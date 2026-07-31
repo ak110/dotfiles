@@ -42,55 +42,19 @@ description: >
    `agent-standards`を、対象ファイル一覧にコード・テストコードを含む場合は`coding-standards`を
    追加適用する。同一テーマを複数計画へ分割する場合、各計画が専任する対象ファイルと主題が
    重複しないことを確認する
-4. Agentツールで`plan-file-finalizer`を起動する。起動プロンプトは
-   `references/plan-file-finalizer-prompt-template.md`が定める必須見出し3点
-   （`## 計画ファイルパス`・`## permission_mode`・`## 作業ディレクトリ`）を満たす形で構成する。
-   `## 作業ディレクトリ`には`### 計画メタ情報`の対象リポジトリ絶対パスを転記する。
-   同エージェントは`agent-toolkit:codex-exec`を使い、機械チェック・総合レビュー・指摘反映を
-   実装・修正系とレビュー系へ委譲する。
-   計画レビューの詳細は`../codex-exec/references/plan-codex-review.md`を参照する。
-   完了報告の`review_completed: true`、両系統の経路と`threadId`、`review_summary`を検収する。
-   いずれかが欠ける場合は実装工程へ進まず委譲先へ照会する。
-   `plan-file-finalizer`は不対応と判断した指摘の見解を`review_summary`欄へ記載するに留め、
-   不対応注記は自ら付さない設計である。呼び出し元は検収時に`review_summary`欄の各指摘見解を
-   実測確認し、`02-claude-code.md`「サブエージェント運用」節が定める書式
-   （`（メイン判断: 不対応 — <理由>）`等）で不対応注記を確定してから実装工程へ進む。
-   `implementation_route: unavailable`または`review_route: unavailable`に起因する
-   `status: needs_escalation`を受領した場合は、呼び出し元が不能となった系統ごとに
-   AgentツールでClaude代替を起動する。task referenceは
-   `plan-codex-review.md`「用途別task reference」節に従って選ぶ。
-   起動プロンプトには用途別の実行手順reference、task reference、計画ファイル、
-   品質規範、プロジェクト規範の絶対パスと、作業ディレクトリの絶対パス、
-   対象、完了条件だけを含める。
-   代替応答全文を任意入力としてfinalizerへ再入力し、finalizer自身に検収を継続させる。
-   `scope_changes`を伴う`status: needs_escalation`はfinalizerから呼び出し元への
-   内部の判断移管であり、ユーザー確認を直接意味しない。
-   呼び出し元は初版との差分と根拠を実測し、`01-agent.md`「協調と自律」に従って
-   セッション状態フラグ`process_feedbacks_skill_invoked`からモードを判定する。
-   元の成果を技術的に成立させる内部追随で、成立案が一意の場合は
-   `### エージェント判断`へ根拠を記録して承認できる。
-   その他も方針から判断できる事項は確認せず自律処理する。
-   協調モードでは同節「協調モードでの確認」の条件に該当する場合だけ
-   `AskUserQuestion`で確認する。自律モードでは同節の例外を除き、
-   `atk mq add --type=tbd`で記録して暫定判断で続行する。
-   `out_of_scope_findings`は現在の計画を停止させず、`01-agent.md`
-   「完遂と先送り」に従って同一作業内の対応またはキュー登録を確定する。
-   `scope_changes`を伴わないその他の`status: needs_escalation`は返却論点を解決する。
-   確定後は承認した差分に加え、初回の`scope_baseline`と全ラウンドの
-   累積`scope_changes`を全文転記した縮減プロンプトでfinalizerを新規起動する。
-   finalizerへ再起動後の計画から`scope_baseline`を再計算させない。
-   `plan_file_path`欄がサンドボックスパスを付記している場合、呼び出し元が
-   `plan-file-finalizer`の反映後の全文を`Read`で検収し、`~/.claude/plans/`配下の正規パスへ
-   `Write`で反映する（サンドボックスパスの削除・移動は委譲先の担当外とする既定に従う）
+4. `references/plan-file-finalizer-prompt-template.md`をReadし、
+   同referenceの起動契約に対応する実行時の値を必須見出し3点で構成する。
+   呼び出し元の読込対象は同referenceに限定し、計画本文と定義済みの委譲手順は起動文へ再掲しない。
+   Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定して起動し、
+   同referenceが定める完了報告の全項目を検収する。
+   `review_summary`の各見解は実体と照合し、呼び出し元が採否を確定する。
+   `status: needs_escalation`とサンドボックスパスの反映は、
+   同referenceが定めるClaude代替、再入力、正規パス反映の手順に従う
 5. plan mode下では`ExitPlanMode`で承認を得る。承認後（またはplan mode外では直ちに）
-   Agentツールで`plan-impl-executor`を起動する。起動プロンプトは
-   `agent-toolkit/agents/plan-impl-executor.md`「入力」節が定める必須引数
-   （計画ファイルの絶対パス、プロジェクトルート（作業ディレクトリ）の絶対パス）を満たす形で構成する。
-   計画作成の`threadId`は引き継がない。実装担当が実装・修正系、
-   計画準拠実装レビュー系、独立実装レビュー系の`threadId`を自身で新規に開始する
-   （計画作成と実装は別コンテキストで行うため）。
-   起動プロンプトは必須引数と完了条件へ限定し、規範本文の引用転記・経路説明を載せない。
-   作業ディレクトリの絶対パスは複製内外を問わず常に明記する。
+   `references/plan-impl-caller-reception.md`をReadする。
+   同referenceの起動契約に対応する実行時の値だけで起動文を構成し、
+   呼び出し元の読込対象は同referenceに限定する。
+   `subagent_type: agent-toolkit:plan-impl-executor`を指定してAgentツールで起動する。
    完了報告の受領後は`references/plan-impl-caller-reception.md`に従う
 
 バグ・障害・エラー・デグレードへの対応は`references/bugfix.md`に従う。判定がつかない場合はバグ対応として扱う。

@@ -22,49 +22,52 @@ user-invocable: false
 
 ## 入力
 
-- 計画ファイルの絶対パス
-- `plan`または非`plan`の`permission_mode`
-- 対象リポジトリの作業ディレクトリの絶対パス
-- 自身の中断作業を継続する場合だけ、両系統の経路、`threadId`、Claude代替時の履歴
-- 実施済みレビュー結果と確定済みの採否
-- 呼び出し元がClaude代替した場合は、その応答全文
-- 初回レビュー開始後に同じfinalizerで継続する場合、または新しいfinalizerへ再起動する場合は、
-  初回に保存した`scope_baseline`と全ラウンドの累積`scope_changes`の全文
+- 必須: 計画ファイルの絶対パス
+- 必須: `plan`または非`plan`の`permission_mode`
+- 必須: 対象リポジトリの作業ディレクトリの絶対パス
+- 条件付き: 既存系統を継続する場合の両系統の経路、`threadId`、Claude代替時の履歴
+- 条件付き: 再開または再レビューの場合の実施済みレビュー結果と確定済みの採否
+- 条件付き: 呼び出し元がClaude代替した場合の応答全文と、
+  `implementation`または`review`の対象系統
+- 条件付き: 初回レビュー開始後に継続または再起動する場合の、初回に保存した
+  `scope_baseline`と、承認状態・反映状態・反映結果を含む全ラウンドの
+  累積`scope_changes`の全文
 
+条件付き入力が無い系統は初回起動として開始する。
+実施済みレビュー結果と確定済みの採否が無い場合は、未実施かつ未確定として扱う。
+受領した経路、識別子、履歴、採否、反映結果は対応する`## 出力`欄へ反映する。
+呼び出し元によるClaude代替では、対象系統が`implementation`の場合は
+`implementation_route: claude`、`implementation_thread_id: なし`として応答全文を
+`implementation_history`へ反映する。対象系統が`review`の場合は
+`review_route: claude`、`review_thread_id: なし`として応答全文を`review_history`へ反映する。
+呼び出し元によるClaude代替では、応答全文と対象系統の両方を必須入力とする。
 作業ディレクトリを自己解決しない。必須入力が欠ける場合は、欠けた項目を
 `escalation_points`へ記載し、`status: needs_escalation`、`review_completed: false`で返す。
 継続または再起動時に`scope_baseline`と`scope_changes`のいずれかが欠ける場合も、
 必須入力不足として返す。再起動後の計画ファイルから`scope_baseline`を再計算しない。
 
-## 委譲と検収
+## 委譲
 
-1. `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review.md`、
-   `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review-fix-task.md`、
-   `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review-task.md`をReadする
-2. 同reference「機械チェック委譲」節の全工程を実装・修正系へ委譲する
-3. 初回は`### 実施内容`、`### ユーザー合意済み事項`、
+1. `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review.md`をReadする
+2. 同referenceからレビュー系と実装・修正系の完結したタスク本文を構成する
+3. 機械チェック用タスク本文を実装・修正系へ渡し、応答と計画ファイル実体を照合する
+4. 初回は機械チェック後の`### 実施内容`、`### ユーザー合意済み事項`、
    `## 変更内容`の原文と内容ハッシュを`scope_baseline`として保存する。
    継続または再起動時は入力された同じ値を用いる
-4. レビュー前の計画ファイルを退避し、内容ハッシュを記録する
-5. レビュー系へ計画ファイル全体の総合レビューを1回委譲する
-6. レビュー前後のハッシュと差分を比較する
-7. レビュー中の変更を検知した場合、同referenceに従って明示確認を得てから
-   実装・修正系へ復元を委譲し、ハッシュ一致を確認する
-8. 指摘を重大度と、初版内補正・スコープ拡大・独立問題の区分で統合する
-9. 初版原文との累積差分を区分し、`scope_changes`を更新する
-10. スコープ拡大は計画へ反映する前に、根拠と選択肢を`needs_escalation`で返す
-11. 独立問題は計画を停止させず、`out_of_scope_findings`へ記載する
-12. 初版内補正は実測結果と自身の見解を`review_summary`へ記載する
-13. 呼び出し元から確定済みの採否を受領し、同じ`scope_changes`項目の承認状態だけを更新する
-14. 採用指摘の全文を実装・修正系へ渡す
-15. 修正後は同referenceが定める限定範囲で同じレビュー系を継続する
-16. 機械チェックの終了状態、計画ファイル実体、両系統の履歴、
-    `scope_baseline`との差分と承認状態を検収する
+5. レビュー前の計画ファイルを退避して内容ハッシュを記録し、レビュー用タスク本文をレビュー系へ渡す
+6. レビュー前後のハッシュと差分を比較し、変更検知時は同referenceの確認・復元手順を適用する
+7. 指摘を重大度と、初版内補正・スコープ拡大・独立問題の区分で統合する
+8. 初版原文との累積差分を`scope_changes`へ記録する。スコープ拡大は反映前に
+   `needs_escalation`で返し、独立問題は`out_of_scope_findings`、初版内補正は
+   実測結果と自身の見解を`review_summary`へ記載する
+9. 呼び出し元から確定済みの採否を受領し、同じ`scope_changes`項目の承認状態だけを更新する。
+   採用指摘の反映と再レビューでは系統別のタスク本文を渡し、応答と計画ファイル実体を照合して
+   同じ項目の反映状態と反映結果を更新する
+10. 機械チェック、計画ファイル実体、両系統の履歴、`scope_baseline`との差分と承認状態を検収し、
+    定義の`## 出力`を作成する
 
-委譲プロンプトには、実行手順referenceと用途別のtask reference、計画、品質規範、
-プロジェクト規範の絶対パスを渡す。タスク本文は作業ディレクトリ、対象、完了条件だけに限定し、
-規範本文を転記しない。CodexとClaude代替の双方に同じreferenceを読ませる。
-task referenceは`plan-codex-review.md`「用途別task reference」節に従って選ぶ。
+用途固有の機械チェック、レビュー、指摘反映、再レビュー、ラウンド上限は同referenceを正本とする。
+呼び出し元の判断が必要な事項は、観測事実と選択肢を`needs_escalation`で返す。
 
 Codex経路では系統別の`threadId`を保持する。
 Codex MCPの未解決時と利用上限応答時は、
@@ -89,6 +92,7 @@ CodexとClaude代替の両経路が利用できない場合も`needs_escalation`
 - 3つの機械チェックが成功したことを確認する
 - 致命的・重大指摘が解消したことを確認する
 - 未承認のスコープ変更がないことを確認する
+- 採用した初版内補正と承認済みのスコープ拡大が反映済みであることを確認する
 - 計画ファイルの実体と検収対象の絶対パスが一致することを確認する
 - 呼び出し元によるClaude代替応答も同じ基準で検収し、不一致は同じ系統へ差し戻す
 - 未開始または利用不能な系統は`thread_id: なし`、履歴`なし`、レビュー回数`0`とする
@@ -117,7 +121,7 @@ scope_baseline:
 - change_content: <初版の## 変更内容の原文>
 - change_content_hash: <初版の## 変更内容の内容ハッシュ>
 scope_changes:
-- <各ラウンドの累積差分、区分、根拠、呼び出し元の承認状態。差分が無ければ「なし」>
+- <各ラウンドの累積差分、区分、根拠、呼び出し元の承認状態、反映状態、反映結果。差分が無ければ「なし」>
 out_of_scope_findings:
 - <独立問題の観測事実と根拠。無ければ「なし」>
 review_summary:
@@ -131,7 +135,11 @@ review_completed: true | false
 `status: completed`は`agent-toolkit:plan-mode`の呼び出し元による採否確定、
 `review_completed: true`、機械チェック成功、致命的・重大指摘の解消、
 計画ファイル実体の確認が全て成立した場合だけ返す。
-`scope_changes`が「なし」または呼び出し元承認済みであることも完了条件とする。
+`scope_changes`が「なし」または呼び出し元承認済みであり、採用した初版内補正と
+承認済みのスコープ拡大が反映済みであることも完了条件とする。
 
 `implementation_thread_id`・`review_thread_id`は本エージェント内の系統継続の記録であり、
 呼び出し元が実装担当へ引き継ぐ値ではない。
+
+完了報告は1回だけ生成し、実際の受領経路（ツール戻り値または完了通知）を通じて返す。
+`SendMessage`による能動送付と、待機対象の結果を欠く完了報告は行わない。

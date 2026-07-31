@@ -1,9 +1,73 @@
-# plan-file-finalizer起動プロンプトの必須見出し
+# plan-file-finalizerの起動契約
 
-`agent-toolkit:plan-mode`手順4が`plan-file-finalizer`を起動する際、および
-`agent-toolkit-edit`等の他スキルが同エージェントを起動する際の起動プロンプトが満たす形式を定める。
-`agent-toolkit/scripts/pretooluse.py`のPreToolUse検査が本ファイルの3見出しの実在と直下本文の
-非空、加えて`## 計画ファイルパス`が指す計画ファイルの実在を機械検査し、欠落・不在時はAgent/Task起動をブロックする。
+本ファイルを呼び出し元側の起動契約の正本とする。
+入力の搬送形式に加え、正しい`subagent_type`、起動形式、起動前準備、
+完了報告の検収、後続処理を定める。
+受信側の解釈は`agent-toolkit/agents/plan-file-finalizer.md`の`## 入力`を正本とし、
+改訂時はペアで更新する。呼び出し元の読込対象は本referenceに限定する。
+
+呼び出し元は起草済み計画ファイルの実在を確認し、
+Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定する。
+`model`、`name`、`run_in_background`を省略し、実際の受領経路を起動結果から判定する。
+完了報告は次の全欄を検収する。
+
+- `summary`、`plan_file_path`、`status`、`review_completed`
+- `implementation_route`、`review_route`、`implementation_thread_id`、`review_thread_id`
+- `review_rounds`、`implementation_history`、`review_history`
+- `check_results`、`scope_baseline`、`scope_changes`、`out_of_scope_findings`
+- `review_summary`、`escalation_points`
+
+`status: completed`は、`review_completed: true`と全機械チェック成功を必須とする。
+致命的・重大指摘が解消し、計画ファイル実体を確認でき、未承認の`scope_changes`が無いことも確認する。
+採用した初版内補正と承認済みのスコープ拡大が反映済みである場合だけ受理する。
+呼び出し元は`review_summary`の各見解を実測確認し、不採用と確定した指摘には
+`02-claude-code.md`「サブエージェント運用」節が定める不対応注記を付してから実装工程へ進む。
+`status: needs_escalation`では`escalation_points`を必須とし、
+呼び出し元が採否または不足事項を確定してから、同じ起動契約で新規起動する。
+
+`scope_changes`を伴う`status: needs_escalation`はfinalizerから呼び出し元への
+内部の判断移管であり、ユーザー確認を直接意味しない。
+呼び出し元は初版との差分と根拠を実測し、`01-agent.md`「協調と自律」に従って
+セッション状態フラグ`process_feedbacks_skill_invoked`からモードを判定する。
+元の成果を技術的に成立させる内部追随で成立案が一意の場合は、
+`### エージェント判断`へ根拠を記録して承認できる。
+その他も方針から判断できる事項は確認せず自律処理する。
+協調モードでは同節「協調モードでの確認」の条件に該当する場合だけ
+`AskUserQuestion`で確認する。
+自律モードでは同節の例外を除き、`atk mq add --type=tbd`で記録して暫定判断で続行する。
+`out_of_scope_findings`は現在の計画を停止させず、`01-agent.md`「完遂と先送り」に従って
+同一作業内の対応またはキュー登録を確定する。
+`scope_changes`を伴わないその他の`status: needs_escalation`は返却論点を解決する。
+確定後は承認した差分に加え、初回の`scope_baseline`と全ラウンドの累積`scope_changes`を
+全文転記した縮減プロンプトでfinalizerを新規起動する。
+再起動後の計画ファイルから`scope_baseline`を再計算させない。
+
+`implementation_route: unavailable`または`review_route: unavailable`に起因する
+`status: needs_escalation`では、呼び出し元が不能な系統ごとに
+Agentツールで`subagent_type: claude`を新規起動する。
+機械チェック・修正系は`model: sonnet`、総合レビュー系および設計判断を含む修正系は
+`model: opus`を指定する。`name`と`run_in_background`は省略し、実際の受領経路を起動結果から判定する。
+
+起動プロンプトには次の絶対パスと実行時入力だけを含め、各資料を着手時に全文Readさせる。
+
+- `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review.md`
+- 機械チェック・修正系では
+  `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review-fix-task.md`、
+  総合レビュー系では
+  `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review-task.md`
+- 計画ファイル
+- 適用する品質規範、対象固有スキル、プロジェクト規範
+- 作業ディレクトリ、対象、完了条件
+
+Claude代替の起動文には、完了報告をツール戻り値で1回だけ返し、
+`SendMessage`で能動送付せず、待機対象の結果を含める指示を明記する。
+呼び出し元がtask referenceの必須欄と成果物実体を検収する。
+検収済みの応答全文と対象系統（`implementation`または`review`）を
+固有の見出しでfinalizerへ再入力し、同エージェントに後続検収を継続させる。
+
+`plan_file_path`がplan mode用サンドボックスパスを付記する場合は、
+呼び出し元がfinalizer反映後の全文をReadで検収し、
+`~/.claude/plans/`配下の正規パスへWriteで反映する。サンドボックスパスは保持する。
 
 ## 必須見出し
 
@@ -24,7 +88,15 @@
 
 ## 追加情報
 
-「必須見出し」節の3見出しに加え、実施済みレビュー結果の転記など
-`plan-file-finalizer.md`「入力」節が定める他の材料は、任意の見出し・書式で追記してよい。
-計画ファイル本文（合意済み事項・提示素材・対象ファイル一覧等）は起動プロンプトへ転記せず、
-`## 計画ファイルパス`が指すファイル自体を情報源とする。
+本referenceが受理する継続情報と実施済み結果は、固有の見出しで追記してよい。
+
+- 既存系統を継続する場合: 実装・修正系とレビュー系の経路、`threadId`、Claude代替履歴
+- 再開または再レビューの場合: 実施済みレビュー結果と、呼び出し元が確定した採否
+- 呼び出し元がClaude代替した場合: 検収済みの応答全文と、
+  `implementation`または`review`の対象系統
+- 初回レビュー開始後の継続または再起動の場合: 初回の`scope_baseline`と
+  承認状態・反映状態・反映結果を含む全ラウンドの累積`scope_changes`の全文
+
+継続情報が無い系統は初回起動として新しく開始する。
+実施済みレビュー結果と確定済み採否が無い場合は、未実施かつ未確定として扱う。
+計画ファイル本文、agent定義の委譲手順、定義frontmatterで読み込む規範は起動文へ転記しない。

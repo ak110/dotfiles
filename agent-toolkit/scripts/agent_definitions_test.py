@@ -13,6 +13,7 @@ _PLAN_REVIEW_TASK = _PLAN_REVIEW.with_name("plan-codex-review-task.md")
 _PLAN_FINALIZER = _AGENTS_DIR / "plan-file-finalizer.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
+_PLAN_FINALIZER_CALLER = _PLAN_MODE.parent / "references" / "plan-file-finalizer-prompt-template.md"
 _REPORT_CONTRACT_LABELS = {
     "記録先の確保",
     "起動プロンプト",
@@ -73,21 +74,25 @@ def test_plan_review_checks_external_plan_without_repository_copy() -> None:
 
 
 def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
-    """計画初版との比較から呼び出し元判断までの契約を節単位で検査する。"""
+    """計画初版との比較から呼び出し元判断までの分離契約を検査する。"""
     finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
+    finalizer_caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
     review = _PLAN_REVIEW.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
 
     finalizer_input = _h2_section(finalizer, "入力")
-    finalizer_workflow = _h2_section(finalizer, "委譲と検収")
+    finalizer_workflow = _h2_section(finalizer, "委譲")
     finalizer_output = _h2_section(finalizer, "出力")
+    completed_scope_changes = "採用した初版内補正と承認済みのスコープ拡大が反映済み"
+    finalizer_output_compact = re.sub(r"\s+", "", finalizer_output)
+    finalizer_caller_compact = re.sub(r"\s+", "", finalizer_caller)
     assert "scope_baseline" in finalizer_input
     assert "scope_changes" in finalizer_input
-    assert "同じfinalizer" in finalizer_input
-    assert "新しいfinalizer" in finalizer_input
+    assert "継続または再起動" in finalizer_input
     assert "再計算しない" in finalizer_input
+    assert finalizer_workflow.index("機械チェック用タスク本文") < finalizer_workflow.index("scope_baseline")
     assert finalizer_workflow.index("scope_baseline") < finalizer_workflow.index("needs_escalation")
     assert finalizer_workflow.index("scope_changes") < finalizer_workflow.index("needs_escalation")
     assert "承認状態だけを更新する" in finalizer_workflow
@@ -95,6 +100,25 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     assert "scope_baseline:" in finalizer_output
     assert "scope_changes:" in finalizer_output
     assert "out_of_scope_findings:" in finalizer_output
+    assert "反映状態" in finalizer_input
+    assert "反映結果" in finalizer_input
+    assert "反映状態" in finalizer_output
+    assert "反映結果" in finalizer_output
+    assert completed_scope_changes in finalizer_output_compact
+
+    for phrase in (
+        "scope_baseline",
+        "scope_changes",
+        "全文転記",
+        "AskUserQuestion",
+        "process_feedbacks_skill_invoked",
+        "atk mq add --type=tbd",
+        "out_of_scope_findings",
+        "反映状態",
+        "反映結果",
+    ):
+        assert phrase in finalizer_caller
+    assert completed_scope_changes in finalizer_caller_compact
 
     review_cycle = _h2_section(review, "指摘反映と再レビュー")
     for phrase in ("初版内補正", "スコープ拡大", "独立問題"):
@@ -102,6 +126,9 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     assert "再起動時" in review_cycle
     assert "再計算しない" in review_cycle
     assert review_cycle.index("反映する前") < review_cycle.index("実装・修正系へ渡す")
+    assert review_cycle.index("反映する前") < review_cycle.index("呼び出し元の承認後")
+    assert review_cycle.index("呼び出し元の承認後") < review_cycle.index("承認済みのスコープ拡大")
+    assert completed_scope_changes in re.sub(r"\s+", "", review_cycle)
 
     review_task_body = _h2_section(review_task, "レビュー")
     assert "前回の採用指摘" in review_task_body
@@ -112,9 +139,5 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     assert "計画レビューの指摘と分けて扱う" in plan_review_exceptions
 
     plan_mode_steps = _h2_section(plan_mode, "進め方")
-    assert "scope_baseline" in plan_mode_steps
-    assert "scope_changes" in plan_mode_steps
-    assert "全文転記" in plan_mode_steps
-    assert "AskUserQuestion" in plan_mode_steps
-    assert "process_feedbacks_skill_invoked" in plan_mode_steps
-    assert "atk mq add --type=tbd" in plan_mode_steps
+    assert "references/plan-file-finalizer-prompt-template.md" in plan_mode_steps
+    assert "呼び出し元の読込対象は同referenceに限定" in plan_mode_steps

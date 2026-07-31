@@ -9,16 +9,25 @@
 構成済みリモートを列挙し、各リモートに対する`git ls-remote --heads --tags <remote>`の
 ref名とOIDを委譲前スナップショットとして保存する。
 
-計画作成の`threadId`を`plan-impl-executor`へ引き継がない。
-実装担当が実装・修正系、計画準拠実装レビュー系、独立実装レビュー系の
-`threadId`を自身で新規に開始する。
-起動プロンプトは必須引数へ限定し、規範本文、経路説明、背景説明を載せない。
-作業ディレクトリの絶対パスは受領した値をそのまま渡す。
-起動は`name`と`run_in_background`を省略する。
+本節を`plan-impl-executor`の呼び出し元側の起動契約の正本とする。
+必須入力は計画ファイルと対象リポジトリの作業ディレクトリの絶対パスとする。
+同executorの中断作業を継続する場合は、該当系統の経路、識別子、履歴を渡す。
+計画作成時の経路、識別子、履歴は実装系統へ引き継がない。
+追加指示、変更意図、意図的に許容した挙動変化は存在する場合だけ渡す。
+継続情報が無い系統は新しく開始し、追加指示等が無い場合は該当事項なしとして扱う。
+
+`subagent_type: agent-toolkit:plan-impl-executor`を指定し、`model`と`name`を省略する。
+`agent-toolkit:plan-mode`からの通常起動は`run_in_background`を省略し、
+実際の受領経路を起動結果から判定する。
+`agent-toolkit:process-feedbacks`の計画実装型フィードバックから起動する場合は、
+`process-feedbacks/references/plan-impl-feedback-flow.md`が定めるbackground経路を適用する。
+この分岐は呼び出し元が観測する起動スキルで判定し、受信側の推測へ依存しない。
+受信側の解釈は`agent-toolkit/agents/plan-impl-executor.md`の`## 入力`を正本とし、
+改訂時はペアで更新する。呼び出し元の読込対象は本referenceに限定する。
 
 ## 完了報告の検収
 
-次の主要欄を検査する。
+次の全欄について実在と値を検査する。
 
 - `status`
 - `summary`
