@@ -155,6 +155,43 @@ class TestScheduleCli:
         assert regenerated.plan_file == str(plan)
         assert any("commit" in call["cmd"] for call in calls)
 
+    def test_legacy_metadata_plan_file_is_selected_without_repair_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """分類メタデータだけに計画パスを持つ旧形式を実行対象として扱う。"""
+        notes = _setup_notes(tmp_path)
+        plan = tmp_path / "plan.md"
+        plan.write_text("### 対象ファイル一覧\n\n- [ ] `shared.py`\n", encoding="utf-8")
+        plan_entry = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo")
+        text = plan_entry.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/repo",
+            "plan-impl",
+            schedule.Dependency("none"),
+            str(plan),
+            (),
+            0,
+            (),
+        )
+        plan_entry.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert payload["plan_items"] == ["plan.md"]
+        assert not payload["missing_plan_file_filenames"]
+        assert not payload["missing_plan_file_needs_tbd_filenames"]
+        assert list((notes / "inbox").glob("*.md")) == [plan_entry]
+        assert not any("commit" in call["cmd"] for call in calls)
+
     def test_missing_plan_file_is_held_with_deduplicated_repair_tbd(
         self,
         monkeypatch: pytest.MonkeyPatch,

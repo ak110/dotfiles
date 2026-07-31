@@ -118,13 +118,10 @@ def _load_plan_target_files(
     classifications: tuple[_schedule.Classification, ...],
 ) -> dict[str, tuple[str, ...]]:
     plan_files = {
-        item
-        for item in (
-            *(entry.plan_file for entry in entries if entry.plan_file is not None),
-            *(classification.plan_file for classification in classifications if classification.plan_file is not None),
-        )
-        if item is not None
-    }
+        plan_file
+        for entry in entries
+        if (plan_file := entry.plan_file or (entry.metadata.plan_file if entry.metadata is not None else None)) is not None
+    } | {classification.plan_file for classification in classifications if classification.plan_file is not None}
     result: dict[str, tuple[str, ...]] = {}
     for plan_file in plan_files:
         path = pathlib.Path(plan_file)
