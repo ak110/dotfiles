@@ -11,8 +11,12 @@ import pytest
 from pytools._internal import claude_common, winutils
 from pytools._internal import setup_mise as _setup_mise
 
-# 非対話化のために `_run_mise` から注入される環境変数の期待値。
-_EXPECTED_ENV_OVERRIDES = {"MISE_YES": "1", "CI": "1"}
+# 無人セットアップのために`_run_mise`から注入される環境変数の期待値。
+_EXPECTED_ENV_OVERRIDES = {
+    "MISE_YES": "1",
+    "CI": "1",
+    "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT": "120s",
+}
 
 
 class _MiseSubprocessStub:
@@ -376,10 +380,11 @@ class TestWindowsProcessPathPriority:
 
 
 class TestNonInteractiveEnvInjection:
-    """全 mise CLI 呼び出しに `MISE_YES=1` ・ `CI=1` が注入されることを確認する。
+    """全mise CLI呼び出しに無人セットアップ用の環境変数が注入されることを確認する。
 
     aqua/npm バックエンドの初回ダウンロード時に確認プロンプトでブロックする事象を
-    防ぐため、trust・ls・install の各サブコマンドが env_overrides 付きで呼ばれる。
+    防ぎ、版一覧取得の上限を延長するため、trust・ls・installの各サブコマンドが
+    env_overrides付きで呼ばれる。
     """
 
     def test_all_mise_invocations_receive_env_overrides(

@@ -25,6 +25,10 @@ _MISE_TIMEOUT = 300
 # 複数ツールの一括インストールで時間がかかるため、通常コマンドより長めに取る。
 _MISE_INSTALL_TIMEOUT = 600
 
+# 無人セットアップではネットワークの一時的な遅延で版一覧取得が失敗しないよう、
+# mise内部の既定値より長い上限を全mise呼び出しへ適用する。
+_MISE_FETCH_REMOTE_VERSIONS_TIMEOUT = "120s"
+
 # Windows 上で mise の shims ディレクトリを指し示す値。レジストリ上は
 # `%LOCALAPPDATA%\mise\shims` のまま REG_EXPAND_SZ で保持する。
 _WINDOWS_SHIMS_ENTRY = r"%LOCALAPPDATA%\mise\shims"
@@ -308,12 +312,18 @@ def _run_mise(
 
     miseの対話確認とTTY検出を抑止するため `MISE_YES=1`・`CI=1` を注入する。
     aqua/npmバックエンドの初回ダウンロード時に確認プロンプトでブロックするのを防ぐ。
+    無人セットアップで版一覧取得が短時間のネットワーク遅延により失敗しないよう、
+    mise内部の版一覧取得上限も延長する。
     """
     return claude_common.run_subprocess(
         [str(mise_bin), *args],
         timeout=timeout,
         tag="mise",
-        env_overrides={"MISE_YES": "1", "CI": "1"},
+        env_overrides={
+            "MISE_YES": "1",
+            "CI": "1",
+            "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT": _MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
+        },
     )
 
 
