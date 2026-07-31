@@ -15,6 +15,11 @@ user-invocable: false
 codex MCPを優先し、利用できない場合だけ汎用エージェントへ切り替える。
 用途固有の作業内容は呼び出し元がreferenceから構成し、本スキルは接続・継続・代替経路だけを担う。
 
+Skillツールの成功応答は本スキルの読み込み完了を示し、委譲結果の待機状態を示さない。
+呼び出し元は成功後、既存のMCPスキーマの有無を確認し、ToolSearch、MCP初回接続、
+MCP継続接続、Claude代替判定のうち該当する工程へ直ちに進む。
+`plan-file-finalizer`と`plan-impl-executor`はSkill、ToolSearch、MCP接続、委譲の順序を共通で適用する。
+
 ## 入力
 
 呼び出し元から次を受け取る。

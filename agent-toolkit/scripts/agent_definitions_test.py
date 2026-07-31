@@ -11,9 +11,11 @@ _PLAN_REVIEW = _AGENTS_DIR.parent / "skills" / "codex-exec" / "references" / "pl
 _PLAN_REVIEW_FIX_TASK = _PLAN_REVIEW.with_name("plan-codex-review-fix-task.md")
 _PLAN_REVIEW_TASK = _PLAN_REVIEW.with_name("plan-codex-review-task.md")
 _PLAN_FINALIZER = _AGENTS_DIR / "plan-file-finalizer.md"
+_PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
 _PLAN_FINALIZER_CALLER = _PLAN_MODE.parent / "references" / "plan-file-finalizer-prompt-template.md"
+_PLAN_IMPL_CALLER = _PLAN_MODE.parent / "references" / "plan-impl-caller-reception.md"
 _REPORT_CONTRACT_LABELS = {
     "記録先の確保",
     "起動プロンプト",
@@ -57,6 +59,60 @@ def test_codex_exec_agents_allow_nested_agent_fallback() -> None:
     claude_route = skill.split("## Claude代替経路", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
     labels = set(re.findall(r"^- ([^:\n]+):", claude_route, flags=re.MULTILINE))
     assert labels >= _REPORT_CONTRACT_LABELS
+
+
+def test_codex_exec_agents_use_skill_then_toolsearch_then_delegation() -> None:
+    """両窓口がSkill読込後に能動的な接続工程へ進む順序を検査する。"""
+    skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
+    assert "Skillツールの成功応答は本スキルの読み込み完了" in skill
+    assert "ToolSearch、MCP初回接続" in skill
+    finalizer = _h2_section(_PLAN_FINALIZER.read_text(encoding="utf-8"), "委譲")
+    assert finalizer.index("Skillツール") < finalizer.index("ToolSearch")
+    assert finalizer.index("ToolSearch") < finalizer.index("plan-codex-review.md`をRead")
+    assert finalizer.index("plan-codex-review.md`をRead") < finalizer.index("タスク本文を構成")
+    assert finalizer.index("タスク本文を構成") < finalizer.index("機械チェック委譲")
+
+    executor = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "委譲")
+    assert executor.index("Skillツール") < executor.index("ToolSearch")
+    assert executor.index("ToolSearch") < executor.index("次のreferenceをRead")
+    assert executor.index("次のreferenceをRead") < executor.index("タスク本文を構成")
+    assert executor.index("タスク本文を構成") < executor.index("実装用タスク本文")
+
+
+def test_plan_finalizer_reuses_working_directory_as_target_worktree() -> None:
+    """作業ディレクトリを唯一の対象worktree入力として再利用する契約を検査する。"""
+    documents = [
+        _PLAN_FINALIZER.read_text(encoding="utf-8"),
+        _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8"),
+        _PLAN_REVIEW.read_text(encoding="utf-8"),
+    ]
+    assert all("target_worktree_path" not in document for document in documents)
+    assert all("対象worktreeの唯一の入力" in document for document in documents)
+    assert all("source_repository_path" in document or "複製元リポジトリ" in document for document in documents)
+
+
+def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
+    """対象worktreeと条件付き複製元の退避・比較・復旧報告契約を検査する。"""
+    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW.read_text(encoding="utf-8")
+    fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    assert "_worktree_snapshot.py capture" in finalizer
+    assert "_worktree_snapshot.py capture" in review
+    assert "worktree_check_results" in finalizer
+    assert "具体的な復旧手順" in finalizer
+    assert "復旧の実行主体は、呼び出し元の明示確認後に開始する別工程" in review
+    assert "worktree_check_result" in fix_task
+    assert "worktree_check_result" in review_task
+
+
+def test_plan_impl_review_report_contract_is_synchronized() -> None:
+    """executorの最終レビュー情報と呼び出し元の検収欄を同期する。"""
+    executor = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
+    caller = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
+    for label in ("review_final_findings", "review_skip_instruction", "review_caller_verification"):
+        assert label in executor
+        assert label in caller
 
 
 def test_plan_review_checks_external_plan_without_repository_copy() -> None:

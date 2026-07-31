@@ -35,6 +35,9 @@ ref名とOIDを委譲前スナップショットとして保存する。
 - `verification`
 - `commit_sha`
 - `review_status`
+- `review_final_findings`
+- `review_skip_instruction`
+- `review_caller_verification`
 - `pending_confirmations`
 - `plan_gaps`
 - `applied_instructions`
@@ -77,6 +80,9 @@ codex routeでは対応するthreadが「なし」以外、Claude routeでは「
 通常完了の値は次を満たす。
 
 - `review_status`は`実施完了...`
+- `review_final_findings`は`計画準拠系N件・独立系M件`で、NとMは非負整数
+- `review_skip_instruction`は`なし`
+- `review_caller_verification`は`不要`
 - 両レビューrouteは`codex`または`claude`
 - `review_rounds`は1〜5
 - 両review historyと`review_resolution`は「なし」ではない
@@ -84,11 +90,16 @@ codex routeでは対応するthreadが「なし」以外、Claude routeでは「
 ユーザー指示によるレビュー省略は次を満たす。
 
 - `review_status`は`レビューは実施しない（ユーザー指示）`
+- `review_final_findings`は`対象外`
+- `review_skip_instruction`は計画の`レビュー省略のユーザー指示原文`と完全一致
+- `review_caller_verification`は`ユーザー指示原文との照合が必要`
 - 両レビューrouteは`not_started`
 - 両review thread、両review history、`review_resolution`は「なし」
 - `review_rounds`は0
 
 `status: needs_escalation`では`review_status`を`レビュー未完了`とし、
+`review_final_findings: 未確定`、`review_skip_instruction: なし`、
+`review_caller_verification: 未完了事項の確認が必要`とする。
 `not_started`または`unavailable`のrouteに対応するthreadは「なし」とする。
 `plan-file-finalizer`の値との照合は行わない。
 
@@ -109,6 +120,7 @@ git diff <計画着手前SHA>..<commit_sha>
 `review_status`が実施完了の場合は、二系統の同一スナップショット利用、
 採用指摘の反映、再検証、レビュー前後の成果物不変性を確認する。
 レビュー省略の場合は、計画の`## 実行方法`に同じ明示文字列があることを確認する。
+併せて`review_skip_instruction`と計画本文に保存されたユーザー指示原文を照合する。
 `レビュー未完了`は完了扱いしない。
 
 ## 未完了事項の処理

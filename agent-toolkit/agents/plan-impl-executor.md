@@ -33,18 +33,24 @@ user-invocable: false
 
 ## 委譲
 
-1. 次のreferenceをReadする
+委譲工程の冒頭で、次の接続順序を適用する。
+
+1. Skillツールで`agent-toolkit:codex-exec`を起動する
+2. Skill成功後にToolSearchでcodex MCPのスキーマを解決する
+3. 解決結果に従いMCP接続またはClaude代替の接続経路を確定する
+
+4. 次のreferenceをReadする
    - `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation.md`
    - `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-review.md`
-2. 両referenceから実装・修正系とレビュー系の完結したタスク本文を構成する
-3. 実装用タスク本文を実装・修正系の`agent-toolkit:codex-exec`へ渡す
-4. 実装応答と作業ツリー、コミット、検証結果を照合する
-5. レビュー前の対象内容を退避し、内容ハッシュを記録する
-6. 計画準拠系と独立系へレビュー用タスク本文を並列に渡す
-7. レビュー応答の受領後にハッシュと差分を比較し、変更検知時は同referenceの確認手順を適用する
-8. レビュー指摘と実体を照合し、採否見解と重複対応を整理する
-9. 採用指摘の修正と再レビューでは、同じ事前条件を満たしてから系統別のタスク本文を渡す
-10. 反映結果と実体を照合し、定義の`## 出力`を作成する
+5. 両referenceから実装・修正系とレビュー系の完結したタスク本文を構成する
+6. 実装用タスク本文を実装・修正系の`agent-toolkit:codex-exec`へ渡す
+7. 実装応答と作業ツリー、コミット、検証結果を照合する
+8. レビュー前の対象内容を退避し、内容ハッシュを記録する
+9. 計画準拠系と独立系へレビュー用タスク本文を並列に渡す
+10. レビュー応答の受領後にハッシュと差分を比較し、変更検知時は同referenceの確認手順を適用する
+11. レビュー指摘と実体を照合し、採否見解と重複対応を整理する
+12. 採用指摘の修正と再レビューでは、同じ事前条件を満たしてから系統別のタスク本文を渡す
+13. 反映結果と実体を照合し、定義の`## 出力`を作成する
 
 計画が`レビューは実施しない（ユーザー指示）`を指定する場合は、実装応答の照合後に
 レビュー省略の出力契約を適用する。
@@ -76,6 +82,9 @@ verification:
 - <コマンド、終了コード、警告>
 commit_sha: <最終コミットまたは「なし」>
 review_status: 実施完了（計画準拠系採用N件・独立系採用M件） | レビューは実施しない（ユーザー指示） | レビュー未完了
+review_final_findings: 計画準拠系N件・独立系M件 | 対象外 | 未確定
+review_skip_instruction: <ユーザー指示原文または「なし」>
+review_caller_verification: 不要 | ユーザー指示原文との照合が必要 | 未完了事項の確認が必要
 pending_confirmations:
 - <確認事項。無ければ「なし」>
 plan_gaps:
@@ -103,6 +112,12 @@ blockers:
 
 `status: completed`は計画項目、検証、コミットと、
 両レビュー系の完了またはユーザー指示によるレビュー省略を実測した場合だけ返す。
+レビュー実施完了では最終ラウンドの指摘件数を`review_final_findings`へ記録し、
+`review_skip_instruction: なし`、`review_caller_verification: 不要`とする。
+レビュー省略では`review_final_findings: 対象外`とし、計画に保存されたユーザー指示原文を
+`review_skip_instruction`へ転記して、呼び出し元による照合を要求する。
+`status: needs_escalation`では`review_final_findings: 未確定`、
+`review_skip_instruction: なし`、`review_caller_verification: 未完了事項の確認が必要`とする。
 
 完了報告は1回だけ生成し、実際の受領経路（ツール戻り値または完了通知）を通じて返す。
 `SendMessage`による能動送付と、待機対象の結果を欠く完了報告は行わない。

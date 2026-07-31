@@ -25,6 +25,8 @@ user-invocable: false
 - 必須: 計画ファイルの絶対パス
 - 必須: `plan`または非`plan`の`permission_mode`
 - 必須: 対象リポジトリの作業ディレクトリの絶対パス
+- 条件付き: `source_repository_path`として、作業ディレクトリが複製の場合の
+  複製元リポジトリの絶対パス。複製でない場合は`対象外`
 - 条件付き: 継続または再起動時の両系統の経路、`threadId`、全応答履歴、累積`review_rounds`
 - 条件付き: 実施済みレビュー結果と確定済みの採否
 - 条件付き: 呼び出し元がClaude代替した場合の応答全文と、
@@ -60,8 +62,23 @@ user-invocable: false
 前回の反映後機械修正前後差分と反映後最終検査結果も、
 `反映後・再レビュー前`だけで必須とする。
 再起動後の計画ファイルから`scope_baseline`を再計算しない。
+作業ディレクトリを対象worktreeの唯一の入力として使う。
+対象worktreeを表す入力は作業ディレクトリだけとする。
+複製元リポジトリは受領したパスだけを対象とする。
 
 ## 委譲
+
+委譲工程の冒頭で、次の接続順序を適用する。
+
+1. Skillツールで`agent-toolkit:codex-exec`を起動する
+2. Skill成功後にToolSearchでcodex MCPのスキーマを解決する
+3. 解決結果に従いMCP接続またはClaude代替の接続経路を確定する
+
+各委譲の直前に`${CLAUDE_PLUGIN_ROOT}/scripts/_worktree_snapshot.py capture`をBashで実行する。
+作業ディレクトリと、`対象外`でない複製元リポジトリを別々の所有者限定一時ディレクトリへ退避する。
+委譲直後に同helperの`compare`を双方へ実行する。
+不一致を検出した場合は自動復旧せず、変更パス、退避先、具体的な復旧手順を
+`worktree_check_results`へ記録し、未完了として呼び出し元へ返す。
 
 1. `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review.md`をReadし、
    同referenceからレビュー系と実装・修正系の完結したタスク本文を構成する
@@ -168,6 +185,8 @@ check_results:
 - check_plan_file.py: <初回と再実行の終了コード、error件数、warning件数>
 - pyfltr: <初回と再実行の終了コード、違反件数、警告>
 - check_dash.py: <初回と再実行の終了コード、検出件数>
+worktree_check_results:
+- <委譲、対象worktreeまたは複製元、前後一致、変更パス、退避先、復旧手順>
 post_application_check_diff: <反映後の機械修正前後差分。差分が無ければ「なし」>
 post_application_check_results: <反映後に実行した3検査の最終結果>
 scope_baseline:

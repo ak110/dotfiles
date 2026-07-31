@@ -54,6 +54,9 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "verification",
     "commit_sha",
     "review_status",
+    "review_final_findings",
+    "review_skip_instruction",
+    "review_caller_verification",
     "pending_confirmations",
     "plan_gaps",
     "applied_instructions",
@@ -77,6 +80,7 @@ _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalati
 _PLAN_IMPL_EXECUTOR_BACKGROUND_LAUNCH_RE = re.compile(r"run_in_background\s*=\s*true|バックグラウンドで?並列起動")
 _PLAN_IMPL_EXECUTOR_UNCHECKED_CHANGED_ITEM_RE = re.compile(r"^-\s*\[\s\]", re.MULTILINE)
 _PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(r"^status:\s*completed\b", re.MULTILINE)
+_PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE = re.compile(r"^計画準拠系(\d+)件・独立系(\d+)件$")
 
 # `changed:`欄本文（次の主要ラベル行直前まで）を抽出する境界パターン（FB[3]）。
 # `_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
@@ -130,6 +134,9 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
         return violations
 
     review_status = _extract_report_first_line(text, "review_status")
+    final_findings = _extract_report_first_line(text, "review_final_findings")
+    skip_instruction = _extract_report_field(text, "review_skip_instruction")
+    caller_verification = _extract_report_first_line(text, "review_caller_verification")
     rounds_text = _extract_report_first_line(text, "review_rounds")
     try:
         rounds = int(rounds_text)
@@ -143,6 +150,12 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
     resolution = _extract_report_field(text, "review_resolution")
 
     if status == "completed" and review_status.startswith("実施完了"):
+        if _PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE.fullmatch(final_findings) is None:
+            violations.append("review_final_findings must contain two non-negative finding counts")
+        if not _is_none_value(skip_instruction):
+            violations.append("review_skip_instruction must be なし for completed review")
+        if caller_verification != "不要":
+            violations.append("review_caller_verification must be 不要 for completed review")
         if rounds not in range(1, 6):
             violations.append("review_rounds must be between 1 and 5 for completed review")
         if _is_none_value(resolution):
@@ -158,6 +171,12 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
             if route == "claude" and not _is_none_value(threads[track]):
                 violations.append(f"{track}_thread_id must be なし for claude route")
     elif status == "completed" and review_status == "レビューは実施しない（ユーザー指示）":
+        if final_findings != "対象外":
+            violations.append("review_final_findings must be 対象外 when review is skipped")
+        if _is_none_value(skip_instruction):
+            violations.append("review_skip_instruction must preserve the user instruction when review is skipped")
+        if caller_verification != "ユーザー指示原文との照合が必要":
+            violations.append("review_caller_verification must request user instruction verification when review is skipped")
         if rounds != 0:
             violations.append("review_rounds must be 0 when review is skipped")
         if not _is_none_value(resolution):
@@ -174,6 +193,12 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
     elif status == "needs_escalation":
         if review_status != "レビュー未完了":
             violations.append("review_status must be レビュー未完了 for needs_escalation")
+        if final_findings != "未確定":
+            violations.append("review_final_findings must be 未確定 for needs_escalation")
+        if not _is_none_value(skip_instruction):
+            violations.append("review_skip_instruction must be なし for needs_escalation")
+        if caller_verification != "未完了事項の確認が必要":
+            violations.append("review_caller_verification must request pending-item verification for needs_escalation")
         for track in tracks:
             if routes[track] in {"not_started", "unavailable"} and not _is_none_value(threads[track]):
                 violations.append(f"{track}_thread_id must be なし for {routes[track]} route")

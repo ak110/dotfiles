@@ -15,6 +15,7 @@ Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定す�
 - `implementation_route`、`review_route`、`implementation_thread_id`、`review_thread_id`
 - `review_rounds`、`implementation_history`、`review_history`
 - `check_results`、`post_application_check_diff`、`post_application_check_results`
+- `worktree_check_results`
 - `scope_baseline`、`scope_changes`、`out_of_scope_findings`
 - `review_summary`、`escalation_points`
 
@@ -96,6 +97,8 @@ Claude代替の起動文には、完了報告をツール戻り値で1回だけ�
 | `## permission_mode` | `plan`または非`plan` |
 | `## 作業ディレクトリ` | 対象リポジトリの絶対パス（`agent-toolkit:codex-exec`によるcodex初回起動時の`cwd`として転記する） |
 
+`## 作業ディレクトリ`を対象worktreeの唯一の入力として使う。
+
 見出しの実在と非空に加え、`## 計画ファイルパス`が指すパスを`expanduser().resolve(strict=False)`で
 正規化したうえで実在することも機械検査される。パスを一意に抽出できない場合は当該検査をブロックしない
 （安全側の設計。曖昧な記述は必須見出しの非空検査で担保される範囲に留める）。パスを一意に抽出できた
@@ -106,6 +109,9 @@ Claude代替の起動文には、完了報告をツール戻り値で1回だけ�
 ## 追加情報
 
 本referenceが受理する継続情報と実施済み結果は、固有の見出しで追記してよい。
+
+- 作業ディレクトリが作業用複製の場合: `source_repository_path`として複製元リポジトリの絶対パス
+- 作業ディレクトリが作業用複製でない場合: `source_repository_path: 対象外`
 
 - 継続または再起動の場合: 実装・修正系とレビュー系の経路、`threadId`、
   全応答履歴、累積`review_rounds`
@@ -123,3 +129,5 @@ Claude代替の起動文には、完了報告をツール戻り値で1回だけ�
 継続情報が無い系統は初回起動として新しく開始する。
 実施済みレビュー結果と確定済み採否が無い場合は、未実施かつ未確定として扱う。
 計画ファイル本文、agent定義の委譲手順、定義frontmatterで読み込む規範は起動文へ転記しない。
+呼び出し元は対象worktreeと条件付き複製元を委譲前後に実測し、
+`worktree_check_results`と一致した場合だけ完了報告を受理する。

@@ -4964,24 +4964,6 @@ class TestPlanFileWarningChecksCoexist:
         assert "editing a plan file without reading required references" not in result.stderr
 
 
-def _history_sync_build_content(*, history_line: str) -> str:
-    """FB5変更履歴と変更内容の対応照合検査用の計画本文を組み立てる。"""
-    return (
-        "# タイトル\n\n"
-        f"## 変更履歴\n\n- 初版\n{history_line}\n\n"
-        "## 背景\n\nx\n\n"
-        "## 対応方針\n\nx\n\n"
-        "## 調査結果\n\nx\n\n"
-        "## 変更内容\n\n"
-        "### 対象ファイル一覧\n\n"
-        "- [ ] `foo/bar.py`\n\n"
-        "### foo/bar.py\n\n```text\nx\n```\n\n"
-        "## 実行方法\n\nx\n\n"
-        "## 進捗ログ\n\nx\n\n"
-        "## 計画ファイル（本ファイル）のパス\n\nx\n"
-    )
-
-
 class TestPlanFileRetroactiveScanRecorded:
     """規範対象ドキュメントへのメタ規範新設編集時の遡及スキャン記録検査（FB4）。"""
 

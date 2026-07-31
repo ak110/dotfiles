@@ -269,6 +269,9 @@ def _complete_report(**overrides: str) -> str:
         "verification": "- `pytest` — pass",
         "commit_sha": "abc123",
         "review_status": "実施完了（計画準拠系採用0件・独立系採用0件）",
+        "review_final_findings": "計画準拠系0件・独立系0件",
+        "review_skip_instruction": "なし",
+        "review_caller_verification": "不要",
         "pending_confirmations": "なし",
         "plan_gaps": "なし",
         "applied_instructions": "なし",
@@ -285,6 +288,18 @@ def _complete_report(**overrides: str) -> str:
         "review_resolution": "指摘なし",
     }
     fields.update(overrides)
+    if "review_final_findings" not in overrides:
+        if fields["status"] == "needs_escalation":
+            fields["review_final_findings"] = "未確定"
+        elif fields["review_status"] == "レビューは実施しない（ユーザー指示）":
+            fields["review_final_findings"] = "対象外"
+    if "review_skip_instruction" not in overrides and fields["review_status"] == "レビューは実施しない（ユーザー指示）":
+        fields["review_skip_instruction"] = "レビューを省略すること"
+    if "review_caller_verification" not in overrides:
+        if fields["status"] == "needs_escalation":
+            fields["review_caller_verification"] = "未完了事項の確認が必要"
+        elif fields["review_status"] == "レビューは実施しない（ユーザー指示）":
+            fields["review_caller_verification"] = "ユーザー指示原文との照合が必要"
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
 
 
@@ -377,7 +392,15 @@ class TestPlanImplExecutorReportFormat:
 
     @pytest.mark.parametrize(
         "missing_label",
-        ["plan_review_thread_id", "independent_review_thread_id", "plan_review_history", "independent_review_history"],
+        [
+            "review_final_findings",
+            "review_skip_instruction",
+            "review_caller_verification",
+            "plan_review_thread_id",
+            "independent_review_thread_id",
+            "plan_review_history",
+            "independent_review_history",
+        ],
     )
     def test_missing_review_track_label_blocks(self, tmp_path: Path, missing_label: str) -> None:
         """いずれかのレビュー系必須欄が欠落する報告をblockする。"""
@@ -419,6 +442,22 @@ class TestPlanImplExecutorReportFormat:
             (
                 {"review_rounds": "6"},
                 "review_rounds must be between 1 and 5",
+            ),
+            (
+                {"review_final_findings": "計画準拠系-1件・独立系0件"},
+                "review_final_findings must contain two non-negative finding counts",
+            ),
+            (
+                {"review_final_findings": "計画準拠系x件・独立系0件"},
+                "review_final_findings must contain two non-negative finding counts",
+            ),
+            (
+                {"review_skip_instruction": "省略すること"},
+                "review_skip_instruction must be なし",
+            ),
+            (
+                {"review_caller_verification": "未完了事項の確認が必要"},
+                "review_caller_verification must be 不要",
             ),
             (
                 {"independent_review_history": "なし"},
@@ -547,6 +586,9 @@ class TestPlanImplExecutorReportFormat:
             ({"independent_review_thread_id": "th_invalid"}, "independent_review_thread_id must be なし"),
             ({"plan_review_history": "指摘なし"}, "plan_review_history must be なし"),
             ({"review_resolution": "指摘なし"}, "review_resolution must be なし"),
+            ({"review_final_findings": "計画準拠系0件・独立系0件"}, "review_final_findings must be 対象外"),
+            ({"review_skip_instruction": "なし"}, "review_skip_instruction must preserve the user instruction"),
+            ({"review_caller_verification": "不要"}, "review_caller_verification must request user instruction"),
         ],
     )
     def test_skipped_review_value_mismatch_blocks(
@@ -616,6 +658,9 @@ class TestPlanImplExecutorReportFormat:
                 {"plan_review_route": "unavailable", "plan_review_thread_id": "th_invalid"},
                 "plan_review_thread_id must be なし",
             ),
+            ({"review_final_findings": "対象外"}, "review_final_findings must be 未確定"),
+            ({"review_skip_instruction": "省略すること"}, "review_skip_instruction must be なし"),
+            ({"review_caller_verification": "不要"}, "review_caller_verification must request pending-item"),
         ],
     )
     def test_escalation_review_value_mismatch_blocks(
