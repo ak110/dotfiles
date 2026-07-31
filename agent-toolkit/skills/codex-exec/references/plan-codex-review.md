@@ -41,21 +41,24 @@
 3. 終了コード2では、対象パス・読み取り権限・文字エンコーディングを是正して再実行する
 4. 終了コード2を解消できない場合は、原因を`escalation_points`へ記録して`needs_escalation`で返す
 5. `[warn]`接頭辞付きの出力は内容を確認し、修正するか許容理由を`check_results`へ記録する
-6. 計画ファイルを対象リポジトリ直下の一意な一時パスへ複製する
-7. 複製には既存ファイルと衝突しない`.plan-check-<stem>-<プロセス固有識別子>.md`を使う
-8. 一時複製へ`uvx pyfltr run --no-fix <一時パス>`を実行する
-9. 違反または警告を計画ファイル本体で修正し、最新の内容から一時複製を再作成して終了コード0まで再実行する
-10. 次のコマンドを計画ファイル本体へ実行し、検出内容を修正して終了コード0まで再実行する
+6. 次のコマンドで計画ファイル本体を直接検査する
+
+   ```text
+   uvx pyfltr run --no-fix --allow-external-paths \
+     --work-dir <対象リポジトリの絶対パス> \
+     --commands=typos,markdownlint,textlint,designmd,lychee,colloquial-check \
+     --enable=colloquial-check \
+     <計画ファイルの絶対パス>
+   ```
+
+7. 違反または警告を計画ファイル本体で修正し、終了コード0まで同じコマンドを再実行する
+8. 次のコマンドを計画ファイル本体へ実行し、検出内容を修正して終了コード0まで再実行する
 
     ```text
     uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/writing-standards/scripts/check_dash.py <計画ファイルの絶対パス>
     ```
 
-11. 修正後に3検査を再実行し、終了コード・error件数・warning件数を`check_results`へ記録する
-12. 検査結果の成否にかかわらず一時複製を除去し、`git status --short`で未追跡の一時ファイルが残っていないことを確認する
-
-計画ファイルは対象リポジトリ外に置かれる場合がある。
-`pyfltr`へ計画ファイルの外部パスを直接渡すと検査対象から除外されるため、リポジトリ内の一時複製を検査対象とする。
+9. 修正後に3検査を再実行し、終了コード・error件数・warning件数を`check_results`へ記録する
 
 ## 変更検知
 
