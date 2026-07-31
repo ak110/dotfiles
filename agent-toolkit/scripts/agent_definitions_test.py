@@ -90,18 +90,69 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     finalizer_caller_compact = re.sub(r"\s+", "", finalizer_caller)
     assert "scope_baseline" in finalizer_input
     assert "scope_changes" in finalizer_input
-    assert "継続または再起動" in finalizer_input
+    assert "反映状態" in finalizer_input
+    assert "反映結果" in finalizer_input
+    assert "同じfinalizer" in finalizer_input
+    assert "新しいfinalizer" in finalizer_input
+    assert "前回の採用指摘" in finalizer_input
+    assert "確定済みの採否" in finalizer_input
+    assert "反映結果" in finalizer_input
+    assert "反映差分" in finalizer_input
+    assert "`採否確定後・反映前`" in finalizer_input
+    assert "`反映後・再レビュー前`" in finalizer_input
+    assert "`初回レビュー前`" in finalizer_input
+    assert "`初回レビュー後・採否確定前`" in finalizer_input
+    assert "両系統の経路、`threadId`、全応答履歴、累積`review_rounds`" in finalizer_input
+    assert "未開始の系統は`not_started`、`threadId: なし`、履歴`なし`" in finalizer_input
+    assert "途中で利用不能になった系統は`unavailable`" in finalizer_input
+    assert "利用不能になる直前の\n`threadId`、全応答履歴、累積`review_rounds`を保持" in finalizer_input
+    assert "反映結果と反映差分は、`反映後・再レビュー前`だけで必須" in finalizer_input
+    assert "前回の反映後機械修正前後差分" in finalizer_input
+    assert "反映後最終検査結果" in finalizer_input
+    assert "反映後最終検査結果も、\n`反映後・再レビュー前`だけで必須" in finalizer_input
     assert "再計算しない" in finalizer_input
-    assert finalizer_workflow.index("機械チェック用タスク本文") < finalizer_workflow.index("scope_baseline")
+    assert finalizer_workflow.index("入力直後かつ書き込み可能な委譲前") < (finalizer_workflow.index("機械チェック委譲"))
+    assert "初回または`初回レビュー前`では、累積`review_rounds`が5未満" in finalizer_workflow
+    assert "レビュー系へ計画ファイル全体の総合レビューを1回" in finalizer_workflow
+    assert "`採否確定後・反映前`は工程14へ" in finalizer_workflow
+    assert "`初回レビュー後・採否確定前`は工程13へ" in finalizer_workflow
+    assert "`反映後・再レビュー前`は工程15へ" in finalizer_workflow
+    assert "機械修正前後の差分を取得" in finalizer_workflow
+    assert "検査だけで変更がなかった場合も「差分なし」と記録" in finalizer_workflow
+    assert finalizer_workflow.index("採用指摘と確定済みの採否を実装・修正系へ渡し") < (
+        finalizer_workflow.index("限定再レビューの入力へ統合")
+    )
+    assert "工程3と工程14の機械修正前後の差分" in finalizer_workflow
+    assert "統合した差分が直接導入した不具合" in finalizer_workflow
+    assert finalizer_workflow.index("採用指摘と確定済みの採否を実装・修正系へ渡し") < (
+        finalizer_workflow.index("反映直後に3検査を再実行")
+    )
+    assert finalizer_workflow.index("反映直後に3検査を再実行") < (finalizer_workflow.index("限定再レビューの入力へ統合"))
+    assert finalizer_workflow.index("反映直後に3検査を再実行") < finalizer_workflow.index("新たに退避して内容ハッシュを記録")
+    assert finalizer_workflow.index("新たに退避して内容ハッシュを記録") < (
+        finalizer_workflow.index("限定再レビューの入力へ統合")
+    )
+    assert "違反修正を含む機械修正前後の差分" in finalizer_workflow
+    assert "入力された前回の反映後機械修正前後差分" in finalizer_workflow
+    assert "工程3を現在ラウンドの反映後3検査として扱う" in finalizer_workflow
+    assert "再起動時は入力された前回の反映後機械修正前後差分" in finalizer_workflow
+    assert "再起動時は入力された前回の反映後機械修正前後差分と\n    反映後最終検査結果" in finalizer_workflow
+    assert "指摘の有無にかかわらず工程6から工程9" in finalizer_workflow
+    assert "指摘がない場合は、累積差分の区分と承認状態を確認" in finalizer_workflow
+    assert "反映後に実行した3検査の最終結果" in finalizer_workflow
+    assert finalizer_workflow.count("累積`review_rounds`が5未満") == 2
+    assert finalizer_workflow.count("累積`review_rounds`へ1を加算") == 2
+    assert "採否が未確定なら`continuation_state: 初回レビュー後・採否確定前`" in finalizer_workflow
     assert finalizer_workflow.index("scope_baseline") < finalizer_workflow.index("needs_escalation")
     assert finalizer_workflow.index("scope_changes") < finalizer_workflow.index("needs_escalation")
     assert "承認状態だけを更新する" in finalizer_workflow
     assert "未承認のスコープ変更" in finalizer_workflow
     assert "scope_baseline:" in finalizer_output
     assert "scope_changes:" in finalizer_output
+    assert "continuation_state:" in finalizer_output
+    assert "post_application_check_diff:" in finalizer_output
+    assert "post_application_check_results:" in finalizer_output
     assert "out_of_scope_findings:" in finalizer_output
-    assert "反映状態" in finalizer_input
-    assert "反映結果" in finalizer_input
     assert "反映状態" in finalizer_output
     assert "反映結果" in finalizer_output
     assert completed_scope_changes in finalizer_output_compact
@@ -109,7 +160,19 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     for phrase in (
         "scope_baseline",
         "scope_changes",
-        "全文転記",
+        "未承認のスコープ拡大が1件以上",
+        "未承認のスコープ拡大が0件",
+        "continuation_state: 初回レビュー前",
+        "continuation_state: 初回レビュー後・採否確定前",
+        "continuation_state: 採否確定後・反映前",
+        "まだ存在しない反映結果と反映差分を入力に要求しない",
+        "continuation_state: 反映後・再レビュー前",
+        "前回の反映後機械修正前後差分",
+        "反映後最終検査結果も全文転記",
+        "全応答履歴、累積`review_rounds`を全文転記",
+        "途中で利用不能になった系統は`unavailable`",
+        "利用不能になる直前の`threadId`",
+        "初回総合レビューと採否確定が完了した場合だけ",
         "AskUserQuestion",
         "process_feedbacks_skill_invoked",
         "atk mq add --type=tbd",
@@ -119,16 +182,31 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     ):
         assert phrase in finalizer_caller
     assert completed_scope_changes in finalizer_caller_compact
+    assert "初回総合レビューの完了前は`初回レビュー前`" in finalizer
+    assert "完了後から採否確定前までは\n`初回レビュー後・採否確定前`" in finalizer
+    assert "受領した累積値へ今回実施回数を加えた累積回数" in finalizer_output
+    assert "未開始の系統だけを`thread_id: なし`、履歴`なし`、レビュー回数`0`" in finalizer_workflow
+    assert "途中で利用不能になった系統は、利用不能になる直前の`thread_id`" in finalizer_workflow
 
     review_cycle = _h2_section(review, "指摘反映と再レビュー")
+    assert "再起動によって回数をリセットしない" in review_cycle
     for phrase in ("初版内補正", "スコープ拡大", "独立問題"):
         assert phrase in review_cycle
     assert "再起動時" in review_cycle
     assert "再計算しない" in review_cycle
+    assert "`implementation_summary`" in review_cycle
+    assert "`user_agreements`" in review_cycle
+    assert "`change_content`" in review_cycle
+    assert "要素別に比較" in review_cycle
+    assert "差分ごとに3区分、承認状態、反映状態、反映結果" in review_cycle
     assert review_cycle.index("反映する前") < review_cycle.index("実装・修正系へ渡す")
-    assert review_cycle.index("反映する前") < review_cycle.index("呼び出し元の承認後")
-    assert review_cycle.index("呼び出し元の承認後") < review_cycle.index("承認済みのスコープ拡大")
-    assert completed_scope_changes in re.sub(r"\s+", "", review_cycle)
+    assert "呼び出し元が承認したスコープ拡大だけ" in review_cycle
+    assert "未承認のスコープ拡大と独立問題" in review_cycle
+    assert "`採否確定後・反映前`では採用指摘を反映してから" in review_cycle
+    assert "`反映後・再レビュー前`へ移行" in review_cycle
+    assert "現在のラウンドで反映前後に生じた機械修正前後の差分" in review_cycle
+    assert "限定再レビュー後は指摘の有無にかかわらず" in review_cycle
+    assert "初版3要素との累積差分の区分と承認状態を更新" in review_cycle
 
     review_task_body = _h2_section(review_task, "レビュー")
     assert "前回の採用指摘" in review_task_body

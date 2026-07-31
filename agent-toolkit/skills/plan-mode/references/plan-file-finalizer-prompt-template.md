@@ -11,10 +11,11 @@ Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定す�
 `model`、`name`、`run_in_background`を省略し、実際の受領経路を起動結果から判定する。
 完了報告は次の全欄を検収する。
 
-- `summary`、`plan_file_path`、`status`、`review_completed`
+- `summary`、`plan_file_path`、`continuation_state`、`status`、`review_completed`
 - `implementation_route`、`review_route`、`implementation_thread_id`、`review_thread_id`
 - `review_rounds`、`implementation_history`、`review_history`
-- `check_results`、`scope_baseline`、`scope_changes`、`out_of_scope_findings`
+- `check_results`、`post_application_check_diff`、`post_application_check_results`
+- `scope_baseline`、`scope_changes`、`out_of_scope_findings`
 - `review_summary`、`escalation_points`
 
 `status: completed`は、`review_completed: true`と全機械チェック成功を必須とする。
@@ -24,8 +25,13 @@ Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定す�
 `02-claude-code.md`「サブエージェント運用」節が定める不対応注記を付してから実装工程へ進む。
 `status: needs_escalation`では`escalation_points`を必須とし、
 呼び出し元が採否または不足事項を確定してから、同じ起動契約で新規起動する。
+新規起動では返却された`continuation_state`を引き継ぎ、初回総合レビューが完了する前の返却は
+`continuation_state: 初回レビュー前`として再開する。
+初回総合レビュー完了後に採否が未確定なら、
+`continuation_state: 初回レビュー後・採否確定前`として採否を確定する。
 
-`scope_changes`を伴う`status: needs_escalation`はfinalizerから呼び出し元への
+`scope_changes`に未承認のスコープ拡大が1件以上ある`status: needs_escalation`は、
+finalizerから呼び出し元への
 内部の判断移管であり、ユーザー確認を直接意味しない。
 呼び出し元は初版との差分と根拠を実測し、`01-agent.md`「協調と自律」に従って
 セッション状態フラグ`process_feedbacks_skill_invoked`からモードを判定する。
@@ -37,10 +43,21 @@ Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定す�
 自律モードでは同節の例外を除き、`atk mq add --type=tbd`で記録して暫定判断で続行する。
 `out_of_scope_findings`は現在の計画を停止させず、`01-agent.md`「完遂と先送り」に従って
 同一作業内の対応またはキュー登録を確定する。
-`scope_changes`を伴わないその他の`status: needs_escalation`は返却論点を解決する。
-確定後は承認した差分に加え、初回の`scope_baseline`と全ラウンドの累積`scope_changes`を
-全文転記した縮減プロンプトでfinalizerを新規起動する。
+`scope_changes`に未承認のスコープ拡大が0件の、
+その他の`status: needs_escalation`は返却論点を解決する。
+確定後は返却された`continuation_state`に対応する縮減プロンプトでfinalizerを新規起動する。
+初回総合レビューと採否確定が完了した場合だけ、
+`continuation_state: 採否確定後・反映前`、採用指摘、確定済みの採否を指定する。
+この状態では、まだ存在しない反映結果と反映差分を入力に要求しない。
+反映後にfinalizerを再起動する場合は、
+`continuation_state: 反映後・再レビュー前`、反映結果、反映差分、
+前回の反映後機械修正前後差分、反映後最終検査結果も全文転記する。
 再起動後の計画ファイルから`scope_baseline`を再計算させない。
+すべての継続・再起動で、初回の`scope_baseline`、全ラウンドの累積`scope_changes`、
+両系統の経路、`threadId`、全応答履歴、累積`review_rounds`を全文転記する。
+未開始の系統は返却値の`not_started`、`threadId: なし`、履歴`なし`、回数`0`を転記する。
+途中で利用不能になった系統は`unavailable`と、利用不能になる直前の`threadId`、
+全応答履歴、累積`review_rounds`を転記する。
 
 `implementation_route: unavailable`または`review_route: unavailable`に起因する
 `status: needs_escalation`では、呼び出し元が不能な系統ごとに
@@ -90,12 +107,18 @@ Claude代替の起動文には、完了報告をツール戻り値で1回だけ�
 
 本referenceが受理する継続情報と実施済み結果は、固有の見出しで追記してよい。
 
-- 既存系統を継続する場合: 実装・修正系とレビュー系の経路、`threadId`、Claude代替履歴
+- 継続または再起動の場合: 実装・修正系とレビュー系の経路、`threadId`、
+  全応答履歴、累積`review_rounds`
 - 再開または再レビューの場合: 実施済みレビュー結果と、呼び出し元が確定した採否
 - 呼び出し元がClaude代替した場合: 検収済みの応答全文と、
   `implementation`または`review`の対象系統
 - 初回レビュー開始後の継続または再起動の場合: 初回の`scope_baseline`と
   承認状態・反映状態・反映結果を含む全ラウンドの累積`scope_changes`の全文
+- `初回レビュー前`の場合: `continuation_state`
+- `初回レビュー後・採否確定前`の場合: `continuation_state`、実施済みレビュー結果
+- `採否確定後・反映前`の場合: `continuation_state`、前回の採用指摘、確定済みの採否
+- `反映後・再レビュー前`の場合: `continuation_state`、前回の採用指摘、確定済みの採否、
+  反映結果、反映差分、前回の反映後機械修正前後差分、反映後最終検査結果
 
 継続情報が無い系統は初回起動として新しく開始する。
 実施済みレビュー結果と確定済み採否が無い場合は、未実施かつ未確定として扱う。
