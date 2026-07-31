@@ -19,6 +19,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_git_fake_test_helpers import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_mq_tbd import _detect_self_containment_deficiency  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
@@ -38,6 +39,12 @@ def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Complet
             stdout: Any = (
                 "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
             )
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+            stdout = "true\n" if kw.get("text") else b"true\n"
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+            stdout = f"{_FIXED_HEAD_COMMIT}\n" if kw.get("text") else f"{_FIXED_HEAD_COMMIT}\n".encode()
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
         empty: Any = "" if kw.get("text") else b""
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
@@ -173,6 +180,7 @@ class TestTbdAdd:
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
+        assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
         assert "scope: theme1" in content
         assert "question_type: free-form" in content
         assert "created:" not in content.split("---\n\n", 1)[0]
@@ -321,10 +329,15 @@ class TestTbdAddEditorBeforePull:
             if cmd == ["git", "rev-parse", "--show-toplevel"]:
                 stdout: Any = f"{myrepo}\n" if kw.get("text") else f"{myrepo}\n".encode()
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
                 stdout = (
                     "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
                 )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+                stdout = f"{_FIXED_HEAD_COMMIT}\n" if kw.get("text") else f"{_FIXED_HEAD_COMMIT}\n".encode()
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd[:2] == ["git", "pull"]:
                 raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
@@ -356,6 +369,8 @@ class TestTbdAddEditorBeforePull:
 
         def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
             empty: Any = "" if kw.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
                 stdout: Any = (
                     "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
@@ -396,12 +411,17 @@ class TestTbdAddRepoPathOverrideCli:
             if cmd == ["git", "rev-parse", "--show-toplevel"]:
                 stdout: Any = f"{cwd_repo}\n" if kw.get("text") else f"{cwd_repo}\n".encode()
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd == ["git", "-C", str(cwd_repo), "rev-parse", "--is-inside-work-tree"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
             if cmd == ["git", "-C", str(cwd_repo), "remote", "get-url", "origin"]:
                 stdout = (
                     "https://github.com/example/cwdrepo.git\n"
                     if kw.get("text")
                     else b"https://github.com/example/cwdrepo.git\n"
                 )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd == ["git", "-C", str(cwd_repo), "rev-parse", "--verify", "HEAD^{commit}"]:
+                stdout = f"{_FIXED_HEAD_COMMIT}\n" if kw.get("text") else f"{_FIXED_HEAD_COMMIT}\n".encode()
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 

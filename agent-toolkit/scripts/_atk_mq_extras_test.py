@@ -17,6 +17,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_git_fake_test_helpers import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
 from _atk_git_fake_test_helpers import fake_git_worktree_remote_response as _fake_git_worktree_remote_response  # noqa: E402
@@ -468,7 +469,7 @@ def _editor_fake_run(
 
     fake-editor以外のコマンドは終了コード0で成功扱いとする。
     myrepo指定時は`git rev-parse --show-toplevel`にmyrepoを、
-    `git -C <myrepo> remote get-url origin`にremote_urlを返す（対象リポジトリはcwdから解決される）。
+    `git -C <myrepo>`のremote URL取得とHEAD取得へ固定値を返す（対象リポジトリはcwdから解決される）。
     """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -482,6 +483,12 @@ def _editor_fake_run(
         if myrepo is not None and cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
             remote_stdout: Any = f"{remote_url}\n" if kwargs.get("text") else f"{remote_url}\n".encode()
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=remote_stdout, stderr=empty)
+        if myrepo is not None and cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+            stdout = "true\n" if kwargs.get("text") else b"true\n"
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+        if myrepo is not None and cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+            stdout = f"{_FIXED_HEAD_COMMIT}\n" if kwargs.get("text") else f"{_FIXED_HEAD_COMMIT}\n".encode()
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     return fake_run

@@ -22,9 +22,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
-
-# pylint: disable-next=wrong-import-position,import-error
-from _atk_git_fake_test_helpers import make_git_remote_fake as _make_git_remote_fake  # noqa: E402
+from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _FIXED_HEAD_COMMIT,
+)
+from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    make_git_remote_fake as _make_git_remote_fake,
+)
 
 _GitCall = dict[str, Any]
 
@@ -394,6 +397,8 @@ class TestAddSingleMessage:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
                 stdout: Any = (
                     "https://github.com/example/myrepo.git\n"
@@ -401,6 +406,8 @@ class TestAddSingleMessage:
                     else b"https://github.com/example/myrepo.git\n"
                 )
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{_FIXED_HEAD_COMMIT}\n", stderr="")
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
@@ -461,6 +468,8 @@ class TestMqLifecycleScenario:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
                 stdout: Any = (
                     "https://github.com/example/myrepo.git\n"
@@ -468,6 +477,8 @@ class TestMqLifecycleScenario:
                     else b"https://github.com/example/myrepo.git\n"
                 )
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{_FIXED_HEAD_COMMIT}\n", stderr="")
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
@@ -622,6 +633,8 @@ class TestAddMultipleMessages:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
                 stdout: Any = (
                     "https://github.com/example/myrepo.git\n"
@@ -629,6 +642,8 @@ class TestAddMultipleMessages:
                     else b"https://github.com/example/myrepo.git\n"
                 )
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{_FIXED_HEAD_COMMIT}\n", stderr="")
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 

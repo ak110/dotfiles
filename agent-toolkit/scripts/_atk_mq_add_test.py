@@ -22,6 +22,9 @@ import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-impor
 import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
+    _FIXED_HEAD_COMMIT,
+)
+from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
     fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
 )
 from _atk_mq_common import MQ_TYPE_TBD, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
@@ -46,6 +49,106 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
     assert "source: test" in content
+
+
+@pytest.mark.parametrize("target_commit", [_FIXED_HEAD_COMMIT, "a" * 64])
+def test_flat_add_operation_records_matching_target_commit(
+    target_commit: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """fallbackと同じtarget_repoの全メッセージへ投入時の完全OIDを記録する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文1", "---\ntarget_repo: github.com/example/repo\n---\n\n本文2"],
+        target_repo="github.com/example/repo",
+        target_commit=target_commit,
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    for filename in generated:
+        content = (notes / "inbox" / filename).read_text(encoding="utf-8")
+        assert f"target_commit: {target_commit}" in content
+
+
+def test_flat_add_operation_omits_commit_for_frontmatter_repo_override(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """frontmatterが別リポジトリを指定したメッセージへfallback側OIDを記録しない。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[message],
+        target_repo="github.com/example/repo",
+        target_commit=_FIXED_HEAD_COMMIT,
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert "target_repo: github.com/other/repo" in content
+    assert "target_commit:" not in content
+
+
+def test_flat_add_operation_drops_input_target_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """利用者入力のtarget_commitを保存せず、システム確定値だけを採用する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    message = f"---\ntarget_commit: {'f' * 40}\n---\n\n本文"
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[message],
+        target_repo="github.com/example/repo",
+        target_commit=_FIXED_HEAD_COMMIT,
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
+    assert f"target_commit: {'f' * 40}" not in content
+
+
+@pytest.mark.parametrize("invalid_commit", ["abc123", "g" * 40, "a" * 41])
+def test_flat_add_operation_rejects_non_full_oid(
+    invalid_commit: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """共有add操作は40桁または64桁の16進完全OID以外を拒否する。"""
+    notes = tmp_path / "private-notes"
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+
+    with pytest.raises(WebInputError, match="完全OID"):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            target_commit=invalid_commit,
+            source=None,
+            now=_FIXED_DT,
+        )
 
 
 def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -288,6 +391,8 @@ class TestAddOrderEditorFirst:
         call_order: list[str] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+                call_order.append("head")
             resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
             if resp is not None:
                 return resp
@@ -306,7 +411,7 @@ class TestAddOrderEditorFirst:
             atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert call_order == ["editor", "pull"]
+        assert call_order == ["editor", "head", "pull"]
         assert list((notes / "inbox").iterdir())
 
     def test_message_preserved_when_pull_fails(
@@ -405,6 +510,7 @@ class TestAddRepoPathOverrideCli:
         # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
         # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
         assert "target_repo: github.com/example/myrepo" in content
+        assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
 
     def test_message_only_directory_errors(
         self,
@@ -452,6 +558,7 @@ class TestAddRepoPathOverrideCli:
         assert exc_info.value.code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
+        assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
         assert "本文" in content
 
     def test_directory_followed_by_option_and_message_uses_compat_path(
@@ -515,6 +622,144 @@ class TestAddRepoPathOverrideCli:
         # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
         assert "target_repo: github.com/example/myrepo" in content
         assert oversized_message in content
+
+
+def test_cli_add_omits_target_commit_for_url_only_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """URLだけのtarget_repo指定ではローカルworktreeを推測せずOIDを省略する。"""
+    notes = _setup_notes(tmp_path)
+    git_commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        if cmd[0] == "git":
+            git_commands.append(list(cmd))
+        empty: Any = "" if kwargs.get("text") else b""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "add", "--target-repo", "github.com/example/remote", "本文"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    assert "target_repo: github.com/example/remote" in content
+    assert "target_commit:" not in content
+    assert not any("HEAD^{commit}" in command for command in git_commands)
+
+
+def test_cli_add_rejects_existing_path_outside_worktree(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実在してもworktreeではないパスをローカル投入先として拒否する。"""
+    notes = _setup_notes(tmp_path)
+    bare_repo = tmp_path / "bare.git"
+    bare_repo.mkdir()
+    git_commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        git_commands.append(list(cmd))
+        empty: Any = "" if kwargs.get("text") else b""
+        if cmd == ["git", "-C", str(bare_repo), "rev-parse", "--is-inside-work-tree"]:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="false\n", stderr="")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "add", str(bare_repo), "本文"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 2
+    assert "ローカルworktreeではありません" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+    assert not any(command[-3:] == ["rev-parse", "--verify", "HEAD^{commit}"] for command in git_commands)
+
+
+@pytest.mark.parametrize(("returncode", "stdout"), [(1, ""), (0, "short")])
+def test_cli_add_rejects_unresolved_head_commit(
+    returncode: int,
+    stdout: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ローカルworktreeのHEAD取得失敗または不正OIDをexit 2で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        empty: Any = "" if kwargs.get("text") else b""
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="true\n", stderr="")
+        if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                returncode=0,
+                stdout="https://github.com/example/myrepo.git\n",
+                stderr="",
+            )
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+            return subprocess.CompletedProcess(cmd, returncode=returncode, stdout=stdout, stderr="取得失敗")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 2
+    assert not list((notes / "inbox").iterdir())
+    assert "HEADコミット" in capsys.readouterr().err
+
+
+def test_editor_body_is_preserved_when_head_resolution_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エディター確定後のHEAD取得失敗時に本文を標準エラーへ再表示する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("EDITOR", "fake-editor")
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        empty: Any = "" if kwargs.get("text") else b""
+        if cmd == ["git", "rev-parse", "--show-toplevel"]:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{myrepo}\n", stderr="")
+        if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                returncode=0,
+                stdout="https://github.com/example/myrepo.git\n",
+                stderr="",
+            )
+        if cmd[0] == "fake-editor":
+            pathlib.Path(cmd[1]).write_text("失いたくない本文", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="HEADなし")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "確定済みの本文" in captured.err
+    assert "失いたくない本文" in captured.err
+    assert not list((notes / "inbox").iterdir())
 
 
 class TestAddEmptyBodyRejection:

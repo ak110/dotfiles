@@ -10,9 +10,11 @@ import subprocess
 from collections.abc import Callable
 from typing import Any
 
+_FIXED_HEAD_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
 
 def make_git_remote_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """`git -C <myrepo> remote get-url origin`にのみ固定URLを返すsubprocess.runのfakeを返す。
+    """`git -C <myrepo>`のリモートURLとHEAD取得へ固定値を返すfakeを返す。
 
     それ以外のgit呼び出しは`text`指定に応じた空stdout/stderrで成功扱いにする。
     """
@@ -22,6 +24,12 @@ def make_git_remote_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Compl
             stdout: Any = (
                 "https://github.com/example/myrepo.git\n" if kwargs.get("text") else b"https://github.com/example/myrepo.git\n"
             )
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+            stdout = "true\n" if kwargs.get("text") else b"true\n"
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+        if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+            stdout = f"{_FIXED_HEAD_COMMIT}\n" if kwargs.get("text") else f"{_FIXED_HEAD_COMMIT}\n".encode()
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
         empty: Any = "" if kwargs.get("text") else b""
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
@@ -43,5 +51,11 @@ def fake_git_worktree_remote_response(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
     if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
         stdout = "https://github.com/example/myrepo.git\n" if kwargs.get("text") else b"https://github.com/example/myrepo.git\n"
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+    if cmd == ["git", "-C", str(myrepo), "rev-parse", "--is-inside-work-tree"]:
+        stdout = "true\n" if kwargs.get("text") else b"true\n"
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+    if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
+        stdout = f"{_FIXED_HEAD_COMMIT}\n" if kwargs.get("text") else f"{_FIXED_HEAD_COMMIT}\n".encode()
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
     return None

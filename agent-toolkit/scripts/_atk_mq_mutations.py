@@ -41,7 +41,13 @@ from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _CATEGORY_GATE_THRESHOLD = 3
-_RESERVED_FRONTMATTER_KEYS_FOR_EDITING = ("queue_schedule", "repair_target", "repair_kind", "plan_file")
+_RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
+    "target_commit",
+    "queue_schedule",
+    "repair_target",
+    "repair_kind",
+    "plan_file",
+)
 
 
 def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
@@ -74,7 +80,7 @@ def _validate_no_reserved_frontmatter_modification(original: str, updated: str) 
             raise WebInputError(f"予約キー`{key}`の追加は許可されていません")
 
         # 対象リポジトリ変更時の分類失効はシステムが行う正当な削除である。
-        if key == "queue_schedule" and original_has_key and not updated_has_key and target_repo_changed:
+        if key in {"target_commit", "queue_schedule"} and original_has_key and not updated_has_key and target_repo_changed:
             continue
 
         # 予約キーの削除を検出
@@ -84,6 +90,21 @@ def _validate_no_reserved_frontmatter_modification(original: str, updated: str) 
         # 予約キーの変更を検出
         if original_has_key and updated_has_key and original_data[key] != updated_data[key]:
             raise WebInputError(f"予約キー`{key}`の変更は許可されていません")
+
+
+def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:
+    """target_repo変更時に旧リポジトリへ結び付くメタデータを削除する。"""
+    original_parsed = _frontmatter.parse_frontmatter(original)
+    updated_parsed = _frontmatter.parse_frontmatter(updated)
+    if original_parsed is None or updated_parsed is None:
+        return updated
+    original_data, _ = original_parsed
+    updated_data, updated_body = updated_parsed
+    if original_data.get("target_repo") == updated_data.get("target_repo"):
+        return updated
+    updated_data.pop("target_commit", None)
+    updated_data.pop("queue_schedule", None)
+    return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 
 
 def transition_entries(
@@ -211,7 +232,7 @@ def edit_entry_content(
 ) -> bool:
     """平引数でfeedback本文を更新する。
 
-    保存前に新旧frontmatterを比較し、予約キー`queue_schedule`・`repair_target`・`repair_kind`・`plan_file`の
+    保存前に新旧frontmatterを比較し、予約キー`target_commit`・`queue_schedule`・`repair_target`・`repair_kind`・`plan_file`の
     追加・変更・削除を禁止する。正当な差分（`target_repo`変更に伴う`queue_schedule`失効等、
     システム側が行う変更）を誤って拒否しないよう、検証範囲を慎重に設定する。
     """
@@ -229,6 +250,7 @@ def edit_entry_content(
         expected_content=expected_content,
         commit_message="chore: edit feedback item",
         content_validator=_validate_no_reserved_frontmatter_modification,
+        content_transformer=_invalidate_repo_bound_metadata,
     )
 
 
@@ -263,6 +285,8 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         updates["target_repo"] = _resolve_repo_id(raw_target_repo)
     if "queue_schedule" in updates:
         raise WebInputError("queue_scheduleは予約キーのため atk mq edit では指定できません")
+    if "target_commit" in updates:
+        raise WebInputError("target_commitは予約キーのため atk mq edit では指定できません")
     if "repair_target" in updates:
         raise WebInputError("repair_targetは予約キーのため atk mq edit では指定できません")
     if "repair_kind" in updates:
@@ -270,6 +294,9 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     if "plan_file" in updates:
         raise WebInputError("plan_fileは予約キーのため atk mq edit では指定できません")
     updated_data = {**stored_data, **updates}
+    target_repo_changed = "target_repo" in updates and stored_data.get("target_repo") != updates["target_repo"]
+    if target_repo_changed:
+        updated_data.pop("target_commit", None)
     schedule_mapping = updated_data.get("queue_schedule")
     typed_schedule_mapping = (
         typing.cast(dict[str, typing.Any], schedule_mapping) if isinstance(schedule_mapping, dict) else None

@@ -7,6 +7,7 @@
 import argparse
 import datetime
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -30,7 +31,7 @@ from _atk_mq_common import (
     _subdir,
 )
 from _atk_mq_formatters import _shorten_home
-from _atk_mq_repo import _resolve_repo_id
+from _atk_mq_repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
@@ -87,6 +88,7 @@ def reject_message_file_path(message: str) -> None:
 
 _RESERVED_FRONTMATTER_KEYS = (
     "target_repo",
+    "target_commit",
     "type",
     "source",
     "scope",
@@ -105,7 +107,7 @@ _RESERVED_FRONTMATTER_KEYS = (
 CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
 保存する。`type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
-`plan_file`・`queue_schedule`・`repair_target`・`repair_kind`は利用者による直接指定を禁止し、
+`target_commit`・`plan_file`・`queue_schedule`・`repair_target`・`repair_kind`は利用者による直接指定を禁止し、
 システムが自動生成する計画実装型の識別情報・分類メタデータ・修復TBDの対象と理由区分として予約する。
 """
 
@@ -121,6 +123,7 @@ def _add_entries_locked(
     scope: str | None,
     question_type: str | None,
     choices: str | None,
+    target_commit: str | None = None,
     plan_file: str | None = None,
     repair_targets: list[str | None] | None = None,
     repair_kinds: list[_schedule.RepairKind | None] | None = None,
@@ -161,6 +164,8 @@ def _add_entries_locked(
             counter += 1
             filename = f"{timestamp}-{counter:03d}.md"
         frontmatter_data: dict[str, object] = {"target_repo": item_target_repo, "type": entry_type}
+        if target_commit is not None and item_target_repo == target_repo:
+            frontmatter_data["target_commit"] = target_commit
         if item_source:
             frontmatter_data["source"] = item_source
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
@@ -209,6 +214,7 @@ def add_entries(
     scope: str | None = None,
     question_type: str | None = None,
     choices: str | None = None,
+    target_commit: str | None = None,
     plan_file: str | None = None,
     lock_timeout: float = -1,
 ) -> list[str]:
@@ -220,6 +226,8 @@ def add_entries(
     """
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
+    if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
+        raise WebInputError("target_commitは40桁または64桁の完全OIDで指定してください")
     if plan_file is not None:
         if entry_type != MQ_TYPE_FEEDBACK:
             raise WebInputError("plan_fileはfeedback種別でのみ指定できます")
@@ -248,6 +256,7 @@ def add_entries(
             scope=scope,
             question_type=question_type,
             choices=choices,
+            target_commit=target_commit,
             plan_file=plan_file,
         )
         count = len(generated)
@@ -273,7 +282,7 @@ def _cmd_add(
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
     `--target-repo`指定時は、レガシーREPO_PATH位置引数が無くfrontmatterにも`target_repo`が
     無い場合のfallback値として使う。
-    エディター経由の本文確定後に`_pull`を実行する順序とし、
+    エディター経由の本文確定後に対象worktreeのHEADを取得してから`_pull`を実行する順序とし、
     エディター起動前のブロッキング待ち（他端末の投入分を反映するgit pull）を無くしてUXを改善する。
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
@@ -284,12 +293,9 @@ def _cmd_add(
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
     _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
-    if repo_path_override is not None:
-        target_repo = _resolve_repo_id(repo_path_override)
-    elif args.target_repo:
-        target_repo = _resolve_repo_id(args.target_repo)
-    else:
-        target_repo = _resolve_repo_id(None)
+    target_value = repo_path_override if repo_path_override is not None else args.target_repo
+    target_repo, local_worktree = resolve_add_target(target_value)
+    collected_via_editor = not messages
     if not messages:
         message = _collect_message_via_editor()
         if message is None:
@@ -312,6 +318,15 @@ def _cmd_add(
                 print(f"投入を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
     try:
+        target_commit = resolve_head_commit(local_worktree) if local_worktree is not None else None
+    except SystemExit:
+        if collected_via_editor:
+            print("HEADコミットの取得に失敗しました。確定済みの本文を以下に再表示します。", file=sys.stderr)
+            for message in messages:
+                print("---", file=sys.stderr)
+                print(message, file=sys.stderr)
+        raise
+    try:
         generated = add_entries(
             private_notes,
             messages=messages,
@@ -322,6 +337,7 @@ def _cmd_add(
             scope=args.scope,
             question_type=args.question_type,
             choices=args.choices,
+            target_commit=target_commit,
             plan_file=args.plan_file,
         )
     except WebInputError as error:

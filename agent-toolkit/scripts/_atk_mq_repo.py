@@ -156,6 +156,49 @@ def resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> st
     return _resolve_repo_id(value, cwd=cwd)
 
 
+def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
+    """投入先のリポジトリ識別子と、特定できたローカルworktreeを返す。"""
+    if value is None:
+        local_worktree = _resolve_local_worktree(None)
+        return _resolve_repo_id(None, cwd=local_worktree), local_worktree
+
+    local_path = pathlib.Path(value).expanduser()
+    if local_path.exists():
+        local_worktree = local_path.resolve()
+        result = subprocess.run(
+            ["git", "-C", str(local_worktree), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0 or result.stdout.strip() != "true":
+            print(f"ローカルworktreeではありません: {local_worktree}", file=sys.stderr)
+            sys.exit(2)
+        return _resolve_repo_id(str(local_worktree)), local_worktree
+
+    return _resolve_repo_id(value), None
+
+
+def resolve_head_commit(local_worktree: pathlib.Path) -> str:
+    """ローカルworktreeのHEADを完全OIDとして返す。"""
+    result = subprocess.run(
+        ["git", "-C", str(local_worktree), "rev-parse", "--verify", "HEAD^{commit}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip()
+        suffix = f": {detail}" if detail else ""
+        print(f"HEADコミットを取得できませんでした（git rev-parse --verify HEAD^{{commit}}）{suffix}", file=sys.stderr)
+        sys.exit(2)
+    commit = result.stdout.strip()
+    if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
+        print(f"HEADコミットが完全OIDではありません: {commit!r}", file=sys.stderr)
+        sys.exit(2)
+    return commit
+
+
 def _verify_frontmatter_target_repo(
     filename: str,
     inbox_paths: list[pathlib.Path],
@@ -203,6 +246,7 @@ def edit_entry(
     expected_content: str | None,
     commit_message: str,
     content_validator: typing.Callable[[str, str], None] | None = None,
+    content_transformer: typing.Callable[[str, str], str] | None = None,
 ) -> bool:
     """feedback・TBD共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
@@ -220,6 +264,10 @@ def edit_entry(
         previous = path.read_text(encoding="utf-8")
         if expected_content is not None and previous != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        if content_validator is not None:
+            content_validator(previous, content)
+        if content_transformer is not None:
+            content = content_transformer(previous, content)
         if content_validator is not None:
             content_validator(previous, content)
         if previous == content:

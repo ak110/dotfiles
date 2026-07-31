@@ -140,6 +140,15 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 `references/review-checklists.md`「網羅調査チェックリスト」節）。複数件の場合は
 `Explore`サブエージェントへ個別並列委譲する。
 
+エントリのfrontmatterに任意項目`target_commit`がある場合、40桁または64桁の
+16進完全OIDであることを確認する。
+`git fetch origin`後に当該コミットがローカルリポジトリへ存在する場合は、
+`git show <target_commit>`と`git diff <target_commit>..HEAD`で投入時点の内容と
+投入後の変化を調査する。
+コミットが存在しない場合は参考情報を利用できない旨を判断記録へ残し、現行HEADの調査を継続する。
+`target_commit`は投入時文脈の参考情報として扱い、現行HEADと現行仕様を実装基準とする。
+当該項目がない既存エントリも正常な入力として処理する。
+
 初期スケジューリング後に本文から新たな依存条件が判明した場合だけ分類結果を修正する。
 未成立なら`atk mq schedule --record-deferral dependency-unmet:<filename> --target-repo=<repo-path>`で
 理由と繰越回数を記録してinboxへ戻す。全項目の前提条件を本ステップで再調査しない。
