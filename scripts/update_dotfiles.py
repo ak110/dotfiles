@@ -24,6 +24,8 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 各段の失敗はexit codeをそのまま伝播し以降の段を実行しない。`chezmoi status`段
 （表示専用）も含め全段をfail-fast対象とし、既存bash実装が`set -euo pipefail`で
 持っていた「いずれかの段が失敗すれば中断する」挙動をそのまま踏襲する。
+Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常終了した場合は
+`update-dotfiles`の標準出力へ転送する。失敗時はGitの標準エラー出力を維持する。
 """
 
 import argparse
@@ -46,6 +48,24 @@ def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture:
     if capture and result.stderr:
         sys.stderr.write(result.stderr)
     return result.returncode, (result.stdout if capture else "")
+
+
+def _run_git_pull(step_no: int, total: int) -> int:
+    """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。"""
+    print(f"=== [{step_no}/{total}] git pull ===")
+    result = subprocess.run(
+        ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "pull", "--rebase", "--quiet"],
+        cwd=_DOTFILES_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        stream = sys.stdout if result.returncode == 0 else sys.stderr
+        stream.write(result.stderr)
+    return result.returncode
 
 
 def _filter_apply_pending(status_output: str) -> list[str]:
@@ -77,12 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     lock_dir.mkdir(parents=True, exist_ok=True)
     try:
         with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
-            returncode, _ = _run_step(
-                1,
-                total,
-                "git pull",
-                ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "pull", "--rebase", "--quiet"],
-            )
+            returncode = _run_git_pull(1, total)
             if returncode != 0:
                 return returncode
 

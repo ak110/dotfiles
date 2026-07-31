@@ -111,7 +111,52 @@ class TestStepFailureStopsExecution:
 
 
 class TestCapturedStderr:
-    """キャプチャ対象段の標準エラー出力が終了コードによらず転送されることを検証する。"""
+    """各段が生成する標準エラー出力の転送先を検証する。"""
+
+    def test_successful_git_output_is_forwarded_to_stdout(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run(
+                {},
+                calls,
+                stdout_by_command={"git": "git stdout\n"},
+                stderr_by_command={"git": "remote: Enumerating objects\n"},
+            ),
+        )
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 0
+        captured = capsys.readouterr()
+        assert "git stdout\n" in captured.out
+        assert "remote: Enumerating objects\n" in captured.out
+        assert not captured.err
+
+    def test_failed_git_stderr_remains_stderr(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run({"git": 2}, calls, stderr_by_command={"git": "fatal: pull failed\n"}),
+        )
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 2
+        captured = capsys.readouterr()
+        assert "fatal: pull failed" not in captured.out
+        assert captured.err == "fatal: pull failed\n"
+        assert len(calls) == 1
 
     def test_successful_status_stderr_is_forwarded(
         self,
