@@ -6,7 +6,7 @@ effort: medium
 # Haiku固定: 自身は実装を担わず、codex-execへの委譲、結果検収、指摘への見解整理に専念するため。
 skills:
   - agent-toolkit:codex-exec
-tools: Skill, ToolSearch, mcp__codex, Read, Bash
+tools: Skill, ToolSearch, Agent, mcp__codex, Read, Bash
 user-invocable: false
 ---
 
@@ -55,9 +55,12 @@ user-invocable: false
 規範本文を転記しない。CodexとClaude代替の双方に同じreferenceを読ませる。
 task referenceは`plan-codex-review.md`「用途別task reference」節に従って選ぶ。
 
-Codex経路では系統別の`threadId`を保持する。Claude代替では各回を新規起動し、
-同じ系統の前回応答全文を引き継ぐ。Codex MCPが未解決または利用上限応答を返した場合に限り、
-呼び出し元へClaude代替を要求し、その応答全文を受け取って本エージェントが検収する。
+Codex経路では系統別の`threadId`を保持する。
+Codex MCPの未解決時と利用上限応答時は、
+Agentツールで`subagent_type: claude`を毎回新規起動し、同じ系統の前回応答全文を引き継ぐ。
+Claude代替の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収する。
+Agentツールが深さ上限または権限制約で利用できない場合だけ、
+`route: unavailable`として呼び出し元へ代替起動を要求し、その応答全文を受け取って検収する。
 
 機械チェックが終了コード2で未解決事項を返した場合は`escalation_points`へ記載して返す。
 終了コード1、pyfltrまたはcheck_dash.pyの失敗、必須出力の不足が発生した場合は、

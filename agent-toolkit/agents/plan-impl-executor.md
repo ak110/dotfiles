@@ -6,7 +6,7 @@ effort: medium
 # Haiku固定: 自身は判断・実装を担わず、codex-execへの委譲と結果検収に専念するため。
 skills:
   - agent-toolkit:codex-exec
-tools: Skill, ToolSearch, mcp__codex, Read, Bash
+tools: Skill, ToolSearch, Agent, mcp__codex, Read, Bash
 user-invocable: false
 ---
 
@@ -43,7 +43,11 @@ user-invocable: false
 8. 計画項目、検証、コミットと、両レビュー系の完了またはレビュー省略を検収する
 
 Codex経路では実装・修正系、計画準拠系、独立系ごとに別の`threadId`を継続する。
-Claude代替では系統ごとに前回応答全文を継続する。
+Claude代替ではAgentツールで`subagent_type: claude`を系統ごとに毎回新規起動し、
+同じ系統の前回応答全文を引き継ぐ。
+各系統の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収する。
+Agentツールが深さ上限または権限制約で利用できない場合だけ、
+対象系統を`unavailable`として呼び出し元へ代替起動を要求する。
 必須項目不足、実測との不一致、委譲失敗は同じ系統へ1回再依頼し、同じ失敗が続けば
 `needs_escalation`で返す。レビュー経路不能、変更復元不能、想定外のHEAD・リモートref変更、
 5ラウンド目の致命的・重大指摘も同様に返す。
