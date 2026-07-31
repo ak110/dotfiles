@@ -156,6 +156,28 @@ class TestRun:
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
         assert exc_info.value.code == 0
 
+    def test_main_splits_info_and_errors_between_streams(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """正常な状態表示はstdout、失敗一覧はstderrへ出力する。"""
+        calls: list[str] = []
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("ok", _make_step("ok", calls)),
+            ("broken", _make_broken_step("broken", calls)),
+        ]
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
+
+        assert exc_info.value.code == 1
+        assert calls == ["ok", "broken"]
+        captured = capsys.readouterr()
+        assert "完了: 更新 0 件 / スキップ 1 件 / 失敗 1 件" in captured.out
+        assert "失敗したステップ" not in captured.out
+        assert "失敗したステップ: broken" in captured.err
+        assert "完了:" not in captured.err
+
 
 class TestDefaultSteps:
     """`_DEFAULT_STEPS`に想定ステップが登録されていることを検証する。"""
@@ -210,7 +232,6 @@ class TestPluginRecommendations:
 
     def test_prints_single_recommendation_without_continuation(
         self,
-        caplog: pytest.LogCaptureFixture,
         capsys: pytest.CaptureFixture[str],
     ):
         """推奨コマンドが 1 件のみなら && も継続記号も付けず単一行で出力する。"""
@@ -218,20 +239,18 @@ class TestPluginRecommendations:
         steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
             ("plugins", _make_plugin_step(fake_recommendations)),
         ]
-        with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
+        with pytest.raises(SystemExit):
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
-        messages = [record.getMessage() for record in caplog.records]
-        assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
+        assert any("推奨プラグイン設定" in line for line in stdout_lines)
         assert "claude plugin install a --scope=user" in stdout_lines
         # コマンド行は cmd.exe での貼り付け失敗を避けるため行頭インデントを付けない。
-        assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
+        assert not any(line.startswith(" ") for line in stdout_lines if "claude plugin" in line)
         assert not any("&&" in line for line in stdout_lines)
 
     def test_prints_multiple_recommendations_bash(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
         capsys: pytest.CaptureFixture[str],
     ):
         """bash 系では && \\ で連結し、最終行のみ継続記号なしで出力する。"""
@@ -244,16 +263,15 @@ class TestPluginRecommendations:
         steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
             ("plugins", _make_plugin_step(fake_recommendations)),
         ]
-        with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
+        with pytest.raises(SystemExit):
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
-        messages = [record.getMessage() for record in caplog.records]
-        assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
+        assert any("推奨プラグイン設定" in line for line in stdout_lines)
         assert "claude plugin install a --scope=user && \\" in stdout_lines
         assert "claude plugin install b --scope=user && \\" in stdout_lines
         assert "claude plugin disable c --scope=user" in stdout_lines
         # コマンド行は cmd.exe での貼り付け失敗を避けるため行頭インデントを付けない。
-        assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
+        assert not any(line.startswith(" ") for line in stdout_lines if "claude plugin" in line)
 
     def test_prints_multiple_recommendations_windows(
         self,
@@ -276,7 +294,7 @@ class TestPluginRecommendations:
         assert "claude plugin install a --scope=user && ^" in stdout_lines
         assert "claude plugin disable b --scope=user" in stdout_lines
         # cmd.exe では `^` 継続後の行頭空白が解析エラーを起こすため、コマンド行は無インデントとする。
-        assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
+        assert not any(line.startswith(" ") for line in stdout_lines if "claude plugin" in line)
 
     def test_no_output_when_no_recommendations(
         self,

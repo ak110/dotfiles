@@ -44,6 +44,9 @@ ref名とOIDを委譲前スナップショットとして保存する。
 - `implementation_thread_id`
 - `plan_review_thread_id`
 - `independent_review_thread_id`
+- `implementation_agent_id`
+- `plan_review_agent_id`
+- `independent_review_agent_id`
 - `implementation_route`
 - `plan_review_route`
 - `independent_review_route`
@@ -72,7 +75,10 @@ ref名とOIDを委譲前スナップショットとして保存する。
 `plan-codex-implementation-independent-review-task.md`を用いる。
 代替応答全文と対象系統をexecutorへ再入力し、実体照合と後続工程を継続させる。
 
-codex routeでは対応するthreadが「なし」以外、Claude routeでは「なし」であることを確認する。
+codex routeでは対応するthreadが「なし」以外かつAgent識別子が「なし」、
+Claude routeではthreadが「なし」かつAgent識別子が「なし」以外であることを確認する。
+受領した系統別Agent識別子は同じ系統名で次回executor入力へ搬送する。
+呼び出し元はexecutor配下のAgentへ直接`SendMessage`を実行しない。
 2つのレビュー系は同じ`review_rounds`で完了し、各履歴を混在させない。
 `review_resolution`の全`P-*`・`I-*`を各レビュー履歴と照合し、
 採否または重複先、および採用指摘の修正・再検証結果が1対1で埋まったことを確認する。
@@ -100,7 +106,7 @@ codex routeでは対応するthreadが「なし」以外、Claude routeでは「
 `status: needs_escalation`では`review_status`を`レビュー未完了`とし、
 `review_final_findings: 未確定`、`review_skip_instruction: なし`、
 `review_caller_verification: 未完了事項の確認が必要`とする。
-`not_started`または`unavailable`のrouteに対応するthreadは「なし」とする。
+`not_started`または`unavailable`のrouteに対応するthreadとAgent識別子は「なし」とする。
 `plan-file-finalizer`の値との照合は行わない。
 
 ## 実体照合

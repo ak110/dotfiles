@@ -40,6 +40,33 @@ from pytools._internal import (
 
 logger = logging.getLogger(__name__)
 
+
+class _BelowWarningFilter(logging.Filter):
+    """WARNING未満のレコードだけを通す。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """レコードがstdout側のレベル範囲なら真を返す。"""
+        return record.levelno < logging.WARNING
+
+
+def _configure_logging() -> tuple[list[logging.Handler], int]:
+    """正常ログをstdout、警告以上をstderrへ分離し、復元用のroot設定を返す。"""
+    formatter = logging.Formatter("  %(message)s")
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(logging.DEBUG)
+    stdout_handler.addFilter(_BelowWarningFilter())
+    stdout_handler.setFormatter(formatter)
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.setFormatter(formatter)
+    root_logger = logging.getLogger()
+    previous_handlers = root_logger.handlers.copy()
+    previous_level = root_logger.level
+    root_logger.handlers[:] = [stdout_handler, stderr_handler]
+    root_logger.setLevel(logging.INFO)
+    return previous_handlers, previous_level
+
+
 # chezmoi は配布元から削除されたファイルを配布先から自動削除しないため、本テーブルで追跡する。
 _REMOVED_PATHS: dict[Path, list[Path]] = {
     Path.home() / ".claude": [
@@ -231,19 +258,24 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
 def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None) -> None:
     """エントリポイント。"""
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
-    logging.basicConfig(format="  %(message)s", level="INFO")
-    results, recommendations = (runner or run)()
-    failed = [r for r in results if not r.ok]
-    updated = [r for r in results if r.ok and r.changed]
-    skipped = [r for r in results if r.ok and not r.changed]
-    # logger.info("") だと format により末尾空白が付与されるため、stdout に直接出力する。
-    print(flush=True)
-    logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
-    _print_plugin_recommendations(recommendations)
-    if failed:
-        logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
-        sys.exit(1)
-    sys.exit(0)
+    previous_handlers, previous_level = _configure_logging()
+    try:
+        results, recommendations = (runner or run)()
+        failed = [r for r in results if not r.ok]
+        updated = [r for r in results if r.ok and r.changed]
+        skipped = [r for r in results if r.ok and not r.changed]
+        # logger.info("") だと format により末尾空白が付与されるため、stdout に直接出力する。
+        print(flush=True)
+        logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
+        _print_plugin_recommendations(recommendations)
+        if failed:
+            logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
+            sys.exit(1)
+        sys.exit(0)
+    finally:
+        root_logger = logging.getLogger()
+        root_logger.handlers[:] = previous_handlers
+        root_logger.setLevel(previous_level)
 
 
 def _print_plugin_recommendations(recommendations: list[str]) -> None:

@@ -6,7 +6,7 @@ effort: medium
 # Haiku固定: 自身は判断・実装を担わず、codex-execへの委譲と結果検収に専念するため。
 skills:
   - agent-toolkit:codex-exec
-tools: Skill, ToolSearch, Agent, mcp__codex, Read, Bash
+tools: Skill, ToolSearch, Agent, SendMessage, mcp__codex, Read, Bash
 user-invocable: false
 ---
 
@@ -21,7 +21,7 @@ user-invocable: false
 
 - 必須: 計画ファイルの絶対パス
 - 必須: 対象リポジトリの作業ディレクトリの絶対パス
-- 条件付き: 自身の中断作業を継続する場合の経路、`threadId`、Claude代替時の履歴
+- 条件付き: 自身の中断作業を継続する場合の経路、`threadId`、Claude Agent識別子、Claude代替時の履歴
 - 条件付き: 存在する場合の追加指示、変更意図、意図的に許容した挙動変化
 - 条件付き: 呼び出し元がClaude代替した場合の応答全文と対象系統
 
@@ -59,8 +59,10 @@ user-invocable: false
 計画方針またはユーザー判断を要する事項は`needs_escalation`で返す。
 
 Codex経路では実装・修正系、計画準拠系、独立系ごとに別の`threadId`を継続する。
-Claude代替ではAgentツールで`subagent_type: claude`を系統ごとに毎回新規起動し、
+Claude代替では系統別のClaude Agent識別子があり`SendMessage`を利用できる場合に同じAgentを再開する。
+識別子欠落、利用不能、送信失敗の場合だけAgentツールで`subagent_type: claude`を新規起動し、
 同じ系統の前回応答全文を引き継ぐ。
+初回起動と各再開の直前に新しい完了報告ディレクトリを作成し、当該試行のマーカーだけを検収する。
 各系統の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収する。
 Agentツールが深さ上限または権限制約で利用できない場合だけ、
 対象系統を`unavailable`として呼び出し元へ代替起動を要求する。
@@ -94,6 +96,9 @@ applied_instructions:
 implementation_thread_id: <threadIdまたは「なし」>
 plan_review_thread_id: <threadIdまたは「なし」>
 independent_review_thread_id: <threadIdまたは「なし」>
+implementation_agent_id: <Claude Agent識別子または「なし」>
+plan_review_agent_id: <Claude Agent識別子または「なし」>
+independent_review_agent_id: <Claude Agent識別子または「なし」>
 implementation_route: codex | claude | unavailable | not_started
 plan_review_route: codex | claude | unavailable | not_started
 independent_review_route: codex | claude | unavailable | not_started

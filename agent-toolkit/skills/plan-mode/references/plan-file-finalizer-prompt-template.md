@@ -13,6 +13,8 @@ Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定す�
 
 - `summary`、`plan_file_path`、`continuation_state`、`status`、`review_completed`
 - `implementation_route`、`review_route`、`implementation_thread_id`、`review_thread_id`
+- `implementation_agent_id`、`review_agent_id`
+- `implementation_agent_owner`、`review_agent_owner`
 - `review_rounds`、`implementation_history`、`review_history`
 - `check_results`、`post_application_check_diff`、`post_application_check_results`
 - `worktree_check_results`
@@ -22,6 +24,9 @@ Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定す�
 `status: completed`は、`review_completed: true`と全機械チェック成功を必須とする。
 致命的・重大指摘が解消し、計画ファイル実体を確認でき、未承認の`scope_changes`が無いことも確認する。
 採用した初版内補正と承認済みのスコープ拡大が反映済みである場合だけ受理する。
+codex routeでは対応する`threadId`が「なし」以外かつAgent識別子が「なし」、
+Claude routeでは`threadId`が「なし」かつAgent識別子が「なし」以外であり、
+Agent識別子の所有主体が`finalizer`または`caller`であることを確認する。
 呼び出し元は`review_summary`の各見解を実測確認し、不採用と確定した指摘には
 `02-claude-code.md`「サブエージェント運用」節が定める不対応注記を付してから実装工程へ進む。
 `status: needs_escalation`では`escalation_points`を必須とし、
@@ -55,14 +60,16 @@ finalizerから呼び出し元への
 前回の反映後機械修正前後差分、反映後最終検査結果も全文転記する。
 再起動後の計画ファイルから`scope_baseline`を再計算させない。
 すべての継続・再起動で、初回の`scope_baseline`、全ラウンドの累積`scope_changes`、
-両系統の経路、`threadId`、全応答履歴、累積`review_rounds`を全文転記する。
-未開始の系統は返却値の`not_started`、`threadId: なし`、履歴`なし`、回数`0`を転記する。
-途中で利用不能になった系統は`unavailable`と、利用不能になる直前の`threadId`、
-全応答履歴、累積`review_rounds`を転記する。
+両系統の経路、`threadId`、Claude Agent識別子、その所有主体、全応答履歴、累積`review_rounds`を全文転記する。
+未開始の系統は返却値の`not_started`、`threadId: なし`、Agent識別子`なし`、所有主体`none`、履歴`なし`、回数`0`を転記する。
+途中で利用不能になった系統は`unavailable`と、利用不能になる直前の`threadId`、Agent識別子、
+その所有主体、全応答履歴、累積`review_rounds`を転記する。
 
-`implementation_route: unavailable`または`review_route: unavailable`に起因する
-`status: needs_escalation`では、呼び出し元が不能な系統ごとに
-Agentツールで`subagent_type: claude`を新規起動する。
+Agent識別子の所有主体が`caller`の系統で追加作業を要求された場合は、呼び出し元が同じAgentを再開する。
+識別子があり`SendMessage`を利用できる場合に再開し、再開できない場合だけ新規起動する。
+Agent識別子の所有主体が`finalizer`の場合は、識別子をfinalizerへ搬送し、呼び出し元から再開しない。
+`implementation_route: unavailable`または`review_route: unavailable`でAgent識別子が無い場合は、
+呼び出し元が不能な系統をAgentツールで`subagent_type: claude`へ代替する。
 機械チェック・修正系は`model: sonnet`、総合レビュー系および設計判断を含む修正系は
 `model: opus`を指定する。`name`と`run_in_background`は省略し、実際の受領経路を起動結果から判定する。
 
@@ -80,8 +87,9 @@ Agentツールで`subagent_type: claude`を新規起動する。
 Claude代替の起動文には、完了報告をツール戻り値で1回だけ返し、
 `SendMessage`で能動送付せず、待機対象の結果を含める指示を明記する。
 呼び出し元がtask referenceの必須欄と成果物実体を検収する。
-検収済みの応答全文と対象系統（`implementation`または`review`）を
+検収済みの応答全文、対象系統（`implementation`または`review`）、呼び出し元が起動したAgent識別子を
 固有の見出しでfinalizerへ再入力し、同エージェントに後続検収を継続させる。
+finalizerが起動したAgentの識別子は同じ系統名でfinalizerへ搬送し、呼び出し元から直接`SendMessage`を実行しない。
 
 `plan_file_path`がplan mode用サンドボックスパスを付記する場合は、
 呼び出し元がfinalizer反映後の全文をReadで検収し、
@@ -114,10 +122,10 @@ Claude代替の起動文には、完了報告をツール戻り値で1回だけ�
 - 作業ディレクトリが作業用複製でない場合: `source_repository_path: 対象外`
 
 - 継続または再起動の場合: 実装・修正系とレビュー系の経路、`threadId`、
-  全応答履歴、累積`review_rounds`
+  系統別Claude Agent識別子、その所有主体、全応答履歴、累積`review_rounds`
 - 再開または再レビューの場合: 実施済みレビュー結果と、呼び出し元が確定した採否
 - 呼び出し元がClaude代替した場合: 検収済みの応答全文と、
-  `implementation`または`review`の対象系統
+  `implementation`または`review`の対象系統、呼び出し元が起動したAgent識別子
 - 初回レビュー開始後の継続または再起動の場合: 初回の`scope_baseline`と
   承認状態・反映状態・反映結果を含む全ラウンドの累積`scope_changes`の全文
 - `初回レビュー前`の場合: `continuation_state`

@@ -1,6 +1,6 @@
 """`scripts/update_dotfiles.py`のテスト。
 
-4段の直列実行順序・各段失敗時のfail-fast・排他ロック・`chezmoi status`出力フィルタを検証する。
+通常4段とforce時5段の直列実行順序・fail-fast・排他ロック・標準ストリームを検証する。
 """
 
 import pathlib
@@ -53,6 +53,31 @@ class TestFourStepsInOrder:
         assert calls[1][:2] == ["chezmoi", "init"]
         assert calls[2][:2] == ["chezmoi", "status"]
         assert calls[3][:2] == ["chezmoi", "apply"]
+        assert "--quiet" in calls[0]
+        assert "--force" not in calls[3]
+
+    def test_force_adds_diff_before_forced_apply(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run({}, calls, stdout_by_command={"diff": "diff output\n"}),
+        )
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main(["--force"]) == 0
+        assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
+        assert calls[3] == ["chezmoi", "diff", "--no-pager"]
+        assert calls[4] == ["chezmoi", "apply", "--force"]
+        captured = capsys.readouterr()
+        assert "=== [4/5] chezmoi diff" in captured.out
+        assert "diff output\n" in captured.out
+        assert not captured.err
 
 
 class TestStepFailureStopsExecution:
@@ -76,6 +101,14 @@ class TestStepFailureStopsExecution:
         assert update_dotfiles.main() == 2
         assert len(calls) == 3
 
+    def test_diff_failure_stops_before_apply(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run({"diff": 7}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main(["--force"]) == 7
+        assert [call[1] for call in calls] == ["git", "init", "status", "diff"]
+
 
 class TestCapturedStderr:
     """キャプチャ対象段の標準エラー出力が終了コードによらず転送されることを検証する。"""
@@ -96,6 +129,30 @@ class TestCapturedStderr:
 
         assert update_dotfiles.main() == 0
         assert capsys.readouterr().err == "chezmoi status warning\n"
+
+    def test_force_diff_stderr_is_forwarded(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run({}, calls, stderr_by_command={"diff": "chezmoi diff warning\n"}),
+        )
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main(["--force"]) == 0
+        assert capsys.readouterr().err == "chezmoi diff warning\n"
+
+
+def test_unknown_argument_exits_2() -> None:
+    """未知引数はargparseの終了コード2で拒否する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        update_dotfiles.main(["--unknown"])
+    assert exc_info.value.code == 2
 
 
 _LOCK_HOLDER_CODE = (

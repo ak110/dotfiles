@@ -25,7 +25,7 @@ _REPORT_CONTRACT_LABELS = {
     "記録失敗",
     "後始末",
 }
-_REQUIRED_TOOLS = {"Agent", "Bash"}
+_REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
 
 
 def _h2_section(text: str, heading: str) -> str:
@@ -77,6 +77,65 @@ def test_codex_exec_agents_use_skill_then_toolsearch_then_delegation() -> None:
     assert executor.index("ToolSearch") < executor.index("次のreferenceをRead")
     assert executor.index("次のreferenceをRead") < executor.index("タスク本文を構成")
     assert executor.index("タスク本文を構成") < executor.index("実装用タスク本文")
+
+
+def test_claude_fallback_preserves_track_agent_ids_and_attempt_markers() -> None:
+    """Claude代替の再開識別子と試行別完了報告契約を検査する。"""
+    skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
+    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    finalizer_caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
+    impl_caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    assert "Agent識別子があり`SendMessage`を利用できる場合" in skill
+    assert "初回Agent起動と各`SendMessage`再開を独立した完了報告試行" in skill
+    assert "当該試行で生成したマーカーだけ" in skill
+    for document in (finalizer, executor):
+        assert "SendMessage" in document
+        assert "Agent識別子" in document
+        assert "当該試行のマーカーだけ" in document
+    for label in (
+        "implementation_agent_id",
+        "review_agent_id",
+        "implementation_agent_owner",
+        "review_agent_owner",
+    ):
+        assert label in finalizer
+        assert label in finalizer_caller
+    for label in ("implementation_agent_id", "plan_review_agent_id", "independent_review_agent_id"):
+        assert label in executor
+        assert label in impl_caller
+    assert "finalizerが起動したAgent" in finalizer_caller
+    assert "Agent識別子の所有主体が`caller`" in finalizer_caller
+    assert "呼び出し元から直接`SendMessage`を実行しない" in finalizer_caller
+    assert "Agentへ直接`SendMessage`を実行" in impl_caller
+
+
+def test_plan_finalizer_continuation_input_matches_agent_ownership_contract() -> None:
+    """finalizerの受信入力と呼び出し元の追加情報を所有主体まで一致させる。"""
+    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
+    caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
+    finalizer_input = _h2_section(finalizer, "入力")
+    caller_additional = _h2_section(caller, "追加情報")
+
+    for phrase in ("Claude Agent識別子", "その所有主体", "全応答履歴", "累積`review_rounds`"):
+        assert phrase in finalizer_input
+        assert phrase in caller_additional
+    assert "呼び出し元が起動したAgent識別子" in finalizer_input
+    assert "呼び出し元が起動したAgent識別子" in caller_additional
+
+
+def test_plan_finalizer_resumes_agents_only_by_owner() -> None:
+    """finalizer所有とcaller所有のAgent再開経路を混同しない。"""
+    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
+    caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
+
+    assert "所有主体が`finalizer`" in finalizer
+    assert "所有主体が`caller`" in finalizer
+    assert "識別子、履歴、未完了事項を保持した`needs_escalation`" in finalizer
+    assert "呼び出し元へ同じAgentの再開を要求" in finalizer
+    assert "所有主体が`caller`の系統で追加作業" in caller
+    assert "所有主体が`finalizer`の場合" in caller
 
 
 def test_plan_finalizer_reuses_working_directory_as_target_worktree() -> None:
@@ -158,10 +217,12 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     assert "`反映後・再レビュー前`" in finalizer_input
     assert "`初回レビュー前`" in finalizer_input
     assert "`初回レビュー後・採否確定前`" in finalizer_input
-    assert "両系統の経路、`threadId`、全応答履歴、累積`review_rounds`" in finalizer_input
-    assert "未開始の系統は`not_started`、`threadId: なし`、履歴`なし`" in finalizer_input
+    assert "両系統の経路、`threadId`、Claude Agent識別子、その所有主体、全応答履歴、累積`review_rounds`" in finalizer_input
+    assert "未開始の系統は`not_started`、`threadId: なし`、Agent識別子`なし`、所有主体`none`" in finalizer_input
     assert "途中で利用不能になった系統は`unavailable`" in finalizer_input
-    assert "利用不能になる直前の\n`threadId`、全応答履歴、累積`review_rounds`を保持" in finalizer_input
+    assert (
+        "利用不能になる直前の\n`threadId`、Agent識別子、その所有主体、全応答履歴、累積`review_rounds`を保持" in finalizer_input
+    )
     assert "反映結果と反映差分は、`反映後・再レビュー前`だけで必須" in finalizer_input
     assert "前回の反映後機械修正前後差分" in finalizer_input
     assert "反映後最終検査結果" in finalizer_input
@@ -241,8 +302,8 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     assert "初回総合レビューの完了前は`初回レビュー前`" in finalizer
     assert "完了後から採否確定前までは\n`初回レビュー後・採否確定前`" in finalizer
     assert "受領した累積値へ今回実施回数を加えた累積回数" in finalizer_output
-    assert "未開始の系統だけを`thread_id: なし`、履歴`なし`、レビュー回数`0`" in finalizer_workflow
-    assert "途中で利用不能になった系統は、利用不能になる直前の`thread_id`" in finalizer_workflow
+    assert "未開始の系統だけを`thread_id: なし`、`agent_id: なし`、履歴`なし`、レビュー回数`0`" in finalizer_workflow
+    assert "途中で利用不能になった系統は、利用不能になる直前の`thread_id`、`agent_id`" in finalizer_workflow
 
     review_cycle = _h2_section(review, "指摘反映と再レビュー")
     assert "再起動によって回数をリセットしない" in review_cycle

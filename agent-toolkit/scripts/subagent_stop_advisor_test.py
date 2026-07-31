@@ -278,6 +278,9 @@ def _complete_report(**overrides: str) -> str:
         "implementation_thread_id": "th_impl",
         "plan_review_thread_id": "th_plan_review",
         "independent_review_thread_id": "th_independent_review",
+        "implementation_agent_id": "なし",
+        "plan_review_agent_id": "なし",
+        "independent_review_agent_id": "なし",
         "implementation_route": "codex",
         "plan_review_route": "codex",
         "independent_review_route": "codex",
@@ -436,6 +439,14 @@ class TestPlanImplExecutorReportFormat:
                 "plan_review_thread_id must be なし",
             ),
             (
+                {"plan_review_route": "claude", "plan_review_thread_id": "なし"},
+                "plan_review_agent_id must not be なし",
+            ),
+            (
+                {"plan_review_agent_id": "agent-invalid"},
+                "plan_review_agent_id must be なし",
+            ),
+            (
                 {"review_rounds": "0"},
                 "review_rounds must be between 1 and 5",
             ),
@@ -490,6 +501,68 @@ class TestPlanImplExecutorReportFormat:
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
         assert expected_fragment in body["reason"]
+
+    def test_completed_claude_routes_with_agent_ids_pass(self, tmp_path: Path) -> None:
+        """Claude routeはthreadなし・Agent識別子ありの組み合わせを受理する。"""
+        sid = "sid-format-claude-agent-ids"
+        agent_id = "sub-claude-agent-ids"
+        _write_flag_state(tmp_path, sid, agent_id)
+        report = _complete_report(
+            implementation_route="claude",
+            implementation_thread_id="なし",
+            implementation_agent_id="agent-implementation",
+            plan_review_route="claude",
+            plan_review_thread_id="なし",
+            plan_review_agent_id="agent-plan-review",
+            independent_review_route="claude",
+            independent_review_thread_id="なし",
+            independent_review_agent_id="agent-independent-review",
+        )
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize("implementation_route", ["not_started", "unavailable"])
+    def test_escalation_allows_unstarted_or_unavailable_implementation(
+        self,
+        tmp_path: Path,
+        implementation_route: str,
+    ) -> None:
+        """実装開始前とAgent利用不能のエスカレーションを正当な状態として受理する。"""
+        sid = f"sid-format-escalation-implementation-{implementation_route}"
+        agent_id = f"sub-escalation-implementation-{implementation_route}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        report = (
+            _complete_report(
+                status="needs_escalation",
+                review_status="レビュー未完了",
+                implementation_route=implementation_route,
+                implementation_thread_id="なし",
+                implementation_agent_id="なし",
+                plan_review_route="not_started",
+                plan_review_thread_id="なし",
+                independent_review_route="not_started",
+                independent_review_thread_id="なし",
+            )
+            + "\nblockers:\n- 未解決事項"
+        )
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
 
     @pytest.mark.parametrize(
         ("overrides", "expected_fragment"),

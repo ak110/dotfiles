@@ -63,6 +63,9 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "implementation_thread_id",
     "plan_review_thread_id",
     "independent_review_thread_id",
+    "implementation_agent_id",
+    "plan_review_agent_id",
+    "independent_review_agent_id",
     "implementation_route",
     "plan_review_route",
     "independent_review_route",
@@ -143,13 +146,38 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
     except ValueError:
         rounds = -1
 
-    tracks = ("plan_review", "independent_review")
-    routes = {track: _extract_report_first_line(text, f"{track}_route") for track in tracks}
-    threads = {track: _extract_report_field(text, f"{track}_thread_id") for track in tracks}
-    histories = {track: _extract_report_field(text, f"{track}_history") for track in tracks}
+    all_tracks = ("implementation", "plan_review", "independent_review")
+    review_tracks = ("plan_review", "independent_review")
+    routes = {track: _extract_report_first_line(text, f"{track}_route") for track in all_tracks}
+    threads = {track: _extract_report_field(text, f"{track}_thread_id") for track in all_tracks}
+    agent_ids = {track: _extract_report_field(text, f"{track}_agent_id") for track in all_tracks}
+    histories = {track: _extract_report_field(text, f"{track}_history") for track in all_tracks}
     resolution = _extract_report_field(text, "review_resolution")
 
+    def inspect_track_identity(track: str, allowed_routes: set[str]) -> None:
+        route = routes[track]
+        if route not in allowed_routes:
+            expected = "codex or claude" if allowed_routes == {"codex", "claude"} else " or ".join(sorted(allowed_routes))
+            violations.append(f"{track}_route must be {expected}")
+            return
+        if route == "codex":
+            if _is_none_value(threads[track]):
+                violations.append(f"{track}_thread_id must not be なし for codex route")
+            if not _is_none_value(agent_ids[track]):
+                violations.append(f"{track}_agent_id must be なし for codex route")
+        elif route == "claude":
+            if not _is_none_value(threads[track]):
+                violations.append(f"{track}_thread_id must be なし for claude route")
+            if _is_none_value(agent_ids[track]):
+                violations.append(f"{track}_agent_id must not be なし for claude route")
+        else:
+            if not _is_none_value(threads[track]):
+                violations.append(f"{track}_thread_id must be なし for {route} route")
+            if not _is_none_value(agent_ids[track]):
+                violations.append(f"{track}_agent_id must be なし for {route} route")
+
     if status == "completed" and review_status.startswith("実施完了"):
+        inspect_track_identity("implementation", {"codex", "claude"})
         if _PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE.fullmatch(final_findings) is None:
             violations.append("review_final_findings must contain two non-negative finding counts")
         if not _is_none_value(skip_instruction):
@@ -160,17 +188,12 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
             violations.append("review_rounds must be between 1 and 5 for completed review")
         if _is_none_value(resolution):
             violations.append("review_resolution must not be なし for completed review")
-        for track in tracks:
-            route = routes[track]
-            if route not in {"codex", "claude"}:
-                violations.append(f"{track}_route must be codex or claude for completed review")
+        for track in review_tracks:
+            inspect_track_identity(track, {"codex", "claude"})
             if _is_none_value(histories[track]):
                 violations.append(f"{track}_history must not be なし for completed review")
-            if route == "codex" and _is_none_value(threads[track]):
-                violations.append(f"{track}_thread_id must not be なし for codex route")
-            if route == "claude" and not _is_none_value(threads[track]):
-                violations.append(f"{track}_thread_id must be なし for claude route")
     elif status == "completed" and review_status == "レビューは実施しない（ユーザー指示）":
+        inspect_track_identity("implementation", {"codex", "claude"})
         if final_findings != "対象外":
             violations.append("review_final_findings must be 対象外 when review is skipped")
         if _is_none_value(skip_instruction):
@@ -181,16 +204,15 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
             violations.append("review_rounds must be 0 when review is skipped")
         if not _is_none_value(resolution):
             violations.append("review_resolution must be なし when review is skipped")
-        for track in tracks:
-            if routes[track] != "not_started":
-                violations.append(f"{track}_route must be not_started when review is skipped")
-            if not _is_none_value(threads[track]):
-                violations.append(f"{track}_thread_id must be なし when review is skipped")
+        for track in review_tracks:
+            inspect_track_identity(track, {"not_started"})
             if not _is_none_value(histories[track]):
                 violations.append(f"{track}_history must be なし when review is skipped")
     elif status == "completed":
+        inspect_track_identity("implementation", {"codex", "claude"})
         violations.append("review_status must show completed review or user-directed skip")
     elif status == "needs_escalation":
+        inspect_track_identity("implementation", {"codex", "claude", "not_started", "unavailable"})
         if review_status != "レビュー未完了":
             violations.append("review_status must be レビュー未完了 for needs_escalation")
         if final_findings != "未確定":
@@ -199,9 +221,8 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
             violations.append("review_skip_instruction must be なし for needs_escalation")
         if caller_verification != "未完了事項の確認が必要":
             violations.append("review_caller_verification must request pending-item verification for needs_escalation")
-        for track in tracks:
-            if routes[track] in {"not_started", "unavailable"} and not _is_none_value(threads[track]):
-                violations.append(f"{track}_thread_id must be なし for {routes[track]} route")
+        for track in review_tracks:
+            inspect_track_identity(track, {"codex", "claude", "not_started", "unavailable"})
     return violations
 
 

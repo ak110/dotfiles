@@ -577,7 +577,7 @@ class TestProcessLoopUpdateAndRestart:
         assert execv_calls
         assert execv_calls[0][0] == "uv"
         assert execv_calls[0][1][:4] == ["uv", "run", "--no-project", "--script"]
-        assert any(cmd[0] == "update-dotfiles" for cmd in subprocess_calls)
+        assert ["update-dotfiles", "--force"] in subprocess_calls
         captured = capsys.readouterr()
         assert "update-dotfilesを実行して" in captured.out
         # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。

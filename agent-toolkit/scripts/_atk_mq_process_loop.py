@@ -304,7 +304,7 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
     出力は静音を基本とし、上流差分なし・ハッシュ不変の場合は無出力とする。
     """
     if _has_upstream_diff(dotfiles_root):
-        result = subprocess.run(["update-dotfiles"], check=False)
+        result = subprocess.run(["update-dotfiles", "--force"], check=False)
         _console_title.set_console_title("atk mq process-loop")
         if result.returncode != 0:
             print(
@@ -410,7 +410,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             sys.exit(result.returncode)
                         if not args.no_update:
                             print("update-dotfilesを実行してprocess-loopを再起動します。")
-                            subprocess.run(["update-dotfiles"], check=False)
+                            subprocess.run(["update-dotfiles", "--force"], check=False)
                             _console_title.set_console_title("atk mq process-loop")
                             _restart_process_loop(sys.argv, dotfiles_root)
                         continue

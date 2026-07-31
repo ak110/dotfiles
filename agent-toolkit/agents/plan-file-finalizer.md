@@ -6,7 +6,7 @@ effort: medium
 # Haiku固定: 自身は実装を担わず、codex-execへの委譲、結果検収、指摘への見解整理に専念するため。
 skills:
   - agent-toolkit:codex-exec
-tools: Skill, ToolSearch, Agent, mcp__codex, Read, Bash
+tools: Skill, ToolSearch, Agent, SendMessage, mcp__codex, Read, Bash
 user-invocable: false
 ---
 
@@ -27,10 +27,10 @@ user-invocable: false
 - 必須: 対象リポジトリの作業ディレクトリの絶対パス
 - 条件付き: `source_repository_path`として、作業ディレクトリが複製の場合の
   複製元リポジトリの絶対パス。複製でない場合は`対象外`
-- 条件付き: 継続または再起動時の両系統の経路、`threadId`、全応答履歴、累積`review_rounds`
+- 条件付き: 継続または再起動時の両系統の経路、`threadId`、Claude Agent識別子、その所有主体、全応答履歴、累積`review_rounds`
 - 条件付き: 実施済みレビュー結果と確定済みの採否
 - 条件付き: 呼び出し元がClaude代替した場合の応答全文と、
-  `implementation`または`review`の対象系統
+  `implementation`または`review`の対象系統、呼び出し元が起動したAgent識別子
 - 条件付き: 初回レビュー開始後に同じfinalizerで継続する場合、または新しいfinalizerへ再起動する場合の、
   初回に保存した`scope_baseline`と、承認状態・反映状態・反映結果を含む
   全ラウンドの累積`scope_changes`の全文
@@ -43,19 +43,20 @@ user-invocable: false
 
 条件付き入力が無い系統は初回起動として開始する。
 実施済みレビュー結果と確定済みの採否が無い場合は、未実施かつ未確定として扱う。
-受領した経路、識別子、履歴、採否、反映結果は対応する`## 出力`欄へ反映する。
-呼び出し元によるClaude代替では、対象系統が`implementation`の場合は
-`implementation_route: claude`、`implementation_thread_id: なし`として応答全文を
-`implementation_history`へ反映する。対象系統が`review`の場合は
-`review_route: claude`、`review_thread_id: なし`として応答全文を`review_history`へ反映する。
-呼び出し元によるClaude代替では、応答全文と対象系統の両方を必須入力とする。
+受領した経路、識別子、識別子の所有主体、履歴、採否、反映結果は対応する`## 出力`欄へ反映する。
+呼び出し元によるClaude代替の入力は、対象系統に応じて次の欄へ反映する。
+
+- `implementation`: routeを`claude`、threadを`なし`、ownerを`caller`として応答全文をhistoryへ反映する
+- `review`: routeを`claude`、threadを`なし`、ownerを`caller`として応答全文をhistoryへ反映する
+
+呼び出し元によるClaude代替では、応答全文、対象系統、Agent識別子を必須入力とする。
 作業ディレクトリを自己解決しない。必須入力が欠ける場合は、欠けた項目を
 `escalation_points`へ記載し、`status: needs_escalation`、`review_completed: false`で返す。
 継続・再起動時に`scope_baseline`、`scope_changes`、`continuation_state`、
-両系統の経路、`threadId`、全応答履歴、累積`review_rounds`のいずれかが欠ける場合も、
-必須入力不足として返す。未開始の系統は`not_started`、`threadId: なし`、履歴`なし`、
+両系統の経路、`threadId`、Claude Agent識別子、その所有主体、全応答履歴、累積`review_rounds`のいずれかが欠ける場合も、
+必須入力不足として返す。未開始の系統は`not_started`、`threadId: なし`、Agent識別子`なし`、所有主体`none`、履歴`なし`、
 回数`0`を明記する。途中で利用不能になった系統は`unavailable`とし、利用不能になる直前の
-`threadId`、全応答履歴、累積`review_rounds`を保持する。
+`threadId`、Agent識別子、その所有主体、全応答履歴、累積`review_rounds`を保持する。
 前回の採用指摘と確定済みの採否は、`採否確定後・反映前`と
 `反映後・再レビュー前`だけで必須とする。
 反映結果と反映差分は、`反映後・再レビュー前`だけで必須とする。
@@ -133,8 +134,15 @@ user-invocable: false
 task referenceは`plan-codex-review.md`「用途別task reference」節に従って選ぶ。
 
 Codex経路では系統別の`threadId`を保持する。
-Codex MCPの未解決時と利用上限応答時は、
-Agentツールで`subagent_type: claude`を毎回新規起動し、同じ系統の前回応答全文を引き継ぐ。
+Codex MCPの未解決時と利用上限応答時は、Claude Agent識別子の所有主体に応じて次を適用する。
+
+- 所有主体が`finalizer`: `SendMessage`を利用できる場合は同じAgentを再開する。再開できない場合だけ新規起動する
+- 所有主体が`caller`: 識別子、履歴、未完了事項を保持した`needs_escalation`で返し、呼び出し元へ同じAgentの再開を要求する
+- 所有主体が`none`: Agentツールで`subagent_type: claude`を新規起動し、同じ系統の前回応答全文を引き継ぐ
+
+自身が新規起動したAgent識別子の所有主体は`finalizer`とする。
+caller所有の再開要求は`escalation_points`へ対象系統、Agent識別子、未完了事項を記録する。
+初回起動と各再開の直前に新しい完了報告ディレクトリを作成し、当該試行のマーカーだけを検収する。
 Claude代替の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収する。
 Agentツールが深さ上限または権限制約で利用できない場合だけ、
 `route: unavailable`として呼び出し元へ代替起動を要求し、その応答全文を受け取って検収する。
@@ -162,8 +170,8 @@ CodexとClaude代替の両経路が利用できない場合も`needs_escalation`
 - 採用した初版内補正と承認済みのスコープ拡大が反映済みであることを確認する
 - 計画ファイルの実体と検収対象の絶対パスが一致することを確認する
 - 呼び出し元によるClaude代替応答も同じ基準で検収し、不一致は同じ系統へ差し戻す
-- 未開始の系統だけを`thread_id: なし`、履歴`なし`、レビュー回数`0`とする
-- 途中で利用不能になった系統は、利用不能になる直前の`thread_id`、全応答履歴、
+- 未開始の系統だけを`thread_id: なし`、`agent_id: なし`、履歴`なし`、レビュー回数`0`とする
+- 途中で利用不能になった系統は、利用不能になる直前の`thread_id`、`agent_id`、全応答履歴、
   累積`review_rounds`を保持する
 
 ## 出力
@@ -176,6 +184,10 @@ implementation_route: codex | claude | unavailable | not_started
 review_route: codex | claude | unavailable | not_started
 implementation_thread_id: <threadIdまたは「なし」>
 review_thread_id: <threadIdまたは「なし」>
+implementation_agent_id: <Claude Agent識別子または「なし」>
+review_agent_id: <Claude Agent識別子または「なし」>
+implementation_agent_owner: finalizer | caller | none
+review_agent_owner: finalizer | caller | none
 review_rounds: <受領した累積値へ今回実施回数を加えた累積回数>
 implementation_history:
 <実装・修正系の応答履歴。無ければ「なし」>
@@ -212,7 +224,7 @@ review_completed: true | false
 `scope_changes`が「なし」または呼び出し元承認済みであり、採用した初版内補正と
 承認済みのスコープ拡大が反映済みであることも完了条件とする。
 
-`implementation_thread_id`・`review_thread_id`は本エージェント内の系統継続の記録であり、
+`implementation_thread_id`・`review_thread_id`・両Agent識別子は本エージェント内の系統継続の記録であり、
 呼び出し元が実装担当へ引き継ぐ値ではない。
 
 完了報告は1回だけ生成し、実際の受領経路（ツール戻り値または完了通知）を通じて返す。

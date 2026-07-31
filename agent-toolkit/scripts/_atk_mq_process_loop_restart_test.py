@@ -159,7 +159,7 @@ class TestWaitLoopAutoRestart:
             wait_return=False,
             has_upstream_diff=True,
         )
-        assert ["update-dotfiles"] in subprocess_calls
+        assert ["update-dotfiles", "--force"] in subprocess_calls
 
     def test_no_upstream_diff_skips_update_dotfiles(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """上流差分なしの場合は`update-dotfiles`が実行されないこと。"""
@@ -169,7 +169,7 @@ class TestWaitLoopAutoRestart:
             wait_return=False,
             has_upstream_diff=False,
         )
-        assert ["update-dotfiles"] not in subprocess_calls
+        assert ["update-dotfiles", "--force"] not in subprocess_calls
 
     def test_no_update_flag_skips_check_after_timeout(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """`--no-update`指定時はタイムアウト復帰後の上流差分確認・再起動チェックが行われないこと。"""
@@ -181,7 +181,7 @@ class TestWaitLoopAutoRestart:
             changed_file_name="a.py",
             extra_argv=["--no-update"],
         )
-        assert ["update-dotfiles"] not in subprocess_calls
+        assert ["update-dotfiles", "--force"] not in subprocess_calls
         assert not execv_calls
 
     def test_change_detected_skips_update_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -193,7 +193,7 @@ class TestWaitLoopAutoRestart:
             has_upstream_diff=True,
             changed_file_name="a.py",
         )
-        assert ["update-dotfiles"] not in subprocess_calls
+        assert ["update-dotfiles", "--force"] not in subprocess_calls
         assert not execv_calls
 
     def test_missing_dotfiles_root_skips_check_entirely(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -210,7 +210,7 @@ class TestWaitLoopAutoRestart:
             changed_file_name="a.py",
             dotfiles_root_missing=True,
         )
-        assert ["update-dotfiles"] not in subprocess_calls
+        assert ["update-dotfiles", "--force"] not in subprocess_calls
         assert not execv_calls
 
     def test_restart_drops_resume_option(

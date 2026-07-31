@@ -8,6 +8,8 @@ r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 `chezmoi git pull --rebase` → `chezmoi init`（テンプレート再展開） →
 `chezmoi status`（apply予定ファイルの表示） → `chezmoi apply`の4段を、
 プロセス間排他ロック下で直列実行する。
+`--force`指定時はapply直前に`chezmoi diff --no-pager`を追加し、差分表示後に
+`chezmoi apply --force`で確認入力を待たずに反映する。
 
 複数の`update-dotfiles`起動（`atk mq process-loop`の複数常駐・手動実行との重複等）が
 同時に`git pull`・`chezmoi apply`を実行するとpullとファイル操作の競合を招くため、
@@ -24,6 +26,7 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 持っていた「いずれかの段が失敗すれば中断する」挙動をそのまま踏襲する。
 """
 
+import argparse
 import pathlib
 import subprocess
 import sys
@@ -55,24 +58,37 @@ def _filter_apply_pending(status_output: str) -> list[str]:
     return [line for line in status_output.splitlines() if len(line) > 1 and line[1] != " "]
 
 
-def main() -> int:
-    """4段を排他ロック下で直列実行し、最終exit codeを返す。"""
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    """コマンドライン引数を解析する。"""
+    parser = argparse.ArgumentParser(description="dotfilesを取得し、chezmoiで反映する")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="適用前の差分を表示し、destination側の変更を確認なしで上書きする",
+    )
+    return parser.parse_args([] if argv is None else argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
+    args = _parse_args(argv)
+    total = 5 if args.force else 4
     lock_dir = _LOCK_PATH.parent
     lock_dir.mkdir(parents=True, exist_ok=True)
     try:
         with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
             returncode, _ = _run_step(
                 1,
-                4,
+                total,
                 "git pull",
-                ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "pull", "--rebase"],
+                ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "pull", "--rebase", "--quiet"],
             )
             if returncode != 0:
                 return returncode
 
             returncode, _ = _run_step(
                 2,
-                4,
+                total,
                 "chezmoi init (テンプレート再展開)",
                 ["chezmoi", "init", f"--source={_DOTFILES_ROOT}"],
             )
@@ -81,7 +97,7 @@ def main() -> int:
 
             returncode, status_output = _run_step(
                 3,
-                4,
+                total,
                 "chezmoi status (apply予定のファイル)",
                 ["chezmoi", "status", "-x", "scripts"],
                 capture=True,
@@ -91,7 +107,21 @@ def main() -> int:
             for line in _filter_apply_pending(status_output):
                 print(line)
 
-            returncode, _ = _run_step(4, 4, "chezmoi apply (post-apply実行)", ["chezmoi", "apply"])
+            if args.force:
+                returncode, diff_output = _run_step(
+                    4,
+                    total,
+                    "chezmoi diff (上書き前の差分)",
+                    ["chezmoi", "diff", "--no-pager"],
+                    capture=True,
+                )
+                if diff_output:
+                    sys.stdout.write(diff_output)
+                if returncode != 0:
+                    return returncode
+
+            apply_argv = ["chezmoi", "apply", "--force"] if args.force else ["chezmoi", "apply"]
+            returncode, _ = _run_step(total, total, "chezmoi apply (post-apply実行)", apply_argv)
             if returncode != 0:
                 return returncode
     except filelock.Timeout:
@@ -105,4 +135,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))
