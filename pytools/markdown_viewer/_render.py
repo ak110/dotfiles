@@ -7,10 +7,10 @@ import markdown_it
 
 
 def make_renderer() -> markdown_it.MarkdownIt:
-    """Raw HTMLを無効化したMarkdownレンダラを返す。"""
-    # CommonMarkプリセットは`html`オプション既定値が`True`でraw HTMLを通すため、
-    # 明示的に`False`へ上書きしてXSS経路を塞ぐ。表拡張は別途`enable("table")`で有効化する。
-    return markdown_it.MarkdownIt("commonmark", {"html": False}).enable("table")
+    """Raw HTMLを無効化したGFM相当のMarkdownレンダラを返す。"""
+    # GFM相当プリセットで表・取り消し線・裸URL自動リンクを有効化する。
+    # `html`は明示的に`False`へ上書きしてXSS経路を塞ぐ。
+    return markdown_it.MarkdownIt("gfm-like", {"html": False})
 
 
 def render_body(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:

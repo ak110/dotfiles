@@ -10,7 +10,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-28T14:55:19.288811026Z"
+exclude-newer = "2026-07-31T12:12:18.869602459Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1974,7 +1974,7 @@ dependencies = [
     { name = "holidays" },
     { name = "httpx" },
     { name = "libarchive-c" },
-    { name = "markdown-it-py" },
+    { name = "markdown-it-py", extra = ["linkify"] },
     { name = "natsort" },
     { name = "numpy" },
     { name = "pdf2image" },
@@ -2015,7 +2015,7 @@ requires-dist = [
     { name = "holidays" },
     { name = "httpx" },
     { name = "libarchive-c" },
-    { name = "markdown-it-py", specifier = ">=4.0.0" },
+    { name = "markdown-it-py", extras = ["linkify"], specifier = ">=4.0.0" },
     { name = "natsort" },
     { name = "numpy" },
     { name = "pdf2image" },

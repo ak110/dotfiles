@@ -317,8 +317,11 @@ class TestApiEndpoints:
 
     @pytest.mark.asyncio
     async def test_api_file_renders_markdown(self, tmp_path: Path):
-        """/api/fileがMarkdownをHTMLへ変換して返す。"""
-        (tmp_path / "a.md").write_text("# title\n", encoding="utf-8")
+        """`/api/file`がGFM相当のMarkdownをHTMLへ変換して返す。"""
+        (tmp_path / "a.md").write_text(
+            "# title\n\n通常 ~~取消~~ https://example.com\n",
+            encoding="utf-8",
+        )
         app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/file?path=a.md")
@@ -326,6 +329,8 @@ class TestApiEndpoints:
         assert response.status_code == 200
         body = await response.get_data(as_text=True)
         assert "<h1>title</h1>" in body
+        assert "<s>取消</s>" in body
+        assert '<a href="https://example.com">https://example.com</a>' in body
 
     @pytest.mark.asyncio
     async def test_api_file_renders_diagrams_without_raw_html(self, tmp_path: Path):

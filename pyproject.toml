@@ -11,7 +11,7 @@ dependencies = [
     "holidays",
     "httpx",
     "libarchive-c",
-    "markdown-it-py>=4.0.0",
+    "markdown-it-py[linkify]>=4.0.0",
     "natsort",
     "numpy",
     "pdf2image",

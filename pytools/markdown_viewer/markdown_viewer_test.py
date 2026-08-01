@@ -12,20 +12,38 @@ from pytools.markdown_viewer import _cli, _render
 
 
 @pytest.mark.parametrize(
-    ("filename", "content", "exit_code", "expected_substr"),
+    ("filename", "content", "exit_code", "expected_substr", "unexpected_substr"),
     [
         # 同値分割: 通常の.md拡張子
-        ("sample.md", "# 見出し\n\n本文段落\n", 0, "<h1>見出し</h1>"),
+        ("sample.md", "# 見出し\n\n本文段落\n", 0, "<h1>見出し</h1>", None),
         # 同値分割: 拡張子なし（README等）
-        ("README", "本文のみ", 0, "<p>本文のみ</p>"),
+        ("README", "本文のみ", 0, "<p>本文のみ</p>", None),
         # 同値分割: 日本語ファイル名
-        ("日本語名.md", "# 日本語タイトル", 0, "<h1>日本語タイトル</h1>"),
+        ("日本語名.md", "# 日本語タイトル", 0, "<h1>日本語タイトル</h1>", None),
         # 境界値: 空ファイル
-        ("empty.md", "", 0, ""),
+        ("empty.md", "", 0, "", None),
         # 境界値: 1文字のMarkdown
-        ("tiny.md", "x", 0, "<p>x</p>"),
+        ("tiny.md", "x", 0, "<p>x</p>", None),
+        # GFM拡張: 二重チルダを取り消し線へ変換する
+        ("strikethrough.md", "通常 ~~取消~~\n", 0, "<s>取消</s>", None),
+        # GFM拡張: 裸URLをリンクへ変換する
+        (
+            "autolink.md",
+            "https://example.com\n",
+            0,
+            '<a href="https://example.com">https://example.com</a>',
+            None,
+        ),
+        # セキュリティ境界: Raw HTMLをエスケープし、生のscriptタグを生成しない
+        (
+            "raw-html.md",
+            "<script>alert(1)</script>\n",
+            0,
+            "&lt;script&gt;alert(1)&lt;/script&gt;",
+            "<script",
+        ),
         # 同値分割: 非存在ファイル
-        ("__missing__.md", None, 1, None),
+        ("__missing__.md", None, 1, None, None),
     ],
 )
 def test_markdown_viewer_integration(
@@ -36,6 +54,7 @@ def test_markdown_viewer_integration(
     content: str | None,
     exit_code: int,
     expected_substr: str | None,
+    unexpected_substr: str | None,
 ) -> None:
     """公開インターフェース`main`経由でMarkdownレンダリング・HTML生成・ブラウザ起動を検査する。
 
@@ -73,6 +92,8 @@ def test_markdown_viewer_integration(
         assert source.resolve().parent.as_uri() in document
         if expected_substr:
             assert expected_substr in document
+        if unexpected_substr:
+            assert unexpected_substr.lower() not in document.lower()
     else:
         # 非存在ファイル指定時はstderrへエラーを出力してexit 1する
         assert not opened
