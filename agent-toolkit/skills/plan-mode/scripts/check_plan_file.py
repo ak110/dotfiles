@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["markdown-it-py[linkify]>=4.0.0"]
 # ///
 r"""計画ファイルの軽量機械チェック。
 
@@ -83,6 +83,8 @@ import pathlib
 import re
 import sys
 
+import markdown_it
+
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`")
 _H3_PATH_RE = re.compile(r"^### `([^`]+)`")
 _CANONICAL_H1_RE = re.compile(r"^# (?!#+[ \t]*$)\S.*$")
@@ -161,6 +163,8 @@ _BUG_WORK_TYPE = "バグ対応"
 _NORMAL_WORK_TYPE = "通常変更"
 _VALID_WORK_TYPES = frozenset({_BUG_WORK_TYPE, _NORMAL_WORK_TYPE})
 
+_COMMONMARK = markdown_it.MarkdownIt("commonmark")
+
 
 def _looks_like_python_definition_identifier(name: str) -> bool:
     """識別子が`_`始まり・snake_case・UPPER_CASEいずれかのPython定義名らしい形式か判定する。
@@ -218,30 +222,83 @@ def _unfenced_line_mask(text: str) -> list[bool]:
     return mask
 
 
-def _strip_inline_code(line: str) -> str:
-    """行中のバッククォートで囲まれたインラインコードを空白で置換する。
+def _inline_block_ranges(text: str) -> list[tuple[int, int]]:
+    """CommonMarkのinline tokenが占める半開区間の一覧を返す。"""
+    line_offsets = [0]
+    for line in text.splitlines(keepends=True):
+        line_offsets.append(line_offsets[-1] + len(line))
 
-    マッチしたスパンを同じ長さの空白に置換することで、他の位置の列番号がずれない。
-    同じ長さの閉じバッククォートが見つからない場合は当該の開き位置群を除外して続行する。
-    """
-    result = list(line)
-    i = 0
-    while i < len(line):
-        if line[i] != "`":
-            i += 1
+    ranges: list[tuple[int, int]] = []
+    for token in _COMMONMARK.parse(text):
+        if token.type != "inline" or token.map is None:
             continue
-        j = i
-        while j < len(line) and line[j] == "`":
-            j += 1
-        tick_len = j - i
-        close_idx = line.find("`" * tick_len, j)
-        if close_idx == -1:
-            i = j
-            continue
-        end = close_idx + tick_len
-        result[i:end] = " " * (end - i)
-        i = end
+        start_line, end_line = token.map
+        ranges.append((line_offsets[start_line], line_offsets[end_line]))
+    return ranges
+
+
+def _inline_code_spans(text: str, block_ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """各インラインブロック内のコードスパンを半開区間の一覧で返す。"""
+    spans: list[tuple[int, int]] = []
+    for block_start, block_end in block_ranges:
+        i = block_start
+        while i < block_end:
+            if text[i] != "`":
+                i += 1
+                continue
+            j = i
+            while j < block_end and text[j] == "`":
+                j += 1
+            tick_len = j - i
+            if _is_escaped(text, i):
+                i = j
+                continue
+            close_idx = j
+            while close_idx < block_end:
+                if text[close_idx] != "`":
+                    close_idx += 1
+                    continue
+                close_end = close_idx
+                while close_end < block_end and text[close_end] == "`":
+                    close_end += 1
+                if close_end - close_idx == tick_len:
+                    spans.append((i, close_end))
+                    i = close_end
+                    break
+                close_idx = close_end
+            else:
+                i = j
+    return spans
+
+
+def _mask_non_inline_blocks(text: str, block_ranges: list[tuple[int, int]]) -> str:
+    """非inlineブロックを改行以外の同長空白へ置換して返す。"""
+    result = [char if char in "\r\n" else " " for char in text]
+    for start, end in block_ranges:
+        result[start:end] = text[start:end]
     return "".join(result)
+
+
+def _strip_inline_code(text: str, spans: list[tuple[int, int]]) -> str:
+    """コードスパンを改行以外の同長空白へ置換する。
+
+    CommonMarkのブロック解析が確定した各inline token範囲内で、最大バッククォート列を
+    同じ長さの最大列と対応付ける。開き候補だけ外側のバックスラッシュエスケープを判定する。
+    """
+    result = list(text)
+    for start, end in spans:
+        result[start:end] = (char if char in "\r\n" else " " for char in text[start:end])
+    return "".join(result)
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    """対象位置の文字が奇数個のバックスラッシュでエスケープされているかを返す。"""
+    backslashes = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
 
 
 def _unfenced_body(body: str) -> str:
@@ -562,11 +619,21 @@ def _check_fence_nesting(text: str) -> list[str]:
     return warnings
 
 
-def _has_session_ops_invocation(line: str) -> bool:
+def _has_session_ops_invocation(
+    line: str,
+    line_offset: int,
+    inline_blocks: list[tuple[int, int]],
+    inline_spans: list[tuple[int, int]],
+) -> bool:
     """行が呼び出し構文でセッション運用の名前を指すかを返す。"""
     for pattern in (_SKILL_TOOL_CALL_RE, _AGENT_TOOL_CALL_RE, _SLASH_COMMAND_RE):
         for match in pattern.finditer(line):
-            if _SESSION_OPS_RE.search(match.group(1)):
+            match_span = (line_offset + match.start(), line_offset + match.end())
+            in_inline_block = any(start <= match_span[0] and match_span[1] <= end for start, end in inline_blocks)
+            enclosed = any(
+                start <= match_span[0] and match_span[1] <= end and (start, end) != match_span for start, end in inline_spans
+            )
+            if in_inline_block and not enclosed and _SESSION_OPS_RE.search(match.group(1)):
                 return True
     return False
 
@@ -574,16 +641,25 @@ def _has_session_ops_invocation(line: str) -> bool:
 def _check_execution_method_scope(text: str) -> list[str]:
     """`## 実行方法`節に振り返り・セッション終了などのセッション運用工程が無いか検出する。
 
-    節内にフェンスで埋め込まれた記述例と、インラインコード内の識別子は対象としない。
+    節内にコードブロックで埋め込まれた記述例と、インラインコード内の識別子は対象としない。
     呼び出し構文でセッション運用の名前が現れる行は実際の起動指示として対象に残す。
     """
     warnings: list[str] = []
     for section_no, body in enumerate(_iter_h2_sections(text, "実行方法"), start=1):
+        inline_blocks = _inline_block_ranges(body)
+        inline_spans = _inline_code_spans(body, inline_blocks)
+        searchable = _strip_inline_code(_mask_non_inline_blocks(body, inline_blocks), inline_spans)
         mask = _unfenced_line_mask(body)
-        for line_no, (line, keep) in enumerate(zip(body.splitlines(), mask, strict=False), start=1):
+        line_offset = 0
+        lines = body.splitlines(keepends=True)
+        searchable_lines = searchable.splitlines()
+        for line_no, (raw_line, target, keep) in enumerate(zip(lines, searchable_lines, mask, strict=False), start=1):
             if not keep:
+                line_offset += len(raw_line)
                 continue
-            target = line if _has_session_ops_invocation(line) else _strip_inline_code(line)
+            line = raw_line.rstrip("\r\n")
+            if _has_session_ops_invocation(line, line_offset, inline_blocks, inline_spans):
+                target = line
             if _SESSION_OPS_RE.search(target):
                 warnings.append(
                     f"実行方法節（{section_no}件目の出現）内({line_no}行目相当): "
@@ -591,6 +667,7 @@ def _check_execution_method_scope(text: str) -> list[str]:
                     "計画ファイルのスコープは当該計画の実装・検証・コミット・レビューに限定し、"
                     "セッション運用工程は呼び出し元セッションが別途担う"
                 )
+            line_offset += len(raw_line)
     return warnings
 
 

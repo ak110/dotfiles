@@ -45,6 +45,17 @@ def _run(payload: dict) -> subprocess.CompletedProcess[str]:
     return _fork_runner.run_script(_SCRIPT, argv=("subagent_stop_advisor",), input=json.dumps(payload))
 
 
+def _write_hook_transcripts(tmp_path: Path, parent_entries: list[dict], agent_entries: list[dict]) -> tuple[str, str]:
+    """公式Hook入力と同じ親セッション記録と対象サブエージェント記録を生成する。"""
+    parent_dir = tmp_path / "parent"
+    agent_dir = tmp_path / "agent"
+    parent_dir.mkdir()
+    agent_dir.mkdir()
+    parent = _write_transcript(parent_dir, parent_entries)
+    agent = _write_transcript(agent_dir, agent_entries)
+    return str(parent), str(agent)
+
+
 @pytest.mark.parametrize(
     ("category", "message_override", "expected_decision", "expected_returncode"),
     [
@@ -89,8 +100,8 @@ def test_blocks_overhead_tradeoff_phrases() -> None:
     assert "overhead-tradeoff" in body["reason"]
 
 
-def test_approves_when_background_tracked_regardless_of_message(tmp_path: Path) -> None:
-    """自身のtranscriptに未消化のbackground起動が実在する場合、完了報告本文の内容によらず承認する。
+def test_approves_when_descendant_background_tracked_regardless_of_message(tmp_path: Path) -> None:
+    """対象サブエージェント記録に未消化の孫起動がある場合、完了報告本文によらず承認する。
 
     本文には未消化background起動が無ければ通常経路でブロックされるはずの
     `process-omission`フレーズを用いる。早期承認判定を外すとブロックされることを
@@ -100,14 +111,33 @@ def test_approves_when_background_tracked_regardless_of_message(tmp_path: Path) 
     text = _pick_scope_escalation_text("process-omission")
     if not text:
         pytest.skip("scope-escalation fixture for process-omission not available")
-    transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg1")]))
-    result = _run({"last_assistant_message": text, "transcript_path": transcript})
+    parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_bg1")])
+    result = _run({"last_assistant_message": text, "transcript_path": parent, "agent_transcript_path": agent})
     assert result.stdout == ""
+
+
+def test_parent_pending_agent_does_not_bypass_completion_report_check(tmp_path: Path) -> None:
+    """親記録だけの未完了起動は兄弟または停止対象自身であり、早期承認の根拠にしない。"""
+    text = _pick_scope_escalation_text("process-omission")
+    if not text:
+        pytest.skip("scope-escalation fixture for process-omission not available")
+    parent, agent = _write_hook_transcripts(tmp_path, [_user_async_launched_entry("toolu_sibling")], [])
+    result = _run({"last_assistant_message": text, "transcript_path": parent, "agent_transcript_path": agent})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
 
 
 def test_approves_empty_report_when_descendant_agent_is_pending(tmp_path: Path) -> None:
     """孫エージェントの起動が未消化の場合は実質空の完了報告でも承認する。"""
-    transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_descendant_pending")]))
+    parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_descendant_pending")])
+    result = _run({"last_assistant_message": "", "transcript_path": parent, "agent_transcript_path": agent})
+    assert result.stdout == ""
+    assert result.returncode == 0
+
+
+def test_legacy_transcript_path_detects_pending_descendant_agent(tmp_path: Path) -> None:
+    """`agent_transcript_path`が無い旧版入力では`transcript_path`を互換経路として使う。"""
+    transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_legacy_descendant")]))
     result = _run({"last_assistant_message": "", "transcript_path": transcript})
     assert result.stdout == ""
     assert result.returncode == 0
@@ -115,8 +145,8 @@ def test_approves_empty_report_when_descendant_agent_is_pending(tmp_path: Path) 
 
 def test_blocks_empty_report_when_only_background_bash_is_pending(tmp_path: Path) -> None:
     """background Bashジョブのみが未消化の場合は実質空の完了報告をブロックする。"""
-    transcript = str(_write_transcript(tmp_path, [_user_background_bash_entry("toolu_bash_pending")]))
-    result = _run({"last_assistant_message": "", "transcript_path": transcript})
+    parent, agent = _write_hook_transcripts(tmp_path, [], [_user_background_bash_entry("toolu_bash_pending")])
+    result = _run({"last_assistant_message": "", "transcript_path": parent, "agent_transcript_path": agent})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
     assert "empty" in body["reason"]
@@ -127,17 +157,18 @@ def test_blocks_incomplete_plan_report_when_only_background_bash_is_pending(tmp_
     session_id = "sid-bash-format"
     agent_id = "sub-bash-format"
     _write_flag_state(tmp_path, session_id, agent_id)
-    transcript_path = Path(_transcript_path_for(tmp_path, agent_id))
-    transcript_path.parent.mkdir(parents=True, exist_ok=True)
-    transcript_path.write_text(
-        json.dumps(_user_background_bash_entry("toolu_bash_format"), ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    parent, agent = _write_hook_transcripts(
+        tmp_path,
+        [],
+        [_user_background_bash_entry("toolu_bash_format")],
     )
     result = _run_with_state_dir(
         {
             "session_id": session_id,
+            "agent_id": agent_id,
             "last_assistant_message": "status: completed\nsummary: 待機中",
-            "transcript_path": str(transcript_path),
+            "transcript_path": parent,
+            "agent_transcript_path": agent,
         },
         tmp_path,
     )
@@ -162,8 +193,8 @@ def test_blocks_when_tracked_background_completed(tmp_path: Path) -> None:
     if not text:
         pytest.skip("scope-escalation fixture for process-omission not available")
     entries = [_user_async_launched_entry("toolu_bg2"), _user_task_notification_entry("toolu_bg2")]
-    transcript = str(_write_transcript(tmp_path, entries))
-    result = _run({"last_assistant_message": text, "transcript_path": transcript})
+    parent, agent = _write_hook_transcripts(tmp_path, [], entries)
+    result = _run({"last_assistant_message": text, "transcript_path": parent, "agent_transcript_path": agent})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
 
@@ -327,7 +358,8 @@ class TestPlanReviewCompletion:
             {
                 "session_id": sid,
                 "last_assistant_message": "status: completed\nreview_completed: true",
-                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+                "agent_id": agent_id,
+                "transcript_path": str(tmp_path / f"{sid}.jsonl"),
             },
             tmp_path,
         )
@@ -352,7 +384,8 @@ class TestPlanReviewCompletion:
             {
                 "session_id": sid,
                 "last_assistant_message": report,
-                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+                "agent_transcript_path": _transcript_path_for(tmp_path, agent_id),
+                "transcript_path": str(tmp_path / f"{sid}.jsonl"),
             },
             tmp_path,
         )
@@ -441,12 +474,15 @@ class TestPlanImplExecutorReportFormat:
             {
                 "session_id": sid,
                 "last_assistant_message": _complete_report(),
-                "transcript_path": _transcript_path_for(tmp_path, "sub-a"),
+                "agent_id": "sub-a",
+                "transcript_path": str(tmp_path / f"{sid}.jsonl"),
             },
             tmp_path,
         )
         assert result.stdout == ""
         assert result.returncode == 0
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert not state["plan_impl_executor_active_subagent_sessions"]
 
     def test_missing_label_blocks(self, tmp_path: Path) -> None:
         """主要欄が欠落する報告はblockし理由文に欠落ラベルを列挙する。"""

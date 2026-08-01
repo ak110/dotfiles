@@ -24,7 +24,7 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 - 非同期処理の応答待ちを理由とした能動動作の停止・待機の表明。
   当該表明はscope-escalation辞書による言語検出の対象カテゴリではなく、
   SubagentStop hook（`subagent_stop_advisor.py`）が当該サブエージェント自身の
-  `transcript_path`を対象に行う構造判定（`has_pending_agent_launches`）と、
+  `agent_transcript_path`を対象に行う構造判定（`has_pending_agent_launches`）と、
   `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める、
   `run_in_background`省略後の実行結果から受領経路を判定し、待機対象の結果を含む完了報告を
   戻り値または完了通知で1回受領して検収する規定が担う
@@ -96,7 +96,9 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 非同期処理の待機中か否かの判定はscope-escalation辞書による言語検出を用いず、構造判定へ一本化する。
 Main Stop hook（`stop_advisor.py`）はMain自身の`transcript_path`を対象に`is_pending_async_work`
 （起動・完了記録の差集合）で判定する。SubagentStop hook（`subagent_stop_advisor.py`）は
-当該サブエージェント自身の`transcript_path`を対象に`has_pending_agent_launches`で判定する。
+当該サブエージェント自身の`agent_transcript_path`を対象に`has_pending_agent_launches`で判定する。
+SubagentStop入力の`transcript_path`は親セッションの記録を指し、旧版入力で
+`agent_transcript_path`が無い場合だけ互換経路として使う。
 `subagent_stop_advisor.py`は`has_pending_agent_launches`が真の場合に限り、
 完了報告本文の検査によらず承認する。当該関数はAgent系の背景起動とSendMessageによる再開だけを
 未消化として数え、委譲先自身が起動したbackground Bashジョブを除外する。

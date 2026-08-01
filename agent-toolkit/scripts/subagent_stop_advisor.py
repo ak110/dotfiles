@@ -1,7 +1,7 @@
 """SubagentStop hook: 完了報告の本文を空/Skill単独報告と縮退表明辞書で検査する。
 
 公式仕様の`last_assistant_message`を直参照し、
-当該サブエージェント自身の`transcript_path`に未消化の孫エージェント起動
+当該サブエージェント自身の`agent_transcript_path`に未消化の孫エージェント起動
 （`has_pending_agent_launches`）が構造的に実在する場合は、完了報告本文の内容によらず無条件で承認する。
 まだ自身配下の作業が構造的に残っている以上、続行の是非を本文の言い回しで判定する必要が無いためである。
 未消化の孫エージェント起動が無い場合に限り、`is_empty_completion_report`で実質空またはSkill呼び出し
@@ -9,7 +9,7 @@
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、
 連続ブロック上限による強制終了を回避する。
 
-`plan-impl-executor`完了報告（`transcript_path`から抽出した`agentId`が
+`plan-impl-executor`完了報告（`agent_id`が
 `plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火）は、
 主要欄ラベルの欠落検査、二系統レビュー値の整合検査、
 background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
@@ -256,10 +256,22 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
+def _resolve_payload_agent_id(payload: dict) -> str | None:
+    """SubagentStop入力から対象サブエージェントの識別子を返す。"""
+    agent_id = payload.get("agent_id")
+    if isinstance(agent_id, str) and agent_id:
+        return agent_id
+    agent_id = _extract_transcript_agent_id(payload.get("agent_transcript_path"))
+    if agent_id is not None:
+        return agent_id
+    # 旧版入力との互換性を保つ。現行仕様の`transcript_path`は親セッションを指す。
+    return _extract_transcript_agent_id(payload.get("transcript_path"))
+
+
 def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str], bool, list[str]]:
     """完了報告のラベル、background起動宣言、レビュー値を検査する。
 
-    `transcript_path`のファイル名から抽出した`agentId`が、`posttooluse.py`が親セッション状態へ
+    SubagentStop入力の`agent_id`が、`posttooluse.py`が親セッション状態へ
     書き込む`plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火する。
     抽出・突合に失敗した場合は対象外として`([], False, [])`を返す（安全側。他種別のサブエージェント
     停止時の誤発火と、他インスタンスの登録の巻き添え消去を防ぐ）。
@@ -272,7 +284,7 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return [], False, []
-    agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
+    agent_id = _resolve_payload_agent_id(payload)
     if agent_id is None:
         return [], False, []
     state = read_state(session_id)
@@ -314,7 +326,7 @@ def _apply_plan_review_completed(payload: dict) -> None:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
-    agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
+    agent_id = _resolve_payload_agent_id(payload)
     if agent_id is None:
         return
     state = read_state(session_id)
@@ -356,10 +368,13 @@ def main() -> int:
         return 0
 
     text = payload.get("last_assistant_message")
-    transcript_path = payload.get("transcript_path")
+    agent_transcript_path = payload.get("agent_transcript_path")
+    if not isinstance(agent_transcript_path, str) or not agent_transcript_path:
+        # `agent_transcript_path`を持たない旧版入力との互換性を保つ。
+        agent_transcript_path = payload.get("transcript_path")
     session_id = payload.get("session_id")
-    if isinstance(transcript_path, str) and has_pending_agent_launches(
-        transcript_path, session_id if isinstance(session_id, str) else ""
+    if isinstance(agent_transcript_path, str) and has_pending_agent_launches(
+        agent_transcript_path, session_id if isinstance(session_id, str) else ""
     ):
         # Agent系の背景起動またはSendMessage再開が未消化の場合だけ、
         # 完了報告本文の検査によらず承認する。

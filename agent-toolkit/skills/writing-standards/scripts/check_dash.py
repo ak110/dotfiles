@@ -1,15 +1,17 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["markdown-it-py[linkify]>=4.0.0"]
 # ///
 """Markdownの地の文・見出し中のダッシュ系禁止文字を検査する独立スクリプト。
 
 writing-standards SKILL.mdの「emダッシュ・horizontal bar・2倍ダッシュは
 日本語の地の文・見出しで使わない」規定を機械化する。
 検出対象はU+2014（EM DASH）・U+2015（HORIZONTAL BAR）・U+2500の2連続（2倍ダッシュ）。
-フェンス付きコードブロック内（バッククォート形式・チルダ形式）・インラインコード内・URL内は除外する。
+コードブロック内（フェンス形式・インデント形式）・インラインコード内・URL内は除外する。
 """
+
+# pylint: disable=duplicate-code  # 各スキルの単独実行性を保ち、同一のCommonMark解析を同期する。
 
 from __future__ import annotations
 
@@ -17,6 +19,8 @@ import argparse
 import pathlib
 import re
 import sys
+
+import markdown_it
 
 # 抜粋の最大文字数。違反行を見やすく示す切り詰め幅。
 _EXCERPT_LIMIT = 80
@@ -56,9 +60,7 @@ _KIND_MAP = {
     "──": "double-dash(U+2500x2)",
 }
 
-# フェンス開始の最小バッククォート/チルダ数。閉じ判定では`group(3)`（マーカー後の残り）が
-# 空であることも要求するため、末尾の任意文字列を第3グループとして捕捉する。
-_FENCE_RE = re.compile(r"^( {0,3})(```+|~~~+)(.*)$")
+_COMMONMARK = markdown_it.MarkdownIt("commonmark")
 
 
 def main() -> int:
@@ -128,28 +130,11 @@ def _check_file(path: pathlib.Path) -> list[str]:
         return []
 
     violations: list[str] = []
-    in_fence = False
-    fence_marker = ""
-
-    for lineno, raw in enumerate(text.splitlines(), start=1):
-        # フェンス開閉判定。バッククォート3個以上またはチルダ3個以上。
-        m = _FENCE_RE.match(raw)
-        if m:
-            marker = m.group(2)
-            if not in_fence:
-                in_fence = True
-                # 開始フェンスの全長を保持し、閉じ判定に使う。
-                fence_marker = marker
-            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker) and m.group(3).strip() == "":
-                in_fence = False
-                fence_marker = ""
-            continue
-
-        if in_fence:
-            continue
-
-        # インラインコードとURLを除去してからダッシュを検索する。
-        searchable = _strip_inline_code(raw)
+    inline_blocks = _inline_block_ranges(text)
+    inline_spans = _inline_code_spans(text, inline_blocks)
+    searchable_text = _strip_inline_code(_mask_non_inline_blocks(text, inline_blocks), inline_spans)
+    for lineno, (raw, searchable) in enumerate(zip(text.splitlines(), searchable_text.splitlines(), strict=False), start=1):
+        # フェンス、コードスパン、URLを除去してからダッシュを検索する。
         searchable = _strip_urls(searchable)
         for match in _DASH_PATTERN.finditer(searchable):
             matched = match.group(0)
@@ -162,35 +147,83 @@ def _check_file(path: pathlib.Path) -> list[str]:
     return violations
 
 
-def _strip_inline_code(line: str) -> str:
-    """行中のバッククォートで囲まれたインラインコードを空白で置換する。
+def _inline_block_ranges(text: str) -> list[tuple[int, int]]:
+    """CommonMarkのinline tokenが占める半開区間の一覧を返す。"""
+    line_offsets = [0]
+    for line in text.splitlines(keepends=True):
+        line_offsets.append(line_offsets[-1] + len(line))
 
-    マッチしたスパンを同じ長さの空白に置換することで、他の位置の列番号がずれない。
-    バッククォートが閉じていない（奇数個で終わる）場合はそのまま返す。
-    """
-    result = list(line)
-    i = 0
-    while i < len(line):
-        if line[i] == "`":
-            # バッククォートの連続長を数える（開きバッククォートの個数）。
+    ranges: list[tuple[int, int]] = []
+    for token in _COMMONMARK.parse(text):
+        if token.type != "inline" or token.map is None:
+            continue
+        start_line, end_line = token.map
+        ranges.append((line_offsets[start_line], line_offsets[end_line]))
+    return ranges
+
+
+def _inline_code_spans(text: str, block_ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """各インラインブロック内のコードスパンを半開区間の一覧で返す。"""
+    spans: list[tuple[int, int]] = []
+    for block_start, block_end in block_ranges:
+        i = block_start
+        while i < block_end:
+            if text[i] != "`":
+                i += 1
+                continue
             j = i
-            while j < len(line) and line[j] == "`":
+            while j < block_end and text[j] == "`":
                 j += 1
             tick_len = j - i
-            # 同じ長さの閉じバッククォートを探す。
-            close_pat = "`" * tick_len
-            close_idx = line.find(close_pat, j)
-            if close_idx != -1:
-                # インラインコードスパン全体を空白に置換する。
-                end = close_idx + tick_len
-                for k in range(i, end):
-                    result[k] = " "
-                i = end
+            if _is_escaped(text, i):
+                i = j
+                continue
+            close_idx = j
+            while close_idx < block_end:
+                if text[close_idx] != "`":
+                    close_idx += 1
+                    continue
+                close_end = close_idx
+                while close_end < block_end and text[close_end] == "`":
+                    close_end += 1
+                if close_end - close_idx == tick_len:
+                    spans.append((i, close_end))
+                    i = close_end
+                    break
+                close_idx = close_end
             else:
                 i = j
-        else:
-            i += 1
+    return spans
+
+
+def _mask_non_inline_blocks(text: str, block_ranges: list[tuple[int, int]]) -> str:
+    """非inlineブロックを改行以外の同長空白へ置換して返す。"""
+    result = [char if char in "\r\n" else " " for char in text]
+    for start, end in block_ranges:
+        result[start:end] = text[start:end]
     return "".join(result)
+
+
+def _strip_inline_code(text: str, spans: list[tuple[int, int]]) -> str:
+    """コードスパンを改行以外の同長空白へ置換する。
+
+    CommonMarkのブロック解析が確定した各inline token範囲内で、最大バッククォート列を
+    同じ長さの最大列と対応付ける。開き候補だけ外側のバックスラッシュエスケープを判定する。
+    """
+    result = list(text)
+    for start, end in spans:
+        result[start:end] = (char if char in "\r\n" else " " for char in text[start:end])
+    return "".join(result)
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    """対象位置の文字が奇数個のバックスラッシュでエスケープされているかを返す。"""
+    backslashes = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
 
 
 def _strip_urls(line: str) -> str:

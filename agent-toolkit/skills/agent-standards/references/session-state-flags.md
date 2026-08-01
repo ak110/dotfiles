@@ -24,7 +24,8 @@
   `agent-toolkit:plan-mode`起動時に偽へ戻す
 - `plan_file_finalizer_active_subagent_sessions`: 完了報告本文を取得できない`plan-file-finalizer`の
   `agentId`をPostToolUseが記録し、SubagentStopで完了報告を検査する。
-  判定後と`agent-toolkit:plan-mode`起動時に辞書を空へ戻す
+  完遂条件成立時に当該エントリを削除し、非成立時は再提出に備えて保持する。
+  `agent-toolkit:plan-mode`起動時は辞書を空へ戻す
 - `plan_impl_executor_active_subagent_sessions`: `plan-impl-executor`の`agentId`を記録し、
   SubagentStopで完了報告の必須欄を検査する
 - `codex_remote_snapshot_by_key`: codex呼び出し直前のリモートrefを記録し、呼び出し後に比較して削除する

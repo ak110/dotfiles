@@ -369,6 +369,134 @@ def test_execution_method_unclosed_inline_code_does_not_raise(
     assert "セッション運用工程" in capsys.readouterr().err
 
 
+def test_execution_method_escaped_backticks_do_not_hide_session_ops(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = "## 実行方法\n\n- \\`session-review\\`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" in capsys.readouterr().err
+
+
+def test_execution_method_code_span_closes_after_literal_backslash(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """コードスパン内のバックスラッシュは閉じバッククォートをエスケープしない。"""
+    body = "## 実行方法\n\n- `session-review\\`を確認する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" not in capsys.readouterr().err
+
+
+def test_execution_method_multiline_code_span_is_silent(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """複数行コードスパン内のセッション運用名は通常本文として扱わない。"""
+    body = (
+        "## 実行方法\n\n``\nSkillツールで`agent-toolkit:session-review`を呼び出す\n``\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" not in capsys.readouterr().err
+
+
+def test_execution_method_nested_slash_command_in_multiline_code_span_is_silent(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """複数行コードスパン内のスラッシュコマンド構文は起動指示として扱わない。"""
+    body = "## 実行方法\n\n``\n`/agent-toolkit:exit-session`\n`` 通常本文\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" not in capsys.readouterr().err
+
+
+def test_execution_method_code_span_does_not_cross_blank_line(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """別段落のバッククォート列を閉じ区切りとして扱わない。"""
+    body = "## 実行方法\n\n`\nsession-review\n\n`\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" in capsys.readouterr().err
+
+
+def test_execution_method_invocation_after_multiline_code_span_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """複数行コードスパンの後にある実際の呼び出し指示は検出する。"""
+    body = (
+        "## 実行方法\n\n``\nsession-review\n``\n"
+        "- `/agent-toolkit:exit-session`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "execution_body",
+    [
+        "- `session-review\n- second`",
+        "`session-review\n### heading `",
+        "`session-review\n> quote `",
+        "`session-review\n***\ntext `",
+    ],
+)
+def test_execution_method_code_span_does_not_cross_inline_block_boundary(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    execution_body: str,
+) -> None:
+    """別のCommonMarkインラインブロックにある閉じ列と対応付けない。"""
+    body = f"## 実行方法\n\n{execution_body}\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "execution_body",
+    [
+        "- item\n    `session-review`",
+        "- ``\n  session-review\n  ``",
+        "> ``\n> session-review\n> ``",
+        "`session-review\nheading `\n---",
+        "    session-review",
+    ],
+)
+def test_execution_method_commonmark_inline_and_code_blocks_are_silent(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    execution_body: str,
+) -> None:
+    """正当なコードスパンとコードブロック内の検出語は通常本文として扱わない。"""
+    body = f"## 実行方法\n\n{execution_body}\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" not in capsys.readouterr().err
+
+
+def test_execution_method_longer_backtick_run_does_not_close_code_span(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """開き列より長い最大バッククォート列への部分一致ではコードスパンを閉じない。"""
+    body = "## 実行方法\n\n- `session-review``を確認する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" in capsys.readouterr().err
+
+
 def test_unknown_skill_name_errors(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -211,6 +211,82 @@ class TestCheckDash:
         assert result.returncode == 1
         assert "em-dash(U+2014)" in result.stderr
 
+    def test_escaped_backticks_do_not_create_inline_code(self, tmp_path: pathlib.Path) -> None:
+        """エスケープされたバッククォート間の禁止文字は通常本文として検出する。"""
+        path = _write(tmp_path / "doc.md", f"\\`{_EM_DASH}\\`を含む\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert "em-dash(U+2014)" in result.stderr
+
+    def test_code_span_closes_after_literal_backslash(self, tmp_path: pathlib.Path) -> None:
+        """コードスパン内のバックスラッシュは閉じバッククォートをエスケープしない。"""
+        path = _write(tmp_path / "doc.md", f"`{_EM_DASH}\\`を含む\n")
+        result = _run(str(path))
+        assert result.returncode == 0
+        assert result.stderr == ""
+
+    def test_longer_backtick_run_does_not_close_code_span(self, tmp_path: pathlib.Path) -> None:
+        """開き列より長い最大バッククォート列への部分一致ではコードスパンを閉じない。"""
+        path = _write(tmp_path / "doc.md", f"`{_EM_DASH}``を含む\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert "em-dash(U+2014)" in result.stderr
+
+    def test_multiline_code_span_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """複数行コードスパン内の禁止文字は無視する。"""
+        path = _write(tmp_path / "doc.md", f"``\n{_EM_DASH}\n``\n")
+        result = _run(str(path))
+        assert result.returncode == 0
+        assert result.stderr == ""
+
+    def test_dash_after_multiline_code_span_keeps_position(self, tmp_path: pathlib.Path) -> None:
+        """複数行コードスパン後の禁止文字は元の行番号と列番号で検出する。"""
+        path = _write(tmp_path / "doc.md", f"``\n{_EM_DASH}\n``\n外側{_EM_DASH}\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f'{path}:4:3: em-dash(U+2014) "外側{_EM_DASH}"' in result.stderr
+
+    def test_code_span_does_not_cross_blank_line(self, tmp_path: pathlib.Path) -> None:
+        """別段落のバッククォート列を閉じ区切りとして扱わない。"""
+        path = _write(tmp_path / "doc.md", f"`\n{_EM_DASH}\n\n`\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f'{path}:2:1: em-dash(U+2014) "{_EM_DASH}"' in result.stderr
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            f"- `{_EM_DASH}\n- second`\n",
+            f"`{_EM_DASH}\n### heading `\n",
+            f"`{_EM_DASH}\n> quote `\n",
+            f"`{_EM_DASH}\n***\ntext `\n",
+        ],
+    )
+    def test_code_span_does_not_cross_inline_block_boundary(self, tmp_path: pathlib.Path, body: str) -> None:
+        """別のCommonMarkインラインブロックにある閉じ列と対応付けない。"""
+        path = _write(tmp_path / "doc.md", body)
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert "em-dash(U+2014)" in result.stderr
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            f"- item\n    `{_EM_DASH}`\n",
+            f"- ``\n  {_EM_DASH}\n  ``\n",
+            f"> ``\n> {_EM_DASH}\n> ``\n",
+            f"`{_EM_DASH}\nheading `\n---\n",
+            f"    {_EM_DASH}\n",
+            f"```\n{_EM_DASH}\n```\n",
+        ],
+    )
+    def test_commonmark_inline_and_code_blocks_are_excluded(self, tmp_path: pathlib.Path, body: str) -> None:
+        """正当なコードスパンとコードブロック内の禁止文字は除外する。"""
+        path = _write(tmp_path / "doc.md", body)
+        result = _run(str(path))
+        assert result.returncode == 0
+        assert result.stderr == ""
+
     def test_non_ascii_dashes_end_url_and_are_detected(self, tmp_path: pathlib.Path) -> None:
         """URL風文字列内でもASCII外のダッシュ系禁止文字は検出する。"""
         path = _write(
