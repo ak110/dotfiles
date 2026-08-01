@@ -15,6 +15,8 @@ _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
 _BUGFIX = _PLAN_MODE.parent / "references" / "bugfix.md"
+_CI_FAILURE_HANDLING = _PLAN_MODE.parent / "references" / "ci-failure-handling.md"
+_COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _PLAN_FINALIZER_CALLER = _PLAN_MODE.parent / "references" / "plan-file-finalizer-prompt-template.md"
@@ -348,6 +350,8 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     review_checklists = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     bugfix = _BUGFIX.read_text(encoding="utf-8")
+    commit_skill = _COMMIT_SKILL.read_text(encoding="utf-8")
+    ci_failure_handling = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
 
     for document in (agent_rules, review_checklists):
         assert "観測上の同等性にかかわらず、仕様変更" in document
@@ -387,3 +391,124 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "同じ原因が別の箇所ですでに成立" in agent_rules
     assert "同じ判断・工程が反復される経路を現行の実装・手順・履歴から観測できる" in agent_rules
     assert "同じ原因が別の箇所または今後の作業で反復し得る" not in agent_rules
+
+    commit_ci = _h2_section(commit_skill, "push後のCI通過確認")
+    series_capture = commit_ci.index("push直前に`mktemp -d`")
+    plan_transition = commit_ci.index("`agent-toolkit:plan-mode`を起動")
+    evidence_collection = commit_ci.index("失敗ジョブのログは")
+    artifact_collection = commit_ci.index("artifact生成ジョブではartifact")
+    terminal_confirmation = commit_ci.index("期待run・pipeline集合の全対象が終端")
+    complete_evidence_collection = commit_ci.index("全失敗ジョブのログとartifactを取得し直す")
+    evidence_verified = commit_ci.index("実在と分量を確認")
+    provisional_reproducibility = commit_ci.index("再現性を暫定分類")
+    diagnostic_rerun = commit_ci.index("同一原因につき1回だけ同一SHAの失敗ジョブを再実行")
+    rerun_terminal = commit_ci.index("再実行対象の試行が終端")
+    rerun_evidence = commit_ci.index("再実行後のログとartifact")
+    rerun_verified = commit_ci.index("両試行の資料の実在と分量")
+    classification = commit_ci.index("原因箇所、セッション帰属、再現性の3観点")
+    plan_draft = commit_ci.index("取得した事実と分析結果を引き継いだ新しいバグ計画の初版を起草")
+    assert series_capture < evidence_collection < evidence_verified < provisional_reproducibility
+    assert artifact_collection < evidence_verified
+    assert evidence_collection < terminal_confirmation < complete_evidence_collection < provisional_reproducibility
+    assert provisional_reproducibility < diagnostic_rerun < rerun_terminal < rerun_evidence < rerun_verified < plan_transition
+    assert plan_transition < classification < plan_draft
+    assert plan_draft < commit_ci.index("修正案を確定")
+    assert plan_draft < commit_ci.index("ファイルを編集")
+    assert plan_draft < commit_ci.index("追加コミットを作成")
+    for phrase in (
+        "${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/bugfix.md",
+        "${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/ci-failure-handling.md",
+        "元の計画ファイルパス",
+        "push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定",
+        "直接的原因の明白さを問わず",
+        "元の計画が存在する場合",
+        "元の計画が存在しない場合",
+        "全親の完全長SHA",
+        "各親から失敗SHAまでの差分",
+        "親のないroot commitではempty tree",
+        "変更系列の基準SHA",
+        "完全長SHA列",
+        "基準SHAから失敗SHAまでの系列差分",
+        "親ごとの差分は補助資料",
+        "upstreamが未設定",
+        "所有者だけが読み書きできる一時領域",
+        "gh run view <run-id> --json jobs",
+        "gh run rerun <run-id> --job <job-database-id>",
+        "実在と分量を確認",
+        "正確な一時領域だけを削除",
+        "再試行中状態",
+        "push失敗後に再試行しない",
+        "監視不能",
+        "run未登録",
+        "forge CLI失敗",
+        "シグナル終了",
+        "例外終了",
+        "追加pushでは別",
+        "追加証拠が必要",
+        "plan modeを終了",
+        "計画関連項目を`なし`",
+    ):
+        assert phrase in commit_ci
+    assert "`references/bugfix.md`" not in commit_ci
+    assert "`references/ci-failure-handling.md`" not in commit_ci
+    assert "CI失敗時は原因を特定し追加commitで是正する" not in commit_ci
+    assert "同一変更系列で自セッション帰属のCI失敗が3回連続" not in commit_ci
+    assert "gh run rerun <run-id> --failed" not in commit_ci
+
+    classification_support = _h2_section(ci_failure_handling, "分類判定の補助")
+    for phrase in (
+        "すべてのCI失敗",
+        "初回ログが決定的な失敗を示す場合",
+        "競合仮説",
+        "支持する事実",
+        "反証する事実",
+        "判別実験",
+    ):
+        assert phrase in classification_support
+    assert "自セッションと無関係な外部基盤障害" in classification_support
+    assert "実測して確定した場合だけ対象外" in classification_support
+    assert "同一SHAの再実行結果だけで原因層を確定しない" in classification_support
+
+    ci_prerequisites = _h2_section(ci_failure_handling, "前提")
+    for phrase in (
+        "元の計画が存在する場合",
+        "元の計画が存在しない場合",
+        "全親の完全長SHA",
+        "各親から失敗SHAまでの差分",
+        "親のないroot commitではempty tree",
+        "変更系列の基準SHA",
+        "完全長SHA列",
+        "基準SHAから失敗SHAまでの系列差分",
+        "親ごとの差分は補助資料",
+        "再試行中状態",
+        "全終端状態",
+        "追加pushでは別",
+        "追加証拠が必要",
+        "plan modeを終了",
+        "計画関連項目を`なし`",
+    ):
+        assert phrase in ci_prerequisites
+    ci_deep_condition = "push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定"
+    assert ci_deep_condition in bugfix
+    assert ci_deep_condition in ci_prerequisites
+    assert ci_prerequisites.index("基準SHAから失敗SHAまでの系列差分") < ci_prerequisites.index("親ごとの差分は補助資料")
+
+    selection_flow = _h2_section(ci_failure_handling, "選択の流れ")
+    flow_start = selection_flow.index("証拠取得の完了後にplan modeを開始")
+    flow_evidence = selection_flow.index("plan mode開始前に、失敗ログと生成される場合のartifact")
+    flow_terminal = selection_flow.index("期待run・pipeline集合の全対象が終端")
+    flow_complete_evidence = selection_flow.index("全失敗ジョブのログとartifactを取得し直す")
+    flow_provisional = selection_flow.index("再現性を暫定分類")
+    flow_rerun = selection_flow.index("同一SHAの対象失敗ジョブを原因単位で1回だけ再実行")
+    flow_rerun_terminal = selection_flow.index("再実行対象の試行が終端")
+    flow_rerun_evidence = selection_flow.index("再実行後のログとartifact")
+    flow_classification = selection_flow.index("原因箇所、セッション帰属、再現性を分類")
+    flow_external = selection_flow.index("自セッションと無関係な外部基盤障害を実測で確定")
+    flow_plan_draft = selection_flow.index("新しいバグ計画の初版を起草")
+    assert flow_evidence < flow_terminal < flow_complete_evidence < flow_provisional
+    assert flow_provisional < flow_rerun < flow_rerun_terminal < flow_rerun_evidence < flow_start
+    assert flow_start < flow_classification < flow_external < flow_plan_draft
+    assert selection_flow.index("競合仮説の支持・反証・判別実験") < selection_flow.index("直接的原因と深掘り要否を確定")
+    assert selection_flow.index("確定した原因に適用可能な対処") < flow_plan_draft
+    assert "bugfix.md`をSSOT" in _h2_section(ci_failure_handling, "前提")
+    assert "3回連続する停止トリガー" not in selection_flow
