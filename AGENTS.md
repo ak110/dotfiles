@@ -266,5 +266,3 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 - `<name>.tmpl` → Goテンプレートとして評価
 - `run_onchange_after_<name>.sh.tmpl` → `chezmoi apply`時の変更検知実行
 - よく使うコマンド: `chezmoi apply`（反映）・`chezmoi diff`（差分確認）・`chezmoi managed`（配布対象確認）
-
-pre-commitフックで`$HOME/dotfiles`チェックアウト時のみ`chezmoi apply`が自動実行される。

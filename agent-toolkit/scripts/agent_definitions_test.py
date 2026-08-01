@@ -14,6 +14,9 @@ _PLAN_FINALIZER = _AGENTS_DIR / "plan-file-finalizer.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
+_BUGFIX = _PLAN_MODE.parent / "references" / "bugfix.md"
+_REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
+_AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _PLAN_FINALIZER_CALLER = _PLAN_MODE.parent / "references" / "plan-file-finalizer-prompt-template.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE.parent / "references" / "plan-impl-caller-reception.md"
 _REPORT_CONTRACT_LABELS = {
@@ -331,8 +334,56 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
 
     plan_review_exceptions = _h2_section(review_standards, "計画ファイル文脈での例外")
     assert "独立する既存問題" in plan_review_exceptions
-    assert "計画レビューの指摘と分けて扱う" in plan_review_exceptions
+    assert "初版の成立性と独立する既存問題は計画レビューと分ける" in plan_review_exceptions
 
     plan_mode_steps = _h2_section(plan_mode, "進め方")
     assert "references/plan-file-finalizer-prompt-template.md" in plan_mode_steps
     assert "呼び出し元の読込対象は同referenceに限定" in plan_mode_steps
+
+
+def test_bug_response_prompt_contracts_are_synchronized() -> None:
+    """明示要件、因果調査、計画レビュー、類似見直しの契約を同期する。"""
+    agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    review_checklists = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    bugfix = _BUGFIX.read_text(encoding="utf-8")
+
+    for document in (agent_rules, review_checklists):
+        assert "観測上の同等性にかかわらず、仕様変更" in document
+        assert "観測上同等でない" not in document
+    for phrase in ("提示素材", "ユーザー合意済み事項", "実施内容", "変更内容", "エージェント判断"):
+        assert phrase in review_task
+    assert "計画が用いる分類名にかかわらず" in review_task
+    assert "`### 計画メタ情報`の固定値`作業種別`だけ" in review_task
+    assert "`バグ対応`の場合だけ" in review_task
+    assert "欠落・未知値・複数値" in review_task
+    assert "分類契約の不成立として指摘" in review_task
+    assert "計画のタイトル、依頼内容、背景、提示素材から" not in review_task
+    assert "コロンはASCIIの`:`、コロン後は半角空白1字" in plan_mode
+    assert "固定値には`バグ対応`または`通常変更`" in plan_mode
+    assert "`### バグ調査結果`は文書全体で1件だけ置き、その親H2を`## 背景`" in bugfix
+    assert "4原因区分の確定後に同じ失敗構造の類似見直し" in agent_rules
+    assert "その結果を踏まえて是正・横展開・再発防止" in agent_rules
+    assert "着手前に記録した基準状態と現在の差分を先に突合" in bugfix
+    assert "進行中の未コミット変更で混入した事象と着手前から存在する事象を区別" in bugfix
+    assert "現在の指示、計画、実装判断を導入経路として調べ" in bugfix
+    assert "既存機能の導入履歴と混同しない" in bugfix
+    assert "複数の規則を1文に束ねない" in bugfix
+    assert "規則ごとに母集団と点検結果" in bugfix
+    assert "`項目`・`内容`の2列表" in bugfix
+    assert "初動と深掘り判定" in bugfix
+    assert "事象、期待する契約、実際の結果、発生条件、直接的原因の確定直後" in bugfix
+    assert "深掘り条件に該当しない局所不良は、是正と近接検証に限定" in bugfix
+    assert "履歴、フィードバック、計画、セッションログの探索" in bugfix
+    assert "深掘り固有行、類似見直し、横展開処置、再発防止処置" in bugfix
+    assert "バグ対応は単一ファイルの単純な修正でも起動対象" in plan_mode
+    assert "バグ対応を除く単一ファイルの単純な修正" in plan_mode
+    assert "\n  単一ファイルの単純な修正や会話だけの質問では起動しない。" not in plan_mode
+    assert "深掘り条件に該当する場合だけ" in plan_mode
+    assert "深掘り条件に該当する場合だけ" in agent_rules
+    assert "該当しない局所不良は、是正と近接検証に限定" in agent_rules
+    assert "深掘り条件に該当した指摘は、恒久ルールへの反映先" in agent_rules
+    assert "同じ原因が別の箇所ですでに成立" in agent_rules
+    assert "同じ判断・工程が反復される経路を現行の実装・手順・履歴から観測できる" in agent_rules
+    assert "同じ原因が別の箇所または今後の作業で反復し得る" not in agent_rules

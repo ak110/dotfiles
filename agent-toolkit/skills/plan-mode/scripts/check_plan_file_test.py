@@ -2,10 +2,31 @@
 
 from __future__ import annotations
 
+import collections.abc
 import pathlib
 
 import pytest
 from check_plan_file import main
+
+_BUG_ROWS = tuple(
+    """\
+観測事象
+期待する契約
+直接的原因
+混入要因
+動機的要因
+見逃し原因
+根本原因
+原因分析の根拠
+類似見直しの観点
+類似見直し結果
+是正処置
+横展開処置
+再発防止処置
+設計意図の記録
+""".splitlines()
+)
+_FULL_COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
 
 def _write_plan(tmp_path: pathlib.Path, body: str, *, include_h1: bool = True) -> pathlib.Path:
@@ -15,6 +36,27 @@ def _write_plan(tmp_path: pathlib.Path, body: str, *, include_h1: bool = True) -
         content = f"# テスト計画\n\n{body}"
     plan.write_text(content, encoding="utf-8")
     return plan
+
+
+def _bug_investigation_table(rows: collections.abc.Sequence[str]) -> str:
+    body = ["### バグ調査結果", "", "| 項目 | 内容 |", "| --- | --- |"]
+    body.extend(f"| {row} | 内容 |" for row in rows)
+    return "\n".join(body)
+
+
+def _pipe_table_lines(*, outer_pipes: bool) -> list[str]:
+    """バグ調査結果表の行を外側パイプの有無に合わせて返す。"""
+    lines = _bug_investigation_table(_BUG_ROWS).splitlines()[2:]
+    if outer_pipes:
+        return lines
+    return [line.removeprefix("|").removesuffix("|").strip() for line in lines]
+
+
+def _plan_metadata(work_type: str | None) -> str:
+    body = ["### 計画メタ情報", "", f"- ベースコミット: `{_FULL_COMMIT}`"]
+    if work_type is not None:
+        body.append(f"- 作業種別: {work_type}")
+    return "\n".join(body)
 
 
 def test_single_h1_returns_zero_without_h1_error(
@@ -454,21 +496,31 @@ def test_sample_plan_reports_no_diagnostics(capsys: pytest.CaptureFixture[str], 
 
 
 @pytest.mark.parametrize(
-    ("metadata", "expected_error"),
+    ("metadata", "expected_error", "expect_work_type_warning"),
     [
         (
-            "### 計画メタ情報\n\n- ベースコミット: `0123456789abcdef0123456789abcdef01234567`\n",
+            f"### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n- 作業種別: 通常変更\n",
             None,
+            False,
         ),
-        ("### 計画メタ情報\n\n- 対象リポジトリ: `/tmp/repo`\n", "ベースコミットの記載が無い"),
-        ("### 計画メタ情報\n\n- ベースコミット: `01234567`\n", "コミットハッシュの記載が無い"),
-        ("### 経緯\n\n変更理由\n", None),
-        ("````markdown\n### 計画メタ情報\n\n- 対象リポジトリ: `/tmp/repo`\n````\n", None),
+        (
+            "### 計画メタ情報\n\n- 対象リポジトリ: `/tmp/repo`\n- 作業種別: 通常変更\n",
+            "ベースコミットの記載が無い",
+            False,
+        ),
+        (
+            "### 計画メタ情報\n\n- ベースコミット: `01234567`\n- 作業種別: 通常変更\n",
+            "コミットハッシュの記載が無い",
+            False,
+        ),
+        ("### 経緯\n\n変更理由\n", None, True),
+        ("````markdown\n### 計画メタ情報\n\n- 対象リポジトリ: `/tmp/repo`\n````\n", None, True),
     ],
 )
 def test_base_commit_recording(
     metadata: str,
     expected_error: str | None,
+    expect_work_type_warning: bool,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -479,10 +531,11 @@ def test_base_commit_recording(
 
     assert main() == (1 if expected_error else 0)
     captured = capsys.readouterr()
-    if expected_error is None:
+    if expected_error is None and not expect_work_type_warning:
         assert captured.err == ""
-    else:
+    if expected_error is not None:
         assert expected_error in captured.err
+    assert ("計画メタ情報に作業種別の記載が無い" in captured.err) is expect_work_type_warning
 
 
 @pytest.mark.parametrize(
@@ -674,6 +727,495 @@ def test_retroactive_scan_record(
     assert main() == (1 if expect_error else 0)
     captured = capsys.readouterr()
     assert ("遡及スキャン記録の不足の疑い" in captured.err) is expect_error
+
+
+def test_bug_investigation_table_accepts_required_rows_in_order(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = f"# バグ修正計画\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n{_bug_investigation_table(_BUG_ROWS)}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_closed_investigation_heading_is_counted(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    table = _bug_investigation_table(_BUG_ROWS).replace("### バグ調査結果", "### バグ調査結果 ###")
+    body = f"# バグ修正計画\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n{table}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_bug_investigation_table_outside_background_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = (
+        f"# バグ修正計画\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n"
+        f"不具合が発生している。\n\n## 対応方針\n\n{_bug_investigation_table(_BUG_ROWS)}\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "`### バグ調査結果`が`## 背景`直下に存在しない" in capsys.readouterr().err
+
+
+def test_investigation_sections_in_background_and_other_h2_warn_as_duplicates(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    table = _bug_investigation_table(_BUG_ROWS)
+    body = f"# バグ修正計画\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n{table}\n\n## 対応方針\n\n{table}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "`### バグ調査結果`が複数ある" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "| 項目 |\n| --- |\n" + "\n".join(f"| {row} |" for row in _BUG_ROWS),
+        "| 分類 | 詳細 |\n| --- | --- |\n" + "\n".join(f"| {row} | 内容 |" for row in _BUG_ROWS),
+        "| 項目 | 内容 | 補足 |\n| --- | --- | --- |\n" + "\n".join(f"| {row} | 内容 | 補足 |" for row in _BUG_ROWS),
+        "| 項目 | 内容 |\n| -- | --- |\n" + "\n".join(f"| {row} | 内容 |" for row in _BUG_ROWS),
+    ],
+)
+def test_bug_investigation_table_requires_two_column_contract(
+    table: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = (
+        f"# バグ修正計画\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n不具合が発生している。\n\n### バグ調査結果\n\n{table}\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "バグ調査結果表の列構造が現行契約と一致しない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "APIエラーが発生した場合に再試行する機能を追加する。",
+        "新しいサブコマンドでエラーが発生した場合は終了コード1を返す。",
+        "不具合が発生しているので修正してください。",
+        "発生中のエラーの原因を調査してください。",
+        "不具合の修正を依頼する。",
+        "エラーの修正をお願いします。",
+    ],
+)
+def test_unclassified_text_warns_without_inferring_bug_plan(
+    description: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = f"## 背景\n\n### 現状\n\n{description}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert "計画メタ情報に作業種別の記載が無い" in stderr
+    assert "バグ計画に必須のバグ調査結果表が存在しない" not in stderr
+
+
+@pytest.mark.parametrize(
+    ("work_type", "description", "expect_bug_warning"),
+    [
+        ("バグ対応", "通常の変更内容を記載する。", True),
+        ("通常変更", "不具合の修正を依頼する。", False),
+        ("通常変更", "APIエラーが発生した場合に再試行する機能を追加する。", False),
+    ],
+)
+def test_work_type_controls_bug_plan_independently_of_prose(
+    work_type: str,
+    description: str,
+    expect_bug_warning: bool,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = f"## 背景\n\n{_plan_metadata(work_type)}\n\n### 現状\n\n{description}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert ("バグ計画に必須のバグ調査結果表が存在しない" in stderr) is expect_bug_warning
+
+
+def test_work_type_like_text_outside_metadata_does_not_mark_bug_plan(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = f"## 背景\n\n{_plan_metadata('通常変更')}\n\n### 現状\n\n- 作業種別: バグ対応\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("work_type", [None, "保守作業"])
+def test_missing_or_unknown_work_type_warns(
+    work_type: str | None,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = f"## 背景\n\n{_plan_metadata(work_type)}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    if work_type is None:
+        assert "計画メタ情報に作業種別の記載が無い" in stderr
+    else:
+        assert "作業種別が現行契約と一致しない" in stderr
+        assert "固定記法`- 作業種別: <固定値>`と一致しない" not in stderr
+
+
+@pytest.mark.parametrize(
+    "work_type_line",
+    [
+        "- 作業種別：通常変更",
+        "- 作業種別 : 通常変更",
+        "- 作業種別:通常変更",
+        "- 作業種別:  通常変更",
+        "-  作業種別: 通常変更",
+        "- 作業種別: 通常変更 ",
+    ],
+)
+def test_work_type_requires_exact_fixed_syntax(
+    work_type_line: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata = f"{_plan_metadata(None)}\n{work_type_line}"
+    plan = _write_plan(tmp_path, f"## 背景\n\n{metadata}\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert "固定記法`- 作業種別: <固定値>`と一致しない" in stderr
+    assert "作業種別が現行契約と一致しない" not in stderr
+
+
+def test_multiple_work_types_warn_without_inferring_bug_plan(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    metadata = f"{_plan_metadata('バグ対応')}\n- 作業種別: 通常変更"
+    plan = _write_plan(tmp_path, f"## 背景\n\n{metadata}\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert "作業種別が複数ある" in stderr
+    assert "バグ計画に必須のバグ調査結果表が存在しない" not in stderr
+
+
+@pytest.mark.parametrize(
+    ("first_work_type", "second_work_type"),
+    [("バグ対応", "通常変更"), ("通常変更", "バグ対応")],
+)
+def test_duplicate_metadata_sections_warn_without_inferring_bug_plan(
+    first_work_type: str,
+    second_work_type: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同じ背景にある同名メタ情報節を出現順にかかわらずすべて検査する。"""
+    metadata = f"{_plan_metadata(first_work_type)}\n\n{_plan_metadata(second_work_type)}"
+    plan = _write_plan(tmp_path, f"## 背景\n\n{metadata}\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert "作業種別が複数ある" in stderr
+    assert "バグ計画に必須のバグ調査結果表が存在しない" not in stderr
+
+
+@pytest.mark.parametrize("indent", ["    ", "\t"])
+def test_indented_pseudo_metadata_heading_does_not_add_work_type(
+    indent: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """コードブロック相当の疑似見出し配下を計画メタ情報として検査しない。"""
+    body = f"## 背景\n\n{_plan_metadata('通常変更')}\n\n### 現状\n\n{indent}### 計画メタ情報\n\n- 作業種別: バグ対応\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("closing", ["", " ###"])
+@pytest.mark.parametrize("indent", ["", " ", "  ", "   "])
+def test_metadata_heading_with_commonmark_indent_and_closing_sequence_is_accepted(
+    indent: str,
+    closing: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata = _plan_metadata("通常変更").replace("### 計画メタ情報", f"{indent}### 計画メタ情報{closing}")
+    plan = _write_plan(tmp_path, f"## 背景\n\n{metadata}\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("marker", ["*", "+"])
+def test_noncanonical_work_type_marker_warns_without_inferring_bug_plan(
+    marker: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata = f"{_plan_metadata(None)}\n{marker} 作業種別: バグ対応"
+    plan = _write_plan(tmp_path, f"## 背景\n\n{metadata}\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert "計画メタ情報に作業種別の記載が無い" in stderr
+    assert "バグ計画に必須のバグ調査結果表が存在しない" not in stderr
+
+
+@pytest.mark.parametrize("outer_pipes", [True, False])
+@pytest.mark.parametrize("indent", ["    ", "\t"])
+def test_indented_code_block_table_is_not_accepted_as_investigation_table(
+    indent: str,
+    outer_pipes: bool,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = "\n".join(f"{indent}{line}" for line in _pipe_table_lines(outer_pipes=outer_pipes))
+    body = f"## 背景\n\n{_plan_metadata('バグ対応')}\n\n### バグ調査結果\n\n{table}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "バグ調査結果表の列構造が現行契約と一致しない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("outer_pipes", [True, False])
+@pytest.mark.parametrize("indent", ["", " ", "   "])
+def test_markdown_table_with_up_to_three_spaces_is_accepted(
+    indent: str,
+    outer_pipes: bool,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = "\n".join(f"{indent}{line}" for line in _pipe_table_lines(outer_pipes=outer_pipes))
+    body = f"## 背景\n\n{_plan_metadata('バグ対応')}\n\n### バグ調査結果\n\n{table}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("outer_pipes", [True, False])
+def test_table_search_skips_pipe_text_before_valid_table(
+    outer_pipes: bool,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = "\n".join(_pipe_table_lines(outer_pipes=outer_pipes))
+    body = f"## 背景\n\n{_plan_metadata('バグ対応')}\n\n### バグ調査結果\n\n補足A | 補足B\n\n{table}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("outer_pipes", [True, False])
+def test_table_search_skips_mismatched_header_and_separator_before_valid_table(
+    outer_pipes: bool,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mismatched = "| 補足A | 補足B | 補足C |\n| --- | --- |" if outer_pipes else "補足A | 補足B | 補足C\n--- | ---"
+    table = "\n".join(_pipe_table_lines(outer_pipes=outer_pipes))
+    body = f"## 背景\n\n{_plan_metadata('バグ対応')}\n\n### バグ調査結果\n\n{mismatched}\n\n{table}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("valid_first", [True, False])
+def test_duplicate_investigation_sections_warn_in_both_orders(
+    valid_first: bool,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid = _bug_investigation_table(_BUG_ROWS)
+    invalid = _bug_investigation_table(_BUG_ROWS[:-1])
+    sections = [valid, invalid] if valid_first else [invalid, valid]
+    body = f"## 背景\n\n{_plan_metadata('バグ対応')}\n\n{'\n\n'.join(sections)}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "`### バグ調査結果`が複数ある" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("location", ["title", "background", "provided_material", "request"])
+def test_bug_work_type_without_investigation_table_warns_for_all_content_locations(
+    location: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    title = "# バグ修正計画" if location == "title" else "# 機能変更計画"
+    background_parts = {
+        "background": "### 現状\n\n不具合が発生している。",
+        "provided_material": "### 提示素材\n\nユーザーの依頼は不具合を修正すること。",
+        "request": "### 依頼内容\n\n障害への対応を依頼された。",
+    }
+    background = background_parts.get(location, "### 現状\n\n通常の機能変更を行う。")
+    plan = _write_plan(tmp_path, f"{title}\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n{background}\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert stderr.startswith("[warn] ")
+    assert "バグ計画に必須のバグ調査結果表が存在しない" in stderr
+
+
+def test_bug_plan_marker_after_fenced_h2_in_provided_material_is_detected(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = (
+        f"## 背景\n\n{_plan_metadata('バグ対応')}\n\n### 提示素材\n\n"
+        "````text\n## 実行方法\n\n例示\n````\n\nフェンス後に不具合が発生している。\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "バグ計画に必須のバグ調査結果表が存在しない" in capsys.readouterr().err
+
+
+def test_bug_request_in_fenced_provided_material_warns_without_investigation_table(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = f"## 背景\n\n{_plan_metadata('バグ対応')}\n\n### 提示素材\n\n```text\n発生しているエラーを修正する。\n```\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "バグ計画に必須のバグ調査結果表が存在しない" in capsys.readouterr().err
+
+
+def test_bug_plan_metadata_marker_warns_without_investigation_table(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = f"## 背景\n\n{_plan_metadata('バグ対応')}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "バグ計画に必須のバグ調査結果表が存在しない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "background",
+    [
+        "### 現状\n\n新しいサブコマンドへ失敗時処理を追加する。",
+        "### 現状\n\n新しいサブコマンドへエラー処理を追加する。",
+        "### 現状\n\nエラー出力の仕様を定義する。",
+        "### 提示素材\n\n```text\n新しいサブコマンドへエラー処理を追加する。\n```",
+    ],
+)
+def test_non_bug_failure_handling_context_has_no_bug_warning(
+    background: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _write_plan(
+        tmp_path,
+        f"# 機能追加計画\n\n## 背景\n\n{_plan_metadata('通常変更')}\n\n{background}\n",
+    )
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_non_bug_plan_without_investigation_table_has_no_bug_warning(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, f"## 背景\n\n{_plan_metadata('通常変更')}\n\n### 現状\n\n機能を追加する。\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        _BUG_ROWS[:-1],
+        [*_BUG_ROWS[:8], _BUG_ROWS[9], _BUG_ROWS[8], *_BUG_ROWS[10:]],
+        ["根本原因", "直接原因の候補", "修正方針", "再発防止策", "類似見直し結果", "知見の記録"],
+    ],
+)
+def test_bug_investigation_table_warns_for_missing_order_or_legacy_rows(
+    rows: list[str],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = f"# 不具合修正計画\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n{_bug_investigation_table(rows)}\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert stderr.startswith("[warn] ")
+    assert "バグ調査結果表の必須行または順序が現行契約と一致しない" in stderr
+    assert "不足=" in stderr
+    assert "実際=" in stderr
+    assert "期待=" in stderr
+
+
+def test_bug_investigation_table_in_fence_is_ignored(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fenced_table = _bug_investigation_table(_BUG_ROWS)
+    body = f"# バグ修正計画\n\n## 背景\n\n{_plan_metadata('バグ対応')}\n\n````markdown\n{fenced_table}\n````\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "バグ計画に必須のバグ調査結果表が存在しない" in capsys.readouterr().err
 
 
 def test_no_violation_returns_zero_without_stderr(

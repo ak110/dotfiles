@@ -6,8 +6,8 @@
 - git clone 分岐は事前に `$FAKE_HOME/dotfiles` を用意して回避
 - chezmoi ダウンロード分岐はシステムの chezmoi バイナリを `$FAKE_HOME/.local/bin/`
   にコピーして回避
-- Claude Code・Codex CLIとnpmの導入分岐は成功する代替実行ファイルを
-  `$FAKE_HOME/.local/bin/`に配置して回避
+- Claude Codeとnpmの導入分岐は成功する代替実行ファイルを`$FAKE_HOME/.local/bin/`に配置して回避
+- Codex CLIの導入分岐は複製したリポジトリ内の導入モジュールをテスト用実装へ置き換えて回避
 """
 
 import http.server
@@ -33,6 +33,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     # 1. リポジトリを fake_home/dotfiles に複製（git clone 分岐を回避）
     fake_dotfiles = fake_home / "dotfiles"
     _copy_repo(REPO_ROOT, fake_dotfiles)
+    _disable_codex_cli_setup(fake_dotfiles)
 
     # 2. システムの chezmoi を fake_home/.local/bin に配置（ダウンロード分岐を回避）
     chezmoi_bin = shutil.which("chezmoi")
@@ -110,6 +111,18 @@ def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
         return [n for n in names if n in {".venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".git"}]
 
     shutil.copytree(src, dst, ignore=_ignore, symlinks=True)
+
+
+def _disable_codex_cli_setup(repo: pathlib.Path) -> None:
+    """隔離インストールで外部取得を避けるためCodex CLI導入をテスト用実装へ置き換える。"""
+    module = repo / "pytools" / "_internal" / "setup_codex_cli.py"
+    module.write_text(
+        '"""install.sh統合テスト用のCodex CLI導入スタブ。"""\n\n\n'
+        "def run() -> bool:\n"
+        '    """外部取得を行わず未変更として返す。"""\n'
+        "    return False\n",
+        encoding="utf-8",
+    )
 
 
 def _write_fake_cli(path: pathlib.Path) -> None:

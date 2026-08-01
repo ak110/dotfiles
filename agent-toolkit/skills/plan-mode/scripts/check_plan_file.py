@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の12点に限定する。
+チェック対象は次の14点に限定する。
 - 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
   Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
@@ -27,7 +27,12 @@ r"""計画ファイルの軽量機械チェック。
   必須3語（対象パターン・検出件数・対応方針）が揃っているか
 - `### 計画メタ情報`が存在する場合、ベースコミットのラベルと完全長のコミットハッシュが
   記載されているか
+- `## 背景`が存在する場合、直下の`### 計画メタ情報`に固定記法`- 作業種別: <固定値>`で
+  作業種別が1件記載され、固定値`バグ対応`・`通常変更`のいずれかであるか
 - 版更新正本を対象ファイル一覧へ含む計画に、具体的なバージョン数値が記載されていないか
+- 計画メタ情報の作業種別が`バグ対応`の場合、
+  文書全体で`### バグ調査結果`表が1件だけ存在して親H2が`## 背景`であり、2列構造を満たし、
+  必須行が現行契約の順序で並んでいるか
 
 `agent-toolkit/skills/agent-standards/references/check-script-design.md`「検査項目のerror・warning区分」
 節に従い、検査項目をerror区分とwarning区分へ分ける。error区分は接頭辞なしで該当箇所と要点を
@@ -60,6 +65,10 @@ warning区分（終了コードへ算入しない）とその判定根拠。
   計画作成時点では対象識別子が残存しているのが正常であり、実装完了後は残存が異常である
 - 版更新正本を含む計画の具体的なバージョン数値: 現行値の引用など正当な記載もあり得る一方、
   更新後の数値を事前に固定すると版更新スクリプトの実行結果と矛盾する可能性がある
+- 計画メタ情報の作業種別: 固定値の導入前に作成した計画は当該項目を持たないため、
+  欠落・未知値を移行支援として検出する
+- バグ調査結果表の構造: 既存計画は旧形式の表を持つ場合があり、表の内容の深さは機械判定できない。
+  表全体の欠落、重複、必須行、順序だけを移行支援として検出する
 
 計画の構造（チェックボックス項目・H3見出しのパス・H2節の範囲・H4節が列挙する識別子）を
 抽出する処理は、共通ヘルパー`_unfenced_line_mask`でフェンス外と判定した行のみを対象とする。
@@ -85,7 +94,9 @@ _SETEXT_H1_UNDERLINE_RE = re.compile(r"^ {0,3}=+[ \t]*$")
 _NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
 _FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*(.*)$")
 _H2_RE = re.compile(r"^## (.+)$")
-_HEADING_RE = re.compile(r"^#{2,4}\s")
+_HEADING_RE = re.compile(r"^ {0,3}#{2,4}(?:[ \t]+|$)")
+_NAMED_H3_RE = re.compile(r"^ {0,3}###[ \t]+(.+?)[ \t]*$")
+_ATX_CLOSING_SEQUENCE_RE = re.compile(r"[ \t]+#+[ \t]*$")
 _SESSION_OPS_RE = re.compile(r"session-review|exit-session|振り返り|セッション終了|session-review-dotfiles")
 
 # 呼び出し構文に限定して名前を抽出する4パターン。
@@ -127,6 +138,28 @@ _RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検�
 
 _BUMP_MANIFEST_PATHS = frozenset({"agent-toolkit/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json"})
 _VERSION_NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])")
+_BUG_INVESTIGATION_REQUIRED_ROWS = (
+    "観測事象",
+    "期待する契約",
+    "直接的原因",
+    "混入要因",
+    "動機的要因",
+    "見逃し原因",
+    "根本原因",
+    "原因分析の根拠",
+    "類似見直しの観点",
+    "類似見直し結果",
+    "是正処置",
+    "横展開処置",
+    "再発防止処置",
+    "設計意図の記録",
+)
+_MARKDOWN_TABLE_SEPARATOR_CELL_RE = re.compile(r"^:?-{3,}:?$")
+_WORK_TYPE_RE = re.compile(r"^- 作業種別: (\S(?:.*\S)?)$")
+_WORK_TYPE_CANDIDATE_RE = re.compile(r"^-[ \t]*作業種別(?:[ \t]*[:：].*)?$")
+_BUG_WORK_TYPE = "バグ対応"
+_NORMAL_WORK_TYPE = "通常変更"
+_VALID_WORK_TYPES = frozenset({_BUG_WORK_TYPE, _NORMAL_WORK_TYPE})
 
 
 def _looks_like_python_definition_identifier(name: str) -> bool:
@@ -254,23 +287,45 @@ def _h3_section_body(text: str, path: str) -> str:
     return "\n".join(lines[start:end])
 
 
-def _h3_named_section_body(text: str, heading: str) -> str | None:
-    """`### <heading>`見出し（フェンス外）配下の本文を返す。見出しが無ければNoneを返す。"""
+def _normalized_named_h3(line: str) -> str | None:
+    """CommonMark ATX形式のH3名を閉じ`#`列を除いて返す。"""
+    match = _NAMED_H3_RE.fullmatch(line)
+    if match is None:
+        return None
+    return _ATX_CLOSING_SEQUENCE_RE.sub("", match.group(1)).strip(" \t")
+
+
+def _h3_named_sections(text: str, heading: str) -> list[tuple[str | None, str]]:
+    """同名H3の親H2名と本文をフェンス外の全出現分返す。"""
     lines = text.splitlines()
     mask = _unfenced_line_mask(text)
-    start = next(
-        (index for index, line in enumerate(lines) if mask[index] and line.strip() == f"### {heading}"),
-        None,
-    )
-    if start is None:
-        return None
-    start += 1
-    end = len(lines)
-    for index in range(start, len(lines)):
-        if mask[index] and _HEADING_RE.match(lines[index]):
-            end = index
-            break
-    return "\n".join(lines[start:end])
+    starts: list[tuple[int, str | None]] = []
+    parent_h2: str | None = None
+    for index, line in enumerate(lines):
+        if not mask[index]:
+            continue
+        if h2_match := _H2_RE.fullmatch(line):
+            parent_h2 = h2_match.group(1).strip()
+        if _normalized_named_h3(line) == heading:
+            starts.append((index + 1, parent_h2))
+    sections: list[tuple[str | None, str]] = []
+    for start, parent in starts:
+        end = next(
+            (index for index in range(start, len(lines)) if mask[index] and _HEADING_RE.match(lines[index])),
+            len(lines),
+        )
+        sections.append((parent, "\n".join(lines[start:end])))
+    return sections
+
+
+def _h3_named_section_bodies(text: str, heading: str) -> list[str]:
+    """`### <heading>`見出し（フェンス外）配下の本文を全出現分返す。"""
+    return [body for _parent, body in _h3_named_sections(text, heading)]
+
+
+def _h3_named_section_body(text: str, heading: str) -> str | None:
+    """最初の`### <heading>`見出し（フェンス外）配下の本文を返す。"""
+    return next(iter(_h3_named_section_bodies(text, heading)), None)
 
 
 def _check_base_commit_recorded(text: str) -> list[str]:
@@ -338,6 +393,118 @@ def _iter_h2_sections(text: str, heading: str) -> list[str]:
     if start is not None:
         sections.append("\n".join(lines[start:]))
     return sections
+
+
+def _plan_work_type_entries(text: str) -> list[tuple[str, str | None]]:
+    """背景直下の計画メタ情報から作業種別候補行と固定記法の値を抽出する。"""
+    entries: list[tuple[str, str | None]] = []
+    for background in _iter_h2_sections(text, "背景"):
+        for metadata in _h3_named_section_bodies(background, "計画メタ情報"):
+            for line in _unfenced_body(metadata).splitlines():
+                if not _WORK_TYPE_CANDIDATE_RE.fullmatch(line):
+                    continue
+                match = _WORK_TYPE_RE.fullmatch(line)
+                entries.append((line, match.group(1) if match is not None else None))
+    return entries
+
+
+def _plan_work_types(text: str) -> list[str]:
+    """固定記法と一致する作業種別の値を全出現分抽出する。"""
+    return [value for _line, value in _plan_work_type_entries(text) if value is not None]
+
+
+def _check_plan_work_type(text: str) -> list[str]:
+    """計画メタ情報の作業種別が1件の固定値であるかをwarningとして検査する。"""
+    if not _iter_h2_sections(text, "背景"):
+        return []
+    entries = _plan_work_type_entries(text)
+    if not entries:
+        return [
+            "`## 背景`直下の計画メタ情報に作業種別の記載が無い: `- 作業種別: バグ対応`または`- 作業種別: 通常変更`を記載する"
+        ]
+    if len(entries) != 1:
+        return [f"`### 計画メタ情報`の作業種別が複数ある: 実際={[line for line, _value in entries]}、期待=1件"]
+    line, value = entries[0]
+    if value is None:
+        return [f"`### 計画メタ情報`の作業種別が固定記法`- 作業種別: <固定値>`と一致しない: 実際={line}"]
+    if value not in _VALID_WORK_TYPES:
+        return [f"`### 計画メタ情報`の作業種別が現行契約と一致しない: 実際={value}、期待={sorted(_VALID_WORK_TYPES)}"]
+    return []
+
+
+def _is_bug_plan(text: str) -> bool:
+    """計画メタ情報の作業種別が単一の`バグ対応`であるかを判定する。"""
+    return _plan_work_types(text) == [_BUG_WORK_TYPE]
+
+
+def _markdown_table_cells(line: str) -> list[str] | None:
+    """Markdownパイプテーブルの1行をセルへ分割する。表の行でなければNoneを返す。"""
+    leading_whitespace = line[: len(line) - len(line.lstrip(" \t"))]
+    if "\t" in leading_whitespace or len(leading_whitespace) >= 4:
+        return None
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|") and not stripped.endswith(r"\|"):
+        stripped = stripped[:-1]
+    cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", stripped)]
+    if len(cells) < 2:
+        return None
+    return cells
+
+
+def _first_markdown_table(section: str) -> list[list[str]]:
+    """節内の最初のフェンス外パイプテーブルを返す。"""
+    mask = _unfenced_line_mask(section)
+    parsed_rows = [
+        _markdown_table_cells(line) if keep else None for line, keep in zip(section.splitlines(), mask, strict=False)
+    ]
+    for index, header in enumerate(parsed_rows[:-1]):
+        separator = parsed_rows[index + 1]
+        if (
+            header is None
+            or separator is None
+            or len(header) != len(separator)
+            or not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in separator)
+        ):
+            continue
+        table = [header, separator]
+        for row in parsed_rows[index + 2 :]:
+            if row is None:
+                break
+            table.append(row)
+        return table
+    return []
+
+
+def _check_bug_investigation_table(text: str) -> list[str]:
+    """バグ調査結果表について全体件数、親H2、列構造、必須行、順序を検査する。"""
+    if not _is_bug_plan(text):
+        return []
+    sections = _h3_named_sections(text, "バグ調査結果")
+    if not sections:
+        return ["バグ計画に必須のバグ調査結果表が存在しない"]
+    if len(sections) != 1:
+        return [f"`### バグ調査結果`が複数ある: 実際={len(sections)}件、期待=1件"]
+    parent_h2, section = sections[0]
+    if parent_h2 != "背景":
+        return ["`### バグ調査結果`が`## 背景`直下に存在しない"]
+    table = _first_markdown_table(section)
+    has_two_column_contract = (
+        len(table) >= 2
+        and table[0] == ["項目", "内容"]
+        and len(table[1]) == 2
+        and all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in table[1])
+        and all(len(row) == 2 for row in table[2:])
+    )
+    if not has_two_column_contract:
+        return ["バグ調査結果表の列構造が現行契約と一致しない: ヘッダー、区切り、全行を`項目`・`内容`の2列にする"]
+    rows = [row[0].strip("`") for row in table[2:]]
+    expected = list(_BUG_INVESTIGATION_REQUIRED_ROWS)
+    if rows == expected:
+        return []
+    missing = [row for row in expected if row not in rows]
+    return [f"バグ調査結果表の必須行または順序が現行契約と一致しない: 不足={missing or 'なし'}, 実際={rows}, 期待={expected}"]
 
 
 def _check_fence_nesting(text: str) -> list[str]:
@@ -684,6 +851,8 @@ def main() -> int:
     warnings.extend(_check_execution_method_scope(text))
     warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))
     warnings.extend(_check_version_number_absent(text, checkbox_paths))
+    warnings.extend(_check_plan_work_type(text))
+    warnings.extend(_check_bug_investigation_table(text))
 
     for error in errors:
         print(error, file=sys.stderr)

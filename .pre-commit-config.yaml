@@ -65,10 +65,3 @@ repos:
         language: system
         pass_filenames: false
         files: '^rust/claude-statusline/.*\.(rs|toml)$'
-      # コミット時にローカルへも反映する（適用漏れ防止のため）。
-      - id: chezmoi-apply
-        name: chezmoi apply
-        entry: bash -c '[ "$(git rev-parse --show-toplevel)" != "$HOME/dotfiles" ] || chezmoi apply'
-        require_serial: true
-        pass_filenames: false
-        language: system
