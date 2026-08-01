@@ -218,6 +218,32 @@ def _unfenced_line_mask(text: str) -> list[bool]:
     return mask
 
 
+def _strip_inline_code(line: str) -> str:
+    """行中のバッククォートで囲まれたインラインコードを空白で置換する。
+
+    マッチしたスパンを同じ長さの空白に置換することで、他の位置の列番号がずれない。
+    同じ長さの閉じバッククォートが見つからない場合は当該の開き位置群を除外して続行する。
+    """
+    result = list(line)
+    i = 0
+    while i < len(line):
+        if line[i] != "`":
+            i += 1
+            continue
+        j = i
+        while j < len(line) and line[j] == "`":
+            j += 1
+        tick_len = j - i
+        close_idx = line.find("`" * tick_len, j)
+        if close_idx == -1:
+            i = j
+            continue
+        end = close_idx + tick_len
+        result[i:end] = " " * (end - i)
+        i = end
+    return "".join(result)
+
+
 def _unfenced_body(body: str) -> str:
     """節本文からフェンス内の行を除去し、フェンス外の行のみを結合して返す。"""
     lines = body.splitlines()
@@ -536,16 +562,29 @@ def _check_fence_nesting(text: str) -> list[str]:
     return warnings
 
 
+def _has_session_ops_invocation(line: str) -> bool:
+    """行が呼び出し構文でセッション運用の名前を指すかを返す。"""
+    for pattern in (_SKILL_TOOL_CALL_RE, _AGENT_TOOL_CALL_RE, _SLASH_COMMAND_RE):
+        for match in pattern.finditer(line):
+            if _SESSION_OPS_RE.search(match.group(1)):
+                return True
+    return False
+
+
 def _check_execution_method_scope(text: str) -> list[str]:
     """`## 実行方法`節に振り返り・セッション終了などのセッション運用工程が無いか検出する。
 
-    節内にフェンスで埋め込まれた記述例の行は対象としない。
+    節内にフェンスで埋め込まれた記述例と、インラインコード内の識別子は対象としない。
+    呼び出し構文でセッション運用の名前が現れる行は実際の起動指示として対象に残す。
     """
     warnings: list[str] = []
     for section_no, body in enumerate(_iter_h2_sections(text, "実行方法"), start=1):
         mask = _unfenced_line_mask(body)
         for line_no, (line, keep) in enumerate(zip(body.splitlines(), mask, strict=False), start=1):
-            if keep and _SESSION_OPS_RE.search(line):
+            if not keep:
+                continue
+            target = line if _has_session_ops_invocation(line) else _strip_inline_code(line)
+            if _SESSION_OPS_RE.search(target):
                 warnings.append(
                     f"実行方法節（{section_no}件目の出現）内({line_no}行目相当): "
                     "振り返り・セッション終了などのセッション運用工程が記載されている疑いがある。"

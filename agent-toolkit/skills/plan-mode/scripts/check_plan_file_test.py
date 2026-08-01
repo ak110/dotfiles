@@ -317,6 +317,58 @@ def test_execution_method_without_session_ops_silent(
     assert "セッション運用工程" not in captured.err
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "- `uvx pyfltr run agent-toolkit/skills/session-review/SKILL.md`で検証する",
+        "- コミット件名は`feat(session-review): 観察源を追加する`とする",
+        "- `agent-toolkit/skills/session-review/SKILL.md`を変更する",
+    ],
+)
+def test_execution_method_inline_session_ops_identifiers_are_silent(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    line: str,
+) -> None:
+    body = f"## 実行方法\n\n{line}\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "- Skillツールで`agent-toolkit:exit-session`を呼び出す",
+        "- `/agent-toolkit:exit-session`を呼び出す",
+        "- セッション終了を実施する",
+    ],
+)
+def test_execution_method_session_ops_invocations_warn(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    line: str,
+) -> None:
+    body = f"## 実行方法\n\n{line}\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" in capsys.readouterr().err
+
+
+def test_execution_method_unclosed_inline_code_does_not_raise(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = "## 実行方法\n\n- `agent-toolkit:session-reviewを確認する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert "セッション運用工程" in capsys.readouterr().err
+
+
 def test_unknown_skill_name_errors(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
