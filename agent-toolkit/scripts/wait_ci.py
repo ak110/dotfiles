@@ -11,8 +11,8 @@ GitHubでは`gh run list --commit=<sha>`、GitLabでは`glab ci list --sha=<sha>
 GitLabは私設ホストも対象とする（対象ホストは`glab`がカレントディレクトリの`git remote`・
 環境変数`GITLAB_HOST`／`GL_HOST`・設定から決定するため、本スクリプト側の追加設定は不要）。
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
-`agent-toolkit:commit`スキル「push後のCI通過確認」節・
-`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節から参照される。
+`agent-toolkit:commit`スキル「push後のCI通過確認」節から参照される。
+同節の実施主体の分離は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める。
 """
 
 from __future__ import annotations

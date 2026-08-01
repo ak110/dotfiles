@@ -173,9 +173,11 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
   - 各コミットの全親SHAと親ごとの差分も補助資料として保存する。
     merge commitの親ごとの差分とroot commitのempty-tree差分だけで系列差分を代替しない
 
-- 推奨手順: `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --sha=<sha>`を
+- 既定の手順: `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py`を
   Bashツールで`run_in_background=true`起動し、明確な失敗ジョブを1件検出するか、
   期待run・pipeline集合がすべて完了するまで待機する。
+  `--sha`の既定はHEADであるため、HEADを対象とする確認では引数を渡さない。
+  スクリプトの不在または実行失敗を実測した場合は、本節後半の手動確認手順を採用する。
   既定`--timeout=900`秒はBashツール既定タイムアウト2分・上限10分を超えるため、
   background起動が前提となる。
   background起動は完了通知を受領できる主体（メインエージェント・委譲元）が選ぶ
@@ -184,7 +186,7 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     （`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
   - 調整可能な引数: `--timeout`・`--poll-interval`・`--registration-grace`・
     `--subprocess-timeout`・`--follow-cancelled`
-  - `--sha`には`git rev-parse HEAD`の実行結果をそのまま渡す
+  - HEAD以外を対象とする場合に限り`--sha`へ`git rev-parse`の実行結果をそのまま渡す
     （`agent-toolkit/rules/02-claude-code.md`が定める識別子の実行結果転記則を参照）
     - 解決できない値は識別子解決失敗の終了コード3で終了する
     - 実在する別コミットを指す値は、登録猶予（既定60秒）が経過してもrunが見つからない場合に
@@ -205,7 +207,8 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
   - `cancelled`・`canceled`は`--follow-cancelled`またはrun・pipelineの最終結論へ委ねる。
     `manual`・`skipped`・`neutral`・`allow_failure`もforgeの最終結論へ委ねる
   - 全体成功は、取得済みジョブの成功状況にかかわらずrun・pipelineの完了を条件として判定する
-  - 登録遅延・タイムアウト未設定の手書きpollループは非推奨とする
+  - CI通過確認は前掲の既定手順で待機する。
+    `gh run list`等を組み合わせた待機ループは、手動確認手順に該当する場合に限る
 - `concurrency.cancel-in-progress`で自コミットrunがcancelledになる運用
   （後続pushによる打ち切りなど）では`--follow-cancelled`を付与する
   - `git log <sha>..HEAD`で得た後続SHA上のrun成功をもって通過と判定する
@@ -311,7 +314,7 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
   - ログ取得コマンドの選択（GitHub/GitLab判定等）は努力目標とする
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
 - GitHub Actionsが動作しないリポジトリ（フィードバック管理側の非公開リポジトリ等）は本節の対象外とする
-- GitLab CI利用リポジトリでも推奨手順の`wait_ci.py`をそのまま使う。
+- GitLab CI利用リポジトリでも既定の手順の`wait_ci.py`をそのまま使う。
   内部で`glab ci list --sha=<sha>`と`glab api`へ切り替わり、gitlab.comと私設ホストの双方を対象とする
   - pipeline一覧とジョブ一覧の対象ホストは、カレントディレクトリの`git remote`・
     環境変数`GITLAB_HOST`／`GL_HOST`・`glab`設定から同じ方法で決定される

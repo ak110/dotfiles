@@ -50,7 +50,10 @@ description: >
    同referenceが定める完了報告の全項目を検収する。
    `review_summary`の各見解は実体と照合し、呼び出し元が採否を確定する。
    `status: needs_escalation`とサンドボックスパスの反映は、
-   同referenceが定めるClaude代替、再入力、正規パス反映の手順に従う
+   同referenceが定めるClaude代替、再入力、正規パス反映の手順に従う。
+   検収後に`plan-impl-executor`の起動がセッション状態の不足を理由に阻まれた場合は、
+   `agent-toolkit/rules/02-claude-code.md`「ツール呼び出し・タスク管理」節の状態実測手順に従う。
+   計画レビューの完遂を検収済みで状態の記録契機が無い場合は、呼び出し元が実装と実装差分レビューを担当する
 5. plan mode下では`ExitPlanMode`で承認を得る。承認後（またはplan mode外では直ちに）
    `references/plan-impl-caller-reception.md`をReadする。
    同referenceの起動契約に対応する実行時の値だけで起動文を構成し、
