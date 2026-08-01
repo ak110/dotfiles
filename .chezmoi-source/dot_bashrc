@@ -69,18 +69,6 @@ if [ -e ~/dotfiles/share/user.env ]; then
     set +a
 fi
 
-# mise (https://mise.jdx.dev/)
-# - 対話シェル: `mise activate bash` でフック方式を有効化
-# - 非対話シェル (IDE / スクリプト / ssh exec): `--shims` で shims を PATH に追加
-# 参考: https://mise.jdx.dev/dev-tools/shims.html
-# 非対話のケースはこの直後に return するため、分岐して片方だけ実行する。
-if command -v mise >/dev/null 2>&1; then
-    case $- in
-    *i*) eval "$(mise activate bash)" ;;
-    *) eval "$(mise activate bash --shims)" ;;
-    esac
-fi
-
 # uv installer が生成する env スクリプト (PATH 等を追加する)。
 # PATH 設定が主目的なので非対話シェルでも source する。
 if [ -e ~/.local/bin/env ]; then
@@ -91,6 +79,17 @@ fi
 # bash_completion は補完用なので対話シェル側で別途 source する。
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# mise (https://mise.jdx.dev/)
+# 非対話シェル (IDE / スクリプト / ssh exec) では shims を PATH に追加する。
+case $- in
+*i*) ;;
+*)
+    if command -v mise >/dev/null 2>&1; then
+        eval "$(mise activate bash --shims)"
+    fi
+    ;;
+esac
 
 # ここまで非対話環境でも共通
 ########################################################################################
@@ -305,6 +304,11 @@ function enable-pyenv() {
 # ただし、VIRTUAL_ENVがすでに有効ならスキップ
 if [ -d "$HOME/.pyenv" ] && [ -z "$VIRTUAL_ENV" ]; then
     enable-pyenv
+fi
+
+# 対話シェルでは、pyenvによるPATH変更後にmiseのフック方式を有効化する。
+if command -v mise >/dev/null 2>&1; then
+    eval "$(mise activate bash)"
 fi
 
 # VSCode

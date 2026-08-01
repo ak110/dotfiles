@@ -1,5 +1,22 @@
+min_version = "2026.7.12"
+
 [tools]
 actionlint = "latest"
 pinact = "latest"
+prek = "latest"
 rust = { version = "latest", components = "rustfmt,clippy" }
 typos = "latest"
+uv = "latest"
+
+[settings]
+lockfile = true
+minimum_release_age = "168h"
+
+[tasks.bootstrap]
+description = "開発環境をセットアップする"
+run = [
+    "env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras",
+    "prek install -c .pre-commit-config.yaml",
+    "git config --local commit.template .gitmessage",
+    "uv tool install --editable .",
+]

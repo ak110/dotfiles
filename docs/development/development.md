@@ -2,9 +2,19 @@
 
 ## 開発環境の構築手順
 
+mise 2026.7.12以降を導入し、次を実行する。
+
 ```bash
-make setup
+mise bootstrap
 ```
+
+`mise bootstrap`はリポジトリ用ツールを導入し、`bootstrap`taskでPython依存、prek hook、
+コミットメッセージテンプレート、ローカルCLIを設定する。
+Python依存の同期では、Makefileから継承する`UV_FROZEN=1`を解除して`uv sync --locked`を実行する。
+`make setup`も同じtaskを呼ぶため、`uv.lock`が不整合な場合はどちらも失敗する。
+
+適用内容だけを確認する場合は`mise bootstrap --dry-run`を使う。
+宣言済み状態との差分は`mise bootstrap status`で確認する。
 
 PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyzer`に依存する。
 未導入でも`make test`は通過し、検証漏れはCIで担保する。
@@ -17,6 +27,7 @@ PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyze
 | `make format` | 整形・軽量lint・自動修正 |
 | `make test` | 全チェック実行（コミット可否判定） |
 | `make update` | 依存更新 |
+| `make update-mise-locks` | リポジトリ用と配布用のmise lockfileを更新 |
 | `make update-actions` | GitHub Actionsのハッシュピン更新（pinact経由） |
 
 各コマンドの詳細は`Makefile`を参照する。
@@ -44,8 +55,8 @@ uv sync --reinstall  # .venvを再構築する場合
 
 ロックファイル尊重・公開待機・ピン留め運用・脆弱性検知の4点を貫徹する。
 
-- ロックファイル尊重: `uv.lock`を再resolveせず使用する（`UV_FROZEN=1`を環境変数で常時適用）
-- 公開待機: `exclude-newer`および`mise`の`minimum_release_age`で公開から一定の期間を経たパッケージのみ採用する
+- ロックファイル尊重: Python依存は`uv.lock`を再resolveせず使用する。mise管理ツールはルートと配布用設定に対応する2つの`mise.lock`を優先する
+- 公開待機: `exclude-newer`およびmiseの`minimum_release_age`で公開から7日を経たツールのみ採用する
 - ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
 - 脆弱性検知: dotfilesは実行可能なコマンドラインツール群を配布するため、依存が利用者の実行環境へ
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は

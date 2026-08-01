@@ -8,9 +8,15 @@ help:
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	env --unset=UV_FROZEN uv sync --upgrade --all-groups --all-extras
-	uvx prek autoupdate
+	mise exec -- prek autoupdate
+	$(MAKE) update-mise-locks
 	$(MAKE) update-actions
 	$(MAKE) test
+
+# リポジトリ用と配布用のmise lockfileを更新
+update-mise-locks:
+	mise lock --bump --platform linux-x64,windows-x64
+	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" mise lock --global --bump --platform linux-x64,windows-x64
 
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:
@@ -19,10 +25,7 @@ update-actions:
 
 # 開発環境のセットアップ
 setup:
-	uv sync --all-groups --all-extras
-	uvx prek install -c .pre-commit-config.yaml
-	git config --local commit.template .gitmessage
-	uv tool install --editable .
+	mise run bootstrap
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
@@ -48,4 +51,4 @@ format:
 test:
 	uvx pyfltr run
 
-.PHONY: help update update-actions setup setup-pwsh format test
+.PHONY: help update update-mise-locks update-actions setup setup-pwsh format test

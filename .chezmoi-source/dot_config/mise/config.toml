@@ -20,4 +20,5 @@ typos = "latest"
 
 [settings]
 idiomatic_version_file_enable_tools = ["node"]
+lockfile = true
 minimum_release_age = "168h"
