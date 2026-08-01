@@ -207,6 +207,9 @@ def _codex_thread_cwd_state_id(thread_id: str) -> str:
 
 _PLAN_FILE_FINALIZER_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-finalizer", "agent-toolkit:plan-file-finalizer"})
 
+# `subagent_stop_advisor.py`の同名定数と同一値を保つ。
+_PLAN_FILE_FINALIZER_ACTIVE_KEY = "plan_file_finalizer_active_subagent_sessions"
+
 # 完了報告末尾の機械可読な記録行を判定する正規表現。
 _RECORD_LINE_RE = re.compile(r"^(?:status|review_completed):")
 _STATUS_LINE_RE = re.compile(r"^status:\s*(completed|needs_escalation)$", re.MULTILINE)
@@ -214,13 +217,34 @@ _REVIEW_COMPLETED_LINE_RE = re.compile(r"^review_completed:\s*(true|false)$", re
 
 
 def _extract_trailing_record_block(completion_text: str) -> str:
-    """完了報告末尾の連続した既知キーの記録行を返す。"""
+    """完了報告の末尾側にある連続した既知キーの記録行を返す。"""
+    lines = completion_text.rstrip("\n").split("\n")
+    end = len(lines)
+    while end > 0:
+        line = lines[end - 1]
+        if not line.strip() or re.fullmatch(r"\s*(?:`{3,}|~{3,})\s*", line):
+            end -= 1
+            continue
+        break
     record_lines: list[str] = []
-    for line in reversed(completion_text.rstrip("\n").split("\n")):
+    for line in reversed(lines[:end]):
         if not _RECORD_LINE_RE.match(line):
             break
         record_lines.append(line)
     return "\n".join(reversed(record_lines))
+
+
+def is_plan_review_completion_report(completion_text: str) -> bool:
+    """完了報告が計画レビュー完遂を示す構造化欄を持つかを返す。"""
+    trailing_record_block = _extract_trailing_record_block(completion_text)
+    status_match = _STATUS_LINE_RE.search(trailing_record_block)
+    review_match = _REVIEW_COMPLETED_LINE_RE.search(trailing_record_block)
+    return (
+        status_match is not None
+        and status_match.group(1) == "completed"
+        and review_match is not None
+        and review_match.group(1) == "true"
+    )
 
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
@@ -459,9 +483,15 @@ def main() -> int:
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
 
             def _set_invoked(state: dict) -> dict | None:
-                if state.get("plan_mode_skill_invoked", False):
+                if (
+                    state.get("plan_mode_skill_invoked", False)
+                    and state.get("plan_review_completed") is not True
+                    and not state.get(_PLAN_FILE_FINALIZER_ACTIVE_KEY)
+                ):
                     return None
                 state["plan_mode_skill_invoked"] = True
+                state["plan_review_completed"] = False
+                state[_PLAN_FILE_FINALIZER_ACTIVE_KEY] = {}
                 return state
 
             update_state(session_id, _set_invoked)
@@ -526,15 +556,22 @@ def main() -> int:
 
                 update_state(session_id, _register_plan_impl_executor_session)
         if isinstance(subagent_type, str) and subagent_type in _PLAN_FILE_FINALIZER_SUBAGENT_TYPES:
-            trailing_record_block = _extract_trailing_record_block(completion_text)
-            status_match = _STATUS_LINE_RE.search(trailing_record_block)
-            review_match = _REVIEW_COMPLETED_LINE_RE.search(trailing_record_block)
-            if (
-                status_match is not None
-                and status_match.group(1) == "completed"
-                and review_match is not None
-                and review_match.group(1) == "true"
-            ):
+            if not completion_text:
+                sub_session_id = raw_tool_response.get("agentId") if isinstance(raw_tool_response, dict) else None
+                if isinstance(sub_session_id, str) and sub_session_id:
+
+                    def _register_plan_file_finalizer_session(state: dict, sid: str = sub_session_id) -> dict | None:
+                        active = state.get(_PLAN_FILE_FINALIZER_ACTIVE_KEY)
+                        if not isinstance(active, dict):
+                            active = {}
+                        if sid in active:
+                            return None
+                        active[sid] = {"started_at": time.time()}
+                        state[_PLAN_FILE_FINALIZER_ACTIVE_KEY] = active
+                        return state
+
+                    update_state(session_id, _register_plan_file_finalizer_session)
+            if is_plan_review_completion_report(completion_text):
 
                 def _set_plan_review_completed(state: dict) -> dict | None:
                     if state.get("plan_review_completed", False):

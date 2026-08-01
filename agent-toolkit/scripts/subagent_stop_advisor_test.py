@@ -251,6 +251,16 @@ def _write_flag_state(state_dir: Path, session_id: str, sub_session_id: str, sub
     )
 
 
+def _write_finalizer_state(state_dir: Path, session_id: str, agent_id: str) -> None:
+    """finalizerの活動中agentIdを事前に書き込む。"""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    state_path.write_text(
+        json.dumps({"plan_file_finalizer_active_subagent_sessions": {agent_id: {"started_at": 0.0}}}),
+        encoding="utf-8",
+    )
+
+
 def _transcript_path_for(tmp_path: Path, agent_id: str) -> str:
     """`agent_id`に対応するtranscriptパス文字列を生成する（実ファイルの存在は不要）。
 
@@ -304,6 +314,107 @@ def _complete_report(**overrides: str) -> str:
         elif fields["review_status"] == "レビューは実施しない（ユーザー指示）":
             fields["review_caller_verification"] = "ユーザー指示原文との照合が必要"
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
+
+
+class TestPlanReviewCompletion:
+    """背景実行されたfinalizerの計画レビュー完了追跡。"""
+
+    def test_completed_report_sets_flag_and_consumes_entry(self, tmp_path: Path) -> None:
+        sid = "sid-finalizer-completed"
+        agent_id = "finalizer-completed"
+        _write_finalizer_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": "status: completed\nreview_completed: true",
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state["plan_review_completed"] is True
+        assert not state["plan_file_finalizer_active_subagent_sessions"]
+
+    @pytest.mark.parametrize(
+        "report",
+        [
+            "status: needs_escalation\nreview_completed: true",
+            "status: completed\nreview_completed: false",
+            "status: completed\nreview_completed: true\nartifact: /tmp/result.md",
+        ],
+    )
+    def test_incomplete_or_non_trailing_report_preserves_entry(self, tmp_path: Path, report: str) -> None:
+        sid = f"sid-finalizer-invalid-{len(report)}"
+        agent_id = "finalizer-invalid"
+        _write_finalizer_state(tmp_path, sid, agent_id)
+        _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state.get("plan_review_completed") is not True
+        assert agent_id in state["plan_file_finalizer_active_subagent_sessions"]
+
+    def test_unregistered_agent_does_not_set_flag(self, tmp_path: Path) -> None:
+        sid = "sid-finalizer-unregistered"
+        _write_finalizer_state(tmp_path, sid, "registered")
+        _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": "status: completed\nreview_completed: true",
+                "transcript_path": _transcript_path_for(tmp_path, "unregistered"),
+            },
+            tmp_path,
+        )
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state.get("plan_review_completed") is not True
+        assert "registered" in state["plan_file_finalizer_active_subagent_sessions"]
+
+    def test_closing_fence_after_report_sets_flag(self, tmp_path: Path) -> None:
+        sid = "sid-finalizer-fence"
+        agent_id = "finalizer-fence"
+        _write_finalizer_state(tmp_path, sid, agent_id)
+        _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": "```text\nstatus: completed\nreview_completed: true\n```",
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state["plan_review_completed"] is True
+
+    def test_empty_report_block_then_corrected_report_completes_review(self, tmp_path: Path) -> None:
+        sid = "sid-finalizer-reentry"
+        agent_id = "finalizer-reentry"
+        _write_finalizer_state(tmp_path, sid, agent_id)
+        payload = {
+            "session_id": sid,
+            "last_assistant_message": "",
+            "transcript_path": _transcript_path_for(tmp_path, agent_id),
+        }
+        first = _run_with_state_dir(payload, tmp_path)
+        assert json.loads(first.stdout)["decision"] == "block"
+        blocked_state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert agent_id in blocked_state["plan_file_finalizer_active_subagent_sessions"]
+        second = _run_with_state_dir(
+            {
+                **payload,
+                "last_assistant_message": "status: completed\nreview_completed: true",
+                "stop_hook_active": True,
+            },
+            tmp_path,
+        )
+        assert json.loads(second.stdout)["decision"] == "approve"
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state["plan_review_completed"] is True
+        assert not state["plan_file_finalizer_active_subagent_sessions"]
 
 
 class TestPlanImplExecutorReportFormat:

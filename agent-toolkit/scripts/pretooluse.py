@@ -2931,6 +2931,9 @@ def _reset_process7_completion_flags(session_id: str) -> None:
             if current.get(flag, False):
                 current[flag] = False
                 changed = True
+        if current.get("plan_file_finalizer_active_subagent_sessions"):
+            current["plan_file_finalizer_active_subagent_sessions"] = {}
+            changed = True
         if current.pop("current_plan_file_path", None) is not None:
             changed = True
         # 別の既存計画への切替記録も新計画へ持ち越さない。

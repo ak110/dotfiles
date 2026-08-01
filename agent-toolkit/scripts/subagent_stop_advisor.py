@@ -14,6 +14,9 @@
 主要欄ラベルの欠落検査、二系統レビュー値の整合検査、
 background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
 書式不備・矛盾を検出しblockした場合はエントリを保持し、是正後の再試行でも検査を再発火させる。
+
+`plan-file-finalizer`完了報告は、登録済み`agentId`と一致する場合に計画レビュー完遂の構造化欄を検査する。
+背景実行ではPostToolUseの応答が完了報告本文を含まないため、本経路が主たる真化契機となる。
 """
 
 from __future__ import annotations
@@ -36,11 +39,17 @@ from _stop_gate import has_pending_agent_launches  # noqa: E402  # pylint: disab
 from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_transcript_agent_id as _extract_transcript_agent_id,
 )
+from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    is_plan_review_completion_report,
+)
 
 _HOOK_ID = "agent-toolkit/subagent-stop"
 
 # `posttooluse.py`の同名定数と同一集合を保つ。
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
+
+# `posttooluse.py`の同名定数と同一値を保つ。
+_PLAN_FILE_FINALIZER_ACTIVE_KEY = "plan_file_finalizer_active_subagent_sessions"
 
 # `plan-impl-executor`完了報告本文の主要欄ラベル集合。
 # SSOTは`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
@@ -300,12 +309,44 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
     return missing, violation, review_value_violations
 
 
+def _apply_plan_review_completed(payload: dict) -> None:
+    """登録済みfinalizerの完了報告から計画レビュー完了状態を更新する。"""
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return
+    agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
+    if agent_id is None:
+        return
+    state = read_state(session_id)
+    active = state.get(_PLAN_FILE_FINALIZER_ACTIVE_KEY)
+    if not isinstance(active, dict) or agent_id not in active:
+        return
+    text = payload.get("last_assistant_message")
+    if not isinstance(text, str) or not text.strip():
+        return
+    if not is_plan_review_completion_report(text):
+        return
+
+    def _update(current_state: dict, aid: str = agent_id) -> dict | None:
+        current_active = current_state.get(_PLAN_FILE_FINALIZER_ACTIVE_KEY)
+        if not isinstance(current_active, dict) or aid not in current_active:
+            return None
+        del current_active[aid]
+        current_state[_PLAN_FILE_FINALIZER_ACTIVE_KEY] = current_active
+        current_state["plan_review_completed"] = True
+        return current_state
+
+    update_state(session_id, _update)
+
+
 def main() -> int:
     """SubagentStop hookのエントリポイント。"""
     try:
         payload = json.loads(sys.stdin.read() or "{}")
     except json.JSONDecodeError:
         return 0
+
+    _apply_plan_review_completed(payload)
 
     # Stop/SubagentStopフックの再帰呼び出し対策:
     # `stop_hook_active`真は直前の本hook呼び出しがブロックした再呼び出しを示す。

@@ -4489,6 +4489,7 @@ class TestPlanModeFlagReset:
         state = {
             "plan_mode_skill_invoked": True,
             "current_plan_file_path": "/tmp/previous-plan.md",
+            "plan_file_finalizer_active_subagent_sessions": {"stale": {"started_at": 0.0}},
         }
         state.update({flag: True for flag in _PROCESS7_FLAGS})
         _write_session_state(tmp_path, sid, state)
@@ -4506,6 +4507,7 @@ class TestPlanModeFlagReset:
         for flag in _PROCESS7_FLAGS:
             assert updated[flag] is False
         assert "current_plan_file_path" not in updated
+        assert not updated["plan_file_finalizer_active_subagent_sessions"]
 
 
 class TestCheckPlanFileH2SectionOrder:

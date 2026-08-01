@@ -67,7 +67,7 @@ def test_plan_review_completed_from_strict_trailing_block(tmp_path: pathlib.Path
     [
         "status: needs_escalation\nreview_completed: true",
         "status: completed\nreview_completed: false",
-        "status: completed\nreview_completed: true\nquoted: value",
+        "status: completed\nreview_completed: true\nartifact: /tmp/result.md",
         "本文にstatus: completedとreview_completed: trueを引用した。",
     ],
 )
@@ -84,6 +84,85 @@ def test_plan_review_completed_rejects_invalid_or_non_trailing_text(tmp_path: pa
         state_dir=tmp_path,
     )
     assert _read_state(tmp_path, sid).get("plan_review_completed") is not True
+
+
+def test_plan_review_completed_accepts_closing_fence(tmp_path: pathlib.Path) -> None:
+    """構造化欄の直後にフェンス閉じ行がある完了報告を受理する。"""
+    sid = "closing-fence"
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "plan-file-finalizer"},
+            "tool_response": {"result": "```text\nstatus: completed\nreview_completed: true\n```"},
+        },
+        state_dir=tmp_path,
+    )
+    assert _read_state(tmp_path, sid)["plan_review_completed"] is True
+
+
+def test_background_finalizer_registers_only_agent_id(tmp_path: pathlib.Path) -> None:
+    """完了報告本文を取得できない背景実行ではagentIdだけを登録する。"""
+    sid = "background-finalizer"
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "plan-file-finalizer"},
+            "tool_response": {"agentId": "finalizer-123"},
+        },
+        state_dir=tmp_path,
+    )
+    state = _read_state(tmp_path, sid)
+    assert "finalizer-123" in state["plan_file_finalizer_active_subagent_sessions"]
+    assert state.get("plan_review_completed") is not True
+
+
+def test_synchronous_finalizer_does_not_register_agent_id(tmp_path: pathlib.Path) -> None:
+    """完了報告本文を取得できた同期完了では活動中agentIdを残さない。"""
+    sid = "synchronous-finalizer"
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "plan-file-finalizer"},
+            "tool_response": {
+                "agentId": "finalizer-456",
+                "result": "status: completed\nreview_completed: true",
+            },
+        },
+        state_dir=tmp_path,
+    )
+    state = _read_state(tmp_path, sid)
+    assert not state.get("plan_file_finalizer_active_subagent_sessions")
+    assert state["plan_review_completed"] is True
+
+
+def test_plan_mode_invocation_resets_finalizer_tracking(tmp_path: pathlib.Path) -> None:
+    """新しい計画作業の開始時に完了状態とfinalizer活動中辞書をリセットする。"""
+    sid = "reset-finalizer"
+    state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "plan_mode_skill_invoked": True,
+                "plan_review_completed": True,
+                "plan_file_finalizer_active_subagent_sessions": {"stale": {"started_at": 0.0}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Skill",
+            "tool_input": {"skill": "agent-toolkit:plan-mode"},
+        },
+        state_dir=tmp_path,
+    )
+    state = _read_state(tmp_path, sid)
+    assert state["plan_review_completed"] is False
+    assert not state["plan_file_finalizer_active_subagent_sessions"]
 
 
 def test_removed_agent_does_not_change_state(tmp_path: pathlib.Path) -> None:
