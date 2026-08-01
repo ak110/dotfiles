@@ -471,8 +471,15 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     )
     loop.add_argument(
         "--resume",
-        action="store_true",
-        help="初回のセッション起動にclaudeの--continueを付与して直前の会話を継続する（2回目以降は付与しない）。",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="SESSION_ID",
+        help=(
+            "初回に過去のClaudeセッションを再開する。"
+            "SESSION_ID省略時はセッション選択画面を開き、指定時は該当セッションを直接再開する。"
+            "2回目以降は新規セッションとして起動する。"
+        ),
     )
 
 

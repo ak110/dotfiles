@@ -419,7 +419,7 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`--resume`指定時は初回のClaudeセッションだけを継続する。"""
+        """`--resume`指定時は初回だけ再開指定のみで起動する。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -442,9 +442,87 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 2
         first_command = claude_calls[0]["cmd"]
         second_command = claude_calls[1]["cmd"]
-        assert "--continue" in first_command
-        assert first_command.index("--continue") < len(first_command) - 1
+        assert first_command == ["claude", "--resume"]
+        assert second_command[:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
+        assert "--resume" not in second_command
         assert "--continue" not in second_command
+        assert second_command[-1].startswith("/process-feedbacks")
+
+    @pytest.mark.parametrize("resume_argv", [["--resume=session-id"], ["--resume", "session-id"]])
+    def test_resume_session_id_is_normalized(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        resume_argv: list[str],
+    ) -> None:
+        """空白区切りと等号区切りのセッションIDをClaudeの等号区切りへ正規化する。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter([1, 0])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts", *resume_argv],
+                home=tmp_path,
+            )
+
+        assert claude_calls[0]["cmd"] == ["claude", "--resume=session-id"]
+
+    def test_dotfiles_resume_defers_worktree_until_next_session(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """dotfilesの初回再開ではworktree同期を行わず、後続の新規起動時に行う。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "dotfiles"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        base_fake_run = _fake_run_with_remote_url(myrepo, claude_calls, 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/ak110/dotfiles.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/ak110/dotfiles.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        counts = iter([1, 1, 0])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+        sync_calls: list[tuple[pathlib.Path, str]] = []
+
+        def fake_sync_worktree(local_path: pathlib.Path, worktree_name: str) -> None:
+            sync_calls.append((local_path, worktree_name))
+
+        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", fake_sync_worktree)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts", "--resume"],
+                home=tmp_path,
+            )
+
+        assert claude_calls[0]["cmd"] == ["claude", "--resume"]
+        assert "--worktree=process-loop" in claude_calls[1]["cmd"]
+        assert sync_calls == [(myrepo, "process-loop")]
 
     def test_resume_absent_without_option(
         self,
@@ -473,6 +551,7 @@ class TestProcessLoopPromptAndEnv:
 
         assert len(claude_calls) == 1
         assert "--continue" not in claude_calls[0]["cmd"]
+        assert "--resume" not in claude_calls[0]["cmd"]
 
 
 class TestProcessLoopClaudeReturncode:

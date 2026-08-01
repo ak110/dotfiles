@@ -41,8 +41,9 @@ class TestWaitLoopAutoRestart:
         extra_argv: list[str] | None = None,
         dotfiles_root_missing: bool = False,
         create_canonical_entry: bool = False,
+        pending_count: int = 0,
     ) -> tuple[list[list[str]], list[tuple[str, list[str]]]]:
-        """件数0固定・`_wait_for_changes`を`wait_return`固定でモックしてprocess-loopを1回実行する。
+        """件数と`_wait_for_changes`を固定でモックしてprocess-loopを1回実行する。
 
         戻り値は(subprocess呼び出し記録, execvp呼び出し記録)。
         `changed_file_name`指定時は初回の待機復帰直前に対象ファイルの内容を変更する。
@@ -73,7 +74,7 @@ class TestWaitLoopAutoRestart:
             return base_fake_run(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 0)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: pending_count)
 
         wait_calls = {"n": 0}
 
@@ -213,24 +214,64 @@ class TestWaitLoopAutoRestart:
         assert ["update-dotfiles", "--force"] not in subprocess_calls
         assert not execv_calls
 
-    def test_restart_drops_resume_option(
+    @pytest.mark.parametrize(
+        "resume_argv",
+        [
+            ["--resume"],
+            ["--resume", "00000000-0000-0000-0000-000000000000"],
+            ["--resume=00000000-0000-0000-0000-000000000000"],
+        ],
+    )
+    def test_wait_loop_restart_preserves_resume_option(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        resume_argv: list[str],
     ) -> None:
-        """再起動時のargvから初回限定の`--resume`を除去する。"""
+        """Claude起動前の待機中再起動ではresume指定を保持する。"""
         _, execv_calls = self._run_until_stop(
             monkeypatch,
             tmp_path,
             wait_return=False,
             has_upstream_diff=False,
             changed_file_name="a.py",
-            extra_argv=["--resume"],
+            extra_argv=resume_argv,
         )
 
         assert execv_calls
         _, restart_argv = execv_calls[0]
-        assert "--resume" not in restart_argv
+        for arg in resume_argv:
+            assert arg in restart_argv
+        assert "--target-repo" in restart_argv
+
+    @pytest.mark.parametrize(
+        "resume_argv",
+        [
+            ["--resume"],
+            ["--resume", "00000000-0000-0000-0000-000000000000"],
+            ["--resume=00000000-0000-0000-0000-000000000000"],
+        ],
+    )
+    def test_session_restart_drops_resume_option_and_value(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        resume_argv: list[str],
+    ) -> None:
+        """Claudeセッション正常終了後の再起動ではresume指定と値を除去する。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            extra_argv=resume_argv,
+            pending_count=1,
+        )
+
+        assert execv_calls
+        _, restart_argv = execv_calls[0]
+        assert not any(arg.startswith("--resume") for arg in restart_argv)
+        assert "00000000-0000-0000-0000-000000000000" not in restart_argv
         assert "--target-repo" in restart_argv
 
 

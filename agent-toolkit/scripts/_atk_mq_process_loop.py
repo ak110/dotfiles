@@ -202,7 +202,31 @@ def _ensure_inbox_dirs(private_notes: pathlib.Path) -> None:
     (private_notes / "inbox").mkdir(parents=True, exist_ok=True)
 
 
-def _build_restart_argv(argv: list[str], dotfiles_root: pathlib.Path | None = None) -> list[str]:
+def _without_resume_args(argv: list[str]) -> list[str]:
+    """初回限定のresume指定と任意値をargvから除去する。"""
+    result: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg.startswith("--resume="):
+            index += 1
+            continue
+        if arg == "--resume":
+            index += 1
+            if index < len(argv) and not argv[index].startswith("-"):
+                index += 1
+            continue
+        result.append(arg)
+        index += 1
+    return result
+
+
+def _build_restart_argv(
+    argv: list[str],
+    dotfiles_root: pathlib.Path | None = None,
+    *,
+    resume_consumed: bool = False,
+) -> list[str]:
     """PEP 723スクリプトとしてprocess-loopを再起動するargvを返す。
 
     `dotfiles_root`を解決できた場合は再起動先を当該チェックアウト配下の`atk.py`へ切り替える。
@@ -215,17 +239,21 @@ def _build_restart_argv(argv: list[str], dotfiles_root: pathlib.Path | None = No
         canonical = dotfiles_root / "agent-toolkit" / "scripts" / "atk.py"
         if canonical.exists():
             script = canonical
-    # 再起動後は新規セッションとして起動するため、初回限定の`--resume`を引き継がない。
-    rest = [arg for arg in argv[1:] if arg != "--resume"]
+    rest = _without_resume_args(argv[1:]) if resume_consumed else argv[1:]
     return ["uv", "run", "--no-project", "--script", str(script), *rest]
 
 
-def _restart_process_loop(argv: list[str], dotfiles_root: pathlib.Path | None = None) -> typing.NoReturn:
+def _restart_process_loop(
+    argv: list[str],
+    dotfiles_root: pathlib.Path | None = None,
+    *,
+    resume_consumed: bool = False,
+) -> typing.NoReturn:
     """自プロセスをPEP 723スクリプトとして`os.execvp`で置き換えて再起動する。
 
     セッション終了後経路・待機中経路の双方から呼ぶ共通ヘルパーとする。
     """
-    os.execvp("uv", _build_restart_argv(argv, dotfiles_root))
+    os.execvp("uv", _build_restart_argv(argv, dotfiles_root, resume_consumed=resume_consumed))
 
 
 def _code_hash(scripts_dir: pathlib.Path) -> str:
@@ -324,9 +352,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     件数はClaude Codeセッションの起動要否だけに使う。
     分類結果の保存、依存判定、セッション上限、実行順は
     `atk mq schedule`を使うprocess-feedbacksが担う。
-    1反復ごとに`claude --permission-mode=auto --model {args.model}`で`/process-feedbacks`と
-    `/agent-toolkit:exit-session`を直接起動する。`--model`の既定値は`opus`で、
-    オーケストレーション品質を維持する目的で設定する。
+    初回再開時は`claude --resume`または`claude --resume=<session ID>`だけを渡す。
+    後続の新規起動は`claude --permission-mode=auto --model {args.model}`で`/process-feedbacks`と
+    `/agent-toolkit:exit-session`を直接起動する。`--model`の既定値は`opus`とする。
     claudeが正常終了（0・-15・15・143のいずれか）した場合、
     `--no-update`未指定なら`update-dotfiles`を実行してから
     自身のプロセスを`_restart_process_loop`（`os.execv`）で置き換えて再起動する。
@@ -362,7 +390,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     previous_env_value = os.environ.get("DOTFILES_AUTONOMOUS_EXIT_REQUIRED")
     os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
     env = os.environ.copy()
-    resume_pending = bool(args.resume)
+    resume_pending = args.resume is not None
     with _console_title.console_title("atk mq process-loop"):
         try:
             try:
@@ -376,20 +404,18 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
                         # claude起動セッション内でcwd依存の子コマンドが発行された場合、
                         # 解決先を`local_path`へ固定してデーモンプロセスのcwdに依存させない。
-                        claude_argv = ["claude", "--permission-mode=auto", "--model", args.model]
-                        if target_repo_id == _DOTFILES_REPO_ID:
-                            # dotfiles編集はホーム直下チェックアウトへの影響を避けるためworktreeで実施する。
-                            # `--worktree`はclaude自身がcwd基準のリポジトリからworktreeを作成する機能で
-                            # あり、`cwd=local_path`固定と競合しない。
-                            claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
-                            # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
-                            _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+                        claude_argv = ["claude"]
                         if resume_pending:
-                            # 中断したセッションの再開は初回起動に限る。
-                            # 2回目以降は新規セッションとして起動する。
-                            claude_argv.append("--continue")
+                            claude_argv.append("--resume" if not args.resume else f"--resume={args.resume}")
                             resume_pending = False
-                        claude_argv.append(prompt)
+                        else:
+                            claude_argv.extend(("--permission-mode=auto", "--model", args.model))
+                            if target_repo_id == _DOTFILES_REPO_ID:
+                                # dotfiles編集はホーム直下チェックアウトへの影響を避けるためworktreeで実施する。
+                                claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
+                                # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
+                                _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+                            claude_argv.append(prompt)
                         result = subprocess.run(
                             claude_argv,
                             check=False,
@@ -412,7 +438,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             print("update-dotfilesを実行してprocess-loopを再起動します。")
                             subprocess.run(["update-dotfiles", "--force"], check=False)
                             _console_title.set_console_title("atk mq process-loop")
-                            _restart_process_loop(sys.argv, dotfiles_root)
+                            _restart_process_loop(sys.argv, dotfiles_root, resume_consumed=True)
                         continue
                     if not args.no_alerts:
                         monotonic_now = time.monotonic()
