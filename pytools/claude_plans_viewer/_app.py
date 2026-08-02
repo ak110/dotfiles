@@ -66,6 +66,8 @@ def create_app(
     hostname: str | None = None,
     remote_hosts: list[str] | None = None,
     ssh_runner: _remote.SshRunner | None = None,
+    *,
+    remote_search_limit: int = _remote.DEFAULT_REMOTE_SEARCH_LIMIT,
 ) -> quart.Quart:
     """Quartアプリを生成する。
 
@@ -75,6 +77,7 @@ def create_app(
     `remote_hosts`が空でない場合、各ホストへSSH越しにwatchを起動して差分イベントを配信する。
     `ssh_runner=None`のときは`default_ssh_runner`を使う（`/api/file`/`/api/raw`の
     リモート参照経路でのみ使用する。watch経路は`RemoteWatcher`が直接asyncio subprocessを起動する）。
+    `remote_search_limit`はSSHフォールバック経路の検索を同時に実行する全ホスト合計の上限。
     """
     # 前回の異常終了で残った作成日時インデックスの一時ファイルを起動時に除去する。
     _local.cleanup_creation_time_temporaries()
@@ -89,6 +92,8 @@ def create_app(
         raise ValueError("local hostname conflicts with --remote-host")
     allowed_remote_hosts = set(remote_host_list)
     runner: _remote.SshRunner = ssh_runner if ssh_runner is not None else _remote.default_ssh_runner
+    # モジュールレベルの可変状態を避けるため、コーディネーターもアプリ単位で生成する。
+    search_coordinator = _remote.RemoteSearchCoordinator(remote_search_limit)
 
     # 初期接続状態を設定する。ローカルは常にconnected、リモートはconnecting開始。
     state.host_status[resolved_hostname] = "connected"
@@ -243,6 +248,8 @@ def create_app(
         else:
             local_paths = await asyncio.to_thread(_local.search_files, root, query)
 
+            # SSH検索の同時実行制限は`RemoteSearchCoordinator`が担う。
+            # RPCはプロセスを起動しないため制限対象外とする。
             async def search_remote(host: str) -> tuple[str, set[str]]:
                 try:
                     paths = await _remote.search_remote_files(
@@ -250,13 +257,30 @@ def create_app(
                         query,
                         runner,
                         state.remote_watchers.get(host),
+                        coordinator=search_coordinator,
                     )
+                except _remote.RemoteSearchSuperseded:
+                    # 打ち切りは失敗として扱わず、別の検索語の結果で埋めないため呼び出し元へ伝える。
+                    raise
                 except Exception as error:  # noqa: BLE001
                     logger.warning("リモート本文検索失敗 host=%s: %s", host, error)
                     paths = set()
                 return host, paths
 
-            remote_matches = dict(await asyncio.gather(*(search_remote(host) for host in remote_host_list)))
+            # 1ホストの打ち切りで他ホストの結果が未回収の例外にならないよう、全件を回収してから判定する。
+            results = await asyncio.gather(
+                *(search_remote(host) for host in remote_host_list),
+                return_exceptions=True,
+            )
+            remote_matches: dict[str, set[str]] = {}
+            for result in results:
+                if isinstance(result, _remote.RemoteSearchSuperseded):
+                    return quart.Response("search superseded", status=409, headers={"Cache-Control": "no-store"})
+                if isinstance(result, BaseException):
+                    # `search_remote`は`Exception`のみを捕捉するため、この分岐はキャンセル等に限られる。
+                    raise result
+                matched_host, matched_paths = result
+                remote_matches[matched_host] = matched_paths
             matched = [
                 entry
                 for entry in entries

@@ -12,6 +12,7 @@ import pytest
 import watchdog.events
 from quart.testing.connections import TestHTTPConnection as _TestHTTPConnection
 
+from pytools import claude_plans_viewer_remote_test_helpers as _remote_test_helpers
 from pytools.claude_plans_viewer import _app, _local, _state
 
 # テスト用debounce短縮値。本番既定値(0.3秒)を検証する対象は
@@ -20,6 +21,15 @@ from pytools.claude_plans_viewer import _app, _local, _state
 _TEST_DEBOUNCE_SEC = 0.02
 _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
 _QUEUE_GET_TIMEOUT_SEC = _TEST_DEBOUNCE_SEC + 0.3
+
+
+async def _wait_until(predicate: typing.Callable[[], bool], timeout: float = 5.0) -> None:
+    """条件が成立するまでイベントループを回す。制限時間内に成立しなければ失敗させる。"""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        assert loop.time() < deadline, "条件が制限時間内に成立しなかった"
+        await asyncio.sleep(0.01)
 
 
 @pytest.fixture(autouse=True)
@@ -487,6 +497,52 @@ class TestApiEndpoints:
         assert response.status_code == 200
         data = json.loads(await response.get_data())
         assert data["name"] == "Claude plans"
+
+
+class TestAppStartup:
+    """`create_app`が起動時に実施する後始末の契約を検証する。"""
+
+    def test_cleans_up_creation_time_temporaries_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """前回の異常終了で残った作成日時インデックスの一時ファイル除去を1回だけ呼ぶ。"""
+        calls: list[None] = []
+
+        def _cleanup() -> None:
+            calls.append(None)
+
+        monkeypatch.setattr(_local, "cleanup_creation_time_temporaries", _cleanup)
+        _app.create_app(tmp_path, hostname="test")
+
+        assert len(calls) == 1
+
+
+class TestApiSearchSupersession:
+    """置き換えられたリモート検索要求に対する`/api/search`の応答契約を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_superseded_request_returns_conflict(self, tmp_path: Path) -> None:
+        """置き換えられた要求へは409を返し、別の検索語の結果を返さない。"""
+        (tmp_path / "q1.md").write_text("q1", encoding="utf-8")
+        (tmp_path / "q3.md").write_text("q3", encoding="utf-8")
+        runner = _remote_test_helpers.BlockingSearchRunner()
+        app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1"], ssh_runner=runner)
+        client = app.test_client()
+
+        first = asyncio.create_task(client.get("/api/search", query_string={"q": "q1"}))
+        # 先行要求がSSHフォールバックを開始するまで待ち、以降の要求が待機列へ入る前提を整える。
+        await _wait_until(lambda: bool(runner.started))
+        second = asyncio.create_task(client.get("/api/search", query_string={"q": "q2"}))
+        await asyncio.sleep(0.1)
+        third = asyncio.create_task(client.get("/api/search", query_string={"q": "q3"}))
+        await asyncio.sleep(0.1)
+        runner.release()
+        responses = await asyncio.wait_for(asyncio.gather(first, second, third), timeout=5.0)
+
+        assert [response.status_code for response in responses] == [200, 409, 200]
+        assert await responses[1].get_data(as_text=True) == "search superseded"
+        # 置き換えられた検索語のSSHは起動せず、実行された2件は自身の検索語の結果を返す。
+        assert runner.started == [("host1", "q1"), ("host1", "q3")]
+        assert [entry["path"] for entry in json.loads(await responses[0].get_data())] == ["q1.md"]
+        assert [entry["path"] for entry in json.loads(await responses[2].get_data())] == ["q3.md"]
 
 
 class TestHostInfo:

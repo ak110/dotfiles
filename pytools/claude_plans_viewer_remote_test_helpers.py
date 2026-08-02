@@ -1,10 +1,12 @@
 """pytools.claude_plans_viewer のリモート関連テストが共有するフェイク・ヘルパー。
 
-`claude_plans_viewer_remote_host_test.py`と`claude_plans_viewer_remote_watcher_test.py`の
-双方が同一のSSH実行器フェイク・stdin/proc フェイク・状態注入ヘルパーを必要とするため集約する。
+`claude_plans_viewer_remote_host_test.py`・`claude_plans_viewer_remote_watcher_test.py`・
+`claude_plans_viewer_server_test.py`が同一のSSH実行器フェイク・stdin/proc フェイク・
+状態注入ヘルパーを必要とするため集約する。
 本モジュール自体はテスト専用であり、`pytools.claude_plans_viewer`配布パッケージには含めない。
 """
 
+import asyncio
 import base64
 import json
 import typing
@@ -49,6 +51,47 @@ class _FakeSshRunner:
                 payload["mtime_epoch"] = mtime
             return json.dumps(payload, ensure_ascii=False)
         raise ValueError(f"unknown op: {op}")
+
+
+class BlockingSearchRunner:
+    """`search`オペレーションの完了タイミングをテストから制御する擬似SSH実行器。
+
+    `release()`が呼ばれるまで応答を返さないため、実行中の件数と起動順序を観測できる。
+    検索結果は検索語から決まる`<検索語>.md`とし、要求ごとの結果の対応を検証できるようにする。
+    """
+
+    def __init__(self) -> None:
+        self.started: list[tuple[str, str]] = []
+        self.active = 0
+        self.max_active = 0
+        self._release = asyncio.Event()
+
+    async def __call__(self, host: str, op: str, args: list[str]) -> str:
+        """`release()`が呼ばれるまで待機し、検索語から決まる一致パスを返す。"""
+        assert op == "search"
+        query = base64.b64decode(args[0]).decode("utf-8")
+        self.started.append((host, query))
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await self._release.wait()
+        finally:
+            self.active -= 1
+        return json.dumps({"paths": [f"{query}.md"]})
+
+    def release(self) -> None:
+        """待機中および以降のすべての検索を完了させる。"""
+        self._release.set()
+
+
+async def settle_event_loop(times: int = 20) -> None:
+    """保留中のタスクへ制御を渡し、コーディネーターの状態遷移を進める。
+
+    `BlockingSearchRunner`以外に待機点が無い経路では、イベントループへ制御を返すだけで
+    起動可能な検索がすべて起動する。
+    """
+    for _ in range(times):
+        await asyncio.sleep(0)
 
 
 async def aiter_lines(lines: list[str]) -> typing.AsyncIterator[str]:

@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 
 from pytools.claude_plans_viewer import _app, _local, _remote, _remote_helper, _state
+from pytools.claude_plans_viewer_remote_test_helpers import BlockingSearchRunner as _BlockingSearchRunner
 from pytools.claude_plans_viewer_remote_test_helpers import _FakeSshRunner
 from pytools.claude_plans_viewer_remote_test_helpers import aiter_lines as _aiter_lines
 from pytools.claude_plans_viewer_remote_test_helpers import attach_fake_connection as _attach_fake_connection
 from pytools.claude_plans_viewer_remote_test_helpers import seed_remote_cache as _seed_remote_cache
+from pytools.claude_plans_viewer_remote_test_helpers import settle_event_loop as _settle
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +27,186 @@ def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     index_path = tmp_path / "creation-times" / "index.json"
     monkeypatch.setattr(_local, "_CREATION_TIME_INDEX_PATH", index_path)
     monkeypatch.setattr(_remote_helper, "_CREATION_TIME_INDEX_PATH", index_path)
+
+
+def _watcher_with_failing_rpc(host: str, monkeypatch: pytest.MonkeyPatch) -> _remote.RemoteWatcher:
+    """接続済みだがRPCが必ず失敗するwatcherを返す（SSHフォールバック経路の検証用）。"""
+    watcher = _remote.RemoteWatcher(host, _state.BroadcastState())
+    _attach_fake_connection(watcher)
+
+    async def _failing_request(op: str, args: dict[str, typing.Any], **kwargs: typing.Any) -> dict[str, typing.Any]:
+        del op, args, kwargs
+        raise RuntimeError("rpc failed")
+
+    monkeypatch.setattr(watcher, "request", _failing_request)
+    return watcher
+
+
+class TestRemoteSearchCoordination:
+    """`RemoteSearchCoordinator`によるSSH検索の直列化と有界化を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_same_host_searches_run_one_at_a_time(self) -> None:
+        """同一ホストへ連続要求してもSSHフォールバックの実行は高々1件に制限される。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator()
+        first = asyncio.create_task(_remote.search_remote_files("host1", "q1", runner, None, coordinator))
+        second = asyncio.create_task(_remote.search_remote_files("host1", "q2", runner, None, coordinator))
+        await _settle()
+
+        assert runner.started == [("host1", "q1")]
+
+        runner.release()
+        assert await asyncio.wait_for(first, timeout=1.0) == {"q1.md"}
+        assert await asyncio.wait_for(second, timeout=1.0) == {"q2.md"}
+        assert runner.max_active == 1
+
+    @pytest.mark.asyncio
+    async def test_superseded_request_raises(self) -> None:
+        """待機中の要求が後続要求へ置き換えられると`RemoteSearchSuperseded`を受け取る。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator()
+        first = asyncio.create_task(_remote.search_remote_files("host1", "q1", runner, None, coordinator))
+        await _settle()
+        second = asyncio.create_task(_remote.search_remote_files("host1", "q2", runner, None, coordinator))
+        third = asyncio.create_task(_remote.search_remote_files("host1", "q3", runner, None, coordinator))
+        await _settle()
+
+        with pytest.raises(_remote.RemoteSearchSuperseded):
+            await second
+
+        runner.release()
+        await asyncio.wait_for(asyncio.gather(first, third), timeout=1.0)
+
+    @pytest.mark.asyncio
+    async def test_running_and_latest_requests_receive_own_results(self) -> None:
+        """実行中の要求と最新の待機要求は、それぞれ自身の検索語に対応する結果を受け取る。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator()
+        first = asyncio.create_task(_remote.search_remote_files("host1", "q1", runner, None, coordinator))
+        await _settle()
+        second = asyncio.create_task(_remote.search_remote_files("host1", "q2", runner, None, coordinator))
+        third = asyncio.create_task(_remote.search_remote_files("host1", "q3", runner, None, coordinator))
+        await _settle()
+        runner.release()
+
+        with pytest.raises(_remote.RemoteSearchSuperseded):
+            await second
+        assert await asyncio.wait_for(first, timeout=1.0) == {"q1.md"}
+        assert await asyncio.wait_for(third, timeout=1.0) == {"q3.md"}
+        # 置き換えられた検索語のSSHは起動しない。
+        assert runner.started == [("host1", "q1"), ("host1", "q3")]
+
+    @pytest.mark.asyncio
+    async def test_different_hosts_are_not_serialized(self) -> None:
+        """別ホストへの要求は互いに直列化されない。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator()
+        tasks = [
+            asyncio.create_task(_remote.search_remote_files(host, "q", runner, None, coordinator))
+            for host in ("host1", "host2")
+        ]
+        await _settle()
+
+        assert sorted(runner.started) == [("host1", "q"), ("host2", "q")]
+        assert runner.max_active == 2
+
+        runner.release()
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=1.0)
+
+    @pytest.mark.asyncio
+    async def test_total_concurrency_is_bounded(self) -> None:
+        """5ホストへ同時要求しても、実行中のSSH検索は既定上限の4件を超えない。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator()
+        hosts = [f"host{index}" for index in range(1, 6)]
+        tasks = [asyncio.create_task(_remote.search_remote_files(host, "q", runner, None, coordinator)) for host in hosts]
+        await _settle()
+
+        assert len(runner.started) == _remote.DEFAULT_REMOTE_SEARCH_LIMIT
+        assert runner.max_active == _remote.DEFAULT_REMOTE_SEARCH_LIMIT
+
+        runner.release()
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=1.0)
+        assert len(runner.started) == len(hosts)
+        assert runner.max_active == _remote.DEFAULT_REMOTE_SEARCH_LIMIT
+
+    @pytest.mark.asyncio
+    async def test_rpc_search_does_not_consume_slots(self) -> None:
+        """RPC接続中の検索はホスト枠と全体Semaphoreを消費しない。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator(1)
+        watcher = _remote.RemoteWatcher("host1", _state.BroadcastState())
+        _attach_fake_connection(watcher)
+        occupying = asyncio.create_task(_remote.search_remote_files("host1", "occupy", runner, None, coordinator))
+        await _settle()
+
+        async def _drive() -> None:
+            await _settle()
+            await watcher._handle_event({"type": "response", "id": 1, "ok": True, "paths": ["rpc.md"]})  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess stdoutから配信されるイベントを単体で注入するため）
+
+        drive_task = asyncio.create_task(_drive())
+        # ホスト枠も全体Semaphoreも埋まっているが、RPC経路は待たされない。
+        paths = await asyncio.wait_for(_remote.search_remote_files("host1", "rpc", runner, watcher, coordinator), timeout=1.0)
+        await drive_task
+
+        assert paths == {"rpc.md"}
+        assert runner.started == [("host1", "occupy")]
+
+        runner.release()
+        await asyncio.wait_for(occupying, timeout=1.0)
+
+    @pytest.mark.asyncio
+    async def test_ssh_fallback_after_rpc_failure_uses_host_slot(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RPC失敗後のSSHフォールバックはホスト枠を消費し、同一ホスト内で直列化される。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator()
+        watcher = _watcher_with_failing_rpc("host1", monkeypatch)
+        first = asyncio.create_task(_remote.search_remote_files("host1", "q1", runner, watcher, coordinator))
+        second = asyncio.create_task(_remote.search_remote_files("host1", "q2", runner, watcher, coordinator))
+        await _settle()
+
+        assert runner.started == [("host1", "q1")]
+
+        runner.release()
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=1.0)
+
+    @pytest.mark.asyncio
+    async def test_ssh_fallback_after_rpc_failure_uses_global_semaphore(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RPC失敗後のSSHフォールバックは全体Semaphoreを消費し、上限到達時は待機する。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator(1)
+        watcher = _watcher_with_failing_rpc("host2", monkeypatch)
+        occupying = asyncio.create_task(_remote.search_remote_files("host1", "occupy", runner, None, coordinator))
+        await _settle()
+        fallback = asyncio.create_task(_remote.search_remote_files("host2", "fallback", runner, watcher, coordinator))
+        await _settle()
+
+        assert runner.started == [("host1", "occupy")]
+
+        runner.release()
+        await asyncio.wait_for(asyncio.gather(occupying, fallback), timeout=1.0)
+        assert runner.started == [("host1", "occupy"), ("host2", "fallback")]
+
+    @pytest.mark.asyncio
+    async def test_cancelled_caller_keeps_slot_until_process_completes(self) -> None:
+        """呼び出し側を取り消しても、起動済みSSHが完了するまで全体Semaphoreを解放しない。"""
+        runner = _BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator(1)
+        first = asyncio.create_task(_remote.search_remote_files("host1", "q1", runner, None, coordinator))
+        await _settle()
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        second = asyncio.create_task(_remote.search_remote_files("host2", "q2", runner, None, coordinator))
+        await _settle()
+
+        # 起動済みSSHは継続し、その枠は解放されないため次の検索は開始しない。
+        assert runner.active == 1
+        assert runner.started == [("host1", "q1")]
+
+        runner.release()
+        assert await asyncio.wait_for(second, timeout=1.0) == {"q2.md"}
 
 
 class TestFetchRemoteFile:

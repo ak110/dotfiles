@@ -4,6 +4,7 @@ import asyncio
 import asyncio.subprocess as _async_subprocess
 import base64
 import contextlib
+import dataclasses
 import json
 import logging
 import pathlib
@@ -27,6 +28,12 @@ SSH_TIMEOUT_SEC = 30.0
 # RPCリクエスト1件あたりのタイムアウト秒。
 # 常駐SSH接続の応答が一時的に遅延した場合にfallback経路へ切り替えるための値。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
+
+# SSHフォールバック経路の検索を同時に実行する上限（全ホスト合計）。
+# 上限1は別ホストの検索まで直列化し、上限8は同時に起動するSSHとリモートPythonを根拠なく倍増させる。
+# 複数ホストの並列性とプロセス数の有界化を両立する値として、
+# フィードバック管理Web UIの有界ワーカー既定値と同じ4を採用する。
+DEFAULT_REMOTE_SEARCH_LIMIT = 4
 
 # `serve`用のSSH追加オプション。
 # 接続確立を5秒、ServerAliveの組合せでネットワーク途絶を最大30秒程度で検知する。
@@ -168,13 +175,104 @@ async def fetch_remote_file(
     return _decode_read_payload(json.loads(raw))
 
 
+class RemoteSearchSuperseded(Exception):
+    """後続の検索要求へ置き換えられ、実行されないまま打ち切られたことを示す。
+
+    置き換えられた要求へ別の検索語の結果や空集合を返すと、
+    呼び出し元は誤った一覧を検索結果として扱う。打ち切りを明示的な失敗として伝える。
+    """
+
+
+# コーディネーター経由で実行する検索本体。結果は一致した相対パス集合とする。
+RemoteSearchRunner = typing.Callable[[], typing.Awaitable[set[str]]]
+
+
+@dataclasses.dataclass
+class _PendingSearch:
+    """待機中の検索要求（実行本体と、結果を受け取るFuture）。"""
+
+    run: RemoteSearchRunner
+    future: asyncio.Future[set[str]]
+
+
+class RemoteSearchCoordinator:
+    """SSHフォールバック経路の検索をホスト単位で直列化し、全ホスト合計でも有界化する。
+
+    検索は利用者の入力ごとに発行されるため、素朴に実行するとSSHとリモートPythonの組が
+    入力継続中に積み上がる。ホストごとに実行中1件・待機中1件へ制限し、
+    3件目以降の到着時は待機中の要求を最新の1件へ置き換える。
+    置き換えられた要求へは`RemoteSearchSuperseded`を返し、別の検索語の結果を共有しない。
+
+    実行はコーディネーターが所有するワーカータスクが担い、呼び出し元は`asyncio.shield`越しに
+    結果を待つ。呼び出し元をキャンセルしても起動済みのSSHプロセスと`asyncio.Semaphore`の枠は
+    保持され続けるため、キャンセル直後の新しい要求が枠を追加取得して同時実行数が上限を超えることはない。
+    """
+
+    def __init__(self, limit: int = DEFAULT_REMOTE_SEARCH_LIMIT) -> None:
+        self._semaphore = asyncio.Semaphore(limit)
+        # host -> 待機中の要求。実行中の要求はワーカーが保持するためここには現れない。
+        self._pending: dict[str, _PendingSearch] = {}
+        # host -> 稼働中のワーカータスク。キーの有無をホスト単位の実行中判定に使う。
+        # `asyncio`はタスクを弱参照でしか保持しないため、完了までの強参照もここで保つ。
+        self._workers: dict[str, asyncio.Task[None]] = {}
+
+    async def submit(self, host: str, run: RemoteSearchRunner) -> set[str]:
+        """検索本体をホストの実行枠へ載せ、自身の要求に対応する結果を返す。
+
+        当該ホストが空いていれば直ちに実行枠へ載せる。実行中であれば待機列へ入り、
+        先行の待機要求があれば最新の要求で置き換えて`RemoteSearchSuperseded`を送出する。
+        """
+        loop = asyncio.get_running_loop()
+        request = _PendingSearch(run=run, future=loop.create_future())
+        if host in self._workers:
+            superseded = self._pending.get(host)
+            self._pending[host] = request
+            if superseded is not None and not superseded.future.done():
+                superseded.future.set_exception(RemoteSearchSuperseded(f"リモート検索が後続要求へ置き換えられた: host={host}"))
+        else:
+            # 最初の要求は待機列を経由せず実行枠へ渡す。待機列へ置くと、
+            # ワーカーの起動前に到着した後続要求が最初の要求を置き換える。
+            self._workers[host] = asyncio.create_task(self._run_host(host, request))
+        # 呼び出し元（HTTP要求）のキャンセルがワーカーへ波及しないよう遮蔽する。
+        return await asyncio.shield(request.future)
+
+    async def _run_host(self, host: str, request: _PendingSearch) -> None:
+        """1ホスト分の要求を順に実行する。待機列が尽きた時点でホスト状態を削除して終了する。"""
+        while True:
+            async with self._semaphore:
+                try:
+                    result = await request.run()
+                except asyncio.CancelledError:
+                    if not request.future.done():
+                        request.future.cancel()
+                    raise
+                except Exception as error:  # noqa: BLE001
+                    # 例外は握り潰さず、要求元のFutureへそのまま転送する。
+                    if not request.future.done():
+                        request.future.set_exception(error)
+                else:
+                    if not request.future.done():
+                        request.future.set_result(result)
+            next_request = self._pending.pop(host, None)
+            if next_request is None:
+                # 削除と終了の間にawaitが無いため、この直後の`submit`は新しいワーカーを起動できる。
+                self._workers.pop(host, None)
+                return
+            request = next_request
+
+
 async def search_remote_files(
     host: str,
     query: str,
     ssh_runner: SshRunner,
     watcher: "RemoteWatcher | None" = None,
+    coordinator: RemoteSearchCoordinator | None = None,
 ) -> set[str]:
-    """リモートホストで本文検索を実行し、一致した相対パス集合を返す。"""
+    """リモートホストで本文検索を実行し、一致した相対パス集合を返す。
+
+    `coordinator`を渡した場合、SSHフォールバック経路だけが直列化と全体上限の対象になる。
+    常駐SSH接続経由のRPCはプロセスを起動しないため対象外とする。
+    """
     query_b64 = base64.b64encode(query.encode("utf-8")).decode("ascii")
     if watcher is not None and watcher.is_connected():
         try:
@@ -185,10 +283,16 @@ async def search_remote_files(
             if response.get("ok") and isinstance(response.get("paths"), list):
                 return {str(path) for path in response["paths"]}
             logger.warning("リモート検索RPCエラー host=%s: %s（fallbackへ）", host, response.get("error"))
-    raw = await ssh_runner(host, "search", [query_b64])
-    payload = json.loads(raw)
-    paths = payload.get("paths", [])
-    return {str(path) for path in paths} if isinstance(paths, list) else set()
+
+    async def _run_ssh_search() -> set[str]:
+        raw = await ssh_runner(host, "search", [query_b64])
+        payload = json.loads(raw)
+        paths = payload.get("paths", [])
+        return {str(path) for path in paths} if isinstance(paths, list) else set()
+
+    if coordinator is None:
+        return await _run_ssh_search()
+    return await coordinator.submit(host, _run_ssh_search)
 
 
 class RemoteWatcher:
