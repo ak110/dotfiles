@@ -218,7 +218,7 @@ def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
         assert "初回成果物に存在した見逃し" not in output
     assert "初回成果物に存在した見逃し" in review
     assert "計画対応・独立提案" in implementation_task
-    assert "## 一括修正後の影響監査" in implementation_task
+    assert "一括修正による影響を監査する" in implementation_task
     assert "review_impact_audit" in implementation_task
 
 
