@@ -28,6 +28,9 @@ _BUG_ROWS = tuple(
 """.splitlines()
 )
 _FULL_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+# 既存ファイルの変更を含む計画で参照追従検査を充足させる`## 調査結果`節。
+# 当該検査と無関係なテストのフィクスチャへ前置し、検査の発動条件を緩めずに意図を保つ。
+_REFERENCE_ENUMERATION_SECTION = "## 調査結果\n\n- 参照追従対象: なし\n- 入力形態: 該当なし\n- 追従要否: 追従先なし\n\n"
 
 
 def _write_plan(tmp_path: pathlib.Path, body: str, *, include_h1: bool = True) -> pathlib.Path:
@@ -379,7 +382,8 @@ def test_nonexistent_path_with_prefixed_deletion_marker_silent(
 ) -> None:
     """`（現行N行、廃止・削除）`のような前置き付き複合形のマーカーも実在確認を免除する。"""
     body = (
-        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `does/not/exist.md`（現行87行、廃止・削除）\n\n"
+        _REFERENCE_ENUMERATION_SECTION + "## 変更内容\n\n### 対象ファイル一覧\n\n"
+        "- [ ] `does/not/exist.md`（現行87行、廃止・削除）\n\n"
         "### `does/not/exist.md`\n\n```text\n本ファイルを削除する。\n```\n"
     )
     plan = _write_plan(tmp_path, body)
@@ -920,7 +924,7 @@ def test_deletion_marker_with_deletion_word_silent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     body = (
-        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（廃止・削除）\n\n"
+        _REFERENCE_ENUMERATION_SECTION + "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（廃止・削除）\n\n"
         "### `foo.md`\n\n```text\n本ファイルを削除する。退避先: archive/foo.md\n```\n"
     )
     plan = _write_plan(tmp_path, body)
@@ -1092,6 +1096,101 @@ def test_retroactive_scan_record(
     assert main() == (1 if expect_error else 0)
     captured = capsys.readouterr()
     assert ("遡及スキャン記録の不足の疑い" in captured.err) is expect_error
+
+
+_EXISTING_TARGET_PLAN_BODY = (
+    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `existing.md`（現行10行）\n\n"
+    "### `existing.md`\n\n```text\n+- 手順を1件追記する\n```\n"
+)
+_NEW_ONLY_PLAN_BODY = (
+    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n### `foo.md`\n\n```text\n+- 手順を1件追記する\n```\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("investigation_section", "plan_body", "expect_error"),
+    [
+        pytest.param(
+            "## 調査結果\n\n- 参照追従対象: `grep -rn`で3件\n- 入力形態: 該当なし\n"
+            "- 追従要否: 全件を対象ファイル一覧へ含めた\n\n",
+            _EXISTING_TARGET_PLAN_BODY,
+            False,
+            id="required_items_present",
+        ),
+        pytest.param(
+            "## 調査結果\n\n- 参照追従対象: `grep -rn`で3件\n- 追従要否: 全件を対象ファイル一覧へ含めた\n\n",
+            _EXISTING_TARGET_PLAN_BODY,
+            True,
+            id="required_item_missing",
+        ),
+        pytest.param(
+            "## 調査結果\n\n- 新設のみのため参照追従の対象が無い\n\n",
+            _NEW_ONLY_PLAN_BODY,
+            False,
+            id="not_triggered_for_new_only",
+        ),
+        pytest.param(
+            "## 調査結果\n\n- 新設のみのため参照追従の対象が無い\n\n",
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n### `foo.md`\n\n"
+            "````text\n- [ ] `existing.md`（現行10行）\n````\n",
+            False,
+            id="fenced_checkbox_example_does_not_trigger",
+        ),
+        pytest.param(
+            "## 調査結果\n\n- 新設と既存が混在する\n\n",
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n"
+            "- [ ] `existing.md`（現行10行）\n\n"
+            "### `foo.md`\n\n```text\n+- 手順を1件追記する\n```\n\n"
+            "### `existing.md`\n\n```text\n+- 手順を1件追記する\n```\n",
+            True,
+            id="triggered_when_new_and_existing_are_mixed",
+        ),
+    ],
+)
+def test_reference_enumeration_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    investigation_section: str,
+    plan_body: str,
+    expect_error: bool,
+) -> None:
+    """参照追従必須3語の充足有無に応じてerrorの有無が切り替わる。"""
+    (tmp_path / "existing.md").write_text("既存ファイル\n", encoding="utf-8")
+    plan = _write_plan(tmp_path, investigation_section + plan_body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == (1 if expect_error else 0)
+    captured = capsys.readouterr()
+    assert ("参照追従の網羅列挙の不足の疑い" in captured.err) is expect_error
+
+
+def test_reference_enumeration_words_in_fenced_example_do_not_satisfy_requirement(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """フェンス内の記述例に必須語があっても要件を満たさない。"""
+    body = "## 調査結果\n\n````text\n参照追従対象\n入力形態\n追従要否\n````\n\n" + _EXISTING_TARGET_PLAN_BODY
+    (tmp_path / "existing.md").write_text("既存ファイル\n", encoding="utf-8")
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "参照追従の網羅列挙の不足の疑い" in capsys.readouterr().err
+
+
+def test_deleted_target_triggers_reference_enumeration_check(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`（廃止・削除）`のみの計画でも参照追従検査が発動する。"""
+    body = (
+        "## 調査結果\n\n- 削除対象の参照は無い\n\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行10行、廃止・削除）\n\n"
+        "### `foo.md`\n\n```text\n本ファイルを削除する\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "参照追従の網羅列挙の不足の疑い" in capsys.readouterr().err
 
 
 def test_bug_investigation_table_accepts_required_rows_in_order(
@@ -1762,7 +1861,7 @@ def test_indented_fenced_code_block_returns_zero(
 ) -> None:
     """1〜3文字インデントしたフェンスをH3配下のコードブロックとして認識する。"""
     body = (
-        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（廃止・削除）\n\n"
+        _REFERENCE_ENUMERATION_SECTION + "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（廃止・削除）\n\n"
         f"### `foo.md`\n\n{indent}```text\n本ファイルを削除する。\n{indent}```\n"
     )
     plan = _write_plan(tmp_path, body)

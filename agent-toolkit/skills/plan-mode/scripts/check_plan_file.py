@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の15点に限定する。
+チェック対象は次の16点に限定する。
 - 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
   Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
@@ -26,6 +26,8 @@ r"""計画ファイルの軽量機械チェック。
 - `## 変更内容`の各H3節`text`コードブロックの追加分がメタ規範パターン（全称禁止表現・
   汎用禁止形バレット・`##`以上の見出し）に該当する場合、`## 調査結果`へ遡及スキャンの
   必須3語（対象パターン・検出件数・対応方針）が揃っているか
+- `### 対象ファイル一覧`が`（新設）`マーカーを持たない項目を含む場合、`## 調査結果`へ
+  参照追従の必須3語（参照追従対象・入力形態・追従要否）が揃っているか
 - `### 計画メタ情報`が存在する場合、ベースコミットのラベルと完全長のコミットハッシュが
   記載されているか
 - `## 背景`が存在する場合、直下の`### 計画メタ情報`に固定記法`- 作業種別: <固定値>`で
@@ -57,6 +59,8 @@ error区分（計画が成立しない致命的な問題）とその判定根拠
 - `（廃止・削除）`注記と削除指示語の食い違い: 注記と本文指示の不整合に当たる
 - メタ規範パターン追加時の遡及スキャン必須3語: 同一判定を行う`agent-toolkit/scripts/pretooluse.py`の
   `_check_plan_file_retroactive_scan_recorded`が既にブロック側へ入っており、error区分が整合する
+- 既存ファイルの変更を含む計画の参照追従必須3語: 変更対象を参照する既存箇所の列挙を欠くと、
+  同一規定を参照する他の箇所への追随が実装段階まで露出せず、計画本文だけで変更を再現できない
 - 計画メタ情報のベースコミット記載: 実装着手時の差分判定に必要な基点が無いと、
   計画作成後に対象が変化した場合の再確認要否を判定できない
 
@@ -152,6 +156,8 @@ _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE = re.compile(r"いかなる理由(?:�
 _RETROACTIVE_SCAN_NEW_HEADING_RE = re.compile(r"^##[#]* .+$", re.MULTILINE)
 
 _RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検出件数", "対応方針")
+
+_REFERENCE_ENUMERATION_REQUIRED_ITEMS: tuple[str, ...] = ("参照追従対象", "入力形態", "追従要否")
 
 _BUMP_MANIFEST_PATHS = frozenset({"agent-toolkit/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json"})
 _VERSION_NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])")
@@ -977,6 +983,39 @@ def _check_retroactive_scan_recorded(document: _Document, change_sections: list[
     ]
 
 
+def _has_existing_target_file(document: _Document, change_sections: list[_Section]) -> bool:
+    """`### 対象ファイル一覧`に`（新設）`マーカーを持たない項目が存在するか判定する。
+
+    `（廃止・削除）`は既存ファイルへの操作であり、当該ファイルを参照する箇所への追随を要するため
+    対象に含める。
+    """
+    for section in change_sections:
+        for line_no in range(section.start_line, section.end_line):
+            if line_no in document.code_lines:
+                continue
+            line = document.lines[line_no]
+            if not _CHECKBOX_RE.match(line):
+                continue
+            marker = _NEW_OR_DELETED_RE.search(line)
+            if marker is None or marker.group(1) != "新設":
+                return True
+    return False
+
+
+def _check_reference_enumeration_recorded(document: _Document, change_sections: list[_Section]) -> list[str]:
+    """既存ファイルの変更を含む計画で、`## 調査結果`の参照追従必須3語の不足を検出する。"""
+    if not _has_existing_target_file(document, change_sections):
+        return []
+    section_text = "\n".join(_non_code_text(document, section) for section in _iter_h2_sections(document, "調査結果"))
+    missing = [item for item in _REFERENCE_ENUMERATION_REQUIRED_ITEMS if item not in section_text]
+    if not missing:
+        return []
+    return [
+        "参照追従の網羅列挙の不足の疑い: `### 対象ファイル一覧`に既存ファイルの変更を検出したが、"
+        f"`## 調査結果`に必須語が揃っていない（不足: {'、'.join(missing)}）"
+    ]
+
+
 def _check_version_number_absent(document: _Document, checkbox_paths: list[str]) -> list[str]:
     """版更新正本を対象へ含む計画で、具体的なバージョン数値の記載を検出する。
 
@@ -1063,6 +1102,7 @@ def main() -> int:
     errors.extend(_check_invocation_names_exist(document))
     errors.extend(_check_deletion_instruction_present(document, change_sections))
     errors.extend(_check_retroactive_scan_recorded(document, change_sections))
+    errors.extend(_check_reference_enumeration_recorded(document, change_sections))
     errors.extend(_check_base_commit_recorded(document))
     warnings.extend(_check_execution_method_scope(document))
     warnings.extend(_check_deprecated_identifiers_removed(document, plan_path))
