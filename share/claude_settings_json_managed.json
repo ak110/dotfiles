@@ -18,12 +18,12 @@
     "superpowers@claude-plugins-official": false
   },
   "env": {
+    "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION": "1",
     "CLAUDE_CODE_ENABLE_AUTO_MODE": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "5",
     "CLAUDE_CODE_NO_FLICKER": "1",
-    "CLAUDE_CODE_SCROLL_SPEED": "3",
-    "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION": "1"
+    "CLAUDE_CODE_SCROLL_SPEED": "3"
   },
   "language": "japanese",
   "permissions": {

@@ -4,15 +4,17 @@ Claude Codeが停止しようとするタイミングで発火する。判定分
 概要は次のとおり。`stop_hook_active`真時・非同期作業継続中は無条件approve、
 直近アシスタント発話にscope-escalationフレーズを検出した場合は`decision: "block"`で
 矯正指示を返す（照合カテゴリは`_build_stop_focus_categories`が通常時／
-plan-mode等のスキル実行中で切り替える）。`agent-toolkit:session-review`起動済み・
-拡張章pending時はapprove、それ以外の通常終了時は振り返り誘導文をblockで返す。
+plan-mode等のスキル実行中で切り替える）。`agent-toolkit:session-review`起動済み時はapproveとする。
+振り返り誘導の抑止経路は2つあり、セッション状態フラグ`session_review_extension_pending`が真の場合と、
+環境変数`AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION`へ非空の値が設定されている場合のいずれかで
+拡張側が誘導を担うとみなしapproveする。
+いずれにも該当しない通常終了時は振り返り誘導文をblockで返す。
 終了判定の言語的基準は`agent-toolkit:session-review`「起動方針」節をSSOTとし、
 誘導文冒頭へ同一基準（`_message_format.SESSION_REVIEW_PRECHECK`）を事前チェックとして埋め込む。
 
 各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で常時ログへ記録する。
 """
 
-import functools
 import json
 import os
 import pathlib
@@ -80,7 +82,6 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
-@functools.cache
 def _has_session_review_extension() -> bool:
     """振り返り拡張フックの導入を示す環境変数が設定されている場合に真を返す。"""
     return bool(os.environ.get(_SESSION_REVIEW_EXTENSION_ENV, "").strip())

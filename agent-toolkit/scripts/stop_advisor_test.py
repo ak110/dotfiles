@@ -551,15 +551,35 @@ class TestExtensionRepository:
         )
         assert _block_reason(_parse_decision(result))
 
-    def test_origin_check_not_used_anymore(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        """リポジトリ識別子への依存が除去されたことを検証する再発防止テスト。"""
+    @pytest.mark.parametrize(
+        "remote_url",
+        ["https://example.com/owner/dotfiles.git", "git@example.com:owner/dotfiles.git"],
+    )
+    def test_home_repository_origin_has_no_effect(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        remote_url: str,
+    ):
+        """ホーム直下のリポジトリとoriginを構成しても、環境変数未設定なら振り返り誘導を維持する。"""
         monkeypatch.delenv("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", raising=False)
+        _configure_dotfiles_origin(tmp_path, remote_url)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
-            {"session_id": "origin-test", "transcript_path": str(transcript)},
+            {"session_id": "origin-ignored", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         assert _block_reason(_parse_decision(result))
+
+    def test_origin_lookup_not_referenced(self):
+        """抑止判定がgit remoteの参照に依存しないことを構造で固定する再発防止テスト。
+
+        origin正規化比較による判定へ巻き戻すと`_git_remote`のimportと
+        `get_normalized_origin`の呼び出しが復活するため、いずれの検査も失敗する。
+        """
+        assert not hasattr(stop_advisor, "_git_remote")
+        source = pathlib.Path(stop_advisor.__file__).read_text(encoding="utf-8")
+        assert "get_normalized_origin" not in source
 
 
 class TestEdgeCases:
