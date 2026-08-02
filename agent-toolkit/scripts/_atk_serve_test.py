@@ -13,7 +13,6 @@ import signal
 import struct
 import subprocess
 import threading
-import time
 import types
 import typing
 import zlib
@@ -1305,27 +1304,78 @@ async def test_state_publishes_once_after_last_change(
     assert published == ["changed"]
 
 
+class _FakeTimer:
+    """`threading.Timer`の代替。実時間で発火せず、テストが明示的に発火させる。"""
+
+    def __init__(self, interval: float, function: typing.Callable[..., None], args: tuple[typing.Any, ...] = ()) -> None:
+        self.interval = interval
+        self.function = function
+        self.args = args
+        self.daemon = False
+        self.cancelled = False
+
+    def start(self) -> None:
+        """発火予約の代わりに何もしない。"""
+
+    def cancel(self) -> None:
+        """発火予約を取り消したものとして記録する。"""
+        self.cancelled = True
+
+
 @pytest.mark.asyncio
 async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """閾値未満の間隔で変更が続いても最大待機時間で1回通知し、以降は新しい保留期間を開始する。"""
-    current = state.ServeState(tmp_path, debounce_seconds=0.05)
-    max_wait = 0.05 * state.ServeState._MAX_DEBOUNCE_FACTOR
+    """閾値未満の間隔で変更が続いても最大待機時間で1回通知し、以降は新しい保留期間を開始する。
+
+    実時間のスケジューリング遅延で結果が変わらないよう、単調時計とタイマーを差し替えて検証する。
+    """
+    debounce = 0.05
+    max_wait = debounce * state.ServeState._MAX_DEBOUNCE_FACTOR
+    clock = [1_000.0]
+    timers: list[_FakeTimer] = []
+
+    def _make_timer(interval: float, function: typing.Callable[..., None], args: tuple[typing.Any, ...] = ()) -> _FakeTimer:
+        timer = _FakeTimer(interval, function, args)
+        timers.append(timer)
+        return timer
+
+    monkeypatch.setattr(state.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(state.threading, "Timer", _make_timer)
+
+    current = state.ServeState(tmp_path, debounce_seconds=debounce)
     current._loop = asyncio.get_running_loop()
     published: list[str] = []
     monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
     event = watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md"))
 
-    # 期限到達後にも複数のイベントを送り、新しい保留期間が始まることを確認できる長さにする。
-    limit = time.monotonic() + max_wait + 0.08
-    while time.monotonic() < limit:
+    # 閾値未満の間隔で変更を送り続け、期限に到達するまで発行されないことを確認する。
+    deadline = clock[0] + max_wait
+    while clock[0] < deadline:
         current.on_modified(event)
-        await asyncio.sleep(0.02)
-    assert published == ["changed"]
+        # 直前に設定したタイマーの発火時刻が期限を超えないこと（期限が上界であること）。
+        assert clock[0] + timers[-1].interval <= deadline
+        await asyncio.sleep(0)
+        assert not published
+        clock[0] += 0.02
 
-    await asyncio.sleep(0.1)
+    # 期限に到達した変更はタイマーを介さず直ちに発行する。
+    pending_before = len(timers)
+    current.on_modified(event)
+    await asyncio.sleep(0)
+    assert published == ["changed"]
+    assert len(timers) == pending_before
+
+    # 以降は新しい保留期間となり、静穏期間の経過で再び1回発行する。
+    clock[0] += 0.01
+    current.on_modified(event)
+    await asyncio.sleep(0)
+    assert published == ["changed"]
+    latest = timers[-1]
+    assert latest.interval == debounce
+    latest.function(*latest.args)
+    await asyncio.sleep(0)
     assert published == ["changed", "changed"]
 
 

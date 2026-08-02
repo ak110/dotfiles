@@ -54,7 +54,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.observer.join()
 
     def _publish_pending(self, generation: int) -> None:
-        """静穏期間後又は最大待機時間の到達後に保留通知を1回だけ発行する。"""
+        """静穏期間の経過後または最大待機時間の到達後に保留通知を1回だけ発行する。"""
         with self._lock:
             if generation != self._pending_generation:
                 return
@@ -73,7 +73,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.publish()
 
     def _publish_markdown_change(self, event: watchdog.events.FileSystemEvent) -> None:
-        """Markdownの内容又は配置の変更を購読者へ通知する。"""
+        """Markdownの内容または配置の変更を購読者へ通知する。"""
         paths = (event.src_path, getattr(event, "dest_path", ""))
         if event.is_directory or not any(str(path).endswith(".md") for path in paths):
             return
@@ -101,8 +101,10 @@ class ServeState(watchdog.events.FileSystemEventHandler):
                 self._pending_started_at = None
                 publish_at_deadline = True
             else:
+                # 期限を上界として保証するため、静穏期間と期限までの残り時間の短い方を待つ。
+                interval = min(self.debounce_seconds, deadline - now)
                 self._pending_notification = threading.Timer(
-                    self.debounce_seconds,
+                    interval,
                     self._publish_pending,
                     args=(self._pending_generation,),
                 )
