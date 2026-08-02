@@ -1304,14 +1304,11 @@ async def test_state_publishes_once_after_last_change(
     assert published == ["changed"]
 
 
-class _FakeTimer:
+class _FakeTimer(threading.Timer):
     """`threading.Timer`の代替。実時間で発火せず、テストが明示的に発火させる。"""
 
     def __init__(self, interval: float, function: typing.Callable[..., None], args: tuple[typing.Any, ...] = ()) -> None:
-        self.interval = interval
-        self.function = function
-        self.args = args
-        self.daemon = False
+        super().__init__(interval, function, args)
         self.cancelled = False
 
     def start(self) -> None:
@@ -1329,7 +1326,7 @@ async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
 ) -> None:
     """閾値未満の間隔で変更が続いても最大待機時間で1回通知し、以降は新しい保留期間を開始する。
 
-    実時間のスケジューリング遅延で結果が変わらないよう、単調時計とタイマーを差し替えて検証する。
+    実時間のスケジューリング遅延で結果が変わらないよう、単調時計とタイマーを注入して検証する。
     """
     debounce = 0.05
     max_wait = debounce * state.ServeState._MAX_DEBOUNCE_FACTOR
@@ -1341,10 +1338,12 @@ async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
         timers.append(timer)
         return timer
 
-    monkeypatch.setattr(state.time, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(state.threading, "Timer", _make_timer)
-
-    current = state.ServeState(tmp_path, debounce_seconds=debounce)
+    current = state.ServeState(
+        tmp_path,
+        debounce_seconds=debounce,
+        monotonic=lambda: clock[0],
+        timer_factory=_make_timer,
+    )
     current._loop = asyncio.get_running_loop()
     published: list[str] = []
     monkeypatch.setattr(current, "publish", lambda: published.append("changed"))

@@ -1,27 +1,45 @@
 """watchdogの変更通知をSSE購読者へ中継する。"""
 
 import asyncio
+import collections.abc
 import contextlib
 import pathlib
 import threading
 import time
+import typing
 
 import _atk_mq_common as common
 import watchdog.events
 import watchdog.observers
 
+_TimerFactory = collections.abc.Callable[[float, collections.abc.Callable[..., None], tuple[typing.Any, ...]], threading.Timer]
+
 
 class ServeState(watchdog.events.FileSystemEventHandler):
-    """変更通知と購読者を管理する。"""
+    """変更通知と購読者を管理する。
+
+    `monotonic`は保留期間の経過判定に使う単調時計、`timer_factory`は保留通知の遅延発火に使う
+    タイマーの生成関数とする。既定値は標準ライブラリの実装であり、呼び出し側が別の実装を渡すと
+    実時間の経過に依存せず発火時刻の決定を確認できる。
+    """
 
     # 末尾発行の先送りが無限に続くことを防ぐ最大待機時間の倍率。
     # 閾値未満の間隔で変更が到着し続ける場合でも、最初の保留から
     # `debounce_seconds * _MAX_DEBOUNCE_FACTOR`が経過した時点で1回発行する。
     _MAX_DEBOUNCE_FACTOR = 5
 
-    def __init__(self, root: pathlib.Path, *, debounce_seconds: float = 0.1) -> None:
+    def __init__(
+        self,
+        root: pathlib.Path,
+        *,
+        debounce_seconds: float = 0.1,
+        monotonic: collections.abc.Callable[[], float] = time.monotonic,
+        timer_factory: _TimerFactory = threading.Timer,
+    ) -> None:
         self.root = root
         self.debounce_seconds = debounce_seconds
+        self._monotonic = monotonic
+        self._timer_factory = timer_factory
         self.observer = watchdog.observers.Observer()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queues: set[asyncio.Queue[str]] = set()
@@ -88,7 +106,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         with self._lock:
             if self._stopped:
                 return
-            now = time.monotonic()
+            now = self._monotonic()
             if self._pending_started_at is None:
                 self._pending_started_at = now
             deadline = self._pending_started_at + self.debounce_seconds * self._MAX_DEBOUNCE_FACTOR
@@ -103,10 +121,10 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             else:
                 # 期限を上界として保証するため、静穏期間と期限までの残り時間の短い方を待つ。
                 interval = min(self.debounce_seconds, deadline - now)
-                self._pending_notification = threading.Timer(
+                self._pending_notification = self._timer_factory(
                     interval,
                     self._publish_pending,
-                    args=(self._pending_generation,),
+                    (self._pending_generation,),
                 )
                 self._pending_notification.daemon = True
                 self._pending_notification.start()
