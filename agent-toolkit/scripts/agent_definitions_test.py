@@ -176,10 +176,10 @@ def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
     review = _PLAN_REVIEW.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "_worktree_snapshot.py capture" in finalizer
     assert "_worktree_snapshot.py capture" in review
+    assert "「用途別task reference」節に従い" in finalizer
     assert "worktree_check_results" in finalizer
-    assert "具体的な復旧手順" in finalizer
+    assert "具体的な復旧手順" in review
     assert "復旧の実行主体は、呼び出し元の明示確認後に開始する別工程" in review
     assert "worktree_check_result" in fix_task
     assert "worktree_check_result" in review_task
@@ -292,7 +292,8 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     assert "反映後最終検査結果も、\n`反映後・再レビュー前`だけで必須" in finalizer_input
     assert "再計算しない" in finalizer_input
     assert finalizer_workflow.index("入力直後かつ書き込み可能な委譲前") < (finalizer_workflow.index("機械チェック委譲"))
-    assert "初回または`初回レビュー前`では、累積`review_rounds`が5未満" in finalizer_workflow
+    assert "初回または`初回レビュー前`では、累積`review_rounds`が`plan-codex-review.md`" in finalizer_workflow
+    assert "「指摘反映と再レビュー」節の定める上限未満" in finalizer_workflow
     assert "レビュー系へ計画ファイル全体の総合レビューを1回" in finalizer_workflow
     assert "`採否確定後・反映前`は工程14へ" in finalizer_workflow
     assert "`初回レビュー後・採否確定前`は工程13へ" in finalizer_workflow
@@ -320,13 +321,14 @@ def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
     assert "指摘の有無にかかわらず工程6から工程9" in finalizer_workflow
     assert "指摘がない場合は、累積差分の区分と承認状態を確認" in finalizer_workflow
     assert "反映後に実行した3検査の最終結果" in finalizer_workflow
-    assert finalizer_workflow.count("累積`review_rounds`が5未満") == 2
+    assert finalizer_workflow.count("「指摘反映と再レビュー」節の定める上限未満であることを確認") == 2
     assert finalizer_workflow.count("累積`review_rounds`へ1を加算") == 2
     assert "採否が未確定なら`continuation_state: 初回レビュー後・採否確定前`" in finalizer_workflow
     assert finalizer_workflow.index("scope_baseline") < finalizer_workflow.index("needs_escalation")
     assert finalizer_workflow.index("scope_changes") < finalizer_workflow.index("needs_escalation")
     assert "承認状態だけを更新する" in finalizer_workflow
-    assert "未承認のスコープ変更" in finalizer_workflow
+    assert "`## 出力`の`status: completed`が定める全条件の成立を確認する" in finalizer_workflow
+    assert "`scope_changes`が「なし」または呼び出し元承認済み" in finalizer_output
     assert "scope_baseline:" in finalizer_output
     assert "scope_changes:" in finalizer_output
     assert "continuation_state:" in finalizer_output
