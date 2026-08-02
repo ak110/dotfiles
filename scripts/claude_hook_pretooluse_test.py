@@ -890,11 +890,22 @@ class TestPlanFileBumpDeclarationWarning:
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
-    def test_checkbox_without_backticks_not_extracted(self):
-        """チェックボックス項目のパスがバッククォートを欠く場合は抽出対象外。"""
+    def test_checkbox_without_backticks_extracted(self):
+        """チェックボックス項目のパスがバッククォートを欠く場合も抽出対象。"""
         content = (
             "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] agent-toolkit/skills/foo/SKILL.md（現行10行）\n\n## 実行方法\n\n- 検証を実行\n"
+        )
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" in _get_additional_context(result)
+
+    def test_fenced_checkbox_only_no_warning(self):
+        """チェックボックス項目がコードフェンス内にのみ現れる計画は警告なし。"""
+        content = (
+            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `scripts/foo.py`（現行10行）\n\n"
+            "### `scripts/foo.py`\n\n```text\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行）\n```\n\n## 実行方法\n\n- 検証を実行\n"
         )
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
@@ -1002,9 +1013,20 @@ class TestPlanFileAgentsMdSyncWarning:
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)
 
-    def test_checkbox_without_backticks_not_extracted(self):
-        """チェックボックス項目のパスがバッククォートを欠く場合は抽出対象外。"""
+    def test_checkbox_without_backticks_extracted(self):
+        """チェックボックス項目のパスがバッククォートを欠く場合も抽出対象。"""
         content = "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] agent-toolkit/rules/01-agent.md（現行10行）\n"
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "sync_generated_files.py" in _get_additional_context(result)
+
+    def test_fenced_checkbox_only_no_warning(self):
+        """チェックボックス項目がコードフェンス内にのみ現れる計画はwarnされない。"""
+        content = (
+            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `scripts/foo.py`（現行10行）\n\n"
+            "### `scripts/foo.py`\n\n```text\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/rules/01-agent.md`（現行10行）\n```\n"
+        )
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)

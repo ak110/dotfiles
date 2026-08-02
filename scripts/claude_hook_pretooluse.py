@@ -45,6 +45,7 @@ sys.path.insert(
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_format import extract_target_files_from_changes  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -519,21 +520,6 @@ def _check_plan_file_dotfiles_specific_names(tool_name: str, fields: list[tuple[
     return None
 
 
-# `### 対象ファイル一覧`のチェックボックス項目からパスを抽出する正規表現。
-# `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`の`_CHECKBOX_RE`と同一の記法を対象とする。
-_PLAN_CHECKBOX_RE = re.compile(r"^\s*- \[ \] `([^`]+)`")
-
-
-def _extract_plan_target_paths(changes: str) -> list[str]:
-    """`## 変更内容`本文からチェックボックス項目のパスを抽出する。
-
-    変更対象として指定されたパスと、変更後文面が本文中で言及するだけのパスを区別するために用いる。
-    規範文書の改訂計画では変更後文面が他の規範文書を参照するのが常態であり、
-    部分文字列一致で判定すると言及だけの計画へ誤警告する。
-    """
-    return [match.group(1) for line in changes.splitlines() if (match := _PLAN_CHECKBOX_RE.match(line))]
-
-
 def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """計画ファイル Write 時の agent-toolkit/ 編集に対する bump 宣言欠落の警告メッセージを返す。
 
@@ -542,7 +528,9 @@ def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, 
     対象パスは `is_plan_file` の判定に従い、`.review.md` / `.codex.log` /
     サブディレクトリ配下は対象外とする。
     判定対象セクションは `## 変更内容` と `## 実行方法`。
-    変更対象の判定は `## 変更内容` のチェックボックス項目に限り、本文中の言及は対象としない。
+    変更対象の判定は `## 変更内容 > ### 対象ファイル一覧` のチェックボックス項目に限り、
+    本文中の言及とコードフェンス内の記述は対象としない
+    （抽出は `_plan_format.extract_target_files_from_changes` に委ねる）。
     """
     if tool_name != "Write":
         return None
@@ -550,9 +538,8 @@ def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, 
         return None
     for _field, value in fields:
         sections = _split_markdown_h2_sections(value)
-        changes = sections.get("変更内容", "")
         plan = sections.get("実行方法", "")
-        targets = _extract_plan_target_paths(changes)
+        targets = extract_target_files_from_changes(value)
         if not any(path.startswith("agent-toolkit/") for path in targets):
             continue
         if "agent_toolkit_bump.py" in plan:
@@ -578,7 +565,9 @@ def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, st
     対象パスは `is_plan_file` の判定に従い、`.review.md` / `.codex.log` /
     サブディレクトリ配下は対象外とする。
     判定対象セクションは `## 変更内容` のみ。
-    変更対象の判定は `## 変更内容` のチェックボックス項目に限り、本文中の言及は対象としない。
+    変更対象の判定は `## 変更内容 > ### 対象ファイル一覧` のチェックボックス項目に限り、
+    本文中の言及とコードフェンス内の記述は対象としない
+    （抽出は `_plan_format.extract_target_files_from_changes` に委ねる）。
     `agent-toolkit/rules/*.md`の編集は`scripts/sync_codex_agents.py`が生成する
     `.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を伴うため、対象ファイル一覧からの
     漏れをwarnで検出する。検査対象パス（`.chezmoi-source/dot_codex/AGENTS.md`）は
@@ -590,9 +579,7 @@ def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, st
     if not is_plan_file(file_path):
         return None
     for _field, value in fields:
-        sections = _split_markdown_h2_sections(value)
-        changes = sections.get("変更内容", "")
-        targets = _extract_plan_target_paths(changes)
+        targets = extract_target_files_from_changes(value)
         if not any(path.startswith("agent-toolkit/rules/") for path in targets):
             continue
         if ".chezmoi-source/dot_codex/AGENTS.md" in targets:
