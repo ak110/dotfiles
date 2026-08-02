@@ -4,14 +4,14 @@
     "name": "aki"
   },
   "metadata": {
-    "description": "ak110/dotfilesから配布するClaude Codeプラグイン。"
+    "description": "ak110/dotfilesから配布するClaude Code・Codex向けプラグイン。"
   },
   "plugins": [
     {
       "name": "agent-toolkit",
       "source": "./agent-toolkit",
-      "description": "Claude Codeの成果物の品質を向上させるプラグイン。不適切な動作をフックで防止し、コード・ドキュメント・計画・バグ調査などの作業指針をオンデマンド提供する。",
-      "version": "2.8.1",
+      "description": "Claude CodeとCodex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針を提供し、Claude Codeではフックによる機械検査も追加する。",
+      "version": "2.9.0",
       "category": "safety",
       "keywords": [
         "hooks",

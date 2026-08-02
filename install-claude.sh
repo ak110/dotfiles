@@ -4,7 +4,7 @@
 # 会社マシンなど dotfiles 全体を導入できない環境向け。GitHub から最新のルールファイルを
 # 一時ステージングディレクトリへダウンロードし、原子的リネームで配布先を差し替える。
 #
-# 使い方: Claude Code をインストールしたあとで以下を実行する。
+# 使い方: Claude Code、Codex、uv をインストールしたあとで以下を実行する。
 #   curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash
 #
 # テスト時は DOTFILES_RULES_URL 環境変数でベース URL を差し替え可能。
@@ -51,17 +51,80 @@ _download() {
     curl -fsSL "$BASE_URL/$name" -o "$STAGE_DIR/$name"
 }
 
+_require_command() {
+    local command_name="$1"
+    local product_name="$2"
+    local install_url="$3"
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "$product_name ($command_name CLI) が見つかりません。" >&2
+        echo "$install_url を参照して先にインストールしてください。" >&2
+        return 1
+    fi
+}
+
 # agent-toolkit プラグインを user scope でインストール・更新する。
 # 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 _install_agent_toolkit() {
     echo ""
     echo "agent-toolkit プラグインを user scope にインストール・更新します..."
     claude plugin marketplace add ak110/dotfiles --scope=user >/dev/null 2>&1 || true
-    claude plugin marketplace update ak110-dotfiles >/dev/null 2>&1 || true
+    claude plugin marketplace update ak110-dotfiles >/dev/null
     claude plugin uninstall edit-guardrails@ak110-dotfiles >/dev/null 2>&1 || true
     claude plugin install agent-toolkit@ak110-dotfiles --scope=user >/dev/null 2>&1 || true
-    claude plugin update agent-toolkit@ak110-dotfiles --scope=user >/dev/null 2>&1 || true
-    echo "agent-toolkit プラグインの導入・更新を試行しました (旧 edit-guardrails は削除を試行しました)。"
+    claude plugin update agent-toolkit@ak110-dotfiles --scope=user >/dev/null
+    echo "Claude Code側のagent-toolkitプラグインを設定しました。"
+}
+
+_install_codex_plugin() {
+    echo "Codex側のagent-toolkitプラグインを設定します..."
+    codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
+    codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
+    codex plugin add agent-toolkit@ak110-dotfiles --json >/dev/null
+    echo "Codex側のagent-toolkitプラグインを設定しました。"
+}
+
+_has_user_codex_mcp() {
+    local config_path="$HOME/.claude.json"
+    uv run --no-config --no-project --python 3 python - "$config_path" <<'PY'
+import json
+import pathlib
+import sys
+
+config_path = pathlib.Path(sys.argv[1])
+if not config_path.exists():
+    raise SystemExit(1)
+try:
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError):
+    raise SystemExit(2)
+if not isinstance(config, dict):
+    raise SystemExit(2)
+if "mcpServers" not in config:
+    raise SystemExit(1)
+mcp_servers = config["mcpServers"]
+if not isinstance(mcp_servers, dict):
+    raise SystemExit(2)
+raise SystemExit(0 if "codex" in mcp_servers else 1)
+PY
+}
+
+_install_codex_mcp() {
+    local status
+    if _has_user_codex_mcp; then
+        echo "Codex MCPはUser scopeへ登録済みです。既存設定を維持します。"
+        return 0
+    else
+        status=$?
+    fi
+
+    if [ "$status" -eq 1 ]; then
+        claude mcp add --scope user codex -- codex mcp-server >/dev/null
+        echo "Codex MCPをUser scopeへ登録しました。"
+        return 0
+    fi
+
+    echo "$HOME/.claude.jsonからCodex MCPのUser scope登録を判定できません。設定を変更せず終了します。" >&2
+    return 1
 }
 
 # ~/.local/bin/atk へラッパーを配置する。
@@ -92,11 +155,9 @@ EOF
 }
 
 main() {
-    if ! command -v claude >/dev/null 2>&1; then
-        echo "Claude Code (claude CLI) が見つかりません。" >&2
-        echo "Claude Code を先にインストールしてから本スクリプトを再実行してください。" >&2
-        exit 1
-    fi
+    _require_command claude "Claude Code" "https://docs.anthropic.com/ja/docs/claude-code/overview"
+    _require_command codex "Codex" "https://developers.openai.com/codex/cli/"
+    _require_command uv "uv" "https://docs.astral.sh/uv/getting-started/installation/"
 
     mkdir -p "$(dirname "$TARGET_DIR")" "$STAGE_ROOT"
     STAGE_DIR=$(mktemp -d "$STAGE_ROOT/agent-toolkit.stage.XXXXXX")
@@ -132,7 +193,10 @@ main() {
     fi
 
     _install_agent_toolkit
+    _install_codex_plugin
+    _install_codex_mcp
     _install_atk_wrapper
+    echo "Claude Code・Codex、Codex MCP、atkの設定が完了しました。"
 }
 
 main "$@"

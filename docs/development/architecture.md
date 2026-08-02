@@ -79,6 +79,15 @@ uvx pyfltr fast                                         # 高速ツールと生�
 
 ## Codex向けagent-toolkit配布
 
+agent-toolkitには、公開互換入口である`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
+chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照を維持するため、インストーラーと
+`docs/guide/claude-code-guide.md`の名前はClaude Code・Codex統合後も変更しない。
+
+| 経路 | マーケットプレイス | 設定対象 |
+| --- | --- | --- |
+| 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、Codex MCP、`atk` |
+| dotfiles `post_apply` | ローカル生成物 | 単体経路の対象に加え、Codex向け`AGENTS.md`と共有リンク |
+
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Codex向けmanifestは
   Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
 - `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のagents・rulesだけをリンクする

@@ -1,6 +1,12 @@
 # Codex利用ガイド
 
-dotfiles利用者は`update-dotfiles`/`chezmoi apply`により、Codex向け設定も`~/.codex/`へ配布される。
+Codexはagent-toolkitの標準構成に含まれる。単体インストーラーはCodexプラグインと、
+Claude CodeからCodexを呼び出すCodex MCPを設定する。
+
+単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル
+`AGENTS.md`と共有リンク群を展開しない。dotfiles利用者は`update-dotfiles`または`chezmoi apply`により、
+Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグイン、Codex MCPを一括設定する。
+プラグイン導入後は新しいCodexセッションを開始して反映を確認する。
 
 ## Codex CLI本体
 

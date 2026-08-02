@@ -1,11 +1,14 @@
-# agent-toolkit 利用ガイド
+# agent-toolkit導入ガイド（Claude Code・Codex）
 
-本リポジトリでは、Claude Codeの動作をカスタマイズするスキルなどのセット「agent-toolkit」を提供する。
+agent-toolkitはClaude CodeとCodexを組み合わせるコーディングエージェント向けツールキットである。
+Claude Codeは対話、フック、ルールの読み込み、作業全体の統括を担う。Codex CLIはMCP経由の
+調査・実装・レビューに加え、Codexセッションで共有スキルを直接実行する。uvは配布スクリプトと
+`atk`コマンドの実行基盤である。
 
 ## コンセプト
 
 1. 標準動作のカスタマイズ: 判断基準が曖昧な場面での事前相談の徹底、lint抑制時のユーザー確認の必須化、
-   検証からコミットまでの流れの自動化などClaude Codeの動作を変更する。
+   検証からコミットまでの流れの自動化などコーディングエージェントの動作を変更する。
    auto mode下でも確認・計画工程を省略しない方針を維持する
 2. 品質水準の維持: コードスタイルや設計が乱れたプロジェクトではコーディングエージェントも
    既存コードの影響を受けて同水準のコードを生成する（割れ窓理論）。
@@ -20,12 +23,12 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
 性質上、頻繁な改訂が発生する。
 
-agent-toolkitはルールファイルとプラグインの2つのコンポーネントで構成される。
+agent-toolkitはルールファイルとClaude Code・Codex双方のプラグインで構成される。
 
 - ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
-- プラグイン: Claude Codeのuser scopeにインストールするプラグイン。
-  フック・スキルを提供し、場面に応じたオンデマンドの機能拡張を担う
+- プラグイン: Claude Codeのuser scopeとCodexへインストールするプラグイン。
+  共有スキルを提供し、Claude Code側ではフックによる機械検査も追加する
 
 両者は相互依存しており、基本的に同時に導入することを前提とする。
 
@@ -33,28 +36,28 @@ agent-toolkitはルールファイルとプラグインの2つのコンポーネ
 ユーザー側の`~/.claude/CLAUDE.md`・プロジェクトの`CLAUDE.md`・プロンプトでの指示などで上書きできる。
 優先度はルールファイル側に明記している。
 
+## 前提条件
+
+単体インストーラーを実行する前に、次の3コマンドを公式手順で導入する。
+インストーラーはCLI本体を導入しない。
+
+- `claude`: [Claude Code](https://docs.anthropic.com/ja/docs/claude-code/overview)のCLI
+- `codex`: [Codex CLI](https://developers.openai.com/codex/cli/)本体
+- `uv`: [uv](https://docs.astral.sh/uv/)による配布スクリプト実行環境
+
+Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Claude Code 2.1.163以上を要求する。
+プラグイン単体利用者では非強制の前提条件、dotfiles配布の管理設定では`requiredMinimumVersion`で強制する。
+
 ## クイックスタート
 
 dotfiles配布利用者では、`chezmoi apply`後の処理がAnthropic公式ネイティブ版を管理する。
 未導入時は公式インストーラーで導入し、導入済みの場合は`claude update`で更新する。
 WindowsでClaude Codeが実行中の場合は停止せず、更新と旧npm版の整理を次回へ延期する。
 
-### 1. uvのインストール
+### ツールキットのインストール
 
-プラグインは[uv](https://docs.astral.sh/uv/)に依存する。
-事前にインストールしておく。
-
-- Linux: `curl -fsSL https://astral.sh/uv/install.sh | sh`
-- Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
-
-### 2. ツールキットのインストール
-
-`install-claude.sh`と`install-claude.ps1`はagent-toolkit単体導入用であり、Claude Code本体は導入しない。
-単体利用者はAnthropic公式手順でClaude Code本体を先にインストールしておく。
-インストーラーは`claude` CLIの存在を前提としており、未検出時はエラー終了する。
-
-Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Claude Code 2.1.163以上を要求する。
-プラグイン単体利用者では非強制の前提条件、dotfiles配布の管理設定では`requiredMinimumVersion`（現行2.1.205）で強制する。
+`install-claude.sh`と`install-claude.ps1`は公開済みの互換名を維持しているが、現在はClaude Codeと
+Codexの双方を設定する。3コマンドのいずれかを検出できない場合は、ファイルを書き込まずエラー終了する。
 
 ツールキットのインストールには以下のワンライナーを実行する。
 
@@ -70,8 +73,8 @@ Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Cl
     powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
     ```
 
-ルールファイルが`~/.claude/rules/agent-toolkit/`へ配置され、
-agent-toolkitプラグインがuser scopeへインストール・更新される。
+ルールファイルが`~/.claude/rules/agent-toolkit/`へ配置され、Claude CodeとCodexの
+agent-toolkitプラグイン、Codex MCP、`atk`ラッパーが設定される。
 再実行すると最新版へ同期される。
 
 インストール後、非公式のプラグインマーケットプレイスはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
@@ -80,11 +83,37 @@ agent-toolkitプラグインがuser scopeへインストール・更新される
 2. `Marketplaces`タブで`ak110-dotfiles`を選択
 3. `Enable auto-update`を選択
 
-### 3. Claude Codeの推奨設定
+## 処理順序
+
+インストーラーは次の順で設定する。途中で必須処理が失敗した場合は非0で終了する。
+
+1. `claude`、`codex`、`uv`の存在を確認する
+2. Claude Codeルールを原子的に配置する
+3. Claude Codeのマーケットプレイスとプラグインを設定する
+4. Codexのマーケットプレイスとプラグインを設定する
+5. User scopeにCodex MCPが無い場合だけ登録する
+6. `atk`ラッパーを配置する
+
+`~/.claude.json`トップレベルに既存のCodex MCPがある場合は、そのUser scope登録を上書きしない。
+Local scopeまたはProject scopeだけに同名登録がある場合はUser scopeへ追加する。
+
+## 設定確認
+
+次のコマンドで導入結果を確認できる。
+
+```bash
+claude mcp get codex
+codex plugin list
+claude plugin list
+```
+
+上から順に、Claude Codeから利用するCodex MCP、Codexプラグイン、Claude Codeプラグインの状態を表示する。
+
+## Claude Codeの推奨設定
 
 以下の設定を適用することを推奨する。
 
-#### `~/.claude/settings.json`
+### `~/.claude/settings.json`
 
 - `autoMemoryEnabled`: `false`（自動メモリー機能を無効化）
 - `showClearContextOnPlanAccept`: `true`（plan mode承認時にコンテキストクリアの選択肢を表示）
@@ -92,13 +121,13 @@ agent-toolkitプラグインがuser scopeへインストール・更新される
 - `permissions`: 許可・拒否するツールやパターンを記述
  （[例](https://github.com/ak110/dotfiles/blob/master/share/claude_settings_json_managed.json)）
 
-#### `/config`コマンド
+### `/config`コマンド
 
 - `Verbose output`: 有効
 - `Default permission mode`: `Plan mode`
 - `Language`: `Japanese`
 
-#### `/plugin`コマンド
+### `/plugin`コマンド
 
 claude-plugins-officialから以下を導入する。
 
@@ -106,7 +135,7 @@ claude-plugins-officialから以下を導入する。
 - 任意: `claude-md-management`・`skill-creator`
 - 無効: `pyright-lsp`（Claude Codeがインストールを推奨するが誤動作が発生するため、インストール後に`Disable`）
 
-#### VSCode設定（任意）
+### VSCode設定（任意）
 
 ターミナル内での右クリックによる意図しない貼り付けを防ぐ場合は、`settings.json`へ以下を追加。
 
@@ -116,16 +145,22 @@ claude-plugins-officialから以下を導入する。
 }
 ```
 
-### 4. codex MCPサーバーのセットアップ（推奨）
+## 運用と保守
 
-`agent-toolkit:plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提とする。
-以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
+計画作成・実装・レビューではCodex経路を標準とする。Codexが一時的に利用できない場合だけ、
+Claude Codeのサブエージェントを回復経路として使用する。
+
+更新時はクイックスタートのインストーラーを再実行する。アンインストール時は双方のプラグインを除去し、
+`~/.claude/rules/agent-toolkit/`と生成された`atk`ラッパーを削除する。Codex MCPは利用者の既存設定を
+保護するため自動削除しない。
+
+自動登録に失敗した場合は、設定ファイルのJSON構造を修復してから次の診断・復旧コマンドを実行する。
 
 ```bash
-claude mcp add --scope=user codex codex mcp-server
+claude mcp add --scope user codex -- codex mcp-server
 ```
 
-codex CLI自体のセットアップは別途実施する。
+Codex単独セッションとdotfiles固有の配布内容は[Codex利用ガイド](codex-guide.md)を参照する。
 
 ## atkコマンドのPATH設定
 

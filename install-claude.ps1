@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 # 会社マシンなど dotfiles 全体を導入できない環境向け。GitHub から最新のルールファイルを
 # 一時ステージングディレクトリへダウンロードし、原子的リネームで配布先を差し替える。
 #
-# cmd からの使い方 (Claude Code をインストールしたあとで実行する):
+# cmd からの使い方 (Claude Code、Codex、uv をインストールしたあとで実行する):
 #   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
 #
 # テスト時は DOTFILES_RULES_URL 環境変数でベース URL を差し替え可能。
@@ -39,17 +39,72 @@ function Invoke-Download {
     }
 }
 
+function Assert-Command {
+    param([string]$name, [string]$productName, [string]$installUrl)
+    if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+        throw "$productName ($name CLI) が見つかりません。$installUrl を参照して先にインストールしてください。"
+    }
+}
+
+function Invoke-RequiredNativeCommand {
+    param([string]$command, [string[]]$arguments)
+    & $command @arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$command の実行に失敗しました（終了コード: $LASTEXITCODE）。"
+    }
+}
+
 # agent-toolkit プラグインを user scope でインストール・更新する。
 # 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 function Install-AgentToolkitPlugin {
     Write-Output ''
     Write-Output 'agent-toolkit プラグインを user scope にインストール・更新します...'
-    try { & claude plugin marketplace add ak110/dotfiles --scope=user 2>&1 | Out-Null } catch { $null = $_ }
-    try { & claude plugin marketplace update ak110-dotfiles 2>&1 | Out-Null } catch { $null = $_ }
-    try { & claude plugin uninstall 'edit-guardrails@ak110-dotfiles' 2>&1 | Out-Null } catch { $null = $_ }
-    try { & claude plugin install 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null } catch { $null = $_ }
-    try { & claude plugin update 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null } catch { $null = $_ }
-    Write-Output 'agent-toolkit プラグインの導入・更新を試行しました (旧 edit-guardrails は削除を試行しました)。'
+    & claude plugin marketplace add ak110/dotfiles --scope=user 2>&1 | Out-Null
+    & claude plugin marketplace update ak110-dotfiles 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeマーケットプレイスの更新に失敗しました。' }
+    & claude plugin uninstall 'edit-guardrails@ak110-dotfiles' 2>&1 | Out-Null
+    & claude plugin install 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null
+    & claude plugin update 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeプラグインの更新に失敗しました。' }
+    Write-Output 'Claude Code側のagent-toolkitプラグインを設定しました。'
+}
+
+function Install-CodexPlugin {
+    Write-Output 'Codex側のagent-toolkitプラグインを設定します...'
+    & codex plugin marketplace add ak110/dotfiles --json 2>&1 | Out-Null
+    Invoke-RequiredNativeCommand codex @('plugin', 'marketplace', 'upgrade', 'ak110-dotfiles', '--json')
+    Invoke-RequiredNativeCommand codex @('plugin', 'add', 'agent-toolkit@ak110-dotfiles', '--json')
+    Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
+}
+
+function Test-UserCodexMcp {
+    $configPath = Join-Path $HOME '.claude.json'
+    if (-not (Test-Path -LiteralPath $configPath)) { return $false }
+
+    try {
+        $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "$configPath をJSONとして読み取れないため、Codex MCPの設定を変更しません。"
+    }
+    if ($null -eq $config -or $config.GetType() -ne [System.Management.Automation.PSCustomObject]) {
+        throw "$configPath のルートがJSONオブジェクトではないため、Codex MCPの設定を変更しません。"
+    }
+
+    $mcpProperty = $config.PSObject.Properties['mcpServers']
+    if ($null -eq $mcpProperty) { return $false }
+    if ($null -eq $mcpProperty.Value -or $mcpProperty.Value.GetType() -ne [System.Management.Automation.PSCustomObject]) {
+        throw "$configPath のmcpServersがJSONオブジェクトではないため、Codex MCPの設定を変更しません。"
+    }
+    return $null -ne $mcpProperty.Value.PSObject.Properties['codex']
+}
+
+function Install-CodexMcp {
+    if (Test-UserCodexMcp) {
+        Write-Output 'Codex MCPはUser scopeへ登録済みです。既存設定を維持します。'
+        return
+    }
+    Invoke-RequiredNativeCommand claude @('mcp', 'add', '--scope', 'user', 'codex', '--', 'codex', 'mcp-server')
+    Write-Output 'Codex MCPをUser scopeへ登録しました。'
 }
 
 # ~/.local/bin/atk.cmd へラッパーを配置する。
@@ -87,10 +142,9 @@ call "%LATEST%" %*
 function Main {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-        Write-Error 'Claude Code (claude CLI) が見つかりません。Claude Code を先にインストールしてから本スクリプトを再実行してください。'
-        exit 1
-    }
+    Assert-Command claude 'Claude Code' 'https://docs.anthropic.com/ja/docs/claude-code/overview'
+    Assert-Command codex 'Codex' 'https://developers.openai.com/codex/cli/'
+    Assert-Command uv 'uv' 'https://docs.astral.sh/uv/getting-started/installation/'
 
     New-Item -ItemType Directory -Path (Split-Path $targetDir -Parent) -Force | Out-Null
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
@@ -130,7 +184,10 @@ function Main {
         }
 
         Install-AgentToolkitPlugin
+        Install-CodexPlugin
+        Install-CodexMcp
         Install-AtkWrapper
+        Write-Output 'Claude Code・Codex、Codex MCP、atkの設定が完了しました。'
     } finally {
         # 差し替え前にエラー終了した場合、既存環境を復元する。
         if (-not $replaced -and $oldDir -and (Test-Path -LiteralPath $oldDir) -and -not (Test-Path -LiteralPath $targetDir)) {
