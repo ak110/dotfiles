@@ -2828,6 +2828,14 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
             " different, already-existing plan file path than the session's"
             " `current_plan_file_path` is not blocked; only a launch referencing"
             " the current plan path is.\n"
+            "Review completed without a recording trigger: if the plan review itself"
+            " was completed and verified but no state-recording trigger fired"
+            " (for example the review ran outside `plan-file-finalizer`), the caller"
+            " takes over the implementation and the implementation-diff review instead"
+            " of relaunching the finalizer; see"
+            " agent-toolkit/skills/plan-mode/SKILL.md step 4 and"
+            " agent-toolkit/rules/02-claude-code.md 'ツール呼び出し・タスク管理' section"
+            " for the state measurement procedure.\n"
             "See agent-toolkit/agents/plan-file-finalizer.md.",
             tag="block",
         ),

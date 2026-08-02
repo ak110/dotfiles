@@ -3692,7 +3692,9 @@ class TestProcess7CompletionCheck:
             assert "plan-file-finalizer.md" in result.stderr
 
     def test_missing_flag_message_explains_gate_and_bypass(self, tmp_path: pathlib.Path):
-        """ブロックメッセージが理由・plan-impl feedback処理時の対処・pre-existing planバイパス条件を説明する。"""
+        """ブロックメッセージが理由・plan-impl feedback処理時の対処・pre-existing planバイパス条件・
+        レビュー完遂時の担当を説明する。
+        """
         sid = "process7-message-explains"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: False for flag in _PROCESS7_FLAGS})
@@ -3705,6 +3707,8 @@ class TestProcess7CompletionCheck:
         assert "plan-impl-feedback-flow.md" in result.stderr
         assert "混在時の並行制御" in result.stderr
         assert "current_plan_file_path" in result.stderr
+        assert "Review completed without a recording trigger" in result.stderr
+        assert "agent-toolkit/skills/plan-mode/SKILL.md" in result.stderr
 
     def test_no_plan_mode_context_passes(self, tmp_path: pathlib.Path):
         """`plan_mode_skill_invoked`が偽の場合は検査対象外として通過する。"""
