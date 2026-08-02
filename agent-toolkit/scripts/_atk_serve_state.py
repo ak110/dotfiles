@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import pathlib
 import threading
+import time
 
 import _atk_mq_common as common
 import watchdog.events
@@ -13,6 +14,11 @@ import watchdog.observers
 class ServeState(watchdog.events.FileSystemEventHandler):
     """変更通知と購読者を管理する。"""
 
+    # 末尾発行の先送りが無限に続くことを防ぐ最大待機時間の倍率。
+    # 閾値未満の間隔で変更が到着し続ける場合でも、最初の保留から
+    # `debounce_seconds * _MAX_DEBOUNCE_FACTOR`が経過した時点で1回発行する。
+    _MAX_DEBOUNCE_FACTOR = 5
+
     def __init__(self, root: pathlib.Path, *, debounce_seconds: float = 0.1) -> None:
         self.root = root
         self.debounce_seconds = debounce_seconds
@@ -21,6 +27,8 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self._queues: set[asyncio.Queue[str]] = set()
         self._lock = threading.Lock()
         self._pending_notification: threading.Timer | None = None
+        self._pending_started_at: float | None = None
+        self._pending_generation = 0
         self._stopped = False
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -40,13 +48,18 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             if self._pending_notification is not None:
                 self._pending_notification.cancel()
                 self._pending_notification = None
+            self._pending_started_at = None
+            self._pending_generation += 1
         self.observer.stop()
         self.observer.join()
 
-    def _publish_pending(self) -> None:
-        """静穏期間後の保留通知を1回だけ発行する。"""
+    def _publish_pending(self, generation: int) -> None:
+        """静穏期間後又は最大待機時間の到達後に保留通知を1回だけ発行する。"""
         with self._lock:
+            if generation != self._pending_generation:
+                return
             self._pending_notification = None
+            self._pending_started_at = None
             if self._stopped:
                 return
         if self._loop is not None:
@@ -71,14 +84,32 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             if self._loop is not None:
                 self._loop.call_soon_threadsafe(self._publish_if_running)
             return
+        publish_at_deadline = False
         with self._lock:
             if self._stopped:
                 return
+            now = time.monotonic()
+            if self._pending_started_at is None:
+                self._pending_started_at = now
+            deadline = self._pending_started_at + self.debounce_seconds * self._MAX_DEBOUNCE_FACTOR
             if self._pending_notification is not None:
                 self._pending_notification.cancel()
-            self._pending_notification = threading.Timer(self.debounce_seconds, self._publish_pending)
-            self._pending_notification.daemon = True
-            self._pending_notification.start()
+            self._pending_generation += 1
+            if now >= deadline:
+                # 期限に到達したため新しいタイマーを設定せず、ロック外で直ちに発行する。
+                self._pending_notification = None
+                self._pending_started_at = None
+                publish_at_deadline = True
+            else:
+                self._pending_notification = threading.Timer(
+                    self.debounce_seconds,
+                    self._publish_pending,
+                    args=(self._pending_generation,),
+                )
+                self._pending_notification.daemon = True
+                self._pending_notification.start()
+        if publish_at_deadline and self._loop is not None:
+            self._loop.call_soon_threadsafe(self._publish_if_running)
 
     def on_created(self, event: watchdog.events.FileSystemEvent) -> None:
         """Markdown作成を購読者へ通知する。"""

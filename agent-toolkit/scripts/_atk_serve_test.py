@@ -13,6 +13,7 @@ import signal
 import struct
 import subprocess
 import threading
+import time
 import types
 import typing
 import zlib
@@ -369,7 +370,9 @@ const entry = {
   source: 'session-review',
   updated_at: '2025-07-30T12:34:56Z',
   summary: '要約本文',
-  filename: 'entry.md'
+  filename: 'entry.md',
+  content: '本文',
+  content_html: '<p>本文</p>'
 };
 const row = renderEntry(entry);
 const cells = row.children[0].children;
@@ -444,11 +447,12 @@ def test_assets_focus_on_user_entry_workflows() -> None:
     result = _run_node_ui(
         """
 bindEvents();
-let detail = {
+const renderContent = entry => ({...entry, content_html: `<p>${entry.content}</p>`});
+let detail = renderContent({
   kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
   target_repo: 'example/repo', source: 'web', category: null,
   summary: '確認', updated_at: '2026-01-01T00:00:00+00:00', content: '取得時本文'
-};
+});
 let removed = false;
 fetchHandler = async (url, options) => {
   let body = {};
@@ -459,11 +463,11 @@ fetchHandler = async (url, options) => {
   } else if (options.method === 'POST' && url.endsWith('/api/entries')) {
     body = {filenames: ['created.md']};
   } else if (options.method === 'PUT') {
-    detail = {...detail, content: JSON.parse(options.body).content};
+    detail = renderContent({...detail, content: JSON.parse(options.body).content});
     body = {changed: true};
   } else if (url.endsWith('/api/entries/answer')) {
     const answer = JSON.parse(options.body).answer;
-    detail = {...detail, answered: true, content: `${detail.content}\\n${answer}`};
+    detail = renderContent({...detail, answered: true, content: `${detail.content}\\n${answer}`});
     body = {changed: true};
   } else if (url.endsWith('/api/entries/remove')) {
     removed = true;
@@ -486,7 +490,7 @@ enterEdit();
 elements['edit-content'].value = '編集本文';
 await saveEntry();
 const editResult = {
-  detail: elements['detail-content'].textContent,
+  detail: elements['detail-content'].innerHTML,
   toast: elements['toast'].textContent
 };
 await selectEntry(detail, elements['entry-list'].children[0].children[0]);
@@ -494,7 +498,7 @@ enterEdit();
 elements['answer-input'].value = '回答本文';
 await saveAnswer();
 const answerResult = {
-  detail: elements['detail-content'].textContent,
+  detail: elements['detail-content'].innerHTML,
   answered: detail.answered,
   toast: elements['toast'].textContent
 };
@@ -539,9 +543,9 @@ process.stdout.write(JSON.stringify({
         "first": "entry.md",
         "toast": "項目を追加しました。",
     }
-    assert result["editResult"] == {"detail": "編集本文", "toast": "本文を保存しました。"}
+    assert result["editResult"] == {"detail": "<p>編集本文</p>", "toast": "本文を保存しました。"}
     assert result["answerResult"] == {
-        "detail": "編集本文\n回答本文",
+        "detail": "<p>編集本文\n回答本文</p>",
         "answered": True,
         "toast": "回答を保存しました。",
     }
@@ -710,7 +714,7 @@ for (const state of ['inbox', 'processing', 'adopted', 'rejected']) {
   editing = true;
   displayEntry({
     kind: 'tbd', state, filename: `${state}.md`, answered: false,
-    content: '本文', updated_at: '2026-01-01'
+    content: '本文', content_html: '<p>本文</p>', updated_at: '2026-01-01'
   });
   result[state] = {
     actions: !elements['detail-actions'].hidden,
@@ -758,7 +762,7 @@ fetchHandler = async (url, options) => {
       return new Promise(resolve => { resolveDetail = resolve; });
     }
     const body = url.includes('/api/entries/inbox/')
-      ? {entry: {...listed, content: 'SSE再描画本文'}}
+      ? {entry: {...listed, content: 'SSE再描画本文', content_html: '<p>SSE再描画本文</p>'}}
       : {entries: [listed]};
     return {ok: true, status: 200, statusText: 'OK', json: async () => body};
   }
@@ -775,9 +779,9 @@ detailOriginKey = entryKey(currentEntry);
 editing = false;
 elements['detail-dialog'].open = true;
 await loadEntries({fromSse: true});
-const redrawnDetail = elements['detail-content'].textContent;
+const redrawnDetail = elements['detail-content'].innerHTML;
 const detailRequests = fetchCalls.filter(call => call.url.includes('/api/entries/inbox/')).length;
-currentEntry = {...listed, content: '取得時本文'};
+currentEntry = {...listed, content: '取得時本文', content_html: '<p>取得時本文</p>'};
 displayEntry(currentEntry);
 deferDetail = true;
 const pendingDetail = renderDetail(listed);
@@ -786,12 +790,12 @@ elements['edit-content'].value = '利用者の本文';
 elements['answer-input'].value = '利用者の回答';
 resolveDetail({
   ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entry: {...listed, content: '遅延した詳細本文'}})
+  json: async () => ({entry: {...listed, content: '遅延した詳細本文', content_html: '<p>遅延した詳細本文</p>'}})
 });
 await pendingDetail;
 const delayedResponse = {
   currentContent: currentEntry.content,
-  displayedContent: elements['detail-content'].textContent,
+  displayedContent: elements['detail-content'].innerHTML,
   error: elements['global-error'].textContent
 };
 deferDetail = false;
@@ -812,7 +816,7 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result["firstUrl"].startswith("/atk/api/entries?")
-    assert result["redrawnDetail"] == "SSE再描画本文"
+    assert result["redrawnDetail"] == "<p>SSE再描画本文</p>"
     assert result["detailRequests"] == 1
     assert result["selected"] == "entry.md"
     assert result["content"] == "利用者の本文"
@@ -820,7 +824,7 @@ process.stdout.write(JSON.stringify({
     assert result["editBaseline"] == result["answerBaseline"] == "取得時本文"
     assert result["delayedResponse"] == {
         "currentContent": "取得時本文",
-        "displayedContent": "取得時本文",
+        "displayedContent": "<p>取得時本文</p>",
         "error": "外部で項目が更新されました。編集中の入力を保持しています。保存前に詳細を再読込してください。",
     }
     assert "入力内容を保持" in result["error"]
@@ -833,11 +837,12 @@ def test_list_reload_tracks_selection_across_state_transition() -> None:
         """
 const inbox = {
   kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: true,
-  summary: '移動前一覧', updated_at: '2026-02-01', content: '移動前本文'
+  summary: '移動前一覧', updated_at: '2026-02-01',
+  content: '移動前本文', content_html: '<p>移動前本文</p>'
 };
 const processing = {
   ...inbox, state: 'processing', summary: '移動後一覧',
-  updated_at: '2026-02-02', content: '移動後本文'
+  updated_at: '2026-02-02', content: '移動後本文', content_html: '<p>移動後本文</p>'
 };
 let listEntries = [processing];
 fetchHandler = async url => {
@@ -855,7 +860,7 @@ const afterTransition = {
   selectedFilename: currentEntry.filename,
   selectedState: currentEntry.state,
   detailState: elements['detail-state'].textContent,
-  detailContent: elements['detail-content'].textContent,
+  detailContent: elements['detail-content'].innerHTML,
   detailUrls: fetchCalls
     .map(call => call.url)
     .filter(url => !url.includes('/api/entries?'))
@@ -876,7 +881,7 @@ process.stdout.write(JSON.stringify({
         "selectedFilename": "entry.md",
         "selectedState": "processing",
         "detailState": "処理中",
-        "detailContent": "移動後本文",
+        "detailContent": "<p>移動後本文</p>",
         "detailUrls": ["/atk/api/entries/processing/entry.md"],
     }
     assert result["afterDisappearance"]["dialogOpen"] is False
@@ -886,8 +891,8 @@ def test_detail_discards_out_of_order_response_for_previous_selection() -> None:
     """選択項目を変更した後に完了した古い詳細応答を画面へ反映しない。"""
     result = _run_node_ui(
         """
-const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文'};
-const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文'};
+const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文', content_html: '<p>A本文</p>'};
+const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文', content_html: '<p>B本文</p>'};
 const resolvers = {};
 fetchHandler = async url => new Promise(resolve => {
   resolvers[url.endsWith('/a.md') ? 'a' : 'b'] = resolve;
@@ -906,20 +911,20 @@ resolvers.a({
 await firstRequest;
 process.stdout.write(JSON.stringify({
   selected: currentEntry.filename,
-  content: elements['detail-content'].textContent,
+  content: elements['detail-content'].innerHTML,
   key: detailOriginKey
 }));
 """
     )
-    assert result == {"selected": "b.md", "content": "B本文", "key": "b.md"}
+    assert result == {"selected": "b.md", "content": "<p>B本文</p>", "key": "b.md"}
 
 
 def test_stale_list_reload_does_not_invalidate_current_detail_request() -> None:
     """一覧再読込中の選択変更後は、古い選択の詳細要求を開始しない。"""
     result = _run_node_ui(
         """
-const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文'};
-const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文'};
+const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文', content_html: '<p>A本文</p>'};
+const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文', content_html: '<p>B本文</p>'};
 currentEntry = first;
 elements['detail-dialog'].open = true;
 let resolveList;
@@ -942,19 +947,19 @@ resolveSecond({
 await secondRequest;
 process.stdout.write(JSON.stringify({
   selected: currentEntry.filename,
-  content: elements['detail-content'].textContent,
+  content: elements['detail-content'].innerHTML,
   generation: detailRequestGeneration
 }));
 """
     )
-    assert result == {"selected": "b.md", "content": "B本文", "generation": 1}
+    assert result == {"selected": "b.md", "content": "<p>B本文</p>", "generation": 1}
 
 
 def test_detail_discards_older_error_for_same_selection() -> None:
     """同じ選択項目の古い404応答は最新の詳細表示を閉じず、エラーも表示しない。"""
     result = _run_node_ui(
         """
-const entry = {kind: 'feedback', state: 'inbox', filename: 'entry.md', content: '一覧本文'};
+const entry = {kind: 'feedback', state: 'inbox', filename: 'entry.md', content: '一覧本文', content_html: '<p>一覧本文</p>'};
 detailOriginKey = entryKey(entry);
 elements['detail-dialog'].open = true;
 const resolvers = [];
@@ -963,7 +968,7 @@ const older = renderDetail(entry, {closeWhenMissing: true});
 const newer = renderDetail(entry, {closeWhenMissing: true});
 resolvers[1]({
   ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entry: {...entry, content: '最新本文'}})
+  json: async () => ({entry: {...entry, content: '最新本文', content_html: '<p>最新本文</p>'}})
 });
 await newer;
 resolvers[0]({
@@ -973,7 +978,7 @@ resolvers[0]({
 await older;
 process.stdout.write(JSON.stringify({
   selected: currentEntry.filename,
-  content: elements['detail-content'].textContent,
+  content: elements['detail-content'].innerHTML,
   open: elements['detail-dialog'].open,
   error: elements['global-error'].textContent
 }));
@@ -981,7 +986,7 @@ process.stdout.write(JSON.stringify({
     )
     assert result == {
         "selected": "entry.md",
-        "content": "最新本文",
+        "content": "<p>最新本文</p>",
         "open": True,
         "error": "",
     }
@@ -1100,7 +1105,7 @@ bindEvents();
 const entry = {
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
   target_repo: 'example/repo', source: 'web', category: 'ui',
-  summary: '要約', updated_at: '2026-01-01', content: '本文'
+  summary: '要約', updated_at: '2026-01-01', content: '本文', content_html: '<p>本文</p>'
 };
 entries = [entry];
 applyClientFilters();
@@ -1298,6 +1303,53 @@ async def test_state_publishes_once_after_last_change(
     assert not published
     await asyncio.sleep(0.03)
     assert published == ["changed"]
+
+
+@pytest.mark.asyncio
+async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """閾値未満の間隔で変更が続いても最大待機時間で1回通知し、以降は新しい保留期間を開始する。"""
+    current = state.ServeState(tmp_path, debounce_seconds=0.05)
+    max_wait = 0.05 * state.ServeState._MAX_DEBOUNCE_FACTOR
+    current._loop = asyncio.get_running_loop()
+    published: list[str] = []
+    monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
+    event = watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md"))
+
+    # 期限到達後にも複数のイベントを送り、新しい保留期間が始まることを確認できる長さにする。
+    limit = time.monotonic() + max_wait + 0.08
+    while time.monotonic() < limit:
+        current.on_modified(event)
+        await asyncio.sleep(0.02)
+    assert published == ["changed"]
+
+    await asyncio.sleep(0.1)
+    assert published == ["changed", "changed"]
+
+
+@pytest.mark.asyncio
+async def test_state_ignores_pending_timer_cancelled_by_deadline(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """取り消し済みタイマーが発火しても、再設定後の保留通知を重複発行しない。"""
+    current = state.ServeState(tmp_path, debounce_seconds=10.0)
+    current._loop = asyncio.get_running_loop()
+    published: list[str] = []
+    monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
+    event = watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md"))
+
+    current.on_modified(event)
+    stale = current._pending_notification
+    assert stale is not None
+    current.on_modified(event)
+    # 取り消しと同時に起動した旧タイマーが発火した状況を再現する。
+    stale.function(*stale.args)
+    await asyncio.sleep(0)
+
+    assert not published
 
 
 @pytest.mark.asyncio

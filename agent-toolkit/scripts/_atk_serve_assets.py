@@ -1165,11 +1165,7 @@ function displayEntry(entry, preserveForm = false) {
   byId('detail-state').textContent = STATE_LABELS[entry.state] || entry.state;
   byId('detail-state').dataset.state = entry.state;
   const detailContent = byId('detail-content');
-  if (typeof entry.content_html === 'string') {
-    detailContent.innerHTML = entry.content_html;
-  } else {
-    detailContent.textContent = entry.content;
-  }
+  detailContent.innerHTML = entry.content_html;
   renderMetadata(entry);
 
   const active = ACTIVE_STATES.has(entry.state);
