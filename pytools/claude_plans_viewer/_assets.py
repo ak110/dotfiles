@@ -257,6 +257,10 @@ let visibleFiles = [];
 let mermaidLoadPromise = null;
 let previewGeneration = 0;
 let previewObjectUrls = new Set();
+let searchGeneration = 0;
+let searchTimer = null;
+let serverSearchKeys = null;
+const SEARCH_DEBOUNCE_MS = 300;
 
 // 一覧描画件数の初期上限と拡張ステップ。
 // `~/.claude/plans/`が数百件規模に達するとフィルタ入力・スクロール・差分更新の比例コストが顕在化するため、
@@ -412,9 +416,10 @@ function renderFiles() {
   const sentinel = document.getElementById("files-sentinel");
   visibleFiles = [];
   for (const file of files) {
-    // ホスト名・パスのいずれかに部分一致するもののみ表示する
+    // ホスト名・パスのクライアント一致と、サーバーによる本文一致の和集合を表示する。
     const haystack = (file.host + " " + file.path).toLowerCase();
-    if (!haystack.includes(q)) continue;
+    const matchesText = serverSearchKeys !== null && serverSearchKeys.has(fileKey(file));
+    if (!haystack.includes(q) && !matchesText) continue;
     visibleFiles.push(file);
   }
   const renderCount = Math.min(visibleLimit, visibleFiles.length);
@@ -478,6 +483,41 @@ async function refreshFiles() {
   const res = await fetch(BASE_PATH + "/api/files");
   files = await res.json();
   renderFiles();
+}
+
+async function searchFullText(query, generation) {
+  const status = document.getElementById("search-status");
+  status.textContent = "検索中";
+  try {
+    const res = await fetch(BASE_PATH + "/api/search?q=" + encodeURIComponent(query));
+    if (generation !== searchGeneration) return;
+    if (!res.ok) throw new Error("status " + res.status);
+    const matched = await res.json();
+    if (generation !== searchGeneration) return;
+    serverSearchKeys = new Set(matched.map(fileKey));
+    status.textContent = "";
+    renderFiles();
+  } catch (_) {
+    if (generation !== searchGeneration) return;
+    serverSearchKeys = new Set();
+    status.textContent = "検索に失敗しました";
+    renderFiles();
+  }
+}
+
+function scheduleFullTextSearch() {
+  const query = document.getElementById("filter").value.trim();
+  const generation = ++searchGeneration;
+  if (searchTimer !== null) clearTimeout(searchTimer);
+  serverSearchKeys = query ? new Set() : null;
+  document.getElementById("search-status").textContent = "";
+  visibleLimit = VISIBLE_FILES_INITIAL;
+  renderFiles();
+  if (!query) return;
+  searchTimer = setTimeout(() => {
+    searchTimer = null;
+    searchFullText(query, generation);
+  }, SEARCH_DEBOUNCE_MS);
 }
 
 async function refreshHostStatus() {
@@ -810,8 +850,7 @@ window.addEventListener("focus", () => {
 document.getElementById("filter").addEventListener("input", () => {
   // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
   // 段階展開によって伸びた上限を引きずると、フィルタ後の少数結果に対しても無駄な走査が残るため。
-  visibleLimit = VISIBLE_FILES_INITIAL;
-  renderFiles();
+  scheduleFullTextSearch();
 });
 document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
 document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath);
@@ -857,6 +896,7 @@ INDEX_HTML = (
   <aside>
     <div class="toolbar">
       <input id="filter" placeholder="検索...">
+      <span id="search-status" role="status"></span>
     </div>
     <div id="files"></div>
     <!-- 段階展開トリガー。`hidden`属性は描画件数が未描画分を残すときだけ外れる。 -->

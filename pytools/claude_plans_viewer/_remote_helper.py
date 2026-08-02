@@ -1,21 +1,27 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["watchdog>=6.0.0"]
+# dependencies = ["platformdirs>=4.0", "watchdog>=6.0.0"]
 # ///
 """claude_plans_viewerのリモートホスト側ヘルパー。
 
-操作種別はargvで受け取る（`list`・`read`・`watch`・`serve`）。
+操作種別はargvで受け取る（`list`・`read`・`search`・`watch`・`serve`）。
 各サブコマンドの入出力プロトコルは対応する関数のdocstringを参照。
 """
 
 import base64
+import hashlib
 import json
 import os
 import pathlib
+import socket
 import sys
 import threading
 import time
 import typing
+
+import platformdirs
+
+# pylint: disable=duplicate-code  # リモート側で単独実行するためローカル側の永続キャッシュ実装を共有できない。
 
 ROOT = pathlib.Path.home() / ".claude" / "plans"
 
@@ -25,6 +31,7 @@ _PING_INTERVAL_SEC = 30.0
 # stdoutへの書き込みは観測スレッドとRPC応答スレッドの双方から発生し得る。
 # print内のwrite/flushが分割されると行JSONが破損するため、emit側で排他する。
 _STDOUT_LOCK = threading.Lock()
+_CREATION_TIME_CACHE_DIR = pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times"
 
 
 def _is_target_path(path: pathlib.Path) -> bool:
@@ -37,14 +44,43 @@ def _is_target_path(path: pathlib.Path) -> bool:
     return not any(p.startswith(".") for p in rel.parts)
 
 
-def _ctime_epoch(st: os.stat_result) -> float:
-    """作成日時をepoch秒で返す。`st_birthtime`（存在時）を優先し`st_ctime`へフォールバックする。
+def _cached_creation_time(host: str, rel: str, observed_mtime: float) -> float:
+    """初回観測時の更新日時をホスト名と相対パスごとに永続化する。"""
+    key = hashlib.sha256(f"{host}\0{rel}".encode()).hexdigest()
+    cache_path = _CREATION_TIME_CACHE_DIR / f"{key}.json"
+    cached: float | None = None
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        if payload.get("host") == host and payload.get("path") == rel:
+            value = payload.get("ctime_epoch")
+            if isinstance(value, (int, float)):
+                cached = float(value)
+    except (FileNotFoundError, OSError, json.JSONDecodeError, AttributeError):
+        pass
+    creation_time = min(observed_mtime, cached) if cached is not None else observed_mtime
+    if cached == creation_time:
+        return creation_time
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_name(f".{cache_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        temporary.write_text(
+            json.dumps({"host": host, "path": rel, "ctime_epoch": creation_time}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary.replace(cache_path)
+    except OSError:
+        return creation_time
+    return creation_time
+
+
+def _ctime_epoch(st: os.stat_result, host: str, rel: str) -> float:
+    """作成日時をepoch秒で返す。`st_birthtime`（存在時）を優先する。
 
     詳細は`pytools/claude_plans_viewer/_local.py`の同名関数のdocstringを参照
     （リモートヘルパーは独立実行スクリプトのためロジックを重複させている）。
     """
     birthtime = getattr(st, "st_birthtime", None)
-    return float(birthtime) if birthtime is not None else float(st.st_ctime)
+    return float(birthtime) if birthtime is not None else _cached_creation_time(host, rel, float(st.st_mtime))
 
 
 def _host_info() -> dict[str, str]:
@@ -72,12 +108,13 @@ def _scan_entries() -> list[dict[str, typing.Any]]:
         if not _is_target_path(path):
             continue
         st = path.stat()
+        rel = path.relative_to(ROOT).as_posix()
         entries.append(
             {
-                "path": path.relative_to(ROOT).as_posix(),
+                "path": rel,
                 "name": path.name,
                 "mtime_epoch": st.st_mtime,
-                "ctime_epoch": _ctime_epoch(st),
+                "ctime_epoch": _ctime_epoch(st, socket.gethostname(), rel),
             }
         )
     return entries
@@ -109,6 +146,24 @@ def _read_payload(rel_b64: str) -> dict[str, typing.Any]:
         "data": base64.b64encode(data).decode("ascii"),
         "mtime_epoch": st.st_mtime,
     }
+
+
+def _search_payload(query_b64: str) -> dict[str, list[str]]:
+    """本文へ検索語が部分一致するMarkdownファイルの相対パスを返す。"""
+    query = base64.b64decode(query_b64).decode("utf-8").casefold()
+    matched: list[str] = []
+    if not ROOT.is_dir():
+        return {"paths": matched}
+    for path in ROOT.rglob("*.md"):
+        if not path.is_file() or not _is_target_path(path):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if query in text.casefold():
+            matched.append(path.relative_to(ROOT).as_posix())
+    return {"paths": sorted(matched)}
 
 
 def _list_files() -> None:
@@ -197,13 +252,14 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
             except OSError as e:
                 sys.stderr.write(f"warn: stat failed for {path}: {e}\n")
                 return
+            rel = path.relative_to(ROOT).as_posix()
             _emit(
                 {
                     "type": "upsert",
-                    "path": path.relative_to(ROOT).as_posix(),
+                    "path": rel,
                     "name": path.name,
                     "mtime_epoch": st.st_mtime,
-                    "ctime_epoch": _ctime_epoch(st),
+                    "ctime_epoch": _ctime_epoch(st, socket.gethostname(), rel),
                 }
             )
 
@@ -263,6 +319,9 @@ def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
         if op == "read":
             payload = _read_payload(str(req.get("path", "")))
             return {"type": "response", "id": req_id, "ok": True, **payload}
+        if op == "search":
+            payload = _search_payload(str(req.get("query", "")))
+            return {"type": "response", "id": req_id, "ok": True, **payload}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
     except Exception as e:  # noqa: BLE001  pylint: disable=broad-exception-caught
         return {"type": "response", "id": req_id, "ok": False, "error": f"{type(e).__name__}: {e}"}
@@ -274,6 +333,7 @@ def _serve() -> int:
     watch行プロトコルは`_watch_files`と共通。
     RPCプロトコル（行区切りJSON）:
         リクエスト（stdin）: {"id":<int>, "op":"read", "path":"<base64>"}
+                            または{"id":<int>, "op":"search", "query":"<base64>"}
         応答（stdout）:
             成功: {"type":"response", "id":<int>, "ok":true, "data":"<base64本文>", "mtime_epoch":<float>}
             失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
@@ -329,6 +389,12 @@ def main() -> int:
             sys.stderr.write("missing path\n")
             return 2
         _read_file(sys.argv[2])
+        return 0
+    if op == "search":
+        if len(sys.argv) < 3:
+            sys.stderr.write("missing query\n")
+            return 2
+        json.dump(_search_payload(sys.argv[2]), sys.stdout, ensure_ascii=False)
         return 0
     if op == "watch":
         return _watch_files()

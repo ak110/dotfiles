@@ -215,6 +215,12 @@ def create_app(
 
     @app.get("/api/files")
     async def api_files() -> quart.Response:
+        merged = await _all_entries()
+        body = json.dumps([dataclasses.asdict(e) for e in merged], ensure_ascii=False)
+        return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    async def _all_entries() -> list[_state.FileEntry]:
+        """ローカルとリモートの一覧を作成日時の降順で返す。"""
         # ローカル一覧はリモート集約と並列実行できるよう`asyncio.to_thread`経由で取得する。
         local_entries = await asyncio.to_thread(_local.list_files, root, resolved_hostname)
         async with state.lock:
@@ -223,7 +229,38 @@ def create_app(
                 remote_entries.extend(cached)
         merged = local_entries + remote_entries
         merged.sort(key=lambda e: e.ctime_epoch, reverse=True)
-        body = json.dumps([dataclasses.asdict(e) for e in merged], ensure_ascii=False)
+        return merged
+
+    @app.get("/api/search")
+    async def api_search() -> quart.Response:
+        """ローカルと全リモートホストから本文一致するファイル一覧を返す。"""
+        query = quart.request.args.get("q", "")
+        entries = await _all_entries()
+        if not query:
+            matched = entries
+        else:
+            local_paths = await asyncio.to_thread(_local.search_files, root, query)
+
+            async def search_remote(host: str) -> tuple[str, set[str]]:
+                try:
+                    paths = await _remote.search_remote_files(
+                        host,
+                        query,
+                        runner,
+                        state.remote_watchers.get(host),
+                    )
+                except Exception as error:  # noqa: BLE001
+                    logger.warning("リモート本文検索失敗 host=%s: %s", host, error)
+                    paths = set()
+                return host, paths
+
+            remote_matches = dict(await asyncio.gather(*(search_remote(host) for host in remote_host_list)))
+            matched = [
+                entry
+                for entry in entries
+                if entry.path in (local_paths if entry.host == resolved_hostname else remote_matches.get(entry.host, set()))
+            ]
+        body = json.dumps([dataclasses.asdict(entry) for entry in matched], ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     async def _resolve_text_and_mtime(host: str, rel: str) -> tuple[str, float | None] | quart.Response:

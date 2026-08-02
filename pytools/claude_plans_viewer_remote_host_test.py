@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools.claude_plans_viewer import _app, _local, _remote, _state
+from pytools.claude_plans_viewer import _app, _local, _remote, _remote_helper, _state
 from pytools.claude_plans_viewer_remote_test_helpers import _FakeSshRunner
 from pytools.claude_plans_viewer_remote_test_helpers import aiter_lines as _aiter_lines
 from pytools.claude_plans_viewer_remote_test_helpers import attach_fake_connection as _attach_fake_connection
@@ -121,7 +121,7 @@ class TestRemoteHostIntegration:
         local = tmp_path / "local.md"
         local.write_text("local", encoding="utf-8")
         os.utime(local, (3_000.0, 3_000.0))
-        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: 2_000.0)
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda _st, _host, _rel: 2_000.0)
 
         app = _app.create_app(
             tmp_path,
@@ -145,6 +145,56 @@ class TestRemoteHostIntegration:
         ]
         # 全エントリに`host`フィールドが乗ること。
         assert {e["host"] for e in data} == {"host1", "host2", "local-host"}
+
+    @pytest.mark.asyncio
+    async def test_api_search_merges_local_and_all_remote_hosts(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`/api/search`がローカルと全リモートホストの本文一致結果を統合する。"""
+        (tmp_path / "local.md").write_text("共通検索語", encoding="utf-8")
+        monkeypatch.setattr(_local, "_CREATION_TIME_CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda _st, _host, _rel: 1.0)
+
+        async def runner(host: str, op: str, args: list[str]) -> str:
+            assert op == "search"
+            assert args
+            paths = [f"{host}.md"] if host in {"host1", "host2"} else []
+            return json.dumps({"paths": paths})
+
+        app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1", "host2"], ssh_runner=runner)
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+        _seed_remote_cache(state, "host1", [{"path": "host1.md", "name": "host1.md", "mtime_epoch": 2.0, "ctime_epoch": 2.0}])
+        _seed_remote_cache(state, "host2", [{"path": "host2.md", "name": "host2.md", "mtime_epoch": 3.0, "ctime_epoch": 3.0}])
+
+        response = await app.test_client().get("/api/search", query_string={"q": "共通検索語"})
+        data = json.loads(await response.get_data())
+
+        assert response.status_code == 200
+        assert [(entry["host"], entry["path"]) for entry in data] == [
+            ("host2", "host2.md"),
+            ("host1", "host1.md"),
+            ("local-host", "local.md"),
+        ]
+
+    def test_remote_creation_time_cache_survives_updates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """リモート側も編集後に初回観測時の作成日時を維持する。"""
+        root = tmp_path / "plans"
+        root.mkdir()
+        path = root / "remote.md"
+        path.write_text("初回", encoding="utf-8")
+        os.utime(path, (1_000.0, 1_000.0))
+        monkeypatch.setattr(_remote_helper, "ROOT", root)
+        monkeypatch.setattr(_remote_helper, "_CREATION_TIME_CACHE_DIR", tmp_path / "cache")
+
+        first = _remote_helper._scan_entries()[0]  # pylint: disable=protected-access  # noqa: SLF001
+        path.write_text("更新後", encoding="utf-8")
+        os.utime(path, (2_000.0, 2_000.0))
+        second = _remote_helper._scan_entries()[0]  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert first["ctime_epoch"] == 1_000.0
+        assert second["ctime_epoch"] == first["ctime_epoch"]
 
     @pytest.mark.asyncio
     async def test_api_file_for_remote_host_renders(self, tmp_path: Path):

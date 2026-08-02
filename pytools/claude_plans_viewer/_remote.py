@@ -94,6 +94,8 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
         "--no-project",
         "--with",
         '"watchdog>=6.0.0"',
+        "--with",
+        '"platformdirs>=4.0"',
         "python",
         "-c",
         f'"{REMOTE_BOOTSTRAP}"',
@@ -164,6 +166,29 @@ async def fetch_remote_file(
             logger.warning("リモートRPCエラー host=%s path=%s: %s（fallbackへ）", host, rel, error_msg)
     raw = await ssh_runner(host, "read", [rel_b64])
     return _decode_read_payload(json.loads(raw))
+
+
+async def search_remote_files(
+    host: str,
+    query: str,
+    ssh_runner: SshRunner,
+    watcher: "RemoteWatcher | None" = None,
+) -> set[str]:
+    """リモートホストで本文検索を実行し、一致した相対パス集合を返す。"""
+    query_b64 = base64.b64encode(query.encode("utf-8")).decode("ascii")
+    if watcher is not None and watcher.is_connected():
+        try:
+            response = await watcher.request("search", {"query": query_b64})
+        except Exception as error:  # noqa: BLE001
+            logger.warning("リモート検索RPC失敗 host=%s: %s（fallbackへ）", host, error)
+        else:
+            if response.get("ok") and isinstance(response.get("paths"), list):
+                return {str(path) for path in response["paths"]}
+            logger.warning("リモート検索RPCエラー host=%s: %s（fallbackへ）", host, response.get("error"))
+    raw = await ssh_runner(host, "search", [query_b64])
+    payload = json.loads(raw)
+    paths = payload.get("paths", [])
+    return {str(path) for path in paths} if isinstance(paths, list) else set()
 
 
 class RemoteWatcher:

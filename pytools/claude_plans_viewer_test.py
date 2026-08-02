@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -41,7 +42,7 @@ class TestListFiles:
         new_path.write_text("new", encoding="utf-8")
         os.utime(new_path, (2_000.0, 2_000.0))
 
-        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: -st.st_mtime)
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st, _host, _rel: -st.st_mtime)
 
         entries = _local.list_files(tmp_path, "local-host")
 
@@ -70,6 +71,57 @@ class TestListFiles:
         entries = _local.list_files(tmp_path, "local-host")
 
         assert sorted(e.path for e in entries) == ["a.md", "sub/c.md"]
+
+    def test_cached_creation_time_survives_file_updates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """生成時刻が無い環境では、編集後も初回観測時の作成日時を維持する。"""
+        root = tmp_path / "plans"
+        root.mkdir()
+        cache = tmp_path / "cache"
+        monkeypatch.setattr(_local, "_CREATION_TIME_CACHE_DIR", cache)
+        path = root / "plan.md"
+        path.write_text("初回", encoding="utf-8")
+        os.utime(path, (1_000.0, 1_000.0))
+
+        first = _local.list_files(root, "local-host")[0]
+        path.write_text("更新後", encoding="utf-8")
+        os.utime(path, (2_000.0, 2_000.0))
+        second = _local.list_files(root, "local-host")[0]
+
+        assert first.ctime_epoch == 1_000.0
+        assert second.ctime_epoch == first.ctime_epoch
+        assert list(cache.glob("*.json"))
+
+
+class TestSearchFiles:
+    """ローカル計画ファイルの本文検索を検証する。"""
+
+    def test_matches_full_text_case_insensitively(self, tmp_path: Path):
+        """ファイル名に無い検索語も本文の大文字小文字を区別せず検出する。"""
+        (tmp_path / "first.md").write_text("Alpha NEEDLE omega", encoding="utf-8")
+        (tmp_path / "second.md").write_text("対象外", encoding="utf-8")
+
+        assert _local.search_files(tmp_path, "needle") == {"first.md"}
+
+    def test_read_failure_is_not_a_match(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """一部ファイルの読み取りに失敗しても他の一致結果を返す。"""
+        good = tmp_path / "good.md"
+        bad = tmp_path / "bad.md"
+        good.write_text("検索語", encoding="utf-8")
+        bad.write_text("検索語", encoding="utf-8")
+        original = Path.read_text
+
+        def read_text(
+            path: Path,
+            encoding: str | None = None,
+            errors: str | None = None,
+        ) -> str:
+            if path == bad:
+                raise OSError("読み取り失敗")
+            return original(path, encoding=encoding, errors=errors)
+
+        monkeypatch.setattr(Path, "read_text", read_text)
+
+        assert _local.search_files(tmp_path, "検索語") == {"good.md"}
 
 
 class TestLocalHostInfo:
@@ -884,3 +936,70 @@ class TestIndexHtml:
         assert "visibleLimit = VISIBLE_FILES_INITIAL" in html_src
         # `renderFiles`はフィルタ後件数と表示上限の小さい方までDOM化する。
         assert "Math.min(visibleLimit, visibleFiles.length)" in html_src
+
+    def test_full_text_search_ignores_stale_and_cleared_query_responses(self):
+        """応答順が逆転しても最新検索だけを反映し、検索語消去後は全件表示を維持する。"""
+        scenario = """
+const snapshots = [];
+renderFiles = () => snapshots.push(serverSearchKeys === null ? null : [...serverSearchKeys]);
+(async () => {
+  const first = searchFullText('first', ++searchGeneration);
+  const second = searchFullText('second', ++searchGeneration);
+  pending[1].resolve({ok: true, json: async () => [{host: 'h', path: 'new.md'}]});
+  await second;
+  pending[0].resolve({ok: true, json: async () => [{host: 'h', path: 'old.md'}]});
+  await first;
+  const afterReversed = [...serverSearchKeys];
+  const third = searchFullText('third', ++searchGeneration);
+  elements.filter.value = '';
+  scheduleFullTextSearch();
+  pending[2].resolve({ok: true, json: async () => [{host: 'h', path: 'late.md'}]});
+  await third;
+  process.stdout.write(JSON.stringify({afterReversed, afterCleared: serverSearchKeys, snapshots}));
+})();
+"""
+        source = _assets.INDEX_HTML.rsplit("<script>", 1)[1].split("</script>", 1)[0]
+        source = (
+            source.replace("__BASE_PATH_JS__", '""')
+            .replace("__LOCAL_HOST_NAME_JS__", '"local"')
+            .replace("__ROOT_DIRS_JS__", "{}")
+            .replace("main();", "")
+            + scenario
+        )
+        script = f"""
+const elements = {{
+  filter: {{value: '', addEventListener() {{}}}},
+  'search-status': {{textContent: ''}},
+  'copy-btn': {{addEventListener() {{}}}},
+  'copy-path-btn': {{addEventListener() {{}}}},
+  'prev-btn': {{addEventListener() {{}}}},
+  'next-btn': {{addEventListener() {{}}}},
+  'menu-btn': {{addEventListener() {{}}}},
+  'drawer-backdrop': {{addEventListener() {{}}}}
+}};
+globalThis.document = {{
+  visibilityState: 'visible',
+  getElementById(id) {{ return elements[id]; }},
+  addEventListener() {{}},
+  querySelector() {{ return null; }}
+}};
+globalThis.window = {{addEventListener() {{}}}};
+globalThis.navigator = {{}};
+globalThis.IntersectionObserver = class {{ observe() {{}} }};
+const pending = [];
+globalThis.fetch = url => new Promise(resolve => pending.push({{url, resolve}}));
+eval({json.dumps(source)});
+"""
+        completed = subprocess.run(
+            ["node", "--input-type=commonjs"],
+            input=script,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        result = json.loads(completed.stdout)
+        assert result["afterReversed"] == ["h\u0000new.md"]
+        assert result["afterCleared"] is None
+        assert ["h\u0000old.md"] not in result["snapshots"]
+        assert ["h\u0000late.md"] not in result["snapshots"]

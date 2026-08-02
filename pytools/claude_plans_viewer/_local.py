@@ -3,15 +3,19 @@
 import asyncio
 import collections
 import collections.abc
+import hashlib
 import html as html_lib
+import json
 import os
 import pathlib
+import threading
 import typing
 
 import markdown_it
 import markdown_it.renderer
 import markdown_it.token
 import markdown_it.utils
+import platformdirs
 import pygments
 import watchdog.events
 from pygments.formatters.html import HtmlFormatter
@@ -81,6 +85,7 @@ def _render_fence(
 # 連続選択や前後ナビゲーションでヒットさせつつ、長時間運用でも有界に保つ値とする。
 MARKDOWN_CACHE_MAX_ENTRIES = 128
 MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
+_CREATION_TIME_CACHE_DIR = pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times"
 
 
 def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
@@ -212,16 +217,44 @@ class MarkdownCache:
         return self._total_bytes
 
 
-def _ctime_epoch(st: os.stat_result) -> float:
+def _cached_creation_time(host: str, rel: str, observed_mtime: float) -> float:
+    """初回観測時の更新日時をホスト名と相対パスごとに永続化する。"""
+    key = hashlib.sha256(f"{host}\0{rel}".encode()).hexdigest()
+    cache_path = _CREATION_TIME_CACHE_DIR / f"{key}.json"
+    cached: float | None = None
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        if payload.get("host") == host and payload.get("path") == rel:
+            value = payload.get("ctime_epoch")
+            if isinstance(value, (int, float)):
+                cached = float(value)
+    except (FileNotFoundError, OSError, json.JSONDecodeError, AttributeError):
+        pass
+    creation_time = min(observed_mtime, cached) if cached is not None else observed_mtime
+    if cached == creation_time:
+        return creation_time
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_name(f".{cache_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        temporary.write_text(
+            json.dumps({"host": host, "path": rel, "ctime_epoch": creation_time}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary.replace(cache_path)
+    except OSError:
+        return creation_time
+    return creation_time
+
+
+def _ctime_epoch(st: os.stat_result, host: str, rel: str) -> float:
     """作成日時をepoch秒で返す。
 
     `st_birthtime`（macOS・Windowsで実在し「作成時刻」を表す）を優先し、
-    存在しないプラットフォーム（Linux等）では`st_ctime`（inode変更時刻）へフォールバックする。
-    Linux上のfallback意味論は並列作業時のリネーム・権限変更で更新される制約があるが、
-    実運用では作成時刻に近い値として許容する。
+    存在しないプラットフォームでは初回観測時の更新日時を永続キャッシュへ記録する。
+    編集で変動する`st_ctime`を使わず、再起動後も同じ並び順を維持するためである。
     """
     birthtime = getattr(st, "st_birthtime", None)
-    return float(birthtime) if birthtime is not None else float(st.st_ctime)
+    return float(birthtime) if birthtime is not None else _cached_creation_time(host, rel, float(st.st_mtime))
 
 
 def local_host_info(root: pathlib.Path) -> dict[str, str]:
@@ -251,15 +284,34 @@ def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
         if not path.is_file():
             continue
         st = path.stat()
+        rel = path.relative_to(root).as_posix()
         item = {
-            "path": path.relative_to(root).as_posix(),
+            "path": rel,
             "name": path.name,
             "mtime_epoch": st.st_mtime,
-            "ctime_epoch": _ctime_epoch(st),
+            "ctime_epoch": _ctime_epoch(st, host, rel),
         }
         collected.append(_state.make_file_entry(host, item))
     collected.sort(key=lambda entry: entry.ctime_epoch, reverse=True)
     return collected
+
+
+def search_files(root: pathlib.Path, query: str) -> set[str]:
+    """本文へ検索語が部分一致するMarkdownファイルの相対パス集合を返す。"""
+    needle = query.casefold()
+    if not needle:
+        return {path.relative_to(root).as_posix() for path in root.rglob("*.md") if path.is_file()}
+    matched: set[str] = set()
+    for path in root.rglob("*.md"):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if needle in text.casefold():
+            matched.add(path.relative_to(root).as_posix())
+    return matched
 
 
 def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
