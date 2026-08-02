@@ -58,7 +58,21 @@
 
 #### 類似見直し
 
-上限値を直書きする箇所は`server/config.py`・`client/limits.ts`・`infra/nginx.conf`の3箇所のみで、他に残存なし。
+母集団は「上限値を判断規則として直書きする箇所」とし、点検観点は当該値の変更時に追随が必要かとする。
+
+母集団抽出に用いた実測コマンドと出力は次のとおりである。
+
+```text
+$ grep -rnE 'MAX_UPLOAD_BYTES|client_max_body_size' server/ client/ infra/
+server/config.py:12:MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+client/limits.ts:3:export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+infra/nginx.conf:8:client_max_body_size 20M;
+infra/nginx.conf:31:client_max_body_size 1M;
+```
+
+出力4行のうち先頭3行は対象ファイル一覧の`server/config.py`・`client/limits.ts`・`infra/nginx.conf`へ対応する。
+4行目はアバター画像専用の`location`ブロックの上限であり、アップロード経路の上限とは独立に定めた値のため非該当とする。
+他に残存なし。
 
 ## 調査結果
 
