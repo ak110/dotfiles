@@ -51,6 +51,8 @@ ref名とOIDを委譲前スナップショットとして保存する。
 - `plan_review_route`
 - `independent_review_route`
 - `review_rounds`
+- `review_coverage`
+- `review_impact_audit`
 - `implementation_history`
 - `plan_review_history`
 - `independent_review_history`
@@ -82,15 +84,31 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 2つのレビュー系は同じ`review_rounds`で完了し、各履歴を混在させない。
 `review_resolution`の全`P-*`・`I-*`を各レビュー履歴と照合し、
 採否または重複先、および採用指摘の修正・再検証結果が1対1で埋まったことを確認する。
+`review_coverage`は観点ごとの点検対象と指摘件数を含むことを確認する。
+欄の欠落および観点の列挙が無い値は未完遂として扱う。
+`review_impact_audit`は一括修正を行った場合に点検対象と結果を含むことを確認する。
+レビュー指摘が無い場合は「指摘なし」とする。
 
 通常完了の値は次を満たす。
 
+- `status`は`completed`
 - `review_status`は`実施完了...`
 - `review_final_findings`は`計画準拠系N件・独立系M件`で、NとMは非負整数
 - `review_skip_instruction`は`なし`
 - `review_caller_verification`は`不要`
 - 両レビューrouteは`codex`または`claude`
 - `review_rounds`は1〜5
+- `review_coverage`は「なし」ではない
+- `review_impact_audit`は、指摘を修正した場合は点検対象と結果、指摘が無い場合は「指摘なし」
+- 両review historyと`review_resolution`は「なし」ではない
+
+上限到達後の既知指摘修正済みの値は次を満たす。
+
+- `status`は`completed_with_review_cap`
+- `review_status`は`上限到達後の既知指摘修正済み（再レビューなし）`
+- `review_rounds`は5
+- `review_coverage`と`review_impact_audit`は「なし」ではない
+- 両レビューrouteは`codex`または`claude`
 - 両review historyと`review_resolution`は「なし」ではない
 
 ユーザー指示によるレビュー省略は次を満たす。
@@ -101,6 +119,7 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 - `review_caller_verification`は`ユーザー指示原文との照合が必要`
 - 両レビューrouteは`not_started`
 - 両review thread、両review history、`review_resolution`は「なし」
+- `review_coverage`と`review_impact_audit`は「なし」
 - `review_rounds`は0
 
 `status: needs_escalation`では`review_status`を`レビュー未完了`とし、
@@ -108,6 +127,19 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 `review_caller_verification: 未完了事項の確認が必要`とする。
 `not_started`または`unavailable`のrouteに対応するthreadとAgent識別子は「なし」とする。
 `plan-file-finalizer`の値との照合は行わない。
+
+## レビュー進行のユーザー報告
+
+レビューが上限へ到達した時点と、計画の対象ファイル一覧に無いファイルへ変更が及んだ時点で、
+次をユーザーへ報告する。上限到達後に既知指摘を修正し終えた場合も、最終報告で同じ値を更新する。
+
+- 現在のラウンド数
+- 上限
+- 既知指摘の残数
+- 計画対象外へ増えたファイルと、その変更が必要になった理由
+
+対象外ファイルが無い場合も「なし」と明記する。上限到達後は確定スナップショットの既知指摘だけを
+処理し、新規指摘探索を再開しない。
 
 ## 実体照合
 
@@ -123,7 +155,7 @@ git diff <計画着手前SHA>..<commit_sha>
 同一ファイルを分割した場合は`git show --patch <sha> -- <path>`も確認する。
 
 `verification`のコマンド、終了コード、警告を実測と照合する。
-`review_status`が実施完了の場合は、二系統の同一スナップショット利用、
+`review_status`が実施完了または上限到達後の既知指摘修正済みの場合は、二系統の同一スナップショット利用、
 採用指摘の反映、再検証、レビュー前後の成果物不変性を確認する。
 レビュー省略の場合は、計画の`## 実行方法`に同じ明示文字列があることを確認する。
 併せて`review_skip_instruction`と計画本文に保存されたユーザー指示原文を照合する。

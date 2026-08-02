@@ -12,6 +12,10 @@ _PLAN_REVIEW_FIX_TASK = _PLAN_REVIEW.with_name("plan-codex-review-fix-task.md")
 _PLAN_REVIEW_TASK = _PLAN_REVIEW.with_name("plan-codex-review-task.md")
 _PLAN_FINALIZER = _AGENTS_DIR / "plan-file-finalizer.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
+_PLAN_IMPL_REVIEW = _AGENTS_DIR.parent / "skills" / "codex-exec" / "references" / "plan-codex-implementation-review.md"
+_PLAN_IMPL_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-task.md")
+_PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-plan-review-task.md")
+_PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-independent-review-task.md")
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
 _BUGFIX = _PLAN_MODE.parent / "references" / "bugfix.md"
@@ -174,9 +178,52 @@ def test_plan_impl_review_report_contract_is_synchronized() -> None:
     """executorの最終レビュー情報と呼び出し元の検収欄を同期する。"""
     executor = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
     caller = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
-    for label in ("review_final_findings", "review_skip_instruction", "review_caller_verification"):
+    for label in (
+        "review_final_findings",
+        "review_skip_instruction",
+        "review_caller_verification",
+        "review_coverage",
+        "review_impact_audit",
+    ):
         assert label in executor
         assert label in caller
+
+
+def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
+    """二系統レビューの証跡出力と修正系の区分・影響監査責務を同期する。"""
+    review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    review_tasks = (
+        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+    )
+
+    for task in review_tasks:
+        output = _h2_section(task, "出力")
+        assert "review_coverage" in output
+        assert "review_impact_audit" in output
+        assert "計画対応・独立提案の区分は返さない" in output
+        assert "観点・点検対象・指摘件数" in output
+        assert "初回成果物に存在した見逃し" not in output
+    assert "初回成果物に存在した見逃し" in review
+    assert "計画対応・独立提案" in implementation_task
+    assert "## 一括修正後の影響監査" in implementation_task
+    assert "review_impact_audit" in implementation_task
+
+
+def test_plan_impl_review_cap_contract_is_synchronized() -> None:
+    """5ラウンド上限後の確定スナップショットと終端状態を各契約で同期する。"""
+    review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    for document in (review, executor, caller):
+        assert "completed_with_review_cap" in document
+        assert "上限到達後の既知指摘修正済み（再レビューなし）" in document
+    assert "確定スナップショット" in review
+    assert "新規指摘を探索する第6ラウンドは実施しない" in review
+    for phrase in ("現在のラウンド数", "上限", "既知指摘の残数", "計画対象外"):
+        assert phrase in caller
 
 
 def test_plan_review_checks_external_plan_without_repository_copy() -> None:

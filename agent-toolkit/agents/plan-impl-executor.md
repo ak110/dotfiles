@@ -52,9 +52,11 @@ user-invocable: false
 7. 実装応答と作業ツリー、コミット、検証結果を照合する
 8. レビュー前の対象内容を退避し、内容ハッシュを記録する
 9. 計画準拠系と独立系へレビュー用タスク本文を並列に渡す
-10. レビュー応答の受領後にハッシュと差分を比較し、変更検知時は同referenceの確認手順を適用する
+10. レビュー応答の受領後にハッシュと差分を比較し、変更検知時は同referenceの確認手順を適用する。
+    初回レビューの`review_coverage`に観点ごとの点検済み証跡が無ければ同じ系統へ再依頼する
 11. レビュー指摘を実装・修正系へ渡し、返された採否と根拠を実体と照合して検収する
-12. 採用指摘の修正と再レビューでは、同じ事前条件を満たしてから系統別のタスク本文を渡す
+12. 採用指摘の修正後は`review_impact_audit`の点検対象と結果を検収し、完了後に限り、
+    同じ事前条件を満たしてから系統別の再レビュー用タスク本文を渡す
 13. 反映結果と実体を照合し、定義の`## 出力`を作成する
 
 計画が`レビューは実施しない（ユーザー指示）`を指定する場合は、実装応答の照合後に
@@ -73,7 +75,9 @@ Agentツールが深さ上限または権限制約で利用できない場合だ
 対象系統を`unavailable`として呼び出し元へ代替起動を要求する。
 必須項目不足、実測との不一致、委譲失敗は同じ系統へ1回再依頼し、同じ失敗が続けば
 `needs_escalation`で返す。レビュー経路不能、変更復元不能、想定外のHEAD・リモートref変更、
-5ラウンド目の致命的・重大指摘も同様に返す。
+5ラウンド目の指摘は確定スナップショットとして固定し、既知指摘だけを実装・修正系へ再入力する。
+新規指摘を探索する第6ラウンドは実施しない。既知指摘を技術的に解消できない場合は
+`needs_escalation`で返す。
 
 委譲範囲は実装・検証・コミット・二系統レビューまでとする。
 `git push`、タグ作成、リモートref変更は呼び出し元の担当とする。
@@ -81,14 +85,14 @@ Agentツールが深さ上限または権限制約で利用できない場合だ
 ## 出力
 
 ```text
-status: completed | needs_escalation
+status: completed | completed_with_review_cap | needs_escalation
 summary: <結果>
 changed:
 - <計画項目と対応する変更>
 verification:
 - <コマンド、終了コード、警告>
 commit_sha: <最終コミットまたは「なし」>
-review_status: 実施完了（計画準拠系採用N件・独立系採用M件） | レビューは実施しない（ユーザー指示） | レビュー未完了
+review_status: 実施完了（計画準拠系採用N件・独立系採用M件） | 上限到達後の既知指摘修正済み（再レビューなし） | レビューは実施しない（ユーザー指示） | レビュー未完了
 review_final_findings: 計画準拠系N件・独立系M件 | 対象外 | 未確定
 review_skip_instruction: <ユーザー指示原文または「なし」>
 review_caller_verification: 不要 | ユーザー指示原文との照合が必要 | 未完了事項の確認が必要
@@ -108,6 +112,10 @@ implementation_route: codex | claude | unavailable | not_started
 plan_review_route: codex | claude | unavailable | not_started
 independent_review_route: codex | claude | unavailable | not_started
 review_rounds: <二系統を一組とした回数>
+review_coverage:
+<観点ごとの点検結果。レビュー省略時だけ「なし」>
+review_impact_audit:
+<一括修正後の影響監査。指摘が無ければ「指摘なし」、レビュー省略時だけ「なし」>
 implementation_history:
 <実装・修正系の応答履歴>
 plan_review_history:
@@ -122,6 +130,11 @@ blockers:
 
 `status: completed`は計画項目、検証、コミットと、
 両レビュー系の完了またはユーザー指示によるレビュー省略を実測した場合だけ返す。
+`status: completed_with_review_cap`は、5ラウンド目の既知指摘の是正と検証を完了し、
+新規指摘を探索する再レビューを実施していない場合だけ返す。この場合は
+`review_status: 上限到達後の既知指摘修正済み（再レビューなし）`、`review_rounds: 5`とする。
+上限到達時は既知指摘の残数と、計画の対象ファイル一覧に無いファイルへ及んだ変更を
+`plan_gaps`へ記録する。
 レビュー実施完了では最終ラウンドの指摘件数を`review_final_findings`へ記録し、
 `review_skip_instruction: なし`、`review_caller_verification: 不要`とする。
 レビュー省略では`review_final_findings: 対象外`とし、計画に保存されたユーザー指示原文を

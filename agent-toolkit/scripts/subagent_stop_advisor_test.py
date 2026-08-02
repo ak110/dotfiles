@@ -326,6 +326,8 @@ def _complete_report(**overrides: str) -> str:
         "plan_review_route": "codex",
         "independent_review_route": "codex",
         "review_rounds": "1",
+        "review_coverage": "外部境界 | CLI入出力 | 0件",
+        "review_impact_audit": "指摘なし",
         "implementation_history": "実装完了",
         "plan_review_history": "指摘なし",
         "independent_review_history": "指摘なし",
@@ -344,6 +346,11 @@ def _complete_report(**overrides: str) -> str:
             fields["review_caller_verification"] = "未完了事項の確認が必要"
         elif fields["review_status"] == "レビューは実施しない（ユーザー指示）":
             fields["review_caller_verification"] = "ユーザー指示原文との照合が必要"
+    if fields["review_status"] == "レビューは実施しない（ユーザー指示）":
+        if "review_coverage" not in overrides:
+            fields["review_coverage"] = "なし"
+        if "review_impact_audit" not in overrides:
+            fields["review_impact_audit"] = "なし"
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
 
 
@@ -484,6 +491,63 @@ class TestPlanImplExecutorReportFormat:
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
         assert not state["plan_impl_executor_active_subagent_sessions"]
 
+    @pytest.mark.parametrize(
+        ("overrides", "expected_fragment"),
+        [
+            (
+                {"review_status": "実施完了（計画準拠系採用0件・独立系採用0件）"},
+                "review_status must show fixed known findings after review cap",
+            ),
+            ({"review_rounds": "4"}, "review_rounds must be 5 after review cap"),
+            ({"review_coverage": "なし"}, "review_coverage must not be なし after review cap"),
+            ({"review_impact_audit": "なし"}, "review_impact_audit must not be なし after review cap"),
+        ],
+    )
+    def test_review_cap_value_mismatch_blocks(
+        self,
+        tmp_path: Path,
+        overrides: dict[str, str],
+        expected_fragment: str,
+    ) -> None:
+        """上限到達後の終端状態とreview_status・回数・証跡の矛盾をblockする。"""
+        sid = f"sid-format-review-cap-mismatch-{len(expected_fragment)}"
+        agent_id = f"sub-review-cap-mismatch-{len(expected_fragment)}"
+        fields = {
+            "status": "completed_with_review_cap",
+            "review_status": "上限到達後の既知指摘修正済み（再レビューなし）",
+            "review_rounds": "5",
+        }
+        fields.update(overrides)
+        _write_flag_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(**fields),
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert expected_fragment in body["reason"]
+
+    def test_review_cap_status_is_rejected_for_regular_completed_status(self, tmp_path: Path) -> None:
+        """上限到達後専用のreview_statusを通常完了へ組み合わせた報告をblockする。"""
+        sid = "sid-format-review-cap-status-with-completed"
+        agent_id = "sub-review-cap-status-with-completed"
+        _write_flag_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(review_status="上限到達後の既知指摘修正済み（再レビューなし）"),
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert "review_status must show completed review or user-directed skip" in body["reason"]
+
     def test_missing_label_blocks(self, tmp_path: Path) -> None:
         """主要欄が欠落する報告はblockし理由文に欠落ラベルを列挙する。"""
         sid = "sid-format-missing"
@@ -550,6 +614,8 @@ class TestPlanImplExecutorReportFormat:
             "independent_review_thread_id",
             "plan_review_history",
             "independent_review_history",
+            "review_coverage",
+            "review_impact_audit",
         ],
     )
     def test_missing_review_track_label_blocks(self, tmp_path: Path, missing_label: str) -> None:
@@ -624,6 +690,14 @@ class TestPlanImplExecutorReportFormat:
             (
                 {"review_resolution": "なし"},
                 "review_resolution must not be なし",
+            ),
+            (
+                {"review_coverage": "なし"},
+                "review_coverage must not be なし",
+            ),
+            (
+                {"review_impact_audit": "なし"},
+                "review_impact_audit must not be なし",
             ),
         ],
     )
@@ -716,7 +790,7 @@ class TestPlanImplExecutorReportFormat:
         [
             ({"plan_review_thread_id": ""}, "plan_review_thread_id must not be なし"),
             ({"plan_review_history": ""}, "plan_review_history must not be なし"),
-            ({"status": ""}, "status must be completed or needs_escalation"),
+            ({"status": ""}, "status must be completed, completed_with_review_cap, or needs_escalation"),
             ({"plan_review_route": ""}, "plan_review_route must be codex or claude"),
         ],
     )
@@ -756,6 +830,13 @@ class TestPlanImplExecutorReportFormat:
                     "blockers": "- 未解決事項",
                 },
             ),
+            (
+                "completed_with_review_cap",
+                {
+                    "review_status": "上限到達後の既知指摘修正済み（再レビューなし）",
+                    "review_rounds": "5",
+                },
+            ),
         ],
     )
     def test_allowed_status_values_pass(
@@ -764,7 +845,7 @@ class TestPlanImplExecutorReportFormat:
         status: str,
         extra_fields: dict[str, str],
     ) -> None:
-        """許可された2つのstatus値は整合する報告で通過する。"""
+        """許可された3つのstatus値は整合する報告で通過する。"""
         sid = f"sid-format-allowed-status-{status}"
         agent_id = f"sub-allowed-status-{status}"
         _write_flag_state(tmp_path, sid, agent_id)
@@ -796,7 +877,7 @@ class TestPlanImplExecutorReportFormat:
         )
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
-        assert "status must be completed or needs_escalation" in body["reason"]
+        assert "status must be completed, completed_with_review_cap, or needs_escalation" in body["reason"]
 
     @pytest.mark.parametrize(
         ("overrides", "expected_fragment"),
@@ -809,6 +890,8 @@ class TestPlanImplExecutorReportFormat:
             ({"review_final_findings": "計画準拠系0件・独立系0件"}, "review_final_findings must be 対象外"),
             ({"review_skip_instruction": "なし"}, "review_skip_instruction must preserve the user instruction"),
             ({"review_caller_verification": "不要"}, "review_caller_verification must request user instruction"),
+            ({"review_coverage": "点検済み"}, "review_coverage must be なし"),
+            ({"review_impact_audit": "指摘なし"}, "review_impact_audit must be なし"),
         ],
     )
     def test_skipped_review_value_mismatch_blocks(
