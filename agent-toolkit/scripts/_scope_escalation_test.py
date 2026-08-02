@@ -6,7 +6,7 @@
 
 フィクスチャは`pretooluse_test.py`・`stop_advisor_test.py`と共有する。
 検出語そのものをテストコード本文へ転記しない
-（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+（`agent-toolkit:agent-standards`「完成条件」節）。
 """
 
 import pathlib

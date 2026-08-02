@@ -35,6 +35,17 @@ _REPORT_CONTRACT_LABELS = {
     "後始末",
 }
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
+_REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
+_DISTRIBUTION_ROOT = _AGENTS_DIR.parent
+_DISTRIBUTION_MARKDOWN_BY_NAME: dict[str, list[pathlib.Path]] = {}
+for _markdown in _DISTRIBUTION_ROOT.rglob("*.md"):
+    _DISTRIBUTION_MARKDOWN_BY_NAME.setdefault(_markdown.name, []).append(_markdown)
+_SKILL_MARKDOWN = {
+    _skill.name: _skill / "SKILL.md" for _skill in (_DISTRIBUTION_ROOT / "skills").iterdir() if (_skill / "SKILL.md").is_file()
+}
+# 節参照の記法。`agent-toolkit:<skill>`「<節名>」節と`<ファイル名>`「<節名>」節の2形式を対象とする。
+_SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?(?:の)?「([^」\n]+)」節")
+_FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md)`(?:の)?「([^」\n]+)」節")
 
 
 def _h2_section(text: str, heading: str) -> str:
@@ -559,3 +570,40 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert selection_flow.index("確定した原因に適用可能な対処") < flow_plan_draft
     assert "bugfix.md`をSSOT" in _h2_section(ci_failure_handling, "前提")
     assert "3回連続する停止トリガー" not in selection_flow
+
+
+def _markdown_headings(path: pathlib.Path) -> set[str]:
+    """Markdownファイルの全見出し文字列を返す。"""
+    text = path.read_text(encoding="utf-8")
+    return {match.group(1).strip() for match in re.finditer(r"^#{1,6}\s+(.+?)\s*$", text, re.MULTILINE)}
+
+
+def _resolve_reference_target(name: str) -> pathlib.Path | None:
+    """節参照が指すMarkdownファイルを一意に解決する。解決できない場合はNoneを返す。"""
+    repository_relative = _REPOSITORY_ROOT / name
+    if repository_relative.is_file():
+        return repository_relative
+    candidates = _DISTRIBUTION_MARKDOWN_BY_NAME.get(pathlib.PurePath(name).name, [])
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def test_section_references_point_to_existing_headings() -> None:
+    """配布物の節参照が参照先ファイルの実在する見出しを指すこと。
+
+    節の統廃合で参照元が更新されず、参照した先で判定基準を得られない状態を検出する。
+    参照先を一意に解決できない形式は誤検出を避けるため検査対象から除く。
+    """
+    missing: list[str] = []
+    for source in sorted(_DISTRIBUTION_ROOT.rglob("*")):
+        if source.suffix not in {".md", ".py", ".txt"} or not source.is_file():
+            continue
+        text = source.read_text(encoding="utf-8")
+        references = [(_SKILL_MARKDOWN.get(skill), section) for skill, section in _SKILL_SECTION_REFERENCE_RE.findall(text)]
+        references += [(_resolve_reference_target(name), section) for name, section in _FILE_SECTION_REFERENCE_RE.findall(text)]
+        for target, section in references:
+            if target is None or section in _markdown_headings(target):
+                continue
+            missing.append(
+                f"{source.relative_to(_REPOSITORY_ROOT)}: 「{section}」節が{target.relative_to(_REPOSITORY_ROOT)}に存在しない"
+            )
+    assert not missing, "\n".join(missing)

@@ -158,7 +158,7 @@ _JAPANESE_SCRIPT_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
 _FOREIGN_SCRIPT_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-\uffdc\u0400-\u04ff\u0500-\u052f]")
 
 # メインエージェントからの直接Readを禁じる隔離指定リファレンス。
-# `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節が指定する隔離リファレンスと同一SSOTとする。
+# `scope-escalation-phrases.md`「隔離リファレンスの取り扱い」節が指定する対象と同一SSOTとする。
 # `isSidechain`真の呼び出しは通過させ、`agent-toolkit-edit`スキル起動セッションも例外とする。
 _ISOLATED_READ_TARGETS: tuple[str, ...] = ("agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",)
 
@@ -197,7 +197,7 @@ def _truncate_matched_phrase(phrase: str) -> str:
     """scope-escalationマッチ文言をブロックメッセージ表示用に整形する。
 
     禁止語彙のクイズ化を避けるため、ブロック契機となったマッチテキストそのものを
-    利用者が判読可能な形で通知する（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+    利用者が判読可能な形で通知する（`agent-toolkit:agent-standards`「完成条件」節）。
     CR/LFを除去し、通知の肥大化を避けるため先頭50文字までに切り詰める。
     """
     return phrase.replace("\r", "").replace("\n", "")[:50]
@@ -1054,7 +1054,7 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
     Edit/MultiEditでも全文へ適用するため、フェンス開始・終了行がold/new_string外にある場合も除外境界を維持する。
     規範文書本体は対象外で検出精度を変えない。
     判定パターンは`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
-    `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、hook警告メッセージは
+    `agent-toolkit:agent-standards`「完成条件」節に従い、hook警告メッセージは
     利用者が警告契機を特定できるようマッチ文言を含める（スキル本文・ルール本文・テストコードへの
     転記禁止とは別扱いとする）。
     警告のみでツール呼び出しは継続する（block降格。完成条件を満たさない状態での次工程移行の抑止は
@@ -1117,7 +1117,7 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
             f" detected in {tool_name}.{field}. Target: {file_path}."
             f" matched: {_truncate_matched_phrase(matched)}."
             f" See {_scope_escalation_agent_md_reference(category)}."
-            f" See agent-toolkit/skills/agent-standards/SKILL.md 'コンテキスト汚染の回避' section and"
+            f" See agent-toolkit/skills/agent-standards/SKILL.md '完成条件' section and"
             f" `references/scope-escalation-phrases.md` isolation rule."
             f" Do not transcribe the detected pattern body into skill body, rule body, or test code."
             f"{_format_scope_escalation_alternatives(category)}",
@@ -4011,7 +4011,7 @@ def _check_askuserquestion_scope_escalation(tool_input: dict) -> tuple[str, str]
     検出時は最初に一致したパターンの`(category, matched_phrase)`を返す。未検出時はNone。
     入力の構造が想定外（questionsが配列でないなど）の場合は検査不能としてNoneを返す。
     ブロックメッセージへのマッチ文言含有は`agent-toolkit:agent-standards`
-    「コンテキスト汚染の回避」節の例外規定に従う。
+    「完成条件」節の例外規定に従う。
     """
     questions = tool_input.get("questions")
     if not isinstance(questions, list):

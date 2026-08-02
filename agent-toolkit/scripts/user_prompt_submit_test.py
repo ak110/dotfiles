@@ -9,7 +9,7 @@ subprocessで起動しexit code・状態ファイルの内容を検証する。
 検出語の具体入力は隔離フィクスチャ
 `agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt`から
 `_load_norm_inquiry_inputs`経由で読み込み、テストコード本文へ直接転記しない
-（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+（`agent-toolkit:agent-standards`「完成条件」節）。
 """
 
 import json

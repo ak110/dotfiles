@@ -10,6 +10,7 @@ import subprocess
 import sys
 import typing
 
+import _git_remote
 from _atk_mq_common import (
     _commit_and_push,
     _normalize_md_filename,
@@ -29,35 +30,7 @@ def _normalize_remote_url(url: str) -> str:
     2要素以上の`/`区切りパスを持つ）の4種を受理する。ネスト配下のリポジトリ（GitLabサブグループ等）も
     含む。受理外はValueErrorを送出する。出力は全体小文字化し`.git`サフィックスを除去する。
     """
-    # HTTPS: https://github.com/owner/repo[.git]
-    m = re.match(r"https?://([^/:]+)/(.+)", url)
-    if m:
-        host = m.group(1)
-        path = m.group(2)
-        path = re.sub(r"\.git$", "", path)
-        return f"{host}/{path}".lower()
-
-    # SSH URI: ssh://git@github.com[:port]/owner/repo[.git]
-    m = re.match(r"ssh://[^@]+@([^/:]+)(?::\d+)?/(.+)", url)
-    if m:
-        host = m.group(1)
-        path = m.group(2)
-        path = re.sub(r"\.git$", "", path)
-        return f"{host}/{path}".lower()
-
-    # SSH shorthand: git@github.com:owner/repo[.git]
-    m = re.match(r"[^@]+@([^:]+):(.+)", url)
-    if m:
-        host = m.group(1)
-        path = m.group(2)
-        path = re.sub(r"\.git$", "", path)
-        return f"{host}/{path}".lower()
-
-    # Already normalized: host/owner/repo or host/group.../repo (2+ slashes, no scheme, no @)
-    if re.match(r"[^/]+(?:/[^/]+){2,}$", url) and "://" not in url and "@" not in url:
-        return re.sub(r"\.git$", "", url).lower()
-
-    raise ValueError(f"リモートURLとして解析できません: {url!r}")
+    return _git_remote.normalize_remote_url(url)
 
 
 def _resolve_local_worktree(value: str | None) -> pathlib.Path:

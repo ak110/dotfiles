@@ -5,7 +5,7 @@
 
 scope-escalation検出テストの入力フレーズは
 `agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt`
-から動的に読み込む（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節。
+から動的に読み込む（`agent-toolkit:agent-standards`「完成条件」節。
 検出語そのものをテストコード本文へ転記しない）。
 """
 
@@ -45,6 +45,8 @@ def _run(
         env["TMPDIR"] = str(state_dir)
         env["TEMP"] = str(state_dir)
         env["TMP"] = str(state_dir)
+        env["HOME"] = str(state_dir)
+        env["USERPROFILE"] = str(state_dir)
     return _fork_runner.run_script(_SCRIPT, argv=("stop_advisor",), input=text, env=env)
 
 
@@ -63,6 +65,20 @@ def _block_reason(decision: dict) -> str:
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+
+def _configure_dotfiles_origin(home: pathlib.Path, remote_url: str) -> pathlib.Path:
+    """`~/dotfiles`相当のテストリポジトリへoriginを設定する。"""
+    repository = home / "dotfiles"
+    repository.mkdir()
+    subprocess.run(["git", "init", str(repository)], check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "remote", "add", "origin", remote_url],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return repository
 
 
 def _user_entry(text: str = "hello") -> dict:
@@ -495,6 +511,64 @@ class TestExtensionPending:
         decision = _parse_decision(result)
         assert "decision" not in decision
         assert "hookSpecificOutput" not in decision
+
+
+class TestExtensionRepository:
+    """既知のdotfilesリポジトリが存在する環境では振り返り誘導を抑制する。"""
+
+    def test_missing_repository_keeps_review_prompt(self, tmp_path: pathlib.Path):
+        """`~/dotfiles`が存在しない場合は通常の振り返り誘導を維持する。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "extension-missing", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        assert _block_reason(_parse_decision(result))
+
+    @pytest.mark.parametrize(
+        "remote_url",
+        ["https://github.com/ak110/dotfiles.git", "git@github.com:ak110/dotfiles.git"],
+    )
+    def test_matching_origin_approves(
+        self,
+        tmp_path: pathlib.Path,
+        make_dirty_repo: Callable[[pathlib.Path], pathlib.Path],
+        remote_url: str,
+    ):
+        """HTTPS・SSH形式の既知originを正規化し、未コミット表示を保ったままapproveする。"""
+        _configure_dotfiles_origin(tmp_path, remote_url)
+        working_root = tmp_path / "working"
+        working_root.mkdir()
+        repo = make_dirty_repo(working_root)
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "extension-match", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+        assert "reason" not in decision
+        assert "git status" in decision["systemMessage"]
+
+    def test_different_origin_keeps_review_prompt(self, tmp_path: pathlib.Path):
+        """origin不一致の場合は通常の振り返り誘導を維持する。"""
+        _configure_dotfiles_origin(tmp_path, "https://github.com/example/dotfiles.git")
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "extension-different-origin", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        assert _block_reason(_parse_decision(result))
+
+    def test_git_failure_keeps_review_prompt(self, tmp_path: pathlib.Path):
+        """origin取得失敗の場合は通常の振り返り誘導を維持する。"""
+        (tmp_path / "dotfiles").mkdir()
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "extension-git-failure", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        assert _block_reason(_parse_decision(result))
 
 
 class TestEdgeCases:

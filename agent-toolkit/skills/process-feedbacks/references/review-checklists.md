@@ -5,7 +5,7 @@
 ---
 # 採否判定チェックリスト
 
-`agent-toolkit:process-feedbacks`ステップ2「内容の調整」・ステップ2.5「採否判定前の網羅調査」・
+`agent-toolkit:process-feedbacks`ステップ2「内容の調整」・ステップ2.5「網羅調査と保留判定」・
 ステップ3「批判的検討」から参照する調整観点・調査観点・判定観点の全件を集約する。
 
 ## 内容調整チェックリスト
@@ -135,6 +135,7 @@
   分解後、採否を**採用／部分採用／不採用**で判定する。
   部分採用と判定した場合は採用する要求と除外する要求を明示し、ステップ4の提示書式の採用範囲・除外範囲欄に転記する
   - 除外する要求は`atk mq add --type=tbd`で個別投入してユーザーが未対応要求を認識できる状態にする。
+    この投入は確認目的ではなく、未対応要求の通知を目的とする。
     投入手順は`references/hold-with-tbd-inject.md`「準用範囲」節に従う
 - 不採用済み主題との照合: 詳細は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`

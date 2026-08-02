@@ -36,7 +36,7 @@ description: >
   対応する推奨事項を併記する。同一命題が複数箇所へ分散する場合は単一の原則へ統合する
 - 会話文脈依存の指示語（「今回」「先ほど」等）・自己参照の指示語（「本規則」「上記」等）を含めない
 - 悪い例・機械検出辞書の検出語をそのまま本文・テストコードへ転記しない
-  （生成確率を上げる逆効果を避けるため。hookブロックメッセージは原因特定のため例外とする）
+  （生成確率を上げる逆効果を避けるため。hookのブロック・警告メッセージは原因特定のため例外とする）
 - 新規挙動・制約は次のいずれかへ振り分ける。常時参照される横断標準は`AGENTS.md`・`CLAUDE.md`本文または
   paths未指定ルール、特定パス限定則はpaths指定ルール、手順・ワークフローはスキル、
   決定論的強制・自動lintはhook、重い調査・冗長出力の隔離はサブエージェント
@@ -97,7 +97,8 @@ description: >
 ### 識別子と環境変数
 
 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式（例:
-`AGENT_TOOLKIT_PRIVATE_NOTES`・`AGENT_TOOLKIT_STOP_GATE_DEBUG`）、個人環境完結は`DOTFILES_`とする。
+`AGENT_TOOLKIT_PRIVATE_NOTES`・`AGENT_TOOLKIT_STOP_GATE_DEBUG`・`AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`）とする。
+個人環境完結は`DOTFILES_`とする。
 `agent-toolkit/rules/`・`agent-toolkit/agents/`配下はサブディレクトリを設けずフラット構造を維持する。
 
 ### セッション状態フラグ

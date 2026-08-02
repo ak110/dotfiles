@@ -2880,7 +2880,7 @@ class TestAskUserQuestionScopeEscalationCheck:
     """AskUserQuestion向け縮退誘発フレーズ検出ブロック。
 
     フレーズ本文の代わりにパターンマッチ最小単位（正規表現の最短一致）を
-    隔離フィクスチャから動的に読み込む（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+    隔離フィクスチャから動的に読み込む（`agent-toolkit:agent-standards`「完成条件」節）。
     """
 
     @pytest.mark.parametrize(("text", "category"), _ASKUSERQUESTION_SCOPE_ESCALATION_INPUTS)

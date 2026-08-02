@@ -7,12 +7,19 @@
 配布物フックは4経路（PreToolUse `AskUserQuestion`／PreToolUse `Write`・`Edit`・`MultiEdit`／
 Stop hook直近アシスタント発話／SubagentStop hookサブエージェント発話）でこの辞書を参照する。
 
-`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、
-機械チェック用辞書の検出語そのものは本ファイルへ隔離する。
-メインエージェントは本ファイルを読み込まず、`model: haiku`を指定した`Explore`サブエージェント経由で確認し、
-修正が必要な場合はAgentツールで`subagent_type: claude`を`model: sonnet`で起動して行う
-pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
+機械チェック用辞書の取り扱いは、本ファイル「隔離リファレンスの取り扱い」節に従う。
 引用ブロック回避規範は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節を参照する。
+
+## 隔離リファレンスの取り扱い
+
+機械チェック用辞書の検出語そのものを収容するファイルを隔離リファレンスとする。
+検出語を規範本文へ転記すると生成確率が上がるため、当該語はこの節が定める範囲へ隔離する。
+
+- メインエージェントは隔離リファレンスを読み込まず、`model: haiku`を指定した`Explore`サブエージェント経由で内容を確認する
+- 修正が必要な場合はAgentツールで`subagent_type: claude`を`model: sonnet`で起動して行う
+- pyfltrの機械チェック対象から除外する（`pyproject.toml`の`extend-exclude`へ登録する）
+- 各ファイルの説明文（検出語そのものを含まない部分）はこの節の隔離対象に含めず、メインと`Explore`双方の参照を許容する
+- 規範本文で機械検出カテゴリの規範論を扱う場合は、検出語を転記せず「代表フレーズは`references/<ファイル名>`の`<カテゴリ名>`を参照する」形式で参照へ誘導する
 
 ## 縮退表明の定義
 
@@ -91,7 +98,7 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 
 配線される4経路は上記「対象カテゴリと代表フレーズ」節の一覧を正とする。
 規範本文で機械検出カテゴリの規範論を扱う場合の記述テンプレートは
-`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節の参照誘導テンプレを用いる。
+本ファイル「隔離リファレンスの取り扱い」節の参照誘導テンプレートを用いる。
 
 非同期処理の待機中か否かの判定はscope-escalation辞書による言語検出を用いず、構造判定へ一本化する。
 Main Stop hook（`stop_advisor.py`）はMain自身の`transcript_path`を対象に`is_pending_async_work`

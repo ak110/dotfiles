@@ -5,12 +5,9 @@
 `agent-toolkit/scripts/_norm_inquiry_escalation.py`が対象とする検出フレーズの典拠でもある。
 配布物フックは`UserPromptSubmit`経路（`agent-toolkit/scripts/user_prompt_submit.py`）でこの辞書を参照する。
 
-`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、
-機械チェック用辞書の検出語そのもの（隣接する`_norm_inquiry_escalation_test_inputs.txt`）は
-コーディングエージェントのメインコンテキストへ読み込ませない。
-本ファイル（説明文）は同節内の除外規定に該当し、メイン・Exploreサブエージェント双方のRead参照を許容する。
-修正が必要な場合はAgentツールで`subagent_type: claude`を`model: sonnet`で起動して行う
-pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
+本ファイルは隔離リファレンスであり、取り扱いは
+`agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`
+「隔離リファレンスの取り扱い」節に従う。
 
 実装用の正規表現定義（`_NORM_INQUIRY_PHRASES`）は
 `agent-toolkit/scripts/_norm_inquiry_escalation.py`が唯一の格納先とし、本ファイルへは複製しない。

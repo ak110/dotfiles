@@ -8,7 +8,7 @@
 ---
 # Explore委譲雛形集
 
-`agent-toolkit:process-feedbacks`スキル「ステップ2.5: 採否判定前の網羅調査」節から
+`agent-toolkit:process-feedbacks`スキル「ステップ2.5: 網羅調査と保留判定」節から
 Exploreサブエージェントへ並列委譲する際の起動プロンプトを集約する。
 1フィードバックごとに1つの雛形インスタンスを生成する。
 複数`Explore`は`model: opus`を指定し、`name`と`run_in_background`を省略して同一応答内へ並置する。

@@ -408,6 +408,9 @@ fi
 if command -v pinact &>/dev/null; then
     eval "$(pinact completion bash)"
 fi
+if command -v codex &>/dev/null; then
+    eval "$(codex completion bash)"
+fi
 
 # ~/dotfiles/completions/*.bash と ~/dotfiles/agent-toolkit/completions/*.bash をまとめて読み込む。
 # pytools系（argcomplete生成）と bin/ 配下のラッパー向け手書き補完、

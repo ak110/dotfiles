@@ -5,7 +5,7 @@
 を読み込む処理をSSOTで集約する。
 
 検出語そのものをテストコード本文へ転記しないため、隔離フィクスチャから動的に読み込む
-（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+（`agent-toolkit:agent-standards`「完成条件」節）。
 """
 
 import pathlib

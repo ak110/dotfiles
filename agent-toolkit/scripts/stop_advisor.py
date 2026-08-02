@@ -12,6 +12,7 @@ plan-mode等のスキル実行中で切り替える）。`agent-toolkit:session-
 各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で常時ログへ記録する。
 """
 
+import functools
 import json
 import pathlib
 import re
@@ -19,6 +20,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import _git_remote  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -48,6 +50,9 @@ _HOOK_ID = "agent-toolkit/stop_advisor"
 # 振り返り誘導の対象スキル名。
 _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 
+# 振り返り拡張を提供する既知のリポジトリ識別子。
+_SESSION_REVIEW_EXTENSION_REPOSITORY = "github.com/ak110/dotfiles"
+
 # transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
 
@@ -72,6 +77,13 @@ def _build_stop_focus_categories(state: dict) -> frozenset[str]:
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
+
+
+@functools.cache
+def _has_session_review_extension_repository() -> bool:
+    """既知の振り返り拡張リポジトリが`~/dotfiles`に存在する場合に真を返す。"""
+    repository = pathlib.Path.home() / "dotfiles"
+    return _git_remote.get_normalized_origin(repository) == _SESSION_REVIEW_EXTENSION_REPOSITORY
 
 
 def _has_uncommitted_changes(cwd: str) -> bool:
@@ -218,6 +230,12 @@ def main(payload_text: str) -> int:
     extension_pending = state.get("session_review_extension_pending") is True
     if extension_pending:
         append_stop_log(session_id, "approve_extension_pending", {})
+        _approve(cwd=cwd)
+        return 0
+
+    # 既知の振り返り拡張が導入される環境では、配布物側から重ねて誘導しない。
+    if _has_session_review_extension_repository():
+        append_stop_log(session_id, "approve_extension_repository", {})
         _approve(cwd=cwd)
         return 0
 

@@ -2,7 +2,7 @@
 
 scope-escalation検出テストの入力フレーズは
 `agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt`
-から動的に読み込む（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節。
+から動的に読み込む（`agent-toolkit:agent-standards`「完成条件」節。
 検出語そのものをテストコード本文へ転記しない）。
 """
 

@@ -5,7 +5,7 @@
 # 同一カテゴリに対し正規表現のalternation分岐ごとの最小マッチ入力を複数行に列挙する。
 # 空行と`#`先頭行はスキップ。
 #
-# 本ファイルはコーディングエージェントのメインコンテキストへ読み込ませない（agent-standardsスキル「コンテキスト汚染の回避」節）。
+# 本ファイルはコーディングエージェントのメインコンテキストへ読み込ませない（scope-escalation-phrases.md「隔離リファレンスの取り扱い」節）。
 # pyproject.tomlの[tool.pyfltr] extend-excludeでpyfltr内蔵版colloquial-check含む機械チェック対象から除外する。
 # Stop hook・SubagentStop hookで実発生した観測文言も追加対象とする（fb 20260720-162742-001）。
 approach-confirm	進め方を確認
