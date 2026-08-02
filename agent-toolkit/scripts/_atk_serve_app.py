@@ -452,15 +452,15 @@ def create_app(
             "background_color": assets.THEME_COLOR,
             "icons": [
                 {
-                    "src": f"{base_path}/static/icon-192.png",
-                    "sizes": "192x192",
-                    "type": "image/png",
-                },
-                {
-                    "src": f"{base_path}/static/icon-512.png",
-                    "sizes": "512x512",
-                    "type": "image/png",
-                },
+                    "src": f"{base_path}/favicon.svg",
+                    "sizes": "192x192 512x512 any",
+                    "type": "image/svg+xml",
+                    # `maskable`は宣言しない。maskableはキャンバス全面の不透明背景と、
+                    # 図形を中央80%の安全域へ収めることを前提にOS側がマスクを適用する。
+                    # 本アイコンは背景を透過させ、輪郭が安全域の外へ届く形状のため、
+                    # 宣言するとマスク適用時に角の透過と図形の欠けが生じる。
+                    "purpose": "any",
+                }
             ],
         }
         response = quart.Response(
@@ -469,6 +469,15 @@ def create_app(
         )
         response.headers["Cache-Control"] = "no-cache"
         return response
+
+    @app.get("/favicon.svg")
+    async def favicon_svg() -> quart.Response:
+        """タブ識別用のfaviconを返す。"""
+        return quart.Response(
+            assets.FAVICON_SVG,
+            content_type="image/svg+xml; charset=utf-8",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @app.get("/static/icon-192.png")
     async def icon_192() -> quart.Response:

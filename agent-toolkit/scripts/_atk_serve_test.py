@@ -87,6 +87,7 @@ def test_assets_are_self_contained() -> None:
     assert "textContent" in assets.JS
     assert ".value" in assets.JS
     assert f'<meta name="theme-color" content="{assets.THEME_COLOR}">' in assets.HTML
+    assert 'rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg"' in assets.HTML
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
 
 
@@ -1325,6 +1326,7 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), current_state)
     rules = {rule.rule for rule in app.url_map.iter_rules()}
     expected = {
+        "/favicon.svg",
         "/manifest.webmanifest",
         "/static/icon-192.png",
         "/static/icon-512.png",
@@ -2317,8 +2319,21 @@ def test_create_app_keeps_resolved_config(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_manifest_and_icons_are_installable_pwa_assets(tmp_path: pathlib.Path) -> None:
-    """manifestと宣言寸法どおりの不透明PNGアイコンを配信する。"""
+async def test_favicon_svg_is_served(tmp_path: pathlib.Path) -> None:
+    """`/favicon.svg`がSVGとして配信される。"""
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    response = await app.test_client().get("/favicon.svg")
+    body = await response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/svg+xml"
+    assert response.headers["Cache-Control"] == "public, max-age=3600"
+    assert body == assets.FAVICON_SVG
+
+
+@pytest.mark.asyncio
+async def test_manifest_declares_svg_icon(tmp_path: pathlib.Path) -> None:
+    """manifestのiconsがSVG1件を宣言し、従来のPNGも引き続き配信する。"""
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
     manifest_response = await client.get("/manifest.webmanifest")
@@ -2334,8 +2349,12 @@ async def test_manifest_and_icons_are_installable_pwa_assets(tmp_path: pathlib.P
         "theme_color": assets.THEME_COLOR,
         "background_color": assets.THEME_COLOR,
         "icons": [
-            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
-            {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            {
+                "src": "/favicon.svg",
+                "sizes": "192x192 512x512 any",
+                "type": "image/svg+xml",
+                "purpose": "any",
+            }
         ],
     }
 
@@ -2387,6 +2406,7 @@ async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> 
     index_body = await index_response.get_data(as_text=True)
     assert 'href="/atk/static/app.css"' in index_body
     assert 'src="/atk/static/app.js"' in index_body
+    assert 'href="/atk/favicon.svg"' in index_body
     assert 'href="/atk/manifest.webmanifest" crossorigin="use-credentials"' in index_body
     assert "/atk/atk/" not in index_body
 
@@ -2399,10 +2419,7 @@ async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> 
     manifest = await manifest_response.get_json()
     assert manifest["start_url"] == "/atk/"
     assert manifest["scope"] == "/atk/"
-    assert [icon["src"] for icon in manifest["icons"]] == [
-        "/atk/static/icon-192.png",
-        "/atk/static/icon-512.png",
-    ]
+    assert [icon["src"] for icon in manifest["icons"]] == ["/atk/favicon.svg"]
     assert all("/atk/atk/" not in icon["src"] for icon in manifest["icons"])
 
 

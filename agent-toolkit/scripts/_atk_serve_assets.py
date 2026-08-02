@@ -5,6 +5,27 @@ import base64
 # ruff: noqa: E501
 
 THEME_COLOR = "#3157d5"
+# タブ識別とPWAアイコンの双方でSSOTにするため、faviconはインラインSVGを単一定数で保持する。
+# 白い縁取りを背景レイヤーとして重ね、黒系・白系・青系いずれのタイトルバー背景でも輪郭を識別可能にする。
+# ベクターで配布するためPWAの192x192/512x512要件も1ファイルで満たせる。
+FAVICON_SVG = """\
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <!-- 白い縁取り（背景レイヤー） -->
+  <g stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="white">
+    <path d="M4 13h3l3 3h4l3 -3h3"/>
+    <path d="M4 13v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-4l-3 -8a2 2 0 0 0 -2 -1h-6a2 2 0 0 0 -2 1z"/>
+  </g>
+  <!-- 本来のストローク色 -->
+  <g stroke="#3157d5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M4 13h3l3 3h4l3 -3h3"/>
+    <path d="M4 13v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-4l-3 -8a2 2 0 0 0 -2 -1h-6a2 2 0 0 0 -2 1z"/>
+  </g>
+</svg>
+"""
+# PNGアイコンはmanifestの宣言からSVGへ移行した後も保持する。
+# 既存の配信URLは長期キャッシュ指定で配布済みであり、インストール済みPWAが
+# 当該URLを参照し続けるため、定数と配信ルートを残して404を避ける。
 ICON_192_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAABiUlEQVR42u3TMQ0AAAjAMCyhBuXoARN89KiBJYusHvgqRMAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwAAYQAQOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAbAACJgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAuLQQp097LuitXAAAAAElFTkSuQmCC"
 )
@@ -19,6 +40,7 @@ HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="__THEME_COLOR__">
   <title>フィードバック管理</title>
+  <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
   <!-- Basic Auth配下でもmanifestへ認証情報を送る。 -->
   <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
