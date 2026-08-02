@@ -151,9 +151,9 @@ def _emit_block(reason: str) -> None:
     print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """dotfiles個人環境専用セッション振り返りを誘導するエントリポイント。"""
-    resolved = _parse_stop_session(sys.stdin.read(), _approve)
+    resolved = _parse_stop_session(payload_text, _approve)
     if resolved is None:
         return 0
     session_id, payload = resolved

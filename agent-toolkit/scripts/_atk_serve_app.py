@@ -147,9 +147,12 @@ def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, ob
 
 
 @functools.lru_cache(maxsize=128)
-def _render_content(text: str, modified_ns: int) -> str:
-    """更新時刻を含むキーでMarkdownの整形済みHTMLを保持する。"""
-    del modified_ns
+def _render_content(text: str) -> str:
+    """Markdownの整形済みHTMLを本文をキーとして保持する。
+
+    整形結果は本文だけで一意に定まるため、更新時刻はキーに含めない。
+    含めると同一本文の再保存でヒットしなくなるだけで、無効化には寄与しない。
+    """
     return _MARKDOWN.render(text)
 
 
@@ -176,6 +179,12 @@ class Operations:
         self.private_notes = private_notes
 
     def entries(self, filters: dict[str, str]) -> list[dict[str, object]]:
+        """条件に一致する一覧を、確認事項・フィードバックの順に各群ファイル名の降順で返す。
+
+        並び順は`atk mq list`の完全な逆順とする。CLIは端末の末尾へ最新が並ぶよう
+        フィードバック群を後段のファイル名昇順で出力し、Web UIは一覧の先頭へ最新が並ぶよう
+        その逆順で返す。利用者の指定による意図的な差異であり、双方を揃えない。
+        """
         result: list[dict[str, object]] = []
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
@@ -234,7 +243,7 @@ class Operations:
             return {
                 **_entry(path, kind or "unknown", state, text),
                 "content": text,
-                "content_html": _render_content(text, path.stat().st_mtime_ns),
+                "content_html": _render_content(text),
             }
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error

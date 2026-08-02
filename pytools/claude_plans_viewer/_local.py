@@ -228,7 +228,7 @@ def _cached_creation_time(host: str, rel: str, observed_mtime: float) -> float:
             value = payload.get("ctime_epoch")
             if isinstance(value, (int, float)):
                 cached = float(value)
-    except (FileNotFoundError, OSError, json.JSONDecodeError, AttributeError):
+    except (OSError, json.JSONDecodeError, AttributeError):
         pass
     creation_time = min(observed_mtime, cached) if cached is not None else observed_mtime
     if cached == creation_time:

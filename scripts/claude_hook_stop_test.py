@@ -583,7 +583,7 @@ class TestEntrypointExceptionStages:
             "import json\n\n"
             "def _approve() -> None:\n"
             "    print(json.dumps({}))\n\n"
-            "def main() -> int:\n"
+            "def main(payload_text: str) -> int:\n"
             "    raise ImportError('main failure')\n",
             encoding="utf-8",
         )
@@ -620,6 +620,54 @@ class TestEntrypointExceptionStages:
         assert not result.stdout
         assert result.stderr.startswith("Traceback (most recent call last):")
         assert "[stop] 想定外エラー" not in result.stderr
+
+
+class TestEntrypointStdinDecoding:
+    """共通入口が標準入力をUTF-8として厳密に復号することの回帰テスト。
+
+    プロセスの既定符号化に委ねると、UTF-8で送られた非ASCII文字が別の符号化で復号され、
+    判定対象の文字列が一致しなくなる。復号結果と終端の双方を固定する。
+    """
+
+    @staticmethod
+    def _entrypoint_with_echo_module(tmp_path: pathlib.Path) -> pathlib.Path:
+        entrypoint = tmp_path / "claude_hook.py"
+        shutil.copy2(_SCRIPT, entrypoint)
+        (tmp_path / "claude_hook_stop.py").write_text(
+            "def _approve() -> None:\n    pass\n\ndef main(payload_text: str) -> int:\n    print(payload_text)\n    return 0\n",
+            encoding="utf-8",
+        )
+        return entrypoint
+
+    def test_utf8_payload_reaches_module_unchanged(self, tmp_path: pathlib.Path) -> None:
+        """UTF-8の日本語payloadがモジュールへ同一文字列として渡ること。"""
+        entrypoint = self._entrypoint_with_echo_module(tmp_path)
+        payload = '{"prompt": "## 計画ファイルパス"}'
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "stop"],
+            input=payload.encode("utf-8"),
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout.decode("utf-8").strip() == payload
+
+    def test_undecodable_payload_passes_through(self, tmp_path: pathlib.Path) -> None:
+        """UTF-8として復号できない入力は判定処理へ渡さず通過扱いで終端すること。"""
+        entrypoint = self._entrypoint_with_echo_module(tmp_path)
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "stop"],
+            input=b'{"prompt": "\xff\xfe"}',
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert not result.stdout
+        assert "UTF-8復号に失敗" in result.stderr.decode("utf-8")
 
 
 class TestHomeIndependent:

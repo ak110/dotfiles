@@ -64,10 +64,10 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """エントリポイント。exit code を返す（0 または 2）。"""
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
         # 想定外入力ではフックを無効化する（実処理の破損を避ける安全側の判定）。
         return 0

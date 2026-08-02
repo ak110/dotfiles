@@ -21,6 +21,7 @@
 # pylint: disable=duplicate-code  # 配布物境界を跨がず例外処理を独立実装するため意図的に重複する。
 
 import importlib
+import io
 import pathlib
 import sys
 import traceback
@@ -38,11 +39,34 @@ _MODULE_NAMES: dict[str, str] = {
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop", "autonomous_exit"})
 
 
+def _configure_standard_output() -> None:
+    """標準出力と標準エラーをUTF-8へ統一する。"""
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str]) -> int:
-    """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
+    """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。
+
+    標準入力は生バイト列として本入口で1回だけ読み、UTF-8で厳密に復号して各モジュールへ渡す。
+    プロセスの既定符号化に委ねると、UTF-8で送られたpayload内の非ASCII文字が
+    別の符号化で復号され、判定対象の文字列が一致しなくなる。
+    復号できない入力は判定処理へ渡さず通過扱いで終端する。
+    """
     if not argv or argv[0] not in _SUBCOMMANDS:
         print(
             f"[claude_hook] usage: claude_hook.py <{'|'.join(sorted(_SUBCOMMANDS))}>",
+            file=sys.stderr,
+        )
+        return 0
+    _configure_standard_output()
+    try:
+        payload_text = sys.stdin.buffer.read().decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        print(
+            f"[claude_hook] stdinのUTF-8復号に失敗したためフック処理を通過させる: {exc}",
             file=sys.stderr,
         )
         return 0
@@ -53,7 +77,7 @@ def main(argv: list[str]) -> int:
         traceback.print_exc()
         return 0
     try:
-        return module.main()
+        return module.main(payload_text)
     except Exception as exc:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
         tb = traceback.extract_tb(exc.__traceback__)
         frame = tb[-1] if tb else None

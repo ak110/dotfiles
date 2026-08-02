@@ -82,6 +82,20 @@ def _plan_metadata(work_type: str | None) -> str:
             id="closed_h3_heading",
         ),
         pytest.param(
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n"
+            "### `foo.md`（新設, 見込み20行）\n\n```text\ncontent\n```\n",
+            0,
+            None,
+            id="decorated_h3_path_heading",
+        ),
+        pytest.param(
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n"
+            "### `foo.md`と`bar.md`\n\n```text\ncontent\n```\n",
+            0,
+            None,
+            id="multiple_paths_in_h3_heading",
+        ),
+        pytest.param(
             "| A | B |\n| --- | --- |\n| only |\n",
             1,
             "5行目: 表の本文行のセル数がヘッダーと一致しない",
@@ -419,7 +433,10 @@ def test_execution_method_without_session_ops_silent(
     [
         pytest.param("- 振り返りフックの誘導を変更する", False, id="implementation_target"),
         pytest.param("- セッション終了処理を実装する", False, id="implementation_noun_phrase"),
+        pytest.param("- 振り返りフックの誘導の変更を行う", False, id="modifier_in_noun_phrase"),
         pytest.param("- 振り返りを実施する", True, id="execute_review"),
+        pytest.param("- 振り返りスキルを起動する", True, id="execute_review_with_short_noun"),
+        pytest.param("- （振り返り・セッション終了）を実施する", True, id="execute_parenthesized_enumeration"),
         pytest.param("- セッション終了を行う", True, id="execute_session_end"),
         pytest.param("- 振り返りへ進む", True, id="proceed_to_review"),
         pytest.param(
@@ -490,11 +507,11 @@ def test_execution_method_session_ops_invocations_warn(
 def test_execution_method_unclosed_inline_code_does_not_raise(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    body = "## 実行方法\n\n- `agent-toolkit:session-reviewを確認する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    body = "## 実行方法\n\n- `agent-toolkit:session-reviewを実施する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" not in capsys.readouterr().err
+    assert "セッション運用工程" in capsys.readouterr().err
 
 
 def test_execution_method_escaped_backticks_do_not_hide_session_ops(
@@ -511,7 +528,7 @@ def test_execution_method_code_span_closes_after_literal_backslash(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """コードスパン内のバックスラッシュは閉じバッククォートをエスケープしない。"""
-    body = "## 実行方法\n\n- `session-review\\`を確認する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    body = "## 実行方法\n\n- `session-review\\`を実施する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
@@ -546,11 +563,11 @@ def test_execution_method_code_span_does_not_cross_blank_line(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """別段落のバッククォート列を閉じ区切りとして扱わない。"""
-    body = "## 実行方法\n\n`\nsession-review\n\n`\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    body = "## 実行方法\n\n`\nsession-reviewを実施する\n\n`\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" not in capsys.readouterr().err
+    assert "セッション運用工程" in capsys.readouterr().err
 
 
 def test_execution_method_invocation_after_multiline_code_span_warns(
@@ -570,10 +587,10 @@ def test_execution_method_invocation_after_multiline_code_span_warns(
 @pytest.mark.parametrize(
     "execution_body",
     [
-        "- `session-review\n- second`",
-        "`session-review\n### heading `",
-        "`session-review\n> quote `",
-        "`session-review\n***\ntext `",
+        "- `session-reviewを実施する\n- second`",
+        "`session-reviewを実施する\n### heading `",
+        "`session-reviewを実施する\n> quote `",
+        "`session-reviewを実施する\n***\ntext `",
     ],
 )
 def test_execution_method_code_span_does_not_cross_inline_block_boundary(
@@ -587,17 +604,17 @@ def test_execution_method_code_span_does_not_cross_inline_block_boundary(
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" not in capsys.readouterr().err
+    assert "セッション運用工程" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
     "execution_body",
     [
-        "- item\n    `session-review`",
-        "- ``\n  session-review\n  ``",
-        "> ``\n> session-review\n> ``",
-        "`session-review\nheading `\n---",
-        "    session-review",
+        "- item\n    `session-reviewを実施する`",
+        "- ``\n  session-reviewを実施する\n  ``",
+        "> ``\n> session-reviewを実施する\n> ``",
+        "`session-reviewを実施する\nheading `\n---",
+        "    session-reviewを実施する",
     ],
 )
 def test_execution_method_commonmark_inline_and_code_blocks_are_silent(
@@ -618,11 +635,11 @@ def test_execution_method_longer_backtick_run_does_not_close_code_span(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """開き列より長い最大バッククォート列への部分一致ではコードスパンを閉じない。"""
-    body = "## 実行方法\n\n- `session-review``を確認する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    body = "## 実行方法\n\n- `session-reviewを実施する``を確認する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" not in capsys.readouterr().err
+    assert "セッション運用工程" in capsys.readouterr().err
 
 
 def test_unknown_skill_name_errors(
@@ -1714,7 +1731,7 @@ def test_indented_fenced_code_block_returns_zero(
     assert capsys.readouterr().err == ""
 
 
-@pytest.mark.parametrize("following_heading", ["## 実行方法", "### 補足"])
+@pytest.mark.parametrize("following_heading", ["## 実行方法", "### 補足", "#### 詳細"])
 def test_h3_body_ends_at_any_supported_heading(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1732,18 +1749,18 @@ def test_h3_body_ends_at_any_supported_heading(
     assert "コードブロックが無いH3: foo.md" in capsys.readouterr().err
 
 
-def test_h4_code_block_belongs_to_parent_h3(
+def test_h4_code_block_does_not_belong_to_parent_h3(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """H4配下のコードブロックを親H3の変更内容として認識する。"""
+    """H4小節のコードブロックを親H3の変更内容として流用しない。"""
     body = (
         "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n### `foo.md`\n\n#### 詳細\n\n```text\n変更後\n```\n"
     )
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
 
-    assert main() == 0
-    assert capsys.readouterr().err == ""
+    assert main() == 1
+    assert "コードブロックが無いH3: foo.md" in capsys.readouterr().err
 
 
 def test_repeated_execution_method_sections_are_all_checked(

@@ -104,6 +104,12 @@ process.stdout.write(JSON.stringify({
     assert rendered == {"datetime": "2026/1/1 9:00:00", "date": "2026/1/1", "time": "9:00:00"}
     assert "min-height: 24rem" in assets.CSS
     assert "min-height: 16rem" in assets.CSS
+    # 狭幅表示の最小高は編集欄だけを対象とする。
+    # ボタン・入力欄・セレクトを含む共通規則へ置くと、それらの高さまで広がる。
+    narrow = re.search(r"@media \(max-width: 700px\) \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert narrow is not None
+    min_height_rules = re.findall(r"([^{}]*)\{[^{}]*min-height: 16rem[^{}]*\}", narrow.group(1))
+    assert [selector.split() for selector in min_height_rules] == [["textarea"]]
 
 
 def test_header_layout_and_additional_filters_structure() -> None:

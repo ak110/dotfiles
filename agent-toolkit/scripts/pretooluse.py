@@ -160,7 +160,10 @@ _FOREIGN_SCRIPT_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-
 # メインエージェントからの直接Readを禁じる隔離指定リファレンス。
 # `scope-escalation-phrases.md`「隔離リファレンスの取り扱い」節が指定する対象と同一SSOTとする。
 # `isSidechain`真の呼び出しは通過させ、`agent-toolkit-edit`スキル起動セッションも例外とする。
-_ISOLATED_READ_TARGETS: tuple[str, ...] = ("agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",)
+_ISOLATED_READ_TARGETS: tuple[str, ...] = (
+    "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
+    "agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt",
+)
 
 # 規範文書を自動読み込みしないサブエージェントタイプ。
 # `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`

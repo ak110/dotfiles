@@ -91,9 +91,9 @@ def _emit_block(reason: str) -> None:
     print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """`exit-session`呼び忘れを検知し再促するエントリポイント。"""
-    resolved = _parse_stop_session(sys.stdin.read(), _approve)
+    resolved = _parse_stop_session(payload_text, _approve)
     if resolved is None:
         return 0
     session_id, payload = resolved

@@ -14,7 +14,11 @@ import pytest
         ("https://GitHub.com/AK110/Dotfiles", "github.com/ak110/dotfiles"),
         ("git@github.com:ak110/dotfiles.git\n", "github.com/ak110/dotfiles"),
         ("ssh://git@github.com/ak110/dotfiles.git", "github.com/ak110/dotfiles"),
+        ("ssh://git@github.com:22/ak110/dotfiles.git", "github.com/ak110/dotfiles"),
+        ("ssh://git@gitlab.example.com:2222/group/sub/repo.git", "gitlab.example.com/group/sub/repo"),
+        ("https://github.com:443/ak110/dotfiles.git", "github.com/ak110/dotfiles"),
         ("github.com/ak110/dotfiles", "github.com/ak110/dotfiles"),
+        ("gitlab.example.com/group/sub/repo", "gitlab.example.com/group/sub/repo"),
     ],
 )
 def test_normalize_remote_url(remote_url: str, expected: str) -> None:

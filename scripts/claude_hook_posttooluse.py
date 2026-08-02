@@ -57,10 +57,10 @@ def _set_autonomous_exit_invoked(state: dict) -> dict | None:
     return state
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """エントリポイント。exit codeは常に0。"""
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
         return 0
     if payload.get("tool_name") != "Skill":

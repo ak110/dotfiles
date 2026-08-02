@@ -456,6 +456,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                                 subprocess.run([executable, "--force"], check=False)
                                 _console_title.set_console_title("atk mq process-loop")
                                 _restart_process_loop(sys.argv, dotfiles_root, resume_consumed=True)
+                            # 更新を実行できない場合は再読込すべき新しいコードが無いため再起動せず、
+                            # 反復を継続する。他プロセスによる更新は待機ループのハッシュ比較が検知する。
                         continue
                     if not args.no_alerts:
                         monotonic_now = time.monotonic()

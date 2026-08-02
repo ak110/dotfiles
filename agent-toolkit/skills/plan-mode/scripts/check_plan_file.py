@@ -89,16 +89,24 @@ import sys
 import markdown_it
 
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`")
-_H3_PATH_CONTENT_RE = re.compile(r"^`([^`]+)`$")
+# H3見出しが示す対象パスは見出し内容の先頭コードスパンから取る。
+# `### `path`（新設, 見込みN行）`のように接尾辞を伴う記法（`plan-mode/SKILL.md`
+# 「対象ファイル一覧」節が定める）を受理するため、内容全体との完全一致は求めない。
+_H3_PATH_CONTENT_RE = re.compile(r"^`([^`]+)`")
 _CANONICAL_H1_RE = re.compile(r"^# (?!#+[ \t]*$)\S.*$")
 # `（新設）`単独形と`（現行N行、廃止・削除）`のような前置き付き複合形（`plan-mode/SKILL.md`
 # 「対象ファイル一覧」節が定める記法）の両方を検出する。マーカーが括弧内の末尾要素であることを
 # `）`直前の位置で担保する。
 _NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
 _SESSION_OPS_RE = re.compile(r"session-review|exit-session|振り返り|セッション終了|session-review-dotfiles")
+# 対象語と実施・起動の指示表現の間には、`振り返りスキルを起動する`の`スキル`や
+# `（振り返り・セッション終了）を実施する`の閉じ括弧のような短い語句が入りうるため、
+# 区切り記号を含まない8文字までを許容する。
+# 連体修飾を示す`の`は許容範囲から除く。`振り返りフックの誘導の変更を行う`のように
+# 対象語がより大きな名詞句の修飾要素となる記述は、実装対象への言及であって工程指示ではない。
 _SESSION_OPS_INSTRUCTION_RE = re.compile(
     r"(?:session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了)"
-    r"[`\\]*?(?:を実施する|を行う|へ進む|を呼び出す|を起動する)"
+    r"[^\n。の]{0,8}?(?:を実施する|を行う|へ進む|を呼び出す|を起動する)"
 )
 
 # 呼び出し構文に限定して名前を抽出する4パターン。
@@ -292,19 +300,30 @@ def _parse_document(text: str) -> _Document:
     )
 
 
+def _section_at(document: _Document, index: int) -> _Section:
+    """`document.headings[index]`の見出し配下を節として返す。
+
+    H2以上（レベル2以下）の節は配下の小見出しを含め、同レベル以上の次見出しで終端する。
+    H3以下（レベル3以上）の節は、より深い小見出しの直前で終端する。
+    後者はH4小節の本文を親H3の本文として扱わないための区切りであり、
+    対象ファイルH3のコードブロック有無判定と`### バグ調査結果`の先頭表判定が依存する。
+    """
+    item = document.headings[index]
+    end_line = len(document.lines)
+    for following in document.headings[index + 1 :]:
+        if following.level <= item.level or item.level >= 3:
+            end_line = following.start_line
+            break
+    return _Section(item.end_line, end_line, item)
+
+
 def _sections(document: _Document, level: int, heading: str) -> list[_Section]:
-    """指定レベル・内容の見出し配下を、同レベル以上の次見出しまでの節として返す。"""
-    sections: list[_Section] = []
-    for index, item in enumerate(document.headings):
-        if item.level != level or item.content != heading:
-            continue
-        end_line = len(document.lines)
-        for following in document.headings[index + 1 :]:
-            if following.level <= level:
-                end_line = following.start_line
-                break
-        sections.append(_Section(item.end_line, end_line, item))
-    return sections
+    """指定レベル・内容の見出し配下を節として返す。終端規則は`_section_at`が定める。"""
+    return [
+        _section_at(document, index)
+        for index, item in enumerate(document.headings)
+        if item.level == level and item.content == heading
+    ]
 
 
 def _within(outer: _BlockRange, inner: _BlockRange) -> bool:
@@ -410,20 +429,28 @@ def _extract_checkbox_paths(document: _Document, sections: list[_Section]) -> li
     ]
 
 
+def _h3_heading_path(heading: _Heading) -> str | None:
+    """H3見出しが先頭コードスパンで示す対象パスを返す。パス記法でなければNoneを返す。"""
+    if heading.level != 3:
+        return None
+    match = _H3_PATH_CONTENT_RE.match(heading.content)
+    return match.group(1) if match is not None else None
+
+
 def _extract_h3_paths(document: _Document, sections: list[_Section]) -> list[str]:
     return [
-        match.group(1)
+        path
         for section in sections
         for heading in document.headings
-        if heading.level == 3
-        and section.start_line <= heading.start_line < section.end_line
-        and (match := _H3_PATH_CONTENT_RE.fullmatch(heading.content))
+        if section.start_line <= heading.start_line < section.end_line and (path := _h3_heading_path(heading))
     ]
 
 
 def _path_h3_sections(document: _Document, path: str) -> list[_Section]:
-    """指定パスを内容とするH3節を返す。"""
-    return _sections(document, 3, f"`{path}`")
+    """指定パスを先頭コードスパンに持つH3節を返す。"""
+    return [
+        _section_at(document, index) for index, heading in enumerate(document.headings) if _h3_heading_path(heading) == path
+    ]
 
 
 def _check_base_commit_recorded(document: _Document) -> list[str]:

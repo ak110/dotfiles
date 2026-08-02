@@ -5,9 +5,10 @@
 `agent-toolkit/scripts/_norm_inquiry_escalation.py`が対象とする検出フレーズの典拠でもある。
 配布物フックは`UserPromptSubmit`経路（`agent-toolkit/scripts/user_prompt_submit.py`）でこの辞書を参照する。
 
-本ファイルは隔離リファレンスであり、取り扱いは
+本ファイルは隔離リファレンスの説明文にあたり、取り扱いは
 `agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`
-「隔離リファレンスの取り扱い」節に従う。
+「隔離リファレンスの取り扱い」節に従う（同節の除外規定により参照を許容する）。
+検出語そのものを収容する`_norm_inquiry_escalation_test_inputs.txt`は同節の隔離対象である。
 
 実装用の正規表現定義（`_NORM_INQUIRY_PHRASES`）は
 `agent-toolkit/scripts/_norm_inquiry_escalation.py`が唯一の格納先とし、本ファイルへは複製しない。

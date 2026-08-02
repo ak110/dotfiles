@@ -5612,13 +5612,21 @@ class TestReadIsolatedReferenceCheck:
 
 
 def test_isolated_targets_excludes_phrases_md() -> None:
-    """`scope-escalation-phrases.md`が隔離対象から除かれ、テストデータのみ隔離を保つ。"""
-    assert not pretooluse._is_isolated_reference(  # noqa: SLF001  # pylint: disable=protected-access
-        "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md"
-    )
-    assert pretooluse._is_isolated_reference(  # noqa: SLF001  # pylint: disable=protected-access
-        "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt"
-    )
+    """説明文のファイルが隔離対象から除かれ、検出語を収容するテストデータのみ隔離を保つ。
+
+    対象は`scope-escalation-phrases.md`「隔離リファレンスの取り扱い」節が定義する
+    「検出語そのものを収容するファイル」であり、規範側の定義と遮断対象を一致させる。
+    """
+    for allowed in (
+        "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
+        "agent-toolkit/skills/agent-standards/references/norm-inquiry-escalation-phrases.md",
+    ):
+        assert not pretooluse._is_isolated_reference(allowed)  # noqa: SLF001  # pylint: disable=protected-access
+    for isolated in (
+        "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
+        "agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt",
+    ):
+        assert pretooluse._is_isolated_reference(isolated)  # noqa: SLF001  # pylint: disable=protected-access
 
 
 class TestScopeEscalationMessageIncludesMatchedPhrase:

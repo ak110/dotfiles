@@ -30,15 +30,16 @@ allowed-tools: Bash
 1. 終了理由を1文で発話する（呼び出し元スキルの完遂サマリーと重複する場合は要点のみ記述する）
 2. 実行環境を判定し、対応する経路でClaude Code本体プロセスへ停止を要求する
    - POSIX互換のプロセス識別が成立する環境: `Bash`ツールで`kill -TERM $PPID`を実行する
-   - Windows環境（`$PPID`が実プロセスを指さない環境を含む）: PowerShellから
-     `Get-CimInstance Win32_Process`を使い、PowerShell自身のPIDから`ParentProcessId`をたどる。
+     採用シグナルは`TERM`へ固定し、実行時に切り替えない
+   - Windows環境（`$PPID`が実プロセスを指さない環境を含む）: `Bash`ツールから
+     `powershell.exe -NoProfile -Command "<スクリプト>"`の形でPowerShellを起動する。
+     スクリプトは`Get-CimInstance Win32_Process`で自身のPIDから`ParentProcessId`をたどり、
      祖先の実行ファイルとコマンドラインを照合してClaude Code本体を一意に特定し、
-     当該単一PIDだけを`Stop-Process -Id`で終了する。実行ファイル名の一致だけを根拠にしない
+     当該単一PIDだけを`Stop-Process -Id <PID>`で終了する。POSIXシグナルは用いない。
+     実行ファイル名の一致だけを根拠にしない
      （`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節のプロセス終了規定に従う）
    - 対象を一意に特定できない場合は停止を要求せず、利用者へ`/exit`の入力を案内して本スキルを終える
-3. POSIX経路の採用シグナルは本スキル本文で`TERM`へ固定する。
-   Windows経路はPOSIXシグナルを用いず、前項の`Stop-Process -Id`へ固定する
-4. 停止要求の発火後はClaude Code本体プロセスが停止するため、後続のツール呼び出し・発話は行わない
+3. 停止要求の発火後はClaude Code本体プロセスが停止するため、後続のツール呼び出し・発話は行わない
 
 ## auto mode下で拒否される場合の対処
 
