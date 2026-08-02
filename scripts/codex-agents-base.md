@@ -77,14 +77,30 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | Claude Code | Codex相当 |
 | --- | --- |
 | `TaskCreate`・`TaskUpdate`・`TaskList`・`TaskGet` | `update_plan`で計画状態を管理する |
-| `Agent`ツール（サブエージェント起動。旧称`Task`） | `spawn_agent`で別エージェントへ委譲する |
+| `Agent`ツール（サブエージェント起動。旧称`Task`） | `spawn_agent`で別エージェントへ委譲する。`task_name`と`message`は必須で、`fork_turns`へ`"none"`を指定する。`model`・`reasoning_effort`による委譲先の指定は`fork_turns`が`"none"`または継承ターン数の場合に有効となり、省略時と`"all"`では上書きできない |
+| `SendMessage`（稼働中のサブエージェントへの追加指示・再開） | `followup_task`で追加タスクを送る（待機中の対象は新しいターンを開始する）。ターンを開始せず伝えるだけの場合は`send_message`を使う |
+| サブエージェントの完了待機・稼働確認・中断 | `wait_agent`で更新を待ち、`list_agents`で稼働中の一覧を取得し、`interrupt_agent`で中断する |
+| `mcp__codex__codex`・`mcp__codex__codex-reply`（codex MCPへの委譲・継続） | 自身がCodexであるためMCP経由の自己呼び出しは不要。`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲し、`followup_task`で継続する |
 | `AskUserQuestion` | ネイティブ機能を利用（ユーザーへ直接質問する） |
 | `Skill`（スキル呼び出し） | ネイティブ機能を利用（参照すべきガイドはユーザー指示またはスラッシュコマンドで呼び出す） |
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
 | `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
 | `WebFetch`・`WebSearch` | ネイティブ機能を利用 |
 | `EnterPlanMode`・`ExitPlanMode` | plan modeのエミュレーション節を参照 |
-| `ScheduleWakeup`・`CronCreate`・`Monitor`・`SendMessage`・`TeamCreate` | 同等手段なし。該当する自動化・通知・並列協調処理は手動運用または利用者操作で代替する |
+| `ScheduleWakeup`・`CronCreate`・`Monitor`・`TeamCreate` | 同等手段なし。該当する自動化・通知は手動運用または利用者操作で代替する |
+
+会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
+
+`agent-toolkit:codex-exec`が定めるcodex MCP経路と汎用エージェント代替経路の分岐は、
+Codexでは`spawn_agent`経路へ一本化する。
+系統別`threadId`の継続は、`spawn_agent`が返すエージェントIDまたはタスク名を
+`followup_task`の`target`へ渡して代替する。
+計画レビュー系・計画準拠実装レビュー系・独立実装レビュー系・実装修正系は系統ごとに別のエージェントを起動し、
+履歴を混同しない。
+
+規範がモデル選択として示す`haiku`・`sonnet`・`opus`はClaude Codeのモデル区分である。
+Codexでは同じ難易度の区分をCodexで利用できるモデル識別子と`reasoning_effort`へ読み替え、
+`spawn_agent`の`model`・`reasoning_effort`で指定する。
 
 ### plan modeのエミュレーション
 
