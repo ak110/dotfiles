@@ -14,6 +14,7 @@ _PLAN_FINALIZER = _AGENTS_DIR / "plan-file-finalizer.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _PLAN_IMPL_REVIEW = _AGENTS_DIR.parent / "skills" / "codex-exec" / "references" / "plan-codex-implementation-review.md"
 _PLAN_IMPL_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-task.md")
+_PLAN_IMPL = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation.md")
 _PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-plan-review-task.md")
 _PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-independent-review-task.md")
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
@@ -198,6 +199,19 @@ def test_plan_impl_review_report_contract_is_synchronized() -> None:
     ):
         assert label in executor
         assert label in caller
+
+
+def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
+    """実装・修正系への配送物一覧と受領側の入力契約が同じreference群を挙げる。
+
+    区分（計画対応・独立提案）の定義は`plan-codex-implementation-review.md`にのみ存在するため、
+    配送漏れが生じると受領側は区分を割り当てられない。
+    """
+    implementation = _h2_section(_PLAN_IMPL.read_text(encoding="utf-8"), "初回委譲")
+    implementation_input = _h2_section(_PLAN_IMPL_TASK.read_text(encoding="utf-8"), "入力")
+    for reference in ("plan-codex-implementation-task.md", "plan-codex-implementation-review.md"):
+        assert reference in implementation
+        assert reference in implementation_input
 
 
 def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
