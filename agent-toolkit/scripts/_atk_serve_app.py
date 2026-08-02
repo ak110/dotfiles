@@ -210,7 +210,19 @@ class Operations:
                 if filters.get("source") and item["source"] != filters["source"]:
                     continue
                 result.append(item)
-        return sorted(result, key=lambda item: str(item["filename"]))
+        # TBDファイルをファイル名降順、その後フィードバックをファイル名降順で並べる
+        tbd_items = sorted(
+            [item for item in result if item["kind"] == "tbd"], key=lambda item: str(item["filename"]), reverse=True
+        )
+        feedback_items = sorted(
+            [item for item in result if item["kind"] == "feedback"], key=lambda item: str(item["filename"]), reverse=True
+        )
+        other_items = sorted(
+            [item for item in result if item["kind"] not in ("tbd", "feedback")],
+            key=lambda item: str(item["filename"]),
+            reverse=True,
+        )
+        return tbd_items + feedback_items + other_items
 
     def detail(self, state: str, filename: str) -> dict[str, object]:
         if state not in _ENTRY_STATES:

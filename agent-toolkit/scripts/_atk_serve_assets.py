@@ -1009,7 +1009,16 @@ function applyClientFilters() {
   const searchableFields = ['filename', 'summary', 'target_repo', 'category', 'source'];
   visibleEntries = entries
     .filter(entry => !query || searchableFields.some(field => String(entry[field] || '').toLocaleLowerCase('ja-JP').includes(query)))
-    .sort((left, right) => String(left.filename || '').localeCompare(String(right.filename || '')));
+    .sort((left, right) => {
+    // TBDをfeedbackの前に置き、各グループ内ではファイル名で降順ソート
+    const kindOrder = {tbd: 0, feedback: 1};
+    const leftKind = kindOrder[left.kind] ?? 2;
+    const rightKind = kindOrder[right.kind] ?? 2;
+    if (leftKind !== rightKind) return leftKind - rightKind;
+    const leftFile = String(left.filename || '');
+    const rightFile = String(right.filename || '');
+    return rightFile.localeCompare(leftFile);  // 降順（rightが先）
+  });
   renderList();
 }
 

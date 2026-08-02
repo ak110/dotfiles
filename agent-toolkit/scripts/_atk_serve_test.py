@@ -615,7 +615,7 @@ process.stdout.write(JSON.stringify({
 }));
 """
     )
-    assert result["sortedKeys"] == ["empty-source.md", "new.md", "old.md"]
+    assert result["sortedKeys"] == ["new.md", "old.md", "empty-source.md"]
     assert result["populated"]["count"] == "1件"
     assert result["populated"]["first"] == "new.md"
     assert result["populated"]["emptyHidden"] is True
@@ -1570,7 +1570,7 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     )
 
     operations = serve_app.Operations(tmp_path)
-    assert [item["filename"] for item in operations.entries({"status": "active"})] == ["a-first.md", "z-last.md"]
+    assert [item["filename"] for item in operations.entries({"status": "active"})] == ["z-last.md", "a-first.md"]
     detail = operations.detail("processing", "a-first.md")
     rendered = typing.cast(str, detail["content_html"])
     assert "<h1>見出し</h1>" in rendered
@@ -1986,6 +1986,41 @@ async def test_adopt_api_rejects_category_for_tbd(tmp_path: pathlib.Path, monkey
         json={"filenames": ["entry.md"], "category": "some-category"},
     )
     assert response.status_code == 400
+
+
+def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.Path) -> None:
+    """一覧はTBD・フィードバックの種別でグループ化し、各グループ内ではファイル名の降順で返す。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    # ファイル名の昇順でファイルを作成
+    (inbox / "a-feedback.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    (inbox / "b-tbd.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n質問\n",
+        encoding="utf-8",
+    )
+    (inbox / "c-tbd.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n質問\n",
+        encoding="utf-8",
+    )
+    (inbox / "d-feedback.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+
+    operations = serve_app.Operations(tmp_path)
+    result = operations.entries({})
+    filenames = [item["filename"] for item in result]
+
+    # TBDが前（降順）、フィードバックが後ろ（降順）
+    assert filenames == ["c-tbd.md", "b-tbd.md", "d-feedback.md", "a-feedback.md"]
+    # 種別の確認
+    assert result[0]["kind"] == "tbd"
+    assert result[1]["kind"] == "tbd"
+    assert result[2]["kind"] == "feedback"
+    assert result[3]["kind"] == "feedback"
 
 
 def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
