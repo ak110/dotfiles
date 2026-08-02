@@ -261,6 +261,11 @@ let searchGeneration = 0;
 let searchTimer = null;
 let serverSearchKeys = null;
 const SEARCH_DEBOUNCE_MS = 300;
+// SSHフォールバック検索の直列化は全クライアント横断で働くため、別クライアント・別タブの検索で
+// 自身の要求が打ち切られて409になることがある。自身にとっては最新世代の要求なので、
+// 失敗表示にせず間隔を空けて再試行する。
+const SEARCH_SUPERSEDED_RETRIES = 3;
+const SEARCH_SUPERSEDED_RETRY_MS = 200;
 
 // 一覧描画件数の初期上限と拡張ステップ。
 // `~/.claude/plans/`が数百件規模に達するとフィルタ入力・スクロール・差分更新の比例コストが顕在化するため、
@@ -489,8 +494,14 @@ async function searchFullText(query, generation) {
   const status = document.getElementById("search-status");
   status.textContent = "検索中";
   try {
-    const res = await fetch(BASE_PATH + "/api/search?q=" + encodeURIComponent(query));
-    if (generation !== searchGeneration) return;
+    let res = null;
+    for (let attempt = 0; ; attempt++) {
+      res = await fetch(BASE_PATH + "/api/search?q=" + encodeURIComponent(query));
+      if (generation !== searchGeneration) return;
+      if (res.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS));
+      if (generation !== searchGeneration) return;
+    }
     if (!res.ok) throw new Error("status " + res.status);
     const matched = await res.json();
     if (generation !== searchGeneration) return;
