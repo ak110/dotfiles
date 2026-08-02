@@ -88,8 +88,14 @@ MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
 _CREATION_TIME_CACHE_DIR = pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times"
 
 
-def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。"""
+def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+    """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。
+
+    一覧・検索・監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
+    リモート側`_remote_helper.py`の`_is_target_path`と同一基準を保つ
+    （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
+    `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
+    """
     if path.suffix != ".md":
         return False
     try:
@@ -97,6 +103,11 @@ def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     except ValueError:
         return False
     return not any(part.startswith(".") for part in rel.parts)
+
+
+def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+    """監視イベントの対象判定。一覧・検索と同一の判定を用いる。"""
+    return is_target_path(path, root)
 
 
 class PlansEventHandler(watchdog.events.FileSystemEventHandler):
@@ -281,7 +292,7 @@ def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
     """
     collected: list[_state.FileEntry] = []
     for path in root.rglob("*.md"):
-        if not path.is_file():
+        if not path.is_file() or not is_target_path(path, root):
             continue
         st = path.stat()
         rel = path.relative_to(root).as_posix()
@@ -300,10 +311,12 @@ def search_files(root: pathlib.Path, query: str) -> set[str]:
     """本文へ検索語が部分一致するMarkdownファイルの相対パス集合を返す。"""
     needle = query.casefold()
     if not needle:
-        return {path.relative_to(root).as_posix() for path in root.rglob("*.md") if path.is_file()}
+        return {
+            path.relative_to(root).as_posix() for path in root.rglob("*.md") if path.is_file() and is_target_path(path, root)
+        }
     matched: set[str] = set()
     for path in root.rglob("*.md"):
-        if not path.is_file():
+        if not path.is_file() or not is_target_path(path, root):
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")

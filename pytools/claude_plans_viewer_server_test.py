@@ -243,6 +243,44 @@ class TestWatchdogHandler:
         finally:
             await _state.unsubscribe(state, q)
 
+    @pytest.mark.asyncio
+    async def test_handler_agrees_with_target_path_helper(self, tmp_path: Path):
+        """監視ハンドラーの通知可否が`_local.is_target_path`と一致すること。
+
+        `root`直下・サブディレクトリ配下・隠しディレクトリ配下・隠しファイル・
+        `root`自身が隠しディレクトリの5形態で照合する。
+        """
+        plain_root = tmp_path / "plans"
+        dot_root = tmp_path / ".claude_like"
+        cases = [
+            (plain_root, plain_root / "top.md"),
+            (plain_root, plain_root / "sub" / "nested.md"),
+            (plain_root, plain_root / ".cache" / "hidden.md"),
+            (plain_root, plain_root / ".hidden.md"),
+            (dot_root, dot_root / "top.md"),
+        ]
+        for _, md_file in cases:
+            md_file.parent.mkdir(parents=True, exist_ok=True)
+            md_file.write_text("x", encoding="utf-8")
+
+        for root, md_file in cases:
+            state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
+            state.loop = asyncio.get_running_loop()
+            q = await _state.subscribe(state)
+            try:
+                event = watchdog.events.FileModifiedEvent(str(md_file))
+                _local.PlansEventHandler(root, state).on_any_event(event)
+                # `on_any_event`は`run_coroutine_threadsafe`でループへ委譲するため、
+                # コールバック実行とdebounceタスク生成の2段階が進むまでループへ制御を返す。
+                for _ in range(3):
+                    await asyncio.sleep(0)
+                if state.debounce_task is not None:
+                    await state.debounce_task
+                notified = not q.empty()
+                assert notified == _local.is_target_path(md_file, root), md_file
+            finally:
+                await _state.unsubscribe(state, q)
+
 
 class TestApiEndpoints:
     """Quartアプリの各種APIエンドポイントのスモーク。"""

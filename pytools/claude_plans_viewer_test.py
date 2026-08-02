@@ -72,6 +72,17 @@ class TestListFiles:
 
         assert sorted(e.path for e in entries) == ["a.md", "sub/c.md"]
 
+    def test_excludes_dotdir_entries(self, tmp_path: Path):
+        """隠しディレクトリ配下・隠しファイルの`.md`は一覧へ含めないこと。"""
+        (tmp_path / "a.md").write_text("x", encoding="utf-8")
+        (tmp_path / ".cache").mkdir()
+        (tmp_path / ".cache" / "b.md").write_text("x", encoding="utf-8")
+        (tmp_path / ".hidden.md").write_text("x", encoding="utf-8")
+
+        entries = _local.list_files(tmp_path, "local-host")
+
+        assert sorted(e.path for e in entries) == ["a.md"]
+
     def test_cached_creation_time_survives_file_updates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """生成時刻が無い環境では、編集後も初回観測時の作成日時を維持する。"""
         root = tmp_path / "plans"
@@ -122,6 +133,57 @@ class TestSearchFiles:
         monkeypatch.setattr(Path, "read_text", read_text)
 
         assert _local.search_files(tmp_path, "検索語") == {"good.md"}
+
+    def test_excludes_dotdir_entries_for_empty_and_nonempty_query(self, tmp_path: Path):
+        """空クエリ・非空クエリの双方で隠しディレクトリ配下の`.md`を返さないこと。"""
+        (tmp_path / "visible.md").write_text("検索語", encoding="utf-8")
+        (tmp_path / ".cache").mkdir()
+        (tmp_path / ".cache" / "hidden.md").write_text("検索語", encoding="utf-8")
+
+        assert _local.search_files(tmp_path, "") == {"visible.md"}
+        assert _local.search_files(tmp_path, "検索語") == {"visible.md"}
+
+
+class TestTargetPathConsistency:
+    """一覧・検索・監視の3経路が同一の対象集合を扱うことを検証する。"""
+
+    def test_list_search_and_watch_agree_on_target_set(self, tmp_path: Path):
+        """`root`直下・サブディレクトリ・隠しディレクトリ・隠しファイルの各形態で3経路が一致すること。"""
+        candidates = [
+            tmp_path / "top.md",
+            tmp_path / "sub" / "nested.md",
+            tmp_path / ".cache" / "hidden.md",
+            tmp_path / ".hidden.md",
+            tmp_path / "sub" / "note.txt",
+        ]
+        for path in candidates:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("本文", encoding="utf-8")
+
+        listed = {entry.path for entry in _local.list_files(tmp_path, "local-host")}
+        searched = _local.search_files(tmp_path, "本文")
+        # 監視経路の判定は`is_target_path`へ集約済みのため、同関数の結果を3経路目として突き合わせる。
+        watched = {path.relative_to(tmp_path).as_posix() for path in candidates if _local.is_target_path(path, tmp_path)}
+
+        assert listed == {"top.md", "sub/nested.md"}
+        assert searched == listed
+        assert watched == listed
+
+    def test_dotdir_root_includes_own_descendants(self, tmp_path: Path):
+        """`root`自身が隠しディレクトリでも、その直下および配下の非隠しパスが対象へ含まれること。"""
+        root = tmp_path / ".claude_like"
+        (root / "sub").mkdir(parents=True)
+        (root / "top.md").write_text("本文", encoding="utf-8")
+        (root / "sub" / "nested.md").write_text("本文", encoding="utf-8")
+        (root / ".cache").mkdir()
+        (root / ".cache" / "hidden.md").write_text("本文", encoding="utf-8")
+
+        listed = {entry.path for entry in _local.list_files(root, "local-host")}
+
+        assert listed == {"top.md", "sub/nested.md"}
+        assert _local.search_files(root, "本文") == listed
+        assert _local.is_target_path(root / "top.md", root)
+        assert not _local.is_target_path(root / ".cache" / "hidden.md", root)
 
 
 class TestLocalHostInfo:
