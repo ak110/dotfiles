@@ -38,12 +38,56 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
 # （プラットフォーム分岐なしの緩い判定で十分と判断）。
 _NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 
+# `atk`は`uv run --no-project --script`で起動するため、PEP 723のエフェメラル環境を指す
+# `VIRTUAL_ENV`が本プロセスの環境に設定される。この値を子セッションへ引き継ぐと、
+# 作業対象リポジトリでのパッケージ操作が起動元ツールの環境を対象にする。
+# 実測で子プロセスへ混入した仮想環境キーだけを除去対象とする。
+_INHERITED_VENV_ENV_KEYS: tuple[str, ...] = ("VIRTUAL_ENV",)
+
+# 仮想環境のコマンド格納ディレクトリ名（POSIXは`bin`、Windowsは`Scripts`）。
+_VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
+
 # 主待機のタイムアウト秒（他端末からのfeedback投入を`git pull`で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0
 
 # 変更検知後、追加イベント発火が無くなるまでの畳み込み待機秒
 # （1回のファイル操作で複数イベントが連続発火する実測を吸収する）。
 _DEBOUNCE_SEC = 3.0
+
+
+def _strip_inherited_venv(env: dict[str, str]) -> None:
+    """起動元ツールのエフェメラル仮想環境を子プロセス環境から除去する。
+
+    `uv run`は`VIRTUAL_ENV`の設定に加えて当該環境のコマンド格納ディレクトリを`PATH`先頭へ挿入する。
+    `VIRTUAL_ENV`だけを除去すると`PATH`側が残り、子セッション内の`python`・`pip`や
+    コンソールスクリプトが引き続き起動元ツールの環境へ解決される。
+    除去対象は`PATH`の全要素ではなく、除去する`VIRTUAL_ENV`の値から導いた
+    コマンド格納ディレクトリと一致する要素だけとする。
+    POSIXの`PATH`では空要素がカレントディレクトリを表すため、空要素は解決順序を保つよう残す。
+    """
+    venv_roots = [value for key in _INHERITED_VENV_ENV_KEYS if (value := env.get(key))]
+    for key in _INHERITED_VENV_ENV_KEYS:
+        env.pop(key, None)
+    path_value = env.get("PATH")
+    if not venv_roots or path_value is None:
+        return
+    venv_bin_dirs = {pathlib.Path(root) / name for root in venv_roots for name in _VENV_BIN_DIR_NAMES}
+    remaining = [entry for entry in path_value.split(os.pathsep) if not entry or pathlib.Path(entry) not in venv_bin_dirs]
+    env["PATH"] = os.pathsep.join(remaining)
+
+
+def _child_env() -> dict[str, str]:
+    """起動元ツールの仮想環境を除いた子プロセス用の環境変数を返す。
+
+    対象は`atk`から起動する外部コマンド（claudeセッション・`update-dotfiles`）とする。
+    `update-dotfiles`は`chezmoi apply`を経て作業対象リポジトリのuvベースのパッケージ操作へ至るため、
+    claudeセッションと同じく起動元ツールの環境を引き継がせない。
+    自己再起動経路（`_restart_process_loop`の`os.execv`）は本関数の対象外とする。
+    再起動先は`atk`自身であり、起動元と同じ実行環境で継続する必要があるためである。
+    """
+    env = os.environ.copy()
+    _strip_inherited_venv(env)
+    return env
 
 
 class _ChangeHandler(watchdog.events.FileSystemEventHandler):
@@ -347,7 +391,7 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
     if _has_upstream_diff(dotfiles_root):
         executable = _resolve_executable("update-dotfiles")
         if executable is not None:
-            result = subprocess.run([executable, "--force"], check=False)
+            result = subprocess.run([executable, "--force"], check=False, env=_child_env())
             _console_title.set_console_title("atk mq process-loop")
             if result.returncode != 0:
                 print(
@@ -404,7 +448,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
     previous_env_value = os.environ.get("DOTFILES_AUTONOMOUS_EXIT_REQUIRED")
     os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
-    env = os.environ.copy()
+    env = _child_env()
     resume_pending = args.resume is not None
     with _console_title.console_title("atk mq process-loop"):
         try:
@@ -453,7 +497,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             executable = _resolve_executable("update-dotfiles")
                             if executable is not None:
                                 print("update-dotfilesを実行してprocess-loopを再起動します。")
-                                subprocess.run([executable, "--force"], check=False)
+                                subprocess.run([executable, "--force"], check=False, env=env)
                                 _console_title.set_console_title("atk mq process-loop")
                                 _restart_process_loop(sys.argv, dotfiles_root, resume_consumed=True)
                             # 更新を実行できない場合は再読込すべき新しいコードが無いため再起動せず、

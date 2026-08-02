@@ -341,6 +341,59 @@ class TestProcessLoopPromptAndEnv:
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out
 
+    def test_removes_inherited_virtual_env(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """起動元ツールの仮想環境を`VIRTUAL_ENV`と`PATH`の双方から取り除いて子セッションへ渡す。
+
+        `uv run`は`VIRTUAL_ENV`の設定と同時に当該環境のコマンド格納ディレクトリを`PATH`先頭へ挿入する。
+        `VIRTUAL_ENV`だけを除いても`PATH`側が残ると`python`等の解決先が起動元ツールの環境のままになる。
+        `PATH`の他要素と`DOTFILES_AUTONOMOUS_EXIT_REQUIRED`が残ることも同時に確認し、過剰除去を防ぐ。
+        """
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        venv_root = "/home/user/.cache/uv/environments-v2/atk-0123456789abcdef"
+        monkeypatch.setenv("VIRTUAL_ENV", venv_root)
+        monkeypatch.setenv("PATH", os.pathsep.join((f"{venv_root}/bin", f"{venv_root}/bin", "/usr/local/bin", "/usr/bin")))
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter((1, 0))
+
+        def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
+            del private_notes, target_repo
+            return next(counts)
+
+        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> NoReturn:
+            del private_notes, target_repo_id
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", fake_count_pending_entries)
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert len(claude_calls) == 1
+        assert "VIRTUAL_ENV" not in claude_calls[0]["env"]
+        assert claude_calls[0]["env"]["PATH"] == os.pathsep.join(("/usr/local/bin", "/usr/bin"))
+        assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
+
+    def test_empty_path_entries_are_preserved(self) -> None:
+        """`PATH`の空要素を除去対象に含めないこと。
+
+        POSIXの`PATH`では空要素がカレントディレクトリを表すため、除去すると解決順序が宣言外に変わる。
+        """
+        venv_root = "/tmp/venv"
+        env = {
+            "VIRTUAL_ENV": venv_root,
+            "PATH": os.pathsep.join((f"{venv_root}/bin", "", "/usr/bin", "")),
+        }
+        _process_loop._strip_inherited_venv(env)  # pylint: disable=protected-access  # noqa: SLF001
+        assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
+
     def test_prompt_delegates_batch_selection_to_schedule_command(self) -> None:
         """選抜対象の完遂と理由付き繰越を明示し、作業量・所要時間を判断材料化しないこと。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
@@ -674,6 +727,68 @@ class TestProcessLoopUpdateAndRestart:
         # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。
         assert "\033]2;" not in captured.out
         assert "\033]2;" not in captured.err
+
+    def test_update_dotfiles_receives_stripped_env(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """セッション終了後の`update-dotfiles`起動へ、仮想環境を除去した環境を渡すこと。
+
+        `update-dotfiles`は`chezmoi apply`を経て作業対象リポジトリのuvベースのパッケージ操作へ至るため、
+        起動元ツールのエフェメラル仮想環境を引き継がせない。
+        """
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        venv_root = "/home/user/.cache/uv/environments-v2/atk-0123456789abcdef"
+        monkeypatch.setenv("VIRTUAL_ENV", venv_root)
+        monkeypatch.setenv("PATH", os.pathsep.join((f"{venv_root}/bin", "/usr/bin")))
+        update_envs: list[Any] = []
+        base_fake_run = _fake_run_with_remote_url(myrepo, [], 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if pathlib.Path(cmd[0]).stem.lower() == "update-dotfiles":
+                update_envs.append(kwargs.get("env"))
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1)
+        monkeypatch.setattr(os, "execv", _raise_system_exit_0)
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+
+        assert len(update_envs) == 1
+        assert update_envs[0] is not None
+        assert "VIRTUAL_ENV" not in update_envs[0]
+        assert update_envs[0]["PATH"] == "/usr/bin"
+
+    def test_wait_loop_update_dotfiles_receives_stripped_env(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """待機ループ復帰時の`update-dotfiles`起動へも、仮想環境を除去した環境を渡すこと。"""
+        venv_root = "/home/user/.cache/uv/environments-v2/atk-0123456789abcdef"
+        monkeypatch.setenv("VIRTUAL_ENV", venv_root)
+        monkeypatch.setenv("PATH", os.pathsep.join((f"{venv_root}/bin", "/usr/bin")))
+        update_envs: list[Any] = []
+
+        def fake_run(cmd: list[str], *_a: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if pathlib.Path(cmd[0]).stem.lower() == "update-dotfiles":
+                update_envs.append(kwargs.get("env"))
+            stdout = "1\n" if "rev-list" in cmd else ""
+            return subprocess.CompletedProcess(cmd, 0, stdout, "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop, "_code_hash", lambda _d: "same-hash")  # 再起動へ進ませない
+        _process_loop._check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert len(update_envs) == 1
+        assert update_envs[0] is not None
+        assert "VIRTUAL_ENV" not in update_envs[0]
+        assert update_envs[0]["PATH"] == "/usr/bin"
 
     def test_no_update_skips_restart(
         self,
