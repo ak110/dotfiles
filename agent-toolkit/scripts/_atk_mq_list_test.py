@@ -71,7 +71,7 @@ class TestListSingle:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "fb-001.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
 
 
 class TestListPlanImplementationClassification:
@@ -98,7 +98,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[feedback/inbox/plan-impl/carry=0]" in output
+        assert "[inbox/plan-impl/carry=0]" in output
         assert "unclassified" not in output
 
     def test_stale_schedule_metadata_is_labeled_plan_implementation(
@@ -133,7 +133,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[feedback/inbox/plan-impl/carry=0]" in output
+        assert "[inbox/plan-impl/carry=0]" in output
         assert "unclassified" not in output
 
 
@@ -169,7 +169,7 @@ class TestListMalformedFrontmatter:
         assert exc_info.value.code == expected_exit
         captured = capsys.readouterr()
         if expected_exit == 0:
-            assert "[feedback/inbox/frontmatter-broken/carry=0]" in captured.out
+            assert "[inbox/frontmatter-broken/carry=0]" in captured.out
             assert not captured.err
         else:
             assert not captured.out
@@ -197,20 +197,26 @@ class TestListMultipleRepos:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out.splitlines() == [
-            "fb-001.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] テスト本文",
-            "fb-002.md: github.com/example/bar [feedback/inbox/unclassified/carry=0] テスト本文",
+            "# feedback",
+            "fb-001.md: github.com/example/foo [inbox/unclassified/carry=0] テスト本文",
+            "fb-002.md: github.com/example/bar [inbox/unclassified/carry=0] テスト本文",
         ]
 
-    def test_feedback_and_tbd_are_sorted_together_without_group_headers(
+    def test_type_groups_sort_by_filename_independently_of_state(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """種別をまたいでファイル名順に並べ、各行の状態ラベルへ種別を含める。"""
+        """種別見出しを維持し、各グループ内を状態によらずファイル名順に並べる。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "z-feedback.md", body="フィードバック")
-        _write_tbd_file(notes, "a-tbd.md", question="確認事項", answer="")
+        feedback_processing = _write_feedback_file(notes, "a-feedback.md", body="処理中フィードバック")
+        (notes / "processing").mkdir()
+        feedback_processing.replace(notes / "processing" / feedback_processing.name)
+        _write_tbd_file(notes, "z-tbd.md", question="未回答", answer="")
+        tbd_processing = _write_tbd_file(notes, "a-tbd.md", question="回答済み", answer="回答")
+        tbd_processing.replace(notes / "processing" / tbd_processing.name)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -219,11 +225,18 @@ class TestListMultipleRepos:
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
         lines = output.splitlines()
-        assert [line.split(":", 1)[0] for line in lines] == ["a-tbd.md", "z-feedback.md"]
-        assert "[tbd/inbox/unanswered]" in lines[0]
-        assert "[feedback/inbox/" in lines[1]
-        assert "# feedback" not in output
-        assert "# tbd" not in output
+        assert [line.split(":", 1)[0] for line in lines] == [
+            "# feedback",
+            "a-feedback.md",
+            "z-feedback.md",
+            "# tbd",
+            "a-tbd.md",
+            "z-tbd.md",
+        ]
+        assert "[processing/" in lines[1]
+        assert "[inbox/" in lines[2]
+        assert "[processing/answered/" in lines[4]
+        assert "[inbox/unanswered]" in lines[5]
 
 
 class TestListTargetRepoFilter:
@@ -270,7 +283,7 @@ class TestListTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "fb-001.md: github.com/example/myrepo [feedback/inbox/unclassified/carry=0] テスト本文\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox/unclassified/carry=0] テスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -381,7 +394,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "fb-001.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
 
     def test_type_tbd_outputs_status_label(
         self,
@@ -399,7 +412,26 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [tbd/inbox/unanswered] q1\n"
+        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
+
+    def test_answered_tbd_status_label_omits_type(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """回答済みTBDの状態ラベルは種別を含まない従来形式である。"""
+        notes = _setup_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--type=tbd", "--answered=yes"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/answered/" in captured.out
+        assert "[tbd/" not in captured.out
 
     def test_type_all_omits_empty_section_header(
         self,
@@ -417,7 +449,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# feedback" not in captured.out
+        assert "# feedback" in captured.out
         assert "# tbd" not in captured.out
 
 

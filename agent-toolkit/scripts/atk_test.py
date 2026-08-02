@@ -239,8 +239,8 @@ class TestUnansweredTbdNotification:
             atk.main(["mq", "list", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out.count("[tbd/inbox/unanswered]") == 1
-        assert "[tbd/inbox/unanswered]" not in captured.err
+        assert captured.out.count("[inbox/unanswered]") == 1
+        assert "[inbox/unanswered]" not in captured.err
 
     def test_suppresses_notify_when_list_covers_all_unanswered_with_defaults(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -253,8 +253,8 @@ class TestUnansweredTbdNotification:
             atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out.count("[tbd/inbox/unanswered]") == 1
-        assert "[tbd/inbox/unanswered]" not in captured.err
+        assert captured.out.count("[inbox/unanswered]") == 1
+        assert "[inbox/unanswered]" not in captured.err
 
     def test_does_not_suppress_notify_when_list_has_source_filter(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -494,7 +494,7 @@ class TestMqLifecycleScenario:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "list"], home=tmp_path)
         assert exc_info.value.code == 0
-        expected = f"{filename}: github.com/example/myrepo [feedback/inbox/unclassified/carry=0] {message}"
+        expected = f"{filename}: github.com/example/myrepo [inbox/unclassified/carry=0] {message}"
         assert expected in capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:

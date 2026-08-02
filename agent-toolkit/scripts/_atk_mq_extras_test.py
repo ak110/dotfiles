@@ -376,8 +376,8 @@ class TestListFeedbackStatusActive:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "fb-inbox.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] in-body" in captured.out
-        assert "fb-proc.md: github.com/example/foo [feedback/processing/unclassified/carry=0] proc-body" in captured.out
+        assert "fb-inbox.md: github.com/example/foo [inbox/unclassified/carry=0] in-body" in captured.out
+        assert "fb-proc.md: github.com/example/foo [processing/unclassified/carry=0] proc-body" in captured.out
         assert "fb-adopted.md" not in captured.out
         assert "fb-rejected.md" not in captured.out
 
@@ -406,7 +406,7 @@ class TestListFeedbackStatusActive:
         active_out = capsys.readouterr().out
 
         assert default_out == active_out
-        assert "fb-inbox.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] inbox本文" in default_out
+        assert "fb-inbox.md: github.com/example/foo [inbox/unclassified/carry=0] inbox本文" in default_out
         assert "fb-adopted.md" not in default_out
         assert f"{_FIXED_TIMESTAMP}-001.md" in default_out
         assert f"{_FIXED_TIMESTAMP}-002.md" in default_out
@@ -438,7 +438,7 @@ class TestListFeedbackStatusRejected:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "fb-inbox.md" not in captured.out
-        assert "fb-rejected.md: github.com/example/foo [feedback/rejected/unclassified/carry=0] rejected-body" in captured.out
+        assert "fb-rejected.md: github.com/example/foo [rejected/unclassified/carry=0] rejected-body" in captured.out
 
     def test_rejected_does_not_affect_tbd(
         self,
