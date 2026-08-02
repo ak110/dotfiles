@@ -93,6 +93,10 @@ references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照
 委譲先は対象filenameごとに`atk mq show <filename> --target-repo=<repo-path>`を実行し、
 未分類または本文変更済みの項目だけを読む。
 分類対象は通常型のみとする。
+回答済みの確認事項も処理対象となるため、分類結果JSONへ`type: "normal"`として含める
+（未回答の確認事項は選抜対象から除外されるため含めない）。
+応答の`classification_required`は分類結果JSONへの追加を要する対象を示し、
+当該配列が空になるまで実行群は確定しない。
 計画実装型は投入時の明示指定でfrontmatterへ確定記録済みであり、分類委譲の対象に含まれない
 （判定基準は`references/plan-impl-feedback-flow.md`のSSOTを参照する）。
 委譲先は通常型の依存条件と推定対象ファイルだけを返す。

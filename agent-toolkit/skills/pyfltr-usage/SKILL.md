@@ -199,6 +199,13 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
   - `command-timeout`: グローバル既定値、秒単位。既定600秒、`0`で無効化
   - `{command}-timeout`: per-tool値、`-1`で未設定sentinel・グローバル値にフォールバック、`0`で当該per-toolを無効化
   - ハング由来の停止はJSONLの`command.hints`の`status.timeout`注記で識別できる
+- CIとローカルではmiseが解決する対応ツールの版が異なる場合がある。ローカルの版が古くなる要因の1つは
+  miseの`minimum_release_age`設定であり、当該設定を持つ環境では公開直後の版が解決対象から除外される
+  - CIでのみ再現した指摘を検証する場合は、`pyproject.toml`の`[tool.pyfltr]`へ`{command}-version = "<版>"`を
+    一時的に指定して`uvx pyfltr run <path> --commands=<command>`を実行し、確認後に設定を元へ戻す。
+    この手順はpyfltr経由での実行を保つため、ツールの実行ファイルやコンテナーイメージを直接起動する必要がない
+  - 版を指定できるのはbin-runner対応ツールに限る。`{command}-version`はbin-runner対応ツール専用のキーであり、
+    Python系ツール（ruff・mypy等）やjs-runner経由のツールには適用できない
 
 ## 詳細情報
 

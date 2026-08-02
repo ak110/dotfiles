@@ -83,6 +83,8 @@ Agentツールで`agent-toolkit:plan-impl-executor`を起動して引き継ぐ�
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
+`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同reference「plan modeでの取り扱い」節を読み、
+対象ファイル一覧へ含めるべきファイルを確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
 
