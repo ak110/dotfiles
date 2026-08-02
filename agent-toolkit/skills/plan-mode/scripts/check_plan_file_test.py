@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections.abc
 import pathlib
 
+import markdown_it
 import pytest
 from check_plan_file import main
 
@@ -57,6 +58,102 @@ def _plan_metadata(work_type: str | None) -> str:
     if work_type is not None:
         body.append(f"- 作業種別: {work_type}")
     return "\n".join(body)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_exit", "expected_fragment"),
+    [
+        pytest.param(
+            "    | A | B |\n    | --- | --- | --- |\n",
+            0,
+            None,
+            id="indented_pseudo_table",
+        ),
+        pytest.param(
+            "````markdown\n### `embedded.md`\n\n| A | B |\n| --- | --- | --- |\n````\n",
+            0,
+            None,
+            id="fenced_structure",
+        ),
+        pytest.param(
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n### `foo.md` ###\n\n```text\ncontent\n```\n",
+            0,
+            None,
+            id="closed_h3_heading",
+        ),
+        pytest.param(
+            "| A | B |\n| --- | --- |\n| only |\n",
+            1,
+            "5行目: 表の本文行のセル数がヘッダーと一致しない",
+            id="table_body_missing_cell",
+        ),
+        pytest.param(
+            "| A | B |\n| --- | --- |\n| 1 | 2 | 3 |\n",
+            1,
+            "5行目: 表の本文行のセル数がヘッダーと一致しない",
+            id="table_body_extra_cell",
+        ),
+        pytest.param(
+            "| A | B |\n| --- | --- | --- |\n",
+            1,
+            "4行目: 表の区切り行のセル数がヘッダーと一致しない",
+            id="paragraphized_table_mismatch",
+        ),
+        pytest.param(
+            "| A | B |\n| 1 | 2 | 3 |\n",
+            0,
+            None,
+            id="ordinary_pipe_paragraph",
+        ),
+        pytest.param(
+            "| A | B |\n--- | ---\n| 1 | 2 |\n",
+            1,
+            "4行目: 表の外側パイプの有無がヘッダーと一致しない",
+            id="outer_pipe_mismatch",
+        ),
+    ],
+)
+def test_markdown_structure_boundary_corpus(
+    body: str,
+    expected_exit: int,
+    expected_fragment: str | None,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """構造認識と原記法検査に共通するMarkdown境界条件を検証する。"""
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == expected_exit
+    stderr = capsys.readouterr().err
+    if expected_fragment is None:
+        assert stderr == ""
+    else:
+        assert expected_fragment in stderr
+
+
+def test_document_is_parsed_once(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """構造認識と原記法検査が1回のMarkdown解析結果を共有する。"""
+    plan = _write_plan(tmp_path, "## 変更内容\n\n### 対象ファイル一覧\n")
+    original_parse = markdown_it.MarkdownIt.parse
+    calls = 0
+
+    def counting_parse(self: markdown_it.MarkdownIt, source: str, env: dict[str, object] | None = None):
+        nonlocal calls
+        calls += 1
+        return original_parse(self, source, env)
+
+    monkeypatch.setattr(markdown_it.MarkdownIt, "parse", counting_parse)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+    assert calls == 1
 
 
 def test_single_h1_returns_zero_without_h1_error(
@@ -318,6 +415,37 @@ def test_execution_method_without_session_ops_silent(
 
 
 @pytest.mark.parametrize(
+    ("line", "expect_warning"),
+    [
+        pytest.param("- 振り返りフックの誘導を変更する", False, id="implementation_target"),
+        pytest.param("- セッション終了処理を実装する", False, id="implementation_noun_phrase"),
+        pytest.param("- 振り返りを実施する", True, id="execute_review"),
+        pytest.param("- セッション終了を行う", True, id="execute_session_end"),
+        pytest.param("- 振り返りへ進む", True, id="proceed_to_review"),
+        pytest.param(
+            "- Skillツールで`agent-toolkit:exit-session`を呼び出す",
+            True,
+            id="invoke_skill",
+        ),
+    ],
+)
+def test_execution_method_requires_instruction_form(
+    line: str,
+    expect_warning: bool,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """実装対象の名詞句を除外し、セッション運用の実施指示形だけを検出する。"""
+    body = f"## 実行方法\n\n{line}\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert ("セッション運用工程" in capsys.readouterr().err) is expect_warning
+
+
+@pytest.mark.parametrize(
     "line",
     [
         "- `uvx pyfltr run agent-toolkit/skills/session-review/SKILL.md`で検証する",
@@ -366,7 +494,7 @@ def test_execution_method_unclosed_inline_code_does_not_raise(
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" in capsys.readouterr().err
+    assert "セッション運用工程" not in capsys.readouterr().err
 
 
 def test_execution_method_escaped_backticks_do_not_hide_session_ops(
@@ -422,7 +550,7 @@ def test_execution_method_code_span_does_not_cross_blank_line(
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" in capsys.readouterr().err
+    assert "セッション運用工程" not in capsys.readouterr().err
 
 
 def test_execution_method_invocation_after_multiline_code_span_warns(
@@ -459,7 +587,7 @@ def test_execution_method_code_span_does_not_cross_inline_block_boundary(
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" in capsys.readouterr().err
+    assert "セッション運用工程" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -494,7 +622,7 @@ def test_execution_method_longer_backtick_run_does_not_close_code_span(
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
-    assert "セッション運用工程" in capsys.readouterr().err
+    assert "セッション運用工程" not in capsys.readouterr().err
 
 
 def test_unknown_skill_name_errors(
@@ -1231,7 +1359,7 @@ def test_table_search_skips_pipe_text_before_valid_table(
 
 
 @pytest.mark.parametrize("outer_pipes", [True, False])
-def test_table_search_skips_mismatched_header_and_separator_before_valid_table(
+def test_table_search_reports_mismatched_header_and_separator_before_valid_table(
     outer_pipes: bool,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1243,8 +1371,8 @@ def test_table_search_skips_mismatched_header_and_separator_before_valid_table(
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
 
-    assert main() == 0
-    assert capsys.readouterr().err == ""
+    assert main() == 1
+    assert "表の区切り行のセル数がヘッダーと一致しない" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("valid_first", [True, False])
@@ -1586,7 +1714,7 @@ def test_indented_fenced_code_block_returns_zero(
     assert capsys.readouterr().err == ""
 
 
-@pytest.mark.parametrize("following_heading", ["## 実行方法", "### 補足", "#### 詳細"])
+@pytest.mark.parametrize("following_heading", ["## 実行方法", "### 補足"])
 def test_h3_body_ends_at_any_supported_heading(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1602,6 +1730,20 @@ def test_h3_body_ends_at_any_supported_heading(
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 1
     assert "コードブロックが無いH3: foo.md" in capsys.readouterr().err
+
+
+def test_h4_code_block_belongs_to_parent_h3(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """H4配下のコードブロックを親H3の変更内容として認識する。"""
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n### `foo.md`\n\n#### 詳細\n\n```text\n変更後\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_repeated_execution_method_sections_are_all_checked(

@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の14点に限定する。
+チェック対象は次の15点に限定する。
 - 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
   Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
@@ -13,6 +13,7 @@ r"""計画ファイルの軽量機械チェック。
 - H3見出しのパスのうち、`（新設）`・`（廃止・削除）`マーカーが無いものの実在確認
 - Markdownフェンスの入れ子整合（開始フェンスより長いフェンスが情報文字列付きで
   内側に現れていないか、閉じフェンスの検出位置が意図した位置と一致しない疑いが無いか）
+- 表のヘッダー・区切り行・本文行のセル数と外側パイプが原文上で一致するか
 - `## 実行方法`節に振り返り・セッション終了などのセッション運用工程が記載されていないか
   （計画ファイルのスコープは当該計画の実装・検証・コミット・レビューに限定する）
 - `## 実行方法`節が呼び出し構文で参照する名前が実在するか
@@ -51,6 +52,7 @@ error区分（計画が成立しない致命的な問題）とその判定根拠
 - H3パスの実在確認（絶対パス・相対パスの双方へ`exists()`を適用する）:
   一般則が挙げる「パスの実在確認失敗」に当たる
 - Markdownフェンスの入れ子整合: フェンスが破れると`## 変更内容`の構造自体を解釈できなくなる
+- 表の原記法の整合: パーサーが不足セルを補完または余剰セルを除去すると、計画に記載された表の列契約を再現できない
 - `## 実行方法`節の呼び出し名の実在確認: 一般則が挙げる「スキル名の実在確認失敗」に当たる
 - `（廃止・削除）`注記と削除指示語の食い違い: 注記と本文指示の不整合に当たる
 - メタ規範パターン追加時の遡及スキャン必須3語: 同一判定を行う`agent-toolkit/scripts/pretooluse.py`の
@@ -60,7 +62,7 @@ error区分（計画が成立しない致命的な問題）とその判定根拠
 
 warning区分（終了コードへ算入しない）とその判定根拠。
 
-- `## 実行方法`節のセッション運用工程混入: スコープ逸脱は計画の技術的成立を妨げない
+- `## 実行方法`節のセッション運用工程混入: 実施指示形に限定しても、スコープ逸脱は計画の技術的成立を妨げない
 - `#### 廃止・改名対象一覧`の識別子残存: 検査結果の正否が実行フェーズで反転する。
   計画作成時点では対象識別子が残存しているのが正常であり、実装完了後は残存が異常である
 - 版更新正本を含む計画の具体的なバージョン数値: 現行値の引用など正当な記載もあり得る一方、
@@ -70,15 +72,16 @@ warning区分（終了コードへ算入しない）とその判定根拠。
 - バグ調査結果表の構造: 既存計画は旧形式の表を持つ場合があり、表の内容の深さは機械判定できない。
   表全体の欠落、重複、必須行、順序だけを移行支援として検出する
 
-計画の構造（チェックボックス項目・H3見出しのパス・H2節の範囲・H4節が列挙する識別子）を
-抽出する処理は、共通ヘルパー`_unfenced_line_mask`でフェンス外と判定した行のみを対象とする。
-計画の記述例をコードブロックへ埋め込んだ文書（`agent-toolkit/skills/plan-mode/references/sample.md`等）
-から埋め込み内の見出し・チェックボックス項目を計画本体の構造として誤抽出しない。
+本文全体はGFMの表構文を有効にした`markdown-it-py`で1回解析する。
+見出し、フェンス、表、段落、節の親子関係はトークン列と位置情報から認識する。
+表のセル数と外側パイプは、表・段落トークンの位置情報から取得した原文行で検査する。
+パーサーが補完または除去した後のセル数は原記法の判定に用いない。
 """
 
 from __future__ import annotations
 
 import collections.abc
+import dataclasses
 import pathlib
 import re
 import sys
@@ -86,20 +89,17 @@ import sys
 import markdown_it
 
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`")
-_H3_PATH_RE = re.compile(r"^### `([^`]+)`")
+_H3_PATH_CONTENT_RE = re.compile(r"^`([^`]+)`$")
 _CANONICAL_H1_RE = re.compile(r"^# (?!#+[ \t]*$)\S.*$")
-_ATX_H1_RE = re.compile(r"^ {0,3}#(?:[ \t]+.*)?$")
-_SETEXT_H1_UNDERLINE_RE = re.compile(r"^ {0,3}=+[ \t]*$")
 # `（新設）`単独形と`（現行N行、廃止・削除）`のような前置き付き複合形（`plan-mode/SKILL.md`
 # 「対象ファイル一覧」節が定める記法）の両方を検出する。マーカーが括弧内の末尾要素であることを
 # `）`直前の位置で担保する。
 _NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
-_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*(.*)$")
-_H2_RE = re.compile(r"^## (.+)$")
-_HEADING_RE = re.compile(r"^ {0,3}#{2,4}(?:[ \t]+|$)")
-_NAMED_H3_RE = re.compile(r"^ {0,3}###[ \t]+(.+?)[ \t]*$")
-_ATX_CLOSING_SEQUENCE_RE = re.compile(r"[ \t]+#+[ \t]*$")
 _SESSION_OPS_RE = re.compile(r"session-review|exit-session|振り返り|セッション終了|session-review-dotfiles")
+_SESSION_OPS_INSTRUCTION_RE = re.compile(
+    r"(?:session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了)"
+    r"[`\\]*?(?:を実施する|を行う|へ進む|を呼び出す|を起動する)"
+)
 
 # 呼び出し構文に限定して名前を抽出する4パターン。
 # コマンド名・パス・関数名等の無関係なバッククォート識別子を誤検出しないため、
@@ -125,7 +125,6 @@ _KIND_LABELS = {
 _DELETED_TARGET_MARKER = "廃止・削除"
 _DELETION_INSTRUCTION_WORDS = ("削除する", "廃止する")
 
-_DEPRECATED_LIST_HEADING_RE = re.compile(r"^####\s+廃止・改名対象一覧\s*$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # 遡及スキャンの発動条件を判定する3パターン。`pretooluse.py`の
@@ -163,7 +162,56 @@ _BUG_WORK_TYPE = "バグ対応"
 _NORMAL_WORK_TYPE = "通常変更"
 _VALID_WORK_TYPES = frozenset({_BUG_WORK_TYPE, _NORMAL_WORK_TYPE})
 
-_COMMONMARK = markdown_it.MarkdownIt("commonmark")
+_COMMONMARK = markdown_it.MarkdownIt("commonmark").enable("table")
+
+
+@dataclasses.dataclass(frozen=True)
+class _Heading:
+    """Markdown見出しのレベル、内容、原文行位置、親見出しを保持する。"""
+
+    level: int
+    content: str
+    start_line: int
+    end_line: int
+    parent_h2: str | None
+
+
+@dataclasses.dataclass(frozen=True)
+class _BlockRange:
+    """Markdownブロックの半開行範囲を保持する。"""
+
+    start_line: int
+    end_line: int
+
+
+@dataclasses.dataclass(frozen=True)
+class _Fence(_BlockRange):
+    """フェンスコードブロックの情報文字列と原文内容を保持する。"""
+
+    info: str
+    markup: str
+    content: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _Section(_BlockRange):
+    """見出し配下の半開行範囲と見出し情報を保持する。"""
+
+    heading: _Heading
+
+
+@dataclasses.dataclass(frozen=True)
+class _Document:
+    """1回のMarkdown解析で得た構造と原文位置を各検査へ供給する。"""
+
+    text: str
+    lines: tuple[str, ...]
+    headings: tuple[_Heading, ...]
+    fences: tuple[_Fence, ...]
+    tables: tuple[_BlockRange, ...]
+    paragraphs: tuple[_BlockRange, ...]
+    code_lines: frozenset[int]
+    inline_blocks: tuple[tuple[int, int], ...]
 
 
 def _looks_like_python_definition_identifier(name: str) -> bool:
@@ -197,44 +245,71 @@ def _is_excluded_repo_path(rel_parts: tuple[str, ...]) -> bool:
     return bool(rel_parts) and rel_parts[-1].startswith(".plan-check-")
 
 
-def _unfenced_line_mask(text: str) -> list[bool]:
-    """各行がMarkdownフェンスの外側かを判定するブールのリストを返す。
-
-    開閉判定は`_check_fence_nesting`と同一規則（同一のフェンス文字かつ同長以上で
-    情報文字列なしの行が閉じフェンスとなる）を用いる。フェンス開始行・終了行自身も
-    内側（`False`）として扱う。開始行・終了行は`- [ ]`・`### `等の抽出対象パターンと
-    一致しないため、内外いずれに含めても抽出結果へ影響しない。
-    """
-    lines = text.splitlines()
-    mask = [True] * len(lines)
-    fence_char: str | None = None
-    fence_len = 0
-    for i, line in enumerate(lines):
-        m = _FENCE_RE.match(line)
-        if fence_char is None:
-            if m:
-                fence_char, fence_len = m.group(1)[0], len(m.group(1))
-                mask[i] = False
-            continue
-        mask[i] = False
-        if m and m.group(1)[0] == fence_char and len(m.group(1)) >= fence_len and m.group(2).strip() == "":
-            fence_char = None
-    return mask
-
-
-def _inline_block_ranges(text: str) -> list[tuple[int, int]]:
-    """CommonMarkのinline tokenが占める半開区間の一覧を返す。"""
+def _parse_document(text: str) -> _Document:
+    """Markdownを1回解析し、構造認識と原記法検査で共有する位置情報を返す。"""
+    tokens = tuple(_COMMONMARK.parse(text))
+    lines = tuple(text.splitlines())
+    headings: list[_Heading] = []
+    fences: list[_Fence] = []
+    tables: list[_BlockRange] = []
+    paragraphs: list[_BlockRange] = []
+    code_lines: set[int] = set()
+    inline_blocks: list[tuple[int, int]] = []
     line_offsets = [0]
     for line in text.splitlines(keepends=True):
         line_offsets.append(line_offsets[-1] + len(line))
-
-    ranges: list[tuple[int, int]] = []
-    for token in _COMMONMARK.parse(text):
+    heading_stack: list[tuple[int, str]] = []
+    for index, token in enumerate(tokens):
+        if token.type == "heading_open" and token.map is not None:
+            level = int(token.tag[1:])
+            content = tokens[index + 1].content
+            while heading_stack and heading_stack[-1][0] >= level:
+                heading_stack.pop()
+            parent_h2 = next((parent for parent_level, parent in reversed(heading_stack) if parent_level == 2), None)
+            headings.append(_Heading(level, content, token.map[0], token.map[1], parent_h2))
+            heading_stack.append((level, content))
+        if token.type in {"fence", "code_block"} and token.map is not None:
+            code_lines.update(range(token.map[0], token.map[1]))
+        if token.type == "fence" and token.map is not None:
+            fences.append(_Fence(token.map[0], token.map[1], token.info.strip(), token.markup, token.content))
+        if token.type == "table_open" and token.map is not None:
+            tables.append(_BlockRange(token.map[0], token.map[1]))
+        if token.type == "paragraph_open" and token.map is not None:
+            paragraphs.append(_BlockRange(token.map[0], token.map[1]))
         if token.type != "inline" or token.map is None:
             continue
         start_line, end_line = token.map
-        ranges.append((line_offsets[start_line], line_offsets[end_line]))
-    return ranges
+        inline_blocks.append((line_offsets[start_line], line_offsets[end_line]))
+    return _Document(
+        text,
+        lines,
+        tuple(headings),
+        tuple(fences),
+        tuple(tables),
+        tuple(paragraphs),
+        frozenset(code_lines),
+        tuple(inline_blocks),
+    )
+
+
+def _sections(document: _Document, level: int, heading: str) -> list[_Section]:
+    """指定レベル・内容の見出し配下を、同レベル以上の次見出しまでの節として返す。"""
+    sections: list[_Section] = []
+    for index, item in enumerate(document.headings):
+        if item.level != level or item.content != heading:
+            continue
+        end_line = len(document.lines)
+        for following in document.headings[index + 1 :]:
+            if following.level <= level:
+                end_line = following.start_line
+                break
+        sections.append(_Section(item.end_line, end_line, item))
+    return sections
+
+
+def _within(outer: _BlockRange, inner: _BlockRange) -> bool:
+    """`inner`の行範囲が`outer`内に収まるかを返す。"""
+    return outer.start_line <= inner.start_line and inner.end_line <= outer.end_line
 
 
 def _inline_code_spans(text: str, block_ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -301,121 +376,62 @@ def _is_escaped(text: str, index: int) -> bool:
     return backslashes % 2 == 1
 
 
-def _unfenced_body(body: str) -> str:
-    """節本文からフェンス内の行を除去し、フェンス外の行のみを結合して返す。"""
-    lines = body.splitlines()
-    mask = _unfenced_line_mask(body)
-    return "\n".join(line for line, keep in zip(lines, mask, strict=False) if keep)
+def _section_text(document: _Document, section: _BlockRange) -> str:
+    """節の原文行を結合して返す。"""
+    return "\n".join(document.lines[section.start_line : section.end_line])
 
 
-def _check_h1(text: str) -> list[str]:
-    """先頭行の正規H1と、フェンス外にある追加H1候補の不在を検査する。"""
-    lines = text.splitlines()
-    mask = _unfenced_line_mask(text)
+def _non_code_text(document: _Document, section: _BlockRange) -> str:
+    """節からコードブロック行を除外した原文を返す。"""
+    return "\n".join(
+        document.lines[line_no] for line_no in range(section.start_line, section.end_line) if line_no not in document.code_lines
+    )
+
+
+def _check_h1(document: _Document) -> list[str]:
+    """先頭行の正規H1と、構文木内にある追加H1の不在を検査する。"""
     errors: list[str] = []
-    if not lines or not _CANONICAL_H1_RE.fullmatch(lines[0]):
+    if not document.lines or not _CANONICAL_H1_RE.fullmatch(document.lines[0]):
         errors.append("先頭行がATX形式`# <主題>`のH1見出しではない")
-    additional_h1_lines: list[int] = []
-    for index, (line, keep) in enumerate(zip(lines, mask, strict=False)):
-        if index == 0 or not keep:
-            continue
-        is_atx_h1 = bool(_ATX_H1_RE.fullmatch(line))
-        is_setext_h1 = bool(_SETEXT_H1_UNDERLINE_RE.fullmatch(line)) and mask[index - 1] and bool(lines[index - 1].strip())
-        if is_atx_h1 or is_setext_h1:
-            additional_h1_lines.append(index + 1)
+    additional_h1_lines = [
+        heading.start_line + 1 for heading in document.headings if heading.level == 1 and heading.start_line != 0
+    ]
     if additional_h1_lines:
         errors.append(f"フェンス外に追加のH1見出し候補がある: {additional_h1_lines}")
     return errors
 
 
-def _extract_checkbox_paths(text: str) -> list[str]:
-    mask = _unfenced_line_mask(text)
-    return [m.group(1) for line, keep in zip(text.splitlines(), mask, strict=False) if keep and (m := _CHECKBOX_RE.match(line))]
+def _extract_checkbox_paths(document: _Document, sections: list[_Section]) -> list[str]:
+    return [
+        match.group(1)
+        for section in sections
+        for line_no in range(section.start_line, section.end_line)
+        if line_no not in document.code_lines and (match := _CHECKBOX_RE.match(document.lines[line_no]))
+    ]
 
 
-def _extract_h3_paths(text: str) -> list[str]:
-    mask = _unfenced_line_mask(text)
-    return [m.group(1) for line, keep in zip(text.splitlines(), mask, strict=False) if keep and (m := _H3_PATH_RE.match(line))]
+def _extract_h3_paths(document: _Document, sections: list[_Section]) -> list[str]:
+    return [
+        match.group(1)
+        for section in sections
+        for heading in document.headings
+        if heading.level == 3
+        and section.start_line <= heading.start_line < section.end_line
+        and (match := _H3_PATH_CONTENT_RE.fullmatch(heading.content))
+    ]
 
 
-def _first_unfenced_h3_line_index(text: str, path: str) -> int | None:
-    r"""`path`に一致する最初のフェンス外`### \\`<path>\\``見出し行のインデックス（0始まり）を返す。
-
-    フェンス内に埋め込まれた同名H3見出しは対象としない。
-    """
-    mask = _unfenced_line_mask(text)
-    for i, line in enumerate(text.splitlines()):
-        if mask[i] and (m := _H3_PATH_RE.match(line)) and m.group(1) == path:
-            return i
-    return None
+def _path_h3_sections(document: _Document, path: str) -> list[_Section]:
+    """指定パスを内容とするH3節を返す。"""
+    return _sections(document, 3, f"`{path}`")
 
 
-def _h3_section_body(text: str, path: str) -> str:
-    r"""`### \\`<path>\\``見出し（フェンス外）配下の本文を返す。見出しが無ければ空文字を返す。
-
-    次のフェンス外H2・H3・H4見出し直前までを本文範囲とする。フェンス内に埋め込まれた同名H3見出しは
-    対象としない。
-    """
-    lines = text.splitlines()
-    mask = _unfenced_line_mask(text)
-    start = _first_unfenced_h3_line_index(text, path)
-    if start is None:
-        return ""
-    start += 1
-    end = len(lines)
-    for j in range(start, len(lines)):
-        if mask[j] and _HEADING_RE.match(lines[j]):
-            end = j
-            break
-    return "\n".join(lines[start:end])
-
-
-def _normalized_named_h3(line: str) -> str | None:
-    """CommonMark ATX形式のH3名を閉じ`#`列を除いて返す。"""
-    match = _NAMED_H3_RE.fullmatch(line)
-    if match is None:
-        return None
-    return _ATX_CLOSING_SEQUENCE_RE.sub("", match.group(1)).strip(" \t")
-
-
-def _h3_named_sections(text: str, heading: str) -> list[tuple[str | None, str]]:
-    """同名H3の親H2名と本文をフェンス外の全出現分返す。"""
-    lines = text.splitlines()
-    mask = _unfenced_line_mask(text)
-    starts: list[tuple[int, str | None]] = []
-    parent_h2: str | None = None
-    for index, line in enumerate(lines):
-        if not mask[index]:
-            continue
-        if h2_match := _H2_RE.fullmatch(line):
-            parent_h2 = h2_match.group(1).strip()
-        if _normalized_named_h3(line) == heading:
-            starts.append((index + 1, parent_h2))
-    sections: list[tuple[str | None, str]] = []
-    for start, parent in starts:
-        end = next(
-            (index for index in range(start, len(lines)) if mask[index] and _HEADING_RE.match(lines[index])),
-            len(lines),
-        )
-        sections.append((parent, "\n".join(lines[start:end])))
-    return sections
-
-
-def _h3_named_section_bodies(text: str, heading: str) -> list[str]:
-    """`### <heading>`見出し（フェンス外）配下の本文を全出現分返す。"""
-    return [body for _parent, body in _h3_named_sections(text, heading)]
-
-
-def _h3_named_section_body(text: str, heading: str) -> str | None:
-    """最初の`### <heading>`見出し（フェンス外）配下の本文を返す。"""
-    return next(iter(_h3_named_section_bodies(text, heading)), None)
-
-
-def _check_base_commit_recorded(text: str) -> list[str]:
+def _check_base_commit_recorded(document: _Document) -> list[str]:
     """`### 計画メタ情報`節のベースコミット記載が欠落または不正な場合にerrorを返す。"""
-    section = _h3_named_section_body(text, "計画メタ情報")
-    if section is None:
+    sections = _sections(document, 3, "計画メタ情報")
+    if not sections:
         return []
+    section = _section_text(document, sections[0])
     match = re.search(r"(?:ベースコミット|基準コミット)[^\n]*?`([0-9a-fA-F]{40}|[0-9a-fA-F]{64})`", section)
     if match is not None:
         return []
@@ -424,66 +440,33 @@ def _check_base_commit_recorded(text: str) -> list[str]:
     return ["`### 計画メタ情報`にベースコミットの記載が無い"]
 
 
-def _has_code_block_after(text: str, path: str) -> bool:
-    body = _h3_section_body(text, path)
-    return any(_FENCE_RE.match(line) for line in body.splitlines())
+def _has_code_block_after(document: _Document, path: str) -> bool:
+    return any(_within(section, fence) for section in _path_h3_sections(document, path) for fence in document.fences)
 
 
-def _extract_fenced_code_blocks(body: str, *, info_string: str) -> list[str]:
-    """本文中の情報文字列が`info_string`と一致するフェンスコードブロックの内容を全出現分抽出する。"""
-    blocks: list[str] = []
-    lines = body.splitlines()
-    i = 0
-    while i < len(lines):
-        m = _FENCE_RE.match(lines[i])
-        if m and m.group(2).strip() == info_string:
-            fence_char, fence_len = m.group(1)[0], len(m.group(1))
-            close_re = re.compile(rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}\s*$")
-            j = i + 1
-            content_lines: list[str] = []
-            while j < len(lines) and not close_re.match(lines[j]):
-                content_lines.append(lines[j])
-                j += 1
-            blocks.append("\n".join(content_lines))
-            i = j + 1
-            continue
-        i += 1
-    return blocks
+def _extract_fenced_code_blocks(document: _Document, sections: list[_Section], *, info_string: str) -> list[str]:
+    """指定節内にある情報文字列一致のフェンストークン内容を返す。"""
+    return [
+        fence.content.rstrip("\n")
+        for section in sections
+        for fence in document.fences
+        if _within(section, fence) and fence.info == info_string
+    ]
 
 
-def _iter_h2_sections(text: str, heading: str) -> list[str]:
-    """`## <heading>`見出し配下の本文（次のH2直前まで）を全出現分列挙する。
-
-    見出し行の判定はフェンス外の行に限る。計画本文へ他計画・記述例をコードブロックとして
-    埋め込んだ場合、埋め込み内の同名見出しを計画本体の節境界として誤認しない
-    （区分の判定根拠はモジュールdocstringを参照する）。節本文自体はフェンス内の行を
-    含めたまま返す。
-    """
-    lines = text.splitlines()
-    mask = _unfenced_line_mask(text)
-    sections: list[str] = []
-    start = None
-    for i, line in enumerate(lines):
-        m = _H2_RE.match(line) if mask[i] else None
-        if m and m.group(1).strip() == heading:
-            if start is not None:
-                sections.append("\n".join(lines[start:i]))
-            start = i + 1
-            continue
-        if start is not None and m:
-            sections.append("\n".join(lines[start:i]))
-            start = None
-    if start is not None:
-        sections.append("\n".join(lines[start:]))
-    return sections
+def _iter_h2_sections(document: _Document, heading: str) -> list[_Section]:
+    """指定内容を持つH2節を全出現分返す。"""
+    return _sections(document, 2, heading)
 
 
-def _plan_work_type_entries(text: str) -> list[tuple[str, str | None]]:
+def _plan_work_type_entries(document: _Document) -> list[tuple[str, str | None]]:
     """背景直下の計画メタ情報から作業種別候補行と固定記法の値を抽出する。"""
     entries: list[tuple[str, str | None]] = []
-    for background in _iter_h2_sections(text, "背景"):
-        for metadata in _h3_named_section_bodies(background, "計画メタ情報"):
-            for line in _unfenced_body(metadata).splitlines():
+    for background in _iter_h2_sections(document, "背景"):
+        for metadata in _sections(document, 3, "計画メタ情報"):
+            if not _within(background, metadata):
+                continue
+            for line in _non_code_text(document, metadata).splitlines():
                 if not _WORK_TYPE_CANDIDATE_RE.fullmatch(line):
                     continue
                 match = _WORK_TYPE_RE.fullmatch(line)
@@ -491,16 +474,16 @@ def _plan_work_type_entries(text: str) -> list[tuple[str, str | None]]:
     return entries
 
 
-def _plan_work_types(text: str) -> list[str]:
+def _plan_work_types(document: _Document) -> list[str]:
     """固定記法と一致する作業種別の値を全出現分抽出する。"""
-    return [value for _line, value in _plan_work_type_entries(text) if value is not None]
+    return [value for _line, value in _plan_work_type_entries(document) if value is not None]
 
 
-def _check_plan_work_type(text: str) -> list[str]:
+def _check_plan_work_type(document: _Document) -> list[str]:
     """計画メタ情報の作業種別が1件の固定値であるかをwarningとして検査する。"""
-    if not _iter_h2_sections(text, "背景"):
+    if not _iter_h2_sections(document, "背景"):
         return []
-    entries = _plan_work_type_entries(text)
+    entries = _plan_work_type_entries(document)
     if not entries:
         return [
             "`## 背景`直下の計画メタ情報に作業種別の記載が無い: `- 作業種別: バグ対応`または`- 作業種別: 通常変更`を記載する"
@@ -515,9 +498,9 @@ def _check_plan_work_type(text: str) -> list[str]:
     return []
 
 
-def _is_bug_plan(text: str) -> bool:
+def _is_bug_plan(document: _Document) -> bool:
     """計画メタ情報の作業種別が単一の`バグ対応`であるかを判定する。"""
-    return _plan_work_types(text) == [_BUG_WORK_TYPE]
+    return _plan_work_types(document) == [_BUG_WORK_TYPE]
 
 
 def _markdown_table_cells(line: str) -> list[str] | None:
@@ -526,53 +509,83 @@ def _markdown_table_cells(line: str) -> list[str] | None:
     if "\t" in leading_whitespace or len(leading_whitespace) >= 4:
         return None
     stripped = line.strip()
+    has_outer_pair = stripped.startswith("|") and stripped.endswith("|") and not stripped.endswith(r"\|")
     if stripped.startswith("|"):
         stripped = stripped[1:]
     if stripped.endswith("|") and not stripped.endswith(r"\|"):
         stripped = stripped[:-1]
     cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", stripped)]
-    if len(cells) < 2:
+    if len(cells) < 2 and not has_outer_pair:
         return None
     return cells
 
 
-def _first_markdown_table(section: str) -> list[list[str]]:
-    """節内の最初のフェンス外パイプテーブルを返す。"""
-    mask = _unfenced_line_mask(section)
-    parsed_rows = [
-        _markdown_table_cells(line) if keep else None for line, keep in zip(section.splitlines(), mask, strict=False)
-    ]
-    for index, header in enumerate(parsed_rows[:-1]):
-        separator = parsed_rows[index + 1]
-        if (
-            header is None
-            or separator is None
-            or len(header) != len(separator)
-            or not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in separator)
-        ):
+def _table_rows(document: _Document, table: _BlockRange) -> list[list[str]]:
+    """表トークンの原文範囲をセル配列へ変換する。"""
+    rows = [_markdown_table_cells(document.lines[line_no]) for line_no in range(table.start_line, table.end_line)]
+    return [row for row in rows if row is not None]
+
+
+def _first_markdown_table(document: _Document, section: _Section) -> list[list[str]]:
+    """節内の最初の表トークンについて、原文から得たセル配列を返す。"""
+    table = next((item for item in document.tables if _within(section, item)), None)
+    return _table_rows(document, table) if table is not None else []
+
+
+def _outer_pipe_shape(line: str) -> tuple[bool, bool]:
+    """表の原文行が先頭・末尾の外側パイプを持つかを返す。"""
+    stripped = line.strip()
+    return stripped.startswith("|"), stripped.endswith("|") and not stripped.endswith(r"\|")
+
+
+def _check_table_notation(document: _Document) -> list[str]:
+    """表・段落トークンの原文行から列数と外側パイプの整合を検査する。
+
+    表トークンではヘッダー、区切り行、本文行を検査する。段落トークンでは、パイプ区切りの
+    ヘッダー候補と直後の区切り行候補だけを検査する。パーサーが補完または除去した後のセル数は
+    原記法を表さないため、トークンのセルノード数は判定に使わない。
+    """
+    errors: list[str] = []
+    for table in document.tables:
+        raw_lines = document.lines[table.start_line : table.end_line]
+        rows = [_markdown_table_cells(line) for line in raw_lines]
+        if len(rows) < 2 or rows[0] is None or rows[1] is None:
             continue
-        table = [header, separator]
-        for row in parsed_rows[index + 2 :]:
-            if row is None:
-                break
-            table.append(row)
-        return table
-    return []
+        expected_columns = len(rows[0])
+        expected_shape = _outer_pipe_shape(raw_lines[0])
+        for offset, (line, row) in enumerate(zip(raw_lines, rows, strict=True)):
+            line_no = table.start_line + offset + 1
+            if row is not None and len(row) != expected_columns:
+                label = "区切り行" if offset == 1 else "本文行"
+                errors.append(f"{line_no}行目: 表の{label}のセル数がヘッダーと一致しない")
+            if _outer_pipe_shape(line) != expected_shape:
+                errors.append(f"{line_no}行目: 表の外側パイプの有無がヘッダーと一致しない")
+    for paragraph in document.paragraphs:
+        for line_no in range(paragraph.start_line, paragraph.end_line - 1):
+            header = _markdown_table_cells(document.lines[line_no])
+            separator = _markdown_table_cells(document.lines[line_no + 1])
+            if header is None or separator is None:
+                continue
+            if not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in separator):
+                continue
+            if len(header) != len(separator):
+                errors.append(f"{line_no + 2}行目: 表の区切り行のセル数がヘッダーと一致しない")
+    return errors
 
 
-def _check_bug_investigation_table(text: str) -> list[str]:
+def _check_bug_investigation_table(document: _Document) -> list[str]:
     """バグ調査結果表について全体件数、親H2、列構造、必須行、順序を検査する。"""
-    if not _is_bug_plan(text):
+    if not _is_bug_plan(document):
         return []
-    sections = _h3_named_sections(text, "バグ調査結果")
+    sections = _sections(document, 3, "バグ調査結果")
     if not sections:
         return ["バグ計画に必須のバグ調査結果表が存在しない"]
     if len(sections) != 1:
         return [f"`### バグ調査結果`が複数ある: 実際={len(sections)}件、期待=1件"]
-    parent_h2, section = sections[0]
-    if parent_h2 != "背景":
+    section = sections[0]
+    if section.heading.parent_h2 != "背景":
         return ["`### バグ調査結果`が`## 背景`直下に存在しない"]
-    table = _first_markdown_table(section)
+    table = _first_markdown_table(document, section)
     has_two_column_contract = (
         len(table) >= 2
         and table[0] == ["項目", "内容"]
@@ -590,33 +603,36 @@ def _check_bug_investigation_table(text: str) -> list[str]:
     return [f"バグ調査結果表の必須行または順序が現行契約と一致しない: 不足={missing or 'なし'}, 実際={rows}, 期待={expected}"]
 
 
-def _check_fence_nesting(text: str) -> list[str]:
-    """情報文字列付き内側フェンスと、ファイル終端まで閉じていないフェンスを検出する。"""
-    warnings: list[str] = []
-    stack: list[tuple[int, str, int]] = []  # (line_no, char, length)
-    lines = text.splitlines()
-    for line_no, line in enumerate(lines, start=1):
-        m = _FENCE_RE.match(line)
-        if not m:
-            continue
-        fence, info = m.group(1), m.group(2).strip()
-        char, length = fence[0], len(fence)
-        if stack:
-            top_line, top_char, top_len = stack[-1]
-            if char == top_char and length >= top_len and info == "":
-                stack.pop()
+def _fence_line_parts(line: str, char: str, max_indent: int) -> tuple[int, str]:
+    """コンテナーの字下げを含む許容幅内で、フェンス文字数と後続文字列を返す。"""
+    stripped = line.lstrip(" ")
+    if len(line) - len(stripped) > max_indent:
+        return 0, line
+    length = len(stripped) - len(stripped.lstrip(char))
+    return length, stripped[length:].strip()
+
+
+def _check_fence_nesting(document: _Document) -> list[str]:
+    """フェンストークンの原文範囲から内側の情報文字列と終端不在を検出する。"""
+    errors: list[str] = []
+    for fence in document.fences:
+        char = fence.markup[0]
+        opening_length = len(fence.markup)
+        content_lines = fence.content.splitlines()
+        has_closing = fence.end_line - fence.start_line == len(content_lines) + 2
+        for offset, line in enumerate(content_lines, start=1):
+            line_index = fence.start_line + offset
+            inner_length, info = _fence_line_parts(line, char, 3)
+            if inner_length < opening_length or not info:
                 continue
-            if char == top_char and length >= top_len and info != "":
-                warnings.append(
-                    f"{line_no}行目: {top_line}行目で開いたフェンス（長さ{top_len}）以上の"
-                    f"長さ{length}のフェンスが情報文字列`{info}`付きで内側に現れた。"
-                    "埋め込み内容のフェンスより外側フェンスを長くする"
-                )
-            continue
-        stack.append((line_no, char, length))
-    for line_no, _char, length in stack:
-        warnings.append(f"{line_no}行目: 長さ{length}のフェンスがファイル終端まで閉じていない疑いがある")
-    return warnings
+            errors.append(
+                f"{line_index + 1}行目: {fence.start_line + 1}行目で開いたフェンス（長さ{opening_length}）以上の"
+                f"長さ{inner_length}のフェンスが情報文字列`{info}`付きで内側に現れた。"
+                "埋め込み内容のフェンスより外側フェンスを長くする"
+            )
+        if not has_closing:
+            errors.append(f"{fence.start_line + 1}行目: 長さ{opening_length}のフェンスがファイル終端まで閉じていない疑いがある")
+    return errors
 
 
 def _has_session_ops_invocation(
@@ -633,41 +649,46 @@ def _has_session_ops_invocation(
             enclosed = any(
                 start <= match_span[0] and match_span[1] <= end and (start, end) != match_span for start, end in inline_spans
             )
-            if in_inline_block and not enclosed and _SESSION_OPS_RE.search(match.group(1)):
+            suffix = line[match.end() :]
+            has_action = re.search(r"(?:を呼び出す|を起動する|へ進む)", suffix) is not None
+            if in_inline_block and not enclosed and has_action and _SESSION_OPS_RE.search(match.group(1)):
                 return True
     return False
 
 
-def _check_execution_method_scope(text: str) -> list[str]:
+def _check_execution_method_scope(document: _Document) -> list[str]:
     """`## 実行方法`節に振り返り・セッション終了などのセッション運用工程が無いか検出する。
 
     節内にコードブロックで埋め込まれた記述例と、インラインコード内の識別子は対象としない。
     呼び出し構文でセッション運用の名前が現れる行は実際の起動指示として対象に残す。
     """
     warnings: list[str] = []
-    for section_no, body in enumerate(_iter_h2_sections(text, "実行方法"), start=1):
-        inline_blocks = _inline_block_ranges(body)
-        inline_spans = _inline_code_spans(body, inline_blocks)
-        searchable = _strip_inline_code(_mask_non_inline_blocks(body, inline_blocks), inline_spans)
-        mask = _unfenced_line_mask(body)
-        line_offset = 0
-        lines = body.splitlines(keepends=True)
-        searchable_lines = searchable.splitlines()
-        for line_no, (raw_line, target, keep) in enumerate(zip(lines, searchable_lines, mask, strict=False), start=1):
-            if not keep:
-                line_offset += len(raw_line)
+    inline_blocks = list(document.inline_blocks)
+    inline_spans = _inline_code_spans(document.text, inline_blocks)
+    searchable = _strip_inline_code(_mask_non_inline_blocks(document.text, inline_blocks), inline_spans)
+    source_lines = document.text.splitlines(keepends=True)
+    searchable_lines = searchable.splitlines()
+    line_offsets = [0]
+    for line in source_lines:
+        line_offsets.append(line_offsets[-1] + len(line))
+    for section_no, section in enumerate(_iter_h2_sections(document, "実行方法"), start=1):
+        for absolute_line in range(section.start_line, section.end_line):
+            if absolute_line in document.code_lines:
                 continue
+            raw_line = source_lines[absolute_line]
+            target = searchable_lines[absolute_line]
+            line_offset = line_offsets[absolute_line]
             line = raw_line.rstrip("\r\n")
-            if _has_session_ops_invocation(line, line_offset, inline_blocks, inline_spans):
+            invokes_session_op = _has_session_ops_invocation(line, line_offset, inline_blocks, inline_spans)
+            if invokes_session_op:
                 target = line
-            if _SESSION_OPS_RE.search(target):
+            if _SESSION_OPS_INSTRUCTION_RE.search(target) or invokes_session_op:
                 warnings.append(
-                    f"実行方法節（{section_no}件目の出現）内({line_no}行目相当): "
+                    f"実行方法節（{section_no}件目の出現）内({absolute_line + 1}行目): "
                     "振り返り・セッション終了などのセッション運用工程が記載されている疑いがある。"
                     "計画ファイルのスコープは当該計画の実装・検証・コミット・レビューに限定し、"
                     "セッション運用工程は呼び出し元セッションが別途担う"
                 )
-            line_offset += len(raw_line)
     return warnings
 
 
@@ -725,7 +746,7 @@ def _available_subagent_names() -> set[str]:
     return names
 
 
-def _check_invocation_names_exist(text: str) -> list[str]:
+def _check_invocation_names_exist(document: _Document) -> list[str]:
     """`## 実行方法`節が参照する名前が、呼び出し構文に対応する定義一覧に実在するか検出する。
 
     節内にフェンスで埋め込まれた記述例の呼び出し名は対象としない。
@@ -738,8 +759,8 @@ def _check_invocation_names_exist(text: str) -> list[str]:
         _KIND_SUBAGENT: subagents,
         _KIND_ANY: skills | subagents,
     }
-    for body in _iter_h2_sections(text, "実行方法"):
-        for name, kind in _extract_invocation_references(_unfenced_body(body)):
+    for section in _iter_h2_sections(document, "実行方法"):
+        for name, kind in _extract_invocation_references(_non_code_text(document, section)):
             available = candidates_by_kind[kind]
             if name in available:
                 continue
@@ -749,21 +770,22 @@ def _check_invocation_names_exist(text: str) -> list[str]:
     return warnings
 
 
-def _check_deletion_instruction_present(text: str) -> list[str]:
+def _check_deletion_instruction_present(document: _Document, change_sections: list[_Section]) -> list[str]:
     """`（廃止・削除）`と注記された項目のH3節`text`コードブロック内に削除指示語が現れるか検出する。
 
     対象項目の抽出はフェンス外の行に限る。
     """
     warnings: list[str] = []
-    mask = _unfenced_line_mask(text)
     deleted_paths = [
-        m.group(1)
-        for line, keep in zip(text.splitlines(), mask, strict=False)
-        if keep and _DELETED_TARGET_MARKER in line and (m := _CHECKBOX_RE.match(line))
+        match.group(1)
+        for section in change_sections
+        for line_no in range(section.start_line, section.end_line)
+        if line_no not in document.code_lines
+        and _DELETED_TARGET_MARKER in document.lines[line_no]
+        and (match := _CHECKBOX_RE.match(document.lines[line_no]))
     ]
     for path in deleted_paths:
-        body = _h3_section_body(text, path)
-        text_blocks = _extract_fenced_code_blocks(body, info_string="text")
+        text_blocks = _extract_fenced_code_blocks(document, _path_h3_sections(document, path), info_string="text")
         # `text`以外の情報文字列（`python`等）のコードブロックのみが存在する場合、
         # 「コードブロックが無いH3」検査（`_has_code_block_after`、任意の情報文字列を許容）は
         # 通過するが本検査は不成立のままとなる。両検査の対象コードブロック種別を揃えるため、
@@ -777,26 +799,17 @@ def _check_deletion_instruction_present(text: str) -> list[str]:
     return warnings
 
 
-def _extract_deprecated_identifiers(text: str) -> list[str]:
+def _extract_deprecated_identifiers(document: _Document) -> list[str]:
     """`#### 廃止・改名対象一覧`H4節が列挙するバッククォート囲み識別子を全出現分抽出する。
 
     見出し・節終端の判定はフェンス外の行に限る。埋め込み例示内の同名H4見出しを
     節境界として誤認しない。
     """
-    identifiers: list[str] = []
-    lines = text.splitlines()
-    mask = _unfenced_line_mask(text)
-    in_section = False
-    for i, line in enumerate(lines):
-        if mask[i] and _DEPRECATED_LIST_HEADING_RE.match(line):
-            in_section = True
-            continue
-        if in_section and mask[i] and _HEADING_RE.match(line):
-            in_section = False
-            continue
-        if in_section and mask[i]:
-            identifiers.extend(re.findall(r"`([^`]+)`", line))
-    return identifiers
+    return [
+        identifier
+        for section in _sections(document, 4, "廃止・改名対象一覧")
+        for identifier in re.findall(r"`([^`]+)`", _non_code_text(document, section))
+    ]
 
 
 def _iter_repo_files(repo_root: pathlib.Path, plan_path: pathlib.Path) -> collections.abc.Iterator[pathlib.Path]:
@@ -812,10 +825,10 @@ def _iter_repo_files(repo_root: pathlib.Path, plan_path: pathlib.Path) -> collec
         yield path
 
 
-def _check_deprecated_identifiers_removed(text: str, plan_path: pathlib.Path) -> list[str]:
+def _check_deprecated_identifiers_removed(document: _Document, plan_path: pathlib.Path) -> list[str]:
     """`#### 廃止・改名対象一覧`が列挙する識別子の定義箇所が残存していないか検出する。"""
     warnings: list[str] = []
-    identifiers = _extract_deprecated_identifiers(text)
+    identifiers = _extract_deprecated_identifiers(document)
     if not identifiers:
         return warnings
     repo_root = pathlib.Path.cwd()
@@ -848,27 +861,25 @@ def _added_lines_text(block: str) -> str:
     return "\n".join(added) if added else block
 
 
-def _detect_meta_norm_addition(text: str) -> bool:
+def _detect_meta_norm_addition(document: _Document, change_sections: list[_Section]) -> bool:
     """`## 変更内容`の各H3節`text`コードブロックの追加分にメタ規範パターンが現れるか判定する。"""
-    for change_body in _iter_h2_sections(text, "変更内容"):
-        for path in _extract_h3_paths(change_body):
-            body = _h3_section_body(change_body, path)
-            for block in _extract_fenced_code_blocks(body, info_string="text"):
-                added = _added_lines_text(block)
-                if (
-                    _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE.search(added)
-                    or _RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE.search(added)
-                    or _RETROACTIVE_SCAN_NEW_HEADING_RE.search(added)
-                ):
-                    return True
+    for path in _extract_h3_paths(document, change_sections):
+        for block in _extract_fenced_code_blocks(document, _path_h3_sections(document, path), info_string="text"):
+            added = _added_lines_text(block)
+            if (
+                _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE.search(added)
+                or _RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE.search(added)
+                or _RETROACTIVE_SCAN_NEW_HEADING_RE.search(added)
+            ):
+                return True
     return False
 
 
-def _check_retroactive_scan_recorded(text: str) -> list[str]:
+def _check_retroactive_scan_recorded(document: _Document, change_sections: list[_Section]) -> list[str]:
     """メタ規範パターンの追加を含む計画で、`## 調査結果`の遡及スキャン必須3語の不足を検出する。"""
-    if not _detect_meta_norm_addition(text):
+    if not _detect_meta_norm_addition(document, change_sections):
         return []
-    section_text = "\n".join(_unfenced_body(body) for body in _iter_h2_sections(text, "調査結果"))
+    section_text = "\n".join(_non_code_text(document, section) for section in _iter_h2_sections(document, "調査結果"))
     missing = [item for item in _RETROACTIVE_SCAN_REQUIRED_ITEMS if item not in section_text]
     if not missing:
         return []
@@ -879,7 +890,7 @@ def _check_retroactive_scan_recorded(text: str) -> list[str]:
     ]
 
 
-def _check_version_number_absent(text: str, checkbox_paths: list[str]) -> list[str]:
+def _check_version_number_absent(document: _Document, checkbox_paths: list[str]) -> list[str]:
     """版更新正本を対象へ含む計画で、具体的なバージョン数値の記載を検出する。
 
     版更新の種別（PATCH・MINOR・MAJOR）だけを記載し、数値は
@@ -889,9 +900,8 @@ def _check_version_number_absent(text: str, checkbox_paths: list[str]) -> list[s
     if not _BUMP_MANIFEST_PATHS & set(checkbox_paths):
         return []
     warnings = []
-    mask = _unfenced_line_mask(text)
-    for line_no, (line, keep) in enumerate(zip(text.splitlines(), mask, strict=False), start=1):
-        if keep and _VERSION_NUMBER_RE.search(line):
+    for line_no, line in enumerate(document.lines, start=1):
+        if line_no - 1 not in document.code_lines and _VERSION_NUMBER_RE.search(line):
             warnings.append(
                 f"バージョン数値の記載の疑い({line_no}行目): 版更新正本を対象ファイル一覧へ含む計画では"
                 "具体的なバージョン数値を書かず、更新種別（PATCH・MINOR・MAJOR）のみを記載する"
@@ -918,13 +928,14 @@ def main() -> int:
     except (OSError, UnicodeDecodeError) as exc:
         print(f"計画ファイルを読み込めない: {plan_path} ({exc})", file=sys.stderr)
         return 2
+    document = _parse_document(text)
     errors: list[str] = []
     warnings: list[str] = []
-    errors.extend(_check_h1(text))
+    errors.extend(_check_h1(document))
 
-    change_text = "\n## 変更内容\n".join(_iter_h2_sections(text, "変更内容"))
-    checkbox_paths = _extract_checkbox_paths(change_text)
-    h3_paths = _extract_h3_paths(change_text)
+    change_sections = _iter_h2_sections(document, "変更内容")
+    checkbox_paths = _extract_checkbox_paths(document, change_sections)
+    h3_paths = _extract_h3_paths(document, change_sections)
     duplicate_checkbox = sorted({p for p in checkbox_paths if checkbox_paths.count(p) > 1})
     duplicate_h3 = sorted({p for p in h3_paths if h3_paths.count(p) > 1})
     if duplicate_checkbox:
@@ -939,17 +950,18 @@ def main() -> int:
         errors.append(f"対象ファイル一覧に無いH3見出し: {missing_checkbox}")
 
     for path in checkbox_paths:
-        if not _has_code_block_after(change_text, path):
+        if not _has_code_block_after(document, path):
             errors.append(f"コードブロックが無いH3: {path}")
 
-    lines = change_text.splitlines()
-    mask = _unfenced_line_mask(change_text)
     for path in h3_paths:
         checkbox_line = next(
             (
-                line
-                for line, keep in zip(lines, mask, strict=False)
-                if keep and f"`{path}`" in line and line.startswith("- [ ]")
+                document.lines[line_no]
+                for section in change_sections
+                for line_no in range(section.start_line, section.end_line)
+                if line_no not in document.code_lines
+                and f"`{path}`" in document.lines[line_no]
+                and document.lines[line_no].startswith("- [ ]")
             ),
             "",
         )
@@ -959,16 +971,17 @@ def main() -> int:
         if not candidate.exists() and not (pathlib.Path.cwd() / path).exists():
             errors.append(f"実在確認できないパス: {path}")
 
-    errors.extend(_check_fence_nesting(text))
-    errors.extend(_check_invocation_names_exist(text))
-    errors.extend(_check_deletion_instruction_present(change_text))
-    errors.extend(_check_retroactive_scan_recorded(text))
-    errors.extend(_check_base_commit_recorded(text))
-    warnings.extend(_check_execution_method_scope(text))
-    warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))
-    warnings.extend(_check_version_number_absent(text, checkbox_paths))
-    warnings.extend(_check_plan_work_type(text))
-    warnings.extend(_check_bug_investigation_table(text))
+    errors.extend(_check_fence_nesting(document))
+    errors.extend(_check_table_notation(document))
+    errors.extend(_check_invocation_names_exist(document))
+    errors.extend(_check_deletion_instruction_present(document, change_sections))
+    errors.extend(_check_retroactive_scan_recorded(document, change_sections))
+    errors.extend(_check_base_commit_recorded(document))
+    warnings.extend(_check_execution_method_scope(document))
+    warnings.extend(_check_deprecated_identifiers_removed(document, plan_path))
+    warnings.extend(_check_version_number_absent(document, checkbox_paths))
+    warnings.extend(_check_plan_work_type(document))
+    warnings.extend(_check_bug_investigation_table(document))
 
     for error in errors:
         print(error, file=sys.stderr)
