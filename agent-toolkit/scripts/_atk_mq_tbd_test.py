@@ -5,6 +5,7 @@ TBD種別の投入・一覧・編集・回答・採用・削除の単体テス�
 `_atk_mq_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import argparse
 import contextlib
 import pathlib
 import subprocess
@@ -20,13 +21,18 @@ import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-p
 import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
-from _atk_mq_tbd import _detect_self_containment_deficiency  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_mq_common import _is_tbd_answered  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_mq_tbd import (  # noqa: E402  # pylint: disable=wrong-import-position
+    _cmd_answer,
+    _detect_self_containment_deficiency,
+)
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
+    _write_feedback_file,
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -752,6 +758,128 @@ class TestTbdAnswerEditorFailure:
         assert "エディターが終了コード1で終了しました" in captured.err
         commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert commit_calls == []
+
+
+class TestTbdAnswerNonInteractive:
+    """answerサブコマンド: ファイル名と回答本文を引数で受け取る非対話経路を検証する。
+
+    自律実行中のエージェントが`$EDITOR`を介さずに回答を記録できることを担保する。
+    """
+
+    def test_arguments_record_answer_without_editor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """ファイル名と回答本文の指定で回答欄が更新され、`$EDITOR`未設定でも成功する。"""
+        notes = _setup_notes(tmp_path)
+        filename = f"{_FIXED_TIMESTAMP}-001.md"
+        path = _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+        monkeypatch.delenv("EDITOR", raising=False)
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "answer", filename, "採用する"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        content = path.read_text(encoding="utf-8")
+        assert content.rstrip().endswith("採用する")
+        assert _is_tbd_answered(content)
+        captured = capsys.readouterr()
+        assert f"1件回答反映: {filename}" in captured.out
+        assert "$EDITOR" not in captured.err
+        assert [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
+
+    def test_answer_marker_in_body_is_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """回答本文が回答欄マーカーを含む場合はexit 1となり、対象ファイルを変更しない。"""
+        notes = _setup_notes(tmp_path)
+        filename = f"{_FIXED_TIMESTAMP}-001.md"
+        path = _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+        before = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "answer", filename, f"{tbd_module.ANSWER_MARKER}\n採用する"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert path.read_text(encoding="utf-8") == before
+        assert "回答欄マーカーを含められません" in capsys.readouterr().err
+
+    def test_filename_without_answer_body_exits_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """ファイル名のみの指定は対話モードへ移行せずexit 1で案内する。"""
+        notes = _setup_notes(tmp_path)
+        filename = f"{_FIXED_TIMESTAMP}-001.md"
+        _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "answer", filename], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "ファイル名と回答本文の両方を指定してください" in capsys.readouterr().err
+
+    def test_answer_body_without_filename_exits_1(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """回答本文のみの指定もexit 1で案内する（CLIの位置引数では組めないため直接渡す）。"""
+        notes = _setup_notes(tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cmd_answer(argparse.Namespace(filename=None, answer_body="採用する"), notes)
+
+        assert exc_info.value.code == 1
+        assert "ファイル名と回答本文の両方を指定してください" in capsys.readouterr().err
+
+    def test_missing_entry_exits_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """対象が存在しない場合はTracebackを露出せずexit 1で案内する。"""
+        _setup_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "answer", f"{_FIXED_TIMESTAMP}-999.md", "採用する"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "inbox・processingのいずれにも存在しません" in capsys.readouterr().err
+
+    def test_non_tbd_entry_exits_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """対象がTBDでない場合はexit 1となり、対象ファイルを変更しない。"""
+        notes = _setup_notes(tmp_path)
+        filename = f"{_FIXED_TIMESTAMP}-001.md"
+        path = _write_feedback_file(notes, filename)
+        before = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "answer", filename, "採用する"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert path.read_text(encoding="utf-8") == before
+        assert "回答はTBDのエントリにのみ適用できます" in capsys.readouterr().err
 
 
 class TestTbdAdopt:

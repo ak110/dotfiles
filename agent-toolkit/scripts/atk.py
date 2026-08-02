@@ -431,7 +431,12 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     grep.add_argument("--skip-pull", action="store_true", help="git pull --ff-onlyをスキップする。")
     grep.set_defaults(subparser=grep)
 
-    answer = sub.add_parser("answer", help="未回答TBDを1件ずつ画面表示し$EDITORで回答する")
+    answer = sub.add_parser(
+        "answer",
+        help="TBDへ回答する（引数指定時は非対話、省略時は未回答TBDを1件ずつ画面表示し$EDITORで回答）",
+    )
+    answer.add_argument("filename", nargs="?", help="回答対象のTBDファイル名（省略時は対話モード）")
+    answer.add_argument("answer_body", nargs="?", help="回答本文（省略時は対話モード）")
     _add_target_repo_arg(answer)
 
     sub.add_parser(

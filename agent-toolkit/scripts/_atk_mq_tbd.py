@@ -200,6 +200,35 @@ def require_tbd_entry(path: pathlib.Path, text: str) -> None:
         raise WebInputError(f"回答はTBDのエントリにのみ適用できます（type={entry_type}）: {path.name}")
 
 
+def _answer_noninteractive(private_notes: pathlib.Path, *, filename: str, answer: str) -> None:
+    """引数で受け取った回答本文をTBDの回答欄へ非対話で反映する。
+
+    回答本文は回答欄マーカー以降へ置く本文だけを受け取る。
+    マーカー自体を含む本文は、反映後にマーカーが二重化するため拒否する。
+    対象解決・種別検証・commit・pushは`answer_tbd`が担う。
+    対象不在時に`_resolve_active_entry`が送出する`FileNotFoundError`は、
+    Tracebackを露出させず他サブコマンドと同じ文面の案内へ変換する。
+    """
+    if ANSWER_MARKER in answer:
+        print(
+            f"回答本文に回答欄マーカーを含められません: {filename}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    try:
+        changed = answer_tbd(private_notes, filename=filename, answer=answer)
+    except FileNotFoundError:
+        print(f"inbox・processingのいずれにも存在しません: {filename}", file=sys.stderr)
+        sys.exit(1)
+    except WebInputError as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)
+    if changed:
+        print(f"1件回答反映: {filename}")
+    else:
+        print("差分なし。")
+
+
 def answer_tbd(
     private_notes: pathlib.Path,
     *,
@@ -231,12 +260,22 @@ def answer_tbd(
 
 
 def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """answerサブコマンド: 未回答TBDを1件ずつ画面表示し$EDITORで回答する。
+    """answerサブコマンド: TBDへ回答する。
 
-    走査対象はactive状態（inbox・processing）のうちfrontmatterの`type`が`tbd`かつ未回答のエントリとする。
+    `filename`と`answer_body`の双方を指定した場合は非対話で当該TBDの回答欄を更新する。
+    いずれかを省略した場合は、active状態（inbox・processing）のうちfrontmatterの`type`が`tbd`かつ
+    未回答のエントリを1件ずつ画面表示し`$EDITOR`で回答する。
     エディターが非ゼロ終了コードで終了した場合、以降の対象を中断してexit 1を返す
     （エディター起動失敗・ユーザーによる強制終了などを成功として扱わないため）。
     """
+    filename = getattr(args, "filename", None)
+    answer_body = getattr(args, "answer_body", None)
+    if filename is not None and answer_body is not None:
+        _answer_noninteractive(private_notes, filename=filename, answer=answer_body)
+        return
+    if filename is not None or answer_body is not None:
+        print("非対話で回答する場合はファイル名と回答本文の両方を指定してください。", file=sys.stderr)
+        sys.exit(1)
     editor = os.environ.get("EDITOR")
     if not editor:
         print("$EDITORが未設定のため回答経路を利用できません。", file=sys.stderr)
