@@ -40,7 +40,6 @@ Bashコマンド判定の設計方針:
 import json
 import pathlib
 import shlex
-import sys
 
 # Git ワークツリー判定で親ディレクトリを遡る際の上限段数。
 # 病的に深いパスでの暴走を防ぐガード。
@@ -99,10 +98,10 @@ _AGENT_META_DIRS = frozenset({".claude", ".agents"})
 _AGENT_META_FILES = frozenset({"AGENTS.md"})
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """エントリポイント。exit code 0 を返す。"""
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
         return 0
 

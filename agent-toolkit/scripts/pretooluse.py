@@ -382,7 +382,7 @@ def _language_notice(body: str) -> str:
     return f"[auto-generated: {_HOOK_ID}][warn] {body}"
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """エントリポイント。
 
     exit code契約:
@@ -393,7 +393,7 @@ def main() -> int:
     予期せぬ例外は0にフォールバックする（pluginのhookが破損して編集できなくなる事故を避けるため）。
     """
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
         # 想定外入力ではフックを無効化（実処理の破損を避ける安全側の判定）
         return 0

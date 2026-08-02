@@ -177,10 +177,10 @@ def _emit_norm_inquiry_reminder() -> None:
     )
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
         return 0
 

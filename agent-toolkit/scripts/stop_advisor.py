@@ -139,9 +139,9 @@ def _emit_block_with_status(reason: str, cwd: str = "") -> None:
     print(json.dumps(output, ensure_ascii=False))
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """Stop hookでセッション終了時通知を出力するエントリポイント。"""
-    resolved = _parse_stop_session(sys.stdin.read(), _approve)
+    resolved = _parse_stop_session(payload_text, _approve)
     if resolved is None:
         return 0
     session_id, payload = resolved

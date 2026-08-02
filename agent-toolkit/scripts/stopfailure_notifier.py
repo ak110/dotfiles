@@ -56,10 +56,10 @@ def append_log(payload: dict, *, log_path: pathlib.Path, now: datetime.datetime)
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """StopFailure hookのエントリポイント。発火内容をログへ追記する。"""
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
         return 0
     if not isinstance(payload, dict):

@@ -445,10 +445,10 @@ def _warn_codex_remote_change(session_id: str, payload: dict) -> None:
     )
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0。"""
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
         return 0
 

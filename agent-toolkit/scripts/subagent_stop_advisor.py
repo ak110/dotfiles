@@ -351,10 +351,10 @@ def _apply_plan_review_completed(payload: dict) -> None:
     update_state(session_id, _update)
 
 
-def main() -> int:
+def main(payload_text: str) -> int:
     """SubagentStop hookのエントリポイント。"""
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = json.loads(payload_text or "{}")
     except json.JSONDecodeError:
         return 0
 

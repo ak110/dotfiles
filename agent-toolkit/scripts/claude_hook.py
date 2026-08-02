@@ -10,6 +10,10 @@
 epilogueを個別に持っていた。本スクリプトへ集約し、各モジュールは`main()`関数の定義のみを
 担うライブラリへ縮小する。第1引数でサブコマンド（対象モジュール名）を指定する。
 
+標準入力は共通入口で生バイト列として一度だけ読み、UTF-8で厳密に復号して各モジュールへ渡す。
+標準出力と標準エラーもUTF-8へ統一する。`AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`が非空の場合は、
+環境依存の入力変換をバイト単位で調査できるよう、復号前の入力を指定ディレクトリへ保存する。
+
 依存パッケージは対象7モジュールの依存集合の和を宣言する。`uv run --script`はスクリプト単位で
 venvをキャッシュするため、集約により従来7個に分散していたキャッシュが1個へ統合され、
 サブコマンド切替時の再解決コストが減る。
@@ -20,7 +24,11 @@ venvをキャッシュするため、集約により従来7個に分散してい
 標準エラー出力へ書き、フック処理を通過させる。
 """
 
+import contextlib
+import datetime
 import importlib
+import io
+import os
 import pathlib
 import sys
 import traceback
@@ -42,11 +50,41 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop_advisor"})
 
 
+def _configure_standard_output() -> None:
+    """標準出力と標準エラーをUTF-8へ統一する。"""
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _dump_payload(subcommand: str, payload_bytes: bytes) -> None:
+    """デバッグ指定時に復号前のpayloadを保存し、失敗時は処理を継続する。"""
+    dump_directory = os.environ.get("AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP", "")
+    if not dump_directory:
+        return
+    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    dump_path = pathlib.Path(dump_directory) / f"{subcommand}-{timestamp}-{os.getpid()}.json"
+    with contextlib.suppress(OSError):
+        dump_path.write_bytes(payload_bytes)
+
+
 def main(argv: list[str]) -> int:
     """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
     if not argv or argv[0] not in _SUBCOMMANDS:
         print(
             f"[claude_hook] usage: claude_hook.py <{'|'.join(sorted(_SUBCOMMANDS))}>",
+            file=sys.stderr,
+        )
+        return 0
+    _configure_standard_output()
+    payload_bytes = sys.stdin.buffer.read()
+    _dump_payload(argv[0], payload_bytes)
+    try:
+        payload_text = payload_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        print(
+            f"[claude_hook] stdinのUTF-8復号に失敗したためフック処理を通過させる: {exc}",
             file=sys.stderr,
         )
         return 0
@@ -57,7 +95,7 @@ def main(argv: list[str]) -> int:
         traceback.print_exc()
         return 0
     try:
-        return module.main()
+        return module.main(payload_text)
     except Exception as exc:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
         tb = traceback.extract_tb(exc.__traceback__)
         frame = tb[-1] if tb else None
