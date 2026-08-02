@@ -17,7 +17,9 @@
 
 各委譲の直前に、対象worktreeと条件付き複製元へ
 `${CLAUDE_PLUGIN_ROOT}/scripts/_worktree_snapshot.py capture`を実行する。
-退避先は対象リポジトリ外に作成した所有者限定の専用一時ディレクトリとする。
+委譲元は対象リポジトリ外へ所有者限定の親一時ディレクトリだけを用意し、
+その配下の未作成のパスを対象worktreeと複製元へ別々の出力先として指定する。
+出力先はhelperが作成するため、委譲元は出力先そのものを事前に作成せず、同じ出力先を再利用しない。
 計画ファイルのほかに許可する書き込みは、この退避先に限る。
 委譲直後に同helperの`compare`を実行し、HEAD、追跡差分、未追跡内容を比較する。
 
@@ -35,6 +37,8 @@
 - 対象計画ファイル
 - 適用する`agent-toolkit:review-standards`・`agent-toolkit:writing-standards`・
   `agent-toolkit:agent-standards`と対象固有スキル
+- `agent-toolkit:plan-mode`のSKILL.md。バグ計画の点検で
+  `references/bugfix.md`を解決する起点となる
 - プロジェクト規範
 
 タスク本文は作業ディレクトリ、対象、完了条件だけに限定し、規範本文を転記しない。
@@ -43,8 +47,8 @@
 
 ## 機械チェック委譲
 
-実装・修正系へは、本ファイルと「用途別task reference」節で選んだ
-機械チェック・修正用task referenceを渡す。
+実装・修正系へは、本ファイル、機械チェック・修正用の`plan-codex-review-fix-task.md`、
+および同task referenceが参照する`plan-codex-implementation-task.md`を渡す。
 `plan-file-finalizer`が実装・修正系へ渡すタスク本文には、次の検査・違反修正・再検査を全て含める。
 
 1. 計画ファイル本体へ次のコマンドを実行する

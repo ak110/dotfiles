@@ -12,6 +12,7 @@
 
 - 本ファイル
 - `plan-codex-implementation-task.md`
+- `plan-codex-implementation-review.md`（採用指摘へ割り当てる区分の定義元）
 - 計画ファイル
 - 対象文書に適用する品質スキル
 - プロジェクト規範

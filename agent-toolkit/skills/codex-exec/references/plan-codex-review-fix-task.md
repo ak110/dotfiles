@@ -2,8 +2,8 @@
 
 ## 入力
 
-- `plan-codex-review.md`と`plan-codex-review-fix-task.md`の絶対パスを受け取り、
-  着手時に各ファイルの全文を読む
+- `plan-codex-review.md`、`plan-codex-review-fix-task.md`、
+  `plan-codex-implementation-task.md`の絶対パスを受け取り、着手時に各ファイルの全文を読む
 - 計画ファイル、品質規範、対象固有スキル、プロジェクト規範の絶対パスを受け取り、
   着手時に各ファイルの全文を読む
 - 作業ディレクトリの絶対パスは、pyfltrの`--work-dir`へ渡す対象リポジトリとして使う

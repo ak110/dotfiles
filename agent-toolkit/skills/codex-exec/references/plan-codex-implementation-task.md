@@ -2,8 +2,8 @@
 
 ## 入力
 
-- `plan-codex-implementation.md`と`plan-codex-implementation-task.md`の絶対パスを受け取り、
-  着手時に各ファイルの全文を読む
+- `plan-codex-implementation.md`、`plan-codex-implementation-task.md`、
+  `plan-codex-implementation-review.md`の絶対パスを受け取り、着手時に各ファイルの全文を読む
 - 計画ファイル、品質規範、プロジェクト規範の絶対パスを受け取り、
   着手時に各ファイルの全文を読む
 - 作業ディレクトリの絶対パスは、対象リポジトリを実装する基点として使う
