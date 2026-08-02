@@ -62,7 +62,7 @@ error区分（計画が成立しない致命的な問題）とその判定根拠
 
 warning区分（終了コードへ算入しない）とその判定根拠。
 
-- `## 実行方法`節のセッション運用工程混入: 実施指示形に限定しても、スコープ逸脱は計画の技術的成立を妨げない
+- `## 実行方法`節のセッション運用工程混入: 実装対象への言及を除いても、スコープ逸脱は計画の技術的成立を妨げない
 - `#### 廃止・改名対象一覧`の識別子残存: 検査結果の正否が実行フェーズで反転する。
   計画作成時点では対象識別子が残存しているのが正常であり、実装完了後は残存が異常である
 - 版更新正本を含む計画の具体的なバージョン数値: 現行値の引用など正当な記載もあり得る一方、
@@ -99,14 +99,13 @@ _CANONICAL_H1_RE = re.compile(r"^# (?!#+[ \t]*$)\S.*$")
 # `）`直前の位置で担保する。
 _NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
 _SESSION_OPS_RE = re.compile(r"session-review|exit-session|振り返り|セッション終了|session-review-dotfiles")
-# 対象語と実施・起動の指示表現の間には、`振り返りスキルを起動する`の`スキル`や
-# `（振り返り・セッション終了）を実施する`の閉じ括弧のような短い語句が入りうるため、
-# 区切り記号を含まない8文字までを許容する。
-# 連体修飾を示す`の`は許容範囲から除く。`振り返りフックの誘導の変更を行う`のように
-# 対象語がより大きな名詞句の修飾要素となる記述は、実装対象への言及であって工程指示ではない。
-_SESSION_OPS_INSTRUCTION_RE = re.compile(
-    r"(?:session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了)"
-    r"[^\n。の]{0,8}?(?:を実施する|を行う|へ進む|を呼び出す|を起動する)"
+# 実装対象を指す名詞句の構成要素。対象語がこれらの語を直後に伴う場合、工程の実施ではなく
+# 変更対象の名称として現れている（`振り返りフックの誘導を変更する`・`セッション終了処理を実装する`）。
+# 工程そのものを指す`工程`・`スキル`は、`振り返り工程を完遂する`のように実施指示で用いるため含めない。
+_SESSION_OPS_IMPLEMENTATION_NOUNS = r"(?:フック|処理|機能|誘導|判定|検査|条件|経路|規範|定義|記述|表示|文言|description|節|欄)"
+_SESSION_OPS_TERM_RE = re.compile(r"session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了")
+_SESSION_OPS_IMPLEMENTATION_MENTION_RE = re.compile(
+    r"(?:session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了)\s*" + _SESSION_OPS_IMPLEMENTATION_NOUNS
 )
 
 # 呼び出し構文に限定して名前を抽出する4パターン。
@@ -303,15 +302,20 @@ def _parse_document(text: str) -> _Document:
 def _section_at(document: _Document, index: int) -> _Section:
     """`document.headings[index]`の見出し配下を節として返す。
 
-    H2以上（レベル2以下）の節は配下の小見出しを含め、同レベル以上の次見出しで終端する。
-    H3以下（レベル3以上）の節は、より深い小見出しの直前で終端する。
+    レベル2以下（H1・H2）の節は配下の小見出しを含め、同レベル以上の次見出しで終端する。
+    レベル3以上（H3・H4など）の節は、レベルを問わず次の見出しの直前で終端する。
     後者はH4小節の本文を親H3の本文として扱わないための区切りであり、
     対象ファイルH3のコードブロック有無判定と`### バグ調査結果`の先頭表判定が依存する。
     """
     item = document.headings[index]
+    following_headings = document.headings[index + 1 :]
+    if item.level >= 3:
+        # レベル3以上は最初の見出しで必ず終端するため、走査せず先頭要素だけを参照する。
+        end_line = following_headings[0].start_line if following_headings else len(document.lines)
+        return _Section(item.end_line, end_line, item)
     end_line = len(document.lines)
-    for following in document.headings[index + 1 :]:
-        if following.level <= item.level or item.level >= 3:
+    for following in following_headings:
+        if following.level <= item.level:
             end_line = following.start_line
             break
     return _Section(item.end_line, end_line, item)
@@ -446,10 +450,22 @@ def _extract_h3_paths(document: _Document, sections: list[_Section]) -> list[str
     ]
 
 
-def _path_h3_sections(document: _Document, path: str) -> list[_Section]:
-    """指定パスを先頭コードスパンに持つH3節を返す。"""
-    return [
+def _path_h3_sections(document: _Document, path: str, scopes: list[_Section] | None = None) -> list[_Section]:
+    """指定パスを先頭コードスパンに持つH3節を返す。
+
+    `scopes`を渡した場合は、その範囲内に見出しがあるH3節だけを対象とする。
+    対象ファイルの充足判定は`## 変更内容`配下の記述で成立させる契約のため、
+    範囲を限定しないと節外の同名H3が持つコードブロックで判定が通る。
+    """
+    sections = [
         _section_at(document, index) for index, heading in enumerate(document.headings) if _h3_heading_path(heading) == path
+    ]
+    if scopes is None:
+        return sections
+    return [
+        section
+        for section in sections
+        if any(scope.start_line <= section.heading.start_line < scope.end_line for scope in scopes)
     ]
 
 
@@ -467,8 +483,10 @@ def _check_base_commit_recorded(document: _Document) -> list[str]:
     return ["`### 計画メタ情報`にベースコミットの記載が無い"]
 
 
-def _has_code_block_after(document: _Document, path: str) -> bool:
-    return any(_within(section, fence) for section in _path_h3_sections(document, path) for fence in document.fences)
+def _has_code_block_after(document: _Document, path: str, change_sections: list[_Section]) -> bool:
+    return any(
+        _within(section, fence) for section in _path_h3_sections(document, path, change_sections) for fence in document.fences
+    )
 
 
 def _extract_fenced_code_blocks(document: _Document, sections: list[_Section], *, info_string: str) -> list[str]:
@@ -683,6 +701,24 @@ def _has_session_ops_invocation(
     return False
 
 
+def _mentions_session_ops_process(text: str) -> bool:
+    """行がセッション運用を工程として述べているかを返す。
+
+    対象語の出現位置だけで判定し、指示表現との語順や動詞の活用形を前提にしない。
+    実運用の計画では`後続工程（push・振り返り・exit-session）を完遂する`のように
+    対象語が列挙の中へ現れ、指示表現が行末や後続行へ離れて置かれるため、
+    対象語の直後に動詞句を求める判定では大半の工程記載を取りこぼす。
+
+    対象語の全出現が実装対象の名詞句であれば工程の記載ではないと判定する。
+    `振り返りフックの誘導を変更する`のように、対象語が変更対象の名称として現れる記述を除外する。
+    """
+    occurrences = list(_SESSION_OPS_TERM_RE.finditer(text))
+    if not occurrences:
+        return False
+    implementation_starts = {match.start() for match in _SESSION_OPS_IMPLEMENTATION_MENTION_RE.finditer(text)}
+    return any(match.start() not in implementation_starts for match in occurrences)
+
+
 def _check_execution_method_scope(document: _Document) -> list[str]:
     """`## 実行方法`節に振り返り・セッション終了などのセッション運用工程が無いか検出する。
 
@@ -709,7 +745,7 @@ def _check_execution_method_scope(document: _Document) -> list[str]:
             invokes_session_op = _has_session_ops_invocation(line, line_offset, inline_blocks, inline_spans)
             if invokes_session_op:
                 target = line
-            if _SESSION_OPS_INSTRUCTION_RE.search(target) or invokes_session_op:
+            if _mentions_session_ops_process(target) or invokes_session_op:
                 warnings.append(
                     f"実行方法節（{section_no}件目の出現）内({absolute_line + 1}行目): "
                     "振り返り・セッション終了などのセッション運用工程が記載されている疑いがある。"
@@ -812,7 +848,9 @@ def _check_deletion_instruction_present(document: _Document, change_sections: li
         and (match := _CHECKBOX_RE.match(document.lines[line_no]))
     ]
     for path in deleted_paths:
-        text_blocks = _extract_fenced_code_blocks(document, _path_h3_sections(document, path), info_string="text")
+        text_blocks = _extract_fenced_code_blocks(
+            document, _path_h3_sections(document, path, change_sections), info_string="text"
+        )
         # `text`以外の情報文字列（`python`等）のコードブロックのみが存在する場合、
         # 「コードブロックが無いH3」検査（`_has_code_block_after`、任意の情報文字列を許容）は
         # 通過するが本検査は不成立のままとなる。両検査の対象コードブロック種別を揃えるため、
@@ -831,11 +869,16 @@ def _extract_deprecated_identifiers(document: _Document) -> list[str]:
 
     見出し・節終端の判定はフェンス外の行に限る。埋め込み例示内の同名H4見出しを
     節境界として誤認しない。
+
+    抽出は行単位で行う。節本文を1つの文字列へ結合してから適用すると、
+    バッククォートを片側だけ持つ行が後続行の閉じバッククォートと対応づき、
+    その間の本文全体を1つの識別子として取り込む。
     """
     return [
         identifier
         for section in _sections(document, 4, "廃止・改名対象一覧")
-        for identifier in re.findall(r"`([^`]+)`", _non_code_text(document, section))
+        for line in _non_code_text(document, section).splitlines()
+        for identifier in re.findall(r"`([^`]+)`", line)
     ]
 
 
@@ -891,7 +934,9 @@ def _added_lines_text(block: str) -> str:
 def _detect_meta_norm_addition(document: _Document, change_sections: list[_Section]) -> bool:
     """`## 変更内容`の各H3節`text`コードブロックの追加分にメタ規範パターンが現れるか判定する。"""
     for path in _extract_h3_paths(document, change_sections):
-        for block in _extract_fenced_code_blocks(document, _path_h3_sections(document, path), info_string="text"):
+        for block in _extract_fenced_code_blocks(
+            document, _path_h3_sections(document, path, change_sections), info_string="text"
+        ):
             added = _added_lines_text(block)
             if (
                 _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE.search(added)
@@ -977,7 +1022,7 @@ def main() -> int:
         errors.append(f"対象ファイル一覧に無いH3見出し: {missing_checkbox}")
 
     for path in checkbox_paths:
-        if not _has_code_block_after(document, path):
+        if not _has_code_block_after(document, path, change_sections):
             errors.append(f"コードブロックが無いH3: {path}")
 
     for path in h3_paths:

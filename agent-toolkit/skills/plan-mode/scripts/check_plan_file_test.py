@@ -434,9 +434,19 @@ def test_execution_method_without_session_ops_silent(
         pytest.param("- 振り返りフックの誘導を変更する", False, id="implementation_target"),
         pytest.param("- セッション終了処理を実装する", False, id="implementation_noun_phrase"),
         pytest.param("- 振り返りフックの誘導の変更を行う", False, id="modifier_in_noun_phrase"),
+        pytest.param("- セッション終了判定を実装する", False, id="implementation_target_predicate"),
+        pytest.param("- exit-session description厳格化を反映", False, id="implementation_target_description"),
         pytest.param("- 振り返りを実施する", True, id="execute_review"),
         pytest.param("- 振り返りスキルを起動する", True, id="execute_review_with_short_noun"),
         pytest.param("- （振り返り・セッション終了）を実施する", True, id="execute_parenthesized_enumeration"),
+        pytest.param(
+            "- 後続工程（push・CI通過確認・振り返り・exit-session）を完遂する",
+            True,
+            id="execute_enumeration_with_trailing_verb",
+        ),
+        pytest.param("- 対象工程は`git push`・push後CI通過確認・振り返り・", True, id="enumeration_continued_next_line"),
+        pytest.param("14. `agent-toolkit:exit-session`でセッション終了", True, id="nominal_ending_step"),
+        pytest.param("- 振り返り工程（`session-review-dotfiles`を含む）", True, id="process_noun_without_verb"),
         pytest.param("- セッション終了を行う", True, id="execute_session_end"),
         pytest.param("- 振り返りへ進む", True, id="proceed_to_review"),
         pytest.param(
@@ -453,7 +463,7 @@ def test_execution_method_requires_instruction_form(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """実装対象の名詞句を除外し、セッション運用の実施指示形だけを検出する。"""
+    """実装対象の名詞句を除外し、工程としてのセッション運用の記載を語順によらず検出する。"""
     body = f"## 実行方法\n\n{line}\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
@@ -941,6 +951,25 @@ def test_deletion_marker_with_deletion_word_only_in_python_block_errors(
     assert main() == 1
     captured = capsys.readouterr()
     assert "指定内容の食い違いの疑い" in captured.err
+
+
+def test_deprecated_identifier_extraction_does_not_cross_lines(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """片側だけバッククォートを持つ行を後続行と対応づけて識別子化しない。"""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "leftover.py").write_text("x = 1\n", encoding="utf-8")
+    body = (
+        "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- 対象は`scripts/leftover.py\n- 補足は次のとおり`\n\n### 対象ファイル一覧\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    # 行を跨いで結合すると本文全体が1識別子となり、パスとして残存判定されない。
+    # 行単位で抽出すると、片側だけバッククォートを持つ行は識別子の抽出対象にならない。
+    assert "\n- 補足は次のとおり" not in capsys.readouterr().err
 
 
 def test_deprecated_identifier_residual_file_warns(
