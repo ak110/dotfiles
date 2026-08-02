@@ -126,7 +126,7 @@ HTML = """<!doctype html>
         </div>
         <div class="detail-body">
           <h3>本文</h3>
-          <pre id="detail-content" class="entry-content"></pre>
+          <div id="detail-content" class="entry-content markdown-body"></div>
         </div>
         <div id="detail-actions" class="detail-actions">
           <button id="edit-button" class="button-primary" type="button">編集</button>
@@ -284,7 +284,7 @@ textarea {
 }
 
 textarea {
-  min-height: 11rem;
+  min-height: 24rem;
   resize: vertical;
 }
 
@@ -662,8 +662,56 @@ button:disabled {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: #f8fafc;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body pre,
+.markdown-body blockquote,
+.markdown-body table {
+  margin-block: var(--space-3);
+}
+
+.markdown-body pre,
+.markdown-body code {
+  font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.markdown-body pre {
+  overflow: auto;
+  padding: var(--space-2);
+  border-radius: var(--radius-small);
+  background: #e9eef5;
+}
+
+.markdown-body blockquote {
+  margin-inline: 0;
+  padding-left: var(--space-3);
+  border-left: 0.25rem solid var(--color-border);
+  color: var(--color-secondary-text);
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
 }
 
 .detail-actions {
@@ -831,6 +879,7 @@ dialog form {
   select,
   textarea {
     width: 100%;
+    min-height: 16rem;
   }
 }
 
@@ -945,10 +994,14 @@ function labelFor(field, value) {
   return value || 'なし';
 }
 
-function formatUpdatedAt(value) {
+function formatUpdatedAt(value, part = 'datetime') {
   if (!value) return '更新日時なし';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('ja-JP');
+  if (Number.isNaN(date.getTime())) return String(value);
+  const options = {timeZone: 'Asia/Tokyo'};
+  if (part === 'date') return date.toLocaleDateString('ja-JP', options);
+  if (part === 'time') return date.toLocaleTimeString('ja-JP', options);
+  return date.toLocaleString('ja-JP', options);
 }
 
 function applyClientFilters() {
@@ -956,7 +1009,7 @@ function applyClientFilters() {
   const searchableFields = ['filename', 'summary', 'target_repo', 'category', 'source'];
   visibleEntries = entries
     .filter(entry => !query || searchableFields.some(field => String(entry[field] || '').toLocaleLowerCase('ja-JP').includes(query)))
-    .sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')));
+    .sort((left, right) => String(left.filename || '').localeCompare(String(right.filename || '')));
   renderList();
 }
 
@@ -1014,8 +1067,8 @@ function renderEntry(entry) {
   if (entry.updated_at) {
     const date = new Date(entry.updated_at);
     if (!Number.isNaN(date.getTime())) {
-      dateStr = date.toLocaleDateString('ja-JP');
-      timeStr = date.toLocaleTimeString('ja-JP');
+      dateStr = formatUpdatedAt(entry.updated_at, 'date');
+      timeStr = formatUpdatedAt(entry.updated_at, 'time');
     } else {
       dateStr = String(entry.updated_at);
     }
@@ -1077,7 +1130,12 @@ function displayEntry(entry, preserveForm = false) {
   byId('detail-filename').textContent = entry.filename;
   byId('detail-state').textContent = STATE_LABELS[entry.state] || entry.state;
   byId('detail-state').dataset.state = entry.state;
-  byId('detail-content').textContent = entry.content;
+  const detailContent = byId('detail-content');
+  if (typeof entry.content_html === 'string') {
+    detailContent.innerHTML = entry.content_html;
+  } else {
+    detailContent.textContent = entry.content;
+  }
   renderMetadata(entry);
 
   const active = ACTIVE_STATES.has(entry.state);

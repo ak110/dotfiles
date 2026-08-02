@@ -95,25 +95,21 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
 
 def _print_entries(selected: list[QueueEntryDisplay]) -> None:
     """選択済みエントリを`atk mq list`の1件1行形式で出力する。"""
-    for header_type in ("feedback", "tbd"):
-        group = [entry for entry in selected if entry[4] == header_type or (header_type == "feedback" and entry[4] is None)]
-        if not group:
-            continue
-        print(f"# {header_type}")
-        for path, target_repo, text, state, entry_type in group:
-            schedule_label = format_schedule_label(text)
-            label = f"{state}/{schedule_label}"
-            if entry_type == MQ_TYPE_TBD:
-                answered = _is_tbd_answered(text)
-                label = f"{state}/answered/{schedule_label}" if answered else f"{state}/unanswered"
-            repo_budget = _target_repo_budget(path.name, label)
-            display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
-            prefix = f"{path.name}: {display_repo} [{label}] "
-            available_width = shutil.get_terminal_size().columns - _display_width(prefix)
-            summary = (
-                _tbd_body_summary(text, available_width) if entry_type == MQ_TYPE_TBD else _body_summary(text, available_width)
-            )
-            print(f"{prefix}{summary}")
+    for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
+        kind = entry_type or "feedback"
+        schedule_label = format_schedule_label(text)
+        label = f"{kind}/{state}/{schedule_label}"
+        if entry_type == MQ_TYPE_TBD:
+            answered = _is_tbd_answered(text)
+            label = f"tbd/{state}/answered/{schedule_label}" if answered else f"tbd/{state}/unanswered"
+        repo_budget = _target_repo_budget(path.name, label)
+        display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
+        prefix = f"{path.name}: {display_repo} [{label}] "
+        available_width = shutil.get_terminal_size().columns - _display_width(prefix)
+        summary = (
+            _tbd_body_summary(text, available_width) if entry_type == MQ_TYPE_TBD else _body_summary(text, available_width)
+        )
+        print(f"{prefix}{summary}")
 
 
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -129,9 +125,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--source`指定時はfeedback・tbd双方をfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
-    `--type=all`（既定）指定時、該当部エントリが1件以上ある場合のみ種別ヘッダを出力する。
     `--count`指定時は、フィルター適用後のfeedback件数とTBD件数の合計を整数のみで出力し、
-    種別ヘッダ・エントリ行は出力しない。
+    エントリ行は出力しない。
     """
     if not args.skip_pull:
         with _repo_lock(private_notes):

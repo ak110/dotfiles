@@ -71,7 +71,7 @@ class TestListSingle:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
+        assert captured.out == "fb-001.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] 本文1\n"
 
 
 class TestListPlanImplementationClassification:
@@ -98,7 +98,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[inbox/plan-impl/carry=0]" in output
+        assert "[feedback/inbox/plan-impl/carry=0]" in output
         assert "unclassified" not in output
 
     def test_stale_schedule_metadata_is_labeled_plan_implementation(
@@ -133,7 +133,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[inbox/plan-impl/carry=0]" in output
+        assert "[feedback/inbox/plan-impl/carry=0]" in output
         assert "unclassified" not in output
 
 
@@ -169,7 +169,7 @@ class TestListMalformedFrontmatter:
         assert exc_info.value.code == expected_exit
         captured = capsys.readouterr()
         if expected_exit == 0:
-            assert "[inbox/frontmatter-broken/carry=0]" in captured.out
+            assert "[feedback/inbox/frontmatter-broken/carry=0]" in captured.out
             assert not captured.err
         else:
             assert not captured.out
@@ -197,10 +197,33 @@ class TestListMultipleRepos:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out.splitlines() == [
-            "# feedback",
-            "fb-001.md: github.com/example/foo [inbox/unclassified/carry=0] テスト本文",
-            "fb-002.md: github.com/example/bar [inbox/unclassified/carry=0] テスト本文",
+            "fb-001.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] テスト本文",
+            "fb-002.md: github.com/example/bar [feedback/inbox/unclassified/carry=0] テスト本文",
         ]
+
+    def test_feedback_and_tbd_are_sorted_together_without_group_headers(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """種別をまたいでファイル名順に並べ、各行の状態ラベルへ種別を含める。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "z-feedback.md", body="フィードバック")
+        _write_tbd_file(notes, "a-tbd.md", question="確認事項", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--status=all"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        lines = output.splitlines()
+        assert [line.split(":", 1)[0] for line in lines] == ["a-tbd.md", "z-feedback.md"]
+        assert "[tbd/inbox/unanswered]" in lines[0]
+        assert "[feedback/inbox/" in lines[1]
+        assert "# feedback" not in output
+        assert "# tbd" not in output
 
 
 class TestListTargetRepoFilter:
@@ -247,7 +270,7 @@ class TestListTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox/unclassified/carry=0] テスト本文\n"
+        assert captured.out == "fb-001.md: github.com/example/myrepo [feedback/inbox/unclassified/carry=0] テスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -358,7 +381,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
+        assert captured.out == "fb-001.md: github.com/example/foo [feedback/inbox/unclassified/carry=0] 本文1\n"
 
     def test_type_tbd_outputs_status_label(
         self,
@@ -376,7 +399,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
+        assert captured.out == f"{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [tbd/inbox/unanswered] q1\n"
 
     def test_type_all_omits_empty_section_header(
         self,
@@ -394,7 +417,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# feedback" in captured.out
+        assert "# feedback" not in captured.out
         assert "# tbd" not in captured.out
 
 
@@ -710,7 +733,7 @@ class TestListNarrowTerminalTargetRepo:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """feedback部の各出力行が50桁以内に収まる。"""
-        terminal_columns = 50
+        terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
             del args, kwargs

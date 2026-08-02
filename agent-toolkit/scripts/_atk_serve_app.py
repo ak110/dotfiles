@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+import functools
 import html
 import json
 import pathlib
@@ -19,6 +20,7 @@ import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
 import _atk_serve_state as serve_state
 import filelock
+import markdown_it
 import pytilpack.quart
 import quart
 import werkzeug.exceptions
@@ -29,6 +31,7 @@ _STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _WEB_LOCK_TIMEOUT = 2.0
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
+_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False})
 
 # pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
 
@@ -143,6 +146,13 @@ def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, ob
     }
 
 
+@functools.lru_cache(maxsize=128)
+def _render_content(text: str, modified_ns: int) -> str:
+    """更新時刻を含むキーでMarkdownの整形済みHTMLを保持する。"""
+    del modified_ns
+    return _MARKDOWN.render(text)
+
+
 class BoundedWorkers:
     """要求キャンセル後も同期処理完了まで同時実行枠を保持する。"""
 
@@ -200,7 +210,7 @@ class Operations:
                 if filters.get("source") and item["source"] != filters["source"]:
                     continue
                 result.append(item)
-        return result
+        return sorted(result, key=lambda item: str(item["filename"]))
 
     def detail(self, state: str, filename: str) -> dict[str, object]:
         if state not in _ENTRY_STATES:
@@ -209,7 +219,11 @@ class Operations:
         try:
             text = path.read_text(encoding="utf-8")
             kind = common.entry_type_of(path, text)
-            return {**_entry(path, kind or "unknown", state, text), "content": text}
+            return {
+                **_entry(path, kind or "unknown", state, text),
+                "content": text,
+                "content_html": _render_content(text, path.stat().st_mtime_ns),
+            }
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error
 

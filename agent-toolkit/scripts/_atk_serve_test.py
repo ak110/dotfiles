@@ -77,7 +77,8 @@ def test_assets_are_self_contained() -> None:
     combined = assets.HTML + assets.CSS + assets.JS
     assert "https://" not in combined
     assert "http://" not in combined
-    assert "innerHTML" not in combined
+    assert combined.count("innerHTML") == 1
+    assert "detailContent.innerHTML = entry.content_html" in assets.JS
     assert "insertAdjacentHTML" not in combined
     assert "/api/entries" in combined
     assert "/api/events" in combined
@@ -87,6 +88,22 @@ def test_assets_are_self_contained() -> None:
     assert ".value" in assets.JS
     assert f'<meta name="theme-color" content="{assets.THEME_COLOR}">' in assets.HTML
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
+
+
+def test_assets_format_dates_in_jst_and_size_editors() -> None:
+    """UTC日時をJSTで表示し、編集欄の最小高を画面幅別に確保する。"""
+    rendered = _run_node_ui(
+        """
+process.stdout.write(JSON.stringify({
+  datetime: formatUpdatedAt('2026-01-01T00:00:00Z'),
+  date: formatUpdatedAt('2026-01-01T00:00:00Z', 'date'),
+  time: formatUpdatedAt('2026-01-01T00:00:00Z', 'time')
+}));
+"""
+    )
+    assert rendered == {"datetime": "2026/1/1 9:00:00", "date": "2026/1/1", "time": "9:00:00"}
+    assert "min-height: 24rem" in assets.CSS
+    assert "min-height: 16rem" in assets.CSS
 
 
 def test_header_layout_and_additional_filters_structure() -> None:
@@ -261,6 +278,7 @@ def test_assets_render_api_entry_values_as_dom_text() -> None:
     }
     entry["answered"] = False
     entry["content"] = dangerous
+    entry["content_html"] = "&lt;p&gt;整形済み&lt;/p&gt;"
     rendered = _run_node_ui(
         f"""
 const entry = {json.dumps(entry)};
@@ -291,7 +309,7 @@ setFieldError('edit-content', {json.dumps(dangerous)});
 process.stdout.write(JSON.stringify({{
   tags: row.children.map(child => child.tagName),
   texts,
-  detail: elements['detail-content'].textContent,
+  detail: elements['detail-content'].innerHTML,
   detailState: elements['detail-state'].textContent,
   editValue: elements['edit-content'].value,
   deleteTarget: elements['delete-target'].textContent,
@@ -311,7 +329,7 @@ process.stdout.write(JSON.stringify({{
     )
     assert rendered["tags"] == ["BUTTON"]
     assert dangerous in rendered["texts"]
-    assert rendered["detail"] == dangerous
+    assert rendered["detail"] == "&lt;p&gt;整形済み&lt;/p&gt;"
     assert rendered["detailState"] == dangerous
     assert rendered["editValue"] == dangerous
     assert rendered["deleteTarget"] == dangerous
@@ -597,7 +615,7 @@ process.stdout.write(JSON.stringify({
 }));
 """
     )
-    assert result["sortedKeys"] == ["new.md", "empty-source.md", "old.md"]
+    assert result["sortedKeys"] == ["empty-source.md", "new.md", "old.md"]
     assert result["populated"]["count"] == "1件"
     assert result["populated"]["first"] == "new.md"
     assert result["populated"]["emptyHidden"] is True
@@ -1251,6 +1269,50 @@ async def test_state_publishes_only_markdown_change_events(
         assert published.is_set() is expected
 
 
+@pytest.mark.asyncio
+async def test_state_publishes_once_after_last_change(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """閾値内の連続変更をまとめ、最後の変更後に1回だけ通知する。"""
+    current = state.ServeState(tmp_path, debounce_seconds=0.03)
+    current._loop = asyncio.get_running_loop()
+    published: list[str] = []
+    monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
+    event = watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md"))
+
+    current.on_modified(event)
+    await asyncio.sleep(0.01)
+    current.on_modified(event)
+    await asyncio.sleep(0.01)
+    current.on_modified(event)
+
+    await asyncio.sleep(0.02)
+    assert not published
+    await asyncio.sleep(0.03)
+    assert published == ["changed"]
+
+
+@pytest.mark.asyncio
+async def test_state_discards_pending_notification_when_stopped(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """監視停止時は保留中の通知を破棄する。"""
+    current = state.ServeState(tmp_path, debounce_seconds=0.02)
+    current._loop = asyncio.get_running_loop()
+    published: list[str] = []
+    monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
+    monkeypatch.setattr(current.observer, "stop", lambda: None)
+    monkeypatch.setattr(current.observer, "join", lambda: None)
+
+    current.on_modified(watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md")))
+    current.stop()
+    await asyncio.sleep(0.04)
+
+    assert not published
+
+
 def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
     """計画で定義した全APIルートを登録する。"""
     current_state = state.ServeState(tmp_path)
@@ -1489,6 +1551,33 @@ def test_operations_reads_local_entries_and_detail_without_pull(
     content = detail["content"]
     assert isinstance(content, str)
     assert content.endswith("要約本文\n")
+
+
+def test_operations_sort_entries_by_filename_across_states_and_render_markdown(tmp_path: pathlib.Path) -> None:
+    """一覧を状態横断のファイル名順で返し、詳細本文を安全なHTMLへ整形する。"""
+    inbox = tmp_path / "inbox"
+    processing = tmp_path / "processing"
+    inbox.mkdir()
+    processing.mkdir()
+    (inbox / "z-last.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    (processing / "a-first.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n"
+        "# 見出し\n\n- 項目\n\n```python\nprint('x')\n```\n\n<script>alert(1)</script>\n",
+        encoding="utf-8",
+    )
+
+    operations = serve_app.Operations(tmp_path)
+    assert [item["filename"] for item in operations.entries({"status": "active"})] == ["a-first.md", "z-last.md"]
+    detail = operations.detail("processing", "a-first.md")
+    rendered = typing.cast(str, detail["content_html"])
+    assert "<h1>見出し</h1>" in rendered
+    assert "<li>項目</li>" in rendered
+    assert '<code class="language-python">' in rendered
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
 
 
 @pytest.mark.parametrize(

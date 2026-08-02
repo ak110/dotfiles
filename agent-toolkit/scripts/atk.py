@@ -2,7 +2,15 @@
 # PYTHON_ARGCOMPLETE_OK
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["argcomplete", "watchdog>=6.0.0", "platformdirs>=4.0", "filelock>=3.30", "pytilpack[quart]>=1.47.0", "pyyaml"]
+# dependencies = [
+#   "argcomplete",
+#   "watchdog>=6.0.0",
+#   "platformdirs>=4.0",
+#   "filelock>=3.30",
+#   "pytilpack[quart]>=1.47.0",
+#   "pyyaml",
+#   "markdown-it-py[linkify]>=4.0.0",
+# ]
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 

@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import pathlib
 import threading
-import time
 
 import _atk_mq_common as common
 import watchdog.events
@@ -21,11 +20,13 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queues: set[asyncio.Queue[str]] = set()
         self._lock = threading.Lock()
-        self._last_event = 0.0
+        self._pending_notification: threading.Timer | None = None
+        self._stopped = False
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         """監視を開始する。"""
         self._loop = loop
+        self._stopped = False
         for relative in common.MQ_STATES:
             path = self.root / relative
             path.mkdir(parents=True, exist_ok=True)
@@ -34,21 +35,50 @@ class ServeState(watchdog.events.FileSystemEventHandler):
 
     def stop(self) -> None:
         """監視を停止してスレッド終了を待つ。"""
+        with self._lock:
+            self._stopped = True
+            if self._pending_notification is not None:
+                self._pending_notification.cancel()
+                self._pending_notification = None
         self.observer.stop()
         self.observer.join()
+
+    def _publish_pending(self) -> None:
+        """静穏期間後の保留通知を1回だけ発行する。"""
+        with self._lock:
+            self._pending_notification = None
+            if self._stopped:
+                return
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._publish_if_running)
+
+    def _publish_if_running(self) -> None:
+        """監視停止後のイベントループ上では通知を発行しない。"""
+        with self._lock:
+            if self._stopped:
+                return
+        self.publish()
 
     def _publish_markdown_change(self, event: watchdog.events.FileSystemEvent) -> None:
         """Markdownの内容又は配置の変更を購読者へ通知する。"""
         paths = (event.src_path, getattr(event, "dest_path", ""))
         if event.is_directory or not any(str(path).endswith(".md") for path in paths):
             return
-        now = time.monotonic()
+        if self.debounce_seconds <= 0:
+            with self._lock:
+                if self._stopped:
+                    return
+            if self._loop is not None:
+                self._loop.call_soon_threadsafe(self._publish_if_running)
+            return
         with self._lock:
-            if now - self._last_event < self.debounce_seconds:
+            if self._stopped:
                 return
-            self._last_event = now
-        if self._loop is not None:
-            self._loop.call_soon_threadsafe(self.publish)
+            if self._pending_notification is not None:
+                self._pending_notification.cancel()
+            self._pending_notification = threading.Timer(self.debounce_seconds, self._publish_pending)
+            self._pending_notification.daemon = True
+            self._pending_notification.start()
 
     def on_created(self, event: watchdog.events.FileSystemEvent) -> None:
         """Markdown作成を購読者へ通知する。"""

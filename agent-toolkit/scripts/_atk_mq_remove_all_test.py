@@ -117,8 +117,8 @@ class TestRemoveAllConfirmation:
         assert _run_main(["mq", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         captured = capsys.readouterr()
-        assert "# feedback" in captured.out
-        assert "# tbd" in captured.out
+        assert "[feedback/inbox/" in captured.out
+        assert "[tbd/inbox/unanswered]" in captured.out
         assert "上記2件を削除します" in captured.out
         assert stdin.tell() == 2
         assert not (notes / "inbox/feedback.md").exists()
@@ -192,7 +192,7 @@ class TestRemoveAllConfirmation:
         )
 
         assert not path.exists()
-        assert "# feedback" in capsys.readouterr().out
+        assert "[feedback/inbox/" in capsys.readouterr().out
         assert len(commits) == 1
 
 
