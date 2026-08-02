@@ -9,7 +9,7 @@
 機械チェック用辞書の検出語そのもの（隣接する`_norm_inquiry_escalation_test_inputs.txt`）は
 コーディングエージェントのメインコンテキストへ読み込ませない。
 本ファイル（説明文）は同節内の除外規定に該当し、メイン・Exploreサブエージェント双方のRead参照を許容する。
-修正が必要な場合はAgentツールで`subagent_type: claude`を起動して行う
+修正が必要な場合はAgentツールで`subagent_type: claude`を`model: sonnet`で起動して行う
 pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
 
 実装用の正規表現定義（`_NORM_INQUIRY_PHRASES`）は

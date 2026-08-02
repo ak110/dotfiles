@@ -78,7 +78,7 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 一覧はトップレベルの`plan_file`を判定の基準とし、`queue_schedule`の欠落・
 本文変更による失効時も計画実装型と表示する。
 一覧に未分類項目がある場合は、Agentツールで書き込み可能な汎用エージェント`claude`を
-`model`・`name`・`run_in_background`指定なしで1回起動する。
+`model: sonnet`で1回起動する。`name`・`run_in_background`は指定しない。
 省略は起動形態を固定しないため、実際の受領経路は実行結果から判定する。
 分類結果JSONの形式は
 references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照する。
@@ -138,7 +138,7 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 
 各提案の追記先となる既存記述・関連スキルを横断調査する（観点は
 `references/review-checklists.md`「網羅調査チェックリスト」節）。複数件の場合は
-`Explore`サブエージェントへ個別並列委譲する。
+`Explore`サブエージェントへ`model: opus`を指定して個別並列委譲する。
 
 エントリのfrontmatterに任意項目`target_commit`がある場合、40桁または64桁の
 16進完全OIDであることを確認する。
