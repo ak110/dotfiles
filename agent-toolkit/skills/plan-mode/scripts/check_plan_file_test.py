@@ -431,13 +431,19 @@ def test_execution_method_without_session_ops_silent(
 @pytest.mark.parametrize(
     ("line", "expect_warning"),
     [
-        pytest.param("- 振り返りフックの誘導を変更する", False, id="implementation_target"),
-        pytest.param("- セッション終了処理を実装する", False, id="implementation_noun_phrase"),
-        pytest.param("- 振り返りフックの誘導の変更を行う", False, id="modifier_in_noun_phrase"),
-        pytest.param("- セッション終了判定を実装する", False, id="implementation_target_predicate"),
-        pytest.param("- exit-session description厳格化を反映", False, id="implementation_target_description"),
+        # 工程としての記載。対象語が句の主辞となる形、列挙の中に現れる形、
+        # 実装対象と同じ名詞を伴いながら実施の述部を持つ形、述部を持たない継続行を含む。
         pytest.param("- 振り返りを実施する", True, id="execute_review"),
-        pytest.param("- 振り返りスキルを起動する", True, id="execute_review_with_short_noun"),
+        pytest.param("- セッション終了を行う", True, id="execute_session_end"),
+        pytest.param("- 振り返りへ進む", True, id="proceed_to_review"),
+        pytest.param("- 振り返りスキルを起動する", True, id="execute_with_noun_skill"),
+        pytest.param("- 振り返り処理を実施する", True, id="execute_with_implementation_noun"),
+        pytest.param("- セッション終了処理を実施する", True, id="execute_session_end_with_noun"),
+        pytest.param("- 振り返り工程を完遂する", True, id="execute_process_noun"),
+        pytest.param("- session-reviewスキルを呼び出す", True, id="invoke_skill_with_noun"),
+        pytest.param("- 振り返り工程へ進む", True, id="proceed_to_process_noun"),
+        pytest.param("- セッション終了まで完遂する", True, id="complete_through_session_end"),
+        pytest.param("- 振り返り・exit-sessionを実施する", True, id="execute_enumeration"),
         pytest.param("- （振り返り・セッション終了）を実施する", True, id="execute_parenthesized_enumeration"),
         pytest.param(
             "- 後続工程（push・CI通過確認・振り返り・exit-session）を完遂する",
@@ -447,13 +453,18 @@ def test_execution_method_without_session_ops_silent(
         pytest.param("- 対象工程は`git push`・push後CI通過確認・振り返り・", True, id="enumeration_continued_next_line"),
         pytest.param("14. `agent-toolkit:exit-session`でセッション終了", True, id="nominal_ending_step"),
         pytest.param("- 振り返り工程（`session-review-dotfiles`を含む）", True, id="process_noun_without_verb"),
-        pytest.param("- セッション終了を行う", True, id="execute_session_end"),
-        pytest.param("- 振り返りへ進む", True, id="proceed_to_review"),
         pytest.param(
             "- Skillツールで`agent-toolkit:exit-session`を呼び出す",
             True,
             id="invoke_skill",
         ),
+        # 実装対象への言及。対象語が実装対象を指す名詞を伴い、実施の述部を持たない形。
+        pytest.param("- 振り返りフックの誘導を変更する", False, id="implementation_target"),
+        pytest.param("- セッション終了処理を実装する", False, id="implementation_noun_phrase"),
+        pytest.param("- 振り返りフックの誘導の変更を行う", False, id="modifier_in_noun_phrase"),
+        pytest.param("- セッション終了判定を実装する", False, id="implementation_target_predicate"),
+        pytest.param("- exit-session description厳格化を反映", False, id="implementation_target_description"),
+        pytest.param("- 振り返り規範を改訂する", False, id="implementation_target_norm"),
     ],
 )
 def test_execution_method_requires_instruction_form(

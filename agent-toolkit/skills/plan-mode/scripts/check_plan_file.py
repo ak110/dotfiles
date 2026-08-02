@@ -98,15 +98,24 @@ _CANONICAL_H1_RE = re.compile(r"^# (?!#+[ \t]*$)\S.*$")
 # 「対象ファイル一覧」節が定める記法）の両方を検出する。マーカーが括弧内の末尾要素であることを
 # `）`直前の位置で担保する。
 _NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
-_SESSION_OPS_RE = re.compile(r"session-review|exit-session|振り返り|セッション終了|session-review-dotfiles")
+# セッション運用の対象語。以降のパターンはすべて本定義から組み立て、対象語の追加・改名を1箇所へ集約する。
+_SESSION_OPS_TERM_PATTERN = r"session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了"
+_SESSION_OPS_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
+_SESSION_OPS_TERM_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
+
 # 実装対象を指す名詞句の構成要素。対象語がこれらの語を直後に伴う場合、工程の実施ではなく
 # 変更対象の名称として現れている（`振り返りフックの誘導を変更する`・`セッション終了処理を実装する`）。
 # 工程そのものを指す`工程`・`スキル`は、`振り返り工程を完遂する`のように実施指示で用いるため含めない。
+#
+# 本列挙は閉じている。ここに無い名詞（`フロー`・`スクリプト`等）を伴う言及と、
+# 連体修飾`の`を伴う形（`振り返りの誘導`）は除外できず、検出側へ残る。
+# 語を追加する場合は、本ファイルの回帰テストへ正例と負例を対で追加してから広げる。
+# 列挙を判定基準へ一般化する検討は当該セッションの対象外とし、フィードバックへ登録済みである。
 _SESSION_OPS_IMPLEMENTATION_NOUNS = r"(?:フック|処理|機能|誘導|判定|検査|条件|経路|規範|定義|記述|表示|文言|description|節|欄)"
-_SESSION_OPS_TERM_RE = re.compile(r"session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了")
-_SESSION_OPS_IMPLEMENTATION_MENTION_RE = re.compile(
-    r"(?:session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了)\s*" + _SESSION_OPS_IMPLEMENTATION_NOUNS
-)
+_SESSION_OPS_IMPLEMENTATION_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTERN})\s*{_SESSION_OPS_IMPLEMENTATION_NOUNS}")
+# 実施を示す述部。対象語が実装対象の名詞を伴う場合でも、同一行にこれらが現れる記載は工程の実施を指す
+# （`振り返り処理を実施する`）。本列挙も閉じており、追加時の手順は前記と同じとする。
+_SESSION_OPS_EXECUTION_PREDICATE_RE = re.compile(r"実施|実行|起動|呼び出|完遂|引き継|移行|復帰|従う|従い|進む|進み")
 
 # 呼び出し構文に限定して名前を抽出する4パターン。
 # コマンド名・パス・関数名等の無関係なバッククォート識別子を誤検出しないため、
@@ -450,21 +459,17 @@ def _extract_h3_paths(document: _Document, sections: list[_Section]) -> list[str
     ]
 
 
-def _path_h3_sections(document: _Document, path: str, scopes: list[_Section] | None = None) -> list[_Section]:
-    """指定パスを先頭コードスパンに持つH3節を返す。
+def _path_h3_sections(document: _Document, path: str, scopes: list[_Section]) -> list[_Section]:
+    """指定パスを先頭コードスパンに持つH3節のうち、`scopes`の範囲内にあるものを返す。
 
-    `scopes`を渡した場合は、その範囲内に見出しがあるH3節だけを対象とする。
     対象ファイルの充足判定は`## 変更内容`配下の記述で成立させる契約のため、
     範囲を限定しないと節外の同名H3が持つコードブロックで判定が通る。
     """
-    sections = [
-        _section_at(document, index) for index, heading in enumerate(document.headings) if _h3_heading_path(heading) == path
-    ]
-    if scopes is None:
-        return sections
     return [
         section
-        for section in sections
+        for index, heading in enumerate(document.headings)
+        if _h3_heading_path(heading) == path
+        for section in [_section_at(document, index)]
         if any(scope.start_line <= section.heading.start_line < scope.end_line for scope in scopes)
     ]
 
@@ -709,14 +714,24 @@ def _mentions_session_ops_process(text: str) -> bool:
     対象語が列挙の中へ現れ、指示表現が行末や後続行へ離れて置かれるため、
     対象語の直後に動詞句を求める判定では大半の工程記載を取りこぼす。
 
-    対象語の全出現が実装対象の名詞句であれば工程の記載ではないと判定する。
-    `振り返りフックの誘導を変更する`のように、対象語が変更対象の名称として現れる記述を除外する。
+    対象語が変更対象の名称として現れる記述（`振り返りフックの誘導を変更する`）は除外する。
+    除外は次の2条件をともに満たす場合に限る。
+
+    - 対象語の全出現が実装対象を指す名詞を直後に伴う
+    - 実施を示す述部が同一行に無い
+
+    後者を条件に含めないと、`振り返り処理を実施する`のように実装対象と同じ名詞を伴いながら
+    実施を指示する記載まで除外する。
+    対象語が助詞・区切り記号を直後に伴う形（`振り返りを実施する`・`push・振り返り・exit-session`）は
+    それ自体が句の主辞であり、除外の対象にしない。
     """
     occurrences = list(_SESSION_OPS_TERM_RE.finditer(text))
     if not occurrences:
         return False
     implementation_starts = {match.start() for match in _SESSION_OPS_IMPLEMENTATION_MENTION_RE.finditer(text)}
-    return any(match.start() not in implementation_starts for match in occurrences)
+    if any(match.start() not in implementation_starts for match in occurrences):
+        return True
+    return bool(_SESSION_OPS_EXECUTION_PREDICATE_RE.search(text))
 
 
 def _check_execution_method_scope(document: _Document) -> list[str]:
