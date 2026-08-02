@@ -890,15 +890,19 @@ class TestPlanFileBumpDeclarationWarning:
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
-    def test_checkbox_without_backticks_extracted(self):
-        """チェックボックス項目のパスがバッククォートを欠く場合も抽出対象。"""
+    def test_checkbox_without_backticks_not_extracted(self):
+        """チェックボックス項目のパスがバッククォートを欠く場合は抽出対象外。
+
+        固定記法から外れた項目は`check_plan_file.py`でも抽出されないため、
+        前方一致で判定する本警告と完全一致で判定する各検査の結果を一致させる。
+        """
         content = (
             "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] agent-toolkit/skills/foo/SKILL.md（現行10行）\n\n## 実行方法\n\n- 検証を実行\n"
         )
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
-        assert "agent_toolkit_bump.py" in _get_additional_context(result)
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
     def test_fenced_checkbox_only_no_warning(self):
         """チェックボックス項目がコードフェンス内にのみ現れる計画は警告なし。"""
@@ -1013,12 +1017,26 @@ class TestPlanFileAgentsMdSyncWarning:
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)
 
-    def test_checkbox_without_backticks_extracted(self):
-        """チェックボックス項目のパスがバッククォートを欠く場合も抽出対象。"""
+    def test_checkbox_without_backticks_not_extracted(self):
+        """チェックボックス項目のパスがバッククォートを欠く場合は抽出対象外。"""
         content = "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] agent-toolkit/rules/01-agent.md（現行10行）\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
-        assert "sync_generated_files.py" in _get_additional_context(result)
+        assert "sync_generated_files.py" not in _get_additional_context(result)
+
+    def test_checkbox_without_backticks_listing_sync_target_not_warned(self):
+        """同期先を併記した項目がバッククォートを欠く場合も誤warnしない。
+
+        前方一致で発動する条件と完全一致で充足する条件が同一の抽出結果に基づくことを固定する。
+        """
+        content = (
+            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] agent-toolkit/rules/01-agent.md（現行10行）\n"
+            "- [ ] .chezmoi-source/dot_codex/AGENTS.md（現行10行）\n"
+        )
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "sync_generated_files.py" not in _get_additional_context(result)
 
     def test_fenced_checkbox_only_no_warning(self):
         """チェックボックス項目がコードフェンス内にのみ現れる計画はwarnされない。"""

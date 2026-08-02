@@ -153,14 +153,15 @@ class TestIterMarkdownBodyLines:
 class TestExtractTargetFilesFromChanges:
     """extract_target_files_from_changes の基本動作を検査する。"""
 
-    def test_strips_trailing_line_count_metadata(self) -> None:
-        """`（現行N行）`等の付随メタ情報がパスから除去される。
+    def test_excludes_trailing_line_count_metadata(self) -> None:
+        """`（現行N行）`等の付随メタ情報が抽出結果へ含まれない。
 
         `plan-mode/SKILL.md`が規定する標準形式
         `` `path`（現行N行） ``を検査対象とする。
+        当該メタ情報はバッククォート囲みの外側にあるため捕捉群へ入らない。
         """
         content = (
-            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `app/src/foo.svelte`（現行10行）\n- [x] `app/src/bar.ts`（新設）\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `app/src/foo.svelte`（現行10行）\n- [ ] `app/src/bar.ts`（新設）\n"
         )
         assert _plan_format.extract_target_files_from_changes(content) == [
             "app/src/foo.svelte",
@@ -171,9 +172,15 @@ class TestExtractTargetFilesFromChanges:
         content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `app/src/foo.svelte`\n"
         assert _plan_format.extract_target_files_from_changes(content) == ["app/src/foo.svelte"]
 
-    def test_path_without_backtick(self) -> None:
+    def test_path_without_backtick_is_ignored(self) -> None:
+        """バッククォートを省いた項目は`check_plan_file.py`と同じく抽出対象から外れる。"""
         content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] app/src/foo.svelte\n"
-        assert _plan_format.extract_target_files_from_changes(content) == ["app/src/foo.svelte"]
+        assert not _plan_format.extract_target_files_from_changes(content)
+
+    def test_completed_checkbox_is_ignored(self) -> None:
+        """完了マークへ書き換えた項目は抽出対象から外れる。"""
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [x] `app/src/foo.svelte`（現行10行）\n"
+        assert not _plan_format.extract_target_files_from_changes(content)
 
     def test_ignores_items_outside_target_file_list_h3(self) -> None:
         content = "## 変更内容\n\n### 別のH3\n\n- [ ] `app/src/foo.svelte`\n"
@@ -184,15 +191,15 @@ class TestFindInvalidTargetFilePaths:
     """find_invalid_target_file_paths の相対パス表記違反検出を検査する。"""
 
     def test_find_invalid_target_file_paths_detects_absolute(self) -> None:
-        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] /home/user/project/foo.py\n"
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `/home/user/project/foo.py`\n"
         assert _plan_format.find_invalid_target_file_paths(content) == ["/home/user/project/foo.py"]
 
     def test_find_invalid_target_file_paths_detects_parent_reference(self) -> None:
-        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] ../outside/bar.py\n"
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `../outside/bar.py`\n"
         assert _plan_format.find_invalid_target_file_paths(content) == ["../outside/bar.py"]
 
     def test_find_invalid_target_file_paths_accepts_relative(self) -> None:
-        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] agent-toolkit/scripts/atk.py\n"
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/scripts/atk.py`\n"
         assert not _plan_format.find_invalid_target_file_paths(content)
 
     def test_find_invalid_target_file_paths_handles_backtick_paths(self) -> None:

@@ -149,13 +149,8 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
         yield lineno, line
 
 
-# `## 変更内容 > ### 対象ファイル一覧` 配下のチェックボックス箇条書きから相対パスを抽出するパターン。
-# `- [ ] path` および `- [x] path` 形式（大文字`X`も許容）を対象とする。
-_CHECKBOX_PATTERN = re.compile(r"^\s*-\s+\[[ xX]\]\s+(.+)")
-
-# チェックボックス項目本文の先頭がバッククォート囲みのパスである場合に、
-# 後続の`（現行N行）`等の付随メタ情報を除いてパス部分のみを取り出すパターン。
-_LEADING_BACKTICK_PATH_PATTERN = re.compile(r"^`([^`]+)`")
+# 対象ファイル一覧のチェックボックス項目から相対パスを取るパターン。記法の根拠は`extract_target_files_from_changes`を参照する。
+_CHECKBOX_PATTERN = re.compile(r"^- \[ \] `([^`]+)`")
 
 
 def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
@@ -247,10 +242,12 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
 def extract_target_files_from_changes(content: str) -> list[str]:
     """`## 変更内容 > ### 対象ファイル一覧`配下のチェックボックス箇条書きから相対パスを抽出する。
 
-    パス記述の慣例（`` `path`（現行N行） ``形式）に合わせ、
-    前後の全角空白を含む空白除去後、先頭のバッククォート囲み区間のみをパスとして取り出す
-    （後続の`（現行N行）`等の付随メタ情報は除く）。
-    バッククォート囲みでない場合は従来どおり前後のバッククォートのみを除去する。
+    `agent-toolkit/skills/plan-mode/SKILL.md`「`## 変更内容`」節が定める固定記法
+    （未チェックのチェックボックスと、バッククォートで囲んだパス）に一致する項目のみを対象とする。
+    `` `path`（現行N行） ``形式の付随メタ情報はバッククォート囲みの外側にあるため抽出結果へ含まれない。
+    完了マークへ書き換えた項目とバッククォートを省いた項目は、
+    `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`の`_CHECKBOX_RE`と同じく抽出対象から外れる。
+    抽出器を1系統に保つことで、文書の規定と機械検査の挙動を一致させる。
     pretooluse / posttooluse の双方からimportして使うSSOT実装。
     """
     body = extract_h2_section_body(content, "変更内容")
@@ -260,13 +257,8 @@ def extract_target_files_from_changes(content: str) -> list[str]:
         if line.startswith("### "):
             in_target_h3 = line[4:].strip() == "対象ファイル一覧"
             continue
-        if in_target_h3:
-            m = _CHECKBOX_PATTERN.match(line)
-            if not m:
-                continue
-            item = m.group(1).strip()
-            path_match = _LEADING_BACKTICK_PATH_PATTERN.match(item)
-            paths.append(path_match.group(1) if path_match else item.strip("`"))
+        if in_target_h3 and (m := _CHECKBOX_PATTERN.match(line)):
+            paths.append(m.group(1))
     return paths
 
 
