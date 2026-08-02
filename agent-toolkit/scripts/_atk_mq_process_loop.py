@@ -9,11 +9,11 @@ import datetime
 import hashlib
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import threading
 import time
-import typing
 
 import _atk_mq_alerts as _alerts
 import _console_title
@@ -66,11 +66,19 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
 
 # github.com/ak110/dotfiles編集時のみ、影響範囲の大きいホーム直下チェックアウトを避けるため
 # git worktreeでセッションを起動する。worktree名は反復ごとに固定値とし、常駐ループの再起動
-# （`--no-update`未指定時の`os.execvp`再起動）を経ても同一worktreeを継続利用させる。
+# （`--no-update`未指定時の`os.execv`再起動）を経ても同一worktreeを継続利用させる。
 _DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
 _DOTFILES_WORKTREE_NAME = "process-loop"
 # `--worktree`が作成するworktreeの配置先（対象リポジトリのroot相対）。
 _WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
+
+
+def _resolve_executable(command: str) -> str | None:
+    """実行可能ファイルを環境の探索規則で解決し、利用不能時は警告する。"""
+    executable = shutil.which(command)
+    if executable is None:
+        print(f"{command}コマンドを利用できないため処理を継続します。", file=sys.stderr)
+    return executable
 
 
 def _git_output(args: list[str], cwd: pathlib.Path) -> str:
@@ -248,12 +256,17 @@ def _restart_process_loop(
     dotfiles_root: pathlib.Path | None = None,
     *,
     resume_consumed: bool = False,
-) -> typing.NoReturn:
-    """自プロセスをPEP 723スクリプトとして`os.execvp`で置き換えて再起動する。
+) -> None:
+    """自プロセスをPEP 723スクリプトとして`os.execv`で置き換えて再起動する。
 
     セッション終了後経路・待機中経路の双方から呼ぶ共通ヘルパーとする。
     """
-    os.execvp("uv", _build_restart_argv(argv, dotfiles_root, resume_consumed=resume_consumed))
+    executable = _resolve_executable("uv")
+    if executable is None:
+        return
+    restart_argv = _build_restart_argv(argv, dotfiles_root, resume_consumed=resume_consumed)
+    restart_argv[0] = executable
+    os.execv(executable, restart_argv)
 
 
 def _code_hash(scripts_dir: pathlib.Path) -> str:
@@ -332,13 +345,15 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
     出力は静音を基本とし、上流差分なし・ハッシュ不変の場合は無出力とする。
     """
     if _has_upstream_diff(dotfiles_root):
-        result = subprocess.run(["update-dotfiles", "--force"], check=False)
-        _console_title.set_console_title("atk mq process-loop")
-        if result.returncode != 0:
-            print(
-                f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
-                file=sys.stderr,
-            )
+        executable = _resolve_executable("update-dotfiles")
+        if executable is not None:
+            result = subprocess.run([executable, "--force"], check=False)
+            _console_title.set_console_title("atk mq process-loop")
+            if result.returncode != 0:
+                print(
+                    f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
+                    file=sys.stderr,
+                )
     current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
     if current_hash != startup_hash:
         print("常駐コードの更新を検知したためprocess-loopを再起動します。")
@@ -435,10 +450,12 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             )
                             sys.exit(result.returncode)
                         if not args.no_update:
-                            print("update-dotfilesを実行してprocess-loopを再起動します。")
-                            subprocess.run(["update-dotfiles", "--force"], check=False)
-                            _console_title.set_console_title("atk mq process-loop")
-                            _restart_process_loop(sys.argv, dotfiles_root, resume_consumed=True)
+                            executable = _resolve_executable("update-dotfiles")
+                            if executable is not None:
+                                print("update-dotfilesを実行してprocess-loopを再起動します。")
+                                subprocess.run([executable, "--force"], check=False)
+                                _console_title.set_console_title("atk mq process-loop")
+                                _restart_process_loop(sys.argv, dotfiles_root, resume_consumed=True)
                         continue
                     if not args.no_alerts:
                         monotonic_now = time.monotonic()

@@ -27,6 +27,17 @@ import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
+@pytest.fixture(autouse=True)
+def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """外部コマンド解決結果をテスト環境のPATHから分離する。"""
+    monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
+
+
+def _command_was_called(calls: list[list[str]], command: str) -> bool:
+    """呼び出し配列の先頭要素を基底名で照合する。"""
+    return any(pathlib.Path(call[0]).stem.lower() == command for call in calls)
+
+
 def _fake_run_with_remote_url(
     myrepo: pathlib.Path,
     claude_calls: list[dict[str, Any]],
@@ -50,7 +61,7 @@ def _fake_run_with_remote_url(
     return fake_run
 
 
-def _raise_system_exit_0(*_a: object, **_kw: object) -> NoReturn:  # os.execvpの代替として無条件にSystemExit(0)を送出する。
+def _raise_system_exit_0(*_a: object, **_kw: object) -> NoReturn:  # os.execvの代替として無条件にSystemExit(0)を送出する。
     raise SystemExit(0)
 
 
@@ -643,20 +654,21 @@ class TestProcessLoopUpdateAndRestart:
         )
         execv_calls: list[tuple[str, list[str]]] = []
 
-        def fake_execvp(path: str, argv: list[str]) -> None:
+        def fake_execv(path: str, argv: list[str]) -> None:
             execv_calls.append((path, list(argv)))
             raise SystemExit(0)
 
-        monkeypatch.setattr(os, "execvp", fake_execvp)
+        monkeypatch.setattr(os, "execv", fake_execv)
         with pytest.raises(SystemExit):
             atk.main(
                 ["mq", "process-loop", "--target-repo", str(myrepo)],
                 home=tmp_path,
             )
         assert execv_calls
-        assert execv_calls[0][0] == "uv"
-        assert execv_calls[0][1][:4] == ["uv", "run", "--no-project", "--script"]
-        assert ["update-dotfiles", "--force"] in subprocess_calls
+        assert execv_calls[0][0] == "/resolved/uv"
+        assert pathlib.Path(execv_calls[0][1][0]).name == "uv"
+        assert execv_calls[0][1][1:4] == ["run", "--no-project", "--script"]
+        assert _command_was_called(subprocess_calls, "update-dotfiles")
         captured = capsys.readouterr()
         assert "update-dotfilesを実行して" in captured.out
         # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。
@@ -694,7 +706,7 @@ class TestProcessLoopUpdateAndRestart:
         execv_calls: list[tuple[str, list[str]]] = []
         monkeypatch.setattr(
             os,
-            "execvp",
+            "execv",
             lambda p, a: execv_calls.append((p, list(a))),
         )
         with pytest.raises(SystemExit):
@@ -703,7 +715,68 @@ class TestProcessLoopUpdateAndRestart:
                 home=tmp_path,
             )
         assert not execv_calls
-        assert not any(cmd[0] == "update-dotfiles" for cmd in subprocess_calls)
+        assert not _command_was_called(subprocess_calls, "update-dotfiles")
+
+    def test_missing_update_command_reports_error_and_continues_loop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """update-dotfilesを解決できない場合も次反復へ進み、待機を継続すること。"""
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        counts = iter([1, 0])
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(
+            _process_loop.shutil,
+            "which",
+            lambda command: None if command == "update-dotfiles" else f"/resolved/{command}",
+        )
+
+        def fake_wait(*_a: object, **_kw: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "update-dotfilesコマンドを利用できない" in capsys.readouterr().err
+
+    def test_missing_uv_command_reports_error_and_continues_loop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """再起動用uvを解決できない場合も次反復へ進み、待機を継続すること。"""
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_notes(tmp_path)
+        counts = iter([1, 0])
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(
+            _process_loop.shutil,
+            "which",
+            lambda command: None if command == "uv" else f"/resolved/{command}",
+        )
+
+        def fake_wait(*_a: object, **_kw: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        monkeypatch.setattr(os, "execv", lambda *_a, **_kw: pytest.fail("uv未解決時はexecvを呼ばないこと"))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "uvコマンドを利用できない" in capsys.readouterr().err
 
 
 class TestConsoleTitleReset:
@@ -745,7 +818,7 @@ class TestConsoleTitleReset:
 
         monkeypatch.setattr(_process_loop._console_title, "console_title", fake_console_title)  # pylint: disable=protected-access  # noqa: SLF001
         monkeypatch.setattr(_process_loop._console_title, "set_console_title", title_calls.append)  # pylint: disable=protected-access  # noqa: SLF001
-        monkeypatch.setattr(os, "execvp", _raise_system_exit_0)
+        monkeypatch.setattr(os, "execv", _raise_system_exit_0)
         with pytest.raises(SystemExit):
             atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
         assert entered == ["atk mq process-loop"]

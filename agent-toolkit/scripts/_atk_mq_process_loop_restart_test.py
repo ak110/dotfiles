@@ -27,6 +27,17 @@ from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-
 _has_upstream_diff = _process_loop._has_upstream_diff  # pylint: disable=protected-access
 
 
+@pytest.fixture(autouse=True)
+def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """外部コマンド解決結果をテスト環境のPATHから分離する。"""
+    monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
+
+
+def _command_was_called(calls: list[list[str]], command: str) -> bool:
+    """呼び出し配列の先頭要素を基底名で照合する。"""
+    return any(pathlib.Path(call[0]).stem.lower() == command for call in calls)
+
+
 class TestWaitLoopAutoRestart:
     """待機ループ復帰時の自動更新反映・再起動を公開CLI経由で検証する。"""
 
@@ -45,7 +56,7 @@ class TestWaitLoopAutoRestart:
     ) -> tuple[list[list[str]], list[tuple[str, list[str]]]]:
         """件数と`_wait_for_changes`を固定でモックしてprocess-loopを1回実行する。
 
-        戻り値は(subprocess呼び出し記録, execvp呼び出し記録)。
+        戻り値は(subprocess呼び出し記録, execv呼び出し記録)。
         `changed_file_name`指定時は初回の待機復帰直前に対象ファイルの内容を変更する。
         `dotfiles_root_missing=True`時は`_resolve_dotfiles_root`が`None`を返す
         （`~/dotfiles`未検出）状況を模擬する。
@@ -91,11 +102,11 @@ class TestWaitLoopAutoRestart:
 
         execv_calls: list[tuple[str, list[str]]] = []
 
-        def fake_execvp(path: str, argv: list[str]) -> None:
+        def fake_execv(path: str, argv: list[str]) -> None:
             execv_calls.append((path, list(argv)))
             raise SystemExit(0)
 
-        monkeypatch.setattr(os, "execvp", fake_execvp)
+        monkeypatch.setattr(os, "execv", fake_execv)
 
         argv = ["mq", "process-loop", "--target-repo", str(myrepo), *(extra_argv or [])]
         monkeypatch.setattr(sys, "argv", [str(pathlib.Path(atk.__file__)), *argv])
@@ -112,7 +123,7 @@ class TestWaitLoopAutoRestart:
             has_upstream_diff=False,
             changed_file_name="a.py",
         )
-        assert execv_calls, "ハッシュ差分検知時はos.execvpが呼ばれる必要がある"
+        assert execv_calls, "ハッシュ差分検知時はos.execvが呼ばれる必要がある"
 
     def test_restart_targets_dotfiles_checkout_entry_point(
         self,
@@ -160,7 +171,7 @@ class TestWaitLoopAutoRestart:
             wait_return=False,
             has_upstream_diff=True,
         )
-        assert ["update-dotfiles", "--force"] in subprocess_calls
+        assert _command_was_called(subprocess_calls, "update-dotfiles")
 
     def test_no_upstream_diff_skips_update_dotfiles(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """上流差分なしの場合は`update-dotfiles`が実行されないこと。"""
@@ -170,7 +181,7 @@ class TestWaitLoopAutoRestart:
             wait_return=False,
             has_upstream_diff=False,
         )
-        assert ["update-dotfiles", "--force"] not in subprocess_calls
+        assert not _command_was_called(subprocess_calls, "update-dotfiles")
 
     def test_no_update_flag_skips_check_after_timeout(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """`--no-update`指定時はタイムアウト復帰後の上流差分確認・再起動チェックが行われないこと。"""
@@ -182,7 +193,7 @@ class TestWaitLoopAutoRestart:
             changed_file_name="a.py",
             extra_argv=["--no-update"],
         )
-        assert ["update-dotfiles", "--force"] not in subprocess_calls
+        assert not _command_was_called(subprocess_calls, "update-dotfiles")
         assert not execv_calls
 
     def test_change_detected_skips_update_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -194,7 +205,7 @@ class TestWaitLoopAutoRestart:
             has_upstream_diff=True,
             changed_file_name="a.py",
         )
-        assert ["update-dotfiles", "--force"] not in subprocess_calls
+        assert not _command_was_called(subprocess_calls, "update-dotfiles")
         assert not execv_calls
 
     def test_missing_dotfiles_root_skips_check_entirely(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -211,7 +222,7 @@ class TestWaitLoopAutoRestart:
             changed_file_name="a.py",
             dotfiles_root_missing=True,
         )
-        assert ["update-dotfiles", "--force"] not in subprocess_calls
+        assert not _command_was_called(subprocess_calls, "update-dotfiles")
         assert not execv_calls
 
     @pytest.mark.parametrize(
