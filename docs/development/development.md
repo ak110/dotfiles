@@ -60,11 +60,24 @@ uv sync --reinstall  # .venvを再構築する場合
 - ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
 - 脆弱性検知: dotfilesは実行可能なコマンドラインツール群を配布するため、依存が利用者の実行環境へ
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
-  無効化する方針を採用する。定期監査ワークフローで未解決アラートを`atk mq process-loop`経由で
-  feedback投入する構成とする。
+  無効化する方針を採用する。あわせて`.github/workflows/audit.yaml`が`uv audit`を定期実行し、
+  検出結果をSARIFでCode Scanningへ送る。Dependabot alertsの未解決分は
+  `atk mq process-loop`がfeedbackとして自動投入する（Code Scanning由来のアラートは
+  当該自動投入の対象に含まない）。
   実測でDependabot alertsは有効である（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）。
   自動修正PRの作成は無効である（`gh api repos/ak110/dotfiles/automated-security-fixes`が
   `enabled: false`）。いずれも方針どおりの状態にある
+
+`pyproject.toml`の`dependencies`または`[tool.uv] override-dependencies`でパッケージの版指定を
+変更した場合、`uv lock`・`uv sync`・`uv run`の成功だけでは配布経路の成立を確認できない。
+`override-dependencies`による上書きは当該リポジトリの依存解決にのみ適用され、配布物のメタデータには
+含まれないため、上書きが適用されない利用者環境ではインストールが不能になり得る。上書き設定が
+適用されない状態での依存解決が成立することを`uvx --from . <コマンド名> --help`で実測する。
+コマンド名は`[project.scripts]`が定義するもののうち引数なしで正常終了するものを選ぶ
+（本リポジトリのコマンドはいずれも`--version`を受理しないため`--help`を用いる）。
+実測が失敗した場合は、まず通信障害・パッケージ索引の障害・ビルド環境の不備など版指定以外の原因を
+解消して再実測する。変更した版指定に起因する依存解決不能を確認した場合は、配布物のインストールを
+不能にするため当該版指定を採用しない。
 
 設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`（prekが読む
 設定ファイルで、ファイル名自体は変更しない）を参照する。
