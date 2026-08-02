@@ -3,12 +3,13 @@
 import asyncio
 import collections
 import collections.abc
+import contextlib
 import hashlib
 import html as html_lib
 import json
 import os
 import pathlib
-import threading
+import re
 import typing
 
 import markdown_it
@@ -22,6 +23,7 @@ from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 
+from pytools._internal import claude_common, file_lock
 from pytools._internal.watchdog_events import WATCHED_EVENT_TYPES
 from pytools.claude_plans_viewer import _assets, _state
 
@@ -85,7 +87,16 @@ def _render_fence(
 # 連続選択や前後ナビゲーションでヒットさせつつ、長時間運用でも有界に保つ値とする。
 MARKDOWN_CACHE_MAX_ENTRIES = 128
 MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
-_CREATION_TIME_CACHE_DIR = pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times"
+# 作成日時の永続インデックス。ホスト・root・相対パスの3項をキーとする単一JSONへ集約する。
+# 同一ホスト上でリモートヘルパー（`_remote_helper.py`）も同じファイルを共有するため、
+# キーと値の形式を両実装で一致させる。
+_CREATION_TIME_INDEX_PATH = (
+    pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times" / "index.json"
+)
+# 旧形式（1エントリ1ファイル）のキャッシュ名。sha256 hexdigestと`.json`から成る。
+_LEGACY_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json$")
+# 旧実装が生成した一時ファイル名。`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`。
+_LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 
 
 def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
@@ -228,44 +239,136 @@ class MarkdownCache:
         return self._total_bytes
 
 
-def _cached_creation_time(host: str, rel: str, observed_mtime: float) -> float:
-    """初回観測時の更新日時をホスト名と相対パスごとに永続化する。"""
-    key = hashlib.sha256(f"{host}\0{rel}".encode()).hexdigest()
-    cache_path = _CREATION_TIME_CACHE_DIR / f"{key}.json"
-    cached: float | None = None
+def _index_lock_path() -> pathlib.Path:
+    """作成日時インデックスの排他ロックファイルのパス。"""
+    return _CREATION_TIME_INDEX_PATH.with_name(_CREATION_TIME_INDEX_PATH.name + ".lock")
+
+
+def _index_key(host: str, root_key: str, rel: str) -> str:
+    r"""インデックスのキー。`(host, root, rel)`を`\0`で連結した文字列のsha256 hexdigest。"""
+    return hashlib.sha256(f"{host}\0{root_key}\0{rel}".encode()).hexdigest()
+
+
+def _root_key(root: pathlib.Path) -> str:
+    """インデックスのキーと値へ用いる`root`の正規化表記。"""
+    return str(root.resolve()).replace("\\", "/")
+
+
+def _entry_ctime(entry: typing.Any) -> float | None:
+    """インデックスまたは旧形式のエントリから作成日時を取り出す。取得できない場合はNone。"""
+    value = entry.get("ctime_epoch")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _load_index() -> dict[str, typing.Any]:
+    """インデックスを読み込む。不在・読み取り失敗・形式不正はいずれも空として扱う。"""
     try:
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
-        if payload.get("host") == host and payload.get("path") == rel:
-            value = payload.get("ctime_epoch")
-            if isinstance(value, (int, float)):
-                cached = float(value)
-    except (OSError, json.JSONDecodeError, AttributeError):
-        pass
-    creation_time = min(observed_mtime, cached) if cached is not None else observed_mtime
-    if cached == creation_time:
-        return creation_time
+        payload = json.loads(_CREATION_TIME_INDEX_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {key: value for key, value in payload.items() if isinstance(value, dict)}
+
+
+def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
+    """旧形式のキャッシュを`(host, 相対パス)`から作成日時と実ファイルへの対応として読み込む。
+
+    旧形式は`root`を保持しないため、現在の走査対象と一致するものだけを移行対象にできる。
+    """
+    entries: dict[tuple[str, str], tuple[float, pathlib.Path]] = {}
     try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = cache_path.with_name(f".{cache_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-        temporary.write_text(
-            json.dumps({"host": host, "path": rel, "ctime_epoch": creation_time}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        temporary.replace(cache_path)
+        candidates = [path for path in _CREATION_TIME_INDEX_PATH.parent.iterdir() if _LEGACY_CACHE_NAME_RE.match(path.name)]
     except OSError:
-        return creation_time
-    return creation_time
+        return entries
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        host = payload.get("host")
+        rel = payload.get("path")
+        ctime = _entry_ctime(payload)
+        if isinstance(host, str) and isinstance(rel, str) and ctime is not None:
+            entries[(host, rel)] = (ctime, candidate)
+    return entries
 
 
-def _ctime_epoch(st: os.stat_result, host: str, rel: str) -> float:
-    """作成日時をepoch秒で返す。
+def update_creation_time_index(host: str, root: pathlib.Path, observed: dict[str, float]) -> dict[str, float]:
+    """走査結果の観測時刻をインデックスへ反映し、確定した作成日時を相対パスごとに返す。
+
+    初回観測時の値を作成日時として保持することで、編集で変動する値に依らず並び順を維持する。
+    同一の`(host, root)`に属し今回の走査に現れなかったキーは回収し、
+    別の`root`に属するキーは維持する（`root`ごとに走査対象が異なるため）。
+    旧形式は`host`と相対パスが今回の走査と一致するものだけを取り込み、
+    インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
+    """
+    root_key = _root_key(root)
+    resolved: dict[str, float] = {}
+    with file_lock.exclusive_file_lock(_index_lock_path()):
+        index = _load_index()
+        legacy = _load_legacy_entries()
+        migrated: list[pathlib.Path] = []
+        updated: dict[str, typing.Any] = {}
+        for rel, observed_epoch in observed.items():
+            key = _index_key(host, root_key, rel)
+            cached = _entry_ctime(index.get(key, {}))
+            if cached is None:
+                legacy_entry = legacy.get((host, rel))
+                if legacy_entry is not None:
+                    cached, legacy_path = legacy_entry
+                    migrated.append(legacy_path)
+            creation = min(observed_epoch, cached) if cached is not None else observed_epoch
+            resolved[rel] = creation
+            updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
+        # 書き込み直前に再読込し、ロック外の経路が追加した別`root`のキーを取りこぼさない。
+        merged = _load_index()
+        for key, entry in list(merged.items()):
+            if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
+                del merged[key]
+        merged.update(updated)
+        if claude_common.atomic_write_json(_CREATION_TIME_INDEX_PATH, merged):
+            for legacy_path in migrated:
+                with contextlib.suppress(OSError):
+                    legacy_path.unlink()
+    return resolved
+
+
+def cleanup_creation_time_temporaries() -> None:
+    """作成日時インデックスの残存一時ファイルをロック下で除去する。
+
+    対象は`atomic_write_json`が生成する`index.json.<ランダム文字列>.tmp`と、
+    旧実装が生成した`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`の2形式とする。
+    書き込み途中のファイルを削除しないよう、除去はインデックスと同じロックの保持中に行う。
+    """
+    directory = _CREATION_TIME_INDEX_PATH.parent
+    if not directory.is_dir():
+        return
+    temporary_pattern = f"{_CREATION_TIME_INDEX_PATH.name}.*.tmp"
+    with file_lock.exclusive_file_lock(_index_lock_path()):
+        try:
+            candidates = list(directory.iterdir())
+        except OSError:
+            return
+        for candidate in candidates:
+            if not candidate.match(temporary_pattern) and not _LEGACY_TEMPORARY_NAME_RE.match(candidate.name):
+                continue
+            with contextlib.suppress(OSError):
+                candidate.unlink()
+
+
+def _ctime_epoch(st: os.stat_result) -> float:
+    """観測時点の作成日時候補をepoch秒で返す。
 
     `st_birthtime`（macOS・Windowsで実在し「作成時刻」を表す）を優先し、
-    存在しないプラットフォームでは初回観測時の更新日時を永続キャッシュへ記録する。
-    編集で変動する`st_ctime`を使わず、再起動後も同じ並び順を維持するためである。
+    存在しないプラットフォームでは更新日時を用いる。
+    初回観測時の値を保持する処理は`update_creation_time_index`が担う。
+    編集で変動する`st_ctime`は用いない。
     """
     birthtime = getattr(st, "st_birthtime", None)
-    return float(birthtime) if birthtime is not None else _cached_creation_time(host, rel, float(st.st_mtime))
+    return float(birthtime) if birthtime is not None else float(st.st_mtime)
 
 
 def local_host_info(root: pathlib.Path) -> dict[str, str]:
@@ -290,19 +393,18 @@ def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
 
     `host`は各エントリの`host`フィールドへ埋め込むラベル（通常はサーバー実行ホスト名）。
     """
-    collected: list[_state.FileEntry] = []
+    scanned: list[dict[str, typing.Any]] = []
+    observed: dict[str, float] = {}
     for path in root.rglob("*.md"):
         if not path.is_file() or not is_target_path(path, root):
             continue
         st = path.stat()
         rel = path.relative_to(root).as_posix()
-        item = {
-            "path": rel,
-            "name": path.name,
-            "mtime_epoch": st.st_mtime,
-            "ctime_epoch": _ctime_epoch(st, host, rel),
-        }
-        collected.append(_state.make_file_entry(host, item))
+        observed[rel] = _ctime_epoch(st)
+        scanned.append({"path": rel, "name": path.name, "mtime_epoch": st.st_mtime})
+    # 走査後に一度だけインデックスを更新し、同じ`(host, root)`の不在エントリを回収する。
+    resolved = update_creation_time_index(host, root, observed)
+    collected = [_state.make_file_entry(host, {**item, "ctime_epoch": resolved[item["path"]]}) for item in scanned]
     collected.sort(key=lambda entry: entry.ctime_epoch, reverse=True)
     return collected
 

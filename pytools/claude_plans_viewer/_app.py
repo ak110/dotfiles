@@ -76,6 +76,8 @@ def create_app(
     `ssh_runner=None`のときは`default_ssh_runner`を使う（`/api/file`/`/api/raw`の
     リモート参照経路でのみ使用する。watch経路は`RemoteWatcher`が直接asyncio subprocessを起動する）。
     """
+    # 前回の異常終了で残った作成日時インデックスの一時ファイルを起動時に除去する。
+    _local.cleanup_creation_time_temporaries()
     app = quart.Quart(__name__)
     renderer = _local.make_md_renderer()
     markdown_cache = _local.MarkdownCache()

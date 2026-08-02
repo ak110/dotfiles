@@ -22,6 +22,12 @@ _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
 _QUEUE_GET_TIMEOUT_SEC = _TEST_DEBOUNCE_SEC + 0.3
 
 
+@pytest.fixture(autouse=True)
+def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """作成日時インデックスを一時領域へ隔離し、開発者環境の利用者キャッシュへ書き込まないようにする。"""
+    monkeypatch.setattr(_local, "_CREATION_TIME_INDEX_PATH", tmp_path / "creation-times" / "index.json")
+
+
 class TestSubscribers:
     """購読者管理(`subscribe`・`unsubscribe`・`schedule_broadcast`)のテスト。"""
 

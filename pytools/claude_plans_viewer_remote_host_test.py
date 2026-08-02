@@ -2,8 +2,11 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
+import socket
+import sys
 import typing
 from pathlib import Path
 
@@ -14,6 +17,14 @@ from pytools.claude_plans_viewer_remote_test_helpers import _FakeSshRunner
 from pytools.claude_plans_viewer_remote_test_helpers import aiter_lines as _aiter_lines
 from pytools.claude_plans_viewer_remote_test_helpers import attach_fake_connection as _attach_fake_connection
 from pytools.claude_plans_viewer_remote_test_helpers import seed_remote_cache as _seed_remote_cache
+
+
+@pytest.fixture(autouse=True)
+def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """作成日時インデックスを一時領域へ隔離し、開発者環境の利用者キャッシュへ書き込まないようにする。"""
+    index_path = tmp_path / "creation-times" / "index.json"
+    monkeypatch.setattr(_local, "_CREATION_TIME_INDEX_PATH", index_path)
+    monkeypatch.setattr(_remote_helper, "_CREATION_TIME_INDEX_PATH", index_path)
 
 
 class TestFetchRemoteFile:
@@ -121,7 +132,7 @@ class TestRemoteHostIntegration:
         local = tmp_path / "local.md"
         local.write_text("local", encoding="utf-8")
         os.utime(local, (3_000.0, 3_000.0))
-        monkeypatch.setattr(_local, "_ctime_epoch", lambda _st, _host, _rel: 2_000.0)
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda _st: 2_000.0)
 
         app = _app.create_app(
             tmp_path,
@@ -154,8 +165,7 @@ class TestRemoteHostIntegration:
     ) -> None:
         """`/api/search`がローカルと全リモートホストの本文一致結果を統合する。"""
         (tmp_path / "local.md").write_text("共通検索語", encoding="utf-8")
-        monkeypatch.setattr(_local, "_CREATION_TIME_CACHE_DIR", tmp_path / "cache")
-        monkeypatch.setattr(_local, "_ctime_epoch", lambda _st, _host, _rel: 1.0)
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda _st: 1.0)
 
         async def runner(host: str, op: str, args: list[str]) -> str:
             assert op == "search"
@@ -186,7 +196,7 @@ class TestRemoteHostIntegration:
         path.write_text("初回", encoding="utf-8")
         os.utime(path, (1_000.0, 1_000.0))
         monkeypatch.setattr(_remote_helper, "ROOT", root)
-        monkeypatch.setattr(_remote_helper, "_CREATION_TIME_CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(_remote_helper, "_ctime_epoch", lambda st: float(st.st_mtime))
 
         first = _remote_helper._scan_entries()[0]  # pylint: disable=protected-access  # noqa: SLF001
         path.write_text("更新後", encoding="utf-8")
@@ -195,6 +205,80 @@ class TestRemoteHostIntegration:
 
         assert first["ctime_epoch"] == 1_000.0
         assert second["ctime_epoch"] == first["ctime_epoch"]
+
+    def test_local_and_remote_share_migrated_creation_time_index(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """旧形式を移行した後、ローカル実装とリモート実装が同じ作成日時を読み取る。
+
+        両実装は同一ホスト上で同じインデックスファイルを共有するため、
+        キーと値の形式が一致していなければ互いの記録を読み取れない。
+        """
+        root = tmp_path / "plans"
+        root.mkdir()
+        path = root / "remote.md"
+        path.write_text("初回", encoding="utf-8")
+        os.utime(path, (2_000.0, 2_000.0))
+        host = socket.gethostname()
+        index_path: Path = _local._CREATION_TIME_INDEX_PATH  # pylint: disable=protected-access  # noqa: SLF001
+        digest = hashlib.sha256(f"{host}\0remote.md".encode()).hexdigest()
+        legacy = index_path.parent / f"{digest}.json"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(json.dumps({"host": host, "path": "remote.md", "ctime_epoch": 500.0}), encoding="utf-8")
+        monkeypatch.setattr(_remote_helper, "ROOT", root)
+        monkeypatch.setattr(_remote_helper, "_ctime_epoch", lambda st: float(st.st_mtime))
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: float(st.st_mtime))
+
+        remote_entry = _remote_helper._scan_entries()[0]  # pylint: disable=protected-access  # noqa: SLF001
+        local_entry = _local.list_files(root, host)[0]
+
+        assert remote_entry["ctime_epoch"] == 500.0
+        assert local_entry.ctime_epoch == 500.0
+        assert not legacy.exists()
+
+    def test_remote_cleanup_removes_only_index_temporaries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """リモート側の一時ファイル除去はインデックス一時ファイルだけを対象とする。"""
+        index_path: Path = _remote_helper._CREATION_TIME_INDEX_PATH  # pylint: disable=protected-access  # noqa: SLF001
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text("{}", encoding="utf-8")
+        lock_path = index_path.with_name(index_path.name + ".lock")
+        lock_path.write_text("", encoding="utf-8")
+        temporary = index_path.with_name(f"{index_path.name}.abc123.tmp")
+        temporary.write_text("", encoding="utf-8")
+        legacy_digest = "a" * 64
+        legacy_temporary = index_path.parent / f".{legacy_digest}.json.100.200.tmp"
+        legacy_temporary.write_text("", encoding="utf-8")
+        monkeypatch.setattr(sys, "argv", ["_remote_helper.py", "unknown-op"])
+
+        assert _remote_helper.main() == 2
+
+        assert index_path.is_file()
+        assert lock_path.is_file()
+        assert not temporary.exists()
+        assert not legacy_temporary.exists()
+
+    def test_remote_index_write_uses_expected_temporary_pattern(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """リモート側の書き込みが`index.json.<ランダム文字列>.tmp`形式の一時ファイルを用いる。"""
+        root = tmp_path / "plans"
+        root.mkdir()
+        (root / "remote.md").write_text("初回", encoding="utf-8")
+        index_path: Path = _remote_helper._CREATION_TIME_INDEX_PATH  # pylint: disable=protected-access  # noqa: SLF001
+        observed_names: list[str] = []
+        original_replace = Path.replace
+
+        def replace(self: Path, target: typing.Any) -> Path:
+            observed_names.append(self.name)
+            return original_replace(self, target)
+
+        monkeypatch.setattr(_remote_helper, "ROOT", root)
+        monkeypatch.setattr(Path, "replace", replace)
+
+        _remote_helper._scan_entries()  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert observed_names
+        assert all(name.startswith(f"{index_path.name}.") and name.endswith(".tmp") for name in observed_names)
 
     @pytest.mark.asyncio
     async def test_api_file_for_remote_host_renders(self, tmp_path: Path):

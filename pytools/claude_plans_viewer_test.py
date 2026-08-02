@@ -1,5 +1,6 @@
 """pytools.claude_plans_viewer のテスト。"""
 
+import hashlib
 import io
 import json
 import logging
@@ -7,10 +8,12 @@ import os
 import re
 import subprocess
 import sys
+import typing
 from pathlib import Path
 
 import pytest
 
+from pytools._internal import claude_common
 from pytools.claude_plans_viewer import _assets, _cli, _config, _console_title, _local
 
 # _state._BROADCAST_DEBOUNCE_SEC と同値（0.3秒）。debounce窓の秒数。
@@ -21,6 +24,12 @@ _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
 # `schedule_broadcast`経由のrefresh待ちは`_BROADCAST_DEBOUNCE_SEC`後に配信されるため、
 # debounce窓にマージン0.7秒を加えた値をタイムアウトとする。
 _QUEUE_GET_TIMEOUT_SEC = _BROADCAST_DEBOUNCE_SEC + 0.7
+
+
+@pytest.fixture(autouse=True)
+def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """作成日時インデックスを一時領域へ隔離し、開発者環境の利用者キャッシュへ書き込まないようにする。"""
+    monkeypatch.setattr(_local, "_CREATION_TIME_INDEX_PATH", tmp_path / "creation-times" / "index.json")
 
 
 class TestListFiles:
@@ -42,7 +51,7 @@ class TestListFiles:
         new_path.write_text("new", encoding="utf-8")
         os.utime(new_path, (2_000.0, 2_000.0))
 
-        monkeypatch.setattr(_local, "_ctime_epoch", lambda st, _host, _rel: -st.st_mtime)
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: -st.st_mtime)
 
         entries = _local.list_files(tmp_path, "local-host")
 
@@ -87,8 +96,10 @@ class TestListFiles:
         """生成時刻が無い環境では、編集後も初回観測時の作成日時を維持する。"""
         root = tmp_path / "plans"
         root.mkdir()
-        cache = tmp_path / "cache"
-        monkeypatch.setattr(_local, "_CREATION_TIME_CACHE_DIR", cache)
+        index_path = tmp_path / "cache" / "index.json"
+        monkeypatch.setattr(_local, "_CREATION_TIME_INDEX_PATH", index_path)
+        # `st_birthtime`の有無で観測値が変わらないよう、更新日時を観測値として固定する。
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: float(st.st_mtime))
         path = root / "plan.md"
         path.write_text("初回", encoding="utf-8")
         os.utime(path, (1_000.0, 1_000.0))
@@ -100,7 +111,11 @@ class TestListFiles:
 
         assert first.ctime_epoch == 1_000.0
         assert second.ctime_epoch == first.ctime_epoch
-        assert list(cache.glob("*.json"))
+        # 単一インデックスへ集約され、値は`(host, root, 相対パス)`と作成日時を保持する。
+        stored = json.loads(index_path.read_text(encoding="utf-8"))
+        assert [entry["path"] for entry in stored.values()] == ["plan.md"]
+        assert [entry["host"] for entry in stored.values()] == ["local-host"]
+        assert [entry["ctime_epoch"] for entry in stored.values()] == [1_000.0]
 
 
 class TestSearchFiles:
@@ -184,6 +199,124 @@ class TestTargetPathConsistency:
         assert _local.search_files(root, "本文") == listed
         assert _local.is_target_path(root / "top.md", root)
         assert not _local.is_target_path(root / ".cache" / "hidden.md", root)
+
+
+class TestCreationTimeIndex:
+    """作成日時の単一インデックスの回収・移行・一時ファイル除去を検証する。"""
+
+    @staticmethod
+    def _legacy_path(index_path: Path, host: str, rel: str) -> Path:
+        """旧形式（1エントリ1ファイル）のキャッシュパスを組み立てる。"""
+        digest = hashlib.sha256(f"{host}\0{rel}".encode()).hexdigest()
+        return index_path.parent / f"{digest}.json"
+
+    @staticmethod
+    def _write_legacy(path: Path, host: str, rel: str, ctime_epoch: float) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"host": host, "path": rel, "ctime_epoch": ctime_epoch}), encoding="utf-8")
+
+    @pytest.fixture(name="index_path")
+    def _index_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        path = tmp_path / "cache" / "index.json"
+        monkeypatch.setattr(_local, "_CREATION_TIME_INDEX_PATH", path)
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: float(st.st_mtime))
+        return path
+
+    def test_absent_entries_are_pruned_and_other_roots_are_kept(self, tmp_path: Path, index_path: Path):
+        """走査結果に現れないキーを回収し、別の`root`に属するキーは維持する。"""
+        first_root = tmp_path / "first"
+        second_root = tmp_path / "second"
+        first_root.mkdir()
+        second_root.mkdir()
+        (first_root / "keep.md").write_text("x", encoding="utf-8")
+        (first_root / "gone.md").write_text("x", encoding="utf-8")
+        (second_root / "other.md").write_text("x", encoding="utf-8")
+
+        _local.list_files(first_root, "local-host")
+        _local.list_files(second_root, "local-host")
+        (first_root / "gone.md").unlink()
+        _local.list_files(first_root, "local-host")
+
+        stored = json.loads(index_path.read_text(encoding="utf-8"))
+        assert sorted((entry["root"].rsplit("/", 1)[-1], entry["path"]) for entry in stored.values()) == [
+            ("first", "keep.md"),
+            ("second", "other.md"),
+        ]
+
+    def test_migrates_matching_legacy_entry(self, tmp_path: Path, index_path: Path):
+        """`host`と相対パスが走査対象と一致する旧形式の作成日時を取り込み、取り込んだ旧形式を削除する。"""
+        root = tmp_path / "plans"
+        root.mkdir()
+        path = root / "plan.md"
+        path.write_text("x", encoding="utf-8")
+        os.utime(path, (2_000.0, 2_000.0))
+        legacy = self._legacy_path(index_path, "local-host", "plan.md")
+        self._write_legacy(legacy, "local-host", "plan.md", 500.0)
+
+        entry = _local.list_files(root, "local-host")[0]
+
+        assert entry.ctime_epoch == 500.0
+        assert not legacy.exists()
+
+    def test_keeps_legacy_entry_not_matching_current_scan(self, tmp_path: Path, index_path: Path):
+        """走査対象と対応しない旧形式は別の`root`の記録であり得るため、移行も削除もしない。"""
+        root = tmp_path / "plans"
+        root.mkdir()
+        (root / "plan.md").write_text("x", encoding="utf-8")
+        legacy = self._legacy_path(index_path, "local-host", "elsewhere.md")
+        self._write_legacy(legacy, "local-host", "elsewhere.md", 500.0)
+
+        _local.list_files(root, "local-host")
+
+        assert legacy.exists()
+        stored = json.loads(index_path.read_text(encoding="utf-8"))
+        assert [entry["path"] for entry in stored.values()] == ["plan.md"]
+
+    def test_keeps_legacy_entry_when_index_write_fails(
+        self,
+        tmp_path: Path,
+        index_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """インデックスの書き込みに失敗した場合は、再試行のため旧形式を残す。"""
+        root = tmp_path / "plans"
+        root.mkdir()
+        path = root / "plan.md"
+        path.write_text("x", encoding="utf-8")
+        os.utime(path, (2_000.0, 2_000.0))
+        legacy = self._legacy_path(index_path, "local-host", "plan.md")
+        self._write_legacy(legacy, "local-host", "plan.md", 500.0)
+
+        def failing_write(*args: typing.Any, **kwargs: typing.Any) -> bool:
+            del args, kwargs
+            return False
+
+        monkeypatch.setattr(claude_common, "atomic_write_json", failing_write)
+
+        entry = _local.list_files(root, "local-host")[0]
+
+        assert entry.ctime_epoch == 500.0
+        assert legacy.exists()
+        assert not index_path.exists()
+
+    def test_cleanup_removes_only_temporaries(self, index_path: Path):
+        """一時ファイルだけを除去し、インデックスとロックファイルは残す。"""
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text("{}", encoding="utf-8")
+        lock_path = index_path.with_name(index_path.name + ".lock")
+        lock_path.write_text("", encoding="utf-8")
+        new_temporary = index_path.with_name(f"{index_path.name}.abc123.tmp")
+        new_temporary.write_text("", encoding="utf-8")
+        legacy_digest = "a" * 64
+        legacy_temporary = index_path.parent / f".{legacy_digest}.json.100.200.tmp"
+        legacy_temporary.write_text("", encoding="utf-8")
+
+        _local.cleanup_creation_time_temporaries()
+
+        assert index_path.is_file()
+        assert lock_path.is_file()
+        assert not new_temporary.exists()
+        assert not legacy_temporary.exists()
 
 
 class TestLocalHostInfo:
