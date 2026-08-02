@@ -4,8 +4,6 @@ description: 他エージェントから起動される。
 model: haiku
 effort: medium
 # Haiku固定: 自身は判断・実装を担わず、codex-execへの委譲と結果検収に専念するため。
-skills:
-  - agent-toolkit:codex-exec
 tools: Skill, ToolSearch, Agent, SendMessage, mcp__codex, Read, Bash
 user-invocable: false
 ---

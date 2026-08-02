@@ -4,8 +4,6 @@ description: 他エージェントから起動される。
 model: haiku
 effort: medium
 # Haiku固定: 自身は実装を担わず、codex-execへの委譲、結果検収、指摘に関する応答の転記に専念するため。
-skills:
-  - agent-toolkit:codex-exec
 tools: Skill, ToolSearch, Agent, SendMessage, mcp__codex, Read, Bash
 user-invocable: false
 ---
@@ -81,6 +79,8 @@ user-invocable: false
 
 各委譲の退避・変更検知・未完了返却は、工程1でReadする`plan-codex-review.md`
 「用途別task reference」節に従い、結果を`worktree_check_results`へ記録する。
+`worktree_check_results`には、継続起動を含むすべての起動で当該helperの`capture`・`compare`実測結果を記載する。
+委譲の有無にかかわらず、実測を経ない記述で当該欄を埋めない。
 
 1. `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review.md`をReadし、
    同referenceからレビュー系と実装・修正系の完結したタスク本文を構成する
@@ -224,6 +224,10 @@ review_completed: true | false
 
 `implementation_thread_id`・`review_thread_id`・両Agent識別子は本エージェント内の系統継続の記録であり、
 呼び出し元が実装担当へ引き継ぐ値ではない。
+
+`status:`行と`review_completed:`行は完了報告の最終行側へ、途中に空行を置かず連続して配置する。
+当該2行より後ろへは空行と閉じフェンス以外の文字（地の文・チェックリスト・注記・依頼文）を置かない。
+補足が必要な場合は当該2行より前へ置く。
 
 完了報告は1回だけ生成し、実際の受領経路（ツール戻り値または完了通知）を通じて返す。
 `SendMessage`による能動送付と、待機対象の結果を欠く完了報告は行わない。

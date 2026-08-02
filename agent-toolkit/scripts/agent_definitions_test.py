@@ -60,13 +60,17 @@ def _h2_section(text: str, heading: str) -> str:
 def test_codex_exec_agents_allow_nested_agent_fallback() -> None:
     """Codex利用不能時のClaude代替と完了報告受領経路が利用可能であること。"""
     missing: dict[str, list[str]] = {}
+    delegating: list[str] = []
     for path in sorted(_AGENTS_DIR.glob("*.md")):
         parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
-        metadata, _ = parsed
-        skills = metadata.get("skills")
-        if not isinstance(skills, list) or "agent-toolkit:codex-exec" not in skills:
+        metadata, body = parsed
+        # 委譲先の判定は定義本文のスキル参照で行う。
+        # frontmatterの`skills:`によるプリロードはSkillツールを経由せず
+        # セッション状態フラグが真化しないため採用しておらず、抽出条件の根拠にならない。
+        if "agent-toolkit:codex-exec" not in body:
             continue
+        delegating.append(path.name)
         tools = metadata.get("tools")
         assert isinstance(tools, str)
         allowed = {name.strip() for name in tools.split(",")}
@@ -74,6 +78,8 @@ def test_codex_exec_agents_allow_nested_agent_fallback() -> None:
         if required:
             missing[path.name] = required
 
+    # 抽出条件の変更で対象が0件になると本検査が無条件成立へ退行するため、検出自体を確認する。
+    assert delegating, "codex-execへ委譲するエージェント定義を検出できない"
     assert not missing, f"Claude代替に必要なツールを許可していないcodex-exec利用エージェント: {missing}"
 
     skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
