@@ -80,10 +80,17 @@ _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 
 
 def _is_target_path(path: pathlib.Path) -> bool:
+    """`path`が`.md`拡張子・`ROOT`配下・非dotdirの全条件を満たすか判定する。
+
+    `_local.py`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
+    `ROOT`自身がドット配下でも通るよう、判定は`ROOT`からの相対パスに対して行う。
+    シンボリックリンクを解決してから相対化するため、`ROOT`外を指すリンクは対象外となる
+    （`_resolve_target`が単一ファイル取得へ課す範囲と一致させる）。
+    """
     if path.suffix != ".md":
         return False
     try:
-        rel = path.relative_to(ROOT)
+        rel = path.resolve().relative_to(ROOT.resolve())
     except ValueError:
         return False
     return not any(p.startswith(".") for p in rel.parts)
@@ -107,6 +114,19 @@ def _exclusive_file_lock(path: pathlib.Path) -> typing.Iterator[None]:
 def _index_lock_path() -> pathlib.Path:
     """作成日時インデックスの排他ロックファイルのパス。"""
     return _CREATION_TIME_INDEX_PATH.with_name(_CREATION_TIME_INDEX_PATH.name + ".lock")
+
+
+def _enter_index_lock(stack: contextlib.ExitStack) -> bool:
+    """作成日時インデックスの排他ロックを`stack`へ登録する。取得できない場合は`False`を返す。
+
+    キャッシュディレクトリを作成・書き込みできない環境ではロックファイルを開けず`OSError`となる。
+    作成日時キャッシュの失敗で一覧機能を止めないため、当該例外は呼び出し元へ伝播させない。
+    """
+    try:
+        stack.enter_context(_exclusive_file_lock(_index_lock_path()))
+    except OSError:
+        return False
+    return True
 
 
 def _index_key(host: str, root_key: str, rel: str) -> str:
@@ -194,10 +214,13 @@ def _update_creation_time_index(host: str, observed: dict[str, float], *, prune:
     単一ファイルの更新通知は走査結果ではないため`prune=False`で呼ぶ。
     旧形式は`host`と相対パスが今回の対象と一致するものだけを取り込み、
     インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
+    ロックを取得できない場合はインデックスの更新を諦め、観測値をそのまま返す。
     """
     root_key = _root_key()
     resolved: dict[str, float] = {}
-    with _exclusive_file_lock(_index_lock_path()):
+    with contextlib.ExitStack() as stack:
+        if not _enter_index_lock(stack):
+            return dict(observed)
         index = _load_index()
         legacy = _load_legacy_entries()
         migrated: list[pathlib.Path] = []
@@ -213,14 +236,13 @@ def _update_creation_time_index(host: str, observed: dict[str, float], *, prune:
             creation = min(observed_epoch, cached) if cached is not None else observed_epoch
             resolved[rel] = creation
             updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
-        # 書き込み直前に再読込し、ロック外の経路が追加した別`root`のキーを取りこぼさない。
-        merged = _load_index()
+        # インデックスを更新する経路は全て同じロックを保持するため、冒頭で読み込んだ内容へ直接反映する。
         if prune:
-            for key, entry in list(merged.items()):
+            for key, entry in list(index.items()):
                 if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
-                    del merged[key]
-        merged.update(updated)
-        if _atomic_write_index(merged):
+                    del index[key]
+        index.update(updated)
+        if _atomic_write_index(index):
             for legacy_path in migrated:
                 with contextlib.suppress(OSError):
                     legacy_path.unlink()
@@ -232,12 +254,15 @@ def _cleanup_creation_time_temporaries() -> None:
 
     対象は`index.json.<ランダム文字列>.tmp`と、
     旧実装が生成した`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`の2形式とする。
+    ロックを取得できない場合は何もせずに返る。
     """
     directory = _CREATION_TIME_INDEX_PATH.parent
     if not directory.is_dir():
         return
     temporary_pattern = f"{_CREATION_TIME_INDEX_PATH.name}.*.tmp"
-    with _exclusive_file_lock(_index_lock_path()):
+    with contextlib.ExitStack() as stack:
+        if not _enter_index_lock(stack):
+            return
         try:
             candidates = list(directory.iterdir())
         except OSError:

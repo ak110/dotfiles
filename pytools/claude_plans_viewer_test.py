@@ -318,6 +318,33 @@ class TestCreationTimeIndex:
         assert not new_temporary.exists()
         assert not legacy_temporary.exists()
 
+    def test_lock_failure_keeps_listing(self, tmp_path: Path, index_path: Path):
+        """ロックを取得できない場合も一覧は成立し、観測値がそのまま作成日時になること。"""
+        # ロックファイル名のディレクトリを配置し、ロックファイルを開けない状態を再現する。
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.with_name(index_path.name + ".lock").mkdir()
+        root = tmp_path / "plans"
+        root.mkdir()
+        target = root / "note.md"
+        target.write_text("本文", encoding="utf-8")
+
+        entries = _local.list_files(root, "local-host")
+
+        assert [entry.path for entry in entries] == ["note.md"]
+        assert entries[0].ctime_epoch == target.stat().st_mtime
+        assert not index_path.exists()
+
+    def test_lock_failure_skips_cleanup(self, index_path: Path):
+        """ロックを取得できない場合の一時ファイル除去は無動作で返ること。"""
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.with_name(index_path.name + ".lock").mkdir()
+        temporary = index_path.with_name(f"{index_path.name}.abc123.tmp")
+        temporary.write_text("", encoding="utf-8")
+
+        _local.cleanup_creation_time_temporaries()
+
+        assert temporary.is_file()
+
 
 class TestLocalHostInfo:
     """local_host_info のテスト。"""

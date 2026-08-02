@@ -441,6 +441,37 @@ class TestRemoteHostIntegration:
         assert not temporary.exists()
         assert not legacy_temporary.exists()
 
+    def test_remote_lock_failure_keeps_scan(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """リモート側でロックを取得できない場合も走査は成立し、観測値がそのまま作成日時になること。"""
+        index_path: Path = _remote_helper._CREATION_TIME_INDEX_PATH  # pylint: disable=protected-access  # noqa: SLF001
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        # ロックファイル名のディレクトリを配置し、ロックファイルを開けない状態を再現する。
+        index_path.with_name(index_path.name + ".lock").mkdir()
+        root = tmp_path / "plans"
+        root.mkdir()
+        target = root / "remote.md"
+        target.write_text("初回", encoding="utf-8")
+        monkeypatch.setattr(_remote_helper, "ROOT", root)
+        monkeypatch.setattr(_remote_helper, "_ctime_epoch", lambda st: float(st.st_mtime))
+
+        entries = _remote_helper._scan_entries()  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert [entry["path"] for entry in entries] == ["remote.md"]
+        assert entries[0]["ctime_epoch"] == target.stat().st_mtime
+        assert not index_path.exists()
+
+    def test_remote_lock_failure_skips_cleanup(self) -> None:
+        """リモート側でロックを取得できない場合の一時ファイル除去は無動作で返ること。"""
+        index_path: Path = _remote_helper._CREATION_TIME_INDEX_PATH  # pylint: disable=protected-access  # noqa: SLF001
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.with_name(index_path.name + ".lock").mkdir()
+        temporary = index_path.with_name(f"{index_path.name}.abc123.tmp")
+        temporary.write_text("", encoding="utf-8")
+
+        _remote_helper._cleanup_creation_time_temporaries()  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert temporary.is_file()
+
     def test_remote_index_write_uses_expected_temporary_pattern(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """リモート側の書き込みが`index.json.<ランダム文字列>.tmp`形式の一時ファイルを用いる。"""
         root = tmp_path / "plans"

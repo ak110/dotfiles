@@ -106,6 +106,7 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     リモート側`_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
+    シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。
     """
     if path.suffix != ".md":
         return False
@@ -244,6 +245,19 @@ def _index_lock_path() -> pathlib.Path:
     return _CREATION_TIME_INDEX_PATH.with_name(_CREATION_TIME_INDEX_PATH.name + ".lock")
 
 
+def _enter_index_lock(stack: contextlib.ExitStack) -> bool:
+    """作成日時インデックスの排他ロックを`stack`へ登録する。取得できない場合は`False`を返す。
+
+    キャッシュディレクトリを作成・書き込みできない環境ではロックファイルを開けず`OSError`となる。
+    作成日時キャッシュの失敗で一覧機能を止めないため、当該例外は呼び出し元へ伝播させない。
+    """
+    try:
+        stack.enter_context(file_lock.exclusive_file_lock(_index_lock_path()))
+    except OSError:
+        return False
+    return True
+
+
 def _index_key(host: str, root_key: str, rel: str) -> str:
     r"""インデックスのキー。`(host, root, rel)`を`\0`で連結した文字列のsha256 hexdigest。"""
     return hashlib.sha256(f"{host}\0{root_key}\0{rel}".encode()).hexdigest()
@@ -304,10 +318,13 @@ def update_creation_time_index(host: str, root: pathlib.Path, observed: dict[str
     別の`root`に属するキーは維持する（`root`ごとに走査対象が異なるため）。
     旧形式は`host`と相対パスが今回の走査と一致するものだけを取り込み、
     インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
+    ロックを取得できない場合はインデックスの更新を諦め、観測値をそのまま返す。
     """
     root_key = _root_key(root)
     resolved: dict[str, float] = {}
-    with file_lock.exclusive_file_lock(_index_lock_path()):
+    with contextlib.ExitStack() as stack:
+        if not _enter_index_lock(stack):
+            return dict(observed)
         index = _load_index()
         legacy = _load_legacy_entries()
         migrated: list[pathlib.Path] = []
@@ -323,13 +340,12 @@ def update_creation_time_index(host: str, root: pathlib.Path, observed: dict[str
             creation = min(observed_epoch, cached) if cached is not None else observed_epoch
             resolved[rel] = creation
             updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
-        # 書き込み直前に再読込し、ロック外の経路が追加した別`root`のキーを取りこぼさない。
-        merged = _load_index()
-        for key, entry in list(merged.items()):
+        # インデックスを更新する経路は全て同じロックを保持するため、冒頭で読み込んだ内容へ直接反映する。
+        for key, entry in list(index.items()):
             if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
-                del merged[key]
-        merged.update(updated)
-        if claude_common.atomic_write_json(_CREATION_TIME_INDEX_PATH, merged):
+                del index[key]
+        index.update(updated)
+        if claude_common.atomic_write_json(_CREATION_TIME_INDEX_PATH, index):
             for legacy_path in migrated:
                 with contextlib.suppress(OSError):
                     legacy_path.unlink()
@@ -342,12 +358,15 @@ def cleanup_creation_time_temporaries() -> None:
     対象は`atomic_write_json`が生成する`index.json.<ランダム文字列>.tmp`と、
     旧実装が生成した`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`の2形式とする。
     書き込み途中のファイルを削除しないよう、除去はインデックスと同じロックの保持中に行う。
+    ロックを取得できない場合は何もせずに返る。
     """
     directory = _CREATION_TIME_INDEX_PATH.parent
     if not directory.is_dir():
         return
     temporary_pattern = f"{_CREATION_TIME_INDEX_PATH.name}.*.tmp"
-    with file_lock.exclusive_file_lock(_index_lock_path()):
+    with contextlib.ExitStack() as stack:
+        if not _enter_index_lock(stack):
+            return
         try:
             candidates = list(directory.iterdir())
         except OSError:
