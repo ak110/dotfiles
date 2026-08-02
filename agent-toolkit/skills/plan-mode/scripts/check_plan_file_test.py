@@ -1053,11 +1053,12 @@ def test_deprecated_identifier_excludes_git_and_plan_file(
 
 
 _META_NORM_PLAN_BODY = (
-    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n"
-    "### `foo.md`\n\n```text\n+- 起動時にnameを指定しない\n```\n"
+    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/foo.md`（新設）\n\n"
+    "### `agent-toolkit/rules/foo.md`\n\n```text\n+- 起動時にnameを指定しない\n```\n"
 )
 _NO_TRIGGER_PLAN_BODY = (
-    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n### `foo.md`\n\n```text\n+- 起動手順を追記する\n```\n"
+    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/foo.md`（新設）\n\n"
+    "### `agent-toolkit/rules/foo.md`\n\n```text\n+- 起動手順を追記する\n```\n"
 )
 
 
@@ -1096,6 +1097,30 @@ def test_retroactive_scan_record(
     assert main() == (1 if expect_error else 0)
     captured = capsys.readouterr()
     assert ("遡及スキャン記録の不足の疑い" in captured.err) is expect_error
+
+
+def test_retroactive_scan_not_required_for_non_agent_doc_targets(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象ファイルがエージェント向け文書でない計画では遡及スキャン記録を要求しない。
+
+    対象ファイルが`docs/development/development.md`のみの計画で、変更後文面に既存の`##`見出しを
+    含む検体を用いる。対象ファイル判定の追加前は当該見出しで過検出していた。
+    """
+    target = tmp_path / "docs" / "development" / "development.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("# 開発\n", encoding="utf-8")
+    body = (
+        _REFERENCE_ENUMERATION_SECTION + "## 変更内容\n\n### 対象ファイル一覧\n\n"
+        "- [ ] `docs/development/development.md`（現行1行）\n\n"
+        "### `docs/development/development.md`\n\n```text\n## 既存見出し\n\n説明を追記する。\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "遡及スキャン記録の不足の疑い" not in capsys.readouterr().err
 
 
 _EXISTING_TARGET_PLAN_BODY = (
@@ -1952,8 +1977,8 @@ def test_retroactive_scan_words_in_fenced_example_do_not_satisfy_requirement(
 ) -> None:
     body = (
         "## 調査結果\n\n````text\n対象パターン\n検出件数\n対応方針\n````\n\n"
-        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n"
-        "### `foo.md`\n\n```text\n+- 起動時にnameを指定しない\n```\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/foo.md`（新設）\n\n"
+        "### `agent-toolkit/rules/foo.md`\n\n```text\n+- 起動時にnameを指定しない\n```\n"
     )
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])

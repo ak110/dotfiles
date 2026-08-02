@@ -336,6 +336,21 @@ class TestIsAgentDocTargetFile:
     def test_matches_chezmoi_dot_claude_skills(self) -> None:
         assert _plan_format.is_agent_doc_target_file(".chezmoi-source/dot_claude/skills/refine-prompt/SKILL.md")
 
+    @pytest.mark.parametrize(
+        "path",
+        [
+            ".chezmoi-source/dot_claude/rules/myprojects.md.tmpl",
+            ".chezmoi-source/dot_claude/skills/example/SKILL.md.tmpl",
+        ],
+    )
+    def test_matches_chezmoi_markdown_template(self, path: str) -> None:
+        """chezmoiテンプレートも配布先ではエージェント向け文書として読み込まれるため対象とする。"""
+        assert _plan_format.is_agent_doc_target_file(path)
+
+    def test_does_not_match_unrelated_template(self) -> None:
+        """`.tmpl`終端の受理を配布元のエージェント向け文書以外へ広げない。"""
+        assert not _plan_format.is_agent_doc_target_file(".chezmoi-source/dot_config/git/config.md.tmpl")
+
     def test_matches_agents_top_md(self) -> None:
         assert _plan_format.is_agent_doc_target_file("AGENTS.md")
 

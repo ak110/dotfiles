@@ -23,7 +23,8 @@ r"""計画ファイルの軽量機械チェック。
   削除を指示する語が現れているか
 - `#### 廃止・改名対象一覧`H4節が列挙する識別子（ファイルパス・関数名・クラス名・定数名）が
   リポジトリ内に定義として残存していないか
-- `## 変更内容`の各H3節`text`コードブロックの追加分がメタ規範パターン（全称禁止表現・
+- `## 変更内容`のH3節のうちコーディングエージェント向け文書を対象とするものについて、
+  `text`コードブロックの追加分がメタ規範パターン（全称禁止表現・
   汎用禁止形バレット・`##`以上の見出し）に該当する場合、`## 調査結果`へ遡及スキャンの
   必須3語（対象パターン・検出件数・対応方針）が揃っているか
 - `### 対象ファイル一覧`が`（新設）`マーカーを持たない項目を含む場合、`## 調査結果`へ
@@ -91,6 +92,9 @@ import re
 import sys
 
 import markdown_it
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`")
 # H3見出しが示す対象パスは見出し内容の先頭コードスパンから取る。
@@ -953,8 +957,15 @@ def _added_lines_text(block: str) -> str:
 
 
 def _detect_meta_norm_addition(document: _Document, change_sections: list[_Section]) -> bool:
-    """`## 変更内容`の各H3節`text`コードブロックの追加分にメタ規範パターンが現れるか判定する。"""
+    """`## 変更内容`の各H3節`text`コードブロックの追加分にメタ規範パターンが現れるか判定する。
+
+    判定対象はコーディングエージェント向け文書のH3節に限る。
+    `pretooluse.py`の`_check_plan_file_retroactive_scan_recorded`と同じ対象限定を適用し、
+    対象外ファイルの変更後文面に含まれる既存見出しで過検出しないようにする。
+    """
     for path in _extract_h3_paths(document, change_sections):
+        if not _plan_format.is_agent_doc_target_file(path):
+            continue
         for block in _extract_fenced_code_blocks(
             document, _path_h3_sections(document, path, change_sections), info_string="text"
         ):

@@ -306,8 +306,10 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
-    re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md$"),
-    re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md$"),
+    # chezmoi配布元のテンプレート（`<name>.md.tmpl`）も配布先ではエージェント向け文書として読み込まれるため、
+    # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレート経由の規範改訂を検査が素通りさせる。
+    re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md(\.tmpl)?$"),
+    re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md(\.tmpl)?$"),
 )
 # basenameで照合するコーディングエージェント向け文書判定対象ファイル名。
 # ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
