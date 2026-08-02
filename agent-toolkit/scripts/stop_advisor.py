@@ -14,13 +14,13 @@ plan-mode等のスキル実行中で切り替える）。`agent-toolkit:session-
 
 import functools
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-import _git_remote  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -50,8 +50,9 @@ _HOOK_ID = "agent-toolkit/stop_advisor"
 # 振り返り誘導の対象スキル名。
 _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 
-# 振り返り拡張を提供する既知のリポジトリ識別子。
-_SESSION_REVIEW_EXTENSION_REPOSITORY = "github.com/ak110/dotfiles"
+# 振り返り拡張フックの導入を示す環境変数。値が非空の場合に導入済みとみなす。
+# 配布物が特定リポジトリの識別子やパスを持たずに拡張の有無を観測するための経路とする。
+_SESSION_REVIEW_EXTENSION_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION"
 
 # transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
@@ -80,10 +81,9 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
 
 
 @functools.cache
-def _has_session_review_extension_repository() -> bool:
-    """既知の振り返り拡張リポジトリが`~/dotfiles`に存在する場合に真を返す。"""
-    repository = pathlib.Path.home() / "dotfiles"
-    return _git_remote.get_normalized_origin(repository) == _SESSION_REVIEW_EXTENSION_REPOSITORY
+def _has_session_review_extension() -> bool:
+    """振り返り拡張フックの導入を示す環境変数が設定されている場合に真を返す。"""
+    return bool(os.environ.get(_SESSION_REVIEW_EXTENSION_ENV, "").strip())
 
 
 def _has_uncommitted_changes(cwd: str) -> bool:
@@ -234,8 +234,8 @@ def main(payload_text: str) -> int:
         return 0
 
     # 既知の振り返り拡張が導入される環境では、配布物側から重ねて誘導しない。
-    if _has_session_review_extension_repository():
-        append_stop_log(session_id, "approve_extension_repository", {})
+    if _has_session_review_extension():
+        append_stop_log(session_id, "approve_extension_env", {})
         _approve(cwd=cwd)
         return 0
 

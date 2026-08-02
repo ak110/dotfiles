@@ -22,6 +22,11 @@ pyfltrまたはagent-toolkitスキルを使用したセッションの終了時�
 使用を検出した際に`session_review_extension_pending`フラグを立て、配布物Stopフック側が
 同フラグを参照して自身の誘導を抑制する。
 
+配布物側の抑止経路は`session_review_extension_pending`に加え、
+環境変数`AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION`の観測を持つ。
+当該環境変数は`share/claude_settings_json_managed.json`の`env`で配布し、
+本フックが導入された環境であることを配布物側へ伝える。
+
 `stop_hook_active`が真の場合は構造判定・誘導生成を行わず無条件approveとする。
 誘導文の先頭には`agent-toolkit/scripts/_message_format.SESSION_REVIEW_PRECHECK`を付与し、
 質問直後等の終了相当ケースでスキル起動を抑止する。両者の設計詳細は

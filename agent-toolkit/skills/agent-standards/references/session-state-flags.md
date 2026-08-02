@@ -10,6 +10,7 @@
 - `sleep_poll_detected`: PreToolUse(Bash)がsleep直後の状態確認連結を検出した場合に記録する
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画ファイル検査の適用判定に使う
 - `session_review_invoked`: 振り返りスキルの起動を記録し、Stop hookの重複を抑止する
+- `session_review_extension_pending`: 振り返り拡張フックの導入を観測したことを示す。個人フックの`PostToolUse`（`scripts/claude_hook_posttooluse.py`）が`agent-toolkit:`接頭辞のスキル起動と`session-review-dotfiles`起動で真化する。配布物の`stop_advisor.py`が参照し、真の場合は振り返り誘導を抑止する。寿命はセッション終了まで
 - `agent_toolkit_edit_skill_invoked`: agent-toolkit-edit起動を記録し、編集警告と隔離reference判定に使う
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
 - `plan_and_add_entries_skill_invoked`: plan-and-add-feedback起動を記録する
