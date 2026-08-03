@@ -681,10 +681,14 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                     )
                 )
             if tool_name == "Write":
+                # スクリプトを対象リポジトリからの相対パスで案内するため、`--work-dir`の既定である
+                # 現在の作業ディレクトリが対象リポジトリと一致する。委譲先向けの手順のように
+                # 絶対パスのプレースホルダーを置くと、そのまま実行できる案内でなくなる。
                 messages.append(
                     _llm_notice(
-                        f"plan file {file_path} was written. Run the post-write checks:"
-                        f" `uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py"
+                        f"plan file {file_path} was written. Run the post-write checks from the target"
+                        f" repository root: `uv run --script"
+                        f" agent-toolkit/skills/plan-mode/scripts/check_plan_file.py"
                         f" {file_path}`.",
                         tag="notice",
                     )

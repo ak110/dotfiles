@@ -1067,7 +1067,8 @@ def test_deprecated_identifier_excludes_temporary_copy_and_plan_file(
     `.git`配下はGitの一覧に現れないため、走査対象の母集団へ最初から入らない。
     """
     _init_git_repo(tmp_path)
-    (tmp_path / ".plan-check-sample-1234.md").write_text("`_removed_helper`\n", encoding="utf-8")
+    # 定義形で書く。単なる言及では識別子定義の検出条件に元から一致せず、除外の有無を判定できない。
+    (tmp_path / ".plan-check-sample-1234.md").write_text("def _removed_helper():\n    pass\n", encoding="utf-8")
     body = (
         "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n\n### 対象ファイル一覧\n\n"
         "計画ファイル自身が定義例を掲載する場合の自己参照除外を確認する。\n\n"
@@ -1204,24 +1205,49 @@ def test_new_identifier_scope_ignores_files_outside_git_management(
 def test_deprecated_identifier_uses_work_dir_instead_of_cwd(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """廃止・改名対象の残存判定も`--work-dir`を照会先とする。"""
+    """廃止・改名対象の残存判定も`--work-dir`を照会先とする。
+
+    識別子定義の走査とファイルパスの実在確認は判定経路が別のため、両形態を対象へ含める。
+    """
     work_dir = tmp_path / "target"
     work_dir.mkdir()
     _init_git_repo(work_dir)
     (work_dir / "leftover.py").write_text("def _removed_helper():\n    pass\n", encoding="utf-8")
+    (work_dir / "scripts").mkdir()
+    (work_dir / "scripts" / "obsolete.py").write_text("x = 1\n", encoding="utf-8")
     unrelated = tmp_path / "unrelated"
     unrelated.mkdir()
     _init_git_repo(unrelated)
-    body = "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n\n### 対象ファイル一覧\n"
+    body = "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n- `scripts/obsolete.py`\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.chdir(unrelated)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan), "--work-dir", str(work_dir)])
 
     assert main() == 0
     captured = capsys.readouterr()
-    # cwd側には定義が無いため、`--work-dir`が無視されると残存を見逃す。
-    assert "廃止・改名対象一覧の識別子が残存している疑い" in captured.err
+    # cwd側には定義もファイルも無いため、`--work-dir`が無視されると両形態とも残存を見逃す。
     assert "_removed_helper" in captured.err
+    assert "scripts/obsolete.py" in captured.err
+
+
+def test_deprecated_identifier_warns_when_repository_resolution_fails(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gitリポジトリとして解決できない場合、識別子定義の走査だけを判定不能として通知する。
+
+    パス形態はファイルの実在で判定できるため、解決の可否によらず検査を継続する。
+    """
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "leftover.py").write_text("x = 1\n", encoding="utf-8")
+    body = "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n- `scripts/leftover.py`\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan), "--work-dir", str(tmp_path)])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "廃止・改名対象一覧の識別子の残存を判定できない" in captured.err
+    assert "scripts/leftover.py" in captured.err
 
 
 _META_NORM_PLAN_BODY = (
