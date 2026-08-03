@@ -18,10 +18,24 @@ from _session_state import update_state
 from _transcript_agent_id import extract_transcript_agent_id
 
 STATE_KEY_UNANSWERED = "tbd_unanswered_by_repo"
-"""対象リポジトリIDごとの直近の未回答TBD件数を保持するセッション状態キー。"""
+"""エージェント別・対象リポジトリID別の直近の未回答TBD件数を保持するセッション状態キー。
+
+値は`{エージェント識別子: {対象リポジトリID: 件数}}`の2段辞書とする。
+メインとサブエージェントのフック呼び出しは同一`session_id`で届くため、
+エージェント識別子で分けないと一方の呼び出しが全件回答済みへの遷移を消費し、
+他方へ通知が届かない。
+"""
 
 STATE_KEY_FINGERPRINT = "tbd_fingerprint_by_repo"
-"""active状態ディレクトリの内容変化指紋を保持するセッション状態キー。"""
+"""エージェント別・作業ディレクトリ別のactive状態ディレクトリ指紋を保持するセッション状態キー。
+
+値は`{エージェント識別子: {作業ディレクトリ: 指紋文字列}}`の2段辞書とする。
+指紋が前回観測から変化していない間はTBDの回答状態も変化しないため、
+走査と`git remote get-url origin`をいずれも実行しない。
+"""
+
+_MAIN_AGENT_ID = "main"
+"""`transcript_path`からエージェント識別子を抽出できない場合に用いるメイン会話の識別子。"""
 
 _GIT_TIMEOUT_SEC = 5.0
 """`git remote get-url origin`の実行上限。フックの滞留を防ぐ。"""
@@ -51,9 +65,44 @@ def resolve_target_repo(cwd: str) -> str | None:
         return None
 
 
+def _nested(state: dict, key: str, agent_id: str) -> dict:
+    """2段辞書`state[key][agent_id]`を必要に応じて用意して返す。
+
+    過去の版が記録した1段辞書や不正な型が残っていた場合は破棄して初期化する。
+    セッション状態は同一セッション内でのみ意味を持つため、移行処理は設けない。
+    """
+    outer = state.get(key)
+    if not isinstance(outer, dict):
+        outer = {}
+        state[key] = outer
+    inner = outer.get(agent_id)
+    if not isinstance(inner, dict):
+        inner = {}
+        outer[agent_id] = inner
+    return inner
+
+
+def _fingerprint_unchanged(session_id: str, agent_id: str, cwd: str, fingerprint: str) -> bool:
+    """記録済みの指紋が今回の指紋と一致するかを返す。
+
+    読み取りだけを行うため、`update_state`のmutatorは書き込みを要求しない
+    （暗黙の`None`を返し、`update_state`は書き込みをスキップする）。
+    ロック下で読むのは、他プロセスの書き込み途中の状態を読まないためである。
+    """
+    previous: object = None
+
+    def _read(state: dict) -> None:
+        nonlocal previous
+        outer = state.get(STATE_KEY_FINGERPRINT)
+        inner = outer.get(agent_id) if isinstance(outer, dict) else None
+        previous = inner.get(cwd) if isinstance(inner, dict) else None
+
+    update_state(session_id, _read)
+    return previous == fingerprint
+
+
 def build_notice(session_id: str, cwd: str, transcript_path: str = "") -> str | None:
     """全件回答済みへの遷移を検出した場合に通知本文を返す。それ以外はNoneを返す。"""
-    # cwdが空の場合は処理しない
     if not cwd:
         return None
 
@@ -61,32 +110,11 @@ def build_notice(session_id: str, cwd: str, transcript_path: str = "") -> str | 
     if root is None:
         return None
 
-    # 指紋を取得して、変化がない場合は直ちに終了（git呼び出しを避ける）
-    current_fingerprint = _tbd_scan.active_fingerprint(root)
-    if current_fingerprint is None:
-        # 指紋取得失敗時は走査へ進む
-        pass
-    else:
-        # エージェントIDをキーに含める（メインとサブエージェントで独立に判定）
-        agent_id = extract_transcript_agent_id(transcript_path)
-        state_key_agent = f"{STATE_KEY_FINGERPRINT}_{agent_id}" if agent_id else STATE_KEY_FINGERPRINT
+    agent_id = extract_transcript_agent_id(transcript_path) or _MAIN_AGENT_ID
+    fingerprint = _tbd_scan.active_fingerprint(root)
+    if fingerprint is not None and _fingerprint_unchanged(session_id, agent_id, cwd, fingerprint):
+        return None
 
-        # 指紋が変化していないかをチェック（走査なし）
-        previous_fingerprint = None
-
-        def _get_previous(state: dict) -> dict | None:
-            nonlocal previous_fingerprint
-            fps = state.get(state_key_agent, {})
-            previous_fingerprint = fps.get(cwd)
-            return None  # 状態変更なし
-
-        update_state(session_id, _get_previous)
-
-        # 指紋が一致している場合は走査をスキップ
-        if current_fingerprint == previous_fingerprint:
-            return None
-
-    # 指紋が変化したか初回観測：git呼び出しと走査を実行
     target_repo = resolve_target_repo(cwd)
     if target_repo is None:
         return None
@@ -101,15 +129,12 @@ def build_notice(session_id: str, cwd: str, transcript_path: str = "") -> str | 
     outcome: dict[str, bool] = {"notify": False}
 
     def _record(state: dict) -> dict | None:
-        counts = state.get(STATE_KEY_UNANSWERED)
-        if not isinstance(counts, dict):
-            counts = {}
+        counts = _nested(state, STATE_KEY_UNANSWERED, agent_id)
         previous = counts.get(target_repo)
         outcome["notify"] = isinstance(previous, int) and previous > 0 and not unanswered and bool(answered)
-        if previous == len(unanswered):
-            return None
         counts[target_repo] = len(unanswered)
-        state[STATE_KEY_UNANSWERED] = counts
+        if fingerprint is not None:
+            _nested(state, STATE_KEY_FINGERPRINT, agent_id)[cwd] = fingerprint
         return state
 
     state_updated = update_state(session_id, _record)

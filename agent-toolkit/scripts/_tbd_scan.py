@@ -7,6 +7,7 @@ YAML表現の違いによってCLIとフックの判定が分岐しないよう�
 再エクスポートする。
 """
 
+import hashlib
 import os
 import pathlib
 import typing
@@ -76,33 +77,36 @@ def private_notes_root() -> pathlib.Path | None:
     return root if root.is_dir() else None
 
 
-def active_fingerprint(root: pathlib.Path) -> tuple[int, int] | None:
+def active_fingerprint(root: pathlib.Path) -> str | None:
     """active状態ディレクトリの内容変化を検出する指紋を返す。
 
-    `.md`ファイルの件数と`st_mtime_ns`の最大値を組で返す。
+    `.md`ファイルごとの相対パス・`st_mtime_ns`・サイズを連結したSHA-256を返す。
     走査（全件のread_textとYAML解析）より桁で安価な`stat`のみで、
     前回観測時から内容が変化していないことを判定する用途に使う。
     列挙に失敗した場合はNoneを返し、呼び出し側は指紋照合を行わず走査へ進む。
+
+    最大`st_mtime_ns`だけでは、時刻の分解能より短い間隔で内容が書き換わった場合に
+    変化を検出できない。TBDの回答は既存ファイルへの追記であり件数も変えないため、
+    取りこぼすと当該セッションへ通知が届かなくなる。サイズを併せることで、
+    回答の追記のように内容長が変わる更新を分解能によらず検出する。
     """
+    digest = hashlib.sha256()
     try:
-        md_count = 0
-        max_mtime_ns = 0
         for state in _ACTIVE_STATES:
             state_dir = root / state
             if not state_dir.is_dir():
                 continue
-            for path in state_dir.iterdir():
+            for path in sorted(state_dir.iterdir()):
                 if path.suffix != ".md":
                     continue
-                md_count += 1
                 try:
                     stat_result = path.stat()
-                    max_mtime_ns = max(max_mtime_ns, stat_result.st_mtime_ns)
                 except OSError:
                     return None
-        return (md_count, max_mtime_ns)
+                digest.update(f"{state}/{path.name}\t{stat_result.st_mtime_ns}\t{stat_result.st_size}\n".encode())
     except OSError:
         return None
+    return digest.hexdigest()
 
 
 def scan_active_tbds(root: pathlib.Path, target_repo: str) -> ActiveTbdScan:
