@@ -77,7 +77,8 @@ warning区分（終了コードへ算入しない）とその判定根拠。
 - 計画メタ情報の作業種別: 固定値の導入前に作成した計画は当該項目を持たないため、
   欠落・未知値を移行支援として検出する
 - 新設識別子の波及先列挙: 単発の識別子新設は正当であり、error区分で停止させると計画作成を妨げる。
-  対象worktreeのルートを解決できない場合も、既存出現を判定できない旨を同区分で通知する
+  `--work-dir`（省略時は現在の作業ディレクトリ）をGitリポジトリとして解決できない場合も、
+  既存出現を判定できない旨を同区分で通知する
 - バグ調査結果表の構造: 既存計画は旧形式の表を持つ場合があり、表の内容の深さは機械判定できない。
   表全体の欠落、重複、必須行、順序だけを移行支援として検出する
 
@@ -94,6 +95,7 @@ import collections.abc
 import dataclasses
 import pathlib
 import re
+import subprocess
 import sys
 
 import markdown_it
@@ -171,8 +173,8 @@ _RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検�
 
 _REFERENCE_ENUMERATION_REQUIRED_ITEMS: tuple[str, ...] = ("参照追従対象", "入力形態", "追従要否")
 _NEW_IDENTIFIER_REQUIRED_ITEM = "新設識別子"
-# 変更後文面に現れるバッククォート囲みの候補。Python定義名らしい形式かの判定は
-# `_looks_like_python_definition_identifier`が担い、抽出条件を1箇所へ集約する。
+# 変更後文面に現れるバッククォート囲みの候補。宣言された名前らしい形式かの判定は
+# `_looks_like_declared_identifier`が担い、抽出条件を1箇所へ集約する。
 _NEW_IDENTIFIER_CANDIDATE_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*)`")
 
 _BUMP_MANIFEST_PATHS = frozenset({"agent-toolkit/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json"})
@@ -252,9 +254,11 @@ class _Document:
     inline_blocks: tuple[tuple[int, int], ...]
 
 
-def _looks_like_python_definition_identifier(name: str) -> bool:
-    """識別子が`_`始まり・snake_case・UPPER_CASEいずれかのPython定義名らしい形式か判定する。
+def _looks_like_declared_identifier(name: str) -> bool:
+    """識別子が`_`始まり・snake_case・UPPER_CASEいずれかの宣言された名前らしい形式か判定する。
 
+    対象は関数名・定数名に限らず、完了報告の欄名・環境変数名など、
+    定義側で名前として宣言されるもの全般とする。
     コマンド名・サブコマンド名等（アンダースコアを含まない単純な単語）を
     検査対象から除外するため、アンダースコアを含む語のみ対象とする。
     """
@@ -277,9 +281,10 @@ def _identifier_definition_pattern(name: str) -> re.Pattern[str]:
 
 
 def _is_excluded_repo_path(rel_parts: tuple[str, ...]) -> bool:
-    """遡及走査から除外するパス（`.git`配下・計画ファイル検証の一時複製）かを判定する。"""
-    if ".git" in rel_parts:
-        return True
+    """遡及走査から除外するパス（計画ファイル検証の一時複製）かを判定する。
+
+    `.git`配下はGitが一覧へ含めないため、本判定の対象としない。
+    """
     return bool(rel_parts) and rel_parts[-1].startswith(".plan-check-")
 
 
@@ -918,36 +923,64 @@ def _extract_deprecated_identifiers(document: _Document) -> list[str]:
     ]
 
 
-def _iter_repo_files(repo_root: pathlib.Path, plan_path: pathlib.Path) -> collections.abc.Iterator[pathlib.Path]:
-    """遡及走査対象のファイルを、`.git`・一時複製・計画ファイル自身を除外して列挙する。"""
+def _git_listed_relative_paths(work_dir: pathlib.Path) -> tuple[str, ...] | None:
+    """`work_dir`のGit管理下ファイル（追跡分と無視されていない未追跡分）を相対パスで返す。
+
+    ディレクトリ全体を再帰走査すると、仮想環境やキャッシュなど当該リポジトリの内容ではない
+    ファイルが対象へ入り、走査コストと他パッケージ由来の誤一致を招く。
+    Gitの一覧はリポジトリの内容そのものを表すため、これを走査対象の母集団とする。
+    Gitリポジトリとして解決できない場合はNoneを返し、呼び出し側が判定不能として扱う。
+    """
+    command = ["git", "-C", str(work_dir), "ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+    try:
+        completed = subprocess.run(command, capture_output=True, check=False)
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+    decoded = completed.stdout.decode("utf-8", errors="surrogateescape")
+    return tuple(name for name in decoded.split("\0") if name)
+
+
+def _iter_repo_files(
+    work_dir: pathlib.Path, relative_names: tuple[str, ...], plan_path: pathlib.Path
+) -> collections.abc.Iterator[pathlib.Path]:
+    """走査対象のファイルを、一時複製・計画ファイル自身を除外して列挙する。"""
     plan_resolved = plan_path.resolve()
-    for path in repo_root.rglob("*"):
-        if not path.is_file():
+    for name in relative_names:
+        if _is_excluded_repo_path(pathlib.PurePosixPath(name).parts):
             continue
-        if _is_excluded_repo_path(path.relative_to(repo_root).parts):
+        path = work_dir / name
+        if not path.is_file():
             continue
         if path.resolve() == plan_resolved:
             continue
         yield path
 
 
-def _check_deprecated_identifiers_removed(document: _Document, plan_path: pathlib.Path) -> list[str]:
+def _check_deprecated_identifiers_removed(
+    document: _Document,
+    plan_path: pathlib.Path,
+    work_dir: pathlib.Path,
+    relative_names: tuple[str, ...] | None,
+) -> list[str]:
     """`#### 廃止・改名対象一覧`が列挙する識別子の定義箇所が残存していないか検出する。"""
     warnings: list[str] = []
     identifiers = _extract_deprecated_identifiers(document)
     if not identifiers:
         return warnings
-    repo_root = pathlib.Path.cwd()
+    if relative_names is None:
+        return [_unresolved_work_dir_message(work_dir, "廃止・改名対象一覧の識別子の残存")]
     for name in identifiers:
         if "/" in name:
-            if (repo_root / name).exists():
+            if (work_dir / name).exists():
                 warnings.append(f"廃止・改名対象一覧の識別子が残存している疑い: `{name}`（ファイルが実在する）")
             continue
-        if not _looks_like_python_definition_identifier(name):
+        if not _looks_like_declared_identifier(name):
             # コマンド名・サブコマンド名等は検査対象外とする
             continue
         pattern = _identifier_definition_pattern(name)
-        for path in _iter_repo_files(repo_root, plan_path):
+        for path in _iter_repo_files(work_dir, relative_names, plan_path):
             try:
                 content = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
@@ -956,6 +989,14 @@ def _check_deprecated_identifiers_removed(document: _Document, plan_path: pathli
                 warnings.append(f"廃止・改名対象一覧の識別子が残存している疑い: `{name}`（{path}に定義が残存）")
                 break
     return warnings
+
+
+def _unresolved_work_dir_message(work_dir: pathlib.Path, subject: str) -> str:
+    """走査対象を解決できない場合の共通メッセージを返す。"""
+    return (
+        f"{subject}を判定できない: 対象worktreeをGitリポジトリとして解決できない（{work_dir}）。"
+        "`--work-dir`へ対象worktreeの絶対パスを指定して再実行する"
+    )
 
 
 def _added_lines_text(block: str) -> str:
@@ -1050,19 +1091,21 @@ def _extract_new_identifier_candidates(document: _Document, change_sections: lis
             document, _path_h3_sections(document, path, change_sections), info_string="text"
         ):
             for name in _NEW_IDENTIFIER_CANDIDATE_RE.findall(_added_lines_text(block)):
-                if _looks_like_python_definition_identifier(name):
+                if _looks_like_declared_identifier(name):
                     candidates.setdefault(name, None)
     return list(candidates)
 
 
-def _identifiers_absent_from_repo(names: list[str], repo_root: pathlib.Path, plan_path: pathlib.Path) -> list[str]:
+def _identifiers_absent_from_repo(
+    names: list[str], work_dir: pathlib.Path, relative_names: tuple[str, ...], plan_path: pathlib.Path
+) -> list[str]:
     """対象worktree内に1件も出現しない識別子だけを抽出順のまま返す。
 
     識別子ごとに全ファイルを走査すると読み込みが識別子の件数だけ重複するため、
     ファイル1件につき1回読み込み、出現を確認した識別子を候補から除く。
     """
     remaining = dict.fromkeys(names)
-    for path in _iter_repo_files(repo_root, plan_path):
+    for path in _iter_repo_files(work_dir, relative_names, plan_path):
         if not remaining:
             break
         try:
@@ -1079,6 +1122,7 @@ def _check_new_identifier_scope_recorded(
     change_sections: list[_Section],
     plan_path: pathlib.Path,
     work_dir: pathlib.Path,
+    relative_names: tuple[str, ...] | None,
 ) -> list[str]:
     """新設識別子を導入する計画で、`## 調査結果`への波及先列挙の記録が無い場合に警告する。
 
@@ -1088,12 +1132,9 @@ def _check_new_identifier_scope_recorded(
     candidates = _extract_new_identifier_candidates(document, change_sections)
     if not candidates:
         return []
-    if not work_dir.is_dir():
-        return [
-            f"新設識別子の既存出現を判定できない: 対象worktreeのルートを解決できない（{work_dir}）。"
-            "`--work-dir`へ対象worktreeの絶対パスを指定して再実行する"
-        ]
-    new_identifiers = _identifiers_absent_from_repo(candidates, work_dir, plan_path)
+    if relative_names is None:
+        return [_unresolved_work_dir_message(work_dir, "新設識別子の既存出現")]
+    new_identifiers = _identifiers_absent_from_repo(candidates, work_dir, relative_names, plan_path)
     if not new_identifiers:
         return []
     section_text = "\n".join(_non_code_text(document, section) for section in _iter_h2_sections(document, "調査結果"))
@@ -1156,6 +1197,8 @@ def main() -> int:
         return exc.code if isinstance(exc.code, int) else 2
     plan_path = args.plan_file
     work_dir = args.work_dir if args.work_dir is not None else pathlib.Path.cwd()
+    # 走査対象の母集団は2つの検査が共有するため、Gitの呼び出しを1回へまとめる。
+    relative_names = _git_listed_relative_paths(work_dir)
     try:
         text = plan_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -1212,8 +1255,8 @@ def main() -> int:
     errors.extend(_check_reference_enumeration_recorded(document, change_sections))
     errors.extend(_check_base_commit_recorded(document))
     warnings.extend(_check_execution_method_scope(document))
-    warnings.extend(_check_deprecated_identifiers_removed(document, plan_path))
-    warnings.extend(_check_new_identifier_scope_recorded(document, change_sections, plan_path, work_dir))
+    warnings.extend(_check_deprecated_identifiers_removed(document, plan_path, work_dir, relative_names))
+    warnings.extend(_check_new_identifier_scope_recorded(document, change_sections, plan_path, work_dir, relative_names))
     warnings.extend(_check_version_number_absent(document, checkbox_paths))
     warnings.extend(_check_plan_work_type(document))
     warnings.extend(_check_bug_investigation_table(document))

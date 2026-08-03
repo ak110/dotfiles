@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections.abc
 import pathlib
+import subprocess
 
 import markdown_it
 import pytest
@@ -40,6 +41,16 @@ def _write_plan(tmp_path: pathlib.Path, body: str, *, include_h1: bool = True) -
         content = f"# テスト計画\n\n{body}"
     plan.write_text(content, encoding="utf-8")
     return plan
+
+
+def _init_git_repo(root: pathlib.Path) -> None:
+    """識別子の走査対象をGitの管理下一覧から得るため、対象ディレクトリをリポジトリ化する。
+
+    走査対象は`git ls-files --cached --others --exclude-standard`が返す一覧であり、
+    リポジトリでないディレクトリは判定不能として扱われる。
+    未追跡ファイルも`--others`で一覧へ入るため、コミットは作成しない。
+    """
+    subprocess.run(["git", "init", "--quiet", str(root)], check=True, capture_output=True)
 
 
 def _bug_investigation_table(rows: collections.abc.Sequence[str]) -> str:
@@ -984,6 +995,7 @@ def test_deprecated_identifier_extraction_does_not_cross_lines(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """片側だけバッククォートを持つ行を後続行と対応づけて識別子化しない。"""
+    _init_git_repo(tmp_path)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "leftover.py").write_text("x = 1\n", encoding="utf-8")
     body = (
@@ -1002,6 +1014,7 @@ def test_deprecated_identifier_extraction_does_not_cross_lines(
 def test_deprecated_identifier_residual_file_warns(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _init_git_repo(tmp_path)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "leftover.py").write_text("x = 1\n", encoding="utf-8")
     body = "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `scripts/leftover.py`\n\n### 対象ファイル一覧\n"
@@ -1017,6 +1030,7 @@ def test_deprecated_identifier_residual_file_warns(
 def test_deprecated_identifier_removed_silent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _init_git_repo(tmp_path)
     body = "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.chdir(tmp_path)
@@ -1030,6 +1044,7 @@ def test_deprecated_identifier_type_annotated_constant_residual_warns(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """型注釈付き定数定義（`NAME: Type = value`）の残存も検出する。"""
+    _init_git_repo(tmp_path)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "leftover.py").write_text(
         "_LEFTOVER_CONSTANT: frozenset[str] = frozenset({'x'})\n", encoding="utf-8"
@@ -1044,12 +1059,14 @@ def test_deprecated_identifier_type_annotated_constant_residual_warns(
     assert "_LEFTOVER_CONSTANT" in captured.err
 
 
-def test_deprecated_identifier_excludes_git_and_plan_file(
+def test_deprecated_identifier_excludes_temporary_copy_and_plan_file(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`.git`配下・一時複製・計画ファイル自身は遡及走査の対象外とする。"""
-    (tmp_path / ".git").mkdir()
-    (tmp_path / ".git" / "leftover.py").write_text("def _removed_helper():\n    pass\n", encoding="utf-8")
+    """一時複製・計画ファイル自身は走査の対象外とする。
+
+    `.git`配下はGitの一覧に現れないため、走査対象の母集団へ最初から入らない。
+    """
+    _init_git_repo(tmp_path)
     (tmp_path / ".plan-check-sample-1234.md").write_text("`_removed_helper`\n", encoding="utf-8")
     body = (
         "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n\n### 対象ファイル一覧\n\n"
@@ -1088,6 +1105,7 @@ def test_new_identifier_scope_detects_identifier_forms(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """既存出現の無い識別子を形態ごとに抽出し、波及先列挙の不足を警告する。"""
+    _init_git_repo(tmp_path)
     plan = _write_plan(tmp_path, _new_identifier_plan_body(block_body))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
@@ -1102,6 +1120,7 @@ def test_new_identifier_scope_silent_for_existing_identifier(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """対象worktree内に既存出現がある識別子は新設と判定しない。"""
+    _init_git_repo(tmp_path)
     (tmp_path / "existing.py").write_text("existing_flag = 1\n", encoding="utf-8")
     plan = _write_plan(tmp_path, _new_identifier_plan_body("+`existing_flag`の扱いを変える"))
     monkeypatch.chdir(tmp_path)
@@ -1115,6 +1134,7 @@ def test_new_identifier_scope_warns_for_partial_record(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """抽出した識別子の一部だけが`## 調査結果`にある場合は不足分を警告する。"""
+    _init_git_repo(tmp_path)
     body = _new_identifier_plan_body(
         "+`alpha_flag`と`beta_flag`を導入する",
         investigation="\n## 調査結果\n\n- 新設識別子: `alpha_flag`（波及先は当該ファイルのみ）\n",
@@ -1129,10 +1149,10 @@ def test_new_identifier_scope_warns_for_partial_record(
     assert "必須語" not in captured.err
 
 
-def test_new_identifier_scope_warns_when_root_resolution_fails(
+def test_new_identifier_scope_warns_when_repository_resolution_fails(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """対象worktreeのルートを解決できない場合は判定不能を警告する。"""
+    """対象worktreeをGitリポジトリとして解決できない場合は判定不能を警告する。"""
     plan = _write_plan(tmp_path, _new_identifier_plan_body("+`new_scope_flag`を導入する"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan), "--work-dir", str(tmp_path / "absent")])
@@ -1141,6 +1161,67 @@ def test_new_identifier_scope_warns_when_root_resolution_fails(
     captured = capsys.readouterr()
     assert "新設識別子の既存出現を判定できない" in captured.err
     assert "新設識別子の波及先列挙の不足の疑い" not in captured.err
+
+
+def test_new_identifier_scope_uses_work_dir_instead_of_cwd(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """既存出現の照会先は現在の作業ディレクトリではなく`--work-dir`とする。"""
+    work_dir = tmp_path / "target"
+    work_dir.mkdir()
+    _init_git_repo(work_dir)
+    (work_dir / "existing.py").write_text("existing_flag = 1\n", encoding="utf-8")
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    _init_git_repo(unrelated)
+    plan = _write_plan(tmp_path, _new_identifier_plan_body("+`existing_flag`の扱いを変える"))
+    monkeypatch.chdir(unrelated)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan), "--work-dir", str(work_dir)])
+
+    assert main() == 0
+    # cwd側には出現が無いため、`--work-dir`が無視されると新設と誤判定される。
+    assert "新設識別子の波及先列挙の不足の疑い" not in capsys.readouterr().err
+
+
+def test_new_identifier_scope_ignores_files_outside_git_management(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gitが無視するディレクトリの出現は既存出現として数えない。"""
+    _init_git_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "vendored.py").write_text("existing_flag = 1\n", encoding="utf-8")
+    plan = _write_plan(tmp_path, _new_identifier_plan_body("+`existing_flag`を導入する"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "新設識別子の波及先列挙の不足の疑い" in captured.err
+    assert "existing_flag" in captured.err
+
+
+def test_deprecated_identifier_uses_work_dir_instead_of_cwd(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """廃止・改名対象の残存判定も`--work-dir`を照会先とする。"""
+    work_dir = tmp_path / "target"
+    work_dir.mkdir()
+    _init_git_repo(work_dir)
+    (work_dir / "leftover.py").write_text("def _removed_helper():\n    pass\n", encoding="utf-8")
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    _init_git_repo(unrelated)
+    body = "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.chdir(unrelated)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan), "--work-dir", str(work_dir)])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    # cwd側には定義が無いため、`--work-dir`が無視されると残存を見逃す。
+    assert "廃止・改名対象一覧の識別子が残存している疑い" in captured.err
+    assert "_removed_helper" in captured.err
 
 
 _META_NORM_PLAN_BODY = (
@@ -2163,6 +2244,7 @@ def test_only_unfenced_violation_is_reported(
 def test_deprecated_identifier_list_in_fence_is_ignored(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _init_git_repo(tmp_path)
     (tmp_path / "leftover.py").write_text("def _leftover_helper():\n    pass\n", encoding="utf-8")
     body = "````markdown\n#### 廃止・改名対象一覧\n\n- `_leftover_helper`\n````\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)

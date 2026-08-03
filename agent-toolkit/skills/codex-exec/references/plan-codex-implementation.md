@@ -89,7 +89,9 @@ Claude代替はAgent識別子を保持し、利用可能な`SendMessage`で同�
 最終検証には次を含める。
 
 ```text
-uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイルパス>
+uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py \
+  --work-dir <対象リポジトリの絶対パス> \
+  <計画ファイルパス>
 ```
 
 終了コード1は計画形式の違反として是正する。

@@ -58,7 +58,9 @@
 1. 計画ファイル本体へ次のコマンドを実行する
 
    ```text
-   uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイルの絶対パス>
+   uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py \
+     --work-dir <対象リポジトリの絶対パス> \
+     <計画ファイルの絶対パス>
    ```
 
 2. 終了コード1のerror区分違反を全件修正し、終了コード0まで再実行する
