@@ -111,18 +111,19 @@ _SESSION_OPS_TERM_PATTERN = r"session-review(?:-dotfiles)?|exit-session|振り�
 _SESSION_OPS_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
 _SESSION_OPS_TERM_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
 
-# 実装対象を指す名詞句の構成要素。対象語がこれらの語を直後に伴う場合、工程の実施ではなく
-# 変更対象の名称として現れている（`振り返りフックの誘導を変更する`・`セッション終了処理を実装する`）。
-# 工程そのものを指す`工程`・`スキル`は、`振り返り工程を完遂する`のように実施指示で用いるため含めない。
-#
-# 本列挙は閉じている。ここに無い名詞（`フロー`・`スクリプト`等）を伴う言及と、
-# 連体修飾`の`を伴う形（`振り返りの誘導`）は除外できず、検出側へ残る。
-# 語を追加する場合は、本ファイルの回帰テストへ正例と負例を対で追加してから広げる。
-# 列挙を判定基準へ一般化する検討は当該セッションの対象外とし、フィードバックへ登録済みである。
+# `description`のように実装対象を強く示す語は、変更述部の有無によらず除外する必要がある。
+# この契約を維持するため、既存16語の列挙を一般名詞パターンへ統合せず残す。
 _SESSION_OPS_IMPLEMENTATION_NOUNS = r"(?:フック|処理|機能|誘導|判定|検査|条件|経路|規範|定義|記述|表示|文言|description|節|欄)"
 _SESSION_OPS_IMPLEMENTATION_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTERN})\s*{_SESSION_OPS_IMPLEMENTATION_NOUNS}")
-# 実施を示す述部。対象語が実装対象の名詞を伴う場合でも、同一行にこれらが現れる記載は工程の実施を指す
-# （`振り返り処理を実施する`）。本列挙も閉じており、追加時の手順は前記と同じとする。
+
+# 列挙外の実装対象を扱う一般名詞。ひらがなを除く漢字・カタカナ・英数字の連なりを取り、
+# 連体修飾`の`を対象語の直後と名詞の間の双方で受理する。
+_SESSION_OPS_GENERAL_NOUN = r"(?:の)?[一-龥ァ-ヶーA-Za-z0-9]+(?:の[一-龥ァ-ヶーA-Za-z0-9]+)*"
+_SESSION_OPS_GENERAL_NOUN_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTERN})\s*{_SESSION_OPS_GENERAL_NOUN}")
+
+# `反映`は工程の実施と実装対象の変更の双方で用いられ、語彙だけでは分離できない。
+# 既存16語による除外で`description`の変更記載を扱い、変更述部には含めない。
+_SESSION_OPS_MODIFICATION_PREDICATE_RE = re.compile(r"変更|修正|実装|削除|改訂|移設|見直|追加|置き換え|廃止|新設|拡張|整備")
 _SESSION_OPS_EXECUTION_PREDICATE_RE = re.compile(r"実施|実行|起動|呼び出|完遂|引き継|移行|復帰|従う|従い|進む|進み")
 
 # 呼び出し構文に限定して名前を抽出する4パターン。
@@ -719,29 +720,28 @@ def _has_session_ops_invocation(
 def _mentions_session_ops_process(text: str) -> bool:
     """行がセッション運用を工程として述べているかを返す。
 
-    対象語の出現位置だけで判定し、指示表現との語順や動詞の活用形を前提にしない。
-    実運用の計画では`後続工程（push・振り返り・exit-session）を完遂する`のように
-    対象語が列挙の中へ現れ、指示表現が行末や後続行へ離れて置かれるため、
-    対象語の直後に動詞句を求める判定では大半の工程記載を取りこぼす。
+    次のいずれかが成立する行は、変更対象の説明として除外する。
 
-    対象語が変更対象の名称として現れる記述（`振り返りフックの誘導を変更する`）は除外する。
-    除外は次の2条件をともに満たす場合に限る。
+    1. 対象語の全出現が既存16語のいずれかを直後に伴い、実施述部が無い。
+    2. 対象語の全出現が一般名詞を直後に伴い、変更述部があり、実施述部が無い。
 
-    - 対象語の全出現が実装対象を指す名詞を直後に伴う
-    - 実施を示す述部が同一行に無い
-
-    後者を条件に含めないと、`振り返り処理を実施する`のように実装対象と同じ名詞を伴いながら
-    実施を指示する記載まで除外する。
-    対象語が助詞・区切り記号を直後に伴う形（`振り返りを実施する`・`push・振り返り・exit-session`）は
-    それ自体が句の主辞であり、除外の対象にしない。
+    どちらも成立しない行は工程として検出する。
     """
     occurrences = list(_SESSION_OPS_TERM_RE.finditer(text))
     if not occurrences:
         return False
+
+    has_execution_predicate = _SESSION_OPS_EXECUTION_PREDICATE_RE.search(text) is not None
     implementation_starts = {match.start() for match in _SESSION_OPS_IMPLEMENTATION_MENTION_RE.finditer(text)}
-    if any(match.start() not in implementation_starts for match in occurrences):
-        return True
-    return bool(_SESSION_OPS_EXECUTION_PREDICATE_RE.search(text))
+    all_implementation_mentions = all(match.start() in implementation_starts for match in occurrences)
+    condition_1 = all_implementation_mentions and not has_execution_predicate
+
+    general_noun_starts = {match.start() for match in _SESSION_OPS_GENERAL_NOUN_MENTION_RE.finditer(text)}
+    all_general_noun_mentions = all(match.start() in general_noun_starts for match in occurrences)
+    has_modification_predicate = _SESSION_OPS_MODIFICATION_PREDICATE_RE.search(text) is not None
+    condition_2 = all_general_noun_mentions and has_modification_predicate and not has_execution_predicate
+
+    return not (condition_1 or condition_2)
 
 
 def _check_execution_method_scope(document: _Document) -> list[str]:

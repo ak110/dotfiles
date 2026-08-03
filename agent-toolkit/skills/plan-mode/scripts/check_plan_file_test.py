@@ -469,6 +469,18 @@ def test_execution_method_without_session_ops_silent(
         pytest.param("- セッション終了判定を実装する", False, id="implementation_target_predicate"),
         pytest.param("- exit-session description厳格化を反映", False, id="implementation_target_description"),
         pytest.param("- 振り返り規範を改訂する", False, id="implementation_target_norm"),
+        pytest.param("- 振り返りスクリプトを修正する", False, id="process_script_noun_modified"),
+        pytest.param("- セッション終了フローの見直しを行う", False, id="process_flow_noun_modified"),
+        pytest.param("- session-reviewモジュールを削除する", False, id="process_module_noun_deleted"),
+        pytest.param("- 振り返りログの記録先を変更する", False, id="process_log_noun_modified"),
+        pytest.param("- 振り返りの誘導を変更する", False, id="process_adnominal_noun_modified"),
+        pytest.param("- exit-sessionの実装を移設する", False, id="process_adnominal_impl_moved"),
+        pytest.param("- 振り返り結果を反映する", True, id="process_result_reflected"),
+        pytest.param(
+            "- 振り返り工程（session-review-dotfiles）を含む",
+            True,
+            id="process_noun_with_unquoted_session_op",
+        ),
     ],
 )
 def test_execution_method_requires_instruction_form(

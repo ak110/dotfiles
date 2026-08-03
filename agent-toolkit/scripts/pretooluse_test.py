@@ -1999,12 +1999,17 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 0
 
-    def test_non_python_project_blocked(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize(
+        "command",
+        ["uv run python /tmp/foo.py", "uv run python -c 'print(1)'"],
+        ids=["path", "inline_code"],
+    )
+    def test_non_python_project_forms_are_blocked(self, tmp_path: pathlib.Path, command: str) -> None:
+        """パス引数形とインラインコード形の双方を公開インターフェースでブロックする。"""
         cwd = self._make_non_python_project(tmp_path)
-        result = self._invoke("uv run python /tmp/foo.py", cwd)
+        result = self._invoke(command, cwd)
         assert result.returncode == 2
-        assert "uv run python" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+        assert "regardless of whether a path or `-c` follows" in result.stderr
 
     def test_no_pyproject_blocked(self, tmp_path: pathlib.Path):
         """pyproject.tomlが無いcwdでもblockする（Pythonプロジェクトと認識できないため）。"""
@@ -2023,11 +2028,16 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python --no-project s.py", cwd)
         assert result.returncode == 2
 
-    def test_cd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
-        """payload cwdがPythonプロジェクトでも、先行`cd`で実行時cwdが変わる場合はblock。"""
+    def test_inline_cd_is_blocked_and_separate_cwd_change_passes(self, tmp_path: pathlib.Path) -> None:
+        """同一コマンドの移動はブロックし、別コマンドで移動済みのcwdは通過する。"""
         cwd = self._make_python_project(tmp_path)
-        result = self._invoke("cd /tmp && uv run python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        blocked = self._invoke("cd /tmp && uv run python /tmp/foo.py", cwd)
+        assert blocked.returncode == 2
+        assert "as a separate command" in blocked.stderr
+        assert "does not help" in blocked.stderr
+
+        allowed = self._invoke("uv run python /tmp/foo.py", cwd)
+        assert allowed.returncode == 0
 
     def test_pushd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)

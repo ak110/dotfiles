@@ -3258,13 +3258,16 @@ def _check_bash_bulk_stage_with_unedited_files(
 # 利用頻度が低く実装コストに見合わないため対応スコープ外とする。
 
 _UV_RUN_PYTHON_BLOCK_MSG = (
-    "blocked: `uv run python <path>` style invocation."
+    "blocked: `uv run python` invocation without `--script` or `--no-project`"
+    " (applies regardless of whether a path or `-c` follows `python`)."
     " In a non-Python project (pyproject.toml without a [project] section, or absent),"
     " uv treats the cwd as a project and generates `.venv` and `uv.lock` as a side effect."
     " Alternatives:"
     " (1) for a PEP 723 script, use `uv run --script <path>` or invoke the executable shebang directly;"
     " (2) to skip cwd project resolution, use `uv run --no-project python ...`;"
-    " (3) inside a Python project, `cd` to the project root before running."
+    " (3) inside a Python project, run it from that directory as a separate command."
+    " A `cd` in the same command line does not help: the working directory after an in-line `cd`"
+    " cannot be determined by this check, so such invocations are blocked."
 )
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")

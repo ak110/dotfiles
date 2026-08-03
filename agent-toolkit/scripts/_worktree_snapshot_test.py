@@ -9,10 +9,52 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).with_name("_worktree_snapshot.py")
+
+_CAPTURE_WRAPPER = """
+import os
+import pathlib
+import sys
+import time
+
+sys.path.insert(0, os.environ["SCRIPT_DIR"])
+import _worktree_snapshot as ws
+
+_original = ws._read_untracked_file
+_state = {"first": True}
+_BARRIER_TIMEOUT_SECONDS = 5.0
+
+
+def _patched(path, expected):
+    if _state["first"]:
+        _state["first"] = False
+        pathlib.Path(os.environ["READY"]).write_text("1", encoding="utf-8")
+        deadline = time.monotonic() + _BARRIER_TIMEOUT_SECONDS
+        while not pathlib.Path(os.environ["DONE"]).exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("同期障壁の応答待ちが期限を超過した")
+            time.sleep(0.001)
+    return _original(path, expected)
+
+
+ws._read_untracked_file = _patched
+sys.argv = ["_worktree_snapshot.py", *sys.argv[1:]]
+ws.main()
+"""
+
+
+def _terminate_capture(capture: subprocess.Popen[str]) -> tuple[str, str]:
+    """期限を超過した子プロセスを終了し、標準出力と標準エラーを回収する。"""
+    capture.terminate()
+    try:
+        return capture.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        capture.kill()
+        return capture.communicate(timeout=5)
 
 
 def _run(*args: object, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -455,40 +497,49 @@ def test_capture_rejects_untracked_change_during_blob_materialization(
     replacement: str,
 ) -> None:
     repo = _repo(tmp_path)
-    (repo / "tracked.bin").write_bytes(os.urandom(8 * 1024 * 1024))
     untracked = repo / "untracked.bin"
     untracked.write_bytes(b"original")
     outside = tmp_path / "outside-secret"
     outside.write_bytes(b"must not be captured")
     snapshot = tmp_path / "snapshot"
+    ready = tmp_path / "ready"
+    done = tmp_path / "done"
     with subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import os,pathlib,time; "
-                "blobs=pathlib.Path(os.environ['BLOBS']); target=pathlib.Path(os.environ['TARGET']); "
-                "outside=os.environ['OUTSIDE']; "
-                'exec("while not blobs.exists():\\n time.sleep(0.001)"); '
-                "target.unlink(); "
-                "target.symlink_to(outside) if os.environ['REPLACEMENT']=='symlink' else None"
-            ),
-        ],
+        [sys.executable, "-c", _CAPTURE_WRAPPER, "capture", "--repo", str(repo), "--output-dir", str(snapshot)],
         env={
             **os.environ,
-            "BLOBS": str(snapshot / "blobs"),
-            "TARGET": str(untracked),
-            "OUTSIDE": str(outside),
-            "REPLACEMENT": replacement,
+            "SCRIPT_DIR": str(_SCRIPT.parent),
+            "READY": str(ready),
+            "DONE": str(done),
         },
-    ) as watcher:
-        result = _capture(repo, snapshot)
-        assert watcher.wait(timeout=10) == 0
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as capture:
+        ready_deadline = time.monotonic() + 5
+        while not ready.exists():
+            if capture.poll() is not None:
+                stdout, stderr = capture.communicate()
+                pytest.fail(f"準備完了前に子プロセスが終了した: {stdout=} {stderr=}")
+            if time.monotonic() >= ready_deadline:
+                stdout, stderr = _terminate_capture(capture)
+                pytest.fail(f"準備完了待ちが期限を超過した: {stdout=} {stderr=}")
+            time.sleep(0.001)
+        untracked.unlink()
+        if replacement == "symlink":
+            untracked.symlink_to(outside)
+        done.write_text("1", encoding="utf-8")
+        try:
+            stdout, stderr = capture.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = _terminate_capture(capture)
+            pytest.fail(f"同期障壁の応答後も子プロセスが終了しなかった: {stdout=} {stderr=}")
 
-    assert result.returncode == 2
-    assert "退避中に未追跡ファイル" in result.stderr
-    assert "Traceback" not in result.stderr
-    assert not any(path.read_bytes() == outside.read_bytes() for path in (snapshot / "blobs").iterdir())
+    assert capture.returncode == 2
+    assert "退避中に未追跡ファイル" in stderr
+    assert "Traceback" not in stderr
+    blobs = snapshot / "blobs"
+    assert not blobs.exists() or not any(path.read_bytes() == outside.read_bytes() for path in blobs.iterdir())
 
 
 def test_git_start_failure_is_reported_as_snapshot_error(tmp_path: pathlib.Path) -> None:
