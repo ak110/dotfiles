@@ -60,6 +60,9 @@ ref名とOIDを委譲前スナップショットとして保存する。
 
 `status: needs_escalation`では`blockers`も必須とする。
 必須欄の欠落または値の矛盾は未完遂として扱い、未完了項目と実測結果へ縮減して再委譲する。
+待機表明だけを返し完了報告の必須欄を欠く返却も未完遂として扱う。
+この場合は「サブエージェント運用」の停止手順で委譲先を停止し、
+「実体照合と後続工程」節の完遂順序のうち未完了の工程を呼び出し元が巻き取る。
 
 `needs_escalation`は次のように処理する。
 
@@ -126,6 +129,9 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 `review_final_findings: 未確定`、`review_skip_instruction: なし`、
 `review_caller_verification: 未完了事項の確認が必要`とする。
 `not_started`または`unavailable`のrouteに対応するthreadとAgent識別子は「なし」とする。
+routeの値は、起動を試みて不能だった場合を`unavailable`、起動を試みていない場合を`not_started`とする。
+`status: needs_escalation`で両レビューrouteが`not_started`である状態は、
+ユーザー指示によるレビュー省略に限って正当とし、それ以外は値の矛盾として未完遂扱いとする。
 `plan-file-finalizer`の値との照合は行わない。
 
 レビュー進行は、上限へ到達した時点と、計画の対象ファイル一覧に無いファイルへ変更が及んだ時点で、
