@@ -56,7 +56,7 @@ _PLAN_FILE_FINALIZER_ACTIVE_KEY = "plan_file_finalizer_active_subagent_sessions"
 # 「完了報告の検収」節および
 # `agent-toolkit/agents/plan-impl-executor.md`「出力」節。
 # ラベル定義変更時は本定数と両ファイルを同時に更新する。
-_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
+PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "status",
     "summary",
     "changed",
@@ -101,13 +101,13 @@ _PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(
 _PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE = re.compile(r"^計画準拠系(\d+)件・独立系(\d+)件$")
 
 # `changed:`欄本文（次の主要ラベル行直前まで）を抽出する境界パターン（FB[3]）。
-# `_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
+# `PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
 # 境界として使い、`verification`・`blockers`等の他欄に含まれるチェックボックス様の記述を誤検出しない。
-_PLAN_IMPL_EXECUTOR_ALL_LABELS: tuple[str, ...] = _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS + (
+PLAN_IMPL_EXECUTOR_ALL_LABELS: tuple[str, ...] = PLAN_IMPL_EXECUTOR_REQUIRED_LABELS + (
     _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL,
 )
 _PLAN_IMPL_EXECUTOR_CHANGED_SECTION_RE = re.compile(
-    r"^changed:\s*\n((?:(?!^(?:" + "|".join(re.escape(label) for label in _PLAN_IMPL_EXECUTOR_ALL_LABELS) + r"):).*\n?)*)",
+    r"^changed:\s*\n((?:(?!^(?:" + "|".join(re.escape(label) for label in PLAN_IMPL_EXECUTOR_ALL_LABELS) + r"):).*\n?)*)",
     re.MULTILINE,
 )
 
@@ -123,7 +123,7 @@ def _extract_changed_section_body(text: str) -> str:
 
 def _extract_report_field(text: str, label: str) -> str:
     """完了報告の欄本文を次の主要ラベル直前まで抽出する。"""
-    labels = "|".join(re.escape(item) for item in _PLAN_IMPL_EXECUTOR_ALL_LABELS)
+    labels = "|".join(re.escape(item) for item in PLAN_IMPL_EXECUTOR_ALL_LABELS)
     pattern = re.compile(
         rf"^{re.escape(label)}:[ \t]*(.*(?:\n(?!(?:{labels}):).*)*)",
         re.MULTILINE,
@@ -334,7 +334,7 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
         return [], False, []
-    required = list(_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
+    required = list(PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
     if _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE.search(text):
         required.append(_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL)
     missing: list[str] = []

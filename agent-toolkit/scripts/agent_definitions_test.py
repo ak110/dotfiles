@@ -4,6 +4,7 @@ import pathlib
 import re
 
 import _atk_mq_frontmatter as frontmatter
+import subagent_stop_advisor
 
 _AGENTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "agents"
 _CODEX_EXEC_SKILL = _AGENTS_DIR.parent / "skills" / "codex-exec" / "SKILL.md"
@@ -47,6 +48,9 @@ _SKILL_MARKDOWN = {
 # 節参照の記法。`agent-toolkit:<skill>`「<節名>」節と`<ファイル名>`「<節名>」節の2形式を対象とする。
 _SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?(?:の)?「([^」\n]+)」節")
 _FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md)`(?:の)?「([^」\n]+)」節")
+# 完了報告の欄ラベル。フェンス内の行頭に置かれた`<label>:`だけを対象とし、入れ子の欄は除く。
+_FENCED_BLOCK_RE = re.compile(r"^```[a-z]*\n(.*?)^```", re.DOTALL | re.MULTILINE)
+_OUTPUT_LABEL_RE = re.compile(r"^([a-z][a-z0-9_]*):", re.MULTILINE)
 
 
 def _h2_section(text: str, heading: str) -> str:
@@ -55,6 +59,18 @@ def _h2_section(text: str, heading: str) -> str:
     _, separator, remainder = text.partition(marker)
     assert separator, f"H2節が存在しない: {heading}"
     return remainder.partition("\n## ")[0]
+
+
+def _output_labels(document: str) -> tuple[str, ...]:
+    """`## 出力`節のフェンス内から`<label>:`形式のラベルを順序どおり抽出する。
+
+    定義側へ欄を追加したとき、対の文書と機械検査へ追随したかを列挙の更新なしで検査するため、
+    検査対象を定義側の本文から導出する。
+    """
+    section = _h2_section(document, "出力")
+    fence = _FENCED_BLOCK_RE.search(section)
+    assert fence, "`## 出力`節にフェンス付きコードブロックが存在しない"
+    return tuple(dict.fromkeys(_OUTPUT_LABEL_RE.findall(fence.group(1))))
 
 
 def test_codex_exec_agents_allow_nested_agent_fallback() -> None:
@@ -192,20 +208,14 @@ def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
     assert "worktree_check_result" in review_task
 
 
-def test_plan_impl_review_report_contract_is_synchronized() -> None:
-    """executorの最終レビュー情報と呼び出し元の検収欄を同期する。"""
-    executor = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
+def test_plan_impl_report_labels_are_synchronized() -> None:
+    """executorの出力欄が呼び出し元の検収節と完了報告の必須ラベル定数へ追随する。"""
+    labels = _output_labels(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"))
+    assert labels, "`## 出力`節からラベルを抽出できない（節の書式が変わった可能性がある）"
     caller = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
-    for label in (
-        "external_operations",
-        "review_final_findings",
-        "review_skip_instruction",
-        "review_caller_verification",
-        "review_coverage",
-        "review_impact_audit",
-    ):
-        assert label in executor
-        assert label in caller
+    for label in labels:
+        assert label in caller, f"呼び出し元の検収節に`{label}`がない"
+        assert label in subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS, f"完了報告のラベル定数に`{label}`がない"
 
 
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
