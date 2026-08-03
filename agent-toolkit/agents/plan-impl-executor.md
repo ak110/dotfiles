@@ -131,7 +131,7 @@ external_operations:
 verification:
 - <コマンド、終了コード、警告>
 commit_sha: <最終コミットまたは「なし」>
-review_status: 実施完了（計画準拠系採用N件・独立系採用M件） | 上限到達後の既知指摘修正済み（再レビューなし） | レビューは実施しない（ユーザー指示） | レビュー未完了
+review_status: 実施完了（計画準拠系採用N件・独立系採用M件） | 上限到達後の既知指摘修正済み（再レビューなし） | 対象拡大により中断（指摘反映済み・再レビューなし） | レビューは実施しない（ユーザー指示） | レビュー未完了
 review_final_findings: 計画準拠系N件・独立系M件 | 対象外 | 未確定
 review_skip_instruction: <ユーザー指示原文または「なし」>
 review_caller_verification: 不要 | ユーザー指示原文との照合が必要 | 未完了事項の確認が必要
@@ -186,15 +186,21 @@ blockers:
 `review_skip_instruction`へ転記して、呼び出し元による照合を要求する。
 `review_status`、`review_final_findings`、`review_skip_instruction`、
 `review_caller_verification`の4欄をレビュー欄と呼ぶ。
-レビュー工程を完了しないまま`status: needs_escalation`で返す場合は、
-`review_final_findings: 未確定`、`review_skip_instruction: なし`、
-`review_caller_verification: 未完了事項の確認が必要`とする。
 `external_operations`のいずれかの`result`が`needs_escalation`の場合は、
 全体の`status`も`needs_escalation`とする。
-実装、検証、コミット、レビュー工程を完了したうえで`needs_escalation`で返す場合は、
-レビュー欄へ前掲の未完了向けの値を書かず、レビュー工程の実測どおりの値を記載する。
-対象リポジトリ外操作の未実施だけが残る場合と、対象ファイル一覧の閾値到達により
-呼び出し元の判断を求める場合が該当する。
+`status: needs_escalation`のレビュー欄は、レビュー工程の到達状況で次の3通りに分ける。
+いずれの場合も`review_caller_verification: 未完了事項の確認が必要`とする。
+
+- レビュー工程へ到達しないまま返す場合は`review_status: レビュー未完了`、
+  `review_final_findings: 未確定`、`review_skip_instruction: なし`とする
+- レビュー工程を完了し、対象リポジトリ外操作の未実施だけが残る場合は、
+  `review_status`と`review_final_findings`へレビュー工程の実測どおりの値を記載する。
+  ユーザー指示によるレビュー省略では`review_final_findings: 対象外`とし、
+  `review_skip_instruction`へ指示原文を転記する
+- 対象ファイル一覧の閾値到達により、当ラウンドの指摘反映を終えた時点で返す場合は、
+  `review_status: 対象拡大により中断（指摘反映済み・再レビューなし）`とし、
+  `review_final_findings`へ当該ラウンドの指摘件数、`review_skip_instruction: なし`とする
+
 完了したレビューの実測結果を`レビュー未完了`と`未確定`へ置き換えると、
 呼び出し元は完了済みのレビュー工程を再実行する。
 `result`が`needs_escalation`の`external_operations`の各項目は、`operation`と`target`を含む形で

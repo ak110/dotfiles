@@ -224,6 +224,35 @@ def test_plan_impl_report_labels_are_synchronized() -> None:
     )
 
 
+def test_plan_impl_review_status_values_are_synchronized() -> None:
+    """executorが定義する`review_status`の固定値と完了報告検査の定数が一致する。
+
+    検査側が知らない値を定義へ加えると、契約どおりの完了報告が`decision: block`で拒否される。
+    """
+    section = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
+    fence = _FENCED_BLOCK_RE.search(section)
+    assert fence, "`## 出力`節にフェンス付きコードブロックが存在しない"
+    definition = next(
+        (line for line in fence.group(1).splitlines() if line.startswith("review_status:")),
+        None,
+    )
+    assert definition, "`## 出力`節に`review_status`の定義行が無い"
+    values = {value.strip() for value in definition.removeprefix("review_status:").split("|")}
+    # `実施完了（...）`は件数を含む可変値のため、固定値の集合比較から除く。
+    fixed_values = {value for value in values if not value.startswith("実施完了")}
+    constants = {
+        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_REVIEW_CAP_STATUS,
+        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS,
+        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_SKIPPED_STATUS,
+        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_INCOMPLETE_STATUS,
+    }
+    assert fixed_values == constants, (
+        f"`review_status`の固定値と検査側の定数が一致しない: "
+        f"定義側のみ={sorted(fixed_values - constants)}、検査側のみ={sorted(constants - fixed_values)}"
+    )
+    assert any(value.startswith("実施完了") for value in values), "`review_status`の定義に実施完了の値が無い"
+
+
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
     """実装・修正系への配送物一覧と受領側の入力契約が同じreference群を挙げる。
 

@@ -975,7 +975,11 @@ class TestPlanImplExecutorReportFormat:
     @pytest.mark.parametrize(
         ("overrides", "expected_fragment"),
         [
-            ({"review_status": "実施完了（計画準拠系採用0件・独立系採用0件）"}, "レビュー未完了"),
+            (
+                {"review_status": "実施完了（計画準拠系採用0件・独立系採用0件）"},
+                "review_final_findings must contain two non-negative finding counts",
+            ),
+            ({"review_status": "レビュー保留中"}, "review_status must be one of the values defined"),
             (
                 {"plan_review_route": "unavailable", "plan_review_thread_id": "th_invalid"},
                 "plan_review_thread_id must be なし",
@@ -983,6 +987,13 @@ class TestPlanImplExecutorReportFormat:
             ({"review_final_findings": "対象外"}, "review_final_findings must be 未確定"),
             ({"review_skip_instruction": "省略すること"}, "review_skip_instruction must be なし"),
             ({"review_caller_verification": "不要"}, "review_caller_verification must request pending-item"),
+            (
+                {
+                    "review_status": "対象拡大により中断（指摘反映済み・再レビューなし）",
+                    "review_final_findings": "未確定",
+                },
+                "review_final_findings must contain two non-negative finding counts",
+            ),
         ],
     )
     def test_escalation_review_value_mismatch_blocks(
@@ -1016,6 +1027,42 @@ class TestPlanImplExecutorReportFormat:
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
         assert expected_fragment in body["reason"]
+
+    @pytest.mark.parametrize(
+        "review_status",
+        [
+            "実施完了（計画準拠系採用2件・独立系採用1件）",
+            "上限到達後の既知指摘修正済み（再レビューなし）",
+            "対象拡大により中断（指摘反映済み・再レビューなし）",
+        ],
+    )
+    def test_escalation_keeps_measured_review_values(self, tmp_path: Path, review_status: str) -> None:
+        """レビュー工程を完了または中断した`needs_escalation`は実測値のまま通過する。
+
+        対象リポジトリ外操作の未実施だけが残る場合と対象ファイル一覧の閾値到達では、
+        レビューの実測結果を`レビュー未完了`と`未確定`へ置き換えないため、
+        当該値を検査がblockすると契約どおりの報告を返せない。
+        """
+        sid = f"sid-format-escalation-measured-{len(review_status)}"
+        agent_id = f"sub-escalation-measured-{len(review_status)}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        report = (
+            _complete_report(
+                status="needs_escalation",
+                review_status=review_status,
+                review_final_findings="計画準拠系2件・独立系1件",
+            )
+            + "\nblockers:\n- 未解決事項"
+        )
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
 
     def test_unchecked_item_inside_applied_instructions_does_not_block(self, tmp_path: Path) -> None:
         """`changed`欄の境界検査は`applied_instructions`欄の追加後も正しく`changed`欄末尾で止まる。"""

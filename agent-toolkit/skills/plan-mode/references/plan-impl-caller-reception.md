@@ -167,16 +167,21 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 - `review_coverage`と`review_impact_audit`は「なし」
 - `review_rounds`は0
 
-レビュー工程を完了しないまま`status: needs_escalation`で返された場合は、
-`review_status`が`レビュー未完了`、`review_final_findings`が`未確定`であることを確認する。
-`review_skip_instruction`は`なし`、`review_caller_verification`は`未完了事項の確認が必要`とする。
-実装、検証、コミット、レビュー工程が完了したうえで`needs_escalation`で返された場合は、
-前掲の4欄が通常完了、上限到達後の既知指摘修正済み、レビュー省略のいずれかの値であることを確認する。
-対象リポジトリ外操作の未実施だけが残る場合と、対象ファイル一覧の閾値到達により
-判断を求められた場合が該当する。
-前者の再委譲は`blockers`が挙げる未実施の対象リポジトリ外操作に限定し、レビュー工程を再実行させない。
-後者は本ファイル「未完了事項の処理」節が定める継続と切り出しの比較へ進み、同じくレビュー工程を再実行させない。
-当該区分は`agent-toolkit/agents/plan-impl-executor.md`「出力」節とペアで維持する。
+`status: needs_escalation`のレビュー欄は、レビュー工程の到達状況で3通りに分かれる。
+いずれも`review_caller_verification`は`未完了事項の確認が必要`である。
+
+- レビュー工程へ到達しないまま返された場合は、`review_status`が`レビュー未完了`、
+  `review_final_findings`が`未確定`、`review_skip_instruction`が`なし`であることを確認する
+- レビュー工程が完了し、対象リポジトリ外操作の未実施だけが残る場合は、
+  `review_status`が通常完了、上限到達後の既知指摘修正済み、レビュー省略のいずれかであることを確認する。
+  再委譲は`blockers`が挙げる未実施の対象リポジトリ外操作に限定し、レビュー工程を再実行させない
+- 対象ファイル一覧の閾値到達により判断を求められた場合は、`review_status`が
+  `対象拡大により中断（指摘反映済み・再レビューなし）`であり、`review_final_findings`へ
+  当該ラウンドの指摘件数が入っていることを確認する。
+  本ファイル「未完了事項の処理」節が定める継続と切り出しの比較へ進み、レビュー工程を再実行させない
+
+当該区分は`agent-toolkit/agents/plan-impl-executor.md`「出力」節および
+`agent-toolkit/scripts/subagent_stop_advisor.py`の完了報告検査とペアで維持する。
 `not_started`または`unavailable`のrouteに対応するthreadとAgent識別子は「なし」とする。
 routeの値は、起動を試みて不能だった場合を`unavailable`、起動を試みていない場合を`not_started`とする。
 `status: needs_escalation`で両レビューrouteが`not_started`である状態は、
