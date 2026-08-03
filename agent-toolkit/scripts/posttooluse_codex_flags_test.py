@@ -108,6 +108,13 @@ def test_plan_review_completed_accepts_closing_fence(tmp_path: pathlib.Path) -> 
         ("status: completed\n\n\nreview_completed: true\n", True),
         ("status: completed\n補足の地の文\nreview_completed: true\n", False),
         ("status: completed\nreview_completed: true\n\n補足の地の文\n", False),
+        # 値を囲む強調記法は完了報告の実態を変えないため受理する。
+        ("status: **completed**\nreview_completed: **true**\n", True),
+        ("status: *completed*\nreview_completed: *true*\n", True),
+        ("status: __completed__\nreview_completed: __true__\n", True),
+        # 値そのものが異なる場合は記法の有無によらず拒否する。
+        ("status: **needs_escalation**\nreview_completed: **true**\n", False),
+        ("status: **completed**\nreview_completed: **false**\n", False),
     ],
 )
 def test_plan_review_completed_skips_blank_lines_between_record_lines(

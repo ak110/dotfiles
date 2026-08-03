@@ -215,8 +215,12 @@ _PLAN_FILE_FINALIZER_ACTIVE_KEY = "plan_file_finalizer_active_subagent_sessions"
 
 # 完了報告末尾の機械可読な記録行を判定する正規表現。
 _RECORD_LINE_RE = re.compile(r"^(?:status|review_completed):")
-_STATUS_LINE_RE = re.compile(r"^status:\s*(completed|needs_escalation)$", re.MULTILINE)
-_REVIEW_COMPLETED_LINE_RE = re.compile(r"^review_completed:\s*(true|false)$", re.MULTILINE)
+# 値を囲む強調記法（`**completed**`等）を許容する。完了報告は本文中の表や見出しと同じ流れで
+# 書かれるため値へ強調が付くことがあり、記法の有無で完遂を判定すると実態と異なる結果になる。
+_STATUS_LINE_RE = re.compile(r"^status:\s*(?:\*{1,2}|_{1,2})?(completed|needs_escalation)(?:\*{1,2}|_{1,2})?$", re.MULTILINE)
+_REVIEW_COMPLETED_LINE_RE = re.compile(
+    r"^review_completed:\s*(?:\*{1,2}|_{1,2})?(true|false)(?:\*{1,2}|_{1,2})?$", re.MULTILINE
+)
 
 
 def _extract_trailing_record_block(completion_text: str) -> str:
