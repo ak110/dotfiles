@@ -9,6 +9,9 @@
 pullとファイル操作・commitの交錯によるfast-forward失敗を招く。
 `_repo_lock`はロックファイル名を対象パスから導出するため、フィードバック保存リポジトリ以外の
 git作業コピー（`atk mq process-loop`が上流差分を確認するdotfilesチェックアウト等）にも適用する。
+
+TBDの回答判定`_is_tbd_answered`は`_tbd_scan`が実体を持つ。PostToolUseフックが
+依存パッケージなしで同じ判定を利用するため、本モジュールは再エクスポートのみを行う。
 """
 
 import argparse
@@ -34,6 +37,7 @@ from _atk_mq_formatters import (
     _truncate_target_repo,
 )
 from _atk_mq_frontmatter import parse_frontmatter, serialize_frontmatter
+from _tbd_scan import is_tbd_answered as _is_tbd_answered
 
 # フィードバック管理repoの4状態フォルダー名（管理repoのroot直下）。
 # - `inbox`: 未処理の投入直後
@@ -621,26 +625,6 @@ def _iter_entries(
             if entry_type not in ("all", actual_type):
                 continue
             yield path, target_repo, text, state, actual_type
-
-
-def _is_tbd_answered(text: str) -> bool:
-    """TBD本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
-    marker = "\n## 回答\n"
-    idx = text.find(marker)
-    if idx < 0:
-        return False
-    body = text[idx + len(marker) :]
-    next_h2 = body.find("\n## ")
-    if next_h2 >= 0:
-        body = body[:next_h2]
-    for line in body.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("<!--") and stripped.endswith("-->"):
-            continue
-        return True
-    return False
 
 
 def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str | None) -> None:
