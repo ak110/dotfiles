@@ -89,7 +89,6 @@ description: >
 統一対象外として扱う。
 
 - `textlint-rule-prh`（dotfilesのみ）: Claude Codeのコンテキスト汚染を防ぐためtextlint系を特に厳しくする方針
-- `--dist=loadfile`（pytest、dotfilesのみ）: テストのファイル単位のセットアップ/ティアダウンに依存するため
 - pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonソースから
   ドキュメントを生成するため、ソース変更でもdocs workflowが起動する必要がある
 - Dependabot alertsの有効・無効（dotfiles・GLATasksは有効、pytilpackは無効）:
