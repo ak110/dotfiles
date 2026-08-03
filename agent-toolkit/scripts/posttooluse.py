@@ -377,8 +377,8 @@ def _diff_remote_snapshots(
     return changed
 
 
-def _warn_codex_remote_change(session_id: str, payload: dict) -> None:
-    """codex呼び出し前後でリモート参照が変化した場合に警告する（ブロックしない）。
+def _warn_codex_remote_change(session_id: str, payload: dict) -> str | None:
+    """codex呼び出し前後でリモート参照が変化した場合に警告本文を返す。
 
     PreToolUse側が記録をスキップした場合（`cwd`未取得等）は比較せず終了する。
     比較後は記録済みスナップショットを削除し、次回呼び出しでの記録漏れによる
@@ -415,38 +415,28 @@ def _warn_codex_remote_change(session_id: str, payload: dict) -> None:
 
     update_state(session_id, _clear)
     if recorded is None:
-        return
+        return None
     before = recorded.get("snapshot")
     if not isinstance(cwd, str) or not isinstance(before, dict):
-        return
+        return None
     after = _git_status.snapshot_remote_refs(cwd)
     changed_remotes = sorted(_diff_remote_snapshots(before, after))
     if not changed_remotes:
-        return
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": _llm_notice(
-                        "warn: remote refs changed during a codex call "
-                        f"(remotes: {', '.join(changed_remotes)})."
-                        " This may reflect an unintended `git push`/tag creation performed inside the"
-                        " codex process (which bypasses PreToolUse), or a legitimate push by another"
-                        " concurrent session that cannot be distinguished from here. Verify the remote"
-                        " state and, if the change was unintended, restore it per caller-reception.md"
-                        " remote-state reconciliation.",
-                        tag="warn",
-                    ),
-                }
-            },
-            ensure_ascii=False,
-        )
+        return None
+    return _llm_notice(
+        "warn: remote refs changed during a codex call "
+        f"(remotes: {', '.join(changed_remotes)})."
+        " This may reflect an unintended `git push`/tag creation performed inside the"
+        " codex process (which bypasses PreToolUse), or a legitimate push by another"
+        " concurrent session that cannot be distinguished from here. Verify the remote"
+        " state and, if the change was unintended, restore it per caller-reception.md"
+        " remote-state reconciliation.",
+        tag="warn",
     )
 
 
-def main(payload_text: str) -> int:
-    """エントリポイント。終了コードは常に0。"""
+def _dispatch(payload_text: str, notices: list[str]) -> int:
+    """payloadを解析し、通知本文を`notices`へ蓄積する。終了コードは常に0。"""
     try:
         payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
@@ -584,7 +574,9 @@ def main(payload_text: str) -> int:
 
     # codex呼び出し後はリモートrefの変化だけを確認する。
     if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
-        _warn_codex_remote_change(session_id, payload)
+        codex_notice = _warn_codex_remote_change(session_id, payload)
+        if codex_notice is not None:
+            notices.append(codex_notice)
         return 0
 
     # Read: 規範ファイル読み込みのセッション状態フラグ化
@@ -653,17 +645,7 @@ def main(payload_text: str) -> int:
             if prohibition_content is not None:
                 prohibition_warnings = _check_conditional_prohibition(pathlib.Path(file_path), prohibition_content)
                 if prohibition_warnings:
-                    print(
-                        json.dumps(
-                            {
-                                "hookSpecificOutput": {
-                                    "hookEventName": "PostToolUse",
-                                    "additionalContext": _llm_notice("\n".join(prohibition_warnings), tag="warn"),
-                                }
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
+                    notices.append(_llm_notice("\n".join(prohibition_warnings), tag="warn"))
         # 計画ファイル向け通知: 形式検査違反（plan-mode起動時のみ）と、
         # Write成功時の書き込み後チェック案内（plan-mode起動時のみ）を1つのadditionalContextへまとめる。
         # 状態フラグは追加せず、案内のみを一方向で通知する。
@@ -689,18 +671,7 @@ def main(payload_text: str) -> int:
                         tag="notice",
                     )
                 )
-            if messages:
-                print(
-                    json.dumps(
-                        {
-                            "hookSpecificOutput": {
-                                "hookEventName": "PostToolUse",
-                                "additionalContext": "\n".join(messages),
-                            }
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+            notices.extend(messages)
         return 0
 
     # Bash以外はここで終了
@@ -771,3 +742,26 @@ def main(payload_text: str) -> int:
 
     update_state(session_id, _apply_bash_updates)
     return 0
+
+
+def main(payload_text: str) -> int:
+    """エントリポイント。終了コードは常に0。
+
+    フック応答はstdout全体を1つのJSONとして解析されるため、蓄積した通知本文を
+    改行で連結して1回だけ出力する。分岐ごとの出力は複数JSONの生成につながる。
+    """
+    notices: list[str] = []
+    exit_code = _dispatch(payload_text, notices)
+    if notices:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PostToolUse",
+                        "additionalContext": "\n".join(notices),
+                    }
+                },
+                ensure_ascii=False,
+            )
+        )
+    return exit_code
