@@ -1384,6 +1384,14 @@ class TestBashCodexExecNudge:
         data = json.loads(result.stdout)
         assert "additionalContext" in data.get("hookSpecificOutput", {})
 
+    def test_codex_exec_nudge_uses_conditional_plan_review_wording(self) -> None:
+        """用途を断定せず、計画レビューの場合だけ点検を促す。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec --help"}})
+        additional_context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "running codex exec." in additional_context
+        assert "If this run submits a plan file for review" in additional_context
+        assert "submitting plan file to codex review." not in additional_context
+
     def test_no_nudge_on_resume(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec resume --dangerously-bypass abc prompt"}})
         assert result.returncode == 0

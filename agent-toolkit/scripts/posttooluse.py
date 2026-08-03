@@ -219,7 +219,7 @@ _REVIEW_COMPLETED_LINE_RE = re.compile(r"^review_completed:\s*(true|false)$", re
 
 
 def _extract_trailing_record_block(completion_text: str) -> str:
-    """完了報告の末尾側にある連続した既知キーの記録行を返す。"""
+    """完了報告の末尾側にある、空行が介在し得る既知キーの記録行を返す。"""
     lines = completion_text.rstrip("\n").split("\n")
     end = len(lines)
     while end > 0:
@@ -230,9 +230,14 @@ def _extract_trailing_record_block(completion_text: str) -> str:
         break
     record_lines: list[str] = []
     for line in reversed(lines[:end]):
-        if not _RECORD_LINE_RE.match(line):
-            break
-        record_lines.append(line)
+        if _RECORD_LINE_RE.match(line):
+            record_lines.append(line)
+            continue
+        # 記録行の間に介在する空行は同一ブロックの一部として無視する。
+        # 空行以外の非記録行では必ず停止するため、末尾ブロック外の記録行を拾うことはない。
+        if not line.strip() and record_lines:
+            continue
+        break
     return "\n".join(reversed(record_lines))
 
 

@@ -101,6 +101,32 @@ def test_plan_review_completed_accepts_closing_fence(tmp_path: pathlib.Path) -> 
     assert _read_state(tmp_path, sid)["plan_review_completed"] is True
 
 
+@pytest.mark.parametrize(
+    ("completion", "expected"),
+    [
+        ("escalation_points: なし\n\nstatus: completed\n\nreview_completed: true\n", True),
+        ("status: completed\n\n\nreview_completed: true\n", True),
+        ("status: completed\n補足の地の文\nreview_completed: true\n", False),
+        ("status: completed\nreview_completed: true\n\n補足の地の文\n", False),
+    ],
+)
+def test_plan_review_completed_skips_blank_lines_between_record_lines(
+    tmp_path: pathlib.Path, completion: str, expected: bool
+) -> None:
+    """記録行の間の空行を無視し、それ以外の行では抽出を終了する。"""
+    sid = "blank-lines"
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "plan-file-finalizer"},
+            "tool_response": {"result": completion},
+        },
+        state_dir=tmp_path,
+    )
+    assert (_read_state(tmp_path, sid).get("plan_review_completed") is True) is expected
+
+
 def test_background_finalizer_registers_only_agent_id(tmp_path: pathlib.Path) -> None:
     """完了報告本文を取得できない背景実行ではagentIdだけを登録する。"""
     sid = "background-finalizer"

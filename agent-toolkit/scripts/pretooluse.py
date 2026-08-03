@@ -3889,10 +3889,10 @@ def _check_bash_codex_exec(command: str) -> dict | None:
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "additionalContext": _llm_notice(
-                "submitting plan file to codex review."
-                " Pre-submission check: are there any decisions made by assumption"
-                " rather than user confirmation?"
-                " Resolve any open questions with the user before proceeding."
+                "running codex exec."
+                " If this run submits a plan file for review, check whether any decisions"
+                " were made by assumption rather than user confirmation,"
+                " and resolve open questions with the user before proceeding."
             ),
         },
     }
