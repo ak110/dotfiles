@@ -33,6 +33,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 17. `plan-file-finalizer`完了報告末尾の`status`と`review_completed`の解析 (Agent/Task)
 18. `agent-toolkit:codex-exec`起動の記録 (Skill)
+19. 対象リポジトリのTBDが全件回答済みへ遷移した場合の通知（全ツール共通）
 """
 
 import hashlib
@@ -46,6 +47,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-mode" / "scripts"))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -455,6 +457,17 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if hook_event_name in ("PostToolUseFailure", "PermissionDenied"):
         return 0
 
+    # cwdはBash分岐とTBD回答完了の検査で使うため、分岐前に一度だけ取得する。
+    cwd_raw = payload.get("cwd", "")
+    cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+
+    # 対象リポジトリのTBDが全件回答済みへ遷移した場合に通知する。
+    # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
+    if cwd:
+        tbd_notice = _tbd_completion.build_notice(session_id, cwd)
+        if tbd_notice is not None:
+            notices.append(_llm_notice(tbd_notice, tag="notice"))
+
     # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
     if tool_name == "EnterPlanMode":
 
@@ -681,9 +694,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # 環境変数代入接頭辞（`LOCALAPPDATA=...`等）を除去してから検出パターンを適用する。
     command = _strip_env_assignments(command)
-
-    cwd_raw = payload.get("cwd", "")
-    cwd = cwd_raw if isinstance(cwd_raw, str) else ""
 
     git_events = extract_git_events(command, cwd)
 
