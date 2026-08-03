@@ -26,6 +26,18 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _SCOPE_ESCALATION_INPUTS = load_scope_escalation_inputs()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_session_review_extension_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """振り返り拡張の環境変数を全テストから除去する。
+
+    `_run`は`os.environ.copy()`を子プロセスへ渡すため、テスト実行者の環境に
+    当該変数が設定されていると`approve_extension_env`で早期approveし、
+    blockを期待するテストが実行環境に依存して失敗する。
+    当該変数の挙動そのものを検証するテストは、本フィクスチャの後に自身で設定する。
+    """
+    monkeypatch.delenv("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", raising=False)
+
+
 def _pick_scope_escalation_text(category: str = "process-omission") -> str:
     """指定カテゴリの最小マッチ入力を1件返す。フィクスチャ不在時は空文字列。"""
     for text, cat in _SCOPE_ESCALATION_INPUTS:
