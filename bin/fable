@@ -1,4 +1,33 @@
 #!/usr/bin/env bash
 # NOTE: 対応する Windows 版 → bin/fable.cmd
+# 後処理の意図は bin/sonnet と同じ。
 export CLAUDE_CODE_SUBAGENT_MODEL=claude-sonnet-5
-exec claude --permission-mode=auto --model=fable --fallback-model='claude-opus-4-7[1m]' --effort=low "$@"
+is_interactive=1
+for arg in "$@"; do
+    case "$arg" in
+    --help | -h | --version | -v | --print | -p)
+        is_interactive=0
+        break
+        ;;
+    -*) ;;
+    *)
+        is_interactive=0
+        break
+        ;;
+    esac
+done
+claude_bin="$HOME/.local/bin/claude"
+if [ ! -x "$claude_bin" ]; then
+    claude_bin="$(command -v claude || true)"
+fi
+if [ -z "$claude_bin" ]; then
+    printf '%s\n' 'claudeコマンドが見つかりません。' >&2
+    exit 127
+fi
+"$claude_bin" --permission-mode=auto --model=fable \
+    --fallback-model='claude-opus-4-7[1m]' --effort=low "$@"
+rc=$?
+if [ "$is_interactive" -eq 1 ] && [ -t 1 ] && [ -t 2 ]; then
+    "$(dirname "$0")/c"
+fi
+exit $rc

@@ -1,3 +1,6 @@
 @echo off
 rem NOTE: ëŒâûÇ∑ÇÈLinuxî≈ Å® bin/sonnet
-claude --permission-mode=auto --model="sonnet[1m]" %*
+call claude --permission-mode=auto --model="sonnet[1m]" %*
+set RC=%ERRORLEVEL%
+call "%~dp0c.cmd"
+exit /b %RC%

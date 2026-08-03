@@ -1,3 +1,6 @@
 @echo off
 rem NOTE: ëŒâûÇ∑ÇÈ Linux î≈ Å® bin/opus
-claude --permission-mode=auto --model="opus[1m]" %*
+call claude --permission-mode=auto --model="opus[1m]" %*
+set RC=%ERRORLEVEL%
+call "%~dp0c.cmd"
+exit /b %RC%
