@@ -258,7 +258,6 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     schedule.add_argument(
         "--set-dependency",
         metavar="JSON",
-        nargs="+",
         default=None,
         help="対象エントリの依存条件だけを更新するJSON。filenameと依存マッピングを同一objectへ置く",
     )

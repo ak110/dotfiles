@@ -207,7 +207,9 @@ JSONは`filename`、`kind`、`condition`、`hold_reason`、`recheck_after`を含
 別リポジトリのフィードバック完了待ちは
 `filename`、`kind`、`filenames`、`target_repo`を含む同じJSON形式で記録する。
 起動時は`suppressed`の各項目が示す`condition`を1回実行し、再評価日時の到来前でも充足を確認する。
-未充足なら`hold_reason`を維持して`recheck_after`を更新し、他の処理対象の有無にかかわらず次工程へ進む。
+未充足なら`recheck_after`を更新する。`--set-dependency`は依存マッピング全体を置き換えるため、
+更新時も`condition`・`hold_reason`を含む全キーを再指定する。省略したキーは検証で拒否される。
+更新後は他の処理対象の有無にかかわらず次工程へ進む。
 外部条件待ちだけで採用0件となる場合は、本ステップの待機ループを起動しない。
 
 保留と判定した時点で既にprocessing状態へ遷移済みの対象は、`atk mq return-to-inbox <filename...>`で

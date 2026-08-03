@@ -40,7 +40,13 @@ def cmd_schedule(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
                 target_repo,
                 (_common.MQ_STATE_ADOPTED, _common.MQ_STATE_REJECTED),
             )
-            run_id = getattr(args, "run_id", None)
+            run_id = args.run_id
+            if run_id is not None and not run_id:
+                raise ValueError("--run-idは非空の文字列で指定してください")
+            if args.record_deferral is not None and args.set_dependency is not None:
+                raise ValueError("--record-deferralと--set-dependencyは同時に指定できません")
+            if args.classifications is not None and args.set_dependency is not None:
+                raise ValueError("--classificationsと--set-dependencyは同時に指定できません")
             if args.record_deferral is not None:
                 result, changed = _record_deferrals(private_notes, active, args.record_deferral, run_id)
                 if changed:
@@ -52,9 +58,8 @@ def cmd_schedule(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
                 _print_result(result)
                 return 0
 
-            set_dependency = getattr(args, "set_dependency", None)
-            if set_dependency:
-                if _apply_set_dependency(private_notes, active, set_dependency):
+            if args.set_dependency is not None:
+                if _apply_set_dependency(private_notes, active, args.set_dependency):
                     _common._commit_and_push(
                         private_notes,
                         "chore: update feedback queue dependencies",
@@ -72,14 +77,13 @@ def cmd_schedule(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
 
             existing_repairs = _load_unanswered_repair_keys(private_notes)
             # 依存先の存在確認だけを全リポジトリ横断で行う。`--target-repo`は処理対象の限定であって
-            # 観測範囲の限定ではない。
-            cross_repo = _common._load_schedule_entries(private_notes, None, _common.MQ_STATES)
+            # 観測範囲の限定ではない。該当する依存が無い場合は読み込まない。
             result = _schedule.calculate_schedule(
                 active,
                 terminal,
                 plan_target_files,
                 existing_repairs,
-                {entry.filename: entry for entry in cross_repo},
+                _common._load_cross_repo_entries(private_notes, active),
                 datetime.datetime.now(datetime.UTC),
             )
             deferred_active = _apply_calculated_deferrals(active, result.deferred, run_id)
@@ -233,33 +237,32 @@ def _apply_calculated_deferrals(
 def _apply_set_dependency(
     private_notes: pathlib.Path,
     entries: tuple[_schedule.QueueEntry, ...],
-    specifications: list[str],
+    specification: str,
 ) -> bool:
     """`--set-dependency`のJSON指定で対象エントリの依存だけを更新する。
 
     JSONは対象filenameと依存マッピングを同一オブジェクトへ置く。
     検証は`_schedule`側の受理関数へ委ね、CLI層で独自の解析を実装しない。
     """
+    payload = json.loads(specification)
+    if not isinstance(payload, dict):
+        raise ValueError(f"依存指定はJSON objectで指定してください: {specification}")
+    filename = payload.get("filename")
+    if not isinstance(filename, str) or not filename:
+        raise ValueError(f"依存指定にfilenameがありません: {specification}")
     by_name = {entry.filename: entry for entry in entries}
-    positions = {entry.filename: index for index, entry in enumerate(entries)}
+    entry = by_name.get(filename)
+    if entry is None or entry.metadata is None:
+        raise ValueError(f"依存更新の対象外または未分類のfilenameです: {filename}")
+    dependency = _schedule.dependency_from_mapping({key: value for key, value in payload.items() if key != "filename"})
+    if dependency is None:
+        raise ValueError(f"依存指定の必須キーまたは型が不正です: {specification}")
+    positions = {item.filename: index for index, item in enumerate(entries)}
     updated = list(entries)
-    for specification in specifications:
-        payload = json.loads(specification)
-        if not isinstance(payload, dict):
-            raise ValueError(f"依存指定はJSON objectで指定してください: {specification}")
-        filename = payload.get("filename")
-        if not isinstance(filename, str) or not filename:
-            raise ValueError(f"依存指定にfilenameがありません: {specification}")
-        entry = by_name.get(filename)
-        if entry is None or entry.metadata is None:
-            raise ValueError(f"依存更新の対象外または未分類のfilenameです: {filename}")
-        dependency = _schedule.dependency_from_mapping({key: value for key, value in payload.items() if key != "filename"})
-        if dependency is None:
-            raise ValueError(f"依存指定の必須キーまたは型が不正です: {specification}")
-        updated[positions[filename]] = dataclasses.replace(
-            entry,
-            metadata=dataclasses.replace(entry.metadata, dependency=dependency),
-        )
+    updated[positions[filename]] = dataclasses.replace(
+        entry,
+        metadata=dataclasses.replace(entry.metadata, dependency=dependency),
+    )
     return _persist_metadata_changes(private_notes, entries, tuple(updated))
 
 

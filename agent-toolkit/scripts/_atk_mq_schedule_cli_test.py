@@ -474,9 +474,110 @@ class TestScheduleCli:
         assert updated.dependency.kind == "external-upstream"
         assert updated.dependency.recheck_after == "2026-09-01T00:00:00+00:00"
         assert updated.dependency.hold_reason == "上流ツールのメジャー版対応待ち"
-        # 依存以外の項目は書き換えない。
+        # 依存以外の項目は書き換えない。本文hashが変わると分類が失効し、再分類を招く。
         assert updated.carry_count == 2
         assert updated.target_files == ("README.md",)
+        assert updated.body_sha256 == metadata.body_sha256
+
+    def test_set_dependency_accepts_external_repo_entry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """別リポジトリ依存もCLI経路で記録でき、対象リポジトリが正規化される。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/repo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("README.md",),
+            0,
+            (),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        specification = json.dumps(
+            {
+                "filename": "fb.md",
+                "kind": "external-repo-entry",
+                "filenames": ["upstream.md"],
+                "target_repo": "git@github.com:example/other.git",
+            },
+            ensure_ascii=False,
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "schedule",
+                    "--target-repo=github.com/example/repo",
+                    "--set-dependency",
+                    specification,
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        updated = schedule.parse_schedule_metadata(path.read_text(encoding="utf-8"))
+        assert updated is not None
+        assert updated.dependency.kind == "external-repo-entry"
+        assert updated.dependency.filenames == ("upstream.md",)
+        assert updated.dependency.target_repo == "github.com/example/other"
+
+    @pytest.mark.parametrize(
+        "conflicting_args",
+        [
+            ["--record-deferral", "conflict:fb.md"],
+            ["--classifications", "/dev/null"],
+        ],
+    )
+    def test_set_dependency_conflicts_with_other_modes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        conflicting_args: list[str],
+    ) -> None:
+        """他の処理と同時指定した場合、片方を無言で無視せずエラーで終える。"""
+        _setup_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        specification = json.dumps({"filename": "fb.md", "kind": "none"}, ensure_ascii=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "schedule",
+                    "--target-repo=github.com/example/repo",
+                    "--set-dependency",
+                    specification,
+                    *conflicting_args,
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+
+    def test_empty_run_id_is_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """空の実行単位は受理しない。書き込むと分類メタデータ全体が無効と判定される。"""
+        _setup_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "schedule", "--target-repo=github.com/example/repo", "--run-id="],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
 
     def test_set_dependency_rejects_invalid_specification(
         self,

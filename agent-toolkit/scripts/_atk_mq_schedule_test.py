@@ -701,6 +701,44 @@ class TestExternalRepoEntryDependency:
         assert not result.missing_dependency_tbds
         assert [item.filename for item in result.deferred] == ["a.md"]
 
+    def test_round_trip_preserves_filenames_and_target_repo(self) -> None:
+        """直列化と復元で依存先の一覧と対象リポジトリが保たれる。"""
+        dependency = self._dependency()
+        metadata = _metadata("a.md", dependency=dependency)
+        body = "\n本文 a.md\n"
+        text = frontmatter.serialize_frontmatter({"target_repo": "github.com/example/repo", "type": "feedback"}, body)
+
+        restored = schedule.parse_schedule_metadata(schedule.serialize_schedule_metadata(text, metadata))
+
+        assert restored is not None
+        assert restored.dependency == dependency
+
+    @pytest.mark.parametrize(
+        "target_repo",
+        [
+            "git@github.com:example/other.git",
+            "https://github.com/example/other.git",
+            "github.com/example/other",
+        ],
+    )
+    def test_target_repo_is_normalized_on_acceptance(self, target_repo: str) -> None:
+        """受理時に対象リポジトリを正規化し、表記の違いで不成立にならないようにする。"""
+        dependency = schedule.dependency_from_mapping(
+            {"kind": "external-repo-entry", "filenames": ["upstream.md"], "target_repo": target_repo}
+        )
+
+        assert dependency is not None
+        assert dependency.target_repo == "github.com/example/other"
+
+    def test_unparsable_target_repo_is_rejected(self) -> None:
+        """リモートURLとして解析できない対象リポジトリは拒否する。"""
+        assert (
+            schedule.dependency_from_mapping(
+                {"kind": "external-repo-entry", "filenames": ["upstream.md"], "target_repo": "###"}
+            )
+            is None
+        )
+
 
 class TestDeferralIdempotency:
     """繰越の冪等化: 同一実行単位の再計算で二重計上しない。"""
@@ -725,6 +763,39 @@ class TestDeferralIdempotency:
 
         assert second.carry_count == 2
         assert second.carry_reasons == ("limit-exceeded", "limit-exceeded")
+
+    def test_same_run_id_with_different_reason_increments(self) -> None:
+        """同一実行単位でも理由が異なる繰越は加算する。
+
+        別の理由による繰越は別の事象であり、抑止すると呼び出し元へ返す記録と
+        永続化した状態が一致しなくなる。
+        """
+        metadata = _metadata("a.md")
+
+        first = schedule.with_deferral(metadata, "limit-exceeded", "run-1")
+        second = schedule.with_deferral(first, "conflict", "run-1")
+
+        assert second.carry_count == 2
+        assert second.carry_reasons == ("limit-exceeded", "conflict")
+
+    def test_empty_run_id_increments_each_time(self) -> None:
+        """空の実行単位は未指定と同じ扱いとし、状態へ書き込まない。"""
+        metadata = _metadata("a.md")
+
+        first = schedule.with_deferral(metadata, "conflict", "")
+        second = schedule.with_deferral(first, "conflict", "")
+
+        assert second.carry_count == 2
+        assert first.last_deferral_run_id is None
+
+    @pytest.mark.parametrize("last_reason", ["", "unknown-reason", 1])
+    def test_invalid_last_deferral_reason_is_rejected(self, last_reason: object) -> None:
+        """記録した理由が受理値でないメタデータは拒否する。"""
+        mapping = schedule.metadata_to_mapping(_metadata("a.md"))
+        mapping["last_deferral_run_id"] = "run-1"
+        mapping["last_deferral_reason"] = last_reason
+
+        assert schedule.mapping_to_metadata(mapping) is None
 
     def test_without_run_id_increments_each_time(self) -> None:
         """実行単位を指定しない場合は毎回加算する。"""

@@ -40,15 +40,16 @@ def _write_feedback(
     *,
     dependency: schedule.Dependency | None = None,
     state: str = "inbox",
+    target_repo: str = "github.com/example/repo",
 ) -> pathlib.Path:
     """分類メタデータ付きのテスト用feedbackを書き込む。"""
     directory = private_notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
-    text = "---\ntarget_repo: github.com/example/repo\ntype: feedback\n---\n\n本文\n"
+    text = f"---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n本文\n"
     metadata = schedule.ScheduleMetadata(
         schedule.body_sha256(text),
-        "github.com/example/repo",
+        target_repo,
         "normal",
         dependency or schedule.Dependency("none"),
         None,
@@ -374,6 +375,98 @@ class TestScheduleEntryLoading:
         )
 
         assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+    @staticmethod
+    def _external_repo_dependency() -> schedule.Dependency:
+        return schedule.Dependency(
+            "external-repo-entry",
+            filenames=("upstream.md",),
+            target_repo="github.com/example/other",
+        )
+
+    @pytest.mark.parametrize(
+        ("upstream_state", "upstream_repo", "expected"),
+        [
+            # 依存先が終端状態にあれば成立し、当該エントリを処理対象として数える。
+            ("adopted", "https://github.com/example/other.git", 1),
+            ("rejected", "https://github.com/example/other.git", 1),
+            # 依存先が未処理の間は成立しない。
+            ("processing", "https://github.com/example/other.git", 0),
+            # 同名エントリが別のリポジトリにある場合は成立しない。
+            ("adopted", "https://github.com/example/unrelated.git", 0),
+        ],
+    )
+    def test_external_repo_entry_is_evaluated_from_files(
+        self,
+        tmp_path: pathlib.Path,
+        upstream_state: str,
+        upstream_repo: str,
+        expected: int,
+    ) -> None:
+        """実ファイルから読み込んだ対象リポジトリと状態で別リポジトリ依存を判定する。
+
+        依存先はHTTPS形式のリモートURLで書き、正規化済みの識別子として
+        `QueueEntry`へ保持されることも併せて検査する。
+        """
+        _write_feedback(tmp_path, "waiting.md", dependency=self._external_repo_dependency())
+        _write_feedback(tmp_path, "upstream.md", state=upstream_state, target_repo=upstream_repo)
+
+        loaded = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path,
+            None,
+            _common.MQ_STATES,
+        )
+        by_name = {entry.filename: entry for entry in loaded}
+        assert by_name["upstream.md"].normalized_target_repo == upstream_repo.removeprefix("https://").removesuffix(".git")
+        assert by_name["upstream.md"].state == upstream_state
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == expected
+
+    def test_external_repo_entry_missing_from_files_is_unsatisfied(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """依存先のファイルが存在しない場合は成立せず、処理対象として数えない。"""
+        _write_feedback(tmp_path, "waiting.md", dependency=self._external_repo_dependency())
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+    @pytest.mark.parametrize(
+        ("dependency", "expects_load"),
+        [
+            (None, False),
+            (
+                schedule.Dependency(
+                    "external-upstream", condition="c", recheck_after="2099-01-01T00:00:00+00:00", hold_reason="h"
+                ),
+                False,
+            ),
+            (
+                schedule.Dependency("external-repo-entry", filenames=("upstream.md",), target_repo="github.com/example/other"),
+                True,
+            ),
+        ],
+    )
+    def test_cross_repo_entries_are_loaded_only_when_required(
+        self,
+        tmp_path: pathlib.Path,
+        dependency: schedule.Dependency | None,
+        expects_load: bool,
+    ) -> None:
+        """全リポジトリ横断の読み込みを、必要な依存がある場合だけ行う。
+
+        当該読み込みは終端状態を含む全件走査であり、蓄積に比例して所要時間が伸びる。
+        """
+        _write_feedback(tmp_path, "waiting.md", dependency=dependency)
+        entries = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path,
+            "github.com/example/repo",
+            _common.MQ_ACTIVE_STATES,
+        )
+
+        loaded = _common._load_cross_repo_entries(tmp_path, entries)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert bool(loaded) is expects_load
 
     def test_count_pending_entries_counts_missing_plan_only_until_repair_tbd_is_filed(
         self,

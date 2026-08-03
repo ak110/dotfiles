@@ -686,6 +686,20 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
         print(f"{prefix}{_tbd_body_summary(text, available_width)}", file=sys.stderr)
 
 
+def _load_cross_repo_entries(
+    private_notes: pathlib.Path,
+    active_entries: tuple[_schedule.QueueEntry, ...],
+) -> dict[str, _schedule.QueueEntry]:
+    """別リポジトリ依存の充足判定に使う全リポジトリのエントリを返す。
+
+    該当する依存が1件も無い場合は読み込まない。全リポジトリ・全状態の走査は
+    終端状態を含むため、蓄積に比例して所要時間が伸びる。
+    """
+    if not _schedule.requires_cross_repo_entries(active_entries):
+        return {}
+    return {entry.filename: entry for entry in _load_schedule_entries(private_notes, None, MQ_STATES)}
+
+
 def _normalized_repo_or_none(value: str | None) -> str | None:
     """対象リポジトリを正規化する。解析できない値はNoneを返す。
 
@@ -736,7 +750,7 @@ def _count_pending_entries(
         terminal_entries,
         plan_target_files,
         existing_repairs,
-        {entry.filename: entry for entry in _load_schedule_entries(private_notes, None, MQ_STATES)},
+        _load_cross_repo_entries(private_notes, active_entries),
         datetime.datetime.now(datetime.UTC),
     )
     return (

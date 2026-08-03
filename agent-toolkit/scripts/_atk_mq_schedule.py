@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from typing import Literal
 
 import _atk_mq_frontmatter as _frontmatter
+import _git_remote
 
 SCHEDULE_KEY = "queue_schedule"
 STARVATION_THRESHOLD = 3
@@ -34,6 +35,9 @@ type RepairKey = tuple[str, RepairKind]
 
 
 # 依存先エントリが処理を終えたと判定する状態ディレクトリ名。
+# `_atk_mq_common.py`の`MQ_STATE_ADOPTED`・`MQ_STATE_REJECTED`と同一の値を保つ。
+# 当該モジュールは本モジュールをimportするため、参照すると循環importになる。
+# 状態名を変更する場合は両方を同時に更新する。
 _TERMINAL_STATES = frozenset(("adopted", "rejected"))
 
 
@@ -67,8 +71,9 @@ class ScheduleMetadata:
     target_files: tuple[str, ...]
     carry_count: int
     carry_reasons: tuple[DeferralReason, ...]
-    # 直近で繰越を加算した実行単位の識別値。同一実行単位での二重計上を防ぐ。
+    # 直近で繰越を加算した実行単位の識別値と理由。同一実行単位・同一理由での二重計上を防ぐ。
     last_deferral_run_id: str | None = None
+    last_deferral_reason: DeferralReason | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -211,6 +216,8 @@ def metadata_to_mapping(metadata: ScheduleMetadata) -> dict[str, object]:
     mapping["carry_reasons"] = list(metadata.carry_reasons)
     if metadata.last_deferral_run_id is not None:
         mapping["last_deferral_run_id"] = metadata.last_deferral_run_id
+    if metadata.last_deferral_reason is not None:
+        mapping["last_deferral_reason"] = metadata.last_deferral_reason
     return mapping
 
 
@@ -235,7 +242,7 @@ def mapping_to_metadata(mapping: dict[str, typing.Any]) -> ScheduleMetadata | No
         or carry_count != len(carry_reasons)
     ):
         return None
-    dependency = _mapping_to_dependency(dependency_mapping)
+    dependency = dependency_from_mapping(dependency_mapping)
     if dependency is None:
         return None
     plan_file = mapping.get("plan_file")
@@ -255,6 +262,9 @@ def mapping_to_metadata(mapping: dict[str, typing.Any]) -> ScheduleMetadata | No
     last_run_id = mapping.get("last_deferral_run_id")
     if last_run_id is not None and (not isinstance(last_run_id, str) or not last_run_id):
         return None
+    last_reason = mapping.get("last_deferral_reason")
+    if last_reason is not None and last_reason not in ("dependency-unmet", "limit-exceeded", "conflict"):
+        return None
     typed_feedback_type = typing.cast(FeedbackKind, feedback_type)
     typed_reasons = typing.cast(tuple[DeferralReason, ...], tuple(carry_reasons))
     return ScheduleMetadata(
@@ -267,6 +277,7 @@ def mapping_to_metadata(mapping: dict[str, typing.Any]) -> ScheduleMetadata | No
         carry_count=carry_count,
         carry_reasons=typed_reasons,
         last_deferral_run_id=last_run_id,
+        last_deferral_reason=typing.cast(DeferralReason | None, last_reason),
     )
 
 
@@ -288,7 +299,7 @@ def classification_from_mapping(mapping: typing.Any) -> Classification | None:
         or not isinstance(dependency_mapping, dict)
     ):
         return None
-    dependency = _mapping_to_dependency(dependency_mapping)
+    dependency = dependency_from_mapping(dependency_mapping)
     if dependency is None:
         return None
     plan_file = mapping.get("plan_file")
@@ -405,12 +416,17 @@ def regenerate_plan_metadata(entries: tuple[QueueEntry, ...]) -> tuple[QueueEntr
             feedback_type="plan-impl",
             # 依存は再生成の対象外とする。独立キーから復元できない情報であり、
             # 毎回初期化すると計画実装型へ依存を設定できない。
-            dependency=current.dependency if current is not None else Dependency(kind="none"),
+            # 引き継ぐのは計画実装型として設定された依存に限る。通常型のエントリが後から
+            # 独立キーを得た場合、通常型向けの依存をそのまま持ち越すと診断の対象が変わる。
+            dependency=(
+                current.dependency if current is not None and current.feedback_type == "plan-impl" else Dependency(kind="none")
+            ),
             plan_file=entry.plan_file,
             target_files=(),
             carry_count=current.carry_count if current is not None else 0,
             carry_reasons=current.carry_reasons if current is not None else (),
             last_deferral_run_id=current.last_deferral_run_id if current is not None else None,
+            last_deferral_reason=current.last_deferral_reason if current is not None else None,
         )
         regenerated.append(dataclasses.replace(entry, metadata=metadata))
     return tuple(regenerated)
@@ -567,17 +583,20 @@ def calculate_schedule(
 def with_deferral(metadata: ScheduleMetadata, reason: DeferralReason, run_id: str | None = None) -> ScheduleMetadata:
     """繰越理由を1回追加した分類メタデータを返す。
 
-    同一の`run_id`で既に加算済みの場合は加算しない。
+    同一の実行単位で同一の理由を既に加算済みの場合は加算しない。
     1つのセッションが選抜計算を複数回実行しても繰越が二重計上されないようにする。
-    `run_id`が`None`の場合は従来どおり無条件に加算する。
+    理由が異なる場合は加算する。別の理由による繰越は別の事象であり、
+    抑止すると呼び出し元へ返す記録と永続化した状態が一致しなくなる。
+    `run_id`が空の場合は従来どおり無条件に加算する。
     """
-    if run_id is not None and metadata.last_deferral_run_id == run_id:
+    if run_id and (run_id, reason) == (metadata.last_deferral_run_id, metadata.last_deferral_reason):
         return metadata
     return dataclasses.replace(
         metadata,
         carry_count=metadata.carry_count + 1,
         carry_reasons=(*metadata.carry_reasons, reason),
-        last_deferral_run_id=run_id,
+        last_deferral_run_id=run_id or None,
+        last_deferral_reason=reason if run_id else None,
     )
 
 
@@ -596,12 +615,17 @@ def format_schedule_label(text: str) -> str:
     return f"{metadata.feedback_type}/carry={metadata.carry_count}"
 
 
+def requires_cross_repo_entries(entries: tuple[QueueEntry, ...]) -> bool:
+    """別リポジトリ依存の充足判定に他リポジトリのエントリを要するかを返す。
+
+    該当する依存が1件も無い場合、呼び出し元は横断読み込みを省ける。
+    全リポジトリ・全状態の読み込みは終端状態を含み、蓄積に比例して所要時間が伸びる。
+    """
+    return any(entry.metadata is not None and entry.metadata.dependency.kind == "external-repo-entry" for entry in entries)
+
+
 def dependency_from_mapping(mapping: dict[str, typing.Any]) -> Dependency | None:
-    """依存マッピングを検証してDependencyへ変換する。CLIの依存更新経路が使う公開名。"""
-    return _mapping_to_dependency(mapping)
-
-
-def _mapping_to_dependency(mapping: dict[str, typing.Any]) -> Dependency | None:
+    """依存マッピングを検証してDependencyへ変換する。受理形式の単一の窓口とする。"""
     kind = mapping.get("kind")
     if kind in ("none", "inbox-empty"):
         return Dependency(kind=typing.cast(DependencyKind, kind))
@@ -642,11 +666,17 @@ def _mapping_to_dependency(mapping: dict[str, typing.Any]) -> Dependency | None:
             return None
         if not isinstance(target_repo, str) or not target_repo:
             return None
+        # 比較先は正規化済みの値であるため、受理時に同じ形式へ揃える。
+        # 表記の違いを残すと恒久的に不成立となり、原因を示す診断も出ない。
+        try:
+            normalized_target_repo = _git_remote.normalize_remote_url(target_repo)
+        except ValueError:
+            return None
         typed_filenames = typing.cast(list[str], filenames)
         return Dependency(
             kind="external-repo-entry",
             filenames=tuple(dict.fromkeys(typed_filenames)),
-            target_repo=target_repo,
+            target_repo=normalized_target_repo,
         )
     return None
 
