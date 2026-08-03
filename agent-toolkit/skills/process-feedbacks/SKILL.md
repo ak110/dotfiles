@@ -129,6 +129,11 @@ references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照
 メインへは処理対象、実行群、除外理由、TBD作成要求だけを返し、本文全文を返さない。
 一覧に未分類項目が無い場合は`atk mq schedule --target-repo=<repo-path>`を実行する。
 
+同一セッション内で`atk mq schedule`を複数回実行する場合、初回の実行前に
+`openssl rand -hex 8`で実行単位の識別値を生成し、当該セッションの全実行へ
+`--run-id=<識別値>`として渡す。分類委譲先へも同じ値を渡す。
+識別値を渡さない実行では繰越が実行ごとに加算される。
+
 依存先消失・自己依存・依存循環のTBD作成要求がある場合は、該当filenameと破損内容を示すTBDを投入する。
 該当項目の型と対象ファイルを維持した補正JSONへTBD filenameを設定し、
 `atk mq schedule --classifications=<path> --target-repo=<repo-path>`で外部・ユーザー依存へ
@@ -176,7 +181,7 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 複数件の場合は
 `Explore`サブエージェントへ`model: opus`を指定して個別並列委譲する。
 
-フィードバック本文が外部ツール・ライブラリ・外部サービスの挙動に関する主張を含み、
+フィードバック本文・レビュー指摘・調査報告が外部ツール・ライブラリ・外部サービスの挙動に関する主張を含み、
 当該主張を成果物（計画ファイル・実装・文書）へ転記する場合は、転記の前に一次資料または実装で
 裏付ける。裏付けを取れない場合は、調査中の記録へ未検証である旨を明記し、
 当該主張を確定成果物の判断根拠に用いない。検証を継続できない場合は未確定事項として保留する。
@@ -193,6 +198,17 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 初期スケジューリング後に本文から新たな依存条件が判明した場合だけ分類結果を修正する。
 未成立なら`atk mq schedule --record-deferral dependency-unmet:<filename> --target-repo=<repo-path>`で
 理由と繰越回数を記録してinboxへ戻す。全項目の前提条件を本ステップで再調査しない。
+
+ユーザー判断を要さない外部条件待ち（上流リポジトリの対応待ちなど）は、
+`atk mq schedule --set-dependency='<JSON文字列>' --target-repo=<repo-path>`で記録する。
+JSONは`filename`、`kind`、`condition`、`hold_reason`、`recheck_after`を含む。
+再評価時刻はタイムゾーン付きISO 8601とし、条件の充足が見込める時期から定める。
+当該項目は再評価時刻まで選抜されず、繰越も加算されない。
+別リポジトリのフィードバック完了待ちは
+`filename`、`kind`、`filenames`、`target_repo`を含む同じJSON形式で記録する。
+起動時は`suppressed`の各項目が示す`condition`を1回実行し、再評価日時の到来前でも充足を確認する。
+未充足なら`hold_reason`を維持して`recheck_after`を更新し、他の処理対象の有無にかかわらず次工程へ進む。
+外部条件待ちだけで採用0件となる場合は、本ステップの待機ループを起動しない。
 
 保留と判定した時点で既にprocessing状態へ遷移済みの対象は、`atk mq return-to-inbox <filename...>`で
 未処理状態へ戻したうえで次回セッションへ持ち越す。
