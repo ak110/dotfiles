@@ -2009,7 +2009,8 @@ class TestBashUvRunPythonBlock:
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke(command, cwd)
         assert result.returncode == 2
-        assert "regardless of whether a path or `-c` follows" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+        assert "uv run python" in result.stderr
 
     def test_no_pyproject_blocked(self, tmp_path: pathlib.Path):
         """pyproject.tomlが無いcwdでもblockする（Pythonプロジェクトと認識できないため）。"""
@@ -2033,8 +2034,10 @@ class TestBashUvRunPythonBlock:
         cwd = self._make_python_project(tmp_path)
         blocked = self._invoke("cd /tmp && uv run python /tmp/foo.py", cwd)
         assert blocked.returncode == 2
-        assert "as a separate command" in blocked.stderr
-        assert "does not help" in blocked.stderr
+        # 案内する対処が判定の通過条件と一致することを、代表語で確認する。
+        # 同一コマンド内の`cd`を対処として案内すると、そのとおり実行しても再びブロックされる。
+        assert "separate command" in blocked.stderr
+        assert "`cd` to the project root before running" not in blocked.stderr
 
         allowed = self._invoke("uv run python /tmp/foo.py", cwd)
         assert allowed.returncode == 0

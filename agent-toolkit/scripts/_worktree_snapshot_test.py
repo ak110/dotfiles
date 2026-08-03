@@ -24,13 +24,16 @@ import time
 sys.path.insert(0, os.environ["SCRIPT_DIR"])
 import _worktree_snapshot as ws
 
-_original = ws._read_untracked_file
-_state = {"first": True}
+_original_read = ws._read_untracked_file
+_original_capture = ws._capture_untracked
+# 実体保存の区間だけを対象とする。状態取得の段階でも同じ読み取り関数を通るため、
+# 区間を限定しないと`blobs`生成前に障壁が成立し、検証したい経路と別の経路を止める。
+_state = {"in_capture": False, "first": True}
 _BARRIER_TIMEOUT_SECONDS = 5.0
 
 
-def _patched(path, expected):
-    if _state["first"]:
+def _patched_read(path, expected):
+    if _state["in_capture"] and _state["first"]:
         _state["first"] = False
         pathlib.Path(os.environ["READY"]).write_text("1", encoding="utf-8")
         deadline = time.monotonic() + _BARRIER_TIMEOUT_SECONDS
@@ -38,10 +41,19 @@ def _patched(path, expected):
             if time.monotonic() >= deadline:
                 raise TimeoutError("同期障壁の応答待ちが期限を超過した")
             time.sleep(0.001)
-    return _original(path, expected)
+    return _original_read(path, expected)
 
 
-ws._read_untracked_file = _patched
+def _patched_capture(repo, blobs_dir, entries):
+    _state["in_capture"] = True
+    try:
+        return _original_capture(repo, blobs_dir, entries)
+    finally:
+        _state["in_capture"] = False
+
+
+ws._read_untracked_file = _patched_read
+ws._capture_untracked = _patched_capture
 sys.argv = ["_worktree_snapshot.py", *sys.argv[1:]]
 ws.main()
 """
@@ -538,8 +550,11 @@ def test_capture_rejects_untracked_change_during_blob_materialization(
     assert capture.returncode == 2
     assert "退避中に未追跡ファイル" in stderr
     assert "Traceback" not in stderr
-    blobs = snapshot / "blobs"
-    assert not blobs.exists() or not any(path.read_bytes() == outside.read_bytes() for path in blobs.iterdir())
+    # `_validate_new_snapshot_dir`は出力先の親を`resolve`してから結合するため、
+    # `/tmp`等がシンボリックリンクの環境では引数のパスと実際の出力先が一致しない。
+    # 同じ解決規則を適用して実体を検査する。
+    blobs = snapshot.parent.resolve() / snapshot.name / "blobs"
+    assert not any(path.read_bytes() == outside.read_bytes() for path in blobs.iterdir())
 
 
 def test_git_start_failure_is_reported_as_snapshot_error(tmp_path: pathlib.Path) -> None:

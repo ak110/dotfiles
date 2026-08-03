@@ -1421,31 +1421,32 @@ async function loadTargetRepos() {
   try {
     const payload = await api('/api/repos');
     repos = Array.isArray(payload.repos) ? payload.repos : [];
-  } catch (error) {
+  } catch {
+    // 候補の取得失敗で一覧表示を止めない。既存の選択肢と選択値をそのまま残す。
     return;
   }
   const filter = byId('target-filter');
   const selected = filter.value;
-  filter.textContent = '';
+  filter.replaceChildren();
   const blank = document.createElement('option');
   blank.value = '';
   blank.textContent = 'すべて';
-  filter.appendChild(blank);
+  filter.append(blank);
   // 選択中の値が候補から消えた場合も選択状態を保つため、候補へ補う。
   const values = repos.includes(selected) || !selected ? repos : [selected, ...repos];
   for (const repo of values) {
     const option = document.createElement('option');
     option.value = repo;
     option.textContent = repo;
-    filter.appendChild(option);
+    filter.append(option);
   }
   filter.value = selected;
   const datalist = byId('repo-options');
-  datalist.textContent = '';
+  datalist.replaceChildren();
   for (const repo of repos) {
     const option = document.createElement('option');
     option.value = repo;
-    datalist.appendChild(option);
+    datalist.append(option);
   }
 }
 

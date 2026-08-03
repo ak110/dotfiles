@@ -1,6 +1,3 @@
 @echo off
-rem NOTE: ‘Î‰‚·‚é Linux ”Å ¨ bin/opus
-call claude --permission-mode=auto --model="opus[1m]" %*
-set RC=%ERRORLEVEL%
-call "%~dp0c.cmd"
-exit /b %RC%
+rem NOTE: ‘Î‰‚·‚éLinux”Å ¨ bin/opus
+call "%~dp0_claude-wrapper.cmd" --permission-mode=auto --model="opus[1m]" %*

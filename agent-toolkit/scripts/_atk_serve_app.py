@@ -185,6 +185,25 @@ class Operations:
     def __init__(self, private_notes: pathlib.Path) -> None:
         self.private_notes = private_notes
 
+    def _iter_entry_files(self, states: typing.Iterable[str]) -> typing.Iterator[tuple[str, pathlib.Path, str]]:
+        """指定状態のエントリを`(状態名, パス, 本文)`として順に返す。
+
+        一覧表示と対象リポジトリの候補収集で同じ走査条件を用いるための共通経路とする。
+        読み取れないファイルは呼び出し側の判定を待たず除外する。
+        """
+        for state in states:
+            try:
+                paths = sorted((self.private_notes / state).iterdir())
+            except FileNotFoundError:
+                continue
+            for path in paths:
+                if path.suffix != ".md":
+                    continue
+                try:
+                    yield state, path, path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+
     def entries(self, filters: dict[str, str]) -> list[dict[str, object]]:
         """条件に一致する一覧を、確認事項・フィードバックの順に各群ファイル名の降順で返す。
 
@@ -199,35 +218,27 @@ class Operations:
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
         states = _resolve_states(status_filter)
-        for state in states:
+        for state, path, text in self._iter_entry_files(states):
             try:
-                paths = sorted((self.private_notes / state).iterdir())
+                kind = common.entry_type_of(path, text)
+                if kind_filter not in ("all", kind):
+                    continue
+                item = _entry(path, kind or "unknown", state, text)
             except FileNotFoundError:
                 continue
-            for path in paths:
-                if path.suffix != ".md":
+            if answered_filter == "yes" and item["answered"] is not True:
+                continue
+            if answered_filter == "no" and item["answered"] is not False:
+                continue
+            if filters.get("source_empty") == "true":
+                source = item["source"]
+                if not (source is None or isinstance(source, str) and not source.strip()):
                     continue
-                try:
-                    text = path.read_text(encoding="utf-8")
-                    kind = common.entry_type_of(path, text)
-                    if kind_filter not in ("all", kind):
-                        continue
-                    item = _entry(path, kind or "unknown", state, text)
-                except FileNotFoundError:
-                    continue
-                if answered_filter == "yes" and item["answered"] is not True:
-                    continue
-                if answered_filter == "no" and item["answered"] is not False:
-                    continue
-                if filters.get("source_empty") == "true":
-                    source = item["source"]
-                    if not (source is None or isinstance(source, str) and not source.strip()):
-                        continue
-                if any(filters.get(key) and item[key] != filters[key] for key in ("target_repo", "category")):
-                    continue
-                if filters.get("source") and item["source"] != filters["source"]:
-                    continue
-                result.append(item)
+            if any(filters.get(key) and item[key] != filters[key] for key in ("target_repo", "category")):
+                continue
+            if filters.get("source") and item["source"] != filters["source"]:
+                continue
+            result.append(item)
         # TBDファイルをファイル名降順、その後フィードバックをファイル名降順で並べる
         tbd_items = sorted(
             [item for item in result if item["kind"] == "tbd"], key=lambda item: str(item["filename"]), reverse=True
@@ -279,30 +290,22 @@ class Operations:
             return False
 
     def target_repos(self) -> list[str]:
-        """既存エントリに現れる対象リポジトリを昇順で返す。
+        """未処理・処理中のエントリに現れる対象リポジトリを昇順で返す。
 
         新規登録フォームの補完候補とフィルターの選択肢に用いる。
+        対象を`active`（`inbox`・`processing`）に限るのは、一覧の状態フィルターの初期値が
+        `active`であり、処理済みにしか現れないリポジトリを候補へ含めると
+        選んだ時点で理由の説明なく0件になるためである。
         `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
         """
         found: set[str] = set()
-        for state in common.MQ_STATES:
-            try:
-                paths = sorted((self.private_notes / state).iterdir())
-            except FileNotFoundError:
+        for _state, _path, text in self._iter_entry_files(common.MQ_ACTIVE_STATES):
+            parsed = frontmatter.parse_frontmatter(text)
+            if parsed is None:
                 continue
-            for path in paths:
-                if path.suffix != ".md":
-                    continue
-                try:
-                    text = path.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    continue
-                parsed = common.parse_frontmatter(text)
-                if parsed is None:
-                    continue
-                target_repo = parsed[0].get("target_repo")
-                if isinstance(target_repo, str) and target_repo:
-                    found.add(target_repo)
+            target_repo = parsed[0].get("target_repo")
+            if isinstance(target_repo, str) and target_repo:
+                found.add(target_repo)
         return sorted(found)
 
     def edit(
@@ -436,10 +439,12 @@ def create_app(
     background_task: asyncio.Task[None] | None = None
 
     async def background_sync_loop() -> None:
-        """一定間隔でリポジトリを更新し、変更があれば購読者へ通知する。
+        """一定間隔でリポジトリを更新する。
 
         利用者の操作のたびにリモートへ問い合わせる代わりに、この周期更新で最新状態を取り込む。
         個々の操作に対応する経路（明示的な同期要求・変更操作）は従来どおり毎回更新する。
+        更新でファイルが変わった場合の購読者への通知は、
+        `_atk_serve_state`のファイル監視が担うため本関数では行わない。
         """
         while True:
             await asyncio.sleep(_BACKGROUND_SYNC_INTERVAL_SECONDS)

@@ -69,12 +69,15 @@ Claude代替では系統別のClaude Agent識別子があり`SendMessage`を利�
 識別子欠落、利用不能、送信失敗の場合だけAgentツールで`subagent_type: claude`を新規起動し、
 同じ系統の前回応答全文を引き継ぐ。
 初回起動と各再開の直前に新しい完了報告ディレクトリを作成し、当該試行のマーカーだけを検収する。
-Claude代替でAgentツールにより系統を起動した場合は、起動直後に当該Agentの記録ファイルの絶対パス
-（`~/.claude/projects/<project>/<session-uuid>/subagents/agent-<agentId>.jsonl`）を記録する。
+Claude代替でAgentツールにより系統を起動した場合は、当該Agentの記録ファイルの絶対パス
+（`~/.claude/projects/<project>/<session-uuid>/subagents/agent-<agentId>.jsonl`）を控える。
+`<agentId>`は、起動時のツール呼び出し識別子と同じ`toolUseId`を持つ
+`subagents/*.meta.json`から特定する（同ファイルは`description`・`spawnDepth`・`parentAgentId`も持つ）。
 完了通知が届かない場合は当該ファイルを直接読み取って完了報告を受領する。
 `agent-toolkit:codex-exec`の記録経路（一意ディレクトリ配下の`completion.md`）と当該jsonl記録は
 別の受領手段であり、いずれで受領した場合も同じ検収手順を適用する。
-各系統の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収する。
+各系統の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収することを既定とする。
+当該経路で受領できない場合は、前掲のjsonl記録の直接読み取りで受領する。
 Agentツールが深さ上限または権限制約で利用できない場合だけ、
 対象系統を`unavailable`として呼び出し元へ代替起動を要求する。
 起動を試みて不能だった場合は`unavailable`とし、起動を試みていない場合だけ`not_started`とする。

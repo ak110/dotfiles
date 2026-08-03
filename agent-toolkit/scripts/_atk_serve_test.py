@@ -205,7 +205,6 @@ class Element {{
     this.dateTime = '';
   }}
   append(...children) {{ this.children.push(...children); }}
-  appendChild(child) {{ this.children.push(child); return child; }}
   replaceChildren(...children) {{ this.children = children; }}
   setAttribute(name, value) {{ this.attributes[name] = value; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
@@ -2706,15 +2705,19 @@ def _write_repo_entry(root: pathlib.Path, state_name: str, filename: str, target
     )
 
 
-def test_target_repos_collects_distinct_values_across_states(tmp_path: pathlib.Path) -> None:
-    """全状態のエントリから対象リポジトリを重複なく昇順で集める。"""
+def test_target_repos_collects_distinct_values_from_active_states(tmp_path: pathlib.Path) -> None:
+    """未処理・処理中のエントリから対象リポジトリを重複なく昇順で集める。
+
+    処理済みにしか現れないリポジトリは、一覧の初期フィルター`active`で0件になるため含めない。
+    """
     _write_repo_entry(tmp_path, "inbox", "a.md", "github.com/x/beta")
     _write_repo_entry(tmp_path, "processing", "b.md", "github.com/x/alpha")
-    _write_repo_entry(tmp_path, "adopted", "c.md", "github.com/x/beta")
-    _write_repo_entry(tmp_path, "rejected", "d.md", "github.com/x/gamma")
+    _write_repo_entry(tmp_path, "processing", "c.md", "github.com/x/beta")
+    _write_repo_entry(tmp_path, "adopted", "d.md", "github.com/x/adopted-only")
+    _write_repo_entry(tmp_path, "rejected", "e.md", "github.com/x/rejected-only")
     (tmp_path / "inbox" / "broken.md").write_text("frontmatterなし\n", encoding="utf-8")
     operations = serve_app.Operations(tmp_path)
-    assert operations.target_repos() == ["github.com/x/alpha", "github.com/x/beta", "github.com/x/gamma"]
+    assert operations.target_repos() == ["github.com/x/alpha", "github.com/x/beta"]
 
 
 @pytest.mark.asyncio
@@ -2770,12 +2773,15 @@ def test_background_sync_respects_rate_limit(tmp_path: pathlib.Path, monkeypatch
 @pytest.mark.asyncio
 async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """定期更新タスクが起動時に開始し終了時に停止する。"""
-    monkeypatch.setattr(serve_app, "_BACKGROUND_SYNC_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(serve_app, "_BACKGROUND_SYNC_INTERVAL_SECONDS", 0.001)
     calls: list[str] = []
+    called = asyncio.Event()
+    loop = asyncio.get_running_loop()
 
     class _Operations(serve_app.Operations):
         def background_sync(self) -> bool:
             calls.append("sync")
+            loop.call_soon_threadsafe(called.set)
             return True
 
     current_state = state.ServeState(tmp_path)
@@ -2786,12 +2792,16 @@ async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, mon
         operations=_Operations(tmp_path),
     )
     async with app.test_app():  # ty: ignore[invalid-context-manager]
-        await asyncio.sleep(0.05)
-        assert calls
-    # 停止指示の直後は実行中の周期が残りうるため、静止を待ってから基準を取る。
-    await asyncio.sleep(0.05)
+        # 実時間の経過ではなく初回呼び出しの成立を待ち、起動を確認する。
+        await asyncio.wait_for(called.wait(), timeout=5)
+
+    # 停止の成立は、`after_serving`の完了後に呼び出し回数が増えないことで確認する。
+    # 実行中の周期が残りうるため、基準を取る前に処理待ちのタスクを消化させる。
+    await asyncio.sleep(0)
     before = len(calls)
-    await asyncio.sleep(0.05)
+    called.clear()
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(called.wait(), timeout=0.1)
     assert len(calls) == before
 
 
@@ -2861,3 +2871,26 @@ process.stdout.write(JSON.stringify({
     )
     assert result["selected"] == "github.com/x/alpha"
     assert result["values"] == []
+
+
+def test_assets_do_not_accumulate_target_repo_choices() -> None:
+    """候補の再取得で選択肢が累積しない。"""
+    result = _run_node_ui(
+        """
+fetchHandler = async (url) => {
+  if (url.endsWith('/api/repos')) {
+    const repos = ['github.com/x/alpha', 'github.com/x/beta'];
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+await loadTargetRepos();
+await loadTargetRepos();
+process.stdout.write(JSON.stringify({
+  filterCount: byId('target-filter').children.length,
+  datalistCount: byId('repo-options').children.length,
+}));
+"""
+    )
+    assert result["filterCount"] == 3
+    assert result["datalistCount"] == 2

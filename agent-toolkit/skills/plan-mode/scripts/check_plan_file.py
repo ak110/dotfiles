@@ -112,7 +112,8 @@ _SESSION_OPS_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
 _SESSION_OPS_TERM_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
 
 # `description`のように実装対象を強く示す語は、変更述部の有無によらず除外する必要がある。
-# この契約を維持するため、既存16語の列挙を一般名詞パターンへ統合せず残す。
+# この契約を維持するため、本列挙を一般名詞パターンへ統合せず残す。
+# 語を追加する場合は、本ファイルの回帰テストへ正例と負例を対で追加してから広げる。
 _SESSION_OPS_IMPLEMENTATION_NOUNS = r"(?:フック|処理|機能|誘導|判定|検査|条件|経路|規範|定義|記述|表示|文言|description|節|欄)"
 _SESSION_OPS_IMPLEMENTATION_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTERN})\s*{_SESSION_OPS_IMPLEMENTATION_NOUNS}")
 
@@ -122,7 +123,8 @@ _SESSION_OPS_GENERAL_NOUN = r"(?:の)?[一-龥ァ-ヶーA-Za-z0-9]+(?:の[一-�
 _SESSION_OPS_GENERAL_NOUN_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTERN})\s*{_SESSION_OPS_GENERAL_NOUN}")
 
 # `反映`は工程の実施と実装対象の変更の双方で用いられ、語彙だけでは分離できない。
-# 既存16語による除外で`description`の変更記載を扱い、変更述部には含めない。
+# 前掲の実装対象名詞の列挙による除外で`description`の変更記載を扱い、変更述部には含めない。
+# 変更述部・実施述部の列挙も閉じており、追加時の手順は実装対象名詞と同じとする。
 _SESSION_OPS_MODIFICATION_PREDICATE_RE = re.compile(r"変更|修正|実装|削除|改訂|移設|見直|追加|置き換え|廃止|新設|拡張|整備")
 _SESSION_OPS_EXECUTION_PREDICATE_RE = re.compile(r"実施|実行|起動|呼び出|完遂|引き継|移行|復帰|従う|従い|進む|進み")
 
@@ -722,7 +724,7 @@ def _mentions_session_ops_process(text: str) -> bool:
 
     次のいずれかが成立する行は、変更対象の説明として除外する。
 
-    1. 対象語の全出現が既存16語のいずれかを直後に伴い、実施述部が無い。
+    1. 対象語の全出現が実装対象名詞の列挙のいずれかを直後に伴い、実施述部が無い。
     2. 対象語の全出現が一般名詞を直後に伴い、変更述部があり、実施述部が無い。
 
     どちらも成立しない行は工程として検出する。
