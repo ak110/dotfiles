@@ -1,7 +1,9 @@
 """メッセージキューの純粋スケジューリング計算を検証する。"""
 
+import datetime
 import pathlib
 import sys
+import typing
 
 import pytest
 
@@ -43,6 +45,8 @@ def _entry(
     plan_file: str | None = None,
     repair_target: str | None = None,
     repair_kind: schedule.RepairKind | None = None,
+    normalized_target_repo: str | None = "github.com/example/repo",
+    state: str | None = "inbox",
 ) -> schedule.QueueEntry:
     body = f"\n本文 {filename}\n"
     text = frontmatter.serialize_frontmatter(
@@ -59,7 +63,12 @@ def _entry(
         repair_target_filename=repair_target,
         plan_file=plan_file,
         repair_kind=repair_kind,
+        normalized_target_repo=normalized_target_repo,
+        state=state,
     )
+
+
+_FIXED_NOW = datetime.datetime(2026, 8, 4, 0, 0, tzinfo=datetime.UTC)
 
 
 def _calculate(
@@ -67,8 +76,10 @@ def _calculate(
     terminal: tuple[schedule.QueueEntry, ...] = (),
     plans: dict[str, tuple[str, ...]] | None = None,
     repairs: frozenset[schedule.RepairKey] = frozenset(),
+    cross_repo: dict[str, schedule.QueueEntry] | None = None,
+    now: datetime.datetime = _FIXED_NOW,
 ) -> schedule.ScheduleResult:
-    return schedule.calculate_schedule(active, terminal, plans or {}, repairs)
+    return schedule.calculate_schedule(active, terminal, plans or {}, repairs, cross_repo or {}, now)
 
 
 class TestMetadata:
@@ -567,3 +578,232 @@ class TestApplyClassifications:
         by_filename = {item.filename: item for item in updated}
         assert by_filename["a.md"].metadata is not None
         assert by_filename["a.md"].metadata.dependency.kind == "external-user"
+
+
+class TestExternalUpstreamDependency:
+    """外部条件待ちの依存種別: 再評価時刻まで選抜から外し、繰越も加算しない。"""
+
+    @staticmethod
+    def _dependency(recheck_after: str) -> schedule.Dependency:
+        return schedule.Dependency(
+            "external-upstream",
+            condition="上流の対応状況を確認する",
+            recheck_after=recheck_after,
+            hold_reason="上流ツールのメジャー版対応待ち",
+        )
+
+    def test_before_recheck_is_suppressed_without_carry(self) -> None:
+        """再評価時刻が未到来の項目は選抜されず、繰越の対象にもならない。"""
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=self._dependency("2026-09-01T00:00:00+00:00")))
+
+        result = _calculate((entry,))
+
+        assert not result.parallel_normal_items
+        assert not result.deferred
+        assert [item.filename for item in result.suppressed] == ["a.md"]
+        assert result.suppressed[0].recheck_after == "2026-09-01T00:00:00+00:00"
+        assert result.suppressed[0].hold_reason == "上流ツールのメジャー版対応待ち"
+        assert result.suppressed[0].condition == "上流の対応状況を確認する"
+
+    def test_after_recheck_becomes_eligible(self) -> None:
+        """再評価時刻が到来した項目は通常の選抜対象へ戻る。"""
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=self._dependency("2026-08-03T00:00:00+00:00")))
+
+        result = _calculate((entry,))
+
+        assert result.parallel_normal_items == ("a.md",)
+        assert not result.suppressed
+
+    def test_boundary_time_is_satisfied(self) -> None:
+        """再評価時刻と現在時刻が等しい場合は成立とする。"""
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=self._dependency("2026-08-04T00:00:00+00:00")))
+
+        assert _calculate((entry,)).parallel_normal_items == ("a.md",)
+
+    @pytest.mark.parametrize(
+        "recheck_after",
+        [
+            "2026-08-04T00:00:00",  # タイムゾーン情報なし
+            "2026-08-04",  # 日付のみでタイムゾーン情報なし
+            "not-a-datetime",
+            "",
+        ],
+    )
+    def test_invalid_recheck_after_is_rejected(self, recheck_after: str) -> None:
+        """解析できない値とnaiveな日時は分類メタデータごと拒否する。"""
+        mapping = {
+            "kind": "external-upstream",
+            "condition": "確認する",
+            "recheck_after": recheck_after,
+            "hold_reason": "待機中",
+        }
+
+        assert schedule.dependency_from_mapping(mapping) is None
+
+    def test_round_trip_keeps_string_type(self) -> None:
+        """直列化と復元で再評価時刻の型が変わらない。"""
+        dependency = self._dependency("2026-09-01T00:00:00+00:00")
+        metadata = _metadata("a.md", dependency=dependency)
+        body = "\n本文 a.md\n"
+        text = frontmatter.serialize_frontmatter({"target_repo": "github.com/example/repo", "type": "feedback"}, body)
+
+        restored = schedule.parse_schedule_metadata(schedule.serialize_schedule_metadata(text, metadata))
+
+        assert restored is not None
+        assert restored.dependency == dependency
+
+
+class TestExternalRepoEntryDependency:
+    """別リポジトリ依存: 依存先が終端状態にあることを機械判定する。"""
+
+    @staticmethod
+    def _dependency() -> schedule.Dependency:
+        return schedule.Dependency(
+            "external-repo-entry",
+            filenames=("upstream.md",),
+            target_repo="github.com/example/other",
+        )
+
+    def test_satisfied_when_dependency_reaches_terminal_state(self) -> None:
+        """依存先が別リポジトリの終端状態にあれば成立する。"""
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=self._dependency()))
+        upstream = _entry("upstream.md", normalized_target_repo="github.com/example/other", state="adopted")
+
+        result = _calculate((entry,), cross_repo={"upstream.md": upstream})
+
+        assert result.parallel_normal_items == ("a.md",)
+
+    def test_unsatisfied_while_dependency_is_active(self) -> None:
+        """依存先が未処理の状態では成立しない。"""
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=self._dependency()))
+        upstream = _entry("upstream.md", normalized_target_repo="github.com/example/other", state="processing")
+
+        result = _calculate((entry,), cross_repo={"upstream.md": upstream})
+
+        assert not result.parallel_normal_items
+        assert [item.filename for item in result.deferred] == ["a.md"]
+
+    def test_unsatisfied_when_repository_differs(self) -> None:
+        """同名エントリが別のリポジトリに存在しても成立しない。"""
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=self._dependency()))
+        same_name = _entry("upstream.md", normalized_target_repo="github.com/example/unrelated", state="adopted")
+
+        result = _calculate((entry,), cross_repo={"upstream.md": same_name})
+
+        assert not result.parallel_normal_items
+
+    def test_absent_dependency_is_not_diagnosed_as_missing(self) -> None:
+        """依存先が対象リポジトリの一覧に無くても消失と診断しない。"""
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=self._dependency()))
+
+        result = _calculate((entry,))
+
+        assert not result.missing_dependency_tbds
+        assert [item.filename for item in result.deferred] == ["a.md"]
+
+
+class TestDeferralIdempotency:
+    """繰越の冪等化: 同一実行単位の再計算で二重計上しない。"""
+
+    def test_same_run_id_increments_once(self) -> None:
+        """同じ実行単位では2回目以降の加算を行わない。"""
+        metadata = _metadata("a.md")
+
+        first = schedule.with_deferral(metadata, "limit-exceeded", "run-1")
+        second = schedule.with_deferral(first, "limit-exceeded", "run-1")
+
+        assert first.carry_count == 1
+        assert second.carry_count == 1
+        assert second.carry_reasons == ("limit-exceeded",)
+
+    def test_different_run_id_increments(self) -> None:
+        """異なる実行単位からの繰越は従来どおり加算する。"""
+        metadata = _metadata("a.md")
+
+        first = schedule.with_deferral(metadata, "limit-exceeded", "run-1")
+        second = schedule.with_deferral(first, "limit-exceeded", "run-2")
+
+        assert second.carry_count == 2
+        assert second.carry_reasons == ("limit-exceeded", "limit-exceeded")
+
+    def test_without_run_id_increments_each_time(self) -> None:
+        """実行単位を指定しない場合は毎回加算する。"""
+        metadata = _metadata("a.md")
+
+        first = schedule.with_deferral(metadata, "conflict")
+        second = schedule.with_deferral(first, "conflict")
+
+        assert second.carry_count == 2
+
+    def test_run_id_survives_round_trip(self) -> None:
+        """実行単位の識別値は直列化と復元をまたいで保持される。"""
+        metadata = schedule.with_deferral(_metadata("a.md"), "limit-exceeded", "run-1")
+        body = "\n本文 a.md\n"
+        text = frontmatter.serialize_frontmatter({"target_repo": "github.com/example/repo", "type": "feedback"}, body)
+
+        restored = schedule.parse_schedule_metadata(schedule.serialize_schedule_metadata(text, metadata))
+
+        assert restored is not None
+        assert restored.last_deferral_run_id == "run-1"
+
+    def test_legacy_metadata_without_run_id_is_accepted(self) -> None:
+        """当該キーを持たない既存キューのエントリを再分類の対象にしない。"""
+        metadata = _metadata("a.md")
+        mapping = schedule.metadata_to_mapping(metadata)
+
+        assert "last_deferral_run_id" not in mapping
+        assert schedule.mapping_to_metadata(mapping) is not None
+
+
+class TestPlanMetadataRegeneration:
+    """計画実装型の再生成: 独立キーから復元できない情報を保持する。"""
+
+    def test_regeneration_preserves_dependency(self) -> None:
+        """再生成で依存が初期化されない。"""
+        dependency = schedule.Dependency(
+            "external-upstream",
+            condition="上流の対応状況を確認する",
+            recheck_after="2026-09-01T00:00:00+00:00",
+            hold_reason="上流ツールのメジャー版対応待ち",
+        )
+        entry = _entry(
+            "a.md",
+            metadata=_metadata("a.md", feedback_type="plan-impl", plan_file="/tmp/plan.md", dependency=dependency),
+            plan_file="/tmp/plan.md",
+        )
+
+        regenerated = schedule.regenerate_plan_metadata((entry,))
+
+        assert regenerated[0].metadata is not None
+        assert regenerated[0].metadata.dependency == dependency
+
+    def test_regeneration_preserves_run_id(self) -> None:
+        """再生成で実行単位の識別値が失われない。"""
+        metadata = schedule.with_deferral(
+            _metadata("a.md", feedback_type="plan-impl", plan_file="/tmp/plan.md"),
+            "limit-exceeded",
+            "run-1",
+        )
+        entry = _entry("a.md", metadata=metadata, plan_file="/tmp/plan.md")
+
+        regenerated = schedule.regenerate_plan_metadata((entry,))
+
+        assert regenerated[0].metadata is not None
+        assert regenerated[0].metadata.last_deferral_run_id == "run-1"
+
+
+class TestUnknownDependencyKind:
+    """未知の依存種別は不成立として扱う。"""
+
+    def test_unknown_kind_is_unsatisfied(self) -> None:
+        """列挙外の種別が混入した場合、他種別の判定が適用されず不成立とする。
+
+        型注釈では表せない値を、frontmatterの直接編集などで持つ場合の防御を検査する。
+        """
+        unknown_kind = typing.cast(schedule.DependencyKind, "unknown-kind")
+        entry = _entry("a.md", metadata=_metadata("a.md", dependency=schedule.Dependency(unknown_kind)))
+
+        result = _calculate((entry,))
+
+        assert not result.parallel_normal_items
+        assert [item.filename for item in result.deferred] == ["a.md"]

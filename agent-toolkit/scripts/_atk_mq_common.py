@@ -28,6 +28,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 
 import _atk_mq_schedule as _schedule
+import _git_remote
 import filelock
 import platformdirs
 from _atk_mq_formatters import (
@@ -685,6 +686,20 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
         print(f"{prefix}{_tbd_body_summary(text, available_width)}", file=sys.stderr)
 
 
+def _normalized_repo_or_none(value: str | None) -> str | None:
+    """対象リポジトリを正規化する。解析できない値はNoneを返す。
+
+    frontmatterが破損したエントリや対象リポジトリ未設定のエントリが1件でもあると
+    キュー全体の読み込みが失敗するため、当該エントリだけを依存判定の対象外にする。
+    """
+    if not value:
+        return None
+    try:
+        return _git_remote.normalize_remote_url(value)
+    except ValueError:
+        return None
+
+
 def _count_pending_entries(
     private_notes: pathlib.Path,
     target_repo: str | None = None,
@@ -714,7 +729,16 @@ def _count_pending_entries(
         and entry.repair_target_filename is not None
         and entry.repair_kind is not None
     )
-    result = _schedule.calculate_schedule(active_entries, terminal_entries, plan_target_files, existing_repairs)
+    # 再評価時刻が未到来の外部条件待ちは`suppressed`へ分類され、以下の合計へ入らない。
+    # 当該項目は当該セッションの処理対象ではないため、常駐実行の起動契機にしない。
+    result = _schedule.calculate_schedule(
+        active_entries,
+        terminal_entries,
+        plan_target_files,
+        existing_repairs,
+        {entry.filename: entry for entry in _load_schedule_entries(private_notes, None, MQ_STATES)},
+        datetime.datetime.now(datetime.UTC),
+    )
     return (
         len(result.classification_required)
         + len(result.plan_items)
@@ -731,9 +755,13 @@ def _load_schedule_entries(
     target_repo: str | None,
     states: tuple[str, ...],
 ) -> tuple[_schedule.QueueEntry, ...]:
-    """指定状態のfeedback・TBDをスケジューリング用表現へ変換する。"""
+    """指定状態のfeedback・TBDをスケジューリング用表現へ変換する。
+
+    別リポジトリ依存の充足判定が対象リポジトリと状態を参照するため、両者をエントリへ保持する。
+    リポジトリは表記揺れを吸収した正規化済みの値とし、依存側の指定と同じ形式で比較できるようにする。
+    """
     entries: list[_schedule.QueueEntry] = []
-    for path, _, text, _, entry_type in _iter_entries(private_notes, states, target_repo, "all"):
+    for path, entry_repo, text, state, entry_type in _iter_entries(private_notes, states, target_repo, "all"):
         parsed = parse_frontmatter(text)
         frontmatter_broken = parsed is None
         if entry_type == MQ_TYPE_FEEDBACK:
@@ -754,6 +782,7 @@ def _load_schedule_entries(
         else:
             repair_kind = None
         plan_file = parsed[0].get("plan_file") if parsed is not None else None
+        normalized_repo = _normalized_repo_or_none(entry_repo)
         entries.append(
             _schedule.QueueEntry(
                 filename=path.name,
@@ -765,6 +794,8 @@ def _load_schedule_entries(
                 plan_file=plan_file if isinstance(plan_file, str) else None,
                 repair_target_filename=repair_target if isinstance(repair_target, str) else None,
                 repair_kind=repair_kind,
+                normalized_target_repo=normalized_repo,
+                state=state,
             )
         )
     return tuple(entries)

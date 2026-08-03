@@ -40,8 +40,9 @@ def cmd_schedule(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
                 target_repo,
                 (_common.MQ_STATE_ADOPTED, _common.MQ_STATE_REJECTED),
             )
+            run_id = getattr(args, "run_id", None)
             if args.record_deferral is not None:
-                result, changed = _record_deferrals(private_notes, active, args.record_deferral)
+                result, changed = _record_deferrals(private_notes, active, args.record_deferral, run_id)
                 if changed:
                     _common._commit_and_push(
                         private_notes,
@@ -49,6 +50,17 @@ def cmd_schedule(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
                         list(_common.MQ_ACTIVE_STATES),
                     )
                 _print_result(result)
+                return 0
+
+            set_dependency = getattr(args, "set_dependency", None)
+            if set_dependency:
+                if _apply_set_dependency(private_notes, active, set_dependency):
+                    _common._commit_and_push(
+                        private_notes,
+                        "chore: update feedback queue dependencies",
+                        list(_common.MQ_ACTIVE_STATES),
+                    )
+                _print_result(_schedule.ScheduleResult())
                 return 0
 
             classifications = _load_classifications(args.classifications)
@@ -59,8 +71,18 @@ def cmd_schedule(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
             active = updated
 
             existing_repairs = _load_unanswered_repair_keys(private_notes)
-            result = _schedule.calculate_schedule(active, terminal, plan_target_files, existing_repairs)
-            deferred_active = _apply_calculated_deferrals(active, result.deferred)
+            # 依存先の存在確認だけを全リポジトリ横断で行う。`--target-repo`は処理対象の限定であって
+            # 観測範囲の限定ではない。
+            cross_repo = _common._load_schedule_entries(private_notes, None, _common.MQ_STATES)
+            result = _schedule.calculate_schedule(
+                active,
+                terminal,
+                plan_target_files,
+                existing_repairs,
+                {entry.filename: entry for entry in cross_repo},
+                datetime.datetime.now(datetime.UTC),
+            )
+            deferred_active = _apply_calculated_deferrals(active, result.deferred, run_id)
             changed = _persist_metadata_changes(private_notes, active, deferred_active) or changed
 
             filed_frontmatter_repairs = _file_repair_tbds(
@@ -197,20 +219,55 @@ def _persist_metadata_changes(
 def _apply_calculated_deferrals(
     entries: tuple[_schedule.QueueEntry, ...],
     deferred: tuple[_schedule.DeferredItem, ...],
+    run_id: str | None = None,
 ) -> tuple[_schedule.QueueEntry, ...]:
     reasons: dict[str, _schedule.DeferralReason] = {item.filename: item.reason for item in deferred}
     return tuple(
-        dataclasses.replace(entry, metadata=_schedule.with_deferral(entry.metadata, reasons[entry.filename]))
+        dataclasses.replace(entry, metadata=_schedule.with_deferral(entry.metadata, reasons[entry.filename], run_id))
         if entry.filename in reasons and entry.metadata is not None
         else entry
         for entry in entries
     )
 
 
+def _apply_set_dependency(
+    private_notes: pathlib.Path,
+    entries: tuple[_schedule.QueueEntry, ...],
+    specifications: list[str],
+) -> bool:
+    """`--set-dependency`のJSON指定で対象エントリの依存だけを更新する。
+
+    JSONは対象filenameと依存マッピングを同一オブジェクトへ置く。
+    検証は`_schedule`側の受理関数へ委ね、CLI層で独自の解析を実装しない。
+    """
+    by_name = {entry.filename: entry for entry in entries}
+    positions = {entry.filename: index for index, entry in enumerate(entries)}
+    updated = list(entries)
+    for specification in specifications:
+        payload = json.loads(specification)
+        if not isinstance(payload, dict):
+            raise ValueError(f"依存指定はJSON objectで指定してください: {specification}")
+        filename = payload.get("filename")
+        if not isinstance(filename, str) or not filename:
+            raise ValueError(f"依存指定にfilenameがありません: {specification}")
+        entry = by_name.get(filename)
+        if entry is None or entry.metadata is None:
+            raise ValueError(f"依存更新の対象外または未分類のfilenameです: {filename}")
+        dependency = _schedule.dependency_from_mapping({key: value for key, value in payload.items() if key != "filename"})
+        if dependency is None:
+            raise ValueError(f"依存指定の必須キーまたは型が不正です: {specification}")
+        updated[positions[filename]] = dataclasses.replace(
+            entry,
+            metadata=dataclasses.replace(entry.metadata, dependency=dependency),
+        )
+    return _persist_metadata_changes(private_notes, entries, tuple(updated))
+
+
 def _record_deferrals(
     private_notes: pathlib.Path,
     entries: tuple[_schedule.QueueEntry, ...],
     specifications: list[str],
+    run_id: str | None = None,
 ) -> tuple[_schedule.ScheduleResult, bool]:
     by_name = {entry.filename: entry for entry in entries}
     deferred: list[_schedule.DeferredItem] = []
@@ -226,7 +283,7 @@ def _record_deferrals(
         typed_reason = typing.cast(_schedule.DeferralReason, reason)
         updated[positions[filename]] = dataclasses.replace(
             entry,
-            metadata=_schedule.with_deferral(entry.metadata, typed_reason),
+            metadata=_schedule.with_deferral(entry.metadata, typed_reason, run_id),
         )
         deferred.append(_schedule.DeferredItem(filename, typed_reason))
     changed = _persist_metadata_changes(private_notes, entries, tuple(updated))
@@ -281,6 +338,7 @@ def _print_result(result: _schedule.ScheduleResult) -> None:
         "parallel_normal_items": list(result.parallel_normal_items),
         "post_plan_normal_items": list(result.post_plan_normal_items),
         "deferred": [dataclasses.asdict(item) for item in result.deferred],
+        "suppressed": [dataclasses.asdict(item) for item in result.suppressed],
         "missing_dependency_tbds": [dataclasses.asdict(item) for item in result.missing_dependency_tbds],
         "frontmatter_broken_filenames": list(result.frontmatter_broken_filenames),
         "frontmatter_broken_needs_tbd_filenames": list(result.frontmatter_broken_needs_tbd_filenames),

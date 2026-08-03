@@ -1,6 +1,7 @@
 """メッセージキューの分類メタデータと機械スケジューリングを提供する。"""
 
 import dataclasses
+import datetime
 import hashlib
 import pathlib
 import re
@@ -15,12 +16,25 @@ STARVATION_THRESHOLD = 3
 PLAN_LIMIT = 3
 NORMAL_LIMIT = 20
 
-type DependencyKind = Literal["none", "entries", "inbox-empty", "external-user"]
+# 依存種別。`external-upstream`は上流リポジトリの対応待ちで、ユーザー判断を要さない。
+# `external-repo-entry`は別リポジトリのフィードバック完了待ちで、依存先の状態から機械判定できる。
+type DependencyKind = Literal[
+    "none",
+    "entries",
+    "inbox-empty",
+    "external-user",
+    "external-upstream",
+    "external-repo-entry",
+]
 type FeedbackKind = Literal["plan-impl", "normal"]
 type FeedbackEntryKind = Literal["feedback", "tbd", "unknown"]
 type DeferralReason = Literal["dependency-unmet", "limit-exceeded", "conflict"]
 type RepairKind = Literal["frontmatter", "missing-plan-file"]
 type RepairKey = tuple[str, RepairKind]
+
+
+# 依存先エントリが処理を終えたと判定する状態ディレクトリ名。
+_TERMINAL_STATES = frozenset(("adopted", "rejected"))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -31,6 +45,14 @@ class Dependency:
     filenames: tuple[str, ...] = ()
     condition: str | None = None
     tbd_filename: str | None = None
+    # `external-upstream`の再評価時刻。ISO 8601の文字列として保持する。
+    # 無引用で書くとYAMLが日時型として構築するため、直列化では必ず文字列として渡す。
+    recheck_after: str | None = None
+    # 外部条件を保留した理由。`condition`は次回再評価時の確認事項として使う。
+    # 両項目は`queue_schedule`へ置き、本文hashと分類の有効性判定へ含めない。
+    hold_reason: str | None = None
+    # `external-repo-entry`の依存先リポジトリ（正規化済みリモートURL）。
+    target_repo: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,6 +67,8 @@ class ScheduleMetadata:
     target_files: tuple[str, ...]
     carry_count: int
     carry_reasons: tuple[DeferralReason, ...]
+    # 直近で繰越を加算した実行単位の識別値。同一実行単位での二重計上を防ぐ。
+    last_deferral_run_id: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -60,6 +84,10 @@ class QueueEntry:
     repair_target_filename: str | None
     plan_file: str | None = None
     repair_kind: RepairKind | None = None
+    # 依存先評価用の正規化済みリモートURL。
+    normalized_target_repo: str | None = None
+    # エントリを読み込んだ状態ディレクトリ名。
+    state: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -83,6 +111,20 @@ class DeferredItem:
 
 
 @dataclasses.dataclass(frozen=True)
+class SuppressedItem:
+    """再評価時刻まで選抜から外す項目と、その判断材料。
+
+    繰越とは別扱いとする。充足時期が外部に依存する項目へ繰越を積むと、
+    スターベーション優先で選抜され続ける一方で毎回除外される状態になる。
+    """
+
+    filename: str
+    recheck_after: str
+    hold_reason: str
+    condition: str
+
+
+@dataclasses.dataclass(frozen=True)
 class MissingDependencyTbd:
     """恒常的な依存不成立についてTBD作成を要求する診断。"""
 
@@ -100,6 +142,7 @@ class ScheduleResult:
     parallel_normal_items: tuple[str, ...] = ()
     post_plan_normal_items: tuple[str, ...] = ()
     deferred: tuple[DeferredItem, ...] = ()
+    suppressed: tuple[SuppressedItem, ...] = ()
     missing_dependency_tbds: tuple[MissingDependencyTbd, ...] = ()
     frontmatter_broken_filenames: tuple[str, ...] = ()
     frontmatter_broken_needs_tbd_filenames: tuple[str, ...] = ()
@@ -146,6 +189,14 @@ def metadata_to_mapping(metadata: ScheduleMetadata) -> dict[str, object]:
     elif metadata.dependency.kind == "external-user":
         dependency["condition"] = metadata.dependency.condition
         dependency["tbd_filename"] = metadata.dependency.tbd_filename
+    elif metadata.dependency.kind == "external-upstream":
+        # 日時は文字列のまま渡す。YAMLへ日時型として書くと読み戻しで型が変わる。
+        dependency["condition"] = metadata.dependency.condition
+        dependency["recheck_after"] = metadata.dependency.recheck_after
+        dependency["hold_reason"] = metadata.dependency.hold_reason
+    elif metadata.dependency.kind == "external-repo-entry":
+        dependency["filenames"] = list(metadata.dependency.filenames)
+        dependency["target_repo"] = metadata.dependency.target_repo
     mapping: dict[str, object] = {
         "body_sha256": metadata.body_sha256,
         "normalized_target_repo": metadata.normalized_target_repo,
@@ -158,6 +209,8 @@ def metadata_to_mapping(metadata: ScheduleMetadata) -> dict[str, object]:
         mapping["target_files"] = list(metadata.target_files)
     mapping["carry_count"] = metadata.carry_count
     mapping["carry_reasons"] = list(metadata.carry_reasons)
+    if metadata.last_deferral_run_id is not None:
+        mapping["last_deferral_run_id"] = metadata.last_deferral_run_id
     return mapping
 
 
@@ -198,6 +251,10 @@ def mapping_to_metadata(mapping: dict[str, typing.Any]) -> ScheduleMetadata | No
         if normalized is None:
             return None
         normalized_files = normalized
+    # 既存キューのエントリは当該キーを持たないため、欠落を許容して再分類の対象にしない。
+    last_run_id = mapping.get("last_deferral_run_id")
+    if last_run_id is not None and (not isinstance(last_run_id, str) or not last_run_id):
+        return None
     typed_feedback_type = typing.cast(FeedbackKind, feedback_type)
     typed_reasons = typing.cast(tuple[DeferralReason, ...], tuple(carry_reasons))
     return ScheduleMetadata(
@@ -209,6 +266,7 @@ def mapping_to_metadata(mapping: dict[str, typing.Any]) -> ScheduleMetadata | No
         target_files=normalized_files,
         carry_count=carry_count,
         carry_reasons=typed_reasons,
+        last_deferral_run_id=last_run_id,
     )
 
 
@@ -345,11 +403,14 @@ def regenerate_plan_metadata(entries: tuple[QueueEntry, ...]) -> tuple[QueueEntr
             body_sha256=body_sha256(entry.text),
             normalized_target_repo=_target_repo(entry.text),
             feedback_type="plan-impl",
-            dependency=Dependency(kind="none"),
+            # 依存は再生成の対象外とする。独立キーから復元できない情報であり、
+            # 毎回初期化すると計画実装型へ依存を設定できない。
+            dependency=current.dependency if current is not None else Dependency(kind="none"),
             plan_file=entry.plan_file,
             target_files=(),
             carry_count=current.carry_count if current is not None else 0,
             carry_reasons=current.carry_reasons if current is not None else (),
+            last_deferral_run_id=current.last_deferral_run_id if current is not None else None,
         )
         regenerated.append(dataclasses.replace(entry, metadata=metadata))
     return tuple(regenerated)
@@ -374,8 +435,15 @@ def calculate_schedule(
     terminal_entries: tuple[QueueEntry, ...],
     plan_target_files: Mapping[str, tuple[str, ...]],
     existing_unanswered_repair_keys: frozenset[RepairKey],
+    cross_repo_entries: Mapping[str, QueueEntry],
+    now: datetime.datetime,
 ) -> ScheduleResult:
-    """依存成立、優先度、上限、競合順、繰越理由を副作用なしで算出する。"""
+    """依存成立、優先度、上限、競合順、繰越理由を副作用なしで算出する。
+
+    `cross_repo_entries`は別リポジトリ依存の充足判定に使う全リポジトリのエントリ、
+    `now`は外部条件待ちの再評価時刻との比較に使う現在時刻とする。
+    いずれも引数で受け取り、純関数性を保つ。
+    """
     active_entries = regenerate_plan_metadata(active_entries)
     broken = tuple(sorted(entry.filename for entry in active_entries if entry.frontmatter_broken))
     broken_needs_tbd = tuple(
@@ -432,10 +500,24 @@ def calculate_schedule(
     all_entries = {entry.filename: entry for entry in (*active_entries, *terminal_entries)}
     eligible: list[QueueEntry] = []
     deferred: list[DeferredItem] = []
+    suppressed: list[SuppressedItem] = []
     for entry in typed:
         assert entry.metadata is not None
-        if _dependency_is_satisfied(entry, active_entries, all_entries):
+        if _dependency_is_satisfied(entry, active_entries, all_entries, cross_repo_entries, now):
             eligible.append(entry)
+        elif entry.metadata.dependency.kind == "external-upstream":
+            # 再評価時刻が未到来の外部条件待ちは繰越の対象外とする。
+            # 充足時期が外部に依存する項目へ繰越を積むと、スターベーション優先で
+            # 選抜され続ける一方で毎回除外される状態になる。
+            dependency = entry.metadata.dependency
+            suppressed.append(
+                SuppressedItem(
+                    entry.filename,
+                    dependency.recheck_after or "",
+                    dependency.hold_reason or "",
+                    dependency.condition or "",
+                )
+            )
         else:
             deferred.append(DeferredItem(entry.filename, "dependency-unmet"))
 
@@ -468,11 +550,13 @@ def calculate_schedule(
         else:
             post_plan.append(entry.filename)
     deferred.sort(key=lambda item: item.filename)
+    suppressed.sort(key=lambda item: item.filename)
     return ScheduleResult(
         plan_items=tuple(entry.filename for entry in selected_plans),
         parallel_normal_items=tuple(parallel),
         post_plan_normal_items=tuple(post_plan),
         deferred=tuple(deferred),
+        suppressed=tuple(suppressed),
         frontmatter_broken_filenames=broken,
         frontmatter_broken_needs_tbd_filenames=broken_needs_tbd,
         missing_plan_file_filenames=missing_plan_files,
@@ -480,12 +564,20 @@ def calculate_schedule(
     )
 
 
-def with_deferral(metadata: ScheduleMetadata, reason: DeferralReason) -> ScheduleMetadata:
-    """繰越理由を1回追加した分類メタデータを返す。"""
+def with_deferral(metadata: ScheduleMetadata, reason: DeferralReason, run_id: str | None = None) -> ScheduleMetadata:
+    """繰越理由を1回追加した分類メタデータを返す。
+
+    同一の`run_id`で既に加算済みの場合は加算しない。
+    1つのセッションが選抜計算を複数回実行しても繰越が二重計上されないようにする。
+    `run_id`が`None`の場合は従来どおり無条件に加算する。
+    """
+    if run_id is not None and metadata.last_deferral_run_id == run_id:
+        return metadata
     return dataclasses.replace(
         metadata,
         carry_count=metadata.carry_count + 1,
         carry_reasons=(*metadata.carry_reasons, reason),
+        last_deferral_run_id=run_id,
     )
 
 
@@ -504,6 +596,11 @@ def format_schedule_label(text: str) -> str:
     return f"{metadata.feedback_type}/carry={metadata.carry_count}"
 
 
+def dependency_from_mapping(mapping: dict[str, typing.Any]) -> Dependency | None:
+    """依存マッピングを検証してDependencyへ変換する。CLIの依存更新経路が使う公開名。"""
+    return _mapping_to_dependency(mapping)
+
+
 def _mapping_to_dependency(mapping: dict[str, typing.Any]) -> Dependency | None:
     kind = mapping.get("kind")
     if kind in ("none", "inbox-empty"):
@@ -520,7 +617,55 @@ def _mapping_to_dependency(mapping: dict[str, typing.Any]) -> Dependency | None:
         if not isinstance(condition, str) or not condition or not isinstance(tbd_filename, str) or not tbd_filename:
             return None
         return Dependency(kind="external-user", condition=condition, tbd_filename=tbd_filename)
+    if kind == "external-upstream":
+        condition = mapping.get("condition")
+        recheck_after = mapping.get("recheck_after")
+        hold_reason = mapping.get("hold_reason")
+        if not isinstance(condition, str) or not condition:
+            return None
+        if not isinstance(recheck_after, str) or not recheck_after:
+            return None
+        if not isinstance(hold_reason, str) or not hold_reason:
+            return None
+        if _parse_recheck_after(recheck_after) is None:
+            return None
+        return Dependency(
+            kind="external-upstream",
+            condition=condition,
+            recheck_after=recheck_after,
+            hold_reason=hold_reason,
+        )
+    if kind == "external-repo-entry":
+        filenames = mapping.get("filenames")
+        target_repo = mapping.get("target_repo")
+        if not isinstance(filenames, list) or not filenames or any(not isinstance(value, str) for value in filenames):
+            return None
+        if not isinstance(target_repo, str) or not target_repo:
+            return None
+        typed_filenames = typing.cast(list[str], filenames)
+        return Dependency(
+            kind="external-repo-entry",
+            filenames=tuple(dict.fromkeys(typed_filenames)),
+            target_repo=target_repo,
+        )
     return None
+
+
+def _parse_recheck_after(value: str | None) -> datetime.datetime | None:
+    """再評価時刻をawareな日時として解析する。解析できない値はNoneを返す。
+
+    タイムゾーン情報を必須とする。比較対象の現在時刻がawareであり、
+    naiveな日時との比較は例外になる。
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
 
 
 def _normalize_target_files(values: list[typing.Any]) -> tuple[str, ...] | None:
@@ -676,7 +821,10 @@ def _dependency_is_satisfied(
     entry: QueueEntry,
     active_entries: tuple[QueueEntry, ...],
     all_entries: Mapping[str, QueueEntry],
+    cross_repo_entries: Mapping[str, QueueEntry],
+    now: datetime.datetime,
 ) -> bool:
+    """依存の成立可否を返す。全種別を明示分岐で扱い、未知の種別は不成立とする。"""
     assert entry.metadata is not None
     dependency = entry.metadata.dependency
     if dependency.kind == "none":
@@ -687,4 +835,20 @@ def _dependency_is_satisfied(
     if dependency.kind == "external-user":
         target = all_entries.get(dependency.tbd_filename or "")
         return target is not None and target.kind == "tbd" and target.tbd_answered is True
-    return not any(candidate.filename != entry.filename for candidate in active_entries)
+    if dependency.kind == "external-upstream":
+        # 再評価時刻の到来だけを成立条件とする。到来後は通常の選抜対象へ戻り、
+        # 条件が未充足であれば当該セッションが改めて繰越または再設定を行う。
+        parsed = _parse_recheck_after(dependency.recheck_after)
+        return parsed is not None and parsed <= now
+    if dependency.kind == "external-repo-entry":
+        # 依存先リポジトリのエントリが終端状態にあることを成立条件とする。
+        # 依存先が未登録の場合は不成立とし、消失の診断は対象リポジトリ内の依存だけを扱う。
+        return all(
+            (target := cross_repo_entries.get(filename)) is not None
+            and target.normalized_target_repo == dependency.target_repo
+            and target.state in _TERMINAL_STATES
+            for filename in dependency.filenames
+        )
+    if dependency.kind == "inbox-empty":
+        return not any(candidate.filename != entry.filename for candidate in active_entries)
+    return False

@@ -249,6 +249,19 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         default=None,
         help="初期選抜後に次回へ送る項目と理由",
     )
+    schedule.add_argument(
+        "--run-id",
+        metavar="ID",
+        default=None,
+        help="選抜計算の実行単位を識別する値。同一の値では繰越回数を二重に加算しない",
+    )
+    schedule.add_argument(
+        "--set-dependency",
+        metavar="JSON",
+        nargs="+",
+        default=None,
+        help="対象エントリの依存条件だけを更新するJSON。filenameと依存マッピングを同一objectへ置く",
+    )
     _add_target_repo_arg(schedule, required=True)
 
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")

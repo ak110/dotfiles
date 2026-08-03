@@ -353,6 +353,28 @@ class TestScheduleEntryLoading:
 
         assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
 
+    def test_count_pending_entries_excludes_suppressed_external_upstream(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """再評価時刻が未到来の外部条件待ちを件数へ数えない。
+
+        常駐実行はこの件数で起動を判断するため、抑制期間中の項目が起動契機になると
+        毎回同じ確認を繰り返すことになる。
+        """
+        _write_feedback(
+            tmp_path,
+            "upstream-wait.md",
+            dependency=schedule.Dependency(
+                "external-upstream",
+                condition="上流の対応状況を確認する",
+                recheck_after="2099-01-01T00:00:00+00:00",
+                hold_reason="上流ツールのメジャー版対応待ち",
+            ),
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
     def test_count_pending_entries_counts_missing_plan_only_until_repair_tbd_is_filed(
         self,
         tmp_path: pathlib.Path,

@@ -371,6 +371,203 @@ class TestScheduleCli:
         assert updated.carry_count == 1
         assert updated.carry_reasons == ("conflict",)
 
+    @pytest.mark.parametrize(
+        ("run_id_args", "expected_carry_count"),
+        [
+            # 同一実行単位の再実行では加算しない。分類委譲先とメインが同じセッションで
+            # 選抜計算を実行しても繰越が二重計上されないようにする。
+            (["--run-id=run-1"], 1),
+            # 実行単位を指定しない場合は従来どおり毎回加算する。
+            ([], 2),
+        ],
+    )
+    def test_record_deferral_respects_run_id(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        run_id_args: list[str],
+        expected_carry_count: int,
+    ) -> None:
+        """同一実行単位での繰越の二重計上を抑止する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/repo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("README.md",),
+            0,
+            (),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        for _ in range(2):
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(
+                    [
+                        "mq",
+                        "schedule",
+                        "--target-repo=github.com/example/repo",
+                        "--record-deferral",
+                        "conflict:fb.md",
+                        *run_id_args,
+                    ],
+                    home=tmp_path,
+                )
+            assert exc_info.value.code == 0
+
+        updated = schedule.parse_schedule_metadata(path.read_text(encoding="utf-8"))
+        assert updated is not None
+        assert updated.carry_count == expected_carry_count
+
+    def test_set_dependency_updates_only_dependency(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """依存更新の経路が対象エントリの依存だけを書き換える。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/repo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("README.md",),
+            2,
+            ("conflict", "conflict"),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        specification = json.dumps(
+            {
+                "filename": "fb.md",
+                "kind": "external-upstream",
+                "condition": "上流の対応状況を確認する",
+                "hold_reason": "上流ツールのメジャー版対応待ち",
+                "recheck_after": "2026-09-01T00:00:00+00:00",
+            },
+            ensure_ascii=False,
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "schedule",
+                    "--target-repo=github.com/example/repo",
+                    "--set-dependency",
+                    specification,
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        updated = schedule.parse_schedule_metadata(path.read_text(encoding="utf-8"))
+        assert updated is not None
+        assert updated.dependency.kind == "external-upstream"
+        assert updated.dependency.recheck_after == "2026-09-01T00:00:00+00:00"
+        assert updated.dependency.hold_reason == "上流ツールのメジャー版対応待ち"
+        # 依存以外の項目は書き換えない。
+        assert updated.carry_count == 2
+        assert updated.target_files == ("README.md",)
+
+    def test_set_dependency_rejects_invalid_specification(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """検証を通らない指定では対象を書き換えずエラーで終える。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/repo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("README.md",),
+            0,
+            (),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        before = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        # タイムゾーン情報を欠く再評価時刻は受理しない。
+        specification = json.dumps(
+            {
+                "filename": "fb.md",
+                "kind": "external-upstream",
+                "condition": "確認する",
+                "hold_reason": "待機中",
+                "recheck_after": "2026-09-01T00:00:00",
+            },
+            ensure_ascii=False,
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "schedule",
+                    "--target-repo=github.com/example/repo",
+                    "--set-dependency",
+                    specification,
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert path.read_text(encoding="utf-8") == before
+
+    def test_suppressed_items_appear_in_output(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """再評価時刻が未到来の項目を抑制として出力へ含める。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/repo",
+            "normal",
+            schedule.Dependency(
+                "external-upstream",
+                condition="上流の対応状況を確認する",
+                recheck_after="2099-01-01T00:00:00+00:00",
+                hold_reason="上流ツールのメジャー版対応待ち",
+            ),
+            None,
+            ("README.md",),
+            0,
+            (),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert [item["filename"] for item in payload["suppressed"]] == ["fb.md"]
+        assert payload["parallel_normal_items"] == []
+        assert payload["deferred"] == []
+        # 抑制した項目へ繰越を積まない。
+        updated = schedule.parse_schedule_metadata(path.read_text(encoding="utf-8"))
+        assert updated is not None
+        assert updated.carry_count == 0
+
     def test_body_sha256_mismatch_is_reported_for_unclassified_item(
         self,
         monkeypatch: pytest.MonkeyPatch,
