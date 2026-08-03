@@ -197,6 +197,7 @@ def test_plan_impl_review_report_contract_is_synchronized() -> None:
     executor = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
     caller = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
     for label in (
+        "external_operations",
         "review_final_findings",
         "review_skip_instruction",
         "review_caller_verification",

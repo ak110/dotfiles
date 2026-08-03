@@ -307,6 +307,7 @@ def _complete_report(**overrides: str) -> str:
         "status": "completed",
         "summary": "全変更を反映",
         "changed": "- [x] item — /path",
+        "external_operations": "- operation: なし\n  target: なし\n  result: not_applicable\n  evidence: なし",
         "verification": "- `pytest` — pass",
         "commit_sha": "abc123",
         "review_status": "実施完了（計画準拠系採用0件・独立系採用0件）",
@@ -585,6 +586,24 @@ class TestPlanImplExecutorReportFormat:
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert "sub-retry" in state.get("plan_impl_executor_active_subagent_sessions", {})
+
+    def test_missing_external_operations_label_blocks(self, tmp_path: Path) -> None:
+        """`external_operations`欄が欠落する報告はblockし理由文に当該ラベルを列挙する。"""
+        sid = "sid-format-missing-external-operations"
+        _write_flag_state(tmp_path, sid, "sub-e")
+        report = _complete_report()
+        report = "\n".join(line for line in report.splitlines() if not line.startswith("external_operations"))
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-e"),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert "external_operations" in body["reason"]
 
     def test_missing_applied_instructions_label_blocks(self, tmp_path: Path) -> None:
         """`applied_instructions`欄が欠落する報告はblockし理由文に当該ラベルを列挙する。"""

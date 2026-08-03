@@ -60,6 +60,7 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "status",
     "summary",
     "changed",
+    "external_operations",
     "verification",
     "commit_sha",
     "review_status",

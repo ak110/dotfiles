@@ -44,25 +44,38 @@ user-invocable: false
 
 4. 次のreferenceをReadする
    - `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation.md`
+   - `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-task.md`
    - `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-review.md`
-5. 両referenceから実装・修正系とレビュー系の完結したタスク本文を構成する
-6. 実装用タスク本文を実装・修正系の`agent-toolkit:codex-exec`へ渡す
-7. 実装応答と作業ツリー、コミット、検証結果を照合する
-8. レビュー前の対象内容を退避し、内容ハッシュを記録する
-9. 計画準拠系と独立系へレビュー用タスク本文を並列に渡す
-10. レビュー応答の受領後にハッシュと差分を比較し、変更検知時は同referenceの確認手順を適用する。
+5. 前掲のreferenceから実装・修正系とレビュー系の完結したタスク本文を構成する
+6. 計画ファイルの`## 実行方法`の本文を委譲前スナップショットとして保存する
+7. 実装用タスク本文を実装・修正系の`agent-toolkit:codex-exec`へ渡す
+8. 実装応答と作業ツリー、コミット、検証結果を照合する
+9. レビュー前の対象内容を退避し、内容ハッシュを記録する
+10. 計画準拠系と独立系へレビュー用タスク本文を並列に渡す
+11. レビュー応答の受領後にハッシュと差分を比較し、変更検知時は同referenceの確認手順を適用する。
     初回レビューの`review_coverage`に観点ごとの点検済み証跡が無ければ同じ系統へ再依頼する
-11. レビュー指摘を実装・修正系へ渡し、返された採否と根拠を実体と照合して検収する
-12. 採用指摘の修正後は`review_impact_audit`の点検対象と結果を検収し、完了後に限り、
+12. レビュー指摘を実装・修正系へ渡し、返された採否と根拠を実体と照合して検収する
+13. 採用指摘の修正後は`review_impact_audit`の点検対象と結果を検収し、完了後に限り、
     同じ事前条件を満たしてから系統別の再レビュー用タスク本文を渡す
-13. 反映結果と実体を照合し、定義の`## 出力`を作成する
+14. 反映結果と実体を照合し、定義の`## 出力`を作成する
+
+保存した委譲前スナップショットは全ラウンドを通じて更新せず、`external_operations`の
+認可判定の根拠として用いる。保存と照合の手順は`plan-codex-implementation.md`
+「初回委譲」節と「応答の即時検収」節を正本とする。
 
 計画が`レビューは実施しない（ユーザー指示）`を指定する場合は、実装応答の照合後に
 レビュー省略の出力契約を適用する。
 用途固有の実装順、検証、コミット、レビュー、指摘反映、再レビュー、
-ラウンド上限は両referenceを正本とする。
+ラウンド上限は前掲のreferenceを正本とする。
+`review_impact_audit`の検収基準は`plan-codex-implementation-task.md`
+「レビュー指摘の妥当性検討」節を正本とする。
 本定義では、二系統一組で数えて上限に到達したラウンド（`review_rounds: 5`に対応する）を上限ラウンドと呼ぶ。
-計画方針またはユーザー判断を要する事項は`needs_escalation`で返す。
+計画方針またはユーザー判断を要する事項、破壊的操作の確認、技術的に解消できない検証失敗、
+および本定義が個別に列挙する条件に該当する場合に`needs_escalation`で返す。
+残作業の多さ、所要時間、トークン消費量はいずれの返却条件にも該当せず、これらを理由に工程の途中で中断しない。
+本定義を`needs_escalation`の返却条件の正本とする。
+呼び出し元側の参照は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
+「完了報告の検収」節が保持し、同節は受領後の処理だけを定める。
 
 Codex経路では実装・修正系、計画準拠系、独立系ごとに別の`threadId`を継続する。
 Claude代替では系統別のClaude Agent識別子があり`SendMessage`を利用できる場合に同じAgentを再開する。
@@ -78,8 +91,10 @@ Claude代替でAgentツールにより系統を起動した場合は、当該Age
 別の受領手段であり、いずれで受領した場合も同じ検収手順を適用する。
 各系統の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収することを既定とする。
 当該経路で受領できない場合は、前掲のjsonl記録の直接読み取りで受領する。
-Agentツールが深さ上限または権限制約で利用できない場合だけ、
+Agentツールが深さ上限または権限制約で利用できない場合と、
+Agent経路で前掲の受領手段を確保できずcodex MCP経路も利用できない場合に、
 対象系統を`unavailable`として呼び出し元へ代替起動を要求する。
+本定義を`unavailable`の返却条件の正本とする。
 起動を試みて不能だった場合は`unavailable`とし、起動を試みていない場合だけ`not_started`とする。
 必須項目不足、実測との不一致、委譲失敗は同じ系統へ1回再依頼し、同じ失敗が続けば
 `needs_escalation`で返す。レビュー経路不能、変更復元不能、想定外のHEAD・リモートref変更も
@@ -89,6 +104,8 @@ Agentツールが深さ上限または権限制約で利用できない場合だ
 `needs_escalation`で返す。
 
 委譲範囲は実装・検証・コミット・二系統レビューまでとする。
+承認済み計画の`## 実行方法`が定めた対象リポジトリ外への操作と、
+適用中の規範が義務づける登録操作は当該範囲に含む。
 `git push`、タグ作成、リモートref変更は呼び出し元の担当とする。
 
 ## 出力
@@ -98,6 +115,12 @@ status: completed | completed_with_review_cap | needs_escalation
 summary: <結果>
 changed:
 - <計画項目と対応する変更>
+external_operations:
+- operation: <実施または実施不可と判定した対象リポジトリ外操作と認可根拠（承認済み計画の`## 実行方法`に
+    記載された操作は`計画記載`、規範が義務づける登録操作は`規範義務`）。該当する操作が無い場合は「なし」>
+  target: <対象リポジトリ、外部サービス、登録先など。該当する操作が無い場合は「なし」>
+  result: completed（実施した） | needs_escalation（実施せず呼び出し元の確認へ回した） | not_applicable（該当する操作が無い）
+  evidence: <対象側の識別子、応答、または実物照合に使う値。該当する操作が無い場合は「なし」>
 verification:
 - <コマンド、終了コード、警告>
 commit_sha: <最終コミットまたは「なし」>
@@ -128,9 +151,9 @@ review_impact_audit:
 implementation_history:
 <実装・修正系の応答履歴>
 plan_review_history:
-<計画準拠系の応答履歴または「なし」>
+<計画準拠系の応答履歴または「なし」。各ラウンドの応答の直前へ`ラウンド<N>:`の行を置く>
 independent_review_history:
-<独立系の応答履歴または「なし」>
+<独立系の応答履歴または「なし」。各ラウンドの応答の直前へ`ラウンド<N>:`の行を置く>
 review_resolution:
 <6列表。指摘が無ければ「指摘なし」、レビュー省略時だけ「なし」>
 blockers:
@@ -139,17 +162,31 @@ blockers:
 
 `status: completed`は計画項目、検証、コミットと、
 両レビュー系の完了またはユーザー指示によるレビュー省略を実測した場合だけ返す。
-`status: completed_with_review_cap`は、上限ラウンドの既知指摘の是正と検証を完了し、
+`status: completed_with_review_cap`は、実際に上限ラウンドへ到達し、
+その既知指摘の是正と検証を完了し、
 新規指摘を探索する再レビューを実施していない場合だけ返す。この場合は
 `review_status: 上限到達後の既知指摘修正済み（再レビューなし）`、`review_rounds: 5`とする。
 上限到達時は既知指摘の残数と、計画の対象ファイル一覧に無いファイルへ及んだ変更を
 `plan_gaps`へ記録する。
+両review historyの`ラウンド<N>:`行は、二系統一組で数えたラウンド番号を1から昇順に付し、
+最大値を`review_rounds`と一致させる。呼び出し元はこの行を実施ラウンド数の判定根拠として用いる。
 レビュー実施完了では完了時点のラウンドの指摘件数を`review_final_findings`へ記録し、
 `review_skip_instruction: なし`、`review_caller_verification: 不要`とする。
 レビュー省略では`review_final_findings: 対象外`とし、計画に保存されたユーザー指示原文を
 `review_skip_instruction`へ転記して、呼び出し元による照合を要求する。
 `status: needs_escalation`では`review_final_findings: 未確定`、
 `review_skip_instruction: なし`、`review_caller_verification: 未完了事項の確認が必要`とする。
+`external_operations`のいずれかの`result`が`needs_escalation`の場合は、
+全体の`status`も`needs_escalation`とする。
+このうち、実装、検証、コミット、レビュー工程を完了し、未完了事項が当該項目だけである場合を例外とする。
+`review_status`、`review_final_findings`、`review_skip_instruction`、
+`review_caller_verification`の4欄をレビュー欄と呼ぶ。
+例外に該当する場合は、レビュー欄へ前掲の`status: needs_escalation`向けの値を書かない。
+レビュー工程の実測どおりの値を記載する。
+完了したレビューの実測結果を`レビュー未完了`と`未確定`へ置き換えると、
+呼び出し元は完了済みのレビュー工程を再実行する。
+`result`が`needs_escalation`の`external_operations`の各項目は、`operation`と`target`を含む形で
+`blockers`へ記載する。呼び出し元はこの欄で未実施の操作を特定する。
 
 完了報告は1回だけ生成し、実際の受領経路（ツール戻り値または完了通知）を通じて返す。
 `SendMessage`による能動送付と、待機対象の結果を欠く完了報告は行わない。
