@@ -54,6 +54,15 @@ _POLL_INTERVAL_SEC = 600.0
 # （1回のファイル操作で複数イベントが連続発火する実測を吸収する）。
 _DEBOUNCE_SEC = 3.0
 
+# ランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
+# 実体プロセスが自身を`uv`へ置き換えると、置き換え前の`uv`が子の終了を待って残り、
+# 再起動のたびにプロセス階層が1段深くなる。実体は次の起動対象を受け渡しファイルへ出力して終了し、
+# ランチャーが同一プロセスで次の実体を起動することで階層を一定に保つ。
+_RESTART_SPEC_ENV = "AGENT_TOOLKIT_RESTART_SPEC"
+
+# ランチャーへ再起動を要求する終了コード。
+_RESTART_EXIT_CODE = 75
+
 
 def _strip_inherited_venv(env: dict[str, str]) -> None:
     """起動元ツールのエフェメラル仮想環境を子プロセス環境から除去する。
@@ -82,7 +91,7 @@ def _child_env() -> dict[str, str]:
     対象は`atk`から起動する外部コマンド（claudeセッション・`update-dotfiles`）とする。
     `update-dotfiles`は`chezmoi apply`を経て作業対象リポジトリのuvベースのパッケージ操作へ至るため、
     claudeセッションと同じく起動元ツールの環境を引き継がせない。
-    自己再起動経路（`_restart_process_loop`の`os.execv`）は本関数の対象外とする。
+    自己再起動経路（`_restart_process_loop`）は本関数の対象外とする。
     再起動先は`atk`自身であり、起動元と同じ実行環境で継続する必要があるためである。
     """
     env = os.environ.copy()
@@ -110,7 +119,7 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
 
 # github.com/ak110/dotfiles編集時のみ、影響範囲の大きいホーム直下チェックアウトを避けるため
 # git worktreeでセッションを起動する。worktree名は反復ごとに固定値とし、常駐ループの再起動
-# （`--no-update`未指定時の`os.execv`再起動）を経ても同一worktreeを継続利用させる。
+# （`--no-update`未指定時の再起動）を経ても同一worktreeを継続利用させる。
 _DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
 _DOTFILES_WORKTREE_NAME = "process-loop"
 # `--worktree`が作成するworktreeの配置先（対象リポジトリのroot相対）。
@@ -273,13 +282,13 @@ def _without_resume_args(argv: list[str]) -> list[str]:
     return result
 
 
-def _build_restart_argv(
+def _build_restart_target(
     argv: list[str],
     dotfiles_root: pathlib.Path | None = None,
     *,
     resume_consumed: bool = False,
-) -> list[str]:
-    """PEP 723スクリプトとしてprocess-loopを再起動するargvを返す。
+) -> tuple[pathlib.Path, list[str]]:
+    """再起動対象のスクリプトパスと引数列を返す。
 
     `dotfiles_root`を解決できた場合は再起動先を当該チェックアウト配下の`atk.py`へ切り替える。
     `atk`がプラグインキャッシュ配下のバージョン別コピーから起動された場合、`argv[0]`は
@@ -292,7 +301,7 @@ def _build_restart_argv(
         if canonical.exists():
             script = canonical
     rest = _without_resume_args(argv[1:]) if resume_consumed else argv[1:]
-    return ["uv", "run", "--no-project", "--script", str(script), *rest]
+    return script, rest
 
 
 def _restart_process_loop(
@@ -301,15 +310,23 @@ def _restart_process_loop(
     *,
     resume_consumed: bool = False,
 ) -> None:
-    """自プロセスをPEP 723スクリプトとして`os.execv`で置き換えて再起動する。
+    """次に起動するスクリプトと引数をランチャーへ渡して再起動を要求する。
 
     セッション終了後経路・待機中経路の双方から呼ぶ共通ヘルパーとする。
+    ランチャー経由で起動された場合は受け渡しファイルへ次の起動対象を書き、
+    専用の終了コードで終了する。ランチャーは同一プロセスで次の実体を`uv run`で起動するため、
+    PEP 723の依存解決が再実行され、かつプロセス階層が増えない。
+    受け渡しファイルの指定が無い直接起動では、従来どおり自プロセスを置き換える。
     """
+    script, rest = _build_restart_target(argv, dotfiles_root, resume_consumed=resume_consumed)
+    spec_path = os.environ.get(_RESTART_SPEC_ENV)
+    if spec_path:
+        pathlib.Path(spec_path).write_text("\n".join([str(script), *rest]) + "\n", encoding="utf-8")
+        sys.exit(_RESTART_EXIT_CODE)
     executable = _resolve_executable("uv")
     if executable is None:
         return
-    restart_argv = _build_restart_argv(argv, dotfiles_root, resume_consumed=resume_consumed)
-    restart_argv[0] = executable
+    restart_argv = [executable, "run", "--no-project", "--script", str(script), *rest]
     os.execv(executable, restart_argv)
 
 
@@ -416,7 +433,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     `/agent-toolkit:exit-session`を直接起動する。`--model`の既定値は`opus`とする。
     claudeが正常終了（0・-15・15・143のいずれか）した場合、
     `--no-update`未指定なら`update-dotfiles`を実行してから
-    自身のプロセスを`_restart_process_loop`（`os.execv`）で置き換えて再起動する。
+    `_restart_process_loop`でランチャーへ再起動を要求する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
     秒間隔で実行し、新規アラートを検知した場合はfeedbackへ投入して即座に次反復へ進む。

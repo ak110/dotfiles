@@ -25,12 +25,16 @@ from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-
 # 上流差分確認は`_run_until_stop`が当該関数自体を差し替えるため公開CLI経由では検証できない。
 # private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
 _has_upstream_diff = _process_loop._has_upstream_diff  # pylint: disable=protected-access
+_restart_process_loop = _process_loop._restart_process_loop  # pylint: disable=protected-access
+_RESTART_SPEC_ENV = _process_loop._RESTART_SPEC_ENV  # pylint: disable=protected-access
+_RESTART_EXIT_CODE = _process_loop._RESTART_EXIT_CODE  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     """外部コマンド解決結果をテスト環境のPATHから分離する。"""
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.delenv(_RESTART_SPEC_ENV, raising=False)
 
 
 def _command_was_called(calls: list[list[str]], command: str) -> bool:
@@ -284,6 +288,82 @@ class TestWaitLoopAutoRestart:
         assert not any(arg.startswith("--resume") for arg in restart_argv)
         assert "00000000-0000-0000-0000-000000000000" not in restart_argv
         assert "--target-repo" in restart_argv
+
+
+def test_restart_writes_spec_and_exits_when_launcher_env_is_set(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """受け渡しファイルの指定時は起動対象を書き、専用の終了コードで終了する。"""
+    spec = tmp_path / "restart-spec"
+    script = tmp_path / "atk.py"
+    monkeypatch.setenv(_RESTART_SPEC_ENV, str(spec))
+
+    def unexpected(*_args: object) -> None:
+        raise AssertionError("ランチャー経由では実体を置き換えない")
+
+    monkeypatch.setattr(os, "execv", unexpected)
+    with pytest.raises(SystemExit) as exc_info:
+        _restart_process_loop([str(script), "mq", "process-loop", "--target-repo", "example/repo"])
+
+    assert exc_info.value.code == _RESTART_EXIT_CODE
+    assert spec.read_text(encoding="utf-8").splitlines() == [
+        str(script.resolve()),
+        "mq",
+        "process-loop",
+        "--target-repo",
+        "example/repo",
+    ]
+
+
+def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """受け渡しファイルの指定が無い直接起動では実体を置き換える。"""
+    calls: list[tuple[str, list[str]]] = []
+
+    def record(path: str, argv: list[str]) -> None:
+        calls.append((path, argv))
+        raise SystemExit(0)
+
+    monkeypatch.setattr(os, "execv", record)
+    with pytest.raises(SystemExit):
+        _restart_process_loop([str(tmp_path / "atk.py"), "mq", "process-loop"])
+
+    assert calls == [
+        (
+            "/resolved/uv",
+            ["/resolved/uv", "run", "--no-project", "--script", str((tmp_path / "atk.py").resolve()), "mq", "process-loop"],
+        )
+    ]
+
+
+def test_restart_spec_targets_dotfiles_checkout_entry_point(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """受け渡しファイル経路でも更新後のチェックアウト配下の`atk.py`へ切り替える。"""
+    spec = tmp_path / "restart-spec"
+    canonical = tmp_path / "dotfiles" / "agent-toolkit" / "scripts" / "atk.py"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("# entry\n", encoding="utf-8")
+    monkeypatch.setenv(_RESTART_SPEC_ENV, str(spec))
+
+    with pytest.raises(SystemExit):
+        _restart_process_loop([str(tmp_path / "old" / "atk.py"), "mq", "process-loop"], tmp_path / "dotfiles")
+
+    assert spec.read_text(encoding="utf-8").splitlines()[0] == str(canonical)
+
+
+def test_restart_spec_drops_resume_option_and_value(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """受け渡しファイル経路でも再開オプションの除去を維持する。"""
+    spec = tmp_path / "restart-spec"
+    monkeypatch.setenv(_RESTART_SPEC_ENV, str(spec))
+
+    with pytest.raises(SystemExit):
+        _restart_process_loop(
+            [str(tmp_path / "atk.py"), "mq", "process-loop", "--resume", "session-id", "--no-alerts"],
+            resume_consumed=True,
+        )
+
+    lines = spec.read_text(encoding="utf-8").splitlines()
+    assert "--resume" not in lines
+    assert "session-id" not in lines
+    assert "--no-alerts" in lines
 
 
 def test_has_upstream_diff_reports_stderr_on_failure(

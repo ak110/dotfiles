@@ -2,4 +2,33 @@
 set -euo pipefail
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
-exec uv run --no-project --script "${SCRIPT_DIR}/scripts/atk.py" "$@"
+SCRIPT="${SCRIPT_DIR}/scripts/atk.py"
+
+# 常駐サブコマンド以外は従来どおり実体へ置き換えて起動する。
+if [ "${1:-}" != "mq" ] || [ "${2:-}" != "process-loop" ]; then
+    exec uv run --no-project --script "${SCRIPT}" "$@"
+fi
+
+# 常駐サブコマンドは自己更新のたびに再起動する。実体側で`uv`へ置き換えると
+# 置き換え前の`uv`が子の終了を待って残り、再起動のたびにプロセス階層が1段深くなる。
+# 実体は次の起動対象を受け渡しファイルへ書いて専用の終了コードで終了し、
+# 本スクリプトが同一プロセスで次の実体を起動する。`uv run`を毎回経由するため、
+# 更新でPEP 723ヘッダーの依存が変わっても解決し直される。
+SPEC="$(mktemp)"
+trap 'rm -f "${SPEC}"' EXIT
+export AGENT_TOOLKIT_RESTART_SPEC="${SPEC}"
+args=("$@")
+while :; do
+    : > "${SPEC}"
+    status=0
+    uv run --no-project --script "${SCRIPT}" "${args[@]}" || status=$?
+    if [ "${status}" -ne 75 ]; then
+        exit "${status}"
+    fi
+    mapfile -t next < "${SPEC}"
+    if [ "${#next[@]}" -lt 1 ]; then
+        exit "${status}"
+    fi
+    SCRIPT="${next[0]}"
+    args=("${next[@]:1}")
+done
