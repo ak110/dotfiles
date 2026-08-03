@@ -1135,6 +1135,39 @@ def test_retroactive_scan_not_required_for_non_agent_doc_targets(
     assert "遡及スキャン記録の不足の疑い" not in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("target", "expect_error"),
+    [
+        (".claude/rules/foo.md", True),
+        (".claude/skills/x/SKILL.md", True),
+        (".claude/skills/x/references/y.md", True),
+        # `agent-toolkit/skills/`側と粒度を揃えるため、`SKILL.md`と`references/`配下以外は対象外とする。
+        (".claude/skills/x/templates/z.md", False),
+    ],
+)
+def test_retroactive_scan_covers_project_local_agent_docs(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    target: str,
+    expect_error: bool,
+) -> None:
+    """利用者プロジェクトが直接持つ規範文書でも遡及スキャン記録の不足を検出する。
+
+    配布元固有パスだけを対象にすると、プラグインの配布先プロジェクトで検査が素通りする。
+    """
+    body = (
+        "## 調査結果\n\n- 対象パターン: 汎用禁止形バレット\n- 対応方針: 機械チェックと対で記載する\n\n"
+        f"## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `{target}`（新設）\n\n"
+        f"### `{target}`\n\n```text\n+- 起動時にnameを指定しない\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == (1 if expect_error else 0)
+    assert ("遡及スキャン記録の不足の疑い" in capsys.readouterr().err) is expect_error
+
+
 _EXISTING_TARGET_PLAN_BODY = (
     "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `existing.md`（現行10行）\n\n"
     "### `existing.md`\n\n```text\n+- 手順を1件追記する\n```\n"

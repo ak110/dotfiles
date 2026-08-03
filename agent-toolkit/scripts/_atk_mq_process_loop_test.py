@@ -298,12 +298,15 @@ class TestProcessLoopPromptAndEnv:
         `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`が付与され、`returncode=0`後は反復継続すること。
         件数0到達後は`_wait_for_changes`が呼ばれ、待機解除後に件数再チェックへ戻ること。
         2回目の`_wait_for_changes`呼び出しで`KeyboardInterrupt`を送出し常駐ループを正常終了する。
+        ランチャーとの再起動要求の受け渡しファイルを指す環境変数は子セッションへ渡さないことも確認する。
         """
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
 
+        # ランチャーとの再起動要求の受け渡しファイルは自プロセス専用であり、子孫セッションへは渡さない。
+        monkeypatch.setenv("AGENT_TOOLKIT_RESTART_SPEC", str(tmp_path / "restart-spec"))
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
 
         # 件数: 1回目は1件（claude起動）、2回目以降は0件（待機ループへ）
@@ -337,6 +340,7 @@ class TestProcessLoopPromptAndEnv:
         assert claude_calls[0]["cwd"] == myrepo
         assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
         assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
+        assert "AGENT_TOOLKIT_RESTART_SPEC" not in claude_calls[0]["env"]
         assert len(wait_calls) == 2
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out

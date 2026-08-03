@@ -317,7 +317,8 @@ AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"
 def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     """パス文字列がコーディングエージェント向け文書判定対象かを判定する。
 
-    `agent-toolkit/scripts/pretooluse.py`が参照する対象パス判定のSSOTとする。
+    `agent-toolkit/scripts/pretooluse.py`と`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が
+    参照する対象パス判定のSSOTとする。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
     `is_agent_facing_md`とは判定対象範囲が異なる。

@@ -14,6 +14,8 @@ fi
 # 実体は次の起動対象を受け渡しファイルへ書いて専用の終了コードで終了し、
 # 本スクリプトが同一プロセスで次の実体を起動する。`uv run`を毎回経由するため、
 # 更新でPEP 723ヘッダーの依存が変わっても解決し直される。
+# 停止シグナルは、プロセスグループ全体へ届く経路（端末のCtrl-C、systemdのcgroup単位の停止）で送る。
+# 本スクリプトのPIDだけへシグナルを送った場合、実体は停止せず、本スクリプトは実体の終了後に後始末して終了する。
 SPEC="$(mktemp)"
 trap 'rm -f "${SPEC}"' EXIT
 export AGENT_TOOLKIT_RESTART_SPEC="${SPEC}"
@@ -25,8 +27,13 @@ while :; do
     if [ "${status}" -ne 75 ]; then
         exit "${status}"
     fi
-    mapfile -t next < "${SPEC}"
-    if [ "${#next[@]}" -lt 1 ]; then
+    # `mapfile`はbash 4.0以降の組み込みのため、macOS既定のbash 3.2でも動く読み取りにする。
+    next=()
+    while IFS= read -r line; do
+        next+=("${line}")
+    done < "${SPEC}"
+    # 先頭要素は次に起動するスクリプトパスであり、空の場合は再起動先を決められない。
+    if [ "${#next[@]}" -lt 1 ] || [ -z "${next[0]}" ]; then
         exit "${status}"
     fi
     SCRIPT="${next[0]}"

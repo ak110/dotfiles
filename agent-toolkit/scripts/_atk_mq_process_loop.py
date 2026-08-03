@@ -93,9 +93,12 @@ def _child_env() -> dict[str, str]:
     claudeセッションと同じく起動元ツールの環境を引き継がせない。
     自己再起動経路（`_restart_process_loop`）は本関数の対象外とする。
     再起動先は`atk`自身であり、起動元と同じ実行環境で継続する必要があるためである。
+    ランチャーとの再起動要求の受け渡しファイルは自プロセス専用のため、子孫プロセスへは引き継がない。
+    引き継ぐと、子孫が同じファイルへ再起動対象を書き込みうる。
     """
     env = os.environ.copy()
     _strip_inherited_venv(env)
+    env.pop(_RESTART_SPEC_ENV, None)
     return env
 
 

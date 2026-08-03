@@ -381,6 +381,7 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
 代表例の1つは`AGENT_TOOLKIT_PRIVATE_NOTES`（`atk mq`管理repoのroot、既定`~/private-notes/`）である。
 ほかに`AGENT_TOOLKIT_STOP_GATE_DEBUG`（デバッグ出力）と
 `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`（受信payloadのダンプ先）がある。
+常駐処理がランチャーへ次の起動対象を渡す受け渡しファイルは`AGENT_TOOLKIT_RESTART_SPEC`で指定する。
 個人環境完結は`DOTFILES_`を使う。
 `agent-toolkit/rules/`・`agent-toolkit/agents/`配下はサブディレクトリを設けずフラット構造を保つ。
 

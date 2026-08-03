@@ -1698,6 +1698,9 @@ def test_detail_falls_back_on_broken_frontmatter(tmp_path: pathlib.Path) -> None
     _write_detail_entry(tmp_path, "---\nkey: [unclosed\n---\n\n本文\n")
     rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert "本文" in rendered
+    # 表へ振り分けず本文全体をMarkdownとして整形するため、開始区切りが水平線として残る。
+    assert '<table class="frontmatter">' not in rendered
+    assert "<hr" in rendered
 
 
 def test_detail_without_frontmatter_is_unchanged(tmp_path: pathlib.Path) -> None:
@@ -1714,6 +1717,8 @@ def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path,
     monkeypatch.setattr(common, "entry_type_of", lambda *_args: "feedback")
     rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert '<table class="frontmatter">' not in rendered
+    # 分離自体は成立するため、開始区切りが水平線として残らない。
+    assert "<hr" not in rendered
     assert "<p>本文</p>" in rendered
 
 

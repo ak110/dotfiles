@@ -25,7 +25,6 @@ from _atk_mq_common import (
     _repo_lock,
     _require_type,
     _validate_filename,
-    make_filename_completer,
 )
 from _atk_mq_repo import _resolve_repo_id
 
@@ -43,11 +42,6 @@ ANSWER_HEADING = "## 回答"
 """TBDエントリの回答見出し。`_atk_mq_add.add_entries`が投入時に付与する。"""
 
 _RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
-
-
-# argcomplete用のTBDファイル名補完候補生成。
-# 候補範囲はactive状態（inbox・processing）かつfrontmatterの`type`が`tbd`のものとする。
-_tbd_filename_completer = make_filename_completer(MQ_ACTIVE_STATES, MQ_TYPE_TBD)
 
 
 def _looks_like_question(message: str) -> bool:

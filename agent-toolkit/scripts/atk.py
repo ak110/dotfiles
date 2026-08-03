@@ -58,6 +58,7 @@ _queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
 _active_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES)
 _inbox_filename_completer = _common.make_filename_completer((_common.MQ_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.MQ_STATE_PROCESSING,))
+_tbd_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES, _common.MQ_TYPE_TBD)
 
 
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
@@ -442,7 +443,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     )
     answer.add_argument(
         "filename", nargs="?", help="回答対象のTBDファイル名（省略時は対話モード）"
-    ).completer = _tbd._tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]  # noqa: SLF001
+    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     answer.add_argument("answer_body", nargs="?", help="回答本文（省略時は対話モード）")
     _add_target_repo_arg(answer)
 
