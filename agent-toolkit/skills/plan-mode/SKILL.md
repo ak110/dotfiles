@@ -259,7 +259,7 @@ Mermaidを既定とし、自由配置や独自図形などMermaidで正確に表
 H2・H3見出し名、または対象ファイル中の一意な既存文字列をアンカーとして用いる
 （並行稼働セッションによるコミットで行番号がずれても、アンカーは対象箇所を特定できるため）。
 
-対象は`pretooluse.py`の`_plan_format.is_agent_doc_target_file`が判定する、
+対象は`pretooluse.py`と`check_plan_file.py`が参照する`_plan_format.is_agent_doc_target_file`が判定する、
 コーディングエージェント向け文書を含む計画とする。
 判定対象は次のとおり。
 
