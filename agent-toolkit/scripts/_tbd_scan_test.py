@@ -158,3 +158,34 @@ class TestPrivateNotesRoot:
         monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path / "home")
         monkeypatch.setattr(_tbd_scan.platformdirs, "user_data_dir", lambda *_args, **_kwargs: tmp_path / "data")
         assert _tbd_scan.private_notes_root() == fallback
+
+    def test_handles_nested_mapping_and_folded_values(self, tmp_path: pathlib.Path) -> None:
+        """入れ子マッピング配下と折り返し値を正しく処理する。
+
+        `queue_schedule:`配下のインデントされた`type: normal`と、
+        `choices:`の折り返し継続行を含むfrontmatterを検証する。
+        """
+        (tmp_path / "inbox").mkdir()
+        # 計画のテスト用frontmatterと同じ形式
+        entry_text = (
+            "---\n"
+            "target_repo: github.com/ak110/dotfiles\n"
+            "type: tbd\n"
+            "queue_schedule:\n"
+            "  type: normal\n"
+            "  target_files:\n"
+            "  - agent-toolkit/rules/01-agent.md\n"
+            "choices: (a) 前半の選択肢,(b)\n"
+            "  折り返した後半の選択肢\n"
+            "---\n\n"
+            "## 質問\n\n本文\n\n"
+            "## 回答\n\n"
+            "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+        )
+        (tmp_path / "inbox" / "test.md").write_text(entry_text, encoding="utf-8")
+
+        result = _tbd_scan.scan_active_tbds(tmp_path, "github.com/ak110/dotfiles")
+        assert len(result.entries) == 1
+        assert result.entries[0].filename == "test.md"
+        assert result.entries[0].answered is False
+        assert result.complete is True

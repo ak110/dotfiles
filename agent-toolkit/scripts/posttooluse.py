@@ -464,7 +464,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # 対象リポジトリのTBDが全件回答済みへ遷移した場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
     if cwd:
-        tbd_notice = _tbd_completion.build_notice(session_id, cwd)
+        tbd_notice = _tbd_completion.build_notice(session_id, cwd, payload.get("transcript_path", ""))
         if tbd_notice is not None:
             notices.append(_llm_notice(tbd_notice, tag="notice"))
 

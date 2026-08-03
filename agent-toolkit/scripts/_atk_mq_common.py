@@ -37,6 +37,8 @@ from _atk_mq_formatters import (
     _truncate_target_repo,
 )
 from _atk_mq_frontmatter import parse_frontmatter, serialize_frontmatter
+from _tbd_scan import _ACTIVE_STATES as MQ_ACTIVE_STATES
+from _tbd_scan import _TBD_TYPE as MQ_TYPE_TBD
 from _tbd_scan import is_tbd_answered as _is_tbd_answered
 
 # フィードバック管理repoの4状態フォルダー名（管理repoのroot直下）。
@@ -49,9 +51,7 @@ MQ_STATE_PROCESSING = "processing"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
 MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
-MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
 MQ_TYPE_FEEDBACK = "feedback"
-MQ_TYPE_TBD = "tbd"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
 _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {

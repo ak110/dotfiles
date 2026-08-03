@@ -72,7 +72,7 @@ class TestBuildNotice:
         _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
         assert _tbd_completion.build_notice("initial", "/dummy") is None
         state = json.loads((tmp_path / "claude-agent-toolkit-initial.json").read_text(encoding="utf-8"))
-        assert state[_tbd_completion.STATE_KEY] == {_REPO: 2}
+        assert state[_tbd_completion.STATE_KEY_UNANSWERED] == {_REPO: 2}
 
     def test_notifies_on_transition_to_zero(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
@@ -109,7 +109,7 @@ class TestBuildNotice:
         _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0, other_repo=2)
         assert _tbd_completion.build_notice("other", "/dummy") is None
         state = json.loads((tmp_path / "claude-agent-toolkit-other.json").read_text(encoding="utf-8"))
-        assert state[_tbd_completion.STATE_KEY] == {_REPO: 1}
+        assert state[_tbd_completion.STATE_KEY_UNANSWERED] == {_REPO: 1}
 
     def test_missing_root_does_not_write_state(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_tbd_scan, "private_notes_root", lambda: None)
@@ -136,10 +136,26 @@ class TestBuildNotice:
 
     def test_state_write_failure_suppresses_notice(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _tbd_completion.build_notice("write-failure", "/dummy") is None
+        assert _tbd_completion.build_notice("write-failure", "/dummy", "") is None
         _answer_all(root)
-        monkeypatch.setattr(_tbd_completion, "update_state", lambda _session_id, mutator: mutator({}) is not None and False)
-        assert _tbd_completion.build_notice("write-failure", "/dummy") is None
+        # 쓰기 실패를 모의: mutator는 None을 반환 (상태 쓰기 없음)
+        call_count = {"count": 0}
+        original_update_state = _tbd_completion.update_state
+
+        def _mock_update_state(session_id, mutator):
+            call_count["count"] += 1
+            if call_count["count"] == 2:  # 두 번째 호출 (미답변 건수 기록)에서만 실패
+                return False
+            return original_update_state(session_id, mutator)
+
+        monkeypatch.setattr(_tbd_completion, "update_state", _mock_update_state)
+        assert _tbd_completion.build_notice("write-failure", "/dummy", "") is None
+
+    def test_missing_cwd_does_not_notify(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
+        # cwd를 빈 문자열로 전달
+        assert _tbd_completion.build_notice("missing-cwd", "", "") is None
+        assert not (tmp_path / "claude-agent-toolkit-missing-cwd.json").exists()
 
 
 class TestResolveTargetRepo:

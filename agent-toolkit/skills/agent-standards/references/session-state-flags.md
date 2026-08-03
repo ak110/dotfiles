@@ -40,9 +40,16 @@
 - `plan_impl_executor_verified_plan_path`: 別の既存計画を参照したexecutor起動時のパスを記録する
 - `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
   計画ファイル作成前の直接編集を検知する
-- `tbd_unanswered_by_repo`: 対象リポジトリIDごとの未回答TBD件数をPostToolUseが毎回記録する。
-  件数が1件以上から0件へ遷移した時点の通知判定に使い、セッション終了まで保持する。
-  リセット経路は設けず、件数の記録更新のみで状態を進める
+- `tbd_unanswered_by_repo`: 対象リポジトリIDごとの直近の未回答TBD件数をPostToolUseが記録する。
+  cwdが空・保存先未解決・リポジトリID未解決・走査不完全のいずれかの場合と、
+  件数が前回観測値と同一の場合は記録を更新しない。件数が1件以上から0件へ遷移した時点の
+  通知判定に使い、セッション終了まで保持する。リセット経路は設けず、件数の記録更新のみで状態を進める
+
+- `tbd_fingerprint_by_repo_<agent_id>`: active状態ディレクトリ（`inbox`・`processing`）の
+  内容変化指紋（`.md`ファイル件数と`st_mtime_ns`の最大値）をPostToolUseが記録する。
+  前回観測時の指紋と同一の場合は走査をスキップし、遷移検出を行わない。
+  エージェントIDをキーに含めることで、メインセッションとサブエージェント間での
+  一意な遷移判定が可能になる。セッション終了まで保持する
 
 サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。
 新規フラグには記録元、利用先、寿命、リセット経路を併記する。
