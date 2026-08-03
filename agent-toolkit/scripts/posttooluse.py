@@ -681,14 +681,15 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                     )
                 )
             if tool_name == "Write":
-                # スクリプトの参照は`${CLAUDE_PLUGIN_ROOT}`で行う。plan modeはagent-toolkitを
-                # 配布物として導入した任意のリポジトリで起動するため、リポジトリ相対のパスでは
-                # 配布元リポジトリ以外で解決できない。
+                # 案内文はそのまま実行される。プラグインルートを本プロセスの位置から絶対パスで解決し、
+                # `--work-dir`へpayloadのcwdを埋める。リポジトリ相対のパスは配布元以外で解決できず、
+                # `${CLAUDE_PLUGIN_ROOT}`はコマンドを実行するシェルの環境に存在しない。
+                check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
+                work_dir_option = f" --work-dir {cwd}" if cwd else ""
                 messages.append(
                     _llm_notice(
                         f"plan file {file_path} was written. Run the post-write checks:"
-                        f" `uv run --script ${{CLAUDE_PLUGIN_ROOT}}/skills/plan-mode/scripts/check_plan_file.py"
-                        f" --work-dir <target repository absolute path> {file_path}`.",
+                        f" `uv run --script {check_script}{work_dir_option} {file_path}`.",
                         tag="notice",
                     )
                 )

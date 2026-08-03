@@ -199,11 +199,11 @@ blockers:
   `review_skip_instruction`へ指示原文を転記する
 - 対象ファイル一覧の閾値到達により、当ラウンドの指摘反映を終えた時点で返す場合は、
   `review_status: 対象拡大により中断（指摘反映済み・再レビューなし）`とし、
-  `review_final_findings`へ当該ラウンドの指摘件数、`review_skip_instruction: なし`とする。
-  対象ファイル一覧に無いファイルへ及んだ変更は`plan_gaps`へ記録する
+  `review_final_findings`へ当該ラウンドの指摘件数、`review_skip_instruction: なし`とする
 
-レビュー工程の実測値を伴う区分では、`review_rounds`へ実施済みのラウンド数を記載し、
-両review history、`review_coverage`、`review_impact_audit`、`review_resolution`へ
+レビュー工程の実測値を伴う区分では、両レビューrouteを`codex`または`claude`とし、
+`review_rounds`へ実施済みのラウンド数を記載する。
+両review history、`review_coverage`、`review_impact_audit`、`review_resolution`へも
 当該ラウンドまでの実測を残す。これらを「なし」とできるのはレビュー省略の場合に限る。
 
 完了したレビューの実測結果を`レビュー未完了`と`未確定`へ置き換えると、

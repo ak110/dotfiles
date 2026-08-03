@@ -183,17 +183,23 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
   当該ラウンドの指摘件数が入っていることを確認する。
   本ファイル「未完了事項の処理」節が定める継続と切り出しの比較へ進み、レビュー工程を再実行させない
 
-レビュー工程の実測値を伴う区分は、通常完了、上限到達後の既知指摘修正済み、対象拡大により中断とする。
-当該区分では`review_rounds`が1以上であり、両review history、`review_coverage`、
-`review_impact_audit`、`review_resolution`がいずれも「なし」以外であることを確認する。
+`status: needs_escalation`でレビュー工程の実測値を伴う区分は、通常完了、
+上限到達後の既知指摘修正済み、対象拡大により中断とする。
+当該区分では両レビューrouteが`codex`または`claude`であることを確認する。
+`review_rounds`は1以上とし、上限到達後の既知指摘修正済みでは5とする。
+両review history、`review_coverage`、`review_impact_audit`、`review_resolution`は
+いずれも「なし」以外であることを確認する。
 実施済みのラウンドがある以上、これらが「なし」の報告は実測と矛盾する。
+`status: completed`および`status: completed_with_review_cap`の欄要求は前掲のブロックが定める。
 
 当該区分は`agent-toolkit/agents/plan-impl-executor.md`「出力」節および
 `agent-toolkit/scripts/subagent_stop_advisor.py`の完了報告検査とペアで維持する。
 `not_started`または`unavailable`のrouteに対応するthreadとAgent識別子は「なし」とする。
 routeの値は、起動を試みて不能だった場合を`unavailable`、起動を試みていない場合を`not_started`とする。
 `status: needs_escalation`で両レビューrouteが`not_started`である状態は、
-ユーザー指示によるレビュー省略に限って正当とし、それ以外は値の矛盾として未完遂扱いとする。
+`review_status`が`レビュー未完了`の場合とユーザー指示によるレビュー省略の場合に限って正当とし、
+それ以外は値の矛盾として未完遂扱いとする。
+レビュー工程へ到達しないまま返す場合は起動自体を試みていないため、`not_started`が実測と一致する。
 `plan-file-finalizer`の値との照合は行わない。
 
 レビュー進行は、上限へ到達した時点と、計画の対象ファイル一覧に無いファイルへ変更が及んだ時点で、

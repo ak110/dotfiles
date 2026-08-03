@@ -1018,6 +1018,36 @@ class TestPlanImplExecutorReportFormat:
                 },
                 "plan_review_history must not be なし when review results exist",
             ),
+            (
+                {
+                    "review_status": "対象拡大により中断（指摘反映済み・再レビューなし）",
+                    "review_final_findings": "計画準拠系2件・独立系1件",
+                    "plan_review_route": "not_started",
+                    "plan_review_thread_id": "なし",
+                },
+                "plan_review_route must be codex or claude",
+            ),
+            (
+                {
+                    "review_status": "上限到達後の既知指摘修正済み（再レビューなし）",
+                    "review_final_findings": "計画準拠系2件・独立系1件",
+                    "review_rounds": "2",
+                },
+                "review_rounds must be 5 after review cap",
+            ),
+            (
+                {
+                    "review_status": "レビューは実施しない（ユーザー指示）",
+                    "review_final_findings": "対象外",
+                    "review_skip_instruction": "レビューを省略すること",
+                    "plan_review_route": "not_started",
+                    "plan_review_thread_id": "なし",
+                    "independent_review_route": "not_started",
+                    "independent_review_thread_id": "なし",
+                    "review_rounds": "3",
+                },
+                "review_rounds must be 0 when review is skipped",
+            ),
         ],
     )
     def test_escalation_review_value_mismatch_blocks(
@@ -1053,14 +1083,15 @@ class TestPlanImplExecutorReportFormat:
         assert expected_fragment in body["reason"]
 
     @pytest.mark.parametrize(
-        "review_status",
+        ("review_status", "review_rounds"),
         [
-            "実施完了（計画準拠系採用2件・独立系採用1件）",
-            "上限到達後の既知指摘修正済み（再レビューなし）",
-            "対象拡大により中断（指摘反映済み・再レビューなし）",
+            ("実施完了（計画準拠系採用2件・独立系採用1件）", "1"),
+            # 上限到達は5ラウンドの到達そのものを表すため`completed_with_review_cap`と同じ値を求める。
+            ("上限到達後の既知指摘修正済み（再レビューなし）", "5"),
+            ("対象拡大により中断（指摘反映済み・再レビューなし）", "2"),
         ],
     )
-    def test_escalation_keeps_measured_review_values(self, tmp_path: Path, review_status: str) -> None:
+    def test_escalation_keeps_measured_review_values(self, tmp_path: Path, review_status: str, review_rounds: str) -> None:
         """レビュー工程を完了または中断した`needs_escalation`は実測値のまま通過する。
 
         対象リポジトリ外操作の未実施だけが残る場合と対象ファイル一覧の閾値到達では、
@@ -1075,6 +1106,7 @@ class TestPlanImplExecutorReportFormat:
                 status="needs_escalation",
                 review_status=review_status,
                 review_final_findings="計画準拠系2件・独立系1件",
+                review_rounds=review_rounds,
             )
             + "\nblockers:\n- 未解決事項"
         )
