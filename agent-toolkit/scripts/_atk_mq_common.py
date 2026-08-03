@@ -605,6 +605,35 @@ def _parse_type(text: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def make_filename_completer(
+    states: tuple[str, ...],
+    entry_type: str | None = None,
+) -> Callable[..., list[str]]:
+    """argcomplete用のキュー内ファイル名補完候補生成器を返す。
+
+    `states`が指す状態ディレクトリ配下の`.md`をprefix一致で列挙する。
+    `entry_type`を指定した場合はfrontmatterの`type`が一致するものだけを返す。
+    種別を限定する場合だけ本文を読むため、限定しない場合はディレクトリ走査で完結する。
+    """
+
+    def complete(prefix: str, **_: object) -> list[str]:
+        private_notes = _private_notes_path(pathlib.Path.home())
+        candidates: list[str] = []
+        for state in states:
+            state_dir = private_notes / state
+            if not state_dir.exists():
+                continue
+            for path in state_dir.iterdir():
+                if path.suffix != ".md" or not path.name.startswith(prefix):
+                    continue
+                if entry_type is not None and _parse_type(path.read_text(encoding="utf-8")) != entry_type:
+                    continue
+                candidates.append(path.name)
+        return sorted(candidates)
+
+    return complete
+
+
 def _require_type(path: pathlib.Path, text: str) -> str | None:
     """エントリの種別を検証して返す。"""
     if parse_frontmatter(text) is None:

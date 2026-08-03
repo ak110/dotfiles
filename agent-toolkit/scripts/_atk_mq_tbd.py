@@ -21,12 +21,11 @@ from _atk_mq_common import (
     _copy_to_tempfile,
     _is_tbd_answered,
     _iter_entries,
-    _parse_type,
-    _private_notes_path,
     _pull,
     _repo_lock,
     _require_type,
     _validate_filename,
+    make_filename_completer,
 )
 from _atk_mq_repo import _resolve_repo_id
 
@@ -46,24 +45,9 @@ ANSWER_HEADING = "## 回答"
 _RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
 
 
-def _tbd_filename_completer(prefix: str, **_: object) -> list[str]:
-    """argcomplete用のTBDファイル名補完候補生成。
-
-    `AGENT_TOOLKIT_PRIVATE_NOTES`環境変数（未設定時は`~/private-notes/`）配下の
-    active状態（inbox・processing）から、frontmatterの`type`が`tbd`のファイル名をprefix一致で返す。
-    """
-    private_notes = _private_notes_path(pathlib.Path.home())
-    candidates: list[str] = []
-    for state in MQ_ACTIVE_STATES:
-        state_dir = private_notes / state
-        if not state_dir.exists():
-            continue
-        for path in state_dir.iterdir():
-            if path.suffix != ".md" or not path.name.startswith(prefix):
-                continue
-            if _parse_type(path.read_text(encoding="utf-8")) == MQ_TYPE_TBD:
-                candidates.append(path.name)
-    return sorted(candidates)
+# argcomplete用のTBDファイル名補完候補生成。
+# 候補範囲はactive状態（inbox・processing）かつfrontmatterの`type`が`tbd`のものとする。
+_tbd_filename_completer = make_filename_completer(MQ_ACTIVE_STATES, MQ_TYPE_TBD)
 
 
 def _looks_like_question(message: str) -> bool:

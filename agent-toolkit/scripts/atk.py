@@ -54,6 +54,11 @@ import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_serve as _serve  # noqa: E402
 
+_queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
+_active_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES)
+_inbox_filename_completer = _common.make_filename_completer((_common.MQ_STATE_INBOX,))
+_processing_filename_completer = _common.make_filename_completer((_common.MQ_STATE_PROCESSING,))
+
 
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     """`mq add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
@@ -252,7 +257,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         nargs="?",
         default=None,
         help="表示する単一のファイル名（省略時は--allの指定が必要）。全状態フォルダを探索する。",
-    )
+    ).completer = _queue_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     show.add_argument(
         "--all",
         action="store_true",
@@ -298,7 +303,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         metavar="FILENAME",
         nargs="+",
         help="処理開始するinboxファイル名（1個以上）。",
-    )
+    ).completer = _inbox_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     _add_target_repo_arg(start_processing, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     return_to_inbox = sub.add_parser(
@@ -310,13 +315,13 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         metavar="FILENAME",
         nargs="+",
         help="差し戻すprocessingファイル名（1個以上）。",
-    )
+    ).completer = _processing_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
     adopt.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="採用するファイル名（1個以上。inbox・processingいずれも対象）。"
-    )
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     adopt.add_argument(
         "--note",
         metavar="TEXT",
@@ -339,7 +344,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     reject = sub.add_parser("reject", help="不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push")
     reject.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="不採用とするファイル名（1個以上。inbox・processingいずれも対象）。"
-    )
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     reject.add_argument(
         "--note",
         metavar="TEXT",
@@ -363,7 +368,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         metavar="FILENAME",
         nargs="*",
         help="削除するファイル名。--allと併用せず、個別削除では1個以上を指定する。",
-    )
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     rm.add_argument(
         "--all",
         action="store_true",
@@ -397,7 +402,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
             "MESSAGEとともに指定すると非対話で編集する。"
             "省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を$EDITORで編集する。"
         ),
-    )
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     edit.add_argument(
         "message",
         metavar="MESSAGE",
@@ -435,7 +440,9 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         "answer",
         help="TBDへ回答する（引数指定時は非対話、省略時は未回答TBDを1件ずつ画面表示し$EDITORで回答）",
     )
-    answer.add_argument("filename", nargs="?", help="回答対象のTBDファイル名（省略時は対話モード）")
+    answer.add_argument(
+        "filename", nargs="?", help="回答対象のTBDファイル名（省略時は対話モード）"
+    ).completer = _tbd._tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]  # noqa: SLF001
     answer.add_argument("answer_body", nargs="?", help="回答本文（省略時は対話モード）")
     _add_target_repo_arg(answer)
 

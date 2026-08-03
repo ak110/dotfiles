@@ -60,6 +60,34 @@ def _write_feedback(
     return path
 
 
+def test_make_filename_completer_limits_states(tmp_path: pathlib.Path) -> None:
+    """指定した状態のファイルだけを候補として返す。"""
+    private_notes = tmp_path / "private-notes"
+    _write_feedback(private_notes, "inbox.md", state="inbox")
+    _write_feedback(private_notes, "processing.md", state="processing")
+    completer = _common.make_filename_completer((_common.MQ_STATE_INBOX,))
+    assert completer("") == ["inbox.md"]
+
+
+def test_make_filename_completer_filters_entry_type(tmp_path: pathlib.Path) -> None:
+    """種別を指定した場合はfrontmatterの種別が一致するものだけを返す。"""
+    private_notes = tmp_path / "private-notes"
+    _write_feedback(private_notes, "feedback.md")
+    _write_tbd(private_notes, "tbd.md")
+    completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES, _common.MQ_TYPE_TBD)
+    assert completer("") == ["tbd.md"]
+
+
+def test_make_filename_completer_matches_prefix_and_sorts(tmp_path: pathlib.Path) -> None:
+    """prefix一致で限定し、結果をソートして返す。"""
+    private_notes = tmp_path / "private-notes"
+    _write_feedback(private_notes, "pre-z.md")
+    _write_feedback(private_notes, "pre-a.md")
+    _write_feedback(private_notes, "other.md")
+    completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES)
+    assert completer("pre-") == ["pre-a.md", "pre-z.md"]
+
+
 def _classify_tbd(path: pathlib.Path, dependency: schedule.Dependency | None = None) -> None:
     """既存のテスト用TBDへ分類メタデータを付与する。"""
     text = path.read_text(encoding="utf-8")
