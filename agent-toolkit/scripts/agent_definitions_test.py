@@ -215,7 +215,13 @@ def test_plan_impl_report_labels_are_synchronized() -> None:
     caller = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
     for label in labels:
         assert label in caller, f"呼び出し元の検収節に`{label}`がない"
-        assert label in subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS, f"完了報告のラベル定数に`{label}`がない"
+    # ラベル定数との照合は両方向で行う。定義側からの導出だけでは、定義から欄が消えたときに
+    # 検査対象の集合が縮むだけで通過し、定数側が要求し続ける欄の欠落を検出できない。
+    assert set(labels) == set(subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS), (
+        f"完了報告のラベル定数と定義側の欄が一致しない: "
+        f"定数のみ={sorted(set(subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS) - set(labels))}、"
+        f"定義側のみ={sorted(set(labels) - set(subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS))}"
+    )
 
 
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
