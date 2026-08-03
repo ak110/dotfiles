@@ -153,14 +153,38 @@ def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, ob
     }
 
 
+def _render_frontmatter_table(metadata: dict[str, typing.Any]) -> str:
+    """解析済みfrontmatterをキーと値の2列表のHTMLへ整形する。
+
+    Markdownとして整形すると区切り行が水平線と見出しへ解釈され、インデントも失われるため、
+    本文と分離して表として描画する。解析は既存の`parse_frontmatter()`へ一元化する。
+    """
+    if not metadata:
+        return ""
+    rows: list[str] = []
+    for key, value in metadata.items():
+        if isinstance(value, (dict, list)):
+            formatted = json.dumps(value, ensure_ascii=False, indent=2)
+            cell = f"<pre>{html.escape(formatted)}</pre>"
+        else:
+            cell = html.escape("" if value is None else str(value))
+        rows.append(f"<tr><th>{html.escape(str(key))}</th><td>{cell}</td></tr>")
+    return '<table class="frontmatter">' + "".join(rows) + "</table>"
+
+
 @functools.lru_cache(maxsize=128)
 def _render_content(text: str) -> str:
-    """Markdownの整形済みHTMLを本文をキーとして保持する。
+    """frontmatterを表として、本文をMarkdownとして整形したHTMLを保持する。
 
     整形結果は本文だけで一意に定まるため、更新時刻はキーに含めない。
     含めると同一本文の再保存でヒットしなくなるだけで、無効化には寄与しない。
     """
-    return _MARKDOWN.render(text)
+    parsed = frontmatter.parse_frontmatter(text)
+    if parsed is None:
+        return _MARKDOWN.render(text)
+    metadata, body = parsed
+    table = _render_frontmatter_table(metadata)
+    return table + _MARKDOWN.render(body)
 
 
 class BoundedWorkers:

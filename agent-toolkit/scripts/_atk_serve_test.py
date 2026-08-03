@@ -1664,6 +1664,59 @@ def test_operations_reads_local_entries_and_detail_without_pull(
     assert content.endswith("要約本文\n")
 
 
+def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:
+    """詳細表示テスト用の入力ファイルを作成する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "entry.md").write_text(text, encoding="utf-8")
+
+
+def test_detail_renders_frontmatter_as_table(tmp_path: pathlib.Path) -> None:
+    """frontmatterは表として描画し、区切り行由来の見出しを生成しない。"""
+    _write_detail_entry(
+        tmp_path,
+        "---\ntarget_repo: github.com/ak110/dotfiles\ntype: feedback\n---\n\n本文です。\n",
+    )
+    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+    assert "<table" in rendered
+    assert "target_repo" in rendered
+    assert "<hr" not in rendered
+    assert "<h2" not in rendered
+    assert "<p>本文です。</p>" in rendered
+
+
+def test_detail_escapes_frontmatter_values(tmp_path: pathlib.Path) -> None:
+    """frontmatterの値に含まれるHTML特殊文字をエスケープする。"""
+    _write_detail_entry(tmp_path, '---\ntype: feedback\nnote: "<script>alert(1)</script>"\n---\n\n本文\n')
+    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered
+
+
+def test_detail_falls_back_on_broken_frontmatter(tmp_path: pathlib.Path) -> None:
+    """frontmatterの解析に失敗した場合は本文全体の整形結果を返す。"""
+    _write_detail_entry(tmp_path, "---\nkey: [unclosed\n---\n\n本文\n")
+    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+    assert "本文" in rendered
+
+
+def test_detail_without_frontmatter_is_unchanged(tmp_path: pathlib.Path) -> None:
+    """frontmatterを持たない本文は従来のMarkdownとして整形する。"""
+    _write_detail_entry(tmp_path, "# 見出し\n\n本文\n")
+    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+    assert "<h1>見出し</h1>" in rendered
+    assert "<p>本文</p>" in rendered
+
+
+def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """空のfrontmatterは空表を生成せず、分離後の本文だけを整形する。"""
+    _write_detail_entry(tmp_path, "---\n---\n\n本文\n")
+    monkeypatch.setattr(common, "entry_type_of", lambda *_args: "feedback")
+    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+    assert '<table class="frontmatter">' not in rendered
+    assert "<p>本文</p>" in rendered
+
+
 def test_operations_sort_entries_by_filename_across_states_and_render_markdown(tmp_path: pathlib.Path) -> None:
     """一覧を状態横断のファイル名順で返し、詳細本文を安全なHTMLへ整形する。"""
     inbox = tmp_path / "inbox"
