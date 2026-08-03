@@ -173,8 +173,8 @@ blockers:
 その既知指摘の是正と検証を完了し、
 新規指摘を探索する再レビューを実施していない場合だけ返す。この場合は
 `review_status: 上限到達後の既知指摘修正済み（再レビューなし）`、`review_rounds: 5`とする。
-上限到達時は既知指摘の残数と、計画の対象ファイル一覧に無いファイルへ及んだ変更を
-`plan_gaps`へ記録する。
+上限到達時および対象ファイル一覧の閾値到達時は、既知指摘の残数と、
+計画の対象ファイル一覧に無いファイルへ及んだ変更を`plan_gaps`へ記録する。
 対象ファイル一覧に無いファイルへ及んだ変更は、ラウンドごとに`ラウンド<N>:`の行を置き、
 当該ラウンドで新規に追加したパスを列挙する。末尾へ前ラウンドまでの累積件数と当ラウンドの
 新規追加件数を記載し、`needs_escalation`で返した場合はその合計を判定根拠として明示する。
@@ -184,15 +184,17 @@ blockers:
 `review_skip_instruction: なし`、`review_caller_verification: 不要`とする。
 レビュー省略では`review_final_findings: 対象外`とし、計画に保存されたユーザー指示原文を
 `review_skip_instruction`へ転記して、呼び出し元による照合を要求する。
-`status: needs_escalation`では`review_final_findings: 未確定`、
-`review_skip_instruction: なし`、`review_caller_verification: 未完了事項の確認が必要`とする。
-`external_operations`のいずれかの`result`が`needs_escalation`の場合は、
-全体の`status`も`needs_escalation`とする。
-このうち、実装、検証、コミット、レビュー工程を完了し、未完了事項が当該項目だけである場合を例外とする。
 `review_status`、`review_final_findings`、`review_skip_instruction`、
 `review_caller_verification`の4欄をレビュー欄と呼ぶ。
-例外に該当する場合は、レビュー欄へ前掲の`status: needs_escalation`向けの値を書かない。
-レビュー工程の実測どおりの値を記載する。
+レビュー工程を完了しないまま`status: needs_escalation`で返す場合は、
+`review_final_findings: 未確定`、`review_skip_instruction: なし`、
+`review_caller_verification: 未完了事項の確認が必要`とする。
+`external_operations`のいずれかの`result`が`needs_escalation`の場合は、
+全体の`status`も`needs_escalation`とする。
+実装、検証、コミット、レビュー工程を完了したうえで`needs_escalation`で返す場合は、
+レビュー欄へ前掲の未完了向けの値を書かず、レビュー工程の実測どおりの値を記載する。
+対象リポジトリ外操作の未実施だけが残る場合と、対象ファイル一覧の閾値到達により
+呼び出し元の判断を求める場合が該当する。
 完了したレビューの実測結果を`レビュー未完了`と`未確定`へ置き換えると、
 呼び出し元は完了済みのレビュー工程を再実行する。
 `result`が`needs_escalation`の`external_operations`の各項目は、`operation`と`target`を含む形で

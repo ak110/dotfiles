@@ -167,15 +167,16 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 - `review_coverage`と`review_impact_audit`は「なし」
 - `review_rounds`は0
 
-`status: needs_escalation`では`review_status`を`レビュー未完了`とし、
-`review_final_findings: 未確定`、`review_skip_instruction: なし`、
-`review_caller_verification: 未完了事項の確認が必要`とする。
-例外として、`status: needs_escalation`の理由が`external_operations`の
-`result: needs_escalation`だけである場合を扱う。
-実装、検証、コミット、レビュー工程が完了しているときは、前掲の4欄が通常完了、
-上限到達後の既知指摘修正済み、レビュー省略のいずれかの値であることを確認する。
-この場合の再委譲は`blockers`が挙げる未実施の対象リポジトリ外操作に限定し、レビュー工程を再実行させない。
-当該例外は`agent-toolkit/agents/plan-impl-executor.md`「出力」節とペアで維持する。
+レビュー工程を完了しないまま`status: needs_escalation`で返された場合は、
+`review_status`が`レビュー未完了`、`review_final_findings`が`未確定`であることを確認する。
+`review_skip_instruction`は`なし`、`review_caller_verification`は`未完了事項の確認が必要`とする。
+実装、検証、コミット、レビュー工程が完了したうえで`needs_escalation`で返された場合は、
+前掲の4欄が通常完了、上限到達後の既知指摘修正済み、レビュー省略のいずれかの値であることを確認する。
+対象リポジトリ外操作の未実施だけが残る場合と、対象ファイル一覧の閾値到達により
+判断を求められた場合が該当する。
+前者の再委譲は`blockers`が挙げる未実施の対象リポジトリ外操作に限定し、レビュー工程を再実行させない。
+後者は本ファイル「未完了事項の処理」節が定める継続と切り出しの比較へ進み、同じくレビュー工程を再実行させない。
+当該区分は`agent-toolkit/agents/plan-impl-executor.md`「出力」節とペアで維持する。
 `not_started`または`unavailable`のrouteに対応するthreadとAgent識別子は「なし」とする。
 routeの値は、起動を試みて不能だった場合を`unavailable`、起動を試みていない場合を`not_started`とする。
 `status: needs_escalation`で両レビューrouteが`not_started`である状態は、
@@ -243,9 +244,10 @@ git diff <計画着手前SHA>..<commit_sha>
 操作結果と証跡を計画の`## 進捗ログ`と呼び出し元の完了報告へ記録する。
 確認を得られない場合は照会結果を確認事項としてユーザーへ提示するに留める。
 
-実装差分レビューの指摘反映により`### 対象ファイル一覧`へ追加されたファイルが累計5件以上になった場合、
-同一計画上での修正継続と、確定済み差分をコミットして残指摘を新規計画へ切り出す選択とを比較する。
-比較は、追加されたファイルが当初の対象と同じ主題に属するかで行う。
+実装差分レビューの指摘反映により、計画の`### 対象ファイル一覧`に無いファイルへ及んだ変更が
+累計5件以上になった場合、同一計画上での修正継続と、確定済み差分をコミットして
+残指摘を新規計画へ切り出す選択とを比較する。
+比較は、当該ファイルが当初の対象と同じ主題に属するかで行う。
 別主題の実体が加わり続ける状態は、計画が前提とした波及範囲が成立していないことを示す。
 判定結果と根拠を計画ファイルの`## 進捗ログ`へ記録する。
 件数の根拠は`agent-toolkit/agents/plan-impl-executor.md`が定める計画対象外ファイルの記録とする。
