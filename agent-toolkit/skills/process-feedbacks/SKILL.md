@@ -177,7 +177,7 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 ## ステップ4: 検討結果の提示
 
 詳細は`references/decision-format.md`に従い、採否ラベルと反映概要を記録する。
-不採用を確定する前に、自律実行中に自ら投入した確認事項がある場合、
+不採用を確定する前に、対象リポジトリ宛の回答済み確認事項がある場合、
 `atk mq list --type=tbd --answered=yes --target-repo=<repo-path>`で対象リポジトリ限定の
 回答済み確認事項一覧を再照会する。回答が記入されていた場合は暫定判断を破棄し、
 回答内容に沿って採否を確定し直す。
@@ -238,10 +238,12 @@ processing状態の採用フィードバックについて、対象リポジト�
 自動的にadopt・push・再実装へ進まず、processing状態を維持する。
 ユーザーか後続セッションが判断を引き継ぐ。
 
-後始末の実施前に、自律実行中に自ら投入した確認事項がある場合、
+後始末の実施前に、対象リポジトリ宛の回答済み確認事項がある場合、
 `atk mq list --type=tbd --answered=yes --target-repo=<repo-path>`で対象リポジトリ限定の
 回答済み確認事項一覧を再照会する。回答が記入されていた場合は暫定判断を破棄し、
 回答内容に沿って実装をやり直したうえで後始末へ進む。
+確認事項の回答が当該セッションの選抜対象と独立する新規作業を要求する場合は、
+`agent-toolkit/rules/01-agent.md`「完遂と先送り」節の規模基準に当たらない限り同一セッション内で対応する。
 
 - feedback側の採用ファイル: `atk mq adopt <filename...> --note=<概要> --commit=<sha>`
 - TBD側の回答済み採用ファイル: `atk mq adopt <filename...> --note=<概要> --commit=<sha>`
