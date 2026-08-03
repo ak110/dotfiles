@@ -156,7 +156,8 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 記法を欠く履歴はラウンド数を判定できないため未完遂として扱い、記法を備えた履歴の再提出を求める。
 `review_rounds`の申告値だけを根拠に`completed_with_review_cap`を受理しない。
 
-ユーザー指示によるレビュー省略は次を満たす。
+`status: completed`でのユーザー指示によるレビュー省略は次を満たす。
+`status: needs_escalation`でのレビュー省略は本ブロックの対象外とし、後掲の3区分に従う。
 
 - `review_status`は`レビューは実施しない（ユーザー指示）`
 - `review_final_findings`は`対象外`
@@ -174,11 +175,18 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
   `review_final_findings`が`未確定`、`review_skip_instruction`が`なし`であることを確認する
 - レビュー工程が完了し、対象リポジトリ外操作の未実施だけが残る場合は、
   `review_status`が通常完了、上限到達後の既知指摘修正済み、レビュー省略のいずれかであることを確認する。
+  レビュー省略の場合は`review_skip_instruction`を計画の`レビュー省略のユーザー指示原文`と照合する。
+  `review_caller_verification`が`未完了事項の確認が必要`となるため、当該欄では照合要求を受け取れない。
   再委譲は`blockers`が挙げる未実施の対象リポジトリ外操作に限定し、レビュー工程を再実行させない
 - 対象ファイル一覧の閾値到達により判断を求められた場合は、`review_status`が
   `対象拡大により中断（指摘反映済み・再レビューなし）`であり、`review_final_findings`へ
   当該ラウンドの指摘件数が入っていることを確認する。
   本ファイル「未完了事項の処理」節が定める継続と切り出しの比較へ進み、レビュー工程を再実行させない
+
+レビュー工程の実測値を伴う区分は、通常完了、上限到達後の既知指摘修正済み、対象拡大により中断とする。
+当該区分では`review_rounds`が1以上であり、両review history、`review_coverage`、
+`review_impact_audit`、`review_resolution`がいずれも「なし」以外であることを確認する。
+実施済みのラウンドがある以上、これらが「なし」の報告は実測と矛盾する。
 
 当該区分は`agent-toolkit/agents/plan-impl-executor.md`「出力」節および
 `agent-toolkit/scripts/subagent_stop_advisor.py`の完了報告検査とペアで維持する。

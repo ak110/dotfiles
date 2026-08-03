@@ -251,6 +251,12 @@ def test_plan_impl_review_status_values_are_synchronized() -> None:
         f"定義側のみ={sorted(fixed_values - constants)}、検査側のみ={sorted(constants - fixed_values)}"
     )
     assert any(value.startswith("実施完了") for value in values), "`review_status`の定義に実施完了の値が無い"
+    # 呼び出し元の検収手順は同じ値を本文へ持つ。定義側と検査側だけを揃えても、
+    # 検収側が知らない値のままでは受領時に未完遂扱いとなる。
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    assert subagent_stop_advisor.PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS in caller, (
+        f"呼び出し元の検収手順に`{subagent_stop_advisor.PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS}`がない"
+    )
 
 
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:

@@ -291,6 +291,19 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
                 )
             if not _is_none_value(skip_instruction):
                 violations.append("review_skip_instruction must be なし when review results exist")
+            # 実施済みのラウンドがある以上、その実測を残す欄が「なし」の報告は実測と矛盾する。
+            if rounds not in range(1, 6):
+                violations.append("review_rounds must be between 1 and 5 when review results exist")
+            for label, value in (
+                ("review_resolution", resolution),
+                ("review_coverage", coverage),
+                ("review_impact_audit", impact_audit),
+            ):
+                if _is_none_value(value):
+                    violations.append(f"{label} must not be なし when review results exist")
+            for track in review_tracks:
+                if _is_none_value(histories[track]):
+                    violations.append(f"{track}_history must not be なし when review results exist")
         else:
             violations.append("review_status must be one of the values defined for needs_escalation")
         if caller_verification != "未完了事項の確認が必要":

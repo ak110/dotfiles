@@ -994,6 +994,30 @@ class TestPlanImplExecutorReportFormat:
                 },
                 "review_final_findings must contain two non-negative finding counts",
             ),
+            (
+                {
+                    "review_status": "対象拡大により中断（指摘反映済み・再レビューなし）",
+                    "review_final_findings": "計画準拠系2件・独立系1件",
+                    "review_rounds": "0",
+                },
+                "review_rounds must be between 1 and 5 when review results exist",
+            ),
+            (
+                {
+                    "review_status": "対象拡大により中断（指摘反映済み・再レビューなし）",
+                    "review_final_findings": "計画準拠系2件・独立系1件",
+                    "review_resolution": "なし",
+                },
+                "review_resolution must not be なし when review results exist",
+            ),
+            (
+                {
+                    "review_status": "対象拡大により中断（指摘反映済み・再レビューなし）",
+                    "review_final_findings": "計画準拠系2件・独立系1件",
+                    "plan_review_history": "なし",
+                },
+                "plan_review_history must not be なし when review results exist",
+            ),
         ],
     )
     def test_escalation_review_value_mismatch_blocks(
