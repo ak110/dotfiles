@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の16点に限定する。
+チェック対象は次の17点に限定する。
 - 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
   Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
@@ -29,6 +29,8 @@ r"""計画ファイルの軽量機械チェック。
   必須3語（対象パターン・検出件数・対応方針）が揃っているか
 - `### 対象ファイル一覧`が`（新設）`マーカーを持たない項目を含む場合、`## 調査結果`へ
   参照追従の必須3語（参照追従対象・入力形態・追従要否）が揃っているか
+- `## 変更内容`の`text`コードブロック追加分が対象worktree内に既存出現を持たない識別子を
+  含む場合、`## 調査結果`へ必須語`新設識別子`と当該識別子の名称が記載されているか
 - `### 計画メタ情報`が存在する場合、ベースコミットのラベルと完全長のコミットハッシュが
   記載されているか
 - `## 背景`が存在する場合、直下の`### 計画メタ情報`に固定記法`- 作業種別: <固定値>`で
@@ -74,6 +76,8 @@ warning区分（終了コードへ算入しない）とその判定根拠。
   更新後の数値を事前に固定すると版更新スクリプトの実行結果と矛盾する可能性がある
 - 計画メタ情報の作業種別: 固定値の導入前に作成した計画は当該項目を持たないため、
   欠落・未知値を移行支援として検出する
+- 新設識別子の波及先列挙: 単発の識別子新設は正当であり、error区分で停止させると計画作成を妨げる。
+  対象worktreeのルートを解決できない場合も、既存出現を判定できない旨を同区分で通知する
 - バグ調査結果表の構造: 既存計画は旧形式の表を持つ場合があり、表の内容の深さは機械判定できない。
   表全体の欠落、重複、必須行、順序だけを移行支援として検出する
 
@@ -85,6 +89,7 @@ warning区分（終了コードへ算入しない）とその判定根拠。
 
 from __future__ import annotations
 
+import argparse
 import collections.abc
 import dataclasses
 import pathlib
@@ -165,6 +170,10 @@ _RETROACTIVE_SCAN_NEW_HEADING_RE = re.compile(r"^##[#]* .+$", re.MULTILINE)
 _RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検出件数", "対応方針")
 
 _REFERENCE_ENUMERATION_REQUIRED_ITEMS: tuple[str, ...] = ("参照追従対象", "入力形態", "追従要否")
+_NEW_IDENTIFIER_REQUIRED_ITEM = "新設識別子"
+# 変更後文面に現れるバッククォート囲みの候補。Python定義名らしい形式かの判定は
+# `_looks_like_python_definition_identifier`が担い、抽出条件を1箇所へ集約する。
+_NEW_IDENTIFIER_CANDIDATE_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*)`")
 
 _BUMP_MANIFEST_PATHS = frozenset({"agent-toolkit/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json"})
 _VERSION_NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])")
@@ -1029,6 +1038,80 @@ def _check_reference_enumeration_recorded(document: _Document, change_sections: 
     ]
 
 
+def _extract_new_identifier_candidates(document: _Document, change_sections: list[_Section]) -> list[str]:
+    """`## 変更内容`のH3節`text`コードブロック追加分から識別子の候補を重複なく抽出する。
+
+    対象は`snake_case`・`UPPER_SNAKE_CASE`・先頭アンダースコア付きの非公開名とする。
+    アンダースコアを含まない語は通常の英単語・コマンド名と区別できないため対象外とする。
+    """
+    candidates: dict[str, None] = {}
+    for path in _extract_h3_paths(document, change_sections):
+        for block in _extract_fenced_code_blocks(
+            document, _path_h3_sections(document, path, change_sections), info_string="text"
+        ):
+            for name in _NEW_IDENTIFIER_CANDIDATE_RE.findall(_added_lines_text(block)):
+                if _looks_like_python_definition_identifier(name):
+                    candidates.setdefault(name, None)
+    return list(candidates)
+
+
+def _identifiers_absent_from_repo(names: list[str], repo_root: pathlib.Path, plan_path: pathlib.Path) -> list[str]:
+    """対象worktree内に1件も出現しない識別子だけを抽出順のまま返す。
+
+    識別子ごとに全ファイルを走査すると読み込みが識別子の件数だけ重複するため、
+    ファイル1件につき1回読み込み、出現を確認した識別子を候補から除く。
+    """
+    remaining = dict.fromkeys(names)
+    for path in _iter_repo_files(repo_root, plan_path):
+        if not remaining:
+            break
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for name in [candidate for candidate in remaining if candidate in content]:
+            del remaining[name]
+    return list(remaining)
+
+
+def _check_new_identifier_scope_recorded(
+    document: _Document,
+    change_sections: list[_Section],
+    plan_path: pathlib.Path,
+    work_dir: pathlib.Path,
+) -> list[str]:
+    """新設識別子を導入する計画で、`## 調査結果`への波及先列挙の記録が無い場合に警告する。
+
+    既存出現が0件の識別子は参照追従の`grep`で波及先を列挙できない。
+    計画作成時に波及先を明示させ、実装中の対象ファイル一覧の拡大を抑える。
+    """
+    candidates = _extract_new_identifier_candidates(document, change_sections)
+    if not candidates:
+        return []
+    if not work_dir.is_dir():
+        return [
+            f"新設識別子の既存出現を判定できない: 対象worktreeのルートを解決できない（{work_dir}）。"
+            "`--work-dir`へ対象worktreeの絶対パスを指定して再実行する"
+        ]
+    new_identifiers = _identifiers_absent_from_repo(candidates, work_dir, plan_path)
+    if not new_identifiers:
+        return []
+    section_text = "\n".join(_non_code_text(document, section) for section in _iter_h2_sections(document, "調査結果"))
+    warnings: list[str] = []
+    if _NEW_IDENTIFIER_REQUIRED_ITEM not in section_text:
+        warnings.append(
+            "新設識別子の波及先列挙の不足の疑い: `## 変更内容`に既存出現の無い識別子"
+            f"（{'、'.join(new_identifiers)}）を検出したが、`## 調査結果`に必須語"
+            f"`{_NEW_IDENTIFIER_REQUIRED_ITEM}`が無い"
+        )
+    unrecorded = [name for name in new_identifiers if name not in section_text]
+    if unrecorded:
+        warnings.append(
+            f"新設識別子の波及先列挙の不足の疑い: `## 調査結果`へ記載の無い新設識別子がある（不足: {'、'.join(unrecorded)}）"
+        )
+    return warnings
+
+
 def _check_version_number_absent(document: _Document, checkbox_paths: list[str]) -> list[str]:
     """版更新正本を対象へ含む計画で、具体的なバージョン数値の記載を検出する。
 
@@ -1055,13 +1138,24 @@ def main() -> int:
     error区分が1件以上あれば1を返す。warning区分のみの場合と違反なしの場合は0を返す。
     引数誤用・対象ファイル読み込み不能はいずれも2を返す。
     """
-    if len(sys.argv) != 2:
-        print(
-            "usage: check_plan_file.py <plan-file-path>（使用法: 計画ファイルのパスを1つ指定する）",
-            file=sys.stderr,
-        )
-        return 2
-    plan_path = pathlib.Path(sys.argv[1])
+    parser = argparse.ArgumentParser(
+        prog="check_plan_file.py",
+        description="計画ファイル1件の軽量機械チェックを実行する",
+    )
+    parser.add_argument("plan_file", type=pathlib.Path, help="計画ファイルのパス")
+    parser.add_argument(
+        "--work-dir",
+        type=pathlib.Path,
+        default=None,
+        help="識別子の既存出現を照会する対象worktreeの絶対パス（省略時は現在の作業ディレクトリ）",
+    )
+    try:
+        args = parser.parse_args()
+    except SystemExit as exc:
+        # 引数誤用は2、`--help`は0を返す契約を保つ。
+        return exc.code if isinstance(exc.code, int) else 2
+    plan_path = args.plan_file
+    work_dir = args.work_dir if args.work_dir is not None else pathlib.Path.cwd()
     try:
         text = plan_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -1119,6 +1213,7 @@ def main() -> int:
     errors.extend(_check_base_commit_recorded(document))
     warnings.extend(_check_execution_method_scope(document))
     warnings.extend(_check_deprecated_identifiers_removed(document, plan_path))
+    warnings.extend(_check_new_identifier_scope_recorded(document, change_sections, plan_path, work_dir))
     warnings.extend(_check_version_number_absent(document, checkbox_paths))
     warnings.extend(_check_plan_work_type(document))
     warnings.extend(_check_bug_investigation_table(document))

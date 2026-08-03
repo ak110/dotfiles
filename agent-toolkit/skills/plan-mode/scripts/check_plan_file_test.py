@@ -1064,6 +1064,85 @@ def test_deprecated_identifier_excludes_git_and_plan_file(
     assert "廃止・改名対象一覧の識別子が残存している疑い" not in captured.err
 
 
+def _new_identifier_plan_body(block_body: str, *, investigation: str = "") -> str:
+    """新設識別子検査用の計画本文を組み立てる。"""
+    return (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `target.py`（新設）\n\n"
+        f"### `target.py`\n\n```text\n{block_body}\n```\n{investigation}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("identifier", "block_body"),
+    [
+        pytest.param("new_scope_flag", "+`new_scope_flag`を導入する", id="snake_case"),
+        pytest.param("NEW_SCOPE_LABELS", "+`NEW_SCOPE_LABELS`を導入する", id="upper_snake_case"),
+        pytest.param("_new_scope_helper", "+`_new_scope_helper`を導入する", id="leading_underscore"),
+    ],
+)
+def test_new_identifier_scope_detects_identifier_forms(
+    identifier: str,
+    block_body: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """既存出現の無い識別子を形態ごとに抽出し、波及先列挙の不足を警告する。"""
+    plan = _write_plan(tmp_path, _new_identifier_plan_body(block_body))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "新設識別子の波及先列挙の不足の疑い" in captured.err
+    assert identifier in captured.err
+
+
+def test_new_identifier_scope_silent_for_existing_identifier(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象worktree内に既存出現がある識別子は新設と判定しない。"""
+    (tmp_path / "existing.py").write_text("existing_flag = 1\n", encoding="utf-8")
+    plan = _write_plan(tmp_path, _new_identifier_plan_body("+`existing_flag`の扱いを変える"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "新設識別子の波及先列挙の不足の疑い" not in capsys.readouterr().err
+
+
+def test_new_identifier_scope_warns_for_partial_record(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """抽出した識別子の一部だけが`## 調査結果`にある場合は不足分を警告する。"""
+    body = _new_identifier_plan_body(
+        "+`alpha_flag`と`beta_flag`を導入する",
+        investigation="\n## 調査結果\n\n- 新設識別子: `alpha_flag`（波及先は当該ファイルのみ）\n",
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "不足: beta_flag" in captured.err
+    assert "必須語" not in captured.err
+
+
+def test_new_identifier_scope_warns_when_root_resolution_fails(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象worktreeのルートを解決できない場合は判定不能を警告する。"""
+    plan = _write_plan(tmp_path, _new_identifier_plan_body("+`new_scope_flag`を導入する"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan), "--work-dir", str(tmp_path / "absent")])
+
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "新設識別子の既存出現を判定できない" in captured.err
+    assert "新設識別子の波及先列挙の不足の疑い" not in captured.err
+
+
 _META_NORM_PLAN_BODY = (
     "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/foo.md`（新設）\n\n"
     "### `agent-toolkit/rules/foo.md`\n\n```text\n+- 起動時にnameを指定しない\n```\n"
@@ -1840,7 +1919,9 @@ def test_error_returns_one_without_warn_prefix(
 def test_no_argument_returns_two_with_usage(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["check_plan_file.py"])
     assert main() == 2
-    assert capsys.readouterr().err == "usage: check_plan_file.py <plan-file-path>（使用法: 計画ファイルのパスを1つ指定する）\n"
+    captured = capsys.readouterr()
+    assert captured.err.startswith("usage: check_plan_file.py")
+    assert "plan_file" in captured.err
 
 
 def test_nonexistent_plan_file_returns_two(
