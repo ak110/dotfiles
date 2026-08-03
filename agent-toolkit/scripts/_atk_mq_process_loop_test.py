@@ -230,7 +230,10 @@ class TestWaitForChanges:
         """タイムアウト前に`.md`ファイル変更を検知した場合、`_pull`が呼ばれないこと。"""
         private_notes = self._make_private_notes(tmp_path)
         inbox = private_notes / "inbox"
-        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 2.0)
+        # 並列実行時のCPU競合でタイマー発火とイベント配送が遅延してもタイムアウト経路へ移らないよう、
+        # 待機上限（10秒）をタイマーの発火時刻（0.05秒）より十分大きく取る。
+        # 変更を検知した時点で戻るため、上限を大きくしても通常の所要時間は延びない。
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 10.0)
         monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
         pull_calls: list[pathlib.Path] = []
         monkeypatch.setattr(_process_loop, "_pull", pull_calls.append)
