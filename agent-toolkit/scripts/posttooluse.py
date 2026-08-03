@@ -40,6 +40,7 @@ import hashlib
 import json
 import pathlib
 import re
+import shlex
 import sys
 import time
 
@@ -685,11 +686,14 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 # `--work-dir`へpayloadのcwdを埋める。リポジトリ相対のパスは配布元以外で解決できず、
                 # `${CLAUDE_PLUGIN_ROOT}`はコマンドを実行するシェルの環境に存在しない。
                 check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
-                work_dir_option = f" --work-dir {cwd}" if cwd else ""
+                work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
                 messages.append(
                     _llm_notice(
                         f"plan file {file_path} was written. Run the post-write checks:"
-                        f" `uv run --script {check_script}{work_dir_option} {file_path}`.",
+                        f" `uv run --script {shlex.quote(str(check_script))}{work_dir_option}"
+                        f" {shlex.quote(file_path)}`."
+                        " Replace --work-dir if the plan targets a repository other than the session's"
+                        " working directory.",
                         tag="notice",
                     )
                 )

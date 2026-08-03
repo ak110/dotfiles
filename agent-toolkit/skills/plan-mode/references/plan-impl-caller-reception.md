@@ -172,7 +172,9 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 いずれも`review_caller_verification`は`未完了事項の確認が必要`である。
 
 - レビュー工程へ到達しないまま返された場合は、`review_status`が`レビュー未完了`、
-  `review_final_findings`が`未確定`、`review_skip_instruction`が`なし`であることを確認する
+  `review_final_findings`が`未確定`、`review_skip_instruction`が`なし`であることを確認する。
+  両レビューrouteは`not_started`または`unavailable`、`review_rounds`は0であり、
+  両review history、`review_coverage`、`review_impact_audit`、`review_resolution`は「なし」である
 - レビュー工程が完了し、対象リポジトリ外操作の未実施だけが残る場合は、
   `review_status`が通常完了、上限到達後の既知指摘修正済み、レビュー省略のいずれかであることを確認する。
   レビュー省略の場合は`review_skip_instruction`を計画の`レビュー省略のユーザー指示原文`と照合する。

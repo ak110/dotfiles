@@ -352,6 +352,22 @@ def _complete_report(**overrides: str) -> str:
             fields["review_coverage"] = "なし"
         if "review_impact_audit" not in overrides:
             fields["review_impact_audit"] = "なし"
+    if fields["status"] == "needs_escalation" and fields["review_status"] == "レビュー未完了":
+        # レビュー工程へ到達していない状態の整合値。矛盾を検査するテストはoverridesで上書きする。
+        for label, value in (
+            ("review_rounds", "0"),
+            ("review_resolution", "なし"),
+            ("review_coverage", "なし"),
+            ("review_impact_audit", "なし"),
+            ("plan_review_history", "なし"),
+            ("independent_review_history", "なし"),
+            ("plan_review_route", "not_started"),
+            ("independent_review_route", "not_started"),
+            ("plan_review_thread_id", "なし"),
+            ("independent_review_thread_id", "なし"),
+        ):
+            if label not in overrides:
+                fields[label] = value
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
 
 
@@ -1047,6 +1063,15 @@ class TestPlanImplExecutorReportFormat:
                     "review_rounds": "3",
                 },
                 "review_rounds must be 0 when review is skipped",
+            ),
+            ({"review_rounds": "5"}, "review_rounds must be 0 when review is not completed"),
+            (
+                {"plan_review_history": "ラウンド1: 指摘なし"},
+                "plan_review_history must be なし when review is not completed",
+            ),
+            (
+                {"plan_review_route": "codex", "plan_review_thread_id": "th_started"},
+                "plan_review_route must be not_started or unavailable",
             ),
         ],
     )

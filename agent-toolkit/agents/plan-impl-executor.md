@@ -192,7 +192,9 @@ blockers:
 いずれの場合も`review_caller_verification: 未完了事項の確認が必要`とする。
 
 - レビュー工程へ到達しないまま返す場合は`review_status: レビュー未完了`、
-  `review_final_findings: 未確定`、`review_skip_instruction: なし`とする
+  `review_final_findings: 未確定`、`review_skip_instruction: なし`とする。
+  両レビューrouteは`not_started`または`unavailable`とし、`review_rounds: 0`、
+  両review history、`review_coverage`、`review_impact_audit`、`review_resolution`は「なし」とする
 - レビュー工程を完了し、対象リポジトリ外操作の未実施だけが残る場合は、
   `review_status`と`review_final_findings`へレビュー工程の実測どおりの値を記載する。
   ユーザー指示によるレビュー省略では`review_final_findings: 対象外`とし、
@@ -203,6 +205,7 @@ blockers:
 
 レビュー工程の実測値を伴う区分では、両レビューrouteを`codex`または`claude`とし、
 `review_rounds`へ実施済みのラウンド数を記載する。
+`上限到達後の既知指摘修正済み（再レビューなし）`では`review_rounds: 5`とする。
 両review history、`review_coverage`、`review_impact_audit`、`review_resolution`へも
 当該ラウンドまでの実測を残す。これらを「なし」とできるのはレビュー省略の場合に限る。
 
@@ -216,4 +219,5 @@ blockers:
 待機表明だけを返して自身のターンを終えない。委譲先の完了を待つ場合は、
 待機対象の結果を含む完了報告を1回で返す。
 `status: needs_escalation`で両レビュー経路を`not_started`とするのは、
-ユーザー指示によるレビュー省略の場合に限る。起動を試みて不能だった系統は`unavailable`とする。
+`review_status`が`レビュー未完了`の場合とユーザー指示によるレビュー省略の場合に限る。
+起動を試みて不能だった系統は`unavailable`とする。

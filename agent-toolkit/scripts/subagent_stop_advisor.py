@@ -151,10 +151,12 @@ def _is_none_value(value: str) -> bool:
 
 
 def _inspect_skipped_review_fields(final_findings: str, skip_instruction: str, rounds: int, resolution: str) -> list[str]:
-    """ユーザー指示によるレビュー省略で、`status`に依らず共通となる欄の違反を返す。
+    """ユーザー指示によるレビュー省略で、引数に取る4欄の違反を返す。
 
     省略は`completed`と`needs_escalation`のどちらでも起こり、実施していない事実は同じである。
     `status`ごとに要求が異なると、同じ省略状況の報告が一方でだけ通過する。
+    `review_caller_verification`は`status`により求める確認の対象が変わるため本関数の対象外とし、
+    呼び出し側が個別に検査する。
     """
     violations: list[str] = []
     if final_findings != "対象外":
@@ -286,10 +288,24 @@ def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
         # 起動済みのrouteだけを許す。未起動のrouteに履歴と件数がある報告は実測と矛盾する。
         review_route_candidates = {"codex", "claude", "not_started", "unavailable"}
         if review_status == PLAN_IMPL_EXECUTOR_INCOMPLETE_STATUS:
+            # レビュー工程へ到達していない以上、実測を残す欄に値がある報告は矛盾する。
+            review_route_candidates = {"not_started", "unavailable"}
             if final_findings != "未確定":
                 violations.append("review_final_findings must be 未確定 when review is not completed")
             if not _is_none_value(skip_instruction):
                 violations.append("review_skip_instruction must be なし when review is not completed")
+            if rounds != 0:
+                violations.append("review_rounds must be 0 when review is not completed")
+            for label, value in (
+                ("review_resolution", resolution),
+                ("review_coverage", coverage),
+                ("review_impact_audit", impact_audit),
+            ):
+                if not _is_none_value(value):
+                    violations.append(f"{label} must be なし when review is not completed")
+            for track in review_tracks:
+                if not _is_none_value(histories[track]):
+                    violations.append(f"{track}_history must be なし when review is not completed")
         elif review_status == PLAN_IMPL_EXECUTOR_SKIPPED_STATUS:
             # 省略時の欄要求は`status`に依らず`completed`側と同一に保つ。
             review_route_candidates = {"not_started"}

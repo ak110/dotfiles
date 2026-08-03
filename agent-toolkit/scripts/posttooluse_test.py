@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import types
 
@@ -661,6 +662,36 @@ class TestPlanFilePostWriteNotice:
         assert "post-write checks" in message
         assert "check_plan_file.py" in message
         assert "[auto-generated: agent-toolkit/posttooluse]" in message
+
+    def test_plan_file_write_notice_is_executable_as_written(self, tmp_path: pathlib.Path) -> None:
+        """案内文がそのまま実行できる形であること。
+
+        案内文を受け取った側はこれをシェルで実行する。実行するシェルの環境に
+        `${CLAUDE_PLUGIN_ROOT}`は存在しないため、スクリプトは絶対パスで示す。
+        照会先の既定は実行時の作業ディレクトリであり、対象リポジトリと一致する保証がないため、
+        payloadの`cwd`を`--work-dir`へ明示する。
+        """
+        plan_path = self._make_plan_path(tmp_path)
+        work_dir = tmp_path / "target repo"
+        work_dir.mkdir()
+        result = _run(
+            {
+                "session_id": "post-write-notice-executable",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# x\n"},
+                "cwd": str(work_dir),
+            },
+            state_dir=tmp_path,
+            home_dir=plan_path.parents[2],
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        message = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "CLAUDE_PLUGIN_ROOT" not in message
+        expected_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
+        assert str(expected_script) in message
+        # 空白を含むパスは引用しないと単語分割され、意図しない引数として渡る。
+        assert f"--work-dir {shlex.quote(str(work_dir))}" in message
 
     def test_notice_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path) -> None:
         plan_path = self._make_plan_path(tmp_path)
