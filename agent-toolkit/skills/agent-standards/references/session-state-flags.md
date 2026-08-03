@@ -40,6 +40,9 @@
 - `plan_impl_executor_verified_plan_path`: 別の既存計画を参照したexecutor起動時のパスを記録する
 - `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
   計画ファイル作成前の直接編集を検知する
+- `tbd_unanswered_by_repo`: 対象リポジトリIDごとの未回答TBD件数をPostToolUseが毎回記録する。
+  件数が1件以上から0件へ遷移した時点の通知判定に使い、セッション終了まで保持する。
+  リセット経路は設けず、件数の記録更新のみで状態を進める
 
 サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。
 新規フラグには記録元、利用先、寿命、リセット経路を併記する。
