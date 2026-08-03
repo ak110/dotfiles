@@ -5343,6 +5343,41 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert result.returncode == 0
         assert "without first creating a plan file" not in result.stderr
 
+    @pytest.mark.parametrize(
+        ("file_path", "expected_count"),
+        [
+            (".claude/rules/foo.md", 0),
+            (".claude/skills/x/SKILL.md", 0),
+            (".claude/skills/x/references/y.md", 0),
+            (".claude/rules/agent-toolkit/01-agent.md", 1),
+            ("agent-toolkit/rules/01-agent.md", 1),
+        ],
+    )
+    def test_direct_agent_toolkit_edit_hook_excludes_project_local_docs(
+        self,
+        tmp_path: pathlib.Path,
+        file_path: str,
+        expected_count: int,
+    ) -> None:
+        """公開フック経路でプロジェクト直下の規範文書を抑止対象から外す。"""
+        sid = "direct-edit-project-local"
+        self._write_flag_state(tmp_path, sid)
+        target = tmp_path / file_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("stub\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=self._state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        state = _read_session_state(tmp_path, sid)
+        assert state.get("direct_agent_toolkit_edit_count", 0) == expected_count
+
     def test_second_target_edit_warns_and_continues(self, tmp_path: pathlib.Path):
         sid = "direct-edit-warn"
         self._write_flag_state(tmp_path, sid)

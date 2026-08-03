@@ -1877,6 +1877,16 @@ _DIRECT_AGENT_TOOLKIT_DISTRIBUTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)\.claude/plugins/cache/[^/]+/agent-toolkit/.+\.md$"),
 )
 
+# `_is_direct_agent_toolkit_edit_target`専用の除外パターン。
+# `_plan_format.AGENT_DOC_TARGET_PATTERNS`はプロジェクト直下の`.claude/rules/`・`.claude/skills/`配下も
+# コーディングエージェント向け文書として判定するが、本checkはagent-toolkit本体への連続直接編集の抑止を
+# 目的とするため、プロジェクトごとの規範文書は対象から外す。
+# `.claude/rules/agent-toolkit/`はagent-toolkitの配布先であるため、配布経路側で引き続き対象とする。
+_PROJECT_LOCAL_AGENT_DOC_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(^|/)\.claude/rules/(?!agent-toolkit/).+\.md$"),
+    re.compile(r"(^|/)\.claude/skills/.+\.md$"),
+)
+
 
 def _is_direct_agent_toolkit_edit_target(file_path: str) -> bool:
     """`_check_direct_agent_toolkit_edits_after_plan_mode`の対象パス判定。
@@ -1888,14 +1898,17 @@ def _is_direct_agent_toolkit_edit_target(file_path: str) -> bool:
     加えて、実在する配布経路（`~/.claude/rules/agent-toolkit/`・
     `~/.claude/plugins/cache/*/agent-toolkit/`）を
     `_DIRECT_AGENT_TOOLKIT_DISTRIBUTION_PATTERNS`で追加照合する。
-    `AGENTS.md`・`CLAUDE.md`のbasename一致はプロジェクトごとの文書へも
-    波及するため本checkの対象外とする。
+    `AGENTS.md`・`CLAUDE.md`のbasename一致とプロジェクト直下の`.claude/rules/`・
+    `.claude/skills/`配下は、プロジェクトごとの文書へ波及するため本checkの対象外とする。
     """
     if not isinstance(file_path, str) or not file_path:
         return False
     normalized = file_path.replace("\\", "/")
     # basename一致（AGENTS.md/CLAUDE.md）はプロジェクト文書波及のため除外する。
     if pathlib.Path(normalized).name in _plan_format.AGENT_DOC_TARGET_BASENAMES:
+        return False
+    # プロジェクト直下の`.claude/rules/`・`.claude/skills/`配下も同じ理由で除外する。
+    if any(pat.search(normalized) for pat in _PROJECT_LOCAL_AGENT_DOC_PATTERNS):
         return False
     if _plan_format.is_agent_doc_target_file(file_path):
         return True

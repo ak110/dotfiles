@@ -344,6 +344,22 @@ class TestIsAgentDocTargetFile:
         assert _plan_format.is_agent_doc_target_file(".chezmoi-source/dot_claude/skills/refine-prompt/SKILL.md")
 
     @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            (".claude/rules/foo.md", True),
+            (".claude/rules/agent-toolkit/01-agent.md", True),
+            (".claude/skills/x/SKILL.md", True),
+            (".claude/skills/x/references/y.md", True),
+            (".claude/skills/x/templates/z.md", False),
+            ("/home/u/proj/.claude/rules/a.md", True),
+            ("sub/dir/.claude/skills/x/SKILL.md", True),
+        ],
+    )
+    def test_matches_project_local_agent_documents(self, path: str, expected: bool) -> None:
+        """プロジェクト直下の規範文書を、スキル配下の既存粒度に揃えて判定する。"""
+        assert _plan_format.is_agent_doc_target_file(path) is expected
+
+    @pytest.mark.parametrize(
         "path",
         [
             ".chezmoi-source/dot_claude/rules/myprojects.md.tmpl",

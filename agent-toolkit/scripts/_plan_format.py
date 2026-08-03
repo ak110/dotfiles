@@ -302,6 +302,12 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレート経由の規範改訂を検査が素通りさせる。
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md(\.tmpl)?$"),
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md(\.tmpl)?$"),
+    # 利用者プロジェクトが直接持つ規範文書。配布元固有パスだけを対象にすると、
+    # プラグインとして配布された先のプロジェクトで検査が素通りする。
+    # `skills`配下の粒度は`agent-toolkit/skills/`側と揃え、`SKILL.md`と`references/`配下に限定する。
+    re.compile(r"(^|/)\.claude/rules/.+\.md$"),
+    re.compile(r"(^|/)\.claude/skills/[^/]+/SKILL\.md$"),
+    re.compile(r"(^|/)\.claude/skills/[^/]+/references/.+\.md$"),
 )
 # basenameで照合するコーディングエージェント向け文書判定対象ファイル名。
 # ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
@@ -314,8 +320,8 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     `agent-toolkit/scripts/pretooluse.py`が参照する対象パス判定のSSOTとする。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
-    `is_agent_facing_md`とは判定対象範囲が異なる
-    （本関数はstyle negation警告・メタ規範新設時の遡及スキャン記録検査専用）。
+    `is_agent_facing_md`とは判定対象範囲が異なる。
+    利用箇所ごとに対象範囲を調整し、連続直接編集の抑止検査はプロジェクト固有文書を独自に除外する。
     """
     normalized = str(file_path).replace("\\", "/")
     if not normalized:

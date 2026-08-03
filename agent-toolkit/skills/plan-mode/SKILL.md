@@ -266,7 +266,10 @@ H2・H3見出し名、または対象ファイル中の一意な既存文字列�
 - `agent-toolkit/rules/`・`agent-toolkit/skills/*/SKILL.md`・
   `agent-toolkit/skills/*/references/`・`agent-toolkit/agents/`配下
 - `.chezmoi-source/dot_claude/rules/`・`.chezmoi-source/dot_claude/skills/`配下
+- `.claude/rules/`配下・`.claude/skills/*/SKILL.md`・`.claude/skills/*/references/`配下
 - ファイル名が`AGENTS.md`・`CLAUDE.md`のもの
+
+本列挙は`_plan_format.py`の`AGENT_DOC_TARGET_PATTERNS`・`AGENT_DOC_TARGET_BASENAMES`と同期する。
 
 次のいずれかに該当する編集を伴う場合を発動条件とし、遡及スキャン結果の記載形式は
 `## 調査結果`の記載要件（「遡及スキャン結果」項）を参照する。
