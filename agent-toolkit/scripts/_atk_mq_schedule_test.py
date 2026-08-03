@@ -314,6 +314,88 @@ class TestCalculateSchedule:
 
         assert "feedback.md" in result.parallel_normal_items
 
+    def test_answered_tbd_refreshes_targets_from_current_dependencies(self, tmp_path: pathlib.Path) -> None:
+        """依存元の対象変更後も回答済みTBDを競合する計画と並列実行しない。"""
+        plan_path = tmp_path / "plan.md"
+        plan = _entry(
+            "plan.md",
+            metadata=_metadata("plan.md", feedback_type="plan-impl", plan_file=str(plan_path)),
+        )
+        tbd = _entry(
+            "tbd.md",
+            kind="tbd",
+            answered=True,
+            metadata=_metadata("tbd.md", target_files=("stale.py",)),
+        )
+        first = _entry(
+            "first.md",
+            metadata=_metadata(
+                "first.md",
+                dependency=schedule.Dependency("external-user", condition="回答後", tbd_filename="tbd.md"),
+                target_files=("shared.py",),
+            ),
+        )
+        second = _entry(
+            "second.md",
+            metadata=_metadata(
+                "second.md",
+                dependency=schedule.Dependency("external-user", condition="回答後", tbd_filename="tbd.md"),
+                target_files=("other.py", "shared.py"),
+            ),
+        )
+
+        result = _calculate(
+            (plan, tbd, first, second),
+            plans={str(plan_path): ("shared.py",)},
+        )
+
+        assert "tbd.md" in result.post_plan_normal_items
+
+    def test_answered_tbd_without_current_source_avoids_plan_parallelism(self, tmp_path: pathlib.Path) -> None:
+        """参照元が無い回答済みTBDは永続化済み対象を信用せず計画後に処理する。"""
+        plan_path = tmp_path / "plan.md"
+        plan = _entry(
+            "plan.md",
+            metadata=_metadata("plan.md", feedback_type="plan-impl", plan_file=str(plan_path)),
+        )
+        tbd = _entry(
+            "tbd.md",
+            kind="tbd",
+            answered=True,
+            metadata=_metadata("tbd.md", target_files=("unrelated.py",)),
+        )
+
+        result = _calculate((plan, tbd), plans={str(plan_path): ("shared.py",)})
+
+        assert "tbd.md" in result.post_plan_normal_items
+
+    def test_answered_repair_tbd_uses_current_repair_target(self, tmp_path: pathlib.Path) -> None:
+        """修復TBDは修復対象の現行対象ファイルで計画との競合を判定する。"""
+        plan_path = tmp_path / "plan.md"
+        plan = _entry(
+            "plan.md",
+            metadata=_metadata("plan.md", feedback_type="plan-impl", plan_file=str(plan_path)),
+        )
+        repair_target = _entry(
+            "feedback.md",
+            metadata=_metadata("feedback.md", target_files=("shared.py",)),
+        )
+        tbd = _entry(
+            "tbd.md",
+            kind="tbd",
+            answered=True,
+            metadata=_metadata("tbd.md", target_files=("stale.py",)),
+            repair_target="feedback.md",
+            repair_kind="frontmatter",
+        )
+
+        result = _calculate(
+            (plan, repair_target, tbd),
+            plans={str(plan_path): ("shared.py",)},
+        )
+
+        assert "tbd.md" in result.post_plan_normal_items
+
     def test_plan_conflict_and_empty_targets_are_post_plan(self, tmp_path: pathlib.Path) -> None:
         plan_path = tmp_path / "plan.md"
         plan = _entry(

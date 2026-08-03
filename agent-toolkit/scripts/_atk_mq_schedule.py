@@ -445,6 +445,7 @@ def calculate_schedule(
     selected_plans, overflow_plans = plans[:PLAN_LIMIT], plans[PLAN_LIMIT:]
     selected_normals, overflow_normals = normals[:NORMAL_LIMIT], normals[NORMAL_LIMIT:]
     deferred.extend(DeferredItem(entry.filename, "limit-exceeded") for entry in (*overflow_plans, *overflow_normals))
+    answered_tbd_targets = _answered_tbd_target_files(active_entries)
 
     plan_files: set[str] = set()
     plan_targets_complete = True
@@ -461,7 +462,7 @@ def calculate_schedule(
     post_plan: list[str] = []
     for entry in selected_normals:
         assert entry.metadata is not None
-        targets = set(entry.metadata.target_files)
+        targets = set(answered_tbd_targets.get(entry.filename, entry.metadata.target_files))
         if not selected_plans or (plan_targets_complete and targets and targets.isdisjoint(plan_files)):
             parallel.append(entry.filename)
         else:
@@ -553,6 +554,31 @@ def _target_repo(text: str) -> str:
 def _priority_key(entry: QueueEntry) -> tuple[int, str]:
     assert entry.metadata is not None
     return (0 if entry.metadata.carry_count >= STARVATION_THRESHOLD else 1, entry.filename)
+
+
+def _answered_tbd_target_files(active_entries: tuple[QueueEntry, ...]) -> dict[str, tuple[str, ...]]:
+    """回答済みTBDの対象ファイルを現在の参照元から導出する。"""
+    by_filename = {entry.filename: entry for entry in active_entries}
+    referenced: dict[str, list[str]] = {}
+    for entry in active_entries:
+        metadata = entry.metadata
+        if metadata is None or metadata.dependency.kind != "external-user":
+            continue
+        tbd_filename = metadata.dependency.tbd_filename
+        if tbd_filename is not None:
+            referenced.setdefault(tbd_filename, []).extend(metadata.target_files)
+
+    result: dict[str, tuple[str, ...]] = {}
+    for entry in active_entries:
+        if entry.kind != "tbd" or entry.tbd_answered is not True or entry.metadata is None:
+            continue
+        target_files = referenced.get(entry.filename)
+        if target_files is None and entry.repair_target_filename is not None:
+            repair_target = by_filename.get(entry.repair_target_filename)
+            if repair_target is not None and repair_target.metadata is not None:
+                target_files = list(repair_target.metadata.target_files)
+        result[entry.filename] = tuple(dict.fromkeys(target_files or ()))
+    return result
 
 
 def _missing_dependency_tbds(
