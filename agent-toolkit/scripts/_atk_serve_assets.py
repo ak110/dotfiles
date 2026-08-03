@@ -95,7 +95,9 @@ HTML = """<!doctype html>
         <h3 id="additional-filters-heading">追加条件</h3>
         <div class="filter-grid">
           <label for="target-filter">対象リポジトリ</label>
-          <input id="target-filter" type="text">
+          <select id="target-filter">
+            <option value="">すべて</option>
+          </select>
           <label for="category-filter">カテゴリ</label>
           <input id="category-filter" type="text">
           <label for="source-filter">投入元</label>
@@ -190,7 +192,9 @@ HTML = """<!doctype html>
       <p id="create-content-error" class="inline-error" hidden></p>
 
       <label for="create-target">対象リポジトリ</label>
-      <input id="create-target" name="target_repo" aria-describedby="create-target-error" required>
+      <input id="create-target" name="target_repo" list="repo-options"
+             aria-describedby="create-target-error" required>
+      <datalist id="repo-options"></datalist>
       <p id="create-target-error" class="inline-error" hidden></p>
 
       <label for="create-source">投入元</label>
@@ -1410,6 +1414,41 @@ function listQuery() {
   return query.toString();
 }
 
+async function loadTargetRepos() {
+  // 対象リポジトリの候補を既存エントリから取得し、フィルターと新規登録欄へ反映する。
+  // フィルターは選択式とし、新規登録欄は未登録のリポジトリも入力できるよう補完候補に留める。
+  let repos = [];
+  try {
+    const payload = await api('/api/repos');
+    repos = Array.isArray(payload.repos) ? payload.repos : [];
+  } catch (error) {
+    return;
+  }
+  const filter = byId('target-filter');
+  const selected = filter.value;
+  filter.textContent = '';
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = 'すべて';
+  filter.appendChild(blank);
+  // 選択中の値が候補から消えた場合も選択状態を保つため、候補へ補う。
+  const values = repos.includes(selected) || !selected ? repos : [selected, ...repos];
+  for (const repo of values) {
+    const option = document.createElement('option');
+    option.value = repo;
+    option.textContent = repo;
+    filter.appendChild(option);
+  }
+  filter.value = selected;
+  const datalist = byId('repo-options');
+  datalist.textContent = '';
+  for (const repo of repos) {
+    const option = document.createElement('option');
+    option.value = repo;
+    datalist.appendChild(option);
+  }
+}
+
 async function loadEntries(options = {}) {
   const selectedFilename = currentEntry ? currentEntry.filename : '';
   setLoading(true);
@@ -1520,8 +1559,12 @@ const events = new EventSource(BASE_PATH + '/api/events');
 events.addEventListener('open', () => {
   byId('connection-status').textContent = '接続済み';
 });
-events.addEventListener('changed', () => loadEntries({fromSse: true}));
+events.addEventListener('changed', () => {
+  loadEntries({fromSse: true});
+  loadTargetRepos();
+});
 events.onerror = () => {
   byId('connection-status').textContent = '再接続中';
 };
+loadTargetRepos();
 synchronizeAndLoad();"""

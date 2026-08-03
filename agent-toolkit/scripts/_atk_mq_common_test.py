@@ -940,3 +940,57 @@ class TestPullAndCommitPushSkipWithoutRemote:
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
         assert calls == [["add", "feedback"], ["commit", "-m", "chore: test"]]
+
+
+class TestPullIfStale:
+    """定期バックグラウンド更新のレート制限を検証する。"""
+
+    def test_skips_recent_pull(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """直近pull後の定期更新を省略することを確認する。"""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        fetch_head = git_dir / "FETCH_HEAD"
+        fetch_head.touch()
+        os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            assert _common.pull_if_stale(tmp_path) is False
+        assert not calls
+
+    def test_pulls_when_due(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """更新期限を過ぎた定期更新がpullすることを確認する。"""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        fetch_head = git_dir / "FETCH_HEAD"
+        fetch_head.touch()
+        os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1100.0)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            assert _common.pull_if_stale(tmp_path) is True
+        assert calls == [["pull", "--ff-only"]]
+
+    def test_pulls_when_fetch_head_missing(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`FETCH_HEAD`が無い場合は経過時間を判定できないためpullする。"""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            assert _common.pull_if_stale(tmp_path) is True
+        assert calls == [["pull", "--ff-only"]]
+
+    def test_public_pull_ignores_rate_limit(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """利用者の操作に対応する`pull`は直近pullの有無によらず毎回実行する。"""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        fetch_head = git_dir / "FETCH_HEAD"
+        fetch_head.touch()
+        os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            _common.pull(tmp_path)
+        assert calls == [["pull", "--ff-only"]]

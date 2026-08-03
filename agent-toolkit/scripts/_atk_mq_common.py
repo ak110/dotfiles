@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import Callable, Iterable, Iterator
 
 import _atk_mq_schedule as _schedule
@@ -318,6 +319,15 @@ def _migrate_legacy_layout(private_notes: pathlib.Path) -> None:
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
     """gitコマンドをcwdで実行し、失敗時は例外を送出する。"""
     subprocess.run(["git", *args], cwd=cwd, check=True)
+
+
+_PULL_MIN_INTERVAL_SECONDS = 30.0
+"""定期バックグラウンド更新専用の`git pull`レート制限。
+
+直近のpullからの経過時間は`.git/FETCH_HEAD`のmtimeで判定する。
+同ファイルは`git pull`（内部のfetch）が実行されるたびに更新され、プロセスを跨いで参照できるため、
+状態ファイルを別途設けずに済む。
+"""
 
 
 def _pull(private_notes: pathlib.Path) -> None:
@@ -850,6 +860,34 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
 def pull(private_notes: pathlib.Path) -> None:
     """リポジトリをfast-forward更新する。"""
     _pull(private_notes)
+
+
+def pull_if_stale(private_notes: pathlib.Path) -> bool:
+    """定期更新が必要ならpullし、実行したかを返す。
+
+    定期バックグラウンド更新専用とする。利用者の操作に対応する経路
+    （変更操作・明示的な同期要求）は`pull`を用い、毎回リモートの最新状態を取得する。
+    """
+    _assert_repo_lock_held(private_notes)
+    if _pulled_recently(private_notes):
+        return False
+    _pull(private_notes)
+    return True
+
+
+def _pulled_recently(private_notes: pathlib.Path) -> bool:
+    """直近のpullから`_PULL_MIN_INTERVAL_SECONDS`未満かを返す。
+
+    `.git`がファイルの場合（worktree形式）は`stat`が失敗し偽を返すため、
+    レート制限が無効化されてpullを実行する側へ倒れる。
+    フィードバック保存リポジトリは通常のクローンであり該当しない。
+    """
+    fetch_head = private_notes / ".git" / "FETCH_HEAD"
+    try:
+        elapsed = time.time() - fetch_head.stat().st_mtime
+    except OSError:
+        return False
+    return elapsed < _PULL_MIN_INTERVAL_SECONDS
 
 
 def repo_lock(private_notes: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:

@@ -1,6 +1,7 @@
 """`atk serve`のQuartアプリケーション。"""
 
 import asyncio
+import contextlib
 import datetime
 import functools
 import html
@@ -30,6 +31,12 @@ _ENTRY_STATES = set(common.MQ_STATES)
 _STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _WEB_LOCK_TIMEOUT = 2.0
+_BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
+"""定期バックグラウンド更新の間隔。
+
+`atk mq process-loop`が10分間隔で更新する先例に対し、
+Web UIは利用者が画面を閲覧する前提のため短く取る。
+"""
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False})
 
@@ -251,10 +258,52 @@ class Operations:
             raise FileNotFoundError(filename) from error
 
     def sync(self) -> bool:
-        """リポジトリを明示的に同期する。"""
+        """リポジトリを明示的に同期する。
+
+        利用者の操作に対応する経路であるため、直近のpullからの経過時間によらず毎回実行する。
+        """
         with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
             common.pull(self.private_notes)
         return True
+
+    def background_sync(self) -> bool:
+        """定期更新としてリポジトリを同期し、実際にpullしたかを返す。
+
+        直近のpullから一定時間内であれば省略する。ロックを取得できない場合は
+        当該周期を見送り、次周期で再試行する。
+        """
+        try:
+            with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
+                return common.pull_if_stale(self.private_notes)
+        except filelock.Timeout:
+            return False
+
+    def target_repos(self) -> list[str]:
+        """既存エントリに現れる対象リポジトリを昇順で返す。
+
+        新規登録フォームの補完候補とフィルターの選択肢に用いる。
+        `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
+        """
+        found: set[str] = set()
+        for state in common.MQ_STATES:
+            try:
+                paths = sorted((self.private_notes / state).iterdir())
+            except FileNotFoundError:
+                continue
+            for path in paths:
+                if path.suffix != ".md":
+                    continue
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                parsed = common.parse_frontmatter(text)
+                if parsed is None:
+                    continue
+                target_repo = parsed[0].get("target_repo")
+                if isinstance(target_repo, str) and target_repo:
+                    found.add(target_repo)
+        return sorted(found)
 
     def edit(
         self,
@@ -384,6 +433,23 @@ def create_app(
     ops = operations or Operations(private_notes)
     workers = BoundedWorkers(worker_limit)
     sync_task: asyncio.Task[bool] | None = None
+    background_task: asyncio.Task[None] | None = None
+
+    async def background_sync_loop() -> None:
+        """一定間隔でリポジトリを更新し、変更があれば購読者へ通知する。
+
+        利用者の操作のたびにリモートへ問い合わせる代わりに、この周期更新で最新状態を取り込む。
+        個々の操作に対応する経路（明示的な同期要求・変更操作）は従来どおり毎回更新する。
+        """
+        while True:
+            await asyncio.sleep(_BACKGROUND_SYNC_INTERVAL_SECONDS)
+            try:
+                await workers.run(ops.background_sync)
+            except Exception:  # pylint: disable=broad-exception-caught
+                # 定期更新の失敗でアプリを停止させない。次周期で再試行する。
+                # `asyncio.CancelledError`は`BaseException`の直系のためここでは捕捉せず、
+                # 停止要求はそのままループを抜ける。
+                continue
 
     async def synchronize() -> bool:
         """同時に届いた同期要求へ同じ実行結果を返す。"""
@@ -491,9 +557,31 @@ def create_app(
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
+    @app.before_serving
+    async def start_background_sync() -> None:
+        """定期バックグラウンド更新を開始する。"""
+        nonlocal background_task
+        background_task = asyncio.create_task(background_sync_loop())
+
+    @app.after_serving
+    async def stop_background_sync() -> None:
+        """定期バックグラウンド更新を停止する。"""
+        nonlocal background_task
+        if background_task is None:
+            return
+        background_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await background_task
+        background_task = None
+
     @app.post("/api/sync")
     async def sync() -> quart.Response:
         return quart.jsonify(synced=await synchronize())
+
+    @app.get("/api/repos")
+    async def repos() -> quart.Response:
+        """既存エントリに現れる対象リポジトリの一覧を返す。"""
+        return quart.jsonify(repos=await workers.run(ops.target_repos))
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:

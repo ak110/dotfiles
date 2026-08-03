@@ -205,6 +205,7 @@ class Element {{
     this.dateTime = '';
   }}
   append(...children) {{ this.children.push(...children); }}
+  appendChild(child) {{ this.children.push(child); return child; }}
   replaceChildren(...children) {{ this.children = children; }}
   setAttribute(name, value) {{ this.attributes[name] = value; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
@@ -231,7 +232,7 @@ const ids = [
   'create-target-error', 'create-source', 'tbd-fields', 'create-scope',
   'create-question-type', 'choice-fields', 'create-choices',
   'create-choices-error', 'cancel-create-button', 'delete-dialog', 'delete-form',
-  'delete-target', 'delete-state', 'force-delete-row',
+  'delete-target', 'delete-state', 'force-delete-row', 'repo-options',
   'force-delete-confirmation', 'delete-error', 'cancel-delete-button', 'toast'
 ];
 const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
@@ -746,7 +747,8 @@ process.stdout.write(JSON.stringify(result));
 
 def test_assets_keep_selection_and_reload_from_sse() -> None:
     """SSE更新と遅延した詳細応答から編集中の表示・入力値・競合基準を保護する。"""
-    assert "events.addEventListener('changed', () => loadEntries({fromSse: true}))" in assets.JS
+    assert "loadEntries({fromSse: true});" in assets.JS
+    assert "events.addEventListener('changed', () => {" in assets.JS
     result = _run_node_ui(
         """
 const listed = {
@@ -1432,6 +1434,7 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/static/icon-192.png",
         "/static/icon-512.png",
         "/api/sync",
+        "/api/repos",
         "/api/entries",
         "/api/entries/<state_name>/<filename>",
         "/api/entries/start-processing",
@@ -2681,3 +2684,180 @@ def test_run_initializes_logging_and_logs_startup(
     assert basic_config_calls[0]["level"] == logging.INFO
     assert "http://127.0.0.1:28766/" in caplog.text
     assert logging.getLogger("hypercorn.error").propagate is False
+
+
+def _recorder(calls: list[str], label: str, *, result: object) -> typing.Callable[[pathlib.Path], typing.Any]:
+    """呼び出しを記録して固定値を返す差し替え関数を返す。"""
+
+    def record(_path: pathlib.Path) -> typing.Any:
+        calls.append(label)
+        return result
+
+    return record
+
+
+def _write_repo_entry(root: pathlib.Path, state_name: str, filename: str, target_repo: str) -> None:
+    """対象リポジトリを持つエントリを配置する。"""
+    directory = root / state_name
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / filename).write_text(
+        f"---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+
+
+def test_target_repos_collects_distinct_values_across_states(tmp_path: pathlib.Path) -> None:
+    """全状態のエントリから対象リポジトリを重複なく昇順で集める。"""
+    _write_repo_entry(tmp_path, "inbox", "a.md", "github.com/x/beta")
+    _write_repo_entry(tmp_path, "processing", "b.md", "github.com/x/alpha")
+    _write_repo_entry(tmp_path, "adopted", "c.md", "github.com/x/beta")
+    _write_repo_entry(tmp_path, "rejected", "d.md", "github.com/x/gamma")
+    (tmp_path / "inbox" / "broken.md").write_text("frontmatterなし\n", encoding="utf-8")
+    operations = serve_app.Operations(tmp_path)
+    assert operations.target_repos() == ["github.com/x/alpha", "github.com/x/beta", "github.com/x/gamma"]
+
+
+@pytest.mark.asyncio
+async def test_api_repos_returns_target_repos(tmp_path: pathlib.Path) -> None:
+    """`GET /api/repos`が対象リポジトリの一覧を返す。"""
+    _write_repo_entry(tmp_path, "inbox", "a.md", "github.com/x/alpha")
+    current_state = state.ServeState(tmp_path)
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), current_state)
+    response = await app.test_client().get("/api/repos")
+    assert response.status_code == 200
+    assert await response.get_json() == {"repos": ["github.com/x/alpha"]}
+
+
+def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """利用者の明示的な同期はレート制限を経由せず毎回pullする。"""
+    calls: list[str] = []
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(common, "repo_lock", lock)
+    monkeypatch.setattr(common, "pull", _recorder(calls, "pull", result=None))
+    monkeypatch.setattr(common, "pull_if_stale", _recorder(calls, "pull_if_stale", result=True))
+    operations = serve_app.Operations(tmp_path)
+    assert operations.sync() is True
+    assert operations.sync() is True
+    assert calls == ["pull", "pull"]
+
+
+def test_background_sync_respects_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """定期更新はレート制限に従い、ロック競合時は当該周期を見送る。"""
+    calls: list[str] = []
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(common, "repo_lock", lock)
+    monkeypatch.setattr(common, "pull_if_stale", _recorder(calls, "pull_if_stale", result=False))
+    operations = serve_app.Operations(tmp_path)
+    assert operations.background_sync() is False
+    assert calls == ["pull_if_stale"]
+
+    def conflicting_lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        raise filelock.Timeout("lock")
+
+    monkeypatch.setattr(common, "repo_lock", conflicting_lock)
+    assert operations.background_sync() is False
+    assert calls == ["pull_if_stale"]
+
+
+@pytest.mark.asyncio
+async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """定期更新タスクが起動時に開始し終了時に停止する。"""
+    monkeypatch.setattr(serve_app, "_BACKGROUND_SYNC_INTERVAL_SECONDS", 0.01)
+    calls: list[str] = []
+
+    class _Operations(serve_app.Operations):
+        def background_sync(self) -> bool:
+            calls.append("sync")
+            return True
+
+    current_state = state.ServeState(tmp_path)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        current_state,
+        operations=_Operations(tmp_path),
+    )
+    async with app.test_app():  # ty: ignore[invalid-context-manager]
+        await asyncio.sleep(0.05)
+        assert calls
+    # 停止指示の直後は実行中の周期が残りうるため、静止を待ってから基準を取る。
+    await asyncio.sleep(0.05)
+    before = len(calls)
+    await asyncio.sleep(0.05)
+    assert len(calls) == before
+
+
+def test_assets_populate_target_repo_choices() -> None:
+    """対象リポジトリの候補をフィルターと新規登録欄へ反映する。"""
+    assert '<select id="target-filter">' in assets.HTML
+    assert '<datalist id="repo-options"></datalist>' in assets.HTML
+    result = _run_node_ui(
+        """
+fetchHandler = async (url) => {
+  if (url.endsWith('/api/repos')) {
+    const repos = ['github.com/x/alpha', 'github.com/x/beta'];
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+await loadTargetRepos();
+process.stdout.write(JSON.stringify({
+  filterValues: byId('target-filter').children.map(option => option.value),
+  filterLabels: byId('target-filter').children.map(option => option.textContent),
+  datalistValues: byId('repo-options').children.map(option => option.value),
+}));
+"""
+    )
+    assert result["filterValues"] == ["", "github.com/x/alpha", "github.com/x/beta"]
+    assert result["filterLabels"][0] == "すべて"
+    assert result["datalistValues"] == ["github.com/x/alpha", "github.com/x/beta"]
+
+
+def test_assets_keep_selected_target_repo_when_absent_from_choices() -> None:
+    """候補から消えた選択値も選択肢へ補って選択状態を保つ。"""
+    result = _run_node_ui(
+        """
+fetchHandler = async (url) => {
+  if (url.endsWith('/api/repos')) {
+    const repos = ['github.com/x/alpha'];
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+byId('target-filter').value = 'github.com/x/removed';
+await loadTargetRepos();
+process.stdout.write(JSON.stringify({
+  values: byId('target-filter').children.map(option => option.value),
+  selected: byId('target-filter').value,
+}));
+"""
+    )
+    assert result["values"] == ["", "github.com/x/removed", "github.com/x/alpha"]
+    assert result["selected"] == "github.com/x/removed"
+
+
+def test_assets_keep_choices_when_repos_request_fails() -> None:
+    """候補の取得に失敗しても既存の選択肢と選択値を壊さない。"""
+    result = _run_node_ui(
+        """
+fetchHandler = async () => {
+  throw new Error('通信失敗');
+};
+byId('target-filter').value = 'github.com/x/alpha';
+await loadTargetRepos();
+process.stdout.write(JSON.stringify({
+  selected: byId('target-filter').value,
+  values: byId('target-filter').children.map(option => option.value),
+}));
+"""
+    )
+    assert result["selected"] == "github.com/x/alpha"
+    assert result["values"] == []
