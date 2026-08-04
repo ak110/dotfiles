@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の17点に限定する。
+チェック対象は次の21点に限定する。
 - 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
   Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
@@ -39,6 +39,11 @@ r"""計画ファイルの軽量機械チェック。
 - 計画メタ情報の作業種別が`バグ対応`の場合、
   文書全体で`### バグ調査結果`表が1件だけ存在して親H2が`## 背景`であり、2列構造を満たし、
   必須行が現行契約の順序で並んでいるか
+- 計画メタ情報に実行系変更宣言があり、`あり`の場合は`## 調査結果`直下の
+  `### 実行契約`表が必須8列と1行以上のデータ行を持つか
+- `--base-commit`指定時に対象ファイル一覧と実変更ファイル集合が一致するか
+- `--base-commit`指定時に計画が列挙するテスト関数名と実差分の追加関数名が一致するか
+- `--base-commit`指定時にコミット件名案と実際のコミット件名が一致するか
 
 `agent-toolkit/skills/agent-standards/references/check-script-design.md`「検査項目のerror・warning区分」
 節に従い、検査項目をerror区分とwarning区分へ分ける。error区分は接頭辞なしで該当箇所と要点を
@@ -83,6 +88,14 @@ warning区分（終了コードへ算入しない）とその判定根拠。
   既存出現を判定できない旨を同区分で通知する
 - バグ調査結果表の構造: 既存計画は旧形式の表を持つ場合があり、表の内容の深さは機械判定できない。
   表全体の欠落、重複、必須行、順序だけを移行支援として検出する
+- 計画メタ情報の実行系変更宣言または、`あり`の場合の実行契約表の必須列・データ行欠落:
+  計画作成時点で記載を促す検査であり、終了コードへ算入しない
+- `--base-commit`指定時の対象ファイル一覧と実変更ファイル集合の不一致: 検査結果の正否が
+  実行フェーズで反転する。計画作成時点では一致しないのが正常であり、実装完了後は不一致が異常である
+- `--base-commit`指定時の計画が列挙するテスト関数名と実差分の追加関数名の不一致:
+  計画へのテスト関数名の記載は義務ではないため、記載がある場合だけ照合する
+- `--base-commit`指定時のコミット件名案と実際のコミット件名の不一致: 実差分に応じた
+  コミット境界の変更が計画同期規定により正当化されるため、件数と対応の一致だけを検査する
 
 本文全体はGFMの表構文を有効にした`markdown-it-py`で1回解析する。
 見出し、フェンス、表、段落、節の親子関係はトークン列と位置情報から認識する。
@@ -93,6 +106,7 @@ warning区分（終了コードへ算入しない）とその判定根拠。
 from __future__ import annotations
 
 import argparse
+import collections
 import collections.abc
 import dataclasses
 import functools
@@ -204,6 +218,21 @@ _WORK_TYPE_CANDIDATE_RE = re.compile(r"^-[ \t]*作業種別(?:[ \t]*[:：].*)?$"
 _BUG_WORK_TYPE = "バグ対応"
 _NORMAL_WORK_TYPE = "通常変更"
 _VALID_WORK_TYPES = frozenset({_BUG_WORK_TYPE, _NORMAL_WORK_TYPE})
+_EXECUTION_CHANGE_RE = re.compile(r"^- 実行系変更: (あり|なし)$")
+_EXECUTION_CHANGE_CANDIDATE_RE = re.compile(r"^-[ \t]*実行系変更(?:[ \t]*[:：].*)?$")
+_EXECUTION_CONTRACT_COLUMNS = (
+    "変更単位",
+    "入力",
+    "起動契機",
+    "実行主体",
+    "SSOT",
+    "出力形式と終了状態",
+    "検証主体",
+    "テスト対象",
+)
+_PLANNED_TEST_FUNCTION_RE = re.compile(r"^\+?\s*(?:async\s+)?def (test_\w+)", re.MULTILINE)
+_ADDED_TEST_FUNCTION_RE = re.compile(r"^\+\s*(?:async )?def (test_\w+)", re.MULTILINE)
+_COMMIT_SUBJECT_RE = re.compile(r"^\s*- 件名案: `(?P<subject>[^`]+)`\s*$", re.MULTILINE)
 
 _COMMONMARK = markdown_it.MarkdownIt("commonmark").enable("table")
 
@@ -610,6 +639,50 @@ def _first_markdown_table(document: _Document, section: _Section) -> list[list[s
     """節内の最初の表トークンについて、原文から得たセル配列を返す。"""
     table = next((item for item in document.tables if _within(section, item)), None)
     return _table_rows(document, table) if table is not None else []
+
+
+def _check_execution_contract_table(document: _Document) -> list[str]:
+    """実行系変更宣言と、変更がある場合の実行契約表をwarningとして検査する。"""
+    if not _sections(document, 2, "背景"):
+        return []
+    metadata_sections = [section for section in _sections(document, 3, "計画メタ情報") if section.heading.parent_h2 == "背景"]
+    if len(metadata_sections) != 1:
+        return [f"`## 背景`直下に`### 計画メタ情報`が1件必要: 実際={len(metadata_sections)}件"]
+    entries: list[tuple[str, str | None]] = []
+    for section in metadata_sections:
+        for line in _non_code_text(document, section).splitlines():
+            if not _EXECUTION_CHANGE_CANDIDATE_RE.fullmatch(line):
+                continue
+            match = _EXECUTION_CHANGE_RE.fullmatch(line)
+            entries.append((line, match.group(1) if match is not None else None))
+    if not entries:
+        return ["`### 計画メタ情報`に実行系変更の宣言が無い: `- 実行系変更: あり`または`- 実行系変更: なし`を記載する"]
+    if len(entries) != 1:
+        return [f"`### 計画メタ情報`の実行系変更の宣言が複数ある: 実際={[line for line, _value in entries]}、期待=1件"]
+    line, value = entries[0]
+    if value is None:
+        return [f"`### 計画メタ情報`の実行系変更の宣言が固定記法`- 実行系変更: あり|なし`と一致しない: 実際={line}"]
+    if value == "なし":
+        return []
+
+    contract_sections = [section for section in _sections(document, 3, "実行契約") if section.heading.parent_h2 == "調査結果"]
+    if len(contract_sections) != 1:
+        return [f"実行系変更が`あり`の場合は`## 調査結果`直下に`### 実行契約`が1件必要: 実際={len(contract_sections)}件"]
+    table = _first_markdown_table(document, contract_sections[0])
+    expected = list(_EXECUTION_CONTRACT_COLUMNS)
+    if not table or table[0] != expected:
+        actual = table[0] if table else []
+        return [f"実行契約表のヘッダーが必須8列と一致しない: 実際={actual}、期待={expected}"]
+    if (
+        len(table) < 2
+        or len(table[1]) != len(expected)
+        or not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in table[1])
+    ):
+        return ["実行契約表の区切り行が必須8列と一致しない"]
+    data_rows = table[2:]
+    if not data_rows or any(len(row) != len(expected) or any(not cell.strip() for cell in row) for row in data_rows):
+        return ["実行契約表に必須8列がすべて非空のデータ行が無い"]
+    return []
 
 
 def _outer_pipe_shape(line: str) -> tuple[bool, bool]:
@@ -1188,6 +1261,124 @@ def _check_version_number_absent(document: _Document, checkbox_paths: list[str])
     return warnings
 
 
+def _run_git_text(work_dir: pathlib.Path, *args: str) -> tuple[str | None, str | None]:
+    """Gitの標準出力を返し、起動失敗または非0終了を利用者向けの診断へ変換する。"""
+    command = ["git", "-C", str(work_dir), *args]
+    try:
+        completed = subprocess.run(command, capture_output=True, check=False, text=True, encoding="utf-8")
+    except OSError as exc:
+        return None, f"Gitによる実装後照合を実行できない: {exc}"
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or f"終了コード{completed.returncode}"
+        return None, f"Gitによる実装後照合を実行できない: {' '.join(args)} ({detail})"
+    return completed.stdout, None
+
+
+def _repo_relative_checkbox_entries(
+    document: _Document,
+    change_sections: list[_Section],
+    work_dir: pathlib.Path,
+) -> dict[str, str | None]:
+    """対象リポジトリ内のチェックボックスパスと新設・削除マーカーを返す。"""
+    entries: dict[str, str | None] = {}
+    root_output, _error = _run_git_text(work_dir, "rev-parse", "--show-toplevel")
+    root = pathlib.Path(root_output.strip()).resolve() if root_output is not None else work_dir.resolve()
+    for section in change_sections:
+        for line_no in range(section.start_line, section.end_line):
+            if line_no in document.code_lines:
+                continue
+            line = document.lines[line_no]
+            match = _CHECKBOX_RE.match(line)
+            if match is None:
+                continue
+            raw_path = pathlib.Path(match.group(1))
+            resolved = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
+            try:
+                relative = resolved.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            marker_match = _NEW_OR_DELETED_RE.search(line)
+            entries[relative] = marker_match.group(1) if marker_match is not None else None
+    return entries
+
+
+def _check_changed_file_set(
+    document: _Document,
+    change_sections: list[_Section],
+    work_dir: pathlib.Path,
+    base_commit: str,
+) -> list[str]:
+    """計画の対象パスと基準コミット以降の変更パス・変更種別を照合する。"""
+    output, error = _run_git_text(work_dir, "diff", "--no-renames", "--name-only", f"{base_commit}..HEAD", "--")
+    added_output, added_error = _run_git_text(
+        work_dir, "diff", "--no-renames", "--name-only", "--diff-filter=A", f"{base_commit}..HEAD", "--"
+    )
+    deleted_output, deleted_error = _run_git_text(
+        work_dir, "diff", "--no-renames", "--name-only", "--diff-filter=D", f"{base_commit}..HEAD", "--"
+    )
+    first_error = error or added_error or deleted_error
+    if first_error is not None or output is None or added_output is None or deleted_output is None:
+        return [first_error or "Gitによる対象ファイル照合を実行できない"]
+    actual_paths = set(output.splitlines())
+    added_paths = set(added_output.splitlines())
+    deleted_paths = set(deleted_output.splitlines())
+
+    planned = _repo_relative_checkbox_entries(document, change_sections, work_dir)
+    planned_paths = set(planned)
+    missing = sorted(planned_paths - actual_paths)
+    unexpected = sorted(actual_paths - planned_paths)
+    wrong_status: list[str] = []
+    for path, marker in planned.items():
+        if path not in actual_paths:
+            continue
+        if marker == "新設" and path not in added_paths:
+            wrong_status.append(f"{path}: 期待=A")
+        if marker == "廃止・削除" and path not in deleted_paths:
+            wrong_status.append(f"{path}: 期待=D")
+    wrong_status.sort()
+    if not missing and not unexpected and not wrong_status:
+        return []
+    return [
+        "対象ファイル一覧と実変更ファイル集合が一致しない: "
+        f"不足={missing or 'なし'}、計画外={unexpected or 'なし'}、変更種別不一致={wrong_status or 'なし'}"
+    ]
+
+
+def _planned_test_function_names(document: _Document) -> list[str]:
+    """計画の`text`コードブロックが列挙するテスト関数名を出現順に返す。"""
+    return [
+        name for fence in document.fences if fence.info == "text" for name in _PLANNED_TEST_FUNCTION_RE.findall(fence.content)
+    ]
+
+
+def _check_added_test_functions(document: _Document, work_dir: pathlib.Path, base_commit: str) -> list[str]:
+    """計画が列挙するテスト関数名と実差分の追加関数名を集合として照合する。"""
+    planned = _planned_test_function_names(document)
+    if not planned:
+        return []
+    output, error = _run_git_text(work_dir, "diff", "--unified=0", f"{base_commit}..HEAD", "--")
+    if error is not None or output is None:
+        return [error or "Gitによるテスト関数名照合を実行できない"]
+    actual = _ADDED_TEST_FUNCTION_RE.findall(output)
+    if set(planned) == set(actual):
+        return []
+    return [f"計画が列挙するテスト関数名と実差分の追加関数名が一致しない: 計画={planned}、実差分={actual}"]
+
+
+def _check_commit_subjects(document: _Document, work_dir: pathlib.Path, base_commit: str) -> list[str]:
+    """計画のコミット件名案と基準コミット以降の実件名を件数を含めて照合する。"""
+    planned = _COMMIT_SUBJECT_RE.findall(document.text)
+    if not planned:
+        return []
+    output, error = _run_git_text(work_dir, "log", "--format=%s", f"{base_commit}..HEAD")
+    if error is not None or output is None:
+        return [error or "Gitによるコミット件名照合を実行できない"]
+    actual = output.splitlines()
+    if collections.Counter(planned) == collections.Counter(actual):
+        return []
+    return [f"コミット件名案と実際のコミット件名が一致しない: 計画={planned}、実履歴={actual}"]
+
+
 def main() -> int:
     """計画ファイル1件を対象に軽量機械チェックを実行し、error・warningをstderrへ出力する。
 
@@ -1204,6 +1395,11 @@ def main() -> int:
         type=pathlib.Path,
         default=None,
         help="識別子の既存出現を照会する対象worktreeの絶対パス（省略時は現在の作業ディレクトリ）",
+    )
+    parser.add_argument(
+        "--base-commit",
+        default=None,
+        help="計画着手前のコミット識別子。指定すると実装後の照合（対象ファイル・テスト関数名・コミット件名）を行う",
     )
     try:
         args = parser.parse_args()
@@ -1285,6 +1481,11 @@ def main() -> int:
     warnings.extend(_check_version_number_absent(document, checkbox_paths))
     warnings.extend(_check_plan_work_type(document))
     warnings.extend(_check_bug_investigation_table(document))
+    warnings.extend(_check_execution_contract_table(document))
+    if args.base_commit is not None:
+        warnings.extend(_check_changed_file_set(document, change_sections, work_dir, args.base_commit))
+        warnings.extend(_check_added_test_functions(document, work_dir, args.base_commit))
+        warnings.extend(_check_commit_subjects(document, work_dir, args.base_commit))
 
     for error in errors:
         print(error, file=sys.stderr)

@@ -173,6 +173,9 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help=(
             "計画ファイルの絶対パス。指定するとフィードバックを計画実装型として確定記録する。"
             "--type=feedback（既定）でのみ指定でき、指定したパスは実在を検証する。"
+            "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
+            "計画ファイルがベースコミットを完全な識別子で記載する場合、投入先作業ツリーのHEADと"
+            "一致することを投入前に検証する。"
         ),
     )
     add.add_argument(

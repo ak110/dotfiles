@@ -68,10 +68,339 @@ def _pipe_table_lines(*, outer_pipes: bool) -> list[str]:
 
 
 def _plan_metadata(work_type: str | None) -> str:
-    body = ["### 計画メタ情報", "", f"- ベースコミット: `{_FULL_COMMIT}`"]
+    body = [
+        "### 計画メタ情報",
+        "",
+        f"- ベースコミット: `{_FULL_COMMIT}`",
+        "- 実行系変更: なし",
+    ]
     if work_type is not None:
         body.append(f"- 作業種別: {work_type}")
     return "\n".join(body)
+
+
+def _execution_contract_table(*, columns: collections.abc.Sequence[str] | None = None) -> str:
+    """実行契約表のフィクスチャを返す。"""
+    headers = list(
+        columns
+        or (
+            "変更単位",
+            "入力",
+            "起動契機",
+            "実行主体",
+            "SSOT",
+            "出力形式と終了状態",
+            "検証主体",
+            "テスト対象",
+        )
+    )
+    separator = ["---"] * len(headers)
+    values = [f"値{index}" for index in range(1, len(headers) + 1)]
+    return "\n".join(
+        [
+            "### 実行契約",
+            "",
+            f"| {' | '.join(headers)} |",
+            f"| {' | '.join(separator)} |",
+            f"| {' | '.join(values)} |",
+        ]
+    )
+
+
+def _create_two_commit_repo(root: pathlib.Path, *, second_content: str = "after\n") -> str:
+    """一時Gitリポジトリへ2コミットを作成し、基準コミットを返す。"""
+    _init_git_repo(root)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Test User"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+    target = root / "actual.py"
+    target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "actual.py"], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "--quiet", "-m", "基準コミット"], check=True)
+    base_commit = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    target.write_text(second_content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "actual.py"], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "--quiet", "-m", "実際の件名"], check=True)
+    return base_commit
+
+
+def test_execution_change_declaration_is_required(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _write_plan(tmp_path, f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "実行系変更の宣言が無い" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_count"),
+    (
+        ("## 背景\n\n背景本文\n", 0),
+        (f"## 背景\n\n{_plan_metadata('通常変更')}\n\n{_plan_metadata('通常変更')}\n", 2),
+        (f"## 背景\n\n背景本文\n\n## 別節\n\n{_plan_metadata('通常変更')}\n", 0),
+    ),
+)
+def test_execution_change_declaration_requires_one_metadata_section_under_background(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    expected_count: int,
+) -> None:
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert f"`## 背景`直下に`### 計画メタ情報`が1件必要: 実際={expected_count}件" in capsys.readouterr().err
+
+
+def test_execution_change_declaration_rejects_invalid_value(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _write_plan(
+        tmp_path,
+        f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n- 実行系変更: 対象外\n",
+    )
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "実行系変更の宣言が固定記法" in capsys.readouterr().err
+
+
+def test_execution_contract_table_not_required_when_change_is_none(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _write_plan(
+        tmp_path,
+        f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n- 作業種別: 通常変更\n- 実行系変更: なし\n",
+    )
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_execution_contract_table_required_when_change_exists(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _write_plan(tmp_path, f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n- 実行系変更: あり\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "`## 調査結果`直下に`### 実行契約`が1件必要" in capsys.readouterr().err
+
+
+def test_execution_contract_table_rejects_missing_required_column(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = _execution_contract_table(
+        columns=("変更単位", "入力", "起動契機", "実行主体", "SSOT", "出力形式と終了状態", "検証主体")
+    )
+    body = f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n- 実行系変更: あり\n\n## 調査結果\n\n{table}\n"
+    plan = _write_plan(tmp_path, body)
+    plan = plan.rename(tmp_path / "execution-contract.txt")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "実行契約表のヘッダーが必須8列と一致しない" in capsys.readouterr().err
+
+
+def test_execution_contract_table_accepts_required_columns_and_data_row(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = (
+        f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n"
+        "- 作業種別: 通常変更\n- 実行系変更: あり\n\n"
+        f"## 調査結果\n\n{_execution_contract_table()}\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_base_commit_reports_target_file_set_mismatch(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    base_commit = _create_two_commit_repo(repo)
+    body = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `planned.py`（新設）\n\n### `planned.py`\n\n```text\ncontent\n```\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    assert "対象ファイル一覧と実変更ファイル集合が一致しない" in capsys.readouterr().err
+
+
+def test_base_commit_reports_test_function_name_mismatch(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    base_commit = _create_two_commit_repo(repo, second_content="def test_actual():\n    pass\n")
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `actual.py`（新設）\n\n"
+        "### `actual.py`\n\n```text\ndef test_planned\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    assert "計画が列挙するテスト関数名と実差分の追加関数名が一致しない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "planned_blocks",
+    (
+        "```text\nasync def test_actual\n```\n",
+        "```text\ndef test_actual\n```\n\n### 補足\n\n```text\ndef test_actual\n```\n",
+    ),
+)
+def test_base_commit_accepts_async_or_repeated_planned_test_function_name(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    planned_blocks: str,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    function = "async def test_actual():\n    pass\n" if "async" in planned_blocks else "def test_actual():\n    pass\n"
+    base_commit = _create_two_commit_repo(repo, second_content=function)
+    body = (
+        _REFERENCE_ENUMERATION_SECTION + "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `actual.py`（新設）\n\n"
+        f"### `actual.py`\n\n{planned_blocks}"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    assert "計画が列挙するテスト関数名と実差分の追加関数名が一致しない" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("modified_content", (None, "after\n"))
+def test_base_commit_accepts_complete_and_modified_rename_as_delete_and_add(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    modified_content: str | None,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test User"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+    (repo / "old.py").write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "old.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "基準コミット"], check=True)
+    base_commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(repo), "mv", "old.py", "new.py"], check=True)
+    if modified_content is not None:
+        (repo / "new.py").write_text(modified_content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "new.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "改名"], check=True)
+    body = (
+        _REFERENCE_ENUMERATION_SECTION + "## 変更内容\n\n### 対象ファイル一覧\n\n"
+        "- [ ] `old.py`（廃止・削除）\n- [ ] `new.py`（新設）\n\n"
+        "### `old.py`\n\n```text\n旧ファイルを削除する。\n```\n\n"
+        "### `new.py`\n\n```text\n新ファイルを追加する。\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    assert "対象ファイル一覧と実変更ファイル集合が一致しない" not in capsys.readouterr().err
+
+
+def test_base_commit_accepts_async_test_function_name(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    base_commit = _create_two_commit_repo(repo, second_content="async def test_async_case():\n    pass\n")
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `actual.py`（新設）\n\n"
+        "### `actual.py`\n\n```text\nasync def test_async_case\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    assert "計画が列挙するテスト関数名と実差分の追加関数名が一致しない" not in capsys.readouterr().err
+
+
+def test_base_commit_accepts_rename_as_delete_and_add(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test User"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+    (repo / "old.py").write_text("content\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "old.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "基準コミット"], check=True)
+    base_commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(repo), "mv", "old.py", "new.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "改名"], check=True)
+    body = (
+        _REFERENCE_ENUMERATION_SECTION + "## 変更内容\n\n### 対象ファイル一覧\n\n"
+        "- [ ] `old.py`（廃止・削除）\n- [ ] `new.py`（新設）\n\n"
+        "### `old.py`\n\n```text\n旧ファイルを削除する。\n```\n\n"
+        "### `new.py`\n\n```text\ncontent\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    assert "対象ファイル一覧と実変更ファイル集合が一致しない" not in capsys.readouterr().err
+
+
+def test_base_commit_reports_commit_subject_mismatch(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    base_commit = _create_two_commit_repo(repo)
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `actual.py`（新設）\n\n"
+        "### `actual.py`\n\n```text\nafter\n```\n\n- 件名案: `計画上の件名`\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    assert "コミット件名案と実際のコミット件名が一致しない" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -872,7 +1201,7 @@ def test_sample_plan_reports_no_diagnostics(capsys: pytest.CaptureFixture[str], 
     ("metadata", "expected_error", "expect_work_type_warning"),
     [
         (
-            f"### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n- 作業種別: 通常変更\n",
+            f"### 計画メタ情報\n\n- ベースコミット: `{_FULL_COMMIT}`\n- 作業種別: 通常変更\n- 実行系変更: なし\n",
             None,
             False,
         ),

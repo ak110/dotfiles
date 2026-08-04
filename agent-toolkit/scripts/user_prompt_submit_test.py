@@ -263,6 +263,40 @@ class TestNormInquiryEscalationDetection:
         assert _additional_context(second) is None
 
 
+def test_task_notification_prompt_does_not_trigger_norm_inquiry(tmp_path: pathlib.Path) -> None:
+    sid = "task-notification-no-inquiry"
+    prompt = "<task-notification>\n定義だけを直しても再発するのではありませんか。\n</task-notification>"
+    _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
+
+    result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
+
+    assert result.returncode == 0
+    assert _additional_context(result) is None
+
+
+def test_task_notification_prompt_does_not_increment_counter(tmp_path: pathlib.Path) -> None:
+    sid = "task-notification-no-counter"
+    prompt = "  <task-notification>\n定義だけを直しても再発するのではありませんか。\n</task-notification>"
+
+    result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
+
+    assert result.returncode == 0
+    assert "user_prompt_counter" not in _read_state(tmp_path, sid)
+
+
+def test_plain_user_prompt_still_triggers_norm_inquiry(tmp_path: pathlib.Path) -> None:
+    sid = "plain-user-prompt"
+    _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
+
+    result = _run(
+        {"session_id": sid, "prompt": "定義だけを直しても再発するのではありませんか。"},
+        state_dir=tmp_path,
+    )
+
+    assert result.returncode == 0
+    assert _additional_context(result) is not None
+
+
 class TestBoundaryConditions:
     """空文字列・単一行・末尾改行有無・複数行の境界条件を`main()`経由で検証する。"""
 

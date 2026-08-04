@@ -63,7 +63,8 @@ plan-mode側の定義は`agent-toolkit:plan-mode`スキル本体にある。
 原題内の縮退フレーズ語彙の混入有無を確認する。
 該当語彙を含む見出しは、該当語彙を含まない要約表現へ書き換える。
 代表フレーズは`agent-toolkit:agent-standards`配下`scope-escalation-phrases.md`の各該当カテゴリを参照する。
-原題の完全転記は計画ファイルの`## 背景`配下の`text`コードブロックでのみ行う。
+原題の完全転記は計画ファイルの`## 背景`配下の`text`コードブロックと、同配下の追跡表の原題欄でのみ行う。
+追跡表の生成と検査は`agent-toolkit/skills/process-feedbacks/SKILL.md`「ステップ5: 計画作成と実行」節が定める。
 呼び出し元の`agent-toolkit:process-feedbacks`スキルは原題入りフィードバック本文を渡す責務を持つ。
 計画ファイル本体の作成・追記は`agent-toolkit:plan-mode`スキルが担う。
 

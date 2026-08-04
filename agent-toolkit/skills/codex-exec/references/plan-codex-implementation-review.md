@@ -41,6 +41,14 @@
 レビュー担当側の起動文へは、`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が
 `claude`・`Explore`の起動文へ求める必須項目を含める。
 
+レビュー専用の委譲を外部の実行系へ起動する場合、`agent-toolkit/skills/codex-exec/SKILL.md`が定める
+`danger-full-access`により実行モードによる書き込み抑止が適用されない。
+起動文へ、対象成果物のファイルを編集しないことと、gitの書き込み操作
+（`add`・`commit`・`checkout`・`stash`・`rebase`・`reset`・`push`など作業ツリー・index・refを
+変更する操作）を行わないことを、厳守すべき制約として明記する。
+読み取り専用のgit操作として許容する範囲（`git diff`・`git log`・`git show`・`git status`・
+`git rev-parse`など状態を変更しない操作）も併せて示す。
+
 両応答の受領後、指摘を次の6列表へ単純結合する。
 計画準拠系には`P-<系統内通番>`、独立系には`I-<系統内通番>`を付ける。
 レビュー応答の受領時点では区分を空欄とし、実装・修正系の判定後に埋める。

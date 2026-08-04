@@ -375,6 +375,164 @@ def test_add_operation_rejects_plan_file_for_tbd(
         )
 
 
+def _write_plan_with_base_commit(tmp_path: pathlib.Path, value: str | None) -> pathlib.Path:
+    """計画メタ情報を持つ計画ファイルを作成する。"""
+    plan = tmp_path / "plan.md"
+    base_line = "" if value is None else f"- ベースコミット: `{value}`\n"
+    plan.write_text(f"# 計画\n\n### 計画メタ情報\n\n{base_line}", encoding="utf-8")
+    return plan
+
+
+def test_add_operation_rejects_plan_file_with_mismatched_base_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
+
+    with pytest.raises(WebInputError, match="ベースコミット"):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="b" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_operation_accepts_plan_file_with_matching_base_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+
+
+def test_add_operation_warns_when_plan_file_lacks_base_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = _write_plan_with_base_commit(tmp_path, None)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+    assert "完全OIDを抽出できない" in capsys.readouterr().err
+
+
+def test_add_operation_warns_when_plan_file_base_commit_is_abbreviated(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = _write_plan_with_base_commit(tmp_path, "01234567")
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+    assert "完全OIDを抽出できない" in capsys.readouterr().err
+
+
+def test_add_operation_rejects_plan_file_with_target_repo_override(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
+    message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
+
+    with pytest.raises(WebInputError, match="対象リポジトリ"):
+        add_module.add_entries(
+            notes,
+            messages=[message],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="a" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_operation_accepts_plan_file_with_equivalent_target_repo(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
+    message = "---\ntarget_repo: GitHub.com/Example/Repo.git\n---\n\n本文"
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[message],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+
+
+def test_add_operation_rejects_all_messages_when_one_overrides_target_repo(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
+    messages = ["本文1", "---\ntarget_repo: github.com/other/repo\n---\n\n本文2"]
+
+    with pytest.raises(WebInputError, match="対象リポジトリ"):
+        add_module.add_entries(
+            notes,
+            messages=messages,
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="a" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
 class TestAddOrderEditorFirst:
     """addサブコマンド: エディター起動を`_pull`より前に呼ぶ順序保証。"""
 

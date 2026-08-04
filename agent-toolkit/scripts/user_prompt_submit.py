@@ -82,6 +82,16 @@ _PLAN_AND_ADD_FEEDBACK_NAMES_EXTENDED = _extend_with_short_names(_PLAN_AND_ADD_F
 # 先頭の`/`直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SLASH_COMMAND_PATTERN = re.compile(r"\A/(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
+_HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
+
+
+def _is_harness_message(prompt: str) -> bool:
+    """ハーネスが挿入したメッセージかを判定する。
+
+    利用者の発話ではない入力に対して規範照会・是正要求の判定と
+    呼び出し回数の加算を行わないために用いる。
+    """
+    return _HARNESS_MESSAGE_RE.search(prompt) is not None
 
 
 def _resolve_canonical_name(name: str, extended: frozenset[str], canonical: frozenset[str]) -> str | None:
@@ -193,6 +203,11 @@ def main(payload_text: str) -> int:
 
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt:
+        return 0
+
+    # 公式契約では`prompt`は利用者の送信本文である。実装版2.1.221で観測した
+    # `<task-notification>`通知の混入経路だけを防御的に除外し、一般的な入力契約とは扱わない。
+    if _is_harness_message(prompt):
         return 0
 
     # 先頭行のみを取り出して照合する（先頭行以外は無視）。

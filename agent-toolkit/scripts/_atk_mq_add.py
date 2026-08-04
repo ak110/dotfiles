@@ -14,6 +14,7 @@ import sys
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_schedule as _schedule
 import _atk_mq_tbd as _tbd
+import markdown_it
 from _atk_mq_common import (
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
@@ -57,6 +58,7 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_FEEDBACK_ERROR = "feedback本文が実質空です"
+_PLAN_BASE_COMMIT_RE = re.compile(r"(?:ベースコミット|基準コミット)[^\n]*?`([0-9a-fA-F]{40}|[0-9a-fA-F]{64})`")
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -67,6 +69,77 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     if entry_type != MQ_TYPE_FEEDBACK:
         _tbd.reject_reserved_tbd_markup(body)
     return frontmatter, body
+
+
+def _plan_metadata_text(plan_text: str) -> str | None:
+    """計画Markdownからフェンス外の`### 計画メタ情報`本文を返す。"""
+    tokens = markdown_it.MarkdownIt("commonmark").parse(plan_text)
+    for index, token in enumerate(tokens):
+        if token.type != "heading_open" or token.tag != "h3" or tokens[index + 1].content != "計画メタ情報":
+            continue
+        if token.map is None:
+            return None
+        start_line = token.map[1]
+        end_line = len(plan_text.splitlines())
+        for following in tokens[index + 2 :]:
+            if following.type != "heading_open" or following.map is None:
+                continue
+            if int(following.tag[1:]) <= 3:
+                end_line = following.map[0]
+                break
+        return "\n".join(plan_text.splitlines()[start_line:end_line])
+    return None
+
+
+def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None) -> None:
+    """計画ファイルのベースコミットと投入先作業ツリーのHEADを照合する。
+
+    双方が完全OIDとして得られた場合だけ比較し、不一致なら`WebInputError`を送出する。
+    計画側が欠落または短縮表記の場合は警告を出力して投入を継続する。
+    """
+    try:
+        plan_text = plan_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise WebInputError(f"plan_fileを読み込めません: {plan_path}") from error
+    metadata = _plan_metadata_text(plan_text)
+    match = _PLAN_BASE_COMMIT_RE.search(metadata or "")
+    if match is None:
+        print(
+            "警告: 計画ファイルの`### 計画メタ情報`からベースコミットの完全OIDを抽出できないため、"
+            "投入先作業ツリーのHEADとの照合を省略します。",
+            file=sys.stderr,
+        )
+        return
+    plan_commit = match.group(1)
+    if target_commit is None or plan_commit.casefold() == target_commit.casefold():
+        return
+    raise WebInputError(
+        "計画ファイルのベースコミットと投入先作業ツリーのHEADが一致しません。"
+        f"計画ファイル={plan_commit}、投入先HEAD={target_commit}。"
+        "計画と投入先の両方を確認し、正しいベースコミットと一致する作業ツリーから再実行してください。"
+    )
+
+
+def _verify_plan_target_repos(
+    parsed_messages: list[tuple[dict[str, object], str]],
+    target_repo: str,
+) -> None:
+    """計画実装型の全メッセージが投入先リポジトリを実効的に上書きしないことを検証する。"""
+    for frontmatter, _body in parsed_messages:
+        raw_target_repo = frontmatter.get("target_repo")
+        if raw_target_repo is None:
+            continue
+        if not isinstance(raw_target_repo, str):
+            raise WebInputError("plan_file指定時のメッセージfrontmatterのtarget_repoは文字列で指定してください")
+        try:
+            item_target_repo = _resolve_repo_id(raw_target_repo)
+        except SystemExit as error:
+            raise WebInputError(f"target_repoを解決できません: {raw_target_repo}") from error
+        if item_target_repo != target_repo:
+            raise WebInputError(
+                "plan_file指定時はメッセージfrontmatterで対象リポジトリを別の値へ上書きできません。"
+                f"投入先={target_repo}、frontmatter={item_target_repo}"
+            )
 
 
 def reject_message_file_path(message: str) -> None:
@@ -228,6 +301,11 @@ def add_entries(
         raise WebInputError("messagesには1件以上を指定してください")
     if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
         raise WebInputError("target_commitは40桁または64桁の完全OIDで指定してください")
+    try:
+        normalized_target_repo = _resolve_repo_id(target_repo)
+    except SystemExit as error:
+        raise WebInputError(f"target_repoを解決できません: {target_repo}") from error
+    plan_path: pathlib.Path | None = None
     if plan_file is not None:
         if entry_type != MQ_TYPE_FEEDBACK:
             raise WebInputError("plan_fileはfeedback種別でのみ指定できます")
@@ -242,6 +320,9 @@ def add_entries(
     if entry_type != MQ_TYPE_FEEDBACK and question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError("question_typeが不正です")
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
+    if plan_path is not None:
+        _verify_plan_target_repos(parsed_messages, normalized_target_repo)
+        _verify_plan_base_commit(plan_path, target_commit)
     if entry_type != MQ_TYPE_FEEDBACK and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
@@ -249,7 +330,7 @@ def add_entries(
         generated = _add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
-            target_repo=target_repo,
+            target_repo=normalized_target_repo,
             source=source,
             now=now,
             entry_type=entry_type,
