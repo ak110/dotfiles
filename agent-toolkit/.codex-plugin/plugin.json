@@ -1,6 +1,6 @@
 {
   "name": "agent-toolkit",
-  "version": "2.15.1",
+  "version": "2.15.2",
   "description": "Claude CodeとCodex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針を提供し、Claude Codeではフックによる機械検査も追加する。",
   "author": {
     "name": "aki",

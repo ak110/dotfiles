@@ -196,6 +196,7 @@ def test_plan_finalizer_reuses_working_directory_as_target_worktree() -> None:
 def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
     """対象worktreeと条件付き複製元の退避・比較・復旧報告契約を検査する。"""
     finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
+    caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
     review = _PLAN_REVIEW.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
@@ -206,6 +207,11 @@ def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
     assert "復旧の実行主体は、呼び出し元の明示確認後に開始する別工程" in review
     assert "worktree_check_result" in fix_task
     assert "worktree_check_result" in review_task
+    for document in (finalizer, caller):
+        compact = re.sub(r"\s+", "", document)
+        assert "委譲前後それぞれの基準コミットの識別子" in compact
+        assert "rev-parseHEAD" in compact
+        assert "報告値と突き合わせる" in compact
 
 
 def test_plan_impl_report_labels_are_synchronized() -> None:

@@ -80,6 +80,9 @@ user-invocable: false
 各委譲の退避・変更検知・未完了返却は、工程1でReadする`plan-codex-review.md`
 「用途別task reference」節に従い、結果を`worktree_check_results`へ記録する。
 `worktree_check_results`には、継続起動を含むすべての起動で当該helperの`capture`・`compare`実測結果を記載する。
+委譲前後それぞれの基準コミットの識別子は、
+`git -C <対象リポジトリの絶対パス> rev-parse HEAD`で実測して`worktree_check_results`へ記載する。
+完了報告の受領時は基準コミットを再取得し、報告値と突き合わせる。
 委譲の有無にかかわらず、実測を経ない記述で当該欄を埋めない。
 
 1. `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review.md`をReadし、
@@ -201,7 +204,7 @@ check_results:
 - pyfltr: <初回と再実行の終了コード、違反件数、警告>
 - check_dash.py: <初回と再実行の終了コード、検出件数>
 worktree_check_results:
-- <委譲、対象worktreeまたは複製元、前後一致、変更パス、退避先、復旧手順>
+- <委譲、対象worktreeまたは複製元、委譲前後の基準コミット識別子、前後一致、変更パス、退避先、復旧手順>
 post_application_check_diff: <反映後の機械修正前後差分。差分が無ければ「なし」>
 post_application_check_results: <反映後に実行した3検査の最終結果>
 scope_baseline:
@@ -220,6 +223,10 @@ escalation_points:
 status: completed | needs_escalation
 review_completed: true | false
 ```
+
+同一系統でラウンドごとに実行系が変わった場合、経路欄と識別子欄には最新ラウンドの実績を記載する。
+過去ラウンドの経路と識別子は、対応する`implementation_history`または`review_history`へ
+時系列で記録する。
 
 `status: completed`は`agent-toolkit:plan-mode`の呼び出し元による採否確定、
 `review_completed: true`、3つの機械チェックの成功、致命的・重大指摘の解消、
@@ -240,3 +247,5 @@ review_completed: true | false
 
 完了報告は1回だけ生成し、実際の受領経路（ツール戻り値または完了通知）を通じて返す。
 `SendMessage`による能動送付と、待機対象の結果を欠く完了報告は行わない。
+`## 出力`が定める必須欄は、ラベル付きの形式のまま返す。
+表形式への要約、項目の統合、組み立てた構造化ドラフトの短縮をせず、欄と値の対応を保ったまま返却する。
