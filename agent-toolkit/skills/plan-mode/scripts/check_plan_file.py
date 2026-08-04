@@ -110,6 +110,7 @@ import collections
 import collections.abc
 import dataclasses
 import functools
+import os
 import pathlib
 import re
 import subprocess
@@ -1292,9 +1293,10 @@ def _repo_relative_checkbox_entries(
             if match is None:
                 continue
             raw_path = pathlib.Path(match.group(1))
-            resolved = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
+            candidate = raw_path if raw_path.is_absolute() else root / raw_path
+            normalized = pathlib.Path(os.path.normpath(candidate))
             try:
-                relative = resolved.relative_to(root).as_posix()
+                relative = normalized.relative_to(root).as_posix()
             except ValueError:
                 continue
             marker_match = _NEW_OR_DELETED_RE.search(line)

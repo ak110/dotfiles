@@ -23,8 +23,6 @@ import _atk_mq_schedule as _schedule
 import markdown_it
 from markdown_it.token import Token
 
-_TITLE_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)(.*)$")
-_TITLE_CLOSING_RE = re.compile(r"^(.*?)(?:[ \t]+#+[ \t]*)?$")
 _PRESENTATION_FILENAME_RE = re.compile(r"^`([^`]+)`$")
 _TRACE_TABLE_HEADER = ("ファイル名", "原題", "本文SHA-256", "想定変更対象")
 
@@ -131,7 +129,7 @@ def check_trace_table(plan_text: str, expected_rows: tuple[TraceRow, ...]) -> tu
     if len(presentations) != 1:
         errors.append(f"背景節直下の`### 提示素材`が1件ではありません: 実際={len(presentations)}件")
         return tuple(errors)
-    expected_materials = {row.filename: row.source_body.removeprefix("\n").removesuffix("\n") for row in expected_rows}
+    expected_materials = {row.filename: row.source_body.removesuffix("\n") for row in expected_rows}
     actual_materials = _presentation_filename_bodies(tokens, lines, presentations[0], frozenset(expected_materials))
     for filename, expected_body in expected_materials.items():
         actual_bodies = actual_materials.get(filename, [])
@@ -160,16 +158,20 @@ def _table_header_cells(tokens: tuple[Token, ...], table_index: int) -> tuple[st
 
 
 def _extract_title(body: str, filename: str) -> str:
-    """本文先頭の非空行から、見出し記号を除いた原題を返す。"""
-    for line in body.splitlines():
+    """本文先頭の非空行から、CommonMark見出しなら解析済み内容を原題として返す。"""
+    for line_index, line in enumerate(body.splitlines()):
         if not line.strip():
             continue
-        match = _TITLE_RE.fullmatch(line)
-        if match is None:
-            return line.strip()
-        closing = _TITLE_CLOSING_RE.fullmatch(match.group(1))
-        assert closing is not None
-        return closing.group(1).strip()
+        tokens = markdown_it.MarkdownIt("commonmark").parse(body)
+        for index, token in enumerate(tokens):
+            if (
+                token.type == "heading_open"
+                and token.level == 0
+                and token.map == [line_index, line_index + 1]
+                and token.tag in {"h1", "h2", "h3", "h4", "h5", "h6"}
+            ):
+                return tokens[index + 1].content.strip()
+        return line.strip()
     raise ValueError(f"本文に原題として利用できる行がありません: {filename}")
 
 

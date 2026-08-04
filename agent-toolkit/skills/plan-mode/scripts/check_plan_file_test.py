@@ -8,7 +8,7 @@ import subprocess
 
 import markdown_it
 import pytest
-from check_plan_file import main
+from check_plan_file import _iter_h2_sections, _parse_document, _repo_relative_checkbox_entries, main
 
 _BUG_ROWS = tuple(
     """\
@@ -268,6 +268,17 @@ def test_base_commit_reports_test_function_name_mismatch(
 
     assert main() == 0
     assert "計画が列挙するテスト関数名と実差分の追加関数名が一致しない" in capsys.readouterr().err
+
+
+def test_target_file_set_preserves_tracked_symlink_path(tmp_path: pathlib.Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".agents").mkdir(parents=True)
+    (repo / ".agents" / "skills").symlink_to("../.claude/skills")
+    document = _parse_document("## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `.agents/skills`\n")
+
+    entries = _repo_relative_checkbox_entries(document, _iter_h2_sections(document, "変更内容"), repo)
+
+    assert entries == {".agents/skills": None}
 
 
 @pytest.mark.parametrize(

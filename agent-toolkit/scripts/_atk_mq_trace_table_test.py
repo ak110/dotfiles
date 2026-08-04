@@ -132,6 +132,16 @@ def test_generate_preserves_non_heading_hash_prefixes(tmp_path: pathlib.Path) ->
     assert "| `seven.md` | ####### literal |" in result.stdout
 
 
+def test_generate_uses_commonmark_title_for_empty_atx_heading(tmp_path: pathlib.Path) -> None:
+    private_notes = tmp_path / "private-notes"
+    _write_entry(private_notes, "empty.md", _entry_text_from_body("\n### ###\n本文\n"))
+
+    result = _run(private_notes, "generate", ("empty.md",))
+
+    assert result.returncode == 0
+    assert "| `empty.md` |  |" in result.stdout
+
+
 def test_generate_escapes_markdown_table_cells(tmp_path: pathlib.Path) -> None:
     private_notes = tmp_path / "private-notes"
     _write_entry(private_notes, "feedback.md", _entry_text("縦棒|を含む", target_files=("one|two.py",)))
@@ -245,6 +255,22 @@ def test_check_rejects_modified_source_body_or_invisible_intervening_block(tmp_p
         result = _run(private_notes, "check", ("feedback.md",), plan_file=plan)
 
         assert result.returncode == 1
+
+
+def test_check_rejects_missing_leading_source_newline(tmp_path: pathlib.Path) -> None:
+    private_notes = tmp_path / "private-notes"
+    _write_entry(private_notes, "feedback.md", _entry_text_from_body("\n# 原題\n本文\n"))
+    generated = _run(private_notes, "generate", ("feedback.md",))
+    plan = tmp_path / "missing-leading-newline.md"
+    plan.write_text(
+        "# 計画\n\n## 背景\n\n### 提示素材\n\n`feedback.md`\n\n```text\n# 原題\n本文\n```\n\n"
+        f"### フィードバック追跡表\n\n{generated.stdout}",
+        encoding="utf-8",
+    )
+
+    result = _run(private_notes, "check", ("feedback.md",), plan_file=plan)
+
+    assert result.returncode == 1
 
 
 def test_check_rejects_missing_modified_or_duplicate_table(tmp_path: pathlib.Path) -> None:

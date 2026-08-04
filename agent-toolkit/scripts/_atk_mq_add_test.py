@@ -502,6 +502,80 @@ def test_add_operation_warns_when_plan_file_lacks_base_commit(
     assert "完全OIDを抽出できない" in capsys.readouterr().err
 
 
+def test_add_operation_warns_when_legacy_plan_lacks_background(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "legacy-plan.md"
+    plan.write_text("# 旧計画\n", encoding="utf-8")
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+    assert "完全OIDを抽出できない" in capsys.readouterr().err
+
+
+def test_add_operation_ignores_base_commit_inside_metadata_code_fence(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n```text\n- ベースコミット: `{'a' * 40}`\n```\n\n"
+        f"- ベースコミット: `{'b' * 40}`\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebInputError, match="ベースコミット"):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="a" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_operation_rejects_duplicate_base_commit_candidates(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n- 基準コミット: `{'a' * 40}`\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebInputError, match="複数"):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="a" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
 def test_add_operation_warns_when_plan_file_base_commit_is_abbreviated(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

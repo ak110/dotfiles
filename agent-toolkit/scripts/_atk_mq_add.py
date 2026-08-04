@@ -58,7 +58,10 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_FEEDBACK_ERROR = "feedback本文が実質空です"
-_PLAN_BASE_COMMIT_RE = re.compile(r"(?:ベースコミット|基準コミット)[^\n]*?`([0-9a-fA-F]{40}|[0-9a-fA-F]{64})`")
+_PLAN_BASE_COMMIT_LINE_RE = re.compile(
+    r"^\s*-\s*(?:ベースコミット|基準コミット):\s*`([0-9a-fA-F]+)`[^\n]*$",
+    re.MULTILINE,
+)
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -71,8 +74,8 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     return frontmatter, body
 
 
-def _plan_metadata_text(plan_text: str) -> str:
-    """計画Markdownの背景直下にある一意な`### 計画メタ情報`本文を返す。"""
+def _plan_metadata_text(plan_text: str) -> str | None:
+    """計画Markdownの背景直下にある一意な`### 計画メタ情報`の非コード本文を返す。"""
     tokens = markdown_it.MarkdownIt("commonmark").parse(plan_text)
     lines = plan_text.splitlines()
     backgrounds: list[tuple[int, int]] = []
@@ -93,8 +96,10 @@ def _plan_metadata_text(plan_text: str) -> str:
                 end_line = following.map[0]
                 break
         backgrounds.append((token.map[1], end_line))
-    if len(backgrounds) != 1:
+    if len(backgrounds) > 1:
         raise WebInputError(f"計画ファイルのフェンス外の`## 背景`が1件ではありません: 実際={len(backgrounds)}件")
+    if not backgrounds:
+        return None
     background_start, background_end = backgrounds[0]
     candidates = [
         (index, token)
@@ -106,10 +111,12 @@ def _plan_metadata_text(plan_text: str) -> str:
         and background_start <= token.map[0] < background_end
         and tokens[index + 1].content == "計画メタ情報"
     ]
-    if len(candidates) != 1:
+    if len(candidates) > 1:
         raise WebInputError(
             f"計画ファイルの`## 背景`直下にあるフェンス外の`### 計画メタ情報`が1件ではありません: 実際={len(candidates)}件"
         )
+    if not candidates:
+        return None
     index, metadata = candidates[0]
     assert metadata.map is not None
     end_line = background_end
@@ -119,7 +126,16 @@ def _plan_metadata_text(plan_text: str) -> str:
                 continue
             end_line = min(end_line, following.map[0])
             break
-    return "\n".join(lines[metadata.map[1] : end_line])
+    code_lines = {
+        line_no
+        for token in tokens
+        if token.type in {"fence", "code_block"}
+        and token.map is not None
+        and metadata.map[1] <= token.map[0]
+        and token.map[1] <= end_line
+        for line_no in range(token.map[0], token.map[1])
+    }
+    return "\n".join(lines[line_no] for line_no in range(metadata.map[1], end_line) if line_no not in code_lines)
 
 
 def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None) -> None:
@@ -133,15 +149,17 @@ def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None)
     except (OSError, UnicodeDecodeError) as error:
         raise WebInputError(f"plan_fileを読み込めません: {plan_path}") from error
     metadata = _plan_metadata_text(plan_text)
-    match = _PLAN_BASE_COMMIT_RE.search(metadata)
-    if match is None:
+    candidates = _PLAN_BASE_COMMIT_LINE_RE.findall(metadata or "")
+    if len(candidates) > 1:
+        raise WebInputError(f"計画ファイルの`### 計画メタ情報`にベースコミット候補が複数あります: 実際={len(candidates)}件")
+    if not candidates or len(candidates[0]) not in {40, 64}:
         print(
             "警告: 計画ファイルの`### 計画メタ情報`からベースコミットの完全OIDを抽出できないため、"
             "投入先作業ツリーのHEADとの照合を省略します。",
             file=sys.stderr,
         )
         return
-    plan_commit = match.group(1)
+    plan_commit = candidates[0]
     if target_commit is None or plan_commit.casefold() == target_commit.casefold():
         return
     raise WebInputError(
