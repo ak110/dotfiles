@@ -71,24 +71,55 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     return frontmatter, body
 
 
-def _plan_metadata_text(plan_text: str) -> str | None:
-    """計画Markdownからフェンス外の`### 計画メタ情報`本文を返す。"""
+def _plan_metadata_text(plan_text: str) -> str:
+    """計画Markdownの背景直下にある一意な`### 計画メタ情報`本文を返す。"""
     tokens = markdown_it.MarkdownIt("commonmark").parse(plan_text)
+    lines = plan_text.splitlines()
+    backgrounds: list[tuple[int, int]] = []
     for index, token in enumerate(tokens):
-        if token.type != "heading_open" or token.tag != "h3" or tokens[index + 1].content != "計画メタ情報":
+        if (
+            token.type != "heading_open"
+            or token.tag != "h2"
+            or token.level != 0
+            or token.map is None
+            or tokens[index + 1].content != "背景"
+        ):
             continue
-        if token.map is None:
-            return None
-        start_line = token.map[1]
-        end_line = len(plan_text.splitlines())
+        end_line = len(lines)
         for following in tokens[index + 2 :]:
-            if following.type != "heading_open" or following.map is None:
-                continue
-            if int(following.tag[1:]) <= 3:
+            if following.type == "heading_open" and following.level == 0 and following.map is not None:
+                if int(following.tag[1:]) > 2:
+                    continue
                 end_line = following.map[0]
                 break
-        return "\n".join(plan_text.splitlines()[start_line:end_line])
-    return None
+        backgrounds.append((token.map[1], end_line))
+    if len(backgrounds) != 1:
+        raise WebInputError(f"計画ファイルのフェンス外の`## 背景`が1件ではありません: 実際={len(backgrounds)}件")
+    background_start, background_end = backgrounds[0]
+    candidates = [
+        (index, token)
+        for index, token in enumerate(tokens)
+        if token.type == "heading_open"
+        and token.tag == "h3"
+        and token.level == 0
+        and token.map is not None
+        and background_start <= token.map[0] < background_end
+        and tokens[index + 1].content == "計画メタ情報"
+    ]
+    if len(candidates) != 1:
+        raise WebInputError(
+            f"計画ファイルの`## 背景`直下にあるフェンス外の`### 計画メタ情報`が1件ではありません: 実際={len(candidates)}件"
+        )
+    index, metadata = candidates[0]
+    assert metadata.map is not None
+    end_line = background_end
+    for following in tokens[index + 2 :]:
+        if following.type == "heading_open" and following.level == 0 and following.map is not None:
+            if int(following.tag[1:]) > 3:
+                continue
+            end_line = min(end_line, following.map[0])
+            break
+    return "\n".join(lines[metadata.map[1] : end_line])
 
 
 def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None) -> None:
@@ -102,7 +133,7 @@ def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None)
     except (OSError, UnicodeDecodeError) as error:
         raise WebInputError(f"plan_fileを読み込めません: {plan_path}") from error
     metadata = _plan_metadata_text(plan_text)
-    match = _PLAN_BASE_COMMIT_RE.search(metadata or "")
+    match = _PLAN_BASE_COMMIT_RE.search(metadata)
     if match is None:
         print(
             "警告: 計画ファイルの`### 計画メタ情報`からベースコミットの完全OIDを抽出できないため、"

@@ -394,13 +394,37 @@ def test_base_commit_reports_commit_subject_mismatch(
     base_commit = _create_two_commit_repo(repo)
     body = (
         "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `actual.py`（新設）\n\n"
-        "### `actual.py`\n\n```text\nafter\n```\n\n- 件名案: `計画上の件名`\n"
+        "### `actual.py`\n\n```text\nafter\n```\n\n## 実行方法\n\n- 件名案: `計画上の件名`\n"
     )
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
 
     assert main() == 0
     assert "コミット件名案と実際のコミット件名が一致しない" in capsys.readouterr().err
+
+
+def test_base_commit_ignores_test_and_subject_examples_in_provided_material(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    base_commit = _create_two_commit_repo(repo, second_content="def test_actual():\n    pass\n")
+    body = (
+        "## 背景\n\n### 提示素材\n\n`feedback.md`\n\n"
+        "```text\ndef test_from_feedback():\n    pass\n\n- 件名案: `原文中の案`\n```\n\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `actual.py`（新設）\n\n"
+        "### `actual.py`\n\n```text\ndef test_actual\n```\n\n"
+        "## 実行方法\n\n- 件名案: `実際の件名`\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", "--work-dir", str(repo), "--base-commit", base_commit, str(plan)])
+
+    assert main() == 0
+    errors = capsys.readouterr().err
+    assert "計画が列挙するテスト関数名と実差分の追加関数名が一致しない" not in errors
+    assert "コミット件名案と実際のコミット件名が一致しない" not in errors
 
 
 @pytest.mark.parametrize(

@@ -23,9 +23,9 @@ import _atk_mq_schedule as _schedule
 import markdown_it
 from markdown_it.token import Token
 
-_TITLE_RE = re.compile(r"^\s*#+\s*(.+?)\s*$")
+_TITLE_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)(.*)$")
+_TITLE_CLOSING_RE = re.compile(r"^(.*?)(?:[ \t]+#+[ \t]*)?$")
 _PRESENTATION_FILENAME_RE = re.compile(r"^`([^`]+)`$")
-_EXPECTED_ROW_RE = re.compile(r"^\| `(?P<filename>[^`]+)` \| (?P<title>(?:\\.|[^|])*) \| `[0-9a-fA-F]{64}` \|")
 _TRACE_TABLE_HEADER = ("ファイル名", "原題", "本文SHA-256", "想定変更対象")
 
 
@@ -37,6 +37,7 @@ class TraceRow:
     title: str
     body_sha256: str
     target_files: tuple[str, ...]
+    source_body: str
 
 
 def build_trace_rows(
@@ -76,6 +77,7 @@ def build_trace_rows(
                 title=title,
                 body_sha256=_schedule.body_sha256(entry.text),
                 target_files=metadata.target_files,
+                source_body=parsed[1],
             )
         )
     return tuple(rows)
@@ -96,8 +98,9 @@ def render_trace_table(rows: tuple[TraceRow, ...]) -> str:
     return "\n".join(lines)
 
 
-def check_trace_table(plan_text: str, expected_table: str) -> tuple[str, ...]:
+def check_trace_table(plan_text: str, expected_rows: tuple[TraceRow, ...]) -> tuple[str, ...]:
     """背景節の追跡表と提示素材がキュー由来の期待値へ一致するか検査する。"""
+    expected_table = render_trace_table(expected_rows)
     tokens = tuple(markdown_it.MarkdownIt("commonmark").enable("table").parse(plan_text))
     lines = plan_text.splitlines()
     backgrounds = _heading_sections(tokens, lines, level=2, content="背景")
@@ -128,15 +131,13 @@ def check_trace_table(plan_text: str, expected_table: str) -> tuple[str, ...]:
     if len(presentations) != 1:
         errors.append(f"背景節直下の`### 提示素材`が1件ではありません: 実際={len(presentations)}件")
         return tuple(errors)
-    expected_rows = _expected_filename_titles(expected_table)
-    actual_rows = _presentation_filename_titles(tokens, presentations[0])
-    for filename, expected_title in expected_rows:
-        actual_titles = actual_rows.get(filename, [])
-        if actual_titles != [expected_title]:
-            errors.append(
-                f"提示素材のファイル名・原題が期待値と一致しません: {filename}、期待={[expected_title]}、実際={actual_titles}"
-            )
-    unexpected = sorted(set(actual_rows) - {filename for filename, _title in expected_rows})
+    expected_materials = {row.filename: row.source_body.removeprefix("\n").removesuffix("\n") for row in expected_rows}
+    actual_materials = _presentation_filename_bodies(tokens, lines, presentations[0], frozenset(expected_materials))
+    for filename, expected_body in expected_materials.items():
+        actual_bodies = actual_materials.get(filename, [])
+        if actual_bodies != [expected_body]:
+            errors.append(f"提示素材のファイル名・原文が期待値と一致しません: {filename}、実際の出現数={len(actual_bodies)}")
+    unexpected = sorted(set(actual_materials) - set(expected_materials))
     if unexpected:
         errors.append(f"提示素材に選抜対象外のファイル名があります: {unexpected}")
     return tuple(errors)
@@ -164,7 +165,11 @@ def _extract_title(body: str, filename: str) -> str:
         if not line.strip():
             continue
         match = _TITLE_RE.fullmatch(line)
-        return match.group(1).strip() if match is not None else line.strip()
+        if match is None:
+            return line.strip()
+        closing = _TITLE_CLOSING_RE.fullmatch(match.group(1))
+        assert closing is not None
+        return closing.group(1).strip()
     raise ValueError(f"本文に原題として利用できる行がありません: {filename}")
 
 
@@ -210,51 +215,66 @@ def _heading_sections(
     return sections
 
 
-def _expected_filename_titles(expected_table: str) -> list[tuple[str, str]]:
-    """期待表からファイル名と原題を行順で抽出する。"""
-    rows: list[tuple[str, str]] = []
-    for line in expected_table.splitlines():
-        match = _EXPECTED_ROW_RE.match(line)
-        if match is None:
-            continue
-        title = match.group("title").replace(r"\|", "|").replace(r"\\", "\\")
-        rows.append((match.group("filename"), title))
-    return rows
-
-
-def _presentation_filename_titles(
+def _presentation_filename_bodies(
     tokens: tuple[Token, ...],
+    lines: list[str],
     presentation: tuple[int, int],
+    expected_filenames: frozenset[str],
 ) -> dict[str, list[str]]:
-    """提示素材節のファイル名と直後のコードフェンス本文から得た原題を返す。"""
+    """提示素材節の単独ファイル名ラベルと直後のtextフェンスから原文を返す。"""
     start, end = presentation
     result: dict[str, list[str]] = {}
-    for index, token in enumerate(tokens):
-        token_map = getattr(token, "map", None)
-        if getattr(token, "type", None) != "inline" or token_map is None or token_map[0] < start or token_map[0] >= end:
+    blocks = [
+        token
+        for token in tokens
+        if token.level == 0
+        and token.map is not None
+        and start <= token.map[0] < end
+        and (token.type.endswith("_open") or token.type in {"fence", "code_block", "hr", "html_block"})
+    ]
+    first_label = next(
+        (
+            index
+            for index, block in enumerate(blocks)
+            if block.type == "paragraph_open"
+            and block.map is not None
+            and block.map[1] - block.map[0] == 1
+            and (match := _PRESENTATION_FILENAME_RE.fullmatch(lines[block.map[0]].strip())) is not None
+            and match.group(1) in expected_filenames
+        ),
+        len(blocks),
+    )
+    material_blocks = blocks[first_label:]
+    if any(block.type in {"fence", "code_block"} for block in blocks[:first_label]):
+        result.setdefault("<不正な提示素材>", []).append("")
+    for block in blocks[:first_label]:
+        if block.type != "paragraph_open" or block.map is None or block.map[1] - block.map[0] != 1:
             continue
-        match = _PRESENTATION_FILENAME_RE.fullmatch(token.content.strip())
+        if _PRESENTATION_FILENAME_RE.fullmatch(lines[block.map[0]].strip()) is not None:
+            result.setdefault("<不正な提示素材>", []).append("")
+    cursor = material_blocks[0].map[0] if material_blocks and material_blocks[0].map is not None else end
+    for index in range(0, len(material_blocks), 2):
+        label = material_blocks[index]
+        fence = material_blocks[index + 1] if index + 1 < len(material_blocks) else None
+        if label.type != "paragraph_open" or label.map is None or label.map[1] - label.map[0] != 1:
+            result.setdefault("<不正な提示素材>", []).append("")
+            continue
+        if any(line.strip() for line in lines[cursor : label.map[0]]):
+            result.setdefault("<不正な提示素材>", []).append("")
+        match = _PRESENTATION_FILENAME_RE.fullmatch(lines[label.map[0]].strip())
         if match is None:
+            result.setdefault("<不正な提示素材>", []).append("")
             continue
         filename = match.group(1)
-        following_fence = next(
-            (
-                following
-                for following in tokens[index + 1 :]
-                if getattr(following, "type", None) in {"fence", "heading_open", "inline"}
-            ),
-            None,
-        )
-        if (
-            following_fence is None
-            or following_fence.type != "fence"
-            or following_fence.map is None
-            or following_fence.map[0] < start
-            or following_fence.map[0] >= end
-        ):
+        if fence is None or fence.map is None or fence.type != "fence" or fence.info.strip() != "text":
             result.setdefault(filename, []).append("")
             continue
-        result.setdefault(filename, []).append(_extract_title(following_fence.content, filename))
+        if any(line.strip() for line in lines[label.map[1] : fence.map[0]]):
+            result.setdefault("<不正な提示素材>", []).append("")
+        result.setdefault(filename, []).append(fence.content.removesuffix("\n"))
+        cursor = fence.map[1]
+    if any(line.strip() for line in lines[cursor:end]):
+        result.setdefault("<不正な提示素材>", []).append("")
     return result
 
 
@@ -283,7 +303,7 @@ def main() -> int:
         plan_path = args.plan_file.expanduser()
         if not plan_path.is_absolute() or not plan_path.is_file():
             raise ValueError(f"--plan-fileには実在する絶対パスを指定してください: {args.plan_file}")
-        errors = check_trace_table(plan_path.read_text(encoding="utf-8"), table)
+        errors = check_trace_table(plan_path.read_text(encoding="utf-8"), rows)
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

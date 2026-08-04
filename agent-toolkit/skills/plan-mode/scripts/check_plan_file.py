@@ -1344,16 +1344,24 @@ def _check_changed_file_set(
     ]
 
 
-def _planned_test_function_names(document: _Document) -> list[str]:
-    """計画の`text`コードブロックが列挙するテスト関数名を出現順に返す。"""
+def _planned_test_function_names(document: _Document, change_sections: list[_Section]) -> list[str]:
+    """変更内容節の`text`コードブロックが列挙するテスト関数名を出現順に返す。"""
     return [
-        name for fence in document.fences if fence.info == "text" for name in _PLANNED_TEST_FUNCTION_RE.findall(fence.content)
+        name
+        for fence in document.fences
+        if fence.info == "text" and any(_within(section, fence) for section in change_sections)
+        for name in _PLANNED_TEST_FUNCTION_RE.findall(fence.content)
     ]
 
 
-def _check_added_test_functions(document: _Document, work_dir: pathlib.Path, base_commit: str) -> list[str]:
+def _check_added_test_functions(
+    document: _Document,
+    change_sections: list[_Section],
+    work_dir: pathlib.Path,
+    base_commit: str,
+) -> list[str]:
     """計画が列挙するテスト関数名と実差分の追加関数名を集合として照合する。"""
-    planned = _planned_test_function_names(document)
+    planned = _planned_test_function_names(document, change_sections)
     if not planned:
         return []
     output, error = _run_git_text(work_dir, "diff", "--unified=0", f"{base_commit}..HEAD", "--")
@@ -1367,7 +1375,11 @@ def _check_added_test_functions(document: _Document, work_dir: pathlib.Path, bas
 
 def _check_commit_subjects(document: _Document, work_dir: pathlib.Path, base_commit: str) -> list[str]:
     """計画のコミット件名案と基準コミット以降の実件名を件数を含めて照合する。"""
-    planned = _COMMIT_SUBJECT_RE.findall(document.text)
+    planned = [
+        subject
+        for section in _iter_h2_sections(document, "実行方法")
+        for subject in _COMMIT_SUBJECT_RE.findall(_non_code_text(document, section))
+    ]
     if not planned:
         return []
     output, error = _run_git_text(work_dir, "log", "--format=%s", f"{base_commit}..HEAD")
@@ -1484,7 +1496,7 @@ def main() -> int:
     warnings.extend(_check_execution_contract_table(document))
     if args.base_commit is not None:
         warnings.extend(_check_changed_file_set(document, change_sections, work_dir, args.base_commit))
-        warnings.extend(_check_added_test_functions(document, work_dir, args.base_commit))
+        warnings.extend(_check_added_test_functions(document, change_sections, work_dir, args.base_commit))
         warnings.extend(_check_commit_subjects(document, work_dir, args.base_commit))
 
     for error in errors:
