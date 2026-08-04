@@ -37,6 +37,12 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    """外部マーケットプレイスの専用テスト以外では対象を空にする。"""
+    monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+
+
 @pytest.fixture(name="disable_auto_managed_plugins")
 def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     """自動 disable 実行と推奨コマンド算出を no-op に差し替える。

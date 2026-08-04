@@ -194,6 +194,12 @@ class TestJsoncCommentPreservation:
 class TestProductionManagedSettings:
     """配布元の share/claude_settings_json_managed.json の内容を検証する。"""
 
+    def test_autocompact_settings_in_production_file(self):
+        """配布設定の自動コンパクション関連設定を検証する。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        assert data["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] == "50"
+        assert data["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "1000000"
+
     def test_env_has_no_flicker(self):
         """Claude Code のちらつき抑制フラグが env に設定されている。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))

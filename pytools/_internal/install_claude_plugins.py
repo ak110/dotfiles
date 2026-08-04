@@ -46,6 +46,12 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     }
 )
 
+# dotfiles自身と公式以外のマーケットプレイスから導入するプラグイン。
+# (マーケットプレイス名, 登録ソース, プラグイン識別子) の組で保持する。
+_EXTERNAL_MARKETPLACES: tuple[tuple[str, str, str], ...] = (
+    ("compact-plus", "u-ichi/compact-plus", "compact-plus@compact-plus"),
+)
+
 
 def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
@@ -65,16 +71,18 @@ def run() -> tuple[bool, list[str]]:
     if not _prerequisites_ok():
         return False, []
 
+    external_changed = _install_external_marketplaces()
+
     dotfiles_root = claude_common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
-        return False, []
+        return external_changed, []
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
     target_versions, deprecated_names = _read_target_info(dotfiles_root)
     if not target_versions and not deprecated_names:
         logger.info(log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
-        return False, []
+        return external_changed, []
 
     # ファイル直接読み取りを先に試み、失敗時のみCLIフォールバックする
     raw_data: object = _read_installed_plugins_from_file()
@@ -82,10 +90,10 @@ def run() -> tuple[bool, list[str]]:
         raw_data = _get_installed_plugins_raw()
         if raw_data is None:
             logger.info(log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
-            return False, []
+            return external_changed, []
 
     if not claude_marketplace.ensure_marketplace():
-        return False, []
+        return external_changed, []
 
     any_change = False
 
@@ -168,7 +176,102 @@ def run() -> tuple[bool, list[str]]:
             + (f" / 失敗 {failed_count + disable_failed_count} 件" if failed_count + disable_failed_count else ""),
         )
     )
-    return any_change, recommendations
+    return external_changed or any_change, recommendations
+
+
+def _install_external_marketplaces() -> bool:
+    """外部マーケットプレイスを登録し、未導入のプラグインを導入する。"""
+    changed = False
+    for marketplace_name, source, plugin_id in _EXTERNAL_MARKETPLACES:
+        marketplace_data = _get_marketplaces_raw()
+        if marketplace_data is None:
+            logger.warning(log_format.format_status(plugin_id, "marketplace一覧の取得に失敗したためスキップ"))
+            continue
+        marketplace = _marketplace_entry(marketplace_data, marketplace_name)
+        if marketplace is None:
+            result = claude_common.run_claude(
+                ["plugin", "marketplace", "add", source, "--scope=user"],
+            )
+            if result is None or result.returncode != 0:
+                logger.warning(
+                    log_format.format_status(
+                        plugin_id,
+                        f"marketplace登録に失敗したためスキップ: {claude_common.format_cli_error(result)}",
+                    )
+                )
+                continue
+            changed = True
+            marketplace_data = _get_marketplaces_raw()
+            marketplace = _marketplace_entry(marketplace_data, marketplace_name) if marketplace_data is not None else None
+        if marketplace is None or not _marketplace_source_matches(marketplace, source):
+            logger.error(
+                log_format.format_status(
+                    plugin_id,
+                    f"marketplace取得元が一致しないためスキップ: 期待値 {source}",
+                )
+            )
+            continue
+
+        installed_data = _get_installed_plugins_raw()
+        if installed_data is None:
+            logger.warning(log_format.format_status(plugin_id, "plugin一覧の取得に失敗したためスキップ"))
+            continue
+        if plugin_id in _user_scope_plugin_ids(installed_data):
+            continue
+        result = claude_common.run_claude(["plugin", "install", plugin_id, "--scope=user"])
+        if result is None or result.returncode != 0:
+            logger.warning(
+                log_format.format_status(
+                    plugin_id,
+                    f"installに失敗したため続行: {claude_common.format_cli_error(result)}",
+                )
+            )
+            continue
+        changed = True
+    return changed
+
+
+def _get_marketplaces_raw() -> object | None:
+    """`claude plugin marketplace list --json`の生パース結果を返す。"""
+    result = claude_common.run_claude(["plugin", "marketplace", "list", "--json"])
+    if result is None or result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _marketplace_entry(data: object, marketplace_name: str) -> dict[str, object] | None:
+    """指定したマーケットプレイス名の一覧要素を返す。"""
+    if isinstance(data, dict):
+        dict_data = cast("dict[str, object]", data)
+        if "marketplaces" in dict_data:
+            return _marketplace_entry(dict_data["marketplaces"], marketplace_name)
+    if isinstance(data, list):
+        for item in cast("list[object]", data):
+            if isinstance(item, dict):
+                entry = cast("dict[str, object]", item)
+                if entry.get("name") == marketplace_name:
+                    return entry
+    return None
+
+
+def _marketplace_source_matches(entry: dict[str, object], expected_source: str) -> bool:
+    """GitHubマーケットプレイスの取得元が期待値と一致するかを返す。"""
+    repo = entry.get("repo")
+    expected = _normalize_github_source(expected_source)
+    actual = _normalize_github_source(repo) if isinstance(repo, str) else None
+    return entry.get("source") == "github" and expected is not None and actual == expected
+
+
+def _normalize_github_source(source: str) -> str | None:
+    """GitHubリポジトリ指定を小文字の`owner/repo`形式へ正規化する。"""
+    value = source.strip().strip("/").removesuffix(".git")
+    parts = value.split("/")
+    if len(parts) != 2 or not all(parts):
+        return None
+    return "/".join(part.lower() for part in parts)
 
 
 def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] | None) -> list[str]:

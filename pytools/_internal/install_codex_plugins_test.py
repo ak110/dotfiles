@@ -10,6 +10,12 @@ import pytest
 from pytools._internal import claude_common, install_codex_plugins
 
 
+@pytest.fixture(autouse=True)
+def _empty_external_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """専用テストで明示した対象以外の外部導入を無効にする。"""
+    monkeypatch.setattr(install_codex_plugins, "_EXTERNAL_PLUGINS", ())
+
+
 @pytest.fixture(name="plugin_env")
 def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Codexの設定とdotfilesを一時ディレクトリへ分離する。"""
@@ -161,3 +167,151 @@ def test_windows_junction_detection_and_removal_use_rmdir() -> None:
     assert install_codex_plugins._is_link(path) is True  # pylint: disable=protected-access
     install_codex_plugins._unlink(path)  # pylint: disable=protected-access
     assert junction.removed is True
+
+
+class TestExternalPlugins:
+    """Codex向け外部プラグインの登録と導入を検証する。"""
+
+    _TARGET = ("compact-plus", "u-ichi/compact-plus", "compact-plus@compact-plus")
+
+    def _setup_run(
+        self,
+        plugin_env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        registered: bool,
+        installed: bool,
+        add_succeeds: bool = True,
+        registered_source: str | None = None,
+        registered_source_type: str = "git",
+    ) -> list[list[str]]:
+        monkeypatch.setattr(install_codex_plugins, "_EXTERNAL_PLUGINS", (self._TARGET,))
+        calls: list[list[str]] = []
+        marketplace_added = False
+
+        def codex_json(args: list[str]) -> dict[str, Any]:
+            calls.append(["json", *args])
+            if args[:3] == ["plugin", "marketplace", "list"]:
+                marketplaces: list[dict[str, Any]] = [{"name": "ak110-dotfiles", "root": str(plugin_env)}]
+                if registered or marketplace_added:
+                    marketplaces.append(
+                        {
+                            "name": self._TARGET[0],
+                            "root": "/tmp/compact-plus",
+                            "marketplaceSource": {
+                                "sourceType": registered_source_type,
+                                "source": registered_source or "https://github.com/u-ichi/compact-plus.git",
+                            },
+                        }
+                    )
+                return {"marketplaces": marketplaces}
+            plugins = cast("list[dict[str, object]]", _installed_state()["installed"])
+            if installed:
+                plugins = [*plugins, {"pluginId": self._TARGET[2], "version": "1.0.0", "enabled": True}]
+            return {"installed": plugins}
+
+        def command(args: list[str]) -> bool:
+            nonlocal marketplace_added
+            calls.append(args)
+            if args == ["plugin", "marketplace", "add", self._TARGET[1]]:
+                marketplace_added = add_succeeds
+                return add_succeeds
+            return True
+
+        monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
+        monkeypatch.setattr(install_codex_plugins, "_command", command)
+        return calls
+
+    def test_registers_and_adds_when_absent(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = self._setup_run(plugin_env, monkeypatch, registered=False, installed=False)
+
+        assert install_codex_plugins.run() is True
+        assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
+        assert ["plugin", "add", self._TARGET[2]] in calls
+        assert calls[:3] == [
+            ["json", "plugin", "marketplace", "list", "--json"],
+            ["plugin", "marketplace", "add", self._TARGET[1]],
+            ["json", "plugin", "marketplace", "list", "--json"],
+        ]
+
+    def test_skips_when_already_added(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = self._setup_run(plugin_env, monkeypatch, registered=True, installed=True)
+
+        assert install_codex_plugins.run() is False
+        assert ["plugin", "marketplace", "add", self._TARGET[1]] not in calls
+        assert ["plugin", "add", self._TARGET[2]] not in calls
+
+    def test_rejects_same_name_from_different_source(
+        self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        calls = self._setup_run(
+            plugin_env,
+            monkeypatch,
+            registered=True,
+            installed=False,
+            registered_source="https://github.com/attacker/compact-plus.git",
+        )
+
+        assert install_codex_plugins.run() is False
+        assert ["plugin", "marketplace", "add", self._TARGET[1]] not in calls
+        assert ["plugin", "add", self._TARGET[2]] not in calls
+        assert "marketplace取得元が一致しないためスキップ" in caplog.text
+
+    def test_rejects_plain_http_source(
+        self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        calls = self._setup_run(
+            plugin_env,
+            monkeypatch,
+            registered=True,
+            installed=False,
+            registered_source="http://github.com/u-ichi/compact-plus.git",
+        )
+
+        assert install_codex_plugins.run() is False
+        assert ["plugin", "add", self._TARGET[2]] not in calls
+        assert "marketplace取得元が一致しないためスキップ" in caplog.text
+
+    def test_rejects_undefined_source_type(
+        self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        calls = self._setup_run(
+            plugin_env,
+            monkeypatch,
+            registered=True,
+            installed=False,
+            registered_source_type="github",
+        )
+
+        assert install_codex_plugins.run() is False
+        assert ["plugin", "add", self._TARGET[2]] not in calls
+        assert "marketplace取得元が一致しないためスキップ" in caplog.text
+
+    def test_accepts_canonical_https_source(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = self._setup_run(plugin_env, monkeypatch, registered=True, installed=False)
+
+        assert install_codex_plugins.run() is True
+        assert ["plugin", "add", self._TARGET[2]] in calls
+
+    def test_rejects_mismatched_source_after_registration(
+        self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        calls = self._setup_run(
+            plugin_env,
+            monkeypatch,
+            registered=False,
+            installed=False,
+            registered_source="https://github.com/attacker/compact-plus.git",
+        )
+
+        assert install_codex_plugins.run() is True
+        assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
+        assert ["plugin", "add", self._TARGET[2]] not in calls
+        assert "marketplace取得元が一致しないためスキップ" in caplog.text
+
+    def test_continues_when_cli_fails(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls = self._setup_run(plugin_env, monkeypatch, registered=False, installed=False, add_succeeds=False)
+
+        assert install_codex_plugins.run() is False
+        assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
+        assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls

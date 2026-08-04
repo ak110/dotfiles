@@ -5,12 +5,17 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pytools._internal import claude_common, log_format
 
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
+
+# dotfiles自身以外のマーケットプレイスから導入するプラグイン。
+# (マーケットプレイス名, 登録ソース, プラグイン識別子) の組で保持する。
+_EXTERNAL_PLUGINS: tuple[tuple[str, str, str], ...] = (("compact-plus", "u-ichi/compact-plus", "compact-plus@compact-plus"),)
 
 
 def _codex_json(args: list[str]) -> dict[str, Any] | None:
@@ -48,6 +53,86 @@ def _marketplace_root(data: dict[str, Any], name: str) -> Path | None:
 
 def _installed(data: dict[str, Any], plugin_id: str) -> dict[str, Any] | None:
     return next((item for item in data.get("installed", []) if item.get("pluginId") == plugin_id), None)
+
+
+def _marketplace_entry(data: dict[str, Any], marketplace_name: str) -> dict[str, Any] | None:
+    return next((item for item in data.get("marketplaces", []) if item.get("name") == marketplace_name), None)
+
+
+def _marketplace_source_matches(entry: dict[str, Any], expected_source: str) -> bool:
+    source_data = entry.get("marketplaceSource")
+    if not isinstance(source_data, dict) or source_data.get("sourceType") != "git":
+        return False
+    source = source_data.get("source")
+    expected = _canonical_github_https_source(expected_source, allow_shorthand=True)
+    actual = _canonical_github_https_source(source, allow_shorthand=False) if isinstance(source, str) else None
+    return expected is not None and actual == expected
+
+
+def _canonical_github_https_source(source: str, *, allow_shorthand: bool) -> str | None:
+    """安全なGitHub HTTPS取得元を正規URLへ変換する。"""
+    value = source.strip().rstrip("/")
+    if "://" in value:
+        parsed = urlparse(value)
+        try:
+            port = parsed.port
+        except ValueError:
+            return None
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "github.com"
+            or parsed.username is not None
+            or parsed.password is not None
+            or port is not None
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+            or not parsed.path.endswith(".git")
+        ):
+            return None
+        repo = parsed.path.removeprefix("/").removesuffix(".git")
+    elif allow_shorthand:
+        repo = value.removesuffix(".git")
+    else:
+        return None
+    parts = repo.split("/")
+    if len(parts) != 2 or not all(parts):
+        return None
+    owner, name = (part.lower() for part in parts)
+    return f"https://github.com/{owner}/{name}.git"
+
+
+def _install_external_plugins() -> bool:
+    """外部マーケットプレイスを登録し、未導入のプラグインを導入する。"""
+    changed = False
+    for marketplace_name, source, plugin_id in _EXTERNAL_PLUGINS:
+        marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
+        if marketplace_data is None:
+            logger.warning(log_format.format_status(plugin_id, "marketplace一覧の取得に失敗したためスキップ"))
+            continue
+        marketplace = _marketplace_entry(marketplace_data, marketplace_name)
+        if marketplace is None:
+            if not _command(["plugin", "marketplace", "add", source]):
+                logger.warning(log_format.format_status(plugin_id, "marketplace登録に失敗したためスキップ"))
+                continue
+            changed = True
+            marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
+            marketplace = _marketplace_entry(marketplace_data, marketplace_name) if marketplace_data is not None else None
+        if marketplace is None or not _marketplace_source_matches(marketplace, source):
+            logger.error(log_format.format_status(plugin_id, f"marketplace取得元が一致しないためスキップ: 期待値 {source}"))
+            continue
+
+        installed_data = _codex_json(["plugin", "list", "--json"])
+        if installed_data is None:
+            logger.warning(log_format.format_status(plugin_id, "plugin一覧の取得に失敗したためスキップ"))
+            continue
+        if _installed(installed_data, plugin_id) is not None:
+            continue
+        if not _command(["plugin", "add", plugin_id]):
+            logger.warning(log_format.format_status(plugin_id, "plugin導入に失敗したため続行"))
+            continue
+        changed = True
+    return changed
 
 
 def _is_link(path: Path) -> bool:
@@ -88,26 +173,27 @@ def run() -> bool:
     if shutil.which("codex") is None:
         logger.info(log_format.format_status("codex plugins", "codex CLIが見つからずスキップ"))
         return False
+    external_changed = _install_external_plugins()
     root = claude_common.find_dotfiles_root()
     if root is None:
-        return False
+        return external_changed
     target = _target(root)
     if target is None:
         logger.warning(log_format.format_status("codex plugins", "Codex plugin manifestが不正なためスキップ"))
-        return False
+        return external_changed
     marketplace_name, plugin_name, version = target
     marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
     if marketplace_data is None:
-        return False
+        return external_changed
     registered_root = _marketplace_root(marketplace_data, marketplace_name)
     changed = False
     if registered_root is None:
         if not _command(["plugin", "marketplace", "add", str(root)]):
-            return False
+            return external_changed
         changed = True
     elif registered_root != root.resolve():
         logger.error(log_format.format_status("codex plugins", f"marketplace登録先が異なる: {registered_root}"))
-        return False
+        return external_changed
 
     plugin_id = f"{plugin_name}@{marketplace_name}"
     before = _codex_json(["plugin", "list", "--json"])
@@ -115,9 +201,10 @@ def run() -> bool:
     if current is None or current.get("version") != version or current.get("enabled") is not True:
         changed = True
     if not _command(["plugin", "add", plugin_id]):
-        return False
+        return external_changed
     after = _codex_json(["plugin", "list", "--json"])
     installed = _installed(after, plugin_id) if after else None
     if installed is None or installed.get("version") != version or installed.get("enabled") is not True:
-        return False
-    return _remove_legacy_links(root) or changed
+        return external_changed
+    legacy_changed = _remove_legacy_links(root)
+    return external_changed or legacy_changed or changed

@@ -44,6 +44,12 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    """外部マーケットプレイスの専用テスト以外では対象を空にする。"""
+    monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+
+
 class TestPrerequisites:
     """前提条件 (claude / uv の存在) のチェック。"""
 
