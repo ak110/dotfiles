@@ -622,7 +622,10 @@ class TestManagedTempWindows:
             subject._WindowsAce(
                 subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
                 flags,
-                subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC,
+                subject._WINDOWS_READ_CONTROL
+                | subject._WINDOWS_WRITE_DAC
+                | subject._WINDOWS_READ_ATTRIBUTES
+                | subject._WINDOWS_SYNCHRONIZE,
                 current_sid,
             ),
         )
