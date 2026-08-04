@@ -158,7 +158,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /cache
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
+          # 固定キーでは一度保存されると更新されないため、run_idとrun_attemptを含めて毎回保存させる。
+          # restore-keysで直近のキャッシュを初期値として復元し、ジョブ中に変化した/cacheの内容を
+          # 新しいキーで保存して次の実行へ引き継ぐ。
+          # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
+          # run_idだけでは再実行時にキーが完全一致し、当該再実行中に変化した/cacheの内容が保存されない。
+          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
