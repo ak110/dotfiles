@@ -6,10 +6,19 @@ CI失敗の対処選択肢を横断で比較し、観測事実に対応する選
 
 ## 前提
 
-push直前に、当該pushへ含まれる変更系列の基準SHAと完全長SHA列、基準SHAから失敗SHAまでの
-系列差分を所有者だけが読み書きできる一時領域へ保存する。
-upstreamが未設定の新規branchではpushのdry-runと有効なGit設定からpush先を確定し、
-対象remoteから到達できないコミットを基に変更系列を確定する。
+push直前に、pushのdry-runが返す全status lineから更新対象refを確定する。
+全更新対象refのsourceのpeel前OID・object typeと、remote側対象refのpush前OID・object typeを
+所有者だけが読み書きできる一時領域へ保存し、存在しない側は不存在と記録する。annotated tagではtag objectの全内容と、
+再帰的にpeeledした対象のOID・object typeも保存する。
+commitへpeeledできるrefでは、ref単位の変更系列の基準SHAと完全長SHA列、
+基準SHAからpush後commitまでの系列差分を同じ一時領域へ保存する。
+upstreamが未設定の新規branchでは有効なGit設定も照合し、対象remoteから到達できないcommitを基に
+変更系列を確定する。到達できないcommitが0件の場合は、変更系列の基準SHA・完全長SHA列・系列差分・
+親差分を`対象なし`と記録し、先頭commitまたは親を参照しない。
+削除refとcommitへpeeledできないrefでは、commit系列の資料が対象外であることを保存する。
+全refのpush後commitから重複を除いた各完全長SHAをCI監視対象とし、1件の失敗検出を理由に
+他SHAの監視を取り消さず、SHAごとの期待run・pipeline集合がすべて終端するまで結果を受領する。
+push後commitが0件の場合は監視対象SHAを`対象なし`と記録する。
 最初のCI失敗ではplan modeを開始する前に、失敗したSHA、CI識別子、取得可能な失敗ログ、
 生成される場合のartifactを同じ一時領域へ暫定保存する。
 早期失敗検出後は期待run・pipeline集合の全対象が終端するまで待ち、
@@ -19,13 +28,15 @@ upstreamが未設定の新規branchではpushのdry-runと有効なGit設定か�
 再実行後のログとartifactを取得して両試行の資料の実在と分量を確認する。
 初回証拠と必要な再実行証拠の取得完了後にplan modeを開始する。
 取得済みの初回資料と、再実行した場合の追加資料を読み取り専用で調査する。
-plan mode内でローカル書き込みまたはforge上の状態変更を伴う追加証拠が必要と判明した場合は、
+plan mode内でローカル書き込みやforge上の状態変更を伴う追加証拠が必要と判明した場合は、
 計画ファイル起草工程を`pending`のままplan modeを終了する。
 追加証拠の取得と実在確認をplan mode外で完了してからplan modeを再開する。
 元の計画が存在する場合は、元の計画と実装・検証・レビュー結果も引き継ぐ。
-元の計画が存在しない場合は、変更系列の基準SHA、完全長SHA列、基準SHAから失敗SHAまでの系列差分を
-主要資料として引き継ぎ、計画関連項目を`なし`と記録する。
-全親の完全長SHAと各親から失敗SHAまでの差分も引き継ぐ。
+元の計画が存在しない場合は、ref単位の基準SHA、完全長SHA列、
+基準SHAから失敗SHAまでの系列差分を主要資料として引き継ぐ。
+全refのpeel前OID・object type、annotated tag objectとpeeled先、削除refと非commit refの記録も引き継ぐ。
+計画関連項目を`なし`と記録する。
+commitを指すrefでは、全親の完全長SHAと各親から失敗SHAまでの差分も引き継ぐ。
 親ごとの差分は補助資料とし、merge commitでは全親、親のないroot commitではempty treeを用いる。
 親ごとの差分で系列差分を代替しない。
 一時領域はpush主体が所有する。次の操作、保持理由、正確なパスを記録した再試行中状態だけ保持する。

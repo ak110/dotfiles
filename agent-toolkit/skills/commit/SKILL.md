@@ -125,6 +125,8 @@ staged差分とunstaged差分が想定した境界に一致することを確認
   - 明示指定が必要な場合は`git config --get branch.<branch>.remote`で当該branchの追跡remoteを確認する。
     確認したremoteと`push`引数のremoteが一致するか照合する。
     一致しない場合は追跡remote側を採用するか`git push --set-upstream <remote> <branch>`で追跡remoteを更新する
+- push直前に、CI失敗時の原因調査へ用いる基準SHAと完全長SHA列を更新対象refごとに記録する。
+  手順は「## push後のCI通過確認」節の当該バレットに従う
 - pushの許可は当該リポジトリ・当該対象・当該指示範囲に限定される
   - 別リポジトリ・別セッションには適用されない
   - 複数プロジェクト横断作業ではリポジトリごとに個別確認する
@@ -175,6 +177,7 @@ staged差分とunstaged差分が想定した境界に一致することを確認
 
 `git push`後は必ずCIが通過することまで確認して初めて作業完了とする。
 `git push`はリモート名・ブランチ名を明示せず単独で呼び出すことを標準とする（詳細は「## コミット運用」節参照）。
+本節はpush直前に実施する準備手順とpush後に実施する確認手順の双方を含む。準備手順は`git push`の実行前に行う。
 
 本節は`git push`を実行した主体が実施する工程であり、サブエージェントの完了条件に含めない。
 担当分離の理由は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
@@ -184,21 +187,35 @@ staged差分とunstaged差分が想定した境界に一致することを確認
 CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:shell-exec`への委譲を選んでよい。
 
 - push直前に`mktemp -d`で所有者だけが読み書きできる一時領域を作成し、
-  当該pushへ含まれる変更系列の基準SHAと完全長SHA列を記録する
-  - `git push --dry-run --porcelain`と有効なGit設定から実際のpush先remoteとrefを確定する。
-    upstreamが未設定の新規branchでも、推測したremote名やbranch名を用いない
-  - push先refが存在する場合は、そのremote tipを変更系列の基準SHAとし、基準SHAから`HEAD`までの
-    完全長SHA列を順序付きで記録する
-  - push先refが存在しない場合は、対象remoteから到達できないコミットを順序付きで列挙する。
-    先頭コミットの第1親を変更系列の基準SHAとし、親のないroot commitではempty treeを基準とする
-  - 基準SHAからpush対象の失敗SHAまでの系列差分を主要な因果資料として保存する
-  - 各コミットの全親SHAと親ごとの差分も補助資料として保存する。
+  当該pushが更新するrefごとに変更系列の基準SHAと完全長SHA列を記録する
+  - `git push --dry-run --porcelain`の全status lineを解析し、有効なGit設定と照合して実際のpush先remoteと
+    `<from>:<to>`をref単位で確定する。複数のrefspec、`push.default=matching`、`--tags`などにより
+    複数refが更新される場合も全件を記録し、upstreamが未設定の新規branchでもremote名やref名を推測しない
+  - statusが成功予定の更新、強制更新、削除、新規作成を示す各refを記録対象とする。
+    up-to-dateのrefは更新対象外として記録し、拒否または失敗を示すstatusが1件でもある場合は
+    準備未完了としてpushへ進まない
+  - 全更新対象refについて、sourceのpeel前OID・object typeと、remote側対象refのpush前OID・object typeを
+    保存する。削除refのsourceとremote側の新規refが存在しない場合も、不存在であることを記録する
+  - sourceのpeel前object typeがtagの場合は、annotated tag objectの全内容と、再帰的にpeeledした
+    対象のOID・object typeを保存する。peeled先がcommitの場合は、そのcommitを当該refのpush後commitとして扱う
+  - commitへpeeledできる更新では、remote側対象refのpush前OIDが存在する場合は当該refをcommitへpeeledし、
+    そのcommitを基準SHAとして、当該refのpush後commitまでの完全長SHA列を順序付きで記録する
+  - commitを指す新規refでは、対象remoteから到達できないcommitを順序付きで列挙する。
+    1件以上の場合は先頭commitの第1親を基準SHAとし、親のないroot commitではempty treeを基準とする。
+    0件の場合は基準SHA・完全長SHA列・系列差分・親差分を`対象なし`と記録し、先頭commitまたは親を参照しない
+  - commitを指す各refについて、基準SHAから当該refのpush後commitまでの系列差分を主要な因果資料として保存し、
+    各commitの全親SHAと親ごとの差分も補助資料として保存する。
     merge commitの親ごとの差分とroot commitのempty-tree差分だけで系列差分を代替しない
+  - 削除refは削除予定であることを保存し、
+    push後commitが存在しないため完全長SHA列と系列差分の対象外であることを記録する
+  - commitへpeeledできないrefは、保存したpeel前とpeeled先の資料を保持し、commit系列を構成しないため
+    基準SHA・完全長SHA列・系列差分・親差分の対象外であることを記録する
 
-- 既定の手順: `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py`を
-  Bashツールで`run_in_background=true`起動し、明確な失敗ジョブを1件検出するか、
-  期待run・pipeline集合がすべて完了するまで待機する。
-  `--sha`の既定はHEADであるため、HEADを対象とする確認では引数を渡さない。
+- 既定の手順: push直前のref単位の記録から全refのpush後commitを抽出し、重複を除いた各完全長SHAについて
+  `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --sha <完全長SHA>`をBashツールで`run_in_background=true`起動する。
+  HEADを含む全対象で`--sha`を明示し、1件の失敗検出を理由に他SHAの監視を取り消さない。
+  各SHAの期待run・pipeline集合がすべて終端するまで全監視結果を受領する。
+  push後commitが0件の場合は監視対象SHAを`対象なし`と記録する。
   スクリプトの不在または実行失敗を実測した場合は、本節後半の手動確認手順を採用する。
   既定`--timeout=900`秒はBashツール既定タイムアウト2分・上限10分を超えるため、
   background起動が前提となる。
@@ -208,7 +225,7 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     （`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
   - 調整可能な引数: `--timeout`・`--poll-interval`・`--registration-grace`・
     `--subprocess-timeout`・`--follow-cancelled`
-  - HEAD以外を対象とする場合に限り`--sha`へ`git rev-parse`の実行結果をそのまま渡す
+  - `--sha`へはpush直前に保存した完全長SHAをそのまま渡す
     （`agent-toolkit/rules/02-claude-code.md`が定める識別子の実行結果転記則を参照）
     - 解決できない値は識別子解決失敗の終了コード3で終了する
     - 実在する別コミットを指す値は、登録猶予（既定60秒）が経過してもrunが見つからない場合に
@@ -220,7 +237,8 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
   - 終了コード2は`--timeout`超過で待機側だけが終了した状態である。
     CIが継続中の場合は同じshaで再度起動して監視を継続できる
   - 終了コード1はCIの非成功を表す。
-    再度の待機ではなく、本節後半のCI失敗時の規定に従って原因調査と修正へ進む
+    再度の待機ではなく、本節後半のCI失敗時の規定に従って当該SHAの期待集合を全終端まで待ち、
+    他SHAの監視も継続したうえで原因調査と修正へ進む
   - 対象forgeは`git remote get-url origin`のホストから自動判別する。
     明示指定する場合は`--forge=github`または`--forge=gitlab`を渡す
   - GitHubは最新試行jobの`failure`・`timed_out`・`action_required`と、
@@ -238,9 +256,9 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     非success扱いで失敗exitする（safe default）
   - `<sha>`が現在HEADの祖先でない場合は`EXIT_GH_ERROR`で終了する
 - 手動確認手順（プラグイン未導入環境などスクリプトを利用できない場合の代替）
-  - `git rev-parse HEAD`でpush対象shaを取得し、
-    `gh run list --commit <sha> --json databaseId,workflowName,status`で対象sha由来のrunを取得する
-    - 照会には完全な識別子（`git rev-parse HEAD`の出力そのもの）を渡す。
+  - push直前に保存した全refのpush後commitから重複を除いた各完全長SHAを取得し、
+    `gh run list --commit <sha> --json databaseId,workflowName,status`でSHAごとにrunを取得する
+    - 照会には保存済みの完全な識別子を渡す。
       短縮された識別子では結果が空で返るため、空結果を検証未登録の根拠にしない
     - 完全な識別子を渡しても空の結果が返る場合がある。空の結果を得たときは
       `gh run list --limit <件数> --json databaseId,workflowName,status,conclusion,headSha`で
@@ -289,9 +307,11 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     証拠取得と実在確認をplan mode外で完了してからplan modeを再開する
   - 元の計画が存在する場合は、元の計画ファイルパス、元計画のベースコミット、
     実装・検証・レビュー結果も取得する
-  - 元の計画が存在しない場合は、push直前に記録した変更系列の基準SHA、完全長SHA列、
-    基準SHAから失敗SHAまでの系列差分、実在する検証・レビュー結果を主要資料として引き継ぐ
-    - 全親の完全長SHAと各親から失敗SHAまでの差分も引き継ぐ。
+  - 元の計画が存在しない場合は、push直前に記録したref単位の基準SHA、完全長SHA列、
+    基準SHAから失敗SHAまでの系列差分を主要資料として引き継ぐ。
+    全refのpeel前OID・object type、annotated tag objectとpeeled先、削除refと非commit refの記録、
+    実在する検証・レビュー結果も引き継ぐ
+    - commitを指すrefでは、全親の完全長SHAと各親から失敗SHAまでの差分も引き継ぐ。
       親ごとの差分は補助資料とし、merge commitでは全親、親のないroot commitではempty treeを用いる
     - 計画関連項目を`なし`と記録する
   - 原因箇所、セッション帰属、再現性の3観点は、
