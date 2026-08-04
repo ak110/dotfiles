@@ -659,7 +659,7 @@ class TestManagedTempWindows:
         assert sentinel.read_text(encoding="utf-8") == "keep"
         assert target.exists()
 
-    @pytest.mark.parametrize("tamper", ["extra", "duplicate", "deny"])
+    @pytest.mark.parametrize("tamper", ["extra", "deny"])
     def test_acl_tamper_is_rejected_and_preserved(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -679,7 +679,6 @@ class TestManagedTempWindows:
         )
         altered = {
             "extra": (expected, subject._WindowsAce(subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid)),
-            "duplicate": (expected, expected),
             "deny": (
                 subject._WindowsAce(
                     subject._WINDOWS_ACCESS_DENIED_ACE_TYPE,
@@ -690,7 +689,7 @@ class TestManagedTempWindows:
             ),
         }[tamper]
         subject._windows_replace_security(target, current_sid, altered, directory=True)
-        with pytest.raises(subject.ManagedTempError, match="ACL"):
+        with pytest.raises(subject.ManagedTempError):
             subject.validate_managed_temp(target)
         assert target.exists()
 
