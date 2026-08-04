@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import json
 import os
 import pathlib
@@ -17,6 +19,181 @@ import pytest
 
 _SCRIPT = pathlib.Path(subject.__file__).resolve()
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
+
+
+class _WindowsSecurityCalls(typing.NamedTuple):
+    opens: list[int]
+    security_reads: list[int]
+    updates: list[tuple[int, int, bytes | None]]
+
+
+def test_windows_ctypes_structures_match_sdk_layout() -> None:
+    """Windows APIへ渡す固定幅structureのsizeとSID offsetを確認する。"""
+    assert ctypes.sizeof(subject._AceHeader) == 4
+    assert ctypes.sizeof(subject._AccessAllowedAce) == 12
+    assert subject._AccessAllowedAce.sid_start.offset == 8
+    assert ctypes.sizeof(subject._Acl) == 8
+    assert ctypes.sizeof(subject._AclSizeInformation) == 12
+    assert ctypes.sizeof(subject._ByHandleFileInformation) == 52
+
+
+def _install_windows_security_doubles(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    directory: bool,
+    existing_owner: bytes,
+    full_open_error: int | None,
+) -> _WindowsSecurityCalls:
+    """Windows security更新のAPI境界を決定論的な記録関数へ置換する。"""
+    opens: list[int] = []
+    security_reads: list[int] = []
+    updates: list[tuple[int, int, bytes | None]] = []
+    full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
+
+    @contextlib.contextmanager
+    def fake_path_handle(
+        path: pathlib.Path,
+        access: int,
+        **_kwargs: object,
+    ) -> typing.Iterator[tuple[int, subject._ByHandleFileInformation]]:
+        opens.append(access)
+        if access == full_access and full_open_error is not None:
+            raise subject._WindowsHandleOpenError("handle open failed", path, full_open_error)
+        information = subject._ByHandleFileInformation()
+        information.attributes = subject._WINDOWS_FILE_ATTRIBUTE_DIRECTORY if directory else 0
+        handle = 202 if access == subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC else 101
+        yield handle, information
+
+    def fake_current_sid(**_kwargs: object) -> str:
+        return "S-1-current"
+
+    def fake_sid_bytes(_sid_text: str, **_kwargs: object) -> bytes:
+        return b"current-owner"
+
+    def fake_acl_buffer(
+        _path: pathlib.Path,
+        _aces: tuple[subject._WindowsAce, ...],
+        **_kwargs: object,
+    ) -> object:
+        return object()
+
+    def fake_security_from_handle(
+        handle: int,
+        _information: subject._ByHandleFileInformation,
+        _path: pathlib.Path,
+        **_kwargs: object,
+    ) -> subject._WindowsSecurity:
+        security_reads.append(handle)
+        return subject._WindowsSecurity(existing_owner, True, True, directory, ())
+
+    def fake_equal_sids(first: bytes, second: bytes, **_kwargs: object) -> bool:
+        return first == second
+
+    def fake_set_security(
+        handle: int,
+        _path: pathlib.Path,
+        security_information: int,
+        owner_sid: bytes | None,
+        _acl_buffer: object,
+        **_kwargs: object,
+    ) -> None:
+        updates.append((handle, security_information, owner_sid))
+
+    monkeypatch.setattr(subject, "_windows_path_handle", fake_path_handle)
+    monkeypatch.setattr(subject, "_windows_current_sid", fake_current_sid)
+    monkeypatch.setattr(subject, "_windows_sid_bytes", fake_sid_bytes)
+    monkeypatch.setattr(subject, "_windows_acl_buffer", fake_acl_buffer)
+    monkeypatch.setattr(subject, "_windows_security_from_handle", fake_security_from_handle)
+    monkeypatch.setattr(subject, "_windows_equal_sids", fake_equal_sids)
+    monkeypatch.setattr(subject, "_windows_set_security", fake_set_security)
+    return _WindowsSecurityCalls(opens, security_reads, updates)
+
+
+@pytest.mark.parametrize(
+    ("directory", "existing_owner", "full_open_error", "expected_handle", "owner_changed"),
+    [
+        (False, b"current-owner", None, 101, False),
+        (True, b"administrator-owner", None, 101, True),
+        (False, b"current-owner", subject._WINDOWS_ERROR_ACCESS_DENIED, 202, False),
+        (True, b"current-owner", subject._WINDOWS_ERROR_ACCESS_DENIED, 202, False),
+    ],
+)
+def test_secure_path_uses_adopted_handle_for_owner_check_and_update(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    directory: bool,
+    existing_owner: bytes,
+    full_open_error: int | None,
+    expected_handle: int,
+    owner_changed: bool,
+) -> None:
+    """採用handleをOwner判定からsecurity更新まで再利用する契約を確認する。"""
+    calls = _install_windows_security_doubles(
+        monkeypatch,
+        directory=directory,
+        existing_owner=existing_owner,
+        full_open_error=full_open_error,
+    )
+
+    subject._windows_secure_path(tmp_path / "target", directory=directory)
+
+    full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
+    minimal_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC
+    expected_opens = [full_access, minimal_access] if full_open_error is not None else [full_access]
+    expected_information = subject._WINDOWS_DACL_SECURITY_INFORMATION | subject._WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION
+    expected_owner = None
+    if owner_changed:
+        expected_information |= subject._WINDOWS_OWNER_SECURITY_INFORMATION
+        expected_owner = b"current-owner"
+    assert calls.opens == expected_opens
+    assert calls.security_reads == [expected_handle]
+    assert calls.updates == [(expected_handle, expected_information, expected_owner)]
+
+
+@pytest.mark.parametrize("directory", [False, True])
+def test_secure_path_fails_closed_when_minimal_handle_owner_differs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    directory: bool,
+) -> None:
+    """WRITE_OWNER無しの採用handleではOwner相違時にDACLも変更しない。"""
+    calls = _install_windows_security_doubles(
+        monkeypatch,
+        directory=directory,
+        existing_owner=b"administrator-owner",
+        full_open_error=subject._WINDOWS_ERROR_ACCESS_DENIED,
+    )
+
+    with pytest.raises(subject.ManagedTempError, match="ownerを変更できるhandle"):
+        subject._windows_secure_path(tmp_path / "target", directory=directory)
+
+    full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
+    minimal_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC
+    assert calls.opens == [full_access, minimal_access]
+    assert calls.security_reads == [202]
+    assert not calls.updates
+
+
+def test_secure_path_does_not_fallback_for_other_open_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """ACCESS_DENIED以外のfull access取得失敗をminimal accessへ変換しない。"""
+    calls = _install_windows_security_doubles(
+        monkeypatch,
+        directory=False,
+        existing_owner=b"current-owner",
+        full_open_error=32,
+    )
+
+    with pytest.raises(subject._WindowsHandleOpenError) as captured:
+        subject._windows_secure_path(tmp_path / "target", directory=False)
+
+    full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
+    assert captured.value.error_code == 32
+    assert calls.opens == [full_access]
+    assert not calls.security_reads
+    assert not calls.updates
 
 
 @pytest.fixture(autouse=True)
@@ -358,11 +535,105 @@ class TestManagedTempWindows:
         (target / "nested").mkdir()
         (target / "nested" / "data.txt").write_text("remove", encoding="utf-8")
         assert subject.validate_managed_temp(target) == target
-        owner, dacl = subject._windows_security_descriptor(target)
-        assert owner == subject._windows_current_sid()
-        assert str(dacl).find(subject._windows_current_sid()) >= 0
+        security = subject._windows_security_descriptor(target)
+        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
+        assert subject._windows_equal_sids(security.owner, current_sid)
+        assert security.dacl_present
+        assert security.protected
+        assert len(security.aces) == 1
+        assert security.aces[0].sid is not None
+        assert subject._windows_equal_sids(security.aces[0].sid, current_sid)
         subject.cleanup_managed_temp(target)
         assert not target.exists()
+
+    @pytest.mark.parametrize(("kind", "directory"), [("file", False), ("directory", True)])
+    def test_secure_path_replaces_owner_and_all_explicit_aces(
+        self,
+        tmp_path: pathlib.Path,
+        kind: str,
+        directory: bool,
+    ) -> None:
+        target = tmp_path / kind
+        if directory:
+            target.mkdir()
+        else:
+            target.write_text("state", encoding="utf-8")
+        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
+        administrators_sid = subject._windows_sid_bytes("S-1-5-32-544")
+        everyone_sid = subject._windows_sid_bytes("S-1-1-0")
+        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE if directory else 0
+        initial_aces = (
+            subject._WindowsAce(
+                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                flags,
+                subject._WINDOWS_FILE_ALL_ACCESS,
+                current_sid,
+            ),
+            subject._WindowsAce(subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid),
+        )
+        try:
+            subject._windows_replace_security(target, administrators_sid, initial_aces, directory=directory)
+        except subject.ManagedTempError as error:
+            error_code = error.error_code if isinstance(error, subject._WindowsApiError) else None
+            cannot_change_owner = "Windows ownerを変更できるhandleを取得できない" in str(error)
+            if error_code in (5, 1307, 1314) or cannot_change_owner:
+                pytest.skip(f"別ownerを設定できるWindows tokenではない: {error}")
+            raise
+
+        initial = subject._windows_security_descriptor(target)
+        assert subject._windows_equal_sids(initial.owner, administrators_sid)
+        assert len(initial.aces) == 2
+
+        subject._windows_secure_path(target, directory=directory)
+
+        secured = subject._windows_security_descriptor(target)
+        assert subject._windows_equal_sids(secured.owner, current_sid)
+        assert secured.dacl_present
+        assert secured.protected
+        assert len(secured.aces) == 1
+        assert secured.aces[0].ace_type == subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE
+        assert secured.aces[0].flags == flags
+        assert secured.aces[0].mask == subject._WINDOWS_FILE_ALL_ACCESS
+        assert secured.aces[0].sid is not None
+        assert subject._windows_equal_sids(secured.aces[0].sid, current_sid)
+        subject._validate_windows_security(target)
+
+    @pytest.mark.parametrize(("kind", "directory"), [("file", False), ("directory", True)])
+    def test_secure_path_preserves_current_owner_without_write_owner(
+        self,
+        tmp_path: pathlib.Path,
+        kind: str,
+        directory: bool,
+    ) -> None:
+        target = tmp_path / f"current-owner-{kind}"
+        if directory:
+            target.mkdir()
+        else:
+            target.write_text("state", encoding="utf-8")
+        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
+        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE if directory else 0
+        restricted_aces = (
+            subject._WindowsAce(
+                subject._WINDOWS_ACCESS_DENIED_ACE_TYPE,
+                flags,
+                subject._WINDOWS_WRITE_OWNER,
+                current_sid,
+            ),
+            subject._WindowsAce(
+                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                flags,
+                subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC,
+                current_sid,
+            ),
+        )
+        subject._windows_replace_security(target, current_sid, restricted_aces, directory=directory)
+
+        restricted = subject._windows_security_descriptor(target)
+        assert subject._windows_equal_sids(restricted.owner, current_sid)
+        assert restricted.aces == restricted_aces
+
+        subject._windows_secure_path(target, directory=directory)
+        subject._validate_windows_security(target)
 
     def test_reparse_child_is_rejected_and_preserved(
         self,
@@ -388,20 +659,37 @@ class TestManagedTempWindows:
         assert sentinel.read_text(encoding="utf-8") == "keep"
         assert target.exists()
 
+    @pytest.mark.parametrize("tamper", ["extra", "duplicate", "deny"])
     def test_acl_tamper_is_rejected_and_preserved(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        tamper: str,
     ) -> None:
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-acl")
-        result = subprocess.run(
-            ["icacls", str(target), "/grant", "*S-1-1-0:R"],
-            capture_output=True,
-            text=True,
-            check=False,
+        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
+        everyone_sid = subject._windows_sid_bytes("S-1-1-0")
+        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE
+        expected = subject._WindowsAce(
+            subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+            flags,
+            subject._WINDOWS_FILE_ALL_ACCESS,
+            current_sid,
         )
-        assert result.returncode == 0, result.stderr or result.stdout
+        altered = {
+            "extra": (expected, subject._WindowsAce(subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid)),
+            "duplicate": (expected, expected),
+            "deny": (
+                subject._WindowsAce(
+                    subject._WINDOWS_ACCESS_DENIED_ACE_TYPE,
+                    flags,
+                    subject._WINDOWS_FILE_ALL_ACCESS,
+                    current_sid,
+                ),
+            ),
+        }[tamper]
+        subject._windows_replace_security(target, current_sid, altered, directory=True)
         with pytest.raises(subject.ManagedTempError, match="ACL"):
             subject.validate_managed_temp(target)
         assert target.exists()

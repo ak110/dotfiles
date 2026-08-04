@@ -18,7 +18,6 @@ import re
 import secrets
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 import typing
@@ -27,11 +26,45 @@ from ctypes import wintypes
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 1
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+_WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
+_WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
+_WINDOWS_ACL_REVISION = 2
+_WINDOWS_ERROR_ACCESS_DENIED = 5
+_WINDOWS_CONTAINER_INHERIT_ACE = 0x02
+_WINDOWS_DACL_SECURITY_INFORMATION = 0x00000004
+_WINDOWS_FILE_ALL_ACCESS = 0x001F01FF
+_WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10
+_WINDOWS_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+_WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+_WINDOWS_FILE_SHARE_ALL = 0x00000001 | 0x00000002 | 0x00000004
+_WINDOWS_OBJECT_INHERIT_ACE = 0x01
+_WINDOWS_OPEN_EXISTING = 3
+_WINDOWS_OWNER_SECURITY_INFORMATION = 0x00000001
+_WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+_WINDOWS_READ_ATTRIBUTES = 0x0080
+_WINDOWS_READ_CONTROL = 0x00020000
 _WINDOWS_REPARSE_POINT = 0x400
+_WINDOWS_SE_DACL_PROTECTED = 0x1000
+_WINDOWS_SE_FILE_OBJECT = 1
+_WINDOWS_WRITE_DAC = 0x00040000
+_WINDOWS_WRITE_OWNER = 0x00080000
 
 
 class ManagedTempError(Exception):
     """利用者が入力または実行環境を修正できる検証エラー。"""
+
+
+class _WindowsApiError(ManagedTempError):
+    """Windows APIのerror codeを保持する検証エラー。"""
+
+    def __init__(self, action: str, path: pathlib.Path | None, error_code: int) -> None:
+        target = f": {path}" if path is not None else ""
+        super().__init__(f"{action}{target}: {error_code}")
+        self.error_code = error_code
+
+
+class _WindowsHandleOpenError(_WindowsApiError):
+    """Windows path handleを開けなかったことを示す。"""
 
 
 class _ValidatedTemp(typing.NamedTuple):
@@ -42,9 +75,172 @@ class _ValidatedTemp(typing.NamedTuple):
     registry_path: pathlib.Path
 
 
+class _AceHeader(ctypes.Structure):
+    _fields_ = [("ace_type", ctypes.c_uint8), ("ace_flags", ctypes.c_uint8), ("ace_size", ctypes.c_uint16)]
+
+
+class _AccessAllowedAce(ctypes.Structure):
+    _fields_ = [("header", _AceHeader), ("mask", ctypes.c_uint32), ("sid_start", ctypes.c_uint32)]
+
+
+class _Acl(ctypes.Structure):
+    _fields_ = [
+        ("revision", ctypes.c_uint8),
+        ("reserved", ctypes.c_uint8),
+        ("size", ctypes.c_uint16),
+        ("ace_count", ctypes.c_uint16),
+        ("reserved2", ctypes.c_uint16),
+    ]
+
+
+class _AclSizeInformation(ctypes.Structure):
+    _fields_ = [("ace_count", ctypes.c_uint32), ("bytes_in_use", ctypes.c_uint32), ("bytes_free", ctypes.c_uint32)]
+
+
+class _FileTime(ctypes.Structure):
+    _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_uint32)]
+
+
+class _ByHandleFileInformation(ctypes.Structure):
+    _fields_ = [
+        ("attributes", ctypes.c_uint32),
+        ("creation_time", _FileTime),
+        ("access_time", _FileTime),
+        ("write_time", _FileTime),
+        ("volume", ctypes.c_uint32),
+        ("size_high", ctypes.c_uint32),
+        ("size_low", ctypes.c_uint32),
+        ("links", ctypes.c_uint32),
+        ("file_index_high", ctypes.c_uint32),
+        ("file_index_low", ctypes.c_uint32),
+    ]
+
+
+class _WindowsAce(typing.NamedTuple):
+    ace_type: int
+    flags: int
+    mask: int
+    sid: bytes | None
+
+
+class _WindowsSecurity(typing.NamedTuple):
+    owner: bytes
+    dacl_present: bool
+    protected: bool
+    directory: bool
+    aces: tuple[_WindowsAce, ...]
+
+
 def _windows_dll(name: str) -> typing.Any:
     """Windows専用DLLを遅延取得する。"""
     return typing.cast(typing.Any, ctypes).WinDLL(name, use_last_error=True)
+
+
+def _windows_error(action: str, path: pathlib.Path | None = None) -> _WindowsApiError:
+    """最後のWindows error codeを含む検証エラーを作成する。"""
+    error_code = typing.cast(typing.Any, ctypes).get_last_error()
+    return _WindowsApiError(action, path, error_code)
+
+
+def _windows_handle_open_error(action: str, path: pathlib.Path) -> _WindowsHandleOpenError:
+    """最後のWindows error codeを含むhandle取得エラーを作成する。"""
+    error_code = typing.cast(typing.Any, ctypes).get_last_error()
+    return _WindowsHandleOpenError(action, path, error_code)
+
+
+def _windows_sid_bytes(sid_text: str) -> bytes:
+    """文字列表現のSIDをWindows APIが扱うbinary SIDへ変換する。"""
+    advapi32 = _windows_dll("advapi32")
+    kernel32 = _windows_dll("kernel32")
+    advapi32.ConvertStringSidToSidW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.ConvertStringSidToSidW.restype = wintypes.BOOL
+    advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+    advapi32.GetLengthSid.restype = wintypes.DWORD
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    sid = ctypes.c_void_p()
+    if not advapi32.ConvertStringSidToSidW(sid_text, ctypes.byref(sid)):
+        raise _windows_error("Windows SIDを変換できない")
+    try:
+        length = advapi32.GetLengthSid(sid)
+        if length == 0:
+            raise _windows_error("Windows SIDの長さを取得できない")
+        return ctypes.string_at(sid, length)
+    finally:
+        kernel32.LocalFree(sid)
+
+
+def _windows_equal_sids(first: bytes, second: bytes) -> bool:
+    """2つのbinary SIDをWindowsのSID比較規則で比較する。"""
+    advapi32 = _windows_dll("advapi32")
+    advapi32.EqualSid.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    advapi32.EqualSid.restype = wintypes.BOOL
+    first_buffer = ctypes.create_string_buffer(first)
+    second_buffer = ctypes.create_string_buffer(second)
+    return bool(advapi32.EqualSid(first_buffer, second_buffer))
+
+
+@contextlib.contextmanager
+def _windows_path_handle(
+    path: pathlib.Path,
+    access: int,
+) -> typing.Iterator[tuple[int, _ByHandleFileInformation]]:
+    """Reparse pointを追跡しないpath handleと属性を返す。"""
+    kernel32 = _windows_dll("kernel32")
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    create_file.restype = wintypes.HANDLE
+    kernel32.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    handle = create_file(
+        str(path),
+        access,
+        _WINDOWS_FILE_SHARE_ALL,
+        None,
+        _WINDOWS_OPEN_EXISTING,
+        _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS | _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT,
+        None,
+    )
+    if handle == wintypes.HANDLE(-1).value:
+        raise _windows_handle_open_error("Windows path handleを取得できない", path)
+    try:
+        information = _ByHandleFileInformation()
+        if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
+            raise _windows_error("Windows path属性を取得できない", path)
+        if information.attributes & _WINDOWS_REPARSE_POINT:
+            raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")
+        yield handle, information
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+@contextlib.contextmanager
+def _windows_security_update_handle(
+    path: pathlib.Path,
+) -> typing.Iterator[tuple[int, _ByHandleFileInformation, bool]]:
+    """Owner更新可否を判定した単一のsecurity更新用handleを返す。"""
+    full_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC | _WINDOWS_WRITE_OWNER
+    minimal_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC
+    with contextlib.ExitStack() as stack:
+        try:
+            handle, information = stack.enter_context(_windows_path_handle(path, full_access))
+            can_write_owner = True
+        except _WindowsHandleOpenError as error:
+            if error.error_code != _WINDOWS_ERROR_ACCESS_DENIED:
+                raise
+            handle, information = stack.enter_context(_windows_path_handle(path, minimal_access))
+            can_write_owner = False
+        yield handle, information, can_write_owner
 
 
 def _windows_current_sid() -> str:
@@ -99,154 +295,235 @@ def _windows_current_sid() -> str:
 
 
 def _windows_secure_path(path: pathlib.Path, *, directory: bool) -> None:
-    """継承ACLを除去し、現在user SIDだけへfull controlを付与する。"""
-    sid = _windows_current_sid()
-    permission = f"*{sid}:(OI)(CI)F" if directory else f"*{sid}:F"
-    result = subprocess.run(
-        ["icacls", str(path), "/inheritance:r", "/grant:r", permission],
-        capture_output=True,
-        text=True,
-        check=False,
+    """OwnerとDACLを現在user SIDだけの保護ACLへ完全置換する。"""
+    current_sid = _windows_sid_bytes(_windows_current_sid())
+    flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if directory else 0
+    ace = _WindowsAce(_WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, _WINDOWS_FILE_ALL_ACCESS, current_sid)
+    _windows_replace_security(path, current_sid, (ace,), directory=directory)
+
+
+def _windows_replace_security(
+    path: pathlib.Path,
+    owner_sid: bytes,
+    aces: tuple[_WindowsAce, ...],
+    *,
+    directory: bool,
+) -> None:
+    """Windows pathのDACLと、必要な場合はOwnerを指定値へ完全置換する。"""
+    acl_buffer = _windows_acl_buffer(path, aces)
+    with _windows_security_update_handle(path) as (handle, information, can_write_owner):
+        actual_directory = bool(information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY)
+        if actual_directory != directory:
+            raise ManagedTempError(f"Windows pathの種別が指定と一致しない: {path}")
+        current_owner = _windows_security_from_handle(handle, information, path).owner
+        owner_changed = not _windows_equal_sids(current_owner, owner_sid)
+        if owner_changed and not can_write_owner:
+            raise ManagedTempError(f"Windows ownerを変更できるhandleを取得できない: {path}")
+        security_information = _WINDOWS_DACL_SECURITY_INFORMATION | _WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION
+        owner_to_set: bytes | None = None
+        if owner_changed:
+            security_information |= _WINDOWS_OWNER_SECURITY_INFORMATION
+            owner_to_set = owner_sid
+        _windows_set_security(handle, path, security_information, owner_to_set, acl_buffer)
+
+
+def _windows_acl_buffer(path: pathlib.Path, aces: tuple[_WindowsAce, ...]) -> typing.Any:
+    """指定ACEだけを含むWindows ACL bufferを作成する。"""
+    advapi32 = _windows_dll("advapi32")
+    advapi32.InitializeAcl.argtypes = [ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD]
+    advapi32.InitializeAcl.restype = wintypes.BOOL
+    advapi32.AddAccessAllowedAceEx.argtypes = [
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+    ]
+    advapi32.AddAccessAllowedAceEx.restype = wintypes.BOOL
+    advapi32.AddAccessDeniedAceEx.argtypes = advapi32.AddAccessAllowedAceEx.argtypes
+    advapi32.AddAccessDeniedAceEx.restype = wintypes.BOOL
+    sid_lengths = [len(ace.sid) for ace in aces if ace.sid is not None]
+    if len(sid_lengths) != len(aces):
+        raise ManagedTempError(f"Windows DACLへSIDを持たないACEは設定できない: {path}")
+    acl_size = ctypes.sizeof(_Acl) + sum(
+        ctypes.sizeof(_AccessAllowedAce) - ctypes.sizeof(ctypes.c_uint32) + size for size in sid_lengths
     )
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip()
-        raise ManagedTempError(f"Windows ACLを設定できない: {path}: {detail}")
+    acl_buffer = ctypes.create_string_buffer(acl_size)
+    if not advapi32.InitializeAcl(acl_buffer, acl_size, _WINDOWS_ACL_REVISION):
+        raise _windows_error("Windows DACLを初期化できない", path)
+    for ace in aces:
+        assert ace.sid is not None
+        sid_buffer = ctypes.create_string_buffer(ace.sid)
+        if ace.ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE:
+            add_ace = advapi32.AddAccessAllowedAceEx
+        elif ace.ace_type == _WINDOWS_ACCESS_DENIED_ACE_TYPE:
+            add_ace = advapi32.AddAccessDeniedAceEx
+        else:
+            raise ManagedTempError(f"Windows DACLへ未対応種別のACEは設定できない: {path}: {ace.ace_type}")
+        if not add_ace(acl_buffer, _WINDOWS_ACL_REVISION, ace.flags, ace.mask, sid_buffer):
+            raise _windows_error("Windows DACLへACEを追加できない", path)
+    return acl_buffer
 
 
-def _windows_security_descriptor(path: pathlib.Path) -> tuple[str, str]:
-    """Windows pathのowner SIDとDACLのSDDL表現を返す。"""
+def _windows_set_security(
+    handle: int,
+    path: pathlib.Path,
+    security_information: int,
+    owner_sid: bytes | None,
+    acl_buffer: typing.Any,
+) -> None:
+    """開いているhandleへOwnerとDACLを設定する。"""
+    advapi32 = _windows_dll("advapi32")
+    advapi32.SetSecurityInfo.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    advapi32.SetSecurityInfo.restype = wintypes.DWORD
+    owner_buffer = ctypes.create_string_buffer(owner_sid) if owner_sid is not None else None
+    result = advapi32.SetSecurityInfo(
+        handle,
+        _WINDOWS_SE_FILE_OBJECT,
+        security_information,
+        owner_buffer,
+        None,
+        acl_buffer,
+        None,
+    )
+    if result != 0:
+        raise _WindowsApiError("Windows ownerまたはDACLを設定できない", path, result)
+
+
+def _windows_security_descriptor(path: pathlib.Path) -> _WindowsSecurity:
+    """Windows pathのsecurity descriptorをraw SIDとACEへ分解して返す。"""
+    with _windows_path_handle(path, _WINDOWS_READ_CONTROL) as (handle, information):
+        return _windows_security_from_handle(handle, information, path)
+
+
+def _windows_security_from_handle(
+    handle: int,
+    information: _ByHandleFileInformation,
+    path: pathlib.Path,
+) -> _WindowsSecurity:
+    """開いているhandleのsecurity descriptorをraw SIDとACEへ分解して返す。"""
     advapi32 = _windows_dll("advapi32")
     kernel32 = _windows_dll("kernel32")
-    advapi32.GetNamedSecurityInfoW.argtypes = [
-        wintypes.LPCWSTR,
+    advapi32.GetSecurityInfo.argtypes = [
+        wintypes.HANDLE,
         wintypes.DWORD,
         wintypes.DWORD,
         ctypes.POINTER(ctypes.c_void_p),
         ctypes.c_void_p,
-        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
         ctypes.c_void_p,
         ctypes.POINTER(ctypes.c_void_p),
     ]
-    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
-    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
-    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
-    advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
+    advapi32.GetSecurityInfo.restype = wintypes.DWORD
+    advapi32.GetSecurityDescriptorControl.argtypes = [
         ctypes.c_void_p,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        ctypes.POINTER(ctypes.c_wchar_p),
+        ctypes.POINTER(wintypes.WORD),
         ctypes.POINTER(wintypes.DWORD),
     ]
-    advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW.restype = wintypes.BOOL
+    advapi32.GetSecurityDescriptorControl.restype = wintypes.BOOL
+    advapi32.GetAclInformation.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD]
+    advapi32.GetAclInformation.restype = wintypes.BOOL
+    advapi32.GetAce.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.GetAce.restype = wintypes.BOOL
+    advapi32.IsValidSid.argtypes = [ctypes.c_void_p]
+    advapi32.IsValidSid.restype = wintypes.BOOL
+    advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+    advapi32.GetLengthSid.restype = wintypes.DWORD
     kernel32.LocalFree.argtypes = [ctypes.c_void_p]
     kernel32.LocalFree.restype = ctypes.c_void_p
     owner = ctypes.c_void_p()
+    dacl = ctypes.c_void_p()
     descriptor = ctypes.c_void_p()
-    result = advapi32.GetNamedSecurityInfoW(
-        str(path),
-        1,
-        0x00000001 | 0x00000004,
+    result = advapi32.GetSecurityInfo(
+        handle,
+        _WINDOWS_SE_FILE_OBJECT,
+        _WINDOWS_OWNER_SECURITY_INFORMATION | _WINDOWS_DACL_SECURITY_INFORMATION,
         ctypes.byref(owner),
         None,
-        None,
+        ctypes.byref(dacl),
         None,
         ctypes.byref(descriptor),
     )
     if result != 0:
         raise ManagedTempError(f"Windows security descriptorを取得できない: {path}: {result}")
     try:
-        owner_text = ctypes.c_wchar_p(None)
-        if not advapi32.ConvertSidToStringSidW(owner, ctypes.byref(owner_text)):
-            raise ManagedTempError(f"Windows owner SIDを文字列化できない: {path}")
-        try:
-            owner_value = owner_text.value
-            if owner_value is None:
-                raise ManagedTempError(f"Windows owner SIDが空である: {path}")
-            owner_sid = str(owner_value)
-        finally:
-            kernel32.LocalFree(ctypes.cast(owner_text, ctypes.c_void_p))
-        sddl_text = ctypes.c_wchar_p(None)
-        length = wintypes.DWORD(0)
-        if not advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(
-            descriptor,
-            1,
-            0x00000004,
-            ctypes.byref(sddl_text),
-            ctypes.byref(length),
-        ):
-            raise ManagedTempError(f"Windows DACLを文字列化できない: {path}")
-        try:
-            sddl_value = sddl_text.value
-            if sddl_value is None:
-                raise ManagedTempError(f"Windows security descriptorが空である: {path}")
-            return owner_sid, str(sddl_value)
-        finally:
-            kernel32.LocalFree(ctypes.cast(sddl_text, ctypes.c_void_p))
+        if not owner or not advapi32.IsValidSid(owner):
+            raise ManagedTempError(f"Windows owner SIDが不正: {path}")
+        owner_sid = ctypes.string_at(owner, advapi32.GetLengthSid(owner))
+        control = wintypes.WORD(0)
+        revision = wintypes.DWORD(0)
+        if not advapi32.GetSecurityDescriptorControl(descriptor, ctypes.byref(control), ctypes.byref(revision)):
+            raise _windows_error("Windows security descriptor controlを取得できない", path)
+        aces: list[_WindowsAce] = []
+        if dacl:
+            acl_information = _AclSizeInformation()
+            if not advapi32.GetAclInformation(dacl, ctypes.byref(acl_information), ctypes.sizeof(acl_information), 2):
+                raise _windows_error("Windows DACL情報を取得できない", path)
+            for index in range(acl_information.ace_count):
+                ace_pointer = ctypes.c_void_p()
+                if not advapi32.GetAce(dacl, index, ctypes.byref(ace_pointer)):
+                    raise _windows_error("Windows ACEを取得できない", path)
+                ace_address = ace_pointer.value
+                if ace_address is None:
+                    raise ManagedTempError(f"Windows ACEのaddressが空である: {path}")
+                header = ctypes.cast(ace_pointer, ctypes.POINTER(_AceHeader)).contents
+                mask = 0
+                sid: bytes | None = None
+                if header.ace_size >= ctypes.sizeof(_AceHeader) + ctypes.sizeof(wintypes.DWORD):
+                    mask = ctypes.c_uint32.from_address(ace_address + ctypes.sizeof(_AceHeader)).value
+                if header.ace_type in (_WINDOWS_ACCESS_ALLOWED_ACE_TYPE, _WINDOWS_ACCESS_DENIED_ACE_TYPE):
+                    sid_pointer = ctypes.c_void_p(ace_address + _AccessAllowedAce.sid_start.offset)
+                    if not advapi32.IsValidSid(sid_pointer):
+                        raise ManagedTempError(f"Windows ACEのSIDが不正: {path}")
+                    sid_length = advapi32.GetLengthSid(sid_pointer)
+                    if _AccessAllowedAce.sid_start.offset + sid_length > header.ace_size:
+                        raise ManagedTempError(f"Windows ACEのSID長が不正: {path}")
+                    sid = ctypes.string_at(sid_pointer, sid_length)
+                aces.append(_WindowsAce(header.ace_type, header.ace_flags, mask, sid))
+        return _WindowsSecurity(
+            owner_sid,
+            bool(dacl),
+            bool(control.value & _WINDOWS_SE_DACL_PROTECTED),
+            bool(information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY),
+            tuple(aces),
+        )
     finally:
         kernel32.LocalFree(descriptor)
 
 
 def _validate_windows_security(path: pathlib.Path) -> None:
-    sid = _windows_current_sid()
-    owner, sddl = _windows_security_descriptor(path)
-    trustees = [ace.split(";")[-1] for ace in re.findall(r"\(([^()]*)\)", sddl)]
-    if owner != sid or not trustees or set(trustees) != {sid} or sddl.find(";FA;;;") < 0:
+    current_sid = _windows_sid_bytes(_windows_current_sid())
+    security = _windows_security_descriptor(path)
+    expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if security.directory else 0
+    valid_ace = (
+        len(security.aces) == 1
+        and security.aces[0].ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE
+        and security.aces[0].flags == expected_flags
+        and security.aces[0].mask == _WINDOWS_FILE_ALL_ACCESS
+        and security.aces[0].sid is not None
+        and _windows_equal_sids(security.aces[0].sid, current_sid)
+    )
+    if (
+        not security.dacl_present
+        or not security.protected
+        or not _windows_equal_sids(security.owner, current_sid)
+        or not valid_ace
+    ):
         raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {path}")
 
 
 def _windows_identity(path: pathlib.Path) -> tuple[int, int]:
     """Reparse pointを開かず、Windows handleからvolumeとfile IDを返す。"""
-
-    class _ByHandleFileInformation(ctypes.Structure):
-        _fields_ = [
-            ("attributes", wintypes.DWORD),
-            ("creation_time", wintypes.FILETIME),
-            ("access_time", wintypes.FILETIME),
-            ("write_time", wintypes.FILETIME),
-            ("volume", wintypes.DWORD),
-            ("size_high", wintypes.DWORD),
-            ("size_low", wintypes.DWORD),
-            ("links", wintypes.DWORD),
-            ("file_index_high", wintypes.DWORD),
-            ("file_index_low", wintypes.DWORD),
-        ]
-
-    kernel32 = _windows_dll("kernel32")
-    create_file = kernel32.CreateFileW
-    create_file.argtypes = [
-        wintypes.LPCWSTR,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        ctypes.c_void_p,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        wintypes.HANDLE,
-    ]
-    create_file.restype = wintypes.HANDLE
-    kernel32.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
-    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-    handle = create_file(
-        str(path),
-        0x0080,
-        0x00000001 | 0x00000002,
-        None,
-        3,
-        0x02000000 | 0x00200000,
-        None,
-    )
-    if handle == wintypes.HANDLE(-1).value:
-        raise ManagedTempError(f"Windows path handleを取得できない: {path}")
-    try:
-        info = _ByHandleFileInformation()
-        if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(info)):
-            raise ManagedTempError(f"Windows path identityを取得できない: {path}")
-        if info.attributes & _WINDOWS_REPARSE_POINT:
-            raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")
-        return info.volume, (info.file_index_high << 32) | info.file_index_low
-    finally:
-        kernel32.CloseHandle(handle)
+    with _windows_path_handle(path, _WINDOWS_READ_ATTRIBUTES) as (_, information):
+        return information.volume, (information.file_index_high << 32) | information.file_index_low
 
 
 def _temp_root() -> pathlib.Path:
