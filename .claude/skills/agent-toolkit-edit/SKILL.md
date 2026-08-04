@@ -121,7 +121,10 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
 3. `scripts/sync_codex_plugin_manifests.py`を実行してCodex向け派生manifestを同期する
 4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
-5. `uvx pyfltr run-for-agent`を実行し、SSOTテストを含む全テストがgreenであることを確認する
+5. MCP経由の`run_for_agent`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
+   `["."]`を渡し、SSOTテストを含む全テストがgreenであることを確認する。
+   必要に応じて`commands`配列でSSOTテストなど特定ツールを指定する。
+   MCPを利用できない場合は`uvx pyfltr run-for-agent`を使う
 6. 変更をコミットする
 
 ## フック実装の配置先（個人フックと配布物）

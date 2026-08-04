@@ -45,6 +45,24 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     assert (manifest_root / subject.PLUGIN_TARGET).read_text().endswith("\n")
 
 
+def test_mcp_servers_propagated_when_source_exists(manifest_root: Path) -> None:
+    source = manifest_root / subject.MCP_SOURCE
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text('{"mcpServers": {}}', encoding="utf-8")
+
+    subject.sync(manifest_root)
+
+    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
+    assert generated["mcpServers"] == "./.mcp.json"
+
+
+def test_mcp_servers_absent_when_source_missing(manifest_root: Path) -> None:
+    subject.sync(manifest_root)
+
+    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
+    assert "mcpServers" not in generated
+
+
 def test_sync_replaces_stale_and_extra_hooks(manifest_root: Path) -> None:
     subject.sync(manifest_root)
     (manifest_root / subject.PLUGIN_TARGET).write_text("{}")

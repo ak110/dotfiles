@@ -73,5 +73,7 @@ description: >
 2. 意味的な変更を両方に適用する
 3. プラットフォーム固有の書き方の違いのみ確認する
 4. 可能であれば両方を実行して動作確認する（Linuxでのみ実行可能な環境では最低限syntax check）
-5. `uvx pyfltr run-for-agent`がgreenであることを確認する
+5. MCP経由の`run_for_agent`へ両プラットフォーム側のファイルパスを渡す。
+   複数ツールを組み合わせる場合は`commands`で対象を限定する。
+   MCPを利用できない場合は`uvx pyfltr run-for-agent`を使う
 6. コミットメッセージにペアを両方記載する

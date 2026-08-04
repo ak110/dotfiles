@@ -67,7 +67,9 @@
 3. 終了コード2では、対象パス・読み取り権限・文字エンコーディングを是正して再実行する
 4. 終了コード2を解消できない場合は、原因を`escalation_points`へ記録して`needs_escalation`で返す
 5. `[warn]`接頭辞付きの出力は内容を確認し、修正するか許容理由を`check_results`へ記録する
-6. 次のコマンドで計画ファイル本体を直接検査する
+6. MCP経由の`run_for_agent`へ計画ファイルのパスを渡し、`no_fix`と`allow_external_paths`を真として
+   計画ファイル本体を直接検査する。`work_dir`で作業ディレクトリを指定する場合は同時に明示する。
+   MCPを利用できない場合は、次のCLI形式を使う
 
    ```text
    uvx pyfltr run --no-fix --allow-external-paths \

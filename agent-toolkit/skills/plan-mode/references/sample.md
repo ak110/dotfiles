@@ -167,18 +167,20 @@ infra/nginx.conf:31:client_max_body_size 1M;
 - （呼び出し元が実施）Agentツールで`agent-toolkit:plan-impl-executor`を起動する
   - `agent-toolkit:coding-standards`を呼び出す
 - `agent-toolkit:commit`スキルを呼び出す
+- MCP経由の`run_for_agent`は、対象リポジトリが起動ディレクトリと異なる場合に`work_dir`を明示する。
+  複数のツールを組み合わせる場合は`commands`で対象を限定する
 - 想定コミット単位ごとに実装、近接検証、差分確認、コミットを反復する
   - アップロード上限の実装とテスト
     - 対象: `server/config.py`・`client/limits.ts`・`infra/nginx.conf`・`tests/upload_test.py`
-    - 近接検証: `uvx pyfltr run tests/upload_test.py`・`tsc --noEmit client/limits.ts`・
+    - 近接検証: MCP経由の`run_for_agent`へ`tests/upload_test.py`を渡す・`tsc --noEmit client/limits.ts`・
       `nginx -t -c infra/nginx.conf`
     - 件名案: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`
   - 設定値管理の文書
     - 対象: `docs/architecture/limits.md`
-    - 近接検証: `uvx pyfltr run docs/architecture/limits.md`
+    - 近接検証: MCP経由の`run_for_agent`へ`docs/architecture/limits.md`を渡す
     - 件名案: `docs(upload): アップロード上限の設定値管理を文書化する`
 - 実装差分に応じてコミット境界を変更した場合は、計画本文と`## 進捗ログ`を同期する
-- 全コミット完了後の最終検証: `uvx pyfltr run tests/upload_test.py docs/architecture/limits.md`・
+- 全コミット完了後の最終検証: MCP経由の`run_for_agent`へ変更した2ファイルを渡す・
   `tsc --noEmit client/limits.ts`・`nginx -t -c infra/nginx.conf`
 - `plan-impl-executor`が計画準拠系と独立系の実装差分レビューを並列実行する
 

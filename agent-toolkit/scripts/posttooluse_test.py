@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import types
@@ -20,6 +21,8 @@ import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
+_HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "hooks.json"
+_PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
 
 
 @functools.cache
@@ -147,6 +150,54 @@ class TestTestExecution:
         _run({"session_id": sid, "tool_input": {"command": "echo hello"}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is not True
+
+    def test_pyfltr_mcp_run_for_agent_detected(self, tmp_path: pathlib.Path):
+        """pyfltr MCPの検証成功をCLI経由と同じ状態へ記録する。"""
+        sid = "test-mcp-run-for-agent"
+        _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUse",
+                "tool_name": _PYFLTR_RUN_FOR_AGENT_TOOL_NAME,
+                "tool_input": {"paths": ["."], "work_dir": "/repo"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("test_executed") is True
+
+    def test_pyfltr_mcp_run_for_agent_failure_not_detected(self, tmp_path: pathlib.Path):
+        """失敗イベントは正式な検証完了として記録しない。"""
+        sid = "test-mcp-run-for-agent-failure"
+        _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": _PYFLTR_RUN_FOR_AGENT_TOOL_NAME,
+                "tool_input": {"paths": ["."]},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("test_executed") is not True
+
+    def test_other_pyfltr_mcp_tool_not_detected(self, tmp_path: pathlib.Path):
+        """検索など検証以外のpyfltr MCPツールでは状態を変更しない。"""
+        sid = "test-mcp-grep"
+        _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "mcp__plugin_agent-toolkit_pyfltr__grep",
+                "tool_input": {"pattern": "x", "paths": ["."]},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("test_executed") is not True
+
+    def test_posttooluse_matcher_routes_pyfltr_mcp_run_for_agent(self):
+        """MCP成功イベントがPostToolUse実装へ配送されるmatcherを維持する。"""
+        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
+        assert re.fullmatch(matcher, _PYFLTR_RUN_FOR_AGENT_TOOL_NAME) is not None
 
 
 class TestPlanModeSkillInvocation:

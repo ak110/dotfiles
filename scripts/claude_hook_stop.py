@@ -76,9 +76,12 @@ from _stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
 # pylint: disable-next=wrong-import-position,import-error
 from _transcript import iter_assistant_content_blocks as _iter_assistant_content_blocks  # noqa: E402
 
-# `\bpyfltr\b` に相当する正規表現。
+# `\bpyfltr\b` に相当するBashコマンド用の正規表現。
 # uv run pyfltr / pyfltr / uv run --script ... pyfltr など典型的な呼び出し形式を網羅する。
 _PYFLTR_PATTERN = re.compile(r"\bpyfltr\b")
+
+# agent-toolkitプラグインに同梱するpyfltr MCPツール名の接頭辞。
+_PYFLTR_MCP_TOOL_PREFIX = "mcp__plugin_agent-toolkit_pyfltr__"
 
 # agent-toolkit スキル呼び出しを検出する正規表現。
 # Skill ツールの input.skill フィールドに `agent-toolkit:` が含まれるケースを対象とする。
@@ -135,8 +138,13 @@ def _has_tool_usage(
 
 
 def _has_pyfltr_usage(transcript_path: str) -> bool:
-    """Transcript内にpyfltrをBash経由で実行した痕跡があるか確認する。"""
-    return _has_tool_usage(transcript_path, "Bash", "command", _PYFLTR_PATTERN)
+    """Transcript内にpyfltrをBashまたはMCP経由で実行した痕跡があるか確認する。"""
+    if _has_tool_usage(transcript_path, "Bash", "command", _PYFLTR_PATTERN):
+        return True
+    return any(
+        isinstance(name := block.get("name"), str) and name.startswith(_PYFLTR_MCP_TOOL_PREFIX)
+        for block in _iter_tool_use_blocks(transcript_path)
+    )
 
 
 def _has_agent_toolkit_usage(transcript_path: str) -> bool:

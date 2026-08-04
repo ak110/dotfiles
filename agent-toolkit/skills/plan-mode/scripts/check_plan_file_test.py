@@ -877,7 +877,7 @@ def test_execution_method_requires_instruction_form(
 @pytest.mark.parametrize(
     "line",
     [
-        "- `uvx pyfltr run agent-toolkit/skills/session-review/SKILL.md`で検証する",
+        "- MCP経由の`run_for_agent`へ`agent-toolkit/skills/session-review/SKILL.md`を渡して検証する",
         "- コミット件名は`feat(session-review): 観察源を追加する`とする",
         "- `agent-toolkit/skills/session-review/SKILL.md`を変更する",
     ],

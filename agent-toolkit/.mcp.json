@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pyfltr": {
+      "command": "uvx",
+      "args": ["--from", "pyfltr>=3.16", "pyfltr", "mcp"]
+    }
+  }
+}

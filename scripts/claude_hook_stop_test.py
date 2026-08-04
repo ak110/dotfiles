@@ -100,6 +100,21 @@ def _assistant_entry_with_bash(command: str, *, run_in_background: bool = False)
     }
 
 
+def _assistant_entry_with_mcp(tool_name: str, tool_input: dict) -> dict:
+    """MCP tool_useを含むassistantエントリを生成する。"""
+    return {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "MCPツールを実行します。"},
+                {"type": "tool_use", "id": "x", "name": tool_name, "input": tool_input},
+            ],
+            "stop_reason": "end_turn",
+        },
+    }
+
+
 # `agent-toolkit/scripts/stop_advisor_test.py`と同一のtranscriptエントリ生成関数を意図的に複製する。
 # claude_hook_stop_test.pyはdotfiles個人環境専用、stop_advisor_test.pyは配布物agent-toolkitプラグイン側の
 # テストであり、プラグイン境界を越えた依存を持ち込まないため共通モジュール化しない。
@@ -193,6 +208,26 @@ class TestUsageDetection:
         body = _block_reason(decision)
         assert _EXTENSION_SKILL in body
         assert _TARGET_SESSION_REVIEW in body
+
+    def test_detects_pyfltr_mcp_tool(self, tmp_path: pathlib.Path):
+        """pyfltr MCPの利用も振り返り拡張の対象として検出する。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry(),
+                _assistant_entry_with_mcp(
+                    "mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
+                    {"paths": ["."], "work_dir": "/repo"},
+                ),
+                _user_entry("結果を確認しました"),
+                _assistant_text_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "detect-mcp-pyfltr", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        assert _decision_kind(_parse_decision(result)) == "context"
 
     def test_no_pyfltr_or_agent_toolkit_approves(self, tmp_path: pathlib.Path):
         """pyfltr も agent-toolkit も検出されないセッションは approve する。"""

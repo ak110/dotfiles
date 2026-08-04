@@ -3,7 +3,8 @@
 配布物のhook間で共有する状態の記録元、利用先、寿命を定める。
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
 
-- `test_executed`: PostToolUse(Bash)が記録し、`git commit`未検証警告の抑制に使う
+- `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run_for_agent`成功時に記録し、
+  `git commit`未検証警告の抑制に使う。セッション終了まで保持する
 - `git_status_checked`: PostToolUse(Bash)が`git status`・`git log`・`git diff`観測時に記録する
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う

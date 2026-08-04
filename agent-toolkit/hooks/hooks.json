@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__codex__codex|mcp__codex__codex-reply",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__codex__codex|mcp__codex__codex-reply|mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
         "hooks": [
           {
             "type": "command",

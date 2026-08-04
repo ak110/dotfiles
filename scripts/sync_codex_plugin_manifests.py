@@ -18,6 +18,7 @@ from pytools._internal import claude_common  # pylint: disable=wrong-import-posi
 PLUGIN_SOURCE = Path("agent-toolkit/.claude-plugin/plugin.json")
 MARKETPLACE_SOURCE = Path(".claude-plugin/marketplace.json")
 HOOKS_SOURCE = Path("agent-toolkit/hooks/hooks.json")
+MCP_SOURCE = Path("agent-toolkit/.mcp.json")
 PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
@@ -76,6 +77,8 @@ def _outputs(root: Path) -> dict[Path, str]:
     }
     codex_plugin["skills"] = "./skills/"
     codex_plugin["hooks"] = "./hooks/hooks.codex.json" if selected else {"hooks": {}}
+    if (root / MCP_SOURCE).exists():
+        codex_plugin["mcpServers"] = "./.mcp.json"
     codex_plugin["interface"] = {
         "displayName": "agent-toolkit",
         "shortDescription": "コード、文書、計画、レビューの作業指針",

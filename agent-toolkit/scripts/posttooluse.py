@@ -6,7 +6,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 
 検出対象:
 
-1. テスト実行 (Bash)
+1. テスト実行 (Bash / pyfltr MCPの`run_for_agent`)
 2. git log確認状態の記録・リセット (Bash: logで記録、対象コミットの親子関係が
    変化する操作＝commit/rebase/resetでリセット)
 3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit)
@@ -69,6 +69,10 @@ from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/posttooluse"
+
+# agent-toolkitプラグインに同梱するpyfltr MCPの検証実行ツール名。
+# hooks/hooks.jsonのPostToolUse matcherと同一値を保つ。
+_PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -477,6 +481,19 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         tbd_notice = _tbd_completion.build_notice(session_id, cwd, payload.get("transcript_path", ""))
         if tbd_notice is not None:
             notices.append(_llm_notice(tbd_notice, tag="notice"))
+
+    # pyfltr MCPのrun_for_agentはPostToolUseへ到達した時点で成功済みである。
+    # CLI経由と同じ検証完了契約として記録し、コミット前の未検証警告を抑制する。
+    if tool_name == _PYFLTR_RUN_FOR_AGENT_TOOL_NAME:
+
+        def _set_test_executed(state: dict) -> dict | None:
+            if state.get("test_executed", False):
+                return None
+            state["test_executed"] = True
+            return state
+
+        update_state(session_id, _set_test_executed)
+        return 0
 
     # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
     if tool_name == "EnterPlanMode":

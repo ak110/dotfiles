@@ -8,9 +8,11 @@
 - `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - コミット前の検証方法: `make test`
-  - 特定ファイルに限定する場合は`uvx pyfltr run <path>`を使う。
+  - 特定ファイルに限定する場合はMCP経由の`run_for_agent`へ当該ファイルのパスを渡す。
+    MCPを利用できない場合は`uvx pyfltr run <対象ファイルの絶対パス>`を使う。
     デバッガ・最小再現・環境切り分けでは直接実行してよい
-  - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
+  - 修正後の再実行時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
+    CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
 
 ## アーキテクチャの参照先
 

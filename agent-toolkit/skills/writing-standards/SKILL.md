@@ -136,7 +136,13 @@ READMEとコーディングエージェント向け文書が重複する場合�
 ## 口語表現チェック
 
 口語的な日本語表現の混入を防ぐため、pyfltr内蔵の`colloquial-check`の実行を必須とする。
-実行コマンドは`uvx pyfltr run --commands=colloquial-check --enable=colloquial-check path/to/file.md`とする。
+MCP経由では`run_for_agent`へ対象パスを渡し、`commands`と`enable`へ`colloquial-check`を明示する。
+`work_dir`で作業ディレクトリを指定する場合は同時に明示する。
+MCPを利用できない場合は、次のCLI形式を使う。
+
+```sh
+uvx pyfltr run --commands=colloquial-check --enable=colloquial-check <対象ファイルの絶対パス>
+```
 
 - 検出範囲: `.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`
   （Markdown引用ブロック`>`・フェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象に含む）

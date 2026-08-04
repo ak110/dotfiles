@@ -184,6 +184,11 @@ dotfiles配布利用者は`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPAT
 文体の核はJIS規格・公的な標準仕様書のスタイルとし、
 対話型UI向けの敬体はNHKの案内放送原稿のスタイルを例外として割り当てる。
 
+agent-toolkitプラグインはpyfltrのMCPサーバーを同梱する。
+プラグインを導入するとClaude CodeとCodexの双方で自動的に利用可能になり、
+検査の実行・横断検索・横断置換・実行履歴の参照をシェルを経由せずに呼び出せる。
+サーバーは`uvx`でpyfltrを取得して起動するため、pyfltr自体の事前インストールは要らない。
+
 agent-toolkitプラグインは以下のフックを常時有効化する。
 
 - 文字化け（U+FFFD）混入・LF改行のみの`.ps1`への書き込み・自動生成物の手編集をブロック
