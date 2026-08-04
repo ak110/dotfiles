@@ -22,6 +22,7 @@ _SUBCOMMANDS = (
     "subagent_stop_advisor",
     "stopfailure_notifier",
     "permissionrequest",
+    "permissionrequest_codex",
     "user_prompt_submit",
 )
 

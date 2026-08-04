@@ -27,7 +27,29 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
     fixtures: tuple[tuple[Path, dict[str, Any]], ...] = (
         (subject.PLUGIN_SOURCE, plugin),
         (subject.MARKETPLACE_SOURCE, marketplace),
-        (subject.HOOKS_SOURCE, {"hooks": {}}),
+        (
+            subject.HOOKS_SOURCE,
+            {
+                "hooks": {
+                    "PermissionRequest": [
+                        {
+                            "matcher": "Write|Edit|MultiEdit|Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "uv run --no-project --script "
+                                    "${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest",
+                                }
+                            ],
+                        },
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"type": "command", "command": subject.CODEX_PERMISSION_REQUEST_COMMAND}],
+                        },
+                    ]
+                }
+            },
+        ),
     )
     for path, value in fixtures:
         target = tmp_path / path
@@ -41,7 +63,18 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     assert subject.sync(manifest_root) is False
     generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
     assert generated["version"] == "1.2.3"
-    assert generated["hooks"] == {"hooks": {}}
+    assert generated["hooks"] == "./hooks/hooks.codex.json"
+    generated_hooks = json.loads((manifest_root / subject.HOOKS_TARGET).read_text())
+    assert generated_hooks == {
+        "hooks": {
+            "PermissionRequest": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{"type": "command", "command": subject.CODEX_PERMISSION_REQUEST_COMMAND}],
+                }
+            ]
+        }
+    }
     assert (manifest_root / subject.PLUGIN_TARGET).read_text().endswith("\n")
 
 
@@ -63,15 +96,28 @@ def test_mcp_servers_absent_when_source_missing(manifest_root: Path) -> None:
     assert "mcpServers" not in generated
 
 
-def test_sync_replaces_stale_and_extra_hooks(manifest_root: Path) -> None:
+def test_sync_replaces_stale_outputs(manifest_root: Path) -> None:
     subject.sync(manifest_root)
     (manifest_root / subject.PLUGIN_TARGET).write_text("{}")
-    extra = manifest_root / subject.HOOKS_TARGET
-    extra.parent.mkdir(parents=True, exist_ok=True)
-    extra.write_text("{}")
+    stale_hooks = manifest_root / subject.HOOKS_TARGET
+    stale_hooks.write_text("{}")
     assert subject.sync(manifest_root) is True
     assert json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())["version"] == "1.2.3"
-    assert not extra.exists()
+    assert json.loads(stale_hooks.read_text())["hooks"]["PermissionRequest"][0]["matcher"] == "Bash"
+
+
+def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
+    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text())
+    hooks["hooks"]["PermissionRequest"] = hooks["hooks"]["PermissionRequest"][:1]
+    (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
+    with pytest.raises(ValueError, match="許可済みhandler"):
+        subject.sync(manifest_root)
+
+
+def test_rejects_unknown_allowlisted_event(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(subject, "CODEX_HOOK_ALLOWLIST", {"UnknownEvent": ("command",)})
+    with pytest.raises(ValueError, match="未知のCodex hookイベント"):
+        subject.sync(manifest_root)
 
 
 def test_rejects_mismatched_sources(manifest_root: Path) -> None:

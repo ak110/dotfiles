@@ -191,7 +191,10 @@ staged差分とunstaged差分が想定した境界に一致することを確認
 本節の実施主体はメインエージェントまたは委譲元となる。
 CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:shell-exec`への委譲を選んでよい。
 
-- push直前に`mktemp -d`で所有者だけが読み書きできる一時領域を作成し、
+- push直前に`uv run --no-project --script <helper> create --prefix ci-evidence`を単独で実行して管理対象一時領域を作成し、
+  標準出力の絶対パスを再生成せず保持する。Claude Codeでは
+  `${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`を使い、Codexでは読み込んだ本スキルの絶対パスから
+  plugin rootを確定して`<plugin rootの絶対パス>/scripts/_managed_temp.py`を使う。その領域へ
   当該pushが更新するrefごとに変更系列の基準SHAと完全長SHA列を記録する
   - `git push --dry-run --porcelain`の全status lineを解析し、有効なGit設定と照合して実際のpush先remoteと
     `<from>:<to>`をref単位で確定する。複数のrefspec、`push.default=matching`、`--tags`などにより
@@ -341,8 +344,10 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
   - 監視不能で完了または中止する判断、run未登録のまま中止する判断、forge CLI失敗後に再試行しない判断も
     全終端状態に含める
   - シグナル終了、例外終了、ユーザー判断によるCI確認のスキップまたは中止も全終端状態に含める
-  - 全終端状態ではplan mode外で、作成時に記録した正確な一時領域だけを削除し、実在しないことを確認する。
-    glob、未解決の環境変数、親ディレクトリを削除対象に用いない
+  - 全終端状態ではplan mode外で、記録した各絶対パスへ
+    `uv run --no-project --script <helper> cleanup --path <保持した絶対パス>`を単独で実行し、終了コード0と残存しないことを確認する。
+    Claude CodeとCodexのhelper解決は作成時と同じ経路を用いる。glob、未解決の環境変数、
+    親ディレクトリを後始末対象に用いない
   - ユーザー回答待ちまたは実行中のバグ対応は終端とせず、次の操作、保持理由、正確なパスを報告する
 - CI設定側の抑制で通す対応は採らない具体禁止条件
   - 対象操作は、`allow_failure: true`の付与や`rules:changes`によるジョブ除外などとする

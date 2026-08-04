@@ -23,8 +23,12 @@ PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
 
-# 初期リリースでは入力契約まで確認できたhookがないため空とする。
-CODEX_HOOK_ALLOWLIST: dict[str, tuple[str, ...]] = {}
+CODEX_PERMISSION_REQUEST_COMMAND = (
+    "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest_codex"
+)
+CODEX_HOOK_ALLOWLIST: dict[str, tuple[str, ...]] = {
+    "PermissionRequest": (CODEX_PERMISSION_REQUEST_COMMAND,),
+}
 CODEX_EVENTS = {
     "PreToolUse",
     "PostToolUse",
@@ -33,6 +37,7 @@ CODEX_EVENTS = {
     "SubagentStop",
     "SessionStart",
     "SessionEnd",
+    "PermissionRequest",
 }
 
 

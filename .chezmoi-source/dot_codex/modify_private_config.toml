@@ -4,4 +4,5 @@
 {{-   $config = fromToml .chezmoi.stdin -}}
 {{- end -}}
 {{- $config = setValueAtPath "project_doc_max_bytes" 131072 $config -}}
+{{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{ toToml $config }}

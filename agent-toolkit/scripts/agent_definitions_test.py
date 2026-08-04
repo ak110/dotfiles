@@ -531,7 +531,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "同じ原因が別の箇所または今後の作業で反復し得る" not in agent_rules
 
     commit_ci = _h2_section(commit_skill, "push後のCI通過確認")
-    series_capture = commit_ci.index("push直前に`mktemp -d`")
+    series_capture = commit_ci.index("push直前に`uv run --no-project --script <helper> create --prefix ci-evidence`")
     plan_transition = commit_ci.index("`agent-toolkit:plan-mode`を起動")
     evidence_collection = commit_ci.index("失敗ジョブのログは")
     artifact_collection = commit_ci.index("artifact生成ジョブではartifact")
@@ -569,11 +569,11 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         "基準SHAから失敗SHAまでの系列差分",
         "親ごとの差分は補助資料",
         "upstreamが未設定",
-        "所有者だけが読み書きできる一時領域",
+        "標準出力の絶対パスを再生成せず保持",
         "gh run view <run-id> --json jobs",
         "gh run rerun <run-id> --job <job-database-id>",
         "実在と分量を確認",
-        "正確な一時領域だけを削除",
+        "`uv run --no-project --script <helper> cleanup --path <保持した絶対パス>`",
         "再試行中状態",
         "push失敗後に再試行しない",
         "監視不能",
@@ -650,6 +650,36 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert selection_flow.index("確定した原因に適用可能な対処") < flow_plan_draft
     assert "bugfix.md`をSSOT" in _h2_section(ci_failure_handling, "前提")
     assert "3回連続する停止トリガー" not in selection_flow
+
+
+def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
+    """一時領域を所有する手順が管理CLIと実行環境別のhelper解決を共有する。"""
+    documents = (
+        _CODEX_EXEC_SKILL,
+        _PLAN_REVIEW,
+        _PLAN_REVIEW_FIX_TASK,
+        _PLAN_FINALIZER_CALLER,
+        _COMMIT_SKILL,
+        _CI_FAILURE_HANDLING,
+    )
+    for path in documents:
+        text = path.read_text(encoding="utf-8")
+        assert "uv run --no-project --script <helper> create --prefix" in text
+        assert "`${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`" in text
+        assert "Codexでは" in text
+        assert "plugin root" in text
+        assert "mktemp -d" not in text
+    assert "uv run --no-project --script <helper> create --prefix completion-record" in _CODEX_EXEC_SKILL.read_text(
+        encoding="utf-8"
+    )
+    for path in (_PLAN_REVIEW, _PLAN_REVIEW_FIX_TASK, _PLAN_FINALIZER_CALLER):
+        assert "uv run --no-project --script <helper> create --prefix plan-review-snapshot" in path.read_text(encoding="utf-8")
+    for path in (_COMMIT_SKILL, _CI_FAILURE_HANDLING):
+        assert "uv run --no-project --script <helper> create --prefix ci-evidence" in path.read_text(encoding="utf-8")
+    for path in (_CODEX_EXEC_SKILL, _PLAN_REVIEW, _PLAN_FINALIZER_CALLER, _COMMIT_SKILL, _CI_FAILURE_HANDLING):
+        text = path.read_text(encoding="utf-8")
+        assert "uv run --no-project --script <helper> cleanup --path <保持した絶対パス>" in text
+        assert "単独で実行" in text
 
 
 def _markdown_headings(path: pathlib.Path) -> set[str]:

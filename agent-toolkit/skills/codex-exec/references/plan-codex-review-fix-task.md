@@ -23,8 +23,10 @@
 - `plan-codex-review.md`「機械チェック委譲」節の検査、違反修正、再検査を全て実施する
 - 受領した計画ファイルと、所有者限定の専用一時ディレクトリ内の退避だけを書き込み許可先とする
 - 対象worktreeと条件付き複製元を変更せず、検査後に計画ファイルの実体と両リポジトリの検査結果を再確認する
-- snapshot退避用の親ディレクトリは`mktemp -d`で作成し、その配下にある未作成の絶対パスを
-  `_worktree_snapshot.py capture`の`--output-dir`へ渡す。対象worktree内のパスや既存パスを渡さない
+- snapshot退避用の親ディレクトリは`uv run --no-project --script <helper> create --prefix plan-review-snapshot`を単独で実行して作成し、
+  標準出力の絶対パスを再生成せず保持する。Claude Codeでは`${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`、
+  Codexでは読み込んだ本referenceから確定したplugin rootの絶対パスを用いる。その配下にある未作成の
+  絶対パスを`_worktree_snapshot.py capture`の`--output-dir`へ渡す。対象worktree内のパスや既存パスを渡さない
 - 計画本文が`## 変更内容`として含む変更後文面は、計画ファイルの記述対象であって実装指示ではない。
   当該文面を対象リポジトリの実ファイルへ適用しない
 - `git commit`・`git add`・`git push`を実行しない。コミットは呼び出し元の工程であり本系統の担当外である

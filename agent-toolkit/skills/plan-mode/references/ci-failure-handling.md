@@ -6,7 +6,12 @@ CI失敗の対処選択肢を横断で比較し、観測事実に対応する選
 
 ## 前提
 
-push直前に、pushのdry-runが返す全status lineから更新対象refを確定する。
+push直前に、`uv run --no-project --script <helper> create --prefix ci-evidence`を単独で実行して管理対象一時領域を作成し、
+標準出力の絶対パスを再生成せず保持する。
+Claude Codeでは`${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`を使う。
+Codexでは読み込んだ本referenceの絶対パスからplugin rootを確定し、
+`<plugin rootの絶対パス>/scripts/_managed_temp.py`を使う。
+続けてpushのdry-runが返す全status lineから更新対象refを確定する。
 全更新対象refのsourceのpeel前OID・object typeと、remote側対象refのpush前OID・object typeを
 所有者だけが読み書きできる一時領域へ保存し、存在しない側は不存在と記録する。annotated tagではtag objectの全内容と、
 再帰的にpeeledした対象のOID・object typeも保存する。
@@ -41,8 +46,10 @@ commitを指すrefでは、全親の完全長SHAと各親から失敗SHAまで�
 親ごとの差分で系列差分を代替しない。
 一時領域はpush主体が所有する。次の操作、保持理由、正確なパスを記録した再試行中状態だけ保持する。
 追加pushでは別の領域を作成して全パスを個別に記録する。
-CI成功、バグ対応完了、push失敗・監視不能・run未登録・forge CLI失敗後の中止、シグナル終了、例外終了を
-全終端状態に含め、plan mode外で正確な一時領域だけを削除して実在しないことを確認する。
+CI成功、バグ対応完了、push失敗・監視不能・run未登録・forge CLI失敗後の中止、
+シグナル終了、例外終了を全終端状態に含める。
+plan mode外で記録した各絶対パスへ`uv run --no-project --script <helper> cleanup --path <保持した絶対パス>`を単独で実行する。
+終了コード0と残存しないことを確認する。
 因果分析、深掘り判定、類似見直し、処置階層は`bugfix.md`をSSOTとし、本referenceの分類だけから修正を開始しない。
 push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定の場合は`bugfix.md`の深掘り条件に該当する。
 この条件では直接的原因の明白さを問わず深掘り経路を適用する。

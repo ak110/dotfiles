@@ -17,7 +17,11 @@
 
 各委譲の直前に、対象worktreeと条件付き複製元へ
 `${CLAUDE_PLUGIN_ROOT}/scripts/_worktree_snapshot.py capture`を実行する。
-委譲元は対象リポジトリ外へ所有者限定の親一時ディレクトリだけを用意し、
+委譲元は`uv run --no-project --script <helper> create --prefix plan-review-snapshot`を単独で実行し、対象リポジトリ外へ
+管理対象の親一時ディレクトリを作成し、標準出力の絶対パスを再生成せず保持する。
+Claude Codeでは`${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`を使う。
+Codexでは読み込んだ本referenceの絶対パスからplugin rootを確定し、
+`<plugin rootの絶対パス>/scripts/_managed_temp.py`を使う。
 その配下の未作成のパスを対象worktreeと複製元へ別々の出力先として指定する。
 出力先はhelperが作成するため、委譲元は出力先そのものを事前に作成せず、同じ出力先を再利用しない。
 計画ファイルのほかに許可する書き込みは、これらの出力先に限る。
@@ -29,7 +33,8 @@
 復旧の実行主体は、呼び出し元の明示確認後に開始する別工程とする。
 
 変化を検出しなかった場合と、報告した復旧が完了した場合に限り、
-委譲元が親一時ディレクトリを配下の出力先ごと除去し、残存しないことを確認する。
+委譲元が`uv run --no-project --script <helper> cleanup --path <保持した絶対パス>`を単独で実行し、
+終了コード0と親一時ディレクトリが残存しないことを確認する。
 復旧が未完了の間は、退避内容が復旧の唯一の入力となるため出力先を保持する。
 
 ## 総合レビューの初回委譲

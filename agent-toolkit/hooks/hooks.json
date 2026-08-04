@@ -83,6 +83,15 @@
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest_codex"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

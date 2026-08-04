@@ -160,7 +160,12 @@ finalizerが起動したAgentの識別子は同じ系統名でfinalizerへ搬送
 継続情報が無い系統は初回起動として新しく開始する。
 実施済みレビュー結果と確定済み採否が無い場合は、未実施かつ未確定として扱う。
 計画ファイル本文、agent定義の委譲手順、定義本文がSkillツールで読み込む規範は起動文へ転記しない。
-呼び出し元は対象worktreeと条件付き複製元ごとに、委譲直前に`mktemp -d`で所有者限定の一時親ディレクトリを作成する。
+呼び出し元は対象worktreeと条件付き複製元ごとに、委譲直前に
+`uv run --no-project --script <helper> create --prefix plan-review-snapshot`を単独で実行し、管理対象の一時親ディレクトリを作成する。
+標準出力の絶対パスは再生成せず保持する。
+Claude Codeでは`${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`を使う。
+Codexでは読み込んだ本referenceの絶対パスからplugin rootを確定し、
+`<plugin rootの絶対パス>/scripts/_managed_temp.py`を使う。
 親ディレクトリ配下の未作成パスを退避先とし、
 `${CLAUDE_PLUGIN_ROOT}/scripts/_worktree_snapshot.py capture --repo <対象リポジトリ> --output-dir <一時親ディレクトリ>/<未作成の退避先名>`を
 実行する。`capture`自身が退避先を0700で作成するため、`--output-dir`へ渡すパスを事前に作成しない。
@@ -173,6 +178,8 @@ finalizerが起動したAgentの識別子は同じ系統名でfinalizerへ搬送
 委譲先がコミットを作成すると作業ツリーは清浄な状態へ戻るため、差分の一致だけでは変更を検出できない。
 呼び出し元は委譲前に基準コミットを記録し、完了報告の受領時に再取得して報告値と突き合わせる。
 変化を検出した場合は自動復旧せず、helperが出力する変更パス、復旧材料、具体的な復旧手順を報告する。
+変化がない場合と復旧完了後に限り、`uv run --no-project --script <helper> cleanup --path <保持した絶対パス>`を単独で実行し、
+終了コード0と親一時ディレクトリが残存しないことを確認する。
 `worktree_check_results`が実測値でない完了報告（委譲の有無にかかわらず、
 実測結果以外の記述で欄を埋めたもの）は未完遂として扱う。
 呼び出し元自身の実測結果と`worktree_check_results`が一致した場合だけ完了報告を受理する。
