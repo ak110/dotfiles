@@ -164,8 +164,26 @@ def test_header_layout_and_additional_filters_structure() -> None:
     assert "overflow: hidden;" in target_repo_rule.group(1)
     assert "text-overflow: ellipsis;" in target_repo_rule.group(1)
 
+    responsive = assets.CSS.partition("@media (max-width: 1280px) {")[2].partition("@media (max-width: 700px) {")[0]
+    assert ".entry-columns {\n    display: none;\n  }" in responsive
+    assert "grid-template-columns: minmax(7rem, 40%) minmax(0, 1fr);" in responsive
     mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
     assert ".checkbox-field {\n    grid-column: auto;\n  }" in mobile
+
+
+def test_all_dialogs_have_accessible_names() -> None:
+    """追加、削除、未保存確認を含む全dialogを固有見出しで命名する。"""
+    expected = {
+        "detail-dialog": "detail-heading",
+        "create-dialog": "create-dialog-heading",
+        "delete-dialog": "delete-dialog-heading",
+        "unsaved-dialog": "unsaved-dialog-heading",
+    }
+    for dialog_id, heading_id in expected.items():
+        dialog = re.search(rf'<dialog id="{dialog_id}"([^>]*)>', assets.HTML)
+        assert dialog is not None
+        assert f'aria-labelledby="{heading_id}"' in dialog.group(1)
+        assert f'id="{heading_id}"' in assets.HTML
 
 
 def test_detail_view_uses_responsive_two_column_layout() -> None:
@@ -236,16 +254,17 @@ const ids = [
   'other-entry-count', 'other-entry-list', 'empty-state', 'empty-create-button', 'detail-dialog',
   'detail-close-button',
   'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
-  'detail-content', 'readonly-notice', 'detail-actions', 'edit-button',
+  'detail-content', 'readonly-notice', 'detail-actions', 'edit-button', 'answer-button',
   'delete-button', 'edit-panel', 'edit-content', 'edit-content-error',
   'cancel-edit-button', 'save-entry-button', 'answer-panel', 'answer-input',
-  'answer-input-error', 'save-answer-button', 'create-dialog', 'create-form',
+  'answer-input-error', 'save-answer-button', 'cancel-answer-button', 'create-dialog', 'create-form',
   'create-kind', 'create-content', 'create-content-error', 'create-target',
   'create-target-error', 'create-source', 'tbd-fields', 'create-scope',
   'create-question-type', 'choice-fields', 'create-choices',
   'create-choices-error', 'cancel-create-button', 'delete-dialog', 'delete-form',
   'delete-target', 'delete-state', 'force-delete-row', 'repo-options',
-  'force-delete-confirmation', 'delete-error', 'cancel-delete-button', 'toast'
+  'force-delete-confirmation', 'delete-error', 'cancel-delete-button', 'unsaved-dialog',
+  'discard-changes-button', 'continue-editing-button', 'toast'
 ];
 const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
 elements['kind-filter'].value = 'all';
@@ -508,7 +527,7 @@ const editResult = {
   toast: elements['toast'].textContent
 };
 await selectEntry(detail, elements['entry-list'].children[0].children[0]);
-enterEdit();
+enterAnswer();
 elements['answer-input'].value = '回答本文';
 await saveAnswer();
 const answerResult = {
@@ -675,15 +694,15 @@ process.stdout.write(JSON.stringify({
         "primaryKeys": ["new.md"],
         "otherHidden": False,
         "otherCount": "4件",
-        "otherKeys": ["finished.md", "answered.md", "old.md", "empty-source.md"],
+        "otherKeys": ["old.md", "answered.md", "finished.md", "empty-source.md"],
     }
     assert result["unsplitState"] == {
-        "heading": "一覧",
+        "heading": "未完了TBD",
         "count": "1件",
-        "primaryKeys": ["answered.md"],
-        "otherHidden": True,
-        "otherCount": "0件",
-        "otherKeys": [],
+        "primaryKeys": ["new.md"],
+        "otherHidden": False,
+        "otherCount": "4件",
+        "otherKeys": ["old.md", "answered.md", "finished.md", "empty-source.md"],
     }
     assert result["populated"]["count"] == "1件"
     assert result["populated"]["first"] == "new.md"
@@ -695,13 +714,14 @@ process.stdout.write(JSON.stringify({
     assert result["sourceSearchKeys"] == ["new.md"]
     assert result["loadingState"] == {"visible": True, "primaryBusy": "true", "otherBusy": "true"}
     assert result["loadedState"] == {"primaryBusy": "false", "otherBusy": "false"}
-    assert result["emptyVisible"] is True
-    assert result["emptyCount"] == "0件"
+    assert result["emptyVisible"] is False
+    assert result["emptyCount"] == "1件"
     assert result["emptySourceState"]["sourceFilterValue"] == ""
     assert result["emptySourceState"]["sourceFilterDisabledAfterCheck"] is True
     assert result["emptySourceState"]["sourceFilterEnabledAfterUncheck"] is True
     assert "source_empty=true" in result["emptySourceState"]["query"]
     assert "source=" not in result["emptySourceState"]["query"]
+    assert "q=%E4%B8%80%E8%87%B4%E3%81%97%E3%81%AA%E3%81%84" in result["emptySourceState"]["query"]
 
 
 def test_assets_use_consistent_readable_typography() -> None:
@@ -780,7 +800,7 @@ for (const state of ['inbox', 'processing', 'adopted', 'rejected']) {
     edit: !elements['edit-button'].hidden,
     remove: !elements['delete-button'].hidden,
     readonly: !elements['readonly-notice'].hidden,
-    answer: !elements['answer-panel'].hidden
+    answer: !elements['answer-button'].hidden
   };
 }
 process.stdout.write(JSON.stringify(result));
@@ -945,6 +965,39 @@ process.stdout.write(JSON.stringify({
         "detailUrls": ["/atk/api/entries/processing/entry.md"],
     }
     assert result["afterDisappearance"]["dialogOpen"] is False
+
+
+def test_sse_disappearance_confirms_before_discarding_unsaved_input() -> None:
+    """SSE一覧から選択項目が消えても未保存本文を保持して確認する。"""
+    result = _run_node_ui(
+        """
+const entry = {
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  content: '取得時本文', content_html: '<p>取得時本文</p>'
+};
+currentEntry = entry;
+detailOriginKey = entryKey(entry);
+elements['detail-dialog'].open = true;
+enterEdit();
+elements['edit-content'].value = '未保存本文';
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({entries: []})
+});
+await loadEntries({fromSse: true});
+process.stdout.write(JSON.stringify({
+  detailOpen: elements['detail-dialog'].open,
+  confirmationOpen: elements['unsaved-dialog'].open,
+  editing,
+  content: elements['edit-content'].value
+}));
+"""
+    )
+    assert result == {
+        "detailOpen": True,
+        "confirmationOpen": True,
+        "editing": True,
+        "content": "未保存本文",
+    }
 
 
 def test_detail_discards_out_of_order_response_for_previous_selection() -> None:
@@ -1185,6 +1238,7 @@ const escapeFocus = globalThis.focused;
 
 await selectEntry(entry, elements['entry-list'].children[0].children[0]);
 enterEdit();
+elements['edit-content'].value = '未保存本文';
 let editPrevented = false;
 elements['detail-dialog'].listeners.cancel({preventDefault() { editPrevented = true; }});
 if (!editPrevented) elements['detail-dialog'].close();
@@ -1227,6 +1281,122 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {"open": True, "editing": True, "content": "未保存本文"}
+
+
+def test_body_edit_and_answer_are_exclusive_and_confirm_unsaved_exit() -> None:
+    """本文編集と回答を同時表示せず、dirty状態の終了を確認する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+currentEntry = {
+  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
+  content: '取得時本文', content_html: '<p>取得時本文</p>'
+};
+elements['detail-dialog'].open = true;
+enterEdit();
+const bodyMode = {
+  body: !elements['edit-panel'].hidden,
+  answer: !elements['answer-panel'].hidden
+};
+elements['edit-content'].value = '未保存本文';
+elements['cancel-edit-button'].listeners.click({type: 'click'});
+const confirmation = {
+  open: elements['unsaved-dialog'].open,
+  editing,
+  value: elements['edit-content'].value
+};
+continueEditing();
+const continued = {
+  open: elements['unsaved-dialog'].open,
+  editing,
+  value: elements['edit-content'].value
+};
+cancelEdit();
+discardChanges();
+enterAnswer();
+const answerMode = {
+  body: !elements['edit-panel'].hidden,
+  answer: !elements['answer-panel'].hidden
+};
+elements['answer-input'].value = '未保存回答';
+elements['cancel-answer-button'].listeners.click({type: 'click'});
+const answerCancelConfirmation = {
+  open: elements['unsaved-dialog'].open,
+  editing,
+  answer: elements['answer-input'].value
+};
+continueEditing();
+elements['answer-input'].value = '   ';
+documentListeners.keydown({
+  key: 'Escape', ctrlKey: false, metaKey: false, altKey: false,
+  preventDefault() {}
+});
+const closeConfirmation = {
+  detailOpen: elements['detail-dialog'].open,
+  confirmationOpen: elements['unsaved-dialog'].open,
+  answer: elements['answer-input'].value
+};
+process.stdout.write(JSON.stringify({
+  bodyMode, confirmation, continued, answerMode, answerCancelConfirmation, closeConfirmation
+}));
+"""
+    )
+    assert result == {
+        "bodyMode": {"body": True, "answer": False},
+        "confirmation": {"open": True, "editing": True, "value": "未保存本文"},
+        "continued": {"open": False, "editing": True, "value": "未保存本文"},
+        "answerMode": {"body": False, "answer": True},
+        "answerCancelConfirmation": {"open": True, "editing": True, "answer": "未保存回答"},
+        "closeConfirmation": {"detailOpen": True, "confirmationOpen": True, "answer": "   "},
+    }
+
+
+def test_stale_list_response_cannot_overwrite_newer_conditions() -> None:
+    """古い一覧応答を無視し、全要求完了まで読込状態を維持する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+const resolvers = [];
+fetchHandler = async () => new Promise(resolve => { resolvers.push(resolve); });
+elements['search-input'].value = '古い';
+const older = loadEntries();
+elements['search-input'].value = '新しい';
+elements['search-input'].listeners.input();
+const newer = loadEntries();
+resolvers[1]({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entries: [{kind: 'feedback', state: 'inbox', filename: 'new.md'}]})
+});
+await newer;
+const whileOlderPending = {
+  keys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
+  loading,
+  pendingListRequests
+};
+resolvers[0]({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entries: [{kind: 'feedback', state: 'inbox', filename: 'old.md'}]})
+});
+await older;
+process.stdout.write(JSON.stringify({
+  urls: fetchCalls.map(call => call.url),
+  whileOlderPending,
+  finalKeys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
+  loading,
+  pendingListRequests,
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result["urls"] == [
+        "/atk/api/entries?type=all&status=active&answered=all&q=%E5%8F%A4%E3%81%84",
+        "/atk/api/entries?type=all&status=active&answered=all&q=%E6%96%B0%E3%81%97%E3%81%84",
+    ]
+    assert result["whileOlderPending"] == {"keys": ["new.md"], "loading": True, "pendingListRequests": 1}
+    assert result["finalKeys"] == ["new.md"]
+    assert result["loading"] is False
+    assert result["pendingListRequests"] == 0
+    assert result["error"] == ""
 
 
 def test_assets_keep_keyboard_and_narrow_viewport_support() -> None:
@@ -1281,7 +1451,7 @@ process.stdout.write(JSON.stringify({
         "preventions": ["save", "command-save", "search", "detail-escape"],
         "focused": "search-input",
         "dialogOpen": False,
-        "editing": True,
+        "editing": False,
     }
 
 
@@ -1869,6 +2039,25 @@ def test_operations_answered_filter_returns_only_answered_tbds(
     assert [item["filename"] for item in result] == ["answered.md"]
 
 
+@pytest.mark.parametrize("query", ["本文途中の固有語", "日本語", "EXAMPLE/REPO", "entry.md"])
+def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.Path, query: str) -> None:
+    """`q`は本文途中、Unicode、frontmatter値、ファイル名を大文字小文字を区別せず検索する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "entry.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n先頭\n\n日本語と本文途中の固有語\n",
+        encoding="utf-8",
+    )
+    (inbox / "other.md").write_text(
+        "---\ntype: feedback\ntarget_repo: other/repo\n---\n\n別本文\n",
+        encoding="utf-8",
+    )
+
+    result = serve_app.Operations(tmp_path).entries({"q": query})
+
+    assert [item["filename"] for item in result] == ["entry.md"]
+
+
 def test_operations_source_empty_filter_returns_items_with_missing_or_empty_source(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2284,6 +2473,7 @@ def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkey
     [
         ("get", "/api/entries?status=unknown", None),
         ("get", "/api/entries?target_repo=", None),
+        ("get", "/api/entries?q=", None),
         ("get", "/api/entries?source_empty=false", None),
         ("get", "/api/entries?source=web&source_empty=true", None),
         (

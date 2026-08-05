@@ -241,6 +241,7 @@ class Operations:
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
+        query = filters.get("q", "").casefold()
         states = _resolve_states(status_filter)
         for state, path, text in self._iter_entry_files(states):
             try:
@@ -261,6 +262,9 @@ class Operations:
             if any(filters.get(key) and item[key] != filters[key] for key in ("target_repo", "category")):
                 continue
             if filters.get("source") and item["source"] != filters["source"]:
+                continue
+            searchable = (text, path.name, item["target_repo"], item["category"], item["source"])
+            if query and not any(query in str(value or "").casefold() for value in searchable):
                 continue
             result.append(item)
         # TBDファイルをファイル名降順、その後フィードバックをファイル名降順で並べる
@@ -614,7 +618,7 @@ def create_app(
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
-        allowed = {"type", "status", "answered", "target_repo", "category", "source", "source_empty"}
+        allowed = {"type", "status", "answered", "target_repo", "category", "source", "source_empty", "q"}
         unknown = set(quart.request.args) - allowed
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
@@ -629,7 +633,7 @@ def create_app(
             raise common.WebInputError("source_emptyはtrueで指定してください")
         if "source" in filters and "source_empty" in filters:
             raise common.WebInputError("sourceとsource_emptyは同時に指定できません")
-        for name in ("target_repo", "category", "source"):
+        for name in ("target_repo", "category", "source", "q"):
             if name in filters and not filters[name].strip():
                 raise common.WebInputError(f"{name}は空でない文字列で指定してください")
         return quart.jsonify(entries=await workers.run(ops.entries, filters))

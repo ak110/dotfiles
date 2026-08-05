@@ -168,6 +168,7 @@ HTML = """<!doctype html>
         </div>
         <div id="detail-actions" class="detail-actions">
           <button id="edit-button" class="button-primary" type="button">編集</button>
+          <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
           <button id="delete-button" class="button-danger" type="button">削除</button>
         </div>
       </section>
@@ -182,19 +183,24 @@ HTML = """<!doctype html>
           <button id="cancel-edit-button" class="button-secondary" type="button">中止</button>
         </div>
 
-        <div id="answer-panel" class="answer-panel" hidden>
-          <label for="answer-input">確認事項への回答</label>
-          <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
-          <p id="answer-input-error" class="inline-error" hidden></p>
+      </section>
+
+      <section id="answer-panel" class="answer-panel" hidden>
+        <h3>回答</h3>
+        <label for="answer-input">確認事項への回答</label>
+        <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
+        <p id="answer-input-error" class="inline-error" hidden></p>
+        <div class="form-actions">
           <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
+          <button id="cancel-answer-button" class="button-secondary" type="button">中止</button>
         </div>
       </section>
     </article>
   </dialog>
 
-  <dialog id="create-dialog">
+  <dialog id="create-dialog" aria-labelledby="create-dialog-heading">
     <form id="create-form" method="dialog" novalidate>
-      <h2>新規追加</h2>
+      <h2 id="create-dialog-heading">新規追加</h2>
       <label for="create-kind">種別</label>
       <select id="create-kind" name="type">
         <option value="feedback">フィードバック</option>
@@ -237,9 +243,9 @@ HTML = """<!doctype html>
     </form>
   </dialog>
 
-  <dialog id="delete-dialog">
+  <dialog id="delete-dialog" aria-labelledby="delete-dialog-heading">
     <form id="delete-form" method="dialog">
-      <h2>削除の確認</h2>
+      <h2 id="delete-dialog-heading">削除の確認</h2>
       <p>対象: <strong id="delete-target"></strong></p>
       <p>状態: <span id="delete-state" class="state-badge"></span></p>
       <label id="force-delete-row" class="force-confirmation" hidden>
@@ -250,6 +256,17 @@ HTML = """<!doctype html>
       <div class="form-actions">
         <button class="button-danger" type="submit">削除する</button>
         <button id="cancel-delete-button" class="button-secondary" type="button">中止</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="unsaved-dialog" aria-labelledby="unsaved-dialog-heading">
+    <form method="dialog">
+      <h2 id="unsaved-dialog-heading">未保存の変更</h2>
+      <p>入力内容を破棄しますか。</p>
+      <div class="form-actions">
+        <button id="discard-changes-button" class="button-danger" type="button">破棄する</button>
+        <button id="continue-editing-button" class="button-secondary" type="button">編集を続ける</button>
       </div>
     </form>
   </dialog>
@@ -859,6 +876,32 @@ dialog form {
   }
 }
 
+@media (max-width: 1280px) {
+  .entry-columns {
+    display: none;
+  }
+
+  .entry-select {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+
+  .entry-cell {
+    display: grid;
+    grid-template-columns: minmax(7rem, 40%) minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .entry-cell::before {
+    display: inline;
+    color: var(--color-secondary-text);
+    content: attr(data-label);
+    font-size: var(--font-size-secondary);
+    font-weight: 700;
+  }
+}
+
 @media (max-width: 700px) {
   .app-header,
   .header-actions,
@@ -875,30 +918,6 @@ dialog form {
 
   .entry-pane {
     min-height: 0;
-  }
-
-  .entry-columns {
-    display: none;
-  }
-
-  .entry-select {
-    grid-template-columns: 1fr;
-    gap: var(--space-1);
-    padding: var(--space-3);
-  }
-
-  .entry-cell {
-    display: grid;
-    grid-template-columns: minmax(7rem, 40%) 1fr;
-    gap: var(--space-2);
-  }
-
-  .entry-cell::before {
-    display: inline;
-    color: var(--color-secondary-text);
-    content: attr(data-label);
-    font-size: var(--font-size-secondary);
-    font-weight: 700;
   }
 
   .detail-dialog {
@@ -973,12 +992,17 @@ let entries = [];
 let visibleEntries = [];
 let currentEntry = null;
 let editing = false;
+let editMode = 'body';
 let loading = false;
 let editBaseline = '';
 let answerBaseline = '';
 let detailOrigin = null;
 let detailOriginKey = '';
 let detailRequestGeneration = 0;
+let listRequestGeneration = 0;
+let pendingListRequests = 0;
+let searchTimer = null;
+let pendingDiscardAction = null;
 let toastTimer = null;
 
 const byId = id => document.getElementById(id);
@@ -1064,20 +1088,7 @@ function formatUpdatedAt(value, part = 'datetime') {
 }
 
 function applyClientFilters() {
-  const query = byId('search-input').value.trim().toLocaleLowerCase('ja-JP');
-  const searchableFields = ['filename', 'summary', 'target_repo', 'category', 'source'];
-  visibleEntries = entries
-    .filter(entry => !query || searchableFields.some(field => String(entry[field] || '').toLocaleLowerCase('ja-JP').includes(query)))
-    .sort((left, right) => {
-      // TBDをfeedbackの前に置き、各グループ内ではファイル名で降順ソート
-      const kindOrder = {tbd: 0, feedback: 1};
-      const leftKind = kindOrder[left.kind] ?? 2;
-      const rightKind = kindOrder[right.kind] ?? 2;
-      if (leftKind !== rightKind) return leftKind - rightKind;
-      const leftFile = String(left.filename || '');
-      const rightFile = String(right.filename || '');
-      return rightFile.localeCompare(leftFile);  // 降順（rightが先）
-    });
+  visibleEntries = entries;
   renderList();
 }
 
@@ -1206,7 +1217,8 @@ function renderMetadata(entry) {
 function displayEntry(entry, preserveForm = false) {
   currentEntry = entry;
   byId('detail-view').hidden = editing;
-  byId('edit-panel').hidden = !editing;
+  byId('edit-panel').hidden = !editing || editMode !== 'body';
+  byId('answer-panel').hidden = !editing || editMode !== 'answer';
   byId('detail-filename').textContent = entry.filename;
   byId('detail-state').textContent = STATE_LABELS[entry.state] || entry.state;
   byId('detail-state').dataset.state = entry.state;
@@ -1218,8 +1230,8 @@ function displayEntry(entry, preserveForm = false) {
   byId('detail-actions').hidden = !active;
   byId('readonly-notice').hidden = active;
   byId('edit-button').hidden = !active;
+  byId('answer-button').hidden = !(active && entry.kind === 'tbd' && entry.answered === false);
   byId('delete-button').hidden = !active;
-  byId('answer-panel').hidden = !(active && entry.kind === 'tbd' && entry.answered === false && editing);
   if (!preserveForm) {
     byId('edit-content').value = entry.content;
     byId('answer-input').value = '';
@@ -1254,14 +1266,21 @@ async function renderDetail(entry, options = {}) {
 }
 
 async function selectEntry(entry, origin) {
-  if (editing && entryKey(entry) !== entryKey(currentEntry)) cancelEdit();
+  if (hasUnsavedChanges() && entryKey(entry) !== entryKey(currentEntry)) {
+    requestDiscard(() => {
+      cancelEdit(true);
+      selectEntry(entry, origin);
+    });
+    return;
+  }
+  if (editing && entryKey(entry) !== entryKey(currentEntry)) cancelEdit(true);
   detailOrigin = origin;
   detailOriginKey = entryKey(entry);
   await renderDetail(entry, {open: true});
 }
 
 function closeDetailDialog(force = false) {
-  if (editing && !force) return false;
+  if (editing && !force) return requestDiscard(() => closeDetailDialog(true));
   if (force) editing = false;
   if (byId('detail-dialog').open) byId('detail-dialog').close();
   return true;
@@ -1282,26 +1301,71 @@ function resetDetailSelection() {
 function enterEdit() {
   if (!currentEntry || !ACTIVE_STATES.has(currentEntry.state)) return;
   editing = true;
+  editMode = 'body';
   editBaseline = currentEntry.content;
   answerBaseline = currentEntry.content;
   byId('edit-content').value = currentEntry.content;
   byId('answer-input').value = '';
   byId('detail-view').hidden = true;
   byId('edit-panel').hidden = false;
-  byId('answer-panel').hidden = !(currentEntry.kind === 'tbd' && currentEntry.answered === false);
+  byId('answer-panel').hidden = true;
   byId('edit-content').focus();
 }
 
-function cancelEdit() {
+function enterAnswer() {
+  if (!currentEntry || currentEntry.kind !== 'tbd' || currentEntry.answered !== false) return;
+  editing = true;
+  editMode = 'answer';
+  answerBaseline = currentEntry.content;
+  byId('answer-input').value = '';
+  byId('detail-view').hidden = true;
+  byId('edit-panel').hidden = true;
+  byId('answer-panel').hidden = false;
+  byId('answer-input').focus();
+}
+
+function cancelEdit(force = false) {
+  if (!force && hasUnsavedChanges()) return requestDiscard(() => cancelEdit(true));
   editing = false;
   setFieldError('edit-content', '');
   setFieldError('answer-input', '');
   byId('edit-panel').hidden = true;
+  byId('answer-panel').hidden = true;
   byId('detail-view').hidden = !currentEntry;
   if (currentEntry) {
     byId('edit-content').value = currentEntry.content;
     byId('answer-input').value = '';
   }
+}
+
+function hasUnsavedChanges() {
+  if (!editing || !currentEntry) return false;
+  if (editMode === 'answer') return byId('answer-input').value !== '';
+  return byId('edit-content').value !== editBaseline;
+}
+
+function requestDiscard(action) {
+  if (!hasUnsavedChanges()) {
+    action();
+    return true;
+  }
+  pendingDiscardAction = action;
+  byId('unsaved-dialog').showModal();
+  return false;
+}
+
+function discardChanges() {
+  const action = pendingDiscardAction;
+  pendingDiscardAction = null;
+  byId('unsaved-dialog').close();
+  if (action) action();
+}
+
+function continueEditing() {
+  pendingDiscardAction = null;
+  byId('unsaved-dialog').close();
+  const inputId = editMode === 'answer' ? 'answer-input' : 'edit-content';
+  byId(inputId).focus();
 }
 
 function conflictMessage(error) {
@@ -1313,7 +1377,7 @@ function conflictMessage(error) {
 }
 
 async function saveEntry() {
-  if (!currentEntry || !editing) return;
+  if (!currentEntry || !editing || editMode !== 'body') return;
   const content = requireValue('edit-content', '本文');
   if (!content) return;
   try {
@@ -1321,17 +1385,16 @@ async function saveEntry() {
       method: 'PUT',
       body: JSON.stringify({content, expected_content: editBaseline})
     });
-    editing = false;
+    cancelEdit(true);
     showToast('本文を保存しました。');
     await loadEntries();
-    closeDetailDialog();
   } catch (error) {
     if (!conflictMessage(error)) showError(error);
   }
 }
 
 async function saveAnswer() {
-  if (!currentEntry || !editing) return;
+  if (!currentEntry || !editing || editMode !== 'answer') return;
   const answer = requireValue('answer-input', '回答');
   if (!answer) return;
   try {
@@ -1339,10 +1402,9 @@ async function saveAnswer() {
       method: 'POST',
       body: JSON.stringify({filename: currentEntry.filename, answer, expected_content: answerBaseline})
     });
-    editing = false;
+    cancelEdit(true);
     showToast('回答を保存しました。');
     await loadEntries();
-    closeDetailDialog();
   } catch (error) {
     if (!conflictMessage(error)) showError(error);
   }
@@ -1453,6 +1515,8 @@ function listQuery() {
   if (byId('source-empty-filter').checked) {
     query.set('source_empty', 'true');
   }
+  const search = byId('search-input').value.trim();
+  if (search) query.set('q', search);
   return query.toString();
 }
 
@@ -1494,14 +1558,17 @@ async function loadTargetRepos() {
 
 async function loadEntries(options = {}) {
   const selectedFilename = currentEntry ? currentEntry.filename : '';
+  const requestGeneration = ++listRequestGeneration;
+  pendingListRequests += 1;
   setLoading(true);
   try {
     const payload = await api(`/api/entries?${listQuery()}`);
+    if (requestGeneration !== listRequestGeneration) return;
     entries = payload.entries;
     applyClientFilters();
     const selected = entries.find(entry => entry.filename === selectedFilename);
     if (!selected) {
-      if (byId('detail-dialog').open) closeDetailDialog(true);
+      if (byId('detail-dialog').open) closeDetailDialog();
       return;
     }
     if (editing) {
@@ -1513,10 +1580,12 @@ async function loadEntries(options = {}) {
     }
     if (byId('detail-dialog').open) await renderDetail(selected, {closeWhenMissing: true});
   } catch (error) {
+    if (requestGeneration !== listRequestGeneration) return;
     showError(error);
   } finally {
-    setLoading(false);
-    renderList();
+    pendingListRequests -= 1;
+    setLoading(pendingListRequests > 0);
+    if (requestGeneration === listRequestGeneration) renderList();
   }
 }
 
@@ -1533,7 +1602,7 @@ async function synchronizeAndLoad() {
 }
 
 function closeTopmostDialog() {
-  for (const dialog of [byId('delete-dialog'), byId('create-dialog')]) {
+  for (const dialog of [byId('unsaved-dialog'), byId('delete-dialog'), byId('create-dialog')]) {
     if (dialog.open) {
       dialog.close();
       return true;
@@ -1551,7 +1620,9 @@ function bindEvents() {
   byId('create-kind').addEventListener('change', updateCreateFields);
   byId('create-question-type').addEventListener('change', updateCreateFields);
   byId('edit-button').addEventListener('click', enterEdit);
-  byId('cancel-edit-button').addEventListener('click', cancelEdit);
+  byId('answer-button').addEventListener('click', enterAnswer);
+  byId('cancel-edit-button').addEventListener('click', () => cancelEdit());
+  byId('cancel-answer-button').addEventListener('click', () => cancelEdit());
   byId('save-entry-button').addEventListener('click', saveEntry);
   byId('save-answer-button').addEventListener('click', saveAnswer);
   byId('delete-button').addEventListener('click', openDeleteDialog);
@@ -1559,11 +1630,20 @@ function bindEvents() {
   byId('cancel-delete-button').addEventListener('click', () => byId('delete-dialog').close());
   byId('detail-close-button').addEventListener('click', () => closeDetailDialog());
   byId('detail-dialog').addEventListener('cancel', event => {
-    if (editing) event.preventDefault();
+    if (hasUnsavedChanges()) {
+      event.preventDefault();
+      requestDiscard(() => closeDetailDialog(true));
+    }
   });
   byId('detail-dialog').addEventListener('close', resetDetailSelection);
+  byId('discard-changes-button').addEventListener('click', discardChanges);
+  byId('continue-editing-button').addEventListener('click', continueEditing);
 
-  byId('search-input').addEventListener('input', applyClientFilters);
+  byId('search-input').addEventListener('input', () => {
+    listRequestGeneration += 1;
+    if (searchTimer !== null) clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadEntries, 200);
+  });
   for (const id of ['kind-filter', 'state-filter', 'answer-filter', 'target-filter', 'category-filter', 'source-filter']) {
     byId(id).addEventListener('change', () => loadEntries());
   }
@@ -1584,7 +1664,8 @@ function bindEvents() {
   document.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 's' && editing) {
       event.preventDefault();
-      saveEntry();
+      if (editMode === 'answer') saveAnswer();
+      else saveEntry();
     } else if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
       const tagName = document.activeElement ? document.activeElement.tagName : '';
       if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName)) {
@@ -1592,7 +1673,10 @@ function bindEvents() {
         byId('search-input').focus();
       }
     } else if (event.key === 'Escape') {
-      if (!closeTopmostDialog() && editing && byId('detail-dialog').open) event.preventDefault();
+      if (!closeTopmostDialog() && editing && byId('detail-dialog').open) {
+        event.preventDefault();
+        closeDetailDialog();
+      }
     }
   });
 }
