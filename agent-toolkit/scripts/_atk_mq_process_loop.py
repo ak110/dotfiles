@@ -12,6 +12,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -100,6 +101,20 @@ def _child_env() -> dict[str, str]:
     _strip_inherited_venv(env)
     env.pop(_RESTART_SPEC_ENV, None)
     return env
+
+
+def _create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
+    """Claude Codeのhook診断ログを所有者限定で事前作成する。"""
+    config_dir = pathlib.Path(env.get("CLAUDE_CONFIG_DIR", pathlib.Path.home() / ".claude"))
+    debug_dir = config_dir / "debug"
+    debug_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix="process-loop-", suffix=".log", dir=debug_dir)
+    try:
+        if os.name != "nt":
+            os.fchmod(descriptor, 0o600)
+    finally:
+        os.close(descriptor)
+    return pathlib.Path(name).resolve()
 
 
 class _ChangeHandler(watchdog.events.FileSystemEventHandler):
@@ -442,6 +457,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     後続の新規起動は`claude --permission-mode=auto --model {args.model}`で、
     process-feedbacksから明示的な終了処理までを単一の`/goal`条件として登録する。
     `--model`の既定値は`opus`とする。
+    全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
+    未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
     claudeが正常終了（0・-15・15・143のいずれか）した場合、
     `--no-update`未指定なら`update-dotfiles`を実行してから
     `_restart_process_loop`でランチャーへ再起動を要求する。
@@ -491,7 +508,14 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
                         # claude起動セッション内でcwd依存の子コマンドが発行された場合、
                         # 解決先を`local_path`へ固定してデーモンプロセスのcwdに依存させない。
-                        claude_argv = ["claude"]
+                        hook_debug_log = _create_hook_debug_log(env)
+                        print(f"Claude hook診断ログ: {hook_debug_log}")
+                        claude_argv = [
+                            "claude",
+                            "--debug=hooks",
+                            "--debug-file",
+                            str(hook_debug_log),
+                        ]
                         if resume_pending:
                             claude_argv.append("--resume" if not args.resume else f"--resume={args.resume}")
                             resume_pending = False

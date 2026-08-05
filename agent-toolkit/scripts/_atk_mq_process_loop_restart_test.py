@@ -31,10 +31,11 @@ _RESTART_EXIT_CODE = _process_loop._RESTART_EXIT_CODE  # pylint: disable=protect
 
 
 @pytest.fixture(autouse=True)
-def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部コマンド解決結果をテスト環境のPATHから分離する。"""
+def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """外部コマンドとClaude設定を利用者環境から分離する。"""
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.delenv(_RESTART_SPEC_ENV, raising=False)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
 
 def _command_was_called(calls: list[list[str]], command: str) -> bool:
@@ -288,6 +289,26 @@ class TestWaitLoopAutoRestart:
         assert not any(arg.startswith("--resume") for arg in restart_argv)
         assert "00000000-0000-0000-0000-000000000000" not in restart_argv
         assert "--target-repo" in restart_argv
+
+    def test_pending_session_uses_isolated_hook_debug_log(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`pending_count=1`経路のClaude起動も一時設定ディレクトリへ診断ログを保存する。"""
+        subprocess_calls, _ = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            pending_count=1,
+        )
+
+        claude_command = next(call for call in subprocess_calls if call[:1] == ["claude"])
+        assert claude_command[:3] == ["claude", "--debug=hooks", "--debug-file"]
+        debug_log = pathlib.Path(claude_command[3])
+        assert debug_log.is_file()
+        assert debug_log.parent == tmp_path / ".claude" / "debug"
 
 
 def test_restart_writes_spec_and_exits_when_launcher_env_is_set(

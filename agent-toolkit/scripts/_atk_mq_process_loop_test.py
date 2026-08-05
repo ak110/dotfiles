@@ -9,6 +9,7 @@ process-loopサブコマンド（常駐ループ）、リモートURL正規化�
 import contextlib
 import os
 import pathlib
+import stat
 import subprocess
 import sys
 import threading
@@ -28,14 +29,24 @@ from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-
 
 
 @pytest.fixture(autouse=True)
-def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部コマンド解決結果をテスト環境のPATHから分離する。"""
+def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """外部コマンドとClaude設定を利用者環境から分離する。"""
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
 
 def _command_was_called(calls: list[list[str]], command: str) -> bool:
     """呼び出し配列の先頭要素を基底名で照合する。"""
     return any(pathlib.Path(call[0]).stem.lower() == command for call in calls)
+
+
+def _hook_debug_log(command: list[str]) -> pathlib.Path:
+    """Claude起動コマンドからhook診断ログを取得し、共通契約を検証する。"""
+    assert command[:3] == ["claude", "--debug=hooks", "--debug-file"]
+    debug_log = pathlib.Path(command[3])
+    assert debug_log.is_absolute()
+    assert debug_log.is_file()
+    return debug_log
 
 
 def _fake_run_with_remote_url(
@@ -310,7 +321,16 @@ class TestProcessLoopPromptAndEnv:
 
         # ランチャーとの再起動要求の受け渡しファイルは自プロセス専用であり、子孫セッションへは渡さない。
         monkeypatch.setenv("AGENT_TOOLKIT_RESTART_SPEC", str(tmp_path / "restart-spec"))
+        monkeypatch.setenv("CLAUDE_CODE_DEBUG_LOGS_DIR", str(tmp_path / "ignored-debug.log"))
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        closed_descriptors: list[int] = []
+        real_close = os.close
+
+        def record_close(descriptor: int) -> None:
+            closed_descriptors.append(descriptor)
+            real_close(descriptor)
+
+        monkeypatch.setattr(_process_loop.os, "close", record_close)
 
         # 件数: 1回目は1件（claude起動）、2回目以降は0件（待機ループへ）
         count_calls: list[int] = []
@@ -341,12 +361,91 @@ class TestProcessLoopPromptAndEnv:
         assert "agent-toolkit:process-feedbacks" in prompt
         # cwdをmyrepoへ固定し、claudeセッション内のcwd依存コマンドの解決先を対象リポジトリへ揃える。
         assert claude_calls[0]["cwd"] == myrepo
-        assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
+        command = claude_calls[0]["cmd"]
+        debug_log = _hook_debug_log(command)
+        assert debug_log.parent == tmp_path / ".claude" / "debug"
+        if os.name != "nt":
+            assert stat.S_IMODE(debug_log.stat().st_mode) == 0o600
+        assert command[4:7] == ["--permission-mode=auto", "--model", "opus"]
         assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
         assert "AGENT_TOOLKIT_RESTART_SPEC" not in claude_calls[0]["env"]
         assert len(wait_calls) == 2
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out
+        assert f"Claude hook診断ログ: {debug_log}" in captured.out
+        assert len(closed_descriptors) == 1
+        with pytest.raises(OSError):
+            os.fstat(closed_descriptors[0])
+
+    def test_hook_debug_log_uses_home_when_config_dir_is_unset(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`CLAUDE_CONFIG_DIR`未設定時は利用者ホーム配下`.claude/debug/`へ保存する。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: tmp_path))
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+        assert len(claude_calls) == 1
+        assert _hook_debug_log(claude_calls[0]["cmd"]).parent == tmp_path / ".claude" / "debug"
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIXの権限設定失敗時だけに適用する契約")
+    def test_hook_debug_log_descriptor_closes_when_permission_setting_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`fchmod`失敗時もfile descriptorを閉じ、Claudeを起動しない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1)
+        permission_descriptors: list[int] = []
+        closed_descriptors: list[int] = []
+        real_close = os.close
+
+        def fail_fchmod(descriptor: int, _mode: int) -> None:
+            permission_descriptors.append(descriptor)
+            raise PermissionError("権限設定失敗")
+
+        def record_close(descriptor: int) -> None:
+            closed_descriptors.append(descriptor)
+            real_close(descriptor)
+
+        monkeypatch.setattr(_process_loop.os, "fchmod", fail_fchmod)
+        monkeypatch.setattr(_process_loop.os, "close", record_close)
+
+        with pytest.raises(PermissionError, match="権限設定失敗"):
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+        assert permission_descriptors == closed_descriptors
+        assert len(closed_descriptors) == 1
+        with pytest.raises(OSError):
+            os.fstat(closed_descriptors[0])
+        assert not claude_calls
 
     def test_removes_inherited_virtual_env(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """起動元ツールの仮想環境を`VIRTUAL_ENV`と`PATH`の双方から取り除いて子セッションへ渡す。
@@ -498,7 +597,9 @@ class TestProcessLoopPromptAndEnv:
             )
 
         assert len(claude_calls) == 1
-        assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "sonnet"]
+        command = claude_calls[0]["cmd"]
+        _hook_debug_log(command)
+        assert command[4:7] == ["--permission-mode=auto", "--model", "sonnet"]
 
     def test_resume_applied_to_first_session_only(
         self,
@@ -528,8 +629,11 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 2
         first_command = claude_calls[0]["cmd"]
         second_command = claude_calls[1]["cmd"]
-        assert first_command == ["claude", "--resume"]
-        assert second_command[:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
+        first_debug_log = _hook_debug_log(first_command)
+        second_debug_log = _hook_debug_log(second_command)
+        assert first_debug_log != second_debug_log
+        assert first_command[4:] == ["--resume"]
+        assert second_command[4:7] == ["--permission-mode=auto", "--model", "opus"]
         assert "--resume" not in second_command
         assert "--continue" not in second_command
         assert second_command[-1].startswith("/goal ")
@@ -562,9 +666,12 @@ class TestProcessLoopPromptAndEnv:
             )
 
         assert len(claude_calls) == 2
-        assert claude_calls[0]["cmd"] == ["claude", "--resume=session-id"]
-        assert claude_calls[1]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
-        assert claude_calls[1]["cmd"][-1].startswith("/goal ")
+        first_command = claude_calls[0]["cmd"]
+        second_command = claude_calls[1]["cmd"]
+        assert _hook_debug_log(first_command) != _hook_debug_log(second_command)
+        assert first_command[4:] == ["--resume=session-id"]
+        assert second_command[4:7] == ["--permission-mode=auto", "--model", "opus"]
+        assert second_command[-1].startswith("/goal ")
 
     def test_dotfiles_resume_defers_worktree_until_next_session(
         self,
@@ -609,7 +716,8 @@ class TestProcessLoopPromptAndEnv:
                 home=tmp_path,
             )
 
-        assert claude_calls[0]["cmd"] == ["claude", "--resume"]
+        assert _hook_debug_log(claude_calls[0]["cmd"]) != _hook_debug_log(claude_calls[1]["cmd"])
+        assert claude_calls[0]["cmd"][4:] == ["--resume"]
         assert "--worktree=process-loop" in claude_calls[1]["cmd"]
         assert sync_calls == [(myrepo, "process-loop")]
 
@@ -639,6 +747,7 @@ class TestProcessLoopPromptAndEnv:
             )
 
         assert len(claude_calls) == 1
+        _hook_debug_log(claude_calls[0]["cmd"])
         assert "--continue" not in claude_calls[0]["cmd"]
         assert "--resume" not in claude_calls[0]["cmd"]
 
@@ -1354,4 +1463,5 @@ class TestProcessLoopUrlInput:
             atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert len(claude_calls) == 1
+        _hook_debug_log(claude_calls[0]["cmd"])
         assert ("--worktree=process-loop" in claude_calls[0]["cmd"]) is expects_worktree
