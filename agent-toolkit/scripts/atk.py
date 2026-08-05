@@ -20,6 +20,7 @@
 - mq add/list/show: エントリの投入・一覧・本文表示
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
+- mq convert-to-plan: 既存feedbackの計画実装型への変換
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
 - mq schedule: 分類メタデータの適用と処理順算出
@@ -433,6 +434,30 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 
+    convert_to_plan = sub.add_parser(
+        "convert-to-plan",
+        help="既存feedbackへ計画ファイルと依存先を設定し、計画実装型へ変換してコミット・push",
+    )
+    convert_to_plan.add_argument(
+        "filename",
+        metavar="FILENAME",
+        help="変換するinboxまたはprocessingのfeedbackファイル名。",
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    convert_to_plan.add_argument(
+        "--plan-file",
+        metavar="ABS_PATH",
+        required=True,
+        help="関連付ける実在計画ファイルの絶対パス。",
+    )
+    convert_to_plan.add_argument(
+        "--depends-on",
+        metavar="FILENAME",
+        action="append",
+        default=None,
+        help="処理完了を待つキュー項目。複数回指定でき、重複は初出順で除去する。",
+    )
+    _add_target_repo_arg(convert_to_plan, help_extra="省略時は現在の作業リポジトリと照合する。")
+
     grep = sub.add_parser("grep", help="本文全体を正規表現で検索し該当行を列挙する（該当0件はexit 1）")
     grep.add_argument("pattern", metavar="PATTERN", help="Pythonの正規表現（reモジュール）として解釈する検索パターン。")
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
@@ -631,6 +656,7 @@ def main(
         "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
         "rm": lambda: _mutations._cmd_rm(args, private_notes),
         "edit": lambda: _mutations._cmd_edit(args, private_notes),
+        "convert-to-plan": lambda: _mutations._cmd_convert_to_plan(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _tbd._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),

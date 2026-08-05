@@ -6,6 +6,7 @@
 
 import argparse
 import datetime
+import json
 import pathlib
 import re
 import subprocess
@@ -33,6 +34,32 @@ from _atk_mq_common import (
 )
 from _atk_mq_formatters import _shorten_home
 from _atk_mq_repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
+
+
+def _read_saved_entry_details(path: pathlib.Path) -> dict[str, object | None]:
+    """保存済みエントリを再読込し、利用者が照合するメタデータを返す。"""
+    parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    if parsed is None:
+        raise WebInputError(f"保存済みエントリのfrontmatterを読み込めません: {path.name}")
+    data, _body = parsed
+    schedule_mapping = data.get(_schedule.SCHEDULE_KEY)
+    dependency = schedule_mapping.get("dependency") if isinstance(schedule_mapping, dict) else None
+    return {
+        "target_repo": data.get("target_repo"),
+        "target_commit": data.get("target_commit"),
+        "plan_file": data.get("plan_file"),
+        "dependency": dependency,
+    }
+
+
+def _print_entry_details(details: dict[str, object | None]) -> None:
+    """エントリの照合対象を固定順で表示する。"""
+    for key in ("target_repo", "target_commit", "plan_file"):
+        value = details[key]
+        print(f"    {key}: {value if value is not None else 'なし'}")
+    dependency = details["dependency"]
+    rendered_dependency = "なし" if dependency is None else json.dumps(dependency, ensure_ascii=False, sort_keys=True)
+    print(f"    dependency: {rendered_dependency}")
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
@@ -339,6 +366,7 @@ def add_entries(
     target_commit: str | None = None,
     plan_file: str | None = None,
     lock_timeout: float = -1,
+    saved_details: dict[str, dict[str, object | None]] | None = None,
 ) -> list[str]:
     """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
 
@@ -395,6 +423,10 @@ def add_entries(
             f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
             [MQ_STATE_INBOX],
         )
+        if saved_details is not None:
+            saved_details.update(
+                (filename, _read_saved_entry_details(private_notes / MQ_STATE_INBOX / filename)) for filename in generated
+            )
     return generated
 
 
@@ -456,6 +488,7 @@ def _cmd_add(
                 print("---", file=sys.stderr)
                 print(message, file=sys.stderr)
         raise
+    saved_details: dict[str, dict[str, object | None]] = {}
     try:
         generated = add_entries(
             private_notes,
@@ -469,6 +502,7 @@ def _cmd_add(
             choices=args.choices,
             target_commit=target_commit,
             plan_file=args.plan_file,
+            saved_details=saved_details,
         )
     except WebInputError as error:
         print(f"投入を拒否しました: {error}", file=sys.stderr)
@@ -485,6 +519,7 @@ def _cmd_add(
     print(f"{count}件投入:")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
+        _print_entry_details(saved_details[filename])
     print(f"inbox: 計{_count_feedback(inbox_dir)}件（processing: {_count_feedback(processing_dir)}件）")
     print(
         f"  うち{target_repo}: {_count_feedback(inbox_dir, target_repo)}件"

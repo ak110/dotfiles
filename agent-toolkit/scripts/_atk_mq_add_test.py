@@ -10,6 +10,7 @@ import contextlib
 import pathlib
 import subprocess
 import sys
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -49,6 +50,46 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
     assert "source: test" in content
+
+
+def test_add_reloads_saved_details_while_holding_lock(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """投入後の表示情報を排他ロック内で再読込する。"""
+    notes = _setup_notes(tmp_path)
+    lock_state = {"held": False}
+
+    @contextlib.contextmanager
+    def tracked_lock(*_args: object, **_kwargs: object) -> Iterator[None]:
+        lock_state["held"] = True
+        try:
+            yield
+        finally:
+            lock_state["held"] = False
+
+    original_read = add_module._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+
+    def read_while_locked(path: pathlib.Path) -> dict[str, object | None]:
+        assert lock_state["held"]
+        return original_read(path)
+
+    monkeypatch.setattr(add_module, "_repo_lock", tracked_lock)
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(add_module, "_read_saved_entry_details", read_while_locked)
+    saved_details: dict[str, dict[str, object | None]] = {}
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source="test",
+        now=_FIXED_DT,
+        saved_details=saved_details,
+    )
+
+    assert saved_details[generated[0]]["target_repo"] == "github.com/example/repo"
 
 
 @pytest.mark.parametrize("target_commit", [_FIXED_HEAD_COMMIT, "a" * 64])

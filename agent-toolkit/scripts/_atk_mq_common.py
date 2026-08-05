@@ -453,6 +453,12 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
     rel_list = list(rel_paths)
     _run_git(["add", *rel_list], cwd=private_notes)
     _run_git(["commit", "-m", message], cwd=private_notes)
+    _push_pending_commits(private_notes)
+
+
+def _push_pending_commits(private_notes: pathlib.Path) -> None:
+    """ローカルcommitをpushし、競合時はrebase後に1回だけ再試行する。"""
+    _assert_repo_lock_held(private_notes)
     if not _has_remote(private_notes):
         return
     try:

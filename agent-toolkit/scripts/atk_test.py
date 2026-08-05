@@ -125,6 +125,27 @@ class TestMutationTargetRepoParserOption:
         assert exc_info.value.code == 2
 
 
+def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
+    """convert-to-planが必須計画と複数の依存先を保持する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    args = parser.parse_args(
+        [
+            "mq",
+            "convert-to-plan",
+            "feedback.md",
+            "--plan-file",
+            "/tmp/plan.md",
+            "--depends-on",
+            "first.md",
+            "--depends-on",
+            "second.md",
+        ]
+    )
+    assert args.filename == "feedback.md"
+    assert args.plan_file == "/tmp/plan.md"
+    assert args.depends_on == ["first.md", "second.md"]
+
+
 class TestTbdAddSourceOptionParser:
     """TBD投入時の`--source`受理をargparseレベルで検証する。"""
 
@@ -177,6 +198,28 @@ class TestAddTargetRepoOptionParser:
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["mq", "add", *type_option, "--target-repo", "github.com/foo/bar", "本文"])
         assert args.target_repo == "github.com/foo/bar"
+
+
+def test_add_output_reloads_saved_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """add完了表示が保存済みfrontmatterの照合対象を列挙する。"""
+    _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+    monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "target_repo: github.com/example/myrepo" in output
+    assert f"target_commit: {_FIXED_HEAD_COMMIT}" in output
+    assert "plan_file: なし" in output
+    assert "dependency: なし" in output
 
 
 class TestSubcommandSubparserDefault:

@@ -55,6 +55,8 @@ TBDの書式と回答後の再開手順は`references/hold-with-tbd-inject.md`�
 重複を検出した場合は新規投入せず、
 既存本文を`atk mq show <FILENAME>`で取得して差分情報（実測値・再現手順・出典）を統合し、
 `atk mq edit <FILENAME> $'<統合後の本文>'`で更新する。
+統合後の既存feedbackを計画実装型へ変更する場合は、予約メタデータを直接編集せず、
+`atk mq convert-to-plan <FILENAME> --plan-file <計画ファイルの絶対パス>`を実行する。
 
 他リポジトリの改訂に追従する提案を投入する場合は、主題の重複照会に続けて、
 投入内容が対象リポジトリで既に実装済みでないかを確認する。確認は当該リポジトリの直近のコミット履歴
@@ -73,7 +75,9 @@ addは種別・TBDメタデータ（`type`・`scope`・`question_type`・`choice
 MESSAGEの先頭frontmatterでは`target_repo`・`source`と追加メタデータだけを指定できる。
 editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示したメタデータだけを既存値へ上書きし、
 未指定メタデータは保持する。
-投入後は`atk mq show <FILENAME>`で登録本文を照合し、欠落があれば同じ項目を
+`atk mq add`と`atk mq convert-to-plan`の完了表示で、保存後に再読込された`target_repo`・
+`target_commit`・`plan_file`・`dependency`を照合する。
+続けて`atk mq show <FILENAME>`で登録本文を照合し、欠落があれば同じ項目を
 `atk mq edit`で修復してから再度照合する。
 
 判断が必要な複数の確認事項を本文へ含める場合、各項目の書式は
@@ -98,7 +102,7 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 `atk mq list --status=active --target-repo=<repo-path>`で1行一覧だけを取得し、
 本文全文は取得しない。
 
-計画実装型は`atk mq add`の明示指定により、全件が投入時点で確定する。
+計画実装型は`atk mq add`または`atk mq convert-to-plan`の明示指定により確定する。
 ここでLLM分類が必要になるのは通常型だけである。
 一覧はトップレベルの`plan_file`を判定の基準とし、`queue_schedule`の欠落・
 本文変更による失効時も計画実装型と表示する。
@@ -111,7 +115,7 @@ references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照
 `frontmatter-broken`な項目は選抜・分類の対象から除外され、修復TBD投入は
 `atk mq schedule`が機械的に行うため、LLM分類委譲へは含めない。
 委譲先は対象filenameごとに`atk mq show <filename> --target-repo=<repo-path>`を実行し、
-未分類または本文変更済みの項目だけを読む。
+未分類・本文変更済みの項目だけを読む。
 分類対象は通常型のみとする。
 回答済みの確認事項も処理対象となるため、分類結果JSONへ`type: "normal"`として含める
 （未回答の確認事項は選抜対象から除外されるため含めない）。

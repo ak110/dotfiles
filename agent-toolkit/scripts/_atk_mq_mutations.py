@@ -11,11 +11,13 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import typing
 
 import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_remove_all as _remove_all
+import _atk_mq_schedule as _schedule
 import _atk_mq_tbd as _tbd
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
@@ -23,12 +25,14 @@ from _atk_mq_common import (
     MQ_STATE_PROCESSING,
     MQ_STATE_REJECTED,
     MQ_STATES,
+    MQ_TYPE_FEEDBACK,
     MQ_TYPE_TBD,
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
     _dedup_positional_filenames,
     _pull,
+    _push_pending_commits,
     _repo_lock,
     _require_type,
     _stamp_result,
@@ -399,6 +403,126 @@ def _resolve_processable_targets(
             print(f"inbox・processingのいずれにも存在しません: {name}", file=sys.stderr)
         sys.exit(2)
     return resolved
+
+
+def _atomic_write_text(path: pathlib.Path, content: str) -> None:
+    """同一ディレクトリの一時ファイルから置換してUTF-8本文を原子的に保存する。"""
+    temporary_path: pathlib.Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as temporary:
+            temporary.write(content)
+            temporary.flush()
+            temporary_path = pathlib.Path(temporary.name)
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def convert_entry_to_plan(
+    private_notes: pathlib.Path,
+    *,
+    filename: str,
+    plan_file: str,
+    depends_on: tuple[str, ...] = (),
+    target_repo: str | None = None,
+    lock_timeout: float = -1,
+) -> dict[str, object | None]:
+    """既存feedbackを計画実装型へ変換し、保存済みメタデータを返す。"""
+    plan_path = pathlib.Path(plan_file)
+    if not plan_path.is_absolute():
+        raise WebInputError("plan_fileは絶対パスで指定してください")
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
+    _validate_filenames_only([filename, *depends_on], inbox_dir)
+    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _push_pending_commits(private_notes)
+        _pull(private_notes)
+        try:
+            if not plan_path.is_file():
+                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
+        except OSError as error:
+            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+
+        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
+        data, body = parsed
+        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
+            raise WebInputError(f"feedbackだけを計画実装型へ変換できます: {path.name}")
+        raw_entry_repo = data.get("target_repo")
+        if not isinstance(raw_entry_repo, str):
+            raise WebInputError(f"target_repoが不正です: {path.name}")
+        entry_repo = _resolve_repo_id(raw_entry_repo)
+        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+
+        target_commit = data.get("target_commit")
+        _add._verify_plan_base_commit(  # pylint: disable=protected-access
+            plan_path,
+            target_commit if isinstance(target_commit, str) else None,
+        )
+        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+        if path.name in canonical_dependencies:
+            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+        dependency = (
+            _schedule.Dependency(kind="entries", filenames=canonical_dependencies)
+            if canonical_dependencies
+            else _schedule.Dependency(kind="none")
+        )
+
+        existing_schedule = data.get(_schedule.SCHEDULE_KEY)
+        existing_metadata = _schedule.mapping_to_metadata(existing_schedule) if isinstance(existing_schedule, dict) else None
+        metadata = _schedule.ScheduleMetadata(
+            body_sha256=_schedule.body_sha256(text),
+            normalized_target_repo=entry_repo,
+            feedback_type="plan-impl",
+            dependency=dependency,
+            plan_file=str(plan_path),
+            target_files=(),
+            carry_count=existing_metadata.carry_count if existing_metadata is not None else 0,
+            carry_reasons=existing_metadata.carry_reasons if existing_metadata is not None else (),
+            last_deferral_run_id=existing_metadata.last_deferral_run_id if existing_metadata is not None else None,
+            last_deferral_reason=existing_metadata.last_deferral_reason if existing_metadata is not None else None,
+        )
+        data["plan_file"] = str(plan_path)
+        data[_schedule.SCHEDULE_KEY] = _schedule.metadata_to_mapping(metadata)
+        updated_text = _frontmatter.serialize_frontmatter(data, body)
+        if updated_text != text:
+            _atomic_write_text(path, updated_text)
+            relative_path = str(path.relative_to(private_notes))
+            _commit_and_push(private_notes, "chore: convert feedback item to plan", [relative_path])
+        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+
+
+def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """convert-to-planサブコマンドを実行する。"""
+    target_repo = args.target_repo
+    if target_repo is None:
+        target_repo, _local_worktree = _add.resolve_add_target(None)
+    try:
+        details = convert_entry_to_plan(
+            private_notes,
+            filename=args.filename,
+            plan_file=args.plan_file,
+            depends_on=tuple(args.depends_on or ()),
+            target_repo=target_repo,
+        )
+    except WebInputError as error:
+        print(f"変換を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
+    print(f"計画実装型へ変換: {args.filename}")
+    _add._print_entry_details(details)  # pylint: disable=protected-access
 
 
 def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:

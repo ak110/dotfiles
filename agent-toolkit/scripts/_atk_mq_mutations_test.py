@@ -7,6 +7,7 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import argparse
 import contextlib
 import pathlib
 import subprocess
@@ -82,6 +83,232 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     )
     assert filenames == ["entry.md"]
     assert (notes / "processing/entry.md").is_file()
+
+
+def _write_convert_plan(tmp_path: pathlib.Path, target_commit: str) -> pathlib.Path:
+    """変換テスト用の計画ファイルを作成する。"""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{target_commit}`\n",
+        encoding="utf-8",
+    )
+    return plan
+
+
+def _write_convert_feedback(
+    notes: pathlib.Path,
+    filename: str,
+    *,
+    entry_type: str = "feedback",
+    state: str = "inbox",
+    target_repo: str = "github.com/example/foo",
+    target_commit: str = "a" * 40,
+    schedule_mapping: str = "",
+) -> pathlib.Path:
+    """変換テスト用のエントリを書き込む。"""
+    directory = notes / state
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / filename
+    path.write_text(
+        f"---\ntarget_repo: {target_repo}\ntype: {entry_type}\ntarget_commit: {target_commit}\n{schedule_mapping}---\n\n本文\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """変換テストでprivate-notesへのgit操作を無効化する。"""
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+
+@pytest.mark.parametrize("state", ["inbox", "processing"])
+def test_convert_to_plan_preserves_history_and_aligns_metadata(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+) -> None:
+    """変換が状態を問わず計画・依存・本文hash・繰越履歴を整合させる。"""
+    notes = _setup_notes(tmp_path)
+    schedule_mapping = (
+        "queue_schedule:\n"
+        "  body_sha256: stale\n"
+        "  normalized_target_repo: github.com/example/foo\n"
+        "  type: normal\n"
+        "  dependency:\n"
+        "    kind: none\n"
+        "  target_files: []\n"
+        "  carry_count: 2\n"
+        "  carry_reasons: [limit-exceeded, conflict]\n"
+        "  last_deferral_run_id: run-1\n"
+        "  last_deferral_reason: conflict\n"
+    )
+    path = _write_convert_feedback(notes, "feedback.md", state=state, schedule_mapping=schedule_mapping)
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    details = mutations.convert_entry_to_plan(
+        notes,
+        filename="feedback.md",
+        plan_file=str(plan),
+        depends_on=("dependency.md", "dependency", "dependency.md"),
+        target_repo="github.com/example/foo",
+    )
+
+    text = path.read_text(encoding="utf-8")
+    parsed = frontmatter_parser.parse_frontmatter(text)
+    assert parsed is not None
+    data, _body = parsed
+    metadata = schedule.parse_schedule_metadata(text)
+    assert metadata is not None
+    assert data["plan_file"] == str(plan)
+    assert metadata.plan_file == str(plan)
+    assert metadata.dependency == schedule.Dependency("entries", filenames=("dependency.md",))
+    assert metadata.carry_count == 2
+    assert metadata.carry_reasons == ("limit-exceeded", "conflict")
+    assert metadata.last_deferral_run_id == "run-1"
+    assert metadata.last_deferral_reason == "conflict"
+    assert details["target_commit"] == "a" * 40
+    assert details["dependency"] == {"kind": "entries", "filenames": ["dependency.md"]}
+
+
+@pytest.mark.parametrize(
+    ("plan_value", "expected"),
+    [("relative.md", "絶対パス"), ("missing", "実在する通常ファイル")],
+)
+def test_convert_to_plan_rejects_invalid_plan(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plan_value: str,
+    expected: str,
+) -> None:
+    """相対パスと未存在の計画ファイルを拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _write_convert_feedback(notes, "feedback.md")
+    _disable_convert_git(monkeypatch)
+    value = plan_value if plan_value == "relative.md" else str(tmp_path / plan_value)
+
+    with pytest.raises(mutations.WebInputError, match=expected):
+        mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=value)
+
+
+def test_convert_to_plan_rejects_tbd_repo_mismatch_and_self_dependency(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TBD、投入先不一致、自己依存をそれぞれ拒否する。"""
+    notes = _setup_notes(tmp_path)
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+    _write_convert_feedback(notes, "tbd.md", entry_type="tbd")
+    with pytest.raises(mutations.WebInputError, match="feedbackだけ"):
+        mutations.convert_entry_to_plan(notes, filename="tbd.md", plan_file=str(plan))
+
+    _write_convert_feedback(notes, "feedback.md")
+    with pytest.raises(mutations.WebInputError, match="target_repoが一致しません"):
+        mutations.convert_entry_to_plan(
+            notes,
+            filename="feedback.md",
+            plan_file=str(plan),
+            target_repo="github.com/example/other",
+        )
+    with pytest.raises(mutations.WebInputError, match="自分自身"):
+        mutations.convert_entry_to_plan(
+            notes,
+            filename="feedback.md",
+            plan_file=str(plan),
+            depends_on=("feedback",),
+        )
+
+
+def test_convert_to_plan_keeps_saved_change_when_push_fails(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """commit後のpush失敗契約に従い、変換済みファイルを保持して例外を伝播する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+
+    commit_calls: list[tuple[object, ...]] = []
+
+    def fail_after_commit(*args: object, **_kwargs: object) -> None:
+        commit_calls.append(args)
+        raise subprocess.CalledProcessError(1, ["git", "push"])
+
+    monkeypatch.setattr(mutations, "_commit_and_push", fail_after_commit)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["plan_file"] == str(plan)
+    assert commit_calls[0][2] == ["inbox/feedback.md"]
+
+    push_calls: list[pathlib.Path] = []
+    monkeypatch.setattr(
+        mutations,
+        "_commit_and_push",
+        lambda *_args, **_kwargs: pytest.fail("再実行時に新規commitを作成してはならない"),
+    )
+    monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
+
+    mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+
+    assert push_calls == [notes]
+
+
+def test_convert_to_plan_pushes_pending_commit_before_pull(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """再実行時の未送信commitをff-only pullより先に同期する。"""
+    notes = _setup_notes(tmp_path)
+    _write_convert_feedback(notes, "feedback.md")
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    events: list[str] = []
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: events.append("push"))
+    monkeypatch.setattr(mutations, "_pull", lambda _path: events.append("pull"))
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+
+    assert events[:2] == ["push", "pull"]
+
+
+def test_cmd_convert_to_plan_displays_saved_metadata(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """変換コマンドが保存後に返された照合対象を表示する。"""
+    details: dict[str, object | None] = {
+        "target_repo": "github.com/example/foo",
+        "target_commit": "a" * 40,
+        "plan_file": "/tmp/plan.md",
+        "dependency": {"kind": "entries", "filenames": ["dependency.md"]},
+    }
+    monkeypatch.setattr(mutations, "convert_entry_to_plan", lambda *_args, **_kwargs: details)
+    args = argparse.Namespace(
+        filename="feedback.md",
+        plan_file="/tmp/plan.md",
+        depends_on=["dependency.md"],
+        target_repo="github.com/example/foo",
+    )
+
+    mutations._cmd_convert_to_plan(args, tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+    output = capsys.readouterr().out
+    assert "target_repo: github.com/example/foo" in output
+    assert f"target_commit: {'a' * 40}" in output
+    assert "plan_file: /tmp/plan.md" in output
+    assert 'dependency: {"filenames": ["dependency.md"], "kind": "entries"}' in output
 
 
 def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
