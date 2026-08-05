@@ -15,12 +15,28 @@ export PYTHONDONTWRITEBYTECODE=1
 export MPLBACKEND=Agg
 
 # 環境変数
-test -d /usr/local/cuda/bin && export PATH=/usr/local/cuda/bin:$PATH
-test -d "$HOME/.cargo/bin" && export PATH=$HOME/.cargo/bin:$PATH
-test -d "$HOME/.local/bin" && export PATH=$HOME/.local/bin:$PATH
-test -d "$HOME/bin" && export PATH=$HOME/bin:$PATH
-test -d "$HOME/dotfiles/bin" && export PATH=$PATH:$HOME/dotfiles/bin
-test -d "$HOME/dotfiles/agent-toolkit/bin" && export PATH=$PATH:$HOME/dotfiles/agent-toolkit/bin
+path_prepend() {
+    if [ -d "$1" ]; then
+        case ":$PATH:" in
+        *:"$1":*) ;;
+        *) export PATH="$1:$PATH" ;;
+        esac
+    fi
+}
+path_append() {
+    if [ -d "$1" ]; then
+        case ":$PATH:" in
+        *:"$1":*) ;;
+        *) export PATH="$PATH:$1" ;;
+        esac
+    fi
+}
+path_prepend /usr/local/cuda/bin
+path_prepend "$HOME/.cargo/bin"
+path_prepend "$HOME/.local/bin"
+path_prepend "$HOME/bin"
+path_append "$HOME/dotfiles/bin"
+path_append "$HOME/dotfiles/agent-toolkit/bin"
 
 test -f /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 export ENV=$HOME/.bashrc
@@ -31,7 +47,7 @@ export MYPY_CACHE_DIR=$HOME/.cache/mypy
 
 # poetry
 if [ -d "$HOME/.poetry/bin" ]; then
-    export PATH="$HOME/.poetry/bin:$PATH"
+    path_prepend "$HOME/.poetry/bin"
 fi
 
 # ~/.env があれば単純な KEY=VALUE 行だけを読み込む
@@ -294,7 +310,7 @@ function enable-pyenv() {
     if [ ! -d "$HOME/.pyenv" ]; then
         curl -sL https://pyenv.run | bash
     fi
-    export PATH="$HOME/.pyenv/bin:$PATH"
+    path_prepend "$HOME/.pyenv/bin"
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
     pyenv --version
