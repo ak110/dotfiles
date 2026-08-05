@@ -437,6 +437,9 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "バグ対応は単一ファイルの単純な修正でも起動対象" in plan_mode
     assert "バグ対応を除く単一ファイルの単純な修正" in plan_mode
     assert "\n  単一ファイルの単純な修正や会話だけの質問では起動しない。" not in plan_mode
+    assert "初回`Write`の成功直後" in plan_mode
+    assert "計画ファイルの絶対パスを利用者向け進捗へ1回だけ提示" in plan_mode
+    assert "反復編集とレビューでは再提示しない" in plan_mode
     assert "深掘り条件に該当する場合だけ" in plan_mode
     assert "深掘り条件に該当する場合だけ" in agent_rules
     assert "該当しない局所不良は、是正と近接検証に限定" in agent_rules
@@ -565,6 +568,52 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert selection_flow.index("確定した原因に適用可能な対処") < flow_plan_draft
     assert "bugfix.md`をSSOT" in _h2_section(ci_failure_handling, "前提")
     assert "3回連続する停止トリガー" not in selection_flow
+
+
+def test_remote_tag_evidence_contracts_are_synchronized() -> None:
+    """remote tagの安全な取得と全階層の証拠保存を両文書で同期する。"""
+    commit_ci = _h2_section(_COMMIT_SKILL.read_text(encoding="utf-8"), "push後のCI通過確認")
+    ci_prerequisites = _h2_section(_CI_FAILURE_HANDLING.read_text(encoding="utf-8"), "前提")
+
+    for document in (commit_ci, ci_prerequisites):
+        assert "sourceとremote側対象refの双方" in document
+        assert "typeがtagである各階層" in document
+        assert "raw tag object" in document
+        assert "最終OIDとobject type" in document
+        assert "git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>" in document
+        for option in ("--no-tags", "--no-write-fetch-head", "--refmap=", "<fullOID>"):
+            assert option in document
+        assert "作業refと`FETCH_HEAD`を変更しない" in document
+        assert "取得後もobjectが存在しない場合は準備未完了" in document
+        assert "remote状態を再取得" in document
+
+
+def test_plan_review_detects_new_success_path_restrictions() -> None:
+    """新設制約が失わせる現行の成功経路を公開契約変更として検査する。"""
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    for restriction in (
+        "拒否条件",
+        "受理する入力値の縮小",
+        "容量・件数制限",
+        "ネットワーク遮断",
+        "権限強化",
+        "既存コマンドや導入済み機能の利用不可化",
+    ):
+        assert restriction in review_task
+    assert "現行実装で成功する利用シナリオ" in review_task
+    assert "成功経路を失う場合" in review_task
+    assert "公開契約変更として扱い" in review_task
+    assert "ユーザー合意の根拠を要求する" in review_task
+
+
+def test_plan_impl_executor_description_limits_invocation_route() -> None:
+    """executorのdescriptionが呼び出し元側の所定起動経路だけを示す。"""
+    parsed = frontmatter.parse_frontmatter(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"))
+    assert parsed is not None
+    metadata, _ = parsed
+    expected = "呼び出し元側のplan-impl-executor起動契約が明示する手順から" + "のみ起動する。"
+    assert metadata["description"] == expected
 
 
 def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:

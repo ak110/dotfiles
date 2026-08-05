@@ -204,8 +204,15 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     準備未完了としてpushへ進まない
   - 全更新対象refについて、sourceのpeel前OID・object typeと、remote側対象refのpush前OID・object typeを
     保存する。削除refのsourceとremote側の新規refが存在しない場合も、不存在であることを記録する
-  - sourceのpeel前object typeがtagの場合は、annotated tag objectの全内容と、再帰的にpeeledした
-    対象のOID・object typeを保存する。peeled先がcommitの場合は、そのcommitを当該refのpush後commitとして扱う
+    - remote側OIDのobjectがローカルに存在しない場合は、完全長OIDを変えずに
+      `git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>`で取得する。
+      この取得では作業refと`FETCH_HEAD`を変更しない
+    - 取得に失敗するか、取得後もobjectが存在しない場合は準備未完了としてpushへ進まない。
+      remote状態を再取得して準備を最初から実施する
+  - sourceとremote側対象refの双方で、peel前object typeがtagの場合は、typeがtagである各階層の
+    `git cat-file tag <OID>`が返すraw tag objectの全内容を保存し、本文の`object <nextOID>`へ進む。
+    非tag objectへ到達後、起点を`^{}`で再帰的にpeeledした最終OIDとobject typeを保存する。
+    source側の最終peeled objectがcommitの場合は、そのcommitを当該refのpush後commitとして扱う
   - commitへpeeledできる更新では、remote側対象refのpush前OIDが存在する場合は当該refをcommitへpeeledし、
     そのcommitを基準SHAとして、当該refのpush後commitまでの完全長SHA列を順序付きで記録する
   - commitを指す新規refでは、対象remoteから到達できないcommitを順序付きで列挙する。

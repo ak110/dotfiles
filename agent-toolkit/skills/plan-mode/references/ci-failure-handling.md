@@ -13,8 +13,14 @@ Codexでは読み込んだ本referenceの絶対パスからplugin rootを確定�
 `<plugin rootの絶対パス>/scripts/_managed_temp.py`を使う。
 続けてpushのdry-runが返す全status lineから更新対象refを確定する。
 全更新対象refのsourceのpeel前OID・object typeと、remote側対象refのpush前OID・object typeを
-所有者だけが読み書きできる一時領域へ保存し、存在しない側は不存在と記録する。annotated tagではtag objectの全内容と、
-再帰的にpeeledした対象のOID・object typeも保存する。
+所有者だけが読み書きできる一時領域へ保存し、存在しない側は不存在と記録する。
+remote側OIDのobjectがローカルに存在しない場合は、完全長OIDを変えずに
+`git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>`で取得する。
+この取得では作業refと`FETCH_HEAD`を変更しない。
+取得に失敗するか、取得後もobjectが存在しない場合は準備未完了としてpushへ進まず、
+remote状態を再取得して準備を最初から実施する。
+sourceとremote側対象refの双方で、peel前object typeがtagの場合は、typeがtagである各階層のraw tag objectを保存する。
+非tag objectへ到達後、起点を再帰的にpeeledした最終OIDとobject typeも保存する。
 commitへpeeledできるrefでは、ref単位の変更系列の基準SHAと完全長SHA列、
 基準SHAからpush後commitまでの系列差分を同じ一時領域へ保存する。
 upstreamが未設定の新規branchでは有効なGit設定も照合し、対象remoteから到達できないcommitを基に

@@ -1,6 +1,6 @@
 ---
 name: plan-impl-executor
-description: 他エージェントから起動される。
+description: 呼び出し元側のplan-impl-executor起動契約が明示する手順からのみ起動する。
 model: haiku
 effort: medium
 # Haiku固定: 自身は判断・実装を担わず、codex-execへの委譲と結果検収に専念するため。
