@@ -3,13 +3,11 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""push後のCI通過確認を待機する補助スクリプト。
+"""push前後の実行ID差分でCI通過確認を待機する補助スクリプト。
 
-GitHubでは`gh run list --commit=<sha>`、GitLabでは`glab ci list --sha=<sha>`で
-対象commitのCI実行を取得し、明確な失敗ジョブ1件または期待実行集合の全完了の早い方までポーリングする。
-対象forgeは`git remote get-url origin`のホストから自動判別し、`--forge`で明示指定もできる。
-GitLabは私設ホストも対象とする（対象ホストは`glab`がカレントディレクトリの`git remote`・
-環境変数`GITLAB_HOST`／`GL_HOST`・設定から決定するため、本スクリプト側の追加設定は不要）。
+push前に対象repository・ref・commit SHAの実行IDをbaselineへ保存し、push後は
+GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないIDだけを待機する。
+一覧とジョブ取得の両方に明示的なrepositoryを指定し、一覧はrefとSHAで限定する。
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
 `agent-toolkit:commit`スキル「push後のCI通過確認」節から参照される。
 同節の実施主体の分離は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める。
@@ -18,6 +16,7 @@ GitLabは私設ホストも対象とする（対象ホストは`glab`がカレ�
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import functools
 import json
 import math
@@ -30,6 +29,7 @@ import sys
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote, urlparse
 
 # 以下の終了コードはCLIの公開インターフェース（利用者が`echo $?`等で参照する契約）であり、
 # private実装詳細ではないためアンダースコア接頭辞を付けない。
@@ -47,6 +47,7 @@ _STDERR_FD = 2
 
 _MAX_CONSECUTIVE_SNAPSHOT_FAILURES = 3
 _GH_JSON_FIELDS = "name,status,conclusion,url,databaseId,headSha,createdAt"
+_BASELINE_VERSION = 1
 
 RunRecord = dict[str, Any]
 JobRecord = dict[str, Any]
@@ -60,11 +61,77 @@ class RunListError(RuntimeError):
     """CI実行一覧・ジョブ一覧の取得または応答検証の失敗。呼び出し側でretry判定に使う。"""
 
 
-def _gh_run_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
-    """`gh run list --commit=<sha>`結果を返す。失敗時はRunListError送出。"""
+@dataclasses.dataclass(frozen=True)
+class CiBaseline:
+    """push前に観測したCI実行IDとその取得条件。"""
+
+    forge: str
+    repository: str
+    ref: str
+    sha: str
+    run_ids: frozenset[int]
+
+
+@dataclasses.dataclass(frozen=True)
+class RepositoryTarget:
+    """forge CLIに渡すrepositoryのホストとproject path。"""
+
+    hostname: str | None
+    project_path: str
+
+
+def _parse_repository(repository: str) -> RepositoryTarget:
+    """URL・SCP形式・`[host/]owner/repo`をrepository対象へ正規化する。"""
+    value = repository.strip()
+    hostname: str | None = None
+    project_path = value
+    if "://" in value:
+        parsed = urlparse(value)
+        hostname = parsed.hostname
+        project_path = parsed.path
+    elif match := re.match(r"^(?:[^@/]+@)?([^:/]+):(.+)$", value):
+        hostname = match.group(1)
+        project_path = match.group(2)
+    else:
+        parts = value.strip("/").split("/")
+        if len(parts) >= 3 and "." in parts[0]:
+            hostname = parts[0]
+            project_path = "/".join(parts[1:])
+    project_path = project_path.strip("/")
+    if project_path.endswith(".git"):
+        project_path = project_path[:-4]
+    if not project_path or "/" not in project_path:
+        raise RunListError(f"repository指定が不正: {repository!r}")
+    return RepositoryTarget(hostname=hostname, project_path=project_path)
+
+
+def _short_ref(ref: str) -> str:
+    """`refs/heads/`または`refs/tags/`をforge CLI用の短縮refへ変換する。"""
+    for prefix in ("refs/heads/", "refs/tags/"):
+        if ref.startswith(prefix):
+            return ref.removeprefix(prefix)
+    return ref
+
+
+def _gh_run_list(repository: str, ref: str, sha: str, subprocess_timeout: float) -> list[RunRecord]:
+    """repository・ref・SHAを明示した`gh run list`結果を返す。"""
     try:
         result = subprocess.run(
-            ["gh", "run", "list", "--commit", sha, "--json", _GH_JSON_FIELDS],
+            [
+                "gh",
+                "run",
+                "list",
+                "--repo",
+                repository,
+                "--branch",
+                _short_ref(ref),
+                "--commit",
+                sha,
+                "--limit",
+                "1000",
+                "--json",
+                _GH_JSON_FIELDS,
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -85,20 +152,25 @@ def _gh_run_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
     return payload
 
 
-def _gh_job_list(run: RunRecord, subprocess_timeout: float) -> list[JobRecord]:
+def _gh_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -> list[JobRecord]:
     """GitHub Actions runの最新試行ジョブを全ページ取得して正規化する。"""
     run_id = run.get("databaseId")
     if not isinstance(run_id, int) or isinstance(run_id, bool):
         raise RunListError(f"GitHub run databaseId is invalid: {run_id!r}")
+    target = _parse_repository(repository)
+    if target.project_path.count("/") != 1:
+        raise RunListError(f"GitHub repository指定が不正: {repository!r}")
     command = [
         "gh",
         "api",
         "-X",
         "GET",
-        f"repos/{{owner}}/{{repo}}/actions/runs/{run_id}/jobs?filter=latest&per_page=100",
+        f"repos/{target.project_path}/actions/runs/{run_id}/jobs?filter=latest&per_page=100",
         "--paginate",
         "--slurp",
     ]
+    if target.hostname is not None:
+        command.extend(["--hostname", target.hostname])
     payload = _run_json_command(command, subprocess_timeout, "gh api jobs")
     if not isinstance(payload, list) or not all(isinstance(page, dict) for page in payload):
         raise RunListError(f"gh api jobs returned unexpected JSON shape: {payload!r}")
@@ -179,15 +251,29 @@ def _normalize_gitlab_pipeline(pipeline: dict[str, Any]) -> RunRecord:
     }
 
 
-def _glab_pipeline_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
-    """`glab ci list --sha=<sha> -F json`結果を正規化して返す。失敗時はRunListError送出。
+def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout: float) -> list[RunRecord]:
+    """repository・ref・SHAを明示した`glab ci list`結果を正規化して返す。
 
     `glab`はJSON出力でGitLab APIの応答オブジェクトを加工せず出力する。
     SHA指定で対象を限定できるサブコマンドは`ci list`のみのため、`ci status`・`ci get`は使わない。
     """
     try:
         result = subprocess.run(
-            ["glab", "ci", "list", "--sha", sha, "-F", "json", "-P", "100"],
+            [
+                "glab",
+                "ci",
+                "list",
+                "--repo",
+                repository,
+                "--ref",
+                _short_ref(ref),
+                "--sha",
+                sha,
+                "-F",
+                "json",
+                "-P",
+                "100",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -208,19 +294,23 @@ def _glab_pipeline_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
     return [_normalize_gitlab_pipeline(item) for item in payload]
 
 
-def _glab_job_list(run: RunRecord, subprocess_timeout: float) -> list[JobRecord]:
+def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -> list[JobRecord]:
     """GitLab pipelineの置換済み試行を除くジョブを全ページ取得して正規化する。"""
     pipeline_id = run.get("databaseId")
     if not isinstance(pipeline_id, int) or isinstance(pipeline_id, bool):
         raise RunListError(f"GitLab pipeline databaseId is invalid: {pipeline_id!r}")
+    target = _parse_repository(repository)
+    encoded_project = quote(target.project_path, safe="")
     command = [
         "glab",
         "api",
-        f"projects/:id/pipelines/{pipeline_id}/jobs?include_retried=false&per_page=100",
+        f"projects/{encoded_project}/pipelines/{pipeline_id}/jobs?include_retried=false&per_page=100",
         "--paginate",
         "--output",
         "json",
     ]
+    if target.hostname is not None:
+        command.extend(["--hostname", target.hostname])
     payload = _run_json_command(command, subprocess_timeout, "glab api jobs")
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise RunListError(f"glab api jobs returned unexpected JSON shape: {payload!r}")
@@ -270,56 +360,91 @@ def _run_json_command(command: list[str], subprocess_timeout: float, description
         raise RunListError(f"{description} returned invalid JSON: {exc}") from exc
 
 
-def _git_stdout(command: list[str], subprocess_timeout: float) -> str | None:
-    """gitコマンドの標準出力を前後空白除去して返す。失敗・空出力時は`None`を返す。"""
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=subprocess_timeout,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    return result.stdout.strip()
-
-
-def _resolve_forge(explicit: str, subprocess_timeout: float) -> str | None:
+def _resolve_forge(explicit: str, repository: str) -> str | None:
     """対象forgeを`github`または`gitlab`へ解決する。判別できない場合は`None`を返す。
 
     `explicit`が`auto`以外ならその値をそのまま返す。
-    `auto`では`git remote get-url origin`のホスト名で判別する。
+    `auto`では明示指定されたrepositoryのホスト名で判別する。
     ホスト名をドット区切りのラベルへ分割し、いずれかのラベルが`github`と完全一致すればGitHub、
     `gitlab`と完全一致すればGitLabとする。`github.com`とGitHub Enterprise Serverの
     標準的なホスト名（`github.<自社ドメイン>`）が前者に該当する。
     部分一致で判定すると`notgithub.example.com`のような無関係なホストを誤分類するため、ラベル単位の完全一致とする。
-    いずれのラベルも一致しないホスト名はgit作業ツリールートの`.gitlab-ci.yml`の実在を副次的な根拠とし、
-    無ければ`None`を返して`--forge`の明示指定を促す。
-    ホスト名だけでは自社ドメインの私設ホストの種別を一意に確定できないためである。
-    `.gitlab-ci.yml`をホスト名より優先しないのは、GitHubリポジトリに同ファイルが同居する場合があるためである。
-    探索起点をカレントディレクトリではなく作業ツリールートとするのは、
-    リポジトリのサブディレクトリから起動された場合の見逃しを避けるためである。
+    ホストを含まない短縮repositoryと未知の私設ホストは、`--forge`の明示指定が必要となる。
     """
     if explicit != "auto":
         return explicit
-    remote = _git_stdout(["git", "remote", "get-url", "origin"], subprocess_timeout)
-    if remote is None:
+    try:
+        hostname = _parse_repository(repository).hostname
+    except RunListError:
         return None
-    m = re.match(r"(?:[a-z+]+://)?(?:[^@/]+@)?([^/:]+)", remote)
-    if m is None:
+    if hostname is None:
         return None
-    labels = m.group(1).lower().split(".")
+    labels = hostname.lower().split(".")
     if "github" in labels:
         return "github"
     if "gitlab" in labels:
         return "gitlab"
-    toplevel = _git_stdout(["git", "rev-parse", "--show-toplevel"], subprocess_timeout)
-    if toplevel is not None and (pathlib.Path(toplevel) / ".gitlab-ci.yml").exists():
-        return "gitlab"
     return None
+
+
+def _default_run_list_fn(
+    forge: str,
+    repository: str,
+    ref: str,
+    subprocess_timeout: float,
+) -> RunListFn:
+    """forgeに対応し、repository・ref・タイムアウトを固定した一覧取得関数を返す。"""
+    fetcher = _glab_pipeline_list if forge == "gitlab" else _gh_run_list
+    return functools.partial(fetcher, repository, ref, subprocess_timeout=subprocess_timeout)
+
+
+def _write_baseline(path: pathlib.Path, baseline: CiBaseline) -> None:
+    """CI baselineを再利用可能なJSONとして保存する。"""
+    payload = {
+        "version": _BASELINE_VERSION,
+        "forge": baseline.forge,
+        "repository": baseline.repository,
+        "ref": baseline.ref,
+        "sha": baseline.sha,
+        "run_ids": sorted(baseline.run_ids),
+    }
+    path.write_text(f"{json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)}\n", encoding="utf-8")
+
+
+def _load_baseline(path: pathlib.Path) -> CiBaseline:
+    """JSON baselineを読み、完全なスキーマ検証後に返す。"""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RunListError(f"baselineの読み込みに失敗: {path}: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("version") != _BASELINE_VERSION:
+        raise RunListError(f"baselineのversionまたはJSON構造が不正: {path}")
+    string_fields = ("forge", "repository", "ref", "sha")
+    if not all(isinstance(payload.get(field), str) and payload[field] for field in string_fields):
+        raise RunListError(f"baselineの対象識別子が不正: {path}")
+    run_ids = payload.get("run_ids")
+    if not isinstance(run_ids, list):
+        raise RunListError(f"baselineのrun_idsが不正: {path}")
+    validated_run_ids: list[int] = []
+    for run_id in run_ids:
+        if not isinstance(run_id, int) or isinstance(run_id, bool):
+            raise RunListError(f"baselineのrun_idsが不正: {path}")
+        validated_run_ids.append(run_id)
+    return CiBaseline(
+        forge=payload["forge"],
+        repository=payload["repository"],
+        ref=payload["ref"],
+        sha=payload["sha"],
+        run_ids=frozenset(validated_run_ids),
+    )
+
+
+def _validate_baseline_context(baseline: CiBaseline, forge: str, repository: str, ref: str, sha: str) -> None:
+    """baselineの取得条件が待機対象と完全に一致することを確認する。"""
+    actual = (baseline.forge, baseline.repository, baseline.ref, baseline.sha)
+    expected = (forge, repository, ref, sha)
+    if actual != expected:
+        raise RunListError(f"baselineの対象が不一致: baseline={actual!r}, requested={expected!r}")
 
 
 def _print(elapsed: float, msg: str) -> None:
@@ -370,11 +495,14 @@ def _fetch_snapshot(
     run_list_fn: RunListFn,
     job_list_fn: JobListFn,
     expected_ids: set[int] | None = None,
+    excluded_ids: frozenset[int] = frozenset(),
 ) -> tuple[list[RunRecord], list[JobRecord]]:
-    """run一覧と対象runすべてのジョブ一覧を不可分なpollスナップショットとして取得する。"""
-    runs = run_list_fn(sha)
-    target_runs = runs if expected_ids is None else [run for run in runs if run.get("databaseId") in expected_ids]
-    jobs = [job for run in target_runs for job in job_list_fn(run)]
+    """baselineを除いたrunと対応ジョブを不可分なpollスナップショットとして取得する。"""
+    candidates = run_list_fn(sha)
+    _run_ids(candidates)
+    new_runs = [run for run in candidates if run["databaseId"] not in excluded_ids]
+    runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
+    jobs = [job for run in runs for job in job_list_fn(run)]
     return runs, jobs
 
 
@@ -383,13 +511,26 @@ def _fetch_follow_snapshot(
     run_list_fn: RunListFn,
     job_list_fn: JobListFn,
     expected_ids: set[int] | None = None,
+    excluded_ids: frozenset[int] = frozenset(),
 ) -> tuple[list[RunRecord], list[JobRecord]]:
     """全後続SHAのrun・ジョブ一覧を不可分なpollスナップショットとして取得する。"""
     candidates = [run for follow_sha in follow_shas for run in run_list_fn(follow_sha)]
-    runs = [run for run in candidates if run.get("headSha") in follow_shas]
-    target_runs = runs if expected_ids is None else [run for run in runs if run.get("databaseId") in expected_ids]
-    jobs = [job for run in target_runs for job in job_list_fn(run)]
+    _run_ids(candidates)
+    new_runs = [run for run in candidates if run.get("headSha") in follow_shas and run["databaseId"] not in excluded_ids]
+    runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
+    jobs = [job for run in runs for job in job_list_fn(run)]
     return runs, jobs
+
+
+def _run_ids(runs: list[RunRecord]) -> set[int]:
+    """run一覧の整数ID集合を返し、不正なIDは取得失敗として扱う。"""
+    identifiers: set[int] = set()
+    for run in runs:
+        run_id = run.get("databaseId")
+        if not isinstance(run_id, int) or isinstance(run_id, bool):
+            raise RunListError(f"CI run databaseId is invalid: {run_id!r}")
+        identifiers.add(run_id)
+    return identifiers
 
 
 def _all_completed(runs: list[RunRecord]) -> bool:
@@ -412,6 +553,9 @@ def wait_for_ci(
     follow_cancelled: bool,
     subprocess_timeout: float,
     *,
+    repository: str,
+    ref: str,
+    baseline_ids: frozenset[int],
     forge: str = "github",
     sleep_fn: Callable[[float], None] = time.sleep,
     now_fn: Callable[[], float] = time.monotonic,
@@ -422,7 +566,7 @@ def wait_for_ci(
 ) -> int:
     """対象shaの明確な失敗run・ジョブ1件検出または期待run集合完了の早い方を待ちexit codeを返す。
 
-    - 毎pollでrun一覧と対象runすべてのジョブ一覧を、通常経路は`_fetch_snapshot`、
+    - 毎pollでbaseline IDを除いたrun一覧とジョブ一覧を、通常経路は`_fetch_snapshot`、
       後続SHA追跡時は`_fetch_follow_snapshot`で不可分なスナップショットとして取得し、
       `_find_early_failure`が確定的な失敗（forgeごとの判定は同関数docstring参照）を1件検出した時点で
       run/pipeline完了を待たずEXIT_CI_FAILEDを返す
@@ -434,21 +578,20 @@ def wait_for_ci(
       登録猶予末・後続SHA登録猶予末は、猶予末に到達した回の取得失敗のみでも
       3回連続を待たず即時EXIT_GH_ERRORとする）
     - 早期失敗が無く期待run集合全runが`conclusion==success`のときのみEXIT_SUCCESS
-    - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..HEAD`の後続SHA上のrunで補完判定
-    - `--sha`が現在ブランチHEADの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
+    - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..<ref>`の後続SHA上のrunで補完判定
+    - `--sha`が明示指定したrefの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
     - `forge`が`gitlab`のとき既定の取得手段を`glab ci list --sha`・`glab api`へ切り替える
       （`run_list_fn`・`job_list_fn`を明示指定した場合、取得関数の既定選択には`forge`を参照しない）
     - `forge`は早期失敗の分類（`_find_early_failure`のforgeごとの判定）には
       `run_list_fn`・`job_list_fn`の明示指定有無によらず常に使う
     """
     if run_list_fn is None:
-        fetcher = _glab_pipeline_list if forge == "gitlab" else _gh_run_list
-        run_list_fn = functools.partial(fetcher, subprocess_timeout=subprocess_timeout)
+        run_list_fn = _default_run_list_fn(forge, repository, ref, subprocess_timeout)
     if job_list_fn is None:
         job_fetcher = _glab_job_list if forge == "gitlab" else _gh_job_list
-        job_list_fn = functools.partial(job_fetcher, subprocess_timeout=subprocess_timeout)
-    ancestor_check_fn = ancestor_check_fn or (lambda ancestor: _is_ancestor_of_head(ancestor, subprocess_timeout))
-    follow_shas_fn = follow_shas_fn or (lambda base: _follow_shas(base, subprocess_timeout))
+        job_list_fn = functools.partial(job_fetcher, repository, subprocess_timeout=subprocess_timeout)
+    ancestor_check_fn = ancestor_check_fn or (lambda ancestor: _is_ancestor_of_ref(ancestor, ref, subprocess_timeout))
+    follow_shas_fn = follow_shas_fn or (lambda base: _follow_shas(base, ref, subprocess_timeout))
     start = now_fn()
     runs: list[RunRecord] = []
     consecutive_failures = 0
@@ -457,9 +600,9 @@ def wait_for_ci(
     while True:  # 登録猶予フェーズ: 猶予末まで継続収集する
         last_call_failed = False
         try:
-            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn)
+            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids)
             consecutive_failures = 0
-            expected_ids |= {r["databaseId"] for r in runs if "databaseId" in r}
+            expected_ids |= _run_ids(runs)
             if failure := _find_early_failure(runs, jobs, forge):
                 _emit_failure_summary(*failure)
                 return EXIT_CI_FAILED
@@ -486,7 +629,7 @@ def wait_for_ci(
 
     while True:  # 完了待ちフェーズ
         try:
-            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn, expected_ids)
+            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn, expected_ids, baseline_ids)
             consecutive_failures = 0
         except RunListError as exc:
             consecutive_failures += 1
@@ -513,9 +656,9 @@ def wait_for_ci(
                 return EXIT_SUCCESS
             if follow_cancelled and _all_cancelled(expected_runs):
                 if not ancestor_check_fn(sha):
-                    _print(elapsed, f"--follow-cancelled対象外: {sha}は現在HEADの祖先ではない")
+                    _print(elapsed, f"--follow-cancelled対象外: {sha}は{ref}の祖先ではない")
                     return EXIT_GH_ERROR
-                _print(elapsed, "全runがcancelled。git logで後続SHA集合を取得し追跡へ移行")
+                _print(elapsed, f"全runがcancelled。{ref}の後続SHA集合を取得し追跡へ移行")
                 return _follow_cancelled(
                     sha,
                     expected_runs,
@@ -528,6 +671,7 @@ def wait_for_ci(
                     job_list_fn=job_list_fn,
                     follow_shas_fn=follow_shas_fn,
                     forge=forge,
+                    excluded_ids=baseline_ids,
                 )
             return EXIT_CI_FAILED
         if elapsed >= timeout:
@@ -552,10 +696,11 @@ def _follow_cancelled(
     job_list_fn: JobListFn,
     follow_shas_fn: FollowShasFn,
     forge: str,
+    excluded_ids: frozenset[int],
 ) -> int:
-    """全run cancelled時、`git log <original_sha>..HEAD`の後続SHA集合を判定対象とする。
+    """全run cancelled時、明示refの後続SHA集合を判定対象とする。
 
-    - 呼び出し前に`ancestor_check_fn`で`<original_sha>`がHEADの祖先であることを確認済み
+    - 呼び出し前に`ancestor_check_fn`で`<original_sha>`が明示refの祖先であることを確認済み
     - 後続SHAが未生成の場合は待機し、初回検出後は`registration_grace`秒の間
       `follow_shas_fn(original_sha)`と各後続SHAの`run_list_fn`を再呼び出しして、
       追加後続SHAの登録・同一SHA上での複数workflowの段階的なrun登録の両方を収集する
@@ -575,9 +720,14 @@ def _follow_cancelled(
         follow_shas |= current_shas
         last_call_failed = False
         try:
-            candidates, jobs = _fetch_follow_snapshot(follow_shas, run_list_fn, job_list_fn)
+            candidates, jobs = _fetch_follow_snapshot(
+                follow_shas,
+                run_list_fn,
+                job_list_fn,
+                excluded_ids=excluded_ids,
+            )
             consecutive_failures = 0
-            expected_ids |= {r["databaseId"] for r in candidates if r.get("headSha") in follow_shas and "databaseId" in r}
+            expected_ids |= _run_ids(candidates)
             if failure := _find_early_failure(candidates, jobs, forge):
                 _emit_failure_summary(*failure)
                 return EXIT_CI_FAILED
@@ -608,7 +758,13 @@ def _follow_cancelled(
     while True:  # 完了待ちフェーズ
         # 各後続SHAのrunを取得し、expected_idsに属するrunのみを集約する
         try:
-            candidates, jobs = _fetch_follow_snapshot(follow_shas, run_list_fn, job_list_fn, expected_ids)
+            candidates, jobs = _fetch_follow_snapshot(
+                follow_shas,
+                run_list_fn,
+                job_list_fn,
+                expected_ids,
+                excluded_ids,
+            )
             consecutive_failures = 0
         except RunListError as exc:
             consecutive_failures += 1
@@ -642,17 +798,16 @@ def _follow_cancelled(
         sleep_fn(poll_interval)
 
 
-def _resolve_sha(sha: str | None, subprocess_timeout: float) -> str | None:
+def _resolve_sha(sha: str, subprocess_timeout: float) -> str | None:
     """`git rev-parse`で完全形式のcommit shaへ解決する。
 
-    `sha`省略時は`HEAD`を対象とする。明示指定時も同一経路で完全形式へ変換することで、
-    短縮形式を受理しない外部コマンド（`gh run list --commit`）との扱いを揃える。
+    明示指定されたSHAを同一経路で完全形式へ変換することで、
+    短縮形式を受理しないforge CLIとの扱いを揃える。
     解決失敗時は`None`を返し、呼び出し元で識別子解決失敗として区別できるようにする。
     """
-    target = sha if sha is not None else "HEAD"
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--verify", "--end-of-options", target],
+            ["git", "rev-parse", "--verify", "--end-of-options", sha],
             capture_output=True,
             text=True,
             check=False,
@@ -665,11 +820,11 @@ def _resolve_sha(sha: str | None, subprocess_timeout: float) -> str | None:
     return result.stdout.strip()
 
 
-def _is_ancestor_of_head(ancestor_sha: str, subprocess_timeout: float) -> bool:
-    """`git merge-base --is-ancestor <sha> HEAD`で祖先関係を確認する。"""
+def _is_ancestor_of_ref(ancestor_sha: str, ref: str, subprocess_timeout: float) -> bool:
+    """`git merge-base --is-ancestor <sha> <ref>`で祖先関係を確認する。"""
     try:
         result = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", ancestor_sha, "HEAD"],
+            ["git", "merge-base", "--is-ancestor", ancestor_sha, ref],
             capture_output=True,
             text=True,
             check=False,
@@ -680,11 +835,11 @@ def _is_ancestor_of_head(ancestor_sha: str, subprocess_timeout: float) -> bool:
     return result.returncode == 0
 
 
-def _follow_shas(base_sha: str, subprocess_timeout: float) -> list[str]:
-    """`git log <base_sha>..HEAD --format=%H`で後続SHA集合を新しい順で返す。"""
+def _follow_shas(base_sha: str, ref: str, subprocess_timeout: float) -> list[str]:
+    """`git log <base_sha>..<ref> --format=%H`で後続SHA集合を新しい順で返す。"""
     try:
         result = subprocess.run(
-            ["git", "log", f"{base_sha}..HEAD", "--format=%H"],
+            ["git", "log", f"{base_sha}..{ref}", "--format=%H"],
             capture_output=True,
             text=True,
             check=False,
@@ -735,10 +890,15 @@ def _non_negative_float(value: str) -> float:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドライン引数を解析し、対象shaのCI通過確認を待ちexit codeを返す。"""
+    """コマンドライン引数を解析し、baseline作成またはCI通過確認を実行する。"""
     _install_signal_handlers()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sha", default=None, help="対象commit sha（既定: HEAD）")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--write-baseline", type=pathlib.Path, help="push前の実行IDを保存するJSONパス")
+    mode.add_argument("--baseline", type=pathlib.Path, help="push前に保存したbaseline JSONパス")
+    parser.add_argument("--repo", required=True, help="対象repository（owner/repoまたはホストを含むURL）")
+    parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")
+    parser.add_argument("--sha", required=True, help="対象commit SHA")
     parser.add_argument("--timeout", type=_positive_float, default=900.0, help="全体タイムアウト秒数（既定900）")
     parser.add_argument("--poll-interval", type=_positive_float, default=20.0, help="ポーリング間隔秒数（既定20）")
     parser.add_argument("--registration-grace", type=_non_negative_float, default=60.0, help="run未登録許容秒数（既定60）")
@@ -752,18 +912,33 @@ def main(argv: list[str] | None = None) -> int:
         "--forge",
         choices=("auto", "github", "gitlab"),
         default="auto",
-        help="対象ホスティング種別（既定auto。originのリモートURLのホストから自動判定）",
+        help="対象ホスティング種別（既定auto。--repoのホストから自動判定）",
     )
     parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時に同ブランチ後続run成功を追跡")
     args = parser.parse_args(argv)
     sha = _resolve_sha(args.sha, args.subprocess_timeout)
     if sha is None:
-        target_desc = args.sha if args.sha is not None else "HEAD"
-        print(f"[wait_ci] {target_desc}のsha解決に失敗（git rev-parse）", file=sys.stderr)
+        print(f"[wait_ci] {args.sha}のsha解決に失敗（git rev-parse）", file=sys.stderr)
         return EXIT_GH_ERROR
-    forge = _resolve_forge(args.forge, args.subprocess_timeout)
+    forge = _resolve_forge(args.forge, args.repo)
     if forge is None:
-        print("[wait_ci] 対象forgeを判別できない（originのリモートURL未取得）。--forgeで明示指定する", file=sys.stderr)
+        print("[wait_ci] 対象forgeを--repoから判別できない。--forgeで明示指定する", file=sys.stderr)
+        return EXIT_GH_ERROR
+    if args.write_baseline is not None:
+        try:
+            runs = _default_run_list_fn(forge, args.repo, args.ref, args.subprocess_timeout)(sha)
+            baseline = CiBaseline(forge, args.repo, args.ref, sha, frozenset(_run_ids(runs)))
+            _write_baseline(args.write_baseline, baseline)
+        except (OSError, RunListError) as exc:
+            print(f"[wait_ci] baseline作成に失敗: {exc}", file=sys.stderr)
+            return EXIT_GH_ERROR
+        print(f"[wait_ci] baseline保存: {args.write_baseline} ({len(baseline.run_ids)}件)")
+        return EXIT_SUCCESS
+    try:
+        baseline = _load_baseline(args.baseline)
+        _validate_baseline_context(baseline, forge, args.repo, args.ref, sha)
+    except RunListError as exc:
+        print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)
         return EXIT_GH_ERROR
     return wait_for_ci(
         sha,
@@ -772,6 +947,9 @@ def main(argv: list[str] | None = None) -> int:
         args.registration_grace,
         args.follow_cancelled,
         args.subprocess_timeout,
+        repository=args.repo,
+        ref=args.ref,
+        baseline_ids=baseline.run_ids,
         forge=forge,
     )
 

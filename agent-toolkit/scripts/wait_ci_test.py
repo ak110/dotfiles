@@ -24,11 +24,45 @@ import wait_ci
 # 理由はモジュールdocstringの「例外」記述に従う。
 _resolve_forge = wait_ci._resolve_forge  # pylint: disable=protected-access
 _normalize_gitlab_pipeline = wait_ci._normalize_gitlab_pipeline  # pylint: disable=protected-access
+_gh_run_list = wait_ci._gh_run_list  # pylint: disable=protected-access
 _glab_pipeline_list = wait_ci._glab_pipeline_list  # pylint: disable=protected-access
 _gh_job_list = wait_ci._gh_job_list  # pylint: disable=protected-access
 _glab_job_list = wait_ci._glab_job_list  # pylint: disable=protected-access
+_is_ancestor_of_ref = wait_ci._is_ancestor_of_ref  # pylint: disable=protected-access
+_follow_shas = wait_ci._follow_shas  # pylint: disable=protected-access
 _all_cancelled = wait_ci._all_cancelled  # pylint: disable=protected-access
 _all_success = wait_ci._all_success  # pylint: disable=protected-access
+
+_FULL_SHA = "a" * 40
+
+
+def _write_test_baseline(path: pathlib.Path, *, sha: str = _FULL_SHA, run_ids: list[int] | None = None) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "forge": "github",
+                "repository": "owner/repository",
+                "ref": "refs/heads/main",
+                "sha": sha,
+                "run_ids": run_ids or [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _main_args(baseline: pathlib.Path, *, sha: str = "abc123") -> list[str]:
+    return [
+        "--baseline",
+        str(baseline),
+        "--forge=github",
+        "--repo",
+        "owner/repository",
+        "--ref",
+        "refs/heads/main",
+        f"--sha={sha}",
+    ]
 
 
 def _run_wait(
@@ -42,6 +76,7 @@ def _run_wait(
     job_list_fn=None,
     ancestor_check_fn=None,
     follow_shas_fn=None,
+    baseline_ids=frozenset(),
 ):
     """`wait_for_ci`をDI経由で駆動する。時刻・sleepはスタブ化。"""
     times = iter(t * 1.0 for t in range(0, 100_000))
@@ -52,6 +87,9 @@ def _run_wait(
         registration_grace,
         follow_cancelled,
         10.0,
+        repository="owner/repository",
+        ref="refs/heads/main",
+        baseline_ids=baseline_ids,
         forge=forge,
         sleep_fn=lambda _s: None,
         now_fn=lambda: next(times),
@@ -214,6 +252,57 @@ class TestRegistrationGrace:
                 job_list_fn=lambda _r: [_job(conclusion="failure")],
             )
             == wait_ci.EXIT_CI_FAILED
+        )
+
+
+class TestPushIdentityDifferential:
+    """push前baselineに存在しない実行IDだけを判定対象とする。"""
+
+    def test_old_success_is_ignored_while_new_run_progresses_to_success(self):
+        old = _run(name="old", db_id=1)
+        calls = {"n": 0}
+        job_run_ids: list[int] = []
+
+        def run_list(_sha):
+            calls["n"] += 1
+            new = _run(
+                name="new",
+                db_id=2,
+                status="in_progress" if calls["n"] == 1 else "completed",
+                conclusion=None if calls["n"] == 1 else "success",
+            )
+            return [old, new]
+
+        def job_list(run):
+            job_run_ids.append(run["databaseId"])
+            return []
+
+        result = _run_wait(
+            run_list,
+            registration_grace=0.0,
+            baseline_ids=frozenset({1}),
+            job_list_fn=job_list,
+        )
+
+        assert result == wait_ci.EXIT_SUCCESS
+        assert job_run_ids == [2, 2]
+
+    def test_old_failure_does_not_fail_new_success(self):
+        runs = [_run(name="old", db_id=1, conclusion="failure"), _run(name="new", db_id=2)]
+        assert _run_wait(lambda _sha: runs, registration_grace=0.0, baseline_ids=frozenset({1})) == wait_ci.EXIT_SUCCESS
+
+    def test_baseline_only_returns_no_runs_without_fetching_old_jobs(self):
+        def unexpected_job_fetch(_run_record):
+            raise AssertionError("baseline runのジョブを取得してはならない")
+
+        assert (
+            _run_wait(
+                lambda _sha: [_run(db_id=1)],
+                registration_grace=0.0,
+                baseline_ids=frozenset({1}),
+                job_list_fn=unexpected_job_fetch,
+            )
+            == wait_ci.EXIT_NO_RUNS
         )
 
 
@@ -803,10 +892,36 @@ class TestFollowCancelled:
         )
 
 
+class TestExplicitFollowRef:
+    """cancelled後の祖先判定と後続取得が`HEAD`ではなく指定refを使うことを確認する。"""
+
+    def test_ancestor_check_uses_explicit_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        assert _is_ancestor_of_ref("base", "refs/heads/release", 1.0) is True
+        assert calls == [["git", "merge-base", "--is-ancestor", "base", "refs/heads/release"]]
+
+    def test_follow_sha_query_uses_explicit_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="next\n", stderr="")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        assert _follow_shas("base", "refs/heads/release", 1.0) == ["next"]
+        assert calls == [["git", "log", "base..refs/heads/release", "--format=%H"]]
+
+
 class TestSignalHandling:
     """実プロセスへシグナルを送信し、`_install_signal_handlers`の実挙動を確認する。"""
 
-    def test_sigterm_exits_with_interrupted_code(self):
+    def test_sigterm_exits_with_interrupted_code(self, tmp_path: pathlib.Path):
         """SIGTERM受信時に`EXIT_INTERRUPTED`を返すことを実プロセスで確認する。
 
         ハンドラ登録は`main`冒頭で行われるため、送信までの待機が起動所要時間を下回ると
@@ -817,13 +932,20 @@ class TestSignalHandling:
         書くと`sys.stderr`の`BufferedWriter`へ再入し得るため、その回帰を検出する。
         """
         script_path = pathlib.Path(__file__).parent / "wait_ci.py"
+        baseline_path = tmp_path / "baseline.json"
+        _write_test_baseline(baseline_path)
         returncode = None
         for warmup_sec in (1.0, 3.0, 6.0):
             with subprocess.Popen(
                 [
                     sys.executable,
                     str(script_path),
-                    "--sha=0000000000000000000000000000000000000000",
+                    "--baseline",
+                    str(baseline_path),
+                    "--forge=github",
+                    "--repo=owner/repository",
+                    "--ref=refs/heads/main",
+                    f"--sha={_FULL_SHA}",
                     "--poll-interval=5",
                     "--registration-grace=30",
                     "--timeout=60",
@@ -851,13 +973,18 @@ class TestSignalHandling:
 
 
 class TestMainEntrypoint:
-    """公開エントリ`main`経由の引数解析・HEAD解決・シナリオ確認。"""
+    """公開エントリ`main`経由の引数解析・SHA解決・シナリオ確認。"""
 
-    def test_head_resolution_failure_returns_gh_error(self):
+    def test_sha_resolution_failure_returns_gh_error(self, tmp_path: pathlib.Path):
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
         with mock.patch("subprocess.run", return_value=mock.Mock(stdout="", returncode=1, stderr="")):
-            assert wait_ci.main(["--timeout", "1"]) == wait_ci.EXIT_GH_ERROR
+            assert wait_ci.main(_main_args(baseline) + ["--timeout", "1"]) == wait_ci.EXIT_GH_ERROR
 
-    def test_explicit_sha_success_path(self):
+    def test_explicit_sha_success_path(self, tmp_path: pathlib.Path):
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+
         def fake_run(cmd, **_kwargs):
             if cmd[:3] == ["git", "rev-parse", "--verify"]:
                 return mock.Mock(stdout="a" * 40, returncode=0, stderr="")
@@ -868,12 +995,58 @@ class TestMainEntrypoint:
             raise AssertionError(cmd)
 
         with mock.patch("subprocess.run", side_effect=fake_run):
-            assert wait_ci.main(["--sha", "abc123", "--registration-grace", "0", "--forge=github"]) == wait_ci.EXIT_SUCCESS
+            assert wait_ci.main(_main_args(baseline) + ["--registration-grace", "0"]) == wait_ci.EXIT_SUCCESS
 
-    def test_subprocess_timeout_surfaces_as_gh_error(self):
+    def test_subprocess_timeout_surfaces_as_gh_error(self, tmp_path: pathlib.Path):
         """内部subprocess呼び出しのタイムアウトが`main`経由でGH_ERRORに現れる。"""
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
         with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gh", 10.0)):
-            assert wait_ci.main(["--sha", "abc123", "--registration-grace", "0", "--timeout", "1"]) == wait_ci.EXIT_GH_ERROR
+            assert wait_ci.main(_main_args(baseline) + ["--registration-grace", "0", "--timeout", "1"]) == wait_ci.EXIT_GH_ERROR
+
+    def test_write_baseline_records_context_and_existing_run_ids(self, tmp_path: pathlib.Path):
+        baseline = tmp_path / "baseline.json"
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                return mock.Mock(stdout=_FULL_SHA, returncode=0, stderr="")
+            if cmd[:3] == ["gh", "run", "list"]:
+                return mock.Mock(stdout=json.dumps([_run(db_id=11), _run(db_id=12)]), returncode=0, stderr="")
+            raise AssertionError(cmd)
+
+        args = [
+            "--write-baseline",
+            str(baseline),
+            "--forge=github",
+            "--repo=owner/repository",
+            "--ref=refs/heads/main",
+            "--sha=abc123",
+        ]
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            assert wait_ci.main(args) == wait_ci.EXIT_SUCCESS
+
+        payload = json.loads(baseline.read_text(encoding="utf-8"))
+        assert payload == {
+            "version": 1,
+            "forge": "github",
+            "repository": "owner/repository",
+            "ref": "refs/heads/main",
+            "sha": _FULL_SHA,
+            "run_ids": [11, 12],
+        }
+
+    def test_baseline_context_mismatch_fails_before_ci_query(self, tmp_path: pathlib.Path):
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+
+        def fake_run(cmd, **_kwargs):
+            assert cmd[:3] == ["git", "rev-parse", "--verify"]
+            return mock.Mock(stdout=_FULL_SHA, returncode=0, stderr="")
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            result = wait_ci.main(_main_args(baseline) + ["--repo=different/repository"])
+
+        assert result == wait_ci.EXIT_GH_ERROR
 
     @pytest.mark.parametrize("flag", ["--timeout", "--poll-interval", "--registration-grace", "--subprocess-timeout"])
     @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf"])
@@ -898,8 +1071,11 @@ class TestMainEntrypoint:
 class TestResolveShaViaMain:
     """`--sha`明示指定時も完全形式へ解決してから`wait_for_ci`へ渡す。"""
 
-    def test_explicit_short_sha_is_resolved_to_full_form(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_explicit_short_sha_is_resolved_to_full_form(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         captured: dict[str, object] = {}
+        resolved_sha = "17561bd376c5fb8ace04153871b2a2d6993c380d"
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline, sha=resolved_sha)
 
         def fake_wait_for_ci(sha: str, *args: object, **kwargs: object) -> int:
             del args, kwargs
@@ -909,41 +1085,49 @@ class TestResolveShaViaMain:
         def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
             del kwargs
             assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "17561bd"]
-            return subprocess.CompletedProcess(
-                cmd, returncode=0, stdout="17561bd376c5fb8ace04153871b2a2d6993c380d\n", stderr=""
-            )
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{resolved_sha}\n", stderr="")
 
         monkeypatch.setattr(wait_ci, "wait_for_ci", fake_wait_for_ci)
         monkeypatch.setattr(subprocess, "run", fake_run)
-        result = wait_ci.main(["--sha", "17561bd", "--forge=github"])
+        result = wait_ci.main(_main_args(baseline, sha="17561bd"))
         assert result == wait_ci.EXIT_SUCCESS
-        assert captured["sha"] == "17561bd376c5fb8ace04153871b2a2d6993c380d"
+        assert captured["sha"] == resolved_sha
 
     def test_explicit_sha_resolution_failure_is_distinguished_from_no_runs(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
     ) -> None:
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+
         def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
             del cmd, kwargs
             return subprocess.CompletedProcess([], returncode=128, stdout="", stderr="fatal: bad revision")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        result = wait_ci.main(["--sha", "deadbee"])
+        result = wait_ci.main(_main_args(baseline, sha="deadbee"))
         assert result == wait_ci.EXIT_GH_ERROR
         err = capsys.readouterr().err
         assert "deadbee" in err
         assert "sha解決に失敗" in err
 
     def test_missing_git_returns_sha_resolution_failure(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
     ) -> None:
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
         monkeypatch.setattr(subprocess, "run", mock.Mock(side_effect=FileNotFoundError("git")))
 
-        result = wait_ci.main(["--sha", "17561bd"])
+        result = wait_ci.main(_main_args(baseline, sha="17561bd"))
 
         assert result == wait_ci.EXIT_GH_ERROR
         assert "sha解決に失敗" in capsys.readouterr().err
 
-    def test_option_like_sha_is_passed_after_end_of_options(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_option_like_sha_is_passed_after_end_of_options(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+
         def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
             del kwargs
             assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "--not-an-option"]
@@ -951,22 +1135,9 @@ class TestResolveShaViaMain:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        result = wait_ci.main(["--sha=--not-an-option"])
+        result = wait_ci.main(_main_args(baseline, sha="--not-an-option"))
 
         assert result == wait_ci.EXIT_GH_ERROR
-
-
-def _patch_git(monkeypatch: pytest.MonkeyPatch, remote: str, toplevel: str | None = None) -> None:
-    """`git remote get-url origin`と`git rev-parse --show-toplevel`の応答を固定するヘルパー。"""
-
-    def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
-        if cmd[1:] == ["rev-parse", "--show-toplevel"]:
-            if toplevel is None:
-                return subprocess.CompletedProcess(cmd, 128, stdout="", stderr="fatal: not a git repository")
-            return subprocess.CompletedProcess(cmd, 0, stdout=f"{toplevel}\n", stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout=remote, stderr="")
-
-    monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
 
 
 class TestResolveForge:
@@ -974,60 +1145,32 @@ class TestResolveForge:
 
     def test_explicit_value_is_returned_as_is(self) -> None:
         """明示指定時はリモート照会をしない。"""
-        assert _resolve_forge("gitlab", 1.0) == "gitlab"
-        assert _resolve_forge("github", 1.0) == "github"
+        assert _resolve_forge("gitlab", "owner/repository") == "gitlab"
+        assert _resolve_forge("github", "owner/repository") == "github"
 
-    def test_auto_detects_github_from_remote_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_auto_detects_github_from_repository_host(self) -> None:
         """ホスト名のラベルがgithubと一致する場合はgithubと判定する（SSH短縮形式）。"""
-        _patch_git(monkeypatch, "git@github.com:o/r.git\n")
-        assert _resolve_forge("auto", 1.0) == "github"
+        assert _resolve_forge("auto", "git@github.com:o/r.git") == "github"
 
-    def test_auto_detects_github_enterprise_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_auto_detects_github_enterprise_host(self) -> None:
         """GitHub Enterprise Serverの標準的なホスト名もgithubと判定する。"""
-        _patch_git(monkeypatch, "https://github.example.com/o/r.git\n")
-        assert _resolve_forge("auto", 1.0) == "github"
+        assert _resolve_forge("auto", "https://github.example.com/o/r.git") == "github"
 
-    def test_auto_detects_gitlab_for_self_hosted_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_auto_detects_gitlab_for_self_hosted_host(self) -> None:
         """ホスト名のラベルがgitlabと一致する私設ホストはgitlabと判定する（サブグループ付きHTTPS形式）。"""
-        _patch_git(monkeypatch, "https://gitlab.example.com/group/sub/repo.git\n")
-        assert _resolve_forge("auto", 1.0) == "gitlab"
+        assert _resolve_forge("auto", "https://gitlab.example.com/group/sub/repo.git") == "gitlab"
 
-    def test_auto_detects_gitlab_from_ssh_uri(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_auto_detects_gitlab_from_ssh_uri(self) -> None:
         """ポート付きSSH URI形式からもホスト名を抽出する。"""
-        _patch_git(monkeypatch, "ssh://git@gitlab.example.com:2222/group/repo.git\n")
-        assert _resolve_forge("auto", 1.0) == "gitlab"
+        assert _resolve_forge("auto", "ssh://git@gitlab.example.com:2222/group/repo.git") == "gitlab"
 
-    def test_auto_does_not_match_host_label_by_substring(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    def test_auto_does_not_match_host_label_by_substring(self) -> None:
         """ラベルの部分一致では判定せず、無関係なホストを誤分類しない。"""
-        _patch_git(monkeypatch, "https://notgithub.example.com/o/r.git\n", toplevel=str(tmp_path))
-        assert _resolve_forge("auto", 1.0) is None
+        assert _resolve_forge("auto", "https://notgithub.example.com/o/r.git") is None
 
-    def test_auto_returns_none_for_ambiguous_host_without_gitlab_ci(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-    ) -> None:
-        """種別ラベルを持たないホスト名で`.gitlab-ci.yml`が無ければNoneを返す。"""
-        _patch_git(monkeypatch, "git@git.example.com:o/r.git\n", toplevel=str(tmp_path))
-        assert _resolve_forge("auto", 1.0) is None
-
-    def test_auto_finds_gitlab_ci_at_worktree_root_from_subdirectory(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-    ) -> None:
-        """サブディレクトリから起動しても作業ツリールートの`.gitlab-ci.yml`を検出する。"""
-        (tmp_path / ".gitlab-ci.yml").write_text("stages: []\n", encoding="utf-8")
-        subdir = tmp_path / "src" / "pkg"
-        subdir.mkdir(parents=True)
-        monkeypatch.chdir(subdir)
-        _patch_git(monkeypatch, "git@git.example.com:o/r.git\n", toplevel=str(tmp_path))
-        assert _resolve_forge("auto", 1.0) == "gitlab"
-
-    def test_auto_returns_none_when_remote_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """リモートURLを取得できない場合はNoneを返す。"""
-        monkeypatch.setattr(
-            wait_ci.subprocess,
-            "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 128, stdout="", stderr="fatal: no such remote"),
-        )
-        assert _resolve_forge("auto", 1.0) is None
+    @pytest.mark.parametrize("repository", ["owner/repository", "git@git.example.com:o/r.git", "invalid"])
+    def test_auto_returns_none_without_recognized_host(self, repository: str) -> None:
+        assert _resolve_forge("auto", repository) is None
 
 
 class TestNormalizeGitlabPipeline:
@@ -1071,6 +1214,36 @@ class TestNormalizeGitlabPipeline:
         assert _all_success([record]) is False
 
 
+class TestGhRunList:
+    """GitHub一覧取得がrepository・ref・SHAの全てを明示することを確認する。"""
+
+    @pytest.mark.parametrize(
+        ("repository", "ref", "short_ref"),
+        [
+            ("owner/first", "refs/heads/main", "main"),
+            ("owner/second", "refs/heads/release/v2", "release/v2"),
+        ],
+    )
+    def test_command_targets_requested_repository_and_ref(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        repository: str,
+        ref: str,
+        short_ref: str,
+    ) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        assert _gh_run_list(repository, ref, "deadbeef", 1.0) == []
+        assert calls[0][calls[0].index("--repo") + 1] == repository
+        assert calls[0][calls[0].index("--branch") + 1] == short_ref
+        assert calls[0][calls[0].index("--commit") + 1] == "deadbeef"
+
+
 class TestGlabPipelineList:
     """glab呼び出しと応答検証を確認する。"""
 
@@ -1083,8 +1256,10 @@ class TestGlabPipelineList:
             return subprocess.CompletedProcess(cmd, 0, stdout='[{"id":1,"status":"success"}]', stderr="")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
-        records = _glab_pipeline_list("deadbeef", 1.0)
+        records = _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
         assert calls[0][:3] == ["glab", "ci", "list"]
+        assert calls[0][calls[0].index("--repo") + 1] == "group/repository"
+        assert calls[0][calls[0].index("--ref") + 1] == "main"
         assert "--sha" in calls[0] and "deadbeef" in calls[0]
         assert calls[0][calls[0].index("-F") + 1] == "json"
         assert records[0]["conclusion"] == "success"
@@ -1097,7 +1272,7 @@ class TestGlabPipelineList:
             lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"),
         )
         with pytest.raises(wait_ci.RunListError):
-            _glab_pipeline_list("deadbeef", 1.0)
+            _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
 
     def test_unexpected_shape_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """配列以外の応答はRunListErrorとして扱う。"""
@@ -1107,7 +1282,7 @@ class TestGlabPipelineList:
             lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout='{"message":"x"}', stderr=""),
         )
         with pytest.raises(wait_ci.RunListError):
-            _glab_pipeline_list("deadbeef", 1.0)
+            _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
 
 
 class TestGhJobList:
@@ -1123,13 +1298,25 @@ class TestGhJobList:
             return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
-        jobs = _gh_job_list(_run(db_id=7), 1.0)
+        jobs = _gh_job_list("owner/repository", _run(db_id=7), 1.0)
         command = calls[0]
-        assert "filter=latest&per_page=100" in command[4]
+        assert "repos/owner/repository/actions/runs/7/jobs?filter=latest&per_page=100" in command
         assert "--paginate" in command
         assert "--slurp" in command
         assert "--jq" not in command
         assert [job["databaseId"] for job in jobs] == [11, 12]
+
+    def test_custom_host_and_repository_are_explicit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        assert not _gh_job_list("https://github.example.com/owner/repository.git", _run(db_id=7), 1.0)
+        assert "repos/owner/repository/actions/runs/7/jobs?filter=latest&per_page=100" in calls[0]
+        assert calls[0][calls[0].index("--hostname") + 1] == "github.example.com"
 
     @pytest.mark.parametrize(
         "payload",
@@ -1142,11 +1329,11 @@ class TestGhJobList:
             lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr=""),
         )
         with pytest.raises(wait_ci.RunListError):
-            _gh_job_list(_run(), 1.0)
+            _gh_job_list("owner/repository", _run(), 1.0)
 
     def test_invalid_run_id_raises_run_list_error(self) -> None:
         with pytest.raises(wait_ci.RunListError):
-            _gh_job_list({"databaseId": None}, 1.0)
+            _gh_job_list("owner/repository", {"databaseId": None}, 1.0)
 
     @pytest.mark.parametrize(
         "side_effect",
@@ -1155,7 +1342,7 @@ class TestGhJobList:
     def test_command_exception_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch, side_effect: Exception) -> None:
         monkeypatch.setattr(wait_ci.subprocess, "run", mock.Mock(side_effect=side_effect))
         with pytest.raises(wait_ci.RunListError):
-            _gh_job_list(_run(), 1.0)
+            _gh_job_list("owner/repository", _run(), 1.0)
 
     def test_non_zero_exit_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
@@ -1164,7 +1351,7 @@ class TestGhJobList:
             lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"),
         )
         with pytest.raises(wait_ci.RunListError):
-            _gh_job_list(_run(), 1.0)
+            _gh_job_list("owner/repository", _run(), 1.0)
 
 
 class TestGlabJobList:
@@ -1192,10 +1379,10 @@ class TestGlabJobList:
             return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
-        jobs = _glab_job_list(_run(db_id=8), 1.0)
+        jobs = _glab_job_list("group/sub/repository", _run(db_id=8), 1.0)
         command = calls[0]
         assert command[:2] == ["glab", "api"]
-        assert "projects/:id/pipelines/8/jobs?include_retried=false&per_page=100" in command
+        assert "projects/group%2Fsub%2Frepository/pipelines/8/jobs?include_retried=false&per_page=100" in command
         assert "--paginate" in command
         assert not any(item.startswith("--hostname") for item in command)
         assert jobs[0]["conclusion"] == "failure"
@@ -1212,7 +1399,7 @@ class TestGlabJobList:
             lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=json.dumps([item]), stderr=""),
         )
         with pytest.raises(wait_ci.RunListError):
-            _glab_job_list(_run(), 1.0)
+            _glab_job_list("group/repository", _run(), 1.0)
 
     def test_invalid_json_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
@@ -1221,7 +1408,7 @@ class TestGlabJobList:
             lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout="not-json", stderr=""),
         )
         with pytest.raises(wait_ci.RunListError):
-            _glab_job_list(_run(), 1.0)
+            _glab_job_list("group/repository", _run(), 1.0)
 
     def test_unexpected_shape_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
@@ -1230,4 +1417,4 @@ class TestGlabJobList:
             lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout='{"message":"x"}', stderr=""),
         )
         with pytest.raises(wait_ci.RunListError):
-            _glab_job_list(_run(), 1.0)
+            _glab_job_list("group/repository", _run(), 1.0)
