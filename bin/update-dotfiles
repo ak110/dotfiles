@@ -4,4 +4,10 @@ set -euo pipefail
 # NOTE: 対応するWindows版 → bin/update-dotfiles.cmd
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
-exec uv run --no-project --script "${SCRIPT_DIR}/scripts/update_dotfiles.py" "$@"
+UV="$HOME/.local/bin/uv"
+if [[ ! -x "$UV" ]]; then
+    echo "uvが見つかりません。公式インストーラーでuvを導入してください。" >&2
+    exit 127
+fi
+"$UV" self update
+exec "$UV" run --no-project --script "${SCRIPT_DIR}/scripts/update_dotfiles.py" "$@"

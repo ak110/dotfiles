@@ -6,7 +6,6 @@ pinact = "latest"
 prek = "latest"
 rust = { version = "latest", components = "rustfmt,clippy" }
 typos = "latest"
-uv = "latest"
 
 [settings]
 lockfile = true
