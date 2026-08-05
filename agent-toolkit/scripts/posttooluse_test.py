@@ -358,7 +358,7 @@ class TestSubagentEndProcessLoopLog:
     )
     def test_subagent_end_logging(self, tmp_path: pathlib.Path, subagent_type: str, enable_env: bool, expect_logged: bool):
         xdg_state_home = tmp_path / "xdg-state"
-        extra_env = {"XDG_STATE_HOME": str(xdg_state_home), "DOTFILES_AUTONOMOUS_EXIT_REQUIRED": "1" if enable_env else ""}
+        extra_env = {"XDG_STATE_HOME": str(xdg_state_home), "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1" if enable_env else ""}
         payload = {"session_id": "sid", "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}}
         _run(payload, state_dir=tmp_path, extra_env=extra_env)
         log_path = xdg_state_home / "agent-toolkit" / "process-feedbacks.log"

@@ -3464,7 +3464,7 @@ class TestSubagentModelOverrideGate:
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:
     return {
-        "DOTFILES_AUTONOMOUS_EXIT_REQUIRED": "1",
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
         "XDG_STATE_HOME": str(tmp_path / "state"),
         "LOCALAPPDATA": str(tmp_path / "state"),
     }

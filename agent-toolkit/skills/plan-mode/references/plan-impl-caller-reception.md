@@ -118,7 +118,12 @@ Agent・Task resultの`agentId:`を出力の実装識別子と照合する。継
 完了ステータスでは初回実装証跡を1件以上必須とし、実装経路が`not_started`、
 `unavailable`のいずれかとなる`needs_escalation`だけ「なし」を許容する。完了報告本文だけを証跡にしない。
 
-必須欄の欠落または値の矛盾は未完遂として扱い、未完了項目と実測結果へ縮減して再委譲する。
+必須欄の欠落は未完遂として扱い、未完了項目と実測結果へ縮減して再委譲する。
+必須欄の値が相互に矛盾する場合も、実体照合とtranscript証拠から正しい値が一意に定まり、
+実装、検証、コミット、必要なレビューが完了していれば受理する。
+呼び出し元は補正前の値、補正値、根拠を計画の進捗ログと最終報告へ記録する。
+実作業が未完了の場合、証拠が不足する場合、または補正候補が複数残る場合だけ、
+未完了項目と実測結果へ縮減して再委譲する。
 待機表明だけを返し完了報告の必須欄を欠く返却も未完遂として扱う。
 この場合は「サブエージェント運用」の停止手順で委譲先を停止し、
 「実体照合と後続工程」節の完遂順序のうち未完了の工程を呼び出し元が巻き取る。
@@ -221,13 +226,12 @@ Claude routeではthreadが「なし」かつAgent識別子が「なし」以外
 実施済みのラウンドがある以上、これらが「なし」の報告は実測と矛盾する。
 `status: completed`および`status: completed_with_review_cap`の欄要求は前掲のブロックが定める。
 
-当該区分は`agent-toolkit/agents/plan-impl-executor.md`「出力」節および
-`agent-toolkit/scripts/subagent_stop_advisor.py`の完了報告検査とペアで維持する。
+当該区分は`agent-toolkit/agents/plan-impl-executor.md`「出力」節とペアで維持する。
 `not_started`または`unavailable`のrouteに対応するthreadとAgent識別子は「なし」とする。
 routeの値は、起動を試みて不能だった場合を`unavailable`、起動を試みていない場合を`not_started`とする。
 `status: needs_escalation`で両レビューrouteが`not_started`である状態は、
 `review_status`が`レビュー未完了`の場合とユーザー指示によるレビュー省略の場合に限って正当とし、
-それ以外は値の矛盾として未完遂扱いとする。
+それ以外は実体照合とtranscript証拠から正しい値を確定する。
 レビュー工程へ到達しないまま返す場合は起動自体を試みていないため、`not_started`が実測と一致する。
 計画レビュー系のroute、thread、Agent識別子は計画確定時に完結し、executorへ引き継がない。
 

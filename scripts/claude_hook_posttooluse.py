@@ -19,7 +19,7 @@ dotfilesローカル配布対象外のため`agent-toolkit`プラグイン本体
   自身の振り返り誘導を抑制する（個人フックStop hookとの誘導重複を防ぐため）。
 - `agent-toolkit:exit-session`スキル: `autonomous_exit_invoked`キーへ`True`を書き込む。
   個人フックStop hook（`claude_hook_autonomous_exit.py`）が参照し、
-  `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下でのexit-session未呼出判定に使う。
+  `AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`環境下でのexit-session未呼出判定に使う。
   記録後は`_AGENT_TOOLKIT_PREFIX`分岐へフォールスルーし、
   `session_review_extension_pending`記録も併せて行う。
 

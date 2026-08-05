@@ -11,7 +11,7 @@
 
 `plan-impl-executor`完了報告（`agent_id`が
 `plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火）は、
-主要欄ラベルの欠落検査、二系統レビュー値の整合検査、
+主要欄ラベルの欠落検査、構造化blockerと実装経路の根拠検査、
 background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
 書式不備・矛盾を検出しblockした場合はエントリを保持し、是正後の再試行でも検査を再発火させる。
 適合報告と未消化の孫起動の有無にかかわらず、登録は親SessionEndまで保持する。
@@ -92,14 +92,8 @@ _PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(
     r"^status:\s*completed(?:_with_review_cap)?\b",
     re.MULTILINE,
 )
-_PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE = re.compile(r"^計画準拠系(\d+)件・独立系(\d+)件$")
-# `status: needs_escalation`で許容する`review_status`の固定値。
-# `agent-toolkit/agents/plan-impl-executor.md`「出力」節が正本であり、
-# `agent_definitions_test.py`が同節の記載と本定数の一致を検査する。
-PLAN_IMPL_EXECUTOR_REVIEW_CAP_STATUS = "上限到達後の既知指摘修正済み（再レビューなし）"
+# 構造化blockerの`target_expansion`で許容する`review_status`。
 PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS = "対象拡大により中断（指摘反映済み・再レビューなし）"
-PLAN_IMPL_EXECUTOR_SKIPPED_STATUS = "レビューは実施しない（ユーザー指示）"
-PLAN_IMPL_EXECUTOR_INCOMPLETE_STATUS = "レビュー未完了"
 
 # `changed:`欄本文（次の主要ラベル行直前まで）を抽出する境界パターン（FB[3]）。
 # `PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
@@ -603,209 +597,6 @@ def _inspect_implementation_route_evidence(text: str, transcript_path: str | Non
     return violations
 
 
-def _inspect_skipped_review_fields(final_findings: str, skip_instruction: str, rounds: int, resolution: str) -> list[str]:
-    """ユーザー指示によるレビュー省略で、引数に取る4欄の違反を返す。
-
-    省略は`completed`と`needs_escalation`のどちらでも起こり、実施していない事実は同じである。
-    `status`ごとに要求が異なると、同じ省略状況の報告が一方でだけ通過する。
-    `review_caller_verification`は`status`により求める確認の対象が変わるため本関数の対象外とし、
-    呼び出し側が個別に検査する。
-    """
-    violations: list[str] = []
-    if final_findings != "対象外":
-        violations.append("review_final_findings must be 対象外 when review is skipped")
-    if _is_none_value(skip_instruction):
-        violations.append("review_skip_instruction must preserve the user instruction when review is skipped")
-    if rounds != 0:
-        violations.append("review_rounds must be 0 when review is skipped")
-    if not _is_none_value(resolution):
-        violations.append("review_resolution must be なし when review is skipped")
-    return violations
-
-
-def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
-    """完了報告のstatusと二系統レビュー欄の値整合違反を返す。"""
-    status = _extract_report_first_line(text, "status")
-    violations: list[str] = []
-    allowed_statuses = {"completed", "completed_with_review_cap", "needs_escalation"}
-    if status not in allowed_statuses:
-        violations.append("status must be completed, completed_with_review_cap, or needs_escalation")
-        return violations
-
-    review_status = _extract_report_first_line(text, "review_status")
-    final_findings = _extract_report_first_line(text, "review_final_findings")
-    skip_instruction = _extract_report_field(text, "review_skip_instruction")
-    caller_verification = _extract_report_first_line(text, "review_caller_verification")
-    rounds_text = _extract_report_first_line(text, "review_rounds")
-    try:
-        rounds = int(rounds_text)
-    except ValueError:
-        rounds = -1
-
-    all_tracks = ("implementation", "plan_review", "independent_review")
-    review_tracks = ("plan_review", "independent_review")
-    routes = {track: _extract_report_first_line(text, f"{track}_route") for track in all_tracks}
-    threads = {track: _extract_report_field(text, f"{track}_thread_id") for track in all_tracks}
-    agent_ids = {track: _extract_report_field(text, f"{track}_agent_id") for track in all_tracks}
-    histories = {track: _extract_report_field(text, f"{track}_history") for track in all_tracks}
-    resolution = _extract_report_field(text, "review_resolution")
-    coverage = _extract_report_field(text, "review_coverage")
-    impact_audit = _extract_report_field(text, "review_impact_audit")
-
-    def inspect_track_identity(track: str, allowed_routes: set[str]) -> None:
-        route = routes[track]
-        if route not in allowed_routes:
-            expected = "codex or claude" if allowed_routes == {"codex", "claude"} else " or ".join(sorted(allowed_routes))
-            violations.append(f"{track}_route must be {expected}")
-            return
-        if route == "codex":
-            if _is_none_value(threads[track]):
-                violations.append(f"{track}_thread_id must not be なし for codex route")
-            if not _is_none_value(agent_ids[track]):
-                violations.append(f"{track}_agent_id must be なし for codex route")
-        elif route == "claude":
-            if not _is_none_value(threads[track]):
-                violations.append(f"{track}_thread_id must be なし for claude route")
-            if _is_none_value(agent_ids[track]):
-                violations.append(f"{track}_agent_id must not be なし for claude route")
-        else:
-            if not _is_none_value(threads[track]):
-                violations.append(f"{track}_thread_id must be なし for {route} route")
-            if not _is_none_value(agent_ids[track]):
-                violations.append(f"{track}_agent_id must be なし for {route} route")
-
-    if status == "completed" and review_status.startswith("実施完了"):
-        inspect_track_identity("implementation", {"codex", "claude"})
-        if _PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE.fullmatch(final_findings) is None:
-            violations.append("review_final_findings must contain two non-negative finding counts")
-        if not _is_none_value(skip_instruction):
-            violations.append("review_skip_instruction must be なし for completed review")
-        if caller_verification != "不要":
-            violations.append("review_caller_verification must be 不要 for completed review")
-        if rounds not in range(1, 6):
-            violations.append("review_rounds must be between 1 and 5 for completed review")
-        if _is_none_value(resolution):
-            violations.append("review_resolution must not be なし for completed review")
-        for track in review_tracks:
-            inspect_track_identity(track, {"codex", "claude"})
-            if _is_none_value(histories[track]):
-                violations.append(f"{track}_history must not be なし for completed review")
-        if _is_none_value(coverage):
-            violations.append("review_coverage must not be なし for completed review")
-        if _is_none_value(impact_audit):
-            violations.append("review_impact_audit must not be なし for completed review")
-    elif status == "completed_with_review_cap":
-        inspect_track_identity("implementation", {"codex", "claude"})
-        if review_status != PLAN_IMPL_EXECUTOR_REVIEW_CAP_STATUS:
-            violations.append("review_status must show fixed known findings after review cap")
-        if _PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE.fullmatch(final_findings) is None:
-            violations.append("review_final_findings must contain two non-negative finding counts")
-        if not _is_none_value(skip_instruction):
-            violations.append("review_skip_instruction must be なし after review cap")
-        if caller_verification != "不要":
-            violations.append("review_caller_verification must be 不要 after review cap")
-        if rounds != 5:
-            violations.append("review_rounds must be 5 after review cap")
-        if _is_none_value(resolution):
-            violations.append("review_resolution must not be なし after review cap")
-        if _is_none_value(coverage):
-            violations.append("review_coverage must not be なし after review cap")
-        if _is_none_value(impact_audit):
-            violations.append("review_impact_audit must not be なし after review cap")
-        for track in review_tracks:
-            inspect_track_identity(track, {"codex", "claude"})
-            if _is_none_value(histories[track]):
-                violations.append(f"{track}_history must not be なし after review cap")
-    elif status == "completed" and review_status == PLAN_IMPL_EXECUTOR_SKIPPED_STATUS:
-        inspect_track_identity("implementation", {"codex", "claude"})
-        violations.extend(_inspect_skipped_review_fields(final_findings, skip_instruction, rounds, resolution))
-        if caller_verification != "ユーザー指示原文との照合が必要":
-            violations.append("review_caller_verification must request user instruction verification when review is skipped")
-        for track in review_tracks:
-            inspect_track_identity(track, {"not_started"})
-            if not _is_none_value(histories[track]):
-                violations.append(f"{track}_history must be なし when review is skipped")
-        if not _is_none_value(coverage):
-            violations.append("review_coverage must be なし when review is skipped")
-        if not _is_none_value(impact_audit):
-            violations.append("review_impact_audit must be なし when review is skipped")
-    elif status == "completed":
-        inspect_track_identity("implementation", {"codex", "claude"})
-        violations.append("review_status must show completed review or user-directed skip")
-    elif status == "needs_escalation":
-        inspect_track_identity("implementation", {"codex", "claude", "not_started", "unavailable"})
-        # レビュー工程の到達状況で3通りに分ける。到達しないまま返す場合だけ未確定を求め、
-        # レビューを完了または中断した場合は実測値を残させる。実測値を`レビュー未完了`と
-        # `未確定`へ置き換えると、呼び出し元は完了済みのレビュー工程を再実行する。
-        # 起動を試みていない場合だけ`not_started`となるため、レビュー実測値を伴う区分では
-        # 起動済みのrouteだけを許す。未起動のrouteに履歴と件数がある報告は実測と矛盾する。
-        review_route_candidates = {"codex", "claude", "not_started", "unavailable"}
-        if review_status == PLAN_IMPL_EXECUTOR_INCOMPLETE_STATUS:
-            # レビュー工程へ到達していない以上、実測を残す欄に値がある報告は矛盾する。
-            review_route_candidates = {"not_started", "unavailable"}
-            if final_findings != "未確定":
-                violations.append("review_final_findings must be 未確定 when review is not completed")
-            if not _is_none_value(skip_instruction):
-                violations.append("review_skip_instruction must be なし when review is not completed")
-            if rounds != 0:
-                violations.append("review_rounds must be 0 when review is not completed")
-            for label, value in (
-                ("review_resolution", resolution),
-                ("review_coverage", coverage),
-                ("review_impact_audit", impact_audit),
-            ):
-                if not _is_none_value(value):
-                    violations.append(f"{label} must be なし when review is not completed")
-            for track in review_tracks:
-                if not _is_none_value(histories[track]):
-                    violations.append(f"{track}_history must be なし when review is not completed")
-        elif review_status == PLAN_IMPL_EXECUTOR_SKIPPED_STATUS:
-            # 省略時の欄要求は`status`に依らず`completed`側と同一に保つ。
-            review_route_candidates = {"not_started"}
-            violations.extend(_inspect_skipped_review_fields(final_findings, skip_instruction, rounds, resolution))
-            for label, value in (("review_coverage", coverage), ("review_impact_audit", impact_audit)):
-                if not _is_none_value(value):
-                    violations.append(f"{label} must be なし when review is skipped")
-            for track in review_tracks:
-                if not _is_none_value(histories[track]):
-                    violations.append(f"{track}_history must be なし when review is skipped")
-        elif review_status.startswith("実施完了") or review_status in {
-            PLAN_IMPL_EXECUTOR_REVIEW_CAP_STATUS,
-            PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS,
-        }:
-            review_route_candidates = {"codex", "claude"}
-            if _PLAN_IMPL_EXECUTOR_FINAL_FINDINGS_RE.fullmatch(final_findings) is None:
-                violations.append(
-                    "review_final_findings must contain two non-negative finding counts when review results exist"
-                )
-            if not _is_none_value(skip_instruction):
-                violations.append("review_skip_instruction must be なし when review results exist")
-            # 実施済みのラウンドがある以上、その実測を残す欄が「なし」の報告は実測と矛盾する。
-            # 上限到達は5ラウンドの到達そのものを表すため、`completed_with_review_cap`と同じ値を求める。
-            if review_status == PLAN_IMPL_EXECUTOR_REVIEW_CAP_STATUS:
-                if rounds != 5:
-                    violations.append("review_rounds must be 5 after review cap")
-            elif rounds not in range(1, 6):
-                violations.append("review_rounds must be between 1 and 5 when review results exist")
-            for label, value in (
-                ("review_resolution", resolution),
-                ("review_coverage", coverage),
-                ("review_impact_audit", impact_audit),
-            ):
-                if _is_none_value(value):
-                    violations.append(f"{label} must not be なし when review results exist")
-            for track in review_tracks:
-                if _is_none_value(histories[track]):
-                    violations.append(f"{track}_history must not be なし when review results exist")
-        else:
-            violations.append("review_status must be one of the values defined for needs_escalation")
-        if caller_verification != "未完了事項の確認が必要":
-            violations.append("review_caller_verification must request pending-item verification for needs_escalation")
-        for track in review_tracks:
-            inspect_track_identity(track, review_route_candidates)
-    return violations
-
-
 def _detect_plan_impl_executor_background_parallel_violation(text: str) -> bool:
     """`plan-impl-executor`完了報告のbackground並列起動宣言と`changed`欄未消化項目の共起を検出する（FB[3]）。
 
@@ -841,26 +632,25 @@ def _resolve_payload_agent_id(payload: dict) -> str | None:
 
 def _inspect_plan_impl_executor_report_format(
     payload: dict,
-) -> tuple[list[str], bool, list[str], list[str]]:
-    """完了報告のラベル、background起動宣言、レビュー値を状態変更なしで検査する。"""
+) -> tuple[list[str], bool, list[str]]:
+    """完了報告のラベル、background起動宣言、構造的契約を状態変更なしで検査する。"""
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return [], False, [], []
+        return [], False, []
     agent_id = _resolve_payload_agent_id(payload)
     if agent_id is None:
-        return [], False, [], []
+        return [], False, []
     state = read_state(session_id)
     active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
     if not isinstance(active, dict) or agent_id not in active:
-        return [], False, [], []
+        return [], False, []
 
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
-        return list(PLAN_IMPL_EXECUTOR_REQUIRED_LABELS), False, [], []
+        return list(PLAN_IMPL_EXECUTOR_REQUIRED_LABELS), False, []
     required = list(PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
     missing = [label for label in required if re.search(rf"^{re.escape(label)}:", text, re.MULTILINE) is None]
     violation = _detect_plan_impl_executor_background_parallel_violation(text)
-    review_value_violations = [] if missing else _inspect_plan_impl_executor_review_values(text)
     contract_violations: list[str] = []
     if not missing:
         transcript_path = payload.get("agent_transcript_path")
@@ -870,7 +660,7 @@ def _inspect_plan_impl_executor_report_format(
             _inspect_structured_blockers(text, transcript_path if isinstance(transcript_path, str) else None)
         )
         contract_violations.extend(_inspect_implementation_route_evidence(text, transcript_path))
-    return missing, violation, review_value_violations, contract_violations
+    return missing, violation, contract_violations
 
 
 def main(payload_text: str) -> int:
@@ -886,9 +676,7 @@ def main(payload_text: str) -> int:
         return 0
 
     text = payload.get("last_assistant_message")
-    missing_labels, has_background_parallel_violation, review_value_violations, contract_violations = (
-        _inspect_plan_impl_executor_report_format(payload)
-    )
+    missing_labels, has_background_parallel_violation, contract_violations = _inspect_plan_impl_executor_report_format(payload)
 
     agent_transcript_path = payload.get("agent_transcript_path")
     if not isinstance(agent_transcript_path, str) or not agent_transcript_path:
@@ -907,18 +695,6 @@ def main(payload_text: str) -> int:
             " See `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`"
             " '完了報告の検収' section for the required format."
             " When resubmitting, restate the entire original completion report with the missing labels added"
-            " (the main agent does not retain the body across this hook's block).",
-            tag="block",
-        )
-        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
-        return 0
-    if review_value_violations:
-        reason = _llm_notice(
-            "blocked: `plan-impl-executor` completion report has inconsistent review values:"
-            f" {'; '.join(review_value_violations)}."
-            " See `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`"
-            " '完了報告の検収' section for the required value combinations."
-            " When resubmitting, restate the entire original completion report with consistent values"
             " (the main agent does not retain the body across this hook's block).",
             tag="block",
         )

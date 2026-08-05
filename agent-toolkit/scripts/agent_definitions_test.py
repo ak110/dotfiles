@@ -208,10 +208,7 @@ def test_plan_impl_report_labels_are_synchronized() -> None:
 
 
 def test_plan_impl_review_status_values_are_synchronized() -> None:
-    """executorが定義する`review_status`の固定値と完了報告検査の定数が一致する。
-
-    検査側が知らない値を定義へ加えると、契約どおりの完了報告が`decision: block`で拒否される。
-    """
+    """executorが定義する`review_status`の値を呼び出し元の検収節が網羅する。"""
     section = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
     fence = _FENCED_BLOCK_RE.search(section)
     assert fence, "`## 出力`節にフェンス付きコードブロックが存在しない"
@@ -221,25 +218,15 @@ def test_plan_impl_review_status_values_are_synchronized() -> None:
     )
     assert definition, "`## 出力`節に`review_status`の定義行が無い"
     values = {value.strip() for value in definition.removeprefix("review_status:").split("|")}
-    # `実施完了（...）`は件数を含む可変値のため、固定値の集合比較から除く。
-    fixed_values = {value for value in values if not value.startswith("実施完了")}
-    constants = {
-        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_REVIEW_CAP_STATUS,
-        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS,
-        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_SKIPPED_STATUS,
-        subagent_stop_advisor.PLAN_IMPL_EXECUTOR_INCOMPLETE_STATUS,
-    }
-    assert fixed_values == constants, (
-        f"`review_status`の固定値と検査側の定数が一致しない: "
-        f"定義側のみ={sorted(fixed_values - constants)}、検査側のみ={sorted(constants - fixed_values)}"
-    )
     assert any(value.startswith("実施完了") for value in values), "`review_status`の定義に実施完了の値が無い"
-    # 呼び出し元の検収手順は同じ値を本文へ持つ。定義側と検査側だけを揃えても、
-    # 検収側が知らない値のままでは受領時に未完遂扱いとなる。
-    # 検索範囲を検収節へ限定し、別節での偶然の一致で充足させない。
     reception = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
-    for constant in sorted(constants):
-        assert constant in reception, f"呼び出し元の検収節に`{constant}`がない"
+    normalized_values = {"実施完了..." if value.startswith("実施完了") else value for value in values}
+    caller_values = {value for value in re.findall(r"`([^`\n]+)`", reception) if value in normalized_values}
+    assert normalized_values == caller_values, (
+        f"`review_status`の値と呼び出し元の検収節が一致しない: "
+        f"定義側のみ={sorted(normalized_values - caller_values)}、"
+        f"呼び出し元のみ={sorted(caller_values - normalized_values)}"
+    )
 
 
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:

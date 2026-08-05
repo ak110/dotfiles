@@ -478,7 +478,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
 
     各反復で件数取得直後・claude起動前後に`_process_loop_log.append`で観測イベント
     （`loop_iter_start`・`session_start`・`session_end`）を記録する
-    （`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`未設定時はno-op）。
+    （`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`未設定時はno-op）。
     待機ループ復帰時に自己コード更新を検知して再起動した場合は`restart_on_wait_loop_update`を記録する。
     """
     local_path = _resolve_local_worktree(args.target_repo)
@@ -491,8 +491,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
-    previous_env_value = os.environ.get("DOTFILES_AUTONOMOUS_EXIT_REQUIRED")
-    os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
+    previous_env_value = os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION")
+    os.environ["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = "1"
     env = _child_env()
     resume_pending = args.resume is not None
     with _console_title.console_title("atk mq process-loop"):
@@ -582,6 +582,6 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                 print("Ctrl+Cを検知しました。常駐モードを終了します。")
         finally:
             if previous_env_value is None:
-                os.environ.pop("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", None)
+                os.environ.pop("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", None)
             else:
-                os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = previous_env_value
+                os.environ["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = previous_env_value

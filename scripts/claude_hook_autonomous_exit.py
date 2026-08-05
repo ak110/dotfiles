@@ -1,7 +1,7 @@
 r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び忘れ防止。
 
 `atk mq process-loop`CLIが常駐ループの1反復ごとに起動するclaudeサブプロセスは、
-環境変数`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`を設定した状態で起動される。
+環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`を設定した状態で起動される。
 本hookは同環境変数が設定されたセッションに限り、`agent-toolkit:exit-session`スキルの
 呼び出し漏れを検知して当該ターンの継続をblockし再促する。
 
@@ -11,7 +11,7 @@ r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び
 
 判定順序は以下のとおり。
 
-1. `DOTFILES_AUTONOMOUS_EXIT_REQUIRED != "1"`: 常駐ループ外のセッションのため無条件approve
+1. `AGENT_TOOLKIT_PROCESS_LOOP_SESSION != "1"`: 常駐ループ外のセッションのため無条件approve
 2. `stop_hook_active`が真: 連続ブロック上限回避のため無条件approve
 3. `is_pending_async_work`が真: サブエージェント継続時の誤発火防止のためapprove
 4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
@@ -51,7 +51,7 @@ from _stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
 _HOOK_ID = "dotfiles/claude_hook_autonomous_exit"
 
 # 常駐ループから起動されたセッションであることを示す環境変数名。
-_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 
 # PostToolUse（`claude_hook_posttooluse.py`）が`agent-toolkit:exit-session`呼び出し検出時に
 # セッション状態へ記録するフラグ名。

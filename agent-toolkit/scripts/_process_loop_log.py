@@ -3,7 +3,7 @@
 目的は`process-loop`起動セッションのフィードバック件数・セッション全体の所要時間・
 plan-impl系サブエージェントの所要時間を後から分析できるよう機械記録することにある。
 
-有効化条件は環境変数`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`のセッションに限定し、
+有効化条件は環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`のセッションに限定し、
 それ以外の対話セッションでは`append`を呼んでも何も書き込まない（no-op）。
 本モジュールのimport自体は環境変数の値に関わらず副作用を持たない
 （判定は`append`呼び出し時に行う）。
@@ -23,7 +23,7 @@ from _file_lock import acquire_lock as _acquire_lock
 from _file_lock import release_lock as _release_lock
 from _file_lock import rotate_if_needed as _rotate_if_needed
 
-_ENABLE_ENV_VAR = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_ENABLE_ENV_VAR = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _MAX_BYTES = 1_000_000
 
 
@@ -33,14 +33,14 @@ def log_path() -> Path:
 
 
 def _is_enabled() -> bool:
-    """`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`のセッションでのみ真を返す。"""
+    """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`のセッションでのみ真を返す。"""
     return os.environ.get(_ENABLE_ENV_VAR) == "1"
 
 
 def append(event: str, **fields: object) -> None:
     """観測イベントを1行追記する。
 
-    `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`未設定のセッションではno-opとする。
+    `AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`未設定のセッションではno-opとする。
     出力形式: `<ISO8601> event=<name> k=v k=v ...`。
     書き込み失敗（権限不足等）は呼び出し元の動作へ影響させないため無視する。
     """

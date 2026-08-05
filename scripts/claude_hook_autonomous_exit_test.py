@@ -17,7 +17,7 @@ import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
-_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
@@ -89,7 +89,7 @@ class TestApproveConditions:
     """approve条件: 環境変数未設定・構造的継続中・呼び出し済みのいずれか。"""
 
     def test_env_not_required_approves(self, tmp_path: pathlib.Path):
-        """環境変数`DOTFILES_AUTONOMOUS_EXIT_REQUIRED`が未設定 → 無条件approve。"""
+        """環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`が未設定 → 無条件approve。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {"session_id": "no-env", "transcript_path": str(transcript)},

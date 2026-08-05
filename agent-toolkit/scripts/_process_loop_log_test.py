@@ -19,8 +19,8 @@ def _redirect_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 
 @pytest.fixture(autouse=True)
 def _enable_autonomous_exit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既定で`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`を設定する（`TestNoop`では個別に上書きする）。"""
-    monkeypatch.setenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", "1")
+    """既定で`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`を設定する（`TestNoop`では個別に上書きする）。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
 
 
 class TestAppend:
@@ -53,14 +53,14 @@ class TestNoop:
     """環境変数未設定時のno-op動作。"""
 
     def test_append_is_noop_without_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`DOTFILES_AUTONOMOUS_EXIT_REQUIRED`未設定時はログファイルを作成しない。"""
-        monkeypatch.delenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", raising=False)
+        """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`未設定時はログファイルを作成しない。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
         _process_loop_log.append("session_start")
         assert not _process_loop_log.log_path().exists()
 
     def test_append_is_noop_with_falsy_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=0`など非`1`値もno-opとして扱う。"""
-        monkeypatch.setenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", "0")
+        """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=0`など非`1`値もno-opとして扱う。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "0")
         _process_loop_log.append("session_start")
         assert not _process_loop_log.log_path().exists()
 

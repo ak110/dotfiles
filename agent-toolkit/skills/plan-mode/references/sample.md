@@ -18,7 +18,6 @@
 - 対象リポジトリ: `~/dotfiles`
 - 作業種別: 通常変更
 - ベースコミット: `a1b2c3d4`（`git rev-parse HEAD`実測。
-  環境変数`DOTFILES_AUTONOMOUS_EXIT_REQUIRED`が設定されていないセッションは、
   並行稼働セッションが対象ファイルへコミットしうる旨と実装着手時の再確認手順への参照を付記する）
 
 ### 経緯
@@ -161,9 +160,8 @@ infra/nginx.conf:31:client_max_body_size 1M;
 
 ## 実行方法
 
-0. 並行変更の確認と保存（`DOTFILES_AUTONOMOUS_EXIT_REQUIRED`未設定のセッションでは必須）：
-   - `git rev-parse HEAD`と`### 計画メタ情報`のベースコミットを比較し、差分があれば
-     アンカー該当箇所を再確認する
+0. 実装開始時に`git rev-parse HEAD`と`### 計画メタ情報`のベースコミットを比較し、
+   差分があればアンカー該当箇所と調査前提を再確認する
 - （呼び出し元が実施）Agentツールで`agent-toolkit:plan-impl-executor`を起動する
   - `agent-toolkit:coding-standards`を呼び出す
 - `agent-toolkit:commit`スキルを呼び出す
