@@ -64,6 +64,10 @@ _RESTART_SPEC_ENV = "AGENT_TOOLKIT_RESTART_SPEC"
 # ランチャーへ再起動を要求する終了コード。
 _RESTART_EXIT_CODE = 75
 
+# process-loopセッションを識別する正本と、更新中に旧Stop hookと併存するための移行互換名。
+_PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
+_LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+
 
 def _strip_inherited_venv(env: dict[str, str]) -> None:
     """起動元ツールのエフェメラル仮想環境を子プロセス環境から除去する。
@@ -491,8 +495,12 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
-    previous_env_value = os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION")
-    os.environ["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = "1"
+    previous_env_values = {
+        _PROCESS_LOOP_SESSION_ENV: os.environ.get(_PROCESS_LOOP_SESSION_ENV),
+        _LEGACY_PROCESS_LOOP_SESSION_ENV: os.environ.get(_LEGACY_PROCESS_LOOP_SESSION_ENV),
+    }
+    os.environ[_PROCESS_LOOP_SESSION_ENV] = "1"
+    os.environ[_LEGACY_PROCESS_LOOP_SESSION_ENV] = "1"
     env = _child_env()
     resume_pending = args.resume is not None
     with _console_title.console_title("atk mq process-loop"):
@@ -581,7 +589,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
             except KeyboardInterrupt:
                 print("Ctrl+Cを検知しました。常駐モードを終了します。")
         finally:
-            if previous_env_value is None:
-                os.environ.pop("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", None)
-            else:
-                os.environ["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = previous_env_value
+            for key, previous_value in previous_env_values.items():
+                if previous_value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = previous_value

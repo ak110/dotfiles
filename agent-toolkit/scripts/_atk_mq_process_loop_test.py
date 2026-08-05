@@ -27,6 +27,9 @@ import _atk_mq_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-posit
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
+_PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
+_LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -322,6 +325,8 @@ class TestProcessLoopPromptAndEnv:
         # ランチャーとの再起動要求の受け渡しファイルは自プロセス専用であり、子孫セッションへは渡さない。
         monkeypatch.setenv("AGENT_TOOLKIT_RESTART_SPEC", str(tmp_path / "restart-spec"))
         monkeypatch.setenv("CLAUDE_CODE_DEBUG_LOGS_DIR", str(tmp_path / "ignored-debug.log"))
+        monkeypatch.setenv(_PROCESS_LOOP_SESSION_ENV, "new-original")
+        monkeypatch.setenv(_LEGACY_PROCESS_LOOP_SESSION_ENV, "legacy-original")
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
         closed_descriptors: list[int] = []
         real_close = os.close
@@ -367,13 +372,16 @@ class TestProcessLoopPromptAndEnv:
         if os.name != "nt":
             assert stat.S_IMODE(debug_log.stat().st_mode) == 0o600
         assert command[4:7] == ["--permission-mode=auto", "--model", "opus"]
-        assert claude_calls[0]["env"]["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] == "1"
+        assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ENV] == "1"
+        assert claude_calls[0]["env"][_LEGACY_PROCESS_LOOP_SESSION_ENV] == "1"
         assert "AGENT_TOOLKIT_RESTART_SPEC" not in claude_calls[0]["env"]
         assert len(wait_calls) == 2
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out
         assert f"Claude hook診断ログ: {debug_log}" in captured.out
         assert len(closed_descriptors) == 1
+        assert os.environ[_PROCESS_LOOP_SESSION_ENV] == "new-original"
+        assert os.environ[_LEGACY_PROCESS_LOOP_SESSION_ENV] == "legacy-original"
         with pytest.raises(OSError):
             os.fstat(closed_descriptors[0])
 
@@ -387,6 +395,8 @@ class TestProcessLoopPromptAndEnv:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
+        monkeypatch.delenv(_PROCESS_LOOP_SESSION_ENV, raising=False)
+        monkeypatch.delenv(_LEGACY_PROCESS_LOOP_SESSION_ENV, raising=False)
         monkeypatch.delenv("CLAUDE_CONFIG_DIR")
         monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: tmp_path))
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
@@ -406,6 +416,8 @@ class TestProcessLoopPromptAndEnv:
 
         assert len(claude_calls) == 1
         assert _hook_debug_log(claude_calls[0]["cmd"]).parent == tmp_path / ".claude" / "debug"
+        assert _PROCESS_LOOP_SESSION_ENV not in os.environ
+        assert _LEGACY_PROCESS_LOOP_SESSION_ENV not in os.environ
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIXの権限設定失敗時だけに適用する契約")
     def test_hook_debug_log_descriptor_closes_when_permission_setting_fails(
@@ -485,7 +497,8 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 1
         assert "VIRTUAL_ENV" not in claude_calls[0]["env"]
         assert claude_calls[0]["env"]["PATH"] == os.pathsep.join(("/usr/local/bin", "/usr/bin"))
-        assert claude_calls[0]["env"]["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] == "1"
+        assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ENV] == "1"
+        assert claude_calls[0]["env"][_LEGACY_PROCESS_LOOP_SESSION_ENV] == "1"
 
     def test_empty_path_entries_are_preserved(self) -> None:
         """`PATH`の空要素を除去対象に含めないこと。

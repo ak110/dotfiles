@@ -18,6 +18,7 @@ import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
+_LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
@@ -67,17 +68,17 @@ def _run(
     payload: object,
     *,
     state_dir: pathlib.Path,
-    autonomous_exit_required: bool = True,
+    required_env: str | None = _ENV_REQUIRED,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
-    if autonomous_exit_required:
-        env[_ENV_REQUIRED] = "1"
-    else:
-        env.pop(_ENV_REQUIRED, None)
+    env.pop(_ENV_REQUIRED, None)
+    env.pop(_LEGACY_ENV_REQUIRED, None)
+    if required_env is not None:
+        env[required_env] = "1"
     return _fork_runner.run_script(_SCRIPT, argv=("autonomous_exit",), input=text, env=env)
 
 
@@ -94,7 +95,7 @@ class TestApproveConditions:
         result = _run(
             {"session_id": "no-env", "transcript_path": str(transcript)},
             state_dir=tmp_path,
-            autonomous_exit_required=False,
+            required_env=None,
         )
         decision = _parse_decision(result)
         assert "decision" not in decision
@@ -153,6 +154,16 @@ class TestBlockCondition:
         assert isinstance(reason, str)
         assert "exit-session" in reason
         assert "session-review-dotfiles" in reason
+
+    def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
+        """旧process-loopの移行互換名だけが設定された場合もblockする。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "legacy-env", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+            required_env=_LEGACY_ENV_REQUIRED,
+        )
+        assert _parse_decision(result).get("decision") == "block"
 
     def test_repeats_block_each_stop(self, tmp_path: pathlib.Path):
         """同一transcriptで2回連続Stopしても、未呼び出しなら毎回blockする。"""
