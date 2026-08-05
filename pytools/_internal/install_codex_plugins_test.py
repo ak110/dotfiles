@@ -141,7 +141,8 @@ def test_version_mismatch_reinstalls_plugin_and_returns_notice(plugin_env: Path,
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is True
-    assert outcome.notices == (install_codex_plugins._CODEX_PLUGIN_RESTART_NOTICE,)  # noqa: SLF001
+    assert len(outcome.notices) == 1
+    assert outcome.notices[0].command == "codex app-server daemon restart"
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
@@ -165,7 +166,8 @@ def test_disabled_plugin_reinstalls_and_returns_notice(plugin_env: Path, monkeyp
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is True
-    assert outcome.notices == (install_codex_plugins._CODEX_PLUGIN_RESTART_NOTICE,)  # noqa: SLF001
+    assert len(outcome.notices) == 1
+    assert outcome.notices[0].command == "codex app-server daemon restart"
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 

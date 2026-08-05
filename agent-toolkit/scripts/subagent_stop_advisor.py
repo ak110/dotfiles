@@ -195,7 +195,7 @@ def _load_report_yaml_field(text: str, label: str) -> object:
 
 def _is_none_list(value: object) -> bool:
     """「なし」だけを表すscalarまたは単一リストであるかを返す。"""
-    return value == "なし" or value == ["なし"]
+    return value in ("なし", ["なし"])
 
 
 def _inspect_target_expansion_evidence(evidence: dict[str, object]) -> list[str]:

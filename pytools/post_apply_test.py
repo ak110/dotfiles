@@ -197,7 +197,7 @@ class TestRun:
 
         results, recommendations = post_apply.run(steps=steps)
 
-        assert recommendations == []
+        assert not recommendations
         assert results[0].changed is True
         assert results[0].notices == (notice,)
 
