@@ -17,6 +17,7 @@ $legacyDir = Join-Path $HOME '.claude/rules/agent-basics'
 # ステージング先は rules/ の外に置く。
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 $stageRoot = Join-Path $HOME '.claude/rules-stage'
+$codexPluginId = 'agent-toolkit@ak110-dotfiles'
 $script:codexPluginUpdated = $false
 
 # 配布対象ファイル一覧。
@@ -70,12 +71,58 @@ function Install-AgentToolkitPlugin {
     Write-Output 'Claude Code側のagent-toolkitプラグインを設定しました。'
 }
 
+function Get-CodexPluginState {
+    $jsonLines = & codex plugin list --json 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    try {
+        $data = ($jsonLines -join "`n") | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        return $null
+    }
+    if ($null -eq $data -or $data.GetType() -ne [System.Management.Automation.PSCustomObject]) { return $null }
+    $installedProperty = $data.PSObject.Properties['installed']
+    if ($null -eq $installedProperty) { return $null }
+    $plugin = $null
+    foreach ($item in @($installedProperty.Value)) {
+        if ($null -eq $item) { continue }
+        $pluginIdProperty = $item.PSObject.Properties['pluginId']
+        if ($null -ne $pluginIdProperty -and $pluginIdProperty.Value -eq $codexPluginId) {
+            $plugin = $item
+            break
+        }
+    }
+    if ($null -eq $plugin) {
+        return [PSCustomObject]@{ Present = $false; Version = $null; Enabled = $null }
+    }
+    $versionProperty = $plugin.PSObject.Properties['version']
+    $enabledProperty = $plugin.PSObject.Properties['enabled']
+    if ($null -eq $versionProperty -or $versionProperty.Value -isnot [string] -or
+        $null -eq $enabledProperty -or $enabledProperty.Value -isnot [bool]) {
+        return $null
+    }
+    return [PSCustomObject]@{
+        Present = $true
+        Version = $versionProperty.Value
+        Enabled = $enabledProperty.Value
+    }
+}
+
+function Test-CodexPluginStateChanged {
+    param([object]$beforeState, [object]$afterState)
+    if ($null -eq $beforeState -or $null -eq $afterState) { return $false }
+    return $beforeState.Present -ne $afterState.Present -or
+        $beforeState.Version -ne $afterState.Version -or
+        $beforeState.Enabled -ne $afterState.Enabled
+}
+
 function Install-CodexPlugin {
     Write-Output 'Codex側のagent-toolkitプラグインを設定します...'
     & codex plugin marketplace add ak110/dotfiles --json 2>&1 | Out-Null
     Invoke-RequiredNativeCommand codex @('plugin', 'marketplace', 'upgrade', 'ak110-dotfiles', '--json')
-    Invoke-RequiredNativeCommand codex @('plugin', 'add', 'agent-toolkit@ak110-dotfiles', '--json')
-    $script:codexPluginUpdated = $true
+    $beforeState = Get-CodexPluginState
+    Invoke-RequiredNativeCommand codex @('plugin', 'add', $codexPluginId, '--json')
+    $afterState = Get-CodexPluginState
+    $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState
     Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
 }
 

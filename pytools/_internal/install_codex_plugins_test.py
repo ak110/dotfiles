@@ -307,6 +307,7 @@ class TestExternalPlugins:
         return calls
 
     def test_registers_and_adds_when_absent(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        destination = _broken_legacy_link(plugin_env)
         calls = self._setup_run(plugin_env, monkeypatch, registered=False, installed=False)
 
         outcome = install_codex_plugins.run()
@@ -319,6 +320,7 @@ class TestExternalPlugins:
             ["plugin", "marketplace", "add", self._TARGET[1]],
             ["json", "plugin", "marketplace", "list", "--json"],
         ]
+        assert not destination.is_symlink()
 
     def test_skips_when_already_added(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._setup_run(plugin_env, monkeypatch, registered=True, installed=True)

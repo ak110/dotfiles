@@ -30,6 +30,27 @@ case "$command_name $*" in
         exit 9
         ;;
 esac
+if [ "$command_name $*" = "codex plugin list --json" ]; then
+    state_index=0
+    if [ -f "$CODEX_PLUGIN_STATE_FILE" ]; then
+        state_index=$(cat "$CODEX_PLUGIN_STATE_FILE")
+    fi
+    if [ "$state_index" -eq 0 ]; then
+        plugin_version="$CODEX_PLUGIN_BEFORE_VERSION"
+        plugin_enabled="$CODEX_PLUGIN_BEFORE_ENABLED"
+    else
+        plugin_version="$CODEX_PLUGIN_AFTER_VERSION"
+        plugin_enabled="$CODEX_PLUGIN_AFTER_ENABLED"
+    fi
+    printf '%s\n' "$((state_index + 1))" > "$CODEX_PLUGIN_STATE_FILE"
+    if [ "$plugin_version" = "__missing__" ]; then
+        printf '{"installed":[]}\n'
+    else
+        printf '{"installed":[{"pluginId":"agent-toolkit@ak110-dotfiles","version":"%s","enabled":%s}]}\n' \
+            "$plugin_version" "$plugin_enabled"
+    fi
+    exit 0
+fi
 exit 0
 """
 
@@ -90,12 +111,13 @@ def _make_command_stubs(
         uv_stub.write_text(
             "#!/bin/sh\n"
             'printf \'uv %s\\n\' "$*" >> "$CLI_STUB_LOG"\n'
-            'if [ "$#" -ne 8 ] || [ "$1" != run ] || [ "$2" != --no-config ] || '
+            'if [ "$#" -lt 8 ] || [ "$1" != run ] || [ "$2" != --no-config ] || '
             '[ "$3" != --no-project ] || [ "$4" != --python ] || [ "$5" != 3 ] || '
             '[ "$6" != python ] || [ "$7" != - ]; then\n'
             "    exit 8\n"
             "fi\n"
-            f'exec {python_command} "$7" "$8"\n',
+            "shift 6\n"
+            f'exec {python_command} "$@"\n',
             encoding="utf-8",
         )
         uv_stub.chmod(uv_stub.stat().st_mode | executable_mode)
@@ -112,6 +134,8 @@ def _run(
     stub_log: pathlib.Path,
     cwd: pathlib.Path | None = None,
     fail_pattern: str = "__never_match__",
+    codex_plugin_before: tuple[str, bool] | None = None,
+    codex_plugin_after: tuple[str, bool] | None = ("1.2.3", True),
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     path_parts = [str(stub_bin)] if stub_bin is not None else []
@@ -121,12 +145,25 @@ def _run(
         if pwsh_dir not in path_parts:
             path_parts.insert(1 if stub_bin is not None else 0, pwsh_dir)
 
+    before_version, before_enabled = (
+        ("__missing__", "false")
+        if codex_plugin_before is None
+        else (codex_plugin_before[0], str(codex_plugin_before[1]).lower())
+    )
+    after_version, after_enabled = (
+        ("__missing__", "false") if codex_plugin_after is None else (codex_plugin_after[0], str(codex_plugin_after[1]).lower())
+    )
     env = {
         "HOME": str(home),
         "PATH": os.pathsep.join(path_parts),
         "DOTFILES_RULES_URL": rules_url,
         "CLI_STUB_LOG": str(stub_log),
         "STUB_FAIL_PATTERN": fail_pattern,
+        "CODEX_PLUGIN_STATE_FILE": str(stub_log.with_suffix(".codex-plugin-state")),
+        "CODEX_PLUGIN_BEFORE_VERSION": before_version,
+        "CODEX_PLUGIN_BEFORE_ENABLED": before_enabled,
+        "CODEX_PLUGIN_AFTER_VERSION": after_version,
+        "CODEX_PLUGIN_AFTER_ENABLED": after_enabled,
     }
     command = (
         ["bash", str(INSTALL_SH)] if kind == "sh" else ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(INSTALL_PS1)]
@@ -179,6 +216,42 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
     assert "claude mcp get" not in joined
     assert result.stderr.splitlines()[-1] == "codex app-server daemon restart"
     assert result.stderr.count("Codex pluginを更新しました。") == 1
+
+
+@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize(
+    ("before_state", "after_state", "expect_notice"),
+    [
+        pytest.param(("1.2.3", True), ("1.2.3", True), False, id="unchanged"),
+        pytest.param(("1.2.2", True), ("1.2.3", True), True, id="version-updated"),
+        pytest.param(("1.2.3", False), ("1.2.3", True), True, id="enabled"),
+    ],
+)
+def test_restart_notice_requires_codex_plugin_state_change(
+    kind: str,
+    before_state: tuple[str, bool],
+    after_state: tuple[str, bool],
+    expect_notice: bool,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """導入前後のversionまたはenabledが変化した場合だけ再起動を案内する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    result = _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=before_state,
+        codex_plugin_after=after_state,
+    )
+
+    assert sum("codex plugin list --json" in line for line in _log_lines(stub_log)) == 2
+    assert ("codex app-server daemon restart" in result.stderr) is expect_notice
 
 
 _REGISTERED_STATES = [

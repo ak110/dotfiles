@@ -220,7 +220,7 @@ def _inspect_target_expansion_evidence(evidence: dict[str, object]) -> list[str]
     return violations
 
 
-def _inspect_structured_blockers(text: str) -> list[str]:
+def _inspect_structured_blockers(text: str, transcript_path: str | None) -> list[str]:
     """statusに対応するblockerの型、試行証跡、境界値を検査する。"""
     status = _extract_report_first_line(text, "status")
     blockers = _load_report_yaml_field(text, "blockers")
@@ -233,7 +233,8 @@ def _inspect_structured_blockers(text: str) -> list[str]:
 
     violations: list[str] = []
     blocker_keys: set[tuple[str, str]] = set()
-    pending_confirmations = _extract_report_field(text, "pending_confirmations")
+    pending_confirmations = _load_report_yaml_field(text, "pending_confirmations")
+    uses, results = _iter_transcript_tool_pairs(transcript_path) if transcript_path else ({}, {})
     implementation_route = _extract_report_first_line(text, "implementation_route")
     review_status = _extract_report_first_line(text, "review_status")
     routes = {
@@ -292,6 +293,13 @@ def _inspect_structured_blockers(text: str) -> list[str]:
                 violations.append(f"{evidence_prefix}.terminal_state does not match {blocker_type}")
             if blocker_type == "repeated_failure" and evidence.get("tool_use_id") == "なし":
                 violations.append(f"{evidence_prefix}.tool_use_id is required for repeated_failure")
+            tool_use_id = evidence.get("tool_use_id")
+            if isinstance(tool_use_id, str) and tool_use_id != "なし":
+                violations.extend(_inspect_tool_backed_blocker_evidence(evidence, evidence_prefix, uses, results))
+            elif tool_use_id == "なし":
+                violations.extend(_inspect_non_tool_blocker_evidence(blocker_type, evidence, evidence_prefix))
+            else:
+                violations.append(f"{evidence_prefix}.tool_use_id must be a string")
             if blocker_type == "target_expansion":
                 violations.extend(_inspect_target_expansion_evidence(evidence))
         for operation_key, numbers in attempts_by_operation.items():
@@ -301,8 +309,12 @@ def _inspect_structured_blockers(text: str) -> list[str]:
             violations.append(f"{prefix}.blocker_attempts must equal the unique evidence count")
         if blocker_type == "repeated_failure" and len(seen) < 2:
             violations.append(f"{prefix} repeated_failure requires at least 2 attempts")
-        if blocker_type in {"user_decision", "destructive_action"} and _is_none_value(pending_confirmations):
-            violations.append(f"{prefix} requires the same item in pending_confirmations")
+        if blocker_type in {"user_decision", "destructive_action"}:
+            for evidence_index, evidence in enumerate(evidence_items, start=1):
+                if not _pending_confirmation_matches(pending_confirmations, evidence):
+                    violations.append(
+                        f"{prefix}.blocker_evidence[{evidence_index}] requires the same item in pending_confirmations"
+                    )
         if blocker_type == "missing_input" and implementation_route != "not_started":
             violations.append(f"{prefix} missing_input requires implementation_route: not_started")
         if blocker_type == "route_unavailable" and "unavailable" not in routes:
@@ -310,6 +322,77 @@ def _inspect_structured_blockers(text: str) -> list[str]:
         if blocker_type == "target_expansion" and review_status != PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS:
             violations.append(f"{prefix} target_expansion requires the scope-expansion review_status")
     return violations
+
+
+def _normalized_tool_result(result_text: str) -> object:
+    """Tool result本文をJSON値または文字列として返す。"""
+    try:
+        return json.loads(result_text)
+    except (json.JSONDecodeError, ValueError):
+        return result_text
+
+
+def _inspect_tool_backed_blocker_evidence(
+    evidence: dict[str, object],
+    prefix: str,
+    uses: dict[str, dict[str, object]],
+    results: dict[str, str],
+) -> list[str]:
+    """Tool use型blocker証跡をJSONL上の入出力へ照合する。"""
+    tool_use_id = evidence.get("tool_use_id")
+    if not isinstance(tool_use_id, str):
+        return [f"{prefix}.tool_use_id must be a string"]
+    tool_use = uses.get(tool_use_id)
+    result_text = results.get(tool_use_id)
+    if tool_use is None or result_text is None:
+        return [f"{prefix}.tool_use_id does not resolve to a tool use/result pair"]
+    violations: list[str] = []
+    if evidence.get("input") != tool_use.get("input"):
+        violations.append(f"{prefix}.input does not match the transcript tool input")
+    if evidence.get("result") != _normalized_tool_result(result_text):
+        violations.append(f"{prefix}.result does not match the transcript tool result")
+    return violations
+
+
+def _contains_scalar_value(value: object, expected: str) -> bool:
+    """再帰構造内に指定した観測値があるかを返す。"""
+    if isinstance(value, (str, int)) and not isinstance(value, bool):
+        return str(value) == expected
+    if _is_object_dict(value):
+        return any(_contains_scalar_value(item, expected) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_scalar_value(item, expected) for item in value)
+    return False
+
+
+def _inspect_non_tool_blocker_evidence(
+    blocker_type: object,
+    evidence: dict[str, object],
+    prefix: str,
+) -> list[str]:
+    """ツール未実行型blocker証跡を入力内の観測可能な識別子へ照合する。"""
+    evidence_id = evidence.get("evidence_id")
+    if not isinstance(evidence_id, str) or not _contains_scalar_value(evidence.get("input"), evidence_id):
+        return [f"{prefix}.evidence_id must match an observable input value when tool_use_id is なし"]
+    if blocker_type == "repository_change" and re.fullmatch(r"[0-9a-fA-F]{7,64}", evidence_id) is None:
+        return [f"{prefix}.comparison_sha must be a hexadecimal commit identifier"]
+    return []
+
+
+def _pending_confirmation_matches(pending_confirmations: object, evidence: dict[str, object]) -> bool:
+    """証跡とpending_confirmationsが同じ確認項目を指すかを返す。"""
+    evidence_id = evidence.get("evidence_id")
+    if not isinstance(evidence_id, str) or not _contains_scalar_value(evidence.get("input"), evidence_id):
+        return False
+    items = pending_confirmations if isinstance(pending_confirmations, list) else [pending_confirmations]
+    for item in items:
+        if item == evidence_id:
+            return True
+        if _is_object_dict(item):
+            for key in ("confirmation_key", "item_key", "key", "evidence_id"):
+                if item.get(key) == evidence_id:
+                    return True
+    return False
 
 
 def _iter_transcript_tool_pairs(
@@ -400,6 +483,47 @@ def _tool_result_route_id(tool_name: str, result_text: str) -> str | None:
     return None
 
 
+def _actual_implementation_route_evidence(
+    route: str,
+    expected_id: str,
+    uses: dict[str, dict[str, object]],
+    results: dict[str, str],
+) -> set[tuple[str, str, str]]:
+    """JSONLから対象実装系統の初回・継続呼出し集合を取得する。"""
+    actual: set[tuple[str, str, str]] = set()
+    for tool_use_id, tool_use in uses.items():
+        tool_name = tool_use.get("name")
+        result_text = results.get(tool_use_id)
+        if not isinstance(tool_name, str) or result_text is None:
+            continue
+        tool_input = tool_use.get("input")
+        actual_id = _tool_result_route_id(tool_name, result_text)
+        is_initial = tool_name in {"mcp__codex__codex", "Agent", "Task"}
+        is_codex_continuation = (
+            route == "codex"
+            and tool_name == "mcp__codex__codex-reply"
+            and _is_object_dict(tool_input)
+            and tool_input.get("threadId") == expected_id
+        )
+        is_claude_continuation = (
+            route == "claude"
+            and tool_name == "SendMessage"
+            and _is_object_dict(tool_input)
+            and tool_input.get("to") == expected_id
+        )
+        is_matching_initial = (
+            is_initial
+            and _contains_execution_track(tool_input, "implementation")
+            and (
+                (route == "codex" and tool_name == "mcp__codex__codex")
+                or (route == "claude" and tool_name in {"Agent", "Task"})
+            )
+        )
+        if actual_id == expected_id and (is_matching_initial or is_codex_continuation or is_claude_continuation):
+            actual.add((tool_name, tool_use_id, expected_id))
+    return actual
+
+
 def _inspect_implementation_route_evidence(text: str, transcript_path: str | None) -> list[str]:
     """申告した実装経路をexecutor JSONLのtool use/resultと照合する。"""
     route = _extract_report_first_line(text, "implementation_route")
@@ -417,7 +541,7 @@ def _inspect_implementation_route_evidence(text: str, transcript_path: str | Non
         return ["agent_transcript_path is required to verify implementation_route_evidence"]
     uses, results = _iter_transcript_tool_pairs(transcript_path)
     violations: list[str] = []
-    initial_found = False
+    claimed: set[tuple[str, str, str]] = set()
     allowed_names = {"mcp__codex__codex", "mcp__codex__codex-reply", "Agent", "Task", "SendMessage"}
     for index, item in enumerate(evidence, start=1):
         tool_name = item.get("tool_name")
@@ -432,6 +556,10 @@ def _inspect_implementation_route_evidence(text: str, transcript_path: str | Non
         ):
             violations.append(f"{prefix} must contain a supported tool_name, tool_use_id, and route_id")
             continue
+        claim = (tool_name, tool_use_id, route_id)
+        if claim in claimed:
+            violations.append(f"{prefix} duplicates an implementation route call")
+        claimed.add(claim)
         tool_use = uses.get(tool_use_id)
         result_text = results.get(tool_use_id)
         if tool_use is None or result_text is None:
@@ -445,21 +573,21 @@ def _inspect_implementation_route_evidence(text: str, transcript_path: str | Non
         if route_id != expected_id or actual_id != expected_id:
             violations.append(f"{prefix}.route_id does not match the implementation identity")
         if tool_name == "mcp__codex__codex":
-            initial_found = True
             if route != "codex" or not _contains_execution_track(tool_input, "implementation"):
                 violations.append(f"{prefix} is not an implementation-track Codex initial call")
         elif tool_name == "mcp__codex__codex-reply":
             if not _is_object_dict(tool_input) or tool_input.get("threadId") != expected_id:
                 violations.append(f"{prefix} does not continue the implementation thread")
         elif tool_name in {"Agent", "Task"}:
-            initial_found = True
             if route != "claude" or not _contains_execution_track(tool_input, "implementation"):
                 violations.append(f"{prefix} is not an implementation-track Claude initial call")
-        elif tool_name == "SendMessage":
-            if not _is_object_dict(tool_input) or tool_input.get("to") != expected_id:
-                violations.append(f"{prefix} does not continue the implementation Agent")
-    if not initial_found:
+        elif tool_name == "SendMessage" and (not _is_object_dict(tool_input) or tool_input.get("to") != expected_id):
+            violations.append(f"{prefix} does not continue the implementation Agent")
+    actual = _actual_implementation_route_evidence(route, expected_id, uses, results)
+    if not any(tool_name in {"mcp__codex__codex", "Agent", "Task"} for tool_name, _, _ in actual):
         violations.append("implementation_route_evidence requires an initial implementation tool call")
+    if claimed != actual:
+        violations.append("implementation_route_evidence must match all implementation calls in the transcript")
 
     review_ids: set[str] = set()
     for tool_use_id, tool_use in uses.items():
@@ -735,10 +863,12 @@ def _inspect_plan_impl_executor_report_format(
     review_value_violations = [] if missing else _inspect_plan_impl_executor_review_values(text)
     contract_violations: list[str] = []
     if not missing:
-        contract_violations.extend(_inspect_structured_blockers(text))
         transcript_path = payload.get("agent_transcript_path")
         if not isinstance(transcript_path, str) or not transcript_path:
             transcript_path = payload.get("transcript_path")
+        contract_violations.extend(
+            _inspect_structured_blockers(text, transcript_path if isinstance(transcript_path, str) else None)
+        )
         contract_violations.extend(_inspect_implementation_route_evidence(text, transcript_path))
     return missing, violation, review_value_violations, contract_violations
 

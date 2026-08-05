@@ -218,18 +218,19 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     push後commitが存在しないため完全長SHA列と系列差分の対象外であることを記録する
   - commitへpeeledできないrefは、保存したpeel前とpeeled先の資料を保持し、commit系列を構成しないため
     基準SHA・完全長SHA列・系列差分・親差分の対象外であることを記録する
-  - commitへpeeledできる各更新は、実際のpush先remote URLからforgeとrepository識別子を確定し、
-    destination ref・push後commitと組み合わせた4項目をCI待機対象とする。`origin`や現在の
-    `HEAD`から推測しない。repository識別子はforge CLIが受理する形式とし、私設ホストは
-    ホストを含む形式で保存する
+  - commitへpeeledできる各更新は、実際のpush先remote URLからforgeとrepository識別子を確定する。
+    dry-runの`<from>:<to>`からsource refとdestination refを別々に保存し、push後commitを加えた5項目を
+    CI待機対象とする。`origin`・現在の`HEAD`・destination refと同名のローカルrefから推測しない。
+    repository識別子はforge CLIが受理する形式とし、私設ホストはホストを含む形式で保存する
   - 前項の各対象に一意なbaseline JSONパスを管理対象一時領域内に割り当て、push前に
-    `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --forge <github|gitlab> --repo <repository識別子> --ref <destination ref> --sha <push後commitの完全長SHA>`
+    `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --forge <github|gitlab> --repo <repository識別子> --ref <destination ref> --source-ref <source ref> --sha <push後commitの完全長SHA>`
     を実行する。終了コード0とbaselineの実在を確認し、作成失敗時はpushへ進まない
 
-- 既定の手順: push直前に保存したforge・repository・destination ref・push後commitの組み合わせごとに、
-  `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --baseline <baselineの絶対パス> --forge <github|gitlab> --repo <repository識別子> --ref <destination ref> --sha <push後commitの完全長SHA>`
-  をBashツールで`run_in_background=true`起動する。同一の4項目が重複する場合だけ監視をまとめ、
-  SHAが同じでもrepositoryまたはrefが異なる対象は独立して監視する。1件の失敗検出を理由に
+- 既定の手順: push直前に保存したforge・repository・source ref・destination ref・push後commitの組み合わせごとに、
+  `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --baseline <baselineの絶対パス> --forge <github|gitlab> --repo <repository識別子> --ref <destination ref> --source-ref <source ref> --sha <push後commitの完全長SHA>`
+  をBashツールで`run_in_background=true`起動する。同一の5項目が重複する場合だけ監視をまとめ、
+  SHAが同じでもrepository・source ref・destination refのいずれかが異なる対象は独立して監視する。
+  1件の失敗検出を理由に
   他対象の監視を取り消さない。
   各SHAの期待run・pipeline集合がすべて終端するまで全監視結果を受領する。
   push後commitが0件の場合は監視対象SHAを`対象なし`と記録する。
@@ -241,11 +242,11 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     Jobs APIの全ページ取得・シグナル受信時の即時exit
     （`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
   - 必須引数: push前は`--write-baseline`、push後は`--baseline`を選び、両方に
-    `--forge`・`--repo`・`--ref`・`--sha`を同じ値で渡す
+    `--forge`・`--repo`・`--ref`・`--source-ref`・`--sha`を同じ値で渡す
   - 調整可能な引数: `--timeout`・`--poll-interval`・`--registration-grace`・
     `--subprocess-timeout`・`--follow-cancelled`
-  - `--sha`へはpush直前に保存した完全長SHAをそのまま渡し、
-    `--repo`・`--ref`は実際のpush先と一致する値を渡す
+  - `--sha`へはpush直前に保存した完全長SHAをそのまま渡す。`--repo`・`--ref`は
+    実際のpush先、`--source-ref`は同じrefspecのpush元と一致する値を渡す
     （`agent-toolkit/rules/02-claude-code.md`が定める識別子の実行結果転記則を参照）
     - 解決できない値は識別子解決失敗の終了コード3で終了する
     - 実在する別コミットを指す値は、登録猶予（既定60秒）が経過してもrunが見つからない場合に
@@ -271,10 +272,10 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     `gh run list`等を組み合わせた待機ループは、手動確認手順に該当する場合に限る
 - `concurrency.cancel-in-progress`で自コミットrunがcancelledになる運用
   （後続pushによる打ち切りなど）では`--follow-cancelled`を付与する
-  - `git log <sha>..<destination ref>`で得た後続SHA上のrun成功をもって通過と判定する
+  - `git log <sha>..<source ref>`で得た後続SHA上のrun成功をもって通過と判定する
   - 全runがcancelledの場合のみ発動し、混在（一部success/一部cancelled）は
     非success扱いで失敗exitする（safe default）
-  - `<sha>`が`--ref`の祖先でない場合は`EXIT_GH_ERROR`で終了する
+  - `<sha>`が`--source-ref`の祖先でない場合は`EXIT_GH_ERROR`で終了する
 - 手動確認手順（プラグイン未導入環境などスクリプトを利用できない場合の代替）
   - push直前に保存した全refのpush後commitから重複を除いた各完全長SHAを取得する。
     push前に`gh run list --repo <repository> --branch <destination ref> --commit <sha> --json databaseId,workflowName,status`

@@ -36,14 +36,21 @@ _all_success = wait_ci._all_success  # pylint: disable=protected-access
 _FULL_SHA = "a" * 40
 
 
-def _write_test_baseline(path: pathlib.Path, *, sha: str = _FULL_SHA, run_ids: list[int] | None = None) -> None:
+def _write_test_baseline(
+    path: pathlib.Path,
+    *,
+    sha: str = _FULL_SHA,
+    source_ref: str = "HEAD",
+    run_ids: list[int] | None = None,
+) -> None:
     path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "forge": "github",
                 "repository": "owner/repository",
                 "ref": "refs/heads/main",
+                "source_ref": source_ref,
                 "sha": sha,
                 "run_ids": run_ids or [],
             }
@@ -52,7 +59,7 @@ def _write_test_baseline(path: pathlib.Path, *, sha: str = _FULL_SHA, run_ids: l
     )
 
 
-def _main_args(baseline: pathlib.Path, *, sha: str = "abc123") -> list[str]:
+def _main_args(baseline: pathlib.Path, *, sha: str = "abc123", source_ref: str = "HEAD") -> list[str]:
     return [
         "--baseline",
         str(baseline),
@@ -61,6 +68,8 @@ def _main_args(baseline: pathlib.Path, *, sha: str = "abc123") -> list[str]:
         "owner/repository",
         "--ref",
         "refs/heads/main",
+        "--source-ref",
+        source_ref,
         f"--sha={sha}",
     ]
 
@@ -77,6 +86,7 @@ def _run_wait(
     ancestor_check_fn=None,
     follow_shas_fn=None,
     baseline_ids=frozenset(),
+    source_ref="HEAD",
 ):
     """`wait_for_ci`をDI経由で駆動する。時刻・sleepはスタブ化。"""
     times = iter(t * 1.0 for t in range(0, 100_000))
@@ -89,6 +99,7 @@ def _run_wait(
         10.0,
         repository="owner/repository",
         ref="refs/heads/main",
+        source_ref=source_ref,
         baseline_ids=baseline_ids,
         forge=forge,
         sleep_fn=lambda _s: None,
@@ -892,10 +903,10 @@ class TestFollowCancelled:
         )
 
 
-class TestExplicitFollowRef:
-    """cancelled後の祖先判定と後続取得が`HEAD`ではなく指定refを使うことを確認する。"""
+class TestExplicitFollowSourceRef:
+    """cancelled後のローカル探索がdestination refではなくsource refを使うことを確認する。"""
 
-    def test_ancestor_check_uses_explicit_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_ancestor_check_uses_explicit_source_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
@@ -903,10 +914,10 @@ class TestExplicitFollowRef:
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
-        assert _is_ancestor_of_ref("base", "refs/heads/release", 1.0) is True
-        assert calls == [["git", "merge-base", "--is-ancestor", "base", "refs/heads/release"]]
+        assert _is_ancestor_of_ref("base", "HEAD", 1.0) is True
+        assert calls == [["git", "merge-base", "--is-ancestor", "base", "HEAD"]]
 
-    def test_follow_sha_query_uses_explicit_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_follow_sha_query_uses_explicit_source_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
@@ -914,8 +925,47 @@ class TestExplicitFollowRef:
             return subprocess.CompletedProcess(cmd, 0, stdout="next\n", stderr="")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
-        assert _follow_shas("base", "refs/heads/release", 1.0) == ["next"]
-        assert calls == [["git", "log", "base..refs/heads/release", "--format=%H"]]
+        assert _follow_shas("base", "HEAD", 1.0) == ["next"]
+        assert calls == [["git", "log", "base..HEAD", "--format=%H"]]
+
+    def test_renamed_push_uses_local_source_ref_when_destination_ref_is_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        local_refs: list[tuple[str, str]] = []
+
+        def ancestor_check(ancestor: str, ref: str, _timeout: float) -> bool:
+            local_refs.append(("ancestor", ref))
+            return ancestor == "sha1"
+
+        def follow_shas(base: str, ref: str, _timeout: float) -> list[str]:
+            local_refs.append(("follow", ref))
+            return ["sha2"] if base == "sha1" else []
+
+        def run_list(sha: str):
+            if sha == "sha1":
+                return [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+            return [_run(conclusion="success", db_id=2, head_sha="sha2")]
+
+        monkeypatch.setattr(wait_ci, _is_ancestor_of_ref.__name__, ancestor_check)
+        monkeypatch.setattr(wait_ci, _follow_shas.__name__, follow_shas)
+        times = iter(t * 1.0 for t in range(100))
+        result = wait_ci.wait_for_ci(
+            "sha1",
+            900.0,
+            20.0,
+            0.0,
+            True,
+            10.0,
+            repository="owner/repository",
+            ref="refs/heads/release",
+            source_ref="HEAD",
+            baseline_ids=frozenset(),
+            sleep_fn=lambda _seconds: None,
+            now_fn=lambda: next(times),
+            run_list_fn=run_list,
+            job_list_fn=lambda _run_record: [],
+        )
+
+        assert result == wait_ci.EXIT_SUCCESS
+        assert local_refs == [("ancestor", "HEAD"), ("follow", "HEAD")]
 
 
 class TestSignalHandling:
@@ -945,6 +995,7 @@ class TestSignalHandling:
                     "--forge=github",
                     "--repo=owner/repository",
                     "--ref=refs/heads/main",
+                    "--source-ref=HEAD",
                     f"--sha={_FULL_SHA}",
                     "--poll-interval=5",
                     "--registration-grace=30",
@@ -1020,6 +1071,7 @@ class TestMainEntrypoint:
             "--forge=github",
             "--repo=owner/repository",
             "--ref=refs/heads/main",
+            "--source-ref=HEAD",
             "--sha=abc123",
         ]
         with mock.patch("subprocess.run", side_effect=fake_run):
@@ -1027,10 +1079,11 @@ class TestMainEntrypoint:
 
         payload = json.loads(baseline.read_text(encoding="utf-8"))
         assert payload == {
-            "version": 1,
+            "version": 2,
             "forge": "github",
             "repository": "owner/repository",
             "ref": "refs/heads/main",
+            "source_ref": "HEAD",
             "sha": _FULL_SHA,
             "run_ids": [11, 12],
         }
@@ -1045,6 +1098,19 @@ class TestMainEntrypoint:
 
         with mock.patch("subprocess.run", side_effect=fake_run):
             result = wait_ci.main(_main_args(baseline) + ["--repo=different/repository"])
+
+        assert result == wait_ci.EXIT_GH_ERROR
+
+    def test_source_ref_mismatch_fails_before_ci_query(self, tmp_path: pathlib.Path):
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline, source_ref="HEAD")
+
+        def fake_run(cmd, **_kwargs):
+            assert cmd[:3] == ["git", "rev-parse", "--verify"]
+            return mock.Mock(stdout=_FULL_SHA, returncode=0, stderr="")
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            result = wait_ci.main(_main_args(baseline, source_ref="refs/heads/local"))
 
         assert result == wait_ci.EXIT_GH_ERROR
 

@@ -217,7 +217,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     before = _codex_json(["plugin", "list", "--json"])
     current = _installed(before, plugin_id) if before else None
     if current is not None and current.get("version") == version and current.get("enabled") is True:
-        return _outcome(changed or _remove_legacy_links(root), notices)
+        legacy_changed = _remove_legacy_links(root)
+        return _outcome(changed or legacy_changed, notices)
     if not _command(["plugin", "add", plugin_id]):
         return _outcome(changed, notices)
     changed = True

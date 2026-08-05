@@ -53,6 +53,34 @@ def _implementation_route_entries() -> list[dict]:
                         "name": "Agent",
                         "input": {"prompt": "execution_track: implementation"},
                     },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_failure_1",
+                        "name": "Bash",
+                        "input": {"operation_key": "tests", "command": "pytest"},
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_failure_2",
+                        "name": "Bash",
+                        "input": {"operation_key": "tests", "command": "pytest"},
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_operation",
+                        "name": "Tool",
+                        "input": {"operation_key": "operation", "value": "input"},
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_compare",
+                        "name": "Tool",
+                        "input": {
+                            "operation_key": "expand-targets",
+                            "previous_paths": [],
+                            "current_added_paths": ["path-0", "path-1", "path-2", "path-3", "path-4"],
+                        },
+                    },
                 ]
             },
         },
@@ -69,6 +97,14 @@ def _implementation_route_entries() -> list[dict]:
                         "type": "tool_result",
                         "tool_use_id": "toolu_impl_agent",
                         "content": "agentId: agent-implementation",
+                    },
+                    {"type": "tool_result", "tool_use_id": "toolu_failure_1", "content": "failed"},
+                    {"type": "tool_result", "tool_use_id": "toolu_failure_2", "content": "failed"},
+                    {"type": "tool_result", "tool_use_id": "toolu_operation", "content": "result"},
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_compare",
+                        "content": json.dumps({"deduplicated_paths": ["path-0", "path-1", "path-2", "path-3", "path-4"]}),
                     },
                 ]
             },
@@ -223,14 +259,18 @@ def _valid_escalation_blockers() -> str:
     attempt_number: 1
     evidence_id: toolu_failure_1
     tool_use_id: toolu_failure_1
-    input: pytest
+    input:
+      operation_key: tests
+      command: pytest
     result: failed
     terminal_state: failed
   - operation_key: tests
     attempt_number: 2
     evidence_id: toolu_failure_2
     tool_use_id: toolu_failure_2
-    input: pytest
+    input:
+      operation_key: tests
+      command: pytest
     result: failed
     terminal_state: failed
   blocker_attempts: 2"""
@@ -245,7 +285,8 @@ def _inactive_route_blocker(blocker_type: str, terminal_state: str) -> str:
     attempt_number: 1
     evidence_id: implementation-route
     tool_use_id: なし
-    input: implementation route
+    input:
+      {"missing_key" if blocker_type == "missing_input" else "route_key"}: implementation-route
     result: {terminal_state}
     terminal_state: {terminal_state}
   blocker_attempts: 1"""
@@ -258,11 +299,47 @@ def _single_blocker(blocker_type: str, terminal_state: str) -> str:
   blocker_evidence:
   - operation_key: operation
     attempt_number: 1
-    evidence_id: evidence-1
+    evidence_id: toolu_operation
     tool_use_id: toolu_operation
-    input: input
+    input:
+      operation_key: operation
+      value: input
     result: result
     terminal_state: {terminal_state}
+  blocker_attempts: 1"""
+
+
+def _confirmation_blocker(blocker_type: str, confirmation_key: str) -> str:
+    """利用者確認待ちのツール未実行blockerを返す。"""
+    return f"""- blocker_type: {blocker_type}
+  blocker_operation: confirmation
+  blocker_evidence:
+  - operation_key: confirmation
+    attempt_number: 1
+    evidence_id: {confirmation_key}
+    tool_use_id: なし
+    input:
+      confirmation_key: {confirmation_key}
+    result: awaiting user response
+    terminal_state: awaiting_confirmation
+  blocker_attempts: 1"""
+
+
+def _repository_change_blocker(comparison_sha: str) -> str:
+    """比較SHAを観測識別子とするツール未実行blockerを返す。"""
+    return f"""- blocker_type: repository_change
+  blocker_operation: compare-head
+  blocker_evidence:
+  - operation_key: compare-head
+    attempt_number: 1
+    evidence_id: {comparison_sha}
+    tool_use_id: なし
+    input:
+      comparison_sha: {comparison_sha}
+      expected_sha: 1111111
+    result:
+      actual_sha: 2222222
+    terminal_state: changed
   blocker_attempts: 1"""
 
 
@@ -273,9 +350,10 @@ def _target_expansion_blocker(path_count: int) -> str:
   blocker_evidence:
   - operation_key: expand-targets
     attempt_number: 1
-    evidence_id: compare-sha
+    evidence_id: toolu_compare
     tool_use_id: toolu_compare
     input:
+      operation_key: expand-targets
       previous_paths: []
       current_added_paths: [{paths}]
     result:
@@ -1398,34 +1476,42 @@ class TestPlanImplExecutorEvidenceContract:
     """構造化blockerと実装系統証跡の公開入口検査。"""
 
     @pytest.mark.parametrize(
-        ("blocker_type", "terminal_state", "overrides"),
+        ("blocker_type", "overrides", "blockers"),
         [
             (
                 "missing_input",
-                "not_started",
                 {
                     "implementation_route": "not_started",
                     "implementation_thread_id": "なし",
                     "implementation_agent_id": "なし",
                 },
+                _inactive_route_blocker("missing_input", "not_started"),
             ),
-            ("user_decision", "awaiting_confirmation", {"pending_confirmations": "実行方針"}),
-            ("destructive_action", "awaiting_confirmation", {"pending_confirmations": "削除確認"}),
-            ("repository_change", "changed", {}),
-            ("recovery_failure", "failed", {}),
+            (
+                "user_decision",
+                {"pending_confirmations": "decision-key"},
+                _confirmation_blocker("user_decision", "decision-key"),
+            ),
+            (
+                "destructive_action",
+                {"pending_confirmations": "destructive-key"},
+                _confirmation_blocker("destructive_action", "destructive-key"),
+            ),
+            ("repository_change", {}, _repository_change_blocker("abcdef1")),
+            ("recovery_failure", {}, _single_blocker("recovery_failure", "failed")),
         ],
     )
     def test_single_attempt_blocker_types_pass(
         self,
         tmp_path: Path,
         blocker_type: str,
-        terminal_state: str,
         overrides: dict[str, str],
+        blockers: str,
     ) -> None:
         report = _complete_report(
             status="needs_escalation",
             review_status="レビュー未完了",
-            blockers=_single_blocker(blocker_type, terminal_state),
+            blockers=blockers,
             **overrides,
         )
         assert _run_tracked_report(tmp_path, report, agent_id=blocker_type).stdout == ""
@@ -1485,6 +1571,62 @@ class TestPlanImplExecutorEvidenceContract:
         result = _run_tracked_report(tmp_path, report, agent_id=f"attempt-{len(expected)}")
         assert json.loads(result.stdout)["decision"] == "block"
         assert expected in result.stdout
+
+    @pytest.mark.parametrize(
+        ("source", "replacement", "expected"),
+        [
+            ("command: pytest", "command: fictitious", "input does not match the transcript tool input"),
+            ("result: failed", "result: fictitious", "result does not match the transcript tool result"),
+        ],
+    )
+    def test_fictitious_tool_blocker_evidence_blocks(
+        self,
+        tmp_path: Path,
+        source: str,
+        replacement: str,
+        expected: str,
+    ) -> None:
+        """JSONLと異なるtool入出力を申告したblocker証跡を拒否する。"""
+        blockers = _valid_escalation_blockers().replace(source, replacement, 1)
+        report = _complete_report(status="needs_escalation", review_status="レビュー未完了", blockers=blockers)
+        result = _run_tracked_report(tmp_path, report, agent_id="fictitious-blocker")
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert expected in result.stdout
+
+    def test_confirmation_blocker_must_match_same_pending_item(self, tmp_path: Path) -> None:
+        """確認blockerと異なるpending項目を申告した報告を拒否する。"""
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            pending_confirmations="different-key",
+            blockers=_confirmation_blocker("user_decision", "decision-key"),
+        )
+        result = _run_tracked_report(tmp_path, report, agent_id="pending-mismatch")
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "same item in pending_confirmations" in result.stdout
+
+    def test_confirmation_item_must_appear_in_observed_tool_input(self, tmp_path: Path) -> None:
+        """実在tool入力と無関係なpending確認キーの後付けを拒否する。"""
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            pending_confirmations="toolu_operation",
+            blockers=_single_blocker("user_decision", "awaiting_confirmation"),
+        )
+        result = _run_tracked_report(tmp_path, report, agent_id="pending-unrelated-input")
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "same item in pending_confirmations" in result.stdout
+
+    def test_repository_change_requires_observable_comparison_sha(self, tmp_path: Path) -> None:
+        """比較SHAでないツール未実行repository_change証跡を拒否する。"""
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            blockers=_repository_change_blocker("not-a-sha"),
+        )
+        result = _run_tracked_report(tmp_path, report, agent_id="invalid-comparison-sha")
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "hexadecimal commit identifier" in result.stdout
 
     def test_codex_route_id_mismatch_blocks(self, tmp_path: Path) -> None:
         report = _complete_report(
@@ -1547,6 +1689,54 @@ class TestPlanImplExecutorEvidenceContract:
             tmp_path,
         )
         assert result.stdout == ""
+
+    def test_omitted_codex_reply_evidence_blocks(self, tmp_path: Path) -> None:
+        """JSONL上の実装系replyを証跡集合から省いた報告を拒否する。"""
+        agent_id = "codex-reply-omitted"
+        session_id = f"sid-{agent_id}"
+        _write_flag_state(tmp_path, session_id, agent_id)
+        transcript = _transcript_path_for(tmp_path, agent_id)
+        _append_transcript_entries(
+            transcript,
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_reply_omitted",
+                                "name": "mcp__codex__codex-reply",
+                                "input": {"threadId": "th_impl", "prompt": "continue"},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_reply_omitted",
+                                "content": json.dumps({"threadId": "th_impl"}),
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+        result = _run_with_state_dir(
+            {
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "last_assistant_message": _complete_report(),
+                "agent_transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "must match all implementation calls" in result.stdout
 
     def test_sendmessage_on_same_agent_passes(self, tmp_path: Path) -> None:
         agent_id = "claude-resume"

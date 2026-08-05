@@ -17,6 +17,7 @@ LEGACY_DIR="$HOME/.claude/rules/agent-basics"
 # ステージング先は rules/ の外に置く。
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 STAGE_ROOT="$HOME/.claude/rules-stage"
+CODEX_PLUGIN_ID="agent-toolkit@ak110-dotfiles"
 
 # 配布対象ファイル一覧。
 # `scripts/gen-install-files.py`が`agent-toolkit/rules/*.md`から自動生成する。
@@ -91,12 +92,51 @@ _install_agent_toolkit() {
     echo "Claude Code側のagent-toolkitプラグインを設定しました。"
 }
 
+_codex_plugin_state() {
+    local plugin_json
+    if ! plugin_json=$(codex plugin list --json); then
+        return 1
+    fi
+    uv run --no-config --no-project --python 3 python - "$CODEX_PLUGIN_ID" "$plugin_json" <<'PY'
+import json
+import sys
+
+plugin_id = sys.argv[1]
+try:
+    data = json.loads(sys.argv[2])
+    installed = data["installed"]
+except (json.JSONDecodeError, KeyError, TypeError):
+    raise SystemExit(1)
+if not isinstance(installed, list):
+    raise SystemExit(1)
+for item in installed:
+    if not isinstance(item, dict) or item.get("pluginId") != plugin_id:
+        continue
+    version = item.get("version")
+    enabled = item.get("enabled")
+    if not isinstance(version, str) or not isinstance(enabled, bool):
+        raise SystemExit(1)
+    print(json.dumps({"enabled": enabled, "present": True, "version": version}, sort_keys=True))
+    break
+else:
+    print('{"present": false}')
+PY
+}
+
 _install_codex_plugin() {
+    local before_state=""
+    local before_state_known=0
+    local after_state=""
     echo "Codex側のagent-toolkitプラグインを設定します..."
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
     codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
-    codex plugin add agent-toolkit@ak110-dotfiles --json >/dev/null
-    CODEX_PLUGIN_UPDATED=1
+    if before_state=$(_codex_plugin_state); then
+        before_state_known=1
+    fi
+    codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null
+    if [ "$before_state_known" -eq 1 ] && after_state=$(_codex_plugin_state) && [ "$before_state" != "$after_state" ]; then
+        CODEX_PLUGIN_UPDATED=1
+    fi
     echo "Codex側のagent-toolkitプラグインを設定しました。"
 }
 

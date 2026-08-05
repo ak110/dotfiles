@@ -5,9 +5,9 @@
 # ///
 """push前後の実行ID差分でCI通過確認を待機する補助スクリプト。
 
-push前に対象repository・ref・commit SHAの実行IDをbaselineへ保存し、push後は
+push前に対象repository・destination ref・source ref・commit SHAの実行IDをbaselineへ保存し、push後は
 GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないIDだけを待機する。
-一覧とジョブ取得の両方に明示的なrepositoryを指定し、一覧はrefとSHAで限定する。
+一覧とジョブ取得の両方に明示的なrepositoryを指定し、一覧はdestination refとSHAで限定する。
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
 `agent-toolkit:commit`スキル「push後のCI通過確認」節から参照される。
 同節の実施主体の分離は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める。
@@ -47,7 +47,7 @@ _STDERR_FD = 2
 
 _MAX_CONSECUTIVE_SNAPSHOT_FAILURES = 3
 _GH_JSON_FIELDS = "name,status,conclusion,url,databaseId,headSha,createdAt"
-_BASELINE_VERSION = 1
+_BASELINE_VERSION = 2
 
 RunRecord = dict[str, Any]
 JobRecord = dict[str, Any]
@@ -68,6 +68,7 @@ class CiBaseline:
     forge: str
     repository: str
     ref: str
+    source_ref: str
     sha: str
     run_ids: frozenset[int]
 
@@ -405,6 +406,7 @@ def _write_baseline(path: pathlib.Path, baseline: CiBaseline) -> None:
         "forge": baseline.forge,
         "repository": baseline.repository,
         "ref": baseline.ref,
+        "source_ref": baseline.source_ref,
         "sha": baseline.sha,
         "run_ids": sorted(baseline.run_ids),
     }
@@ -419,7 +421,7 @@ def _load_baseline(path: pathlib.Path) -> CiBaseline:
         raise RunListError(f"baselineの読み込みに失敗: {path}: {exc}") from exc
     if not isinstance(payload, dict) or payload.get("version") != _BASELINE_VERSION:
         raise RunListError(f"baselineのversionまたはJSON構造が不正: {path}")
-    string_fields = ("forge", "repository", "ref", "sha")
+    string_fields = ("forge", "repository", "ref", "source_ref", "sha")
     if not all(isinstance(payload.get(field), str) and payload[field] for field in string_fields):
         raise RunListError(f"baselineの対象識別子が不正: {path}")
     run_ids = payload.get("run_ids")
@@ -434,15 +436,23 @@ def _load_baseline(path: pathlib.Path) -> CiBaseline:
         forge=payload["forge"],
         repository=payload["repository"],
         ref=payload["ref"],
+        source_ref=payload["source_ref"],
         sha=payload["sha"],
         run_ids=frozenset(validated_run_ids),
     )
 
 
-def _validate_baseline_context(baseline: CiBaseline, forge: str, repository: str, ref: str, sha: str) -> None:
+def _validate_baseline_context(
+    baseline: CiBaseline,
+    forge: str,
+    repository: str,
+    ref: str,
+    source_ref: str,
+    sha: str,
+) -> None:
     """baselineの取得条件が待機対象と完全に一致することを確認する。"""
-    actual = (baseline.forge, baseline.repository, baseline.ref, baseline.sha)
-    expected = (forge, repository, ref, sha)
+    actual = (baseline.forge, baseline.repository, baseline.ref, baseline.source_ref, baseline.sha)
+    expected = (forge, repository, ref, source_ref, sha)
     if actual != expected:
         raise RunListError(f"baselineの対象が不一致: baseline={actual!r}, requested={expected!r}")
 
@@ -555,6 +565,7 @@ def wait_for_ci(
     *,
     repository: str,
     ref: str,
+    source_ref: str,
     baseline_ids: frozenset[int],
     forge: str = "github",
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -578,8 +589,8 @@ def wait_for_ci(
       登録猶予末・後続SHA登録猶予末は、猶予末に到達した回の取得失敗のみでも
       3回連続を待たず即時EXIT_GH_ERRORとする）
     - 早期失敗が無く期待run集合全runが`conclusion==success`のときのみEXIT_SUCCESS
-    - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..<ref>`の後続SHA上のrunで補完判定
-    - `--sha`が明示指定したrefの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
+    - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..<source_ref>`の後続SHA上のrunで補完判定
+    - `--sha`が明示指定したsource refの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
     - `forge`が`gitlab`のとき既定の取得手段を`glab ci list --sha`・`glab api`へ切り替える
       （`run_list_fn`・`job_list_fn`を明示指定した場合、取得関数の既定選択には`forge`を参照しない）
     - `forge`は早期失敗の分類（`_find_early_failure`のforgeごとの判定）には
@@ -590,8 +601,8 @@ def wait_for_ci(
     if job_list_fn is None:
         job_fetcher = _glab_job_list if forge == "gitlab" else _gh_job_list
         job_list_fn = functools.partial(job_fetcher, repository, subprocess_timeout=subprocess_timeout)
-    ancestor_check_fn = ancestor_check_fn or (lambda ancestor: _is_ancestor_of_ref(ancestor, ref, subprocess_timeout))
-    follow_shas_fn = follow_shas_fn or (lambda base: _follow_shas(base, ref, subprocess_timeout))
+    ancestor_check_fn = ancestor_check_fn or (lambda ancestor: _is_ancestor_of_ref(ancestor, source_ref, subprocess_timeout))
+    follow_shas_fn = follow_shas_fn or (lambda base: _follow_shas(base, source_ref, subprocess_timeout))
     start = now_fn()
     runs: list[RunRecord] = []
     consecutive_failures = 0
@@ -656,9 +667,9 @@ def wait_for_ci(
                 return EXIT_SUCCESS
             if follow_cancelled and _all_cancelled(expected_runs):
                 if not ancestor_check_fn(sha):
-                    _print(elapsed, f"--follow-cancelled対象外: {sha}は{ref}の祖先ではない")
+                    _print(elapsed, f"--follow-cancelled対象外: {sha}は{source_ref}の祖先ではない")
                     return EXIT_GH_ERROR
-                _print(elapsed, f"全runがcancelled。{ref}の後続SHA集合を取得し追跡へ移行")
+                _print(elapsed, f"全runがcancelled。{source_ref}の後続SHA集合を取得し追跡へ移行")
                 return _follow_cancelled(
                     sha,
                     expected_runs,
@@ -698,9 +709,9 @@ def _follow_cancelled(
     forge: str,
     excluded_ids: frozenset[int],
 ) -> int:
-    """全run cancelled時、明示refの後続SHA集合を判定対象とする。
+    """全run cancelled時、明示source refの後続SHA集合を判定対象とする。
 
-    - 呼び出し前に`ancestor_check_fn`で`<original_sha>`が明示refの祖先であることを確認済み
+    - 呼び出し前に`ancestor_check_fn`で`<original_sha>`が明示source refの祖先であることを確認済み
     - 後続SHAが未生成の場合は待機し、初回検出後は`registration_grace`秒の間
       `follow_shas_fn(original_sha)`と各後続SHAの`run_list_fn`を再呼び出しして、
       追加後続SHAの登録・同一SHA上での複数workflowの段階的なrun登録の両方を収集する
@@ -898,6 +909,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--baseline", type=pathlib.Path, help="push前に保存したbaseline JSONパス")
     parser.add_argument("--repo", required=True, help="対象repository（owner/repoまたはホストを含むURL）")
     parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")
+    parser.add_argument("--source-ref", required=True, help="push元のローカルsource ref（例: HEAD）")
     parser.add_argument("--sha", required=True, help="対象commit SHA")
     parser.add_argument("--timeout", type=_positive_float, default=900.0, help="全体タイムアウト秒数（既定900）")
     parser.add_argument("--poll-interval", type=_positive_float, default=20.0, help="ポーリング間隔秒数（既定20）")
@@ -914,7 +926,7 @@ def main(argv: list[str] | None = None) -> int:
         default="auto",
         help="対象ホスティング種別（既定auto。--repoのホストから自動判定）",
     )
-    parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時に同ブランチ後続run成功を追跡")
+    parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時にsource refの後続run成功を追跡")
     args = parser.parse_args(argv)
     sha = _resolve_sha(args.sha, args.subprocess_timeout)
     if sha is None:
@@ -927,7 +939,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.write_baseline is not None:
         try:
             runs = _default_run_list_fn(forge, args.repo, args.ref, args.subprocess_timeout)(sha)
-            baseline = CiBaseline(forge, args.repo, args.ref, sha, frozenset(_run_ids(runs)))
+            baseline = CiBaseline(
+                forge=forge,
+                repository=args.repo,
+                ref=args.ref,
+                source_ref=args.source_ref,
+                sha=sha,
+                run_ids=frozenset(_run_ids(runs)),
+            )
             _write_baseline(args.write_baseline, baseline)
         except (OSError, RunListError) as exc:
             print(f"[wait_ci] baseline作成に失敗: {exc}", file=sys.stderr)
@@ -936,7 +955,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_SUCCESS
     try:
         baseline = _load_baseline(args.baseline)
-        _validate_baseline_context(baseline, forge, args.repo, args.ref, sha)
+        _validate_baseline_context(baseline, forge, args.repo, args.ref, args.source_ref, sha)
     except RunListError as exc:
         print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)
         return EXIT_GH_ERROR
@@ -949,6 +968,7 @@ def main(argv: list[str] | None = None) -> int:
         args.subprocess_timeout,
         repository=args.repo,
         ref=args.ref,
+        source_ref=args.source_ref,
         baseline_ids=baseline.run_ids,
         forge=forge,
     )
