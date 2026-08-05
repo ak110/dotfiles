@@ -489,7 +489,7 @@ def _actual_implementation_route_evidence(
     uses: dict[str, dict[str, object]],
     results: dict[str, str],
 ) -> set[tuple[str, str, str]]:
-    """JSONLから対象実装系統の初回・継続呼出し集合を取得する。"""
+    """JSONLにある対象実装系統の初回・継続呼び出し集合を列挙する。"""
     actual: set[tuple[str, str, str]] = set()
     for tool_use_id, tool_use in uses.items():
         tool_name = tool_use.get("name")
