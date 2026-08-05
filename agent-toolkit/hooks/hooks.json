@@ -22,6 +22,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "plan-impl-executor|agent-toolkit:plan-impl-executor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py subagent_start_tracker"
+          }
+        ]
+      }
+    ],
     "PostToolUseFailure": [
       {
         "matcher": "Agent|Task",
@@ -60,6 +71,16 @@
           {
             "type": "command",
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py subagent_stop_advisor"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py session_end_cleanup"
           }
         ]
       }

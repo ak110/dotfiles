@@ -106,12 +106,27 @@ review_impact_audit: <点検対象と結果。レビュー指摘修正時だけ�
 unplanned:
 - <計画外事項。無ければ「なし」>
 blockers:
-- <未解決事項。無ければ「なし」>
+- blocker_type: missing_input | user_decision | destructive_action | repeated_failure | route_unavailable | repository_change | recovery_failure | target_expansion
+  blocker_operation: <阻害された具体的な操作>
+  blocker_evidence:
+  - operation_key: <同じ操作を再開間で対応付ける安定キー>
+    attempt_number: <operation_key内で1から始まる連番>
+    evidence_id: <再取得可能な安定識別子>
+    tool_use_id: <tool use識別子。ツール未実行時は「なし」>
+    input: <当該試行の入力>
+    result: <観測結果>
+    terminal_state: not_started | awaiting_confirmation | failed | unavailable | changed | threshold_reached
+  blocker_attempts: <重複除外後の試行要素数>
 ```
 
 `external_operations`のいずれかの`result`が`needs_escalation`の場合は、
 全体の`status`も`needs_escalation`とする。
 当該項目は`operation`と`target`を含む形で`blockers`へ記載する。
 呼び出し元はこの欄で未実施の操作を特定する。
+完了時は`blockers`を単一要素の「なし」とする。`needs_escalation`では阻害を定義済み8種へ分類し、
+独立した阻害を別要素にする。同じ型と操作は1要素へ集約し、試行ごとの入力と結果を
+`blocker_evidence`へ分けて記録する。`blocker_attempts`は複合キーで重複除外した試行要素数と一致させる。
+同じ操作の試行回数は再開後も継続する。`repeated_failure`は2試行以上とする。
+対象拡大では前回集合、追加集合、両者の辞書順和集合を記録し、5件以上の場合だけ返却する。
 `git status --short`と`git diff --stat`は要約へ置き換えず、生の出力を記載する。
 前者は未コミット変更の残存を示し、後者は計画着手前からの変更規模を示す。

@@ -47,6 +47,9 @@ user-invocable: false
    - `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-task.md`
    - `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-review.md`
 5. 前掲のreferenceから実装・修正系とレビュー系の完結したタスク本文を構成する
+   - 実装・修正系へ`execution_track: implementation`を1行で含める
+   - 計画準拠レビュー系へ`execution_track: plan_review`を1行で含める
+   - 独立レビュー系へ`execution_track: independent_review`を1行で含める
 6. 計画ファイルの`## 実行方法`の本文を委譲前スナップショットとして保存する
 7. 実装用タスク本文を実装・修正系の`agent-toolkit:codex-exec`へ渡す
 8. 実装応答と作業ツリー、コミット、検証結果を照合する
@@ -58,6 +61,9 @@ user-invocable: false
 13. 採用指摘の修正後は`review_impact_audit`の点検対象と結果を検収し、完了後に限り、
     同じ事前条件を満たしてから系統別の再レビュー用タスク本文を渡す
 14. 反映結果と実体を照合し、定義の`## 出力`を作成する
+
+各系統の初回呼び出しと継続呼び出しについて、tool use識別子と返却されたthreadIdまたは
+Agent識別子を保存する。自身による成果物編集は実装経路の証跡として扱わない。
 
 保存した委譲前スナップショットは全ラウンドを通じて更新せず、`external_operations`の
 認可判定の根拠として用いる。保存と照合の手順は`plan-codex-implementation.md`
@@ -149,6 +155,10 @@ implementation_agent_id: <Claude Agent識別子または「なし」>
 plan_review_agent_id: <Claude Agent識別子または「なし」>
 independent_review_agent_id: <Claude Agent識別子または「なし」>
 implementation_route: codex | claude | unavailable | not_started
+implementation_route_evidence:
+- tool_name: <mcp__codex__codex | mcp__codex__codex-reply | Agent | Task | SendMessage>
+  tool_use_id: <executor JSONL上のtool use識別子>
+  route_id: <Codex threadIdまたはClaude Agent識別子>
 plan_review_route: codex | claude | unavailable | not_started
 independent_review_route: codex | claude | unavailable | not_started
 review_rounds: <二系統を一組とした回数>
@@ -165,8 +175,33 @@ independent_review_history:
 review_resolution:
 <6列表。指摘が無ければ「指摘なし」、レビュー省略時だけ「なし」>
 blockers:
-- <未解決事項。無ければ「なし」>
+- blocker_type: missing_input | user_decision | destructive_action | repeated_failure | route_unavailable | repository_change | recovery_failure | target_expansion
+  blocker_operation: <阻害された具体的な操作>
+  blocker_evidence:
+  - operation_key: <同じ操作を再開間で対応付ける安定キー>
+    attempt_number: <operation_key内で1から始まる連番>
+    evidence_id: <再取得可能な安定識別子>
+    tool_use_id: <tool use識別子。ツール未実行時は「なし」>
+    input: <当該試行の入力>
+    result: <観測結果>
+    terminal_state: not_started | awaiting_confirmation | failed | unavailable | changed | threshold_reached
+  blocker_attempts: <重複除外後の試行要素数>
 ```
+
+`completed`と`completed_with_review_cap`では`blockers`を単一要素の「なし」とする。
+`needs_escalation`では1件以上の構造化要素を返し、「なし」と構造化要素を混在させない。
+同じ`blocker_type`と`blocker_operation`は1要素へ集約する。
+`blocker_attempts`は`operation_key`、`attempt_number`、`evidence_id`の組で重複除外した
+`blocker_evidence`要素数と一致させる。同じ`operation_key`の`attempt_number`は1から連続させる。
+`repeated_failure`は2試行以上とする。`target_expansion`は`input.previous_paths`と
+`input.current_added_paths`、`result.deduplicated_paths`を配列で記録し、最後の値を
+前2集合の辞書順和集合とする。和集合が5件以上となった場合だけ返却する。
+
+`implementation_route_evidence`は実装系の初回呼び出しを1件以上含める。
+Codexではtool resultの`threadId`、ClaudeではAgent・Task resultの`agentId:`を実装識別子と一致させる。
+継続時はCodex replyの入出力`threadId`を照合する。SendMessageでは入力`to`と結果`pin.id`を
+同じ実装識別子へ一致させる。レビュー系の`execution_track`から得た識別子は実装証跡へ流用しない。
+`needs_escalation`で実装経路が`not_started`、`unavailable`のいずれかの場合だけ「なし」とする。
 
 `status: completed`は計画項目、検証、コミットと、
 両レビュー系の完了またはユーザー指示によるレビュー省略を実測した場合だけ返す。

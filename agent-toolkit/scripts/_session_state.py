@@ -79,6 +79,29 @@ def update_state(session_id: str, mutator: Callable[[dict], dict | None]) -> boo
         return False
 
 
+def delete_state(session_id: str) -> bool:
+    """有効なセッションの状態JSONを排他ロック下で削除する。
+
+    状態JSONが存在しない場合も成功とする。並行するhookプロセスが同じロック対象を
+    共有できるよう、ロックファイルは削除しない。
+    """
+    if not isinstance(session_id, str) or not session_id:
+        return False
+    path = state_path(session_id)
+    lock_path = path.parent / (path.name + ".lock")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "a+", encoding="utf-8") as lock_file:  # noqa: SIM115 -- ロック保持のため
+            _acquire_lock(lock_file)
+            try:
+                path.unlink(missing_ok=True)
+                return True
+            finally:
+                _release_lock(lock_file)
+    except OSError:
+        return False
+
+
 def _read_locked(path: pathlib.Path) -> dict:
     """ロック取得後に状態ファイルを読み込む。不在・破損時は空辞書を返す。"""
     try:

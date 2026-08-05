@@ -22,8 +22,9 @@
 - `codex_exec_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:codex-exec`または
   `codex-exec`を起動した場合にPostToolUseが真化する。
   メインセッションからcodex MCPを呼び出す前の経路検査に使い、セッション終了まで保持する
-- `plan_impl_executor_active_subagent_sessions`: `plan-impl-executor`の`agentId`を記録し、
-  SubagentStopで完了報告の必須欄を検査する
+- `plan_impl_executor_active_subagent_sessions`: SubagentStartが`plan-impl-executor`の`agent_id`を
+  Agent識別子別に記録し、SubagentStopが完了報告を検査する。正常報告、SendMessage再開、
+  plan-mode起動では削除せず、別executorの要素と併存させる。親SessionEndで状態JSON全体を削除する
 - `codex_remote_snapshot_by_key`: codex呼び出し直前のリモートrefを記録し、呼び出し後に比較して削除する
 - `codex_remote_cwd_by_key`: 呼び出し元ごとの直近`cwd`を記録し、同じ呼び出し元からの継続時に使う
 - `claude-agent-toolkit-codex-thread-cwd-<threadIdのSHA-256>.json`: codexの`threadId`ごとの`cwd`を
@@ -51,5 +52,6 @@
 
 サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。
 新規フラグには記録元、利用先、寿命、リセット経路を併記する。
+状態JSONは親セッションのSessionEndで排他ロック下から削除する。並行プロセスが共有するロックファイルは保持する。
 サブエージェント側で記録される状態は呼び出し元へ自動伝播しないため、
 親側で必要な値は完了報告の構造化欄から厳格に解析する。

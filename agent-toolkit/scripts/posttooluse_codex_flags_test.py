@@ -62,20 +62,3 @@ def test_removed_agent_does_not_change_state(tmp_path: pathlib.Path) -> None:
     )
     state = _read_state(tmp_path, sid)
     assert removed_flag not in state
-
-
-@pytest.mark.parametrize("subagent_type", ["plan-impl-executor", "agent-toolkit:plan-impl-executor"])
-def test_plan_impl_executor_registers_active_session(tmp_path: pathlib.Path, subagent_type: str) -> None:
-    """executorのサブセッションIDを完了報告検査用に記録する。"""
-    sid = subagent_type.replace(":", "-")
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": subagent_type},
-            "tool_response": {"agentId": "sub-session-123"},
-        },
-        state_dir=tmp_path,
-    )
-    active = _read_state(tmp_path, sid)["plan_impl_executor_active_subagent_sessions"]
-    assert active["sub-session-123"]["subagent_type"] == subagent_type

@@ -30,8 +30,50 @@ def _write_hook_transcripts(tmp_path: Path, parent_entries: list[dict], agent_en
     parent_dir.mkdir()
     agent_dir.mkdir()
     parent = _write_transcript(parent_dir, parent_entries)
-    agent = _write_transcript(agent_dir, agent_entries)
+    agent = _write_transcript(agent_dir, [*_implementation_route_entries(), *agent_entries])
     return str(parent), str(agent)
+
+
+def _implementation_route_entries() -> list[dict]:
+    """Codex・Claude実装系のtool use/result fixtureを返す。"""
+    return [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_impl",
+                        "name": "mcp__codex__codex",
+                        "input": {"prompt": "execution_track: implementation"},
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_impl_agent",
+                        "name": "Agent",
+                        "input": {"prompt": "execution_track: implementation"},
+                    },
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_impl",
+                        "content": json.dumps({"threadId": "th_impl"}),
+                    },
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_impl_agent",
+                        "content": "agentId: agent-implementation",
+                    },
+                ]
+            },
+        },
+    ]
 
 
 def test_approves_empty_report_when_descendant_agent_is_pending(tmp_path: Path) -> None:
@@ -161,12 +203,108 @@ def _write_flag_state(state_dir: Path, session_id: str, sub_session_id: str, sub
 
 
 def _transcript_path_for(tmp_path: Path, agent_id: str) -> str:
-    """`agent_id`に対応するtranscriptパス文字列を生成する（実ファイルの存在は不要）。
+    """`agent_id`に対応する実装経路fixture入りtranscriptを生成する。"""
+    directory = tmp_path / "subagents"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"agent-{agent_id}.jsonl"
+    path.write_text(
+        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in _implementation_route_entries()) + "\n",
+        encoding="utf-8",
+    )
+    return str(path)
 
-    `_inspect_plan_impl_executor_report_format`はファイル名の`agent-<id>.jsonl`部分のみを
-    参照しファイル内容を読み取らないため、実体作成は不要とする。
-    """
-    return str(tmp_path / "subagents" / f"agent-{agent_id}.jsonl")
+
+def _valid_escalation_blockers() -> str:
+    """2試行の反復失敗を表す構造化blockerを返す。"""
+    return """- blocker_type: repeated_failure
+  blocker_operation: tests
+  blocker_evidence:
+  - operation_key: tests
+    attempt_number: 1
+    evidence_id: toolu_failure_1
+    tool_use_id: toolu_failure_1
+    input: pytest
+    result: failed
+    terminal_state: failed
+  - operation_key: tests
+    attempt_number: 2
+    evidence_id: toolu_failure_2
+    tool_use_id: toolu_failure_2
+    input: pytest
+    result: failed
+    terminal_state: failed
+  blocker_attempts: 2"""
+
+
+def _inactive_route_blocker(blocker_type: str, terminal_state: str) -> str:
+    """未開始または利用不能経路の単一試行blockerを返す。"""
+    return f"""- blocker_type: {blocker_type}
+  blocker_operation: implementation-route
+  blocker_evidence:
+  - operation_key: implementation-route
+    attempt_number: 1
+    evidence_id: implementation-route
+    tool_use_id: なし
+    input: implementation route
+    result: {terminal_state}
+    terminal_state: {terminal_state}
+  blocker_attempts: 1"""
+
+
+def _single_blocker(blocker_type: str, terminal_state: str) -> str:
+    """単一試行の構造化blockerを返す。"""
+    return f"""- blocker_type: {blocker_type}
+  blocker_operation: operation
+  blocker_evidence:
+  - operation_key: operation
+    attempt_number: 1
+    evidence_id: evidence-1
+    tool_use_id: toolu_operation
+    input: input
+    result: result
+    terminal_state: {terminal_state}
+  blocker_attempts: 1"""
+
+
+def _target_expansion_blocker(path_count: int) -> str:
+    paths = ", ".join(f"path-{index}" for index in range(path_count))
+    return f"""- blocker_type: target_expansion
+  blocker_operation: expand-targets
+  blocker_evidence:
+  - operation_key: expand-targets
+    attempt_number: 1
+    evidence_id: compare-sha
+    tool_use_id: toolu_compare
+    input:
+      previous_paths: []
+      current_added_paths: [{paths}]
+    result:
+      deduplicated_paths: [{paths}]
+    terminal_state: threshold_reached
+  blocker_attempts: 1"""
+
+
+def _run_tracked_report(tmp_path: Path, report: str, *, agent_id: str = "contract-agent") -> subprocess.CompletedProcess[str]:
+    """追跡済みexecutorの報告を実装経路fixture付きで検査する。"""
+    session_id = f"sid-{agent_id}"
+    _write_flag_state(tmp_path, session_id, agent_id)
+    return _run_with_state_dir(
+        {
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "last_assistant_message": report,
+            "agent_transcript_path": _transcript_path_for(tmp_path, agent_id),
+        },
+        tmp_path,
+    )
+
+
+def _append_transcript_entries(path: str, entries: list[dict]) -> None:
+    """実装経路fixtureへ追加のtool use/resultを追記する。"""
+    transcript = Path(path)
+    with transcript.open("a", encoding="utf-8") as stream:
+        for entry in entries:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 def _complete_report(**overrides: str) -> str:
@@ -192,6 +330,7 @@ def _complete_report(**overrides: str) -> str:
         "plan_review_agent_id": "なし",
         "independent_review_agent_id": "なし",
         "implementation_route": "codex",
+        "implementation_route_evidence": "- tool_name: mcp__codex__codex\n  tool_use_id: toolu_impl\n  route_id: th_impl",
         "plan_review_route": "codex",
         "independent_review_route": "codex",
         "review_rounds": "1",
@@ -201,8 +340,27 @@ def _complete_report(**overrides: str) -> str:
         "plan_review_history": "指摘なし",
         "independent_review_history": "指摘なし",
         "review_resolution": "指摘なし",
+        "blockers": "- なし",
     }
     fields.update(overrides)
+    if "implementation_route_evidence" not in overrides:
+        if fields["implementation_route"] == "codex":
+            fields["implementation_route_evidence"] = (
+                "- tool_name: mcp__codex__codex\n  tool_use_id: toolu_impl\n  route_id: " + fields["implementation_thread_id"]
+            )
+        elif fields["implementation_route"] == "claude":
+            fields["implementation_route_evidence"] = (
+                "- tool_name: Agent\n  tool_use_id: toolu_impl_agent\n  route_id: " + fields["implementation_agent_id"]
+            )
+        else:
+            fields["implementation_route_evidence"] = "- なし"
+    if "blockers" not in overrides and fields["status"] == "needs_escalation":
+        if fields["implementation_route"] == "not_started":
+            fields["blockers"] = _inactive_route_blocker("missing_input", "not_started")
+        elif fields["implementation_route"] == "unavailable":
+            fields["blockers"] = _inactive_route_blocker("route_unavailable", "unavailable")
+        else:
+            fields["blockers"] = _valid_escalation_blockers()
     if "review_final_findings" not in overrides:
         if fields["status"] == "needs_escalation":
             fields["review_final_findings"] = "未確定"
@@ -264,14 +422,14 @@ class TestPlanImplExecutorReportFormat:
                 "session_id": sid,
                 "last_assistant_message": _complete_report(),
                 "agent_id": "sub-a",
-                "transcript_path": str(tmp_path / f"{sid}.jsonl"),
+                "transcript_path": _transcript_path_for(tmp_path, "sub-a"),
             },
             tmp_path,
         )
         assert result.stdout == ""
         assert result.returncode == 0
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert not state["plan_impl_executor_active_subagent_sessions"]
+        assert "sub-a" in state["plan_impl_executor_active_subagent_sessions"]
 
     def test_registered_executor_is_checked_before_pending_descendant(self, tmp_path: Path) -> None:
         sid = "sid-pending-invalid"
@@ -342,7 +500,7 @@ class TestPlanImplExecutorReportFormat:
         )
         assert json.loads(retry.stdout)["decision"] == "approve"
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert agent_id not in state["plan_impl_executor_active_subagent_sessions"]
+        assert agent_id in state["plan_impl_executor_active_subagent_sessions"]
 
     @pytest.mark.parametrize(("valid", "pending"), [(False, False), (True, True)])
     def test_registered_executor_stop_hook_retry_keeps_active_entry_for_invalid_or_pending_report(
@@ -365,7 +523,7 @@ class TestPlanImplExecutorReportFormat:
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
         assert agent_id in state["plan_impl_executor_active_subagent_sessions"]
 
-    def test_registered_executor_stop_hook_retry_consumes_valid_final_report(self, tmp_path: Path) -> None:
+    def test_registered_executor_stop_hook_retry_keeps_valid_final_report_active(self, tmp_path: Path) -> None:
         sid = "sid-retry-consumes"
         agent_id = "sub-retry-consumes"
         _write_flag_state(tmp_path, sid, agent_id)
@@ -380,7 +538,7 @@ class TestPlanImplExecutorReportFormat:
         )
         assert json.loads(result.stdout)["decision"] == "approve"
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert agent_id not in state["plan_impl_executor_active_subagent_sessions"]
+        assert agent_id in state["plan_impl_executor_active_subagent_sessions"]
 
     def test_unregistered_agent_with_pending_descendant_is_approved(self, tmp_path: Path) -> None:
         parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_unregistered")])
@@ -684,19 +842,16 @@ class TestPlanImplExecutorReportFormat:
         sid = f"sid-format-escalation-implementation-{implementation_route}"
         agent_id = f"sub-escalation-implementation-{implementation_route}"
         _write_flag_state(tmp_path, sid, agent_id)
-        report = (
-            _complete_report(
-                status="needs_escalation",
-                review_status="レビュー未完了",
-                implementation_route=implementation_route,
-                implementation_thread_id="なし",
-                implementation_agent_id="なし",
-                plan_review_route="not_started",
-                plan_review_thread_id="なし",
-                independent_review_route="not_started",
-                independent_review_thread_id="なし",
-            )
-            + "\nblockers:\n- 未解決事項"
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            implementation_route=implementation_route,
+            implementation_thread_id="なし",
+            implementation_agent_id="なし",
+            plan_review_route="not_started",
+            plan_review_thread_id="なし",
+            independent_review_route="not_started",
+            independent_review_thread_id="なし",
         )
         result = _run_with_state_dir(
             {
@@ -751,7 +906,7 @@ class TestPlanImplExecutorReportFormat:
                     "review_status": "レビュー未完了",
                     "plan_review_route": "unavailable",
                     "plan_review_thread_id": "なし",
-                    "blockers": "- 未解決事項",
+                    "blockers": _valid_escalation_blockers(),
                 },
             ),
             (
@@ -983,7 +1138,7 @@ class TestPlanImplExecutorReportFormat:
             "independent_review_thread_id": "なし",
         }
         escalation.update(overrides)
-        report = _complete_report(**escalation) + "\nblockers:\n- 未解決事項"
+        report = _complete_report(**escalation)
         result = _run_with_state_dir(
             {
                 "session_id": sid,
@@ -1015,14 +1170,11 @@ class TestPlanImplExecutorReportFormat:
         sid = f"sid-format-escalation-measured-{len(review_status)}"
         agent_id = f"sub-escalation-measured-{len(review_status)}"
         _write_flag_state(tmp_path, sid, agent_id)
-        report = (
-            _complete_report(
-                status="needs_escalation",
-                review_status=review_status,
-                review_final_findings="計画準拠系2件・独立系1件",
-                review_rounds=review_rounds,
-            )
-            + "\nblockers:\n- 未解決事項"
+        report = _complete_report(
+            status="needs_escalation",
+            review_status=review_status,
+            review_final_findings="計画準拠系2件・独立系1件",
+            review_rounds=review_rounds,
         )
         result = _run_with_state_dir(
             {
@@ -1057,7 +1209,7 @@ class TestPlanImplExecutorReportFormat:
         """`status: needs_escalation`検出時は`blockers`欄も必須。"""
         sid = "sid-format-needs-escalation"
         _write_flag_state(tmp_path, sid, "sub-c")
-        report = _complete_report(status="needs_escalation")
+        report = _complete_report(status="needs_escalation").split("\nblockers:", maxsplit=1)[0]
         result = _run_with_state_dir(
             {
                 "session_id": sid,
@@ -1074,14 +1226,11 @@ class TestPlanImplExecutorReportFormat:
         """`status: needs_escalation`かつ`blockers`欄あり報告は通過する。"""
         sid = "sid-format-escalation-ok"
         _write_flag_state(tmp_path, sid, "sub-d")
-        report = (
-            _complete_report(
-                status="needs_escalation",
-                review_status="レビュー未完了",
-                plan_review_route="unavailable",
-                plan_review_thread_id="なし",
-            )
-            + "\nblockers:\n- 未解決事項"
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            plan_review_route="unavailable",
+            plan_review_thread_id="なし",
         )
         result = _run_with_state_dir(
             {
@@ -1094,8 +1243,8 @@ class TestPlanImplExecutorReportFormat:
         assert result.stdout == ""
         assert result.returncode == 0
 
-    def test_flag_entry_removed_after_check(self, tmp_path: Path) -> None:
-        """SubagentStop発火時に該当agentIdのエントリのみを状態辞書から削除し、他の並行エントリは保持する。"""
+    def test_flag_entries_are_retained_after_check(self, tmp_path: Path) -> None:
+        """SubagentStop発火後も該当agentIdと他の並行エントリを保持する。"""
         sid = "sid-format-cleanup"
         _write_flag_state(tmp_path, sid, "sub-e")
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
@@ -1115,7 +1264,7 @@ class TestPlanImplExecutorReportFormat:
         )
         state = json.loads(state_path.read_text(encoding="utf-8"))
         active = state.get("plan_impl_executor_active_subagent_sessions")
-        assert "sub-e" not in active
+        assert "sub-e" in active
         assert "sub-other" in active
 
     def test_background_parallel_declaration_with_unchecked_item_blocks(self, tmp_path: Path) -> None:
@@ -1161,7 +1310,7 @@ class TestPlanImplExecutorReportFormat:
         _write_flag_state(tmp_path, sid, "sub-h")
         report = _complete_report(
             changed="- [x] item — /path（run_in_background=trueで並列起動）",
-            blockers="- [ ] 未解決の論点",
+            verification="- [ ] 未解決の論点",
         )
         result = _run_with_state_dir(
             {
@@ -1243,3 +1392,263 @@ class TestPlanImplExecutorReportFormat:
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert "sub-a" in state.get("plan_impl_executor_active_subagent_sessions", {})
+
+
+class TestPlanImplExecutorEvidenceContract:
+    """構造化blockerと実装系統証跡の公開入口検査。"""
+
+    @pytest.mark.parametrize(
+        ("blocker_type", "terminal_state", "overrides"),
+        [
+            (
+                "missing_input",
+                "not_started",
+                {
+                    "implementation_route": "not_started",
+                    "implementation_thread_id": "なし",
+                    "implementation_agent_id": "なし",
+                },
+            ),
+            ("user_decision", "awaiting_confirmation", {"pending_confirmations": "実行方針"}),
+            ("destructive_action", "awaiting_confirmation", {"pending_confirmations": "削除確認"}),
+            ("repository_change", "changed", {}),
+            ("recovery_failure", "failed", {}),
+        ],
+    )
+    def test_single_attempt_blocker_types_pass(
+        self,
+        tmp_path: Path,
+        blocker_type: str,
+        terminal_state: str,
+        overrides: dict[str, str],
+    ) -> None:
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            blockers=_single_blocker(blocker_type, terminal_state),
+            **overrides,
+        )
+        assert _run_tracked_report(tmp_path, report, agent_id=blocker_type).stdout == ""
+
+    def test_route_unavailable_blocker_passes(self, tmp_path: Path) -> None:
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            implementation_route="unavailable",
+            implementation_thread_id="なし",
+            implementation_agent_id="なし",
+            blockers=_inactive_route_blocker("route_unavailable", "unavailable"),
+        )
+        assert _run_tracked_report(tmp_path, report, agent_id="route-unavailable").stdout == ""
+
+    def test_repeated_failure_requires_two_attempts(self, tmp_path: Path) -> None:
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            blockers=_single_blocker("repeated_failure", "failed"),
+        )
+        result = _run_tracked_report(tmp_path, report, agent_id="repeated-one")
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "at least 2 attempts" in result.stdout
+
+    @pytest.mark.parametrize(("path_count", "passes"), [(4, False), (5, True)])
+    def test_target_expansion_threshold(self, tmp_path: Path, path_count: int, passes: bool) -> None:
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="対象拡大により中断（指摘反映済み・再レビューなし）",
+            review_final_findings="計画準拠系0件・独立系0件",
+            blockers=_target_expansion_blocker(path_count),
+        )
+        result = _run_tracked_report(tmp_path, report, agent_id=f"target-{path_count}")
+        assert (result.stdout == "") is passes
+
+    @pytest.mark.parametrize(
+        ("blockers", "expected"),
+        [
+            (
+                _valid_escalation_blockers().replace("blocker_attempts: 2", "blocker_attempts: 1"),
+                "unique evidence count",
+            ),
+            (
+                _valid_escalation_blockers().replace("attempt_number: 2", "attempt_number: 1"),
+                "contiguous from 1",
+            ),
+        ],
+    )
+    def test_attempt_count_and_sequence_mismatch_block(
+        self,
+        tmp_path: Path,
+        blockers: str,
+        expected: str,
+    ) -> None:
+        report = _complete_report(status="needs_escalation", review_status="レビュー未完了", blockers=blockers)
+        result = _run_tracked_report(tmp_path, report, agent_id=f"attempt-{len(expected)}")
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert expected in result.stdout
+
+    def test_codex_route_id_mismatch_blocks(self, tmp_path: Path) -> None:
+        report = _complete_report(
+            implementation_route_evidence=(
+                "- tool_name: mcp__codex__codex\n  tool_use_id: toolu_impl\n  route_id: wrong-thread"
+            )
+        )
+        result = _run_tracked_report(tmp_path, report, agent_id="codex-mismatch")
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "implementation identity" in result.stdout
+
+    def test_codex_reply_on_same_thread_passes(self, tmp_path: Path) -> None:
+        agent_id = "codex-reply"
+        session_id = f"sid-{agent_id}"
+        _write_flag_state(tmp_path, session_id, agent_id)
+        transcript = _transcript_path_for(tmp_path, agent_id)
+        _append_transcript_entries(
+            transcript,
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_reply",
+                                "name": "mcp__codex__codex-reply",
+                                "input": {"threadId": "th_impl", "prompt": "continue"},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_reply",
+                                "content": json.dumps({"threadId": "th_impl"}),
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+        evidence = """- tool_name: mcp__codex__codex
+  tool_use_id: toolu_impl
+  route_id: th_impl
+- tool_name: mcp__codex__codex-reply
+  tool_use_id: toolu_reply
+  route_id: th_impl"""
+        result = _run_with_state_dir(
+            {
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "last_assistant_message": _complete_report(implementation_route_evidence=evidence),
+                "agent_transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+
+    def test_sendmessage_on_same_agent_passes(self, tmp_path: Path) -> None:
+        agent_id = "claude-resume"
+        session_id = f"sid-{agent_id}"
+        _write_flag_state(tmp_path, session_id, agent_id)
+        transcript = _transcript_path_for(tmp_path, agent_id)
+        _append_transcript_entries(
+            transcript,
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_send",
+                                "name": "SendMessage",
+                                "input": {"to": "agent-implementation", "message": "continue"},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_send",
+                                "content": json.dumps({"pin": {"id": "agent-implementation"}}),
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+        evidence = """- tool_name: Agent
+  tool_use_id: toolu_impl_agent
+  route_id: agent-implementation
+- tool_name: SendMessage
+  tool_use_id: toolu_send
+  route_id: agent-implementation"""
+        report = _complete_report(
+            implementation_route="claude",
+            implementation_thread_id="なし",
+            implementation_agent_id="agent-implementation",
+            implementation_route_evidence=evidence,
+        )
+        result = _run_with_state_dir(
+            {
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "last_assistant_message": report,
+                "agent_transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+
+    def test_review_track_identity_cannot_satisfy_implementation(self, tmp_path: Path) -> None:
+        agent_id = "review-reuse"
+        session_id = f"sid-{agent_id}"
+        _write_flag_state(tmp_path, session_id, agent_id)
+        transcript = _transcript_path_for(tmp_path, agent_id)
+        _append_transcript_entries(
+            transcript,
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_review",
+                                "name": "mcp__codex__codex",
+                                "input": {"prompt": "execution_track: plan_review"},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_review",
+                                "content": json.dumps({"threadId": "th_impl"}),
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+        result = _run_with_state_dir(
+            {
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "last_assistant_message": _complete_report(),
+                "agent_transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "review track" in result.stdout

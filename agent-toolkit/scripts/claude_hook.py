@@ -5,7 +5,7 @@
 # ///
 """Claude Code agent-toolkit: フック共通エントリポイント。
 
-`hooks.json`に登録された7個のフックスクリプト（`pretooluse.py`等）は、いずれも末尾で
+`hooks.json`に登録された10個のフックスクリプト（`pretooluse.py`等）は、いずれも末尾で
 同型の`try: sys.exit(main()) except Exception: traceback.print_exc(); sys.exit(0)`
 epilogueを個別に持っていた。本スクリプトへ集約し、各モジュールは`main()`関数の定義のみを
 担うライブラリへ縮小する。第1引数でサブコマンド（対象モジュール名）を指定する。
@@ -14,7 +14,7 @@ epilogueを個別に持っていた。本スクリプトへ集約し、各モジ
 標準出力と標準エラーもUTF-8へ統一する。`AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`が非空の場合は、
 環境依存の入力変換をバイト単位で調査できるよう、復号前の入力を指定ディレクトリへ保存する。
 
-依存パッケージは対象7モジュールの依存集合の和を宣言する。`uv run --script`はスクリプト単位で
+依存パッケージは対象10モジュールの依存集合の和を宣言する。`uv run --script`はスクリプト単位で
 venvをキャッシュするため、集約により従来7個に分散していたキャッシュが1個へ統合され、
 サブコマンド切替時の再解決コストが減る。
 
@@ -39,6 +39,8 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "posttooluse",
         "stop_advisor",
         "subagent_stop_advisor",
+        "subagent_start_tracker",
+        "session_end_cleanup",
         "stopfailure_notifier",
         "permissionrequest",
         "permissionrequest_codex",

@@ -22,6 +22,9 @@ ref名とOIDを委譲前スナップショットとして保存する。
 継続情報が無い系統は新しく開始し、追加指示等が無い場合は該当事項なしとして扱う。
 
 `subagent_type: agent-toolkit:plan-impl-executor`を指定し、`model`と`name`を省略する。
+起動結果のexecutor Agent識別子を保存し、対応する
+`<parent-session>/subagents/agent-<Agent識別子>.jsonl`を完了報告の証跡照合先とする。
+パスを直接得られない場合は、同じ起動tool use識別子を持つ`subagents/*.meta.json`から特定する。
 `agent-toolkit:plan-mode`からの通常起動は`run_in_background`を省略し、
 実際の受領経路を起動結果から判定する。
 `agent-toolkit:process-feedbacks`の計画実装型フィードバックから起動する場合は、
@@ -59,6 +62,7 @@ executorの通常配送と配送不能時の記録照会は、
 - `plan_review_agent_id`
 - `independent_review_agent_id`
 - `implementation_route`
+- `implementation_route_evidence`
 - `plan_review_route`
 - `independent_review_route`
 - `review_rounds`
@@ -68,6 +72,7 @@ executorの通常配送と配送不能時の記録照会は、
 - `plan_review_history`
 - `independent_review_history`
 - `review_resolution`
+- `blockers`
 
 `external_operations`の各項目に操作、認可根拠、対象、結果、検証情報が揃うことを確認する。
 確認対象は、計画の`## 実行方法`が対象リポジトリ外への操作（他リポジトリへのフィードバック投入・
@@ -95,7 +100,24 @@ executorの通常配送と配送不能時の記録照会は、
 「リモート状態の照合」節と同じく自律モードでもユーザー確認を得る。
 当該操作は作業ツリーの差分にもコミット履歴にも現れないため、「実体照合」節の手順では検出できない。
 
-`status: needs_escalation`では`blockers`も必須とする。
+`completed`と`completed_with_review_cap`の`blockers`は単一要素の「なし」とする。
+`status: needs_escalation`では構造化された`blockers`を1件以上必須とする。
+各要素の`blocker_type`が定義済み8種のいずれかであり、`blocker_operation`、
+`blocker_evidence`、`blocker_attempts`を持つことを確認する。各試行は`operation_key`、
+1から連続する`attempt_number`、`evidence_id`、`tool_use_id`、`input`、`result`、
+定義済み`terminal_state`を持つことを確認する。複合キーの重複、導出件数との不一致、
+`repeated_failure`の2試行未満を未完遂として扱う。
+`target_expansion`は前回集合、追加集合、辞書順の重複除外和集合を照合し、4件では継続、
+5件以上では対象拡大中断となることを確認する。
+
+`implementation_route_evidence`の各`tool_use_id`をexecutor JSONLのtool use/resultへ対応させる。
+初回タスク本文の`execution_track: implementation`、Codex resultの`threadId`、
+Agent・Task resultの`agentId:`を出力の実装識別子と照合する。継続証跡ではCodex replyの
+入出力`threadId`を照合する。SendMessageでは入力`to`と結果`pin.id`を同じ識別子へ一致させる。
+`execution_track: plan_review`と`independent_review`の識別子流用を未完遂として扱う。
+完了ステータスでは初回実装証跡を1件以上必須とし、実装経路が`not_started`、
+`unavailable`のいずれかとなる`needs_escalation`だけ「なし」を許容する。完了報告本文だけを証跡にしない。
+
 必須欄の欠落または値の矛盾は未完遂として扱い、未完了項目と実測結果へ縮減して再委譲する。
 待機表明だけを返し完了報告の必須欄を欠く返却も未完遂として扱う。
 この場合は「サブエージェント運用」の停止手順で委譲先を停止し、

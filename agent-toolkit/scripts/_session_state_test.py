@@ -18,6 +18,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    delete_state,
     read_state,
     state_path,
     update_state,
@@ -158,6 +159,51 @@ class TestReadState:
     def test_non_dict_payload_returns_empty(self) -> None:
         state_path("array").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
         assert read_state("array") == {}
+
+
+class TestDeleteState:
+    """状態JSON削除の入力・寿命境界。"""
+
+    def test_existing_state_is_deleted_and_lock_is_retained(self) -> None:
+        update_state("sid", lambda current: {**current, "a": 1})
+        path = state_path("sid")
+        lock_path = path.parent / (path.name + ".lock")
+
+        assert delete_state("sid") is True
+        assert not path.exists()
+        assert lock_path.exists()
+
+    def test_missing_state_is_success(self) -> None:
+        assert delete_state("missing") is True
+
+    def test_invalid_session_ids_fail(self) -> None:
+        assert delete_state("") is False
+        assert delete_state(cast(str, 123)) is False
+
+    def test_other_session_is_preserved(self) -> None:
+        update_state("target", lambda current: {**current, "target": True})
+        update_state("other", lambda current: {**current, "other": True})
+
+        assert delete_state("target") is True
+        assert read_state("target") == {}
+        assert read_state("other") == {"other": True}
+
+    def test_delete_failure_returns_false(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        update_state("sid", lambda current: {**current, "a": 1})
+        target = state_path("sid")
+        original_unlink = pathlib.Path.unlink
+
+        def _unlink(path: pathlib.Path, *, missing_ok: bool = False) -> None:
+            if path == target:
+                raise PermissionError("simulated failure")
+            original_unlink(path, missing_ok=missing_ok)
+
+        monkeypatch.setattr(pathlib.Path, "unlink", _unlink)
+        assert delete_state("sid") is False
+        assert read_state("sid") == {"a": 1}
 
 
 def test_session_state_persists_codex_exec_flags() -> None:

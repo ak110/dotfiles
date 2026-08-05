@@ -7,14 +7,14 @@
 未消化の孫エージェント起動が無い場合に限り、`is_empty_completion_report`で実質空またはSkill呼び出し
 単独の構造的欠落を検出する。
 `stop_hook_active`真の再呼び出し時は再blockせずapproveを返す。
-登録済みexecutorは適合報告かつ未消化の孫起動なしの場合だけactive entryを消費する。
+登録済みexecutorは親SessionEndまでactive entryを保持し、`SendMessage`再開後も同じ検査を適用する。
 
 `plan-impl-executor`完了報告（`agent_id`が
 `plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火）は、
 主要欄ラベルの欠落検査、二系統レビュー値の整合検査、
 background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
 書式不備・矛盾を検出しblockした場合はエントリを保持し、是正後の再試行でも検査を再発火させる。
-適合報告でも未消化の孫起動がある間はエントリを保持し、最終報告の承認時にだけ消費する。
+適合報告と未消化の孫起動の有無にかかわらず、登録は親SessionEndまで保持する。
 
 縮退表明の本文検査はAskUserQuestionとStopへ集約し、本hookでは実施しない。
 
@@ -26,12 +26,15 @@ import json
 import pathlib
 import re
 import sys
+from typing import TypeGuard
+
+import yaml
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _scope_escalation import is_empty_completion_report  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import has_pending_agent_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_transcript_agent_id as _extract_transcript_agent_id,
@@ -68,6 +71,7 @@ PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "plan_review_agent_id",
     "independent_review_agent_id",
     "implementation_route",
+    "implementation_route_evidence",
     "plan_review_route",
     "independent_review_route",
     "review_rounds",
@@ -77,9 +81,8 @@ PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "plan_review_history",
     "independent_review_history",
     "review_resolution",
+    "blockers",
 )
-_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL = "blockers"
-_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalation\b", re.MULTILINE)
 
 # `plan-impl-executor`が`run_in_background=true`を明示して自己起動した宣言と、
 # `changed`欄の未消化項目（`- [ ]`）が共起するかの判定パターン（FB[3]）。
@@ -101,9 +104,7 @@ PLAN_IMPL_EXECUTOR_INCOMPLETE_STATUS = "レビュー未完了"
 # `changed:`欄本文（次の主要ラベル行直前まで）を抽出する境界パターン（FB[3]）。
 # `PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
 # 境界として使い、`verification`・`blockers`等の他欄に含まれるチェックボックス様の記述を誤検出しない。
-PLAN_IMPL_EXECUTOR_ALL_LABELS: tuple[str, ...] = PLAN_IMPL_EXECUTOR_REQUIRED_LABELS + (
-    _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL,
-)
+PLAN_IMPL_EXECUTOR_ALL_LABELS: tuple[str, ...] = PLAN_IMPL_EXECUTOR_REQUIRED_LABELS
 _PLAN_IMPL_EXECUTOR_CHANGED_SECTION_RE = re.compile(
     r"^changed:\s*\n((?:(?!^(?:" + "|".join(re.escape(label) for label in PLAN_IMPL_EXECUTOR_ALL_LABELS) + r"):).*\n?)*)",
     re.MULTILINE,
@@ -139,6 +140,339 @@ def _extract_report_first_line(text: str, label: str) -> str:
 def _is_none_value(value: str) -> bool:
     """欄が空または「なし」だけであるかを返す。"""
     return not value or value == "なし"
+
+
+_BLOCKER_TYPES = frozenset(
+    {
+        "missing_input",
+        "user_decision",
+        "destructive_action",
+        "repeated_failure",
+        "route_unavailable",
+        "repository_change",
+        "recovery_failure",
+        "target_expansion",
+    }
+)
+_BLOCKER_TERMINAL_STATES = frozenset(
+    {"not_started", "awaiting_confirmation", "failed", "unavailable", "changed", "threshold_reached"}
+)
+_BLOCKER_REQUIRED_EVIDENCE_FIELDS = frozenset(
+    {"operation_key", "attempt_number", "evidence_id", "tool_use_id", "input", "result", "terminal_state"}
+)
+_BLOCKER_EXPECTED_TERMINAL_STATES = {
+    "missing_input": "not_started",
+    "user_decision": "awaiting_confirmation",
+    "destructive_action": "awaiting_confirmation",
+    "repeated_failure": "failed",
+    "route_unavailable": "unavailable",
+    "repository_change": "changed",
+    "recovery_failure": "failed",
+    "target_expansion": "threshold_reached",
+}
+
+
+def _is_object_dict(value: object) -> TypeGuard[dict[str, object]]:
+    """外部構造の値が文字列キーの辞書であるかを返す。"""
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
+
+
+def _is_object_dict_list(value: object) -> TypeGuard[list[dict[str, object]]]:
+    """外部構造の値が文字列キー辞書のリストであるかを返す。"""
+    return isinstance(value, list) and all(_is_object_dict(item) for item in value)
+
+
+def _load_report_yaml_field(text: str, label: str) -> object:
+    """YAML形式の完了報告欄を構造化値として返す。"""
+    body = _extract_report_field(text, label)
+    if not body:
+        return None
+    try:
+        return yaml.safe_load(body)
+    except yaml.YAMLError:
+        return None
+
+
+def _is_none_list(value: object) -> bool:
+    """「なし」だけを表すscalarまたは単一リストであるかを返す。"""
+    return value == "なし" or value == ["なし"]
+
+
+def _inspect_target_expansion_evidence(evidence: dict[str, object]) -> list[str]:
+    """対象拡大証跡の3集合と閾値を検査する。"""
+    violations: list[str] = []
+    input_value = evidence.get("input")
+    result_value = evidence.get("result")
+    if not _is_object_dict(input_value) or not _is_object_dict(result_value):
+        return ["target_expansion input and result must be mappings"]
+    previous = input_value.get("previous_paths")
+    added = input_value.get("current_added_paths")
+    deduplicated = result_value.get("deduplicated_paths")
+    if not isinstance(previous, list) or not isinstance(added, list) or not isinstance(deduplicated, list):
+        return ["target_expansion path sets must be string lists"]
+    if not all(isinstance(path, str) for value in (previous, added, deduplicated) for path in value):
+        return ["target_expansion path sets must be string lists"]
+    expected = sorted(set(previous) | set(added))
+    if deduplicated != expected:
+        violations.append("target_expansion deduplicated_paths must be the sorted union of both input sets")
+    if len(deduplicated) < 5:
+        violations.append("target_expansion requires at least 5 deduplicated paths")
+    return violations
+
+
+def _inspect_structured_blockers(text: str) -> list[str]:
+    """statusに対応するblockerの型、試行証跡、境界値を検査する。"""
+    status = _extract_report_first_line(text, "status")
+    blockers = _load_report_yaml_field(text, "blockers")
+    if status in {"completed", "completed_with_review_cap"}:
+        return [] if _is_none_list(blockers) else ["blockers must contain only なし for completed status"]
+    if status != "needs_escalation":
+        return []
+    if not _is_object_dict_list(blockers) or not blockers:
+        return ["needs_escalation blockers must be a non-empty structured list"]
+
+    violations: list[str] = []
+    blocker_keys: set[tuple[str, str]] = set()
+    pending_confirmations = _extract_report_field(text, "pending_confirmations")
+    implementation_route = _extract_report_first_line(text, "implementation_route")
+    review_status = _extract_report_first_line(text, "review_status")
+    routes = {
+        _extract_report_first_line(text, "implementation_route"),
+        _extract_report_first_line(text, "plan_review_route"),
+        _extract_report_first_line(text, "independent_review_route"),
+    }
+    for index, blocker in enumerate(blockers, start=1):
+        blocker_type = blocker.get("blocker_type")
+        operation = blocker.get("blocker_operation")
+        evidence_items = blocker.get("blocker_evidence")
+        attempts = blocker.get("blocker_attempts")
+        prefix = f"blockers[{index}]"
+        if not isinstance(blocker_type, str) or blocker_type not in _BLOCKER_TYPES:
+            violations.append(f"{prefix}.blocker_type must be one of the defined 8 types")
+            continue
+        if not isinstance(operation, str) or not operation:
+            violations.append(f"{prefix}.blocker_operation must be a non-empty string")
+            continue
+        blocker_key = (blocker_type, operation)
+        if blocker_key in blocker_keys:
+            violations.append(f"{prefix} duplicates blocker_type and blocker_operation")
+        blocker_keys.add(blocker_key)
+        if not _is_object_dict_list(evidence_items) or not evidence_items:
+            violations.append(f"{prefix}.blocker_evidence must be a non-empty structured list")
+            continue
+        seen: set[tuple[str, int, str]] = set()
+        attempts_by_operation: dict[str, list[int]] = {}
+        for evidence_index, evidence in enumerate(evidence_items, start=1):
+            evidence_prefix = f"{prefix}.blocker_evidence[{evidence_index}]"
+            missing = _BLOCKER_REQUIRED_EVIDENCE_FIELDS - evidence.keys()
+            if missing:
+                violations.append(f"{evidence_prefix} is missing {', '.join(sorted(missing))}")
+                continue
+            operation_key = evidence.get("operation_key")
+            attempt_number = evidence.get("attempt_number")
+            evidence_id = evidence.get("evidence_id")
+            terminal_state = evidence.get("terminal_state")
+            if not isinstance(operation_key, str) or not operation_key:
+                violations.append(f"{evidence_prefix}.operation_key must be a non-empty string")
+                continue
+            if not isinstance(attempt_number, int) or isinstance(attempt_number, bool) or attempt_number < 1:
+                violations.append(f"{evidence_prefix}.attempt_number must be a positive integer")
+                continue
+            if not isinstance(evidence_id, str) or not evidence_id:
+                violations.append(f"{evidence_prefix}.evidence_id must be a non-empty string")
+                continue
+            composite = (operation_key, attempt_number, evidence_id)
+            if composite in seen:
+                violations.append(f"{evidence_prefix} duplicates an attempt key")
+            seen.add(composite)
+            attempts_by_operation.setdefault(operation_key, []).append(attempt_number)
+            if terminal_state not in _BLOCKER_TERMINAL_STATES:
+                violations.append(f"{evidence_prefix}.terminal_state is undefined")
+            elif terminal_state != _BLOCKER_EXPECTED_TERMINAL_STATES[blocker_type]:
+                violations.append(f"{evidence_prefix}.terminal_state does not match {blocker_type}")
+            if blocker_type == "repeated_failure" and evidence.get("tool_use_id") == "なし":
+                violations.append(f"{evidence_prefix}.tool_use_id is required for repeated_failure")
+            if blocker_type == "target_expansion":
+                violations.extend(_inspect_target_expansion_evidence(evidence))
+        for operation_key, numbers in attempts_by_operation.items():
+            if sorted(numbers) != list(range(1, len(numbers) + 1)):
+                violations.append(f"{prefix} attempt_number must be contiguous from 1 for {operation_key}")
+        if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts != len(seen):
+            violations.append(f"{prefix}.blocker_attempts must equal the unique evidence count")
+        if blocker_type == "repeated_failure" and len(seen) < 2:
+            violations.append(f"{prefix} repeated_failure requires at least 2 attempts")
+        if blocker_type in {"user_decision", "destructive_action"} and _is_none_value(pending_confirmations):
+            violations.append(f"{prefix} requires the same item in pending_confirmations")
+        if blocker_type == "missing_input" and implementation_route != "not_started":
+            violations.append(f"{prefix} missing_input requires implementation_route: not_started")
+        if blocker_type == "route_unavailable" and "unavailable" not in routes:
+            violations.append(f"{prefix} route_unavailable requires an unavailable route")
+        if blocker_type == "target_expansion" and review_status != PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS:
+            violations.append(f"{prefix} target_expansion requires the scope-expansion review_status")
+    return violations
+
+
+def _iter_transcript_tool_pairs(
+    transcript_path: str,
+) -> tuple[dict[str, dict[str, object]], dict[str, str]]:
+    """JSONLからtool useと対応result本文を識別子別に収集する。"""
+    uses: dict[str, dict[str, object]] = {}
+    results: dict[str, str] = {}
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return uses, results
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not _is_object_dict(block):
+                continue
+            if block.get("type") == "tool_use":
+                tool_use_id = block.get("id")
+                if isinstance(tool_use_id, str):
+                    uses[tool_use_id] = block
+            elif block.get("type") == "tool_result":
+                tool_use_id = block.get("tool_use_id")
+                if isinstance(tool_use_id, str):
+                    results[tool_use_id] = _content_text(block.get("content"))
+    return uses, results
+
+
+def _content_text(content: object) -> str:
+    """Tool result contentを照合可能な文字列へ正規化する。"""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, str):
+            parts.append(item)
+        elif _is_object_dict(item):
+            text = item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _contains_execution_track(value: object, track: str) -> bool:
+    """Tool inputの再帰構造内に指定execution_trackがあるかを返す。"""
+    if isinstance(value, str):
+        return re.search(rf"(?m)^execution_track:\s*{re.escape(track)}\s*$", value) is not None
+    if isinstance(value, dict):
+        return any(_contains_execution_track(item, track) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_execution_track(item, track) for item in value)
+    return False
+
+
+def _json_result_id(result_text: str, *keys: str) -> str | None:
+    """JSON resultの指定キー階層から文字列識別子を返す。"""
+    try:
+        value: object = json.loads(result_text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    for key in keys:
+        if not _is_object_dict(value):
+            return None
+        value = value.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _tool_result_route_id(tool_name: str, result_text: str) -> str | None:
+    """tool種別に応じて結果本文からroute識別子を抽出する。"""
+    if tool_name in {"mcp__codex__codex", "mcp__codex__codex-reply"}:
+        return _json_result_id(result_text, "threadId")
+    if tool_name in {"Agent", "Task"}:
+        match = re.search(r"(?m)^agentId:\s*(\S+)\s*$", result_text)
+        return match.group(1) if match else None
+    if tool_name == "SendMessage":
+        return _json_result_id(result_text, "pin", "id")
+    return None
+
+
+def _inspect_implementation_route_evidence(text: str, transcript_path: str | None) -> list[str]:
+    """申告した実装経路をexecutor JSONLのtool use/resultと照合する。"""
+    route = _extract_report_first_line(text, "implementation_route")
+    expected_id = (
+        _extract_report_field(text, "implementation_thread_id")
+        if route == "codex"
+        else _extract_report_field(text, "implementation_agent_id")
+    )
+    evidence = _load_report_yaml_field(text, "implementation_route_evidence")
+    if route in {"not_started", "unavailable"}:
+        return [] if _is_none_list(evidence) else ["implementation_route_evidence must be なし for an inactive route"]
+    if not _is_object_dict_list(evidence) or not evidence:
+        return ["implementation_route_evidence must be a non-empty structured list"]
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return ["agent_transcript_path is required to verify implementation_route_evidence"]
+    uses, results = _iter_transcript_tool_pairs(transcript_path)
+    violations: list[str] = []
+    initial_found = False
+    allowed_names = {"mcp__codex__codex", "mcp__codex__codex-reply", "Agent", "Task", "SendMessage"}
+    for index, item in enumerate(evidence, start=1):
+        tool_name = item.get("tool_name")
+        tool_use_id = item.get("tool_use_id")
+        route_id = item.get("route_id")
+        prefix = f"implementation_route_evidence[{index}]"
+        if (
+            not isinstance(tool_name, str)
+            or tool_name not in allowed_names
+            or not isinstance(tool_use_id, str)
+            or not isinstance(route_id, str)
+        ):
+            violations.append(f"{prefix} must contain a supported tool_name, tool_use_id, and route_id")
+            continue
+        tool_use = uses.get(tool_use_id)
+        result_text = results.get(tool_use_id)
+        if tool_use is None or result_text is None:
+            violations.append(f"{prefix}.tool_use_id does not resolve to a tool use/result pair")
+            continue
+        if tool_use.get("name") != tool_name:
+            violations.append(f"{prefix}.tool_name does not match the transcript")
+            continue
+        tool_input = tool_use.get("input")
+        actual_id = _tool_result_route_id(tool_name, result_text)
+        if route_id != expected_id or actual_id != expected_id:
+            violations.append(f"{prefix}.route_id does not match the implementation identity")
+        if tool_name == "mcp__codex__codex":
+            initial_found = True
+            if route != "codex" or not _contains_execution_track(tool_input, "implementation"):
+                violations.append(f"{prefix} is not an implementation-track Codex initial call")
+        elif tool_name == "mcp__codex__codex-reply":
+            if not _is_object_dict(tool_input) or tool_input.get("threadId") != expected_id:
+                violations.append(f"{prefix} does not continue the implementation thread")
+        elif tool_name in {"Agent", "Task"}:
+            initial_found = True
+            if route != "claude" or not _contains_execution_track(tool_input, "implementation"):
+                violations.append(f"{prefix} is not an implementation-track Claude initial call")
+        elif tool_name == "SendMessage":
+            if not _is_object_dict(tool_input) or tool_input.get("to") != expected_id:
+                violations.append(f"{prefix} does not continue the implementation Agent")
+    if not initial_found:
+        violations.append("implementation_route_evidence requires an initial implementation tool call")
+
+    review_ids: set[str] = set()
+    for tool_use_id, tool_use in uses.items():
+        if not any(_contains_execution_track(tool_use.get("input"), track) for track in ("plan_review", "independent_review")):
+            continue
+        result_text = results.get(tool_use_id)
+        if result_text is not None:
+            review_id = _tool_result_route_id(str(tool_use.get("name", "")), result_text)
+            if review_id is not None:
+                review_ids.add(review_id)
+    if expected_id in review_ids:
+        violations.append("implementation identity must not be reused from a review track")
+    return violations
 
 
 def _inspect_skipped_review_fields(final_findings: str, skip_instruction: str, rounds: int, resolution: str) -> list[str]:
@@ -379,45 +713,34 @@ def _resolve_payload_agent_id(payload: dict) -> str | None:
 
 def _inspect_plan_impl_executor_report_format(
     payload: dict,
-) -> tuple[list[str], bool, list[str], tuple[str, str] | None]:
+) -> tuple[list[str], bool, list[str], list[str]]:
     """完了報告のラベル、background起動宣言、レビュー値を状態変更なしで検査する。"""
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return [], False, [], None
+        return [], False, [], []
     agent_id = _resolve_payload_agent_id(payload)
     if agent_id is None:
-        return [], False, [], None
+        return [], False, [], []
     state = read_state(session_id)
     active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
     if not isinstance(active, dict) or agent_id not in active:
-        return [], False, [], None
+        return [], False, [], []
 
-    token = (session_id, agent_id)
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
-        return list(PLAN_IMPL_EXECUTOR_REQUIRED_LABELS), False, [], token
+        return list(PLAN_IMPL_EXECUTOR_REQUIRED_LABELS), False, [], []
     required = list(PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
-    if _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE.search(text):
-        required.append(_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL)
     missing = [label for label in required if re.search(rf"^{re.escape(label)}:", text, re.MULTILINE) is None]
     violation = _detect_plan_impl_executor_background_parallel_violation(text)
     review_value_violations = [] if missing else _inspect_plan_impl_executor_review_values(text)
-    return missing, violation, review_value_violations, token
-
-
-def _consume_plan_impl_executor_active_entry(token: tuple[str, str]) -> None:
-    """承認したexecutor完了報告に対応する登録エントリを消費する。"""
-    session_id, agent_id = token
-
-    def _drop_entry(current_state: dict, aid: str = agent_id) -> dict | None:
-        current_active = current_state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
-        if not isinstance(current_active, dict) or aid not in current_active:
-            return None
-        del current_active[aid]
-        current_state[_PLAN_IMPL_EXECUTOR_ACTIVE_KEY] = current_active
-        return current_state
-
-    update_state(session_id, _drop_entry)
+    contract_violations: list[str] = []
+    if not missing:
+        contract_violations.extend(_inspect_structured_blockers(text))
+        transcript_path = payload.get("agent_transcript_path")
+        if not isinstance(transcript_path, str) or not transcript_path:
+            transcript_path = payload.get("transcript_path")
+        contract_violations.extend(_inspect_implementation_route_evidence(text, transcript_path))
+    return missing, violation, review_value_violations, contract_violations
 
 
 def main(payload_text: str) -> int:
@@ -427,8 +750,13 @@ def main(payload_text: str) -> int:
     except json.JSONDecodeError:
         return 0
 
+    # 再帰呼び出し時は最初に強制承認する。active登録は親SessionEndまで保持する。
+    if payload.get("stop_hook_active") is True:
+        print(json.dumps({"decision": "approve"}, ensure_ascii=False))
+        return 0
+
     text = payload.get("last_assistant_message")
-    missing_labels, has_background_parallel_violation, review_value_violations, active_token = (
+    missing_labels, has_background_parallel_violation, review_value_violations, contract_violations = (
         _inspect_plan_impl_executor_report_format(payload)
     )
 
@@ -440,20 +768,6 @@ def main(payload_text: str) -> int:
     has_pending = isinstance(agent_transcript_path, str) and has_pending_agent_launches(
         agent_transcript_path, session_id if isinstance(session_id, str) else ""
     )
-
-    # 再帰呼び出し時は強制承認する。登録済みexecutorの正しい最終報告であり、
-    # 未消化の子起動が無い場合に限って登録エントリも消費する。
-    if payload.get("stop_hook_active") is True:
-        if (
-            active_token is not None
-            and not missing_labels
-            and not has_background_parallel_violation
-            and not review_value_violations
-            and not has_pending
-        ):
-            _consume_plan_impl_executor_active_entry(active_token)
-        print(json.dumps({"decision": "approve"}, ensure_ascii=False))
-        return 0
 
     # 登録済みexecutorの書式違反は、未消化の子起動があっても先に差し戻す。
     if missing_labels:
@@ -475,6 +789,18 @@ def main(payload_text: str) -> int:
             " See `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`"
             " '完了報告の検収' section for the required value combinations."
             " When resubmitting, restate the entire original completion report with consistent values"
+            " (the main agent does not retain the body across this hook's block).",
+            tag="block",
+        )
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+        return 0
+    if contract_violations:
+        reason = _llm_notice(
+            "blocked: `plan-impl-executor` completion report has invalid blocker or implementation-route evidence:"
+            f" {'; '.join(contract_violations)}."
+            " See `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`"
+            " '完了報告の検収' section for the structured contract."
+            " When resubmitting, restate the entire original completion report with corrected evidence"
             " (the main agent does not retain the body across this hook's block).",
             tag="block",
         )
@@ -509,6 +835,4 @@ def main(payload_text: str) -> int:
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0
 
-    if active_token is not None:
-        _consume_plan_impl_executor_active_entry(active_token)
     return 0
