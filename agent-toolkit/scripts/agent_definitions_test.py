@@ -256,8 +256,11 @@ def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
 
 
 def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
-    """二系統レビューの証跡出力と修正系の区分・影響監査責務を同期する。"""
+    """静的検査と二系統レビューの並列実行および既存責務を同期する。"""
     review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
+    initial_review = _h2_section(review, "初回レビュー")
+    rereview = _h2_section(review, "再レビュー")
+    executor_delegation = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "委譲")
     implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     review_tasks = (
         _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
@@ -275,6 +278,38 @@ def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
     assert "計画対応・独立提案" in implementation_task
     assert "一括修正による影響を監査する" in implementation_task
     assert "review_impact_audit" in implementation_task
+    for phrase in (
+        "静的検査、計画準拠系レビュー、独立系レビューの3件を同時に開始する",
+        "初回レビューでは、静的検査専用の継続指示を実装・修正系へ送る",
+        "実装・修正系の既存route、thread、Agent識別子を継続する",
+        "第4系統や新しいtask referenceは追加しない",
+        "レビュー系へ静的検査結果を渡さず、静的検査の完了も待たない",
+        "3結果を独立に検収する",
+        "既存の`verification`",
+        "終了コードが0以外、または未解消warning",
+        "レビュー指摘の有無にかかわらず実装・修正系へ戻す",
+        "静的検査結果をレビュー指摘へ変換しない",
+    ):
+        assert phrase in initial_review
+    for phrase in (
+        "採用指摘または静的検査失敗の修正後",
+        "静的検査と二系統レビューの3件を同時に再実行する",
+        "静的検査結果をレビュー系の継続入力へ追加しない",
+        "3結果の独立検収と修正系への差し戻し条件は初回と同じ",
+    ):
+        assert phrase in rereview
+    for phrase in (
+        "初回レビューでは、静的検査専用の継続指示を実装・修正系へ送る",
+        "同時に、計画準拠系と独立系へレビュー用タスク本文を並列に渡す",
+        "実装・修正系の既存route、thread、Agent識別子を継続する",
+        "第4系統や新しいtask referenceは追加しない",
+        "静的検査結果と両レビュー応答の3結果を受領",
+        "採用指摘または静的検査失敗の修正後",
+        "同時に、両レビュー系へ系統別の再レビュー用タスク本文を渡す",
+        "3結果を受領し、初回と同じ方法で独立に検収する",
+        "静的検査結果をレビュー系の継続入力へ追加しない",
+    ):
+        assert phrase in executor_delegation
 
 
 def test_plan_impl_review_cap_contract_is_synchronized() -> None:
