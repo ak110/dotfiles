@@ -158,6 +158,12 @@ def test_header_layout_and_additional_filters_structure() -> None:
     assert "overflow: hidden;" in filename_rule.group(1)
     assert "text-overflow: ellipsis;" in filename_rule.group(1)
 
+    target_repo_rule = re.search(r"\.entry-cell\.target-repo-cell\s*\{([^}]*)\}", assets.CSS)
+    assert target_repo_rule is not None
+    assert "white-space: nowrap;" in target_repo_rule.group(1)
+    assert "overflow: hidden;" in target_repo_rule.group(1)
+    assert "text-overflow: ellipsis;" in target_repo_rule.group(1)
+
     mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
     assert ".checkbox-field {\n    grid-column: auto;\n  }" in mobile
 
@@ -219,8 +225,9 @@ class Element {{
 const ids = [
   'connection-status', 'refresh-button', 'create-button', 'global-error',
   'search-input', 'kind-filter', 'state-filter', 'answer-filter', 'target-filter',
-  'category-filter', 'source-filter', 'source-empty-filter', 'entry-count', 'loading-indicator',
-  'entry-list', 'empty-state', 'empty-create-button', 'detail-dialog',
+  'category-filter', 'source-filter', 'source-empty-filter', 'entry-heading', 'entry-count',
+  'loading-indicator', 'entry-list', 'other-entry-group', 'other-entry-heading',
+  'other-entry-count', 'other-entry-list', 'empty-state', 'empty-create-button', 'detail-dialog',
   'detail-close-button',
   'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
   'detail-content', 'readonly-notice', 'detail-actions', 'edit-button',
@@ -390,6 +397,7 @@ const timeFallbacks = [null, 'not-a-date'].map(updatedAt => {
 });
 process.stdout.write(JSON.stringify({
   labels: cells.map(cell => cell.dataset.label),
+  classes: cells.map(cell => cell.className),
   displayedValues: cells.map(cell => cell.textContent.trim().split(/\\s+/).slice(0, 3).join(' ')),
   accessibleName: row.children[0].attributes['aria-label'],
   hasTimeElement: timeCell.children[0] ? timeCell.children[0].tagName : null,
@@ -404,6 +412,7 @@ process.stdout.write(JSON.stringify({
     assert rendered["labels"] == ["ファイル名", "対象リポジトリ", "種別・状態・回答状況", "更新日時", "要約"]
     assert rendered["displayedValues"][0] == "entry.md"
     assert rendered["displayedValues"][1] == "example/repo"
+    assert rendered["classes"][1] == "entry-cell target-repo-cell"
     # 状態集約セルは複数のバッジを含む
     assert "確認事項" in rendered["accessibleName"]
     assert "処理中" in rendered["accessibleName"]
@@ -558,20 +567,42 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_present_search_filters_count_and_empty_state() -> None:
-    """検索、フィルター、並び順、件数、読込中、空状態を検証する。"""
+    """検索、フィルター、一覧分割、並び順、件数、読込中、空状態を検証する。"""
+    assert '<h2 id="other-entry-heading">その他一覧</h2>' in assets.HTML
     result = _run_node_ui(
         """
 bindEvents();
 entries = [
   {kind: 'feedback', state: 'inbox', filename: 'old.md', summary: '対象外',
-   target_repo: 'other/repo', category: 'x', source: 'cli', updated_at: '2025-01-01'},
+   answered: null, target_repo: 'other/repo', category: 'x', source: 'cli', updated_at: '2025-01-01'},
   {kind: 'tbd', state: 'processing', filename: 'new.md', summary: '探す文字',
-   target_repo: 'example/repo', category: 'category-token', source: 'source-token', updated_at: '2026-01-01'},
+   answered: false, target_repo: 'example/repo', category: 'category-token', source: 'source-token', updated_at: '2026-01-01'},
+  {kind: 'tbd', state: 'inbox', filename: 'answered.md', summary: '回答済み',
+   answered: true, target_repo: 'example/repo', category: null, source: 'web', updated_at: '2025-07-01'},
+  {kind: 'tbd', state: 'adopted', filename: 'finished.md', summary: '完了状態',
+   answered: false, target_repo: 'example/repo', category: null, source: 'web', updated_at: '2025-08-01'},
   {kind: 'feedback', state: 'inbox', filename: 'empty-source.md', summary: '投入元なし',
-   target_repo: 'example/repo', category: null, source: null, updated_at: '2025-06-01'}
+   answered: null, target_repo: 'example/repo', category: null, source: null, updated_at: '2025-06-01'}
 ];
 applyClientFilters();
-const sortedKeys = elements['entry-list'].children.map(item => item.children[0].dataset.key);
+const splitState = {
+  heading: elements['entry-heading'].textContent,
+  count: elements['entry-count'].textContent,
+  primaryKeys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
+  otherHidden: elements['other-entry-group'].hidden,
+  otherCount: elements['other-entry-count'].textContent,
+  otherKeys: elements['other-entry-list'].children.map(item => item.children[0].dataset.key)
+};
+elements['search-input'].value = '回答済み';
+applyClientFilters();
+const unsplitState = {
+  heading: elements['entry-heading'].textContent,
+  count: elements['entry-count'].textContent,
+  primaryKeys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
+  otherHidden: elements['other-entry-group'].hidden,
+  otherCount: elements['other-entry-count'].textContent,
+  otherKeys: elements['other-entry-list'].children.map(item => item.children[0].dataset.key)
+};
 elements['search-input'].value = '探す';
 elements['target-filter'].value = 'example/repo';
 elements['category-filter'].value = 'category-token';
@@ -595,10 +626,15 @@ const sourceSearchKeys = elements['entry-list'].children.map(item => item.childr
 setLoading(true);
 const loadingState = {
   visible: !elements['loading-indicator'].hidden,
-  busy: elements['entry-list'].attributes['aria-busy']
+  primaryBusy: elements['entry-list'].attributes['aria-busy'],
+  otherBusy: elements['other-entry-list'].attributes['aria-busy']
 };
 elements['search-input'].value = '一致しない';
 setLoading(false);
+const loadedState = {
+  primaryBusy: elements['entry-list'].attributes['aria-busy'],
+  otherBusy: elements['other-entry-list'].attributes['aria-busy']
+};
 applyClientFilters();
 elements['source-filter'].value = 'web';
 elements['source-empty-filter'].checked = true;
@@ -614,9 +650,11 @@ const emptySourceState = {
   query: emptySourceQuery
 };
 process.stdout.write(JSON.stringify({
-  sortedKeys,
+  splitState,
+  unsplitState,
   populated,
   loadingState,
+  loadedState,
   categorySearchKeys,
   sourceSearchKeys,
   emptyVisible: !elements['empty-state'].hidden,
@@ -625,7 +663,22 @@ process.stdout.write(JSON.stringify({
 }));
 """
     )
-    assert result["sortedKeys"] == ["new.md", "old.md", "empty-source.md"]
+    assert result["splitState"] == {
+        "heading": "未完了TBD",
+        "count": "1件",
+        "primaryKeys": ["new.md"],
+        "otherHidden": False,
+        "otherCount": "4件",
+        "otherKeys": ["finished.md", "answered.md", "old.md", "empty-source.md"],
+    }
+    assert result["unsplitState"] == {
+        "heading": "一覧",
+        "count": "1件",
+        "primaryKeys": ["answered.md"],
+        "otherHidden": True,
+        "otherCount": "0件",
+        "otherKeys": [],
+    }
     assert result["populated"]["count"] == "1件"
     assert result["populated"]["first"] == "new.md"
     assert result["populated"]["emptyHidden"] is True
@@ -634,7 +687,8 @@ process.stdout.write(JSON.stringify({
     assert "source=source-token" in result["populated"]["query"]
     assert result["categorySearchKeys"] == ["new.md"]
     assert result["sourceSearchKeys"] == ["new.md"]
-    assert result["loadingState"] == {"visible": True, "busy": "true"}
+    assert result["loadingState"] == {"visible": True, "primaryBusy": "true", "otherBusy": "true"}
+    assert result["loadedState"] == {"primaryBusy": "false", "otherBusy": "false"}
     assert result["emptyVisible"] is True
     assert result["emptyCount"] == "0件"
     assert result["emptySourceState"]["sourceFilterValue"] == ""

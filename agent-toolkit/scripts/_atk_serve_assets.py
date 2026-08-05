@@ -124,6 +124,20 @@ HTML = """<!doctype html>
         <span>要約</span>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
+      <div id="other-entry-group" class="entry-group" hidden>
+        <div class="pane-heading">
+          <h2 id="other-entry-heading">その他一覧</h2>
+          <span id="other-entry-count" class="secondary-text">0件</span>
+        </div>
+        <div class="entry-columns" aria-hidden="true">
+          <span>ファイル名</span>
+          <span>対象リポジトリ</span>
+          <span>種別・状態・回答状況</span>
+          <span>更新日時</span>
+          <span>要約</span>
+        </div>
+        <ul id="other-entry-list" class="entry-list" aria-label="その他のエントリ一覧"></ul>
+      </div>
       <div id="empty-state" class="empty-state" hidden>
         <p>条件に一致する項目はありません。</p>
         <button id="empty-create-button" class="button-primary" type="button">最初の項目を追加</button>
@@ -519,6 +533,10 @@ button:disabled {
   list-style: none;
 }
 
+.entry-group {
+  margin-top: var(--space-5);
+}
+
 .entry-row {
   margin: 0;
 }
@@ -551,6 +569,12 @@ button:disabled {
 }
 
 .entry-cell.filename-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-cell.target-repo-cell {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -976,6 +1000,7 @@ function setLoading(value) {
   byId('loading-indicator').hidden = !value;
   byId('refresh-button').disabled = value;
   byId('entry-list').setAttribute('aria-busy', String(value));
+  byId('other-entry-list').setAttribute('aria-busy', String(value));
 }
 
 function showToast(message) {
@@ -1069,7 +1094,7 @@ function renderEntry(entry) {
   };
 
   const filename = cell('ファイル名', entry.filename, 'filename-cell');
-  const targetRepo = cell('対象リポジトリ', entry.target_repo);
+  const targetRepo = cell('対象リポジトリ', entry.target_repo, 'target-repo-cell');
 
   const statusCell = document.createElement('span');
   statusCell.className = 'entry-cell status-cell';
@@ -1144,9 +1169,21 @@ function renderEntry(entry) {
 }
 
 function renderList() {
-  byId('entry-count').textContent = `${visibleEntries.length}件`;
+  const unfinishedTbdEntries = visibleEntries.filter(entry => (
+    entry.kind === 'tbd' && entry.answered === false && ACTIVE_STATES.has(entry.state)
+  ));
+  const hasUnfinishedTbd = unfinishedTbdEntries.length > 0;
+  const primaryEntries = hasUnfinishedTbd ? unfinishedTbdEntries : visibleEntries;
+  const otherEntries = hasUnfinishedTbd
+    ? visibleEntries.filter(entry => !unfinishedTbdEntries.includes(entry))
+    : [];
+  byId('entry-heading').textContent = hasUnfinishedTbd ? '未完了TBD' : '一覧';
+  byId('entry-count').textContent = `${primaryEntries.length}件`;
+  byId('other-entry-count').textContent = `${otherEntries.length}件`;
+  byId('other-entry-group').hidden = !hasUnfinishedTbd;
   byId('empty-state').hidden = loading || visibleEntries.length > 0;
-  byId('entry-list').replaceChildren(...visibleEntries.map(renderEntry));
+  byId('entry-list').replaceChildren(...primaryEntries.map(renderEntry));
+  byId('other-entry-list').replaceChildren(...otherEntries.map(renderEntry));
 }
 
 function renderMetadata(entry) {
