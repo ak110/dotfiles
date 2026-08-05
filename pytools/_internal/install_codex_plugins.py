@@ -7,11 +7,18 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
+_CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
+    message=(
+        "Codex pluginを更新しました。実行中のCodexセッションを終了してから、"
+        "次のコマンドでapp-server daemonを再起動してください。"
+    ),
+    command="codex app-server daemon restart",
+)
 
 # dotfiles自身以外のマーケットプレイスから導入するプラグイン。
 # (マーケットプレイス名, 登録ソース, プラグイン識別子) の組で保持する。
@@ -102,9 +109,18 @@ def _canonical_github_https_source(source: str, *, allow_shorthand: bool) -> str
     return f"https://github.com/{owner}/{name}.git"
 
 
-def _install_external_plugins() -> bool:
+def _outcome(
+    changed: bool,
+    notices: list[post_apply_outcome.PostApplyNotice] | tuple[post_apply_outcome.PostApplyNotice, ...],
+) -> post_apply_outcome.PostApplyOutcome:
+    """案内を初出順で重複排除した結果を返す。"""
+    return post_apply_outcome.PostApplyOutcome(changed=changed, notices=tuple(dict.fromkeys(notices)))
+
+
+def _install_external_plugins() -> post_apply_outcome.PostApplyOutcome:
     """外部マーケットプレイスを登録し、未導入のプラグインを導入する。"""
     changed = False
+    notices: list[post_apply_outcome.PostApplyNotice] = []
     for marketplace_name, source, plugin_id in _EXTERNAL_PLUGINS:
         marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
         if marketplace_data is None:
@@ -132,7 +148,8 @@ def _install_external_plugins() -> bool:
             logger.warning(log_format.format_status(plugin_id, "plugin導入に失敗したため続行"))
             continue
         changed = True
-    return changed
+        notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
+    return _outcome(changed, notices)
 
 
 def _is_link(path: Path) -> bool:
@@ -159,7 +176,7 @@ def _remove_legacy_links(root: Path) -> bool:
         if not _is_link(path):
             continue
         try:
-            target = path.resolve(strict=True)
+            target = path.resolve(strict=False)
             target.relative_to(source_root)
         except (OSError, ValueError):
             continue
@@ -168,43 +185,46 @@ def _remove_legacy_links(root: Path) -> bool:
     return changed
 
 
-def run() -> bool:
+def run() -> post_apply_outcome.PostApplyOutcome:
     """marketplaceを登録してagent-toolkitを導入・更新する。"""
     if shutil.which("codex") is None:
         logger.info(log_format.format_status("codex plugins", "codex CLIが見つからずスキップ"))
-        return False
-    external_changed = _install_external_plugins()
+        return _outcome(False, [])
+    external_outcome = _install_external_plugins()
+    changed = external_outcome.changed
+    notices = list(external_outcome.notices)
     root = claude_common.find_dotfiles_root()
     if root is None:
-        return external_changed
+        return _outcome(changed, notices)
     target = _target(root)
     if target is None:
         logger.warning(log_format.format_status("codex plugins", "Codex plugin manifestが不正なためスキップ"))
-        return external_changed
+        return _outcome(changed, notices)
     marketplace_name, plugin_name, version = target
     marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
     if marketplace_data is None:
-        return external_changed
+        return _outcome(changed, notices)
     registered_root = _marketplace_root(marketplace_data, marketplace_name)
-    changed = False
     if registered_root is None:
         if not _command(["plugin", "marketplace", "add", str(root)]):
-            return external_changed
+            return _outcome(changed, notices)
         changed = True
     elif registered_root != root.resolve():
         logger.error(log_format.format_status("codex plugins", f"marketplace登録先が異なる: {registered_root}"))
-        return external_changed
+        return _outcome(changed, notices)
 
     plugin_id = f"{plugin_name}@{marketplace_name}"
     before = _codex_json(["plugin", "list", "--json"])
     current = _installed(before, plugin_id) if before else None
-    if current is None or current.get("version") != version or current.get("enabled") is not True:
-        changed = True
+    if current is not None and current.get("version") == version and current.get("enabled") is True:
+        return _outcome(changed or _remove_legacy_links(root), notices)
     if not _command(["plugin", "add", plugin_id]):
-        return external_changed
+        return _outcome(changed, notices)
+    changed = True
+    notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
     after = _codex_json(["plugin", "list", "--json"])
     installed = _installed(after, plugin_id) if after else None
     if installed is None or installed.get("version") != version or installed.get("enabled") is not True:
-        return external_changed
+        return _outcome(changed, notices)
     legacy_changed = _remove_legacy_links(root)
-    return external_changed or legacy_changed or changed
+    return _outcome(changed or legacy_changed, notices)

@@ -18,6 +18,7 @@ from pytools._internal import (
     install_codex_plugins,
     install_libarchive_windows,
     log_format,
+    post_apply_outcome,
     setup_atk_serve_linux,
     setup_bin_path,
     setup_claude_cli,
@@ -206,6 +207,7 @@ class _StepResult:
     name: str
     ok: bool
     changed: bool
+    notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
 
 
 def _cleanup_removed_paths() -> bool:
@@ -222,8 +224,8 @@ def _cleanup_removed_paths() -> bool:
     return total_removed > 0
 
 
-# ステップ関数の戻り値型。通常ステップは bool、install_claude_plugins だけ推奨コマンドを含むタプルを返す。
-StepReturn = bool | tuple[bool, list[str]]
+# ステップ関数の戻り値型。通常ステップは bool、個別の出力を持つステップは構造化した値を返す。
+StepReturn = bool | tuple[bool, list[str]] | post_apply_outcome.PostApplyOutcome
 
 _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("bin PATH 登録 (Windows)", setup_bin_path.run),
@@ -264,14 +266,15 @@ def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
+        notices = [notice for result in results for notice in result.notices]
         # logger.info("") だと format により末尾空白が付与されるため、stdout に直接出力する。
         print(flush=True)
         logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
-            sys.exit(1)
-        sys.exit(0)
+        _print_post_apply_notices(notices)
+        sys.exit(1 if failed else 0)
     finally:
         root_logger = logging.getLogger()
         root_logger.handlers[:] = previous_handlers
@@ -302,6 +305,18 @@ def _print_plugin_recommendations(recommendations: list[str]) -> None:
             print(f"{cmd} && {continuation}", flush=True)
 
 
+def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
+    """post-apply完了時の案内をstderrへ表示する。"""
+    unique_notices = tuple(dict.fromkeys(notices))
+    if not unique_notices:
+        return
+    print(file=sys.stderr, flush=True)
+    for notice in unique_notices:
+        logger.warning(notice.message)
+        if notice.command is not None:
+            print(notice.command, file=sys.stderr, flush=True)
+
+
 def run(steps: list[tuple[str, Callable[[], StepReturn]]] | None = None) -> tuple[list[_StepResult], list[str]]:
     """各ステップを順に実行し、`(results, recommendations)` を返す。
 
@@ -322,13 +337,17 @@ def run(steps: list[tuple[str, Callable[[], StepReturn]]] | None = None) -> tupl
             results.append(_StepResult(name=name, ok=False, changed=False))
             continue
         # install_claude_plugins.run() は (changed, recommendations) を返す。
-        # 他のステップは bool を返すため isinstance で振り分ける。
-        if isinstance(ret, tuple):
+        # 構造化結果、推奨コマンドを持つタプル、bool の順に振り分ける。
+        notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
+        if isinstance(ret, post_apply_outcome.PostApplyOutcome):
+            changed = ret.changed
+            notices = ret.notices
+        elif isinstance(ret, tuple):
             changed, step_recs = ret
             recommendations.extend(step_recs)
         else:
             changed = ret
-        results.append(_StepResult(name=name, ok=True, changed=changed))
+        results.append(_StepResult(name=name, ok=True, changed=changed, notices=notices))
     return results, recommendations
 
 

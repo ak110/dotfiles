@@ -17,6 +17,7 @@ $legacyDir = Join-Path $HOME '.claude/rules/agent-basics'
 # ステージング先は rules/ の外に置く。
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 $stageRoot = Join-Path $HOME '.claude/rules-stage'
+$script:codexPluginUpdated = $false
 
 # 配布対象ファイル一覧。
 # `scripts/gen-install-files.py`が`agent-toolkit/rules/*.md`から自動生成する。
@@ -74,7 +75,13 @@ function Install-CodexPlugin {
     & codex plugin marketplace add ak110/dotfiles --json 2>&1 | Out-Null
     Invoke-RequiredNativeCommand codex @('plugin', 'marketplace', 'upgrade', 'ak110-dotfiles', '--json')
     Invoke-RequiredNativeCommand codex @('plugin', 'add', 'agent-toolkit@ak110-dotfiles', '--json')
+    $script:codexPluginUpdated = $true
     Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
+}
+
+function Write-CodexRestartNotice {
+    [Console]::Error.WriteLine('Codex pluginを更新しました。実行中のCodexセッションを終了してから、次のコマンドでapp-server daemonを再起動してください。')
+    [Console]::Error.WriteLine('codex app-server daemon restart')
 }
 
 function Test-UserCodexMcp {
@@ -202,4 +209,14 @@ function Main {
     }
 }
 
-Main
+$exitCode = 0
+try {
+    Main
+} catch {
+    $exitCode = 1
+    [Console]::Error.WriteLine($_.Exception.Message)
+}
+if ($script:codexPluginUpdated) {
+    Write-CodexRestartNotice
+}
+exit $exitCode

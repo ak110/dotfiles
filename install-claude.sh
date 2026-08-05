@@ -33,6 +33,7 @@ STAGE_DIR=""
 OLD_DIR=""
 # 差し替え完了後は OLD_DIR を削除扱いとするため本フラグで区別する（エラー時の復元を抑止）
 REPLACED=0
+CODEX_PLUGIN_UPDATED=0
 
 _cleanup() {
     # エラー終了時に既存の TARGET_DIR を可能な限り復元する。
@@ -44,7 +45,22 @@ _cleanup() {
     [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ] && rm -rf "$OLD_DIR"
     return 0
 }
-trap _cleanup EXIT
+
+_print_codex_restart_notice() {
+    echo "Codex pluginを更新しました。実行中のCodexセッションを終了してから、次のコマンドでapp-server daemonを再起動してください。" >&2
+    echo "codex app-server daemon restart" >&2
+}
+
+_on_exit() {
+    local status=$?
+    trap - EXIT
+    _cleanup
+    if [ "$CODEX_PLUGIN_UPDATED" -eq 1 ]; then
+        _print_codex_restart_notice
+    fi
+    exit "$status"
+}
+trap _on_exit EXIT
 
 _download() {
     local name="$1"
@@ -80,6 +96,7 @@ _install_codex_plugin() {
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
     codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
     codex plugin add agent-toolkit@ak110-dotfiles --json >/dev/null
+    CODEX_PLUGIN_UPDATED=1
     echo "Codex側のagent-toolkitプラグインを設定しました。"
 }
 

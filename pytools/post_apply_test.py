@@ -7,6 +7,7 @@
 import pytest
 
 from pytools import post_apply
+from pytools._internal import post_apply_outcome
 
 
 def _make_step(name: str, calls: list[str], changed: bool = False):
@@ -34,6 +35,15 @@ def _make_plugin_step(recommendations: list[str]):
 
     def fn() -> tuple[bool, list[str]]:
         return True, recommendations
+
+    return fn
+
+
+def _make_outcome_step(*, changed: bool, notices: tuple[post_apply_outcome.PostApplyNotice, ...]):
+    """構造化したpost-apply結果を返すステップ関数を返す。"""
+
+    def fn() -> post_apply_outcome.PostApplyOutcome:
+        return post_apply_outcome.PostApplyOutcome(changed=changed, notices=notices)
 
     return fn
 
@@ -177,6 +187,53 @@ class TestRun:
         assert "失敗したステップ" not in captured.out
         assert "失敗したステップ: broken" in captured.err
         assert "完了:" not in captured.err
+
+    def test_structured_outcome_preserves_changed_and_notices(self) -> None:
+        """構造化結果の変更有無と案内をステップ結果へ保持する。"""
+        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。", "codex app-server daemon restart")
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("Codex plugin", _make_outcome_step(changed=True, notices=(notice,))),
+        ]
+
+        results, recommendations = post_apply.run(steps=steps)
+
+        assert recommendations == []
+        assert results[0].changed is True
+        assert results[0].notices == (notice,)
+
+    def test_main_prints_deduplicated_notice_to_stderr_with_command_last(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """重複した案内をstderrへ1回表示し、再起動コマンドを最終行に置く。"""
+        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。", "codex app-server daemon restart")
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("first", _make_outcome_step(changed=True, notices=(notice,))),
+            ("second", _make_outcome_step(changed=True, notices=(notice,))),
+        ]
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "codex app-server daemon restart" not in captured.out
+        assert captured.err.count("Codex pluginを更新しました。") == 1
+        assert captured.err.splitlines()[-1] == "codex app-server daemon restart"
+
+    def test_main_keeps_notice_on_later_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """案内の発生後に後続が失敗しても非0終了と案内を両立する。"""
+        calls: list[str] = []
+        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。", "codex app-server daemon restart")
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("Codex plugin", _make_outcome_step(changed=True, notices=(notice,))),
+            ("broken", _make_broken_step("broken", calls)),
+        ]
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "失敗したステップ: broken" in captured.err
+        assert captured.err.splitlines()[-1] == "codex app-server daemon restart"
 
 
 class TestDefaultSteps:

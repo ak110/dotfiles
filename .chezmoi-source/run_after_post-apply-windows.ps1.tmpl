@@ -7,9 +7,9 @@ $ErrorActionPreference = 'Stop'
 #
 # NOTE: 対応するLinux版 → run_after_post-apply.sh.tmpl
 #
-# 1. pytools を editable install する (pyproject.toml ハッシュと期待シム実在の両方をキャッシュキーとする)
-# 2. dotfiles-post-apply.exe を実行する
-#    (CLI本体 / 設定 / SSH config / 旧配布物 / plugin / MCPを順に更新)
+# 1. pytools を必要時に再導入する。
+# 2. OS固有の後処理を完了する。
+# 3. dotfiles-post-apply.exe を最終出力主体として実行する。
 
 $cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $hashFile = Join-Path $cacheDir 'pytools.hash'
@@ -34,6 +34,7 @@ function Test-ExpectedShims {
 $needsReinstall = ($currentHash -ne $cachedHash) -or (-not (Test-ExpectedShims))
 
 $viewerBin = Join-Path $env:USERPROFILE '.local\bin\claude-plans-viewer.exe'
+$mediaRemoteBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-media-remote.exe'
 # uv tool venvの場所はOSと環境変数（UV_TOOL_DIR等）で変動する。
 # `uv tool dir`の出力を一次情報源とし、取得失敗時はWindows既定配置へフォールバックする。
 $uvToolBaseDir = $null
@@ -133,16 +134,6 @@ if (Test-Path $userEnvFile) {
     }
 }
 
-# uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す
-$postApplyBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-post-apply.exe'
-if (Test-Path $postApplyBin) {
-    # dotfiles-post-apply は chezmoi から独立した CLI のため、workingTree を環境変数で渡す
-    $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'
-    & $postApplyBin
-} else {
-    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ"
-}
-
 # 再インストール前に停止した viewer を再起動する。
 # post-apply 側に Windows 用のレストアステップは存在しないため、
 # 本節が「停止済み → 明示的に再開」を単独で担う。
@@ -154,9 +145,13 @@ if ($viewerWasRunning -and (Test-Path $viewerBin)) {
 # 再インストール前に停止した media-remote を再起動する（stheno のみ）。
 # 自動起動は post-apply 側のショートカット配置に委ねるが、再インストール中の停止からの
 # 復帰だけは本節で担当する。
-if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno' -and (Test-Path $mediaRemotePythonw)) {
+if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno') {
     Write-Host '  [pytools] dotfiles-media-remote を再起動'
-    Start-Process -FilePath $mediaRemotePythonw -WindowStyle Hidden -ArgumentList @('-m', 'pytools.media_remote', 'serve')
+    if (Test-Path $mediaRemotePythonw) {
+        Start-Process -FilePath $mediaRemotePythonw -WindowStyle Hidden -ArgumentList @('-m', 'pytools.media_remote', 'serve')
+    } elseif (Test-Path $mediaRemoteBin) {
+        Start-Process -FilePath $mediaRemoteBin -WindowStyle Hidden -ArgumentList @('serve')
+    }
 }
 
 # media-remote 対症療法: stheno ホストでは post-apply 実行ごとに dotfiles-media-remote を停止→再起動する。
@@ -180,5 +175,19 @@ if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {
     if (Test-Path $vbsPath) {
         Write-Host '  [pytools] dotfiles-media-remote を再起動（対症療法）'
         Start-Process -FilePath 'wscript.exe' -ArgumentList @("`"$vbsPath`"") -WindowStyle Hidden
+    } elseif (Test-Path $mediaRemoteBin) {
+        Write-Host '  [pytools] dotfiles-media-remote を再起動（対症療法）'
+        Start-Process -FilePath $mediaRemoteBin -WindowStyle Hidden -ArgumentList @('serve')
     }
+}
+
+# uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す。
+# OS固有処理の後に実行し、post-applyの案内を更新処理全体の最終出力にする。
+$postApplyBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-post-apply.exe'
+if (Test-Path $postApplyBin) {
+    # dotfiles-post-apply は chezmoi から独立した CLI のため、workingTree を環境変数で渡す
+    $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'
+    & $postApplyBin
+} else {
+    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ"
 }

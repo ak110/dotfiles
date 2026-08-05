@@ -1,7 +1,7 @@
 """install_codex_pluginsのテスト。"""
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, cast
 
@@ -41,6 +41,14 @@ def _legacy_link(plugin_env: Path, name: str = "coding") -> Path:
     return destination
 
 
+def _broken_legacy_link(plugin_env: Path, name: str = "removed") -> Path:
+    source = plugin_env / f"agent-toolkit/skills/{name}"
+    destination = install_codex_plugins.CODEX_HOME / f"skills/{name}"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.symlink_to(source, target_is_directory=True)
+    return destination
+
+
 def _installed_state() -> dict[str, object]:
     return {
         "installed": [
@@ -51,6 +59,16 @@ def _installed_state() -> dict[str, object]:
             }
         ]
     }
+
+
+def _recording_success(calls: list[list[str]]) -> Callable[[list[str]], bool]:
+    """引数を記録して成功を返すコマンドスタブを作成する。"""
+
+    def command(args: list[str]) -> bool:
+        calls.append(args)
+        return True
+
+    return command
 
 
 def test_registers_installs_and_removes_expected_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,7 +88,9 @@ def test_registers_installs_and_removes_expected_legacy_link(plugin_env: Path, m
         return True
 
     monkeypatch.setattr(install_codex_plugins, "_command", command)
-    assert install_codex_plugins.run() is True
+    outcome = install_codex_plugins.run()
+    assert outcome.changed is True
+    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
     assert ["plugin", "marketplace", "add", str(plugin_env)] in calls
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
@@ -82,15 +102,71 @@ def test_rejects_mismatched_marketplace_root(plugin_env: Path, monkeypatch: pyte
         "_codex_json",
         lambda _: {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env / "other")}]},
     )
-    assert install_codex_plugins.run() is False
+    outcome = install_codex_plugins.run()
+    assert outcome.changed is False
+    assert not outcome.notices
 
 
-def test_noop_state_still_resyncs_plugin(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_noop_state_skips_resync_and_removes_broken_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    destination = _broken_legacy_link(plugin_env)
     state = _installed_state()
-    responses = iter([{"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]}, state, state])
+    responses = iter([{"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]}, state])
+    calls: list[list[str]] = []
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
-    monkeypatch.setattr(install_codex_plugins, "_command", lambda _: True)
-    assert install_codex_plugins.run() is False
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+    outcome = install_codex_plugins.run()
+    assert outcome.changed is True
+    assert not outcome.notices
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+    assert not destination.is_symlink()
+
+
+def test_version_mismatch_reinstalls_plugin_and_returns_notice(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    before = {
+        "installed": [
+            {"pluginId": "agent-toolkit@ak110-dotfiles", "version": "1.2.2", "enabled": True},
+        ]
+    }
+    responses = iter(
+        [
+            {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
+            before,
+            _installed_state(),
+        ]
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert outcome.notices == (install_codex_plugins._CODEX_PLUGIN_RESTART_NOTICE,)  # noqa: SLF001
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
+
+
+def test_disabled_plugin_reinstalls_and_returns_notice(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    before = {
+        "installed": [
+            {"pluginId": "agent-toolkit@ak110-dotfiles", "version": "1.2.3", "enabled": False},
+        ]
+    }
+    responses = iter(
+        [
+            {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
+            before,
+            _installed_state(),
+        ]
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert outcome.notices == (install_codex_plugins._CODEX_PLUGIN_RESTART_NOTICE,)  # noqa: SLF001
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
 def test_plugin_add_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,7 +179,9 @@ def test_plugin_add_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pyt
     )
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
     monkeypatch.setattr(install_codex_plugins, "_command", lambda _: False)
-    assert install_codex_plugins.run() is False
+    outcome = install_codex_plugins.run()
+    assert outcome.changed is False
+    assert not outcome.notices
     assert destination.is_symlink()
 
 
@@ -118,7 +196,9 @@ def test_post_install_json_failure_keeps_legacy_link(plugin_env: Path, monkeypat
     )
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
     monkeypatch.setattr(install_codex_plugins, "_command", lambda _: True)
-    assert install_codex_plugins.run() is False
+    outcome = install_codex_plugins.run()
+    assert outcome.changed is True
+    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
     assert destination.is_symlink()
 
 
@@ -140,7 +220,9 @@ def test_migration_keeps_unrelated_link_and_regular_directory(plugin_env: Path, 
     )
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
     monkeypatch.setattr(install_codex_plugins, "_command", lambda _: True)
-    assert install_codex_plugins.run() is True
+    outcome = install_codex_plugins.run()
+    assert outcome.changed is True
+    assert not outcome.notices
     assert not expected.exists()
     assert unrelated.is_symlink()
     assert regular.is_dir()
@@ -225,7 +307,9 @@ class TestExternalPlugins:
     def test_registers_and_adds_when_absent(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._setup_run(plugin_env, monkeypatch, registered=False, installed=False)
 
-        assert install_codex_plugins.run() is True
+        outcome = install_codex_plugins.run()
+        assert outcome.changed is True
+        assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
         assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
         assert ["plugin", "add", self._TARGET[2]] in calls
         assert calls[:3] == [
@@ -237,7 +321,9 @@ class TestExternalPlugins:
     def test_skips_when_already_added(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._setup_run(plugin_env, monkeypatch, registered=True, installed=True)
 
-        assert install_codex_plugins.run() is False
+        outcome = install_codex_plugins.run()
+        assert outcome.changed is False
+        assert not outcome.notices
         assert ["plugin", "marketplace", "add", self._TARGET[1]] not in calls
         assert ["plugin", "add", self._TARGET[2]] not in calls
 
@@ -252,7 +338,9 @@ class TestExternalPlugins:
             registered_source="https://github.com/attacker/compact-plus.git",
         )
 
-        assert install_codex_plugins.run() is False
+        outcome = install_codex_plugins.run()
+        assert outcome.changed is False
+        assert not outcome.notices
         assert ["plugin", "marketplace", "add", self._TARGET[1]] not in calls
         assert ["plugin", "add", self._TARGET[2]] not in calls
         assert "marketplace取得元が一致しないためスキップ" in caplog.text
@@ -268,7 +356,9 @@ class TestExternalPlugins:
             registered_source="http://github.com/u-ichi/compact-plus.git",
         )
 
-        assert install_codex_plugins.run() is False
+        outcome = install_codex_plugins.run()
+        assert outcome.changed is False
+        assert not outcome.notices
         assert ["plugin", "add", self._TARGET[2]] not in calls
         assert "marketplace取得元が一致しないためスキップ" in caplog.text
 
@@ -283,15 +373,56 @@ class TestExternalPlugins:
             registered_source_type="github",
         )
 
-        assert install_codex_plugins.run() is False
+        outcome = install_codex_plugins.run()
+        assert outcome.changed is False
+        assert not outcome.notices
         assert ["plugin", "add", self._TARGET[2]] not in calls
         assert "marketplace取得元が一致しないためスキップ" in caplog.text
 
-    def test_accepts_canonical_https_source(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._setup_run(plugin_env, monkeypatch, registered=True, installed=False)
+    def test_base_and_external_updates_deduplicate_restart_notice(
+        self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(install_codex_plugins, "_EXTERNAL_PLUGINS", (self._TARGET,))
+        local_installed = False
+        external_installed = False
 
-        assert install_codex_plugins.run() is True
-        assert ["plugin", "add", self._TARGET[2]] in calls
+        def codex_json(args: list[str]) -> dict[str, Any]:
+            if args[:3] == ["plugin", "marketplace", "list"]:
+                return {
+                    "marketplaces": [
+                        {"name": "ak110-dotfiles", "root": str(plugin_env)},
+                        {
+                            "name": self._TARGET[0],
+                            "root": "/tmp/compact-plus",
+                            "marketplaceSource": {
+                                "sourceType": "git",
+                                "source": "https://github.com/u-ichi/compact-plus.git",
+                            },
+                        },
+                    ]
+                }
+            installed: list[dict[str, object]] = []
+            if external_installed:
+                installed.append({"pluginId": self._TARGET[2], "version": "1.0.0", "enabled": True})
+            if local_installed:
+                installed.extend(cast("list[dict[str, object]]", _installed_state()["installed"]))
+            return {"installed": installed}
+
+        def command(args: list[str]) -> bool:
+            nonlocal external_installed, local_installed
+            if args == ["plugin", "add", self._TARGET[2]]:
+                external_installed = True
+            if args == ["plugin", "add", "agent-toolkit@ak110-dotfiles"]:
+                local_installed = True
+            return True
+
+        monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
+        monkeypatch.setattr(install_codex_plugins, "_command", command)
+
+        outcome = install_codex_plugins.run()
+
+        assert outcome.changed is True
+        assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
 
     def test_rejects_mismatched_source_after_registration(
         self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -304,7 +435,9 @@ class TestExternalPlugins:
             registered_source="https://github.com/attacker/compact-plus.git",
         )
 
-        assert install_codex_plugins.run() is True
+        outcome = install_codex_plugins.run()
+        assert outcome.changed is True
+        assert not outcome.notices
         assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
         assert ["plugin", "add", self._TARGET[2]] not in calls
         assert "marketplace取得元が一致しないためスキップ" in caplog.text
@@ -312,6 +445,8 @@ class TestExternalPlugins:
     def test_continues_when_cli_fails(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._setup_run(plugin_env, monkeypatch, registered=False, installed=False, add_succeeds=False)
 
-        assert install_codex_plugins.run() is False
+        outcome = install_codex_plugins.run()
+        assert outcome.changed is False
+        assert not outcome.notices
         assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
-        assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
+        assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls

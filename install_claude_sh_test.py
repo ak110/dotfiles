@@ -25,7 +25,10 @@ _COMMAND_STUB = """#!/bin/sh
 command_name=$(basename "$0")
 printf '%s %s\\n' "$command_name" "$*" >> "$CLI_STUB_LOG"
 case "$command_name $*" in
-    *"$STUB_FAIL_PATTERN"*) exit 9 ;;
+    *"$STUB_FAIL_PATTERN"*)
+        printf 'stub failure: %s %s\n' "$command_name" "$*" >&2
+        exit 9
+        ;;
 esac
 exit 0
 """
@@ -151,7 +154,7 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
     rules_dir.mkdir(parents=True)
     (rules_dir / "obsolete.md").write_text("# 旧ファイル\n", encoding="utf-8")
 
-    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    result = _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
     assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == (RULES_SRC / "01-agent.md").read_text(encoding="utf-8")
     assert not legacy_dir.exists()
@@ -174,6 +177,8 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
         assert index > last_index, f"未呼び出しまたは順序違反: {command!r}\nlog={joined}"
         last_index = index
     assert "claude mcp get" not in joined
+    assert result.stderr.splitlines()[-1] == "codex app-server daemon restart"
+    assert result.stderr.count("Codex pluginを更新しました。") == 1
 
 
 _REGISTERED_STATES = [
@@ -325,6 +330,52 @@ def test_propagates_required_setup_failures(
     )
 
     assert result.returncode != 0
+
+
+@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize(
+    ("fail_pattern", "block_atk_wrapper", "expect_notice"),
+    [
+        pytest.param("claude plugin marketplace update", False, False, id="before-codex-plugin"),
+        pytest.param("codex plugin marketplace upgrade", False, False, id="marketplace-upgrade"),
+        pytest.param("codex plugin add", False, False, id="plugin-add"),
+        pytest.param("claude mcp add", False, True, id="after-plugin-mcp"),
+        pytest.param("__never_match__", True, True, id="after-plugin-atk-wrapper"),
+    ],
+)
+def test_notice_contract_by_failure_stage(
+    kind: str,
+    fail_pattern: str,
+    block_atk_wrapper: bool,
+    expect_notice: bool,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """Codex plugin更新後だけ、後続失敗時も最終案内を保持する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    if block_atk_wrapper:
+        local_dir = home / ".local"
+        local_dir.mkdir()
+        (local_dir / "bin").write_text("ディレクトリ作成を阻害する", encoding="utf-8")
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    result = _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        fail_pattern=fail_pattern,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    stderr_lines = result.stderr.splitlines()
+    assert (bool(stderr_lines) and stderr_lines[-1] == "codex app-server daemon restart") is expect_notice
+    assert ("Codex pluginを更新しました。" in result.stderr) is expect_notice
+    if expect_notice and not block_atk_wrapper:
+        assert result.stderr.index("stub failure:") < result.stderr.index("Codex pluginを更新しました。")
 
 
 @pytest.mark.parametrize("kind", _runners())
