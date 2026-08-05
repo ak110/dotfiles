@@ -1,5 +1,6 @@
 """pytools.claude_plans_viewer のテスト。"""
 
+import datetime
 import hashlib
 import io
 import json
@@ -14,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from pytools._internal import claude_common
-from pytools.claude_plans_viewer import _assets, _cli, _config, _console_title, _local
+from pytools.claude_plans_viewer import _app, _assets, _cli, _config, _console_title, _local
 
 # _state._BROADCAST_DEBOUNCE_SEC と同値（0.3秒）。debounce窓の秒数。
 _BROADCAST_DEBOUNCE_SEC = 0.3
@@ -69,6 +70,31 @@ class TestListFiles:
         assert hasattr(entries[0], "mtime_epoch")
         assert hasattr(entries[0], "ctime_epoch")
         assert all(e.host == "local-host" for e in entries)
+
+    @pytest.mark.asyncio
+    async def test_api_order_and_display_time_use_ctime(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """APIの一覧順と作成日時表示が同じ`ctime_epoch`に基づくこと。"""
+        old_path = tmp_path / "old.md"
+        old_path.write_text("old", encoding="utf-8")
+        os.utime(old_path, (1_000.0, 1_000.0))
+        new_path = tmp_path / "new.md"
+        new_path.write_text("new", encoding="utf-8")
+        os.utime(new_path, (2_000.0, 2_000.0))
+        # mtimeとは逆順になる正の作成日時を与え、ソートと表示値の対応を同時に検証する。
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: 3_000.0 - st.st_mtime)
+        app = _app.create_app(tmp_path, hostname="local-host")
+
+        response = await app.test_client().get("/api/files")
+
+        assert response.status_code == 200
+        entries = json.loads(await response.get_data())
+        assert [entry["path"] for entry in entries] == ["old.md", "new.md"]
+        tzinfo = datetime.datetime.now().astimezone().tzinfo
+        expected_ctimes = [
+            datetime.datetime.fromtimestamp(entry["ctime_epoch"], tz=tzinfo).strftime("%Y/%m/%d %H:%M") for entry in entries
+        ]
+        assert [entry["ctime"] for entry in entries] == expected_ctimes
+        assert [entry["ctime"] for entry in entries] != [entry["mtime"] for entry in entries]
 
     def test_includes_only_md(self, tmp_path: Path):
         """.md以外は含まず、サブディレクトリは再帰的に拾うこと。"""
@@ -1056,10 +1082,10 @@ class TestIndexHtml:
         assert "const counterBefore = hostInfoEventCounter;" in html_src
         assert "if (hostInfoEventCounter !== counterBefore) continue;" in html_src
 
-    def test_index_html_renders_host_and_mtime_in_meta(self):
-        """左ペインのmetaが左にホスト名、右にmtimeを並べる。
+    def test_index_html_renders_host_and_ctime_in_meta(self):
+        """左ペインのmetaが左にホスト名、右に作成日時を並べる。
 
-        多ホスト統合表示で、行内のホスト識別と更新日時の視認性を担保する契約。
+        多ホスト統合表示で、行内のホスト識別とソート基準である作成日時の視認性を担保する契約。
         """
         html_src = _assets.INDEX_HTML
 
@@ -1068,10 +1094,14 @@ class TestIndexHtml:
         meta_block = html_src.split(".meta {", 1)[1].split("}", 1)[0]
         assert "display: flex" in meta_block
         assert "justify-content: space-between" in meta_block
-        # 行内に`host`と`mtime`の2つのspanが描画される。
+        # デスクトップ行内に`host`と`ctime`の2つのspanが描画される。
         assert 'className = "meta"' in html_src or 'class="meta"' in html_src
         assert 'hostSpan.className = "host"' in html_src
-        assert 'mtimeSpan.className = "mtime"' in html_src
+        assert 'ctimeSpan.className = "ctime"' in html_src
+        assert "ctimeSpan.textContent = file.ctime" in html_src
+        # モバイル専用メタも同じ作成日時フィールドを表示する。
+        assert 'ctimeSpan.className = "meta-ctime"' in html_src
+        assert 'ctimeSpan.textContent = selected ? selected.ctime : ""' in html_src
 
     def test_index_html_has_mobile_drawer_contract(self):
         """モバイル幅（768px以下）で左ペインをドロワー化する契約。

@@ -118,7 +118,7 @@ _INDEX_CSS = """\
     gap: 8px;
   }
   .meta .host { word-break: break-all; }
-  .meta .mtime { white-space: nowrap; }
+  .meta .ctime { white-space: nowrap; }
   /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
   .host-badge {
     display: none;
@@ -216,7 +216,7 @@ _INDEX_CSS = """\
     }
     #meta-mobile .meta-host { font-weight: 600; color: #374151; }
     #meta-mobile .meta-path { display: block; margin-top: 2px; }
-    #meta-mobile .meta-mtime { display: inline-block; margin-left: 8px; }
+    #meta-mobile .meta-ctime { display: inline-block; margin-left: 8px; }
     #meta-mobile.empty { display: none; }
   }
 """
@@ -323,14 +323,14 @@ function updateMetaMobile() {
     badge.textContent = HOST_BADGE_LABELS[status];
     hostSpan.appendChild(badge);
   }
-  const mtimeSpan = document.createElement("span");
-  mtimeSpan.className = "meta-mtime";
-  mtimeSpan.textContent = selected ? selected.mtime : "";
+  const ctimeSpan = document.createElement("span");
+  ctimeSpan.className = "meta-ctime";
+  ctimeSpan.textContent = selected ? selected.ctime : "";
   const pathSpan = document.createElement("span");
   pathSpan.className = "meta-path";
   pathSpan.textContent = selectedPath;
   block.appendChild(hostSpan);
-  block.appendChild(mtimeSpan);
+  block.appendChild(ctimeSpan);
   block.appendChild(pathSpan);
 }
 
@@ -381,10 +381,10 @@ function createFileItem(file) {
   meta.className = "meta";
   const hostSpan = document.createElement("span");
   hostSpan.className = "host";
-  const mtimeSpan = document.createElement("span");
-  mtimeSpan.className = "mtime";
+  const ctimeSpan = document.createElement("span");
+  ctimeSpan.className = "ctime";
   meta.appendChild(hostSpan);
-  meta.appendChild(mtimeSpan);
+  meta.appendChild(ctimeSpan);
   item.appendChild(name);
   item.appendChild(meta);
   item.addEventListener("click", () => openFile(file.host, file.path));
@@ -407,8 +407,8 @@ function updateFileItem(item, file) {
       hostSpan.appendChild(badge);
     }
   }
-  const mtimeSpan = item.querySelector(".mtime");
-  if (mtimeSpan) mtimeSpan.textContent = file.mtime;
+  const ctimeSpan = item.querySelector(".ctime");
+  if (ctimeSpan) ctimeSpan.textContent = file.ctime;
 }
 
 function renderFiles() {

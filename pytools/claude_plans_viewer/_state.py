@@ -24,6 +24,7 @@ class FileEntry:
     path: str
     name: str
     mtime: str
+    ctime: str
     mtime_epoch: float
     ctime_epoch: float
 
@@ -66,11 +67,13 @@ def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEnt
     ctime_epoch = float(item["ctime_epoch"])
     tzinfo = datetime.datetime.now().astimezone().tzinfo
     mtime = datetime.datetime.fromtimestamp(mtime_epoch, tz=tzinfo)
+    ctime = datetime.datetime.fromtimestamp(ctime_epoch, tz=tzinfo)
     return FileEntry(
         host=host,
         path=str(item["path"]),
         name=str(item["name"]),
         mtime=mtime.strftime("%Y/%m/%d %H:%M"),
+        ctime=ctime.strftime("%Y/%m/%d %H:%M"),
         mtime_epoch=mtime_epoch,
         ctime_epoch=ctime_epoch,
     )
