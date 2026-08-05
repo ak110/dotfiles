@@ -7,4 +7,6 @@
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.command" "claude" $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.args" (list "mcp" "serve") $config -}}
+{{- $config = setValueAtPath "mcp_servers.claude.default_tools_approval_mode" "approve" $config -}}
+{{- $config = setValueAtPath "plugins.agent-toolkit@ak110-dotfiles.mcp_servers.pyfltr.default_tools_approval_mode" "approve" $config -}}
 {{ toToml $config }}
