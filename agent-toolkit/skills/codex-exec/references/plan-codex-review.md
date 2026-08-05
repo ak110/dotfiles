@@ -1,6 +1,6 @@
 # 計画ファイルのcodexレビュー
 
-`agent-toolkit:plan-mode`の呼び出し元が、計画ファイルのサンドボックス上の機械チェック・修正と総合レビューを
+`agent-toolkit:plan-mode`の呼び出し元が、隔離作業領域にある計画コピーの機械チェック・修正と総合レビューを
 別系統へ委譲するための実行手順を定める。
 比較基準、累積差分、採否、反映、限定再レビュー、ラウンド上限、後始末は、
 `agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を正本とする。
@@ -20,6 +20,11 @@
 このほかは呼び出し元が許可した追加指示だけを渡す。
 観点、ファイル、文書種別による複数起動は行わない。
 
+Codex経路は、呼び出し元へ返るツール戻り値または完了通知を受領経路とする。
+中間のCodexがさらに委譲する場合は、子孫の完了本文を中間層が受領し、自身の完了報告へ含める。
+`list_agents`は稼働状態の確認に限って使い、完了本文を取得する手段として扱わない。
+完了本文を直接の呼び出し元へ返せる経路を確認できない場合は、その経路を開始しない。
+
 ## 機械チェック委譲
 
 実装・修正系へは、本ファイル、機械チェック・修正用の`plan-codex-review-fix-task.md`、
@@ -27,12 +32,12 @@
 `agent-toolkit:plan-mode`の呼び出し元が実装・修正系へ渡すタスク本文には、
 次の検査、違反修正、再検査を全て含める。
 
-1. 正規計画ファイルから委譲先が作成したサンドボックス計画ファイルへ次のコマンドを実行する
+1. `_review_workspace.py create`が作成したレビュー用計画コピーへ次のコマンドを実行する
 
    ```text
    uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py \
-     --work-dir <対象リポジトリの絶対パス> \
-     <サンドボックス計画ファイルの絶対パス>
+     --work-dir <レビュー用cloneの絶対パス> \
+     <レビュー用計画コピーの絶対パス>
    ```
 
 2. 終了コード1のerror区分違反を全件修正し、終了コード0まで再実行する
@@ -40,22 +45,28 @@
 4. 終了コード2を解消できない場合は、原因を`escalation_points`へ記録して`needs_escalation`で返す
 5. `[warn]`接頭辞付きの出力は内容を確認し、修正するか許容理由を`check_results`へ記録する
 6. MCP経由の`run_for_agent`へ計画ファイルのパスを渡し、`no_fix`と`allow_external_paths`を真として
-   サンドボックス計画ファイルを検査する。`work_dir`で作業ディレクトリを指定する場合は同時に明示する。
+   レビュー用計画コピーを検査する。`work_dir`でレビュー用cloneを指定する場合は同時に明示する。
    MCPを利用できない場合は、次のCLI形式を使う
 
    ```text
    uvx pyfltr run --no-fix --allow-external-paths \
-     --work-dir <対象リポジトリの絶対パス> \
+     --work-dir <レビュー用cloneの絶対パス> \
      --commands=typos,markdownlint,textlint,designmd,lychee,colloquial-check \
      --enable=colloquial-check \
-     <サンドボックス計画ファイルの絶対パス>
+     <レビュー用計画コピーの絶対パス>
    ```
 
-7. 違反または警告をサンドボックス計画ファイルで修正し、終了コード0まで同じコマンドを再実行する
-8. 次のコマンドをサンドボックス計画ファイルへ実行し、検出内容を修正して終了コード0まで再実行する
+7. 違反または警告をレビュー用計画コピーで修正し、終了コード0まで同じコマンドを再実行する
+8. 次のコマンドをレビュー用計画コピーへ実行し、検出内容を修正して終了コード0まで再実行する
 
    ```text
-   uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/writing-standards/scripts/check_dash.py <サンドボックス計画ファイルの絶対パス>
+   uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/writing-standards/scripts/check_dash.py <レビュー用計画コピーの絶対パス>
    ```
 
 9. 修正後に3検査を再実行し、終了コード、error件数、warning件数を`check_results`へ記録する
+
+## 継続
+
+限定再レビューは、同じCodex threadまたは完了本文を受領できる同じAgentを継続する。
+`list_agents`で生存を確認できることだけを継続可能の根拠にしない。
+同じ経路の完了本文を受領できない場合は、前回応答と確定済み状態を全文で渡して新しい経路を開始する。

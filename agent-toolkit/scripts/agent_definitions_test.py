@@ -31,6 +31,7 @@ _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "02-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE.parent / "references" / "plan-review-delegation.md"
+_REVIEW_WORKSPACE_HELPER = _AGENTS_DIR.parent / "scripts" / "_review_workspace.py"
 _MANAGED_TEMP_HELPER = _AGENTS_DIR.parent / "scripts" / "_managed_temp.py"
 _MANAGED_TEMP_LAUNCHER = _AGENTS_DIR.parent / "bin" / "atk-managed-temp"
 _MANAGED_TEMP_LAUNCHER_WINDOWS = _MANAGED_TEMP_LAUNCHER.with_suffix(".cmd")
@@ -132,39 +133,75 @@ def test_claude_fallback_preserves_track_agent_ids_and_attempt_markers() -> None
     assert "Agentへ直接`SendMessage`を実行" in impl_caller
 
 
-def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
-    """対象worktreeと条件付き複製元の退避・比較・復旧報告契約を検査する。"""
+def test_plan_review_contract_uses_isolated_clone_and_plan_copy() -> None:
+    """Git管理領域を分離したcloneと計画コピーの検収契約を検査する。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "_worktree_snapshot.pyの絶対パス> capture" in delegation
-    assert "worktree snapshot" in delegation
-    assert "具体的な復旧手順" in delegation
-    assert "復旧の明示確認を得る" in delegation
-    for document in (delegation, fix_task, review_task):
-        assert "worktree_check_result" in document
+    assert _REVIEW_WORKSPACE_HELPER.is_file()
+    assert "_review_workspace.py create" in delegation
+    assert "_review_workspace.py finish" in delegation
+    assert "Git管理領域を共有しない`review_repo`" in delegation
+    assert "計画コピーだけを渡し" in delegation
+    for document in (delegation, fix_task):
+        assert "review_workspace_result" in document or "review_repo_compare" in document
         for field in (
-            "exit_code",
-            "compare_json",
-            "repository_changed",
-            "worktrees_changed",
-            "classification",
-            "worktree_state_only",
+            "source_plan_unchanged",
+            "source_repo_unchanged",
+            "source_repo_compare",
+            "conditional_source_repo_unchanged",
+            "conditional_source_repo_compare",
+            "review_repo_unchanged",
+            "review_repo_compare",
+            "review_files_compare",
+            "plan_changed",
+            "plan_diff",
         ):
             assert field in document
-        assert "target=unchanged|changed" not in document
-        assert "source=not_applicable|unchanged|changed" not in document
-    compact = re.sub(r"\s+", "", delegation)
-    assert "対象worktree" in compact
-    assert "複製元" in compact
-    assert "snapshot比較" in compact
-    assert "`承認済み復旧`として委譲" in delegation
-    assert "利用者の明示確認結果" in fix_task
-    assert "変更主体を帰属" in delegation
-    assert "計画前提への影響を再評価" in delegation
-    assert "判定根拠を記録して続行" in delegation
-    assert "index.patch" in delegation
-    assert "worktree.patch" in delegation
+    assert "正規計画ファイルと対象リポジトリを変更しない" in fix_task
+    assert "対象リポジトリと正規計画ファイルは入力として受け取らず" in review_task
+    assert "review_inputs" in review_task
+    assert "開始時HEAD、index、未ステージ差分、未追跡通常ファイル" in delegation
+    assert "--conditional-source-repo" in delegation
+    assert "Gitの無視設定に依存せず一覧化" in delegation
+
+
+def test_review_delegation_propagates_constraints_and_runtime_evidence() -> None:
+    """再委譲、完了配送、外部実行、再現証跡、指摘集合の契約を同期する。"""
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
+    implementation_review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
+    rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
+
+    for field in ("作業場所", "書込主体", "出力言語", "プロセス所有権", "不可逆操作権限"):
+        assert field in delegation
+        assert field in rules
+    assert "子孫の完了本文を自身で受領" in delegation
+    assert "子孫の完了本文を中間層が受領" in review
+    assert "`list_agents`は稼働状態の確認に限って使い" in review
+    assert "安定した実行識別子" in delegation
+    assert "成果物差分だけで停滞を判定せず" in delegation
+    assert "所有主体だけが行う" in delegation
+    for document in (delegation, review_task, fix_task):
+        assert "reproduction" in document or "再現証跡" in document
+        assert "標準出力" in document
+        assert "標準エラー" in document
+    assert "同一ラウンドの指摘は集合として扱う" in delegation
+    assert "集合全体を反映せず終了" in delegation
+    assert "共通委譲契約" in implementation_review
+    assert "外部実行と再現証跡" in implementation_review
+    for document in (
+        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+    ):
+        for field in ("再現証跡ディレクトリ", "書込主体", "プロセス所有権", "不可逆操作権限"):
+            assert field in document
+        assert "external_execution" in document
+        assert "reproduction_evidence" in document
+    assert "各系統専用の再現証跡ディレクトリ" in implementation_review
+    assert "計画準拠系と独立系の再現証跡ディレクトリを別々に作成" in implementation_review
 
 
 def test_codex_exec_prompt_allows_task_required_runtime_values() -> None:
@@ -186,14 +223,19 @@ def test_plan_review_fix_task_separates_operation_outputs() -> None:
         "初回機械検査",
         "レビュー前退避",
         "指摘反映",
-        "反映後検収・レビュー後検収・復旧後検収",
-        "承認済み復旧",
+        "反映後検収・レビュー後検収",
         "後始末",
     ):
         assert operation in text
     assert "cleanup_exit_code" in text
     assert "cleanup_target_absent" in text
     assert "削除済みディレクトリ内の`raw_output_paths`は返さない" in text
+    assert "初回機械検査、レビュー前退避、指摘反映では、対象リポジトリ、条件付き複製元" in text
+    assert "反映後検収、レビュー後検収では、作成済みの管理対象一時ディレクトリ" in text
+    assert "初期化完了まではhelperが管理対象一時ディレクトリへ生成する全成果物" in text
+    assert "初期化後はレビュー用計画コピーと再現証跡ディレクトリだけ" in text
+    assert "`.plan.diff.tmp`" in text
+    assert "管理対象一時ディレクトリ内の生出力ファイルだけ" in text
 
 
 def test_removed_hook_contracts_are_not_described_as_active() -> None:
@@ -372,8 +414,8 @@ def test_plan_impl_review_cap_contract_is_synchronized() -> None:
         assert phrase in caller
 
 
-def test_plan_review_checks_sandbox_plan_without_repository_copy() -> None:
-    """worktree外のサンドボックスを検査し、リポジトリ内一時複製の契約を持たないこと。"""
+def test_plan_review_checks_plan_copy_inside_isolated_workspace() -> None:
+    """隔離cloneを作業ディレクトリとし、計画コピーだけを修正する契約を検査する。"""
     review = _PLAN_REVIEW.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
@@ -382,15 +424,12 @@ def test_plan_review_checks_sandbox_plan_without_repository_copy() -> None:
     assert "--work-dir" in review
     assert "--commands=typos,markdownlint,textlint,designmd,lychee,colloquial-check" in review
     assert "--enable=colloquial-check" in review
-    assert "<サンドボックス計画ファイルの絶対パス>" in review
+    assert "<レビュー用計画コピーの絶対パス>" in review
     assert "正規計画ファイル" in fix_task
-    assert "正規計画ファイル、対象worktree" in fix_task
-    assert "管理対象一時ディレクトリだけ" in fix_task
-    assert "呼び出し元が正規計画ファイルへ反映" in delegation
-    assert "plan mode下の呼び出し元は、正規計画ファイル以外へ書き込まない" in delegation
-    assert "呼び出し元はBashを実行せず" in delegation
-    assert "生出力ファイル" in delegation
-    assert "`Read`で検収" in delegation
+    assert "正規計画ファイルと対象リポジトリを変更しない" in fix_task
+    assert "レビュー用計画コピーと再現証跡ディレクトリだけ" in fix_task
+    assert "呼び出し元が検収し、正規計画ファイルへ反映" in delegation
+    assert "plan mode下の呼び出し元は正規計画ファイル以外へ書き込まない" in delegation
     assert "raw_output_paths" in fix_task
     assert all(".plan-check-" not in content for content in (review, fix_task, delegation))
     assert "temporary_files" not in delegation
@@ -409,26 +448,23 @@ def test_plan_review_state_machine_is_complete() -> None:
     for phrase in (
         "初回機械検査",
         "scope_baseline",
-        "計画ファイルの全文",
-        "SHA-256",
-        "capture --repo",
-        "compare --repo",
-        "一致時に0、変化検出時に1、入力または比較失敗時に2",
-        "plan_file_diff",
+        "Git管理領域を共有しない",
+        "_review_workspace.py create",
+        "_review_workspace.py finish",
+        "plan_diff",
         "総合レビュー",
         "3区分",
         "初版内補正",
         "スコープ拡大",
         "独立問題",
         "採否",
-        "反映と限定再レビュー",
+        "累積差分と反映",
         "review_rounds",
         "累積5ラウンド",
-        "初回ラウンドだけ",
-        "全ラウンドで対応対象",
-        "破棄する",
-        "status: needs_escalation",
-        "完了判定と後始末",
+        "集合として扱う",
+        "集合全体を反映せず終了",
+        "needs_escalation",
+        "ラウンド上限と完了判定",
         "cleanup --path",
     ):
         assert phrase in text
@@ -441,7 +477,7 @@ def test_plan_review_resume_preserves_cumulative_state() -> None:
         assert state in text
     assert "比較基準を現行計画から再計算しない" in text
     assert "全ラウンドの累積`scope_changes`" in text
-    assert "`review_rounds`が5の場合は限定再レビューを再開せず" in text
+    assert "5ラウンド目は既知指摘の確定スナップショット" in text
 
 
 def test_delegation_boilerplate_prefers_normal_delivery() -> None:
@@ -687,7 +723,7 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
         assert "Codexでは" in text
         assert "plugin root" in text
         assert "mktemp -d" not in text
-    assert "uv run --no-project --script <helper> create --prefix plan-review-snapshot" in _PLAN_REVIEW_DELEGATION.read_text(
+    assert "uv run --no-project --script <helper> create --prefix plan-review-workspace" in _PLAN_REVIEW_DELEGATION.read_text(
         encoding="utf-8"
     )
     for path in (_COMMIT_SKILL, _CI_FAILURE_HANDLING):
@@ -754,7 +790,7 @@ def test_policy_parser_review_contract_declares_operating_boundary() -> None:
     assert "ユーザーが明示・合意した現行の外部契約" in initial_review_contract
     assert "適用規範により" in initial_review_contract
     assert "ユーザー発話全文は渡さず" in initial_review_contract
-    assert "完了条件、独立系の`review_contract`だけを渡す" in initial_review_contract
+    assert "独立系にはこれらに加えて`review_contract`だけを渡す" in initial_review_contract
     assert "作者の推論を渡さず" in initial_review_contract
     assert "`review_contract`" in independent_input_contract
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針は含めない" in independent_input_contract

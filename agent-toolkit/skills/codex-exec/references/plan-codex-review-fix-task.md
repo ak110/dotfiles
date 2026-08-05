@@ -6,13 +6,15 @@
 
 - `plan-review-delegation.md`、`plan-codex-review.md`、本ファイル、`plan-codex-implementation-task.md`の絶対パスを受け取り、着手時に全文を読む
 - 計画ファイル、品質規範、対象固有スキル、プロジェクト規範の絶対パスを受け取り、着手時に全文を読む
-- 作業ディレクトリ、条件付き複製元、初回機械検査、レビュー前退避、指摘反映、
-  反映後検収、レビュー後検収、承認済み復旧、復旧後検収、後始末の別を受け取る
+- 全処理種別で、初回機械検査、レビュー前退避、指摘反映、反映後検収、レビュー後検収、
+  後始末の別を受け取る
+- 初回機械検査、レビュー前退避、指摘反映では、対象リポジトリ、条件付き複製元、
+  正規計画ファイルの絶対パスを受け取る。条件付き複製元が無い場合は`対象外`を受け取る
+- 反映後検収、レビュー後検収では、作成済みの管理対象一時ディレクトリと
+  `workspace.json`、標準出力と標準エラー出力を保存するファイルの絶対パスを受け取る。
+  生出力ファイルは管理対象一時ディレクトリ内に割り当てられた未作成パスとする
 - 後始末では、呼び出し元が検収済みの管理対象一時ディレクトリ絶対パスを受け取る
-- 反映後検収、レビュー後検収、復旧後検収では、管理対象一時ディレクトリ、計画全文バックアップ、
-  サンドボックス計画ファイル、対象worktreeと条件付き複製元のsnapshotの絶対パスを受け取る
 - 指摘反映では指摘全文、区分、呼び出し元が確定した採否、承認状態を受け取る
-- 承認済み復旧では、利用者の明示確認結果、変更対象、退避先、記録済みHEAD、具体的な復旧手順を受け取る
 - 入力が欠ける場合は欠落項目を返し、推測で補わない
 
 ## レビュー指摘の妥当性検討
@@ -27,16 +29,15 @@
 
 | 処理種別 | 実行工程 | 書き込み許可先 |
 | --- | --- | --- |
-| 初回機械検査 | 管理対象一時ディレクトリ、全文バックアップ、サンドボックス計画、snapshotを作成する。サンドボックスへ3検査、違反修正、再検査を実施する | 管理対象一時ディレクトリだけ |
-| レビュー前退避 | 管理対象一時ディレクトリ、全文バックアップ、無変更のサンドボックス計画、snapshotを作成する | 管理対象一時ディレクトリだけ |
-| 指摘反映 | 初回機械検査と同じ退避を作成し、採用済み指摘だけをサンドボックスへ反映して3検査を実施する | 管理対象一時ディレクトリだけ |
-| 反映後検収・レビュー後検収・復旧後検収 | 受領した退避を使い、SHA-256照合、統一差分取得、snapshot比較を再実行する | 受領した管理対象一時ディレクトリ内の生出力だけ |
-| 承認済み復旧 | 利用者が明示確認した復旧手順だけを実行し、続けて復旧後検収を実施する | 確認済み手順が列挙する対象worktreeまたは複製元のパスと、生出力 |
+| 初回機械検査 | 隔離作業領域を作成し、レビュー用計画コピーへ3検査、違反修正、再検査を実施する | 初期化完了まではhelperが管理対象一時ディレクトリへ生成する全成果物。初期化後はレビュー用計画コピーと再現証跡ディレクトリだけ |
+| レビュー前退避 | 隔離作業領域を作成し、無変更のレビュー用計画コピーとcloneを返す | 初期化完了まではhelperが管理対象一時ディレクトリへ生成する全成果物。初期化後は再現証跡ディレクトリだけ |
+| 指摘反映 | 新しい隔離作業領域を作成し、採用済み指摘だけをレビュー用計画コピーへ反映して3検査を実施する | 初期化完了まではhelperが管理対象一時ディレクトリへ生成する全成果物。初期化後はレビュー用計画コピーと再現証跡ディレクトリだけ |
+| 反映後検収・レビュー後検収 | `_review_workspace.py finish`を実行し、計画差分とcloneの不変を検査する | `plan.diff`、helperが同じディレクトリへ原子的置換のため作成する`.plan.diff.tmp`、受領した管理対象一時ディレクトリ内の生出力ファイルだけ |
 | 後始末 | 受領した管理対象一時ディレクトリへ`_managed_temp.py cleanup`だけを実行し、対象パスの不在を確認する | cleanup対象だけ |
 
 初回機械検査と指摘反映の3検査は、`plan-codex-review.md`「機械チェック委譲」節に従う。
-承認済み復旧以外では、正規計画ファイル、対象worktree、条件付き複製元を変更しない。
-承認済み復旧は利用者の明示確認結果を欠く場合に実行せず、`escalation_points`へ不足を返す。
+全処理種別で正規計画ファイルと対象リポジトリを変更しない。
+呼び出し元だけが検収済みの`plan.diff`を正規計画ファイルへ反映する。
 
 ## 共通禁止事項
 
@@ -53,22 +54,19 @@
 
 初回機械検査、レビュー前退避、指摘反映は次を返す。
 
-- `managed_temp_dir`、`plan_backup_path`、`sandbox_plan_path`、`snapshot_paths`
-- `plan_sha256_before`、`plan_sha256_after`、`plan_file_change`、`sandbox_plan_change`
-- `worktree_check_result`。`target`と条件付き`source`ごとに`exit_code`、compareのJSON全体を保持する
-  `compare_json`、`repository_changed`、`worktrees_changed`、`classification`を記載する。
-  `classification`は`unchanged`、`repository_changed`、`worktree_state_only`、`error`、
-  `source`が無い場合の`not_applicable`から選び、`changed|unchanged`の二値へ縮約しない。
-  終了コード2は`error`、`repository_changed=true`は`repository_changed`、
-  `repository_changed=false`かつ`worktrees_changed=true`は`worktree_state_only`、両方falseは`unchanged`とする
-- `plan_file_diff`。差分なしは`none`とし、差分の各変更を機械違反または採用済み指摘へ対応づける
+- `managed_temp_dir`、`review_workspace`、`review_repo`、`original_plan_path`、`review_plan_path`
+- `plan_sha256_before`、`plan_sha256_after`、`source_plan_unchanged`、`review_plan_change`
+- `review_workspace_result`。`finish`の終了コード、`source_plan_unchanged`、`source_repo_unchanged`、
+  `source_repo_compare`、`conditional_source_repo_unchanged`、`conditional_source_repo_compare`、
+  `review_repo_unchanged`、`review_repo_compare`、`review_files_compare`、`plan_changed`、`plan_diff`を記載する
+- `plan_file_diff`。差分なしは`none`とし、各変更を機械違反または採用済み指摘へ対応づける
+- `work_location`、`write_targets`、`external_execution`、`reproduction_evidence`
 - 初回機械検査と指摘反映では、各検査の初回と最終の終了コード、error件数、warning件数を`check_results`へ記載する
 
-反映後検収、レビュー後検収、復旧後検収は次を返す。
+反映後検収、レビュー後検収は次を返す。
 
-- SHA-256照合、snapshot比較、統一差分取得の標準出力、標準エラー出力、終了コード
-- 同じ生出力を保存した`raw_output_paths`と、`worktree_check_result`、`plan_file_change`
+- `finish`の標準出力、標準エラー出力、終了コード
+- 同じ生出力を保存した`raw_output_paths`、`review_workspace_result`、`review_plan_change`
 
-承認済み復旧は、実行した確認済み手順、変更パス、復旧後検収の全出力を返す。
 後始末は`managed_temp_dir`、`cleanup_exit_code`、`cleanup_target_absent: true|false`だけを返す。
 削除済みディレクトリ内の`raw_output_paths`は返さない。

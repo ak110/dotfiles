@@ -7,7 +7,8 @@
 - `plan-review-delegation.md`、`plan-codex-review.md`、本ファイル、計画ファイルの絶対パスを受け取り、着手時に全文を読む
 - 適用する品質規範はスキル名で受け取り、各スキルのトリガー規則に従って着手時に全文を読む
 - `agent-toolkit:plan-mode`のSKILL.mdとプロジェクト規範の絶対パスを受け取り、着手時に全文を読む
-- 作業ディレクトリ、条件付き複製元、初回または限定再レビューの別、限定再レビュー時の差分一式を受け取る
+- レビュー用clone、レビュー用計画コピー、再現証跡ディレクトリの絶対パス、
+  初回または限定再レビューの別、限定再レビュー時の差分一式を受け取る
 - 入力が欠ける場合は欠落項目を返し、推測で補わない
 
 ## レビュー
@@ -41,8 +42,12 @@
   コマンドまたはイベントのディスパッチを経て最終処理までを同じ観点で追跡する
 - 応答フィールドに関する主張は、内部オブジェクトの生成箇所から
   シリアライズ・フィルターを経て利用者が観測できる値まで追跡する
-- 計画ファイルとリポジトリを読み取り専用として扱う
-- 対象worktreeと条件付き複製元の非変更を完了条件とする
+- レビュー用計画コピーとcloneを読み取り専用として扱う
+- 対象リポジトリと正規計画ファイルは入力として受け取らず、自己解決しない
+- 外部ツールまたは外部実行系の挙動を根拠とする指摘は、再現証跡ディレクトリ内の最小再現で確認する。
+  実行したコマンド、主要な環境条件、終了コード、標準出力、標準エラーを根拠へ含める
+- 最小再現で確認できない主張は`未検証`と明記し、確定的な不具合指摘と区別する
+- レビュー用cloneと計画コピーの非変更を完了条件とする
 - 指摘ごとに重大度、対象箇所、根拠、修正方針を示す
 
 ## 出力
@@ -50,9 +55,8 @@
 - 重大度は`致命的`、`重大`、`軽微`から選ぶ
 - 指摘がある場合は、重大度、区分、対象箇所、根拠、修正方針を全件返す
 - 指摘がない場合は「指摘なし」と明記する
-- `worktree_check_result`は`target`と条件付き`source`ごとに`exit_code`、compareのJSON全体を保持する
-  `compare_json`、`repository_changed`、`worktrees_changed`、`classification`を記載する。
-  `classification`は`unchanged`、`repository_changed`、`worktree_state_only`、`error`、
-  `source`が無い場合の`not_applicable`から選び、`changed|unchanged`の二値へ縮約しない。
-  終了コード2は`error`、`repository_changed=true`は`repository_changed`、
-  `repository_changed=false`かつ`worktrees_changed=true`は`worktree_state_only`、両方falseは`unchanged`とする
+- `review_inputs`へレビュー用clone、レビュー用計画コピー、再現証跡ディレクトリの絶対パスを記載する
+- 外部実行を保持した場合は`external_execution`へ所有主体、安定した実行識別子、開始時刻、
+  直近の生存確認時刻と結果を記載する。保持しなかった場合は`not_applicable`とする
+- 外部ツール主張を最小再現した場合は`reproduction_evidence`へ証跡パスと結果を記載し、
+  再現しなかった場合は`none`とする
