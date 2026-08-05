@@ -254,7 +254,7 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     `--subprocess-timeout`・`--follow-cancelled`
   - `--sha`へはpush直前に保存した完全長SHAをそのまま渡す。`--repo`・`--ref`は
     実際のpush先、`--source-ref`は同じrefspecのpush元と一致する値を渡す
-    （`agent-toolkit/rules/02-claude-code.md`が定める識別子の実行結果転記則を参照）
+    （`agent-toolkit/rules/02-agent-operations.md`が定める識別子の実行結果転記則を参照）
     - 解決できない値は識別子解決失敗の終了コード3で終了する
     - 実在する別コミットを指す値は、登録猶予（既定60秒）が経過してもrunが見つからない場合に
       終了コード4で終了する。いずれも正しい対象の監視開始が遅延する
@@ -293,7 +293,7 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
       `gh run list --repo <repository> --branch <destination ref> --limit <件数> --json databaseId,workflowName,status,conclusion,headSha`で
       実行状況を一覧取得し、`headSha`を対象コミットの識別子で突合する
     - 待機処理の条件へ用いる照会は、起動前に当該コミットで結果が得られることを単発実行で確認する
-      （`agent-toolkit/rules/02-claude-code.md`の待機ループ規定に従う）
+      （`agent-toolkit/rules/02-agent-operations.md`の待機ループ規定に従う）
   - `--workflow`引数を追加指定する場合はworkflow名・数値IDのいずれも受理するが、
     ファイル名指定時は`workflowName`と一致しない場合があるため、
     `gh workflow list`で正確な`workflowName`を事前確認するか`--commit`のみで代替する

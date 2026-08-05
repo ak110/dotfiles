@@ -40,7 +40,8 @@
     `hard_deny`区分の拒否は`autoMode.allow`で上書きできないため、当該制約を前提に運用を見直す
 - `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる
   - `.chezmoi-source/dot_codex/AGENTS.md`は`scripts/codex-agents-base.md`と
-    `agent-toolkit/rules/*.md`から`scripts/sync_generated_files.py`が生成するため、手動編集しない
+    `agent-toolkit/rules/`配下の共有規範から`scripts/sync_generated_files.py`が生成するため、手動編集しない
+  - Claude Code固有の`99-claude-code.md`はCodex向けAGENTS.mdの生成対象から除外する
   - agent-toolkitのスキルはCodex plugin marketplaceで配布し、`post_apply`で導入・更新する
   - dotfiles固有スキルとplugin非対応のagents・rulesは、`post_apply`の専用ステップで原本へリンクする
   - Codex向けplugin・marketplace manifestもClaude Code向けmanifestから統合生成ランナーが生成する

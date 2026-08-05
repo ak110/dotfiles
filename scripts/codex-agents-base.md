@@ -102,6 +102,11 @@ Codexでは`spawn_agent`経路へ一本化する。
 Codexでは同じ難易度の区分をCodexで利用できるモデル識別子と`reasoning_effort`へ読み替え、
 `spawn_agent`の`model`・`reasoning_effort`で指定する。
 
+作業用一時領域では、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
+`uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>`を単独で実行して作成する。
+用途の完了と内容の検収後は、
+`uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>`を単独で実行する。
+
 ### plan modeのエミュレーション
 
 Claude Codeのplan modeは、計画立案中の意図しない変更を抑止する読み取り専用モードを提供する。

@@ -13,7 +13,7 @@
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
 7. 計画ファイルの`## 変更内容`配下の`agent-toolkit/`パスを示すH3配下diffブロック+行へのdotfiles固有名混入検出（block）
-8. 計画ファイルの`## 変更内容`配下に`agent-toolkit/rules/`配下パスを含み
+8. 計画ファイルの`## 変更内容`配下にCodex共有規範のパスを含み
    `.chezmoi-source/dot_codex/AGENTS.md`を含まない場合の同期漏れ警告（warn、非ブロック）
 
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
@@ -50,6 +50,7 @@ from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-imp
 
 # pylint: disable-next=wrong-import-position,import-error
 from pretooluse import _collect_new_fields  # noqa: E402
+from sync_codex_agents import is_codex_shared_rule  # noqa: E402  # pylint: disable=wrong-import-position
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
@@ -558,7 +559,7 @@ def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, 
 
 
 def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
-    """計画ファイル Write 時の`agent-toolkit/rules/`編集に対するAGENTS.md同期漏れの警告メッセージを返す。
+    """計画ファイル Write 時のCodex共有規範編集に対するAGENTS.md同期漏れの警告メッセージを返す。
 
     対象は Write のみ。Edit / MultiEdit の new_string では計画ファイル本文全域を
     取得できないため判定対象外とする（`_plan_file_bump_declaration_warning`と同じ理由）。
@@ -568,7 +569,7 @@ def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, st
     変更対象の判定は `## 変更内容 > ### 対象ファイル一覧` のチェックボックス項目に限り、
     本文中の言及とコードフェンス内の記述は対象としない
     （抽出は `_plan_format.extract_target_files_from_changes` に委ねる）。
-    `agent-toolkit/rules/*.md`の編集は`scripts/sync_codex_agents.py`が生成する
+    Codex共有規範の編集は`scripts/sync_codex_agents.py`が生成する
     `.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を伴うため、対象ファイル一覧からの
     漏れをwarnで検出する。検査対象パス（`.chezmoi-source/dot_codex/AGENTS.md`）は
     dotfilesリポジトリ固有であり、`agent-toolkit/rules/`配下の編集を伴わない計画や
@@ -580,14 +581,14 @@ def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, st
         return None
     for _field, value in fields:
         targets = extract_target_files_from_changes(value)
-        if not any(path.startswith("agent-toolkit/rules/") for path in targets):
+        if not any(path.startswith("agent-toolkit/rules/") and is_codex_shared_rule(path) for path in targets):
             continue
         if ".chezmoi-source/dot_codex/AGENTS.md" in targets:
             continue
         return (
             "plan file references `agent-toolkit/rules/` paths under `## 変更内容` but"
             " does not reference `.chezmoi-source/dot_codex/AGENTS.md`."
-            " Editing `agent-toolkit/rules/*.md` regenerates that file via"
+            " Editing Codex-shared rules regenerates that file via"
             " `scripts/sync_codex_agents.py`; include it in the target file list and"
             " run `uv run python scripts/sync_generated_files.py` as part of the plan,"
             " unless the sync is intentionally deferred to a separate plan."

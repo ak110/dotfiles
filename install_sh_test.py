@@ -81,7 +81,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
             thread.join()
 
     # 5. ルールファイルがデプロイされていること。
-    # rules側の配布対象は01-agent.md・02-claude-code.mdの2ファイル。
+    # rules側の配布対象は生成一覧を正本とし、POSIX版とWindows版の完全一致を検査する。
     # その他の規約はagent-toolkitプラグインのスキルが担う。
     # 代表として01-agent.mdの存在のみを検証する（ファイル一覧の一致は install_script_ssot_test.py が担う）。
     rules_dir = fake_home / ".claude" / "rules" / "agent-toolkit"

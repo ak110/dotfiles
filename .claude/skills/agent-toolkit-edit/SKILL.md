@@ -12,7 +12,7 @@ description: >
 ## ファイル構成と参照方向
 
 - `agent-toolkit/`配下: プラグイン
-- `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`が基本原則・運用方針・言語表現を単独で担う）
+- `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
@@ -104,9 +104,10 @@ Codex向けmanifestはこの2ファイルを正本として`scripts/sync_codex_p
 - 配布物スキル本体の外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）へ
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
-- `agent-toolkit/rules/*.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
+- `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
   計画の対象ファイル一覧と実行方法（`uv run python scripts/sync_generated_files.py`）へ同ファイルを含める。
   漏れは`scripts/claude_hook_pretooluse.py`のwarnチェックが検出する
+- `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 
 ## セッション状態フラグ
 

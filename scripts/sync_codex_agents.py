@@ -21,12 +21,18 @@ TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
 MAX_BYTES = 128 * 1024
 GENERATED_MARKER = "<!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->"
+CODEX_EXCLUDED_RULE_NAMES = frozenset({"99-claude-code.md"})
+
+
+def is_codex_shared_rule(path: Path | str) -> bool:
+    """ルールファイルがCodexへ埋め込む共有規範ならTrueを返す。"""
+    return Path(path).name not in CODEX_EXCLUDED_RULE_NAMES
 
 
 def render(root: Path = REPO_ROOT) -> str:
     """生成内容を決定的に組み立てる。"""
     sections = [GENERATED_MARKER, "", (root / BASE_SOURCE).read_text(encoding="utf-8").rstrip("\n")]
-    for rule in sorted((root / RULES_SOURCE).glob("*.md")):
+    for rule in sorted(path for path in (root / RULES_SOURCE).glob("*.md") if is_codex_shared_rule(path)):
         relative = rule.relative_to(root).as_posix()
         sections.extend(
             [

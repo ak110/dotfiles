@@ -28,7 +28,8 @@ _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
-_CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "02-claude-code.md"
+_AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
+_CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE.parent / "references" / "plan-review-delegation.md"
 _REVIEW_WORKSPACE_HELPER = _AGENTS_DIR.parent / "scripts" / "_review_workspace.py"
@@ -40,6 +41,7 @@ _PLAN_IMPL_CALLER = _PLAN_MODE.parent / "references" / "plan-impl-caller-recepti
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
+_CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
 _DISTRIBUTION_MARKDOWN_BY_NAME: dict[str, list[pathlib.Path]] = {}
 for _markdown in _DISTRIBUTION_ROOT.rglob("*.md"):
     _DISTRIBUTION_MARKDOWN_BY_NAME.setdefault(_markdown.name, []).append(_markdown)
@@ -173,7 +175,7 @@ def test_review_delegation_propagates_constraints_and_runtime_evidence() -> None
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     implementation_review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-    rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
 
     for field in ("作業場所", "書込主体", "出力言語", "プロセス所有権", "不可逆操作権限"):
         assert field in delegation
@@ -365,7 +367,7 @@ def test_plan_impl_worktree_snapshot_contract_is_synchronized() -> None:
     """実装レビューの単一地点snapshot、絶対パス伝播、完成成果物の引取りを同期する。"""
     review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
-    rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
 
     for document in (review, rules):
         assert "_worktree_snapshot.py" in document
@@ -736,18 +738,21 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
         text = path.read_text(encoding="utf-8")
         assert "uv run --no-project --script <helper> cleanup --path <保持した絶対パス>" in text
         assert "単独で実行" in text
+    agent_operations_rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     claude_code_rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
+    codex_agents_base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
     assert "atk-managed-temp create --prefix <用途>" in claude_code_rules
     assert "atk-managed-temp cleanup --path <検収済み絶対パス>" in claude_code_rules
-    assert "uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>" in claude_code_rules
+    assert "uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>" in codex_agents_base
     assert (
         "uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>"
-        in claude_code_rules
+        in codex_agents_base
     )
     assert "pluginの`bin/`からBashの`PATH`へ追加" in claude_code_rules
-    assert "管理CLIで作成していない既存領域を自動で後始末しない" in claude_code_rules
-    assert "mktemp -d" not in claude_code_rules
+    assert "管理CLIで作成していない既存領域を自動で後始末しない" in agent_operations_rules
+    assert "mktemp -d" not in agent_operations_rules
     assert "単独で実行" in claude_code_rules
+    assert "単独で実行" in codex_agents_base
 
 
 def test_review_workflows_gate_findings_by_original_purpose() -> None:

@@ -37,7 +37,8 @@ allowed-tools: Bash
      祖先の実行ファイルとコマンドラインを照合してClaude Code本体を一意に特定し、
      当該単一PIDだけを`Stop-Process -Id <PID>`で終了する。POSIXシグナルは用いない。
      実行ファイル名の一致だけを根拠にしない
-     （`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節のプロセス終了規定に従う）
+     （`agent-toolkit/rules/02-agent-operations.md`「待機・プロセス管理」節の所有PID原則と、
+     `agent-toolkit/rules/99-claude-code.md`「セッション・フック」節のClaude Code本体例外に従う）
    - 対象を一意に特定できない場合は停止を要求せず、利用者へ`/exit`の入力を案内して本スキルを終える
 3. 停止要求の発火後はClaude Code本体プロセスが停止するため、後続のツール呼び出し・発話は行わない
 

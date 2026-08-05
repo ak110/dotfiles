@@ -8,7 +8,7 @@
 Stop hook直近アシスタント発話／SubagentStop hookサブエージェント発話）でこの辞書を参照する。
 
 機械チェック用辞書の取り扱いは、本ファイル「隔離リファレンスの取り扱い」節に従う。
-引用ブロック回避規範は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節を参照する。
+引用ブロック回避規範は`agent-toolkit/rules/02-agent-operations.md`「サブエージェント運用」節を参照する。
 
 ## 隔離リファレンスの取り扱い
 
@@ -32,7 +32,7 @@ Stop hook直近アシスタント発話／SubagentStop hookサブエージェン
   当該表明はscope-escalation辞書による言語検出の対象カテゴリではなく、
   SubagentStop hook（`subagent_stop_advisor.py`）が当該サブエージェント自身の
   `agent_transcript_path`を対象に行う構造判定（`has_pending_agent_launches`）と、
-  `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める、
+  `agent-toolkit/rules/99-claude-code.md`「サブエージェント実装」節が定める、
   `run_in_background`省略後の実行結果から受領経路を判定し、待機対象の結果を含む完了報告を
   戻り値または完了通知で1回受領して検収する規定が担う
 - 規範違反または工程の省略・割愛を、是正せずに宣言・記録して続行する表明

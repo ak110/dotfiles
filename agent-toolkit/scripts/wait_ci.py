@@ -10,7 +10,7 @@ GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないI
 一覧とジョブ取得の両方に明示的なrepositoryを指定し、一覧はdestination refとSHAで限定する。
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
 `agent-toolkit:commit`スキル「push後のCI通過確認」節から参照される。
-同節の実施主体の分離は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める。
+同節の実施主体の分離は`agent-toolkit/rules/02-agent-operations.md`「サブエージェント運用」節が定める。
 """
 
 from __future__ import annotations

@@ -855,8 +855,8 @@ class TestPlanImplExecutorReportFormat:
         )
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
-        assert "agent-toolkit/rules/02-claude-code.md" in body["reason"]
-        assert "サブエージェント運用" in body["reason"]
+        assert "agent-toolkit/rules/99-claude-code.md" in body["reason"]
+        assert "サブエージェント実装" in body["reason"]
         assert "run_in_background" in body["reason"]
         assert "実行結果" in body["reason"]
         assert "foreground" not in body["reason"]

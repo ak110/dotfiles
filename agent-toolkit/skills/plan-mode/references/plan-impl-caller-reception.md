@@ -37,7 +37,7 @@ ref名とOIDを委譲前スナップショットとして保存する。
 
 executorの通常配送と配送不能時の記録照会は、
 `agent-toolkit/skills/codex-exec/references/delegation-boilerplate.md`を正本とする。
-完了済みAgentの継続条件は、`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節を正本とする。
+完了済みAgentの継続条件は、`agent-toolkit/rules/99-claude-code.md`「サブエージェント実装」節を正本とする。
 必須欄を欠く応答は受領経路によらず未完遂として扱う。
 
 次の全欄について実在と値を検査する。

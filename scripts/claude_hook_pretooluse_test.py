@@ -971,7 +971,7 @@ class TestPlanFileBumpDeclarationWarning:
 
 
 class TestPlanFileAgentsMdSyncWarning:
-    """計画ファイル Write 時の `agent-toolkit/rules/` 編集に対するAGENTS.md同期漏れ警告。"""
+    """計画ファイル Write 時のCodex共有規範編集に対するAGENTS.md同期漏れ警告。"""
 
     _PLAN_PATH = str(_HOME / ".claude" / "plans" / "sample-plan.md")
     _RULES_ONLY = "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/01-agent.md`（現行10行）\n"
@@ -979,6 +979,14 @@ class TestPlanFileAgentsMdSyncWarning:
         "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
         "- [ ] `agent-toolkit/rules/01-agent.md`（現行10行）\n"
         "- [ ] `.chezmoi-source/dot_codex/AGENTS.md`（現行20行）\n"
+    )
+    _CLAUDE_ONLY = (
+        "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/99-claude-code.md`（現行10行）\n"
+    )
+    _SHARED_AND_CLAUDE_ONLY = (
+        "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+        "- [ ] `agent-toolkit/rules/02-agent-operations.md`（現行10行）\n"
+        "- [ ] `agent-toolkit/rules/99-claude-code.md`（現行10行）\n"
     )
 
     @staticmethod
@@ -998,6 +1006,20 @@ class TestPlanFileAgentsMdSyncWarning:
         result = self._write(self._PLAN_PATH, self._RULES_WITH_AGENTS_MD)
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)
+
+    def test_claude_code_specific_rule_without_agents_md_no_warning(self):
+        """Claude Code固有規範だけを含む計画はwarnされない。"""
+        result = self._write(self._PLAN_PATH, self._CLAUDE_ONLY)
+        assert result.returncode == 0
+        assert "sync_generated_files.py" not in _get_additional_context(result)
+
+    def test_shared_and_claude_code_specific_rules_without_agents_md_warns(self):
+        """共有規範とClaude Code固有規範を含む計画はwarnされる。"""
+        result = self._write(self._PLAN_PATH, self._SHARED_AND_CLAUDE_ONLY)
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "AGENTS.md" in msg
+        assert "warn" in msg.lower()
 
     def test_no_rules_reference_no_warning(self):
         """チェックボックス項目に`agent-toolkit/rules/`を含まない計画はwarnされない。"""

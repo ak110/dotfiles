@@ -181,7 +181,7 @@ commit SHAの進捗観測を単独の判定根拠にしない。
 ## `run_in_background`起動の制約
 
 `run_in_background`起動は権限プロンプトへ応答できない制約
-（`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節）を持つ。
+（`agent-toolkit/rules/99-claude-code.md`「サブエージェント実装」節）を持つ。
 委譲先が権限プロンプト起因で停滞した場合、同節の停滞検知手順に従い
 メイン側で未完了の工程を巻き取る。
 完遂順序は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`が定める

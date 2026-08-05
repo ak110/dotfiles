@@ -716,8 +716,8 @@ def main(payload_text: str) -> int:
         reason = _llm_notice(
             "blocked: `plan-impl-executor` completion report declares a self-initiated background parallel"
             " subagent launch (`run_in_background=true`) while the `changed` section still has unchecked"
-            " (`- [ ]`) items. This violates `agent-toolkit/rules/02-claude-code.md`"
-            " 'サブエージェント運用' section."
+            " (`- [ ]`) items. This violates `agent-toolkit/rules/99-claude-code.md`"
+            " 'サブエージェント実装' section."
             " `plan-impl-executor`は`run_in_background`を省略して起動し、"
             "実際の受領経路を実行結果から判定する必要があります。"
             "未完了項目がある状態で`run_in_background=true`を指定した自己起動は行わないでください。",

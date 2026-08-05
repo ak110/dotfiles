@@ -179,13 +179,13 @@ def _scope_escalation_agent_md_reference(category: str) -> str:
     `agent-toolkit/skills/process-feedbacks/references/review-checklists.md`
     「批判的検討チェックリスト」節の「採用時の反映内容の縮小禁止」項を参照する。
     `subagent-hesitation`はサブエージェント委譲可否の判断保留を扱うため
-    `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節を参照する。
+    `agent-toolkit/rules/02-agent-operations.md`「サブエージェント運用」節を参照する。
     他カテゴリは`agent-toolkit/rules/01-agent.md`「完遂と先送り」節を参照する。
     """
     if category == "mitigation-in-adoption":
         return "agent-toolkit/skills/process-feedbacks/references/review-checklists.md '採用時の反映内容の縮小禁止' item"
     if category == "subagent-hesitation":
-        return "agent-toolkit/rules/02-claude-code.md 'サブエージェント運用' section"
+        return "agent-toolkit/rules/02-agent-operations.md 'サブエージェント運用' section"
     return "agent-toolkit/rules/01-agent.md '完遂と先送り' section"
 
 
@@ -2254,7 +2254,7 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
     """AgentまたはTask起動時の`name`引数指定を値によらずブロックする。
 
     `name`付きbackground起動は完了通知が本来の起動元へ配送されず停滞するため、
-    `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が`name`の指定を厳守規定として禁じる。
+    `agent-toolkit/rules/99-claude-code.md`「サブエージェント実装」節が`name`の指定を厳守規定として禁じる。
     キーの存在のみで判定し、空文字列・`None`を含め値の内容は問わない。
     """
     if "name" not in tool_input:
@@ -2269,7 +2269,7 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
             " Omitting them does not fix the launch mode; determine the actual completion-report"
             " delivery route from the execution result. Place independent launches side by side"
             " in a single response to run them in parallel.\n"
-            "See agent-toolkit/rules/02-claude-code.md 'サブエージェント運用' section.",
+            "See agent-toolkit/rules/99-claude-code.md 'サブエージェント実装' section.",
             tag="block",
         ),
         file=sys.stderr,

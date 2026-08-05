@@ -11,8 +11,9 @@
 ## 事前調査の徹底
 
 候補事象に関連する既存規範文書の関連節を網羅的に`Read`してから抽象化階層を確定する。
-対象は`agent-toolkit/rules/01-agent.md`・`agent-toolkit/rules/02-claude-code.md`・該当作業のスキル本体・
-対応する`references/`配下を含む。当該事象を特殊ケースとして包含する既存上位節がある場合は
+対象は`agent-toolkit/rules/01-agent.md`・`agent-toolkit/rules/02-agent-operations.md`・該当作業のスキル本体・
+対応する`references/`配下を含む。Claude Codeの実装へ依存する事象では`agent-toolkit/rules/99-claude-code.md`も対象とする。
+当該事象を特殊ケースとして包含する既存上位節がある場合は
 新規追加ではなく既存節の表現強化・対象類型追加・例示拡張へ変換する。
 
 観測事象が実装挙動の異常（フック発火漏れ・記録漏れ等）に該当する場合は次の項を実施する。
