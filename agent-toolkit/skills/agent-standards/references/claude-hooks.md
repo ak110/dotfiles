@@ -58,6 +58,9 @@ Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘
 | `permissionDecisionReason` | ユーザーのみ | コーディングエージェント |
 | `hookSpecificOutput.additionalContext` | コーディングエージェント | コーディングエージェント |
 
+警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する。
+決定を省略すると通常の権限フローが適用され、警告表示が許可プロンプトを省略しない。
+
 PreToolUseの`permissionDecision: "allow"`時にコーディングエージェントへ情報を渡すフィールドは
 `hookSpecificOutput.additionalContext`に限られる。
 

@@ -715,6 +715,8 @@ class TestResponseLanguageCheck:
             }
         )
         assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert "permissionDecision" not in output["hookSpecificOutput"]
         ctx = self._additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in ctx
         assert "英語主体" in ctx
@@ -820,6 +822,7 @@ class TestWarnJsonAndLanguageWarningComposition:
         )
         assert result.returncode == 0
         output = json.loads(result.stdout)
+        assert "permissionDecision" not in output["hookSpecificOutput"]
         context = output["hookSpecificOutput"]["additionalContext"]
         commit_warning = "committing without running tests"
         language_warning = "英語主体"
@@ -827,6 +830,48 @@ class TestWarnJsonAndLanguageWarningComposition:
         assert language_warning in context
         assert context.index(commit_warning) < context.index(language_warning)
         assert "\n\n" in context[context.index(commit_warning) : context.index(language_warning)]
+
+    def test_language_warning_preserves_allow_and_updated_input(self, tmp_path: pathlib.Path) -> None:
+        """入力書き換えへ警告を合成しても明示許可と変更後入力を維持する。"""
+        transcript = tmp_path / "transcript-git-log.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "m-language-git-log",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "A" * 100}],
+                        "stop_reason": "end_turn",
+                    },
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline -1"},
+                "transcript_path": str(transcript),
+            }
+        )
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert output["permissionDecision"] == "allow"
+        assert "--decorate" in output["updatedInput"]["command"]
+        assert "英語主体" in output["additionalContext"]
+
+    def test_append_additional_context_creates_warning_only_output(self) -> None:
+        """出力本体が無い場合も警告追加だけでは明示許可しない。"""
+        result: dict = {}
+        pretooluse._append_additional_context(result, "warning")  # noqa: SLF001  # pylint: disable=protected-access
+        assert result == {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "additionalContext": "warning",
+            }
+        }
 
 
 class TestLanguageEscalation:
@@ -1337,6 +1382,8 @@ class TestBashGitCommitWarning:
         result = self._invoke(command, sid, state_dir, cwd=cwd)
         assert result.returncode == 0
         if expect_warn:
+            output = json.loads(result.stdout)
+            assert "permissionDecision" not in output["hookSpecificOutput"]
             assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
             assert self._has_additional_context(result, "committing without running tests")
             assert self._has_additional_context(result, "Auto-generated hook notice")
@@ -1351,6 +1398,7 @@ class TestBashGitLogDecorate:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}})
         assert result.returncode == 0
         data = json.loads(result.stdout)
+        assert data["hookSpecificOutput"]["permissionDecision"] == "allow"
         updated = data["hookSpecificOutput"]["updatedInput"]["command"]
         assert "--decorate" in updated
 
@@ -1383,6 +1431,7 @@ class TestBashCodexExecNudge:
         assert result.returncode == 0
         data = json.loads(result.stdout)
         assert "additionalContext" in data.get("hookSpecificOutput", {})
+        assert "permissionDecision" not in data["hookSpecificOutput"]
 
     def test_codex_exec_nudge_uses_conditional_plan_review_wording(self) -> None:
         """用途を断定せず、計画レビューの場合だけ点検を促す。"""
@@ -1580,6 +1629,7 @@ class TestBashBulkStageWithUneditedFiles:
         assert result.returncode == 0
         data = self._extract_json(result.stdout)
         assert data is not None, f"expected JSON output, got: {result.stdout!r}"
+        assert "permissionDecision" not in data["hookSpecificOutput"]
         ctx = data["hookSpecificOutput"]["additionalContext"]
         assert "bulk staging" in ctx
         return ctx
@@ -2779,6 +2829,8 @@ class TestBashAgentToolkitVersionBump:
         repo = self._make_repo(tmp_path, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
         result = self._invoke("git commit -m 'skill'", str(repo))
         assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert "permissionDecision" not in output["hookSpecificOutput"]
         assert self._has_version_bump_warning(result)
 
     def test_plugin_manifest_in_staged_no_warn(self, tmp_path: pathlib.Path):

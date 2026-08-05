@@ -295,7 +295,6 @@ def main(payload_text: str) -> int:
                 {
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
-                        "permissionDecision": "allow",
                         "additionalContext": _language_notice(body),
                     },
                 },
@@ -614,7 +613,7 @@ def _append_additional_context(result: dict, suffix: str) -> None:
     """
     hook_specific = result.get("hookSpecificOutput")
     if not isinstance(hook_specific, dict):
-        hook_specific = {"hookEventName": "PreToolUse", "permissionDecision": "allow"}
+        hook_specific = {"hookEventName": "PreToolUse"}
         result["hookSpecificOutput"] = hook_specific
     existing = hook_specific.get("additionalContext")
     if isinstance(existing, str) and existing:
@@ -2650,7 +2649,6 @@ def _check_bash_bulk_stage_with_unedited_files(
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
-                "permissionDecision": "allow",
                 "additionalContext": _llm_notice(
                     "warn: bulk staging includes files that were not edited in this session."
                     f" Un-edited candidates: {sample}."
@@ -3163,7 +3161,6 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | No
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
             "additionalContext": _llm_notice(
                 "committing without running tests. Follow the verify-then-commit procedure in 01-agent.md and run tests first.",
                 tag="warn",
@@ -3236,7 +3233,6 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | Non
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
             "additionalContext": _llm_notice(
                 "agent-toolkit/ files are staged but"
                 " `agent-toolkit/.claude-plugin/plugin.json` `version` is unchanged"
@@ -3303,7 +3299,6 @@ def _check_bash_codex_exec(command: str) -> dict | None:
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
             "additionalContext": _llm_notice(
                 "running codex exec."
                 " If this run submits a plan file for review, check whether any decisions"
