@@ -23,7 +23,8 @@
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
 - mq schedule: 分類メタデータの適用と処理順算出
-- mq process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
+- mq process-loop: 新規Claudeセッションへ`/goal`で完遂条件を設定して常駐実行する。
+  初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 

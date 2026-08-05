@@ -297,7 +297,7 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """プロンプトに`/process-feedbacks`と`/agent-toolkit:exit-session`を含み、
+        """新規セッションのプロンプトが単一の`/goal`条件であり、
         `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`が付与され、`returncode=0`後は反復継続すること。
         件数0到達後は`_wait_for_changes`が呼ばれ、待機解除後に件数再チェックへ戻ること。
         2回目の`_wait_for_changes`呼び出しで`KeyboardInterrupt`を送出し常駐ループを正常終了する。
@@ -337,7 +337,7 @@ class TestProcessLoopPromptAndEnv:
         assert exc_info.value.code == 0
         assert len(claude_calls) == 1
         prompt = claude_calls[0]["cmd"][-1]
-        assert "/process-feedbacks" in prompt
+        assert prompt.startswith("/goal ")
         assert "agent-toolkit:process-feedbacks" in prompt
         # cwdをmyrepoへ固定し、claudeセッション内のcwd依存コマンドの解決先を対象リポジトリへ揃える。
         assert claude_calls[0]["cwd"] == myrepo
@@ -401,20 +401,35 @@ class TestProcessLoopPromptAndEnv:
         _process_loop._strip_inherited_venv(env)  # pylint: disable=protected-access  # noqa: SLF001
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
-    def test_prompt_delegates_batch_selection_to_schedule_command(self) -> None:
-        """選抜対象の完遂と理由付き繰越を明示し、作業量・所要時間を判断材料化しないこと。"""
+    def test_prompt_is_single_goal_with_complete_success_conditions(self) -> None:
+        """新規セッションのgoal条件が構造・起動方法・達成条件・長さの契約を満たすこと。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
         )
-        assert "主目標" in prompt
-        assert "完遂" in prompt
-        assert "`atk mq schedule`が選抜した" in prompt
+        assert prompt.startswith("/goal ")
+        assert prompt.count("/goal ") == 1
+        assert not any(line.startswith("/") for line in prompt.splitlines()[1:])
+        assert len(prompt) < 4000
+        assert "`Skill`ツール" in prompt
+        assert "agent-toolkit:process-feedbacks" in prompt
+        assert "/repo" in prompt
+        assert "--target-repo=github.com/example/repo" in prompt
+        assert "`atk mq schedule`が当該セッションへ選抜した全項目" in prompt
+        assert "採否または理由付き繰越" in prompt
         assert "理由と繰越回数を記録" in prompt
-        assert "取得した全件" not in prompt
+        assert "計画準拠レビュー" in prompt
+        assert "独立レビュー" in prompt
+        assert "push" in prompt
+        assert "CI通過確認" in prompt
+        assert "`atk mq adopt`" in prompt
+        assert "回答済みTBD" in prompt
+        assert "連鎖feedback" in prompt
+        assert "session-review-dotfiles" in prompt
+        assert "agent-toolkit:session-review" in prompt
+        assert "agent-toolkit:exit-session" in prompt
         assert "時間がかかるのは正常" in prompt
         assert "作業量" in prompt
-        # 追加文言: 工程列挙が実施順序の定義である旨と、後続工程の到達要求を先行工程の縮退の根拠に解釈しない旨を明示する。
         assert "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません" in prompt
         assert "本プロンプトの完遂順序の列挙全体がユーザー明示指示を構成します" in prompt
         assert "後続工程" in prompt
@@ -517,7 +532,7 @@ class TestProcessLoopPromptAndEnv:
         assert second_command[:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
         assert "--resume" not in second_command
         assert "--continue" not in second_command
-        assert second_command[-1].startswith("/process-feedbacks")
+        assert second_command[-1].startswith("/goal ")
 
     @pytest.mark.parametrize("resume_argv", [["--resume=session-id"], ["--resume", "session-id"]])
     def test_resume_session_id_is_normalized(
@@ -532,7 +547,7 @@ class TestProcessLoopPromptAndEnv:
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter([1, 0])
+        counts = iter([1, 1, 0])
         monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
@@ -546,7 +561,10 @@ class TestProcessLoopPromptAndEnv:
                 home=tmp_path,
             )
 
+        assert len(claude_calls) == 2
         assert claude_calls[0]["cmd"] == ["claude", "--resume=session-id"]
+        assert claude_calls[1]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
+        assert claude_calls[1]["cmd"][-1].startswith("/goal ")
 
     def test_dotfiles_resume_defers_worktree_until_next_session(
         self,
