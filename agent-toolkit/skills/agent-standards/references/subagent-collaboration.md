@@ -111,27 +111,19 @@ frontmatterの`skills:`によるプリロードは採用しない。
 
 ## 計画処理の委譲関係
 
-`plan-file-finalizer`と`plan-impl-executor`はHaiku固定の委譲窓口とする。
-両者は成果物を直接編集せず、`agent-toolkit:codex-exec`を接続経路として作業を委譲する。
+計画レビューは`agent-toolkit:plan-mode`の呼び出し元が機械チェック・修正系と総合レビュー系へ直接委譲する。
+直接委譲の比較基準、累積差分、採否、反映、限定再レビューは、
+`agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を正本とする。
 
-- `plan-file-finalizer`: 計画の機械チェック・総合レビュー・指摘反映を統括する
-- `plan-impl-executor`: 計画の実装・検証・コミット・実装差分レビュー・指摘反映を統括する
-- `codex-exec`: codex MCPの初回接続・継続と、利用不能時の汎用エージェント代替を担う
-- codexまたは`subagent_type: claude`: 成果物の作成・修正またはレビューを実施する
+`plan-impl-executor`はHaiku固定の委譲窓口として維持する。
+同executorは成果物を直接編集せず、`agent-toolkit:codex-exec`を接続経路として、
+実装・修正系、計画準拠実装レビュー系、独立実装レビュー系へ委譲する。
+3系統は履歴、thread、Agent識別子を共有せず、2つのレビュー系は並列起動する。
 
-実装・修正系、計画準拠実装レビュー系、独立実装レビュー系は独立した3系統とする。
-2つの実装レビュー系は並列起動し、互いの入力と履歴を共有しない。
-codex経路は系統別の`threadId`を継続する。
-Claude代替は系統別のAgent識別子を保持し、利用可能な`SendMessage`で同じAgentを再開する。
-再開できない場合だけ新規起動する。確定的な実装・機械的修正ではSonnet、
-設計判断や重大指摘の採否を含む作業ではOpusを使う。
-系統別Agent識別子を受領した主体はrouteとの整合を検収し、同じ系統の次回入力へ搬送する。
-Agent識別子の搬送だけでは再開主体を移管しない。直接起動した主体を所有主体として併記し、
-所有主体だけが当該Agentへ`SendMessage`を実行する。
-
-スキル経路と汎用Agent経路は接続方法が異なるが、作業主体として同じ役割層に属する。
-同一役割層を同じ定義種別へ揃えることは要件としない。
-用途固有の詳細は`agent-toolkit/skills/codex-exec/references/`配下を正典とする。
+codexまたは汎用Agentへの共通の起動文、通常配送、代替記録、完了済みAgentの継続条件は、
+`agent-toolkit/skills/codex-exec/references/delegation-boilerplate.md`を正本とする。
+Agent識別子の所有主体は直接起動した主体とし、所有主体だけが同じAgentを継続できる。
+用途固有の資料契約は`agent-toolkit/skills/codex-exec/references/`配下のtask referenceを正本とする。
 
 ## 出力節への追加要素導入
 

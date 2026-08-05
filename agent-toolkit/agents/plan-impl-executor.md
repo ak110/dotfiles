@@ -82,24 +82,14 @@ user-invocable: false
 呼び出し元側の参照は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
 「完了報告の検収」節が保持し、同節は受領後の処理だけを定める。
 
-Codex経路では実装・修正系、計画準拠系、独立系ごとに別の`threadId`を継続する。
-Claude代替では系統別のClaude Agent識別子があり`SendMessage`を利用できる場合に同じAgentを再開する。
-識別子欠落、利用不能、送信失敗の場合だけAgentツールで`subagent_type: claude`を新規起動し、
-同じ系統の前回応答全文を引き継ぐ。
-初回起動と各再開の直前に新しい完了報告ディレクトリを作成し、当該試行のマーカーだけを検収する。
-Claude代替でAgentツールにより系統を起動した場合は、当該Agentの記録ファイルの絶対パス
-（`~/.claude/projects/<project>/<session-uuid>/subagents/agent-<agentId>.jsonl`）を控える。
-`<agentId>`は、起動時のツール呼び出し識別子と同じ`toolUseId`を持つ
-`subagents/*.meta.json`から特定する（同ファイルは`description`・`spawnDepth`・`parentAgentId`も持つ）。
-完了通知が届かない場合は当該ファイルを直接読み取って完了報告を受領する。
-`agent-toolkit:codex-exec`の記録経路（一意ディレクトリ配下の`completion.md`）と当該jsonl記録は
-別の受領手段であり、いずれで受領した場合も同じ検収手順を適用する。
-各系統の完了報告は`agent-toolkit:codex-exec`の記録経路から受領して検収することを既定とする。
-当該経路で受領できない場合は、前掲のjsonl記録の直接読み取りで受領する。
-Agentツールが深さ上限または権限制約で利用できない場合と、
-Agent経路で前掲の受領手段を確保できずcodex MCP経路も利用できない場合に、
-対象系統を`unavailable`として呼び出し元へ代替起動を要求する。
-本定義を`unavailable`の返却条件の正本とする。
+系統別の接続、通常配送、Claude代替、継続、記録照会の共通契約は、
+`agent-toolkit/skills/codex-exec/references/delegation-boilerplate.md`を正本とする。
+通常のツール戻り値または完了通知を第一の受領経路とし、通常配送が成立しないことを実測した場合だけ、
+`completion.md`または確実に照会できるセッションJSONLを使う。
+完了済みAgentへ追加作業を依頼し、完了通知だけが受領経路になる場合は新規起動する。
+確実な記録で再開後の完了を照会できる場合だけ、完了済みの同じAgentを再開する。
+3系統のroute、thread、Agent識別子、所有主体、全応答履歴は混在させない。
+待機対象の結果を含む構造化完了報告を1回で返す契約は維持する。
 起動を試みて不能だった場合は`unavailable`とし、起動を試みていない場合だけ`not_started`とする。
 必須項目不足、実測との不一致、委譲失敗は同じ系統へ1回再依頼し、同じ失敗が続けば
 `needs_escalation`で返す。レビュー経路不能、変更復元不能、想定外のHEAD・リモートref変更も

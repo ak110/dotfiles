@@ -334,7 +334,7 @@ class TestSessionReviewSkillInvocation:
 
 
 class TestCodexExecTracking:
-    """codex-exec起動とfinalizer完了報告の状態記録。"""
+    """codex-exec起動の状態記録。"""
 
     def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path) -> None:
         sid = "codex-exec-skill"
@@ -347,19 +347,6 @@ class TestCodexExecTracking:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("codex_exec_skill_invoked") is True
-
-    def test_finalizer_completion_sets_review_flag(self, tmp_path: pathlib.Path) -> None:
-        sid = "finalizer-completed"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
-                "tool_response": {"result": "status: completed\nreview_completed: true"},
-            },
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("plan_review_completed") is True
 
 
 class TestSubagentEndProcessLoopLog:

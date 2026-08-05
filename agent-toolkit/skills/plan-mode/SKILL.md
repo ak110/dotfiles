@@ -46,17 +46,11 @@ description: >
    計画レビューの指摘範囲を定める節であるため、起草時点で満たすべき水準を確定できる。
    同一テーマを複数計画へ分割する場合、各計画が専任する対象ファイルと主題が
    重複しないことを確認する
-4. `references/plan-file-finalizer-prompt-template.md`をReadし、
-   同referenceの起動契約に対応する実行時の値を必須見出し3点で構成する。
-   呼び出し元の読込対象は同referenceに限定し、計画本文と定義済みの委譲手順は起動文へ再掲しない。
-   Agentツールで`subagent_type: agent-toolkit:plan-file-finalizer`を指定して起動し、
-   同referenceが定める完了報告の全項目を検収する。
-   `review_summary`の各見解は実体と照合し、呼び出し元が採否を確定する。
-   `status: needs_escalation`とサンドボックスパスの反映は、
-   同referenceが定めるClaude代替、再入力、正規パス反映の手順に従う。
-   検収後に`plan-impl-executor`の起動がセッション状態の不足を理由に阻まれた場合は、
-   `agent-toolkit/rules/02-claude-code.md`「ツール呼び出し・タスク管理」節の状態実測手順に従う。
-   計画レビューの完遂を検収済みで状態の記録契機が無い場合は、呼び出し元が実装と実装差分レビューを担当する
+4. `references/plan-review-delegation.md`をReadし、同referenceが定める初回機械検査、
+   比較基準の保存、総合レビュー、3区分の採否、反映、限定再レビューを呼び出し元が実施する。
+   機械チェック・修正系と総合レビュー系は`agent-toolkit:codex-exec`を介して別系統で起動する。
+   呼び出し元は各応答と成果物実体を検収し、指摘の採否とスコープ拡大の承認要否を確定する。
+   未解決事項と再開状態は同referenceの返却契約に従い、正常完了後だけ一時ディレクトリを後始末する。
 5. 計画の確定をユーザーへ提示する。提示内容は次の4点とし、計画ファイルの記載から引く。
    本スキル以外の経路（`agent-toolkit:process-feedbacks`・`agent-toolkit:plan-and-add-feedback`など）で
    計画ファイルを作成した場合も同じ提示をする。

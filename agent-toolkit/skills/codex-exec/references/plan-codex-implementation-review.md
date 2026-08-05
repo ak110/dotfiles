@@ -6,16 +6,13 @@
 ## 初回レビュー
 
 計画着手前SHAと`HEAD`から変更ファイル一覧を実測し、同じ成果物スナップショットを両系統へ渡す。
-両系統へ渡す品質規範は、適用する`agent-toolkit:review-standards`・
-`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`と対象固有スキルとする。
-対象差分がコード・テストコードを含む場合は`agent-toolkit:coding-standards`を追加して渡す。
+計画準拠系の資料契約は`plan-codex-implementation-plan-review-task.md`の`## 入力`、
+独立系の資料契約は`plan-codex-implementation-independent-review-task.md`の`## 入力`を正本とする。
+送信側は各task referenceが要求する絶対パスと、計画着手前SHA、HEAD、変更ファイル一覧、
+作業ディレクトリ、対象、完了条件だけを渡す。
+独立系へ計画、進捗ログ、他レビューの出力を渡さない。
 
-レビュー前に「変更検知と復元」節の記録を完了してから、次を同時に開始する。
-
-- 計画準拠系: 本ファイル、`plan-codex-implementation-plan-review-task.md`、計画ファイル、
-  品質規範、プロジェクト規範を絶対パスで渡す
-- 独立系: 本ファイル、`plan-codex-implementation-independent-review-task.md`、変更ファイル一覧、
-  計画着手前SHA、品質規範、プロジェクト規範、作業ディレクトリを渡す
+レビュー前に「変更検知と復元」節の記録を完了してから、両系統を同時に開始する。
 
 両系統は対象差分から次の観点を導出して点検する。固定観点だけに限定せず、
 対象差分に固有の観点を追加する。

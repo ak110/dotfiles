@@ -166,10 +166,10 @@ def test_session_state_persists_codex_exec_flags() -> None:
 
     def _set(state: dict) -> dict | None:
         state["codex_exec_skill_invoked"] = True
-        state["plan_review_completed"] = True
+        state["plan_mode_skill_invoked"] = True
         return state
 
     assert update_state(session_id, _set) is True
     state = read_state(session_id)
     assert state["codex_exec_skill_invoked"] is True
-    assert state["plan_review_completed"] is True
+    assert state["plan_mode_skill_invoked"] is True

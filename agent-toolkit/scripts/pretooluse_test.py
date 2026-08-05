@@ -3235,364 +3235,6 @@ _DOC_EDIT_SCENARIOS = [
 ]
 
 
-class TestScopeEscalationInDocEditCheck:
-    """対象ドキュメント編集時のscope-escalationフレーズ転記検出警告（block降格済み）。
-
-    対象は`agent-toolkit/rules/`配下と`agent-toolkit/skills/**/SKILL.md`（`references/`配下を除く）。
-    フレーズ本文は隔離フィクスチャから動的に読み込む。テストメソッド名の`blocks` /
-    `detects_phrase`は検出時の警告出力を指し、いずれも`returncode`は0を維持する
-    （完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-impl-executor`起動時の
-    ブロックへ集約する）。
-    """
-
-    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
-    @pytest.mark.parametrize(("scenario", "text", "category"), _DOC_EDIT_SCENARIOS)
-    def test_doc_edit_scenarios(
-        self,
-        tmp_path: pathlib.Path,
-        tool_name: str,
-        scenario: str,
-        text: str,
-        category: str,
-    ) -> None:
-        """4種の文書編集シナリオをWrite、Edit、MultiEditで共通検証する。"""
-        tool_input, expect_warning = _prepare_doc_edit_scenario(tmp_path, tool_name, scenario, text)
-        result = _run({"tool_name": tool_name, "tool_input": tool_input})
-        assert result.returncode == 0
-        assert ("scope-escalation" in result.stderr) is expect_warning
-        assert (category in result.stderr) is expect_warning
-        assert ("matched:" in result.stderr) is expect_warning
-
-    def test_multilevel_skill_target_blocks(self):
-        """任意階層の`agent-toolkit/skills/**/SKILL.md`を対象に含む。"""
-        text = _SCOPE_ESCALATION_INPUTS[0][0]
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "agent-toolkit/skills/parent/child/SKILL.md",
-                    "content": f"{text}\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    def test_old_string_not_inspected_on_target(self, tmp_path: pathlib.Path):
-        """対象ファイルでも`old_string`内のフレーズは検出しない（既存違反の修正を妨げない）。
-
-        `new_string`にはクリーンな置換後文面を配置し、フレーズが`old_string`にのみあることで
-        通過判定が`old_string`不検査に由来することを確認する。
-        """
-        text = _SCOPE_ESCALATION_INPUTS[0][0]
-        clean_replacement = "通常の置換後文面"
-        target = _write_tmp_file(tmp_path, "agent-toolkit/rules/01-agent.md", f"{text}\n")
-        # 置換後文面にフレーズが残っていないことを確認（テスト前提の自己検査）
-        for input_text, _ in _SCOPE_ESCALATION_INPUTS:
-            assert input_text not in clean_replacement
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": text,
-                    "new_string": clean_replacement,
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize(
-        "file_path",
-        [
-            "agent-toolkit/agents/plan-impl-executor.md",
-            "agent-toolkit/scripts/pretooluse.py",
-            "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
-            "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
-            "agent-toolkit/skills/x/y/references/SKILL.md",
-            "README.md",
-            "src/app.py",
-        ],
-    )
-    def test_non_target_doc_allows_phrase(self, file_path: str):
-        """対象外ドキュメントでは同一フレーズも通過する。"""
-        text = _SCOPE_ESCALATION_INPUTS[0][0]
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": file_path,
-                    "content": f"{text}\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    def test_clean_content_on_target_allowed(self):
-        """対象ファイルでもフレーズを含まない内容は通過する。"""
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
-                    "content": "# header\n\nplain content.\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    def test_absolute_path_target_blocks(self):
-        """絶対パス指定でも末尾マッチで対象判定される。"""
-        text = _SCOPE_ESCALATION_INPUTS[0][0]
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "/home/user/dotfiles/agent-toolkit/rules/01-agent.md",
-                    "content": f"{text}\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    def test_plan_file_target_blocks(self, tmp_path: pathlib.Path):
-        """計画ファイル（`~/.claude/plans/*.md`）もscope-escalation転記検出の対象に含まれる。"""
-        home = tmp_path / "home"
-        plan = _make_plan_file(home)
-        env = _plan_file_state_env(tmp_path, home)
-        sid = "scope-esc-plan-file"
-        text, category = _SCOPE_ESCALATION_INPUTS[0]
-        content = _VALID_H2_PLAN_CONTENT.replace("## 対応方針\n\nx\n", f"## 対応方針\n\n{text}\n", 1)
-        _write_session_state(
-            tmp_path,
-            sid,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "scope-escalation" in result.stderr
-        assert category in result.stderr
-
-    def test_mitigation_in_adoption_references_process_feedbacks(self):
-        """`mitigation-in-adoption`カテゴリはprocess-feedbacks配下review-checklists.mdの項を参照する。"""
-        text = next(t for t, c in _SCOPE_ESCALATION_INPUTS if c == "mitigation-in-adoption")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
-                    "content": f"# header\n\n{text}\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert "review-checklists.md" in result.stderr
-        assert "採用時の反映内容の縮小禁止" in result.stderr
-
-    def test_other_category_references_01_agent_md(self):
-        """`mitigation-in-adoption`以外のカテゴリは01-agent.mdの節を参照する。"""
-        text = next(t for t, c in _SCOPE_ESCALATION_INPUTS if c == "process-omission")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
-                    "content": f"# header\n\n{text}\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert "agent-toolkit/rules/01-agent.md" in result.stderr
-        assert "01-01-agent.md" not in result.stderr
-        assert "完遂と先送り" in result.stderr
-
-
-class TestScopeEscalationPlanFileFenceExclusion:
-    """fb-7: 計画ファイル対象時に`text`コードフェンス内のfixture例語彙を走査対象から除外する。
-
-    規範文書本体（`agent-toolkit/rules/`配下等）はフェンス除外を適用せず、既存の検出精度を維持する。
-    """
-
-    def test_priority_consult_in_text_fence_of_plan_file_not_detected(self, tmp_path: pathlib.Path):
-        """計画ファイルの`text`フェンス内フレーズは通過する（Write経路）。"""
-        home = tmp_path / "home"
-        plan = _make_plan_file(home)
-        env = _plan_file_state_env(tmp_path, home)
-        sid = "scope-esc-plan-fence-write"
-        text, _category = _SCOPE_ESCALATION_INPUTS[0]
-        content = _VALID_H2_PLAN_CONTENT.replace(
-            "## 対応方針\n\nx\n",
-            f"## 対応方針\n\n```text\n{text}\n```\n",
-            1,
-        )
-        _write_session_state(
-            tmp_path,
-            sid,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_priority_consult_in_text_fence_of_plan_file_edit_not_detected(self, tmp_path: pathlib.Path):
-        """計画ファイルの`text`フェンス内へのnew_string追加も通過する（Edit経路）。"""
-        home = tmp_path / "home"
-        plan = _make_plan_file(home)
-        env = _plan_file_state_env(tmp_path, home)
-        text, _category = _SCOPE_ESCALATION_INPUTS[0]
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "old_string": "# t",
-                    "new_string": f"# t\n\n```text\n{text}\n```\n",
-                },
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_fence_inner_only_plan_file_edit_not_detected(self, tmp_path: pathlib.Path):
-        """フェンス境界を含まないEditでも、全文上の`text`フェンス内なら通過する。"""
-        home = tmp_path / "home"
-        plan = _make_plan_file(home)
-        env = _plan_file_state_env(tmp_path, home)
-        text, _category = _SCOPE_ESCALATION_INPUTS[0]
-        before = "フェンス内の既存文言"
-        after = f"フェンス内の既存文言。{text}"
-        plan.write_text(f"# t\n\n```text\n{before}\n```\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "old_string": before,
-                    "new_string": after,
-                },
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_fence_inner_only_plan_file_multiedit_not_detected(self, tmp_path: pathlib.Path):
-        """フェンス境界を含まないMultiEditでも、全文上の`text`フェンス内なら通過する。"""
-        home = tmp_path / "home"
-        plan = _make_plan_file(home)
-        env = _plan_file_state_env(tmp_path, home)
-        text, _category = _SCOPE_ESCALATION_INPUTS[0]
-        before = "フェンス内の既存文言"
-        after = f"フェンス内の既存文言。{text}"
-        plan.write_text(f"# t\n\n```text\n{before}\n```\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "edits": [{"old_string": before, "new_string": after}],
-                },
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_priority_consult_in_norm_doc_still_detected(self):
-        """計画ファイル以外（規範文書本体）はフェンス内でも従来どおり検出する（警告、block降格済み）。"""
-        text, category = _SCOPE_ESCALATION_INPUTS[0]
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
-                    "content": f"# header\n\n```text\n{text}\n```\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
-
-
-class TestMatchScopeEscalationIncreaseBracketExclusion:
-    """`_match_scope_escalation_increase`の括弧内除外の共有動作を検証する。
-
-    `_scope_escalation._apply_category_exclusions`を経由してnew・old双方へ除外を適用する。
-    fixtureは`_scope_escalation_test.py`の`test_priority_consult_phrase_*`3件と同一文言。
-    """
-
-    def test_bracket_quoted_priority_consult_not_blocked(self, tmp_path: pathlib.Path):
-        """全角鍵括弧内のpriority-consult語彙は増分検出でもブロックしない。"""
-        old = "既存記述のみ。"
-        new = "既存記述のみ。計画ファイル本文の「スコープ相談節」を確認する。"
-        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": old,
-                    "new_string": new,
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    def test_outside_bracket_priority_consult_blocked(self, tmp_path: pathlib.Path):
-        """全角鍵括弧の外側のpriority-consult語彙は増分検出で警告する（block降格済み）。"""
-        old = "既存記述のみ。"
-        new = "既存記述のみ。優先順位について相談してから着手する。"
-        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": old,
-                    "new_string": new,
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert "priority-consult" in result.stderr
-
-    def test_bracket_and_outside_mixed_blocked_by_outside(self, tmp_path: pathlib.Path):
-        """内側と外側の両方にある場合、外側の増分で警告する（block降格済み）。"""
-        old = "既存記述のみ。"
-        new = "既存記述のみ。計画ファイル本文の「スコープ相談節」を参照しつつ、優先順位について相談してから着手する。"
-        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": old,
-                    "new_string": new,
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert "priority-consult" in result.stderr
-
-
 class TestFabricatedMetricsScopeEscalation:
     """`fabricated-metrics`カテゴリ（実測値取得手段が無い数値主張）の検出（FB7）。
 
@@ -3674,349 +3316,46 @@ class TestFabricatedMetricsScopeEscalation:
         assert "fabricated-metrics" not in result.stderr
 
 
-_PROCESS7_FLAGS = ("plan_review_completed",)
+class TestPlanImplExecutorPlanPathRecording:
+    """executor起動時の実在計画パス記録。"""
 
-
-def _process7_env(tmp_path: pathlib.Path) -> dict[str, str]:
-    return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-
-
-class TestProcess7CompletionCheck:
-    """ExitPlanMode / `plan-impl-executor`起動時のplan-file-finalizerの整合性チェック完了未達ブロック。"""
-
-    @pytest.mark.parametrize(
-        ("missing_flags", "expect_block"),
-        [
-            pytest.param(frozenset(), False, id="review-completed"),
-            pytest.param(frozenset({"plan_review_completed"}), True, id="review-incomplete"),
-        ],
-    )
-    def test_flag_combination_matrix(
-        self,
-        tmp_path: pathlib.Path,
-        missing_flags: frozenset[str],
-        expect_block: bool,
-    ) -> None:
-        """計画レビュー完了フラグの真偽でゲートが分岐することを検証する。"""
-        sid = "process7-flags-" + ("-".join(sorted(missing_flags)) or "all-set")
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: flag not in missing_flags for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
+    @pytest.mark.parametrize("same_as_current", [False, True])
+    def test_records_existing_plan(self, tmp_path: pathlib.Path, same_as_current: bool) -> None:
+        home = tmp_path / "home"
+        plan = _make_plan_file(home, "target.md")
+        sid = f"executor-plan-path-{same_as_current}"
+        if same_as_current:
+            _write_session_state(tmp_path, sid, {"current_plan_file_path": str(plan)})
         result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == (2 if expect_block else 0)
-        if expect_block:
-            for missing_flag in missing_flags & frozenset(_PROCESS7_FLAGS):
-                assert missing_flag in result.stderr
-            assert "plan-file-finalizer.md" in result.stderr
-
-    def test_missing_flag_message_explains_gate_and_bypass(self, tmp_path: pathlib.Path):
-        """ブロックメッセージが理由・plan-impl feedback処理時の対処・pre-existing planバイパス条件・
-        レビュー完遂時の担当を説明する。
-        """
-        sid = "process7-message-explains"
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert "plan-impl-feedback-flow.md" in result.stderr
-        assert "混在時の並行制御" in result.stderr
-        assert "current_plan_file_path" in result.stderr
-        assert "Review completed without a recording trigger" in result.stderr
-        assert "agent-toolkit/skills/plan-mode/SKILL.md" in result.stderr
-
-    def test_no_plan_mode_context_passes(self, tmp_path: pathlib.Path):
-        """`plan_mode_skill_invoked`が偽の場合は検査対象外として通過する。"""
-        sid = "process7-no-plan-mode"
-        _write_session_state(tmp_path, sid, {})
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル `{plan}` を実装する。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
+        assert _read_session_state(tmp_path, sid)["plan_impl_executor_verified_plan_path"] == str(plan.resolve())
 
-    def test_plan_impl_executor_agent_also_checked(self, tmp_path: pathlib.Path):
-        """`plan-impl-executor`のAgent起動も同様にplan-file-finalizerの整合性チェック完了未達をブロックする。"""
-        sid = "process7-plan-impl-executor-agent"
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
+    @pytest.mark.parametrize("prompt", ["計画を実装する。", "計画ファイル `.claude/plans/missing.md` を実装する。"])
+    def test_does_not_record_unresolved_plan(self, tmp_path: pathlib.Path, prompt: str) -> None:
+        sid = "executor-plan-path-unresolved"
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor"},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": prompt},
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-    def test_agent_referenced_matching_current_plan_blocks(self, tmp_path: pathlib.Path):
-        """起動プロンプトが現行計画パスと一致する場合はplan-file-finalizerの整合性チェック完了未達をブロックする。"""
-        plan_path = str(tmp_path / ".claude" / "plans" / "current.md")
-        sid = "process7-agent-path-match"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": plan_path}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {plan_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-    def test_agent_referenced_other_existing_plan_passes(self, tmp_path: pathlib.Path):
-        """起動プロンプトが現行計画と異なる実在パスを指す場合はブロックしない。"""
-        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
-        other_path = tmp_path / ".claude" / "plans" / "other-reviewed.md"
-        other_path.parent.mkdir(parents=True, exist_ok=True)
-        other_path.write_text("計画実装型フィードバック投入元セッションで完遂済みの計画。", encoding="utf-8")
-        sid = "process7-agent-path-mismatch"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {other_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-
-    def test_agent_referenced_nonexistent_other_plan_blocks(self, tmp_path: pathlib.Path):
-        """起動プロンプトが現行計画と異なる非実在パスを指す場合は従来どおりブロックする。
-
-        実在確認が無ければ、任意の非実在パスを記述するだけでplan-file-finalizerの整合性チェック未達を回避できてしまうため、
-        実在しないパスへの参照はブロック（returncode 2）を維持することを確認する。
-        """
-        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
-        other_path = str(tmp_path / ".claude" / "plans" / "other-nonexistent.md")
-        sid = "process7-agent-path-mismatch-nonexistent"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {other_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-    def test_agent_backtick_path_with_spaces_matches(self, tmp_path: pathlib.Path):
-        """空白を含むバッククォート囲みパスも丸ごと抽出して一致判定する。"""
-        plan_path = str(tmp_path / "User Name" / ".claude" / "plans" / "current.md")
-        sid = "process7-agent-path-space-match"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": plan_path}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: `{plan_path}` を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-    def test_agent_path_normalization_failure_blocks(self, tmp_path: pathlib.Path):
-        """パス正規化に失敗した場合（未解決ユーザー表記等）は従来判定でブロックする。
-
-        現行計画パスには正規化可能な別パスを設定する。正規化失敗のフォールバックが
-        無ければ両パスは不一致となり通過（returncode 0）するため、
-        ブロック（returncode 2）はフォールバック経路の通過を裏付ける。
-        """
-        referenced_path = "~nonexistent-user-for-test/.claude/plans/current.md"
-        current_path = str(tmp_path / ".claude" / "plans" / "other.md")
-        sid = "process7-agent-path-normalize-fail"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: `{referenced_path}` を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-    def test_agent_prompt_without_plan_path_blocks(self, tmp_path: pathlib.Path):
-        """起動プロンプトから計画ファイルパスを抽出できない場合は安全側でブロックする。"""
-        sid = "process7-agent-path-unextractable"
-        state = {
-            "plan_mode_skill_invoked": True,
-            "current_plan_file_path": str(tmp_path / ".claude" / "plans" / "current.md"),
-        }
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": "計画に従い実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-    def test_referenced_other_existing_plan_records_verified_path(self, tmp_path: pathlib.Path):
-        """別の実在計画への切替を許可した経路で`plan_impl_executor_verified_plan_path`へ当該パスを記録する。"""
-        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
-        other_path = tmp_path / ".claude" / "plans" / "other-reviewed.md"
-        other_path.parent.mkdir(parents=True, exist_ok=True)
-        other_path.write_text("別セッションで完遂済みの計画。", encoding="utf-8")
-        sid = "process7-verified-path-record"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {other_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 0
-        recorded = _read_session_state(tmp_path, sid)
-        assert recorded.get("plan_impl_executor_verified_plan_path") == str(other_path.resolve())
-        assert recorded.get("current_plan_file_path") == current_path
-
-    def test_referenced_same_plan_does_not_record_verified_path(self, tmp_path: pathlib.Path):
-        """現行計画と同一パスを参照した通過経路では`plan_impl_executor_verified_plan_path`を記録しない。"""
-        plan_path = tmp_path / ".claude" / "plans" / "current.md"
-        plan_path.parent.mkdir(parents=True, exist_ok=True)
-        plan_path.write_text("本セッションで起草した計画。", encoding="utf-8")
-        sid = "process7-verified-path-same-plan"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
-        state.update({flag: True for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {plan_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 0
-        assert _read_session_state(tmp_path, sid).get("plan_impl_executor_verified_plan_path") is None
-
-    def test_referenced_nonexistent_other_plan_does_not_record_verified_path(self, tmp_path: pathlib.Path):
-        """非実在パスを参照したブロック経路では`plan_impl_executor_verified_plan_path`を記録しない。"""
-        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
-        other_path = str(tmp_path / ".claude" / "plans" / "other-nonexistent.md")
-        sid = "process7-verified-path-nonexistent"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {other_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert _read_session_state(tmp_path, sid).get("plan_impl_executor_verified_plan_path") is None
-
-    def test_unset_current_plan_path_with_existing_referenced_plan_passes(self, tmp_path: pathlib.Path) -> None:
-        """`current_plan_file_path`が未記録でも、参照先が実在する計画ならブロックしない。"""
-        other_path = tmp_path / ".claude" / "plans" / "other-reviewed.md"
-        other_path.parent.mkdir(parents=True, exist_ok=True)
-        other_path.write_text("別セッションで完遂済みの計画。", encoding="utf-8")
-        sid = "process7-unset-current-existing-referenced"
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {other_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 0
-
-    def test_unset_current_plan_path_with_nonexistent_referenced_plan_blocks(self, tmp_path: pathlib.Path) -> None:
-        """`current_plan_file_path`が未記録で、参照先が非実在の場合は従来どおりブロックする。"""
-        other_path = str(tmp_path / ".claude" / "plans" / "other-nonexistent.md")
-        sid = "process7-unset-current-nonexistent-referenced"
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル: {other_path} を実装してください。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        assert not state_path.exists() or "plan_impl_executor_verified_plan_path" not in _read_session_state(tmp_path, sid)
 
 
 class TestAgentNameParameterGate:
@@ -4034,7 +3373,7 @@ class TestAgentNameParameterGate:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_process7_env(tmp_path),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 2
         assert "`name` parameter is not allowed" in result.stderr
@@ -4050,7 +3389,7 @@ class TestAgentNameParameterGate:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_process7_env(tmp_path),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
         assert "`name` parameter is not allowed" not in result.stderr
@@ -4064,7 +3403,7 @@ class TestAgentNameParameterGate:
                 "session_id": "agent-name-block-route",
                 "permission_mode": "default",
             },
-            env_overrides=_process7_env(tmp_path),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 2
         assert "execution result" in result.stderr
@@ -4074,53 +3413,30 @@ class TestAgentNameParameterGate:
     def test_name_block_precedes_subagent_type_flag_record(self, tmp_path: pathlib.Path) -> None:
         """ブロックされた起動では`subagent_type`別フラグを記録しない（起動しない呼び出しの副作用を残さない）。"""
         sid = "agent-name-block-no-flag"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "name": "codex-1"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        assert not state_path.exists() or _read_session_state(tmp_path, sid).get("plan_review_completed") is not True
-
-
-# `TestSubagentModelOverrideGate`用の完全な起動プロンプト。モデル検査は見出し検査より先に
-# 評価されるため、参照パスが実在しなくても見出し欠落ゲートの誤検出と混同しない
-# （モデル検査が真の場合は`_check_plan_file_finalizer_prompt_completeness`へ到達する前にreturnする）。
-_COMPLETE_PLAN_FILE_FINALIZER_PROMPT_FOR_MODEL_GATE = (
-    "## 計画ファイルパス\n`~/.claude/plans/example.md`\n\n## permission_mode\n非`plan`\n\n## 作業ディレクトリ\n`/repo`\n"
-)
-
-
-def _complete_plan_file_finalizer_prompt(plan_path: pathlib.Path) -> str:
-    """`TestPlanFileFinalizerPromptCompletenessGate`用の、実在する計画ファイルを参照する完全な起動プロンプト。"""
-    return f"## 計画ファイルパス\n`{plan_path}`\n\n## permission_mode\n非`plan`\n\n## 作業ディレクトリ\n`/repo`\n"
-
-
-class TestSubagentModelOverrideGate:
-    """`plan-file-finalizer`・`plan-impl-executor`への`model`引数指定の一律ブロック。"""
-
-    def test_plan_file_finalizer_with_opus_blocked(self):
-        """完全な起動プロンプトを使い、見出し欠落ゲートではなくモデル検査自体の発火を検証する。"""
+        plan = _make_plan_file(tmp_path / "home", "name-block.md")
+        env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
         result = _run(
             {
                 "tool_name": "Agent",
                 "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-file-finalizer",
-                    "model": "opus",
-                    "prompt": _COMPLETE_PLAN_FILE_FINALIZER_PROMPT_FOR_MODEL_GATE,
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "name": "codex-1",
+                    "prompt": f"計画ファイル `{plan}` を実装する。",
                 },
-                "session_id": "model-override-plan-file-finalizer",
+                "session_id": sid,
                 "permission_mode": "default",
-            }
+            },
+            env_overrides=env,
         )
         assert result.returncode == 2
-        assert "explicit `model` argument" in result.stderr
-        assert "plan-file-finalizer" in result.stderr
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        assert not state_path.exists() or "plan_impl_executor_verified_plan_path" not in _read_session_state(tmp_path, sid)
+        log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
+        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+
+
+class TestSubagentModelOverrideGate:
+    """`plan-impl-executor`への`model`引数指定の一律ブロック。"""
 
     def test_plan_impl_executor_with_model_blocked_short_form(self):
         result = _run(
@@ -4134,7 +3450,7 @@ class TestSubagentModelOverrideGate:
         assert result.returncode == 2
 
     def test_no_model_argument_passes(self):
-        """`plan-impl-executor`を使い、同時導入の`TestPlanFileFinalizerPromptCompletenessGate`と非干渉にする。"""
+        """`plan-impl-executor`でモデル指定を省略した起動は通過する。"""
         result = _run(
             {
                 "tool_name": "Agent",
@@ -4144,275 +3460,6 @@ class TestSubagentModelOverrideGate:
             }
         )
         assert result.returncode == 0
-
-
-class TestPlanFileFinalizerPromptCompletenessGate:
-    """`plan-file-finalizer`起動プロンプトの必須見出し3点の実在・非空検査と計画ファイル実在検査。"""
-
-    def test_complete_prompt_passes(self, tmp_path: pathlib.Path):
-        """観点(a): 必須見出し3点（作業ディレクトリを含む）のプロンプトが通過する。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-file-finalizer",
-                    "prompt": _complete_plan_file_finalizer_prompt(plan_path),
-                },
-                "session_id": "prompt-completeness-ok",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 0
-
-    def test_omitting_legacy_headings_still_passes(self, tmp_path: pathlib.Path):
-        """観点(b): 旧必須見出しだった`## 合意済み事項`・`## 照合結果`が無くてもブロックされない。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        prompt = _complete_plan_file_finalizer_prompt(plan_path)
-        assert "合意済み事項" not in prompt
-        assert "照合結果" not in prompt
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": "prompt-completeness-no-legacy-headings",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 0
-
-    def test_nonexistent_plan_file_path_blocked(self, tmp_path: pathlib.Path):
-        """観点(c): `## 計画ファイルパス`が指す計画ファイルが実在しない場合にブロックされる。"""
-        missing_path = tmp_path / "does-not-exist.md"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-file-finalizer",
-                    "prompt": _complete_plan_file_finalizer_prompt(missing_path),
-                },
-                "session_id": "prompt-completeness-missing-plan-file",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
-        assert "does not resolve to an existing file" in result.stderr
-
-    def test_ambiguous_plan_file_path_not_blocked_by_existence_check(self, tmp_path: pathlib.Path):
-        """観点(d): パスを一意に抽出できない場合、実在検査ではブロックされない。"""
-        prompt = (
-            f"## 計画ファイルパス\n`{tmp_path / 'a.md'}`と`{tmp_path / 'b.md'}`のいずれか\n\n"
-            "## permission_mode\n非`plan`\n\n"
-            "## 作業ディレクトリ\n`/repo`\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": "prompt-completeness-ambiguous-path",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 0
-
-    def test_normalization_failure_blocked(self):
-        """観点(c'): `~`展開に失敗するパス（未解決ユーザー表記）は正規化失敗として厳格にブロックされる。"""
-        prompt = (
-            "## 計画ファイルパス\n`~nonexistentuser12345/plan.md`\n\n"
-            "## permission_mode\n非`plan`\n\n"
-            "## 作業ディレクトリ\n`/repo`\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": "prompt-completeness-normalization-failure",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
-        assert "does not resolve to an existing file" in result.stderr
-
-    def test_backtick_less_existing_path_passes(self, tmp_path: pathlib.Path):
-        """観点(a'): バッククォート無しの裸パス表記でも実在パスなら通過する。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        prompt = f"## 計画ファイルパス\n{plan_path}\n\n## permission_mode\n非`plan`\n\n## 作業ディレクトリ\n`/repo`\n"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": "prompt-completeness-bare-path",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 0
-
-    def test_backtick_path_takes_priority_over_coexisting_bare_path(self, tmp_path: pathlib.Path):
-        """観点(a''): バッククォート表記と裸パスが併存する場合、バッククォート表記が優先され一意に抽出される。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        bare_missing_path = tmp_path / "does-not-exist-bare.md"
-        prompt = (
-            f"## 計画ファイルパス\n`{plan_path}`（参考: {bare_missing_path} は無関係な裸パス表記）\n\n"
-            "## permission_mode\n非`plan`\n\n"
-            "## 作業ディレクトリ\n`/repo`\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": "prompt-completeness-backtick-priority",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize("indent", [0, 1, 2, 3])
-    def test_heading_with_up_to_three_leading_spaces_still_counted(self, tmp_path: pathlib.Path, indent: int):
-        """CommonMarkのATX見出し仕様上、先頭スペース0〜3個までは見出しとして有効である境界値を検証する。
-
-        4個以上との区別（インデントコードブロック扱い）は`test_heading_inside_indented_code_block_not_counted`が
-        別途検証する。0〜3個をパラメーター化して個別に検証することで、1個・2個を拒否する実装への
-        後退を検出できるようにする（3個のみの検証では検出できない）。
-        """
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        pad = " " * indent
-        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
-        prompt = "\n".join(f"{pad}{line}" if line else "" for line in complete_prompt.splitlines())
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": f"prompt-completeness-{indent}-space-heading",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize("omit_heading", ["計画ファイルパス", "permission_mode", "作業ディレクトリ"])
-    def test_missing_heading_blocked(self, tmp_path: pathlib.Path, omit_heading: str):
-        """新必須見出し3点を1件ずつ欠落させ、各欠落単独でブロックされることを検証する。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        headings = {
-            "計画ファイルパス": f"## 計画ファイルパス\n`{plan_path}`",
-            "permission_mode": "## permission_mode\n非`plan`",
-            "作業ディレクトリ": "## 作業ディレクトリ\n`/repo`",
-        }
-        del headings[omit_heading]
-        prompt = "\n\n".join(headings.values()) + "\n"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer", "prompt": prompt},
-                "session_id": f"prompt-completeness-missing-{omit_heading}",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
-        assert omit_heading in result.stderr
-
-    @pytest.mark.parametrize("empty_heading", ["計画ファイルパス", "permission_mode", "作業ディレクトリ"])
-    def test_empty_section_blocked(self, tmp_path: pathlib.Path, empty_heading: str):
-        """新必須見出し3点を1件ずつ空にし、各空欄単独でブロックされることを検証する。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        headings = {
-            "計画ファイルパス": f"## 計画ファイルパス\n`{plan_path}`",
-            "permission_mode": "## permission_mode\n非`plan`",
-            "作業ディレクトリ": "## 作業ディレクトリ\n`/repo`",
-        }
-        headings[empty_heading] = f"## {empty_heading}\n"
-        prompt = "\n\n".join(headings.values()) + "\n"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": f"prompt-completeness-empty-{empty_heading}",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
-        assert empty_heading in result.stderr
-
-    def test_other_subagent_not_checked(self):
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "計画を実装して。"},
-                "session_id": "prompt-completeness-other",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 0
-
-    def test_heading_inside_tilde_fence_not_counted(self, tmp_path: pathlib.Path):
-        """チルダフェンス（`~~~`）内の見出し例示も、バッククォートフェンスと同様に実見出しと誤認しない。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
-        prompt = "~~~\n" + complete_prompt + "~~~\n本文のみで実見出しは無い。"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": "prompt-completeness-tilde-fence",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
-        assert "計画ファイルパス" in result.stderr
-
-    def test_heading_inside_html_comment_not_counted(self, tmp_path: pathlib.Path):
-        """複数行HTMLコメント内の見出し例示も実見出しと誤認しない。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
-        prompt = "<!--\n" + complete_prompt + "-->\n本文のみで実見出しは無い。"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
-                "session_id": "prompt-completeness-html-comment",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
-        assert "計画ファイルパス" in result.stderr
-
-    def test_heading_inside_indented_code_block_not_counted(self, tmp_path: pathlib.Path):
-        """4スペース以上インデントされた見出し例示（CommonMarkのインデントコードブロック）も
-        実見出しと誤認しない。"""
-        plan_path = tmp_path / "example.md"
-        plan_path.write_text("# 例\n", encoding="utf-8")
-        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
-        indented_prompt = "\n".join(f"    {line}" if line else "" for line in complete_prompt.splitlines())
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": indented_prompt},
-                "session_id": "prompt-completeness-indented-code-block",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
-        assert "計画ファイルパス" in result.stderr
-
-    def test_missing_prompt_key_blocked(self):
-        """`prompt`キー自体が無い場合も安全側でブロックする（Agent/Taskスキーマ上は通常発生しない）。"""
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
-                "session_id": "prompt-completeness-no-prompt",
-                "permission_mode": "default",
-            }
-        )
-        assert result.returncode == 2
 
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:
@@ -4441,47 +3488,14 @@ class TestSubagentStartLogOrdering:
             {
                 "tool_name": "Agent",
                 "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-file-finalizer",
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
                     "model": "opus",
-                    "prompt": _COMPLETE_PLAN_FILE_FINALIZER_PROMPT_FOR_MODEL_GATE,
+                    "prompt": "計画を実装する。",
                 },
                 "session_id": "log-order-model-override",
                 "permission_mode": "default",
             },
             env_overrides=_process_loop_log_env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
-
-    def test_prompt_completeness_block_does_not_log_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        log_path = self._log_path(monkeypatch, tmp_path)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": "x"},
-                "session_id": "log-order-prompt-completeness",
-                "permission_mode": "default",
-            },
-            env_overrides=_process_loop_log_env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
-
-    def test_process7_block_does_not_log_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        log_path = self._log_path(monkeypatch, tmp_path)
-        sid = "log-order-process7"
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: False for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        env = {**_process_loop_log_env(tmp_path), **_process7_env(tmp_path)}
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "計画を実装して。"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
         )
         assert result.returncode == 2
         assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
@@ -4501,38 +3515,6 @@ class TestSubagentStartLogOrdering:
         assert result.returncode == 0
         assert log_path.exists()
         assert "subagent_start" in log_path.read_text(encoding="utf-8")
-
-
-class TestPlanModeFlagReset:
-    """`agent-toolkit:plan-mode`スキル起動時のplan-file-finalizerの整合性チェック完了フラグリセット。"""
-
-    def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
-        """新計画着手時にplan-file-finalizerの整合性チェック完了フラグが偽へリセットされ、
-        `current_plan_file_path`が消去される。
-        """
-        sid = "process7-reset"
-        state = {
-            "plan_mode_skill_invoked": True,
-            "current_plan_file_path": "/tmp/previous-plan.md",
-            "plan_file_finalizer_active_subagent_sessions": {"stale": {"started_at": 0.0}},
-        }
-        state.update({flag: True for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:plan-mode"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 0
-        updated = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        for flag in _PROCESS7_FLAGS:
-            assert updated[flag] is False
-        assert "current_plan_file_path" not in updated
-        assert not updated["plan_file_finalizer_active_subagent_sessions"]
 
 
 class TestCheckPlanFileH2SectionOrder:
@@ -5713,21 +4695,6 @@ class TestScopeEscalationMessageIncludesMatchedPhrase:
         assert result.returncode == 2
         assert "matched:" in result.stderr
 
-    def test_doc_edit_warn_message_includes_matched_phrase(self):
-        text, category = _SCOPE_ESCALATION_INPUTS[0]
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
-                    "content": f"# header\n\n{text}\n",
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
-        assert "matched:" in result.stderr
-
 
 class TestAgentNormReferenceCheck:
     """Agent/Task: 規範非読込型サブエージェント起動時の規範明示引用漏れ警告検査。"""
@@ -5926,129 +4893,6 @@ class TestAgentNormReferenceCheck:
         )
         assert result.returncode == 0
         assert "does not load norms" in result.stderr
-
-
-class TestProcessFeedbacksBlocksEnterPlanMode:
-    """process-feedbacks経由起動下でのEnterPlanMode発行ブロック検査。"""
-
-    @staticmethod
-    def _env(tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-
-    def test_blocks_when_flag_true(self, tmp_path: pathlib.Path):
-        """`process_feedbacks_skill_invoked=True`時、EnterPlanMode発行がブロックされる。"""
-        sid = "epm-flag-true"
-        _write_session_state(tmp_path, sid, {"process_feedbacks_skill_invoked": True})
-        result = _run(
-            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert "process-feedbacks" in result.stderr
-        assert "EnterPlanMode" in result.stderr
-        assert "agent-toolkit:exit-session" in result.stderr
-        assert "agent-toolkit:process-feedbacks`" not in result.stderr
-
-    def test_passes_when_flag_absent(self, tmp_path: pathlib.Path):
-        """フラグ未設定時はEnterPlanMode発行を通過させる。"""
-        sid = "epm-flag-absent"
-        _write_session_state(tmp_path, sid, {})
-        result = _run(
-            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_flag_false(self, tmp_path: pathlib.Path):
-        """フラグが偽の場合はEnterPlanMode発行を通過させる。"""
-        sid = "epm-flag-false"
-        _write_session_state(tmp_path, sid, {"process_feedbacks_skill_invoked": False})
-        result = _run(
-            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert result.returncode == 0
-
-    def test_ignores_other_tool_names(self, tmp_path: pathlib.Path):
-        """`ExitPlanMode`など他のツール名では本ハンドラは発火しない。"""
-        sid = "epm-other-tool"
-        _write_session_state(tmp_path, sid, {"process_feedbacks_skill_invoked": True})
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert "blocked: issuing EnterPlanMode" not in result.stderr
-
-
-class TestPlanAndAddFeedbackBlocksEnterPlanMode:
-    """plan-and-add-feedback経由起動下でのEnterPlanMode発行ブロック検査。"""
-
-    @staticmethod
-    def _env(tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-
-    def test_blocks_when_flag_true(self, tmp_path: pathlib.Path):
-        """`plan_and_add_entries_skill_invoked=True`時、EnterPlanMode発行がブロックされる。"""
-        sid = "epm-paaf-flag-true"
-        _write_session_state(tmp_path, sid, {"plan_and_add_entries_skill_invoked": True})
-        result = _run(
-            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert "plan-and-add-feedback" in result.stderr
-        assert "EnterPlanMode" in result.stderr
-        assert "agent-toolkit:process-feedbacks`" in result.stderr
-        assert "agent-toolkit:exit-session" not in result.stderr
-
-    def test_passes_when_flag_absent(self, tmp_path: pathlib.Path):
-        """フラグ未設定時はEnterPlanMode発行を通過させる。"""
-        sid = "epm-paaf-flag-absent"
-        _write_session_state(tmp_path, sid, {})
-        result = _run(
-            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_flag_false(self, tmp_path: pathlib.Path):
-        """フラグが偽の場合はEnterPlanMode発行を通過させる。"""
-        sid = "epm-paaf-flag-false"
-        _write_session_state(tmp_path, sid, {"plan_and_add_entries_skill_invoked": False})
-        result = _run(
-            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert result.returncode == 0
-
-    def test_ignores_other_tool_names(self, tmp_path: pathlib.Path):
-        """`ExitPlanMode`など他のツール名では本ハンドラは発火しない。"""
-        sid = "epm-paaf-other-tool"
-        _write_session_state(tmp_path, sid, {"plan_and_add_entries_skill_invoked": True})
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert "blocked: issuing EnterPlanMode" not in result.stderr
-
-    def test_both_flags_report_both_reset_paths(self, tmp_path: pathlib.Path):
-        """両フラグが真の場合は両方の解除手段を案内する。"""
-        sid = "epm-both-flags-true"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {
-                "process_feedbacks_skill_invoked": True,
-                "plan_and_add_entries_skill_invoked": True,
-            },
-        )
-        result = _run(
-            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
-            env_overrides=self._env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert "agent-toolkit:exit-session" in result.stderr
-        assert "agent-toolkit:process-feedbacks`" in result.stderr
 
 
 class TestPlanFileBumpStepWhenAgentToolkitTarget:
@@ -6639,7 +5483,7 @@ class TestDangerFullAccessPreserved:
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/agents/plan-file-finalizer.md",
+                    "file_path": "agent-toolkit/agents/plan-impl-executor.md",
                     "content": "`sandbox`へ`workspace-write`と指定",
                 },
             }

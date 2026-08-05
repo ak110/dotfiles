@@ -1,4 +1,4 @@
-"""codex-exec経路と計画レビュー完了状態のPostToolUseテスト。"""
+"""codex-exec経路とexecutor状態のPostToolUseテスト。"""
 
 import json
 import os
@@ -46,158 +46,6 @@ def test_codex_exec_skill_invocation_is_recorded(tmp_path: pathlib.Path, skill_n
     assert _read_state(tmp_path, sid)["codex_exec_skill_invoked"] is True
 
 
-@pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-def test_plan_review_completed_from_strict_trailing_block(tmp_path: pathlib.Path, tool_name: str) -> None:
-    """finalizerの末尾構造化欄が両条件を満たす場合だけ完了を記録する。"""
-    sid = tool_name.lower()
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": tool_name,
-            "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
-            "tool_response": {"result": "summary\nstatus: completed\nreview_completed: true"},
-        },
-        state_dir=tmp_path,
-    )
-    assert _read_state(tmp_path, sid)["plan_review_completed"] is True
-
-
-@pytest.mark.parametrize(
-    "completion",
-    [
-        "status: needs_escalation\nreview_completed: true",
-        "status: completed\nreview_completed: false",
-        "status: completed\nreview_completed: true\nartifact: /tmp/result.md",
-        "本文にstatus: completedとreview_completed: trueを引用した。",
-    ],
-)
-def test_plan_review_completed_rejects_invalid_or_non_trailing_text(tmp_path: pathlib.Path, completion: str) -> None:
-    """未完了値、引用、末尾以外の記述による偽陽性を防ぐ。"""
-    sid = "negative"
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": "plan-file-finalizer"},
-            "tool_response": {"result": completion},
-        },
-        state_dir=tmp_path,
-    )
-    assert _read_state(tmp_path, sid).get("plan_review_completed") is not True
-
-
-def test_plan_review_completed_accepts_closing_fence(tmp_path: pathlib.Path) -> None:
-    """構造化欄の直後にフェンス閉じ行がある完了報告を受理する。"""
-    sid = "closing-fence"
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": "plan-file-finalizer"},
-            "tool_response": {"result": "```text\nstatus: completed\nreview_completed: true\n```"},
-        },
-        state_dir=tmp_path,
-    )
-    assert _read_state(tmp_path, sid)["plan_review_completed"] is True
-
-
-@pytest.mark.parametrize(
-    ("completion", "expected"),
-    [
-        ("escalation_points: なし\n\nstatus: completed\n\nreview_completed: true\n", True),
-        ("status: completed\n\n\nreview_completed: true\n", True),
-        ("status: completed\n補足の地の文\nreview_completed: true\n", False),
-        ("status: completed\nreview_completed: true\n\n補足の地の文\n", False),
-        # 値を囲む強調記法は完了報告の実態を変えないため受理する。
-        ("status: **completed**\nreview_completed: **true**\n", True),
-        ("status: *completed*\nreview_completed: *true*\n", True),
-        ("status: __completed__\nreview_completed: __true__\n", True),
-        # 値そのものが異なる場合は記法の有無によらず拒否する。
-        ("status: **needs_escalation**\nreview_completed: **true**\n", False),
-        ("status: **completed**\nreview_completed: **false**\n", False),
-    ],
-)
-def test_plan_review_completed_skips_blank_lines_between_record_lines(
-    tmp_path: pathlib.Path, completion: str, expected: bool
-) -> None:
-    """記録行の間の空行を無視し、それ以外の行では抽出を終了する。"""
-    sid = "blank-lines"
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": "plan-file-finalizer"},
-            "tool_response": {"result": completion},
-        },
-        state_dir=tmp_path,
-    )
-    assert (_read_state(tmp_path, sid).get("plan_review_completed") is True) is expected
-
-
-def test_background_finalizer_registers_only_agent_id(tmp_path: pathlib.Path) -> None:
-    """完了報告本文を取得できない背景実行ではagentIdだけを登録する。"""
-    sid = "background-finalizer"
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": "plan-file-finalizer"},
-            "tool_response": {"agentId": "finalizer-123"},
-        },
-        state_dir=tmp_path,
-    )
-    state = _read_state(tmp_path, sid)
-    assert "finalizer-123" in state["plan_file_finalizer_active_subagent_sessions"]
-    assert state.get("plan_review_completed") is not True
-
-
-def test_synchronous_finalizer_does_not_register_agent_id(tmp_path: pathlib.Path) -> None:
-    """完了報告本文を取得できた同期完了では活動中agentIdを残さない。"""
-    sid = "synchronous-finalizer"
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": "plan-file-finalizer"},
-            "tool_response": {
-                "agentId": "finalizer-456",
-                "result": "status: completed\nreview_completed: true",
-            },
-        },
-        state_dir=tmp_path,
-    )
-    state = _read_state(tmp_path, sid)
-    assert not state.get("plan_file_finalizer_active_subagent_sessions")
-    assert state["plan_review_completed"] is True
-
-
-def test_plan_mode_invocation_resets_finalizer_tracking(tmp_path: pathlib.Path) -> None:
-    """新しい計画作業の開始時に完了状態とfinalizer活動中辞書をリセットする。"""
-    sid = "reset-finalizer"
-    state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
-    state_path.write_text(
-        json.dumps(
-            {
-                "plan_mode_skill_invoked": True,
-                "plan_review_completed": True,
-                "plan_file_finalizer_active_subagent_sessions": {"stale": {"started_at": 0.0}},
-            }
-        ),
-        encoding="utf-8",
-    )
-    _run(
-        {
-            "session_id": sid,
-            "tool_name": "Skill",
-            "tool_input": {"skill": "agent-toolkit:plan-mode"},
-        },
-        state_dir=tmp_path,
-    )
-    state = _read_state(tmp_path, sid)
-    assert state["plan_review_completed"] is False
-    assert not state["plan_file_finalizer_active_subagent_sessions"]
-
-
 def test_removed_agent_does_not_change_state(tmp_path: pathlib.Path) -> None:
     """廃止したエージェント名を受け取っても旧状態を作成しない。"""
     sid = "removed"
@@ -213,7 +61,6 @@ def test_removed_agent_does_not_change_state(tmp_path: pathlib.Path) -> None:
         state_dir=tmp_path,
     )
     state = _read_state(tmp_path, sid)
-    assert "plan_review_completed" not in state
     assert removed_flag not in state
 
 

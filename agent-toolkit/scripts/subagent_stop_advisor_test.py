@@ -1,10 +1,4 @@
-"""subagent_stop_advisorのテスト。
-
-scope-escalation検出テストの入力フレーズは
-`agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt`
-から動的に読み込む（`agent-toolkit:agent-standards`「完成条件」節。
-検出語そのものをテストコード本文へ転記しない）。
-"""
+"""subagent_stop_advisorのテスト。"""
 
 from __future__ import annotations
 
@@ -15,7 +9,6 @@ from pathlib import Path
 
 import _fork_runner
 import pytest
-from _scope_escalation_test_helpers import load_scope_escalation_inputs
 from _stop_gate_test import (
     _user_async_launched_entry,
     _user_background_bash_entry,
@@ -24,21 +17,6 @@ from _stop_gate_test import (
 )
 
 _SCRIPT = Path(__file__).parent / "claude_hook.py"
-
-_SCOPE_ESCALATION_INPUTS = load_scope_escalation_inputs()
-
-
-def _pick_scope_escalation_text(category: str) -> str:
-    """指定カテゴリの最小マッチ入力を1件返す。フィクスチャ不在時は空文字列。
-
-    フィクスチャ内の最後の該当行を返す。新規追記した最小マッチ入力を
-    優先的にE2Eテストへ供給するため（末尾追記が既定の追記位置のため）。
-    """
-    picked = ""
-    for text, cat in _SCOPE_ESCALATION_INPUTS:
-        if cat == category:
-            picked = text
-    return picked
 
 
 def _run(payload: dict) -> subprocess.CompletedProcess[str]:
@@ -54,77 +32,6 @@ def _write_hook_transcripts(tmp_path: Path, parent_entries: list[dict], agent_en
     parent = _write_transcript(parent_dir, parent_entries)
     agent = _write_transcript(agent_dir, agent_entries)
     return str(parent), str(agent)
-
-
-@pytest.mark.parametrize(
-    ("category", "message_override", "expected_decision", "expected_returncode"),
-    [
-        pytest.param(None, None, None, 0, id="no-message"),
-        pytest.param(None, "工程4完了。次工程へ移行する。", None, None, id="normal-message"),
-        pytest.param("process-omission", None, "block", None, id="process-omission"),
-        pytest.param("approach-confirm", None, "block", None, id="approach-confirm"),
-        pytest.param("subagent-hesitation", None, "block", None, id="subagent-hesitation"),
-    ],
-)
-def test_message_gate_scenarios(
-    category: str | None,
-    message_override: str | None,
-    expected_decision: str | None,
-    expected_returncode: int | None,
-) -> None:
-    message = message_override
-    if category is not None:
-        message = _pick_scope_escalation_text(category)
-        if not message:
-            pytest.skip(f"scope-escalation fixture for {category} not available")
-
-    payload = {} if message is None else {"last_assistant_message": message}
-    result = _run(payload)
-    if expected_decision is None:
-        assert result.stdout == ""
-    else:
-        body = json.loads(result.stdout)
-        assert body["decision"] == expected_decision
-    if expected_returncode is not None:
-        assert result.returncode == expected_returncode
-
-
-def test_blocks_overhead_tradeoff_phrases() -> None:
-    """`overhead-tradeoff`カテゴリのフレーズもblockする。"""
-    text = _pick_scope_escalation_text("overhead-tradeoff")
-    if not text:
-        pytest.skip("scope-escalation fixture for overhead-tradeoff not available")
-    result = _run({"last_assistant_message": text})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
-    assert "overhead-tradeoff" in body["reason"]
-
-
-def test_approves_when_descendant_background_tracked_regardless_of_message(tmp_path: Path) -> None:
-    """対象サブエージェント記録に未消化の孫起動がある場合、完了報告本文によらず承認する。
-
-    本文には未消化background起動が無ければ通常経路でブロックされるはずの
-    `process-omission`フレーズを用いる。早期承認判定を外すとブロックされることを
-    別テスト（`test_blocks_process_omission_without_tracked_background`）で確認しており、
-    両者の対比で本テストが早期承認分岐自体を検証していることを担保する。
-    """
-    text = _pick_scope_escalation_text("process-omission")
-    if not text:
-        pytest.skip("scope-escalation fixture for process-omission not available")
-    parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_bg1")])
-    result = _run({"last_assistant_message": text, "transcript_path": parent, "agent_transcript_path": agent})
-    assert result.stdout == ""
-
-
-def test_parent_pending_agent_does_not_bypass_completion_report_check(tmp_path: Path) -> None:
-    """親記録だけの未完了起動は兄弟または停止対象自身であり、早期承認の根拠にしない。"""
-    text = _pick_scope_escalation_text("process-omission")
-    if not text:
-        pytest.skip("scope-escalation fixture for process-omission not available")
-    parent, agent = _write_hook_transcripts(tmp_path, [_user_async_launched_entry("toolu_sibling")], [])
-    result = _run({"last_assistant_message": text, "transcript_path": parent, "agent_transcript_path": agent})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
 
 
 def test_approves_empty_report_when_descendant_agent_is_pending(tmp_path: Path) -> None:
@@ -177,38 +84,9 @@ def test_blocks_incomplete_plan_report_when_only_background_bash_is_pending(tmp_
     assert "missing required labels" in body["reason"]
 
 
-def test_blocks_process_omission_without_tracked_background() -> None:
-    """未消化のbackground起動が無い場合は現行どおり縮退表明フレーズの照合が働く。"""
-    text = _pick_scope_escalation_text("process-omission")
-    if not text:
-        pytest.skip("scope-escalation fixture for process-omission not available")
-    result = _run({"last_assistant_message": text})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
-
-
-def test_blocks_when_tracked_background_completed(tmp_path: Path) -> None:
-    """起動記録があっても完了通知で全消化済みなら通常の縮退表明照合が働く。"""
-    text = _pick_scope_escalation_text("process-omission")
-    if not text:
-        pytest.skip("scope-escalation fixture for process-omission not available")
-    entries = [_user_async_launched_entry("toolu_bg2"), _user_task_notification_entry("toolu_bg2")]
-    parent, agent = _write_hook_transcripts(tmp_path, [], entries)
-    result = _run({"last_assistant_message": text, "transcript_path": parent, "agent_transcript_path": agent})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
-
-
 def test_stop_hook_active_bypasses_check() -> None:
-    """`stop_hook_active`真は判定処理をせず無条件approveを返す。
-
-    通常なら縮退表明としてblockされる本文であっても、再呼び出し時は
-    連続ブロック上限による強制終了を避けるため無条件approveを返す。
-    """
-    text = _pick_scope_escalation_text("approach-confirm")
-    if not text:
-        pytest.skip("scope-escalation fixture for approach-confirm not available")
-    result = _run({"last_assistant_message": text, "stop_hook_active": True})
+    """`stop_hook_active`真は再blockせずapproveを返す。"""
+    result = _run({"last_assistant_message": "再試行の報告", "stop_hook_active": True})
     body = json.loads(result.stdout)
     assert body.get("decision") == "approve"
 
@@ -278,16 +156,6 @@ def _write_flag_state(state_dir: Path, session_id: str, sub_session_id: str, sub
             },
             ensure_ascii=False,
         ),
-        encoding="utf-8",
-    )
-
-
-def _write_finalizer_state(state_dir: Path, session_id: str, agent_id: str) -> None:
-    """finalizerの活動中agentIdを事前に書き込む。"""
-    state_dir.mkdir(parents=True, exist_ok=True)
-    state_path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    state_path.write_text(
-        json.dumps({"plan_file_finalizer_active_subagent_sessions": {agent_id: {"started_at": 0.0}}}),
         encoding="utf-8",
     )
 
@@ -371,109 +239,6 @@ def _complete_report(**overrides: str) -> str:
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
 
 
-class TestPlanReviewCompletion:
-    """背景実行されたfinalizerの計画レビュー完了追跡。"""
-
-    def test_completed_report_sets_flag_and_consumes_entry(self, tmp_path: Path) -> None:
-        sid = "sid-finalizer-completed"
-        agent_id = "finalizer-completed"
-        _write_finalizer_state(tmp_path, sid, agent_id)
-        result = _run_with_state_dir(
-            {
-                "session_id": sid,
-                "last_assistant_message": "status: completed\nreview_completed: true",
-                "agent_id": agent_id,
-                "transcript_path": str(tmp_path / f"{sid}.jsonl"),
-            },
-            tmp_path,
-        )
-        assert result.stdout == ""
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state["plan_review_completed"] is True
-        assert not state["plan_file_finalizer_active_subagent_sessions"]
-
-    @pytest.mark.parametrize(
-        "report",
-        [
-            "status: needs_escalation\nreview_completed: true",
-            "status: completed\nreview_completed: false",
-            "status: completed\nreview_completed: true\nartifact: /tmp/result.md",
-        ],
-    )
-    def test_incomplete_or_non_trailing_report_preserves_entry(self, tmp_path: Path, report: str) -> None:
-        sid = f"sid-finalizer-invalid-{len(report)}"
-        agent_id = "finalizer-invalid"
-        _write_finalizer_state(tmp_path, sid, agent_id)
-        _run_with_state_dir(
-            {
-                "session_id": sid,
-                "last_assistant_message": report,
-                "agent_transcript_path": _transcript_path_for(tmp_path, agent_id),
-                "transcript_path": str(tmp_path / f"{sid}.jsonl"),
-            },
-            tmp_path,
-        )
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state.get("plan_review_completed") is not True
-        assert agent_id in state["plan_file_finalizer_active_subagent_sessions"]
-
-    def test_unregistered_agent_does_not_set_flag(self, tmp_path: Path) -> None:
-        sid = "sid-finalizer-unregistered"
-        _write_finalizer_state(tmp_path, sid, "registered")
-        _run_with_state_dir(
-            {
-                "session_id": sid,
-                "last_assistant_message": "status: completed\nreview_completed: true",
-                "transcript_path": _transcript_path_for(tmp_path, "unregistered"),
-            },
-            tmp_path,
-        )
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state.get("plan_review_completed") is not True
-        assert "registered" in state["plan_file_finalizer_active_subagent_sessions"]
-
-    def test_closing_fence_after_report_sets_flag(self, tmp_path: Path) -> None:
-        sid = "sid-finalizer-fence"
-        agent_id = "finalizer-fence"
-        _write_finalizer_state(tmp_path, sid, agent_id)
-        _run_with_state_dir(
-            {
-                "session_id": sid,
-                "last_assistant_message": "```text\nstatus: completed\nreview_completed: true\n```",
-                "transcript_path": _transcript_path_for(tmp_path, agent_id),
-            },
-            tmp_path,
-        )
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state["plan_review_completed"] is True
-
-    def test_empty_report_block_then_corrected_report_completes_review(self, tmp_path: Path) -> None:
-        sid = "sid-finalizer-reentry"
-        agent_id = "finalizer-reentry"
-        _write_finalizer_state(tmp_path, sid, agent_id)
-        payload = {
-            "session_id": sid,
-            "last_assistant_message": "",
-            "transcript_path": _transcript_path_for(tmp_path, agent_id),
-        }
-        first = _run_with_state_dir(payload, tmp_path)
-        assert json.loads(first.stdout)["decision"] == "block"
-        blocked_state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert agent_id in blocked_state["plan_file_finalizer_active_subagent_sessions"]
-        second = _run_with_state_dir(
-            {
-                **payload,
-                "last_assistant_message": "status: completed\nreview_completed: true",
-                "stop_hook_active": True,
-            },
-            tmp_path,
-        )
-        assert json.loads(second.stdout)["decision"] == "approve"
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state["plan_review_completed"] is True
-        assert not state["plan_file_finalizer_active_subagent_sessions"]
-
-
 class TestPlanImplExecutorReportFormat:
     """`plan-impl-executor`完了報告本文の主要欄ラベル存在検査。"""
 
@@ -507,6 +272,130 @@ class TestPlanImplExecutorReportFormat:
         assert result.returncode == 0
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
         assert not state["plan_impl_executor_active_subagent_sessions"]
+
+    def test_registered_executor_is_checked_before_pending_descendant(self, tmp_path: Path) -> None:
+        sid = "sid-pending-invalid"
+        agent_id = "sub-pending-invalid"
+        _write_flag_state(tmp_path, sid, agent_id)
+        parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_pending_invalid")])
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_id": agent_id,
+                "last_assistant_message": "status: completed",
+                "transcript_path": parent,
+                "agent_transcript_path": agent,
+            },
+            tmp_path,
+        )
+        assert json.loads(result.stdout)["decision"] == "block"
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert agent_id in state["plan_impl_executor_active_subagent_sessions"]
+
+    def test_registered_executor_success_with_pending_descendant_keeps_active_entry(self, tmp_path: Path) -> None:
+        sid = "sid-pending-valid"
+        agent_id = "sub-pending-valid"
+        _write_flag_state(tmp_path, sid, agent_id)
+        parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_pending_valid")])
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_id": agent_id,
+                "last_assistant_message": _complete_report(),
+                "transcript_path": parent,
+                "agent_transcript_path": agent,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert agent_id in state["plan_impl_executor_active_subagent_sessions"]
+
+    def test_registered_executor_final_report_is_checked_after_pending_descendant_completes(self, tmp_path: Path) -> None:
+        sid = "sid-pending-completes"
+        agent_id = "sub-pending-completes"
+        tool_id = "toolu_pending_completes"
+        _write_flag_state(tmp_path, sid, agent_id)
+        parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry(tool_id)])
+        common = {
+            "session_id": sid,
+            "agent_id": agent_id,
+            "transcript_path": parent,
+            "agent_transcript_path": agent,
+        }
+        first = _run_with_state_dir({**common, "last_assistant_message": _complete_report()}, tmp_path)
+        assert first.stdout == ""
+        Path(agent).write_text(
+            "\n".join(
+                json.dumps(entry, ensure_ascii=False)
+                for entry in [_user_async_launched_entry(tool_id), _user_task_notification_entry(tool_id)]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        invalid = _run_with_state_dir({**common, "last_assistant_message": "status: completed"}, tmp_path)
+        assert json.loads(invalid.stdout)["decision"] == "block"
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert agent_id in state["plan_impl_executor_active_subagent_sessions"]
+        retry = _run_with_state_dir(
+            {**common, "last_assistant_message": _complete_report(), "stop_hook_active": True}, tmp_path
+        )
+        assert json.loads(retry.stdout)["decision"] == "approve"
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert agent_id not in state["plan_impl_executor_active_subagent_sessions"]
+
+    @pytest.mark.parametrize(("valid", "pending"), [(False, False), (True, True)])
+    def test_registered_executor_stop_hook_retry_keeps_active_entry_for_invalid_or_pending_report(
+        self, tmp_path: Path, valid: bool, pending: bool
+    ) -> None:
+        sid = f"sid-retry-keeps-{valid}-{pending}"
+        agent_id = f"sub-retry-keeps-{valid}-{pending}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        payload = {
+            "session_id": sid,
+            "agent_id": agent_id,
+            "last_assistant_message": _complete_report() if valid else "status: completed",
+            "stop_hook_active": True,
+        }
+        if pending:
+            parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_retry_pending")])
+            payload.update({"transcript_path": parent, "agent_transcript_path": agent})
+        result = _run_with_state_dir(payload, tmp_path)
+        assert json.loads(result.stdout)["decision"] == "approve"
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert agent_id in state["plan_impl_executor_active_subagent_sessions"]
+
+    def test_registered_executor_stop_hook_retry_consumes_valid_final_report(self, tmp_path: Path) -> None:
+        sid = "sid-retry-consumes"
+        agent_id = "sub-retry-consumes"
+        _write_flag_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_id": agent_id,
+                "last_assistant_message": _complete_report(),
+                "stop_hook_active": True,
+            },
+            tmp_path,
+        )
+        assert json.loads(result.stdout)["decision"] == "approve"
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert agent_id not in state["plan_impl_executor_active_subagent_sessions"]
+
+    def test_unregistered_agent_with_pending_descendant_is_approved(self, tmp_path: Path) -> None:
+        parent, agent = _write_hook_transcripts(tmp_path, [], [_user_async_launched_entry("toolu_unregistered")])
+        result = _run_with_state_dir(
+            {
+                "session_id": "sid-unregistered-pending",
+                "agent_id": "sub-unregistered-pending",
+                "last_assistant_message": "",
+                "transcript_path": parent,
+                "agent_transcript_path": agent,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
 
     @pytest.mark.parametrize(
         ("overrides", "expected_fragment"),

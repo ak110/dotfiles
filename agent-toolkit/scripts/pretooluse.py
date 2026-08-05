@@ -28,15 +28,6 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `## 実行方法`節のスコープ逸脱は`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-EnterPlanMode:
-
-- `process-feedbacks`・`plan-and-add-feedback`スキル経由
-  （`process_feedbacks_skill_invoked`または`plan_and_add_entries_skill_invoked`真）でのEnterPlanMode発行のブロック (block)
-
-ExitPlanMode:
-
-- `plan-file-finalizer`の構造化完了報告で計画レビュー完了を確認できない場合のブロック (block)
-
 mcp__codex__codex:
 
 - メインセッションで`agent-toolkit:codex-exec`の起動記録が無いcodex MCP呼び出しのブロック (block)
@@ -66,16 +57,14 @@ AskUserQuestion:
 
 Skill:
 
-- `agent-toolkit:plan-mode`起動時の`plan-file-finalizer`の整合性チェック完了フラグリセット（新計画着手の合図） (auto-fix)
+- `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
 
 Agent / Task:
 
 - 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 (warn)
-- `plan-impl-executor`起動時、起動プロンプトが現行計画パスを指す場合の
-  `plan-file-finalizer`の整合性チェック完了未達のブロック (block)
+- `plan-impl-executor`起動時、起動プロンプトが指す実在計画パスの記録 (side-effect)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
-- `plan-file-finalizer`起動プロンプトの必須見出し3点の実在・非空検査と計画ファイル実在検査によるブロック (block)
 - `name`引数指定のブロック (block)
 
 Write / Edit / MultiEdit:
@@ -84,8 +73,6 @@ Write / Edit / MultiEdit:
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
 - lockfile / 生成物ディレクトリの直接編集 (block)
 - シークレット / 鍵ファイルの直接編集 (block)
-- `agent-toolkit/rules/`配下・`agent-toolkit/skills/**/SKILL.md`・計画ファイルへの
-  scope-escalationフレーズ転記検出 (warn)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -100,9 +87,6 @@ block系checkの検査対象は「新規に書き込まれる側」（`content` 
 `old_string`は既存内容の修正・削除を妨げないため単独では検査対象としない。
 例外は`_check_danger_full_access_preserved`とする。同checkは保護対象文字列の「削除」自体を検出対象とするため、
 `old_string`と`new_string`の出現数を比較する（`_check_style_negation`と同方式）。
-Edit/MultiEditのscope-escalation checkは既存ファイル本文を読み込み、
-各edit適用前後の全文をフェンス除外込みで比較しフレーズ出現回数の増加のみを検出する。
-既存保持時の誤検出を解消し、フェンス開始・終了行がold/new_string外にある場合の除外漏れも解消する。
 """
 
 import datetime
@@ -115,7 +99,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -132,8 +116,6 @@ from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pyli
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _SCOPE_ESCALATION_ALTERNATIVES,
-    _SCOPE_ESCALATION_PHRASES,
-    _apply_category_exclusions,
     _match_scope_escalation,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -440,9 +422,8 @@ def main(payload_text: str) -> int:
             ),
         )
 
-    # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）
-    # 完成条件を満たさない状態での次工程移行の抑止はExitPlanMode/plan-impl-executor起動時の
-    # ブロックへ集約する
+    # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）。
+    # 呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する
     _check_plan_mode_skill_first(tool_name, tool_input, session_id)
 
     # plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続をブロック
@@ -461,8 +442,8 @@ def main(payload_text: str) -> int:
     # 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの遡及スキャン記録未整備をブロック
     blocking_errors.append(_check_plan_file_retroactive_scan_recorded(tool_name, tool_input, session_id) or "")
 
-    # 内容・形式系検査群はwarn降格（ExitPlanMode/plan-impl-executor起動時までのブロック集約は
-    # `agent-toolkit:codex-exec`によるレビューへ委譲する）
+    # 内容・形式系検査群はwarn降格し、計画確定前の解消・検収を
+    # `agent-toolkit:codex-exec`によるレビューへ委譲する
     _check_plan_file_h2_section_order(tool_name, tool_input)
     _check_plan_file_path_section_matches_file_path(tool_name, tool_input)
     _check_plan_file_bump_step_when_agent_toolkit_target(tool_name, tool_input)
@@ -478,22 +459,15 @@ def main(payload_text: str) -> int:
         print("\n".join(non_empty_errors), file=sys.stderr)
         return 2
 
-    # plan mode準備スキル経由の起動下でのEnterPlanMode発行は規範違反のためブロック
-    if _check_plan_prep_skills_block_enter_plan_mode(tool_name, session_id):
-        return 2
-
-    # ExitPlanMode: `plan-file-finalizer`の整合性チェック（2サブエージェント/codexレビュー）の完了未達をブロック
     if tool_name == "ExitPlanMode":
-        if _check_process7_completion_before_exit_plan_mode(session_id):
-            return 2
         flush_pending_language_warning()
         return 0
 
-    # Skill: plan-mode起動時は`plan-file-finalizer`の整合性チェック完了フラグをリセット
+    # Skill: plan-mode起動時は計画単位の状態をリセット
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
-            _reset_process7_completion_flags(session_id)
+            _reset_plan_mode_state(session_id)
         flush_pending_language_warning()
         return 0
 
@@ -619,8 +593,7 @@ def main(payload_text: str) -> int:
         flush_pending_language_warning()
         return 0
 
-    # Agent/Task: plan-impl-executor起動時の`plan-file-finalizer`の整合性チェック完了未達ブロック +
-    # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
+    # Agent/Task: 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
     # process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
     if tool_name in ("Agent", "Task"):
         # `name`指定は起動記録より前に遮断する（起動しない呼び出しの副作用を残さないため）。
@@ -629,14 +602,8 @@ def main(payload_text: str) -> int:
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
             return 2
-        if isinstance(subagent_type, str) and _check_plan_file_finalizer_prompt_completeness(subagent_type, tool_input):
-            return 2
-        if (
-            isinstance(subagent_type, str)
-            and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
-            and _check_process7_completion_for_plan_impl_executor_agent(session_id, tool_input)
-        ):
-            return 2
+        if isinstance(subagent_type, str) and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES:
+            _record_plan_impl_executor_plan_path(session_id, tool_input)
         # ブロック検査を全通過した場合のみ、実際に起動する種別として開始時刻を記録する。
         # ブロック前に記録すると、起動しなかった種別の`subagent_start`だけが残り
         # `subagent_end`と対応しなくなるため（process-loopの所要時間分析が崩れる）。
@@ -674,9 +641,6 @@ def main(payload_text: str) -> int:
         return 2
 
     # --- warn系check（stderrに警告のみ、exit codeは0のまま）---
-    # scope-escalationフレーズ転記検出は警告（降格。完成条件を満たさない状態での次工程移行の抑止は
-    # ExitPlanMode/plan-impl-executor起動時のブロックへ集約する）
-    _check_scope_escalation_in_doc_edit(tool_name, tool_input, file_path)
     _check_manifest(tool_name, file_path)
     _check_home_path(tool_name, fields, file_path)
     _check_colloquial(tool_name, fields, file_path)
@@ -955,180 +919,6 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
         )
         return True
     return False
-
-
-# --- scope-escalationフレーズ転記check (block) ---
-
-# 対象ドキュメント判定パターン。
-# `agent-toolkit/rules/`配下の.mdと`agent-toolkit/skills/**/SKILL.md`を対象とし、
-# 途中に`references/`を含むパスは隔離ファイル扱いで除外する。
-_SCOPE_ESCALATION_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(^|/)agent-toolkit/rules/[^/]+\.md$"),
-    re.compile(r"(^|/)agent-toolkit/skills/(?:(?!.*/references/).)+/SKILL\.md$"),
-)
-
-
-def _is_scope_escalation_target_doc(file_path: str) -> bool:
-    """対象ドキュメント（agent-toolkit/rules配下・SKILL.md・計画ファイル）への編集か判定する。"""
-    if not file_path:
-        return False
-    normalized = file_path.replace("\\", "/")
-    if any(p.search(normalized) is not None for p in _SCOPE_ESCALATION_DOC_TARGET_PATTERNS):
-        return True
-    return is_plan_file(file_path)
-
-
-def _match_scope_escalation_increase(
-    old: str,
-    new: str,
-    *,
-    exclude_categories: Iterable[str] | None = None,
-) -> tuple[str, str] | None:
-    """new側でフレーズ出現回数がold側より増加したカテゴリと、そのマッチ文言を返す。
-
-    `_SCOPE_ESCALATION_PHRASES`を走査し、各パターンのfindall件数を比較する。
-    new側件数がold側件数を上回るカテゴリを最初に検出した時点で`(category, matched_phrase)`を返す。
-    既存文字列の保持時はold=new同数となり通過する（既存保持部分での誤検出を防ぐ）。
-    カテゴリ別除外は`_scope_escalation._apply_category_exclusions`をnew・old双方へ適用し、
-    priority-consult他のカテゴリ別除外を両経路で共有する。
-    `exclude_categories`を指定した場合は当該カテゴリ集合を照合対象から除外する。
-    matched_phraseはnew側でのパターンマッチテキストそのまま。
-    増加が無い場合はNoneを返す。
-    """
-    excluded = frozenset(exclude_categories) if exclude_categories is not None else frozenset()
-    for category, pattern in _SCOPE_ESCALATION_PHRASES:
-        if category in excluded:
-            continue
-        target_new = _apply_category_exclusions(new, category)
-        target_old = _apply_category_exclusions(old, category)
-        if len(pattern.findall(target_new)) > len(pattern.findall(target_old)):
-            m = pattern.search(target_new)
-            matched = m.group(0) if m is not None else ""
-            return (category, matched)
-    return None
-
-
-def _extract_plan_scope_escalation_body(text: str, file_path: str) -> str:
-    """計画ファイル対象時のみscope-escalation走査本文からフェンス等除外領域を取り除く。
-
-    `_plan_format.iter_markdown_body_lines`（フロントマター・コードフェンス・
-    複数行HTMLコメントを除外するSSOT実装）を計画ファイル検査経路専用に適用するヘルパー。
-    テストfixture例を格納する`text`フェンス内の語彙が誤検出される問題（fb-7）を解消する。
-    計画ファイル以外（`agent-toolkit/rules/`配下・SKILL.md等の規範文書本体）は
-    検出精度を変えないため`text`をそのまま返す。
-    """
-    if not is_plan_file(file_path):
-        return text
-    return "\n".join(line for _, line in _plan_format.iter_markdown_body_lines(text))
-
-
-def _apply_single_edit(base_content: str, edit_dict: dict, *, empty_base_fallback: bool = False) -> str | None:
-    """単一Edit入力を既存本文へ適用した文字列を返す。
-
-    `new_string`が文字列でない場合はNoneを返す。
-    `old_string`が文字列でない場合は空文字列扱いとし、既存の緩和処理と同じくfail-closeで検査を継続する。
-    `empty_base_fallback`が真で既存本文が空の場合は、Edit経路の読込失敗時検査漏れを避けるため`new_string`を返す。
-    """
-    old_string = edit_dict.get("old_string") or ""
-    new_string = edit_dict.get("new_string")
-    if not isinstance(new_string, str):
-        return None
-    old_string = old_string if isinstance(old_string, str) else ""
-    if empty_base_fallback and not base_content:
-        return new_string
-    replace_all = bool(edit_dict.get("replace_all"))
-    if replace_all:
-        return base_content.replace(old_string, new_string)
-    return base_content.replace(old_string, new_string, 1)
-
-
-def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_path: str) -> bool:
-    """対象ドキュメントへの編集時、フレーズ出現回数の増加を検出した場合に警告する。
-
-    対象は`agent-toolkit/rules/`配下・`agent-toolkit/skills/**/SKILL.md`（`references/`配下を除く）・
-    計画ファイル（`~/.claude/plans/`直下）。
-    Edit/MultiEditは既存ファイル本文を読み込み、各edit適用前後の全文を
-    `_match_scope_escalation_increase`で比較してnew側件数 > old側件数のカテゴリを検出する。
-    MultiEditは各edit単位で適用前後を比較し、同一MultiEdit内の除去と追加による相殺を検出漏れにしない。
-    既存文字列の保持時は件数同数で通過する（誤検出解消）。
-    Writeは`content`全文を検査する。
-    計画ファイル対象時は`_extract_plan_scope_escalation_body`でフェンス・フロントマター・
-    HTMLコメント区間を走査対象から除外する。
-    Edit/MultiEditでも全文へ適用するため、フェンス開始・終了行がold/new_string外にある場合も除外境界を維持する。
-    規範文書本体は対象外で検出精度を変えない。
-    判定パターンは`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
-    `agent-toolkit:agent-standards`「完成条件」節に従い、hook警告メッセージは
-    利用者が警告契機を特定できるようマッチ文言を含める（スキル本文・ルール本文・テストコードへの
-    転記禁止とは別扱いとする）。
-    警告のみでツール呼び出しは継続する（block降格。完成条件を満たさない状態での次工程移行の抑止は
-    `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する）。
-    """
-    if not _is_scope_escalation_target_doc(file_path):
-        return False
-    # plan fileでは`plan-deferral-onset`をMarkdown除外領域（text/HTMLコメント/`## 背景`配下）を考慮する
-    # `_check_plan_file_no_deferral_expression`が担当するため、本checkでは除外する。
-    exclude_categories: frozenset[str] = frozenset({"plan-deferral-onset"}) if is_plan_file(file_path) else frozenset()
-    detection: tuple[str, str, str] | None = None
-    if tool_name == "Write":
-        content = tool_input.get("content")
-        if isinstance(content, str):
-            body = _extract_plan_scope_escalation_body(content, file_path)
-            match_result = _match_scope_escalation(body, exclude_categories=exclude_categories)
-            if match_result is not None:
-                category, matched = match_result
-                detection = ("content", category, matched)
-    elif tool_name == "Edit":
-        try:
-            pre_content = pathlib.Path(file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            pre_content = ""
-        post_content = _apply_single_edit(pre_content, tool_input, empty_base_fallback=True)
-        if post_content is not None:
-            pre_body = _extract_plan_scope_escalation_body(pre_content, file_path)
-            post_body = _extract_plan_scope_escalation_body(post_content, file_path)
-            match_result = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
-            if match_result is not None:
-                category, matched = match_result
-                detection = ("new_string", category, matched)
-    elif tool_name == "MultiEdit":
-        edits = tool_input.get("edits") or []
-        if isinstance(edits, list):
-            try:
-                current = pathlib.Path(file_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                current = ""
-            for index, edit in enumerate(edits):
-                if not isinstance(edit, dict):
-                    continue
-                next_current = _apply_single_edit(current, edit, empty_base_fallback=False)
-                if next_current is None:
-                    continue
-                pre_body = _extract_plan_scope_escalation_body(current, file_path)
-                post_body = _extract_plan_scope_escalation_body(next_current, file_path)
-                match_result = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
-                if match_result is not None:
-                    category, matched = match_result
-                    detection = (f"edits[{index}].new_string", category, matched)
-                    break
-                current = next_current
-    if detection is None:
-        return False
-    field, category, matched = detection
-    print(
-        _llm_notice(
-            f"warning: scope-escalation phrase (category: {category})"
-            f" detected in {tool_name}.{field}. Target: {file_path}."
-            f" matched: {_truncate_matched_phrase(matched)}."
-            f" See {_scope_escalation_agent_md_reference(category)}."
-            f" See agent-toolkit/skills/agent-standards/SKILL.md '完成条件' section and"
-            f" `references/scope-escalation-phrases.md` isolation rule."
-            f" Do not transcribe the detected pattern body into skill body, rule body, or test code."
-            f"{_format_scope_escalation_alternatives(category)}",
-            tag="warn",
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 # --- manifest手編集check (warn) ---
@@ -1668,7 +1458,6 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
 # --- codex sandbox指定（danger-full-access）の保護 (block, FB13) ---
 
 _DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
-    "agent-toolkit/agents/plan-file-finalizer.md",
     "agent-toolkit/agents/plan-impl-executor.md",
     "agent-toolkit/skills/codex-exec/SKILL.md",
     "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
@@ -1696,8 +1485,7 @@ def _extract_sandbox_assignments(text: str) -> list[str]:
 def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_path: str) -> bool:
     """`danger-full-access`を含む行の削除・変更を遮断する（block）。
 
-    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下5つ:
-    - `agent-toolkit/agents/plan-file-finalizer.md`
+    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下4つ:
     - `agent-toolkit/agents/plan-impl-executor.md`
     - `agent-toolkit/skills/codex-exec/SKILL.md`
     - `agent-toolkit/skills/agent-standards/references/claude-hooks.md`
@@ -1819,8 +1607,8 @@ def _check_plan_mode_skill_first(
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
     plan file編集に至るまでは警告を表示しない
     （`process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
-    警告のみでツール呼び出しは継続する（block降格。完成条件を満たさない状態での次工程移行の抑止は
-    `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する）。
+    警告のみでツール呼び出しは継続する（block降格）。
+    呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する。
     戻り値は違反検出の有無を示す（呼び出し元は制御フローに使わない）。
     """
     if not session_id:
@@ -1838,7 +1626,8 @@ def _check_plan_mode_skill_first(
             "warning: editing a plan file without invoking `agent-toolkit:plan-mode` skill first."
             " Invoke the skill and restart from Phase 1 (Initial Understanding)"
             " before continuing the plan file edit."
-            " ExitPlanMode/plan-impl-executor起動時に完成条件未達として改めてブロックされる。",
+            " Resolve and verify this warning through the plan-mode direct delegation workflow"
+            " before finalizing the plan.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2075,8 +1864,8 @@ def _check_plan_file_required_reads_first(
     （反復サイクル防止のため初回で全件を一括開示する）、既読済み項目には`(already read)`を付与する。
     未読要素が1件も無い場合は`None`を返す。
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
-    警告のみでツール呼び出しは継続する（block降格。完成条件を満たさない状態での次工程移行の抑止は
-    `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する）。
+    警告のみでツール呼び出しは継続する（block降格）。
+    呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する。
     戻り値契約: 違反メッセージ`str`または`None`。呼び出し元は制御フローに使わずstderrへ出力する。
     """
     if not session_id:
@@ -2197,7 +1986,7 @@ def _check_plan_file_h2_section_order(
         _llm_notice(
             f"warning: plan file H2 section order violation: {violation_str}"
             f" Required order: {list(_plan_format.PLAN_REQUIRED_H2)}."
-            " Fix the section order before ExitPlanMode / plan-impl-executor invocation.",
+            " Fix the section order before finalizing the plan.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2303,8 +2092,8 @@ def _check_plan_file_no_deferral_expression(
     検出パターンは`_scope_escalation._SCOPE_ESCALATION_PHRASES`の`plan-deferral-onset`カテゴリ
     （「実装時／実装段階」直後の未確定動詞＋文末「〜で判断／決定／選定／確定する」連結）。
     `text`コードブロック内・HTMLコメント内・フロントマターは`iter_markdown_body_lines`が除外する。
-    警告のみでツール呼び出しは継続する（block降格。完成条件を満たさない状態での次工程移行の抑止は
-    `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する）。
+    警告のみでツール呼び出しは継続する（block降格）。
+    呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する。
     戻り値契約: 違反メッセージ`str`または`None`。呼び出し元は制御フローに使わずstderrへ出力する。
     """
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
@@ -2340,8 +2129,8 @@ def _check_plan_file_no_deferral_expression(
 # --- 規範対象ドキュメントへのメタ規範新設編集時の遡及スキャン記録チェック (FB4) ---
 
 # 遡及スキャン対象の計画ファイル解決時に`current_plan_file_path`より優先するセッション状態キー。
-# `_check_process7_completion_for_plan_impl_executor_agent`が、別の実在する計画ファイルを参照した
-# `plan-impl-executor`起動を許可した時点で当該パスを記録する。
+# `_record_plan_impl_executor_plan_path`が、実在する計画ファイルを参照した
+# `plan-impl-executor`起動時に当該パスを記録する。
 _PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY = "plan_impl_executor_verified_plan_path"
 
 # 汎用禁止形: バレット行頭記号直後から句点・改行終端の禁止動詞までを検出する。
@@ -2484,7 +2273,7 @@ def _check_plan_file_retroactive_scan_recorded(
     )
 
 
-# --- `plan-file-finalizer`の整合性チェック（2サブエージェント/codexレビュー）完了チェック ---
+# --- 計画単位の状態管理 ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
@@ -2493,67 +2282,8 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # フルネームと短縮名の両方を許容する。
 _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 
-# Agent/Taskツールの`subagent_type`引数として許容するplan-file-finalizer識別子。
-_PLAN_FILE_FINALIZER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-file-finalizer", "plan-file-finalizer"})
-
-# `model`引数指定を一律禁止する対象。両エージェントはHaiku固定の委譲窓口として動く。
-_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
-    _PLAN_FILE_FINALIZER_SUBAGENT_TYPES | _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
-)
-
-# `agent-toolkit/skills/plan-mode/references/plan-file-finalizer-prompt-template.md`が定める必須見出し。
-# 改訂時は当該ファイルと同期する。
-_PLAN_FILE_FINALIZER_REQUIRED_PROMPT_HEADINGS: tuple[str, ...] = (
-    "計画ファイルパス",
-    "permission_mode",
-    "作業ディレクトリ",
-)
-
-# `plan-file-finalizer`の構造化完了報告から記録する完遂フラグ。
-_PROCESS7_COMPLETION_FLAGS: tuple[str, ...] = ("plan_review_completed",)
-
-
-def _check_plan_prep_skills_block_enter_plan_mode(tool_name: str, session_id: str) -> bool:
-    """process-feedbacks・plan-and-add-feedback経由でのplan-modeネスト起動時のEnterPlanMode発行をブロックする。
-
-    判定条件:
-
-    - `tool_name`が`EnterPlanMode`
-    - `session_id`が空でない
-    - セッション状態の`process_feedbacks_skill_invoked`または`plan_and_add_entries_skill_invoked`が真
-
-    process-feedbacks・plan-and-add-feedback両スキルはplan mode外で実行する規範
-    （`agent-toolkit/skills/plan-and-add-feedback/SKILL.md`「本スキルはplan mode外で実行する」規定）を機械化する。
-    `process_feedbacks_skill_invoked`のフラグリセットは`agent-toolkit/scripts/posttooluse.py`が
-    `exit-session`起動検知時に担う。
-    `plan_and_add_entries_skill_invoked`のリセットは同スクリプトが
-    `process-feedbacks`起動検知時（plan-and-add-feedbackの終端工程が委譲する先）に担う。
-    """
-    if tool_name != "EnterPlanMode":
-        return False
-    if not session_id:
-        return False
-    state = read_state(session_id)
-    process_feedbacks_invoked = state.get("process_feedbacks_skill_invoked", False)
-    plan_and_add_entries_invoked = state.get("plan_and_add_entries_skill_invoked", False)
-    if not process_feedbacks_invoked and not plan_and_add_entries_invoked:
-        return False
-    reset_guidance = ""
-    if process_feedbacks_invoked:
-        reset_guidance += " Reset the process-feedbacks flag by invoking the `agent-toolkit:exit-session` skill."
-    if plan_and_add_entries_invoked:
-        reset_guidance += " Reset the plan-and-add-feedback flag by invoking the `agent-toolkit:process-feedbacks` skill."
-    print(
-        _llm_notice(
-            "blocked: issuing EnterPlanMode from within the process-feedbacks or plan-and-add-feedback skill"
-            " violates the plan-mode norm"
-            " (agent-toolkit/skills/plan-and-add-feedback/SKILL.md 'plan mode外で実行する' rule)."
-            " Run these skills outside plan mode." + reset_guidance,
-            tag="block",
-        ),
-        file=sys.stderr,
-    )
-    return True
+# `model`引数指定を一律禁止する対象。executorは定義済みモデルを使う委譲窓口として動く。
+_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
 
 
 def _check_plan_file_bump_step_when_agent_toolkit_target(tool_name: str, tool_input: dict) -> None:
@@ -2672,9 +2402,9 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
-    """`plan-file-finalizer`・`plan-impl-executor`への`model`引数指定を一律ブロックする。
+    """`plan-impl-executor`への`model`引数指定を一律ブロックする。
 
-    両者はHaiku固定の委譲窓口として動くため、呼び出しごとの上書きを許容しない。
+    executorは定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
     """
     if subagent_type not in _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES:
         return False
@@ -2688,168 +2418,6 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
             " actual work through `agent-toolkit:codex-exec`; no per-call model override is defined.\n"
             "Normal fix: omit the `model` parameter and let the agent definition's default"
             " (`haiku`) apply.",
-            tag="block",
-        ),
-        file=sys.stderr,
-    )
-    return True
-
-
-_ATX_H2_RE = re.compile(r"^ {0,3}## (.*)$")
-
-
-def _extract_prompt_h2_sections(prompt: str) -> dict[str, str]:
-    """起動プロンプト本文からH2見出しごとの直下本文（次のH2見出し直前まで）を返す。
-
-    フェンス付きコードブロック（バッククォート・チルダの両形式）・HTMLコメント内の見出し例示は
-    `_plan_format.iter_markdown_body_lines`（SSOT実装）が除外するため、実見出しとして誤認しない。
-    見出し判定はCommonMarkのATX見出し仕様（先頭スペース0〜3個までを許容し、4個以上は
-    インデントコードブロックと解釈して見出し扱いしない）に従う。
-    """
-    sections: dict[str, list[str]] = {}
-    current: str | None = None
-    for _, line in _plan_format.iter_markdown_body_lines(prompt):
-        heading_match = _ATX_H2_RE.match(line)
-        if heading_match is not None:
-            heading_name: str = (heading_match.group(1) or "").strip()
-            current = heading_name
-            sections.setdefault(heading_name, [])
-            continue
-        if current is not None:
-            sections[current].append(line)
-    return {heading: "\n".join(body) for heading, body in sections.items()}
-
-
-_ABS_MD_PATH_IN_BACKTICK_RE = re.compile(r"`([^`\n]+\.md)`")
-_ABS_MD_PATH_IN_TEXT_RE = re.compile(r"[^\s`]+\.md")
-
-
-def _extract_plan_file_path_from_section(section_text: str) -> str | None:
-    """`plan-file-finalizer`の`## 計画ファイルパス`直下本文からMarkdownパスを抽出する。
-
-    `_extract_referenced_plan_file_path`と異なり`.claude/plans/`配下への制約を持たない
-    （plan modeサンドボックスパス・テストの一時パスも対象に含めるため）。
-    バッククォート囲み表記を優先し、一意に定まらない場合（0件または2件以上）は`None`を返す。
-    """
-    matches = {m.group(1) for m in _ABS_MD_PATH_IN_BACKTICK_RE.finditer(section_text)}
-    if not matches:
-        matches = {m.group(0) for m in _ABS_MD_PATH_IN_TEXT_RE.finditer(section_text)}
-    if len(matches) != 1:
-        return None
-    return next(iter(matches))
-
-
-def _check_plan_file_finalizer_prompt_completeness(subagent_type: str, tool_input: dict) -> bool:
-    """`plan-file-finalizer`起動プロンプトの必須見出し3点の欠落・空欄・計画ファイル不在をブロックする。
-
-    要件が固まっていない状態での起動（曖昧な起動プロンプト、または初版が存在しない状態での
-    委譲）を機械的に差し戻すゲートである。見出しの実在・非空検査に加え、`## 計画ファイルパス`が
-    指すパスの実在検査を行う。パスを一意に抽出できない場合は当該検査をブロックしない
-    （安全側の設計。必須見出しの非空検査で担保される範囲に留める）。パスを抽出できた場合は
-    正規化失敗を含め非実在として扱い、厳格にブロックする。`prompt`が欠落または
-    非文字列の場合、必須見出し全件が不在であるとみなしてブロックする。
-    """
-    if subagent_type not in _PLAN_FILE_FINALIZER_SUBAGENT_TYPES:
-        return False
-    prompt = tool_input.get("prompt")
-    if isinstance(prompt, str):
-        sections = _extract_prompt_h2_sections(prompt)
-        missing = [
-            heading for heading in _PLAN_FILE_FINALIZER_REQUIRED_PROMPT_HEADINGS if not sections.get(heading, "").strip()
-        ]
-    else:
-        sections = {}
-        missing = list(_PLAN_FILE_FINALIZER_REQUIRED_PROMPT_HEADINGS)
-    if missing:
-        print(
-            _llm_notice(
-                f"blocked: `plan-file-finalizer` launch prompt is missing required section(s): {missing}.\n"
-                "Required headings (verbatim, each with non-empty content):"
-                " `## 計画ファイルパス`, `## permission_mode`, `## 作業ディレクトリ`.\n"
-                "Why this gate exists: launching plan-file-finalizer before the plan draft is"
-                " settled produces rework.\n"
-                "See agent-toolkit/skills/plan-mode/references/plan-file-finalizer-prompt-template.md.",
-                tag="block",
-            ),
-            file=sys.stderr,
-        )
-        return True
-    referenced_path = _extract_plan_file_path_from_section(sections.get("計画ファイルパス", ""))
-    if referenced_path is None:
-        return False
-    normalized = _normalize_plan_file_path(referenced_path)
-    if normalized is not None and normalized.is_file():
-        return False
-    print(
-        _llm_notice(
-            f"blocked: `plan-file-finalizer` launch prompt's `## 計画ファイルパス` section references"
-            f" `{referenced_path}`, but it does not resolve to an existing file"
-            f" (resolved: `{normalized}`).\n"
-            "Why this gate exists: plan-file-finalizer no longer drafts the plan; the caller must"
-            " write the initial draft before delegating.\n"
-            "Normal fix: write the plan draft to the referenced path (or fix a typo in the path)"
-            " before invoking plan-file-finalizer.",
-            tag="block",
-        ),
-        file=sys.stderr,
-    )
-    return True
-
-
-def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dict | None = None) -> bool:
-    """ExitPlanModeまたは`plan-impl-executor`起動時、`plan-file-finalizer`の整合性チェック完了未達をブロックする。
-
-    `plan-impl-executor`起動時は`_check_process7_completion_for_plan_impl_executor_agent`
-    経由で呼ばれる。
-
-    判定条件:
-
-    - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
-    - セッション状態の`plan_mode_skill_invoked`が真
-      （plan-modeスキルを使わない文脈では`plan-file-finalizer`の整合性チェックの完遂義務が生じないため対象外）
-    - `_PROCESS7_COMPLETION_FLAGS`のいずれかが偽
-
-    未起動フラグは1回のブロックメッセージへ全件列挙する。
-    `state`を渡した場合はセッション状態の再読み込みを省略する。
-    """
-    if not session_id:
-        return False
-    if state is None:
-        state = read_state(session_id)
-    if not state.get("plan_mode_skill_invoked", False):
-        return False
-    missing = [flag for flag in _PROCESS7_COMPLETION_FLAGS if not state.get(flag, False)]
-    if not missing:
-        return False
-    print(
-        _llm_notice(
-            "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
-            " before completing the plan-file-finalizer integrity check"
-            " and its required review."
-            f" Missing flags: {missing}.\n"
-            "Why this gate exists: it forces `plan-file-finalizer` to actually run"
-            " the review through `agent-toolkit:codex-exec`"
-            " before implementation starts.\n"
-            "Normal fix: invoke `agent-toolkit:plan-file-finalizer` for the current"
-            " plan; its review steps set the missing flags as a side effect.\n"
-            "plan-impl feedback processing: follow"
-            " agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md"
-            " '混在時の並行制御' section and start the plan-impl-type"
-            " `plan-impl-executor` before the normal-type plan-mode invocation"
-            " (this check does not fire while `plan_mode_skill_invoked` is false).\n"
-            "Pre-existing plan bypass: a `plan-impl-executor` launch referencing a"
-            " different, already-existing plan file path than the session's"
-            " `current_plan_file_path` is not blocked; only a launch referencing"
-            " the current plan path is.\n"
-            "Review completed without a recording trigger: if the plan review itself"
-            " was completed and verified but no state-recording trigger fired"
-            " (for example the review ran outside `plan-file-finalizer`), the caller"
-            " takes over the implementation and the implementation-diff review instead"
-            " of relaunching the finalizer; see"
-            " agent-toolkit/skills/plan-mode/SKILL.md step 4 and"
-            " agent-toolkit/rules/02-claude-code.md 'ツール呼び出し・タスク管理' section"
-            " for the state measurement procedure.\n"
-            "See agent-toolkit/agents/plan-file-finalizer.md.",
             tag="block",
         ),
         file=sys.stderr,
@@ -2890,49 +2458,27 @@ def _normalize_plan_file_path(path_text: str) -> pathlib.Path | None:
         return None
 
 
-def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, tool_input: dict) -> bool:
-    """`plan-impl-executor`系Agent/Task起動時、現行計画パスへの起動時のみ`plan-file-finalizer`の整合性チェック完了未達をブロックする。
-
-    起動プロンプトの`prompt`欄から計画ファイルパスを抽出し、正規化のうえセッション状態の
-    `current_plan_file_path`と一致する場合のみ`_check_process7_completion_before_exit_plan_mode`を適用する。
-    別セッションでplan-modeにより完遂済みの計画（例:`plan-and-add-feedback`投入の計画実装型フィードバック）を
-    指す起動は、当該計画ファイルが実在する場合に限り、当該セッションの`plan-file-finalizer`の整合性チェック未達を理由にブロックしない。
-    `current_plan_file_path`が未記録・非文字列・空文字列の場合は「現行パスと不一致」として扱い、
-    参照先の実在確認のみでバイパスの成立可否を判定する
-    （`plan-file-finalizer`を起動していないセッションから、実在する別計画への起動を妨げないため）。
-    `prompt`が文字列でない場合、パスが一意に抽出できない場合、参照パスの正規化に失敗した場合、
-    または不一致の参照パスが実在しない場合は安全側として従来どおり判定する
-    （実在確認が無いと、任意の非実在パスを記述するだけで`plan-file-finalizer`の整合性チェック未達を回避できてしまうため）。
-    """
+def _record_plan_impl_executor_plan_path(session_id: str, tool_input: dict) -> None:
+    """実在する計画を参照したexecutor起動時に当該パスを記録する。"""
     if not session_id:
-        return False
+        return
     prompt = tool_input.get("prompt")
     if not isinstance(prompt, str):
-        return _check_process7_completion_before_exit_plan_mode(session_id)
+        return
     referenced_path = _extract_referenced_plan_file_path(prompt)
     if referenced_path is None:
-        return _check_process7_completion_before_exit_plan_mode(session_id)
-    state = read_state(session_id)
+        return
     referenced = _normalize_plan_file_path(referenced_path)
-    if referenced is None:
-        return _check_process7_completion_before_exit_plan_mode(session_id, state)
-    current_path = state.get("current_plan_file_path")
-    current = _normalize_plan_file_path(current_path) if isinstance(current_path, str) and current_path else None
-    if current is None or referenced != current:
-        if not referenced.is_file():
-            return _check_process7_completion_before_exit_plan_mode(session_id, state)
-        _record_verified_plan_path(session_id, str(referenced))
-        return False
-    return _check_process7_completion_before_exit_plan_mode(session_id, state)
+    if referenced is None or not referenced.is_file():
+        return
+    _record_verified_plan_path(session_id, str(referenced))
 
 
 def _record_verified_plan_path(session_id: str, plan_file_path: str) -> None:
-    """別の実在する計画ファイルを参照した`plan-impl-executor`起動の許可時、当該パスを記録する。
+    """実在する計画ファイルを参照した`plan-impl-executor`起動時、当該パスを記録する。
 
     記録値は正規化済みの絶対パスとし、以降の計画ファイル読み取りで`~`の未展開による失敗を避ける。
-    `current_plan_file_path`は更新しない。完遂ゲートの一致比較（参照パスと現行パスの一致判定）の
-    入力が切替検出のたびに書き換わると、同一計画への再起動が一致側と判定され、
-    当該セッション自身の完遂フラグを要求する分岐が誤って適用されるためである。
+    `current_plan_file_path`は更新せず、計画作成側の状態と実装対象の記録を分離する。
     """
 
     def _set(state: dict) -> dict | None:
@@ -2944,20 +2490,13 @@ def _record_verified_plan_path(session_id: str, plan_file_path: str) -> None:
     update_state(session_id, _set)
 
 
-def _reset_process7_completion_flags(session_id: str) -> None:
-    """plan-mode起動時に計画レビュー完了フラグと計画単位の状態をリセットする。"""
+def _reset_plan_mode_state(session_id: str) -> None:
+    """plan-mode起動時に計画単位の状態をリセットする。"""
     if not session_id:
         return
 
     def _reset(current: dict) -> dict | None:
         changed = False
-        for flag in _PROCESS7_COMPLETION_FLAGS:
-            if current.get(flag, False):
-                current[flag] = False
-                changed = True
-        if current.get("plan_file_finalizer_active_subagent_sessions"):
-            current["plan_file_finalizer_active_subagent_sessions"] = {}
-            changed = True
         if current.pop("current_plan_file_path", None) is not None:
             changed = True
         # 別の既存計画への切替記録も新計画へ持ち越さない。

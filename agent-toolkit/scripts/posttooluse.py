@@ -21,8 +21,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
     `plan-and-add-feedback`起動検知による`plan_and_add_entries_skill_invoked`フラグの設定と、
     `process-feedbacks`起動検知による同フラグのリセットも同経路で扱う (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
-    （pretooluse.py側の遡及スキャン記録検査・process7完了検査が計画ファイル本文を
-    再読み込みする際に使用）
+    （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
 12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
     （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
 13. `git commit --amend` / `git commit --fixup` 成功時のcwd別
@@ -31,9 +30,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 15. PostToolUseFailure・PermissionDenied: 状態を変更せず終了
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-17. `plan-file-finalizer`完了報告末尾の`status`と`review_completed`の解析 (Agent/Task)
-18. `agent-toolkit:codex-exec`起動の記録 (Skill)
-19. 対象リポジトリのTBDが全件回答済みへ遷移した場合の通知（全ツール共通）
+17. `agent-toolkit:codex-exec`起動の記録 (Skill)
+18. 対象リポジトリのTBDが全件回答済みへ遷移した場合の通知（全ツール共通）
 """
 
 import hashlib
@@ -78,25 +76,6 @@ _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_age
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
-
-
-def _extract_agent_completion_text(tool_response: dict) -> str:
-    """Agent/Task tool_responseから完了報告本文を抽出する。
-
-    foreground Agentツールの完了報告本文は`content`配列内`text`欄（複数ブロック時は連結）へ格納される。
-    `result`欄（文字列）は他ツール経路で採用され得る形式のため次点候補として確認する。
-    候補キーがいずれも存在しない場合は空文字列を返す。
-    """
-    content = tool_response.get("content")
-    if isinstance(content, list):
-        texts = [block.get("text") for block in content if isinstance(block, dict) and block.get("type") == "text"]
-        joined = "".join(text for text in texts if isinstance(text, str))
-        if joined:
-            return joined
-    result = tool_response.get("result")
-    if isinstance(result, str):
-        return result
-    return ""
 
 
 # --- Bashコマンド前処理 ---
@@ -210,57 +189,6 @@ def _codex_thread_cwd_state_id(thread_id: str) -> str:
     """`threadId`単位の共有cwd状態ファイルに使う疑似セッションIDを返す。"""
     digest = hashlib.sha256(thread_id.encode()).hexdigest()
     return f"codex-thread-cwd-{digest}"
-
-
-_PLAN_FILE_FINALIZER_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-finalizer", "agent-toolkit:plan-file-finalizer"})
-
-# `subagent_stop_advisor.py`の同名定数と同一値を保つ。
-_PLAN_FILE_FINALIZER_ACTIVE_KEY = "plan_file_finalizer_active_subagent_sessions"
-
-# 完了報告末尾の機械可読な記録行を判定する正規表現。
-_RECORD_LINE_RE = re.compile(r"^(?:status|review_completed):")
-# 値を囲む強調記法（`**completed**`等）を許容する。完了報告は本文中の表や見出しと同じ流れで
-# 書かれるため値へ強調が付くことがあり、記法の有無で完遂を判定すると実態と異なる結果になる。
-_STATUS_LINE_RE = re.compile(r"^status:\s*(?:\*{1,2}|_{1,2})?(completed|needs_escalation)(?:\*{1,2}|_{1,2})?$", re.MULTILINE)
-_REVIEW_COMPLETED_LINE_RE = re.compile(
-    r"^review_completed:\s*(?:\*{1,2}|_{1,2})?(true|false)(?:\*{1,2}|_{1,2})?$", re.MULTILINE
-)
-
-
-def _extract_trailing_record_block(completion_text: str) -> str:
-    """完了報告の末尾側にある、空行が介在し得る既知キーの記録行を返す。"""
-    lines = completion_text.rstrip("\n").split("\n")
-    end = len(lines)
-    while end > 0:
-        line = lines[end - 1]
-        if not line.strip() or re.fullmatch(r"\s*(?:`{3,}|~{3,})\s*", line):
-            end -= 1
-            continue
-        break
-    record_lines: list[str] = []
-    for line in reversed(lines[:end]):
-        if _RECORD_LINE_RE.match(line):
-            record_lines.append(line)
-            continue
-        # 記録行の間に介在する空行は同一ブロックの一部として無視する。
-        # 空行以外の非記録行では必ず停止するため、末尾ブロック外の記録行を拾うことはない。
-        if not line.strip() and record_lines:
-            continue
-        break
-    return "\n".join(reversed(record_lines))
-
-
-def is_plan_review_completion_report(completion_text: str) -> bool:
-    """完了報告が計画レビュー完遂を示す構造化欄を持つかを返す。"""
-    trailing_record_block = _extract_trailing_record_block(completion_text)
-    status_match = _STATUS_LINE_RE.search(trailing_record_block)
-    review_match = _REVIEW_COMPLETED_LINE_RE.search(trailing_record_block)
-    return (
-        status_match is not None
-        and status_match.group(1) == "completed"
-        and review_match is not None
-        and review_match.group(1) == "true"
-    )
 
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
@@ -513,15 +441,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
 
             def _set_invoked(state: dict) -> dict | None:
-                if (
-                    state.get("plan_mode_skill_invoked", False)
-                    and state.get("plan_review_completed") is not True
-                    and not state.get(_PLAN_FILE_FINALIZER_ACTIVE_KEY)
-                ):
+                if state.get("plan_mode_skill_invoked", False):
                     return None
                 state["plan_mode_skill_invoked"] = True
-                state["plan_review_completed"] = False
-                state[_PLAN_FILE_FINALIZER_ACTIVE_KEY] = {}
                 return state
 
             update_state(session_id, _set_invoked)
@@ -558,9 +480,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
-        raw_tool_response = payload.get("tool_response", {})
-        completion_text = _extract_agent_completion_text(raw_tool_response) if isinstance(raw_tool_response, dict) else ""
-
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
             _process_loop_log.append("subagent_end", type=subagent_type)
@@ -585,31 +504,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                     return state
 
                 update_state(session_id, _register_plan_impl_executor_session)
-        if isinstance(subagent_type, str) and subagent_type in _PLAN_FILE_FINALIZER_SUBAGENT_TYPES:
-            if not completion_text:
-                sub_session_id = raw_tool_response.get("agentId") if isinstance(raw_tool_response, dict) else None
-                if isinstance(sub_session_id, str) and sub_session_id:
-
-                    def _register_plan_file_finalizer_session(state: dict, sid: str = sub_session_id) -> dict | None:
-                        active = state.get(_PLAN_FILE_FINALIZER_ACTIVE_KEY)
-                        if not isinstance(active, dict):
-                            active = {}
-                        if sid in active:
-                            return None
-                        active[sid] = {"started_at": time.time()}
-                        state[_PLAN_FILE_FINALIZER_ACTIVE_KEY] = active
-                        return state
-
-                    update_state(session_id, _register_plan_file_finalizer_session)
-            if is_plan_review_completion_report(completion_text):
-
-                def _set_plan_review_completed(state: dict) -> dict | None:
-                    if state.get("plan_review_completed", False):
-                        return None
-                    state["plan_review_completed"] = True
-                    return state
-
-                update_state(session_id, _set_plan_review_completed)
         return 0
 
     # codex呼び出し後はリモートrefの変化だけを確認する。
@@ -648,8 +542,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
         if is_plan_file(file_path):
             # 現在の計画ファイルパスを記録する。
-            # pretooluse.py側の`_check_process7_completion_before_exit_plan_mode`
-            # 計画ファイルの完遂ゲートが再読み込みする用途に使う。
+            # pretooluse.py側の遡及スキャン記録検査が再読み込みする用途に使う。
 
             def _set_current_plan_file_path(current_state: dict, file_path: str = file_path) -> dict | None:
                 if current_state.get("current_plan_file_path") == file_path:

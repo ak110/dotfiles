@@ -32,8 +32,7 @@ description: >
 1. `agent-toolkit:plan-mode`スキルを参照呼び出しする。「進め方」節のうち
    `plan-impl-executor`起動を除く全工程（調査・確認・計画ファイルの作成と整合性チェック・codexレビュー）を完遂する。
    計画確定時は同節の工程5が定める全提示をユーザーへ行う。
-   本スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない
-   （PreToolUseフックが`plan_and_add_entries_skill_invoked`真時にブロックする）。
+   本スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない。
    既にplan mode下で起動された場合は、本スキルをplan mode外で実行する旨を`ExitPlanMode`で提示し、
    承認を得てから工程1へ進む
 2. `plan-impl-executor`起動工程を実施しない。代わりに`agent-toolkit:process-feedbacks`「フィードバック投入」節の手順を実行する。

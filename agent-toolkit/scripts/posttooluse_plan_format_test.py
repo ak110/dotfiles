@@ -317,44 +317,6 @@ class TestPlanFormatCheck:
         assert "'対象ファイル一覧'" not in found_section
 
 
-class TestPlanReviewCompletedTracking:
-    """finalizer完了報告の計画レビュー完了追跡。"""
-
-    def test_structured_completion_sets_flag(self, tmp_path: pathlib.Path) -> None:
-        """末尾の正規完了報告だけがフラグを真化する。"""
-        sid = "plan-review-completed"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer"},
-                "tool_response": {"result": "status: completed\nreview_completed: true"},
-                "session_id": sid,
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state["plan_review_completed"] is True
-
-    def test_incomplete_structured_completion_does_not_set_flag(self, tmp_path: pathlib.Path) -> None:
-        """未完了の構造化報告ではフラグを真化しない。"""
-        sid = "plan-review-incomplete"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer"},
-                "tool_response": {"result": "status: needs_escalation\nreview_completed: false"},
-                "session_id": sid,
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state_file = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        assert not state_file.exists() or not json.loads(state_file.read_text(encoding="utf-8")).get(
-            "plan_review_completed", False
-        )
-
-
 class TestTextlintViolationsReadTracking:
     """textlint-violations.md読み込み追跡。"""
 

@@ -205,7 +205,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
   `mcp__codex__codex`・`mcp__codex__codex-reply`の呼び出しをブロック
 - codex呼び出しのサンドボックス指定を削除・弱体化する編集をブロック
 - AgentまたはTaskツール起動時のnameパラメーター指定をブロック
-- `plan-file-finalizer`・`plan-impl-executor`などのサイドチェーンでは、
+- 計画レビューでは、メインセッションが機械チェック・修正系と総合レビュー系へ直接委譲する
+- 計画実装では、`plan-impl-executor`が実装・修正系と2つの実装差分レビュー系を管理し、
   frontmatterから読み込んだ`agent-toolkit:codex-exec`経由のcodex MCP呼び出しを許可
 - 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
 - APIエラー停止後の入力待ち時にツール呼び出しの解析失敗をベルとデスクトップ通知で警告

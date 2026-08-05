@@ -659,12 +659,11 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
 - 同一セッションで取得済みのファイルは、変更を観測するまで保持済み内容を再利用する。
   編集後の検収、外部更新後、正確な現行文面が必要な差分適用前に再取得する
 - 計画ファイルなどを反復編集する工程は、整合確認と修正を同じ委譲先へまとめる
-- `plan-file-finalizer`と`plan-impl-executor`はfrontmatterのモデル指定を適用する。
-  AgentまたはTask起動時に`model`引数を指定しない
-  （PreToolUseフックが機械的にブロックする）。既定モデルの変更が必要な場合は呼び出し側でなく
-  エージェント定義自体のfrontmatterを改訂する。
-  両定義の役割と委譲関係は`agent-toolkit:agent-standards`
-  `references/subagent-collaboration.md`「計画処理の委譲関係」節を参照する
+- `plan-impl-executor`はfrontmatterのモデル指定を適用する。
+  AgentまたはTask起動時に`model`引数を指定しない。
+  既定モデルの変更はエージェント定義のfrontmatterで行う。
+  計画レビューは`agent-toolkit:plan-mode`の呼び出し元が2系統へ直接委譲する。
+  当該手順は`agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を参照する
 - 委譲の完了は起動形態によらず同一手順で検収する。完了報告を受領したら、受領経路を問わず
   まず成果物を実測し（`git log`・作業ツリー差分・成果物ファイルの実在と分量）、
   次に完了報告本文の必須欄を検査する。実測と本文が一致しない場合は未完遂として扱う。
@@ -674,7 +673,9 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
     `run_in_background`を省略した起動が背景実行へ転換されると受領経路が戻り値から完了通知へ変わるが、
     どちらで受領したかは検収の成否を左右しない。
     孫委譲時の記録ファイル直接読み取りは、通常のツール配送経路が成立しない場合の
-    例外的な受領手段として扱い、読み取った完了報告へ同じ検収手順を適用する
+    例外的な受領手段として扱い、読み取った完了報告へ同じ検収手順を適用する。
+    計画処理の委譲プロンプトと受領順序は、
+    `agent-toolkit/skills/codex-exec/references/delegation-boilerplate.md`を共通の正本とする
 - AgentまたはTask起動では`name`パラメーターを渡さず、`run_in_background`を省略する。
   `name`付きbackground起動で完了通知が配送されず停滞する事象は技術的な不成立に該当するため、
   `name`パラメーターの禁止は厳守規定とする。

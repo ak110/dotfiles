@@ -22,15 +22,6 @@
 - `codex_exec_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:codex-exec`または
   `codex-exec`を起動した場合にPostToolUseが真化する。
   メインセッションからcodex MCPを呼び出す前の経路検査に使い、セッション終了まで保持する
-- `plan_review_completed`: `plan-file-finalizer`の完了報告の末尾側にある構造化欄で
-  `status: completed`と`review_completed: true`がともに成立した場合に真化する。
-  背景実行ではSubagentStop、同期完了ではPostToolUseが真化する。
-  ExitPlanModeと現行計画の`plan-impl-executor`起動前検査に使う。
-  `agent-toolkit:plan-mode`起動時に偽へ戻す
-- `plan_file_finalizer_active_subagent_sessions`: 完了報告本文を取得できない`plan-file-finalizer`の
-  `agentId`をPostToolUseが記録し、SubagentStopで完了報告を検査する。
-  完遂条件成立時に当該エントリを削除し、非成立時は再提出に備えて保持する。
-  `agent-toolkit:plan-mode`起動時は辞書を空へ戻す
 - `plan_impl_executor_active_subagent_sessions`: `plan-impl-executor`の`agentId`を記録し、
   SubagentStopで完了報告の必須欄を検査する
 - `codex_remote_snapshot_by_key`: codex呼び出し直前のリモートrefを記録し、呼び出し後に比較して削除する
@@ -38,7 +29,7 @@
 - `claude-agent-toolkit-codex-thread-cwd-<threadIdのSHA-256>.json`: codexの`threadId`ごとの`cwd`を
   疑似セッション状態として記録し、オーケストレーターをまたぐ継続呼び出し時の比較対象を解決する
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
-- `plan_impl_executor_verified_plan_path`: 別の既存計画を参照したexecutor起動時のパスを記録する
+- `plan_impl_executor_verified_plan_path`: 実在する計画を参照したexecutor起動時の正規化済みパスをPreToolUseが記録し、遡及スキャン対象の解決に使う。plan-mode起動時に削除する
 - `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
   計画ファイル作成前の直接編集を検知する
 - `tbd_unanswered_by_repo`: エージェント識別子ごと・対象リポジトリIDごとの直近の未回答TBD件数を

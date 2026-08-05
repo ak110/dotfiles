@@ -11,7 +11,6 @@ _CODEX_EXEC_SKILL = _AGENTS_DIR.parent / "skills" / "codex-exec" / "SKILL.md"
 _PLAN_REVIEW = _AGENTS_DIR.parent / "skills" / "codex-exec" / "references" / "plan-codex-review.md"
 _PLAN_REVIEW_FIX_TASK = _PLAN_REVIEW.with_name("plan-codex-review-fix-task.md")
 _PLAN_REVIEW_TASK = _PLAN_REVIEW.with_name("plan-codex-review-task.md")
-_PLAN_FINALIZER = _AGENTS_DIR / "plan-file-finalizer.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _PLAN_IMPL_REVIEW = _AGENTS_DIR.parent / "skills" / "codex-exec" / "references" / "plan-codex-implementation-review.md"
 _PLAN_IMPL_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-task.md")
@@ -20,22 +19,16 @@ _PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementa
 _PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-independent-review-task.md")
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
+_PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
 _BUGFIX = _PLAN_MODE.parent / "references" / "bugfix.md"
 _CI_FAILURE_HANDLING = _PLAN_MODE.parent / "references" / "ci-failure-handling.md"
 _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
-_PLAN_FINALIZER_CALLER = _PLAN_MODE.parent / "references" / "plan-file-finalizer-prompt-template.md"
+_SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
+_PLAN_REVIEW_DELEGATION = _PLAN_MODE.parent / "references" / "plan-review-delegation.md"
+_DELEGATION_BOILERPLATE = _PLAN_REVIEW.parent / "delegation-boilerplate.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE.parent / "references" / "plan-impl-caller-reception.md"
-_REPORT_CONTRACT_LABELS = {
-    "記録先の確保",
-    "起動プロンプト",
-    "完了時の書き込み",
-    "受領待機",
-    "受領と検収",
-    "記録失敗",
-    "後始末",
-}
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
@@ -99,22 +92,14 @@ def test_codex_exec_agents_allow_nested_agent_fallback() -> None:
     assert not missing, f"Claude代替に必要なツールを許可していないcodex-exec利用エージェント: {missing}"
 
     skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
-    claude_route = skill.split("## Claude代替経路", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-    labels = set(re.findall(r"^- ([^:\n]+):", claude_route, flags=re.MULTILINE))
-    assert labels >= _REPORT_CONTRACT_LABELS
+    assert "references/delegation-boilerplate.md" in skill
 
 
 def test_codex_exec_agents_use_skill_then_toolsearch_then_delegation() -> None:
-    """両窓口がSkill読込後に能動的な接続工程へ進む順序を検査する。"""
+    """実装窓口がSkill読込後に能動的な接続工程へ進む順序を検査する。"""
     skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
     assert "Skillツールの成功応答は本スキルの読み込み完了" in skill
     assert "ToolSearch、MCP初回接続" in skill
-    finalizer = _h2_section(_PLAN_FINALIZER.read_text(encoding="utf-8"), "委譲")
-    assert finalizer.index("Skillツール") < finalizer.index("ToolSearch")
-    assert finalizer.index("ToolSearch") < finalizer.index("plan-codex-review.md`をRead")
-    assert finalizer.index("plan-codex-review.md`をRead") < finalizer.index("タスク本文を構成")
-    assert finalizer.index("タスク本文を構成") < finalizer.index("機械チェック委譲")
-
     executor = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "委譲")
     assert executor.index("Skillツール") < executor.index("ToolSearch")
     assert executor.index("ToolSearch") < executor.index("次のreferenceをRead")
@@ -123,95 +108,80 @@ def test_codex_exec_agents_use_skill_then_toolsearch_then_delegation() -> None:
 
 
 def test_claude_fallback_preserves_track_agent_ids_and_attempt_markers() -> None:
-    """Claude代替の再開識別子と試行別完了報告契約を検査する。"""
+    """Claude代替の識別子と通常配送優先契約を検査する。"""
     skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
-    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    finalizer_caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
+    boilerplate = _DELEGATION_BOILERPLATE.read_text(encoding="utf-8")
     impl_caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
-    assert "Agent識別子があり`SendMessage`を利用できる場合" in skill
-    assert "初回Agent起動と各`SendMessage`再開を独立した完了報告試行" in skill
-    assert "当該試行で生成したマーカーだけ" in skill
-    for document in (finalizer, executor):
+    for document in (executor, boilerplate):
         assert "SendMessage" in document
         assert "Agent識別子" in document
-        assert "当該試行のマーカーだけ" in document
-    for label in (
-        "implementation_agent_id",
-        "review_agent_id",
-        "implementation_agent_owner",
-        "review_agent_owner",
-    ):
-        assert label in finalizer
-        assert label in finalizer_caller
+        assert "通常" in document
+    assert "references/delegation-boilerplate.md" in skill
     for label in ("implementation_agent_id", "plan_review_agent_id", "independent_review_agent_id"):
         assert label in executor
         assert label in impl_caller
-    assert "finalizerが起動したAgent" in finalizer_caller
-    assert "Agent識別子の所有主体が`caller`" in finalizer_caller
-    assert "呼び出し元から直接`SendMessage`を実行しない" in finalizer_caller
     assert "Agentへ直接`SendMessage`を実行" in impl_caller
-
-
-def test_plan_finalizer_continuation_input_matches_agent_ownership_contract() -> None:
-    """finalizerの受信入力と呼び出し元の追加情報を所有主体まで一致させる。"""
-    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
-    caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
-    finalizer_input = _h2_section(finalizer, "入力")
-    caller_additional = _h2_section(caller, "追加情報")
-
-    for phrase in ("Claude Agent識別子", "その所有主体", "全応答履歴", "累積`review_rounds`"):
-        assert phrase in finalizer_input
-        assert phrase in caller_additional
-    assert "呼び出し元が起動したAgent識別子" in finalizer_input
-    assert "呼び出し元が起動したAgent識別子" in caller_additional
-
-
-def test_plan_finalizer_resumes_agents_only_by_owner() -> None:
-    """finalizer所有とcaller所有のAgent再開経路を混同しない。"""
-    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
-    caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
-
-    assert "所有主体が`finalizer`" in finalizer
-    assert "所有主体が`caller`" in finalizer
-    assert "識別子、履歴、未完了事項を保持した`needs_escalation`" in finalizer
-    assert "呼び出し元へ同じAgentの再開を要求" in finalizer
-    assert "所有主体が`caller`の系統で追加作業" in caller
-    assert "所有主体が`finalizer`の場合" in caller
-
-
-def test_plan_finalizer_reuses_working_directory_as_target_worktree() -> None:
-    """作業ディレクトリを唯一の対象worktree入力として再利用する契約を検査する。"""
-    documents = [
-        _PLAN_FINALIZER.read_text(encoding="utf-8"),
-        _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8"),
-        _PLAN_REVIEW.read_text(encoding="utf-8"),
-    ]
-    assert all("target_worktree_path" not in document for document in documents)
-    assert all("対象worktreeの唯一の入力" in document for document in documents)
-    assert all("source_repository_path" in document or "複製元リポジトリ" in document for document in documents)
 
 
 def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
     """対象worktreeと条件付き複製元の退避・比較・復旧報告契約を検査する。"""
-    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
-    caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
-    review = _PLAN_REVIEW.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "_worktree_snapshot.py capture" in review
-    assert "「用途別task reference」節に従い" in finalizer
-    assert "worktree_check_results" in finalizer
-    assert "具体的な復旧手順" in review
-    assert "復旧の実行主体は、呼び出し元の明示確認後に開始する別工程" in review
+    assert "_worktree_snapshot.pyの絶対パス> capture" in delegation
+    assert "worktree snapshot" in delegation
+    assert "具体的な復旧手順" in delegation
+    assert "復旧の明示確認を得る" in delegation
     assert "worktree_check_result" in fix_task
     assert "worktree_check_result" in review_task
-    for document in (finalizer, caller):
-        compact = re.sub(r"\s+", "", document)
-        assert "委譲前後それぞれの基準コミットの識別子" in compact
-        assert "rev-parseHEAD" in compact
-        assert "報告値と突き合わせる" in compact
+    compact = re.sub(r"\s+", "", delegation)
+    assert "対象worktree" in compact
+    assert "複製元" in compact
+    assert "snapshot比較" in compact
+    assert "`承認済み復旧`として委譲" in delegation
+    assert "利用者の明示確認結果" in fix_task
+
+
+def test_codex_exec_prompt_allows_task_required_runtime_values() -> None:
+    """用途別taskの必須値を共通プロンプト契約が拒まないこと。"""
+    skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW.read_text(encoding="utf-8")
+    boilerplate = _DELEGATION_BOILERPLATE.read_text(encoding="utf-8")
+    for document in (skill, boilerplate):
+        assert "実行時に確定した値" in document
+        assert "許可した追加指示" in document
+    assert "task referenceが要求する用途別の必須値" in skill
+    assert "限定再レビュー時の差分一式" in review
+
+
+def test_plan_review_fix_task_separates_operation_outputs() -> None:
+    """機械修正系の処理種別と後始末出力が両立すること。"""
+    text = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
+    for operation in (
+        "初回機械検査",
+        "レビュー前退避",
+        "指摘反映",
+        "反映後検収・レビュー後検収・復旧後検収",
+        "承認済み復旧",
+        "後始末",
+    ):
+        assert operation in text
+    assert "cleanup_exit_code" in text
+    assert "cleanup_target_absent" in text
+    assert "削除済みディレクトリ内の`raw_output_paths`は返さない" in text
+
+
+def test_removed_hook_contracts_are_not_described_as_active() -> None:
+    """廃止済みゲートとSubagentStop縮退検出を現存機能として案内しないこと。"""
+    pretooluse = (_AGENTS_DIR.parent / "scripts" / "pretooluse.py").read_text(encoding="utf-8")
+    subagent_stop = (_AGENTS_DIR.parent / "scripts" / "subagent_stop_advisor.py").read_text(encoding="utf-8")
+    session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
+    assert "ExitPlanMode/plan-impl-executor起動時に完成条件未達" not in pretooluse
+    assert "`ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約" not in pretooluse
+    assert "縮退表明辞書で検査" not in subagent_stop
+    assert "scope-escalation検出専用" not in session_review
 
 
 def test_plan_impl_report_labels_are_synchronized() -> None:
@@ -273,8 +243,8 @@ def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
     """
     implementation = _h2_section(_PLAN_IMPL.read_text(encoding="utf-8"), "初回委譲")
     implementation_input = _h2_section(_PLAN_IMPL_TASK.read_text(encoding="utf-8"), "入力")
+    assert "plan-codex-implementation-task.md" in implementation
     for reference in ("plan-codex-implementation-task.md", "plan-codex-implementation-review.md"):
-        assert reference in implementation
         assert reference in implementation_input
 
 
@@ -315,170 +285,85 @@ def test_plan_impl_review_cap_contract_is_synchronized() -> None:
         assert phrase in caller
 
 
-def test_plan_review_checks_external_plan_without_repository_copy() -> None:
-    """計画本体を外部パス対応で検査し、リポジトリ内一時複製の契約を持たないこと。"""
+def test_plan_review_checks_sandbox_plan_without_repository_copy() -> None:
+    """worktree外のサンドボックスを検査し、リポジトリ内一時複製の契約を持たないこと。"""
     review = _PLAN_REVIEW.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
-    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
 
     assert "--allow-external-paths" in review
     assert "--work-dir" in review
     assert "--commands=typos,markdownlint,textlint,designmd,lychee,colloquial-check" in review
     assert "--enable=colloquial-check" in review
-    assert all(".plan-check-" not in content for content in (review, fix_task, finalizer))
-    assert "temporary_files" not in finalizer
+    assert "<サンドボックス計画ファイルの絶対パス>" in review
+    assert "正規計画ファイル" in fix_task
+    assert "正規計画ファイル、対象worktree" in fix_task
+    assert "管理対象一時ディレクトリだけ" in fix_task
+    assert "呼び出し元が正規計画ファイルへ反映" in delegation
+    assert "plan mode下の呼び出し元は、正規計画ファイル以外へ書き込まない" in delegation
+    assert "呼び出し元はBashを実行せず" in delegation
+    assert "生出力ファイル" in delegation
+    assert "`Read`で検収" in delegation
+    assert "raw_output_paths" in fix_task
+    assert all(".plan-check-" not in content for content in (review, fix_task, delegation))
+    assert "temporary_files" not in delegation
 
 
-def test_plan_review_escalates_scope_changes_before_applying_them() -> None:
-    """計画初版との比較から呼び出し元判断までの分離契約を検査する。"""
-    finalizer = _PLAN_FINALIZER.read_text(encoding="utf-8")
-    finalizer_caller = _PLAN_FINALIZER_CALLER.read_text(encoding="utf-8")
-    review = _PLAN_REVIEW.read_text(encoding="utf-8")
-    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+def test_plan_and_add_feedback_does_not_claim_removed_enter_plan_mode_hook() -> None:
+    """plan mode外で実行する規範が削除済みPreToolUse検査へ依存しないこと。"""
+    text = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    assert "本スキルはplan mode外で実行する" in text
+    assert "PreToolUseフックが`plan_and_add_entries_skill_invoked`真時にブロックする" not in text
 
-    finalizer_input = _h2_section(finalizer, "入力")
-    finalizer_workflow = _h2_section(finalizer, "委譲")
-    finalizer_output = _h2_section(finalizer, "出力")
-    completed_scope_changes = "採用した初版内補正と承認済みのスコープ拡大が反映済み"
-    finalizer_output_compact = re.sub(r"\s+", "", finalizer_output)
-    finalizer_caller_compact = re.sub(r"\s+", "", finalizer_caller)
-    assert "scope_baseline" in finalizer_input
-    assert "scope_changes" in finalizer_input
-    assert "反映状態" in finalizer_input
-    assert "反映結果" in finalizer_input
-    assert "同じfinalizer" in finalizer_input
-    assert "新しいfinalizer" in finalizer_input
-    assert "前回の採用指摘" in finalizer_input
-    assert "確定済みの採否" in finalizer_input
-    assert "反映結果" in finalizer_input
-    assert "反映差分" in finalizer_input
-    assert "`採否確定後・反映前`" in finalizer_input
-    assert "`反映後・再レビュー前`" in finalizer_input
-    assert "`初回レビュー前`" in finalizer_input
-    assert "`初回レビュー後・採否確定前`" in finalizer_input
-    assert "両系統の経路、`threadId`、Claude Agent識別子、その所有主体、全応答履歴、累積`review_rounds`" in finalizer_input
-    assert "未開始の系統は`not_started`、`threadId: なし`、Agent識別子`なし`、所有主体`none`" in finalizer_input
-    assert "途中で利用不能になった系統は`unavailable`" in finalizer_input
-    assert (
-        "利用不能になる直前の\n`threadId`、Agent識別子、その所有主体、全応答履歴、累積`review_rounds`を保持" in finalizer_input
-    )
-    assert "反映結果と反映差分は、`反映後・再レビュー前`だけで必須" in finalizer_input
-    assert "前回の反映後機械修正前後差分" in finalizer_input
-    assert "反映後最終検査結果" in finalizer_input
-    assert "反映後最終検査結果も、\n`反映後・再レビュー前`だけで必須" in finalizer_input
-    assert "再計算しない" in finalizer_input
-    assert finalizer_workflow.index("入力直後かつ書き込み可能な委譲前") < (finalizer_workflow.index("機械チェック委譲"))
-    assert "初回または`初回レビュー前`では、累積`review_rounds`が`plan-codex-review.md`" in finalizer_workflow
-    assert "「指摘反映と再レビュー」節の定める上限未満" in finalizer_workflow
-    assert "レビュー系へ計画ファイル全体の総合レビューを1回" in finalizer_workflow
-    assert "`採否確定後・反映前`は工程14へ" in finalizer_workflow
-    assert "`初回レビュー後・採否確定前`は工程13へ" in finalizer_workflow
-    assert "`反映後・再レビュー前`は工程15へ" in finalizer_workflow
-    assert "機械修正前後の差分を取得" in finalizer_workflow
-    assert "検査だけで変更がなかった場合も「差分なし」と記録" in finalizer_workflow
-    assert finalizer_workflow.index("採用指摘と確定済みの採否を実装・修正系へ渡し") < (
-        finalizer_workflow.index("限定再レビューの入力へ統合")
-    )
-    assert "工程3と工程14の機械修正前後の差分" in finalizer_workflow
-    assert "統合した差分が直接導入した不具合" in finalizer_workflow
-    assert finalizer_workflow.index("採用指摘と確定済みの採否を実装・修正系へ渡し") < (
-        finalizer_workflow.index("反映直後に3検査を再実行")
-    )
-    assert finalizer_workflow.index("反映直後に3検査を再実行") < (finalizer_workflow.index("限定再レビューの入力へ統合"))
-    assert finalizer_workflow.index("反映直後に3検査を再実行") < finalizer_workflow.index("新たに退避して内容ハッシュを記録")
-    assert finalizer_workflow.index("新たに退避して内容ハッシュを記録") < (
-        finalizer_workflow.index("限定再レビューの入力へ統合")
-    )
-    assert "違反修正を含む機械修正前後の差分" in finalizer_workflow
-    assert "入力された前回の反映後機械修正前後差分" in finalizer_workflow
-    assert "工程3を現在ラウンドの反映後3検査として扱う" in finalizer_workflow
-    assert "再起動時は入力された前回の反映後機械修正前後差分" in finalizer_workflow
-    assert "再起動時は入力された前回の反映後機械修正前後差分と\n    反映後最終検査結果" in finalizer_workflow
-    assert "指摘の有無にかかわらず工程6から工程9" in finalizer_workflow
-    assert "指摘がない場合は、累積差分の区分と承認状態を確認" in finalizer_workflow
-    assert "反映後に実行した3検査の最終結果" in finalizer_workflow
-    assert finalizer_workflow.count("「指摘反映と再レビュー」節の定める上限未満であることを確認") == 2
-    assert finalizer_workflow.count("累積`review_rounds`へ1を加算") == 2
-    assert "採否が未確定なら`continuation_state: 初回レビュー後・採否確定前`" in finalizer_workflow
-    assert finalizer_workflow.index("scope_baseline") < finalizer_workflow.index("needs_escalation")
-    assert finalizer_workflow.index("scope_changes") < finalizer_workflow.index("needs_escalation")
-    assert "承認状態だけを更新する" in finalizer_workflow
-    assert "`## 出力`の`status: completed`が定める全条件の成立を確認する" in finalizer_workflow
-    assert "`scope_changes`が「なし」または呼び出し元承認済み" in finalizer_output
-    assert "scope_baseline:" in finalizer_output
-    assert "scope_changes:" in finalizer_output
-    assert "continuation_state:" in finalizer_output
-    assert "post_application_check_diff:" in finalizer_output
-    assert "post_application_check_results:" in finalizer_output
-    assert "out_of_scope_findings:" in finalizer_output
-    assert "反映状態" in finalizer_output
-    assert "反映結果" in finalizer_output
-    assert completed_scope_changes in finalizer_output_compact
 
+def test_plan_review_state_machine_is_complete() -> None:
+    """計画レビューの初回検査から後始末までの状態機械を固定する。"""
+    text = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     for phrase in (
+        "初回機械検査",
         "scope_baseline",
-        "scope_changes",
-        "未承認のスコープ拡大が1件以上",
-        "未承認のスコープ拡大が0件",
-        "continuation_state: 初回レビュー前",
-        "continuation_state: 初回レビュー後・採否確定前",
-        "continuation_state: 採否確定後・反映前",
-        "まだ存在しない反映結果と反映差分を入力に要求しない",
-        "continuation_state: 反映後・再レビュー前",
-        "前回の反映後機械修正前後差分",
-        "反映後最終検査結果も全文転記",
-        "全応答履歴、累積`review_rounds`を全文転記",
-        "途中で利用不能になった系統は`unavailable`",
-        "利用不能になる直前の`threadId`",
-        "初回総合レビューと採否確定が完了した場合だけ",
-        "AskUserQuestion",
-        "process_feedbacks_skill_invoked",
-        "atk mq add --type=tbd",
-        "out_of_scope_findings",
-        "反映状態",
-        "反映結果",
+        "計画ファイルの全文",
+        "SHA-256",
+        "capture --repo",
+        "compare --repo",
+        "一致時に0、変化検出時に1、入力または比較失敗時に2",
+        "plan_file_diff",
+        "総合レビュー",
+        "3区分",
+        "初版内補正",
+        "スコープ拡大",
+        "独立問題",
+        "採否",
+        "反映と限定再レビュー",
+        "review_rounds",
+        "累積5ラウンド",
+        "初回ラウンドだけ",
+        "全ラウンドで対応対象",
+        "破棄する",
+        "status: needs_escalation",
+        "完了判定と後始末",
+        "cleanup --path",
     ):
-        assert phrase in finalizer_caller
-    assert completed_scope_changes in finalizer_caller_compact
-    assert "初回総合レビューの完了前は`初回レビュー前`" in finalizer
-    assert "完了後から採否確定前までは\n`初回レビュー後・採否確定前`" in finalizer
-    assert "受領した累積値へ今回実施回数を加えた累積回数" in finalizer_output
-    assert "未開始の系統だけを`thread_id: なし`、`agent_id: なし`、履歴`なし`、レビュー回数`0`" in finalizer_workflow
-    assert "途中で利用不能になった系統は、利用不能になる直前の`thread_id`、`agent_id`" in finalizer_workflow
+        assert phrase in text
 
-    review_cycle = _h2_section(review, "指摘反映と再レビュー")
-    assert "再起動によって回数をリセットしない" in review_cycle
-    for phrase in ("初版内補正", "スコープ拡大", "独立問題"):
-        assert phrase in review_cycle
-    assert "再起動時" in review_cycle
-    assert "再計算しない" in review_cycle
-    assert "`implementation_summary`" in review_cycle
-    assert "`user_agreements`" in review_cycle
-    assert "`change_content`" in review_cycle
-    assert "要素別に比較" in review_cycle
-    assert "差分ごとに3区分、承認状態、反映状態、反映結果" in review_cycle
-    assert review_cycle.index("反映する前") < review_cycle.index("実装・修正系へ渡す")
-    assert "呼び出し元が承認したスコープ拡大だけ" in review_cycle
-    assert "未承認のスコープ拡大と独立問題" in review_cycle
-    assert "`採否確定後・反映前`では採用指摘を反映してから" in review_cycle
-    assert "`反映後・再レビュー前`へ移行" in review_cycle
-    assert "現在のラウンドで反映前後に生じた機械修正前後の差分" in review_cycle
-    assert "限定再レビュー後は指摘の有無にかかわらず" in review_cycle
-    assert "初版3要素との累積差分の区分と承認状態を更新" in review_cycle
 
-    review_task_body = _h2_section(review_task, "レビュー")
-    assert "前回の採用指摘" in review_task_body
-    assert "反映差分との因果関係" in review_task_body
+def test_plan_review_resume_preserves_cumulative_state() -> None:
+    """再開時に比較基準と累積状態を保持する契約を固定する。"""
+    text = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    for state in ("初回レビュー前", "初回レビュー後・採否確定前", "採否確定後・反映前", "反映後・再レビュー前"):
+        assert state in text
+    assert "比較基準を現行計画から再計算しない" in text
+    assert "全ラウンドの累積`scope_changes`" in text
+    assert "`review_rounds`が5の場合は限定再レビューを再開せず" in text
 
-    plan_review_exceptions = _h2_section(review_standards, "計画ファイル文脈での例外")
-    assert "独立する既存問題" in plan_review_exceptions
-    assert "初版の成立性と独立する既存問題は計画レビューと分ける" in plan_review_exceptions
 
-    plan_mode_steps = _h2_section(plan_mode, "進め方")
-    assert "references/plan-file-finalizer-prompt-template.md" in plan_mode_steps
-    assert "呼び出し元の読込対象は同referenceに限定" in plan_mode_steps
+def test_delegation_boilerplate_prefers_normal_delivery() -> None:
+    """通常配送優先と完了済みAgentの再開分岐を固定する。"""
+    text = _DELEGATION_BOILERPLATE.read_text(encoding="utf-8")
+    assert text.index("通常のツール戻り値または完了通知を第一") < text.index("配送不能を実測")
+    assert "`completion.md`や確実に照会できるセッション記録" in text
+    assert "完了済みAgentへ追加作業" in text
+    assert "新規起動" in text
 
 
 def test_bug_response_prompt_contracts_are_synchronized() -> None:
@@ -655,10 +540,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
 def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
     """一時領域を所有する手順が管理CLIと実行環境別のhelper解決を共有する。"""
     documents = (
-        _CODEX_EXEC_SKILL,
-        _PLAN_REVIEW,
-        _PLAN_REVIEW_FIX_TASK,
-        _PLAN_FINALIZER_CALLER,
+        _PLAN_REVIEW_DELEGATION,
         _COMMIT_SKILL,
         _CI_FAILURE_HANDLING,
     )
@@ -669,14 +551,12 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
         assert "Codexでは" in text
         assert "plugin root" in text
         assert "mktemp -d" not in text
-    assert "uv run --no-project --script <helper> create --prefix completion-record" in _CODEX_EXEC_SKILL.read_text(
+    assert "uv run --no-project --script <helper> create --prefix plan-review-snapshot" in _PLAN_REVIEW_DELEGATION.read_text(
         encoding="utf-8"
     )
-    for path in (_PLAN_REVIEW, _PLAN_REVIEW_FIX_TASK, _PLAN_FINALIZER_CALLER):
-        assert "uv run --no-project --script <helper> create --prefix plan-review-snapshot" in path.read_text(encoding="utf-8")
     for path in (_COMMIT_SKILL, _CI_FAILURE_HANDLING):
         assert "uv run --no-project --script <helper> create --prefix ci-evidence" in path.read_text(encoding="utf-8")
-    for path in (_CODEX_EXEC_SKILL, _PLAN_REVIEW, _PLAN_FINALIZER_CALLER, _COMMIT_SKILL, _CI_FAILURE_HANDLING):
+    for path in (_PLAN_REVIEW_DELEGATION, _COMMIT_SKILL, _CI_FAILURE_HANDLING):
         text = path.read_text(encoding="utf-8")
         assert "uv run --no-project --script <helper> cleanup --path <保持した絶対パス>" in text
         assert "単独で実行" in text
