@@ -37,7 +37,7 @@ MCPツールを使うと、出力の欠落を避けるための独自の抽出�
 - `mode`: `run`・`fast`・`ci`のいずれか。既定は`run`であり、他の値はエラーとなる
 - `work_dir`: 検査の基準ディレクトリ。省略時はサーバーの起動ディレクトリを使う
 - `commands`: 実行するツールの限定。省略時は設定された全ツールを使う
-- `no_fix`: 自動修正を抑止する。`ci`では自動修正が元から無効のため効果を持たない
+- `no_fix`: fixステージだけを抑止する。通常ステージのformatterによる書き込みは抑止しない。`ci`は元からfixステージを持たない
 - `only_failed`: 直前の実行で失敗した対象だけを再実行する
 - `from_run`: 参照する実行を指定する。`only_failed`が真の場合に限り指定できる
 
@@ -100,17 +100,17 @@ pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・prekフック
 `pyfltr: error: argument <subcommand>: invalid choice: ...`でexit 2の即時エラー終了となる。
 ファイル個別実行も`uvx pyfltr run <files>`の形でサブコマンドを必ず指定する。
 
-`run`／`fast`は前段で自動fixステージを実行する（`run-for-agent`はエージェント検出時の`run`と同等に振る舞う）。
-fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段）→ `ruff check`（linter段）
-の3段構成を一般化した仕組みである。
-抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
+`run`／`fast`は通常ステージに先立ってfixステージを実行する
+（`run-for-agent`はエージェント検出時の`run`と同等に振る舞う）。
+`--no-fix`が抑止するのはfixステージだけであり、通常ステージのformatterは対象ファイルを書き換えることがある。
+`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
 
 コミット前検証は対象ファイル・対象ツールを必要に応じて限定する（最終検証はCIに委ねる前提）。
 公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合は全体で実行する。
 末尾のsummary行で`failed`の有無と`diagnostics`数を確認する。
 
-- 所要時間の計測・現状把握・調査を目的とする実行には`--no-fix`を付ける。auto-fixによる作業ツリー変更の副作用を避けるため、
-  修正を意図する実行のみ既定のauto-fixを用いる
+- 所要時間の計測・現状把握・調査を目的とする実行では、`--commands`で必要なlinterやtesterなどの非formatterへ限定し、
+  `--no-fix`を併用する
 
 ## grep&replace
 

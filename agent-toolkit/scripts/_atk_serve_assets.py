@@ -740,6 +740,11 @@ button:disabled {
   font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
 
+.frontmatter pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .markdown-body pre {
   overflow: auto;
   padding: var(--space-2);
