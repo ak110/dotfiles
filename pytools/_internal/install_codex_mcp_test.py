@@ -25,12 +25,14 @@ class TestPrerequisites:
         assert _install_codex_mcp.run() is False
 
 
-class TestAlreadyRegistered:
-    """codex が既に登録されている場合は add を呼ばない (CLIフォールバックパス)。"""
+class TestRegistrationScope:
+    """User scopeと他scopeの登録判定。"""
 
-    def test_already_registered_skips_add(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+    def test_local_or_project_registration_does_not_skip_user_add(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """全scope一覧にcodexがあっても、一覧を使わずUser scopeへのaddを呼び出す。"""
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
-        # ファイルが存在しない状態で CLI フォールバックパスに進む
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", tmp_path / "missing.json")
         calls: list[list[str]] = []
 
@@ -39,37 +41,31 @@ class TestAlreadyRegistered:
             if cmd[:3] == ["claude", "mcp", "list"]:
                 return _FakeResult(
                     returncode=0,
-                    stdout=(
-                        "Checking MCP server health…\n\n"
-                        "other: http://example - ✓ Connected\n"
-                        "codex: codex mcp-server - ✓ Connected\n"
-                    ),
+                    stdout="codex: codex mcp-server - ✓ Connected\n",
                 )
-            return _FakeResult(returncode=1, stderr="should not be called")
+            if cmd[:3] == ["claude", "mcp", "add"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_codex_mcp.run() is False
-        # mcp add は呼ばれないこと
-        assert [c for c in calls if c[:3] == ["claude", "mcp", "add"]] == []
+        assert _install_codex_mcp.run() is True
+        assert [c for c in calls if c[:3] == ["claude", "mcp", "list"]] == []
+        assert [c for c in calls if c[:3] == ["claude", "mcp", "add"]] == [
+            ["claude", "mcp", "add", "--scope=user", "codex", "codex", "mcp-server"]
+        ]
 
 
 class TestAddsWhenMissing:
-    """codex が未登録の場合は add を呼ぶ (CLIフォールバックパス)。"""
+    """User scopeにcodexが未登録の場合のadd処理。"""
 
     def test_adds_codex_when_missing(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
-        # ファイルが存在しない状態で CLI フォールバックパスに進む
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", tmp_path / "missing.json")
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "mcp", "list"]:
-                return _FakeResult(
-                    returncode=0,
-                    stdout="Checking MCP server health…\n\nother: http://example - ✓ Connected\n",
-                )
             if cmd[:3] == ["claude", "mcp", "add"]:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
@@ -86,18 +82,14 @@ class TestAddsWhenMissing:
 
 
 class TestAlreadyExistsHandling:
-    """mcp add が "already exists" を返す場合の処理 (CLIフォールバックパス)。"""
+    """mcp addがalready existsを返す場合の処理。"""
 
     def test_already_exists_treated_as_registered(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """タイムアウトで list が失敗した後、add が already exists を返す場合は登録済み扱い。"""
+        """User scopeへのaddがalready existsを返す場合は登録済み扱いにする。"""
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
-        # ファイルが存在しない状態で CLI フォールバックパスに進む
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", tmp_path / "missing.json")
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            if cmd[:3] == ["claude", "mcp", "list"]:
-                # タイムアウト相当: returncode != 0
-                return _FakeResult(returncode=1, stderr="timeout")
             if cmd[:3] == ["claude", "mcp", "add"]:
                 return _FakeResult(returncode=1, stderr="MCP server codex already exists")
             return _FakeResult(returncode=1)
@@ -109,16 +101,13 @@ class TestAlreadyExistsHandling:
 
 
 class TestFailureHandling:
-    """失敗系で例外を発生させず False を返すこと (CLIフォールバックパス)。"""
+    """失敗系で例外を発生させずFalseを返すこと。"""
 
     def test_add_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
-        # ファイルが存在しない状態で CLI フォールバックパスに進む
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", tmp_path / "missing.json")
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            if cmd[:3] == ["claude", "mcp", "list"]:
-                return _FakeResult(returncode=0, stdout="")
             if cmd[:3] == ["claude", "mcp", "add"]:
                 return _FakeResult(returncode=1, stderr="boom")
             return _FakeResult(returncode=1)
@@ -129,7 +118,6 @@ class TestFailureHandling:
 
     def test_timeout_is_swallowed(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
-        # ファイルが存在しない状態で CLI フォールバックパスに進む
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", tmp_path / "missing.json")
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -144,7 +132,7 @@ class TestReadCodexFromFile:
     """設定ファイル直接読み取り経路の統合テスト。
 
     `run()` 経由で `_CLAUDE_CONFIG_PATH` を差し替え、ファイル状態ごとの
-    動作（登録済みスキップ・CLIフォールバック・CLI add 呼び出し）を検証する。
+    動作（登録済みスキップ・User scopeへのadd呼び出し）を検証する。
     """
 
     def test_codex_present_skips_add(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
@@ -183,25 +171,25 @@ class TestReadCodexFromFile:
         assert _install_codex_mcp.run() is True
         assert any(c[:3] == ["claude", "mcp", "add"] for c in calls)
 
-    def test_file_not_found_falls_back_to_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """ファイルが存在しない場合、CLI フォールバックして mcp list を呼び出す。"""
+    def test_file_not_found_triggers_user_add(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """ファイルが存在しない場合、User scopeへのaddを直接呼び出す。"""
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", tmp_path / "missing.json")
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "mcp", "list"]:
-                return _FakeResult(returncode=0, stdout="codex: codex mcp-server - ✓ Connected\n")
-            return _FakeResult(returncode=1)
+            if cmd[:3] == ["claude", "mcp", "add"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1, stderr="should not be called")
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
-        # CLI 経由で登録済みを確認 → add は呼ばれず False を返す
-        assert _install_codex_mcp.run() is False
-        assert any(c[:3] == ["claude", "mcp", "list"] for c in calls)
+        assert _install_codex_mcp.run() is True
+        assert [c for c in calls if c[:3] == ["claude", "mcp", "list"]] == []
+        assert any(c[:3] == ["claude", "mcp", "add"] for c in calls)
 
-    def test_invalid_json_falls_back_to_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """不正なJSONの場合、CLI フォールバックして mcp list を呼び出す。"""
+    def test_invalid_json_triggers_user_add(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """不正なJSONの場合、User scopeへのaddを直接呼び出す。"""
         path = tmp_path / ".claude.json"
         path.write_text("{bad", encoding="utf-8")
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
@@ -210,19 +198,17 @@ class TestReadCodexFromFile:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "mcp", "list"]:
-                return _FakeResult(returncode=0, stdout="")
             if cmd[:3] == ["claude", "mcp", "add"]:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
-        # JSON 不正 → CLI フォールバック → 未登録 → add を呼び出す
         assert _install_codex_mcp.run() is True
+        assert [c for c in calls if c[:3] == ["claude", "mcp", "list"]] == []
         assert any(c[:3] == ["claude", "mcp", "add"] for c in calls)
 
-    def test_no_mcp_servers_key_falls_back_to_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """mcpServersキー自体が無い場合、CLI フォールバックして mcp list を呼び出す。"""
+    def test_no_mcp_servers_key_triggers_user_add(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """mcpServersキー自体が無い場合、User scopeへのaddを直接呼び出す。"""
         path = tmp_path / ".claude.json"
         path.write_text(json.dumps({"otherKey": "value"}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
@@ -231,14 +217,14 @@ class TestReadCodexFromFile:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "mcp", "list"]:
-                return _FakeResult(returncode=0, stdout="codex: codex mcp-server - ✓ Connected\n")
-            return _FakeResult(returncode=1)
+            if cmd[:3] == ["claude", "mcp", "add"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1, stderr="should not be called")
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
-        # mcpServers キーなし → CLI フォールバック → 登録済み確認 → False
-        assert _install_codex_mcp.run() is False
-        assert any(c[:3] == ["claude", "mcp", "list"] for c in calls)
+        assert _install_codex_mcp.run() is True
+        assert [c for c in calls if c[:3] == ["claude", "mcp", "list"]] == []
+        assert any(c[:3] == ["claude", "mcp", "add"] for c in calls)
 
 
 class TestHappyPathNoCli:

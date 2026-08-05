@@ -194,6 +194,7 @@ class TestDefaultSteps:
         assert names.index("Codex リンクの同期") < names.index("Codex plugin のインストール")
         assert names.index("Claude Code plugin のインストール") < names.index("Codex plugin のインストール")
         assert names.index("Codex plugin のインストール") < names.index("codex MCP サーバーの登録")
+        assert names.index("codex MCP サーバーの登録") < names.index("Claude 設定")
 
     def test_codex_logs_step_registered_after_links(self):
         """Codex診断ログの共有メモリー配置をリンク同期の直後に実行する。"""
@@ -213,6 +214,7 @@ class TestDefaultSteps:
             "Claude Code plugin のインストール",
             "Codex plugin のインストール",
             "codex MCP サーバーの登録",
+            "Claude 設定",
         ]
         indexes = [names.index(name) for name in ordered]
         assert indexes == sorted(indexes)

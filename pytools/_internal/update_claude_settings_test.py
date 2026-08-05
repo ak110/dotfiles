@@ -13,6 +13,7 @@ from pytools._internal.update_claude_settings import update_claude_settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PROD_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.json"
+_PROD_MANAGED_CONFIG = _REPO_ROOT / "share" / "claude_json_managed.json"
 
 MANAGED_ALLOW = [
     "Bash",
@@ -288,17 +289,22 @@ class TestPlatformOverride:
         assert result == {"language": "japanese"}
 
 
-def _setup_run_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed_settings: dict) -> Path:
+def _setup_run_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    managed_settings: dict,
+    managed_config: dict | None = None,
+) -> Path:
     """`run()` 経由テスト向けに 4 つのモジュール定数パスを差し替える。
 
     `_MANAGED_SETTINGS_PATH` には `managed_settings` を書き込む。
-    `_MANAGED_CONFIG_PATH` には空 dict を書き込む。
+    `_MANAGED_CONFIG_PATH` には `managed_config` を書き込む。省略時は空 dict とする。
     `_SETTINGS_PATH`・`_CONFIG_PATH` は未作成のまま返す。
     """
     managed_settings_path = tmp_path / "managed_settings.json"
     managed_settings_path.write_text(json.dumps(managed_settings, ensure_ascii=False), encoding="utf-8")
     managed_config_path = tmp_path / "managed_config.json"
-    managed_config_path.write_text(json.dumps({}), encoding="utf-8")
+    managed_config_path.write_text(json.dumps(managed_config or {}), encoding="utf-8")
     settings_path = tmp_path / "settings.json"
     config_path = tmp_path / "claude.json"
     monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
@@ -306,6 +312,93 @@ def _setup_run_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed_se
     monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
     monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
     return settings_path
+
+
+class TestCodexMcpTimeout:
+    """`run()`経由でCodex MCPのtimeout管理契約を検証する。"""
+
+    def test_production_config_sets_two_hour_timeout(self) -> None:
+        """配布設定はCodex MCPのtimeoutを2時間に設定する。"""
+        managed = json.loads(_PROD_MANAGED_CONFIG.read_text(encoding="utf-8"))
+        assert managed["mcpServers"]["codex"]["timeout"] == 7_200_000
+
+    def test_complete_stdio_definition_gets_timeout_and_preserves_fields(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """完全なstdio定義ではtimeoutだけを更新し、既存フィールドを保持する。"""
+        _setup_run_paths(
+            tmp_path,
+            monkeypatch,
+            {},
+            {"mcpServers": {"codex": {"timeout": 7_200_000}}},
+        )
+        config_path = tmp_path / "claude.json"
+        existing_codex = {
+            "type": "stdio",
+            "command": "codex",
+            "args": ["mcp-server"],
+            "env": {"CUSTOM": "value"},
+            "customField": True,
+            "timeout": 1_000,
+        }
+        config_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
+
+        mod.run()
+
+        result = json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
+        assert result == {**existing_codex, "timeout": 7_200_000}
+
+    def test_stdio_definition_without_type_gets_timeout(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """type省略のstdio定義にもtimeoutを付加する。"""
+        _setup_run_paths(
+            tmp_path,
+            monkeypatch,
+            {},
+            {"mcpServers": {"codex": {"timeout": 7_200_000}}},
+        )
+        config_path = tmp_path / "claude.json"
+        existing = {"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"]}}}
+        config_path.write_text(json.dumps(existing), encoding="utf-8")
+
+        mod.run()
+
+        result = json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
+        assert result == {"command": "codex", "args": ["mcp-server"], "timeout": 7_200_000}
+
+    @pytest.mark.parametrize(
+        "existing",
+        [
+            {},
+            {"mcpServers": {"codex": {"type": "stdio", "args": ["mcp-server"]}}},
+            {"mcpServers": {"codex": {"type": "stdio", "command": ""}}},
+            {"mcpServers": {"codex": {"type": "http", "command": "codex"}}},
+        ],
+    )
+    def test_missing_or_incomplete_definition_does_not_create_timeout_only_entry(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        existing: dict,
+    ) -> None:
+        """Codex定義が不在または不完全な場合はtimeoutを追加しない。"""
+        _setup_run_paths(
+            tmp_path,
+            monkeypatch,
+            {},
+            {"mcpServers": {"codex": {"timeout": 7_200_000}}},
+        )
+        config_path = tmp_path / "claude.json"
+        config_path.write_text(json.dumps(existing), encoding="utf-8")
+
+        mod.run()
+
+        assert json.loads(config_path.read_text(encoding="utf-8")) == existing
 
 
 class TestPlatformOverrideSelection:

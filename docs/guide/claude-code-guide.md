@@ -96,6 +96,8 @@ agent-toolkitプラグイン、Codex MCP、`atk`ラッパーが設定される�
 
 `~/.claude.json`トップレベルに既存のCodex MCPがある場合は、そのUser scope登録を上書きしない。
 Local scopeまたはProject scopeだけに同名登録がある場合はUser scopeへ追加する。
+dotfiles配布利用者が`chezmoi apply`を実行すると、完全なUser scopeのCodex MCP定義へ
+2時間のper-server timeoutを付加する。この設定はCodex MCPだけに適用する。
 
 ## 設定確認
 
@@ -158,6 +160,12 @@ Claude Codeのサブエージェントを回復経路として使用する。
 
 ```bash
 claude mcp add --scope user codex -- codex mcp-server
+```
+
+dotfiles配布利用者は手動登録後に次のコマンドを実行し、Codex MCPへ2時間のtimeoutを反映する。
+
+```bash
+chezmoi apply
 ```
 
 Codex単独セッションとdotfiles固有の配布内容は[Codex利用ガイド](codex-guide.md)を参照する。

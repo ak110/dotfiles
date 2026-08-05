@@ -40,20 +40,14 @@ def run() -> bool:
         logger.info(log_format.format_status("codex-mcp", "claude CLI 未検出のためスキップ"))
         return False
 
-    # ファイル直接読み取りを先に試み、登録済みならCLI呼び出しを省略する
-    file_check = _is_codex_registered_from_file()
-    if file_check is True:
-        logger.info(log_format.format_status("codex-mcp", "登録済み"))
-        return False
-    if file_check is None and _is_codex_registered():
+    # User設定を直接読み取り、登録済みならCLI呼び出しを省略する
+    if _is_codex_registered_from_file() is True:
         logger.info(log_format.format_status("codex-mcp", "登録済み"))
         return False
 
     args = ["mcp", "add", "--scope=user", _CODEX_NAME, _CODEX_COMMAND, *_CODEX_ARGS]
     result = claude_common.run_claude(args)
     if result is None or result.returncode != 0:
-        # タイムアウトで list が失敗 → 未登録と誤判定 → add が "already exists" で失敗するケースがある。
-        # "already exists" エラーは登録済みを意味するため、スキップ扱いにする。
         stderr = result.stderr.strip() if result else ""
         if result is not None and "already exists" in result.stderr:
             logger.info(log_format.format_status("codex-mcp", "登録済み (add が already exists を返却)"))
@@ -70,7 +64,7 @@ def _is_codex_registered_from_file() -> bool | None:
     Returns:
         True: mcpServersにcodexキーが存在する（登録済み）。
         False: mcpServersは存在するがcodexキーがない（未登録）。
-        None: 読み取り失敗（CLIフォールバックが必要）。
+        None: 読み取り失敗（User scopeへのadd試行が必要）。
     """
     try:
         data = json.loads(_CLAUDE_CONFIG_PATH.read_text(encoding="utf-8"))
@@ -82,17 +76,6 @@ def _is_codex_registered_from_file() -> bool | None:
     if not isinstance(mcp_servers, dict):
         return None
     return _CODEX_NAME in mcp_servers
-
-
-def _is_codex_registered() -> bool:
-    """`claude mcp list` の出力に codex サーバーが含まれているか判定する。"""
-    result = claude_common.run_claude(["mcp", "list"])
-    if result is None or result.returncode != 0:
-        # list が失敗した場合は未登録扱いにし、後続の add 試行で改めて判定する
-        # (add は登録済みの場合に非ゼロ終了するため冪等性が保たれる)
-        return False
-    # 出力の各行は `<name>: <command/url> - <status>` 形式。先頭の name が codex かで判定する
-    return any(line.strip().startswith(f"{_CODEX_NAME}:") for line in result.stdout.splitlines())
 
 
 if __name__ == "__main__":

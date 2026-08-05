@@ -228,7 +228,6 @@ StepReturn = bool | tuple[bool, list[str]]
 _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("bin PATH 登録 (Windows)", setup_bin_path.run),
     ("MSYS 環境変数 (Windows)", setup_msys_env.run),
-    ("Claude 設定", update_claude_settings.run),
     ("VSCode 設定", update_vscode_settings.run),
     ("SSH config", update_ssh_config.run),
     ("旧配布物の削除", _cleanup_removed_paths),
@@ -243,6 +242,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("Claude Code plugin のインストール", install_claude_plugins.run),
     ("Codex plugin のインストール", install_codex_plugins.run),
     ("codex MCP サーバーの登録", install_codex_mcp.run),
+    ("Claude 設定", update_claude_settings.run),
     ("libarchive (Windows)", install_libarchive_windows.run),
     ("claude-statusline バイナリの取得", setup_statusline_binary.run),
     ("claude-plans-viewer 自動起動セットアップ (Linux)", setup_plans_viewer_linux.run),
