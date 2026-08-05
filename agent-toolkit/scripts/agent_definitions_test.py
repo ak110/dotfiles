@@ -189,7 +189,7 @@ def test_review_delegation_propagates_constraints_and_runtime_evidence() -> None
         assert "標準出力" in document
         assert "標準エラー" in document
     assert "同一ラウンドの指摘は集合として扱う" in delegation
-    assert "集合全体を反映せず終了" in delegation
+    assert "個別の修正往復を開始しない" in delegation
     assert "共通委譲契約" in implementation_review
     assert "外部実行と再現証跡" in implementation_review
     for document in (
@@ -290,7 +290,7 @@ def test_plan_impl_review_status_values_are_synchronized() -> None:
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
     """実装・修正系への配送物一覧と受領側の入力契約が同じreference群を挙げる。
 
-    区分（計画対応・独立提案）の定義は`plan-codex-implementation-review.md`にのみ存在するため、
+    採否区分の定義は`plan-codex-implementation-review.md`にのみ存在するため、
     配送漏れが生じると受領側は区分を割り当てられない。
     """
     implementation = _h2_section(_PLAN_IMPL.read_text(encoding="utf-8"), "初回委譲")
@@ -320,7 +320,11 @@ def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
         assert "観点・点検対象・指摘件数" in output
         assert "初回成果物に存在した見逃し" not in output
     assert "初回成果物に存在した見逃し" in review
-    assert "計画対応・独立提案" in implementation_task
+    assert "`独立提案`は目的外として不採用" in implementation_task
+    assert "採用（独立提案）" not in implementation_task
+    assert "不採用とした`独立提案`は登録操作に含めない" in implementation_task
+    assert "2区分の採否" in _PLAN_MODE.read_text(encoding="utf-8")
+    assert "不採用とする独立提案は含めない" in _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     assert "一括修正による影響を監査する" in implementation_task
     assert "review_impact_audit" in implementation_task
     for phrase in (
@@ -453,7 +457,7 @@ def test_plan_review_state_machine_is_complete() -> None:
         "_review_workspace.py finish",
         "plan_diff",
         "総合レビュー",
-        "3区分",
+        "次の2区分",
         "初版内補正",
         "スコープ拡大",
         "独立問題",
@@ -462,7 +466,7 @@ def test_plan_review_state_machine_is_complete() -> None:
         "review_rounds",
         "累積5ラウンド",
         "集合として扱う",
-        "集合全体を反映せず終了",
+        "個別の修正往復を開始しない",
         "needs_escalation",
         "ラウンド上限と完了判定",
         "cleanup --path",
@@ -770,7 +774,7 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
     assert "変更範囲、抽象化層、入力前提が変わる場合" in implementation_task
     assert "同じ主題の指摘が2件目以降となる場合" in implementation_task
     assert "個別修正を止め" in implementation_task
-    assert "有限な入力・状態" in implementation_task
+    assert "実在欠陥の影響範囲を確定できる最小集合" in implementation_task
 
 
 def test_policy_parser_review_contract_declares_operating_boundary() -> None:

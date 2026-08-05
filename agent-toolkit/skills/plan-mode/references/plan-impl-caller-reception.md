@@ -92,9 +92,9 @@ executorの通常配送と配送不能時の記録照会は、
 当該スナップショットの`## 実行方法`に操作と対象が明記されたものと、
 適用中の規範が義務づける登録操作に限る。
 `規範義務`に当たる登録操作の範囲は、
-`agent-toolkit/skills/codex-exec/references/plan-codex-implementation-review.md`
-「初回レビュー」節が登録対象と定める独立提案の`atk mq add`登録などとする。
-同節が破棄と定める指摘の登録は含まない。
+適用中の規範が明示的に登録を要求する操作に限る。
+`agent-toolkit/skills/codex-exec/references/plan-codex-implementation-review.md`が
+不採用とする独立提案は含めない。
 これら以外の操作と対象範囲の拡大は許可しない。
 外部側の既存内容の削除・改変を伴う操作は破壊的操作として扱い、
 「リモート状態の照合」節と同じく自律モードでもユーザー確認を得る。
