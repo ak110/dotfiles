@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import time
+import typing
 
 import pytest
 
@@ -100,11 +101,24 @@ def _compare(repo: pathlib.Path, snapshot: pathlib.Path) -> subprocess.Completed
     return _run("compare", "--repo", repo, "--snapshot-dir", snapshot)
 
 
+def _payload(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
+    """compareの構造化結果を返す。"""
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, dict)
+    return payload
+
+
 def test_clean_and_unchanged_dirty_repositories_match(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     clean_snapshot = tmp_path / "clean-snapshot"
     assert _capture(repo, clean_snapshot).returncode == 0
-    assert _compare(repo, clean_snapshot).returncode == 0
+    clean_result = _compare(repo, clean_snapshot)
+    assert clean_result.returncode == 0
+    clean_payload = _payload(clean_result)
+    assert clean_payload["head_relation"] == "same"
+    assert clean_payload["tracked_changed"] is False
+    assert clean_payload["worktrees_changed"] is False
+    assert clean_payload["changed_paths"] == []
 
     (repo / "tracked.bin").write_bytes(b"dirty\x00content\n")
     dirty_snapshot = tmp_path / "dirty-snapshot"
@@ -112,7 +126,8 @@ def test_clean_and_unchanged_dirty_repositories_match(tmp_path: pathlib.Path) ->
     assert _compare(repo, dirty_snapshot).returncode == 0
     assert stat.S_IMODE(dirty_snapshot.stat().st_mode) == 0o700
     assert stat.S_IMODE((dirty_snapshot / "manifest.json").stat().st_mode) == 0o600
-    assert (dirty_snapshot / "tracked.patch").read_bytes().startswith(b"diff --git")
+    assert not (dirty_snapshot / "index.patch").read_bytes()
+    assert (dirty_snapshot / "worktree.patch").read_bytes().startswith(b"diff --git")
 
 
 def test_snapshot_patch_ignores_textconv_and_remains_applicable(tmp_path: pathlib.Path) -> None:
@@ -128,7 +143,7 @@ def test_snapshot_patch_ignores_textconv_and_remains_applicable(tmp_path: pathli
     snapshot = tmp_path / "snapshot"
 
     assert _capture(repo, snapshot).returncode == 0
-    patch = (snapshot / "tracked.patch").read_bytes()
+    patch = (snapshot / "worktree.patch").read_bytes()
     assert b"GIT binary patch" in patch
     assert b"converted output" not in patch
 
@@ -138,7 +153,7 @@ def test_snapshot_patch_ignores_textconv_and_remains_applicable(tmp_path: pathli
     (repo / "tracked.bin").unlink()
     subprocess.run(["git", "-C", str(repo), "checkout", manifest["head"], "--", "tracked.bin"], check=True)
     subprocess.run(
-        ["git", "-C", str(repo), "apply", "--index", "--binary", str(snapshot / "tracked.patch")],
+        ["git", "-C", str(repo), "apply", "--binary", str(snapshot / "worktree.patch")],
         check=True,
     )
     assert _compare(repo, snapshot).returncode == 0
@@ -162,15 +177,27 @@ def test_compare_detects_tracked_and_untracked_content_changes(tmp_path: pathlib
     existing = repo / "existing.bin"
     existing.write_bytes(b"original\x00bytes")
     existing.chmod(0o740)
+    removed = repo / "removed.txt"
+    removed.write_text("removed", encoding="utf-8")
     snapshot = tmp_path / "snapshot"
     assert _capture(repo, snapshot).returncode == 0
 
     tracked.write_bytes(b"second dirty\x00\n")
     existing.write_bytes(b"changed")
+    removed.unlink()
     added = repo / "added.txt"
     added.write_text("added", encoding="utf-8")
     result = _compare(repo, snapshot)
     assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["head_relation"] == "same"
+    assert payload["repository_changed"] is True
+    assert payload["tracked_changed"] is True
+    assert payload["index_changed"] is False
+    assert payload["worktree_changed"] is True
+    assert payload["untracked_added"] == ["added.txt"]
+    assert payload["untracked_removed"] == ["removed.txt"]
+    assert payload["untracked_modified"] == ["existing.bin"]
     assert "tracked.bin" in result.stderr
     assert "existing.bin" in result.stderr
     assert "added.txt" in result.stderr
@@ -228,9 +255,113 @@ def test_compare_detects_head_change(tmp_path: pathlib.Path) -> None:
 
     result = _compare(repo, snapshot)
     assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["head_relation"] == "descendant"
+    assert payload["tracked_changed"] is False
     assert "HEAD:" in result.stderr
     assert "退避用ブランチへ保全" in result.stderr
     assert "tracked.bin" in result.stderr
+
+
+def test_compare_classifies_ancestor_and_diverged_heads(tmp_path: pathlib.Path) -> None:
+    repo = _repo(tmp_path)
+    initial_head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (repo / "tracked.bin").write_bytes(b"second commit")
+    subprocess.run(["git", "-C", str(repo), "add", "tracked.bin"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "second"], check=True)
+    snapshot = tmp_path / "snapshot"
+    assert _capture(repo, snapshot).returncode == 0
+
+    subprocess.run(["git", "-C", str(repo), "checkout", "--detach", "-q", initial_head], check=True)
+    ancestor_result = _compare(repo, snapshot)
+    assert ancestor_result.returncode == 1
+    assert _payload(ancestor_result)["head_relation"] == "ancestor"
+
+    empty_tree = subprocess.run(
+        ["git", "-C", str(repo), "mktree"],
+        input="",
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    unrelated_head = subprocess.run(
+        ["git", "-C", str(repo), "commit-tree", empty_tree, "-m", "unrelated"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(repo), "checkout", "--detach", "-q", unrelated_head], check=True)
+    diverged_result = _compare(repo, snapshot)
+    assert diverged_result.returncode == 1
+    assert _payload(diverged_result)["head_relation"] == "diverged"
+
+
+def test_capture_records_worktree_lock_and_compare_detects_inventory_change(tmp_path: pathlib.Path) -> None:
+    repo = _repo(tmp_path)
+    linked = tmp_path / "linked"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "--detach", "-q", str(linked)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "lock", "--reason", "review active", str(linked)],
+        check=True,
+    )
+    snapshot = tmp_path / "snapshot"
+    assert _capture(repo, snapshot).returncode == 0
+    manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
+    linked_entry = next(entry for entry in manifest["worktrees"] if entry["path"] == str(linked))
+    assert linked_entry["locked"] is True
+    assert linked_entry["lock_reason"] == "review active"
+
+    subprocess.run(["git", "-C", str(repo), "worktree", "unlock", str(linked)], check=True)
+    result = _compare(repo, snapshot)
+    assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["worktrees_changed"] is True
+    assert payload["worktrees_modified"] == [str(linked)]
+    assert payload["changed_paths"] == []
+
+
+def test_sibling_head_progress_is_attribution_only_but_lock_change_is_detected(tmp_path: pathlib.Path) -> None:
+    repo = _repo(tmp_path)
+    linked = tmp_path / "linked"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "--detach", "-q", str(linked)], check=True)
+    source_snapshot = tmp_path / "source-snapshot"
+    target_snapshot = tmp_path / "target-snapshot"
+    assert _capture(repo, source_snapshot).returncode == 0
+    assert _capture(linked, target_snapshot).returncode == 0
+
+    subprocess.run(["git", "-C", str(linked), "commit", "--allow-empty", "-q", "-m", "linked progress"], check=True)
+
+    target_result = _compare(linked, target_snapshot)
+    assert target_result.returncode == 1
+    target_payload = _payload(target_result)
+    assert target_payload["head_relation"] == "descendant"
+    assert target_payload["repository_changed"] is True
+    assert target_payload["worktrees_changed"] is False
+
+    source_result = _compare(repo, source_snapshot)
+    assert source_result.returncode == 0
+    source_payload = _payload(source_result)
+    assert source_payload["head_relation"] == "same"
+    assert source_payload["repository_changed"] is False
+    assert source_payload["worktrees_changed"] is False
+    baseline_worktrees = typing.cast(list[dict[str, object]], source_payload["baseline_worktrees"])
+    current_worktrees = typing.cast(list[dict[str, object]], source_payload["current_worktrees"])
+    baseline_linked = next(entry for entry in baseline_worktrees if entry["path"] == str(linked))
+    current_linked = next(entry for entry in current_worktrees if entry["path"] == str(linked))
+    assert baseline_linked["head"] != current_linked["head"]
+
+    subprocess.run(["git", "-C", str(repo), "worktree", "lock", "--reason", "review active", str(linked)], check=True)
+    locked_result = _compare(repo, source_snapshot)
+    assert locked_result.returncode == 1
+    locked_payload = _payload(locked_result)
+    assert locked_payload["repository_changed"] is False
+    assert locked_payload["worktrees_changed"] is True
+    assert locked_payload["worktrees_modified"] == [str(linked)]
 
 
 def test_compare_detects_symlink_target_change_without_reading_target(tmp_path: pathlib.Path) -> None:
@@ -288,7 +419,7 @@ def test_reported_recovery_strategy_restores_added_tracked_and_type_changed_path
     added.unlink()
     subprocess.run(["git", "-C", str(repo), "checkout", head, "--", "tracked.bin"], check=True)
     subprocess.run(
-        ["git", "-C", str(repo), "apply", "--index", "--binary", str(snapshot / "tracked.patch")],
+        ["git", "-C", str(repo), "apply", "--binary", str(snapshot / "worktree.patch")],
         check=True,
     )
 
@@ -299,6 +430,44 @@ def test_reported_recovery_strategy_restores_added_tracked_and_type_changed_path
     shutil.copyfile(snapshot / "blobs" / regular_entry["blob"], regular)
     regular.chmod(regular_entry["mode"])
     link.symlink_to(entries["untracked-link"]["target"])
+    assert _compare(repo, snapshot).returncode == 0
+
+
+def test_compare_detects_unstaged_change_becoming_staged_and_restores_both_layers(tmp_path: pathlib.Path) -> None:
+    repo = _repo(tmp_path)
+    tracked = repo / "tracked.bin"
+    tracked.write_bytes(b"captured index")
+    subprocess.run(["git", "-C", str(repo), "add", "tracked.bin"], check=True)
+    tracked.write_bytes(b"captured worktree")
+    snapshot = tmp_path / "snapshot"
+    assert _capture(repo, snapshot).returncode == 0
+    assert (snapshot / "index.patch").read_bytes().startswith(b"diff --git")
+    assert (snapshot / "worktree.patch").read_bytes().startswith(b"diff --git")
+
+    subprocess.run(["git", "-C", str(repo), "add", "tracked.bin"], check=True)
+    result = _compare(repo, snapshot)
+    assert result.returncode == 1
+    payload = _payload(result)
+    assert payload["repository_changed"] is True
+    assert payload["index_changed"] is True
+    assert payload["worktree_changed"] is True
+    assert "index用退避パッチ" in result.stderr
+    assert "未ステージ用退避パッチ" in result.stderr
+
+    manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
+    subprocess.run(["git", "-C", str(repo), "reset", manifest["head"], "--", "tracked.bin"], check=True)
+    tracked.unlink()
+    subprocess.run(["git", "-C", str(repo), "checkout", manifest["head"], "--", "tracked.bin"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "apply", "--index", "--binary", str(snapshot / "index.patch")],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "apply", "--binary", str(snapshot / "worktree.patch")],
+        check=True,
+    )
+    assert subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--quiet"], check=False).returncode == 1
+    assert subprocess.run(["git", "-C", str(repo), "diff", "--quiet"], check=False).returncode == 1
     assert _compare(repo, snapshot).returncode == 0
 
 
@@ -313,13 +482,13 @@ def test_reported_recovery_strategy_restores_only_added_tracked_path(tmp_path: p
     added.write_text("delegated change", encoding="utf-8")
     result = _compare(repo, snapshot)
     assert result.returncode == 1
-    assert "退避パッチを再適用する" in result.stderr
+    assert "index用退避パッチをindexとworktreeへ再適用する" in result.stderr
 
     manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
     subprocess.run(["git", "-C", str(repo), "reset", manifest["head"], "--", "added.txt"], check=True)
     added.unlink()
     subprocess.run(
-        ["git", "-C", str(repo), "apply", "--index", "--binary", str(snapshot / "tracked.patch")],
+        ["git", "-C", str(repo), "apply", "--index", "--binary", str(snapshot / "index.patch")],
         check=True,
     )
     assert _compare(repo, snapshot).returncode == 0
@@ -595,9 +764,11 @@ def test_compare_rejects_invalid_snapshot(tmp_path: pathlib.Path) -> None:
     ("field", "value", "message"),
     [
         ("repo", 1, "リポジトリ形式"),
+        ("common_dir", 1, "Git共通ディレクトリ形式"),
         ("head", 1, "HEAD形式"),
         ("head", "not-an-object-id", "HEAD形式"),
-        ("tracked_patch_sha256", "invalid", "追跡パッチdigest形式"),
+        ("index_patch_sha256", "invalid", "indexパッチdigest形式"),
+        ("worktree_patch_sha256", "invalid", "未ステージパッチdigest形式"),
     ],
 )
 def test_compare_rejects_invalid_manifest_scalar_fields(
@@ -632,13 +803,28 @@ def test_compare_rejects_corrupted_untracked_blob(tmp_path: pathlib.Path) -> Non
     assert "blobが退避後に変化" in result.stderr
 
 
+def test_compare_rejects_invalid_worktree_state(tmp_path: pathlib.Path) -> None:
+    repo = _repo(tmp_path)
+    snapshot = tmp_path / "snapshot"
+    assert _capture(repo, snapshot).returncode == 0
+    manifest_path = snapshot / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["worktrees"][0]["locked"] = "yes"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = _compare(repo, snapshot)
+
+    assert result.returncode == 2
+    assert "worktree状態形式" in result.stderr
+
+
 def test_manifest_rejects_parent_traversal_path(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     snapshot = tmp_path / "snapshot"
     assert _capture(repo, snapshot).returncode == 0
     manifest_path = snapshot / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["tracked_paths"] = ["../outside"]
+    manifest["index_paths"] = ["../outside"]
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     result = _compare(repo, snapshot)
     assert result.returncode == 2

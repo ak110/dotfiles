@@ -141,14 +141,30 @@ def test_plan_review_contract_preserves_and_checks_both_repositories() -> None:
     assert "worktree snapshot" in delegation
     assert "具体的な復旧手順" in delegation
     assert "復旧の明示確認を得る" in delegation
-    assert "worktree_check_result" in fix_task
-    assert "worktree_check_result" in review_task
+    for document in (delegation, fix_task, review_task):
+        assert "worktree_check_result" in document
+        for field in (
+            "exit_code",
+            "compare_json",
+            "repository_changed",
+            "worktrees_changed",
+            "classification",
+            "worktree_state_only",
+        ):
+            assert field in document
+        assert "target=unchanged|changed" not in document
+        assert "source=not_applicable|unchanged|changed" not in document
     compact = re.sub(r"\s+", "", delegation)
     assert "対象worktree" in compact
     assert "複製元" in compact
     assert "snapshot比較" in compact
     assert "`承認済み復旧`として委譲" in delegation
     assert "利用者の明示確認結果" in fix_task
+    assert "変更主体を帰属" in delegation
+    assert "計画前提への影響を再評価" in delegation
+    assert "判定根拠を記録して続行" in delegation
+    assert "index.patch" in delegation
+    assert "worktree.patch" in delegation
 
 
 def test_codex_exec_prompt_allows_task_required_runtime_values() -> None:
@@ -297,6 +313,47 @@ def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
         "静的検査結果をレビュー系の継続入力へ追加しない",
     ):
         assert phrase in executor_delegation
+
+
+def test_plan_impl_worktree_snapshot_contract_is_synchronized() -> None:
+    """実装レビューの単一地点snapshot、絶対パス伝播、完成成果物の引取りを同期する。"""
+    review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
+
+    for document in (review, rules):
+        assert "_worktree_snapshot.py" in document
+        assert "capture" in document
+        assert "compare" in document
+        for field in (
+            "head_relation",
+            "repository_changed",
+            "tracked_changed",
+            "index_changed",
+            "worktree_changed",
+            "untracked_added",
+            "untracked_removed",
+            "untracked_modified",
+        ):
+            assert field in document
+        assert "worktree一覧" in document
+        assert "lock状態" in document
+        assert "絶対パス" in document
+    assert "作業ディレクトリを自己解決する手段を用いない" in rules
+    assert "再委譲時にも同じ形式を引き継がせる" in rules
+    assert "成果物が完成条件を満たす場合は復旧せず引き取る" in rules
+    assert "完成条件を満たす成果物が実在する場合は再作業せず復旧もせず" in caller
+    for phrase in (
+        "分岐元ref",
+        "分岐元OID",
+        "git log --oneline <分岐元ref>..HEAD",
+        "git log --oneline HEAD..<分岐元ref>",
+        "分岐元へ追随",
+        "成果物snapshotを取り直す",
+        "追随と再取得が完了するまでレビューを開始しない",
+    ):
+        assert phrase in review
+    assert "レビュー範囲は分岐元追随とは別に計画着手前SHAで固定" in review
 
 
 def test_plan_impl_review_cap_contract_is_synchronized() -> None:

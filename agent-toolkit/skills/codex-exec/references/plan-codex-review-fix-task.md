@@ -55,7 +55,12 @@
 
 - `managed_temp_dir`、`plan_backup_path`、`sandbox_plan_path`、`snapshot_paths`
 - `plan_sha256_before`、`plan_sha256_after`、`plan_file_change`、`sandbox_plan_change`
-- `worktree_check_result: target=unchanged|changed, source=not_applicable|unchanged|changed`
+- `worktree_check_result`。`target`と条件付き`source`ごとに`exit_code`、compareのJSON全体を保持する
+  `compare_json`、`repository_changed`、`worktrees_changed`、`classification`を記載する。
+  `classification`は`unchanged`、`repository_changed`、`worktree_state_only`、`error`、
+  `source`が無い場合の`not_applicable`から選び、`changed|unchanged`の二値へ縮約しない。
+  終了コード2は`error`、`repository_changed=true`は`repository_changed`、
+  `repository_changed=false`かつ`worktrees_changed=true`は`worktree_state_only`、両方falseは`unchanged`とする
 - `plan_file_diff`。差分なしは`none`とし、差分の各変更を機械違反または採用済み指摘へ対応づける
 - 初回機械検査と指摘反映では、各検査の初回と最終の終了コード、error件数、warning件数を`check_results`へ記載する
 

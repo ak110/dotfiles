@@ -92,16 +92,30 @@ Codexでは本referenceの絶対パスからplugin rootを確定し、
 
 機械チェック・修正系は、SHA-256計算、snapshot比較、統一差分取得の標準出力、標準エラー出力、
 終了コードを省略せず完了報告へ記載する。同じ生出力を管理対象一時ディレクトリにも保存する。
-呼び出し元はBashを実行せず、`Read`で生出力ファイル、snapshotの`manifest.json`と`tracked.patch`、
+呼び出し元はBashを実行せず、`Read`で生出力ファイル、snapshotの`manifest.json`、`index.patch`、
+`worktree.patch`、
 計画全文バックアップ、サンドボックス計画ファイルを読み、完了報告の転記値と実体を独立に照合する。
 呼び出し元が正規計画ファイルへ反映した後の照合も同じ系統へ委譲し、
 呼び出し元は返却された生出力と実体を`Read`で検収する。
 
-対象worktree、複製元、または読み取り専用レビュー中の正規計画ファイルに変化を検出した場合は後続工程を停止する。
+対象worktreeと複製元の`worktree_check_result`は、対象ごとに`exit_code`、compareのJSON全体を保持する
+`compare_json`、`repository_changed`、`worktrees_changed`、`classification`を保持する。
+`classification`は`unchanged`、`repository_changed`、`worktree_state_only`、`error`、
+複製元が無い場合の`not_applicable`の5区分とし、`changed|unchanged`の二値へ縮約しない。
+終了コード2は`error`、`repository_changed=true`は`repository_changed`、
+`repository_changed=false`かつ`worktrees_changed=true`は`worktree_state_only`、
+両方falseは`unchanged`とする。
+`worktree_state_only`ではbaseline/currentのworktree一覧から変更主体を帰属し、
+計画前提への影響を再評価する。対象リポジトリの変更パスも復旧材料も無ければ、
+判定根拠を記録して続行する。計画前提が無効になった場合は復旧せず、
+退避・レビューのやり直し要否を呼び出し元が確定する。
+
+対象worktreeまたは複製元で`repository_changed`か`error`を検出した場合、または
+読み取り専用レビュー中の正規計画ファイルに変化を検出した場合は後続工程を停止する。
 変更対象、退避先、記録済みHEAD、具体的な復旧手順を返し、管理対象一時ディレクトリを保持する。
 呼び出し元は変更内容、退避先、復旧手順を提示し、復旧の明示確認を得る。
 正規計画ファイルだけの変化は、保存した全文バックアップを入力として呼び出し元が復旧する。
-対象worktreeと複製元のいずれかに変化がある場合は、確認結果と復旧手順を機械チェック・修正系へ渡し、
+対象worktreeと複製元のいずれかで`repository_changed`を検出した場合は、確認結果と復旧手順を機械チェック・修正系へ渡し、
 `承認済み復旧`として委譲する。同系統は確認済みの変更パスと手順だけを書き込み許可先とし、
 除去、checkout、patch適用のうち、承認済み手順に列挙されない操作は実行しない。
 復旧後のsnapshot比較、計画ファイルのSHA-256一致、差分なしの再確認は機械チェック・修正系へ委譲する。

@@ -50,4 +50,9 @@
 - 重大度は`致命的`、`重大`、`軽微`から選ぶ
 - 指摘がある場合は、重大度、区分、対象箇所、根拠、修正方針を全件返す
 - 指摘がない場合は「指摘なし」と明記する
-- `worktree_check_result: target=unchanged|changed, source=not_applicable|unchanged|changed`を記載する
+- `worktree_check_result`は`target`と条件付き`source`ごとに`exit_code`、compareのJSON全体を保持する
+  `compare_json`、`repository_changed`、`worktrees_changed`、`classification`を記載する。
+  `classification`は`unchanged`、`repository_changed`、`worktree_state_only`、`error`、
+  `source`が無い場合の`not_applicable`から選び、`changed|unchanged`の二値へ縮約しない。
+  終了コード2は`error`、`repository_changed=true`は`repository_changed`、
+  `repository_changed=false`かつ`worktrees_changed=true`は`worktree_state_only`、両方falseは`unchanged`とする
