@@ -4,6 +4,7 @@ import json
 import pathlib
 
 import _fork_runner
+import _managed_temp
 import permissionrequest as hook
 import pytest
 
@@ -158,14 +159,26 @@ class TestShouldAllowBash:
         [
             (("rm {plans}/x.md", "{home}"), True),
             (("rm -rf {plans}/sub", "{home}"), True),
+            (("rm --recursive --force {plans}/sub", "{home}"), True),
+            (("rm -- {plans}/-draft.md", "{home}"), True),
             (("rm {repo}/.claude/rules/x.md", "{repo}"), True),
             (("mkdir -p {plans}/sub", "{home}"), True),
+            (("mkdir --parents {plans}/sub", "{home}"), True),
             (("mv {plans}/a.md {plans}/b.md", "{home}"), True),
             (("cp -r {plans}/a {plans}/b", "{home}"), True),
+            (("cp --recursive {plans}/a {plans}/b", "{home}"), True),
+            (("cp --parents {plans}/a {plans}/backup", "{home}"), True),
+            (("ln -s {plans}/a {plans}/b", "{home}"), True),
+            (("chmod 600 {plans}/a", "{home}"), True),
+            (("chmod -x {plans}/a", "{home}"), True),
+            (("chmod -R 600 {plans}/a", "{home}"), True),
+            (("chmod -- -x {plans}/a", "{home}"), True),
+            (("chown aki {plans}/a", "{home}"), True),
+            (("chown -R aki:staff {plans}/a", "{home}"), True),
             (("touch {plans}/x.md", "{home}"), True),
             (("echo hello > {plans}/x.md", "{home}"), True),
             (("echo hello >> {plans}/log.md", "{home}"), True),
-            (("some-unknown-cmd arg1 arg2 > {plans}/x.md", "{home}"), True),
+            (("some-unknown-cmd arg1 arg2 > {plans}/x.md", "{home}"), False),
             (("rm x.md", "{plans}"), True),
             (('rm "{plans}/a b.md"', "{home}"), True),
             (("mv {plans}/a.md {home}/elsewhere.md", "{home}"), False),
@@ -179,7 +192,25 @@ class TestShouldAllowBash:
             (("", ""), False),
             (("rm x.md", ""), False),
             (('rm "unterminated', "{home}"), False),
-            (("some-unknown-cmd arg1 arg2>{plans}/x.md", "{home}"), True),
+            (("some-unknown-cmd arg1 arg2>{plans}/x.md", "{home}"), False),
+            (("echo $(touch /outside)", "{home}"), False),
+            (("echo '$(touch /outside)'", "{home}"), False),
+            (('echo "$(touch /outside)"', "{home}"), False),
+            (('echo "$var"', "{home}"), True),
+            (("git reset --hard > {plans}/log", "{home}"), False),
+            (("cp --target-directory=/outside {plans}/source", "{home}"), False),
+            (("cp --target-directory /outside {plans}/source", "{home}"), False),
+            (("cp --target-directory={plans}/out {plans}/source", "{home}"), False),
+            (("cp -t {plans}/out {plans}/source", "{home}"), False),
+            (("mv --target-directory={plans}/out {plans}/source", "{home}"), False),
+            (("ln --target-directory={plans}/out {plans}/source", "{home}"), False),
+            (("touch --reference={plans}/ref {plans}/target", "{home}"), False),
+            (("chmod --reference={plans}/ref {plans}/target", "{home}"), False),
+            (("chown --reference={plans}/ref {plans}/target", "{home}"), False),
+            (("chmod 600 {home}/outside", "{home}"), False),
+            (("chown aki {home}/outside", "{home}"), False),
+            (("chmod 600", "{home}"), False),
+            (("chown aki", "{home}"), False),
             (("cp {plans}/a.md {plans}/b.md && wc -l {plans}/b.md", "{home}"), True),
             (("cp {plans}/a.md {plans}/b.md&&wc -l {plans}/b.md", "{home}"), True),
             (("rm {plans}/a.md || rm {plans}/b.md", "{home}"), True),
@@ -249,6 +280,53 @@ class TestShouldAllowBash:
         # `/tmp/` 配下は一時ファイル領域として自動許可対象に含める
         monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
         assert hook.should_allow_bash("rm /tmp/foo.txt", "/tmp") is True
+
+    def test_managed_temp_create_and_cleanup_allowed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """完全一致するcreateと真正性検証済みcleanupだけを許可する。"""
+        temp_root = tmp_path / "temp"
+        temp_root.mkdir()
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+        target = _managed_temp.create_managed_temp("permission-test")
+
+        assert hook.should_allow_bash("atk-managed-temp create --prefix agent-work", str(tmp_path)) is True
+        assert hook.should_allow_bash(f"atk-managed-temp cleanup --path {target}", str(tmp_path)) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "atk-managed-temp create --prefix UPPER",
+            "atk-managed-temp create --prefix agent-work extra",
+            "atk-managed-temp cleanup --path relative",
+            "atk-managed-temp cleanup --path /tmp/unmanaged",
+            "atk-managed-temp validate --path /tmp/unmanaged",
+            "rm -rf /tmp/unmanaged",
+            "atk-managed-temp create --prefix foo#; printf permission-bypass-observed",
+            "atk-managed-temp create --prefix agent-work > /tmp/log",
+            "atk-managed-temp create --prefix agent-work extra > /tmp/log",
+            "atk-managed-temp --verbose create --prefix agent-work",
+            "atk-managed-temp validate --path /tmp/unmanaged > /tmp/log",
+            "echo ok; atk-managed-temp validate --path /tmp/unmanaged > /tmp/log",
+            "echo ok && atk-managed-temp create --prefix agent-work extra > /tmp/log",
+            "echo ok || atk-managed-temp create --prefix agent-work > /tmp/log",
+            "echo ok | atk-managed-temp create --prefix agent-work",
+            "atk-managed-temp create --prefix agent-work && echo ok",
+            "(atk-managed-temp create --prefix agent-work)",
+            "env atk-managed-temp create --prefix agent-work",
+            "/opt/agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
+            "./agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
+            "echo ok && /opt/agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
+            "echo ok; ./agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
+            'printf "%s\\n" "atk-managed-temp create --prefix agent-work"',
+        ],
+    )
+    def test_managed_temp_noncanonical_command_not_allowed(self, command: str, tmp_path: pathlib.Path) -> None:
+        """不正入力と生の削除コマンドを管理一時領域経路では許可しない。"""
+        assert hook.should_allow_bash(command, str(tmp_path)) is False
 
     def test_wc_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
@@ -364,6 +442,17 @@ class TestEndToEnd:
             "tool_name": "Bash",
             "tool_input": {"command": f"cp {scratchpad}/x.md {plans}/y.md && wc -l {plans}/y.md"},
             "cwd": str(home),
+        }
+        code, stdout = self._run(payload)
+        assert code == 0
+        assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
+
+    def test_bash_managed_temp_create_returns_allow(self) -> None:
+        """canonical launcherのcreate確認を自動許可する。"""
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "atk-managed-temp create --prefix agent-work"},
+            "cwd": "/tmp",
         }
         code, stdout = self._run(payload)
         assert code == 0

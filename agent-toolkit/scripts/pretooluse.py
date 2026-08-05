@@ -61,7 +61,6 @@ Skill:
 
 Agent / Task:
 
-- 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 (warn)
 - `plan-impl-executor`起動時、起動プロンプトが指す実在計画パスの記録 (side-effect)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
@@ -92,7 +91,6 @@ block系checkの検査対象は「新規に書き込まれる側」（`content` 
 import datetime
 import hashlib
 import json
-import ntpath
 import pathlib
 import re
 import shlex
@@ -146,33 +144,6 @@ _ISOLATED_READ_TARGETS: tuple[str, ...] = (
     "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
     "agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt",
 )
-
-# 規範文書を自動読み込みしないサブエージェントタイプ。
-# `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`
-# 「必要な規範スキルの明示」節のSSOTに従い、
-# `claude`と`Explore`は独立コンテキストで規範を読み込まないため、
-# 起動プロンプトへの明示引用を求める。
-_NORM_SKIPPING_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude", "Explore"})
-
-# 起動プロンプトが規範を明示引用していると判定するキーワード。
-_NORM_INLINE_REFERENCE_KEYWORDS: tuple[str, ...] = (
-    "agent-toolkit:agent-standards",
-    "agent-toolkit:coding-standards",
-    "agent-toolkit:writing-standards",
-)
-_NORM_PLUGIN_RELATIVE_PATHS = frozenset(
-    {
-        "skills/agent-standards/SKILL.md",
-        "skills/coding-standards/SKILL.md",
-        "skills/writing-standards/SKILL.md",
-        "rules/01-agent.md",
-        "rules/02-claude-code.md",
-    }
-)
-_NORM_DISTRIBUTED_RULE_RELATIVE_PATHS = frozenset({"01-agent.md", "02-claude-code.md"})
-_PROMPT_PATH_TOKEN_RE = re.compile(r"`([^`\n]+)`|([^\s`]+)")
-_PROMPT_PATH_STRIP_CHARS = "\"'()[]{}<>,.;:、。"
-
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/pretooluse"
@@ -265,96 +236,6 @@ def _check_read_isolated_reference(tool_input: dict, session_id: str, is_sidecha
         f"Use Explore subagent to check, subagent_type=claude to fix, "
         f"or invoke agent-toolkit-edit for edit purpose. "
         f"Target: {file_path_raw}"
-    )
-
-
-def _extract_prompt_path_candidates(prompt: str) -> list[str]:
-    """起動プロンプトから空白またはバッククォートで区切られたMarkdownパス候補を抽出する。"""
-    candidates: list[str] = []
-    for match in _PROMPT_PATH_TOKEN_RE.finditer(prompt):
-        token = (match.group(1) or match.group(2)).strip(_PROMPT_PATH_STRIP_CHARS)
-        if token.lower().endswith(".md"):
-            candidates.append(token)
-    return candidates
-
-
-def _norm_reference_trusted_roots() -> tuple[str, str]:
-    """実行中のagent-toolkitルートと配布済みルールディレクトリの実在パスを返す。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    distributed_root = pathlib.Path.home() / ".claude" / "rules" / "agent-toolkit"
-    return str(plugin_root), str(distributed_root)
-
-
-def _normalize_norm_reference_path(path_text: str) -> tuple[str, pathlib.PurePath] | None:
-    """POSIX・Windows形式の絶対パスを形式識別子付きで正規化する。"""
-    windows_path = pathlib.PureWindowsPath(path_text)
-    if windows_path.is_absolute():
-        if ".." in windows_path.parts:
-            return None
-        return "windows", pathlib.PureWindowsPath(ntpath.normpath(path_text))
-    posix_path = pathlib.PurePosixPath(path_text)
-    if not posix_path.is_absolute() or ".." in posix_path.parts:
-        return None
-    try:
-        return "posix", pathlib.Path(path_text).resolve(strict=False)
-    except (OSError, RuntimeError, ValueError):
-        return None
-
-
-def _is_absolute_norm_reference_path(
-    candidate: str,
-    trusted_roots: tuple[str, str] | None = None,
-) -> bool:
-    """候補が信頼済みルート配下の認可規範ファイルを指す絶対パスか判定する。"""
-    normalized_candidate = _normalize_norm_reference_path(candidate)
-    if normalized_candidate is None:
-        return False
-    candidate_kind, candidate_path = normalized_candidate
-    roots = trusted_roots if trusted_roots is not None else _norm_reference_trusted_roots()
-    allowed_sets = (_NORM_PLUGIN_RELATIVE_PATHS, _NORM_DISTRIBUTED_RULE_RELATIVE_PATHS)
-    for root_text, allowed in zip(roots, allowed_sets, strict=True):
-        normalized_root = _normalize_norm_reference_path(root_text)
-        if normalized_root is None or normalized_root[0] != candidate_kind:
-            continue
-        try:
-            relative = candidate_path.relative_to(normalized_root[1])
-        except ValueError:
-            continue
-        if relative.as_posix() in allowed:
-            return True
-    return False
-
-
-def _has_explicit_norm_reference(prompt: str) -> bool:
-    """規範キーワード引用またはRead指示付きの信頼済み絶対パスがあるか判定する。"""
-    if any(keyword in prompt for keyword in _NORM_INLINE_REFERENCE_KEYWORDS):
-        return True
-    has_read_instruction = any(keyword in prompt for keyword in ("Read", "読む", "読ませる", "読み込む"))
-    if not has_read_instruction:
-        return False
-    return any(_is_absolute_norm_reference_path(candidate) for candidate in _extract_prompt_path_candidates(prompt))
-
-
-def _check_agent_norm_reference(tool_input: dict) -> str | None:
-    """規範非読込型サブエージェント起動時に規範の明示引用が無い場合の警告文言を返す。
-
-    `subagent_type`が`_NORM_SKIPPING_SUBAGENT_TYPES`のいずれかで、
-    かつ`prompt`本文に規範キーワード引用またはRead指示付きの信頼済み絶対パスが無い場合に
-    警告文言を返す。
-    それ以外は`None`を返す。
-    """
-    subagent_type = tool_input.get("subagent_type")
-    if subagent_type not in _NORM_SKIPPING_SUBAGENT_TYPES:
-        return None
-    prompt = tool_input.get("prompt")
-    if not isinstance(prompt, str):
-        return None
-    if _has_explicit_norm_reference(prompt):
-        return None
-    return _llm_notice(
-        f"warning: subagent_type={subagent_type!r} does not load norms. "
-        "Include a norm keyword or an explicit Read instruction with an authorized absolute norm path in prompt.",
-        tag="warn",
     )
 
 
@@ -593,8 +474,7 @@ def main(payload_text: str) -> int:
         flush_pending_language_warning()
         return 0
 
-    # Agent/Task: 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
-    # process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
+    # Agent/Task: process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
     if tool_name in ("Agent", "Task"):
         # `name`指定は起動記録より前に遮断する（起動しない呼び出しの副作用を残さないため）。
         if _check_agent_name_parameter(tool_name, tool_input):
@@ -609,9 +489,6 @@ def main(payload_text: str) -> int:
         # `subagent_end`と対応しなくなるため（process-loopの所要時間分析が崩れる）。
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
             _process_loop_log.append("subagent_start", type=subagent_type)
-        message = _check_agent_norm_reference(tool_input)
-        if message is not None:
-            print(message, file=sys.stderr)
         flush_pending_language_warning()
         return 0
 

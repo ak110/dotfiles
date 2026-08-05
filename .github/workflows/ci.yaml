@@ -87,6 +87,7 @@ jobs:
         run: >-
           uv run --python 3.12 pytest -q
           agent-toolkit/scripts/_managed_temp_test.py
+          agent-toolkit/scripts/agent_definitions_test.py
           agent-toolkit/scripts/permissionrequest_codex_test.py
       - name: chezmoi インストール
         shell: bash

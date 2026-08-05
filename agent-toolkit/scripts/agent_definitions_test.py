@@ -1,7 +1,9 @@
 """エージェント定義の委譲権限契約を検査する。"""
 
+import os
 import pathlib
 import re
+import subprocess
 
 import _atk_mq_frontmatter as frontmatter
 import subagent_stop_advisor
@@ -23,10 +25,15 @@ _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback"
 _BUGFIX = _PLAN_MODE.parent / "references" / "bugfix.md"
 _CI_FAILURE_HANDLING = _PLAN_MODE.parent / "references" / "ci-failure-handling.md"
 _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
+_CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
+_CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "02-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE.parent / "references" / "plan-review-delegation.md"
+_MANAGED_TEMP_HELPER = _AGENTS_DIR.parent / "scripts" / "_managed_temp.py"
+_MANAGED_TEMP_LAUNCHER = _AGENTS_DIR.parent / "bin" / "atk-managed-temp"
+_MANAGED_TEMP_LAUNCHER_WINDOWS = _MANAGED_TEMP_LAUNCHER.with_suffix(".cmd")
 _DELEGATION_BOILERPLATE = _PLAN_REVIEW.parent / "delegation-boilerplate.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE.parent / "references" / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
@@ -281,6 +288,7 @@ def test_plan_impl_review_cap_contract_is_synchronized() -> None:
         assert "上限到達後の既知指摘修正済み（再レビューなし）" in document
     assert "確定スナップショット" in review
     assert "新規指摘を探索する第6ラウンドは実施しない" in review
+    assert "最終確認・final review・rereview" in review
     for phrase in ("現在のラウンド数", "上限", "既知指摘の残数", "計画対象外"):
         assert phrase in caller
 
@@ -560,6 +568,102 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
         text = path.read_text(encoding="utf-8")
         assert "uv run --no-project --script <helper> cleanup --path <保持した絶対パス>" in text
         assert "単独で実行" in text
+    claude_code_rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
+    assert "atk-managed-temp create --prefix <用途>" in claude_code_rules
+    assert "atk-managed-temp cleanup --path <検収済み絶対パス>" in claude_code_rules
+    assert "uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>" in claude_code_rules
+    assert (
+        "uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>"
+        in claude_code_rules
+    )
+    assert "pluginの`bin/`からBashの`PATH`へ追加" in claude_code_rules
+    assert "管理CLIで作成していない既存領域を自動で後始末しない" in claude_code_rules
+    assert "mktemp -d" not in claude_code_rules
+    assert "単独で実行" in claude_code_rules
+
+
+def test_review_workflows_gate_findings_by_original_purpose() -> None:
+    """レビュー出力と受領側が目的・前提・非目標を基準に指摘を選別する。"""
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+    purpose_contract = _h2_section(review_standards, "目的との整合")
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+
+    for phrase in (
+        "元のユーザー目的",
+        "公開契約",
+        "適用規範",
+        "計画が定める実装",
+        "入力前提",
+        "非目標",
+        "異なる脅威モデル",
+    ):
+        assert phrase in purpose_contract
+        assert phrase in implementation_task
+    assert "UX補助へ、敵対的入力に対する堅牢性を暗黙の要件として課さない" in purpose_contract
+    assert "元の目的、契約または適用規範の何に違反するかを1文で記す" in purpose_contract
+    assert "計画を入力契約として受け取るレビュー" in purpose_contract
+    assert "独立レビューは`review_contract`を確認" in purpose_contract
+    assert "変更範囲、抽象化層、入力前提が変わる場合" in implementation_task
+    assert "同じ主題の指摘が2件目以降となる場合" in implementation_task
+    assert "個別修正を止め" in implementation_task
+    assert "有限な入力・状態" in implementation_task
+
+
+def test_policy_parser_review_contract_declares_operating_boundary() -> None:
+    """自動判定の作成規範と独立レビュー入力が同じ運用境界を共有する。"""
+    coding_standards = _CODING_STANDARDS.read_text(encoding="utf-8")
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+    implementation_review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
+    independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    initial_review_contract = _h2_section(implementation_review, "初回レビュー")
+    independent_input_contract = _h2_section(independent_task, "入力")
+
+    for phrase in ("入力生成主体", "信頼境界", "通常入力", "対象外入力", "誤許可と誤拒否"):
+        assert phrase in coding_standards
+        assert phrase in review_standards
+        assert phrase in initial_review_contract
+        assert phrase in independent_input_contract
+    assert "ユーザーが明示・合意した現行の外部契約" in initial_review_contract
+    assert "適用規範により" in initial_review_contract
+    assert "ユーザー発話全文は渡さず" in initial_review_contract
+    assert "完了条件、独立系の`review_contract`だけを渡す" in initial_review_contract
+    assert "作者の推論を渡さず" in initial_review_contract
+    assert "`review_contract`" in independent_input_contract
+    assert "ユーザー発話全文、作者の推論、変更意図、実装方針は含めない" in independent_input_contract
+
+
+def test_managed_temp_launchers_preserve_helper_contract() -> None:
+    """launcherが現行plugin rootのhelperへ入出力と終了状態をそのまま転送する。"""
+    for arguments in (["--help"], ["create", "--prefix", "INVALID"]):
+        direct = subprocess.run(
+            ["uv", "run", "--no-project", "--script", str(_MANAGED_TEMP_HELPER), *arguments],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if os.name == "nt":
+            command = [
+                os.environ.get("COMSPEC", "cmd.exe"),
+                "/d",
+                "/c",
+                str(_MANAGED_TEMP_LAUNCHER_WINDOWS),
+                *arguments,
+            ]
+        else:
+            command = [str(_MANAGED_TEMP_LAUNCHER), *arguments]
+        launched = subprocess.run(command, capture_output=True, text=True, check=False)
+
+        assert launched.returncode == direct.returncode, arguments
+        assert launched.stdout == direct.stdout, arguments
+        assert launched.stderr == direct.stderr, arguments
+
+    posix_text = _MANAGED_TEMP_LAUNCHER.read_text(encoding="utf-8")
+    windows_text = _MANAGED_TEMP_LAUNCHER_WINDOWS.read_text(encoding="ascii")
+    assert 'plugin_root="$(cd "$(dirname "${self}")/.." && pwd)"' in posix_text
+    assert 'exec uv run --no-project --script "${helper}" "$@"' in posix_text
+    assert 'for /f "delims=" %%A in (\'cd /d "%~dp0.." ^& cd\') do set "PLUGIN_ROOT=%%A"' in windows_text
+    assert 'uv run --no-project --script "%HELPER%" %*' in windows_text
+    assert "endlocal & exit /b %STATUS%" in windows_text
 
 
 def _markdown_headings(path: pathlib.Path) -> set[str]:

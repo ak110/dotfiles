@@ -21,6 +21,24 @@ _SCRIPT = pathlib.Path(subject.__file__).resolve()
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 
 
+@pytest.mark.parametrize(
+    ("prefix", "expected"),
+    [
+        ("agent-work", True),
+        ("a1", True),
+        ("", False),
+        ("UPPER", False),
+        ("under_score", False),
+        ("leading-", False),
+        ("-leading", False),
+        ("dot.name", False),
+    ],
+)
+def test_is_valid_prefix(prefix: str, expected: bool) -> None:
+    """createとPermissionRequestが共有するprefix規則を確認する。"""
+    assert subject.is_valid_prefix(prefix) is expected
+
+
 class _WindowsSecurityCalls(typing.NamedTuple):
     opens: list[int]
     security_reads: list[int]

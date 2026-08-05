@@ -695,9 +695,14 @@ def _write_marker(path: pathlib.Path, record: dict[str, typing.Any]) -> None:
     _write_private_json(marker_path, record)
 
 
+def is_valid_prefix(prefix: str) -> bool:
+    """prefixが管理対象一時領域の命名規則に一致するか返す。"""
+    return _PREFIX_RE.fullmatch(prefix) is not None
+
+
 def create_managed_temp(prefix: str) -> pathlib.Path:
     """管理対象一時ディレクトリを作成し、絶対パスを返す。"""
-    if _PREFIX_RE.fullmatch(prefix) is None:
+    if not is_valid_prefix(prefix):
         raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
     root = _temp_root()
     try:

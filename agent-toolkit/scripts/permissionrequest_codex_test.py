@@ -169,6 +169,20 @@ def test_malformed_payload_and_validation_error_return_no_decision(
     assert not capsys.readouterr().out
 
 
+def test_rejects_claude_code_launcher_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexでは現行plugin rootの絶対helper経路だけをcanonicalとする。"""
+    plugin_root = pathlib.Path(__file__).resolve().parent.parent
+    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
+    command = f"atk-managed-temp cleanup --path {tmp_path}"
+
+    assert subject.main(_payload(command)) == 0
+    assert not capsys.readouterr().out
+
+
 def test_entrypoint_subprocess_allows_valid_cleanup_without_deleting(tmp_path: pathlib.Path) -> None:
     """共通入口へ実stdinを渡してallow JSONと非削除を確認する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent.parent

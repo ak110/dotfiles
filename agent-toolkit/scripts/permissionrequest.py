@@ -4,6 +4,12 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 （`.claude/`配下の編集確認ダイアログ等）を上書きできないため、
 確認ダイアログ表示時に発火するPermissionRequestフックで自動許可を返す。
 
+このフックは通常のLLMが生成した操作について確認回数を減らすUX補助であり、
+セキュリティ境界ではない。Bashの完全な構文解析や、敵対的な引用・escape・展開形態の
+同値判定は非目標とする。明示的に扱う通常形へ一致しない入力は出力せず、Claude Codeの
+通常の確認へ戻す。信頼境界はClaude Codeの通常確認と利用者判断が担う。誤許可時は確認が
+1回省略され、誤拒否時は通常確認が1回表示される。`False`はdeny応答ではなく出力なしを表す。
+
 自動許可の対象パス:
 
 - `~/.claude/plans/`配下
@@ -41,6 +47,8 @@ import json
 import pathlib
 import shlex
 
+import _managed_temp
+
 # Git ワークツリー判定で親ディレクトリを遡る際の上限段数。
 # 病的に深いパスでの暴走を防ぐガード。
 _GIT_WORKTREE_LOOKUP_DEPTH = 64
@@ -54,10 +62,26 @@ _BASH_COMMAND_SEPARATORS = frozenset({"&&", "||", ";", "\n"})
 # 危険性が高い `dd` / `tar` / `rsync` 等は対象外。
 _BASH_FILE_OPS = frozenset({"rm", "mkdir", "mv", "cp", "touch", "ln", "chmod", "chown", "cd"})
 
+# ファイル操作コマンドで値を取らないことを確認済みの一般的なオプション。
+# 未列挙オプションは自動許可せず、通常の確認へ戻す。
+_FILE_OP_ALLOWED_OPTS: dict[str, frozenset[str]] = {
+    "rm": frozenset({"-f", "-r", "-R", "-rf", "-fr", "--force", "--recursive"}),
+    "mkdir": frozenset({"-p", "--parents"}),
+    "mv": frozenset(),
+    "cp": frozenset({"-r", "-R", "--recursive", "--parents"}),
+    "touch": frozenset(),
+    "ln": frozenset({"-s", "--symbolic"}),
+    "chmod": frozenset({"-R", "--recursive"}),
+    "chown": frozenset({"-R", "--recursive"}),
+}
+
+# パス列の前に必須となる一般的な非パスオペランド数。
+_FILE_OP_NON_PATH_PREFIX_ARGS = {"chmod": 1, "chown": 1}
+
 # Bash 自動許可の対象となる文字列出力コマンド。
 _BASH_ECHO_OPS = frozenset({"echo"})
 
-# 安全と判断できないシェルメタ文字。`>` `>>` のリダイレクトと `;` のサブコマンド区切りは
+# 自動許可の対象として明瞭でないシェルメタ文字。`>` `>>` のリダイレクトと `;` のサブコマンド区切りは
 # 別途トークンレベルで扱う。
 # `&` は論理AND結合 `&&` を、`|` は論理OR結合 `||` を許容するため除外する。
 # 単独の `&`・`|`（バックグラウンド実行・パイプ）はトークンレベルで別途拒否する。
@@ -96,6 +120,9 @@ _AGENT_META_DIRS = frozenset({".claude", ".agents"})
 
 # ファイル名として一致した場合に Git ワークツリー判定対象とするファイル名。
 _AGENT_META_FILES = frozenset({"AGENTS.md"})
+
+# PermissionRequestで専用判定する管理対象一時領域の実行名。
+_MANAGED_TEMP_COMMAND = "atk-managed-temp"
 
 
 def main(payload_text: str) -> int:
@@ -161,25 +188,45 @@ def should_allow(file_path: str) -> bool:
 def should_allow_bash(command: str, cwd: str) -> bool:
     """Bash コマンドの操作対象パスがすべて自動許可対象配下なら True を返す。
 
-    安全に解析できないコマンド (危険メタ文字含む / shlex 失敗 / 対象外コマンド) は False。
+    明示的な通常形として扱わないコマンド（複雑なメタ文字 / shlex失敗 / 対象外コマンド）はFalse。
     `&&` / `||` で結合された複数サブコマンドは、すべてのサブコマンドが
     個別に許可条件を満たす場合にのみ全体を許可する。
     単独 `&`（バックグラウンド実行）・単独 `|`（パイプ）は拒否する。
     """
     if not command:
         return False
+    # echoの通常の変数表示は維持し、コマンド置換を含む複雑な入力だけ確認へ戻す。
+    if "$(" in command or "`" in command:
+        return False
     tokens = _tokenize(command)
     if not tokens:
         return False
+    if tokens[0] == _MANAGED_TEMP_COMMAND:
+        return _is_managed_temp_command(tokens)
     # 単独 `&`・単独 `|`・`|&`・`>&`・`&>` 等の複合演算子トークンも拒否する。
     # `&&` と `||` のみを許容する例外とする。
     # 各演算子の意味論はモジュール冒頭docstringの「Bashコマンド判定の設計方針」節を参照する。
     if any(token not in ("&&", "||") and ("&" in token or "|" in token) for token in tokens):
         return False
-
     cwd_base = _resolve_cwd(cwd)
     subcommands = _split_by_logical_ops(tokens)
     return bool(subcommands) and all(_evaluate_subcommand(subcommand, cwd_base) for subcommand in subcommands)
+
+
+def _is_managed_temp_command(tokens: list[str]) -> bool:
+    """管理対象一時領域launcherの通常のcreateまたはcleanupだけを許可する。"""
+    if len(tokens) != 4 or tokens[0] != _MANAGED_TEMP_COMMAND:
+        return False
+    action, option, value = tokens[1:]
+    if action == "create" and option == "--prefix":
+        return _managed_temp.is_valid_prefix(value)
+    if action != "cleanup" or option != "--path":
+        return False
+    try:
+        _managed_temp.validate_managed_temp(pathlib.Path(value))
+    except (OSError, ValueError, _managed_temp.ManagedTempError):
+        return False
+    return True
 
 
 def _tokenize(command: str) -> list[str] | None:
@@ -187,12 +234,16 @@ def _tokenize(command: str) -> list[str] | None:
 
     `posix=True` かつ `punctuation_chars=True` の `shlex.shlex` で、空白の有無によらず
     `&&` / `||` / `;` / 単独 `&` / 単独 `|` を独立トークンへ分割する。
+    `commenters`を空にして、Bashが単語途中の`#`をコメント開始と解釈しない契約へ合わせる。
     `whitespace` から改行を除外し、改行も独立トークンとして扱う。空白なしの
     リダイレクト `>` / `>>` も同様に独立トークン化される。引用符内の文字列は
     連結されたまま扱われる。
     """
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.commenters = ""
+        # Bashでは通常単語の一部となる`:`を、chownの`owner:group`やパス内でも分割しない。
+        lexer.wordchars += ":"
         lexer.whitespace = lexer.whitespace.replace("\n", "")
         return list(lexer)
     except ValueError:
@@ -236,16 +287,18 @@ def _evaluate_subcommand(tokens: list[str], cwd_base: pathlib.Path | None) -> bo
         elif cmd == "cd":
             return _evaluate_cd_subcommand(redirect_targets, remaining[1:], cwd_base)
         elif cmd in _BASH_FILE_OPS:
-            paths.extend(_extract_path_args(remaining[1:]))
+            extracted = _extract_file_op_paths(cmd, remaining[1:])
+            if extracted is None:
+                return False  # 許容外または値付きオプション指定のため拒否する
+            paths.extend(extracted)
         elif cmd in _BASH_READ_OPS:
             extracted = _extract_read_op_paths(cmd, remaining[1:])
             if extracted is None:
                 return False  # 許容外オプション指定のため拒否する
             paths.extend(extracted)
-        elif not redirect_targets:
-            # ファイル操作系・読み取り系でもリダイレクトでもないため拒否する。
+        else:
+            # 許可リスト外のコマンドはリダイレクト先にかかわらず拒否する。
             return False
-        # else: リダイレクトのみで判定する（コマンド本体は問わない）
 
     if not paths:
         return False
@@ -436,6 +489,44 @@ def _extract_path_args(args: list[str]) -> list[str]:
                 continue
         paths.append(arg)
     return paths
+
+
+def _extract_file_op_paths(cmd: str, args: list[str]) -> list[str] | None:
+    """ファイル操作の許容済みboolオプションを除き、パス引数を返す。"""
+    allowed_options = _FILE_OP_ALLOWED_OPTS.get(cmd)
+    if allowed_options is None:
+        return None
+    non_path_prefix_count = _FILE_OP_NON_PATH_PREFIX_ARGS.get(cmd, 0)
+    if non_path_prefix_count:
+        operand_index = 0
+        while operand_index < len(args) and args[operand_index] in allowed_options:
+            operand_index += 1
+        after_double_dash = operand_index < len(args) and args[operand_index] == "--"
+        if after_double_dash:
+            operand_index += 1
+        if len(args) <= operand_index + non_path_prefix_count:
+            return None
+        operands = args[operand_index : operand_index + non_path_prefix_count]
+        if not after_double_dash and any(operand.startswith("--") for operand in operands):
+            return None
+        operand_paths = args[operand_index + non_path_prefix_count :]
+        if not after_double_dash and any(path.startswith("-") for path in operand_paths):
+            return None
+        return operand_paths
+
+    paths: list[str] = []
+    after_double_dash = False
+    for arg in args:
+        if not after_double_dash:
+            if arg == "--":
+                after_double_dash = True
+                continue
+            if arg.startswith("-"):
+                if arg not in allowed_options:
+                    return None
+                continue
+        paths.append(arg)
+    return paths or None
 
 
 def _extract_read_op_paths(cmd: str, args: list[str]) -> list[str] | None:
