@@ -126,13 +126,22 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 "complete" if state not in MQ_ACTIVE_STATES else "ready" if path.name in readiness.ready else "blocked"
             )
             label = f"{state}/{item_kind}/{state_readiness}"
+            answered = False
             if entry_type == MQ_TYPE_TBD:
                 answered = _is_tbd_answered(text)
-                label = f"{state}/answered" if answered else f"{state}/unanswered"
+                label = (
+                    f"{state}/answered/blocked"
+                    if answered and state_readiness == "blocked"
+                    else f"{state}/answered"
+                    if answered
+                    else f"{state}/unanswered"
+                )
             repo_budget = _target_repo_budget(path.name, label)
             display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
             reason = (
-                _blocked_reason(readiness, path.name) if state_readiness == "blocked" and entry_type != MQ_TYPE_TBD else None
+                _blocked_reason(readiness, path.name)
+                if state_readiness == "blocked" and (entry_type != MQ_TYPE_TBD or answered)
+                else None
             )
             reason_suffix = f" blocked_reason={reason}" if reason is not None else ""
             prefix = f"{path.name}: {display_repo} [{label}]{reason_suffix} "

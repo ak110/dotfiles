@@ -126,6 +126,41 @@ def test_completed_requires_resolution_for_each_finding() -> None:
     assert any("resolution" in violation for violation in violations)
 
 
+def test_completed_rejects_partially_resolved_findings() -> None:
+    """複数指摘の各行へ個別の採否と修正・検証結果を要求する。"""
+    report = _report().replace(
+        "- 指摘なし\nreview_resolution:\n- 指摘なし",
+        "- P-1: 欠陥\n- P-2: 欠陥\nreview_resolution:\n"
+        "| 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| P-1 | 重大 | 採用 | x | y | 修正し検証済み |\n"
+        "| P-2 | 重大 | 保留 | x | y | 未対応 |",
+        1,
+    )
+
+    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
+
+    assert any("resolution" in violation for violation in violations)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        ("review_status: completed", "review_status: skipped_by_user", "completed review"),
+        ("- 変更", "- [ ] 未実装", "unchecked"),
+        ("pending_confirmations:\n- なし", "pending_confirmations:\n- 確認待ち", "pending_confirmations"),
+        ("plan_gaps:\n- なし", "plan_gaps:\n- 計画不足", "plan_gaps"),
+    ],
+)
+def test_completed_rejects_unfinished_state(old: str, new: str, expected: str) -> None:
+    """レビュー省略と実装・確認・計画の未完了をcompletedで受理しない。"""
+    report = _report().replace(old, new, 1)
+
+    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
+
+    assert any(expected in violation for violation in violations)
+
+
 def test_needs_escalation_allows_unexecuted_plan_check() -> None:
     report = _report(status="needs_escalation", review_status="needs_escalation", blockers="- blocker_type: missing_input")
     report = report.replace(

@@ -97,7 +97,7 @@ commit_sha: <最終コミット。コミット不要時は「なし」>
 review_resolution: <レビュー指摘修正時だけ出力する>
 | 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |
 | <P-*またはI-*> | ... | 採用（計画対応）・不採用・重複 | ... | ... | 根拠、重複先、修正・再検証結果 |
-review_status: completed | needs_escalation | skipped_by_user
+review_status: completed | needs_escalation
 review_routes:
 - 計画準拠系: <route/thread>
 - 独立系: <route/thread>

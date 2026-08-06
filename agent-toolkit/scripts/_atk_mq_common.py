@@ -829,12 +829,21 @@ def _effective_dependencies(entry: QueueEntry) -> tuple[str, ...] | None:
     kind = legacy.get("kind")
     if kind in ("entries", "external-repo-entry"):
         filenames = legacy.get("filenames")
-        if not isinstance(filenames, list) or any(not isinstance(value, str) for value in filenames):
+        if (
+            not isinstance(filenames, list)
+            or not filenames
+            or any(not isinstance(value, str) or not value for value in filenames)
+        ):
             return None
+        if kind == "external-repo-entry":
+            target_repo = legacy.get("target_repo")
+            if not isinstance(target_repo, str) or _normalized_repo_or_none(target_repo) is None:
+                return None
         return tuple(dict.fromkeys(value for value in filenames if isinstance(value, str)))
     if kind == "external-user":
         filename = legacy.get("tbd_filename")
-        return (filename,) if isinstance(filename, str) and filename else None
+        condition = legacy.get("condition")
+        return (filename,) if isinstance(filename, str) and filename and isinstance(condition, str) and condition else None
     if kind == "external-upstream":
         recheck_after = legacy.get("recheck_after")
         condition = legacy.get("condition")
@@ -886,12 +895,9 @@ def _legacy_dependency_is_satisfied(
         return not any(candidate.filename != entry.filename for candidate in target_active)
     if kind == "external-repo-entry":
         filenames = legacy.get("filenames")
-        dependency_repo = legacy.get("target_repo")
-        if (
-            not isinstance(filenames, list)
-            or any(not isinstance(value, str) for value in filenames)
-            or not isinstance(dependency_repo, str)
-        ):
+        target_repo = legacy.get("target_repo")
+        dependency_repo = _normalized_repo_or_none(target_repo if isinstance(target_repo, str) else None)
+        if not isinstance(filenames, list) or any(not isinstance(value, str) for value in filenames) or dependency_repo is None:
             return False
         terminal_pairs = {(candidate.filename, candidate.target_repo) for candidate in terminal}
         active_pairs = {(candidate.filename, candidate.target_repo) for candidate in all_active}

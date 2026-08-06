@@ -19,6 +19,7 @@ from _atk_mq_common import (
     MQ_STATE_PROCESSING,
     MQ_STATES,
     MQ_TYPE_FEEDBACK,
+    MQ_TYPE_TBD,
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
@@ -478,6 +479,9 @@ def _cmd_add(
             else:
                 print(f"投入を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
+    if args.type == MQ_TYPE_TBD and args.depends_on:
+        print("投入を拒否しました: --depends-onは--type=feedbackでのみ指定できます", file=sys.stderr)
+        sys.exit(1)
     try:
         target_commit = resolve_head_commit(local_worktree) if local_worktree is not None else None
     except SystemExit:

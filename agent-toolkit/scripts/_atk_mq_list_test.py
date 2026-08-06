@@ -424,6 +424,29 @@ class TestListTypeFilter:
         captured = capsys.readouterr()
         assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
 
+    def test_answered_tbd_displays_blocked_reason(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """回答済みTBDが依存異常でblockedの場合は両状態を表示する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答済み")
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("type: tbd\n", "type: tbd\ndepends_on: [missing.md]\n"),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--type=tbd", "--answered=yes"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "[inbox/answered/blocked]" in output
+        assert "blocked_reason=missing-dependency" in output
+
     def test_answered_tbd_status_label_omits_type(
         self,
         monkeypatch: pytest.MonkeyPatch,

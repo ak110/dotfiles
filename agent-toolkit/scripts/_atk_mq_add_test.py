@@ -402,6 +402,30 @@ def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Pat
     assert exc_info.value.code == 2
 
 
+def test_add_rejects_dependencies_for_tbd(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """TBDで保存されないdepends_on指定を成功扱いにしない。"""
+    _setup_notes(tmp_path)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "mq",
+                "add",
+                "--target-repo",
+                "github.com/example/repo",
+                "--type=tbd",
+                "--depends-on",
+                "feedback.md",
+                "確認しますか？",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 1
+    assert "--type=feedbackでのみ" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("plan_file", ["relative-plan.md", "/missing-plan.md"])
 def test_add_operation_rejects_invalid_plan_file(
     plan_file: str,

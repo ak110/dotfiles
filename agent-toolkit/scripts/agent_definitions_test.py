@@ -246,7 +246,7 @@ def test_plan_impl_report_labels_are_synchronized() -> None:
 
 
 def test_plan_impl_review_status_values_are_synchronized() -> None:
-    """executorのreview statusを2終端状態とユーザー省略へ限定する。"""
+    """executorのreview statusを完了と要確認の2状態へ限定する。"""
     section = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
     fence = _FENCED_BLOCK_RE.search(section)
     assert fence, "`## 出力`節にフェンス付きコードブロックが存在しない"
@@ -256,9 +256,23 @@ def test_plan_impl_review_status_values_are_synchronized() -> None:
     )
     assert definition, "`## 出力`節に`review_status`の定義行が無い"
     values = {value.strip() for value in definition.removeprefix("review_status:").split("|")}
-    assert values == {"completed", "needs_escalation", "skipped_by_user"}
+    assert values == {"completed", "needs_escalation"}
     reception = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
     assert "未解決の実指摘が無い" in reception
+
+
+def test_review_reference_defines_finding_classifications() -> None:
+    """review taskが参照する採否区分と再レビュー3分類を共通referenceへ定義する。"""
+    text = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
+
+    for label in (
+        "計画対応",
+        "独立提案",
+        "初回成果物に存在した見逃し",
+        "指摘修正で導入された欠陥",
+        "修正後に初めて評価可能になった欠陥",
+    ):
+        assert f"`{label}`" in text
 
 
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:

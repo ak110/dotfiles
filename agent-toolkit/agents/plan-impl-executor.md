@@ -66,7 +66,7 @@ plan_check:
 - 終了コード: <整数>
 - 警告件数: <整数>
 commit_sha: <最終コミットまたは「なし」>
-review_status: completed | needs_escalation | skipped_by_user
+review_status: completed | needs_escalation
 review_rounds: <二系統一組の実施回数>
 review_routes:
 - 計画準拠系: <route/thread>

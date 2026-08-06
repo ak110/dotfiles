@@ -194,6 +194,29 @@ class TestReadiness:
 
         assert result.ready == ("feedback.md",)
 
+    @pytest.mark.parametrize(
+        "legacy_dependency",
+        [
+            "    kind: entries\n    filenames: []",
+            "    kind: external-user\n    tbd_filename: answer.md",
+            "    kind: external-repo-entry\n    filenames: []\n    target_repo: github.com/example/other",
+            "    kind: external-repo-entry\n    filenames: [other.md]\n    target_repo: invalid",
+        ],
+    )
+    def test_invalid_legacy_schema_is_actionable_for_repair(
+        self,
+        tmp_path: pathlib.Path,
+        legacy_dependency: str,
+    ) -> None:
+        """旧schemaの必須値欠落を依存なしや恒久待機へ変換しない。"""
+        _write_feedback(tmp_path, "feedback.md", legacy_dependency=legacy_dependency)
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.invalid_dependencies == ("feedback.md",)
+        assert result.actionable_count == 1
+        assert not result.ready
+
     def test_cross_repo_cycle_is_actionable_for_each_target_repo(self, tmp_path: pathlib.Path) -> None:
         """対象repoをまたぐ明示依存の循環も修復対象として検出する。"""
         _write_feedback(tmp_path, "first.md", depends_on=("second.md",), target_repo="github.com/example/first")

@@ -175,8 +175,17 @@ def _inspect_completion_contract(text: str) -> list[str]:
     if not verification or "未実施" in verification:
         violations.append("completed status requires executed verification")
     review_status = _extract_report_first_line(text, "review_status")
-    if review_status not in {"completed", "skipped_by_user"}:
-        violations.append("completed status requires completed review or an explicit user skip")
+    if review_status != "completed":
+        violations.append("completed status requires completed review")
+    changed = _extract_report_field(text, "changed")
+    if _PLAN_IMPL_EXECUTOR_UNCHECKED_CHANGED_ITEM_RE.search(changed):
+        violations.append("completed status must not contain unchecked changed items")
+    for label in ("pending_confirmations", "plan_gaps"):
+        values = [
+            line.strip().removeprefix("-").strip() for line in _extract_report_field(text, label).splitlines() if line.strip()
+        ]
+        if values != ["なし"]:
+            violations.append(f"completed status requires {label} to contain only なし")
     findings = _extract_report_field(text, "review_findings")
     resolution = _extract_report_field(text, "review_resolution")
     if any(marker in findings or marker in resolution for marker in ("未解決", "未修正", "要対応", "needs_escalation")):
@@ -196,8 +205,10 @@ def _inspect_completion_contract(text: str) -> list[str]:
             violations.append("completed review targets must identify the final commit for both systems")
         finding_ids = set(re.findall(r"\b[PI]-[0-9]+\b", findings))
         if finding_ids:
-            missing_resolution = sorted(identifier for identifier in finding_ids if identifier not in resolution)
-            if missing_resolution or not any(status in resolution for status in ("採用", "不採用", "重複")):
+            unresolved_ids = [
+                identifier for identifier in sorted(finding_ids) if not _resolution_row_is_complete(resolution, identifier)
+            ]
+            if unresolved_ids:
                 violations.append("completed review requires a resolution for every review finding")
         elif "指摘なし" not in findings:
             violations.append("completed review findings must contain finding IDs or 指摘なし")
@@ -212,6 +223,28 @@ def _parse_review_mapping(body: str) -> dict[str, str]:
         if match is not None:
             result[match.group(1)] = match.group(2)
     return result
+
+
+def _resolution_row_is_complete(body: str, finding_id: str) -> bool:
+    """指摘IDに対応する単一表行が採否と必要な修正証拠を持つか返す。"""
+    rows = []
+    for line in body.splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if cells and cells[0] == finding_id:
+            rows.append(cells)
+    if len(rows) != 1 or len(rows[0]) < 6:
+        return False
+    disposition = rows[0][2]
+    if not any(status in disposition for status in ("採用", "不採用", "重複")):
+        return False
+    if "不採用" in disposition or "重複" in disposition:
+        return True
+    if "採用" in disposition:
+        outcome = rows[0][5]
+        return "修正" in outcome and "検証" in outcome
+    return False
 
 
 def _detect_plan_impl_executor_background_parallel_violation(text: str) -> bool:

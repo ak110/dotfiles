@@ -192,7 +192,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         metavar="FILENAME",
         action="append",
         default=None,
-        help="処理完了を待つキュー項目。複数回指定でき、重複は初出順で除去する。",
+        help="feedbackが処理完了を待つキュー項目。--type=feedbackでのみ指定でき、複数回指定できる。",
     )
     add.add_argument(
         "--source",
