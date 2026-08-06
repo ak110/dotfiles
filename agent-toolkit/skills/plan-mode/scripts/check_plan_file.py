@@ -17,6 +17,9 @@ import sys
 import markdown_it
 import markdown_it.token
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
 _H1_RE = re.compile(r"^# (?!#)\S")
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`(?P<suffix>.*)$")
 _H3_RE = re.compile(r"^### `([^`]+)`(?:\s|（|$)")
@@ -29,15 +32,22 @@ _SKILL_CALL_RE = re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _TABLE_SEPARATOR_RE = re.compile(r"\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)*\s*\|?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
-_REQUIRED_H2 = (
-    "変更履歴",
-    "背景",
-    "対応方針",
-    "調査結果",
-    "変更内容",
-    "実行方法",
-    "進捗ログ",
-    "計画ファイル（本ファイル）のパス",
+_BUG_INVESTIGATION_HEADING_PREFIX = "バグ調査結果:"
+_BUG_INVESTIGATION_REQUIRED_ROWS = (
+    "観測事象",
+    "期待する契約",
+    "直接的原因",
+    "混入要因",
+    "動機的要因",
+    "見逃し原因",
+    "根本原因",
+    "原因分析の根拠",
+    "類似見直しの観点",
+    "類似見直し結果",
+    "是正処置",
+    "横展開処置",
+    "再発防止処置",
+    "設計意図の記録",
 )
 
 
@@ -70,10 +80,12 @@ def _section_bounds(lines: list[str], outside: list[bool], title: str) -> tuple[
 
 def _check_h1(lines: list[str], outside: list[bool]) -> list[str]:
     errors: list[str] = []
-    if not lines or not _H1_RE.match(lines[0]):
-        errors.append("先頭行に正規のH1見出しが無い")
+    first_body_line = next((index for index, line in enumerate(lines) if outside[index] and line.strip()), None)
+    if first_body_line is None or not _H1_RE.match(lines[first_body_line]):
+        errors.append("Markdown本文の先頭行に正規のH1見出しが無い")
     h1_lines = [i + 1 for i, line in enumerate(lines) if outside[i] and line.startswith("# ")]
-    if h1_lines != [1]:
+    expected_h1_lines = [first_body_line + 1] if first_body_line is not None else []
+    if h1_lines != expected_h1_lines:
         errors.append(f"H1見出しが一意でない: {h1_lines}")
     for index in range(1, len(lines)):
         if outside[index] and lines[index].strip() and set(lines[index].strip()) == {"="} and lines[index - 1].strip():
@@ -81,17 +93,21 @@ def _check_h1(lines: list[str], outside: list[bool]) -> list[str]:
     return errors
 
 
-def _check_required_sections(lines: list[str], outside: list[bool]) -> list[str]:
+def _check_required_sections(lines: list[str], outside: list[bool], text: str) -> list[str]:
     """必須H2の一意性・順序と固定H3の親節を検査する。"""
+    implementation_materials_h2 = _plan_format.resolve_implementation_materials_h2(text)
+    required_h2 = tuple(
+        implementation_materials_h2 if title == "実装資料" else title for title in _plan_format.PLAN_REQUIRED_H2
+    )
     errors: list[str] = []
     positions: list[int] = []
-    for title in _REQUIRED_H2:
+    for title in required_h2:
         matches = [index for index, line in enumerate(lines) if outside[index] and line == f"## {title}"]
         if len(matches) != 1:
             errors.append(f"必須H2`## {title}`が1件必要: 実際={len(matches)}件")
         if matches:
             positions.append(matches[0])
-    if len(positions) == len(_REQUIRED_H2) and positions != sorted(positions):
+    if len(positions) == len(required_h2) and positions != sorted(positions):
         errors.append("必須H2の順序が計画ファイル完成条件と一致しない")
 
     fixed_h3 = (("背景", "計画メタ情報"), ("変更内容", "対象ファイル一覧"))
@@ -225,6 +241,147 @@ def _table_cell_count(line: str) -> int:
     return count
 
 
+def _table_cells(line: str) -> list[str]:
+    """Markdown表の原文行を、エスケープされていないパイプでセルへ分割する。"""
+    stripped = line.strip()
+    cells: list[str] = []
+    current: list[str] = []
+    preceding_backslashes = 0
+    for character in stripped:
+        if character == "\\":
+            preceding_backslashes += 1
+            current.append(character)
+            continue
+        if character == "|" and preceding_backslashes % 2 == 0:
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(character)
+        preceding_backslashes = 0
+    cells.append("".join(current).strip())
+    if cells and not cells[0]:
+        cells.pop(0)
+    if cells and not cells[-1]:
+        cells.pop()
+    return cells
+
+
+def _work_type(lines: list[str], outside: list[bool]) -> str | None:
+    """計画メタ情報から一意な作業種別を返す。"""
+    bounds = _section_bounds(lines, outside, "背景")
+    if bounds is None:
+        return None
+    metadata_start = next(
+        (index for index in range(bounds[0] + 1, bounds[1]) if outside[index] and lines[index] == "### 計画メタ情報"),
+        None,
+    )
+    if metadata_start is None:
+        return None
+    metadata_end = next(
+        (index for index in range(metadata_start + 1, bounds[1]) if outside[index] and lines[index].startswith("### ")),
+        bounds[1],
+    )
+    matches = [
+        match.group(1)
+        for index in range(metadata_start + 1, metadata_end)
+        if (line := lines[index])
+        if outside[index] and (match := re.fullmatch(r"- 作業種別: (.+)", line)) is not None
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _first_table_rows(
+    lines: list[str], outside: list[bool], start: int, end: int
+) -> tuple[list[str] | None, list[list[str]] | None]:
+    """指定範囲の最初のMarkdown表からヘッダーと本文セルを返す。"""
+    for index in range(start, end - 1):
+        if not outside[index] or not outside[index + 1]:
+            continue
+        if "|" not in lines[index] or _TABLE_SEPARATOR_RE.fullmatch(lines[index + 1].strip()) is None:
+            continue
+        header = _table_cells(lines[index])
+        rows: list[list[str]] = []
+        for row_index in range(index + 2, end):
+            if not outside[row_index] or "|" not in lines[row_index]:
+                break
+            cells = _table_cells(lines[row_index])
+            if cells:
+                rows.append(cells)
+        return header, rows
+    return None, None
+
+
+def _heading_records(tokens: list[markdown_it.token.Token], outside: list[bool]) -> list[tuple[int, int, str]]:
+    """Markdownパーサーが認識したH2・H3の位置、深さ、正規化済み本文を返す。"""
+    headings: list[tuple[int, int, str]] = []
+    for index, token in enumerate(tokens[:-1]):
+        if token.type != "heading_open" or token.tag not in {"h2", "h3"} or token.map is None or token.level != 0:
+            continue
+        position = token.map[0]
+        inline = tokens[index + 1]
+        if position >= len(outside) or not outside[position] or inline.type != "inline":
+            continue
+        headings.append((position, int(token.tag[1]), inline.content.strip()))
+    return headings
+
+
+def _check_bug_investigation_tables(lines: list[str], outside: list[bool], tokens: list[markdown_it.token.Token]) -> list[str]:
+    """バグ対応計画にある名前付き調査表を表ごとに検査する。"""
+    if _work_type(lines, outside) != "バグ対応":
+        return []
+
+    warnings: list[str] = []
+    headings: list[tuple[int, str, str]] = []
+    legacy_count = 0
+    parent_h2 = ""
+    structural_headings = _heading_records(tokens, outside)
+    for position, level, content in structural_headings:
+        if level == 2:
+            parent_h2 = content
+            continue
+        if content == "バグ調査結果":
+            legacy_count += 1
+            continue
+        if content.startswith(_BUG_INVESTIGATION_HEADING_PREFIX):
+            name = content.removeprefix(_BUG_INVESTIGATION_HEADING_PREFIX).strip()
+            headings.append((position, parent_h2, name))
+
+    if legacy_count:
+        warnings.append("旧形式`### バグ調査結果`を名前付き形式`### バグ調査結果: <事象名>`へ移行する")
+    if not headings:
+        warnings.append("バグ対応計画には名前付きの`### バグ調査結果: <事象名>`が1件以上必要")
+        return warnings
+
+    duplicates = sorted(
+        name for name, count in collections.Counter(name for _, _, name in headings if name).items() if count > 1
+    )
+    if duplicates:
+        warnings.append(f"バグ調査結果の事象名が重複している: {duplicates}")
+
+    for position, parent, name in headings:
+        label = name or "<空名>"
+        if not name:
+            warnings.append("バグ調査結果の事象名が空である")
+        if parent != "背景":
+            warnings.append(f"バグ調査結果`{label}`の親H2は`## 背景`である必要がある: 実際=`## {parent}`")
+        end = next(
+            (heading_position for heading_position, _, _ in structural_headings if heading_position > position),
+            len(lines),
+        )
+        header, table_rows = _first_table_rows(lines, outside, position + 1, end)
+        if header is None or table_rows is None:
+            warnings.append(f"バグ調査結果`{label}`にMarkdown表が無い")
+            continue
+        if header != ["項目", "内容"] or any(len(cells) != 2 for cells in table_rows):
+            warnings.append(f"バグ調査結果`{label}`の表は`項目`・`内容`の2列である必要がある: 実際={header}")
+        rows = [cells[0] for cells in table_rows if cells]
+        if rows != list(_BUG_INVESTIGATION_REQUIRED_ROWS):
+            warnings.append(
+                f"バグ調査結果`{label}`の必須14行と順序が一致しない: 期待={list(_BUG_INVESTIGATION_REQUIRED_ROWS)}, 実際={rows}"
+            )
+    return warnings
+
+
 def _check_tables(lines: list[str], tokens: list[markdown_it.token.Token]) -> list[str]:
     """表トークンと段落候補の原文位置から行ごとのセル数を検査する。"""
     errors: list[str] = []
@@ -284,15 +441,21 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
     """計画ファイルを検査し、エラーと警告を返す。"""
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    tokens = markdown_it.MarkdownIt("commonmark").enable("table").parse(text)
-    outside, fence_errors = _outside_fences(lines)
-    errors = fence_errors + _check_h1(lines, outside) + _check_required_sections(lines, outside)
+    body_start = _plan_format.markdown_body_start_index(text)
+    structure_lines = ["" if index < body_start else line for index, line in enumerate(lines)]
+    outside, fence_errors = _outside_fences(structure_lines)
+    body_lines = {lineno - 1 for lineno, _ in _plan_format.iter_markdown_body_lines(text)}
+    outside = [is_outside and index in body_lines for index, is_outside in enumerate(outside)]
+    markdown_body = "\n".join(line if outside[index] else "" for index, line in enumerate(lines))
+    tokens = markdown_it.MarkdownIt("commonmark").enable("table").parse(markdown_body)
+    errors = fence_errors + _check_h1(lines, outside) + _check_required_sections(lines, outside, text)
+    errors.extend(_plan_format.check_h2_order(text))
     errors.extend(_check_plan_metadata(lines, outside))
     target_errors, planned_paths = _check_target_structure(lines, outside, work_dir)
     errors.extend(target_errors)
     errors.extend(_check_tables(lines, tokens))
     errors.extend(_check_references(tokens, work_dir))
-    warnings: list[str] = []
+    warnings = _check_bug_investigation_tables(lines, outside, tokens)
     if base_commit is not None:
         changed, error = _git_changed_files(work_dir, base_commit)
         if error:

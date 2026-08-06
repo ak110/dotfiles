@@ -14,7 +14,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 - plan file編集前の必須リファレンス（textlint-violations.md）未読の警告 (warn)
-- 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの遡及スキャン結果記録未整備のブロック (block)
+- 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの実装資料に遡及スキャン結果が無い場合のブロック (block)
 - plan fileのWrite/Edit/MultiEditでH2見出し順序違反の警告 (warn)
 - plan fileのWrite/Edit/MultiEditで末尾の`## 計画ファイル（本ファイル）のパス`節配下パス値と`file_path`不一致の警告 (warn)
 - plan fileのWrite/Edit/MultiEditで対象ファイル一覧に`agent-toolkit/`配下パスを含むが

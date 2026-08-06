@@ -17,7 +17,7 @@ _VALID_CONTENT = (
     "## 変更履歴\n\nx\n\n"
     "## 背景\n\nx\n\n"
     "## 対応方針\n\nx\n\n"
-    "## 調査結果\n\nx\n\n"
+    "## 実装資料\n\nx\n\n"
     "## 変更内容\n\nx\n\n"
     "## 実行方法\n\nx\n\n"
     "## 進捗ログ\n\nx\n\n"
@@ -48,6 +48,23 @@ class TestExtractH2Sections:
 
     def test_h2_inside_tilde_fence_is_excluded(self):
         content = "~~~\n## フェンス内\n~~~\n## 実在\n"
+        assert _plan_format.extract_h2_sections(content) == ["実在"]
+
+    def test_backticks_crossing_block_boundary_do_not_hide_html_comment(self):
+        content = "説明 `未成立\n<!--\n## コメント内\n-->\n終了`\n## 実在\n"
+        assert _plan_format.extract_h2_sections(content) == ["実在"]
+
+    @pytest.mark.parametrize(
+        "blocks",
+        [
+            "先行 `未成立\n\n後続 `<!--`",
+            "- 先行 `未成立\n\n- 後続 `<!--`",
+            "| 先行 | 後続 |\n| --- | --- |\n| `未成立 | `<!--` |",
+            "| 先行 | 後続 |\n| --- | --- |\n| `未成立 | 値 \\| `<!--` |",
+        ],
+    )
+    def test_unclosed_backtick_in_previous_inline_block_does_not_affect_later_code_span(self, blocks: str):
+        content = f"{blocks}\n\n## 実在\n\n-->\n"
         assert _plan_format.extract_h2_sections(content) == ["実在"]
 
     def test_h2_inside_fence_with_info_string_is_excluded(self):
@@ -85,7 +102,7 @@ class TestCheckH2Order:
             "## 変更履歴\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
             "## 背景\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
+            "## 実装資料\n\nx\n\n"
             "## 変更内容\n\nx\n\n"
             "## 実行方法\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
@@ -102,6 +119,86 @@ class TestCheckH2Order:
         content = _VALID_CONTENT + "\n```\n## フェンス内\n```\n"
         assert not _plan_format.check_h2_order(content)
 
+    def test_h2_inside_multiline_html_comment_not_counted_as_unexpected(self):
+        content = _VALID_CONTENT.replace("## 背景\n\nx", "## 背景\n\nx\n\n<!--\n## コメント内\n-->")
+        assert not _plan_format.check_h2_order(content)
+
+    def test_h2_inside_midline_multiline_html_comment_not_counted_as_unexpected(self):
+        content = _VALID_CONTENT.replace(
+            "## 背景\n\nx",
+            "## 背景\n\nx\n\n説明の途中 <!--\n## コメント内\n-->",
+        )
+        assert not _plan_format.check_h2_order(content)
+
+    @pytest.mark.parametrize("literal", ["```text", "<!--"])
+    def test_frontmatter_block_scalar_literal_does_not_hide_h2(self, literal: str):
+        frontmatter = f"---\ndescription: |\n  {literal}\n---\n"
+        assert not _plan_format.check_h2_order(frontmatter + _VALID_CONTENT)
+
+    @pytest.mark.parametrize("literal", ["`<!--`", "`` `<!--` ``", r"`<!--\`", r"\<!--"])
+    def test_html_comment_literal_does_not_hide_following_h2(self, literal: str):
+        content = _VALID_CONTENT.replace("## 背景", f"{literal}は説明用のリテラルである。\n\n## 背景", 1)
+        assert not _plan_format.check_h2_order(content)
+
+    def test_multiline_code_span_html_comment_literal_does_not_hide_following_h2(self):
+        content = _VALID_CONTENT.replace("## 背景", "`開始\n行内 <!--\n終了`\n\n## 背景", 1)
+        assert not _plan_format.check_h2_order(content)
+
+    def test_optional_completion_section_is_accepted(self):
+        content = _VALID_CONTENT.replace("## 進捗ログ", "## 完了条件\n\nx\n\n## 進捗ログ", 1)
+        assert not _plan_format.check_h2_order(content)
+
+    def test_optional_section_does_not_mask_required_order_violation(self):
+        content = _VALID_CONTENT.replace(
+            "## 背景\n\nx\n\n## 対応方針",
+            "## 対応方針\n\nx\n\n## 完了条件\n\nx\n\n## 背景",
+            1,
+        )
+        violations = _plan_format.check_h2_order(content)
+        assert any("out of order" in violation for violation in violations)
+
+    def test_duplicate_optional_section_is_rejected(self):
+        content = _VALID_CONTENT.replace(
+            "## 進捗ログ",
+            "## 完了条件\n\nx\n\n## 完了条件\n\nx\n\n## 進捗ログ",
+            1,
+        )
+        violations = _plan_format.check_h2_order(content)
+        assert any("optional H2 sections must be unique" in violation for violation in violations)
+
+    def test_legacy_h2_with_transition_marker_is_accepted(self):
+        content = _VALID_CONTENT.replace("## 実装資料", "## 調査結果").replace(
+            "## 背景\n\nx",
+            f"## 背景\n\nx\n\n{_plan_format.PLAN_LEGACY_H2_TRANSITION_MARKER}",
+            1,
+        )
+        assert not _plan_format.check_h2_order(content)
+
+    @pytest.mark.parametrize(
+        "marker_block",
+        [
+            "---\ntransition: '- 計画形式移行: 調査結果から実装資料'\n---\n",
+            "```text\n- 計画形式移行: 調査結果から実装資料\n```\n",
+            "<!--\n- 計画形式移行: 調査結果から実装資料\n-->\n",
+            "説明の途中 <!--\n- 計画形式移行: 調査結果から実装資料\n-->\n",
+        ],
+    )
+    def test_transition_marker_in_excluded_region_is_ignored(self, marker_block: str):
+        content = marker_block + _VALID_CONTENT.replace("## 実装資料", "## 調査結果")
+        violations = _plan_format.check_h2_order(content)
+        assert any("実装資料" in violation for violation in violations)
+
+    def test_transition_marker_requires_exact_spelling(self):
+        content = _VALID_CONTENT.replace("## 実装資料", "## 調査結果") + "\n- 計画形式移行:調査結果から実装資料\n"
+        violations = _plan_format.check_h2_order(content)
+        assert any("実装資料" in violation for violation in violations)
+
+    def test_legacy_and_current_h2_cannot_be_mixed(self):
+        content = _VALID_CONTENT.replace("## 実装資料", "## 調査結果\n\nx\n\n## 実装資料")
+        content += f"\n{_plan_format.PLAN_LEGACY_H2_TRANSITION_MARKER}\n"
+        violations = _plan_format.check_h2_order(content)
+        assert any("unexpected H2 sections" in violation for violation in violations)
+
 
 class TestIterMarkdownBodyLines:
     """iter_markdown_body_lines の除外領域とフェンス判定を検査する。"""
@@ -111,6 +208,12 @@ class TestIterMarkdownBodyLines:
         rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
         assert "key: value" not in rendered
         assert "body line" in rendered
+
+    @pytest.mark.parametrize("literal", ["```text", "<!--"])
+    def test_frontmatter_literal_does_not_exclude_body(self, literal: str) -> None:
+        content = f"---\ndescription: |\n  {literal}\n---\nbody line\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert rendered == ["body line"]
 
     def test_skips_code_fence_content(self) -> None:
         content = "before\n```text\ninside\n```\nafter\n"
@@ -126,10 +229,26 @@ class TestIterMarkdownBodyLines:
         assert "after" in rendered
         assert "hidden" not in rendered
 
+    def test_skips_midline_multiline_html_comment(self) -> None:
+        content = "before\n説明の途中 <!--\nhidden\n-->\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert rendered == ["before", "after"]
+
     def test_keeps_single_line_html_comment_line(self) -> None:
         content = "before\n<!-- visible -->\nafter\n"
         rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
         assert "<!-- visible -->" in rendered
+
+    @pytest.mark.parametrize("literal", ["`<!--`", "`` `<!--` ``", r"`<!--\`", r"\<!--"])
+    def test_keeps_html_comment_literal_and_following_lines(self, literal: str) -> None:
+        content = f"before\n{literal}\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert rendered == ["before", literal, "after"]
+
+    def test_keeps_multiline_code_span_html_comment_literal_and_following_lines(self) -> None:
+        content = "before\n`開始\n行内 <!--\n終了`\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert rendered == ["before", "`開始", "行内 <!--", "終了`", "after"]
 
     def test_long_backtick_fence_close(self) -> None:
         """4文字以上のバックティックフェンスでも閉じ判定が機能する。"""
@@ -401,6 +520,11 @@ class TestPlanFormatSsot:
         for heading in _plan_format.PLAN_REQUIRED_H2:
             assert f"## {heading}" in text, f"plan-mode/SKILL.md に `## {heading}` が無い"
 
+    def test_optional_h2_appear_as_permitted_in_plan_file_ref(self):
+        text = _PLAN_FILE_REF.read_text(encoding="utf-8")
+        for heading in _plan_format.PLAN_OPTIONAL_H2:
+            assert f"## {heading}`へ記載してもよい" in text
+
     def test_section_definition_order_matches_required_h2(self):
         """`plan-mode/SKILL.md`のセクション定義H3と`PLAN_REQUIRED_H2`の順序が一致することを検査する。
 
@@ -465,6 +589,12 @@ def test_iter_h3_sections_under_h2_heading_like_lines_inside_tilde_fence_are_not
     result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
     headings = [h for h, _ in result]
     assert headings == ["foo.md", "bar.md"]
+
+
+def test_iter_h3_sections_under_h2_heading_like_lines_inside_html_comment_are_not_boundaries() -> None:
+    content = "## 変更内容\n### a.md\n説明の途中 <!--\n### fake.md\n## 別H2\n-->\nbody\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    assert result == [("a.md", [(3, "説明の途中 <!--"), (4, "### fake.md"), (5, "## 別H2"), (6, "-->"), (7, "body")])]
 
 
 def test_iter_h3_sections_under_h2_unclosed_fence_to_eof_keeps_heading_like_lines_in_body() -> None:

@@ -55,7 +55,7 @@ pyfltr配布の`docs/guide/recommended.md`・`docs/guide/recommended-nonpython.m
 
 緩和の妥当性は計画段階で実機検証することを必須とする。
 対象lintツールの検証用サブコマンド（`textlint --rule <name>`・`markdownlint --rules <name>`等）を計画段階で実機実行する。
-次の観測項目を計画ファイルの`## 調査結果`へ転記する。
+次の観測項目を計画ファイルの`## 実装資料`へ転記する。
 
 - 緩和前後の検出件数差（対象ルール単独実行時の検出件数を緩和前後で記載する）
 - false positive現存の確認結果（緩和対象が現行版でも再現する旨を実機出力で確認したことを記載する）

@@ -8,16 +8,30 @@ import pathlib
 import re
 from collections.abc import Iterator
 
+import markdown_it
+import markdown_it.common.html_re
+import markdown_it.rules_inline
+import markdown_it.token
+
 PLAN_REQUIRED_H2: tuple[str, ...] = (
     "変更履歴",
     "背景",
     "対応方針",
-    "調査結果",
+    "実装資料",
     "変更内容",
     "実行方法",
     "進捗ログ",
     "計画ファイル（本ファイル）のパス",
 )
+
+PLAN_OPTIONAL_H2: tuple[str, ...] = ("完了条件",)
+"""必須H2の相対順序を変えずに挿入できる任意H2。"""
+
+PLAN_LEGACY_H2_TRANSITION_MARKER = "- 計画形式移行: 調査結果から実装資料"
+"""計画形式の変更計画だけが旧H2を一時的に使うための完全一致マーカー。"""
+
+_IMPLEMENTATION_MATERIALS_H2 = "実装資料"
+_LEGACY_IMPLEMENTATION_MATERIALS_H2 = "調査結果"
 
 PLUGIN_MANIFEST_PATH: str = "agent-toolkit/.claude-plugin/plugin.json"
 """`scripts/agent_toolkit_bump.py`が更新するagent-toolkitプラグインmanifestの相対パス。"""
@@ -31,40 +45,17 @@ BUMP_MANIFEST_PATHS: frozenset[str] = frozenset({PLUGIN_MANIFEST_PATH, MARKETPLA
 `agent_toolkit_bump.py`側のリテラルとの一致は`scripts/agent_toolkit_bump_test.py`が検証する。
 """
 
-_FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 _H2_PATTERN = re.compile(r"^## (.+?)\s*$")
 
 
 def extract_h2_sections(content: str) -> list[str]:
-    """本文からH2見出しの一覧を抽出する（コードフェンス内は除外する）。
+    """本文からH2見出しの一覧を抽出する。
 
-    フェンス閉じ判定は同字種かつ開始長以上で閉じる方式（CommonMark準拠）に揃え、
-    `iter_markdown_body_lines`と同一仕様で動作する。
+    先頭フロントマター、コードフェンス、複数行HTMLコメントの除外は
+    `iter_markdown_body_lines`へ集約する。
     """
     headings: list[str] = []
-    fence_marker: str | None = None
-    for line in content.splitlines():
-        stripped = line.strip()
-        fence_match = _FENCE_PATTERN.match(stripped)
-        if fence_match:
-            candidate = fence_match.group(1)
-            if fence_marker is None:
-                # 開きフェンス: infoストリング許容
-                fence_marker = candidate
-                continue
-            if (
-                stripped
-                and stripped[0] == fence_marker[0]
-                and len(stripped) >= len(fence_marker)
-                and set(stripped) == {fence_marker[0]}
-            ):
-                # 閉じフェンス: 同字種・開始長以上・他字種を含まない
-                fence_marker = None
-                continue
-            # fence_markerと異なる字種のフェンスはフェンス内テキスト扱い
-            continue
-        if fence_marker is not None:
-            continue
+    for _, line in iter_markdown_body_lines(content):
         m = _H2_PATTERN.match(line)
         if m:
             headings.append(m.group(1))
@@ -74,23 +65,141 @@ def extract_h2_sections(content: str) -> list[str]:
 def check_h2_order(content: str) -> list[str]:
     """H2節順違反を検査して違反メッセージの一覧を返す。"""
     headings = extract_h2_sections(content)
-    allowed = set(PLAN_REQUIRED_H2)
+    effective_h2 = resolve_implementation_materials_h2(content)
+    required_h2 = tuple(effective_h2 if h == _IMPLEMENTATION_MATERIALS_H2 else h for h in PLAN_REQUIRED_H2)
+    required = set(required_h2)
+    allowed = required | set(PLAN_OPTIONAL_H2)
     violations: list[str] = []
 
     unexpected = [h for h in headings if h not in allowed]
     if unexpected:
-        violations.append(f"unexpected H2 sections: {unexpected}. Allowed: {list(PLAN_REQUIRED_H2)}.")
+        violations.append(f"unexpected H2 sections: {unexpected}. Allowed: {list(required_h2 + PLAN_OPTIONAL_H2)}.")
 
-    missing = [h for h in PLAN_REQUIRED_H2 if h not in headings]
+    missing = [h for h in required_h2 if h not in headings]
     if missing:
         violations.append(f"missing required H2 sections: {missing}.")
 
-    present_required = [h for h in headings if h in allowed]
-    expected_order = [h for h in PLAN_REQUIRED_H2 if h in headings]
+    duplicate_optional = [h for h in PLAN_OPTIONAL_H2 if headings.count(h) > 1]
+    if duplicate_optional:
+        violations.append(f"optional H2 sections must be unique: {duplicate_optional}.")
+
+    present_required = [h for h in headings if h in required]
+    expected_order = [h for h in required_h2 if h in headings]
     if present_required != expected_order:
         violations.append(f"required H2 sections are out of order. Expected: {expected_order}, but found: {present_required}.")
 
     return violations
+
+
+def markdown_body_start_index(content: str) -> int:
+    """先頭フロントマターの直後にあるMarkdown本文の0始まり行番号を返す。"""
+    lines = content.splitlines()
+    if not lines or lines[0].rstrip() != "---":
+        return 0
+    for index, line in enumerate(lines[1:], start=1):
+        if line.rstrip() in ("---", "..."):
+            return index + 1
+    return len(lines)
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    """指定位置の文字が直前のバックスラッシュでエスケープされているかを返す。"""
+    backslashes = 0
+    while index > backslashes and text[index - backslashes - 1] == "\\":
+        backslashes += 1
+    return backslashes % 2 == 1
+
+
+def _code_span_comment_starts(content: str, inline_tokens: list[markdown_it.token.Token]) -> set[int]:
+    """各inline blockのコードスパン内にあるHTMLコメント開始位置を返す。"""
+    parser = markdown_it.MarkdownIt("commonmark")
+    spans: list[tuple[int, int]] = []
+
+    def record_backtick(state: markdown_it.rules_inline.StateInline, silent: bool) -> bool:
+        start = state.pos
+        token_count = len(state.tokens)
+        matched = markdown_it.rules_inline.backtick(state, silent)
+        if matched and not silent and len(state.tokens) > token_count and state.tokens[-1].type == "code_inline":
+            spans.append((start, state.pos))
+        return matched
+
+    parser.inline.ruler.at("backticks", record_backtick)
+
+    def protected_markers(source: str) -> list[bool]:
+        spans.clear()
+        parser.parseInline(source)
+        markers: list[bool] = []
+        cursor = 0
+        while (marker := source.find("<!--", cursor)) >= 0:
+            markers.append(any(start <= marker < end for start, end in spans))
+            cursor = marker + len("<!--")
+        return markers
+
+    lines = content.splitlines(keepends=True)
+    line_offsets = [0]
+    for line in lines:
+        line_offsets.append(line_offsets[-1] + len(line))
+
+    tokens_by_line_range: dict[tuple[int, int], list[markdown_it.token.Token]] = {}
+    for token in inline_tokens:
+        assert token.map is not None
+        tokens_by_line_range.setdefault((token.map[0], token.map[1]), []).append(token)
+
+    protected: set[int] = set()
+    for (start_line, end_line), block_tokens in tokens_by_line_range.items():
+        source_start = line_offsets[start_line]
+        source_end = line_offsets[end_line]
+        source = content[source_start:source_end]
+        if len(block_tokens) == 1:
+            marker_flags = protected_markers(source)
+        else:
+            marker_flags = []
+            for token in block_tokens:
+                marker_flags.extend(protected_markers(token.content))
+
+        cursor = 0
+        marker_index = 0
+        while (marker := source.find("<!--", cursor)) >= 0:
+            if marker_index >= len(marker_flags) or marker_flags[marker_index]:
+                protected.add(source_start + marker)
+            marker_index += 1
+            cursor = marker + len("<!--")
+    return protected
+
+
+def _markdown_excluded_line_indices(content: str) -> set[int]:
+    """CommonMarkのフェンスと複数行HTMLコメントに属する0始まり行番号を返す。"""
+    excluded: set[int] = set()
+    inline_tokens: list[markdown_it.token.Token] = []
+    parser = markdown_it.MarkdownIt("commonmark").enable("table")
+    for token in parser.parse(content):
+        if token.type == "fence" and token.map is not None:
+            start, end = token.map
+            excluded.update(range(start, end))
+        elif token.type == "html_block" and token.map is not None and token.content.lstrip().startswith("<!--"):
+            start, end = token.map
+            if end - start > 1:
+                excluded.update(range(start, end))
+        elif token.type == "inline" and token.map is not None:
+            inline_tokens.append(token)
+
+    code_span_comment_starts = _code_span_comment_starts(content, inline_tokens)
+    cursor = 0
+    while (comment_start := content.find("<!--", cursor)) >= 0:
+        start_line = content.count("\n", 0, comment_start)
+        if start_line in excluded or _is_escaped(content, comment_start) or comment_start in code_span_comment_starts:
+            cursor = comment_start + len("<!--")
+            continue
+        match = markdown_it.common.html_re.HTML_TAG_RE.match(content[comment_start:])
+        if match is None or not match.group().startswith("<!--"):
+            cursor = comment_start + len("<!--")
+            continue
+        comment_end = comment_start + len(match.group())
+        end_line = content.count("\n", 0, comment_end - 1)
+        if end_line > start_line:
+            excluded.update(range(start_line, end_line + 1))
+        cursor = comment_end
+    return excluded
 
 
 def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
@@ -108,45 +217,23 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
     pretooluse / posttooluse の双方からimportして使うSSOT実装。
     """
     lines = content.splitlines()
-    i = 0
-    # フロントマター: 1 行目が `---` のときのみ検出対象とする（途中の `---` は区切り線）
-    if lines and lines[0].rstrip() == "---":
-        i = 1
-        while i < len(lines):
-            if lines[i].rstrip() in ("---", "..."):
-                i += 1
-                break
-            i += 1
+    body_start = markdown_body_start_index(content)
+    body = "\n".join(lines[body_start:])
+    excluded = _markdown_excluded_line_indices(body)
+    for body_index, line in enumerate(lines[body_start:]):
+        if body_index not in excluded:
+            yield body_start + body_index + 1, line
 
-    fence_marker: str | None = None  # 開きフェンスのマーカー文字列（同字種・同長以上で閉じる）
-    in_html_comment = False
-    while i < len(lines):
-        lineno = i + 1
-        line = lines[i]
-        i += 1
-        if in_html_comment:
-            # 閉じタグ到達行は `-->` 以降を解析せず丸ごとスキップする（素朴な実装）
-            if "-->" in line:
-                in_html_comment = False
-            continue
-        if fence_marker is not None:
-            stripped = line.strip()
-            if (
-                stripped
-                and stripped[0] == fence_marker[0]
-                and len(stripped) >= len(fence_marker)
-                and set(stripped) == {fence_marker[0]}
-            ):
-                fence_marker = None
-            continue
-        fence_match = _FENCE_PATTERN.match(line.lstrip())
-        if fence_match:
-            fence_marker = fence_match.group(1)
-            continue
-        if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:
-            in_html_comment = True
-            continue
-        yield lineno, line
+
+def resolve_implementation_materials_h2(content: str) -> str:
+    """計画本文から実装資料として扱うH2名を返す。
+
+    通常は新しい`実装資料`を返す。コードフェンス、先頭フロントマター、複数行HTMLコメントを除く
+    Markdown本文に完全一致の移行マーカーがある場合だけ、形式変更計画の旧H2`調査結果`を返す。
+    """
+    if any(line == PLAN_LEGACY_H2_TRANSITION_MARKER for _, line in iter_markdown_body_lines(content)):
+        return _LEGACY_IMPLEMENTATION_MATERIALS_H2
+    return _IMPLEMENTATION_MATERIALS_H2
 
 
 # 対象ファイル一覧のチェックボックス項目から相対パスを取るパターン。記法の根拠は`extract_target_files_from_changes`を参照する。
@@ -199,8 +286,8 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
     素朴に全行走査する（`## 変更内容`H2はフロントマターより後方の慣例のため十分）。
     コードフェンス内の行はスキップせず生body行として返す
     （呼び出し側でコードフェンス出現を判定できるようにするため）。
-    見出し境界判定（H2/H3行の検知）はコードフェンス内を除外する（`extract_h2_sections`と同一の
-    フェンス判定ロジックを用いる）。対象ファイルのH2/H3見出しを`text`フェンス内へ埋め込む差分表記で、
+    見出し境界判定（H2/H3行の検知）は`iter_markdown_body_lines`の有効行だけを対象とする。
+    対象ファイルのH2/H3見出しを除外領域へ埋め込む差分表記で、
     実見出しと誤認して以降のH3走査が打ち切られる事象を防ぐ。
     指定H2の直下にH3が現れる前の本文行は無視する。
     pretooluse / posttooluse の双方からimportして使うSSOT実装。
@@ -209,17 +296,9 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
     in_target_h2 = False
     current_h3: str | None = None
     current_body: list[tuple[int, str]] = []
-    fence_marker: str | None = None
+    structural_lines = {lineno for lineno, _ in iter_markdown_body_lines(content)}
     for lineno, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        fence_match = _FENCE_PATTERN.match(stripped)
-        if fence_match:
-            candidate = fence_match.group(1)
-            if fence_marker is None:
-                fence_marker = candidate
-            elif stripped[0] == fence_marker[0] and len(stripped) >= len(fence_marker) and set(stripped) == {fence_marker[0]}:
-                fence_marker = None
-        elif fence_marker is None:
+        if lineno in structural_lines:
             if line.startswith("## "):
                 if current_h3 is not None:
                     yield current_h3, current_body

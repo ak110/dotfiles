@@ -454,7 +454,11 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "計画のタイトル、依頼内容、背景、提示素材から" not in review_task
     assert "コロンはASCIIの`:`、コロン後は半角空白1字" in plan_mode
     assert "固定値には`バグ対応`または`通常変更`" in plan_mode
-    assert "`### バグ調査結果`は文書全体で1件だけ置き、その親H2を`## 背景`" in bugfix
+    assert "原因分析後に確定した最終バグ単位ごとに`### バグ調査結果: <事象名>`" in bugfix
+    assert "直接的原因と是正処置の変更単位がともに同じ場合だけ1表へ統合" in bugfix
+    assert "根本原因の共有だけを統合理由にしない" in bugfix
+    assert "名前付きの全`### バグ調査結果: <事象名>`" in review_task
+    assert "提示素材に現れる利用者可視の各バグ" in review_task
     assert "4原因区分の確定後に同じ失敗構造の類似見直し" in agent_rules
     assert "その結果を踏まえて是正・横展開・再発防止" in agent_rules
     assert "着手前に記録した基準状態と現在の差分を先に突合" in bugfix

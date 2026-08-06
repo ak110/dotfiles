@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pyfltr>=3.14.1", "platformdirs>=4.0", "pyyaml"]
+# dependencies = ["markdown-it-py[linkify]>=4.0.0", "pyfltr>=3.14.1", "platformdirs>=4.0", "pyyaml"]
 # ///
 """Claude Code agent-toolkit: フック共通エントリポイント。
 

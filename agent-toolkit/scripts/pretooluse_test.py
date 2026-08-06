@@ -377,7 +377,7 @@ _VALID_H2_PLAN_CONTENT = (
     "## 変更履歴\n\nx\n\n"
     "## 背景\n\nx\n\n"
     "## 対応方針\n\nx\n\n"
-    "## 調査結果\n\nx\n\n"
+    "## 実装資料\n\nx\n\n"
     "## 変更内容\n\n"
     "### 対象ファイル一覧\n\nx\n\n"
     "## 実行方法\n\nx\n\n"
@@ -760,7 +760,7 @@ class TestBlockCheckExecutionOrder:
     """複数のblock系checkが同時に違反する場合の先行check契約を検証する。"""
 
     def test_direct_edit_block_preempts_retroactive_scan_block(self, tmp_path: pathlib.Path) -> None:
-        plan = _write_tmp_file(tmp_path, "home/.claude/plans/current.md", "## 調査結果\n\nなし\n")
+        plan = _write_tmp_file(tmp_path, "home/.claude/plans/current.md", "## 実装資料\n\nなし\n")
         target = _write_tmp_file(tmp_path, "agent-toolkit/rules/new-rule.md", "# 既存\n")
         sid = "block-check-order"
         _write_session_state(
@@ -3576,7 +3576,7 @@ def _path_section_build_content(recorded_path: str) -> str:
         "## 変更履歴\n\nx\n\n"
         "## 背景\n\nx\n\n"
         "## 対応方針\n\nx\n\n"
-        "## 調査結果\n\nx\n\n"
+        "## 実装資料\n\nx\n\n"
         "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
         "## 実行方法\n\nx\n\n"
         "## 進捗ログ\n\nx\n\n"
@@ -3685,7 +3685,7 @@ class TestPlanFilePathSectionMatchesFilePath:
             "## 変更履歴\n\nx\n\n"
             "## 背景\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
+            "## 実装資料\n\nx\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
             "## 実行方法\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
@@ -4079,7 +4079,7 @@ def _h3_codeblock_build_content(extra_h3: str) -> str:
         "## 変更履歴\n\nx\n\n"
         "## 背景\n\nx\n\n"
         "## 対応方針\n\nx\n\n"
-        "## 調査結果\n\nx\n\n"
+        "## 実装資料\n\nx\n\n"
         "## 変更内容\n\n"
         "### 対象ファイル一覧\n\n"
         "- [ ] `foo/bar.py`\n\n"
@@ -4212,7 +4212,7 @@ class TestPlanFileTargetFilePathsRelative:
             "## 変更履歴\n\n- 初版\n\n"
             "## 背景\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
+            "## 実装資料\n\nx\n\n"
             "## 変更内容\n\n"
             "### 対象ファイル一覧\n\n"
             f"{target_lines}\n\n"
