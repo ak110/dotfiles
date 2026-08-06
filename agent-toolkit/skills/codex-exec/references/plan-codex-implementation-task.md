@@ -53,7 +53,7 @@
   逆方向へ変えていないかを点検する。実装と文書の組み合わせも対象とし、
   一方が仕様を緩め、他方が同じ仕様を厳格化する状態を残さない
 - 点検で見つけた欠陥は同じ修正単位で解消し、再検証する
-- 点検対象と結果を`review_impact_audit`として出力へ含める
+- 点検対象と結果は各指摘の`review_resolution`へ統合する
 
 ## 実装
 
@@ -97,31 +97,26 @@ commit_sha: <最終コミット。コミット不要時は「なし」>
 review_resolution: <レビュー指摘修正時だけ出力する>
 | 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |
 | <P-*またはI-*> | ... | 採用（計画対応）・不採用・重複 | ... | ... | 根拠、重複先、修正・再検証結果 |
-review_impact_audit: <点検対象と結果。レビュー指摘修正時だけ出力する>
+review_status: completed | needs_escalation | skipped_by_user
+review_routes:
+- 計画準拠系: <route/thread>
+- 独立系: <route/thread>
+review_targets:
+- 計画準拠系: <対象commitと点検範囲>
+- 独立系: <対象commitと点検範囲>
+review_findings:
+- <正規化した実指摘。無ければ「指摘なし」>
 unplanned:
 - <計画外事項。無ければ「なし」>
 blockers:
-- blocker_type: missing_input | user_decision | destructive_action | repeated_failure | route_unavailable | repository_change | recovery_failure | target_expansion
-  blocker_operation: <阻害された具体的な操作>
-  blocker_evidence:
-  - operation_key: <同じ操作を再開間で対応付ける安定キー>
-    attempt_number: <operation_key内で1から始まる連番>
-    evidence_id: <再取得可能な安定識別子>
-    tool_use_id: <tool use識別子。ツール未実行時は「なし」>
-    input: <当該試行の入力>
-    result: <観測結果>
-    terminal_state: not_started | awaiting_confirmation | failed | unavailable | changed | threshold_reached
-  blocker_attempts: <重複除外後の試行要素数>
+- <阻害要因。完了時は「なし」>
 ```
 
 `external_operations`のいずれかの`result`が`needs_escalation`の場合は、
 全体の`status`も`needs_escalation`とする。
 当該項目は`operation`と`target`を含む形で`blockers`へ記載する。
 呼び出し元はこの欄で未実施の操作を特定する。
-完了時は`blockers`を単一要素の「なし」とする。`needs_escalation`では阻害を定義済み8種へ分類し、
-独立した阻害を別要素にする。同じ型と操作は1要素へ集約し、試行ごとの入力と結果を
-`blocker_evidence`へ分けて記録する。`blocker_attempts`は複合キーで重複除外した試行要素数と一致させる。
-同じ操作の試行回数は再開後も継続する。`repeated_failure`は2試行以上とする。
-対象拡大では前回集合、追加集合、両者の辞書順和集合を記録し、5件以上の場合だけ返却する。
+完了時は`blockers`を単一要素の「なし」とする。`needs_escalation`では、阻害された操作と
+観測結果を再試行に必要な粒度で記録する。
 `git status --short`と`git diff --stat`は要約へ置き換えず、生の出力を記載する。
 前者は未コミット変更の残存を示し、後者は計画着手前からの変更規模を示す。

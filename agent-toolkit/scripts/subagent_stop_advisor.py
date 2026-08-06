@@ -26,9 +26,6 @@ import json
 import pathlib
 import re
 import sys
-from typing import TypeGuard
-
-import yaml
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
@@ -59,29 +56,14 @@ PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "plan_check",
     "commit_sha",
     "review_status",
-    "review_final_findings",
-    "review_skip_instruction",
-    "review_caller_verification",
+    "review_rounds",
+    "review_routes",
+    "review_targets",
+    "review_findings",
+    "review_resolution",
     "pending_confirmations",
     "plan_gaps",
     "applied_instructions",
-    "implementation_thread_id",
-    "plan_review_thread_id",
-    "independent_review_thread_id",
-    "implementation_agent_id",
-    "plan_review_agent_id",
-    "independent_review_agent_id",
-    "implementation_route",
-    "implementation_route_evidence",
-    "plan_review_route",
-    "independent_review_route",
-    "review_rounds",
-    "review_coverage",
-    "review_impact_audit",
-    "implementation_history",
-    "plan_review_history",
-    "independent_review_history",
-    "review_resolution",
     "blockers",
 )
 
@@ -89,12 +71,7 @@ PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
 # `changed`欄の未消化項目（`- [ ]`）が共起するかの判定パターン（FB[3]）。
 _PLAN_IMPL_EXECUTOR_BACKGROUND_LAUNCH_RE = re.compile(r"run_in_background\s*=\s*true|バックグラウンドで?並列起動")
 _PLAN_IMPL_EXECUTOR_UNCHECKED_CHANGED_ITEM_RE = re.compile(r"^-\s*\[\s\]", re.MULTILINE)
-_PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(
-    r"^status:\s*completed(?:_with_review_cap)?\b",
-    re.MULTILINE,
-)
-# 構造化blockerの`target_expansion`で許容する`review_status`。
-PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS = "対象拡大により中断（指摘反映済み・再レビューなし）"
+_PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(r"^status:\s*completed\b", re.MULTILINE)
 
 # `changed:`欄本文（次の主要ラベル行直前まで）を抽出する境界パターン（FB[3]）。
 # `PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
@@ -153,7 +130,7 @@ def _inspect_plan_check(text: str, *, status: str, review_status: str) -> str | 
     missing = [name for name in _PLAN_CHECK_REQUIRED_ITEMS if name not in items]
     if missing:
         return "plan_check欄に必須項目が無い: " + "・".join(missing)
-    review_incomplete = status == "needs_escalation" and review_status == "レビュー未完了"
+    review_incomplete = status == "needs_escalation" and review_status == "needs_escalation"
     not_executed = [name for name in _PLAN_CHECK_REQUIRED_ITEMS if items[name] == _PLAN_CHECK_NOT_EXECUTED]
     if review_incomplete:
         if len(not_executed) == len(_PLAN_CHECK_REQUIRED_ITEMS):
@@ -173,469 +150,35 @@ def _inspect_plan_check(text: str, *, status: str, review_status: str) -> str | 
     return None
 
 
-def _is_none_value(value: str) -> bool:
-    """欄が空または「なし」だけであるかを返す。"""
-    return not value or value == "なし"
-
-
-_BLOCKER_TYPES = frozenset(
-    {
-        "missing_input",
-        "user_decision",
-        "destructive_action",
-        "repeated_failure",
-        "route_unavailable",
-        "repository_change",
-        "recovery_failure",
-        "target_expansion",
-    }
-)
-_BLOCKER_TERMINAL_STATES = frozenset(
-    {"not_started", "awaiting_confirmation", "failed", "unavailable", "changed", "threshold_reached"}
-)
-_BLOCKER_REQUIRED_EVIDENCE_FIELDS = frozenset(
-    {"operation_key", "attempt_number", "evidence_id", "tool_use_id", "input", "result", "terminal_state"}
-)
-_BLOCKER_EXPECTED_TERMINAL_STATES = {
-    "missing_input": "not_started",
-    "user_decision": "awaiting_confirmation",
-    "destructive_action": "awaiting_confirmation",
-    "repeated_failure": "failed",
-    "route_unavailable": "unavailable",
-    "repository_change": "changed",
-    "recovery_failure": "failed",
-    "target_expansion": "threshold_reached",
-}
-
-
-def _is_object_dict(value: object) -> TypeGuard[dict[str, object]]:
-    """外部構造の値が文字列キーの辞書であるかを返す。"""
-    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
-
-
-def _is_object_dict_list(value: object) -> TypeGuard[list[dict[str, object]]]:
-    """外部構造の値が文字列キー辞書のリストであるかを返す。"""
-    return isinstance(value, list) and all(_is_object_dict(item) for item in value)
-
-
-def _load_report_yaml_field(text: str, label: str) -> object:
-    """YAML形式の完了報告欄を構造化値として返す。"""
-    body = _extract_report_field(text, label)
-    if not body:
-        return None
-    try:
-        return yaml.safe_load(body)
-    except yaml.YAMLError:
-        return None
-
-
-def _is_none_list(value: object) -> bool:
-    """「なし」だけを表すscalarまたは単一リストであるかを返す。"""
-    return value in ("なし", ["なし"])
-
-
-def _inspect_target_expansion_evidence(evidence: dict[str, object]) -> list[str]:
-    """対象拡大証跡の3集合と閾値を検査する。"""
-    violations: list[str] = []
-    input_value = evidence.get("input")
-    result_value = evidence.get("result")
-    if not _is_object_dict(input_value) or not _is_object_dict(result_value):
-        return ["target_expansion input and result must be mappings"]
-    previous = input_value.get("previous_paths")
-    added = input_value.get("current_added_paths")
-    deduplicated = result_value.get("deduplicated_paths")
-    if not isinstance(previous, list) or not isinstance(added, list) or not isinstance(deduplicated, list):
-        return ["target_expansion path sets must be string lists"]
-    if not all(isinstance(path, str) for value in (previous, added, deduplicated) for path in value):
-        return ["target_expansion path sets must be string lists"]
-    expected = sorted(set(previous) | set(added))
-    if deduplicated != expected:
-        violations.append("target_expansion deduplicated_paths must be the sorted union of both input sets")
-    if len(deduplicated) < 5:
-        violations.append("target_expansion requires at least 5 deduplicated paths")
-    return violations
-
-
-def _inspect_structured_blockers(text: str, transcript_path: str | None) -> list[str]:
-    """statusに対応するblockerの型、試行証跡、境界値を検査する。"""
+def _inspect_blockers(text: str) -> list[str]:
+    """完了状態とblockers欄の最小整合だけを検査する。"""
     status = _extract_report_first_line(text, "status")
-    blockers = _load_report_yaml_field(text, "blockers")
-    if status in {"completed", "completed_with_review_cap"}:
-        return [] if _is_none_list(blockers) else ["blockers must contain only なし for completed status"]
-    if status != "needs_escalation":
+    body = _extract_report_field(text, "blockers")
+    normalized = [line.strip().removeprefix("-").strip() for line in body.splitlines() if line.strip()]
+    is_none = normalized == ["なし"]
+    if status == "completed":
+        return [] if is_none else ["blockers must contain only なし for completed status"]
+    if status == "needs_escalation":
+        return [] if normalized and not is_none else ["needs_escalation requires a concrete blocker"]
+    return ["status must be completed or needs_escalation"]
+
+
+def _inspect_completion_contract(text: str) -> list[str]:
+    """completed報告のcommit・検証・レビュー完了を検査する。"""
+    if _extract_report_first_line(text, "status") != "completed":
         return []
-    if not _is_object_dict_list(blockers) or not blockers:
-        return ["needs_escalation blockers must be a non-empty structured list"]
-
     violations: list[str] = []
-    blocker_keys: set[tuple[str, str]] = set()
-    pending_confirmations = _load_report_yaml_field(text, "pending_confirmations")
-    uses, results = _iter_transcript_tool_pairs(transcript_path) if transcript_path else ({}, {})
-    implementation_route = _extract_report_first_line(text, "implementation_route")
+    commit_sha = _extract_report_first_line(text, "commit_sha")
+    if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit_sha) is None:
+        violations.append("completed status requires a full commit_sha")
+    verification = _extract_report_field(text, "verification")
+    if not verification or "未実施" in verification:
+        violations.append("completed status requires executed verification")
     review_status = _extract_report_first_line(text, "review_status")
-    routes = {
-        _extract_report_first_line(text, "implementation_route"),
-        _extract_report_first_line(text, "plan_review_route"),
-        _extract_report_first_line(text, "independent_review_route"),
-    }
-    for index, blocker in enumerate(blockers, start=1):
-        blocker_type = blocker.get("blocker_type")
-        operation = blocker.get("blocker_operation")
-        evidence_items = blocker.get("blocker_evidence")
-        attempts = blocker.get("blocker_attempts")
-        prefix = f"blockers[{index}]"
-        if not isinstance(blocker_type, str) or blocker_type not in _BLOCKER_TYPES:
-            violations.append(f"{prefix}.blocker_type must be one of the defined 8 types")
-            continue
-        if not isinstance(operation, str) or not operation:
-            violations.append(f"{prefix}.blocker_operation must be a non-empty string")
-            continue
-        blocker_key = (blocker_type, operation)
-        if blocker_key in blocker_keys:
-            violations.append(f"{prefix} duplicates blocker_type and blocker_operation")
-        blocker_keys.add(blocker_key)
-        if not _is_object_dict_list(evidence_items) or not evidence_items:
-            violations.append(f"{prefix}.blocker_evidence must be a non-empty structured list")
-            continue
-        seen: set[tuple[str, int, str]] = set()
-        attempts_by_operation: dict[str, list[int]] = {}
-        for evidence_index, evidence in enumerate(evidence_items, start=1):
-            evidence_prefix = f"{prefix}.blocker_evidence[{evidence_index}]"
-            missing = _BLOCKER_REQUIRED_EVIDENCE_FIELDS - evidence.keys()
-            if missing:
-                violations.append(f"{evidence_prefix} is missing {', '.join(sorted(missing))}")
-                continue
-            operation_key = evidence.get("operation_key")
-            attempt_number = evidence.get("attempt_number")
-            evidence_id = evidence.get("evidence_id")
-            terminal_state = evidence.get("terminal_state")
-            if not isinstance(operation_key, str) or not operation_key:
-                violations.append(f"{evidence_prefix}.operation_key must be a non-empty string")
-                continue
-            if not isinstance(attempt_number, int) or isinstance(attempt_number, bool) or attempt_number < 1:
-                violations.append(f"{evidence_prefix}.attempt_number must be a positive integer")
-                continue
-            if not isinstance(evidence_id, str) or not evidence_id:
-                violations.append(f"{evidence_prefix}.evidence_id must be a non-empty string")
-                continue
-            composite = (operation_key, attempt_number, evidence_id)
-            if composite in seen:
-                violations.append(f"{evidence_prefix} duplicates an attempt key")
-            seen.add(composite)
-            attempts_by_operation.setdefault(operation_key, []).append(attempt_number)
-            if terminal_state not in _BLOCKER_TERMINAL_STATES:
-                violations.append(f"{evidence_prefix}.terminal_state is undefined")
-            elif terminal_state != _BLOCKER_EXPECTED_TERMINAL_STATES[blocker_type]:
-                violations.append(f"{evidence_prefix}.terminal_state does not match {blocker_type}")
-            if blocker_type == "repeated_failure" and evidence.get("tool_use_id") == "なし":
-                violations.append(f"{evidence_prefix}.tool_use_id is required for repeated_failure")
-            tool_use_id = evidence.get("tool_use_id")
-            if isinstance(tool_use_id, str) and tool_use_id != "なし":
-                violations.extend(_inspect_tool_backed_blocker_evidence(evidence, evidence_prefix, uses, results))
-            elif tool_use_id == "なし":
-                violations.extend(_inspect_non_tool_blocker_evidence(blocker_type, evidence, evidence_prefix))
-            else:
-                violations.append(f"{evidence_prefix}.tool_use_id must be a string")
-            if blocker_type == "target_expansion":
-                violations.extend(_inspect_target_expansion_evidence(evidence))
-        for operation_key, numbers in attempts_by_operation.items():
-            if sorted(numbers) != list(range(1, len(numbers) + 1)):
-                violations.append(f"{prefix} attempt_number must be contiguous from 1 for {operation_key}")
-        if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts != len(seen):
-            violations.append(f"{prefix}.blocker_attempts must equal the unique evidence count")
-        if blocker_type == "repeated_failure" and len(seen) < 2:
-            violations.append(f"{prefix} repeated_failure requires at least 2 attempts")
-        if blocker_type in {"user_decision", "destructive_action"}:
-            for evidence_index, evidence in enumerate(evidence_items, start=1):
-                if not _pending_confirmation_matches(pending_confirmations, evidence):
-                    violations.append(
-                        f"{prefix}.blocker_evidence[{evidence_index}] requires the same item in pending_confirmations"
-                    )
-        if blocker_type == "missing_input" and implementation_route != "not_started":
-            violations.append(f"{prefix} missing_input requires implementation_route: not_started")
-        if blocker_type == "route_unavailable" and "unavailable" not in routes:
-            violations.append(f"{prefix} route_unavailable requires an unavailable route")
-        if blocker_type == "target_expansion" and review_status != PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS:
-            violations.append(f"{prefix} target_expansion requires the scope-expansion review_status")
-    return violations
-
-
-def _normalized_tool_result(result_text: str) -> object:
-    """Tool result本文をJSON値または文字列として返す。"""
-    try:
-        return json.loads(result_text)
-    except (json.JSONDecodeError, ValueError):
-        return result_text
-
-
-def _inspect_tool_backed_blocker_evidence(
-    evidence: dict[str, object],
-    prefix: str,
-    uses: dict[str, dict[str, object]],
-    results: dict[str, str],
-) -> list[str]:
-    """Tool use型blocker証跡をJSONL上の入出力へ照合する。"""
-    tool_use_id = evidence.get("tool_use_id")
-    if not isinstance(tool_use_id, str):
-        return [f"{prefix}.tool_use_id must be a string"]
-    tool_use = uses.get(tool_use_id)
-    result_text = results.get(tool_use_id)
-    if tool_use is None or result_text is None:
-        return [f"{prefix}.tool_use_id does not resolve to a tool use/result pair"]
-    violations: list[str] = []
-    if evidence.get("input") != tool_use.get("input"):
-        violations.append(f"{prefix}.input does not match the transcript tool input")
-    if evidence.get("result") != _normalized_tool_result(result_text):
-        violations.append(f"{prefix}.result does not match the transcript tool result")
-    return violations
-
-
-def _contains_scalar_value(value: object, expected: str) -> bool:
-    """再帰構造内に指定した観測値があるかを返す。"""
-    if isinstance(value, (str, int)) and not isinstance(value, bool):
-        return str(value) == expected
-    if _is_object_dict(value):
-        return any(_contains_scalar_value(item, expected) for item in value.values())
-    if isinstance(value, list):
-        return any(_contains_scalar_value(item, expected) for item in value)
-    return False
-
-
-def _inspect_non_tool_blocker_evidence(
-    blocker_type: object,
-    evidence: dict[str, object],
-    prefix: str,
-) -> list[str]:
-    """ツール未実行型blocker証跡を入力内の観測可能な識別子へ照合する。"""
-    evidence_id = evidence.get("evidence_id")
-    if not isinstance(evidence_id, str) or not _contains_scalar_value(evidence.get("input"), evidence_id):
-        return [f"{prefix}.evidence_id must match an observable input value when tool_use_id is なし"]
-    if blocker_type == "repository_change" and re.fullmatch(r"[0-9a-fA-F]{7,64}", evidence_id) is None:
-        return [f"{prefix}.comparison_sha must be a hexadecimal commit identifier"]
-    return []
-
-
-def _pending_confirmation_matches(pending_confirmations: object, evidence: dict[str, object]) -> bool:
-    """証跡とpending_confirmationsが同じ確認項目を指すかを返す。"""
-    evidence_id = evidence.get("evidence_id")
-    if not isinstance(evidence_id, str) or not _contains_scalar_value(evidence.get("input"), evidence_id):
-        return False
-    items = pending_confirmations if isinstance(pending_confirmations, list) else [pending_confirmations]
-    for item in items:
-        if item == evidence_id:
-            return True
-        if _is_object_dict(item):
-            for key in ("confirmation_key", "item_key", "key", "evidence_id"):
-                if item.get(key) == evidence_id:
-                    return True
-    return False
-
-
-def _iter_transcript_tool_pairs(
-    transcript_path: str,
-) -> tuple[dict[str, dict[str, object]], dict[str, str]]:
-    """JSONLからtool useと対応result本文を識別子別に収集する。"""
-    uses: dict[str, dict[str, object]] = {}
-    results: dict[str, str] = {}
-    try:
-        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return uses, results
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        message = entry.get("message")
-        if not isinstance(message, dict):
-            continue
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not _is_object_dict(block):
-                continue
-            if block.get("type") == "tool_use":
-                tool_use_id = block.get("id")
-                if isinstance(tool_use_id, str):
-                    uses[tool_use_id] = block
-            elif block.get("type") == "tool_result":
-                tool_use_id = block.get("tool_use_id")
-                if isinstance(tool_use_id, str):
-                    results[tool_use_id] = _content_text(block.get("content"))
-    return uses, results
-
-
-def _content_text(content: object) -> str:
-    """Tool result contentを照合可能な文字列へ正規化する。"""
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for item in content:
-        if isinstance(item, str):
-            parts.append(item)
-        elif _is_object_dict(item):
-            text = item.get("text")
-            if isinstance(text, str):
-                parts.append(text)
-    return "\n".join(parts)
-
-
-def _contains_execution_track(value: object, track: str) -> bool:
-    """Tool inputの再帰構造内に指定execution_trackがあるかを返す。"""
-    if isinstance(value, str):
-        return re.search(rf"(?m)^execution_track:\s*{re.escape(track)}\s*$", value) is not None
-    if isinstance(value, dict):
-        return any(_contains_execution_track(item, track) for item in value.values())
-    if isinstance(value, list):
-        return any(_contains_execution_track(item, track) for item in value)
-    return False
-
-
-def _json_result_id(result_text: str, *keys: str) -> str | None:
-    """JSON resultの指定キー階層から文字列識別子を返す。"""
-    try:
-        value: object = json.loads(result_text)
-    except (json.JSONDecodeError, ValueError):
-        return None
-    for key in keys:
-        if not _is_object_dict(value):
-            return None
-        value = value.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def _tool_result_route_id(tool_name: str, result_text: str) -> str | None:
-    """tool種別に応じて結果本文からroute識別子を抽出する。"""
-    if tool_name in {"mcp__codex__codex", "mcp__codex__codex-reply"}:
-        return _json_result_id(result_text, "threadId")
-    if tool_name in {"Agent", "Task"}:
-        match = re.search(r"(?m)^agentId:\s*(\S+)\s*$", result_text)
-        return match.group(1) if match else None
-    if tool_name == "SendMessage":
-        return _json_result_id(result_text, "pin", "id")
-    return None
-
-
-def _actual_implementation_route_evidence(
-    route: str,
-    expected_id: str,
-    uses: dict[str, dict[str, object]],
-    results: dict[str, str],
-) -> set[tuple[str, str, str]]:
-    """JSONLにある対象実装系統の初回・継続呼び出し集合を列挙する。"""
-    actual: set[tuple[str, str, str]] = set()
-    for tool_use_id, tool_use in uses.items():
-        tool_name = tool_use.get("name")
-        result_text = results.get(tool_use_id)
-        if not isinstance(tool_name, str) or result_text is None:
-            continue
-        tool_input = tool_use.get("input")
-        actual_id = _tool_result_route_id(tool_name, result_text)
-        is_initial = tool_name in {"mcp__codex__codex", "Agent", "Task"}
-        is_codex_continuation = (
-            route == "codex"
-            and tool_name == "mcp__codex__codex-reply"
-            and _is_object_dict(tool_input)
-            and tool_input.get("threadId") == expected_id
-        )
-        is_claude_continuation = (
-            route == "claude"
-            and tool_name == "SendMessage"
-            and _is_object_dict(tool_input)
-            and tool_input.get("to") == expected_id
-        )
-        is_matching_initial = (
-            is_initial
-            and _contains_execution_track(tool_input, "implementation")
-            and (
-                (route == "codex" and tool_name == "mcp__codex__codex")
-                or (route == "claude" and tool_name in {"Agent", "Task"})
-            )
-        )
-        if actual_id == expected_id and (is_matching_initial or is_codex_continuation or is_claude_continuation):
-            actual.add((tool_name, tool_use_id, expected_id))
-    return actual
-
-
-def _inspect_implementation_route_evidence(text: str, transcript_path: str | None) -> list[str]:
-    """申告した実装経路をexecutor JSONLのtool use/resultと照合する。"""
-    route = _extract_report_first_line(text, "implementation_route")
-    expected_id = (
-        _extract_report_field(text, "implementation_thread_id")
-        if route == "codex"
-        else _extract_report_field(text, "implementation_agent_id")
-    )
-    evidence = _load_report_yaml_field(text, "implementation_route_evidence")
-    if route in {"not_started", "unavailable"}:
-        return [] if _is_none_list(evidence) else ["implementation_route_evidence must be なし for an inactive route"]
-    if not _is_object_dict_list(evidence) or not evidence:
-        return ["implementation_route_evidence must be a non-empty structured list"]
-    if not isinstance(transcript_path, str) or not transcript_path:
-        return ["agent_transcript_path is required to verify implementation_route_evidence"]
-    uses, results = _iter_transcript_tool_pairs(transcript_path)
-    violations: list[str] = []
-    claimed: set[tuple[str, str, str]] = set()
-    allowed_names = {"mcp__codex__codex", "mcp__codex__codex-reply", "Agent", "Task", "SendMessage"}
-    for index, item in enumerate(evidence, start=1):
-        tool_name = item.get("tool_name")
-        tool_use_id = item.get("tool_use_id")
-        route_id = item.get("route_id")
-        prefix = f"implementation_route_evidence[{index}]"
-        if (
-            not isinstance(tool_name, str)
-            or tool_name not in allowed_names
-            or not isinstance(tool_use_id, str)
-            or not isinstance(route_id, str)
-        ):
-            violations.append(f"{prefix} must contain a supported tool_name, tool_use_id, and route_id")
-            continue
-        claim = (tool_name, tool_use_id, route_id)
-        if claim in claimed:
-            violations.append(f"{prefix} duplicates an implementation route call")
-        claimed.add(claim)
-        tool_use = uses.get(tool_use_id)
-        result_text = results.get(tool_use_id)
-        if tool_use is None or result_text is None:
-            violations.append(f"{prefix}.tool_use_id does not resolve to a tool use/result pair")
-            continue
-        if tool_use.get("name") != tool_name:
-            violations.append(f"{prefix}.tool_name does not match the transcript")
-            continue
-        tool_input = tool_use.get("input")
-        actual_id = _tool_result_route_id(tool_name, result_text)
-        if route_id != expected_id or actual_id != expected_id:
-            violations.append(f"{prefix}.route_id does not match the implementation identity")
-        if tool_name == "mcp__codex__codex":
-            if route != "codex" or not _contains_execution_track(tool_input, "implementation"):
-                violations.append(f"{prefix} is not an implementation-track Codex initial call")
-        elif tool_name == "mcp__codex__codex-reply":
-            if not _is_object_dict(tool_input) or tool_input.get("threadId") != expected_id:
-                violations.append(f"{prefix} does not continue the implementation thread")
-        elif tool_name in {"Agent", "Task"}:
-            if route != "claude" or not _contains_execution_track(tool_input, "implementation"):
-                violations.append(f"{prefix} is not an implementation-track Claude initial call")
-        elif tool_name == "SendMessage" and (not _is_object_dict(tool_input) or tool_input.get("to") != expected_id):
-            violations.append(f"{prefix} does not continue the implementation Agent")
-    actual = _actual_implementation_route_evidence(route, expected_id, uses, results)
-    if not any(tool_name in {"mcp__codex__codex", "Agent", "Task"} for tool_name, _, _ in actual):
-        violations.append("implementation_route_evidence requires an initial implementation tool call")
-    if claimed != actual:
-        violations.append("implementation_route_evidence must match all implementation calls in the transcript")
-
-    review_ids: set[str] = set()
-    for tool_use_id, tool_use in uses.items():
-        if not any(_contains_execution_track(tool_use.get("input"), track) for track in ("plan_review", "independent_review")):
-            continue
-        result_text = results.get(tool_use_id)
-        if result_text is not None:
-            review_id = _tool_result_route_id(str(tool_use.get("name", "")), result_text)
-            if review_id is not None:
-                review_ids.add(review_id)
-    if expected_id in review_ids:
-        violations.append("implementation identity must not be reused from a review track")
+    if review_status not in {"completed", "skipped_by_user"}:
+        violations.append("completed status requires completed review or an explicit user skip")
+    if "未解決" in _extract_report_field(text, "review_findings"):
+        violations.append("completed status must not contain unresolved review findings")
     return violations
 
 
@@ -702,13 +245,8 @@ def _inspect_plan_impl_executor_report_format(
         )
         if plan_check_violation is not None:
             contract_violations.append(plan_check_violation)
-        transcript_path = payload.get("agent_transcript_path")
-        if not isinstance(transcript_path, str) or not transcript_path:
-            transcript_path = payload.get("transcript_path")
-        contract_violations.extend(
-            _inspect_structured_blockers(text, transcript_path if isinstance(transcript_path, str) else None)
-        )
-        contract_violations.extend(_inspect_implementation_route_evidence(text, transcript_path))
+        contract_violations.extend(_inspect_blockers(text))
+        contract_violations.extend(_inspect_completion_contract(text))
     return missing, violation, contract_violations
 
 

@@ -1,1527 +1,219 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["markdown-it-py[linkify]>=4.0.0"]
+# dependencies = []
 # ///
-r"""計画ファイルの軽量機械チェック。
-
-チェック対象は次の22点に限定する。
-- 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
-  Setext形式H1見出し候補が存在しないか
-- `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
-- 各H3配下にコードブロック（フェンスで囲われた本文）が存在するか
-- H3見出しのパスのうち、`（新設）`・`（廃止・削除）`マーカーが無いものの実在確認
-- Markdownフェンスの入れ子整合（開始フェンスより長いフェンスが情報文字列付きで
-  内側に現れていないか、閉じフェンスの検出位置が意図した位置と一致しない疑いが無いか）
-- 表のヘッダー・区切り行・本文行のセル数と外側パイプが原文上で一致するか
-- `## 実行方法`節に振り返り・セッション終了などのセッション運用工程が記載されていないか
-  （計画ファイルのスコープは当該計画の実装・検証・コミット・レビューに限定する）
-- `## 実行方法`節が`Agentツールで`呼び出すサブエージェント名が実在するか
-- `### 対象ファイル一覧`で`（廃止・削除）`と注記された項目の対応するH3節`text`コードブロック内に、
-  削除を指示する語が現れているか
-- `#### 廃止・改名対象一覧`H4節が列挙する識別子（ファイルパス・関数名・クラス名・定数名）が
-  リポジトリ内に定義として残存していないか
-- `## 変更内容`のH3節のうちコーディングエージェント向け文書を対象とするものについて、
-  `text`コードブロックの追加分がメタ規範パターン（全称禁止表現・
-  汎用禁止形バレット・`##`以上の見出し）に該当する場合、`## 調査結果`へ遡及スキャンの
-  必須3語（対象パターン・検出件数・対応方針）が揃っているか
-- `### 対象ファイル一覧`が`（新設）`マーカーを持たない項目を含む場合、`## 調査結果`へ
-  参照追従の必須3語（参照追従対象・入力形態・追従要否）が揃っているか
-- `## 変更内容`の`text`コードブロック追加分が対象worktree内に既存出現を持たない識別子を
-  含む場合、`## 調査結果`へ必須語`新設識別子`と当該識別子の名称が記載されているか
-- `### 計画メタ情報`が存在する場合、ベースコミットのラベルと完全長のコミットハッシュが
-  記載されているか
-- `## 背景`が存在する場合、直下の`### 計画メタ情報`に固定記法`- 作業種別: <固定値>`で
-  作業種別が1件記載され、固定値`バグ対応`・`通常変更`のいずれかであるか
-- 版更新正本を対象ファイル一覧へ含む計画に、具体的なバージョン数値が記載されていないか
-- 計画メタ情報の作業種別が`バグ対応`の場合、
-  文書全体で`### バグ調査結果`表が1件だけ存在して親H2が`## 背景`であり、2列構造を満たし、
-  必須行が現行契約の順序で並んでいるか
-- 計画メタ情報に実行系変更宣言があり、`あり`の場合は`## 調査結果`直下の
-  `### 実行契約`表が必須8列と1行以上のデータ行を持つか
-- `## 対応方針`直下の`### 実施内容`表が必須3列、非空データ行、許容された指示関係を持つか
-- `--base-commit`指定時に対象ファイル一覧と実変更ファイル集合が一致するか
-- `--base-commit`指定時に計画が列挙するテスト関数名と実差分の追加関数名が一致するか
-- `--base-commit`指定時にコミット件名案と実際のコミット件名が一致するか
-
-`agent-toolkit/skills/agent-standards/references/check-script-design.md`「検査項目のerror・warning区分」
-節に従い、検査項目をerror区分とwarning区分へ分ける。error区分は接頭辞なしで該当箇所と要点を
-標準エラー出力へ出力し、1件以上あれば終了コード1を返す。warning区分は`[warn] `接頭辞付きで
-標準エラー出力へ出力し、終了コードへ算入しない。引数誤用・対象ファイル読み込み不能は
-終了コード2を返し、検査違反と区別する。
-
-error区分（計画が成立しない致命的な問題）とその判定根拠。
-
-- 先頭行の正規H1とフェンス外H1の一意性: タイトルを一意に確定できない計画は、
-  人間向けに主題を提示する完成条件を満たさない
-- 対象ファイル一覧・H3見出しそれぞれの重複: 同一パスが複数出現すると1対1対応の判定自体が
-  不正確になり、一覧との不整合を見落とす
-- 対象ファイル一覧とH3見出しの1対1対応: 一般則が挙げる「対象ファイル一覧との不整合」に当たる
-- 各H3配下のコードブロック存在: 変更後文面が無いと計画本文だけで変更を再現できない
-- H3パスの実在確認（絶対パス・相対パスの双方へ`exists()`を適用する）:
-  一般則が挙げる「パスの実在確認失敗」に当たる
-- Markdownフェンスの入れ子整合: フェンスが破れると`## 変更内容`の構造自体を解釈できなくなる
-- 表の原記法の整合: パーサーが不足セルを補完または余剰セルを除去すると、計画に記載された表の列契約を再現できない
-- `## 実行方法`節が呼び出すサブエージェント名の実在確認: 一般則が挙げる名前の実在確認失敗に当たる
-- `（廃止・削除）`注記と削除指示語の食い違い: 注記と本文指示の不整合に当たる
-- メタ規範パターン追加時の遡及スキャン必須3語: 同一判定を行う`agent-toolkit/scripts/pretooluse.py`の
-  `_check_plan_file_retroactive_scan_recorded`が既にブロック側へ入っており、error区分が整合する
-- 既存ファイルの変更を含む計画の参照追従必須3語: 変更対象を参照する既存箇所の列挙を欠くと、
-  同一規定を参照する他の箇所への追随が実装段階まで露出せず、計画本文だけで変更を再現できない
-- 計画メタ情報のベースコミット記載: 実装着手時の差分判定に必要な基点が無いと、
-  計画作成後に対象が変化した場合の再確認要否を判定できない
-
-warning区分（終了コードへ算入しない）とその判定根拠。
-
-- `## 実行方法`節のセッション運用工程混入: 実装対象への言及を除いても、スコープ逸脱は計画の技術的成立を妨げない
-- `#### 廃止・改名対象一覧`の識別子残存: 検査結果の正否が実行フェーズで反転する。
-  計画作成時点では対象識別子が残存しているのが正常であり、実装完了後は残存が異常である。
-  `--work-dir`をGitリポジトリとして解決できない場合も、識別子定義の走査を行えない旨を同区分で通知する
-  （パス形態の項目は実在確認だけで判定できるため、解決の可否によらず検査する）
-- 版更新正本を含む計画の具体的なバージョン数値: 現行値の引用など正当な記載もあり得る一方、
-  更新後の数値を事前に固定すると版更新スクリプトの実行結果と矛盾する可能性がある
-- 計画メタ情報の作業種別: 固定値の導入前に作成した計画は当該項目を持たないため、
-  欠落・未知値を移行支援として検出する
-- 新設識別子の波及先列挙: 単発の識別子新設は正当であり、error区分で停止させると計画作成を妨げる。
-  `--work-dir`（省略時は現在の作業ディレクトリ）をGitリポジトリとして解決できない場合も、
-  既存出現を判定できない旨を同区分で通知する
-- バグ調査結果表の構造: 既存計画は旧形式の表を持つ場合があり、表の内容の深さは機械判定できない。
-  表全体の欠落、重複、必須行、順序だけを移行支援として検出する
-- 計画メタ情報の実行系変更宣言または、`あり`の場合の実行契約表の必須列・データ行欠落:
-  計画作成時点で記載を促す検査であり、終了コードへ算入しない
-- `### 実施内容`表の構造: 体裁・表記ではなく計画レビューの前提情報を機械的に取得できる形へ保つ。
-  既存計画の移行支援として、表全体の構造、非空セル、指示関係の固定値だけを検出する
-- `--base-commit`指定時の対象ファイル一覧と実変更ファイル集合の不一致: 検査結果の正否が
-  実行フェーズで反転する。計画作成時点では一致しないのが正常であり、実装完了後は不一致が異常である
-- `--base-commit`指定時の計画が列挙するテスト関数名と実差分の追加関数名の不一致:
-  計画へのテスト関数名の記載は義務ではないため、記載がある場合だけ照合する
-- `--base-commit`指定時のコミット件名案と実際のコミット件名の不一致: 実差分に応じた
-  コミット境界の変更が計画同期規定により正当化されるため、件数と対応の一致だけを検査する
-
-本文全体はGFMの表構文を有効にした`markdown-it-py`で1回解析する。
-見出し、フェンス、表、段落、節の親子関係はトークン列と位置情報から認識する。
-表のセル数と外側パイプは、表・段落トークンの位置情報から取得した原文行で検査する。
-パーサーが補完または除去した後のセル数は原記法の判定に用いない。
-"""
+"""計画の成立に必要なMarkdown構造と実体だけを検査する。"""
 
 from __future__ import annotations
 
 import argparse
 import collections
-import collections.abc
-import dataclasses
-import functools
-import os
 import pathlib
 import re
 import subprocess
 import sys
 
-import markdown_it
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-
-_CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`")
-# H3見出しが示す対象パスは見出し内容の先頭コードスパンから取る。
-# `### `path`（新設, 見込みN行）`のように接尾辞を伴う記法（`plan-mode/SKILL.md`
-# 「対象ファイル一覧」節が定める）を受理するため、内容全体との完全一致は求めない。
-_H3_PATH_CONTENT_RE = re.compile(r"^`([^`]+)`")
-_CANONICAL_H1_RE = re.compile(r"^# (?!#+[ \t]*$)\S.*$")
-# `（新設）`単独形と`（現行N行、廃止・削除）`のような前置き付き複合形（`plan-mode/SKILL.md`
-# 「対象ファイル一覧」節が定める記法）の両方を検出する。マーカーが括弧内の末尾要素であることを
-# `）`直前の位置で担保する。
-_NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
-# セッション運用の対象語。以降のパターンはすべて本定義から組み立て、対象語の追加・改名を1箇所へ集約する。
-_SESSION_OPS_TERM_PATTERN = r"session-review(?:-dotfiles)?|exit-session|振り返り|セッション終了"
-_SESSION_OPS_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
-_SESSION_OPS_TERM_RE = re.compile(_SESSION_OPS_TERM_PATTERN)
-
-# `description`のように実装対象を強く示す語は、変更述部の有無によらず除外する必要がある。
-# この契約を維持するため、本列挙を一般名詞パターンへ統合せず残す。
-# 語を追加する場合は、本ファイルの回帰テストへ正例と負例を対で追加してから広げる。
-_SESSION_OPS_IMPLEMENTATION_NOUNS = r"(?:フック|処理|機能|誘導|判定|検査|条件|経路|規範|定義|記述|表示|文言|description|節|欄)"
-_SESSION_OPS_IMPLEMENTATION_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTERN})\s*{_SESSION_OPS_IMPLEMENTATION_NOUNS}")
-
-# 列挙外の実装対象を扱う一般名詞。ひらがなを除く漢字・カタカナ・英数字の連なりを取り、
-# 連体修飾`の`を対象語の直後と名詞の間の双方で受理する。
-_SESSION_OPS_GENERAL_NOUN = r"(?:の)?[一-龥ァ-ヶーA-Za-z0-9]+(?:の[一-龥ァ-ヶーA-Za-z0-9]+)*"
-_SESSION_OPS_GENERAL_NOUN_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTERN})\s*{_SESSION_OPS_GENERAL_NOUN}")
-
-# `反映`は工程の実施と実装対象の変更の双方で用いられ、語彙だけでは分離できない。
-# 前掲の実装対象名詞の列挙による除外で`description`の変更記載を扱い、変更述部には含めない。
-# 変更述部・実施述部の列挙も閉じており、追加時の手順は実装対象名詞と同じとする。
-_SESSION_OPS_MODIFICATION_PREDICATE_RE = re.compile(r"変更|修正|実装|削除|改訂|移設|見直|追加|置き換え|廃止|新設|拡張|整備")
-_SESSION_OPS_EXECUTION_PREDICATE_RE = re.compile(r"実施|実行|起動|呼び出|完遂|引き継|移行|復帰|従う|従い|進む|進み")
-
-# `Agentツールで`構文に限定してサブエージェント名を抽出する。
-# セッション運用工程の検出はSkill・slash commandも対象とするため、専用パターンを分離する。
-_AGENT_TOOL_CALL_RE = re.compile(r"Agentツールで\s*`([^`]+)`")
-_SESSION_OPS_SKILL_TOOL_CALL_RE = re.compile(r"Skillツールで\s*`([^`]+)`")
-_SESSION_OPS_SLASH_COMMAND_RE = re.compile(r"`(/[^`/]+)`")
-
-_KIND_SUBAGENT = "subagent"
-
-_KIND_LABELS = {_KIND_SUBAGENT: "サブエージェント名"}
-
-_DELETED_TARGET_MARKER = "廃止・削除"
-_DELETION_INSTRUCTION_WORDS = ("削除する", "廃止する")
-
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-# 遡及スキャンの発動条件を判定する3パターン。`pretooluse.py`の
-# `_check_plan_file_retroactive_scan_recorded`と同一定義（対象範囲のみ計画ファイル自身へ変更）。
-_RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE = re.compile(
-    r"^\s*-\s+[^\n]{0,80}(しない|禁止する|発行しない|省略しない)(。|$)", re.MULTILINE
-)
-_RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE = re.compile(r"いかなる理由(?:（[^）]*）)?があっても[^\n]{0,80}しない")
-_RETROACTIVE_SCAN_NEW_HEADING_RE = re.compile(r"^##[#]* .+$", re.MULTILINE)
-
-_RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検出件数", "対応方針")
-
-_REFERENCE_ENUMERATION_REQUIRED_ITEMS: tuple[str, ...] = ("参照追従対象", "入力形態", "追従要否")
-_NEW_IDENTIFIER_REQUIRED_ITEM = "新設識別子"
-# 変更後文面に現れるバッククォート囲みの候補。宣言された名前らしい形式かの判定は
-# `_looks_like_declared_identifier`が担い、抽出条件を1箇所へ集約する。
-_NEW_IDENTIFIER_CANDIDATE_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*)`")
-
-_BUMP_MANIFEST_PATHS = frozenset({"agent-toolkit/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json"})
-_VERSION_NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])")
-_BUG_INVESTIGATION_REQUIRED_ROWS = (
-    "観測事象",
-    "期待する契約",
-    "直接的原因",
-    "混入要因",
-    "動機的要因",
-    "見逃し原因",
-    "根本原因",
-    "原因分析の根拠",
-    "類似見直しの観点",
-    "類似見直し結果",
-    "是正処置",
-    "横展開処置",
-    "再発防止処置",
-    "設計意図の記録",
-)
-_MARKDOWN_TABLE_SEPARATOR_CELL_RE = re.compile(r"^:?-{3,}:?$")
-_WORK_TYPE_RE = re.compile(r"^- 作業種別: (\S(?:.*\S)?)$")
-_WORK_TYPE_CANDIDATE_RE = re.compile(r"^-[ \t]*作業種別(?:[ \t]*[:：].*)?$")
-_BUG_WORK_TYPE = "バグ対応"
-_NORMAL_WORK_TYPE = "通常変更"
-_VALID_WORK_TYPES = frozenset({_BUG_WORK_TYPE, _NORMAL_WORK_TYPE})
-_VALID_INSTRUCTION_RELATIONS = frozenset({"指示どおり", "具体化", "エージェント追加"})
-_EXECUTION_CHANGE_RE = re.compile(r"^- 実行系変更: (あり|なし)$")
-_EXECUTION_CHANGE_CANDIDATE_RE = re.compile(r"^-[ \t]*実行系変更(?:[ \t]*[:：].*)?$")
-_EXECUTION_CONTRACT_COLUMNS = (
-    "変更単位",
-    "入力",
-    "起動契機",
-    "実行主体",
-    "SSOT",
-    "出力形式と終了状態",
-    "検証主体",
-    "テスト対象",
-)
-_EXECUTION_SUMMARY_COLUMNS = ("実施内容", "ユーザー指示との関係", "根拠")
-_PLANNED_TEST_FUNCTION_RE = re.compile(r"^\+?\s*(?:async\s+)?def (test_\w+)", re.MULTILINE)
-_ADDED_TEST_FUNCTION_RE = re.compile(r"^\+\s*(?:async )?def (test_\w+)", re.MULTILINE)
-_COMMIT_SUBJECT_RE = re.compile(r"^\s*- 件名案: `(?P<subject>[^`]+)`\s*$", re.MULTILINE)
-
-_COMMONMARK = markdown_it.MarkdownIt("commonmark").enable("table")
+_H1_RE = re.compile(r"^# (?!#)\S")
+_CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`(?P<suffix>.*)$")
+_H3_RE = re.compile(r"^### `([^`]+)`(?:\s|（|$)")
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
+_DELETED_RE = re.compile(r"廃止・削除")
+_DELETE_WORD_RE = re.compile(r"削除|廃止")
+_BASE_RE = re.compile(r"(?:ベースコミット|計画着手前SHA)\s*[:：]\s*`?([0-9a-f]{40}|[0-9a-f]{64})`?")
+_SKILL_CALL_RE = re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`")
+_AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 
 
-@dataclasses.dataclass(frozen=True)
-class _Heading:
-    """Markdown見出しのレベル、内容、原文行位置、親見出しを保持する。"""
-
-    level: int
-    content: str
-    start_line: int
-    end_line: int
-    parent_h2: str | None
-
-
-@dataclasses.dataclass(frozen=True)
-class _BlockRange:
-    """Markdownブロックの半開行範囲を保持する。"""
-
-    start_line: int
-    end_line: int
-
-
-@dataclasses.dataclass(frozen=True)
-class _Fence(_BlockRange):
-    """フェンスコードブロックの情報文字列と原文内容を保持する。"""
-
-    info: str
-    markup: str
-    content: str
-
-
-@dataclasses.dataclass(frozen=True)
-class _Section(_BlockRange):
-    """見出し配下の半開行範囲と見出し情報を保持する。"""
-
-    heading: _Heading
-
-
-@dataclasses.dataclass(frozen=True)
-class _Document:
-    """1回のMarkdown解析で得た構造と原文位置を各検査へ供給する。"""
-
-    text: str
-    lines: tuple[str, ...]
-    headings: tuple[_Heading, ...]
-    fences: tuple[_Fence, ...]
-    tables: tuple[_BlockRange, ...]
-    paragraphs: tuple[_BlockRange, ...]
-    code_lines: frozenset[int]
-    inline_blocks: tuple[tuple[int, int], ...]
-
-
-def _looks_like_declared_identifier(name: str) -> bool:
-    """識別子が`_`始まり・snake_case・UPPER_CASEいずれかの宣言された名前らしい形式か判定する。
-
-    対象は関数名・定数名に限らず、完了報告の欄名・環境変数名など、
-    定義側で名前として宣言されるもの全般とする。
-    コマンド名・サブコマンド名等（アンダースコアを含まない単純な単語）を
-    検査対象から除外するため、アンダースコアを含む語のみ対象とする。
-    """
-    if not _IDENTIFIER_RE.fullmatch(name):
-        return False
-    if name.startswith("_"):
-        return True
-    if "_" not in name:
-        return False
-    return name == name.lower() or name == name.upper()
-
-
-def _identifier_definition_pattern(name: str) -> re.Pattern[str]:
-    """関数定義・クラス定義・定数定義のいずれかに識別子`name`が現れる行を検出する正規表現を返す。"""
-    escaped = re.escape(name)
-    return re.compile(
-        rf"^\s*(async\s+)?def\s+{escaped}\s*\(|^\s*class\s+{escaped}\s*[(:]|^\s*{escaped}\s*(:[^=\n]+)?=",
-        re.MULTILINE,
-    )
-
-
-def _is_excluded_repo_path(rel_parts: tuple[str, ...]) -> bool:
-    """遡及走査から除外するパス（計画ファイル検証の一時複製）かを判定する。
-
-    `.git`配下はGitが一覧へ含めないため、本判定の対象としない。
-    """
-    return bool(rel_parts) and rel_parts[-1].startswith(".plan-check-")
-
-
-def _parse_document(text: str) -> _Document:
-    """Markdownを1回解析し、構造認識と原記法検査で共有する位置情報を返す。"""
-    tokens = tuple(_COMMONMARK.parse(text))
-    lines = tuple(text.splitlines())
-    headings: list[_Heading] = []
-    fences: list[_Fence] = []
-    tables: list[_BlockRange] = []
-    paragraphs: list[_BlockRange] = []
-    code_lines: set[int] = set()
-    inline_blocks: list[tuple[int, int]] = []
-    line_offsets = [0]
-    for line in text.splitlines(keepends=True):
-        line_offsets.append(line_offsets[-1] + len(line))
-    heading_stack: list[tuple[int, str]] = []
-    for index, token in enumerate(tokens):
-        if token.type == "heading_open" and token.map is not None:
-            level = int(token.tag[1:])
-            content = tokens[index + 1].content
-            while heading_stack and heading_stack[-1][0] >= level:
-                heading_stack.pop()
-            parent_h2 = next((parent for parent_level, parent in reversed(heading_stack) if parent_level == 2), None)
-            headings.append(_Heading(level, content, token.map[0], token.map[1], parent_h2))
-            heading_stack.append((level, content))
-        if token.type in {"fence", "code_block"} and token.map is not None:
-            code_lines.update(range(token.map[0], token.map[1]))
-        if token.type == "fence" and token.map is not None:
-            fences.append(_Fence(token.map[0], token.map[1], token.info.strip(), token.markup, token.content))
-        if token.type == "table_open" and token.map is not None:
-            tables.append(_BlockRange(token.map[0], token.map[1]))
-        if token.type == "paragraph_open" and token.map is not None:
-            paragraphs.append(_BlockRange(token.map[0], token.map[1]))
-        if token.type != "inline" or token.map is None:
-            continue
-        start_line, end_line = token.map
-        inline_blocks.append((line_offsets[start_line], line_offsets[end_line]))
-    return _Document(
-        text,
-        lines,
-        tuple(headings),
-        tuple(fences),
-        tuple(tables),
-        tuple(paragraphs),
-        frozenset(code_lines),
-        tuple(inline_blocks),
-    )
-
-
-def _section_at(document: _Document, index: int) -> _Section:
-    """`document.headings[index]`の見出し配下を節として返す。
-
-    レベル2以下（H1・H2）の節は配下の小見出しを含め、同レベル以上の次見出しで終端する。
-    レベル3以上（H3・H4など）の節は、レベルを問わず次の見出しの直前で終端する。
-    後者はH4小節の本文を親H3の本文として扱わないための区切りであり、
-    対象ファイルH3のコードブロック有無判定と`### バグ調査結果`の先頭表判定が依存する。
-    """
-    item = document.headings[index]
-    following_headings = document.headings[index + 1 :]
-    if item.level >= 3:
-        # レベル3以上は最初の見出しで必ず終端するため、走査せず先頭要素だけを参照する。
-        end_line = following_headings[0].start_line if following_headings else len(document.lines)
-        return _Section(item.end_line, end_line, item)
-    end_line = len(document.lines)
-    for following in following_headings:
-        if following.level <= item.level:
-            end_line = following.start_line
-            break
-    return _Section(item.end_line, end_line, item)
-
-
-def _sections(document: _Document, level: int, heading: str) -> list[_Section]:
-    """指定レベル・内容の見出し配下を節として返す。終端規則は`_section_at`が定める。"""
-    return [
-        _section_at(document, index)
-        for index, item in enumerate(document.headings)
-        if item.level == level and item.content == heading
-    ]
-
-
-def _within(outer: _BlockRange, inner: _BlockRange) -> bool:
-    """`inner`の行範囲が`outer`内に収まるかを返す。"""
-    return outer.start_line <= inner.start_line and inner.end_line <= outer.end_line
-
-
-def _inline_code_spans(text: str, block_ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """各インラインブロック内のコードスパンを半開区間の一覧で返す。"""
-    spans: list[tuple[int, int]] = []
-    for block_start, block_end in block_ranges:
-        i = block_start
-        while i < block_end:
-            if text[i] != "`":
-                i += 1
-                continue
-            j = i
-            while j < block_end and text[j] == "`":
-                j += 1
-            tick_len = j - i
-            if _is_escaped(text, i):
-                i = j
-                continue
-            close_idx = j
-            while close_idx < block_end:
-                if text[close_idx] != "`":
-                    close_idx += 1
-                    continue
-                close_end = close_idx
-                while close_end < block_end and text[close_end] == "`":
-                    close_end += 1
-                if close_end - close_idx == tick_len:
-                    spans.append((i, close_end))
-                    i = close_end
-                    break
-                close_idx = close_end
-            else:
-                i = j
-    return spans
-
-
-def _mask_non_inline_blocks(text: str, block_ranges: list[tuple[int, int]]) -> str:
-    """非inlineブロックを改行以外の同長空白へ置換して返す。"""
-    result = [char if char in "\r\n" else " " for char in text]
-    for start, end in block_ranges:
-        result[start:end] = text[start:end]
-    return "".join(result)
-
-
-def _strip_inline_code(text: str, spans: list[tuple[int, int]]) -> str:
-    """コードスパンを改行以外の同長空白へ置換する。
-
-    CommonMarkのブロック解析が確定した各inline token範囲内で、最大バッククォート列を
-    同じ長さの最大列と対応付ける。開き候補だけ外側のバックスラッシュエスケープを判定する。
-    """
-    result = list(text)
-    for start, end in spans:
-        result[start:end] = (char if char in "\r\n" else " " for char in text[start:end])
-    return "".join(result)
-
-
-def _is_escaped(text: str, index: int) -> bool:
-    """対象位置の文字が奇数個のバックスラッシュでエスケープされているかを返す。"""
-    backslashes = 0
-    cursor = index - 1
-    while cursor >= 0 and text[cursor] == "\\":
-        backslashes += 1
-        cursor -= 1
-    return backslashes % 2 == 1
-
-
-def _section_text(document: _Document, section: _BlockRange) -> str:
-    """節の原文行を結合して返す。"""
-    return "\n".join(document.lines[section.start_line : section.end_line])
-
-
-def _non_code_text(document: _Document, section: _BlockRange) -> str:
-    """節からコードブロック行を除外した原文を返す。"""
-    return "\n".join(
-        document.lines[line_no] for line_no in range(section.start_line, section.end_line) if line_no not in document.code_lines
-    )
-
-
-def _check_h1(document: _Document) -> list[str]:
-    """先頭行の正規H1と、構文木内にある追加H1の不在を検査する。"""
+def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
+    outside: list[bool] = []
     errors: list[str] = []
-    if not document.lines or not _CANONICAL_H1_RE.fullmatch(document.lines[0]):
-        errors.append("先頭行がATX形式`# <主題>`のH1見出しではない")
-    additional_h1_lines = [
-        heading.start_line + 1 for heading in document.headings if heading.level == 1 and heading.start_line != 0
-    ]
-    if additional_h1_lines:
-        errors.append(f"フェンス外に追加のH1見出し候補がある: {additional_h1_lines}")
+    marker: str | None = None
+    for _number, line in enumerate(lines, start=1):
+        match = _FENCE_RE.match(line)
+        if marker is None:
+            outside.append(True)
+            if match:
+                marker = match.group(1)
+        else:
+            outside.append(False)
+            if match and match.group(1)[0] == marker[0] and len(match.group(1)) >= len(marker) and not match.group(2).strip():
+                marker = None
+    if marker is not None:
+        errors.append("閉じていないMarkdownフェンスがある")
+    return outside, errors
+
+
+def _section_bounds(lines: list[str], outside: list[bool], title: str) -> tuple[int, int] | None:
+    start = next((i for i, line in enumerate(lines) if outside[i] and line == f"## {title}"), None)
+    if start is None:
+        return None
+    end = next((i for i in range(start + 1, len(lines)) if outside[i] and lines[i].startswith("## ")), len(lines))
+    return start, end
+
+
+def _check_h1(lines: list[str], outside: list[bool]) -> list[str]:
+    errors: list[str] = []
+    if not lines or not _H1_RE.match(lines[0]):
+        errors.append("先頭行に正規のH1見出しが無い")
+    h1_lines = [i + 1 for i, line in enumerate(lines) if outside[i] and line.startswith("# ")]
+    if h1_lines != [1]:
+        errors.append(f"H1見出しが一意でない: {h1_lines}")
+    for index in range(1, len(lines)):
+        if outside[index] and lines[index].strip() and set(lines[index].strip()) == {"="} and lines[index - 1].strip():
+            errors.append(f"Setext形式のH1候補がある: {index + 1}行目")
     return errors
 
 
-def _extract_checkbox_paths(document: _Document, sections: list[_Section]) -> list[str]:
-    return [
-        match.group(1)
-        for section in sections
-        for line_no in range(section.start_line, section.end_line)
-        if line_no not in document.code_lines and (match := _CHECKBOX_RE.match(document.lines[line_no]))
-    ]
-
-
-def _h3_heading_path(heading: _Heading) -> str | None:
-    """H3見出しが先頭コードスパンで示す対象パスを返す。パス記法でなければNoneを返す。"""
-    if heading.level != 3:
-        return None
-    match = _H3_PATH_CONTENT_RE.match(heading.content)
-    return match.group(1) if match is not None else None
-
-
-def _extract_h3_paths(document: _Document, sections: list[_Section]) -> list[str]:
-    return [
-        path
-        for section in sections
-        for heading in document.headings
-        if section.start_line <= heading.start_line < section.end_line and (path := _h3_heading_path(heading))
-    ]
-
-
-def _path_h3_sections(document: _Document, path: str, scopes: list[_Section]) -> list[_Section]:
-    """指定パスを先頭コードスパンに持つH3節のうち、`scopes`の範囲内にあるものを返す。
-
-    対象ファイルの充足判定は`## 変更内容`配下の記述で成立させる契約のため、
-    範囲を限定しないと節外の同名H3が持つコードブロックで判定が通る。
-    """
-    return [
-        section
-        for index, heading in enumerate(document.headings)
-        if _h3_heading_path(heading) == path
-        for section in [_section_at(document, index)]
-        if any(scope.start_line <= section.heading.start_line < scope.end_line for scope in scopes)
-    ]
-
-
-def _check_base_commit_recorded(document: _Document) -> list[str]:
-    """`### 計画メタ情報`節のベースコミット記載が欠落または不正な場合にerrorを返す。"""
-    sections = _sections(document, 3, "計画メタ情報")
-    if not sections:
-        return []
-    section = _section_text(document, sections[0])
-    match = re.search(r"(?:ベースコミット|基準コミット)[^\n]*?`([0-9a-fA-F]{40}|[0-9a-fA-F]{64})`", section)
-    if match is not None:
-        return []
-    if re.search(r"ベースコミット|基準コミット", section):
-        return ["`### 計画メタ情報`のベースコミットにコミットハッシュの記載が無い"]
-    return ["`### 計画メタ情報`にベースコミットの記載が無い"]
-
-
-def _has_code_block_after(document: _Document, path: str, change_sections: list[_Section]) -> bool:
-    return any(
-        _within(section, fence) for section in _path_h3_sections(document, path, change_sections) for fence in document.fences
-    )
-
-
-def _extract_fenced_code_blocks(document: _Document, sections: list[_Section], *, info_string: str) -> list[str]:
-    """指定節内にある情報文字列一致のフェンストークン内容を返す。"""
-    return [
-        fence.content.rstrip("\n")
-        for section in sections
-        for fence in document.fences
-        if _within(section, fence) and fence.info == info_string
-    ]
-
-
-def _iter_h2_sections(document: _Document, heading: str) -> list[_Section]:
-    """指定内容を持つH2節を全出現分返す。"""
-    return _sections(document, 2, heading)
-
-
-def _plan_work_type_entries(document: _Document) -> list[tuple[str, str | None]]:
-    """背景直下の計画メタ情報から作業種別候補行と固定記法の値を抽出する。"""
-    entries: list[tuple[str, str | None]] = []
-    for background in _iter_h2_sections(document, "背景"):
-        for metadata in _sections(document, 3, "計画メタ情報"):
-            if not _within(background, metadata):
-                continue
-            for line in _non_code_text(document, metadata).splitlines():
-                if not _WORK_TYPE_CANDIDATE_RE.fullmatch(line):
-                    continue
-                match = _WORK_TYPE_RE.fullmatch(line)
-                entries.append((line, match.group(1) if match is not None else None))
-    return entries
-
-
-def _plan_work_types(document: _Document) -> list[str]:
-    """固定記法と一致する作業種別の値を全出現分抽出する。"""
-    return [value for _line, value in _plan_work_type_entries(document) if value is not None]
-
-
-def _check_plan_work_type(document: _Document) -> list[str]:
-    """計画メタ情報の作業種別が1件の固定値であるかをwarningとして検査する。"""
-    if not _iter_h2_sections(document, "背景"):
-        return []
-    entries = _plan_work_type_entries(document)
-    if not entries:
-        return [
-            "`## 背景`直下の計画メタ情報に作業種別の記載が無い: `- 作業種別: バグ対応`または`- 作業種別: 通常変更`を記載する"
-        ]
-    if len(entries) != 1:
-        return [f"`### 計画メタ情報`の作業種別が複数ある: 実際={[line for line, _value in entries]}、期待=1件"]
-    line, value = entries[0]
-    if value is None:
-        return [f"`### 計画メタ情報`の作業種別が固定記法`- 作業種別: <固定値>`と一致しない: 実際={line}"]
-    if value not in _VALID_WORK_TYPES:
-        return [f"`### 計画メタ情報`の作業種別が現行契約と一致しない: 実際={value}、期待={sorted(_VALID_WORK_TYPES)}"]
-    return []
-
-
-def _is_bug_plan(document: _Document) -> bool:
-    """計画メタ情報の作業種別が単一の`バグ対応`であるかを判定する。"""
-    return _plan_work_types(document) == [_BUG_WORK_TYPE]
-
-
-def _markdown_table_cells(line: str) -> list[str] | None:
-    """Markdownパイプテーブルの1行をセルへ分割する。表の行でなければNoneを返す。"""
-    leading_whitespace = line[: len(line) - len(line.lstrip(" \t"))]
-    if "\t" in leading_whitespace or len(leading_whitespace) >= 4:
-        return None
-    stripped = line.strip()
-    has_outer_pair = stripped.startswith("|") and stripped.endswith("|") and not stripped.endswith(r"\|")
-    if stripped.startswith("|"):
-        stripped = stripped[1:]
-    if stripped.endswith("|") and not stripped.endswith(r"\|"):
-        stripped = stripped[:-1]
-    cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", stripped)]
-    if len(cells) < 2 and not has_outer_pair:
-        return None
-    return cells
-
-
-def _table_rows(document: _Document, table: _BlockRange) -> list[list[str]]:
-    """表トークンの原文範囲をセル配列へ変換する。"""
-    rows = [_markdown_table_cells(document.lines[line_no]) for line_no in range(table.start_line, table.end_line)]
-    return [row for row in rows if row is not None]
-
-
-def _first_markdown_table_block(document: _Document, section: _Section) -> _BlockRange | None:
-    """節内の最初の表トークンの原文範囲を返す。"""
-    return next((item for item in document.tables if _within(section, item)), None)
-
-
-def _first_markdown_table(document: _Document, section: _Section) -> list[list[str]]:
-    """節内の最初の表トークンについて、原文から得たセル配列を返す。"""
-    table = _first_markdown_table_block(document, section)
-    return _table_rows(document, table) if table is not None else []
-
-
-def _check_execution_contract_table(document: _Document) -> list[str]:
-    """実行系変更宣言と、変更がある場合の実行契約表をwarningとして検査する。"""
-    if not _sections(document, 2, "背景"):
-        return []
-    metadata_sections = [section for section in _sections(document, 3, "計画メタ情報") if section.heading.parent_h2 == "背景"]
-    if len(metadata_sections) != 1:
-        return [f"`## 背景`直下に`### 計画メタ情報`が1件必要: 実際={len(metadata_sections)}件"]
-    entries: list[tuple[str, str | None]] = []
-    for section in metadata_sections:
-        for line in _non_code_text(document, section).splitlines():
-            if not _EXECUTION_CHANGE_CANDIDATE_RE.fullmatch(line):
-                continue
-            match = _EXECUTION_CHANGE_RE.fullmatch(line)
-            entries.append((line, match.group(1) if match is not None else None))
-    if not entries:
-        return ["`### 計画メタ情報`に実行系変更の宣言が無い: `- 実行系変更: あり`または`- 実行系変更: なし`を記載する"]
-    if len(entries) != 1:
-        return [f"`### 計画メタ情報`の実行系変更の宣言が複数ある: 実際={[line for line, _value in entries]}、期待=1件"]
-    line, value = entries[0]
-    if value is None:
-        return [f"`### 計画メタ情報`の実行系変更の宣言が固定記法`- 実行系変更: あり|なし`と一致しない: 実際={line}"]
-    if value == "なし":
-        return []
-
-    contract_sections = [section for section in _sections(document, 3, "実行契約") if section.heading.parent_h2 == "調査結果"]
-    if len(contract_sections) != 1:
-        return [f"実行系変更が`あり`の場合は`## 調査結果`直下に`### 実行契約`が1件必要: 実際={len(contract_sections)}件"]
-    table = _first_markdown_table(document, contract_sections[0])
-    expected = list(_EXECUTION_CONTRACT_COLUMNS)
-    if not table or table[0] != expected:
-        actual = table[0] if table else []
-        return [f"実行契約表のヘッダーが必須8列と一致しない: 実際={actual}、期待={expected}"]
-    if (
-        len(table) < 2
-        or len(table[1]) != len(expected)
-        or not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in table[1])
-    ):
-        return ["実行契約表の区切り行が必須8列と一致しない"]
-    data_rows = table[2:]
-    if not data_rows or any(len(row) != len(expected) or any(not cell.strip() for cell in row) for row in data_rows):
-        return ["実行契約表に必須8列がすべて非空のデータ行が無い"]
-    return []
-
-
-def _check_execution_summary_table(document: _Document, text: str) -> list[str]:
-    """対応方針の実施内容表について原記法、構造、指示関係をwarningとして検査する。"""
-    del text
-    all_sections = _sections(document, 3, "実施内容")
-    sections = [section for section in all_sections if section.heading.parent_h2 == "対応方針"]
-    if not sections and not all_sections and not _sections(document, 2, "対応方針"):
-        return []
-    if len(sections) != 1:
-        return [f"`## 対応方針`直下に`### 実施内容`が1件必要: 実際={len(sections)}件"]
-    table_block = _first_markdown_table_block(document, sections[0])
-    table = _table_rows(document, table_block) if table_block is not None else []
-    expected = list(_EXECUTION_SUMMARY_COLUMNS)
-    if not table or table[0] != expected:
-        actual = table[0] if table else []
-        return [f"実施内容表のヘッダーが必須3列と一致しない: 実際={actual}、期待={expected}"]
-    if (
-        len(table) < 2
-        or len(table[1]) != len(expected)
-        or not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in table[1])
-    ):
-        return ["実施内容表の区切り行が必須3列と一致しない"]
-    data_rows = table[2:]
-    if not data_rows:
-        return ["実施内容表にデータ行が無い"]
-    warnings: list[str] = []
-    if table_block is not None:
-        raw_lines = document.lines[table_block.start_line : table_block.end_line]
-        expected_shape = _outer_pipe_shape(raw_lines[0])
-        for offset, line in enumerate(raw_lines[1:], start=1):
-            if _outer_pipe_shape(line) != expected_shape:
-                line_no = table_block.start_line + offset + 1
-                warnings.append(f"{line_no}行目: 実施内容表の外側パイプの有無がヘッダーと一致しない")
-    for row_index, row in enumerate(data_rows, start=1):
-        if len(row) != len(expected):
-            warnings.append(f"実施内容表のデータ行{row_index}が必須3列と一致しない: 実際={len(row)}列")
+def _extract_targets(
+    lines: list[str], outside: list[bool], bounds: tuple[int, int]
+) -> tuple[list[tuple[str, str]], list[tuple[str, int]]]:
+    start, end = bounds
+    checkboxes: list[tuple[str, str]] = []
+    headings: list[tuple[str, int]] = []
+    for index in range(start + 1, end):
+        if not outside[index]:
             continue
-        if any(not cell.strip() for cell in row):
-            warnings.append(f"実施内容表のデータ行{row_index}に空セルがある")
-        if row[1].strip() not in _VALID_INSTRUCTION_RELATIONS:
-            warnings.append(
-                f"実施内容表のユーザー指示との関係が許容値と一致しない: 実際={row[1].strip()}、"
-                f"期待={sorted(_VALID_INSTRUCTION_RELATIONS)}"
-            )
-    return warnings
+        if match := _CHECKBOX_RE.match(lines[index]):
+            checkboxes.append((match.group(1), match.group("suffix")))
+        if match := _H3_RE.match(lines[index]):
+            headings.append((match.group(1), index))
+    return checkboxes, headings
 
 
-def _outer_pipe_shape(line: str) -> tuple[bool, bool]:
-    """表の原文行が先頭・末尾の外側パイプを持つかを返す。"""
-    stripped = line.strip()
-    return stripped.startswith("|"), stripped.endswith("|") and not stripped.endswith(r"\|")
-
-
-def _check_table_notation(document: _Document) -> list[str]:
-    """表・段落トークンの原文行から列数と外側パイプの整合を検査する。
-
-    表トークンではヘッダー、区切り行、本文行を検査する。段落トークンでは、パイプ区切りの
-    ヘッダー候補と直後の区切り行候補だけを検査する。パーサーが補完または除去した後のセル数は
-    原記法を表さないため、トークンのセルノード数は判定に使わない。
-    """
+def _check_target_structure(lines: list[str], outside: list[bool], work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
-    execution_summary_sections = [
-        section for section in _sections(document, 3, "実施内容") if section.heading.parent_h2 == "対応方針"
-    ]
-    execution_summary_table = (
-        _first_markdown_table_block(document, execution_summary_sections[0]) if len(execution_summary_sections) == 1 else None
-    )
-    for table in document.tables:
-        # 専用検査が選ぶ最初の実施内容表だけは、既存計画の移行支援としてwarning区分を維持する。
-        if table == execution_summary_table:
-            continue
-        raw_lines = document.lines[table.start_line : table.end_line]
-        rows = [_markdown_table_cells(line) for line in raw_lines]
-        if len(rows) < 2 or rows[0] is None or rows[1] is None:
-            continue
-        expected_columns = len(rows[0])
-        expected_shape = _outer_pipe_shape(raw_lines[0])
-        for offset, (line, row) in enumerate(zip(raw_lines, rows, strict=True)):
-            line_no = table.start_line + offset + 1
-            if row is not None and len(row) != expected_columns:
-                label = "区切り行" if offset == 1 else "本文行"
-                errors.append(f"{line_no}行目: 表の{label}のセル数がヘッダーと一致しない")
-            if _outer_pipe_shape(line) != expected_shape:
-                errors.append(f"{line_no}行目: 表の外側パイプの有無がヘッダーと一致しない")
-    for paragraph in document.paragraphs:
-        for line_no in range(paragraph.start_line, paragraph.end_line - 1):
-            header = _markdown_table_cells(document.lines[line_no])
-            separator = _markdown_table_cells(document.lines[line_no + 1])
-            if header is None or separator is None:
-                continue
-            if not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in separator):
-                continue
-            if len(header) != len(separator):
-                errors.append(f"{line_no + 2}行目: 表の区切り行のセル数がヘッダーと一致しない")
-    return errors
-
-
-def _check_bug_investigation_table(document: _Document) -> list[str]:
-    """バグ調査結果表について全体件数、親H2、列構造、必須行、順序を検査する。"""
-    if not _is_bug_plan(document):
-        return []
-    sections = _sections(document, 3, "バグ調査結果")
-    if not sections:
-        return ["バグ計画に必須のバグ調査結果表が存在しない"]
-    if len(sections) != 1:
-        return [f"`### バグ調査結果`が複数ある: 実際={len(sections)}件、期待=1件"]
-    section = sections[0]
-    if section.heading.parent_h2 != "背景":
-        return ["`### バグ調査結果`が`## 背景`直下に存在しない"]
-    table = _first_markdown_table(document, section)
-    has_two_column_contract = (
-        len(table) >= 2
-        and table[0] == ["項目", "内容"]
-        and len(table[1]) == 2
-        and all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in table[1])
-        and all(len(row) == 2 for row in table[2:])
-    )
-    if not has_two_column_contract:
-        return ["バグ調査結果表の列構造が現行契約と一致しない: ヘッダー、区切り、全行を`項目`・`内容`の2列にする"]
-    rows = [row[0].strip("`") for row in table[2:]]
-    expected = list(_BUG_INVESTIGATION_REQUIRED_ROWS)
-    if rows == expected:
-        return []
-    missing = [row for row in expected if row not in rows]
-    return [f"バグ調査結果表の必須行または順序が現行契約と一致しない: 不足={missing or 'なし'}, 実際={rows}, 期待={expected}"]
-
-
-def _fence_line_parts(line: str, char: str, max_indent: int) -> tuple[int, str]:
-    """コンテナーの字下げを含む許容幅内で、フェンス文字数と後続文字列を返す。"""
-    stripped = line.lstrip(" ")
-    if len(line) - len(stripped) > max_indent:
-        return 0, line
-    length = len(stripped) - len(stripped.lstrip(char))
-    return length, stripped[length:].strip()
-
-
-def _check_fence_nesting(document: _Document) -> list[str]:
-    """フェンストークンの原文範囲から内側の情報文字列と終端不在を検出する。"""
-    errors: list[str] = []
-    for fence in document.fences:
-        char = fence.markup[0]
-        opening_length = len(fence.markup)
-        content_lines = fence.content.splitlines()
-        has_closing = fence.end_line - fence.start_line == len(content_lines) + 2
-        for offset, line in enumerate(content_lines, start=1):
-            line_index = fence.start_line + offset
-            inner_length, info = _fence_line_parts(line, char, 3)
-            if inner_length < opening_length or not info:
-                continue
-            errors.append(
-                f"{line_index + 1}行目: {fence.start_line + 1}行目で開いたフェンス（長さ{opening_length}）以上の"
-                f"長さ{inner_length}のフェンスが情報文字列`{info}`付きで内側に現れた。"
-                "埋め込み内容のフェンスより外側フェンスを長くする"
-            )
-        if not has_closing:
-            errors.append(f"{fence.start_line + 1}行目: 長さ{opening_length}のフェンスがファイル終端まで閉じていない疑いがある")
-    return errors
-
-
-def _has_session_ops_invocation(
-    line: str,
-    line_offset: int,
-    inline_blocks: list[tuple[int, int]],
-    inline_spans: list[tuple[int, int]],
-) -> bool:
-    """行が呼び出し構文でセッション運用の名前を指すかを返す。"""
-    for pattern in (_SESSION_OPS_SKILL_TOOL_CALL_RE, _AGENT_TOOL_CALL_RE, _SESSION_OPS_SLASH_COMMAND_RE):
-        for match in pattern.finditer(line):
-            match_span = (line_offset + match.start(), line_offset + match.end())
-            in_inline_block = any(start <= match_span[0] and match_span[1] <= end for start, end in inline_blocks)
-            enclosed = any(
-                start <= match_span[0] and match_span[1] <= end and (start, end) != match_span for start, end in inline_spans
-            )
-            suffix = line[match.end() :]
-            has_action = re.search(r"(?:を呼び出す|を起動する|へ進む)", suffix) is not None
-            if in_inline_block and not enclosed and has_action and _SESSION_OPS_RE.search(match.group(1)):
-                return True
-    return False
-
-
-def _mentions_session_ops_process(text: str) -> bool:
-    """行がセッション運用を工程として述べているかを返す。
-
-    次のいずれかが成立する行は、変更対象の説明として除外する。
-
-    1. 対象語の全出現が実装対象名詞の列挙のいずれかを直後に伴い、実施述部が無い。
-    2. 対象語の全出現が一般名詞を直後に伴い、変更述部があり、実施述部が無い。
-
-    どちらも成立しない行は工程として検出する。
-    """
-    occurrences = list(_SESSION_OPS_TERM_RE.finditer(text))
-    if not occurrences:
-        return False
-
-    has_execution_predicate = _SESSION_OPS_EXECUTION_PREDICATE_RE.search(text) is not None
-    implementation_starts = {match.start() for match in _SESSION_OPS_IMPLEMENTATION_MENTION_RE.finditer(text)}
-    all_implementation_mentions = all(match.start() in implementation_starts for match in occurrences)
-    condition_1 = all_implementation_mentions and not has_execution_predicate
-
-    general_noun_starts = {match.start() for match in _SESSION_OPS_GENERAL_NOUN_MENTION_RE.finditer(text)}
-    all_general_noun_mentions = all(match.start() in general_noun_starts for match in occurrences)
-    has_modification_predicate = _SESSION_OPS_MODIFICATION_PREDICATE_RE.search(text) is not None
-    condition_2 = all_general_noun_mentions and has_modification_predicate and not has_execution_predicate
-
-    return not (condition_1 or condition_2)
-
-
-def _check_execution_method_scope(document: _Document) -> list[str]:
-    """`## 実行方法`節に振り返り・セッション終了などのセッション運用工程が無いか検出する。
-
-    節内にコードブロックで埋め込まれた記述例と、インラインコード内の識別子は対象としない。
-    呼び出し構文でセッション運用の名前が現れる行は実際の起動指示として対象に残す。
-    """
-    warnings: list[str] = []
-    inline_blocks = list(document.inline_blocks)
-    inline_spans = _inline_code_spans(document.text, inline_blocks)
-    searchable = _strip_inline_code(_mask_non_inline_blocks(document.text, inline_blocks), inline_spans)
-    source_lines = document.text.splitlines(keepends=True)
-    searchable_lines = searchable.splitlines()
-    line_offsets = [0]
-    for line in source_lines:
-        line_offsets.append(line_offsets[-1] + len(line))
-    for section_no, section in enumerate(_iter_h2_sections(document, "実行方法"), start=1):
-        for absolute_line in range(section.start_line, section.end_line):
-            if absolute_line in document.code_lines:
-                continue
-            raw_line = source_lines[absolute_line]
-            target = searchable_lines[absolute_line]
-            line_offset = line_offsets[absolute_line]
-            line = raw_line.rstrip("\r\n")
-            invokes_session_op = _has_session_ops_invocation(line, line_offset, inline_blocks, inline_spans)
-            if invokes_session_op:
-                target = line
-            if _mentions_session_ops_process(target) or invokes_session_op:
-                warnings.append(
-                    f"実行方法節（{section_no}件目の出現）内({absolute_line + 1}行目): "
-                    "振り返り・セッション終了などのセッション運用工程が記載されている疑いがある。"
-                    "計画ファイルのスコープは当該計画の実装・検証・コミット・レビューに限定し、"
-                    "セッション運用工程は呼び出し元セッションが別途担う"
-                )
-    return warnings
-
-
-def _extract_invocation_references(body: str) -> list[tuple[str, str]]:
-    """本文の`Agentツールで`構文からサブエージェント名を抽出する。"""
-    return sorted({(name, _KIND_SUBAGENT) for name in _AGENT_TOOL_CALL_RE.findall(body)})
-
-
-def _available_subagent_names() -> set[str]:
-    """`agent-toolkit/agents/*.md`と`.claude/agents/*.md`から利用可能なサブエージェント名一覧を取得する。
-
-    スキル側の候補が配布物とリポジトリ固有の2系統を参照するのと対称に、
-    サブエージェント側もリポジトリ固有定義を候補へ含める。
-    """
-    names: set[str] = set()
-    agent_toolkit_root = pathlib.Path(__file__).resolve().parents[3]
-    for agent_md in agent_toolkit_root.glob("agents/*.md"):
-        names.add(f"agent-toolkit:{agent_md.stem}")
-    local_agents_root = pathlib.Path.cwd() / ".claude" / "agents"
-    if local_agents_root.is_dir():
-        for agent_md in local_agents_root.glob("*.md"):
-            names.add(agent_md.stem)
-    return names
-
-
-def _check_invocation_names_exist(document: _Document) -> list[str]:
-    """`## 実行方法`節が参照する名前が、呼び出し構文に対応する定義一覧に実在するか検出する。
-
-    節内にフェンスで埋め込まれた記述例の呼び出し名は対象としない。
-    """
-    warnings: list[str] = []
-    subagents = _available_subagent_names()
-    candidates_by_kind = {_KIND_SUBAGENT: subagents}
-    for section in _iter_h2_sections(document, "実行方法"):
-        for name, kind in _extract_invocation_references(_non_code_text(document, section)):
-            available = candidates_by_kind[kind]
-            if name in available:
-                continue
-            candidate = name.removeprefix("agent-toolkit:") if name.startswith("agent-toolkit:") else f"agent-toolkit:{name}"
-            hint = f"（接頭辞違いの候補: `{candidate}`）" if candidate in available else "（接頭辞違いの候補も無し）"
-            warnings.append(f"実在しない{_KIND_LABELS[kind]}の疑い: `{name}`{hint}")
-    return warnings
-
-
-def _check_deletion_instruction_present(document: _Document, change_sections: list[_Section]) -> list[str]:
-    """`（廃止・削除）`と注記された項目のH3節`text`コードブロック内に削除指示語が現れるか検出する。
-
-    対象項目の抽出はフェンス外の行に限る。
-    """
-    warnings: list[str] = []
-    deleted_paths = [
-        match.group(1)
-        for section in change_sections
-        for line_no in range(section.start_line, section.end_line)
-        if line_no not in document.code_lines
-        and _DELETED_TARGET_MARKER in document.lines[line_no]
-        and (match := _CHECKBOX_RE.match(document.lines[line_no]))
-    ]
-    for path in deleted_paths:
-        text_blocks = _extract_fenced_code_blocks(
-            document, _path_h3_sections(document, path, change_sections), info_string="text"
-        )
-        # `text`以外の情報文字列（`python`等）のコードブロックのみが存在する場合、
-        # 「コードブロックが無いH3」検査（`_has_code_block_after`、任意の情報文字列を許容）は
-        # 通過するが本検査は不成立のままとなる。両検査の対象コードブロック種別を揃えるため、
-        # `text`ブロックが1件も無い場合も食い違いとしてerrorにし、他検査への委譲で見逃さない。
-        combined = "\n".join(text_blocks)
-        if not any(word in combined for word in _DELETION_INSTRUCTION_WORDS):
-            warnings.append(
-                f"指定内容の食い違いの疑い: `{path}`は対象ファイル一覧で（廃止・削除）と注記されているが、"
-                "対応するH3節のtextコードブロック内に削除を指示する語（「削除する」「廃止する」）が見当たらない"
-            )
-    return warnings
-
-
-def _extract_deprecated_identifiers(document: _Document) -> list[str]:
-    """`#### 廃止・改名対象一覧`H4節が列挙するバッククォート囲み識別子を全出現分抽出する。
-
-    見出し・節終端の判定はフェンス外の行に限る。埋め込み例示内の同名H4見出しを
-    節境界として誤認しない。
-
-    抽出は行単位で行う。節本文を1つの文字列へ結合してから適用すると、
-    バッククォートを片側だけ持つ行が後続行の閉じバッククォートと対応づき、
-    その間の本文全体を1つの識別子として取り込む。
-    """
-    return [
-        identifier
-        for section in _sections(document, 4, "廃止・改名対象一覧")
-        for line in _non_code_text(document, section).splitlines()
-        for identifier in re.findall(r"`([^`]+)`", line)
-    ]
-
-
-def _git_listed_relative_paths(work_dir: pathlib.Path) -> tuple[str, ...] | None:
-    """`work_dir`のGit管理下ファイル（追跡分と無視されていない未追跡分）を相対パスで返す。
-
-    ディレクトリ全体を再帰走査すると、仮想環境やキャッシュなど当該リポジトリの内容ではない
-    ファイルが対象へ入り、走査コストと他パッケージ由来の誤一致を招く。
-    Gitの一覧はリポジトリの内容そのものを表すため、これを走査対象の母集団とする。
-    Gitリポジトリとして解決できない場合はNoneを返し、呼び出し側が判定不能として扱う。
-
-    入れ子リポジトリとサブモジュールはディレクトリ1件として返り、配下は母集団へ入らない。
-    別リポジトリの内容は当該リポジトリの内容ではないため、この除外は意図したものとする。
-    """
-    command = ["git", "-C", str(work_dir), "ls-files", "--cached", "--others", "--exclude-standard", "-z"]
-    try:
-        completed = subprocess.run(command, capture_output=True, check=False)
-    except OSError:
-        return None
-    if completed.returncode != 0:
-        return None
-    decoded = completed.stdout.decode("utf-8", errors="surrogateescape")
-    return tuple(name for name in decoded.split("\0") if name)
-
-
-def _iter_repo_files(
-    work_dir: pathlib.Path, relative_names: tuple[str, ...], plan_path: pathlib.Path
-) -> collections.abc.Iterator[pathlib.Path]:
-    """走査対象のファイルを、一時複製・計画ファイル自身を除外して列挙する。"""
-    plan_resolved = plan_path.resolve()
-    for name in relative_names:
-        if _is_excluded_repo_path(pathlib.PurePosixPath(name).parts):
-            continue
-        path = work_dir / name
-        if not path.is_file():
-            continue
-        if path.resolve() == plan_resolved:
-            continue
-        yield path
-
-
-def _check_deprecated_identifiers_removed(
-    document: _Document,
-    plan_path: pathlib.Path,
-    work_dir: pathlib.Path,
-    resolve_relative_names: collections.abc.Callable[[], tuple[str, ...] | None],
-) -> list[str]:
-    """`#### 廃止・改名対象一覧`が列挙する識別子の定義箇所が残存していないか検出する。"""
-    warnings: list[str] = []
-    identifiers = _extract_deprecated_identifiers(document)
-    if not identifiers:
-        return warnings
-    unresolved_reported = False
-    for name in identifiers:
-        if "/" in name:
-            # パス形態はファイルの実在そのものが残存を示すため、Gitの一覧を要さず判定できる。
-            # Gitが無視する対象でも実体が残っていれば廃止は未完了であり、走査対象の限定を適用しない。
-            if (work_dir / name).exists():
-                warnings.append(f"廃止・改名対象一覧の識別子が残存している疑い: `{name}`（ファイルが実在する）")
-            continue
-        if not _looks_like_declared_identifier(name):
-            # コマンド名・サブコマンド名等は検査対象外とする
-            continue
-        relative_names = resolve_relative_names()
-        if relative_names is None:
-            # 走査を要さないパス形態の判定は続けるため、通知は1回にとどめてループを継続する。
-            if not unresolved_reported:
-                warnings.append(_unresolved_work_dir_message(work_dir, "廃止・改名対象一覧の識別子の残存"))
-                unresolved_reported = True
-            continue
-        pattern = _identifier_definition_pattern(name)
-        for path in _iter_repo_files(work_dir, relative_names, plan_path):
-            try:
-                content = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            if pattern.search(content):
-                warnings.append(f"廃止・改名対象一覧の識別子が残存している疑い: `{name}`（{path}に定義が残存）")
-                break
-    return warnings
-
-
-def _unresolved_work_dir_message(work_dir: pathlib.Path, subject: str) -> str:
-    """走査対象を解決できない場合の共通メッセージを返す。"""
-    return (
-        f"{subject}を判定できない: 対象worktreeをGitリポジトリとして解決できない（{work_dir}）。"
-        "`--work-dir`へ対象worktreeの絶対パスを指定して再実行する"
-    )
-
-
-def _added_lines_text(block: str) -> str:
-    """`text`コードブロックの追加分本文を返す（`+`行なしは全文置換としてブロック全体を返す）。
-
-    `-`始まりの行はMarkdownのバレット記号と区別できないため削除マーカーとして扱わない。
-    """
-    added = [line[1:] for line in block.splitlines() if line.startswith("+")]
-    return "\n".join(added) if added else block
-
-
-def _detect_meta_norm_addition(document: _Document, change_sections: list[_Section]) -> bool:
-    """`## 変更内容`の各H3節`text`コードブロックの追加分にメタ規範パターンが現れるか判定する。
-
-    判定対象はコーディングエージェント向け文書のH3節に限る。
-    `pretooluse.py`の`_check_plan_file_retroactive_scan_recorded`と同じ対象限定を適用し、
-    対象外ファイルの変更後文面に含まれる既存見出しで過検出しないようにする。
-    """
-    for path in _extract_h3_paths(document, change_sections):
-        if not _plan_format.is_agent_doc_target_file(path):
-            continue
-        for block in _extract_fenced_code_blocks(
-            document, _path_h3_sections(document, path, change_sections), info_string="text"
-        ):
-            added = _added_lines_text(block)
-            if (
-                _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE.search(added)
-                or _RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE.search(added)
-                or _RETROACTIVE_SCAN_NEW_HEADING_RE.search(added)
-            ):
-                return True
-    return False
-
-
-def _check_retroactive_scan_recorded(document: _Document, change_sections: list[_Section]) -> list[str]:
-    """メタ規範パターンの追加を含む計画で、`## 調査結果`の遡及スキャン必須3語の不足を検出する。"""
-    if not _detect_meta_norm_addition(document, change_sections):
-        return []
-    section_text = "\n".join(_non_code_text(document, section) for section in _iter_h2_sections(document, "調査結果"))
-    missing = [item for item in _RETROACTIVE_SCAN_REQUIRED_ITEMS if item not in section_text]
-    if not missing:
-        return []
-    return [
-        "遡及スキャン記録の不足の疑い: `## 変更内容`にメタ規範パターン（全称禁止表現・"
-        "汎用禁止形バレット・`##`以上の見出し）の追加を検出したが、`## 調査結果`に"
-        f"必須語が揃っていない（不足: {'、'.join(missing)}）"
-    ]
-
-
-def _has_existing_target_file(document: _Document, change_sections: list[_Section]) -> bool:
-    """`### 対象ファイル一覧`に`（新設）`マーカーを持たない項目が存在するか判定する。
-
-    `（廃止・削除）`は既存ファイルへの操作であり、当該ファイルを参照する箇所への追随を要するため
-    対象に含める。
-    """
-    for section in change_sections:
-        for line_no in range(section.start_line, section.end_line):
-            if line_no in document.code_lines:
-                continue
-            line = document.lines[line_no]
-            if not _CHECKBOX_RE.match(line):
-                continue
-            marker = _NEW_OR_DELETED_RE.search(line)
-            if marker is None or marker.group(1) != "新設":
-                return True
-    return False
-
-
-def _check_reference_enumeration_recorded(document: _Document, change_sections: list[_Section]) -> list[str]:
-    """既存ファイルの変更を含む計画で、`## 調査結果`の参照追従必須3語の不足を検出する。"""
-    if not _has_existing_target_file(document, change_sections):
-        return []
-    section_text = "\n".join(_non_code_text(document, section) for section in _iter_h2_sections(document, "調査結果"))
-    missing = [item for item in _REFERENCE_ENUMERATION_REQUIRED_ITEMS if item not in section_text]
-    if not missing:
-        return []
-    return [
-        "参照追従の網羅列挙の不足の疑い: `### 対象ファイル一覧`に既存ファイルの変更を検出したが、"
-        f"`## 調査結果`に必須語が揃っていない（不足: {'、'.join(missing)}）"
-    ]
-
-
-def _extract_new_identifier_candidates(document: _Document, change_sections: list[_Section]) -> list[str]:
-    """`## 変更内容`のH3節`text`コードブロック追加分から識別子の候補を重複なく抽出する。
-
-    対象は`snake_case`・`UPPER_SNAKE_CASE`・先頭アンダースコア付きの非公開名とする。
-    アンダースコアを含まない語は通常の英単語・コマンド名と区別できないため対象外とする。
-    """
-    candidates: dict[str, None] = {}
-    for path in _extract_h3_paths(document, change_sections):
-        for block in _extract_fenced_code_blocks(
-            document, _path_h3_sections(document, path, change_sections), info_string="text"
-        ):
-            for name in _NEW_IDENTIFIER_CANDIDATE_RE.findall(_added_lines_text(block)):
-                if _looks_like_declared_identifier(name):
-                    candidates.setdefault(name, None)
-    return list(candidates)
-
-
-def _identifiers_absent_from_repo(
-    names: list[str], work_dir: pathlib.Path, relative_names: tuple[str, ...], plan_path: pathlib.Path
-) -> list[str]:
-    """対象worktree内に1件も出現しない識別子だけを抽出順のまま返す。
-
-    識別子ごとに全ファイルを走査すると読み込みが識別子の件数だけ重複するため、
-    ファイル1件につき1回読み込み、出現を確認した識別子を候補から除く。
-    """
-    remaining = dict.fromkeys(names)
-    for path in _iter_repo_files(work_dir, relative_names, plan_path):
-        if not remaining:
-            break
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for name in [candidate for candidate in remaining if candidate in content]:
-            del remaining[name]
-    return list(remaining)
-
-
-def _check_new_identifier_scope_recorded(
-    document: _Document,
-    change_sections: list[_Section],
-    plan_path: pathlib.Path,
-    work_dir: pathlib.Path,
-    resolve_relative_names: collections.abc.Callable[[], tuple[str, ...] | None],
-) -> list[str]:
-    """新設識別子を導入する計画で、`## 調査結果`への波及先列挙の記録が無い場合に警告する。
-
-    既存出現が0件の識別子は参照追従の`grep`で波及先を列挙できない。
-    計画作成時に波及先を明示させ、実装中の対象ファイル一覧の拡大を抑える。
-    """
-    candidates = _extract_new_identifier_candidates(document, change_sections)
-    if not candidates:
-        return []
-    relative_names = resolve_relative_names()
-    if relative_names is None:
-        return [_unresolved_work_dir_message(work_dir, "新設識別子の既存出現")]
-    new_identifiers = _identifiers_absent_from_repo(candidates, work_dir, relative_names, plan_path)
-    if not new_identifiers:
-        return []
-    section_text = "\n".join(_non_code_text(document, section) for section in _iter_h2_sections(document, "調査結果"))
-    warnings: list[str] = []
-    if _NEW_IDENTIFIER_REQUIRED_ITEM not in section_text:
-        warnings.append(
-            "新設識別子の波及先列挙の不足の疑い: `## 変更内容`に既存出現の無い識別子"
-            f"（{'、'.join(new_identifiers)}）を検出したが、`## 調査結果`に必須語"
-            f"`{_NEW_IDENTIFIER_REQUIRED_ITEM}`が無い"
-        )
-    unrecorded = [name for name in new_identifiers if name not in section_text]
-    if unrecorded:
-        warnings.append(
-            f"新設識別子の波及先列挙の不足の疑い: `## 調査結果`へ記載の無い新設識別子がある（不足: {'、'.join(unrecorded)}）"
-        )
-    return warnings
-
-
-def _check_version_number_absent(document: _Document, checkbox_paths: list[str]) -> list[str]:
-    """版更新正本を対象へ含む計画で、具体的なバージョン数値の記載を検出する。
-
-    版更新の種別（PATCH・MINOR・MAJOR）だけを記載し、数値は
-    `scripts/agent_toolkit_bump.py`の実行結果へ委ねる規定に対応する。
-    フェンス内の記述例は対象としない。
-    """
-    if not _BUMP_MANIFEST_PATHS & set(checkbox_paths):
-        return []
-    warnings = []
-    for line_no, line in enumerate(document.lines, start=1):
-        if line_no - 1 not in document.code_lines and _VERSION_NUMBER_RE.search(line):
-            warnings.append(
-                f"バージョン数値の記載の疑い({line_no}行目): 版更新正本を対象ファイル一覧へ含む計画では"
-                "具体的なバージョン数値を書かず、更新種別（PATCH・MINOR・MAJOR）のみを記載する"
-                "（現行値の引用など正当な記載であれば対応不要）"
-            )
-    return warnings
-
-
-def _run_git_text(work_dir: pathlib.Path, *args: str) -> tuple[str | None, str | None]:
-    """Gitの標準出力を返し、起動失敗または非0終了を利用者向けの診断へ変換する。"""
-    command = ["git", "-C", str(work_dir), *args]
-    try:
-        completed = subprocess.run(command, capture_output=True, check=False, text=True, encoding="utf-8")
-    except OSError as exc:
-        return None, f"Gitによる実装後照合を実行できない: {exc}"
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or f"終了コード{completed.returncode}"
-        return None, f"Gitによる実装後照合を実行できない: {' '.join(args)} ({detail})"
-    return completed.stdout, None
-
-
-def _repo_relative_checkbox_entries(
-    document: _Document,
-    change_sections: list[_Section],
-    work_dir: pathlib.Path,
-) -> dict[str, str | None]:
-    """対象リポジトリ内のチェックボックスパスと新設・削除マーカーを返す。"""
-    entries: dict[str, str | None] = {}
-    root_output, _error = _run_git_text(work_dir, "rev-parse", "--show-toplevel")
-    root = pathlib.Path(root_output.strip()).resolve() if root_output is not None else work_dir.resolve()
-    for section in change_sections:
-        for line_no in range(section.start_line, section.end_line):
-            if line_no in document.code_lines:
-                continue
-            line = document.lines[line_no]
-            match = _CHECKBOX_RE.match(line)
-            if match is None:
-                continue
-            raw_path = pathlib.Path(match.group(1))
-            candidate = raw_path if raw_path.is_absolute() else root / raw_path
-            normalized = pathlib.Path(os.path.normpath(candidate))
-            try:
-                relative = normalized.relative_to(root).as_posix()
-            except ValueError:
-                continue
-            marker_match = _NEW_OR_DELETED_RE.search(line)
-            entries[relative] = marker_match.group(1) if marker_match is not None else None
-    return entries
-
-
-def _check_changed_file_set(
-    document: _Document,
-    change_sections: list[_Section],
-    work_dir: pathlib.Path,
-    base_commit: str,
-) -> list[str]:
-    """計画の対象パスと基準コミット以降の変更パス・変更種別を照合する。"""
-    output, error = _run_git_text(work_dir, "diff", "--no-renames", "--name-only", f"{base_commit}..HEAD", "--")
-    added_output, added_error = _run_git_text(
-        work_dir, "diff", "--no-renames", "--name-only", "--diff-filter=A", f"{base_commit}..HEAD", "--"
-    )
-    deleted_output, deleted_error = _run_git_text(
-        work_dir, "diff", "--no-renames", "--name-only", "--diff-filter=D", f"{base_commit}..HEAD", "--"
-    )
-    first_error = error or added_error or deleted_error
-    if first_error is not None or output is None or added_output is None or deleted_output is None:
-        return [first_error or "Gitによる対象ファイル照合を実行できない"]
-    actual_paths = set(output.splitlines())
-    added_paths = set(added_output.splitlines())
-    deleted_paths = set(deleted_output.splitlines())
-
-    planned = _repo_relative_checkbox_entries(document, change_sections, work_dir)
-    planned_paths = set(planned)
-    missing = sorted(planned_paths - actual_paths)
-    unexpected = sorted(actual_paths - planned_paths)
-    wrong_status: list[str] = []
-    for path, marker in planned.items():
-        if path not in actual_paths:
-            continue
-        if marker == "新設" and path not in added_paths:
-            wrong_status.append(f"{path}: 期待=A")
-        if marker == "廃止・削除" and path not in deleted_paths:
-            wrong_status.append(f"{path}: 期待=D")
-    wrong_status.sort()
-    if not missing and not unexpected and not wrong_status:
-        return []
-    return [
-        "対象ファイル一覧と実変更ファイル集合が一致しない: "
-        f"不足={missing or 'なし'}、計画外={unexpected or 'なし'}、変更種別不一致={wrong_status or 'なし'}"
-    ]
-
-
-def _planned_test_function_names(document: _Document, change_sections: list[_Section]) -> list[str]:
-    """変更内容節の`text`コードブロックが列挙するテスト関数名を出現順に返す。"""
-    return [
-        name
-        for fence in document.fences
-        if fence.info == "text" and any(_within(section, fence) for section in change_sections)
-        for name in _PLANNED_TEST_FUNCTION_RE.findall(fence.content)
-    ]
-
-
-def _check_added_test_functions(
-    document: _Document,
-    change_sections: list[_Section],
-    work_dir: pathlib.Path,
-    base_commit: str,
-) -> list[str]:
-    """計画が列挙するテスト関数名と実差分の追加関数名を集合として照合する。"""
-    planned = _planned_test_function_names(document, change_sections)
-    if not planned:
-        return []
-    output, error = _run_git_text(work_dir, "diff", "--unified=0", f"{base_commit}..HEAD", "--")
-    if error is not None or output is None:
-        return [error or "Gitによるテスト関数名照合を実行できない"]
-    actual = _ADDED_TEST_FUNCTION_RE.findall(output)
-    if set(planned) == set(actual):
-        return []
-    return [f"計画が列挙するテスト関数名と実差分の追加関数名が一致しない: 計画={planned}、実差分={actual}"]
-
-
-def _check_commit_subjects(document: _Document, work_dir: pathlib.Path, base_commit: str) -> list[str]:
-    """計画のコミット件名案と基準コミット以降の実件名を件数を含めて照合する。"""
-    planned = [
-        subject
-        for section in _iter_h2_sections(document, "実行方法")
-        for subject in _COMMIT_SUBJECT_RE.findall(_non_code_text(document, section))
-    ]
-    if not planned:
-        return []
-    output, error = _run_git_text(work_dir, "log", "--format=%s", f"{base_commit}..HEAD")
-    if error is not None or output is None:
-        return [error or "Gitによるコミット件名照合を実行できない"]
-    actual = output.splitlines()
-    if collections.Counter(planned) == collections.Counter(actual):
-        return []
-    return [f"コミット件名案と実際のコミット件名が一致しない: 計画={planned}、実履歴={actual}"]
-
-
-def main() -> int:
-    """計画ファイル1件を対象に軽量機械チェックを実行し、error・warningをstderrへ出力する。
-
-    error区分が1件以上あれば1を返す。warning区分のみの場合と違反なしの場合は0を返す。
-    引数誤用・対象ファイル読み込み不能はいずれも2を返す。
-    """
-    parser = argparse.ArgumentParser(
-        prog="check_plan_file.py",
-        description="計画ファイル1件の軽量機械チェックを実行する",
-    )
-    parser.add_argument("plan_file", type=pathlib.Path, help="計画ファイルのパス")
-    parser.add_argument(
-        "--work-dir",
-        type=pathlib.Path,
-        default=None,
-        help="識別子の既存出現を照会する対象worktreeの絶対パス（省略時は現在の作業ディレクトリ）",
-    )
-    parser.add_argument(
-        "--base-commit",
-        default=None,
-        help="計画着手前のコミット識別子。指定すると実装後の照合（対象ファイル・テスト関数名・コミット件名）を行う",
-    )
-    try:
-        args = parser.parse_args()
-    except SystemExit as exc:
-        # 引数誤用は2、`--help`は0を返す契約を保つ。
-        return exc.code if isinstance(exc.code, int) else 2
-    plan_path = args.plan_file
-    work_dir = args.work_dir if args.work_dir is not None else pathlib.Path.cwd()
-
-    @functools.cache
-    def resolve_relative_names() -> tuple[str, ...] | None:
-        """走査対象の母集団を、初回に必要となった時点で1回だけ解決する。
-
-        2つの検査が同じ母集団を使うため結果を保持し、
-        いずれの検査も走査を要しない計画では子プロセスを起動しない。
-        """
-        return _git_listed_relative_paths(work_dir)
-
-    try:
-        text = plan_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        print(f"計画ファイルを読み込めない: {plan_path} ({exc})", file=sys.stderr)
-        return 2
-    document = _parse_document(text)
-    errors: list[str] = []
-    warnings: list[str] = []
-    errors.extend(_check_h1(document))
-
-    change_sections = _iter_h2_sections(document, "変更内容")
-    checkbox_paths = _extract_checkbox_paths(document, change_sections)
-    h3_paths = _extract_h3_paths(document, change_sections)
-    duplicate_checkbox = sorted({p for p in checkbox_paths if checkbox_paths.count(p) > 1})
-    duplicate_h3 = sorted({p for p in h3_paths if h3_paths.count(p) > 1})
-    if duplicate_checkbox:
-        errors.append(f"対象ファイル一覧に重複したパス: {duplicate_checkbox}")
-    if duplicate_h3:
-        errors.append(f"重複したH3見出し: {duplicate_h3}")
-    missing_h3 = [p for p in checkbox_paths if p not in h3_paths]
-    missing_checkbox = [p for p in h3_paths if p not in checkbox_paths]
+    bounds = _section_bounds(lines, outside, "変更内容")
+    if bounds is None:
+        return ["`## 変更内容`が無い"], []
+    checkboxes, headings = _extract_targets(lines, outside, bounds)
+    if not checkboxes:
+        errors.append("対象ファイル一覧の未チェック項目が無い")
+    checkbox_paths = [path for path, _ in checkboxes]
+    heading_paths = [path for path, _ in headings]
+    for label, values in (("対象ファイル一覧", checkbox_paths), ("H3見出し", heading_paths)):
+        duplicates = sorted(path for path, count in collections.Counter(values).items() if count > 1)
+        if duplicates:
+            errors.append(f"{label}に重複したパス: {duplicates}")
+    missing_h3 = [path for path in checkbox_paths if path not in heading_paths]
+    missing_checkbox = [path for path in heading_paths if path not in checkbox_paths]
     if missing_h3:
         errors.append(f"H3見出しが無い対象ファイル: {missing_h3}")
     if missing_checkbox:
         errors.append(f"対象ファイル一覧に無いH3見出し: {missing_checkbox}")
 
-    for path in checkbox_paths:
-        if not _has_code_block_after(document, path, change_sections):
-            errors.append(f"コードブロックが無いH3: {path}")
-
-    for path in h3_paths:
-        checkbox_line = next(
+    end = bounds[1]
+    for path, heading_index in headings:
+        next_heading = next(
             (
-                document.lines[line_no]
-                for section in change_sections
-                for line_no in range(section.start_line, section.end_line)
-                if line_no not in document.code_lines
-                and f"`{path}`" in document.lines[line_no]
-                and document.lines[line_no].startswith("- [ ]")
+                i
+                for i in range(heading_index + 1, end)
+                if outside[i] and (match := _HEADING_RE.match(lines[i])) is not None and len(match.group(1)) <= 3
             ),
-            "",
+            end,
         )
-        if _NEW_OR_DELETED_RE.search(checkbox_line):
+        block = "\n".join(lines[heading_index + 1 : next_heading])
+        if not _FENCE_RE.search(block):
+            errors.append(f"コードブロックが無いH3: {path}")
+        suffix = next((suffix for candidate, suffix in checkboxes if candidate == path), "")
+        if _DELETED_RE.search(suffix) and not _DELETE_WORD_RE.search(block):
+            errors.append(f"削除指示が無い廃止対象: {path}")
+        if not re.search(r"新設|廃止・削除", suffix):
+            candidate = pathlib.Path(path)
+            resolved = candidate if candidate.is_absolute() else work_dir / candidate
+            if not resolved.exists():
+                errors.append(f"実在確認できないパス: {path}")
+    return errors, checkbox_paths
+
+
+def _check_tables(lines: list[str], outside: list[bool]) -> list[str]:
+    errors: list[str] = []
+    for index in range(len(lines) - 1):
+        if not outside[index] or not outside[index + 1] or "|" not in lines[index]:
             continue
-        candidate = pathlib.Path(path) if pathlib.Path(path).is_absolute() else plan_path.parents[-1] / path
-        if not candidate.exists() and not (pathlib.Path.cwd() / path).exists():
-            errors.append(f"実在確認できないパス: {path}")
+        separator = lines[index + 1].strip()
+        if not re.fullmatch(r"\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?", separator):
+            continue
+        expected = len(lines[index].strip().strip("|").split("|"))
+        row = index + 2
+        while row < len(lines) and outside[row] and "|" in lines[row] and lines[row].strip():
+            actual = len(lines[row].strip().strip("|").split("|"))
+            if actual != expected:
+                errors.append(f"表のセル数が一致しない: {row + 1}行目")
+            row += 1
+    return errors
 
-    errors.extend(_check_fence_nesting(document))
-    errors.extend(_check_table_notation(document))
-    errors.extend(_check_invocation_names_exist(document))
-    errors.extend(_check_deletion_instruction_present(document, change_sections))
-    errors.extend(_check_retroactive_scan_recorded(document, change_sections))
-    errors.extend(_check_reference_enumeration_recorded(document, change_sections))
-    errors.extend(_check_base_commit_recorded(document))
-    warnings.extend(_check_execution_method_scope(document))
-    warnings.extend(_check_deprecated_identifiers_removed(document, plan_path, work_dir, resolve_relative_names))
-    warnings.extend(
-        _check_new_identifier_scope_recorded(document, change_sections, plan_path, work_dir, resolve_relative_names)
+
+def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
+    errors: list[str] = []
+    for skill in sorted(set(_SKILL_CALL_RE.findall(text))):
+        name = skill.split(":", 1)[-1]
+        candidates = [
+            work_dir / "agent-toolkit" / "skills" / name / "SKILL.md",
+            work_dir / ".claude" / "skills" / name / "SKILL.md",
+        ]
+        if not any(path.exists() for path in candidates):
+            errors.append(f"実在しないスキル参照: {skill}")
+    for agent in sorted(set(_AGENT_CALL_RE.findall(text))):
+        name = agent.split(":", 1)[-1]
+        if not (work_dir / "agent-toolkit" / "agents" / f"{name}.md").exists():
+            errors.append(f"実在しないサブエージェント参照: {agent}")
+    return errors
+
+
+def _git_changed_files(work_dir: pathlib.Path, base_commit: str) -> tuple[list[str] | None, str | None]:
+    result = subprocess.run(
+        ["git", "-C", str(work_dir), "diff", "--name-only", f"{base_commit}..HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    warnings.extend(_check_version_number_absent(document, checkbox_paths))
-    warnings.extend(_check_plan_work_type(document))
-    warnings.extend(_check_bug_investigation_table(document))
-    warnings.extend(_check_execution_contract_table(document))
-    warnings.extend(_check_execution_summary_table(document, text))
-    if args.base_commit is not None:
-        warnings.extend(_check_changed_file_set(document, change_sections, work_dir, args.base_commit))
-        warnings.extend(_check_added_test_functions(document, change_sections, work_dir, args.base_commit))
-        warnings.extend(_check_commit_subjects(document, work_dir, args.base_commit))
+    if result.returncode != 0:
+        return None, result.stderr.strip() or "git diffに失敗した"
+    return [line for line in result.stdout.splitlines() if line], None
 
+
+def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | None) -> tuple[list[str], list[str]]:
+    """計画ファイルを検査し、エラーと警告を返す。"""
+    text = plan_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    outside, fence_errors = _outside_fences(lines)
+    errors = fence_errors + _check_h1(lines, outside)
+    target_errors, planned_paths = _check_target_structure(lines, outside, work_dir)
+    errors.extend(target_errors)
+    errors.extend(_check_tables(lines, outside))
+    errors.extend(_check_references(text, work_dir))
+    if not _BASE_RE.search(text):
+        errors.append("完全長のベースコミットが無い")
+    warnings: list[str] = []
+    if base_commit is not None:
+        changed, error = _git_changed_files(work_dir, base_commit)
+        if error:
+            errors.append(error)
+        elif sorted(set(changed or ())) != sorted(set(planned_paths)):
+            planned = sorted(set(planned_paths))
+            actual = sorted(set(changed or ()))
+            warnings.append(f"対象ファイル一覧と実変更ファイルが一致しない: 計画={planned}, 実差分={actual}")
+    return errors, warnings
+
+
+def main(argv: list[str] | None = None) -> int:
+    """コマンドライン引数を解析して計画検査を実行する。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("plan_file", type=pathlib.Path)
+    parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
+    parser.add_argument("--base-commit")
+    try:
+        args = parser.parse_args(argv)
+        errors, warnings = check(args.plan_file, args.work_dir, args.base_commit)
+    except (OSError, UnicodeDecodeError) as error:
+        print(f"計画ファイルを読み込めない: {error}", file=sys.stderr)
+        return 2
     for error in errors:
         print(error, file=sys.stderr)
     for warning in warnings:
         print(f"[warn] {warning}", file=sys.stderr)
-
     return 1 if errors else 0
 
 

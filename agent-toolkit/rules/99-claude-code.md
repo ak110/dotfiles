@@ -57,6 +57,9 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
   既定モデルの変更はエージェント定義のfrontmatterで行う。
   計画レビューは`agent-toolkit:plan-mode`の呼び出し元が2系統へ直接委譲する。
   当該手順は`agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を参照する
+- 書き込みを伴う委譲は、上流追随に成功し、staged・unstaged・non-ignored untrackedの全てが空の
+  worktreeだけで起動する。1つのworktreeへ同時に複数のwriterを割り当てない。
+  reviewerは読み取り専用とし、起動前後のGit差分で書き込みが無いことを確認する
 - 計画ファイル作成のplan mode下委譲では、サンドボックスパスへの書き込みをメイン側が検収し正規パス
   （`~/.claude/plans/`配下）へ反映する。委譲先は正規パスの削除・移動をしない
   - 通常のツール配送経路は戻り値と完了通知（task-notification）の2種である。
@@ -121,7 +124,8 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
   停止指示の成功だけでは停止成立を判定せず、`TaskList`と成果物側の実測を共通規範の手順で照合する
 - `idle_notification(available)`は待機可能な状態だけを示すため、完了報告として扱わない
 - foreground実行では完了報告の受領時点で委譲先が終了している。
-  background実行と孫委譲の記録ファイル経由では受領後も稼働しうるため、対象範囲へ書き込む前に停止させる
+  background実行では委譲機能の終端状態を確認してからwriterを交代する。状態を取得できない経路だけ、
+  間隔を空けた複数回のGit状態確認を補助的に用いる
 - background委譲の状態と累計起動回数は、`TaskList`と`subagents/*.meta.json`の
   `agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`から観測する。
   並列起動した複数インスタンスは各1回として合算する

@@ -97,7 +97,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -310,34 +310,12 @@ def main(payload_text: str) -> int:
     if _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id):
         return 2
 
-    # plan fileWrite検査のblock系checkを統合報告する。
-    # `_check_plan_file_retroactive_scan_recorded`のみ違反メッセージ`str`または`None`を返し
-    # 蓄積して一括printしてreturn 2する。他の旧block系check（required-reads・no-deferral）は
-    # 警告へ降格済みのため、戻り値を制御フローに使わず直接printする。
-    blocking_errors: list[str] = []
-
     # plan file編集前の必須リファレンス未読の場合は警告（降格）
     _print_warning_if_present(_check_plan_file_required_reads_first(tool_name, tool_input, session_id))
 
-    # 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの遡及スキャン記録未整備をブロック
-    blocking_errors.append(_check_plan_file_retroactive_scan_recorded(tool_name, tool_input, session_id) or "")
-
-    # 内容・形式系検査群はwarn降格し、計画確定前の解消・検収を
-    # `agent-toolkit:codex-exec`によるレビューへ委譲する
-    _check_plan_file_h2_section_order(tool_name, tool_input)
+    # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
     _check_plan_file_path_section_matches_file_path(tool_name, tool_input)
-    _check_plan_file_bump_step_when_agent_toolkit_target(tool_name, tool_input)
-    _check_plan_file_manifest_when_bump_step(tool_name, tool_input)
     _check_plan_file_target_file_paths_relative(tool_name, tool_input)
-
-    # plan file `## 変更内容`・`### エージェント判断`配下の先送り含意動詞連結は警告（降格）
-    _print_warning_if_present(_check_plan_file_no_deferral_expression(tool_name, tool_input))
-
-    # 蓄積された違反メッセージを統合報告する。1件でもあればreturn 2する。
-    non_empty_errors = [msg for msg in blocking_errors if msg]
-    if non_empty_errors:
-        print("\n".join(non_empty_errors), file=sys.stderr)
-        return 2
 
     if tool_name == "ExitPlanMode":
         flush_pending_language_warning()
@@ -1770,22 +1748,8 @@ def _check_plan_file_required_reads_first(
     )
 
 
-# --- plan file edit適用後内容の構築（Write/Edit/MultiEdit共通）---
-
-
 def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: str) -> str | None:
-    """Write/Edit/MultiEdit適用後の計画ファイル内容を構築して返す。
-
-    - Write: `tool_input["content"]`が文字列ならそのまま返す。文字列でない場合はNoneを返す
-    - Edit: 既存ファイル本文を読み、`old_string`を`new_string`へ置換した内容を返す
-      `replace_all`が真なら全マッチを置換する
-    - MultiEdit: 既存ファイル本文を読み、`edits[]`を順次適用した内容を返す
-
-    既存ファイル読み込みに失敗した場合の挙動:
-
-    - Edit: 既存内容が空のため、`new_string`を単独で返す
-    - MultiEdit: 既存内容が空のため、`edits[]`を空文字列に対して順次適用した結果（通常は空文字列）を返す
-    """
+    """Write/Edit/MultiEditを適用した後のファイル内容を構築する。"""
     if tool_name == "Write":
         content = tool_input.get("content")
         return content if isinstance(content, str) else None
@@ -1800,10 +1764,9 @@ def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: 
         new_string = tool_input.get("new_string")
         if not isinstance(old_string, str) or not isinstance(new_string, str):
             return None
-        replace_all = bool(tool_input.get("replace_all"))
         if not existing:
             return new_string
-        if replace_all:
+        if bool(tool_input.get("replace_all")):
             return existing.replace(old_string, new_string)
         return existing.replace(old_string, new_string, 1)
 
@@ -1819,69 +1782,23 @@ def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: 
             new_string = edit.get("new_string")
             if not isinstance(old_string, str) or not isinstance(new_string, str):
                 continue
-            replace_all = bool(edit.get("replace_all"))
-            result = result.replace(old_string, new_string) if replace_all else result.replace(old_string, new_string, 1)
+            if bool(edit.get("replace_all")):
+                result = result.replace(old_string, new_string)
+            else:
+                result = result.replace(old_string, new_string, 1)
         return result
 
     return None
 
 
-# --- plan fileのH2節順検査 ---
-
-
-def _check_plan_file_h2_section_order(
-    tool_name: str,
-    tool_input: dict,
-) -> bool:
-    """Plan fileのWrite/Edit/MultiEdit時にH2節順違反をブロックする。
-
-    判定条件:
-
-    - `tool_name`が`_PLAN_FILE_EDIT_TOOLS`に含まれる
-    - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
-    - 適用後contentの構築に成功
-    - `_plan_format.check_h2_order`が1件以上の違反を返す
-
-    SSOTは`skills/plan-mode/SKILL.md`「計画ファイルの完成条件」節のH2構成順の規定。
-    同節の他の完成条件（対象ファイル一覧とH3の対応・コードブロックの有無等）は
-    `skills/plan-mode/scripts/check_plan_file.py`が扱う。
-    """
-    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return False
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return False
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
-    if content is None:
-        return False
-    violations = _plan_format.check_h2_order(content)
-    if not violations:
-        return False
-    violation_str = " / ".join(violations)
-    print(
-        _llm_notice(
-            f"warning: plan file H2 section order violation: {violation_str}"
-            f" Required order: {list(_plan_format.PLAN_REQUIRED_H2)}."
-            " Fix the section order before finalizing the plan.",
-            tag="warn",
-        ),
-        file=sys.stderr,
-    )
-    return True
-
-
-# --- plan file末尾の`## 計画ファイル（本ファイル）のパス`節配下パス値と`file_path`の一致検査 ---
+_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY = "plan_impl_executor_verified_plan_path"
 
 
 def _check_plan_file_path_section_matches_file_path(
     tool_name: str,
     tool_input: dict,
 ) -> bool:
-    """Plan file編集で末尾のパス節配下パス値がWrite/Edit/MultiEditの`file_path`と一致しない場合にブロックする。
-
-    本文末尾の当該節が実際の書き込み先と異なるパス値のまま残存する事象を防ぐ。
-    SSOTは`skills/plan-mode/SKILL.md`「`## 計画ファイル（本ファイル）のパス`」節の規定。
-    """
+    """計画ファイル末尾に記録したパスと実際の編集先の一致を検査する。"""
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
         return False
     file_path_raw = tool_input.get("file_path")
@@ -1899,11 +1816,7 @@ def _check_plan_file_path_section_matches_file_path(
         if stripped:
             candidate = stripped
             break
-    if candidate is None:
-        return False
-    # candidateがパス表記でない場合はプレースホルダーとみなし対象外
-    # （絶対パス`/...`・ホーム展開`~/...`のいずれかで始まる場合のみ検査対象）
-    if not (candidate.startswith("/") or candidate.startswith("~")):
+    if candidate is None or not (candidate.startswith("/") or candidate.startswith("~")):
         return False
     try:
         recorded = pathlib.Path(candidate).expanduser().resolve()
@@ -1926,229 +1839,6 @@ def _check_plan_file_path_section_matches_file_path(
     return True
 
 
-# --- plan file `## 変更内容`・`### エージェント判断`配下の先送り含意動詞連結検査 ---
-
-# 走査対象H2見出し名（`## 変更内容`）。`### エージェント判断`は変更内容配下のH3で扱う。
-_PLAN_DEFERRAL_TARGET_H2: frozenset[str] = frozenset({"変更内容"})
-
-# `### エージェント判断`H3見出し名。H2直下ではなく`## 対応方針`等の配下に置かれる場合もあり、
-# H3見出し自体の名前で判定する。
-_PLAN_DEFERRAL_TARGET_H3: frozenset[str] = frozenset({"エージェント判断"})
-
-
-def _iter_plan_deferral_target_lines(content: str) -> Iterator[tuple[int, str]]:
-    """`## 変更内容`配下および任意H2下の`### エージェント判断`配下の本文行を生成する。
-
-    `_plan_format.iter_markdown_body_lines`を経由してフロントマター・コードフェンス・
-    複数行HTMLコメントは除外済み（`text`コードブロック内・HTMLコメント内は無条件除外）。
-    """
-    current_h2: str | None = None
-    current_h3: str | None = None
-    for lineno, line in _plan_format.iter_markdown_body_lines(content):
-        if line.startswith("## "):
-            current_h2 = line[3:].strip()
-            current_h3 = None
-            continue
-        if line.startswith("### "):
-            current_h3 = line[4:].strip().strip("`")
-            continue
-        in_change_content = current_h2 in _PLAN_DEFERRAL_TARGET_H2
-        in_agent_decision = current_h3 in _PLAN_DEFERRAL_TARGET_H3
-        if in_change_content or in_agent_decision:
-            yield lineno, line
-
-
-def _check_plan_file_no_deferral_expression(
-    tool_name: str,
-    tool_input: dict,
-) -> str | None:
-    """Plan fileのWrite/Edit/MultiEdit時に先送り含意動詞連結パターンの警告メッセージを返す。
-
-    走査対象は`## 変更内容`配下および任意H2下の`### エージェント判断`配下の本文行。
-    検出パターンは`_scope_escalation._SCOPE_ESCALATION_PHRASES`の`plan-deferral-onset`カテゴリ
-    （「実装時／実装段階」直後の未確定動詞＋文末「〜で判断／決定／選定／確定する」連結）。
-    `text`コードブロック内・HTMLコメント内・フロントマターは`iter_markdown_body_lines`が除外する。
-    警告のみでツール呼び出しは継続する（block降格）。
-    呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する。
-    戻り値契約: 違反メッセージ`str`または`None`。呼び出し元は制御フローに使わずstderrへ出力する。
-    """
-    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return None
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return None
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
-    if content is None:
-        return None
-
-    matches: list[tuple[int, str]] = []
-    for lineno, line in _iter_plan_deferral_target_lines(content):
-        match_result = _match_scope_escalation(line, categories={"plan-deferral-onset"})
-        if match_result is not None:
-            matches.append((lineno, line.strip()))
-    if not matches:
-        return None
-    shown = matches[:5]
-    shown_str = "; ".join(f"line {ln}: {s!r}" for ln, s in shown)
-    overflow = len(matches) - len(shown)
-    tail = f"; and {overflow} more" if overflow > 0 else ""
-    return _llm_notice(
-        "warning: deferral expressions were detected under plan file `## 変更内容` / `### エージェント判断`."
-        " Rewrite phrases that defer decisions to the implementation phase into definitive execution statements"
-        " (present-tense mandatory execution) or into observation records under `## 進捗ログ`."
-        f" Matches: {shown_str}{tail}."
-        f" Alternatives: {_format_scope_escalation_alternatives('plan-deferral-onset')}",
-        tag="warn",
-    )
-
-
-# --- 規範対象ドキュメントへのメタ規範新設編集時の遡及スキャン記録チェック (FB4) ---
-
-# 遡及スキャン対象の計画ファイル解決時に`current_plan_file_path`より優先するセッション状態キー。
-# `_record_plan_impl_executor_plan_path`が、実在する計画ファイルを参照した
-# `plan-impl-executor`起動時に当該パスを記録する。
-_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY = "plan_impl_executor_verified_plan_path"
-
-# 汎用禁止形: バレット行頭記号直後から句点・改行終端の禁止動詞までを検出する。
-_RETROACTIVE_SCAN_GENERIC_PROHIBITION_PATTERN = re.compile(
-    r"^\s*-\s+[^\n]{0,80}(しない|禁止する|発行しない|省略しない)(。|$)", re.MULTILINE
-)
-# 全称禁止形: 「いかなる理由（例: X）があっても〜しない」形式。
-_RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_PATTERN = re.compile(r"いかなる理由(?:（[^）]*）)?があっても[^\n]{0,80}しない")
-# 新規節見出し: 規範文書への新規セクション追加を検出する。
-_RETROACTIVE_SCAN_NEW_HEADING_PATTERN = re.compile(r"^##[#]* .+$", re.MULTILINE)
-
-_RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検出件数", "対応方針")
-
-
-def _detect_new_meta_norm(old: str, new: str) -> bool:
-    """new側にold側と比べて新規のメタ規範パターン（禁止形バレット・新規節見出し）が追加されたか判定する。"""
-    if _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_PATTERN.search(new) and not (
-        _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_PATTERN.search(old)
-    ):
-        return True
-    if len(_RETROACTIVE_SCAN_GENERIC_PROHIBITION_PATTERN.findall(new)) > len(
-        _RETROACTIVE_SCAN_GENERIC_PROHIBITION_PATTERN.findall(old)
-    ):
-        return True
-    return len(_RETROACTIVE_SCAN_NEW_HEADING_PATTERN.findall(new)) > len(_RETROACTIVE_SCAN_NEW_HEADING_PATTERN.findall(old))
-
-
-def _plan_file_has_retroactive_scan_record(plan_file_path: str) -> bool:
-    """現在の計画ファイルの`## 調査結果`配下に遡及スキャンの必須3項目の記述があるか判定する。
-
-    `skills/plan-mode/SKILL.md`「計画ファイルの完成条件」節は記載先を`### 事実確認済み事項`と定めるため、
-    専用H3見出し名は要求せず`## 調査結果`本文全体を判定範囲とする。
-    """
-    try:
-        content = pathlib.Path(plan_file_path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return False
-    body = _plan_format.extract_h2_section_body(content, "調査結果")
-    if not body:
-        return False
-    section_text = "\n".join(line for _, line in body)
-    return all(item in section_text for item in _RETROACTIVE_SCAN_REQUIRED_ITEMS)
-
-
-def _resolve_retroactive_scan_plan_file_path(state: dict) -> str | None:
-    """遡及スキャン記録の検査対象とする計画ファイルパスを解決する。
-
-    別の既存計画への切替時に記録される`plan_impl_executor_verified_plan_path`を優先し、
-    未記録の場合は`current_plan_file_path`を使う。
-    切替後は当該計画が実装対象であり、以前の計画の記録有無で判定すると検査対象を取り違えるためである。
-    いずれも未記録・非文字列・空文字列の場合は`None`を返す。
-    """
-    for key in (_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY, "current_plan_file_path"):
-        value = state.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
-
-
-def _check_plan_file_retroactive_scan_recorded(
-    tool_name: str,
-    tool_input: dict,
-    session_id: str,
-) -> str | None:
-    """規範対象ドキュメントへのメタ規範新設編集時、現在の計画ファイルの遡及スキャン記録未整備の違反メッセージを返す。
-
-    戻り値契約: 違反メッセージ`str`または`None`。呼び出し元が統合報告する。
-
-    判定条件:
-
-    - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`がコーディングエージェント向け文書判定対象パターン
-      （`_plan_format.AGENT_DOC_TARGET_PATTERNS` / `_plan_format.AGENT_DOC_TARGET_BASENAMES`）に
-      一致する規範対象ドキュメント（計画ファイル自身は対象外）
-    - 新規/既存内容の比較で`_detect_new_meta_norm`が真
-      （全称禁止形の新規出現、汎用禁止形バレットの増加、新規節見出しの増加のいずれか）
-    - `session_id`のセッション状態から解決した計画ファイル
-      （`plan_impl_executor_verified_plan_path`を優先し、未記録なら`current_plan_file_path`）の
-      `## 調査結果`配下に必須3項目（対象パターン・検出件数・対応方針）が記述されていない
-
-    計画ファイルパスが未記録の場合は判定不能として通過させる（安全側でブロックしない）。
-    """
-    if tool_name not in ("Write", "Edit", "MultiEdit"):
-        return None
-    file_path_raw = tool_input.get("file_path")
-    file_path = file_path_raw if isinstance(file_path_raw, str) else ""
-    if not file_path or is_plan_file(file_path):
-        return None
-    if not _plan_format.is_agent_doc_target_file(file_path):
-        return None
-
-    detected = False
-    if tool_name == "Write":
-        content = tool_input.get("content")
-        if isinstance(content, str):
-            try:
-                old_content = pathlib.Path(file_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                old_content = ""
-            detected = _detect_new_meta_norm(old_content, content)
-    elif tool_name == "Edit":
-        old_string = tool_input.get("old_string") or ""
-        new_string = tool_input.get("new_string")
-        if isinstance(new_string, str):
-            old_string = old_string if isinstance(old_string, str) else ""
-            detected = _detect_new_meta_norm(old_string, new_string)
-    else:  # MultiEdit
-        edits = tool_input.get("edits") or []
-        if isinstance(edits, list):
-            for edit in edits:
-                if not isinstance(edit, dict):
-                    continue
-                old_string = edit.get("old_string") or ""
-                new_string = edit.get("new_string")
-                if not isinstance(new_string, str):
-                    continue
-                old_string = old_string if isinstance(old_string, str) else ""
-                if _detect_new_meta_norm(old_string, new_string):
-                    detected = True
-                    break
-    if not detected:
-        return None
-
-    if not session_id:
-        return None
-    state = read_state(session_id)
-    plan_file_path = _resolve_retroactive_scan_plan_file_path(state)
-    if plan_file_path is None:
-        return None
-    if _plan_file_has_retroactive_scan_record(plan_file_path):
-        return None
-    return _llm_notice(
-        f"blocked: detected a new meta-norm pattern being added to {file_path},"
-        f" but plan file {plan_file_path} does not record the required items"
-        f" (target pattern, detection count, remediation policy) under the"
-        f" `## 調査結果` section."
-        f" Follow skills/plan-mode/SKILL.md '計画ファイルの完成条件' section,"
-        f" record the retroactive scan results in the plan file, then retry the edit.",
-        tag="block",
-    )
-
-
 # --- 計画単位の状態管理 ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
@@ -2160,64 +1850,6 @@ _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:p
 
 # `model`引数指定を一律禁止する対象。executorは定義済みモデルを使う委譲窓口として動く。
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
-
-
-def _check_plan_file_bump_step_when_agent_toolkit_target(tool_name: str, tool_input: dict) -> None:
-    """計画ファイルの対象ファイル一覧に`agent-toolkit/`配下パスがある場合にbump記載を要求する。
-
-    判定は`_plan_format.has_bump_step_when_required`へ委譲する（SSOT）。
-    違反時はwarn降格の`_llm_notice`を`stderr`へ出力し、ブロックは採用しない
-    （`agent-toolkit-edit`スキル「bump不要時のみ省略可」文言との整合を保つ）。
-    """
-    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
-    if content is None:
-        return
-    if _plan_format.has_bump_step_when_required(content):
-        return
-    print(
-        _llm_notice(
-            f"plan file {file_path_raw}: the target file list includes paths under `agent-toolkit/`,"
-            " but the `## 実行方法` body does not include an `agent_toolkit_bump.py` step."
-            " Follow `.claude/skills/agent-toolkit-edit/SKILL.md` 'バージョン更新' section and add a bump step"
-            " to the execution procedure (ignore this warning if a bump is not required).",
-            tag="warn",
-        ),
-        file=sys.stderr,
-    )
-
-
-def _check_plan_file_manifest_when_bump_step(tool_name: str, tool_input: dict) -> None:
-    """計画ファイル`## 実行方法`にbump stepがある場合、対象ファイル一覧のmanifest記載を要求する。
-
-    判定は`_plan_format.has_manifest_files_when_bump_step_present`へ委譲する（SSOT）。
-    違反時はwarn降格の`_llm_notice`を`stderr`へ出力し、ブロックは採用しない
-    （既存`_check_plan_file_bump_step_when_agent_toolkit_target`と同分類）。
-    """
-    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
-    if content is None:
-        return
-    if _plan_format.has_manifest_files_when_bump_step_present(content):
-        return
-    print(
-        _llm_notice(
-            f"plan file {file_path_raw}: the `## 実行方法` body records a bump step,"
-            " but the target file list is missing both manifests."
-            " Follow `.claude/skills/agent-toolkit-edit/SKILL.md` 'バージョン更新' section and add both manifests to"
-            " the target file list.",
-            tag="warn",
-        ),
-        file=sys.stderr,
-    )
 
 
 def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict) -> None:

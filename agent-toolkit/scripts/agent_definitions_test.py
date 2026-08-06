@@ -115,25 +115,21 @@ def test_codex_exec_agents_use_skill_then_toolsearch_then_delegation() -> None:
     assert executor.index("Skillツール") < executor.index("ToolSearch")
     assert executor.index("ToolSearch") < executor.index("次のreferenceをRead")
     assert executor.index("次のreferenceをRead") < executor.index("タスク本文を構成")
-    assert executor.index("タスク本文を構成") < executor.index("実装用タスク本文")
 
 
 def test_claude_fallback_preserves_track_agent_ids_and_attempt_markers() -> None:
-    """Claude代替の識別子と通常配送優先契約を検査する。"""
+    """Claude代替の系統分離と通常配送優先契約を検査する。"""
     skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     boilerplate = _DELEGATION_BOILERPLATE.read_text(encoding="utf-8")
-    impl_caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
     for document in (executor, boilerplate):
         assert "SendMessage" in document
         assert "Agent識別子" in document
         assert "通常" in document
     assert "references/delegation-boilerplate.md" in skill
-    for label in ("implementation_agent_id", "plan_review_agent_id", "independent_review_agent_id"):
-        assert label in executor
-        assert label in impl_caller
-    assert "Agentへ直接`SendMessage`を実行" in impl_caller
+    assert "系統別" in executor
+    assert "route/thread" in executor
 
 
 def test_plan_review_contract_uses_canonical_plan_and_repository_directly() -> None:
@@ -250,7 +246,7 @@ def test_plan_impl_report_labels_are_synchronized() -> None:
 
 
 def test_plan_impl_review_status_values_are_synchronized() -> None:
-    """executorが定義する`review_status`の値を呼び出し元の検収節が網羅する。"""
+    """executorのreview statusを2終端状態とユーザー省略へ限定する。"""
     section = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
     fence = _FENCED_BLOCK_RE.search(section)
     assert fence, "`## 出力`節にフェンス付きコードブロックが存在しない"
@@ -260,15 +256,9 @@ def test_plan_impl_review_status_values_are_synchronized() -> None:
     )
     assert definition, "`## 出力`節に`review_status`の定義行が無い"
     values = {value.strip() for value in definition.removeprefix("review_status:").split("|")}
-    assert any(value.startswith("実施完了") for value in values), "`review_status`の定義に実施完了の値が無い"
+    assert values == {"completed", "needs_escalation", "skipped_by_user"}
     reception = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
-    normalized_values = {"実施完了..." if value.startswith("実施完了") else value for value in values}
-    caller_values = {value for value in re.findall(r"`([^`\n]+)`", reception) if value in normalized_values}
-    assert normalized_values == caller_values, (
-        f"`review_status`の値と呼び出し元の検収節が一致しない: "
-        f"定義側のみ={sorted(normalized_values - caller_values)}、"
-        f"呼び出し元のみ={sorted(caller_values - normalized_values)}"
-    )
+    assert "未解決の実指摘が無い" in reception
 
 
 def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
@@ -285,12 +275,9 @@ def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
 
 
 def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
-    """静的検査と二系統レビューの並列実行および既存責務を同期する。"""
+    """二系統レビューの最小出力と実契約違反の限定を同期する。"""
     review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-    initial_review = _h2_section(review, "初回レビュー")
-    rereview = _h2_section(review, "再レビュー")
     executor_delegation = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "委譲")
-    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     review_tasks = (
         _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
         _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
@@ -298,108 +285,37 @@ def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
 
     for task in review_tasks:
         output = _h2_section(task, "出力")
-        assert "review_coverage" in output
-        assert "review_impact_audit" in output
-        assert "計画対応・独立提案の区分は返さない" in output
-        assert "観点・点検対象・指摘件数" in output
-        assert "初回成果物に存在した見逃し" not in output
-    assert "初回成果物に存在した見逃し" in review
-    assert "`独立提案`は目的外として不採用" in implementation_task
-    assert "採用（独立提案）" not in implementation_task
-    assert "不採用とした`独立提案`は登録操作に含めない" in implementation_task
-    assert "2区分の採否" in _PLAN_MODE.read_text(encoding="utf-8")
-    assert "不採用とする独立提案は含めない" in _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
-    assert "一括修正による影響を監査する" in implementation_task
-    assert "review_impact_audit" in implementation_task
-    for phrase in (
-        "静的検査、計画準拠系レビュー、独立系レビューの3件を同時に開始する",
-        "初回レビューでは、静的検査専用の継続指示を実装・修正系へ送る",
-        "実装・修正系の既存route、thread、Agent識別子を継続する",
-        "第4系統や新しいtask referenceは追加しない",
-        "レビュー系へ静的検査結果を渡さず、静的検査の完了も待たない",
-        "3結果を独立に検収する",
-        "既存の`verification`",
-        "終了コードが0以外、または未解消warning",
-        "レビュー指摘の有無にかかわらず実装・修正系へ戻す",
-        "静的検査結果をレビュー指摘へ変換しない",
-    ):
-        assert phrase in initial_review
-    for phrase in (
-        "採用指摘または静的検査失敗の修正後",
-        "静的検査と二系統レビューの3件を同時に再実行する",
-        "静的検査結果をレビュー系の継続入力へ追加しない",
-        "3結果の独立検収と修正系への差し戻し条件は初回と同じ",
-    ):
-        assert phrase in rereview
-    for phrase in (
-        "初回レビューでは、静的検査専用の継続指示を実装・修正系へ送る",
-        "同時に、計画準拠系と独立系へレビュー用タスク本文を並列に渡す",
-        "実装・修正系の既存route、thread、Agent識別子を継続する",
-        "第4系統や新しいtask referenceは追加しない",
-        "静的検査結果と両レビュー応答の3結果を受領",
-        "採用指摘または静的検査失敗の修正後",
-        "同時に、両レビュー系へ系統別の再レビュー用タスク本文を渡す",
-        "3結果を受領し、初回と同じ方法で独立に検収する",
-        "静的検査結果をレビュー系の継続入力へ追加しない",
-    ):
-        assert phrase in executor_delegation
+        assert "対象commit" in output
+        assert "点検範囲" in output
+        assert "violated_contract" in output
+        assert "review_coverage" not in output
+        assert "review_impact_audit" not in output
+    assert "計画準拠レビューと独立レビューを並列実行" in executor_delegation
+    assert "軽微な好み" in review
 
 
 def test_plan_impl_worktree_snapshot_contract_is_synchronized() -> None:
-    """実装レビューの単一地点snapshot、絶対パス伝播、完成成果物の引取りを同期する。"""
+    """全量snapshotを廃止し、Git標準検査とone-writer契約へ同期する。"""
     review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
-
-    for document in (review, rules):
-        assert "_worktree_snapshot.py" in document
-        assert "capture" in document
-        assert "compare" in document
-        for field in (
-            "head_relation",
-            "repository_changed",
-            "tracked_changed",
-            "index_changed",
-            "worktree_changed",
-            "untracked_added",
-            "untracked_removed",
-            "untracked_modified",
-        ):
-            assert field in document
-        assert "worktree一覧" in document
-        assert "lock状態" in document
-        assert "絶対パス" in document
-    assert "作業ディレクトリを自己解決する手段を用いない" in rules
-    assert "再委譲時にも同じ形式を引き継がせる" in rules
-    assert "成果物が完成条件を満たす場合は復旧せず引き取る" in rules
-    assert "完成条件を満たす成果物が実在する場合は再作業せず復旧もせず" in caller
-    for phrase in (
-        "分岐元ref",
-        "分岐元OID",
-        "git log --oneline <分岐元ref>..HEAD",
-        "git log --oneline HEAD..<分岐元ref>",
-        "分岐元へ追随",
-        "成果物snapshotを取り直す",
-        "追随と再取得が完了するまでレビューを開始しない",
-    ):
-        assert phrase in review
-    assert "レビュー範囲は分岐元追随とは別に計画着手前SHAで固定" in review
+    assert "_worktree_snapshot.py" not in review
+    assert "_worktree_snapshot.py" not in rules
+    assert "git status --short" in review
+    assert "writer" in rules
+    assert "終端状態" in rules
 
 
 def test_plan_impl_review_cap_contract_is_synchronized() -> None:
-    """5ラウンド上限後の確定スナップショットと終端状態を各契約で同期する。"""
+    """5ラウンド上限時の未解決指摘をneeds_escalationへ同期する。"""
     review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
     for document in (review, executor, caller):
-        assert "completed_with_review_cap" in document
-        assert "上限到達後の既知指摘修正済み（再レビューなし）" in document
-    assert "確定スナップショット" in review
-    assert "新規指摘を探索する第6ラウンドは実施しない" in review
-    assert "最終確認・final review・rereview" in review
-    for phrase in ("現在のラウンド数", "上限", "既知指摘の残数", "計画対象外"):
-        assert phrase in caller
+        assert "completed_with_review_cap" not in document
+        assert "needs_escalation" in document
+    assert "最大5ラウンド" in review
+    assert "未解決指摘" in review
 
 
 def test_plan_review_checks_canonical_plan_in_target_repository_context() -> None:
@@ -467,7 +383,7 @@ def test_add_feedback_and_process_feedbacks_have_distinct_triggers() -> None:
 
 
 def test_plan_review_direct_route_skips_worktree_snapshot_contract() -> None:
-    """計画レビューだけをworktree snapshot契約から除外する。"""
+    """計画レビューと共通規範の双方からsnapshot契約を除去する。"""
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     documents = (
         _PLAN_REVIEW_DELEGATION,
@@ -476,16 +392,10 @@ def test_plan_review_direct_route_skips_worktree_snapshot_contract() -> None:
         _PLAN_REVIEW_TASK,
     )
 
-    assert "正規計画と対象リポジトリの直接レビュー経路は、本バレットの対象外" in rules
-    before_capture, separator, _ = rules.partition("委譲開始前に想定先の作業ディレクトリ")
-    assert separator
-    snapshot_contract = before_capture.rsplit("\n- ", maxsplit=1)[-1]
-    assert "本バレットと配下のsnapshot契約の対象外" in snapshot_contract
+    assert "_worktree_snapshot.py" not in rules
     for path in documents:
         text = path.read_text(encoding="utf-8")
         assert "_worktree_snapshot.py" not in text
-        assert "capture" not in text
-        assert "compare" not in text
 
 
 def test_plan_review_resume_preserves_cumulative_state() -> None:
@@ -548,10 +458,6 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "バグ対応は単一ファイルの単純な修正でも起動対象" in plan_mode
     assert "バグ対応を除く単一ファイルの単純な修正" in plan_mode
     assert "\n  単一ファイルの単純な修正や会話だけの質問では起動しない。" not in plan_mode
-    assert "初回`Write`の成功直後" in plan_mode
-    assert "計画ファイルの絶対パスを利用者向け進捗へ1回だけ提示" in plan_mode
-    assert "反復編集とレビューでは再提示しない" in plan_mode
-    assert "深掘り条件に該当する場合だけ" in plan_mode
     assert "深掘り条件に該当する場合だけ" in agent_rules
     assert "該当しない局所不良は、是正と近接検証に限定" in agent_rules
     assert "深掘り条件に該当した指摘は、恒久ルールへの反映先" in agent_rules

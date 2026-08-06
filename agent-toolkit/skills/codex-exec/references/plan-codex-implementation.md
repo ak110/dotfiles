@@ -21,7 +21,7 @@ task referenceが列挙する資料と規範本文を起動文へ転記しない
 実装をファイル・言語・工程別の複数担当へ分割しない。
 同じ実装・修正系を完了まで継続する。Codex経路は`threadId`を保持する。
 Claude代替はAgent識別子を保持し、利用可能な`SendMessage`で同じAgentを再開する。
-再開できない場合だけ、同じreference群と前回応答全文を渡して新規起動する。
+再開できない場合だけ、同じreference群、計画ファイル、feedback filename、worktree、未完了事項を渡して新規起動する。
 
 ## 実装順序
 

@@ -14,6 +14,8 @@ user-invocable: false
 
 codex MCPを優先し、利用できない場合だけ汎用エージェントへ切り替える。
 用途固有の作業内容は呼び出し元がreferenceから構成し、本スキルは接続・継続・代替経路だけを担う。
+設計判断を伴う実装・レビューはGPT-5.6-Solを選ぶ。内容が確定した低リスクの機械作業だけ
+GPT-5.6-Terraまたは同等の軽量経路を選べる。価格やquotaの固定比較ではなく、失敗時の再試行を含む総費用で決める。
 
 Skillツールの成功応答は本スキルの読み込み完了を示し、委譲結果の待機状態を示さない。
 呼び出し元は成功後、既存のMCPスキーマの有無を確認し、ToolSearch、MCP初回接続、
@@ -55,7 +57,7 @@ task referenceは委譲先自身が守る作業契約だけを記載する。
 2. `threadId`が無い初回は`mcp__codex__codex`を呼び出す
    - `cwd`には受領した作業ディレクトリの絶対パスを指定する
    - `sandbox`には`danger-full-access`を指定する
-   - `config.model_reasoning_effort`には`medium`を指定する
+   - 設計判断を伴う実装・レビューではGPT-5.6-Solと十分なreasoning effortを指定する
 3. 同じ系統の`threadId`がある場合は`mcp__codex__codex-reply`で継続する
 4. 指定モデルが利用できない場合だけ、同じ経路で利用可能な既定モデルへ切り替えて再試行する
 5. 一時的な失敗は同じ経路で再試行する
