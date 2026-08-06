@@ -12,12 +12,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import typing
 
 import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_remove_all as _remove_all
-import _atk_mq_schedule as _schedule
 import _atk_mq_tbd as _tbd
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
@@ -47,7 +45,7 @@ from _atk_mq_repo import edit_entry as _edit_entry
 _CATEGORY_GATE_THRESHOLD = 3
 _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
     "target_commit",
-    "queue_schedule",
+    "depends_on",
     "repair_target",
     "repair_kind",
     "plan_file",
@@ -57,11 +55,7 @@ _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
 def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
     """frontmatterの予約キーが不正に追加・変更・削除されていないかを検証する。
 
-    利用者が$EDITORまたはWeb APIで任意のfrontmatterを書き込むことで、
-    修復TBDの自動投入抑止や`queue_schedule`偽装が可能になることを防ぐ。
-    ただし、正当な差分（`target_repo`変更に伴う`queue_schedule`失効等、
-    システム側が行う変更）を誤って拒否しないよう、新旧frontmatterを比較して
-    不正な差分のみを検出する。
+    利用者が$EDITORまたはWeb APIで内部管理用frontmatterを書き換えることを防ぐ。
     """
     original_parsed = _frontmatter.parse_frontmatter(original)
     updated_parsed = _frontmatter.parse_frontmatter(updated)
@@ -84,7 +78,7 @@ def _validate_no_reserved_frontmatter_modification(original: str, updated: str) 
             raise WebInputError(f"予約キー`{key}`の追加は許可されていません")
 
         # 対象リポジトリ変更時の分類失効はシステムが行う正当な削除である。
-        if key in {"target_commit", "queue_schedule"} and original_has_key and not updated_has_key and target_repo_changed:
+        if key == "target_commit" and original_has_key and not updated_has_key and target_repo_changed:
             continue
 
         # 予約キーの削除を検出
@@ -107,7 +101,6 @@ def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:
     if original_data.get("target_repo") == updated_data.get("target_repo"):
         return updated
     updated_data.pop("target_commit", None)
-    updated_data.pop("queue_schedule", None)
     return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 
 
@@ -236,9 +229,7 @@ def edit_entry_content(
 ) -> bool:
     """平引数でfeedback本文を更新する。
 
-    保存前に新旧frontmatterを比較し、予約キー`target_commit`・`queue_schedule`・`repair_target`・`repair_kind`・`plan_file`の
-    追加・変更・削除を禁止する。正当な差分（`target_repo`変更に伴う`queue_schedule`失効等、
-    システム側が行う変更）を誤って拒否しないよう、検証範囲を慎重に設定する。
+    保存前に新旧frontmatterを比較し、内部管理用予約キーの追加・変更・削除を禁止する。
     """
     if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}:
         raise WebInputError("編集可能状態はinbox又はprocessingです")
@@ -287,8 +278,8 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         if not isinstance(raw_target_repo, str):
             raise WebInputError("target_repoは文字列で指定してください")
         updates["target_repo"] = _resolve_repo_id(raw_target_repo)
-    if "queue_schedule" in updates:
-        raise WebInputError("queue_scheduleは予約キーのため atk mq edit では指定できません")
+    if "depends_on" in updates:
+        raise WebInputError("depends_onは予約キーのため atk mq edit では指定できません")
     if "target_commit" in updates:
         raise WebInputError("target_commitは予約キーのため atk mq edit では指定できません")
     if "repair_target" in updates:
@@ -301,16 +292,6 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     target_repo_changed = "target_repo" in updates and stored_data.get("target_repo") != updates["target_repo"]
     if target_repo_changed:
         updated_data.pop("target_commit", None)
-    schedule_mapping = updated_data.get("queue_schedule")
-    typed_schedule_mapping = (
-        typing.cast(dict[str, typing.Any], schedule_mapping) if isinstance(schedule_mapping, dict) else None
-    )
-    if (
-        "target_repo" in updates
-        and typed_schedule_mapping is not None
-        and typed_schedule_mapping.get("normalized_target_repo") != updates["target_repo"]
-    ):
-        del updated_data["queue_schedule"]
 
     if entry_type != MQ_TYPE_TBD:
         return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
@@ -475,28 +456,12 @@ def convert_entry_to_plan(
         canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
         if path.name in canonical_dependencies:
             raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
-        dependency = (
-            _schedule.Dependency(kind="entries", filenames=canonical_dependencies)
-            if canonical_dependencies
-            else _schedule.Dependency(kind="none")
-        )
-
-        existing_schedule = data.get(_schedule.SCHEDULE_KEY)
-        existing_metadata = _schedule.mapping_to_metadata(existing_schedule) if isinstance(existing_schedule, dict) else None
-        metadata = _schedule.ScheduleMetadata(
-            body_sha256=_schedule.body_sha256(text),
-            normalized_target_repo=entry_repo,
-            feedback_type="plan-impl",
-            dependency=dependency,
-            plan_file=str(plan_path),
-            target_files=(),
-            carry_count=existing_metadata.carry_count if existing_metadata is not None else 0,
-            carry_reasons=existing_metadata.carry_reasons if existing_metadata is not None else (),
-            last_deferral_run_id=existing_metadata.last_deferral_run_id if existing_metadata is not None else None,
-            last_deferral_reason=existing_metadata.last_deferral_reason if existing_metadata is not None else None,
-        )
         data["plan_file"] = str(plan_path)
-        data[_schedule.SCHEDULE_KEY] = _schedule.metadata_to_mapping(metadata)
+        data.pop("queue_schedule", None)
+        if canonical_dependencies:
+            data["depends_on"] = list(canonical_dependencies)
+        else:
+            data.pop("depends_on", None)
         updated_text = _frontmatter.serialize_frontmatter(data, body)
         if updated_text != text:
             _atomic_write_text(path, updated_text)

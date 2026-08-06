@@ -19,7 +19,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
@@ -125,12 +124,12 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("state", ["inbox", "processing"])
-def test_convert_to_plan_preserves_history_and_aligns_metadata(
+def test_convert_to_plan_replaces_legacy_schedule_with_top_level_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     state: str,
 ) -> None:
-    """変換が状態を問わず計画・依存・本文hash・繰越履歴を整合させる。"""
+    """変換が状態を問わず計画・依存をトップレベルへ正規化する。"""
     notes = _setup_notes(tmp_path)
     schedule_mapping = (
         "queue_schedule:\n"
@@ -161,17 +160,11 @@ def test_convert_to_plan_preserves_history_and_aligns_metadata(
     parsed = frontmatter_parser.parse_frontmatter(text)
     assert parsed is not None
     data, _body = parsed
-    metadata = schedule.parse_schedule_metadata(text)
-    assert metadata is not None
     assert data["plan_file"] == str(plan)
-    assert metadata.plan_file == str(plan)
-    assert metadata.dependency == schedule.Dependency("entries", filenames=("dependency.md",))
-    assert metadata.carry_count == 2
-    assert metadata.carry_reasons == ("limit-exceeded", "conflict")
-    assert metadata.last_deferral_run_id == "run-1"
-    assert metadata.last_deferral_reason == "conflict"
+    assert data["depends_on"] == ["dependency.md"]
+    assert "queue_schedule" not in data
     assert details["target_commit"] == "a" * 40
-    assert details["dependency"] == {"kind": "entries", "filenames": ["dependency.md"]}
+    assert details["depends_on"] == ["dependency.md"]
 
 
 @pytest.mark.parametrize(
@@ -292,7 +285,7 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
         "target_repo": "github.com/example/foo",
         "target_commit": "a" * 40,
         "plan_file": "/tmp/plan.md",
-        "dependency": {"kind": "entries", "filenames": ["dependency.md"]},
+        "depends_on": ["dependency.md"],
     }
     monkeypatch.setattr(mutations, "convert_entry_to_plan", lambda *_args, **_kwargs: details)
     args = argparse.Namespace(
@@ -308,7 +301,7 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
     assert "target_repo: github.com/example/foo" in output
     assert f"target_commit: {'a' * 40}" in output
     assert "plan_file: /tmp/plan.md" in output
-    assert 'dependency: {"filenames": ["dependency.md"], "kind": "entries"}' in output
+    assert "depends_on: dependency.md" in output
 
 
 def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1309,26 +1302,6 @@ class TestNoninteractiveEdit:
         assert "差分なし。" in capsys.readouterr().out
         assert not [call for call in git_calls if "commit" in call["cmd"]]
 
-    def test_edit_rejects_explicit_queue_schedule(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """edit経路からqueue_scheduleを注入できない。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "fb-001.md")
-        original = path.read_text(encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        message = "---\nqueue_schedule:\n  type: normal\n---\n\n編集後"
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
-
-        assert exc_info.value.code == 1
-        assert "予約キー" in capsys.readouterr().err
-        assert path.read_text(encoding="utf-8") == original
-
     def test_edit_rejects_explicit_target_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1481,42 +1454,6 @@ class TestNoninteractiveEdit:
         assert parsed is not None
         assert parsed[0]["plan_file"] == "/tmp/plan.md"
 
-    def test_edit_content_validator_rejects_queue_schedule_via_direct_call(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """共通保存境界のcontent_validatorがqueue_scheduleの追加を拒否する（edit_entry_content直接呼び出し）。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "fb-001.md")
-        original_content = path.read_text(encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        # 元のfrontmatterにqueue_scheduleが無いことを確認
-        original_parsed = frontmatter_parser.parse_frontmatter(original_content)
-        assert original_parsed is not None
-        original_data, _ = original_parsed
-        assert "queue_schedule" not in original_data
-
-        # queue_scheduleを追加した新しいcontentを作成
-        new_content = (
-            "---\ntarget_repo: github.com/example/repo\ntype: feedback\nqueue_schedule:\n  type: normal\n---\n\n編集後の本文\n"
-        )
-
-        # edit_entry_contentへ直接呼び出し。共通保存境界のvalidatorがqueue_schedule追加を拒否する
-        with pytest.raises(mutations.WebInputError) as exc_info:
-            mutations.edit_entry_content(
-                notes,
-                state="inbox",
-                filename="fb-001.md",
-                content=new_content,
-                lock_timeout=2.0,
-            )
-
-        assert "予約キー" in str(exc_info.value)
-        # ファイルは変更されていない
-        assert path.read_text(encoding="utf-8") == original_content
-
     @pytest.mark.parametrize(
         ("reserved_key", "reserved_value"),
         [("repair_target", "broken.md"), ("repair_kind", "frontmatter")],
@@ -1542,107 +1479,6 @@ class TestNoninteractiveEdit:
         assert exc_info.value.code == 1
         assert "予約キー" in capsys.readouterr().err
         assert path.read_text(encoding="utf-8") == original
-
-    def test_edit_invalidates_queue_schedule_on_target_repo_change(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """target_repo変更時は旧リポジトリ向け分類メタデータを削除する。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "fb-001.md")
-        text = path.read_text(encoding="utf-8")
-        metadata = schedule.ScheduleMetadata(
-            schedule.body_sha256(text),
-            "github.com/example/foo",
-            "normal",
-            schedule.Dependency("none"),
-            None,
-            ("README.md",),
-            0,
-            (),
-        )
-        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                [
-                    "mq",
-                    "edit",
-                    "fb-001.md",
-                    "---\ntarget_repo: github.com/example/new\n---\n\n編集後",
-                ],
-                home=tmp_path,
-            )
-
-        assert exc_info.value.code == 0
-        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
-        assert parsed is not None
-        assert "queue_schedule" not in parsed[0]
-
-    def test_edit_preserves_queue_schedule_when_other_keys_change(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """target_repo以外のfrontmatter更新ではqueue_scheduleを保持する。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "fb-001.md")
-        text = path.read_text(encoding="utf-8")
-        metadata = schedule.ScheduleMetadata(
-            schedule.body_sha256(text),
-            "github.com/example/foo",
-            "normal",
-            schedule.Dependency("none"),
-            None,
-            ("README.md",),
-            0,
-            (),
-        )
-        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "edit", "fb-001.md", "---\nsource: manual\n---\n\n本文"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
-        assert parsed is not None
-        assert parsed[0]["source"] == "manual"
-        assert "queue_schedule" in parsed[0]
-
-    def test_edit_preserves_nested_queue_schedule_mapping_when_unrelated_key_changes(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """無関係なキーの更新前後でqueue_scheduleの入れ子構造を保持する。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "fb-001.md")
-        text = path.read_text(encoding="utf-8")
-        metadata = schedule.ScheduleMetadata(
-            schedule.body_sha256(text),
-            "github.com/example/foo",
-            "normal",
-            schedule.Dependency("entries", ("dependency.md",)),
-            None,
-            ("README.md", "src/example.py"),
-            1,
-            ("dependency-unmet",),
-        )
-        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
-        before = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
-        assert before is not None
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "edit", "fb-001.md", "---\nsource: manual\n---\n\n本文"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        after = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
-        assert after is not None
-        assert after[0]["queue_schedule"] == before[0]["queue_schedule"]
 
     def test_edit_raises_web_input_error_when_frontmatter_is_corrupt(
         self,

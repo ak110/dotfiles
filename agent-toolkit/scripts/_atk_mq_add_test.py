@@ -19,7 +19,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_frontmatter as frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
@@ -308,7 +307,7 @@ def test_add_operation_classifies_explicit_plan_file(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """plan_file指定時に計画実装型の独立キーと分類を記録する。"""
+    """plan_file指定時に計画実装型の独立キーを記録する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
@@ -330,14 +329,10 @@ def test_add_operation_classifies_explicit_plan_file(
     )
 
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
-    metadata = schedule.parse_schedule_metadata(content)
-    assert metadata is not None
-    assert metadata.feedback_type == "plan-impl"
-    assert metadata.plan_file == str(plan)
-    assert metadata.dependency == schedule.Dependency("none")
     parsed = frontmatter.parse_frontmatter(content)
     assert parsed is not None
     assert parsed[0]["plan_file"] == str(plan)
+    assert "queue_schedule" not in parsed[0]
 
 
 def test_add_operation_does_not_infer_plan_file_from_body(
@@ -362,11 +357,35 @@ def test_add_operation_does_not_infer_plan_file_from_body(
     )
 
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
-    assert schedule.parse_schedule_metadata(content) is None
     parsed = frontmatter.parse_frontmatter(content)
     assert parsed is not None
     assert "queue_schedule" not in parsed[0]
     assert "plan_file" not in parsed[0]
+
+
+def test_add_operation_records_top_level_dependencies(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """depends_on指定をトップレベル配列として重複なく記録する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        depends_on=("first.md", "second.md"),
+    )
+
+    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["depends_on"] == ["first.md", "second.md"]
 
 
 @pytest.mark.parametrize("plan_file", ["relative-plan.md", "/missing-plan.md"])

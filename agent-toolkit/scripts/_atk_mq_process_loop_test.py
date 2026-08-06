@@ -527,9 +527,10 @@ class TestProcessLoopPromptAndEnv:
         assert "agent-toolkit:process-feedbacks" in prompt
         assert "/repo" in prompt
         assert "--target-repo=github.com/example/repo" in prompt
-        assert "`atk mq schedule`が当該セッションへ選抜した全項目" in prompt
-        assert "採否または理由付き繰越" in prompt
-        assert "理由と繰越回数を記録" in prompt
+        assert "`atk mq list --status=active --target-repo=github.com/example/repo`" in prompt
+        assert "未分類feedbackが1件だけならメインで分類" in prompt
+        assert "複数の計画実装はcleanな別worktreeでprepareまで並列化" in prompt
+        assert "blockedとなる項目は後続waveで再評価" in prompt
         assert "計画準拠レビュー" in prompt
         assert "独立レビュー" in prompt
         assert "push" in prompt
@@ -1062,6 +1063,51 @@ class TestConsoleTitleReset:
         _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
         _process_loop._check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
         assert calls == ["atk mq process-loop"] * 6
+
+
+class TestWorktreeWriterGate:
+    """writer起動前のclean判定と上流追随のfail-closed契約を検証する。"""
+
+    @pytest.mark.parametrize("dirty_command", ["diff", "cached", "untracked"])
+    def test_worktree_is_clean_rejects_each_dirty_kind(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        dirty_command: str,
+    ) -> None:
+        """unstaged・staged・未追跡の各差分を個別に拒否する。"""
+
+        def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if dirty_command == "diff" and cmd == ["git", "diff", "--quiet"]:
+                return subprocess.CompletedProcess(cmd, 1, "", "")
+            if dirty_command == "cached" and cmd == ["git", "diff", "--cached", "--quiet"]:
+                return subprocess.CompletedProcess(cmd, 1, "", "")
+            stdout = "new.txt\n" if dirty_command == "untracked" and "ls-files" in cmd else ""
+            return subprocess.CompletedProcess(cmd, 0, stdout, "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert not _process_loop._worktree_is_clean(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+    @pytest.mark.parametrize("failed_step", ["fetch", "rebase"])
+    def test_sync_failure_returns_false(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        failed_step: str,
+    ) -> None:
+        """fetch又はrebase失敗時はwriterを起動可能と判定しない。"""
+        local_path = tmp_path / "repo"
+        (local_path / ".claude" / "worktrees" / "process-loop").mkdir(parents=True)
+        monkeypatch.setattr(_process_loop, "_worktree_is_clean", lambda _path: True)
+        monkeypatch.setattr(_process_loop, "_git_output", lambda *_args, **_kwargs: "origin/main")
+
+        def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            command = cmd[1] if len(cmd) > 1 else ""
+            failed = command == failed_step
+            return subprocess.CompletedProcess(cmd, 1 if failed else 0, "", "failure" if failed else "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert not _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
     def test_title_set_at_start_and_after_runs(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """process-loop開始時にタイトルを設定し、claude起動・update-dotfiles実行の直後にも再設定すること。"""

@@ -15,6 +15,7 @@ TBDの回答判定`_is_tbd_answered`は`_tbd_scan`が実体を持つ。PostToolU
 """
 
 import argparse
+import dataclasses
 import datetime
 import hashlib
 import os
@@ -26,8 +27,8 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
+from typing import Literal
 
-import _atk_mq_schedule as _schedule
 import _git_remote
 import filelock
 import platformdirs
@@ -55,6 +56,55 @@ MQ_STATE_REJECTED = "rejected"
 MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
+type RepairKind = Literal["frontmatter", "missing-plan-file"]
+
+
+@dataclasses.dataclass(frozen=True)
+class QueueEntry:
+    """readiness判定に必要なキュー項目の現行状態。"""
+
+    filename: str
+    text: str
+    kind: str | None
+    state: str
+    target_repo: str | None
+    tbd_answered: bool | None
+    frontmatter_broken: bool
+    plan_file: str | None
+    depends_on: tuple[str, ...]
+    legacy_dependency: dict[str, object] | None
+    repair_target_filename: str | None
+    repair_kind: RepairKind | None
+
+
+@dataclasses.dataclass(frozen=True)
+class ReadinessResult:
+    """対象リポジトリのactive項目に対するreadinessと修復診断。"""
+
+    ready: tuple[str, ...] = ()
+    blocked: tuple[str, ...] = ()
+    frontmatter_broken: tuple[str, ...] = ()
+    frontmatter_broken_needs_tbd: tuple[str, ...] = ()
+    missing_plan_file: tuple[str, ...] = ()
+    missing_plan_file_needs_tbd: tuple[str, ...] = ()
+    invalid_dependencies: tuple[str, ...] = ()
+    missing_dependencies: tuple[str, ...] = ()
+    self_dependencies: tuple[str, ...] = ()
+    cyclic_dependencies: tuple[str, ...] = ()
+
+    @property
+    def actionable_count(self) -> int:
+        """処理セッションを起動すべき項目数を返す。"""
+        repair_targets = {
+            *self.frontmatter_broken_needs_tbd,
+            *self.missing_plan_file_needs_tbd,
+            *self.invalid_dependencies,
+            *self.missing_dependencies,
+            *self.self_dependencies,
+            *self.cyclic_dependencies,
+        }
+        return len(set(self.ready) | repair_targets)
+
 
 _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
     "mq": frozenset(("adopt", "reject", "rm")),
@@ -692,20 +742,6 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
         print(f"{prefix}{_tbd_body_summary(text, available_width)}", file=sys.stderr)
 
 
-def _load_cross_repo_entries(
-    private_notes: pathlib.Path,
-    active_entries: tuple[_schedule.QueueEntry, ...],
-) -> dict[str, _schedule.QueueEntry]:
-    """別リポジトリ依存の充足判定に使う全リポジトリのエントリを返す。
-
-    該当する依存が1件も無い場合は読み込まない。全リポジトリ・全状態の走査は
-    終端状態を含むため、蓄積に比例して所要時間が伸びる。
-    """
-    if not _schedule.requires_cross_repo_entries(active_entries):
-        return {}
-    return {entry.filename: entry for entry in _load_schedule_entries(private_notes, None, MQ_STATES)}
-
-
 def _normalized_repo_or_none(value: str | None) -> str | None:
     """対象リポジトリを正規化する。解析できない値はNoneを返す。
 
@@ -725,74 +761,23 @@ def _count_pending_entries(
     target_repo: str | None = None,
 ) -> int:
     """当該対象リポジトリでこのセッションが着手可能な項目数を返す。"""
-    active_entries = _load_schedule_entries(private_notes, target_repo, MQ_ACTIVE_STATES)
-    terminal_entries = _load_schedule_entries(
-        private_notes,
-        target_repo,
-        (MQ_STATE_ADOPTED, MQ_STATE_REJECTED),
-    )
-    plan_files = {
-        plan_file
-        for entry in active_entries
-        if (plan_file := entry.plan_file or (entry.metadata.plan_file if entry.metadata is not None else None)) is not None
-    }
-    plan_target_files = {
-        plan_file: _schedule.parse_plan_target_files(pathlib.Path(plan_file).read_text(encoding="utf-8"))
-        for plan_file in plan_files
-        if pathlib.Path(plan_file).is_file()
-    }
-    existing_repairs: frozenset[_schedule.RepairKey] = frozenset(
-        (entry.repair_target_filename, entry.repair_kind)
-        for entry in _load_schedule_entries(private_notes, None, MQ_ACTIVE_STATES)
-        if entry.kind == MQ_TYPE_TBD
-        and entry.tbd_answered is False
-        and entry.repair_target_filename is not None
-        and entry.repair_kind is not None
-    )
-    # 再評価時刻が未到来の外部条件待ちは`suppressed`へ分類され、以下の合計へ入らない。
-    # 当該項目は当該セッションの処理対象ではないため、常駐実行の起動契機にしない。
-    result = _schedule.calculate_schedule(
-        active_entries,
-        terminal_entries,
-        plan_target_files,
-        existing_repairs,
-        _load_cross_repo_entries(private_notes, active_entries),
-        datetime.datetime.now(datetime.UTC),
-    )
-    return (
-        len(result.classification_required)
-        + len(result.plan_items)
-        + len(result.parallel_normal_items)
-        + len(result.post_plan_normal_items)
-        + len(result.missing_dependency_tbds)
-        + len(result.frontmatter_broken_needs_tbd_filenames)
-        + len(result.missing_plan_file_needs_tbd_filenames)
-    )
+    return calculate_readiness(private_notes, target_repo).actionable_count
 
 
-def _load_schedule_entries(
+def _load_queue_entries(
     private_notes: pathlib.Path,
     target_repo: str | None,
     states: tuple[str, ...],
-) -> tuple[_schedule.QueueEntry, ...]:
-    """指定状態のfeedback・TBDをスケジューリング用表現へ変換する。
-
-    別リポジトリ依存の充足判定が対象リポジトリと状態を参照するため、両者をエントリへ保持する。
-    リポジトリは表記揺れを吸収した正規化済みの値とし、依存側の指定と同じ形式で比較できるようにする。
-    """
-    entries: list[_schedule.QueueEntry] = []
+) -> tuple[QueueEntry, ...]:
+    """指定状態のfeedback・TBDをreadiness判定用表現へ変換する。"""
+    entries: list[QueueEntry] = []
     for path, entry_repo, text, state, entry_type in _iter_entries(private_notes, states, target_repo, "all"):
         parsed = parse_frontmatter(text)
         frontmatter_broken = parsed is None
-        if entry_type == MQ_TYPE_FEEDBACK:
-            kind: _schedule.FeedbackEntryKind = "feedback"
-        elif entry_type == MQ_TYPE_TBD:
-            kind = "tbd"
-        else:
-            kind = "unknown"
-        repair_target = parsed[0].get("repair_target") if parsed is not None and kind == MQ_TYPE_TBD else None
-        raw_repair_kind = parsed[0].get("repair_kind") if parsed is not None and kind == MQ_TYPE_TBD else None
-        repair_kind: _schedule.RepairKind | None
+        data = parsed[0] if parsed is not None else {}
+        repair_target = data.get("repair_target") if entry_type == MQ_TYPE_TBD else None
+        raw_repair_kind = data.get("repair_kind") if entry_type == MQ_TYPE_TBD else None
+        repair_kind: RepairKind | None
         if not isinstance(repair_target, str):
             repair_kind = None
         elif raw_repair_kind is None or raw_repair_kind == "frontmatter":
@@ -801,24 +786,146 @@ def _load_schedule_entries(
             repair_kind = "missing-plan-file"
         else:
             repair_kind = None
-        plan_file = parsed[0].get("plan_file") if parsed is not None else None
+        plan_file = data.get("plan_file")
+        raw_dependencies = data.get("depends_on", [])
+        depends_on = (
+            tuple(dict.fromkeys(value for value in raw_dependencies if isinstance(value, str)))
+            if isinstance(raw_dependencies, list) and all(isinstance(value, str) for value in raw_dependencies)
+            else ()
+        )
+        schedule = data.get("queue_schedule")
+        legacy_dependency = schedule.get("dependency") if isinstance(schedule, dict) else None
         normalized_repo = _normalized_repo_or_none(entry_repo)
         entries.append(
-            _schedule.QueueEntry(
+            QueueEntry(
                 filename=path.name,
                 text=text,
-                kind=kind,
-                tbd_answered=_is_tbd_answered(text) if kind == MQ_TYPE_TBD else None,
+                kind=entry_type,
+                state=state,
+                target_repo=normalized_repo,
+                tbd_answered=_is_tbd_answered(text) if entry_type == MQ_TYPE_TBD else None,
                 frontmatter_broken=frontmatter_broken,
-                metadata=None if frontmatter_broken else _schedule.parse_schedule_metadata(text),
                 plan_file=plan_file if isinstance(plan_file, str) else None,
+                depends_on=depends_on,
+                legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
                 repair_target_filename=repair_target if isinstance(repair_target, str) else None,
                 repair_kind=repair_kind,
-                normalized_target_repo=normalized_repo,
-                state=state,
             )
         )
     return tuple(entries)
+
+
+def _effective_dependencies(entry: QueueEntry) -> tuple[str, ...] | None:
+    """トップレベル依存を返し、無い場合はlegacy依存を読み取る。"""
+    parsed = parse_frontmatter(entry.text)
+    if parsed is not None and "depends_on" in parsed[0]:
+        raw = parsed[0]["depends_on"]
+        if not isinstance(raw, list) or any(not isinstance(value, str) for value in raw):
+            return None
+        return tuple(dict.fromkeys(value for value in raw if isinstance(value, str)))
+    legacy = entry.legacy_dependency
+    if legacy is None or legacy.get("kind") in (None, "none"):
+        return ()
+    kind = legacy.get("kind")
+    if kind in ("entries", "external-repo-entry"):
+        filenames = legacy.get("filenames")
+        if not isinstance(filenames, list) or any(not isinstance(value, str) for value in filenames):
+            return None
+        return tuple(dict.fromkeys(value for value in filenames if isinstance(value, str)))
+    if kind == "external-user":
+        filename = legacy.get("tbd_filename")
+        return (filename,) if isinstance(filename, str) and filename else None
+    if kind in ("external-upstream", "inbox-empty"):
+        return ()
+    return None
+
+
+def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
+    """依存グラフ内で循環に属する全項目名を返す。"""
+    visiting: set[str] = set()
+    visited: set[str] = set()
+    cyclic: set[str] = set()
+
+    def visit(node: str, path: tuple[str, ...]) -> None:
+        if node in visiting:
+            cyclic.update(path[path.index(node) :])
+            return
+        if node in visited:
+            return
+        visiting.add(node)
+        for dependency in graph.get(node, ()):
+            if dependency in graph:
+                visit(dependency, (*path, dependency))
+        visiting.remove(node)
+        visited.add(node)
+
+    for node in graph:
+        visit(node, (node,))
+    return cyclic
+
+
+def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) -> ReadinessResult:
+    """最新frontmatterとキュー状態から対象リポジトリのreadinessを算出する。"""
+    active = _load_queue_entries(private_notes, target_repo, MQ_ACTIVE_STATES)
+    terminal = _load_queue_entries(private_notes, None, (MQ_STATE_ADOPTED, MQ_STATE_REJECTED))
+    all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES)
+    existing_repairs = {
+        (entry.repair_target_filename, entry.repair_kind)
+        for entry in all_active
+        if entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False
+    }
+    active_by_name = {entry.filename: entry for entry in all_active}
+    terminal_names = {entry.filename for entry in terminal}
+    broken = tuple(sorted(entry.filename for entry in active if entry.frontmatter_broken))
+    broken_needs_tbd = tuple(name for name in broken if (name, "frontmatter") not in existing_repairs)
+    missing_plan = tuple(
+        sorted(
+            entry.filename for entry in active if entry.plan_file is not None and not pathlib.Path(entry.plan_file).is_file()
+        )
+    )
+    missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
+
+    dependency_map = {entry.filename: _effective_dependencies(entry) for entry in active if not entry.frontmatter_broken}
+    invalid = tuple(sorted(name for name, dependencies in dependency_map.items() if dependencies is None))
+    graph = {name: dependencies for name, dependencies in dependency_map.items() if dependencies is not None}
+    self_dependencies = tuple(sorted(name for name, dependencies in graph.items() if name in dependencies))
+    missing_dependencies = tuple(
+        sorted(
+            name
+            for name, dependencies in graph.items()
+            if any(dependency not in active_by_name and dependency not in terminal_names for dependency in dependencies)
+        )
+    )
+    cyclic = tuple(sorted(_cycle_members(graph)))
+    permanently_blocked = set((*broken, *missing_plan, *invalid, *self_dependencies, *missing_dependencies, *cyclic))
+    ready: list[str] = []
+    blocked: list[str] = []
+    for entry in active:
+        if entry.filename in permanently_blocked or (entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False):
+            blocked.append(entry.filename)
+            continue
+        dependencies = graph.get(entry.filename, ())
+        waiting = any(
+            dependency in active_by_name
+            and not (active_by_name[dependency].kind == MQ_TYPE_TBD and active_by_name[dependency].tbd_answered is True)
+            for dependency in dependencies
+        )
+        if waiting:
+            blocked.append(entry.filename)
+        else:
+            ready.append(entry.filename)
+    return ReadinessResult(
+        ready=tuple(sorted(ready)),
+        blocked=tuple(sorted(blocked)),
+        frontmatter_broken=broken,
+        frontmatter_broken_needs_tbd=broken_needs_tbd,
+        missing_plan_file=missing_plan,
+        missing_plan_file_needs_tbd=missing_plan_needs_tbd,
+        invalid_dependencies=invalid,
+        missing_dependencies=missing_dependencies,
+        self_dependencies=self_dependencies,
+        cyclic_dependencies=cyclic,
+    )
 
 
 def _count_feedback(feedback_dir: pathlib.Path, target_repo: str | None = None) -> int:

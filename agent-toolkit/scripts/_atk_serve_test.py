@@ -1903,19 +1903,16 @@ def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:
 
 def test_detail_renders_frontmatter_as_table(tmp_path: pathlib.Path) -> None:
     """frontmatterは入れ子の長い値も表として描画し、区切り行由来の見出しを生成しない。"""
-    body_sha256 = "a" * 64
     _write_detail_entry(
         tmp_path,
-        "---\ntarget_repo: github.com/ak110/dotfiles\ntype: feedback\nqueue_schedule:\n"
-        f"  body_sha256: {body_sha256}\n"
-        "  normalized_target_repo: github.com/ak110/dotfiles\n---\n\n本文です。\n",
+        "---\ntarget_repo: github.com/ak110/dotfiles\ntype: feedback\n"
+        "plan_file: /tmp/plan.md\ndepends_on:\n  - predecessor.md\n---\n\n本文です。\n",
     )
     rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert "<table" in rendered
     assert "target_repo" in rendered
-    assert "<pre>{" in rendered
-    assert f"&quot;body_sha256&quot;: &quot;{body_sha256}&quot;" in rendered
-    assert "&quot;normalized_target_repo&quot;: &quot;github.com/ak110/dotfiles&quot;" in rendered
+    assert "plan_file" in rendered
+    assert "predecessor.md" in rendered
     assert "<hr" not in rendered
     assert "<h2" not in rendered
     assert "<p>本文です。</p>" in rendered
@@ -1989,14 +1986,15 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     ("frontmatter_source", "expected_repo", "expected_source"),
     [
         (
-            "type: feedback\ntarget_repo: example/repo\nsource: test\nqueue_schedule:\n  type: normal\n  carry_count: 0\n",
+            "type: feedback\ntarget_repo: example/repo\nsource: test\nplan_file: /tmp/plan.md\n"
+            "depends_on:\n  - predecessor.md\n",
             "example/repo",
             "test",
         ),
         ("type: feedback\ntarget_repo: [broken\n", None, None),
     ],
 )
-def test_operations_frontmatter_parser_handles_nested_schedule_and_broken_yaml(
+def test_operations_frontmatter_parser_handles_nested_dependencies_and_broken_yaml(
     tmp_path: pathlib.Path,
     frontmatter_source: str,
     expected_repo: str | None,

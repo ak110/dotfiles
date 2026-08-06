@@ -14,7 +14,6 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _write_tbd(
@@ -38,26 +37,25 @@ def _write_feedback(
     private_notes: pathlib.Path,
     filename: str,
     *,
-    dependency: schedule.Dependency | None = None,
+    depends_on: tuple[str, ...] = (),
+    legacy_dependency: str | None = None,
+    plan_file: pathlib.Path | None = None,
     state: str = "inbox",
     target_repo: str = "github.com/example/repo",
 ) -> pathlib.Path:
-    """分類メタデータ付きのテスト用feedbackを書き込む。"""
+    """readiness用frontmatterを持つテスト用feedbackを書き込む。"""
     directory = private_notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
-    text = f"---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n本文\n"
-    metadata = schedule.ScheduleMetadata(
-        schedule.body_sha256(text),
-        target_repo,
-        "normal",
-        dependency or schedule.Dependency("none"),
-        None,
-        ("README.md",),
-        0,
-        (),
-    )
-    path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+    lines = ["---", f"target_repo: {target_repo}", "type: feedback"]
+    if depends_on:
+        lines.extend(("depends_on:", *(f"  - {value}" for value in depends_on)))
+    if legacy_dependency is not None:
+        lines.extend(("queue_schedule:", "  dependency:", *legacy_dependency.splitlines()))
+    if plan_file is not None:
+        lines.append(f"plan_file: {plan_file}")
+    lines.extend(("---", "", "本文", ""))
+    path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
 
@@ -89,427 +87,104 @@ def test_make_filename_completer_matches_prefix_and_sorts(tmp_path: pathlib.Path
     assert completer("pre-") == ["pre-a.md", "pre-z.md"]
 
 
-def _classify_tbd(path: pathlib.Path, dependency: schedule.Dependency | None = None) -> None:
-    """既存のテスト用TBDへ分類メタデータを付与する。"""
-    text = path.read_text(encoding="utf-8")
-    metadata = schedule.ScheduleMetadata(
-        schedule.body_sha256(text),
-        "github.com/example/repo",
-        "normal",
-        dependency or schedule.Dependency("none"),
-        None,
-        ("README.md",),
-        0,
-        (),
-    )
-    path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+class TestReadiness:
+    """明示依存、TBD、修復診断からreadinessを算出する。"""
 
+    def test_ready_feedback_is_actionable(self, tmp_path: pathlib.Path) -> None:
+        _write_feedback(tmp_path, "feedback.md")
 
-class TestScheduleEntryLoading:
-    """frontmatter全体破損とtypeキー不正を区別する。"""
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-    @pytest.mark.parametrize(
-        ("frontmatter_line", "expected"),
-        [
-            ("plan_file: /tmp/plan.md", "/tmp/plan.md"),
-            ("source: manual", None),
-            ("plan_file: [invalid]", None),
-        ],
-    )
-    def test_load_schedule_entries_reads_string_plan_file(
-        self,
-        frontmatter_line: str,
-        expected: str | None,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """独立キーは文字列だけをQueueEntryへ読み込む。"""
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        (inbox / "feedback.md").write_text(
-            f"---\ntarget_repo: github.com/example/repo\ntype: feedback\n{frontmatter_line}\n---\n\n本文\n",
-            encoding="utf-8",
-        )
+        assert result.ready == ("feedback.md",)
+        assert result.actionable_count == 1
 
-        entries = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
-            tmp_path,
-            None,
-            ("inbox",),
-        )
-
-        assert entries[0].plan_file == expected
-
-    @pytest.mark.parametrize(
-        ("repair_kind_line", "expected"),
-        [
-            ("", "frontmatter"),
-            ("repair_kind: frontmatter\n", "frontmatter"),
-            ("repair_kind: missing-plan-file\n", "missing-plan-file"),
-            ("repair_kind: invalid\n", None),
-        ],
-    )
-    def test_load_schedule_entries_reads_repair_kind_with_legacy_default(
-        self,
-        repair_kind_line: str,
-        expected: schedule.RepairKind | None,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """理由区分のない既存修復TBDをfrontmatter修復として読み込む。"""
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        (inbox / "repair.md").write_text(
-            "---\n"
-            "target_repo: github.com/example/repo\n"
-            "type: tbd\n"
-            "repair_target: item.md\n"
-            f"{repair_kind_line}"
-            "question_type: free-form\n"
-            "---\n\n"
-            "## 質問\n\n修復する\n\n"
-            "## 回答\n\n",
-            encoding="utf-8",
-        )
-
-        entries = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
-            tmp_path,
-            None,
-            ("inbox",),
-        )
-
-        assert entries[0].repair_kind == expected
-
-    def test_iter_entries_yields_frontmatter_broken_entry_without_exiting(self, tmp_path: pathlib.Path) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        path = inbox / "broken.md"
-        path.write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
-
-        all_entries = tuple(_common.iter_entries(tmp_path, ("inbox",), None, "all"))
-
-        assert all_entries[0][0] == path
-        assert all_entries[0][4] is None
-
-    def test_iter_entries_excludes_frontmatter_broken_entry_when_filtered_by_specific_type(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        (inbox / "broken.md").write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
-
-        feedback_entries = tuple(_common.iter_entries(tmp_path, ("inbox",), None, "feedback"))
-        tbd_entries = tuple(_common.iter_entries(tmp_path, ("inbox",), None, "tbd"))
-
-        assert not feedback_entries
-        assert not tbd_entries
-
-    @pytest.mark.parametrize("type_line", ["", "type: invalid\n"])
-    def test_require_type_still_exits_when_type_key_itself_is_missing_or_invalid(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-        type_line: str,
-    ) -> None:
-        path = tmp_path / "entry.md"
-        text = f"---\ntarget_repo: github.com/example/repo\n{type_line}---\n本文\n"
-
-        with pytest.raises(SystemExit) as exc_info:
-            _common.entry_type_of(path, text)
-
-        assert exc_info.value.code == 2
-        assert "typeが不正または欠落" in capsys.readouterr().err
-
-    def test_count_pending_entries_excludes_normal_entry_blocked_on_unanswered_external_dependency(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
+    def test_unanswered_tbd_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
         _write_tbd(tmp_path, "answer.md")
-        _write_feedback(
-            tmp_path,
-            "feedback.md",
-            dependency=schedule.Dependency(
-                "external-user",
-                condition="回答後",
-                tbd_filename="answer.md",
-            ),
-        )
+        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
 
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-    def test_count_pending_entries_excludes_normal_entry_blocked_on_chained_dependency_to_unanswered_external(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        _write_tbd(tmp_path, "answer.md")
-        _write_feedback(
-            tmp_path,
-            "dependency.md",
-            dependency=schedule.Dependency(
-                "external-user",
-                condition="回答後",
-                tbd_filename="answer.md",
-            ),
-        )
-        _write_feedback(
-            tmp_path,
-            "feedback.md",
-            dependency=schedule.Dependency("entries", filenames=("dependency.md",)),
-        )
+        assert result.blocked == ("answer.md", "feedback.md")
+        assert result.actionable_count == 0
 
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
-
-    def test_count_pending_entries_includes_normal_entry_with_answered_external_dependency(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
+    def test_answered_tbd_satisfies_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
         _write_tbd(tmp_path, "answer.md", answer="回答済み")
-        answer = tmp_path / "inbox" / "answer.md"
-        adopted = tmp_path / "adopted"
-        adopted.mkdir()
-        answer.rename(adopted / answer.name)
+        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.ready == ("answer.md", "feedback.md")
+        assert result.actionable_count == 2
+
+    @pytest.mark.parametrize("relation", ["missing", "self", "cycle"])
+    def test_invalid_dependency_relationship_is_actionable_for_repair(
+        self,
+        tmp_path: pathlib.Path,
+        relation: str,
+    ) -> None:
+        if relation == "missing":
+            _write_feedback(tmp_path, "first.md", depends_on=("absent.md",))
+        elif relation == "self":
+            _write_feedback(tmp_path, "first.md", depends_on=("first.md",))
+        else:
+            _write_feedback(tmp_path, "first.md", depends_on=("second.md",))
+            _write_feedback(tmp_path, "second.md", depends_on=("first.md",))
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.actionable_count >= 1
+        assert not result.ready
+
+    def test_legacy_entry_dependency_remains_readable(self, tmp_path: pathlib.Path) -> None:
+        _write_feedback(tmp_path, "dependency.md")
         _write_feedback(
             tmp_path,
             "feedback.md",
-            dependency=schedule.Dependency(
-                "external-user",
-                condition="回答後",
-                tbd_filename="answer.md",
-            ),
+            legacy_dependency="    kind: entries\n    filenames:\n      - dependency.md",
         )
 
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-    def test_count_pending_entries_includes_unclassified_entry(self, tmp_path: pathlib.Path) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        (inbox / "feedback.md").write_text(
-            "---\ntarget_repo: github.com/example/repo\ntype: feedback\n---\n\n本文\n",
+        assert result.ready == ("dependency.md",)
+        assert result.blocked == ("feedback.md",)
+
+    def test_missing_plan_file_requires_one_repair_tbd(self, tmp_path: pathlib.Path) -> None:
+        _write_feedback(tmp_path, "plan.md", plan_file=tmp_path / "missing.md")
+
+        first = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+        _write_tbd(tmp_path, "repair.md")
+        repair = tmp_path / "inbox" / "repair.md"
+        repair.write_text(
+            repair.read_text(encoding="utf-8").replace(
+                "type: tbd\n",
+                "type: tbd\nrepair_target: plan.md\nrepair_kind: missing-plan-file\n",
+            ),
             encoding="utf-8",
         )
+        second = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+        assert first.missing_plan_file_needs_tbd == ("plan.md",)
+        assert not second.missing_plan_file_needs_tbd
 
-    def test_count_pending_entries_includes_entry_with_missing_dependency_tbd_request(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        _write_feedback(
-            tmp_path,
-            "feedback.md",
-            dependency=schedule.Dependency("entries", filenames=("missing.md",)),
-        )
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
-
-    def test_count_pending_entries_excludes_unanswered_tbd_and_does_not_double_count_answered_tbd(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        _write_tbd(tmp_path, "answer.md")
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
-
-        answer_path = tmp_path / "inbox" / "answer.md"
-        answer_path.write_text(answer_path.read_text(encoding="utf-8") + "\n回答済み\n", encoding="utf-8")
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
-
-    def test_count_pending_entries_returns_zero_when_only_answered_tbd_remains_with_no_actionable_work(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        _write_tbd(tmp_path, "dependency.md")
-        _write_tbd(tmp_path, "answer.md", answer="回答済み")
-        answer_path = tmp_path / "inbox" / "answer.md"
-        _classify_tbd(
-            answer_path,
-            schedule.Dependency(
-                "external-user",
-                condition="依存先の回答後",
-                tbd_filename="dependency.md",
-            ),
-        )
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
-
-    def test_count_pending_entries_counts_frontmatter_broken_item_only_until_repair_tbd_is_filed(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        (inbox / "broken.md").write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
-
-        (inbox / "repair.md").write_text(
-            "---\n"
-            "target_repo: github.com/example/repo\n"
-            "type: tbd\n"
-            "question_type: free-form\n"
-            "repair_target: broken.md\n"
-            "---\n\n"
-            "## 質問\n\n修復する\n\n"
-            "## 回答\n\n",
-            encoding="utf-8",
-        )
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
-
-    def test_count_pending_entries_excludes_suppressed_external_upstream(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """再評価時刻が未到来の外部条件待ちを件数へ数えない。
-
-        常駐実行はこの件数で起動を判断するため、抑制期間中の項目が起動契機になると
-        毎回同じ確認を繰り返すことになる。
-        """
-        _write_feedback(
-            tmp_path,
-            "upstream-wait.md",
-            dependency=schedule.Dependency(
-                "external-upstream",
-                condition="上流の対応状況を確認する",
-                recheck_after="2099-01-01T00:00:00+00:00",
-                hold_reason="上流ツールのメジャー版対応待ち",
-            ),
-        )
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
-
-    @staticmethod
-    def _external_repo_dependency() -> schedule.Dependency:
-        return schedule.Dependency(
-            "external-repo-entry",
-            filenames=("upstream.md",),
-            target_repo="github.com/example/other",
-        )
-
-    @pytest.mark.parametrize(
-        ("upstream_state", "upstream_repo", "expected"),
-        [
-            # 依存先が終端状態にあれば成立し、当該エントリを処理対象として数える。
-            ("adopted", "https://github.com/example/other.git", 1),
-            ("rejected", "https://github.com/example/other.git", 1),
-            # 依存先が未処理の間は成立しない。
-            ("processing", "https://github.com/example/other.git", 0),
-            # 同名エントリが別のリポジトリにある場合は成立しない。
-            ("adopted", "https://github.com/example/unrelated.git", 0),
-        ],
-    )
-    def test_external_repo_entry_is_evaluated_from_files(
-        self,
-        tmp_path: pathlib.Path,
-        upstream_state: str,
-        upstream_repo: str,
-        expected: int,
-    ) -> None:
-        """実ファイルから読み込んだ対象リポジトリと状態で別リポジトリ依存を判定する。
-
-        依存先はHTTPS形式のリモートURLで書き、正規化済みの識別子として
-        `QueueEntry`へ保持されることも併せて検査する。
-        """
-        _write_feedback(tmp_path, "waiting.md", dependency=self._external_repo_dependency())
-        _write_feedback(tmp_path, "upstream.md", state=upstream_state, target_repo=upstream_repo)
-
-        loaded = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
-            tmp_path,
-            None,
-            _common.MQ_STATES,
-        )
-        by_name = {entry.filename: entry for entry in loaded}
-        assert by_name["upstream.md"].normalized_target_repo == upstream_repo.removeprefix("https://").removesuffix(".git")
-        assert by_name["upstream.md"].state == upstream_state
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == expected
-
-    def test_external_repo_entry_missing_from_files_is_unsatisfied(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """依存先のファイルが存在しない場合は成立せず、処理対象として数えない。"""
-        _write_feedback(tmp_path, "waiting.md", dependency=self._external_repo_dependency())
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
-
-    @pytest.mark.parametrize(
-        ("dependency", "expects_load"),
-        [
-            (None, False),
-            (
-                schedule.Dependency(
-                    "external-upstream", condition="c", recheck_after="2099-01-01T00:00:00+00:00", hold_reason="h"
-                ),
-                False,
-            ),
-            (
-                schedule.Dependency("external-repo-entry", filenames=("upstream.md",), target_repo="github.com/example/other"),
-                True,
-            ),
-        ],
-    )
-    def test_cross_repo_entries_are_loaded_only_when_required(
-        self,
-        tmp_path: pathlib.Path,
-        dependency: schedule.Dependency | None,
-        expects_load: bool,
-    ) -> None:
-        """全リポジトリ横断の読み込みを、必要な依存がある場合だけ行う。
-
-        当該読み込みは終端状態を含む全件走査であり、蓄積に比例して所要時間が伸びる。
-        """
-        _write_feedback(tmp_path, "waiting.md", dependency=dependency)
-        entries = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
-            tmp_path,
-            "github.com/example/repo",
-            _common.MQ_ACTIVE_STATES,
-        )
-
-        loaded = _common._load_cross_repo_entries(tmp_path, entries)  # pylint: disable=protected-access  # noqa: SLF001
-
-        assert bool(loaded) is expects_load
-
-    def test_count_pending_entries_counts_missing_plan_only_until_repair_tbd_is_filed(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """消失した計画ファイルの修復TBD要求を1件と数え、投入後は待機状態とする。"""
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        missing_plan = tmp_path / "missing-plan.md"
-        (inbox / "plan.md").write_text(
-            f"---\ntarget_repo: github.com/example/repo\ntype: feedback\nplan_file: {missing_plan}\n---\n\n本文\n",
-            encoding="utf-8",
-        )
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
-
-        (inbox / "repair.md").write_text(
-            "---\n"
-            "target_repo: github.com/example/repo\n"
-            "type: tbd\n"
-            "question_type: free-form\n"
-            "repair_target: plan.md\n"
-            "repair_kind: missing-plan-file\n"
-            "---\n\n"
-            "## 質問\n\n修復する\n\n"
-            "## 回答\n\n",
-            encoding="utf-8",
-        )
-
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
-
-    def test_count_pending_entries_uses_existing_independent_plan_file(self, tmp_path: pathlib.Path) -> None:
-        """分類メタデータ欠落時も独立キーの実在計画ファイルを読み込み、実行対象へ数える。"""
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
+    def test_queue_entry_loader_reads_plan_and_repair_kind(self, tmp_path: pathlib.Path) -> None:
         plan = tmp_path / "plan.md"
-        plan.write_text("### 対象ファイル一覧\n\n- [ ] `README.md`\n", encoding="utf-8")
-        (inbox / "plan.md").write_text(
-            f"---\ntarget_repo: github.com/example/repo\ntype: feedback\nplan_file: {plan}\n---\n\n本文\n",
+        plan.write_text("# 計画\n", encoding="utf-8")
+        _write_feedback(tmp_path, "plan-item.md", plan_file=plan)
+        _write_tbd(tmp_path, "repair.md")
+        repair = tmp_path / "inbox" / "repair.md"
+        repair.write_text(
+            repair.read_text(encoding="utf-8").replace(
+                "type: tbd\n",
+                "type: tbd\nrepair_target: plan-item.md\nrepair_kind: frontmatter\n",
+            ),
             encoding="utf-8",
         )
 
-        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+        entries = _common._load_queue_entries(tmp_path, None, ("inbox",))  # noqa: SLF001
+        by_name = {entry.filename: entry for entry in entries}
+
+        assert by_name["plan-item.md"].plan_file == str(plan)
+        assert by_name["repair.md"].repair_kind == "frontmatter"
 
 
 class TestWarnSpaceSeparatedOption:

@@ -163,7 +163,25 @@ def _git_output(args: list[str], cwd: pathlib.Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> None:
+def _worktree_is_clean(worktree_path: pathlib.Path) -> bool:
+    """index・追跡済み差分・未追跡ファイルが全て空か判定する。"""
+    checks = (
+        ["git", "diff", "--quiet"],
+        ["git", "diff", "--cached", "--quiet"],
+    )
+    if any(subprocess.run(command, cwd=worktree_path, check=False).returncode != 0 for command in checks):
+        return False
+    untracked = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return untracked.returncode == 0 and not untracked.stdout.strip()
+
+
+def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> bool:
     """既存worktreeのブランチを対象リポジトリの上流最新へ追随させる。
 
     worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
@@ -171,33 +189,39 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     worktreeのブランチへ入らない。追随を経ないまま次の反復が始まると、
     上流に既にある変更を未実装と誤認して同一内容を二重に実装し、履歴が分岐する。
 
-    worktree未作成の反復（初回起動時）は`--worktree`が上流最新から生成するため無動作で戻る。
-    ローカル変更・未pushコミットが残る場合はrebaseが失敗しうるため、
-    失敗内容をstderrへ示したうえで起動を継続し、セッション側の判断へ委ねる。
+    worktree未作成の反復では`--worktree`が上流最新から生成するため成功として返す。
+    追随失敗またはdirty状態では`False`を返し、呼び出し元はwriterを起動しない。
     """
     worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
     if not worktree_path.is_dir():
-        return
+        return True
+    if not _worktree_is_clean(worktree_path):
+        print(f"worktreeに未コミット変更があるためwriterを起動しません: {worktree_path}", file=sys.stderr)
+        return False
     upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
     if not upstream_branch:
-        print(f"上流ブランチを解決できないためworktreeの追随を見送ります: {worktree_path}", file=sys.stderr)
-        return
+        print(f"上流ブランチを解決できないためwriterを起動しません: {worktree_path}", file=sys.stderr)
+        return False
     fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     if fetch.returncode != 0:
         print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
-        return
+        return False
     rebase = subprocess.run(["git", "rebase", upstream_branch], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     if rebase.returncode == 0:
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
-        return
+        if _worktree_is_clean(worktree_path):
+            return True
+        print(f"追随後のworktreeがdirtyなためwriterを起動しません: {worktree_path}", file=sys.stderr)
+        return False
     subprocess.run(["git", "rebase", "--abort"], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     print(
-        f"worktreeの{upstream_branch}への追随に失敗しました（{rebase.stderr.strip()}）。起動後のセッションで解消してください。",
+        f"worktreeの{upstream_branch}への追随に失敗したためwriterを起動しません（{rebase.stderr.strip()}）。",
         file=sys.stderr,
     )
+    return False
 
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
@@ -220,14 +244,17 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
         "他リポジトリのフィードバックを対象に含めないでください。\n"
         "処理対象のフィードバックはフィードバック管理リポジトリに保存された指示であり、"
         "投入元（ユーザー投入か`source: session-review`等の自己生成起点か）は各フィードバックのfrontmatterで確認できます。\n"
-        "`atk mq schedule`が当該セッションへ選抜した全項目について、採否または理由付き繰越を確定してください。\n"
-        "上限超過、依存未成立、競合により当該セッションで完了しない項目は、"
-        "理由と繰越回数を記録してinboxへ残してください。\n"
+        f"最初に`atk mq list --status=active --target-repo={target_repo_id}`で対象一覧だけを確認してください。\n"
+        "対象が少数の場合は`atk mq show --all`、本文量が多い場合は当該waveのfilenameを指定して本文を取得してください。"
+        f"いずれの`show`にも`--target-repo={target_repo_id}`を指定してください。\n"
+        "未分類feedbackが1件だけならメインで分類し、複数件をまとめて読む利益がある場合だけ1つの分類委譲へまとめてください。\n"
+        "readinessが成立する全項目を、利用可能なworker枠へ固定上限なしで割り当ててください。"
+        "複数の計画実装はcleanな別worktreeでprepareまで並列化し、finalizeは優先順に直列化してください。\n"
         "採用項目は実装・検証・計画準拠レビュー・独立レビュー・commit・push・CI通過確認・"
         "`atk mq adopt`まで完了してください。\n"
         "回答済みTBDと処理中に生じた連鎖feedbackを含む後始末を完了してください。\n"
         "`session-review-dotfiles`と`agent-toolkit:session-review`を完了してください。\n"
-        "選抜外の項目は後続のprocess-loopセッションが機械スケジューリングで再評価します。\n"
+        "未回答TBDまたは明示依存によりblockedとなる項目は後続waveで再評価してください。\n"
         "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
         "コンテキストは自動コンパクションで継続されます。\n"
         "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません。\n"
@@ -455,7 +482,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
 
     件数はClaude Codeセッションの起動要否だけに使う。
     分類結果の保存、依存判定、セッション上限、実行順は
-    `atk mq schedule`を使うprocess-feedbacksが担う。
+    readiness判定とwave選択はprocess-feedbacksが担う。
     初回再開時は`claude --resume`または`claude --resume=<session ID>`だけを渡し、
     再開後のプロンプト入力は利用者へ委ねる。
     後続の新規起動は`claude --permission-mode=auto --model {args.model}`で、
@@ -528,12 +555,13 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             claude_argv.append("--resume" if not args.resume else f"--resume={args.resume}")
                             resume_pending = False
                         else:
-                            claude_argv.extend(("--permission-mode=auto", "--model", args.model))
+                            claude_argv.extend(("--permission-mode=auto", "--model", args.model, "--autocompact", "1m"))
                             if target_repo_id == _DOTFILES_REPO_ID:
                                 # dotfiles編集はホーム直下チェックアウトへの影響を避けるためworktreeで実施する。
                                 claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
                                 # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
-                                _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+                                if _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME) is False:
+                                    sys.exit(1)
                             claude_argv.append(prompt)
                         result = subprocess.run(
                             claude_argv,

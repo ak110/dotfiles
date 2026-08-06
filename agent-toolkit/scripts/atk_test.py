@@ -219,7 +219,7 @@ def test_add_output_reloads_saved_metadata(
     assert "target_repo: github.com/example/myrepo" in output
     assert f"target_commit: {_FIXED_HEAD_COMMIT}" in output
     assert "plan_file: なし" in output
-    assert "dependency: なし" in output
+    assert "depends_on: なし" in output
 
 
 class TestSubcommandSubparserDefault:
@@ -537,7 +537,7 @@ class TestMqLifecycleScenario:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "list"], home=tmp_path)
         assert exc_info.value.code == 0
-        expected = f"{filename}: github.com/example/myrepo [inbox/unclassified/carry=0] {message}"
+        expected = f"{filename}: github.com/example/myrepo [inbox/normal/ready] {message}"
         assert expected in capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:

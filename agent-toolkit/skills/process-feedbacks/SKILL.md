@@ -97,85 +97,26 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 本文が計画ファイルの絶対パスへ言及していても分類へ影響しない。
 実装要求ではなく経緯の参照として既存計画へ言及する場合も、当該オプションを指定しなければよい。
 
-## ステップ1: 入力の確定と初期スケジューリング
+## ステップ1: 入力の確定とreadiness確認
 
 `/process-feedbacks <repo-path>`形式の引数が実在ディレクトリなら対象リポジトリとし、
 実在ディレクトリでなければフィードバック本文の直接入力として扱う。引数省略時は
 `git rev-parse --show-toplevel`の現リポジトリを対象とする。
 
-`atk mq list --status=active --target-repo=<repo-path>`で1行一覧だけを取得し、
-本文全文は取得しない。
+最初に`atk mq list --status=active --target-repo=<repo-path>`で本文を含まない一覧を取得する。
+少数なら`atk mq show --all --target-repo=<repo-path>`、多数なら選択したfilenameだけを
+`atk mq show <filename> --target-repo=<repo-path>`で取得する。単件・全件とも対象repoを省略しない。
 
-計画実装型は`atk mq add`または`atk mq convert-to-plan`の明示指定により確定する。
-ここでLLM分類が必要になるのは通常型だけである。
-一覧はトップレベルの`plan_file`を判定の基準とし、`queue_schedule`の欠落・
-本文変更による失効時も計画実装型と表示する。
-未分類項目の有無は、一覧が各項目へ表示する種別のラベルで判別する。
-一覧に未分類項目がある場合は、Agentツールで書き込み可能な汎用エージェント`claude`を
-`model: sonnet`で1回起動する。`name`・`run_in_background`は指定しない。
-省略は起動形態を固定しないため、実際の受領経路は実行結果から判定する。
-分類結果JSONの形式は
-references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照する。
-`frontmatter-broken`な項目は選抜・分類の対象から除外され、修復TBD投入は
-`atk mq schedule`が機械的に行うため、LLM分類委譲へは含めない。
-委譲先は対象filenameごとに`atk mq show <filename> --target-repo=<repo-path>`を実行し、
-未分類・本文変更済みの項目だけを読む。
-分類対象は通常型のみとする。
-回答済みの確認事項も処理対象となるため、分類結果JSONへ`type: "normal"`として含める
-（未回答の確認事項は選抜対象から除外されるため含めない）。
-未分類の確認事項は分類必須の一覧へ残り、当該一覧が非空の間は選抜処理が実行群を確定せずに戻る。
-回答済み確認事項の`target_files`には、当該確認事項を参照する依存元フィードバックが対象とするファイルを記す。
-依存元は、対象リポジトリのactiveなフィードバックのうち、
-`queue_schedule.dependency.tbd_filename`が当該確認事項のfilenameと一致する全項目とする。
-委譲先は一覧から得た各フィードバックのfilenameを`atk mq show <filename> --target-repo=<repo-path>`で照会し、
-一致した全依存元の`target_files`を順序維持で統合する。
-一致する依存元が無い場合は、確認事項の`repair_target`が示す項目を同じコマンドで照会し、
-取得できる`target_files`を用いる。いずれの参照元も無い場合は空配列とする。
-選抜時はactiveな依存元を優先し、存在しない場合は修復対象の現行`target_files`から再計算する。
-永続化済みの派生値をそのまま用いず、参照元の変更後も計画実装との競合判定を更新する。
-応答の`classification_required`は分類結果JSONへの追加を要する対象を示し、
-当該配列が空になるまで実行群は確定しない。
-計画実装型は投入時の明示指定でfrontmatterへ確定記録済みであり、分類委譲の対象に含まれない
-（判定基準は`references/plan-impl-feedback-flow.md`のSSOTを参照する）。
-委譲先は通常型の依存条件と推定対象ファイルだけを返す。
+トップレベルの`plan_file`を持つ項目は計画実装型とする。未分類の通常型が1件だけならメインが分類し、
+複数件の場合だけ、分類referenceと選択filenameを渡して汎用エージェントへ1回委譲する。
+分類schemaや既存本文を起動promptへ複製しない。実装担当と二系統レビューは件数によらず維持する。
 
-外部・ユーザー依存を検出した場合、委譲先はユーザー判断を要する事項に限って条件文を引用したTBDを
-`atk mq add --type=tbd --scope=hold`で投入し、分類結果へ生成されたTBD filenameを含める。
+一覧のready項目を処理対象とする。未回答TBDと明示的な`depends_on`だけを通常のblockerとする。
+frontmatter破損、計画ファイル消失、欠落依存、自己依存、循環依存はblockedの修復対象として扱い、
+原因を修復して同じwaveで再評価する。legacyの`queue_schedule.dependency`は読取互換だけ維持する。
 
-委譲先は分類結果を所有者だけが読み書きできる一時JSONへ保存する。
-続いて`atk mq schedule --classifications=<path> --target-repo=<repo-path>`を実行する。
-メインへは処理対象、実行群、除外理由、TBD作成要求だけを返し、本文全文を返さない。
-一覧に未分類項目が無い場合は`atk mq schedule --target-repo=<repo-path>`を実行する。
-
-同一セッション内で`atk mq schedule`を複数回実行する場合、初回の実行前に
-`openssl rand -hex 8`で実行単位の識別値を生成し、当該セッションの全実行へ
-`--run-id=<識別値>`として渡す。分類委譲先へも同じ値を渡す。
-識別値を渡さない実行では繰越が実行ごとに加算される。
-
-依存先消失・自己依存・依存循環のTBD作成要求がある場合は、該当filenameと破損内容を示すTBDを投入する。
-該当項目の型と対象ファイルを維持した補正JSONへTBD filenameを設定し、
-`atk mq schedule --classifications=<path> --target-repo=<repo-path>`で外部・ユーザー依存へ
-機械更新して同じ選抜工程内で再計算する。恒常的な未成立を返した計算では繰越回数を更新しない。
-
-`atk mq schedule`の応答に含まれる`frontmatter_broken_filenames`は、
-修復TBDの投入有無を問わずfrontmatter破損項目を通知する診断出力である。
-TBDの投入自体は`atk mq schedule`のCLIハンドラーが同一ロック内で機械的に行うため、
-process-feedbacks側で追加操作しない。修復は`atk mq edit`ではなく対象ファイルを直接編集する
-（`atk mq edit`はfrontmatter解析失敗時に処理を拒否するため）。
-TBDの回答は、直接編集による修復が完了したことの確認として扱う。
-
-`missing_plan_file_filenames`は、トップレベルの`plan_file`が指す計画ファイルの
-消失を通知する診断出力である。当該項目は計画実装型のまま`plan_items`から除外する。
-`missing_plan_file_needs_tbd_filenames`に含まれる項目には、`atk mq schedule`が
-計画ファイルの復元または`plan_file`の修復を求めるTBDを同一ロック内で機械的に投入する。
-未回答の修復TBDが存在する間は再投入せず、修復完了まで選抜しない。
-
-選抜結果をinbox項目とprocessing残存項目へ分ける。
-inbox状態の選抜対象だけを`atk mq start-processing <filename...>`でprocessingへ遷移させる
-（`start-processing`はinboxだけを移動元として探索するため、processing状態のfilenameを渡さない）。
-processing状態の選抜対象は遷移させず、中断前の処理をそのまま再開する。
-選抜外の項目は理由付き繰越を記録し、processing残存分は
-`atk mq return-to-inbox <filename...>`でinboxへ戻す。
+inbox状態のready項目だけを`atk mq start-processing <filename...>`でprocessingへ遷移させる。
+processing状態の項目は中断前の工程から再開する。固定件数の選抜上限を設けず、利用可能なworker枠でwaveを構成する。
 
 target_repoが誤設定と判明した場合は、現在の本文を保持したまま
 `atk mq edit <FILENAME> $'---\ntarget_repo: <正しいリポジトリ>\n---\n\n<現在の論理本文>'`で更新する。
@@ -213,21 +154,8 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 `target_commit`は投入時文脈の参考情報として扱い、現行HEADと現行仕様を実装基準とする。
 当該項目がない既存エントリも正常な入力として処理する。
 
-初期スケジューリング後に本文から新たな依存条件が判明した場合だけ分類結果を修正する。
-未成立なら`atk mq schedule --record-deferral dependency-unmet:<filename> --target-repo=<repo-path>`で
-理由と繰越回数を記録してinboxへ戻す。全項目の前提条件を本ステップで再調査しない。
-
-ユーザー判断を要さない外部条件待ち（上流リポジトリの対応待ちなど）は、
-`atk mq schedule --set-dependency='<JSON文字列>' --target-repo=<repo-path>`で記録する。
-JSONは`filename`、`kind`、`condition`、`hold_reason`、`recheck_after`を含む。
-再評価時刻はタイムゾーン付きISO 8601とし、条件の充足が見込める時期から定める。
-当該項目は再評価時刻まで選抜されず、繰越も加算されない。
-別リポジトリのフィードバック完了待ちは
-`filename`、`kind`、`filenames`、`target_repo`を含む同じJSON形式で記録する。
-起動時は`suppressed`の各項目が示す`condition`を1回実行し、再評価日時の到来前でも充足を確認する。
-未充足なら`recheck_after`を更新する。`--set-dependency`は依存マッピング全体を置き換えるため、
-更新時も`condition`・`hold_reason`を含む全キーを再指定する。省略したキーは検証で拒否される。
-更新後は他の処理対象の有無にかかわらず次工程へ進む。
+本文から新たな明示依存が判明した場合は、`depends_on`を専用CLI引数で更新してinboxへ戻す。
+ユーザー判断を要する依存はTBDへ記録し、回答後に再評価する。
 外部条件待ちだけで採用0件となる場合は、本ステップの待機ループを起動しない。
 
 保留と判定した時点で既にprocessing状態へ遷移済みの対象は、`atk mq return-to-inbox <filename...>`で
@@ -275,39 +203,8 @@ OR条件には各保留の解除契機に加えて、対象リポジトリ宛の
 
 ## ステップ5: 計画作成と実行
 
-計画の起草前に、当該計画が扱う各フィードバックについてファイル名・原題・本文ハッシュ・
-想定変更対象を列挙した追跡表を生成する。
-`atk mq schedule`の選定結果に現れた各ファイル名を`--filename`へ1件ずつ渡し、次の専用スクリプトを実行する。
-
-```text
-uv run --no-project --script "${CLAUDE_PLUGIN_ROOT}/scripts/_atk_mq_trace_table.py" generate \
-  --target-repo <repo-path> --filename <filename> [--filename <filename> ...]
-```
-
-スクリプトはキューの実ファイルと永続化済みの分類結果を読み、原題・本文ハッシュ・想定変更対象を導出する。
-`atk mq show`の出力は見出し行の前置と末尾改行の追加を伴うため、本文の復元には用いない。
-本文ハッシュの算出仕様は`references/plan-impl-feedback-flow.md`「分類結果JSONの形式」節が定める
-`source_body_sha256`と同一とする。
-
-調査工程では生成した追跡表を計画素材として保持し、追跡表の生成成功を確認してから調査工程を完了する。
-計画ファイルの起草工程へ移り、提示素材と追跡表を`## 背景`配下へ記載した後、
-提示素材に全ファイル名が重複なく1回ずつ現れること、および各行の原題・本文ハッシュ・
-想定変更対象が実ファイルと一致することを次のコマンドで検査する。
-提示素材はファイル名をフェンス外の単独コードスパンとして記載し、その直後の`text`コードフェンス1件へ
-当該ファイルの原文を記載する。
-`### 提示素材`には、このファイル名ラベルとコードフェンスの組だけを置く。
-追跡表など他のブロックを混在させない。
-追跡表は`## 背景`配下の別のH3へ置く。
-コードフェンスにはfrontmatter除去後の論理本文を、先頭空行を含めて改変せず記載する。
-複数ファイルの原文を1件のコードフェンスへ結合しない。
-
-```text
-uv run --no-project --script "${CLAUDE_PLUGIN_ROOT}/scripts/_atk_mq_trace_table.py" check \
-  --target-repo <repo-path> --plan-file <計画ファイルの絶対パス> \
-  --filename <filename> [--filename <filename> ...]
-```
-
-検査が成立した後に計画レビューへ進む。計画レビューを委譲する場合も同じ追跡表を渡す。
+通常型の採用項目は、取得済みの本文と対象リポジトリの実装を根拠に調査・計画へ進める。
+本文hash、対象ファイル予測、追跡表を別途生成しない。
 
 採用フィードバック全件へ`agent-toolkit:plan-mode`の類似見直し（母集団の悉皆点検）を実施する。
 この義務は計画ファイルを作成するか否かにかかわらず適用する。
@@ -348,7 +245,7 @@ uv run --no-project --script "${CLAUDE_PLUGIN_ROOT}/scripts/_atk_mq_trace_table.
 push時点で採否は確定しており、CI失敗時も同一セッション内で追加commitにより是正するため採否は覆らない。
 後始末の完了後もCI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従って完遂する。
 
-中断後は、ステップ1の既存機構でprocessing状態の項目を再度スケジュールする。
+中断後は、ステップ1の一覧でprocessing状態の項目を確認する。
 processing状態の採用フィードバックについて、対象リポジトリでの実装・コミット・pushの
 完了状況を確認し、未了の工程から再開する。ステップ1から全件をやり直さない。
 当該フィードバックの反映を含むコミットを一意に特定できる場合に限り、

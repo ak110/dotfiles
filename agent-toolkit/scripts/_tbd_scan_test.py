@@ -162,8 +162,7 @@ class TestPrivateNotesRoot:
     def test_handles_nested_mapping_and_folded_values(self, tmp_path: pathlib.Path) -> None:
         """入れ子マッピング配下と折り返し値を正しく処理する。
 
-        `queue_schedule:`配下のインデントされた`type: normal`と、
-        `choices:`の折り返し継続行を含むfrontmatterを検証する。
+        トップレベル`depends_on`配列と`choices:`の折り返し継続行を含むfrontmatterを検証する。
         """
         (tmp_path / "inbox").mkdir()
         # 計画のテスト用frontmatterと同じ形式
@@ -171,10 +170,8 @@ class TestPrivateNotesRoot:
             "---\n"
             "target_repo: github.com/ak110/dotfiles\n"
             "type: tbd\n"
-            "queue_schedule:\n"
-            "  type: normal\n"
-            "  target_files:\n"
-            "  - agent-toolkit/rules/01-agent.md\n"
+            "depends_on:\n"
+            "  - predecessor.md\n"
             "choices: (a) 前半の選択肢,(b)\n"
             "  折り返した後半の選択肢\n"
             "---\n\n"

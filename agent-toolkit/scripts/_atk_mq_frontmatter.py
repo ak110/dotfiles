@@ -2,7 +2,7 @@
 
 このモジュールは他の`_atk_mq_*`モジュールへ依存せず、依存グラフの最下層に置く。
 `_atk_mq_common.py`・`_atk_mq_formatters.py`・`_atk_mq_add.py`・`_atk_mq_mutations.py`・
-`_atk_mq_schedule.py`・`_atk_serve_app.py`・`_tbd_scan.py`がこのモジュールから一方向にimportする。
+`_atk_mq_common.py`・`_atk_serve_app.py`・`_tbd_scan.py`がこのモジュールから一方向にimportする。
 """
 
 import typing

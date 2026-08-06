@@ -16,6 +16,7 @@ from _atk_mq_common import (
     _iter_entries,
     _pull,
     _repo_lock,
+    calculate_readiness,
 )
 from _atk_mq_formatters import (
     _body_summary,
@@ -26,8 +27,8 @@ from _atk_mq_formatters import (
     _tbd_body_summary,
     _truncate_target_repo,
 )
+from _atk_mq_frontmatter import parse_frontmatter
 from _atk_mq_repo import _resolve_repo_id
-from _atk_mq_schedule import format_schedule_label
 
 type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 
@@ -93,7 +94,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     )
 
 
-def _print_entries(selected: list[QueueEntryDisplay]) -> None:
+def _print_entries(selected: list[QueueEntryDisplay], ready: frozenset[str]) -> None:
     """選択済みエントリを`atk mq list`の1件1行形式で出力する。"""
     for header_type in ("feedback", "tbd"):
         group = [entry for entry in selected if entry[4] == header_type or (header_type == "feedback" and entry[4] is None)]
@@ -101,11 +102,14 @@ def _print_entries(selected: list[QueueEntryDisplay]) -> None:
             continue
         print(f"# {header_type}")
         for path, target_repo, text, state, entry_type in sorted(group, key=lambda entry: entry[0].name):
-            schedule_label = format_schedule_label(text)
-            label = f"{state}/{schedule_label}"
+            parsed = parse_frontmatter(text)
+            plan_file = parsed[0].get("plan_file") if parsed is not None else None
+            item_kind = "frontmatter-broken" if parsed is None else "plan" if isinstance(plan_file, str) else "normal"
+            readiness = "complete" if state not in MQ_ACTIVE_STATES else "ready" if path.name in ready else "blocked"
+            label = f"{state}/{item_kind}/{readiness}"
             if entry_type == MQ_TYPE_TBD:
                 answered = _is_tbd_answered(text)
-                label = f"{state}/answered/{schedule_label}" if answered else f"{state}/unanswered"
+                label = f"{state}/answered" if answered else f"{state}/unanswered"
             repo_budget = _target_repo_budget(path.name, label)
             display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
             prefix = f"{path.name}: {display_repo} [{label}] "
@@ -137,9 +141,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not args.skip_pull:
         with _repo_lock(private_notes):
             _pull(private_notes)
-    filter_repo: str | None = None
-    if args.target_repo is not None:
-        filter_repo = _resolve_repo_id(args.target_repo)
+    filter_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
+    readiness = calculate_readiness(private_notes, filter_repo)
 
     selected: list[QueueEntryDisplay] = []
     for entry in _iter_entries(private_notes, _resolve_states(args.status), filter_repo, args.type):
@@ -156,4 +159,4 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         print(len(selected))
         return
 
-    _print_entries(selected)
+    _print_entries(selected, frozenset(readiness.ready))

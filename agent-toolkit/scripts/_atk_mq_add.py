@@ -6,14 +6,12 @@
 
 import argparse
 import datetime
-import json
 import pathlib
 import re
 import subprocess
 import sys
 
 import _atk_mq_frontmatter as _frontmatter
-import _atk_mq_schedule as _schedule
 import _atk_mq_tbd as _tbd
 import markdown_it
 from _atk_mq_common import (
@@ -42,13 +40,13 @@ def _read_saved_entry_details(path: pathlib.Path) -> dict[str, object | None]:
     if parsed is None:
         raise WebInputError(f"保存済みエントリのfrontmatterを読み込めません: {path.name}")
     data, _body = parsed
-    schedule_mapping = data.get(_schedule.SCHEDULE_KEY)
-    dependency = schedule_mapping.get("dependency") if isinstance(schedule_mapping, dict) else None
+    raw_dependencies = data.get("depends_on")
+    depends_on = [value for value in raw_dependencies if isinstance(value, str)] if isinstance(raw_dependencies, list) else []
     return {
         "target_repo": data.get("target_repo"),
         "target_commit": data.get("target_commit"),
         "plan_file": data.get("plan_file"),
-        "dependency": dependency,
+        "depends_on": depends_on,
     }
 
 
@@ -57,9 +55,11 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
     for key in ("target_repo", "target_commit", "plan_file"):
         value = details[key]
         print(f"    {key}: {value if value is not None else 'なし'}")
-    dependency = details["dependency"]
-    rendered_dependency = "なし" if dependency is None else json.dumps(dependency, ensure_ascii=False, sort_keys=True)
-    print(f"    dependency: {rendered_dependency}")
+    depends_on = details["depends_on"]
+    rendered_dependencies = (
+        "、".join(str(value) for value in depends_on) if isinstance(depends_on, (list, tuple)) and depends_on else "なし"
+    )
+    print(f"    depends_on: {rendered_dependencies}")
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
@@ -245,6 +245,7 @@ _RESERVED_FRONTMATTER_KEYS = (
     "choices",
     "plan_file",
     "queue_schedule",
+    "depends_on",
     "repair_target",
     "repair_kind",
 )
@@ -256,8 +257,8 @@ _RESERVED_FRONTMATTER_KEYS = (
 CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
 保存する。`type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
-`target_commit`・`plan_file`・`queue_schedule`・`repair_target`・`repair_kind`は利用者による直接指定を禁止し、
-システムが自動生成する計画実装型の識別情報・分類メタデータ・修復TBDの対象と理由区分として予約する。
+`target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`repair_target`・`repair_kind`は
+利用者による直接指定を禁止し、CLIが管理する識別情報・依存・修復TBDの対象と理由区分として予約する。
 """
 
 
@@ -275,13 +276,12 @@ def _add_entries_locked(
     target_commit: str | None = None,
     plan_file: str | None = None,
     repair_targets: list[str | None] | None = None,
-    repair_kinds: list[_schedule.RepairKind | None] | None = None,
+    repair_kinds: list[str | None] | None = None,
+    depends_on: tuple[str, ...] = (),
 ) -> list[str]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名を返す。"""
     effective_repair_targets: list[str | None] = [None for _ in parsed_messages] if repair_targets is None else repair_targets
-    effective_repair_kinds: list[_schedule.RepairKind | None] = (
-        [None for _ in parsed_messages] if repair_kinds is None else repair_kinds
-    )
+    effective_repair_kinds: list[str | None] = [None for _ in parsed_messages] if repair_kinds is None else repair_kinds
     if len(effective_repair_targets) != len(parsed_messages):
         raise ValueError("repair_targetsの件数がメッセージ件数と一致しません")
     if len(effective_repair_kinds) != len(parsed_messages):
@@ -332,17 +332,8 @@ def _add_entries_locked(
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
             if plan_file is not None:
                 frontmatter_data["plan_file"] = plan_file
-                metadata = _schedule.ScheduleMetadata(
-                    body_sha256=_schedule.body_sha256(logical_body),
-                    normalized_target_repo=item_target_repo,
-                    feedback_type="plan-impl",
-                    dependency=_schedule.Dependency(kind="none"),
-                    plan_file=plan_file,
-                    target_files=(),
-                    carry_count=0,
-                    carry_reasons=(),
-                )
-                frontmatter_data["queue_schedule"] = _schedule.metadata_to_mapping(metadata)
+            if depends_on:
+                frontmatter_data["depends_on"] = list(depends_on)
         content = _frontmatter.serialize_frontmatter(frontmatter_data, logical_body)
         (inbox_dir / filename).write_text(content, encoding="utf-8")
         if entry_type != MQ_TYPE_FEEDBACK:
@@ -365,6 +356,7 @@ def add_entries(
     choices: str | None = None,
     target_commit: str | None = None,
     plan_file: str | None = None,
+    depends_on: tuple[str, ...] = (),
     lock_timeout: float = -1,
     saved_details: dict[str, dict[str, object | None]] | None = None,
 ) -> list[str]:
@@ -416,6 +408,7 @@ def add_entries(
             choices=choices,
             target_commit=target_commit,
             plan_file=plan_file,
+            depends_on=depends_on,
         )
         count = len(generated)
         _commit_and_push(
@@ -502,6 +495,7 @@ def _cmd_add(
             choices=args.choices,
             target_commit=target_commit,
             plan_file=args.plan_file,
+            depends_on=tuple(dict.fromkeys(args.depends_on or ())),
             saved_details=saved_details,
         )
     except WebInputError as error:

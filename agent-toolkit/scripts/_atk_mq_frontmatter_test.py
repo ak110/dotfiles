@@ -48,8 +48,8 @@ class TestParseFrontmatter:
         result_tilde = frontmatter.parse_frontmatter("---\n~\n---\n本文")
         assert result_tilde is None
 
-    def test_parse_frontmatter_preserves_nested_queue_schedule_mapping(self) -> None:
-        """`queue_schedule`を含むfrontmatterが解析できる。"""
+    def test_parse_frontmatter_preserves_legacy_queue_schedule_as_nested_value(self) -> None:
+        """legacyの`queue_schedule`を未知の入れ子値として読み取れる。"""
         text = """---
 target_repo: example
 queue_schedule:
@@ -63,6 +63,14 @@ queue_schedule:
         assert isinstance(data.get("queue_schedule"), dict)
         assert data["queue_schedule"]["type"] == "normal"
         assert data["queue_schedule"]["carry_count"] == 2
+        assert body == "本文"
+
+    def test_parse_frontmatter_preserves_depends_on_sequence(self) -> None:
+        """トップレベルの`depends_on`を文字列配列として保持する。"""
+        result = frontmatter.parse_frontmatter("---\ndepends_on:\n  - a.md\n  - b.md\n---\n本文")
+        assert result is not None
+        data, body = result
+        assert data["depends_on"] == ["a.md", "b.md"]
         assert body == "本文"
 
     def test_parse_frontmatter_keeps_iso8601_timestamp_value_as_literal_string(self) -> None:

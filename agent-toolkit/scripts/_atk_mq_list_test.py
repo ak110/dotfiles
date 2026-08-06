@@ -16,7 +16,6 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -71,7 +70,7 @@ class TestListSingle:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
 
 
 class TestListPlanImplementationClassification:
@@ -98,7 +97,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[inbox/plan-impl/carry=0]" in output
+        assert "[inbox/plan/blocked]" in output
         assert "unclassified" not in output
 
     def test_stale_schedule_metadata_is_labeled_plan_implementation(
@@ -115,17 +114,7 @@ class TestListPlanImplementationClassification:
             "type: feedback\n",
             f"type: feedback\nplan_file: {plan}\n",
         )
-        metadata = schedule.ScheduleMetadata(
-            schedule.body_sha256(text),
-            "github.com/example/repo",
-            "plan-impl",
-            schedule.Dependency("none"),
-            str(plan),
-            (),
-            2,
-            ("dependency-unmet", "conflict"),
-        )
-        path.write_text(schedule.serialize_schedule_metadata(text, metadata) + "\n本文変更\n", encoding="utf-8")
+        path.write_text(text + "\n本文変更\n", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -133,7 +122,7 @@ class TestListPlanImplementationClassification:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "[inbox/plan-impl/carry=0]" in output
+        assert "[inbox/plan/blocked]" in output
         assert "unclassified" not in output
 
 
@@ -169,7 +158,7 @@ class TestListMalformedFrontmatter:
         assert exc_info.value.code == expected_exit
         captured = capsys.readouterr()
         if expected_exit == 0:
-            assert "[inbox/frontmatter-broken/carry=0]" in captured.out
+            assert "[inbox/frontmatter-broken/blocked]" in captured.out
             assert not captured.err
         else:
             assert not captured.out
@@ -198,8 +187,8 @@ class TestListMultipleRepos:
         captured = capsys.readouterr()
         assert captured.out.splitlines() == [
             "# feedback",
-            "fb-001.md: github.com/example/foo [inbox/unclassified/carry=0] テスト本文",
-            "fb-002.md: github.com/example/bar [inbox/unclassified/carry=0] テスト本文",
+            "fb-001.md: github.com/example/foo [inbox/normal/ready] テスト本文",
+            "fb-002.md: github.com/example/bar [inbox/normal/ready] テスト本文",
         ]
 
     def test_type_groups_sort_by_filename_independently_of_state(
@@ -235,7 +224,7 @@ class TestListMultipleRepos:
         ]
         assert "[processing/" in lines[1]
         assert "[inbox/" in lines[2]
-        assert "[processing/answered/" in lines[4]
+        assert "[processing/answered]" in lines[4]
         assert "[inbox/unanswered]" in lines[5]
 
 
@@ -283,7 +272,7 @@ class TestListTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox/unclassified/carry=0] テスト本文\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox/normal/ready] テスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -394,7 +383,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
 
     def test_type_tbd_outputs_status_label(
         self,
@@ -430,7 +419,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/answered/" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/answered]" in captured.out
         assert "[tbd/" not in captured.out
 
     def test_type_all_omits_empty_section_header(

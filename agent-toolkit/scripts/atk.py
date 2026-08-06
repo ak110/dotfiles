@@ -23,14 +23,13 @@
 - mq convert-to-plan: 既存feedbackの計画実装型への変換
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
-- mq schedule: 分類メタデータの適用と処理順算出
 - mq process-loop: 新規Claudeセッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 
 ハンドラ実装は`_atk_mq_add`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
-`_atk_mq_schedule_cli`・`_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
+`_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントを保持する。
 """
 
@@ -51,7 +50,6 @@ import _atk_mq_grep as _grep  # noqa: E402
 import _atk_mq_list as _list  # noqa: E402
 import _atk_mq_mutations as _mutations  # noqa: E402
 import _atk_mq_process_loop as _process_loop  # noqa: E402
-import _atk_mq_schedule_cli as _schedule_cli  # noqa: E402
 import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_serve as _serve  # noqa: E402
@@ -74,7 +72,16 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     if len(argv) < 2 or (argv[0], argv[1]) != ("mq", "add"):
         return argv, None
     candidate_index = 2
-    value_options = {"--type", "--source", "--scope", "--question-type", "--choices", "--target-repo"}
+    value_options = {
+        "--type",
+        "--source",
+        "--scope",
+        "--question-type",
+        "--choices",
+        "--target-repo",
+        "--plan-file",
+        "--depends-on",
+    }
     while candidate_index < len(argv) and argv[candidate_index].startswith("-"):
         option = argv[candidate_index].split("=", 1)[0]
         if "=" not in argv[candidate_index] and option in value_options:
@@ -181,6 +188,13 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         ),
     )
     add.add_argument(
+        "--depends-on",
+        metavar="FILENAME",
+        action="append",
+        default=None,
+        help="処理完了を待つキュー項目。複数回指定でき、重複は初出順で除去する。",
+    )
+    add.add_argument(
         "--source",
         metavar="NAME",
         default=None,
@@ -196,12 +210,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     add.set_defaults(subparser=add)
 
     list_ = sub.add_parser("list", help="エントリを1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する")
-    list_.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        default=None,
-        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターする。",
-    )
+    _add_target_repo_arg(list_)
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
@@ -237,37 +246,6 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
     )
 
-    schedule = sub.add_parser(
-        "schedule",
-        help="分類メタデータを検証し、依存・上限・競合からセッションの処理順を算出する",
-    )
-    schedule.add_argument(
-        "--classifications",
-        metavar="PATH",
-        default=None,
-        help="未分類項目へ適用する分類結果JSONファイル",
-    )
-    schedule.add_argument(
-        "--record-deferral",
-        metavar="REASON:FILENAME",
-        nargs="+",
-        default=None,
-        help="初期選抜後に次回へ送る項目と理由",
-    )
-    schedule.add_argument(
-        "--run-id",
-        metavar="ID",
-        default=None,
-        help="選抜計算の実行単位を識別する値。同一の値では繰越回数を二重に加算しない",
-    )
-    schedule.add_argument(
-        "--set-dependency",
-        metavar="JSON",
-        default=None,
-        help="対象エントリの依存条件だけを更新するJSON。filenameと依存マッピングを同一objectへ置く",
-    )
-    _add_target_repo_arg(schedule, required=True)
-
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")
     show.add_argument(
         "filename",
@@ -281,12 +259,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         action="store_true",
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
-    show.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        default=None,
-        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターする。",
-    )
+    _add_target_repo_arg(show)
     show.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
@@ -660,7 +633,6 @@ def main(
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _tbd._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
-        "schedule": lambda: _schedule_cli.cmd_schedule(args, private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
     }
     exit_code = dispatch[sub]() or 0

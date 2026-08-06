@@ -123,9 +123,11 @@ Stopフック誘導かつ言い切り判定を満たす場合は、他工程
   詳細な候補順位は
   [references/generation-criteria-detail.md](references/generation-criteria-detail.md)の該当節を参照する
 - 既存の仕組みの再評価: 既存の仕組みの修正を提案する候補では、当該の仕組みの目的・目的の現行成立性・
-  目的達成への寄与・手段としての妥当性を評価し、維持・内部修正・別手段への置換・撤去の比較結果を
+  目的達成への寄与・副作用・保守費・手段としての妥当性を評価し、維持・内部修正・簡素化・別手段への置換・撤去の比較結果を
   自己検証の内部記録へ残す。詳細は
   [references/generation-criteria-detail.md](references/generation-criteria-detail.md)の該当節を参照する
+- 既存active feedbackとの重複: `atk mq list --status=active --target-repo=<repo-path>`で確認し、
+  既存項目へ吸収できる候補は重複投入しない
 - 判断軸の順序・既存対処済みの確認・候補技術主張の実機検証・処理済みフィードバックの参照・方針固定化は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`の該当節を参照する（肥大化抑止の
   判定基準は`agent-toolkit:agent-standards`「文書記述量の管理」節に従う）
