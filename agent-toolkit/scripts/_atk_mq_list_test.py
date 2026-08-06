@@ -100,6 +100,27 @@ class TestListPlanImplementationClassification:
         assert "[inbox/plan/blocked]" in output
         assert "unclassified" not in output
 
+    def test_missing_dependency_displays_repair_reason(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """修復対象のblocked項目へ具体的な理由を表示する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "feedback.md", target_repo="github.com/example/repo", body="本文")
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [missing.md]\n"),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--target-repo", "github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "blocked_reason=missing-dependency" in capsys.readouterr().out
+
     def test_stale_schedule_metadata_is_labeled_plan_implementation(
         self,
         monkeypatch: pytest.MonkeyPatch,

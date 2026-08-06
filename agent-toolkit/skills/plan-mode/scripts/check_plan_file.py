@@ -24,6 +24,16 @@ _DELETE_WORD_RE = re.compile(r"削除|廃止")
 _BASE_RE = re.compile(r"(?:ベースコミット|計画着手前SHA)\s*[:：]\s*`?([0-9a-f]{40}|[0-9a-f]{64})`?")
 _SKILL_CALL_RE = re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
+_REQUIRED_H2 = (
+    "変更履歴",
+    "背景",
+    "対応方針",
+    "調査結果",
+    "変更内容",
+    "実行方法",
+    "進捗ログ",
+    "計画ファイル（本ファイル）のパス",
+)
 
 
 def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
@@ -63,6 +73,32 @@ def _check_h1(lines: list[str], outside: list[bool]) -> list[str]:
     for index in range(1, len(lines)):
         if outside[index] and lines[index].strip() and set(lines[index].strip()) == {"="} and lines[index - 1].strip():
             errors.append(f"Setext形式のH1候補がある: {index + 1}行目")
+    return errors
+
+
+def _check_required_sections(lines: list[str], outside: list[bool]) -> list[str]:
+    """必須H2の一意性・順序と固定H3の親節を検査する。"""
+    errors: list[str] = []
+    positions: list[int] = []
+    for title in _REQUIRED_H2:
+        matches = [index for index, line in enumerate(lines) if outside[index] and line == f"## {title}"]
+        if len(matches) != 1:
+            errors.append(f"必須H2`## {title}`が1件必要: 実際={len(matches)}件")
+        if matches:
+            positions.append(matches[0])
+    if len(positions) == len(_REQUIRED_H2) and positions != sorted(positions):
+        errors.append("必須H2の順序が計画ファイル完成条件と一致しない")
+
+    fixed_h3 = (("背景", "計画メタ情報"), ("変更内容", "対象ファイル一覧"))
+    for parent, child in fixed_h3:
+        bounds = _section_bounds(lines, outside, parent)
+        count = (
+            sum(1 for index in range(bounds[0] + 1, bounds[1]) if outside[index] and lines[index] == f"### {child}")
+            if bounds is not None
+            else 0
+        )
+        if count != 1:
+            errors.append(f"`## {parent}`直下に`### {child}`が1件必要: 実際={count}件")
     return errors
 
 
@@ -179,7 +215,7 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
     outside, fence_errors = _outside_fences(lines)
-    errors = fence_errors + _check_h1(lines, outside)
+    errors = fence_errors + _check_h1(lines, outside) + _check_required_sections(lines, outside)
     target_errors, planned_paths = _check_target_structure(lines, outside, work_dir)
     errors.extend(target_errors)
     errors.extend(_check_tables(lines, outside))

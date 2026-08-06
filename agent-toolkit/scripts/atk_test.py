@@ -146,6 +146,14 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
     assert args.depends_on == ["first.md", "second.md"]
 
 
+def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:
+    """set-dependenciesが既存feedbackと複数の依存先を受理する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    args = parser.parse_args(["mq", "set-dependencies", "feedback.md", "--depends-on", "first", "--depends-on", "second.md"])
+    assert args.filename == "feedback.md"
+    assert args.depends_on == ["first", "second.md"]
+
+
 class TestTbdAddSourceOptionParser:
     """TBD投入時の`--source`受理をargparseレベルで検証する。"""
 

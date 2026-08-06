@@ -29,6 +29,7 @@ from _atk_mq_common import (
     _repo_lock,
     _resolve_repo_path_override,
     _subdir,
+    _validate_filename,
 )
 from _atk_mq_formatters import _shorten_home
 from _atk_mq_repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
@@ -60,6 +61,11 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
         "、".join(str(value) for value in depends_on) if isinstance(depends_on, (list, tuple)) and depends_on else "なし"
     )
     print(f"    depends_on: {rendered_dependencies}")
+
+
+def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
+    """CLIの依存filenameを検証し、`.md`付きの初出順へ正規化する。"""
+    return tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in (values or ())))
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
@@ -481,6 +487,8 @@ def _cmd_add(
                 print("---", file=sys.stderr)
                 print(message, file=sys.stderr)
         raise
+    dependency_dir = _subdir(private_notes, MQ_STATE_INBOX)
+    canonical_dependencies = _normalize_dependencies(args.depends_on, dependency_dir)
     saved_details: dict[str, dict[str, object | None]] = {}
     try:
         generated = add_entries(
@@ -495,7 +503,7 @@ def _cmd_add(
             choices=args.choices,
             target_commit=target_commit,
             plan_file=args.plan_file,
-            depends_on=tuple(dict.fromkeys(args.depends_on or ())),
+            depends_on=canonical_dependencies,
             saved_details=saved_details,
         )
     except WebInputError as error:

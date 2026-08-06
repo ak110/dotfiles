@@ -80,9 +80,11 @@ MESSAGEの先頭frontmatterでは`target_repo`・`source`と追加メタデー�
 editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示したメタデータだけを既存値へ上書きし、
 未指定メタデータは保持する。
 `atk mq add`と`atk mq convert-to-plan`の完了表示で、保存後に再読込された`target_repo`・
-`target_commit`・`plan_file`・`dependency`を照合する。
-続けて`atk mq show <FILENAME>`で登録本文を照合し、欠落があれば同じ項目を
-`atk mq edit`で修復してから再度照合する。
+`target_commit`・`plan_file`・`depends_on`を照合する。
+続けて`atk mq show <FILENAME>`で登録本文を照合する。既存feedbackの`plan_file`は
+`atk mq convert-to-plan`、`depends_on`は`atk mq set-dependencies`で更新する。
+`target_commit`など専用更新経路を持たない保存値が完了表示と一致しない場合は、通常の本文編集で補正せず、
+コマンド失敗として実測値を報告して処理を止める。
 
 判断が必要な複数の確認事項を本文へ含める場合、各項目の書式は
 `references/hold-with-tbd-inject.md`「投入コマンド」節に従う（疑問文要件を本体へ複製しない）。
@@ -154,7 +156,9 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 `target_commit`は投入時文脈の参考情報として扱い、現行HEADと現行仕様を実装基準とする。
 当該項目がない既存エントリも正常な入力として処理する。
 
-本文から新たな明示依存が判明した場合は、`depends_on`を専用CLI引数で更新してinboxへ戻す。
+本文から新たな明示依存が判明した場合は、
+`atk mq set-dependencies <filename> --depends-on <依存filename>`で`depends_on`を更新してinboxへ戻す。
+依存先が複数ある場合は`--depends-on`を複数回指定し、依存を解除する場合は同オプションを省略する。
 ユーザー判断を要する依存はTBDへ記録し、回答後に再評価する。
 外部条件待ちだけで採用0件となる場合は、本ステップの待機ループを起動しない。
 

@@ -177,9 +177,41 @@ def _inspect_completion_contract(text: str) -> list[str]:
     review_status = _extract_report_first_line(text, "review_status")
     if review_status not in {"completed", "skipped_by_user"}:
         violations.append("completed status requires completed review or an explicit user skip")
-    if "未解決" in _extract_report_field(text, "review_findings"):
+    findings = _extract_report_field(text, "review_findings")
+    resolution = _extract_report_field(text, "review_resolution")
+    if any(marker in findings or marker in resolution for marker in ("未解決", "未修正", "要対応", "needs_escalation")):
         violations.append("completed status must not contain unresolved review findings")
+    if review_status == "completed":
+        rounds = _extract_report_first_line(text, "review_rounds")
+        if re.fullmatch(r"[1-5]", rounds) is None:
+            violations.append("completed review requires review_rounds from 1 to 5")
+        routes = _parse_review_mapping(_extract_report_field(text, "review_routes"))
+        targets = _parse_review_mapping(_extract_report_field(text, "review_targets"))
+        required_systems = {"計画準拠系", "独立系"}
+        if set(routes) != required_systems or any(not value for value in routes.values()):
+            violations.append("completed review requires nonempty routes for both review systems")
+        elif len(set(routes.values())) != len(required_systems):
+            violations.append("completed review requires distinct route/thread values")
+        if set(targets) != required_systems or any(commit_sha not in value for value in targets.values()):
+            violations.append("completed review targets must identify the final commit for both systems")
+        finding_ids = set(re.findall(r"\b[PI]-[0-9]+\b", findings))
+        if finding_ids:
+            missing_resolution = sorted(identifier for identifier in finding_ids if identifier not in resolution)
+            if missing_resolution or not any(status in resolution for status in ("採用", "不採用", "重複")):
+                violations.append("completed review requires a resolution for every review finding")
+        elif "指摘なし" not in findings:
+            violations.append("completed review findings must contain finding IDs or 指摘なし")
     return violations
+
+
+def _parse_review_mapping(body: str) -> dict[str, str]:
+    """レビュー系統の箇条書きを名前と値の対応へ変換する。"""
+    result: dict[str, str] = {}
+    for line in body.splitlines():
+        match = re.fullmatch(r"\s*-\s*(計画準拠系|独立系)[:：]\s*(.*?)\s*", line)
+        if match is not None:
+            result[match.group(1)] = match.group(2)
+    return result
 
 
 def _detect_plan_impl_executor_background_parallel_violation(text: str) -> bool:

@@ -216,6 +216,52 @@ def test_convert_to_plan_rejects_tbd_repo_mismatch_and_self_dependency(
         )
 
 
+def test_set_dependencies_updates_normal_feedback_without_converting_plan(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """通常feedbackの型と本文を保ち、依存だけを正規化して更新する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(
+        notes,
+        "feedback.md",
+        schedule_mapping="queue_schedule:\n  dependency:\n    kind: none\n",
+    )
+    _disable_convert_git(monkeypatch)
+
+    details = mutations.set_entry_dependencies(
+        notes,
+        filename="feedback.md",
+        depends_on=("dependency", "dependency.md"),
+        target_repo="github.com/example/foo",
+    )
+
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    data, body = parsed
+    assert data["type"] == "feedback"
+    assert "plan_file" not in data
+    assert data["depends_on"] == ["dependency.md"]
+    assert "queue_schedule" not in data
+    assert "本文" in body
+    assert details["depends_on"] == ["dependency.md"]
+
+
+def test_set_dependencies_can_clear_dependencies(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """依存オプション省略時は既存の明示依存を解除する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    text = path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [old.md]\n")
+    path.write_text(text, encoding="utf-8")
+    _disable_convert_git(monkeypatch)
+
+    mutations.set_entry_dependencies(notes, filename="feedback.md", depends_on=())
+
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert "depends_on" not in parsed[0]
+
+
 def test_convert_to_plan_keeps_saved_change_when_push_fails(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

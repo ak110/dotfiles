@@ -12,6 +12,7 @@ from _atk_mq_common import (
     MQ_ACTIVE_STATES,
     MQ_STATES,
     MQ_TYPE_TBD,
+    ReadinessResult,
     _is_tbd_answered,
     _iter_entries,
     _pull,
@@ -94,7 +95,23 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     )
 
 
-def _print_entries(selected: list[QueueEntryDisplay], ready: frozenset[str]) -> None:
+def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
+    """項目の具体的なblocked理由を安定した識別子で返す。"""
+    reasons = (
+        ("frontmatter-broken", readiness.frontmatter_broken),
+        ("missing-plan-file", readiness.missing_plan_file),
+        ("invalid-dependency", readiness.invalid_dependencies),
+        ("missing-dependency", readiness.missing_dependencies),
+        ("self-dependency", readiness.self_dependencies),
+        ("cyclic-dependency", readiness.cyclic_dependencies),
+    )
+    specific = next((reason for reason, filenames in reasons if filename in filenames), None)
+    if specific is not None:
+        return specific
+    return "dependency-unmet" if filename in readiness.blocked else None
+
+
+def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:
     """選択済みエントリを`atk mq list`の1件1行形式で出力する。"""
     for header_type in ("feedback", "tbd"):
         group = [entry for entry in selected if entry[4] == header_type or (header_type == "feedback" and entry[4] is None)]
@@ -105,14 +122,20 @@ def _print_entries(selected: list[QueueEntryDisplay], ready: frozenset[str]) -> 
             parsed = parse_frontmatter(text)
             plan_file = parsed[0].get("plan_file") if parsed is not None else None
             item_kind = "frontmatter-broken" if parsed is None else "plan" if isinstance(plan_file, str) else "normal"
-            readiness = "complete" if state not in MQ_ACTIVE_STATES else "ready" if path.name in ready else "blocked"
-            label = f"{state}/{item_kind}/{readiness}"
+            state_readiness = (
+                "complete" if state not in MQ_ACTIVE_STATES else "ready" if path.name in readiness.ready else "blocked"
+            )
+            label = f"{state}/{item_kind}/{state_readiness}"
             if entry_type == MQ_TYPE_TBD:
                 answered = _is_tbd_answered(text)
                 label = f"{state}/answered" if answered else f"{state}/unanswered"
             repo_budget = _target_repo_budget(path.name, label)
             display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
-            prefix = f"{path.name}: {display_repo} [{label}] "
+            reason = (
+                _blocked_reason(readiness, path.name) if state_readiness == "blocked" and entry_type != MQ_TYPE_TBD else None
+            )
+            reason_suffix = f" blocked_reason={reason}" if reason is not None else ""
+            prefix = f"{path.name}: {display_repo} [{label}]{reason_suffix} "
             available_width = shutil.get_terminal_size().columns - _display_width(prefix)
             summary = (
                 _tbd_body_summary(text, available_width) if entry_type == MQ_TYPE_TBD else _body_summary(text, available_width)
@@ -159,4 +182,4 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         print(len(selected))
         return
 
-    _print_entries(selected, frozenset(readiness.ready))
+    _print_entries(selected, readiness)

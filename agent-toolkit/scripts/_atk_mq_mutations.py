@@ -490,6 +490,73 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
     _add._print_entry_details(details)  # pylint: disable=protected-access
 
 
+def set_entry_dependencies(
+    private_notes: pathlib.Path,
+    *,
+    filename: str,
+    depends_on: tuple[str, ...],
+    target_repo: str | None = None,
+    lock_timeout: float = -1,
+) -> dict[str, object | None]:
+    """既存feedbackの明示依存だけを更新し、保存済みメタデータを返す。"""
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
+    _validate_filenames_only([filename, *depends_on], inbox_dir)
+    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _push_pending_commits(private_notes)
+        _pull(private_notes)
+        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
+        data, body = parsed
+        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
+            raise WebInputError(f"feedbackだけ依存を更新できます: {path.name}")
+        raw_entry_repo = data.get("target_repo")
+        if not isinstance(raw_entry_repo, str):
+            raise WebInputError(f"target_repoが不正です: {path.name}")
+        entry_repo = _resolve_repo_id(raw_entry_repo)
+        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+
+        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+        if path.name in canonical_dependencies:
+            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+        data.pop("queue_schedule", None)
+        if canonical_dependencies:
+            data["depends_on"] = list(canonical_dependencies)
+        else:
+            data.pop("depends_on", None)
+        updated_text = _frontmatter.serialize_frontmatter(data, body)
+        if updated_text != text:
+            _atomic_write_text(path, updated_text)
+            relative_path = str(path.relative_to(private_notes))
+            _commit_and_push(private_notes, "chore: update feedback dependencies", [relative_path])
+        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+
+
+def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """set-dependenciesサブコマンドを実行する。"""
+    target_repo = args.target_repo
+    if target_repo is None:
+        target_repo, _local_worktree = _add.resolve_add_target(None)
+    try:
+        details = set_entry_dependencies(
+            private_notes,
+            filename=args.filename,
+            depends_on=tuple(args.depends_on or ()),
+            target_repo=target_repo,
+        )
+    except WebInputError as error:
+        print(f"依存更新を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
+    print(f"依存を更新: {args.filename}")
+    _add._print_entry_details(details)  # pylint: disable=protected-access
+
+
 def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """adoptサブコマンド: 採用としてinboxまたはprocessingからadopted/へ移動しcommit・push。
 

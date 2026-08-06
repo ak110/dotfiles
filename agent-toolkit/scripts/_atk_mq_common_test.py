@@ -148,6 +148,64 @@ class TestReadiness:
         assert result.ready == ("dependency.md",)
         assert result.blocked == ("feedback.md",)
 
+    @pytest.mark.parametrize(
+        ("legacy_dependency", "other_active"),
+        [
+            (
+                "    kind: external-upstream\n"
+                "    condition: upstream待ち\n"
+                "    recheck_after: '2999-01-01T00:00:00+00:00'\n"
+                "    hold_reason: 未到来",
+                False,
+            ),
+            ("    kind: inbox-empty", True),
+        ],
+    )
+    def test_legacy_condition_remains_blocked_until_satisfied(
+        self,
+        tmp_path: pathlib.Path,
+        legacy_dependency: str,
+        other_active: bool,
+    ) -> None:
+        """legacyの時刻条件とinbox空条件を無条件readyへ変換しない。"""
+        _write_feedback(tmp_path, "feedback.md", legacy_dependency=legacy_dependency)
+        if other_active:
+            _write_feedback(tmp_path, "other.md")
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert "feedback.md" in result.blocked
+        assert "feedback.md" not in result.ready
+
+    def test_legacy_external_upstream_becomes_ready_after_recheck_time(self, tmp_path: pathlib.Path) -> None:
+        """legacy外部条件は再評価時刻の到来後だけreadyとなる。"""
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            legacy_dependency=(
+                "    kind: external-upstream\n"
+                "    condition: upstream待ち\n"
+                "    recheck_after: '2000-01-01T00:00:00+00:00'\n"
+                "    hold_reason: 再評価"
+            ),
+        )
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.ready == ("feedback.md",)
+
+    def test_cross_repo_cycle_is_actionable_for_each_target_repo(self, tmp_path: pathlib.Path) -> None:
+        """対象repoをまたぐ明示依存の循環も修復対象として検出する。"""
+        _write_feedback(tmp_path, "first.md", depends_on=("second.md",), target_repo="github.com/example/first")
+        _write_feedback(tmp_path, "second.md", depends_on=("first.md",), target_repo="github.com/example/second")
+
+        first = _common.calculate_readiness(tmp_path, "github.com/example/first")
+        second = _common.calculate_readiness(tmp_path, "github.com/example/second")
+
+        assert first.cyclic_dependencies == ("first.md",)
+        assert second.cyclic_dependencies == ("second.md",)
+        assert first.actionable_count == second.actionable_count == 1
+
     def test_missing_plan_file_requires_one_repair_tbd(self, tmp_path: pathlib.Path) -> None:
         _write_feedback(tmp_path, "plan.md", plan_file=tmp_path / "missing.md")
 

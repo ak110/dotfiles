@@ -388,6 +388,20 @@ def test_add_operation_records_top_level_dependencies(
     assert parsed[0]["depends_on"] == ["first.md", "second.md"]
 
 
+def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Path) -> None:
+    """add CLIの依存を単純filenameへ限定し、拡張子省略と重複を正規化する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+
+    assert add_module._normalize_dependencies(["first", "first.md", "second.md"], inbox) == (  # pylint: disable=protected-access  # noqa: SLF001
+        "first.md",
+        "second.md",
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._normalize_dependencies(["../outside"], inbox)  # pylint: disable=protected-access  # noqa: SLF001
+    assert exc_info.value.code == 2
+
+
 @pytest.mark.parametrize("plan_file", ["relative-plan.md", "/missing-plan.md"])
 def test_add_operation_rejects_invalid_plan_file(
     plan_file: str,

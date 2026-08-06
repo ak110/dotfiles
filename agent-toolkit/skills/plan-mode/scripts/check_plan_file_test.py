@@ -14,11 +14,23 @@ _BASE = "a" * 40
 def _plan(path: str = "existing.py", *, suffix: str = "（現行1行）", body: str = "変更する") -> str:
     return f"""# 主題
 
+## 変更履歴
+
+- なし
+
 ## 背景
 
 ### 計画メタ情報
 
 - ベースコミット: `{_BASE}`
+
+## 対応方針
+
+- 実施する
+
+## 調査結果
+
+- 調査済み
 
 ## 変更内容
 
@@ -35,6 +47,14 @@ def _plan(path: str = "existing.py", *, suffix: str = "（現行1行）", body: 
 ## 実行方法
 
 - 検証する
+
+## 進捗ログ
+
+- 未着手
+
+## 計画ファイル（本ファイル）のパス
+
+`/tmp/plan.md`
 """
 
 
@@ -58,6 +78,16 @@ def test_valid_plan_passes(tmp_path: pathlib.Path) -> None:
         (_plan().replace("- [ ] `existing.py`（現行1行）\n", "", 1), "対象ファイル一覧"),
         (_plan().replace("```text\n変更する\n```", "変更する"), "コードブロック"),
         (_plan("missing.py"), "実在確認"),
+        (_plan().replace("## 調査結果\n\n- 調査済み\n\n", "", 1), "必須H2"),
+        (
+            _plan().replace(
+                "## 対応方針\n\n- 実施する\n\n## 調査結果\n\n- 調査済み",
+                "## 調査結果\n\n- 調査済み\n\n## 対応方針\n\n- 実施する",
+                1,
+            ),
+            "順序",
+        ),
+        (_plan().replace("### 計画メタ情報", "### メタ情報", 1), "計画メタ情報"),
     ],
 )
 def test_structural_errors(tmp_path: pathlib.Path, text: str, message: str) -> None:
@@ -84,7 +114,7 @@ def test_deleted_path_with_h3_suffix_passes(tmp_path: pathlib.Path) -> None:
 
 
 def test_unclosed_fence_is_error(tmp_path: pathlib.Path) -> None:
-    errors, _warnings = _run(tmp_path, _plan().removesuffix("```\n\n## 実行方法\n\n- 検証する\n"))
+    errors, _warnings = _run(tmp_path, _plan().replace("```text\n変更する\n```", "```text\n変更する", 1))
     assert any("フェンス" in error for error in errors)
 
 

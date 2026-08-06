@@ -835,9 +835,71 @@ def _effective_dependencies(entry: QueueEntry) -> tuple[str, ...] | None:
     if kind == "external-user":
         filename = legacy.get("tbd_filename")
         return (filename,) if isinstance(filename, str) and filename else None
-    if kind in ("external-upstream", "inbox-empty"):
+    if kind == "external-upstream":
+        recheck_after = legacy.get("recheck_after")
+        condition = legacy.get("condition")
+        hold_reason = legacy.get("hold_reason")
+        if (
+            not all(isinstance(value, str) and value for value in (recheck_after, condition, hold_reason))
+            or _parse_legacy_recheck_after(recheck_after) is None
+        ):
+            return None
+        return ()
+    if kind == "inbox-empty":
         return ()
     return None
+
+
+def _parse_legacy_recheck_after(value: object) -> datetime.datetime | None:
+    """legacy外部条件の再評価時刻をaware datetimeとして返す。"""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _legacy_dependency_is_satisfied(
+    entry: QueueEntry,
+    *,
+    all_active: tuple[QueueEntry, ...],
+    terminal: tuple[QueueEntry, ...],
+    target_active: tuple[QueueEntry, ...],
+    now: datetime.datetime,
+) -> bool | None:
+    """legacy固有依存の成立状態を返し、通常のfilename依存ではNoneを返す。"""
+    parsed = parse_frontmatter(entry.text)
+    if parsed is not None and "depends_on" in parsed[0]:
+        return None
+    legacy = entry.legacy_dependency
+    if legacy is None:
+        return None
+    kind = legacy.get("kind")
+    if kind in (None, "none", "entries", "external-user"):
+        return None
+    if kind == "external-upstream":
+        recheck_after = _parse_legacy_recheck_after(legacy.get("recheck_after"))
+        return recheck_after is not None and recheck_after <= now
+    if kind == "inbox-empty":
+        return not any(candidate.filename != entry.filename for candidate in target_active)
+    if kind == "external-repo-entry":
+        filenames = legacy.get("filenames")
+        dependency_repo = legacy.get("target_repo")
+        if (
+            not isinstance(filenames, list)
+            or any(not isinstance(value, str) for value in filenames)
+            or not isinstance(dependency_repo, str)
+        ):
+            return False
+        terminal_pairs = {(candidate.filename, candidate.target_repo) for candidate in terminal}
+        active_pairs = {(candidate.filename, candidate.target_repo) for candidate in all_active}
+        return all(
+            (filename, dependency_repo) in terminal_pairs and (filename, dependency_repo) not in active_pairs
+            for filename in filenames
+        )
+    return False
 
 
 def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
@@ -886,6 +948,9 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
     missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
 
     dependency_map = {entry.filename: _effective_dependencies(entry) for entry in active if not entry.frontmatter_broken}
+    all_dependency_map = {
+        entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
+    }
     invalid = tuple(sorted(name for name, dependencies in dependency_map.items() if dependencies is None))
     graph = {name: dependencies for name, dependencies in dependency_map.items() if dependencies is not None}
     self_dependencies = tuple(sorted(name for name, dependencies in graph.items() if name in dependencies))
@@ -896,16 +961,25 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
             if any(dependency not in active_by_name and dependency not in terminal_names for dependency in dependencies)
         )
     )
-    cyclic = tuple(sorted(_cycle_members(graph)))
+    all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
+    cyclic = tuple(sorted(set(_cycle_members(all_graph)) & set(dependency_map)))
     permanently_blocked = set((*broken, *missing_plan, *invalid, *self_dependencies, *missing_dependencies, *cyclic))
     ready: list[str] = []
     blocked: list[str] = []
+    now = datetime.datetime.now(datetime.UTC)
     for entry in active:
         if entry.filename in permanently_blocked or (entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False):
             blocked.append(entry.filename)
             continue
         dependencies = graph.get(entry.filename, ())
-        waiting = any(
+        legacy_satisfied = _legacy_dependency_is_satisfied(
+            entry,
+            all_active=all_active,
+            terminal=terminal,
+            target_active=active,
+            now=now,
+        )
+        waiting = legacy_satisfied is False or any(
             dependency in active_by_name
             and not (active_by_name[dependency].kind == MQ_TYPE_TBD and active_by_name[dependency].tbd_answered is True)
             for dependency in dependencies

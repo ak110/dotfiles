@@ -32,8 +32,8 @@ review_routes:
 - 計画準拠系: codex/thread-plan
 - 独立系: codex/thread-independent
 review_targets:
-- 計画準拠系: HEADと計画
-- 独立系: HEADと公開契約
+- 計画準拠系: {"b" * 40}と計画
+- 独立系: {"b" * 40}と公開契約
 review_findings:
 - 指摘なし
 review_resolution:
@@ -99,6 +99,31 @@ def test_completed_rejects_incomplete_contract(old: str, new: str, expected: str
     report = _report().replace(old, new, 1)
     _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
     assert any(expected in violation for violation in violations)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        ("review_rounds: 1", "review_rounds: 0", "review_rounds"),
+        ("- 独立系: codex/thread-independent", "- 独立系:", "routes"),
+        ("- 独立系: codex/thread-independent", "- 独立系: codex/thread-plan", "distinct"),
+        (f"- 独立系: {'b' * 40}と公開契約", "- 独立系: HEADと公開契約", "targets"),
+    ],
+)
+def test_completed_rejects_incomplete_review_evidence(old: str, new: str, expected: str) -> None:
+    """二系統reviewの回数、経路分離、最終commit対象を必須にする。"""
+    report = _report().replace(old, new, 1)
+    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
+    assert any(expected in violation for violation in violations)
+
+
+def test_completed_requires_resolution_for_each_finding() -> None:
+    """実指摘IDをresolutionへ対応付けない完了報告を拒否する。"""
+    report = _report().replace("- 指摘なし\nreview_resolution:\n- 指摘なし", "- P-1: 欠陥\nreview_resolution:\n- 指摘なし", 1)
+
+    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
+
+    assert any("resolution" in violation for violation in violations)
 
 
 def test_needs_escalation_allows_unexecuted_plan_check() -> None:
