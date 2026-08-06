@@ -22,6 +22,9 @@ def _plan(path: str = "existing.py", *, suffix: str = "（現行1行）", body: 
 
 ### 計画メタ情報
 
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `/tmp/repo`
+- 作業種別: 通常変更
 - ベースコミット: `{_BASE}`
 
 ## 対応方針
@@ -97,6 +100,45 @@ def test_structural_errors(tmp_path: pathlib.Path, text: str, message: str) -> N
 
 def test_new_path_does_not_require_existence(tmp_path: pathlib.Path) -> None:
     assert _run(tmp_path, _plan("new.py", suffix="（新設）")) == ([], [])
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("- 起動経路: `agent-toolkit:plan-mode`\n", "", "起動経路"),
+        ("- 対象リポジトリ: `/tmp/repo`\n", "", "対象リポジトリ"),
+        ("- 作業種別: 通常変更", "- 作業種別: 調査", "作業種別"),
+        (f"- ベースコミット: `{_BASE}`", "- ベースコミット: `abc`", "ベースコミット"),
+    ],
+)
+def test_plan_metadata_requires_unique_valid_fields(
+    tmp_path: pathlib.Path,
+    old: str,
+    new: str,
+    message: str,
+) -> None:
+    errors, _warnings = _run(tmp_path, _plan().replace(old, new, 1))
+    assert any(message in error for error in errors)
+
+
+def test_base_commit_outside_metadata_does_not_satisfy_requirement(tmp_path: pathlib.Path) -> None:
+    text = _plan().replace(f"- ベースコミット: `{_BASE}`\n", "", 1) + f"\n- 計画着手前SHA: `{_BASE}`\n"
+
+    errors, _warnings = _run(tmp_path, text)
+
+    assert any("ベースコミット" in error for error in errors)
+
+
+def test_duplicate_plan_metadata_field_is_error(tmp_path: pathlib.Path) -> None:
+    text = _plan().replace(
+        "- 起動経路: `agent-toolkit:plan-mode`",
+        "- 起動経路: `agent-toolkit:plan-mode`\n- 起動経路: その他",
+        1,
+    )
+
+    errors, _warnings = _run(tmp_path, text)
+
+    assert any("起動経路" in error and "2件" in error for error in errors)
 
 
 def test_deleted_path_requires_delete_instruction(tmp_path: pathlib.Path) -> None:

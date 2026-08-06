@@ -21,7 +21,7 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _DELETED_RE = re.compile(r"廃止・削除")
 _DELETE_WORD_RE = re.compile(r"削除|廃止")
-_BASE_RE = re.compile(r"(?:ベースコミット|計画着手前SHA)\s*[:：]\s*`?([0-9a-f]{40}|[0-9a-f]{64})`?")
+_BASE_VALUE_RE = re.compile(r"`(?:[0-9a-f]{40}|[0-9a-f]{64})`(?:\s.*)?")
 _SKILL_CALL_RE = re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _REQUIRED_H2 = (
@@ -99,6 +99,43 @@ def _check_required_sections(lines: list[str], outside: list[bool]) -> list[str]
         )
         if count != 1:
             errors.append(f"`## {parent}`直下に`### {child}`が1件必要: 実際={count}件")
+    return errors
+
+
+def _check_plan_metadata(lines: list[str], outside: list[bool]) -> list[str]:
+    """背景直下の計画メタ情報について必須4項目の一意性と値を検査する。"""
+    bounds = _section_bounds(lines, outside, "背景")
+    if bounds is None:
+        return ["`## 背景`が無いため計画メタ情報を検査できない"]
+    metadata_start = next(
+        (index for index in range(bounds[0] + 1, bounds[1]) if outside[index] and lines[index] == "### 計画メタ情報"),
+        None,
+    )
+    if metadata_start is None:
+        return ["`## 背景`直下に`### 計画メタ情報`が無い"]
+    metadata_end = next(
+        (index for index in range(metadata_start + 1, bounds[1]) if outside[index] and lines[index].startswith("### ")),
+        bounds[1],
+    )
+    required = ("起動経路", "対象リポジトリ", "作業種別", "ベースコミット")
+    values: dict[str, str] = {}
+    errors: list[str] = []
+    for field in required:
+        matches = []
+        pattern = re.compile(rf"^- {re.escape(field)}: (.+)$")
+        for index in range(metadata_start + 1, metadata_end):
+            if outside[index] and (match := pattern.fullmatch(lines[index])) is not None:
+                matches.append(match.group(1).strip())
+        if len(matches) != 1:
+            errors.append(f"計画メタ情報の`{field}`が1件必要: 実際={len(matches)}件")
+        elif not matches[0]:
+            errors.append(f"計画メタ情報の`{field}`が空である")
+        else:
+            values[field] = matches[0]
+    if (work_type := values.get("作業種別")) is not None and work_type not in {"バグ対応", "通常変更"}:
+        errors.append("計画メタ情報の`作業種別`は`バグ対応`または`通常変更`で記載する")
+    if (base := values.get("ベースコミット")) is not None and _BASE_VALUE_RE.fullmatch(base) is None:
+        errors.append("計画メタ情報の`ベースコミット`は完全長SHAで記載する")
     return errors
 
 
@@ -216,12 +253,11 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
     lines = text.splitlines()
     outside, fence_errors = _outside_fences(lines)
     errors = fence_errors + _check_h1(lines, outside) + _check_required_sections(lines, outside)
+    errors.extend(_check_plan_metadata(lines, outside))
     target_errors, planned_paths = _check_target_structure(lines, outside, work_dir)
     errors.extend(target_errors)
     errors.extend(_check_tables(lines, outside))
     errors.extend(_check_references(text, work_dir))
-    if not _BASE_RE.search(text):
-        errors.append("完全長のベースコミットが無い")
     warnings: list[str] = []
     if base_commit is not None:
         changed, error = _git_changed_files(work_dir, base_commit)

@@ -19,7 +19,7 @@ external_operations:
   result: not_applicable
   evidence: なし
 verification:
-- pytest: exit 0
+- command: pytest; exit_code: 0; warnings: 0
 plan_check:
 - 計画ファイル: /tmp/plan.md
 - 計画着手前SHA: {"a" * 40}
@@ -90,7 +90,7 @@ def test_completed_requires_no_blockers() -> None:
     ("old", "new", "expected"),
     [
         (f"commit_sha: {'b' * 40}", "commit_sha: なし", "commit_sha"),
-        ("- pytest: exit 0", "- 未実施", "verification"),
+        ("- command: pytest; exit_code: 0; warnings: 0", "- 未実施", "verification"),
         ("review_status: completed", "review_status: needs_escalation", "review"),
         ("- 指摘なし", "- 未解決指摘 P-1", "unresolved"),
     ],
@@ -133,8 +133,64 @@ def test_completed_rejects_partially_resolved_findings() -> None:
         "- P-1: 欠陥\n- P-2: 欠陥\nreview_resolution:\n"
         "| 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |\n"
         "| --- | --- | --- | --- | --- | --- |\n"
-        "| P-1 | 重大 | 採用 | x | y | 修正し検証済み |\n"
+        "| P-1 | 重大 | 採用 | x | y | 修正結果: completed; 検証結果: completed |\n"
         "| P-2 | 重大 | 保留 | x | y | 未対応 |",
+        1,
+    )
+
+    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
+
+    assert any("resolution" in violation for violation in violations)
+
+
+@pytest.mark.parametrize(
+    "verification",
+    [
+        "- なし",
+        "- 検証していない",
+        "- command: pytest; exit_code: 0",
+        "- command: pytest; exit_code: 1; warnings: 0",
+        "- command: pytest; exit_code: 0; warnings: 1",
+    ],
+)
+def test_completed_requires_structured_successful_verification(verification: str) -> None:
+    """実行コマンド、成功終了、警告0件が揃わない検証欄を拒否する。"""
+    report = _report().replace("- command: pytest; exit_code: 0; warnings: 0", verification, 1)
+
+    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
+
+    assert any("verification" in violation for violation in violations)
+
+
+def test_completed_rejects_failed_command_mixed_with_success() -> None:
+    """成功行があっても失敗した検証コマンドが混在する完了報告を拒否する。"""
+    report = _report().replace(
+        "- command: pytest; exit_code: 0; warnings: 0",
+        "- command: pytest; exit_code: 0; warnings: 0\n- command: mypy; exit_code: 1; warnings: 0",
+        1,
+    )
+
+    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
+
+    assert any("verification" in violation for violation in violations)
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "| P-1 | 重大 | 採用予定 | x | y | 修正結果: completed; 検証結果: completed |",
+        "| P-1 | 重大 | 採用 | x | y | 修正未了; 検証未実施 |",
+        "| P-1 | 重大 | 採用 | x | y | 修正結果: pending; 検証結果: completed |",
+    ],
+)
+def test_completed_rejects_nonfinal_adopted_resolution(row: str) -> None:
+    """採用区分と修正・検証の完了状態を完全一致で検査する。"""
+    report = _report().replace(
+        "- 指摘なし\nreview_resolution:\n- 指摘なし",
+        "- P-1: 欠陥\nreview_resolution:\n"
+        "| 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        f"{row}",
         1,
     )
 

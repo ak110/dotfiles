@@ -886,8 +886,17 @@ def _legacy_dependency_is_satisfied(
     if legacy is None:
         return None
     kind = legacy.get("kind")
-    if kind in (None, "none", "entries", "external-user"):
+    if kind in (None, "none", "entries"):
         return None
+    if kind == "external-user":
+        filename = legacy.get("tbd_filename")
+        if not isinstance(filename, str):
+            return False
+        target = next(
+            (candidate for candidate in (*all_active, *terminal) if candidate.filename == filename),
+            None,
+        )
+        return target is not None and target.kind == MQ_TYPE_TBD and target.tbd_answered is True
     if kind == "external-upstream":
         recheck_after = _parse_legacy_recheck_after(legacy.get("recheck_after"))
         return recheck_after is not None and recheck_after <= now
@@ -957,7 +966,19 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
     all_dependency_map = {
         entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
     }
-    invalid = tuple(sorted(name for name, dependencies in dependency_map.items() if dependencies is None))
+    all_entries_by_name = {entry.filename: entry for entry in (*all_active, *terminal)}
+    invalid_external_user_targets: set[str] = set()
+    for entry in active:
+        legacy = entry.legacy_dependency
+        if legacy is None or legacy.get("kind") != "external-user":
+            continue
+        filename = legacy.get("tbd_filename")
+        target = all_entries_by_name.get(filename) if isinstance(filename, str) else None
+        if target is not None and target.kind != MQ_TYPE_TBD:
+            invalid_external_user_targets.add(entry.filename)
+    invalid = tuple(
+        sorted({name for name, dependencies in dependency_map.items() if dependencies is None} | invalid_external_user_targets)
+    )
     graph = {name: dependencies for name, dependencies in dependency_map.items() if dependencies is not None}
     self_dependencies = tuple(sorted(name for name, dependencies in graph.items() if name in dependencies))
     missing_dependencies = tuple(

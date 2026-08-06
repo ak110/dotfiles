@@ -172,7 +172,7 @@ def _inspect_completion_contract(text: str) -> list[str]:
     if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit_sha) is None:
         violations.append("completed status requires a full commit_sha")
     verification = _extract_report_field(text, "verification")
-    if not verification or "未実施" in verification:
+    if not _verification_is_complete(verification):
         violations.append("completed status requires executed verification")
     review_status = _extract_report_first_line(text, "review_status")
     if review_status != "completed":
@@ -225,6 +225,32 @@ def _parse_review_mapping(body: str) -> dict[str, str]:
     return result
 
 
+def _parse_semicolon_fields(value: str) -> dict[str, str]:
+    """セミコロン区切りの`key: value`列を一意な辞書へ変換する。"""
+    result: dict[str, str] = {}
+    for item in re.split(r"[;；]", value):
+        match = re.fullmatch(r"\s*([^:：]+)[:：]\s*(.*?)\s*", item)
+        if match is None or not match.group(2) or match.group(1).strip() in result:
+            return {}
+        result[match.group(1).strip()] = match.group(2)
+    return result
+
+
+def _verification_item_is_complete(line: str) -> bool:
+    """検証行が実行コマンド、成功終了、警告0件を構造化しているか返す。"""
+    item = line.strip().removeprefix("-").strip()
+    fields = _parse_semicolon_fields(item)
+    return fields.get("command") not in (None, "なし") and fields.get("exit_code") == "0" and fields.get("warnings") == "0"
+
+
+def _verification_is_complete(body: str) -> bool:
+    """検証欄に構造化した成功実行があり、失敗・未実施の実行が無いか返す。"""
+    if any(marker in body for marker in ("未実施", "検証していない")):
+        return False
+    command_lines = [line for line in body.splitlines() if "command:" in line or "exit_code:" in line or "warnings:" in line]
+    return bool(command_lines) and all(_verification_item_is_complete(line) for line in command_lines)
+
+
 def _resolution_row_is_complete(body: str, finding_id: str) -> bool:
     """指摘IDに対応する単一表行が採否と必要な修正証拠を持つか返す。"""
     rows = []
@@ -237,14 +263,12 @@ def _resolution_row_is_complete(body: str, finding_id: str) -> bool:
     if len(rows) != 1 or len(rows[0]) < 6:
         return False
     disposition = rows[0][2]
-    if not any(status in disposition for status in ("採用", "不採用", "重複")):
+    if disposition not in {"採用", "採用（計画対応）", "不採用", "重複"}:
         return False
-    if "不採用" in disposition or "重複" in disposition:
+    if disposition in {"不採用", "重複"}:
         return True
-    if "採用" in disposition:
-        outcome = rows[0][5]
-        return "修正" in outcome and "検証" in outcome
-    return False
+    outcome = _parse_semicolon_fields(rows[0][5])
+    return outcome.get("修正結果") == "completed" and outcome.get("検証結果") == "completed"
 
 
 def _detect_plan_impl_executor_background_parallel_violation(text: str) -> bool:

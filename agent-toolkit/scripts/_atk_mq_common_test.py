@@ -194,6 +194,41 @@ class TestReadiness:
 
         assert result.ready == ("feedback.md",)
 
+    @pytest.mark.parametrize(("answer", "expected_ready"), [("", False), ("回答済み", True)])
+    def test_legacy_external_user_requires_answered_tbd(
+        self,
+        tmp_path: pathlib.Path,
+        answer: str,
+        expected_ready: bool,
+    ) -> None:
+        """legacyのユーザー依存は参照TBDの回答後だけ成立する。"""
+        _write_tbd(tmp_path, "answer.md", answer=answer)
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md"),
+        )
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert ("feedback.md" in result.ready) is expected_ready
+        assert ("feedback.md" in result.blocked) is not expected_ready
+
+    @pytest.mark.parametrize("state", ["inbox", "adopted"])
+    def test_legacy_external_user_rejects_non_tbd_target(self, tmp_path: pathlib.Path, state: str) -> None:
+        """legacyのユーザー依存がfeedbackを参照した場合は修復対象として示す。"""
+        _write_feedback(tmp_path, "answer.md", state=state)
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md"),
+        )
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.invalid_dependencies == ("feedback.md",)
+        assert "feedback.md" not in result.ready
+
     @pytest.mark.parametrize(
         "legacy_dependency",
         [

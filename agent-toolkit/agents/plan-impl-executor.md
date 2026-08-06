@@ -59,7 +59,7 @@ external_operations:
   result: completed | needs_escalation | not_applicable
   evidence: <識別子または「なし」>
 verification:
-- <コマンド、終了コード、警告>
+- command: <コマンド>; exit_code: 0; warnings: 0
 plan_check:
 - 計画ファイル: <絶対パス>
 - 計画着手前SHA: <SHA>
@@ -78,7 +78,7 @@ review_findings:
 - <正規化した実指摘。無ければ「指摘なし」>
 review_resolution:
 | 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |
-| <P-*またはI-*> | ... | 採用・不採用・重複 | ... | ... | 根拠と修正・再検証結果 |
+| <P-*またはI-*> | ... | 採用・不採用・重複 | ... | ... | 採用時は`修正結果: completed; 検証結果: completed`と根拠 |
 pending_confirmations:
 - <確認事項。無ければ「なし」>
 plan_gaps:

@@ -90,13 +90,13 @@ external_operations:
   result: completed（実施した） | needs_escalation（実施せず呼び出し元の確認へ回した） | not_applicable（該当する操作が無い）
   evidence: <対象側の識別子、応答、または実物照合に使う値。該当する操作が無い場合は「なし」>
 verification:
-- <コマンド、終了コード、警告>
+- command: <コマンド>; exit_code: 0; warnings: 0
 - <`git status --short`の生の出力。空の場合も空であることを明示する>
 - <`git diff --stat <計画着手前SHA>..<commit_sha>`の生の出力>
 commit_sha: <最終コミット。コミット不要時は「なし」>
 review_resolution: <レビュー指摘修正時だけ出力する>
 | 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |
-| <P-*またはI-*> | ... | 採用（計画対応）・不採用・重複 | ... | ... | 根拠、重複先、修正・再検証結果 |
+| <P-*またはI-*> | ... | 採用（計画対応）・不採用・重複 | ... | ... | 採用時は`修正結果: completed; 検証結果: completed`と根拠 |
 review_status: completed | needs_escalation
 review_routes:
 - 計画準拠系: <route/thread>
