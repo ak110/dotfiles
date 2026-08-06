@@ -122,7 +122,8 @@ frontmatterの`skills:`によるプリロードは採用しない。
 直接委譲の比較基準、累積差分、採否、反映、限定再レビューは、
 `agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を正本とする。
 
-`plan-impl-executor`はHaiku固定の委譲窓口として維持する。
+`plan-impl-executor`は委譲窓口として維持する。モデルはSonnetを指定する。
+委譲と検収に専念する役割であっても、完了報告の契約充足に指示追従を要するためである。
 同executorは成果物を直接編集せず、`agent-toolkit:codex-exec`を接続経路として、
 実装・修正系、計画準拠実装レビュー系、独立実装レビュー系へ委譲する。
 3系統は履歴、thread、Agent識別子を共有せず、2つのレビュー系は並列起動する。

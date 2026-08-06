@@ -101,11 +101,37 @@ def _compare(repo: pathlib.Path, snapshot: pathlib.Path) -> subprocess.Completed
     return _run("compare", "--repo", repo, "--snapshot-dir", snapshot)
 
 
+def _compare_with_output_dir(repo: pathlib.Path, snapshot: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    return _run("compare", "--repo", repo, "--output-dir", snapshot)
+
+
 def _payload(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
     """compareの構造化結果を返す。"""
     payload = json.loads(result.stdout)
     assert isinstance(payload, dict)
     return payload
+
+
+def test_compare_accepts_output_dir_alias(tmp_path: pathlib.Path) -> None:
+    """`--output-dir`で比較を起動した結果が`--snapshot-dir`での結果と一致する。"""
+    repo = _repo(tmp_path)
+    snapshot = tmp_path / "snapshot"
+    assert _capture(repo, snapshot).returncode == 0
+
+    primary = _compare(repo, snapshot)
+    alias = _compare_with_output_dir(repo, snapshot)
+
+    assert alias.returncode == primary.returncode
+    assert alias.stdout == primary.stdout
+    assert alias.stderr == primary.stderr
+
+
+def test_compare_help_shows_snapshot_dir_as_primary() -> None:
+    """ヘルプ出力が`--snapshot-dir`を主として示す。"""
+    result = _run("compare", "--help")
+
+    assert result.returncode == 0
+    assert "--snapshot-dir, --output-dir SNAPSHOT_DIR" in result.stdout
 
 
 def test_clean_and_unchanged_dirty_repositories_match(tmp_path: pathlib.Path) -> None:

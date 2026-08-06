@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の21点に限定する。
+チェック対象は次の22点に限定する。
 - 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
   Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
@@ -16,9 +16,7 @@ r"""計画ファイルの軽量機械チェック。
 - 表のヘッダー・区切り行・本文行のセル数と外側パイプが原文上で一致するか
 - `## 実行方法`節に振り返り・セッション終了などのセッション運用工程が記載されていないか
   （計画ファイルのスコープは当該計画の実装・検証・コミット・レビューに限定する）
-- `## 実行方法`節が呼び出し構文で参照する名前が実在するか
-  （`Skillツールで`・`/`接頭辞はスキル定義、`Agentツールで`はサブエージェント定義、
-  接頭辞`agent-toolkit:`の裸参照は双方のいずれかと照合する）
+- `## 実行方法`節が`Agentツールで`呼び出すサブエージェント名が実在するか
 - `### 対象ファイル一覧`で`（廃止・削除）`と注記された項目の対応するH3節`text`コードブロック内に、
   削除を指示する語が現れているか
 - `#### 廃止・改名対象一覧`H4節が列挙する識別子（ファイルパス・関数名・クラス名・定数名）が
@@ -41,6 +39,7 @@ r"""計画ファイルの軽量機械チェック。
   必須行が現行契約の順序で並んでいるか
 - 計画メタ情報に実行系変更宣言があり、`あり`の場合は`## 調査結果`直下の
   `### 実行契約`表が必須8列と1行以上のデータ行を持つか
+- `## 対応方針`直下の`### 実施内容`表が必須3列、非空データ行、許容された指示関係を持つか
 - `--base-commit`指定時に対象ファイル一覧と実変更ファイル集合が一致するか
 - `--base-commit`指定時に計画が列挙するテスト関数名と実差分の追加関数名が一致するか
 - `--base-commit`指定時にコミット件名案と実際のコミット件名が一致するか
@@ -63,7 +62,7 @@ error区分（計画が成立しない致命的な問題）とその判定根拠
   一般則が挙げる「パスの実在確認失敗」に当たる
 - Markdownフェンスの入れ子整合: フェンスが破れると`## 変更内容`の構造自体を解釈できなくなる
 - 表の原記法の整合: パーサーが不足セルを補完または余剰セルを除去すると、計画に記載された表の列契約を再現できない
-- `## 実行方法`節の呼び出し名の実在確認: 一般則が挙げる「スキル名の実在確認失敗」に当たる
+- `## 実行方法`節が呼び出すサブエージェント名の実在確認: 一般則が挙げる名前の実在確認失敗に当たる
 - `（廃止・削除）`注記と削除指示語の食い違い: 注記と本文指示の不整合に当たる
 - メタ規範パターン追加時の遡及スキャン必須3語: 同一判定を行う`agent-toolkit/scripts/pretooluse.py`の
   `_check_plan_file_retroactive_scan_recorded`が既にブロック側へ入っており、error区分が整合する
@@ -90,6 +89,8 @@ warning区分（終了コードへ算入しない）とその判定根拠。
   表全体の欠落、重複、必須行、順序だけを移行支援として検出する
 - 計画メタ情報の実行系変更宣言または、`あり`の場合の実行契約表の必須列・データ行欠落:
   計画作成時点で記載を促す検査であり、終了コードへ算入しない
+- `### 実施内容`表の構造: 体裁・表記ではなく計画レビューの前提情報を機械的に取得できる形へ保つ。
+  既存計画の移行支援として、表全体の構造、非空セル、指示関係の固定値だけを検出する
 - `--base-commit`指定時の対象ファイル一覧と実変更ファイル集合の不一致: 検査結果の正否が
   実行フェーズで反転する。計画作成時点では一致しないのが正常であり、実装完了後は不一致が異常である
 - `--base-commit`指定時の計画が列挙するテスト関数名と実差分の追加関数名の不一致:
@@ -153,26 +154,15 @@ _SESSION_OPS_GENERAL_NOUN_MENTION_RE = re.compile(rf"(?:{_SESSION_OPS_TERM_PATTE
 _SESSION_OPS_MODIFICATION_PREDICATE_RE = re.compile(r"変更|修正|実装|削除|改訂|移設|見直|追加|置き換え|廃止|新設|拡張|整備")
 _SESSION_OPS_EXECUTION_PREDICATE_RE = re.compile(r"実施|実行|起動|呼び出|完遂|引き継|移行|復帰|従う|従い|進む|進み")
 
-# 呼び出し構文に限定して名前を抽出する4パターン。
-# コマンド名・パス・関数名等の無関係なバッククォート識別子を誤検出しないため、
-# 接頭辞なしの任意識別子をスキル名と推定する方式は採らない。
-# 構文ごとに照合先（スキル定義／サブエージェント定義）が異なるため、抽出時に種別を保持する。
-_SKILL_TOOL_CALL_RE = re.compile(r"Skillツールで\s*`([^`]+)`")
+# `Agentツールで`構文に限定してサブエージェント名を抽出する。
+# セッション運用工程の検出はSkill・slash commandも対象とするため、専用パターンを分離する。
 _AGENT_TOOL_CALL_RE = re.compile(r"Agentツールで\s*`([^`]+)`")
-_AGENT_TOOLKIT_REF_RE = re.compile(r"`(agent-toolkit:[^`]+)`")
-# 先頭が`/`かつ2文字目以降に`/`を含まない（絶対パスと区別するため）バッククォート識別子。
-_SLASH_COMMAND_RE = re.compile(r"`(/[^`/]+)`")
+_SESSION_OPS_SKILL_TOOL_CALL_RE = re.compile(r"Skillツールで\s*`([^`]+)`")
+_SESSION_OPS_SLASH_COMMAND_RE = re.compile(r"`(/[^`/]+)`")
 
-# 照合先の種別。`any`は構文から種別を確定できない裸参照に対応する。
-_KIND_SKILL = "skill"
 _KIND_SUBAGENT = "subagent"
-_KIND_ANY = "any"
 
-_KIND_LABELS = {
-    _KIND_SKILL: "スキル名",
-    _KIND_SUBAGENT: "サブエージェント名",
-    _KIND_ANY: "スキル・サブエージェント名",
-}
+_KIND_LABELS = {_KIND_SUBAGENT: "サブエージェント名"}
 
 _DELETED_TARGET_MARKER = "廃止・削除"
 _DELETION_INSTRUCTION_WORDS = ("削除する", "廃止する")
@@ -219,6 +209,7 @@ _WORK_TYPE_CANDIDATE_RE = re.compile(r"^-[ \t]*作業種別(?:[ \t]*[:：].*)?$"
 _BUG_WORK_TYPE = "バグ対応"
 _NORMAL_WORK_TYPE = "通常変更"
 _VALID_WORK_TYPES = frozenset({_BUG_WORK_TYPE, _NORMAL_WORK_TYPE})
+_VALID_INSTRUCTION_RELATIONS = frozenset({"指示どおり", "具体化", "エージェント追加"})
 _EXECUTION_CHANGE_RE = re.compile(r"^- 実行系変更: (あり|なし)$")
 _EXECUTION_CHANGE_CANDIDATE_RE = re.compile(r"^-[ \t]*実行系変更(?:[ \t]*[:：].*)?$")
 _EXECUTION_CONTRACT_COLUMNS = (
@@ -231,6 +222,7 @@ _EXECUTION_CONTRACT_COLUMNS = (
     "検証主体",
     "テスト対象",
 )
+_EXECUTION_SUMMARY_COLUMNS = ("実施内容", "ユーザー指示との関係", "根拠")
 _PLANNED_TEST_FUNCTION_RE = re.compile(r"^\+?\s*(?:async\s+)?def (test_\w+)", re.MULTILINE)
 _ADDED_TEST_FUNCTION_RE = re.compile(r"^\+\s*(?:async )?def (test_\w+)", re.MULTILINE)
 _COMMIT_SUBJECT_RE = re.compile(r"^\s*- 件名案: `(?P<subject>[^`]+)`\s*$", re.MULTILINE)
@@ -636,9 +628,14 @@ def _table_rows(document: _Document, table: _BlockRange) -> list[list[str]]:
     return [row for row in rows if row is not None]
 
 
+def _first_markdown_table_block(document: _Document, section: _Section) -> _BlockRange | None:
+    """節内の最初の表トークンの原文範囲を返す。"""
+    return next((item for item in document.tables if _within(section, item)), None)
+
+
 def _first_markdown_table(document: _Document, section: _Section) -> list[list[str]]:
     """節内の最初の表トークンについて、原文から得たセル配列を返す。"""
-    table = next((item for item in document.tables if _within(section, item)), None)
+    table = _first_markdown_table_block(document, section)
     return _table_rows(document, table) if table is not None else []
 
 
@@ -686,6 +683,52 @@ def _check_execution_contract_table(document: _Document) -> list[str]:
     return []
 
 
+def _check_execution_summary_table(document: _Document, text: str) -> list[str]:
+    """対応方針の実施内容表について原記法、構造、指示関係をwarningとして検査する。"""
+    del text
+    all_sections = _sections(document, 3, "実施内容")
+    sections = [section for section in all_sections if section.heading.parent_h2 == "対応方針"]
+    if not sections and not all_sections and not _sections(document, 2, "対応方針"):
+        return []
+    if len(sections) != 1:
+        return [f"`## 対応方針`直下に`### 実施内容`が1件必要: 実際={len(sections)}件"]
+    table_block = _first_markdown_table_block(document, sections[0])
+    table = _table_rows(document, table_block) if table_block is not None else []
+    expected = list(_EXECUTION_SUMMARY_COLUMNS)
+    if not table or table[0] != expected:
+        actual = table[0] if table else []
+        return [f"実施内容表のヘッダーが必須3列と一致しない: 実際={actual}、期待={expected}"]
+    if (
+        len(table) < 2
+        or len(table[1]) != len(expected)
+        or not all(_MARKDOWN_TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in table[1])
+    ):
+        return ["実施内容表の区切り行が必須3列と一致しない"]
+    data_rows = table[2:]
+    if not data_rows:
+        return ["実施内容表にデータ行が無い"]
+    warnings: list[str] = []
+    if table_block is not None:
+        raw_lines = document.lines[table_block.start_line : table_block.end_line]
+        expected_shape = _outer_pipe_shape(raw_lines[0])
+        for offset, line in enumerate(raw_lines[1:], start=1):
+            if _outer_pipe_shape(line) != expected_shape:
+                line_no = table_block.start_line + offset + 1
+                warnings.append(f"{line_no}行目: 実施内容表の外側パイプの有無がヘッダーと一致しない")
+    for row_index, row in enumerate(data_rows, start=1):
+        if len(row) != len(expected):
+            warnings.append(f"実施内容表のデータ行{row_index}が必須3列と一致しない: 実際={len(row)}列")
+            continue
+        if any(not cell.strip() for cell in row):
+            warnings.append(f"実施内容表のデータ行{row_index}に空セルがある")
+        if row[1].strip() not in _VALID_INSTRUCTION_RELATIONS:
+            warnings.append(
+                f"実施内容表のユーザー指示との関係が許容値と一致しない: 実際={row[1].strip()}、"
+                f"期待={sorted(_VALID_INSTRUCTION_RELATIONS)}"
+            )
+    return warnings
+
+
 def _outer_pipe_shape(line: str) -> tuple[bool, bool]:
     """表の原文行が先頭・末尾の外側パイプを持つかを返す。"""
     stripped = line.strip()
@@ -700,7 +743,16 @@ def _check_table_notation(document: _Document) -> list[str]:
     原記法を表さないため、トークンのセルノード数は判定に使わない。
     """
     errors: list[str] = []
+    execution_summary_sections = [
+        section for section in _sections(document, 3, "実施内容") if section.heading.parent_h2 == "対応方針"
+    ]
+    execution_summary_table = (
+        _first_markdown_table_block(document, execution_summary_sections[0]) if len(execution_summary_sections) == 1 else None
+    )
     for table in document.tables:
+        # 専用検査が選ぶ最初の実施内容表だけは、既存計画の移行支援としてwarning区分を維持する。
+        if table == execution_summary_table:
+            continue
         raw_lines = document.lines[table.start_line : table.end_line]
         rows = [_markdown_table_cells(line) for line in raw_lines]
         if len(rows) < 2 or rows[0] is None or rows[1] is None:
@@ -796,7 +848,7 @@ def _has_session_ops_invocation(
     inline_spans: list[tuple[int, int]],
 ) -> bool:
     """行が呼び出し構文でセッション運用の名前を指すかを返す。"""
-    for pattern in (_SKILL_TOOL_CALL_RE, _AGENT_TOOL_CALL_RE, _SLASH_COMMAND_RE):
+    for pattern in (_SESSION_OPS_SKILL_TOOL_CALL_RE, _AGENT_TOOL_CALL_RE, _SESSION_OPS_SLASH_COMMAND_RE):
         for match in pattern.finditer(line):
             match_span = (line_offset + match.start(), line_offset + match.end())
             in_inline_block = any(start <= match_span[0] and match_span[1] <= end for start, end in inline_blocks)
@@ -874,40 +926,8 @@ def _check_execution_method_scope(document: _Document) -> list[str]:
 
 
 def _extract_invocation_references(body: str) -> list[tuple[str, str]]:
-    """本文から呼び出し構文に限定して名前と照合先種別の組を抽出する。
-
-    同一の名前が複数の構文で現れる場合、構文ごとに種別を独立して保持し検査する
-    （例: 正しい`Skillツールで`呼び出しと誤った`Agentツールで`呼び出しが同名で
-    併存する取り違えを見落とさないため。名前だけをキーにすると後着の種別で
-    上書き、または`setdefault`で先着以外が失われ、一方の誤りを検出できない）。
-    種別が確定する構文（`Skillツールで`・`Agentツールで`・`/`接頭辞）の抽出結果がある名前は、
-    種別未確定の裸参照（`agent-toolkit:`単独参照）側を除外する。
-    """
-    typed: set[tuple[str, str]] = set()
-    for name in _SKILL_TOOL_CALL_RE.findall(body):
-        typed.add((name, _KIND_SKILL))
-    for name in _AGENT_TOOL_CALL_RE.findall(body):
-        typed.add((name, _KIND_SUBAGENT))
-    for raw in _SLASH_COMMAND_RE.findall(body):
-        typed.add((raw[1:], _KIND_SKILL))
-    typed_names = {name for name, _ in typed}
-    for name in _AGENT_TOOLKIT_REF_RE.findall(body):
-        if name not in typed_names:
-            typed.add((name, _KIND_ANY))
-    return sorted(typed)
-
-
-def _available_skill_names() -> set[str]:
-    """`agent-toolkit/skills/*/SKILL.md`と`.claude/skills/*/SKILL.md`から利用可能なスキル名一覧を取得する。"""
-    names: set[str] = set()
-    agent_toolkit_root = pathlib.Path(__file__).resolve().parents[3]
-    for skill_md in agent_toolkit_root.glob("skills/*/SKILL.md"):
-        names.add(f"agent-toolkit:{skill_md.parent.name}")
-    local_skills_root = pathlib.Path.cwd() / ".claude" / "skills"
-    if local_skills_root.is_dir():
-        for skill_md in local_skills_root.glob("*/SKILL.md"):
-            names.add(skill_md.parent.name)
-    return names
+    """本文の`Agentツールで`構文からサブエージェント名を抽出する。"""
+    return sorted({(name, _KIND_SUBAGENT) for name in _AGENT_TOOL_CALL_RE.findall(body)})
 
 
 def _available_subagent_names() -> set[str]:
@@ -933,13 +953,8 @@ def _check_invocation_names_exist(document: _Document) -> list[str]:
     節内にフェンスで埋め込まれた記述例の呼び出し名は対象としない。
     """
     warnings: list[str] = []
-    skills = _available_skill_names()
     subagents = _available_subagent_names()
-    candidates_by_kind = {
-        _KIND_SKILL: skills,
-        _KIND_SUBAGENT: subagents,
-        _KIND_ANY: skills | subagents,
-    }
+    candidates_by_kind = {_KIND_SUBAGENT: subagents}
     for section in _iter_h2_sections(document, "実行方法"):
         for name, kind in _extract_invocation_references(_non_code_text(document, section)):
             available = candidates_by_kind[kind]
@@ -1496,6 +1511,7 @@ def main() -> int:
     warnings.extend(_check_plan_work_type(document))
     warnings.extend(_check_bug_investigation_table(document))
     warnings.extend(_check_execution_contract_table(document))
+    warnings.extend(_check_execution_summary_table(document, text))
     if args.base_commit is not None:
         warnings.extend(_check_changed_file_set(document, change_sections, work_dir, args.base_commit))
         warnings.extend(_check_added_test_functions(document, change_sections, work_dir, args.base_commit))

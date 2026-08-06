@@ -26,9 +26,12 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 持っていた「いずれかの段が失敗すれば中断する」挙動をそのまま踏襲する。
 Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常終了した場合は
 `update-dotfiles`の標準出力へ転送する。失敗時はGitの標準エラー出力を維持する。
+各段のサブプロセスへ`MISE_AUTO_INSTALL=0`を渡し、miseのshimが呼び出したコマンドと
+無関係なツールを自動導入して更新処理を停止させる経路を抑止する。
 """
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
@@ -41,10 +44,31 @@ _LOCK_PATH = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor
 _LOCK_TIMEOUT_SEC = 600.0
 
 
+def _child_env() -> dict[str, str]:
+    """各工程のサブプロセスへ渡す環境を構成する。
+
+    `MISE_AUTO_INSTALL=0`は、実行ファイル名で起動したコマンドがmiseのshimへ解決された場合に、
+    呼び出したコマンドと無関係なツールの自動導入が実行されるのを防ぐ。当該導入が失敗すると
+    shimが非ゼロ終了し、更新処理が最初の工程で止まる。
+    post-apply工程が実行する明示的な`mise install`は当該設定の影響を受けないため、
+    ツールの導入自体は従来どおり行われる。
+    """
+    env = os.environ.copy()
+    env["MISE_AUTO_INSTALL"] = "0"
+    return env
+
+
 def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture: bool = False) -> tuple[int, str]:
     """1段を実行し見出しを表示する。`capture=True`時のみ標準出力を文字列で返す。"""
     print(f"=== [{step_no}/{total}] {title} ===")
-    result = subprocess.run(argv, cwd=_DOTFILES_ROOT, check=False, capture_output=capture, text=capture)
+    result = subprocess.run(
+        argv,
+        cwd=_DOTFILES_ROOT,
+        check=False,
+        capture_output=capture,
+        text=capture,
+        env=_child_env(),
+    )
     if capture and result.stderr:
         sys.stderr.write(result.stderr)
     return result.returncode, (result.stdout if capture else "")
@@ -59,6 +83,7 @@ def _run_git_pull(step_no: int, total: int) -> int:
         check=False,
         capture_output=True,
         text=True,
+        env=_child_env(),
     )
     if result.stdout:
         sys.stdout.write(result.stdout)

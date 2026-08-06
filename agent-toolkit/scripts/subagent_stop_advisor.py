@@ -56,6 +56,7 @@ PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "changed",
     "external_operations",
     "verification",
+    "plan_check",
     "commit_sha",
     "review_status",
     "review_final_findings",
@@ -99,6 +100,10 @@ PLAN_IMPL_EXECUTOR_SCOPE_EXPANSION_STATUS = "対象拡大により中断（指�
 # `PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
 # 境界として使い、`verification`・`blockers`等の他欄に含まれるチェックボックス様の記述を誤検出しない。
 PLAN_IMPL_EXECUTOR_ALL_LABELS: tuple[str, ...] = PLAN_IMPL_EXECUTOR_REQUIRED_LABELS
+_PLAN_CHECK_REQUIRED_ITEMS = ("計画ファイル", "計画着手前SHA", "終了コード", "警告件数")
+_PLAN_CHECK_ITEM_RE = re.compile(r"^\s*-\s*([^:：]+)[:：]\s*(.+?)\s*$")
+_PLAN_CHECK_NOT_EXECUTED = "未実施"
+_PLAN_CHECK_INTEGER_RE = re.compile(r"^[0-9]+$")
 _PLAN_IMPL_EXECUTOR_CHANGED_SECTION_RE = re.compile(
     r"^changed:\s*\n((?:(?!^(?:" + "|".join(re.escape(label) for label in PLAN_IMPL_EXECUTOR_ALL_LABELS) + r"):).*\n?)*)",
     re.MULTILINE,
@@ -129,6 +134,43 @@ def _extract_report_first_line(text: str, label: str) -> str:
     """完了報告の欄本文から先頭行を返す。空欄では空文字列を返す。"""
     lines = _extract_report_field(text, label).splitlines()
     return lines[0] if lines else ""
+
+
+def _inspect_plan_check(text: str, *, status: str, review_status: str) -> str | None:
+    """`plan_check`欄の本文だけを構造的に検査し、阻害理由があれば返す。
+
+    欄本文の抽出には既存の`_extract_report_field`を用いる。完了報告全体を検索すると、
+    他欄に同形式の行がある場合に無関係な値で通過するため採らない。
+    """
+    body = _extract_report_field(text, "plan_check")
+    if not body:
+        return "plan_check欄が空である。計画ファイル・計画着手前SHA・終了コード・警告件数を記載すること。"
+    items: dict[str, str] = {}
+    for line in body.splitlines():
+        match = _PLAN_CHECK_ITEM_RE.match(line)
+        if match is not None:
+            items[match.group(1).strip()] = match.group(2).strip()
+    missing = [name for name in _PLAN_CHECK_REQUIRED_ITEMS if name not in items]
+    if missing:
+        return "plan_check欄に必須項目が無い: " + "・".join(missing)
+    review_incomplete = status == "needs_escalation" and review_status == "レビュー未完了"
+    not_executed = [name for name in _PLAN_CHECK_REQUIRED_ITEMS if items[name] == _PLAN_CHECK_NOT_EXECUTED]
+    if review_incomplete:
+        if len(not_executed) == len(_PLAN_CHECK_REQUIRED_ITEMS):
+            return None
+        return "レビュー未完了のplan_check欄は4項目すべてを未実施とし、実行結果と混在させないこと。"
+    if not_executed:
+        return "レビュー到達後のplan_check欄に未実施の項目がある: " + "・".join(not_executed)
+    numeric_items = ("終了コード", "警告件数")
+    nonnumeric = [name for name in numeric_items if _PLAN_CHECK_INTEGER_RE.fullmatch(items[name]) is None]
+    if nonnumeric:
+        return "plan_check欄の終了コードと警告件数は0以上の整数で記載すること: " + "・".join(nonnumeric)
+    if items["終了コード"] != "0" or items["警告件数"] != "0":
+        return (
+            "plan_checkの終了コードまたは警告件数が0でない。"
+            "同じ実装経路へ委譲して計画ファイルを是正し、check_plan_file.pyを再実行すること。"
+        )
+    return None
 
 
 def _is_none_value(value: str) -> bool:
@@ -653,6 +695,13 @@ def _inspect_plan_impl_executor_report_format(
     violation = _detect_plan_impl_executor_background_parallel_violation(text)
     contract_violations: list[str] = []
     if not missing:
+        plan_check_violation = _inspect_plan_check(
+            text,
+            status=_extract_report_first_line(text, "status"),
+            review_status=_extract_report_first_line(text, "review_status"),
+        )
+        if plan_check_violation is not None:
+            contract_violations.append(plan_check_violation)
         transcript_path = payload.get("agent_transcript_path")
         if not isinstance(transcript_path, str) or not transcript_path:
             transcript_path = payload.get("transcript_path")

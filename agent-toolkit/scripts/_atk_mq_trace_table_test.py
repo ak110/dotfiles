@@ -91,9 +91,9 @@ def test_generate_uses_queue_body_title_hash_and_classified_targets(tmp_path: pa
     result = _run(private_notes, "generate", ("feedback.md",))
 
     assert result.returncode == 0
-    assert "| `feedback.md` | 原題 |" in result.stdout
+    assert "| `feedback.md` | `原題` |" in result.stdout
     assert schedule.body_sha256(text) in result.stdout
-    assert "one.py<br>two.md" in result.stdout
+    assert "`one.py`、`two.md`" in result.stdout
 
 
 def test_generate_accepts_headingless_feedback(tmp_path: pathlib.Path) -> None:
@@ -117,7 +117,7 @@ def test_generate_accepts_headingless_feedback(tmp_path: pathlib.Path) -> None:
     result = _run(private_notes, "generate", ("feedback.md",))
 
     assert result.returncode == 0
-    assert "| `feedback.md` | 本文先頭行 |" in result.stdout
+    assert "| `feedback.md` | `本文先頭行` |" in result.stdout
 
 
 def test_generate_preserves_non_heading_hash_prefixes(tmp_path: pathlib.Path) -> None:
@@ -128,8 +128,8 @@ def test_generate_preserves_non_heading_hash_prefixes(tmp_path: pathlib.Path) ->
     result = _run(private_notes, "generate", ("literal.md", "seven.md"))
 
     assert result.returncode == 0
-    assert "| `literal.md` | #literal |" in result.stdout
-    assert "| `seven.md` | ####### literal |" in result.stdout
+    assert "| `literal.md` | `#literal` |" in result.stdout
+    assert "| `seven.md` | `####### literal` |" in result.stdout
 
 
 def test_generate_uses_commonmark_title_for_empty_atx_heading(tmp_path: pathlib.Path) -> None:
@@ -139,7 +139,7 @@ def test_generate_uses_commonmark_title_for_empty_atx_heading(tmp_path: pathlib.
     result = _run(private_notes, "generate", ("empty.md",))
 
     assert result.returncode == 0
-    assert "| `empty.md` |  |" in result.stdout
+    assert "| `empty.md` | `` |" in result.stdout
 
 
 def test_generate_escapes_markdown_table_cells(tmp_path: pathlib.Path) -> None:
@@ -149,8 +149,42 @@ def test_generate_escapes_markdown_table_cells(tmp_path: pathlib.Path) -> None:
     result = _run(private_notes, "generate", ("feedback.md",))
 
     assert result.returncode == 0
-    assert "縦棒\\|を含む" in result.stdout
-    assert "one\\|two.py" in result.stdout
+    assert "`縦棒\\|を含む`" in result.stdout
+    assert "`one\\|two.py`" in result.stdout
+
+
+def test_generate_wraps_title_containing_backtick(tmp_path: pathlib.Path) -> None:
+    """原題にバッククォートを含む場合にコードスパンが破綻しない。"""
+    private_notes = tmp_path / "private-notes"
+    _write_entry(private_notes, "feedback.md", _entry_text("`code`を含む"))
+
+    result = _run(private_notes, "generate", ("feedback.md",))
+
+    assert result.returncode == 0
+    assert "`` `code`を含む ``" in result.stdout
+
+
+def test_generate_renders_empty_target_files(tmp_path: pathlib.Path) -> None:
+    """想定変更対象が0件の場合に空セルとなる。"""
+    private_notes = tmp_path / "private-notes"
+    _write_entry(private_notes, "feedback.md", _entry_text("原題", target_files=()))
+
+    result = _run(private_notes, "generate", ("feedback.md",))
+
+    assert result.returncode == 0
+    assert result.stdout.rstrip().endswith("|  |")
+
+
+def test_generate_renders_single_target_file(tmp_path: pathlib.Path) -> None:
+    """想定変更対象が1件の場合に読点を含まない。"""
+    private_notes = tmp_path / "private-notes"
+    _write_entry(private_notes, "feedback.md", _entry_text("原題", target_files=("one.py",)))
+
+    result = _run(private_notes, "generate", ("feedback.md",))
+
+    assert result.returncode == 0
+    assert "| `one.py` |" in result.stdout
+    assert "、" not in result.stdout
 
 
 def test_generate_rejects_duplicate_filenames(tmp_path: pathlib.Path) -> None:
@@ -281,12 +315,12 @@ def test_check_rejects_missing_modified_or_duplicate_table(tmp_path: pathlib.Pat
     compact_header_table = generated.stdout.replace(
         "| ファイル名 | 原題 | 本文SHA-256 | 想定変更対象 |",
         "|ファイル名|原題|本文SHA-256|想定変更対象|",
-    ).replace("| 原題 | `", "| 改変 | `")
+    ).replace("| `原題` | `", "| `改変` | `")
     variants = (
         f"# 計画\n\n## 背景\n\n{presentation}表なし\n",
         f"# 計画\n\n## 背景\n\n{presentation}{generated.stdout.replace('原題', '改変')}\n",
         f"# 計画\n\n```markdown\n## 背景\n\n{presentation}{generated.stdout}\n```\n",
-        f"# 計画\n\n## 背景\n\n{presentation}{generated.stdout}| `feedback.md` | 原題 | `{'0' * 64}` | one.py |\n",
+        f"# 計画\n\n## 背景\n\n{presentation}{generated.stdout}| `feedback.md` | `原題` | `{'0' * 64}` | `one.py` |\n",
         f"# 計画\n\n## 背景\n\n### 提示素材\n\n`feedback.md`\n\n```text\n# 原題\n```\n\n"
         f"`feedback.md`\n\n```text\n# 原題\n```\n\n{generated.stdout}\n",
         f"# 計画\n\n## 背景\n\n### 提示素材\n\n```text\n## feedback.md\n# 原題\n```\n\n"
@@ -314,7 +348,7 @@ def test_check_rejects_missing_modified_or_duplicate_table(tmp_path: pathlib.Pat
 
     duplicate_tables = (
         f"{generated.stdout}\n\n### 別表\n\n{generated.stdout}",
-        f"{generated.stdout}\n\n### 別表\n\n{generated.stdout.replace('| 原題 | `', '| 改変 | `')}",
+        f"{generated.stdout}\n\n### 別表\n\n{generated.stdout.replace('| `原題` | `', '| `改変` | `')}",
         f"{generated.stdout}\n\n### 別表\n\n{compact_header_table}",
     )
     for index, tables in enumerate(duplicate_tables):

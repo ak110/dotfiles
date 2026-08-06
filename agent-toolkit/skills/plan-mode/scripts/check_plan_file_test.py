@@ -32,13 +32,28 @@ _FULL_COMMIT = "0123456789abcdef0123456789abcdef01234567"
 # 既存ファイルの変更を含む計画で参照追従検査を充足させる`## 調査結果`節。
 # 当該検査と無関係なテストのフィクスチャへ前置し、検査の発動条件を緩めずに意図を保つ。
 _REFERENCE_ENUMERATION_SECTION = "## 調査結果\n\n- 参照追従対象: なし\n- 入力形態: 該当なし\n- 追従要否: 追従先なし\n\n"
+_EXECUTION_SUMMARY_SECTION = """\
+## 対応方針
+
+### 実施内容
+
+| 実施内容 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- |
+| テスト対象 | 指示どおり | ユーザー指示 |
+"""
 
 
-def _write_plan(tmp_path: pathlib.Path, body: str, *, include_h1: bool = True) -> pathlib.Path:
+def _write_plan(
+    tmp_path: pathlib.Path,
+    body: str,
+    *,
+    include_h1: bool = True,
+    include_execution_summary: bool = True,
+) -> pathlib.Path:
     plan = tmp_path / "sample.md"
-    content = body
+    content = f"{body}\n{_EXECUTION_SUMMARY_SECTION}" if include_execution_summary else body
     if include_h1 and not body.startswith("# "):
-        content = f"# テスト計画\n\n{body}"
+        content = f"# テスト計画\n\n{content}"
     plan.write_text(content, encoding="utf-8")
     return plan
 
@@ -233,6 +248,165 @@ def test_execution_contract_table_accepts_required_columns_and_data_row(
 
     assert main() == 0
     assert capsys.readouterr().err == ""
+
+
+def test_execution_summary_table_valid_is_silent(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """規範どおりの3列表がwarningを報告しない。"""
+    plan = _write_plan(tmp_path, _EXECUTION_SUMMARY_SECTION, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_execution_summary_section_missing_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`### 実施内容`が無い場合にwarningを報告する。"""
+    plan = _write_plan(tmp_path, "## 対応方針\n\n本文\n", include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "`### 実施内容`が1件必要" in capsys.readouterr().err
+
+
+def test_execution_summary_section_duplicated_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`### 実施内容`が2件ある場合にwarningを報告する。"""
+    duplicate = _EXECUTION_SUMMARY_SECTION + _EXECUTION_SUMMARY_SECTION.removeprefix("## 対応方針\n\n")
+    plan = _write_plan(tmp_path, duplicate, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "実際=2件" in capsys.readouterr().err
+
+
+def test_execution_summary_table_missing_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """節はあるが表が無い場合にwarningを報告する。"""
+    plan = _write_plan(tmp_path, "## 対応方針\n\n### 実施内容\n\n本文\n", include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "実施内容表のヘッダー" in capsys.readouterr().err
+
+
+def test_execution_summary_table_rejects_wrong_column_names(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ヘッダー列名が異なる場合にwarningを報告する。"""
+    body = _EXECUTION_SUMMARY_SECTION.replace("ユーザー指示との関係", "指示との関係")
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "ヘッダーが必須3列と一致しない" in capsys.readouterr().err
+
+
+def test_execution_summary_table_rejects_wrong_column_order(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """列順が異なる場合にwarningを報告する。"""
+    body = _EXECUTION_SUMMARY_SECTION.replace(
+        "| 実施内容 | ユーザー指示との関係 | 根拠 |",
+        "| 根拠 | ユーザー指示との関係 | 実施内容 |",
+    )
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "ヘッダーが必須3列と一致しない" in capsys.readouterr().err
+
+
+def test_execution_summary_table_rejects_wrong_data_row_width(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """データ行の列数が3でない場合にwarningを報告する。"""
+    body = _EXECUTION_SUMMARY_SECTION.replace("| テスト対象 | 指示どおり | ユーザー指示 |", "| テスト対象 | 指示どおり |")
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "データ行1が必須3列と一致しない" in capsys.readouterr().err
+
+
+def test_execution_summary_table_rejects_empty_cell(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """セルが空の場合にwarningを報告する。"""
+    body = _EXECUTION_SUMMARY_SECTION.replace("| テスト対象 | 指示どおり | ユーザー指示 |", "| テスト対象 | 指示どおり |  |")
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "空セル" in capsys.readouterr().err
+
+
+def test_execution_summary_table_rejects_invalid_relation_value(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ユーザー指示との関係`列の値が許容値以外の場合にwarningを報告する。"""
+    body = _EXECUTION_SUMMARY_SECTION.replace("指示どおり", "任意")
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "許容値と一致しない" in capsys.readouterr().err
+
+
+def test_execution_summary_table_rejects_outer_pipe_mismatch(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """データ行の外側パイプがヘッダーと異なる場合にwarningを報告する。"""
+    body = _EXECUTION_SUMMARY_SECTION.replace(
+        "| テスト対象 | 指示どおり | ユーザー指示 |",
+        "テスト対象 | 指示どおり | ユーザー指示",
+    )
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "実施内容表の外側パイプの有無がヘッダーと一致しない" in capsys.readouterr().err
+
+
+def test_execution_summary_additional_table_uses_general_notation_check(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """実施内容表の後にある第2表の原記法違反が通常表のerrorとなる。"""
+    body = f"{_EXECUTION_SUMMARY_SECTION}\n| A | B |\n--- | ---\n| 1 | 2 |\n"
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 1
+    assert "表の外側パイプの有無がヘッダーと一致しない" in capsys.readouterr().err
+
+
+def test_execution_summary_table_in_fence_is_ignored(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """コードフェンス内の同名見出しが対象外となる。"""
+    body = f"````markdown\n{_EXECUTION_SUMMARY_SECTION}````\n\n{_EXECUTION_SUMMARY_SECTION}"
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_execution_summary_table_outside_response_policy_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """親H2が`## 対応方針`でない`### 実施内容`が対象外となる。"""
+    body = _EXECUTION_SUMMARY_SECTION.replace("## 対応方針", "## 調査結果")
+    plan = _write_plan(tmp_path, body, include_execution_summary=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 0
+    assert "実際=0件" in capsys.readouterr().err
 
 
 def test_base_commit_reports_target_file_set_mismatch(
@@ -1054,53 +1228,6 @@ def test_execution_method_longer_backtick_run_does_not_close_code_span(
     assert "セッション運用工程" in capsys.readouterr().err
 
 
-def test_unknown_skill_name_errors(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    body = "## 実行方法\n\n- Skillツールで`agent-toolkit:no-such-skill`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 1
-    captured = capsys.readouterr()
-    assert "実在しないスキル名の疑い" in captured.err
-    assert "no-such-skill" in captured.err
-
-
-def test_known_skill_name_silent(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    body = "## 実行方法\n\n- Skillツールで`agent-toolkit:coding-standards`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 0
-    captured = capsys.readouterr()
-    assert "実在しないスキル名の疑い" not in captured.err
-
-
-def test_unknown_skill_name_with_prefix_mismatch_suggests_candidate(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """接頭辞違いで存在する候補があればerror文へ候補名を添える。"""
-    body = "## 実行方法\n\n- Skillツールで`coding-standards`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 1
-    captured = capsys.readouterr()
-    assert "接頭辞違いの候補: `agent-toolkit:coding-standards`" in captured.err
-
-
-def test_unknown_skill_name_without_prefix_mismatch_candidate(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """接頭辞違いの候補も実在しない場合はその旨をerror文へ添える。"""
-    body = "## 実行方法\n\n- Skillツールで`agent-toolkit:no-such-skill`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 1
-    captured = capsys.readouterr()
-    assert "接頭辞違いの候補も無し" in captured.err
-
-
 def test_agent_tool_subagent_name_silent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1126,19 +1253,6 @@ def test_agent_tool_unknown_subagent_name_errors(
     assert "no-such-agent" in captured.err
 
 
-def test_agent_tool_with_skill_name_errors(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`Agentツールで`構文にスキル名を書いた取り違えはerrorにする。"""
-    body = "## 実行方法\n\n- Agentツールで`agent-toolkit:coding-standards`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 1
-    captured = capsys.readouterr()
-    assert "実在しないサブエージェント名の疑い" in captured.err
-    assert "coding-standards" in captured.err
-
-
 def test_local_subagent_name_silent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1153,67 +1267,6 @@ def test_local_subagent_name_silent(
     assert main() == 0
     captured = capsys.readouterr()
     assert "実在しないサブエージェント名の疑い" not in captured.err
-
-
-def test_skill_tool_with_subagent_name_errors(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`Skillツールで`構文にサブエージェント名を書いた取り違えはerrorにする。"""
-    body = "## 実行方法\n\n- Skillツールで`agent-toolkit:plan-impl-executor`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 1
-    captured = capsys.readouterr()
-    assert "実在しないスキル名の疑い" in captured.err
-
-
-def test_slash_prefix_with_subagent_name_errors(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`/`接頭辞にサブエージェント名を書いた取り違えはスキル名としてerrorにする。"""
-    body = "## 実行方法\n\n- `/agent-toolkit:plan-impl-executor`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 1
-    captured = capsys.readouterr()
-    assert "実在しないスキル名の疑い" in captured.err
-    assert "plan-impl-executor" in captured.err
-
-
-def test_same_name_used_correctly_and_incorrectly_in_different_syntax(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """同名を正しい構文と誤った構文の双方で使った場合、誤った側だけを独立してerrorにする。
-
-    名前だけをキーにする実装では一方の種別が失われ、この取り違えを検出できない。
-    """
-    body = (
-        "## 実行方法\n\n"
-        "- Skillツールで`agent-toolkit:plan-impl-executor`を呼び出す\n"
-        "- Agentツールで`agent-toolkit:plan-impl-executor`を起動する\n\n"
-        "## 変更内容\n\n### 対象ファイル一覧\n"
-    )
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 1
-    captured = capsys.readouterr()
-    # `agent-toolkit:plan-impl-executor`はサブエージェント定義であり、スキル定義ではない。
-    # `Agentツールで`側は正しい呼び出しでありerrorとして検出しない。`Skillツールで`側は
-    # 取り違えであり、スキル名として実在しないことをerrorとして報告する。
-    assert "実在しないスキル名の疑い: `agent-toolkit:plan-impl-executor`" in captured.err
-    assert "実在しないサブエージェント名の疑い" not in captured.err
-
-
-def test_bare_agent_toolkit_reference_accepts_subagent(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """構文を伴わない参照はスキル・サブエージェントいずれかに実在すればerrorとして検出しない。"""
-    body = "## 実行方法\n\n- 実装は`agent-toolkit:plan-impl-executor`の担当とする\n\n## 変更内容\n\n### 対象ファイル一覧\n"
-    plan = _write_plan(tmp_path, body)
-    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
-    assert main() == 0
-    captured = capsys.readouterr()
-    assert "の疑い" not in captured.err
 
 
 def test_sample_plan_reports_no_diagnostics(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2527,15 +2580,15 @@ def test_h4_code_block_does_not_belong_to_parent_h3(
 def test_repeated_execution_method_sections_are_all_checked(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """同名H2が再出現しても、先行する節の呼び出し名検査を保持する。"""
+    """同名H2が再出現しても、先行する節のサブエージェント名検査を保持する。"""
     body = (
-        "## 実行方法\n\n- Skillツールで`agent-toolkit:no-such-skill`を呼び出す\n\n"
+        "## 実行方法\n\n- Agentツールで`agent-toolkit:no-such-agent`を呼び出す\n\n"
         "## 実行方法\n\n- 実装する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     )
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 1
-    assert "実在しないスキル名の疑い" in capsys.readouterr().err
+    assert "実在しないサブエージェント名の疑い" in capsys.readouterr().err
 
 
 def test_embedded_and_actual_same_h3_uses_actual_section(
@@ -2565,7 +2618,7 @@ def test_fenced_example_in_execution_method_is_ignored(
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
     stderr = capsys.readouterr().err
-    assert "実在しないスキル名の疑い" not in stderr
+    assert "実在しないサブエージェント名の疑い" not in stderr
     assert "セッション運用工程" not in stderr
 
 

@@ -88,9 +88,9 @@ def render_trace_table(rows: tuple[TraceRow, ...]) -> str:
         "| --- | --- | --- | --- |",
     ]
     for row in rows:
-        target_files = "<br>".join(_escape_cell(path) for path in row.target_files)
+        target_files = "、".join(_wrap_code_span(_escape_cell(path)) for path in row.target_files)
         lines.append(
-            f"| `{_escape_cell(row.filename)}` | {_escape_cell(row.title)} | "
+            f"| `{_escape_cell(row.filename)}` | {_wrap_code_span(_escape_cell(row.title))} | "
             f"`{_escape_cell(row.body_sha256)}` | {target_files} |"
         )
     return "\n".join(lines)
@@ -176,8 +176,19 @@ def _extract_title(body: str, filename: str) -> str:
 
 
 def _escape_cell(value: str) -> str:
-    """Markdown表のセル値を1論理行へエスケープする。"""
-    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>")
+    """Markdown表のセル値を1論理行へエスケープする。
+
+    インラインHTMLはmarkdownlintの禁止対象となるため、改行は読点へ変換する。
+    """
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\r\n", "、").replace("\n", "、")
+
+
+def _wrap_code_span(value: str) -> str:
+    """内容中のバッククォート列より長い囲みでコードスパンを構成する。"""
+    runs = re.findall(r"`+", value)
+    fence = "`" * (max((len(run) for run in runs), default=0) + 1)
+    padding = " " if runs else ""
+    return f"{fence}{padding}{value}{padding}{fence}"
 
 
 def _heading_sections(

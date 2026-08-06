@@ -53,7 +53,16 @@ def main() -> None:
 
     compare_parser = subparsers.add_parser("compare", help="退避時点と現在の状態を比較してJSONで返す")
     compare_parser.add_argument("--repo", required=True, type=pathlib.Path)
-    compare_parser.add_argument("--snapshot-dir", required=True, type=pathlib.Path)
+    # `capture`と同じ引数名でも受理する。取得時と同じ名前で比較を起動した際の失敗を防ぐ。
+    compare_parser.add_argument(
+        "--snapshot-dir",
+        "--output-dir",
+        required=True,
+        type=pathlib.Path,
+        dest="snapshot_dir",
+        metavar="SNAPSHOT_DIR",
+        help="退避先ディレクトリ（`--output-dir`でも指定できる）",
+    )
 
     args = parser.parse_args()
     try:

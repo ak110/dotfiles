@@ -47,6 +47,7 @@ executorの通常配送と配送不能時の記録照会は、
 - `changed`
 - `external_operations`
 - `verification`
+- `plan_check`
 - `commit_sha`
 - `review_status`
 - `review_final_findings`
@@ -276,8 +277,21 @@ git diff <計画着手前SHA>..<commit_sha>
 
 `verification`のコマンド、終了コード、警告を実測と照合する。
 
+`plan_check`の4項目（計画ファイル、計画着手前SHA、終了コード、警告件数）が揃うことを確認する。
+`status`が`completed`または`completed_with_review_cap`では、終了コードと警告件数がいずれも0であることを確認する。
+`status: needs_escalation`でレビュー工程へ到達しないまま返された場合は、各項目が`未実施`であることを確認する。
+呼び出し元による`check_plan_file.py`の再実行は、当該欄が0を示す場合は省略できる。
+
+`plan_check`の計画ファイルは、呼び出し元が委譲時に渡した正規計画の絶対パスと一致することを確認する。
+計画着手前SHAは「起動前」節で記録した値と一致することを確認する。
+いずれかが一致しない場合は、当該欄が別の計画を対象とした検査結果を指すため未完遂として扱い、
+呼び出し元が`check_plan_file.py`を自ら実行して確定する。
+SubagentStop検査は完了報告の欄本文だけを検査対象とし、呼び出し元が保持する値を参照できないため、
+当該照合は呼び出し元が担う。
+
 併せて`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を、
 `--work-dir <対象リポジトリの作業ディレクトリ>`と`--base-commit <計画着手前SHA>`付きで実行する。
+`plan_check`の終了コードと警告件数がいずれも0の場合は、この再実行を省略できる。
 計画の対象ファイル一覧と実際の変更ファイル集合を照合する。
 計画が列挙するテスト関数名と実差分で追加された関数名の集合も照合する。
 計画が挙げるコミット件名案と実際のコミット件名の対応も機械照合する。

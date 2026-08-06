@@ -1,9 +1,11 @@
 ---
 name: plan-impl-executor
 description: 呼び出し元側のplan-impl-executor起動契約が明示する手順からのみ起動する。
-model: haiku
+model: sonnet
 effort: medium
-# Haiku固定: 自身は判断・実装を担わず、codex-execへの委譲と結果検収に専念するため。
+# Sonnet指定: 委譲と検収に専念する役割であっても、状態値ごとに値が変わる条件分岐、
+# 阻害要因の重複除外規則、実行経路の識別子照合を含む完了報告の契約充足に指示追従を要する。
+# 軽量モデルでは完了報告の必須欄の欠落と必須工程の差し戻しが反復した。
 tools: Skill, ToolSearch, Agent, SendMessage, mcp__codex, Read, Bash
 user-invocable: false
 ---
@@ -69,7 +71,13 @@ user-invocable: false
     同時に、両レビュー系へ系統別の再レビュー用タスク本文を渡す。
     3結果を受領し、初回と同じ方法で独立に検収する。
     静的検査結果をレビュー系の継続入力へ追加しない
-15. 反映結果と実体を照合し、定義の`## 出力`を作成する
+15. 全レビュー修正の反映後、最終`HEAD`を基準として計画ファイルを静的検査する。
+    `uv run --no-project --script <check_plan_file.pyの絶対パス> --work-dir <対象リポジトリの作業ディレクトリ> --base-commit <計画着手前SHA> <計画ファイルの絶対パス>`
+    で検査し、計画ファイルの絶対パス、計画着手前SHA、終了コード、警告件数を`plan_check`欄へ記録する。
+    警告件数は標準エラー出力のうち`[warn]`で始まる行数とする。
+    終了コードが0以外の場合と警告件数が0以外の場合は、計画ファイルを是正して同じ検査を再実行する。
+    是正は実装・修正系へ委譲し、自身では編集しない
+16. 反映結果と実体を照合し、定義の`## 出力`を作成する
 
 各系統の初回呼び出しと継続呼び出しについて、tool use識別子と返却されたthreadIdまたは
 Agent識別子を保存する。自身による成果物編集は実装経路の証跡として扱わない。
@@ -133,6 +141,9 @@ Agent識別子を保存する。自身による成果物編集は実装経路の
 
 ## 出力
 
+`status: needs_escalation`でレビュー工程へ到達しないまま返す場合は、
+`plan_check`の各項目を`未実施`とする。
+
 ```text
 status: completed | completed_with_review_cap | needs_escalation
 summary: <結果>
@@ -146,6 +157,11 @@ external_operations:
   evidence: <対象側の識別子、応答、または実物照合に使う値。該当する操作が無い場合は「なし」>
 verification:
 - <コマンド、終了コード、警告>
+plan_check:
+- 計画ファイル: <計画ファイルの絶対パス>
+- 計画着手前SHA: <SHA>
+- 終了コード: <整数>
+- 警告件数: <整数>
 commit_sha: <最終コミットまたは「なし」>
 review_status: 実施完了（計画準拠系採用N件・独立系採用M件） | 上限到達後の既知指摘修正済み（再レビューなし） | 対象拡大により中断（指摘反映済み・再レビューなし） | レビューは実施しない（ユーザー指示） | レビュー未完了
 review_final_findings: 計画準拠系N件・独立系M件 | 対象外 | 未確定

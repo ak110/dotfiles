@@ -122,6 +122,10 @@ Stopフック誘導かつ言い切り判定を満たす場合は、他工程
   `agent-toolkit/skills/plan-mode/references/bugfix.md`「再発防止策」節に従う）。
   詳細な候補順位は
   [references/generation-criteria-detail.md](references/generation-criteria-detail.md)の該当節を参照する
+- 既存の仕組みの再評価: 既存の仕組みの修正を提案する候補では、当該の仕組みの目的・目的の現行成立性・
+  目的達成への寄与・手段としての妥当性を評価し、維持・内部修正・別手段への置換・撤去の比較結果を
+  自己検証の内部記録へ残す。詳細は
+  [references/generation-criteria-detail.md](references/generation-criteria-detail.md)の該当節を参照する
 - 判断軸の順序・既存対処済みの確認・候補技術主張の実機検証・処理済みフィードバックの参照・方針固定化は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`の該当節を参照する（肥大化抑止の
   判定基準は`agent-toolkit:agent-standards`「文書記述量の管理」節に従う）
@@ -213,5 +217,9 @@ dotfiles利用環境では拡張スキル`session-review-dotfiles`の`## dotfile
 tempファイルの生パスも入力経路に使わない。
 ヒアドキュメントは位置引数MESSAGEとして認識されず`$EDITOR`を対話的に起動するため、
 非対話環境では使用できない。
+
+利用者が本スキル由来の提案を是正した場合は、登録本文の修正だけで終えない。
+どの前提または生成基準が誤った提案を通したかを同一ターンで特定し、
+一般化した再発防止を同じフィードバックまたは別フィードバックへ登録してから完了報告する。
 投入完了後は`agent-toolkit:exit-session`スキルへ遷移せず、通常の完了応答へ戻る。
 「以上の改善提案を検討します」等の承認待ちと解釈される表現をステップ3応答末尾へ置かない。

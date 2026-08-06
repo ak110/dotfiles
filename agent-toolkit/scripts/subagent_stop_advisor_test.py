@@ -393,6 +393,12 @@ def _complete_report(**overrides: str) -> str:
         "changed": "- [x] item — /path",
         "external_operations": "- operation: なし\n  target: なし\n  result: not_applicable\n  evidence: なし",
         "verification": "- `pytest` — pass",
+        "plan_check": (
+            "- 計画ファイル: /home/user/.claude/plans/sample-0000.md\n"
+            "- 計画着手前SHA: 0123456789abcdef0123456789abcdef01234567\n"
+            "- 終了コード: 0\n"
+            "- 警告件数: 0"
+        ),
         "commit_sha": "abc123",
         "review_status": "実施完了（計画準拠系採用0件・独立系採用0件）",
         "review_final_findings": "計画準拠系0件・独立系0件",
@@ -458,6 +464,8 @@ def _complete_report(**overrides: str) -> str:
             fields["review_impact_audit"] = "なし"
     if fields["status"] == "needs_escalation" and fields["review_status"] == "レビュー未完了":
         # レビュー工程へ到達していない状態の整合値。矛盾を検査するテストはoverridesで上書きする。
+        if "plan_check" not in overrides:
+            fields["plan_check"] = "- 計画ファイル: 未実施\n- 計画着手前SHA: 未実施\n- 終了コード: 未実施\n- 警告件数: 未実施"
         for label, value in (
             ("review_rounds", "0"),
             ("review_resolution", "なし"),
@@ -508,6 +516,126 @@ class TestPlanImplExecutorReportFormat:
         assert result.returncode == 0
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
         assert "sub-a" in state["plan_impl_executor_active_subagent_sessions"]
+
+    def test_plan_check_label_is_required(self, tmp_path: Path) -> None:
+        """`plan_check`欄を欠く完了報告がblockとなる。"""
+        report = "\n".join(line for line in _complete_report().splitlines() if not line.startswith("plan_check:"))
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-missing-label")
+
+        assert json.loads(result.stdout)["decision"] == "block"
+        assert "plan_check" in json.loads(result.stdout)["reason"]
+
+    def test_plan_check_zero_exit_and_zero_warnings_is_approved(self, tmp_path: Path) -> None:
+        """終了コード0・警告件数0の完了報告が承認される。"""
+        result = _run_tracked_report(tmp_path, _complete_report(), agent_id="plan-check-zero")
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_plan_check_nonzero_exit_is_blocked(self, tmp_path: Path) -> None:
+        """終了コードが0以外の完了報告がblockとなる。"""
+        report = _complete_report(
+            plan_check=("- 計画ファイル: /tmp/plan.md\n- 計画着手前SHA: abc\n- 終了コード: 1\n- 警告件数: 0")
+        )
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-exit")
+
+        assert json.loads(result.stdout)["decision"] == "block"
+
+    def test_plan_check_nonzero_warnings_is_blocked(self, tmp_path: Path) -> None:
+        """警告件数が0以外の完了報告がblockとなる。"""
+        report = _complete_report(
+            plan_check=("- 計画ファイル: /tmp/plan.md\n- 計画着手前SHA: abc\n- 終了コード: 0\n- 警告件数: 1")
+        )
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-warning")
+
+        assert json.loads(result.stdout)["decision"] == "block"
+
+    def test_plan_check_not_executed_is_approved_for_review_incomplete(self, tmp_path: Path) -> None:
+        """`status: needs_escalation`かつレビュー未完了で各項目が`未実施`の完了報告が承認される。"""
+        report = _complete_report(status="needs_escalation", review_status="レビュー未完了")
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-not-executed")
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_plan_check_mixed_not_executed_values_is_blocked(self, tmp_path: Path) -> None:
+        """レビュー未完了時に`未実施`と数値が混在する完了報告がblockとなる。"""
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            plan_check=("- 計画ファイル: 未実施\n- 計画着手前SHA: 未実施\n- 終了コード: 0\n- 警告件数: 0"),
+        )
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-mixed-not-executed")
+
+        assert json.loads(result.stdout)["decision"] == "block"
+
+    def test_plan_check_executed_values_are_blocked_for_review_incomplete(self, tmp_path: Path) -> None:
+        """レビュー未完了時に実行済みの値だけを持つ完了報告がblockとなる。"""
+        report = _complete_report(
+            status="needs_escalation",
+            review_status="レビュー未完了",
+            plan_check=("- 計画ファイル: /tmp/plan.md\n- 計画着手前SHA: abc\n- 終了コード: 0\n- 警告件数: 0"),
+        )
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-executed-before-review")
+
+        assert json.loads(result.stdout)["decision"] == "block"
+
+    def test_plan_check_not_executed_value_is_blocked_after_review(self, tmp_path: Path) -> None:
+        """レビュー到達後に一部項目が`未実施`の完了報告がblockとなる。"""
+        report = _complete_report(plan_check="- 計画ファイル: 未実施\n- 計画着手前SHA: abc\n- 終了コード: 0\n- 警告件数: 0")
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-not-executed-after-review")
+
+        assert json.loads(result.stdout)["decision"] == "block"
+
+    def test_plan_check_nonnumeric_exit_is_blocked(self, tmp_path: Path) -> None:
+        """終了コードが整数でない完了報告が形式違反としてblockとなる。"""
+        report = _complete_report(
+            plan_check=("- 計画ファイル: /tmp/plan.md\n- 計画着手前SHA: abc\n- 終了コード: zero\n- 警告件数: 0")
+        )
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-nonnumeric-exit")
+
+        assert "整数" in json.loads(result.stdout)["reason"]
+
+    def test_plan_check_empty_body_is_blocked(self, tmp_path: Path) -> None:
+        """`plan_check`欄が空の完了報告がblockとなる。"""
+        result = _run_tracked_report(tmp_path, _complete_report(plan_check=""), agent_id="plan-check-empty")
+
+        assert json.loads(result.stdout)["decision"] == "block"
+
+    def test_plan_check_missing_plan_path_is_blocked(self, tmp_path: Path) -> None:
+        """計画ファイル項目を欠く完了報告がblockとなる。"""
+        report = _complete_report(plan_check="- 計画着手前SHA: abc\n- 終了コード: 0\n- 警告件数: 0")
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-missing-path")
+
+        assert "計画ファイル" in json.loads(result.stdout)["reason"]
+
+    def test_plan_check_missing_base_commit_is_blocked(self, tmp_path: Path) -> None:
+        """計画着手前SHA項目を欠く完了報告がblockとなる。"""
+        report = _complete_report(plan_check="- 計画ファイル: /tmp/plan.md\n- 終了コード: 0\n- 警告件数: 0")
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-missing-sha")
+
+        assert "計画着手前SHA" in json.loads(result.stdout)["reason"]
+
+    def test_plan_check_ignores_items_outside_the_field(self, tmp_path: Path) -> None:
+        """欄外に同名項目がある完了報告で、欄内の値だけが検査対象となる。"""
+        report = _complete_report(
+            verification="- 計画ファイル: /tmp/plan.md\n- pytest: pass",
+            plan_check="- 計画着手前SHA: abc\n- 終了コード: 0\n- 警告件数: 0",
+        )
+
+        result = _run_tracked_report(tmp_path, report, agent_id="plan-check-field-scope")
+
+        assert "計画ファイル" in json.loads(result.stdout)["reason"]
 
     def test_registered_executor_is_checked_before_pending_descendant(self, tmp_path: Path) -> None:
         sid = "sid-pending-invalid"

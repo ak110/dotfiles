@@ -7,7 +7,7 @@ import pathlib
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -22,6 +22,7 @@ def _fake_run(
     *,
     stdout_by_command: dict[str, str] | None = None,
     stderr_by_command: dict[str, str] | None = None,
+    environments: list[dict[str, str]] | None = None,
 ) -> Any:
     """コマンド名（argv[0:2]相当）ごとの終了コードを返すfake `subprocess.run`。"""
     stdout_by_command = stdout_by_command or {}
@@ -29,6 +30,8 @@ def _fake_run(
 
     def fake_run(argv: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         calls.append(list(argv))
+        if environments is not None:
+            environments.append(cast(dict[str, str], kwargs["env"]))
         key = argv[1] if argv[0] == "chezmoi" else argv[0]
         returncode = returncodes.get(key, 0)
         stdout_text = stdout_by_command.get(key, "")
@@ -38,6 +41,38 @@ def _fake_run(
         return subprocess.CompletedProcess(argv, returncode=returncode, stdout=stdout, stderr=stderr)
 
     return fake_run
+
+
+def test_run_git_pull_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    """工程1のサブプロセス起動が`MISE_AUTO_INSTALL=0`を含む環境で実行される。"""
+    calls: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, environments=environments))
+
+    assert update_dotfiles._run_git_pull(1, 4) == 0  # pylint: disable=protected-access
+    assert environments[0]["MISE_AUTO_INSTALL"] == "0"
+
+
+def test_run_step_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    """工程2以降のサブプロセス起動が`MISE_AUTO_INSTALL=0`を含む環境で実行される。"""
+    calls: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, environments=environments))
+
+    returncode, _output = update_dotfiles._run_step(2, 4, "test", ["chezmoi", "init"])  # pylint: disable=protected-access
+
+    assert returncode == 0
+    assert environments[0]["MISE_AUTO_INSTALL"] == "0"
+
+
+def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存の環境変数が保持される。"""
+    monkeypatch.setenv("UPDATE_DOTFILES_TEST_SENTINEL", "preserved")
+
+    environment = update_dotfiles._child_env()  # pylint: disable=protected-access
+
+    assert environment["UPDATE_DOTFILES_TEST_SENTINEL"] == "preserved"
+    assert environment["MISE_AUTO_INSTALL"] == "0"
 
 
 class TestFourStepsInOrder:
