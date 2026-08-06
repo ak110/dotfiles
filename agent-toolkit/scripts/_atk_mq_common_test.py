@@ -180,7 +180,9 @@ class TestReadiness:
             encoding="utf-8",
         )
 
-        entries = _common._load_queue_entries(tmp_path, None, ("inbox",))  # noqa: SLF001
+        entries = _common._load_queue_entries(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path, None, ("inbox",)
+        )
         by_name = {entry.filename: entry for entry in entries}
 
         assert by_name["plan-item.md"].plan_file == str(plan)

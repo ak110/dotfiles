@@ -95,8 +95,8 @@ def test_current_output_is_synced() -> None:
     ):
         assert claude_specific not in shared_rules
     for shared_contract in (
-        "既存サブエージェントの生存",
-        "委譲元は委譲先の対象範囲に含まれるファイルを編集しない",
+        "1つのworktreeへ書き込む主体は同時に1つだけ",
+        "委譲機能上の終端状態",
         "累計起動回数が5回を超えた",
     ):
         assert shared_contract in operations_source

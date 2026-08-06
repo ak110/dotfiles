@@ -12,6 +12,7 @@ from _atk_mq_common import (
     _iter_entries,
     _pull,
     _repo_lock,
+    calculate_readiness,
 )
 from _atk_mq_list import QueueEntryDisplay, _print_entries
 from _atk_mq_repo import _resolve_repo_id
@@ -97,8 +98,9 @@ def remove_all_entries(
     with _repo_lock(private_notes):
         _pull(private_notes)
         candidates = _select_candidates(private_notes, normalized_repo)
+        ready = frozenset(calculate_readiness(private_notes, normalized_repo).ready)
         if assume_yes:
-            _print_entries(candidates)
+            _print_entries(candidates, ready)
             if not candidates:
                 print(f"削除対象なし: {normalized_repo}")
                 return []
@@ -106,7 +108,7 @@ def remove_all_entries(
             return _remove_candidates(private_notes, candidates, note=note)
         confirmed_snapshot = _snapshot(candidates)
 
-    _print_entries(candidates)
+    _print_entries(candidates, ready)
     if not candidates:
         print(f"削除対象なし: {normalized_repo}")
         return []
