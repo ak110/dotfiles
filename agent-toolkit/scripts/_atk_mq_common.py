@@ -859,6 +859,12 @@ def _effective_dependencies(entry: QueueEntry) -> tuple[str, ...] | None:
     return None
 
 
+def _has_explicit_dependencies(entry: QueueEntry) -> bool:
+    """トップレベルの`depends_on`が正本として存在するか返す。"""
+    parsed = parse_frontmatter(entry.text)
+    return parsed is not None and "depends_on" in parsed[0]
+
+
 def _parse_legacy_recheck_after(value: object) -> datetime.datetime | None:
     """legacy外部条件の再評価時刻をaware datetimeとして返す。"""
     if not isinstance(value, str) or not value:
@@ -969,6 +975,8 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
     all_entries_by_name = {entry.filename: entry for entry in (*all_active, *terminal)}
     invalid_external_user_targets: set[str] = set()
     for entry in active:
+        if _has_explicit_dependencies(entry):
+            continue
         legacy = entry.legacy_dependency
         if legacy is None or legacy.get("kind") != "external-user":
             continue
@@ -1006,11 +1014,14 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
             target_active=active,
             now=now,
         )
-        waiting = legacy_satisfied is False or any(
-            dependency in active_by_name
-            and not (active_by_name[dependency].kind == MQ_TYPE_TBD and active_by_name[dependency].tbd_answered is True)
-            for dependency in dependencies
-        )
+        if _has_explicit_dependencies(entry):
+            waiting = any(dependency in active_by_name for dependency in dependencies)
+        else:
+            waiting = legacy_satisfied is False or any(
+                dependency in active_by_name
+                and not (active_by_name[dependency].kind == MQ_TYPE_TBD and active_by_name[dependency].tbd_answered is True)
+                for dependency in dependencies
+            )
         if waiting:
             blocked.append(entry.filename)
         else:

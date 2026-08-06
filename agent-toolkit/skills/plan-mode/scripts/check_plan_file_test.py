@@ -166,10 +166,42 @@ def test_table_cell_mismatch_is_error(tmp_path: pathlib.Path) -> None:
     assert any("セル数" in error for error in errors)
 
 
+def test_escaped_pipe_in_table_cell_passes(tmp_path: pathlib.Path) -> None:
+    text = _plan() + "\n| A | B |\n| --- | --- |\n| x\\|y | z |\n"
+
+    assert _run(tmp_path, text) == ([], [])
+
+
+def test_table_header_separator_mismatch_is_error(tmp_path: pathlib.Path) -> None:
+    text = _plan() + "\n| A | B |\n| --- |\n| x | y |\n"
+
+    errors, _warnings = _run(tmp_path, text)
+
+    assert any("セル数" in error for error in errors)
+
+
 def test_missing_skill_reference_is_error(tmp_path: pathlib.Path) -> None:
     text = _plan().replace("- 検証する", "- Skillツールで`agent-toolkit:not-found`を起動する")
     errors, _warnings = _run(tmp_path, text)
     assert any("スキル参照" in error for error in errors)
+
+
+def test_references_in_code_fence_are_ignored(tmp_path: pathlib.Path) -> None:
+    text = _plan().replace(
+        "- 検証する",
+        "- 検証する\n\n```text\nSkillツールで`agent-toolkit:not-found`を起動する\n"
+        "Agentツールで`agent-toolkit:not-found`を起動する\n```",
+        1,
+    )
+
+    assert _run(tmp_path, text) == ([], [])
+
+
+@pytest.mark.parametrize("agent", ["claude", "Explore", "Plan"])
+def test_generic_agent_reference_does_not_require_definition(tmp_path: pathlib.Path, agent: str) -> None:
+    text = _plan().replace("- 検証する", f"- Agentツールで`{agent}`を起動する", 1)
+
+    assert _run(tmp_path, text) == ([], [])
 
 
 def test_base_commit_changed_file_mismatch_is_warning(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["markdown-it-py[linkify]>=4.0.0"]
 # ///
 """計画の成立に必要なMarkdown構造と実体だけを検査する。"""
 
@@ -14,6 +14,9 @@ import re
 import subprocess
 import sys
 
+import markdown_it
+import markdown_it.token
+
 _H1_RE = re.compile(r"^# (?!#)\S")
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`(?P<suffix>.*)$")
 _H3_RE = re.compile(r"^### `([^`]+)`(?:\s|（|$)")
@@ -24,6 +27,8 @@ _DELETE_WORD_RE = re.compile(r"削除|廃止")
 _BASE_VALUE_RE = re.compile(r"`(?:[0-9a-f]{40}|[0-9a-f]{64})`(?:\s.*)?")
 _SKILL_CALL_RE = re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
+_TABLE_SEPARATOR_RE = re.compile(r"\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)*\s*\|?")
+_GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 _REQUIRED_H2 = (
     "変更履歴",
     "背景",
@@ -200,27 +205,55 @@ def _check_target_structure(lines: list[str], outside: list[bool], work_dir: pat
     return errors, checkbox_paths
 
 
-def _check_tables(lines: list[str], outside: list[bool]) -> list[str]:
+def _table_cell_count(line: str) -> int:
+    """表の原文行を、エスケープされていないパイプだけでセルへ分割する。"""
+    stripped = line.strip()
+    separators: list[int] = []
+    preceding_backslashes = 0
+    for index, character in enumerate(stripped):
+        if character == "\\":
+            preceding_backslashes += 1
+            continue
+        if character == "|" and preceding_backslashes % 2 == 0:
+            separators.append(index)
+        preceding_backslashes = 0
+    count = len(separators) + 1
+    if separators and separators[0] == 0:
+        count -= 1
+    if separators and separators[-1] == len(stripped) - 1:
+        count -= 1
+    return count
+
+
+def _check_tables(lines: list[str], tokens: list[markdown_it.token.Token]) -> list[str]:
+    """表トークンと段落候補の原文位置から行ごとのセル数を検査する。"""
     errors: list[str] = []
-    for index in range(len(lines) - 1):
-        if not outside[index] or not outside[index + 1] or "|" not in lines[index]:
+    for token in tokens:
+        if token.type == "table_open" and token.map is not None:
+            start, end = token.map
+            expected = _table_cell_count(lines[start])
+            for row in range(start + 2, end):
+                actual = _table_cell_count(lines[row])
+                if actual != expected:
+                    errors.append(f"表のセル数が一致しない: {row + 1}行目")
+        if token.type != "paragraph_open" or token.map is None:
             continue
-        separator = lines[index + 1].strip()
-        if not re.fullmatch(r"\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?", separator):
-            continue
-        expected = len(lines[index].strip().strip("|").split("|"))
-        row = index + 2
-        while row < len(lines) and outside[row] and "|" in lines[row] and lines[row].strip():
-            actual = len(lines[row].strip().strip("|").split("|"))
+        start, end = token.map
+        for row in range(start, end - 1):
+            if "|" not in lines[row] or _TABLE_SEPARATOR_RE.fullmatch(lines[row + 1].strip()) is None:
+                continue
+            expected = _table_cell_count(lines[row])
+            actual = _table_cell_count(lines[row + 1])
             if actual != expected:
-                errors.append(f"表のセル数が一致しない: {row + 1}行目")
-            row += 1
+                errors.append(f"表のセル数が一致しない: {row + 2}行目")
     return errors
 
 
-def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
+def _check_references(tokens: list[markdown_it.token.Token], work_dir: pathlib.Path) -> list[str]:
+    """コードブロックを除くインライン本文のスキル・専用agent参照を検査する。"""
     errors: list[str] = []
-    for skill in sorted(set(_SKILL_CALL_RE.findall(text))):
+    inline_text = "\n".join(token.content for token in tokens if token.type == "inline")
+    for skill in sorted(set(_SKILL_CALL_RE.findall(inline_text))):
         name = skill.split(":", 1)[-1]
         candidates = [
             work_dir / "agent-toolkit" / "skills" / name / "SKILL.md",
@@ -228,7 +261,7 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
         ]
         if not any(path.exists() for path in candidates):
             errors.append(f"実在しないスキル参照: {skill}")
-    for agent in sorted(set(_AGENT_CALL_RE.findall(text))):
+    for agent in sorted(set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES):
         name = agent.split(":", 1)[-1]
         if not (work_dir / "agent-toolkit" / "agents" / f"{name}.md").exists():
             errors.append(f"実在しないサブエージェント参照: {agent}")
@@ -251,13 +284,14 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
     """計画ファイルを検査し、エラーと警告を返す。"""
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
+    tokens = markdown_it.MarkdownIt("commonmark").enable("table").parse(text)
     outside, fence_errors = _outside_fences(lines)
     errors = fence_errors + _check_h1(lines, outside) + _check_required_sections(lines, outside)
     errors.extend(_check_plan_metadata(lines, outside))
     target_errors, planned_paths = _check_target_structure(lines, outside, work_dir)
     errors.extend(target_errors)
-    errors.extend(_check_tables(lines, outside))
-    errors.extend(_check_references(text, work_dir))
+    errors.extend(_check_tables(lines, tokens))
+    errors.extend(_check_references(tokens, work_dir))
     warnings: list[str] = []
     if base_commit is not None:
         changed, error = _git_changed_files(work_dir, base_commit)

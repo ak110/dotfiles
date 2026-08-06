@@ -107,14 +107,15 @@ class TestReadiness:
         assert result.blocked == ("answer.md", "feedback.md")
         assert result.actionable_count == 0
 
-    def test_answered_tbd_satisfies_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
+    def test_answered_tbd_does_not_satisfy_explicit_dependency_while_active(self, tmp_path: pathlib.Path) -> None:
         _write_tbd(tmp_path, "answer.md", answer="回答済み")
         _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.ready == ("answer.md", "feedback.md")
-        assert result.actionable_count == 2
+        assert result.ready == ("answer.md",)
+        assert result.blocked == ("feedback.md",)
+        assert result.actionable_count == 1
 
     @pytest.mark.parametrize("relation", ["missing", "self", "cycle"])
     def test_invalid_dependency_relationship_is_actionable_for_repair(
@@ -228,6 +229,82 @@ class TestReadiness:
 
         assert result.invalid_dependencies == ("feedback.md",)
         assert "feedback.md" not in result.ready
+
+    @pytest.mark.parametrize("terminal_state", ["adopted", "rejected"])
+    def test_explicit_dependency_waits_for_answered_tbd_to_reach_terminal_state(
+        self,
+        tmp_path: pathlib.Path,
+        terminal_state: str,
+    ) -> None:
+        """明示依存は回答済みTBDがactiveな間も成立せず、終端遷移後に成立する。"""
+        _write_tbd(tmp_path, "answer.md", answer="回答済み")
+        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
+
+        active = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert active.ready == ("answer.md",)
+        assert active.blocked == ("feedback.md",)
+
+        terminal_dir = tmp_path / terminal_state
+        terminal_dir.mkdir()
+        (tmp_path / "inbox" / "answer.md").rename(terminal_dir / "answer.md")
+
+        terminal = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert terminal.ready == ("feedback.md",)
+        assert not terminal.blocked
+
+    def test_explicit_dependency_blocks_again_when_terminal_target_is_retried(self, tmp_path: pathlib.Path) -> None:
+        """終端依存先をprocessingへ戻した再試行では依存元を再びblockedにする。"""
+        _write_tbd(tmp_path, "answer.md", answer="回答済み")
+        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
+        adopted = tmp_path / "adopted"
+        adopted.mkdir()
+        answer = adopted / "answer.md"
+        (tmp_path / "inbox" / "answer.md").rename(answer)
+        assert "feedback.md" in _common.calculate_readiness(tmp_path, "github.com/example/repo").ready
+
+        processing = tmp_path / "processing"
+        processing.mkdir()
+        answer.rename(processing / "answer.md")
+
+        retried = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert retried.ready == ("answer.md",)
+        assert retried.blocked == ("feedback.md",)
+
+    def test_explicit_dependency_ignores_legacy_external_user_target(self, tmp_path: pathlib.Path) -> None:
+        """トップレベル依存がある場合は併存する旧ユーザー依存を検証対象にしない。"""
+        _write_feedback(tmp_path, "done.md", state="adopted")
+        _write_feedback(tmp_path, "not-tbd.md")
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            depends_on=("done.md",),
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: not-tbd.md"),
+        )
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert not result.invalid_dependencies
+        assert "feedback.md" in result.ready
+
+    def test_malformed_explicit_dependency_is_invalid_even_with_valid_legacy_value(self, tmp_path: pathlib.Path) -> None:
+        """正本の明示依存が不正な場合は旧依存へフォールバックせず修復対象にする。"""
+        path = _write_feedback(
+            tmp_path,
+            "feedback.md",
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md"),
+        )
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: answer.md\n"),
+            encoding="utf-8",
+        )
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.invalid_dependencies == ("feedback.md",)
+        assert not result.ready
 
     @pytest.mark.parametrize(
         "legacy_dependency",
