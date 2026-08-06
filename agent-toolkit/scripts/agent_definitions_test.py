@@ -21,6 +21,8 @@ _PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementa
 _PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-independent-review-task.md")
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
+_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
+_PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
 _BUGFIX = _PLAN_MODE.parent / "references" / "bugfix.md"
 _CI_FAILURE_HANDLING = _PLAN_MODE.parent / "references" / "ci-failure-handling.md"
@@ -32,7 +34,6 @@ _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md
 _CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE.parent / "references" / "plan-review-delegation.md"
-_REVIEW_WORKSPACE_HELPER = _AGENTS_DIR.parent / "scripts" / "_review_workspace.py"
 _MANAGED_TEMP_HELPER = _AGENTS_DIR.parent / "scripts" / "_managed_temp.py"
 _MANAGED_TEMP_LAUNCHER = _AGENTS_DIR.parent / "bin" / "atk-managed-temp"
 _MANAGED_TEMP_LAUNCHER_WINDOWS = _MANAGED_TEMP_LAUNCHER.with_suffix(".cmd")
@@ -135,37 +136,29 @@ def test_claude_fallback_preserves_track_agent_ids_and_attempt_markers() -> None
     assert "Agentへ直接`SendMessage`を実行" in impl_caller
 
 
-def test_plan_review_contract_uses_isolated_clone_and_plan_copy() -> None:
-    """Git管理領域を分離したcloneと計画コピーの検収契約を検査する。"""
+def test_plan_review_contract_uses_canonical_plan_and_repository_directly() -> None:
+    """正規計画と対象リポジトリを直接使うレビュー契約を検査する。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    assert _REVIEW_WORKSPACE_HELPER.is_file()
-    assert "_review_workspace.py create" in delegation
-    assert "_review_workspace.py finish" in delegation
-    assert "Git管理領域を共有しない`review_repo`" in delegation
-    assert "計画コピーだけを渡し" in delegation
-    for document in (delegation, fix_task):
-        assert "review_workspace_result" in document or "review_repo_compare" in document
-        for field in (
-            "source_plan_unchanged",
-            "source_repo_unchanged",
-            "source_repo_compare",
-            "conditional_source_repo_unchanged",
-            "conditional_source_repo_compare",
-            "review_repo_unchanged",
-            "review_repo_compare",
-            "review_files_compare",
-            "plan_changed",
+    assert "機械チェック・修正系だけが正規計画へ書き込める" in delegation
+    assert "対象リポジトリを読み取り専用" in delegation
+    assert "<正規計画ファイルの絶対パス>" in review
+    assert "<対象リポジトリの絶対パス>" in review
+    assert "正規計画だけ" in fix_task
+    assert "正規計画と対象リポジトリを読み取り専用" in review_task
+    for document in (delegation, review, fix_task, review_task):
+        for removed in (
+            "_review_" + "workspace.py",
+            "review_" + "workspace",
+            "review_" + "repo",
             "plan_diff",
+            "source_repo_" + "unchanged",
+            "review_" + "repo_" + "unchanged",
+            "conditional_source_" + "repo",
         ):
-            assert field in document
-    assert "正規計画ファイルと対象リポジトリを変更しない" in fix_task
-    assert "対象リポジトリと正規計画ファイルは入力として受け取らず" in review_task
-    assert "review_inputs" in review_task
-    assert "開始時HEAD、index、未ステージ差分、未追跡通常ファイル" in delegation
-    assert "--conditional-source-repo" in delegation
-    assert "Gitの無視設定に依存せず一覧化" in delegation
+            assert removed not in document
 
 
 def test_review_delegation_propagates_constraints_and_runtime_evidence() -> None:
@@ -173,7 +166,6 @@ def test_review_delegation_propagates_constraints_and_runtime_evidence() -> None
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     review = _PLAN_REVIEW.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     implementation_review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
 
@@ -186,8 +178,7 @@ def test_review_delegation_propagates_constraints_and_runtime_evidence() -> None
     assert "安定した実行識別子" in delegation
     assert "成果物差分だけで停滞を判定せず" in delegation
     assert "所有主体だけが行う" in delegation
-    for document in (delegation, review_task, fix_task):
-        assert "reproduction" in document or "再現証跡" in document
+    for document in (delegation, review_task):
         assert "標準出力" in document
         assert "標準エラー" in document
     assert "同一ラウンドの指摘は集合として扱う" in delegation
@@ -218,26 +209,17 @@ def test_codex_exec_prompt_allows_task_required_runtime_values() -> None:
     assert "限定再レビュー時の差分一式" in review
 
 
-def test_plan_review_fix_task_separates_operation_outputs() -> None:
-    """機械修正系の処理種別と後始末出力が両立すること。"""
+def test_plan_review_fix_task_limits_writes_and_reports_checks() -> None:
+    """機械修正系の書込先と検査出力を固定する。"""
     text = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
-    for operation in (
-        "初回機械検査",
-        "レビュー前退避",
-        "指摘反映",
-        "反映後検収・レビュー後検収",
-        "後始末",
-    ):
+    for operation in ("初回機械検査", "指摘反映"):
         assert operation in text
-    assert "cleanup_exit_code" in text
-    assert "cleanup_target_absent" in text
-    assert "削除済みディレクトリ内の`raw_output_paths`は返さない" in text
-    assert "初回機械検査、レビュー前退避、指摘反映では、対象リポジトリ、条件付き複製元" in text
-    assert "反映後検収、レビュー後検収では、作成済みの管理対象一時ディレクトリ" in text
-    assert "初期化完了まではhelperが管理対象一時ディレクトリへ生成する全成果物" in text
-    assert "初期化後はレビュー用計画コピーと再現証跡ディレクトリだけ" in text
-    assert "`.plan.diff.tmp`" in text
-    assert "管理対象一時ディレクトリ内の生出力ファイルだけ" in text
+    assert "正規計画だけ" in text
+    assert "対象リポジトリのファイルは読み取り専用" in text
+    assert "plan_sha256_before" in text
+    assert "plan_sha256_after" in text
+    assert "plan_change_summary" in text
+    assert "check_results" in text
 
 
 def test_removed_hook_contracts_are_not_described_as_active() -> None:
@@ -420,8 +402,8 @@ def test_plan_impl_review_cap_contract_is_synchronized() -> None:
         assert phrase in caller
 
 
-def test_plan_review_checks_plan_copy_inside_isolated_workspace() -> None:
-    """隔離cloneを作業ディレクトリとし、計画コピーだけを修正する契約を検査する。"""
+def test_plan_review_checks_canonical_plan_in_target_repository_context() -> None:
+    """対象リポジトリを作業場所として正規計画だけを修正する契約を検査する。"""
     review = _PLAN_REVIEW.read_text(encoding="utf-8")
     fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
@@ -430,13 +412,12 @@ def test_plan_review_checks_plan_copy_inside_isolated_workspace() -> None:
     assert "--work-dir" in review
     assert "--commands=typos,markdownlint,textlint,designmd,lychee,colloquial-check" in review
     assert "--enable=colloquial-check" in review
-    assert "<レビュー用計画コピーの絶対パス>" in review
-    assert "正規計画ファイル" in fix_task
-    assert "正規計画ファイルと対象リポジトリを変更しない" in fix_task
-    assert "レビュー用計画コピーと再現証跡ディレクトリだけ" in fix_task
-    assert "呼び出し元が検収し、正規計画ファイルへ反映" in delegation
-    assert "plan mode下の呼び出し元は正規計画ファイル以外へ書き込まない" in delegation
-    assert "raw_output_paths" in fix_task
+    assert "<正規計画ファイルの絶対パス>" in review
+    assert "<対象リポジトリの絶対パス>" in review
+    assert "正規計画だけ" in fix_task
+    assert "対象リポジトリのファイルは読み取り専用" in fix_task
+    assert "判断を正規計画へ直接反映" in delegation
+    assert "正常完了時は一時ディレクトリの後始末を要求しない" in delegation
     assert all(".plan-check-" not in content for content in (review, fix_task, delegation))
     assert "temporary_files" not in delegation
 
@@ -449,15 +430,13 @@ def test_plan_and_add_feedback_does_not_claim_removed_enter_plan_mode_hook() -> 
 
 
 def test_plan_review_state_machine_is_complete() -> None:
-    """計画レビューの初回検査から後始末までの状態機械を固定する。"""
+    """計画レビューの初回検査から完了判定までの状態機械を固定する。"""
     text = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     for phrase in (
         "初回機械検査",
         "scope_baseline",
-        "Git管理領域を共有しない",
-        "_review_workspace.py create",
-        "_review_workspace.py finish",
-        "plan_diff",
+        "正規計画の直接検査",
+        "機械チェック・修正系だけが正規計画へ書き込める",
         "総合レビュー",
         "次の2区分",
         "初版内補正",
@@ -471,9 +450,42 @@ def test_plan_review_state_machine_is_complete() -> None:
         "個別の修正往復を開始しない",
         "needs_escalation",
         "ラウンド上限と完了判定",
-        "cleanup --path",
     ):
         assert phrase in text
+
+
+def test_add_feedback_and_process_feedbacks_have_distinct_triggers() -> None:
+    """通常投入と既存キュー処理の入口を分離する。"""
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    process_feedbacks = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+
+    assert "〇〇をフィードバックにして" in add_feedback
+    assert "計画を作成せず通常型フィードバック" in add_feedback
+    assert "同スキル自体は起動しない" in add_feedback
+    assert "回答をTBDへ置き換えず" in process_feedbacks
+    assert "フィードバック本文を投入するときにも起動する" not in process_feedbacks
+
+
+def test_plan_review_direct_route_skips_worktree_snapshot_contract() -> None:
+    """計画レビューだけをworktree snapshot契約から除外する。"""
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    documents = (
+        _PLAN_REVIEW_DELEGATION,
+        _PLAN_REVIEW,
+        _PLAN_REVIEW_FIX_TASK,
+        _PLAN_REVIEW_TASK,
+    )
+
+    assert "正規計画と対象リポジトリの直接レビュー経路は、本バレットの対象外" in rules
+    before_capture, separator, _ = rules.partition("委譲開始前に想定先の作業ディレクトリ")
+    assert separator
+    snapshot_contract = before_capture.rsplit("\n- ", maxsplit=1)[-1]
+    assert "本バレットと配下のsnapshot契約の対象外" in snapshot_contract
+    for path in documents:
+        text = path.read_text(encoding="utf-8")
+        assert "_worktree_snapshot.py" not in text
+        assert "capture" not in text
+        assert "compare" not in text
 
 
 def test_plan_review_resume_preserves_cumulative_state() -> None:
@@ -717,11 +729,7 @@ def test_plan_impl_executor_description_limits_invocation_route() -> None:
 
 def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
     """一時領域を所有する手順が管理CLIと実行環境別のhelper解決を共有する。"""
-    documents = (
-        _PLAN_REVIEW_DELEGATION,
-        _COMMIT_SKILL,
-        _CI_FAILURE_HANDLING,
-    )
+    documents = (_COMMIT_SKILL, _CI_FAILURE_HANDLING)
     for path in documents:
         text = path.read_text(encoding="utf-8")
         assert "uv run --no-project --script <helper> create --prefix" in text
@@ -729,12 +737,9 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
         assert "Codexでは" in text
         assert "plugin root" in text
         assert "mktemp -d" not in text
-    assert "uv run --no-project --script <helper> create --prefix plan-review-workspace" in _PLAN_REVIEW_DELEGATION.read_text(
-        encoding="utf-8"
-    )
     for path in (_COMMIT_SKILL, _CI_FAILURE_HANDLING):
         assert "uv run --no-project --script <helper> create --prefix ci-evidence" in path.read_text(encoding="utf-8")
-    for path in (_PLAN_REVIEW_DELEGATION, _COMMIT_SKILL, _CI_FAILURE_HANDLING):
+    for path in (_COMMIT_SKILL, _CI_FAILURE_HANDLING):
         text = path.read_text(encoding="utf-8")
         assert "uv run --no-project --script <helper> cleanup --path <保持した絶対パス>" in text
         assert "単独で実行" in text

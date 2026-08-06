@@ -714,6 +714,8 @@ TBDへの回答は本切り替えの対象外とし、「指摘発生時の扱�
   - 委譲元が書き込む場合、委譲先へ読み取り専用である旨を伝える
   - レビュー専用として委譲先を起動する場合、委譲元は起動前後に
     plugin rootから解決した`_worktree_snapshot.py`の絶対パスで`capture`と`compare`を実行する。
+    `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`が定める
+    正規計画と対象リポジトリの直接レビュー経路は、本バレットの対象外とする。
     helperは対象worktreeのHEAD系譜、index差分、未ステージ差分、未追跡の増減・内容変化、
     同一Git共通ディレクトリに属するworktree一覧とlock状態を記録・比較する。
     worktree一覧では追加・除去とlock状態だけを変更判定へ算入し、各worktreeのHEAD・branchは
@@ -736,6 +738,9 @@ TBDへの回答は本切り替えの対象外とし、「指摘発生時の扱�
   呼び出し元と一致しない場合、複製元など意図しないパスを指す。
   直後のバレット群が定める記録・変化検出・復旧の規定は、本予防が破られた場合の備えとして併せて実施する
 - 作業用の複製（git worktree等）内で起動したセッションが書き込みを伴う委譲をする場合、
+  `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`が定める
+  正規計画と対象リポジトリの直接レビュー経路は、正規計画への書き込みを伴う場合も、
+  本バレットと配下のsnapshot契約の対象外とする。
   委譲開始前に想定先の作業ディレクトリと複製元リポジトリの双方へ、管理対象一時領域を別々に作成し、
   `uv run --no-project --script <_worktree_snapshot.pyの絶対パス> capture --repo <絶対パス> --output-dir <絶対パス>`を実行する。
   helperが保存する基準HEAD、index差分、未ステージ差分、未追跡ファイルの内容、同一Git共通ディレクトリの
