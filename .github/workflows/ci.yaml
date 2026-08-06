@@ -142,6 +142,8 @@ jobs:
       run:
         shell: bash
     strategy:
+      # 1つの版が失敗しても他の版の結果を取得し、失敗が版固有かを切り分けられるようにする
+      fail-fast: false
       matrix:
         python-version: [ "3.12", "3.13", "3.14" ]
     env:

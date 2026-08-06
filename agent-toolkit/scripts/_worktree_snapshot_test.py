@@ -127,11 +127,18 @@ def test_compare_accepts_output_dir_alias(tmp_path: pathlib.Path) -> None:
 
 
 def test_compare_help_shows_snapshot_dir_as_primary() -> None:
-    """ヘルプ出力が`--snapshot-dir`を主として示す。"""
+    """ヘルプ出力が`--snapshot-dir`を`--output-dir`より前に示す。
+
+    `argparse`のヘルプ整形はPython 3.13でmetavarの配置が変わるため、
+    整形結果の完全一致ではなく出現順序で「主として示す」ことを検証する。
+    """
     result = _run("compare", "--help")
 
     assert result.returncode == 0
-    assert "--snapshot-dir, --output-dir SNAPSHOT_DIR" in result.stdout
+    assert "--output-dir" in result.stdout
+    assert "退避先ディレクトリ" in result.stdout
+    options_section = result.stdout[result.stdout.index("--repo") :]
+    assert options_section.index("--snapshot-dir") < options_section.index("--output-dir")
 
 
 def test_clean_and_unchanged_dirty_repositories_match(tmp_path: pathlib.Path) -> None:
