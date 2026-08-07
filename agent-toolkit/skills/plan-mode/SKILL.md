@@ -21,8 +21,9 @@ description: >
 5. 計画ファイル、成立させる結果、ユーザー指示との差分、レビュー反映状況を提示する
 6. 承認後に`references/plan-impl-caller-reception.md`を読み、`plan-impl-executor`へ引き継ぐ
 
-バグ対応では`references/bugfix.md`に従い、直接的原因、深掘り要否、必要な原因区分、類似見直し、
-是正・横展開・再発防止を確定する。
+バグ対応では`agent-toolkit:bugfix`を起動し、直接的原因、深掘り要否、必要な原因区分、
+類似見直し、是正・横展開・再発防止を確定する。
+委譲を用いる工程では`agent-toolkit:delegation`を起動し、経路固有の条件だけを操作直前に読む。
 
 ## 計画ファイルの完成条件
 
@@ -88,7 +89,8 @@ description: >
 
 ### バグ調査結果
 
-バグ対応では`references/bugfix.md`に従い、`### バグ調査結果: <事象名>`を確定したバグ単位ごとに置く。
+バグ対応では`agent-toolkit:bugfix`の`references/root-cause-analysis.md`に従い、
+`### バグ調査結果: <事象名>`を確定したバグ単位ごとに置く。
 事象名を空にせず重複させず、各表で既定の2列と必須14行を満たす。
 利用者の提示素材に現れる各バグと名前付き表の対応は総合レビューで確認する。
 

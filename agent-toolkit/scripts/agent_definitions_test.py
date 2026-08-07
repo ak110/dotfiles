@@ -22,9 +22,12 @@ _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
 _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
-_BUGFIX = _PLAN_MODE.parent / "references" / "bugfix.md"
-_CI_FAILURE_HANDLING = _PLAN_MODE.parent / "references" / "ci-failure-handling.md"
+_BUGFIX_SKILL = _AGENTS_DIR.parent / "skills" / "bugfix" / "SKILL.md"
+_BUGFIX = _BUGFIX_SKILL.parent / "references" / "root-cause-analysis.md"
+_CI_FAILURE_HANDLING = _BUGFIX.parent / "ci-failure-handling.md"
 _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
+_PUSH_AND_CI = _COMMIT_SKILL.parent / "references" / "push-and-ci.md"
+_HISTORY_REWRITE = _COMMIT_SKILL.parent / "references" / "history-rewrite.md"
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
@@ -379,16 +382,19 @@ def test_plan_review_state_machine_is_complete() -> None:
         assert phrase in text
 
 
-def test_add_feedback_and_process_feedbacks_have_distinct_triggers() -> None:
-    """通常投入と既存キュー処理の入口を分離する。"""
+def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
+    """対話・非対話の投入契約をadd-feedbackへ集約する。"""
     add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
-    process_feedbacks = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
 
-    assert "〇〇をフィードバックにして" in add_feedback
-    assert "計画を作成せず通常型フィードバック" in add_feedback
-    assert "同スキル自体は起動しない" in add_feedback
-    assert "回答をTBDへ置き換えず" in process_feedbacks
-    assert "フィードバック本文を投入するときにも起動する" not in process_feedbacks
+    assert "投入するすべての経路で起動" in add_feedback
+    assert "完成済み本文を受け取った場合" in add_feedback
+    assert "非対話経路" in add_feedback
+    assert "通常型フィードバックの主題だけを受け取った場合" in add_feedback
+    assert "対象リポジトリ、重複、必要な実装済み判定" in add_feedback
+    assert "保存後に取得した本文" in add_feedback
+    assert "`agent-toolkit:add-feedback`へ渡し" in plan_and_add
+    assert "`atk mq add`を実行" not in plan_and_add
 
 
 def test_plan_review_direct_route_skips_worktree_snapshot_contract() -> None:
@@ -427,195 +433,97 @@ def test_delegation_boilerplate_prefers_normal_delivery() -> None:
 
 
 def test_bug_response_prompt_contracts_are_synchronized() -> None:
-    """明示要件、因果調査、計画レビュー、類似見直しの契約を同期する。"""
+    """バグ対応・commit・CIの正本境界と条件付き参照を固定する。"""
     agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
     review_checklists = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    bugfix = _BUGFIX.read_text(encoding="utf-8")
+    bugfix_skill = _BUGFIX_SKILL.read_text(encoding="utf-8")
+    root_cause = _BUGFIX.read_text(encoding="utf-8")
+    ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
     commit_skill = _COMMIT_SKILL.read_text(encoding="utf-8")
-    ci_failure_handling = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
+    history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
+    push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
 
     for document in (agent_rules, review_checklists):
         assert "観測上の同等性にかかわらず、仕様変更" in document
-        assert "観測上同等でない" not in document
-    for phrase in ("提示素材", "ユーザー合意済み事項", "実施内容", "変更内容", "エージェント判断"):
-        assert phrase in review_task
     assert "計画が用いる分類名にかかわらず" in review_task
     assert "`### 計画メタ情報`の固定値`作業種別`だけ" in review_task
-    assert "`バグ対応`の場合だけ" in review_task
-    assert "欠落・未知値・複数値" in review_task
     assert "分類契約の不成立として指摘" in review_task
-    assert "計画のタイトル、依頼内容、背景、提示素材から" not in review_task
     assert "コロンはASCIIの`:`、コロン後は半角空白1字" in plan_mode
     assert "固定値には`バグ対応`または`通常変更`" in plan_mode
-    assert "原因分析後に確定した最終バグ単位ごとに`### バグ調査結果: <事象名>`" in bugfix
-    assert "直接的原因と是正処置の変更単位がともに同じ場合だけ1表へ統合" in bugfix
-    assert "根本原因の共有だけを統合理由にしない" in bugfix
-    assert "名前付きの全`### バグ調査結果: <事象名>`" in review_task
-    assert "提示素材に現れる利用者可視の各バグ" in review_task
-    assert "4原因区分の確定後に同じ失敗構造の類似見直し" in agent_rules
-    assert "その結果を踏まえて是正・横展開・再発防止" in agent_rules
-    assert "着手前に記録した基準状態と現在の差分を先に突合" in bugfix
-    assert "進行中の未コミット変更で混入した事象と着手前から存在する事象を区別" in bugfix
-    assert "現在の指示、計画、実装判断を導入経路として調べ" in bugfix
-    assert "既存機能の導入履歴と混同しない" in bugfix
-    assert "複数の規則を1文に束ねない" in bugfix
-    assert "規則ごとに母集団と点検結果" in bugfix
-    assert "`項目`・`内容`の2列表" in bugfix
-    assert "初動と深掘り判定" in bugfix
-    assert "事象、期待する契約、実際の結果、発生条件、直接的原因の確定直後" in bugfix
-    assert "深掘り条件に該当しない局所不良は、是正と近接検証に限定" in bugfix
-    assert "履歴、フィードバック、計画、セッションログの探索" in bugfix
-    assert "深掘り固有行、類似見直し、横展開処置、再発防止処置" in bugfix
-    assert "バグ対応は単一ファイルの単純な修正でも起動対象" in plan_mode
-    assert "バグ対応を除く単一ファイルの単純な修正" in plan_mode
-    assert "\n  単一ファイルの単純な修正や会話だけの質問では起動しない。" not in plan_mode
-    assert "深掘り条件に該当する場合だけ" in agent_rules
-    assert "該当しない局所不良は、是正と近接検証に限定" in agent_rules
-    assert "深掘り条件に該当した指摘は、恒久ルールへの反映先" in agent_rules
-    assert "同じ原因が別の箇所ですでに成立" in agent_rules
-    assert "同じ判断・工程が反復される経路を現行の実装・手順・履歴から観測できる" in agent_rules
-    assert "同じ原因が別の箇所または今後の作業で反復し得る" not in agent_rules
 
-    commit_ci = _h2_section(commit_skill, "push後のCI通過確認")
-    series_capture = commit_ci.index("push直前に`uv run --no-project --script <helper> create --prefix ci-evidence`")
-    plan_transition = commit_ci.index("`agent-toolkit:plan-mode`を起動")
-    evidence_collection = commit_ci.index("失敗ジョブのログは")
-    artifact_collection = commit_ci.index("artifact生成ジョブではartifact")
-    terminal_confirmation = commit_ci.index("期待run・pipeline集合の全対象が終端")
-    complete_evidence_collection = commit_ci.index("全失敗ジョブのログとartifactを取得し直す")
-    evidence_verified = commit_ci.index("実在と分量を確認")
-    provisional_reproducibility = commit_ci.index("再現性を暫定分類")
-    diagnostic_rerun = commit_ci.index("同一原因につき1回だけ同一SHAの失敗ジョブを再実行")
-    rerun_terminal = commit_ci.index("再実行対象の試行が終端")
-    rerun_evidence = commit_ci.index("再実行後のログとartifact")
-    rerun_verified = commit_ci.index("両試行の資料の実在と分量")
-    classification = commit_ci.index("原因箇所、セッション帰属、再現性の3観点")
-    plan_draft = commit_ci.index("取得した事実と分析結果を引き継いだ新しいバグ計画の初版を起草")
-    assert series_capture < evidence_collection < evidence_verified < provisional_reproducibility
-    assert artifact_collection < evidence_verified
-    assert evidence_collection < terminal_confirmation < complete_evidence_collection < provisional_reproducibility
-    assert provisional_reproducibility < diagnostic_rerun < rerun_terminal < rerun_evidence < rerun_verified < plan_transition
-    assert plan_transition < classification < plan_draft
-    assert plan_draft < commit_ci.index("修正案を確定")
-    assert plan_draft < commit_ci.index("ファイルを編集")
-    assert plan_draft < commit_ci.index("追加コミットを作成")
+    assert "`references/root-cause-analysis.md`" in bugfix_skill
+    assert "`references/ci-failure-handling.md`" in bugfix_skill
+    assert "深掘り条件に該当する場合だけ" in bugfix_skill
+    assert "計画、実装、レビューのいずれでも同じ判定" in bugfix_skill
     for phrase in (
-        "${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/bugfix.md",
-        "${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/ci-failure-handling.md",
-        "元の計画ファイルパス",
-        "push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定",
-        "直接的原因の明白さを問わず",
-        "元の計画が存在する場合",
-        "元の計画が存在しない場合",
-        "全親の完全長SHA",
-        "各親から失敗SHAまでの差分",
-        "親のないroot commitではempty tree",
-        "変更系列の基準SHA",
-        "完全長SHA列",
-        "基準SHAから失敗SHAまでの系列差分",
-        "親ごとの差分は補助資料",
-        "upstreamが未設定",
-        "標準出力の絶対パスを再生成せず保持",
-        "gh run view <run-id> --json jobs",
-        "gh run rerun <run-id> --job <job-database-id>",
-        "実在と分量を確認",
-        "`uv run --no-project --script <helper> cleanup --path <保持した絶対パス>`",
-        "再試行中状態",
-        "push失敗後に再試行しない",
-        "監視不能",
-        "run未登録",
-        "forge CLI失敗",
-        "シグナル終了",
-        "例外終了",
-        "追加pushでは別",
-        "追加証拠が必要",
-        "plan modeを終了",
-        "計画関連項目を`なし`",
+        "当該事象が計画または設計の時点で判断材料が揃っており",
+        "規範文書の欠陥、判定条件の抜けや矛盾",
+        "ツールの使い勝手の悪さ",
+        "公開インターフェース・コマンド体系・配置規約の一貫性の逸脱",
+        "既存の拡張点を使わず別系統を新設した実装",
+        "原因区分",
+        "類似見直し",
+        "処置の階層",
+        "再発防止策",
     ):
-        assert phrase in commit_ci
-    assert "`references/bugfix.md`" not in commit_ci
-    assert "`references/ci-failure-handling.md`" not in commit_ci
-    assert "CI失敗時は原因を特定し追加commitで是正する" not in commit_ci
-    assert "同一変更系列で自セッション帰属のCI失敗が3回連続" not in commit_ci
-    assert "gh run rerun <run-id> --failed" not in commit_ci
+        assert phrase in root_cause
 
-    classification_support = _h2_section(ci_failure_handling, "分類判定の補助")
+    assert "`references/history-rewrite.md`を全文読む" in commit_skill
+    assert "`references/push-and-ci.md`を全文読む" in commit_skill
+    assert "push済みcommitのamend、fixup、rebaseは禁止" in commit_skill
+    assert "## push後のCI通過確認" not in commit_skill
+    for phrase in ("git commit --amend", "git commit --fixup=", "autosquash", "refs/remotes/"):
+        assert phrase in history_rewrite
+
     for phrase in (
-        "すべてのCI失敗",
-        "初回ログが決定的な失敗を示す場合",
+        "git push --dry-run --porcelain",
+        "全commitの完全長SHA",
+        "scripts/wait_ci.py",
+        "--write-baseline",
+        "--baseline",
+        "--repo",
+        "--ref",
+        "--source-ref",
+        "--sha",
+        "終了コード1はCI失敗",
+        "`agent-toolkit:bugfix`を起動",
+    ):
+        assert phrase in push_and_ci
+    assert "## 失敗の性質による分類" not in push_and_ci
+
+    for phrase in (
+        "原因箇所",
+        "セッション帰属",
+        "再現性",
         "競合仮説",
         "支持する事実",
         "反証する事実",
         "判別実験",
+        "`root-cause-analysis.md`に従って直接的原因と深掘り要否を確定",
     ):
-        assert phrase in classification_support
-    assert "自セッションと無関係な外部基盤障害" in classification_support
-    assert "実測して確定した場合だけ対象外" in classification_support
-    assert "同一SHAの再実行結果だけで原因層を確定しない" in classification_support
-
-    ci_prerequisites = _h2_section(ci_failure_handling, "前提")
-    for phrase in (
-        "元の計画が存在する場合",
-        "元の計画が存在しない場合",
-        "全親の完全長SHA",
-        "各親から失敗SHAまでの差分",
-        "親のないroot commitではempty tree",
-        "変更系列の基準SHA",
-        "完全長SHA列",
-        "基準SHAから失敗SHAまでの系列差分",
-        "親ごとの差分は補助資料",
-        "再試行中状態",
-        "全終端状態",
-        "追加pushでは別",
-        "追加証拠が必要",
-        "plan modeを終了",
-        "計画関連項目を`なし`",
-    ):
-        assert phrase in ci_prerequisites
-    ci_deep_condition = "push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定"
-    assert ci_deep_condition in bugfix
-    assert ci_deep_condition in ci_prerequisites
-    assert ci_prerequisites.index("基準SHAから失敗SHAまでの系列差分") < ci_prerequisites.index("親ごとの差分は補助資料")
-
-    selection_flow = _h2_section(ci_failure_handling, "選択の流れ")
-    flow_start = selection_flow.index("証拠取得の完了後にplan modeを開始")
-    flow_evidence = selection_flow.index("plan mode開始前に、失敗ログと生成される場合のartifact")
-    flow_terminal = selection_flow.index("期待run・pipeline集合の全対象が終端")
-    flow_complete_evidence = selection_flow.index("全失敗ジョブのログとartifactを取得し直す")
-    flow_provisional = selection_flow.index("再現性を暫定分類")
-    flow_rerun = selection_flow.index("同一SHAの対象失敗ジョブを原因単位で1回だけ再実行")
-    flow_rerun_terminal = selection_flow.index("再実行対象の試行が終端")
-    flow_rerun_evidence = selection_flow.index("再実行後のログとartifact")
-    flow_classification = selection_flow.index("原因箇所、セッション帰属、再現性を分類")
-    flow_external = selection_flow.index("自セッションと無関係な外部基盤障害を実測で確定")
-    flow_plan_draft = selection_flow.index("新しいバグ計画の初版を起草")
-    assert flow_evidence < flow_terminal < flow_complete_evidence < flow_provisional
-    assert flow_provisional < flow_rerun < flow_rerun_terminal < flow_rerun_evidence < flow_start
-    assert flow_start < flow_classification < flow_external < flow_plan_draft
-    assert selection_flow.index("競合仮説の支持・反証・判別実験") < selection_flow.index("直接的原因と深掘り要否を確定")
-    assert selection_flow.index("確定した原因に適用可能な対処") < flow_plan_draft
-    assert "bugfix.md`をSSOT" in _h2_section(ci_failure_handling, "前提")
-    assert "3回連続する停止トリガー" not in selection_flow
+        assert phrase in ci_failure
+    assert "scripts/wait_ci.py" not in ci_failure
+    assert "raw tag object" not in ci_failure
 
 
 def test_remote_tag_evidence_contracts_are_synchronized() -> None:
-    """remote tagの安全な取得と全階層の証拠保存を両文書で同期する。"""
-    commit_ci = _h2_section(_COMMIT_SKILL.read_text(encoding="utf-8"), "push後のCI通過確認")
-    ci_prerequisites = _h2_section(_CI_FAILURE_HANDLING.read_text(encoding="utf-8"), "前提")
+    """remote tagの証拠保存をpush契約だけが所有する。"""
+    commit_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
+    cause_analysis = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
 
-    for document in (commit_ci, ci_prerequisites):
-        assert "sourceとremote側対象refの双方" in document
-        assert "typeがtagである各階層" in document
-        assert "raw tag object" in document
-        assert "最終OIDとobject type" in document
-        assert "git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>" in document
-        for option in ("--no-tags", "--no-write-fetch-head", "--refmap=", "<fullOID>"):
-            assert option in document
-        assert "作業refと`FETCH_HEAD`を変更しない" in document
-        assert "取得後もobjectが存在しない場合は準備未完了" in document
-        assert "remote状態を再取得" in document
+    assert "sourceとremote側対象refの双方" in commit_ci
+    assert "typeがtagである各階層" in commit_ci
+    assert "raw tag object" in commit_ci
+    assert "最終OIDとobject type" in commit_ci
+    assert "git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>" in commit_ci
+    for option in ("--no-tags", "--no-write-fetch-head", "--refmap=", "<fullOID>"):
+        assert option in commit_ci
+    assert "作業refと`FETCH_HEAD`を変更しない" in commit_ci
+    assert "取得後もobjectが存在しない場合は準備未完了" in commit_ci
+    assert "remote状態を再取得" in commit_ci
+    assert "raw tag object" not in cause_analysis
 
 
 def test_plan_review_detects_new_success_path_restrictions() -> None:
@@ -647,21 +555,15 @@ def test_plan_impl_executor_description_limits_invocation_route() -> None:
 
 
 def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
-    """一時領域を所有する手順が管理CLIと実行環境別のhelper解決を共有する。"""
-    documents = (_COMMIT_SKILL, _CI_FAILURE_HANDLING)
-    for path in documents:
-        text = path.read_text(encoding="utf-8")
-        assert "uv run --no-project --script <helper> create --prefix" in text
-        assert "`${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`" in text
-        assert "Codexでは" in text
-        assert "plugin root" in text
-        assert "mktemp -d" not in text
-    for path in (_COMMIT_SKILL, _CI_FAILURE_HANDLING):
-        assert "uv run --no-project --script <helper> create --prefix ci-evidence" in path.read_text(encoding="utf-8")
-    for path in (_COMMIT_SKILL, _CI_FAILURE_HANDLING):
-        text = path.read_text(encoding="utf-8")
-        assert "uv run --no-project --script <helper> cleanup --path <保持した絶対パス>" in text
-        assert "単独で実行" in text
+    """CI証拠の一時領域をpush契約だけが所有する。"""
+    push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
+    ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
+    assert "_managed_temp.py create --prefix ci-evidence" in push_and_ci
+    assert "_managed_temp.py cleanup --path <保持した絶対パス>" in push_and_ci
+    assert "読み込んだ本スキルの絶対パスからplugin rootを確定" in push_and_ci
+    assert "単独で実行" in push_and_ci
+    assert "_managed_temp.py create" not in ci_failure
+    assert "mktemp -d" not in push_and_ci
     agent_operations_rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     claude_code_rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
     codex_agents_base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")

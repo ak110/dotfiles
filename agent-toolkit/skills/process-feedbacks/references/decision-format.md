@@ -117,7 +117,7 @@ plan-mode側の定義は`agent-toolkit:plan-mode`スキル本体にある。
   二系統レビューまで`plan-impl-executor`側で完遂する。
   以降の後続工程（`git push`から振り返り・`exit-session`まで）は、
   本スキル「ステップ7: 採否確定の後始末」以降の工程順序へ引き継ぐ
-  - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
+  - push後CI通過確認は`agent-toolkit:commit`の`references/push-and-ci.md`に従う
 
 ## 後始末コマンドの引数
 

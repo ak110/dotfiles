@@ -39,7 +39,7 @@
 
 同じ再発防止を実現できる手段のうち、恒常コンテキストを消費しない手段から順に検討する。
 コーディング作業中のバグ・障害の再発防止策は、本節に代えて
-`agent-toolkit/skills/plan-mode/references/bugfix.md`「再発防止策」節に従う。
+`agent-toolkit/skills/bugfix/references/root-cause-analysis.md`「再発防止策」節に従う。
 
 - 第1候補: 事象を発生させない根本対応（コード修正・設定変更・自動化スクリプト整備・CI制約追加等）。
   ワークアラウンド文書化・運用ノウハウ蓄積にしか結びつかない場合は文書追記案を取り下げ、

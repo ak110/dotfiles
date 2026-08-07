@@ -117,7 +117,7 @@ Stopフック誘導かつ言い切り判定を満たす場合は、他工程
   `references/generation-criteria-detail.md`「生成基準の層」節を参照する
 - 対策手段の優先順位: 同じ再発防止を実現できる手段のうち恒常コンテキストを消費しない手段から順に検討する
   （コーディング作業中のバグ・障害の再発防止策は本バレット全体に代えて
-  `agent-toolkit/skills/plan-mode/references/bugfix.md`「再発防止策」節に従う）。
+  `agent-toolkit/skills/bugfix/references/root-cause-analysis.md`「再発防止策」節に従う）。
   詳細な候補順位は
   [references/generation-criteria-detail.md](references/generation-criteria-detail.md)の該当節を参照する
 - 既存の仕組みの再評価: 既存の仕組みの修正を提案する候補では、当該の仕組みの目的・目的の現行成立性・

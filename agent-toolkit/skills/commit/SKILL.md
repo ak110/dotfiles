@@ -4,418 +4,45 @@ description: >
   git commit作業（通常commit・amend・fixup）に着手する直前、
   またはコミットメッセージ案（計画ファイル・PR説明など）を書く時点で起動する。
 # 編集時の注意点:
-# コミット境界判断のSSOTは本ファイル「コミット運用」節。
-# type選定バレット群直後に配置した「本文中の判断分岐・規範削除・機能的な規範変更は`chore`ではなく
-# `fix`または`refactor`を選ぶ」バレットは、文書の見た目だけを整える`chore`コミットで
-# 機能的な規範が意図せず消失した経緯を踏まえた警戒バレットである。
+# コミット境界判断のSSOTは本ファイル「通常commit」節。
+# 本文中の判断分岐・規範削除・機能的な規範変更はchoreへ分類しない。
 ---
 
 # コミット運用とコミットメッセージ
 
-## 検証とコミットの流れ
+## 検証
 
-作業が一段落したら、必ず検証→コミットの順で完了させる。
-
-1. format/lint/testを実行し、警告ゼロを保った上で正しく動作することを示す
-2. 動作を確認できたらコミットする（「コミットしますか」などの確認は不要）
-
-検証コマンドの出力は`tail`・`head`で切り詰めず全量取得する（長大時は`tee /tmp/<name>.log`等で保存して抽出する）。
-
-Claude Code固有事項として、本体作業に着手する時点で
-メイン側で`TaskCreate`で「検証」「コミット」を登録し、両方が完了するまで最終応答を返さない。
-
-## コミット運用
-
-コミット数はセッションや計画ごとに固定しない。
-計画ファイルを用いる場合、1計画から1件以上の任意数コミットを作成できる。
-変更目的・依存関係・レビュー・revert時の理解しやすさを基準にコミット境界を決める。
-分割と統合のどちらにも逸脱扱いや理由の記録を要求しない。
-
-計画ファイルの`## 実行方法`に想定コミット単位がある場合は、その単位を起点にする。
-実装差分に応じて境界を変更でき、変更時は計画本文と`## 進捗ログ`を同期する。
-各コミット単位で対象を実装し、その単位に近い検証を完了してからコミットする。
-各中間`HEAD`は、当該時点の公開契約とテストを満たす状態にする。
-独立して検証できない変更は同一コミット単位へまとめる。
-同一ファイルを複数コミットへ分ける場合はハンク単位でステージする。
-現在のコミット単位に属する変更だけをステージする。
-近接検証へ影響する単位外の変更が作業ツリーにないことを確認する。
-影響を否定できない場合は、単位外の変更を含まない一時worktreeで現在の単位だけを適用して検証するか、
-独立検証できない変更を同一コミット単位へまとめる。
-各コミットの直前に`git status --short`・`git diff --cached`・`git diff`を実行し、
-staged差分とunstaged差分が想定した境界に一致することを確認する。
-全変更を実装してから部分ステージで過去の境界を再構成する運用は既定経路としない。
+作業が一段落したら、対象に近いformat、lint、testを実行し、警告ゼロを確認してからコミットする。
+検証コマンドの出力は切り詰めず、長大な出力は管理対象一時領域へ保存して必要箇所を抽出する。
 全コミットの完了後に計画全体を最終検証し、レビューへ進む。
-想定コミット単位が1件の場合の順序と、対象リポジトリの開発者向け規範を優先する条件は、
-`agent-toolkit:plan-mode`「計画ファイルの完成条件」の`## 実行方法`に関する記載要件を正本とする。
 
-- 計画範囲外で発見した既存不備の修正も計画内の適切なコミットに含めてよい
-- 別計画・TODO・後回しの形で持ち越さない（追跡装置を介すと忘却されやすいため）
-  本計画に含めにくい発見は即時にユーザーへ相談し、本計画に取り込むか実施しないかをその場で決める
-- サブエージェント側ではgitコミット・pushを行わない（メインの責務として一元管理する）
-  - Agentツール呼び出しのプロンプトへ「`git push`は行わないこと」を常に明示する（例外なし）
-  - 既定では`git commit`も行わせず、git操作は`git diff`・`git status`など読み取り系に限定する。
-    ファイル編集の可否は委譲タスクの内容に従う（読み取り専用化の対象はgit操作のみで、
-    ファイル編集を伴う委譲を妨げない）
-  - 例外1: ユーザーから明示的にサブエージェントでのコミットを指示された場合、
-    上記のコミット禁止を解除してコミットを許可する（`git push`禁止は維持する）
-  - 例外2: `agent-toolkit:plan-impl-executor`など、計画ファイル`## 実行方法`のコミットステップを
-    正規手順として実行する委譲先は、上記のコミット禁止を解除してコミットまで担う。
-    `git push`禁止は維持し、`git push`は呼び出し元へ委ねる
+## 通常commit
 
-未プッシュコミットへの修正は3パターンを使い分ける。
-本節はClaude Codeのシステムプロンプト「常に新規コミットを作成する」指示を上書きする。
-レビュー修正は新規コミットを通常の安全な選択肢とし、履歴統合が明確に成立する場合だけamendまたはfixupを選ぶ。
+コミット数はセッションや計画ごとに固定せず、変更目的、依存関係、レビュー、revert時の理解しやすさを
+基準に境界を決める。計画の想定commit単位がある場合はその単位を起点とし、各単位で実装、近接検証、
+差分確認、commitを反復する。各中間`HEAD`も当該時点の公開契約とテストを満たす状態にする。
 
-- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend`を使う
-- それより前の未プッシュコミットを完成させる修正は、統合後のメッセージ変更要否でfixup形式を選ぶ
-  - 統合先のコミットメッセージを変更しない場合は`git commit --fixup=<sha>`を使う
-  - 統合先のコミットメッセージへ帰属情報などを追加または更新する場合は、
-    `git commit --fixup=amend:<sha>`を使い、複製された統合先メッセージを編集する
-  - コード差分を含めず統合先のコミットメッセージだけを変更する場合は、
-    `git commit --fixup=reword:<sha>`を使う
-  - `amend:`・`reword:`のいずれも件名が`amend! <統合先の件名>`のコミットを生成する。
-    指定名`reword`と目印は一致せず、`reword!`という目印は存在しない
-  - エディターへ渡されるバッファは1行目が`amend! <統合先の件名>`、空行で区切られて統合先の全メッセージが続く構造であり、
-    差し替えてよいのは3行目以降である。1行目の目印と統合先の件名を書き換えるとautosquashの対象と認識されない
-  - `--fixup`は`-m`・`-F`と併用できない（`fatal: options '-m' and '--fixup:reword' cannot be used together`で失敗する）。
-    非対話環境では`GIT_EDITOR`へ1行目を保持したまま以降を差し替える処理を指定する
-  - fixupコミットの作成直後に`git log --oneline -1`の件名が`amend!`で始まることを確認してからautosquashへ進む
-  - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
-    追加または更新する帰属情報を統合後に1回だけ残す
-  - 修正が統合先コミットの時点で独立して成立し、対応する近接検証を再実行できることを条件とする
-  - そのあと`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で統合する
-    （`<base>`は対象コミットの親以前を指す）
-  - autosquash後に書き換わった各中間`HEAD`へ対応する近接検証を再実行する
-  - `git log -1 --format=%B <統合後sha>`で最終メッセージと帰属情報を確認する
-  - 中間状態を独立して検証できない場合はfixupを使わず新規コミットを作成する
-- 独立した変更目的を持つ修正、または統合先に適する未プッシュコミットがない修正は新規コミットを作成する
-- プッシュ済み判定: `git fetch --all --prune`後に`git for-each-ref --contains=<対象sha> refs/remotes/`を
-  実行する。出力が1件以上あれば、対象コミットはいずれかのremote-tracking ref
-  （`origin/`に限らず、追跡remote名は任意）から到達可能でありプッシュ済みである。
-  出力が空ならプッシュ未了である。
-  `git log --decorate`はref先端にしか装飾を付けない。
-  対象コミットが先端より前の祖先である場合を検出できないため用いない
-  プッシュ済みコミットに対する`amend`や`fixup`は厳禁
+コミットはメインが所有する。サブエージェントは明示的に許可された場合、または計画実装の正規手順として
+指定された場合だけcommitできる。`git push`は委譲先へ明示された場合を除き呼び出し元が所有する。
 
-退避・バックアップ・実験のために作成したブランチは、当該目的を達した時点で削除する。
+commit直前に次を実施する。
 
-- 削除前に`git cherry -v <統合先> <対象ブランチ>`と
-  `git diff --diff-filter=A --name-only <統合先>..<対象ブランチ>`を実行する。
-  統合先に同等の変更があることと、当該ブランチにのみ存在するファイルが無いことを確認する。
-  `git cherry`の`+`は件名の言い換えや後続の是正でも付くため、主題が統合先へ入っているかを内容で照合する
-- 保持が必要な場合は、保持理由と削除条件を記録する。理由を記録しないまま残さない
-- 削除したブランチは`git reflog`から復元できるが、削除前の内容確認を省く根拠にしない
+1. `git status --short`、`git diff --cached`、`git diff`で現在の単位だけがstage済みであることを確認する
+2. 計画の対象ファイルと変更箇所を、差分と特徴的な文字列で照合する
+3. format、lint、testの結果と警告ゼロを確認する
+4. 競合解決後は`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`で競合マーカーが無いことを確認する
+5. commit後に`git status --short`と`git show --stat --oneline HEAD`で成果を実測する
 
-操作前の確認チェックリスト:
+利用者の未コミット変更を混入させない。pre-commitのstashが競合する場合だけ、対象ファイルへ正式な検査を
+実行済みであることを条件に`--no-verify`を使用できる。検証省略やhook失敗の回避には使用しない。
 
-- `git status ; git log --oneline --decorate -5`で現在の状態を把握する
-- 計画ファイルがある場合、コミット直前に`## 変更内容`表が列挙する対象ファイル集合が
-  `git status`・`git diff --stat`の変更集合にすべて含まれるか照合する。
-  欠落があれば未反映の編集として補完してからコミットする
-  - 計画のファイル別節が同一ファイルへ複数の変更箇所を定める場合、ファイル集合の照合に加えて、
-    各変更後文面の特徴的な文字列を`grep`で検索し実在を確認してからコミットする。
-    ファイル単位の照合では、当該ファイルが変更済みである限り箇所単位の実装漏れを検出できない。
-    整形・lintにより変更後文面が変形しうる箇所では、変形の影響を受けない部分文字列を検索語に選ぶ
-  - 計画が箇条書きまたはコードブロックで複数の項目（追加するテスト関数名・追加する定数名など）を
-    列挙する場合、当該列挙の件数と成果物側の同種項目の件数を照合してからコミットする。
-    件数の数え上げには`grep -c`など機械的な手段を用いる。
-    前項の文字列照合は変更後文面を対象とするため、コードブロック内に列挙された項目の一覧は
-    対象に含まれない。件数が一致しない場合は未実装の項目を特定して補う
-- push前: `git remote -v`と`git branch --show-current`で対象リポジトリ・リモートURL・ブランチを確認する
-- 作業着手時とpush前に`git fetch`してから`git log --oneline <上流ブランチ>..HEAD`と
-  `git log --oneline HEAD..<上流ブランチ>`の双方を確認する。後者に出力がある場合は上流と分岐している。
-  分岐したまま作業を進めると、上流に既にある変更を未実装と誤認して同一内容を二重に実装しうるため、
-  着手前に上流最新へ追随させる。push直前に判明した場合は上流へrebaseしてから検証をやり直す
-- `git push`はリモート名・ブランチ名を明示せず`git push`単独で呼び出すことを標準とする
-  - 明示指定が必要な場合は`git config --get branch.<branch>.remote`で当該branchの追跡remoteを確認する。
-    確認したremoteと`push`引数のremoteが一致するか照合する。
-    一致しない場合は追跡remote側を採用するか`git push --set-upstream <remote> <branch>`で追跡remoteを更新する
-- push直前に、CI失敗時の原因調査へ用いる基準SHAと完全長SHA列を更新対象refごとに記録する。
-  手順は「## push後のCI通過確認」節の当該バレットに従う
-- pushの許可は当該リポジトリ・当該対象・当該指示範囲に限定される
-  - 別リポジトリ・別セッションには適用されない
-  - 複数プロジェクト横断作業ではリポジトリごとに個別確認する
-- `git commit --amend`／`git commit --fixup=`／`git rebase -i --autosquash`等の
-  履歴書き換え系コマンド直前に常に`git log --oneline --decorate`を実行する。
-  同一プロジェクト内でも他コマンド（`git status`・`git add`等）の介在で
-  hookの`git_log_checked`フラグがリセットされフラグ保持に頼れない場合がある。
-  プロジェクトをまたぐ／またがないによらず毎回確認する
-  - `git log`と履歴書き換えコマンドを`&&`等で連結せず、別コマンドとして順に実行する
-    - 連結すると実行前検査の時点で先行する`git log`が未実行のため、確認済みと判定されずブロックされる
-    - `git log`の出力を自分で確認してから履歴書き換えコマンドを実行する
-- plain・`amend:`・`reword:`の各fixup形式で対象コミットを計画段階に選定する際は、
-  次の手順で確定する
-  - 修正対象の行またはコミットメッセージを導入した既存コミットを
-    `git blame`または`git log -p`で特定する
-  - 最新の未プッシュコミットを単純に選ばない
-  - `## 実行方法`の件名案へfixup対象コミットのSHAと件名を記載する場合は、
-    `git show --stat`で当該コミットが該当変更を含むことを確認したうえで本文へ転記する
-- plain・`amend:`・`reword:`の各fixup形式を実行する直前は、
-  計画ファイルや過去ログに記載されたSHAをそのまま指定せず、現在の履歴上で対象コミットを再特定する。
-  amend・rebase・fixup統合により対象コミットのSHAが変動している可能性があるため、
-  `git log --oneline --decorate`の出力から件名で照合したうえで、
-  `git show --stat <sha>`を実行してファイル集合が計画作成時点の対象と一致するか確認する
-- fixupコミット作成後は、pushする前に必ず
-  `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で統合を完了させる。
-  fixupコミットを未統合のままpushしない
-- plain fixupの追加メッセージはautosquash時に破棄される。
-  統合先の帰属情報を追加または更新する用途では`amend:`または`reword:`を使う
-- ユーザーが別途更新したファイルなどを見つけた場合は、コミットが混ざらないよう注意する
-  - pre-commitが自動的にstashを実行するため作業ミスが発生しやすい
-  - この場合に限り、事前に`prek run --files <対象ファイル>`を手動実行して問題がないことを確認したうえで、
-    `git commit --no-verify`を使ってよい（stashによる事故を避けるための限定的な例外）
-  - これ以外（検証省略・hook失敗の強行突破など）での`--no-verify`使用は禁止する
-- `git add`後・amend実行前は`git status --short`でステージ対象と作業ツリー差分を確認する
-- `git commit --amend`／`git commit --fixup=`の実行直後は初回・再実行を問わずステージ状態を確認する
-  - pre-commitのstash/restoreは初回amendでも発生し、直後にステージ状態がワーキングツリーへ戻り未コミット差分が残る
-  - `git status`で未コミット差分が残っていないか確認し、残っていれば`git add`したうえで
-    `git commit --amend`／`git commit --fixup=`を再実行する
-  - amend後は`git show HEAD:<path>`で反映結果を実体照合する
-  - 最終応答前に`git status`がcleanであることを確認してから完了を宣言する
-  - `git push`実行時にPreToolUseフックがamend後の未コミット差分残置を検知すると自動的にpushをブロックする。
-    `git status`で確認後、再amendまたはadd/commitで解消してから再度pushできる
-- 変更の競合を解決した後、コミット前に競合マーカーが本文へ残っていないことを横断検査する
-  - `git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`が出力を返さないことを確認する
-  - 統合作業では変更をまとめて登録する操作を使うため、解決したつもりのファイルの残存を個別確認では検知できない
+## 条件付き手順
 
-## push後のCI通過確認
-
-`git push`後は必ずCIが通過することまで確認して初めて作業完了とする。
-`git push`はリモート名・ブランチ名を明示せず単独で呼び出すことを標準とする（詳細は「## コミット運用」節参照）。
-本節はpush直前に実施する準備手順とpush後に実施する確認手順の双方を含む。準備手順は`git push`の実行前に行う。
-
-本節は`git push`を実行した主体が実施する工程であり、サブエージェントの完了条件に含めない。
-担当分離の理由は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
-「実体照合と後続工程」節をSSOTとして参照する。
-`git push`はサブエージェントの担当外（「## コミット運用」節）であるため、
-本節の実施主体はメインエージェントまたは委譲元となる。
-CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:shell-exec`への委譲を選んでよい。
-
-- push直前に`uv run --no-project --script <helper> create --prefix ci-evidence`を単独で実行して管理対象一時領域を作成し、
-  標準出力の絶対パスを再生成せず保持する。Claude Codeでは
-  `${CLAUDE_PLUGIN_ROOT}/scripts/_managed_temp.py`を使い、Codexでは読み込んだ本スキルの絶対パスから
-  plugin rootを確定して`<plugin rootの絶対パス>/scripts/_managed_temp.py`を使う。その領域へ
-  当該pushが更新するrefごとに変更系列の基準SHAと完全長SHA列を記録する
-  - `git push --dry-run --porcelain`の全status lineを解析し、有効なGit設定と照合して実際のpush先remoteと
-    `<from>:<to>`をref単位で確定する。複数のrefspec、`push.default=matching`、`--tags`などにより
-    複数refが更新される場合も全件を記録し、upstreamが未設定の新規branchでもremote名やref名を推測しない
-  - statusが成功予定の更新、強制更新、削除、新規作成を示す各refを記録対象とする。
-    up-to-dateのrefは更新対象外として記録し、拒否または失敗を示すstatusが1件でもある場合は
-    準備未完了としてpushへ進まない
-  - 全更新対象refについて、sourceのpeel前OID・object typeと、remote側対象refのpush前OID・object typeを
-    保存する。削除refのsourceとremote側の新規refが存在しない場合も、不存在であることを記録する
-    - remote側OIDのobjectがローカルに存在しない場合は、完全長OIDを変えずに
-      `git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>`で取得する。
-      この取得では作業refと`FETCH_HEAD`を変更しない
-    - 取得に失敗するか、取得後もobjectが存在しない場合は準備未完了としてpushへ進まない。
-      remote状態を再取得して準備を最初から実施する
-  - sourceとremote側対象refの双方で、peel前object typeがtagの場合は、typeがtagである各階層の
-    `git cat-file tag <OID>`が返すraw tag objectの全内容を保存し、本文の`object <nextOID>`へ進む。
-    非tag objectへ到達後、起点を`^{}`で再帰的にpeeledした最終OIDとobject typeを保存する。
-    source側の最終peeled objectがcommitの場合は、そのcommitを当該refのpush後commitとして扱う
-  - commitへpeeledできる更新では、remote側対象refのpush前OIDが存在する場合は当該refをcommitへpeeledし、
-    そのcommitを基準SHAとして、当該refのpush後commitまでの完全長SHA列を順序付きで記録する
-  - commitを指す新規refでは、対象remoteから到達できないcommitを順序付きで列挙する。
-    1件以上の場合は先頭commitの第1親を基準SHAとし、親のないroot commitではempty treeを基準とする。
-    0件の場合は基準SHA・完全長SHA列・系列差分・親差分を`対象なし`と記録し、先頭commitまたは親を参照しない
-  - commitを指す各refについて、基準SHAから当該refのpush後commitまでの系列差分を主要な因果資料として保存し、
-    各commitの全親SHAと親ごとの差分も補助資料として保存する。
-    merge commitの親ごとの差分とroot commitのempty-tree差分だけで系列差分を代替しない
-  - 削除refは削除予定であることを保存し、
-    push後commitが存在しないため完全長SHA列と系列差分の対象外であることを記録する
-  - commitへpeeledできないrefは、保存したpeel前とpeeled先の資料を保持し、commit系列を構成しないため
-    基準SHA・完全長SHA列・系列差分・親差分の対象外であることを記録する
-  - commitへpeeledできる各更新は、実際のpush先remote URLからforgeとrepository識別子を確定する。
-    dry-runの`<from>:<to>`からsource refとdestination refを別々に保存し、push後commitを加えた5項目を
-    CI待機対象とする。`origin`・現在の`HEAD`・destination refと同名のローカルrefから推測しない。
-    repository識別子はforge CLIが受理する形式とし、私設ホストはホストを含む形式で保存する
-  - 前項の各対象に一意なbaseline JSONパスを管理対象一時領域内に割り当て、push前に
-    `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --forge <github|gitlab> --repo <repository識別子> --ref <destination ref> --source-ref <source ref> --sha <push後commitの完全長SHA>`
-    を実行する。終了コード0とbaselineの実在を確認し、作成失敗時はpushへ進まない
-
-- 既定の手順: push直前に保存したforge・repository・source ref・destination ref・push後commitの組み合わせごとに、
-  `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --baseline <baselineの絶対パス> --forge <github|gitlab> --repo <repository識別子> --ref <destination ref> --source-ref <source ref> --sha <push後commitの完全長SHA>`
-  をBashツールで`run_in_background=true`起動する。同一の5項目が重複する場合だけ監視をまとめ、
-  SHAが同じでもrepository・source ref・destination refのいずれかが異なる対象は独立して監視する。
-  1件の失敗検出を理由に
-  他対象の監視を取り消さない。
-  各SHAの期待run・pipeline集合がすべて終端するまで全監視結果を受領する。
-  push後commitが0件の場合は監視対象SHAを`対象なし`と記録する。
-  スクリプトの不在または実行失敗を実測した場合は、本節後半の手動確認手順を採用する。
-  既定`--timeout=900`秒はBashツール既定タイムアウト2分・上限10分を超えるため、
-  background起動が前提となる。
-  background起動は完了通知を受領できる主体（メインエージェント・委譲元）が選ぶ
-  - 組み込み機能: タイムアウト・登録遅延リトライ・進捗ログ・ジョブ単位の早期失敗検出・
-    Jobs APIの全ページ取得・シグナル受信時の即時exit
-    （`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
-  - 必須引数: push前は`--write-baseline`、push後は`--baseline`を選び、両方に
-    `--forge`・`--repo`・`--ref`・`--source-ref`・`--sha`を同じ値で渡す
-  - 調整可能な引数: `--timeout`・`--poll-interval`・`--registration-grace`・
-    `--subprocess-timeout`・`--follow-cancelled`
-  - `--sha`へはpush直前に保存した完全長SHAをそのまま渡す。`--repo`・`--ref`は
-    実際のpush先、`--source-ref`は同じrefspecのpush元と一致する値を渡す
-    （`agent-toolkit/rules/02-agent-operations.md`が定める識別子の実行結果転記則を参照）
-    - 解決できない値は識別子解決失敗の終了コード3で終了する
-    - 実在する別コミットを指す値は、登録猶予（既定60秒）が経過してもrunが見つからない場合に
-      終了コード4で終了する。いずれも正しい対象の監視開始が遅延する
-  - exit code: 0=全run success、1=早期検出した失敗ジョブまたは全run完了後の非success、2=タイムアウト
-  - exit code（続き）: 3=forge CLI（`gh`・`glab`）呼び出し失敗または対象forgeの判別失敗
-    （`--sha`で渡した値の完全形式への解決に失敗した場合を含む）、
-    4=登録猶予が経過してもrun未登録、130=シグナル終了
-  - 終了コード2は`--timeout`超過で待機側だけが終了した状態である。
-    CIが継続中の場合は同じshaで再度起動して監視を継続できる
-  - 終了コード1はCIの非成功を表す。
-    再度の待機ではなく、本節後半のCI失敗時の規定に従って当該SHAの期待集合を全終端まで待ち、
-    他SHAの監視も継続したうえで原因調査と修正へ進む
-  - 対象forgeは実際のpush先remote URLから確定し、`--forge=github`または`--forge=gitlab`で明示する。
-    `--forge=auto`はホストを含む`--repo`から判別できる場合に限る
-  - GitHubは最新試行jobの`failure`・`timed_out`・`action_required`と、
-    完了runの`failure`・`timed_out`・`action_required`・`startup_failure`・`stale`を早期失敗とする
-  - GitLabは`allow_failure`ではない`failed` jobを早期失敗とする
-  - `cancelled`・`canceled`は`--follow-cancelled`またはrun・pipelineの最終結論へ委ねる。
-    `manual`・`skipped`・`neutral`・`allow_failure`もforgeの最終結論へ委ねる
-  - 全体成功は、取得済みジョブの成功状況にかかわらずrun・pipelineの完了を条件として判定する
-  - CI通過確認は前掲の既定手順で待機する。
-    `gh run list`等を組み合わせた待機ループは、手動確認手順に該当する場合に限る
-- `concurrency.cancel-in-progress`で自コミットrunがcancelledになる運用
-  （後続pushによる打ち切りなど）では`--follow-cancelled`を付与する
-  - `git log <sha>..<source ref>`で得た後続SHA上のrun成功をもって通過と判定する
-  - 全runがcancelledの場合のみ発動し、混在（一部success/一部cancelled）は
-    非success扱いで失敗exitする（safe default）
-  - `<sha>`が`--source-ref`の祖先でない場合は`EXIT_GH_ERROR`で終了する
-- 手動確認手順（プラグイン未導入環境などスクリプトを利用できない場合の代替）
-  - push直前に保存した全refのpush後commitから重複を除いた各完全長SHAを取得する。
-    push前に`gh run list --repo <repository> --branch <destination ref> --commit <sha> --json databaseId,workflowName,status`
-    で実行ID集合を保存する。push後に同一条件で再取得してpush前に存在しなかったIDだけを待機する
-    - 照会には保存済みの完全な識別子を渡す。
-      短縮された識別子では結果が空で返るため、空結果を検証未登録の根拠にしない
-    - 完全な識別子を渡しても空の結果が返る場合がある。空の結果を得たときは
-      `gh run list --repo <repository> --branch <destination ref> --limit <件数> --json databaseId,workflowName,status,conclusion,headSha`で
-      実行状況を一覧取得し、`headSha`を対象コミットの識別子で突合する
-    - 待機処理の条件へ用いる照会は、起動前に当該コミットで結果が得られることを単発実行で確認する
-      （`agent-toolkit/rules/02-agent-operations.md`の待機ループ規定に従う）
-  - `--workflow`引数を追加指定する場合はworkflow名・数値IDのいずれも受理するが、
-    ファイル名指定時は`workflowName`と一致しない場合があるため、
-    `gh workflow list`で正確な`workflowName`を事前確認するか`--commit`のみで代替する
-  - 各run IDについて`gh run watch <run-id> --exit-status`で完了を待つ
-- run未登録・件数不足時の対処（`wait_ci.py`使用時は`--registration-grace`と`EXIT_NO_RUNS`が同等処理を担う）
-  - `.github/workflows/`配下（`*.yml`・`*.yaml`両方）のpush起動条件
-    （branches・paths・branches-ignore・paths-ignore）を対象shaの変更パス・ブランチと照合する
-  - 起動対象がある想定なのに十分なrunが集まらない場合は原因を特定する
-  - 登録遅延なら引き続き待ち、ワークフロー無効化・トリガー未定義などでCI実行不能なら
-    ユーザーの明示判断を得てから完了扱いとする
-  - 判定困難な場合はユーザーへ確認する
-- CI失敗を最初に観測した時点ではplan modeを開始せず、push前に作成した一時領域へ
-  失敗した完全長SHA、CIのrunまたはpipelineとjobのID、取得可能な失敗ログを暫定保存する
-  - artifact生成ジョブではartifactも同じ一時領域へ取得する
-  - 失敗ジョブのログは、GitHubでは`gh run view <run-id> --log-failed`で取得する
-  - GitLabでは`glab ci list --sha=<sha> -F json`で得たpipeline IDを
-    `glab ci get -p <id> --with-job-details`へ渡し、失敗したjobを`glab ci trace <job>`へ渡す
-  - 早期失敗検出で監視が終了した場合は、初回証拠を確定する前に期待run・pipeline集合の全対象が終端するまで待つ
-    - GitHubでは取得済みの各run IDを`gh run watch <run-id>`へ渡して終端を待つ
-    - GitLabでは取得済みの各pipeline IDを`glab ci get -p <pipeline-id> -F json`で照会し、終端状態を確認する
-  - 全対象の終端後に全失敗ジョブのログとartifactを取得し直す。
-    一時領域内の資料一覧と各資料の分量を実測し、初回証拠の実在と分量を確認する
-  - 初回ログと同一SHAのローカル再現結果から再現性を暫定分類する
-  - 非決定性の疑いがある場合は、plan mode開始前に同一原因につき1回だけ同一SHAの失敗ジョブを再実行する
-    - GitHubでは`gh run view <run-id> --json jobs`で対象jobの`databaseId`を取得し、
-      `gh run rerun <run-id> --job <job-database-id>`で対象jobへ限定する
-    - GitLabでは`glab ci retry <job-id>`を使用する
-    - 独立した原因で複数jobが失敗した場合は、原因ごとに診断要否を判定し、各原因の再実行を1回までとする
-    - 再実行対象の試行が終端するまで待った後、再実行後のログとartifactを同じ一時領域へ取得し、
-      両試行の資料の実在と分量を確認する
-    - 結果が変動した場合は非決定的と暫定判定する。
-      同一箇所で再失敗した場合は非決定性を確認できなかったものとし、追加再実行を止める
-    - 再実行は診断であり、成功しても原因除去や自セッションとの無関係を示す完了判定に用いない
-- 初回証拠と必要な再実行証拠の取得・実在確認後に`agent-toolkit:plan-mode`を起動してplan modeを開始し、
-  `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/bugfix.md`に従って新しいバグ計画の調査工程へ入る
-  - 取得済みの初回資料と、再実行した場合の追加資料を読み取り専用で分析し、
-    再現性の暫定判定を因果分析へ反映する
-  - plan mode内でローカル書き込みまたはforge上の状態変更を伴う追加証拠が必要と判明した場合は、
-    計画ファイル起草工程を`pending`のままplan modeを終了する。
-    証拠取得と実在確認をplan mode外で完了してからplan modeを再開する
-  - 元の計画が存在する場合は、元の計画ファイルパス、元計画のベースコミット、
-    実装・検証・レビュー結果も取得する
-  - 元の計画が存在しない場合は、push直前に記録したref単位の基準SHA、完全長SHA列、
-    基準SHAから失敗SHAまでの系列差分を主要資料として引き継ぐ。
-    全refのpeel前OID・object type、annotated tag objectとpeeled先、削除refと非commit refの記録、
-    実在する検証・レビュー結果も引き継ぐ
-    - commitを指すrefでは、全親の完全長SHAと各親から失敗SHAまでの差分も引き継ぐ。
-      親ごとの差分は補助資料とし、merge commitでは全親、親のないroot commitではempty treeを用いる
-    - 計画関連項目を`なし`と記録する
-  - 原因箇所、セッション帰属、再現性の3観点は、
-    `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/ci-failure-handling.md`をCI固有の観測補助として用いて確定する
-  - 因果分析、深掘り判定、類似見直し、是正・横展開・再発防止の選定は
-    `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/bugfix.md`をSSOTとする
-  - push後のCI失敗で、原因が自セッションに帰属するか、セッション帰属が未確定の場合は、
-    初回ログの見え方を問わず競合仮説を評価する
-  - 前項の場合は直接的原因の明白さを問わず同referenceの深掘り経路を適用する
-  - 自セッションと無関係な外部基盤障害は、失敗ジョブ、エラー内容、変更差分との
-    非関連性を実測して確定した場合だけ競合仮説評価と深掘りの対象外とする
-  - 前項の場合は無関係である根拠を提示し、ユーザーの明示判断を得てから成果物の修正要否を確定する
-  - 必要な因果調査の完了後、調査工程を`completed`、計画ファイル起草工程を`in_progress`へ更新し、
-    取得した事実と分析結果を引き継いだ新しいバグ計画の初版を起草する
-  - 新しい計画への遷移を完了してから修正案を確定し、ファイルを編集して追加コミットを作成する
-- 一時領域のライフサイクルはpush主体が所有する
-  - push・CI監視・診断再実行・バグ調査・ユーザー回答待ちのいずれかで次の操作を記録し、
-    正確な一時領域のパスと保持理由を記録した状態だけを再試行中状態として保持する
-  - バグ修正後の追加pushでは別の一時領域を作成し、既存分を含む全パスを個別に記録する。
-    全終端状態では記録した各領域を個別に後始末する
-  - CI成功、CI失敗に対するバグ対応完了、push失敗後に再試行しない判断を全終端状態に含める
-  - 監視不能で完了または中止する判断、run未登録のまま中止する判断、forge CLI失敗後に再試行しない判断も
-    全終端状態に含める
-  - シグナル終了、例外終了、ユーザー判断によるCI確認のスキップまたは中止も全終端状態に含める
-  - 全終端状態ではplan mode外で、記録した各絶対パスへ
-    `uv run --no-project --script <helper> cleanup --path <保持した絶対パス>`を単独で実行し、終了コード0と残存しないことを確認する。
-    Claude CodeとCodexのhelper解決は作成時と同じ経路を用いる。glob、未解決の環境変数、
-    親ディレクトリを後始末対象に用いない
-  - ユーザー回答待ちまたは実行中のバグ対応は終端とせず、次の操作、保持理由、正確なパスを報告する
-- CI設定側の抑制で通す対応は採らない具体禁止条件
-  - 対象操作は、`allow_failure: true`の付与や`rules:changes`によるジョブ除外などとする
-  - 対象操作は、specまたはtestの`.skip`・`xfail`・`pytest.mark.skip`の暗黙化などとする
-  - 対象操作は、テスト対象リストやVRTベースライン対象からの画面・spec除外などとする
-  - 対象操作は、`retries`上限の水増しやpipeline定義からの`stage`削除などとする
-  - 変更差分がない`CI trigger`空コミットの再pushは使用しない。
-    非決定的な障害の再実行にはforgeのジョブ再実行機能を使用する
-  - 失敗が自セッション変更と無関係と判明済みで、無関係の根拠を提示して
-    ユーザーの明示合意を得た場合のみ、該当する制約を解除できる
-  - 無関係の根拠には、失敗ジョブ名・エラー内容・変更ファイルとの非関連性を含める
-  - 一時的な回避や別MRでの恒久対策予定は、制約の解除条件に該当しない
-- 初回バグ対応遷移・3観点分類・競合仮説の判別・再実行上限・
-  CI設定側抑制の禁止・環境起因失敗時のユーザー確認を厳守規定とする
-  - CI設定側の抑制は品質ゲートを技術的に不成立とし、確認省略は無関係な失敗の見過ごしを招く
-  - ログ取得コマンドの選択（GitHub/GitLab判定等）は努力目標とする
-- `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
-- GitHub Actionsが動作しないリポジトリ（フィードバック管理側の非公開リポジトリ等）は本節の対象外とする
-- GitLab CI利用リポジトリでも既定の手順の`wait_ci.py`をそのまま使う。
-  内部で`glab ci list --repo <repository> --ref <ref> --sha <sha>`とproject path付き`glab api`へ切り替わり、
-  gitlab.comと私設ホストの双方を対象とする
-  - pipeline一覧とジョブ一覧の両方に、`--repo`で保存したrepository識別子のproject pathと
-    ホストを明示する。カレントディレクトリのremoteから対象projectを推測しない
-  - 自己署名のTLS証明書を使う私設ホストは`glab config set skip_tls_verify true --host <host>`を先に実行する
-  - パイプラインが手動ジョブ待ち（`manual`）で停止した場合は非成功として終了コード1で返る。
-    手動ジョブを起動してから再実行する
-  - `glab`自体が利用できない場合は`agent-toolkit:gitlab-ci-usage`スキル
-    「私設ホスト（自己署名のTLS証明書）でのCI通過確認」節の代替手順に従う。
-    当該手順も実行できない場合に限り、ユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）
-- `git push`実行結果に`remote: GitHub found N vulnerabilities`等のセキュリティ警告、
-  または依存bump系のdependabot PR通知が出力された場合、
-  `gh pr list --author dependabot --state open`でオープン中のPRを確認する
-  - 各PRは`gh pr view <PR番号> --json title,files`で変更内容・バージョン区分
-   （MAJOR/MINOR/PATCH）を事前判定する
-  - マイナー・パッチ更新かつCI通過済みのPRは`gh pr merge <PR番号> --squash --auto`で統合する
-  - メジャー更新が疑われるPRはユーザーへ確認してから対応する
-
-終了状態のみで通過と判定せず、出力の最終行に成功を示す完了マーカーが存在することを併せて確認する。
-出力が空のまま成功扱いで終了した場合は未判定として扱い、起動し直すか検証状況の照会コマンドで実測へ切り替える。
-
-再実行されたワークフローの過去の試行のログを取得する手順は次のとおり。
-通常の実行内容表示コマンドは最新の試行しか表示せず、再実行で成功した後は失敗した試行の記録を参照できなくなる。
-
-```sh
-gh api "repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs" --jq '.jobs[] | "\(.id) \(.name) \(.conclusion)"'
-gh api "repos/{owner}/{repo}/actions/jobs/{job_id}/logs"
-```
+- amend、fixup、autosquashを行う直前に`references/history-rewrite.md`を全文読む
+- 実際にpushする直前に`references/push-and-ci.md`を全文読む
+- push済みcommitのamend、fixup、rebaseは禁止する。push済み判定は
+  `references/history-rewrite.md`のremote-tracking ref到達判定を用いる
+- push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルのCI失敗契約で原因を分析する
 
 ## コミットメッセージとリリース
 
@@ -475,8 +102,9 @@ gh api "repos/{owner}/{repo}/actions/jobs/{job_id}/logs"
   - Codexは上位3項目に定義がない場合、実行環境の既定値として
     `Co-authored-by: Codex <noreply@openai.com>`を使う
   - 通常commitとamendでは、作成対象となる最終コミットメッセージへ帰属情報を反映する
-  - fixup統合先へ帰属情報を追加または更新する場合は、`## コミット運用`が定める
-    `amend:`または`reword:`形式を使い、統合後の最終コミットメッセージへ反映する
+  - fixup統合先へ帰属情報を追加または更新する場合は、
+    `references/history-rewrite.md`が定める`amend:`または`reword:`形式を使い、
+    統合後の最終コミットメッセージへ反映する
   - 既存の異なるtrailerを保持し、同じ帰属情報を最終コミットメッセージ内で1回に保つ
 
 フィードバック採用（`atk mq adopt`起因）を反映するコミットは、本文（body）へ

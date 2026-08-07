@@ -136,7 +136,8 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 `references/review-checklists.md`「網羅調査チェックリスト」節）。
 
 調査を委譲する前に、対象フィードバックがバグ・障害・エラー・デグレードへの対応に当たるかを判定する。
-該当する場合は`agent-toolkit:plan-mode`の`references/bugfix.md`「事象単位の並列調査委譲」節に従って
+該当する場合は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`
+「事象単位の並列調査委譲」節に従って
 起動文を構成し、仮説・疑わしい実装箇所の指名・修正案を起動文へ含めない。
 
 複数件の場合は
@@ -247,7 +248,7 @@ OR条件には各保留の解除契機に加えて、対象リポジトリ宛の
 採用フィードバックだけを後始末する。1セッションで複数コミットを作成する場合は、
 各コミットのpush完了時点で該当分の`atk mq adopt`を実行する。
 push時点で採否は確定しており、CI失敗時も同一セッション内で追加commitにより是正するため採否は覆らない。
-後始末の完了後もCI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従って完遂する。
+後始末の完了後もCI通過確認は`agent-toolkit:commit`の`references/push-and-ci.md`に従って完遂する。
 
 中断後は、ステップ1の一覧でprocessing状態の項目を確認する。
 processing状態の採用フィードバックについて、対象リポジトリでの実装・コミット・pushの

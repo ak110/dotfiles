@@ -13,7 +13,8 @@
 成立しない場合は元の追記提案をそのまま主提案とする。
 
 - 根本対応案を表層レベルの整理（内部重複の撤去のみ・既存実装の再利用のみなど）に限定した場合、
- `agent-toolkit:coding-standards`「責務帰属（SRP）分析の観点」節に従い判定確定前に分析する
+ `agent-toolkit:coding-standards`の`references/design-heuristics.md`
+ 「責務帰属（SRP）分析の観点」節に従い判定確定前に分析する
 - フィードバック原文がワークアラウンド表現（フォールバック・回避策・迂回・失敗時対処など）を含む場合、
   元の追記提案を主提案として確定する前に根本対応を検討し、検討結果を
  `~/.claude/plans/<計画ファイルstem>-workaround-check.md`へ記録する必須ゲートとする。
