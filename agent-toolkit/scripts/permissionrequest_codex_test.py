@@ -177,7 +177,7 @@ def test_rejects_claude_code_launcher_command(
     """Codexでは現行plugin rootの絶対helper経路だけをcanonicalとする。"""
     plugin_root = pathlib.Path(__file__).resolve().parent.parent
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    command = f"atk-managed-temp cleanup --path {tmp_path}"
+    command = f"atk managed-temp cleanup --path {tmp_path}"
 
     assert subject.main(_payload(command)) == 0
     assert not capsys.readouterr().out

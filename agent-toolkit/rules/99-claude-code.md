@@ -46,10 +46,10 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
 
 ## サブエージェント実装
 
-- Claude Codeで作業用一時領域を作成する場合は、`atk-managed-temp create --prefix <用途>`を単独で実行する。
-  `atk-managed-temp`はpluginの`bin/`からBashの`PATH`へ追加され、
+- Claude Codeで作業用一時領域を作成する場合は、`atk managed-temp create --prefix <用途>`を単独で実行する。
+  `atk`はpluginの`bin/`からBashの`PATH`へ追加され、
   自身の位置から現行plugin rootの`scripts/_managed_temp.py`を解決する。
-  用途の完了と内容の検収後は`atk-managed-temp cleanup --path <検収済み絶対パス>`を単独で実行する
+  用途の完了と内容の検収後は`atk managed-temp cleanup --path <検収済み絶対パス>`を単独で実行する
 - Claude Codeのモデル区分は、軽量モデルを`haiku`、標準モデルを`sonnet`、上位モデルを`opus`とする。
   共通規範の難易度区分をこの3区分へ対応付ける
 - `plan-impl-executor`はfrontmatterのモデル指定を適用する。

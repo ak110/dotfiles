@@ -1,9 +1,7 @@
 """エージェント定義の委譲権限契約を検査する。"""
 
-import os
 import pathlib
 import re
-import subprocess
 
 import _atk_mq_frontmatter as frontmatter
 import subagent_stop_advisor
@@ -34,9 +32,6 @@ _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md
 _CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE.parent / "references" / "plan-review-delegation.md"
-_MANAGED_TEMP_HELPER = _AGENTS_DIR.parent / "scripts" / "_managed_temp.py"
-_MANAGED_TEMP_LAUNCHER = _AGENTS_DIR.parent / "bin" / "atk-managed-temp"
-_MANAGED_TEMP_LAUNCHER_WINDOWS = _MANAGED_TEMP_LAUNCHER.with_suffix(".cmd")
 _DELEGATION_BOILERPLATE = _PLAN_REVIEW.parent / "delegation-boilerplate.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE.parent / "references" / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
@@ -670,8 +665,8 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
     agent_operations_rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     claude_code_rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
     codex_agents_base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
-    assert "atk-managed-temp create --prefix <用途>" in claude_code_rules
-    assert "atk-managed-temp cleanup --path <検収済み絶対パス>" in claude_code_rules
+    assert "atk managed-temp create --prefix <用途>" in claude_code_rules
+    assert "atk managed-temp cleanup --path <検収済み絶対パス>" in claude_code_rules
     assert "uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>" in codex_agents_base
     assert (
         "uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>"
@@ -734,38 +729,12 @@ def test_policy_parser_review_contract_declares_operating_boundary() -> None:
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針は含めない" in independent_input_contract
 
 
-def test_managed_temp_launchers_preserve_helper_contract() -> None:
-    """launcherが現行plugin rootのhelperへ入出力と終了状態をそのまま転送する。"""
-    for arguments in (["--help"], ["create", "--prefix", "INVALID"]):
-        direct = subprocess.run(
-            ["uv", "run", "--no-project", "--script", str(_MANAGED_TEMP_HELPER), *arguments],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if os.name == "nt":
-            command = [
-                os.environ.get("COMSPEC", "cmd.exe"),
-                "/d",
-                "/c",
-                str(_MANAGED_TEMP_LAUNCHER_WINDOWS),
-                *arguments,
-            ]
-        else:
-            command = [str(_MANAGED_TEMP_LAUNCHER), *arguments]
-        launched = subprocess.run(command, capture_output=True, text=True, check=False)
+def test_agent_toolkit_bin_contains_only_atk_launchers() -> None:
+    """agent-toolkit/binへatk以外の独立コマンドを増やさない。
 
-        assert launched.returncode == direct.returncode, arguments
-        assert launched.stdout == direct.stdout, arguments
-        assert launched.stderr == direct.stderr, arguments
-
-    posix_text = _MANAGED_TEMP_LAUNCHER.read_text(encoding="utf-8")
-    windows_text = _MANAGED_TEMP_LAUNCHER_WINDOWS.read_text(encoding="ascii")
-    assert 'plugin_root="$(cd "$(dirname "${self}")/.." && pwd)"' in posix_text
-    assert 'exec uv run --no-project --script "${helper}" "$@"' in posix_text
-    assert 'for /f "delims=" %%A in (\'cd /d "%~dp0.." ^& cd\') do set "PLUGIN_ROOT=%%A"' in windows_text
-    assert 'uv run --no-project --script "%HELPER%" %*' in windows_text
-    assert "endlocal & exit /b %STATUS%" in windows_text
+    サブコマンド方式の親CLIが存在するため、新規機能はatkのサブコマンドとして追加する。
+    """
+    assert {path.name for path in (_AGENTS_DIR.parent / "bin").iterdir()} == {"atk", "atk.cmd"}
 
 
 def _markdown_headings(path: pathlib.Path) -> set[str]:

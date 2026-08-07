@@ -84,7 +84,7 @@ def test_current_output_is_synced() -> None:
         "`haiku`",
         "`sonnet`",
         "`opus`",
-        "atk-managed-temp",
+        "atk managed-temp",
         "Claude Code",
         "idle_notification",
         "記録ファイル直接読み取り",

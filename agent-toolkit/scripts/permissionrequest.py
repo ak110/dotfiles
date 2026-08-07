@@ -121,8 +121,11 @@ _AGENT_META_DIRS = frozenset({".claude", ".agents"})
 # ファイル名として一致した場合に Git ワークツリー判定対象とするファイル名。
 _AGENT_META_FILES = frozenset({"AGENTS.md"})
 
-# PermissionRequestで専用判定する管理対象一時領域の実行名。
-_MANAGED_TEMP_COMMAND = "atk-managed-temp"
+# PermissionRequestで専用判定する管理対象一時領域のサブコマンド。
+# `atk`名前空間を入口としつつ、トークン列全体の厳密一致で判定の狭さを担保する。
+# 実行名を分離せずとも、第2トークンまで検査すれば破壊的サブコマンドと区別できる。
+_ATK_COMMAND = "atk"
+_MANAGED_TEMP_SUBCOMMAND = "managed-temp"
 
 
 def main(payload_text: str) -> int:
@@ -201,7 +204,7 @@ def should_allow_bash(command: str, cwd: str) -> bool:
     tokens = _tokenize(command)
     if not tokens:
         return False
-    if tokens[0] == _MANAGED_TEMP_COMMAND:
+    if len(tokens) >= 2 and tokens[0] == _ATK_COMMAND and tokens[1] == _MANAGED_TEMP_SUBCOMMAND:
         return _is_managed_temp_command(tokens)
     # 単独 `&`・単独 `|`・`|&`・`>&`・`&>` 等の複合演算子トークンも拒否する。
     # `&&` と `||` のみを許容する例外とする。
@@ -214,10 +217,10 @@ def should_allow_bash(command: str, cwd: str) -> bool:
 
 
 def _is_managed_temp_command(tokens: list[str]) -> bool:
-    """管理対象一時領域launcherの通常のcreateまたはcleanupだけを許可する。"""
-    if len(tokens) != 4 or tokens[0] != _MANAGED_TEMP_COMMAND:
+    """管理対象一時領域サブコマンドの通常のcreateまたはcleanupだけを許可する。"""
+    if len(tokens) != 5 or tokens[0] != _ATK_COMMAND or tokens[1] != _MANAGED_TEMP_SUBCOMMAND:
         return False
-    action, option, value = tokens[1:]
+    action, option, value = tokens[2:]
     if action == "create" and option == "--prefix":
         return _managed_temp.is_valid_prefix(value)
     if action != "cleanup" or option != "--path":

@@ -14,7 +14,8 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`形式とする。
+サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`・
+`atk managed-temp <sub>`形式とする。
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示
@@ -27,6 +28,7 @@
   初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
+- managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 
 ハンドラ実装は`_atk_mq_add`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
 `_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
@@ -53,6 +55,7 @@ import _atk_mq_process_loop as _process_loop  # noqa: E402
 import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_serve as _serve  # noqa: E402
+import _managed_temp  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
 _active_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES)
@@ -559,6 +562,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     config = top.add_parser("config", help="XDG関連パス・codexモデル判定設定を確認・変更する")
     _config_cmd.build_parser(config)
+    managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・後始末する")
+    _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     return parser
 
 
@@ -631,6 +636,8 @@ def main(
     if args.command == "serve":
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
+    if args.command == "managed-temp":
+        sys.exit(_managed_temp.dispatch(args, command_dest="managed_temp_subcommand"))
     if args.command == "config":
         _config_cmd.dispatch(args, home)
     if args.command != "mq":

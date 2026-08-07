@@ -293,35 +293,37 @@ class TestShouldAllowBash:
         monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
         target = _managed_temp.create_managed_temp("permission-test")
 
-        assert hook.should_allow_bash("atk-managed-temp create --prefix agent-work", str(tmp_path)) is True
-        assert hook.should_allow_bash(f"atk-managed-temp cleanup --path {target}", str(tmp_path)) is True
+        assert hook.should_allow_bash("atk managed-temp create --prefix agent-work", str(tmp_path)) is True
+        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
 
     @pytest.mark.parametrize(
         "command",
         [
-            "atk-managed-temp create --prefix UPPER",
-            "atk-managed-temp create --prefix agent-work extra",
-            "atk-managed-temp cleanup --path relative",
-            "atk-managed-temp cleanup --path /tmp/unmanaged",
-            "atk-managed-temp validate --path /tmp/unmanaged",
+            "atk managed-temp create --prefix UPPER",
+            "atk managed-temp create --prefix agent-work extra",
+            "atk managed-temp cleanup --path relative",
+            "atk managed-temp cleanup --path /tmp/unmanaged",
+            "atk managed-temp validate --path /tmp/unmanaged",
+            "atk managed-temp",
+            "atk mq rm --all",
             "rm -rf /tmp/unmanaged",
-            "atk-managed-temp create --prefix foo#; printf permission-bypass-observed",
-            "atk-managed-temp create --prefix agent-work > /tmp/log",
-            "atk-managed-temp create --prefix agent-work extra > /tmp/log",
-            "atk-managed-temp --verbose create --prefix agent-work",
-            "atk-managed-temp validate --path /tmp/unmanaged > /tmp/log",
-            "echo ok; atk-managed-temp validate --path /tmp/unmanaged > /tmp/log",
-            "echo ok && atk-managed-temp create --prefix agent-work extra > /tmp/log",
-            "echo ok || atk-managed-temp create --prefix agent-work > /tmp/log",
-            "echo ok | atk-managed-temp create --prefix agent-work",
-            "atk-managed-temp create --prefix agent-work && echo ok",
-            "(atk-managed-temp create --prefix agent-work)",
-            "env atk-managed-temp create --prefix agent-work",
-            "/opt/agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
-            "./agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
-            "echo ok && /opt/agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
-            "echo ok; ./agent-toolkit/bin/atk-managed-temp create --prefix agent-work",
-            'printf "%s\\n" "atk-managed-temp create --prefix agent-work"',
+            "atk managed-temp create --prefix foo#; printf permission-bypass-observed",
+            "atk managed-temp create --prefix agent-work > /tmp/log",
+            "atk managed-temp create --prefix agent-work extra > /tmp/log",
+            "atk --verbose managed-temp create --prefix agent-work",
+            "atk managed-temp validate --path /tmp/unmanaged > /tmp/log",
+            "echo ok; atk managed-temp validate --path /tmp/unmanaged > /tmp/log",
+            "echo ok && atk managed-temp create --prefix agent-work extra > /tmp/log",
+            "echo ok || atk managed-temp create --prefix agent-work > /tmp/log",
+            "echo ok | atk managed-temp create --prefix agent-work",
+            "atk managed-temp create --prefix agent-work && echo ok",
+            "(atk managed-temp create --prefix agent-work)",
+            "env atk managed-temp create --prefix agent-work",
+            "/opt/agent-toolkit/bin/atk managed-temp create --prefix agent-work",
+            "./agent-toolkit/bin/atk managed-temp create --prefix agent-work",
+            "echo ok && /opt/agent-toolkit/bin/atk managed-temp create --prefix agent-work",
+            "echo ok; ./agent-toolkit/bin/atk managed-temp create --prefix agent-work",
+            'printf "%s\\n" "atk managed-temp create --prefix agent-work"',
         ],
     )
     def test_managed_temp_noncanonical_command_not_allowed(self, command: str, tmp_path: pathlib.Path) -> None:
@@ -451,7 +453,7 @@ class TestEndToEnd:
         """canonical launcherのcreate確認を自動許可する。"""
         payload = {
             "tool_name": "Bash",
-            "tool_input": {"command": "atk-managed-temp create --prefix agent-work"},
+            "tool_input": {"command": "atk managed-temp create --prefix agent-work"},
             "cwd": "/tmp",
         }
         code, stdout = self._run(payload)

@@ -989,17 +989,19 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
         raise ManagedTempError(f"管理対象を後始末できない: {path}: {error}") from error
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI引数を解釈して管理対象一時ディレクトリを操作する。"""
-    parser = argparse.ArgumentParser(description=__doc__)
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "command") -> None:
+    """管理対象一時領域のサブコマンドを登録する。"""
+    subparsers = parser.add_subparsers(dest=command_dest, required=True)
     create_parser = subparsers.add_parser("create", help="管理対象一時ディレクトリを作成する")
     create_parser.add_argument("--prefix", required=True)
     cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
     cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
-    args = parser.parse_args(argv)
+
+
+def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
+    """解析済み引数に対応する操作を実行し、終了状態を返す。"""
     try:
-        if args.command == "create":
+        if getattr(args, command_dest) == "create":
             print(create_managed_temp(args.prefix))
         else:
             cleanup_managed_temp(args.path)
@@ -1007,6 +1009,13 @@ def main(argv: list[str] | None = None) -> int:
     except ManagedTempError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI引数を解釈して管理対象一時ディレクトリを操作する。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    build_parser(parser)
+    return dispatch(parser.parse_args(argv))
 
 
 if __name__ == "__main__":
