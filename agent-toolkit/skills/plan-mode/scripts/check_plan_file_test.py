@@ -26,10 +26,9 @@ def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
     (directory / "nested.py").write_text("nested\n", encoding="utf-8")
     _git(tmp_path, "add", "existing.py", "old.py", "directory/nested.py")
     _git(tmp_path, "commit", "-qm", "files")
-    first_commit = _git(tmp_path, "rev-parse", "HEAD")
     blob = _git(tmp_path, "rev-parse", "HEAD:existing.py")
     _git(tmp_path, "update-index", "--add", "--cacheinfo", f"120000,{blob},linked.py")
-    _git(tmp_path, "update-index", "--add", "--cacheinfo", f"160000,{first_commit},module")
+    _git(tmp_path, "update-index", "--add", "--cacheinfo", f"160000,{'f' * 40},module")
     _git(tmp_path, "commit", "-qm", "base")
     return tmp_path, _git(tmp_path, "rev-parse", "HEAD")
 

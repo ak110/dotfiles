@@ -124,18 +124,32 @@ def _metadata_values(lines: list[str], outside: list[bool]) -> tuple[dict[str, s
 
 
 def _git_path_object_type(work_dir: pathlib.Path, base_commit: str, path: str) -> tuple[str | None, str | None]:
-    """基準コミット上のパスが参照するGit object typeを返す。"""
+    """基準コミット上のtree entryが宣言するGit object typeを返す。"""
     result = subprocess.run(
-        ["git", "-C", str(work_dir), "cat-file", "-t", f"{base_commit}:{path}"],
+        [
+            "git",
+            "-C",
+            str(work_dir),
+            "--literal-pathspecs",
+            "ls-tree",
+            "--format=%(objectmode) %(objecttype)",
+            base_commit,
+            "--",
+            path,
+        ],
         capture_output=True,
         text=True,
         check=False,
     )
-    if result.returncode == 0:
-        return result.stdout.strip(), None
-    if result.returncode == 128:
+    if result.returncode != 0:
+        return None, result.stderr.strip() or f"基準コミット上のパス確認に失敗した: {path}"
+    entries = result.stdout.splitlines()
+    if not entries:
         return None, None
-    return None, result.stderr.strip() or f"基準コミット上のパス確認に失敗した: {path}"
+    if len(entries) != 1 or len(parts := entries[0].split()) != 2:
+        return None, f"基準コミット上のパス確認が不正な結果を返した: {path}"
+    _, object_type = parts
+    return object_type, None
 
 
 def _git_commit_exists(work_dir: pathlib.Path, base_commit: str) -> bool:
