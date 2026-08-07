@@ -197,6 +197,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     if not upstream_branch:
         print(f"上流ブランチを解決できないためwriterを起動しません: {worktree_path}", file=sys.stderr)
         return None
+    created_worktree = False
     if not worktree_path.exists():
         fetch = subprocess.run(["git", "fetch", "origin"], cwd=local_path, capture_output=True, text=True, check=False)
         _console_title.set_console_title("atk mq process-loop")
@@ -220,18 +221,19 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         if created.returncode != 0:
             print(f"worktreeの作成に失敗しました: {created.stderr.strip()}", file=sys.stderr)
             return None
-        return worktree_path if _worktree_is_clean(worktree_path) else None
+        created_worktree = True
     if not worktree_path.is_dir():
         print(f"worktreeの配置先がディレクトリではありません: {worktree_path}", file=sys.stderr)
         return None
     if not _worktree_is_clean(worktree_path):
         print(f"worktreeに未コミット変更があるためwriterを起動しません: {worktree_path}", file=sys.stderr)
         return None
-    fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
-    _console_title.set_console_title("atk mq process-loop")
-    if fetch.returncode != 0:
-        print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
-        return None
+    if not created_worktree:
+        fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
+        _console_title.set_console_title("atk mq process-loop")
+        if fetch.returncode != 0:
+            print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
+            return None
     rebase = subprocess.run(["git", "rebase", upstream_branch], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     if rebase.returncode == 0:

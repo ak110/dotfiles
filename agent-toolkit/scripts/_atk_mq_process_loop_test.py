@@ -1085,6 +1085,8 @@ class TestWorktreeWriterGate:
 
         def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
             calls.append(cmd)
+            if cmd[1:3] == ["worktree", "add"]:
+                worktree_path.mkdir(parents=True)
             returncode = 1 if "show-ref" in cmd else 0
             return subprocess.CompletedProcess(cmd, returncode, "", "")
 
@@ -1101,6 +1103,7 @@ class TestWorktreeWriterGate:
             str(worktree_path),
             "origin/main",
         ] in calls
+        assert ["git", "rebase", "origin/main"] in calls
 
     @pytest.mark.parametrize("dirty_command", ["diff", "cached", "untracked"])
     def test_worktree_is_clean_rejects_each_dirty_kind(
