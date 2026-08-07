@@ -1,9 +1,9 @@
-"""対象リポジトリのTBDが全件回答済みへ遷移したことを検出し、通知本文を組み立てる。
+"""対象リポジトリで新たに回答されたTBDを検出し、通知本文を組み立てる。
 
-PostToolUseフックから毎回呼ばれる。セッション状態へ対象リポジトリごとの未回答件数と
-active状態ディレクトリの指紋を記録し、前回観測値が1件以上かつ今回が0件で、回答済みが
-1件以上ある場合に限り通知本文を返す。セッション開始後の初回観測は基準値の記録だけを
-行い、通知しない。
+PostToolUseフックから毎回呼ばれる。セッション状態へ対象リポジトリごとの回答済み
+ファイル名とactive状態ディレクトリの指紋を記録し、前回観測後に回答済みとなった
+ファイル名だけを通知する。セッション開始後の初回観測は基準値の記録だけを行い、
+通知しない。
 
 `git pull`は実行しない。同一ホストのWeb UIおよびCLIからの回答はローカルファイルを
 直接更新するため、pullなしで観測できる。他端末からの回答は当該ホストで次にpullが
@@ -17,12 +17,12 @@ import _tbd_scan
 from _session_state import update_state
 from _transcript_agent_id import extract_transcript_agent_id
 
-STATE_KEY_UNANSWERED = "tbd_unanswered_by_repo"
-"""エージェント別・対象リポジトリID別の直近の未回答TBD件数を保持するセッション状態キー。
+STATE_KEY_ANSWERED = "tbd_answered_by_repo"
+"""エージェント別・対象リポジトリID別の回答済みTBDファイル名を保持する状態キー。
 
-値は`{エージェント識別子: {対象リポジトリID: 件数}}`の2段辞書とする。
+値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とする。
 メインとサブエージェントのフック呼び出しは同一`session_id`で届くため、
-エージェント識別子で分けないと一方の呼び出しが全件回答済みへの遷移を消費し、
+エージェント識別子で分けないと一方の呼び出しが新規回答の差分を消費し、
 他方へ通知が届かない。
 """
 
@@ -102,7 +102,7 @@ def _fingerprint_unchanged(session_id: str, agent_id: str, cwd: str, fingerprint
 
 
 def build_notice(session_id: str, cwd: str, transcript_path: str = "") -> str | None:
-    """全件回答済みへの遷移を検出した場合に通知本文を返す。それ以外はNoneを返す。"""
+    """前回観測後に回答されたTBDがあれば通知本文を返す。それ以外はNoneを返す。"""
     if not cwd:
         return None
 
@@ -123,28 +123,27 @@ def build_notice(session_id: str, cwd: str, transcript_path: str = "") -> str | 
     if not scan.complete:
         return None
 
-    entries = scan.entries
-    unanswered = [entry for entry in entries if not entry.answered]
-    answered = [entry for entry in entries if entry.answered]
-    outcome: dict[str, bool] = {"notify": False}
+    answered = sorted(entry.filename for entry in scan.entries if entry.answered)
+    outcome: dict[str, list[str]] = {"newly_answered": []}
 
     def _record(state: dict) -> dict | None:
-        counts = _nested(state, STATE_KEY_UNANSWERED, agent_id)
-        previous = counts.get(target_repo)
-        outcome["notify"] = isinstance(previous, int) and previous > 0 and not unanswered and bool(answered)
-        counts[target_repo] = len(unanswered)
+        answers = _nested(state, STATE_KEY_ANSWERED, agent_id)
+        previous = answers.get(target_repo)
+        if isinstance(previous, list) and all(isinstance(filename, str) for filename in previous):
+            outcome["newly_answered"] = sorted(set(answered) - set(previous))
+        answers[target_repo] = answered
         if fingerprint is not None:
             _nested(state, STATE_KEY_FINGERPRINT, agent_id)[cwd] = fingerprint
         return state
 
     state_updated = update_state(session_id, _record)
-    if not outcome["notify"] or not state_updated:
+    newly_answered = outcome["newly_answered"]
+    if not newly_answered or not state_updated:
         return None
 
-    filenames = ", ".join(entry.filename for entry in answered)
+    filenames = ", ".join(newly_answered)
     return (
-        f"all TBD entries for repository {target_repo} are now answered"
-        f" (unanswered: 0, answered: {len(answered)}). Answered entries: {filenames}."
+        f"newly answered TBD entries for repository {target_repo}: {filenames}."
         " Decide whether to take them into the current session before it ends:"
         " read each entry with `atk mq show <filename>` and follow the recorded answer,"
         " revising any provisional decision that the answer contradicts."

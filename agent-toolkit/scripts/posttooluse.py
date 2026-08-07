@@ -31,7 +31,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 17. `agent-toolkit:delegation`起動の記録 (Skill)
-18. 対象リポジトリのTBDが全件回答済みへ遷移した場合の通知（全ツール共通）
+18. 対象リポジトリで新たに回答されたTBDファイルの通知（全ツール共通）
 """
 
 import hashlib
@@ -393,7 +393,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
 
-    # 対象リポジトリのTBDが全件回答済みへ遷移した場合に通知する。
+    # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
     if cwd:
         tbd_notice = _tbd_completion.build_notice(session_id, cwd, payload.get("transcript_path", ""))

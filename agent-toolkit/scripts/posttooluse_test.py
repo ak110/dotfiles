@@ -2,8 +2,7 @@
 
 subprocessで起動しexit code・状態ファイルの内容を検証する。
 plan file形式検査・SSOT検査・codex-review.md読み込み追跡は`posttooluse_plan_format_test.py`、
-Agent/Task起動セッション状態フラグ記録は`posttooluse_codex_flags_test.py`、
-`session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へそれぞれ分割している。
+`session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へ分割している。
 """
 
 import functools
@@ -348,6 +347,62 @@ class TestDelegationTracking:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("delegation_skill_invoked") is True
+
+
+class TestTbdCompletionNotice:
+    """TBD回答差分をPostToolUseの追加contextへ接続する。"""
+
+    def test_dispatch_appends_answered_filename_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """回答差分通知をLLM向けnoticeとして蓄積する。"""
+        monkeypatch.setattr(
+            _POSTTOOLUSE_MODULE._tbd_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            "build_notice",
+            lambda _session_id, _cwd, _transcript_path: "newly answered: answered.md",
+        )
+        notices: list[str] = []
+        payload = {
+            "session_id": "tbd-answer",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "README.md"},
+            "cwd": "/repo",
+        }
+
+        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
+            json.dumps(payload), notices
+        )
+
+        assert result == 0
+        assert len(notices) == 1
+        assert "newly answered: answered.md" in notices[0]
+
+    @pytest.mark.parametrize("hook_event_name", ["PostToolUseFailure", "PermissionDenied"])
+    def test_failure_events_skip_tbd_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        hook_event_name: str,
+    ) -> None:
+        """失敗イベントでは回答差分を問い合わせない。"""
+        monkeypatch.setattr(
+            _POSTTOOLUSE_MODULE._tbd_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            "build_notice",
+            lambda *_args: pytest.fail("失敗イベントでTBD通知が呼ばれた"),
+        )
+        notices: list[str] = []
+        payload = {
+            "session_id": "tbd-failure",
+            "hook_event_name": hook_event_name,
+            "tool_name": "Read",
+            "tool_input": {"file_path": "README.md"},
+            "cwd": "/repo",
+        }
+
+        result = _POSTTOOLUSE_MODULE._dispatch(  # pylint: disable=protected-access  # noqa: SLF001
+            json.dumps(payload), notices
+        )
+
+        assert result == 0
+        assert not notices
 
 
 class TestSubagentEndProcessLoopLog:

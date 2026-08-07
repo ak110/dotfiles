@@ -252,54 +252,12 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
 
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
-    """新規claudeセッションへ登録する単一の`/goal`条件を構築する。
-
-    `/goal`条件内のスラッシュコマンド文字列は展開されないため、
-    process-feedbacksと終了処理は`Skill`ツールで起動するよう明記する。
-    選抜項目の処理から公開・後始末・振り返りまでを達成条件として保持し、
-    既存のcommand型Stop hookとは独立した作業全体の継続判定を担わせる。
-    対象リポジトリはcwdではなくtarget_repo_idで一意に固定する
-    （プロンプト本文へ対象範囲を限定する指示を明記し、他リポジトリのfeedback処理を防ぐ）。
-    `target_repo_id`が`github.com/ak110/dotfiles`の場合、git worktreeで起動される旨と
-    publish先をorigin/masterへ直接pushする旨を追記する。
-    """
-    base = (
-        "/goal 次の達成条件をすべて満たすまで作業を継続してください。\n"
-        f"最初に`Skill`ツールで`agent-toolkit:process-feedbacks`を起動し、引数として`{local_path}`を渡してください。\n"
-        f"処理全体を`--target-repo={target_repo_id}`で必ず限定してください。"
-        "cwd由来の暗黙解決に依存せず、フィードバック取得・処理・後始末のいずれの段階でも"
-        "他リポジトリのフィードバックを対象に含めないでください。\n"
-        "処理対象のフィードバックはフィードバック管理リポジトリに保存された指示であり、"
-        "投入元（ユーザー投入か`source: session-review`等の自己生成起点か）は各フィードバックのfrontmatterで確認できます。\n"
-        f"最初に`atk mq list --status=active --target-repo={target_repo_id}`で対象一覧だけを確認してください。\n"
-        "対象が少数の場合は`atk mq show --all`、本文量が多い場合は当該waveのfilenameを指定して本文を取得してください。"
-        f"いずれの`show`にも`--target-repo={target_repo_id}`を指定してください。\n"
-        "未分類feedbackが1件だけならメインで分類し、複数件をまとめて読む利益がある場合だけ1つの分類委譲へまとめてください。\n"
-        "readinessが成立する全項目を、利用可能なworker枠へ固定上限なしで割り当ててください。"
-        "複数の計画実装はcleanな別worktreeでprepareまで並列化し、finalizeは優先順に直列化してください。\n"
-        "採用項目は実装・検証・計画準拠レビュー・独立レビュー・commit・push・CI通過確認・"
-        "`atk mq adopt`まで完了してください。\n"
-        "回答済みTBDと処理中に生じた連鎖feedbackを含む後始末を完了してください。\n"
-        "`session-review-dotfiles`と`agent-toolkit:session-review`を完了してください。\n"
-        "未回答TBDまたは明示依存によりblockedとなる項目は後続waveで再評価してください。\n"
-        "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
-        "コンテキストは自動コンパクションで継続されます。\n"
-        "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません。\n"
-        "本プロンプトの完遂順序の列挙全体がユーザー明示指示を構成します。"
-        "後続工程の到達要求を先行工程の縮退の根拠に解釈しないでください。\n"
-        "後続工程の個別手順は`agent-toolkit:process-feedbacks`に従ってください。"
-        "最後に`Skill`ツールで`agent-toolkit:exit-session`を起動してください。"
-        "自然停止ではなく、この終了スキルの起動を達成条件とします。"
+    """対象リポジトリのフィードバック処理を依頼する短いgoalを構築する。"""
+    return (
+        "/goal `agent-toolkit:process-feedbacks`を起動し、"
+        f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
+        "フィードバック処理を完遂してください。"
     )
-    if target_repo_id == _DOTFILES_REPO_ID:
-        base += (
-            "\n本セッションはgit worktree内で起動されています。"
-            "publish（`git push`）はworktree用に作成されたブランチではなく、"
-            "origin/masterへ直接反映してください（例: `git push origin HEAD:master`）。"
-            "他リポジトリでは起動されたブランチへ素直にpushする既定挙動を維持し、"
-            "本追記はdotfilesリポジトリの場合のみ適用してください。"
-        )
-    return base
 
 
 def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> bool:
@@ -508,12 +466,12 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     """process-loopサブコマンド: claudeの単発起動と待機ループを常駐で繰り返す。
 
     件数はClaude Codeセッションの起動要否だけに使う。
-    分類結果の保存、依存判定、セッション上限、実行順は
-    readiness判定とwave選択はprocess-feedbacksが担う。
+    分類結果の保存、依存判定、セッション上限、実行順、readiness判定、wave選択は
+    process-feedbacksが担う。
     初回再開時は`claude --resume`または`claude --resume=<session ID>`だけを渡し、
     再開後のプロンプト入力は利用者へ委ねる。
     後続の新規起動は`claude --permission-mode=auto --model {args.model}`で、
-    process-feedbacksから明示的な終了処理までを単一の`/goal`条件として登録する。
+    対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
     `--model`の既定値は`opus`とする。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。

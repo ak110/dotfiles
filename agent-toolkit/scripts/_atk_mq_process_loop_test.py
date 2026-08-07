@@ -513,40 +513,32 @@ class TestProcessLoopPromptAndEnv:
         _process_loop._strip_inherited_venv(env)  # pylint: disable=protected-access  # noqa: SLF001
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
-    def test_prompt_is_single_goal_with_complete_success_conditions(self) -> None:
-        """新規セッションのgoal条件が構造・起動方法・達成条件・長さの契約を満たすこと。"""
+    def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:
+        """新規セッションのgoalが対象と起動スキルだけを伝えること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
         )
-        assert prompt.startswith("/goal ")
-        assert prompt.count("/goal ") == 1
-        assert not any(line.startswith("/") for line in prompt.splitlines()[1:])
-        assert len(prompt) < 4000
-        assert "`Skill`ツール" in prompt
-        assert "agent-toolkit:process-feedbacks" in prompt
-        assert "/repo" in prompt
-        assert "--target-repo=github.com/example/repo" in prompt
-        assert "`atk mq list --status=active --target-repo=github.com/example/repo`" in prompt
-        assert "未分類feedbackが1件だけならメインで分類" in prompt
-        assert "複数の計画実装はcleanな別worktreeでprepareまで並列化" in prompt
-        assert "blockedとなる項目は後続waveで再評価" in prompt
-        assert "計画準拠レビュー" in prompt
-        assert "独立レビュー" in prompt
-        assert "push" in prompt
-        assert "CI通過確認" in prompt
-        assert "`atk mq adopt`" in prompt
-        assert "回答済みTBD" in prompt
-        assert "連鎖feedback" in prompt
-        assert "session-review-dotfiles" in prompt
-        assert "agent-toolkit:session-review" in prompt
-        assert "agent-toolkit:exit-session" in prompt
-        assert "時間がかかるのは正常" in prompt
-        assert "作業量" in prompt
-        assert "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません" in prompt
-        assert "本プロンプトの完遂順序の列挙全体がユーザー明示指示を構成します" in prompt
-        assert "後続工程" in prompt
-        assert "縮退の根拠に" in prompt
+        assert prompt == (
+            "/goal `agent-toolkit:process-feedbacks`を起動し、"
+            "`/repo`で対象リポジトリ`github.com/example/repo`の"
+            "フィードバック処理を完遂してください。"
+        )
+
+        forbidden_details = (
+            "atk mq list",
+            "atk mq show",
+            "frontmatter",
+            "worker",
+            "レビュー",
+            "commit",
+            "push",
+            "CI",
+            "atk mq adopt",
+            "session-review",
+            "exit-session",
+        )
+        assert all(detail not in prompt for detail in forbidden_details)
 
     def test_prompt_references_process_feedbacks(self) -> None:
         """プロンプトが後続工程の集約先としてprocess-feedbacksスキルを参照すること。"""
@@ -567,17 +559,8 @@ class TestProcessLoopPromptAndEnv:
             pathlib.Path("/repo"),
             target_repo_id,
         )
-        assert f"--target-repo={target_repo_id}" in prompt
+        assert target_repo_id in prompt
         assert "/repo" in prompt
-
-    def test_prompt_states_feedback_provenance(self) -> None:
-        """プロンプトがフィードバックの投入元の確認方法を明示すること。"""
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo"),
-            "github.com/example/repo",
-        )
-        assert "投入元" in prompt
-        assert "frontmatterで確認できます" in prompt
 
     def test_model_override(
         self,
@@ -1502,20 +1485,14 @@ class TestProcessLoopUrlInput:
             atk.main(["mq", "process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
         assert exc_info.value.code == 2
 
-    def test_prompt_adds_worktree_push_instruction_for_dotfiles(self) -> None:
+    def test_prompt_keeps_dotfiles_goal_free_of_publish_details(self) -> None:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/ak110/dotfiles",
         )
-        assert "git worktree内で起動" in prompt
-        assert "origin/master" in prompt
-
-    def test_prompt_omits_worktree_push_instruction_for_other_repos(self) -> None:
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo"),
-            "github.com/example/repo",
-        )
         assert "git worktree内で起動" not in prompt
+        assert "origin/master" not in prompt
+        assert "push" not in prompt
 
     @pytest.mark.parametrize("remote_url", ["https://github.com/ak110/dotfiles.git\n", "https://github.com/example/repo.git\n"])
     def test_worktree_cwd_depends_on_target_repo(

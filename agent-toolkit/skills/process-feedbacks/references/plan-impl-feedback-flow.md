@@ -1,53 +1,23 @@
-# 計画実装型フィードバックの処理フロー
+# 計画実装型フィードバック
 
-計画実装型フィードバックの判定、依存関係、並列prepare、直列finalizeを定める。
-`agent-toolkit:process-feedbacks`の計画実装フローから参照するSSOTとする。
-
-## 判定基準
-
-トップレベルの`plan_file`を持つactive feedbackを計画実装型とし、それ以外を通常型とする。
-本文から型を推定しない。`plan_file`が存在しない場合は通常型へ変換せず、修復対象として扱う。
-
-## readiness
-
-active feedbackは次の条件を全て満たす場合にreadyとする。
-
-- `depends_on`が参照する全項目が終端状態にある
-- TBDの場合は回答済みである
-- frontmatterを解析できる
-- 計画実装型の`plan_file`が実在する
-
-トップレベルの`depends_on`を正本とする。過去に生成された`queue_schedule.dependency`は読取互換としてのみ
-解釈し、新規生成・更新しない。欠落依存、自己依存、循環、frontmatter破損、計画ファイル消失はblockedとし、
-修復対象としてprocess-loopの起動件数へ含める。未回答TBDと明示依存以外を推測でblockerへ追加しない。
-
-## 分類
-
-未分類の通常型が1件だけならメインが分類する。複数件の場合だけ、分類referenceと選択したfilenameを渡して
-1回の分類委譲を行う。本文hash、対象ファイル予測、carry、競合groupは作成しない。
+トップレベルの`plan_file`を持つactive feedbackだけを計画実装型とする。本文から型を推測しない。
 
 ## 実行wave
 
-readyな計画が1件の場合は現在のcleanなworktreeで実行する。複数件の場合は利用可能なworker枠までwaveを構成し、
-上流追随済みのcleanな基準から計画ごとに別worktreeを作成する。固定件数の上限は設けない。
-dirty差分を前提とする計画は並列対象に含めない。
+readyな計画が1件なら現在のcleanなworktreeで実行する。
+複数件なら利用可能なwriter枠まで、上流追随済みのcleanな別worktreeへ1計画ずつ割り当てる。
+1つのworktreeへ複数のwriterを割り当てず、dirty差分を前提とする計画は並列化しない。
 
-各laneのprepareでは、実装、近接検証、commitまでを並列に行う。1つのworktreeへ書き込む主体は1つだけとし、
-計画作成とreviewerは読み取り専用とする。laneが失敗した場合は調査可能な状態でworktreeを保全する。
+各laneは`agent-toolkit:delegation`に従って`plan-impl-executor`を起動する。
+起動文には計画、worktree、プロジェクト規範、feedback filename、権限だけを渡し、
+実装とreviewのtask本文を複製しない。
 
-finalizeは1件ずつ次の順に直列実行する。
+laneの結果を受領後、呼び出し元が次を1件ずつ直列に行う。
 
-1. 最新の基準へ追随し、競合を解消する
-2. 最終検証する
-3. 計画準拠レビューと独立レビューを実行する
-4. 実在する未解決指摘が無いことを確認する
-5. push、CI通過確認、`atk mq adopt`を実行する
-6. 成功したlaneのworktreeだけをcleanupする
+1. 最新基準への追随と競合解消
+2. executorのcommit、検証、二系統review、完了条件の実測
+3. 追随後にcommitが変わった場合の再検証と二系統review
+4. pushとCI通過確認
+5. `atk mq adopt`と成功したlaneのworktree cleanup
 
-finalize後に対象commitを変更した場合は、最終検証と二系統レビューを再実行する。
-ユーザー合意を覆す必要が生じた場合は自動反映せず、モード別の確認経路へ送る。
-
-## 複数リポジトリ横断作業
-
-作業が複数リポジトリを対象とする場合は、各リポジトリ向けの独立したfeedbackへ分解投入する。
-複数リポジトリ間で不可分な同期改訂を要する場合だけ単一計画へ集約する。
+失敗したlaneは調査可能な状態で保持する。ユーザー合意を覆す判断は自動反映せずTBDへ送る。

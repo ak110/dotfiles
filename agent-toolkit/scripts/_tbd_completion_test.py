@@ -1,4 +1,4 @@
-"""`_tbd_completion.py`のTBD全件回答済み遷移を検証する。"""
+"""`_tbd_completion.py`のTBD回答ファイル差分通知を検証する。"""
 
 import json
 import pathlib
@@ -66,50 +66,75 @@ def _isolate_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 class TestBuildNotice:
-    """未回答件数の1件以上から0件への遷移だけを通知する。"""
+    """初回観測後に新しく回答されたファイル名だけを通知する。"""
 
-    def test_initial_observation_only_records_count(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_initial_observation_only_records_answered_filenames(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
         assert _tbd_completion.build_notice("initial", "/dummy") is None
         state = json.loads((tmp_path / "claude-agent-toolkit-initial.json").read_text(encoding="utf-8"))
-        assert state[_tbd_completion.STATE_KEY_UNANSWERED] == {"main": {_REPO: 2}}
+        assert state[_tbd_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: []}}
 
-    def test_notifies_on_transition_to_zero(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _tbd_completion.build_notice("transition", "/dummy") is None
-        _answer_all(root)
-        notice = _tbd_completion.build_notice("transition", "/dummy")
+    def test_notifies_new_answer_while_another_tbd_remains_unanswered(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
+        assert _tbd_completion.build_notice("new-answer", "/dummy") is None
+        path = root / "inbox/unanswered-0.md"
+        path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+
+        notice = _tbd_completion.build_notice("new-answer", "/dummy")
+
         assert notice is not None
         assert _REPO in notice
-        assert "answered: 1" in notice
         assert "unanswered-0.md" in notice
+        assert "unanswered-1.md" not in notice
 
-    def test_does_not_notify_when_zero_remains_zero(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_initial_answered_state_does_not_notify(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=1)
         assert _tbd_completion.build_notice("stable-zero", "/dummy") is None
         assert _tbd_completion.build_notice("stable-zero", "/dummy") is None
 
-    def test_notifies_again_after_second_transition(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _tbd_completion.build_notice("repeat", "/dummy") is None
+    def test_notifies_multiple_new_answers_together(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        root = _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
+        assert _tbd_completion.build_notice("multiple", "/dummy") is None
         _answer_all(root)
-        assert _tbd_completion.build_notice("repeat", "/dummy") is not None
-        (root / "inbox" / "unanswered-new.md").write_text(_entry(), encoding="utf-8")
-        assert _tbd_completion.build_notice("repeat", "/dummy") is None
-        (root / "inbox" / "unanswered-new.md").write_text(_entry(answer="回答\n"), encoding="utf-8")
-        assert _tbd_completion.build_notice("repeat", "/dummy") is not None
 
-    def test_does_not_notify_when_all_entries_disappear(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _tbd_completion.build_notice("removed", "/dummy") is None
-        (root / "inbox" / "unanswered-0.md").unlink()
-        assert _tbd_completion.build_notice("removed", "/dummy") is None
+        notice = _tbd_completion.build_notice("multiple", "/dummy")
+
+        assert notice is not None
+        assert "unanswered-0.md" in notice
+        assert "unanswered-1.md" in notice
+
+    def test_answer_cancellation_does_not_notify_and_reanswer_does(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=1)
+        assert _tbd_completion.build_notice("cancel", "/dummy") is None
+        path = root / "processing/answered-0.md"
+        path.write_text(_entry(), encoding="utf-8")
+        assert _tbd_completion.build_notice("cancel", "/dummy") is None
+        path.write_text(_entry(answer="再回答\n"), encoding="utf-8")
+        notice = _tbd_completion.build_notice("cancel", "/dummy")
+        assert notice is not None
+        assert "answered-0.md" in notice
+
+    def test_same_fingerprint_skips_rescan(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
+        assert _tbd_completion.build_notice("same-state", "/dummy") is None
+        monkeypatch.setattr(
+            _tbd_scan,
+            "scan_active_tbds",
+            lambda *_args: pytest.fail("指紋が同じ状態で再走査された"),
+        )
+        assert _tbd_completion.build_notice("same-state", "/dummy") is None
 
     def test_ignores_other_repositories(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0, other_repo=2)
         assert _tbd_completion.build_notice("other", "/dummy") is None
         state = json.loads((tmp_path / "claude-agent-toolkit-other.json").read_text(encoding="utf-8"))
-        assert state[_tbd_completion.STATE_KEY_UNANSWERED] == {"main": {_REPO: 1}}
+        assert state[_tbd_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: []}}
 
     def test_missing_root_does_not_write_state(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_tbd_scan, "private_notes_root", lambda: None)
@@ -134,11 +159,11 @@ class TestBuildNotice:
         assert _tbd_completion.build_notice("incomplete", "/dummy") is None
         assert not (tmp_path / "claude-agent-toolkit-incomplete.json").exists()
 
-    def test_state_write_failure_suppresses_notice(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """遷移が成立していても状態を保存できなければ通知しない。
+    def test_state_write_failure_suppresses_notification(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """新規回答があっても通知状態を保存できなければ通知しない。
 
-        保存できないまま通知すると、同じ遷移を次回以降も繰り返し通知する。
-        指紋照合を無効化して`update_state`の呼び出しを件数記録の1回に限定し、
+        保存できないまま通知すると、同じ回答を次回以降も繰り返し通知する。
+        指紋照合を無効化して`update_state`の呼び出しを回答記録の1回に限定し、
         呼び出し順に依存せず書き込み失敗だけを模擬する。
         """
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
@@ -157,10 +182,10 @@ class TestBuildNotice:
     def test_subagent_call_does_not_consume_main_transition(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """サブエージェントの呼び出しがメインへの通知を消費しない。
+        """サブエージェントの呼び出しがメインへの回答差分通知を消費しない。
 
         メインとサブエージェントのフック呼び出しは同一`session_id`で届くため、
-        遷移の判定をエージェント識別子で分けないと先に観測した側だけが通知を受け取る。
+        差分の判定をエージェント識別子で分けないと先に観測した側だけが通知を受け取る。
         """
         subagent_transcript = str(tmp_path / "agent-abc123.jsonl")
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
