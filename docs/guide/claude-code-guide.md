@@ -176,7 +176,7 @@ dotfiles配布利用者は手動登録後に次のコマンドを実行し、Cod
 chezmoi apply
 ```
 
-Codex単独セッションとdotfiles固有の配布内容は[Codex利用ガイド](codex-guide.md)を参照する。
+Codex単独セッションとdotfiles固有の配布内容については[Codex利用ガイド](codex-guide.md)を参照してください。
 
 ## atkコマンドのPATH設定
 
@@ -217,13 +217,13 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `git log`実行時に`--decorate`オプションを自動挿入する
 - `codex exec`実行前に未決事項の確認を促す
 - `sleep`直後に状態確認を連結するBash入力をブロックし、1回の待機ループへ誘導する
-- メインセッションでは`agent-toolkit:codex-exec`の起動記録`codex_exec_skill_invoked`が無い
+- メインセッションでは`agent-toolkit:delegation`の起動記録`delegation_skill_invoked`が無い
   `mcp__codex__codex`・`mcp__codex__codex-reply`の呼び出しをブロック
 - codex呼び出しのサンドボックス指定を削除・弱体化する編集をブロック
 - AgentまたはTaskツール起動時のnameパラメーター指定をブロック
 - 計画レビューでは、メインセッションが機械チェック・修正系と総合レビュー系へ直接委譲する
-- 計画実装では、`plan-impl-executor`が実装・修正系と2つの実装差分レビュー系を管理し、
-  frontmatterから読み込んだ`agent-toolkit:codex-exec`経由のcodex MCP呼び出しを許可
+- 計画実装では、`plan-impl-executor`がコミット単位ごとのwriterと2つの読み取り専用reviewerを管理し、
+  writerがcommit、呼び出し元がpushとCI確認を担当
 - 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
 - APIエラー停止後の入力待ち時にツール呼び出しの解析失敗をベルとデスクトップ通知で警告
 - APIエラーでのターン終了の発生種別をログへ記録
@@ -238,9 +238,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - 計画ファイル編集前の参照ドキュメント
  （`references/textlint-violations.md`・`agent-toolkit:plan-mode`スキル本体）未読をブロック
 - 規範文書の本文中にある他ファイルの節参照が実在しない場合に警告
-- 修正指示やcodexレビュー不合格の多さに応じてCLAUDE.md更新を提案
 - Gitワークツリー配下のコーディングエージェント向け文書や`~/.claude/plans/`への書き込み時に確認ダイアログを自動許可
-- ユーザー発話中の規範照会・是正要求の兆候を検出し、メタ視点点検・恒久化検討の実施を促す
 
 ### オンデマンドのスキル
 
@@ -250,6 +248,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
 - `/agent-standards`: コーディングエージェント向け文書固有の品質基準
 - `/commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
+- `/bugfix`: バグ対応時の原因区分、類似見直し、是正・横展開・再発防止の判断基準
+- `/delegation`: 受信者への依頼契約と、必要な場合だけ読む実行経路別の委譲手順
 - `/plan-mode`: 計画ファイル作成と、実装後の二系統レビューを含む実行引き継ぎ
   - 計画確定時は、文書タイトルが先頭行のATX形式H1として1件だけ存在することを含めて構造を検査する
   - バグ対応計画は計画メタ情報の固定記法から判定する。4原因区分、原因起点の類似見直し、
@@ -270,7 +270,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 
 ### 明示呼び出し専用のスキル
 
-- `/session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動する
+- `/session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
+  独立した読み取り専用advisorが恒久改善候補を評価する
 
 ## 更新方法
 
