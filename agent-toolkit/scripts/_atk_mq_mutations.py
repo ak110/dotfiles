@@ -664,7 +664,7 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path) 
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
-    （`agent-toolkit:process-feedbacks`スキルのステップ2.5・ステップ7参照）。
+    （`agent-toolkit:process-feedbacks`「3. 保留」節参照）。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "return-to-inbox")

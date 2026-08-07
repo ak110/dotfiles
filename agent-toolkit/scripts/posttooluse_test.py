@@ -869,7 +869,7 @@ class TestFeedbackSkillFlags:
 class TestExitSessionResetsProcessFeedbacksFlag:
     """exit-sessionスキル起動検知時のprocess_feedbacks_skill_invokedフラグリセット。
 
-    process-feedbacks/SKILL.md「ステップ8: 振り返りとセッション終了」がexit-sessionで終端するため、
+    `agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端するため、
     exit-session起動を完了シグナルとする。
     """
 

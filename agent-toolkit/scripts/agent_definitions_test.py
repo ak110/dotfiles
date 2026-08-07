@@ -53,6 +53,10 @@ _SKILL_MARKDOWN = {
 # 節参照の記法。pathと節名の間にMarkdown整形用の改行があっても同じ参照として扱う。
 _SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?\s*(?:の\s*)?「([^」\n]+)」節")
 _FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:の\s*)?「([^」\n]+)」節")
+_WORKFLOW_STEP_REFERENCE_RE = re.compile(
+    r"(?:`agent-toolkit:[a-z0-9-]+`(?:スキル)?|`?(?:agent-toolkit/skills/)?[a-z0-9-]+/SKILL\.md`?)"
+    r"\s*(?:の\s*)?「?ステップ[0-9]"
+)
 
 
 def _h2_section(text: str, heading: str) -> str:
@@ -423,11 +427,22 @@ def _markdown_headings(path: pathlib.Path) -> set[str]:
     return {match.group(1).strip() for match in re.finditer(r"^#{1,6}\s+(.+?)\s*$", text, re.MULTILINE)}
 
 
-def _resolve_reference_target(name: str) -> pathlib.Path | None:
-    """節参照が指すMarkdownファイルを一意に解決する。解決できない場合はNoneを返す。"""
-    repository_relative = _REPOSITORY_ROOT / name
-    if repository_relative.is_file():
-        return repository_relative
+def _resolve_repository_markdown(path: pathlib.Path) -> pathlib.Path | None:
+    """リポジトリ内に実在するMarkdownファイルだけを解決する。"""
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(_REPOSITORY_ROOT.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def _resolve_reference_target(name: str, source: pathlib.Path) -> pathlib.Path | None:
+    """参照元相対、リポジトリ相対、配布物内の順にMarkdownファイルを一意に解決する。"""
+    for candidate in (source.parent / name, _REPOSITORY_ROOT / name):
+        resolved = _resolve_repository_markdown(candidate)
+        if resolved is not None:
+            return resolved
     candidates = _DISTRIBUTION_MARKDOWN_BY_NAME.get(pathlib.PurePath(name).name, [])
     return candidates[0] if len(candidates) == 1 else None
 
@@ -439,19 +454,31 @@ def test_section_references_point_to_existing_headings() -> None:
     参照先を一意に解決できない形式は誤検出を避けるため検査対象から除く。
     """
     missing: list[str] = []
+    checked_targets: set[pathlib.Path] = set()
     sources = sorted({source for root in _SECTION_REFERENCE_SOURCE_ROOTS for source in root.rglob("*")})
     for source in sources:
         if source.suffix not in {".md", ".py", ".txt"} or not source.is_file():
             continue
         text = source.read_text(encoding="utf-8")
         references = [(_SKILL_MARKDOWN.get(skill), section) for skill, section in _SKILL_SECTION_REFERENCE_RE.findall(text)]
-        references += [(_resolve_reference_target(name), section) for name, section in _FILE_SECTION_REFERENCE_RE.findall(text)]
+        references += [
+            (_resolve_reference_target(name, source), section) for name, section in _FILE_SECTION_REFERENCE_RE.findall(text)
+        ]
         for target, section in references:
-            if target is None or section in _markdown_headings(target):
+            if target is None:
+                continue
+            checked_targets.add(target.resolve())
+            if section in _markdown_headings(target):
                 continue
             missing.append(
                 f"{source.relative_to(_REPOSITORY_ROOT)}: 「{section}」節が{target.relative_to(_REPOSITORY_ROOT)}に存在しない"
             )
+        if _WORKFLOW_STEP_REFERENCE_RE.search(text):
+            missing.append(f"{source.relative_to(_REPOSITORY_ROOT)}: workflowの番号形式ではなく現行の見出し名で節を参照する")
+    expected_local_target = (
+        _REPOSITORY_ROOT / ".claude" / "skills" / "agent-toolkit-edit" / "references" / "version-bump.md"
+    ).resolve()
+    assert expected_local_target in checked_targets, "プロジェクトローカルスキルの相対referenceを検査できていない"
     assert not missing, "\n".join(missing)
 
 
@@ -464,3 +491,12 @@ def test_section_reference_patterns_accept_line_breaks() -> None:
     assert _FILE_SECTION_REFERENCE_RE.findall(file_reference) == [
         ("agent-toolkit/skills/commit/references/push-and-ci.md", "CI通過確認")
     ]
+
+
+def test_workflow_step_reference_pattern_requires_explicit_target() -> None:
+    """workflowを特定した旧番号参照だけを検出し、同一文書内の手順番号を除外する。"""
+    skill_reference = "`agent-toolkit:process-feedbacks`の" + "ステップ3"
+    file_reference = "process-feedbacks/SKILL.md「" + "ステップ8: 終了」"
+    assert _WORKFLOW_STEP_REFERENCE_RE.search(skill_reference) is not None
+    assert _WORKFLOW_STEP_REFERENCE_RE.search(file_reference) is not None
+    assert _WORKFLOW_STEP_REFERENCE_RE.search("次のステップ2へ進む") is None

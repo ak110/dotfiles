@@ -34,8 +34,8 @@
 
 規範改訂・スコープ判断・方針衝突の解釈でユーザーの過去方針・選好を参照する場合、
 adopted配下のユーザー起草フィードバックを一次資料とする。
-適用主体は`agent-toolkit:session-review`のステップ2と
-`agent-toolkit:process-feedbacks`のステップ3の双方とする。
+適用主体は`agent-toolkit:session-review`「提案の確定」節と
+`agent-toolkit:process-feedbacks`「2. 調査と採否」節の双方とする。
 ユーザー起草フィードバックはfrontmatterに`source`キーを持たないものとし、
 `source: session-review`・`source: alert-monitor`等、`source`キーを持つ
 自動生成フィードバックは対象外とする。
@@ -43,7 +43,7 @@ adopted配下のユーザー起草フィードバックを一次資料とする�
 
 ### 既採用意向との衝突照合
 
-`agent-toolkit:session-review`のステップ2で適用する。生成候補は対象target_repoの
+`agent-toolkit:session-review`「提案の確定」節で適用する。生成候補は対象target_repoの
 既採用フィードバック（adopted配下）で示された意向と衝突しないかを確認する。
 
 - 候補ファイルは`atk mq list --status=adopted --type=feedback --target-repo=<repo>`で
@@ -55,8 +55,8 @@ adopted配下のユーザー起草フィードバックを一次資料とする�
 
 ### 不採用済み主題との照合
 
-`agent-toolkit:session-review`のステップ2と`agent-toolkit:process-feedbacks`の
-ステップ3の双方で適用する。候補の確定または採否判定の前に、対象リポジトリの過去の
+`agent-toolkit:session-review`「提案の確定」節と`agent-toolkit:process-feedbacks`
+「2. 調査と採否」節の双方で適用する。候補の確定または採否判定の前に、対象リポジトリの過去の
 不採用履歴を次の順で照合する。
 
 1. 検索語は候補要約またはフィードバック原文冒頭1文が指す対象機能・対象コンポーネントを表す
@@ -191,7 +191,8 @@ adopted配下のユーザー起草フィードバックを一次資料とする�
 
 ## 方針固定化
 
-`agent-toolkit:session-review`ステップ2「Draft Additions」の生成基準バレットと、
+`agent-toolkit/skills/session-review/references/generation-criteria-detail.md`
+「提案する候補」節と、
 本ファイル「総量規制の努力目標」節は、ユーザー明示方針（2026-07-21確定）である。
 `agent-toolkit:agent-standards`「文書記述量の管理」節の削減判定基準も同様にユーザー明示方針
 （出典はadopted配下の採用済みユーザー起草フィードバック）として扱う。
@@ -225,7 +226,8 @@ adopted配下のユーザー起草フィードバックを一次資料とする�
   例外条項を末尾へ追記する」構造を指す。当該例外規定が更に他の既存規範と衝突する場合、または
   例外条項が主規定を実質的に無効化する場合に限り不採用を確定してよい。不採用確定時は当該検討結果を
   `### 却下した代替案`へ記録する
-- 例外4: `agent-toolkit:session-review`ステップ2の生成基準（層3）は反復証跡の有無を理由に
+- 例外4: `agent-toolkit/skills/session-review/references/generation-criteria-detail.md`
+  「提案する候補」節の第3項は反復証跡の有無を理由に
   候補を生成する前の段階で除外するゲートである。「不採用根拠の限定」節が扱う生成済み候補の採否判定とは
   適用段階が異なるため、両者は衝突しない
 
