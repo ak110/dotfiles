@@ -383,13 +383,67 @@ _PULL_MIN_INTERVAL_SECONDS = 30.0
 _LEGACY_RESERVATION_INTERNAL_REPO = "internal/agent-toolkit/reservations"
 
 
-def _is_legacy_reservation_companion(data: dict[str, object]) -> bool:
-    """旧予約が生成した内部companionかを返す。"""
-    return (
-        data.get("target_repo") == _LEGACY_RESERVATION_INTERNAL_REPO
-        and data.get("type") == MQ_TYPE_FEEDBACK
-        and isinstance(data.get("reservation_companion"), dict)
+def _is_legacy_token_hash(value: object) -> bool:
+    """2.34.0の予約が記録したSHA-256値かを返す。"""
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
+def _legacy_reservation_companion(data: dict[str, object]) -> dict[str, str] | None:
+    """2.34.0が生成した内部companion metadataを返す。"""
+    raw = data.get("reservation_companion")
+    if (
+        data.get("target_repo") != _LEGACY_RESERVATION_INTERNAL_REPO
+        or data.get("type") != MQ_TYPE_FEEDBACK
+        or not isinstance(raw, dict)
+    ):
+        return None
+    metadata: dict[Any, Any] = raw
+    target_repo = metadata.get("target_repo")
+    target_filename = metadata.get("target_filename")
+    token_hash = metadata.get("token_hash")
+    if (
+        not isinstance(target_repo, str)
+        or not target_repo
+        or not isinstance(target_filename, str)
+        or pathlib.Path(target_filename).name != target_filename
+        or not target_filename.endswith(".md")
+        or not _is_legacy_token_hash(token_hash)
+    ):
+        return None
+    assert isinstance(token_hash, str)
+    return {"target_repo": target_repo, "target_filename": target_filename, "token_hash": token_hash}
+
+
+def _is_legacy_reservation(
+    data: dict[str, object],
+    *,
+    filename: str,
+    state: str,
+    companions: tuple[tuple[str, dict[str, str]], ...],
+) -> bool:
+    """対応する内部companionを持つ2.34.0形式の予約かを返す。"""
+    raw = data.get("reservation")
+    target_repo = data.get("target_repo")
+    if state != MQ_STATE_PROCESSING or data.get("type") != MQ_TYPE_FEEDBACK or raw is None:
+        return False
+    if not isinstance(target_repo, str) or not target_repo:
+        return False
+    reservation: dict[Any, Any] = raw if isinstance(raw, dict) else {}
+    companion = reservation.get("companion")
+    token_hash = reservation.get("token_hash")
+    matching = tuple(
+        (companion_filename, metadata)
+        for companion_filename, metadata in companions
+        if metadata["target_repo"] == target_repo and metadata["target_filename"] == filename
     )
+    if not matching:
+        return False
+    if isinstance(companion, str) and _is_legacy_token_hash(token_hash):
+        return any(
+            companion_filename == companion and metadata["token_hash"] == token_hash
+            for companion_filename, metadata in matching
+        )
+    return True
 
 
 def _legacy_companion_dependency(data: dict[str, object]) -> str | None:
@@ -413,6 +467,7 @@ def _migrate_legacy_reservations(private_notes: pathlib.Path) -> int:
     processing_dir = private_notes / MQ_STATE_PROCESSING
     parsed_entries: list[tuple[pathlib.Path, dict[str, object], str]] = []
     companion_paths: set[pathlib.Path] = set()
+    companion_metadata: list[tuple[str, dict[str, str]]] = []
     companion_names: set[str] = set()
     reservation_paths: set[pathlib.Path] = set()
 
@@ -425,10 +480,17 @@ def _migrate_legacy_reservations(private_notes: pathlib.Path) -> int:
                 continue
             data, body = parsed
             parsed_entries.append((path, data, body))
-            if _is_legacy_reservation_companion(data):
+            metadata = _legacy_reservation_companion(data)
+            if metadata is not None:
                 companion_paths.add(path)
+                companion_metadata.append((path.name, metadata))
                 companion_names.add(path.name)
-            if "reservation" in data:
+            if _is_legacy_reservation(
+                data,
+                filename=path.name,
+                state=path.parent.name,
+                companions=tuple(companion_metadata),
+            ):
                 reservation_paths.add(path)
                 dependency = _legacy_companion_dependency(data)
                 if dependency is not None:

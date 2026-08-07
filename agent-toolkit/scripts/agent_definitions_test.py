@@ -17,6 +17,7 @@ _PLAN_IMPL_TASK = _PLAN_MODE_REFERENCES / "implementation-task.md"
 _PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-plan-review-task.md"
 _PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-independent-review-task.md"
 _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
+_COORDINATION_PREFLIGHT = _ADD_FEEDBACK.parent / "references" / "coordination-preflight.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
 _BUGFIX_SKILL = _AGENTS_DIR.parent / "skills" / "bugfix" / "SKILL.md"
@@ -253,6 +254,14 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
         assert removed_command not in add_feedback
         assert removed_command not in plan_and_add
         assert removed_command not in process
+
+
+def test_coordination_preflight_conditions_plan_handoff_note() -> None:
+    """通常addに計画移管のnoteを要求しない。"""
+    preflight = _COORDINATION_PREFLIGHT.read_text(encoding="utf-8")
+
+    assert "計画作成へ移管する場合は" in preflight
+    assert "通常のadd経路では、実際の終端理由" in preflight
 
 
 def test_problem_solution_proportionality_contract_is_complete() -> None:

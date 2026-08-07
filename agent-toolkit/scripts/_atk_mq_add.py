@@ -269,6 +269,9 @@ _RESERVED_FRONTMATTER_KEYS = (
     "depends_on",
     "repair_target",
     "repair_kind",
+    "reservation",
+    "reservation_companion",
+    "target_commit_history",
 )
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
@@ -278,8 +281,9 @@ _RESERVED_FRONTMATTER_KEYS = (
 CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
 保存する。`type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
-`target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`repair_target`・`repair_kind`は
-利用者による直接指定を禁止し、CLIが管理する識別情報・依存・修復TBDの対象と理由区分として予約する。
+`target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`repair_target`・`repair_kind`・
+`reservation`・`reservation_companion`・`target_commit_history`は利用者による直接指定を禁止し、
+CLIが管理する識別情報、依存、修復TBD、旧形式の内部metadataとして予約する。
 """
 
 

@@ -91,6 +91,24 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     assert (notes / "processing/entry.md").is_file()
 
 
+def test_cli_converts_web_input_error_to_user_facing_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """dispatch境界でWebInputErrorを利用者向けの終了状態へ変換する。"""
+    notes = _setup_notes(tmp_path)
+    _write_tbd_entry(notes, "tbd.md", answer="")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "adopt", "tbd.md", "--category", "test"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "操作を拒否しました: --categoryはfeedback専用です: tbd.md" in captured.err
+
+
 class TestAnsweredTbdMutationGate:
     """adopt・reject直前の回答済みactive TBD確認を検証する。"""
 

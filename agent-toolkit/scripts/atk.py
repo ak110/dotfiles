@@ -172,7 +172,8 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         nargs="*",
         help=(
             "投入する本文（省略時は$EDITORで編集する）。--type=feedback（既定）・tbdで種別を切り替える。"
-            "対象リポジトリは常にカレントディレクトリから解決する。"
+            "対象リポジトリは省略時にカレントworktree、ローカルパス指定時に指定worktree、"
+            "正規化リモートURL指定時にローカルHEADを持たないリポジトリ識別子として解決する。"
             "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
         ),
     )
@@ -189,7 +190,8 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
             "--type=feedback（既定）でのみ指定でき、指定したパスは実在を検証する。"
             "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
             "計画ファイルがベースコミットを完全な識別子で記載する場合、投入先作業ツリーのHEADと"
-            "一致することを投入前に検証する。"
+            "一致することを投入前に検証する。計画作成に用いた正確なworktreeを指定し、"
+            "別worktreeのHEADを照合対象にしない。"
         ),
     )
     add.add_argument(
@@ -672,7 +674,11 @@ def main(
         "commit": lambda: _mutations._cmd_commit(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
     }
-    exit_code = dispatch[sub]() or 0
+    try:
+        exit_code = dispatch[sub]() or 0
+    except _common.WebInputError as error:
+        print(f"操作を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
     suppress_notify = (sub == "list" and _list._covers_unanswered_tbds(args)) or (
         sub == "show" and _show._covers_unanswered_tbds(args)
     )

@@ -207,6 +207,19 @@ class TestAddTargetRepoOptionParser:
         args = parser.parse_args(["mq", "add", *type_option, "--target-repo", "github.com/foo/bar", "本文"])
         assert args.target_repo == "github.com/foo/bar"
 
+    def test_add_help_describes_explicit_worktree_resolution(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """addの案内がREPO_PATHとtarget_repo指定の解決先を区別する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["mq", "add", "--help"])
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "ローカルパス指定時に指定worktree" in output
+        assert "正規化リモートURL指定時にローカルHEADを持たない" in output
+        assert "計画作成に用いた正確なworktreeを指定し" in output
+
 
 def test_add_output_reloads_saved_metadata(
     monkeypatch: pytest.MonkeyPatch,

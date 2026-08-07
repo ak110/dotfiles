@@ -96,11 +96,16 @@ class TestLegacyReservationMigration:
         return path
 
     @staticmethod
-    def _write_companion(notes: pathlib.Path, filename: str = "companion.md") -> pathlib.Path:
+    def _write_companion(
+        notes: pathlib.Path,
+        filename: str = "companion.md",
+        target_filename: str = "main.md",
+    ) -> pathlib.Path:
         path = notes / "inbox" / filename
         path.write_text(
             "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: feedback\n"
-            "reservation_companion: {target_repo: github.com/example/foo}\n---\n\n内部項目\n",
+            "reservation_companion: {target_repo: github.com/example/foo, "
+            f"target_filename: {target_filename}, token_hash: {'a' * 64}}}\n---\n\n内部項目\n",
             encoding="utf-8",
         )
         return path
@@ -109,12 +114,16 @@ class TestLegacyReservationMigration:
         "reservation",
         [
             (
-                "{companion_dependency_added: 'true', companion_dependency_filename: companion.md, "
-                "expires_at: '2099-01-01T00:00:00+00:00'}"
+                "{token_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, owner: owner, "
+                "generation: '1', reason: plan, reserved_at: '2026-08-08T00:00:00+00:00', "
+                "updated_at: '2026-08-08T00:00:00+00:00', expires_at: '2099-01-01T00:00:00+00:00', "
+                "companion: companion.md, companion_dependency_added: 'true', companion_dependency_filename: companion.md}"
             ),
             (
-                "{companion_dependency_added: 'true', companion_dependency_filename: companion.md, "
-                "expires_at: '2000-01-01T00:00:00+00:00'}"
+                "{token_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, owner: owner, "
+                "generation: '1', reason: plan, reserved_at: '2026-08-08T00:00:00+00:00', "
+                "updated_at: '2026-08-08T00:00:00+00:00', expires_at: '2000-01-01T00:00:00+00:00', "
+                "companion: companion.md, companion_dependency_added: 'true', companion_dependency_filename: companion.md}"
             ),
             "broken",
         ],
@@ -192,6 +201,33 @@ class TestLegacyReservationMigration:
         original = path.read_text(encoding="utf-8").replace(
             "type: feedback\n",
             "type: feedback\nreservation_companion: {target_repo: github.com/example/foo}\n",
+        )
+        path.write_text(original, encoding="utf-8")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8") == original
+        assert not any(any("legacy queue reservations" in value for value in call["cmd"]) for call in git_calls)
+
+    def test_user_reservation_metadata_is_unchanged_without_legacy_companion(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """旧companionが無い利用者metadataは移行対象にしない。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "user.md", body="利用者本文")
+        processing_path = notes / "processing" / path.name
+        processing_path.parent.mkdir()
+        path.rename(processing_path)
+        path = processing_path
+        original = path.read_text(encoding="utf-8").replace(
+            "type: feedback\n",
+            "type: feedback\nreservation: {owner: user, purpose: custom}\ntarget_commit_history: [custom]\n",
         )
         path.write_text(original, encoding="utf-8")
         git_calls: list[_GitCall] = []
