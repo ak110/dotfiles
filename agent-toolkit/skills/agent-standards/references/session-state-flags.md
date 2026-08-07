@@ -13,7 +13,6 @@
 - `session_review_invoked`: 振り返りスキルの起動を記録し、Stop hookの重複を抑止する
 - `agent_toolkit_edit_skill_invoked`: agent-toolkit-edit起動を記録し、編集警告の抑制に使う
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
-- `plan_and_add_entries_skill_invoked`: plan-and-add-feedback起動を記録する
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
   `delegation`を起動した場合にPostToolUseが真化する。
   メインセッションからcodex MCPを呼び出す前の経路検査に使い、セッション終了まで保持する

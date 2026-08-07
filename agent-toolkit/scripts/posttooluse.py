@@ -16,9 +16,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. codex MCP呼び出し後のリモートref変化確認
-10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)。
-    `plan-and-add-feedback`起動検知による`plan_and_add_entries_skill_invoked`フラグの設定と、
-    `process-feedbacks`起動検知による同フラグのリセットも同経路で扱う (Skill)
+10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
 12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
@@ -163,7 +161,6 @@ _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "
 # （`agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端する）。
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 
-_PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
 _DELEGATION_SKILL_NAMES = frozenset({"agent-toolkit:delegation", "delegation"})
 
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
@@ -229,24 +226,6 @@ def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
     if not state.get("process_feedbacks_skill_invoked", False):
         return None
     state["process_feedbacks_skill_invoked"] = False
-    return state
-
-
-def _set_plan_and_add_entries_invoked(state: dict) -> dict | None:
-    """plan-and-add-feedbackスキル起動フラグを常時Trueへ上書きする。"""
-    state["plan_and_add_entries_skill_invoked"] = True
-    return state
-
-
-def _reset_plan_and_add_entries_invoked(state: dict) -> dict | None:
-    """process-feedbacks起動検知（plan-and-add-feedbackの終端工程が委譲する先）でフラグをリセットする。
-
-    `plan-and-add-feedback/SKILL.md`「手順」節2は`agent-toolkit:process-feedbacks`
-    「フィードバック投入」節を参照呼び出しして終端するため、当該スキルの起動を終端シグナルとする。
-    """
-    if not state.get("plan_and_add_entries_skill_invoked", False):
-        return None
-    state["plan_and_add_entries_skill_invoked"] = False
     return state
 
 
@@ -419,11 +398,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             update_state(session_id, _set_review_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
             update_state(session_id, _set_process_feedbacks_invoked)
-            update_state(session_id, _reset_plan_and_add_entries_invoked)
         if isinstance(skill_name, str) and skill_name in _EXIT_SESSION_SKILL_NAMES:
             update_state(session_id, _reset_process_feedbacks_invoked)
-        if isinstance(skill_name, str) and skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
-            update_state(session_id, _set_plan_and_add_entries_invoked)
         if isinstance(skill_name, str) and skill_name in _DELEGATION_SKILL_NAMES:
 
             def _set_delegation_invoked(state: dict) -> dict | None:

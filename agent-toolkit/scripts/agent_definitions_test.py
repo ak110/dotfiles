@@ -203,11 +203,10 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
     assert _SESSION_REVIEW_EVIDENCE.is_file()
 
 
-def test_plan_and_add_feedback_does_not_claim_removed_enter_plan_mode_hook() -> None:
-    """plan mode外で実行する規範が削除済みPreToolUse検査へ依存しないこと。"""
+def test_plan_and_add_feedback_runs_outside_plan_mode() -> None:
+    """plan-and-add-feedbackをplan mode外で実行する契約を維持する。"""
     text = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     assert "本スキルはplan mode外で実行する" in text
-    assert "PreToolUseフックが`plan_and_add_entries_skill_invoked`真時にブロックする" not in text
 
 
 def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
