@@ -73,6 +73,11 @@ def test_completed_report_passes() -> None:
     assert not violations
 
 
+def test_empty_completion_report_is_rejected_structurally() -> None:
+    assert advisor._is_empty_completion_report("  \n")  # pylint: disable=protected-access
+    assert not advisor._is_empty_completion_report("指摘なし")  # pylint: disable=protected-access
+
+
 @pytest.mark.parametrize("label", advisor.PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
 def test_each_required_label_is_enforced(label: str) -> None:
     report = _report().replace(f"{label}:", f"missing_{label}:", 1)

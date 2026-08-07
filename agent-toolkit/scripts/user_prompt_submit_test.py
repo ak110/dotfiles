@@ -3,55 +3,17 @@
 subprocessで起動しexit code・状態ファイルの内容を検証する。
 スラッシュコマンド起動時のセッション状態フラグ書き込みを網羅検証する。
 
-規範照会・是正要求検出（`_norm_inquiry_escalation.py`の`_match_norm_inquiry_escalation`への委譲、
-クールダウン判定）は`main()`公開経路（フック実行経路）経由でのみ検証する。
-`_match_norm_inquiry_escalation`単体への直接テストは設けない。
-検出語の具体入力は隔離フィクスチャ
-`agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt`から
-`_load_norm_inquiry_inputs`経由で読み込み、テストコード本文へ直接転記しない
-（`agent-toolkit:agent-standards`「完成条件」節）。
 """
 
 import json
 import os
 import pathlib
 import subprocess
-import sys
 
 import _fork_runner
-import pytest
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 _SCRIPT = _SCRIPTS_DIR / "claude_hook.py"
-_NORM_INQUIRY_INPUTS_PATH = (
-    _SCRIPTS_DIR.parent / "skills" / "agent-standards" / "references" / "_norm_inquiry_escalation_test_inputs.txt"
-)
-
-# クールダウン閾値は実装側の定数を直接参照する。
-sys.path.insert(0, str(_SCRIPTS_DIR))
-from user_prompt_submit import (  # noqa: E402  # pylint: disable=wrong-import-position
-    _NORM_INQUIRY_COOLDOWN_TURNS as _COOLDOWN_TURNS,
-)
-
-
-def _load_norm_inquiry_inputs() -> dict[str, list[str]]:
-    """隔離フィクスチャからカテゴリ別のテスト入力を読み込む。
-
-    フォーマットは`<category>\\t<text>`のタブ区切り。空行と`#`先頭行はスキップする。
-    戻り値はカテゴリごとの入力テキスト一覧の辞書
-    （`norm-inquiry`・`correction-request`・非該当を示す`none`）。
-    """
-    by_category: dict[str, list[str]] = {}
-    for raw in _NORM_INQUIRY_INPUTS_PATH.read_text(encoding="utf-8").splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#") or "\t" not in stripped:
-            continue
-        category, text = stripped.split("\t", 1)
-        by_category.setdefault(category.strip(), []).append(text.strip())
-    return by_category
-
-
-_NORM_INQUIRY_INPUTS = _load_norm_inquiry_inputs()
 
 
 def _run(
@@ -72,22 +34,6 @@ def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _additional_context(result: subprocess.CompletedProcess[str]) -> str | None:
-    """標準出力の`hookSpecificOutput.additionalContext`を取り出す。未出力時は`None`。"""
-    stdout = result.stdout.strip()
-    if not stdout:
-        return None
-    payload = json.loads(stdout)
-    return payload.get("hookSpecificOutput", {}).get("additionalContext")
-
-
-def _prime_counter(sid: str, state_dir: pathlib.Path, *, turns: int) -> None:
-    """`user_prompt_counter`を非検出プロンプトの反復送信で指定回数まで進める。"""
-    non_matching = _NORM_INQUIRY_INPUTS["none"][0]
-    for _ in range(turns):
-        _run({"session_id": sid, "prompt": non_matching}, state_dir=state_dir)
 
 
 class TestSlashCommandDetection:
@@ -158,7 +104,6 @@ class TestNonMatchingPrompts:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _additional_context(result) is None
         state = _read_state(tmp_path, sid)
         assert "plan_mode_skill_invoked" not in state
         assert "session_review_invoked" not in state
@@ -193,142 +138,4 @@ class TestNonMatchingPrompts:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _additional_context(result) is None
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
-
-
-class TestNormInquiryEscalationDetection:
-    """規範照会・是正要求検出時の`additionalContext`注入とクールダウン判定の検証。"""
-
-    @pytest.mark.parametrize("prompt", _NORM_INQUIRY_INPUTS.get("norm-inquiry", []))
-    def test_norm_inquiry_pattern_emits_additional_context(self, tmp_path: pathlib.Path, prompt: str):
-        """規範照会パターン（`norm-inquiry`カテゴリ）でリマインダーが注入される。
-
-        隔離フィクスチャの全代表フレーズを`parametrize`で走査する。
-        """
-        sid = f"norm-inquiry-detect-{abs(hash(prompt))}"
-        _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-        result = _run(
-            {"session_id": sid, "prompt": prompt},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        context = _additional_context(result)
-        assert context is not None, f"unmatched norm-inquiry input: {prompt!r}"
-        assert context.startswith("[auto-generated: agent-toolkit/user_prompt_submit]")
-        assert context.endswith(
-            "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
-        )
-        assert _read_state(tmp_path, sid).get("norm_inquiry_last_injected") == _COOLDOWN_TURNS
-
-    @pytest.mark.parametrize("prompt", _NORM_INQUIRY_INPUTS.get("correction-request", []))
-    def test_correction_request_pattern_emits_additional_context(self, tmp_path: pathlib.Path, prompt: str):
-        """是正要求パターン（`correction-request`カテゴリ）でリマインダーが注入される。"""
-        sid = f"correction-request-detect-{abs(hash(prompt))}"
-        _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-        result = _run(
-            {"session_id": sid, "prompt": prompt},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        assert _additional_context(result) is not None, f"unmatched correction-request input: {prompt!r}"
-
-    @pytest.mark.parametrize("prompt", _NORM_INQUIRY_INPUTS.get("none", []))
-    def test_non_matching_prompt_emits_nothing(self, tmp_path: pathlib.Path, prompt: str):
-        """規範・ルール言及を伴わない単純な質問・要望では追加出力が発生しない。"""
-        sid = f"non-matching-{abs(hash(prompt))}"
-        _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-        result = _run(
-            {"session_id": sid, "prompt": prompt},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        assert _additional_context(result) is None, f"false-positive on: {prompt!r}"
-
-    def test_cooldown_suppresses_immediate_redetection(self, tmp_path: pathlib.Path):
-        """クールダウン中（直近注入から`_COOLDOWN_TURNS`未満）の再検出は抑止される。"""
-        sid = "cooldown-suppress"
-        _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-        first = _run(
-            {"session_id": sid, "prompt": _NORM_INQUIRY_INPUTS["norm-inquiry"][0]},
-            state_dir=tmp_path,
-        )
-        assert _additional_context(first) is not None
-        # 直後の再検出（カウンター差分1 < _COOLDOWN_TURNS）は抑止される。
-        second = _run(
-            {"session_id": sid, "prompt": _NORM_INQUIRY_INPUTS["correction-request"][0]},
-            state_dir=tmp_path,
-        )
-        assert second.returncode == 0
-        assert _additional_context(second) is None
-
-
-def test_task_notification_prompt_does_not_trigger_norm_inquiry(tmp_path: pathlib.Path) -> None:
-    sid = "task-notification-no-inquiry"
-    prompt = "<task-notification>\n定義だけを直しても再発するのではありませんか。\n</task-notification>"
-    _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-
-    result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
-
-    assert result.returncode == 0
-    assert _additional_context(result) is None
-
-
-def test_task_notification_prompt_does_not_increment_counter(tmp_path: pathlib.Path) -> None:
-    sid = "task-notification-no-counter"
-    prompt = "  <task-notification>\n定義だけを直しても再発するのではありませんか。\n</task-notification>"
-
-    result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
-
-    assert result.returncode == 0
-    assert "user_prompt_counter" not in _read_state(tmp_path, sid)
-
-
-def test_plain_user_prompt_still_triggers_norm_inquiry(tmp_path: pathlib.Path) -> None:
-    sid = "plain-user-prompt"
-    _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-
-    result = _run(
-        {"session_id": sid, "prompt": "定義だけを直しても再発するのではありませんか。"},
-        state_dir=tmp_path,
-    )
-
-    assert result.returncode == 0
-    assert _additional_context(result) is not None
-
-
-class TestBoundaryConditions:
-    """空文字列・単一行・末尾改行有無・複数行の境界条件を`main()`経由で検証する。"""
-
-    def test_empty_string_prompt_exits_zero_without_output(self, tmp_path: pathlib.Path):
-        sid = "boundary-empty-prompt"
-        result = _run({"session_id": sid, "prompt": ""}, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert _additional_context(result) is None
-        assert _read_state(tmp_path, sid) == {}
-
-    def test_single_line_without_trailing_newline(self, tmp_path: pathlib.Path):
-        sid = "boundary-single-line"
-        _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-        prompt = _NORM_INQUIRY_INPUTS["norm-inquiry"][0]
-        assert not prompt.endswith("\n")
-        result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert _additional_context(result) is not None
-
-    def test_single_line_with_trailing_newline(self, tmp_path: pathlib.Path):
-        sid = "boundary-trailing-newline"
-        _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-        prompt = _NORM_INQUIRY_INPUTS["norm-inquiry"][0] + "\n"
-        result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert _additional_context(result) is not None
-
-    def test_multi_line_prompt_with_match_on_later_line(self, tmp_path: pathlib.Path):
-        """先頭行が非該当でも、プロンプト全文の後続行に検出語があれば検出する。"""
-        sid = "boundary-multiline"
-        _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
-        prompt = "背景を説明します。\n" + _NORM_INQUIRY_INPUTS["correction-request"][0] + "\n補足も書きます。"
-        result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert _additional_context(result) is not None

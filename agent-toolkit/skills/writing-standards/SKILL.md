@@ -27,7 +27,7 @@ description: >
   - 「なぜそう設計したか」「どこに注意が必要か」を中心に書く
   - 行動指示・体言止めの扱いはエンドユーザー向けに準じる
 - コーディングエージェント向け文書: 前置き・自己紹介・書き手目線の解説は不要とし、判断に必要な情報のみ直接記述する
-  - 行動指示は常体の終止形（「〜する」「〜を確認する」「〜を参照する」など）を使う
+  - 行動要求は命令形・依頼形・体言止めで主体と対象を示し、説明の「〜する」で要求を代用しない
   - 箇条書きの体言止め列挙は許容する
 
 ## ユーザー入力素材の取扱い
@@ -151,9 +151,7 @@ uvx pyfltr run --commands=colloquial-check --enable=colloquial-check <対象フ�
 pyfltr内蔵の辞書ファイルは、メインから直接読み込まない。
 対象は`Read`に限らず、シェルコマンドによる内容表示を含む全ての読み込み経路とする。
 構造調査など、調査目的の内容確認も対象に含む。
-内容確認が必要な場合は`model: haiku`を指定したExploreサブエージェント経由で取得する。
-修正はAgentツールで`subagent_type: claude`を`model: sonnet`で起動して行う。
-参照先は`agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`とする。
+内容確認や修正を委譲する場合は`agent-toolkit:delegation`の経路選択に従う。
 口語禁止語を計画ファイル本文・PR説明・チャット転記等で議論する場合は語そのものを書かず、
 `references/tone-examples.md`の節名（比喩動詞・主観評価語など）で間接参照する。
 LLM口調の禁止語彙・対比例は`references/tone-examples-llm-tone.md`に従う。

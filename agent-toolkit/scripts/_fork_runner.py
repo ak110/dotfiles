@@ -193,7 +193,6 @@ def _serve() -> None:
     import _plan_format  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _process_loop_log  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _response_language_check  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
-    import _scope_escalation  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _session_state  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _stop_gate  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _tracked_subagent_types  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
@@ -212,7 +211,6 @@ def _serve() -> None:
         _plan_format,
         _process_loop_log,
         _response_language_check,
-        _scope_escalation,
         _session_state,
         _stop_gate,
         _tracked_subagent_types,

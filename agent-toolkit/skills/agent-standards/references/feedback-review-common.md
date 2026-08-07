@@ -1,12 +1,7 @@
----
-# 同期注記: 「追記文言案の表記統一の事前照合」節の照合対象4種は
-# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`
-# 「Explore委譲雛形」節の観点14と意図的に同期する。改訂時は両ファイルを同時更新する。
----
 # フィードバック処理・振り返り共通観点
 
-`agent-toolkit:session-review`・`agent-toolkit:process-feedbacks`両スキルから参照するSSOT。
-両スキルで独立に定義していた採否判定観点・調査観点を集約する。
+複数workflowが候補を採用・不採用と判断する際の共通観点を集約する。
+候補の探索、委譲prompt、処理手順、出力書式は各workflowが担う。
 
 ## 事前調査の徹底
 

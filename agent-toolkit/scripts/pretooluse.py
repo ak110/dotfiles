@@ -51,10 +51,6 @@ Bash:
 - `codex exec`の未決事項念押し (warn)
 - 一括ステージ実行時の自セッション編集対象外ファイル警告 (warn)
 
-AskUserQuestion:
-
-- 縮退誘発フレーズ（作業量・残コンテキスト等を根拠とした分割可否相談・進め方確認）の検出 (block)
-
 Skill:
 
 - `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
@@ -112,10 +108,6 @@ from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import
 from _file_lock import rotate_if_needed as _rotate_if_needed  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _SCOPE_ESCALATION_ALTERNATIVES,
-    _match_scope_escalation,
-)
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
@@ -137,56 +129,8 @@ _JAPANESE_SCRIPT_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
 # 半角ハングル（U+FFA0-U+FFDC）・キリル文字（U+0400-U+04FF）・キリル補助（U+0500-U+052F）を対象とする。
 _FOREIGN_SCRIPT_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-\uffdc\u0400-\u04ff\u0500-\u052f]")
 
-# メインエージェントからの直接Readを禁じる隔離指定リファレンス。
-# `scope-escalation-phrases.md`「隔離リファレンスの取り扱い」節が指定する対象と同一SSOTとする。
-# `isSidechain`真の呼び出しは通過させ、`agent-toolkit-edit`スキル起動セッションも例外とする。
-_ISOLATED_READ_TARGETS: tuple[str, ...] = (
-    "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
-    "agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt",
-)
-
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/pretooluse"
-
-
-def _truncate_matched_phrase(phrase: str) -> str:
-    """scope-escalationマッチ文言をブロックメッセージ表示用に整形する。
-
-    禁止語彙のクイズ化を避けるため、ブロック契機となったマッチテキストそのものを
-    利用者が判読可能な形で通知する（`agent-toolkit:agent-standards`「完成条件」節）。
-    CR/LFを除去し、通知の肥大化を避けるため先頭50文字までに切り詰める。
-    """
-    return phrase.replace("\r", "").replace("\n", "")[:50]
-
-
-def _format_scope_escalation_alternatives(category: str) -> str:
-    """scope-escalationカテゴリに対応する代替表現例を1行文字列で返す。
-
-    エラーメッセージ末尾へ添えるための整形ヘルパー。
-    対応するカテゴリが存在しない場合は空文字列を返す。
-    """
-    alternatives = _SCOPE_ESCALATION_ALTERNATIVES.get(category)
-    if not alternatives:
-        return ""
-    joined = " / ".join(f"`{item}`" for item in alternatives)
-    return f" Alternative expressions: {joined}."
-
-
-def _scope_escalation_agent_md_reference(category: str) -> str:
-    """scope-escalationカテゴリに対応する参照先規範節の文言を返す。
-
-    `mitigation-in-adoption`は反映内容の縮小をフィードバック採否の場面で扱うため
-    `agent-toolkit/skills/process-feedbacks/references/review-checklists.md`
-    「批判的検討チェックリスト」節の「採用時の反映内容の縮小禁止」項を参照する。
-    `subagent-hesitation`はサブエージェント委譲可否の判断保留を扱うため
-    `agent-toolkit/rules/02-agent-operations.md`「サブエージェント運用」節を参照する。
-    他カテゴリは`agent-toolkit/rules/01-agent.md`「完遂と先送り」節を参照する。
-    """
-    if category == "mitigation-in-adoption":
-        return "agent-toolkit/skills/process-feedbacks/references/review-checklists.md '採用時の反映内容の縮小禁止' item"
-    if category == "subagent-hesitation":
-        return "agent-toolkit/rules/02-agent-operations.md 'サブエージェント運用' section"
-    return "agent-toolkit/rules/01-agent.md '完遂と先送り' section"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -202,41 +146,6 @@ def _print_warning_if_present(message: str | None) -> None:
     """
     if message:
         print(message, file=sys.stderr)
-
-
-def _is_isolated_reference(file_path: str) -> bool:
-    r"""`_ISOLATED_READ_TARGETS`のいずれかに末尾一致するかを判定する。
-
-    `file_path`は相対・絶対の双方を受け取り、Windowsの`\\`区切りも正規化する。
-    """
-    if not file_path:
-        return False
-    posix = pathlib.Path(file_path).as_posix()
-    return any(posix.endswith(target) for target in _ISOLATED_READ_TARGETS)
-
-
-def _check_read_isolated_reference(tool_input: dict, session_id: str, is_sidechain: bool) -> str | None:
-    """メインエージェントからの隔離指定リファレンスへの直接Readを検出する。
-
-    `isSidechain`真（サブエージェント経由）は通過させる。
-    `agent-toolkit-edit`スキル起動セッション（`agent_toolkit_edit_skill_invoked`フラグ）も
-    編集目的の直接Readを許容する例外とする。
-    それ以外の場合はブロック用の`_llm_notice`文言を返す。
-    """
-    if is_sidechain:
-        return None
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not _is_isolated_reference(file_path_raw):
-        return None
-    state = read_state(session_id)
-    if state.get("agent_toolkit_edit_skill_invoked"):
-        return None
-    return _llm_notice(
-        f"blocked: direct Read of isolated reference by main agent is prohibited. "
-        f"Use Explore subagent to check, subagent_type=claude to fix, "
-        f"or invoke agent-toolkit-edit for edit purpose. "
-        f"Target: {file_path_raw}"
-    )
 
 
 def _language_notice(body: str) -> str:
@@ -329,29 +238,6 @@ def main(payload_text: str) -> int:
         flush_pending_language_warning()
         return 0
 
-    # AskUserQuestion: 縮退誘発フレーズ検出
-    if tool_name == "AskUserQuestion":
-        match_result = _check_askuserquestion_scope_escalation(tool_input)
-        if match_result is not None:
-            category, matched = match_result
-            print(
-                _llm_notice(
-                    f"blocked: AskUserQuestion contains a scope-escalation phrase (category: {category})."
-                    f" matched: {_truncate_matched_phrase(matched)}."
-                    f" See {_scope_escalation_agent_md_reference(category)}."
-                    f" Category definitions are documented in `agent-toolkit:agent-standards`"
-                    f" `references/scope-escalation-phrases.md` (isolated reference)."
-                    f"{_format_scope_escalation_alternatives(category)}"
-                    f" To pre-validate candidate phrases before re-issuing, run"
-                    f" `echo '<candidate>' | python agent-toolkit/scripts/_scope_escalation.py`"
-                    f" and match by exit code and category identifier (0 = pass, 2 = block).",
-                ),
-                file=sys.stderr,
-            )
-            return 2
-        flush_pending_language_warning()
-        return 0
-
     # mcp__codex__codex: メインセッションのcodex-exec起動確認 + sandbox・cwd検査。
     if tool_name == "mcp__codex__codex":
         _record_iss_sidechain_probe(session_id, tool_name, payload)
@@ -441,13 +327,8 @@ def main(payload_text: str) -> int:
         flush_pending_language_warning()
         return 0
 
-    # Read: メインエージェントからの隔離指定リファレンスへの直接Readをブロック
+    # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
-        message = _check_read_isolated_reference(tool_input, session_id, payload.get("isSidechain") is True)
-        if message is not None:
-            print(message, file=sys.stderr)
-            flush_pending_language_warning()
-            return 2
         flush_pending_language_warning()
         return 0
 
@@ -932,7 +813,7 @@ def _count_style_negation_matches(text: str) -> int:
 def _check_style_negation(tool_name: str, tool_input: dict, file_path: str) -> bool:
     """『Xを根拠にYしない』『Xを理由にYしない』形式の増加を検出したら警告を表示して真を返す（warn）。
 
-    `_match_scope_escalation_increase`と同方式でold・new差分による増加時のみ警告する
+    既存側と新規側の出現数を比較し、増加時のみ警告する
     （既存文字列の保持時は件数同数で誤検出しない）。Writeは`content`全文のマッチ件数が
     1件以上であれば警告する。
     """
@@ -3071,35 +2952,3 @@ def _check_codex_mcp_execution(tool_input: dict) -> dict:
     if not approval_ok:
         result["systemMessage"] = "[agent-toolkit] forced codex MCP approval-policy to never."
     return result
-
-
-def _check_askuserquestion_scope_escalation(tool_input: dict) -> tuple[str, str] | None:
-    """AskUserQuestion入力から縮退誘発フレーズを検出して該当カテゴリとマッチ文言を返す。
-
-    対象は`questions[].options[].label`、`questions[].options[].description`の各テキスト。
-    `questions[].question`と`questions[].header`はユーザーへの状況説明性質を持つため対象外とする
-    （エージェントの意思表明は選択肢側に現れる前提）。
-    検出時は最初に一致したパターンの`(category, matched_phrase)`を返す。未検出時はNone。
-    入力の構造が想定外（questionsが配列でないなど）の場合は検査不能としてNoneを返す。
-    ブロックメッセージへのマッチ文言含有は`agent-toolkit:agent-standards`
-    「完成条件」節の例外規定に従う。
-    """
-    questions = tool_input.get("questions")
-    if not isinstance(questions, list):
-        return None
-    for question in questions:
-        if not isinstance(question, dict):
-            continue
-        options = question.get("options")
-        if not isinstance(options, list):
-            continue
-        for option in options:
-            if not isinstance(option, dict):
-                continue
-            for field in ("label", "description"):
-                text = option.get(field)
-                if isinstance(text, str):
-                    match_result = _match_scope_escalation(text, exclude_categories={"pattern-conformance"})
-                    if match_result is not None:
-                        return match_result
-    return None

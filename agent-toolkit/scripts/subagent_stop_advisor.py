@@ -4,8 +4,7 @@
 当該サブエージェント自身の`agent_transcript_path`に未消化の孫エージェント起動
 （`has_pending_agent_launches`）が構造的に実在する場合は、登録済みexecutorの書式検査後に承認する。
 登録対象外は完了報告本文の内容によらず承認する。
-未消化の孫エージェント起動が無い場合に限り、`is_empty_completion_report`で実質空またはSkill呼び出し
-単独の構造的欠落を検出する。
+完了報告の本文が空文字列であり、未消化の孫エージェント起動も存在しないときは構造違反として扱う。
 `stop_hook_active`真の再呼び出し時は再blockせずapproveを返す。
 登録済みexecutorは親SessionEndまでactive entryを保持し、`SendMessage`再開後も同じ検査を適用する。
 
@@ -15,8 +14,6 @@
 background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
 書式不備・矛盾を検出しblockした場合はエントリを保持し、是正後の再試行でも検査を再発火させる。
 適合報告と未消化の孫起動の有無にかかわらず、登録は親SessionEndまで保持する。
-
-縮退表明の本文検査はAskUserQuestionとStopへ集約し、本hookでは実施しない。
 
 """
 
@@ -30,7 +27,6 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _scope_escalation import is_empty_completion_report  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import has_pending_agent_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -85,6 +81,11 @@ _PLAN_IMPL_EXECUTOR_CHANGED_SECTION_RE = re.compile(
     r"^changed:\s*\n((?:(?!^(?:" + "|".join(re.escape(label) for label in PLAN_IMPL_EXECUTOR_ALL_LABELS) + r"):).*\n?)*)",
     re.MULTILINE,
 )
+
+
+def _is_empty_completion_report(text: object) -> bool:
+    """完了報告が空文字列だけで構成される場合に真を返す。"""
+    return isinstance(text, str) and not text.strip()
 
 
 def _extract_changed_section_body(text: str) -> str:
@@ -406,9 +407,9 @@ def main(payload_text: str) -> int:
         # 正しい中間報告は承認するが、最終報告ではないため登録エントリを消費しない。
         return 0
 
-    if is_empty_completion_report(text):
+    if _is_empty_completion_report(text):
         reason = _llm_notice(
-            "blocked: the subagent completion report is effectively empty or consists only of a `Skill` invocation."
+            "blocked: the subagent completion report is empty."
             " Either re-delegate the task or append the full completion body."
             " When resubmitting, restate the entire original completion report along with the added/corrected"
             " content (the main agent does not retain the body across this hook's block).",

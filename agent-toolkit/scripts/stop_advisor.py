@@ -2,9 +2,7 @@
 
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
 概要は次のとおり。`stop_hook_active`真時・非同期作業継続中は無条件approve、
-直近アシスタント発話にscope-escalationフレーズを検出した場合は`decision: "block"`で
-矯正指示を返す（照合カテゴリは`_build_stop_focus_categories`が通常時／
-plan-mode等のスキル実行中で切り替える）。`agent-toolkit:session-review`起動済み時はapproveとする。
+`agent-toolkit:session-review`起動済み時はapproveとする。
 振り返り誘導の抑止経路は2つあり、セッション状態フラグ`session_review_extension_pending`が真の場合と、
 環境変数`AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION`へ非空の値が設定されている場合のいずれかで
 拡張側が誘導を担うとみなしapproveする。
@@ -26,12 +24,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _STOP_FOCUS_CATEGORIES,
-    _STOP_FOCUS_CATEGORIES_EXTENDED,
-    _match_scope_escalation,
-    has_inline_choice_offer,
-)
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
@@ -41,10 +33,6 @@ from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,
 
 # pylint: disable-next=wrong-import-position,import-error
 from _stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
-from _transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    assistant_text,
-    iter_latest_assistant_messages,
-)
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/stop_advisor"
@@ -58,23 +46,6 @@ _SESSION_REVIEW_EXTENSION_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION"
 
 # transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
-
-
-def _build_stop_focus_categories(state: dict) -> frozenset[str]:
-    """スキル起動フラグに応じてStop経路の照合カテゴリ集合を決定する。
-
-    `plan_mode_skill_invoked`・`process_feedbacks_skill_invoked`・
-    `plan_and_add_entries_skill_invoked`のいずれかが真の場合、
-    縮退表明を含む可能性が高い文脈と判断し`_STOP_FOCUS_CATEGORIES_EXTENDED`を返す。
-    いずれも偽の場合は基本カテゴリ`_STOP_FOCUS_CATEGORIES`を返す。
-    """
-    if (
-        state.get("plan_mode_skill_invoked")
-        or state.get("process_feedbacks_skill_invoked")
-        or state.get("plan_and_add_entries_skill_invoked")
-    ):
-        return _STOP_FOCUS_CATEGORIES_EXTENDED
-    return _STOP_FOCUS_CATEGORIES
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -182,35 +153,7 @@ def main(payload_text: str) -> int:
         _approve()
         return 0
 
-    # 直近アシスタントターンの応答テキストにscope-escalationフレーズを検出した場合、
-    # `decision: "block"`＋`reason`で矯正指示を返す。
-    # `stop_hook_active`ガードは既に上流で処理済みのため1回のみ発火する。
-    # 振り返りスキル起動済み・拡張章pending等のapprove分岐より前に判定するため、
-    # `session_review_invoked`真化以降のセッションでもscope-escalationフレーズを検出時点で矯正できる。
-    # transcript読み取り失敗（空パス・存在しないパス・OSエラー等）は
-    # `iter_latest_assistant_messages`が空イテレーターを返すため、
-    # 本checkは自動的にfail-openとなる。
     state = read_state(session_id)
-    focus_categories = _build_stop_focus_categories(state)
-    if transcript_path:
-        for message in iter_latest_assistant_messages(transcript_path):
-            text = assistant_text(message)
-            match_result = _match_scope_escalation(text, categories=focus_categories)
-            category = match_result[0] if match_result is not None else None
-            if category is None and focus_categories == _STOP_FOCUS_CATEGORIES_EXTENDED and has_inline_choice_offer(text):
-                category = "approach-confirm"
-            if category is not None:
-                reason = _llm_notice(
-                    f"blocked: matched scope-escalation category `{category}`"
-                    " (a phrase that skips normative steps or bypasses required workflow)."
-                    " Retract that judgment and continue the mandatory workflow"
-                    " (see `agent-toolkit:agent-standards` `references/scope-escalation-phrases.md`).",
-                    tag="block",
-                )
-                append_stop_log(session_id, "block_scope_escalation", {"category": category})
-                _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
-                return 0
-
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
     # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録するほか、
     # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。

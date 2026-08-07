@@ -59,8 +59,6 @@ Stopフック誘導かつ言い切り判定を満たす場合は、他工程
 質問・確認・承認待ちで終えていた場合は`AskUserQuestion`で当該の問いを再発行してターンを終える。
 それ以外は現在の作業状況と次の契機を1文から2文で示してターンを終える。
 状況の提示は事実の記述に留め、応答待ちを理由に能動動作を停止する旨を述べない。
-後者は`agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`
-「縮退表明の定義」節が禁じる縮退表明に当たる。
 
 ## ステップ1: Reflect
 

@@ -62,8 +62,8 @@
 起動文へは本節の絶対パスと適用節を示し、着手時に読ませる。調査手順を委譲先へ伝えるとともに、
 規範を参照しない起動を機械チェックが警告する事態を避けるためである。
 プロジェクト固有の設計規範・コーディング規範は渡さない。
-当該扱いは`agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`
-「必要な規範スキルの引き渡し」節の、判断の独立性を確保する例外規定に基づく。
+当該扱いは`agent-toolkit/skills/agent-standards/references/agent-skills.md`
+「委譲文書の責務分離」節の判断独立性に基づく。
 起動形式の一般規定は`agent-toolkit/rules/02-agent-operations.md`「サブエージェント運用」節を正本とし、本節へは再掲しない。
 
 ## 深掘り資料と因果の確定

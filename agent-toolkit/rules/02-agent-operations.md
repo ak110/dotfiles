@@ -59,7 +59,7 @@
   所有主体が返した安定した実行識別子を直接照会し、生存中、識別子消失、終了後の結果未回収を区別する。
   外部実行を終了できるのは所有主体だけとし、委譲元は生存中の処理を重複起動しない
 - 名前付きサブエージェントの定義と起動文の責務分離は、`agent-toolkit:agent-standards`
-  `references/subagent-collaboration.md`に従う
+  `references/agent-skills.md`に従う
 - 委譲先がスキルとして実装されている場合はSkillツールで起動し、
   `agent-toolkit/agents/`配下のエージェント定義として実装されている場合はAgentツールで起動する
   （厳守規定。実装種別と異なるツールを指定すると呼び出しが失敗する）

@@ -110,18 +110,11 @@ markdownlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 lychee-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 # profile_ipy/はIPython自動生成プロファイル、
-# tone-examples.md・tone-examples-llm-tone.md・scope-escalation-phrases.md・
-# _scope_escalation_test_inputs.txt・norm-inquiry-escalation-phrases.md・
-# _norm_inquiry_escalation_test_inputs.txtは
-# 危険語彙または縮退誘発フレーズを含む隔離ファイルのためいずれも検査対象外とする。
+# tone-examples.md・tone-examples-llm-tone.mdは危険語彙を含む隔離ファイルのため検査対象外とする。
 extend-exclude = [
     "*/profile_ipy/*",
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
     "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
-    "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
-    "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
-    "agent-toolkit/skills/agent-standards/references/norm-inquiry-escalation-phrases.md",
-    "agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt",
 ]
 # chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]

@@ -15,10 +15,9 @@
   配布物外の拡張フックがPostToolUseで真化する。
   配布物のStop hookが参照し、真の場合は自身の振り返り誘導を抑止する。
   寿命はセッション終了まで
-- `agent_toolkit_edit_skill_invoked`: agent-toolkit-edit起動を記録し、編集警告と隔離reference判定に使う
+- `agent_toolkit_edit_skill_invoked`: agent-toolkit-edit起動を記録し、編集警告の抑制に使う
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
 - `plan_and_add_entries_skill_invoked`: plan-and-add-feedback起動を記録する
-- `user_prompt_counter`・`norm_inquiry_last_injected`: 規範照会リマインダーの間隔判定に使う
 - `codex_exec_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:codex-exec`または
   `codex-exec`を起動した場合にPostToolUseが真化する。
   メインセッションからcodex MCPを呼び出す前の経路検査に使い、セッション終了まで保持する

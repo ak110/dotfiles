@@ -36,6 +36,14 @@ Claude Code固有の挙動には節ごとに「Claude Code固有」の注記を�
 - 行数上限超過を理由に必須指示をreferences/へ移さない
  （references/はトリガー時のみ読み込まれ参照漏れが起きやすいため）
 
+## 委譲文書の責務分離
+
+- senderは委譲経路、入力資料、制約、返却物、検収条件を定める。receiver固有の作業手順は書かない
+- named agentは調整責務と受信形式を定め、呼び出し時には所定taskのパスだけを受け取る
+- 受信taskは実施内容、対象、必要なauthor・reviewスキル、検証、返却形式を定める
+- skillは利用者またはsenderが選ぶ作業入口を定める。named agentやtaskの本文を複製しない
+- 同じ判断をsenderとreceiverの双方が必要とする場合は共通skillへ置き、双方から参照する
+
 ## サブエージェント実行とパス解決（Claude Code固有）
 
 SKILL.md内で使用できる`${CLAUDE_SKILL_DIR}`は、
@@ -94,6 +102,6 @@ fork形態の公式制約は次のとおりで、fork配下のスキル・サブ
 
 サブエージェントが常時参照する規範スキルは、agents定義の本文へSkillツールで読み込む手順として書く。
 frontmatter `skills`によるプリロードは採用しない
-（根拠は`references/subagent-collaboration.md`「必要な規範スキルの引き渡し」節に置く）。
+（受信者が実行時に必要な規範だけを読む責務分離を維持するため）。
 スキル配下の`references/`はスキル読み込みでは自動的に読み込まれないため、
 必要なreferenceはエージェント本文から明示的にReadする。
