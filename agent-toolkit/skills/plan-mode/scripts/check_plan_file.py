@@ -22,7 +22,7 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-_SKILL_PREFIX_MARKER_RE = re.compile(r"(?:Skillツールで|スキル)\s*$")
+_SKILL_PREFIX_MARKER_RE = re.compile(r"(?:Skillツールで|スキル)$")
 _SKILL_SUFFIX_MARKER_RE = re.compile(r"^スキルを(?:起動|呼び出)")
 _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
@@ -123,18 +123,18 @@ def _metadata_values(lines: list[str], outside: list[bool]) -> tuple[dict[str, s
     return values, errors
 
 
-def _git_path_exists(work_dir: pathlib.Path, base_commit: str, path: str) -> tuple[bool | None, str | None]:
-    """基準コミットにパスが存在するかを返す。"""
+def _git_path_object_type(work_dir: pathlib.Path, base_commit: str, path: str) -> tuple[str | None, str | None]:
+    """基準コミット上のパスが参照するGit object typeを返す。"""
     result = subprocess.run(
-        ["git", "-C", str(work_dir), "cat-file", "-e", f"{base_commit}:{path}"],
+        ["git", "-C", str(work_dir), "cat-file", "-t", f"{base_commit}:{path}"],
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode == 0:
-        return True, None
+        return result.stdout.strip(), None
     if result.returncode == 128:
-        return False, None
+        return None, None
     return None, result.stderr.strip() or f"基準コミット上のパス確認に失敗した: {path}"
 
 
@@ -200,14 +200,19 @@ def _check_targets(text: str, work_dir: pathlib.Path, base_commit: str | None) -
         errors.append(f"対象ファイル一覧に危険なパスがある: {invalid}")
     if base_commit is not None:
         for target in targets:
-            exists, error = _git_path_exists(work_dir, base_commit, target.path)
+            object_type, error = _git_path_object_type(work_dir, base_commit, target.path)
             if error is not None:
                 errors.append(error)
-            elif target.state == "new" and exists:
+            elif target.state == "new" and object_type is not None:
                 errors.append(f"新設対象が基準コミットに実在する: {target.path}")
-            elif target.state in {"existing", "deleted"} and not exists:
+            elif target.state in {"existing", "deleted"} and object_type is None:
                 label = "削除" if target.state == "deleted" else "既存"
                 errors.append(f"{label}対象が基準コミットに実在しない: {target.path}")
+            elif target.state in {"existing", "deleted"} and object_type not in {"blob", "commit"}:
+                label = "削除" if target.state == "deleted" else "既存"
+                errors.append(
+                    f"{label}対象が基準コミット上のファイルまたはgitlinkではない: {target.path} (object type={object_type})"
+                )
     return errors, paths
 
 
@@ -252,8 +257,8 @@ def _classify_skill_references(text: str) -> set[str]:
         reference = match.group(1)
         line_start = text.rfind("\n", 0, match.start()) + 1
         line_end = text.find("\n", match.end())
-        suffix = text[match.end() : None if line_end < 0 else line_end]
-        prefix = text[line_start : match.start()]
+        suffix = text[match.end() : None if line_end < 0 else line_end].lstrip()
+        prefix = text[line_start : match.start()].rstrip()
         has_marker = _SKILL_PREFIX_MARKER_RE.search(prefix) is not None or _SKILL_SUFFIX_MARKER_RE.match(suffix) is not None
         is_direct_plugin_call = reference.startswith("agent-toolkit:") and _DIRECT_INVOCATION_RE.match(suffix) is not None
         if has_marker or is_direct_plugin_call:

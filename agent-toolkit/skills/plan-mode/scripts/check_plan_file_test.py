@@ -15,13 +15,21 @@ def _git(repo: pathlib.Path, *args: str) -> str:
 
 @pytest.fixture(name="repo")
 def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
-    """既存対象と削除対象を持つGitリポジトリを作成する。"""
+    """各Git object typeの対象を持つGitリポジトリを作成する。"""
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.email", "test@example.com")
     _git(tmp_path, "config", "user.name", "Test")
     (tmp_path / "existing.py").write_text("old\n", encoding="utf-8")
     (tmp_path / "old.py").write_text("remove\n", encoding="utf-8")
-    _git(tmp_path, "add", "existing.py", "old.py")
+    directory = tmp_path / "directory"
+    directory.mkdir()
+    (directory / "nested.py").write_text("nested\n", encoding="utf-8")
+    _git(tmp_path, "add", "existing.py", "old.py", "directory/nested.py")
+    _git(tmp_path, "commit", "-qm", "files")
+    first_commit = _git(tmp_path, "rev-parse", "HEAD")
+    blob = _git(tmp_path, "rev-parse", "HEAD:existing.py")
+    _git(tmp_path, "update-index", "--add", "--cacheinfo", f"120000,{blob},linked.py")
+    _git(tmp_path, "update-index", "--add", "--cacheinfo", f"160000,{first_commit},module")
     _git(tmp_path, "commit", "-qm", "base")
     return tmp_path, _git(tmp_path, "rev-parse", "HEAD")
 
@@ -126,6 +134,29 @@ def test_rejects_base_state_mismatch(repo: tuple[pathlib.Path, str], replacement
     assert any(message in error for error in errors)
 
 
+@pytest.mark.parametrize(
+    ("path", "object_type", "is_allowed"),
+    [
+        ("existing.py", "blob", True),
+        ("linked.py", "blob", True),
+        ("module", "commit", True),
+        ("directory", "tree", False),
+    ],
+)
+def test_target_git_object_type_boundary(
+    repo: tuple[pathlib.Path, str], path: str, object_type: str, *, is_allowed: bool
+) -> None:
+    """fileとsymlinkのblobおよびgitlinkのcommitを受理し、directoryのtreeを拒否する。"""
+    work_dir, base = repo
+    original = "- `existing.py`\n- `new.py`（新設）\n- `old.py`（削除）"
+    errors, _ = _check(work_dir, base, _plan(base).replace(original, f"- `{path}`"))
+    message = f"既存対象が基準コミット上のファイルまたはgitlinkではない: {path} (object type={object_type})"
+    if is_allowed:
+        assert not errors
+    else:
+        assert message in errors
+
+
 def test_rejects_unknown_base_commit_even_when_all_targets_are_new(repo: tuple[pathlib.Path, str]) -> None:
     """新設対象だけでもリポジトリに存在しないベースコミットを拒否する。"""
     work_dir, base = repo
@@ -176,11 +207,17 @@ def test_rejects_missing_agent_reference(repo: tuple[pathlib.Path, str]) -> None
     ("invocation", "missing_reference"),
     [
         ("スキル`missing-prefix`を起動する。", "missing-prefix"),
+        ("スキル `missing-prefix-space`を起動する。", "missing-prefix-space"),
         ("Skillツールで`missing-tool`を起動する。", "missing-tool"),
+        ("Skillツールで `missing-tool-space`を起動する。", "missing-tool-space"),
         ("`missing-suffix`スキルを起動する。", "missing-suffix"),
+        ("`missing-suffix-space` スキルを起動する。", "missing-suffix-space"),
         ("`agent-toolkit:plan-mode`を起動する。", None),
+        ("`agent-toolkit:missing` を起動する。", "agent-toolkit:missing"),
         ("スキル`other:plan-mode`を起動する。", "other:plan-mode"),
+        ("スキル `other:plan-mode`を起動する。", "other:plan-mode"),
         ("`uv`を起動する。", None),
+        ("`uv` を起動する。", None),
     ],
 )
 def test_skill_reference_classification(repo: tuple[pathlib.Path, str], invocation: str, missing_reference: str | None) -> None:
