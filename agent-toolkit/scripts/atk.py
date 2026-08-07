@@ -296,7 +296,8 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         "reserve-inbox",
         help="inbox feedbackを期限付きで排他予約しprocessingへ移動する",
         description=(
-            "予約時刻と更新時刻を保存し、予約ごとに内部feedback companionをinternal/agent-toolkit/reservationsへ作成し、"
+            "予約時刻、更新時刻、companion依存の追加記録を保存し、予約ごとに内部feedback companionを"
+            "internal/agent-toolkit/reservationsへ作成し、"
             "既存depends_onへcompanion filenameを追加して旧process-loopから保護する。"
         ),
     )

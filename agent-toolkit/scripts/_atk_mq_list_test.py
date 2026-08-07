@@ -87,7 +87,8 @@ def test_list_labels_reserved_entry_and_hides_companion(
         "---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on: [companion.md]\n"
         "reservation:\n  token_hash: " + token_hash + "\n  owner: /worktree\n  generation: '1'\n"
         "  reason: test\n  reserved_at: 2026-01-01T00:00:00+00:00\n  updated_at: 2026-01-01T00:00:00+00:00\n"
-        "  expires_at: 9999-01-01T00:00:00+00:00\n  companion: companion.md\n---\n\n本文\n",
+        "  expires_at: 9999-01-01T00:00:00+00:00\n  companion: companion.md\n"
+        "  companion_dependency_added: true\n  companion_dependency_filename: companion.md\n---\n\n本文\n",
         encoding="utf-8",
     )
     (notes / "inbox" / "companion.md").write_text(

@@ -89,7 +89,9 @@ def _write_reserved_feedback(
         "  reserved_at: '2026-08-08T00:00:00+00:00'\n"
         "  updated_at: '2026-08-08T00:00:00+00:00'\n"
         f"  expires_at: '{expires_at}'\n"
-        f"  companion: {companion}\n",
+        f"  companion: {companion}\n"
+        "  companion_dependency_added: true\n"
+        f"  companion_dependency_filename: {companion}\n",
     )
     path.write_text(text, encoding="utf-8")
     companion_path = _write_feedback(
@@ -227,6 +229,18 @@ class TestReadiness:
         assert first.actionable_count == 0
         assert second_result.invalid_reservations == ("second.md",)
         assert second_result.orphan_reservation_companions == ("orphan.md", "second-companion.md")
+
+    def test_legacy_readiness_keeps_reserved_entry_out_of_actionable_set(self, tmp_path: pathlib.Path) -> None:
+        """計画base相当の依存判定で予約と内部companionを処理対象へ数えない。"""
+        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00")
+
+        result = _common.calculate_readiness(
+            tmp_path, "github.com/example/repo", now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC)
+        )
+
+        assert not result.ready
+        assert not result.missing_dependencies
+        assert result.actionable_count == 0
 
     def test_unanswered_tbd_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
         _write_tbd(tmp_path, "answer.md")
@@ -562,6 +576,18 @@ class TestNotifyUnansweredTbdsIfAny:
     ) -> None:
         """TBDが0件または全件回答済みの場合は何も通知しない。"""
         _write_tbd(tmp_path, "answered.md", answer="回答済み")
+
+        _common.notify_unanswered_tbds_if_any(tmp_path, None)
+
+        assert not capsys.readouterr().err
+
+    def test_does_not_notify_reservation_companion(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """内部feedback companionを旧未回答TBD通知から除外する。"""
+        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00")
 
         _common.notify_unanswered_tbds_if_any(tmp_path, None)
 

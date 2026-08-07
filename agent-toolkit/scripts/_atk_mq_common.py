@@ -72,6 +72,8 @@ class Reservation:
     updated_at: datetime.datetime
     expires_at: datetime.datetime
     companion: str
+    companion_dependency_added: bool
+    companion_dependency_filename: str
     plan_file: str | None
 
 
@@ -828,6 +830,9 @@ def parse_reservation(
     updated_at = _parse_aware_utc(raw.get("updated_at"))
     expires_at = _parse_aware_utc(raw.get("expires_at"))
     companion = raw.get("companion")
+    raw_companion_dependency_added = raw.get("companion_dependency_added")
+    companion_dependency_added = raw_companion_dependency_added == "true"
+    companion_dependency_filename = raw.get("companion_dependency_filename")
     plan_file = raw.get("plan_file")
     try:
         generation = int(raw_generation) if isinstance(raw_generation, str) else 0
@@ -849,6 +854,11 @@ def parse_reservation(
         and isinstance(companion, str)
         and companion.endswith(".md")
         and pathlib.Path(companion).name == companion
+        and raw_companion_dependency_added == "true"
+        and isinstance(companion_dependency_filename, str)
+        and companion_dependency_filename.endswith(".md")
+        and pathlib.Path(companion_dependency_filename).name == companion_dependency_filename
+        and companion_dependency_filename == companion
         and (plan_file is None or isinstance(plan_file, str) and bool(plan_file))
     )
     if (
@@ -867,6 +877,7 @@ def parse_reservation(
     assert updated_at is not None
     assert expires_at is not None
     assert isinstance(companion, str)
+    assert isinstance(companion_dependency_filename, str)
     return (
         Reservation(
             token_hash=token_hash,
@@ -877,6 +888,8 @@ def parse_reservation(
             updated_at=updated_at,
             expires_at=expires_at,
             companion=companion,
+            companion_dependency_added=companion_dependency_added,
+            companion_dependency_filename=companion_dependency_filename,
             plan_file=plan_file if isinstance(plan_file, str) else None,
         ),
         False,
@@ -886,7 +899,7 @@ def parse_reservation(
 def parse_reservation_companion(data: dict[str, object], *, entry_type: str | None) -> dict[str, str] | None:
     """内部companion metadataを検証して返す。"""
     raw = data.get("reservation_companion")
-    if not isinstance(raw, dict) or entry_type != MQ_TYPE_FEEDBACK:
+    if not isinstance(raw, dict) or entry_type != MQ_TYPE_FEEDBACK or data.get("target_repo") != RESERVATION_INTERNAL_REPO:
         return None
     raw = cast(dict[str, object], raw)
     target_repo = raw.get("target_repo")

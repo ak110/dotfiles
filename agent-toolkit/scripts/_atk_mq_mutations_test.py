@@ -150,8 +150,10 @@ class TestReservationMutations:
         assert token not in reserved_path.read_text(encoding="utf-8")
         assert reservation["reserved_at"] == "2026-08-08T00:00:00+00:00"
         assert reservation["updated_at"] == "2026-08-08T00:00:00+00:00"
+        assert reservation["companion_dependency_added"] == "true"
         companion = reservation["companion"]
         assert isinstance(companion, str)
+        assert reservation["companion_dependency_filename"] == companion
         assert (notes / "inbox" / companion).is_file()
         assert len(list((notes / "inbox").glob("*.md"))) == 1
         assert reserved[0]["depends_on"] == ["user-dependency.md", companion]
@@ -202,7 +204,10 @@ class TestReservationMutations:
         assert reservation["updated_at"] == "2026-08-08T00:01:00+00:00"
         assert reservation["expires_at"] == "2026-08-08T00:31:00+00:00"
 
-    @pytest.mark.parametrize("companion_kind", ("missing", "ordinary", "mismatched"))
+    @pytest.mark.parametrize(
+        "companion_kind",
+        ("missing", "ordinary", "mismatched", "invalid-type", "malformed-frontmatter", "token-mismatch"),
+    )
     def test_invalid_recovery_preserves_unverified_companion(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -213,7 +218,12 @@ class TestReservationMutations:
         notes = _setup_notes(tmp_path)
         worktree = tmp_path / "worktree"
         worktree.mkdir()
-        _write_feedback_file(notes, "feedback.md")
+        feedback_path = _write_feedback_file(notes, "feedback.md")
+        parsed_feedback = frontmatter_parser.parse_frontmatter(feedback_path.read_text(encoding="utf-8"))
+        assert parsed_feedback is not None
+        feedback_data, feedback_body = parsed_feedback
+        feedback_data["depends_on"] = ["user-dependency.md"]
+        feedback_path.write_text(frontmatter_parser.serialize_frontmatter(feedback_data, feedback_body), encoding="utf-8")
         _patch_reservation_storage(monkeypatch, worktree)
         mutations.reserve_inbox_entries(
             notes,
@@ -231,12 +241,36 @@ class TestReservationMutations:
         companion = reservation["companion"]
         assert isinstance(companion, str)
         if companion_kind == "ordinary":
-            _write_feedback_file(notes, "ordinary.md")
+            ordinary_path = _write_feedback_file(notes, "ordinary.md")
+            ordinary = frontmatter_parser.parse_frontmatter(ordinary_path.read_text(encoding="utf-8"))
+            assert ordinary is not None
+            ordinary_data, ordinary_body = ordinary
+            ordinary_data["reservation_companion"] = {
+                "target_repo": "github.com/example/foo",
+                "target_filename": "feedback.md",
+                "token_hash": reservation["token_hash"],
+            }
+            ordinary_path.write_text(frontmatter_parser.serialize_frontmatter(ordinary_data, ordinary_body), encoding="utf-8")
             reservation["companion"] = "ordinary.md"
         elif companion_kind == "mismatched":
             companion_path = notes / "inbox" / companion
             companion_path.write_text(
                 companion_path.read_text(encoding="utf-8").replace("target_filename: feedback.md", "target_filename: other.md"),
+                encoding="utf-8",
+            )
+        elif companion_kind == "invalid-type":
+            companion_path = notes / "inbox" / companion
+            companion_path.write_text(
+                companion_path.read_text(encoding="utf-8").replace("type: feedback", "type: tbd"),
+                encoding="utf-8",
+            )
+        elif companion_kind == "malformed-frontmatter":
+            companion_path = notes / "inbox" / companion
+            companion_path.write_text("frontmatter破損", encoding="utf-8")
+        elif companion_kind == "token-mismatch":
+            companion_path = notes / "inbox" / companion
+            companion_path.write_text(
+                companion_path.read_text(encoding="utf-8").replace("token_hash: ", "token_hash: b"),
                 encoding="utf-8",
             )
         else:
@@ -256,6 +290,10 @@ class TestReservationMutations:
         recovered = frontmatter_parser.parse_frontmatter((notes / "inbox/feedback.md").read_text(encoding="utf-8"))
         assert recovered is not None
         assert "reservation" not in recovered[0]
+        if companion_kind in {"missing", "ordinary"}:
+            assert recovered[0]["depends_on"] == ["user-dependency.md", companion]
+        else:
+            assert recovered[0]["depends_on"] == ["user-dependency.md"]
         if companion_kind == "ordinary":
             assert (notes / "inbox/ordinary.md").is_file()
         else:

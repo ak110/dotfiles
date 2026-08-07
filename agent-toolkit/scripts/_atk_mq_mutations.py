@@ -717,8 +717,14 @@ def _resolve_companion_locked(
     path = _find_active_path(private_notes, reservation.companion)
     if path is None:
         raise ReservationConflict(f"予約companionが見つかりません: {reservation.companion}")
-    parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
-    metadata = parse_reservation_companion(parsed[0], entry_type=MQ_TYPE_FEEDBACK) if parsed is not None else None
+    text = path.read_text(encoding="utf-8")
+    parsed = _frontmatter.parse_frontmatter(text)
+    entry_type = parsed[0].get("type") if parsed is not None else None
+    metadata = (
+        parse_reservation_companion(parsed[0], entry_type=entry_type if isinstance(entry_type, str) else None)
+        if parsed is not None
+        else None
+    )
     if not reservation_matches_companion(
         reservation,
         metadata,
@@ -742,7 +748,12 @@ def _matching_companion_path(
         return None
     text = path.read_text(encoding="utf-8")
     parsed = _frontmatter.parse_frontmatter(text)
-    metadata = parse_reservation_companion(parsed[0], entry_type=_require_type(path, text)) if parsed is not None else None
+    entry_type = parsed[0].get("type") if parsed is not None else None
+    metadata = (
+        parse_reservation_companion(parsed[0], entry_type=entry_type if isinstance(entry_type, str) else None)
+        if parsed is not None
+        else None
+    )
     if not reservation_matches_companion(
         reservation,
         metadata,
@@ -763,7 +774,12 @@ def _clear_reservation(
     data.pop("reservation", None)
     raw_dependencies = data.get("depends_on")
     dependencies = (
-        [value for value in raw_dependencies if isinstance(value, str) and value != reservation.companion]
+        [
+            value
+            for value in raw_dependencies
+            if isinstance(value, str)
+            and (not reservation.companion_dependency_added or value != reservation.companion_dependency_filename)
+        ]
         if isinstance(raw_dependencies, list)
         else []
     )
@@ -873,6 +889,8 @@ def reserve_inbox_entries(
                 "updated_at": _utc_text(effective_now),
                 "expires_at": _utc_text(expires_at),
                 "companion": companion,
+                "companion_dependency_added": "true",
+                "companion_dependency_filename": companion,
             }
             if plan_path is not None:
                 reservation_data["plan_file"] = str(plan_path)
@@ -1214,6 +1232,8 @@ def recover_reservation(
             if matching_companion is not None:
                 assert reservation is not None
                 matching_companion.unlink()
+                _clear_reservation(data, reservation)
+            elif reservation is not None:
                 _clear_reservation(data, reservation)
             else:
                 data.pop("reservation", None)

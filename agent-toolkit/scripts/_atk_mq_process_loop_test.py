@@ -152,7 +152,8 @@ class TestProcessLoopIncludesProcessingInCount:
             "reservation:\n  token_hash: " + token_hash + "\n  owner: /worktree\n  generation: '1'\n"
             "  reason: test\n  reserved_at: 2026-01-01T00:00:00+00:00\n  updated_at: 2026-01-01T00:00:00+00:00\n  expires_at: "
             + expires_at
-            + "\n  companion: companion.md\n---\n\n本文\n",
+            + "\n  companion: companion.md\n  companion_dependency_added: true\n"
+            + "  companion_dependency_filename: companion.md\n---\n\n本文\n",
             encoding="utf-8",
         )
         (notes / "inbox" / "companion.md").write_text(
