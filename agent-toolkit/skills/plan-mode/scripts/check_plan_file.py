@@ -21,10 +21,10 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
-_SKILL_CALL_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`"),
-    re.compile(r"`(agent-toolkit:[A-Za-z0-9][A-Za-z0-9_-]*)`(?:スキル)?を(?:起動|呼び出)"),
-)
+_INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+_SKILL_PREFIX_MARKER_RE = re.compile(r"(?:Skillツールで|スキル)\s*$")
+_SKILL_SUFFIX_MARKER_RE = re.compile(r"^スキルを(?:起動|呼び出)")
+_DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 
@@ -216,7 +216,7 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
     inline_text = "\n".join(line for _, line in _plan_format.iter_markdown_body_lines(text))
     errors: list[str] = []
     agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
-    skill_calls = {skill for pattern in _SKILL_CALL_PATTERNS for skill in pattern.findall(inline_text)} - agent_calls
+    skill_calls = _classify_skill_references(inline_text) - agent_calls
     for skill in sorted(skill_calls):
         namespace, separator, qualified_name = skill.partition(":")
         if separator and namespace != "agent-toolkit":
@@ -243,6 +243,22 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
         if not any(path.exists() for path in candidates):
             errors.append(f"実在しないサブエージェント参照: {agent}")
     return errors
+
+
+def _classify_skill_references(text: str) -> set[str]:
+    """明示標識または現plugin namespaceを持つスキル参照を返す。"""
+    references: set[str] = set()
+    for match in _INLINE_CODE_RE.finditer(text):
+        reference = match.group(1)
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        line_end = text.find("\n", match.end())
+        suffix = text[match.end() : None if line_end < 0 else line_end]
+        prefix = text[line_start : match.start()]
+        has_marker = _SKILL_PREFIX_MARKER_RE.search(prefix) is not None or _SKILL_SUFFIX_MARKER_RE.match(suffix) is not None
+        is_direct_plugin_call = reference.startswith("agent-toolkit:") and _DIRECT_INVOCATION_RE.match(suffix) is not None
+        if has_marker or is_direct_plugin_call:
+            references.add(reference)
+    return references
 
 
 def _git_changed_files(work_dir: pathlib.Path, base_commit: str) -> tuple[list[str] | None, str | None]:

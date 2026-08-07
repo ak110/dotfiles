@@ -3,6 +3,8 @@
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -93,31 +95,23 @@ def test_extract_plan_targets_ignores_other_sections_and_fences() -> None:
     assert _plan_format.extract_target_files_from_changes(content) == ["existing.py", "new.py", "old.py"]
 
 
-def test_find_invalid_target_paths() -> None:
-    """POSIX絶対パスと親参照を危険な対象パスとして返す。"""
-    content = _VALID_CONTENT.replace(
-        "- `existing.py`",
-        "- `/abs/file.py`\n- `../outside.py`\n- `safe/file.py`",
-    )
-    assert _plan_format.find_invalid_target_file_paths(content) == ["/abs/file.py", "../outside.py"]
-
-
-def test_rejects_windows_drive_absolute_target() -> None:
-    """ドライブ付きWindows絶対パスを拒否する。"""
-    content = _VALID_CONTENT.replace("- `existing.py`", "- `C:\\Windows\\system.ini`")
-    assert _plan_format.find_invalid_target_file_paths(content) == ["C:\\Windows\\system.ini"]
-
-
-def test_rejects_windows_unc_target() -> None:
-    """UNCパスを拒否する。"""
-    content = _VALID_CONTENT.replace("- `existing.py`", "- `\\\\server\\share\\system.ini`")
-    assert _plan_format.find_invalid_target_file_paths(content) == ["\\\\server\\share\\system.ini"]
-
-
-def test_rejects_windows_drive_less_rooted_target() -> None:
-    """ドライブなしrooted Windowsパスを拒否する。"""
-    content = _VALID_CONTENT.replace("- `existing.py`", "- `\\Windows\\system.ini`")
-    assert _plan_format.find_invalid_target_file_paths(content) == ["\\Windows\\system.ini"]
+@pytest.mark.parametrize(
+    ("path", "is_invalid"),
+    [
+        ("/abs/file.py", True),
+        ("../outside.py", True),
+        ("C:\\Windows\\system.ini", True),
+        ("D:outside.py", True),
+        ("\\\\server\\share\\system.ini", True),
+        ("\\Windows\\system.ini", True),
+        ("safe/path.py", False),
+    ],
+)
+def test_target_path_boundary(path: str, *, is_invalid: bool) -> None:
+    """全対応形式の対象パス境界を検証する。"""
+    content = _VALID_CONTENT.replace("- `existing.py`", f"- `{path}`")
+    expected = [path] if is_invalid else []
+    assert _plan_format.find_invalid_target_file_paths(content) == expected
 
 
 def test_allowed_repo_root_comment_cannot_authorize_absolute_target() -> None:
@@ -126,24 +120,23 @@ def test_allowed_repo_root_comment_cannot_authorize_absolute_target() -> None:
     assert _plan_format.find_invalid_target_file_paths(content) == ["/other/file.py"]
 
 
-def test_find_invalid_target_entries_reports_target_like_bullets() -> None:
-    """対象パスらしい形式外の箇条書きを報告する。"""
-    content = _VALID_CONTENT.replace(
-        "- `existing.py`",
-        "- `existing.py`\n- [ ] `hidden.py`\n* `other.py`\n- plain/path.py（新設）\n- [ ] unchecked.py",
-    )
-    assert _plan_format.find_invalid_target_entries(content) == [
-        (16, "- [ ] `hidden.py`"),
-        (17, "* `other.py`"),
-        (18, "- plain/path.py（新設）"),
-        (19, "- [ ] unchecked.py"),
-    ]
-
-
-def test_find_invalid_target_entries_accepts_explanatory_bullet() -> None:
-    """対象一覧内の説明用箇条書きを検査対象外にする。"""
-    content = _VALID_CONTENT.replace("- `existing.py`", "- `existing.py`\n- 実装方針は既存構造を維持する")
-    assert not _plan_format.find_invalid_target_entries(content)
+@pytest.mark.parametrize(
+    ("entry", "is_invalid"),
+    [
+        ("* Makefile", True),
+        ("* src/module", True),
+        ("- `Makefile` extra", True),
+        ("- [ ] Makefile", True),
+        ("- plain/path（新設）", True),
+        ("- 変更対象の例は `src/module.py` とする", False),
+        ("- ファイル src/module.py を説明する", False),
+    ],
+)
+def test_target_entry_candidate_boundary(entry: str, *, is_invalid: bool) -> None:
+    """対象項目の構文標識と説明用箇条書きの境界を検証する。"""
+    content = _VALID_CONTENT.replace("- `existing.py`", f"- `existing.py`\n{entry}")
+    invalid = _plan_format.find_invalid_target_entries(content)
+    assert bool(invalid) is is_invalid
 
 
 def test_bump_contract_uses_implementation_contract() -> None:

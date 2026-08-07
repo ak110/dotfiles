@@ -200,7 +200,7 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
 
 _TARGET_PATTERN = re.compile(r"^- `(?P<path>[^`]+)`(?:（(?P<state>新設|削除)）)?\s*$")
 _TARGET_BULLET_PATTERN = re.compile(r"^\s*[-*+]\s+(?P<body>.+?)\s*$")
-_TARGET_ITEM_PATTERN = re.compile(r"^(?:\[[ xX]\]\s*)?`[^`]+`(?:（[^）]+）)?$")
+_TARGET_CHECKBOX_PATTERN = re.compile(r"^\[[ xX]\]\s+")
 _TARGET_STATE_PATTERN = re.compile(r"（(?:新設|削除)[^）]*）")
 
 
@@ -330,18 +330,12 @@ def _is_target_entry_candidate(line: str) -> bool:
     if match is None:
         return False
     body = match.group("body")
-    if _TARGET_ITEM_PATTERN.fullmatch(body) or _TARGET_STATE_PATTERN.search(body):
-        return True
-    tokens = re.findall(r"`([^`]+)`", body)
-    content = re.sub(r"^\[[ xX]\]\s*", "", body)
-    first_token = content.split(maxsplit=1)[0].strip("`")
-    return any(_looks_like_path(token) for token in (*tokens, first_token))
-
-
-def _looks_like_path(token: str) -> bool:
-    """文字列がディレクトリ区切りまたは拡張子を持つかを返す。"""
-    normalized = token.rstrip(".,:;）").replace("\\", "/")
-    return "/" in normalized or bool(pathlib.PurePosixPath(normalized).suffix)
+    return (
+        body.startswith("`")
+        or _TARGET_CHECKBOX_PATTERN.match(body) is not None
+        or _TARGET_STATE_PATTERN.search(body) is not None
+        or not any(character.isspace() for character in body)
+    )
 
 
 def is_agent_facing_md(rel_path: str) -> bool:
@@ -449,7 +443,7 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
     invalid: list[str] = []
     for path in extract_target_files_from_changes(content):
         windows_path = pathlib.PureWindowsPath(path)
-        if pathlib.PurePosixPath(path).is_absolute() or windows_path.is_absolute() or windows_path.root:
+        if pathlib.PurePosixPath(path).is_absolute() or windows_path.drive or windows_path.root:
             invalid.append(path)
             continue
         parts = pathlib.PurePosixPath(path.replace("\\", "/")).parts

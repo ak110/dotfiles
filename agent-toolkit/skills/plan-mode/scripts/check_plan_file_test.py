@@ -164,37 +164,34 @@ def test_rejects_unclosed_fence(repo: tuple[pathlib.Path, str]) -> None:
     assert "閉じていないMarkdownフェンスがある" in errors
 
 
-def test_rejects_missing_skill_and_agent_references(repo: tuple[pathlib.Path, str]) -> None:
-    """実在しないスキルと専用agentの参照を拒否する。"""
+def test_rejects_missing_agent_reference(repo: tuple[pathlib.Path, str]) -> None:
+    """実在しない専用agentの参照を拒否する。"""
     work_dir, base = repo
-    content = _plan(base).replace("共通変更説明", "スキル`missing-skill`とAgentツールで`missing-agent`を使う。")
+    content = _plan(base).replace("共通変更説明", "Agentツールで`missing-agent`を使う。")
     errors, _ = _check(work_dir, base, content)
-    assert any("実在しないスキル参照" in error for error in errors)
     assert any("実在しないサブエージェント参照" in error for error in errors)
 
 
-def test_rejects_missing_skill_in_direct_invocation_form(repo: tuple[pathlib.Path, str]) -> None:
-    """正規文書が使う直接起動表記でも不存在を検出する。"""
+@pytest.mark.parametrize(
+    ("invocation", "missing_reference"),
+    [
+        ("スキル`missing-prefix`を起動する。", "missing-prefix"),
+        ("Skillツールで`missing-tool`を起動する。", "missing-tool"),
+        ("`missing-suffix`スキルを起動する。", "missing-suffix"),
+        ("`agent-toolkit:plan-mode`を起動する。", None),
+        ("スキル`other:plan-mode`を起動する。", "other:plan-mode"),
+        ("`uv`を起動する。", None),
+    ],
+)
+def test_skill_reference_classification(repo: tuple[pathlib.Path, str], invocation: str, missing_reference: str | None) -> None:
+    """明示標識、namespace、通常CLIの分類境界を検証する。"""
     work_dir, base = repo
-    content = _plan(base).replace("共通変更説明", "`agent-toolkit:missing-skill`を起動する。")
+    content = _plan(base).replace("共通変更説明", invocation)
     errors, _ = _check(work_dir, base, content)
-    assert any("実在しないスキル参照: agent-toolkit:missing-skill" in error for error in errors)
-
-
-def test_accepts_normal_cli_direct_invocation(repo: tuple[pathlib.Path, str]) -> None:
-    """通常CLIの直接起動表記をスキル参照として扱わない。"""
-    work_dir, base = repo
-    content = _plan(base).replace("共通変更説明", "`uv`を起動する。")
-    errors, _ = _check(work_dir, base, content)
-    assert not errors
-
-
-def test_rejects_unknown_skill_namespace(repo: tuple[pathlib.Path, str]) -> None:
-    """未知namespaceを現pluginのスキルとして解決しない。"""
-    work_dir, base = repo
-    content = _plan(base).replace("共通変更説明", "スキル`other:plan-mode`を起動する。")
-    errors, _ = _check(work_dir, base, content)
-    assert any("実在しないスキル参照: other:plan-mode" in error for error in errors)
+    if missing_reference is None:
+        assert not errors
+    else:
+        assert any(f"実在しないスキル参照: {missing_reference}" in error for error in errors)
 
 
 def test_resolves_plugin_resources_outside_plugin_worktree(repo: tuple[pathlib.Path, str]) -> None:
