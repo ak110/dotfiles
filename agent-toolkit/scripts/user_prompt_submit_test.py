@@ -88,7 +88,12 @@ class TestSlashCommandDetection:
         assert invoked.get("agent-toolkit:session-review") is True
         output = json.loads(result.stdout)
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
-        assert "/tmp/review.jsonl" in output["hookSpecificOutput"]["additionalContext"]
+        context = output["hookSpecificOutput"]["additionalContext"]
+        assert context.startswith("[auto-generated: agent-toolkit/user-prompt-submit] Use this exact transcript_path")
+        assert "/tmp/review.jsonl" in context
+        assert context.endswith(
+            "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+        )
 
     def test_full_session_review_command_preserves_transcript_path(self, tmp_path: pathlib.Path):
         transcript_path = "/tmp/会話 transcript.jsonl"

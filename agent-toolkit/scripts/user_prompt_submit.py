@@ -25,6 +25,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES,
@@ -62,6 +63,7 @@ _PLAN_AND_ADD_FEEDBACK_NAMES_EXTENDED = _extend_with_short_names(_PLAN_AND_ADD_F
 _SLASH_COMMAND_PATTERN = re.compile(r"\A/(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
 _SESSION_REVIEW_EXACT_COMMANDS = frozenset({"/session-review", "/agent-toolkit:session-review"})
+_HOOK_ID = "agent-toolkit/user-prompt-submit"
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -123,12 +125,16 @@ def _set_plan_and_add_entries_invoked(state: dict) -> dict | None:
 
 def _emit_session_review_context(transcript_path: str) -> None:
     """手動振り返りへpayloadのtranscript絶対パスを渡す。"""
+    context = _llm_notice_base(
+        "Use this exact transcript_path for agent-toolkit:session-review: " + transcript_path,
+        _HOOK_ID,
+    )
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "UserPromptSubmit",
-                    "additionalContext": ("agent-toolkit:session-reviewへ渡すtranscript_pathの絶対パス: " + transcript_path),
+                    "additionalContext": context,
                 }
             },
             ensure_ascii=False,

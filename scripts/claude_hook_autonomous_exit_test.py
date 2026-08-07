@@ -155,6 +155,10 @@ class TestBlockCondition:
         assert "exit-session" in reason
         assert "agent-toolkit:session-review" in reason
         assert "session-review-dotfiles" not in reason
+        for heading in ("入力とreadiness", "調査と採否", "保留", "実装と公開", "後始末", "振り返りと終了"):
+            assert heading in reason
+        assert "steps 1-3" not in reason
+        assert "step 4" not in reason
 
     def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
         """旧process-loopの移行互換名だけが設定された場合もblockする。"""

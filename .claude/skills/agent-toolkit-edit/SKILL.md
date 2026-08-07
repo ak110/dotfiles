@@ -47,7 +47,7 @@ description: >
 スキル・サブエージェント編集時は次を守る。
 
 - 名前付きサブエージェントの定義と起動文を編集する場合は、`agent-toolkit:agent-standards`の
-  `references/subagent-collaboration.md`を適用する
+  `agent-toolkit/skills/agent-standards/references/agent-skills.md`を適用する
 - 呼び出し元の専用referenceを起動契約、agent定義を受信側の恒常手順としてペアで更新する
 - 呼び出し元スキルとreferenceからagent定義をReadする手順を除外する
 - 独立入口間の重複は、各入口の読込コンテキストを実測し、
@@ -58,10 +58,6 @@ description: >
 - agent-toolkit同梱スキル参照は`agent-toolkit:<skill-name>`形式に統一する。
   サブエージェント名の表記規約は起動指示を完全修飾形、地の文呼称を短縮形とする。
   プロジェクトローカルスキル（`.claude/skills/`配下）はプラグイン接頭辞を付けず素のスキル名で参照する
-- 規範文言中でscope-escalation検出対象パターン（工程スキップ・作業省略・部分対応・規範違反承知の続行等）に
-  言及する場合は肯定形で書き、否定形の生表記を本文へ含めない（例: 「登録された全工程を実施する」）
-  - 否定形の生表記は`process-omission`カテゴリでヒットしEdit/Writeがブロックされる
-  - 検出対象パターン一覧の典拠は`agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`
 
 ### プラグイン内リソースの参照書式
 

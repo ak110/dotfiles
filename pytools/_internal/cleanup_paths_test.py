@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from pytools._internal.cleanup_paths import cleanup_paths, cleanup_paths_if_content_matches
 
 
@@ -63,6 +65,58 @@ class TestCleanupPaths:
         # c は存在しない
         removed = cleanup_paths(tmp_path, (Path("a"), Path("b"), Path("c")))
         assert removed == 2
+
+    def test_windows_junction_is_removed_with_rmdir(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Windowsのジャンクション相当はリンク先を辿らずrmdirで除去する。"""
+        target = tmp_path / "skills" / "old-skill"
+        target.mkdir(parents=True)
+        real_rmdir = Path.rmdir
+        removed_with_rmdir: list[Path] = []
+
+        monkeypatch.setattr(Path, "is_junction", lambda path: path == target)
+
+        def record_rmdir(path: Path) -> None:
+            removed_with_rmdir.append(path)
+            real_rmdir(path)
+
+        monkeypatch.setattr(Path, "rmdir", record_rmdir)
+
+        removed = cleanup_paths(tmp_path, (Path("skills/old-skill"),))
+
+        assert removed == 1
+        assert removed_with_rmdir == [target]
+        assert not target.exists()
+
+    def test_broken_windows_junction_is_not_treated_as_missing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """リンク先を失ったジャンクション相当も存在判定を越えてrmdirする。"""
+        target = tmp_path / "skills" / "old-skill"
+        target.mkdir(parents=True)
+        real_exists = Path.exists
+        real_rmdir = Path.rmdir
+        removed_with_rmdir: list[Path] = []
+
+        monkeypatch.setattr(Path, "exists", lambda path: False if path == target else real_exists(path))
+        monkeypatch.setattr(Path, "is_junction", lambda path: path == target)
+
+        def record_rmdir(path: Path) -> None:
+            removed_with_rmdir.append(path)
+            real_rmdir(path)
+
+        monkeypatch.setattr(Path, "rmdir", record_rmdir)
+
+        removed = cleanup_paths(tmp_path, (Path("skills/old-skill"),))
+
+        assert removed == 1
+        assert removed_with_rmdir == [target]
+        assert not real_exists(target)
 
 
 class TestCleanupPathsIfContentMatches:

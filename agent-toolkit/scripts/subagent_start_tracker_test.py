@@ -79,7 +79,7 @@ def test_invalid_or_unrelated_payload_does_not_create_state(tmp_path: pathlib.Pa
     assert not list(tmp_path.glob("claude-agent-toolkit-*.json"))
 
 
-def test_first_subagent_stop_is_checked_without_posttooluse(tmp_path: pathlib.Path) -> None:
+def test_first_nonempty_subagent_stop_passes_without_posttooluse(tmp_path: pathlib.Path) -> None:
     start = {
         "hook_event_name": "SubagentStart",
         "session_id": "sid",
@@ -94,4 +94,4 @@ def test_first_subagent_stop_is_checked_without_posttooluse(tmp_path: pathlib.Pa
         tmp_path,
     )
 
-    assert json.loads(result.stdout)["decision"] == "block"
+    assert result.stdout == ""

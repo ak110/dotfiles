@@ -14,6 +14,24 @@ from pytools._internal import log_format
 logger = logging.getLogger(__name__)
 
 
+def _is_link_like(path: Path) -> bool:
+    """シンボリックリンクまたはWindowsのディレクトリジャンクションかを返す。"""
+    if path.is_symlink():
+        return True
+    # Path.is_junction()はPython 3.12で追加されたため、対応版以外でもimport可能に保つ。
+    is_junction = getattr(path, "is_junction", None)
+    return bool(is_junction is not None and is_junction())
+
+
+def _remove_link_like(path: Path) -> None:
+    """リンク先を辿らず、リンクまたはジャンクション自体を除去する。"""
+    if path.is_symlink():
+        path.unlink()
+    else:
+        # Windowsのディレクトリジャンクションはunlinkではなくrmdirで除去する。
+        path.rmdir()
+
+
 def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
     """`base_dir` 配下から `relative_paths` に列挙されたパスを安全に削除する。
 
@@ -29,19 +47,22 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
     removed = 0
     for rel in relative_paths:
         target = base_dir / rel
-        if not target.exists() and not target.is_symlink():
+        is_link_like = _is_link_like(target)
+        if not target.exists() and not is_link_like:
             logger.debug("%s は存在しないためスキップ", target)
             continue
         try:
-            if target.is_symlink():
-                # シンボリックリンク自体の削除はリンク先を削除しないため、親ディレクトリだけを確認する。
+            if is_link_like:
+                # リンク自体の削除はリンク先を削除しないため、親ディレクトリだけを確認する。
                 target.parent.resolve().relative_to(base_resolved)
             else:
                 target.resolve().relative_to(base_resolved)
         except ValueError:
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
-        if target.is_dir() and not target.is_symlink():
+        if is_link_like:
+            _remove_link_like(target)
+        elif target.is_dir():
             shutil.rmtree(target)
         else:
             target.unlink()

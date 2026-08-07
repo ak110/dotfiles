@@ -144,6 +144,7 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
 # （`--no-update`未指定時の再起動）を経ても同一worktreeを継続利用させる。
 _DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
 _DOTFILES_WORKTREE_NAME = "process-loop"
+_DOTFILES_PUBLISH_DESTINATION = "origin/master"
 # process-loopが作成するworktreeの配置先（対象リポジトリのroot相対）。
 _WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
 
@@ -253,11 +254,14 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
     """対象リポジトリのフィードバック処理を依頼する短いgoalを構築する。"""
-    return (
+    prompt = (
         "/goal `agent-toolkit:process-feedbacks`を起動し、"
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
         "フィードバック処理を完遂してください。"
     )
+    if target_repo_id == _DOTFILES_REPO_ID:
+        prompt += f"公開時は現在のHEADを`{_DOTFILES_PUBLISH_DESTINATION}`へ反映してください。"
+    return prompt
 
 
 def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> bool:

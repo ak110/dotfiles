@@ -39,15 +39,20 @@ _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
+_SECTION_REFERENCE_SOURCE_ROOTS = (
+    _DISTRIBUTION_ROOT,
+    _REPOSITORY_ROOT / ".claude" / "skills",
+    _REPOSITORY_ROOT / ".chezmoi-source" / "dot_claude" / "skills",
+)
 _DISTRIBUTION_MARKDOWN_BY_NAME: dict[str, list[pathlib.Path]] = {}
 for _markdown in _DISTRIBUTION_ROOT.rglob("*.md"):
     _DISTRIBUTION_MARKDOWN_BY_NAME.setdefault(_markdown.name, []).append(_markdown)
 _SKILL_MARKDOWN = {
     _skill.name: _skill / "SKILL.md" for _skill in (_DISTRIBUTION_ROOT / "skills").iterdir() if (_skill / "SKILL.md").is_file()
 }
-# 節参照の記法。`agent-toolkit:<skill>`「<節名>」節と`<ファイル名>`「<節名>」節の2形式を対象とする。
-_SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?(?:の)?「([^」\n]+)」節")
-_FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md)`(?:の)?「([^」\n]+)」節")
+# 節参照の記法。pathと節名の間にMarkdown整形用の改行があっても同じ参照として扱う。
+_SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?\s*(?:の\s*)?「([^」\n]+)」節")
+_FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:の\s*)?「([^」\n]+)」節")
 
 
 def _h2_section(text: str, heading: str) -> str:
@@ -428,13 +433,14 @@ def _resolve_reference_target(name: str) -> pathlib.Path | None:
 
 
 def test_section_references_point_to_existing_headings() -> None:
-    """配布物の節参照が参照先ファイルの実在する見出しを指すこと。
+    """配布物とプロジェクトローカルスキルの節参照が実在する見出しを指すこと。
 
     節の統廃合で参照元が更新されず、参照した先で判定基準を得られない状態を検出する。
     参照先を一意に解決できない形式は誤検出を避けるため検査対象から除く。
     """
     missing: list[str] = []
-    for source in sorted(_DISTRIBUTION_ROOT.rglob("*")):
+    sources = sorted({source for root in _SECTION_REFERENCE_SOURCE_ROOTS for source in root.rglob("*")})
+    for source in sources:
         if source.suffix not in {".md", ".py", ".txt"} or not source.is_file():
             continue
         text = source.read_text(encoding="utf-8")
@@ -447,3 +453,14 @@ def test_section_references_point_to_existing_headings() -> None:
                 f"{source.relative_to(_REPOSITORY_ROOT)}: 「{section}」節が{target.relative_to(_REPOSITORY_ROOT)}に存在しない"
             )
     assert not missing, "\n".join(missing)
+
+
+def test_section_reference_patterns_accept_line_breaks() -> None:
+    """pathと節名の間の改行が節参照検査から脱落しないこと。"""
+    skill_reference = "`agent-toolkit:commit`\n「push後のCI通過確認」節"
+    file_reference = "`agent-toolkit/skills/commit/references/push-and-ci.md`\n  「CI通過確認」節"
+
+    assert _SKILL_SECTION_REFERENCE_RE.findall(skill_reference) == [("commit", "push後のCI通過確認")]
+    assert _FILE_SECTION_REFERENCE_RE.findall(file_reference) == [
+        ("agent-toolkit/skills/commit/references/push-and-ci.md", "CI通過確認")
+    ]

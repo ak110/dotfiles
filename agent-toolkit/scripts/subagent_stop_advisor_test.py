@@ -1,4 +1,4 @@
-"""SubagentStop advisorの簡素化後完了報告契約を検証する。"""
+"""SubagentStop advisorの構造的な完了判定を検証する。"""
 
 from __future__ import annotations
 
@@ -8,51 +8,29 @@ import pytest
 import subagent_stop_advisor as advisor
 
 
-def _report(*, status: str = "completed", review_status: str = "completed", blockers: str = "- なし") -> str:
-    return f"""status: {status}
+def _minimal_report() -> str:
+    """`plan-impl-executor`の現行8欄だけを持つ最小完了報告を返す。"""
+    return """status: completed
 summary: 完了
-changed:
-- 変更
-external_operations:
-- operation: なし
-  target: なし
-  result: not_applicable
-  evidence: なし
+commits:
+- aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 verification:
-- command: pytest; exit_code: 0; warnings: 0
-plan_check:
-- 計画ファイル: /tmp/plan.md
-- 計画着手前SHA: {"a" * 40}
-- 終了コード: 0
-- 警告件数: 0
-commit_sha: {"b" * 40}
-review_status: {review_status}
-review_rounds: 1
-review_routes:
-- 計画準拠系: codex/thread-plan
-- 独立系: codex/thread-independent
-review_targets:
-- 計画準拠系: {"b" * 40}と計画
-- 独立系: {"b" * 40}と公開契約
-review_findings:
+- pytest: 終了コード0、警告0件
+reviews:
+- 計画準拠系と独立系: 完了
+findings:
 - 指摘なし
-review_resolution:
-- 指摘なし
-pending_confirmations:
-- なし
-plan_gaps:
-- なし
-applied_instructions:
-- なし
+plan_check: 完了条件を満たす
 blockers:
-{blockers}
+- なし
 """
 
 
-def _payload(report: str) -> dict[str, object]:
+def _payload(report: str = "完了") -> dict[str, object]:
     return {
         "session_id": "session",
         "agent_id": "agent",
+        "agent_transcript_path": "/tmp/agent.jsonl",
         "last_assistant_message": report,
     }
 
@@ -64,179 +42,59 @@ def _active_executor(monkeypatch: pytest.MonkeyPatch) -> None:
         "read_state",
         lambda _session_id: {advisor._PLAN_IMPL_EXECUTOR_ACTIVE_KEY: {"agent": {}}},  # pylint: disable=protected-access
     )
+    monkeypatch.setattr(advisor, "has_pending_agent_launches", lambda *_args: False)
 
 
-def test_completed_report_passes() -> None:
-    missing, background_violation, violations = advisor._inspect_plan_impl_executor_report_format(_payload(_report()))  # pylint: disable=protected-access
-    assert missing == []
-    assert not background_violation
-    assert not violations
+def test_current_minimal_executor_report_passes(capsys: pytest.CaptureFixture[str]) -> None:
+    assert advisor.main(json.dumps(_payload(_minimal_report()))) == 0
+    assert capsys.readouterr().out == ""
 
 
-def test_empty_completion_report_is_rejected_structurally() -> None:
-    assert advisor._is_empty_completion_report("  \n")  # pylint: disable=protected-access
-    assert not advisor._is_empty_completion_report("指摘なし")  # pylint: disable=protected-access
+def test_nonempty_report_does_not_require_legacy_labels(capsys: pytest.CaptureFixture[str]) -> None:
+    assert advisor.main(json.dumps(_payload("status: completed"))) == 0
+    assert capsys.readouterr().out == ""
 
 
-@pytest.mark.parametrize("label", advisor.PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
-def test_each_required_label_is_enforced(label: str) -> None:
-    report = _report().replace(f"{label}:", f"missing_{label}:", 1)
-    missing, _background_violation, _violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-    assert label in missing
+def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) -> None:
+    assert advisor.main(json.dumps(_payload("  \n"))) == 0
 
-
-def test_completed_requires_no_blockers() -> None:
-    report = _report(blockers="- blocker_type: missing_input")
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-    assert any("blockers" in violation for violation in violations)
-
-
-@pytest.mark.parametrize(
-    ("old", "new", "expected"),
-    [
-        (f"commit_sha: {'b' * 40}", "commit_sha: なし", "commit_sha"),
-        ("- command: pytest; exit_code: 0; warnings: 0", "- 未実施", "verification"),
-        ("review_status: completed", "review_status: needs_escalation", "review"),
-        ("- 指摘なし", "- 未解決指摘 P-1", "unresolved"),
-    ],
-)
-def test_completed_rejects_incomplete_contract(old: str, new: str, expected: str) -> None:
-    report = _report().replace(old, new, 1)
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-    assert any(expected in violation for violation in violations)
-
-
-@pytest.mark.parametrize(
-    ("old", "new", "expected"),
-    [
-        ("review_rounds: 1", "review_rounds: 0", "review_rounds"),
-        ("- 独立系: codex/thread-independent", "- 独立系:", "routes"),
-        ("- 独立系: codex/thread-independent", "- 独立系: codex/thread-plan", "distinct"),
-        (f"- 独立系: {'b' * 40}と公開契約", "- 独立系: HEADと公開契約", "targets"),
-    ],
-)
-def test_completed_rejects_incomplete_review_evidence(old: str, new: str, expected: str) -> None:
-    """二系統reviewの回数、経路分離、最終commit対象を必須にする。"""
-    report = _report().replace(old, new, 1)
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-    assert any(expected in violation for violation in violations)
-
-
-def test_completed_requires_resolution_for_each_finding() -> None:
-    """実指摘IDをresolutionへ対応付けない完了報告を拒否する。"""
-    report = _report().replace("- 指摘なし\nreview_resolution:\n- 指摘なし", "- P-1: 欠陥\nreview_resolution:\n- 指摘なし", 1)
-
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-
-    assert any("resolution" in violation for violation in violations)
-
-
-def test_completed_rejects_partially_resolved_findings() -> None:
-    """複数指摘の各行へ個別の採否と修正・検証結果を要求する。"""
-    report = _report().replace(
-        "- 指摘なし\nreview_resolution:\n- 指摘なし",
-        "- P-1: 欠陥\n- P-2: 欠陥\nreview_resolution:\n"
-        "| 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
-        "| P-1 | 重大 | 採用 | x | y | 修正結果: completed; 検証結果: completed |\n"
-        "| P-2 | 重大 | 保留 | x | y | 未対応 |",
-        1,
+    decision = json.loads(capsys.readouterr().out)
+    assert decision["decision"] == "block"
+    assert decision["reason"].startswith(
+        "[auto-generated: agent-toolkit/subagent-stop][block] Provide a non-empty completion report"
     )
 
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
 
-    assert any("resolution" in violation for violation in violations)
+def test_registered_executor_with_pending_child_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(advisor, "has_pending_agent_launches", lambda *_args: True)
 
+    assert advisor.main(json.dumps(_payload(_minimal_report()))) == 0
 
-@pytest.mark.parametrize(
-    "verification",
-    [
-        "- なし",
-        "- 検証していない",
-        "- command: pytest; exit_code: 0",
-        "- command: pytest; exit_code: 1; warnings: 0",
-        "- command: pytest; exit_code: 0; warnings: 1",
-    ],
-)
-def test_completed_requires_structured_successful_verification(verification: str) -> None:
-    """実行コマンド、成功終了、警告0件が揃わない検証欄を拒否する。"""
-    report = _report().replace("- command: pytest; exit_code: 0; warnings: 0", verification, 1)
-
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-
-    assert any("verification" in violation for violation in violations)
+    decision = json.loads(capsys.readouterr().out)
+    assert decision["decision"] == "block"
+    assert "Complete or receive every child agent before stopping" in decision["reason"]
 
 
-def test_completed_rejects_failed_command_mixed_with_success() -> None:
-    """成功行があっても失敗した検証コマンドが混在する完了報告を拒否する。"""
-    report = _report().replace(
-        "- command: pytest; exit_code: 0; warnings: 0",
-        "- command: pytest; exit_code: 0; warnings: 0\n- command: mypy; exit_code: 1; warnings: 0",
-        1,
-    )
+def test_unregistered_agent_with_pending_child_keeps_existing_approval(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(advisor, "read_state", lambda _session_id: {})
+    monkeypatch.setattr(advisor, "has_pending_agent_launches", lambda *_args: True)
 
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-
-    assert any("verification" in violation for violation in violations)
-
-
-@pytest.mark.parametrize(
-    "row",
-    [
-        "| P-1 | 重大 | 採用予定 | x | y | 修正結果: completed; 検証結果: completed |",
-        "| P-1 | 重大 | 採用 | x | y | 修正未了; 検証未実施 |",
-        "| P-1 | 重大 | 採用 | x | y | 修正結果: pending; 検証結果: completed |",
-    ],
-)
-def test_completed_rejects_nonfinal_adopted_resolution(row: str) -> None:
-    """採用区分と修正・検証の完了状態を完全一致で検査する。"""
-    report = _report().replace(
-        "- 指摘なし\nreview_resolution:\n- 指摘なし",
-        "- P-1: 欠陥\nreview_resolution:\n"
-        "| 通番 | 重大度／観点 | 区分 | 箇所 | 内容 | 対応方針 |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
-        f"{row}",
-        1,
-    )
-
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-
-    assert any("resolution" in violation for violation in violations)
-
-
-@pytest.mark.parametrize(
-    ("old", "new", "expected"),
-    [
-        ("review_status: completed", "review_status: skipped_by_user", "completed review"),
-        ("- 変更", "- [ ] 未実装", "unchecked"),
-        ("pending_confirmations:\n- なし", "pending_confirmations:\n- 確認待ち", "pending_confirmations"),
-        ("plan_gaps:\n- なし", "plan_gaps:\n- 計画不足", "plan_gaps"),
-    ],
-)
-def test_completed_rejects_unfinished_state(old: str, new: str, expected: str) -> None:
-    """レビュー省略と実装・確認・計画の未完了をcompletedで受理しない。"""
-    report = _report().replace(old, new, 1)
-
-    _missing, _background, violations = advisor._inspect_plan_impl_executor_report_format(_payload(report))  # pylint: disable=protected-access
-
-    assert any(expected in violation for violation in violations)
-
-
-def test_needs_escalation_allows_unexecuted_plan_check() -> None:
-    report = _report(status="needs_escalation", review_status="needs_escalation", blockers="- blocker_type: missing_input")
-    report = report.replace(
-        f"- 計画ファイル: /tmp/plan.md\n- 計画着手前SHA: {'a' * 40}\n- 終了コード: 0\n- 警告件数: 0",
-        "- 計画ファイル: 未実施\n- 計画着手前SHA: 未実施\n- 終了コード: 未実施\n- 警告件数: 未実施",
-    )
-    assert advisor._inspect_plan_check(report, status="needs_escalation", review_status="needs_escalation") is None  # pylint: disable=protected-access
-
-
-def test_nonzero_plan_check_is_rejected() -> None:
-    report = _report().replace("- 終了コード: 0", "- 終了コード: 1")
-    violation = advisor._inspect_plan_check(report, status="completed", review_status="completed")  # pylint: disable=protected-access
-    assert violation is not None
+    assert advisor.main(json.dumps(_payload("中間報告"))) == 0
+    assert capsys.readouterr().out == ""
 
 
 def test_recursive_hook_is_approved(capsys: pytest.CaptureFixture[str]) -> None:
     assert advisor.main(json.dumps({"stop_hook_active": True})) == 0
     assert json.loads(capsys.readouterr().out)["decision"] == "approve"
+
+
+def test_invalid_payload_fails_open(capsys: pytest.CaptureFixture[str]) -> None:
+    assert advisor.main("not json") == 0
+    assert advisor.main("[]") == 0
+    assert capsys.readouterr().out == ""

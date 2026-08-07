@@ -562,6 +562,62 @@ class TestProcessLoopPromptAndEnv:
         assert target_repo_id in prompt
         assert "/repo" in prompt
 
+    def test_dotfiles_prompt_declares_publish_destination_without_internal_command(self) -> None:
+        """dotfiles固有worktreeだけに公開先を伝え、内部commandをpromptへ複製しない。"""
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo/.claude/worktrees/process-loop"),
+            "github.com/ak110/dotfiles",
+        )
+
+        assert "現在のHEADを`origin/master`へ反映" in prompt
+        assert "git push" not in prompt
+        assert "commit" not in prompt
+        assert "レビュー" not in prompt
+
+    def test_dotfiles_publish_destination_dry_run_targets_master(self, tmp_path: pathlib.Path) -> None:
+        """branch名が異なるworktreeでも、明示した公開先がremoteのmasterへ到達する。"""
+        remote = tmp_path / "remote.git"
+        worktree = tmp_path / "worktree"
+        subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+        subprocess.run(
+            ["git", "init", "--initial-branch=worktree-process-loop", str(worktree)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(["git", "-C", str(worktree), "config", "user.name", "test"], check=True)
+        subprocess.run(["git", "-C", str(worktree), "config", "user.email", "test@example.invalid"], check=True)
+        (worktree / "tracked.txt").write_text("payload\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(worktree), "add", "tracked.txt"], check=True)
+        subprocess.run(["git", "-C", str(worktree), "commit", "-m", "test"], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(worktree), "remote", "add", "origin", str(remote)], check=True)
+        subprocess.run(["git", "-C", str(worktree), "config", "push.default", "simple"], check=True)
+        subprocess.run(
+            ["git", "-C", str(worktree), "config", "branch.worktree-process-loop.remote", "origin"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(worktree), "config", "branch.worktree-process-loop.merge", "refs/heads/master"],
+            check=True,
+        )
+
+        implicit = subprocess.run(
+            ["git", "-C", str(worktree), "push", "--dry-run", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        explicit = subprocess.run(
+            ["git", "-C", str(worktree), "push", "--dry-run", "--porcelain", "origin", "HEAD:master"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert implicit.returncode != 0
+        assert explicit.returncode == 0
+        assert "HEAD:refs/heads/master" in explicit.stdout
+
     def test_model_override(
         self,
         tmp_path: pathlib.Path,
@@ -1485,13 +1541,14 @@ class TestProcessLoopUrlInput:
             atk.main(["mq", "process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
         assert exc_info.value.code == 2
 
-    def test_prompt_keeps_dotfiles_goal_free_of_publish_details(self) -> None:
+    def test_prompt_keeps_dotfiles_goal_free_of_internal_publish_steps(self) -> None:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/ak110/dotfiles",
         )
         assert "git worktree内で起動" not in prompt
-        assert "origin/master" not in prompt
+        assert "現在のHEADを`origin/master`へ反映" in prompt
+        assert "git push" not in prompt
         assert "push" not in prompt
 
     @pytest.mark.parametrize("remote_url", ["https://github.com/ak110/dotfiles.git\n", "https://github.com/example/repo.git\n"])
