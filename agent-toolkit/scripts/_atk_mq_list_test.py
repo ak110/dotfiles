@@ -163,6 +163,29 @@ class TestLegacyReservationMigration:
         ]
         assert len(migration_commits) == 1
 
+    def test_invalid_reservation_keeps_unrelated_dependency(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """破損予約の未検証filenameで通常依存を削除しない。"""
+        notes = _setup_notes(tmp_path)
+        self._write_legacy_main(
+            notes,
+            reservation="{companion_dependency_added: 'true', companion_dependency_filename: normal.md}",
+        )
+        self._write_companion(notes)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter.parse_frontmatter((notes / "inbox/main.md").read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["depends_on"] == ["normal.md"]
+        assert not (notes / "inbox/companion.md").exists()
+
     def test_orphan_companion_and_only_its_dependencies_are_removed(
         self,
         monkeypatch: pytest.MonkeyPatch,

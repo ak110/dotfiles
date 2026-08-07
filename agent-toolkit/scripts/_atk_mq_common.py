@@ -446,20 +446,6 @@ def _is_legacy_reservation(
     return True
 
 
-def _legacy_companion_dependency(data: dict[str, object]) -> str | None:
-    """旧予約が追加した内部companion依存のファイル名を返す。"""
-    raw_reservation = data.get("reservation")
-    if not isinstance(raw_reservation, dict):
-        return None
-    reservation: dict[Any, Any] = raw_reservation
-    if reservation.get("companion_dependency_added") != "true":
-        return None
-    filename = reservation.get("companion_dependency_filename")
-    if not isinstance(filename, str) or pathlib.Path(filename).name != filename or not filename.endswith(".md"):
-        return None
-    return filename
-
-
 def _migrate_legacy_reservations(private_notes: pathlib.Path) -> int:
     """2.34.0形式の予約を通常のinbox項目へ一方向に移行する。"""
     _assert_repo_lock_held(private_notes)
@@ -492,9 +478,6 @@ def _migrate_legacy_reservations(private_notes: pathlib.Path) -> int:
                 companions=tuple(companion_metadata),
             ):
                 reservation_paths.add(path)
-                dependency = _legacy_companion_dependency(data)
-                if dependency is not None:
-                    companion_names.add(dependency)
 
     if not companion_paths and not reservation_paths:
         return 0
