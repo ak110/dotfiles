@@ -285,7 +285,7 @@ addopts = [
     # module scopeのfixtureが1件のみで順序依存が無いことを確認したうえで本方式へ変更した
     "--dist=worksteal",
 ]
-markers = ["browser: Chromiumを使うclaude-plans-viewer実ブラウザー統合テスト"]
+markers = ["browser: Chromiumを使う実ブラウザー統合テスト"]
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"

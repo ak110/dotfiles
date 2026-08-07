@@ -124,6 +124,16 @@ def _specified_string(data: JsonObject, name: str) -> str | None:
     return value
 
 
+def _specified_text(data: JsonObject, name: str) -> str | None:
+    """指定済みの本文を空文字列も含めて受理する。"""
+    if name not in data:
+        return None
+    value = data[name]
+    if not isinstance(value, str):
+        raise common.WebInputError(f"{name}は文字列で指定してください")
+    return value
+
+
 def _summary(text: str, kind: str) -> str:
     body = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
     lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("## ")]
@@ -187,6 +197,29 @@ def _render_content(text: str) -> str:
     return table + _MARKDOWN.render(body)
 
 
+@functools.lru_cache(maxsize=128)
+def _render_body(text: str) -> str:
+    """frontmatterを除いた本文だけをMarkdownとして整形する。"""
+    parsed = frontmatter.parse_frontmatter(text)
+    return _MARKDOWN.render(text if parsed is None else parsed[1])
+
+
+def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str, list[str]]:
+    """TBDの回答形式と選択肢をWeb UI用の安定した形へ正規化する。"""
+    if kind != common.MQ_TYPE_TBD:
+        return "free-form", []
+    raw_type = metadata.get("question_type")
+    question_type = raw_type if isinstance(raw_type, str) and raw_type in {"choice", "yes-no", "free-form"} else "free-form"
+    if question_type != "choice":
+        return question_type, []
+    raw_choices = metadata.get("choices")
+    if isinstance(raw_choices, str):
+        return question_type, [choice.strip() for choice in raw_choices.split(",") if choice.strip()]
+    if isinstance(raw_choices, list) and all(isinstance(choice, str) and choice.strip() for choice in raw_choices):
+        return question_type, [choice.strip() for choice in raw_choices]
+    return question_type, []
+
+
 class BoundedWorkers:
     """要求キャンセル後も同期処理完了まで同時実行枠を保持する。"""
 
@@ -209,11 +242,15 @@ class Operations:
     def __init__(self, private_notes: pathlib.Path) -> None:
         self.private_notes = private_notes
 
-    def _iter_entry_files(self, states: typing.Iterable[str]) -> typing.Iterator[tuple[str, pathlib.Path, str]]:
+    def _iter_entry_files(
+        self,
+        states: typing.Iterable[str],
+        warnings: list[dict[str, str]] | None = None,
+    ) -> typing.Iterator[tuple[str, pathlib.Path, str]]:
         """指定状態のエントリを`(状態名, パス, 本文)`として順に返す。
 
         一覧表示と対象リポジトリの候補収集で同じ走査条件を用いるための共通経路とする。
-        読み取れないファイルは呼び出し側の判定を待たず除外する。
+        読み取れないファイルは除外し、一覧APIの走査では警告へ記録する。
         """
         for state in states:
             try:
@@ -225,31 +262,37 @@ class Operations:
                     continue
                 try:
                     yield state, path, path.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
+                except UnicodeDecodeError:
+                    if warnings is not None:
+                        warnings.append({"filename": path.name, "reason": "UTF-8として読み取れません"})
+                except OSError:
+                    if warnings is not None:
+                        warnings.append({"filename": path.name, "reason": "ファイルを読み取れません"})
                     continue
 
-    def entries(self, filters: dict[str, str]) -> list[dict[str, object]]:
-        """条件に一致する一覧を、確認事項・フィードバックの順に各群ファイル名の降順で返す。
+    def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
+        """条件に一致する一覧と、走査中に発生した読取り警告を返す。
 
-        確認事項とフィードバックの2群については`atk mq list`の逆順とする。CLIは端末の末尾へ
-        最新が並ぶようフィードバック群を後段のファイル名昇順で出力し、Web UIは一覧の先頭へ
-        最新が並ぶようその逆順で返す。利用者の指定による意図的な差異であり、双方を揃えない。
-        種別を判定できないエントリは末尾へ置く。CLIは当該エントリをフィードバック群へ
-        畳み込むため、この群に限っては互いの逆順にならない。
+        未回答TBD、その他のTBD、フィードバック、種別不明の順に分け、
+        各群ではファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
+        warnings: list[dict[str, str]] = []
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
         query = filters.get("q", "").casefold()
         states = _resolve_states(status_filter)
-        for state, path, text in self._iter_entry_files(states):
+        for state, path, text in self._iter_entry_files(states, warnings):
             try:
                 kind = common.entry_type_of(path, text)
                 if kind_filter not in ("all", kind):
                     continue
                 item = _entry(path, kind or "unknown", state, text)
             except FileNotFoundError:
+                continue
+            except OSError:
+                warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
                 continue
             if answered_filter == "yes" and item["answered"] is not True:
                 continue
@@ -267,9 +310,15 @@ class Operations:
             if query and not any(query in str(value or "").casefold() for value in searchable):
                 continue
             result.append(item)
-        # TBDファイルをファイル名降順、その後フィードバックをファイル名降順で並べる
-        tbd_items = sorted(
-            [item for item in result if item["kind"] == "tbd"], key=lambda item: str(item["filename"]), reverse=True
+        unanswered_tbd_items = sorted(
+            [item for item in result if item["kind"] == "tbd" and item["answered"] is False],
+            key=lambda item: str(item["filename"]),
+            reverse=True,
+        )
+        other_tbd_items = sorted(
+            [item for item in result if item["kind"] == "tbd" and item["answered"] is not False],
+            key=lambda item: str(item["filename"]),
+            reverse=True,
         )
         feedback_items = sorted(
             [item for item in result if item["kind"] == "feedback"], key=lambda item: str(item["filename"]), reverse=True
@@ -279,7 +328,18 @@ class Operations:
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
-        return tbd_items + feedback_items + other_items
+        return unanswered_tbd_items + other_tbd_items + feedback_items + other_items, warnings
+
+    def entries(self, filters: dict[str, str]) -> list[dict[str, object]]:
+        """後方互換の同期APIとして、条件に一致する一覧だけを返す。"""
+        return self._entries(filters)[0]
+
+    def entries_with_warnings(
+        self,
+        filters: dict[str, str],
+    ) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
+        """一覧API向けにエントリと読取り警告を返す。"""
+        return self._entries(filters)
 
     def detail(self, state: str, filename: str) -> dict[str, object]:
         if state not in _ENTRY_STATES:
@@ -288,10 +348,16 @@ class Operations:
         try:
             text = path.read_text(encoding="utf-8")
             kind = common.entry_type_of(path, text)
+            parsed = frontmatter.parse_frontmatter(text)
+            metadata = parsed[0] if parsed is not None else {}
+            question_type, choices = _question_metadata(metadata, kind or "unknown")
             return {
                 **_entry(path, kind or "unknown", state, text),
                 "content": text,
                 "content_html": _render_content(text),
+                "body_html": _render_body(text),
+                "question_type": question_type,
+                "choices": choices,
             }
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error
@@ -317,17 +383,15 @@ class Operations:
         except filelock.Timeout:
             return False
 
-    def target_repos(self) -> list[str]:
-        """未処理・処理中のエントリに現れる対象リポジトリを昇順で返す。
+    def target_repos(self, status: str = "active") -> list[str]:
+        """指定状態のエントリに現れる対象リポジトリを昇順で返す。
 
         新規登録フォームの補完候補とフィルターの選択肢に用いる。
-        対象を`active`（`inbox`・`processing`）に限るのは、一覧の状態フィルターの初期値が
-        `active`であり、処理済みにしか現れないリポジトリを候補へ含めると
-        選んだ時点で理由の説明なく0件になるためである。
+        既定値は一覧の状態フィルターの初期値と同じ`active`とする。
         `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
         """
         found: set[str] = set()
-        for _state, _path, text in self._iter_entry_files(common.MQ_ACTIVE_STATES):
+        for _state, _path, text in self._iter_entry_files(_resolve_states(status)):
             parsed = frontmatter.parse_frontmatter(text)
             if parsed is None:
                 continue
@@ -400,12 +464,14 @@ class Operations:
         filename: str,
         answer: str,
         expected_content: str | None = None,
+        state: str | None = None,
     ) -> bool:
         """TBD回答欄を置換する。"""
         return tbd_mutations.answer_tbd(
             self.private_notes,
             filename=filename,
             answer=answer,
+            state=state,
             lock_timeout=_WEB_LOCK_TIMEOUT,
             expected_content=expected_content,
         )
@@ -420,6 +486,8 @@ class Operations:
         category: str | None = None,
         target_repo: str | None = None,
         force: bool = False,
+        state: str | None = None,
+        expected_content: str | None = None,
     ) -> list[str]:
         """複数エントリを全件検証後に移動又は削除する。
 
@@ -438,6 +506,8 @@ class Operations:
                 category=category,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
                 force=force,
+                state=state,
+                expected_content=expected_content,
             )
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
@@ -614,7 +684,13 @@ def create_app(
     @app.get("/api/repos")
     async def repos() -> quart.Response:
         """既存エントリに現れる対象リポジトリの一覧を返す。"""
-        return quart.jsonify(repos=await workers.run(ops.target_repos))
+        unknown = set(quart.request.args) - {"status"}
+        if unknown:
+            raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+        status_filter = quart.request.args.get("status", "active")
+        if status_filter not in _STATUS_FILTERS:
+            raise common.WebInputError("statusが不正です")
+        return quart.jsonify(repos=await workers.run(ops.target_repos, status_filter))
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
@@ -636,7 +712,8 @@ def create_app(
         for name in ("target_repo", "category", "source", "q"):
             if name in filters and not filters[name].strip():
                 raise common.WebInputError(f"{name}は空でない文字列で指定してください")
-        return quart.jsonify(entries=await workers.run(ops.entries, filters))
+        result, warnings = await workers.run(ops.entries_with_warnings, filters)
+        return quart.jsonify(entries=result, warnings=warnings)
 
     @app.get("/api/entries/<state_name>/<filename>")
     async def detail(state_name: str, filename: str) -> quart.Response:
@@ -696,7 +773,7 @@ def create_app(
     async def answer_tbd() -> quart.Response:
         data = _json_object(
             await _request_json(),
-            allowed={"filename", "answer", "expected_content"},
+            allowed={"filename", "state", "answer", "expected_content"},
             required={"filename", "answer"},
         )
         if not isinstance(data["answer"], str) or not data["answer"].strip():
@@ -704,18 +781,29 @@ def create_app(
         if not isinstance(data["filename"], str):
             raise common.WebInputError("filenameは文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
-        return quart.jsonify(
-            changed=await workers.run(
+        state_name = _optional_string(data, "state")
+        if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
+            raise common.WebInputError("stateはinbox又はprocessingで指定してください")
+        if state_name is None:
+            changed = await workers.run(
                 ops.answer_tbd,
                 data["filename"],
                 data["answer"],
                 expected_content,
             )
-        )
+        else:
+            changed = await workers.run(
+                ops.answer_tbd,
+                data["filename"],
+                data["answer"],
+                expected_content,
+                state_name,
+            )
+        return quart.jsonify(changed=changed)
 
     async def transition(action: str, allowed: set[str]) -> quart.Response:
         # target_repoは`_verify_frontmatter_target_repo`の任意検証にのみ使われ、常駐プロセスの
-        # カレントディレクトリには依存しない（filenameで対象を一意に特定できるため）。
+        # カレントディレクトリには依存しない。Web UIは状態を併用して対象を特定する。
         # CWD依存回避のため必須化するのは新規追加系（add）のみでよい。
         data = _json_object(await _request_json(), allowed=allowed, required={"filenames"})
         filenames = _strings(data["filenames"], "filenames")
@@ -727,16 +815,34 @@ def create_app(
             if not isinstance(data["force"], bool):
                 raise common.WebInputError("forceはbooleanで指定してください")
             force = data["force"]
-        result = await workers.run(
-            ops.transition,
-            action,
-            filenames,
-            note=optional.get("note"),
-            commit=optional.get("commit"),
-            category=optional.get("category"),
-            target_repo=optional.get("target_repo"),
-            force=force,
-        )
+        state_name = _optional_string(data, "state") if "state" in allowed else None
+        if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
+            raise common.WebInputError("stateはinbox又はprocessingで指定してください")
+        expected_content = _specified_text(data, "expected_content") if "expected_content" in allowed else None
+        if state_name is None and expected_content is None:
+            result = await workers.run(
+                ops.transition,
+                action,
+                filenames,
+                note=optional.get("note"),
+                commit=optional.get("commit"),
+                category=optional.get("category"),
+                target_repo=optional.get("target_repo"),
+                force=force,
+            )
+        else:
+            result = await workers.run(
+                ops.transition,
+                action,
+                filenames,
+                note=optional.get("note"),
+                commit=optional.get("commit"),
+                category=optional.get("category"),
+                target_repo=optional.get("target_repo"),
+                force=force,
+                state=state_name,
+                expected_content=expected_content,
+            )
         return quart.jsonify(filenames=result)
 
     @app.post("/api/entries/start-processing")
@@ -756,7 +862,10 @@ def create_app(
 
     @app.post("/api/entries/remove")
     async def remove_feedback() -> quart.Response:
-        return await transition("remove", {"filenames", "note", "target_repo", "force"})
+        return await transition(
+            "remove",
+            {"filenames", "note", "target_repo", "force", "state", "expected_content"},
+        )
 
     @app.post("/api/entries/commit")
     async def commit_entries() -> quart.Response:

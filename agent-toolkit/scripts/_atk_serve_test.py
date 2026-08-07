@@ -78,139 +78,123 @@ def test_assets_are_self_contained() -> None:
     assert "https://" not in combined
     assert "http://" not in combined
     assert combined.count("innerHTML") == 1
-    assert "detailContent.innerHTML = entry.content_html" in assets.JS
+    assert "entry.body_html ?? entry.content_html ?? ''" in assets.JS
+    assert "eventSource.addEventListener('changed'" in assets.JS
+    assert "entries-changed" not in assets.JS
     assert "insertAdjacentHTML" not in combined
     assert "/api/entries" in combined
     assert "/api/events" in combined
     assert "__BASE_PATH_HTML__" in assets.HTML
     assert "__BASE_PATH_JS__" in assets.JS
-    assert "textContent" in assets.JS
-    assert ".value" in assets.JS
     assert f'<meta name="theme-color" content="{assets.THEME_COLOR}">' in assets.HTML
     assert 'rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg"' in assets.HTML
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
 
 
-def test_assets_format_dates_in_jst_and_size_editors() -> None:
-    """UTC日時をJSTで表示し、編集欄の最小高を画面幅別に確保する。"""
-    rendered = _run_node_ui(
-        """
-process.stdout.write(JSON.stringify({
-  datetime: formatUpdatedAt('2026-01-01T00:00:00Z'),
-  date: formatUpdatedAt('2026-01-01T00:00:00Z', 'date'),
-  time: formatUpdatedAt('2026-01-01T00:00:00Z', 'time')
-}));
-"""
-    )
-    assert rendered == {"datetime": "2026/1/1 9:00:00", "date": "2026/1/1", "time": "9:00:00"}
-    assert "min-height: 24rem" in assets.CSS
-    assert "min-height: 16rem" in assets.CSS
-    # 狭幅表示の最小高は編集欄だけを対象とする。
-    # ボタン・入力欄・セレクトを含む共通規則へ置くと、それらの高さまで広がる。
-    narrow = re.search(r"@media \(max-width: 700px\) \{(.*?)\n\}", assets.CSS, re.DOTALL)
-    assert narrow is not None
-    min_height_rules = re.findall(r"([^{}]*)\{[^{}]*min-height: 16rem[^{}]*\}", narrow.group(1))
-    assert [selector.split() for selector in min_height_rules] == [["textarea"]]
+def test_assets_use_single_summary_first_list_and_current_terms() -> None:
+    """単一一覧の列順、件数、優先表示属性、利用者向け用語を固定する。"""
+    assert assets.HTML.count('<ul id="entry-list"') == 1
+    assert "other-entry-list" not in assets.HTML
+    columns = re.search(r'<div class="entry-columns"[^>]*>(.*?)</div>', assets.HTML, re.DOTALL)
+    assert columns is not None
+    assert re.findall(r"<span>(.*?)</span>", columns.group(1)) == [
+        "要約",
+        "対象リポジトリ",
+        "種別・状態",
+        "更新日時",
+        "ファイル名",
+    ]
+    assert "未回答TBD 0件" in assets.HTML
+    assert "種別・状態・回答状況" not in assets.HTML
+    assert ">確認事項<" not in assets.HTML
+    assert ">TBD<" in assets.HTML
+    assert ">今すぐ同期<" in assets.HTML
+    assert 'placeholder="本文・ファイル名・対象・カテゴリ・投入元を検索"' in assets.HTML
+    assert "dataset.unansweredTbd" in assets.JS
+    assert "種別不明" in assets.JS
 
-
-def test_header_layout_and_additional_filters_structure() -> None:
-    """ヘッダーを横並び、追加条件をセクション、投入元が空フィルターを検証する。"""
-    header = re.search(r'<header class="app-header">(.*?)</header>', assets.HTML, re.DOTALL)
-    assert header is not None
-    assert re.search(
-        r'<div class="header-title">\s*<h1>フィードバック管理</h1>\s*'
-        r'<span id="connection-status"[^>]*>接続中</span>\s*</div>\s*'
-        r'<div class="header-actions">',
-        header.group(1),
-    )
-    assert '<section class="additional-filters" aria-labelledby="additional-filters-heading">' in assets.HTML
-    assert '<h3 id="additional-filters-heading">追加条件</h3>' in assets.HTML
-    assert '<label class="checkbox-field" for="source-empty-filter">' in assets.HTML
-    assert '<input id="source-empty-filter" type="checkbox">' in assets.HTML
-    assert "投入元が空" in assets.HTML
-    assert 'details class="additional-filters"' not in assets.HTML
-
-    header_title_rule = re.search(r"\.header-title\s*\{([^}]*)\}", assets.CSS)
-    assert header_title_rule is not None
-    assert "display: flex;" in header_title_rule.group(1)
-    assert "align-items: center;" in header_title_rule.group(1)
-
-    assert ".header-actions button {" in assets.CSS
-    assert "padding: var(--space-1) var(--space-2);" in assets.CSS
-    assert ".checkbox-field {" in assets.CSS
-    assert "grid-column: 2;" in assets.CSS
-
-    grid_rule = re.search(r"\.entry-columns,\s*\.entry-select\s*\{([^}]*)\}", assets.CSS)
-    assert grid_rule is not None
-    assert "display: grid;" in grid_rule.group(1)
-    assert "grid-template-columns:" in grid_rule.group(1)
-    assert re.findall(r"minmax\([^)]+\)", grid_rule.group(1)) == [
-        "minmax(12rem, 1.6fr)",
-        "minmax(10rem, 1fr)",
-        "minmax(11rem, 1.2fr)",
-        "minmax(7rem, 0.7fr)",
-        "minmax(16rem, 2fr)",
+    grid = re.search(r"\.entry-columns, \.entry-select \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert grid is not None
+    widths = re.findall(r"minmax\(([^)]+)\)", grid.group(1))
+    assert widths == [
+        "12rem, 2fr",
+        "10rem, 1.35fr",
+        "8rem, 1fr",
+        "7rem, 0.75fr",
+        "8rem, 0.85fr",
     ]
 
-    filename_rule = re.search(r"\.entry-cell\.filename-cell\s*\{([^}]*)\}", assets.CSS)
-    assert filename_rule is not None
-    assert "white-space: nowrap;" in filename_rule.group(1)
-    assert "overflow: hidden;" in filename_rule.group(1)
-    assert "text-overflow: ellipsis;" in filename_rule.group(1)
 
-    target_repo_rule = re.search(r"\.entry-cell\.target-repo-cell\s*\{([^}]*)\}", assets.CSS)
-    assert target_repo_rule is not None
-    assert "white-space: nowrap;" in target_repo_rule.group(1)
-    assert "overflow: hidden;" in target_repo_rule.group(1)
-    assert "text-overflow: ellipsis;" in target_repo_rule.group(1)
-
-    responsive = assets.CSS.partition("@media (max-width: 1280px) {")[2].partition("@media (max-width: 700px) {")[0]
-    assert ".entry-columns {\n    display: none;\n  }" in responsive
-    assert "grid-template-columns: minmax(7rem, 40%) minmax(0, 1fr);" in responsive
-    mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
-    assert ".checkbox-field {\n    grid-column: auto;\n  }" in mobile
-
-
-def test_all_dialogs_have_accessible_names() -> None:
-    """追加、削除、未保存確認を含む全dialogを固有見出しで命名する。"""
-    expected = {
-        "detail-dialog": "detail-heading",
-        "create-dialog": "create-dialog-heading",
-        "delete-dialog": "delete-dialog-heading",
-        "unsaved-dialog": "unsaved-dialog-heading",
-    }
-    for dialog_id, heading_id in expected.items():
-        dialog = re.search(rf'<dialog id="{dialog_id}"([^>]*)>', assets.HTML)
+def test_assets_use_shared_dialog_shell_without_cancel_ui() -> None:
+    """3ダイアログへ共通シェルと唯一の終了操作を適用する。"""
+    assert assets.HTML.count("<dialog ") == 3
+    assert assets.HTML.count('class="dialog-shell') == 3
+    assert 'class="dialog-shell detail-dialog"' in assets.HTML
+    for dialog_id, heading_id, close_id in [
+        ("detail-dialog", "detail-heading", "detail-close-button"),
+        ("create-dialog", "create-dialog-heading", "create-close-button"),
+        ("delete-dialog", "delete-dialog-heading", "delete-close-button"),
+    ]:
+        dialog = re.search(rf'<dialog id="{dialog_id}"([^>]*)>(.*?)</dialog>', assets.HTML, re.DOTALL)
         assert dialog is not None
         assert f'aria-labelledby="{heading_id}"' in dialog.group(1)
-        assert f'id="{heading_id}"' in assets.HTML
+        assert 'class="dialog-header"' in dialog.group(2)
+        assert 'class="dialog-body"' in dialog.group(2)
+        assert 'class="dialog-footer"' in dialog.group(2)
+        assert f'id="{close_id}"' in dialog.group(2)
+        assert 'aria-label="閉じる"' in dialog.group(2)
+    assert "unsaved-dialog" not in assets.HTML
+    assert "cancel-" not in assets.HTML
+    assert "requestDiscard" not in assets.JS
+    assert "pendingDiscardAction" not in assets.JS
+    assert "中止</button>" not in assets.HTML
+    assert "width: 2.75rem;" in assets.CSS
+    assert "height: 2.75rem;" in assets.CSS
+    assert "overflow-y: auto;" in assets.CSS
+    assert "dialog.dialog-shell {" in assets.CSS
+    dialog_rule = re.search(r"dialog\.dialog-shell \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert dialog_rule is not None
+    assert "overflow: hidden;" in dialog_rule.group(1)
 
 
-def test_detail_view_uses_responsive_two_column_layout() -> None:
-    """詳細閲覧を横長画面では2列、狭い画面では1列に配置する。"""
-    assert '<section id="detail-view" class="detail-view" hidden>' in assets.HTML
-    assert '<div class="detail-summary">' in assets.HTML
-    assert '<div class="detail-body">' in assets.HTML
-    assert ".detail-view {" in assets.CSS
-    assert "grid-template-columns: minmax(18rem, 0.35fr) minmax(0, 1fr);" in assets.CSS
-    assert ".detail-view[hidden] {" in assets.CSS
-    assert ".detail-summary,\n.detail-body {\n  min-width: 0;\n}" in assets.CSS
-    assert ".detail-body > h3 {\n  margin-top: 0;\n}" in assets.CSS
-    assert ".detail-actions {\n  grid-column: 1 / -1;\n}" in assets.CSS
-    frontmatter_pre_rule = re.search(r"\.frontmatter pre\s*\{([^}]*)\}", assets.CSS)
-    assert frontmatter_pre_rule is not None
-    assert [line.strip() for line in frontmatter_pre_rule.group(1).splitlines() if line.strip()] == [
-        "white-space: pre-wrap;",
-        "overflow-wrap: anywhere;",
-    ]
+def test_assets_style_markdown_and_inputs_by_purpose() -> None:
+    """本文、コード、用途別入力、モバイル操作の表示契約を固定する。"""
+    assert ".markdown-body :not(pre) > code {" in assets.CSS
+    pre_rule = re.search(r"\.markdown-body pre \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert pre_rule is not None
+    assert "white-space: pre-wrap;" in pre_rule.group(1)
+    assert "overflow-wrap: anywhere;" in pre_rule.group(1)
+    assert ".markdown-body pre code { padding: 0; background: transparent; }" in assets.CSS
+    for selector in ("#edit-content", "#answer-input", "#create-content", "#create-choices"):
+        rule = re.search(rf"{re.escape(selector)} \{{([^}}]+)\}}", assets.CSS)
+        assert rule is not None
+        assert "clamp(" in rule.group(1)
     mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
-    assert ".detail-view {\n    grid-template-columns: 1fr;\n    gap: var(--space-3);\n  }" in mobile
-    assert ".detail-actions {\n    grid-column: auto;\n  }" in mobile
+    assert ".app-header { align-items: flex-start; flex-wrap: wrap; }" in mobile
+    assert ".dialog-footer button { width: auto; }" in mobile
+    assert "button,\n  input,\n  select,\n  textarea" not in mobile
+
+
+def test_assets_define_all_operation_lifecycles_and_message_regions() -> None:
+    """5更新操作を共通pending処理へ接続し、結果領域を操作場所ごとに持つ。"""
+    assert "async function runPending(" in assets.JS
+    for key in ("'sync'", "'save'", "'answer'", "'create'", "'delete'"):
+        assert f"runPending({key}" in assets.JS
+    assert "payload" in assets.JS.partition("async function runPending")[0] or "payload" in assets.JS
+    assert ".filter(control => !control.classList.contains('dialog-close'))" in assets.JS
+    assert "pendingOperations.has(key)" in assets.JS
+    assert "finally {" in assets.JS
+    for dialog_name in ("detail", "create", "delete"):
+        assert f'id="{dialog_name}-alert"' in assets.HTML
+        assert f'id="{dialog_name}-status"' in assets.HTML
+    assert 'id="result-status"' in assets.HTML
+    assert 'id="list-warning"' in assets.HTML
+    assert "showError('')" not in assets.JS
 
 
 def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
     """UI関数を最小DOM上で実行し、シナリオのJSON結果を返す。"""
-    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"').partition("bindEvents();")[0]
+    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"').partition("// BIND_EVENTS")[0]
     executable = (
         source
         + "\n(async () => {\n"
@@ -233,38 +217,64 @@ class Element {{
     this.checked = false;
     this.open = false;
     this.dateTime = '';
+    this.innerHTML = '';
+    this.className = '';
+    this.type = '';
+    this.isConnected = true;
+    this.classList = {{
+      add: (...names) => {{
+        const values = new Set(this.className.split(/\\s+/).filter(Boolean));
+        names.forEach(name => values.add(name));
+        this.className = Array.from(values).join(' ');
+      }},
+      remove: (...names) => {{
+        const values = this.className.split(/\\s+/).filter(name => name && !names.includes(name));
+        this.className = values.join(' ');
+      }},
+      contains: name => this.className.split(/\\s+/).includes(name)
+    }};
   }}
-  append(...children) {{ this.children.push(...children); }}
-  replaceChildren(...children) {{ this.children = children; }}
-  setAttribute(name, value) {{ this.attributes[name] = value; }}
+  setConnected(value) {{
+    this.isConnected = value;
+    this.children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(value); }});
+  }}
+  append(...children) {{
+    children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(true); }});
+    this.children.push(...children);
+  }}
+  replaceChildren(...children) {{
+    this.children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(false); }});
+    children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(true); }});
+    this.children = children;
+  }}
+  setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+  getAttribute(name) {{ return this.attributes[name] ?? null; }}
+  removeAttribute(name) {{ delete this.attributes[name]; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
+  querySelectorAll() {{ return globalThis.controlGroups[this.id] || []; }}
   showModal() {{ this.open = true; }}
-  close() {{
-    this.open = false;
-    if (this.listeners.close) this.listeners.close({{currentTarget: this}});
-  }}
-  focus() {{ globalThis.focused = this.dataset.key || this.id; }}
-  reset() {{ globalThis.formReset = true; }}
+  close() {{ this.open = false; }}
+  focus() {{ document.activeElement = this; globalThis.focused = this.dataset.key || this.id; }}
 }}
 const ids = [
-  'connection-status', 'refresh-button', 'create-button', 'global-error',
-  'search-input', 'kind-filter', 'state-filter', 'answer-filter', 'target-filter',
-  'category-filter', 'source-filter', 'source-empty-filter', 'entry-heading', 'entry-count',
-  'loading-indicator', 'entry-list', 'other-entry-group', 'other-entry-heading',
-  'other-entry-count', 'other-entry-list', 'empty-state', 'empty-create-button', 'detail-dialog',
-  'detail-close-button',
-  'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
-  'detail-content', 'readonly-notice', 'detail-actions', 'edit-button', 'answer-button',
-  'delete-button', 'edit-panel', 'edit-content', 'edit-content-error',
-  'cancel-edit-button', 'save-entry-button', 'answer-panel', 'answer-input',
-  'answer-input-error', 'save-answer-button', 'cancel-answer-button', 'create-dialog', 'create-form',
+  'connection-status', 'sync-result', 'refresh-button', 'create-button', 'global-error',
+  'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
+  'target-filter', 'category-filter', 'source-filter', 'source-empty-filter', 'entry-count',
+  'result-status', 'list-warning', 'loading-indicator', 'entry-list', 'empty-state',
+  'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-create-button',
+  'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
+  'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
+  'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
+  'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
+  'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button',
+  'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
   'create-kind', 'create-content', 'create-content-error', 'create-target',
   'create-target-error', 'create-source', 'tbd-fields', 'create-scope',
-  'create-question-type', 'choice-fields', 'create-choices',
-  'create-choices-error', 'cancel-create-button', 'delete-dialog', 'delete-form',
-  'delete-target', 'delete-state', 'force-delete-row', 'repo-options',
-  'force-delete-confirmation', 'delete-error', 'cancel-delete-button', 'unsaved-dialog',
-  'discard-changes-button', 'continue-editing-button', 'toast'
+  'create-question-type', 'choice-fields', 'create-choices', 'create-choices-error',
+  'create-submit-button', 'delete-dialog', 'delete-form', 'delete-close-button',
+  'delete-alert', 'delete-status', 'delete-target', 'delete-state', 'delete-target-repo',
+  'delete-summary', 'force-delete-row', 'force-delete-confirmation', 'delete-error',
+  'delete-submit-button', 'repo-options', 'toast'
 ];
 const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
 elements['kind-filter'].value = 'all';
@@ -272,17 +282,43 @@ elements['state-filter'].value = 'active';
 elements['answer-filter'].value = 'all';
 elements['create-kind'].value = 'feedback';
 elements['create-question-type'].value = 'free-form';
-const documentListeners = {{}};
+globalThis.controlGroups = {{
+  'detail-shell': [
+    elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
+    elements['delete-button'], elements['edit-content'], elements['save-entry-button'],
+    elements['answer-input'], elements['save-answer-button']
+  ],
+  'create-form': [
+    elements['create-close-button'], elements['create-kind'], elements['create-content'],
+    elements['create-target'], elements['create-source'], elements['create-scope'],
+    elements['create-question-type'], elements['create-choices'], elements['create-submit-button']
+  ],
+  'delete-form': [
+    elements['delete-close-button'], elements['force-delete-confirmation'], elements['delete-submit-button']
+  ],
+  'app-header': [elements['refresh-button'], elements['create-button']]
+}};
+elements['detail-close-button'].className = 'dialog-close';
+elements['create-close-button'].className = 'dialog-close';
+elements['delete-close-button'].className = 'dialog-close';
+const appHeader = new Element('app-header');
+globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
 globalThis.document = {{
   activeElement: null,
   getElementById(id) {{ return elements[id] || null; }},
   createElement(tagName) {{ return new Element('', tagName.toUpperCase()); }},
-  addEventListener(name, handler) {{ documentListeners[name] = handler; }}
+  createTextNode(text) {{ const node = new Element('', '#TEXT'); node.textContent = text; return node; }},
+  querySelector(selector) {{ return selector === '.app-header' ? appHeader : null; }},
+  querySelectorAll(selector) {{
+    if (selector !== '.entry-select') return [];
+    return elements['entry-list'].children.flatMap(item => item.children);
+  }}
 }};
+globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
 globalThis.setTimeout = () => 1;
 globalThis.clearTimeout = () => undefined;
 const fetchCalls = [];
-let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: []}})}});
+let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: [], warnings: []}})}});
 globalThis.fetch = async (url, options = {{}}) => {{
   fetchCalls.push({{url, options}});
   return fetchHandler(url, options);
@@ -299,1159 +335,1040 @@ eval({json.dumps(executable)});
     return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))
 
 
-def test_assets_render_api_entry_values_as_dom_text() -> None:
-    """API由来の値を全表示経路のテキストとフォーム値へ安全に反映する。"""
-    dangerous = '<img src=x onerror="alert(1)"><script>alert(2)</script>'
-    entry: dict[str, object] = {
-        field: dangerous
-        for field in (
-            "kind",
-            "filename",
-            "state",
-            "target_repo",
-            "source",
-            "category",
-            "summary",
-            "updated_at",
-        )
-    }
-    entry["answered"] = False
-    entry["content"] = dangerous
-    entry["content_html"] = "&lt;p&gt;整形済み&lt;/p&gt;"
-    rendered = _run_node_ui(
-        f"""
-const entry = {json.dumps(entry)};
-const row = renderEntry(entry);
-displayEntry(entry);
-const texts = [];
-const visit = node => {{
-  if (node.textContent) texts.push(node.textContent);
-  node.children.forEach(visit);
-}};
-visit(row);
-visit(elements['detail-metadata']);
-currentEntry = {{...entry, state: 'inbox'}};
-openDeleteDialog();
-showToast({json.dumps(dangerous)});
-fetchHandler = async () => ({{
-  ok: false,
-  status: 400,
-  statusText: 'Bad Request',
-  json: async () => ({{error: {json.dumps(dangerous)}}})
-}});
-try {{
-  await api('/api/failure');
-}} catch (error) {{
-  showError(error);
-}}
-setFieldError('edit-content', {json.dumps(dangerous)});
-process.stdout.write(JSON.stringify({{
-  tags: row.children.map(child => child.tagName),
-  texts,
-  detail: elements['detail-content'].innerHTML,
-  detailState: elements['detail-state'].textContent,
-  editValue: elements['edit-content'].value,
-  deleteTarget: elements['delete-target'].textContent,
-  deleteState: elements['delete-state'].textContent,
-  toast: elements['toast'].textContent,
-  globalError: elements['global-error'].textContent,
-  inlineError: elements['edit-content-error'].textContent,
-  childCounts: [
-    elements['delete-target'],
-    elements['delete-state'],
-    elements['toast'],
-    elements['global-error'],
-    elements['edit-content-error']
-  ].map(element => element.children.length)
-}}));
-"""
-    )
-    assert rendered["tags"] == ["BUTTON"]
-    assert dangerous in rendered["texts"]
-    assert rendered["detail"] == "&lt;p&gt;整形済み&lt;/p&gt;"
-    assert rendered["detailState"] == dangerous
-    assert rendered["editValue"] == dangerous
-    assert rendered["deleteTarget"] == dangerous
-    assert rendered["deleteState"] == "未処理"
-    assert rendered["toast"] == dangerous
-    assert rendered["globalError"] == dangerous
-    assert rendered["inlineError"] == dangerous
-    assert rendered["childCounts"] == [0, 0, 0, 0, 0]
-
-
-def test_render_entry_displays_all_comparison_columns() -> None:
-    """一覧行へ5列（ファイル名・対象リポジトリ・状態集約・更新日時・要約）を表示し、詳細にはカテゴリと投入元を含める。"""
-    columns = re.search(r'<div class="entry-columns"[^>]*>(.*?)</div>', assets.HTML, re.DOTALL)
-    assert columns is not None
-    assert re.findall(r"<span>(.*?)</span>", columns.group(1)) == [
-        "ファイル名",
-        "対象リポジトリ",
-        "種別・状態・回答状況",
-        "更新日時",
-        "要約",
-    ]
-    rendered = _run_node_ui(
-        """
-const entry = {
-  target_repo: 'example/repo',
-  kind: 'tbd',
-  state: 'processing',
-  answered: false,
-  category: 'ui',
-  source: 'session-review',
-  updated_at: '2025-07-30T12:34:56Z',
-  summary: '要約本文',
-  filename: 'entry.md',
-  content: '本文',
-  content_html: '<p>本文</p>'
-};
-const row = renderEntry(entry);
-const cells = row.children[0].children;
-const timeCell = cells[3];
-const timeElements = timeCell.children[0] ? timeCell.children[0].children : [];
-displayEntry(entry);
-const metadata = elements['detail-metadata'].children;
-const timeFallbacks = [null, 'not-a-date'].map(updatedAt => {
-  const fallbackRow = renderEntry({...entry, updated_at: updatedAt});
-  const time = fallbackRow.children[0].children[3].children[0];
-  return {
-    dateTime: time.dateTime,
-    accessibleName: time.attributes['aria-label'],
-    lines: time.children.map(child => child.textContent)
-  };
-});
-process.stdout.write(JSON.stringify({
-  labels: cells.map(cell => cell.dataset.label),
-  classes: cells.map(cell => cell.className),
-  displayedValues: cells.map(cell => cell.textContent.trim().split(/\\s+/).slice(0, 3).join(' ')),
-  accessibleName: row.children[0].attributes['aria-label'],
-  hasTimeElement: timeCell.children[0] ? timeCell.children[0].tagName : null,
-  timeDateTimeAttr: timeCell.children[0] ? timeCell.children[0].dateTime : null,
-  timeHasDateAndTime: timeElements.length === 2,
-  metadataLabels: metadata.filter((_, index) => index % 2 === 0).map(node => node.textContent),
-  metadataValues: metadata.filter((_, index) => index % 2 === 1).map(node => node.textContent),
-  timeFallbacks
-}));
-"""
-    )
-    assert rendered["labels"] == ["ファイル名", "対象リポジトリ", "種別・状態・回答状況", "更新日時", "要約"]
-    assert rendered["displayedValues"][0] == "entry.md"
-    assert rendered["displayedValues"][1] == "example/repo"
-    assert rendered["classes"][1] == "entry-cell target-repo-cell"
-    # 状態集約セルは複数のバッジを含む
-    assert "確認事項" in rendered["accessibleName"]
-    assert "処理中" in rendered["accessibleName"]
-    assert "未回答" in rendered["accessibleName"]
-    # カテゴリと投入元は行に表示されず、詳細メタデータに含まれる
-    assert "カテゴリ" not in rendered["labels"]
-    assert "投入元" not in rendered["labels"]
-    assert "example/repo" in rendered["accessibleName"]
-    assert "要約本文" in rendered["accessibleName"]
-    assert rendered["hasTimeElement"] == "TIME"
-    assert rendered["timeDateTimeAttr"] == "2025-07-30T12:34:56Z"
-    assert rendered["timeHasDateAndTime"] is True
-    category_index = rendered["metadataLabels"].index("カテゴリ")
-    source_index = rendered["metadataLabels"].index("投入元")
-    assert rendered["metadataValues"][category_index] == "ui"
-    assert rendered["metadataValues"][source_index] == "session-review"
-    assert rendered["timeFallbacks"] == [
-        {"dateTime": "", "accessibleName": "更新日時なし", "lines": ["更新日時なし", ""]},
-        {"dateTime": "not-a-date", "accessibleName": "not-a-date", "lines": ["not-a-date", ""]},
-    ]
-
-
-def test_assets_focus_on_user_entry_workflows() -> None:
-    """追加、一覧、詳細、編集、回答、削除の利用者操作を検証する。"""
-    forbidden = (
-        "start-processing",
-        "data-action",
-        "batch-note",
-        "batch-category",
-        "batch-commit",
-        'id="commit"',
-        'id="toggle"',
-        'id="select-all"',
-        "/api/entries/adopt",
-        "/api/entries/commit",
-        "/api/entries/reject",
-    )
-    combined = assets.HTML + assets.JS
-    assert all(value not in combined for value in forbidden)
+def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:
+    """一覧警告、種別不明、件数通知、成立しないフィルター組合せの解除を検証する。"""
     result = _run_node_ui(
         """
-bindEvents();
-const renderContent = entry => ({...entry, content_html: `<p>${entry.content}</p>`});
-let detail = renderContent({
-  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
-  target_repo: 'example/repo', source: 'web', category: null,
-  summary: '確認', updated_at: '2026-01-01T00:00:00+00:00', content: '取得時本文'
-});
-let removed = false;
-fetchHandler = async (url, options) => {
-  let body = {};
-  if (url.endsWith('/api/entries/inbox/entry.md') && (!options.method || options.method === 'GET')) {
-    body = {entry: detail};
-  } else if (!options.method || options.method === 'GET') {
-    body = {entries: removed ? [] : [detail]};
-  } else if (options.method === 'POST' && url.endsWith('/api/entries')) {
-    body = {filenames: ['created.md']};
-  } else if (options.method === 'PUT') {
-    detail = renderContent({...detail, content: JSON.parse(options.body).content});
-    body = {changed: true};
-  } else if (url.endsWith('/api/entries/answer')) {
-    const answer = JSON.parse(options.body).answer;
-    detail = renderContent({...detail, answered: true, content: `${detail.content}\\n${answer}`});
-    body = {changed: true};
-  } else if (url.endsWith('/api/entries/remove')) {
-    removed = true;
-    body = {filenames: ['entry.md']};
-  } else {
-    body = {changed: true, filenames: ['entry.md']};
-  }
-  return {ok: true, status: 200, statusText: 'OK', json: async () => body};
-};
-elements['create-content'].value = '新規本文';
-elements['create-target'].value = 'example/repo';
-await createEntry({preventDefault() {}});
-const createResult = {
-  count: elements['entry-count'].textContent,
-  first: elements['entry-list'].children[0].children[0].dataset.key,
-  toast: elements['toast'].textContent
-};
-await selectEntry(detail, elements['entry-list'].children[0].children[0]);
-enterEdit();
-elements['edit-content'].value = '編集本文';
-await saveEntry();
-const editResult = {
-  detail: elements['detail-content'].innerHTML,
-  toast: elements['toast'].textContent
-};
-await selectEntry(detail, elements['entry-list'].children[0].children[0]);
-enterAnswer();
-elements['answer-input'].value = '回答本文';
-await saveAnswer();
-const answerResult = {
-  detail: elements['detail-content'].innerHTML,
-  answered: detail.answered,
-  toast: elements['toast'].textContent
-};
-await selectEntry(detail, elements['entry-list'].children[0].children[0]);
-openDeleteDialog();
-await removeEntry({preventDefault() {}});
-process.stdout.write(JSON.stringify({
-  calls: fetchCalls.map(call => ({
-    url: call.url,
-    method: call.options.method || 'GET',
-    body: call.options.body ? JSON.parse(call.options.body) : null
-  })),
-  createResult,
-  editResult,
-  answerResult,
-  deleteResult: {
-    count: elements['entry-count'].textContent,
-    listLength: elements['entry-list'].children.length,
-    dialogOpen: elements['detail-dialog'].open,
-    selected: currentEntry,
-    toast: elements['toast'].textContent
-  }
-}));
-"""
-    )
-    calls = result["calls"]
-    assert any(call["url"] == "/atk/api/entries" and call["method"] == "POST" for call in calls)
-    assert any(call["url"].startswith("/atk/api/entries?") and call["method"] == "GET" for call in calls)
-    assert any(call["url"] == "/atk/api/entries/inbox/entry.md" and call["method"] == "GET" for call in calls)
-    edit_call = next(call for call in calls if call["method"] == "PUT")
-    assert edit_call["body"] == {"content": "編集本文", "expected_content": "取得時本文"}
-    answer_call = next(call for call in calls if call["url"] == "/atk/api/entries/answer")
-    assert answer_call["body"] == {
-        "filename": "entry.md",
-        "answer": "回答本文",
-        "expected_content": "編集本文",
-    }
-    remove_call = next(call for call in calls if call["url"] == "/atk/api/entries/remove")
-    assert remove_call["body"] == {"filenames": ["entry.md"]}
-    assert result["createResult"] == {
-        "count": "1件",
-        "first": "entry.md",
-        "toast": "項目を追加しました。",
-    }
-    assert result["editResult"] == {"detail": "<p>編集本文</p>", "toast": "本文を保存しました。"}
-    assert result["answerResult"] == {
-        "detail": "<p>編集本文\n回答本文</p>",
-        "answered": True,
-        "toast": "回答を保存しました。",
-    }
-    assert result["deleteResult"] == {
-        "count": "0件",
-        "listLength": 0,
-        "dialogOpen": False,
-        "selected": None,
-        "toast": "項目を削除しました。",
-    }
-
-
-def test_assets_present_search_filters_count_and_empty_state() -> None:
-    """検索、フィルター、一覧分割、並び順、件数、読込中、空状態を検証する。"""
-    assert '<h2 id="other-entry-heading">その他一覧</h2>' in assets.HTML
-    result = _run_node_ui(
-        """
-bindEvents();
 entries = [
-  {kind: 'feedback', state: 'inbox', filename: 'old.md', summary: '対象外',
-   answered: null, target_repo: 'other/repo', category: 'x', source: 'cli', updated_at: '2025-01-01'},
-  {kind: 'tbd', state: 'processing', filename: 'new.md', summary: '探す文字',
-   answered: false, target_repo: 'example/repo', category: 'category-token', source: 'source-token', updated_at: '2026-01-01'},
-  {kind: 'tbd', state: 'inbox', filename: 'answered.md', summary: '回答済み',
-   answered: true, target_repo: 'example/repo', category: null, source: 'web', updated_at: '2025-07-01'},
-  {kind: 'tbd', state: 'adopted', filename: 'finished.md', summary: '完了状態',
-   answered: false, target_repo: 'example/repo', category: null, source: 'web', updated_at: '2025-08-01'},
-  {kind: 'feedback', state: 'inbox', filename: 'empty-source.md', summary: '投入元なし',
-   answered: null, target_repo: 'example/repo', category: null, source: null, updated_at: '2025-06-01'}
+  {kind: 'tbd', state: 'inbox', filename: 'u.md', answered: false, summary: '未回答', target_repo: 'x/u'},
+  {kind: 'unknown', state: 'inbox', filename: 'x.md', answered: null, summary: '不明', target_repo: 'x/u'},
+  {kind: 'feedback', state: 'inbox', filename: 'f.md', answered: null, summary: '本文', target_repo: 'x/f',
+   updated_at: '2026-08-07T10:11:00+00:00'}
 ];
-applyClientFilters();
-const splitState = {
-  heading: elements['entry-heading'].textContent,
-  count: elements['entry-count'].textContent,
-  primaryKeys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
-  otherHidden: elements['other-entry-group'].hidden,
-  otherCount: elements['other-entry-count'].textContent,
-  otherKeys: elements['other-entry-list'].children.map(item => item.children[0].dataset.key)
-};
-elements['search-input'].value = '回答済み';
-applyClientFilters();
-const unsplitState = {
-  heading: elements['entry-heading'].textContent,
-  count: elements['entry-count'].textContent,
-  primaryKeys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
-  otherHidden: elements['other-entry-group'].hidden,
-  otherCount: elements['other-entry-count'].textContent,
-  otherKeys: elements['other-entry-list'].children.map(item => item.children[0].dataset.key)
-};
-elements['search-input'].value = '探す';
-elements['target-filter'].value = 'example/repo';
-elements['category-filter'].value = 'category-token';
-elements['source-filter'].value = 'source-token';
-applyClientFilters();
-const populated = {
-  count: elements['entry-count'].textContent,
-  first: elements['entry-list'].children[0].children[0].dataset.key,
-  emptyHidden: elements['empty-state'].hidden,
-  query: listQuery()
-};
-elements['target-filter'].value = '';
-elements['category-filter'].value = '';
-elements['source-filter'].value = '';
-elements['search-input'].value = 'category-token';
-applyClientFilters();
-const categorySearchKeys = elements['entry-list'].children.map(item => item.children[0].dataset.key);
-elements['search-input'].value = 'source-token';
-applyClientFilters();
-const sourceSearchKeys = elements['entry-list'].children.map(item => item.children[0].dataset.key);
-setLoading(true);
-const loadingState = {
-  visible: !elements['loading-indicator'].hidden,
-  primaryBusy: elements['entry-list'].attributes['aria-busy'],
-  otherBusy: elements['other-entry-list'].attributes['aria-busy']
-};
-elements['search-input'].value = '一致しない';
-setLoading(false);
-const loadedState = {
-  primaryBusy: elements['entry-list'].attributes['aria-busy'],
-  otherBusy: elements['other-entry-list'].attributes['aria-busy']
-};
-applyClientFilters();
+renderList([{filename: 'bad.md', reason: 'UTF-8として読み取れません'}], true);
+const announced = elements['result-status'].textContent;
+const warning = elements['list-warning'].textContent;
+const feedbackCells = elements['entry-list'].children[2].children[0].children;
+const statusPrefix = feedbackCells[2].textContent;
+const timePrefix = feedbackCells[3].textContent;
+elements['kind-filter'].value = 'feedback';
+elements['answer-filter'].value = 'no';
 elements['source-filter'].value = 'web';
 elements['source-empty-filter'].checked = true;
-elements['source-empty-filter'].listeners.change({currentTarget: elements['source-empty-filter']});
-const emptySourceQuery = listQuery();
-const sourceFilterDisabledAfterCheck = elements['source-filter'].disabled;
-elements['source-empty-filter'].checked = false;
-elements['source-empty-filter'].listeners.change({currentTarget: elements['source-empty-filter']});
-const emptySourceState = {
-  sourceFilterValue: elements['source-filter'].value,
-  sourceFilterDisabledAfterCheck,
-  sourceFilterEnabledAfterUncheck: !elements['source-filter'].disabled,
-  query: emptySourceQuery
-};
+syncFilterDependencies();
+elements['result-status'].textContent = '変更しない';
+renderList([], false);
 process.stdout.write(JSON.stringify({
-  splitState,
-  unsplitState,
-  populated,
-  loadingState,
-  loadedState,
-  categorySearchKeys,
-  sourceSearchKeys,
-  emptyVisible: !elements['empty-state'].hidden,
-  emptyCount: elements['entry-count'].textContent,
-  emptySourceState
-}));
-"""
-    )
-    assert result["splitState"] == {
-        "heading": "未完了TBD",
-        "count": "1件",
-        "primaryKeys": ["new.md"],
-        "otherHidden": False,
-        "otherCount": "4件",
-        "otherKeys": ["old.md", "answered.md", "finished.md", "empty-source.md"],
-    }
-    assert result["unsplitState"] == {
-        "heading": "未完了TBD",
-        "count": "1件",
-        "primaryKeys": ["new.md"],
-        "otherHidden": False,
-        "otherCount": "4件",
-        "otherKeys": ["old.md", "answered.md", "finished.md", "empty-source.md"],
-    }
-    assert result["populated"]["count"] == "1件"
-    assert result["populated"]["first"] == "new.md"
-    assert result["populated"]["emptyHidden"] is True
-    assert "target_repo=example%2Frepo" in result["populated"]["query"]
-    assert "category=category-token" in result["populated"]["query"]
-    assert "source=source-token" in result["populated"]["query"]
-    assert result["categorySearchKeys"] == ["new.md"]
-    assert result["sourceSearchKeys"] == ["new.md"]
-    assert result["loadingState"] == {"visible": True, "primaryBusy": "true", "otherBusy": "true"}
-    assert result["loadedState"] == {"primaryBusy": "false", "otherBusy": "false"}
-    assert result["emptyVisible"] is False
-    assert result["emptyCount"] == "1件"
-    assert result["emptySourceState"]["sourceFilterValue"] == ""
-    assert result["emptySourceState"]["sourceFilterDisabledAfterCheck"] is True
-    assert result["emptySourceState"]["sourceFilterEnabledAfterUncheck"] is True
-    assert "source_empty=true" in result["emptySourceState"]["query"]
-    assert "source=" not in result["emptySourceState"]["query"]
-    assert "q=%E4%B8%80%E8%87%B4%E3%81%97%E3%81%AA%E3%81%84" in result["emptySourceState"]["query"]
-
-
-def test_assets_use_consistent_readable_typography() -> None:
-    """本文と補助文字の最小文字サイズを検証する。"""
-    assert "--font-size-body: 1rem" in assets.CSS
-    assert "--font-size-secondary: 0.875rem" in assets.CSS
-    sizes = re.findall(r"font-size:\s*([0-9.]+)rem", assets.CSS)
-    assert sizes
-    assert all(float(size) >= 0.875 for size in sizes)
-
-
-def test_assets_use_japanese_labels_for_entry_states() -> None:
-    """種別、状態、回答状況を日本語ラベルへ変換する。"""
-    result = _run_node_ui(
-        """
-process.stdout.write(JSON.stringify({
-  kinds: [labelFor('kind', 'feedback'), labelFor('kind', 'tbd')],
-  states: ['inbox', 'processing', 'adopted', 'rejected'].map(value => labelFor('state', value)),
-  answers: [true, false, null].map(value => labelFor('answered', value))
+  keys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
+  unanswered: elements['entry-list'].children[0].children[0].dataset.unansweredTbd,
+  unknownKind: elements['entry-list'].children[1].children[0].dataset.kind,
+  count: elements['entry-count'].textContent,
+  warning,
+  announced,
+  statusPrefix,
+  timePrefix,
+  sseStatus: elements['result-status'].textContent,
+  answerValue: elements['answer-filter'].value,
+  answerDisabled: elements['answer-filter'].disabled,
+  sourceValue: elements['source-filter'].value,
+  sourceDisabled: elements['source-filter'].disabled
 }));
 """
     )
     assert result == {
-        "kinds": ["フィードバック", "確認事項"],
-        "states": ["未処理", "処理中", "採用済み", "不採用"],
-        "answers": ["回答済み", "未回答", "対象外"],
+        "keys": ["inbox/u.md", "inbox/x.md", "inbox/f.md"],
+        "unanswered": "true",
+        "unknownKind": "unknown",
+        "count": "3件（未回答TBD 1件）",
+        "warning": "一覧から除外したファイル: bad.md（UTF-8として読み取れません）",
+        "announced": "3件を表示",
+        "statusPrefix": "",
+        "timePrefix": "",
+        "sseStatus": "変更しない",
+        "answerValue": "all",
+        "answerDisabled": True,
+        "sourceValue": "",
+        "sourceDisabled": True,
     }
 
 
-def test_processing_removal_requires_explicit_force_confirmation() -> None:
-    """processing削除だけに明示確認とforce送信を要求する。"""
+def test_assets_render_three_contextual_empty_states() -> None:
+    """条件適用中、対応中0件、全件0件を別の回復操作へ案内する。"""
     result = _run_node_ui(
         """
-fetchHandler = async () => ({
-  ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entries: [], filenames: ['entry.md']})
-});
-const processing = {kind: 'feedback', state: 'processing', filename: 'entry.md', content: '本文'};
-currentEntry = processing;
-openDeleteDialog();
-await removeEntry({preventDefault() {}});
-const beforeConfirmation = fetchCalls.length;
-elements['force-delete-confirmation'].checked = true;
-await removeEntry({preventDefault() {}});
-const forcedBody = JSON.parse(fetchCalls.find(call => call.options.method === 'POST').options.body);
-currentEntry = {kind: 'feedback', state: 'inbox', filename: 'inbox.md', content: '本文'};
-openDeleteDialog();
-await removeEntry({preventDefault() {}});
-const postCalls = fetchCalls.filter(call => call.options.method === 'POST');
+entries = [];
+renderEmptyState();
+const active = {
+  message: elements['empty-state-message'].textContent,
+  allStates: !elements['empty-all-states-button'].hidden
+};
+elements['search-input'].value = 'none';
+renderEmptyState();
+const filtered = {
+  message: elements['empty-state-message'].textContent,
+  clear: !elements['empty-clear-button'].hidden
+};
+elements['search-input'].value = '';
+elements['state-filter'].value = 'all';
+renderEmptyState();
+const all = {
+  message: elements['empty-state-message'].textContent,
+  create: !elements['empty-create-button'].hidden
+};
+process.stdout.write(JSON.stringify({active, filtered, all}));
+"""
+    )
+    assert result == {
+        "active": {"message": "対応中の項目はありません。", "allStates": True},
+        "filtered": {"message": "条件に一致する項目はありません。", "clear": True},
+        "all": {"message": "項目はまだありません。", "create": True},
+    }
+
+
+def test_assets_keep_question_visible_and_offer_editable_answer_candidates() -> None:
+    """回答時も質問本文を残し、候補ボタンを回答欄への入力補助だけにする。"""
+    result = _run_node_ui(
+        """
+const origin = new Element('origin', 'BUTTON');
+const entry = {
+  kind: 'tbd', state: 'inbox', filename: 'question.md', answered: false,
+  summary: '質問', target_repo: 'example/repo', content: 'raw',
+  body_html: '<h2>質問</h2><p>本文</p>', question_type: 'choice', choices: ['A', 'B']
+};
+displayEntry(entry);
+openDialog(elements['detail-dialog'], origin, elements['detail-dialog-body']);
+enterAnswer();
+const candidates = elements['answer-choices'].children.map(button => button.textContent);
+elements['answer-choices'].children[0].listeners.click();
+const afterCandidate = elements['answer-input'].value;
+elements['answer-input'].value += 'を補足';
+const answerVisible = !elements['answer-panel'].hidden;
+closeDetailDialog();
 process.stdout.write(JSON.stringify({
-  forceVisible: !elements['force-delete-row'].hidden,
-  beforeConfirmation,
-  forcedBody,
-  inboxBody: JSON.parse(postCalls[1].options.body)
+  detailVisible: !elements['detail-view'].hidden,
+  answerVisible,
+  candidates,
+  afterCandidate,
+  edited: elements['answer-input'].value,
+  focused
 }));
 """
     )
-    assert result["beforeConfirmation"] == 0
-    assert result["forcedBody"] == {"filenames": ["entry.md"], "force": True}
-    assert result["inboxBody"] == {"filenames": ["inbox.md"]}
+    assert result == {
+        "detailVisible": True,
+        "answerVisible": True,
+        "candidates": ["A", "B"],
+        "afterCandidate": "A",
+        "edited": "Aを補足",
+        "focused": "origin",
+    }
 
 
-def test_finished_entries_are_read_only() -> None:
-    """終了状態では編集、回答、削除を隠し、対応中状態で表示する。"""
+def test_assets_restore_focus_on_escape_and_focus_delete_close_first() -> None:
+    """Escapeで起点へ戻り、破壊確認では非破壊の閉じる操作へ初期フォーカスを置く。"""
     result = _run_node_ui(
         """
-const result = {};
-for (const state of ['inbox', 'processing', 'adopted', 'rejected']) {
-  editing = true;
-  displayEntry({
-    kind: 'tbd', state, filename: `${state}.md`, answered: false,
-    content: '本文', content_html: '<p>本文</p>', updated_at: '2026-01-01'
-  });
-  result[state] = {
-    actions: !elements['detail-actions'].hidden,
-    edit: !elements['edit-button'].hidden,
-    remove: !elements['delete-button'].hidden,
-    readonly: !elements['readonly-notice'].hidden,
-    answer: !elements['answer-button'].hidden
-  };
-}
-process.stdout.write(JSON.stringify(result));
+const origin = new Element('create-origin', 'BUTTON');
+attachDialogCloseHandlers('create-dialog', 'create-close-button', () => closeDialog(elements['create-dialog']));
+openDialog(elements['create-dialog'], origin, elements['create-content']);
+elements['create-dialog'].listeners.cancel({preventDefault() {}});
+const restored = focused;
+displayEntry({
+  kind: 'feedback', state: 'processing', filename: 'entry.md', answered: null,
+  summary: '要約', target_repo: 'example/repo', content: 'raw', body_html: '<p>本文</p>',
+  question_type: 'free-form', choices: []
+});
+elements['detail-dialog'].open = true;
+dialogStack.push('detail-dialog');
+openDeleteDialog();
+process.stdout.write(JSON.stringify({
+  restored,
+  deleteInitial: focused,
+  closeSizeClass: elements['delete-close-button'].className,
+  detailStillOpen: elements['detail-dialog'].open
+}));
 """
     )
-    for active_state in ("inbox", "processing"):
-        assert result[active_state] == {
-            "actions": True,
-            "edit": True,
-            "remove": True,
-            "readonly": False,
-            "answer": True,
-        }
-    for finished_state in ("adopted", "rejected"):
-        assert result[finished_state] == {
-            "actions": False,
-            "edit": False,
-            "remove": False,
-            "readonly": True,
-            "answer": False,
-        }
+    assert result == {
+        "restored": "create-origin",
+        "deleteInitial": "delete-close-button",
+        "closeSizeClass": "dialog-close",
+        "detailStillOpen": True,
+    }
 
 
-def test_assets_keep_selection_and_reload_from_sse() -> None:
-    """SSE更新と遅延した詳細応答から編集中の表示・入力値・競合基準を保護する。"""
-    assert "loadEntries({fromSse: true});" in assets.JS
-    assert "events.addEventListener('changed', () => {" in assets.JS
+def test_assets_restore_detail_focus_after_origin_row_disappears() -> None:
+    """詳細の起点行が消えた場合も、残存行又は空状態の操作へフォーカスを戻す。"""
+    result = _run_node_ui(
+        """
+const first = {
+  kind: 'feedback', state: 'inbox', filename: 'first.md', answered: null,
+  summary: '先頭', content: '本文', body_html: '<p>本文</p>'
+};
+const second = {
+  kind: 'feedback', state: 'inbox', filename: 'second.md', answered: null,
+  summary: '次行', content: '本文', body_html: '<p>本文</p>'
+};
+entries = [first, second];
+renderList();
+const firstButton = elements['entry-list'].children[0].children[0];
+displayEntry(first);
+detailOriginKey = entryKey(first);
+openDialog(elements['detail-dialog'], firstButton, elements['detail-dialog-body']);
+entries = [second];
+renderList();
+closeDetailDialog();
+const remainingRow = focused;
+
+entries = [second];
+renderList();
+const secondButton = elements['entry-list'].children[0].children[0];
+displayEntry(second);
+detailOriginKey = entryKey(second);
+openDialog(elements['detail-dialog'], secondButton, elements['detail-dialog-body']);
+elements['search-input'].value = '一致しない条件';
+entries = [];
+renderList();
+closeDetailDialog();
+process.stdout.write(JSON.stringify({remainingRow, emptyState: focused}));
+"""
+    )
+    assert result == {
+        "remainingRow": "inbox/second.md",
+        "emptyState": "empty-clear-button",
+    }
+
+
+def test_assets_reload_open_detail_from_sse_and_preserve_editing_input() -> None:
+    """SSE更新時に閲覧本文を再取得し、編集中は入力を保持して消失時に閉じる。"""
     result = _run_node_ui(
         """
 const listed = {
-  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
-  summary: '更新後一覧', updated_at: '2026-02-01'
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  summary: '一覧要約', target_repo: 'example/repo'
 };
-let resolveDetail;
-let deferDetail = false;
-fetchHandler = async (url, options) => {
-  if (!options.method || options.method === 'GET') {
-    if (deferDetail && url.includes('/api/entries/inbox/')) {
-      return new Promise(resolve => { resolveDetail = resolve; });
-    }
-    const body = url.includes('/api/entries/inbox/')
-      ? {entry: {...listed, content: 'SSE再描画本文', content_html: '<p>SSE再描画本文</p>'}}
-      : {entries: [listed]};
-    return {ok: true, status: 200, statusText: 'OK', json: async () => body};
+let detailContent = '外部更新後の本文';
+let deleted = false;
+fetchHandler = async url => {
+  if (url.includes('/api/repos?')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})};
   }
-  return {
-    ok: false, status: 409, statusText: 'Conflict',
-    json: async () => ({
-      error: '編集中に他プロセスが対象を変更しました',
-      code: 'edit_conflict'
-    })
-  };
+  if (url.includes('/api/entries?')) {
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({entries: deleted ? [] : [listed], warnings: []})
+    };
+  }
+  if (url.includes('/api/entries/')) {
+    if (deleted) {
+      return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+    }
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({entry: {...listed, content: detailContent, body_html: `<p>${detailContent}</p>`}})
+    };
+  }
+  throw new Error('想定外のURL: ' + url);
 };
-currentEntry = {...listed, content: '更新前本文'};
-detailOriginKey = entryKey(currentEntry);
-editing = false;
-elements['detail-dialog'].open = true;
-await loadEntries({fromSse: true});
-const redrawnDetail = elements['detail-content'].innerHTML;
-const detailRequests = fetchCalls.filter(call => call.url.includes('/api/entries/inbox/')).length;
-currentEntry = {...listed, content: '取得時本文', content_html: '<p>取得時本文</p>'};
-displayEntry(currentEntry);
-deferDetail = true;
-const pendingDetail = renderDetail(listed);
+const original = {...listed, content: '更新前の本文', body_html: '<p>更新前の本文</p>'};
+entries = [original];
+renderList();
+const origin = elements['entry-list'].children[0].children[0];
+displayEntry(original);
+detailOriginKey = entryKey(original);
+openDialog(elements['detail-dialog'], origin, elements['detail-dialog-body']);
+await reloadFromExternalChange();
+const viewed = elements['detail-content'].innerHTML;
 enterEdit();
-elements['edit-content'].value = '利用者の本文';
-elements['answer-input'].value = '利用者の回答';
-resolveDetail({
-  ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entry: {...listed, content: '遅延した詳細本文', content_html: '<p>遅延した詳細本文</p>'}})
-});
-await pendingDetail;
-const delayedResponse = {
-  currentContent: currentEntry.content,
-  displayedContent: elements['detail-content'].innerHTML,
-  error: elements['global-error'].textContent
+elements['edit-content'].value = '利用者の未保存本文';
+detailContent = '編集中の外部更新';
+await reloadFromExternalChange();
+const editing = {
+  input: elements['edit-content'].value,
+  baseline: currentEntry.content,
+  alert: elements['detail-alert'].textContent,
+  saveDisabled: elements['save-entry-button'].disabled,
+  open: elements['detail-dialog'].open
 };
-deferDetail = false;
-await loadEntries({fromSse: true});
-await saveEntry();
+setDetailMode('answer');
+elements['answer-input'].value = '利用者の未保存回答';
+detailContent = '回答中の外部更新';
+await reloadFromExternalChange();
+const answering = {
+  input: elements['answer-input'].value,
+  alert: elements['detail-alert'].textContent,
+  saveDisabled: elements['save-answer-button'].disabled,
+  open: elements['detail-dialog'].open
+};
+deleted = true;
+await reloadFromExternalChange();
 process.stdout.write(JSON.stringify({
-  firstUrl: fetchCalls[0].url,
-  redrawnDetail,
-  detailRequests,
-  selected: currentEntry.filename,
-  content: elements['edit-content'].value,
-  answer: elements['answer-input'].value,
-  editBaseline,
-  answerBaseline,
-  delayedResponse,
-  error: elements['global-error'].textContent
+  viewed,
+  detailRequests: fetchCalls.filter(call => call.url.includes('/api/entries/')).length,
+  editing,
+  answering,
+  afterDelete: {open: elements['detail-dialog'].open, focused}
 }));
 """
     )
-    assert result["firstUrl"].startswith("/atk/api/entries?")
-    assert result["redrawnDetail"] == "<p>SSE再描画本文</p>"
-    assert result["detailRequests"] == 1
-    assert result["selected"] == "entry.md"
-    assert result["content"] == "利用者の本文"
-    assert result["answer"] == "利用者の回答"
-    assert result["editBaseline"] == result["answerBaseline"] == "取得時本文"
-    assert result["delayedResponse"] == {
-        "currentContent": "取得時本文",
-        "displayedContent": "<p>取得時本文</p>",
-        "error": "外部で項目が更新されました。編集中の入力を保持しています。保存前に詳細を再読込してください。",
+    assert result["viewed"] == "<p>外部更新後の本文</p>"
+    assert result["detailRequests"] >= 3
+    assert result["editing"] == {
+        "input": "利用者の未保存本文",
+        "baseline": "外部更新後の本文",
+        "alert": "外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。",
+        "saveDisabled": True,
+        "open": True,
     }
-    assert "入力内容を保持" in result["error"]
-    assert "/api/sync" not in result["firstUrl"]
+    assert result["answering"] == {
+        "input": "利用者の未保存回答",
+        "alert": "外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。",
+        "saveDisabled": True,
+        "open": True,
+    }
+    assert result["afterDelete"] == {"open": False, "focused": "empty-all-states-button"}
 
 
-def test_list_reload_tracks_selection_across_state_transition() -> None:
-    """状態移動後も同じファイル名の選択を維持し、最新状態の詳細を取得する。"""
+def test_assets_sse_detail_tracks_state_and_discards_stale_response() -> None:
+    """SSE詳細は状態移動を追跡し、別項目選択後の古い応答を破棄する。"""
     result = _run_node_ui(
         """
 const inbox = {
-  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: true,
-  summary: '移動前一覧', updated_at: '2026-02-01',
-  content: '移動前本文', content_html: '<p>移動前本文</p>'
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  content: '移動前本文', body_html: '<p>移動前本文</p>'
 };
 const processing = {
-  ...inbox, state: 'processing', summary: '移動後一覧',
-  updated_at: '2026-02-02', content: '移動後本文', content_html: '<p>移動後本文</p>'
+  ...inbox, state: 'processing', content: '移動後本文', body_html: '<p>移動後本文</p>'
 };
-let listEntries = [processing];
-fetchHandler = async url => {
-  const body = url.includes('/api/entries/processing/')
-    ? {entry: processing}
-    : {entries: listEntries};
-  return {ok: true, status: 200, statusText: 'OK', json: async () => body};
+const second = {
+  kind: 'feedback', state: 'inbox', filename: 'second.md', answered: null,
+  content: '別項目本文', body_html: '<p>別項目本文</p>'
 };
-currentEntry = inbox;
+displayEntry(inbox);
 detailOriginKey = entryKey(inbox);
 elements['detail-dialog'].open = true;
-await loadEntries({fromSse: true});
-const afterTransition = {
-  dialogOpen: elements['detail-dialog'].open,
-  selectedFilename: currentEntry.filename,
-  selectedState: currentEntry.state,
-  detailState: elements['detail-state'].textContent,
-  detailContent: elements['detail-content'].innerHTML,
-  detailUrls: fetchCalls
-    .map(call => call.url)
-    .filter(url => !url.includes('/api/entries?'))
-};
-listEntries = [];
-await loadEntries({fromSse: true});
-process.stdout.write(JSON.stringify({
-  afterTransition,
-  afterDisappearance: {
-    dialogOpen: elements['detail-dialog'].open,
-    selected: currentEntry
-  }
-}));
-"""
-    )
-    assert result["afterTransition"] == {
-        "dialogOpen": True,
-        "selectedFilename": "entry.md",
-        "selectedState": "processing",
-        "detailState": "処理中",
-        "detailContent": "<p>移動後本文</p>",
-        "detailUrls": ["/atk/api/entries/processing/entry.md"],
-    }
-    assert result["afterDisappearance"]["dialogOpen"] is False
-
-
-def test_sse_disappearance_confirms_before_discarding_unsaved_input() -> None:
-    """SSE一覧から選択項目が消えても未保存本文を保持して確認する。"""
-    result = _run_node_ui(
-        """
-const entry = {
-  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-  content: '取得時本文', content_html: '<p>取得時本文</p>'
-};
-currentEntry = entry;
-detailOriginKey = entryKey(entry);
-elements['detail-dialog'].open = true;
-enterEdit();
-elements['edit-content'].value = '未保存本文';
-fetchHandler = async () => ({
-  ok: true, status: 200, statusText: 'OK', json: async () => ({entries: []})
-});
-await loadEntries({fromSse: true});
-process.stdout.write(JSON.stringify({
-  detailOpen: elements['detail-dialog'].open,
-  confirmationOpen: elements['unsaved-dialog'].open,
-  editing,
-  content: elements['edit-content'].value
-}));
-"""
-    )
-    assert result == {
-        "detailOpen": True,
-        "confirmationOpen": True,
-        "editing": True,
-        "content": "未保存本文",
-    }
-
-
-def test_detail_discards_out_of_order_response_for_previous_selection() -> None:
-    """選択項目を変更した後に完了した古い詳細応答を画面へ反映しない。"""
-    result = _run_node_ui(
-        """
-const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文', content_html: '<p>A本文</p>'};
-const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文', content_html: '<p>B本文</p>'};
-const resolvers = {};
-fetchHandler = async url => new Promise(resolve => {
-  resolvers[url.endsWith('/a.md') ? 'a' : 'b'] = resolve;
-});
-const firstRequest = selectEntry(first, new Element('a-origin'));
-const secondRequest = selectEntry(second, new Element('b-origin'));
-resolvers.b({
+entries = [processing];
+fetchHandler = async url => ({
   ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entry: second})
+  json: async () => ({entry: url.endsWith('/entry.md') ? processing : second})
 });
-await secondRequest;
-resolvers.a({
-  ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entry: first})
-});
-await firstRequest;
-process.stdout.write(JSON.stringify({
-  selected: currentEntry.filename,
+await reloadOpenDetailFromExternalChange();
+const moved = {
+  state: currentEntry.state,
   content: elements['detail-content'].innerHTML,
   key: detailOriginKey
-}));
-"""
-    )
-    assert result == {"selected": "b.md", "content": "<p>B本文</p>", "key": "b.md"}
+};
 
-
-def test_stale_list_reload_does_not_invalidate_current_detail_request() -> None:
-    """一覧再読込中の選択変更後は、古い選択の詳細要求を開始しない。"""
-    result = _run_node_ui(
-        """
-const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文', content_html: '<p>A本文</p>'};
-const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文', content_html: '<p>B本文</p>'};
-currentEntry = first;
-elements['detail-dialog'].open = true;
-let resolveList;
-let resolveSecond;
+let resolveStale;
+let markStaleStarted;
+const staleStarted = new Promise(resolve => { markStaleStarted = resolve; });
 fetchHandler = async url => {
-  if (url.includes('/api/entries?')) return new Promise(resolve => { resolveList = resolve; });
-  return new Promise(resolve => { resolveSecond = resolve; });
+  if (url.endsWith('/entry.md')) return new Promise(resolve => {
+    resolveStale = resolve;
+    markStaleStarted();
+  });
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: second})};
 };
-const staleReload = loadEntries();
-const secondRequest = selectEntry(second, new Element('b-origin'));
-resolveList({
+const stale = reloadOpenDetailFromExternalChange();
+await staleStarted;
+await selectEntry(second, new Element('second-origin', 'BUTTON'));
+resolveStale({
   ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entries: [first, second]})
+  json: async () => ({entry: {...processing, content: '遅延本文', body_html: '<p>遅延本文</p>'}})
 });
-await staleReload;
-resolveSecond({
-  ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entry: second})
-});
-await secondRequest;
+await stale;
 process.stdout.write(JSON.stringify({
-  selected: currentEntry.filename,
-  content: elements['detail-content'].innerHTML,
-  generation: detailRequestGeneration
-}));
-"""
-    )
-    assert result == {"selected": "b.md", "content": "<p>B本文</p>", "generation": 1}
-
-
-def test_detail_discards_older_error_for_same_selection() -> None:
-    """同じ選択項目の古い404応答は最新の詳細表示を閉じず、エラーも表示しない。"""
-    result = _run_node_ui(
-        """
-const entry = {kind: 'feedback', state: 'inbox', filename: 'entry.md', content: '一覧本文', content_html: '<p>一覧本文</p>'};
-detailOriginKey = entryKey(entry);
-elements['detail-dialog'].open = true;
-const resolvers = [];
-fetchHandler = async () => new Promise(resolve => { resolvers.push(resolve); });
-const older = renderDetail(entry, {closeWhenMissing: true});
-const newer = renderDetail(entry, {closeWhenMissing: true});
-resolvers[1]({
-  ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entry: {...entry, content: '最新本文', content_html: '<p>最新本文</p>'}})
-});
-await newer;
-resolvers[0]({
-  ok: false, status: 404, statusText: 'Not Found',
-  json: async () => ({error: '見つかりません'})
-});
-await older;
-process.stdout.write(JSON.stringify({
-  selected: currentEntry.filename,
-  content: elements['detail-content'].innerHTML,
-  open: elements['detail-dialog'].open,
-  error: elements['global-error'].textContent
+  moved,
+  final: {filename: currentEntry.filename, content: elements['detail-content'].innerHTML, key: detailOriginKey}
 }));
 """
     )
     assert result == {
-        "selected": "entry.md",
-        "content": "<p>最新本文</p>",
-        "open": True,
-        "error": "",
+        "moved": {
+            "state": "processing",
+            "content": "<p>移動後本文</p>",
+            "key": "processing/entry.md",
+        },
+        "final": {
+            "filename": "second.md",
+            "content": "<p>別項目本文</p>",
+            "key": "inbox/second.md",
+        },
     }
 
 
-def test_initial_and_manual_sync_always_fall_back_to_local_entries() -> None:
-    """同期の成功、409、Git失敗の各結果後にローカル一覧を取得して利用可能状態へ戻す。"""
-    assert "byId('refresh-button').addEventListener('click', synchronizeAndLoad)" in assets.JS
-    assert assets.JS.rstrip().endswith("synchronizeAndLoad();")
+def test_assets_sse_detail_prefers_exact_identity_and_only_tracks_unique_move() -> None:
+    """SSE詳細は複合キーを優先し、404後の一意な移動だけを追跡する。"""
     result = _run_node_ui(
         """
-let syncResult = 'success';
-fetchHandler = async (url, options) => {
-  if (url.endsWith('/api/sync')) {
-    if (syncResult === 'success') {
-      return {ok: true, status: 200, statusText: 'OK', json: async () => ({synced: true})};
-    }
-    const conflict = syncResult === 'conflict';
-    return {
-      ok: false,
-      status: conflict ? 409 : 500,
-      statusText: conflict ? 'Conflict' : 'Internal Server Error',
-      json: async () => ({
-        error: conflict ? '別の操作が進行中です' : 'Git同期に失敗しました',
-        code: conflict ? 'lock_conflict' : undefined
-      })
-    };
+const processing = {
+  kind: 'feedback', state: 'processing', filename: 'same.md', answered: null,
+  summary: '処理中', content: '処理中本文', body_html: '<p>処理中本文</p>'
+};
+const inbox = {
+  ...processing, state: 'inbox', summary: '未処理', content: '未処理本文', body_html: '<p>未処理本文</p>'
+};
+const adopted = {
+  ...processing, state: 'adopted', summary: '採用済み', content: '採用済み本文', body_html: '<p>採用済み本文</p>'
+};
+displayEntry(processing);
+detailOriginKey = entryKey(processing);
+elements['detail-dialog'].open = true;
+entries = [inbox, processing];
+const exactRequests = [];
+fetchHandler = async url => {
+  exactRequests.push(url);
+  const entry = url.includes('/processing/') ? processing : inbox;
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry})};
+};
+await reloadOpenDetailFromExternalChange();
+const exact = {
+  state: currentEntry.state,
+  content: elements['detail-content'].innerHTML,
+  requests: exactRequests
+};
+
+fetchHandler = async url => {
+  if (url.includes('/processing/')) {
+    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
   }
-  return {
-    ok: true, status: 200, statusText: 'OK',
-    json: async () => ({entries: [{
-      kind: 'feedback', state: 'inbox', filename: 'local.md',
-      summary: 'ローカル一覧', updated_at: '2026-01-01'
-    }]})
-  };
+  if (url.includes('/inbox/')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: inbox})};
+  }
+  return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
 };
-await Promise.all([synchronizeAndLoad(), synchronizeAndLoad()]);
-const parallelAvailable = !loading && elements['entry-count'].textContent === '1件';
-syncResult = 'conflict';
-await synchronizeAndLoad();
-const conflictError = elements['global-error'].textContent;
-syncResult = 'git';
-await synchronizeAndLoad();
-const gitError = elements['global-error'].textContent;
+await reloadOpenDetailFromExternalChange();
+const uniqueMove = {state: currentEntry.state, key: detailOriginKey, open: elements['detail-dialog'].open};
+
+displayEntry(processing);
+detailOriginKey = entryKey(processing);
+elements['detail-dialog'].open = true;
+fetchHandler = async url => {
+  if (url.includes('/processing/')) {
+    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+  }
+  const entry = url.includes('/inbox/') ? inbox : adopted;
+  if (url.includes('/inbox/') || url.includes('/adopted/')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry})};
+  }
+  return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+};
+await reloadOpenDetailFromExternalChange();
 process.stdout.write(JSON.stringify({
-  parallelAvailable,
-  conflictError,
-  gitError,
-  syncCalls: fetchCalls.filter(call => call.url.endsWith('/api/sync')).length,
-  entryCalls: fetchCalls.filter(call => call.url.includes('/api/entries?')).length,
-  available: !loading && elements['entry-list'].children.length === 1
+  exact,
+  uniqueMove,
+  ambiguous: {
+    detailOpen: elements['detail-dialog'].open,
+    currentEntryIsNull: currentEntry === null,
+    error: elements['global-error'].textContent
+  }
 }));
 """
     )
     assert result == {
-        "parallelAvailable": True,
-        "conflictError": "別の操作が進行中です",
-        "gitError": "Git同期に失敗しました",
-        "syncCalls": 4,
-        "entryCalls": 4,
-        "available": True,
+        "exact": {
+            "state": "processing",
+            "content": "<p>処理中本文</p>",
+            "requests": ["/atk/api/entries/processing/same.md"],
+        },
+        "uniqueMove": {
+            "state": "inbox",
+            "key": "inbox/same.md",
+            "open": True,
+        },
+        "ambiguous": {
+            "detailOpen": False,
+            "currentEntryIsNull": True,
+            "error": "same.mdの移動先を一意に特定できません。詳細を開き直してください。",
+        },
     }
 
 
-def test_edit_and_answer_conflicts_keep_user_input() -> None:
-    """編集競合だけを外部更新として案内し、ロック競合は通常エラーにする。"""
+def test_assets_sse_keeps_edit_target_for_duplicate_filename() -> None:
+    """同名項目のSSE後も編集中の複合キーを保存先として維持する。"""
     result = _run_node_ui(
         """
-let conflictCode = 'edit_conflict';
-fetchHandler = async () => ({
-  ok: false, status: 409, statusText: 'Conflict',
-  json: async () => ({
-    error: conflictCode === 'edit_conflict'
-      ? '編集中に他プロセスが対象を変更しました'
-      : '別の操作が進行中です',
-    code: conflictCode
-  })
-});
-currentEntry = {
-  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
-  content: '取得時本文'
+const processing = {
+  kind: 'feedback', state: 'processing', filename: 'same.md', answered: null,
+  summary: '処理中', content: '処理中本文', body_html: '<p>処理中本文</p>'
 };
-editing = true;
-editBaseline = '取得時本文';
-answerBaseline = '取得時本文';
-elements['edit-content'].value = '保存したい本文';
-elements['answer-input'].value = '保存したい回答';
+const inbox = {
+  ...processing, state: 'inbox', summary: '未処理', content: '未処理本文', body_html: '<p>未処理本文</p>'
+};
+displayEntry(processing);
+detailOriginKey = entryKey(processing);
+elements['detail-dialog'].open = true;
+entries = [inbox, processing];
+enterEdit();
+elements['edit-content'].value = '利用者の保存本文';
+const putUrls = [];
+fetchHandler = async (url, options) => {
+  if (options.method === 'PUT') {
+    putUrls.push(url);
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({ok: true})};
+  }
+  if (url.includes('/api/entries?')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [inbox, processing], warnings: []})};
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: processing})};
+};
+await reloadOpenDetailFromExternalChange();
 await saveEntry();
-const editError = elements['global-error'].textContent;
-await saveAnswer();
-const answerError = elements['global-error'].textContent;
-conflictCode = 'lock_conflict';
-await saveEntry();
-process.stdout.write(JSON.stringify({
-  content: elements['edit-content'].value,
-  answer: elements['answer-input'].value,
-  editError,
-  answerError,
-  lockError: elements['global-error'].textContent
-}));
+process.stdout.write(JSON.stringify({putUrls, state: currentEntry.state}));
 """
     )
-    assert result["content"] == "保存したい本文"
-    assert result["answer"] == "保存したい回答"
-    assert "再読込" in result["editError"]
-    assert "再読込" in result["answerError"]
-    assert result["lockError"] == "別の操作が進行中です"
-    assert "外部" not in result["lockError"]
+    assert result == {
+        "putUrls": ["/atk/api/entries/processing/same.md"],
+        "state": "processing",
+    }
 
 
-def test_detail_dialog_opens_and_restores_row_focus_after_close_and_escape() -> None:
-    """詳細ダイアログを選択時に開き、閉じる操作とEscape後に起点行へフォーカスを戻す。"""
+def test_assets_sse_reconciles_owned_delete_dialog() -> None:
+    """SSE移動時は削除確認を閉じ、消失時は親子を閉じて一覧へ戻す。"""
     result = _run_node_ui(
         """
-bindEvents();
-const entry = {
+const inbox = {
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-  target_repo: 'example/repo', source: 'web', category: 'ui',
-  summary: '要約', updated_at: '2026-01-01', content: '本文', content_html: '<p>本文</p>'
+  summary: '移動前', target_repo: 'example/repo', content: '本文', body_html: '<p>本文</p>'
 };
-entries = [entry];
-applyClientFilters();
-fetchHandler = async () => ({
-  ok: true, status: 200, statusText: 'OK', json: async () => ({entry})
-});
-await selectEntry(entry, elements['entry-list'].children[0].children[0]);
-const opened = elements['detail-dialog'].open;
-elements['detail-close-button'].listeners.click();
-const closeFocus = globalThis.focused;
-
-await selectEntry(entry, elements['entry-list'].children[0].children[0]);
-let prevented = false;
-elements['detail-dialog'].listeners.cancel({preventDefault() { prevented = true; }});
-if (!prevented) elements['detail-dialog'].close();
-const escapeFocus = globalThis.focused;
-
-await selectEntry(entry, elements['entry-list'].children[0].children[0]);
-enterEdit();
-elements['edit-content'].value = '未保存本文';
-let editPrevented = false;
-elements['detail-dialog'].listeners.cancel({preventDefault() { editPrevented = true; }});
-if (!editPrevented) elements['detail-dialog'].close();
-process.stdout.write(JSON.stringify({
-  opened,
-  closeFocus,
-  escapeFocus,
-  editPrevented,
-  editingOpen: elements['detail-dialog'].open
-}));
-"""
-    )
-    assert result == {
-        "opened": True,
-        "closeFocus": "entry.md",
-        "escapeFocus": "entry.md",
-        "editPrevented": True,
-        "editingOpen": True,
-    }
-
-
-def test_detail_close_click_does_not_force_close_while_editing() -> None:
-    """閉じるクリックのMouseEventを強制終了引数として扱わず、編集中の入力を保持する。"""
-    result = _run_node_ui(
-        """
-bindEvents();
-currentEntry = {
-  kind: 'feedback', state: 'inbox', filename: 'entry.md',
-  answered: null, content: '取得時本文'
+const processing = {...inbox, state: 'processing', summary: '移動後'};
+const remaining = {...inbox, filename: 'remaining.md', summary: '残存'};
+entries = [inbox, remaining];
+renderList();
+const origin = elements['entry-list'].children[0].children[0];
+displayEntry(inbox);
+detailOriginKey = entryKey(inbox);
+openDialog(elements['detail-dialog'], origin, elements['detail-dialog-body']);
+openDeleteDialog();
+let phase = 'moved';
+fetchHandler = async url => {
+  if (url.includes('/inbox/entry.md')) {
+    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+  }
+  if (phase === 'moved' && url.includes('/processing/entry.md')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: processing})};
+  }
+  return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
 };
-elements['detail-dialog'].open = true;
-enterEdit();
-elements['edit-content'].value = '未保存本文';
-elements['detail-close-button'].listeners.click({type: 'click'});
-process.stdout.write(JSON.stringify({
-  open: elements['detail-dialog'].open,
-  editing,
-  content: elements['edit-content'].value
-}));
-"""
-    )
-    assert result == {"open": True, "editing": True, "content": "未保存本文"}
-
-
-def test_body_edit_and_answer_are_exclusive_and_confirm_unsaved_exit() -> None:
-    """本文編集と回答を同時表示せず、dirty状態の終了を確認する。"""
-    result = _run_node_ui(
-        """
-bindEvents();
-currentEntry = {
-  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
-  content: '取得時本文', content_html: '<p>取得時本文</p>'
-};
-elements['detail-dialog'].open = true;
-enterEdit();
-const bodyMode = {
-  body: !elements['edit-panel'].hidden,
-  answer: !elements['answer-panel'].hidden
-};
-elements['edit-content'].value = '未保存本文';
-elements['cancel-edit-button'].listeners.click({type: 'click'});
-const confirmation = {
-  open: elements['unsaved-dialog'].open,
-  editing,
-  value: elements['edit-content'].value
-};
-continueEditing();
-const continued = {
-  open: elements['unsaved-dialog'].open,
-  editing,
-  value: elements['edit-content'].value
-};
-cancelEdit();
-discardChanges();
-enterAnswer();
-const answerMode = {
-  body: !elements['edit-panel'].hidden,
-  answer: !elements['answer-panel'].hidden
-};
-elements['answer-input'].value = '未保存回答';
-elements['cancel-answer-button'].listeners.click({type: 'click'});
-const answerCancelConfirmation = {
-  open: elements['unsaved-dialog'].open,
-  editing,
-  answer: elements['answer-input'].value
-};
-continueEditing();
-elements['answer-input'].value = '   ';
-documentListeners.keydown({
-  key: 'Escape', ctrlKey: false, metaKey: false, altKey: false,
-  preventDefault() {}
-});
-const closeConfirmation = {
+await reloadOpenDetailFromExternalChange();
+const moved = {
   detailOpen: elements['detail-dialog'].open,
-  confirmationOpen: elements['unsaved-dialog'].open,
-  answer: elements['answer-input'].value
+  deleteOpen: elements['delete-dialog'].open,
+  state: currentEntry.state,
+  focused
 };
+openDeleteDialog();
+const reopened = {
+  state: elements['delete-state'].textContent,
+  forceVisible: !elements['force-delete-row'].hidden
+};
+entries = [remaining];
+renderList();
+phase = 'missing';
+await reloadOpenDetailFromExternalChange();
 process.stdout.write(JSON.stringify({
-  bodyMode, confirmation, continued, answerMode, answerCancelConfirmation, closeConfirmation
+  moved,
+  reopened,
+  missing: {
+    detailOpen: elements['detail-dialog'].open,
+    deleteOpen: elements['delete-dialog'].open,
+    focused
+  }
 }));
 """
     )
     assert result == {
-        "bodyMode": {"body": True, "answer": False},
-        "confirmation": {"open": True, "editing": True, "value": "未保存本文"},
-        "continued": {"open": False, "editing": True, "value": "未保存本文"},
-        "answerMode": {"body": False, "answer": True},
-        "answerCancelConfirmation": {"open": True, "editing": True, "answer": "未保存回答"},
-        "closeConfirmation": {"detailOpen": True, "confirmationOpen": True, "answer": "   "},
+        "moved": {
+            "detailOpen": True,
+            "deleteOpen": False,
+            "state": "processing",
+            "focused": "detail-dialog-body",
+        },
+        "reopened": {"state": "処理中", "forceVisible": True},
+        "missing": {
+            "detailOpen": False,
+            "deleteOpen": False,
+            "focused": "inbox/remaining.md",
+        },
     }
 
 
-def test_stale_list_response_cannot_overwrite_newer_conditions() -> None:
-    """古い一覧応答を無視し、全要求完了まで読込状態を維持する。"""
+def test_assets_clear_self_write_sse_alert_after_save_and_answer_success() -> None:
+    """保存・回答の応答前にSSEが届いても、成功後は競合警告を残さない。"""
     result = _run_node_ui(
         """
-bindEvents();
-const resolvers = [];
-fetchHandler = async () => new Promise(resolve => { resolvers.push(resolve); });
-elements['search-input'].value = '古い';
-const older = loadEntries();
-elements['search-input'].value = '新しい';
-elements['search-input'].listeners.input();
-const newer = loadEntries();
-resolvers[1]({
-  ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entries: [{kind: 'feedback', state: 'inbox', filename: 'new.md'}]})
-});
-await newer;
-const whileOlderPending = {
-  keys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
-  loading,
-  pendingListRequests
-};
-resolvers[0]({
-  ok: true, status: 200, statusText: 'OK',
-  json: async () => ({entries: [{kind: 'feedback', state: 'inbox', filename: 'old.md'}]})
-});
-await older;
+async function runSave() {
+  let serverEntry = {
+    kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+    summary: '保存対象', content: '更新前', body_html: '<p>更新前</p>'
+  };
+  displayEntry(serverEntry);
+  detailOriginKey = entryKey(serverEntry);
+  openDialog(elements['detail-dialog'], new Element('save-origin', 'BUTTON'), elements['detail-dialog-body']);
+  enterEdit();
+  elements['edit-content'].value = '保存後';
+  let resolveMutation;
+  let markStarted;
+  const started = new Promise(resolve => { markStarted = resolve; });
+  fetchHandler = async (url, options) => {
+    if (options.method === 'PUT') return new Promise(resolve => {
+      resolveMutation = resolve;
+      markStarted();
+    });
+    if (url.includes('/api/entries?')) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [serverEntry], warnings: []})};
+    }
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: serverEntry})};
+  };
+  const saving = saveEntry();
+  await started;
+  serverEntry = {...serverEntry, content: '保存後', body_html: '<p>保存後</p>'};
+  await reloadOpenDetailFromExternalChange();
+  const during = elements['detail-alert'].textContent;
+  resolveMutation({ok: true, status: 200, statusText: 'OK', json: async () => ({ok: true})});
+  await saving;
+  return {
+    during,
+    after: elements['detail-alert'].textContent,
+    status: elements['detail-status'].textContent,
+    mode: currentDetailMode()
+  };
+}
+
+async function runAnswer() {
+  let serverEntry = {
+    kind: 'tbd', state: 'inbox', filename: 'question.md', answered: false,
+    summary: '回答対象', content: '質問', body_html: '<p>質問</p>',
+    question_type: 'free-form', choices: []
+  };
+  displayEntry(serverEntry);
+  detailOriginKey = entryKey(serverEntry);
+  openDialog(elements['detail-dialog'], new Element('answer-origin', 'BUTTON'), elements['detail-dialog-body']);
+  enterAnswer();
+  elements['answer-input'].value = '回答';
+  let resolveMutation;
+  let markStarted;
+  const started = new Promise(resolve => { markStarted = resolve; });
+  fetchHandler = async (url, options) => {
+    if (url.endsWith('/api/entries/answer') && options.method === 'POST') return new Promise(resolve => {
+      resolveMutation = resolve;
+      markStarted();
+    });
+    if (url.includes('/api/entries?')) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [serverEntry], warnings: []})};
+    }
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: serverEntry})};
+  };
+  const answering = saveAnswer();
+  await started;
+  serverEntry = {...serverEntry, answered: true, content: '質問と回答', body_html: '<p>質問と回答</p>'};
+  await reloadOpenDetailFromExternalChange();
+  const during = elements['detail-alert'].textContent;
+  resolveMutation({ok: true, status: 200, statusText: 'OK', json: async () => ({ok: true})});
+  await answering;
+  return {
+    during,
+    after: elements['detail-alert'].textContent,
+    status: elements['detail-status'].textContent,
+    mode: currentDetailMode()
+  };
+}
+
+const saved = await runSave();
+const answered = await runAnswer();
+process.stdout.write(JSON.stringify({saved, answered}));
+"""
+    )
+    warning = "外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。"
+    assert result == {
+        "saved": {
+            "during": warning,
+            "after": "",
+            "status": "inbox/entry.mdを保存しました。",
+            "mode": "view",
+        },
+        "answered": {
+            "during": warning,
+            "after": "",
+            "status": "inbox/question.mdへ回答しました。",
+            "mode": "view",
+        },
+    }
+
+
+def test_assets_preserve_external_update_recovery_across_operation_failures() -> None:
+    """外部更新後の一般失敗と競合は復旧手順を保ち、単独の権限拒否は再試行できる。"""
+    result = _run_node_ui(
+        """
+async function exercise(kind, status, code, withExternalUpdate) {
+  const answering = kind === 'answer';
+  let serverEntry = {
+    kind: answering ? 'tbd' : 'feedback', state: 'inbox',
+    filename: answering ? 'question.md' : 'entry.md', answered: answering ? false : null,
+    summary: '操作対象', content: '更新前', body_html: '<p>更新前</p>',
+    question_type: 'free-form', choices: []
+  };
+  displayEntry(serverEntry);
+  detailOriginKey = entryKey(serverEntry);
+  openDialog(elements['detail-dialog'], new Element(`${kind}-origin`, 'BUTTON'), elements['detail-dialog-body']);
+  if (answering) {
+    enterAnswer();
+    elements['answer-input'].value = '利用者の回答';
+  } else {
+    enterEdit();
+    elements['edit-content'].value = '利用者の保存本文';
+  }
+  let resolveMutation;
+  let markStarted;
+  const started = new Promise(resolve => { markStarted = resolve; });
+  fetchHandler = async (url, options) => {
+    const isMutation = answering
+      ? url.endsWith('/api/entries/answer') && options.method === 'POST'
+      : options.method === 'PUT';
+    if (isMutation) return new Promise(resolve => {
+      resolveMutation = resolve;
+      markStarted();
+    });
+    if (url.includes('/api/entries?')) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [serverEntry], warnings: []})};
+    }
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: serverEntry})};
+  };
+  const pending = answering ? saveAnswer() : saveEntry();
+  await started;
+  if (withExternalUpdate) {
+    serverEntry = {...serverEntry, content: '外部更新後', body_html: '<p>外部更新後</p>'};
+    await reloadOpenDetailFromExternalChange();
+  }
+  const payload = {error: status === 403 ? '権限がありません' : '一般失敗'};
+  if (code) payload.code = code;
+  resolveMutation({ok: false, status, statusText: 'Error', json: async () => payload});
+  await pending;
+  const button = elements[answering ? 'save-answer-button' : 'save-entry-button'];
+  const input = elements[answering ? 'answer-input' : 'edit-content'];
+  const outcome = {
+    alert: elements['detail-alert'].textContent,
+    disabled: button.disabled,
+    input: input.value,
+    mode: currentDetailMode()
+  };
+  closeDetailDialog();
+  return outcome;
+}
+
+const saveGeneral = await exercise('save', 500, null, true);
+const answerGeneral = await exercise('answer', 500, null, true);
+const saveConflict = await exercise('save', 409, 'edit_conflict', false);
+const answerConflict = await exercise('answer', 409, 'edit_conflict', false);
+const savePermission = await exercise('save', 403, null, false);
+const answerPermission = await exercise('answer', 403, null, false);
 process.stdout.write(JSON.stringify({
-  urls: fetchCalls.map(call => call.url),
-  whileOlderPending,
-  finalKeys: elements['entry-list'].children.map(item => item.children[0].dataset.key),
-  loading,
-  pendingListRequests,
-  error: elements['global-error'].textContent
+  saveGeneral, answerGeneral, saveConflict, answerConflict, savePermission, answerPermission
 }));
 """
     )
-    assert result["urls"] == [
-        "/atk/api/entries?type=all&status=active&answered=all&q=%E5%8F%A4%E3%81%84",
-        "/atk/api/entries?type=all&status=active&answered=all&q=%E6%96%B0%E3%81%97%E3%81%84",
-    ]
-    assert result["whileOlderPending"] == {"keys": ["new.md"], "loading": True, "pendingListRequests": 1}
-    assert result["finalKeys"] == ["new.md"]
-    assert result["loading"] is False
-    assert result["pendingListRequests"] == 0
-    assert result["error"] == ""
+    for name in ("saveGeneral", "answerGeneral", "saveConflict", "answerConflict"):
+        assert "詳細を閉じて開き直してから保存してください" in result[name]["alert"]
+        assert result[name]["disabled"] is True
+        assert result[name]["mode"] == ("answer" if name.startswith("answer") else "edit")
+    assert "保存できませんでした。 一般失敗" in result["saveGeneral"]["alert"]
+    assert "回答できませんでした。 一般失敗" in result["answerGeneral"]["alert"]
+    assert result["saveGeneral"]["input"] == "利用者の保存本文"
+    assert result["answerGeneral"]["input"] == "利用者の回答"
+    assert result["savePermission"] == {
+        "alert": "inbox/entry.mdを保存できませんでした。 権限がありません",
+        "disabled": False,
+        "input": "利用者の保存本文",
+        "mode": "edit",
+    }
+    assert result["answerPermission"] == {
+        "alert": "inbox/question.mdへ回答できませんでした。 権限がありません",
+        "disabled": False,
+        "input": "利用者の回答",
+        "mode": "answer",
+    }
 
 
-def test_assets_keep_keyboard_and_narrow_viewport_support() -> None:
-    """保存、検索、Escapeのキー操作と狭幅表示を検証する。"""
-    assert "@media (max-width: 700px)" in assets.CSS
-    assert "@media (prefers-reduced-motion: reduce)" in assets.CSS
-    assert ".entry-cell::before" in assets.CSS
-    assert "content: attr(data-label)" in assets.CSS
-    assert "width: calc(100% - 1rem)" in assets.CSS
-    assert 'id="detail-dialog"' in assets.HTML
-    assert 'aria-labelledby="detail-heading"' in assets.HTML
+def test_assets_close_delete_confirmation_before_detail_refresh_failure() -> None:
+    """一覧反映後に詳細取得が失敗しても、古い削除確認を閉じて親へ復旧手順を示す。"""
     result = _run_node_ui(
         """
-bindEvents();
-let saved = 0;
-saveEntry = async () => { saved += 1; };
-editing = true;
-const preventions = [];
-documentListeners.keydown({
-  key: 's', ctrlKey: true, metaKey: false, altKey: false,
-  preventDefault() { preventions.push('save'); }
-});
-documentListeners.keydown({
-  key: 's', ctrlKey: false, metaKey: true, altKey: false,
-  preventDefault() { preventions.push('command-save'); }
-});
-editing = false;
-document.activeElement = null;
-documentListeners.keydown({
-  key: '/', ctrlKey: false, metaKey: false, altKey: false,
-  preventDefault() { preventions.push('search'); }
-});
-elements['create-dialog'].open = true;
-documentListeners.keydown({key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}});
-editing = true;
-elements['detail-dialog'].open = true;
-documentListeners.keydown({
-  key: 'Escape', ctrlKey: false, metaKey: false, altKey: false,
-  preventDefault() { preventions.push('detail-escape'); }
-});
+async function exercise(updatedEntries, warnings) {
+  const original = {
+    kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+    summary: '変更前の要約', target_repo: 'example/old', content: '変更前本文', body_html: '<p>変更前本文</p>'
+  };
+  entries = [original];
+  renderList();
+  displayEntry(original);
+  detailOriginKey = entryKey(original);
+  openDialog(elements['detail-dialog'], elements['entry-list'].children[0].children[0], elements['detail-dialog-body']);
+  openDeleteDialog();
+  fetchHandler = async url => {
+    if (url.includes('/api/repos')) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
+    }
+    if (url.includes('/api/entries?')) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: updatedEntries, warnings})};
+    }
+    return {ok: false, status: 500, statusText: 'Error', json: async () => ({error: '詳細取得に失敗'})};
+  };
+  await reloadFromExternalChange();
+  const outcome = {
+    deleteOpen: elements['delete-dialog'].open,
+    detailOpen: elements['detail-dialog'].open,
+    alert: elements['detail-alert'].textContent,
+    topmost: topmostDialog()?.id || '',
+    focused
+  };
+  closeDetailDialog();
+  return outcome;
+}
+
+const updated = {
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  summary: '変更後の要約', target_repo: 'example/new', content: '変更後本文', body_html: '<p>変更後本文</p>'
+};
+const changed = await exercise([updated], []);
+const unreadable = await exercise([], [{filename: 'entry.md', reason: 'UTF-8として読み取れません'}]);
+process.stdout.write(JSON.stringify({changed, unreadable}));
+"""
+    )
+    for outcome in result.values():
+        assert outcome["deleteOpen"] is False
+        assert outcome["detailOpen"] is True
+        assert "詳細取得に失敗" in outcome["alert"]
+        assert "削除確認を閉じました" in outcome["alert"]
+        assert "削除操作をやり直してください" in outcome["alert"]
+        assert outcome["topmost"] == "detail-dialog"
+        assert outcome["focused"] == "detail-dialog-body"
+
+
+def test_pending_helper_locks_inputs_rejects_reentry_and_keeps_close_enabled() -> None:
+    """要求中は対象操作だけを固定し、二重実行を拒み、finallyで状態を復元する。"""
+    result = _run_node_ui(
+        """
+let release;
+let calls = 0;
+const waiting = new Promise(resolve => { release = resolve; });
+const first = runPending('save', {
+  container: elements['detail-shell'],
+  button: elements['save-entry-button'],
+  busyLabel: '保存中'
+}, async () => { calls += 1; return waiting; });
+await Promise.resolve();
+const during = {
+  inputDisabled: elements['edit-content'].disabled,
+  submitDisabled: elements['save-entry-button'].disabled,
+  closeDisabled: elements['detail-close-button'].disabled,
+  label: elements['save-entry-button'].textContent,
+  busy: elements['detail-shell'].attributes['aria-busy']
+};
+const second = await runPending('save', {
+  container: elements['detail-shell'],
+  button: elements['save-entry-button'],
+  busyLabel: '保存中'
+}, async () => { calls += 1; });
+release('done');
+await first;
+let failureCaught = false;
+try {
+  await runPending('create', {
+    container: elements['create-form'],
+    button: elements['create-submit-button'],
+    busyLabel: '追加中'
+  }, async () => { throw new Error('失敗'); });
+} catch (error) {
+  failureCaught = error.message === '失敗';
+}
 process.stdout.write(JSON.stringify({
-  saved,
-  preventions,
-  focused: globalThis.focused,
-  dialogOpen: elements['create-dialog'].open,
-  editing
+  during,
+  secondIsUndefined: second === undefined,
+  calls,
+  failureCaught,
+  failureRestored: !elements['create-content'].disabled &&
+    elements['create-form'].attributes['aria-busy'] === 'false',
+  after: {
+    inputDisabled: elements['edit-content'].disabled,
+    submitDisabled: elements['save-entry-button'].disabled,
+    label: elements['save-entry-button'].textContent,
+    busy: elements['detail-shell'].attributes['aria-busy']
+  }
 }));
 """
     )
     assert result == {
-        "saved": 2,
-        "preventions": ["save", "command-save", "search", "detail-escape"],
-        "focused": "search-input",
-        "dialogOpen": False,
-        "editing": False,
+        "during": {
+            "inputDisabled": True,
+            "submitDisabled": True,
+            "closeDisabled": False,
+            "label": "保存中",
+            "busy": "true",
+        },
+        "secondIsUndefined": True,
+        "calls": 1,
+        "failureCaught": True,
+        "failureRestored": True,
+        "after": {
+            "inputDisabled": False,
+            "submitDisabled": False,
+            "label": "",
+            "busy": "false",
+        },
+    }
+
+
+def test_operation_result_uses_current_topmost_dialog_or_global_toast() -> None:
+    """開始元を閉じた後は現在最上位のdialogへ、dialogなしでは共通通知へ結果を送る。"""
+    result = _run_node_ui(
+        """
+elements['detail-dialog'].open = true;
+dialogStack.push('detail-dialog');
+elements['delete-dialog'].open = true;
+dialogStack.push('delete-dialog');
+closeDialog(elements['delete-dialog']);
+deliverOperationMessage('削除完了');
+const detailMessage = elements['detail-status'].textContent;
+closeDialog(elements['detail-dialog']);
+deliverOperationMessage('保存完了');
+process.stdout.write(JSON.stringify({
+  detailMessage,
+  toast: elements['toast'].textContent,
+  globalError: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result == {"detailMessage": "削除完了", "toast": "保存完了", "globalError": ""}
+
+
+def test_failed_dialog_updates_restore_actionable_focus() -> None:
+    """更新失敗後は開いたダイアログ内の再操作可能な要素へフォーカスを戻す。"""
+    result = _run_node_ui(
+        """
+fetchHandler = async () => ({
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '失敗'})
+});
+const feedback = {
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  summary: '要約', target_repo: 'example/repo', content: 'raw', body_html: '<p>本文</p>',
+  question_type: 'free-form', choices: []
+};
+elements['detail-dialog'].open = true;
+dialogStack.push('detail-dialog');
+displayEntry(feedback);
+enterEdit();
+elements['edit-content'].value = '更新後';
+await saveEntry();
+const editFailure = focused;
+
+displayEntry({...feedback, kind: 'tbd', filename: 'question.md', answered: false});
+enterAnswer();
+elements['answer-input'].value = '回答';
+await saveAnswer();
+const answerFailure = focused;
+
+elements['create-dialog'].open = true;
+dialogStack.push('create-dialog');
+elements['create-content'].value = '新規本文';
+elements['create-target'].value = 'example/repo';
+await createEntry({preventDefault() {}});
+const createFailure = focused;
+
+displayEntry(feedback);
+openDeleteDialog();
+await deleteEntry({preventDefault() {}});
+const deleteFailure = focused;
+
+process.stdout.write(JSON.stringify({editFailure, answerFailure, createFailure, deleteFailure}));
+"""
+    )
+    assert result == {
+        "editFailure": "edit-content",
+        "answerFailure": "answer-input",
+        "createFailure": "create-content",
+        "deleteFailure": "delete-close-button",
+    }
+
+
+def test_field_errors_mark_and_focus_first_invalid_control() -> None:
+    """入力エラーを関連付け、最初の不正入力へフォーカスする。"""
+    result = _run_node_ui(
+        """
+setFieldError(elements['create-content'], elements['create-content-error'], '本文が必要です');
+setFieldError(elements['create-target'], elements['create-target-error'], '対象が必要です');
+const first = firstInvalid([elements['create-content'], elements['create-target']]);
+process.stdout.write(JSON.stringify({
+  first: first.id,
+  focused,
+  contentInvalid: elements['create-content'].attributes['aria-invalid'],
+  targetInvalid: elements['create-target'].attributes['aria-invalid'],
+  contentError: elements['create-content-error'].textContent
+}));
+"""
+    )
+    assert result == {
+        "first": "create-content",
+        "focused": "create-content",
+        "contentInvalid": "true",
+        "targetInvalid": "true",
+        "contentError": "本文が必要です",
+    }
+
+
+def test_create_success_resets_filters_and_opens_created_detail() -> None:
+    """追加成功後は既定条件へ戻し、返却されたファイルの詳細を開く。"""
+    result = _run_node_ui(
+        """
+elements['create-dialog'].open = true;
+dialogStack.push('create-dialog');
+elements['create-content'].value = '新しい本文';
+elements['create-target'].value = 'example/repo';
+elements['kind-filter'].value = 'feedback';
+elements['state-filter'].value = 'all';
+elements['search-input'].value = '隠す条件';
+const listed = {
+  kind: 'feedback', state: 'inbox', filename: 'new.md', answered: null,
+  summary: '新しい本文', target_repo: 'example/repo'
+};
+const detailed = {
+  ...listed, content: 'raw', body_html: '<p>新しい本文</p>',
+  question_type: 'free-form', choices: []
+};
+fetchHandler = async (url, options) => {
+  if (url.endsWith('/api/entries') && options.method === 'POST') {
+    return {ok: true, status: 201, statusText: 'Created', json: async () => ({filenames: ['new.md']})};
+  }
+  if (url.endsWith('/api/repos?status=active')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})};
+  }
+  if (url.includes('/api/entries?')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [listed], warnings: []})};
+  }
+  if (url.endsWith('/api/entries/inbox/new.md')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: detailed})};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+await createEntry({preventDefault() {}});
+process.stdout.write(JSON.stringify({
+  kind: elements['kind-filter'].value,
+  state: elements['state-filter'].value,
+  search: elements['search-input'].value,
+  detailOpen: elements['detail-dialog'].open,
+  current: currentEntry.filename,
+  body: elements['detail-content'].innerHTML,
+  createCalls: fetchCalls.filter(call => call.url.endsWith('/api/entries') && call.options.method === 'POST').length
+}));
+"""
+    )
+    assert result == {
+        "kind": "all",
+        "state": "active",
+        "search": "",
+        "detailOpen": True,
+        "current": "new.md",
+        "body": "<p>新しい本文</p>",
+        "createCalls": 1,
     }
 
 
@@ -1846,7 +1763,7 @@ async def test_read_routes_remain_available_during_entry_move(
     )
     entries_response = await race_request("/api/entries?status=inbox")
     assert entries_response.status_code == 200
-    assert await entries_response.get_json() == {"entries": []}
+    assert await entries_response.get_json() == {"entries": [], "warnings": []}
 
     entry = adopted / "entry.md"
     entry.rename(inbox / entry.name)
@@ -1953,6 +1870,49 @@ def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path,
     # 分離自体は成立するため、開始区切りが水平線として残らない。
     assert "<hr" not in rendered
     assert "<p>本文</p>" in rendered
+
+
+def test_detail_with_frontmatter_only_returns_empty_body_html(tmp_path: pathlib.Path) -> None:
+    """frontmatterだけの詳細は本文用HTMLを空文字列として返す。"""
+    _write_detail_entry(tmp_path, "---\ntype: feedback\ntarget_repo: example/repo\n---\n")
+
+    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+
+    assert detail["body_html"] == ""
+    assert '<table class="frontmatter">' in typing.cast(str, detail["content_html"])
+
+
+@pytest.mark.parametrize(
+    ("question_source", "expected_type", "expected_choices"),
+    [
+        ("question_type: choice\nchoices: 最初, 2番目\n", "choice", ["最初", "2番目"]),
+        ("question_type: choice\nchoices:\n  - 最初\n  - 2番目\n", "choice", ["最初", "2番目"]),
+        ("question_type: yes-no\nchoices: 無視する\n", "yes-no", []),
+        ("question_type: broken\nchoices: [最初, '']\n", "free-form", []),
+        ("question_type:\n  - choice\nchoices: [最初, 2番目]\n", "free-form", []),
+        ("question_type:\n  nested: choice\nchoices: [最初, 2番目]\n", "free-form", []),
+    ],
+)
+def test_detail_returns_body_only_and_normalized_question_metadata(
+    tmp_path: pathlib.Path,
+    question_source: str,
+    expected_type: str,
+    expected_choices: list[str],
+) -> None:
+    """詳細API用データはfrontmatterを除いた本文と正規化済みの回答形式を返す。"""
+    _write_detail_entry(
+        tmp_path,
+        f"---\ntype: tbd\ntarget_repo: example/repo\n{question_source}---\n\n## 質問\n\n質問本文\n",
+    )
+
+    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+
+    assert detail["question_type"] == expected_type
+    assert detail["choices"] == expected_choices
+    body_html = typing.cast(str, detail["body_html"])
+    assert '<table class="frontmatter">' not in body_html
+    assert "target_repo" not in body_html
+    assert "質問本文" in body_html
 
 
 def test_operations_sort_entries_by_filename_across_states_and_render_markdown(tmp_path: pathlib.Path) -> None:
@@ -2280,6 +2240,155 @@ async def test_edit_and_answer_apis_detect_external_changes(
 
 
 @pytest.mark.asyncio
+async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """状態指定時は表示対象へ作用し、省略時はprocessing優先を維持する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, serve_app.feedback_mutations, serve_app.tbd_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+    inbox = tmp_path / "inbox"
+    processing = tmp_path / "processing"
+    inbox.mkdir()
+    processing.mkdir()
+    tbd_content = (
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+    )
+    feedback_content = "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n"
+    for filename in ("answer-state.md", "answer-legacy.md"):
+        (inbox / filename).write_text(tbd_content, encoding="utf-8")
+        (processing / filename).write_text(tbd_content, encoding="utf-8")
+    for filename in ("remove-state.md", "remove-legacy.md", "remove-protected.md"):
+        (inbox / filename).write_text(feedback_content, encoding="utf-8")
+        (processing / filename).write_text(feedback_content, encoding="utf-8")
+
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    state_answer = await client.post(
+        "/api/entries/answer",
+        json={
+            "filename": "answer-state.md",
+            "state": "inbox",
+            "answer": "未処理側への回答",
+            "expected_content": tbd_content,
+        },
+    )
+    assert state_answer.status_code == 200
+    assert (inbox / "answer-state.md").read_text(encoding="utf-8").endswith("未処理側への回答\n")
+    assert (processing / "answer-state.md").read_text(encoding="utf-8") == tbd_content
+
+    legacy_answer = await client.post(
+        "/api/entries/answer",
+        json={"filename": "answer-legacy.md", "answer": "従来経路の回答"},
+    )
+    assert legacy_answer.status_code == 200
+    assert (inbox / "answer-legacy.md").read_text(encoding="utf-8") == tbd_content
+    assert (processing / "answer-legacy.md").read_text(encoding="utf-8").endswith("従来経路の回答\n")
+
+    state_remove = await client.post(
+        "/api/entries/remove",
+        json={
+            "filenames": ["remove-state.md"],
+            "state": "inbox",
+            "expected_content": feedback_content,
+            "force": False,
+        },
+    )
+    assert state_remove.status_code == 200
+    assert not (inbox / "remove-state.md").exists()
+    assert (processing / "remove-state.md").is_file()
+
+    protected = await client.post(
+        "/api/entries/remove",
+        json={"filenames": ["remove-protected.md"], "force": False},
+    )
+    assert protected.status_code == 400
+    assert await protected.get_json() == {"error": "指定したエントリを操作できません"}
+
+    legacy_remove = await client.post(
+        "/api/entries/remove",
+        json={"filenames": ["remove-legacy.md"], "force": True},
+    )
+    assert legacy_remove.status_code == 200
+    assert (inbox / "remove-legacy.md").is_file()
+    assert not (processing / "remove-legacy.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_remove_api_rejects_changed_and_unreadable_expected_content(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """内容変更と読取り不能を409で保護し、空の確認時本文も受理する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, serve_app.feedback_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    original = "---\ntype: feedback\n---\n\n確認時本文\n"
+    changed = inbox / "changed.md"
+    changed.write_text(original.replace("確認時", "外部更新後"), encoding="utf-8")
+    unreadable = inbox / "unreadable.md"
+    unreadable.write_bytes(b"\xff")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    for filename in (changed.name, unreadable.name):
+        response = await client.post(
+            "/api/entries/remove",
+            json={
+                "filenames": [filename],
+                "state": "inbox",
+                "expected_content": original,
+                "force": False,
+            },
+        )
+        assert response.status_code == 409
+        assert await response.get_json() == {
+            "code": "edit_conflict",
+            "error": "編集中に他プロセスが対象を変更しました",
+        }
+        assert (inbox / filename).exists()
+
+    empty = inbox / "empty.md"
+    empty.write_text("", encoding="utf-8")
+    empty_response = await client.post(
+        "/api/entries/remove",
+        json={
+            "filenames": [empty.name],
+            "state": "inbox",
+            "expected_content": "",
+            "force": False,
+        },
+    )
+    assert empty_response.status_code == 200
+    assert not empty.exists()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("method", "path", "payload", "filename", "initial_content"),
     [
@@ -2411,7 +2520,7 @@ async def test_adopt_api_rejects_category_for_tbd(tmp_path: pathlib.Path, monkey
 
 
 def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.Path) -> None:
-    """一覧はTBD・フィードバックの種別でグループ化し、各グループ内ではファイル名の降順で返す。"""
+    """一覧は未回答TBD・その他TBD・フィードバックの順で各群をファイル名降順に返す。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     # ファイル名の昇順でファイルを作成
@@ -2419,12 +2528,13 @@ def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.
         "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
         encoding="utf-8",
     )
-    (inbox / "b-tbd.md").write_text(
-        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n質問\n",
+    (inbox / "z-answered-tbd.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問\n\n## 回答\n\n回答済み\n",
         encoding="utf-8",
     )
-    (inbox / "c-tbd.md").write_text(
-        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n質問\n",
+    (inbox / "a-unanswered-tbd.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n",
         encoding="utf-8",
     )
     (inbox / "d-feedback.md").write_text(
@@ -2436,13 +2546,63 @@ def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.
     result = operations.entries({})
     filenames = [item["filename"] for item in result]
 
-    # TBDが前（降順）、フィードバックが後ろ（降順）
-    assert filenames == ["c-tbd.md", "b-tbd.md", "d-feedback.md", "a-feedback.md"]
+    # 未回答TBD、回答済みTBD、フィードバックの順になる。
+    assert filenames == ["a-unanswered-tbd.md", "z-answered-tbd.md", "d-feedback.md", "a-feedback.md"]
     # 種別の確認
     assert result[0]["kind"] == "tbd"
     assert result[1]["kind"] == "tbd"
     assert result[2]["kind"] == "feedback"
     assert result[3]["kind"] == "feedback"
+
+
+@pytest.mark.asyncio
+async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(tmp_path: pathlib.Path) -> None:
+    """一覧APIは読取り不能な1ファイルを警告へ分離し、残りの一覧を返す。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "readable.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    (inbox / "invalid.md").write_bytes(b"\xff")
+    current_state = state.ServeState(tmp_path)
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), current_state)
+
+    response = await app.test_client().get("/api/entries?status=inbox")
+
+    assert response.status_code == 200
+    payload = await response.get_json()
+    assert [item["filename"] for item in payload["entries"]] == ["readable.md"]
+    assert payload["warnings"] == [{"filename": "invalid.md", "reason": "UTF-8として読み取れません"}]
+
+
+def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OS読取り失敗だけを警告へ分離し、種別不明のMarkdownは一覧へ残す。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "unknown.md").write_text("種別を判定できない本文\n", encoding="utf-8")
+    failed_path = inbox / "os-error.md"
+    failed_path.touch()
+    original_read_text = pathlib.Path.read_text
+
+    def read_text(
+        path: pathlib.Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        if path == failed_path:
+            raise OSError("読取り失敗")
+        return original_read_text(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+
+    entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
+
+    assert [(entry["filename"], entry["kind"]) for entry in entries] == [("unknown.md", "unknown")]
+    assert warnings == [{"filename": "os-error.md", "reason": "ファイルを読み取れません"}]
 
 
 def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3030,17 +3190,24 @@ def test_target_repos_collects_distinct_values_from_active_states(tmp_path: path
     (tmp_path / "inbox" / "broken.md").write_text("frontmatterなし\n", encoding="utf-8")
     operations = serve_app.Operations(tmp_path)
     assert operations.target_repos() == ["github.com/x/alpha", "github.com/x/beta"]
+    assert operations.target_repos("adopted") == ["github.com/x/adopted-only"]
 
 
 @pytest.mark.asyncio
 async def test_api_repos_returns_target_repos(tmp_path: pathlib.Path) -> None:
-    """`GET /api/repos`が対象リポジトリの一覧を返す。"""
+    """`GET /api/repos`は一覧と同じ状態指定で対象リポジトリの一覧を返す。"""
     _write_repo_entry(tmp_path, "inbox", "a.md", "github.com/x/alpha")
+    _write_repo_entry(tmp_path, "adopted", "b.md", "github.com/x/adopted")
     current_state = state.ServeState(tmp_path)
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), current_state)
     response = await app.test_client().get("/api/repos")
     assert response.status_code == 200
     assert await response.get_json() == {"repos": ["github.com/x/alpha"]}
+    adopted_response = await app.test_client().get("/api/repos?status=adopted")
+    assert adopted_response.status_code == 200
+    assert await adopted_response.get_json() == {"repos": ["github.com/x/adopted"]}
+    invalid_response = await app.test_client().get("/api/repos?status=unknown")
+    assert invalid_response.status_code == 400
 
 
 def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3124,7 +3291,7 @@ def test_assets_populate_target_repo_choices() -> None:
     result = _run_node_ui(
         """
 fetchHandler = async (url) => {
-  if (url.endsWith('/api/repos')) {
+  if (url.endsWith('/api/repos?status=active')) {
     const repos = ['github.com/x/alpha', 'github.com/x/beta'];
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
   }
@@ -3143,12 +3310,12 @@ process.stdout.write(JSON.stringify({
     assert result["datalistValues"] == ["github.com/x/alpha", "github.com/x/beta"]
 
 
-def test_assets_keep_selected_target_repo_when_absent_from_choices() -> None:
-    """候補から消えた選択値も選択肢へ補って選択状態を保つ。"""
+def test_assets_clear_selected_target_repo_when_absent_from_choices() -> None:
+    """候補から消えた対象リポジトリの選択状態を解除する。"""
     result = _run_node_ui(
         """
 fetchHandler = async (url) => {
-  if (url.endsWith('/api/repos')) {
+  if (url.endsWith('/api/repos?status=active')) {
     const repos = ['github.com/x/alpha'];
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
   }
@@ -3162,8 +3329,8 @@ process.stdout.write(JSON.stringify({
 }));
 """
     )
-    assert result["values"] == ["", "github.com/x/removed", "github.com/x/alpha"]
-    assert result["selected"] == "github.com/x/removed"
+    assert result["values"] == ["", "github.com/x/alpha"]
+    assert result["selected"] == ""
 
 
 def test_assets_keep_choices_when_repos_request_fails() -> None:
@@ -3185,12 +3352,47 @@ process.stdout.write(JSON.stringify({
     assert result["values"] == []
 
 
+def test_assets_load_entries_when_current_repo_candidate_request_fails() -> None:
+    """最新の候補取得が失敗しても、現在の状態による一覧更新は継続する。"""
+    result = _run_node_ui(
+        """
+const listUrls = [];
+fetchHandler = async url => {
+  if (url.includes('/api/repos?')) throw new Error('候補取得失敗');
+  if (url.includes('/api/entries?')) {
+    listUrls.push(url);
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({
+        entries: [{kind: 'feedback', state: 'adopted', filename: 'entry.md', summary: '本文'}],
+        warnings: []
+      })
+    };
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+elements['state-filter'].value = 'adopted';
+await handleFilterChange({reloadRepos: true});
+process.stdout.write(JSON.stringify({
+  listUrls,
+  rows: entries.map(entry => entry.filename),
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result == {
+        "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all"],
+        "rows": ["entry.md"],
+        "error": "候補取得失敗",
+    }
+
+
 def test_assets_do_not_accumulate_target_repo_choices() -> None:
     """候補の再取得で選択肢が累積しない。"""
     result = _run_node_ui(
         """
 fetchHandler = async (url) => {
-  if (url.endsWith('/api/repos')) {
+  if (url.endsWith('/api/repos?status=active')) {
     const repos = ['github.com/x/alpha', 'github.com/x/beta'];
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
   }
@@ -3206,3 +3408,296 @@ process.stdout.write(JSON.stringify({
     )
     assert result["filterCount"] == 3
     assert result["datalistCount"] == 2
+
+
+def test_assets_ignore_out_of_order_repo_candidates_for_state_changes() -> None:
+    """状態変更の旧候補応答を破棄し、旧処理から一覧要求を開始しない。"""
+    result = _run_node_ui(
+        """
+let resolveAdopted;
+const listUrls = [];
+fetchHandler = async url => {
+  if (url.endsWith('/api/repos?status=adopted')) {
+    return new Promise(resolve => { resolveAdopted = resolve; });
+  }
+  if (url.endsWith('/api/repos?status=active')) {
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({repos: ['active/repo']})
+    };
+  }
+  if (url.includes('/api/entries?')) {
+    listUrls.push(url);
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({
+        entries: [{kind: 'feedback', state: 'inbox', filename: 'active.md', summary: 'active'}],
+        warnings: []
+      })
+    };
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+elements['state-filter'].value = 'adopted';
+const stale = handleFilterChange({reloadRepos: true});
+await Promise.resolve();
+elements['state-filter'].value = 'active';
+await handleFilterChange({reloadRepos: true});
+resolveAdopted({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({repos: ['adopted/repo']})
+});
+await stale;
+process.stdout.write(JSON.stringify({
+  state: elements['state-filter'].value,
+  candidates: elements['target-filter'].children.map(option => option.value),
+  listUrls,
+  rows: entries.map(entry => entry.filename)
+}));
+"""
+    )
+    assert result == {
+        "state": "active",
+        "candidates": ["", "active/repo"],
+        "listUrls": ["/atk/api/entries?type=all&status=active&answered=all"],
+        "rows": ["active.md"],
+    }
+
+
+def test_assets_keep_latest_list_when_entry_requests_finish_out_of_order() -> None:
+    """一覧要求が逆順に完了しても後発要求の行だけを維持する。"""
+    result = _run_node_ui(
+        """
+const resolvers = [];
+fetchHandler = async url => {
+  if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
+  return new Promise(resolve => { resolvers.push(resolve); });
+};
+const first = loadEntries();
+const second = loadEntries();
+resolvers[1]({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({
+    entries: [{kind: 'feedback', state: 'inbox', filename: 'new.md', summary: 'new'}],
+    warnings: []
+  })
+});
+await second;
+resolvers[0]({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({
+    entries: [{kind: 'feedback', state: 'inbox', filename: 'old.md', summary: 'old'}],
+    warnings: []
+  })
+});
+await first;
+process.stdout.write(JSON.stringify({
+  rows: entries.map(entry => entry.filename),
+  loading: elements['entry-list'].attributes['aria-busy']
+}));
+"""
+    )
+    assert result == {
+        "rows": ["new.md"],
+        "loading": "false",
+    }
+
+
+def test_assets_preserve_user_announcement_across_user_and_sse_request_orders() -> None:
+    """利用者要求とSSE要求の開始・完了順にかかわらず、件数を一度通知する。"""
+    result = _run_node_ui(
+        """
+async function runCase(startOrder, completionOrder) {
+  const resolvers = {};
+  let currentKind = '';
+  fetchHandler = async url => new Promise(resolve => {
+    resolvers[currentKind] = {resolve, url};
+  });
+  elements['result-status'].textContent = '変更前の通知';
+  const requests = {};
+  for (const kind of startOrder) {
+    currentKind = kind;
+    requests[kind] = loadEntries({announce: kind === 'user'});
+    await Promise.resolve();
+  }
+  for (const kind of completionOrder) {
+    resolvers[kind].resolve({
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({
+        entries: [{kind: 'feedback', state: 'inbox', filename: `${kind}.md`, summary: kind}],
+        warnings: []
+      })
+    });
+    await requests[kind];
+  }
+  return {
+    status: elements['result-status'].textContent,
+    rows: entries.map(entry => entry.filename),
+    urls: Object.fromEntries(Object.entries(resolvers).map(([kind, item]) => [kind, item.url]))
+  };
+}
+
+const userThenSseUserFirst = await runCase(['user', 'sse'], ['user', 'sse']);
+const userThenSseSseFirst = await runCase(['user', 'sse'], ['sse', 'user']);
+const sseThenUserSseFirst = await runCase(['sse', 'user'], ['sse', 'user']);
+const sseThenUserUserFirst = await runCase(['sse', 'user'], ['user', 'sse']);
+
+elements['result-status'].textContent = 'SSE前の通知';
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entries: [], warnings: []})
+});
+await loadEntries({announce: false});
+process.stdout.write(JSON.stringify({
+  cases: [userThenSseUserFirst, userThenSseSseFirst, sseThenUserSseFirst, sseThenUserUserFirst],
+  sseOnlyStatus: elements['result-status'].textContent
+}));
+"""
+    )
+    assert [case["status"] for case in result["cases"]] == ["1件を表示"] * 4
+    assert result["cases"][0]["rows"] == ["sse.md"]
+    assert result["cases"][1]["rows"] == ["sse.md"]
+    assert result["cases"][2]["rows"] == ["user.md"]
+    assert result["cases"][3]["rows"] == ["user.md"]
+    assert result["sseOnlyStatus"] == "SSE前の通知"
+
+
+def test_assets_keep_user_filter_load_when_same_state_sse_supersedes_repo_request() -> None:
+    """同一状態の後発SSEが候補要求を失効させても利用者の一覧通知を維持する。"""
+    result = _run_node_ui(
+        """
+const repoResolvers = [];
+const listUrls = [];
+fetchHandler = async url => {
+  if (url.includes('/api/repos?')) return new Promise(resolve => { repoResolvers.push(resolve); });
+  if (url.includes('/api/entries?')) {
+    listUrls.push(url);
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({
+        entries: [{kind: 'feedback', state: 'inbox', filename: 'filtered.md', summary: 'filtered'}],
+        warnings: []
+      })
+    };
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+elements['kind-filter'].value = 'feedback';
+elements['result-status'].textContent = '変更前の通知';
+const user = handleFilterChange({reloadRepos: true});
+await Promise.resolve();
+const sse = reloadFromExternalChange();
+await Promise.resolve();
+repoResolvers[1]({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})
+});
+await Promise.resolve();
+repoResolvers[0]({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})
+});
+await Promise.all([user, sse]);
+process.stdout.write(JSON.stringify({
+  listUrls,
+  status: elements['result-status'].textContent,
+  rows: entries.map(entry => entry.filename)
+}));
+"""
+    )
+    assert result == {
+        "listUrls": [
+            "/atk/api/entries?type=feedback&status=active&answered=all",
+            "/atk/api/entries?type=feedback&status=active&answered=all",
+        ],
+        "status": "1件を表示",
+        "rows": ["filtered.md"],
+    }
+
+
+def test_assets_keep_latest_repo_selection_when_stale_sse_candidates_finish() -> None:
+    """SSEの旧候補応答後も最新の対象リポジトリと一覧条件を維持する。"""
+    result = _run_node_ui(
+        """
+let resolveActive;
+const listUrls = [];
+fetchHandler = async url => {
+  if (url.endsWith('/api/repos?status=active')) {
+    return new Promise(resolve => { resolveActive = resolve; });
+  }
+  if (url.endsWith('/api/repos?status=adopted')) {
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({repos: ['adopted/repo']})
+    };
+  }
+  if (url.includes('/api/entries?')) {
+    listUrls.push(url);
+    const selected = url.includes('target_repo=adopted%2Frepo');
+    const matching = {kind: 'feedback', state: 'adopted', filename: 'selected.md', summary: 'selected'};
+    const other = {kind: 'feedback', state: 'adopted', filename: 'other.md', summary: 'other'};
+    return {
+      ok: true, status: 200, statusText: 'OK',
+      json: async () => ({entries: selected ? [matching] : [matching, other], warnings: []})
+    };
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+const staleSse = reloadFromExternalChange();
+await Promise.resolve();
+elements['state-filter'].value = 'adopted';
+await handleFilterChange({reloadRepos: true});
+elements['target-filter'].value = 'adopted/repo';
+await handleFilterChange();
+resolveActive({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({repos: ['active/old']})
+});
+await staleSse;
+process.stdout.write(JSON.stringify({
+  state: elements['state-filter'].value,
+  candidates: elements['target-filter'].children.map(option => option.value),
+  selected: elements['target-filter'].value,
+  lastListUrl: listUrls.at(-1),
+  rows: entries.map(entry => entry.filename)
+}));
+"""
+    )
+    assert result == {
+        "state": "adopted",
+        "candidates": ["", "adopted/repo"],
+        "selected": "adopted/repo",
+        "lastListUrl": ("/atk/api/entries?type=all&status=adopted&answered=all&target_repo=adopted%2Frepo"),
+        "rows": ["selected.md"],
+    }
+
+
+def test_assets_ignore_error_from_stale_repo_candidate_request() -> None:
+    """失効した候補要求の失敗で最新候補とエラー領域を上書きしない。"""
+    result = _run_node_ui(
+        """
+let rejectAdopted;
+fetchHandler = async url => {
+  if (url.endsWith('/api/repos?status=adopted')) {
+    return new Promise((_resolve, reject) => { rejectAdopted = reject; });
+  }
+  return {
+    ok: true, status: 200, statusText: 'OK',
+    json: async () => ({repos: ['active/repo']})
+  };
+};
+elements['state-filter'].value = 'adopted';
+const stale = loadTargetRepos();
+await Promise.resolve();
+elements['state-filter'].value = 'active';
+await loadTargetRepos();
+rejectAdopted(new Error('旧要求の失敗'));
+await stale;
+process.stdout.write(JSON.stringify({
+  candidates: elements['target-filter'].children.map(option => option.value),
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result == {
+        "candidates": ["", "active/repo"],
+        "error": "",
+    }

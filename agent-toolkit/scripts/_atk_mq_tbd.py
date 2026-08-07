@@ -154,14 +154,25 @@ def warn_question_quality(filename: str, message: str, question_type: str | None
         )
 
 
-def _resolve_active_entry(private_notes: pathlib.Path, filename: str) -> pathlib.Path:
-    """inbox・processingの順で対象ファイルを解決する。
+def _resolve_active_entry(
+    private_notes: pathlib.Path,
+    filename: str,
+    state: str | None = None,
+) -> pathlib.Path:
+    """状態指定時は完全一致、省略時は既存の優先順で対象を解決する。
 
     同名がinboxとprocessingの双方に存在する場合はprocessingを優先する
     （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
     """
-    for state in (MQ_STATE_PROCESSING, MQ_STATE_INBOX):
+    if state is not None:
+        if state not in MQ_ACTIVE_STATES:
+            raise WebInputError("stateはinbox又はprocessingで指定してください")
         candidate = _validate_filename(filename, private_notes / state)
+        if candidate.is_file():
+            return candidate
+        raise FileNotFoundError(filename)
+    for candidate_state in (MQ_STATE_PROCESSING, MQ_STATE_INBOX):
+        candidate = _validate_filename(filename, private_notes / candidate_state)
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(filename)
@@ -212,13 +223,14 @@ def answer_tbd(
     *,
     filename: str,
     answer: str,
+    state: str | None = None,
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
     """平引数でTBD回答欄を更新する。対象はinbox・processingのTBDに限る。"""
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        path = _resolve_active_entry(private_notes, filename)
+        path = _resolve_active_entry(private_notes, filename, state)
         text = path.read_text(encoding="utf-8")
         require_tbd_entry(path, text)
         if expected_content is not None and text != expected_content:

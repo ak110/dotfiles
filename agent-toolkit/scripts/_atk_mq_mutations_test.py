@@ -247,6 +247,104 @@ class TestAnsweredTbdMutationGate:
         assert not mutation_calls
 
 
+def test_remove_targets_explicit_state_and_keeps_legacy_priority(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """状態指定時は指定側を削除し、省略時はprocessing優先を維持する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    content = "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n"
+    inbox = notes / "inbox/same.md"
+    processing = notes / "processing/same.md"
+    processing.parent.mkdir()
+    inbox.write_text(content, encoding="utf-8")
+    processing.write_text(content, encoding="utf-8")
+
+    removed = mutations.transition_entries(
+        notes,
+        action="remove",
+        filenames=["same.md"],
+        now=_FIXED_DT,
+        state="inbox",
+        expected_content=content,
+    )
+    assert removed == ["same.md"]
+    assert not inbox.exists()
+    assert processing.read_text(encoding="utf-8") == content
+
+    inbox.write_text(content, encoding="utf-8")
+    removed = mutations.transition_entries(
+        notes,
+        action="remove",
+        filenames=["same.md"],
+        now=_FIXED_DT,
+        force=True,
+    )
+    assert removed == ["same.md"]
+    assert inbox.exists()
+    assert not processing.exists()
+
+
+def test_remove_rejects_changed_and_unreadable_expected_content(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """確認後の内容変更とUTF-8読取り不能を競合として削除しない。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    original = "---\ntype: feedback\n---\n\n確認時本文\n"
+
+    changed = notes / "inbox/changed.md"
+    changed.write_text(original.replace("確認時", "外部更新後"), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
+        mutations.transition_entries(
+            notes,
+            action="remove",
+            filenames=[changed.name],
+            now=_FIXED_DT,
+            state="inbox",
+            expected_content=original,
+        )
+    assert changed.exists()
+
+    pull_changed = notes / "inbox/pull-changed.md"
+    pull_changed.write_text(original, encoding="utf-8")
+
+    def update_during_pull(_path: pathlib.Path) -> None:
+        pull_changed.write_text(original.replace("確認時", "pull後"), encoding="utf-8")
+
+    monkeypatch.setattr(mutations, "_pull", update_during_pull)
+    with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
+        mutations.transition_entries(
+            notes,
+            action="remove",
+            filenames=[pull_changed.name],
+            now=_FIXED_DT,
+            state="inbox",
+            expected_content=original,
+        )
+    assert pull_changed.read_text(encoding="utf-8").endswith("pull後本文\n")
+
+    unreadable = notes / "inbox/unreadable.md"
+    unreadable.write_bytes(b"\xff")
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
+        mutations.transition_entries(
+            notes,
+            action="remove",
+            filenames=[unreadable.name],
+            now=_FIXED_DT,
+            state="inbox",
+            expected_content=original,
+        )
+    assert unreadable.exists()
+
+
 def _write_convert_plan(tmp_path: pathlib.Path, target_commit: str) -> pathlib.Path:
     """変換テスト用の計画ファイルを作成する。"""
     plan = tmp_path / "plan.md"

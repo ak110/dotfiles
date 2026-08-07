@@ -1251,6 +1251,34 @@ def test_answer_tbd_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, mon
     assert content.rstrip().endswith("不採用とする")
 
 
+def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """状態指定時は指定側へ回答し、省略時はprocessing優先を維持する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    content = (
+        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n"
+        f"{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n"
+    )
+    inbox = notes / "inbox/same.md"
+    processing = notes / "processing/same.md"
+    processing.parent.mkdir()
+    inbox.write_text(content, encoding="utf-8")
+    processing.write_text(content, encoding="utf-8")
+
+    assert tbd_module.answer_tbd(notes, filename="same.md", state="inbox", answer="未処理側への回答") is True
+    assert inbox.read_text(encoding="utf-8").endswith("未処理側への回答\n")
+    assert processing.read_text(encoding="utf-8") == content
+
+    assert tbd_module.answer_tbd(notes, filename="same.md", answer="従来経路の回答") is True
+    assert processing.read_text(encoding="utf-8").endswith("従来経路の回答\n")
+
+
 def test_reject_reserved_tbd_markup_allows_plain_body() -> None:
     """予約書式を含まない本文は拒否しない。"""
     tbd_module.reject_reserved_tbd_markup("判定根拠を示したうえで、どちらの案を採用しますか？")

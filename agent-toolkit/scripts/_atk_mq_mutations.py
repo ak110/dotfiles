@@ -151,6 +151,8 @@ def transition_entries(
     category: str | None = None,
     lock_timeout: float = -1,
     force: bool = False,
+    state: str | None = None,
+    expected_content: str | None = None,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移又は削除を実行する。
 
@@ -160,13 +162,19 @@ def transition_entries(
     """
     if action not in {"start-processing", "return-to-inbox", "adopt", "reject", "remove"}:
         raise WebInputError(f"未知のエントリ操作です: {action}")
+    if state is not None and (action != "remove" or state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}):
+        raise WebInputError("stateはremoveでinbox又はprocessingを指定する場合に限り使用できます")
+    if expected_content is not None and (action != "remove" or len(filenames) != 1):
+        raise WebInputError("expected_contentはremoveで1件を指定する場合に限り使用できます")
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
         search_dirs = (
-            [inbox_dir]
+            [private_notes / state]
+            if state is not None
+            else [inbox_dir]
             if action == "start-processing"
             else [processing_dir]
             if action == "return-to-inbox"
@@ -175,7 +183,9 @@ def transition_entries(
         for filename in filenames:
             _verify_frontmatter_target_repo(filename, search_dirs, target_repo)
         paths = (
-            _resolve_feedback_targets(filenames, inbox_dir)
+            _resolve_feedback_targets(filenames, private_notes / state)
+            if state is not None
+            else _resolve_feedback_targets(filenames, inbox_dir)
             if action == "start-processing"
             else _resolve_feedback_targets(filenames, processing_dir)
             if action == "return-to-inbox"
@@ -203,6 +213,13 @@ def transition_entries(
                     file=sys.stderr,
                 )
                 sys.exit(2)
+        if action == "remove" and expected_content is not None:
+            try:
+                current_content = paths[0].read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
+            if current_content != expected_content:
+                raise RuntimeError("編集中に他プロセスが対象を変更しました")
         destination_name = {
             "start-processing": MQ_STATE_PROCESSING,
             "return-to-inbox": MQ_STATE_INBOX,
