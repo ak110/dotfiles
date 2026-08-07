@@ -719,8 +719,9 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
         sync_calls: list[tuple[pathlib.Path, str]] = []
 
-        def fake_sync_worktree(local_path: pathlib.Path, worktree_name: str) -> None:
+        def fake_sync_worktree(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
             sync_calls.append((local_path, worktree_name))
+            return local_path / ".claude" / "worktrees" / worktree_name
 
         monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", fake_sync_worktree)
 
@@ -732,7 +733,8 @@ class TestProcessLoopPromptAndEnv:
 
         assert _hook_debug_log(claude_calls[0]["cmd"]) != _hook_debug_log(claude_calls[1]["cmd"])
         assert claude_calls[0]["cmd"][4:] == ["--resume"]
-        assert "--worktree=process-loop" in claude_calls[1]["cmd"]
+        assert "--worktree=process-loop" not in claude_calls[1]["cmd"]
+        assert claude_calls[1]["cwd"] == myrepo / ".claude" / "worktrees" / "process-loop"
         assert sync_calls == [(myrepo, "process-loop")]
 
     def test_resume_absent_without_option(
@@ -1068,6 +1070,38 @@ class TestConsoleTitleReset:
 class TestWorktreeWriterGate:
     """writer起動前のclean判定と上流追随のfail-closed契約を検証する。"""
 
+    def test_missing_worktree_is_created_from_upstream(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """未作成のworktreeを専用ブランチと上流ブランチから作成する。"""
+        local_path = tmp_path / "repo"
+        local_path.mkdir()
+        worktree_path = local_path / ".claude" / "worktrees" / "process-loop"
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_process_loop, "_git_output", lambda *_args, **_kwargs: "origin/main")
+        monkeypatch.setattr(_process_loop, "_worktree_is_clean", lambda path: path == worktree_path)
+
+        def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            returncode = 1 if "show-ref" in cmd else 0
+            return subprocess.CompletedProcess(cmd, returncode, "", "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert _process_loop._sync_worktree_with_upstream(local_path, "process-loop") == worktree_path  # pylint: disable=protected-access  # noqa: SLF001
+        assert ["git", "fetch", "origin"] in calls
+        assert [
+            "git",
+            "worktree",
+            "add",
+            "-b",
+            "worktree-process-loop",
+            str(worktree_path),
+            "origin/main",
+        ] in calls
+
     @pytest.mark.parametrize("dirty_command", ["diff", "cached", "untracked"])
     def test_worktree_is_clean_rejects_each_dirty_kind(
         self,
@@ -1107,7 +1141,7 @@ class TestWorktreeWriterGate:
             return subprocess.CompletedProcess(cmd, 1 if failed else 0, "", "failure" if failed else "")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        assert not _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
+        assert _process_loop._sync_worktree_with_upstream(local_path, "process-loop") is None  # pylint: disable=protected-access  # noqa: SLF001
 
     def test_title_set_at_start_and_after_runs(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """process-loop開始時にタイトルを設定し、claude起動・update-dotfiles実行の直後にも再設定すること。"""
@@ -1480,21 +1514,14 @@ class TestProcessLoopUrlInput:
         )
         assert "git worktree内で起動" not in prompt
 
-    @pytest.mark.parametrize(
-        ("remote_url", "expects_worktree"),
-        [
-            ("https://github.com/ak110/dotfiles.git\n", True),
-            ("https://github.com/example/repo.git\n", False),
-        ],
-    )
-    def test_worktree_flag_depends_on_target_repo(
+    @pytest.mark.parametrize("remote_url", ["https://github.com/ak110/dotfiles.git\n", "https://github.com/example/repo.git\n"])
+    def test_worktree_cwd_depends_on_target_repo(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         remote_url: str,
-        expects_worktree: bool,
     ) -> None:
-        """対象リポジトリに応じてclaude起動引数へworktree指定を付与すること。"""
+        """dotfilesでは作成済みworktreeをcwdに使い、CLIのworktree指定を使わない。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1517,10 +1544,18 @@ class TestProcessLoopUrlInput:
             raise KeyboardInterrupt
 
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+        worktree_path = myrepo / ".claude" / "worktrees" / "process-loop"
+        monkeypatch.setattr(
+            _process_loop,
+            "_sync_worktree_with_upstream",
+            lambda *_args: worktree_path,
+        )
 
         with pytest.raises(SystemExit):
             atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert len(claude_calls) == 1
         _hook_debug_log(claude_calls[0]["cmd"])
-        assert ("--worktree=process-loop" in claude_calls[0]["cmd"]) is expects_worktree
+        assert "--worktree=process-loop" not in claude_calls[0]["cmd"]
+        expected_cwd = worktree_path if "ak110/dotfiles" in remote_url else myrepo
+        assert claude_calls[0]["cwd"] == expected_cwd

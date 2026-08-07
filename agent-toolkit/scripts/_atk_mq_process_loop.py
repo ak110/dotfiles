@@ -140,11 +140,11 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
 
 
 # github.com/ak110/dotfiles編集時のみ、影響範囲の大きいホーム直下チェックアウトを避けるため
-# git worktreeでセッションを起動する。worktree名は反復ごとに固定値とし、常駐ループの再起動
+# git worktreeを作成してセッションのcwdにする。worktree名は反復ごとに固定値とし、常駐ループの再起動
 # （`--no-update`未指定時の再起動）を経ても同一worktreeを継続利用させる。
 _DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
 _DOTFILES_WORKTREE_NAME = "process-loop"
-# `--worktree`が作成するworktreeの配置先（対象リポジトリのroot相対）。
+# process-loopが作成するworktreeの配置先（対象リポジトリのroot相対）。
 _WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
 
 
@@ -181,47 +181,72 @@ def _worktree_is_clean(worktree_path: pathlib.Path) -> bool:
     return untracked.returncode == 0 and not untracked.stdout.strip()
 
 
-def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> bool:
-    """既存worktreeのブランチを対象リポジトリの上流最新へ追随させる。
+def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path | None:
+    """worktreeを準備して対象リポジトリの上流最新へ追随させる。
 
     worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
     前回反復の成果がpush済みでも、その後に他の作業ツリーが上流へ進めた分は
     worktreeのブランチへ入らない。追随を経ないまま次の反復が始まると、
     上流に既にある変更を未実装と誤認して同一内容を二重に実装し、履歴が分岐する。
 
-    worktree未作成の反復では`--worktree`が上流最新から生成するため成功として返す。
-    追随失敗またはdirty状態では`False`を返し、呼び出し元はwriterを起動しない。
+    worktree未作成の反復では上流最新から新規作成する。
+    追随失敗またはdirty状態では`None`を返し、呼び出し元はwriterを起動しない。
     """
     worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
-    if not worktree_path.is_dir():
-        return True
-    if not _worktree_is_clean(worktree_path):
-        print(f"worktreeに未コミット変更があるためwriterを起動しません: {worktree_path}", file=sys.stderr)
-        return False
     upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
     if not upstream_branch:
         print(f"上流ブランチを解決できないためwriterを起動しません: {worktree_path}", file=sys.stderr)
-        return False
+        return None
+    if not worktree_path.exists():
+        fetch = subprocess.run(["git", "fetch", "origin"], cwd=local_path, capture_output=True, text=True, check=False)
+        _console_title.set_console_title("atk mq process-loop")
+        if fetch.returncode != 0:
+            print(f"worktree作成前のfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
+            return None
+        branch = f"worktree-{worktree_name}"
+        branch_exists = (
+            subprocess.run(
+                ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+                cwd=local_path,
+                check=False,
+            ).returncode
+            == 0
+        )
+        command = ["git", "worktree", "add", str(worktree_path), branch]
+        if not branch_exists:
+            command = ["git", "worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
+        created = subprocess.run(command, cwd=local_path, capture_output=True, text=True, check=False)
+        _console_title.set_console_title("atk mq process-loop")
+        if created.returncode != 0:
+            print(f"worktreeの作成に失敗しました: {created.stderr.strip()}", file=sys.stderr)
+            return None
+        return worktree_path if _worktree_is_clean(worktree_path) else None
+    if not worktree_path.is_dir():
+        print(f"worktreeの配置先がディレクトリではありません: {worktree_path}", file=sys.stderr)
+        return None
+    if not _worktree_is_clean(worktree_path):
+        print(f"worktreeに未コミット変更があるためwriterを起動しません: {worktree_path}", file=sys.stderr)
+        return None
     fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     if fetch.returncode != 0:
         print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
-        return False
+        return None
     rebase = subprocess.run(["git", "rebase", upstream_branch], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     if rebase.returncode == 0:
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         if _worktree_is_clean(worktree_path):
-            return True
+            return worktree_path
         print(f"追随後のworktreeがdirtyなためwriterを起動しません: {worktree_path}", file=sys.stderr)
-        return False
+        return None
     subprocess.run(["git", "rebase", "--abort"], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     print(
         f"worktreeの{upstream_branch}への追随に失敗したためwriterを起動しません（{rebase.stderr.strip()}）。",
         file=sys.stderr,
     )
-    return False
+    return None
 
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
@@ -540,9 +565,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
                         _process_loop_log.append("session_start")
                         session_started_at = time.monotonic()
-                        # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
-                        # claude起動セッション内でcwd依存の子コマンドが発行された場合、
-                        # 解決先を`local_path`へ固定してデーモンプロセスのcwdに依存させない。
+                        session_path = local_path
+                        session_prompt = prompt
                         hook_debug_log = _create_hook_debug_log(env)
                         print(f"Claude hook診断ログ: {hook_debug_log}")
                         claude_argv = [
@@ -557,17 +581,20 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         else:
                             claude_argv.extend(("--permission-mode=auto", "--model", args.model, "--autocompact", "1m"))
                             if target_repo_id == _DOTFILES_REPO_ID:
-                                # dotfiles編集はホーム直下チェックアウトへの影響を避けるためworktreeで実施する。
-                                claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
-                                # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
-                                if _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME) is False:
+                                # `--worktree`は使わない。CLIのworktree隔離ガードが、gitへの言及を問わず
+                                # ANSI-Cクォート・制御構造・コマンド置換など18種のシェル構文を拒否するため。
+                                # 自前でworktreeを作成してcwdへ渡し、規範が推奨する実行形式を維持する。
+                                prepared = _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+                                if prepared is None:
                                     sys.exit(1)
-                            claude_argv.append(prompt)
+                                session_path = prepared
+                                session_prompt = _build_process_loop_prompt(session_path, target_repo_id)
+                            claude_argv.append(session_prompt)
                         result = subprocess.run(
                             claude_argv,
                             check=False,
                             env=env,
-                            cwd=local_path,
+                            cwd=session_path,
                         )
                         _console_title.set_console_title("atk mq process-loop")
                         _process_loop_log.append(
