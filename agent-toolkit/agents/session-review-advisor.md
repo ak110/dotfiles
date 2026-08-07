@@ -1,6 +1,6 @@
 ---
 name: session-review-advisor
-description: agent-toolkit:session-reviewからのみ起動し、セッション証拠から恒久改善候補を独立評価する。
+description: agent-toolkit:session-review専用。セッション証拠から恒久改善候補を独立評価する。
 model: opus
 effort: high
 tools: Read, Bash

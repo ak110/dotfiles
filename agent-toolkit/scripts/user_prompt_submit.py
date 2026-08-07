@@ -67,8 +67,7 @@ _SESSION_REVIEW_EXACT_COMMANDS = frozenset({"/session-review", "/agent-toolkit:s
 def _is_harness_message(prompt: str) -> bool:
     """ハーネスが挿入したメッセージかを判定する。
 
-    利用者の発話ではない入力に対して規範照会・是正要求の判定と
-    呼び出し回数の加算を行わないために用いる。
+    ハーネス通知を利用者のスラッシュコマンドとして扱わないために用いる。
     """
     return _HARNESS_MESSAGE_RE.search(prompt) is not None
 

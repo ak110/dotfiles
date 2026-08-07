@@ -127,13 +127,7 @@ class TestSlashCommandDetection:
 
 
 class TestNonMatchingPrompts:
-    """非スキル起動プロンプトでフラグが立たないことの検証。
-
-    非スラッシュコマンド入力は規範照会・是正要求検出の対象経路（`user_prompt_counter`加算）を
-    通るため、非スラッシュ入力ケースは状態辞書の完全一致ではなくスキルフラグ・追加出力の不在で
-    検証する（`/help`は既存のスラッシュコマンド検出処理に留まりカウンター加算対象外のため
-    完全一致のまま維持する）。
-    """
+    """非スキル起動プロンプトで状態と追加出力が変わらないことの検証。"""
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
         sid = "non-skill"
@@ -142,10 +136,8 @@ class TestNonMatchingPrompts:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_mode_skill_invoked" not in state
-        assert "session_review_invoked" not in state
-        assert "process_feedbacks_skill_invoked" not in state
+        assert result.stdout == ""
+        assert _read_state(tmp_path, sid) == {}
 
     def test_ignores_unrelated_slash(self, tmp_path: pathlib.Path):
         sid = "unrelated-slash"
