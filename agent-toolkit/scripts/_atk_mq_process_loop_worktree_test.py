@@ -43,18 +43,23 @@ class TestSyncWorktreeWithUpstream:
         assert ["git", "rebase", "origin/master"] in calls
         assert worktree.is_dir()
 
-    def test_noop_when_worktree_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """worktree未作成の反復ではgitを1度も呼ばない。"""
+    def test_reuses_existing_branch_when_worktree_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """worktree未作成でも専用ブランチがあれば同ブランチから作成する。"""
+        local_path = tmp_path / "repo"
+        worktree = local_path / ".claude" / "worktrees" / "process-loop"
         calls: list[list[str]] = []
+        monkeypatch.setattr(_process_loop, "_git_output", lambda *_args, **_kwargs: "origin/master")
+        monkeypatch.setattr(_process_loop, "_worktree_is_clean", lambda path: path == worktree)
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append(list(cmd))
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        _process_loop._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
+        result = _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert not calls
+        assert result == worktree
+        assert ["git", "worktree", "add", str(worktree), "worktree-process-loop"] in calls
 
     def test_aborts_rebase_and_warns_on_conflict(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
