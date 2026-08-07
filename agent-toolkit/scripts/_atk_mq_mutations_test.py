@@ -252,6 +252,8 @@ class TestReservationMutations:
             }
             ordinary_path.write_text(frontmatter_parser.serialize_frontmatter(ordinary_data, ordinary_body), encoding="utf-8")
             reservation["companion"] = "ordinary.md"
+            reservation["companion_dependency_filename"] = "ordinary.md"
+            data["depends_on"] = ["user-dependency.md", "ordinary.md"]
         elif companion_kind == "mismatched":
             companion_path = notes / "inbox" / companion
             companion_path.write_text(
@@ -290,10 +292,8 @@ class TestReservationMutations:
         recovered = frontmatter_parser.parse_frontmatter((notes / "inbox/feedback.md").read_text(encoding="utf-8"))
         assert recovered is not None
         assert "reservation" not in recovered[0]
-        if companion_kind in {"missing", "ordinary"}:
-            assert recovered[0]["depends_on"] == ["user-dependency.md", companion]
-        else:
-            assert recovered[0]["depends_on"] == ["user-dependency.md"]
+        expected_companion = "ordinary.md" if companion_kind == "ordinary" else companion
+        assert recovered[0]["depends_on"] == ["user-dependency.md", expected_companion]
         if companion_kind == "ordinary":
             assert (notes / "inbox/ordinary.md").is_file()
         else:

@@ -17,6 +17,52 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 
 
+def _calculate_legacy_readiness_before_companion_hiding(
+    private_notes: pathlib.Path,
+    target_repo: str,
+    *,
+    now: datetime.datetime,
+) -> _common.ReadinessResult:
+    """計画base時点の通常active依存判定を最小限に再現する。"""
+    active = _common._load_queue_entries(  # noqa: SLF001  # pylint: disable=protected-access
+        private_notes, target_repo, _common.MQ_ACTIVE_STATES
+    )
+    terminal = _common._load_queue_entries(  # noqa: SLF001  # pylint: disable=protected-access
+        private_notes, None, (_common.MQ_STATE_ADOPTED, _common.MQ_STATE_REJECTED)
+    )
+    all_active = _common._load_queue_entries(  # noqa: SLF001  # pylint: disable=protected-access
+        private_notes, None, _common.MQ_ACTIVE_STATES
+    )
+    active_by_name = {entry.filename: entry for entry in all_active}
+    terminal_names = {entry.filename for entry in terminal}
+    ready: list[str] = []
+    blocked: list[str] = []
+    missing: list[str] = []
+    for entry in active:
+        dependencies = _common._effective_dependencies(entry)  # noqa: SLF001  # pylint: disable=protected-access
+        assert dependencies is not None
+        if any(name not in active_by_name and name not in terminal_names for name in dependencies):
+            missing.append(entry.filename)
+            continue
+        if entry.reservation is not None:
+            blocked.append(entry.filename)
+            continue
+        legacy_satisfied = _common._legacy_dependency_is_satisfied(  # noqa: SLF001  # pylint: disable=protected-access
+            entry,
+            all_active=all_active,
+            terminal=terminal,
+            target_active=active,
+            now=now,
+        )
+        waiting = any(name in active_by_name for name in dependencies) or legacy_satisfied is False
+        (blocked if waiting else ready).append(entry.filename)
+    return _common.ReadinessResult(
+        ready=tuple(sorted(ready)),
+        blocked=tuple(sorted(blocked)),
+        missing_dependencies=tuple(sorted(missing)),
+    )
+
+
 def _write_tbd(
     private_notes: pathlib.Path,
     filename: str,
@@ -105,7 +151,13 @@ def _write_reserved_feedback(
         "reservation_companion:\n"
         f"  target_repo: {target_repo}\n"
         f"  target_filename: {filename}\n"
-        f"  token_hash: {'a' * 64}\n",
+        f"  token_hash: {'a' * 64}\n"
+        "queue_schedule:\n"
+        "  dependency:\n"
+        "    kind: external-upstream\n"
+        "    recheck_after: '9999-12-31T23:59:59+00:00'\n"
+        "    condition: 対応する予約項目が解除されること\n"
+        "    hold_reason: 予約互換companion\n",
     )
     companion_path.write_text(companion_text, encoding="utf-8")
     return path
@@ -234,8 +286,10 @@ class TestReadiness:
         """計画base相当の依存判定で予約と内部companionを処理対象へ数えない。"""
         _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00")
 
-        result = _common.calculate_readiness(
-            tmp_path, "github.com/example/repo", now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC)
+        result = _calculate_legacy_readiness_before_companion_hiding(
+            tmp_path,
+            "github.com/example/repo",
+            now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC),
         )
 
         assert not result.ready

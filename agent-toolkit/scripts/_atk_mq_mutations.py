@@ -769,8 +769,9 @@ def _clear_reservation(
     reservation: Reservation,
     *,
     add_depends_on: tuple[str, ...] = (),
+    remove_companion_dependency: bool = True,
 ) -> None:
-    """予約内部metadataとcompanion依存だけを除去する。"""
+    """予約内部metadataと、検証済みならcompanion依存を除去する。"""
     data.pop("reservation", None)
     raw_dependencies = data.get("depends_on")
     dependencies = (
@@ -778,7 +779,11 @@ def _clear_reservation(
             value
             for value in raw_dependencies
             if isinstance(value, str)
-            and (not reservation.companion_dependency_added or value != reservation.companion_dependency_filename)
+            and (
+                not remove_companion_dependency
+                or not reservation.companion_dependency_added
+                or value != reservation.companion_dependency_filename
+            )
         ]
         if isinstance(raw_dependencies, list)
         else []
@@ -1234,7 +1239,7 @@ def recover_reservation(
                 matching_companion.unlink()
                 _clear_reservation(data, reservation)
             elif reservation is not None:
-                _clear_reservation(data, reservation)
+                _clear_reservation(data, reservation, remove_companion_dependency=False)
             else:
                 data.pop("reservation", None)
         else:
