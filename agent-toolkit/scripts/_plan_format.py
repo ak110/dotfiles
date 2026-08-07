@@ -199,6 +199,7 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
 
 
 _TARGET_PATTERN = re.compile(r"^- `(?P<path>[^`]+)`(?:（(?P<state>新設|削除)）)?\s*$")
+_TARGET_CANDIDATE_PATTERN = re.compile(r"^\s*[-*+]\s+")
 
 
 @dataclass(frozen=True)
@@ -307,6 +308,20 @@ def extract_plan_targets(content: str) -> list[PlanTarget]:
     return targets
 
 
+def find_invalid_target_entries(content: str) -> list[tuple[int, str]]:
+    """対象ファイル一覧の箇条書き候補から契約形式に一致しない項目を返す。"""
+    body = extract_h2_section_body(content, "実装契約")
+    invalid: list[tuple[int, str]] = []
+    in_target_h3 = False
+    for lineno, line in body:
+        if line.startswith("### "):
+            in_target_h3 = line[4:].strip() == "対象ファイル一覧"
+            continue
+        if in_target_h3 and _TARGET_CANDIDATE_PATTERN.match(line) and _TARGET_PATTERN.fullmatch(line) is None:
+            invalid.append((lineno, line.strip()))
+    return invalid
+
+
 def is_agent_facing_md(rel_path: str) -> bool:
     """パス文字列がコーディングエージェント向けMarkdownの対象種別かを判定する。
 
@@ -402,33 +417,16 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
     return PLUGIN_MANIFEST_PATH in paths and MARKETPLACE_MANIFEST_PATH in paths
 
 
-_ALLOWED_REPO_ROOT_RE = re.compile(r"<!--\s*allowed-repo-root:\s*(?P<root>[^\s]+?)\s*-->")
-
-
-def extract_allowed_repo_roots(content: str) -> list[str]:
-    """計画本文中の`<!-- allowed-repo-root: /abs/path -->`宣言から許容ルート絶対パス一覧を抽出する。
-
-    複数宣言時は宣言順に全て収集する。宣言が無い場合は空リストを返す。
-    本ファイル内`find_invalid_target_file_paths`が参照するSSOT実装。
-    """
-    return [m.group("root") for m in _ALLOWED_REPO_ROOT_RE.finditer(content)]
-
-
 def find_invalid_target_file_paths(content: str) -> list[str]:
     """`## 実装契約 > ### 対象ファイル一覧`配下の相対パス表記違反を検出する。
 
     絶対パス（`/`始まり）または親ディレクトリ参照（パス部品に`..`を含む）を
     プロジェクトルート相対の完全パス規範への違反として返す。
     `agent-toolkit/skills/plan-mode/SKILL.md`の計画契約が定めるパス記述形式を機械検査する。
-    `<!-- allowed-repo-root: /abs/path -->`宣言済みルート配下の絶対パスは、
-    複数リポジトリに跨る計画（姉妹プロジェクトのドキュメント更新等）を許容するため違反対象から除外する。
     """
-    allowed_roots = extract_allowed_repo_roots(content)
     invalid: list[str] = []
     for path in extract_target_files_from_changes(content):
-        if path.startswith("/"):
-            if any(path == root or path.startswith(root.rstrip("/") + "/") for root in allowed_roots):
-                continue
+        if pathlib.PurePosixPath(path).is_absolute() or pathlib.PureWindowsPath(path).is_absolute():
             invalid.append(path)
             continue
         parts = pathlib.PurePosixPath(path.replace("\\", "/")).parts

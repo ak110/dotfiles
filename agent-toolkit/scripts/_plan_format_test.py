@@ -97,15 +97,28 @@ def test_find_invalid_target_paths() -> None:
     """絶対パスと親参照を危険な対象パスとして返す。"""
     content = _VALID_CONTENT.replace(
         "- `existing.py`",
-        "- `/abs/file.py`\n- `../outside.py`\n- `safe/file.py`",
+        "- `/abs/file.py`\n- `C:\\abs\\file.py`\n- `../outside.py`\n- `safe/file.py`",
     )
-    assert _plan_format.find_invalid_target_file_paths(content) == ["/abs/file.py", "../outside.py"]
+    assert _plan_format.find_invalid_target_file_paths(content) == [
+        "/abs/file.py",
+        "C:\\abs\\file.py",
+        "../outside.py",
+    ]
 
 
-def test_allowed_repo_root_accepts_declared_absolute_target() -> None:
-    """明示された別リポジトリ配下の絶対パスは受理する。"""
+def test_allowed_repo_root_comment_cannot_authorize_absolute_target() -> None:
+    """本文コメントで絶対パスを自己許可できない。"""
     content = "<!-- allowed-repo-root: /other -->\n" + _VALID_CONTENT.replace("- `existing.py`", "- `/other/file.py`")
-    assert not _plan_format.find_invalid_target_file_paths(content)
+    assert _plan_format.find_invalid_target_file_paths(content) == ["/other/file.py"]
+
+
+def test_find_invalid_target_entries_reports_unrecognized_bullets() -> None:
+    """有効な対象と併記された形式外の箇条書きを報告する。"""
+    content = _VALID_CONTENT.replace("- `existing.py`", "- `existing.py`\n- [ ] `hidden.py`\n* `other.py`")
+    assert _plan_format.find_invalid_target_entries(content) == [
+        (16, "- [ ] `hidden.py`"),
+        (17, "* `other.py`"),
+    ]
 
 
 def test_bump_contract_uses_implementation_contract() -> None:

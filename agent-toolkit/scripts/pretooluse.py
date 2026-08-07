@@ -13,7 +13,6 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
-- 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの実装資料に遡及スキャン結果が無い場合のブロック (block)
 - plan fileのWrite/Edit/MultiEditで対象ファイル一覧に`agent-toolkit/`配下パスを含むが
   `## 実装契約`本文に`agent_toolkit_bump.py`ステップが記載されていない場合の警告 (warn)
 - plan fileのWrite/Edit/MultiEditで`## 実装契約`本文にbump stepが記載されているが

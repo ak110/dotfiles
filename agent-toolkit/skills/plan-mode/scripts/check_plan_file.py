@@ -14,12 +14,17 @@ import re
 import subprocess
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
-_SKILL_CALL_RE = re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`")
+_SKILL_CALL_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`"),
+    re.compile(r"`((?:agent-toolkit:)?[A-Za-z0-9][A-Za-z0-9_-]*)`(?:スキル)?を(?:起動|呼び出)"),
+)
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 
@@ -144,10 +149,45 @@ def _git_commit_exists(work_dir: pathlib.Path, base_commit: str) -> bool:
     return result.returncode == 0
 
 
+def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
+    """作業ディレクトリが属するGitルートの正規化済みパスを返す。"""
+    result = subprocess.run(
+        ["git", "-C", str(work_dir), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None, result.stderr.strip() or "作業ディレクトリのGitルートを解決できない"
+    return pathlib.Path(result.stdout.strip()).resolve(), None
+
+
+def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> list[str]:
+    """宣言された対象リポジトリと作業ディレクトリのGitルートを照合する。"""
+    if declared_value is None:
+        return []
+    declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
+    declared_path = pathlib.Path(declared_text).expanduser()
+    if not declared_path.is_absolute():
+        declared_path = work_dir / declared_path
+    declared_root = declared_path.resolve()
+    actual_root, error = _git_root(work_dir)
+    if error is not None:
+        return [error]
+    if declared_root != actual_root:
+        return [
+            f"計画メタ情報の対象リポジトリが作業ディレクトリのGitルートと一致しない: 計画={declared_root}, 実際={actual_root}"
+        ]
+    return []
+
+
 def _check_targets(text: str, work_dir: pathlib.Path, base_commit: str | None) -> tuple[list[str], list[str]]:
     """対象一覧の構造、パス安全性、基準コミット上の状態を検査する。"""
     targets = _plan_format.extract_plan_targets(text)
     errors: list[str] = []
+    invalid_entries = _plan_format.find_invalid_target_entries(text)
+    if invalid_entries:
+        errors.append(f"対象ファイル一覧に契約形式と一致しない箇条書きがある: {invalid_entries}")
     if not targets:
         errors.append("対象ファイル一覧が空である")
         return errors, []
@@ -175,17 +215,24 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
     """コードフェンスを除く本文のスキル・専用agent参照を検査する。"""
     inline_text = "\n".join(line for _, line in _plan_format.iter_markdown_body_lines(text))
     errors: list[str] = []
-    for skill in sorted(set(_SKILL_CALL_RE.findall(inline_text))):
+    agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
+    skill_calls = {skill for pattern in _SKILL_CALL_PATTERNS for skill in pattern.findall(inline_text)} - agent_calls
+    for skill in sorted(skill_calls):
         name = skill.split(":", 1)[-1]
-        candidates = (
-            work_dir / "agent-toolkit" / "skills" / name / "SKILL.md",
+        plugin_candidates = (_PLUGIN_ROOT / "skills" / name / "SKILL.md",)
+        project_candidates = (
             work_dir / ".claude" / "skills" / name / "SKILL.md",
+            work_dir / ".agents" / "skills" / name / "SKILL.md",
         )
+        candidates = plugin_candidates if skill.startswith("agent-toolkit:") else plugin_candidates + project_candidates
         if not any(path.exists() for path in candidates):
             errors.append(f"実在しないスキル参照: {skill}")
-    for agent in sorted(set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES):
+    for agent in sorted(agent_calls):
         name = agent.split(":", 1)[-1]
-        if not (work_dir / "agent-toolkit" / "agents" / f"{name}.md").exists():
+        plugin_candidates = (_PLUGIN_ROOT / "agents" / f"{name}.md",)
+        project_candidates = (work_dir / ".claude" / "agents" / f"{name}.md",)
+        candidates = plugin_candidates if agent.startswith("agent-toolkit:") else plugin_candidates + project_candidates
+        if not any(path.exists() for path in candidates):
             errors.append(f"実在しないサブエージェント参照: {agent}")
     return errors
 
@@ -215,6 +262,7 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
     errors.extend(_check_required_sections(lines, outside, text))
     metadata, metadata_errors = _metadata_values(lines, outside)
     errors.extend(metadata_errors)
+    errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     declared_base = metadata.get("ベースコミット")
     normalized_base = _BASE_VALUE_RE.fullmatch(declared_base or "")
     target_base = base_commit or (normalized_base.group(1) if normalized_base is not None else None)
