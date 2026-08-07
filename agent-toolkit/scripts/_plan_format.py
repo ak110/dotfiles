@@ -199,7 +199,9 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
 
 
 _TARGET_PATTERN = re.compile(r"^- `(?P<path>[^`]+)`(?:（(?P<state>新設|削除)）)?\s*$")
-_TARGET_CANDIDATE_PATTERN = re.compile(r"^\s*[-*+]\s+")
+_TARGET_BULLET_PATTERN = re.compile(r"^\s*[-*+]\s+(?P<body>.+?)\s*$")
+_TARGET_ITEM_PATTERN = re.compile(r"^(?:\[[ xX]\]\s*)?`[^`]+`(?:（[^）]+）)?$")
+_TARGET_STATE_PATTERN = re.compile(r"（(?:新設|削除)[^）]*）")
 
 
 @dataclass(frozen=True)
@@ -317,9 +319,29 @@ def find_invalid_target_entries(content: str) -> list[tuple[int, str]]:
         if line.startswith("### "):
             in_target_h3 = line[4:].strip() == "対象ファイル一覧"
             continue
-        if in_target_h3 and _TARGET_CANDIDATE_PATTERN.match(line) and _TARGET_PATTERN.fullmatch(line) is None:
+        if in_target_h3 and _is_target_entry_candidate(line) and _TARGET_PATTERN.fullmatch(line) is None:
             invalid.append((lineno, line.strip()))
     return invalid
+
+
+def _is_target_entry_candidate(line: str) -> bool:
+    """対象パスらしい箇条書きかを返す。"""
+    match = _TARGET_BULLET_PATTERN.fullmatch(line)
+    if match is None:
+        return False
+    body = match.group("body")
+    if _TARGET_ITEM_PATTERN.fullmatch(body) or _TARGET_STATE_PATTERN.search(body):
+        return True
+    tokens = re.findall(r"`([^`]+)`", body)
+    content = re.sub(r"^\[[ xX]\]\s*", "", body)
+    first_token = content.split(maxsplit=1)[0].strip("`")
+    return any(_looks_like_path(token) for token in (*tokens, first_token))
+
+
+def _looks_like_path(token: str) -> bool:
+    """文字列がディレクトリ区切りまたは拡張子を持つかを返す。"""
+    normalized = token.rstrip(".,:;）").replace("\\", "/")
+    return "/" in normalized or bool(pathlib.PurePosixPath(normalized).suffix)
 
 
 def is_agent_facing_md(rel_path: str) -> bool:
@@ -426,7 +448,8 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
     """
     invalid: list[str] = []
     for path in extract_target_files_from_changes(content):
-        if pathlib.PurePosixPath(path).is_absolute() or pathlib.PureWindowsPath(path).is_absolute():
+        windows_path = pathlib.PureWindowsPath(path)
+        if pathlib.PurePosixPath(path).is_absolute() or windows_path.is_absolute() or windows_path.root:
             invalid.append(path)
             continue
         parts = pathlib.PurePosixPath(path.replace("\\", "/")).parts

@@ -181,6 +181,22 @@ def test_rejects_missing_skill_in_direct_invocation_form(repo: tuple[pathlib.Pat
     assert any("実在しないスキル参照: agent-toolkit:missing-skill" in error for error in errors)
 
 
+def test_accepts_normal_cli_direct_invocation(repo: tuple[pathlib.Path, str]) -> None:
+    """通常CLIの直接起動表記をスキル参照として扱わない。"""
+    work_dir, base = repo
+    content = _plan(base).replace("共通変更説明", "`uv`を起動する。")
+    errors, _ = _check(work_dir, base, content)
+    assert not errors
+
+
+def test_rejects_unknown_skill_namespace(repo: tuple[pathlib.Path, str]) -> None:
+    """未知namespaceを現pluginのスキルとして解決しない。"""
+    work_dir, base = repo
+    content = _plan(base).replace("共通変更説明", "スキル`other:plan-mode`を起動する。")
+    errors, _ = _check(work_dir, base, content)
+    assert any("実在しないスキル参照: other:plan-mode" in error for error in errors)
+
+
 def test_resolves_plugin_resources_outside_plugin_worktree(repo: tuple[pathlib.Path, str]) -> None:
     """利用先worktreeに複製されないplugin同梱resourceをplugin rootから解決する。"""
     work_dir, base = repo

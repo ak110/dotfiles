@@ -23,7 +23,7 @@ _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
 _SKILL_CALL_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:Skillツールで|スキル)\s*`([^`]+)`"),
-    re.compile(r"`((?:agent-toolkit:)?[A-Za-z0-9][A-Za-z0-9_-]*)`(?:スキル)?を(?:起動|呼び出)"),
+    re.compile(r"`(agent-toolkit:[A-Za-z0-9][A-Za-z0-9_-]*)`(?:スキル)?を(?:起動|呼び出)"),
 )
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
@@ -218,20 +218,28 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
     agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
     skill_calls = {skill for pattern in _SKILL_CALL_PATTERNS for skill in pattern.findall(inline_text)} - agent_calls
     for skill in sorted(skill_calls):
-        name = skill.split(":", 1)[-1]
+        namespace, separator, qualified_name = skill.partition(":")
+        if separator and namespace != "agent-toolkit":
+            errors.append(f"実在しないスキル参照: {skill}")
+            continue
+        name = qualified_name if separator else namespace
         plugin_candidates = (_PLUGIN_ROOT / "skills" / name / "SKILL.md",)
         project_candidates = (
             work_dir / ".claude" / "skills" / name / "SKILL.md",
             work_dir / ".agents" / "skills" / name / "SKILL.md",
         )
-        candidates = plugin_candidates if skill.startswith("agent-toolkit:") else plugin_candidates + project_candidates
+        candidates = plugin_candidates if separator else plugin_candidates + project_candidates
         if not any(path.exists() for path in candidates):
             errors.append(f"実在しないスキル参照: {skill}")
     for agent in sorted(agent_calls):
-        name = agent.split(":", 1)[-1]
+        namespace, separator, qualified_name = agent.partition(":")
+        if separator and namespace != "agent-toolkit":
+            errors.append(f"実在しないサブエージェント参照: {agent}")
+            continue
+        name = qualified_name if separator else namespace
         plugin_candidates = (_PLUGIN_ROOT / "agents" / f"{name}.md",)
         project_candidates = (work_dir / ".claude" / "agents" / f"{name}.md",)
-        candidates = plugin_candidates if agent.startswith("agent-toolkit:") else plugin_candidates + project_candidates
+        candidates = plugin_candidates if separator else plugin_candidates + project_candidates
         if not any(path.exists() for path in candidates):
             errors.append(f"実在しないサブエージェント参照: {agent}")
     return errors

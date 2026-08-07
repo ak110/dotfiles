@@ -94,16 +94,30 @@ def test_extract_plan_targets_ignores_other_sections_and_fences() -> None:
 
 
 def test_find_invalid_target_paths() -> None:
-    """絶対パスと親参照を危険な対象パスとして返す。"""
+    """POSIX絶対パスと親参照を危険な対象パスとして返す。"""
     content = _VALID_CONTENT.replace(
         "- `existing.py`",
-        "- `/abs/file.py`\n- `C:\\abs\\file.py`\n- `../outside.py`\n- `safe/file.py`",
+        "- `/abs/file.py`\n- `../outside.py`\n- `safe/file.py`",
     )
-    assert _plan_format.find_invalid_target_file_paths(content) == [
-        "/abs/file.py",
-        "C:\\abs\\file.py",
-        "../outside.py",
-    ]
+    assert _plan_format.find_invalid_target_file_paths(content) == ["/abs/file.py", "../outside.py"]
+
+
+def test_rejects_windows_drive_absolute_target() -> None:
+    """ドライブ付きWindows絶対パスを拒否する。"""
+    content = _VALID_CONTENT.replace("- `existing.py`", "- `C:\\Windows\\system.ini`")
+    assert _plan_format.find_invalid_target_file_paths(content) == ["C:\\Windows\\system.ini"]
+
+
+def test_rejects_windows_unc_target() -> None:
+    """UNCパスを拒否する。"""
+    content = _VALID_CONTENT.replace("- `existing.py`", "- `\\\\server\\share\\system.ini`")
+    assert _plan_format.find_invalid_target_file_paths(content) == ["\\\\server\\share\\system.ini"]
+
+
+def test_rejects_windows_drive_less_rooted_target() -> None:
+    """ドライブなしrooted Windowsパスを拒否する。"""
+    content = _VALID_CONTENT.replace("- `existing.py`", "- `\\Windows\\system.ini`")
+    assert _plan_format.find_invalid_target_file_paths(content) == ["\\Windows\\system.ini"]
 
 
 def test_allowed_repo_root_comment_cannot_authorize_absolute_target() -> None:
@@ -112,13 +126,24 @@ def test_allowed_repo_root_comment_cannot_authorize_absolute_target() -> None:
     assert _plan_format.find_invalid_target_file_paths(content) == ["/other/file.py"]
 
 
-def test_find_invalid_target_entries_reports_unrecognized_bullets() -> None:
-    """有効な対象と併記された形式外の箇条書きを報告する。"""
-    content = _VALID_CONTENT.replace("- `existing.py`", "- `existing.py`\n- [ ] `hidden.py`\n* `other.py`")
+def test_find_invalid_target_entries_reports_target_like_bullets() -> None:
+    """対象パスらしい形式外の箇条書きを報告する。"""
+    content = _VALID_CONTENT.replace(
+        "- `existing.py`",
+        "- `existing.py`\n- [ ] `hidden.py`\n* `other.py`\n- plain/path.py（新設）\n- [ ] unchecked.py",
+    )
     assert _plan_format.find_invalid_target_entries(content) == [
         (16, "- [ ] `hidden.py`"),
         (17, "* `other.py`"),
+        (18, "- plain/path.py（新設）"),
+        (19, "- [ ] unchecked.py"),
     ]
+
+
+def test_find_invalid_target_entries_accepts_explanatory_bullet() -> None:
+    """対象一覧内の説明用箇条書きを検査対象外にする。"""
+    content = _VALID_CONTENT.replace("- `existing.py`", "- `existing.py`\n- 実装方針は既存構造を維持する")
+    assert not _plan_format.find_invalid_target_entries(content)
 
 
 def test_bump_contract_uses_implementation_contract() -> None:
