@@ -448,7 +448,7 @@ class TestIsAgentDocTargetFile:
     @pytest.mark.parametrize(
         "path",
         [
-            "agent-toolkit/skills/codex-exec/references/plan-codex-review.md",
+            "agent-toolkit/skills/plan-mode/references/plan-review-task.md",
             "agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md",
         ],
     )

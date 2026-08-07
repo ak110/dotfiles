@@ -93,7 +93,7 @@ Codexで利用する場合は次の対応表に従って読み替える。
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
 
-`agent-toolkit:codex-exec`が定めるcodex MCP経路と汎用エージェント代替経路の分岐は、
+`agent-toolkit:delegation`が定めるcodex MCP経路と汎用エージェント代替経路の分岐は、
 Codexでは`spawn_agent`経路へ一本化する。
 系統別`threadId`の継続は、`spawn_agent`が返すエージェントIDまたはタスク名を
 `followup_task`の`target`へ渡して代替する。
@@ -721,7 +721,7 @@ TBDへの回答は本切り替えの対象外とし、「指摘発生時の扱�
   Skillツールで`agent-toolkit:shell-exec`を起動して委譲する。
   メインへは終了状態、警告、要求した値、後続判断に必要な要約だけを返させる
   - push後のCI通過確認の待機は委譲対象から除く。担当分離の理由は
-    `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`「実体照合と後続工程」節
+    `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`「pushとCI」節
     （SSOT）を参照する。当該待機は`agent-toolkit:commit`の`references/push-and-ci.md`に従い、
     `git push`を実行した主体が自身で実施する
   - CI失敗後のログ取得・要約は長出力を伴うため引き続き委譲対象とする

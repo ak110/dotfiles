@@ -2140,8 +2140,8 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 0
 
 
-class TestCodexExecRouteGate:
-    """メインセッションのcodex-exec起動ゲート。"""
+class TestDelegationRouteGate:
+    """メインセッションのdelegation起動ゲート。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -2150,17 +2150,17 @@ class TestCodexExecRouteGate:
     _write_state = staticmethod(_write_session_state)
 
     def test_blocked_when_skill_not_invoked(self, state_dir: dict[str, str]) -> None:
-        """メインセッションでcodex-exec未起動の初回呼び出しをブロックする。"""
+        """メインセッションでdelegation未起動の初回呼び出しをブロックする。"""
         result = _run(
             {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "no-review"},
             env_overrides=state_dir,
         )
         assert result.returncode == 2
-        assert "agent-toolkit:codex-exec" in result.stderr
+        assert "agent-toolkit:delegation" in result.stderr
 
     def test_allowed_when_skill_invoked(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
-        """codex-exec起動後の初回呼び出しを許可する。"""
-        self._write_state(tmp_path, "with-review", {"codex_exec_skill_invoked": True})
+        """delegation起動後の初回呼び出しを許可する。"""
+        self._write_state(tmp_path, "with-review", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2201,7 +2201,7 @@ class TestCodexExecRouteGate:
             env_overrides=state_dir,
         )
         assert result.returncode == 2
-        assert "agent-toolkit:codex-exec" in result.stderr
+        assert "agent-toolkit:delegation" in result.stderr
 
 
 class TestCodexMcpExecution:
@@ -2215,7 +2215,7 @@ class TestCodexMcpExecution:
 
     def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未指定の場合はブロックする。"""
-        self._write_state(tmp_path, "fix1", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "fix1", {"delegation_skill_invoked": True})
         result = _run(
             {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "fix1"},
             env_overrides=state_dir,
@@ -2226,7 +2226,7 @@ class TestCodexMcpExecution:
     @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
     def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """`danger-full-access`以外のsandbox指定はブロックする。"""
-        self._write_state(tmp_path, "fix2", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "fix2", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2240,7 +2240,7 @@ class TestCodexMcpExecution:
 
     def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """サブエージェント内部からの呼び出しでもsandbox検査を適用する。"""
-        self._write_state(tmp_path, "fix_side", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "fix_side", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2255,7 +2255,7 @@ class TestCodexMcpExecution:
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandbox・approval-policyが共に既定値の場合、updatedInputは返すがsystemMessageを含めない。"""
-        self._write_state(tmp_path, "fix3", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "fix3", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2278,7 +2278,7 @@ class TestCodexMcpExecution:
 
     def test_approval_policy_wrong_value_auto_fix_with_correct_sandbox(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが正しい値でもapproval-policyのみ誤りなら単独でneverへ強制修正する。"""
-        self._write_state(tmp_path, "fix_ap", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "fix_ap", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2331,7 +2331,7 @@ class TestCheckCodexMcpCwd:
 
     def test_blocks_missing_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """`cwd`未指定の場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-missing", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "cwd-missing", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2345,7 +2345,7 @@ class TestCheckCodexMcpCwd:
 
     def test_blocks_empty_string_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """`cwd`が空文字列の場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-empty", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "cwd-empty", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2359,7 +2359,7 @@ class TestCheckCodexMcpCwd:
 
     def test_blocks_whitespace_only_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """`cwd`が空白のみの場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-whitespace", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "cwd-whitespace", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2373,7 +2373,7 @@ class TestCheckCodexMcpCwd:
 
     def test_blocks_relative_path_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """`cwd`が相対パスの場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-relative", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "cwd-relative", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2387,7 +2387,7 @@ class TestCheckCodexMcpCwd:
 
     def test_allows_absolute_path_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """`cwd`が絶対パスの場合は許可する。"""
-        self._write_state(tmp_path, "cwd-absolute", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "cwd-absolute", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2433,8 +2433,8 @@ class TestCodexMcpReply:
     _write_state = staticmethod(_write_session_state)
 
     def test_reply_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """codex-exec起動後は`mcp__codex__codex-reply`が強制承認される。"""
-        self._write_state(tmp_path, "reply1", {"codex_exec_skill_invoked": True})
+        """delegation起動後は`mcp__codex__codex-reply`が強制承認される。"""
+        self._write_state(tmp_path, "reply1", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex-reply",
@@ -2477,7 +2477,7 @@ class TestCodexMcpLanguageWarningMerge:
     def test_codex_merges_pending_language_warning(self, tmp_path: pathlib.Path):
         """mcp__codex__codex分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "codex-lang", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "codex-lang", {"delegation_skill_invoked": True})
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
@@ -2497,7 +2497,7 @@ class TestCodexMcpLanguageWarningMerge:
     def test_codex_reply_merges_pending_language_warning(self, tmp_path: pathlib.Path):
         """mcp__codex__codex-reply分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "reply-lang", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "reply-lang", {"delegation_skill_invoked": True})
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
@@ -2528,7 +2528,7 @@ class TestIssSidechainProbe:
     def test_writes_one_jsonl_line_under_tempdir(self, tmp_path: pathlib.Path):
         """`tempfile.gettempdir()`起点、session_id含むパスへJSONL 1行を追記する。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe1", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "probe1", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2550,7 +2550,7 @@ class TestIssSidechainProbe:
             tmp_path,
             "probe2",
             {
-                "codex_exec_skill_invoked": True,
+                "delegation_skill_invoked": True,
                 "current_plan_file_path": "/tmp/plan.md",
             },
         )
@@ -2577,7 +2577,7 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_absent_is_recorded_as_null(self, tmp_path: pathlib.Path):
         """`isSidechain`欠落時に`null`が記録される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe3", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "probe3", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2593,7 +2593,7 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_non_boolean_is_recorded_as_is(self, tmp_path: pathlib.Path):
         """`isSidechain`が非boolean型（整数・文字列など）でもそのまま記録される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe4", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "probe4", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2628,7 +2628,7 @@ class TestIssSidechainProbe:
     def test_rotates_when_log_exceeds_one_megabyte(self, tmp_path: pathlib.Path):
         """ログファイルが1MB超過時に`_file_lock.rotate_if_needed`経由で`.1`世代ファイルへローテートされる。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe-rotate", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "probe-rotate", {"delegation_skill_invoked": True})
         log_path = self._log_path(tmp_path, "probe-rotate")
         log_path.write_text("x" * (1_000_001), encoding="utf-8")
         result = _run(
@@ -2649,7 +2649,7 @@ class TestIssSidechainProbe:
     def test_called_for_codex_reply_tool(self, tmp_path: pathlib.Path):
         """`mcp__codex__codex-reply`の呼び出し時にも本ヘルパーが呼ばれる。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe-reply", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "probe-reply", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex-reply",
@@ -4069,7 +4069,7 @@ class TestCodexRemoteSnapshotRecording:
         repo = tmp_path / "repo"
         self._init_repo(repo)
         env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-agent", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "snap-agent", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -4095,7 +4095,7 @@ class TestCodexRemoteSnapshotRecording:
         repo = tmp_path / "repo"
         self._init_repo(repo)
         env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-session", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "snap-session", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -4124,7 +4124,7 @@ class TestCodexRemoteSnapshotRecording:
         self._init_repo(codex_repo)
         self._init_repo(session_repo)
         env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-cwd-src", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "snap-cwd-src", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -4150,7 +4150,7 @@ class TestCodexRemoteSnapshotRecording:
         同一キーの直近`mcp__codex__codex`呼び出しで永続化したcwdが無ければ比較対象が無い。
         """
         env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-reply-nocwd", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "snap-reply-nocwd", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex-reply",
@@ -4169,7 +4169,7 @@ class TestCodexRemoteSnapshotRecording:
         repo = tmp_path / "repo"
         self._init_repo(repo)
         env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-reply", {"codex_exec_skill_invoked": True})
+        self._write_state(tmp_path, "snap-reply", {"delegation_skill_invoked": True})
         first = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -4183,7 +4183,7 @@ class TestCodexRemoteSnapshotRecording:
         self._write_state(
             tmp_path,
             "snap-reply",
-            self._read_state(tmp_path, "snap-reply") | {"codex_exec_skill_invoked": True},
+            self._read_state(tmp_path, "snap-reply") | {"delegation_skill_invoked": True},
         )
         result = _run(
             {

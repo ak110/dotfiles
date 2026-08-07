@@ -4,21 +4,18 @@ import pathlib
 import re
 
 import _atk_mq_frontmatter as frontmatter
-import subagent_stop_advisor
 
 _AGENTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "agents"
-_CODEX_EXEC_SKILL = _AGENTS_DIR.parent / "skills" / "codex-exec" / "SKILL.md"
-_PLAN_REVIEW = _AGENTS_DIR.parent / "skills" / "codex-exec" / "references" / "plan-codex-review.md"
-_PLAN_REVIEW_FIX_TASK = _PLAN_REVIEW.with_name("plan-codex-review-fix-task.md")
-_PLAN_REVIEW_TASK = _PLAN_REVIEW.with_name("plan-codex-review-task.md")
+_DELEGATION_SKILL = _AGENTS_DIR.parent / "skills" / "delegation" / "SKILL.md"
+_RUNTIME_ROUTING = _DELEGATION_SKILL.parent / "references" / "runtime-routing.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
-_PLAN_IMPL_REVIEW = _AGENTS_DIR.parent / "skills" / "codex-exec" / "references" / "plan-codex-implementation-review.md"
-_PLAN_IMPL_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-task.md")
-_PLAN_IMPL = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation.md")
-_PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-plan-review-task.md")
-_PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_IMPL_REVIEW.with_name("plan-codex-implementation-independent-review-task.md")
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
+_PLAN_MODE_REFERENCES = _PLAN_MODE.parent / "references"
+_PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "plan-review-task.md"
+_PLAN_IMPL_TASK = _PLAN_MODE_REFERENCES / "implementation-task.md"
+_PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-plan-review-task.md"
+_PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-independent-review-task.md"
 _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
@@ -34,9 +31,8 @@ _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
 _CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
-_PLAN_REVIEW_DELEGATION = _PLAN_MODE.parent / "references" / "plan-review-delegation.md"
-_DELEGATION_BOILERPLATE = _PLAN_REVIEW.parent / "delegation-boilerplate.md"
-_PLAN_IMPL_CALLER = _PLAN_MODE.parent / "references" / "plan-impl-caller-reception.md"
+_PLAN_REVIEW_DELEGATION = _PLAN_MODE_REFERENCES / "plan-review-delegation.md"
+_PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
@@ -50,9 +46,6 @@ _SKILL_MARKDOWN = {
 # 節参照の記法。`agent-toolkit:<skill>`「<節名>」節と`<ファイル名>`「<節名>」節の2形式を対象とする。
 _SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?(?:の)?「([^」\n]+)」節")
 _FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md)`(?:の)?「([^」\n]+)」節")
-# 完了報告の欄ラベル。フェンス内の行頭に置かれた`<label>:`だけを対象とし、入れ子の欄は除く。
-_FENCED_BLOCK_RE = re.compile(r"^```[a-z]*\n(.*?)^```", re.DOTALL | re.MULTILINE)
-_OUTPUT_LABEL_RE = re.compile(r"^([a-z][a-z0-9_]*):", re.MULTILINE)
 
 
 def _h2_section(text: str, heading: str) -> str:
@@ -63,30 +56,15 @@ def _h2_section(text: str, heading: str) -> str:
     return remainder.partition("\n## ")[0]
 
 
-def _output_labels(document: str) -> tuple[str, ...]:
-    """`## 出力`節のフェンス内から`<label>:`形式のラベルを順序どおり抽出する。
-
-    定義側へ欄を追加したとき、対の文書と機械検査へ追随したかを列挙の更新なしで検査するため、
-    検査対象を定義側の本文から導出する。
-    """
-    section = _h2_section(document, "出力")
-    fence = _FENCED_BLOCK_RE.search(section)
-    assert fence, "`## 出力`節にフェンス付きコードブロックが存在しない"
-    return tuple(dict.fromkeys(_OUTPUT_LABEL_RE.findall(fence.group(1))))
-
-
-def test_codex_exec_agents_allow_nested_agent_fallback() -> None:
-    """Codex利用不能時のClaude代替と完了報告受領経路が利用可能であること。"""
+def test_delegating_agents_allow_required_tools() -> None:
+    """delegation利用agentが起動と受領に必要なツールを許可する。"""
     missing: dict[str, list[str]] = {}
     delegating: list[str] = []
     for path in sorted(_AGENTS_DIR.glob("*.md")):
         parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         metadata, body = parsed
-        # 委譲先の判定は定義本文のスキル参照で行う。
-        # frontmatterの`skills:`によるプリロードはSkillツールを経由せず
-        # セッション状態フラグが真化しないため採用しておらず、抽出条件の根拠にならない。
-        if "agent-toolkit:codex-exec" not in body:
+        if "agent-toolkit:delegation" not in body:
             continue
         delegating.append(path.name)
         tools = metadata.get("tools")
@@ -96,124 +74,89 @@ def test_codex_exec_agents_allow_nested_agent_fallback() -> None:
         if required:
             missing[path.name] = required
 
-    # 抽出条件の変更で対象が0件になると本検査が無条件成立へ退行するため、検出自体を確認する。
-    assert delegating, "codex-execへ委譲するエージェント定義を検出できない"
-    assert not missing, f"Claude代替に必要なツールを許可していないcodex-exec利用エージェント: {missing}"
-
-    skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
-    assert "references/delegation-boilerplate.md" in skill
+    assert delegating, "delegationを使うエージェント定義を検出できない"
+    assert not missing, f"委譲に必要なツールを許可していないエージェント: {missing}"
 
 
-def test_codex_exec_agents_use_skill_then_toolsearch_then_delegation() -> None:
-    """実装窓口がSkill読込後に能動的な接続工程へ進む順序を検査する。"""
-    skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
-    assert "Skillツールの成功応答は本スキルの読み込み完了" in skill
-    assert "ToolSearch、MCP初回接続" in skill
-    executor = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "委譲")
-    assert executor.index("Skillツール") < executor.index("ToolSearch")
-    assert executor.index("ToolSearch") < executor.index("次のreferenceをRead")
-    assert executor.index("次のreferenceをRead") < executor.index("タスク本文を構成")
+def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
+    """共通sender契約と経路固有判断を条件付きreferenceへ分離する。"""
+    skill = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+
+    assert "起動文の先頭で受信者への命令を1文で示す" in skill
+    assert "task referenceの手順、品質規範本文、出力schema、過去応答を起動文へ複製しない" in skill
+    assert "必要な場合だけ" in skill
+    assert "references/runtime-routing.md" in skill
+    assert "受信者固有の作業手順は本referenceへ置かない" in runtime
+    for phrase in ("GPT-5.6-Sol", "GPT-5.6-Luna", "model_reasoning_effort", "読み取り専用", "writerとworktree", "snapshot"):
+        assert phrase in runtime
 
 
-def test_claude_fallback_preserves_track_agent_ids_and_attempt_markers() -> None:
-    """Claude代替の系統分離と通常配送優先契約を検査する。"""
-    skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    boilerplate = _DELEGATION_BOILERPLATE.read_text(encoding="utf-8")
-
-    for document in (executor, boilerplate):
-        assert "SendMessage" in document
-        assert "Agent識別子" in document
-        assert "通常" in document
-    assert "references/delegation-boilerplate.md" in skill
-    assert "系統別" in executor
-    assert "route/thread" in executor
-
-
-def test_plan_review_contract_uses_canonical_plan_and_repository_directly() -> None:
-    """正規計画と対象リポジトリを直接使うレビュー契約を検査する。"""
+def test_plan_review_keeps_author_as_the_only_writer() -> None:
+    """計画authorが検査・修正を所有し、reviewerを読み取り専用にする。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
-    review = _PLAN_REVIEW.read_text(encoding="utf-8")
-    fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
-    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "機械チェック・修正系だけが正規計画へ書き込める" in delegation
-    assert "対象リポジトリを読み取り専用" in delegation
-    assert "<正規計画ファイルの絶対パス>" in review
-    assert "<対象リポジトリの絶対パス>" in review
-    assert "正規計画だけ" in fix_task
-    assert "正規計画と対象リポジトリを読み取り専用" in review_task
-    for document in (delegation, review, fix_task, review_task):
-        for removed in (
-            "_review_" + "workspace.py",
-            "review_" + "workspace",
-            "review_" + "repo",
-            "plan_diff",
-            "source_repo_" + "unchanged",
-            "review_" + "repo_" + "unchanged",
-            "conditional_source_" + "repo",
-        ):
-            assert removed not in document
+    task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    assert "author自身が正規計画へ" in delegation
+    assert "正規計画の書込主体をauthor 1名に保つ" in delegation
+    assert "独立reviewer" in delegation
+    assert "references/plan-review-task.md" in delegation
+    assert "計画とリポジトリを修正しない" in task
+    assert "総ライフサイクルコスト" in task
+    assert "同一箇所へ2ラウンド連続で指摘" in delegation
 
 
-def test_review_delegation_propagates_constraints_and_runtime_evidence() -> None:
-    """再委譲、完了配送、外部実行、再現証跡、指摘集合の契約を同期する。"""
-    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
-    review = _PLAN_REVIEW.read_text(encoding="utf-8")
-    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    implementation_review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
+    """writerと二系統reviewerの責務を一方向のtaskで分離する。"""
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
 
-    for field in ("作業場所", "書込主体", "出力言語", "プロセス所有権", "不可逆操作権限"):
-        assert field in delegation
-        assert field in rules
-    assert "子孫の完了本文を自身で受領" in delegation
-    assert "子孫の完了本文を中間層が受領" in review
-    assert "`list_agents`は稼働状態の確認に限って使い" in review
-    assert "安定した実行識別子" in delegation
-    assert "成果物差分だけで停滞を判定せず" in delegation
-    assert "所有主体だけが行う" in delegation
-    for document in (delegation, review_task):
-        assert "標準出力" in document
-        assert "標準エラー" in document
-    assert "同一ラウンドの指摘は集合として扱う" in delegation
-    assert "個別の修正往復を開始しない" in delegation
-    assert "共通委譲契約" in implementation_review
-    assert "外部実行と再現証跡" in implementation_review
-    for document in (
-        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
-        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+    assert writer.startswith("# 計画実装writerタスク\n\n指定されたコミット単位を実装し")
+    assert "stage、commitまで完了" in writer
+    assert "delegation内部資料は読まず" in writer
+    assert "`git push`、タグ作成、リモートrefも変更しない" in writer
+    assert "計画からの逸脱、実装漏れ" in plan_review
+    assert "境界条件と回帰は独立系が担う" in plan_review
+    assert "計画ファイル、進捗ログ、コミットメッセージ" in independent_review
+    assert "公開契約、正確性、回帰、境界条件、安全性" in independent_review
+    assert "計画との照合と実装漏れは計画準拠系が担う" in independent_review
+    for task in (writer, plan_review, independent_review):
+        assert "skills/delegation" not in task
+        assert "runtime-routing.md" not in task
+
+
+def test_plan_impl_executor_is_coordinator_not_writer() -> None:
+    """executorがtask pathだけでwriterとreviewerを調整する。"""
+    text = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(text)
+    assert parsed is not None
+    metadata, _ = parsed
+
+    assert metadata["model"] == "sonnet"
+    assert metadata["effort"] == "medium"
+    assert "自身は成果物、計画ファイル、stage、commitを変更せず" in text
+    assert "単位ごとにwriterを1つずつ起動" in text
+    assert "1回のwriter呼び出しへ全単位を積まず" in text
+    for task_name in (
+        "implementation-task.md",
+        "implementation-plan-review-task.md",
+        "implementation-independent-review-task.md",
     ):
-        for field in ("再現証跡ディレクトリ", "書込主体", "プロセス所有権", "不可逆操作権限"):
-            assert field in document
-        assert "external_execution" in document
-        assert "reproduction_evidence" in document
-    assert "各系統専用の再現証跡ディレクトリ" in implementation_review
-    assert "計画準拠系と独立系の再現証跡ディレクトリを別々に作成" in implementation_review
+        assert task_name in text
+    assert "同一箇所へ2ラウンド連続で指摘" in text
 
 
-def test_codex_exec_prompt_allows_task_required_runtime_values() -> None:
-    """用途別taskの必須値を共通プロンプト契約が拒まないこと。"""
-    skill = _CODEX_EXEC_SKILL.read_text(encoding="utf-8")
-    review = _PLAN_REVIEW.read_text(encoding="utf-8")
-    boilerplate = _DELEGATION_BOILERPLATE.read_text(encoding="utf-8")
-    for document in (skill, boilerplate):
-        assert "実行時に確定した値" in document
-        assert "許可した追加指示" in document
-    assert "task referenceが要求する用途別の必須値" in skill
-    assert "限定再レビュー時の差分一式" in review
-
-
-def test_plan_review_fix_task_limits_writes_and_reports_checks() -> None:
-    """機械修正系の書込先と検査出力を固定する。"""
-    text = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
-    for operation in ("初回機械検査", "指摘反映"):
-        assert operation in text
-    assert "正規計画だけ" in text
-    assert "対象リポジトリのファイルは読み取り専用" in text
-    assert "plan_sha256_before" in text
-    assert "plan_sha256_after" in text
-    assert "plan_change_summary" in text
-    assert "check_results" in text
+def test_removed_codex_exec_contracts_are_absent() -> None:
+    """旧委譲skillと受信taskの重複契約を配布物へ残さない。"""
+    removed_skill_name = "codex-" + "exec"
+    assert not any(path.is_file() for path in (_DISTRIBUTION_ROOT / "skills" / removed_skill_name).rglob("*"))
+    for path in sorted(_DISTRIBUTION_ROOT.rglob("*")):
+        if path.suffix not in {".md", ".py", ".json"} or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        assert "agent-toolkit:" + removed_skill_name not in text
+        assert "plan-" + "codex-" not in text
 
 
 def test_removed_hook_contracts_are_not_described_as_active() -> None:
@@ -227,159 +170,11 @@ def test_removed_hook_contracts_are_not_described_as_active() -> None:
     assert "scope-escalation検出専用" not in session_review
 
 
-def test_plan_impl_report_labels_are_synchronized() -> None:
-    """executorの出力欄が呼び出し元の検収節と完了報告の必須ラベル定数へ追随する。"""
-    labels = _output_labels(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"))
-    assert labels, "`## 出力`節からラベルを抽出できない（節の書式が変わった可能性がある）"
-    caller = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
-    for label in labels:
-        assert label in caller, f"呼び出し元の検収節に`{label}`がない"
-    # ラベル定数との照合は両方向で行う。定義側からの導出だけでは、定義から欄が消えたときに
-    # 検査対象の集合が縮むだけで通過し、定数側が要求し続ける欄の欠落を検出できない。
-    assert set(labels) == set(subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS), (
-        f"完了報告のラベル定数と定義側の欄が一致しない: "
-        f"定数のみ={sorted(set(subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS) - set(labels))}、"
-        f"定義側のみ={sorted(set(labels) - set(subagent_stop_advisor.PLAN_IMPL_EXECUTOR_ALL_LABELS))}"
-    )
-
-
-def test_plan_impl_review_status_values_are_synchronized() -> None:
-    """executorのreview statusを完了と要確認の2状態へ限定する。"""
-    section = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "出力")
-    fence = _FENCED_BLOCK_RE.search(section)
-    assert fence, "`## 出力`節にフェンス付きコードブロックが存在しない"
-    definition = next(
-        (line for line in fence.group(1).splitlines() if line.startswith("review_status:")),
-        None,
-    )
-    assert definition, "`## 出力`節に`review_status`の定義行が無い"
-    values = {value.strip() for value in definition.removeprefix("review_status:").split("|")}
-    assert values == {"completed", "needs_escalation"}
-    reception = _h2_section(_PLAN_IMPL_CALLER.read_text(encoding="utf-8"), "完了報告の検収")
-    assert "未解決の実指摘が無い" in reception
-
-
-def test_review_reference_defines_finding_classifications() -> None:
-    """review taskが参照する採否区分と再レビュー3分類を共通referenceへ定義する。"""
-    text = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-
-    for label in (
-        "計画対応",
-        "独立提案",
-        "初回成果物に存在した見逃し",
-        "指摘修正で導入された欠陥",
-        "修正後に初めて評価可能になった欠陥",
-    ):
-        assert f"`{label}`" in text
-
-
-def test_plan_impl_delivery_and_input_contracts_are_paired() -> None:
-    """実装・修正系への配送物一覧と受領側の入力契約が同じreference群を挙げる。
-
-    採否区分の定義は`plan-codex-implementation-review.md`にのみ存在するため、
-    配送漏れが生じると受領側は区分を割り当てられない。
-    """
-    implementation = _h2_section(_PLAN_IMPL.read_text(encoding="utf-8"), "初回委譲")
-    implementation_input = _h2_section(_PLAN_IMPL_TASK.read_text(encoding="utf-8"), "入力")
-    assert "plan-codex-implementation-task.md" in implementation
-    for reference in ("plan-codex-implementation-task.md", "plan-codex-implementation-review.md"):
-        assert reference in implementation_input
-
-
-def test_plan_impl_review_task_responsibilities_are_synchronized() -> None:
-    """二系統レビューの最小出力と実契約違反の限定を同期する。"""
-    review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-    executor_delegation = _h2_section(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"), "委譲")
-    review_tasks = (
-        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
-        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
-    )
-
-    for task in review_tasks:
-        output = _h2_section(task, "出力")
-        assert "対象commit" in output
-        assert "点検範囲" in output
-        assert "violated_contract" in output
-        assert "review_coverage" not in output
-        assert "review_impact_audit" not in output
-    assert "計画準拠レビューと独立レビューを並列実行" in executor_delegation
-    assert "軽微な好み" in review
-
-
-def test_plan_impl_worktree_snapshot_contract_is_synchronized() -> None:
-    """全量snapshotを廃止し、Git標準検査とone-writer契約へ同期する。"""
-    review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
-    assert "_worktree_snapshot.py" not in review
-    assert "_worktree_snapshot.py" not in rules
-    assert "git status --short" in review
-    assert "writer" in rules
-    assert "終端状態" in rules
-
-
-def test_plan_impl_review_cap_contract_is_synchronized() -> None:
-    """5ラウンド上限時の未解決指摘をneeds_escalationへ同期する。"""
-    review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
-
-    for document in (review, executor, caller):
-        assert "completed_with_review_cap" not in document
-        assert "needs_escalation" in document
-    assert "最大5ラウンド" in review
-    assert "未解決指摘" in review
-
-
-def test_plan_review_checks_canonical_plan_in_target_repository_context() -> None:
-    """対象リポジトリを作業場所として正規計画だけを修正する契約を検査する。"""
-    review = _PLAN_REVIEW.read_text(encoding="utf-8")
-    fix_task = _PLAN_REVIEW_FIX_TASK.read_text(encoding="utf-8")
-    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
-
-    assert "--allow-external-paths" in review
-    assert "--work-dir" in review
-    assert "--commands=typos,markdownlint,textlint,designmd,lychee,colloquial-check" in review
-    assert "--enable=colloquial-check" in review
-    assert "<正規計画ファイルの絶対パス>" in review
-    assert "<対象リポジトリの絶対パス>" in review
-    assert "正規計画だけ" in fix_task
-    assert "対象リポジトリのファイルは読み取り専用" in fix_task
-    assert "判断を正規計画へ直接反映" in delegation
-    assert "正常完了時は一時ディレクトリの後始末を要求しない" in delegation
-    assert all(".plan-check-" not in content for content in (review, fix_task, delegation))
-    assert "temporary_files" not in delegation
-
-
 def test_plan_and_add_feedback_does_not_claim_removed_enter_plan_mode_hook() -> None:
     """plan mode外で実行する規範が削除済みPreToolUse検査へ依存しないこと。"""
     text = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     assert "本スキルはplan mode外で実行する" in text
     assert "PreToolUseフックが`plan_and_add_entries_skill_invoked`真時にブロックする" not in text
-
-
-def test_plan_review_state_machine_is_complete() -> None:
-    """計画レビューの初回検査から完了判定までの状態機械を固定する。"""
-    text = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
-    for phrase in (
-        "初回機械検査",
-        "scope_baseline",
-        "正規計画の直接検査",
-        "機械チェック・修正系だけが正規計画へ書き込める",
-        "総合レビュー",
-        "次の2区分",
-        "初版内補正",
-        "スコープ拡大",
-        "独立問題",
-        "採否",
-        "累積差分と反映",
-        "review_rounds",
-        "累積5ラウンド",
-        "集合として扱う",
-        "個別の修正往復を開始しない",
-        "needs_escalation",
-        "ラウンド上限と完了判定",
-    ):
-        assert phrase in text
 
 
 def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
@@ -397,41 +192,6 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "`atk mq add`を実行" not in plan_and_add
 
 
-def test_plan_review_direct_route_skips_worktree_snapshot_contract() -> None:
-    """計画レビューと共通規範の双方からsnapshot契約を除去する。"""
-    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
-    documents = (
-        _PLAN_REVIEW_DELEGATION,
-        _PLAN_REVIEW,
-        _PLAN_REVIEW_FIX_TASK,
-        _PLAN_REVIEW_TASK,
-    )
-
-    assert "_worktree_snapshot.py" not in rules
-    for path in documents:
-        text = path.read_text(encoding="utf-8")
-        assert "_worktree_snapshot.py" not in text
-
-
-def test_plan_review_resume_preserves_cumulative_state() -> None:
-    """再開時に比較基準と累積状態を保持する契約を固定する。"""
-    text = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
-    for state in ("初回レビュー前", "初回レビュー後・採否確定前", "採否確定後・反映前", "反映後・再レビュー前"):
-        assert state in text
-    assert "比較基準を現行計画から再計算しない" in text
-    assert "全ラウンドの累積`scope_changes`" in text
-    assert "5ラウンド目は既知指摘の確定スナップショット" in text
-
-
-def test_delegation_boilerplate_prefers_normal_delivery() -> None:
-    """通常配送優先と完了済みAgentの再開分岐を固定する。"""
-    text = _DELEGATION_BOILERPLATE.read_text(encoding="utf-8")
-    assert text.index("通常のツール戻り値または完了通知を第一") < text.index("配送不能を実測")
-    assert "`completion.md`や確実に照会できるセッション記録" in text
-    assert "完了済みAgentへ追加作業" in text
-    assert "新規起動" in text
-
-
 def test_bug_response_prompt_contracts_are_synchronized() -> None:
     """バグ対応・commit・CIの正本境界と条件付き参照を固定する。"""
     agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
@@ -447,8 +207,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
 
     for document in (agent_rules, review_checklists):
         assert "観測上の同等性にかかわらず、仕様変更" in document
-    assert "計画が用いる分類名にかかわらず" in review_task
-    assert "`### 計画メタ情報`の固定値`作業種別`だけ" in review_task
+    assert "`### 計画メタ情報`にある固定値`作業種別`だけ" in review_task
     assert "分類契約の不成立として指摘" in review_task
     assert "コロンはASCIIの`:`、コロン後は半角空白1字" in plan_mode
     assert "固定値には`バグ対応`または`通常変更`" in plan_mode
@@ -585,7 +344,7 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
     """レビュー出力と受領側が目的・前提・非目標を基準に指摘を選別する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     purpose_contract = _h2_section(review_standards, "目的との整合")
-    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
 
     for phrase in (
         "元のユーザー目的",
@@ -597,36 +356,26 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
         "異なる脅威モデル",
     ):
         assert phrase in purpose_contract
-        assert phrase in implementation_task
     assert "UX補助へ、敵対的入力に対する堅牢性を暗黙の要件として課さない" in purpose_contract
     assert "元の目的、契約または適用規範の何に違反するかを1文で記す" in purpose_contract
     assert "計画を入力契約として受け取るレビュー" in purpose_contract
     assert "独立レビューは`review_contract`を確認" in purpose_contract
-    assert "変更範囲、抽象化層、入力前提が変わる場合" in implementation_task
-    assert "同じ主題の指摘が2件目以降となる場合" in implementation_task
-    assert "個別修正を止め" in implementation_task
-    assert "実在欠陥の影響範囲を確定できる最小集合" in implementation_task
+    assert "`review_contract`" in independent_task
+    assert "ユーザー目的、現行の公開契約" in independent_task
+    assert "ユーザー発話全文、作者の推論、変更意図、実装方針" in independent_task
 
 
 def test_policy_parser_review_contract_declares_operating_boundary() -> None:
     """自動判定の作成規範と独立レビュー入力が同じ運用境界を共有する。"""
     coding_standards = _CODING_STANDARDS.read_text(encoding="utf-8")
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    implementation_review = _PLAN_IMPL_REVIEW.read_text(encoding="utf-8")
     independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
-    initial_review_contract = _h2_section(implementation_review, "初回レビュー")
     independent_input_contract = _h2_section(independent_task, "入力")
 
     for phrase in ("入力生成主体", "信頼境界", "通常入力", "対象外入力", "誤許可と誤拒否"):
         assert phrase in coding_standards
         assert phrase in review_standards
-        assert phrase in initial_review_contract
         assert phrase in independent_input_contract
-    assert "ユーザーが明示・合意した現行の外部契約" in initial_review_contract
-    assert "適用規範により" in initial_review_contract
-    assert "ユーザー発話全文は渡さず" in initial_review_contract
-    assert "独立系にはこれらに加えて`review_contract`だけを渡す" in initial_review_contract
-    assert "作者の推論を渡さず" in initial_review_contract
     assert "`review_contract`" in independent_input_contract
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針は含めない" in independent_input_contract
 

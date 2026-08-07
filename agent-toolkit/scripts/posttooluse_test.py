@@ -333,20 +333,21 @@ class TestSessionReviewSkillInvocation:
         assert path.stat().st_mtime_ns == mtime_before
 
 
-class TestCodexExecTracking:
-    """codex-exec起動の状態記録。"""
+class TestDelegationTracking:
+    """delegation起動の状態記録。"""
 
-    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path) -> None:
-        sid = "codex-exec-skill"
+    @pytest.mark.parametrize("skill_name", ["delegation", "agent-toolkit:delegation"])
+    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path, skill_name: str) -> None:
+        sid = f"delegation-skill-{skill_name}"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:codex-exec"},
+                "tool_input": {"skill": skill_name},
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("codex_exec_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("delegation_skill_invoked") is True
 
 
 class TestSubagentEndProcessLoopLog:

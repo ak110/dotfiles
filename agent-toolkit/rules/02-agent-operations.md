@@ -102,7 +102,7 @@
   Skillツールで`agent-toolkit:shell-exec`を起動して委譲する。
   メインへは終了状態、警告、要求した値、後続判断に必要な要約だけを返させる
   - push後のCI通過確認の待機は委譲対象から除く。担当分離の理由は
-    `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`「実体照合と後続工程」節
+    `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`「pushとCI」節
     （SSOT）を参照する。当該待機は`agent-toolkit:commit`の`references/push-and-ci.md`に従い、
     `git push`を実行した主体が自身で実施する
   - CI失敗後のログ取得・要約は長出力を伴うため引き続き委譲対象とする

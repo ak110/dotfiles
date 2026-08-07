@@ -206,16 +206,17 @@ class TestDeleteState:
         assert read_state("sid") == {"a": 1}
 
 
-def test_session_state_persists_codex_exec_flags() -> None:
-    """codex委譲経路と計画レビュー完了のフラグが永続化されることを確認する。"""
-    session_id = "test-codex-exec-session"
+def test_session_state_persists_delegation_flags() -> None:
+    """委譲経路と計画レビュー完了のフラグが永続化されることを確認する。"""
+    session_id = "test-delegation-session"
 
     def _set(state: dict) -> dict | None:
-        state["codex_exec_skill_invoked"] = True
+        state["delegation_skill_invoked"] = True
         state["plan_mode_skill_invoked"] = True
         return state
 
     assert update_state(session_id, _set) is True
     state = read_state(session_id)
-    assert state["codex_exec_skill_invoked"] is True
+    assert state["delegation_skill_invoked"] is True
     assert state["plan_mode_skill_invoked"] is True
+    assert "codex_" + "exec_skill_invoked" not in state

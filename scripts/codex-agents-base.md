@@ -91,7 +91,7 @@ Codexで利用する場合は次の対応表に従って読み替える。
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
 
-`agent-toolkit:codex-exec`が定めるcodex MCP経路と汎用エージェント代替経路の分岐は、
+`agent-toolkit:delegation`が定めるcodex MCP経路と汎用エージェント代替経路の分岐は、
 Codexでは`spawn_agent`経路へ一本化する。
 系統別`threadId`の継続は、`spawn_agent`が返すエージェントIDまたはタスク名を
 `followup_task`の`target`へ渡して代替する。

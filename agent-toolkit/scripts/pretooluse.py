@@ -30,14 +30,14 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__codex__codex:
 
-- メインセッションで`agent-toolkit:codex-exec`の起動記録が無いcodex MCP呼び出しのブロック (block)
+- メインセッションで`agent-toolkit:delegation`の起動記録が無いcodex MCP呼び出しのブロック (block)
 - `sandbox`が`danger-full-access`以外（未指定を含む）の呼び出しのブロック (block)
 - `approval-policy`の`never`固定 (auto-fix)
 - 全チェック通過時の強制承認 (auto-approve)
 
 mcp__codex__codex-reply:
 
-- `agent-toolkit:codex-exec`起動後のcodex継続呼び出しの強制承認 (auto-approve)
+- `agent-toolkit:delegation`起動後のcodex継続呼び出しの強制承認 (auto-approve)
 
 Bash:
 
@@ -238,12 +238,12 @@ def main(payload_text: str) -> int:
         flush_pending_language_warning()
         return 0
 
-    # mcp__codex__codex: メインセッションのcodex-exec起動確認 + sandbox・cwd検査。
+    # mcp__codex__codex: メインセッションのdelegation起動確認 + sandbox・cwd検査。
     if tool_name == "mcp__codex__codex":
         _record_iss_sidechain_probe(session_id, tool_name, payload)
         if payload.get("isSidechain") is not True:
             state = read_state(session_id)
-            if _check_codex_exec_not_invoked(state, tool_name=tool_name):
+            if _check_delegation_not_invoked(state, tool_name=tool_name):
                 return 2
         if _check_codex_mcp_sandbox(tool_input):
             return 2
@@ -253,12 +253,12 @@ def main(payload_text: str) -> int:
         _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
         return 0
 
-    # mcp__codex__codex-reply: メインセッションのcodex-exec起動確認 + 強制承認。
+    # mcp__codex__codex-reply: メインセッションのdelegation起動確認 + 強制承認。
     if tool_name == "mcp__codex__codex-reply":
         _record_iss_sidechain_probe(session_id, tool_name, payload)
         if payload.get("isSidechain") is not True:
             state = read_state(session_id)
-            if _check_codex_exec_not_invoked(state, tool_name=tool_name):
+            if _check_delegation_not_invoked(state, tool_name=tool_name):
                 return 2
         emit_json(
             {
@@ -1194,7 +1194,8 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
 
 _DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
     "agent-toolkit/agents/plan-impl-executor.md",
-    "agent-toolkit/skills/codex-exec/SKILL.md",
+    "agent-toolkit/skills/delegation/SKILL.md",
+    "agent-toolkit/skills/delegation/references/runtime-routing.md",
     "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
     "agent-toolkit/scripts/pretooluse.py",
 )
@@ -1220,9 +1221,10 @@ def _extract_sandbox_assignments(text: str) -> list[str]:
 def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_path: str) -> bool:
     """`danger-full-access`を含む行の削除・変更を遮断する（block）。
 
-    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下4つ:
+    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下5つ:
     - `agent-toolkit/agents/plan-impl-executor.md`
-    - `agent-toolkit/skills/codex-exec/SKILL.md`
+    - `agent-toolkit/skills/delegation/SKILL.md`
+    - `agent-toolkit/skills/delegation/references/runtime-routing.md`
     - `agent-toolkit/skills/agent-standards/references/claude-hooks.md`
     - `agent-toolkit/scripts/pretooluse.py`
 
@@ -1803,10 +1805,10 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
     print(
         _llm_notice(
             f"blocked: explicit `model` argument (`{model!r}`) for subagent_type `{subagent_type}`.\n"
-            "Why this gate exists: this subagent is a Haiku-fixed front end that delegates"
-            " actual work through `agent-toolkit:codex-exec`; no per-call model override is defined.\n"
+            "Why this gate exists: this subagent uses its frontmatter model and delegates"
+            " actual work through `agent-toolkit:delegation`; no per-call model override is defined.\n"
             "Normal fix: omit the `model` parameter and let the agent definition's default"
-            " (`haiku`) apply.",
+            " apply.",
             tag="block",
         ),
         file=sys.stderr,
@@ -2859,13 +2861,13 @@ def _record_iss_sidechain_probe(
         pass
 
 
-def _check_codex_exec_not_invoked(state: dict, *, tool_name: str) -> bool:
-    """メインセッションでcodex-execが未起動のMCP呼び出しをブロックする。"""
-    if state.get("codex_exec_skill_invoked", False):
+def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:
+    """メインセッションでdelegationが未起動のMCP呼び出しをブロックする。"""
+    if state.get("delegation_skill_invoked", False):
         return False
     print(
         _llm_notice(
-            f"{tool_name} call is blocked because `agent-toolkit:codex-exec` was not invoked."
+            f"{tool_name} call is blocked because `agent-toolkit:delegation` was not invoked."
             " Invoke the skill before calling codex MCP from the main session.",
             tag="block",
         ),

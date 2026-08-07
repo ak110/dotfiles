@@ -30,7 +30,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 15. PostToolUseFailure・PermissionDenied: 状態を変更せず終了
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-17. `agent-toolkit:codex-exec`起動の記録 (Skill)
+17. `agent-toolkit:delegation`起動の記録 (Skill)
 18. 対象リポジトリのTBDが全件回答済みへ遷移した場合の通知（全ツール共通）
 """
 
@@ -169,7 +169,7 @@ _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 
 _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
-_CODEX_EXEC_SKILL_NAMES = frozenset({"agent-toolkit:codex-exec", "codex-exec"})
+_DELEGATION_SKILL_NAMES = frozenset({"agent-toolkit:delegation", "delegation"})
 
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
 # `pretooluse.py`が同一キーで書き込み、本スクリプトが読み取り・削除する共有SSOT。
@@ -457,15 +457,15 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             update_state(session_id, _reset_process_feedbacks_invoked)
         if isinstance(skill_name, str) and skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
             update_state(session_id, _set_plan_and_add_entries_invoked)
-        if isinstance(skill_name, str) and skill_name in _CODEX_EXEC_SKILL_NAMES:
+        if isinstance(skill_name, str) and skill_name in _DELEGATION_SKILL_NAMES:
 
-            def _set_codex_exec_invoked(state: dict) -> dict | None:
-                if state.get("codex_exec_skill_invoked", False):
+            def _set_delegation_invoked(state: dict) -> dict | None:
+                if state.get("delegation_skill_invoked", False):
                     return None
-                state["codex_exec_skill_invoked"] = True
+                state["delegation_skill_invoked"] = True
                 return state
 
-            update_state(session_id, _set_codex_exec_invoked)
+            update_state(session_id, _set_delegation_invoked)
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)

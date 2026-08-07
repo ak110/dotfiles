@@ -81,8 +81,7 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
     どちらで受領したかは検収の成否を左右しない。
     孫委譲時の記録ファイル直接読み取りは、通常のツール配送経路が成立しない場合の
     例外的な受領手段として扱い、読み取った完了報告へ同じ検収手順を適用する。
-    計画処理の委譲プロンプトと受領順序は、
-    `agent-toolkit/skills/codex-exec/references/delegation-boilerplate.md`を共通の正本とする
+    計画処理の委譲プロンプトと受領順序は、`agent-toolkit:delegation`を共通の正本とする
 - AgentまたはTask起動では`name`パラメーターを渡さず、`run_in_background`を省略する。
   `name`付きbackground起動で完了通知が配送されず停滞する事象は技術的な不成立に該当するため、
   `name`パラメーターの禁止は厳守規定とする。
