@@ -79,13 +79,51 @@ class TestSlashCommandDetection:
         """短縮名`/session-review`もフルスキル名キーで正規化して保存する。"""
         sid = "short-session-review"
         result = _run(
-            {"session_id": sid, "prompt": "/session-review"},
+            {"session_id": sid, "prompt": "/session-review", "transcript_path": "/tmp/review.jsonl"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         invoked = _read_state(tmp_path, sid).get("session_review_invoked")
         assert isinstance(invoked, dict)
         assert invoked.get("agent-toolkit:session-review") is True
+        output = json.loads(result.stdout)
+        assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert "/tmp/review.jsonl" in output["hookSpecificOutput"]["additionalContext"]
+
+    def test_full_session_review_command_preserves_transcript_path(self, tmp_path: pathlib.Path):
+        transcript_path = "/tmp/会話 transcript.jsonl"
+        result = _run(
+            {
+                "session_id": "full-session-review",
+                "prompt": "/agent-toolkit:session-review",
+                "transcript_path": transcript_path,
+            },
+            state_dir=tmp_path,
+        )
+
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert transcript_path in context
+
+    def test_session_review_with_arguments_does_not_emit_context(self, tmp_path: pathlib.Path):
+        result = _run(
+            {
+                "session_id": "session-review-arguments",
+                "prompt": "/session-review extra",
+                "transcript_path": "/tmp/review.jsonl",
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.stdout == ""
+
+    def test_session_review_without_transcript_fails_open(self, tmp_path: pathlib.Path):
+        result = _run(
+            {"session_id": "session-review-no-path", "prompt": "/session-review"},
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == ""
 
 
 class TestNonMatchingPrompts:

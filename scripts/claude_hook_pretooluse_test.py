@@ -577,11 +577,9 @@ class TestAgentToolkitDotfilesNamesCheck:
         "name",
         [
             "sync-cross-project",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
-            "session-review-dotfiles",  # 個人スキル名
             "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
             "claude-session-export",  # pytools コマンド名 (project.scripts)
             "psgrep",  # pytools コマンド名
-            "claude_hook_stop",  # scripts 名 (拡張子除去)
             "agent_toolkit_bump",  # scripts 名
             "glatasks",  # 固定プロジェクト名
             "gv",

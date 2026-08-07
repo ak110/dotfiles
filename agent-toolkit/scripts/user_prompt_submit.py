@@ -12,6 +12,8 @@
 - plan-and-add-feedback → `plan_and_add_entries_skill_invoked`
 
 例外時はfail-openで exit 0 を返す。
+`/session-review`または`/agent-toolkit:session-review`の完全一致時は、payloadの
+`transcript_path`を変更せず`additionalContext`へ渡す。
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ _PLAN_AND_ADD_FEEDBACK_NAMES_EXTENDED = _extend_with_short_names(_PLAN_AND_ADD_F
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SLASH_COMMAND_PATTERN = re.compile(r"\A/(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
+_SESSION_REVIEW_EXACT_COMMANDS = frozenset({"/session-review", "/agent-toolkit:session-review"})
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -119,6 +122,21 @@ def _set_plan_and_add_entries_invoked(state: dict) -> dict | None:
     return state
 
 
+def _emit_session_review_context(transcript_path: str) -> None:
+    """手動振り返りへpayloadのtranscript絶対パスを渡す。"""
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "additionalContext": ("agent-toolkit:session-reviewへ渡すtranscript_pathの絶対パス: " + transcript_path),
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     try:
@@ -153,6 +171,7 @@ def main(payload_text: str) -> int:
 
     name = match.group(1)
     full_name = f"agent-toolkit:{name}"
+    exact_session_review_command = prompt.strip() in _SESSION_REVIEW_EXACT_COMMANDS
 
     # 対応スキル別にフラグを設定する。
     if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
@@ -160,6 +179,9 @@ def main(payload_text: str) -> int:
     if name in _SESSION_REVIEW_NAMES_EXTENDED or full_name in _SESSION_REVIEW_SKILL_NAMES:
         canonical = _resolve_canonical_name(name, _SESSION_REVIEW_NAMES_EXTENDED, _SESSION_REVIEW_SKILL_NAMES) or full_name
         update_state(session_id, _make_session_review_mutator(canonical))
+        transcript_path = payload.get("transcript_path")
+        if exact_session_review_command and isinstance(transcript_path, str) and transcript_path:
+            _emit_session_review_context(transcript_path)
     if name in _PROCESS_FEEDBACKS_NAMES_EXTENDED or full_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
         update_state(session_id, _set_process_feedbacks_invoked)
     if name in _PLAN_AND_ADD_FEEDBACK_NAMES_EXTENDED or full_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:

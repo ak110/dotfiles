@@ -3,10 +3,7 @@
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
 概要は次のとおり。`stop_hook_active`真時・非同期作業継続中は無条件approve、
 `agent-toolkit:session-review`起動済み時はapproveとする。
-振り返り誘導の抑止経路は2つあり、セッション状態フラグ`session_review_extension_pending`が真の場合と、
-環境変数`AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION`へ非空の値が設定されている場合のいずれかで
-拡張側が誘導を担うとみなしapproveする。
-いずれにも該当しない通常終了時は振り返り誘導文をblockで返す。
+いずれにも該当しない通常終了時は、transcriptの絶対パスを含む振り返り誘導文をblockで返す。
 終了判定の言語的基準は`agent-toolkit:session-review`「起動方針」節をSSOTとし、
 誘導文冒頭へ同一基準（`_message_format.SESSION_REVIEW_PRECHECK`）を事前チェックとして埋め込む。
 
@@ -14,7 +11,6 @@ Claude Codeが停止しようとするタイミングで発火する。判定分
 """
 
 import json
-import os
 import pathlib
 import re
 import subprocess
@@ -40,10 +36,6 @@ _HOOK_ID = "agent-toolkit/stop_advisor"
 # 振り返り誘導の対象スキル名。
 _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 
-# 振り返り拡張フックの導入を示す環境変数。値が非空の場合に導入済みとみなす。
-# 配布物が特定リポジトリの識別子やパスを持たずに拡張の有無を観測するための経路とする。
-_SESSION_REVIEW_EXTENSION_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION"
-
 # transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
 
@@ -51,11 +43,6 @@ _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-r
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
-
-
-def _has_session_review_extension() -> bool:
-    """振り返り拡張フックの導入を示す環境変数が設定されている場合に真を返す。"""
-    return bool(os.environ.get(_SESSION_REVIEW_EXTENSION_ENV, "").strip())
 
 
 def _has_uncommitted_changes(cwd: str) -> bool:
@@ -169,27 +156,14 @@ def main(payload_text: str) -> int:
         _approve(cwd=cwd)
         return 0
 
-    # 拡張章フックの存在を観測した場合、振り返り誘導の重複送出を避けるため
-    # 配布物側の誘導を抑制する。
-    extension_pending = state.get("session_review_extension_pending") is True
-    if extension_pending:
-        append_stop_log(session_id, "approve_extension_pending", {})
-        _approve(cwd=cwd)
-        return 0
-
-    # 既知の振り返り拡張が導入される環境では、配布物側から重ねて誘導しない。
-    if _has_session_review_extension():
-        append_stop_log(session_id, "approve_extension_env", {})
-        _approve(cwd=cwd)
-        return 0
-
     # --- セッション振り返り誘導（毎回提示）---
     # 終了判定の基準・振り返り手順はスキル本体の「起動方針」節に集約する。
     # 誘導文の先頭にSESSION_REVIEW_PRECHECKを付与し、質問直後など終了相当の
     # ケースではスキル起動自体を抑止する。
     reason = _llm_notice(
         f"{SESSION_REVIEW_PRECHECK} If so, invoke `{_SESSION_REVIEW_SKILL}` via the Skill tool"
-        " per its activation policy section."
+        " per its activation policy section. Pass this exact absolute transcript path to the skill: "
+        f"{transcript_path}"
     )
     append_stop_log(session_id, "block_session_review", {})
     _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")

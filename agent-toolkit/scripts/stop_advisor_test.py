@@ -18,18 +18,6 @@ import stop_advisor
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
 
-@pytest.fixture(autouse=True)
-def _isolate_session_review_extension_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """振り返り拡張の環境変数を全テストから除去する。
-
-    `_run`は`os.environ.copy()`を子プロセスへ渡すため、テスト実行者の環境に
-    当該変数が設定されていると`approve_extension_env`で早期approveし、
-    blockを期待するテストが実行環境に依存して失敗する。
-    当該変数の挙動そのものを検証するテストは、本フィクスチャの後に自身で設定する。
-    """
-    monkeypatch.delenv("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", raising=False)
-
-
 def _run(
     payload: object,
     *,
@@ -61,20 +49,6 @@ def _block_reason(decision: dict) -> str:
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-
-def _configure_dotfiles_origin(home: pathlib.Path, remote_url: str) -> pathlib.Path:
-    """`~/dotfiles`相当のテストリポジトリへoriginを設定する。"""
-    repository = home / "dotfiles"
-    repository.mkdir()
-    subprocess.run(["git", "init", str(repository)], check=True, capture_output=True, text=True)
-    subprocess.run(
-        ["git", "-C", str(repository), "remote", "add", "origin", remote_url],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return repository
 
 
 def _user_entry(text: str = "hello") -> dict:
@@ -415,6 +389,7 @@ class TestContextConditions:
         assert "uncommitted" not in body.lower()
         assert "AskUserQuestion" in body
         assert "end the turn silently" in body
+        assert str(transcript) in body
 
     def test_dirty_repo_context_with_both_messages(
         self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
@@ -432,6 +407,7 @@ class TestContextConditions:
         assert _SESSION_REVIEW_SKILL in body
         assert "AskUserQuestion" in body
         assert "end the turn silently" in body
+        assert str(transcript) in body
         assert "systemMessage" in decision
         assert "changed file(s)" in decision["systemMessage"]
 
@@ -470,112 +446,6 @@ class TestUncommittedChangesAfterReview:
         )
         decision = _parse_decision(result)
         assert "decision" not in decision
-
-
-class TestExtensionPending:
-    """`session_review_extension_pending`フラグが真のとき振り返り誘導を抑制する。"""
-
-    def test_extension_pending_dirty_repo_emits_git_status_only(
-        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
-    ):
-        """フラグ真かつ未コミット変更あり → approveと`systemMessage`にgit statusのみ（振り返り誘導なし）。"""
-        repo = make_dirty_repo(tmp_path)
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        _write_state(tmp_path, "ext-dirty", {"session_review_extension_pending": True})
-        result = _run(
-            {"session_id": "ext-dirty", "transcript_path": str(transcript), "cwd": str(repo)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert "decision" not in decision
-        assert "reason" not in decision
-        assert "systemMessage" in decision
-        assert "git status" in decision["systemMessage"]
-        assert _SESSION_REVIEW_SKILL not in decision.get("systemMessage", "")
-
-    def test_extension_pending_clean_repo_approves(
-        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
-    ):
-        """フラグ真かつ未コミット変更なし → approveのみ（`reason`なし）。"""
-        repo = make_clean_repo(tmp_path)
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        _write_state(tmp_path, "ext-clean", {"session_review_extension_pending": True})
-        result = _run(
-            {"session_id": "ext-clean", "transcript_path": str(transcript), "cwd": str(repo)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert "decision" not in decision
-        assert "hookSpecificOutput" not in decision
-
-
-class TestExtensionRepository:
-    """振り返り拡張の導入観測時に振り返り誘導を抑制する。"""
-
-    def test_missing_env_keeps_review_prompt(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        """環境変数が未設定の場合は通常の振り返り誘導を維持する。"""
-        monkeypatch.delenv("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", raising=False)
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        result = _run(
-            {"session_id": "env-missing", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        assert _block_reason(_parse_decision(result))
-
-    def test_env_set_approves(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        """環境変数へ非空の値を設定した場合にapproveされ、Stopログのdecisionが`approve_extension_env`であること。"""
-        monkeypatch.setenv("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", "1")
-        working_root = tmp_path / "working"
-        working_root.mkdir()
-        repo = working_root
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        result = _run(
-            {"session_id": "env-set", "transcript_path": str(transcript), "cwd": str(repo)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert "decision" not in decision
-        assert "reason" not in decision
-
-    def test_env_empty_keeps_review_prompt(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        """環境変数が空文字・空白のみの場合に振り返り誘導が維持されること。"""
-        monkeypatch.setenv("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", "   ")
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        result = _run(
-            {"session_id": "env-empty", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        assert _block_reason(_parse_decision(result))
-
-    @pytest.mark.parametrize(
-        "remote_url",
-        ["https://example.com/owner/dotfiles.git", "git@example.com:owner/dotfiles.git"],
-    )
-    def test_home_repository_origin_has_no_effect(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-        remote_url: str,
-    ):
-        """ホーム直下のリポジトリとoriginを構成しても、環境変数未設定なら振り返り誘導を維持する。"""
-        monkeypatch.delenv("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", raising=False)
-        _configure_dotfiles_origin(tmp_path, remote_url)
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        result = _run(
-            {"session_id": "origin-ignored", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        assert _block_reason(_parse_decision(result))
-
-    def test_origin_lookup_not_referenced(self):
-        """抑止判定がgit remoteの参照に依存しないことを構造で固定する再発防止テスト。
-
-        origin正規化比較による判定へ巻き戻すと`_git_remote`のimportと
-        `get_normalized_origin`の呼び出しが復活するため、いずれの検査も失敗する。
-        """
-        assert not hasattr(stop_advisor, "_git_remote")
-        source = pathlib.Path(stop_advisor.__file__).read_text(encoding="utf-8")
-        assert "get_normalized_origin" not in source
 
 
 class TestEdgeCases:

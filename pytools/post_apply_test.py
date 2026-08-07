@@ -4,10 +4,28 @@
 失敗時の exit code を検証する。
 """
 
+from pathlib import Path
+
 import pytest
 
 from pytools import post_apply
 from pytools._internal import post_apply_outcome
+
+# 配布先cleanup契約の定数を直接検証する。
+# pylint: disable=protected-access
+
+
+def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
+    """旧個人スキルをClaude CodeとCodexの両配布先からcleanupする。"""
+    relative = Path("skills/session-review-dotfiles")
+    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".claude"]  # noqa: SLF001
+    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".codex"]  # noqa: SLF001
+
+
+def test_session_review_reference_is_not_cleanup_target() -> None:
+    """新しいreferenceを旧資産cleanupへ含めない。"""
+    for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
+        assert Path("references/session-review-dotfiles.md") not in paths
 
 
 def _make_step(name: str, calls: list[str], changed: bool = False):

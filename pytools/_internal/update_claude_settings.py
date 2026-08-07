@@ -50,12 +50,14 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_posttooluse.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
+    # 2026-08: 振り返り入口をagent-toolkit側へ統合したため個人Stop hookを除去
+    "claude_hook.py stop;",
 )
 
 # settings.json の env 配下から除去するキー。
 # share/claude_settings_json_managed.* から廃止した env キーを列挙する。
 # dict は再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
-_REMOVED_ENV_KEYS: tuple[str, ...] = ()
+_REMOVED_ENV_KEYS: tuple[str, ...] = ("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION",)
 
 # settings.json 配下のリスト要素から除去する部分文字列のペア。
 # ドット区切りパスで対象配列を指定し、配列要素のうち部分文字列を含むものを除去する。

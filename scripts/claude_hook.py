@@ -8,7 +8,7 @@
 # ///
 """Claude Code dotfiles個人環境フック共通エントリポイント。
 
-`share/claude_settings_json_managed.*.json`に個別登録されていた4フックスクリプト
+`share/claude_settings_json_managed.*.json`に個別登録されていたフックスクリプト
 （`claude_hook_pretooluse.py`等）の起動処理を集約する。各モジュールは`main()`関数の
 定義のみを担うライブラリへ縮小し、`if __name__ == "__main__"`epilogueは本ファイルへ移す。
 第1引数でサブコマンド（イベント種別相当のモジュール名）を指定する。
@@ -26,17 +26,16 @@ import pathlib
 import sys
 import traceback
 
-_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "stop", "autonomous_exit"})
+_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "autonomous_exit"})
 
 _MODULE_NAMES: dict[str, str] = {
     "pretooluse": "claude_hook_pretooluse",
     "posttooluse": "claude_hook_posttooluse",
-    "stop": "claude_hook_stop",
     "autonomous_exit": "claude_hook_autonomous_exit",
 }
 
 # 例外時に`_approve()`（空JSON応答）フォールバックを呼ぶ対象（Stop系のみ、既存挙動を維持）。
-_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop", "autonomous_exit"})
+_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"autonomous_exit"})
 
 
 def _configure_standard_output() -> None:

@@ -153,7 +153,8 @@ class TestBlockCondition:
         reason = decision.get("reason")
         assert isinstance(reason, str)
         assert "exit-session" in reason
-        assert "session-review-dotfiles" in reason
+        assert "agent-toolkit:session-review" in reason
+        assert "session-review-dotfiles" not in reason
 
     def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
         """旧process-loopの移行互換名だけが設定された場合もblockする。"""

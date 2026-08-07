@@ -18,7 +18,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"
 
 sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -63,8 +63,6 @@ class TestAgentToolkitEditSkillRecording:
     def test_ignores_other_skill(self, tmp_path: pathlib.Path):
         env = _state_env(tmp_path)
         sid = "rec-other-skill"
-        # `agent-toolkit:plan-mode`は`session_review_extension_pending`の対象でもあるため、
-        # 当該フラグへ影響しない別系統のスキル名を使う。
         result = _run(
             {
                 "tool_name": "Skill",
@@ -169,147 +167,13 @@ class TestAgentToolkitEditSkillRecording:
         assert state.get("other_flag") is True
 
 
-class TestSessionReviewDotfilesRecording:
-    """`session-review-dotfiles` スキル呼び出しを `session_review_invoked` 辞書へ記録する。"""
-
-    _SKILL = "session-review-dotfiles"
-
-    def test_records_invocation(self, tmp_path: pathlib.Path):
-        env = _state_env(tmp_path)
-        sid = "review-rec-1"
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": self._SKILL},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        invoked = _read_state(tmp_path, sid).get("session_review_invoked")
-        assert isinstance(invoked, dict)
-        assert invoked.get(self._SKILL) is True
-
-    def test_no_rewrite_when_key_already_true(self, tmp_path: pathlib.Path):
-        env = _state_env(tmp_path)
-        sid = "review-rec-already"
-        path = _state_path(tmp_path, sid)
-        # `session_review_extension_pending`も予め真にしておくことで、本フックの両分岐とも
-        # mutatorが`None`を返し書き込みが発生しない状態にする。
-        path.write_text(
-            json.dumps(
-                {
-                    "session_review_invoked": {self._SKILL: True},
-                    "session_review_extension_pending": True,
-                    "other": "keep",
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        mtime_before = path.stat().st_mtime_ns
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": self._SKILL},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert state == {
-            "session_review_invoked": {self._SKILL: True},
-            "session_review_extension_pending": True,
-            "other": "keep",
-        }
-        assert path.stat().st_mtime_ns == mtime_before
-
-    def test_merges_with_existing_key(self, tmp_path: pathlib.Path):
-        """既存の他キー（例: 配布物側スキル）と共存する。"""
-        env = _state_env(tmp_path)
-        sid = "review-rec-merge"
-        _state_path(tmp_path, sid).write_text(
-            json.dumps(
-                {"session_review_invoked": {"agent-toolkit:session-review": True}},
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": self._SKILL},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        invoked = _read_state(tmp_path, sid).get("session_review_invoked")
-        assert isinstance(invoked, dict)
-        assert invoked.get(self._SKILL) is True
-        assert invoked.get("agent-toolkit:session-review") is True
-
-
-class TestExtensionPendingRecording:
-    """`session_review_extension_pending`フラグの記録検証。"""
-
-    def test_agent_toolkit_prefix_skill_sets_flag(self, tmp_path: pathlib.Path):
-        """`agent-toolkit:`で始まるスキルを観測するとフラグが真になる。"""
-        env = _state_env(tmp_path)
-        sid = "ext-pending-prefix"
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:plan-mode"},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("session_review_extension_pending") is True
-
-    def test_session_review_dotfiles_sets_flag(self, tmp_path: pathlib.Path):
-        """`session-review-dotfiles`スキルを観測するとフラグが真になる。"""
-        env = _state_env(tmp_path)
-        sid = "ext-pending-dotfiles"
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "session-review-dotfiles"},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("session_review_extension_pending") is True
-
-    def test_non_target_skill_does_not_set_flag(self, tmp_path: pathlib.Path):
-        """対象外スキルを観測してもフラグは変化しない。"""
-        env = _state_env(tmp_path)
-        sid = "ext-pending-nontarget"
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "other-skill"},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        assert "session_review_extension_pending" not in _read_state(tmp_path, sid)
-
-
 class TestAutonomousExitSkillRecording:
     """`agent-toolkit:exit-session`スキル呼び出しを`autonomous_exit_invoked`へ記録する。"""
 
     _SKILL = "agent-toolkit:exit-session"
 
-    def test_records_invocation_falls_through_to_extension_pending(self, tmp_path: pathlib.Path):
-        """`agent-toolkit:exit-session`は`_AGENT_TOOLKIT_PREFIX`分岐へフォールスルーする。
-
-        `autonomous_exit_invoked`に加え`session_review_extension_pending`も真になる。
-        """
+    def test_records_invocation(self, tmp_path: pathlib.Path):
+        """`agent-toolkit:exit-session`は自律終了フラグだけを記録する。"""
         env = _state_env(tmp_path)
         sid = "exit-rec-fallthrough"
         result = _run(
@@ -323,7 +187,7 @@ class TestAutonomousExitSkillRecording:
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
         assert state.get("autonomous_exit_invoked") is True
-        assert state.get("session_review_extension_pending") is True
+        assert "session_review_extension_pending" not in state
 
     def test_other_skill_does_not_set_flag(self, tmp_path: pathlib.Path):
         env = _state_env(tmp_path)
@@ -342,6 +206,19 @@ class TestAutonomousExitSkillRecording:
 
 class TestGeneralBehavior:
     """共通の振る舞い。"""
+
+    def test_removed_stop_subcommand_is_not_dispatched(self, tmp_path: pathlib.Path):
+        """廃止した個人Stop入口を共通エントリポイントから起動しない。"""
+        result = _fork_runner.run_script(
+            _SCRIPT,
+            argv=("stop",),
+            input="{}",
+            env=_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert "usage:" in result.stderr
 
     def test_invalid_json_silent(self, tmp_path: pathlib.Path):
         env = _state_env(tmp_path)

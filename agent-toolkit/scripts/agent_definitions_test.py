@@ -31,6 +31,8 @@ _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
 _CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
+_SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
+_SESSION_REVIEW_EVIDENCE = _AGENTS_DIR.parent / "scripts" / "_session_review_evidence.py"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE_REFERENCES / "plan-review-delegation.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
@@ -168,6 +170,28 @@ def test_removed_hook_contracts_are_not_described_as_active() -> None:
     assert "`ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約" not in pretooluse
     assert "縮退表明辞書で検査" not in subagent_stop
     assert "scope-escalation検出専用" not in session_review
+
+
+def test_session_review_uses_single_entry_and_independent_advisor() -> None:
+    """振り返りを単一入口へ統合し、独立した読み取り専用評価を必須にする。"""
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    advisor_text = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(advisor_text)
+    assert parsed is not None
+    metadata, _ = parsed
+
+    assert metadata["model"] == "opus"
+    assert metadata["effort"] == "high"
+    assert metadata["user-invocable"] == "false"
+    assert metadata["tools"] == "Read, Bash"
+    assert "必ず読み取り専用の`session-review-advisor`を1つ起動" in skill
+    assert "メインだけで改善提案の要否を確定しない" in skill
+    assert "Explore" not in skill
+    assert "別スキルとして起動せず" in skill
+    assert "_session_review_evidence.py" in advisor_text
+    assert "1回だけ実行" in advisor_text
+    assert "対象を変更せず、`atk mq add`、外部送信、サブエージェント起動も行わない" in advisor_text
+    assert _SESSION_REVIEW_EVIDENCE.is_file()
 
 
 def test_plan_and_add_feedback_does_not_claim_removed_enter_plan_mode_hook() -> None:

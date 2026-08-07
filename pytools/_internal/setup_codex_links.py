@@ -1,4 +1,4 @@
-"""`~/.codex/`配下にdotfiles固有スキル・agent-toolkit補助資料へのリンクを生成する。
+"""`~/.codex/`配下にdotfiles固有スキル・reference・agent-toolkit補助資料へのリンクを生成する。
 
 chezmoiの`symlink_`はWindowsで`CreateSymbolicLinkW`の特権不足により失敗するため採用しない。
 Linux/macOSではシンボリックリンクを、Windowsではディレクトリジャンクションを生成する。
@@ -19,8 +19,8 @@ CODEX_HOME = Path.home() / ".codex"
 _LINKS: dict[str, str] = {
     "skills/export-session": ".chezmoi-source/dot_claude/skills/export-session",
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
-    "skills/session-review-dotfiles": ".chezmoi-source/dot_claude/skills/session-review-dotfiles",
     "skills/sync-cross-project": ".chezmoi-source/dot_claude/skills/sync-cross-project",
+    "references": ".chezmoi-source/dot_claude/references",
     "agent-toolkit/agents": "agent-toolkit/agents",
     "agent-toolkit/rules": "agent-toolkit/rules",
 }

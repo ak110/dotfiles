@@ -21,7 +21,7 @@ r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び
 LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整形し、
 `decision: "block"`＋`reason`フィールドへ載せて返す。
 参照経路は`Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"`を
-`sys.path`に追加して解決する（`scripts/claude_hook_stop.py`と同形式）。
+`sys.path`に追加して解決する。
 
 各判定分岐の最終判定ラベルと根拠は`agent-toolkit/scripts/_stop_gate.append_stop_log`で
 常時ログへ記録する。
@@ -69,8 +69,8 @@ After processing completes, you must call /agent-toolkit:exit-session to end the
 Before calling exit-session, fully complete the following steps.
 1. process-feedbacks skill steps 1-3 (feedback adoption decision, commit, push, cleanup)
 2. process-feedbacks skill step 4, "振り返り工程"
-   (both the agent-toolkit:session-review skill and the session-review-dotfiles skill)
-3. Submission of improvement proposals via the session-review-dotfiles skill
+   (the agent-toolkit:session-review skill, including its independent advisor assessment)
+3. Submission of improvement proposals via the agent-toolkit:session-review skill
 Call exit-session only after all of the above steps are complete.
 Calling exit-session before submitting improvement proposals is strictly forbidden, \
 because it discards the reflection results.

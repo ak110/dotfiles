@@ -159,6 +159,12 @@ def test_links_contains_dotfiles_skills() -> None:
     assert setup_codex_links._LINKS["skills/refine-prompt"].startswith(".chezmoi-source/")
 
 
+def test_links_replaces_session_review_skill_with_reference_directory() -> None:
+    """独立スキルを除去し、振り返りの追加観点をreferenceとして共有する。"""
+    assert "skills/session-review-dotfiles" not in setup_codex_links._LINKS
+    assert setup_codex_links._LINKS["references"] == ".chezmoi-source/dot_claude/references"
+
+
 def test_links_contains_agent_toolkit_agents() -> None:
     """`_LINKS`辞書に`agent-toolkit/agents`エントリが含まれること。"""
     assert "agent-toolkit/agents" in setup_codex_links._LINKS

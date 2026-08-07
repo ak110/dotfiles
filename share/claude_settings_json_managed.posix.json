@@ -29,10 +29,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py stop; exit 0'"
-          },
-          {
-            "type": "command",
             "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit; exit 0'"
           }
         ]

@@ -206,6 +206,21 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert data["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
 
+    def test_removed_session_review_extension_is_absent(self):
+        """単一入口化後の配布設定に旧拡張環境変数を残さない。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        assert "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION" not in data["env"]
+
+    @pytest.mark.parametrize("suffix", ["posix", "win32"])
+    def test_only_autonomous_exit_personal_stop_hook_remains(self, suffix: str):
+        """OS別設定の個人Stop hookは自律終了検査だけを保持する。"""
+        path = _PROD_MANAGED_SETTINGS.with_suffix(f".{suffix}.json")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        commands = [hook["command"] for group in data["hooks"]["Stop"] for hook in group["hooks"]]
+        assert len(commands) == 1
+        assert "claude_hook.py autonomous_exit" in commands[0]
+        assert "claude_hook.py stop" not in commands[0]
+
 
 class TestUpdateClaudeConfig:
     """~/.claude.json 向けの単純上書きマージテスト。"""
@@ -729,19 +744,28 @@ class TestStripRemovedHooks:
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py; exit 0'",
                 True,
             ),
-            # 共通エントリポイント形式 (`uv run --no-project --script <claude_hook.py> <subcommand>`): 保持
+            # 共通エントリポイント形式の現行サブコマンドは保持する
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; exit 0'",
                 False,
             ),
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py stop; exit 0'",
+                True,
+            ),
+            (
+                'powershell -Command "& { uv run --no-project --script '
+                '$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py stop; exit 0 }"',
+                True,
+            ),
+            (
+                "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit; exit 0'",
                 False,
             ),
         ],
     )
     def test_no_project_substrings_default(self, tmp_path: Path, command: str, should_be_removed: bool):
-        """既定の除去パターンが旧形式と廃止済みの直接起動形式を除去し、共通エントリポイント形式を保持する。"""
+        """既定の除去パターンが廃止形式を除去し、現行の共通エントリポイントを保持する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
