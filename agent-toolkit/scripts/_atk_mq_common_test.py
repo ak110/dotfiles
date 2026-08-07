@@ -1,5 +1,6 @@
 """`atk mq`共通の警告・通知処理を検証する。"""
 
+import datetime
 import os
 import pathlib
 import shutil
@@ -59,6 +60,46 @@ def _write_feedback(
     return path
 
 
+def _write_reserved_feedback(
+    private_notes: pathlib.Path,
+    *,
+    expires_at: str,
+    generation: str = "1",
+    companion: str = "companion.md",
+) -> pathlib.Path:
+    """予約付きfeedbackと対応companionを書き込む。"""
+    path = _write_feedback(private_notes, "reserved.md", depends_on=(companion,), state="processing")
+    text = path.read_text(encoding="utf-8")
+    text = text.replace(
+        "type: feedback\n",
+        "type: feedback\n"
+        "reservation:\n"
+        f"  token_hash: {'a' * 64}\n"
+        "  owner: /tmp/worktree\n"
+        f"  generation: '{generation}'\n"
+        "  reason: 計画作成\n"
+        "  reserved_at: '2026-08-08T00:00:00+00:00'\n"
+        f"  expires_at: '{expires_at}'\n"
+        f"  companion: {companion}\n",
+    )
+    path.write_text(text, encoding="utf-8")
+    companion_path = _write_feedback(
+        private_notes,
+        companion,
+        target_repo=_common.RESERVATION_INTERNAL_REPO,
+    )
+    companion_text = companion_path.read_text(encoding="utf-8").replace(
+        "type: feedback\n",
+        "type: feedback\n"
+        "reservation_companion:\n"
+        "  target_repo: github.com/example/repo\n"
+        "  target_filename: reserved.md\n"
+        f"  token_hash: {'a' * 64}\n",
+    )
+    companion_path.write_text(companion_text, encoding="utf-8")
+    return path
+
+
 def test_make_filename_completer_limits_states(tmp_path: pathlib.Path) -> None:
     """指定した状態のファイルだけを候補として返す。"""
     private_notes = tmp_path / "private-notes"
@@ -96,6 +137,44 @@ class TestReadiness:
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
         assert result.ready == ("feedback.md",)
+        assert result.actionable_count == 1
+
+    @pytest.mark.parametrize(
+        ("now", "expected_reason", "actionable"),
+        [
+            (datetime.datetime(2026, 8, 8, 0, 29, 59, tzinfo=datetime.UTC), "reserved", 0),
+            (datetime.datetime(2026, 8, 8, 0, 30, tzinfo=datetime.UTC), "expired", 1),
+        ],
+    )
+    def test_reservation_boundary_blocks_or_requests_repair(
+        self,
+        tmp_path: pathlib.Path,
+        now: datetime.datetime,
+        expected_reason: str,
+        actionable: int,
+    ) -> None:
+        """期限直前は保留し、期限到来時は回収対象にする。"""
+        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00")
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo", now=now)
+
+        selected = result.reserved if expected_reason == "reserved" else result.expired_reservations
+        assert selected == ("reserved.md",)
+        assert result.blocked == ("reserved.md",)
+        assert result.actionable_count == actionable
+        assert "companion.md" not in (*result.ready, *result.blocked)
+
+    def test_reservation_generation_must_be_positive_decimal(self, tmp_path: pathlib.Path) -> None:
+        """0以下の世代を不正予約として修復対象にする。"""
+        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00", generation="0")
+
+        result = _common.calculate_readiness(
+            tmp_path,
+            "github.com/example/repo",
+            now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC),
+        )
+
+        assert result.invalid_reservations == ("reserved.md",)
         assert result.actionable_count == 1
 
     def test_unanswered_tbd_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:

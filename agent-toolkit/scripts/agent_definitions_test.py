@@ -42,6 +42,7 @@ _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
 _SECTION_REFERENCE_SOURCE_ROOTS = (
     _DISTRIBUTION_ROOT,
     _REPOSITORY_ROOT / ".claude" / "skills",
+    _REPOSITORY_ROOT / ".chezmoi-source" / "dot_claude" / "rules",
     _REPOSITORY_ROOT / ".chezmoi-source" / "dot_claude" / "skills",
 )
 _DISTRIBUTION_MARKDOWN_BY_NAME: dict[str, list[pathlib.Path]] = {}
@@ -52,7 +53,7 @@ _SKILL_MARKDOWN = {
 }
 # 節参照の記法。pathと節名の間にMarkdown整形用の改行があっても同じ参照として扱う。
 _SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?\s*(?:の\s*)?「([^」\n]+)」節")
-_FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md)`\s*(?:の\s*)?「([^」\n]+)」節")
+_FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md(?:\.tmpl)?)`\s*(?:の\s*)?「([^」\n]+)」節")
 _WORKFLOW_STEP_REFERENCE_RE = re.compile(
     r"(?:`agent-toolkit:[a-z0-9-]+`(?:スキル)?|`?(?:agent-toolkit/skills/)?[a-z0-9-]+/SKILL\.md`?)"
     r"\s*(?:の\s*)?「?ステップ[0-9]"
@@ -215,13 +216,45 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
 
     assert "投入するすべての経路で起動" in add_feedback
-    assert "完成済み本文を受け取った場合" in add_feedback
-    assert "非対話経路" in add_feedback
-    assert "通常型フィードバックの主題だけを受け取った場合" in add_feedback
-    assert "対象リポジトリ、重複、必要な実装済み判定" in add_feedback
-    assert "保存後に取得した本文" in add_feedback
-    assert "`agent-toolkit:add-feedback`へ渡し" in plan_and_add
+    assert "完成済み本文は問い直さず" in add_feedback
+    assert "通常型の主題だけを受け取った場合" in add_feedback
+    assert "保存直前にactive一覧" in add_feedback
+    assert "予約を所有しない項目を変更していない" in add_feedback
+    assert "`agent-toolkit:add-feedback`をSkill機能で起動" in plan_and_add
     assert "`atk mq add`を実行" not in plan_and_add
+
+
+def test_feedback_workflow_declares_skill_calls_and_reservation_boundaries() -> None:
+    """producerとconsumerがSkill起動、二段階確認、予約の全終端を明示する。"""
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+
+    assert "保存直前にactive一覧と関連項目を再取得" in add_feedback
+    assert "processing重複" in add_feedback
+    assert "依存付き追随" in add_feedback
+    assert "計画作成前に" in plan_and_add
+    reserve_at = plan_and_add.index("対象worktree、filename、理由、leaseを渡して予約")
+    for later_phase in ("追加調査", "計画起草", "review"):
+        assert reserve_at < plan_and_add.index(later_phase, reserve_at)
+    assert "`merge-inbox`" in plan_and_add
+    assert "`release-reservation`" in plan_and_add
+    assert "`agent-toolkit:add-feedback`をSkill機能で起動" in process
+    assert "## フィードバック投入" not in process
+
+
+def test_feedback_dependencies_point_to_provider_references() -> None:
+    """providerからconsumerへの逆依存を防ぎ、複数repo契約をadd側へ集約する。"""
+    add_tree = "\n".join(path.read_text(encoding="utf-8") for path in sorted(_ADD_FEEDBACK.parent.rglob("*.md")))
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    sync_cross_project = (
+        _REPOSITORY_ROOT / ".chezmoi-source" / "dot_claude" / "skills" / "sync-cross-project" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert "process-feedbacks/references" not in add_tree
+    for text in (plan_and_add, sync_cross_project):
+        assert "add-feedback/references/cross-repository-submission.md" in text
+        assert "process-feedbacks/references/plan-impl-feedback-flow.md" not in text
 
 
 def test_bug_response_prompt_contracts_are_synchronized() -> None:
@@ -456,7 +489,7 @@ def test_section_references_point_to_existing_headings() -> None:
     checked_targets: set[pathlib.Path] = set()
     sources = sorted({source for root in _SECTION_REFERENCE_SOURCE_ROOTS for source in root.rglob("*")})
     for source in sources:
-        if source.suffix not in {".md", ".py", ".txt"} or not source.is_file():
+        if not source.is_file() or not source.name.endswith((".md", ".md.tmpl", ".py", ".txt")):
             continue
         text = source.read_text(encoding="utf-8")
         references = [(_SKILL_MARKDOWN.get(skill), section) for skill, section in _SKILL_SECTION_REFERENCE_RE.findall(text)]
@@ -490,6 +523,25 @@ def test_section_reference_patterns_accept_line_breaks() -> None:
     assert _FILE_SECTION_REFERENCE_RE.findall(file_reference) == [
         ("agent-toolkit/skills/commit/references/push-and-ci.md", "CI通過確認")
     ]
+
+
+def test_skill_references_are_reachable_from_instruction_roots() -> None:
+    """runtime配布するskill referenceをSKILL又はagent定義から到達可能に保つ。"""
+    roots = set((_DISTRIBUTION_ROOT / "skills").glob("*/SKILL.md")) | set(_AGENTS_DIR.glob("*.md"))
+    references = set((_DISTRIBUTION_ROOT / "skills").glob("*/references/*.md"))
+    reachable = set(roots)
+    pending = list(roots)
+    while pending:
+        source = pending.pop()
+        text = source.read_text(encoding="utf-8")
+        for candidate in references - reachable:
+            if candidate.name not in text:
+                continue
+            reachable.add(candidate)
+            pending.append(candidate)
+
+    unreachable = sorted(str(path.relative_to(_REPOSITORY_ROOT)) for path in references - reachable)
+    assert not unreachable, f"instruction rootから到達しないreference: {unreachable}"
 
 
 def test_workflow_step_reference_pattern_requires_explicit_target() -> None:

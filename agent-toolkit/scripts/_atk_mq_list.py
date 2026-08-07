@@ -98,6 +98,10 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
 def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     """項目の具体的なblocked理由を安定した識別子で返す。"""
     reasons = (
+        ("reserved", readiness.reserved),
+        ("expired-reservation", readiness.expired_reservations),
+        ("invalid-reservation", readiness.invalid_reservations),
+        ("orphan-reservation-companion", readiness.orphan_reservation_companions),
         ("frontmatter-broken", readiness.frontmatter_broken),
         ("missing-plan-file", readiness.missing_plan_file),
         ("invalid-dependency", readiness.invalid_dependencies),
@@ -179,6 +183,9 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     selected: list[QueueEntryDisplay] = []
     for entry in _iter_entries(private_notes, _resolve_states(args.status), filter_repo, args.type):
         _, _, text, _, entry_type = entry
+        parsed = parse_frontmatter(text)
+        if parsed is not None and "reservation_companion" in parsed[0]:
+            continue
         if not _answered_matches(entry_type, text, args.answered):
             continue
         if args.category is not None and not _has_category(text, args.category):

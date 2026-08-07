@@ -55,8 +55,8 @@ auto mode classifierは`kill -TERM $PPID`を「エージェントが作成して
 
 本節はharnessレベルの技術的ブロック（classifier拒否）への対応フローである。
 `agent-toolkit/rules/01-agent.md`「協調と自律」節が扱う確認事項は、エージェント自身が
-判断可能な設計判断・方針確認である。自律モードでは`AskUserQuestion`を`atk mq add --type=tbd`
-記録へ置換し暫定判断で続行する仕組みであり、対象操作の実行そのものは妨げない。
+判断可能な設計判断・方針確認である。自律モードでは実行主体が`agent-toolkit:add-feedback`をSkill機能で
+起動し、`AskUserQuestion`をTBD入力として永続化して暫定判断で続行する仕組みであり、対象操作の実行そのものは妨げない。
 一方classifier拒否は対象操作の実行自体を妨げる技術的ブロックであり、TBD記録による暫定判断・
 続行ではブロックを解消できない。したがって本節は同節が定める確認省略の対象外に当たり、
 自律モード・協調モードのいずれでも本フローの`AskUserQuestion`を通常どおり発行する。

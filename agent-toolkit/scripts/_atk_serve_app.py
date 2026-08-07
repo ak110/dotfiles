@@ -579,6 +579,10 @@ def create_app(
         del error
         return quart.jsonify(error="別の操作が進行中です", code="lock_conflict"), 409
 
+    @app.errorhandler(common.ReservationConflict)
+    async def reservation_conflict(error: common.ReservationConflict) -> tuple[quart.Response, int]:
+        return quart.jsonify(error=str(error), code="reservation_conflict"), 409
+
     @app.errorhandler(RuntimeError)
     async def edit_conflict(error: RuntimeError) -> tuple[quart.Response, int]:
         if str(error) != _EDIT_CONFLICT_MESSAGE:

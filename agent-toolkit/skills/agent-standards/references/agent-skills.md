@@ -44,6 +44,15 @@ Claude Code固有の挙動には節ごとに「Claude Code固有」の注記を�
 - skillは利用者またはsenderが選ぶ作業入口を定める。named agentやtaskの本文を複製しない
 - 同じ判断をsenderとreceiverの双方が必要とする場合は共通skillへ置き、双方から参照する
 
+## スキル間操作
+
+- SKILL.mdの記述だけでは別スキルは自動起動されない。実行中のエージェントがSkill機能で対象スキルを起動する
+- 起動手順は実行主体、スキル名、渡す引数、期待する返却値又は効果を明記する
+- referenceの読込みはSkill起動と区別し、実行主体がReadで全文を読む対象として記述する
+- スキル間引継ぎではconsumerが必要とする完成済み入力をproviderが返し、暗黙の会話履歴へ依存しない
+- providerはconsumer固有referenceへ依存しない。共通判断はprovider又は実際の判断主体へ置く
+- 必須instruction rootから到達しないreferenceをruntime配布物へ残さない。履歴保管は配布物外へ分離する
+
 ## サブエージェント実行とパス解決（Claude Code固有）
 
 SKILL.md内で使用できる`${CLAUDE_SKILL_DIR}`は、

@@ -73,6 +73,42 @@ class TestListSingle:
         assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
 
 
+def test_list_labels_reserved_entry_and_hides_companion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """予約項目はblocked理由を示し、内部companionは一覧へ表示しない。"""
+    notes = _setup_notes(tmp_path)
+    processing = notes / "processing"
+    processing.mkdir()
+    token_hash = "a" * 64
+    (processing / "reserved.md").write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on: [companion.md]\n"
+        "reservation:\n  token_hash: " + token_hash + "\n  owner: /worktree\n  generation: '1'\n"
+        "  reason: test\n  reserved_at: 2026-01-01T00:00:00+00:00\n"
+        "  expires_at: 9999-01-01T00:00:00+00:00\n  companion: companion.md\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    (notes / "inbox" / "companion.md").write_text(
+        "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: feedback\nreservation_companion:\n"
+        "  target_repo: github.com/example/foo\n  target_filename: reserved.md\n  token_hash: "
+        + token_hash
+        + "\n---\n\n内部項目\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "list", "--status=active", "--target-repo=github.com/example/foo"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "[processing/normal/blocked]" in output
+    assert "blocked_reason=reserved" in output
+    assert "companion.md:" not in output
+
+
 class TestListPlanImplementationClassification:
     """独立キーを持つ計画実装型を未分類として分類委譲へ混入させない。"""
 

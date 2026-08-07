@@ -25,6 +25,7 @@ from _atk_mq_common import (
     _repo_lock,
     _require_type,
     _validate_filename,
+    ensure_reservation_mutation_allowed,
 )
 from _atk_mq_repo import _resolve_repo_id
 
@@ -244,6 +245,7 @@ def answer_tbd(
             raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
         if expected_content is not None and text != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        ensure_reservation_mutation_allowed(path, text)
         require_tbd_entry(path, text)
         if ANSWER_MARKER not in text:
             raise WebInputError("回答欄マーカーがありません")

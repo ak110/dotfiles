@@ -6,8 +6,10 @@
 
 import argparse
 import datetime
+import hashlib
 import os
 import pathlib
+import secrets
 import shutil
 import subprocess
 import sys
@@ -25,6 +27,9 @@ from _atk_mq_common import (
     MQ_STATES,
     MQ_TYPE_FEEDBACK,
     MQ_TYPE_TBD,
+    RESERVATION_INTERNAL_REPO,
+    Reservation,
+    ReservationConflict,
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
@@ -38,6 +43,10 @@ from _atk_mq_common import (
     _subdir,
     _validate_filename,
     _validate_filenames_only,
+    ensure_reservation_mutation_allowed,
+    parse_reservation,
+    parse_reservation_companion,
+    reservation_metadata_present,
 )
 from _atk_mq_list import _has_category
 from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo, _verify_target_repo_content
@@ -50,7 +59,12 @@ _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
     "repair_target",
     "repair_kind",
     "plan_file",
+    "reservation",
+    "reservation_companion",
+    "target_commit_history",
 )
+
+_DEFAULT_RESERVATION_LEASE_MINUTES = 30
 
 
 def _entry_target_repo(path: pathlib.Path, text: str) -> str:
@@ -92,6 +106,8 @@ def _validate_no_reserved_frontmatter_modification(original: str, updated: str) 
 
     利用者が$EDITORまたはWeb APIで内部管理用frontmatterを書き換えることを防ぐ。
     """
+    if reservation_metadata_present(original):
+        raise ReservationConflict("予約中の項目は所有者用操作だけが変更できます")
     original_parsed = _frontmatter.parse_frontmatter(original)
     updated_parsed = _frontmatter.parse_frontmatter(updated)
 
@@ -209,6 +225,8 @@ def transition_entries(
         else:
             normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
             _verify_target_repo_content(paths[0], current_content, normalized_target_repo)
+        for path in paths:
+            ensure_reservation_mutation_allowed(path, path.read_text(encoding="utf-8"))
         if action in {"adopt", "reject"}:
             answered_tbds = _answered_tbd_blockers(private_notes, paths)
             if answered_tbds:
@@ -282,8 +300,8 @@ def transition_entries(
                 print(
                     f"カテゴリ「{category}」の採用件数が{adopted_count}件に到達した。"
                     "上位カテゴリでの規範化・仕組み化の検討を必須とする"
-                    "（agent-toolkit:agent-standards配下references/feedback-review-common.md"
-                    "「同一カテゴリ累積時の規範化ゲート」参照）。",
+                    "（agent-toolkit:process-feedbacks配下references/decision-format.md"
+                    "「上位カテゴリの評価」参照）。",
                     file=sys.stderr,
                 )
     return [path.name for path in paths]
@@ -409,6 +427,28 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
         )
         if not status.stdout.strip():
             return False
+        changed = subprocess.run(
+            ["git", "status", "--porcelain", "--", inbox_rel, processing_rel],
+            cwd=private_notes,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        for line in changed:
+            relative = line[3:].split(" -> ")[-1]
+            current_path = private_notes / relative
+            current_text = current_path.read_text(encoding="utf-8") if current_path.is_file() else ""
+            original = subprocess.run(
+                ["git", "show", f"HEAD:{relative}"],
+                cwd=private_notes,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if reservation_metadata_present(current_text) or (
+                original.returncode == 0 and reservation_metadata_present(original.stdout)
+            ):
+                raise ReservationConflict(f"予約中の項目は外部編集commitで変更できません: {relative}")
         _commit_and_push(private_notes, "chore: edit queue items externally", [inbox_rel, processing_rel])
     return True
 
@@ -522,6 +562,7 @@ def convert_entry_to_plan(
         if parsed is None:
             raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
         data, body = parsed
+        ensure_reservation_mutation_allowed(path, text)
         if _require_type(path, text) != MQ_TYPE_FEEDBACK:
             raise WebInputError(f"feedbackだけを計画実装型へ変換できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
@@ -596,6 +637,7 @@ def set_entry_dependencies(
         if parsed is None:
             raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
         data, body = parsed
+        ensure_reservation_mutation_allowed(path, text)
         if _require_type(path, text) != MQ_TYPE_FEEDBACK:
             raise WebInputError(f"feedbackだけ依存を更新できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
@@ -619,6 +661,631 @@ def set_entry_dependencies(
             relative_path = str(path.relative_to(private_notes))
             _commit_and_push(private_notes, "chore: update feedback dependencies", [relative_path])
         return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+
+
+def _utc_text(value: datetime.datetime) -> str:
+    """UTC日時を秒精度のISO 8601文字列へ変換する。"""
+    return value.astimezone(datetime.UTC).replace(microsecond=0).isoformat()
+
+
+def _token_hash(token: str) -> str:
+    """予約tokenを保存用SHA-256へ変換する。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _canonical_dependencies(values: tuple[str, ...], inbox_dir: pathlib.Path) -> tuple[str, ...]:
+    """依存filenameを検証し、初出順へ正規化する。"""
+    return tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in values))
+
+
+def _reservation_for_path(path: pathlib.Path, text: str) -> tuple[dict[str, object], str, Reservation]:
+    """予約付きprocessing feedbackを検証して返す。"""
+    parsed = _frontmatter.parse_frontmatter(text)
+    if parsed is None:
+        raise WebInputError(f"frontmatterが破損しています: {path.name}")
+    data, body = parsed
+    reservation, invalid = parse_reservation(data, state=path.parent.name, entry_type=_require_type(path, text))
+    if invalid or reservation is None:
+        raise ReservationConflict(f"予約metadataが不正です: {path.name}")
+    return data, body, reservation
+
+
+def _verify_token(path: pathlib.Path, reservation: Reservation, token: str) -> None:
+    """生tokenが保存hashと一致することを検証する。"""
+    if not secrets.compare_digest(reservation.token_hash, _token_hash(token)):
+        raise ReservationConflict(f"予約tokenが一致しません: {path.name}")
+
+
+def _find_active_path(private_notes: pathlib.Path, filename: str) -> pathlib.Path | None:
+    """active状態からfilenameを解決する。"""
+    for state in (MQ_STATE_PROCESSING, MQ_STATE_INBOX):
+        candidate = private_notes / state / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _resolve_companion_locked(
+    private_notes: pathlib.Path,
+    *,
+    reservation: Reservation,
+    target_repo: str,
+    target_filename: str,
+) -> pathlib.Path:
+    """対応する内部companionを検証して返す。"""
+    path = _find_active_path(private_notes, reservation.companion)
+    if path is None:
+        raise ReservationConflict(f"予約companionが見つかりません: {reservation.companion}")
+    parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    metadata = parse_reservation_companion(parsed[0], entry_type=MQ_TYPE_FEEDBACK) if parsed is not None else None
+    if (
+        metadata is None
+        or metadata["target_repo"] != target_repo
+        or metadata["target_filename"] != target_filename
+        or metadata["token_hash"] != reservation.token_hash
+    ):
+        raise ReservationConflict(f"予約companionが一致しません: {reservation.companion}")
+    return path
+
+
+def _clear_reservation(
+    data: dict[str, object],
+    reservation: Reservation,
+    *,
+    add_depends_on: tuple[str, ...] = (),
+) -> None:
+    """予約内部metadataとcompanion依存だけを除去する。"""
+    data.pop("reservation", None)
+    raw_dependencies = data.get("depends_on")
+    dependencies = (
+        [value for value in raw_dependencies if isinstance(value, str) and value != reservation.companion]
+        if isinstance(raw_dependencies, list)
+        else []
+    )
+    dependencies.extend(value for value in add_depends_on if value not in dependencies)
+    if dependencies:
+        data["depends_on"] = dependencies
+    else:
+        data.pop("depends_on", None)
+
+
+def reserve_inbox_entries(
+    private_notes: pathlib.Path,
+    *,
+    repo_path: str,
+    filenames: list[str],
+    reason: str,
+    plan_file: str | None = None,
+    lease_minutes: int = _DEFAULT_RESERVATION_LEASE_MINUTES,
+    now: datetime.datetime | None = None,
+    lock_timeout: float = -1,
+) -> str:
+    """Inbox feedback群を同一tokenで期限付き予約する。"""
+    if lease_minutes <= 0:
+        raise WebInputError("lease_minutesは1以上で指定してください")
+    if not reason.strip():
+        raise WebInputError("reasonは空でない文字列で指定してください")
+    filenames = list(dict.fromkeys(filenames))
+    target_repo, worktree = _add.resolve_add_target(repo_path)
+    if worktree is None:
+        raise WebInputError("reserve-inboxにはローカルworktreeを指定してください")
+    plan_path = pathlib.Path(plan_file) if plan_file is not None else None
+    if plan_path is not None and (not plan_path.is_absolute() or not plan_path.is_file()):
+        raise WebInputError("plan_fileは実在する絶対パスで指定してください")
+    if plan_path is not None:
+        _add._verify_plan_base_commit(  # pylint: disable=protected-access
+            plan_path,
+            _add.resolve_head_commit(worktree),
+        )
+    effective_now = (now or datetime.datetime.now(datetime.UTC)).astimezone(datetime.UTC)
+    expires_at = effective_now + datetime.timedelta(minutes=lease_minutes)
+    token = secrets.token_urlsafe(32)
+    token_hash = _token_hash(token)
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
+    _validate_filenames_only(filenames, inbox_dir)
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        try:
+            paths = _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=True)
+        except RuntimeError as error:
+            raise ReservationConflict(str(error)) from error
+        loaded: list[tuple[pathlib.Path, dict[str, object], str]] = []
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            parsed = _frontmatter.parse_frontmatter(text)
+            if parsed is None or _require_type(path, text) != MQ_TYPE_FEEDBACK:
+                raise WebInputError(f"予約できるのはfrontmatterが正常なfeedbackだけです: {path.name}")
+            data, body = parsed
+            raw_repo = data.get("target_repo")
+            if not isinstance(raw_repo, str) or _resolve_repo_id(raw_repo) != target_repo:
+                raise WebInputError(f"target_repoが一致しません: {path.name}")
+            if reservation_metadata_present(text):
+                raise ReservationConflict(f"既に予約されています: {path.name}")
+            loaded.append((path, data, body))
+        for path, data, body in loaded:
+            companion_message = f"予約中のキュー項目を旧process-loopから保護する内部項目: {path.name}"
+            companion = _add._add_entries_locked(  # pylint: disable=protected-access
+                private_notes,
+                parsed_messages=[({}, companion_message)],
+                target_repo=RESERVATION_INTERNAL_REPO,
+                source="reservation",
+                now=effective_now,
+                entry_type=MQ_TYPE_FEEDBACK,
+                scope=None,
+                question_type=None,
+                choices=None,
+            )[0]
+            companion_path = inbox_dir / companion
+            companion_parsed = _frontmatter.parse_frontmatter(companion_path.read_text(encoding="utf-8"))
+            assert companion_parsed is not None
+            companion_data, companion_body = companion_parsed
+            companion_data["reservation_companion"] = {
+                "target_repo": target_repo,
+                "target_filename": path.name,
+                "token_hash": token_hash,
+            }
+            companion_data["queue_schedule"] = {
+                "dependency": {
+                    "kind": "external-upstream",
+                    "recheck_after": "9999-12-31T23:59:59+00:00",
+                    "condition": "対応する予約項目が解除されること",
+                    "hold_reason": "予約互換companion",
+                }
+            }
+            _atomic_write_text(companion_path, _frontmatter.serialize_frontmatter(companion_data, companion_body))
+            raw_dependencies = data.get("depends_on")
+            dependencies = list(raw_dependencies) if isinstance(raw_dependencies, list) else []
+            if companion not in dependencies:
+                dependencies.append(companion)
+            data["depends_on"] = dependencies
+            reservation_data: dict[str, object] = {
+                "token_hash": token_hash,
+                "owner": str(worktree),
+                "generation": "1",
+                "reason": reason.strip(),
+                "reserved_at": _utc_text(effective_now),
+                "expires_at": _utc_text(expires_at),
+                "companion": companion,
+            }
+            if plan_path is not None:
+                reservation_data["plan_file"] = str(plan_path)
+            data["reservation"] = reservation_data
+            _atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
+            shutil.move(path, processing_dir / path.name)
+        _commit_and_push(private_notes, f"chore: reserve {len(paths)} queue entries", list(MQ_STATES))
+    return token
+
+
+def renew_reservations(
+    private_notes: pathlib.Path,
+    *,
+    filenames: list[str],
+    reservation_token: str,
+    target_repo: str | None = None,
+    lease_minutes: int = _DEFAULT_RESERVATION_LEASE_MINUTES,
+    now: datetime.datetime | None = None,
+    lock_timeout: float = -1,
+) -> list[dict[str, object | None]]:
+    """所有者tokenが一致する予約群の期限と世代を更新する。"""
+    if lease_minutes <= 0:
+        raise WebInputError("lease_minutesは1以上で指定してください")
+    filenames = list(dict.fromkeys(filenames))
+    effective_now = (now or datetime.datetime.now(datetime.UTC)).astimezone(datetime.UTC)
+    processing_dir = private_notes / MQ_STATE_PROCESSING
+    _validate_filenames_only(filenames, private_notes / MQ_STATE_INBOX)
+    expected_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    details: list[dict[str, object | None]] = []
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        try:
+            paths = _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=True)
+        except RuntimeError as error:
+            raise ReservationConflict(str(error)) from error
+        loaded: list[tuple[pathlib.Path, dict[str, object], str, Reservation]] = []
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            data, body, reservation = _reservation_for_path(path, text)
+            _verify_token(path, reservation, reservation_token)
+            raw_repo = data.get("target_repo")
+            if not isinstance(raw_repo, str):
+                raise WebInputError(f"target_repoが不正です: {path.name}")
+            item_repo = _resolve_repo_id(raw_repo)
+            if expected_repo is not None and item_repo != expected_repo:
+                raise WebInputError(f"target_repoが一致しません: {path.name}")
+            _resolve_companion_locked(
+                private_notes,
+                reservation=reservation,
+                target_repo=item_repo,
+                target_filename=path.name,
+            )
+            loaded.append((path, data, body, reservation))
+        for path, data, body, reservation in loaded:
+            raw = dict(data["reservation"]) if isinstance(data["reservation"], dict) else {}
+            raw["generation"] = str(reservation.generation + 1)
+            raw["expires_at"] = _utc_text(effective_now + datetime.timedelta(minutes=lease_minutes))
+            data["reservation"] = raw
+            _atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
+            details.append(_add._read_saved_entry_details(path))  # pylint: disable=protected-access
+        _commit_and_push(private_notes, f"chore: renew {len(paths)} queue reservations", [MQ_STATE_PROCESSING])
+    return details
+
+
+def merge_inbox_entry(
+    private_notes: pathlib.Path,
+    *,
+    repo_path: str,
+    filename: str,
+    message: str,
+    reservation_token: str | None = None,
+    plan_file: str | None = None,
+    depends_on: tuple[str, ...] | None = None,
+    supersede: tuple[str, ...] = (),
+    now: datetime.datetime | None = None,
+    lock_timeout: float = -1,
+) -> dict[str, object | None]:
+    """inbox又は所有中予約へ本文と計画metadataを原子的に統合する。"""
+    target_repo, worktree = _add.resolve_add_target(repo_path)
+    if worktree is None:
+        raise WebInputError("merge-inboxにはローカルworktreeを指定してください")
+    target_commit = _add.resolve_head_commit(worktree)
+    parsed_message = _add.parse_entry_message(message, entry_type=MQ_TYPE_FEEDBACK)
+    message_data, message_body = parsed_message
+    plan_path = pathlib.Path(plan_file) if plan_file is not None else None
+    if plan_path is not None:
+        if not plan_path.is_absolute() or not plan_path.is_file():
+            raise WebInputError("plan_fileは実在する絶対パスで指定してください")
+        _add._verify_plan_base_commit(plan_path, target_commit)  # pylint: disable=protected-access
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
+    canonical_name = _validate_filename(filename, inbox_dir).name
+    supersede_names = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in supersede))
+    if canonical_name in supersede_names:
+        raise WebInputError("canonical項目をsupersedeへ指定できません")
+    canonical_dependencies = _canonical_dependencies(depends_on, inbox_dir) if depends_on is not None else None
+    if canonical_dependencies is not None and canonical_name in canonical_dependencies:
+        raise WebInputError(f"自分自身を依存先へ指定できません: {canonical_name}")
+    effective_now = now or datetime.datetime.now(datetime.UTC)
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        try:
+            path = _resolve_processable_targets(
+                [canonical_name],
+                inbox_dir,
+                processing_dir,
+                missing_is_conflict=True,
+            )[0]
+        except RuntimeError as error:
+            raise ReservationConflict(str(error)) from error
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None or _require_type(path, text) != MQ_TYPE_FEEDBACK:
+            raise WebInputError(f"統合できるのはfrontmatterが正常なfeedbackだけです: {path.name}")
+        data, _stored_body = parsed
+        raw_repo = data.get("target_repo")
+        if not isinstance(raw_repo, str) or _resolve_repo_id(raw_repo) != target_repo:
+            raise WebInputError(f"target_repoが一致しません: {path.name}")
+        reservation: Reservation | None = None
+        companion_path: pathlib.Path | None = None
+        if path.parent.name == MQ_STATE_PROCESSING:
+            if reservation_token is None:
+                raise ReservationConflict(f"processing項目の統合には予約tokenが必要です: {path.name}")
+            data, _stored_body, reservation = _reservation_for_path(path, text)
+            _verify_token(path, reservation, reservation_token)
+            companion_path = _resolve_companion_locked(
+                private_notes,
+                reservation=reservation,
+                target_repo=target_repo,
+                target_filename=path.name,
+            )
+        elif reservation_token is not None:
+            raise ReservationConflict(f"指定した予約は既に失効又は解除されています: {path.name}")
+        else:
+            ensure_reservation_mutation_allowed(path, text)
+        try:
+            supersede_paths = _resolve_feedback_targets(list(supersede_names), inbox_dir, missing_is_conflict=True)
+        except RuntimeError as error:
+            raise ReservationConflict(str(error)) from error
+        for candidate in supersede_paths:
+            candidate_text = candidate.read_text(encoding="utf-8")
+            if _require_type(candidate, candidate_text) != MQ_TYPE_FEEDBACK:
+                raise WebInputError(f"supersede対象はfeedbackに限ります: {candidate.name}")
+            ensure_reservation_mutation_allowed(candidate, candidate_text)
+            candidate_data = _frontmatter.parse_frontmatter(candidate_text)
+            assert candidate_data is not None
+            raw_candidate_repo = candidate_data[0].get("target_repo")
+            if not isinstance(raw_candidate_repo, str) or _resolve_repo_id(raw_candidate_repo) != target_repo:
+                raise WebInputError(f"supersede対象のtarget_repoが一致しません: {candidate.name}")
+        previous_target = data.get("target_commit")
+        if isinstance(previous_target, str) and previous_target != target_commit:
+            raw_history = data.get("target_commit_history")
+            history = [value for value in raw_history if isinstance(value, str)] if isinstance(raw_history, list) else []
+            if previous_target not in history:
+                history.append(previous_target)
+            data["target_commit_history"] = history
+        data["target_commit"] = target_commit
+        for key, value in message_data.items():
+            if key not in _add._RESERVED_FRONTMATTER_KEYS:  # pylint: disable=protected-access
+                data[key] = value
+        if plan_path is not None:
+            data["plan_file"] = str(plan_path)
+        if canonical_dependencies is not None:
+            if canonical_dependencies:
+                data["depends_on"] = list(canonical_dependencies)
+            else:
+                data.pop("depends_on", None)
+        if reservation is not None:
+            assert companion_path is not None
+            companion_path.unlink()
+            _clear_reservation(data, reservation)
+        updated = _frontmatter.serialize_frontmatter(
+            data, message_body if message_body.startswith("\n") else f"\n{message_body.rstrip()}\n"
+        )
+        destination = inbox_dir / path.name
+        _atomic_write_text(path, updated)
+        if path.parent.name == MQ_STATE_PROCESSING:
+            shutil.move(path, destination)
+        rejected_dir = _subdir(private_notes, MQ_STATE_REJECTED)
+        for candidate in supersede_paths:
+            _stamp_result(
+                candidate,
+                outcome=MQ_STATE_REJECTED,
+                now=effective_now,
+                commit=None,
+                note=f"{canonical_name}へ統合",
+            )
+            shutil.move(candidate, rejected_dir / candidate.name)
+        _commit_and_push(private_notes, "chore: merge feedback into inbox", list(MQ_STATES))
+        return _add._read_saved_entry_details(destination)  # pylint: disable=protected-access
+
+
+def release_reservations(
+    private_notes: pathlib.Path,
+    *,
+    filenames: list[str],
+    reservation_token: str,
+    target_repo: str | None = None,
+    add_depends_on: tuple[str, ...] = (),
+    lock_timeout: float = -1,
+) -> list[dict[str, object | None]]:
+    """所有者tokenが一致する予約を解除してinboxへ戻す。"""
+    filenames = list(dict.fromkeys(filenames))
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = private_notes / MQ_STATE_PROCESSING
+    dependencies = _canonical_dependencies(add_depends_on, inbox_dir)
+    expected_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        try:
+            paths = _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=True)
+        except RuntimeError as error:
+            raise ReservationConflict(str(error)) from error
+        loaded: list[tuple[pathlib.Path, dict[str, object], str, Reservation, pathlib.Path]] = []
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            data, body, reservation = _reservation_for_path(path, text)
+            _verify_token(path, reservation, reservation_token)
+            raw_repo = data.get("target_repo")
+            if expected_repo is not None and (not isinstance(raw_repo, str) or _resolve_repo_id(raw_repo) != expected_repo):
+                raise WebInputError(f"target_repoが一致しません: {path.name}")
+            if not isinstance(raw_repo, str):
+                raise WebInputError(f"target_repoが不正です: {path.name}")
+            companion_path = _resolve_companion_locked(
+                private_notes,
+                reservation=reservation,
+                target_repo=_resolve_repo_id(raw_repo),
+                target_filename=path.name,
+            )
+            loaded.append((path, data, body, reservation, companion_path))
+        for path, data, body, reservation, companion_path in loaded:
+            companion_path.unlink()
+            _clear_reservation(data, reservation, add_depends_on=dependencies)
+            _atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
+            shutil.move(path, inbox_dir / path.name)
+        _commit_and_push(private_notes, f"chore: release {len(paths)} queue reservations", list(MQ_STATES))
+        return [
+            _add._read_saved_entry_details(inbox_dir / path.name)  # pylint: disable=protected-access
+            for path in paths
+        ]
+
+
+def recover_reservation(
+    private_notes: pathlib.Path,
+    *,
+    repo_path: str,
+    filename: str,
+    expected_generation: int | None = None,
+    expected_expires_at: str | None = None,
+    invalid: bool = False,
+    add_depends_on: tuple[str, ...] = (),
+    tbd_message: str | None = None,
+    tbd_question_type: str | None = None,
+    tbd_choices: str | None = None,
+    tbd_scope: str | None = None,
+    tbd_source: str | None = None,
+    now: datetime.datetime | None = None,
+    lock_timeout: float = -1,
+) -> dict[str, object | None] | None:
+    """期限切れ又は不正予約をCAS検証して原子的に回収する。"""
+    if invalid == (expected_generation is not None or expected_expires_at is not None):
+        raise WebInputError("--invalid又は世代・期限の組のいずれか一方を指定してください")
+    if not invalid and (expected_generation is None or expected_expires_at is None):
+        raise WebInputError("期限切れ回収にはexpected_generationとexpected_expires_atが必要です")
+    if (tbd_message is None) != (tbd_question_type is None):
+        raise WebInputError("TBD本文とquestion_typeは同時に指定してください")
+    if tbd_message is None and any(value is not None for value in (tbd_choices, tbd_scope, tbd_source)):
+        raise WebInputError("TBD専用metadataはTBD本文と同時に指定してください")
+    target_repo, worktree = _add.resolve_add_target(repo_path)
+    if worktree is None:
+        raise WebInputError("recover-reservationにはローカルworktreeを指定してください")
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    dependencies = list(_canonical_dependencies(add_depends_on, inbox_dir))
+    effective_now = (now or datetime.datetime.now(datetime.UTC)).astimezone(datetime.UTC)
+    parsed_tbd = [_add.parse_entry_message(tbd_message, entry_type=MQ_TYPE_TBD)] if tbd_message is not None else None
+    if tbd_question_type == "choice" and not tbd_choices:
+        raise WebInputError("choice形式にはchoicesが必要です")
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        path = _find_active_path(private_notes, _validate_filename(filename, inbox_dir).name)
+        if path is None:
+            raise ReservationConflict(f"回収対象が存在しません: {filename}")
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError(f"frontmatter修復経路を使用してください: {path.name}")
+        data, body = parsed
+        companion_metadata = parse_reservation_companion(data, entry_type=_require_type(path, text))
+        if companion_metadata is not None:
+            if not invalid or companion_metadata["target_repo"] != target_repo:
+                raise ReservationConflict(f"内部companionの回収条件が一致しません: {path.name}")
+            target = _find_active_path(private_notes, companion_metadata["target_filename"])
+            if target is not None:
+                target_parsed = _frontmatter.parse_frontmatter(target.read_text(encoding="utf-8"))
+                target_reservation = (
+                    parse_reservation(target_parsed[0], state=target.parent.name, entry_type=MQ_TYPE_FEEDBACK)[0]
+                    if target_parsed is not None
+                    else None
+                )
+                if target_reservation is not None and target_reservation.companion == path.name:
+                    raise ReservationConflict(f"有効な予約へ変化したため回収できません: {path.name}")
+            path.unlink()
+            _commit_and_push(private_notes, "chore: recover orphan reservation companion", list(MQ_STATES))
+            return None
+        raw_repo = data.get("target_repo")
+        if not isinstance(raw_repo, str) or _resolve_repo_id(raw_repo) != target_repo:
+            raise WebInputError(f"target_repoが一致しません: {path.name}")
+        reservation, reservation_invalid = parse_reservation(
+            data,
+            state=path.parent.name,
+            entry_type=_require_type(path, text),
+        )
+        if invalid:
+            if not reservation_invalid:
+                raise ReservationConflict(f"予約が有効な状態へ変化したため回収できません: {path.name}")
+            raw_reservation = data.get("reservation")
+            companion_name = raw_reservation.get("companion") if isinstance(raw_reservation, dict) else None
+            data.pop("reservation", None)
+            if isinstance(companion_name, str):
+                companion_path = _find_active_path(private_notes, companion_name)
+                if companion_path is not None:
+                    companion_path.unlink()
+                raw_dependencies = data.get("depends_on")
+                if isinstance(raw_dependencies, list):
+                    data["depends_on"] = [value for value in raw_dependencies if value != companion_name]
+        else:
+            if reservation is None or reservation_invalid:
+                raise ReservationConflict(f"予約が不正な状態へ変化したためCAS回収できません: {path.name}")
+            if reservation.generation != expected_generation or _utc_text(reservation.expires_at) != expected_expires_at:
+                raise ReservationConflict(f"予約の世代又は期限が変化したためCAS回収できません: {path.name}")
+            if reservation.expires_at > effective_now:
+                raise ReservationConflict(f"予約期限が更新されたためCAS回収できません: {path.name}")
+            companion_path = _resolve_companion_locked(
+                private_notes,
+                reservation=reservation,
+                target_repo=target_repo,
+                target_filename=path.name,
+            )
+            companion_path.unlink()
+            _clear_reservation(data, reservation)
+        if parsed_tbd is not None:
+            generated = _add._add_entries_locked(  # pylint: disable=protected-access
+                private_notes,
+                parsed_messages=parsed_tbd,
+                target_repo=target_repo,
+                source=tbd_source,
+                now=effective_now,
+                entry_type=MQ_TYPE_TBD,
+                scope=tbd_scope,
+                question_type=tbd_question_type,
+                choices=tbd_choices,
+            )
+            dependencies.extend(generated)
+        existing = data.get("depends_on")
+        merged_dependencies = [value for value in existing if isinstance(value, str)] if isinstance(existing, list) else []
+        merged_dependencies.extend(value for value in dependencies if value not in merged_dependencies)
+        if merged_dependencies:
+            data["depends_on"] = merged_dependencies
+        else:
+            data.pop("depends_on", None)
+        _atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
+        if path.parent.name == MQ_STATE_PROCESSING:
+            shutil.move(path, inbox_dir / path.name)
+        _commit_and_push(private_notes, "chore: recover queue reservation", list(MQ_STATES))
+        return _add._read_saved_entry_details(inbox_dir / path.name)  # pylint: disable=protected-access
+
+
+def _cmd_reserve_inbox(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """reserve-inboxサブコマンドを実行する。"""
+    token = reserve_inbox_entries(
+        private_notes,
+        repo_path=args.repo_path,
+        filenames=args.filenames,
+        reason=args.reason,
+        plan_file=args.plan_file,
+        lease_minutes=args.lease_minutes,
+    )
+    print(f"reservation_token: {token}")
+
+
+def _cmd_renew_reservation(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """renew-reservationサブコマンドを実行する。"""
+    renew_reservations(
+        private_notes,
+        filenames=args.filenames,
+        reservation_token=args.reservation_token,
+        target_repo=args.target_repo,
+        lease_minutes=args.lease_minutes,
+    )
+    print(f"{len(args.filenames)}件の予約期限を更新しました。")
+
+
+def _cmd_merge_inbox(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """merge-inboxサブコマンドを実行する。"""
+    details = merge_inbox_entry(
+        private_notes,
+        repo_path=args.repo_path,
+        filename=args.filename,
+        message=args.message,
+        reservation_token=args.reservation_token,
+        plan_file=args.plan_file,
+        depends_on=tuple(args.depends_on) if args.depends_on is not None else None,
+        supersede=tuple(args.supersede or ()),
+    )
+    print(f"inboxへ統合: {args.filename}")
+    _add._print_entry_details(details)  # pylint: disable=protected-access
+
+
+def _cmd_release_reservation(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """release-reservationサブコマンドを実行する。"""
+    release_reservations(
+        private_notes,
+        filenames=args.filenames,
+        reservation_token=args.reservation_token,
+        target_repo=args.target_repo,
+        add_depends_on=tuple(args.add_depends_on or ()),
+    )
+    print(f"{len(args.filenames)}件の予約を解除しました。")
+
+
+def _cmd_recover_reservation(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """recover-reservationサブコマンドを実行する。"""
+    details = recover_reservation(
+        private_notes,
+        repo_path=args.repo_path,
+        filename=args.filename,
+        expected_generation=args.expected_generation,
+        expected_expires_at=args.expected_expires_at,
+        invalid=args.invalid,
+        add_depends_on=tuple(args.add_depends_on or ()),
+        tbd_message=args.tbd_message,
+        tbd_question_type=args.tbd_question_type,
+        tbd_choices=args.tbd_choices,
+        tbd_scope=args.tbd_scope,
+        tbd_source=args.tbd_source,
+    )
+    print(f"予約を回収: {args.filename}")
+    if details is not None:
+        _add._print_entry_details(details)  # pylint: disable=protected-access
 
 
 def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

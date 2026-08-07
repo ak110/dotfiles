@@ -21,7 +21,7 @@ import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-p
 import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
-from _atk_mq_common import _is_tbd_answered  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_mq_common import ReservationConflict, _is_tbd_answered  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_mq_tbd import (  # noqa: E402  # pylint: disable=wrong-import-position
     _cmd_answer,
     _detect_self_containment_deficiency,
@@ -1249,6 +1249,21 @@ def test_answer_tbd_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, mon
     assert content.count(tbd_module.ANSWER_MARKER) == 1
     assert "質問本文。" in content
     assert content.rstrip().endswith("不採用とする")
+
+
+def test_answer_tbd_rejects_reserved_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """予約metadataを持つTBDは回答操作でも変更しない。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    path = _write_tbd_file(notes, "reserved.md")
+    original = path.read_text(encoding="utf-8").replace("type: tbd\n", "type: tbd\nreservation: forged\n")
+    path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ReservationConflict):
+        tbd_module.answer_tbd(notes, filename=path.name, answer="回答")
+
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
