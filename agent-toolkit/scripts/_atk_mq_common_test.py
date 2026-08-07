@@ -44,9 +44,6 @@ def _calculate_legacy_readiness_before_companion_hiding(
         if any(name not in active_by_name and name not in terminal_names for name in dependencies):
             missing.append(entry.filename)
             continue
-        if entry.reservation is not None:
-            blocked.append(entry.filename)
-            continue
         legacy_satisfied = _common._legacy_dependency_is_satisfied(  # noqa: SLF001  # pylint: disable=protected-access
             entry,
             all_active=all_active,
@@ -294,6 +291,7 @@ class TestReadiness:
 
         assert not result.ready
         assert not result.missing_dependencies
+        assert result.blocked == ("companion.md", "reserved.md")
         assert result.actionable_count == 0
 
     def test_unanswered_tbd_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
