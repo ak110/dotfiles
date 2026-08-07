@@ -129,8 +129,10 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
 - background委譲の状態と累計起動回数は、`TaskList`と`subagents/*.meta.json`の
   `agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`から観測する。
   並列起動した複数インスタンスは各1回として合算する
-- 停滞検知の仕組みは`ScheduleWakeup`・`CronCreate`・Bash background loopのいずれかで実装し、
-  全background起動の完了後またはセッション終了時に停止・登録解除する
+- background委譲を起動した時点で、待機対象の完了通知から独立した定時起動を
+  `ScheduleWakeup`または`CronCreate`で装着する
+  いずれも利用できない場合は、上限付きの前景待機を継続してターンを終えない
+  全background起動の完了後またはセッション終了時に、定時起動を停止・登録解除する
 
 ## セッション・フック
 
