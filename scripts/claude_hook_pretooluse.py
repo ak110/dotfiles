@@ -47,10 +47,10 @@ from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pyli
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import extract_target_files_from_changes  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from codex_shared_rules import is_codex_shared_rule  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
 from pretooluse import _collect_new_fields  # noqa: E402
-from sync_codex_agents import is_codex_shared_rule  # noqa: E402  # pylint: disable=wrong-import-position
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"

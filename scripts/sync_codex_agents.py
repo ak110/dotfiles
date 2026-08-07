@@ -10,6 +10,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from codex_shared_rules import CODEX_EXCLUDED_RULE_NAMES, is_codex_shared_rule
+
+__all__ = ["CODEX_EXCLUDED_RULE_NAMES", "is_codex_shared_rule"]
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -21,12 +25,6 @@ TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
 MAX_BYTES = 128 * 1024
 GENERATED_MARKER = "<!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->"
-CODEX_EXCLUDED_RULE_NAMES = frozenset({"99-claude-code.md"})
-
-
-def is_codex_shared_rule(path: Path | str) -> bool:
-    """ルールファイルがCodexへ埋め込む共有規範ならTrueを返す。"""
-    return Path(path).name not in CODEX_EXCLUDED_RULE_NAMES
 
 
 def render(root: Path = REPO_ROOT) -> str:
