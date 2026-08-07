@@ -107,6 +107,16 @@ Codexでは同じ難易度の区分をCodexで利用できるモデル識別子�
 用途の完了と内容の検収後は、
 `uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>`を単独で実行する。
 
+委譲先の成果物側の状況は、同じく現行plugin rootを起点として次のコマンドを単独で実行して観測する。
+
+```sh
+uv run --no-project --script <plugin root>/scripts/atk.py watch --worktree [<ラベル>=]<作業ツリーの絶対パス> --file [<ラベル>=]<成果物の絶対パス>
+```
+
+`--worktree`・`--file`はいずれも複数回指定でき、
+出力は各対象の差分件数・HEADの短縮SHA・行数・最終更新からの経過秒を含む1行となる。
+当該コマンドは成果物側の補助観測であり、委譲先の稼働状態そのものの確認を置き換えない。
+
 ### plan modeのエミュレーション
 
 Claude Codeのplan modeは、計画立案中の意図しない変更を抑止する読み取り専用モードを提供する。

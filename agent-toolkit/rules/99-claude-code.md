@@ -50,6 +50,14 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
   `atk`はpluginの`bin/`からBashの`PATH`へ追加され、
   自身の位置から現行plugin rootの`scripts/_managed_temp.py`を解決する。
   用途の完了と内容の検収後は`atk managed-temp cleanup --path <検収済み絶対パス>`を単独で実行する
+- Claude Codeで委譲先の成果物側の状況を観測する場合は、
+  `atk watch --worktree [<ラベル>=]<作業ツリーの絶対パス> --file [<ラベル>=]<成果物の絶対パス>`を
+  単独で実行する。`--worktree`・`--file`はいずれも複数回指定でき、
+  出力は各対象の差分件数・HEADの短縮SHA・行数・最終更新からの経過秒を含む1行となる。
+  取得できなかった項目は`ERR`となり終了コードが1になる。
+  ラベルの重複、空パス、空白を含むラベルは終了コード2で拒否される。
+  当該コマンドは成果物側の補助観測であり、`TaskList`と`subagents/*.meta.json`による
+  稼働状態の確認を置き換えない
 - Claude Codeのモデル区分は、軽量モデルを`haiku`、標準モデルを`sonnet`、上位モデルを`opus`とする。
   共通規範の難易度区分をこの3区分へ対応付ける
 - `plan-impl-executor`はfrontmatterのモデル指定を適用する。
