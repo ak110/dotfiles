@@ -35,9 +35,8 @@ description: >
   利用者環境側の連携設計（個人フックとの優先順序など）は書かない
 - 配布物の出力文字列・フックメッセージ・docstringにリポジトリ管理外の個人メモファイル名を含めない
 - 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
-- 配布物文面は計画段階（plan modeの提案文・改訂案・例示文など）にも本節の方針を事前適用し、
-  `## 変更内容`のdiff改訂後文面の確定前に+側文字列の固有名照合を実施して一般化表現へ置き換える
-  （照合対象は`scripts/claude_hook_pretooluse.py`の固有名ブロック対象）
+- 配布物文面は実ファイル編集時に`scripts/claude_hook_pretooluse.py`の固有名検査を適用し、
+  検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文でhook内部の実装挙動
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
   利用者には挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
@@ -70,7 +69,7 @@ description: >
 
 `agent-toolkit:plan-mode`から作業を開始する。作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、
 Agentツールで`agent-toolkit:plan-impl-executor`を起動して引き継ぐ。
-計画ファイルの`## 実行方法`のレビューステップに
+計画ファイルの実装契約にあるレビューステップへ
 `レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップし、
 それ以外は`plan-impl-executor`が計画準拠系と独立系のレビューを並列実行する。
 指摘の統合、修正、コミット統合、二系統の再レビューも同executorが完遂する。
@@ -101,7 +100,7 @@ Codex向けmanifestはこの2ファイルを正本として`scripts/sync_codex_p
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
-  計画の対象ファイル一覧と実行方法（`uv run python scripts/sync_generated_files.py`）へ同ファイルを含める。
+  計画の対象ファイル一覧と実装契約へ同ファイルと`uv run python scripts/sync_generated_files.py`を含める。
   漏れは`scripts/claude_hook_pretooluse.py`のwarnチェックが検出する
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 

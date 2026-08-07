@@ -1,10 +1,4 @@
-"""agent-toolkit/scripts/posttooluse.py のplan file形式検査関連テスト。
-
-`posttooluse_test.py`本体から計画ファイル形式検査を分割した。
-共通ヘルパー（`_run`・`_read_state`）は分割先で複製する。
-ハンドラ網羅と機械チェック上限のバランス確保が分割の動機。
-H2節順検査（必須H2欠落・順序違反・予期せぬH2）はPreToolUseへ移管済み（`_plan_format.py`・`pretooluse.py`参照）。
-"""
+"""計画書き込み後の案内と状態記録を検証する。"""
 
 import json
 import os
@@ -12,12 +6,10 @@ import pathlib
 import subprocess
 
 import _fork_runner
-import _plan_format
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 
 
-# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 def _run(
     payload: dict | str,
     *,
@@ -25,6 +17,7 @@ def _run(
     home_dir: pathlib.Path | None = None,
     plan_mode_skill_invoked: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    """PostToolUseフックを隔離環境で実行する。"""
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if state_dir is not None:
@@ -33,8 +26,6 @@ def _run(
         env["TMP"] = str(state_dir)
     if home_dir is not None:
         env["HOME"] = str(home_dir)
-    # plan file形式検査はplan_mode_skill_invokedが真の場合のみ実行されるため、
-    # 形式検査を期待するテストでは事前に状態ファイルへ同フラグを書き込んでおく。
     if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
@@ -47,324 +38,124 @@ def _run(
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
+    """セッション状態を読み込む。"""
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-# pylint: enable=duplicate-code
-
-
-# plan file形式検査で使う各種Markdown断片。テスト全体で共用する。
-# `## 対応方針`配下には判断材料H3を含めて妥当なplan構造を再現する。
-_PLAN_BODY: dict[str, str] = {
-    "変更履歴": "- 初版",
-    "背景": "説明。",
-    "対応方針": "### ユーザー合意済み事項\n\n- a",
-    "実装資料": "- x",
-    "変更内容": "### 対象ファイル一覧\n\n- y",
-    "実行方法": "- w",
-    "進捗ログ": "初版時点では実装未着手のため空欄。",
-    "計画ファイル（本ファイル）のパス": "`~/.claude/plans/xxx.md`",
-}
-
-
-def _build_valid_plan(
-    omit: tuple[str, ...] = (),
-    *,
-    overrides: dict[str, str] | None = None,
-    prefix: str = "",
-) -> str:
-    """必須セクション順序に従い妥当なplan file内容を生成する。
-
-    - `omit`: 指定したH2セクションを省略する（必須セクション欠落の検証用）。
-    - `overrides`: 指定したH2セクションの本文を差し替える
-      （コードフェンス・HTMLコメントなど特定本文での無視判定検証用）。
-    - `prefix`: 戻り値の先頭に連結する文字列（YAMLフロントマターなどの検証用）。
-    """
-    section_order: tuple[str, ...] = _plan_format.PLAN_REQUIRED_H2
-    overrides = overrides or {}
-    parts: list[str] = ["# タイトル", ""]
-    for h2 in section_order:
-        if h2 in omit:
-            continue
-        parts.append(f"## {h2}")
-        parts.append("")
-        parts.append(overrides.get(h2, _PLAN_BODY[h2]))
-        parts.append("")
-    return prefix + "\n".join(parts) + "\n"
-
-
-_VALID_PLAN = _build_valid_plan()
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:
-    """`<home>/.claude/plans`を作成してパスを返す。"""
+    """計画ディレクトリを作成する。"""
     plans = home_dir / ".claude" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
     return plans
 
 
-def _write_plan(plans_dir: pathlib.Path, name: str, content: str) -> pathlib.Path:
-    path = plans_dir / name
-    path.write_text(content, encoding="utf-8")
-    return path
+def _plan_content() -> str:
+    """新しい意味アンカーを持つ計画を返す。"""
+    return """## 目的
+
+成果。
+
+## 実装契約
+
+### 計画メタ情報
+
+- 対象リポジトリ: `/repo`
+- ベースコミット: `0123456789012345678901234567890123456789`
+- 作業種別: 通常変更
+
+### 対象ファイル一覧
+
+- `file.py`
+
+## 完了条件
+
+検証成功。
+
+## 進捗ログ
+
+未着手。
+"""
 
 
-def _parse_hook_output(stdout: str) -> dict | None:
-    stdout = stdout.strip()
-    if not stdout:
-        return None
-    return json.loads(stdout)
+class TestPlanPostWrite:
+    """計画ファイルへの書き込み後処理を検証する。"""
 
+    def test_write_emits_check_notice_and_records_current_path(self, tmp_path: pathlib.Path) -> None:
+        """Write後にstandalone checker案内と現在パスを記録する。"""
+        home = tmp_path / "home"
+        state_dir = tmp_path / "state"
+        plan = _prepare_plan_home(home) / "sample.md"
+        content = _plan_content()
+        plan.write_text(content, encoding="utf-8")
+        result = _run(
+            {
+                "session_id": "plan-write",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "cwd": "/repo",
+            },
+            state_dir=state_dir,
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert "post-write checks" in result.stdout
+        assert "does not conform" not in result.stdout
+        assert _read_state(state_dir, "plan-write")["current_plan_file_path"] == str(plan)
 
-class TestPlanFormatCheck:
-    """plan file形式検査。"""
+    def test_arbitrary_h2_order_and_additional_h2_are_not_constrained(self, tmp_path: pathlib.Path) -> None:
+        """任意順序と追加H2でもPostToolUseは形式警告を返さない。"""
+        home = tmp_path / "home"
+        state_dir = tmp_path / "state"
+        plan = _prepare_plan_home(home) / "flexible.md"
+        content = _plan_content().replace(
+            "## 完了条件\n\n検証成功。\n\n## 進捗ログ",
+            "## 進捗ログ\n\n未着手。\n\n## 補足\n\n追加。\n\n## 完了条件",
+        )
+        plan.write_text(content, encoding="utf-8")
+        result = _run(
+            {
+                "session_id": "plan-flexible",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "cwd": "/repo",
+            },
+            state_dir=state_dir,
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert "does not conform" not in result.stdout
+        assert "post-write checks" in result.stdout
 
-    def _home(self, tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    def test_read_textlint_reference_does_not_record_plan_state(self, tmp_path: pathlib.Path) -> None:
+        """文章lint資料のReadは計画用状態フラグを記録しない。"""
+        result = _run(
+            {
+                "session_id": "read-reference",
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/repo/references/textlint-violations.md"},
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert not _read_state(tmp_path, "read-reference").get("textlint_violations_read", False)
+
+    def test_non_plan_and_sidecar_paths_are_skipped(self, tmp_path: pathlib.Path) -> None:
+        """計画外パスと副次ファイルには案内を返さない。"""
         home = tmp_path / "home"
         plans = _prepare_plan_home(home)
-        return home, plans
-
-    def test_valid_plan_emits_only_post_write_notice(self, tmp_path: pathlib.Path):
-        """有効な計画ファイルへのWrite成功時、形式違反は無く書き込み後チェック案内のみが返る。"""
-        home, plans = self._home(tmp_path)
-        plan = _write_plan(plans, "sample.md", _VALID_PLAN)
-        result = _run(
-            {
-                "session_id": "plan-ok",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": _VALID_PLAN},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.returncode == 0
-        assert "does not conform" not in result.stdout
-        assert "post-write checks" in result.stdout
-
-    def test_review_md_is_skipped(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        content = "# レビュー\n\nなにか書く。\n"
-        plan = _write_plan(plans, "sample.review.md", content)
-        result = _run(
-            {
-                "session_id": "plan-review",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    def test_codex_log_is_skipped(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        log_path = plans / "sample.codex.log"
-        log_path.write_text("codex output...", encoding="utf-8")
-        result = _run(
-            {
-                "session_id": "plan-log",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(log_path), "content": "codex output..."},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    def test_non_plans_path_is_skipped(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        home.mkdir()
-        other = tmp_path / "other.md"
-        other.write_text("# 無関係\n", encoding="utf-8")
-        result = _run(
-            {
-                "session_id": "plan-other",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(other), "content": "# 無関係\n"},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    def test_subdirectory_plan_is_skipped(self, tmp_path: pathlib.Path):
-        """`~/.claude/plans/` のサブディレクトリ配下は対象外 (直下のみ検査)。"""
-        home, plans = self._home(tmp_path)
-        sub = plans / "archive"
-        sub.mkdir()
-        plan = sub / "old.md"
-        plan.write_text("# 古い計画\n", encoding="utf-8")
-        result = _run(
-            {
-                "session_id": "plan-sub",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": "# 古い計画\n"},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    def test_skipped_when_skill_not_invoked(self, tmp_path: pathlib.Path):
-        """``plan_mode_skill_invoked`` 未設定時は plan file の構造検査をスキップする。
-
-        PreToolUse 側で plan-mode スキル先行呼び出しが既に促されているため、
-        構造検査の二重警告を避ける。
-        """
-        home, plans = self._home(tmp_path)
-        # 必須セクションが欠落した plan を書いても、フラグ未設定なら警告しない。
-        content = "# タイトル\n\n## 背景\n\n説明。\n"
-        plan = _write_plan(plans, "no-skill.md", content)
-        result = _run(
-            {
-                "session_id": "plan-no-skill",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == ""
-
-    def test_bash_does_not_emit_plan_check(self, tmp_path: pathlib.Path):
-        """Bash ツールでは plan check が実行されず stdout が空のまま。"""
-        result = _run(
-            {
-                "session_id": "bash-silent",
-                "tool_name": "Bash",
-                "tool_input": {"command": "pytest"},
-            },
-            state_dir=tmp_path,
-        )
-        assert result.stdout == ""
-
-    def test_valid_plan_with_h3_emits_only_post_write_notice(self, tmp_path: pathlib.Path):
-        """## 変更内容 配下の先頭H3が「対象ファイル一覧」のとき形式違反は無く書き込み後チェック案内のみが返る。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(
-            overrides={"変更内容": "### 対象ファイル一覧\n\n- z"},
-        )
-        plan = _write_plan(plans, "h3-valid.md", content)
-        result = _run(
-            {
-                "session_id": "h3-valid",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.returncode == 0
-        assert "does not conform" not in result.stdout
-        assert "post-write checks" in result.stdout
-
-    def test_no_h3_under_changes_section_is_warned(self, tmp_path: pathlib.Path):
-        """## 変更内容 配下にH3が存在しないとき違反として警告される。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(
-            overrides={"変更内容": "- no h3 here"},
-        )
-        plan = _write_plan(plans, "h3-missing.md", content)
-        result = _run(
-            {
-                "session_id": "h3-miss",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "the first H3 under '## 変更内容' must be '対象ファイル一覧'" in msg
-        assert "(no H3 present)" in msg
-
-    def test_wrong_first_h3_under_changes_section_is_warned(self, tmp_path: pathlib.Path):
-        """## 変更内容 配下の先頭H3が「対象ファイル一覧」以外のとき違反として警告される。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(
-            overrides={"変更内容": "### 対象ファイル\n\n- z"},
-        )
-        plan = _write_plan(plans, "h3-wrong.md", content)
-        result = _run(
-            {
-                "session_id": "h3-wrong",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "the first H3 under '## 変更内容' must be '対象ファイル一覧'" in msg
-        found_section = msg.split("found:", 1)[1]
-        assert "'対象ファイル'" in found_section
-        assert "'対象ファイル一覧'" not in found_section
-
-
-class TestTextlintViolationsReadTracking:
-    """textlint-violations.md読み込み追跡。"""
-
-    def test_read_textlint_violations_sets_flag(self, tmp_path: pathlib.Path):
-        """配布元パスのtextlint-violations.mdをReadすると状態フラグが設定される。"""
-        sid = "textlint-read-source"
-        result = _run(
-            {
-                "tool_name": "Read",
-                "tool_input": {
-                    "file_path": "/home/foo/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md"
+        for target in (tmp_path / "other.md", plans / "sample.review.md", plans / "sample.codex.log"):
+            target.write_text("content\n", encoding="utf-8")
+            result = _run(
+                {
+                    "session_id": f"skip-{target.suffix}",
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(target), "content": "content\n"},
                 },
-                "session_id": sid,
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state["textlint_violations_read"] is True
-
-    def test_read_textlint_violations_distributed_path_sets_flag(self, tmp_path: pathlib.Path):
-        """配布先パスのtextlint-violations.mdをReadすると状態フラグが設定される。"""
-        sid = "textlint-read-dist"
-        result = _run(
-            {
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/home/foo/.claude/skills/writing-standards/references/textlint-violations.md"},
-                "session_id": sid,
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state["textlint_violations_read"] is True
-
-    def test_read_other_file_does_not_set_flag(self, tmp_path: pathlib.Path):
-        """textlint-violations.md以外のファイルでは状態フラグが設定されない。"""
-        sid = "textlint-other-read"
-        result = _run(
-            {
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/fake/rules/01-agent.md"},
-                "session_id": sid,
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state_file = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        if state_file.exists():
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-            assert not state.get("textlint_violations_read", False)
+                state_dir=tmp_path / "state",
+                home_dir=home,
+                plan_mode_skill_invoked=True,
+            )
+            assert result.stdout.strip() == ""

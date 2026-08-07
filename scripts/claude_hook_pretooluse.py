@@ -12,8 +12,7 @@
 4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
-7. 計画ファイルの`## 変更内容`配下の`agent-toolkit/`パスを示すH3配下diffブロック+行へのdotfiles固有名混入検出（block）
-8. 計画ファイルの`## 変更内容`配下にCodex共有規範のパスを含み
+7. 計画ファイルの`## 実装契約`配下にCodex共有規範のパスを含み
    `.chezmoi-source/dot_codex/AGENTS.md`を含まない場合の同期漏れ警告（warn、非ブロック）
 
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
@@ -45,7 +44,10 @@ sys.path.insert(
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_format import extract_target_files_from_changes  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_h2_section_body,
+    extract_target_files_from_changes,
+)
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from codex_shared_rules import is_codex_shared_rule  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -96,11 +98,6 @@ def main(payload_text: str) -> int:
     if dotfiles_block is not None:
         print(_llm_notice(dotfiles_block), file=sys.stderr)
         return 2
-    plan_diff_block = _check_plan_file_dotfiles_specific_names(tool_name, fields, file_path)
-    if plan_diff_block is not None:
-        print(_llm_notice(plan_diff_block), file=sys.stderr)
-        return 2
-
     # --- warn 系 check ---
     warnings: list[str] = []
     home_claude_warning = _home_claude_edit_warning(tool_name, file_path)
@@ -440,87 +437,6 @@ def _agent_toolkit_edit_skill_warning(
     )
 
 
-# H3見出し行に出現する最初のバッククォート1個のインラインコード値を抽出する。
-# `.*?` で非貪欲マッチし、複数のインラインコードを含むH3でも先頭の値を採用する。
-_H3_INLINE_CODE = re.compile(r"^### .*?`([^`]+)`")
-# diff言語指定フェンスの開始（3個以上の連続バッククォート）。
-_DIFF_FENCE_OPEN = re.compile(r"^(`{3,})diff\s*$")
-# 終了フェンス候補（連続バッククォート行）。
-_FENCE_CLOSE = re.compile(r"^`+\s*$")
-
-
-def _extract_plan_file_diff_plus_lines(changes_section: str) -> list[str]:
-    """計画ファイルの`## 変更内容`配下から`agent-toolkit/`パス指示H3配下のdiff +行を抽出する。
-
-    - `###`で始まるH3行に出現するバッククォート1個のインラインコード値を現在の対象パスとして記憶する
-    - 対象パスに`agent-toolkit/`を含む場合に限り、配下の`diff`言語指定フェンスブロック内へ入る
-    - diffフェンスは3個以上の連続バッククォートで開く
-    - 終了フェンスは開始フェンスと同じ長さ以上の連続バッククォートで判定する
-    - 先頭1文字が`+`かつ先頭2文字が`++`でない行のみを返す
-    """
-    result: list[str] = []
-    current_path = ""
-    in_diff = False
-    fence_len = 0
-
-    for line in changes_section.splitlines():
-        if in_diff:
-            if _FENCE_CLOSE.match(line) and len(line.rstrip()) >= fence_len:
-                in_diff = False
-                fence_len = 0
-            elif line.startswith("+") and not line.startswith("++"):
-                result.append(line)
-        else:
-            m_h3 = _H3_INLINE_CODE.match(line)
-            if m_h3:
-                current_path = m_h3.group(1)
-                continue
-            if "agent-toolkit/" in current_path:
-                m_fence = _DIFF_FENCE_OPEN.match(line)
-                if m_fence:
-                    in_diff = True
-                    fence_len = len(m_fence.group(1))
-
-    return result
-
-
-def _check_plan_file_dotfiles_specific_names(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
-    r"""計画ファイル`## 変更内容`配下のdiff +行へのdotfiles固有名混入を検出する。
-
-    対象は`Write`のみ。対象パスは`is_plan_file`の判定に従う。
-    `## 変更内容`配下の`agent-toolkit/`パスを示すH3見出し配下のdiffブロック+行を検査し、
-    block名集合の名前が`\b<name>\b`でマッチする場合にブロックメッセージを返す。
-    """
-    if tool_name != "Write":
-        return None
-    if not is_plan_file(file_path):
-        return None
-    dotfiles_root = pathlib.Path(__file__).resolve().parent.parent
-    block_names, _warn_names = _build_dotfiles_specific_names(dotfiles_root)
-    for _field, value in fields:
-        sections = _split_markdown_h2_sections(value)
-        changes = sections.get("変更内容", "")
-        plus_lines = _extract_plan_file_diff_plus_lines(changes)
-        if not plus_lines:
-            continue
-        combined = "\n".join(plus_lines)
-        hits: list[str] = []
-        for name in sorted(block_names):
-            if re.search(rf"\b{re.escape(name)}\b", combined):
-                hits.append(name)
-        if hits:
-            return (
-                "plan file diff (+lines) under `## 変更内容` references"
-                " dotfiles-specific identifiers in agent-toolkit/ paths."
-                f" Hits: {'; '.join(hits)}."
-                " Replace with generalized wording before adding to the plan."
-                " These names (personal skill names, pytools commands, scripts,"
-                " personal project names) leak repository internals into the distribution."
-                f" Target: {file_path}"
-            )
-    return None
-
-
 def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """計画ファイル Write 時の agent-toolkit/ 編集に対する bump 宣言欠落の警告メッセージを返す。
 
@@ -528,8 +444,8 @@ def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, 
     取得できないため判定対象外とする。
     対象パスは `is_plan_file` の判定に従い、`.review.md` / `.codex.log` /
     サブディレクトリ配下は対象外とする。
-    判定対象セクションは `## 変更内容` と `## 実行方法`。
-    変更対象の判定は `## 変更内容 > ### 対象ファイル一覧` のチェックボックス項目に限り、
+    判定対象セクションは `## 実装契約`。
+    変更対象の判定は `## 実装契約 > ### 対象ファイル一覧` の通常箇条書きに限り、
     本文中の言及とコードフェンス内の記述は対象としない
     （抽出は `_plan_format.extract_target_files_from_changes` に委ねる）。
     """
@@ -538,8 +454,7 @@ def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, 
     if not is_plan_file(file_path):
         return None
     for _field, value in fields:
-        sections = _split_markdown_h2_sections(value)
-        plan = sections.get("実行方法", "")
+        plan = "\n".join(line for _, line in extract_h2_section_body(value, "実装契約"))
         targets = extract_target_files_from_changes(value)
         if not any(path.startswith("agent-toolkit/") for path in targets):
             continue
@@ -548,8 +463,8 @@ def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, 
         if "bump不要" in plan:
             continue
         return (
-            "plan file references `agent-toolkit/` paths under `## 変更内容` but"
-            " `## 実行方法` is missing both an `agent_toolkit_bump.py` invocation"
+            "plan file references `agent-toolkit/` paths under `## 実装契約` but"
+            " the implementation contract is missing both an `agent_toolkit_bump.py` invocation"
             " and an explicit `bump不要` declaration."
             " Per the `agent-toolkit-edit` skill (plan mode handling), include"
             " `scripts/agent_toolkit_bump.py {patch|minor|major}` before the"
@@ -565,8 +480,8 @@ def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, st
     取得できないため判定対象外とする（`_plan_file_bump_declaration_warning`と同じ理由）。
     対象パスは `is_plan_file` の判定に従い、`.review.md` / `.codex.log` /
     サブディレクトリ配下は対象外とする。
-    判定対象セクションは `## 変更内容` のみ。
-    変更対象の判定は `## 変更内容 > ### 対象ファイル一覧` のチェックボックス項目に限り、
+    判定対象セクションは `## 実装契約` のみ。
+    変更対象の判定は `## 実装契約 > ### 対象ファイル一覧` の通常箇条書きに限り、
     本文中の言及とコードフェンス内の記述は対象としない
     （抽出は `_plan_format.extract_target_files_from_changes` に委ねる）。
     Codex共有規範の編集は`scripts/sync_codex_agents.py`が生成する
@@ -586,7 +501,7 @@ def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, st
         if ".chezmoi-source/dot_codex/AGENTS.md" in targets:
             continue
         return (
-            "plan file references `agent-toolkit/rules/` paths under `## 変更内容` but"
+            "plan file references `agent-toolkit/rules/` paths under `## 実装契約` but"
             " does not reference `.chezmoi-source/dot_codex/AGENTS.md`."
             " Editing Codex-shared rules regenerates that file via"
             " `scripts/sync_codex_agents.py`; include it in the target file list and"
@@ -594,30 +509,6 @@ def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, st
             " unless the sync is intentionally deferred to a separate plan."
         )
     return None
-
-
-def _split_markdown_h2_sections(text: str) -> dict[str, str]:
-    """Markdown 本文を `## ` 見出しで分割し見出し名→本文の dict を返す。
-
-    `### ` 以下の深い見出しは本文側に含める（`## ` で始まる行は 3 文字目が空白で
-    `### ` を排除済みのため追加条件は不要）。
-    同名見出しが複数ある場合は後の値で上書きする。
-    最初の `## ` 見出しより前のコンテンツ（`# タイトル` 行等）は dict に含めず破棄する。
-    """
-    sections: dict[str, str] = {}
-    current_name: str | None = None
-    current_lines: list[str] = []
-    for line in text.splitlines():
-        if line.startswith("## "):
-            if current_name is not None:
-                sections[current_name] = "\n".join(current_lines)
-            current_name = line[3:].strip()
-            current_lines = []
-        else:
-            current_lines.append(line)
-    if current_name is not None:
-        sections[current_name] = "\n".join(current_lines)
-    return sections
 
 
 def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:

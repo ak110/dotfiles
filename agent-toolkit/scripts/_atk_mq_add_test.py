@@ -312,7 +312,10 @@ def test_add_operation_classifies_explicit_plan_file(
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
     plan.write_text(
-        "# 計画\n\n## 背景\n\n### 計画メタ情報\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `README.md`\n",
+        "## 目的\n\n成果。\n\n"
+        "## 実装契約\n\n### 計画メタ情報\n\n"
+        "### 対象ファイル一覧\n\n- `README.md`\n\n"
+        "## 完了条件\n\n検証。\n\n## 進捗ログ\n\n未着手。\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -480,7 +483,7 @@ def _write_plan_with_base_commit(tmp_path: pathlib.Path, value: str | None) -> p
     """計画メタ情報を持つ計画ファイルを作成する。"""
     plan = tmp_path / "plan.md"
     base_line = "" if value is None else f"- ベースコミット: `{value}`\n"
-    plan.write_text(f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n{base_line}", encoding="utf-8")
+    plan.write_text(f"## 実装契約\n\n### 計画メタ情報\n\n{base_line}", encoding="utf-8")
     return plan
 
 
@@ -533,7 +536,7 @@ def test_add_operation_rejects_spoofed_or_duplicate_plan_metadata(
     plan = tmp_path / "plan.md"
     plan.write_text(
         f"# 計画\n\n## 引用\n\n> ### 計画メタ情報\n>\n> - ベースコミット: `{'a' * 40}`\n\n"
-        f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n\n"
+        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n\n"
         f"### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n",
         encoding="utf-8",
     )
@@ -560,7 +563,7 @@ def test_add_operation_ignores_blockquoted_plan_metadata(
     plan = tmp_path / "plan.md"
     plan.write_text(
         f"# 計画\n\n## 引用\n\n> ### 計画メタ情報\n>\n> - ベースコミット: `{'a' * 40}`\n\n"
-        f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
+        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
         encoding="utf-8",
     )
 
@@ -600,7 +603,32 @@ def test_add_operation_warns_when_plan_file_lacks_base_commit(
     assert "完全OIDを抽出できない" in capsys.readouterr().err
 
 
-def test_add_operation_warns_when_legacy_plan_lacks_background(
+def test_add_operation_accepts_legacy_plan_metadata(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """現行形式が無い既存計画では背景直下のメタ情報を照合する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "legacy-plan.md"
+    plan.write_text(
+        f"## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n",
+        encoding="utf-8",
+    )
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+
+
+def test_add_operation_warns_when_legacy_plan_lacks_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -630,8 +658,7 @@ def test_add_operation_ignores_base_commit_inside_metadata_code_fence(
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
-        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n```text\n- ベースコミット: `{'a' * 40}`\n```\n\n"
-        f"- ベースコミット: `{'b' * 40}`\n",
+        f"## 実装契約\n\n### 計画メタ情報\n\n```text\n- ベースコミット: `{'a' * 40}`\n```\n\n- ベースコミット: `{'b' * 40}`\n",
         encoding="utf-8",
     )
 
@@ -656,7 +683,7 @@ def test_add_operation_rejects_duplicate_base_commit_candidates(
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
-        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n- 基準コミット: `{'a' * 40}`\n",
+        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n- 基準コミット: `{'a' * 40}`\n",
         encoding="utf-8",
     )
 

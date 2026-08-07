@@ -369,19 +369,18 @@ def _write_tmp_file(tmp_path: pathlib.Path, relative_path: str, content: str) ->
     return path
 
 
-# H2節順検査も通過する最小限の正規計画ファイル内容。
-# `## 変更内容`配下に`### 対象ファイル一覧`を含め、PostToolUseのH3検査も通過させる。
+# 現行の機械検査を通過する最小限の正規計画ファイル内容。
 _VALID_H2_PLAN_CONTENT = (
-    "# タイトル\n\n"
-    "## 変更履歴\n\nx\n\n"
-    "## 背景\n\nx\n\n"
-    "## 対応方針\n\nx\n\n"
-    "## 実装資料\n\nx\n\n"
-    "## 変更内容\n\n"
-    "### 対象ファイル一覧\n\nx\n\n"
-    "## 実行方法\n\nx\n\n"
-    "## 進捗ログ\n\nx\n\n"
-    "## 計画ファイル（本ファイル）のパス\n\nx\n"
+    "## 目的\n\nx\n\n"
+    "## 実装契約\n\n"
+    "### 計画メタ情報\n\n"
+    "- 計画ファイル: `/tmp/plan.md`\n"
+    f"- ベースコミット: `{'a' * 40}`\n"
+    "- バージョン更新: なし\n\n"
+    "### 対象ファイル一覧\n\n"
+    "- `README.md`\n\n"
+    "## 完了条件\n\nx\n\n"
+    "## 進捗ログ\n\nx\n"
 )
 
 
@@ -441,7 +440,6 @@ class TestPlanModeSkillFirstCheck:
             sid,
             {
                 "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
             },
         )
         result = _run(
@@ -507,14 +505,7 @@ class TestPlanModeSkillFirstCheck:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "non-plan-mode"
-        # textlint_violations_readを設定して独立checkとの干渉を回避
-        _write_session_state(
-            tmp_path,
-            sid,
-            {
-                "textlint_violations_read": True,
-            },
-        )
+        _write_session_state(tmp_path, sid, {})
         result = _run(
             {
                 "tool_name": "Write",
@@ -577,8 +568,8 @@ class TestPlanModeSkillCallSites:
         assert result.stdout == ""
 
 
-class TestPlanFileRequiredReadsFirstCheck:
-    """plan file 編集前に必須リファレンス未読の場合の警告検査（block降格済み）。
+class TestPlanFileDoesNotRequireTextlintRead:
+    """計画編集前の文章lint資料読了条件が撤去済みであることを検証する。
 
     `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
     Write/Edit/MultiEditのみが警告対象となる。plan file以外の操作は
@@ -589,8 +580,8 @@ class TestPlanFileRequiredReadsFirstCheck:
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
-    def test_warns_when_unread(self, tmp_path: pathlib.Path):
-        """未読の場合、警告メッセージに参照パスが含まれる。"""
+    def test_write_without_read_does_not_warn(self, tmp_path: pathlib.Path):
+        """資料未読のWriteを警告しない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -606,12 +597,10 @@ class TestPlanFileRequiredReadsFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "textlint-violations.md" in result.stderr
-        assert "(already read)" not in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+        assert "textlint-violations.md" not in result.stderr
 
-    def test_warns_on_edit_when_unread(self, tmp_path: pathlib.Path):
-        """Editでも同様に未読を警告する。"""
+    def test_edit_without_read_does_not_warn(self, tmp_path: pathlib.Path):
+        """資料未読のEditを警告しない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
@@ -627,11 +616,10 @@ class TestPlanFileRequiredReadsFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "textlint-violations.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+        assert "textlint-violations.md" not in result.stderr
 
-    def test_allows_plan_file_when_read(self, tmp_path: pathlib.Path):
-        """読了済みの場合は通過する。"""
+    def test_legacy_read_flag_does_not_change_result(self, tmp_path: pathlib.Path):
+        """旧読了フラグが残るセッションでも計画編集を妨げない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -3133,23 +3121,19 @@ class TestSubagentStartLogOrdering:
 
 
 def _path_section_build_content(recorded_path: str) -> str:
-    """末尾パス節検査用の計画本文を組み立てる。"""
+    """撤去済みの末尾パス節検査へ与える計画本文を組み立てる。"""
     return (
-        "# タイトル\n\n"
-        "## 変更履歴\n\nx\n\n"
-        "## 背景\n\nx\n\n"
-        "## 対応方針\n\nx\n\n"
-        "## 実装資料\n\nx\n\n"
-        "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
-        "## 実行方法\n\nx\n\n"
+        "## 目的\n\nx\n\n"
+        "## 実装契約\n\n### 対象ファイル一覧\n\n- `README.md`\n\n"
+        "## 完了条件\n\nx\n\n"
         "## 進捗ログ\n\nx\n\n"
         "## 計画ファイル（本ファイル）のパス\n\n"
         f"`{recorded_path}`\n"
     )
 
 
-class TestPlanFilePathSectionMatchesFilePath:
-    """plan file編集で末尾の`## 計画ファイル（本ファイル）のパス`節配下パス値と`file_path`不一致のブロック検査。"""
+class TestPlanFileDoesNotRequireSelfPath:
+    """計画自身のパス照合が撤去済みであることを検証する。"""
 
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
@@ -3161,12 +3145,11 @@ class TestPlanFilePathSectionMatchesFilePath:
             session_id,
             {
                 "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
             },
         )
 
-    def test_blocks_when_recorded_path_differs(self, tmp_path: pathlib.Path):
-        """記録パス値とWrite先のfile_pathが異なる場合はブロックする。"""
+    def test_recorded_path_difference_does_not_warn(self, tmp_path: pathlib.Path):
+        """記録パス値とWrite先が異なっても警告しない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -3184,7 +3167,7 @@ class TestPlanFilePathSectionMatchesFilePath:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "trailing path section" in result.stderr
+        assert "trailing path section" not in result.stderr
 
     def test_allows_when_recorded_path_matches(self, tmp_path: pathlib.Path):
         """記録パス値とWrite先のfile_pathが一致する場合は通過する。"""
@@ -3244,13 +3227,9 @@ class TestPlanFilePathSectionMatchesFilePath:
         env = self._state_env(tmp_path, home)
         sid = "path-nosection"
         content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 実装資料\n\nx\n\n"
-            "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
-            "## 実行方法\n\nx\n\n"
+            "## 目的\n\nx\n\n"
+            "## 実装契約\n\n### 対象ファイル一覧\n\n- `README.md`\n\n"
+            "## 完了条件\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
             "## 計画ファイル（本ファイル）のパス\n\n\n"
         )
@@ -3357,7 +3336,6 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
     def _write_flag_state(self, tmp_path: pathlib.Path, sid: str, extra: dict | None = None) -> None:
         state: dict = {
             "plan_mode_skill_invoked": True,
-            "textlint_violations_read": True,
         }
         if extra:
             state.update(extra)
@@ -3635,24 +3613,6 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert state_post["last_agent_toolkit_edit_path"] is None
 
 
-def _h3_codeblock_build_content(extra_h3: str) -> str:
-    """`## 変更内容`配下H3のtext/diffコードブロック検査用の計画本文を組み立てる。"""
-    return (
-        "# タイトル\n\n"
-        "## 変更履歴\n\nx\n\n"
-        "## 背景\n\nx\n\n"
-        "## 対応方針\n\nx\n\n"
-        "## 実装資料\n\nx\n\n"
-        "## 変更内容\n\n"
-        "### 対象ファイル一覧\n\n"
-        "- [ ] `foo/bar.py`\n\n"
-        f"{extra_h3}"
-        "## 実行方法\n\nx\n\n"
-        "## 進捗ログ\n\nx\n\n"
-        "## 計画ファイル（本ファイル）のパス\n\nx\n"
-    )
-
-
 class TestPlanFileTargetFilePathsRelative:
     """対象ファイル一覧のパス表記違反警告検査。"""
 
@@ -3666,26 +3626,13 @@ class TestPlanFileTargetFilePathsRelative:
             session_id,
             {
                 "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
             },
         )
 
     @staticmethod
     def _plan_body(target_paths: list[str]) -> str:
-        target_lines = "\n".join(f"- [ ] `{p}`" for p in target_paths)
-        return (
-            "# タイトル\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 実装資料\n\nx\n\n"
-            "## 変更内容\n\n"
-            "### 対象ファイル一覧\n\n"
-            f"{target_lines}\n\n"
-            "## 実行方法\n\n- 実装する\n\n"
-            "## 進捗ログ\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
+        target_lines = "\n".join(f"- `{p}`" for p in target_paths)
+        return f"## 目的\n\nx\n\n## 実装契約\n\n### 対象ファイル一覧\n\n{target_lines}\n\n## 完了条件\n\nx\n\n## 進捗ログ\n\n"
 
     def test_warns_on_absolute_path(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"

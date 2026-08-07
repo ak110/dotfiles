@@ -7,6 +7,7 @@ SSOTは`agent-toolkit/skills/plan-mode/SKILL.md`の「計画ファイルの完�
 import pathlib
 import re
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 import markdown_it
 import markdown_it.common.html_re
@@ -14,24 +15,12 @@ import markdown_it.rules_inline
 import markdown_it.token
 
 PLAN_REQUIRED_H2: tuple[str, ...] = (
-    "変更履歴",
-    "背景",
-    "対応方針",
-    "実装資料",
-    "変更内容",
-    "実行方法",
+    "目的",
+    "実装契約",
+    "完了条件",
     "進捗ログ",
-    "計画ファイル（本ファイル）のパス",
 )
-
-PLAN_OPTIONAL_H2: tuple[str, ...] = ("完了条件",)
-"""必須H2の相対順序を変えずに挿入できる任意H2。"""
-
-PLAN_LEGACY_H2_TRANSITION_MARKER = "- 計画形式移行: 調査結果から実装資料"
-"""計画形式の変更計画だけが旧H2を一時的に使うための完全一致マーカー。"""
-
-_IMPLEMENTATION_MATERIALS_H2 = "実装資料"
-_LEGACY_IMPLEMENTATION_MATERIALS_H2 = "調査結果"
+"""別コンテキストが計画を探索するための意味アンカー。順序は問わない。"""
 
 PLUGIN_MANIFEST_PATH: str = "agent-toolkit/.claude-plugin/plugin.json"
 """`scripts/agent_toolkit_bump.py`が更新するagent-toolkitプラグインmanifestの相対パス。"""
@@ -63,31 +52,15 @@ def extract_h2_sections(content: str) -> list[str]:
 
 
 def check_h2_order(content: str) -> list[str]:
-    """H2節順違反を検査して違反メッセージの一覧を返す。"""
+    """意味アンカーの欠落と重複を検査して違反メッセージの一覧を返す。"""
     headings = extract_h2_sections(content)
-    effective_h2 = resolve_implementation_materials_h2(content)
-    required_h2 = tuple(effective_h2 if h == _IMPLEMENTATION_MATERIALS_H2 else h for h in PLAN_REQUIRED_H2)
-    required = set(required_h2)
-    allowed = required | set(PLAN_OPTIONAL_H2)
     violations: list[str] = []
-
-    unexpected = [h for h in headings if h not in allowed]
-    if unexpected:
-        violations.append(f"unexpected H2 sections: {unexpected}. Allowed: {list(required_h2 + PLAN_OPTIONAL_H2)}.")
-
-    missing = [h for h in required_h2 if h not in headings]
+    missing = [h for h in PLAN_REQUIRED_H2 if h not in headings]
     if missing:
         violations.append(f"missing required H2 sections: {missing}.")
-
-    duplicate_optional = [h for h in PLAN_OPTIONAL_H2 if headings.count(h) > 1]
-    if duplicate_optional:
-        violations.append(f"optional H2 sections must be unique: {duplicate_optional}.")
-
-    present_required = [h for h in headings if h in required]
-    expected_order = [h for h in required_h2 if h in headings]
-    if present_required != expected_order:
-        violations.append(f"required H2 sections are out of order. Expected: {expected_order}, but found: {present_required}.")
-
+    duplicates = [h for h in PLAN_REQUIRED_H2 if headings.count(h) > 1]
+    if duplicates:
+        violations.append(f"required H2 sections must be unique: {duplicates}.")
     return violations
 
 
@@ -225,19 +198,15 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
             yield body_start + body_index + 1, line
 
 
-def resolve_implementation_materials_h2(content: str) -> str:
-    """計画本文から実装資料として扱うH2名を返す。
-
-    通常は新しい`実装資料`を返す。コードフェンス、先頭フロントマター、複数行HTMLコメントを除く
-    Markdown本文に完全一致の移行マーカーがある場合だけ、形式変更計画の旧H2`調査結果`を返す。
-    """
-    if any(line == PLAN_LEGACY_H2_TRANSITION_MARKER for _, line in iter_markdown_body_lines(content)):
-        return _LEGACY_IMPLEMENTATION_MATERIALS_H2
-    return _IMPLEMENTATION_MATERIALS_H2
+_TARGET_PATTERN = re.compile(r"^- `(?P<path>[^`]+)`(?:（(?P<state>新設|削除)）)?\s*$")
 
 
-# 対象ファイル一覧のチェックボックス項目から相対パスを取るパターン。記法の根拠は`extract_target_files_from_changes`を参照する。
-_CHECKBOX_PATTERN = re.compile(r"^- \[ \] `([^`]+)`")
+@dataclass(frozen=True)
+class PlanTarget:
+    """実装契約に記載された対象パスと基準コミット上の状態を表す。"""
+
+    path: str
+    state: str = "existing"
 
 
 def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
@@ -283,7 +252,7 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
 
     body行はH3見出しの直後行から次のH3見出し行の直前までを、
     ファイル先頭基準1始まりの行番号付きで収集する。
-    素朴に全行走査する（`## 変更内容`H2はフロントマターより後方の慣例のため十分）。
+    素朴に全行走査する（対象H2はフロントマターより後方のMarkdown本文にあるため十分）。
     コードフェンス内の行はスキップせず生body行として返す
     （呼び出し側でコードフェンス出現を判定できるようにするため）。
     見出し境界判定（H2/H3行の検知）は`iter_markdown_body_lines`の有効行だけを対象とする。
@@ -319,26 +288,23 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
 
 
 def extract_target_files_from_changes(content: str) -> list[str]:
-    """`## 変更内容 > ### 対象ファイル一覧`配下のチェックボックス箇条書きから相対パスを抽出する。
+    """`実装契約`の対象一覧からパスを宣言順に抽出する。"""
+    return [target.path for target in extract_plan_targets(content)]
 
-    `agent-toolkit/skills/plan-mode/SKILL.md`「`## 変更内容`」節が定める固定記法
-    （未チェックのチェックボックスと、バッククォートで囲んだパス）に一致する項目のみを対象とする。
-    `` `path`（現行N行） ``形式の付随メタ情報はバッククォート囲みの外側にあるため抽出結果へ含まれない。
-    完了マークへ書き換えた項目とバッククォートを省いた項目は、
-    `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`の`_CHECKBOX_RE`と同じく抽出対象から外れる。
-    抽出器を1系統に保つことで、文書の規定と機械検査の挙動を一致させる。
-    pretooluse / posttooluse の双方からimportして使うSSOT実装。
-    """
-    body = extract_h2_section_body(content, "変更内容")
-    paths: list[str] = []
+
+def extract_plan_targets(content: str) -> list[PlanTarget]:
+    """`## 実装契約 > ### 対象ファイル一覧`の通常箇条書きを抽出する。"""
+    body = extract_h2_section_body(content, "実装契約")
+    targets: list[PlanTarget] = []
     in_target_h3 = False
     for _, line in body:
         if line.startswith("### "):
             in_target_h3 = line[4:].strip() == "対象ファイル一覧"
             continue
-        if in_target_h3 and (m := _CHECKBOX_PATTERN.match(line)):
-            paths.append(m.group(1))
-    return paths
+        if in_target_h3 and (match := _TARGET_PATTERN.fullmatch(line)):
+            state = {"新設": "new", "削除": "deleted"}.get(match.group("state"), "existing")
+            targets.append(PlanTarget(match.group("path"), state))
+    return targets
 
 
 def is_agent_facing_md(rel_path: str) -> bool:
@@ -411,53 +377,8 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     return pathlib.Path(normalized).name in AGENT_DOC_TARGET_BASENAMES
 
 
-# `## 対応方針`または`### エージェント判断`配下に置かれる版更新マトリクスの5列表ヘッダ検出パターン。
-# `check_plan_file.py`側の同名定義を本モジュールへ統合したSSOT。
-_BUMP_MATRIX_HEADER_RE = re.compile(r"\|\s*ファイル\s*\|\s*改訂節数\s*\|\s*節名\s*\|\s*判定\s*\|\s*該当基準\s*\|")
-# 版更新マトリクスの表本体1行（1列目がファイルパス、2列目が改訂節数、4列目が判定ラベル、5列目が該当基準）を
-# 抽出するパターン。FB[4]: 改訂節数列を`revision_count`、該当基準列を`criteria`の名前付きグループで抽出し、
-# 行単位のPATCH判定整合照合（節新設行の除外判定を含む）に使う。
-_BUMP_MATRIX_ROW_RE = re.compile(
-    r"^\|\s*`(?P<file>[^`]+)`\s*\|\s*(?P<revision_count>[^|]*?)\s*\|[^|]*\|\s*(?P<judgment>[^|]+?)\s*\|\s*(?P<criteria>[^|]+?)\s*\|\s*$",
-    re.MULTILINE,
-)
-
-
-def _all_bump_matrix_judgments_are_none_required(content: str) -> bool:
-    """版更新マトリクスの「判定」列が全行`bump不要`かを判定する。
-
-    マトリクス自体が存在しない場合、または表本体行が1件も抽出できない場合は`False`を返す
-    （抑止を発動させないための安全側判定）。
-    「判定」列に`bump不要`以外のラベル（`PATCH`・`MINOR`・`MAJOR`等）が1行でも含まれる場合も`False`を返す。
-    本モジュール内の`has_bump_step_when_required`と
-    `has_manifest_files_when_bump_step_present`が共有する。
-    `agent-toolkit/scripts/pretooluse.py`は両関数へ判定を委譲する。
-    """
-    if not _BUMP_MATRIX_HEADER_RE.search(content):
-        return False
-    judgments = [m.group("judgment").strip() for m in _BUMP_MATRIX_ROW_RE.finditer(content)]
-    if not judgments:
-        return False
-    return all(j == "bump不要" for j in judgments)
-
-
 def has_bump_step_when_required(content: str) -> bool:
-    """計画ファイル本文がversion bumpステップ要件を満たすかを判定する。
-
-    判定手順:
-
-    1. `_all_bump_matrix_judgments_are_none_required`が`True`を返す場合、
-       版更新マトリクスの「判定」列全行が`bump不要`と確定済みのため`True`を返す
-    2. `extract_target_files_from_changes`で対象ファイル一覧を取得する
-    3. 対象ファイル一覧が空、または`agent-toolkit/`で始まるパスを1件も含まない場合は`True`を返す
-    4. 対象ファイル一覧の`agent-toolkit/`配下パス全件が`_test.py`で終わる場合は`True`を返す
-    5. `extract_h2_section_body`で`## 実行方法`節本文を取得し、
-       `agent_toolkit_bump.py`リテラル出現があれば`True`、無ければ`False`を返す
-
-    `agent-toolkit/scripts/pretooluse.py`からimportして使うSSOT実装。
-    """
-    if _all_bump_matrix_judgments_are_none_required(content):
-        return True
+    """配布物の変更計画に版更新宣言があるかを判定する。"""
     paths = extract_target_files_from_changes(content)
     if not paths:
         return True
@@ -466,31 +387,16 @@ def has_bump_step_when_required(content: str) -> bool:
         return True
     if all(p.endswith("_test.py") for p in agent_toolkit_paths):
         return True
-    execution_body = extract_h2_section_body(content, "実行方法")
-    execution_text = "\n".join(line for _lineno, line in execution_body)
-    return "agent_toolkit_bump.py" in execution_text
+    contract = extract_h2_section_body(content, "実装契約")
+    contract_text = "\n".join(line for _lineno, line in contract)
+    return "agent_toolkit_bump.py" in contract_text or "bump不要" in contract_text
 
 
 def has_manifest_files_when_bump_step_present(content: str) -> bool:
-    """計画ファイル本文がmanifest対象ファイル記載要件を満たすかを判定する。
-
-    判定手順:
-
-    1. `_all_bump_matrix_judgments_are_none_required`が`True`を返す場合、
-       版更新マトリクスの「判定」列全行が`bump不要`と確定済みのため`True`を返す
-    2. `extract_h2_section_body`で`## 実行方法`節本文を取得する
-    3. `agent_toolkit_bump.py`リテラルの出現がなければ`True`を返す（bump不要のため対象外）
-    4. `extract_target_files_from_changes`で対象ファイル一覧を取得する
-    5. 対象ファイル一覧に`agent-toolkit/.claude-plugin/plugin.json`と
-       `.claude-plugin/marketplace.json`の両方が含まれれば`True`、いずれかが欠落していれば`False`を返す
-
-    `agent-toolkit/scripts/pretooluse.py`からimportして使うSSOT実装。
-    """
-    if _all_bump_matrix_judgments_are_none_required(content):
-        return True
-    execution_body = extract_h2_section_body(content, "実行方法")
-    execution_text = "\n".join(line for _lineno, line in execution_body)
-    if "agent_toolkit_bump.py" not in execution_text:
+    """版更新宣言がある計画に正本manifest 2件が含まれるかを判定する。"""
+    contract = extract_h2_section_body(content, "実装契約")
+    contract_text = "\n".join(line for _lineno, line in contract)
+    if "agent_toolkit_bump.py" not in contract_text:
         return True
     paths = extract_target_files_from_changes(content)
     return PLUGIN_MANIFEST_PATH in paths and MARKETPLACE_MANIFEST_PATH in paths
@@ -509,12 +415,11 @@ def extract_allowed_repo_roots(content: str) -> list[str]:
 
 
 def find_invalid_target_file_paths(content: str) -> list[str]:
-    """`## 変更内容 > ### 対象ファイル一覧`配下の相対パス表記違反を検出する。
+    """`## 実装契約 > ### 対象ファイル一覧`配下の相対パス表記違反を検出する。
 
     絶対パス（`/`始まり）または親ディレクトリ参照（パス部品に`..`を含む）を
     プロジェクトルート相対の完全パス規範への違反として返す。
-    `agent-toolkit/skills/plan-mode/SKILL.md`「計画ファイルの完成条件」節の
-    `## 変更内容`の項が定めるパス記述形式の機械強制。
+    `agent-toolkit/skills/plan-mode/SKILL.md`の計画契約が定めるパス記述形式を機械検査する。
     `<!-- allowed-repo-root: /abs/path -->`宣言済みルート配下の絶対パスは、
     複数リポジトリに跨る計画（姉妹プロジェクトのドキュメント更新等）を許容するため違反対象から除外する。
     """

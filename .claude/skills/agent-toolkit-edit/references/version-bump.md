@@ -80,20 +80,17 @@ push済みコミット範囲の既往bumpは判定対象に含めない。
 ## plan modeでの取り扱い
 
 計画フェーズではbump要否や既存bumpとの差分を調査せず、種別（PATCH／MINOR／MAJOR）と
-「判定基準」節に基づく種別選定根拠を`### エージェント判断`欄へ記述する。
-対象ファイル×H2/H3節数マトリクスも同欄へ並記する。
+「判定基準」節に基づく種別選定根拠を実装契約へ記述する。
 具体的なversion数値（`x.y.z`形式）は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
-判定は計画段階で対象ファイル一覧と変更内容から目視照合する。
+判定は計画段階で対象ファイル一覧と実装契約から目視照合する。
 実装フェーズで`scripts/agent_toolkit_bump.py {種別}`を実行する
 （既存bumpとの統合はツール側が吸収するため`git log`確認は不要）。
 `agent-toolkit/scripts/pretooluse.py`の`agent-toolkit/`配下変更検知フックが`plugin.json`版未変更をwarnで返す。
 補完照合の対象は`agent-toolkit/`配下に限定し、`.chezmoi-source/`・`bin/`・`scripts/`配下は対象外。
-計画ファイル本文の`## 実行方法`には検証ステップの手前へ
-`scripts/agent_toolkit_bump.py {patch|minor|major}`の実行ステップを必ず含める（bump不要時のみ省略可）。
-bump不要と判定した計画では、`## 対応方針`配下の`### エージェント判断`節に版更新マトリクス（5列表）を配置し「判定」列の全行に`bump不要`を記載する。
-この場合`_plan_format.py`のSSOT関数がbumpステップ記載を求める警告とmanifest記載欠落の警告を抑止する。
-マトリクス自体が欠落している場合の警告は現行どおり維持する。
-version bumpを伴う計画では、Claude Code向け正本2ファイルを`## 変更内容`の対象ファイル一覧へ必ず含める。
+計画ファイルの実装契約には検証より前に
+`scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する順序を含める。
+bump不要の場合は、実装契約へ`bump不要`と根拠を記載する。
+version bumpを伴う計画では、Claude Code向け正本2ファイルを対象ファイル一覧へ必ず含める。
 正本は`agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`である。
 Codex向け派生manifestも対象ファイル一覧へ含める。
 Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象に含めない。

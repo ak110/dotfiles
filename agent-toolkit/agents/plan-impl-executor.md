@@ -27,11 +27,13 @@ user-invocable: false
 ## 実行
 
 1. `agent-toolkit:delegation`を起動する
-2. 計画の想定コミット単位を読み、単位ごとにwriterを1つずつ起動する。
+2. 計画に原子的なコミット単位が明示されている場合だけ単位ごとにwriterを1つずつ起動する。
+   単位が明示されていない場合は計画全体を1つの実装単位として扱う。
+   明示された単位が複数ある場合は、1回のwriter呼び出しへ全単位を積まず順次割り当てる。
    writerへ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、worktree、
    プロジェクト規範、該当author skillの絶対パスと、その単位の識別だけとする
 3. 各writerの完了後にcommit、差分、検証、cleanな作業ツリーを実測してから次の単位へ進む。
-   1回のwriter呼び出しへ全単位を積まず、単位ごとに呼び出し元へ結果を戻す
+   writer結果は呼び出し元が進捗ログへ反映できる時点で単位ごとに返す
 4. 全単位後に最終検証を実測し、同じ最終commitを対象として次のreviewerを別識別子で並列起動する
    - 計画準拠系: `skills/plan-mode/references/implementation-plan-review-task.md`
    - 独立系: `skills/plan-mode/references/implementation-independent-review-task.md`
@@ -60,7 +62,7 @@ reviews:
 - <系統、実識別子、対象commit、点検範囲、write_status>
 findings:
 - <6列表の指摘と対応結果。無ければ「指摘なし」>
-plan_check: <完了条件との照合結果>
+plan_check: <目的、実装契約、完了条件、対象一覧、進捗ログとの照合結果>
 blockers:
 - <未完了事項。完了時は「なし」>
 ```

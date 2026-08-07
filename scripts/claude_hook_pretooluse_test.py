@@ -837,8 +837,8 @@ class TestPlanFileBumpDeclarationWarning:
     """計画ファイル Write 時の `agent-toolkit/` 編集に対する bump 宣言欠落警告。"""
 
     _PLAN_PATH = str(_HOME / ".claude" / "plans" / "sample-plan.md")
-    _TARGET_LIST = "### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行）\n"
-    _MISSING = f"# 計画\n\n## 変更内容\n\n{_TARGET_LIST}\n## 実行方法\n\n- 検証を実行\n"
+    _TARGET_LIST = "### 対象ファイル一覧\n\n- `agent-toolkit/skills/foo/SKILL.md`\n"
+    _MISSING = f"## 実装契約\n\n{_TARGET_LIST}\n- 検証を実行\n"
 
     @staticmethod
     def _write(file_path: str, content: str) -> subprocess.CompletedProcess[str]:
@@ -853,7 +853,7 @@ class TestPlanFileBumpDeclarationWarning:
     )
     def test_valid_declarations_no_warning(self, plan_body: str):
         """`agent_toolkit_bump.py` 呼び出しまたは `bump不要` 宣言があれば警告なし。"""
-        content = f"# 計画\n\n## 変更内容\n\n{self._TARGET_LIST}\n## 実行方法\n\n{plan_body}\n"
+        content = f"## 実装契約\n\n{self._TARGET_LIST}\n{plan_body}\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
@@ -868,46 +868,34 @@ class TestPlanFileBumpDeclarationWarning:
         assert "warn" in msg.lower()
 
     def test_no_agent_toolkit_reference(self):
-        """`## 変更内容` のチェックボックス項目に `agent-toolkit/` が無ければ警告なし。"""
-        content = (
-            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `scripts/foo.py`（現行10行）\n\n"
-            "## 実行方法\n\n- 検証を実行\n"
-        )
+        """対象一覧に`agent-toolkit/`が無ければ警告しない。"""
+        content = "## 実装契約\n\n### 対象ファイル一覧\n\n- `scripts/foo.py`\n\n- 検証を実行\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
     def test_prose_mention_only_no_warning(self):
-        """チェックボックス項目に含まず本文が `agent-toolkit/` へ言及するだけなら警告なし。"""
+        """対象項目に含まず本文が`agent-toolkit/`へ言及するだけなら警告しない。"""
         content = (
-            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `scripts/foo.py`（現行10行）\n\n"
-            "### `scripts/foo.py`\n\n変更後文面で agent-toolkit/skills/foo/SKILL.md を参照する。\n\n"
-            "## 実行方法\n\n- 検証を実行\n"
+            "## 実装契約\n\n### 対象ファイル一覧\n\n- `scripts/foo.py`\n\n"
+            "変更後文面で agent-toolkit/skills/foo/SKILL.md を参照する。\n"
         )
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
-    def test_checkbox_without_backticks_not_extracted(self):
-        """チェックボックス項目のパスがバッククォートを欠く場合は抽出対象外。
-
-        固定記法から外れた項目は`check_plan_file.py`でも抽出されないため、
-        前方一致で判定する本警告と完全一致で判定する各検査の結果を一致させる。
-        """
-        content = (
-            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] agent-toolkit/skills/foo/SKILL.md（現行10行）\n\n## 実行方法\n\n- 検証を実行\n"
-        )
+    def test_list_without_backticks_not_extracted(self):
+        """通常箇条書きのパスがバッククォートを欠く場合は抽出しない。"""
+        content = "## 実装契約\n\n### 対象ファイル一覧\n\n- agent-toolkit/skills/foo/SKILL.md\n\n- 検証を実行\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
     def test_fenced_checkbox_only_no_warning(self):
-        """チェックボックス項目がコードフェンス内にのみ現れる計画は警告なし。"""
+        """対象項目がコードフェンス内にだけ現れる計画は警告しない。"""
         content = (
-            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `scripts/foo.py`（現行10行）\n\n"
-            "### `scripts/foo.py`\n\n```text\n### 対象ファイル一覧\n\n"
-            "- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行）\n```\n\n## 実行方法\n\n- 検証を実行\n"
+            "## 実装契約\n\n### 対象ファイル一覧\n\n- `scripts/foo.py`\n\n"
+            "```text\n### 対象ファイル一覧\n\n- `agent-toolkit/skills/foo/SKILL.md`\n```\n"
         )
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
@@ -953,16 +941,16 @@ class TestPlanFileBumpDeclarationWarning:
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
-    def test_changes_section_missing_no_warning(self):
-        """`## 変更内容` セクション欠落は `agent-toolkit/` 参照なしとみなす。"""
-        content = "# 計画\n\n## 実行方法\n\n- 検証を実行\n"
+    def test_contract_section_missing_no_warning(self):
+        """`## 実装契約`の欠落は対象参照なしとみなす。"""
+        content = "## 目的\n\n成果。\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" not in _get_additional_context(result)
 
-    def test_plan_section_missing_warns(self):
-        """`## 実行方法` セクション欠落かつ `agent-toolkit/` 参照ありは警告対象。"""
-        content = f"# 計画\n\n## 変更内容\n\n{self._TARGET_LIST}"
+    def test_bump_declaration_missing_warns(self):
+        """対象一覧に配布物があり版更新宣言が無ければ警告する。"""
+        content = f"## 実装契約\n\n{self._TARGET_LIST}"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" in _get_additional_context(result)
@@ -972,19 +960,15 @@ class TestPlanFileAgentsMdSyncWarning:
     """計画ファイル Write 時のCodex共有規範編集に対するAGENTS.md同期漏れ警告。"""
 
     _PLAN_PATH = str(_HOME / ".claude" / "plans" / "sample-plan.md")
-    _RULES_ONLY = "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/01-agent.md`（現行10行）\n"
+    _RULES_ONLY = "## 実装契約\n\n### 対象ファイル一覧\n\n- `agent-toolkit/rules/01-agent.md`\n"
     _RULES_WITH_AGENTS_MD = (
-        "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-        "- [ ] `agent-toolkit/rules/01-agent.md`（現行10行）\n"
-        "- [ ] `.chezmoi-source/dot_codex/AGENTS.md`（現行20行）\n"
+        "## 実装契約\n\n### 対象ファイル一覧\n\n- `agent-toolkit/rules/01-agent.md`\n- `.chezmoi-source/dot_codex/AGENTS.md`\n"
     )
-    _CLAUDE_ONLY = (
-        "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/99-claude-code.md`（現行10行）\n"
-    )
+    _CLAUDE_ONLY = "## 実装契約\n\n### 対象ファイル一覧\n\n- `agent-toolkit/rules/99-claude-code.md`\n"
     _SHARED_AND_CLAUDE_ONLY = (
-        "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-        "- [ ] `agent-toolkit/rules/02-agent-operations.md`（現行10行）\n"
-        "- [ ] `agent-toolkit/rules/99-claude-code.md`（現行10行）\n"
+        "## 実装契約\n\n### 対象ファイル一覧\n\n"
+        "- `agent-toolkit/rules/02-agent-operations.md`\n"
+        "- `agent-toolkit/rules/99-claude-code.md`\n"
     )
 
     @staticmethod
@@ -992,7 +976,7 @@ class TestPlanFileAgentsMdSyncWarning:
         return _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": content}})
 
     def test_rules_without_agents_md_warns(self):
-        """チェックボックス項目が`agent-toolkit/rules/`を含み`.chezmoi-source/dot_codex/AGENTS.md`を含まない計画はwarn。"""
+        """対象一覧が共有規範を含みCodex生成物を含まない場合は警告する。"""
         result = self._write(self._PLAN_PATH, self._RULES_ONLY)
         assert result.returncode == 0
         msg = _get_additional_context(result)
@@ -1020,8 +1004,8 @@ class TestPlanFileAgentsMdSyncWarning:
         assert "warn" in msg.lower()
 
     def test_no_rules_reference_no_warning(self):
-        """チェックボックス項目に`agent-toolkit/rules/`を含まない計画はwarnされない。"""
-        content = "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行）\n"
+        """対象一覧に共有規範を含まない計画は警告しない。"""
+        content = "## 実装契約\n\n### 対象ファイル一覧\n\n- `agent-toolkit/skills/foo/SKILL.md`\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)
@@ -1029,7 +1013,7 @@ class TestPlanFileAgentsMdSyncWarning:
     def test_prose_mention_only_no_warning(self):
         """変更後文面が`agent-toolkit/rules/`を参照するだけで変更対象に含まない計画はwarnされない。"""
         content = (
-            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行）\n\n"
+            "## 実装契約\n\n### 対象ファイル一覧\n\n- `agent-toolkit/skills/foo/SKILL.md`\n\n"
             "### `agent-toolkit/skills/foo/SKILL.md`\n\n"
             "変更後文面で agent-toolkit/rules/01-agent.md の当該節を参照する旨を追記する。\n"
         )
@@ -1037,33 +1021,31 @@ class TestPlanFileAgentsMdSyncWarning:
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)
 
-    def test_checkbox_without_backticks_not_extracted(self):
-        """チェックボックス項目のパスがバッククォートを欠く場合は抽出対象外。"""
-        content = "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] agent-toolkit/rules/01-agent.md（現行10行）\n"
+    def test_list_without_backticks_not_extracted(self):
+        """通常箇条書きのパスがバッククォートを欠く場合は抽出しない。"""
+        content = "## 実装契約\n\n### 対象ファイル一覧\n\n- agent-toolkit/rules/01-agent.md\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)
 
-    def test_checkbox_without_backticks_listing_sync_target_not_warned(self):
+    def test_list_without_backticks_listing_sync_target_not_warned(self):
         """同期先を併記した項目がバッククォートを欠く場合も誤warnしない。
 
         前方一致で発動する条件と完全一致で充足する条件が同一の抽出結果に基づくことを固定する。
         """
         content = (
-            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] agent-toolkit/rules/01-agent.md（現行10行）\n"
-            "- [ ] .chezmoi-source/dot_codex/AGENTS.md（現行10行）\n"
+            "## 実装契約\n\n### 対象ファイル一覧\n\n- agent-toolkit/rules/01-agent.md\n- .chezmoi-source/dot_codex/AGENTS.md\n"
         )
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "sync_generated_files.py" not in _get_additional_context(result)
 
-    def test_fenced_checkbox_only_no_warning(self):
-        """チェックボックス項目がコードフェンス内にのみ現れる計画はwarnされない。"""
+    def test_fenced_target_only_no_warning(self):
+        """対象項目がコードフェンス内にだけ現れる計画は警告しない。"""
         content = (
-            "# 計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `scripts/foo.py`（現行10行）\n\n"
+            "## 実装契約\n\n### 対象ファイル一覧\n\n- `scripts/foo.py`\n\n"
             "### `scripts/foo.py`\n\n```text\n### 対象ファイル一覧\n\n"
-            "- [ ] `agent-toolkit/rules/01-agent.md`（現行10行）\n```\n"
+            "- `agent-toolkit/rules/01-agent.md`\n```\n"
         )
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0

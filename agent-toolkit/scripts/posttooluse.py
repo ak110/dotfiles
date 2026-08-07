@@ -13,7 +13,6 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 振り返りスキル呼び出し検出 (Skill)
    （`session_review_invoked`辞書へ記録）
-6. textlint-violations.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. codex MCP呼び出し後のリモートref変化確認
@@ -49,11 +48,7 @@ import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,im
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    extract_h2_sections,
-    extract_h3_headings_under_h2,
-    is_agent_facing_md,
-)
+from _plan_format import is_agent_facing_md  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
@@ -255,34 +250,6 @@ def _reset_plan_and_add_entries_invoked(state: dict) -> dict | None:
     return state
 
 
-def _check_plan_format(file_path: str) -> list[str]:
-    """Plan fileの構成を検査して違反メッセージの一覧を返す。
-
-    検出する違反は`## 変更内容`配下の先頭H3が「対象ファイル一覧」でないこと。
-    `agent-toolkit/skills/plan-mode/SKILL.md`「計画ファイルの完成条件」節の
-    `## 変更内容`の項（冒頭に`### 対象ファイル一覧`を置く規定）に対応する。
-
-    読み取り失敗時は空リストを返す。
-    H2節順違反（必須H2欠落・順序違反・予期せぬH2）はPreToolUseのWriteブロックへ移管済み。
-    """
-    try:
-        content = pathlib.Path(file_path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return []
-    headings = extract_h2_sections(content)
-    violations: list[str] = []
-
-    # 変更内容H2 配下の先頭H3が「対象ファイル一覧」かを検査する
-    if "変更内容" in headings:
-        h3_list = extract_h3_headings_under_h2(content, "変更内容")
-        first_h3 = h3_list[0] if h3_list else None
-        if first_h3 != "対象ファイル一覧":
-            actual = first_h3 if first_h3 is not None else "(no H3 present)"
-            violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
-
-    return violations
-
-
 def _diff_remote_snapshots(
     before: dict[str, dict[str, str] | None],
     after: dict[str, dict[str, str] | None],
@@ -482,21 +449,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             notices.append(codex_notice)
         return 0
 
-    # Read: 規範ファイル読み込みのセッション状態フラグ化
+    # Readは本フックで状態更新を行わない。
     if tool_name == "Read":
-        file_path_raw = tool_input.get("file_path")
-        if isinstance(file_path_raw, str):
-            # Windowsからのバックスラッシュ区切りを正規化してから判定する
-            file_path_normalized = file_path_raw.replace("\\", "/")
-            if file_path_normalized.endswith("writing-standards/references/textlint-violations.md"):
-
-                def _set_textlint_violations_read(state: dict) -> dict | None:
-                    if state.get("textlint_violations_read", False):
-                        return None
-                    state["textlint_violations_read"] = True
-                    return state
-
-                update_state(session_id, _set_textlint_violations_read)
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
@@ -548,22 +502,10 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 prohibition_warnings = _check_conditional_prohibition(pathlib.Path(file_path), prohibition_content)
                 if prohibition_warnings:
                     notices.append(_llm_notice("\n".join(prohibition_warnings), tag="warn"))
-        # 計画ファイル向け通知: 形式検査違反（plan-mode起動時のみ）と、
-        # Write成功時の書き込み後チェック案内（plan-mode起動時のみ）を1つのadditionalContextへまとめる。
+        # 計画ファイル向け通知: Write成功時の書き込み後チェック案内をadditionalContextへまとめる。
         # 状態フラグは追加せず、案内のみを一方向で通知する。
         if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
             messages: list[str] = []
-            violations = _check_plan_format(file_path)
-            if violations:
-                messages.append(
-                    _llm_notice(
-                        f"plan file {file_path} does not conform to the expected structure."
-                        f" {' '.join(violations)}"
-                        f" Fix the structure per the '計画ファイルの完成条件' section of"
-                        f" agent-toolkit/skills/plan-mode/SKILL.md (read it first if not yet).",
-                        tag="warn",
-                    )
-                )
             if tool_name == "Write":
                 # 案内文はそのまま実行される。プラグインルートを本プロセスの位置から絶対パスで解決し、
                 # `--work-dir`へpayloadのcwdを埋める。リポジトリ相対のパスは配布元以外で解決できず、

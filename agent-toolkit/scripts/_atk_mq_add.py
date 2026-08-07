@@ -109,32 +109,45 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
 
 
 def _plan_metadata_text(plan_text: str) -> str | None:
-    """計画Markdownの背景直下にある一意な`### 計画メタ情報`の非コード本文を返す。"""
+    """計画Markdownの実装契約直下にある一意な計画メタ情報の非コード本文を返す。
+
+    現行形式の`## 実装契約`を正本として優先する。現行形式が無い既存計画だけは
+    旧形式の`## 背景`へフォールバックし、投入済み計画の継続処理を維持する。
+    """
     tokens = markdown_it.MarkdownIt("commonmark").parse(plan_text)
     lines = plan_text.splitlines()
-    backgrounds: list[tuple[int, int]] = []
-    for index, token in enumerate(tokens):
-        if (
-            token.type != "heading_open"
-            or token.tag != "h2"
-            or token.level != 0
-            or token.map is None
-            or tokens[index + 1].content != "背景"
-        ):
-            continue
-        end_line = len(lines)
-        for following in tokens[index + 2 :]:
-            if following.type == "heading_open" and following.level == 0 and following.map is not None:
-                if int(following.tag[1:]) > 2:
-                    continue
-                end_line = following.map[0]
-                break
-        backgrounds.append((token.map[1], end_line))
-    if len(backgrounds) > 1:
-        raise WebInputError(f"計画ファイルのフェンス外の`## 背景`が1件ではありません: 実際={len(backgrounds)}件")
-    if not backgrounds:
+
+    def h2_sections(heading: str) -> list[tuple[int, int]]:
+        sections: list[tuple[int, int]] = []
+        for index, token in enumerate(tokens):
+            if (
+                token.type != "heading_open"
+                or token.tag != "h2"
+                or token.level != 0
+                or token.map is None
+                or tokens[index + 1].content != heading
+            ):
+                continue
+            end_line = len(lines)
+            for following in tokens[index + 2 :]:
+                if following.type == "heading_open" and following.level == 0 and following.map is not None:
+                    if int(following.tag[1:]) > 2:
+                        continue
+                    end_line = following.map[0]
+                    break
+            sections.append((token.map[1], end_line))
+        return sections
+
+    parent_heading = "実装契約"
+    parents = h2_sections(parent_heading)
+    if not parents:
+        parent_heading = "背景"
+        parents = h2_sections(parent_heading)
+    if len(parents) > 1:
+        raise WebInputError(f"計画ファイルのフェンス外の`## {parent_heading}`が1件ではありません: 実際={len(parents)}件")
+    if not parents:
         return None
-    background_start, background_end = backgrounds[0]
+    parent_start, parent_end = parents[0]
     candidates = [
         (index, token)
         for index, token in enumerate(tokens)
@@ -142,18 +155,19 @@ def _plan_metadata_text(plan_text: str) -> str | None:
         and token.tag == "h3"
         and token.level == 0
         and token.map is not None
-        and background_start <= token.map[0] < background_end
+        and parent_start <= token.map[0] < parent_end
         and tokens[index + 1].content == "計画メタ情報"
     ]
     if len(candidates) > 1:
         raise WebInputError(
-            f"計画ファイルの`## 背景`直下にあるフェンス外の`### 計画メタ情報`が1件ではありません: 実際={len(candidates)}件"
+            f"計画ファイルの`## {parent_heading}`直下にあるフェンス外の"
+            f"`### 計画メタ情報`が1件ではありません: 実際={len(candidates)}件"
         )
     if not candidates:
         return None
     index, metadata = candidates[0]
     assert metadata.map is not None
-    end_line = background_end
+    end_line = parent_end
     for following in tokens[index + 2 :]:
         if following.type == "heading_open" and following.level == 0 and following.map is not None:
             if int(following.tag[1:]) > 3:

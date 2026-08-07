@@ -1,6 +1,4 @@
-"""簡素化した計画構造検査の回帰テスト。"""
-
-from __future__ import annotations
+"""意味契約中心の計画検査を検証する。"""
 
 import pathlib
 import subprocess
@@ -8,381 +6,174 @@ import subprocess
 import check_plan_file
 import pytest
 
-_BASE = "a" * 40
+
+def _git(repo: pathlib.Path, *args: str) -> str:
+    """テスト用リポジトリでgitを実行して標準出力を返す。"""
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True)
+    return result.stdout.strip()
 
 
-def _plan(
-    path: str = "existing.py",
-    *,
-    suffix: str = "（現行1行）",
-    body: str = "変更する",
-    work_type: str = "通常変更",
-    background: str = "",
-) -> str:
-    return f"""# 主題
+@pytest.fixture(name="repo")
+def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
+    """既存対象と削除対象を持つGitリポジトリを作成する。"""
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test")
+    (tmp_path / "existing.py").write_text("old\n", encoding="utf-8")
+    (tmp_path / "old.py").write_text("remove\n", encoding="utf-8")
+    _git(tmp_path, "add", "existing.py", "old.py")
+    _git(tmp_path, "commit", "-qm", "base")
+    return tmp_path, _git(tmp_path, "rev-parse", "HEAD")
 
-## 変更履歴
 
-- なし
+def _plan(base: str) -> str:
+    """新しい最小契約を満たす計画を返す。"""
+    return f"""## 目的
 
-## 背景
+成果を得る。
+
+## 実装契約
 
 ### 計画メタ情報
 
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `/tmp/repo`
-- 作業種別: {work_type}
-- ベースコミット: `{_BASE}`
-
-{background}
-
-## 対応方針
-
-- 実施する
-
-## 実装資料
-
-- 調査済み
-
-## 変更内容
+- 対象リポジトリ: `/repo`
+- ベースコミット: `{base}`
+- 作業種別: 通常変更
 
 ### 対象ファイル一覧
 
-- [ ] `{path}`{suffix}
+- `existing.py`
+- `new.py`（新設）
+- `old.py`（削除）
 
-### `{path}`
+共通変更説明だけで実装を特定する。
 
-```text
-{body}
-```
+## 完了条件
 
-## 実行方法
-
-- 検証する
+検証が成功する。
 
 ## 進捗ログ
 
-- 未着手
-
-## 計画ファイル（本ファイル）のパス
-
-`/tmp/plan.md`
+未着手。
 """
 
 
-def _run(tmp_path: pathlib.Path, text: str) -> tuple[list[str], list[str]]:
-    (tmp_path / "existing.py").write_text("x\n", encoding="utf-8")
-    plan = tmp_path / "plan.md"
-    plan.write_text(text, encoding="utf-8")
-    return check_plan_file.check(plan, tmp_path, None)
+def _check(repo: pathlib.Path, base: str, content: str, *, compare_diff: bool = False) -> tuple[list[str], list[str]]:
+    """計画を一時ファイルへ保存して検査する。"""
+    path = repo / "plan.md"
+    path.write_text(content, encoding="utf-8")
+    return check_plan_file.check(path, repo, base if compare_diff else None)
 
 
-def test_valid_plan_passes(tmp_path: pathlib.Path) -> None:
-    assert _run(tmp_path, _plan()) == ([], [])
-
-
-@pytest.mark.parametrize("literal", ["`<!--`", "`` `<!--` ``", r"`<!--\`", r"\<!--"])
-def test_html_comment_literal_does_not_hide_required_h2(tmp_path: pathlib.Path, literal: str) -> None:
-    text = _plan(background=f"{literal}は説明用のリテラルである。")
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_multiline_code_span_html_comment_literal_does_not_hide_required_h2(tmp_path: pathlib.Path) -> None:
-    text = _plan(background="説明 `開始\n行内 <!--\n終了`")
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_unclosed_backtick_in_previous_block_does_not_hide_required_h2(tmp_path: pathlib.Path) -> None:
-    text = _plan(background="先行 `未成立\n\n後続 `<!--`") + "\n-->\n"
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_optional_completion_section_passes(tmp_path: pathlib.Path) -> None:
-    text = _plan().replace("## 進捗ログ", "## 完了条件\n\n- 検証結果を確認できる\n\n## 進捗ログ", 1)
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_required_h2_inside_multiline_html_comment_is_ignored(tmp_path: pathlib.Path) -> None:
-    text = _plan(background="<!--\n## 背景\n-->")
-    assert _run(tmp_path, text) == ([], [])
-
-
-@pytest.mark.parametrize("literal", ["```text", "<!--"])
-def test_frontmatter_block_scalar_literal_does_not_hide_body(tmp_path: pathlib.Path, literal: str) -> None:
-    frontmatter = f"---\ndescription: |\n  {literal}\n---\n"
-    assert _run(tmp_path, frontmatter + _plan()) == ([], [])
-
-
-def test_midline_multiline_html_comment_is_ignored(tmp_path: pathlib.Path) -> None:
-    background = "説明の途中 <!--\n## コメント内\n- 計画形式移行: 調査結果から実装資料\n-->"
-    assert _run(tmp_path, _plan(background=background)) == ([], [])
-
-
-@pytest.mark.parametrize(
-    ("text", "message"),
-    [
-        (_plan().replace("# 主題", "主題", 1), "H1"),
-        (_plan() + "\n# 追加\n", "H1"),
-        (_plan().replace("### `existing.py`\n", "", 1), "H3"),
-        (_plan().replace("- [ ] `existing.py`（現行1行）\n", "", 1), "対象ファイル一覧"),
-        (_plan().replace("```text\n変更する\n```", "変更する"), "コードブロック"),
-        (_plan("missing.py"), "実在確認"),
-        (_plan().replace("## 実装資料\n\n- 調査済み\n\n", "", 1), "必須H2"),
-        (
-            _plan().replace(
-                "## 対応方針\n\n- 実施する\n\n## 実装資料\n\n- 調査済み",
-                "## 実装資料\n\n- 調査済み\n\n## 対応方針\n\n- 実施する",
-                1,
-            ),
-            "順序",
-        ),
-        (_plan().replace("### 計画メタ情報", "### メタ情報", 1), "計画メタ情報"),
-    ],
-)
-def test_structural_errors(tmp_path: pathlib.Path, text: str, message: str) -> None:
-    errors, _warnings = _run(tmp_path, text)
-    assert any(message in error for error in errors)
-
-
-def test_new_path_does_not_require_existence(tmp_path: pathlib.Path) -> None:
-    assert _run(tmp_path, _plan("new.py", suffix="（新設）")) == ([], [])
-
-
-@pytest.mark.parametrize(
-    ("old", "new", "message"),
-    [
-        ("- 起動経路: `agent-toolkit:plan-mode`\n", "", "起動経路"),
-        ("- 対象リポジトリ: `/tmp/repo`\n", "", "対象リポジトリ"),
-        ("- 作業種別: 通常変更", "- 作業種別: 調査", "作業種別"),
-        (f"- ベースコミット: `{_BASE}`", "- ベースコミット: `abc`", "ベースコミット"),
-    ],
-)
-def test_plan_metadata_requires_unique_valid_fields(
-    tmp_path: pathlib.Path,
-    old: str,
-    new: str,
-    message: str,
-) -> None:
-    errors, _warnings = _run(tmp_path, _plan().replace(old, new, 1))
-    assert any(message in error for error in errors)
-
-
-def test_base_commit_outside_metadata_does_not_satisfy_requirement(tmp_path: pathlib.Path) -> None:
-    text = _plan().replace(f"- ベースコミット: `{_BASE}`\n", "", 1) + f"\n- 計画着手前SHA: `{_BASE}`\n"
-
-    errors, _warnings = _run(tmp_path, text)
-
-    assert any("ベースコミット" in error for error in errors)
-
-
-def test_duplicate_plan_metadata_field_is_error(tmp_path: pathlib.Path) -> None:
-    text = _plan().replace(
-        "- 起動経路: `agent-toolkit:plan-mode`",
-        "- 起動経路: `agent-toolkit:plan-mode`\n- 起動経路: その他",
-        1,
-    )
-
-    errors, _warnings = _run(tmp_path, text)
-
-    assert any("起動経路" in error and "2件" in error for error in errors)
-
-
-def test_deleted_path_requires_delete_instruction(tmp_path: pathlib.Path) -> None:
-    errors, _warnings = _run(tmp_path, _plan(suffix="（現行1行、廃止・削除）", body="変更する"))
-    assert any("削除指示" in error for error in errors)
-
-
-def test_deleted_path_with_instruction_passes(tmp_path: pathlib.Path) -> None:
-    assert _run(tmp_path, _plan(suffix="（現行1行、廃止・削除）", body="削除する")) == ([], [])
-
-
-def test_deleted_path_with_h3_suffix_passes(tmp_path: pathlib.Path) -> None:
-    text = _plan(suffix="（廃止・削除）", body="削除する").replace("### `existing.py`", "### `existing.py`（廃止・削除）")
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_unclosed_fence_is_error(tmp_path: pathlib.Path) -> None:
-    errors, _warnings = _run(tmp_path, _plan().replace("```text\n変更する\n```", "```text\n変更する", 1))
-    assert any("フェンス" in error for error in errors)
-
-
-def test_table_cell_mismatch_is_error(tmp_path: pathlib.Path) -> None:
-    text = _plan() + "\n| A | B |\n| --- | --- |\n| x |\n"
-    errors, _warnings = _run(tmp_path, text)
-    assert any("セル数" in error for error in errors)
-
-
-def test_escaped_pipe_in_table_cell_passes(tmp_path: pathlib.Path) -> None:
-    text = _plan() + "\n| A | B |\n| --- | --- |\n| x\\|y | z |\n"
-
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_table_header_separator_mismatch_is_error(tmp_path: pathlib.Path) -> None:
-    text = _plan() + "\n| A | B |\n| --- |\n| x | y |\n"
-
-    errors, _warnings = _run(tmp_path, text)
-
-    assert any("セル数" in error for error in errors)
-
-
-def test_missing_skill_reference_is_error(tmp_path: pathlib.Path) -> None:
-    text = _plan().replace("- 検証する", "- Skillツールで`agent-toolkit:not-found`を起動する")
-    errors, _warnings = _run(tmp_path, text)
-    assert any("スキル参照" in error for error in errors)
-
-
-def test_references_in_code_fence_are_ignored(tmp_path: pathlib.Path) -> None:
-    text = _plan().replace(
-        "- 検証する",
-        "- 検証する\n\n```text\nSkillツールで`agent-toolkit:not-found`を起動する\n"
-        "Agentツールで`agent-toolkit:not-found`を起動する\n```",
-        1,
-    )
-
-    assert _run(tmp_path, text) == ([], [])
-
-
-@pytest.mark.parametrize("agent", ["claude", "Explore", "Plan"])
-def test_generic_agent_reference_does_not_require_definition(tmp_path: pathlib.Path, agent: str) -> None:
-    text = _plan().replace("- 検証する", f"- Agentツールで`{agent}`を起動する", 1)
-
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_base_commit_changed_file_mismatch_is_warning(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    (tmp_path / "existing.py").write_text("x\n", encoding="utf-8")
-    plan = tmp_path / "plan.md"
-    plan.write_text(_plan(), encoding="utf-8")
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "other.py\n", ""),
-    )
-    errors, warnings = check_plan_file.check(plan, tmp_path, _BASE)
+def test_accepts_free_form_contract_without_h1_table_or_code_block(repo: tuple[pathlib.Path, str]) -> None:
+    """追加H2と自由記述を含む最小契約を受理する。"""
+    work_dir, base = repo
+    content = _plan(base).replace("## 完了条件", "## 任意の説明\n\n補足。\n\n## 完了条件")
+    errors, warnings = _check(work_dir, base, content)
     assert not errors
-    assert len(warnings) == 1
+    assert not warnings
 
 
-def test_main_returns_two_for_unreadable_plan(tmp_path: pathlib.Path) -> None:
-    assert check_plan_file.main([str(tmp_path / "missing.md")]) == 2
+@pytest.mark.parametrize("anchor", ["目的", "実装契約", "完了条件", "進捗ログ"])
+def test_rejects_missing_anchor(repo: tuple[pathlib.Path, str], anchor: str) -> None:
+    """各意味アンカーの欠落を拒否する。"""
+    work_dir, base = repo
+    content = _plan(base).replace(f"## {anchor}", f"## 欠落-{anchor}", 1)
+    errors, _ = _check(work_dir, base, content)
+    assert any("missing required H2" in error for error in errors)
 
 
-_BUG_ROWS = (
-    "観測事象",
-    "期待する契約",
-    "直接的原因",
-    "混入要因",
-    "動機的要因",
-    "見逃し原因",
-    "根本原因",
-    "原因分析の根拠",
-    "類似見直しの観点",
-    "類似見直し結果",
-    "是正処置",
-    "横展開処置",
-    "再発防止処置",
-    "設計意図の記録",
+def test_rejects_duplicate_anchor(repo: tuple[pathlib.Path, str]) -> None:
+    """意味アンカーの重複を拒否する。"""
+    work_dir, base = repo
+    content = _plan(base) + "\n## 目的\n\n重複。\n"
+    errors, _ = _check(work_dir, base, content)
+    assert any("must be unique" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        ("", "対象ファイル一覧が空"),
+        ("- `existing.py`\n- `existing.py`", "重複したパス"),
+        ("- `/absolute.py`", "危険なパス"),
+        ("- `../outside.py`", "危険なパス"),
+    ],
 )
+def test_rejects_invalid_target_list(repo: tuple[pathlib.Path, str], replacement: str, message: str) -> None:
+    """空、重複、危険パスの対象一覧を拒否する。"""
+    work_dir, base = repo
+    original = "- `existing.py`\n- `new.py`（新設）\n- `old.py`（削除）"
+    errors, _ = _check(work_dir, base, _plan(base).replace(original, replacement))
+    assert any(message in error for error in errors)
 
 
-def _bug_table(name: str, *, rows: tuple[str, ...] = _BUG_ROWS, header: str = "| 項目 | 内容 |") -> str:
-    body = "\n".join(f"| {row} | 確認済み |" for row in rows)
-    return f"### バグ調査結果: {name}\n\n{header}\n| --- | --- |\n{body}\n"
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        ("- `existing.py`（新設）", "新設対象が基準コミットに実在"),
+        ("- `missing.py`", "既存対象が基準コミットに実在しない"),
+        ("- `missing.py`（削除）", "削除対象が基準コミットに実在しない"),
+    ],
+)
+def test_rejects_base_state_mismatch(repo: tuple[pathlib.Path, str], replacement: str, message: str) -> None:
+    """基準コミット上の対象状態と注記の矛盾を拒否する。"""
+    work_dir, base = repo
+    content = _plan(base).replace("- `existing.py`", replacement, 1)
+    errors, _ = _check(work_dir, base, content)
+    assert any(message in error for error in errors)
 
 
-def test_transition_marker_accepts_legacy_implementation_materials_h2(tmp_path: pathlib.Path) -> None:
-    text = _plan(background="- 計画形式移行: 調査結果から実装資料").replace("## 実装資料", "## 調査結果")
-    assert _run(tmp_path, text) == ([], [])
-
-
-def test_legacy_implementation_materials_h2_without_marker_is_error(tmp_path: pathlib.Path) -> None:
-    errors, _warnings = _run(tmp_path, _plan().replace("## 実装資料", "## 調査結果"))
-    assert any("実装資料" in error for error in errors)
-
-
-def test_transition_marker_rejects_mixed_implementation_materials_h2(tmp_path: pathlib.Path) -> None:
-    text = _plan(background="- 計画形式移行: 調査結果から実装資料").replace(
-        "## 実装資料",
-        "## 調査結果\n\n- 旧資料\n\n## 実装資料",
-        1,
+def test_rejects_unknown_base_commit_even_when_all_targets_are_new(repo: tuple[pathlib.Path, str]) -> None:
+    """新設対象だけでもリポジトリに存在しないベースコミットを拒否する。"""
+    work_dir, base = repo
+    content = (
+        _plan(base)
+        .replace(
+            "- `existing.py`\n- `new.py`（新設）\n- `old.py`（削除）",
+            "- `new.py`（新設）",
+        )
+        .replace(base, "f" * 40)
     )
-    errors, _warnings = _run(tmp_path, text)
-    assert any("unexpected H2 sections" in error for error in errors)
+    errors, _ = _check(work_dir, base, content)
+    assert any("ベースコミットを解決できない" in error for error in errors)
 
 
-def test_bug_investigation_table_accepts_multiple_named_tables(tmp_path: pathlib.Path) -> None:
-    background = _bug_table("保存失敗") + "\n" + _bug_table("再試行停止")
-    assert _run(tmp_path, _plan(work_type="バグ対応", background=background)) == ([], [])
+def test_rejects_unclosed_fence(repo: tuple[pathlib.Path, str]) -> None:
+    """未閉鎖フェンスを拒否する。"""
+    work_dir, base = repo
+    errors, _ = _check(work_dir, base, _plan(base) + "\n```text\nopen\n")
+    assert "閉じていないMarkdownフェンスがある" in errors
 
 
-def test_bug_investigation_table_warns_for_duplicate_bug_names(tmp_path: pathlib.Path) -> None:
-    background = _bug_table("保存失敗") + "\n" + _bug_table("保存失敗")
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=background))
-    assert any("重複" in warning and "保存失敗" in warning for warning in warnings)
+def test_rejects_missing_skill_and_agent_references(repo: tuple[pathlib.Path, str]) -> None:
+    """実在しないスキルと専用agentの参照を拒否する。"""
+    work_dir, base = repo
+    content = _plan(base).replace("共通変更説明", "スキル`missing-skill`とAgentツールで`missing-agent`を使う。")
+    errors, _ = _check(work_dir, base, content)
+    assert any("実在しないスキル参照" in error for error in errors)
+    assert any("実在しないサブエージェント参照" in error for error in errors)
 
 
-def test_bug_investigation_table_warns_for_legacy_unnamed_heading(tmp_path: pathlib.Path) -> None:
-    background = _bug_table("保存失敗").replace("### バグ調査結果: 保存失敗", "### バグ調査結果", 1)
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=background))
-    assert any("旧形式" in warning for warning in warnings)
+def test_base_commit_diff_mismatch_is_error(repo: tuple[pathlib.Path, str]) -> None:
+    """実装後の対象一覧と実差分の不一致をエラーにする。"""
+    work_dir, base = repo
+    (work_dir / "existing.py").write_text("new\n", encoding="utf-8")
+    _git(work_dir, "add", "existing.py")
+    _git(work_dir, "commit", "-qm", "change")
+    errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
+    assert any("対象ファイル一覧と実変更ファイルが一致しない" in error for error in errors)
+    assert not warnings
 
 
-def test_bug_investigation_table_warns_for_empty_name(tmp_path: pathlib.Path) -> None:
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=_bug_table("")))
-    assert any("空" in warning for warning in warnings)
-
-
-def test_bug_investigation_table_warns_for_empty_name_with_atx_closing_sequence(tmp_path: pathlib.Path) -> None:
-    background = _bug_table("").replace("### バグ調査結果: ", "### バグ調査結果: ###", 1)
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=background))
-    assert any("空" in warning for warning in warnings)
-
-
-def test_bug_investigation_table_warns_for_legacy_heading_with_atx_closing_sequence(tmp_path: pathlib.Path) -> None:
-    background = _bug_table("保存失敗").replace("### バグ調査結果: 保存失敗", "### バグ調査結果 ###", 1)
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=background))
-    assert any("旧形式" in warning for warning in warnings)
-
-
-def test_bug_investigation_table_normalizes_atx_closing_sequence_before_duplicate_check(
-    tmp_path: pathlib.Path,
-) -> None:
-    first = _bug_table("保存失敗")
-    second = _bug_table("保存失敗").replace("### バグ調査結果: 保存失敗", "### バグ調査結果: 保存失敗 ###", 1)
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=first + "\n" + second))
-    assert any("重複" in warning and "保存失敗" in warning for warning in warnings)
-
-
-def test_bug_investigation_table_ignores_heading_inside_multiline_html_comment(tmp_path: pathlib.Path) -> None:
-    commented = "<!--\n### バグ調査結果: コメント内\n-->\n"
-    assert _run(
-        tmp_path,
-        _plan(work_type="バグ対応", background=commented + "\n" + _bug_table("保存失敗")),
-    ) == ([], [])
-
-
-def test_bug_investigation_table_ignores_heading_inside_blockquote(tmp_path: pathlib.Path) -> None:
-    quoted_heading = _bug_table("引用内").replace("### バグ調査結果: 引用内", "> ### バグ調査結果: 引用内", 1)
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=quoted_heading))
-    assert any("1件以上必要" in warning for warning in warnings)
-
-
-def test_bug_investigation_table_ignores_parent_h2_inside_blockquote(tmp_path: pathlib.Path) -> None:
-    background = "> ## 引用内\n\n" + _bug_table("保存失敗")
-    assert _run(tmp_path, _plan(work_type="バグ対応", background=background)) == ([], [])
-
-
-def test_bug_investigation_table_warns_for_wrong_parent(tmp_path: pathlib.Path) -> None:
-    text = _plan(work_type="バグ対応", background=_bug_table("保存失敗"))
-    text = text.replace(_bug_table("保存失敗") + "\n\n## 対応方針", "\n## 対応方針\n\n" + _bug_table("保存失敗"), 1)
-    _errors, warnings = _run(tmp_path, text)
-    assert any("親H2" in warning and "保存失敗" in warning for warning in warnings)
-
-
-def test_bug_investigation_table_reports_each_invalid_named_table(tmp_path: pathlib.Path) -> None:
-    first = _bug_table("保存失敗", rows=_BUG_ROWS[:-1])
-    second = _bug_table("再試行停止", header="| 項目 | 内容 | 補足 |")
-    _errors, warnings = _run(tmp_path, _plan(work_type="バグ対応", background=first + "\n" + second))
-    assert any("保存失敗" in warning and "必須14行" in warning for warning in warnings)
-    assert any("再試行停止" in warning and "2列" in warning for warning in warnings)
+def test_base_commit_diff_match_succeeds(repo: tuple[pathlib.Path, str]) -> None:
+    """実装後の実差分が対象一覧と一致すれば成功する。"""
+    work_dir, base = repo
+    (work_dir / "existing.py").write_text("new\n", encoding="utf-8")
+    (work_dir / "new.py").write_text("new\n", encoding="utf-8")
+    (work_dir / "old.py").unlink()
+    _git(work_dir, "add", "existing.py", "new.py", "old.py")
+    _git(work_dir, "commit", "-qm", "change")
+    errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
+    assert not errors
+    assert not warnings

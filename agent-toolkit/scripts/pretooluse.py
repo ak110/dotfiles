@@ -13,19 +13,16 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
-- plan file編集前の必須リファレンス（textlint-violations.md）未読の警告 (warn)
 - 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの実装資料に遡及スキャン結果が無い場合のブロック (block)
-- plan fileのWrite/Edit/MultiEditでH2見出し順序違反の警告 (warn)
-- plan fileのWrite/Edit/MultiEditで末尾の`## 計画ファイル（本ファイル）のパス`節配下パス値と`file_path`不一致の警告 (warn)
 - plan fileのWrite/Edit/MultiEditで対象ファイル一覧に`agent-toolkit/`配下パスを含むが
-  `## 実行方法`本文に`agent_toolkit_bump.py`ステップが記載されていない場合の警告 (warn)
-- plan fileのWrite/Edit/MultiEditで`## 実行方法`本文にbump stepが記載されているが
+  `## 実装契約`本文に`agent_toolkit_bump.py`ステップが記載されていない場合の警告 (warn)
+- plan fileのWrite/Edit/MultiEditで`## 実装契約`本文にbump stepが記載されているが
   対象ファイル一覧にmanifest（`agent-toolkit/.claude-plugin/plugin.json`・
   `.claude-plugin/marketplace.json`）が含まれていない場合の警告 (warn)
 - plan fileのWrite/Edit/MultiEditで対象ファイル一覧に絶対パスまたは親ディレクトリ参照を検出した場合の警告 (warn)
 
-対象ファイル一覧とH3見出しの1対1対応・H3配下コードブロックの有無・パス実在・フェンス入れ子整合・
-`## 実行方法`節のスコープ逸脱は`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
+意味アンカー、最小メタ情報、対象一覧の状態、フェンス整合、参照実在は
+`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
 mcp__codex__codex:
@@ -220,10 +217,8 @@ def main(payload_text: str) -> int:
         return 2
 
     # plan file編集前の必須リファレンス未読の場合は警告（降格）
-    _print_warning_if_present(_check_plan_file_required_reads_first(tool_name, tool_input, session_id))
 
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
-    _check_plan_file_path_section_matches_file_path(tool_name, tool_input)
     _check_plan_file_target_file_paths_relative(tool_name, tool_input)
 
     if tool_name == "ExitPlanMode":
@@ -908,7 +903,7 @@ def _extract_frontmatter_sync_notes(content: str) -> list[str]:
     （1行目に参照先パス、後続行にトリガー語を含む宣言文）は同一注記として結合する一方、
     空行を置かず連続して書かれた独立した複数の同期注記宣言が1つの注記へ混在する事態を避ける。
     frontmatter未使用ファイル（先頭が`---`で始まらない）は空リストを返す
-    （`## 背景`原文転記領域はfrontmatter区間の外側のため走査対象に含まれない）。
+    （原文転記領域はfrontmatter区間の外側のため走査対象に含まれない）。
     """
     match = _FRONTMATTER_BLOCK_RE.match(content)
     if match is None:
@@ -1567,70 +1562,6 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     return False
 
 
-# --- plan file編集前の必須リファレンス未読をブロック ---
-
-# 各要素は(flag_name, skill_name, reference_path, purpose_sentence)の4タプル。
-# 将来のリファレンス追加時は本タプルへの要素追加と、対応する`Read`検知で
-# `flag_name`を真にする処理の`posttooluse.py`側への追加を同時に行う。
-_PLAN_FILE_REQUIRED_READS: tuple[tuple[str, str, str, str], ...] = (
-    (
-        "textlint_violations_read",
-        "agent-toolkit:writing-standards",
-        "references/textlint-violations.md",
-        "internalize frequent textlint violation patterns",
-    ),
-)
-
-
-def _check_plan_file_required_reads_first(
-    tool_name: str,
-    tool_input: dict,
-    session_id: str,
-) -> str | None:
-    """Plan fileを編集しようとした際に`_PLAN_FILE_REQUIRED_READS`の未読要素がある場合の警告メッセージを返す。
-
-    判定条件:
-
-    - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
-    - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
-    - `_PLAN_FILE_REQUIRED_READS`のいずれかのフラグがセッション状態上で偽
-
-    各リファレンスを一度Readするとフラグが設定され、以降の判定から除外される。
-    警告メッセージには既読済みも含めた`_PLAN_FILE_REQUIRED_READS`全件を毎回列挙し
-    （反復サイクル防止のため初回で全件を一括開示する）、既読済み項目には`(already read)`を付与する。
-    未読要素が1件も無い場合は`None`を返す。
-    `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
-    警告のみでツール呼び出しは継続する（block降格）。
-    呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する。
-    戻り値契約: 違反メッセージ`str`または`None`。呼び出し元は制御フローに使わずstderrへ出力する。
-    """
-    if not session_id:
-        return None
-    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return None
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return None
-    state = read_state(session_id)
-    read_flags = [state.get(flag_name, False) for flag_name, _, _, _ in _PLAN_FILE_REQUIRED_READS]
-    if all(read_flags):
-        return None
-    lines = [
-        f"- `{skill_name}` reference `{reference_path}`: {purpose_sentence}" + (" (already read)" if is_read else "")
-        for is_read, (_, skill_name, reference_path, purpose_sentence) in zip(
-            read_flags, _PLAN_FILE_REQUIRED_READS, strict=True
-        )
-    ]
-    return _llm_notice(
-        "warning: editing a plan file without reading required references.\n"
-        "Read them first, then continue the plan file edit.\n"
-        "This check fires only when editing plan files directly under `~/.claude/plans/`."
-        " Read all references below before editing the plan file.\n" + "\n".join(lines),
-        tag="warn",
-    )
-
-
 def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: str) -> str | None:
     """Write/Edit/MultiEditを適用した後のファイル内容を構築する。"""
     if tool_name == "Write":
@@ -1677,51 +1608,6 @@ def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: 
 _PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY = "plan_impl_executor_verified_plan_path"
 
 
-def _check_plan_file_path_section_matches_file_path(
-    tool_name: str,
-    tool_input: dict,
-) -> bool:
-    """計画ファイル末尾に記録したパスと実際の編集先の一致を検査する。"""
-    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return False
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return False
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
-    if content is None:
-        return False
-    body = _plan_format.extract_h2_section_body(content, "計画ファイル（本ファイル）のパス")
-    if not body:
-        return False
-    candidate: str | None = None
-    for _, line in body:
-        stripped = line.strip().strip("-").strip().strip("`").strip()
-        if stripped:
-            candidate = stripped
-            break
-    if candidate is None or not (candidate.startswith("/") or candidate.startswith("~")):
-        return False
-    try:
-        recorded = pathlib.Path(candidate).expanduser().resolve()
-        actual = pathlib.Path(file_path_raw).resolve()
-    except (OSError, ValueError):
-        return False
-    if recorded == actual:
-        return False
-    print(
-        _llm_notice(
-            "warning: the path recorded under the plan file's trailing path section does not match the"
-            " `file_path` of the Write/Edit/MultiEdit."
-            f" Recorded value: {candidate}. Write path: {file_path_raw}."
-            " Update the section value to match the actual write target."
-            " SSOT: `skills/plan-mode/SKILL.md` '計画ファイル（本ファイル）のパス' section.",
-            tag="warn",
-        ),
-        file=sys.stderr,
-    )
-    return True
-
-
 # --- 計画単位の状態管理 ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
@@ -1756,7 +1642,7 @@ def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict
     print(
         _llm_notice(
             f"plan file {file_path_raw}: entries containing absolute paths or parent-directory references were"
-            f" detected under `## 変更内容 > ### 対象ファイル一覧`: {joined}."
+            f" detected under `## 実装契約 > ### 対象ファイル一覧`: {joined}."
             f" Rewrite them as full paths relative to the project root"
             f" (see `skills/plan-mode/SKILL.md` '計画ファイルの完成条件' section).",
             tag="warn",

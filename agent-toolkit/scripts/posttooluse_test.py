@@ -711,7 +711,7 @@ class TestReadHandler:
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("textlint_violations_read") is True
+        assert _read_state(tmp_path, sid).get("textlint_violations_read") is not True
 
     def test_read_unrelated_path_does_not_set_flags(self, tmp_path: pathlib.Path) -> None:
         """無関係ファイルのReadではどのフラグも立たない。"""
