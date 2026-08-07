@@ -240,6 +240,7 @@ def test_feedback_workflow_declares_skill_calls_and_reservation_boundaries() -> 
     assert "`merge-inbox`" in plan_and_add
     assert "`release-reservation`" in plan_and_add
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in process
+    assert "状態競合で拒否した場合は、active一覧と必要な本文を再取得" in process
     assert "## フィードバック投入" not in process
 
 
@@ -252,8 +253,10 @@ def test_feedback_dependencies_point_to_provider_references() -> None:
     ).read_text(encoding="utf-8")
 
     assert "process-feedbacks/references" not in add_tree
+    assert "add-feedback/references/cross-repository-submission.md" in plan_and_add
+    assert "add-feedback/references/cross-repository-submission.md" not in sync_cross_project
+    assert "agent-toolkit:add-feedback" in sync_cross_project
     for text in (plan_and_add, sync_cross_project):
-        assert "add-feedback/references/cross-repository-submission.md" in text
         assert "process-feedbacks/references/plan-impl-feedback-flow.md" not in text
 
 

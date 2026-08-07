@@ -25,6 +25,8 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 5. readyなinbox項目を`atk mq start-processing`でprocessingへ移す。
    processing項目は実体を確認し、完了済み工程を再実行せず未完了工程から再開する
 
+`start-processing`が状態競合で拒否した場合は、active一覧と必要な本文を再取得し、readiness判定から再開する。
+
 期限内の予約付きprocessingは別producerの所有項目としてreadyから除外する。期限切れは世代と期限を記録し、
 plan file、関連process、worktreeから所有工程を確認する。終了済みと確定した場合だけ、実行主体が
 `agent-toolkit:add-feedback`をSkill機能で起動して観測値を渡し、CAS回収後にinboxから再評価する。

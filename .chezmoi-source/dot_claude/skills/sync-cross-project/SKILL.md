@@ -47,8 +47,7 @@ description: >
 ## 複数リポジトリ横断作業の分解投入
 
 同期対象を複数リポジトリへ反映する場合は、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
-完成済み本文と対象リポジトリを渡す。分解投入は
-`${CLAUDE_PLUGIN_ROOT}/skills/add-feedback/references/cross-repository-submission.md`を全文読んで従う。
+完成済み本文と対象リポジトリを渡す。
 
 ## 変更時の同期対象マトリクス
 

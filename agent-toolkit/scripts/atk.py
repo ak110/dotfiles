@@ -296,7 +296,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         "reserve-inbox",
         help="inbox feedbackを期限付きで排他予約しprocessingへ移動する",
         description=(
-            "予約ごとに内部feedback companionをinternal/agent-toolkit/reservationsへ作成し、"
+            "予約時刻と更新時刻を保存し、予約ごとに内部feedback companionをinternal/agent-toolkit/reservationsへ作成し、"
             "既存depends_onへcompanion filenameを追加して旧process-loopから保護する。"
         ),
     )
@@ -311,7 +311,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help="予約期限の分数（既定: 30）。予約tokenは標準出力へ1回だけ返す。",
     )
 
-    renew_reservation = sub.add_parser("renew-reservation", help="所有中予約の期限を更新して世代を進める")
+    renew_reservation = sub.add_parser("renew-reservation", help="所有中予約の更新時刻・期限・世代を更新する")
     renew_reservation.add_argument("filenames", metavar="FILENAME", nargs="+", help="更新する予約付きprocessing feedback。")
     renew_reservation.add_argument("--reservation-token", required=True, help="予約取得時に返された生token。")
     renew_reservation.add_argument("--lease-minutes", type=int, default=30, help="更新後の予約期限分数（既定: 30）。")

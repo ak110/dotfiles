@@ -150,7 +150,7 @@ class TestProcessLoopIncludesProcessingInCount:
         (processing / "reserved.md").write_text(
             "---\ntarget_repo: github.com/example/myrepo\ntype: feedback\ndepends_on: [companion.md]\n"
             "reservation:\n  token_hash: " + token_hash + "\n  owner: /worktree\n  generation: '1'\n"
-            "  reason: test\n  reserved_at: 2026-01-01T00:00:00+00:00\n  expires_at: "
+            "  reason: test\n  reserved_at: 2026-01-01T00:00:00+00:00\n  updated_at: 2026-01-01T00:00:00+00:00\n  expires_at: "
             + expires_at
             + "\n  companion: companion.md\n---\n\n本文\n",
             encoding="utf-8",

@@ -46,6 +46,7 @@ from _atk_mq_common import (
     ensure_reservation_mutation_allowed,
     parse_reservation,
     parse_reservation_companion,
+    reservation_matches_companion,
     reservation_metadata_present,
 )
 from _atk_mq_list import _has_category
@@ -718,13 +719,37 @@ def _resolve_companion_locked(
         raise ReservationConflict(f"予約companionが見つかりません: {reservation.companion}")
     parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     metadata = parse_reservation_companion(parsed[0], entry_type=MQ_TYPE_FEEDBACK) if parsed is not None else None
-    if (
-        metadata is None
-        or metadata["target_repo"] != target_repo
-        or metadata["target_filename"] != target_filename
-        or metadata["token_hash"] != reservation.token_hash
+    if not reservation_matches_companion(
+        reservation,
+        metadata,
+        target_repo=target_repo,
+        target_filename=target_filename,
     ):
         raise ReservationConflict(f"予約companionが一致しません: {reservation.companion}")
+    return path
+
+
+def _matching_companion_path(
+    private_notes: pathlib.Path,
+    *,
+    reservation: Reservation,
+    target_repo: str,
+    target_filename: str,
+) -> pathlib.Path | None:
+    """相互対応するcompanionだけを削除対象として返す。"""
+    path = _find_active_path(private_notes, reservation.companion)
+    if path is None:
+        return None
+    text = path.read_text(encoding="utf-8")
+    parsed = _frontmatter.parse_frontmatter(text)
+    metadata = parse_reservation_companion(parsed[0], entry_type=_require_type(path, text)) if parsed is not None else None
+    if not reservation_matches_companion(
+        reservation,
+        metadata,
+        target_repo=target_repo,
+        target_filename=target_filename,
+    ):
+        return None
     return path
 
 
@@ -845,6 +870,7 @@ def reserve_inbox_entries(
                 "generation": "1",
                 "reason": reason.strip(),
                 "reserved_at": _utc_text(effective_now),
+                "updated_at": _utc_text(effective_now),
                 "expires_at": _utc_text(expires_at),
                 "companion": companion,
             }
@@ -903,6 +929,7 @@ def renew_reservations(
         for path, data, body, reservation in loaded:
             raw = dict(data["reservation"]) if isinstance(data["reservation"], dict) else {}
             raw["generation"] = str(reservation.generation + 1)
+            raw["updated_at"] = _utc_text(effective_now)
             raw["expires_at"] = _utc_text(effective_now + datetime.timedelta(minutes=lease_minutes))
             data["reservation"] = raw
             _atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
@@ -1142,11 +1169,23 @@ def recover_reservation(
             if target is not None:
                 target_parsed = _frontmatter.parse_frontmatter(target.read_text(encoding="utf-8"))
                 target_reservation = (
-                    parse_reservation(target_parsed[0], state=target.parent.name, entry_type=MQ_TYPE_FEEDBACK)[0]
+                    parse_reservation(
+                        target_parsed[0],
+                        state=target.parent.name,
+                        entry_type=_require_type(target, target.read_text(encoding="utf-8")),
+                    )[0]
                     if target_parsed is not None
                     else None
                 )
-                if target_reservation is not None and target_reservation.companion == path.name:
+                target_data = target_parsed[0] if target_parsed is not None else None
+                target_repo_value = target_data.get("target_repo") if target_data is not None else None
+                if (
+                    target_reservation is not None
+                    and isinstance(target_repo_value, str)
+                    and _resolve_repo_id(target_repo_value) == companion_metadata["target_repo"]
+                    and target_reservation.companion == path.name
+                    and target_reservation.token_hash == companion_metadata["token_hash"]
+                ):
                     raise ReservationConflict(f"有効な予約へ変化したため回収できません: {path.name}")
             path.unlink()
             _commit_and_push(private_notes, "chore: recover orphan reservation companion", list(MQ_STATES))
@@ -1160,18 +1199,24 @@ def recover_reservation(
             entry_type=_require_type(path, text),
         )
         if invalid:
-            if not reservation_invalid:
+            matching_companion = (
+                _matching_companion_path(
+                    private_notes,
+                    reservation=reservation,
+                    target_repo=target_repo,
+                    target_filename=path.name,
+                )
+                if reservation is not None
+                else None
+            )
+            if not reservation_invalid and matching_companion is not None:
                 raise ReservationConflict(f"予約が有効な状態へ変化したため回収できません: {path.name}")
-            raw_reservation = data.get("reservation")
-            companion_name = raw_reservation.get("companion") if isinstance(raw_reservation, dict) else None
-            data.pop("reservation", None)
-            if isinstance(companion_name, str):
-                companion_path = _find_active_path(private_notes, companion_name)
-                if companion_path is not None:
-                    companion_path.unlink()
-                raw_dependencies = data.get("depends_on")
-                if isinstance(raw_dependencies, list):
-                    data["depends_on"] = [value for value in raw_dependencies if value != companion_name]
+            if matching_companion is not None:
+                assert reservation is not None
+                matching_companion.unlink()
+                _clear_reservation(data, reservation)
+            else:
+                data.pop("reservation", None)
         else:
             if reservation is None or reservation_invalid:
                 raise ReservationConflict(f"予約が不正な状態へ変化したためCAS回収できません: {path.name}")

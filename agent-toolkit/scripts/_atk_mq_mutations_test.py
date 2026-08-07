@@ -148,6 +148,8 @@ class TestReservationMutations:
         reservation = reserved[0]["reservation"]
         assert isinstance(reservation, dict)
         assert token not in reserved_path.read_text(encoding="utf-8")
+        assert reservation["reserved_at"] == "2026-08-08T00:00:00+00:00"
+        assert reservation["updated_at"] == "2026-08-08T00:00:00+00:00"
         companion = reservation["companion"]
         assert isinstance(companion, str)
         assert (notes / "inbox" / companion).is_file()
@@ -165,6 +167,99 @@ class TestReservationMutations:
         assert "reservation" not in released[0]
         assert released[0]["depends_on"] == ["user-dependency.md"]
         assert not (notes / "inbox" / companion).exists()
+
+    def test_renew_updates_timestamp_with_generation_and_expiry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """更新時刻を予約取得時に初期化し、更新時に世代・期限と一括変更する。"""
+        notes = _setup_notes(tmp_path)
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _write_feedback_file(notes, "feedback.md")
+        _patch_reservation_storage(monkeypatch, worktree)
+        token = mutations.reserve_inbox_entries(
+            notes,
+            repo_path=str(worktree),
+            filenames=["feedback.md"],
+            reason="計画作成",
+            now=_RESERVATION_NOW,
+        )
+
+        mutations.renew_reservations(
+            notes,
+            filenames=["feedback.md"],
+            reservation_token=token,
+            now=_RESERVATION_NOW + datetime.timedelta(minutes=1),
+        )
+
+        parsed = frontmatter_parser.parse_frontmatter((notes / "processing/feedback.md").read_text(encoding="utf-8"))
+        assert parsed is not None
+        reservation = parsed[0]["reservation"]
+        assert isinstance(reservation, dict)
+        assert reservation["generation"] == "2"
+        assert reservation["updated_at"] == "2026-08-08T00:01:00+00:00"
+        assert reservation["expires_at"] == "2026-08-08T00:31:00+00:00"
+
+    @pytest.mark.parametrize("companion_kind", ("missing", "ordinary", "mismatched"))
+    def test_invalid_recovery_preserves_unverified_companion(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        companion_kind: str,
+    ) -> None:
+        """不正回収は予約との相互対応を検証できないcompanionを削除しない。"""
+        notes = _setup_notes(tmp_path)
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _write_feedback_file(notes, "feedback.md")
+        _patch_reservation_storage(monkeypatch, worktree)
+        mutations.reserve_inbox_entries(
+            notes,
+            repo_path=str(worktree),
+            filenames=["feedback.md"],
+            reason="計画作成",
+            now=_RESERVATION_NOW,
+        )
+        reserved_path = notes / "processing/feedback.md"
+        parsed = frontmatter_parser.parse_frontmatter(reserved_path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        data, body = parsed
+        reservation = data["reservation"]
+        assert isinstance(reservation, dict)
+        companion = reservation["companion"]
+        assert isinstance(companion, str)
+        if companion_kind == "ordinary":
+            _write_feedback_file(notes, "ordinary.md")
+            reservation["companion"] = "ordinary.md"
+        elif companion_kind == "mismatched":
+            companion_path = notes / "inbox" / companion
+            companion_path.write_text(
+                companion_path.read_text(encoding="utf-8").replace("target_filename: feedback.md", "target_filename: other.md"),
+                encoding="utf-8",
+            )
+        else:
+            reservation["companion"] = "missing.md"
+        data["reservation"] = reservation
+        reserved_path.write_text(frontmatter_parser.serialize_frontmatter(data, body), encoding="utf-8")
+
+        mutations.recover_reservation(
+            notes,
+            repo_path=str(worktree),
+            filename="feedback.md",
+            invalid=True,
+            now=_RESERVATION_NOW,
+        )
+
+        assert (notes / "inbox/feedback.md").is_file()
+        recovered = frontmatter_parser.parse_frontmatter((notes / "inbox/feedback.md").read_text(encoding="utf-8"))
+        assert recovered is not None
+        assert "reservation" not in recovered[0]
+        if companion_kind == "ordinary":
+            assert (notes / "inbox/ordinary.md").is_file()
+        else:
+            assert (notes / "inbox" / companion).is_file()
 
     def test_normal_mutation_rejects_reserved_entry(
         self,

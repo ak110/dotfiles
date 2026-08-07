@@ -69,6 +69,7 @@ class Reservation:
     generation: int
     reason: str
     reserved_at: datetime.datetime
+    updated_at: datetime.datetime
     expires_at: datetime.datetime
     companion: str
     plan_file: str | None
@@ -824,6 +825,7 @@ def parse_reservation(
     raw_generation = raw.get("generation")
     reason = raw.get("reason")
     reserved_at = _parse_aware_utc(raw.get("reserved_at"))
+    updated_at = _parse_aware_utc(raw.get("updated_at"))
     expires_at = _parse_aware_utc(raw.get("expires_at"))
     companion = raw.get("companion")
     plan_file = raw.get("plan_file")
@@ -842,19 +844,27 @@ def parse_reservation(
         and isinstance(reason, str)
         and bool(reason)
         and reserved_at is not None
+        and updated_at is not None
         and expires_at is not None
-        and expires_at > reserved_at
         and isinstance(companion, str)
         and companion.endswith(".md")
         and pathlib.Path(companion).name == companion
         and (plan_file is None or isinstance(plan_file, str) and bool(plan_file))
     )
+    if (
+        reserved_at is not None
+        and updated_at is not None
+        and expires_at is not None
+        and (updated_at < reserved_at or expires_at <= updated_at)
+    ):
+        return None, True
     if not valid:
         return None, True
     assert isinstance(token_hash, str)
     assert isinstance(owner, str)
     assert isinstance(reason, str)
     assert reserved_at is not None
+    assert updated_at is not None
     assert expires_at is not None
     assert isinstance(companion, str)
     return (
@@ -864,6 +874,7 @@ def parse_reservation(
             generation=generation,
             reason=reason,
             reserved_at=reserved_at,
+            updated_at=updated_at,
             expires_at=expires_at,
             companion=companion,
             plan_file=plan_file if isinstance(plan_file, str) else None,
@@ -891,6 +902,22 @@ def parse_reservation_companion(data: dict[str, object], *, entry_type: str | No
     if len(token_hash) != 64 or any(character not in "0123456789abcdef" for character in token_hash):
         return None
     return {"target_repo": target_repo, "target_filename": target_filename, "token_hash": token_hash}
+
+
+def reservation_matches_companion(
+    reservation: Reservation,
+    companion: dict[str, str] | None,
+    *,
+    target_repo: str,
+    target_filename: str,
+) -> bool:
+    """予約とcompanion metadataの相互対応を検証する。"""
+    return (
+        companion is not None
+        and companion["target_repo"] == target_repo
+        and companion["target_filename"] == target_filename
+        and companion["token_hash"] == reservation.token_hash
+    )
 
 
 def reservation_metadata_present(text: str) -> bool:
@@ -1124,17 +1151,28 @@ def calculate_readiness(
         assert entry.reservation is not None
         companion = companions.get(entry.reservation.companion)
         metadata = companion.reservation_companion if companion is not None else None
-        if (
-            companion is not None
-            and metadata is not None
-            and metadata["target_filename"] == entry.filename
-            and metadata["target_repo"] == entry.target_repo
-            and metadata["token_hash"] == entry.reservation.token_hash
+        if companion is not None and reservation_matches_companion(
+            entry.reservation,
+            metadata,
+            target_repo=entry.target_repo or "",
+            target_filename=entry.filename,
         ):
             matching_companions.add(companion.filename)
         else:
             reservation_companion_mismatches.add(entry.filename)
-    orphan_companions = tuple(sorted(set(companions) - matching_companions - claimed_companion_names))
+    target_filter = _normalized_repo_or_none(target_repo)
+    companion_metadata = {
+        name: entry.reservation_companion for name, entry in companions.items() if entry.reservation_companion is not None
+    }
+    orphan_companions = tuple(
+        sorted(
+            name
+            for name, entry in companions.items()
+            if name not in matching_companions
+            and name not in claimed_companion_names
+            and (target_filter is None or _normalized_repo_or_none(companion_metadata[name]["target_repo"]) == target_filter)
+        )
+    )
     companion_names = set(companions)
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)
@@ -1194,7 +1232,9 @@ def calculate_readiness(
     structurally_invalid_reservations = {
         entry.filename for entry in active if entry.invalid_reservation and entry.filename not in companion_names
     }
-    invalid_reservations = tuple(sorted(structurally_invalid_reservations | reservation_companion_mismatches))
+    invalid_reservations = tuple(
+        sorted(structurally_invalid_reservations | (reservation_companion_mismatches & {entry.filename for entry in active}))
+    )
     expired_reservations = tuple(
         sorted(
             entry.filename

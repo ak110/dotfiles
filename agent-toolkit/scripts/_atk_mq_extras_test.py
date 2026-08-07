@@ -141,7 +141,8 @@ class TestCommitSubcommand:
             if cmd[:3] == ["git", "status", "--porcelain"]:
                 stdout: Any = " M inbox/x.md\n" if kwargs.get("text") else b" M inbox/x.md\n"
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -152,9 +153,11 @@ class TestCommitSubcommand:
         git_cmds = [c["cmd"] for c in calls]
         assert git_cmds[0] == ["git", "pull", "--ff-only"]
         assert git_cmds[1][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[2] == ["git", "add", "inbox", "processing"]
-        assert git_cmds[3] == ["git", "commit", "-m", "chore: edit queue items externally"]
-        assert git_cmds[4] == ["git", "push"]
+        assert git_cmds[2][:3] == ["git", "status", "--porcelain"]
+        assert git_cmds[3] == ["git", "show", "HEAD:inbox/x.md"]
+        assert git_cmds[4] == ["git", "add", "inbox", "processing"]
+        assert git_cmds[5] == ["git", "commit", "-m", "chore: edit queue items externally"]
+        assert git_cmds[6] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()
         assert "外部編集分をコミット" in captured.out
