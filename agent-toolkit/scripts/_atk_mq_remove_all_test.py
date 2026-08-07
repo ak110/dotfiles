@@ -43,18 +43,6 @@ def _write_entry(
     return path
 
 
-def _mark_reserved(path: pathlib.Path) -> None:
-    """テスト項目へ予約metadataを追加する。"""
-    text = path.read_text(encoding="utf-8")
-    path.write_text(
-        text.replace(
-            "type: feedback\n",
-            "type: feedback\nreservation:\n  invalid: true\n",
-        ),
-        encoding="utf-8",
-    )
-
-
 def _patch_storage(
     monkeypatch: pytest.MonkeyPatch,
     commit_calls: list[tuple[str, list[str]]],
@@ -138,33 +126,6 @@ class TestRemoveAllConfirmation:
         assert not (notes / "inbox/feedback.md").exists()
         assert not (notes / "inbox/question.md").exists()
         assert commits == [("chore: remove 2 entries", ["inbox", "processing", "adopted", "rejected"])]
-
-    def test_force_yes_keeps_reserved_and_removes_unreserved(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """強制一括削除でも予約項目を残し、非予約項目だけを削除する。"""
-        notes = _setup_notes(tmp_path)
-        reserved = _write_feedback_file(notes, "reserved.md")
-        removable = _write_feedback_file(notes, "removable.md")
-        _mark_reserved(reserved)
-        commits: list[tuple[str, list[str]]] = []
-        _patch_storage(monkeypatch, commits)
-
-        assert (
-            _run_main(
-                ["mq", "rm", "--all", "--force", "--yes", "--target-repo", "github.com/example/foo"],
-                tmp_path,
-            )
-            == 0
-        )
-
-        assert reserved.is_file()
-        assert not removable.exists()
-        assert "予約中のため一括削除から除外" in capsys.readouterr().err
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "adopted", "rejected"])]
 
     @pytest.mark.parametrize("answer", ["n\n", "\n", "later\n"])
     def test_non_approval_keeps_all_candidates(

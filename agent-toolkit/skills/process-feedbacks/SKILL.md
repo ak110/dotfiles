@@ -27,18 +27,6 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 
 `start-processing`が状態競合で拒否した場合は、active一覧と必要な本文を再取得し、readiness判定から再開する。
 
-期限内の予約付きprocessingは別producerの所有項目としてreadyから除外する。期限切れは世代と期限を記録し、
-plan file、関連process、worktreeから所有工程を確認する。終了済みと確定した場合だけ、実行主体が
-`agent-toolkit:add-feedback`をSkill機能で起動して観測値を渡し、CAS回収後にinboxから再評価する。
-継続中なら所有者による更新を待ち、自身はtokenを利用しない。判定不能なら完成済みTBD入力とCAS値を
-同時に渡し、CAS成立後だけTBD作成、依存追加、inbox遷移を一括実行させる。
-
-不正予約は`show`で再取得し、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動してfilenameと
-`--invalid`回収要求を渡す。orphan又は対応不一致のcompanionだけはtarget repo filter無しで取得し、
-内部metadataの元target repoが処理中repoと一致することを
-検証する。競合拒否時はactiveを再取得し、有効予約なら保留、不正のままなら回収経路へ戻る。
-構文解析不能なfrontmatterは既存のfrontmatter修復経路へ送る。
-
 欠落依存、自己依存、循環、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
 複数の計画実装型を扱う場合は`references/plan-impl-feedback-flow.md`を全文読む。

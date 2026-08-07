@@ -2146,47 +2146,6 @@ async def test_tbd_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_reserved_entry_mutations_return_reservation_conflict(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """予約付きprocessingの編集と遷移は専用409を返し、内容と状態を保つ。"""
-
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    for module in (common, feedback_repo, serve_app.feedback_mutations):
-        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
-        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
-        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
-    monkeypatch.setattr(common, "repo_lock", lock)
-    monkeypatch.setattr(common, "pull", lambda _path: None)
-    processing = tmp_path / "processing"
-    processing.mkdir(parents=True)
-    path = processing / "reserved.md"
-    original = "---\ntype: feedback\ntarget_repo: example/repo\nreservation: forged\n---\n\n本文\n"
-    path.write_text(original, encoding="utf-8")
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        state.ServeState(tmp_path),
-    )
-    client = app.test_client()
-
-    edit = await client.put(
-        "/api/entries/processing/reserved.md",
-        json={"content": original.replace("本文", "更新")},
-    )
-    transition = await client.post("/api/entries/reject", json={"filenames": ["reserved.md"]})
-
-    for response in (edit, transition):
-        assert response.status_code == 409
-        assert (await response.get_json())["code"] == "reservation_conflict"
-    assert path.read_text(encoding="utf-8") == original
-
-
-@pytest.mark.asyncio
 async def test_answer_api_rejects_feedback_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """feedbackエントリへの回答送信は拒否する。"""
 

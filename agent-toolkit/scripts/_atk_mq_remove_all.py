@@ -13,7 +13,6 @@ from _atk_mq_common import (
     _pull,
     _repo_lock,
     calculate_readiness,
-    reservation_metadata_present,
 )
 from _atk_mq_list import QueueEntryDisplay, _print_entries
 from _atk_mq_repo import _resolve_repo_id
@@ -40,24 +39,6 @@ def _snapshot(candidates: list[QueueEntryDisplay]) -> CandidateSnapshot:
         for path, target_repo, text, state, entry_type in candidates
         if entry_type is not None
     )
-
-
-def _partition_reserved(
-    candidates: list[QueueEntryDisplay],
-) -> tuple[list[QueueEntryDisplay], list[QueueEntryDisplay]]:
-    """一括削除候補を削除可能項目と予約保護項目へ分ける。"""
-    protected = [entry for entry in candidates if reservation_metadata_present(entry[2])]
-    removable = [entry for entry in candidates if not reservation_metadata_present(entry[2])]
-    return removable, protected
-
-
-def _print_reserved(protected: list[QueueEntryDisplay]) -> None:
-    """予約保護により残した項目を通知する。"""
-    if protected:
-        print(
-            "予約中のため一括削除から除外しました: " + ", ".join(entry[0].name for entry in protected),
-            file=sys.stderr,
-        )
 
 
 def _ensure_processing_is_explicit(
@@ -118,28 +99,21 @@ def remove_all_entries(
         _pull(private_notes)
         candidates = _select_candidates(private_notes, normalized_repo)
         readiness = calculate_readiness(private_notes, normalized_repo)
-        removable, protected = _partition_reserved(candidates)
         if assume_yes:
             _print_entries(candidates, readiness)
             if not candidates:
                 print(f"削除対象なし: {normalized_repo}")
                 return []
-            _print_reserved(protected)
-            if not removable:
-                return []
-            _ensure_processing_is_explicit(removable, force=force)
-            return _remove_candidates(private_notes, removable, note=note)
+            _ensure_processing_is_explicit(candidates, force=force)
+            return _remove_candidates(private_notes, candidates, note=note)
         confirmed_snapshot = _snapshot(candidates)
 
     _print_entries(candidates, readiness)
     if not candidates:
         print(f"削除対象なし: {normalized_repo}")
         return []
-    _print_reserved(protected)
-    if not removable:
-        return []
-    _ensure_processing_is_explicit(removable, force=force)
-    if not _confirm_removal(len(removable)):
+    _ensure_processing_is_explicit(candidates, force=force)
+    if not _confirm_removal(len(candidates)):
         print("削除を中止しました。")
         return []
 
@@ -152,6 +126,4 @@ def remove_all_entries(
                 file=sys.stderr,
             )
             sys.exit(2)
-        current_removable, current_protected = _partition_reserved(current)
-        _print_reserved(current_protected)
-        return _remove_candidates(private_notes, current_removable, note=note)
+        return _remove_candidates(private_notes, current, note=note)

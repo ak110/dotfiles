@@ -9,7 +9,6 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 
 import argparse
 import contextlib
-import datetime
 import pathlib
 import subprocess
 import sys
@@ -29,8 +28,6 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _setup_notes,
     _write_feedback_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
-
-_RESERVATION_NOW = datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC)
 
 
 def _write_tbd_entry(
@@ -57,26 +54,6 @@ def _disable_transition_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-
-
-def _patch_reservation_storage(
-    monkeypatch: pytest.MonkeyPatch,
-    worktree: pathlib.Path,
-    *,
-    head: str = "1" * 40,
-) -> None:
-    """予約テストからGit操作を除外し、worktree解決を固定する。"""
-    _disable_transition_git(monkeypatch)
-    monkeypatch.setattr(
-        mutations._add,  # pylint: disable=protected-access  # noqa: SLF001
-        "resolve_add_target",
-        lambda _value: ("github.com/example/foo", worktree),
-    )
-    monkeypatch.setattr(
-        mutations._add,  # pylint: disable=protected-access  # noqa: SLF001
-        "resolve_head_commit",
-        lambda _worktree: head,
-    )
 
 
 def test_add_empty_feedback_keeps_detailed_rejection(
@@ -112,399 +89,6 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     )
     assert filenames == ["entry.md"]
     assert (notes / "processing/entry.md").is_file()
-
-
-class TestReservationMutations:
-    """予約の取得、更新、統合、解除、回収を検証する。"""
-
-    def test_reserve_and_release_preserve_user_dependencies(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """予約companionだけを追加・除去し、利用者依存を保持する。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        path = _write_feedback_file(notes, "feedback.md")
-        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
-        assert parsed is not None
-        data, body = parsed
-        data["depends_on"] = ["user-dependency.md"]
-        path.write_text(frontmatter_parser.serialize_frontmatter(data, body), encoding="utf-8")
-        _patch_reservation_storage(monkeypatch, worktree)
-
-        token = mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["feedback.md", "feedback.md"],
-            reason="計画作成",
-            now=_RESERVATION_NOW,
-        )
-
-        reserved_path = notes / "processing/feedback.md"
-        reserved = frontmatter_parser.parse_frontmatter(reserved_path.read_text(encoding="utf-8"))
-        assert reserved is not None
-        reservation = reserved[0]["reservation"]
-        assert isinstance(reservation, dict)
-        assert token not in reserved_path.read_text(encoding="utf-8")
-        assert reservation["reserved_at"] == "2026-08-08T00:00:00+00:00"
-        assert reservation["updated_at"] == "2026-08-08T00:00:00+00:00"
-        assert reservation["companion_dependency_added"] == "true"
-        companion = reservation["companion"]
-        assert isinstance(companion, str)
-        assert reservation["companion_dependency_filename"] == companion
-        assert (notes / "inbox" / companion).is_file()
-        assert len(list((notes / "inbox").glob("*.md"))) == 1
-        assert reserved[0]["depends_on"] == ["user-dependency.md", companion]
-
-        mutations.release_reservations(
-            notes,
-            filenames=["feedback.md"],
-            reservation_token=token,
-        )
-
-        released = frontmatter_parser.parse_frontmatter((notes / "inbox/feedback.md").read_text(encoding="utf-8"))
-        assert released is not None
-        assert "reservation" not in released[0]
-        assert released[0]["depends_on"] == ["user-dependency.md"]
-        assert not (notes / "inbox" / companion).exists()
-
-    def test_renew_updates_timestamp_with_generation_and_expiry(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """更新時刻を予約取得時に初期化し、更新時に世代・期限と一括変更する。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        _write_feedback_file(notes, "feedback.md")
-        _patch_reservation_storage(monkeypatch, worktree)
-        token = mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["feedback.md"],
-            reason="計画作成",
-            now=_RESERVATION_NOW,
-        )
-
-        mutations.renew_reservations(
-            notes,
-            filenames=["feedback.md"],
-            reservation_token=token,
-            now=_RESERVATION_NOW + datetime.timedelta(minutes=1),
-        )
-
-        parsed = frontmatter_parser.parse_frontmatter((notes / "processing/feedback.md").read_text(encoding="utf-8"))
-        assert parsed is not None
-        reservation = parsed[0]["reservation"]
-        assert isinstance(reservation, dict)
-        assert reservation["generation"] == "2"
-        assert reservation["updated_at"] == "2026-08-08T00:01:00+00:00"
-        assert reservation["expires_at"] == "2026-08-08T00:31:00+00:00"
-
-    @pytest.mark.parametrize(
-        "companion_kind",
-        ("missing", "ordinary", "mismatched", "invalid-type", "malformed-frontmatter", "token-mismatch"),
-    )
-    def test_invalid_recovery_preserves_unverified_companion(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        companion_kind: str,
-    ) -> None:
-        """不正回収は予約との相互対応を検証できないcompanionを削除しない。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        feedback_path = _write_feedback_file(notes, "feedback.md")
-        parsed_feedback = frontmatter_parser.parse_frontmatter(feedback_path.read_text(encoding="utf-8"))
-        assert parsed_feedback is not None
-        feedback_data, feedback_body = parsed_feedback
-        feedback_data["depends_on"] = ["user-dependency.md"]
-        feedback_path.write_text(frontmatter_parser.serialize_frontmatter(feedback_data, feedback_body), encoding="utf-8")
-        _patch_reservation_storage(monkeypatch, worktree)
-        mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["feedback.md"],
-            reason="計画作成",
-            now=_RESERVATION_NOW,
-        )
-        reserved_path = notes / "processing/feedback.md"
-        parsed = frontmatter_parser.parse_frontmatter(reserved_path.read_text(encoding="utf-8"))
-        assert parsed is not None
-        data, body = parsed
-        reservation = data["reservation"]
-        assert isinstance(reservation, dict)
-        companion = reservation["companion"]
-        assert isinstance(companion, str)
-        if companion_kind == "ordinary":
-            ordinary_path = _write_feedback_file(notes, "ordinary.md")
-            ordinary = frontmatter_parser.parse_frontmatter(ordinary_path.read_text(encoding="utf-8"))
-            assert ordinary is not None
-            ordinary_data, ordinary_body = ordinary
-            ordinary_data["reservation_companion"] = {
-                "target_repo": "github.com/example/foo",
-                "target_filename": "feedback.md",
-                "token_hash": reservation["token_hash"],
-            }
-            ordinary_path.write_text(frontmatter_parser.serialize_frontmatter(ordinary_data, ordinary_body), encoding="utf-8")
-            reservation["companion"] = "ordinary.md"
-            reservation["companion_dependency_filename"] = "ordinary.md"
-            data["depends_on"] = ["user-dependency.md", "ordinary.md"]
-        elif companion_kind == "mismatched":
-            companion_path = notes / "inbox" / companion
-            companion_path.write_text(
-                companion_path.read_text(encoding="utf-8").replace("target_filename: feedback.md", "target_filename: other.md"),
-                encoding="utf-8",
-            )
-        elif companion_kind == "invalid-type":
-            companion_path = notes / "inbox" / companion
-            companion_path.write_text(
-                companion_path.read_text(encoding="utf-8").replace("type: feedback", "type: tbd"),
-                encoding="utf-8",
-            )
-        elif companion_kind == "malformed-frontmatter":
-            companion_path = notes / "inbox" / companion
-            companion_path.write_text("frontmatter破損", encoding="utf-8")
-        elif companion_kind == "token-mismatch":
-            companion_path = notes / "inbox" / companion
-            companion_path.write_text(
-                companion_path.read_text(encoding="utf-8").replace("token_hash: ", "token_hash: b"),
-                encoding="utf-8",
-            )
-        else:
-            reservation["companion"] = "missing.md"
-        data["reservation"] = reservation
-        reserved_path.write_text(frontmatter_parser.serialize_frontmatter(data, body), encoding="utf-8")
-
-        mutations.recover_reservation(
-            notes,
-            repo_path=str(worktree),
-            filename="feedback.md",
-            invalid=True,
-            now=_RESERVATION_NOW,
-        )
-
-        assert (notes / "inbox/feedback.md").is_file()
-        recovered = frontmatter_parser.parse_frontmatter((notes / "inbox/feedback.md").read_text(encoding="utf-8"))
-        assert recovered is not None
-        assert "reservation" not in recovered[0]
-        expected_companion = "ordinary.md" if companion_kind == "ordinary" else companion
-        assert recovered[0]["depends_on"] == ["user-dependency.md", expected_companion]
-        if companion_kind == "ordinary":
-            assert (notes / "inbox/ordinary.md").is_file()
-        else:
-            assert (notes / "inbox" / companion).is_file()
-
-    def test_normal_mutation_rejects_reserved_entry(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """所有者用操作以外の状態遷移は予約項目を変更しない。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        _write_feedback_file(notes, "feedback.md")
-        _patch_reservation_storage(monkeypatch, worktree)
-        mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["feedback.md"],
-            reason="計画作成",
-            now=_RESERVATION_NOW,
-        )
-
-        with pytest.raises(mutations.ReservationConflict):
-            mutations.transition_entries(
-                notes,
-                action="adopt",
-                filenames=["feedback.md"],
-                now=_RESERVATION_NOW,
-            )
-
-        assert (notes / "processing/feedback.md").is_file()
-
-    def test_release_validates_all_companions_before_mutation(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """複数解除の後半が不正でも、先行項目を部分解除しない。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        for filename in ("first.md", "second.md"):
-            _write_feedback_file(notes, filename)
-        _patch_reservation_storage(monkeypatch, worktree)
-        token = mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["first.md", "second.md"],
-            reason="計画作成",
-            now=_RESERVATION_NOW,
-        )
-        second = frontmatter_parser.parse_frontmatter((notes / "processing/second.md").read_text(encoding="utf-8"))
-        assert second is not None
-        raw_second = second[0]["reservation"]
-        assert isinstance(raw_second, dict)
-        companion = raw_second["companion"]
-        assert isinstance(companion, str)
-        (notes / "inbox" / companion).write_text("---\ntype: feedback\n---\n\n破損\n", encoding="utf-8")
-
-        with pytest.raises(mutations.ReservationConflict):
-            mutations.release_reservations(
-                notes,
-                filenames=["first.md", "second.md"],
-                reservation_token=token,
-            )
-
-        for filename in ("first.md", "second.md"):
-            current = frontmatter_parser.parse_frontmatter((notes / "processing" / filename).read_text(encoding="utf-8"))
-            assert current is not None
-            assert "reservation" in current[0]
-
-    def test_renewed_generation_rejects_stale_recovery(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """更新前の世代・期限による回収をCAS競合として拒否する。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        _write_feedback_file(notes, "feedback.md")
-        _patch_reservation_storage(monkeypatch, worktree)
-        token = mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["feedback.md"],
-            reason="計画作成",
-            lease_minutes=1,
-            now=_RESERVATION_NOW,
-        )
-        before = frontmatter_parser.parse_frontmatter((notes / "processing/feedback.md").read_text(encoding="utf-8"))
-        assert before is not None
-        raw_before = before[0]["reservation"]
-        assert isinstance(raw_before, dict)
-        old_expiry = raw_before["expires_at"]
-        assert isinstance(old_expiry, str)
-
-        mutations.renew_reservations(
-            notes,
-            filenames=["feedback.md"],
-            reservation_token=token,
-            now=_RESERVATION_NOW + datetime.timedelta(seconds=30),
-        )
-        active_before = {path.name for state in ("inbox", "processing") for path in (notes / state).glob("*.md")}
-
-        with pytest.raises(mutations.ReservationConflict):
-            mutations.recover_reservation(
-                notes,
-                repo_path=str(worktree),
-                filename="feedback.md",
-                expected_generation=1,
-                expected_expires_at=old_expiry,
-                tbd_message="所有工程を確認できますか。理由と判断根拠を確認し、再開条件を確定してください。",
-                tbd_question_type="free-form",
-                now=_RESERVATION_NOW + datetime.timedelta(hours=1),
-            )
-
-        current = frontmatter_parser.parse_frontmatter((notes / "processing/feedback.md").read_text(encoding="utf-8"))
-        assert current is not None
-        assert current[0]["reservation"]["generation"] == "2"
-        assert {path.name for state in ("inbox", "processing") for path in (notes / state).glob("*.md")} == active_before
-
-    def test_expired_recovery_creates_tbd_and_dependency_atomically(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """CAS成立時だけTBDを作成し、依存追加とinbox復帰を同時に行う。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        _write_feedback_file(notes, "feedback.md")
-        _patch_reservation_storage(monkeypatch, worktree)
-        mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["feedback.md"],
-            reason="計画作成",
-            lease_minutes=1,
-            now=_RESERVATION_NOW,
-        )
-        reserved = frontmatter_parser.parse_frontmatter((notes / "processing/feedback.md").read_text(encoding="utf-8"))
-        assert reserved is not None
-        raw = reserved[0]["reservation"]
-        assert isinstance(raw, dict)
-        expires_at = raw["expires_at"]
-        assert isinstance(expires_at, str)
-
-        mutations.recover_reservation(
-            notes,
-            repo_path=str(worktree),
-            filename="feedback.md",
-            expected_generation=1,
-            expected_expires_at=expires_at,
-            tbd_message="所有工程を確認できますか。理由と判断根拠を確認し、再開条件を確定してください。",
-            tbd_question_type="free-form",
-            now=_RESERVATION_NOW + datetime.timedelta(minutes=2),
-        )
-
-        recovered = frontmatter_parser.parse_frontmatter((notes / "inbox/feedback.md").read_text(encoding="utf-8"))
-        assert recovered is not None
-        assert "reservation" not in recovered[0]
-        dependencies = recovered[0]["depends_on"]
-        assert isinstance(dependencies, list)
-        assert len(dependencies) == 1
-        assert (notes / "inbox" / dependencies[0]).is_file()
-
-    def test_merge_updates_target_commit_and_finishes_duplicates(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """予約統合でHEAD更新、予約解除、重複終端を一括反映する。"""
-        notes = _setup_notes(tmp_path)
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        canonical = _write_feedback_file(notes, "canonical.md")
-        _write_feedback_file(notes, "duplicate.md")
-        parsed = frontmatter_parser.parse_frontmatter(canonical.read_text(encoding="utf-8"))
-        assert parsed is not None
-        data, body = parsed
-        data["target_commit"] = "0" * 40
-        canonical.write_text(frontmatter_parser.serialize_frontmatter(data, body), encoding="utf-8")
-        _patch_reservation_storage(monkeypatch, worktree, head="1" * 40)
-        token = mutations.reserve_inbox_entries(
-            notes,
-            repo_path=str(worktree),
-            filenames=["canonical.md"],
-            reason="計画作成",
-            now=_RESERVATION_NOW,
-        )
-
-        mutations.merge_inbox_entry(
-            notes,
-            repo_path=str(worktree),
-            filename="canonical.md",
-            message="統合後の本文",
-            reservation_token=token,
-            supersede=("duplicate.md",),
-            now=_RESERVATION_NOW,
-        )
-
-        stored = frontmatter_parser.parse_frontmatter((notes / "inbox/canonical.md").read_text(encoding="utf-8"))
-        assert stored is not None
-        assert stored[0]["target_commit"] == "1" * 40
-        assert stored[0]["target_commit_history"] == ["0" * 40]
-        assert "reservation" not in stored[0]
-        assert "統合後の本文" in stored[1]
-        assert (notes / "rejected/duplicate.md").is_file()
 
 
 class TestAnsweredTbdMutationGate:
@@ -1387,6 +971,91 @@ class TestRejectMultiple:
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: process 2 entries (rejected)" in commit_cmds[0]
+
+
+class TestRejectIfInbox:
+    """rejectのinbox状態前提を公開CLI経路で検証する。"""
+
+    def test_rejects_inbox_entry_and_preserves_note(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """対象がinboxなら本文を保持して処理理由を記録する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "inbox.md", body="保持する本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "reject", "inbox.md", "--if-inbox", "--note=計画作成へ移管"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 0
+        content = (notes / "rejected/inbox.md").read_text(encoding="utf-8")
+        assert "保持する本文" in content
+        assert "- メモ: 計画作成へ移管" in content
+
+    def test_processing_entry_stops_without_changes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """pull後にprocessingへ移った対象は終端しない。"""
+        notes = _setup_notes(tmp_path)
+        processing = notes / "processing"
+        processing.mkdir(parents=True, exist_ok=True)
+        path = processing / "processing.md"
+        path.write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n処理中本文\n",
+            encoding="utf-8",
+        )
+        original = path.read_text(encoding="utf-8")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "reject", "processing.md", "--if-inbox"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 2
+        assert path.read_text(encoding="utf-8") == original
+        assert not (notes / "rejected/processing.md").exists()
+        assert not any("commit" in call["cmd"] for call in git_calls)
+
+    def test_mixed_states_stop_the_whole_batch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """複数対象の一部がprocessingならinbox対象も変更しない。"""
+        notes = _setup_notes(tmp_path)
+        inbox = _write_feedback_file(notes, "inbox.md", body="inbox本文")
+        processing_dir = notes / "processing"
+        processing_dir.mkdir(parents=True, exist_ok=True)
+        processing = processing_dir / "processing.md"
+        processing.write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\nprocessing本文\n",
+            encoding="utf-8",
+        )
+        inbox_original = inbox.read_text(encoding="utf-8")
+        processing_original = processing.read_text(encoding="utf-8")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "reject", "inbox.md", "processing.md", "--if-inbox"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 2
+        assert inbox.read_text(encoding="utf-8") == inbox_original
+        assert processing.read_text(encoding="utf-8") == processing_original
+        assert not any((notes / "rejected").glob("*.md"))
+        assert not any("commit" in call["cmd"] for call in git_calls)
 
 
 class TestRejectZeroArgs:

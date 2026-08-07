@@ -135,43 +135,6 @@ class TestProcessLoopIncludesProcessingInCount:
         captured = capsys.readouterr()
         assert "2件のfeedback/回答済みTBDを検知" in captured.out
 
-    @pytest.mark.parametrize(("expires_at", "expected"), [("9999-01-01T00:00:00+00:00", 0), ("2000-01-01T00:00:00+00:00", 1)])
-    def test_reservation_changes_actionable_count(
-        self,
-        expires_at: str,
-        expected: int,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """期限内予約を除外し、期限切れ予約を回収対象として数える。"""
-        notes = _setup_notes(tmp_path)
-        processing = notes / "processing"
-        processing.mkdir()
-        token_hash = "a" * 64
-        (processing / "reserved.md").write_text(
-            "---\ntarget_repo: github.com/example/myrepo\ntype: feedback\ndepends_on: [companion.md]\n"
-            "reservation:\n  token_hash: " + token_hash + "\n  owner: /worktree\n  generation: '1'\n"
-            "  reason: test\n  reserved_at: 2026-01-01T00:00:00+00:00\n  updated_at: 2026-01-01T00:00:00+00:00\n  expires_at: "
-            + expires_at
-            + "\n  companion: companion.md\n  companion_dependency_added: true\n"
-            + "  companion_dependency_filename: companion.md\n---\n\n本文\n",
-            encoding="utf-8",
-        )
-        (notes / "inbox" / "companion.md").write_text(
-            "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: feedback\nreservation_companion:\n"
-            "  target_repo: github.com/example/myrepo\n  target_filename: reserved.md\n  token_hash: "
-            + token_hash
-            + "\n---\n\n内部項目\n",
-            encoding="utf-8",
-        )
-
-        assert (
-            _process_loop._count_pending_entries(  # pylint: disable=protected-access  # noqa: SLF001
-                notes,
-                target_repo="github.com/example/myrepo",
-            )
-            == expected
-        )
-
 
 class TestChangeHandler:
     """_ChangeHandler.on_any_event: 監視対象イベント判定の実動作を検証する。"""

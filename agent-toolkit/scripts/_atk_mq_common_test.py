@@ -1,6 +1,5 @@
 """`atk mq`共通の警告・通知処理を検証する。"""
 
-import datetime
 import os
 import pathlib
 import shutil
@@ -15,49 +14,6 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
-
-
-def _calculate_legacy_readiness_before_companion_hiding(
-    private_notes: pathlib.Path,
-    target_repo: str,
-    *,
-    now: datetime.datetime,
-) -> _common.ReadinessResult:
-    """計画base時点の通常active依存判定を最小限に再現する。"""
-    active = _common._load_queue_entries(  # noqa: SLF001  # pylint: disable=protected-access
-        private_notes, target_repo, _common.MQ_ACTIVE_STATES
-    )
-    terminal = _common._load_queue_entries(  # noqa: SLF001  # pylint: disable=protected-access
-        private_notes, None, (_common.MQ_STATE_ADOPTED, _common.MQ_STATE_REJECTED)
-    )
-    all_active = _common._load_queue_entries(  # noqa: SLF001  # pylint: disable=protected-access
-        private_notes, None, _common.MQ_ACTIVE_STATES
-    )
-    active_by_name = {entry.filename: entry for entry in all_active}
-    terminal_names = {entry.filename for entry in terminal}
-    ready: list[str] = []
-    blocked: list[str] = []
-    missing: list[str] = []
-    for entry in active:
-        dependencies = _common._effective_dependencies(entry)  # noqa: SLF001  # pylint: disable=protected-access
-        assert dependencies is not None
-        if any(name not in active_by_name and name not in terminal_names for name in dependencies):
-            missing.append(entry.filename)
-            continue
-        legacy_satisfied = _common._legacy_dependency_is_satisfied(  # noqa: SLF001  # pylint: disable=protected-access
-            entry,
-            all_active=all_active,
-            terminal=terminal,
-            target_active=active,
-            now=now,
-        )
-        waiting = any(name in active_by_name for name in dependencies) or legacy_satisfied is False
-        (blocked if waiting else ready).append(entry.filename)
-    return _common.ReadinessResult(
-        ready=tuple(sorted(ready)),
-        blocked=tuple(sorted(blocked)),
-        missing_dependencies=tuple(sorted(missing)),
-    )
 
 
 def _write_tbd(
@@ -103,63 +59,6 @@ def _write_feedback(
     return path
 
 
-def _write_reserved_feedback(
-    private_notes: pathlib.Path,
-    *,
-    expires_at: str,
-    generation: str = "1",
-    companion: str = "companion.md",
-    filename: str = "reserved.md",
-    target_repo: str = "github.com/example/repo",
-) -> pathlib.Path:
-    """予約付きfeedbackと対応companionを書き込む。"""
-    path = _write_feedback(
-        private_notes,
-        filename,
-        depends_on=(companion,),
-        state="processing",
-        target_repo=target_repo,
-    )
-    text = path.read_text(encoding="utf-8")
-    text = text.replace(
-        "type: feedback\n",
-        "type: feedback\n"
-        "reservation:\n"
-        f"  token_hash: {'a' * 64}\n"
-        "  owner: /tmp/worktree\n"
-        f"  generation: '{generation}'\n"
-        "  reason: 計画作成\n"
-        "  reserved_at: '2026-08-08T00:00:00+00:00'\n"
-        "  updated_at: '2026-08-08T00:00:00+00:00'\n"
-        f"  expires_at: '{expires_at}'\n"
-        f"  companion: {companion}\n"
-        "  companion_dependency_added: true\n"
-        f"  companion_dependency_filename: {companion}\n",
-    )
-    path.write_text(text, encoding="utf-8")
-    companion_path = _write_feedback(
-        private_notes,
-        companion,
-        target_repo=_common.RESERVATION_INTERNAL_REPO,
-    )
-    companion_text = companion_path.read_text(encoding="utf-8").replace(
-        "type: feedback\n",
-        "type: feedback\n"
-        "reservation_companion:\n"
-        f"  target_repo: {target_repo}\n"
-        f"  target_filename: {filename}\n"
-        f"  token_hash: {'a' * 64}\n"
-        "queue_schedule:\n"
-        "  dependency:\n"
-        "    kind: external-upstream\n"
-        "    recheck_after: '9999-12-31T23:59:59+00:00'\n"
-        "    condition: 対応する予約項目が解除されること\n"
-        "    hold_reason: 予約互換companion\n",
-    )
-    companion_path.write_text(companion_text, encoding="utf-8")
-    return path
-
-
 def test_make_filename_completer_limits_states(tmp_path: pathlib.Path) -> None:
     """指定した状態のファイルだけを候補として返す。"""
     private_notes = tmp_path / "private-notes"
@@ -198,101 +97,6 @@ class TestReadiness:
 
         assert result.ready == ("feedback.md",)
         assert result.actionable_count == 1
-
-    @pytest.mark.parametrize(
-        ("now", "expected_reason", "actionable"),
-        [
-            (datetime.datetime(2026, 8, 8, 0, 29, 59, tzinfo=datetime.UTC), "reserved", 0),
-            (datetime.datetime(2026, 8, 8, 0, 30, tzinfo=datetime.UTC), "expired", 1),
-        ],
-    )
-    def test_reservation_boundary_blocks_or_requests_repair(
-        self,
-        tmp_path: pathlib.Path,
-        now: datetime.datetime,
-        expected_reason: str,
-        actionable: int,
-    ) -> None:
-        """期限直前は保留し、期限到来時は回収対象にする。"""
-        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00")
-
-        result = _common.calculate_readiness(tmp_path, "github.com/example/repo", now=now)
-
-        selected = result.reserved if expected_reason == "reserved" else result.expired_reservations
-        assert selected == ("reserved.md",)
-        assert result.blocked == ("reserved.md",)
-        assert result.actionable_count == actionable
-        assert "companion.md" not in (*result.ready, *result.blocked)
-
-    def test_reservation_generation_must_be_positive_decimal(self, tmp_path: pathlib.Path) -> None:
-        """0以下の世代を不正予約として修復対象にする。"""
-        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00", generation="0")
-
-        result = _common.calculate_readiness(
-            tmp_path,
-            "github.com/example/repo",
-            now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC),
-        )
-
-        assert result.invalid_reservations == ("reserved.md",)
-        assert result.actionable_count == 1
-
-    def test_reservation_diagnostics_are_limited_to_target_repo(self, tmp_path: pathlib.Path) -> None:
-        """別repoの予約不整合とorphanを対象repoの修復件数へ混入させない。"""
-        _write_reserved_feedback(
-            tmp_path,
-            expires_at="2026-08-08T00:30:00+00:00",
-            filename="first.md",
-            companion="first-companion.md",
-            target_repo="github.com/example/first",
-        )
-        second = _write_reserved_feedback(
-            tmp_path,
-            expires_at="2026-08-08T00:30:00+00:00",
-            filename="second.md",
-            companion="second-companion.md",
-            target_repo="github.com/example/second",
-        )
-        second.write_text(second.read_text(encoding="utf-8").replace("second-companion.md", "missing.md"), encoding="utf-8")
-        _write_feedback(
-            tmp_path,
-            "orphan.md",
-            target_repo=_common.RESERVATION_INTERNAL_REPO,
-        ).write_text(
-            "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: feedback\nreservation_companion:\n"
-            "  target_repo: github.com/example/second\n  target_filename: absent.md\n  token_hash: "
-            + "b" * 64
-            + "\n---\n\n内部項目\n",
-            encoding="utf-8",
-        )
-
-        first = _common.calculate_readiness(
-            tmp_path, "github.com/example/first", now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC)
-        )
-        second_result = _common.calculate_readiness(
-            tmp_path, "github.com/example/second", now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC)
-        )
-
-        assert not first.invalid_reservations
-        assert not first.orphan_reservation_companions
-        assert first.actionable_count == 0
-        assert second_result.invalid_reservations == ("second.md",)
-        assert second_result.orphan_reservation_companions == ("orphan.md", "second-companion.md")
-
-    def test_legacy_readiness_keeps_reserved_entry_out_of_actionable_set(self, tmp_path: pathlib.Path) -> None:
-        """計画base相当の依存判定で予約と内部companionを処理対象へ数えない。"""
-        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00")
-
-        result = _calculate_legacy_readiness_before_companion_hiding(
-            tmp_path,
-            "github.com/example/repo",
-            now=datetime.datetime(2026, 8, 8, tzinfo=datetime.UTC),
-        )
-
-        assert not result.ready
-        assert not result.missing_dependencies
-        assert result.blocked == ("companion.md", "reserved.md")
-        assert result.actionable_count == 0
 
     def test_unanswered_tbd_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
         _write_tbd(tmp_path, "answer.md")
@@ -628,18 +432,6 @@ class TestNotifyUnansweredTbdsIfAny:
     ) -> None:
         """TBDが0件または全件回答済みの場合は何も通知しない。"""
         _write_tbd(tmp_path, "answered.md", answer="回答済み")
-
-        _common.notify_unanswered_tbds_if_any(tmp_path, None)
-
-        assert not capsys.readouterr().err
-
-    def test_does_not_notify_reservation_companion(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """内部feedback companionを旧未回答TBD通知から除外する。"""
-        _write_reserved_feedback(tmp_path, expires_at="2026-08-08T00:30:00+00:00")
 
         _common.notify_unanswered_tbds_if_any(tmp_path, None)
 

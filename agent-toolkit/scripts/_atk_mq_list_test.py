@@ -16,6 +16,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_mq_frontmatter as frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -73,41 +74,182 @@ class TestListSingle:
         assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
 
 
-def test_list_labels_reserved_entry_and_hides_companion(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """予約項目はblocked理由を示し、内部companionは一覧へ表示しない。"""
-    notes = _setup_notes(tmp_path)
-    processing = notes / "processing"
-    processing.mkdir()
-    token_hash = "a" * 64
-    (processing / "reserved.md").write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on: [companion.md]\n"
-        "reservation:\n  token_hash: " + token_hash + "\n  owner: /worktree\n  generation: '1'\n"
-        "  reason: test\n  reserved_at: 2026-01-01T00:00:00+00:00\n  updated_at: 2026-01-01T00:00:00+00:00\n"
-        "  expires_at: 9999-01-01T00:00:00+00:00\n  companion: companion.md\n"
-        "  companion_dependency_added: true\n  companion_dependency_filename: companion.md\n---\n\n本文\n",
-        encoding="utf-8",
-    )
-    (notes / "inbox" / "companion.md").write_text(
-        "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: feedback\nreservation_companion:\n"
-        "  target_repo: github.com/example/foo\n  target_filename: reserved.md\n  token_hash: "
-        + token_hash
-        + "\n---\n\n内部項目\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+class TestLegacyReservationMigration:
+    """通常読取前の旧予約移行と軽量読取での延期を検証する。"""
 
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["mq", "list", "--status=active", "--target-repo=github.com/example/foo"], home=tmp_path)
+    @staticmethod
+    def _write_legacy_main(
+        notes: pathlib.Path,
+        *,
+        reservation: str,
+        state: str = "processing",
+    ) -> pathlib.Path:
+        path = notes / state / "main.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n"
+            "depends_on: [companion.md, normal.md]\n"
+            f"reservation: {reservation}\n"
+            "target_commit_history: [abc123]\n---\n\n利用者本文\n",
+            encoding="utf-8",
+        )
+        return path
 
-    assert exc_info.value.code == 0
-    output = capsys.readouterr().out
-    assert "[processing/normal/blocked]" in output
-    assert "blocked_reason=reserved" in output
-    assert "companion.md:" not in output
+    @staticmethod
+    def _write_companion(notes: pathlib.Path, filename: str = "companion.md") -> pathlib.Path:
+        path = notes / "inbox" / filename
+        path.write_text(
+            "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: feedback\n"
+            "reservation_companion: {target_repo: github.com/example/foo}\n---\n\n内部項目\n",
+            encoding="utf-8",
+        )
+        return path
+
+    @pytest.mark.parametrize(
+        "reservation",
+        [
+            (
+                "{companion_dependency_added: 'true', companion_dependency_filename: companion.md, "
+                "expires_at: '2099-01-01T00:00:00+00:00'}"
+            ),
+            (
+                "{companion_dependency_added: 'true', companion_dependency_filename: companion.md, "
+                "expires_at: '2000-01-01T00:00:00+00:00'}"
+            ),
+            "broken",
+        ],
+    )
+    def test_normal_read_migrates_valid_expired_and_invalid_reservations_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        reservation: str,
+    ) -> None:
+        """予約の妥当性や期限にかかわらず利用者データを通常inboxへ戻す。"""
+        notes = _setup_notes(tmp_path)
+        self._write_legacy_main(notes, reservation=reservation)
+        self._write_companion(notes)
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        for _ in range(2):
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(["mq", "list"], home=tmp_path)
+            assert exc_info.value.code == 0
+
+        migrated = notes / "inbox/main.md"
+        parsed = frontmatter.parse_frontmatter(migrated.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, body = parsed
+        assert "reservation" not in metadata
+        assert "target_commit_history" not in metadata
+        assert metadata["depends_on"] == ["normal.md"]
+        assert "利用者本文" in body
+        assert not (notes / "processing/main.md").exists()
+        assert not (notes / "inbox/companion.md").exists()
+        migration_commits = [
+            call
+            for call in git_calls
+            if "commit" in call["cmd"] and any("legacy queue reservations" in value for value in call["cmd"])
+        ]
+        assert len(migration_commits) == 1
+
+    def test_orphan_companion_and_only_its_dependencies_are_removed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """孤立した内部項目を削除し、通常依存を保持する。"""
+        notes = _setup_notes(tmp_path)
+        self._write_companion(notes, "orphan.md")
+        dependent = _write_feedback_file(notes, "dependent.md", body="本文")
+        dependent.write_text(
+            dependent.read_text(encoding="utf-8").replace(
+                "type: feedback\n",
+                "type: feedback\ndepends_on: [orphan.md, normal.md]\n",
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter.parse_frontmatter(dependent.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["depends_on"] == ["normal.md"]
+        assert not (notes / "inbox/orphan.md").exists()
+
+    def test_companion_like_user_metadata_is_unchanged(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """内部repo以外の同名metadataを旧生成物と誤認しない。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "user.md", body="利用者本文")
+        original = path.read_text(encoding="utf-8").replace(
+            "type: feedback\n",
+            "type: feedback\nreservation_companion: {target_repo: github.com/example/foo}\n",
+        )
+        path.write_text(original, encoding="utf-8")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8") == original
+        assert not any(any("legacy queue reservations" in value for value in call["cmd"]) for call in git_calls)
+
+    def test_broken_frontmatter_is_unchanged(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """frontmatterを解析できない項目は既存修復経路へ残す。"""
+        notes = _setup_notes(tmp_path)
+        path = notes / "inbox/broken.md"
+        original = "---\ntarget_repo: [broken\nreservation: forged\n---\n本文\n"
+        path.write_text(original, encoding="utf-8")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8") == original
+        assert not any(any("legacy queue reservations" in value for value in call["cmd"]) for call in git_calls)
+
+    def test_skip_pull_defers_migration_until_normal_read(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """軽量読取は通信と変更を避け、後続の通常読取で移行する。"""
+        notes = _setup_notes(tmp_path)
+        legacy = self._write_legacy_main(notes, reservation="broken")
+        companion = self._write_companion(notes)
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as skip_exit:
+            atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
+
+        assert skip_exit.value.code == 0
+        assert legacy.is_file()
+        assert companion.is_file()
+        assert not git_calls
+
+        with pytest.raises(SystemExit) as normal_exit:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert normal_exit.value.code == 0
+        assert (notes / "inbox/main.md").is_file()
+        assert not companion.exists()
 
 
 class TestListPlanImplementationClassification:

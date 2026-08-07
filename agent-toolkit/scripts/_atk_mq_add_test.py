@@ -271,13 +271,7 @@ def test_flat_add_operation_drops_input_queue_schedule(
 
 @pytest.mark.parametrize(
     ("reserved_key", "reserved_value"),
-    [
-        ("repair_target", "broken.md"),
-        ("repair_kind", "frontmatter"),
-        ("reservation", "forged"),
-        ("reservation_companion", "forged"),
-        ("target_commit_history", "forged"),
-    ],
+    [("repair_target", "broken.md"), ("repair_kind", "frontmatter")],
 )
 def test_flat_add_operation_drops_input_repair_metadata(
     reserved_key: str,

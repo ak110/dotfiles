@@ -27,7 +27,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
-from typing import Literal, cast
+from typing import Any, Literal
 
 import _git_remote
 import filelock
@@ -56,29 +56,7 @@ MQ_STATE_REJECTED = "rejected"
 MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
-RESERVATION_INTERNAL_REPO = "internal/agent-toolkit/reservations"
-type RepairKind = Literal["frontmatter", "missing-plan-file", "reservation"]
-
-
-@dataclasses.dataclass(frozen=True)
-class Reservation:
-    """検証済みの期限付き予約。"""
-
-    token_hash: str
-    owner: str
-    generation: int
-    reason: str
-    reserved_at: datetime.datetime
-    updated_at: datetime.datetime
-    expires_at: datetime.datetime
-    companion: str
-    companion_dependency_added: bool
-    companion_dependency_filename: str
-    plan_file: str | None
-
-
-class ReservationConflict(RuntimeError):
-    """予約所有者以外の変更操作が予約項目へ競合したことを表す。"""
+type RepairKind = Literal["frontmatter", "missing-plan-file"]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -97,9 +75,6 @@ class QueueEntry:
     legacy_dependency: dict[str, object] | None
     repair_target_filename: str | None
     repair_kind: RepairKind | None
-    reservation: Reservation | None
-    invalid_reservation: bool
-    reservation_companion: dict[str, str] | None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -116,10 +91,6 @@ class ReadinessResult:
     missing_dependencies: tuple[str, ...] = ()
     self_dependencies: tuple[str, ...] = ()
     cyclic_dependencies: tuple[str, ...] = ()
-    reserved: tuple[str, ...] = ()
-    expired_reservations: tuple[str, ...] = ()
-    invalid_reservations: tuple[str, ...] = ()
-    orphan_reservation_companions: tuple[str, ...] = ()
 
     @property
     def actionable_count(self) -> int:
@@ -131,9 +102,6 @@ class ReadinessResult:
             *self.missing_dependencies,
             *self.self_dependencies,
             *self.cyclic_dependencies,
-            *self.expired_reservations,
-            *self.invalid_reservations,
-            *self.orphan_reservation_companions,
         }
         return len(set(self.ready) | repair_targets)
 
@@ -412,17 +380,117 @@ _PULL_MIN_INTERVAL_SECONDS = 30.0
 状態ファイルを別途設けずに済む。
 """
 
+_LEGACY_RESERVATION_INTERNAL_REPO = "internal/agent-toolkit/reservations"
+
+
+def _is_legacy_reservation_companion(data: dict[str, object]) -> bool:
+    """旧予約が生成した内部companionかを返す。"""
+    return (
+        data.get("target_repo") == _LEGACY_RESERVATION_INTERNAL_REPO
+        and data.get("type") == MQ_TYPE_FEEDBACK
+        and isinstance(data.get("reservation_companion"), dict)
+    )
+
+
+def _legacy_companion_dependency(data: dict[str, object]) -> str | None:
+    """旧予約が追加した内部companion依存のファイル名を返す。"""
+    raw_reservation = data.get("reservation")
+    if not isinstance(raw_reservation, dict):
+        return None
+    reservation: dict[Any, Any] = raw_reservation
+    if reservation.get("companion_dependency_added") != "true":
+        return None
+    filename = reservation.get("companion_dependency_filename")
+    if not isinstance(filename, str) or pathlib.Path(filename).name != filename or not filename.endswith(".md"):
+        return None
+    return filename
+
+
+def _migrate_legacy_reservations(private_notes: pathlib.Path) -> int:
+    """2.34.0形式の予約を通常のinbox項目へ一方向に移行する。"""
+    _assert_repo_lock_held(private_notes)
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = private_notes / MQ_STATE_PROCESSING
+    parsed_entries: list[tuple[pathlib.Path, dict[str, object], str]] = []
+    companion_paths: set[pathlib.Path] = set()
+    companion_names: set[str] = set()
+    reservation_paths: set[pathlib.Path] = set()
+
+    for state_dir in (inbox_dir, processing_dir):
+        if not state_dir.is_dir():
+            continue
+        for path in sorted(state_dir.glob("*.md")):
+            parsed = parse_frontmatter(path.read_text(encoding="utf-8"))
+            if parsed is None:
+                continue
+            data, body = parsed
+            parsed_entries.append((path, data, body))
+            if _is_legacy_reservation_companion(data):
+                companion_paths.add(path)
+                companion_names.add(path.name)
+            if "reservation" in data:
+                reservation_paths.add(path)
+                dependency = _legacy_companion_dependency(data)
+                if dependency is not None:
+                    companion_names.add(dependency)
+
+    if not companion_paths and not reservation_paths:
+        return 0
+
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+
+    move_conflicts = sorted(
+        path.name for path in reservation_paths if path.parent == processing_dir and (inbox_dir / path.name).exists()
+    )
+    if move_conflicts:
+        raise RuntimeError("旧予約の移行先に同名項目が存在します: " + ", ".join(move_conflicts))
+
+    for path, data, body in parsed_entries:
+        if path in companion_paths:
+            path.unlink()
+            continue
+
+        changed = False
+        if path in reservation_paths:
+            data.pop("reservation", None)
+            data.pop("target_commit_history", None)
+            changed = True
+        dependencies = data.get("depends_on")
+        if isinstance(dependencies, list):
+            retained = [value for value in dependencies if value not in companion_names]
+            if retained != dependencies:
+                data["depends_on"] = retained
+                changed = True
+        if changed:
+            path.write_text(serialize_frontmatter(data, body), encoding="utf-8")
+
+    for path in sorted(reservation_paths):
+        if path.parent != processing_dir:
+            continue
+        destination = inbox_dir / path.name
+        shutil.move(str(path), str(destination))
+
+    migrated_count = len(reservation_paths) + len(companion_paths)
+    _commit_and_push(
+        private_notes,
+        f"chore: migrate {migrated_count} legacy queue reservations",
+        (MQ_STATE_INBOX, MQ_STATE_PROCESSING),
+    )
+    print(f"旧予約形式の{migrated_count}件を通常inboxへ移行しました。", file=sys.stderr)
+    return migrated_count
+
 
 def _pull(private_notes: pathlib.Path) -> None:
     """フィードバック保存リポジトリで`git pull --ff-only`を実行する。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
-    remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は無動作。
+    remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
+    pullを省略し、旧予約形式の移行だけを実行する。
     """
     _assert_repo_lock_held(private_notes)
-    if not _has_remote(private_notes):
-        return
-    _run_git(["pull", "--ff-only"], cwd=private_notes)
+    if _has_remote(private_notes):
+        _run_git(["pull", "--ff-only"], cwd=private_notes)
+    _migrate_legacy_reservations(private_notes)
 
 
 class _ThreadLocalHeldPaths(threading.local):
@@ -796,155 +864,6 @@ def _count_pending_entries(
     return calculate_readiness(private_notes, target_repo).actionable_count
 
 
-def _parse_aware_utc(value: object) -> datetime.datetime | None:
-    """ISO 8601文字列をUTCのaware datetimeへ変換する。"""
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return None
-    return parsed.astimezone(datetime.UTC)
-
-
-def parse_reservation(
-    data: dict[str, object],
-    *,
-    state: str,
-    entry_type: str | None,
-) -> tuple[Reservation | None, bool]:
-    """予約metadataを検証し、検証済み予約と不正状態を返す。"""
-    raw = data.get("reservation")
-    if raw is None:
-        return None, False
-    if not isinstance(raw, dict) or state != MQ_STATE_PROCESSING or entry_type != MQ_TYPE_FEEDBACK:
-        return None, True
-    raw = cast(dict[str, object], raw)
-    token_hash = raw.get("token_hash")
-    owner = raw.get("owner")
-    raw_generation = raw.get("generation")
-    reason = raw.get("reason")
-    reserved_at = _parse_aware_utc(raw.get("reserved_at"))
-    updated_at = _parse_aware_utc(raw.get("updated_at"))
-    expires_at = _parse_aware_utc(raw.get("expires_at"))
-    companion = raw.get("companion")
-    raw_companion_dependency_added = raw.get("companion_dependency_added")
-    companion_dependency_added = raw_companion_dependency_added == "true"
-    companion_dependency_filename = raw.get("companion_dependency_filename")
-    plan_file = raw.get("plan_file")
-    try:
-        generation = int(raw_generation) if isinstance(raw_generation, str) else 0
-    except ValueError:
-        generation = 0
-    valid = (
-        isinstance(token_hash, str)
-        and len(token_hash) == 64
-        and all(character in "0123456789abcdef" for character in token_hash)
-        and isinstance(owner, str)
-        and bool(owner)
-        and generation >= 1
-        and str(generation) == raw_generation
-        and isinstance(reason, str)
-        and bool(reason)
-        and reserved_at is not None
-        and updated_at is not None
-        and expires_at is not None
-        and isinstance(companion, str)
-        and companion.endswith(".md")
-        and pathlib.Path(companion).name == companion
-        and raw_companion_dependency_added == "true"
-        and isinstance(companion_dependency_filename, str)
-        and companion_dependency_filename.endswith(".md")
-        and pathlib.Path(companion_dependency_filename).name == companion_dependency_filename
-        and companion_dependency_filename == companion
-        and (plan_file is None or isinstance(plan_file, str) and bool(plan_file))
-    )
-    if (
-        reserved_at is not None
-        and updated_at is not None
-        and expires_at is not None
-        and (updated_at < reserved_at or expires_at <= updated_at)
-    ):
-        return None, True
-    if not valid:
-        return None, True
-    assert isinstance(token_hash, str)
-    assert isinstance(owner, str)
-    assert isinstance(reason, str)
-    assert reserved_at is not None
-    assert updated_at is not None
-    assert expires_at is not None
-    assert isinstance(companion, str)
-    assert isinstance(companion_dependency_filename, str)
-    return (
-        Reservation(
-            token_hash=token_hash,
-            owner=owner,
-            generation=generation,
-            reason=reason,
-            reserved_at=reserved_at,
-            updated_at=updated_at,
-            expires_at=expires_at,
-            companion=companion,
-            companion_dependency_added=companion_dependency_added,
-            companion_dependency_filename=companion_dependency_filename,
-            plan_file=plan_file if isinstance(plan_file, str) else None,
-        ),
-        False,
-    )
-
-
-def parse_reservation_companion(data: dict[str, object], *, entry_type: str | None) -> dict[str, str] | None:
-    """内部companion metadataを検証して返す。"""
-    raw = data.get("reservation_companion")
-    if not isinstance(raw, dict) or entry_type != MQ_TYPE_FEEDBACK or data.get("target_repo") != RESERVATION_INTERNAL_REPO:
-        return None
-    raw = cast(dict[str, object], raw)
-    target_repo = raw.get("target_repo")
-    target_filename = raw.get("target_filename")
-    token_hash = raw.get("token_hash")
-    if not all(isinstance(value, str) and value for value in (target_repo, target_filename, token_hash)):
-        return None
-    assert isinstance(target_repo, str)
-    assert isinstance(target_filename, str)
-    assert isinstance(token_hash, str)
-    if pathlib.Path(target_filename).name != target_filename or not target_filename.endswith(".md"):
-        return None
-    if len(token_hash) != 64 or any(character not in "0123456789abcdef" for character in token_hash):
-        return None
-    return {"target_repo": target_repo, "target_filename": target_filename, "token_hash": token_hash}
-
-
-def reservation_matches_companion(
-    reservation: Reservation,
-    companion: dict[str, str] | None,
-    *,
-    target_repo: str,
-    target_filename: str,
-) -> bool:
-    """予約とcompanion metadataの相互対応を検証する。"""
-    return (
-        companion is not None
-        and companion["target_repo"] == target_repo
-        and companion["target_filename"] == target_filename
-        and companion["token_hash"] == reservation.token_hash
-    )
-
-
-def reservation_metadata_present(text: str) -> bool:
-    """予約又は内部companion metadataが存在するかを返す。"""
-    parsed = parse_frontmatter(text)
-    return parsed is not None and any(key in parsed[0] for key in ("reservation", "reservation_companion"))
-
-
-def ensure_reservation_mutation_allowed(path: pathlib.Path, text: str) -> None:
-    """通常mutationが予約又は内部companionへ触れる場合に競合を送出する。"""
-    if reservation_metadata_present(text):
-        raise ReservationConflict(f"予約中の項目は所有者用操作だけが変更できます: {path.name}")
-
-
 def _load_queue_entries(
     private_notes: pathlib.Path,
     target_repo: str | None,
@@ -952,18 +871,10 @@ def _load_queue_entries(
 ) -> tuple[QueueEntry, ...]:
     """指定状態のfeedback・TBDをreadiness判定用表現へ変換する。"""
     entries: list[QueueEntry] = []
-    normalized_filter = _normalized_repo_or_none(target_repo)
-    for path, entry_repo, text, state, entry_type in _iter_entries(private_notes, states, None, "all"):
+    for path, entry_repo, text, state, entry_type in _iter_entries(private_notes, states, target_repo, "all"):
         parsed = parse_frontmatter(text)
         frontmatter_broken = parsed is None
         data = parsed[0] if parsed is not None else {}
-        reservation, invalid_reservation = parse_reservation(data, state=state, entry_type=entry_type)
-        companion = parse_reservation_companion(data, entry_type=entry_type)
-        invalid_companion = "reservation_companion" in data and companion is None
-        effective_repo = companion["target_repo"] if companion is not None else entry_repo
-        normalized_repo = _normalized_repo_or_none(effective_repo)
-        if normalized_filter is not None and normalized_repo != normalized_filter:
-            continue
         repair_target = data.get("repair_target") if entry_type == MQ_TYPE_TBD else None
         raw_repair_kind = data.get("repair_kind") if entry_type == MQ_TYPE_TBD else None
         repair_kind: RepairKind | None
@@ -984,6 +895,7 @@ def _load_queue_entries(
         )
         schedule = data.get("queue_schedule")
         legacy_dependency = schedule.get("dependency") if isinstance(schedule, dict) else None
+        normalized_repo = _normalized_repo_or_none(entry_repo)
         entries.append(
             QueueEntry(
                 filename=path.name,
@@ -998,9 +910,6 @@ def _load_queue_entries(
                 legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
                 repair_target_filename=repair_target if isinstance(repair_target, str) else None,
                 repair_kind=repair_kind,
-                reservation=reservation,
-                invalid_reservation=invalid_reservation or invalid_companion,
-                reservation_companion=companion,
             )
         )
     return tuple(entries)
@@ -1138,61 +1047,17 @@ def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
     return cyclic
 
 
-def calculate_readiness(
-    private_notes: pathlib.Path,
-    target_repo: str | None,
-    *,
-    now: datetime.datetime | None = None,
-) -> ReadinessResult:
+def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) -> ReadinessResult:
     """最新frontmatterとキュー状態から対象リポジトリのreadinessを算出する。"""
     active = _load_queue_entries(private_notes, target_repo, MQ_ACTIVE_STATES)
     terminal = _load_queue_entries(private_notes, None, (MQ_STATE_ADOPTED, MQ_STATE_REJECTED))
     all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES)
-    effective_now = now or datetime.datetime.now(datetime.UTC)
-    companions = {entry.filename: entry for entry in all_active if entry.reservation_companion is not None}
-    reservations = {entry.filename: entry for entry in all_active if entry.reservation is not None}
-    claimed_companion_names: set[str] = set()
-    for entry in all_active:
-        parsed_entry = parse_frontmatter(entry.text)
-        raw_reservation = parsed_entry[0].get("reservation") if parsed_entry is not None else None
-        raw_companion = raw_reservation.get("companion") if isinstance(raw_reservation, dict) else None
-        if isinstance(raw_companion, str):
-            claimed_companion_names.add(raw_companion)
-    matching_companions: set[str] = set()
-    reservation_companion_mismatches: set[str] = set()
-    for entry in reservations.values():
-        assert entry.reservation is not None
-        companion = companions.get(entry.reservation.companion)
-        metadata = companion.reservation_companion if companion is not None else None
-        if companion is not None and reservation_matches_companion(
-            entry.reservation,
-            metadata,
-            target_repo=entry.target_repo or "",
-            target_filename=entry.filename,
-        ):
-            matching_companions.add(companion.filename)
-        else:
-            reservation_companion_mismatches.add(entry.filename)
-    target_filter = _normalized_repo_or_none(target_repo)
-    companion_metadata = {
-        name: entry.reservation_companion for name, entry in companions.items() if entry.reservation_companion is not None
-    }
-    orphan_companions = tuple(
-        sorted(
-            name
-            for name, entry in companions.items()
-            if name not in matching_companions
-            and name not in claimed_companion_names
-            and (target_filter is None or _normalized_repo_or_none(companion_metadata[name]["target_repo"]) == target_filter)
-        )
-    )
-    companion_names = set(companions)
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)
         for entry in all_active
         if entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False
     }
-    active_by_name = {entry.filename: entry for entry in all_active if entry.filename not in companion_names}
+    active_by_name = {entry.filename: entry for entry in all_active}
     terminal_names = {entry.filename for entry in terminal}
     broken = tuple(sorted(entry.filename for entry in active if entry.frontmatter_broken))
     broken_needs_tbd = tuple(name for name in broken if (name, "frontmatter") not in existing_repairs)
@@ -1203,18 +1068,9 @@ def calculate_readiness(
     )
     missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
 
-    dependency_map: dict[str, tuple[str, ...] | None] = {}
-    for entry in active:
-        if entry.frontmatter_broken or entry.filename in companion_names:
-            continue
-        dependencies = _effective_dependencies(entry)
-        if dependencies is not None and entry.reservation is not None:
-            dependencies = tuple(value for value in dependencies if value != entry.reservation.companion)
-        dependency_map[entry.filename] = dependencies
+    dependency_map = {entry.filename: _effective_dependencies(entry) for entry in active if not entry.frontmatter_broken}
     all_dependency_map = {
-        entry.filename: _effective_dependencies(entry)
-        for entry in all_active
-        if not entry.frontmatter_broken and entry.filename not in companion_names
+        entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
     }
     all_entries_by_name = {entry.filename: entry for entry in (*all_active, *terminal)}
     invalid_external_user_targets: set[str] = set()
@@ -1242,48 +1098,11 @@ def calculate_readiness(
     )
     all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
     cyclic = tuple(sorted(set(_cycle_members(all_graph)) & set(dependency_map)))
-    structurally_invalid_reservations = {
-        entry.filename for entry in active if entry.invalid_reservation and entry.filename not in companion_names
-    }
-    invalid_reservations = tuple(
-        sorted(structurally_invalid_reservations | (reservation_companion_mismatches & {entry.filename for entry in active}))
-    )
-    expired_reservations = tuple(
-        sorted(
-            entry.filename
-            for entry in active
-            if entry.reservation is not None
-            and entry.filename not in invalid_reservations
-            and entry.reservation.expires_at <= effective_now
-        )
-    )
-    reserved = tuple(
-        sorted(
-            entry.filename
-            for entry in active
-            if entry.reservation is not None
-            and entry.filename not in invalid_reservations
-            and entry.filename not in expired_reservations
-        )
-    )
-    permanently_blocked = set(
-        (
-            *broken,
-            *missing_plan,
-            *invalid,
-            *self_dependencies,
-            *missing_dependencies,
-            *cyclic,
-            *reserved,
-            *expired_reservations,
-            *invalid_reservations,
-        )
-    )
+    permanently_blocked = set((*broken, *missing_plan, *invalid, *self_dependencies, *missing_dependencies, *cyclic))
     ready: list[str] = []
     blocked: list[str] = []
+    now = datetime.datetime.now(datetime.UTC)
     for entry in active:
-        if entry.filename in companion_names:
-            continue
         if entry.filename in permanently_blocked or (entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False):
             blocked.append(entry.filename)
             continue
@@ -1293,7 +1112,7 @@ def calculate_readiness(
             all_active=all_active,
             terminal=terminal,
             target_active=active,
-            now=effective_now,
+            now=now,
         )
         if _has_explicit_dependencies(entry):
             waiting = any(dependency in active_by_name for dependency in dependencies)
@@ -1318,10 +1137,6 @@ def calculate_readiness(
         missing_dependencies=missing_dependencies,
         self_dependencies=self_dependencies,
         cyclic_dependencies=cyclic,
-        reserved=reserved,
-        expired_reservations=expired_reservations,
-        invalid_reservations=invalid_reservations,
-        orphan_reservation_companions=orphan_companions,
     )
 
 

@@ -219,13 +219,13 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "完成済み本文は問い直さず" in add_feedback
     assert "通常型の主題だけを受け取った場合" in add_feedback
     assert "保存直前にactive一覧" in add_feedback
-    assert "予約を所有しない項目を変更していない" in add_feedback
+    assert "processing項目を変更していない" in add_feedback
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in plan_and_add
     assert "`atk mq add`を実行" not in plan_and_add
 
 
-def test_feedback_workflow_declares_skill_calls_and_reservation_boundaries() -> None:
-    """producerとconsumerがSkill起動、二段階確認、予約の全終端を明示する。"""
+def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
+    """計画着手前の即時終端とprocessing非更新を明示する。"""
     add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
@@ -233,15 +233,42 @@ def test_feedback_workflow_declares_skill_calls_and_reservation_boundaries() -> 
     assert "保存直前にactive一覧と関連項目を再取得" in add_feedback
     assert "processing重複" in add_feedback
     assert "依存付き追随" in add_feedback
-    assert "計画作成前に" in plan_and_add
-    reserve_at = plan_and_add.index("対象worktree、filename、理由、leaseを渡して予約")
+    reject_at = plan_and_add.index("atk mq reject <filename> --if-inbox")
     for later_phase in ("追加調査", "計画起草", "review"):
-        assert reserve_at < plan_and_add.index(later_phase, reserve_at)
-    assert "`merge-inbox`" in plan_and_add
-    assert "`release-reservation`" in plan_and_add
+        assert reject_at < plan_and_add.index(later_phase, reject_at)
+    assert "回答済みTBD" in plan_and_add
+    assert "新しい計画feedbackを追加" in plan_and_add
+    assert "吸収元filename" in plan_and_add
+    assert "processing項目を変更しない" in plan_and_add
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in process
     assert "状態競合で拒否した場合は、active一覧と必要な本文を再取得" in process
     assert "## フィードバック投入" not in process
+    for removed_command in (
+        "reserve-inbox",
+        "renew-reservation",
+        "merge-inbox",
+        "release-reservation",
+        "recover-reservation",
+    ):
+        assert removed_command not in add_feedback
+        assert removed_command not in plan_and_add
+        assert removed_command not in process
+
+
+def test_problem_solution_proportionality_contract_is_complete() -> None:
+    """問題側の入力、候補比較、複雑化時の再評価を共通規範へ保持する。"""
+    agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
+
+    for phrase in (
+        "観測事象、発生条件、確認できた頻度、最大影響、許容できる残存リスク",
+        "何もしない案、既存操作だけの案、局所運用案、新機構案",
+        "作成、更新、失効、復旧、移行、検証の全ライフサイクル",
+        "個別対策を追加する前に採用案を候補比較へ戻す",
+        "各review round",
+        "対応量又は既実装量を理由にした採用継続は認めない",
+        "実装範囲を最大化する意味ではない",
+    ):
+        assert phrase in agent_rules
 
 
 def test_feedback_dependencies_point_to_provider_references() -> None:

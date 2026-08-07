@@ -172,8 +172,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         nargs="*",
         help=(
             "投入する本文（省略時は$EDITORで編集する）。--type=feedback（既定）・tbdで種別を切り替える。"
-            "対象リポジトリは省略時にカレントworktree、ローカルパス指定時に指定worktree、"
-            "正規化リモートURL指定時にローカルHEADを持たないリポジトリ識別子として解決する。"
+            "対象リポジトリは常にカレントディレクトリから解決する。"
             "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
         ),
     )
@@ -190,8 +189,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
             "--type=feedback（既定）でのみ指定でき、指定したパスは実在を検証する。"
             "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
             "計画ファイルがベースコミットを完全な識別子で記載する場合、投入先作業ツリーのHEADと"
-            "一致することを投入前に検証する。計画作成に用いた正確なworktreeを指定し、"
-            "別worktreeのHEADを照合対象にしない。"
+            "一致することを投入前に検証する。"
         ),
     )
     add.add_argument(
@@ -292,76 +290,6 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     )
     show.set_defaults(subparser=show)
 
-    reserve_inbox = sub.add_parser(
-        "reserve-inbox",
-        help="inbox feedbackを期限付きで排他予約しprocessingへ移動する",
-        description=(
-            "予約時刻、更新時刻、companion依存の追加記録を保存し、予約ごとに内部feedback companionを"
-            "internal/agent-toolkit/reservationsへ作成し、"
-            "既存depends_onへcompanion filenameを追加して旧process-loopから保護する。"
-        ),
-    )
-    reserve_inbox.add_argument("repo_path", metavar="REPO_PATH", help="対象feedbackのローカルworktree絶対パス。")
-    reserve_inbox.add_argument("filenames", metavar="FILENAME", nargs="+", help="予約するinbox feedback。")
-    reserve_inbox.add_argument("--reason", required=True, help="予約理由。")
-    reserve_inbox.add_argument("--plan-file", metavar="ABS_PATH", default=None, help="作成中の計画ファイル絶対パス。")
-    reserve_inbox.add_argument(
-        "--lease-minutes",
-        type=int,
-        default=30,
-        help="予約期限の分数（既定: 30）。予約tokenは標準出力へ1回だけ返す。",
-    )
-
-    renew_reservation = sub.add_parser("renew-reservation", help="所有中予約の更新時刻・期限・世代を更新する")
-    renew_reservation.add_argument("filenames", metavar="FILENAME", nargs="+", help="更新する予約付きprocessing feedback。")
-    renew_reservation.add_argument("--reservation-token", required=True, help="予約取得時に返された生token。")
-    renew_reservation.add_argument("--lease-minutes", type=int, default=30, help="更新後の予約期限分数（既定: 30）。")
-    _add_target_repo_arg(renew_reservation, help_extra="指定時は予約項目の対象と一致するか検証する。")
-
-    merge_inbox = sub.add_parser(
-        "merge-inbox",
-        help="inbox又は所有中予約へ本文・計画metadata・依存を原子的に統合する",
-    )
-    merge_inbox.add_argument("repo_path", metavar="REPO_PATH", help="計画baseとHEADを照合するローカルworktree絶対パス。")
-    merge_inbox.add_argument("filename", metavar="FILENAME", help="canonical feedback。")
-    merge_inbox.add_argument("message", metavar="MESSAGE", help="保存する論理本文。")
-    merge_inbox.add_argument("--reservation-token", default=None, help="予約付きprocessingを統合する場合の生token。")
-    merge_inbox.add_argument("--plan-file", metavar="ABS_PATH", default=None, help="関連付ける計画ファイル絶対パス。")
-    merge_inbox.add_argument("--depends-on", action="append", default=None, help="置換後の依存。複数回指定できる。")
-    merge_inbox.add_argument("--supersede", action="append", default=None, help="同じ操作で不採用終端する重複inbox項目。")
-
-    release_reservation = sub.add_parser(
-        "release-reservation",
-        help="所有中予約を解除してinboxへ戻す",
-        description="予約metadata、内部companion、companion依存だけを除去し、利用者の依存を保持する。",
-    )
-    release_reservation.add_argument("filenames", metavar="FILENAME", nargs="+", help="解除する予約付きprocessing feedback。")
-    release_reservation.add_argument("--reservation-token", required=True, help="予約取得時に返された生token。")
-    release_reservation.add_argument("--add-depends-on", action="append", default=None, help="解除時に追加する依存。")
-    _add_target_repo_arg(release_reservation, help_extra="指定時は予約項目の対象と一致するか検証する。")
-
-    recover_reservation = sub.add_parser(
-        "recover-reservation",
-        help="期限切れ又は不正予約をlock内で再検証してCAS回収する",
-        description="CAS成立時だけ予約metadata、内部companion、companion依存を除去し、利用者の依存を保持する。",
-    )
-    recover_reservation.add_argument("repo_path", metavar="REPO_PATH", help="回収対象のローカルworktree絶対パス。")
-    recover_reservation.add_argument("filename", metavar="FILENAME", help="予約項目又はorphan companion。")
-    recover_reservation.add_argument("--expected-generation", type=int, default=None, help="観測済みlease世代。")
-    recover_reservation.add_argument("--expected-expires-at", default=None, help="観測済み期限のISO 8601文字列。")
-    recover_reservation.add_argument("--invalid", action="store_true", help="不正予約をlock内で再検証して回収する。")
-    recover_reservation.add_argument("--add-depends-on", action="append", default=None, help="回収時に保持依存へ追加する項目。")
-    recover_reservation.add_argument("--tbd-message", default=None, help="CAS成立時だけ作成する完成済みTBD本文。")
-    recover_reservation.add_argument(
-        "--tbd-question-type",
-        choices=("free-form", "yes-no", "choice"),
-        default=None,
-        help="回収用TBDの質問形式。",
-    )
-    recover_reservation.add_argument("--tbd-choices", default=None, help="choice形式の選択肢。")
-    recover_reservation.add_argument("--tbd-scope", default=None, help="回収用TBDのscope。")
-    recover_reservation.add_argument("--tbd-source", default=None, help="回収用TBDのsource。")
-
     start_processing = sub.add_parser(
         "start-processing",
         help="feedbackをinboxからprocessing/へ移動し処理中状態に遷移させコミット・push",
@@ -424,6 +352,11 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         metavar="SHA",
         default=None,
         help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。--commit=VALUE形式で渡すことを推奨。",
+    )
+    reject.add_argument(
+        "--if-inbox",
+        action="store_true",
+        help="pull後も全対象がinboxにある場合だけ不採用とし、processingへ移った対象があれば全体を変更しない。",
     )
     _add_target_repo_arg(reject, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
@@ -726,11 +659,6 @@ def main(
         "add": lambda: _add._cmd_add(args, private_notes, now, home),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
-        "reserve-inbox": lambda: _mutations._cmd_reserve_inbox(args, private_notes),
-        "renew-reservation": lambda: _mutations._cmd_renew_reservation(args, private_notes),
-        "merge-inbox": lambda: _mutations._cmd_merge_inbox(args, private_notes),
-        "release-reservation": lambda: _mutations._cmd_release_reservation(args, private_notes),
-        "recover-reservation": lambda: _mutations._cmd_recover_reservation(args, private_notes),
         "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes),
         "return-to-inbox": lambda: _mutations._cmd_return_to_inbox(args, private_notes),
         "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
@@ -744,14 +672,7 @@ def main(
         "commit": lambda: _mutations._cmd_commit(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
     }
-    try:
-        exit_code = dispatch[sub]() or 0
-    except _common.ReservationConflict as error:
-        print(f"予約競合: {error}", file=sys.stderr)
-        sys.exit(1)
-    except _common.WebInputError as error:
-        print(f"操作を拒否しました: {error}", file=sys.stderr)
-        sys.exit(1)
+    exit_code = dispatch[sub]() or 0
     suppress_notify = (sub == "list" and _list._covers_unanswered_tbds(args)) or (
         sub == "show" and _show._covers_unanswered_tbds(args)
     )
