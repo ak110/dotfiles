@@ -1089,6 +1089,38 @@ process.stdout.write(JSON.stringify({
     }
 
 
+def test_assets_delete_conflict_requires_detail_reload() -> None:
+    """削除競合後は古い詳細から再試行させず、開き直しを要求する。"""
+    result = _run_node_ui(
+        """
+const entry = {
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  summary: '削除対象', target_repo: 'example/repo', content: '取得時本文', body_html: '<p>取得時本文</p>'
+};
+displayEntry(entry);
+openDialog(elements['detail-dialog'], new Element('origin', 'BUTTON'), elements['detail-dialog-body']);
+openDeleteDialog();
+fetchHandler = async () => ({
+  ok: false, status: 409, statusText: 'Conflict',
+  json: async () => ({error: '編集中に他プロセスが対象を変更しました', code: 'edit_conflict'})
+});
+await deleteEntry({preventDefault() {}});
+process.stdout.write(JSON.stringify({
+  deleteOpen: elements['delete-dialog'].open,
+  detailOpen: elements['detail-dialog'].open,
+  deleteDisabled: elements['delete-button'].disabled,
+  editDisabled: elements['edit-button'].disabled,
+  alert: elements['detail-alert'].textContent
+}));
+"""
+    )
+    assert result["deleteOpen"] is False
+    assert result["detailOpen"] is True
+    assert result["deleteDisabled"] is True
+    assert result["editDisabled"] is True
+    assert "詳細を閉じて開き直してから削除してください" in result["alert"]
+
+
 def test_assets_close_delete_confirmation_before_detail_refresh_failure() -> None:
     """一覧反映後に詳細取得が失敗しても、古い削除確認を閉じて親へ復旧手順を示す。"""
     result = _run_node_ui(
@@ -2386,6 +2418,171 @@ async def test_remove_api_rejects_changed_and_unreadable_expected_content(
     )
     assert empty_response.status_code == 200
     assert not empty.exists()
+
+
+@pytest.mark.asyncio
+async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """対象リポジトリ照合より先に非UTF-8化を削除競合へ正規化する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, serve_app.feedback_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    target = inbox / "unreadable.md"
+    target.write_bytes(b"\xff")
+    original = "---\ntype: feedback\ntarget_repo: github.com/example/repo\n---\n\n取得時本文\n"
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().post(
+        "/api/entries/remove",
+        json={
+            "filenames": [target.name],
+            "state": "inbox",
+            "target_repo": "github.com/example/repo",
+            "expected_content": original,
+            "force": False,
+        },
+    )
+
+    assert response.status_code == 409
+    assert await response.get_json() == {
+        "code": "edit_conflict",
+        "error": "編集中に他プロセスが対象を変更しました",
+    }
+    assert response.content_type == "application/json"
+    assert target.read_bytes() == b"\xff"
+
+
+@pytest.mark.asyncio
+async def test_answer_api_returns_edit_conflict_for_unreadable_expected_content(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """回答対象の非UTF-8化を409競合へ正規化し、元のバイト列を保つ。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, serve_app.tbd_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    target = inbox / "question.md"
+    target.write_bytes(b"\xff")
+    original = (
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+    )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().post(
+        "/api/entries/answer",
+        json={
+            "filename": target.name,
+            "state": "inbox",
+            "answer": "回答",
+            "expected_content": original,
+        },
+    )
+
+    assert response.status_code == 409
+    assert await response.get_json() == {
+        "code": "edit_conflict",
+        "error": "編集中に他プロセスが対象を変更しました",
+    }
+    assert target.read_bytes() == b"\xff"
+
+
+@pytest.mark.asyncio
+async def test_answer_and_remove_apis_return_edit_conflict_when_pull_moves_target(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pullで取得時の状態から移動した回答・削除対象を409競合として保全する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, serve_app.feedback_mutations, serve_app.tbd_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+    inbox = tmp_path / "inbox"
+    processing = tmp_path / "processing"
+    inbox.mkdir()
+    processing.mkdir()
+    tbd_content = (
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+    )
+    feedback_content = "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n"
+    answer_inbox = inbox / "answer.md"
+    remove_inbox = inbox / "remove.md"
+    answer_inbox.write_text(tbd_content, encoding="utf-8")
+    remove_inbox.write_text(feedback_content, encoding="utf-8")
+
+    def move_during_pull(_path: pathlib.Path) -> None:
+        if answer_inbox.exists():
+            answer_inbox.rename(processing / answer_inbox.name)
+        elif remove_inbox.exists():
+            remove_inbox.rename(processing / remove_inbox.name)
+
+    monkeypatch.setattr(serve_app.feedback_mutations, "_pull", move_during_pull)
+    monkeypatch.setattr(serve_app.tbd_mutations, "_pull", move_during_pull)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    answer_response = await client.post(
+        "/api/entries/answer",
+        json={
+            "filename": answer_inbox.name,
+            "state": "inbox",
+            "answer": "回答",
+            "expected_content": tbd_content,
+        },
+    )
+    remove_response = await client.post(
+        "/api/entries/remove",
+        json={
+            "filenames": [remove_inbox.name],
+            "state": "inbox",
+            "expected_content": feedback_content,
+            "force": False,
+        },
+    )
+
+    for response in (answer_response, remove_response):
+        assert response.status_code == 409
+        assert await response.get_json() == {
+            "code": "edit_conflict",
+            "error": "編集中に他プロセスが対象を変更しました",
+        }
+    assert (processing / answer_inbox.name).read_text(encoding="utf-8") == tbd_content
+    assert (processing / remove_inbox.name).read_text(encoding="utf-8") == feedback_content
 
 
 @pytest.mark.asyncio

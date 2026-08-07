@@ -40,7 +40,7 @@ from _atk_mq_common import (
     _validate_filenames_only,
 )
 from _atk_mq_list import _has_category
-from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo
+from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo, _verify_target_repo_content
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _CATEGORY_GATE_THRESHOLD = 3
@@ -180,17 +180,35 @@ def transition_entries(
             if action == "return-to-inbox"
             else [inbox_dir, processing_dir]
         )
-        for filename in filenames:
-            _verify_frontmatter_target_repo(filename, search_dirs, target_repo)
+        missing_is_conflict = action == "remove" and expected_content is not None
         paths = (
-            _resolve_feedback_targets(filenames, private_notes / state)
+            _resolve_feedback_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
             if state is not None
-            else _resolve_feedback_targets(filenames, inbox_dir)
+            else _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
             if action == "start-processing"
-            else _resolve_feedback_targets(filenames, processing_dir)
+            else _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
             if action == "return-to-inbox"
-            else _resolve_processable_targets(filenames, inbox_dir, processing_dir)
+            else _resolve_processable_targets(
+                filenames,
+                inbox_dir,
+                processing_dir,
+                missing_is_conflict=missing_is_conflict,
+            )
         )
+        current_content: str | None = None
+        if action == "remove" and expected_content is not None:
+            try:
+                current_content = paths[0].read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
+            if current_content != expected_content:
+                raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        if current_content is None:
+            for filename in filenames:
+                _verify_frontmatter_target_repo(filename, search_dirs, target_repo)
+        else:
+            normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+            _verify_target_repo_content(paths[0], current_content, normalized_target_repo)
         if action in {"adopt", "reject"}:
             answered_tbds = _answered_tbd_blockers(private_notes, paths)
             if answered_tbds:
@@ -213,13 +231,6 @@ def transition_entries(
                     file=sys.stderr,
                 )
                 sys.exit(2)
-        if action == "remove" and expected_content is not None:
-            try:
-                current_content = paths[0].read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as error:
-                raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
-            if current_content != expected_content:
-                raise RuntimeError("編集中に他プロセスが対象を変更しました")
         destination_name = {
             "start-processing": MQ_STATE_PROCESSING,
             "return-to-inbox": MQ_STATE_INBOX,
@@ -402,7 +413,12 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
     return True
 
 
-def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) -> list[pathlib.Path]:
+def _resolve_feedback_targets(
+    filenames: list[str],
+    feedback_dir: pathlib.Path,
+    *,
+    missing_is_conflict: bool = False,
+) -> list[pathlib.Path]:
     """`feedback_dir`配下のファイル名群を検証・解決し、未存在があればexit 2する。
 
     `feedback_dir`には`start-processing`はinbox、`return-to-inbox`はprocessingが渡される。
@@ -411,6 +427,8 @@ def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) 
     paths = [_validate_filename(f, feedback_dir) for f in filenames]
     missing = [p for p in paths if not p.exists()]
     if missing:
+        if missing_is_conflict:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for p in missing:
             print(f"{feedback_dir.name}に存在しません: {p.name}", file=sys.stderr)
         sys.exit(2)
@@ -421,6 +439,8 @@ def _resolve_processable_targets(
     filenames: list[str],
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
+    *,
+    missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
     """inboxまたはprocessing配下のファイル名群を検証・解決し、未存在があればexit 2する。
 
@@ -441,6 +461,8 @@ def _resolve_processable_targets(
         else:
             missing.append(inbox_path.name)
     if missing:
+        if missing_is_conflict:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
             print(f"inbox・processingのいずれにも存在しません: {name}", file=sys.stderr)
         sys.exit(2)

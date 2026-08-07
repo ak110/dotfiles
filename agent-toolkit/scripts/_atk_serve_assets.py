@@ -1154,8 +1154,10 @@ function setDetailMode(mode) {
 }
 
 function syncDetailMutationAvailability() {
-  byId('save-entry-button').disabled = !byId('save-entry-button').hidden && detailRefreshRequired;
-  byId('save-answer-button').disabled = !byId('save-answer-button').hidden && detailRefreshRequired;
+  for (const id of ['edit-button', 'answer-button', 'delete-button', 'save-entry-button', 'save-answer-button']) {
+    const button = byId(id);
+    button.disabled = !button.hidden && detailRefreshRequired;
+  }
 }
 
 function renderAnswerChoices(entry) {
@@ -1222,6 +1224,8 @@ function invalidateDeleteConfirmation() {
 
 const DELETE_RECONFIRM_MESSAGE =
   '外部更新により削除確認を閉じました。詳細を確認し、削除操作をやり直してください。';
+const DELETE_CONFLICT_MESSAGE =
+  '外部更新により削除確認を閉じました。詳細を閉じて開き直してから削除してください。';
 
 function reportExternalDetailFailure(error, deleteConfirmationInvalidated) {
   const invalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
@@ -1541,7 +1545,9 @@ async function deleteEntry(event) {
     const failure = `${key}を削除できませんでした。 ${error.message}`;
     if (error.payload?.code === 'edit_conflict' && byId('detail-dialog').open) {
       invalidateDeleteConfirmation();
-      setTextMessage('detail-alert', `${failure} ${DELETE_RECONFIRM_MESSAGE}`);
+      detailRefreshRequired = true;
+      syncDetailMutationAvailability();
+      setTextMessage('detail-alert', `${failure} ${DELETE_CONFLICT_MESSAGE}`);
       byId('detail-dialog-body').focus();
     } else {
       deliverOperationMessage(failure, true);

@@ -230,11 +230,21 @@ def answer_tbd(
     """平引数でTBD回答欄を更新する。対象はinbox・processingのTBDに限る。"""
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        path = _resolve_active_entry(private_notes, filename, state)
-        text = path.read_text(encoding="utf-8")
-        require_tbd_entry(path, text)
+        try:
+            path = _resolve_active_entry(private_notes, filename, state)
+        except FileNotFoundError as error:
+            if expected_content is None:
+                raise
+            raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            if expected_content is None:
+                raise
+            raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
         if expected_content is not None and text != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        require_tbd_entry(path, text)
         if ANSWER_MARKER not in text:
             raise WebInputError("回答欄マーカーがありません")
         # 既存データにマーカーが重複するエントリが存在するため最後のマーカーを基準に分割する。

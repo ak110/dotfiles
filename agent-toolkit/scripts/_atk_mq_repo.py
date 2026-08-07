@@ -194,18 +194,25 @@ def _verify_frontmatter_target_repo(
         if not candidate.exists():
             continue
         text = candidate.read_text(encoding="utf-8")
-        actual = _parse_target_repo(text)
-        if actual == "(unknown)":
-            print(f"frontmatterにtarget_repoがありません: {candidate}", file=sys.stderr)
-            sys.exit(2)
-        normalized_actual = _normalize_remote_url(actual)
-        if normalized_actual != normalized_expected:
-            print(
-                f"target_repo不一致: 期待={normalized_expected} 実際={normalized_actual} ファイル={candidate}",
-                file=sys.stderr,
-            )
-            sys.exit(2)
+        _verify_target_repo_content(candidate, text, normalized_expected)
         return
+
+
+def _verify_target_repo_content(path: pathlib.Path, content: str, normalized_expected: str | None) -> None:
+    """読取り済み本文の`target_repo`を正規化済み期待値と照合する。"""
+    if normalized_expected is None:
+        return
+    actual = _parse_target_repo(content)
+    if actual == "(unknown)":
+        print(f"frontmatterにtarget_repoがありません: {path}", file=sys.stderr)
+        sys.exit(2)
+    normalized_actual = _normalize_remote_url(actual)
+    if normalized_actual != normalized_expected:
+        print(
+            f"target_repo不一致: 期待={normalized_expected} 実際={normalized_actual} ファイル={path}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 def edit_entry(
