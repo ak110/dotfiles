@@ -57,6 +57,12 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
   既定モデルの変更はエージェント定義のfrontmatterで行う。
   計画レビューは`agent-toolkit:plan-mode`の呼び出し元が2系統へ直接委譲する。
   当該手順は`agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を参照する
+- エージェント定義のfrontmatterで`model`を指定する場合は`effort`も併記する。
+  Agentツールの呼び出しでは`model`を指定できるが、`effort`に相当するパラメーターを
+  ツールスキーマが持たないため、当該経路の推論の深さは定義側のfrontmatterで確定する。
+  共通規範が定めるモデル明示時の推論の深さの併記義務は、当該値を受け取る経路を持つ呼び出しへ適用する。
+  組み込み`Explore`・`claude`のようにfrontmatterを持たず当該値も受け取らない経路では、
+  併記の対象となる値が存在しないため、モデルの明示だけを行う
 - 書き込みを伴う委譲は、上流追随に成功し、staged・unstaged・non-ignored untrackedの全てが空の
   worktreeだけで起動する。1つのworktreeへ同時に複数のwriterを割り当てない。
   reviewerは読み取り専用とし、起動前後のGit差分で書き込みが無いことを確認する

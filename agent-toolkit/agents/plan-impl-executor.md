@@ -1,8 +1,8 @@
 ---
 name: plan-impl-executor
 description: 呼び出し元側のplan-impl-executor起動契約が明示する手順からのみ起動する。
-model: opus
-effort: high
+model: sonnet
+effort: medium
 tools: Skill, ToolSearch, Agent, SendMessage, mcp__codex, Read, Bash
 user-invocable: false
 ---
