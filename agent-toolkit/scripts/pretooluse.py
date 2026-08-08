@@ -2051,8 +2051,10 @@ def _check_bash_bulk_stage_with_unedited_files(
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "additionalContext": _llm_notice(
-                    "warn: bulk staging includes files that were not edited in this session."
-                    f" Un-edited candidates: {sample}."
+                    "warn: bulk staging includes files with no recorded edit by the file edit tools"
+                    " in this session. Files changed by shell commands or generators are not recorded,"
+                    " so confirm ownership before staging."
+                    f" Candidates: {sample}."
                     " Consider switching to per-file staging (`git add <file>`).",
                     tag="warn",
                 ),
