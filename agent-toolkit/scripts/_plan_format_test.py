@@ -321,8 +321,8 @@ def test_metadata_rejects_conflicting_values() -> None:
     assert any("競合する値" in error for error in errors)
 
 
-def test_extract_h2_sections_ignores_frontmatter_fences_and_comments() -> None:
-    """構造外の見出し候補は抽出されない。"""
+def test_markdown_body_lines_exclude_frontmatter_fences_and_comments() -> None:
+    """フロントマター、コードフェンス、複数行HTMLコメントの行は本文行に含めない。"""
     content = """---
 title: x
 ---
@@ -336,7 +336,8 @@ title: x
 ## コメント内
 -->
 """
-    assert _plan_format.extract_h2_sections(content) == ["実在"]
+    headings = [line for _lineno, line in _plan_format.iter_markdown_body_lines(content) if line.startswith("## ")]
+    assert headings == ["## 実在"]
 
 
 def test_extract_plan_targets_supports_existing_new_and_deleted() -> None:
@@ -429,11 +430,3 @@ def test_agent_document_target_paths() -> None:
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/example/SKILL.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
     assert not _plan_format.is_agent_doc_target_file("pytools/example.py")
-
-
-def test_iter_h3_sections_keeps_raw_fence_body() -> None:
-    """H3本文走査はフェンスを含む生の本文を保持する。"""
-    content = "## 実装契約\n\n### 一\n\n```text\n### 偽\n```\n\n### 二\n\n本文\n"
-    sections = list(_plan_format.iter_h3_sections_under_h2(content, "実装契約"))
-    assert [heading for heading, _ in sections] == ["一", "二"]
-    assert any(line == "### 偽" for _, line in sections[0][1])

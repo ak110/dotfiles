@@ -1,6 +1,8 @@
 """計画ファイルの構造検査の共通モジュール。
 
-PreToolUseのWrite/Edit/MultiEditブロック判定と、PostToolUseの構造検査の両方で使う。
+構造検査（`check_plan_file.py`）、フィードバック登録（`_atk_mq_add.py`）、
+2系統のPreToolUse（`pretooluse.py`・`scripts/claude_hook_pretooluse.py`）、
+PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 SSOTは`agent-toolkit/skills/plan-mode/SKILL.md`の「計画ファイルの完成条件」節。
 """
 
@@ -89,22 +91,6 @@ BUMP_MANIFEST_PATHS: frozenset[str] = frozenset({PLUGIN_MANIFEST_PATH, MARKETPLA
 
 `agent_toolkit_bump.py`側のリテラルとの一致は`scripts/agent_toolkit_bump_test.py`が検証する。
 """
-
-_H2_PATTERN = re.compile(r"^## (.+?)\s*$")
-
-
-def extract_h2_sections(content: str) -> list[str]:
-    """本文からH2見出しの一覧を抽出する。
-
-    先頭フロントマター、コードフェンス、複数行HTMLコメントの除外は
-    `iter_markdown_body_lines`へ集約する。
-    """
-    headings: list[str] = []
-    for _, line in iter_markdown_body_lines(content):
-        m = _H2_PATTERN.match(line)
-        if m:
-            headings.append(m.group(1))
-    return headings
 
 
 def markdown_body_start_index(content: str) -> int:
@@ -229,8 +215,7 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
     - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
 
     H2見出し・H3見出し・箇条書き行を含む全ての非除外行を生成する。
-    H2/H3抽出や本文収集など、上記領域を共通除外する各種スキャン処理の基盤として使う。
-    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    見出し抽出や本文収集など、上記領域を共通除外する各種スキャン処理の基盤として使う。
     """
     lines = content.splitlines()
     body_start = markdown_body_start_index(content)
@@ -262,7 +247,7 @@ def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, st
     対象H2見出しが存在しない場合は空リストを返す。
     対象H2見出し行自体は本文行に含めず、次のH2見出し行に達した時点で収集を終える。
     H3見出し行・箇条書き行を含む全ての非除外行を本文行として収集する。
-    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    `extract_implementer_region`が既存計画の`## 実装契約`を読み取る互換経路で使う。
     """
     body: list[tuple[int, str]] = []
     in_target_h2 = False
@@ -273,64 +258,6 @@ def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, st
         if in_target_h2:
             body.append((lineno, line))
     return body
-
-
-def extract_h3_headings_under_h2(content: str, h2_heading: str) -> list[str]:
-    """指定したH2見出し配下に出現するH3見出しのテキストをリストで返す。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    指定したH2が存在しない場合は空リストを返す。
-    pretooluse / posttooluse の双方からimportして使うSSOT実装。
-    """
-    headings: list[str] = []
-    in_target_h2 = False
-    for _, line in iter_markdown_body_lines(content):
-        if line.startswith("## "):
-            in_target_h2 = line[3:].strip() == h2_heading
-            continue
-        if in_target_h2 and line.startswith("### "):
-            headings.append(line[4:].strip())
-    return headings
-
-
-def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[str, list[tuple[int, str]]]]:
-    """指定したH2見出し配下のH3見出しごとに、(H3見出しテキスト, body行リスト)を生成する。
-
-    body行はH3見出しの直後行から次のH3見出し行の直前までを、
-    ファイル先頭基準1始まりの行番号付きで収集する。
-    素朴に全行走査する（対象H2はフロントマターより後方のMarkdown本文にあるため十分）。
-    コードフェンス内の行はスキップせず生body行として返す
-    （呼び出し側でコードフェンス出現を判定できるようにするため）。
-    見出し境界判定（H2/H3行の検知）は`iter_markdown_body_lines`の有効行だけを対象とする。
-    対象ファイルのH2/H3見出しを除外領域へ埋め込む差分表記で、
-    実見出しと誤認して以降のH3走査が打ち切られる事象を防ぐ。
-    指定H2の直下にH3が現れる前の本文行は無視する。
-    pretooluse / posttooluse の双方からimportして使うSSOT実装。
-    """
-    lines = content.splitlines()
-    in_target_h2 = False
-    current_h3: str | None = None
-    current_body: list[tuple[int, str]] = []
-    structural_lines = {lineno for lineno, _ in iter_markdown_body_lines(content)}
-    for lineno, line in enumerate(lines, start=1):
-        if lineno in structural_lines:
-            if line.startswith("## "):
-                if current_h3 is not None:
-                    yield current_h3, current_body
-                    current_h3 = None
-                    current_body = []
-                in_target_h2 = line[3:].strip() == h2_heading
-                continue
-            if in_target_h2 and line.startswith("### "):
-                if current_h3 is not None:
-                    yield current_h3, current_body
-                current_h3 = line[4:].strip()
-                current_body = []
-                continue
-        if in_target_h2 and current_h3 is not None:
-            current_body.append((lineno, line))
-    if current_h3 is not None:
-        yield current_h3, current_body
 
 
 @dataclass(frozen=True)
@@ -559,15 +486,6 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     return PlanMetadata(parent, tuple(entries), values, tuple(base_candidates)), []
 
 
-def plan_work_type(content: str) -> str | None:
-    """計画メタ情報から作業種別の固定値を返す。取得できない場合は`None`を返す。"""
-    metadata, _errors = parse_plan_metadata(content)
-    if metadata is None:
-        return None
-    value = metadata.values.get("作業種別")
-    return value if value in PLAN_WORK_TYPES else None
-
-
 def extract_implementer_region(content: str) -> list[tuple[int, str]]:
     """実装者向け可変領域の本文行を行番号付きで返す。
 
@@ -661,7 +579,7 @@ def is_agent_facing_md(rel_path: str) -> bool:
     `.chezmoi-source/dot_claude/skills/<name>/SKILL.md`等）。
     パス部品に`references`と`skills`の両方を含むもの。パス部品に`agents`を含むもの。
     パス部品の完全一致で判定し、部分文字列一致は行わない。
-    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    `posttooluse.py`の条件付き禁止形の警告通知が対象種別の判定に使う。
     """
     p = pathlib.PurePosixPath(rel_path.replace("\\", "/"))
     parts = p.parts
@@ -767,11 +685,6 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
 _MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
 _MATERIAL_FENCE_PATTERN = re.compile(r"^\s*(?:`{3,}|~{3,})text\s*$")
 _REFERENCE_SEPARATOR_PATTERN = re.compile(r"[、,・/\s]+")
-
-
-def _text_of(lines: list[tuple[int, str]]) -> str:
-    """行番号付き行列を1つの文字列へ連結する。"""
-    return "\n".join(line for _lineno, line in lines)
 
 
 def _is_placeholder_only(lines: list[tuple[int, str]]) -> bool:
