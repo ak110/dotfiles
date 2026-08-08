@@ -3,6 +3,9 @@ name: plan-impl-executor
 description: 呼び出し元側のplan-impl-executor起動契約が明示する手順からのみ起動する。
 model: sonnet
 effort: medium
+# Sonnet指定: 委譲と検収に専念する役割であっても、状態値ごとに値が変わる条件分岐、
+# 阻害要因の重複除外規則、実行経路の識別子照合を含む完了報告の契約充足に指示追従を要する。
+# 軽量モデルでは完了報告の必須欄の欠落と必須工程の差し戻しが反復した。
 tools: Skill, Agent, SendMessage, Read, Bash
 user-invocable: false
 ---

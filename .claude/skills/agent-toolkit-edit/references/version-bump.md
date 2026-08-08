@@ -51,6 +51,17 @@ rebase・merge時に`version`フィールドが競合した場合、次の手順
 5. 同期後、対象3ファイル（正本2ファイルとCodex向け派生manifest）の`version`値が
    一致することを`grep -n version`等で確認する
 
+## 統合後の同値確認
+
+rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の正本の`version`値を比較する。
+自分の未公開コミットに利用者の振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
+統合後の版を基準として「判定基準」節に従うbumpを再実行する。
+この確認により、別の作業が同じ版へ先にbumpし、Gitが非競合として統合した場合も配信漏れを防ぐ。
+
+再bump後はClaude Code向け正本2ファイルを確認し、`scripts/sync_codex_plugin_manifests.py`で
+Codex向け派生manifestを同期する。
+対象3ファイルの`version`値が一致することを確認してから後続の検証へ進む。
+
 ## 未プッシュ範囲での統合
 
 未プッシュコミットが既に1回以上bumpを含む場合、後続編集ごとに追加でbumpしない。
