@@ -758,7 +758,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         args.subparser.error("MESSAGEを指定する場合はFILENAMEも指定してください。")
     if message is not None:
         try:
-            _add.reject_message_file_path(message)
+            _add.reject_message_file_path(
+                message,
+                file_input_hint="ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。",
+            )
         except WebInputError as error:
             print(f"編集を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)

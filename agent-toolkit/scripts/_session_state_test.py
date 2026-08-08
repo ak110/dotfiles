@@ -18,9 +18,11 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    STALE_STATE_MAX_AGE_SECONDS,
     delete_state,
     read_state,
     state_path,
+    sweep_stale_states,
     update_state,
 )
 
@@ -204,6 +206,78 @@ class TestDeleteState:
         monkeypatch.setattr(pathlib.Path, "unlink", _unlink)
         assert delete_state("sid") is False
         assert read_state("sid") == {"a": 1}
+
+
+class TestSweepStaleStates:
+    """期限を過ぎた状態ファイルとロックファイルの回収。"""
+
+    @staticmethod
+    def _age(path: pathlib.Path, seconds: float) -> None:
+        stamp = os.stat(path).st_mtime - seconds
+        os.utime(path, (stamp, stamp))
+
+    def test_fresh_state_and_lock_are_kept(self) -> None:
+        """期限内の状態ファイルと対のロックは残す。"""
+        update_state("fresh", lambda current: {**current, "a": 1})
+        target = state_path("fresh")
+        lock = target.parent / (target.name + ".lock")
+
+        assert sweep_stale_states() == 0
+        assert target.exists()
+        assert lock.exists()
+
+    def test_stale_state_is_collected_with_its_lock(self) -> None:
+        """期限を過ぎた状態ファイルは対のロックとともに回収する。"""
+        update_state("stale", lambda current: {**current, "a": 1})
+        target = state_path("stale")
+        lock = target.parent / (target.name + ".lock")
+        self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        assert sweep_stale_states() == 1
+        assert not target.exists()
+        assert not lock.exists()
+
+    def test_old_lock_is_kept_while_state_is_fresh(self) -> None:
+        """状態ファイルが期限内なら、対のロックが古くても残す。
+
+        ロックは`open(path, "a+")`で開くだけなので更新時刻が進まず、
+        再開したセッションでは作成時刻が期限を超えうる。
+        """
+        update_state("resumed", lambda current: {**current, "a": 1})
+        target = state_path("resumed")
+        lock = target.parent / (target.name + ".lock")
+        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        assert sweep_stale_states() == 0
+        assert target.exists()
+        assert lock.exists()
+
+    def test_orphan_lock_is_collected_only_after_expiry(self, tmp_path: pathlib.Path) -> None:
+        """状態ファイルの無いロックは、期限を過ぎた場合だけ回収する。
+
+        `update_state`はロックを先に作成するため、状態ファイルの無いロックは
+        セッション開始直後にも生じる。
+        """
+        starting = tmp_path / "claude-agent-toolkit-starting.json.lock"
+        abandoned = tmp_path / "claude-agent-toolkit-abandoned.json.lock"
+        starting.write_text("", encoding="utf-8")
+        abandoned.write_text("", encoding="utf-8")
+        self._age(abandoned, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        assert sweep_stale_states() == 0
+        assert starting.exists()
+        assert not abandoned.exists()
+
+    def test_other_sessions_are_untouched(self) -> None:
+        """期限内の別セッションの状態は回収しない。"""
+        update_state("stale", lambda current: {**current, "a": 1})
+        update_state("live", lambda current: {**current, "a": 1})
+        self._age(state_path("stale"), STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        assert sweep_stale_states() == 1
+        assert not state_path("stale").exists()
+        assert read_state("live") == {"a": 1}
 
 
 def test_session_state_persists_delegation_flags() -> None:

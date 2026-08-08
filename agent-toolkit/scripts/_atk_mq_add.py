@@ -162,17 +162,19 @@ def _verify_plan_target_repos(
             )
 
 
-def reject_message_file_path(message: str) -> None:
-    """本文文字列が実在通常ファイルのパスだけの場合に`WebInputError`を送出する。"""
+def reject_message_file_path(message: str, *, file_input_hint: str = "") -> None:
+    """本文文字列が実在通常ファイルのパスだけの場合に`WebInputError`を送出する。
+
+    `file_input_hint`にはファイル内容を渡す正しい手段を呼び出し側が渡す。
+    手段はサブコマンドごとに異なるため、本関数へ固定文言を持たせない。
+    """
     value = message.strip()
     if not value:
         return
     try:
         if pathlib.Path(value).is_file():
             raise WebInputError(
-                f"MESSAGEがファイルパス '{value}' として解釈できます。"
-                "MESSAGEは本文文字列を受け取ります。"
-                f"ファイル内容を本文として渡す場合は --body-file {value} を使ってください。"
+                f"MESSAGEがファイルパス '{value}' として解釈できます。MESSAGEは本文文字列を受け取ります。" + file_input_hint
             )
     except OSError:
         # パス長制限などで検査できない文字列は本文として扱う。
@@ -438,7 +440,10 @@ def _cmd_add(
         messages = [message]
     for message in messages:
         try:
-            reject_message_file_path(message)
+            reject_message_file_path(
+                message,
+                file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
+            )
             parse_entry_message(message, entry_type=args.type)
         except WebInputError as error:
             if str(error) == _EMPTY_FEEDBACK_ERROR:

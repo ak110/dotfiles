@@ -72,20 +72,23 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
 
 # --- Bashコマンド前処理 ---
 
-# コマンド先頭またはセグメント区切り（`;`・`&`・`|`）直後の`KEY=VALUE`代入を捕捉する。
-# `_ENV_ASSIGN_PREFIX_PATTERN.sub`で代入連続を除去し、先頭の区切り文字＋空白は維持する。
-_ENV_ASSIGN_PREFIX_PATTERN = re.compile(r"(\A|[;&|])(\s*)(?:[A-Za-z_]\w*=\S*\s+)+")
+# コマンド先頭またはセグメント区切り（`;`・`&`・`|`）直後に並ぶ接頭辞を捕捉する。
+# 対象は`KEY=VALUE`の環境変数代入と`timeout <時間>`の時間制限で、両者の混在と連続も1回で除去する。
+# `.sub`で接頭辞列を除去し、先頭の区切り文字＋空白は維持する。
+_COMMAND_PREFIX_PATTERN = re.compile(r"(\A|[;&|])(\s*)(?:[A-Za-z_]\w*=\S*\s+|timeout\s+\d+(?:\.\d+)?[smhd]?\s+)+")
 
 
-def _strip_env_assignments(command: str) -> str:
-    """コマンド先頭・セグメント区切り直後の環境変数代入接頭辞（`KEY=VALUE`）を除去する。
+def _strip_command_prefixes(command: str) -> str:
+    """コマンド先頭・セグメント区切り直後の環境変数代入と時間制限の接頭辞を除去する。
 
-    用途: テスト実行検出やgit操作検出の正規表現が、`LOCALAPPDATA=/tmp/dummy uvx pyfltr ...`
-    のような環境変数代入接頭辞付きコマンドにマッチしない問題に追従する。
-    適用範囲: Bashコマンド文字列。`KEY=VALUE`の単純形式のみを対象とし、
-    クォート内に空白を含む値・`env`コマンド経由・行継続バックスラッシュ等の特殊形式は対象外とする。
+    用途: テスト実行検出やgit操作検出の正規表現が、`LOCALAPPDATA=/tmp/dummy uvx pyfltr ...`や
+    `timeout 600 uvx pyfltr run ...`のような接頭辞付きコマンドにマッチせず、
+    検証済みでも未検証として警告される問題に追従する。
+    適用範囲: Bashコマンド文字列。`KEY=VALUE`と`timeout <時間>`の単純形式のみを対象とし、
+    クォート内に空白を含む値・`env`コマンド経由・行継続バックスラッシュ・
+    `timeout`のオプション付き形式（`-k 10s 600`等、引数の境界を字句だけで確定できない）は対象外とする。
     """
-    return _ENV_ASSIGN_PREFIX_PATTERN.sub(r"\1\2", command)
+    return _COMMAND_PREFIX_PATTERN.sub(r"\1\2", command)
 
 
 # --- テスト実行検出パターン ---
@@ -506,8 +509,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if not isinstance(command, str) or not command:
         return 0
 
-    # 環境変数代入接頭辞（`LOCALAPPDATA=...`等）を除去してから検出パターンを適用する。
-    command = _strip_env_assignments(command)
+    # 環境変数代入接頭辞（`LOCALAPPDATA=...`等）と時間制限接頭辞（`timeout 600`等）を
+    # 除去してから検出パターンを適用する。
+    command = _strip_command_prefixes(command)
 
     git_events = extract_git_events(command, cwd)
 

@@ -135,6 +135,11 @@ class TestTestExecution:
             "LOCALAPPDATA=/tmp/dummy uvx pyfltr run-for-agent",
             "LOCALAPPDATA=x FOO=bar uvx pyfltr ci",
             "cd /tmp && LOCALAPPDATA=x uvx pre-commit run",
+            # 時間制限接頭辞付き（境界値: 秒指定・単位付き・環境変数代入との併用・セグメント区切り直後）
+            "timeout 600 uvx pyfltr run-for-agent",
+            "timeout 10m make test",
+            "timeout 300 LOCALAPPDATA=x uv run pytest",
+            "cd /tmp && timeout 120 cargo test",
         ],
     )
     def test_test_commands_detected(self, tmp_path: pathlib.Path, command: str):
