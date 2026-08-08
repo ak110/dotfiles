@@ -166,6 +166,34 @@ def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: p
     assert events[-1]["text"].endswith("完了報告")
 
 
+def test_codex_failed_command_without_output_keeps_failure_event(tmp_path: pathlib.Path) -> None:
+    """出力が空でも非0終了のCommandExecutionを証拠から欠落させない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "failed",
+                        "aggregated_output": "",
+                        "exit_code": 1,
+                    },
+                },
+            }
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert len(events) == 1
+    assert events[0]["kind"] == "failed-tool"
+    assert events[0]["tool"] == "CommandExecution"
+    assert '"exit_code": 1' in events[0]["text"]
+
+
 def test_manual_review_invocation_excludes_following_codex_events(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

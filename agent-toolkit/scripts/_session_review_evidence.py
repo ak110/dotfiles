@@ -181,8 +181,9 @@ def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             item = payload.get("item")
             if not isinstance(item, dict) or item.get("type") != "CommandExecution" or item.get("status") != "failed":
                 continue
+            output_candidates = (item.get(key) for key in ("aggregated_output", "output", "error"))
             text = next(
-                (item[key] for key in ("aggregated_output", "output", "error") if isinstance(item.get(key), str)),
+                (value for value in output_candidates if isinstance(value, str) and value.strip()),
                 json.dumps(item, ensure_ascii=False),
             )
             event = _event("failed-tool", text, tool="CommandExecution")
