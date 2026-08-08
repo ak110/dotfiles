@@ -127,7 +127,7 @@ def _check_targets(text: str, work_dir: pathlib.Path, base_commit: str | None) -
     if invalid_entries:
         errors.append(f"対象ファイル一覧に契約形式と一致しない箇条書きがある: {invalid_entries}")
     if not targets:
-        errors.append("対象ファイル一覧が空である")
+        errors.append("対象ファイル一覧が空である（実装者向け領域が新しいH2から始まっていない場合も本エラーになる）")
         return errors, []
     paths = [target.path for target in targets]
     duplicates = sorted(path for path, count in collections.Counter(paths).items() if count > 1)
