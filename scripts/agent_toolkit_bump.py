@@ -41,33 +41,39 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     current = _read_current_version()
-    upstream = _read_upstream_version()
-    existing = infer_bump_kind(upstream, current) if upstream is not None else None
+    resolved = resolve_base_version()
+    if resolved is None:
+        print(f"current version: {current}")
+        print(
+            "基準版を確定できなかった（上流ブランチも origin/HEAD も解決できない）。既往のbumpを検出できないため増分しない。",
+            file=sys.stderr,
+        )
+        return 1
+    base, base_ref = resolved
+    existing = infer_bump_kind(base, current)
 
     if args.kind is None:
-        _print_status(current, upstream, existing)
+        _print_status(current, base, base_ref, existing)
         return 0
 
     requested: BumpKind = args.kind
-    upstream_str = upstream if upstream is not None else "取得不可"
 
     if existing is None:
         new_version = compute_new_version(current, requested)
         _write_version(new_version)
-        print(f"bump: {current} -> {new_version} ({requested}, 上流: {upstream_str})")
+        print(f"bump: {current} -> {new_version} ({requested}, 基準: {base} [{base_ref}])")
         return 0
 
     if BUMP_RANKS[requested] <= BUMP_RANKS[existing]:
         print(f"既存の未プッシュbump種別（{existing}）が指定種別（{requested}）と同等以上のため何もしない。")
-        print(f"  上流: {upstream_str}")
+        print(f"  基準: {base}（{base_ref}）")
         print(f"  現在: {current}（既存bump: {existing}）")
         return 0
 
-    # 上書き格上げ。基準は上流時点のバージョン。
-    assert upstream is not None
-    new_version = compute_new_version(upstream, requested)
+    # 上書き格上げ。基準は公開済み時点のバージョン。
+    new_version = compute_new_version(base, requested)
     _write_version(new_version)
-    print(f"upgrade bump: {current} -> {new_version} ({existing} -> {requested}, 上流: {upstream})")
+    print(f"upgrade bump: {current} -> {new_version} ({existing} -> {requested}, 基準: {base} [{base_ref}])")
     return 0
 
 
@@ -124,14 +130,32 @@ def _read_current_version() -> str:
     return json.loads(_PLUGIN_MANIFEST.read_text(encoding="utf-8"))["version"]
 
 
-def _read_upstream_version() -> str | None:
-    """上流ブランチ(@{u})上のplugin.jsonから`version`を取得する。
+BASE_VERSION_REFS: tuple[str, ...] = ("@{u}", "origin/HEAD")
+"""基準版の解決に試す参照。先頭から順に試し、最初に解決できたものを採用する。
 
-    上流ブランチが未設定など取得できない場合は`None`を返す。
+作業用の複製（git worktree等）では追跡先が失われて`@{u}`が解決できないため、
+公開済みの既定ブランチを指す`origin/HEAD`を次に試す。
+"""
+
+
+def resolve_base_version() -> tuple[str, str] | None:
+    """公開済み時点のplugin.jsonから`version`と、取得に使った参照名を返す。
+
+    `BASE_VERSION_REFS`の順に試し、いずれからも取得できない場合は`None`を返す。
+    呼び出し元は`None`を「既往のbumpを検出できない」状態として扱い、増分しない。
     """
+    for ref in BASE_VERSION_REFS:
+        version = _read_version_at(ref)
+        if version is not None:
+            return version, ref
+    return None
+
+
+def _read_version_at(ref: str) -> str | None:
+    """指定参照上のplugin.jsonから`version`を取得する。解決できない場合は`None`を返す。"""
     rel = _PLUGIN_MANIFEST.relative_to(_REPO_ROOT)
     result = subprocess.run(
-        ["git", "show", f"@{{u}}:{rel.as_posix()}"],
+        ["git", "show", f"{ref}:{rel.as_posix()}"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -160,27 +184,9 @@ def _write_version(new_version: str) -> None:
     _MARKETPLACE_MANIFEST.write_text(json.dumps(marketplace_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _update_plugin_manifest(new_version: str) -> None:
-    data = json.loads(_PLUGIN_MANIFEST.read_text(encoding="utf-8"))
-    data["version"] = new_version
-    _PLUGIN_MANIFEST.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def _update_marketplace_manifest(new_version: str) -> None:
-    data = json.loads(_MARKETPLACE_MANIFEST.read_text(encoding="utf-8"))
-    matched = [entry for entry in data["plugins"] if entry.get("name") == _PLUGIN_NAME]
-    if len(matched) != 1:
-        raise RuntimeError(f"marketplace.jsonに{_PLUGIN_NAME}のエントリが1件ではない（{len(matched)}件）")
-    matched[0]["version"] = new_version
-    _MARKETPLACE_MANIFEST.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def _print_status(current: str, upstream: str | None, existing: BumpKind | None) -> None:
+def _print_status(current: str, base: str, base_ref: str, existing: BumpKind | None) -> None:
     print(f"current version: {current}")
-    if upstream is None:
-        print("upstream version: 取得できなかった（上流ブランチが未設定の可能性）")
-    else:
-        print(f"upstream version: {upstream}")
+    print(f"base version: {base}（{base_ref}）")
     if existing is None:
         print("未プッシュbump: なし")
     else:

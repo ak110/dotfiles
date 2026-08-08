@@ -412,19 +412,6 @@ def test_target_entry_candidate_boundary(entry: str, *, is_invalid: bool) -> Non
     assert bool(invalid) is is_invalid
 
 
-def test_bump_contract_uses_implementer_region() -> None:
-    """版更新宣言とmanifest対象は実装者向け領域で判定する。"""
-    content = _VALID_CONTENT.replace(
-        "- `old.py`（削除）",
-        "- `old.py`（削除）\n"
-        "- `agent-toolkit/skills/example/SKILL.md`\n"
-        "- `agent-toolkit/.claude-plugin/plugin.json`\n"
-        "- `.claude-plugin/marketplace.json`",
-    ).replace("### 対象ファイル一覧", "scripts/agent_toolkit_bump.py minor\n\n### 対象ファイル一覧")
-    assert _plan_format.has_bump_step_when_required(content)
-    assert _plan_format.has_manifest_files_when_bump_step_present(content)
-
-
 def test_agent_document_target_paths() -> None:
     """配布規範とagent定義をエージェント向け文書として判定する。"""
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/example/SKILL.md")

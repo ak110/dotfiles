@@ -638,29 +638,6 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     return pathlib.Path(normalized).name in AGENT_DOC_TARGET_BASENAMES
 
 
-def has_bump_step_when_required(content: str) -> bool:
-    """配布物の変更計画に版更新宣言があるかを判定する。"""
-    paths = extract_target_files_from_changes(content)
-    if not paths:
-        return True
-    agent_toolkit_paths = [p for p in paths if p.startswith("agent-toolkit/")]
-    if not agent_toolkit_paths:
-        return True
-    if all(p.endswith("_test.py") for p in agent_toolkit_paths):
-        return True
-    contract_text = "\n".join(line for _lineno, line in extract_implementer_region(content))
-    return "agent_toolkit_bump.py" in contract_text or "bump不要" in contract_text
-
-
-def has_manifest_files_when_bump_step_present(content: str) -> bool:
-    """版更新宣言がある計画に正本manifest 2件が含まれるかを判定する。"""
-    contract_text = "\n".join(line for _lineno, line in extract_implementer_region(content))
-    if "agent_toolkit_bump.py" not in contract_text:
-        return True
-    paths = extract_target_files_from_changes(content)
-    return PLUGIN_MANIFEST_PATH in paths and MARKETPLACE_MANIFEST_PATH in paths
-
-
 def find_invalid_target_file_paths(content: str) -> list[str]:
     """実装者向け領域の`### 対象ファイル一覧`配下の相対パス表記違反を検出する。
 

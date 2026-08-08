@@ -3,7 +3,8 @@ set -euo pipefail
 # NOTE: 対応するWindows版 → bin/c.cmd
 echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
 
-# clear
+# resetだけではtmuxのスクロールバックが残るため、先に`clear`で表示履歴を破棄する。
+clear
 reset
 
 # カレントディレクトリが git 作業ツリーなら git status を自動実行する。

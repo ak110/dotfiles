@@ -1492,6 +1492,103 @@ def test_add_entries_rejects_answer_heading_in_tbd_body(tmp_path: pathlib.Path, 
         )
 
 
+class TestAddBodyFile:
+    """`mq add --body-file`によるシェル引用符を経由しない本文入力経路を検証する。"""
+
+    @staticmethod
+    def _fake_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, repo, kwargs)
+            if resp is not None:
+                return resp
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+    def test_body_file_content_becomes_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """指定ファイルの内容が本文として投入される。"""
+        notes = _setup_notes(tmp_path)
+        repo = tmp_path / "myrepo"
+        repo.mkdir()
+        self._fake_git(monkeypatch, repo)
+        # シェルの引用規則を経由すると破損しやすい文字を含む本文を用いる。
+        body = '### 見出し\n\n- `バッククォート` と $変数 と "引用符" を含む本文\n'
+        body_path = tmp_path / "body.md"
+        body_path.write_text(body, encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert body.strip() in content
+
+    def test_body_file_repeats_for_multiple_entries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """複数回指定すると指定件数のエントリが投入される。"""
+        notes = _setup_notes(tmp_path)
+        repo = tmp_path / "myrepo"
+        repo.mkdir()
+        self._fake_git(monkeypatch, repo)
+        first = tmp_path / "first.md"
+        second = tmp_path / "second.md"
+        first.write_text("1件目の本文\n", encoding="utf-8")
+        second.write_text("2件目の本文\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "add", "--body-file", str(first), "--body-file", str(second)],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 0
+        bodies = sorted(path.read_text(encoding="utf-8") for path in (notes / "inbox").iterdir())
+        assert len(bodies) == 2
+        assert any("1件目の本文" in body for body in bodies)
+        assert any("2件目の本文" in body for body in bodies)
+
+    def test_body_file_rejects_positional_message(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """MESSAGE位置引数との併用はusage表示付きでexit 2になる。"""
+        _setup_notes(tmp_path)
+        body_path = tmp_path / "body.md"
+        body_path.write_text("本文\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--body-file", str(body_path), "本文"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "併用できません" in captured.err
+
+    def test_body_file_missing_path_rejected(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """読み込みに失敗するパスを指定した場合は投入せず非ゼロ終了する。"""
+        _setup_notes(tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--body-file", str(tmp_path / "missing.md")], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "--body-file" in captured.err
+
+
 def test_add_entries_accepts_plain_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """予約書式を含まないTBD本文は投入され、見出しと回答欄が1組だけ生成される。"""
     notes = _prepare_notes(tmp_path, monkeypatch)

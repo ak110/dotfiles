@@ -78,15 +78,9 @@ push済みコミット範囲の既往bumpは判定対象に含めない。
 `scripts/agent_toolkit_bump.py`はno-op出力で正常終了する。
 複数計画の直列消化中はこれが期待動作であり、bump欠落扱いにしない。
 
-既往bumpの自動検出は上流ブランチ（`@{u}`）上の`plugin.json`との比較に依存する
-（`scripts/agent_toolkit_bump.py`の`_read_upstream_version()`が`git show @{u}:<path>`で取得する）。
-作業ブランチの追跡先が未設定または削除済み（`git branch -vv`の出力が`[origin/<branch>: gone]`等となる
-状態）の環境では当該比較が失敗し`_read_upstream_version()`が`None`を返す。この場合
-`scripts/agent_toolkit_bump.py`は「upstream version: 取得できなかった」「未プッシュbump: なし」と
-出力し、既往bumpの有無によらず未検出のまま新規bumpを実行してしまう。bump実行前に`git branch -vv`で
-追跡状態を確認し、追跡先が無い・`gone`と表示される場合は自動検出結果を鵜呑みにせず、bump実行後に
-`agent-toolkit/.claude-plugin/plugin.json`の`version`値を実測で確認して重複増分の有無を判定する。
-この機能不全は、次節が述べる「既存bumpとの統合はツール側が吸収する」仕組みが機能しない例外である。
+既往bumpの自動検出に使う基準版は、上流ブランチ（`@{u}`）、次に`origin/HEAD`の順で解決する。
+作業用の複製で追跡先が失われている場合も`origin/HEAD`から取得できる。
+いずれからも解決できない場合は増分せず非ゼロ終了するため、未検出のまま重複増分することはない。
 
 ## Codex導入後のroot再照合
 

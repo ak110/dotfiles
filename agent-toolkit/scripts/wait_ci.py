@@ -718,7 +718,7 @@ def _follow_cancelled(
       （単一run・単一SHAのみで即断せず取りこぼしを防ぐ）
     - 登録猶予終了後は収集済みrun ID集合（`expected_ids`）に属するrunのみを判定対象とし、
       主フェーズの`expected_ids`方式と同じ考え方で扱う
-    - 混在ケース（一部success/一部cancelled）は対象外（`### 却下した代替案`節参照）
+    - 混在ケース（一部success/一部cancelled）は本処理の前提（全run cancelled）を満たさないため対象外
     """
     start = now_fn()
     follow_shas: set[str] = set()
@@ -868,7 +868,7 @@ def _install_signal_handlers() -> None:
 
     ハンドラは即座に`sys.exit`する。実行中の子`gh`プロセスは明示的に終了させず、
     `subprocess.run`側の`timeout`（`--subprocess-timeout`）到達による自然終了に委ねる。
-    厳密なプロセスグループ制御は複雑化を避けるため実装しない（詳細は`### 却下した代替案`節参照）。
+    厳密なプロセスグループ制御は、複雑化に見合う利得が無いため実装しない。
 
     終了メッセージは`print`ではなく`os.write`で書く。`print`は`sys.stderr`の
     `BufferedWriter`を経由するため、メインフローが同じバッファへ書き込んでいる最中に

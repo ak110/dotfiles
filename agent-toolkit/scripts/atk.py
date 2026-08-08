@@ -177,6 +177,17 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
             "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
         ),
     )
+    add.add_argument(
+        "--body-file",
+        metavar="PATH",
+        action="append",
+        default=None,
+        help=(
+            "本文を記載したファイルのパス。複数回指定すると複数件を投入する。"
+            "MESSAGE位置引数とは併用できない。"
+            "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
+        ),
+    )
     add.add_argument("--type", choices=("feedback", "tbd"), default="feedback")
     add.add_argument("--scope", metavar="NAME", default=None)
     add.add_argument("--question-type", choices=("free-form", "yes-no", "choice"), default=None)

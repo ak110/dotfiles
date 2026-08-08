@@ -172,7 +172,7 @@ def reject_message_file_path(message: str) -> None:
             raise WebInputError(
                 f"MESSAGEがファイルパス '{value}' として解釈できます。"
                 "MESSAGEは本文文字列を受け取ります。"
-                f'ファイル内容を渡す場合は "$(cat {value})" のようにシェルで展開してください。'
+                f"ファイル内容を本文として渡す場合は --body-file {value} を使ってください。"
             )
     except OSError:
         # パス長制限などで検査できない文字列は本文として扱う。
@@ -371,6 +371,24 @@ def add_entries(
     return generated
 
 
+def read_body_files(paths: list[str]) -> list[str]:
+    """`--body-file`で指定された各パスの内容を本文として読む。
+
+    シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路として用いる。
+    読み込みに失敗したパスは`WebInputError`を送出し、部分的に読み込んだ内容を投入へ進めない。
+    """
+    bodies: list[str] = []
+    for raw in paths:
+        path = pathlib.Path(raw).expanduser()
+        try:
+            bodies.append(path.read_text(encoding="utf-8"))
+        except OSError as error:
+            raise WebInputError(f"--body-fileの読み込みに失敗しました: {raw}（{error}）") from error
+        except UnicodeDecodeError as error:
+            raise WebInputError(f"--body-fileをUTF-8として読めません: {raw}") from error
+    return bodies
+
+
 def _cmd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
@@ -390,11 +408,25 @@ def _cmd_add(
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
     計画実装型の分類は`--plan-file`の指定だけで確定する。
+    `--body-file`を指定した場合は当該ファイルの内容を本文として扱い、MESSAGE位置引数とは併用を拒否する。
+    シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
     本文文字列（位置引数またはエディター確定内容）が実在する通常ファイルのパスと解釈できる場合は、
     本文文字列でなくファイル内容の渡し忘れによる誤操作とみなし`_repo_lock`取得前に拒否する
     （拡張子は問わない。`mktemp`が生成する拡張子なしの一時ファイルパスの誤投入も検出対象に含めるためである）。
     """
-    messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
+    body_files = getattr(args, "body_file", None)
+    if body_files:
+        if args.messages:
+            args.subparser.error("--body-fileとMESSAGE位置引数は併用できません")
+        try:
+            messages = read_body_files(body_files)
+        except WebInputError as error:
+            print(f"投入を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
+        # 本文がファイル由来と確定しているため、旧REPO_PATH位置引数形式の互換抽出は適用しない。
+        repo_path_override = args.repo_path_override
+    else:
+        messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
     _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
     target_value = repo_path_override if repo_path_override is not None else args.target_repo
     target_repo, local_worktree = resolve_add_target(target_value)

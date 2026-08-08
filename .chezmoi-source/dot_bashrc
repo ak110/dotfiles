@@ -268,6 +268,8 @@ function cd() {
 }
 alias ..='cd ..'
 function r() {
+    # resetだけではtmuxのスクロールバックが残るため、先に`clear`で表示履歴を破棄する。
+    clear
     reset
     # exec $SHELLはシェルを置き換えるため、残存ジョブ（停止中を含む）は失われる
     if [ -n "$(jobs -p)" ]; then

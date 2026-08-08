@@ -127,6 +127,53 @@ class TestWriteVersion:
         assert json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"] == "0.1.0"
 
 
+class TestResolveBaseVersion:
+    """基準版の解決順序と、解決できない場合の扱い。"""
+
+    @staticmethod
+    def _fake_reader(available: dict[str, str]):
+        def _read(ref: str) -> str | None:
+            return available.get(ref)
+
+        return _read
+
+    def test_prefers_upstream_branch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """上流ブランチを解決できる場合はそちらを採用する。"""
+        monkeypatch.setattr(
+            bump,
+            "_read_version_at",
+            self._fake_reader({"@{u}": "1.0.0", "origin/HEAD": "0.9.0"}),
+        )
+        assert bump.resolve_base_version() == ("1.0.0", "@{u}")
+
+    def test_falls_back_to_origin_head(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """上流ブランチを解決できない場合はorigin/HEADを使う。"""
+        monkeypatch.setattr(bump, "_read_version_at", self._fake_reader({"origin/HEAD": "0.9.0"}))
+        assert bump.resolve_base_version() == ("0.9.0", "origin/HEAD")
+
+    def test_returns_none_when_no_ref_resolves(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """いずれの参照も解決できない場合はNoneを返す。"""
+        monkeypatch.setattr(bump, "_read_version_at", self._fake_reader({}))
+        assert bump.resolve_base_version() is None
+
+    def test_main_exits_nonzero_without_base_version(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """基準版を確定できない場合は増分せず非ゼロ終了する。"""
+        monkeypatch.setattr(bump, "_read_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(bump, "resolve_base_version", lambda: None)
+
+        def _fail(_new_version: str) -> None:
+            raise AssertionError("基準版が未確定のまま書き込んではならない")
+
+        monkeypatch.setattr(bump, "_write_version", _fail)
+
+        assert bump.main(["patch"]) == 1
+        assert "基準版を確定できなかった" in capsys.readouterr().err
+
+
 class TestBumpManifestPathsSsot:
     """`_plan_format.BUMP_MANIFEST_PATHS`とのSSOT整合性検証。"""
 
