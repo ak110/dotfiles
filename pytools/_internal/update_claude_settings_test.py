@@ -211,6 +211,20 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION" not in data["env"]
 
+    def test_gate_revision_rule_requires_verbatim_materials(self):
+        """承認ゲート緩和ルールが新規正規形の逐語素材を許可条件として要求する。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        rules = [rule for rule in data["autoMode"]["allow"] if rule.startswith("Feedback-Originated Gate Revision:")]
+        assert len(rules) == 1
+        assert "`## 目的 > ### 提示素材`" in rules[0]
+        assert "逐語転記" in rules[0]
+
+    def test_gate_revision_rule_keeps_legacy_material_location(self):
+        """移行前に作成済みの計画を処理できるよう旧配置を読み取り互換条件として残す。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        rule = next(rule for rule in data["autoMode"]["allow"] if rule.startswith("Feedback-Originated Gate Revision:"))
+        assert "`## 背景 > ### 提示素材`" in rule
+
     @pytest.mark.parametrize("suffix", ["posix", "win32"])
     def test_only_autonomous_exit_personal_stop_hook_remains(self, suffix: str):
         """OS別設定の個人Stop hookは自律終了検査だけを保持する。"""

@@ -69,7 +69,7 @@ description: >
 
 `agent-toolkit:plan-mode`から作業を開始する。作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、
 Agentツールで`agent-toolkit:plan-impl-executor`を起動して引き継ぐ。
-計画ファイルの実装契約にあるレビューステップへ
+計画ファイルの実装者向け領域にあるレビューステップへ
 `レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップし、
 それ以外は`plan-impl-executor`が計画準拠系と独立系のレビューを並列実行する。
 指摘の統合、修正、コミット統合、二系統の再レビューも同executorが完遂する。
@@ -100,7 +100,7 @@ Codex向けmanifestはこの2ファイルを正本として`scripts/sync_codex_p
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
-  計画の対象ファイル一覧と実装契約へ同ファイルと`uv run python scripts/sync_generated_files.py`を含める。
+  計画の`### 対象ファイル一覧`と実装者向け領域へ同ファイルと`uv run python scripts/sync_generated_files.py`を含める。
   漏れは`scripts/claude_hook_pretooluse.py`のwarnチェックが検出する
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 

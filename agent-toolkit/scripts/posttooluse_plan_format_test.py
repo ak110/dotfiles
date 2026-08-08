@@ -51,18 +51,65 @@ def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:
 
 
 def _plan_content() -> str:
-    """新しい意味アンカーを持つ計画を返す。"""
-    return """## 目的
+    """人間向け固定領域と実装者向け領域を持つ正規形の計画を返す。"""
+    return """# 計画の主題
+
+## 変更履歴
+
+| ID | 起点 | 採否・現在の結論 | 同期先 |
+| --- | --- | --- | --- |
+| H-001 | 初版 | 固定構造で起草した。 | `目的` |
+
+## 目的
+
+### 概要
 
 成果。
 
-## 実装契約
-
 ### 計画メタ情報
 
+- 起動経路: `agent-toolkit:plan-mode`
 - 対象リポジトリ: `/repo`
-- ベースコミット: `0123456789012345678901234567890123456789`
 - 作業種別: 通常変更
+- ベースコミット: `0123456789012345678901234567890123456789`
+
+### 提示素材
+
+P-001:
+
+```text
+対象を更新してほしい。
+```
+
+### ユーザー合意済み事項
+
+| 合意事項 | 適用範囲 | 原文参照 |
+| --- | --- | --- |
+| 対象を更新する | 対象ファイルだけ | P-001 |
+
+## 対応方針
+
+### 実施内容
+
+| 実施内容 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- |
+| 対象を更新する | 指示どおり | P-001が更新を求めている。 |
+
+### 恒久化・リファクタリング内容
+
+#### 恒久化
+
+検討結果を記載する。
+
+#### リファクタリング
+
+検討結果を記載する。
+
+#### 類似見直し
+
+検討結果を記載する。
+
+## 実装契約
 
 ### 対象ファイル一覧
 
@@ -104,14 +151,21 @@ class TestPlanPostWrite:
         assert "does not conform" not in result.stdout
         assert _read_state(state_dir, "plan-write")["current_plan_file_path"] == str(plan)
 
-    def test_arbitrary_h2_order_and_additional_h2_are_not_constrained(self, tmp_path: pathlib.Path) -> None:
-        """任意順序と追加H2でもPostToolUseは形式警告を返さない。"""
+    def test_implementer_region_composition_is_not_constrained(self, tmp_path: pathlib.Path) -> None:
+        """実装者向け領域の構成を変えてもPostToolUseは形式警告を返さない。"""
         home = tmp_path / "home"
         state_dir = tmp_path / "state"
         plan = _prepare_plan_home(home) / "flexible.md"
-        content = _plan_content().replace(
-            "## 完了条件\n\n検証成功。\n\n## 進捗ログ",
-            "## 進捗ログ\n\n未着手。\n\n## 補足\n\n追加。\n\n## 完了条件",
+        content = (
+            _plan_content()
+            .replace(
+                "## 実装契約\n\n### 対象ファイル一覧",
+                "## 変更内容\n\n### 対象ファイル一覧",
+            )
+            .replace(
+                "## 完了条件\n\n検証成功。",
+                "## 実行方法\n\n手順。\n\n## 完了条件\n\n検証成功。",
+            )
         )
         plan.write_text(content, encoding="utf-8")
         result = _run(

@@ -110,26 +110,26 @@ Codexプラグインの導入版が変わった場合、保持済みのplugin ro
 ## plan modeでの取り扱い
 
 計画フェーズではbump要否や既存bumpとの差分を調査せず、種別（PATCH／MINOR／MAJOR）と
-「判定基準」節に基づく種別選定根拠を実装契約へ記述する。
+「判定基準」節に基づく種別選定根拠を実装者向け領域へ記述する。
 具体的なversion数値（`x.y.z`形式）は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
-判定は計画段階で対象ファイル一覧と実装契約から目視照合する。
+判定は計画段階で`### 対象ファイル一覧`と実装者向け領域から目視照合する。
 実装フェーズで`scripts/agent_toolkit_bump.py {種別}`を実行する
 （既存bumpとの統合はツール側が吸収するため`git log`確認は不要）。
 `agent-toolkit/scripts/pretooluse.py`の`agent-toolkit/`配下変更検知フックが`plugin.json`版未変更をwarnで返す。
 補完照合の対象は`agent-toolkit/`配下に限定し、`.chezmoi-source/`・`bin/`・`scripts/`配下は対象外。
-計画ファイルの実装契約には検証より前に
+計画ファイルの実装者向け領域には検証より前に
 `scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する順序を含める。
-bump不要の場合は、実装契約へ`bump不要`と根拠を記載する。
-version bumpを伴う計画では、Claude Code向け正本2ファイルを対象ファイル一覧へ必ず含める。
+bump不要の場合は、同領域へ`bump不要`と根拠を記載する。
+version bumpを伴う計画では、Claude Code向け正本2ファイルを`### 対象ファイル一覧`へ必ず含める。
 正本は`agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`である。
-Codex向け派生manifestも対象ファイル一覧へ含める。
+Codex向け派生manifestも`### 対象ファイル一覧`へ含める。
 Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象に含めない。
 Claude Code向け正本2ファイルを更新した後、`scripts/sync_codex_plugin_manifests.py`で反映する。
 
 ## 新規CLI公開時の疎通経路確認
 
 配布物プラグインで新規CLI・新規コマンド・新規ラッパースクリプトを公開する変更を対象とする計画では、
-計画段階の対象ファイル一覧に利用者環境での疎通経路を含める。
+計画段階の`### 対象ファイル一覧`に利用者環境での疎通経路を含める。
 対象経路はインストールスクリプト・post-apply処理・PATH配置手法・bash補完登録・Windowsペアファイル同期を指す。
 判断基準は、プラグイン単体利用者がPATH追加・環境変数の設定以外の追加設定なしで新CLIを起動できるかとする。
 

@@ -867,6 +867,48 @@ class TestPlanFileBumpDeclarationWarning:
         assert "bump不要" in msg
         assert "warn" in msg.lower()
 
+    @staticmethod
+    def _canonical(implementer_body: str) -> str:
+        """人間向け固定領域の後へ実装者向け領域を置く正規形の計画を返す。"""
+        return (
+            "# 主題\n\n## 変更履歴\n\nx\n\n"
+            "## 目的\n\n### 対象ファイル一覧\n\n- `human/decoy.py`\n\n"
+            "## 対応方針\n\nx\n\n"
+            f"{implementer_body}"
+            "## 進捗ログ\n\nx\n"
+        )
+
+    def test_canonical_region_missing_declaration_warns(self):
+        """正規形でも実装者向け領域の対象一覧と宣言欠落から警告する。"""
+        content = self._canonical(f"## 変更内容\n\n{self._TARGET_LIST}\n- 検証を実行\n\n")
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "agent_toolkit_bump.py" in msg
+        assert "implementer-facing section" in msg
+
+    def test_canonical_region_declaration_in_other_h2_no_warning(self):
+        """実装者向け領域の構成を変えても宣言を同領域から読み取る。"""
+        content = self._canonical(
+            f"## 変更内容\n\n{self._TARGET_LIST}\n## 実行方法\n\n- scripts/agent_toolkit_bump.py patch を実行\n\n"
+        )
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
+    def test_canonical_region_ignores_human_section_target_list(self):
+        """人間向け固定領域の同名H3は対象一覧として扱わない。"""
+        content = (
+            "# 主題\n\n## 変更履歴\n\nx\n\n"
+            "## 目的\n\n### 対象ファイル一覧\n\n- `agent-toolkit/skills/foo/SKILL.md`\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- `scripts/foo.py`\n\n"
+            "## 進捗ログ\n\nx\n"
+        )
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
     def test_no_agent_toolkit_reference(self):
         """対象一覧に`agent-toolkit/`が無ければ警告しない。"""
         content = "## 実装契約\n\n### 対象ファイル一覧\n\n- `scripts/foo.py`\n\n- 検証を実行\n"
@@ -1002,6 +1044,20 @@ class TestPlanFileAgentsMdSyncWarning:
         msg = _get_additional_context(result)
         assert "AGENTS.md" in msg
         assert "warn" in msg.lower()
+
+    def test_canonical_region_rules_without_agents_md_warns(self):
+        """正規形の実装者向け領域からもCodex共有規範の同期漏れを警告する。"""
+        content = (
+            "# 主題\n\n## 変更履歴\n\nx\n\n"
+            "## 目的\n\nx\n\n## 対応方針\n\nx\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- `agent-toolkit/rules/01-agent.md`\n\n"
+            "## 進捗ログ\n\nx\n"
+        )
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "AGENTS.md" in msg
+        assert "implementer-facing section" in msg
 
     def test_no_rules_reference_no_warning(self):
         """対象一覧に共有規範を含まない計画は警告しない。"""

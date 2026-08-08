@@ -8,7 +8,7 @@ matcher・出力フィールド・メッセージ標識の記述指示が前提�
 スキーマ詳細は本スキル本体（SKILL.md）の公式リファレンス節または`plugin-dev:hook-development`スキルを参照する。
 新規実装・改修に着手する前は公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を`WebFetch`で一次資料参照する。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
-参照したセクション名は計画ファイルの実装契約へ引用する。
+参照したセクション名は計画ファイルの実装者向け領域へ引用する。
 既存実装の類推・記憶ベースでのpayload設計は用いない。
 
 - 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutに応答JSONを出力する。exit codeは0で正常完了とする
@@ -16,7 +16,7 @@ matcher・出力フィールド・メッセージ標識の記述指示が前提�
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeランタイムが現プラグインのルートディレクトリに置換する組み込み変数である。
   `hooks.json`の`command`フィールドや、hookスクリプトから他リソースを参照するときに用いる
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する
-- フック追加を計画に含める場合、対象イベントの発火条件を計画本文の実装契約へ事前明示する。
+- フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
   auto modeでのブロック等はPermissionDeniedフックが処理する
 

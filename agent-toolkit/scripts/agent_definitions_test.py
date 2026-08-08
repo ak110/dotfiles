@@ -139,6 +139,37 @@ def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
         assert "runtime-routing.md" not in task
 
 
+def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> None:
+    """初回reviewerへ逐語素材、再reviewerへ変更履歴と解決表を渡す契約を固定する。"""
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    assert "`### 提示素材`の逐語原文、元のユーザー指示" in delegation
+    assert "履歴契約の復元判定表" in delegation
+    assert "要約だけを一次入力にせず" in delegation
+    assert "`## 変更履歴`、前回の6列表" in delegation
+    assert "解決済みIDの再提示は現行計画に同じ違反が残る場合だけ認め" in delegation
+    assert "`### 提示素材`の逐語原文、元のユーザー指示、復元型変更では履歴契約の復元判定表" in task
+    assert "1対1で照合" in task
+    assert "第2列の分類が実際の内容と一致するか" in task
+    assert "節名だけを満たす記載、結論語だけの記載" in task
+    assert "現存箇所と破る契約を示す" in task
+
+
+def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
+    """writerと計画準拠reviewerの参照範囲を固定領域と実装者向け領域で分ける。"""
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    assert "人間向け固定領域（`## 変更履歴`から`## 対応方針`まで）をユーザー要求の正本" in writer
+    assert "実装者向け領域を実装詳細の正本" in writer
+    assert "writerは人間向け固定領域と`## 進捗ログ`を編集せず" in writer
+    assert "`## 目的`、`## 対応方針`、実装者向け領域、`### 対象ファイル一覧`" in plan_review
+    assert "callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`を更新する" in caller
+    assert "`## 変更履歴`へ起点、採否、現在の結論、同期先を追記" in caller
+
+
 def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     """executorがtask pathだけでwriterとreviewerを調整する。"""
     text = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
@@ -314,7 +345,10 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "`### 計画メタ情報`にある固定値`作業種別`だけ" in review_task
     assert "分類契約の不成立として指摘" in review_task
     assert "コロンはASCIIの`:`、コロン後は半角空白1字" in plan_mode
-    assert "固定値には`バグ対応`または`通常変更`" in plan_mode
+    assert "`作業種別`の固定値は`バグ対応`または`通常変更`とする" in plan_mode
+    assert "固定14行の調査表" in review_task
+    for phrase in ("固定順で書く", "行の削除、名称変更、順序変更は行わない"):
+        assert phrase in root_cause
 
     assert "`references/root-cause-analysis.md`" in bugfix_skill
     assert "`references/ci-failure-handling.md`" in bugfix_skill

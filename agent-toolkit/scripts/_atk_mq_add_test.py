@@ -609,6 +609,115 @@ def test_add_operation_warns_when_plan_file_lacks_base_commit(
     assert "完全OIDを抽出できない" in capsys.readouterr().err
 
 
+def test_add_operation_accepts_canonical_plan_metadata(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新しい正規配置の`## 目的`直下からベースコミットを照合する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "canonical-plan.md"
+    plan.write_text(
+        "# 計画\n\n## 目的\n\n### 計画メタ情報\n\n"
+        "- 起動経路: `agent-toolkit:plan-mode`\n"
+        "- 対象リポジトリ: `/repo`\n"
+        "- 作業種別: 通常変更\n"
+        f"- ベースコミット: `{'a' * 40}`\n",
+        encoding="utf-8",
+    )
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+
+
+def test_add_operation_prefers_canonical_over_legacy_plan_metadata(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """正規配置と旧配置が併存する移行期の計画では正規配置の値を採用する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "transitional-plan.md"
+    plan.write_text(
+        f"# 計画\n\n## 目的\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n\n"
+        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
+        encoding="utf-8",
+    )
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+
+
+def test_add_operation_rejects_metadata_split_across_legacy_sections(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """旧配置の候補が複数のH2へ分かれる計画は曖昧として拒否する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "ambiguous-plan.md"
+    plan.write_text(
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n\n"
+        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebInputError, match="計画メタ情報"):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="a" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_operation_warns_when_base_commit_lacks_backticks(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """囲み違反のベースコミットは候補として採らずHEAD照合を省略する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "unquoted-plan.md"
+    plan.write_text(
+        f"# 計画\n\n## 目的\n\n### 計画メタ情報\n\n- ベースコミット: {'a' * 40}\n",
+        encoding="utf-8",
+    )
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="b" * 40,
+        plan_file=str(plan),
+    )
+
+    assert len(generated) == 1
+    assert "完全OIDを抽出できない" in capsys.readouterr().err
+
+
 def test_add_operation_accepts_legacy_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

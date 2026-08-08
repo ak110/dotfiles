@@ -14,13 +14,67 @@ import markdown_it.common.html_re
 import markdown_it.rules_inline
 import markdown_it.token
 
-PLAN_REQUIRED_H2: tuple[str, ...] = (
-    "目的",
-    "実装契約",
-    "完了条件",
-    "進捗ログ",
+PLAN_H2_HISTORY: str = "変更履歴"
+PLAN_H2_PURPOSE: str = "目的"
+PLAN_H2_BUG: str = "バグ調査結果"
+PLAN_H2_POLICY: str = "対応方針"
+PLAN_H2_PROGRESS: str = "進捗ログ"
+
+PLAN_PURPOSE_H3: tuple[str, ...] = ("概要", "計画メタ情報", "提示素材", "ユーザー合意済み事項")
+"""`## 目的`直下に固定順で置くH3。"""
+
+PLAN_POLICY_H3: tuple[str, ...] = ("実施内容", "恒久化・リファクタリング内容")
+"""`## 対応方針`直下に固定順で置くH3。"""
+
+PLAN_PERMANENCE_H4: tuple[str, ...] = ("恒久化", "リファクタリング", "類似見直し")
+"""`### 恒久化・リファクタリング内容`直下に固定順で置くH4。"""
+
+PLAN_METADATA_H3: str = "計画メタ情報"
+PLAN_TARGET_LIST_H3: str = "対象ファイル一覧"
+
+PLAN_METADATA_FIELDS: tuple[str, ...] = ("起動経路", "対象リポジトリ", "作業種別", "ベースコミット")
+"""計画メタ情報の正規形が持つ項目と順序。"""
+
+PLAN_METADATA_QUOTED_FIELDS: frozenset[str] = frozenset({"起動経路", "対象リポジトリ", "ベースコミット"})
+"""値をバッククォートで囲む項目。`作業種別`だけは固定値を裸で書く。"""
+
+PLAN_WORK_TYPES: tuple[str, ...] = ("バグ対応", "通常変更")
+
+PLAN_METADATA_FALLBACK_H2: tuple[str, ...] = ("実装契約", "背景")
+"""正規配置を持たない既存計画で計画メタ情報を読み取る旧配置。読み取り専用の互換経路とする。"""
+
+PLAN_HISTORY_TABLE_HEADER: tuple[str, ...] = ("ID", "起点", "採否・現在の結論", "同期先")
+PLAN_AGREEMENT_TABLE_HEADER: tuple[str, ...] = ("合意事項", "適用範囲", "原文参照")
+PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
+PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
+
+PLAN_BUG_TABLE_HEADER: tuple[str, ...] = ("項目", "内容")
+PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
+    "観測事象",
+    "期待する契約",
+    "直接的原因",
+    "混入要因",
+    "動機的要因",
+    "見逃し原因",
+    "根本原因",
+    "原因分析の根拠",
+    "類似見直しの観点",
+    "類似見直し結果",
+    "是正処置",
+    "横展開処置",
+    "再発防止処置",
+    "設計意図の記録",
 )
-"""別コンテキストが計画を探索するための意味アンカー。順序は問わない。"""
+"""バグ調査表の固定14行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。"""
+
+PLAN_PERMANENCE_TABLE_ROWS: tuple[str, ...] = ("観測事象", "根本原因", "反映先", "反映内容", "対策強度")
+"""通常変更の恒久化表の固定5行。バグ対応はバグ調査表の14行を正本とする。"""
+
+PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
+PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当件数と箇所")
+
+PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})
+"""検討結果として成立しない結論語。これだけの記載は検討の省略として拒否する。"""
 
 PLUGIN_MANIFEST_PATH: str = "agent-toolkit/.claude-plugin/plugin.json"
 """`scripts/agent_toolkit_bump.py`が更新するagent-toolkitプラグインmanifestの相対パス。"""
@@ -49,19 +103,6 @@ def extract_h2_sections(content: str) -> list[str]:
         if m:
             headings.append(m.group(1))
     return headings
-
-
-def check_h2_order(content: str) -> list[str]:
-    """意味アンカーの欠落と重複を検査して違反メッセージの一覧を返す。"""
-    headings = extract_h2_sections(content)
-    violations: list[str] = []
-    missing = [h for h in PLAN_REQUIRED_H2 if h not in headings]
-    if missing:
-        violations.append(f"missing required H2 sections: {missing}.")
-    duplicates = [h for h in PLAN_REQUIRED_H2 if headings.count(h) > 1]
-    if duplicates:
-        violations.append(f"required H2 sections must be unique: {duplicates}.")
-    return violations
 
 
 def markdown_body_start_index(content: str) -> int:
@@ -290,21 +331,291 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
         yield current_h3, current_body
 
 
+@dataclass(frozen=True)
+class PlanHeading:
+    """Markdown本文で有効な見出し1件を表す。"""
+
+    lineno: int
+    level: int
+    text: str
+
+
+_HEADING_PATTERN = re.compile(r"^(#{1,6}) +(.*?)\s*$")
+
+
+def extract_headings(content: str) -> list[PlanHeading]:
+    """本文の有効行から全階層の見出しを出現順に抽出する。
+
+    除外領域の定義は`iter_markdown_body_lines`に従う。
+    """
+    headings: list[PlanHeading] = []
+    for lineno, line in iter_markdown_body_lines(content):
+        match = _HEADING_PATTERN.match(line)
+        if match is not None:
+            headings.append(PlanHeading(lineno, len(match.group(1)), match.group(2)))
+    return headings
+
+
+def heading_subtree_range(headings: list[PlanHeading], index: int) -> tuple[int, int | None]:
+    """指定見出しの本文範囲を(見出し行番号, 次の同位以上の見出し行番号)で返す。
+
+    末尾まで続く場合は第2要素を`None`とする。
+    """
+    level = headings[index].level
+    for following in headings[index + 1 :]:
+        if following.level <= level:
+            return headings[index].lineno, following.lineno
+    return headings[index].lineno, None
+
+
+def lines_within(lines: list[tuple[int, str]], start: int, end: int | None) -> list[tuple[int, str]]:
+    """行番号付き行列から`start`超過かつ`end`未満の範囲を切り出す。"""
+    return [(lineno, line) for lineno, line in lines if lineno > start and (end is None or lineno < end)]
+
+
+def child_headings(headings: list[PlanHeading], index: int, level: int) -> list[tuple[int, PlanHeading]]:
+    """指定見出しの本文範囲にある指定階層の見出しを(索引, 見出し)で返す。"""
+    start, end = heading_subtree_range(headings, index)
+    return [
+        (position, heading)
+        for position, heading in enumerate(headings)
+        if heading.level == level and heading.lineno > start and (end is None or heading.lineno < end)
+    ]
+
+
+def find_heading_index(headings: list[PlanHeading], level: int, text: str) -> int | None:
+    """指定階層・指定見出し文の最初の索引を返す。存在しない場合は`None`を返す。"""
+    return next((index for index, heading in enumerate(headings) if heading.level == level and heading.text == text), None)
+
+
+@dataclass(frozen=True)
+class MarkdownTable:
+    """パイプ表1件の見出し行と本文行を表す。"""
+
+    lineno: int
+    header: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+
+    def row_labels(self) -> tuple[str, ...]:
+        """各行の第1列を返す。"""
+        return tuple(row[0] if row else "" for row in self.rows)
+
+
+_TABLE_DELIMITER_CELL = re.compile(r"^:?-{3,}:?$")
+
+
+def _split_table_row(line: str) -> list[str]:
+    """パイプ表の1行をセルへ分割する。バックスラッシュでのエスケープを尊重する。"""
+    text = line.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|") and not text.endswith("\\|"):
+        text = text[:-1]
+    cells: list[str] = []
+    current = ""
+    escaped = False
+    for character in text:
+        if escaped:
+            current += character
+            escaped = False
+        elif character == "\\":
+            current += character
+            escaped = True
+        elif character == "|":
+            cells.append(current.strip())
+            current = ""
+        else:
+            current += character
+    cells.append(current.strip())
+    return cells
+
+
+def extract_tables(lines: list[tuple[int, str]]) -> list[MarkdownTable]:
+    """行番号付き本文行からパイプ表を出現順に抽出する。"""
+    tables: list[MarkdownTable] = []
+    index = 0
+    while index < len(lines):
+        lineno, line = lines[index]
+        if not line.strip().startswith("|") or index + 1 >= len(lines):
+            index += 1
+            continue
+        delimiter_line = lines[index + 1][1]
+        header = _split_table_row(line)
+        delimiter = _split_table_row(delimiter_line)
+        if (
+            not delimiter_line.strip().startswith("|")
+            or len(delimiter) != len(header)
+            or not all(_TABLE_DELIMITER_CELL.fullmatch(cell) for cell in delimiter)
+        ):
+            index += 1
+            continue
+        rows: list[tuple[str, ...]] = []
+        cursor = index + 2
+        while cursor < len(lines) and lines[cursor][1].strip().startswith("|"):
+            rows.append(tuple(_split_table_row(lines[cursor][1])))
+            cursor += 1
+        tables.append(MarkdownTable(lineno, tuple(header), tuple(rows)))
+        index = cursor
+    return tables
+
+
+@dataclass(frozen=True)
+class PlanMetadata:
+    """計画メタ情報の解析結果を表す。"""
+
+    parent: str
+    """メタ情報を収めていた親H2の見出し文。正規形では`目的`となる。"""
+
+    entries: tuple[tuple[str, str], ...]
+    """記載順の(項目名, 生の値)。順序と記法の検査に使う。"""
+
+    values: dict[str, str]
+    """正規4項目の値。バッククォートは除去済みで、欠落項目は含めない。"""
+
+    base_commit_candidates: tuple[str, ...]
+    """`ベースコミット`と旧別名`基準コミット`から抽出した16進値の全候補。"""
+
+    @property
+    def is_canonical(self) -> bool:
+        """正規配置（`## 目的`直下）から読み取ったかを返す。"""
+        return self.parent == PLAN_H2_PURPOSE
+
+
+_METADATA_ENTRY_PATTERN = re.compile(r"^- (?P<field>[^:]+): (?P<value>.*?)\s*$")
+_METADATA_BASE_COMMIT_FIELDS: frozenset[str] = frozenset({"ベースコミット", "基準コミット"})
+_METADATA_BASE_COMMIT_VALUE = re.compile(r"^`(?P<oid>[0-9a-fA-F]+)`$")
+
+
+def _strip_backticks(value: str) -> str:
+    """前後のバッククォートを1組だけ取り除く。"""
+    if len(value) >= 2 and value.startswith("`") and value.endswith("`"):
+        return value[1:-1]
+    return value
+
+
+def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
+    """計画メタ情報を正規配置優先で解析し、(解析結果, 曖昧性エラー)を返す。
+
+    `## 目的`直下の`### 計画メタ情報`を正規配置とする。
+    正規配置が無い既存計画に限り`PLAN_METADATA_FALLBACK_H2`の旧配置を読み取り互換として使う。
+    同一親に複数の`### 計画メタ情報`がある場合と、旧配置の候補が複数の親に散在する場合は
+    曖昧として解析結果を返さない。
+    """
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    sections: dict[str, list[int]] = {}
+    for index, heading in enumerate(headings):
+        if heading.level != 3 or heading.text != PLAN_METADATA_H3:
+            continue
+        parent = next(
+            (candidate.text for candidate in reversed(headings[:index]) if candidate.level == 2),
+            "",
+        )
+        sections.setdefault(parent, []).append(index)
+
+    if PLAN_H2_PURPOSE in sections:
+        parent = PLAN_H2_PURPOSE
+    else:
+        fallback_parents = [name for name in PLAN_METADATA_FALLBACK_H2 if name in sections]
+        if not fallback_parents:
+            return None, []
+        if len(fallback_parents) > 1:
+            return None, [f"計画メタ情報の配置が複数のH2に分かれています: {fallback_parents}"]
+        parent = fallback_parents[0]
+
+    indices = sections[parent]
+    if len(indices) > 1:
+        return None, [f"`## {parent}`直下の`### {PLAN_METADATA_H3}`が1件ではありません: 実際={len(indices)}件"]
+
+    start, end = heading_subtree_range(headings, indices[0])
+    entries: list[tuple[str, str]] = []
+    for _lineno, line in lines_within(body, start, end):
+        match = _METADATA_ENTRY_PATTERN.fullmatch(line)
+        if match is not None:
+            entries.append((match.group("field").strip(), match.group("value")))
+
+    values: dict[str, str] = {}
+    conflicts: list[str] = []
+    for field, raw_value in entries:
+        if field not in PLAN_METADATA_FIELDS:
+            continue
+        normalized = _strip_backticks(raw_value)
+        if field in values and values[field] != normalized:
+            conflicts.append(f"計画メタ情報の`{field}`に競合する値があります")
+        values.setdefault(field, normalized)
+    base_candidates = [
+        match.group("oid")
+        for field, raw_value in entries
+        if field in _METADATA_BASE_COMMIT_FIELDS and (match := _METADATA_BASE_COMMIT_VALUE.fullmatch(raw_value)) is not None
+    ]
+    if conflicts:
+        return None, conflicts
+    return PlanMetadata(parent, tuple(entries), values, tuple(base_candidates)), []
+
+
+def plan_work_type(content: str) -> str | None:
+    """計画メタ情報から作業種別の固定値を返す。取得できない場合は`None`を返す。"""
+    metadata, _errors = parse_plan_metadata(content)
+    if metadata is None:
+        return None
+    value = metadata.values.get("作業種別")
+    return value if value in PLAN_WORK_TYPES else None
+
+
+def extract_implementer_region(content: str) -> list[tuple[int, str]]:
+    """実装者向け可変領域の本文行を行番号付きで返す。
+
+    正規形では`## 対応方針`の直後のH2から`## 進捗ログ`の直前までを領域とし、
+    領域内のH2・H3見出し行も含める。
+    `## 対応方針`を持たない既存計画では`## 実装契約`配下を読み取り互換の領域とする。
+    実装者向け領域が存在しない場合は空リストを返す。
+    """
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    policy_index = find_heading_index(headings, 2, PLAN_H2_POLICY)
+    if policy_index is None:
+        return extract_h2_section_body(content, "実装契約")
+    _policy_start, policy_end = heading_subtree_range(headings, policy_index)
+    if policy_end is None:
+        return []
+    progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
+    region_end = headings[progress_index].lineno if progress_index is not None else None
+    return [(lineno, line) for lineno, line in body if lineno >= policy_end and (region_end is None or lineno < region_end)]
+
+
+def find_target_list_sections(content: str) -> list[list[tuple[int, str]]]:
+    """実装者向け領域にある`### 対象ファイル一覧`の本文行をセクションごとに返す。"""
+    sections: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] | None = None
+    for lineno, line in extract_implementer_region(content):
+        if line.startswith("## "):
+            current = None
+            continue
+        if line.startswith("### "):
+            current = [] if line[4:].strip() == PLAN_TARGET_LIST_H3 else None
+            if current is not None:
+                sections.append(current)
+            continue
+        if current is not None:
+            current.append((lineno, line))
+    return sections
+
+
+def _target_list_body(content: str) -> list[tuple[int, str]]:
+    """`### 対象ファイル一覧`の本文行を全セクション分連結して返す。"""
+    return [entry for section in find_target_list_sections(content) for entry in section]
+
+
 def extract_target_files_from_changes(content: str) -> list[str]:
-    """`実装契約`の対象一覧からパスを宣言順に抽出する。"""
+    """実装者向け領域の対象一覧からパスを宣言順に抽出する。"""
     return [target.path for target in extract_plan_targets(content)]
 
 
 def extract_plan_targets(content: str) -> list[PlanTarget]:
-    """`## 実装契約 > ### 対象ファイル一覧`の通常箇条書きを抽出する。"""
-    body = extract_h2_section_body(content, "実装契約")
+    """実装者向け領域の`### 対象ファイル一覧`の通常箇条書きを抽出する。"""
     targets: list[PlanTarget] = []
-    in_target_h3 = False
-    for _, line in body:
-        if line.startswith("### "):
-            in_target_h3 = line[4:].strip() == "対象ファイル一覧"
-            continue
-        if in_target_h3 and (match := _TARGET_PATTERN.fullmatch(line)):
+    for _lineno, line in _target_list_body(content):
+        if (match := _TARGET_PATTERN.fullmatch(line)) is not None:
             state = {"新設": "new", "削除": "deleted"}.get(match.group("state"), "existing")
             targets.append(PlanTarget(match.group("path"), state))
     return targets
@@ -312,16 +623,11 @@ def extract_plan_targets(content: str) -> list[PlanTarget]:
 
 def find_invalid_target_entries(content: str) -> list[tuple[int, str]]:
     """対象ファイル一覧の箇条書き候補から契約形式に一致しない項目を返す。"""
-    body = extract_h2_section_body(content, "実装契約")
-    invalid: list[tuple[int, str]] = []
-    in_target_h3 = False
-    for lineno, line in body:
-        if line.startswith("### "):
-            in_target_h3 = line[4:].strip() == "対象ファイル一覧"
-            continue
-        if in_target_h3 and _is_target_entry_candidate(line) and _TARGET_PATTERN.fullmatch(line) is None:
-            invalid.append((lineno, line.strip()))
-    return invalid
+    return [
+        (lineno, line.strip())
+        for lineno, line in _target_list_body(content)
+        if _is_target_entry_candidate(line) and _TARGET_PATTERN.fullmatch(line) is None
+    ]
 
 
 def _is_target_entry_candidate(line: str) -> bool:
@@ -418,15 +724,13 @@ def has_bump_step_when_required(content: str) -> bool:
         return True
     if all(p.endswith("_test.py") for p in agent_toolkit_paths):
         return True
-    contract = extract_h2_section_body(content, "実装契約")
-    contract_text = "\n".join(line for _lineno, line in contract)
+    contract_text = "\n".join(line for _lineno, line in extract_implementer_region(content))
     return "agent_toolkit_bump.py" in contract_text or "bump不要" in contract_text
 
 
 def has_manifest_files_when_bump_step_present(content: str) -> bool:
     """版更新宣言がある計画に正本manifest 2件が含まれるかを判定する。"""
-    contract = extract_h2_section_body(content, "実装契約")
-    contract_text = "\n".join(line for _lineno, line in contract)
+    contract_text = "\n".join(line for _lineno, line in extract_implementer_region(content))
     if "agent_toolkit_bump.py" not in contract_text:
         return True
     paths = extract_target_files_from_changes(content)
@@ -450,3 +754,299 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
         if ".." in parts:
             invalid.append(path)
     return invalid
+
+
+# --- 人間向け固定領域の構造検査 ---
+
+_MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
+_MATERIAL_FENCE_PATTERN = re.compile(r"^\s*(?:`{3,}|~{3,})text\s*$")
+_REFERENCE_SEPARATOR_PATTERN = re.compile(r"[、,・/\s]+")
+
+
+def _text_of(lines: list[tuple[int, str]]) -> str:
+    """行番号付き行列を1つの文字列へ連結する。"""
+    return "\n".join(line for _lineno, line in lines)
+
+
+def _is_placeholder_only(lines: list[tuple[int, str]]) -> bool:
+    """本文が結論語だけで構成されているかを返す。"""
+    contents = [line.strip().lstrip("-*+ ").strip("。 ") for _lineno, line in lines if line.strip()]
+    contents = [content for content in contents if content and not content.startswith("#")]
+    if not contents:
+        return True
+    return all(content in PLAN_PLACEHOLDER_WORDS for content in contents)
+
+
+def _find_table_with_rows(tables: list[MarkdownTable], rows: tuple[str, ...]) -> MarkdownTable | None:
+    """行名と順序が一致する表を返す。見つからない場合は`None`を返す。"""
+    return next((table for table in tables if table.row_labels() == rows), None)
+
+
+def _check_fixed_h2_layout(headings: list[PlanHeading], work_type: str | None) -> list[str]:
+    """人間向け固定領域のH2の有無、順序、追加、`進捗ログ`の位置を検査する。"""
+    errors: list[str] = []
+    h2_texts = [heading.text for heading in headings if heading.level == 2]
+    expected = [PLAN_H2_HISTORY, PLAN_H2_PURPOSE]
+    if work_type == "バグ対応":
+        expected.append(PLAN_H2_BUG)
+    expected.append(PLAN_H2_POLICY)
+    if h2_texts[: len(expected)] != expected:
+        errors.append(f"人間向け固定領域のH2は{expected}をこの順序で置く: 実際={h2_texts[: len(expected)]}")
+    for name in (*expected, PLAN_H2_PROGRESS):
+        count = h2_texts.count(name)
+        if count != 1:
+            errors.append(f"固定H2`## {name}`は1件必要: 実際={count}件")
+    if work_type == "通常変更" and PLAN_H2_BUG in h2_texts:
+        errors.append(f"作業種別が`通常変更`の計画に`## {PLAN_H2_BUG}`は置かない")
+    if h2_texts and h2_texts[-1] != PLAN_H2_PROGRESS:
+        errors.append(f"`## {PLAN_H2_PROGRESS}`は最後のH2にする: 実際の末尾={h2_texts[-1]}")
+    return errors
+
+
+def _check_child_heading_sequence(
+    headings: list[PlanHeading],
+    index: int,
+    level: int,
+    expected: tuple[str, ...],
+    parent_label: str,
+) -> list[str]:
+    """指定見出しの直下にある固定見出しの有無、一意性、順序を検査する。"""
+    errors: list[str] = []
+    children = [heading.text for _position, heading in child_headings(headings, index, level)]
+    positions: list[int] = []
+    for name in expected:
+        count = children.count(name)
+        if count != 1:
+            errors.append(f"{parent_label}直下の`{'#' * level} {name}`は1件必要: 実際={count}件")
+        elif count == 1:
+            positions.append(children.index(name))
+    if len(positions) == len(expected) and positions != sorted(positions):
+        errors.append(f"{parent_label}直下の固定見出しは{list(expected)}の順序で置く: 実際={children}")
+    return errors
+
+
+def _check_metadata_block(content: str) -> tuple[str | None, list[str]]:
+    """計画メタ情報の配置、項目、順序、記法、値を検査して(作業種別, エラー)を返す。"""
+    metadata, errors = parse_plan_metadata(content)
+    if metadata is None:
+        return None, errors or [f"`## {PLAN_H2_PURPOSE}`直下の`### {PLAN_METADATA_H3}`を検査できない"]
+    if not metadata.is_canonical:
+        errors.append(f"計画メタ情報は`## {PLAN_H2_PURPOSE}`直下へ置く: 実際=`## {metadata.parent}`直下")
+    fields = [field for field, _value in metadata.entries]
+    if fields != list(PLAN_METADATA_FIELDS):
+        errors.append(f"計画メタ情報は{list(PLAN_METADATA_FIELDS)}をこの順序で1行ずつ置く: 実際={fields}")
+    for field, raw_value in metadata.entries:
+        if field not in PLAN_METADATA_FIELDS:
+            continue
+        quoted = raw_value.startswith("`") and raw_value.endswith("`") and len(raw_value) >= 2
+        if field in PLAN_METADATA_QUOTED_FIELDS and not quoted:
+            errors.append(f"計画メタ情報の`{field}`はバッククォートで囲む")
+        if field not in PLAN_METADATA_QUOTED_FIELDS and quoted:
+            errors.append(f"計画メタ情報の`{field}`はバッククォートで囲まない")
+        if not _strip_backticks(raw_value):
+            errors.append(f"計画メタ情報の`{field}`が空である")
+    work_type = metadata.values.get("作業種別")
+    if work_type is not None and work_type not in PLAN_WORK_TYPES:
+        errors.append(f"計画メタ情報の`作業種別`は{list(PLAN_WORK_TYPES)}のいずれかで記載する")
+        work_type = None
+    base_commit = metadata.values.get("ベースコミット")
+    if base_commit is not None and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", base_commit) is None:
+        errors.append("計画メタ情報の`ベースコミット`は完全長SHAで記載する")
+    return work_type, errors
+
+
+def _check_materials(
+    content: str,
+    body: list[tuple[int, str]],
+    headings: list[PlanHeading],
+    index: int,
+) -> tuple[set[str], list[str]]:
+    """`### 提示素材`の素材IDと逐語fenceを検査して(素材ID集合, エラー)を返す。"""
+    raw_lines = content.splitlines()
+    start, end = heading_subtree_range(headings, index)
+    upper = len(raw_lines) if end is None else end - 1
+    section = [(lineno, raw_lines[lineno - 1]) for lineno in range(start + 1, min(upper, len(raw_lines)) + 1)]
+    structural = {lineno for lineno, _line in lines_within(body, start, end)}
+    identifiers: set[str] = set()
+    errors: list[str] = []
+    position = 0
+    while position < len(section):
+        lineno, line = section[position]
+        match = _MATERIAL_ID_PATTERN.fullmatch(line.strip())
+        if match is None or lineno not in structural:
+            position += 1
+            continue
+        identifiers.add(match.group("id"))
+        follower = next(
+            ((next_lineno, next_line) for next_lineno, next_line in section[position + 1 :] if next_line.strip()),
+            None,
+        )
+        if follower is None or _MATERIAL_FENCE_PATTERN.fullmatch(follower[1]) is None:
+            errors.append(f"提示素材`{match.group('id')}`の直後に`text`フェンスの逐語転記が無い")
+        position += 1
+    if not identifiers:
+        errors.append("提示素材に素材IDと`text`フェンスの逐語転記が1件以上必要")
+    return identifiers, errors
+
+
+def _check_fixed_table(
+    lines: list[tuple[int, str]],
+    header: tuple[str, ...],
+    label: str,
+) -> tuple[MarkdownTable | None, list[str]]:
+    """列名が一致する表の実在、行数、空cellを検査して(表, エラー)を返す。"""
+    tables = extract_tables(lines)
+    table = next((candidate for candidate in tables if candidate.header == header), None)
+    if table is None:
+        return None, [f"{label}は{list(header)}の列を持つ表にする"]
+    errors: list[str] = []
+    if not table.rows:
+        errors.append(f"{label}の表に1行以上の内容が必要")
+    for row in table.rows:
+        if len(row) != len(header) or any(not cell for cell in row):
+            errors.append(f"{label}の表に空cellまたは列数不一致の行がある: {list(row)}")
+    return table, errors
+
+
+def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading], index: int) -> list[str]:
+    """`## バグ調査結果`配下の各バグ単位が固定14行の2列表を持つかを検査する。"""
+    errors: list[str] = []
+    children = child_headings(headings, index, 3)
+    if not children:
+        errors.append(f"`## {PLAN_H2_BUG}`直下にバグ単位のH3が1件以上必要")
+    for position, heading in children:
+        start, end = heading_subtree_range(headings, position)
+        table = _find_table_with_rows(extract_tables(lines_within(body, start, end)), PLAN_BUG_TABLE_ROWS)
+        if table is None or table.header != PLAN_BUG_TABLE_HEADER:
+            errors.append(f"`### {heading.text}`は{list(PLAN_BUG_TABLE_HEADER)}の2列と固定14行の調査表にする")
+            continue
+        for row in table.rows:
+            if len(row) != 2 or not row[1]:
+                errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
+    return errors
+
+
+def _check_permanence_sections(
+    body: list[tuple[int, str]],
+    headings: list[PlanHeading],
+    index: int,
+    work_type: str | None,
+) -> list[str]:
+    """恒久化、リファクタリング、類似見直しの検討実体を検査する。"""
+    errors = _check_child_heading_sequence(headings, index, 4, PLAN_PERMANENCE_H4, "`### 恒久化・リファクタリング内容`")
+    for position, heading in child_headings(headings, index, 4):
+        if heading.text not in PLAN_PERMANENCE_H4:
+            continue
+        start, end = heading_subtree_range(headings, position)
+        section = lines_within(body, start, end)
+        if _is_placeholder_only(section):
+            errors.append(f"`#### {heading.text}`は対象、比較、確認結果、理由を記載する（結論語だけの記載は成立しない）")
+            continue
+        tables = extract_tables(section)
+        if heading.text == "恒久化" and work_type == "通常変更":
+            if _find_table_with_rows(tables, PLAN_PERMANENCE_TABLE_ROWS) is None:
+                errors.append(f"通常変更の`#### 恒久化`は対象ごとに{list(PLAN_PERMANENCE_TABLE_ROWS)}の5行表を置く")
+        elif heading.text == "リファクタリング":
+            if _find_table_with_rows(tables, PLAN_REFACTORING_TABLE_ROWS) is None:
+                errors.append(f"`#### リファクタリング`は対象ごとに{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く")
+        elif heading.text == "類似見直し" and _find_table_with_rows(tables, PLAN_SIMILAR_REVIEW_TABLE_ROWS) is None:
+            errors.append(f"`#### 類似見直し`は{list(PLAN_SIMILAR_REVIEW_TABLE_ROWS)}の3行表を置く")
+    return errors
+
+
+def check_plan_structure(content: str) -> list[str]:
+    """計画の人間向け固定領域と実装者向け領域の境界を検査して違反一覧を返す。
+
+    検査対象は見出しの欠落、重複、順序違反、固定領域への追加H2、固定表の列と行、
+    空cell、原文参照先の欠落、恒久化等の空欄または結論語だけの記載とする。
+    原文と要約の意味照合、根拠の妥当性、検討の実質はreviewerが判定する。
+    """
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    errors: list[str] = []
+
+    h1_headings = [heading for heading in headings if heading.level == 1]
+    if len(h1_headings) != 1:
+        errors.append(f"先頭にATX H1が1件必要: 実際={len(h1_headings)}件")
+    elif not h1_headings[0].text or headings[0] is not h1_headings[0]:
+        errors.append("H1は本文の先頭見出しとし、主題を空にしない")
+
+    work_type, metadata_errors = _check_metadata_block(content)
+    errors.extend(metadata_errors)
+
+    if not [heading for heading in headings if heading.level == 2]:
+        errors.append("固定H2が1件も無い")
+        return errors
+    errors.extend(_check_fixed_h2_layout(headings, work_type))
+
+    history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
+    if history_index is not None:
+        start, end = heading_subtree_range(headings, history_index)
+        _table, table_errors = _check_fixed_table(
+            lines_within(body, start, end), PLAN_HISTORY_TABLE_HEADER, f"`## {PLAN_H2_HISTORY}`"
+        )
+        errors.extend(table_errors)
+
+    purpose_index = find_heading_index(headings, 2, PLAN_H2_PURPOSE)
+    identifiers: set[str] = set()
+    if purpose_index is not None:
+        errors.extend(_check_child_heading_sequence(headings, purpose_index, 3, PLAN_PURPOSE_H3, f"`## {PLAN_H2_PURPOSE}`"))
+        for position, heading in child_headings(headings, purpose_index, 3):
+            start, end = heading_subtree_range(headings, position)
+            section = lines_within(body, start, end)
+            if heading.text == "概要" and not [line for _lineno, line in section if line.strip()]:
+                errors.append("`### 概要`に成果と解消する問題を記載する")
+            elif heading.text == "提示素材":
+                identifiers, material_errors = _check_materials(content, body, headings, position)
+                errors.extend(material_errors)
+            elif heading.text == "ユーザー合意済み事項":
+                table, table_errors = _check_fixed_table(section, PLAN_AGREEMENT_TABLE_HEADER, "`### ユーザー合意済み事項`")
+                errors.extend(table_errors)
+                if table is not None:
+                    errors.extend(_check_reference_ids(table, identifiers))
+
+    bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)
+    if bug_index is not None:
+        errors.extend(_check_bug_sections(body, headings, bug_index))
+
+    policy_index = find_heading_index(headings, 2, PLAN_H2_POLICY)
+    if policy_index is not None:
+        errors.extend(_check_child_heading_sequence(headings, policy_index, 3, PLAN_POLICY_H3, f"`## {PLAN_H2_POLICY}`"))
+        for position, heading in child_headings(headings, policy_index, 3):
+            start, end = heading_subtree_range(headings, position)
+            section = lines_within(body, start, end)
+            if heading.text == "実施内容":
+                table, table_errors = _check_fixed_table(section, PLAN_ACTION_TABLE_HEADER, "`### 実施内容`")
+                errors.extend(table_errors)
+                if table is not None:
+                    errors.extend(_check_action_relations(table))
+            elif heading.text == "恒久化・リファクタリング内容":
+                errors.extend(_check_permanence_sections(body, headings, position, work_type))
+
+    sections = find_target_list_sections(content)
+    if len(sections) != 1:
+        errors.append(f"実装者向け領域の`### {PLAN_TARGET_LIST_H3}`は1件必要: 実際={len(sections)}件")
+    return errors
+
+
+def _check_reference_ids(table: MarkdownTable, identifiers: set[str]) -> list[str]:
+    """合意表の`原文参照`が提示素材の素材IDを指すかを検査する。"""
+    column = table.header.index("原文参照")
+    errors: list[str] = []
+    for row in table.rows:
+        if len(row) <= column or not row[column]:
+            continue
+        for token in _REFERENCE_SEPARATOR_PATTERN.split(row[column]):
+            if token and token not in identifiers:
+                errors.append(f"`### ユーザー合意済み事項`の原文参照が提示素材に無い: {token}")
+    return errors
+
+
+def _check_action_relations(table: MarkdownTable) -> list[str]:
+    """実施内容表の`ユーザー指示との関係`が3値だけを取るかを検査する。"""
+    column = table.header.index("ユーザー指示との関係")
+    return [
+        f"`### 実施内容`の`ユーザー指示との関係`は{list(PLAN_ACTION_RELATIONS)}のいずれかにする: {row[column]}"
+        for row in table.rows
+        if len(row) > column and row[column] and row[column] not in PLAN_ACTION_RELATIONS
+    ]

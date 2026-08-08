@@ -3634,6 +3634,38 @@ class TestPlanFileTargetFilePathsRelative:
         target_lines = "\n".join(f"- `{p}`" for p in target_paths)
         return f"## 目的\n\nx\n\n## 実装契約\n\n### 対象ファイル一覧\n\n{target_lines}\n\n## 完了条件\n\nx\n\n## 進捗ログ\n\n"
 
+    @staticmethod
+    def _canonical_plan_body(target_paths: list[str]) -> str:
+        """人間向け固定領域の後にある実装者向け領域へ対象一覧を置く正規形を返す。"""
+        target_lines = "\n".join(f"- `{p}`" for p in target_paths)
+        return (
+            "# 主題\n\n## 変更履歴\n\nx\n\n"
+            "## 目的\n\n### 対象ファイル一覧\n\n- `human/decoy.py`\n\n"
+            "## 対応方針\n\nx\n\n"
+            f"## 変更内容\n\n### 対象ファイル一覧\n\n{target_lines}\n\n"
+            "## 進捗ログ\n\nx\n"
+        )
+
+    def test_warns_on_absolute_path_in_canonical_implementer_region(self, tmp_path: pathlib.Path):
+        """固定領域の同名H3を無視し、実装者向け領域の対象一覧だけを判定する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "path-canonical"
+        self._prior_flags(tmp_path, sid)
+        content = self._canonical_plan_body(["/home/user/project/foo.py"])
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "/home/user/project/foo.py" in result.stderr
+        assert "human/decoy.py" not in result.stderr
+        assert "`### 対象ファイル一覧` in the implementer-facing section" in result.stderr
+
     def test_warns_on_absolute_path(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
         plan = self._make_plan(home)

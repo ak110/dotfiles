@@ -14,8 +14,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 - plan fileのWrite/Edit/MultiEditで対象ファイル一覧に`agent-toolkit/`配下パスを含むが
-  `## 実装契約`本文に`agent_toolkit_bump.py`ステップが記載されていない場合の警告 (warn)
-- plan fileのWrite/Edit/MultiEditで`## 実装契約`本文にbump stepが記載されているが
+  実装者向け領域に`agent_toolkit_bump.py`ステップが記載されていない場合の警告 (warn)
+- plan fileのWrite/Edit/MultiEditで実装者向け領域にbump stepが記載されているが
   対象ファイル一覧にmanifest（`agent-toolkit/.claude-plugin/plugin.json`・
   `.claude-plugin/marketplace.json`）が含まれていない場合の警告 (warn)
 - plan fileのWrite/Edit/MultiEditで対象ファイル一覧に絶対パスまたは親ディレクトリ参照を検出した場合の警告 (warn)
@@ -1641,7 +1641,7 @@ def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict
     print(
         _llm_notice(
             f"plan file {file_path_raw}: entries containing absolute paths or parent-directory references were"
-            f" detected under `## 実装契約 > ### 対象ファイル一覧`: {joined}."
+            f" detected under `### 対象ファイル一覧` in the implementer-facing section: {joined}."
             f" Rewrite them as full paths relative to the project root"
             f" (see `skills/plan-mode/SKILL.md` '計画ファイルの完成条件' section).",
             tag="warn",

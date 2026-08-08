@@ -47,82 +47,6 @@ def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
     return outside, errors
 
 
-def _section_bounds(lines: list[str], outside: list[bool], title: str) -> tuple[int, int] | None:
-    """指定H2の開始位置と次のH2の位置を返す。"""
-    start = next((index for index, line in enumerate(lines) if outside[index] and line == f"## {title}"), None)
-    if start is None:
-        return None
-    end = next(
-        (index for index in range(start + 1, len(lines)) if outside[index] and lines[index].startswith("## ")), len(lines)
-    )
-    return start, end
-
-
-def _h3_bounds(lines: list[str], outside: list[bool], parent: str, child: str) -> tuple[int, int] | None:
-    """指定H2直下に一意に存在するH3の本文範囲を返す。"""
-    parent_bounds = _section_bounds(lines, outside, parent)
-    if parent_bounds is None:
-        return None
-    matches = [
-        index for index in range(parent_bounds[0] + 1, parent_bounds[1]) if outside[index] and lines[index] == f"### {child}"
-    ]
-    if len(matches) != 1:
-        return None
-    start = matches[0]
-    end = next(
-        (
-            index
-            for index in range(start + 1, parent_bounds[1])
-            if outside[index] and (lines[index].startswith("## ") or lines[index].startswith("### "))
-        ),
-        parent_bounds[1],
-    )
-    return start, end
-
-
-def _check_required_sections(lines: list[str], outside: list[bool], text: str) -> list[str]:
-    """意味アンカーと実装契約内の固定H3が一意かを検査する。"""
-    errors = _plan_format.check_h2_order(text)
-    for child in ("計画メタ情報", "対象ファイル一覧"):
-        bounds = _section_bounds(lines, outside, "実装契約")
-        count = (
-            sum(1 for index in range(bounds[0] + 1, bounds[1]) if outside[index] and lines[index] == f"### {child}")
-            if bounds is not None
-            else 0
-        )
-        if count != 1:
-            errors.append(f"`## 実装契約`直下に`### {child}`が1件必要: 実際={count}件")
-    return errors
-
-
-def _metadata_values(lines: list[str], outside: list[bool]) -> tuple[dict[str, str], list[str]]:
-    """計画メタ情報の値と構造エラーを返す。"""
-    bounds = _h3_bounds(lines, outside, "実装契約", "計画メタ情報")
-    if bounds is None:
-        return {}, ["`## 実装契約`直下の`### 計画メタ情報`を検査できない"]
-    required = ("対象リポジトリ", "ベースコミット", "作業種別")
-    values: dict[str, str] = {}
-    errors: list[str] = []
-    for field in required:
-        pattern = re.compile(rf"^- {re.escape(field)}: (.+)$")
-        matches = [
-            match.group(1).strip()
-            for index in range(bounds[0] + 1, bounds[1])
-            if outside[index] and (match := pattern.fullmatch(lines[index])) is not None
-        ]
-        if len(matches) != 1:
-            errors.append(f"計画メタ情報の`{field}`が1件必要: 実際={len(matches)}件")
-        elif not matches[0]:
-            errors.append(f"計画メタ情報の`{field}`が空である")
-        else:
-            values[field] = matches[0]
-    if (work_type := values.get("作業種別")) is not None and work_type not in {"バグ対応", "通常変更"}:
-        errors.append("計画メタ情報の`作業種別`は`バグ対応`または`通常変更`で記載する")
-    if (base := values.get("ベースコミット")) is not None and _BASE_VALUE_RE.fullmatch(base) is None:
-        errors.append("計画メタ情報の`ベースコミット`は完全長SHAで記載する")
-    return values, errors
-
-
 def _git_path_object_type(work_dir: pathlib.Path, base_commit: str, path: str) -> tuple[str | None, str | None]:
     """基準コミット上のtree entryが宣言するGit object typeを返す。"""
     result = subprocess.run(
@@ -299,15 +223,12 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
     lines = text.splitlines()
     body_start = _plan_format.markdown_body_start_index(text)
     structure_lines = ["" if index < body_start else line for index, line in enumerate(lines)]
-    outside, errors = _outside_fences(structure_lines)
-    body_lines = {lineno - 1 for lineno, _ in _plan_format.iter_markdown_body_lines(text)}
-    outside = [is_outside and index in body_lines for index, is_outside in enumerate(outside)]
-    errors.extend(_check_required_sections(lines, outside, text))
-    metadata, metadata_errors = _metadata_values(lines, outside)
-    errors.extend(metadata_errors)
+    _outside, errors = _outside_fences(structure_lines)
+    errors.extend(_plan_format.check_plan_structure(text))
+    parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
+    metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
-    declared_base = metadata.get("ベースコミット")
-    normalized_base = _BASE_VALUE_RE.fullmatch(declared_base or "")
+    normalized_base = _BASE_VALUE_RE.fullmatch(metadata.get("ベースコミット") or "")
     target_base = base_commit or (normalized_base.group(1) if normalized_base is not None else None)
     if target_base is not None and not _git_commit_exists(work_dir, target_base):
         errors.append(f"対象リポジトリでベースコミットを解決できない: {target_base}")

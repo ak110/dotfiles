@@ -13,7 +13,7 @@ import sys
 
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_tbd as _tbd
-import markdown_it
+import _plan_format
 from _atk_mq_common import (
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
@@ -92,10 +92,6 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_FEEDBACK_ERROR = "feedback本文が実質空です"
-_PLAN_BASE_COMMIT_LINE_RE = re.compile(
-    r"^\s*-\s*(?:ベースコミット|基準コミット):\s*`([0-9a-fA-F]+)`[^\n]*$",
-    re.MULTILINE,
-)
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -108,87 +104,12 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     return frontmatter, body
 
 
-def _plan_metadata_text(plan_text: str) -> str | None:
-    """計画Markdownの実装契約直下にある一意な計画メタ情報の非コード本文を返す。
-
-    現行形式の`## 実装契約`を正本として優先する。現行形式が無い既存計画だけは
-    旧形式の`## 背景`へフォールバックし、投入済み計画の継続処理を維持する。
-    """
-    tokens = markdown_it.MarkdownIt("commonmark").parse(plan_text)
-    lines = plan_text.splitlines()
-
-    def h2_sections(heading: str) -> list[tuple[int, int]]:
-        sections: list[tuple[int, int]] = []
-        for index, token in enumerate(tokens):
-            if (
-                token.type != "heading_open"
-                or token.tag != "h2"
-                or token.level != 0
-                or token.map is None
-                or tokens[index + 1].content != heading
-            ):
-                continue
-            end_line = len(lines)
-            for following in tokens[index + 2 :]:
-                if following.type == "heading_open" and following.level == 0 and following.map is not None:
-                    if int(following.tag[1:]) > 2:
-                        continue
-                    end_line = following.map[0]
-                    break
-            sections.append((token.map[1], end_line))
-        return sections
-
-    parent_heading = "実装契約"
-    parents = h2_sections(parent_heading)
-    if not parents:
-        parent_heading = "背景"
-        parents = h2_sections(parent_heading)
-    if len(parents) > 1:
-        raise WebInputError(f"計画ファイルのフェンス外の`## {parent_heading}`が1件ではありません: 実際={len(parents)}件")
-    if not parents:
-        return None
-    parent_start, parent_end = parents[0]
-    candidates = [
-        (index, token)
-        for index, token in enumerate(tokens)
-        if token.type == "heading_open"
-        and token.tag == "h3"
-        and token.level == 0
-        and token.map is not None
-        and parent_start <= token.map[0] < parent_end
-        and tokens[index + 1].content == "計画メタ情報"
-    ]
-    if len(candidates) > 1:
-        raise WebInputError(
-            f"計画ファイルの`## {parent_heading}`直下にあるフェンス外の"
-            f"`### 計画メタ情報`が1件ではありません: 実際={len(candidates)}件"
-        )
-    if not candidates:
-        return None
-    index, metadata = candidates[0]
-    assert metadata.map is not None
-    end_line = parent_end
-    for following in tokens[index + 2 :]:
-        if following.type == "heading_open" and following.level == 0 and following.map is not None:
-            if int(following.tag[1:]) > 3:
-                continue
-            end_line = min(end_line, following.map[0])
-            break
-    code_lines = {
-        line_no
-        for token in tokens
-        if token.type in {"fence", "code_block"}
-        and token.map is not None
-        and metadata.map[1] <= token.map[0]
-        and token.map[1] <= end_line
-        for line_no in range(token.map[0], token.map[1])
-    }
-    return "\n".join(lines[line_no] for line_no in range(metadata.map[1], end_line) if line_no not in code_lines)
-
-
 def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None) -> None:
     """計画ファイルのベースコミットと投入先作業ツリーのHEADを照合する。
 
+    計画メタ情報の解析は`_plan_format.parse_plan_metadata`へ委ねる。
+    正規形の`## 目的`直下を優先し、正規形を持たない既存計画だけ旧配置へ読み取り互換で
+    フォールバックする。配置が曖昧な計画は投入を拒否する。
     双方が完全OIDとして得られた場合だけ比較し、不一致なら`WebInputError`を送出する。
     計画側が欠落または短縮表記の場合は警告を出力して投入を継続する。
     """
@@ -196,8 +117,10 @@ def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None)
         plan_text = plan_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise WebInputError(f"plan_fileを読み込めません: {plan_path}") from error
-    metadata = _plan_metadata_text(plan_text)
-    candidates = _PLAN_BASE_COMMIT_LINE_RE.findall(metadata or "")
+    metadata, ambiguity_errors = _plan_format.parse_plan_metadata(plan_text)
+    if ambiguity_errors:
+        raise WebInputError(f"計画ファイルの`### 計画メタ情報`を一意に解析できません: {ambiguity_errors[0]}")
+    candidates = list(metadata.base_commit_candidates) if metadata is not None else []
     if len(candidates) > 1:
         raise WebInputError(f"計画ファイルの`### 計画メタ情報`にベースコミット候補が複数あります: 実際={len(candidates)}件")
     if not candidates or len(candidates[0]) not in {40, 64}:
