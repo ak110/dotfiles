@@ -220,6 +220,13 @@ def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str,
     return question_type, []
 
 
+def _tbd_answer(text: str, kind: str) -> str | None:
+    """TBD回答欄の既存回答を編集用文字列として返す。"""
+    if kind != common.MQ_TYPE_TBD or tbd_mutations.ANSWER_MARKER not in text:
+        return None
+    return text.rsplit(tbd_mutations.ANSWER_MARKER, maxsplit=1)[1].strip() or None
+
+
 class BoundedWorkers:
     """要求キャンセル後も同期処理完了まで同時実行枠を保持する。"""
 
@@ -358,6 +365,7 @@ class Operations:
                 "body_html": _render_body(text),
                 "question_type": question_type,
                 "choices": choices,
+                "answer": _tbd_answer(text, kind or "unknown"),
             }
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error

@@ -322,10 +322,10 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator('#entry-list .entry-select[data-kind="unknown"]').count() == 1
 
     feedback_row = page.locator('#entry-list .entry-select[data-kind="feedback"]').filter(has_text="feedback.md")
-    assert await feedback_row.locator(".status-cell").text_content() == "フィードバック未処理"
-    time_text = await feedback_row.locator(".time-cell").text_content()
-    assert time_text is not None
-    assert not time_text.startswith("—")
+    assert await feedback_row.locator(".entry-kind").text_content() == "feedback"
+    assert await feedback_row.locator(".state-badge").text_content() == "inbox"
+    assert await feedback_row.locator(".filename-cell").text_content() == "feedback.md"
+    assert await feedback_row.locator(".summary-cell").text_content() == "編集対象の本文"
 
     empty_row = page.locator("#entry-list .entry-select").filter(has_text="empty.md")
     await empty_row.click()
@@ -392,6 +392,93 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#entry-list .entry-select").filter(has_text="sse.md").wait_for(state="visible")
     await playwright.async_api.expect(page.locator('#target-filter option[value="sse/repo"]')).to_have_count(1)
     assert await page.locator("#result-status").text_content() == status_before_sse
+
+
+@pytest.mark.asyncio
+async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
+    """既存回答の変更、終端状態の読取り専用、識別子表示を実ブラウザーで検証する。"""
+    harness = browser_harness
+    page = harness.page
+    question_path = harness.root / "inbox" / "question.md"
+    question_path.write_text(question_path.read_text(encoding="utf-8") + "既存回答\n", encoding="utf-8")
+    await page.goto(harness.base_url + "/")
+
+    question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
+    await question_row.click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("tbd / inbox")
+    await detail.get_by_role("button", name="回答を変更", exact=True).click()
+    await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
+    await page.keyboard.press("Escape")
+
+    await page.locator("#state-filter").select_option("all")
+    await page.locator('.entry-select[data-key="adopted/adopted.md"]').click()
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / adopted")
+    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#delete-button")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_browser_notification_uses_filename_registration_identity(browser_harness: _BrowserHarness) -> None:
+    """初回と既知TBDの属性変化を通知せず、新規未回答TBDだけを通知する。"""
+    harness = browser_harness
+    page = harness.page
+    await page.add_init_script(
+        """
+window.__notificationCalls = [];
+class TestNotification {
+  static permission = 'default';
+  static async requestPermission() { TestNotification.permission = 'granted'; return 'granted'; }
+  constructor(title, options) { window.__notificationCalls.push({title, body: options.body}); }
+}
+Object.defineProperty(window, 'Notification', {configurable: true, value: TestNotification});
+"""
+    )
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?type=tbd&status=all&answered=all")):
+        await page.goto(harness.base_url + "/")
+    assert await page.evaluate("window.__notificationCalls.length") == 0
+    notification_button = page.get_by_role("button", name="通知を有効化")
+    await notification_button.click()
+    await playwright.async_api.expect(notification_button).to_be_hidden()
+
+    async def publish_and_wait() -> None:
+        async with page.expect_response(
+            lambda response: response.url.endswith("/api/entries?type=tbd&status=all&answered=all")
+        ):
+            harness.current_state.publish()
+
+    marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
+    new_path = harness.root / "inbox" / "new-question.md"
+    new_unanswered = f"---\ntype: tbd\ntarget_repo: new/repo\n---\n\n## 質問\n\n新規\n\n## 回答\n\n{marker}\n"
+    new_path.write_text(new_unanswered, encoding="utf-8")
+    await publish_and_wait()
+    await page.wait_for_function("window.__notificationCalls.length === 1")
+    assert await page.evaluate("window.__notificationCalls") == [{"title": "新規未回答TBD", "body": "new-question.md"}]
+
+    question_path = harness.root / "inbox" / "question.md"
+    original_question = question_path.read_text(encoding="utf-8")
+    question_path.write_text(original_question + "回答済み\n", encoding="utf-8")
+    await publish_and_wait()
+    question_path.write_text(original_question, encoding="utf-8")
+    await publish_and_wait()
+    question_path.write_text(original_question.replace("example/repo", "changed/repo"), encoding="utf-8")
+    await publish_and_wait()
+
+    processing_path = harness.root / "processing" / "question.md"
+    processing_path.parent.mkdir(exist_ok=True)
+    question_path.rename(processing_path)
+    await publish_and_wait()
+    processing_path.rename(question_path)
+    await publish_and_wait()
+
+    new_path.unlink()
+    await publish_and_wait()
+    new_path.write_text(new_unanswered, encoding="utf-8")
+    await publish_and_wait()
+    await page.wait_for_timeout(100)
+    assert await page.evaluate("window.__notificationCalls.length") == 1
 
 
 @pytest.mark.asyncio
@@ -533,10 +620,10 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     processing_row = page.locator('.entry-select[data-key="processing/same.md"]')
     await processing_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("処理中")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / processing")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
     harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("処理中")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / processing")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
 
     await detail.get_by_role("button", name="編集", exact=True).click()
@@ -565,7 +652,7 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     moving.rename(moved)
     harness.current_state.publish()
     await delete_dialog.wait_for(state="hidden")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("処理中")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / processing")
     await playwright.async_api.expect(detail.locator("#detail-dialog-body")).to_be_focused()
 
     await detail.get_by_role("button", name="削除").click()

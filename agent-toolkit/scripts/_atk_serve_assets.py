@@ -45,6 +45,7 @@ HTML = """<!doctype html>
     </div>
     <div class="header-actions">
       <span id="sync-result" class="secondary-text" role="status"></span>
+      <button id="notification-button" class="button-secondary" type="button" hidden>通知を有効化</button>
       <button id="refresh-button" class="button-secondary" type="button">今すぐ同期</button>
       <button id="create-button" class="button-primary" type="button">新規追加</button>
     </div>
@@ -64,18 +65,18 @@ HTML = """<!doctype html>
       <div class="filter-grid">
         <label for="kind-filter">種別</label>
         <select id="kind-filter">
-          <option value="all">すべて</option>
-          <option value="feedback">フィードバック</option>
-          <option value="tbd">TBD</option>
+          <option value="all">all</option>
+          <option value="feedback">feedback</option>
+          <option value="tbd">tbd</option>
         </select>
         <label for="state-filter">状態</label>
         <select id="state-filter">
-          <option value="active">対応中</option>
-          <option value="all">すべて</option>
-          <option value="inbox">未処理</option>
-          <option value="processing">処理中</option>
-          <option value="adopted">採用済み</option>
-          <option value="rejected">不採用</option>
+          <option value="active">active</option>
+          <option value="all">all</option>
+          <option value="inbox">inbox</option>
+          <option value="processing">processing</option>
+          <option value="adopted">adopted</option>
+          <option value="rejected">rejected</option>
         </select>
         <label for="answer-filter">回答状況</label>
         <select id="answer-filter">
@@ -85,12 +86,11 @@ HTML = """<!doctype html>
         </select>
       </div>
 
-      <section class="additional-filters" aria-labelledby="additional-filters-heading">
-        <h3 id="additional-filters-heading">追加条件</h3>
+      <section class="additional-filters" aria-label="追加のフィルター条件">
         <div class="filter-grid">
           <label for="target-filter">対象リポジトリ</label>
           <select id="target-filter"><option value="">すべて</option></select>
-          <label for="category-filter">カテゴリ</label>
+          <label for="category-filter">category（再発防止分類）</label>
           <input id="category-filter" type="text">
           <label for="source-filter">投入元</label>
           <input id="source-filter" type="text">
@@ -111,11 +111,10 @@ HTML = """<!doctype html>
       <div id="list-warning" class="list-warning" role="alert" hidden></div>
       <div id="loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
       <div class="entry-columns" aria-hidden="true">
-        <span>要約</span>
+        <span>ファイル名</span>
         <span>対象リポジトリ</span>
         <span>種別・状態</span>
-        <span>更新日時</span>
-        <span>ファイル名</span>
+        <span>要約</span>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
       <div id="empty-state" class="empty-state" hidden>
@@ -164,12 +163,16 @@ HTML = """<!doctype html>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>
       </div>
-      <footer id="detail-footer" class="dialog-footer">
-        <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
-        <button id="edit-button" class="button-primary" type="button">編集</button>
-        <button id="delete-button" class="button-danger" type="button">削除</button>
-        <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
-        <button id="save-answer-button" class="button-primary" type="button" hidden>回答を保存</button>
+      <footer id="detail-footer" class="dialog-footer detail-footer">
+        <div class="detail-footer-left">
+          <button id="delete-button" class="button-danger" type="button">削除</button>
+        </div>
+        <div class="detail-footer-right">
+          <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
+          <button id="edit-button" class="button-primary" type="button">編集</button>
+          <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
+          <button id="save-answer-button" class="button-primary" type="button" hidden>回答を保存</button>
+        </div>
       </footer>
     </article>
   </dialog>
@@ -186,8 +189,8 @@ HTML = """<!doctype html>
         <div class="dialog-form-fields">
           <label for="create-kind">種別（必須）</label>
           <select id="create-kind" name="type">
-            <option value="feedback">フィードバック</option>
-            <option value="tbd">TBD</option>
+            <option value="feedback">feedback</option>
+            <option value="tbd">tbd</option>
           </select>
           <label for="create-content">本文（必須）</label>
           <textarea id="create-content" name="message" aria-describedby="create-content-error" required></textarea>
@@ -424,13 +427,12 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .entry-pane { min-height: 34rem; }
 .entry-columns, .entry-select {
   display: grid;
-  /* 要約と対象を主情報、ファイル名と日時を補助情報として幅を配分する。 */
+  /* ファイル名と要約を主情報として幅を配分する。 */
   grid-template-columns:
-    minmax(12rem, 2fr)
+    minmax(12rem, 1.4fr)
     minmax(10rem, 1.35fr)
     minmax(8rem, 1fr)
-    minmax(7rem, 0.75fr)
-    minmax(8rem, 0.85fr);
+    minmax(12rem, 2fr);
   gap: var(--space-2);
   align-items: center;
 }
@@ -559,6 +561,8 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
 }
+.detail-footer { justify-content: space-between; }
+.detail-footer-left, .detail-footer-right { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .detail-title-row { justify-content: space-between; }
 .detail-title-row h3 { overflow-wrap: anywhere; }
 .metadata {
@@ -713,6 +717,8 @@ let detailRefreshRequired = false;
 let deleteDialogEntrySnapshot = '';
 let searchTimer = null;
 let toastTimer = null;
+let knownTbdBaselineReady = false;
+const knownTbdFilenames = new Set();
 const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
@@ -876,17 +882,17 @@ function renderEntry(entry) {
   button.dataset.unansweredTbd = String(unanswered);
   button.setAttribute('aria-current', String(entryKey(currentEntry) === entryKey(entry)));
 
-  appendTextCell(button, '要約', 'summary-cell', entry.summary);
+  appendTextCell(button, 'ファイル名', 'filename-cell', entry.filename);
   appendTextCell(button, '対象リポジトリ', 'target-repo-cell', entry.target_repo);
   const status = appendCell(button, '種別・状態', 'status-cell');
   const kind = document.createElement('span');
   kind.className = 'entry-kind';
-  kind.textContent = kindLabel(entry.kind);
+  kind.textContent = entry.kind || 'unknown';
   status.append(kind);
   const badge = document.createElement('span');
   badge.className = 'state-badge';
   badge.dataset.state = entry.state;
-  badge.textContent = stateLabel(entry.state);
+  badge.textContent = entry.state || 'unknown';
   status.append(badge);
   if (unanswered) {
     const attention = document.createElement('span');
@@ -894,18 +900,11 @@ function renderEntry(entry) {
     attention.textContent = '未回答';
     status.append(attention);
   }
-  const parts = formatDateParts(entry.updated_at);
-  const timeCell = appendCell(button, '更新日時', 'time-cell');
-  const dateTime = document.createElement('time');
-  dateTime.dateTime = entry.updated_at || '';
-  dateTime.textContent = parts.date;
-  timeCell.append(dateTime);
-  if (parts.time) timeCell.append(document.createTextNode(` ${parts.time}`));
-  appendTextCell(button, 'ファイル名', 'filename-cell', entry.filename);
+  appendTextCell(button, '要約', 'summary-cell', entry.summary);
   button.setAttribute(
     'aria-label',
-    [entry.summary || '要約なし', entry.target_repo || '対象なし', kindLabel(entry.kind), stateLabel(entry.state),
-      unanswered ? '未回答' : '', entry.filename].filter(Boolean).join('、')
+    [entry.filename, entry.target_repo || '対象なし', entry.kind || 'unknown', entry.state || 'unknown',
+      unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
   button.addEventListener('click', () => selectEntry(entry, button));
   item.append(button);
@@ -1024,6 +1023,33 @@ async function loadEntries({announce = false} = {}) {
   }
 }
 
+function syncNotificationButton() {
+  const button = byId('notification-button');
+  button.hidden = typeof Notification === 'undefined' || Notification.permission !== 'default';
+}
+
+async function refreshKnownTbds({notify = false} = {}) {
+  const payload = await api('/api/entries?type=tbd&status=all&answered=all');
+  const allTbds = Array.isArray(payload.entries) ? payload.entries : [];
+  const newUnanswered = knownTbdBaselineReady && notify ? allTbds.filter(entry =>
+    !knownTbdFilenames.has(entry.filename) && ACTIVE_STATES.has(entry.state) && entry.answered === false
+  ) : [];
+  allTbds.forEach(entry => knownTbdFilenames.add(entry.filename));
+  knownTbdBaselineReady = true;
+  if (newUnanswered.length && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    const filenames = newUnanswered.map(entry => entry.filename);
+    new Notification('新規未回答TBD', {
+      body: filenames.length === 1 ? filenames[0] : `${filenames.length}件: ${filenames.join('、')}`
+    });
+  }
+}
+
+async function enableNotifications() {
+  if (typeof Notification === 'undefined') return;
+  await Notification.requestPermission();
+  syncNotificationButton();
+}
+
 function replaceOptions(select, values, firstLabel) {
   const selected = select.value;
   select.replaceChildren();
@@ -1111,8 +1137,8 @@ function detailReturnTarget() {
 }
 
 function metadataValue(entry, key) {
-  if (key === 'kind') return kindLabel(entry.kind);
-  if (key === 'state') return stateLabel(entry.state);
+  if (key === 'kind') return entry.kind || 'unknown';
+  if (key === 'state') return entry.state || 'unknown';
   if (key === 'answered') return entry.answered === true ? '回答済み' : entry.answered === false ? '未回答' : '';
   if (key === 'updated_at') {
     const parts = formatDateParts(entry.updated_at);
@@ -1143,7 +1169,8 @@ function setDetailMode(mode) {
   byId('answer-panel').hidden = !answering;
   byId('edit-button').hidden = editing || answering || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
   byId('answer-button').hidden = editing || answering || !currentEntry ||
-    currentEntry.kind !== 'tbd' || currentEntry.answered !== false || !ACTIVE_STATES.has(currentEntry.state);
+    currentEntry.kind !== 'tbd' || !ACTIVE_STATES.has(currentEntry.state);
+  byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
   byId('delete-button').hidden = editing || answering || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
@@ -1184,7 +1211,7 @@ function displayEntry(entry) {
   setTextMessage('detail-alert', '');
   byId('detail-view').hidden = false;
   byId('detail-filename').textContent = entry.filename;
-  byId('detail-state').textContent = stateLabel(entry.state);
+  byId('detail-state').textContent = `${entry.kind || 'unknown'} / ${entry.state || 'unknown'}`;
   byId('detail-state').dataset.state = entry.state;
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
@@ -1344,7 +1371,7 @@ function enterEdit() {
 
 function enterAnswer() {
   if (!currentEntry) return;
-  byId('answer-input').value = '';
+  byId('answer-input').value = currentEntry.answer || '';
   setDetailMode('answer');
   byId('answer-input').focus();
 }
@@ -1499,7 +1526,7 @@ function openDeleteDialog() {
   deleteDialogEntrySnapshot = deleteEntrySnapshot(currentEntry);
   clearDialogMessages('delete');
   byId('delete-target').textContent = currentEntry.filename;
-  byId('delete-state').textContent = stateLabel(currentEntry.state);
+  byId('delete-state').textContent = `${currentEntry.kind || 'unknown'} / ${currentEntry.state || 'unknown'}`;
   byId('delete-state').dataset.state = currentEntry.state;
   byId('delete-target-repo').textContent = currentEntry.target_repo || '—';
   byId('delete-summary').textContent = currentEntry.summary || '—';
@@ -1579,6 +1606,9 @@ async function handleFilterChange({reloadRepos = false} = {}) {
 }
 
 async function reloadFromExternalChange() {
+  void refreshKnownTbds({notify: true}).catch((error) => {
+    setTextMessage('global-error', messageFromError(error));
+  });
   await loadTargetRepos();
   await loadEntries({announce: false});
   await reloadOpenDetailFromExternalChange();
@@ -1596,6 +1626,7 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
 
 // BIND_EVENTS
 byId('refresh-button').addEventListener('click', synchronizeAndLoad);
+byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
 byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
 byId('empty-create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
 byId('clear-filters-button').addEventListener('click', () => clearFilters());
@@ -1631,8 +1662,14 @@ attachDialogCloseHandlers('delete-dialog', 'delete-close-button', closeDeleteDia
 const eventSource = new EventSource(BASE_PATH + '/api/events');
 eventSource.addEventListener('open', () => { byId('connection-status').textContent = '自動更新に接続済み'; });
 eventSource.addEventListener('error', () => { byId('connection-status').textContent = '自動更新を再接続中'; });
-eventSource.addEventListener('changed', () => { void reloadFromExternalChange(); });
+let initialization;
+eventSource.addEventListener('changed', () => { void initialization.then(reloadFromExternalChange); });
 
 syncFilterDependencies();
-void synchronizeAndLoad();
+syncNotificationButton();
+initialization = synchronizeAndLoad()
+  .then(() => refreshKnownTbds({notify: false}))
+  .catch((error) => {
+    setTextMessage('global-error', messageFromError(error));
+  });
 """

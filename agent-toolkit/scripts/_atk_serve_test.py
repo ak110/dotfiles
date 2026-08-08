@@ -91,23 +91,22 @@ def test_assets_are_self_contained() -> None:
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
 
 
-def test_assets_use_single_summary_first_list_and_current_terms() -> None:
-    """単一一覧の列順、件数、優先表示属性、利用者向け用語を固定する。"""
+def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
+    """単一一覧のCLI準拠列順、件数、識別子表示を固定する。"""
     assert assets.HTML.count('<ul id="entry-list"') == 1
     assert "other-entry-list" not in assets.HTML
     columns = re.search(r'<div class="entry-columns"[^>]*>(.*?)</div>', assets.HTML, re.DOTALL)
     assert columns is not None
     assert re.findall(r"<span>(.*?)</span>", columns.group(1)) == [
-        "要約",
+        "ファイル名",
         "対象リポジトリ",
         "種別・状態",
-        "更新日時",
-        "ファイル名",
+        "要約",
     ]
     assert "未回答TBD 0件" in assets.HTML
     assert "種別・状態・回答状況" not in assets.HTML
     assert ">確認事項<" not in assets.HTML
-    assert ">TBD<" in assets.HTML
+    assert assets.HTML.count(">tbd<") == 2
     assert ">今すぐ同期<" in assets.HTML
     assert 'placeholder="本文・ファイル名・対象・カテゴリ・投入元を検索"' in assets.HTML
     assert "dataset.unansweredTbd" in assets.JS
@@ -117,11 +116,10 @@ def test_assets_use_single_summary_first_list_and_current_terms() -> None:
     assert grid is not None
     widths = re.findall(r"minmax\(([^)]+)\)", grid.group(1))
     assert widths == [
-        "12rem, 2fr",
+        "12rem, 1.4fr",
         "10rem, 1.35fr",
         "8rem, 1fr",
-        "7rem, 0.75fr",
-        "8rem, 0.85fr",
+        "12rem, 2fr",
     ]
 
 
@@ -140,7 +138,7 @@ def test_assets_use_shared_dialog_shell_without_cancel_ui() -> None:
         assert f'aria-labelledby="{heading_id}"' in dialog.group(1)
         assert 'class="dialog-header"' in dialog.group(2)
         assert 'class="dialog-body"' in dialog.group(2)
-        assert 'class="dialog-footer"' in dialog.group(2)
+        assert 'class="dialog-footer' in dialog.group(2)
         assert f'id="{close_id}"' in dialog.group(2)
         assert 'aria-label="閉じる"' in dialog.group(2)
     assert "unsaved-dialog" not in assets.HTML
@@ -257,7 +255,7 @@ class Element {{
   focus() {{ document.activeElement = this; globalThis.focused = this.dataset.key || this.id; }}
 }}
 const ids = [
-  'connection-status', 'sync-result', 'refresh-button', 'create-button', 'global-error',
+  'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
   'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
   'target-filter', 'category-filter', 'source-filter', 'source-empty-filter', 'entry-count',
   'result-status', 'list-warning', 'loading-indicator', 'entry-list', 'empty-state',
@@ -349,8 +347,8 @@ renderList([{filename: 'bad.md', reason: 'UTF-8として読み取れません'}]
 const announced = elements['result-status'].textContent;
 const warning = elements['list-warning'].textContent;
 const feedbackCells = elements['entry-list'].children[2].children[0].children;
-const statusPrefix = feedbackCells[2].textContent;
-const timePrefix = feedbackCells[3].textContent;
+const kindState = feedbackCells[2].children.map(child => child.textContent);
+const summary = feedbackCells[3].textContent;
 elements['kind-filter'].value = 'feedback';
 elements['answer-filter'].value = 'no';
 elements['source-filter'].value = 'web';
@@ -365,8 +363,8 @@ process.stdout.write(JSON.stringify({
   count: elements['entry-count'].textContent,
   warning,
   announced,
-  statusPrefix,
-  timePrefix,
+  kindState,
+  summary,
   sseStatus: elements['result-status'].textContent,
   answerValue: elements['answer-filter'].value,
   answerDisabled: elements['answer-filter'].disabled,
@@ -382,8 +380,8 @@ process.stdout.write(JSON.stringify({
         "count": "3件（未回答TBD 1件）",
         "warning": "一覧から除外したファイル: bad.md（UTF-8として読み取れません）",
         "announced": "3件を表示",
-        "statusPrefix": "",
-        "timePrefix": "",
+        "kindState": ["feedback", "inbox"],
+        "summary": "本文",
         "sseStatus": "変更しない",
         "answerValue": "all",
         "answerDisabled": True,
@@ -425,19 +423,21 @@ process.stdout.write(JSON.stringify({active, filtered, all}));
     }
 
 
-def test_assets_keep_question_visible_and_offer_editable_answer_candidates() -> None:
-    """回答時も質問本文を残し、候補ボタンを回答欄への入力補助だけにする。"""
+def test_assets_prefill_answer_change_and_keep_question_visible() -> None:
+    """回答変更時は既存回答と質問本文を残し、候補を入力補助にする。"""
     result = _run_node_ui(
         """
 const origin = new Element('origin', 'BUTTON');
 const entry = {
-  kind: 'tbd', state: 'inbox', filename: 'question.md', answered: false,
+  kind: 'tbd', state: 'inbox', filename: 'question.md', answered: true, answer: '既存回答',
   summary: '質問', target_repo: 'example/repo', content: 'raw',
   body_html: '<h2>質問</h2><p>本文</p>', question_type: 'choice', choices: ['A', 'B']
 };
 displayEntry(entry);
+const answerLabel = elements['answer-button'].textContent;
 openDialog(elements['detail-dialog'], origin, elements['detail-dialog-body']);
 enterAnswer();
+const prefilled = elements['answer-input'].value;
 const candidates = elements['answer-choices'].children.map(button => button.textContent);
 elements['answer-choices'].children[0].listeners.click();
 const afterCandidate = elements['answer-input'].value;
@@ -447,6 +447,8 @@ closeDetailDialog();
 process.stdout.write(JSON.stringify({
   detailVisible: !elements['detail-view'].hidden,
   answerVisible,
+  answerLabel,
+  prefilled,
   candidates,
   afterCandidate,
   edited: elements['answer-input'].value,
@@ -457,10 +459,109 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "detailVisible": True,
         "answerVisible": True,
+        "answerLabel": "回答を変更",
+        "prefilled": "既存回答",
         "candidates": ["A", "B"],
         "afterCandidate": "A",
         "edited": "Aを補足",
         "focused": "origin",
+    }
+
+
+def test_assets_keep_terminal_entry_read_only_and_show_identifiers() -> None:
+    """終端状態では操作を隠し、kind/state識別子をそのまま表示する。"""
+    result = _run_node_ui(
+        """
+displayEntry({
+  kind: 'tbd', state: 'adopted', filename: 'done.md', answered: true, answer: '回答',
+  summary: '完了', target_repo: 'example/repo', content: 'raw', body_html: '<p>本文</p>',
+  question_type: 'free-form', choices: []
+});
+process.stdout.write(JSON.stringify({
+  heading: elements['detail-state'].textContent,
+  metadata: elements['detail-metadata'].children.map(child => child.textContent),
+  readonly: !elements['readonly-notice'].hidden,
+  editHidden: elements['edit-button'].hidden,
+  answerHidden: elements['answer-button'].hidden,
+  deleteHidden: elements['delete-button'].hidden
+}));
+"""
+    )
+    assert result == {
+        "heading": "tbd / adopted",
+        "metadata": [
+            "種別",
+            "tbd",
+            "状態",
+            "adopted",
+            "回答状況",
+            "回答済み",
+            "対象リポジトリ",
+            "example/repo",
+            "更新日時",
+            "—",
+        ],
+        "readonly": True,
+        "editHidden": True,
+        "answerHidden": True,
+        "deleteHidden": True,
+    }
+
+
+def test_assets_notify_only_new_active_unanswered_tbd_after_permission() -> None:
+    """初期集合と既知項目の属性変化を通知せず、新規未回答TBDだけを通知する。"""
+    result = _run_node_ui(
+        """
+const notifications = [];
+globalThis.Notification = class {
+  static permission = 'default';
+  static async requestPermission() { this.permission = 'granted'; return this.permission; }
+  constructor(title, options) { notifications.push({title, body: options.body}); }
+};
+const snapshots = [
+  [
+    {kind: 'tbd', state: 'inbox', filename: 'base.md', answered: false, target_repo: 'old/repo'},
+    {kind: 'tbd', state: 'inbox', filename: 'answered.md', answered: true},
+    {kind: 'tbd', state: 'inbox', filename: 'moving.md', answered: false},
+    {kind: 'tbd', state: 'adopted', filename: 'reappear.md', answered: true}
+  ],
+  [
+    {kind: 'tbd', state: 'inbox', filename: 'base.md', answered: false, target_repo: 'new/repo'},
+    {kind: 'tbd', state: 'inbox', filename: 'answered.md', answered: false},
+    {kind: 'tbd', state: 'processing', filename: 'moving.md', answered: false},
+    {kind: 'tbd', state: 'inbox', filename: 'new.md', answered: false}
+  ],
+  [
+    {kind: 'tbd', state: 'inbox', filename: 'base.md', answered: false},
+    {kind: 'tbd', state: 'inbox', filename: 'answered.md', answered: true},
+    {kind: 'tbd', state: 'inbox', filename: 'moving.md', answered: false},
+    {kind: 'tbd', state: 'inbox', filename: 'new.md', answered: true},
+    {kind: 'tbd', state: 'inbox', filename: 'reappear.md', answered: false}
+  ]
+];
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({entries: snapshots.shift()})
+});
+syncNotificationButton();
+const buttonVisibleBefore = !elements['notification-button'].hidden;
+await enableNotifications();
+const buttonHiddenAfter = elements['notification-button'].hidden;
+await refreshKnownTbds({notify: false});
+const afterBaseline = notifications.length;
+await refreshKnownTbds({notify: true});
+await refreshKnownTbds({notify: true});
+process.stdout.write(JSON.stringify({
+  buttonVisibleBefore, buttonHiddenAfter, afterBaseline, notifications,
+  known: Array.from(knownTbdFilenames).sort()
+}));
+"""
+    )
+    assert result == {
+        "buttonVisibleBefore": True,
+        "buttonHiddenAfter": True,
+        "afterBaseline": 0,
+        "notifications": [{"title": "新規未回答TBD", "body": "new.md"}],
+        "known": ["answered.md", "base.md", "moving.md", "new.md", "reappear.md"],
     }
 
 
@@ -884,7 +985,7 @@ process.stdout.write(JSON.stringify({
             "state": "processing",
             "focused": "detail-dialog-body",
         },
-        "reopened": {"state": "処理中", "forceVisible": True},
+        "reopened": {"state": "feedback / processing", "forceVisible": True},
         "missing": {
             "detailOpen": False,
             "deleteOpen": False,
@@ -1841,6 +1942,19 @@ def test_operations_reads_local_entries_and_detail_without_pull(
     content = detail["content"]
     assert isinstance(content, str)
     assert content.endswith("要約本文\n")
+
+
+def test_detail_returns_existing_tbd_answer(tmp_path: pathlib.Path) -> None:
+    """回答済みTBDの詳細は既存回答を編集用に返す。"""
+    _write_detail_entry(
+        tmp_path,
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問本文\n\n"
+        "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n既存回答\n2行目\n",
+    )
+
+    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+
+    assert detail["answer"] == "既存回答\n2行目"
 
 
 def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:
@@ -3802,6 +3916,7 @@ process.stdout.write(JSON.stringify({
     )
     assert result == {
         "listUrls": [
+            "/atk/api/entries?type=tbd&status=all&answered=all",
             "/atk/api/entries?type=feedback&status=active&answered=all",
             "/atk/api/entries?type=feedback&status=active&answered=all",
         ],
