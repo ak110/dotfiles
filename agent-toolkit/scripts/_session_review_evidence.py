@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Claude Code transcriptから振り返りに必要な時系列証拠だけを抽出する。"""
+"""Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出する。"""
 
 from __future__ import annotations
 
@@ -42,6 +42,21 @@ def _text_blocks(content: Any, *, include_tool_results: bool = False) -> list[st
             result.append(block["text"])
         elif include_tool_results and block_type == "tool_result":
             result.extend(_text_blocks(block.get("content"), include_tool_results=False))
+    return result
+
+
+def _codex_text_blocks(content: Any) -> list[str]:
+    """Codex message contentから可視テキストを取得する。"""
+    if isinstance(content, str):
+        return [content]
+    if not isinstance(content, list):
+        return []
+    result: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") in {"input_text", "output_text", "text"} and isinstance(block.get("text"), str):
+            result.append(block["text"])
     return result
 
 
@@ -89,8 +104,8 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def extract(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """transcriptエントリから対象イベントを順序どおり抽出する。"""
+def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Claude Code形式を共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
     for entry in entries:
         if entry.get("isSidechain") is True:
@@ -125,6 +140,76 @@ def extract(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         completion = _completion_event(entry)
         if completion:
             events.append(completion)
+    return events
+
+
+def _codex_agent_message(payload: dict[str, Any]) -> str:
+    for key in ("message", "text", "content"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Codex rollout形式を共通イベントへ変換する。"""
+    events: list[dict[str, Any]] = []
+    for entry in entries:
+        entry_type = entry.get("type")
+        payload = entry.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        payload_type = payload.get("type")
+        if entry_type == "response_item" and payload_type == "message":
+            role = payload.get("role")
+            kind = "user" if role == "user" else "assistant" if role == "assistant" else None
+            if kind is not None:
+                for text in _codex_text_blocks(payload.get("content")):
+                    event = _event(kind, text)
+                    if event:
+                        events.append(event)
+        elif entry_type == "response_item" and payload_type == "agent_message":
+            text = _codex_agent_message(payload)
+            if text.lstrip().startswith("Message Type: FINAL_ANSWER"):
+                event = _event("agent-completion", text)
+                if event:
+                    events.append(event)
+        elif entry_type == "event_msg" and payload_type == "turn_aborted":
+            event = _event("interrupt", json.dumps(payload, ensure_ascii=False))
+            events.append(event or {"kind": "interrupt", "text": "turn_aborted"})
+        elif entry_type == "event_msg" and payload_type == "item_completed":
+            item = payload.get("item")
+            if not isinstance(item, dict) or item.get("type") != "CommandExecution" or item.get("status") != "failed":
+                continue
+            text = next(
+                (item[key] for key in ("aggregated_output", "output", "error") if isinstance(item.get(key), str)),
+                json.dumps(item, ensure_ascii=False),
+            )
+            event = _event("failed-tool", text, tool="CommandExecution")
+            if event:
+                events.append(event)
+    return events
+
+
+def _is_manual_review_invocation(text: str) -> bool:
+    stripped = text.strip()
+    commands = ("/session-review", "/agent-toolkit:session-review")
+    if any(stripped == command or stripped.startswith(f"{command} ") for command in commands):
+        return True
+    return any(f"<command-name>{command}</command-name>" in stripped for command in commands)
+
+
+def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """手動振り返り境界を適用し、最終結果と連番を確定する。"""
+    boundary = next(
+        (
+            index
+            for index, event in enumerate(events)
+            if event["kind"] == "user" and _is_manual_review_invocation(event["text"])
+        ),
+        len(events),
+    )
+    events = events[:boundary]
 
     for event in reversed(events):
         if event["kind"] == "assistant":
@@ -133,6 +218,20 @@ def extract(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for sequence, event in enumerate(events, start=1):
         event["sequence"] = sequence
     return events
+
+
+def extract(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """transcript形式を判定し、対象イベントを順序どおり抽出する。"""
+    if not entries:
+        return []
+    entry_types = {entry.get("type") for entry in entries}
+    if entry_types & {"response_item", "event_msg"}:
+        return _finalize(_extract_codex(entries))
+    if entry_types & {"user", "assistant", "interrupt"} or any(
+        entry.get("isSidechain") is True or "toolUseResult" in entry for entry in entries
+    ):
+        return _finalize(_extract_claude(entries))
+    return _fallback()
 
 
 def _fallback() -> list[dict[str, Any]]:

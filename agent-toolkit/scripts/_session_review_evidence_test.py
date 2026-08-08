@@ -112,3 +112,110 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     lines = output.out.splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0]) == {"kind": "user", "text": "入力", "sequence": 1}
+
+
+def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "途中結果"}],
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {"type": "CommandExecution", "status": "failed", "aggregated_output": "失敗出力"},
+                },
+            },
+            {"type": "event_msg", "payload": {"type": "turn_aborted", "reason": "interrupted"}},
+            {
+                "type": "response_item",
+                "payload": {"type": "agent_message", "message": "Message Type: MESSAGE\n通常連絡"},
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "agent_message", "message": "Message Type: FINAL_ANSWER\n完了報告"},
+            },
+            {
+                "type": "event_msg",
+                "payload": {"type": "item_completed", "item": {"type": "SubAgentActivity", "status": "interacted"}},
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["kind"] for event in events] == [
+        "user",
+        "final-result",
+        "failed-tool",
+        "interrupt",
+        "agent-completion",
+    ]
+    assert events[2]["tool"] == "CommandExecution"
+    assert events[-1]["text"].endswith("完了報告")
+
+
+def test_manual_review_invocation_excludes_following_codex_events(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "本来の最終結果"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "/agent-toolkit:session-review"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "振り返り中"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+
+
+def test_manual_review_invocation_excludes_following_claude_events(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
+            {"type": "user", "message": {"role": "user", "content": "/session-review"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "振り返り中"}},
+        ],
+    )
+
+    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+
+
+def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(tmp_path, [{"type": "unknown", "payload": {"type": "unknown"}}])
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["kind"] for event in events] == ["fallback"]
