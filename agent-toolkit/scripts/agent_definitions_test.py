@@ -342,7 +342,6 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
 
     for phrase in (
         "git push --dry-run --porcelain",
-        "全commitの完全長SHA",
         "scripts/wait_ci.py",
         "--write-baseline",
         "--baseline",
@@ -355,7 +354,6 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     ):
         assert phrase in push_and_ci
     assert "## 失敗の性質による分類" not in push_and_ci
-
     for phrase in (
         "原因箇所",
         "セッション帰属",
@@ -371,36 +369,53 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "raw tag object" not in ci_failure
 
 
-def test_remote_tag_evidence_contracts_are_synchronized() -> None:
-    """remote tagの証拠保存をpush契約だけが所有する。"""
+def test_simplification_checks_cover_decisions_plans_and_user_explanations() -> None:
+    """既存機構の簡素化比較と内部状態の説明を接続する。"""
+    decision_format = (_PROCESS_FEEDBACKS.parent / "references" / "decision-format.md").read_text(encoding="utf-8")
+    plan_review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
+
+    assert "仕組みを維持・修正する場合は、削除・簡素化案と比較した根拠" in decision_format
+    assert "既存機構の維持・修正では、目的の存続" in plan_review
+    assert "利用者が操作又は判断しない一時状態や内部工程は命名して概念化せず" in agent_rules
+    assert "目的と寿命を平易に1回だけ示す" in agent_rules
+    assert "同じ対象を複数名で呼ばない" in agent_rules
+
+
+def test_push_ci_keeps_only_monitoring_inputs() -> None:
+    """CI監視に使うrefとcommitだけをpush契約へ残す。"""
     commit_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
-    cause_analysis = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
+    for phrase in (
+        "更新refごとにsource refをcommitへ再帰的にpeel",
+        "完全長commit SHAを1件確定する",
+        "annotated tagではraw tag OIDではなくpeeledしたcommit SHA",
+        "GitHubではpush workflowのSHAが更新refのtip",
+        "GitLabではpipelineがcommit単位ではなくpush単位で起動する",
+        "各`(destination ref, peeled commit SHA)`",
+        "別のbaselineを作成",
+        "他のbaseline作成・監視を省略しない",
+    ):
+        assert phrase in commit_ci
+    for phrase in (
+        "sourceとremote側対象refの双方でOIDとobject typeを保存",
+        "git fetch --no-tags --no-write-fetch-head --refmap=",
+        "全commitの完全長SHAを保存",
+        "保存した全commit",
+        "raw tag objectと最終OID",
+    ):
+        assert phrase not in commit_ci
 
-    assert "sourceとremote側対象refの双方" in commit_ci
-    assert "typeがtagである各階層" in commit_ci
-    assert "raw tag object" in commit_ci
-    assert "最終OIDとobject type" in commit_ci
-    assert "git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>" in commit_ci
-    for option in ("--no-tags", "--no-write-fetch-head", "--refmap=", "<fullOID>"):
-        assert option in commit_ci
-    assert "作業refと`FETCH_HEAD`を変更しない" in commit_ci
-    assert "取得後もobjectが存在しない場合は準備未完了" in commit_ci
-    assert "remote状態を再取得" in commit_ci
-    assert "raw tag object" not in cause_analysis
 
-
-def test_push_ci_uses_github_ref_tips_and_preserves_gitlab_monitoring() -> None:
-    """GitHubのpush単位とGitLabの既存監視契約を混同しない。"""
+def test_push_ci_monitors_one_peeled_commit_per_updated_ref() -> None:
+    """forgeにかかわらず更新refごとにpeeled commitを監視する。"""
     push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
 
     for phrase in (
-        "GitHubでは更新refごとにsourceをcommitへpeeledしたtip commitだけを対象とする",
-        "診断用に保存した全commit列は保持し",
-        "中間commitをCI監視対象へ含めない",
-        "複数refではrefごとにtip commitを1件ずつ監視する",
-        "中間commitを別refのtipとしてpushする場合は、そのrefの監視対象とする",
-        "GitLabはpipelineのSHA契約を確認できていないため",
-        "保存した全commitを現行どおり監視対象とする",
+        "削除refとcommitへpeeledできないrefを除き",
+        "更新refごとにsource refをcommitへ再帰的にpeel",
+        "完全長commit SHAを1件確定する",
+        "annotated tagではraw tag OIDではなくpeeledしたcommit SHA",
+        "複数refでは組ごとに別のbaselineを作成",
     ):
         assert phrase in push_and_ci
 

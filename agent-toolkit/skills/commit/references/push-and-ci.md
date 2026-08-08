@@ -14,21 +14,10 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 4. 読み込んだ本スキルの絶対パスからplugin rootを確定し、
    `uv run --no-project --script <plugin-root>/scripts/_managed_temp.py create --prefix ci-evidence`を単独で実行する。
    標準出力の絶対パスを保持し、pushごとに別の領域を使う
-5. 更新refのsourceとremote側対象refの双方でOIDとobject typeを保存する
-   remote側objectがローカルに無い場合は、完全長OIDを変えずに
-   `git fetch --no-tags --no-write-fetch-head --refmap= <remote> <fullOID>`で取得する。
-   この取得では作業refと`FETCH_HEAD`を変更しない。取得後もobjectが存在しない場合は準備未完了とし、
-   remote状態を再取得する。typeがtagである各階層のraw tag objectと最終OIDとobject typeも保存する。
-   commitへpeeledできないrefと削除refはCI監視対象外と記録する
-6. commitへpeeledできるrefでは、push前のdestinationからsourceまでの全commitの完全長SHAを保存する。
-   新規refではremoteから到達不能なcommitを対象とし、対象が無ければ`対象なし`と記録する
-7. CI監視対象をforgeごとに確定する
-   - GitHubでは更新refごとにsourceをcommitへpeeledしたtip commitだけを対象とする
-   - 診断用に保存した全commit列は保持し、中間commitをCI監視対象へ含めない
-   - 複数refではrefごとにtip commitを1件ずつ監視する
-   - 中間commitを別refのtipとしてpushする場合は、そのrefの監視対象とする
-   - GitLabはpipelineのSHA契約を確認できていないため、保存した全commitを現行どおり監視対象とする
-8. 確定したCI監視対象の各SHAについて、次をpush前に実行してbaseline JSONを保存する
+5. 削除refとcommitへpeeledできないrefを除き、更新refごとにsource refをcommitへ再帰的にpeelし、
+   完全長commit SHAを1件確定する。annotated tagではraw tag OIDではなくpeeledしたcommit SHAを使い、
+   GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
+6. 確定した各`(destination ref, peeled commit SHA)`について、次をpush前に実行してbaseline JSONを保存する
 
 ```text
 uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
@@ -42,7 +31,7 @@ uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
 
 `--repo`、`--forge`、`--ref`、`--source-ref`、`--sha`は省略しない。
 単一refと複数refのいずれでも、GitHubとGitLabの両方で、選定済みforgeを`--forge <github|gitlab>`へ明示する。
-複数refまたは複数commitでは組ごとに別のbaselineを作成し、1件の失敗を理由に他の監視を省略しない。
+複数refでは組ごとに別のbaselineを作成し、1件の失敗を理由に他のbaseline作成・監視を省略しない。
 
 ## pushと監視
 
