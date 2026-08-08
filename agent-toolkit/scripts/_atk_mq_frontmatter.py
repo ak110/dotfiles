@@ -49,8 +49,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     （`queue_schedule`は`carry_count`のような整数を必要とするため、字面保持ローダーの
     対象から除く）。
     本文は区切り直後から末尾までを一切加工せず（先頭改行の除去も末尾改行の追加もせず）返す
-    （本文が1バイトも変化しないことを、`serialize_frontmatter`との往復で本文のSHA-256が
-    不変であることの根拠とする）。
+    （本文が変化しないことは、`serialize_frontmatter`との往復後の本文文字列を直接比較して確認する）。
     """
     if not text.startswith("---\n"):
         return None

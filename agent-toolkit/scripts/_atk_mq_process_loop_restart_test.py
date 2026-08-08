@@ -58,6 +58,7 @@ class TestWaitLoopAutoRestart:
         dotfiles_root_missing: bool = False,
         create_canonical_entry: bool = False,
         pending_count: int = 0,
+        ambiguous_partition_change: bool = False,
     ) -> tuple[list[list[str]], list[tuple[str, list[str]]]]:
         """件数と`_wait_for_changes`を固定でモックしてprocess-loopを1回実行する。
 
@@ -74,7 +75,8 @@ class TestWaitLoopAutoRestart:
         fake_dotfiles_root = tmp_path / "dotfiles_root"
         fake_scripts_dir = fake_dotfiles_root / "agent-toolkit" / "scripts"
         fake_scripts_dir.mkdir(parents=True)
-        (fake_scripts_dir / "a.py").write_text("x = 1\n", encoding="utf-8")
+        initial_content = "b.py\nx = 1\n" if ambiguous_partition_change else "x = 1\n"
+        (fake_scripts_dir / "a.py").write_text(initial_content, encoding="utf-8")
         (fake_scripts_dir / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
         if create_canonical_entry:
             (fake_scripts_dir / "atk.py").write_text("# canonical entry point\n", encoding="utf-8")
@@ -100,6 +102,9 @@ class TestWaitLoopAutoRestart:
                 raise KeyboardInterrupt
             if changed_file_name is not None:
                 (fake_scripts_dir / changed_file_name).write_text("changed = True\n", encoding="utf-8")
+            if ambiguous_partition_change:
+                (fake_scripts_dir / "a.py").write_text("", encoding="utf-8")
+                (fake_scripts_dir / "b.py").write_text("\nx = 1\n", encoding="utf-8")
             return wait_return
 
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
@@ -129,6 +134,21 @@ class TestWaitLoopAutoRestart:
             changed_file_name="a.py",
         )
         assert execv_calls, "ハッシュ差分検知時はos.execvが呼ばれる必要がある"
+
+    def test_different_file_partition_on_timeout_triggers_restart(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """旧方式で同じ入力列になるファイル分割の変更でも再起動されること。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            ambiguous_partition_change=True,
+        )
+        assert execv_calls
 
     def test_restart_targets_dotfiles_checkout_entry_point(
         self,

@@ -19,6 +19,7 @@ _NOW = datetime.datetime(2026, 7, 29, 12, tzinfo=datetime.UTC)
 _TARBALL_URL = "https://registry.npmjs.org/mermaid/-/mermaid-10.0.0.tgz"
 _BUNDLE = b"window.mermaid={version:'10.0.0'};\n"
 _LICENSE = b"MIT License\n"
+_VENDOR_DIR = pathlib.Path(__file__).resolve().parents[1] / "pytools" / "claude_plans_viewer" / "vendor"
 
 
 def _metadata(integrity: str = "sha512-placeholder") -> dict[str, object]:
@@ -164,6 +165,15 @@ def test_successful_update_produces_consistent_artifacts(tmp_path: pathlib.Path)
         "retrieved_at": "2026-07-29T12:00:00Z",
         "bundle_sha256": hashlib.sha256(_BUNDLE).hexdigest(),
     }
+
+
+def test_tracked_bundle_matches_provenance_digest() -> None:
+    """追跡済みbundleが同梱由来情報のSHA-256と一致する。"""
+    metadata_path = _VENDOR_DIR / "mermaid.json"
+    bundle_path = metadata_path.with_name("mermaid.min.js")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    assert hashlib.sha256(bundle_path.read_bytes()).hexdigest() == metadata["bundle_sha256"]
 
 
 def test_atomic_replace_restores_existing_vendor_when_backup_fails(

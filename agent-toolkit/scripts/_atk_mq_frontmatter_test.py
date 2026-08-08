@@ -1,7 +1,5 @@
 """frontmatterパーサー・直列化モジュールのテスト。"""
 
-import hashlib
-
 import _atk_mq_frontmatter as frontmatter
 import pytest
 
@@ -167,23 +165,21 @@ source: feedback
         assert reparsed_data == data
         assert reparsed_body == body
 
-    def test_round_trip_preserves_body_sha256_across_repeated_serialize_calls(self) -> None:
-        """反復`serialize_frontmatter`呼び出しでも本文のSHA-256が不変である。"""
+    def test_round_trip_preserves_body_across_repeated_serialize_calls(self) -> None:
+        """反復`serialize_frontmatter`呼び出しでも本文が直接保持される。"""
         data = {"target_repo": "example", "type": "normal"}
         body = "本文内容"
         serialized1 = frontmatter.serialize_frontmatter(data, body)
         parsed1 = frontmatter.parse_frontmatter(serialized1)
         assert parsed1 is not None
         _, body1 = parsed1
-        hash1 = hashlib.sha256(body1.encode()).hexdigest()
+        assert body1 == body
 
         serialized2 = frontmatter.serialize_frontmatter(data, body1)
         parsed2 = frontmatter.parse_frontmatter(serialized2)
         assert parsed2 is not None
         _, body2 = parsed2
-        hash2 = hashlib.sha256(body2.encode()).hexdigest()
-
-        assert hash1 == hash2
+        assert body2 == body
 
     @pytest.mark.parametrize(
         "frontmatter_source",

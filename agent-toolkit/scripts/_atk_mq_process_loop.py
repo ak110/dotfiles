@@ -377,14 +377,18 @@ def _restart_process_loop(
 def _code_hash(scripts_dir: pathlib.Path) -> str:
     """`scripts_dir`配下の`*.py`（`*_test.py`除く）内容から安定ハッシュを算出する。
 
-    ファイル名でソートしてから相対順序を固定し、ファイル名とバイト列を連結してSHA-256を取る。
+    ファイル名でソートしてから相対順序を固定し、ファイル名と内容の各バイト列へ8byte長接頭辞を付けて
+    境界を一意にしたうえでSHA-256を取る。
     常駐プロセスが起動時に読み込んだPythonコード群と現在のコード群の同一性判定に用いる。
     テストコードの変更では再起動を要さないため`*_test.py`は対象から除く。
     """
     digest = hashlib.sha256()
     for path in sorted(p for p in scripts_dir.glob("*.py") if not p.name.endswith("_test.py")):
-        digest.update(path.name.encode("utf-8"))
-        digest.update(path.read_bytes())
+        name_bytes = path.name.encode("utf-8")
+        content = path.read_bytes()
+        for field in (name_bytes, content):
+            digest.update(len(field).to_bytes(8, "big"))
+            digest.update(field)
     return digest.hexdigest()
 
 
