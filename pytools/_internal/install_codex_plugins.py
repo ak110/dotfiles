@@ -15,9 +15,8 @@ _TIMEOUT = 60.0
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
         "Codex pluginを更新しました。実行中のCodexセッションを終了してから、"
-        "次のコマンドでapp-server daemonを再起動してください。"
+        "利用中のCodexアプリケーション又はCLIを再起動してください。"
     ),
-    command="codex app-server daemon restart",
 )
 
 # dotfiles自身以外のマーケットプレイスから導入するプラグイン。

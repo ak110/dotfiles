@@ -208,7 +208,7 @@ class TestRun:
 
     def test_structured_outcome_preserves_changed_and_notices(self) -> None:
         """構造化結果の変更有無と案内をステップ結果へ保持する。"""
-        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。", "codex app-server daemon restart")
+        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
         steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
             ("Codex plugin", _make_outcome_step(changed=True, notices=(notice,))),
         ]
@@ -219,9 +219,9 @@ class TestRun:
         assert results[0].changed is True
         assert results[0].notices == (notice,)
 
-    def test_main_prints_deduplicated_notice_to_stderr_with_command_last(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """重複した案内をstderrへ1回表示し、再起動コマンドを最終行に置く。"""
-        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。", "codex app-server daemon restart")
+    def test_main_prints_deduplicated_notice_without_command(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """commandを持たない重複案内をstderrへ1回表示する。"""
+        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
         steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
             ("first", _make_outcome_step(changed=True, notices=(notice,))),
             ("second", _make_outcome_step(changed=True, notices=(notice,))),
@@ -234,12 +234,12 @@ class TestRun:
         captured = capsys.readouterr()
         assert "codex app-server daemon restart" not in captured.out
         assert captured.err.count("Codex pluginを更新しました。") == 1
-        assert captured.err.splitlines()[-1] == "codex app-server daemon restart"
+        assert captured.err.splitlines()[-1].endswith("Codex pluginを更新しました。")
 
     def test_main_keeps_notice_on_later_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
         """案内の発生後に後続が失敗しても非0終了と案内を両立する。"""
         calls: list[str] = []
-        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。", "codex app-server daemon restart")
+        notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
         steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
             ("Codex plugin", _make_outcome_step(changed=True, notices=(notice,))),
             ("broken", _make_broken_step("broken", calls)),
@@ -251,7 +251,7 @@ class TestRun:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "失敗したステップ: broken" in captured.err
-        assert captured.err.splitlines()[-1] == "codex app-server daemon restart"
+        assert captured.err.splitlines()[-1].endswith("Codex pluginを更新しました。")
 
 
 class TestDefaultSteps:
