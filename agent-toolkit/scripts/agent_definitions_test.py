@@ -389,6 +389,45 @@ def test_remote_tag_evidence_contracts_are_synchronized() -> None:
     assert "raw tag object" not in cause_analysis
 
 
+def test_push_ci_uses_github_ref_tips_and_preserves_gitlab_monitoring() -> None:
+    """GitHubのpush単位とGitLabの既存監視契約を混同しない。"""
+    push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
+
+    for phrase in (
+        "GitHubでは更新refごとにsourceをcommitへpeeledしたtip commitだけを対象とする",
+        "診断用に保存した全commit列は保持し",
+        "中間commitをCI監視対象へ含めない",
+        "複数refではrefごとにtip commitを1件ずつ監視する",
+        "中間commitを別refのtipとしてpushする場合は、そのrefの監視対象とする",
+        "GitLabはpipelineのSHA契約を確認できていないため",
+        "保存した全commitを現行どおり監視対象とする",
+    ):
+        assert phrase in push_and_ci
+
+
+def test_codex_plugin_version_change_invalidates_cached_root() -> None:
+    """導入版変更後に現行のCodex plugin rootだけを使用する。"""
+    version_bump = (
+        _REPOSITORY_ROOT / ".claude" / "skills" / "agent-toolkit-edit" / "references" / "version-bump.md"
+    ).read_text(encoding="utf-8")
+
+    for phrase in (
+        "codex plugin list --json",
+        "JSONとして構造解析する",
+        'pluginId == "agent-toolkit@ak110-dotfiles"',
+        "導入版が保持済みの版と同じ場合は、保持済みrootを再解決しない",
+        "導入版が変わった場合は、保持済みrootを破棄する",
+        "新versionの兄弟cache directoryを再解決する",
+        ".codex-plugin/plugin.json",
+        "scripts/atk.py",
+        "skills/plan-mode/scripts/check_plan_file.py",
+        "plugin manifestの`version`と導入版が一致する",
+        "`source.path`は配布元を示す値",
+        "旧rootへフォールバックせず未完了として扱う",
+    ):
+        assert phrase in version_bump
+
+
 def test_plan_review_detects_new_success_path_restrictions() -> None:
     """新設制約が失わせる現行の成功経路を公開契約変更として検査する。"""
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")

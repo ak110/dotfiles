@@ -22,7 +22,13 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    commitへpeeledできないrefと削除refはCI監視対象外と記録する
 6. commitへpeeledできるrefでは、push前のdestinationからsourceまでの全commitの完全長SHAを保存する。
    新規refではremoteから到達不能なcommitを対象とし、対象が無ければ`対象なし`と記録する
-7. CI監視対象の各SHAについて、次をpush前に実行してbaseline JSONを保存する
+7. CI監視対象をforgeごとに確定する
+   - GitHubでは更新refごとにsourceをcommitへpeeledしたtip commitだけを対象とする
+   - 診断用に保存した全commit列は保持し、中間commitをCI監視対象へ含めない
+   - 複数refではrefごとにtip commitを1件ずつ監視する
+   - 中間commitを別refのtipとしてpushする場合は、そのrefの監視対象とする
+   - GitLabはpipelineのSHA契約を確認できていないため、保存した全commitを現行どおり監視対象とする
+8. 確定したCI監視対象の各SHAについて、次をpush前に実行してbaseline JSONを保存する
 
 ```text
 uv run --no-project --script <plugin-root>/scripts/wait_ci.py \

@@ -88,6 +88,22 @@ push済みコミット範囲の既往bumpは判定対象に含めない。
 `agent-toolkit/.claude-plugin/plugin.json`の`version`値を実測で確認して重複増分の有無を判定する。
 この機能不全は、次節が述べる「既存bumpとの統合はツール側が吸収する」仕組みが機能しない例外である。
 
+## Codex導入後のroot再照合
+
+Codexプラグインの導入版が変わった場合、保持済みのplugin rootを再利用してはならない。
+次の手順で現行rootを再照合してから、`atk.py`や`check_plan_file.py`などの後続スクリプトを実行する。
+
+1. `codex plugin list --json`の出力をJSONとして構造解析する
+2. `pluginId == "agent-toolkit@ak110-dotfiles"`の完全一致項目を1件取得し、導入版を確認する
+3. 導入版が保持済みの版と同じ場合は、保持済みrootを再解決しない
+4. 導入版が変わった場合は、保持済みrootを破棄する
+5. 保持していた導入rootのcache階層と`pluginId`のmarketplace名・plugin名から、新versionの兄弟cache directoryを再解決する
+6. 再解決したroot配下の`.codex-plugin/plugin.json`、`scripts/atk.py`、`skills/plan-mode/scripts/check_plan_file.py`の実在を確認する
+7. plugin manifestの`version`と導入版が一致することを確認してから、再解決したrootを後続スクリプトへ渡す
+
+`source.path`は配布元を示す値であり、導入cache rootの更新には使用しない。
+完全一致項目、導入版、cache directory、必要ファイル、plugin manifestのいずれかを確認できない場合は、旧rootへフォールバックせず未完了として扱う。
+
 ## plan modeでの取り扱い
 
 計画フェーズではbump要否や既存bumpとの差分を調査せず、種別（PATCH／MINOR／MAJOR）と
