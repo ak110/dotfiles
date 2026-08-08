@@ -4,6 +4,7 @@ PreToolUseのWrite/Edit/MultiEditブロック判定と、PostToolUseの構造検
 SSOTは`agent-toolkit/skills/plan-mode/SKILL.md`の「計画ファイルの完成条件」節。
 """
 
+import functools
 import pathlib
 import re
 from collections.abc import Iterator
@@ -72,6 +73,7 @@ PLAN_PERMANENCE_TABLE_ROWS: tuple[str, ...] = ("観測事象", "根本原因", "
 
 PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
 PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当件数と箇所")
+"""通常変更の類似見直し表の固定3行。バグ対応はバグ調査表の14行を正本とする。"""
 
 PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})
 """検討結果として成立しない結論語。これだけの記載は検討の省略として拒否する。"""
@@ -401,61 +403,61 @@ class MarkdownTable:
         return tuple(row[0] if row else "" for row in self.rows)
 
 
-_TABLE_DELIMITER_CELL = re.compile(r"^:?-{3,}:?$")
+@functools.cache
+def _table_parser() -> markdown_it.MarkdownIt:
+    """GFM表を解釈するMarkdownパーサーを返す。
+
+    パーサーは解析ごとの状態を持たないため、生成コストを避けて使い回す。
+    """
+    return markdown_it.MarkdownIt("commonmark").enable("table")
 
 
-def _split_table_row(line: str) -> list[str]:
-    """パイプ表の1行をセルへ分割する。バックスラッシュでのエスケープを尊重する。"""
-    text = line.strip()
-    if text.startswith("|"):
-        text = text[1:]
-    if text.endswith("|") and not text.endswith("\\|"):
-        text = text[:-1]
-    cells: list[str] = []
-    current = ""
-    escaped = False
-    for character in text:
-        if escaped:
-            current += character
-            escaped = False
-        elif character == "\\":
-            current += character
-            escaped = True
-        elif character == "|":
-            cells.append(current.strip())
-            current = ""
-        else:
-            current += character
-    cells.append(current.strip())
-    return cells
+def _table_row_cells(line: str) -> tuple[str, ...]:
+    """表の1行を、その行が実際に持つ列数のままセルへ分割する。
+
+    GFMのbody行はheaderの列数へ切り詰められて解釈されるため、
+    行単体をheader行として解析し直し、列数不一致を後段で検出できるようにする。
+    区切り行の列数はheader行の列数と一致した場合だけ表として解釈される性質を使い、
+    パイプの数から上限を定めて一致する列数を探す。
+    """
+    parser = _table_parser()
+    for count in range(1, line.count("|") + 2):
+        delimiter = "|" + "|".join(["---"] * count) + "|"
+        tokens = parser.parse(f"{line}\n{delimiter}\n")
+        if not any(token.type == "table_open" for token in tokens):
+            continue
+        return tuple(token.content.strip() for token in tokens if token.type == "inline")
+    return (line.strip(),)
 
 
 def extract_tables(lines: list[tuple[int, str]]) -> list[MarkdownTable]:
-    """行番号付き本文行からパイプ表を出現順に抽出する。"""
+    """行番号付き本文行からGFMの表を出現順に抽出する。
+
+    表の境界判定とセル分割はmarkdown-it-pyのtable拡張へ委ね、
+    区切り行のダッシュ数、整列コロン、行頭パイプの省略といった記法差を吸収する。
+    行番号は入力行の並びから復元し、ファイル先頭基準1始まりで返す。
+    """
+    source_lines = [line for _lineno, line in lines]
     tables: list[MarkdownTable] = []
-    index = 0
-    while index < len(lines):
-        lineno, line = lines[index]
-        if not line.strip().startswith("|") or index + 1 >= len(lines):
-            index += 1
-            continue
-        delimiter_line = lines[index + 1][1]
-        header = _split_table_row(line)
-        delimiter = _split_table_row(delimiter_line)
-        if (
-            not delimiter_line.strip().startswith("|")
-            or len(delimiter) != len(header)
-            or not all(_TABLE_DELIMITER_CELL.fullmatch(cell) for cell in delimiter)
-        ):
-            index += 1
-            continue
-        rows: list[tuple[str, ...]] = []
-        cursor = index + 2
-        while cursor < len(lines) and lines[cursor][1].strip().startswith("|"):
-            rows.append(tuple(_split_table_row(lines[cursor][1])))
-            cursor += 1
-        tables.append(MarkdownTable(lineno, tuple(header), tuple(rows)))
-        index = cursor
+    lineno = 0
+    header: tuple[str, ...] = ()
+    rows: list[tuple[str, ...]] = []
+    in_body = False
+    for token in _table_parser().parse("\n".join(source_lines)):
+        if token.type == "table_open":
+            assert token.map is not None
+            lineno = lines[token.map[0]][0]
+            header, rows, in_body = (), [], False
+        elif token.type == "thead_open":
+            assert token.map is not None
+            header = _table_row_cells(source_lines[token.map[0]])
+        elif token.type == "tbody_open":
+            in_body = True
+        elif token.type == "tr_open" and in_body:
+            assert token.map is not None
+            rows.append(_table_row_cells(source_lines[token.map[0]]))
+        elif token.type == "table_close":
+            tables.append(MarkdownTable(lineno, header, tuple(rows)))
     return tables
 
 
@@ -482,8 +484,13 @@ class PlanMetadata:
 
 
 _METADATA_ENTRY_PATTERN = re.compile(r"^- (?P<field>[^:]+): (?P<value>.*?)\s*$")
-_METADATA_BASE_COMMIT_FIELDS: frozenset[str] = frozenset({"ベースコミット", "基準コミット"})
-_METADATA_BASE_COMMIT_VALUE = re.compile(r"^`(?P<oid>[0-9a-fA-F]+)`$")
+_METADATA_BASE_COMMIT_LINE = re.compile(r"^\s*-\s*(?:ベースコミット|基準コミット):\s*`(?P<oid>[0-9a-fA-F]+)`.*$")
+"""ベースコミットを記載した箇条書きからOIDを読み取る互換パターン。
+
+正規形の記法検査は`entries`側で行うため、値抽出は既存計画の記法差を受け入れる。
+行頭の字下げ、コロン前後の空白、閉じバッククォート以降の注記を許容し、
+旧別名`基準コミット`も対象とする。
+"""
 
 
 def _strip_backticks(value: str) -> str:
@@ -528,8 +535,9 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
         return None, [f"`## {parent}`直下の`### {PLAN_METADATA_H3}`が1件ではありません: 実際={len(indices)}件"]
 
     start, end = heading_subtree_range(headings, indices[0])
+    section = lines_within(body, start, end)
     entries: list[tuple[str, str]] = []
-    for _lineno, line in lines_within(body, start, end):
+    for _lineno, line in section:
         match = _METADATA_ENTRY_PATTERN.fullmatch(line)
         if match is not None:
             entries.append((match.group("field").strip(), match.group("value")))
@@ -544,9 +552,7 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
             conflicts.append(f"計画メタ情報の`{field}`に競合する値があります")
         values.setdefault(field, normalized)
     base_candidates = [
-        match.group("oid")
-        for field, raw_value in entries
-        if field in _METADATA_BASE_COMMIT_FIELDS and (match := _METADATA_BASE_COMMIT_VALUE.fullmatch(raw_value)) is not None
+        match.group("oid") for _lineno, line in section if (match := _METADATA_BASE_COMMIT_LINE.fullmatch(line)) is not None
     ]
     if conflicts:
         return None, conflicts
@@ -949,8 +955,12 @@ def _check_permanence_sections(
         elif heading.text == "リファクタリング":
             if _find_table_with_rows(tables, PLAN_REFACTORING_TABLE_ROWS) is None:
                 errors.append(f"`#### リファクタリング`は対象ごとに{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く")
-        elif heading.text == "類似見直し" and _find_table_with_rows(tables, PLAN_SIMILAR_REVIEW_TABLE_ROWS) is None:
-            errors.append(f"`#### 類似見直し`は{list(PLAN_SIMILAR_REVIEW_TABLE_ROWS)}の3行表を置く")
+        elif (
+            heading.text == "類似見直し"
+            and work_type == "通常変更"
+            and _find_table_with_rows(tables, PLAN_SIMILAR_REVIEW_TABLE_ROWS) is None
+        ):
+            errors.append(f"通常変更の`#### 類似見直し`は{list(PLAN_SIMILAR_REVIEW_TABLE_ROWS)}の3行表を置く")
     return errors
 
 

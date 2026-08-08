@@ -534,6 +534,32 @@ def test_add_operation_accepts_plan_file_with_matching_base_commit(
     assert len(generated) == 1
 
 
+def test_add_operation_rejects_annotated_base_commit_mismatch(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """閉じバッククォート以降に注記がある既存記法でもHEAD照合を省略しない。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`（`git rev-parse HEAD`で実測）\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebInputError, match="ベースコミット"):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="b" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
 def test_add_operation_rejects_spoofed_or_duplicate_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

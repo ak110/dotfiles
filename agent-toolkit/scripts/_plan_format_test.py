@@ -196,6 +196,41 @@ def test_permanence_sections_reject_conclusion_words_only() -> None:
     assert any("結論語だけの記載は成立しない" in error for error in errors)
 
 
+def test_similar_review_table_is_required_only_for_normal_work_type() -> None:
+    """バグ対応の類似見直しはバグ調査表を正本として参照でき、3行表を求めない。"""
+    content = _plan(bug=True)
+    reference = "#### 類似見直し\n\n観点と結果はバグ調査表を正本として参照する。\n"
+    content = content[: content.index("#### 類似見直し")] + reference + _IMPLEMENTER_SECTION
+    assert not _plan_format.check_plan_structure(content)
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "| 項目 | 内容 |\n| --- | --- |\n| 母集団 | 全体。 |",
+        "| 項目 | 内容 |\n| - | - |\n| 母集団 | 全体。 |",
+        "| 項目 | 内容 |\n|:-:|:-:|\n| 母集団 | 全体。 |",
+        "項目 | 内容\n--- | ---\n母集団 | 全体。",
+    ],
+)
+def test_extract_tables_accepts_gfm_notations(table: str) -> None:
+    """区切り行のダッシュ数、整列コロン、行頭パイプ省略の各記法を表として抽出する。"""
+    lines: list[tuple[int, str]] = list(enumerate(table.splitlines(), start=1))
+    assert _plan_format.extract_tables(lines) == [_plan_format.MarkdownTable(1, ("項目", "内容"), (("母集団", "全体。"),))]
+
+
+def test_extract_tables_keeps_row_column_count() -> None:
+    """列数が見出しと異なる行を切り詰めずに返し、列数不一致を後段で検出できるようにする。"""
+    table = "| A | B |\n| --- | --- |\n| 1 | 2 | 3 |\n| 4 |"
+    lines: list[tuple[int, str]] = list(enumerate(table.splitlines(), start=1))
+    assert _plan_format.extract_tables(lines)[0].rows == (("1", "2", "3"), ("4",))
+
+
+def test_structure_check_accepts_short_delimiter_tables() -> None:
+    """区切り行が1ダッシュの固定表を受理する。"""
+    assert not _plan_format.check_plan_structure(_VALID_CONTENT.replace("| --- | --- |", "| - | - |"))
+
+
 def test_materials_require_verbatim_fence() -> None:
     """素材IDの直後に逐語fenceが無い提示素材を拒否する。"""
     content = _VALID_CONTENT.replace("```text\n対象を更新してほしい。\n```", "対象を更新してほしい。")
@@ -238,6 +273,24 @@ def test_metadata_falls_back_to_legacy_placement() -> None:
     assert not errors
     assert metadata is not None
     assert metadata.parent == "背景"
+    assert metadata.base_commit_candidates == ("a" * 40,)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"- ベースコミット: `{'a' * 40}`（`git rev-parse HEAD`で実測）",
+        f"- ベースコミット: `{'a' * 40}`（実測値）。",
+        f"  - ベースコミット: `{'a' * 40}`",
+        f"- 基準コミット:  `{'a' * 40}`",
+    ],
+)
+def test_metadata_reads_base_commit_with_legacy_notations(line: str) -> None:
+    """注記付き、字下げ、旧別名のベースコミット記法からもOIDを読み取る。"""
+    content = f"## 背景\n\n### 計画メタ情報\n\n{line}\n"
+    metadata, errors = _plan_format.parse_plan_metadata(content)
+    assert not errors
+    assert metadata is not None
     assert metadata.base_commit_candidates == ("a" * 40,)
 
 
