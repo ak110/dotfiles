@@ -234,7 +234,7 @@ _TARGET_STATE_PATTERN = re.compile(r"（(?:新設|削除)[^）]*）")
 
 @dataclass(frozen=True)
 class PlanTarget:
-    """実装契約に記載された対象パスと基準コミット上の状態を表す。"""
+    """実装者向け領域の`### 対象ファイル一覧`に記載された対象パスと基準コミット上の状態を表す。"""
 
     path: str
     state: str = "existing"
@@ -662,7 +662,7 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
 
 
 def find_invalid_target_file_paths(content: str) -> list[str]:
-    """`## 実装契約 > ### 対象ファイル一覧`配下の相対パス表記違反を検出する。
+    """実装者向け領域の`### 対象ファイル一覧`配下の相対パス表記違反を検出する。
 
     絶対パス（`/`始まり）または親ディレクトリ参照（パス部品に`..`を含む）を
     プロジェクトルート相対の完全パス規範への違反として返す。
