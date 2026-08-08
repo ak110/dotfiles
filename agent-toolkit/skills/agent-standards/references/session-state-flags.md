@@ -18,7 +18,7 @@
   メインセッションからcodex MCPを呼び出す前の経路検査に使い、セッション終了まで保持する
 - `plan_impl_executor_active_subagent_sessions`: SubagentStartが`plan-impl-executor`の`agent_id`を
   Agent識別子別に記録し、SubagentStopが完了報告を検査する。正常報告、SendMessage再開、
-  plan-mode起動では削除せず、別executorの要素と併存させる。親SessionEndで状態JSON全体を削除する
+  plan-mode起動では削除せず、別executorの要素と併存させる。状態JSON全体の寿命は末尾の規定に従う
 - `codex_remote_snapshot_by_key`: codex呼び出し直前のリモートrefを記録し、呼び出し後に比較して削除する
 - `codex_remote_cwd_by_key`: 呼び出し元ごとの直近`cwd`を記録し、同じ呼び出し元からの継続時に使う
 - `claude-agent-toolkit-codex-thread-cwd-<threadIdのSHA-256>.json`: codexの`threadId`ごとの`cwd`を
@@ -46,6 +46,10 @@
 
 サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。
 新規フラグには記録元、利用先、寿命、リセット経路を併記する。
-状態JSONは親セッションのSessionEndで排他ロック下から削除する。並行プロセスが共有するロックファイルは保持する。
+状態JSONはセッション終了イベントを契機に削除しない。同イベントは同じセッションへ後から戻る場合にも発火し、
+`--continue`・`--resume`・`/resume`で戻ると同じ`session_id`で会話が続くため、削除すると再開後の記録が失われる。
+回収は更新から一定期間が経過した状態JSONに限り、対のロックファイルも同時に破棄する。
+対応する状態JSONが無いロックファイルは、ロック自身の更新時刻が同じ期間を超えた場合だけ破棄する。
+例外は終了理由が`clear`の場合とし、会話が破棄されたことが確定するため排他ロック下で当該セッションの状態JSONを削除する。
 サブエージェント側で記録される状態は呼び出し元へ自動伝播しないため、
 親側で必要な値は完了報告の構造化欄から厳格に解析する。

@@ -19,6 +19,7 @@ import json
 import os
 import pathlib
 import tempfile
+import time
 from collections.abc import Callable
 
 from _file_lock import acquire_lock as _acquire_lock
@@ -26,11 +27,73 @@ from _file_lock import release_lock as _release_lock
 
 _FILENAME_PREFIX = "claude-agent-toolkit-"
 _FILENAME_SUFFIX = ".json"
+_LOCK_SUFFIX = ".lock"
+
+STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
+"""状態ファイルを回収するまでの経過時間。
+
+セッションは終了イベントの後も`--continue`・`--resume`・`/resume`で同じ`session_id`へ戻れるため、
+終了イベントを契機に削除すると再開後の記録が失われる。回収は再開の実用的な範囲を十分に超える
+期間だけ更新が無かったものに限る。
+"""
 
 
 def state_path(session_id: str) -> pathlib.Path:
     """セッション状態ファイルのパスを返す。"""
     return pathlib.Path(tempfile.gettempdir()) / f"{_FILENAME_PREFIX}{session_id}{_FILENAME_SUFFIX}"
+
+
+def sweep_stale_states(
+    *,
+    now: float | None = None,
+    max_age_seconds: float = STALE_STATE_MAX_AGE_SECONDS,
+) -> int:
+    """期限を過ぎた状態ファイルとロックファイルを回収し、削除した状態ファイル数を返す。
+
+    状態ファイルは更新時刻が期限を超えた場合に、対のロックファイルとともに削除する。
+    対応する状態ファイルが無いロックファイルは、ロック自身の更新時刻で判定する。
+    ロックは`open(path, "a+")`で開くだけで内容を書かないため更新時刻が進まず、
+    当該値は作成時刻に等しい。対の状態ファイルがある間は、そちらの更新時刻のほうが
+    稼働の有無をよく表すため、ロック単独では判定しない。
+
+    `update_state`はロックを先に作成して状態ファイルを後段で生成するため、
+    対応する状態ファイルが無いロックはセッション開始直後にも生じる。
+    期限を課さずに回収すると稼働中の排他を壊すため、孤立ロックにも同じ期限を課す。
+
+    個別の削除失敗は無視して走査を継続する。
+    """
+    directory = pathlib.Path(tempfile.gettempdir())
+    threshold = (time.time() if now is None else now) - max_age_seconds
+    removed = 0
+    for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"):
+        if not _is_stale(path, threshold):
+            continue
+        if _unlink_quietly(path):
+            removed += 1
+        _unlink_quietly(path.parent / (path.name + _LOCK_SUFFIX))
+    for lock_path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}{_LOCK_SUFFIX}"):
+        if (lock_path.parent / lock_path.name[: -len(_LOCK_SUFFIX)]).exists():
+            continue
+        if _is_stale(lock_path, threshold):
+            _unlink_quietly(lock_path)
+    return removed
+
+
+def _is_stale(path: pathlib.Path, threshold: float) -> bool:
+    """更新時刻が閾値より古い場合に真を返す。取得できない場合は偽を返す。"""
+    try:
+        return path.stat().st_mtime < threshold
+    except OSError:
+        return False
+
+
+def _unlink_quietly(path: pathlib.Path) -> bool:
+    """削除に成功した場合だけ真を返す。失敗は無視する。"""
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    return True
 
 
 def read_state(session_id: str) -> dict:
