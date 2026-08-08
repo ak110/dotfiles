@@ -405,6 +405,21 @@ def test_push_ci_uses_github_ref_tips_and_preserves_gitlab_monitoring() -> None:
         assert phrase in push_and_ci
 
 
+def test_push_ci_explicitly_selects_forge_for_baseline_and_monitoring() -> None:
+    """短縮repository指定でもbaseline作成と監視のforgeを確定する。"""
+    push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
+    command_blocks = re.findall(r"```text\n(uv run .*?wait_ci\.py .*?)\n```", push_and_ci, re.DOTALL)
+
+    assert len(command_blocks) == 2
+    assert "--write-baseline" in command_blocks[0]
+    assert "--baseline" in command_blocks[1]
+    for command in command_blocks:
+        for option in ("--repo", "--forge <github|gitlab>", "--ref", "--source-ref", "--sha"):
+            assert option in command
+    assert "`--forge`、`--ref`" in push_and_ci
+    assert "単一refと複数refのいずれでも、GitHubとGitLabの両方" in push_and_ci
+
+
 def test_codex_plugin_version_change_invalidates_cached_root() -> None:
     """導入版変更後に現行のCodex plugin rootだけを使用する。"""
     version_bump = (

@@ -34,12 +34,14 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
   --write-baseline <baseline-json> \
   --repo <owner/repoまたはURL> \
+  --forge <github|gitlab> \
   --ref <destination-ref> \
   --source-ref <source-ref> \
   --sha <完全長SHA>
 ```
 
-`--repo`、`--ref`、`--source-ref`、`--sha`は省略しない。
+`--repo`、`--forge`、`--ref`、`--source-ref`、`--sha`は省略しない。
+単一refと複数refのいずれでも、GitHubとGitLabの両方で、選定済みforgeを`--forge <github|gitlab>`へ明示する。
 複数refまたは複数commitでは組ごとに別のbaselineを作成し、1件の失敗を理由に他の監視を省略しない。
 
 ## pushと監視
@@ -51,6 +53,7 @@ uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
 uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
   --baseline <baseline-json> \
   --repo <owner/repoまたはURL> \
+  --forge <github|gitlab> \
   --ref <destination-ref> \
   --source-ref <source-ref> \
   --sha <完全長SHA>
