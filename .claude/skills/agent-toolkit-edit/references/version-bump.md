@@ -95,14 +95,17 @@ Codexプラグインの導入版が変わった場合、保持済みのplugin ro
 
 1. `codex plugin list --json`の出力をJSONとして構造解析する
 2. `pluginId == "agent-toolkit@ak110-dotfiles"`の完全一致項目を1件取得し、導入版を確認する
-3. 導入版が保持済みの版と同じ場合は、保持済みrootを再解決しない
-4. 導入版が変わった場合は、保持済みrootを破棄する
-5. 保持していた導入rootのcache階層と`pluginId`のmarketplace名・plugin名から、新versionの兄弟cache directoryを再解決する
-6. 再解決したroot配下の`.codex-plugin/plugin.json`、`scripts/atk.py`、`skills/plan-mode/scripts/check_plan_file.py`の実在を確認する
-7. plugin manifestの`version`と導入版が一致することを確認してから、再解決したrootを後続スクリプトへ渡す
+3. 導入版が単一のdirectory名であり、path separatorまたはdot segmentを含まないことを確認する
+4. 導入版が保持済みの版と同じ場合は、保持済みrootを再解決しない
+5. 導入版が変わった場合は、保持済みrootを破棄する
+6. 保持していた導入rootの親plugin cache directoryと`pluginId`のmarketplace名・plugin名から、新versionの兄弟cache directoryを組み立てる
+7. 候補pathをstrict resolveし、保持済みrootの親plugin cache directory配下であることを確認する
+8. 再解決したroot配下の`.codex-plugin/plugin.json`、`scripts/atk.py`、`skills/plan-mode/scripts/check_plan_file.py`の実在を確認する
+9. plugin manifestの`version`と導入版が一致することを確認してから、再解決したrootを後続スクリプトへ渡す
+10. writerは完了報告へ導入版、再解決したrootの絶対パス、plugin manifestと必要スクリプトの確認結果を含める
 
 `source.path`は配布元を示す値であり、導入cache rootの更新には使用しない。
-完全一致項目、導入版、cache directory、必要ファイル、plugin manifestのいずれかを確認できない場合は、旧rootへフォールバックせず未完了として扱う。
+完全一致項目、導入版、directory名検証、cache directory、親directory配下の確認、必要ファイル、plugin manifestのいずれかを確認できない場合は、旧rootへフォールバックせず未完了として扱う。
 
 ## plan modeでの取り扱い
 
