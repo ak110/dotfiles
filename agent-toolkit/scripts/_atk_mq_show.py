@@ -43,6 +43,22 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     )
 
 
+def _state_prefixed_filename_hint(filename: str) -> str | None:
+    """`<状態名>/<ファイル名>`形式の入力に対する案内文を返す。該当しない場合は`None`を返す。
+
+    `show`は4状態フォルダすべてを探索するため、状態名を含む入力は受理しない。
+    共通のファイル名検証は`不正なファイル名`としか示さず正しい入力形式を判断できないため、
+    この形式に限って再実行方法を案内する。共通検証自体は緩和しない。
+    """
+    parts = filename.replace("\\", "/").split("/")
+    if len(parts) != 2 or parts[0] not in MQ_STATES:
+        return None
+    remainder = parts[1]
+    if not remainder or remainder in (".", ".."):
+        return None
+    return f"状態名を除いたファイル名を指定する: {remainder}（showは全状態フォルダを探索する）"
+
+
 def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """showサブコマンド: `FILENAME`指定時は当該1件、`--all`指定時は全件の本文を表示する。
 
@@ -61,6 +77,11 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """
     if args.filename is None and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
+    if args.filename is not None:
+        hint = _state_prefixed_filename_hint(args.filename)
+        if hint is not None:
+            print(hint, file=sys.stderr)
+            sys.exit(2)
     if not args.skip_pull:
         with _repo_lock(private_notes):
             _pull(private_notes)

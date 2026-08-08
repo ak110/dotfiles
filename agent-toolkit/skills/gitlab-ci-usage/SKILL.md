@@ -162,8 +162,8 @@ CIが意図通りに動作しない場合は、原因の階層（起動条件・
 自己署名のTLS証明書のGitLab私設ホストでは、`glab`が既定でTLS証明書検証エラー（`tls: failed to verify certificate`）で
 動作しない場合がある。以下のいずれかで解消する。
 
-- `glab`が利用できる場合は、TLS設定後に
-  `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --forge=gitlab --sha=<完全SHA>`を使う。
+- `glab`が利用できる場合は、TLS設定後に`agent-toolkit:commit`の`references/push-and-ci.md`が示す
+  CI通過確認の手順をそのまま使い、forgeへ`gitlab`を指定する。
   pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリポジトリから解決した同じSelf-Managedホストへ問い合わせる
 - `glab config set skip_tls_verify true --host <host>`でホスト単位のTLS検証をスキップする
 - 環境変数`GITLAB_HOST=<host>`と`GITLAB_TOKEN=<token>`を併せて設定する

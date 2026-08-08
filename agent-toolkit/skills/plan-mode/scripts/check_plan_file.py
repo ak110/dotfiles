@@ -242,7 +242,8 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
             errors.append(error)
         elif sorted(set(changed or ())) != sorted(set(planned_paths)):
             errors.append(
-                f"対象ファイル一覧と実変更ファイルが一致しない: 計画={sorted(set(planned_paths))}, "
+                f"対象ファイル一覧と{base_commit}..HEADのコミット済み差分が一致しない"
+                f"（未コミットの作業ツリー差分は照合対象外）: 計画={sorted(set(planned_paths))}, "
                 f"実差分={sorted(set(changed or ()))}"
             )
     return errors, []
@@ -253,7 +254,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan_file", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
-    parser.add_argument("--base-commit")
+    parser.add_argument(
+        "--base-commit",
+        help=(
+            "対象ファイル一覧と`<base>..HEAD`のコミット済み差分を照合する。"
+            "未コミットの作業ツリー差分は照合対象に含めないため、実装コミットの作成後に指定する。"
+            "起草直後の初版検査では指定しない。"
+        ),
+    )
     try:
         args = parser.parse_args(argv)
         errors, warnings = check(args.plan_file, args.work_dir, args.base_commit)

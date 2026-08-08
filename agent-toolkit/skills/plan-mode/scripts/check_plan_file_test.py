@@ -320,7 +320,18 @@ def test_base_commit_diff_mismatch_is_error(repo: tuple[pathlib.Path, str]) -> N
     _git(work_dir, "add", "existing.py")
     _git(work_dir, "commit", "-qm", "change")
     errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
-    assert any("対象ファイル一覧と実変更ファイルが一致しない" in error for error in errors)
+    assert any(f"対象ファイル一覧と{base}..HEADのコミット済み差分が一致しない" in error for error in errors)
+    assert any("未コミットの作業ツリー差分は照合対象外" in error for error in errors)
+    assert not warnings
+
+
+def test_base_commit_ignores_uncommitted_changes(repo: tuple[pathlib.Path, str]) -> None:
+    """未コミットの作業ツリー差分は照合対象に含めない。"""
+    work_dir, base = repo
+    (work_dir / "existing.py").write_text("new\n", encoding="utf-8")
+    errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
+    assert any("対象ファイル一覧と" in error for error in errors)
+    assert all("existing.py']" not in error.rsplit("実差分=", maxsplit=1)[-1] for error in errors)
     assert not warnings
 
 
