@@ -15,8 +15,9 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    `uv run --no-project --script <plugin-root>/scripts/_managed_temp.py create --prefix ci-evidence`を単独で実行する。
    標準出力の絶対パスを保持し、pushごとに別の領域を使う
 5. 削除refとcommitへpeeledできないrefを除き、更新refごとにsource refをcommitへ再帰的にpeelし、
-   完全長commit SHAを1件確定する。annotated tagではraw tag OIDではなくpeeledしたcommit SHAを使い、
-   GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
+   完全長commit SHAを1件確定する
+   - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを使う
+   - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
 6. 確定した各`(destination ref, peeled commit SHA)`について、次をpush前に実行してbaseline JSONを保存する
 
 ```text

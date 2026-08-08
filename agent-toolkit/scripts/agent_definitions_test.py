@@ -386,14 +386,19 @@ def test_push_ci_keeps_only_monitoring_inputs() -> None:
     """CI監視に使うrefとcommitだけをpush契約へ残す。"""
     commit_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
     for phrase in (
+        "pushの許可が対象リポジトリと対象branchを含む",
+        "`git fetch`後に上流との差分を双方向で確認する",
+        "上流が進んでいる場合は追随後に検証をやり直す",
         "更新refごとにsource refをcommitへ再帰的にpeel",
         "完全長commit SHAを1件確定する",
-        "annotated tagではraw tag OIDではなくpeeledしたcommit SHA",
+        "annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHA",
         "GitHubではpush workflowのSHAが更新refのtip",
         "GitLabではpipelineがcommit単位ではなくpush単位で起動する",
         "各`(destination ref, peeled commit SHA)`",
         "別のbaselineを作成",
         "他のbaseline作成・監視を省略しない",
+        "runまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する",
+        "`agent-toolkit:bugfix`を起動",
     ):
         assert phrase in commit_ci
     for phrase in (
@@ -401,7 +406,9 @@ def test_push_ci_keeps_only_monitoring_inputs() -> None:
         "git fetch --no-tags --no-write-fetch-head --refmap=",
         "全commitの完全長SHAを保存",
         "保存した全commit",
-        "raw tag objectと最終OID",
+        "raw tag object",
+        "全commit列",
+        "remote object",
     ):
         assert phrase not in commit_ci
 
@@ -414,7 +421,7 @@ def test_push_ci_monitors_one_peeled_commit_per_updated_ref() -> None:
         "削除refとcommitへpeeledできないrefを除き",
         "更新refごとにsource refをcommitへ再帰的にpeel",
         "完全長commit SHAを1件確定する",
-        "annotated tagではraw tag OIDではなくpeeledしたcommit SHA",
+        "annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHA",
         "複数refでは組ごとに別のbaselineを作成",
     ):
         assert phrase in push_and_ci
