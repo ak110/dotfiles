@@ -18,7 +18,8 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 
 対象リポジトリの絶対パスを確定し、次を行う。
 
-1. `atk mq list --status=active --target-repo=<repo-path>`でactive項目を取得する
+1. `atk mq list --status=active --target-repo=<repo-path>`でactive項目を取得する。
+   `CLAUDECODE`が設定されている場合は、この一覧のfilenameを本セッションの処理対象として固定する
 2. 必要なfilenameだけを`atk mq show <filename> --target-repo=<repo-path>`で取得する
 3. `plan_file`を持つfeedbackを計画実装型、それ以外を通常型とする。本文から型を推測しない
 4. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
@@ -78,8 +79,10 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 queue lock内の変異直前検査で停止する。通知の有無を処理可否の根拠にしない。
 各コマンドの保存結果を再取得し、対象、採否、note、commitを照合する。
 
-本セッションで終端した項目を`depends_on`に持つactive項目だけを再取得し、
-新たにreadyとなった項目を「2. 調査と採否」へ戻す。当該依存関係を持たない新規項目は対象にしない。
+Claude Codeでは起動時に固定した未終端項目だけを再取得し、新たにreadyとなった項目を「2. 調査と採否」へ戻す。
+起動後に追加された項目はactiveのまま残し、process-loop又は次回の手動起動による新しいセッションで扱う。
+Codexでは実装と後始末の間にactive一覧を再取得し、追加分を含むready項目が無くなるまで「2. 調査と採否」へ戻す。
+Codexでも「6. 振り返りと終了」の開始後に追加された項目は次回の手動起動で扱う。
 既に本セッションのcommitで要求が満たされている場合は、その実測を根拠に採用として終端させる。
 
 ## 6. 振り返りと終了

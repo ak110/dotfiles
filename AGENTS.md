@@ -89,9 +89,6 @@
   `~/.claude/plugins/installed_plugins.json`の`installPath`で確認する。
   hookに新規にブロックされた場合は、まず作業ツリーと稼働中の版との差を疑い、
   当該hookが参照する配布先のファイルを`diff`等で比較してから対応する
-- `atk mq process-loop`によるdotfiles固有運用では、対象リポジトリの各worktreeへ書き込む主体を
-  1つに限定する。計画作成とレビューは読み取り専用とし、相互に独立した複数計画の実装だけを
-  上流追随済みのcleanな別worktreeへ分けて並列化する
 
 ## 固有差分
 

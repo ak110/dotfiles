@@ -5,7 +5,7 @@
 ## 実行wave
 
 readyな計画が1件なら現在のcleanなworktreeで実行する。
-複数件なら利用可能なwriter枠まで、上流追随済みのcleanな別worktreeへ1計画ずつ割り当てる。
+複数件なら変更対象ファイルの重複をwave分割条件にせず、利用可能なwriter枠まで上流追随済みの別worktreeへ1計画ずつ割り当てる。
 1つのworktreeへ複数のwriterを割り当てず、dirty差分を前提とする計画は並列化しない。
 
 各laneは`agent-toolkit:delegation`に従って`plan-impl-executor`を起動する。
