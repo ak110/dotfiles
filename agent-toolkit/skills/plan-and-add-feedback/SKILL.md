@@ -12,9 +12,11 @@ feedback投入以外の変更を対象リポジトリへ加えない。
 
 ## 手順
 
-1. 計画作成前に`${CLAUDE_PLUGIN_ROOT}/skills/add-feedback/references/coordination-preflight.md`を全文読み、
-   active、processing、関連worktreeを確認する。複数repoの場合だけ
-   `${CLAUDE_PLUGIN_ROOT}/skills/add-feedback/references/cross-repository-submission.md`も全文読む
+1. 計画作成前に現行plugin rootを確定する。Claude Codeでは`${CLAUDE_PLUGIN_ROOT}`を使い、Codexでは
+   読み込んだ本`SKILL.md`の絶対パスから親ディレクトリを2階層たどる。
+   `<plugin root>/skills/add-feedback/references/coordination-preflight.md`を全文読み、active、processing、
+   関連worktreeを確認する。複数repoの場合だけ
+   `<plugin root>/skills/add-feedback/references/cross-repository-submission.md`も全文読む
 2. 同じ対象リポジトリに回答済みTBDがある場合は、重複inboxの終端より先に処理を完了する
 3. 重複inboxを計画へ吸収すると確定した直後に、
    `atk mq reject <filename> --if-inbox --note=<移管理由と計画パス>`を実行する。

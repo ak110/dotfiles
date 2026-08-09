@@ -1,6 +1,7 @@
 """Claude Code・Codex plugin agent-toolkit: UserPromptSubmitセッション状態記録。
 
-ホスト別コマンド形式（`/agent-toolkit:<name>`・`/<name>`・`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し、
+ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
+Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し、
 対応するセッション状態フラグを立てる。
 既存のPostToolUse(Skill)経由の記録では捕捉できない手動起動を補完する。
 
@@ -54,19 +55,12 @@ _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _SESSION_REVIEW_NAMES_EXTENDED = _extend_with_short_names(_SESSION_REVIEW_SKILL_NAMES)
 _PROCESS_FEEDBACKS_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_FEEDBACKS_SKILL_NAMES)
 
-# ホスト別の手動コマンドから<name>を抽出する。
+# ホスト判定後の手動コマンドから<name>を抽出する。
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
-_SKILL_COMMAND_PATTERN = re.compile(r"\A[/\$](?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
+_SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
-_SESSION_REVIEW_EXACT_COMMANDS = frozenset(
-    {
-        "/session-review",
-        "/agent-toolkit:session-review",
-        "$session-review",
-        "$agent-toolkit:session-review",
-    }
-)
+_SESSION_REVIEW_COMMAND_NAMES = frozenset({"session-review", "agent-toolkit:session-review"})
 _HOOK_ID = "agent-toolkit/user-prompt-submit"
 
 
@@ -164,16 +158,18 @@ def main(payload_text: str) -> int:
 
     # 先頭行のみを取り出して照合する（先頭行以外は無視）。
     first_line = prompt.split("\n", 1)[0].strip()
-    if not first_line.startswith(("/", "$")):
+    command_prefix = "$" if "model" in payload else "/"
+    if not first_line.startswith(command_prefix):
         return 0
 
-    match = _SKILL_COMMAND_PATTERN.match(first_line)
+    match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
     if match is None:
         return 0
 
     name = match.group(1)
     full_name = f"agent-toolkit:{name}"
-    exact_session_review_command = prompt.strip() in _SESSION_REVIEW_EXACT_COMMANDS
+    exact_session_review_commands = {command_prefix + name for name in _SESSION_REVIEW_COMMAND_NAMES}
+    exact_session_review_command = prompt.strip() in exact_session_review_commands
 
     # 対応スキル別にフラグを設定する。
     if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:

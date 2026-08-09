@@ -181,6 +181,33 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid) == {}
 
+    def test_claude_ignores_codex_skill_command(self, tmp_path: pathlib.Path):
+        sid = "claude-dollar-command"
+        result = _run(
+            {"session_id": sid, "prompt": "$agent-toolkit:session-review", "transcript_path": "/tmp/review.jsonl"},
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert _read_state(tmp_path, sid) == {}
+
+    def test_codex_ignores_claude_skill_command(self, tmp_path: pathlib.Path):
+        sid = "codex-slash-command"
+        result = _run(
+            {
+                "session_id": sid,
+                "prompt": "/agent-toolkit:session-review",
+                "transcript_path": "/tmp/review.jsonl",
+                "model": "gpt-5",
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert _read_state(tmp_path, sid) == {}
+
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
         result = _run("", state_dir=tmp_path)

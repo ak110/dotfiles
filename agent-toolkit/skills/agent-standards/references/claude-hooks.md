@@ -16,7 +16,8 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 - 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutにホスト別契約の応答JSONを出力する。exit codeは0で正常完了とする
   - stderr経由の表示はexit 2との組合せで使う代替経路
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeランタイムが現プラグインのルートディレクトリに置換する組み込み変数である。
-  Codexもplugin hook内で互換変数として置換するため、`hooks.json`の`command`フィールドや他リソース参照に用いる
+  Codexもplugin hookの`command`内では互換変数として置換する。通常のCodexスキル実行では置換されないため、
+  スキル本文から実行するコマンドには、読み込んだSKILL.mdの絶対パスから確定したplugin rootを用いる
 - Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。
   信頼するまではCodexが当該フックをスキップする
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する

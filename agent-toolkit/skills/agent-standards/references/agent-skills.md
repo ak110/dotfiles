@@ -57,14 +57,18 @@ Claude Code固有の挙動には節ごとに「Claude Code固有」の注記を�
 - providerはconsumer固有referenceへ依存しない。共通判断はprovider又は実際の判断主体へ置く
 - 必須instruction rootから到達しないreferenceをruntime配布物へ残さない。履歴保管は配布物外へ分離する
 
-## サブエージェント実行とパス解決（Claude Code固有）
+## サブエージェント実行とパス解決
 
-SKILL.md内で使用できる`${CLAUDE_SKILL_DIR}`は、
+Claude CodeのSKILL.md内で使用できる`${CLAUDE_SKILL_DIR}`は、
 実行時に当該SKILL.md所在ディレクトリの絶対パスへ展開される。
 同梱ファイルをインストール先非依存で参照する用途に使う。
 展開対象はSKILL.md本文に限る。
 自身のスキルに同梱したファイルは`${CLAUDE_SKILL_DIR}`で参照し、
 プラグイン全体のファイルや別スキルのファイルは`${CLAUDE_PLUGIN_ROOT}`から参照する。
+
+Codexの通常のスキル実行ではこれらのClaude Code組み込み変数を利用せず、読み込んだSKILL.mdの
+絶対パスから現行plugin rootまたはskill directoryを確定する。スキル本文で両ホストに実行手順を示す場合は、
+Claude Codeの組み込み変数を使う経路と、Codexで読み込んだSKILL.mdから絶対パスを確定する経路を分けて書く。
 
 YAMLのfrontmatterで`context: fork`を指定するとスキルをサブエージェントコンテキストで実行できる。
 あわせて`agent`フィールドでサブエージェント種別

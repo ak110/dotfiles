@@ -29,10 +29,18 @@ Stopフックから呼ばれた場合は、直前のアシスタントターン�
 質問・確認・承認待ち、バックグラウンド処理待ち、外部完了通知待ちは完了に含めない。
 起動条件を満たさない場合は現在の状態と次の契機を示して終了する。
 起動条件を満たして証拠収集へ進む場合、StopのreasonまたはUserPromptSubmitの`additionalContext`から
-`session_id`を受け取っていれば、次のコマンドで起動済み状態を記録する。
+`session_id`を受け取っていれば、ホスト別に現行plugin rootを確定して起動済み状態を記録する。
+Claude Codeでは次のコマンドを使う。
 
 ```sh
 uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/session_review_state.py <session_id>
+```
+
+Codexでは、読み込んだ本`SKILL.md`の絶対パスから親ディレクトリを2階層たどって現行plugin rootを確定し、
+次の`<plugin root>`をその絶対パスへ置き換えて実行する。
+
+```sh
+uv run --no-project --script <plugin root>/scripts/session_review_state.py <session_id>
 ```
 
 記録コマンドが失敗した場合は証拠収集へ進まず、失敗を報告する。

@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import subprocess
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -46,9 +47,21 @@ def _block_reason(decision: dict) -> str:
     return body
 
 
-def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
+def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> pathlib.Path:
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _write_lock(state_dir: pathlib.Path, session_id: str) -> pathlib.Path:
+    path = state_dir / f"claude-agent-toolkit-{session_id}.json.lock"
+    path.write_text("", encoding="utf-8")
+    return path
+
+
+def _set_stale(path: pathlib.Path) -> None:
+    stamp = time.time() - 15 * 24 * 60 * 60
+    os.utime(path, (stamp, stamp))
 
 
 def _user_entry(text: str = "hello") -> dict:
@@ -353,6 +366,10 @@ class TestSessionReviewCommandInvocation:
         assert "decision" not in _parse_decision(result)
 
     def test_codex_started_marker_approves_after_state_expiry(self, tmp_path: pathlib.Path):
+        stale_state = _write_state(tmp_path, "codex-started-marker", {"marker": True})
+        stale_lock = _write_lock(tmp_path, "codex-started-marker")
+        _set_stale(stale_state)
+        _set_stale(stale_lock)
         transcript = _write_transcript(
             tmp_path,
             [
@@ -371,6 +388,38 @@ class TestSessionReviewCommandInvocation:
         )
 
         assert "decision" not in _parse_decision(result)
+        assert not stale_state.exists()
+        assert not stale_lock.exists()
+
+    def test_codex_stop_collects_stale_sessions_and_preserves_fresh_invocation(self, tmp_path: pathlib.Path):
+        stale_state = _write_state(tmp_path, "codex-stale", {"marker": True})
+        stale_lock = _write_lock(tmp_path, "codex-stale")
+        orphan_lock = _write_lock(tmp_path, "codex-orphan")
+        for path in (stale_state, stale_lock, orphan_lock):
+            _set_stale(path)
+        fresh_state = _write_state(
+            tmp_path,
+            "codex-fresh",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
+        )
+        fresh_lock = _write_lock(tmp_path, "codex-fresh")
+        transcript = _write_transcript(tmp_path, [_codex_message("assistant", "作業完了")])
+
+        result = _run(
+            {
+                "session_id": "codex-fresh",
+                "transcript_path": str(transcript),
+                "model": "gpt-5",
+            },
+            state_dir=tmp_path,
+        )
+
+        assert "decision" not in _parse_decision(result)
+        assert not stale_state.exists()
+        assert not stale_lock.exists()
+        assert not orphan_lock.exists()
+        assert fresh_state.exists()
+        assert fresh_lock.exists()
 
     def test_codex_stop_notice_without_started_marker_blocks(self, tmp_path: pathlib.Path):
         transcript = _write_transcript(

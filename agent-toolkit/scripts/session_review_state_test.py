@@ -13,6 +13,7 @@ import pytest
 import session_review_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "session_review_state.py"
+_SESSION_REVIEW_SKILL = _SCRIPT.parents[1] / "skills" / "session-review" / "SKILL.md"
 
 
 def _run(session_id: str, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -37,6 +38,22 @@ def test_records_session_review_idempotently(tmp_path: pathlib.Path) -> None:
     assert first.stdout.strip() == _session_review_evidence.SESSION_REVIEW_STARTED_MARKER
     assert second.stdout.strip() == _session_review_evidence.SESSION_REVIEW_STARTED_MARKER
     assert _read_state(tmp_path, "review-session")["session_review_invoked"] == {"agent-toolkit:session-review": True}
+
+
+def test_codex_resolves_executable_from_loaded_skill_path(tmp_path: pathlib.Path) -> None:
+    """Codexが読み込んだSKILL.mdから実在する記録CLIを解決して実行できる。"""
+    plugin_root = _SESSION_REVIEW_SKILL.resolve().parents[2]
+    script = plugin_root / "scripts" / "session_review_state.py"
+
+    assert script == _SCRIPT.resolve()
+    result = _fork_runner.run_script(
+        script,
+        argv=("codex-loaded-skill",),
+        env={**os.environ, "TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+    )
+
+    assert result.returncode == 0
+    assert _read_state(tmp_path, "codex-loaded-skill")["session_review_invoked"] == {"agent-toolkit:session-review": True}
 
 
 def test_rejects_empty_session_id_without_marker(tmp_path: pathlib.Path) -> None:
