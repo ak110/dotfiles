@@ -31,7 +31,7 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 
 欠落依存、自己依存、循環、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
-複数の計画実装型を扱う場合は`references/plan-impl-feedback-flow.md`を全文読む。
+計画実装型を1件以上扱う場合は`references/plan-impl-feedback-flow.md`を全文読む。
 
 ## 2. 調査と採否
 
@@ -61,7 +61,7 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 ## 4. 実装と公開
 
 - 通常型の採用項目は実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、調査済み事実と採否を渡す
-- 計画実装型は計画ファイルを正本として実装する
+- 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する
 - commit前に実行主体が`agent-toolkit:commit`をSkill機能で起動する
 - 実装と二系統reviewの完了後、呼び出し元がpushとCI通過確認を完遂する
 - 計画の完了条件を満たした対象だけを後始末へ進める

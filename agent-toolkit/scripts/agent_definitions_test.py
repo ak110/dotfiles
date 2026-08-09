@@ -297,19 +297,36 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
 
 def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     """単一計画と複数laneの双方でexecutorの必須worktree一覧を構成する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
 
+    readiness = _h2_section(process, "1. 入力とreadiness")
+    implementation = _h2_section(process, "4. 実装と公開")
+    assert "計画実装型を1件以上扱う場合は`references/plan-impl-feedback-flow.md`を全文読む" in readiness
+    assert "計画実装型は`references/plan-impl-feedback-flow.md`に従い" in implementation
     for phrase in (
         "plan-impl-caller-reception.md`を全文読み",
         "sender契約の正本",
         "借用する現在worktreeを回収不可として含む完全な一覧",
-        "lane用worktreeと計画が明示する管理対象worktreeを含む完全な一覧",
+        "lane用統合worktreeと計画が明示する管理対象worktreeを含む完全な一覧",
         "worktreeの完全な一覧、feedback filename、追加指示",
         "許容済みの挙動変化、権限だけを渡し",
     ):
         assert phrase in flow
+    for single_value in ("`用途=統合用`", "`管理対象領域=なし`", "`作成主体=既存`", "`回収可否=不可`"):
+        assert single_value in flow
+    assert "管理対象領域内へlane用統合worktreeを作成" in flow
+    for lane_value in (
+        "用途",
+        "絶対パス",
+        "HEADの完全OID",
+        "管理対象領域の絶対パス",
+        "`作成主体=caller`",
+        "`回収可否=可`",
+    ):
+        assert lane_value in flow
     for field in ("用途", "絶対パス", "管理対象領域の絶対パス", "HEADの完全OID", "作成主体", "回収可否"):
         assert field in caller
     for required_input in (
