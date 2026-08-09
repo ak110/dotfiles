@@ -199,13 +199,13 @@ def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
     assert "単位worktreeと統合用worktreeは作成・回収しない" in executor
-    assert "用途、正確な絶対パス、管理対象領域の絶対パス、状態、完全OID、作成主体、回収可否" in executor
+    assert "用途、正確な絶対パス、管理対象領域の絶対パス、借用時は`なし`、状態、完全OID、作成主体、回収可否" in executor
     assert "`git worktree remove`" not in executor
     assert "commit・統合可、worktreeの作成・回収不可、push不可" in caller
     for phrase in (
         "pushとCI成功を実測",
         "採用処理と保存結果の照合も完了",
-        "用途、正確な絶対パス、状態、完全OID、管理対象領域、作成主体、回収可否も記録",
+        "用途、正確な絶対パス、状態、完全OID、管理対象領域の絶対パス、借用時は`なし`、作成主体、回収可否も記録",
         "進捗ログの記録値と`git worktree list --porcelain`を照合",
         "`作成主体=caller`かつ`回収可否=可`",
         "`git worktree remove <exact-path>`",
@@ -238,6 +238,21 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
     assert "一覧で指定されたworktreeだけへ割り当てる" in executor
     for command in ("atk managed-temp create", "git worktree add", "git worktree remove"):
         assert command not in executor
+
+
+def test_plan_impl_worktree_schema_accepts_only_owned_or_borrowed_combinations() -> None:
+    """管理対象領域の値域を作成主体と回収可否の組へ一致させる。"""
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+
+    assert "`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`" in flow
+    assert "管理対象領域の絶対パス、`作成主体=caller`、`回収可否=可`" in flow
+    for contract in (caller, executor):
+        assert "管理対象領域の絶対パス、借用時は`なし`" in contract
+        assert "`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`の組だけ" in contract
+        assert "`作成主体=caller`、`回収可否=可`の組では管理対象領域の絶対パスを必須" in contract
+        assert "その他の組合せ" in contract
 
 
 def test_plan_impl_escalation_is_self_contained_and_uses_existing_routes() -> None:
