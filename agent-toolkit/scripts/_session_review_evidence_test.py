@@ -6,6 +6,7 @@ import json
 import pathlib
 
 import _session_review_evidence as evidence
+import pytest
 
 
 def _write_transcript(path: pathlib.Path, entries: list[dict]) -> pathlib.Path:
@@ -194,7 +195,8 @@ def test_codex_failed_command_without_output_keeps_failure_event(tmp_path: pathl
     assert '"exit_code": 1' in events[0]["text"]
 
 
-def test_manual_review_invocation_excludes_following_codex_events(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("command", ["/session-review", "/agent-toolkit:session-review"])
+def test_claude_syntax_is_not_codex_manual_review_boundary(tmp_path: pathlib.Path, command: str) -> None:
     transcript = _write_transcript(
         tmp_path,
         [
@@ -211,7 +213,7 @@ def test_manual_review_invocation_excludes_following_codex_events(tmp_path: path
                 "payload": {
                     "type": "message",
                     "role": "user",
-                    "content": [{"type": "input_text", "text": "/agent-toolkit:session-review"}],
+                    "content": [{"type": "input_text", "text": command}],
                 },
             },
             {
@@ -219,16 +221,25 @@ def test_manual_review_invocation_excludes_following_codex_events(tmp_path: path
                 "payload": {
                     "type": "message",
                     "role": "assistant",
-                    "content": [{"type": "output_text", "text": "振り返り中"}],
+                    "content": [{"type": "output_text", "text": "slash後の本来の作業結果"}],
                 },
             },
         ],
     )
 
-    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == [
+        "本来の最終結果",
+        command,
+        "slash後の本来の作業結果",
+    ]
+    assert events[-1]["kind"] == "final-result"
+    assert evidence.has_session_review_started(str(transcript)) is False
 
 
-def test_dollar_manual_review_invocation_excludes_following_codex_events(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("command", ["$session-review", "$agent-toolkit:session-review"])
+def test_dollar_manual_review_invocation_excludes_following_codex_events(tmp_path: pathlib.Path, command: str) -> None:
     transcript = _write_transcript(
         tmp_path,
         [
@@ -245,7 +256,7 @@ def test_dollar_manual_review_invocation_excludes_following_codex_events(tmp_pat
                 "payload": {
                     "type": "message",
                     "role": "user",
-                    "content": [{"type": "input_text", "text": "$agent-toolkit:session-review"}],
+                    "content": [{"type": "input_text", "text": command}],
                 },
             },
             {
@@ -388,17 +399,40 @@ def test_unrelated_successful_codex_command_is_not_evidence(tmp_path: pathlib.Pa
     assert evidence.load_and_extract(str(transcript)) == []
 
 
-def test_manual_review_invocation_excludes_following_claude_events(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("command", ["/session-review", "/agent-toolkit:session-review"])
+def test_manual_review_invocation_excludes_following_claude_events(tmp_path: pathlib.Path, command: str) -> None:
     transcript = _write_transcript(
         tmp_path,
         [
             {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
-            {"type": "user", "message": {"role": "user", "content": "/session-review"}},
+            {"type": "user", "message": {"role": "user", "content": command}},
             {"type": "assistant", "message": {"role": "assistant", "content": "振り返り中"}},
         ],
     )
 
     assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+
+
+@pytest.mark.parametrize("command", ["$session-review", "$agent-toolkit:session-review"])
+def test_codex_syntax_is_not_claude_manual_review_boundary(tmp_path: pathlib.Path, command: str) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
+            {"type": "user", "message": {"role": "user", "content": command}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "dollar後の本来の作業結果"}},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == [
+        "本来の最終結果",
+        command,
+        "dollar後の本来の作業結果",
+    ]
+    assert events[-1]["kind"] == "final-result"
+    assert evidence.has_session_review_started(str(transcript)) is False
 
 
 def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> None:

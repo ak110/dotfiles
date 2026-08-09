@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 _MAX_TEXT_LENGTH = 2000
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
@@ -19,6 +19,11 @@ _FALLBACK_TEXT = (
     "transcript_pathを読み取れないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
 )
+_Runtime = Literal["claude", "codex"]
+_MANUAL_REVIEW_COMMANDS: dict[_Runtime, tuple[str, ...]] = {
+    "claude": ("/session-review", "/agent-toolkit:session-review"),
+    "codex": ("$session-review", "$agent-toolkit:session-review"),
+}
 
 
 def _clip(text: str) -> str:
@@ -207,26 +212,21 @@ def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return events
 
 
-def _is_manual_review_invocation(text: str) -> bool:
+def _is_manual_review_invocation(text: str, runtime: _Runtime) -> bool:
     stripped = text.strip()
-    commands = (
-        "/session-review",
-        "/agent-toolkit:session-review",
-        "$session-review",
-        "$agent-toolkit:session-review",
-    )
+    commands = _MANUAL_REVIEW_COMMANDS[runtime]
     if any(stripped == command or stripped.startswith(f"{command} ") for command in commands):
         return True
     return any(f"<command-name>{command}</command-name>" in stripped for command in commands)
 
 
-def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str, Any]]:
     """手動・自動振り返り境界を適用し、最終結果と連番を確定する。"""
     manual_boundary = next(
         (
             index
             for index, event in enumerate(events)
-            if event["kind"] == "user" and _is_manual_review_invocation(event["text"])
+            if event["kind"] == "user" and _is_manual_review_invocation(event["text"], runtime)
         ),
         len(events),
     )
@@ -260,14 +260,27 @@ def extract(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """transcript形式を判定し、対象イベントを順序どおり抽出する。"""
     if not entries:
         return []
+    runtime = _detect_runtime(entries)
+    if runtime is None:
+        return _fallback()
+    return _finalize(_extract_for_runtime(entries, runtime), runtime)
+
+
+def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
+    """transcriptのentry形式から手動構文を解釈するruntimeを返す。"""
     entry_types = {entry.get("type") for entry in entries}
     if entry_types & {"response_item", "event_msg"}:
-        return _finalize(_extract_codex(entries))
+        return "codex"
     if entry_types & {"user", "assistant", "interrupt"} or any(
         entry.get("isSidechain") is True or "toolUseResult" in entry for entry in entries
     ):
-        return _finalize(_extract_claude(entries))
-    return _fallback()
+        return "claude"
+    return None
+
+
+def _extract_for_runtime(entries: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str, Any]]:
+    """確定したruntimeに対応する共通イベントへ変換する。"""
+    return _extract_codex(entries) if runtime == "codex" else _extract_claude(entries)
 
 
 def _fallback() -> list[dict[str, Any]]:
@@ -312,17 +325,13 @@ def has_session_review_started(raw_path: str | None) -> bool:
     entries = _load_entries(raw_path)
     if entries is None:
         return False
-    entry_types = {entry.get("type") for entry in entries}
-    if entry_types & {"response_item", "event_msg"}:
-        events = _extract_codex(entries)
-    elif entry_types & {"user", "assistant", "interrupt"} or any(
-        entry.get("isSidechain") is True or "toolUseResult" in entry for entry in entries
-    ):
-        events = _extract_claude(entries)
-    else:
+    runtime = _detect_runtime(entries)
+    if runtime is None:
         return False
+    events = _extract_for_runtime(entries, runtime)
     return any(
-        event["kind"] == "session-review-started" or (event["kind"] == "user" and _is_manual_review_invocation(event["text"]))
+        event["kind"] == "session-review-started"
+        or (event["kind"] == "user" and _is_manual_review_invocation(event["text"], runtime))
         for event in events
     )
 
