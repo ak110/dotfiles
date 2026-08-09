@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import shlex
+import shutil
 import subprocess
 import typing
 from ctypes import wintypes
@@ -60,6 +61,44 @@ def _payload_object(payload_text: str) -> dict[str, typing.Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _is_trusted_atk_launcher(plugin_root: pathlib.Path) -> bool:
+    """PATH上のatkが配布済みの安定ランチャーか判定する。"""
+    executable = shutil.which("atk")
+    if executable is None:
+        return False
+    launcher_name = "atk.cmd" if os.name == "nt" else "atk"
+    candidates = (
+        pathlib.Path.home() / ".local" / "bin" / launcher_name,
+        plugin_root / "bin" / launcher_name,
+    )
+    resolved = pathlib.Path(executable).resolve(strict=True)
+    for candidate in candidates:
+        try:
+            if resolved == candidate.resolve(strict=True):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _cleanup_target(
+    tokens: list[str],
+    *,
+    plugin_root: pathlib.Path,
+    helper: pathlib.Path,
+) -> pathlib.Path | None:
+    """許可対象の新旧cleanupコマンドから対象パスを返す。"""
+    if tokens[:4] == ["atk", "managed-temp", "cleanup", "--path"] and len(tokens) == 5:
+        return pathlib.Path(tokens[4]) if _is_trusted_atk_launcher(plugin_root) else None
+    if len(tokens) != 8:
+        return None
+    if tokens[:5] != ["uv", "run", "--no-project", "--script", str(helper)]:
+        return None
+    if tokens[5:7] != ["cleanup", "--path"]:
+        return None
+    return pathlib.Path(tokens[7])
+
+
 def main(payload_text: str) -> int:
     """厳密に一致して所有権検証を通過したcleanupだけを承認する。"""
     payload = _payload_object(payload_text)
@@ -80,13 +119,9 @@ def main(payload_text: str) -> int:
         tokens = _tokens(command)
         if os.name == "nt" and command != subprocess.list2cmdline(tokens):
             return 0
-        if len(tokens) != 8:
+        target = _cleanup_target(tokens, plugin_root=plugin_root, helper=helper)
+        if target is None:
             return 0
-        if tokens[:5] != ["uv", "run", "--no-project", "--script", str(helper)]:
-            return 0
-        if tokens[5:7] != ["cleanup", "--path"]:
-            return 0
-        target = pathlib.Path(tokens[7])
         if not target.is_absolute():
             return 0
         _managed_temp.validate_managed_temp(target)

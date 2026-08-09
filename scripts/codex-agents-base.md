@@ -102,15 +102,14 @@ Codexでは`spawn_agent`経路へ一本化する。
 Codexでは同じ難易度の区分をCodexで利用できるモデル識別子と`reasoning_effort`へ読み替え、
 `spawn_agent`の`model`・`reasoning_effort`で指定する。
 
-作業用一時領域では、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
-`uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>`を単独で実行して作成する。
-用途の完了と内容の検収後は、
-`uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>`を単独で実行する。
+公開サブコマンドがないplugin内部資源を実行する場合は、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
+作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成する。
+用途の完了と内容の検収後は、`atk managed-temp cleanup --path <検収済み絶対パス>`を単独で実行する。
 
-委譲先の成果物側の状況は、同じく現行plugin rootを起点として次のコマンドを単独で実行して観測する。
+委譲先の成果物側の状況は、次のコマンドを単独で実行して観測する。
 
 ```sh
-uv run --no-project --script <plugin root>/scripts/atk.py watch --worktree [<ラベル>=]<作業ツリーの絶対パス> --file [<ラベル>=]<成果物の絶対パス>
+atk watch --worktree [<ラベル>=]<作業ツリーの絶対パス> --file [<ラベル>=]<成果物の絶対パス>
 ```
 
 `--worktree`・`--file`はいずれも複数回指定でき、

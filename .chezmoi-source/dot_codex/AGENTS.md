@@ -104,15 +104,14 @@ Codexでは`spawn_agent`経路へ一本化する。
 Codexでは同じ難易度の区分をCodexで利用できるモデル識別子と`reasoning_effort`へ読み替え、
 `spawn_agent`の`model`・`reasoning_effort`で指定する。
 
-作業用一時領域では、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
-`uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>`を単独で実行して作成する。
-用途の完了と内容の検収後は、
-`uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>`を単独で実行する。
+公開サブコマンドがないplugin内部資源を実行する場合は、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
+作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成する。
+用途の完了と内容の検収後は、`atk managed-temp cleanup --path <検収済み絶対パス>`を単独で実行する。
 
-委譲先の成果物側の状況は、同じく現行plugin rootを起点として次のコマンドを単独で実行して観測する。
+委譲先の成果物側の状況は、次のコマンドを単独で実行して観測する。
 
 ```sh
-uv run --no-project --script <plugin root>/scripts/atk.py watch --worktree [<ラベル>=]<作業ツリーの絶対パス> --file [<ラベル>=]<成果物の絶対パス>
+atk watch --worktree [<ラベル>=]<作業ツリーの絶対パス> --file [<ラベル>=]<成果物の絶対パス>
 ```
 
 `--worktree`・`--file`はいずれも複数回指定でき、
@@ -329,6 +328,9 @@ TBDへの回答は本切り替えの対象外とし、「指摘発生時の扱�
 確認時は候補を一覧で示し、技術的な最適案を第1選択肢に置く。
 技術的に優劣を判断できる事項は選択肢化せず最適な手法を選ぶ。
 実装手順の詳細（タスク分解の粒度・実装順序・委譲判断・ファイル名・節の配置など）は技術判断として自律決定する。
+確認候補に複数の利用者依存事項を含む場合は、各事項を単独で除外したときに他の事項の技術的成立性が変わるかを確認する。
+成立性が変わらない事項は別の質問または別の選択欄へ分け、提案全体への肯定を各事項への個別合意として扱わない。
+相互依存する事項は同じ確認単位に保ち、追加機構を用いない既存動作だけの案も同じ階層で比較する。
 選択肢を組む前に、候補群が共有している暗黙の前提を1つ以上言語化し、前提に代替がある場合は前提そのものを選択肢化する。
 
 ### 方針が衝突する場合の優先順位

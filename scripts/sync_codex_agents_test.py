@@ -76,6 +76,18 @@ def test_current_output_is_synced() -> None:
     operations_source = (subject.REPO_ROOT / "agent-toolkit/rules/02-agent-operations.md").read_text(encoding="utf-8")
     assert (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8") == content
     assert "99-claude-code.md" not in content
+    for stable_command in (
+        "atk managed-temp create --prefix <用途>",
+        "atk managed-temp cleanup --path <検収済み絶対パス>",
+        "atk watch --worktree",
+    ):
+        assert stable_command in content
+    for version_dependent_command in (
+        "<plugin root>/scripts/_managed_temp.py create",
+        "<plugin root>/scripts/_managed_temp.py cleanup",
+        "<plugin root>/scripts/atk.py watch",
+    ):
+        assert version_dependent_command not in content
     for claude_specific in (
         "`subagent_type`",
         "`Explore`",

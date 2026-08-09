@@ -50,6 +50,11 @@ def _command(plugin_root: pathlib.Path, target: pathlib.Path) -> str:
     return subprocess.list2cmdline(tokens) if os.name == "nt" else shlex.join(tokens)
 
 
+def _atk_command(target: pathlib.Path) -> str:
+    tokens = ["atk", "managed-temp", "cleanup", "--path", str(target)]
+    return subprocess.list2cmdline(tokens) if os.name == "nt" else shlex.join(tokens)
+
+
 def test_allows_only_valid_managed_cleanup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -169,17 +174,64 @@ def test_malformed_payload_and_validation_error_return_no_decision(
     assert not capsys.readouterr().out
 
 
-def test_rejects_claude_code_launcher_command(
+@pytest.mark.parametrize("launcher_source", ["home", "plugin"])
+def test_allows_trusted_atk_launcher_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    launcher_source: str,
+) -> None:
+    """ホーム側ラッパーと現行プラグイン側ランチャーを許可する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parent.parent
+    temp_root = tmp_path / "temp"
+    temp_root.mkdir()
+    home = tmp_path / "home"
+    launcher_name = "atk.cmd" if os.name == "nt" else "atk"
+    home_launcher = home / ".local" / "bin" / launcher_name
+    home_launcher.parent.mkdir(parents=True)
+    home_launcher.write_text("launcher\n", encoding="utf-8")
+    launcher = home_launcher if launcher_source == "home" else plugin_root / "bin" / launcher_name
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
+    monkeypatch.setattr(subject.shutil, "which", lambda name: str(launcher) if name == "atk" else None)
+    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    target = _managed_temp.create_managed_temp("hook-test")
+
+    assert subject.main(_payload(_atk_command(target))) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
+
+
+def test_rejects_untrusted_or_noncanonical_atk_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Codexでは現行plugin rootの絶対helper経路だけをcanonicalとする。"""
+    """別ランチャー、追加引数、演算子、相対パス、管理外パスを拒否する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent.parent
+    temp_root = tmp_path / "temp"
+    temp_root.mkdir()
+    other_launcher = tmp_path / ("atk.cmd" if os.name == "nt" else "atk")
+    other_launcher.write_text("other\n", encoding="utf-8")
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    command = f"atk managed-temp cleanup --path {tmp_path}"
+    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+    target = _managed_temp.create_managed_temp("hook-test")
+    command = _atk_command(target)
 
+    monkeypatch.setattr(subject.shutil, "which", lambda name: str(other_launcher) if name == "atk" else None)
     assert subject.main(_payload(command)) == 0
+
+    plugin_launcher = plugin_root / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
+    monkeypatch.setattr(subject.shutil, "which", lambda name: str(plugin_launcher) if name == "atk" else None)
+    for rejected in (
+        f"{command} extra",
+        f"{command} && true",
+        f"env X=1 {command}",
+        _atk_command(pathlib.Path("relative")),
+        _atk_command(temp_root / "unmanaged"),
+    ):
+        assert subject.main(_payload(rejected)) == 0
     assert not capsys.readouterr().out
 
 
