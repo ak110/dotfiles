@@ -581,8 +581,9 @@ def wait_for_ci(
       後続SHA追跡時は`_fetch_follow_snapshot`で不可分なスナップショットとして取得し、
       `_find_early_failure`が確定的な失敗（forgeごとの判定は同関数docstring参照）を1件検出した時点で
       run/pipeline完了を待たずEXIT_CI_FAILEDを返す
-    - 登録猶予期間全体でrun集合を継続収集し、期間末で安定確定する
-      （猶予末までに追加登録されるrunも期待集合に含む）
+    - 登録猶予期間全体でrun集合を継続収集し、期間末に1件以上あることを確認して完了待ちへ移る
+    - 完了待ちフェーズでも対象shaのrunを毎pollで取り込み、猶予後に登録されたrunを期待集合へ加える
+      （run一覧は対象shaで限定するため、猶予後のrunも同じcommitに対する実行である）
     - 期間末で0件ならEXIT_NO_RUNS
     - run一覧・ジョブ一覧いずれかの取得失敗を含むスナップショット取得の連続失敗が閾値到達でEXIT_GH_ERROR
       （1回でも全取得成功したスナップショットで連続失敗カウンターをリセットする。
@@ -640,7 +641,7 @@ def wait_for_ci(
 
     while True:  # 完了待ちフェーズ
         try:
-            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn, expected_ids, baseline_ids)
+            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids)
             consecutive_failures = 0
         except RunListError as exc:
             consecutive_failures += 1
@@ -649,8 +650,13 @@ def wait_for_ci(
                 return EXIT_GH_ERROR
             sleep_fn(poll_interval)
             continue
-        expected_runs = [r for r in runs if r.get("databaseId") in expected_ids] or []
         elapsed = now_fn() - start
+        if added := _run_ids(runs) - expected_ids:
+            # run一覧は対象shaで限定するため、猶予後に現れるrunも同じcommitに対する実行である。
+            # 待機対象へ加えないと当該runの失敗を待たずに通過と判定してしまう。
+            _print(elapsed, f"追加登録されたrunを待機対象へ追加（{len(added)}件）")
+            expected_ids |= added
+        expected_runs = [r for r in runs if r.get("databaseId") in expected_ids] or []
         if len(expected_runs) < len(expected_ids):
             _print(elapsed, f"期待run集合の一部が取得結果から欠落（{len(expected_runs)}/{len(expected_ids)}）")
             if elapsed >= timeout:

@@ -356,7 +356,8 @@ class TestPollingCompletion:
         assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=lambda _r: [_job()]) == wait_ci.EXIT_SUCCESS
         assert calls["n"] >= 4
 
-    def test_job_failure_from_run_registered_after_grace_is_not_in_expected_set(self):
+    def test_job_failure_from_run_registered_after_grace_is_detected(self):
+        """猶予後に登録されたrunも対象shaの実行であるため待機対象へ加え、その失敗を検出する。"""
         calls = {"n": 0}
         fetched_job_run_ids: list[int] = []
 
@@ -372,8 +373,24 @@ class TestPollingCompletion:
                 return [_job(conclusion="failure")]
             return []
 
-        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=job_list_fn) == wait_ci.EXIT_SUCCESS
-        assert fetched_job_run_ids == [1, 1]
+        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=job_list_fn) == wait_ci.EXIT_CI_FAILED
+        assert 2 in fetched_job_run_ids
+
+    def test_run_registered_after_grace_is_waited_until_completion(self):
+        """猶予後に登録されたrunが未完了の間は成功と判定せず、完了まで待つ。"""
+        calls = {"n": 0}
+
+        def run_list_fn(_s):
+            calls["n"] += 1
+            expected = _run(name="expected", db_id=1)
+            if calls["n"] == 1:
+                return [expected]
+            late_status = "completed" if calls["n"] >= 4 else "in_progress"
+            late_conclusion = "success" if calls["n"] >= 4 else None
+            return [expected, _run(name="late", status=late_status, conclusion=late_conclusion, db_id=2)]
+
+        assert _run_wait(run_list_fn, registration_grace=0.0) == wait_ci.EXIT_SUCCESS
+        assert calls["n"] >= 4
 
 
 class TestGhErrorHandling:
