@@ -148,9 +148,10 @@ Claude CodeのツールAPI、権限評価、フック、セッション保存形
 - foreground実行では完了報告の受領時点で委譲先が終了している。
   background実行では委譲機能の終端状態を確認してからwriterを交代する。状態を取得できない経路だけ、
   間隔を空けた複数回のGit状態確認を補助的に用いる
-- background委譲の稼働状態は`ListAgents`で観測する。同ツールは自身が起動した委譲先について
-  識別子・種別・稼働状態（`running`・`completed`）・開始からの経過を返し、
-  `SendMessage`の宛先となる識別子もここで得る。
+- background委譲の稼働状態は`ListAgents`で観測する。同ツールは到達可能な委譲先について
+  識別子・種別・稼働状態・開始からの経過を返し、`SendMessage`の宛先となる識別子もここで得る。
+  稼働中の委譲先が`running`として列挙されること、完了直後の委譲先が列挙されない場合があることを実測した。
+  列挙されない事実は稼働の終了を支持する材料に留め、起動の有無の根拠にはしない。
   累計起動回数と系統は`subagents/*.meta.json`の
   `agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`から観測する。
   同ファイルは稼働状態を示す項目を持たないため、状態の判定には使わない。
