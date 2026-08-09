@@ -31,7 +31,7 @@ MANAGED_ALLOW = [
     "mcp__serena",
     "mcp__plugin_serena_serena",
 ]
-MANAGED_DENY = ["Read(*.key)", "Read(*.crt)", "Read(./.env)"]
+MANAGED_DENY = ["Read(*.key)", "Read(*.crt)"]
 MANAGED = {
     "language": "japanese",
     "permissions": {
@@ -211,19 +211,69 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION" not in data["env"]
 
-    def test_gate_revision_rule_requires_verbatim_materials(self):
-        """承認ゲート緩和ルールが新規正規形の逐語素材を許可条件として要求する。"""
+    def test_managed_deny_keeps_only_key_and_certificate_protection(self):
+        """配布設定の読取禁止は秘密鍵と証明書だけを保護する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        rules = [rule for rule in data["autoMode"]["allow"] if rule.startswith("Feedback-Originated Gate Revision:")]
-        assert len(rules) == 1
-        assert "`## 目的 > ### 提示素材`" in rules[0]
-        assert "逐語転記" in rules[0]
+        assert data["permissions"]["deny"] == MANAGED_DENY
 
-    def test_gate_revision_rule_keeps_legacy_material_location(self):
-        """移行前に作成済みの計画を処理できるよう旧配置を読み取り互換条件として残す。"""
+    def test_auto_mode_rules_keep_required_scope_without_confirmation_details(self):
+        """自動許可文は5ラベルの対象と安全境界だけを保持する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        rule = next(rule for rule in data["autoMode"]["allow"] if rule.startswith("Feedback-Originated Gate Revision:"))
-        assert "`## 背景 > ### 提示素材`" in rule
+        rules = dict(rule.split(": ", maxsplit=1) for rule in data["autoMode"]["allow"])
+        assert set(rules) == {
+            "Session-Owned Amend",
+            "Exit-Session Termination",
+            "Feedback-Originated Gate Revision",
+            "Background Operator Auto-Approval",
+            "External Marketplace Registration",
+        }
+        assert all(
+            term in rules["Session-Owned Amend"]
+            for term in ("transcript", "現在のHEAD", "稼働中の別書込担当", "ユーザー作成", "`git commit --amend`")
+        )
+        assert all(
+            term in rules["Exit-Session Termination"]
+            for term in (
+                "transcript",
+                "このエージェント",
+                "`agent-toolkit:exit-session`",
+                "Skill呼び出し",
+                "直前",
+                "単独",
+                "`kill -TERM $PPID`",
+            )
+        )
+        assert all(
+            term in rules["Feedback-Originated Gate Revision"]
+            for term in (
+                "transcript",
+                "`agent-toolkit:process-feedbacks`",
+                "`agent-toolkit:plan-and-add-feedback`",
+                "Skill呼び出し",
+                "frontmatter",
+                "`source`",
+                "`session-review`でない",
+                "`~/dotfiles`",
+                "エージェント用規範",
+                "配布原本",
+                "hard_deny",
+                "配布先",
+            )
+        )
+        assert all(
+            term in rules["Background Operator Auto-Approval"]
+            for term in ("`&`", "背景実行自体は拒否理由とせず", "各subcommand", "個別", "既存の許可条件")
+        )
+        assert all(
+            term in rules["External Marketplace Registration"]
+            for term in (
+                "`claude plugin marketplace add u-ichi/compact-plus`",
+                "`codex plugin marketplace add u-ichi/compact-plus`",
+                "`compact-plus@compact-plus`",
+                "インストール",
+            )
+        )
+        assert "AskUserQuestion" not in "\n".join(rules.values())
 
     @pytest.mark.parametrize("suffix", ["posix", "win32"])
     def test_only_autonomous_exit_personal_stop_hook_remains(self, suffix: str):
@@ -1038,6 +1088,30 @@ class TestStripRemovedListItems:
         # config 側は削除されない（仮に同名構造があっても保持される）
         config_result = json.loads(config_path.read_text(encoding="utf-8"))
         assert config_result["autoMode"]["allow"] == [f"{old_rule_marker} を含む config 側項目"]
+
+    def test_run_removes_legacy_env_deny_and_preserves_user_deny(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`run()`は旧管理denyだけを除去し、利用者独自denyと現行管理denyを保持する。"""
+        settings_path = _setup_run_paths(
+            tmp_path,
+            monkeypatch,
+            {"permissions": {"deny": MANAGED_DENY}},
+        )
+        settings_path.write_text(
+            json.dumps(
+                {"permissions": {"deny": ["Read(./.env)", "Read(./.secret)", "Read(*.key)"]}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert result["permissions"]["deny"] == ["Read(./.secret)", "Read(*.key)", "Read(*.crt)"]
 
 
 class TestStripStaleLabeledListItems:

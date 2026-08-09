@@ -84,6 +84,11 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
         "autoMode.allow",
         "自律終了再促フックからの誘導・ユーザーのSkill名明示指定のいずれか",
     ),
+    # 2026-08: ユーザースコープの読取禁止を廃止したため旧管理項目を除去
+    (
+        "permissions.deny",
+        "Read(./.env)",
+    ),
 )
 
 # ラベル付き配列要素（`^<ラベル>: `形式の接頭辞を持つ要素）の先頭ラベルを抽出する正規表現。
