@@ -18,12 +18,14 @@ user-invocable: false
 ## 役割
 
 委譲の調整、writerとreviewerの検収、指摘集合の統合を担当する。
-自身は成果物と計画ファイルを直接編集せず、writerが作成したcommitの統合と、自身が作成したworktreeの管理だけを行う。
+自身は成果物と計画ファイルを直接編集せず、writerが作成したcommitの統合と、渡されたworktreeの検収だけを行う。
+worktreeと管理対象領域を作成・回収しない。
 `git push`、タグ作成、リモートrefは変更しない。
 
 ## 入力
 
-- 計画ファイル、対象worktree、プロジェクト規範の絶対パス
+- 計画ファイル、プロジェクト規範の絶対パス
+- 用途、絶対パス、管理対象領域の絶対パス、完全OID、作成主体、回収可否を持つworktree一覧
 - feedback filename、追加指示、許容済みの挙動変化
 - 複製元と対象外worktree、git操作の制約
 
@@ -36,10 +38,9 @@ user-invocable: false
    共通のベースコミット、統合順を取得する。単位が明示されていない場合は計画全体を1つの実装単位として扱う。
    対象集合が交差せず、先行単位の成果を設計入力にせず、同じ生成物を所有しない単位だけを並列可能とする。
    判定材料が計画にない既存計画は逐次実行し、不足値を推測して並列化しない
-3. 並列可能な単位ごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成し、
-   その配下へ`git worktree add --detach <absolute-path> <common-base>`でworktreeを作成する。
-   作成した絶対パスと完全OIDを記録し、この作成操作では複製元、統合用worktree、対象外worktreeを変更しない。
-   同じworktreeへ複数のwriterを割り当てず、依存する単位は先行commitの統合後に統合用worktreeへ逐次割り当てる
+3. 渡されたworktree一覧を計画の単位、共通のベースコミット、統合順と照合する。
+   一覧にないworktreeを補完または作成せず、各単位を一覧で指定されたworktreeだけへ割り当てる。
+   同じworktreeへ複数のwriterを割り当てず、依存する単位は先行commitの統合後に一覧の統合用worktreeへ逐次割り当てる
 4. writerとreviewerはAgentツールの`general-purpose`で起動し、executor自身を含む同じ役割種別へ割り当てない。
    writerへ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
    プロジェクト規範、該当author skillの絶対パス、その単位の識別と完全な対象ファイル集合だけとする。
@@ -49,8 +50,8 @@ user-invocable: false
    各統合後にHEAD、変更ファイル集合、clean状態を計画と照合する。
    衝突時は統合用worktreeのcherry-pickだけを中止し、対象重複または依存関係を再調査してから該当単位を再実装する。
    失敗していない単位のcommitとworktreeは巻き戻さない
-6. 単位worktreeと統合用worktreeは回収しない。
-   各worktreeと対応する管理対象領域について、正確な絶対パス、状態、完全OIDを呼び出し元へ返す。
+6. 単位worktreeと統合用worktreeは作成・回収しない。
+   各worktreeについて、用途、正確な絶対パス、管理対象領域の絶対パス、状態、完全OID、作成主体、回収可否を返す。
    失敗または中断中のworktreeも復旧用に保持し、対象外worktreeを変更しない。
    writer結果は呼び出し元が進捗ログへ反映できる時点で単位ごとに返す
 7. 全単位後に統合済みの累積差分へ生成同期と最終検証を実測する。
@@ -96,7 +97,7 @@ summary: <結果>
 commits:
 - <完全長SHA、対応する計画単位>
 worktrees:
-- <種別、正確な絶対パス、管理対象領域の正確な絶対パス、状態、完全OID>
+- <用途、正確な絶対パス、管理対象領域の正確な絶対パス、状態、完全OID、作成主体、回収可否>
 verification:
 - <コマンド、終了コード、警告件数>
 reviews:

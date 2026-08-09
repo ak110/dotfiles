@@ -5,12 +5,22 @@
 ## 起動
 
 対象worktreeが上流追随済みでcleanであることと、同じworktreeにwriterがいないことを確認する。
+計画から単位、共通のベースコミット、統合順を読み、executorへ渡すworktreeの完全な一覧を作成する。
+通常経路では受領済みの現在worktreeを統合用として借用し、`作成主体=既存`かつ`回収可否=不可`で記録する。
+計画が非重複の並列単位を明示した場合は、callerが単位ごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
+各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`で単位worktreeを作成する。
+計画がcallerによる統合用worktreeの作成も明示する場合は、同じ方法で統合用worktreeを作成する。
+作成直後に用途、絶対パス、管理対象領域の絶対パス、HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録する。
+callerが管理対象領域内へ作成した一時worktreeだけを回収対象とする。
+対象は並列単位worktreeと、計画が作成を明示した統合用worktreeに限る。
+一覧には`作成主体=caller`、`回収可否=可`と記録する。
 起動文は受信者への命令を先頭に置き、次だけを渡す。
 
-- 計画ファイル、対象worktree、プロジェクト規範の絶対パス
+- 計画ファイル、プロジェクト規範の絶対パス
+- 用途、絶対パス、管理対象領域の絶対パス、HEADの完全OID、作成主体、回収可否を持つworktreeの完全な一覧
 - feedback filename
 - 追加指示と許容済みの挙動変化。該当しない場合は`なし`
-- 複製元と対象外worktree、commit可、管理対象worktreeの作成・統合可、回収不可、push不可などの権限
+- 複製元と対象外worktree、commit・統合可、worktreeの作成・回収不可、push不可などの権限
 
 計画が対象リポジトリ外への操作を列挙している場合は、列挙された対象だけを認可範囲として渡し、
 記載の無い対象への操作は許可しない。
@@ -25,10 +35,10 @@ executorの要約を受領したら、本文より先に次を実測する。
 3. 近接検証と最終検証の実行結果
 4. 二系統reviewの対象commit、読み取り専用状態、指摘と対応結果
 5. 計画の完了条件と`## 進捗ログ`
-6. 共通base、単位と統合用の各worktree、統合順、全単位commit、各管理対象領域の正確な絶対パス、状態、完全OID
+6. 共通base、統合順、全単位commit、各worktreeの用途、絶対パス、管理対象領域、状態、完全OID、作成主体、回収可否
 
 callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`の3列表へ行を追記する。
-単位と統合用の各worktreeについて、正確な絶対パス、状態、完全OID、対応する管理対象領域の絶対パスも記録する。
+単位と統合用の各worktreeについて、用途、正確な絶対パス、状態、完全OID、管理対象領域、作成主体、回収可否も記録する。
 `結果・特記事項`にはcommit、検証、計画との差異、blockerを必要な範囲で書き、全操作履歴を要求しない。
 完了報告の直前に計画の`## 完了条件`を全文再読し、各条件の充足根拠または未達理由を進捗ログの最終行へ記録する。
 実装中に判断を変えた場合は`## 変更履歴`へ起点、指摘内容、採否、現在の結論、同期先を追記し、
@@ -49,6 +59,7 @@ callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`
 CI失敗時は`agent-toolkit:bugfix`で原因を確定し、必要な修正、検証、commit、二系統reviewを再実施する。
 pushとCI成功を実測し、feedback filenameが`なし`でない場合は採用処理と保存結果の照合も完了する。
 全条件の成立後だけ、進捗ログの記録値と`git worktree list --porcelain`を照合する。
-照合済みの記録されたworktreeだけを`git worktree remove <exact-path>`で除去し、
+`作成主体=caller`かつ`回収可否=可`で、管理対象領域を記録したworktreeだけを`git worktree remove <exact-path>`で除去し、
 続いて`atk managed-temp cleanup --path <exact-parent>`で対応する管理対象領域を回収する。
+借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない。
 中断または失敗時は全領域を保持し、対象外worktreeを変更しない。

@@ -197,21 +197,46 @@ def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
-    assert "単位worktreeと統合用worktreeは回収しない" in executor
-    assert "正確な絶対パス、状態、完全OIDを呼び出し元へ返す" in executor
+    assert "単位worktreeと統合用worktreeは作成・回収しない" in executor
+    assert "用途、正確な絶対パス、管理対象領域の絶対パス、状態、完全OID、作成主体、回収可否" in executor
     assert "`git worktree remove`" not in executor
-    assert "管理対象worktreeの作成・統合可、回収不可、push不可" in caller
+    assert "commit・統合可、worktreeの作成・回収不可、push不可" in caller
     for phrase in (
         "pushとCI成功を実測",
         "採用処理と保存結果の照合も完了",
-        "正確な絶対パス、状態、完全OID、対応する管理対象領域の絶対パスも記録",
+        "用途、正確な絶対パス、状態、完全OID、管理対象領域、作成主体、回収可否も記録",
         "進捗ログの記録値と`git worktree list --porcelain`を照合",
+        "`作成主体=caller`かつ`回収可否=可`",
         "`git worktree remove <exact-path>`",
         "`atk managed-temp cleanup --path <exact-parent>`",
         "中断または失敗時は全領域を保持",
         "対象外worktreeを変更しない",
     ):
         assert phrase in caller
+
+
+def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
+    """借用worktreeを保護し、callerが作成した一時worktreeだけを回収対象にする。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    for phrase in (
+        "計画から単位、共通のベースコミット、統合順を読み",
+        "現在worktreeを統合用として借用",
+        "`作成主体=既存`かつ`回収可否=不可`",
+        "非重複の並列単位",
+        "callerが単位ごとに`atk managed-temp create",
+        "計画がcallerによる統合用worktreeの作成も明示",
+        "callerが管理対象領域内へ作成した一時worktreeだけを回収対象",
+        "対象は並列単位worktreeと、計画が作成を明示した統合用worktreeに限る",
+        "HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録",
+        "借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない",
+    ):
+        assert phrase in caller
+    assert "渡されたworktree一覧を計画の単位、共通のベースコミット、統合順と照合" in executor
+    assert "一覧で指定されたworktreeだけへ割り当てる" in executor
+    for command in ("atk managed-temp create", "git worktree add", "git worktree remove"):
+        assert command not in executor
 
 
 def test_plan_impl_escalation_is_self_contained_and_uses_existing_routes() -> None:
