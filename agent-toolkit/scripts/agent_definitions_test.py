@@ -581,6 +581,53 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針" in independent_task
 
 
+def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
+    """指摘の根拠を修正担当まで保持し、各レビュー後に目的へ累積照合する。"""
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+    agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    implementation_plan_review_task = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    independent_review_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+
+    for phrase in ("出典の原文", "適用範囲", "例外条件", "対象への適用", "`未検証`"):
+        assert phrase in review_standards
+    assert "元のユーザー目的、公開契約、保持対象を変更する認可" in review_standards
+
+    for reviewer in (plan_review_task, implementation_plan_review_task, independent_review_task):
+        assert "対象への適用根拠" in reviewer
+        assert "修正方針" in reviewer
+        assert "変更する認可ではない" in reviewer
+    for phrase in ("ユーザー目的", "ユーザー合意", "現行の公開契約", "保持対象"):
+        assert phrase in _h2_section(independent_review_task, "入力")
+
+    for adopter in (agent_rules, delegation, plan_review_delegation, executor):
+        assert "適用" in adopter
+        assert "最小限の修正" in adopter
+        assert "修正方針" in adopter
+        assert "`未検証`" in adopter
+    assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
+    assert "`対応方針`にはexecutorが独立に確定した採否" in executor
+
+    for phrase in ("検証済みの実際値、期待値、違反契約、対象への適用根拠", "保持契約が指摘ごとにそろう"):
+        assert phrase in writer
+    assert "推測して修正せず`needs_escalation`" in writer
+    assert "原文と適用根拠の確認結果" in writer
+    assert "保持契約の維持結果" in writer
+
+    assert "`### 保持対象`" in plan_mode
+    assert "基準値、期待する方向または目標" in plan_mode
+    assert "別の永続状態を新設しない" in plan_mode
+    assert "採否の確定前と反映後" in plan_review_delegation
+    assert "前回ラウンドとの差分だけで完了を判定しない" in plan_review_delegation
+    assert "ベースコミットから現行`HEAD`までの累積差分" in executor
+    assert "照合成功後だけ最終検証と次の二系統reviewへ進む" in executor
+
+
 def test_policy_parser_review_contract_declares_operating_boundary() -> None:
     """自動判定の作成規範と独立レビュー入力が同じ運用境界を共有する。"""
     coding_standards = _CODING_STANDARDS.read_text(encoding="utf-8")

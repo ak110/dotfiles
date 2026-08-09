@@ -29,8 +29,11 @@
 7. commit、検証、計画との差異をcallerへ返す。
    writerは人間向け固定領域と`## 進捗ログ`を編集せず、進捗の追記はcallerが行う
 
-レビュー指摘の修正を受け取った場合は、`agent-toolkit:review-standards`と該当author skillを読み、
-各指摘の事実と違反契約を実測する。採用指摘を一括修正し、同じ単位の検証とcommitを再実行する。
+レビュー指摘の修正を受け取った場合は、検証済みの実際値、期待値、違反契約、対象への適用根拠、
+保持契約が指摘ごとにそろうことを確認する。いずれかが欠ける場合は推測して修正せず`needs_escalation`で返す。
+`agent-toolkit:review-standards`と該当author skillを読み、各指摘の事実と違反契約を自身でも実測する。
+最上位の担当者が確定した範囲内で最小限に修正し、reviewerの修正方針を新しい要件として扱わない。
+採用指摘を一括修正し、同じ単位の検証とcommitを再実行する。
 ユーザー合意と衝突する指摘は修正せず`needs_escalation`で返す。
 
 対象worktree以外を編集しない。担当外差分を復元しない。`git push`、タグ作成、リモートrefも変更しない。
@@ -45,7 +48,7 @@ changed:
 verification:
 - <コマンド>; exit_code: <整数>; warnings: <整数>
 review_resolution:
-- <指摘ID、採否、根拠、修正結果。該当なしなら「なし」>
+- <指摘ID、原文と適用根拠の確認結果、採用した修正、保持契約の維持結果。該当なしなら「なし」>
 plan_deviation:
 - <差異と調整結果。無ければ「なし」>
 blockers:
