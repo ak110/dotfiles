@@ -12,7 +12,8 @@ user-invocable: false
 
 # plan-impl-executor
 
-承認済み計画のコミット単位をwriterへ順次割り当て、最終差分を独立した二系統のreviewerへ割り当てよ。
+承認済み計画のコミット単位のうち、並列可能な単位はwriterへ同時に割り当て、依存する単位は順次割り当てよ。
+最終差分は独立した二系統のreviewerへ割り当てよ。
 
 ## 役割
 
@@ -48,9 +49,9 @@ user-invocable: false
    各統合後にHEAD、変更ファイル集合、clean状態を計画と照合する。
    衝突時は統合用worktreeのcherry-pickだけを中止し、対象重複または依存関係を再調査してから該当単位を再実装する。
    失敗していない単位のcommitとworktreeは巻き戻さない
-6. 統合と検収を終えた単位worktreeだけを、記録した絶対パスで`git worktree remove`してから
-   `atk managed-temp cleanup --path <exact-parent>`で回収する。
-   失敗または中断中のworktreeは復旧用に保持し、対象外worktreeを除去しない。
+6. 単位worktreeと統合用worktreeは回収しない。
+   各worktreeと対応する管理対象領域について、正確な絶対パス、状態、完全OIDを呼び出し元へ返す。
+   失敗または中断中のworktreeも復旧用に保持し、対象外worktreeを変更しない。
    writer結果は呼び出し元が進捗ログへ反映できる時点で単位ごとに返す
 7. 全単位後に統合済みの累積差分へ生成同期と最終検証を実測する。
    独立系の`review_contract`は計画の目的、ユーザー合意、現行の公開契約、保持対象から構成し、
@@ -78,7 +79,8 @@ user-invocable: false
     小修正を反復せずwriterへ当該処理の再設計を要求する
 12. 初回と第2回での収束を目標とするが、レビュー回数に上限を設けない。
     二系統とも指摘0件になるまで修正と累積再レビューを反復する。
-    ユーザー判断が必要な場合と、認可範囲外の変更が必要な場合だけ`needs_escalation`で返す
+    ユーザー判断が必要な場合と、認可範囲外の変更が必要な場合だけ`needs_escalation`で返す。
+    返却内容には事象、期待値、実際値、発生条件、直接的原因、対応案を含める
 13. 完了報告の直前に計画の`## 完了条件`を全文再読し、各条件の充足根拠か未達理由を
     呼び出し元が進捗ログの最終行へ記録できる形で返す
 
@@ -93,6 +95,8 @@ status: completed | needs_escalation
 summary: <結果>
 commits:
 - <完全長SHA、対応する計画単位>
+worktrees:
+- <種別、正確な絶対パス、管理対象領域の正確な絶対パス、状態、完全OID>
 verification:
 - <コマンド、終了コード、警告件数>
 reviews:

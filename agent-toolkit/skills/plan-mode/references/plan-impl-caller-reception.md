@@ -10,7 +10,7 @@
 - 計画ファイル、対象worktree、プロジェクト規範の絶対パス
 - feedback filename
 - 追加指示と許容済みの挙動変化。該当しない場合は`なし`
-- 複製元と対象外worktree、commit可、管理対象worktreeの作成・統合・回収可、push不可などの権限
+- 複製元と対象外worktree、commit可、管理対象worktreeの作成・統合可、回収不可、push不可などの権限
 
 計画が対象リポジトリ外への操作を列挙している場合は、列挙された対象だけを認可範囲として渡し、
 記載の無い対象への操作は許可しない。
@@ -25,9 +25,10 @@ executorの要約を受領したら、本文より先に次を実測する。
 3. 近接検証と最終検証の実行結果
 4. 二系統reviewの対象commit、読み取り専用状態、指摘と対応結果
 5. 計画の完了条件と`## 進捗ログ`
-6. 並列単位がある場合は、共通base、単位ごとのworktree、統合順、全単位commit、回収済み又は復旧用に保持した領域
+6. 共通base、単位と統合用の各worktree、統合順、全単位commit、各管理対象領域の正確な絶対パス、状態、完全OID
 
 callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`の3列表へ行を追記する。
+単位と統合用の各worktreeについて、正確な絶対パス、状態、完全OID、対応する管理対象領域の絶対パスも記録する。
 `結果・特記事項`にはcommit、検証、計画との差異、blockerを必要な範囲で書き、全操作履歴を要求しない。
 完了報告の直前に計画の`## 完了条件`を全文再読し、各条件の充足根拠または未達理由を進捗ログの最終行へ記録する。
 実装中に判断を変えた場合は`## 変更履歴`へ起点、指摘内容、採否、現在の結論、同期先を追記し、
@@ -37,9 +38,17 @@ callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`
 実作業不足、証拠不足、候補が複数残る場合だけ未完了事項へ縮減してexecutorへ返す。
 開始SHA、全roundの応答全文、大規模な固定report schemaは要求しない。
 
+`needs_escalation`では認可範囲外の変更を成果へ混入させない。
+深掘り条件が成立する事象は現行規範に従って`agent-toolkit:bugfix`を起動し、原因分析結果をモード別経路でfeedbackへ送る。
+ユーザー判断事項も同じモード別確認経路へ送り、独自の手順を本referenceへ複製しない。
+
 ## pushとCI
 
 実装委譲はcommitと二系統reviewまでとする。呼び出し元が`agent-toolkit:commit`の
 `references/push-and-ci.md`を読み、pushとCI通過確認を所有する。
 CI失敗時は`agent-toolkit:bugfix`で原因を確定し、必要な修正、検証、commit、二系統reviewを再実施する。
-CI通過後にfeedbackの後始末へ進む。
+pushとCI成功を実測し、feedback filenameが`なし`でない場合は採用処理と保存結果の照合も完了する。
+全条件の成立後だけ、進捗ログの記録値と`git worktree list --porcelain`を照合する。
+照合済みの記録されたworktreeだけを`git worktree remove <exact-path>`で除去し、
+続いて`atk managed-temp cleanup --path <exact-parent>`で対応する管理対象領域を回収する。
+中断または失敗時は全領域を保持し、対象外worktreeを変更しない。

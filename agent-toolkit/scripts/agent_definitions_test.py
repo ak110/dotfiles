@@ -180,6 +180,8 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert metadata["model"] == "sonnet"
     assert metadata["effort"] == "medium"
     assert "自身は成果物と計画ファイルを直接編集せず" in text
+    assert "並列可能な単位はwriterへ同時に割り当て" in text
+    assert "依存する単位は順次割り当て" in text
     assert "並列可能なwriterは利用できる実行枠内で同時に起動" in text
     assert "その他は依存順に1件ずつ起動" in text
     for task_name in (
@@ -188,6 +190,41 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
         "implementation-independent-review-task.md",
     ):
         assert task_name in text
+
+
+def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
+    """executorが保持したworktreeを公開成功後だけcallerが回収する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    assert "単位worktreeと統合用worktreeは回収しない" in executor
+    assert "正確な絶対パス、状態、完全OIDを呼び出し元へ返す" in executor
+    assert "`git worktree remove`" not in executor
+    assert "管理対象worktreeの作成・統合可、回収不可、push不可" in caller
+    for phrase in (
+        "pushとCI成功を実測",
+        "採用処理と保存結果の照合も完了",
+        "正確な絶対パス、状態、完全OID、対応する管理対象領域の絶対パスも記録",
+        "進捗ログの記録値と`git worktree list --porcelain`を照合",
+        "`git worktree remove <exact-path>`",
+        "`atk managed-temp cleanup --path <exact-parent>`",
+        "中断または失敗時は全領域を保持",
+        "対象外worktreeを変更しない",
+    ):
+        assert phrase in caller
+
+
+def test_plan_impl_escalation_is_self_contained_and_uses_existing_routes() -> None:
+    """認可外の問題を自己完結した情報で既存の対処経路へ返す。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    for phrase in ("事象", "期待値", "実際値", "発生条件", "直接的原因", "対応案"):
+        assert phrase in executor
+    assert "認可範囲外の変更を成果へ混入させない" in caller
+    assert "`agent-toolkit:bugfix`を起動" in caller
+    assert "原因分析結果をモード別経路でfeedbackへ送る" in caller
+    assert "ユーザー判断事項も同じモード別確認経路へ送" in caller
 
 
 def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
@@ -263,6 +300,31 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
     assert "1回だけ実行" in advisor_text
     assert "対象を変更せず、`atk mq add`、外部送信、サブエージェント起動も行わない" in advisor_text
     assert _SESSION_REVIEW_EVIDENCE.is_file()
+
+
+def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> None:
+    """証拠のある利用者介入起因の誤りだけを深掘り契約へ接続する。"""
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+
+    assert "証拠からエージェントの誤りが利用者介入を招いたと確定した候補" in skill
+    assert "`agent-toolkit:bugfix`を起動" in skill
+    assert "4原因区分、原因起点の類似見直し、是正・横展開・再発防止" in skill
+    assert "利用者介入がない候補" in skill
+    assert "介入とエージェントの誤りの因果を確定できない候補には適用しない" in skill
+
+
+def test_plan_workflows_reread_completion_conditions_before_reporting() -> None:
+    """計画関係の各主体が完了条件を再読し、最終行へ根拠を同期する。"""
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    for text in (plan_mode, executor, caller):
+        assert "完了報告の直前" in text
+        assert "`## 完了条件`を全文再読" in text
+        assert "進捗ログの最終行" in text
+        assert "充足根拠" in text
+        assert "未達理由" in text
 
 
 def test_plan_and_add_feedback_runs_outside_plan_mode() -> None:
