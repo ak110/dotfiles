@@ -59,8 +59,8 @@ def _write_test_baseline(
     )
 
 
-def _main_args(baseline: pathlib.Path, *, sha: str = "abc123", source_ref: str = "HEAD") -> list[str]:
-    return [
+def _main_args(baseline: pathlib.Path, *, sha: str | None = "abc123", source_ref: str = "HEAD") -> list[str]:
+    args = [
         "--baseline",
         str(baseline),
         "--forge=github",
@@ -70,8 +70,41 @@ def _main_args(baseline: pathlib.Path, *, sha: str = "abc123", source_ref: str =
         "refs/heads/main",
         "--source-ref",
         source_ref,
-        f"--sha={sha}",
     ]
+    if sha is not None:
+        args.append(f"--sha={sha}")
+    return args
+
+
+def _git(repository: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """テスト用repositoryでgitを実行する。"""
+    return subprocess.run(
+        ["git", *args],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+@pytest.fixture(name="git_repository")
+def _git_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
+    """branchと2種類のtagが同じcommitを指すテスト用repositoryを返す。"""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _git(repository, "init")
+    _git(repository, "config", "user.name", "Wait CI Test")
+    _git(repository, "config", "user.email", "wait-ci@example.invalid")
+    (repository / "tracked.txt").write_text("first\n", encoding="utf-8")
+    _git(repository, "add", "tracked.txt")
+    _git(repository, "commit", "-m", "first")
+    commit_sha = _git(repository, "rev-parse", "HEAD").stdout.strip()
+    _git(repository, "branch", "source-branch")
+    _git(repository, "tag", "lightweight-tag")
+    _git(repository, "tag", "-a", "annotated-tag", "-m", "annotated")
+    blob_sha = _git(repository, "rev-parse", "HEAD:tracked.txt").stdout.strip()
+    _git(repository, "tag", "-a", "non-commit-tag", blob_sha, "-m", "non-commit")
+    return repository, commit_sha
 
 
 def _run_wait(
@@ -1000,7 +1033,8 @@ class TestSignalHandling:
         """
         script_path = pathlib.Path(__file__).parent / "wait_ci.py"
         baseline_path = tmp_path / "baseline.json"
-        _write_test_baseline(baseline_path)
+        baseline_sha = _git(pathlib.Path.cwd(), "rev-parse", "HEAD").stdout.strip()
+        _write_test_baseline(baseline_path, sha=baseline_sha)
         returncode = None
         for warmup_sec in (1.0, 3.0, 6.0):
             with subprocess.Popen(
@@ -1013,7 +1047,7 @@ class TestSignalHandling:
                     "--repo=owner/repository",
                     "--ref=refs/heads/main",
                     "--source-ref=HEAD",
-                    f"--sha={_FULL_SHA}",
+                    f"--sha={baseline_sha}",
                     "--poll-interval=5",
                     "--registration-grace=30",
                     "--timeout=60",
@@ -1105,6 +1139,110 @@ class TestMainEntrypoint:
             "run_ids": [11, 12],
         }
 
+    @pytest.mark.parametrize("source_ref", ["source-branch", "lightweight-tag", "annotated-tag"])
+    def test_write_baseline_resolves_source_ref_to_commit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        git_repository: tuple[pathlib.Path, str],
+        source_ref: str,
+    ) -> None:
+        repository, commit_sha = git_repository
+        baseline = tmp_path / f"{source_ref}.json"
+        monkeypatch.chdir(repository)
+        monkeypatch.setattr(wait_ci, "_default_run_list_fn", lambda *_args, **_kwargs: lambda _sha: [])
+
+        result = wait_ci.main(
+            [
+                "--write-baseline",
+                str(baseline),
+                "--forge=github",
+                "--repo=owner/repository",
+                "--ref=refs/heads/main",
+                "--source-ref",
+                source_ref,
+            ]
+        )
+
+        assert result == wait_ci.EXIT_SUCCESS
+        assert json.loads(baseline.read_text(encoding="utf-8"))["sha"] == commit_sha
+
+    def test_write_baseline_rejects_source_ref_that_cannot_peel_to_commit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: pathlib.Path,
+        git_repository: tuple[pathlib.Path, str],
+    ) -> None:
+        repository, _commit_sha = git_repository
+        baseline = tmp_path / "baseline.json"
+        monkeypatch.chdir(repository)
+        monkeypatch.setattr(wait_ci, "_default_run_list_fn", lambda *_args, **_kwargs: lambda _sha: [])
+
+        result = wait_ci.main(
+            [
+                "--write-baseline",
+                str(baseline),
+                "--forge=github",
+                "--repo=owner/repository",
+                "--ref=refs/heads/main",
+                "--source-ref=non-commit-tag",
+            ]
+        )
+
+        assert result == wait_ci.EXIT_GH_ERROR
+        assert not baseline.exists()
+        assert "non-commit-tag" in capsys.readouterr().err
+
+    def test_wait_uses_saved_sha_after_source_ref_advances(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        git_repository: tuple[pathlib.Path, str],
+    ) -> None:
+        repository, baseline_sha = git_repository
+        baseline = tmp_path / "baseline.json"
+        monkeypatch.chdir(repository)
+        monkeypatch.setattr(wait_ci, "_default_run_list_fn", lambda *_args, **_kwargs: lambda _sha: [])
+        write_args = [
+            "--write-baseline",
+            str(baseline),
+            "--forge=github",
+            "--repo=owner/repository",
+            "--ref=refs/heads/main",
+            "--source-ref=HEAD",
+        ]
+        assert wait_ci.main(write_args) == wait_ci.EXIT_SUCCESS
+        (repository / "tracked.txt").write_text("second\n", encoding="utf-8")
+        _git(repository, "add", "tracked.txt")
+        _git(repository, "commit", "-m", "second")
+        assert _git(repository, "rev-parse", "HEAD").stdout.strip() != baseline_sha
+        captured: dict[str, str] = {}
+
+        def fake_wait_for_ci(sha: str, *_args: object, **_kwargs: object) -> int:
+            captured["sha"] = sha
+            return wait_ci.EXIT_SUCCESS
+
+        monkeypatch.setattr(wait_ci, "wait_for_ci", fake_wait_for_ci)
+        result = wait_ci.main(_main_args(baseline, sha=None))
+
+        assert result == wait_ci.EXIT_SUCCESS
+        assert captured["sha"] == baseline_sha
+
+    def test_explicit_sha_must_match_saved_sha(self, tmp_path: pathlib.Path) -> None:
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+        different_sha = "b" * 40
+
+        def fake_run(cmd, **_kwargs):
+            assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "different^{commit}"]
+            return mock.Mock(stdout=different_sha, returncode=0, stderr="")
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            result = wait_ci.main(_main_args(baseline, sha="different"))
+
+        assert result == wait_ci.EXIT_GH_ERROR
+
     def test_baseline_context_mismatch_fails_before_ci_query(self, tmp_path: pathlib.Path):
         baseline = tmp_path / "baseline.json"
         _write_test_baseline(baseline)
@@ -1167,7 +1305,7 @@ class TestResolveShaViaMain:
 
         def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
             del kwargs
-            assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "17561bd"]
+            assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "17561bd^{commit}"]
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=f"{resolved_sha}\n", stderr="")
 
         monkeypatch.setattr(wait_ci, "wait_for_ci", fake_wait_for_ci)
@@ -1191,7 +1329,7 @@ class TestResolveShaViaMain:
         assert result == wait_ci.EXIT_GH_ERROR
         err = capsys.readouterr().err
         assert "deadbee" in err
-        assert "sha解決に失敗" in err
+        assert "commit解決に失敗" in err
 
     def test_missing_git_returns_sha_resolution_failure(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
@@ -1203,7 +1341,7 @@ class TestResolveShaViaMain:
         result = wait_ci.main(_main_args(baseline, sha="17561bd"))
 
         assert result == wait_ci.EXIT_GH_ERROR
-        assert "sha解決に失敗" in capsys.readouterr().err
+        assert "commit解決に失敗" in capsys.readouterr().err
 
     def test_option_like_sha_is_passed_after_end_of_options(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -1213,7 +1351,7 @@ class TestResolveShaViaMain:
 
         def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
             del kwargs
-            assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "--not-an-option"]
+            assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "--not-an-option^{commit}"]
             return subprocess.CompletedProcess(cmd, returncode=128, stdout="", stderr="fatal: bad revision")
 
         monkeypatch.setattr(subprocess, "run", fake_run)

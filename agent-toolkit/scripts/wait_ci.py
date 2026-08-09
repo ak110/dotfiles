@@ -5,7 +5,7 @@
 # ///
 """push前後の実行ID差分でCI通過確認を待機する補助スクリプト。
 
-push前に対象repository・destination ref・source ref・commit SHAの実行IDをbaselineへ保存し、push後は
+push前に対象repository・destination ref・source refから解決したcommit SHAの実行IDをbaselineへ保存し、push後は
 GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないIDだけを待機する。
 一覧とジョブ取得の両方に明示的なrepositoryを指定し、一覧はdestination refとSHAで限定する。
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
@@ -591,7 +591,7 @@ def wait_for_ci(
       3回連続を待たず即時EXIT_GH_ERRORとする）
     - 早期失敗が無く期待run集合全runが`conclusion==success`のときのみEXIT_SUCCESS
     - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..<source_ref>`の後続SHA上のrunで補完判定
-    - `--sha`が明示指定したsource refの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
+    - 対象SHAが明示したsource refの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
     - `forge`が`gitlab`のとき既定の取得手段を`glab ci list --sha`・`glab api`へ切り替える
       （`run_list_fn`・`job_list_fn`を明示指定した場合、取得関数の既定選択には`forge`を参照しない）
     - `forge`は早期失敗の分類（`_find_early_failure`のforgeごとの判定）には
@@ -815,8 +815,8 @@ def _follow_cancelled(
         sleep_fn(poll_interval)
 
 
-def _resolve_sha(sha: str, subprocess_timeout: float) -> str | None:
-    """`git rev-parse`で完全形式のcommit shaへ解決する。
+def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
+    """`git rev-parse`でrevisionを完全形式のcommit shaへ再帰的にpeelする。
 
     明示指定されたSHAを同一経路で完全形式へ変換することで、
     短縮形式を受理しないforge CLIとの扱いを揃える。
@@ -824,7 +824,7 @@ def _resolve_sha(sha: str, subprocess_timeout: float) -> str | None:
     """
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--verify", "--end-of-options", sha],
+            ["git", "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
             capture_output=True,
             text=True,
             check=False,
@@ -916,7 +916,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", required=True, help="対象repository（owner/repoまたはホストを含むURL）")
     parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")
     parser.add_argument("--source-ref", required=True, help="push元のローカルsource ref（例: HEAD）")
-    parser.add_argument("--sha", required=True, help="対象commit SHA")
+    parser.add_argument(
+        "--sha",
+        help="対象commit SHA（省略時はbaseline作成でsource ref、待機でbaseline保存SHAを使用）",
+    )
     parser.add_argument("--timeout", type=_positive_float, default=900.0, help="全体タイムアウト秒数（既定900）")
     parser.add_argument("--poll-interval", type=_positive_float, default=20.0, help="ポーリング間隔秒数（既定20）")
     parser.add_argument("--registration-grace", type=_non_negative_float, default=60.0, help="run未登録許容秒数（既定60）")
@@ -934,15 +937,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時にsource refの後続run成功を追跡")
     args = parser.parse_args(argv)
-    sha = _resolve_sha(args.sha, args.subprocess_timeout)
-    if sha is None:
-        print(f"[wait_ci] {args.sha}のsha解決に失敗（git rev-parse）", file=sys.stderr)
-        return EXIT_GH_ERROR
     forge = _resolve_forge(args.forge, args.repo)
     if forge is None:
         print("[wait_ci] 対象forgeを--repoから判別できない。--forgeで明示指定する", file=sys.stderr)
         return EXIT_GH_ERROR
     if args.write_baseline is not None:
+        revision = args.sha if args.sha is not None else args.source_ref
+        sha = _resolve_sha(revision, args.subprocess_timeout)
+        if sha is None:
+            print(f"[wait_ci] {revision}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
+            return EXIT_GH_ERROR
         try:
             runs = _default_run_list_fn(forge, args.repo, args.ref, args.subprocess_timeout)(sha)
             baseline = CiBaseline(
@@ -961,6 +965,13 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_SUCCESS
     try:
         baseline = _load_baseline(args.baseline)
+        if args.sha is None:
+            sha = baseline.sha
+        else:
+            sha = _resolve_sha(args.sha, args.subprocess_timeout)
+            if sha is None:
+                print(f"[wait_ci] {args.sha}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
+                return EXIT_GH_ERROR
         _validate_baseline_context(baseline, forge, args.repo, args.ref, args.source_ref, sha)
     except RunListError as exc:
         print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)

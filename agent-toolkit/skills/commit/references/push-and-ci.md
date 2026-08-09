@@ -14,11 +14,12 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 4. 読み込んだ本スキルの絶対パスからplugin rootを確定し、
    `uv run --no-project --script <plugin-root>/scripts/_managed_temp.py create --prefix ci-evidence`を単独で実行する。
    標準出力の絶対パスを保持し、pushごとに別の領域を使う
-5. 削除refとcommitへpeeledできないrefを除き、更新refごとにsource refをcommitへ再帰的にpeelし、
-   完全長commit SHAを1件確定する
-   - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを使う
+5. 削除refを除き、更新refごとにsource refを1件確定する。
+   baseline作成時に補助スクリプトがsource refをcommitへ再帰的にpeelし、完全長commit SHAを保存する
+   - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
+   - commitへpeelできないrefではbaseline作成が失敗するためpushしない
    - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
-6. 確定した各`(destination ref, peeled commit SHA)`について、次をpush前に実行してbaseline JSONを保存する
+6. 確定した各`(destination ref, source ref)`について、次をpush前に実行してbaseline JSONを保存する
 
 ```text
 uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
@@ -26,11 +27,10 @@ uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
   --repo <owner/repoまたはURL> \
   --forge <github|gitlab> \
   --ref <destination-ref> \
-  --source-ref <source-ref> \
-  --sha <完全長SHA>
+  --source-ref <source-ref>
 ```
 
-`--repo`、`--forge`、`--ref`、`--source-ref`、`--sha`は省略しない。
+`--repo`、`--forge`、`--ref`、`--source-ref`は省略しない。
 単一refと複数refのいずれでも、GitHubとGitLabの両方で、選定済みforgeを`--forge <github|gitlab>`へ明示する。
 複数refでは組ごとに別のbaselineを作成し、1件の失敗を理由に他のbaseline作成・監視を省略しない。
 
@@ -45,14 +45,14 @@ uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
   --repo <owner/repoまたはURL> \
   --forge <github|gitlab> \
   --ref <destination-ref> \
-  --source-ref <source-ref> \
-  --sha <完全長SHA>
+  --source-ref <source-ref>
 ```
 
 1. 全対象が終了コード0で完了した場合だけCI通過と判定する。
    終了コード1はCI失敗、2はtimeout、3はforge CLIまたは対象判別の失敗、4はrun未登録、130は中断を示す。
    出力が空の場合や成功完了マーカーが無い場合は未判定として実測へ切り替える。
-   判定対象は指定した完全長SHAに対する実行であり、登録猶予の終了後に登録された実行も含む。
+   判定対象はbaselineへ保存した完全長SHAに対する実行であり、source refがpush後に進んでも再解決しない。
+   登録猶予の終了後に登録された実行も判定対象に含む。
    登録猶予は、実行が1件も登録されないまま終わる場合を切り分けるための待機であり、
    判定対象を確定する期限ではない
 2. CI失敗ではrunまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する。
