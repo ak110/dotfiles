@@ -203,15 +203,16 @@ def test_removed_codex_exec_contracts_are_absent() -> None:
         assert "plan-" + "codex-" not in text
 
 
-def test_process_feedbacks_limits_continuous_queue_to_codex_process_loop_goal() -> None:
-    """Codex process-loopだけが追加ready項目を同じセッションで処理する。"""
+def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() -> None:
+    """通常Codexの再取得とprocess-loopの明示的な連続処理を両立する。"""
     text = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     cleanup = _h2_section(text, "5. 後始末")
     completion = _h2_section(text, "6. 振り返りと終了")
 
+    assert "`CLAUDECODE`が設定されている場合は、この一覧のfilenameを本セッションの処理対象として固定" in text
     assert "起動goalにCodexオーケストレーターの連続処理と明記" in text
-    assert "それ以外は、この一覧のfilenameを本セッションの処理対象として固定" in text
-    assert "取得済みのready項目を終端又は保留した後にactive一覧を再取得" in cleanup
+    assert "Codexでは実装と後始末の間にactive一覧を再取得" in cleanup
+    assert "取得済みのready項目を終端させたか保留した後にactive一覧を再取得" in cleanup
     assert "依存関係の有無を問わず追加分を含むready項目" in cleanup
     assert "ready項目が無い場合だけ「6. 振り返りと終了」へ進む" in cleanup
     assert completion.count("`agent-toolkit:session-review`をSkill機能で起動") == 1
