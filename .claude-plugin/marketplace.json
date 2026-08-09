@@ -4,21 +4,22 @@
     "name": "aki"
   },
   "metadata": {
-    "description": "ak110/dotfilesから配布するClaude Code・Codex向けプラグイン。"
+    "description": "ak110/dotfilesから配布するAgent Plugins・Claude Code・Codex向けプラグイン。"
   },
   "plugins": [
     {
       "name": "agent-toolkit",
       "source": "./agent-toolkit",
-      "description": "Claude CodeとCodex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針と、フックによる機械検査を提供する。",
-      "version": "2.41.0",
+      "description": "Agent Plugins、Claude Code、Codex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針と、フックによる機械検査を提供する。",
+      "version": "2.42.0",
       "category": "safety",
       "keywords": [
         "hooks",
         "pretooluse",
         "guardrails",
         "safety",
-        "bash"
+        "bash",
+        "agent-plugins"
       ]
     }
   ]

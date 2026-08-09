@@ -77,7 +77,20 @@ uvx pyfltr fast                                         # 高速ツールと生�
 - `.ps1.tmpl`は`.gitattributes`で`eol=crlf`を指定している（Windows PowerShell 5.1はLF改行だと構文解析に失敗する）
 - 全スクリプト冒頭に`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を記述
 
-## Codex向けagent-toolkit配布
+## agent-toolkitの3形式配布
+
+`agent-toolkit/`はAgent Plugins、Claude Code、Codexが共有するプラグインルートである。
+`skills/`の実体を3形式で共有し、形式ごとのmanifestとMCP設定だけを分ける。
+
+| 対象 | 役割と生成経路 |
+| --- | --- |
+| `.claude-plugin/plugin.json`・`.mcp.json` | Claude Code向け設定であり、metadataとMCP server定義の正本 |
+| `plugin.json`・`mcp.json` | Agent Plugins v1向け生成物。正本から固定schemaへ写像する |
+| `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。正本から許可済みの要素だけを写像する |
+| `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
+
+`scripts/sync_codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を同期する。
+`scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
 
 agent-toolkitには、公開互換入口である`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
 chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照を維持するため、インストーラーと
@@ -88,7 +101,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 | 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、Codex MCP、`atk` |
 | dotfiles `post_apply` | ローカル生成物 | 単体経路の対象に加え、Codex向け`AGENTS.md`と共有リンク |
 
-- agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Codex向けmanifestは
+- agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
 - `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のagents・rulesだけをリンクする
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、Codex MCPの順に処理する

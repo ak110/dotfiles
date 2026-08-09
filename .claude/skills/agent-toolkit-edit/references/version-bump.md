@@ -22,7 +22,8 @@
 
 rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`の数値タプルが大きい方を採用する。
 採用値を正本2ファイル（`agent-toolkit/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`）へ反映する。
-反映後に`scripts/sync_codex_plugin_manifests.py`でCodex向け派生manifestを同期し、3ファイルの一致を確認する。
+反映後に`scripts/sync_codex_plugin_manifests.py`でAgent Plugins・Codex向け派生manifestを同期し、
+4ファイルの`version`と`description`が一致することを確認する。
 
 rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の正本の`version`値を比較する。
 自分の未公開コミットに利用者の振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
@@ -56,8 +57,9 @@ plugin cache directory配下の新versionのrootを解決し直す。
 具体的なversion数値は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
 実装フェーズでは検証より前に`scripts/agent_toolkit_bump.py {種別}`を実行する
 （既存bumpとの統合はツール側が吸収する）。bump不要の場合は実装者向け領域へ`bump不要`と根拠を記載する。
-version bumpを伴う計画では、Claude Code向け正本2ファイルとCodex向け派生manifestを
-`### 対象ファイル一覧`へ含める。Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
+version bumpを伴う計画では、Claude Code向け正本2ファイル、Agent Plugins向け派生manifest、
+Codex向け派生manifestを`### 対象ファイル一覧`へ含める。
+Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
 正本更新後に`scripts/sync_codex_plugin_manifests.py`で反映する。
 
 ## 新規CLI公開時の疎通経路確認

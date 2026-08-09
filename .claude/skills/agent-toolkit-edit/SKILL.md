@@ -7,11 +7,11 @@ description: >
   「agent-toolkit編集」「version bump」「marketplace管理」「セッション状態フラグ」などのキーワードでも起動する。
 ---
 
-# agent-toolkit (Claude Codeルールファイル + プラグイン)
+# agent-toolkit（Agent Plugins・Claude Code・Codex）
 
 ## ファイル構成と参照方向
 
-- `agent-toolkit/`配下: プラグイン
+- `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
 
@@ -91,8 +91,9 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
 整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が検査し、`uvx pyfltr run`で自動的に失敗する。
-Codex向けmanifestはこの2ファイルを正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
-生成物を手動編集してはならない。
+Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
+`agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
+Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 ## 同期先ドキュメント
 
@@ -120,7 +121,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
-3. `scripts/sync_codex_plugin_manifests.py`を実行してCodex向け派生manifestを同期する
+3. `scripts/sync_codex_plugin_manifests.py`を実行してAgent Plugins・Codex向け派生JSONを同期する
 4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
 5. MCP経由の`run_for_agent`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
    `["."]`を渡し、SSOTテストを含む全テストがgreenであることを確認する。
@@ -163,9 +164,11 @@ agent-toolkitのhookが利用者環境の他hookと同一イベントで共存�
 - ローカル編集の反映: `chezmoi apply`（または`update-dotfiles`）でデプロイし、
   Claude Code再起動か`/reload-plugins`で反映する（version bumpは不要）
 
-Codex向け`.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`はClaude Code向けmanifestを
-正本として専用同期スクリプトで生成する。prekは書き込みモードで毎回再生成する。
-Codex生成物を手動編集せず、正本の変更後に同期スクリプトを実行する。
+Agent Plugins向け`plugin.json`・`mcp.json`は専用同期スクリプトで生成する。
+Codex向け`.codex-plugin/plugin.json`・`.agents/plugins/marketplace.json`も同じ生成器の出力である。
+いずれもClaude Code向けmanifestと`.mcp.json`を正本とする。
+prekは書き込みモードで毎回再生成する。
+Agent Plugins・Codex向け生成物を手動編集せず、正本の変更後に同期スクリプトを実行する。
 Codex hookはイベント名、matcher、入力契約を確認した許可表の定義だけを生成する。
 `chezmoi apply`後処理はCodex marketplaceを登録し、agent-toolkit pluginを導入・更新する。
 

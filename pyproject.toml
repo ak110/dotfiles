@@ -140,6 +140,8 @@ targets = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     "agent-toolkit/.claude-plugin/plugin.json",
     "agent-toolkit/.codex-plugin/plugin.json",
+    "agent-toolkit/plugin.json",
+    "agent-toolkit/mcp.json",
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/rules/*.md",
     "agent-toolkit/scripts/*.py",

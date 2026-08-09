@@ -10,10 +10,8 @@ import sync_codex_plugin_manifests as subject
 from pytools._internal import claude_common
 
 
-@pytest.fixture(name="manifest_root")
-def manifest_root_fixture(tmp_path: Path) -> Path:
-    """最小正本fixtureを作成する。"""
-    plugin = {
+def _plugin_data() -> dict[str, Any]:
+    return {
         "name": "agent-toolkit",
         "version": "1.2.3",
         "description": "desc",
@@ -23,10 +21,29 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
         "license": "MIT",
         "keywords": ["k"],
     }
+
+
+@pytest.fixture(name="manifest_root")
+def manifest_root_fixture(tmp_path: Path) -> Path:
+    """最小正本fixtureを作成する。"""
+    plugin = _plugin_data()
     marketplace = {"name": "ak110-dotfiles", "plugins": [{**plugin, "source": "./agent-toolkit"}]}
     fixtures: tuple[tuple[Path, dict[str, Any]], ...] = (
         (subject.PLUGIN_SOURCE, plugin),
         (subject.MARKETPLACE_SOURCE, marketplace),
+        (
+            subject.MCP_SOURCE,
+            {
+                "mcpServers": {
+                    "pyfltr": {
+                        "command": "uvx",
+                        "args": ["--from", "pyfltr>=3.16", "pyfltr", "mcp"],
+                        "env": {"MODE": "portable"},
+                        "cwd": "./workspace",
+                    }
+                }
+            },
+        ),
         (
             subject.HOOKS_SOURCE,
             {
@@ -76,8 +93,27 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     assert subject.sync(manifest_root) is True
     assert subject.sync(manifest_root) is False
     generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
-    assert generated["version"] == "1.2.3"
+    for key, value in _plugin_data().items():
+        assert generated[key] == value
     assert generated["hooks"] == "./hooks/hooks.codex.json"
+    agent_plugin_text = (manifest_root / subject.AGENT_PLUGIN_TARGET).read_text()
+    agent_plugin = json.loads(agent_plugin_text)
+    assert agent_plugin == {"$schema": subject.AGENT_PLUGIN_SCHEMA, **_plugin_data()}
+    assert agent_plugin_text.endswith("\n")
+    agent_mcp_text = (manifest_root / subject.AGENT_MCP_TARGET).read_text()
+    assert json.loads(agent_mcp_text) == {
+        "$schema": subject.AGENT_MCP_SCHEMA,
+        "mcpServers": {
+            "pyfltr": {
+                "type": "stdio",
+                "command": "uvx",
+                "args": ["--from", "pyfltr>=3.16", "pyfltr", "mcp"],
+                "env": {"MODE": "portable"},
+                "cwd": "./workspace",
+            }
+        },
+    }
+    assert agent_mcp_text.endswith("\n")
     generated_hooks = json.loads((manifest_root / subject.HOOKS_TARGET).read_text())
     assert generated_hooks == {
         "hooks": {
@@ -103,10 +139,6 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
 
 
 def test_mcp_servers_propagated_when_source_exists(manifest_root: Path) -> None:
-    source = manifest_root / subject.MCP_SOURCE
-    source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_text('{"mcpServers": {}}', encoding="utf-8")
-
     subject.sync(manifest_root)
 
     generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
@@ -114,19 +146,48 @@ def test_mcp_servers_propagated_when_source_exists(manifest_root: Path) -> None:
 
 
 def test_mcp_servers_absent_when_source_missing(manifest_root: Path) -> None:
+    (manifest_root / subject.MCP_SOURCE).unlink()
     subject.sync(manifest_root)
 
     generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
     assert "mcpServers" not in generated
 
 
+@pytest.mark.parametrize(
+    ("server", "message"),
+    [
+        ({"command": "uvx", "url": "https://example.com"}, "stdioへ変換できないMCP field"),
+        ({"command": 1}, "MCP commandは文字列"),
+        ({"command": "uvx", "args": "mcp"}, "MCP argsは文字列の配列"),
+        ({"command": "uvx", "env": {"MODE": 1}}, "MCP envは文字列を値に持つJSON object"),
+        ({"command": "uvx", "cwd": 1}, "MCP cwdは文字列"),
+    ],
+)
+def test_rejects_unportable_mcp_server(manifest_root: Path, server: dict[str, Any], message: str) -> None:
+    source = manifest_root / subject.MCP_SOURCE
+    source.write_text(json.dumps({"mcpServers": {"pyfltr": server}}), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        subject.sync(manifest_root)
+
+
+@pytest.mark.parametrize("source", [{"mcpServers": []}, {"mcpServers": {}, "unknown": True}])
+def test_rejects_unportable_mcp_root(manifest_root: Path, source: dict[str, Any]) -> None:
+    (manifest_root / subject.MCP_SOURCE).write_text(json.dumps(source), encoding="utf-8")
+    with pytest.raises(ValueError, match="MCP正本はmcpServersだけ"):
+        subject.sync(manifest_root)
+
+
 def test_sync_replaces_stale_outputs(manifest_root: Path) -> None:
     subject.sync(manifest_root)
     (manifest_root / subject.PLUGIN_TARGET).write_text("{}")
+    (manifest_root / subject.AGENT_PLUGIN_TARGET).write_text("{}")
+    (manifest_root / subject.AGENT_MCP_TARGET).write_text("{}")
     stale_hooks = manifest_root / subject.HOOKS_TARGET
     stale_hooks.write_text("{}")
     assert subject.sync(manifest_root) is True
     assert json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())["version"] == "1.2.3"
+    assert json.loads((manifest_root / subject.AGENT_PLUGIN_TARGET).read_text())["$schema"] == subject.AGENT_PLUGIN_SCHEMA
+    assert json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text())["$schema"] == subject.AGENT_MCP_SCHEMA
     assert json.loads(stale_hooks.read_text())["hooks"]["PermissionRequest"][0]["matcher"] == "Bash"
 
 

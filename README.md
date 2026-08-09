@@ -12,7 +12,7 @@
 - chezmoi管理によるホーム配下（`~/.*`）の一括デプロイ
 - LinuxとWindowsの両対応
 - Python製コマンドラインツール群（`pytools`）の同梱
-- Claude CodeとCodexを組み合わせるagent-toolkitの配布
+- Agent Plugins、Claude Code、Codexで同じルートを共有するagent-toolkitの配布
 - サプライチェーン攻撃対策設定のグローバル適用（uv/npmの公開待機、`pinact`によるGitHub Actionsのコミットハッシュ固定）
 
 ## 前提条件
@@ -38,7 +38,11 @@ winget install --id=Git.Git -e --source=winget
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-agent-toolkitは、Claude CodeとCodexを組み合わせるコーディングエージェント向けツールキットである。
+agent-toolkitは、Agent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
+Agent Plugins互換クライアントは`agent-toolkit/`をパッケージルートとして扱える。
+可搬部分は参照検証器が受理する15スキルとpyfltr MCPで構成される。
+クライアント固有のフィールドを受理する環境では、残る2スキルも同じ`skills/`から利用できる。
+Claude Code・Codex固有の資源は同じルートに残り、対応するクライアントが利用する。
 単体導入にはClaude Code CLI、Codex CLI、uvを使用する。
 dotfiles配布では、Claude CodeとCodex CLIを`chezmoi apply`後の処理が公式インストーラーから導入し、更新する。
 Codex CLIは公式スタンドアローン版を使用する。

@@ -1,6 +1,6 @@
-# agent-toolkit導入ガイド（Claude Code・Codex）
+# agent-toolkit導入ガイド（Agent Plugins・Claude Code・Codex）
 
-agent-toolkitはClaude CodeとCodexを組み合わせるコーディングエージェント向けツールキットである。
+agent-toolkitはAgent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
 Claude Codeは対話、フック、ルールの読み込み、作業全体の統括を担う。Codex CLIはMCP経由の
 調査・実装・レビューに加え、Codexセッションで共有スキルを直接実行する。uvは配布スクリプトと
 `atk`コマンドの実行基盤である。
@@ -23,12 +23,17 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
 性質上、頻繁な改訂が発生する。
 
-agent-toolkitはルールファイルとClaude Code・Codex双方のプラグインで構成される。
+agent-toolkitはルールファイルと3形式で共有するプラグインルートで構成される。
 
 - ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
-- プラグイン: Claude Codeのuser scopeとCodexへインストールするプラグイン。
-  共有スキルを提供し、Claude Codeでは全機械検査、Codexでは限定したフックを追加する
+- Agent Plugins: `agent-toolkit/`をパッケージルートとして扱う。
+  参照検証器が受理する15スキルとpyfltr MCPを可搬部分として提供する
+- Claude Code・Codex: 同じ`skills/`を利用し、形式固有のmanifest、ルール、フック、実行資源を追加する。
+  固有frontmatterフィールドを受理するクライアントでは残る2スキルも共有できる
+
+Agent Pluginsが定義しないClaude Code・Codex固有のディレクトリも同じルートに存在する。
+Agent Plugins互換クライアントは未対応の資源を可搬部分として扱わない。
 
 両者は相互依存しており、基本的に同時に導入することを前提とする。
 
@@ -53,6 +58,9 @@ Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Cl
 dotfiles配布利用者では、`chezmoi apply`後の処理がAnthropic公式ネイティブ版を管理する。
 未導入時は公式インストーラーで導入し、導入済みの場合は`claude update`で更新する。
 WindowsでClaude Codeが実行中の場合は停止せず、更新と旧npm版の整理を次回へ延期する。
+
+Agent Plugins互換クライアントでは、`agent-toolkit/`をプラグインのパッケージルートとして指定する。
+導入操作はクライアントごとに異なるため、利用するクライアントの公式手順を参照する。
 
 ### ツールキットのインストール
 
