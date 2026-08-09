@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 _MAX_TEXT_LENGTH = 2000
+STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
+SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
 _FALLBACK_TEXT = (
     "transcript_pathを読み取れないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
@@ -151,6 +153,15 @@ def _codex_agent_message(payload: dict[str, Any]) -> str:
     return ""
 
 
+def _codex_command_output(item: dict[str, Any]) -> str:
+    """Codexコマンド実行項目から標準出力相当の本文を取得する。"""
+    for key in ("aggregated_output", "output", "stdout"):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
 def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Codex rollout形式を共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
@@ -179,14 +190,18 @@ def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             events.append(event or {"kind": "interrupt", "text": "turn_aborted"})
         elif entry_type == "event_msg" and payload_type == "item_completed":
             item = payload.get("item")
-            if not isinstance(item, dict) or item.get("type") != "CommandExecution" or item.get("status") != "failed":
+            if not isinstance(item, dict) or item.get("type") != "CommandExecution":
                 continue
-            output_candidates = (item.get(key) for key in ("aggregated_output", "output", "error"))
-            text = next(
-                (value for value in output_candidates if isinstance(value, str) and value.strip()),
-                json.dumps(item, ensure_ascii=False),
-            )
-            event = _event("failed-tool", text, tool="CommandExecution")
+            status = item.get("status")
+            output = _codex_command_output(item)
+            if status == "completed" and SESSION_REVIEW_STARTED_MARKER in output:
+                event = _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
+            elif status == "failed":
+                error = item.get("error")
+                text = output or (error if isinstance(error, str) and error.strip() else json.dumps(item, ensure_ascii=False))
+                event = _event("failed-tool", text, tool="CommandExecution")
+            else:
+                event = None
             if event:
                 events.append(event)
     return events
@@ -194,15 +209,20 @@ def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _is_manual_review_invocation(text: str) -> bool:
     stripped = text.strip()
-    commands = ("/session-review", "/agent-toolkit:session-review")
+    commands = (
+        "/session-review",
+        "/agent-toolkit:session-review",
+        "$session-review",
+        "$agent-toolkit:session-review",
+    )
     if any(stripped == command or stripped.startswith(f"{command} ") for command in commands):
         return True
     return any(f"<command-name>{command}</command-name>" in stripped for command in commands)
 
 
 def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """手動振り返り境界を適用し、最終結果と連番を確定する。"""
-    boundary = next(
+    """手動・自動振り返り境界を適用し、最終結果と連番を確定する。"""
+    manual_boundary = next(
         (
             index
             for index, event in enumerate(events)
@@ -210,7 +230,22 @@ def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ),
         len(events),
     )
-    events = events[:boundary]
+    started_index = next(
+        (index for index, event in enumerate(events) if event["kind"] == "session-review-started"),
+        len(events),
+    )
+    automatic_boundary = len(events)
+    if started_index < len(events):
+        automatic_boundary = next(
+            (
+                index
+                for index in range(started_index - 1, -1, -1)
+                if events[index]["kind"] == "user" and events[index]["text"].startswith(STOP_ADVISOR_PREFIX)
+            ),
+            len(events),
+        )
+    boundary = min(manual_boundary, automatic_boundary)
+    events = [event for event in events[:boundary] if event["kind"] != "session-review-started"]
 
     for event in reversed(events):
         if event["kind"] == "assistant":
@@ -239,17 +274,17 @@ def _fallback() -> list[dict[str, Any]]:
     return [{"sequence": 1, "kind": "fallback", "text": _FALLBACK_TEXT}]
 
 
-def load_and_extract(raw_path: str | None) -> list[dict[str, Any]]:
-    """絶対パスのJSONLを一度読み、抽出結果またはfallbackを返す。"""
+def _load_entries(raw_path: str | None) -> list[dict[str, Any]] | None:
+    """絶対パスのJSONLを読み、失敗時は`None`を返す。"""
     if not raw_path:
-        return _fallback()
+        return None
     path = Path(raw_path)
     if not path.is_absolute():
-        return _fallback()
+        return None
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
-        return _fallback()
+        return None
 
     entries: list[dict[str, Any]] = []
     try:
@@ -260,8 +295,36 @@ def load_and_extract(raw_path: str | None) -> list[dict[str, Any]]:
             if isinstance(parsed, dict):
                 entries.append(parsed)
     except (json.JSONDecodeError, ValueError):
+        return None
+    return entries
+
+
+def load_and_extract(raw_path: str | None) -> list[dict[str, Any]]:
+    """絶対パスのJSONLを一度読み、抽出結果またはfallbackを返す。"""
+    entries = _load_entries(raw_path)
+    if entries is None:
         return _fallback()
     return extract(entries)
+
+
+def has_session_review_started(raw_path: str | None) -> bool:
+    """対応するtranscriptに振り返りの手動起動または起動確定標識があれば真を返す。"""
+    entries = _load_entries(raw_path)
+    if entries is None:
+        return False
+    entry_types = {entry.get("type") for entry in entries}
+    if entry_types & {"response_item", "event_msg"}:
+        events = _extract_codex(entries)
+    elif entry_types & {"user", "assistant", "interrupt"} or any(
+        entry.get("isSidechain") is True or "toolUseResult" in entry for entry in entries
+    ):
+        events = _extract_claude(entries)
+    else:
+        return False
+    return any(
+        event["kind"] == "session-review-started" or (event["kind"] == "user" and _is_manual_review_invocation(event["text"]))
+        for event in events
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

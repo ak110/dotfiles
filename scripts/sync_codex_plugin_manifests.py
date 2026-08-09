@@ -26,8 +26,14 @@ HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
 CODEX_PERMISSION_REQUEST_COMMAND = (
     "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest_codex"
 )
+CODEX_USER_PROMPT_SUBMIT_COMMAND = (
+    "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py user_prompt_submit"
+)
+CODEX_STOP_COMMAND = "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py stop_advisor"
 CODEX_HOOK_ALLOWLIST: dict[str, tuple[str, ...]] = {
     "PermissionRequest": (CODEX_PERMISSION_REQUEST_COMMAND,),
+    "UserPromptSubmit": (CODEX_USER_PROMPT_SUBMIT_COMMAND,),
+    "Stop": (CODEX_STOP_COMMAND,),
 }
 CODEX_EVENTS = {
     "PreToolUse",

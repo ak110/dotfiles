@@ -41,6 +41,20 @@ codex app-server daemon restart
 案内されたコマンドは、Codex、Codex MCP、remote-controlを利用する実行中セッションの終了後に実行する。
 daemonを利用しない既存のCLI・IDEセッションは、作業完了後に新しいセッションを開始する。
 
+### フックの信頼確認
+
+Codexはplugin同梱フックの定義が変わると、利用者が再び信頼するまで当該フックをスキップする。
+プラグイン更新後は新しいCodexセッションで`/hooks`を実行し、次の3イベントだけが含まれることを確認する。
+
+- `PermissionRequest`
+- `UserPromptSubmit`
+- `Stop`
+
+表示内容を確認してフックを信頼する。
+信頼後は、作業完了時のStopが同じセッションを一度だけ継続し、セッション振り返りを起動する。
+振り返りの完了後は追加の振り返りを起動せず、ターンを終了する。
+手動で振り返る場合は`$agent-toolkit:session-review`を実行する。
+
 ## Codex CLI本体
 
 dotfiles配布利用者では、`chezmoi apply`後の処理がCodexの公式インストーラーを非対話で実行する。

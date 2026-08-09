@@ -26,7 +26,7 @@ SESSION_REVIEW_PRECHECK = (
     "Proceed only if your previous response is a definitive completion of the work."
     " If your previous response instead ended on a question, confirmation request,"
     " or approval-pending state addressed to the user, do not end the turn silently;"
-    " re-issue that question via the AskUserQuestion tool and end the turn there."
+    " re-issue that question through the host's user-question mechanism and end the turn there."
     " In all other non-completion cases, state the current work status and the next trigger"
     " in one or two sentences, then end the turn. Report the state as observed fact;"
     " do not announce that you are pausing, waiting, or standing by for a response."

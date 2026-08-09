@@ -1,21 +1,24 @@
-# Claude Code Hook実装ガイドライン
+# Claude Code・Codex Hook実装ガイドライン
 
-Hookは現状Claude Code固有の概念である。本ファイル全体がClaude Code固有事項を扱う。
+Hook実装はホストごとの公式契約へ適合させる。
+Claude Code固有の上限値や出力契約にはホスト名を付ける。
 
 ## hookスクリプトの基本プロトコル
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
-スキーマ詳細は`agent-toolkit/rules/99-claude-code.md`「公式リファレンス」節または`plugin-dev:hook-development`スキルを参照する。
-新規実装・改修に着手する前は公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を一次資料として参照する。
+Claude Codeは公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
 取得方法は`agent-toolkit/rules/99-claude-code.md`「公式リファレンス」節に従う。
+Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次資料とする。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
 参照したセクション名は計画ファイルの実装者向け領域へ引用する。
 既存実装の類推・記憶ベースでのpayload設計は用いない。
 
-- 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutに応答JSONを出力する。exit codeは0で正常完了とする
+- 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutにホスト別契約の応答JSONを出力する。exit codeは0で正常完了とする
   - stderr経由の表示はexit 2との組合せで使う代替経路
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeランタイムが現プラグインのルートディレクトリに置換する組み込み変数である。
-  `hooks.json`の`command`フィールドや、hookスクリプトから他リソースを参照するときに用いる
+  Codexもplugin hook内で互換変数として置換するため、`hooks.json`の`command`フィールドや他リソース参照に用いる
+- Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。
+  信頼するまではCodexが当該フックをスキップする
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
@@ -99,12 +102,13 @@ codexプロセスが承認待ちのまま復帰しないため、書き換えに
 | --- | --- | --- |
 | `hookSpecificOutput.additionalContext` | コーディングエージェント | 当該ターンの応答生成前にユーザー発話へ前置注入する誘導に使う（`decision: "block"`非対応） |
 
-`decision`と独立に注入可能で、stdoutプレーン出力もコンテキスト追加される仕様である。
+Claude Codeでは`decision`と独立に注入可能で、stdoutプレーン出力もコンテキストへ追加される。
+Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`とし、`additionalContext`を返す。
 
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
 Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、
-判定処理を行わず無条件で`decision: "approve"`を返す。出力経路によらず両イベントで必須とする。
+判定処理を行わず終了を許可する応答を返す。出力経路によらず両イベントで必須とする。
 `stop_hook_active`は、直前の同フック呼び出しが当該ターンの終了を一度阻止したことを示す。
 
 この対策を要する理由は次のとおりである。
@@ -123,6 +127,11 @@ Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場�
 正規表現等により行うと誤検知が生じやすい。
 コーディングエージェントへの誘導文の先頭に判定基準を事前チェックとして埋め込み、
 基準を満たさない場合は誘導内容に従わずターンを終了する設計を推奨する。
+
+CodexのStopは`decision: "block"`と`reason`で同一ターンを継続し、許可時は空のJSONオブジェクトを返す。
+Codex固有の入力には`model`があり、Stopでは`stop_hook_active`と`last_assistant_message`も受け取る。
+Codex rolloutのtranscript形式は安定インターフェースではないため、完了判定や背景作業判定の契約に使わない。
+状態欠落時の回復判定など、必要な標識の有無を確認する限定用途でだけruntime別に変換する。
 
 ## Stop hookの背景タスク完了突合
 
@@ -170,7 +179,7 @@ hookの出力はユーザー発言と同じ形で会話コンテキストに注�
 
 ## セッション状態ファイル
 
-PreToolUseとPostToolUseの間で情報を共有する場合、セッション単位の状態ファイルを使う。
+Claude CodeまたはCodexのhook間で情報を共有する場合、セッション単位の状態ファイルを使う。
 hookは1呼び出しごとに独立プロセスとして起動するため、メモリー上の変数では情報の引き継ぎができない。
 
 - パス規則: `{tempdir}/{plugin名など}-{session_id}.json`

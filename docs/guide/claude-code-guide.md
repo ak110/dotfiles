@@ -28,7 +28,7 @@ agent-toolkitはルールファイルとClaude Code・Codex双方のプラグイ
 - ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
 - プラグイン: Claude Codeのuser scopeとCodexへインストールするプラグイン。
-  共有スキルを提供し、Claude Code側ではフックによる機械検査も追加する
+  共有スキルを提供し、Claude Codeでは全機械検査、Codexでは限定したフックを追加する
 
 両者は相互依存しており、基本的に同時に導入することを前提とする。
 
@@ -242,7 +242,7 @@ agent-toolkitプラグインはpyfltrのMCPサーバーを同梱する。
 検査の実行・横断検索・横断置換・実行履歴の参照をシェルを経由せずに呼び出せる。
 サーバーは`uvx`でpyfltrを取得して起動するため、pyfltr自体の事前インストールは要らない。
 
-agent-toolkitプラグインは以下のフックを常時有効化する。
+Claude Code向けagent-toolkitプラグインは以下のフックを常時有効化する。
 
 - 文字化け（U+FFFD）混入・LF改行のみの`.ps1`への書き込み・自動生成物の手編集をブロック
 - 日本語を含む書き込み内容へのハングル・キリル文字の混入をブロック
@@ -279,39 +279,45 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - 規範文書の本文中にある他ファイルの節参照が実在しない場合に警告
 - Gitワークツリー配下のコーディングエージェント向け文書や`~/.claude/plans/`への書き込み時に確認ダイアログを自動許可
 
+Codex向けagent-toolkitプラグインは、公式契約を確認済みの次の3イベントだけを配布する。
+
+- `PermissionRequest`: BashのCodex起動条件を検査する
+- `UserPromptSubmit`: 手動スキル起動の状態と振り返り対象を記録する
+- `Stop`: 作業完了時に同一セッションの振り返りを一度だけ継続する
+
 ### オンデマンドのスキル
 
-該当作業に着手したとき自動的にロードされる。手動で呼び出すこともできる。
+該当作業に着手したとき自動的にロードされる。Claude Codeは`/`、Codexは`$`を付けて手動でも呼び出せる。
 
-- `/agent-toolkit:coding-standards`: コードの新規作成・修正・レビュー時の品質基準とテスト方針
-- `/agent-toolkit:writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
-- `/agent-toolkit:agent-standards`: コーディングエージェント向け文書固有の品質基準
-- `/agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
-- `/agent-toolkit:bugfix`: バグ対応時の原因区分、類似見直し、是正・横展開・再発防止の判断基準
+- `agent-toolkit:coding-standards`: コードの新規作成・修正・レビュー時の品質基準とテスト方針
+- `agent-toolkit:writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
+- `agent-toolkit:agent-standards`: コーディングエージェント向け文書固有の品質基準
+- `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
+- `agent-toolkit:bugfix`: バグ対応時の原因区分、類似見直し、是正・横展開・再発防止の判断基準
 - `agent-toolkit:delegation`: 受信者への依頼契約と、必要な場合だけ読む実行経路別の委譲手順。
   委譲する場面で他スキルから自動的にロードされ、手動では呼び出せない
-- `/agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の二系統レビューを含む実行引き継ぎ
+- `agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の二系統レビューを含む実行引き継ぎ
   - 計画確定時は人間向け固定領域の見出しと表、計画メタ情報、対象一覧、参照実在を機械検査する
   - バグ対応計画は計画メタ情報の固定記法から判定し、固定14行の調査表で4原因区分、
     原因起点の類似見直し、是正・横展開・再発防止を記録する
   - 変更履歴は5列表で解決済み論点の指摘内容と採否を安定IDで保持し、再レビューでの根拠なき再指摘を防ぐ
   - 進捗ログは日時・完了した工程・結果の3列表で実装工程の作業状況を追跡し、異常終了からの再開に使う
-- `/agent-toolkit:review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュアー側心得）
-- `/agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、計画ファイルを作成せず通常型フィードバックを投入する
-- `/agent-toolkit:process-feedbacks`: 未分類または本文変更済みの項目だけを分類し、
+- `agent-toolkit:review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュアー側心得）
+- `agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、計画ファイルを作成せず通常型フィードバックを投入する
+- `agent-toolkit:process-feedbacks`: 未分類または本文変更済みの項目だけを分類し、
   保存済みメタデータから依存、上限、競合を機械計算して処理順を決める
-- `/agent-toolkit:plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
-- `/agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
-- `/agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
-- `/agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `/agent-toolkit:shell-exec`: 長出力が予想されるコマンド列をサブエージェントへ委譲し、
+- `agent-toolkit:plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
+- `agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
+- `agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
+- `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
+- `agent-toolkit:shell-exec`: 長出力が予想されるコマンド列をサブエージェントへ委譲し、
   メインへ終了状態と要約だけを返す
-- `/agent-toolkit:exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
+- `agent-toolkit:exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
   （Claude Code以外のホストでは本体プロセスを停止せず、終了理由を最終応答としてターンを完了させる）
 
 ### 明示呼び出し専用のスキル
 
-- `/agent-toolkit:session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
+- `agent-toolkit:session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
   独立した読み取り専用advisorが恒久改善候補を評価する
 
 ## 更新方法

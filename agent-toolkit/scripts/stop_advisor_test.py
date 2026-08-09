@@ -92,6 +92,28 @@ def _write_transcript(tmp_path: pathlib.Path, entries: list[dict]) -> pathlib.Pa
     return transcript
 
 
+def _codex_message(role: str, text: str) -> dict:
+    content_type = "input_text" if role == "user" else "output_text"
+    return {
+        "type": "response_item",
+        "payload": {"type": "message", "role": role, "content": [{"type": content_type, "text": text}]},
+    }
+
+
+def _codex_started_marker() -> dict:
+    return {
+        "type": "event_msg",
+        "payload": {
+            "type": "item_completed",
+            "item": {
+                "type": "CommandExecution",
+                "status": "completed",
+                "aggregated_output": "[auto-generated: agent-toolkit/session-review-started]\n",
+            },
+        },
+    }
+
+
 def _background_bash_launch_entry(tool_use_id: str) -> dict:
     """背景Bash起動を記録するメイン側userエントリを生成する。"""
     return {
@@ -314,6 +336,62 @@ class TestSessionReviewCommandInvocation:
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"
 
+    def test_codex_manual_invocation_in_rollout_approves_without_state(self, tmp_path: pathlib.Path):
+        transcript = _write_transcript(
+            tmp_path,
+            [_codex_message("user", "$agent-toolkit:session-review"), _codex_message("assistant", "振り返り中")],
+        )
+        result = _run(
+            {
+                "session_id": "codex-manual-invoked",
+                "transcript_path": str(transcript),
+                "model": "gpt-5",
+            },
+            state_dir=tmp_path,
+        )
+
+        assert "decision" not in _parse_decision(result)
+
+    def test_codex_started_marker_approves_after_state_expiry(self, tmp_path: pathlib.Path):
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _codex_message("assistant", "作業完了"),
+                _codex_message("user", "[auto-generated: agent-toolkit/stop_advisor] 振り返り誘導"),
+                _codex_started_marker(),
+            ],
+        )
+        result = _run(
+            {
+                "session_id": "codex-started-marker",
+                "transcript_path": str(transcript),
+                "model": "gpt-5",
+            },
+            state_dir=tmp_path,
+        )
+
+        assert "decision" not in _parse_decision(result)
+
+    def test_codex_stop_notice_without_started_marker_blocks(self, tmp_path: pathlib.Path):
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _codex_message("assistant", "未完了"),
+                _codex_message("user", "[auto-generated: agent-toolkit/stop_advisor] 最初の誘導"),
+                _codex_message("assistant", "追加作業後に完了"),
+            ],
+        )
+        result = _run(
+            {
+                "session_id": "codex-stop-notice-only",
+                "transcript_path": str(transcript),
+                "model": "gpt-5",
+            },
+            state_dir=tmp_path,
+        )
+
+        assert _parse_decision(result).get("decision") == "block"
+
 
 class TestAppendStopLog:
     """`append_stop_log`が最終判定分岐ごとに呼び出されることの検証（ログファイル1行確認）。"""
@@ -384,11 +462,11 @@ class TestContextConditions:
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
         assert _SESSION_REVIEW_SKILL in body
-        assert "Skill" in body
         assert "activation policy" in body
         assert "uncommitted" not in body.lower()
-        assert "AskUserQuestion" in body
+        assert "user-question mechanism" in body
         assert "end the turn silently" in body
+        assert "session_id=clean-context" in body
         assert str(transcript) in body
 
     def test_dirty_repo_context_with_both_messages(
@@ -405,7 +483,7 @@ class TestContextConditions:
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
         assert _SESSION_REVIEW_SKILL in body
-        assert "AskUserQuestion" in body
+        assert "user-question mechanism" in body
         assert "end the turn silently" in body
         assert str(transcript) in body
         assert "systemMessage" in decision
@@ -425,6 +503,22 @@ class TestContextConditions:
         )
         assert _block_reason(_parse_decision(first))
         assert _block_reason(_parse_decision(second))
+
+    def test_codex_payload_does_not_parse_claude_background_fixture(self, tmp_path: pathlib.Path):
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_with_async_tool("Agent")],
+        )
+        result = _run(
+            {
+                "session_id": "codex-ignore-claude-background",
+                "transcript_path": str(transcript),
+                "model": "gpt-5",
+            },
+            state_dir=tmp_path,
+        )
+
+        assert _parse_decision(result).get("decision") == "block"
 
 
 class TestUncommittedChangesAfterReview:

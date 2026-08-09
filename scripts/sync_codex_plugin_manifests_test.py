@@ -46,7 +46,21 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             "matcher": "Bash",
                             "hooks": [{"type": "command", "command": subject.CODEX_PERMISSION_REQUEST_COMMAND}],
                         },
-                    ]
+                    ],
+                    "UserPromptSubmit": [
+                        {
+                            "hooks": [
+                                {"type": "command", "command": subject.CODEX_USER_PROMPT_SUBMIT_COMMAND},
+                            ],
+                        }
+                    ],
+                    "Stop": [
+                        {
+                            "hooks": [
+                                {"type": "command", "command": subject.CODEX_STOP_COMMAND},
+                            ],
+                        }
+                    ],
                 }
             },
         ),
@@ -72,7 +86,17 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "matcher": "Bash",
                     "hooks": [{"type": "command", "command": subject.CODEX_PERMISSION_REQUEST_COMMAND}],
                 }
-            ]
+            ],
+            "UserPromptSubmit": [
+                {
+                    "hooks": [{"type": "command", "command": subject.CODEX_USER_PROMPT_SUBMIT_COMMAND}],
+                }
+            ],
+            "Stop": [
+                {
+                    "hooks": [{"type": "command", "command": subject.CODEX_STOP_COMMAND}],
+                }
+            ],
         }
     }
     assert (manifest_root / subject.PLUGIN_TARGET).read_text().endswith("\n")
@@ -111,6 +135,15 @@ def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
     hooks["hooks"]["PermissionRequest"] = hooks["hooks"]["PermissionRequest"][:1]
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
     with pytest.raises(ValueError, match="許可済みhandler"):
+        subject.sync(manifest_root)
+
+
+@pytest.mark.parametrize("event", ["UserPromptSubmit", "Stop"])
+def test_rejects_missing_shared_allowlisted_handler(manifest_root: Path, event: str) -> None:
+    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text())
+    del hooks["hooks"][event]
+    (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
+    with pytest.raises(ValueError, match="未知のCodex hookイベント"):
         subject.sync(manifest_root)
 
 

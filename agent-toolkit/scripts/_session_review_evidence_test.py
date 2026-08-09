@@ -228,6 +228,166 @@ def test_manual_review_invocation_excludes_following_codex_events(tmp_path: path
     assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
 
 
+def test_dollar_manual_review_invocation_excludes_following_codex_events(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "本来の最終結果"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "$agent-toolkit:session-review"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "振り返り中"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+    assert evidence.has_session_review_started(str(transcript)) is True
+
+
+def test_automatic_review_boundary_uses_last_stop_notice_before_started_marker(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "未完了結果"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 最初の誘導"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "追加作業"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "本来の最終結果"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 完了後の誘導"}],
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "completed",
+                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
+                    },
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "振り返り中"}],
+                },
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert events[-1] == {"kind": "final-result", "text": "本来の最終結果", "sequence": 4}
+    assert any(event["text"] == "追加作業" for event in events)
+    assert all(event["kind"] != "session-review-started" for event in events)
+    assert evidence.has_session_review_started(str(transcript)) is True
+
+
+def test_stop_notice_without_started_marker_does_not_mark_review_started(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "追加作業後の結果"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 誘導"}],
+                },
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert events[-1]["text"].startswith(evidence.STOP_ADVISOR_PREFIX)
+    assert evidence.has_session_review_started(str(transcript)) is False
+
+
+def test_unrelated_successful_codex_command_is_not_evidence(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "completed",
+                        "aggregated_output": "通常出力",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence.has_session_review_started(str(transcript)) is False
+    assert evidence.load_and_extract(str(transcript)) == []
+
+
 def test_manual_review_invocation_excludes_following_claude_events(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

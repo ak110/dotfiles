@@ -1,4 +1,4 @@
-"""Claude Code plugin agent-toolkit: Stop hook。
+"""Claude Code・Codex plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
 概要は次のとおり。`stop_hook_active`真時・非同期作業継続中は無条件approve、
@@ -20,6 +20,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_review_evidence import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    has_session_review_started,
+)
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
@@ -36,7 +39,7 @@ _HOOK_ID = "agent-toolkit/stop_advisor"
 # 振り返り誘導の対象スキル名。
 _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 
-# transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
+# Claude Code transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
 
 
@@ -132,10 +135,12 @@ def main(payload_text: str) -> int:
     cwd = payload.get("cwd", "")
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
+    is_codex = "model" in payload
 
-    # 構造的にセッション継続中ならapprove。
+    # Claude Codeで構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background task（Agent・Bash双方）が存在するケース。
-    if is_pending_async_work(transcript_path, session_id):
+    # Codex rolloutは安定した終了ゲートではないため背景作業判定へ渡さない。
+    if not is_codex and is_pending_async_work(transcript_path, session_id):
         append_stop_log(session_id, "approve_pending_async", {})
         _approve()
         return 0
@@ -146,12 +151,17 @@ def main(payload_text: str) -> int:
     # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
     invoked = state.get("session_review_invoked")
     state_invoked = isinstance(invoked, dict) and invoked.get(_SESSION_REVIEW_SKILL) is True
-    command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
-    if state_invoked or command_invoked:
+    command_invoked = not is_codex and has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
+    recovered_invocation = is_codex and not state_invoked and has_session_review_started(transcript_path)
+    if state_invoked or command_invoked or recovered_invocation:
         append_stop_log(
             session_id,
             "approve_review_invoked",
-            {"session_review_invoked": state_invoked, "command_detected": command_invoked},
+            {
+                "session_review_invoked": state_invoked,
+                "command_detected": command_invoked,
+                "evidence_detected": recovered_invocation,
+            },
         )
         _approve(cwd=cwd)
         return 0
@@ -161,9 +171,9 @@ def main(payload_text: str) -> int:
     # 誘導文の先頭にSESSION_REVIEW_PRECHECKを付与し、質問直後など終了相当の
     # ケースではスキル起動自体を抑止する。
     reason = _llm_notice(
-        f"{SESSION_REVIEW_PRECHECK} If so, invoke `{_SESSION_REVIEW_SKILL}` via the Skill tool"
-        " per its activation policy section. Pass this exact absolute transcript path to the skill: "
-        f"{transcript_path}"
+        f"{SESSION_REVIEW_PRECHECK} If so, use the `{_SESSION_REVIEW_SKILL}` skill immediately"
+        " according to its activation policy. Pass the following values from this Stop payload:"
+        f" session_id={session_id}; transcript_path={transcript_path}"
     )
     append_stop_log(session_id, "block_session_review", {})
     _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")

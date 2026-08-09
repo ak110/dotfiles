@@ -1,8 +1,8 @@
-"""Claude Code plugin agent-toolkit: UserPromptSubmit セッション状態記録。
+"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitセッション状態記録。
 
-スラッシュコマンド形式（`/agent-toolkit:<name>`または`/<name>`）でのスキル起動を検出し、
+ホスト別コマンド形式（`/agent-toolkit:<name>`・`/<name>`・`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し、
 対応するセッション状態フラグを立てる。
-既存のPostToolUse(Skill)経由の記録では捕捉できないケース（スラッシュコマンド起動）を補完する。
+既存のPostToolUse(Skill)経由の記録では捕捉できない手動起動を補完する。
 
 検出対象スキルと対応フラグ:
 
@@ -11,8 +11,8 @@
 - process-feedbacks → `process_feedbacks_skill_invoked`
 
 例外時はfail-openで exit 0 を返す。
-`/session-review`または`/agent-toolkit:session-review`の完全一致時は、payloadの
-`transcript_path`を変更せず`additionalContext`へ渡す。
+session-reviewの手動コマンド完全一致時は、payloadの`session_id`と`transcript_path`を
+変更せず`additionalContext`へ渡す。
 """
 
 from __future__ import annotations
@@ -54,12 +54,19 @@ _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _SESSION_REVIEW_NAMES_EXTENDED = _extend_with_short_names(_SESSION_REVIEW_SKILL_NAMES)
 _PROCESS_FEEDBACKS_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_FEEDBACKS_SKILL_NAMES)
 
-# `/agent-toolkit:<name>`または`/<name>`形式のスラッシュコマンドから<name>を抽出する。
-# 先頭の`/`直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
+# ホスト別の手動コマンドから<name>を抽出する。
+# 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
-_SLASH_COMMAND_PATTERN = re.compile(r"\A/(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
+_SKILL_COMMAND_PATTERN = re.compile(r"\A[/\$](?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
-_SESSION_REVIEW_EXACT_COMMANDS = frozenset({"/session-review", "/agent-toolkit:session-review"})
+_SESSION_REVIEW_EXACT_COMMANDS = frozenset(
+    {
+        "/session-review",
+        "/agent-toolkit:session-review",
+        "$session-review",
+        "$agent-toolkit:session-review",
+    }
+)
 _HOOK_ID = "agent-toolkit/user-prompt-submit"
 
 
@@ -113,10 +120,10 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
     return state
 
 
-def _emit_session_review_context(transcript_path: str) -> None:
-    """手動振り返りへpayloadのtranscript絶対パスを渡す。"""
+def _emit_session_review_context(session_id: str, transcript_path: str) -> None:
+    """手動振り返りへpayloadのセッション識別子とtranscript絶対パスを渡す。"""
     context = _llm_notice_base(
-        "Use this exact transcript_path for agent-toolkit:session-review: " + transcript_path,
+        f"Use these exact values for agent-toolkit:session-review: session_id={session_id}; transcript_path={transcript_path}",
         _HOOK_ID,
     )
     print(
@@ -157,10 +164,10 @@ def main(payload_text: str) -> int:
 
     # 先頭行のみを取り出して照合する（先頭行以外は無視）。
     first_line = prompt.split("\n", 1)[0].strip()
-    if not first_line.startswith("/"):
+    if not first_line.startswith(("/", "$")):
         return 0
 
-    match = _SLASH_COMMAND_PATTERN.match(first_line)
+    match = _SKILL_COMMAND_PATTERN.match(first_line)
     if match is None:
         return 0
 
@@ -174,9 +181,10 @@ def main(payload_text: str) -> int:
     if name in _SESSION_REVIEW_NAMES_EXTENDED or full_name in _SESSION_REVIEW_SKILL_NAMES:
         canonical = _resolve_canonical_name(name, _SESSION_REVIEW_NAMES_EXTENDED, _SESSION_REVIEW_SKILL_NAMES) or full_name
         update_state(session_id, _make_session_review_mutator(canonical))
-        transcript_path = payload.get("transcript_path")
-        if exact_session_review_command and isinstance(transcript_path, str) and transcript_path:
-            _emit_session_review_context(transcript_path)
+        raw_transcript_path = payload.get("transcript_path")
+        transcript_path = raw_transcript_path if isinstance(raw_transcript_path, str) else ""
+        if exact_session_review_command:
+            _emit_session_review_context(session_id, transcript_path)
     if name in _PROCESS_FEEDBACKS_NAMES_EXTENDED or full_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
         update_state(session_id, _set_process_feedbacks_invoked)
 

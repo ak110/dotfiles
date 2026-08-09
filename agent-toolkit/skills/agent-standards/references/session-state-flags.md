@@ -10,7 +10,10 @@
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う
 - `sleep_poll_detected`: PreToolUse(Bash)がsleep直後の状態確認連結を検出した場合に記録する
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画ファイル検査の適用判定に使う
-- `session_review_invoked`: 振り返りスキルの起動を記録し、Stop hookの重複を抑止する
+- `session_review_invoked`: 振り返りスキルの起動を記録し、Stop hookの重複を抑止する。
+  Claude CodeではPostToolUseとUserPromptSubmitが記録し、EnterPlanModeで解除する。
+  CodexではUserPromptSubmitと振り返りスキルが記録し、同一セッション内の解除経路を設けない。
+  Codexの状態が期限回収された場合は、transcript内の手動起動または起動確定標識から起動済み判定を復元する
 - `agent_toolkit_edit_skill_invoked`: agent-toolkit-edit起動を記録し、編集警告の抑制に使う
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または

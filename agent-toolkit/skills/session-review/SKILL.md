@@ -22,21 +22,30 @@ description: >
 
 ## 起動方針
 
-ユーザーから手動起動された場合は終了判定をせず、証拠収集へ進む。
+ユーザーからClaude Codeの`/agent-toolkit:session-review`またはCodexの
+`$agent-toolkit:session-review`で手動起動された場合は終了判定をせず、証拠収集へ進む。
 
 Stopフックから呼ばれた場合は、直前のアシスタントターンが作業完了の言い切りで終わっている場合だけ進む。
 質問・確認・承認待ち、バックグラウンド処理待ち、外部完了通知待ちは完了に含めない。
 起動条件を満たさない場合は現在の状態と次の契機を示して終了する。
+起動条件を満たして証拠収集へ進む場合、StopのreasonまたはUserPromptSubmitの`additionalContext`から
+`session_id`を受け取っていれば、次のコマンドで起動済み状態を記録する。
+
+```sh
+uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/session_review_state.py <session_id>
+```
+
+記録コマンドが失敗した場合は証拠収集へ進まず、失敗を報告する。
 
 ## 証拠収集
 
-Stopフック起動ではreason、手動slash起動では`additionalContext`から、同じpayload由来の
-`transcript_path`を受け取る。受け渡し専用の永続stateや証拠fileは作成しない。
+Stopフック起動ではreason、ホスト別の手動コマンド起動では`additionalContext`から、同じpayload由来の
+`session_id`と`transcript_path`を受け取る。受け渡し専用の永続stateや証拠fileは作成しない。
 
 起動時に必ず読み取り専用の`session-review-advisor`を1つ起動する。メインだけで改善提案の要否を確定しない。
 advisorへ次を渡す。
 
-- Stopフックのreasonまたはスラッシュコマンドの`additionalContext`から受け取った`transcript_path`の絶対パス
+- Stopフックのreasonまたは手動コマンドの`additionalContext`から受け取った`transcript_path`の絶対パス
 - 現在作業中のリポジトリの絶対パス
 - `references/generation-criteria-detail.md`の絶対パス
 - 存在する場合はClaude Codeの`~/.claude/references/session-review-dotfiles.md`または
