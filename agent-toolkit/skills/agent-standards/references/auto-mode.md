@@ -33,23 +33,34 @@ auto modeは次の4区分でルールを判定する。
 
 ## 既知の誤拒否パターンと対応
 
-### `git commit --amend`の`autonomous post-review cleanup`拒否
+次の4事例を実機で観測した。
+分類名は`claude auto-mode defaults`の出力で確認できる区分を指す。
 
-デフォルト`soft_deny`「Git Destructive」ルールは、エージェント自身がセッション内で作成したHEADへのamendを`clears`する。
-しかし別判断軸（例:`autonomous post-review cleanup`）でamend統合フローのamendが拒否されるケースがある。
-レビュー指摘修正後にamendで統合する運用を採用する場合、該当範囲を狭く許容するカスタムルールを`autoMode.allow`に追加する。
+| 拒否される操作 | 分類名 | 対応 |
+| --- | --- | --- |
+| 自身が作成したHEADへの`git commit --amend` | Git Destructive | 該当範囲を狭く許容するルールを追加する |
+| `exit-session`からの`kill -TERM $PPID` | Interfere With Workloads | 起動条件を満たす場合だけ許可するルールを追加する |
+| リリースワークフローの起動 | 未取得 | ルール追加ではなく利用者自身による実行を第1選択肢とする |
+| 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | フィードバック処理由来に限定するルールを追加する |
 
-### exit-session `kill -TERM $PPID` の Interfere With Workloads 拒否
-
-auto mode classifierは`kill -TERM $PPID`を「エージェントが作成していない親プロセスの終了」とみなし拒否する。
-`agent-toolkit:exit-session`スキルは起動条件を厳密に限定する設計だが、既定classifierでは拒否対象となる。
-
-対応: `share/claude_settings_json_managed.json`の`autoMode.allow`配列へ以下の自然言語ルールを追加する。
-
-- 対象: `exit-session`スキルからの`kill -TERM $PPID`。
-- ルール本文: 「`agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、
+- 分類名を取得できない場合は、拒否メッセージ本文を根拠として後掲の利用者確認へ進む。
+  `claude auto-mode defaults`自体が拒否されて分類名を確認できない場合も同じ扱いとする
+- `git commit --amend`はデフォルトの`soft_deny`「Git Destructive」ルールが
+  エージェント自身の作成したHEADへのamendを`clears`するが、
+  別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
+- `kill -TERM $PPID`のルール本文は「`agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、
   同スキルの起動条件を満たした状態でのシグナル送出であり許可する」とする。
-  起動条件の内訳は`agent-toolkit:exit-session`スキル本文「起動条件」節を参照する。
+  起動条件の内訳は`agent-toolkit:exit-session`スキル本文「起動条件」節を参照する
+- リリースワークフローの起動は外部公開を伴う不可逆操作という性質上、拒否される傾向がある。
+  当該拒否では分類名を取得できない場合があり、その場合は前掲の代替根拠に従う
+- Self Modificationのルールは、正規のフィードバック処理フロー由来・ユーザー投入フィードバック限定
+  （`source: session-review`等の自己生成起点を除外）・計画レビュー工程経由を条件とする。
+  計画ファイルへユーザー発話原文を転記済みでも、
+  起動元がクロスセッションのメッセージであることを理由に拒否される場合がある
+  - 逐語素材の記載先は`## 目的 > ### 提示素材`とし、移行前に作成済みの計画を処理できるよう
+    旧`## 背景 > ### 提示素材`も読み取り互換の条件として残す
+- ルールを追加しても拒否が続く場合は`AskUserQuestion`で当該判定がfalse positiveかを明示的に問い、
+  false positiveである旨の回答を得てから再試行する（進行への同意のみでは`clears`されない）
 
 ### false positiveと判断できる拒否への対応
 
@@ -87,34 +98,6 @@ GitHubリポジトリ設定変更等の外部サービスの設定変更コマ�
      撤回した旨と再開時の条件を返却する
    - レビュー完了待ちを選んだ場合はサブエージェント側のレビューを起動し、
      完了報告の受領後に再度本フローの1へ戻り拒否再現の有無を確認する
-
-### リリースワークフロー起動の拒否
-
-- `releaser patch`等のリリースワークフロー起動は、外部公開を伴う不可逆操作という性質上、
-  auto mode classifierに拒否される傾向がある（本セッションで観測した実行環境で実際に拒否された）
-- `claude auto-mode defaults`も同様に拒否され分類名を取得できない場合は、
-  拒否メッセージ本文を根拠として利用者確認へ進む
-- 許可ルール追加ではなく、利用者自身による実行を第1選択肢とする
-
-### 承認ゲート緩和コミットの`Self Modification`拒否
-
-自律実行系フローは次の操作をコミットする場合がある。
-承認ゲートの緩和（`pretooluse.py`の完了判定フラグ削減・計画ゲートスクリプトの検査を警告型へ格下げする変更等）。
-規範文書の完遂挙動規定の改訂（完遂と先送り・縮退表明規定の変更等）。
-エージェント設定の配布原本の変更（`share/claude_settings_json_managed.json`のpermission許可リスト拡大等）。
-これらの操作はデフォルトの`soft_deny`区分「Self Modification」ルールにより拒否される。
-計画ファイルの`## 目的 > ### 提示素材`へユーザー発話原文を転記済みでも、
-起動元がクロスセッションのメッセージであることを理由に拒否される場合があることを実機で観測した。
-
-対応: 次の2段で対処する。
-
-- `share/claude_settings_json_managed.json`の`autoMode.allow`配列へカスタムルールを追加する。
-  条件は正規のフィードバック処理フロー由来・ユーザー投入フィードバック限定
-  （`source: session-review`等の自己生成起点を除外）・計画レビュー工程経由とする
-  - 逐語素材の記載先は新規正規形の`## 目的 > ### 提示素材`とし、
-    移行前に作成済みの計画を処理できるよう旧`## 背景 > ### 提示素材`も読み取り互換の条件として残す
-- ルール適用外で拒否が続く場合は`AskUserQuestion`で「この判定はfalse positiveか」を明示的に問い、
-  false positiveである旨の回答を得てから再試行する（進行への同意のみでは`clears`されない）
 
 ## カスタムルール記述の注意点
 

@@ -38,7 +38,7 @@ advisorへ次を渡す。
 
 - Stopフックのreasonまたはスラッシュコマンドの`additionalContext`から受け取った`transcript_path`の絶対パス
 - 現在作業中のリポジトリの絶対パス
-- [references/generation-criteria-detail.md](references/generation-criteria-detail.md)の絶対パス
+- `references/generation-criteria-detail.md`の絶対パス
 - 存在する場合はClaude Codeの`~/.claude/references/session-review-dotfiles.md`または
   Codexの`~/.codex/references/session-review-dotfiles.md`の絶対パス
 - 提案ごとに裏付け手段を示し、裏付けられない内容を`未検証`と明記する要件
@@ -61,7 +61,7 @@ advisorには少なくとも次を点検させる。
 ## 提案の確定
 
 advisorの報告をメインが実測と既存規範へ照合し、採否を確定する。
-各候補は[references/generation-criteria-detail.md](references/generation-criteria-detail.md)に従い、
+各候補は`references/generation-criteria-detail.md`に従い、
 根本原因、恒久的な反映先、期待効果、総ライフサイクルコスト、未検証事項を検査する。
 既存active feedbackは`atk mq list --status=active --target-repo=<repo-path>`で確認し、重複投入しない。
 

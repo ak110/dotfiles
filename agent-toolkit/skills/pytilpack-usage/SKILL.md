@@ -7,6 +7,7 @@ description: >
 
 # pytilpackの使い方
 
+本スキルは、pytilpackの構成とAPIに関する知識を提供する。
 pytilpackはPythonのユーティリティ集で、各種ライブラリ向けの拡張とフレームワーク非依存の汎用モジュールを提供する。
 
 ## 基本的なimport方式

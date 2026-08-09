@@ -3749,7 +3749,7 @@ class TestFrontmatterSyncNoteBodyExists:
             rules_dir = tmp_path / "agent-toolkit" / "rules"
             rules_dir.mkdir(parents=True)
             (rules_dir / "01-agent.md").write_text(
-                "# 01-agent\n\n## 品質最優先\n\n本文。\n",
+                "# 01-agent\n\n## 判断指針\n\n本文。\n",
                 encoding="utf-8",
             )
         return target
@@ -3776,7 +3776,7 @@ class TestFrontmatterSyncNoteBodyExists:
             ),
             pytest.param(
                 "git-neighbor",
-                "---\nname: test-agent\n# 01-agent.mdの「品質最優先」節と意図的に重複させている\n---\n\n# test-agent\n",
+                "---\nname: test-agent\n# 01-agent.mdの「判断指針」節と意図的に重複させている\n---\n\n# test-agent\n",
                 id="git-ancestor-neighbor",
             ),
             pytest.param(

@@ -5,7 +5,7 @@ Hookは現状Claude Code固有の概念である。本ファイル全体がClaud
 ## hookスクリプトの基本プロトコル
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
-スキーマ詳細は本スキル本体（SKILL.md）の公式リファレンス節または`plugin-dev:hook-development`スキルを参照する。
+スキーマ詳細は`agent-toolkit/rules/99-claude-code.md`「公式リファレンス」節または`plugin-dev:hook-development`スキルを参照する。
 新規実装・改修に着手する前は公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を`WebFetch`で一次資料参照する。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
 参照したセクション名は計画ファイルの実装者向け領域へ引用する。
@@ -102,20 +102,21 @@ codexプロセスが承認待ちのまま復帰しないため、書き換えに
 
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
-Stop/SubagentStopフックがターン終了をブロックすると、コーディングエージェントは新たな応答を生成し、
+Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、
+判定処理を行わず無条件で`decision: "approve"`を返す。出力経路によらず両イベントで必須とする。
+`stop_hook_active`は、直前の同フック呼び出しが当該ターンの終了を一度阻止したことを示す。
+
+この対策を要する理由は次のとおりである。
+フックがターン終了を阻止するとコーディングエージェントは新たな応答を生成し、
 その応答に対して同じフックが再び発火する。
-出力経路は用途別に使い分ける。
-次のユーザー入力ターンまで待ってよい誘導は`hookSpecificOutput.additionalContext`を主に用いる。
-当該ターン継続を強制する誘導（振り返りスキル起動等）は`decision: "block"`＋`reason`を主に用いる。
-Stop/SubagentStopいずれのイベントも両経路の採用可能性がある。
-判定条件が変化しない場合、この再帰はClaude Codeの既定上限（連続8回）まで繰り返される。
-上限到達時は警告とともにフックの判定を上書きしてターンが終了する。
+判定条件が変化しない場合、この繰り返しはClaude Codeの既定上限（連続8回）まで続く。
+上限に達すると警告とともにフックの判定が無視されてターンが終了する。
 上限値は`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`環境変数で変更できる。
 
-再帰の起点を断つため、Stop/SubagentStopフックは入力payloadの`stop_hook_active`が真の場合、
-判定処理を行わず無条件で`decision: "approve"`を返す。
-`stop_hook_active`は直前の同フック呼び出しが当該ターンの終了を一度ブロックしたことを示す。
-本対策は出力経路によらず両イベントで必須とする。
+出力経路は用途で選ぶ。
+次のユーザー入力ターンまで待ってよい誘導は`hookSpecificOutput.additionalContext`を用いる。
+当該ターンの継続を強制する誘導（振り返りスキルの起動など）は`decision: "block"`と`reason`を用いる。
+いずれの経路もStop・SubagentStopの双方で採用できる。
 
 ターン終了の言語的判定（完了文言・質問・待機表明の判別）をフック側のコードで
 正規表現等により行うと誤検知が生じやすい。
@@ -170,7 +171,7 @@ hookは1呼び出しごとに独立プロセスとして起動するため、メ
 - 設計原則: フックイベント間の多段同期（コマンド文字列の完全一致検出とハッシュ照合の組合せ等）を状態ファイルへ持ち込まない。
   検査は対象ファイル実体への直接実行・直接読み取りで代替し、フラグは実施済み・読了済みの単純な記録に限定する
 - フラグの用途・書き込み元・読み取り元の対応表をプラグインごとにドキュメント化する。
-  `agent-toolkit`自身の一覧SSOTは本スキル本体（SKILL.md）「セッション状態フラグ」節に置き、本ファイルへ再掲しない
+  `agent-toolkit`自身の一覧SSOTは`session-state-flags.md`に置き、本ファイルへ再掲しない
 
 ### 完了報告からの状態読み取り
 

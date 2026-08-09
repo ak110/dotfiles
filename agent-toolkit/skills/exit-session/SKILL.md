@@ -6,8 +6,9 @@ allowed-tools: Bash
 
 # セッション自律終了
 
-現在の対話セッションを自律終了する。
-到達できる終了の範囲は実行ホストによって異なる。
+本スキルは、現在の対話セッションを自律終了する手順を提供する。
+到達できる終了の範囲は実行ホストによって異なり、ホスト別・環境別の詳細は
+`references/host-and-os-termination.md`へ置く。
 Claude Codeでは本体プロセスへ停止を要求して`/exit`に近い停止挙動を得る。
 Codexでは本体プロセスの停止を要求せず、終了理由を最終応答としてターンを完了させる。
 
@@ -29,46 +30,12 @@ Codexでは本体プロセスの停止を要求せず、終了理由を最終応
 ## 実行手順
 
 1. 終了理由を1文で発話する（呼び出し元スキルの完遂サマリーと重複する場合は要点のみ記述する）
-2. 実行ホストを判定する。`CLAUDECODE`環境変数が設定されている場合はClaude Codeとして手順3へ進み、
-   設定されていない場合はClaude Code以外として手順4へ進む
-3. Claude Codeでは、実行環境を判定して対応する経路で本体プロセスへ停止を要求する
-   - POSIX互換のプロセス識別が成立する環境: `Bash`ツールで`kill -TERM $PPID`を実行する
-     採用シグナルは`TERM`へ固定し、実行時に切り替えない
-   - Windows環境（`$PPID`が実プロセスを指さない環境を含む）: `Bash`ツールから
-     `powershell.exe -NoProfile -Command "<スクリプト>"`の形でPowerShellを起動する。
-     スクリプトは`Get-CimInstance Win32_Process`で自身のPIDから`ParentProcessId`をたどり、
-     祖先の実行ファイルとコマンドラインを照合してClaude Code本体を一意に特定し、
-     当該単一PIDだけを`Stop-Process -Id <PID>`で終了する。POSIXシグナルは用いない。
-     実行ファイル名の一致だけを根拠にしない
-     （`agent-toolkit/rules/02-agent-operations.md`「待機・プロセス管理」節の所有PID原則と、
-     `agent-toolkit/rules/99-claude-code.md`「セッション・フック」節のClaude Code本体例外に従う）
-   - 対象を一意に特定できない場合は停止を要求せず、利用者へ`/exit`の入力を案内して本スキルを終える
-4. Claude Code以外では、プロセスの停止を一切要求せず、終了理由を最終応答としてターンを完了させる。
-   対話CLIを閉じる操作は利用者に委ね、`/exit`または`/quit`の入力が必要である旨を案内する
-5. 停止要求の発火後は本体プロセスが停止するため、後続のツール呼び出し・発話は行わない
-
-## Codexでプロセス停止を要求しない理由
-
-Codex CLIでは、スキルから起動したシェルの親プロセスがセッション固有の対話CLIではなく、
-複数のクライアントが利用する共用のapp-serverとなる構成が観測されている。
-この構成で`$PPID`へシグナルを送出すると、現在の会話ではなく共用プロセスを停止する方向に作用する。
-`codex remote-control stop`もapp-serverデーモン自体の停止操作であり、
-現在のクライアントだけを終了する手段ではない（同コマンドのヘルプで確認できる）。
-したがってCodexでは、現在のクライアントだけを終了する正式な手段が公開されるまで、
-これらの操作を用いず、ターンの完了と利用者への案内で終える。
+2. `references/host-and-os-termination.md`を全文読み、実行ホストと実行環境を判定する
+3. 判定した経路に従って本体プロセスの停止を要求するか、利用者への案内でターンを完了させる
+4. 停止要求の発火後は本体プロセスが停止するため、後続のツール呼び出し・発話は行わない
 
 ## auto mode下で拒否される場合の対処
 
 `kill -TERM $PPID`がauto mode classifierに拒否される場合がある。
-対処は`agent-toolkit/skills/agent-standards/references/auto-mode.md`
-「既知の誤拒否パターンと対応」節のexit-session該当項を参照する。
-
-## シグナル種別の見直し
-
-実運用でPOSIX互換経路から`kill -TERM $PPID`実行後にClaude Code本体プロセスが停止しない現象を観測した場合、
-`kill -INT $PPID`（SIGINT）へ本スキル本文を書き換えて対応する。
-これとは別に、Windows環境では`$PPID`がinit相当の値を返し、
-Claude Code本体プロセスへ到達しない事象を観測している。
-実行手順の環境判定はこの観測に基づく。
-本スキル実行時に動的に切り替える構造は取らない
-（SIGTERM送出後は本体プロセスが停止するため後続ツール呼び出しが実行不能となるため）。
+対処は`agent-toolkit:agent-standards`の
+`references/auto-mode.md`「既知の誤拒否パターンと対応」節のexit-session該当項を参照する。

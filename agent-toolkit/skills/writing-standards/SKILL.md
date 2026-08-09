@@ -12,7 +12,8 @@ description: >
 
 # ドキュメント品質
 
-一般ドキュメント（Markdown・README・技術文書・API文書、コメント類）の品質指示。
+本スキルは、一般ドキュメント（Markdown・README・技術文書・API文書、コメント類）の品質基準を提供する。
+
 コーディングエージェント向け文書も対象に含むが、その編集時は`agent-toolkit:agent-standards`を併用する。
 
 ## 読み手別の追加注意点
@@ -132,7 +133,7 @@ READMEとコーディングエージェント向け文書が重複する場合�
 ## コメントの記述粒度
 
 コード・スクリプトのコメント記述粒度・省略基準は
-[references/comment-granularity.md](references/comment-granularity.md)を参照する。
+`references/comment-granularity.md`を参照する。
 
 ## 口語表現チェック
 

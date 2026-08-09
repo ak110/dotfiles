@@ -95,9 +95,9 @@ def test_current_output_is_synced() -> None:
     ):
         assert claude_specific not in shared_rules
     for shared_contract in (
-        "1つのworktreeへ書き込む主体は同時に1つだけ",
-        "委譲機能上の終端状態",
-        "累計起動回数が5回を超えた",
+        "1つの作業ツリーへ書き込む主体は同時に1つだけ",
+        "担当外差分は保持して委譲元へ報告",
+        "自身が起動して識別子（PID）を確認したものに限る",
     ):
         assert shared_contract in operations_source
         assert shared_contract in shared_operations

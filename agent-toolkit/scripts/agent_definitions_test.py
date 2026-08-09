@@ -8,6 +8,7 @@ import _atk_mq_frontmatter as frontmatter
 _AGENTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "agents"
 _DELEGATION_SKILL = _AGENTS_DIR.parent / "skills" / "delegation" / "SKILL.md"
 _RUNTIME_ROUTING = _DELEGATION_SKILL.parent / "references" / "runtime-routing.md"
+_CLAUDE_CODE_RUNTIME = _DELEGATION_SKILL.parent / "references" / "claude-code-runtime.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
@@ -30,7 +31,6 @@ _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
-_CLAUDE_CODE_RULES = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
 _SESSION_REVIEW_EVIDENCE = _AGENTS_DIR.parent / "scripts" / "_session_review_evidence.py"
@@ -113,7 +113,7 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "author自身が正規計画へ" in delegation
     assert "正規計画の書込主体をauthor 1名に保つ" in delegation
     assert "独立reviewer" in delegation
-    assert "references/plan-review-task.md" in delegation
+    assert "plan-review-task.md" in delegation
     assert "計画とリポジトリを修正しない" in task
     assert "総ライフサイクルコスト" in task
     assert "同一箇所へ2ラウンド連続で指摘" in delegation
@@ -306,7 +306,7 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "個別対策を追加する前に採用案を候補比較へ戻す",
         "各review round",
         "対応量又は既実装量を理由にした採用継続は認めない",
-        "実装範囲を最大化する意味ではない",
+        "観測されていない低頻度リスクを除くために恒常的な複雑性を増加させてはならない",
     ):
         assert phrase in agent_rules
 
@@ -360,11 +360,9 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         "ツールの使い勝手の悪さ",
         "公開インターフェース・コマンド体系・配置規約の一貫性の逸脱",
         "既存の拡張点を使わず別系統を新設した実装",
-        "原因区分",
-        "類似見直し",
-        "処置の階層",
-        "再発防止策",
     ):
+        assert phrase in bugfix_skill
+    for phrase in ("原因区分", "類似見直し", "処置の階層", "再発防止策"):
         assert phrase in root_cause
 
     assert "`references/history-rewrite.md`を全文読む" in commit_skill
@@ -396,7 +394,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         "支持する事実",
         "反証する事実",
         "判別実験",
-        "`root-cause-analysis.md`に従って直接的原因と深掘り要否を確定",
+        "`agent-toolkit:bugfix`本体「初動と深掘り判定」に従って直接的原因と深掘り要否を確定",
     ):
         assert phrase in ci_failure
     assert "scripts/wait_ci.py" not in ci_failure
@@ -541,19 +539,20 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
     assert "_managed_temp.py create" not in ci_failure
     assert "mktemp -d" not in push_and_ci
     agent_operations_rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
-    claude_code_rules = _CLAUDE_CODE_RULES.read_text(encoding="utf-8")
+    delegation_skill = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    claude_code_runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
     codex_agents_base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
-    assert "atk managed-temp create --prefix <用途>" in claude_code_rules
-    assert "atk managed-temp cleanup --path <検収済み絶対パス>" in claude_code_rules
+    assert "atk managed-temp create --prefix <用途>" in claude_code_runtime
+    assert "atk managed-temp cleanup --path <検収済み絶対パス>" in claude_code_runtime
     assert "uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>" in codex_agents_base
     assert (
         "uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>"
         in codex_agents_base
     )
-    assert "pluginの`bin/`からBashの`PATH`へ追加" in claude_code_rules
-    assert "管理CLIで作成していない既存領域を自動で後始末しない" in agent_operations_rules
+    assert "pluginの`bin/`からBashの`PATH`へ追加" in claude_code_runtime
+    assert "管理CLIで作成していない既存領域を自動で後始末しない" in delegation_skill
     assert "mktemp -d" not in agent_operations_rules
-    assert "単独で実行" in claude_code_rules
+    assert "単独で実行" in claude_code_runtime
     assert "単独で実行" in codex_agents_base
 
 

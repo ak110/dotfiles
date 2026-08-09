@@ -1,0 +1,46 @@
+# ホスト別・環境別の終了経路
+
+実行手順で停止要求を発行する直前に本referenceを全文読む。
+起動条件と手順の骨子は`../SKILL.md`を正本とする。
+
+## ホストの判定
+
+`CLAUDECODE`環境変数が設定されている場合はClaude Codeとして「Claude Codeでの停止要求」節へ進み、
+設定されていない場合は「Claude Code以外での終了」節へ進む。
+
+## Claude Codeでの停止要求
+
+実行環境を判定し、対応する経路で本体プロセスへ停止を要求する。
+
+- POSIX互換のプロセス識別が成立する環境: `Bash`ツールで`kill -TERM $PPID`を実行する。
+  採用シグナルは`TERM`へ固定し、実行時に切り替えない
+- Windows環境（`$PPID`が実プロセスを指さない環境を含む）: `Bash`ツールから
+  `powershell.exe -NoProfile -Command "<スクリプト>"`の形でPowerShellを起動する。
+  スクリプトは`Get-CimInstance Win32_Process`で自身のPIDから`ParentProcessId`をたどり、
+  祖先の実行ファイルとコマンドラインを照合してClaude Code本体を一意に特定し、
+  当該単一PIDだけを`Stop-Process -Id <PID>`で終了する。
+  POSIXシグナルは用いず、実行ファイル名の一致だけを根拠にしない
+  （`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」節の所有PID原則と、
+  `agent-toolkit/rules/99-claude-code.md`「セッション・フック」節のClaude Code本体例外に従う）
+- 対象を一意に特定できない場合は停止を要求せず、利用者へ`/exit`の入力を案内して本スキルを終える
+
+## Claude Code以外での終了
+
+プロセスの停止を一切要求せず、終了理由を最終応答としてターンを完了させる。
+対話CLIを閉じる操作は利用者に委ね、`/exit`または`/quit`の入力が必要である旨を案内する。
+
+Codex CLIでプロセス停止を要求しない理由は次のとおりである。
+スキルから起動したシェルの親プロセスがセッション固有の対話CLIではなく、
+複数のクライアントが利用する共用のapp-serverとなる構成を観測している。
+この構成で`$PPID`へシグナルを送出すると、現在の会話ではなく共用プロセスを停止する方向に作用する。
+`codex remote-control stop`もapp-serverデーモン自体の停止操作であり、
+現在のクライアントだけを終了する手段ではない（同コマンドのヘルプで確認できる）。
+現在のクライアントだけを終了する正式な手段が公開されるまで、これらの操作を用いない。
+
+## シグナル種別の見直し
+
+POSIX互換経路から`kill -TERM $PPID`を実行してもClaude Code本体プロセスが停止しない現象を
+実運用で観測した場合は、`kill -INT $PPID`（SIGINT）へ本referenceを書き換えて対応する。
+SIGTERM送出後は本体プロセスが停止して後続のツール呼び出しが実行不能となるため、実行時に動的へ切り替える構造は取らない。
+Windows環境で`$PPID`がinit相当の値を返しClaude Code本体プロセスへ到達しない事象は別に観測しており、
+ホストの判定と環境の判定はこの2つの観測に基づく。

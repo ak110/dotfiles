@@ -7,8 +7,7 @@ description: >
 
 # フィードバック投入
 
-フィードバック投入のproviderとして、本文確定、処理状況の事前確認、保存、保存後照合を担当する。
-採否、実装、計画作成は担当しない。
+本スキルは、フィードバックまたはTBDを投入する手順を提供する。
 
 ## 入力
 
@@ -20,9 +19,9 @@ description: >
 
 ## 手順
 
-1. 全投入で[references/coordination-preflight.md](references/coordination-preflight.md)を全文読む。
+1. 全投入で`references/coordination-preflight.md`を全文読む。
    複数リポジトリの場合だけ
-   [references/cross-repository-submission.md](references/cross-repository-submission.md)も全文読む
+   `references/cross-repository-submission.md`も全文読む
 2. 各本文を単体で意味が完結する形にし、対象、観測事象、期待結果、出典、関連提案との関係を含める
 3. 対象worktreeのリモートURLと完全HEADを確認する。計画実装型は完全HEADと計画base commitも照合する
 4. 保存直前にactive一覧と関連項目を再取得し、事前確認の判断表を再適用する

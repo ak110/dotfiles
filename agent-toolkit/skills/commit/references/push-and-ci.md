@@ -58,7 +58,7 @@ uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
 2. CI失敗ではrunまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する。
    長出力の取得と要約は`agent-toolkit:shell-exec`へ委譲できるが、待機と原因分析は委譲しない
 3. 証拠取得後に`agent-toolkit:bugfix`を起動し、
-   `references/ci-failure-handling.md`で帰属と原因を分類する。
+   同スキルの`references/ci-failure-handling.md`で帰属と原因を分類する。
    自セッション帰属または帰属未確定なら、直接的原因の明白さを問わず深掘り経路を適用する
 
 ## 後始末

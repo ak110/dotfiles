@@ -155,6 +155,30 @@ claude-plugins-officialから以下を導入する。
 }
 ```
 
+## 推奨ワークフロー
+
+作業の進め方は次の2パターンを推奨する。要件がどこまで固まっているかで選ぶ。
+
+### 対話型
+
+計画作成のスキル（`/agent-toolkit:plan-mode`）を手動で起動して計画ファイルを作成し、
+内容を確認して承認したうえで実装まで進める。
+対話の途中で要件が変わる作業や、方針をその場で確定したい作業に向く。
+
+### 自律型
+
+フィードバック処理の常駐実行（`atk mq process-loop`）を起動し、依頼したい内容を要求として登録する。
+登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
+要件を本文だけで説明できる作業に向く。
+
+登録経路は、要求の難易度と、計画を事前にレビューしたいかどうかで選ぶ。
+
+| 登録経路 | 選ぶ場面 |
+| --- | --- |
+| `atk mq add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
+| `/agent-toolkit:add-feedback` | 依頼内容を対話で確定してから登録したい |
+| `/agent-toolkit:plan-and-add-feedback` | 計画の作成とレビューまで先に済ませ、実装だけを自律実行へ渡したい |
+
 ## 運用と保守
 
 計画作成・実装・レビューではCodex経路を標準とする。Codexが一時的に利用できない場合だけ、
@@ -246,33 +270,34 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 
 該当作業に着手したとき自動的にロードされる。手動で呼び出すこともできる。
 
-- `/coding-standards`: コードの新規作成・修正・レビュー時の品質基準とテスト方針
-- `/writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
-- `/agent-standards`: コーディングエージェント向け文書固有の品質基準
-- `/commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
-- `/bugfix`: バグ対応時の原因区分、類似見直し、是正・横展開・再発防止の判断基準
-- `/delegation`: 受信者への依頼契約と、必要な場合だけ読む実行経路別の委譲手順
-- `/plan-mode`: 計画ファイル作成と、実装後の二系統レビューを含む実行引き継ぎ
+- `/agent-toolkit:coding-standards`: コードの新規作成・修正・レビュー時の品質基準とテスト方針
+- `/agent-toolkit:writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
+- `/agent-toolkit:agent-standards`: コーディングエージェント向け文書固有の品質基準
+- `/agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
+- `/agent-toolkit:bugfix`: バグ対応時の原因区分、類似見直し、是正・横展開・再発防止の判断基準
+- `agent-toolkit:delegation`: 受信者への依頼契約と、必要な場合だけ読む実行経路別の委譲手順。
+  委譲する場面で他スキルから自動的にロードされ、手動では呼び出せない
+- `/agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の二系統レビューを含む実行引き継ぎ
   - 計画確定時は人間向け固定領域の見出しと表、計画メタ情報、対象一覧、参照実在を機械検査する
   - バグ対応計画は計画メタ情報の固定記法から判定し、固定14行の調査表で4原因区分、
     原因起点の類似見直し、是正・横展開・再発防止を記録する
   - 変更履歴は解決済み論点の安定IDと現在の結論を保持し、再レビューでの根拠なき再指摘を防ぐ
-- `/review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュアー側心得）
-- `/add-feedback`: 利用者向け要件を対話で確定し、計画ファイルを作成せず通常型フィードバックを投入する
-- `/process-feedbacks`: 未分類または本文変更済みの項目だけを分類し、
+- `/agent-toolkit:review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュアー側心得）
+- `/agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、計画ファイルを作成せず通常型フィードバックを投入する
+- `/agent-toolkit:process-feedbacks`: 未分類または本文変更済みの項目だけを分類し、
   保存済みメタデータから依存、上限、競合を機械計算して処理順を決める
-- `/plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
-- `/pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
-- `/pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
-- `/gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `/shell-exec`: 長出力が予想されるコマンド列をサブエージェントへ委譲し、
+- `/agent-toolkit:plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
+- `/agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
+- `/agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
+- `/agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
+- `/agent-toolkit:shell-exec`: 長出力が予想されるコマンド列をサブエージェントへ委譲し、
   メインへ終了状態と要約だけを返す
-- `/exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
+- `/agent-toolkit:exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
   （Claude Code以外のホストでは本体プロセスを停止せず、終了理由を最終応答としてターンを完了させる）
 
 ### 明示呼び出し専用のスキル
 
-- `/session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
+- `/agent-toolkit:session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
   独立した読み取り専用advisorが恒久改善候補を評価する
 
 ## 更新方法

@@ -1,7 +1,6 @@
 # コーディングエージェント宛てメッセージの標識の書式
 
-`agent-toolkit/skills/agent-standards/references/claude-hooks.md`
-「コーディングエージェント宛てメッセージの標識」節から分離した書式詳細。
+`claude-hooks.md`「コーディングエージェント宛てメッセージの標識」節から分離した書式詳細。
 
 ## プレフィックス
 

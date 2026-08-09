@@ -1650,7 +1650,7 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
     """AgentまたはTask起動時の`name`引数指定を値によらずブロックする。
 
     `name`付きbackground起動は完了通知が本来の起動元へ配送されず停滞するため、
-    `agent-toolkit/rules/99-claude-code.md`「サブエージェント実装」節が`name`の指定を厳守規定として禁じる。
+    `agent-toolkit/rules/99-claude-code.md`「委譲起動時の厳守事項」節が`name`の指定を厳守規定として禁じる。
     キーの存在のみで判定し、空文字列・`None`を含め値の内容は問わない。
     """
     if "name" not in tool_input:
@@ -1665,7 +1665,9 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
             " Omitting them does not fix the launch mode; determine the actual completion-report"
             " delivery route from the execution result. Place independent launches side by side"
             " in a single response to run them in parallel.\n"
-            "See agent-toolkit/rules/99-claude-code.md 'サブエージェント実装' section.",
+            "See agent-toolkit/rules/99-claude-code.md '委譲起動時の厳守事項' section for the `name`"
+            " prohibition, and agent-toolkit/skills/delegation/references/claude-code-runtime.md"
+            " for omitting `run_in_background`.",
             tag="block",
         ),
         file=sys.stderr,

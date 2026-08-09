@@ -5,7 +5,7 @@
 ## 入力
 
 - feedback filenameと本文、対象リポジトリ、プロジェクト規範の絶対パス
-- `references/content-adjustment.md`と`references/review-checklists.md`の絶対パス
+- `content-adjustment.md`と`review-checklists.md`の絶対パス
 - バグ対応の場合だけ`agent-toolkit:bugfix`の絶対パス
 - 調査対象と完了条件
 

@@ -7,6 +7,7 @@ description: >
 
 # pyfltrの使い方
 
+本スキルは、pyfltrの使い方に関する知識を提供する。
 pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的に並列実行するツール。
 Python・Rust・.NET・TypeScript/JSなどに対応する。
 
