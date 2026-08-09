@@ -42,7 +42,7 @@ Codexでは、読み込んだ本`SKILL.md`の絶対パスの末尾成分が順�
 次の`<plugin root>`をその絶対パスへ置き換え、対象スクリプトが実在する通常ファイルであることを確認してから実行する。
 
 ```sh
-uv run --no-project --script <plugin root>/scripts/session_review_state.py <session_id>
+uv run --no-project --script "<plugin root>/scripts/session_review_state.py" <session_id>
 ```
 
 固定末尾成分が一致しない場合、対象スクリプトが実在しない場合、記録コマンドが失敗した場合は、
