@@ -20,6 +20,7 @@ _PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-ind
 _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
 _COORDINATION_PREFLIGHT = _ADD_FEEDBACK.parent / "references" / "coordination-preflight.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
+_PLAN_IMPL_FEEDBACK_FLOW = _PROCESS_FEEDBACKS.parent / "references" / "plan-impl-feedback-flow.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
 _BUGFIX_SKILL = _AGENTS_DIR.parent / "skills" / "bugfix" / "SKILL.md"
 _BUGFIX = _BUGFIX_SKILL.parent / "references" / "root-cause-analysis.md"
@@ -292,6 +293,34 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
     assert "ready項目が無い場合だけ「6. 振り返りと終了」へ進む" in cleanup
     assert completion.count("`agent-toolkit:session-review`をSkill機能で起動") == 1
     assert "`agent-toolkit:exit-session`をSkill機能で起動" in completion
+
+
+def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
+    """単一計画と複数laneの双方でexecutorの必須worktree一覧を構成する。"""
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+
+    for phrase in (
+        "plan-impl-caller-reception.md`を全文読み",
+        "sender契約の正本",
+        "借用する現在worktreeを回収不可として含む完全な一覧",
+        "lane用worktreeと計画が明示する管理対象worktreeを含む完全な一覧",
+        "worktreeの完全な一覧、feedback filename、追加指示",
+        "許容済みの挙動変化、権限だけを渡し",
+    ):
+        assert phrase in flow
+    for field in ("用途", "絶対パス", "管理対象領域の絶対パス", "HEADの完全OID", "作成主体", "回収可否"):
+        assert field in caller
+    for required_input in (
+        "計画ファイル、プロジェクト規範の絶対パス",
+        "worktreeの完全な一覧",
+        "feedback filename",
+        "追加指示と許容済みの挙動変化",
+        "複製元と対象外worktree",
+    ):
+        assert required_input in caller
+    assert "作成主体、回収可否を持つworktree一覧" in executor
 
 
 def test_removed_hook_contracts_are_not_described_as_active() -> None:
