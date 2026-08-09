@@ -19,14 +19,8 @@ description: >
 `.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`）で判別する。
 編集対象がいずれかに該当する場合は、対応するもう一方を作業対象に含める。
 
-## 片方のみ編集した場合の不整合事例
-
-作業着手時に両側の対応関係を確認する。
-
-- Windows側の`.cmd`や`.ps1`を更新せず、Linux側のみ挙動が変わる
-- `install.sh`のオプション追加後、`install.ps1`への同一オプション追加が漏れる
-- `run_after_post-apply.sh.tmpl`に処理を追加しても、`run_after_post-apply-windows.ps1.tmpl`側が空のままで挙動が非対称になる
-- `share/claude_settings_json_managed.posix.json`と`.win32.json`のマッチャー追加が一方のみで止まる
+作業着手時に両側の対応関係を確認する
+（例: `install.sh`のオプション追加後、`install.ps1`への同一オプション追加が漏れる）。
 
 ## 新規ペアの追加
 

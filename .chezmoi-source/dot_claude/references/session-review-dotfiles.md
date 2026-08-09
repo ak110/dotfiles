@@ -1,7 +1,6 @@
 # dotfiles環境の振り返り観点
 
-`agent-toolkit:session-review`が独立advisorへ渡す追加観点である。本reference自体は外部入口ではなく、
-起動、証拠収集、提案表示、フィードバック投入の手順を持たない。
+`agent-toolkit:session-review`が独立advisorへ渡す追加観点である。
 
 ## pyfltr
 

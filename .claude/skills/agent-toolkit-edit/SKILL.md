@@ -31,9 +31,6 @@ description: >
 進捗ログまたはコミットメッセージへ記録する。
 理由を示せない削除は復元するか、独立レビューで実害の有無を確認してから確定する。
 
-過去の簡潔化コミット群が意味のある規範を削除した際、意図的な転換か意図しない消失かを判定・記録する
-手順が無かったため、消失が数週間気づかれず、発覚後の遡及調査に独立調査2系統を要した。
-
 ## 配布物としての記述方針
 
 配布先の利用者は本リポジトリのdotfiles利用者とは限らないため、手元プロジェクト固有の前提を断定的に書かない。
@@ -77,12 +74,10 @@ description: >
 
 ## スキル間の連携
 
-`agent-toolkit:plan-mode`から作業を開始する。作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、
-Agentツールで`agent-toolkit:plan-impl-executor`を起動して引き継ぐ。
+`agent-toolkit:plan-mode`から作業を開始し、承認後はAgentツールで`agent-toolkit:plan-impl-executor`を
+起動して引き継ぐ（レビュー実行を含む工程の詳細は各スキル・agent定義を正本とする）。
 計画ファイルの実装者向け領域にあるレビューステップへ
-`レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップし、
-それ以外は`plan-impl-executor`が計画準拠系と独立系のレビューを並列実行する。
-指摘の統合、修正、コミット統合、二系統の再レビューも同executorが完遂する。
+`レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップする。
 
 ## バージョン更新
 
@@ -90,7 +85,7 @@ Agentツールで`agent-toolkit:plan-impl-executor`を起動して引き継ぐ�
 詳細手順は`references/version-bump.md`に集約する。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同reference「plan modeでの取り扱い」節を読み、
 対象ファイル一覧へ含めるべきファイルを確定する。
-rebase・merge時の版数競合は`references/version-bump.md`「競合解決」節に従って解決する。
+rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
 
 - `agent-toolkit/.claude-plugin/plugin.json`

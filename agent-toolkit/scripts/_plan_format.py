@@ -46,7 +46,8 @@ PLAN_WORK_TYPES: tuple[str, ...] = ("バグ対応", "通常変更")
 PLAN_METADATA_FALLBACK_H2: tuple[str, ...] = ("実装契約", "背景")
 """正規配置を持たない既存計画で計画メタ情報を読み取る旧配置。読み取り専用の互換経路とする。"""
 
-PLAN_HISTORY_TABLE_HEADER: tuple[str, ...] = ("ID", "起点", "採否・現在の結論", "同期先")
+PLAN_HISTORY_TABLE_HEADER: tuple[str, ...] = ("ID", "起点", "指摘内容", "採否・現在の結論", "同期先")
+PLAN_PROGRESS_TABLE_HEADER: tuple[str, ...] = ("日時", "完了した工程", "結果・特記事項")
 PLAN_AGREEMENT_TABLE_HEADER: tuple[str, ...] = ("合意事項", "適用範囲", "原文参照")
 PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
 PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
@@ -904,6 +905,14 @@ def check_plan_structure(content: str) -> list[str]:
                 errors.extend(table_errors)
                 if table is not None:
                     errors.extend(_check_reference_ids(table, identifiers))
+
+    progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
+    if progress_index is not None:
+        start, end = heading_subtree_range(headings, progress_index)
+        _table, table_errors = _check_fixed_table(
+            lines_within(body, start, end), PLAN_PROGRESS_TABLE_HEADER, f"`## {PLAN_H2_PROGRESS}`"
+        )
+        errors.extend(table_errors)
 
     bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)
     if bug_index is not None:

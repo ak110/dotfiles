@@ -145,11 +145,11 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
     assert "`### 提示素材`の逐語原文、元のユーザー指示" in delegation
-    assert "履歴契約の復元判定表" in delegation
+    assert "項目別の維持・修正・撤去の判定と根拠" in delegation
     assert "要約だけを一次入力にせず" in delegation
     assert "`## 変更履歴`、前回の6列表" in delegation
     assert "解決済みIDの再提示は現行計画に同じ違反が残る場合だけ認め" in delegation
-    assert "`### 提示素材`の逐語原文、元のユーザー指示、復元型変更では履歴契約の復元判定表" in task
+    assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
     assert "1対1で照合" in task
     assert "第2列の分類が実際の内容と一致するか" in task
     assert "節名だけを満たす記載、結論語だけの記載" in task
@@ -166,8 +166,8 @@ def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
     assert "実装者向け領域を実装詳細の正本" in writer
     assert "writerは人間向け固定領域と`## 進捗ログ`を編集せず" in writer
     assert "`## 目的`、`## 対応方針`、実装者向け領域、`### 対象ファイル一覧`" in plan_review
-    assert "callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`を更新する" in caller
-    assert "`## 変更履歴`へ起点、採否、現在の結論、同期先を追記" in caller
+    assert "callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`の3列表へ行を追記する" in caller
+    assert "`## 変更履歴`へ起点、指摘内容、採否、現在の結論、同期先を追記" in caller
 
 
 def test_plan_impl_executor_is_coordinator_not_writer() -> None:
@@ -489,18 +489,9 @@ def test_codex_plugin_version_change_invalidates_cached_root() -> None:
 
     for phrase in (
         "codex plugin list --json",
-        "JSONとして構造解析する",
         'pluginId == "agent-toolkit@ak110-dotfiles"',
-        "導入版が単一のdirectory名であり、path separatorまたはdot segmentを含まないことを確認する",
-        "導入版が保持済みの版と同じ場合は、保持済みrootを再解決しない",
-        "導入版が変わった場合は、保持済みrootを破棄する",
-        "新versionの兄弟cache directoryを組み立てる",
-        "候補pathをstrict resolveし、保持済みrootの親plugin cache directory配下であることを確認する",
-        ".codex-plugin/plugin.json",
-        "scripts/atk.py",
-        "skills/plan-mode/scripts/check_plan_file.py",
-        "plugin manifestの`version`と導入版が一致する",
-        "writerは完了報告へ導入版、再解決したrootの絶対パス、plugin manifestと必要スクリプトの確認結果を含める",
+        "保持済みのplugin rootを再利用せず",
+        "`version`が導入版と一致する",
         "`source.path`は配布元を示す値",
         "旧rootへフォールバックせず未完了として扱う",
     ):

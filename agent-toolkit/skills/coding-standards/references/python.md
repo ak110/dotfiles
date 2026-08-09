@@ -113,11 +113,13 @@
   `ty`は`# ty: ignore[<rule>]`、`mypy`は`# type: ignore[<code>]`を要求する。
   プロジェクトで両方有効な場合は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`の形で同一行に併記する
 - `sorted(iterable, key=fn)`で型検査器tyが要素型を`fn`の引数protocol型へ誤って収束させる
+  （2026-08時点のty実装で観測。tyの修正で陳腐化し得るため、再現しなくなった場合は本項を削除する）
   - 具体例は`key=str`での文字列ソートと`key=len`でのコレクション長ソート
   - 検出例は`invalid-assignment`・`unresolved-attribute`
   - `key=lambda x: fn(x)`形式の回避はpylintの`unnecessary-lambda`（W0108）を招き両立しない
   - 内包表記でリスト化してから`list.sort(key=fn)`を使い、`sorted`の戻り値型推論を回避する
 - `object`型の引数を`isinstance(x, dict)`で判定すると、型検査器tyは型引数を`Never`と推論する
+  （2026-08時点のty実装で観測。tyの修正で陳腐化し得るため、再現しなくなった場合は本項を削除する）
   - 後続の`x.get("key")`で`invalid-argument-type`（`Expected Never, found Literal["key"]`）を報告する
   - 引数型を`typing.Any`にして回避する（`mypy`・`pyright`・`ty`・`pylint`・`ruff-check`の全通過を確認済み）
   - JSON応答やセッション記録など外部由来の任意値を`dict`判定して処理するヘルパーで再発しやすい

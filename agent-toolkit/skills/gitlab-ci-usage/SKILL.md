@@ -33,83 +33,13 @@ description: >
 - [CI Lint API](https://docs.gitlab.com/api/lint/): 外部からのlint呼び出し仕様
 - [CI/CD components](https://docs.gitlab.com/ci/components/): コンポーネント定義・入力パラメーター
 
-## 典型パターン
+## 誤りやすい点と推奨
 
-日常的に頻出する構文の最小スニペットを以下に示す。
-個別のサブキーや組み合わせの妥当性は公式ドキュメントと照合する。
+基礎構文（`rules:if`・`needs`・`extends`・`parallel:matrix`等）は公式ドキュメントを参照する。
+以下は誤りやすい点だけを示す。
 
-### `rules:if`による条件分岐
-
-```yaml
-job:
-  script: ./build.sh
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-    - when: never  # 上記いずれにも該当しないケースは実行しない
-```
-
-暗黙のフォールスルー挙動に頼ると意図と異なる起動をしやすいため、末尾の`when: never`で明示する。
-
-### `needs`によるDAG構築
-
-```yaml
-build:
-  stage: build
-  script: ./build.sh
-test:
-  stage: test
-  needs: [build]
-  script: ./test.sh
-deploy:
-  stage: deploy
-  needs:
-    - job: test
-    - job: build
-      artifacts: true
-  script: ./deploy.sh
-```
-
-### `include`による設定分割
-
-```yaml
-include:
-  - local: .gitlab/ci/lint.yml
-  - project: my-group/ci-templates
-    ref: v1.2.0
-    file: /templates/python.yml
-  - component: $CI_SERVER_FQDN/my-group/component-name/job@1.0
-    inputs:
-      stage: test
-```
-
-`ref`はタグまたはコミットSHA固定を推奨する。
-ブランチ名参照は意図せず挙動が変わるため避ける。
-
-### `extends`によるジョブテンプレート再利用
-
-```yaml
-.base:
-  image: python:3.12
-  before_script:
-    - uv sync
-
-test:
-  extends: .base
-  script: uv run pytest
-```
-
-### `parallel:matrix`
-
-```yaml
-test:
-  parallel:
-    matrix:
-      - PYTHON: ["3.11", "3.12", "3.13"]
-        OS: ["ubuntu", "alpine"]
-  script: ./test.sh
-```
+- `rules`の暗黙のフォールスルー挙動に頼ると意図と異なる起動をしやすいため、末尾の`when: never`で明示する
+- `include`の`ref`はタグまたはコミットSHA固定を推奨する。ブランチ名参照は意図せず挙動が変わるため避ける
 
 ### `rules:changes`とスケジュール実行
 
@@ -160,27 +90,5 @@ CIが意図通りに動作しない場合は、原因の階層（起動条件・
 
 ## 私設ホスト（自己署名のTLS証明書）でのCI通過確認
 
-自己署名のTLS証明書のGitLab私設ホストでは、`glab`が既定でTLS証明書検証エラー（`tls: failed to verify certificate`）で
-動作しない場合がある。以下のいずれかで解消する。
-
-- `glab`が利用できる場合は、TLS設定後に`agent-toolkit:commit`の`references/push-and-ci.md`が示す
-  CI通過確認の手順をそのまま使い、forgeへ`gitlab`を指定する。
-  pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリポジトリから解決した同じSelf-Managedホストへ問い合わせる
-- `glab config set skip_tls_verify true --host <host>`でホスト単位のTLS検証をスキップする
-- 環境変数`GITLAB_HOST=<host>`と`GITLAB_TOKEN=<token>`を併せて設定する
-- `glab`が全く機能しない場合の代替として`curl -k`によるAPI直呼び出しを使う
-
-```text
-curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-  "https://${GITLAB_HOST}/api/v4/projects/<project-id>/pipelines?sha=<完全SHA>&per_page=100&page=<page>"
-curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-  "https://${GITLAB_HOST}/api/v4/projects/<project-id>/pipelines/<pipeline-id>/jobs?include_retried=false&per_page=100&page=<page>"
-```
-
-pipeline一覧と対象pipelineごとのjob一覧は、応答が100件未満になるまで`page`を増やして全ページ取得する。
-`allow_failure`が`false`の`failed` jobを1件検出するか、対象pipelineがすべて完了するまでpollingする。
-取得済みjobがすべて成功していてもpipelineが未完了なら待機を続ける。全て不可能な場合は
-ユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）。
-
-`curl -k`はTLS検証をスキップするためMITM耐性が下がる。認証トークン漏洩防止のため、
-トークンは環境変数経由で渡し、コマンド履歴に残さない運用とする。
+自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーになる場合の対処は、
+`references/self-hosted-tls.md`を読む。
