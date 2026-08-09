@@ -5,8 +5,8 @@
     "allowMode": "extend",
     "allow": [
       "Session-Owned Amend: transcript内に稼働中の別書込担当が現在のHEADを所有する記録がない場合、セッション開始前またはユーザー作成のコミットを含めて`git commit --amend`を許可する。",
-      "Exit-Session Termination: transcriptにこのエージェントによる`agent-toolkit:exit-session`のSkill呼び出しが直前にある場合、単独の`kill -TERM $PPID`だけを許可する。",
-      "Feedback-Originated Gate Revision: transcriptに`agent-toolkit:process-feedbacks`または`agent-toolkit:plan-and-add-feedback`のSkill呼び出しがあり、処理対象のfrontmatter `source`が`session-review`でない場合、`~/dotfiles`内のエージェント用規範・フック・検査・承認設定の配布原本の編集とコミットを許可する。hard_deny領域と配布先の直接変更は許可しない。",
+      "Exit-Session Termination: transcriptにこのエージェントによる`agent-toolkit:exit-session`のSkill呼び出しが直前にあり、同スキルの起動条件を満たす場合、単独の`kill -TERM $PPID`だけを許可する。",
+      "Feedback-Originated Gate Revision: transcriptに`agent-toolkit:process-feedbacks`または`agent-toolkit:plan-and-add-feedback`のSkill呼び出しがあり、処理対象がユーザー投入フィードバック（frontmatter `source`が`session-review`等の自己生成起点ではない）で、計画レビュー工程を完了している場合、`~/dotfiles`内のエージェント用規範・フック・検査・承認設定の配布原本の編集とコミットを許可する。hard_deny領域と配布先の直接変更は許可しない。",
       "Background Operator Auto-Approval: `&`による背景実行自体は拒否理由とせず、各subcommandを個別に既存の許可条件で判定する。",
       "External Marketplace Registration: `claude plugin marketplace add u-ichi/compact-plus`または`codex plugin marketplace add u-ichi/compact-plus`による登録と、`compact-plus@compact-plus`のインストールを許可する。"
     ]
