@@ -57,11 +57,18 @@ def _fake_run_with_remote_url(
     claude_calls: list[dict[str, Any]],
     claude_returncode: int,
 ) -> Any:
-    """claude呼び出し（コマンド・環境変数）を記録し、`git remote get-url origin`にはダミーURLを返すfake_runを構築する。"""
+    """対話セッション呼び出しを記録し、リモートURL取得にはダミー値を返すfake_runを構築する。"""
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-        if cmd[:1] == ["claude"]:
-            claude_calls.append({"cmd": list(cmd), "env": kwargs.get("env"), "cwd": kwargs.get("cwd")})
+        if cmd[:1] in (["claude"], ["codex"]):
+            claude_calls.append(
+                {
+                    "cmd": list(cmd),
+                    "env": kwargs.get("env"),
+                    "cwd": kwargs.get("cwd"),
+                    "kwargs": dict(kwargs),
+                }
+            )
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=claude_returncode, stdout=empty, stderr=empty)
         if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
@@ -518,6 +525,7 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
+            "claude",
         )
         assert prompt == (
             "/goal `agent-toolkit:process-feedbacks`を起動し、"
@@ -545,8 +553,27 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
+            "claude",
         )
         assert "agent-toolkit:process-feedbacks" in prompt
+
+    def test_codex_prompt_declares_continuous_ready_processing(self) -> None:
+        """Codexのgoalだけが追加ready項目の連続処理と終了判定を明示する。"""
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo"),
+            "github.com/example/repo",
+            "codex",
+        )
+
+        assert prompt.startswith("/goal ")
+        assert prompt.count("/goal ") == 1
+        assert "開始後に追加されたready項目も同じセッションで順次処理" in prompt
+        assert "ready項目がなくなった時点で既存の終了工程" in prompt
+        assert "exit-session" not in prompt
+        assert "/exit" not in prompt
+        assert "Git" not in prompt
+        assert "計画状態" not in prompt
+        assert "session-review" not in prompt
 
     def test_prompt_includes_target_repo(self) -> None:
         """プロンプトが`--target-repo`限定指示と正規化リモートURLを本文へ含める。
@@ -558,6 +585,7 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             target_repo_id,
+            "claude",
         )
         assert target_repo_id in prompt
         assert "/repo" in prompt
@@ -567,6 +595,7 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo/.claude/worktrees/process-loop"),
             "github.com/ak110/dotfiles",
+            "claude",
         )
 
         assert "現在のHEADを`origin/master`へ反映" in prompt
@@ -806,9 +835,127 @@ class TestProcessLoopPromptAndEnv:
         assert "--continue" not in claude_calls[0]["cmd"]
         assert "--resume" not in claude_calls[0]["cmd"]
 
+    @pytest.mark.parametrize(
+        ("model_argv", "expected_model_argv"), [([], []), (["--model", "gpt-5.5"], ["--model", "gpt-5.5"])]
+    )
+    def test_codex_new_session_uses_interactive_cli(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        model_argv: list[str],
+        expected_model_argv: list[str],
+    ) -> None:
+        """Codex新規起動は対話CLIへ単一goalを渡し、標準入出力を捕捉しない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        codex_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, codex_calls, 0))
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
 
-class TestProcessLoopClaudeReturncode:
-    """process-loopサブコマンド: claudeのreturncode判定（正常/異常）を検証する。"""
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "process-loop",
+                    f"--target-repo={myrepo}",
+                    "--orchestrator=codex",
+                    "--no-update",
+                    "--no-alerts",
+                    *model_argv,
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert len(codex_calls) == 1
+        call = codex_calls[0]
+        command = call["cmd"]
+        assert command[:2] == ["codex", "--approve-for-me"]
+        assert command[2 : 2 + len(expected_model_argv)] == expected_model_argv
+        assert command[-1].startswith("/goal ")
+        assert command[-1].count("/goal ") == 1
+        assert "exec" not in command
+        if not expected_model_argv:
+            assert "--model" not in command
+        assert "--debug=hooks" not in command
+        assert "--autocompact" not in command
+        assert call["cwd"] == myrepo
+        assert all(key not in call["kwargs"] for key in ("stdin", "stdout", "stderr", "capture_output"))
+
+    @pytest.mark.parametrize(
+        ("resume_argv", "expected_tail"),
+        [
+            (["--resume"], []),
+            (["--resume", "session-id"], ["session-id"]),
+            (["--resume=session-id", "--model", "gpt-5.5"], ["--model", "gpt-5.5", "session-id"]),
+        ],
+    )
+    def test_codex_resume_uses_interactive_cli_without_prompt(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        resume_argv: list[str],
+        expected_tail: list[str],
+    ) -> None:
+        """Codex再開はpicker又はIDを使い、新しいgoalを渡さない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        codex_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, codex_calls, 0))
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                [
+                    "mq",
+                    "process-loop",
+                    f"--target-repo={myrepo}",
+                    "--orchestrator=codex",
+                    "--no-update",
+                    "--no-alerts",
+                    *resume_argv,
+                ],
+                home=tmp_path,
+            )
+
+        assert len(codex_calls) == 1
+        command = codex_calls[0]["cmd"]
+        assert command == ["codex", "resume", "--approve-for-me", *expected_tail]
+        assert all(not arg.startswith("/goal ") for arg in command)
+        assert "exec" not in command
+
+
+def test_process_loop_parser_orchestrator_contract() -> None:
+    """オーケストレーターの既定値と選択肢をargparse境界で固定する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    default_args = parser.parse_args(["mq", "process-loop"])
+    codex_args = parser.parse_args(["mq", "process-loop", "--orchestrator=codex"])
+
+    assert default_args.orchestrator == "claude"
+    assert default_args.model is None
+    assert codex_args.orchestrator == "codex"
+    assert codex_args.model is None
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["mq", "process-loop", "--orchestrator=unknown"])
+    assert exc_info.value.code == 2
+
+
+class TestProcessLoopReturncode:
+    """process-loopサブコマンドのオーケストレーター別returncode判定を検証する。"""
 
     @pytest.mark.parametrize("returncode", [0, -15, 15, 143])
     def test_normal_returncode_continues_loop(
@@ -866,6 +1013,35 @@ class TestProcessLoopClaudeReturncode:
         assert exc_info.value.code == 42
         captured = capsys.readouterr()
         assert "claudeがexit code 42で異常終了しました" in captured.err
+
+    def test_codex_accepts_only_zero_returncode(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """CodexではClaude Code用SIGTERM終了コードを正常扱いしない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        codex_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, codex_calls, 15))
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--orchestrator=codex", "--no-update"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 15
+        assert "codexがexit code 15で異常終了しました" in capsys.readouterr().err
 
 
 class TestProcessLoopUpdateAndRestart:
@@ -1545,6 +1721,7 @@ class TestProcessLoopUrlInput:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/ak110/dotfiles",
+            "claude",
         )
         assert "git worktree内で起動" not in prompt
         assert "現在のHEADを`origin/master`へ反映" in prompt

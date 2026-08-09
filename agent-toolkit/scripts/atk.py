@@ -24,7 +24,7 @@
 - mq convert-to-plan/set-dependencies: 既存feedbackの計画実装型への変換・明示依存の更新
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
-- mq process-loop: 新規Claudeセッションへ`/goal`で完遂条件を設定して常駐実行する。
+- mq process-loop: Claude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
@@ -510,7 +510,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
 
     loop = sub.add_parser(
         "process-loop",
-        help="対象リポジトリのfeedback消化をclaudeの常駐起動で反復実行する",
+        help="対象リポジトリのfeedback消化を選択したオーケストレーターの常駐起動で反復実行する",
     )
     loop.add_argument(
         "--target-repo",
@@ -524,9 +524,15 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help="セッション完了後・待機中いずれの経路でもupdate-dotfiles実行と自身再起動を抑止する。",
     )
     loop.add_argument(
+        "--orchestrator",
+        choices=("claude", "codex"),
+        default="claude",
+        help="起動するオーケストレーター（claude又はcodex、既定: claude）。",
+    )
+    loop.add_argument(
         "--model",
-        default="opus",
-        help="claude起動時の--modelオプションの既定はopusとする。",
+        default=None,
+        help=("選択したオーケストレーターへ渡すモデル。省略時はclaudeだけopusを使い、codexは設定済みの既定モデルを使う。"),
     )
     loop.add_argument(
         "--no-alerts",
@@ -553,7 +559,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         default=None,
         metavar="SESSION_ID",
         help=(
-            "初回に過去のClaudeセッションを再開する。"
+            "初回に選択したオーケストレーターの過去セッションを再開する。"
             "SESSION_ID省略時はセッション選択画面を開き、指定時は該当セッションを直接再開する。"
             "2回目以降は新規セッションとして起動する。"
         ),

@@ -8,6 +8,18 @@ Claude CodeからCodexを呼び出すCodex MCPを設定する。
 Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグイン、Codex MCPを一括設定する。
 プラグイン導入後は、次の手順で更新を反映する。
 
+## フィードバックの常駐処理
+
+次のコマンドはCodexの対話UIを起動し、対象リポジトリのフィードバックを継続して処理する。
+
+```bash
+atk mq process-loop --orchestrator=codex
+```
+
+開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
+ready項目がなくなると、終了時の`session-review`を1回実行してgoalを完了する。
+goal完了後に対話UIで`/exit`を入力すると、親の監視ループへ戻る。
+
 ## プラグイン更新の反映
 
 Codexプラグインはバージョン付きキャッシュへ導入される。

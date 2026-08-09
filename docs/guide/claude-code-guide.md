@@ -171,6 +171,19 @@ claude-plugins-officialから以下を導入する。
 登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
 要件を本文だけで説明できる作業に向く。
 
+Claude Codeを使う場合は次のコマンドを実行する。
+`--orchestrator`を省略した場合もClaude Codeを使う。
+
+```bash
+atk mq process-loop --orchestrator=claude
+```
+
+Codexを使う場合は次のコマンドを実行する。
+
+```bash
+atk mq process-loop --orchestrator=codex
+```
+
 登録経路は、要求の難易度と、計画を事前にレビューしたいかどうかで選ぶ。
 
 | 登録経路 | 選ぶ場面 |

@@ -310,6 +310,35 @@ class TestWaitLoopAutoRestart:
         assert "00000000-0000-0000-0000-000000000000" not in restart_argv
         assert "--target-repo" in restart_argv
 
+    def test_codex_session_restart_preserves_orchestrator_and_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Codex正常終了後の再起動では選択値とmodelを保持し、resumeだけを除去する。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            extra_argv=[
+                "--orchestrator=codex",
+                "--model",
+                "gpt-5.5",
+                "--resume",
+                "session-id",
+            ],
+            pending_count=1,
+        )
+
+        assert execv_calls
+        _, restart_argv = execv_calls[0]
+        assert "--orchestrator=codex" in restart_argv
+        assert "--model" in restart_argv
+        assert "gpt-5.5" in restart_argv
+        assert "--resume" not in restart_argv
+        assert "session-id" not in restart_argv
+
     def test_pending_session_uses_isolated_hook_debug_log(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -33,11 +33,11 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileClosedEvent,
 )
 
-# claudeがexit-sessionスキル経由でSIGTERMにより終了する場合のexit codeを含む正常終了集合。
+# Claude Codeがexit-sessionスキル経由でSIGTERMにより終了する場合のexit codeを含む正常終了集合。
 # 0は正常exit、-15はLinuxでのSIGTERM受信、15はWindowsでのSIGTERM相当、
 # 143はシェル経由でSIGTERM終了した場合の128+15を表す
 # （プラットフォーム分岐なしの緩い判定で十分と判断）。
-_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
+_CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 
 # `atk`は`uv run --no-project --script`で起動するため、PEP 723のエフェメラル環境を指す
 # `VIRTUAL_ENV`が本プロセスの環境に設定される。この値を子セッションへ引き継ぐと、
@@ -252,7 +252,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     return None
 
 
-def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
+def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str, orchestrator: str) -> str:
     """対象リポジトリのフィードバック処理を依頼する短いgoalを構築する。"""
     prompt = (
         "/goal `agent-toolkit:process-feedbacks`を起動し、"
@@ -261,7 +261,52 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
     )
     if target_repo_id == _DOTFILES_REPO_ID:
         prompt += f"公開時は現在のHEADを`{_DOTFILES_PUBLISH_DESTINATION}`へ反映してください。"
+    if orchestrator == "codex":
+        prompt += (
+            "Codexオーケストレーターの連続処理として、開始後に追加されたready項目も同じセッションで順次処理し、"
+            "ready項目がなくなった時点で既存の終了工程へ進んでください。"
+        )
     return prompt
+
+
+def _build_session_argv(
+    args: argparse.Namespace,
+    prompt: str,
+    env: dict[str, str],
+    *,
+    resume_pending: bool,
+) -> tuple[list[str], pathlib.Path | None]:
+    """選択したオーケストレーターの対話セッション用argvを構築する。"""
+    if args.orchestrator == "claude":
+        hook_debug_log = _create_hook_debug_log(env)
+        argv = ["claude", "--debug=hooks", "--debug-file", str(hook_debug_log)]
+        if resume_pending:
+            argv.append("--resume" if not args.resume else f"--resume={args.resume}")
+        else:
+            model = args.model or "opus"
+            argv.extend(("--permission-mode=auto", "--model", model, "--autocompact", "1m", prompt))
+        return argv, hook_debug_log
+
+    argv = ["codex"]
+    if resume_pending:
+        argv.extend(("resume", "--approve-for-me"))
+    else:
+        argv.append("--approve-for-me")
+    if args.model is not None:
+        argv.extend(("--model", args.model))
+    if resume_pending:
+        if args.resume:
+            argv.append(args.resume)
+    else:
+        argv.append(prompt)
+    return argv, None
+
+
+def _is_normal_session_exit(orchestrator: str, returncode: int) -> bool:
+    """オーケストレーター別の正常終了コードを判定する。"""
+    if orchestrator == "claude":
+        return returncode in _CLAUDE_NORMAL_EXIT_CODES
+    return returncode == 0
 
 
 def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> bool:
@@ -471,19 +516,19 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
 
 
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """process-loopサブコマンド: claudeの単発起動と待機ループを常駐で繰り返す。
+    """process-loopサブコマンド: 選択した対話セッションと待機ループを常駐で繰り返す。
 
-    件数はClaude Codeセッションの起動要否だけに使う。
+    件数は選択したオーケストレーターのセッション起動要否だけに使う。
     分類結果の保存、依存判定、セッション上限、実行順、readiness判定、wave選択は
     process-feedbacksが担う。
-    初回再開時は`claude --resume`または`claude --resume=<session ID>`だけを渡し、
-    再開後のプロンプト入力は利用者へ委ねる。
-    後続の新規起動は`claude --permission-mode=auto --model {args.model}`で、
-    対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
-    `--model`の既定値は`opus`とする。
+    初回再開時は選択したCLIのresume形式だけを渡し、再開後のプロンプト入力は利用者へ委ねる。
+    新規起動は対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
+    Claude Codeは既定modelの`opus`、権限mode、コンパクション設定を従来どおり使う。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
-    claudeが正常終了（0・-15・15・143のいずれか）した場合、
+    Codexは対話CLIを使い、model未指定時はCodex設定の既定値を使う。
+    Claude Codeは0・-15・15・143、Codexは0を正常終了とする。
+    正常終了した場合、
     `--no-update`未指定なら`update-dotfiles`を実行してから
     `_restart_process_loop`でランチャーへ再起動を要求する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
@@ -500,14 +545,14 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     （`atk`がプラグインキャッシュ配下から実行され、かつ`~/dotfiles`が存在しない場合）ではこのチェック自体を行わない。
     Ctrl+Cで常駐ループを終了する。
 
-    各反復で件数取得直後・claude起動前後に`_process_loop_log.append`で観測イベント
+    各反復で件数取得直後・セッション起動前後に`_process_loop_log.append`で観測イベント
     （`loop_iter_start`・`session_start`・`session_end`）を記録する
     （`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`未設定時はno-op）。
     待機ループ復帰時に自己コード更新を検知して再起動した場合は`restart_on_wait_loop_update`を記録する。
     """
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
-    prompt = _build_process_loop_prompt(local_path, target_repo_id)
+    prompt = _build_process_loop_prompt(local_path, target_repo_id, args.orchestrator)
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
     print(f"atk mq process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
@@ -530,24 +575,15 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     count = _count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0:
-                        print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
+                        print(f"{count}件のfeedback/回答済みTBDを検知。{args.orchestrator}へ委譲します。")
                         _process_loop_log.append("session_start")
                         session_started_at = time.monotonic()
                         session_path = local_path
                         session_prompt = prompt
-                        hook_debug_log = _create_hook_debug_log(env)
-                        print(f"Claude hook診断ログ: {hook_debug_log}")
-                        claude_argv = [
-                            "claude",
-                            "--debug=hooks",
-                            "--debug-file",
-                            str(hook_debug_log),
-                        ]
-                        if resume_pending:
-                            claude_argv.append("--resume" if not args.resume else f"--resume={args.resume}")
+                        current_resume_pending = resume_pending
+                        if current_resume_pending:
                             resume_pending = False
                         else:
-                            claude_argv.extend(("--permission-mode=auto", "--model", args.model, "--autocompact", "1m"))
                             if target_repo_id == _DOTFILES_REPO_ID:
                                 # `--worktree`は使わない。CLIのworktree隔離ガードが、gitへの言及を問わず
                                 # ANSI-Cクォート・制御構造・コマンド置換など18種のシェル構文を拒否するため。
@@ -556,10 +592,21 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                                 if prepared is None:
                                     sys.exit(1)
                                 session_path = prepared
-                                session_prompt = _build_process_loop_prompt(session_path, target_repo_id)
-                            claude_argv.append(session_prompt)
+                                session_prompt = _build_process_loop_prompt(
+                                    session_path,
+                                    target_repo_id,
+                                    args.orchestrator,
+                                )
+                        session_argv, hook_debug_log = _build_session_argv(
+                            args,
+                            session_prompt,
+                            env,
+                            resume_pending=current_resume_pending,
+                        )
+                        if hook_debug_log is not None:
+                            print(f"Claude hook診断ログ: {hook_debug_log}")
                         result = subprocess.run(
-                            claude_argv,
+                            session_argv,
                             check=False,
                             env=env,
                             cwd=session_path,
@@ -570,9 +617,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             elapsed_sec=round(time.monotonic() - session_started_at, 3),
                             returncode=result.returncode,
                         )
-                        if result.returncode not in _NORMAL_EXIT_CODES:
+                        if not _is_normal_session_exit(args.orchestrator, result.returncode):
                             print(
-                                f"claudeがexit code {result.returncode}で異常終了しました。",
+                                f"{args.orchestrator}がexit code {result.returncode}で異常終了しました。",
                                 file=sys.stderr,
                             )
                             sys.exit(result.returncode)
