@@ -36,14 +36,17 @@ Claude Codeでは次のコマンドを使う。
 uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/session_review_state.py <session_id>
 ```
 
-Codexでは、読み込んだ本`SKILL.md`の絶対パスから親ディレクトリを2階層たどって現行plugin rootを確定し、
-次の`<plugin root>`をその絶対パスへ置き換えて実行する。
+Codexでは、読み込んだ本`SKILL.md`の絶対パスの末尾成分が順に
+`skills`、`session-review`、`SKILL.md`と完全一致することを確認する。
+一致した固定末尾成分を一組として絶対パスから除き、残った接頭部分を現行plugin rootとする。
+次の`<plugin root>`をその絶対パスへ置き換え、対象スクリプトが実在する通常ファイルであることを確認してから実行する。
 
 ```sh
 uv run --no-project --script <plugin root>/scripts/session_review_state.py <session_id>
 ```
 
-記録コマンドが失敗した場合は証拠収集へ進まず、失敗を報告する。
+固定末尾成分が一致しない場合、対象スクリプトが実在しない場合、記録コマンドが失敗した場合は、
+いずれも証拠収集へ進まず失敗を報告する。
 
 ## 証拠収集
 

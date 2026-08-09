@@ -13,7 +13,20 @@ import pytest
 import session_review_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "session_review_state.py"
-_SESSION_REVIEW_SKILL = _SCRIPT.parents[1] / "skills" / "session-review" / "SKILL.md"
+_PLUGIN_ROOT = _SCRIPT.parent.parent
+_SESSION_REVIEW_SKILL = _PLUGIN_ROOT / "skills" / "session-review" / "SKILL.md"
+_CODEX_SKILL_SUFFIX = ("skills", "session-review", "SKILL.md")
+
+
+def _resolve_codex_recording_script(skill_path: pathlib.Path) -> pathlib.Path | None:
+    """スキル本文と同じ固定末尾成分の除去と実在確認で記録CLIを解決する。"""
+    resolved = skill_path.resolve()
+    suffix_length = len(_CODEX_SKILL_SUFFIX)
+    if resolved.parts[-suffix_length:] != _CODEX_SKILL_SUFFIX:
+        return None
+    plugin_root = pathlib.Path(*resolved.parts[:-suffix_length])
+    script = plugin_root / "scripts" / "session_review_state.py"
+    return script if script.is_file() else None
 
 
 def _run(session_id: str, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -42,9 +55,13 @@ def test_records_session_review_idempotently(tmp_path: pathlib.Path) -> None:
 
 def test_codex_resolves_executable_from_loaded_skill_path(tmp_path: pathlib.Path) -> None:
     """Codexが読み込んだSKILL.mdから実在する記録CLIを解決して実行できる。"""
-    plugin_root = _SESSION_REVIEW_SKILL.resolve().parents[2]
-    script = plugin_root / "scripts" / "session_review_state.py"
+    skill_text = _SESSION_REVIEW_SKILL.read_text(encoding="utf-8")
+    script = _resolve_codex_recording_script(_SESSION_REVIEW_SKILL)
 
+    assert "`skills`、`session-review`、`SKILL.md`と完全一致" in skill_text
+    assert "固定末尾成分を一組として絶対パスから除き" in skill_text
+    assert "対象スクリプトが実在する通常ファイル" in skill_text
+    assert script is not None
     assert script == _SCRIPT.resolve()
     result = _fork_runner.run_script(
         script,
@@ -54,6 +71,17 @@ def test_codex_resolves_executable_from_loaded_skill_path(tmp_path: pathlib.Path
 
     assert result.returncode == 0
     assert _read_state(tmp_path, "codex-loaded-skill")["session_review_invoked"] == {"agent-toolkit:session-review": True}
+
+
+def test_codex_rejects_unexpected_skill_suffix_and_missing_script(tmp_path: pathlib.Path) -> None:
+    """固定末尾成分の不一致と、導出先スクリプトの不在をいずれも棄却する。"""
+    unexpected = tmp_path / "skills" / "other-skill" / "SKILL.md"
+    missing_script = tmp_path / "skills" / "session-review" / "SKILL.md"
+    missing_script.parent.mkdir(parents=True)
+    missing_script.write_text("# test\n", encoding="utf-8")
+
+    assert _resolve_codex_recording_script(unexpected) is None
+    assert _resolve_codex_recording_script(missing_script) is None
 
 
 def test_rejects_empty_session_id_without_marker(tmp_path: pathlib.Path) -> None:
