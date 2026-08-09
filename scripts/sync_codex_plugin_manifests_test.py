@@ -158,9 +158,13 @@ def test_mcp_servers_absent_when_source_missing(manifest_root: Path) -> None:
     [
         ({"command": "uvx", "url": "https://example.com"}, "stdioへ変換できないMCP field"),
         ({"command": 1}, "MCP commandは文字列"),
+        ({"command": ""}, "MCP commandは空文字列"),
         ({"command": "uvx", "args": "mcp"}, "MCP argsは文字列の配列"),
         ({"command": "uvx", "env": {"MODE": 1}}, "MCP envは文字列を値に持つJSON object"),
+        ({"command": "uvx", "env": {"PLUGIN_ROOT": "./root"}}, "MCP envにAgent Pluginsの予約名"),
+        ({"command": "uvx", "env": {"PLUGIN_DATA": "./data"}}, "MCP envにAgent Pluginsの予約名"),
         ({"command": "uvx", "cwd": 1}, "MCP cwdは文字列"),
+        ({"command": "uvx", "cwd": "workspace"}, "MCP cwdはAgent Plugins schemaのpattern"),
     ],
 )
 def test_rejects_unportable_mcp_server(manifest_root: Path, server: dict[str, Any], message: str) -> None:
@@ -168,6 +172,18 @@ def test_rejects_unportable_mcp_server(manifest_root: Path, server: dict[str, An
     source.write_text(json.dumps({"mcpServers": {"pyfltr": server}}), encoding="utf-8")
     with pytest.raises(ValueError, match=message):
         subject.sync(manifest_root)
+
+
+@pytest.mark.parametrize(
+    "cwd",
+    ["./workspace", "${PLUGIN_ROOT}", "${PLUGIN_ROOT}/workspace", "${PLUGIN_DATA}", "${PLUGIN_DATA}/workspace"],
+)
+def test_accepts_agent_plugin_cwd_patterns(manifest_root: Path, cwd: str) -> None:
+    source = manifest_root / subject.MCP_SOURCE
+    source.write_text(json.dumps({"mcpServers": {"pyfltr": {"command": "uvx", "cwd": cwd}}}), encoding="utf-8")
+    subject.sync(manifest_root)
+    generated = json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text())
+    assert generated["mcpServers"]["pyfltr"]["cwd"] == cwd
 
 
 @pytest.mark.parametrize("source", [{"mcpServers": []}, {"mcpServers": {}, "unknown": True}])

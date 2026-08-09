@@ -87,14 +87,27 @@ def _agent_mcp(source: dict[str, Any]) -> dict[str, Any]:
         cwd = value.get("cwd")
         if not isinstance(command, str):
             raise ValueError(f"MCP commandは文字列である必要がある: {name}")
+        if not command:
+            raise ValueError(f"MCP commandは空文字列にできない: {name}")
         if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
             raise ValueError(f"MCP argsは文字列の配列である必要がある: {name}")
         if env is not None and (
             not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(item, str) for key, item in env.items())
         ):
             raise ValueError(f"MCP envは文字列を値に持つJSON objectである必要がある: {name}")
-        if cwd is not None and not isinstance(cwd, str):
-            raise ValueError(f"MCP cwdは文字列である必要がある: {name}")
+        if env is not None and {"PLUGIN_ROOT", "PLUGIN_DATA"} & set(env):
+            raise ValueError(f"MCP envにAgent Pluginsの予約名は指定できない: {name}")
+        if cwd is not None:
+            if not isinstance(cwd, str):
+                raise ValueError(f"MCP cwdは文字列である必要がある: {name}")
+            if not (
+                cwd.startswith("./")
+                or cwd == "${PLUGIN_ROOT}"
+                or cwd.startswith("${PLUGIN_ROOT}/")
+                or cwd == "${PLUGIN_DATA}"
+                or cwd.startswith("${PLUGIN_DATA}/")
+            ):
+                raise ValueError(f"MCP cwdはAgent Plugins schemaのpatternに一致する必要がある: {name}")
 
         server: dict[str, Any] = {"type": "stdio", "command": command}
         if "args" in value:
