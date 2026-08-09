@@ -138,6 +138,16 @@ fail-closed設計の判定関数（Stop hookのゲート判定等）を新規追
 fail-closedの意図と整合させる。参考実装は`agent-toolkit/scripts/_stop_gate.py`の
 `is_pending_async_work`および`has_pending_background_launches`とする。
 
+## 環境変数の一覧
+
+配布物完結の環境変数（`AGENT_TOOLKIT_<PURPOSE>`形式）の一覧と用途を示す。
+
+- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk mq`管理repoのroot（既定`~/private-notes/`）
+- `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力
+- `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信payloadのダンプ先
+- `AGENT_TOOLKIT_RESTART_SPEC`: フィードバック処理の常駐実行で、次に起動するセッションの指定を
+  起動側の処理へ渡す一時ファイルのパス
+
 ## メッセージの記述言語
 
 コーディングエージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）は

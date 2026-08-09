@@ -296,9 +296,17 @@ def test_coordination_preflight_conditions_plan_handoff_note() -> None:
 
 
 def test_problem_solution_proportionality_contract_is_complete() -> None:
-    """問題側の入力、候補比較、複雑化時の再評価を共通規範へ保持する。"""
+    """問題側の入力、候補比較、複雑化時の再評価を共通規範と詳細referenceへ保持する。"""
     agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
+    judgment_details = (_DISTRIBUTION_ROOT / "skills" / "review-standards" / "references" / "judgment-details.md").read_text(
+        encoding="utf-8"
+    )
 
+    for phrase in (
+        "何もしない案、既存操作だけの案、局所運用案、新機構案",
+        "観測されていない低頻度リスクを除くために恒常的な複雑性を増加させてはならない",
+    ):
+        assert phrase in agent_rules
     for phrase in (
         "観測事象、発生条件、確認できた頻度、最大影響、許容できる残存リスク",
         "何もしない案、既存操作だけの案、局所運用案、新機構案",
@@ -306,9 +314,8 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "個別対策を追加する前に採用案を候補比較へ戻す",
         "各review round",
         "対応量又は既実装量を理由にした採用継続は認めない",
-        "観測されていない低頻度リスクを除くために恒常的な複雑性を増加させてはならない",
     ):
-        assert phrase in agent_rules
+        assert phrase in judgment_details
 
 
 def test_feedback_dependencies_point_to_provider_references() -> None:

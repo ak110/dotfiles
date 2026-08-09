@@ -2,7 +2,8 @@
 name: sync-cross-project
 description: >
   作者個人の姉妹プロジェクト群の間でツールチェイン（Makefile、mise、prek、GitHub Actionsなど）や
-  ドキュメント構成を揃える際に必ず使う。`/sync-cross-project`、「他プロジェクトへの反映」
+  ドキュメント構成を揃える際に必ず使う。gv・lcなど姉妹プロジェクト自体を編集する作業と、
+  推奨ガイド・共有ファイルへの追従作業でも使う。`/sync-cross-project`、「他プロジェクトへの反映」
   「プロジェクト間の同期」などのキーワードで自動トリガーしてよい。プロジェクト固有のアプリケーションロジック変更は対象外
 ---
 
@@ -26,11 +27,9 @@ description: >
 - 変更内容の分類を特定する（例: prek設定、mise設定、CI workflow、README構成など）
 - 「変更時の同期対象マトリクス」で波及プロジェクトを決める
 - 「意図的に維持している差異」に該当しないか確認する
-- 移植対象の記述が依拠する前提（脆弱性検知の仕組みの有無、配布形態がライブラリかアプリケーションか、
-  外部サービスの有効状態など）を列挙し、各前提が移植先で成立することを実測または移植先の
-  明文化された方針との照合で確認する
-- 成立しない前提がある場合は、当該前提に依拠する記述を移植先の実情に合わせて書き換えるか、
-  移植対象から除く
+- 移植対象の記述が依拠する前提（配布形態・外部サービスの有効状態など）を列挙し、
+  各前提が移植先で成立することを実測または移植先の明文化された方針との照合で確認する。
+  成立しない前提に依拠する記述は移植先の実情に合わせて書き換えるか、移植対象から除く
 - 該当プロジェクトに対してサブエージェント（`general-purpose`）で並列調査して差分を把握する
 - 同期が必要なプロジェクトと推奨アクションをユーザーに報告する
 
@@ -44,10 +43,30 @@ description: >
 - CI: `.github/workflows/**`
 - ドキュメント: `README.md` / `CLAUDE.md` / `docs/**/development.md` / `docs/**/security.md`
 
-## 複数リポジトリ横断作業の分解投入
+## 追従作業と複数リポジトリ横断投入
 
-同期対象を複数リポジトリへ反映する場合は、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
-完成済み本文と対象リポジトリを渡す。
+推奨ガイド（`~/pyfltr/docs/guide/recommended.md`・`recommended-nonpython.md`）または
+姉妹プロジェクト共有ファイルへの追従作業では、着手前に次の2点を確認する。
+
+- 他の姉妹プロジェクト宛の未処理フィードバックを同じ主題で照会し、実装レビューで確定した
+  検証結果・訂正記録が記録されていないかを確認する。記録があった場合はその結論を変更の前提として取り込む
+- 推奨ガイドが新設した設定へ追随する場合、追随先が実際に取得する配布物の公開版に当該設定が
+  含まれることを、公開版を明示指定した実行で確認する
+
+追従を目的とする計画では、本計画は正本の現行内容への追従に限定し正本の設計自体の改善は対象外とする旨と、
+正本の改善が必要と判明した場合は正本リポジトリ宛のフィードバックとして登録する旨を計画本文へ明記する。
+
+推奨ガイドまたは同期対象マトリクスが対象とするファイル群を更新した場合、
+同一セッション内で実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
+他プロジェクト向けの追従提案を各リポジトリのフィードバックとして投入する。
+複数リポジトリでは同スキルの`references/cross-repository-submission.md`に従う。
+
+- 追従提案の本文には適用すべき変更内容を対象リポジトリ単独で実施できる粒度で転記し、
+  更新元のリポジトリ名とコミットを関連情報として併記する
+- 既に別計画で同内容の改訂を扱うことが判明しているリポジトリは投入対象から除き、その旨を各提案の関連欄へ記す
+- 推奨ガイドの改訂を要する変更を`~/pyfltr`以外のリポジトリで確定した場合は、先に`~/pyfltr`向けfeedbackを
+  投入し、他プロジェクト向け追従提案の`depends_on`へそのfilenameを記録する。
+  典拠のないままの追従着手による整合の崩れを防ぐためである
 
 ## 変更時の同期対象マトリクス
 
@@ -85,9 +104,7 @@ description: >
 - pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonソースから
   ドキュメントを生成するため、ソース変更でもdocs workflowが起動する必要がある
 - Dependabot alertsの有効・無効（dotfiles・GLATasksは有効、pytilpackは無効）:
-  pytilpackはライブラリである。
-  ロックファイルが開発専用のため、利用者の実行環境への脆弱性の影響が限定的である
-  （pyfltrは実測では無効だが方針未確定のため本行では扱わない。方針確定時に追記する）
+  pytilpackはライブラリであり、ロックファイルが開発専用のため利用者の実行環境への脆弱性の影響が限定的である
 
 ## pnpmに関する既知の注意点
 
@@ -96,6 +113,12 @@ description: >
 - pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）
   - env var経由の設定反映テストには`npm config get`を使う
 - `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数より優先される
+
+## ドキュメント章構成の統一
+
+README.md・CLAUDE.md・docs/development/development.mdの標準章構成・共通文面・記述基準・バッジ記法は
+[references/doc-structure.md](references/doc-structure.md)が定める。
+ドキュメント構成を変更・同期する場合は同ファイルを読む。
 
 ## 補足事項
 
@@ -106,24 +129,31 @@ description: >
   - `pyfltr/docs/guide/recommended-nonpython.md`
 - 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を
   発見したらdotfiles側を修正する（マスター）
-- `docs/development/development.md`の「サプライチェーン攻撃対策」節は、
-  Python系（dotfiles・pyfltr・pytilpack・smpr）間で概ね共通文面とする
-  - UV_FROZEN方針を含む
-  - `exclude-newer`の参照先など一部はプロジェクト固有差分を許容する
-  - 変更時は他プロジェクトへの波及を確認する
 - README.md・CLAUDE.md・docs/development/development.md間で、
   共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
-- README.md・CLAUDE.md・docs/development/development.mdの章構成・章順・共通文面は
-  myprojects.mdの「ドキュメント章構成の統一」章に従い、他プロジェクトとの比較で逸脱を検出する
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
 - Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能
-  - cargo-clippy / cargo-test / cargo-denyはWindowsターゲットのためLinuxでは失敗する
 - Makefileではなく`mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
 - `package.json`の`lint`/`lint:fix`スクリプトは`CLAUDE.md`もtextlint/markdownlint-cli2対象に含めている
   - 新規Node系プロジェクトでも同様に設定する
-- `taiki-e/install-action@cargo-deny`はツール名タグ形式のためpinactでハッシュピン不可（gvの`.pinact.yaml`で除外済み）
+
+`~/gv`・`~/lc`の`mise.toml`はWindows前提で`{{ env.LOCALAPPDATA }}`を参照しているため、
+Linux環境ではmiseの評価時に未定義変数エラーで展開に失敗する。
+pre-commit hookや`uvx pyfltr`配下のmarkdownlint・textlintなどmise経由で動く処理も同じ理由で中断する。
+ドキュメント修正等でLinuxから作業する場合は、以下のいずれかで対処する。
+
+- 全実行コマンドの先頭に`LOCALAPPDATA=/tmp/dummy`を付与する（`git commit`時にも必須）
+- mise依存のlint・buildタスクを呼ばず、該当箇所はスキップする
+
+加えて`~/gv`のRustコードは、`windows-future`等のWindows専用クレートが依存ツリーに含まれるため、
+Linux環境で`cargo check`・`cargo clippy`・`cargo test`がビルド段階で失敗する。
+Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで対処する。
+
+- Windows実機で`cargo`系チェックを実行してからpushする
+- `SKIP=<該当hook>`環境変数でpre-commit hookを部分的に無効化してコミットする
+- 該当コードを`#[cfg(windows)]`ガードで囲み、Linux向けビルド対象外にする
 
 ### prek / pyfltr / ビルド関連
 
@@ -134,12 +164,6 @@ description: >
 ### CI / リリース関連
 
 - CI workflow（Python系・lint系のLinuxジョブ）は`ghcr.io/ak110/pyfltr:latest`イメージを`container:`として使う方針
-  - uv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、`pinact run --check`を直接呼び出せる
-  - Pythonバージョンマトリクスは`env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ
-  - `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
-- container非対応のジョブ（Windows runner必須・chezmoi検証・Docker Compose依存など）は従来どおりruner上で実行する
+- container非対応のジョブ（Windows runner必須・chezmoi検証・Docker Compose依存など）は従来どおりrunner上で実行する
 - container化したジョブのキャッシュは`actions/cache`で`/cache`配下を一括キャッシュする方式に統一する
-- `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
-- `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
-  PowerShell系（gv / lc）が`check-suites` API方式
 - リリース手段とバージョン区分は`myprojects.md`の「リリース運用」節を参照する

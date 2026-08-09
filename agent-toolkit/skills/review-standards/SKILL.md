@@ -3,6 +3,8 @@ name: review-standards
 description: >
   コードレビュー・ドキュメントレビュー実施時に最初に必ず起動する。
   レビュー担当サブエージェント、およびメインエージェント自身がレビューする場面で起動する。
+  計画・設計の採用案やレビュー指摘・想定外の発見の妥当性を評価する場面でも起動する
+  （`references/judgment-details.md`が詳細手順を定める）。
   著者向けスキル（`coding-standards`・`writing-standards`・`agent-standards`）と併用する。
 # 編集時の注意点:
 # レビュアー側の判断指針のみを扱う。
@@ -19,6 +21,7 @@ description: >
 
 対象成果物のauthorスキルを最初に全文読み、成果物契約はauthor側を正本とする。
 本スキルは欠陥の証拠、重大度、未検証の区別、報告形式だけを定める。
+計画・設計の採用案や指摘・発見の妥当性を評価する場面では`references/judgment-details.md`を併せて読む。
 
 ## 目的との整合
 
