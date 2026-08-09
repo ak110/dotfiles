@@ -33,6 +33,7 @@ user-invocable: false
 2. 計画に原子的なコミット単位が明示されている場合だけ単位ごとにwriterを1つずつ起動する。
    単位が明示されていない場合は計画全体を1つの実装単位として扱う。
    明示された単位が複数ある場合は、1回のwriter呼び出しへ全単位を積まず順次割り当てる。
+   writerとreviewerはAgentツールの`general-purpose`で起動し、executor自身を含む同じ役割種別へ割り当てない。
    writerへ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、worktree、
    プロジェクト規範、該当author skillの絶対パスと、その単位の識別だけとする
 3. 各writerの完了後にcommit、差分、検証、cleanな作業ツリーを実測してから次の単位へ進む。

@@ -6,7 +6,8 @@ Hookは現状Claude Code固有の概念である。本ファイル全体がClaud
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
 スキーマ詳細は`agent-toolkit/rules/99-claude-code.md`「公式リファレンス」節または`plugin-dev:hook-development`スキルを参照する。
-新規実装・改修に着手する前は公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を`WebFetch`で一次資料参照する。
+新規実装・改修に着手する前は公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を一次資料として参照する。
+取得方法は`agent-toolkit/rules/99-claude-code.md`「公式リファレンス」節に従う。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
 参照したセクション名は計画ファイルの実装者向け領域へ引用する。
 既存実装の類推・記憶ベースでのpayload設計は用いない。

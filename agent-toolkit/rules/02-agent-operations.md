@@ -36,6 +36,8 @@
   - 複数ファイルに跨る置換は`agent-toolkit:pyfltr-usage`のgrep/replaceサブコマンドを使う。
     長出力のコマンド列は`agent-toolkit:shell-exec`へ委譲する。
     CI通過確認は`agent-toolkit:commit`スキルの専用ツールを使う
+  - `AGENT_TOOLKIT_PRIVATE_NOTES`配下の`inbox/`または`processing/`にあるキュー管理ファイルを
+    専用サブコマンド以外で変更した場合は、作業を終える前に`atk mq commit`を実行する
   - 判定対象は例示以外の定型作業も含む
 - 同一セッションで取得済みのファイルは、変更を観測するまで保持済み内容を再利用する。
   編集後の検収、外部更新後、正確な現行文面が必要な差分適用前に再取得する
