@@ -7,8 +7,11 @@ push・CI完了待機を経てrelease.yamlをworkflow_dispatchで起動する。
 """
 
 import argparse
+import collections.abc
 import json
 import logging
+import random
+import re
 import subprocess
 import sys
 import time
@@ -31,6 +34,12 @@ _CI_COMPLETE_INTERVAL_SEC = 15
 # workflow_dispatch起動後に新規runが確認できるまでの待機上限。
 _DISPATCH_RUN_APPEAR_TIMEOUT_SEC = 120
 _DISPATCH_RUN_APPEAR_INTERVAL_SEC = 5
+_GH_READ_ATTEMPTS = 3
+_GH_READ_TIMEOUT_SEC = 60
+_GH_TRANSIENT_ERROR_PATTERN = re.compile(
+    r"HTTP\s+5\d{2}\b|timeout|timed out|connection reset|connection refused|temporary failure|TLS handshake timeout|EOF",
+    re.IGNORECASE,
+)
 
 _BUMP_CHOICES = ("patch", "minor", "major")
 _RELEASE_WORKFLOW_FILENAME = "release.yaml"
@@ -306,8 +315,66 @@ def _get_release_workflow_name() -> str:
     return str(data.get("name") or _RELEASE_WORKFLOW_FILENAME)
 
 
-def _list_runs_for_commit(sha: str) -> list[dict[str, Any]]:
-    result = subprocess.run(
+def _run_gh_json_read(
+    args: list[str],
+    *,
+    attempts: int = _GH_READ_ATTEMPTS,
+    timeout: float = _GH_READ_TIMEOUT_SEC,
+    sleep: collections.abc.Callable[[float], None] = time.sleep,
+    random_uniform: collections.abc.Callable[[float, float], float] = random.uniform,
+) -> Any:
+    if attempts < 1:
+        raise ValueError("attemptsは1以上で指定してください。")
+
+    for attempt in range(attempts):
+        try:
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as e:
+            stderr = _subprocess_text(e.stderr)
+            detail = stderr or f"{timeout:g}秒でタイムアウトしました。"
+        else:
+            stderr = result.stderr.strip()
+            if result.returncode == 0:
+                try:
+                    return json.loads(result.stdout)
+                except json.JSONDecodeError as e:
+                    detail = stderr or str(e)
+                    raise _ReleaserError(f"GitHub APIの応答を解析できませんでした: {detail}") from None
+            detail = stderr or f"終了コード {result.returncode}"
+            if not _GH_TRANSIENT_ERROR_PATTERN.search(stderr):
+                raise _ReleaserError(f"GitHub APIから情報を取得できませんでした: {detail}")
+
+        if attempt + 1 == attempts:
+            raise _ReleaserError(f"GitHub APIから情報を取得できませんでした: {detail}")
+        delay_limit = float(2**attempt)
+        sleep(random_uniform(0.0, delay_limit))
+
+    raise AssertionError("unreachable")
+
+
+def _subprocess_text(value: str | bytes | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace").strip()
+    return (value or "").strip()
+
+
+def _list_runs_for_commit(
+    sha: str,
+    *,
+    attempts: int = _GH_READ_ATTEMPTS,
+    timeout: float = _GH_READ_TIMEOUT_SEC,
+    sleep: collections.abc.Callable[[float], None] = time.sleep,
+    random_uniform: collections.abc.Callable[[float, float], float] = random.uniform,
+) -> list[dict[str, Any]]:
+    data = _run_gh_json_read(
         [
             "gh",
             "run",
@@ -316,13 +383,14 @@ def _list_runs_for_commit(sha: str) -> list[dict[str, Any]]:
             "--json=databaseId,status,conclusion,workflowName,name",
             "--limit=50",
         ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
+        attempts=attempts,
+        timeout=timeout,
+        sleep=sleep,
+        random_uniform=random_uniform,
     )
-    return json.loads(result.stdout)
+    if not isinstance(data, list):
+        raise _ReleaserError("GitHub APIのrun一覧応答が配列ではありません。")
+    return data
 
 
 def _wait_for_non_release_runs(sha: str, release_name: str) -> list[dict[str, Any]] | None:
@@ -411,8 +479,14 @@ def _validate_release_workflow_dict(data: Any) -> None:
         raise _ReleaserError(f"release.yamlの`bump.options`に必要な値がありません: {sorted(missing)}")
 
 
-def _list_release_runs() -> list[dict[str, Any]]:
-    result = subprocess.run(
+def _list_release_runs(
+    *,
+    attempts: int = _GH_READ_ATTEMPTS,
+    timeout: float = _GH_READ_TIMEOUT_SEC,
+    sleep: collections.abc.Callable[[float], None] = time.sleep,
+    random_uniform: collections.abc.Callable[[float, float], float] = random.uniform,
+) -> list[dict[str, Any]]:
+    data = _run_gh_json_read(
         [
             "gh",
             "run",
@@ -421,13 +495,14 @@ def _list_release_runs() -> list[dict[str, Any]]:
             "--json=databaseId,status,createdAt",
             "--limit=5",
         ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=True,
+        attempts=attempts,
+        timeout=timeout,
+        sleep=sleep,
+        random_uniform=random_uniform,
     )
-    return json.loads(result.stdout)
+    if not isinstance(data, list):
+        raise _ReleaserError("GitHub APIのrelease run一覧応答が配列ではありません。")
+    return data
 
 
 def _get_latest_release_run_id() -> int | None:
@@ -465,16 +540,69 @@ def _wait_for_new_release_run(last_id: int | None) -> int:
     raise _ReleaserError("dispatch後の新規runが検出できませんでした。")
 
 
-def _watch_run(run_id: int) -> None:
+def _view_run(
+    run_id: int,
+    *,
+    attempts: int = _GH_READ_ATTEMPTS,
+    timeout: float = _GH_READ_TIMEOUT_SEC,
+    sleep: collections.abc.Callable[[float], None] = time.sleep,
+    random_uniform: collections.abc.Callable[[float, float], float] = random.uniform,
+) -> dict[str, Any]:
+    data = _run_gh_json_read(
+        ["gh", "run", "view", str(run_id), "--json=status,conclusion"],
+        attempts=attempts,
+        timeout=timeout,
+        sleep=sleep,
+        random_uniform=random_uniform,
+    )
+    if not isinstance(data, dict):
+        raise _ReleaserError("GitHub APIのrun状態応答がマップではありません。")
+    return data
+
+
+def _watch_run(
+    run_id: int,
+    *,
+    attempts: int = _GH_READ_ATTEMPTS,
+    timeout: float = _GH_READ_TIMEOUT_SEC,
+    sleep: collections.abc.Callable[[float], None] = time.sleep,
+    random_uniform: collections.abc.Callable[[float, float], float] = random.uniform,
+) -> None:
     """`gh run watch --exit-status` でrunの完了を待機する。"""
     logger.info("release run %s の完了を待機する。", run_id)
-    result = subprocess.run(
-        ["gh", "run", "watch", str(run_id), "--exit-status"],
-        check=False,
-    )
-    if result.returncode != 0:
-        raise _ReleaserError(f"release run {run_id} が失敗しました。")
-    logger.info("release run %s が成功しました。", run_id)
+    for attempt in range(attempts):
+        result = subprocess.run(
+            ["gh", "run", "watch", str(run_id), "--exit-status"],
+            check=False,
+        )
+        if result.returncode == 0:
+            logger.info("release run %s が成功しました。", run_id)
+            return
+
+        state = _view_run(
+            run_id,
+            attempts=attempts,
+            timeout=timeout,
+            sleep=sleep,
+            random_uniform=random_uniform,
+        )
+        status = state.get("status")
+        conclusion = state.get("conclusion")
+        if status == "completed":
+            if not isinstance(conclusion, str) or not conclusion:
+                raise _ReleaserError(f"release run {run_id} の完了結果を取得できませんでした。")
+            if conclusion in _ACCEPTABLE_CONCLUSIONS:
+                logger.info("release run %s が成功しました。", run_id)
+                return
+            raise _ReleaserError(f"release run {run_id} が失敗しました（conclusion={conclusion}）。")
+        if status not in _IN_PROGRESS_STATUSES:
+            raise _ReleaserError(f"release run {run_id} の状態を判定できませんでした（status={status}）。")
+        if attempt + 1 == attempts:
+            raise _ReleaserError(f"release run {run_id} の状態取得が再試行上限に達しました。")
+        delay_limit = float(2**attempt)
+        sleep(random_uniform(0.0, delay_limit))
+
+    raise AssertionError("unreachable")
 
 
 def _sync_local_repo() -> None:

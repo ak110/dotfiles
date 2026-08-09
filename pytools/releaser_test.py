@@ -11,8 +11,12 @@ import yaml
 
 from pytools.releaser import (
     _build_parser,
+    _list_release_runs,
+    _list_runs_for_commit,
     _ReleaserError,
+    _run_release_flow,
     _validate_release_workflow_dict,
+    _watch_run,
     main,
 )
 
@@ -140,6 +144,235 @@ class TestMainSmoke:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "見つかりません" in captured.out
+
+    def test_expected_error_has_no_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(sys, "argv", ["releaser", "patch"])
+        with (
+            patch("pytools.releaser._run_release_flow", side_effect=_ReleaserError("API取得失敗")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Traceback" not in captured.out
+        assert "Traceback" not in captured.err
+
+
+class TestGhReadPolicy:
+    """GitHub読取コマンドの再試行契約を検証する。"""
+
+    @pytest.mark.parametrize(
+        "stderr",
+        [
+            "HTTP 500",
+            "HTTP 599",
+            "request timeout",
+            "request timed out",
+            "connection reset",
+            "connection refused",
+            "temporary failure",
+            "TLS handshake timeout",
+            "unexpected EOF",
+        ],
+    )
+    def test_transient_release_list_failure_recovers(self, stderr: str) -> None:
+        sleeps: list[float] = []
+        results = [
+            _completed_process(returncode=1, stderr=stderr),
+            _completed_process(stdout='[{"databaseId": 2}]'),
+        ]
+        with patch("pytools.releaser.subprocess.run", side_effect=results) as run:
+            runs = _list_release_runs(
+                attempts=2,
+                timeout=7,
+                sleep=sleeps.append,
+                random_uniform=_upper_bound,
+            )
+        assert runs == [{"databaseId": 2}]
+        assert sleeps == [1.0]
+        assert run.call_count == 2
+        assert run.call_args_list[0].kwargs["timeout"] == 7
+
+    def test_timeout_for_commit_list_recovers(self) -> None:
+        sleeps: list[float] = []
+        results = [
+            subprocess.TimeoutExpired(["gh", "run", "list"], 4, stderr=b"HTTP 502"),
+            _completed_process(stdout='[{"databaseId": 3}]'),
+        ]
+        with patch("pytools.releaser.subprocess.run", side_effect=results):
+            runs = _list_runs_for_commit(
+                "abc",
+                attempts=2,
+                timeout=4,
+                sleep=sleeps.append,
+                random_uniform=_upper_bound,
+            )
+        assert runs == [{"databaseId": 3}]
+        assert sleeps == [1.0]
+
+    def test_permanent_failure_is_not_retried(self) -> None:
+        with (
+            patch(
+                "pytools.releaser.subprocess.run",
+                return_value=_completed_process(returncode=1, stderr="HTTP 404: Not Found"),
+            ) as run,
+            pytest.raises(_ReleaserError, match="HTTP 404: Not Found"),
+        ):
+            _list_release_runs(attempts=3)
+        assert run.call_count == 1
+
+    def test_retry_exhaustion_preserves_last_stderr(self) -> None:
+        sleeps: list[float] = []
+        results = [
+            _completed_process(returncode=1, stderr="HTTP 500: first"),
+            _completed_process(returncode=1, stderr="HTTP 502: second"),
+            _completed_process(returncode=1, stderr="HTTP 503: last"),
+        ]
+        with (
+            patch("pytools.releaser.subprocess.run", side_effect=results),
+            pytest.raises(_ReleaserError, match="HTTP 503: last"),
+        ):
+            _list_release_runs(
+                sleep=sleeps.append,
+                random_uniform=_upper_bound,
+            )
+        assert sleeps == [1.0, 2.0]
+
+    def test_invalid_json_is_not_retried_and_preserves_stderr(self) -> None:
+        with (
+            patch(
+                "pytools.releaser.subprocess.run",
+                return_value=_completed_process(stdout="not-json", stderr="response parse context"),
+            ) as run,
+            pytest.raises(_ReleaserError, match="response parse context"),
+        ):
+            _list_release_runs(attempts=3)
+        assert run.call_count == 1
+
+
+class TestWatchRun:
+    """watch失敗後のrun状態判定を検証する。"""
+
+    @pytest.mark.parametrize("conclusion", ["success", "skipped", "neutral"])
+    def test_transient_view_failure_recovers_completed_success(self, conclusion: str) -> None:
+        sleeps: list[float] = []
+        results = [
+            _completed_process(returncode=1),
+            _completed_process(returncode=1, stderr="HTTP 500"),
+            _completed_process(stdout=f'{{"status": "completed", "conclusion": "{conclusion}"}}'),
+        ]
+        with patch("pytools.releaser.subprocess.run", side_effect=results) as run:
+            _watch_run(
+                42,
+                attempts=2,
+                timeout=6,
+                sleep=sleeps.append,
+                random_uniform=_upper_bound,
+            )
+        assert run.call_count == 3
+        assert sleeps == [1.0]
+        assert run.call_args_list[1].kwargs["timeout"] == 6
+
+    def test_completed_failure_is_not_hidden(self) -> None:
+        results = [
+            _completed_process(returncode=1),
+            _completed_process(stdout='{"status": "completed", "conclusion": "failure"}'),
+        ]
+        with (
+            patch("pytools.releaser.subprocess.run", side_effect=results),
+            pytest.raises(_ReleaserError, match="conclusion=failure"),
+        ):
+            _watch_run(42)
+
+    def test_incomplete_run_restarts_watch(self) -> None:
+        sleeps: list[float] = []
+        results = [
+            _completed_process(returncode=1),
+            _completed_process(stdout='{"status": "in_progress", "conclusion": null}'),
+            _completed_process(),
+        ]
+        with patch("pytools.releaser.subprocess.run", side_effect=results) as run:
+            _watch_run(42, sleep=sleeps.append, random_uniform=_upper_bound)
+        watch_calls = [call for call in run.call_args_list if call.args[0][2] == "watch"]
+        assert len(watch_calls) == 2
+        assert sleeps == [1.0]
+
+    def test_incomplete_run_exhaustion_is_api_error(self) -> None:
+        sleeps: list[float] = []
+        results = [
+            _completed_process(returncode=1),
+            _completed_process(stdout='{"status": "pending", "conclusion": null}'),
+            _completed_process(returncode=1),
+            _completed_process(stdout='{"status": "pending", "conclusion": null}'),
+            _completed_process(returncode=1),
+            _completed_process(stdout='{"status": "pending", "conclusion": null}'),
+        ]
+        with (
+            patch("pytools.releaser.subprocess.run", side_effect=results),
+            pytest.raises(_ReleaserError, match="状態取得が再試行上限"),
+        ):
+            _watch_run(42, sleep=sleeps.append, random_uniform=_upper_bound)
+        assert sleeps == [1.0, 2.0]
+
+    def test_unclassifiable_view_is_api_error(self) -> None:
+        results = [
+            _completed_process(returncode=1),
+            _completed_process(stdout='{"status": "unknown", "conclusion": null}'),
+        ]
+        with (
+            patch("pytools.releaser.subprocess.run", side_effect=results),
+            pytest.raises(_ReleaserError, match="状態を判定できません"),
+        ):
+            _watch_run(42)
+
+    def test_completed_view_without_conclusion_is_api_error(self) -> None:
+        results = [
+            _completed_process(returncode=1),
+            _completed_process(stdout='{"status": "completed", "conclusion": null}'),
+        ]
+        with (
+            patch("pytools.releaser.subprocess.run", side_effect=results),
+            pytest.raises(_ReleaserError, match="完了結果を取得できません"),
+        ):
+            _watch_run(42)
+
+    def test_dispatch_is_not_repeated_after_watch_failure(self, tmp_path: Path) -> None:
+        root = tmp_path
+        workflow_path = root / ".github" / "workflows" / "release.yaml"
+        workflow_path.parent.mkdir(parents=True)
+        workflow_path.write_text("name: release\n", encoding="utf-8")
+        with (
+            patch("pytools.releaser._get_git_root", return_value=root),
+            patch("pytools.releaser._ensure_default_branch"),
+            patch("pytools.releaser._ensure_clean_working_tree"),
+            patch("pytools.releaser._push_to_remote"),
+            patch("pytools.releaser._wait_for_ci"),
+            patch("pytools.releaser._check_release_workflow"),
+            patch("pytools.releaser._get_latest_release_run_id", return_value=1),
+            patch("pytools.releaser._dispatch_release_workflow") as dispatch,
+            patch("pytools.releaser._wait_for_new_release_run", return_value=2),
+            patch("pytools.releaser._watch_run", side_effect=_ReleaserError("API取得失敗")),
+            pytest.raises(_ReleaserError, match="API取得失敗"),
+        ):
+            _run_release_flow("PATCH")
+        dispatch.assert_called_once_with("PATCH")
+
+
+def _completed_process(
+    *,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(["gh"], returncode, stdout, stderr)
+
+
+def _upper_bound(_lower: float, upper: float) -> float:
+    return upper
 
 
 def _setup_git_repo(path: Path) -> None:
