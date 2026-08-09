@@ -132,6 +132,11 @@ function Write-CodexRestartNotice {
     [Console]::Error.WriteLine('codex app-server daemon restart')
 }
 
+function Test-CodexDaemonRunning {
+    & codex app-server daemon version *> $null
+    return $LASTEXITCODE -eq 0
+}
+
 function Test-UserCodexMcp {
     $configPath = Join-Path $HOME '.claude.json'
     if (-not (Test-Path -LiteralPath $configPath)) { return $false }
@@ -264,7 +269,7 @@ try {
     $exitCode = 1
     [Console]::Error.WriteLine($_.Exception.Message)
 }
-if ($script:codexPluginUpdated) {
+if ($script:codexPluginUpdated -and (Test-CodexDaemonRunning)) {
     Write-CodexRestartNotice
 }
 exit $exitCode

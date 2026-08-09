@@ -15,8 +15,9 @@ _TIMEOUT = 60.0
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
         "Codex pluginを更新しました。実行中のCodexセッションを終了してから、"
-        "利用中のCodexアプリケーション又はCLIを再起動してください。"
+        "次のコマンドでapp-server daemonを再起動してください。"
     ),
+    command="codex app-server daemon restart",
 )
 
 # dotfiles自身以外のマーケットプレイスから導入するプラグイン。
@@ -116,6 +117,12 @@ def _outcome(
     return post_apply_outcome.PostApplyOutcome(changed=changed, notices=tuple(dict.fromkeys(notices)))
 
 
+def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
+    """稼働中のCodex daemonがある場合だけ再起動案内を追加する。"""
+    if _command(["app-server", "daemon", "version"]):
+        notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
+
+
 def _install_external_plugins() -> post_apply_outcome.PostApplyOutcome:
     """外部マーケットプレイスを登録し、未導入のプラグインを導入する。"""
     changed = False
@@ -147,7 +154,7 @@ def _install_external_plugins() -> post_apply_outcome.PostApplyOutcome:
             logger.warning(log_format.format_status(plugin_id, "plugin導入に失敗したため続行"))
             continue
         changed = True
-        notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
+        _append_restart_notice_if_daemon_running(notices)
     return _outcome(changed, notices)
 
 
@@ -221,7 +228,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if not _command(["plugin", "add", plugin_id]):
         return _outcome(changed, notices)
     changed = True
-    notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
+    _append_restart_notice_if_daemon_running(notices)
     after = _codex_json(["plugin", "list", "--json"])
     installed = _installed(after, plugin_id) if after else None
     if installed is None or installed.get("version") != version or installed.get("enabled") is not True:

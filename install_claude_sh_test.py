@@ -51,6 +51,10 @@ if [ "$command_name $*" = "codex plugin list --json" ]; then
     fi
     exit 0
 fi
+if [ "$command_name $*" = "codex app-server daemon version" ]; then
+    [ "$CODEX_DAEMON_RUNNING" = "1" ]
+    exit $?
+fi
 exit 0
 """
 
@@ -136,6 +140,7 @@ def _run(
     fail_pattern: str = "__never_match__",
     codex_plugin_before: tuple[str, bool] | None = None,
     codex_plugin_after: tuple[str, bool] | None = ("1.2.3", True),
+    codex_daemon_running: bool = True,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     path_parts = [str(stub_bin)] if stub_bin is not None else []
@@ -164,6 +169,7 @@ def _run(
         "CODEX_PLUGIN_BEFORE_ENABLED": before_enabled,
         "CODEX_PLUGIN_AFTER_VERSION": after_version,
         "CODEX_PLUGIN_AFTER_ENABLED": after_enabled,
+        "CODEX_DAEMON_RUNNING": "1" if codex_daemon_running else "0",
     }
     command = (
         ["bash", str(INSTALL_SH)] if kind == "sh" else ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(INSTALL_PS1)]
@@ -220,17 +226,21 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
 
 @pytest.mark.parametrize("kind", _runners())
 @pytest.mark.parametrize(
-    ("before_state", "after_state", "expect_notice"),
+    ("before_state", "after_state", "daemon_running", "expect_notice"),
     [
-        pytest.param(("1.2.3", True), ("1.2.3", True), False, id="unchanged"),
-        pytest.param(("1.2.2", True), ("1.2.3", True), True, id="version-updated"),
-        pytest.param(("1.2.3", False), ("1.2.3", True), True, id="enabled"),
+        pytest.param(("1.2.3", True), ("1.2.3", True), True, False, id="unchanged-running"),
+        pytest.param(("1.2.3", True), ("1.2.3", True), False, False, id="unchanged-stopped"),
+        pytest.param(("1.2.2", True), ("1.2.3", True), True, True, id="version-updated-running"),
+        pytest.param(("1.2.2", True), ("1.2.3", True), False, False, id="version-updated-stopped"),
+        pytest.param(("1.2.3", False), ("1.2.3", True), True, True, id="enabled-running"),
+        pytest.param(("1.2.3", False), ("1.2.3", True), False, False, id="enabled-stopped"),
     ],
 )
 def test_restart_notice_requires_codex_plugin_state_change(
     kind: str,
     before_state: tuple[str, bool],
     after_state: tuple[str, bool],
+    daemon_running: bool,
     expect_notice: bool,
     tmp_path: pathlib.Path,
     rules_url: str,
@@ -248,9 +258,12 @@ def test_restart_notice_requires_codex_plugin_state_change(
         stub_log=stub_log,
         codex_plugin_before=before_state,
         codex_plugin_after=after_state,
+        codex_daemon_running=daemon_running,
     )
 
-    assert sum("codex plugin list --json" in line for line in _log_lines(stub_log)) == 2
+    lines = _log_lines(stub_log)
+    assert sum("codex plugin list --json" in line for line in lines) == 2
+    assert ("codex app-server daemon version" in lines) is (before_state != after_state)
     assert ("codex app-server daemon restart" in result.stderr) is expect_notice
 
 

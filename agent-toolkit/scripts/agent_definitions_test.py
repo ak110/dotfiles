@@ -148,7 +148,7 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "項目別の維持・修正・撤去の判定と根拠" in delegation
     assert "要約だけを一次入力にせず" in delegation
     assert "`## 変更履歴`、前回の6列表" in delegation
-    assert "解決済みIDの再提示は現行計画に同じ違反が残る場合だけ認め" in delegation
+    assert "解決済みIDは現行計画に同じ違反が残る場合だけ再提示" in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
     assert "1対1で照合" in task
     assert "第2列の分類が実際の内容と一致するか" in task
@@ -179,16 +179,29 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
 
     assert metadata["model"] == "sonnet"
     assert metadata["effort"] == "medium"
-    assert "自身は成果物、計画ファイル、stage、commitを変更せず" in text
-    assert "単位ごとにwriterを1つずつ起動" in text
-    assert "1回のwriter呼び出しへ全単位を積まず" in text
+    assert "自身は成果物と計画ファイルを直接編集せず" in text
+    assert "並列可能なwriterは利用できる実行枠内で同時に起動" in text
+    assert "その他は依存順に1件ずつ起動" in text
     for task_name in (
         "implementation-task.md",
         "implementation-plan-review-task.md",
         "implementation-independent-review-task.md",
     ):
         assert task_name in text
-    assert "同一箇所へ2ラウンド連続で指摘" in text
+
+
+def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
+    """初回全件抽出と指摘0件までの累積再レビューを固定する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    assert "指摘候補の全件抽出" in executor
+    assert "二系統とも指摘0件になるまで" in executor
+    assert "レビュー回数に上限を設けない" in executor
+    assert "確実な指摘は初回で全件提示" in plan_review_delegation
+    assert "未解決の実在欠陥がある限り" in plan_review_delegation
+    assert "全修正と累積計画全体を再監査" in plan_review_task
 
 
 def test_removed_codex_exec_contracts_are_absent() -> None:
@@ -403,7 +416,6 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         "--repo",
         "--ref",
         "--source-ref",
-        "--sha",
         "終了コード1はCI失敗",
         "`agent-toolkit:bugfix`を起動",
     ):
@@ -444,12 +456,13 @@ def test_push_ci_keeps_only_monitoring_inputs() -> None:
         "pushの許可が対象リポジトリと対象branchを含む",
         "`git fetch`後に上流との差分を双方向で確認する",
         "上流が進んでいる場合は追随後に検証をやり直す",
-        "更新refごとにsource refをcommitへ再帰的にpeel",
-        "完全長commit SHAを1件確定する",
+        "更新refごとにsource refを1件確定する",
+        "baseline作成時に補助スクリプトがsource refをcommitへ再帰的にpeel",
+        "完全長commit SHAを保存する",
         "annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHA",
         "GitHubではpush workflowのSHAが更新refのtip",
         "GitLabではpipelineがcommit単位ではなくpush単位で起動する",
-        "各`(destination ref, peeled commit SHA)`",
+        "各`(destination ref, source ref)`",
         "別のbaselineを作成",
         "他のbaseline作成・監視を省略しない",
         "runまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する",
@@ -473,9 +486,9 @@ def test_push_ci_monitors_one_peeled_commit_per_updated_ref() -> None:
     push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
 
     for phrase in (
-        "削除refとcommitへpeeledできないrefを除き",
-        "更新refごとにsource refをcommitへ再帰的にpeel",
-        "完全長commit SHAを1件確定する",
+        "削除refを除き",
+        "baseline作成時に補助スクリプトがsource refをcommitへ再帰的にpeel",
+        "完全長commit SHAを保存する",
         "annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHA",
         "複数refでは組ごとに別のbaselineを作成",
     ):
@@ -491,7 +504,7 @@ def test_push_ci_explicitly_selects_forge_for_baseline_and_monitoring() -> None:
     assert "--write-baseline" in command_blocks[0]
     assert "--baseline" in command_blocks[1]
     for command in command_blocks:
-        for option in ("--repo", "--forge <github|gitlab>", "--ref", "--source-ref", "--sha"):
+        for option in ("--repo", "--forge <github|gitlab>", "--ref", "--source-ref"):
             assert option in command
     assert "`--forge`、`--ref`" in push_and_ci
     assert "単一refと複数refのいずれでも、GitHubとGitLabの両方" in push_and_ci
@@ -558,11 +571,8 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
     codex_agents_base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
     assert "atk managed-temp create --prefix <用途>" in claude_code_runtime
     assert "atk managed-temp cleanup --path <検収済み絶対パス>" in claude_code_runtime
-    assert "uv run --no-project --script <plugin root>/scripts/_managed_temp.py create --prefix <用途>" in codex_agents_base
-    assert (
-        "uv run --no-project --script <plugin root>/scripts/_managed_temp.py cleanup --path <検収済み絶対パス>"
-        in codex_agents_base
-    )
+    assert "atk managed-temp create --prefix <用途>" in codex_agents_base
+    assert "atk managed-temp cleanup --path <検収済み絶対パス>" in codex_agents_base
     assert "pluginの`bin/`からBashの`PATH`へ追加" in claude_code_runtime
     assert "管理CLIで作成していない既存領域を自動で後始末しない" in delegation_skill
     assert "mktemp -d" not in agent_operations_rules

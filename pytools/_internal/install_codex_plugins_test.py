@@ -61,12 +61,12 @@ def _installed_state() -> dict[str, object]:
     }
 
 
-def _recording_success(calls: list[list[str]]) -> Callable[[list[str]], bool]:
+def _recording_success(calls: list[list[str]], *, daemon_running: bool = True) -> Callable[[list[str]], bool]:
     """引数を記録して成功を返すコマンドスタブを作成する。"""
 
     def command(args: list[str]) -> bool:
         calls.append(args)
-        return True
+        return daemon_running if args == ["app-server", "daemon", "version"] else True
 
     return command
 
@@ -90,8 +90,8 @@ def test_registers_installs_and_removes_expected_legacy_link(plugin_env: Path, m
     monkeypatch.setattr(install_codex_plugins, "_command", command)
     outcome = install_codex_plugins.run()
     assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == [None]
-    assert "Codexアプリケーション又はCLIを再起動してください" in outcome.notices[0].message
+    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
+    assert "app-server daemonを再起動してください" in outcome.notices[0].message
     assert ["plugin", "marketplace", "add", str(plugin_env)] in calls
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
@@ -119,6 +119,7 @@ def test_noop_state_skips_resync_and_removes_broken_legacy_link(plugin_env: Path
     assert outcome.changed is True
     assert not outcome.notices
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+    assert ["app-server", "daemon", "version"] not in calls
     assert not destination.is_symlink()
 
 
@@ -143,8 +144,33 @@ def test_version_mismatch_reinstalls_plugin_and_returns_notice(plugin_env: Path,
 
     assert outcome.changed is True
     assert len(outcome.notices) == 1
-    assert outcome.notices[0].command is None
+    assert outcome.notices[0].command == "codex app-server daemon restart"
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
+
+
+def test_version_mismatch_omits_notice_when_daemon_is_not_running(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """プラグイン更新後もdaemon未起動なら再起動を案内しない。"""
+    before = {
+        "installed": [
+            {"pluginId": "agent-toolkit@ak110-dotfiles", "version": "1.2.2", "enabled": True},
+        ]
+    }
+    responses = iter(
+        [
+            {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
+            before,
+            _installed_state(),
+        ]
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert not outcome.notices
+    assert ["app-server", "daemon", "version"] in calls
 
 
 def test_disabled_plugin_reinstalls_and_returns_notice(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,7 +194,7 @@ def test_disabled_plugin_reinstalls_and_returns_notice(plugin_env: Path, monkeyp
 
     assert outcome.changed is True
     assert len(outcome.notices) == 1
-    assert outcome.notices[0].command is None
+    assert outcome.notices[0].command == "codex app-server daemon restart"
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
@@ -201,7 +227,7 @@ def test_post_install_json_failure_keeps_legacy_link(plugin_env: Path, monkeypat
     monkeypatch.setattr(install_codex_plugins, "_command", lambda _: True)
     outcome = install_codex_plugins.run()
     assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == [None]
+    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
     assert destination.is_symlink()
 
 
@@ -313,7 +339,7 @@ class TestExternalPlugins:
 
         outcome = install_codex_plugins.run()
         assert outcome.changed is True
-        assert [notice.command for notice in outcome.notices] == [None]
+        assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
         assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
         assert ["plugin", "add", self._TARGET[2]] in calls
         assert calls[:3] == [
@@ -427,7 +453,7 @@ class TestExternalPlugins:
         outcome = install_codex_plugins.run()
 
         assert outcome.changed is True
-        assert [notice.command for notice in outcome.notices] == [None]
+        assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
 
     def test_rejects_mismatched_source_after_registration(
         self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture

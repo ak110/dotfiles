@@ -87,11 +87,13 @@ agent-toolkitプラグイン、Codex MCP、`atk`ラッパーが設定される�
 
 両インストーラーは再実行時にもCodexプラグインを更新する。
 `codex plugin add`の前後で導入済みプラグインのversionとenabledを比較し、いずれかが変化すると、
-後続処理の成否にかかわらずstderrの最終行へ
-`codex app-server daemon restart`を表示する。後続処理が失敗した場合は、エラーを先に表示し、
+`codex app-server daemon version`でdaemonの稼働状態を確認する。状態確認が成功した場合だけ、
+後続処理の成否にかかわらずstderrの最終行へ`codex app-server daemon restart`を表示する。
+後続処理が失敗した場合は、エラーを先に表示し、
 非0の終了状態を維持する。進行中のセッションを保護するため、セッションの完了後に案内されたコマンドを実行する。
 導入前後の状態が同じ場合、状態を確認できない場合、プラグイン追加前の処理または
-`codex plugin add`自体が失敗した場合は、再起動案内を表示しない。
+`codex plugin add`自体が失敗した場合は、再起動案内を表示しない。daemonが未起動の場合や
+daemonの状態確認に失敗した場合も表示しない。
 
 インストール後、非公式のプラグインマーケットプレイスはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
 
@@ -334,5 +336,5 @@ Codex向けagent-toolkitプラグインは、公式契約を確認済みの次�
 
 「ツールキットのインストール」のワンライナーを再実行すると更新される。
 dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。
-いずれの単体インストーラーも初回導入専用ではない。Codexプラグインの更新後に表示される
-`codex app-server daemon restart`は、進行中のCodexセッションを完了してから実行する。
+いずれの単体インストーラーも初回導入専用ではない。Codexプラグインの更新後、daemonが稼働中の場合だけ
+`codex app-server daemon restart`を表示する。進行中のCodexセッションを完了してから実行する。

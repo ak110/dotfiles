@@ -53,11 +53,15 @@ _print_codex_restart_notice() {
     echo "codex app-server daemon restart" >&2
 }
 
+_codex_daemon_running() {
+    codex app-server daemon version >/dev/null 2>&1
+}
+
 _on_exit() {
     local status=$?
     trap - EXIT
     _cleanup
-    if [ "$CODEX_PLUGIN_UPDATED" -eq 1 ]; then
+    if [ "$CODEX_PLUGIN_UPDATED" -eq 1 ] && _codex_daemon_running; then
         _print_codex_restart_notice
     fi
     exit "$status"
