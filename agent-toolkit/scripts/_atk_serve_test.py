@@ -109,6 +109,7 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     assert assets.HTML.count(">tbd<") == 2
     assert ">今すぐ同期<" in assets.HTML
     assert 'placeholder="本文・ファイル名・対象・カテゴリ・投入元を検索"' in assets.HTML
+    assert '<label for="category-filter">category</label>' in assets.HTML
     assert "dataset.unansweredTbd" in assets.JS
     assert "種別不明" in assets.JS
 

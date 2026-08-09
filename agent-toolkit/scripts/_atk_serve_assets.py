@@ -90,7 +90,7 @@ HTML = """<!doctype html>
         <div class="filter-grid">
           <label for="target-filter">対象リポジトリ</label>
           <select id="target-filter"><option value="">すべて</option></select>
-          <label for="category-filter">category（再発防止分類）</label>
+          <label for="category-filter">category</label>
           <input id="category-filter" type="text">
           <label for="source-filter">投入元</label>
           <input id="source-filter" type="text">
