@@ -111,6 +111,20 @@ fork形態の公式制約は次のとおりで、fork配下のスキル・サブ
 - 引数なしで起動した場合の既定動作・既定対象の選定基準もSKILL.md本体で定義し、呼び出し側で都度指定させない
 - 呼び出し側プロンプトで動作を上書きしたい場合は引数として渡し、引数仕様もSKILL.md本体に明示する
 
+## 公式リファレンス（Claude Code）
+
+スキル新規作成・hook実装では公式マーケットプレイス（`anthropics/claude-plugins-official`）の
+`skill-creator:skill-creator`・`plugin-dev`各スキルを参照する。
+各スキルの`references/`に記載のない仕様と、記載と認識が相違する事項は公式ドキュメントで確認する。
+参照先は`https://code.claude.com/docs/ja/`配下（`memory.md`・`skills.md`・`sub-agents.md`・
+`hooks.md`・`plugins.md`・`plugins-reference.md`など）とする。
+列挙にないページを参照する場合は、ドキュメントインデックス（`https://code.claude.com/docs/llms.txt`）を
+取得して対象ページのURLを特定する。インデックスが列挙するURLは英語版
+（`https://code.claude.com/docs/en/<page>.md`）のため、日本語版を読む場合は言語部分を`ja`へ置換して用いる。
+`WebFetch`はページの特定と概要の把握に使用してよい。
+公式資料の文言、値の一覧、表の内容を成果物へ引用する場合は、同じURLの生本文を管理対象一時領域へ保存する。
+保存後に該当箇所だけを検索し、生本文を典拠として引用する。
+
 ## サブエージェントが参照する規範スキルの読み込み（Claude Code固有）
 
 サブエージェントが常時参照する規範スキルは、agents定義の本文へSkillツールで読み込む手順として書く。

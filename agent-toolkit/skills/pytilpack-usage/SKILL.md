@@ -3,6 +3,7 @@ name: pytilpack-usage
 description: >
   pytilpackのモジュール構成・API・extras・CLIの使い方を参照するときに起動する。
   `import pytilpack`を含むコードを読み書きする時に起動する。
+# 編集時の注意点: pytilpack本体の使用方法を変更した場合は本ファイルの更新漏れに注意する。
 ---
 
 # pytilpackの使い方

@@ -7,7 +7,7 @@ Claude Code固有の上限値や出力契約にはホスト名を付ける。
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
 Claude Codeは公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
-取得方法は`agent-toolkit/rules/99-claude-code.md`「公式リファレンス」節に従う。
+取得方法は`agent-toolkit/skills/agent-standards/references/agent-skills.md`「公式リファレンス（Claude Code）」節に従う。
 Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次資料とする。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
 参照したセクション名は計画ファイルの実装者向け領域へ引用する。

@@ -54,6 +54,8 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 保留時は`references/hold-with-tbd-inject.md`を全文読み、解除条件と再開情報を永続化する。
 processing項目は`atk mq return-to-inbox`でinboxへ戻す。
 回答済みTBDの能動的なpoll、内部待機ループ、同一セッションでの時限待機は行わない。
+TBDの回答が単純な回答を超える指示・是正要求を含む場合は`agent-toolkit:bugfix`の深掘り条件を判定し、
+自律モードの原則（TBD記録と暫定判断での続行）に従って進める。
 
 readyな採用項目が無ければ、保留状態を維持して「6. 振り返りと終了」へ進む。
 process-loopがactive状態の変化を検出し、readiness成立後に新しいセッションを起動する。

@@ -65,7 +65,9 @@ description: >
 統合を検討する場合、削減判定は次のいずれかの根拠を満たすことを条件とする。
 
 - SSOT違反: 他ファイルに正規の記述がありここは転記に過ぎない
-- 自明導出: 上位指針・学習データから自明に導出できる
+- 自明導出: 上位指針・学習データから自明に導出できる。
+  ただし知識として自明でも、明示されないとエージェントが安定して考慮しない種類の観点
+  （セキュリティ・エラー処理の作法など）は自明導出に当たらない
 - 公式ドキュメント代替可能: 公式ドキュメントの一次資料参照で同等の情報が得られる
 - 上位指針への統合: 細則列挙を束ねる上位指針へ昇格できる。
   同一工程を扱うバレットが同一節配下へ並列蓄積している場合も統合を検討する
@@ -88,7 +90,8 @@ Claude Codeのhookは状態ファイル`{tempdir}/claude-agent-toolkit-{session_
 
 ## タスク固有で読み込む補足情報
 
-- `references/agent-skills.md`: スキル編集時
+- `references/agent-skills.md`: スキル編集時（公式リファレンスの参照先を含む）
 - `references/check-script-design.md`: 機械チェックスクリプト新設・改修時
-- `references/claude-hooks.md`（hook編集時）・`references/auto-mode.md`（auto mode編集時）
+- `references/claude-hooks.md`（hook編集時）・`references/auto-mode.md`（auto mode編集時・権限拒否時）
 - `references/session-records.md`: セッション記録の集計・分析時
+- `references/tool-operations.md`: 大量の文書読込・大規模ブロック置換・plugin資源のroot失効時

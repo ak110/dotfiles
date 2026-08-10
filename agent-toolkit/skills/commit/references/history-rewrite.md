@@ -32,6 +32,10 @@ fixupは、修正が統合先コミットの時点で独立して成立し、対
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する帰属情報を統合後に1回だけ残す
 
+## merge進行中の退避
+
+`git merge`進行中は`git stash`を使わない。退避は別パスへの`cp`または別ブランチ退避で行う。
+
 ## プッシュ済み判定
 
 `git fetch --all --prune`後に`git for-each-ref --contains=<対象sha> refs/remotes/`を実行する。

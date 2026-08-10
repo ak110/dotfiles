@@ -14,6 +14,11 @@ description: >
 - `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
+- `agent-toolkit/rules/`・`agent-toolkit/agents/`配下はサブディレクトリを設けずフラット構造を保つ
+- 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
+  （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk mq`管理repoのroot、既定`~/private-notes/`）。
+  個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
+  `agent-toolkit:agent-standards`の`references/claude-hooks.md`が扱う
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
@@ -115,6 +120,22 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 `agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:agent-standards`スキル本体（SKILL.md）
 「セッション状態フラグ」節に置く。フラグを追加・変更する際は当該節を更新する。
 
+## 権限設定の配置
+
+権限設定を変更する場合は、対象が全利用者向けかを先に判定する。
+全利用者向けの内容は配布原本`share/claude_settings_json_managed*.json`へ置く
+（`pytools/_internal/update_claude_settings.py`が`~/.claude/settings.json`へ反映する）。
+特定ホスト・本リポジトリ限定の内容はリポジトリ直下の`.claude/settings.local.json`（バージョン管理対象外）へ置く。
+読み取り専用コマンドには、引数なしの`Bash`許可を適用する。
+
+## worktreeでの編集時の注意
+
+作業用の複製（git worktree等）で配布物（`agent-toolkit/`配下等）を改訂しても、
+実行中のhook・検査には当該セッションでは反映されない。稼働中の版は
+`~/.claude/plugins/installed_plugins.json`の`installPath`で確認する。
+hookに新規にブロックされた場合は、まず作業ツリーと稼働中の版との差を疑い、
+当該hookが参照する配布先のファイルを`diff`等で比較してから対応する。
+
 ## 編集手順
 
 push前にbumpが必須（同じバージョンでは`claude plugin update`が「最新です」と返し利用者へ配信されないため）。
@@ -141,6 +162,10 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布される。
   汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け。
   配置した場合は「バージョン更新」節の手順に従う
+- Claude Codeのhookから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す
+  （対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`）
+- PEP 723スクリプト（`agent-toolkit/scripts/atk.py`等）の`dependencies`へパッケージを追加・更新する場合、
+  リポジトリ本体の`pyproject.toml`にも同一制約で登録する（テスト実行が間接依存で偶然解決する状態を防ぐため）
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
 個人プロジェクト名固定リストは当該スクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
@@ -157,7 +182,11 @@ agent-toolkitのhookが利用者環境の他hookと同一イベントで共存�
 ## marketplace管理
 
 `update-dotfiles`（`chezmoi apply`後処理）はClaude Code向けagent-toolkitプラグインを自動インストール・更新する。
-処理は`pytools/_internal/install_claude_plugins.py`が担う。marketplace配布経路は次のとおり。
+処理は`pytools/_internal/install_claude_plugins.py`が担う。
+dotfiles固有スキルとplugin非対応のagents・rulesは、`post_apply`の専用ステップで原本へリンクする。
+生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する
+（`python`の明示が必須。起動形の詳細は`docs/development/operations.md`を参照）。
+marketplace配布経路は次のとおり。
 
 - bootstrap: `install-claude.sh`/`install-claude.ps1`がGitHub型として登録する
 - chezmoi apply: 後処理がdirectory型（絶対パス直接参照）で維持し、GitHub型登録残存時は自動でマイグレーションする

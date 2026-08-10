@@ -23,7 +23,8 @@
 
 全プロジェクトに反映する可能性のある変更時と、姉妹プロジェクト（gv・lc含む）自体の編集時は、
 必ず`/sync-cross-project`スキルを使用する。
-同期対象マトリクス・意図的な差異・ドキュメント章構成・追従作業の手順・gv/lcのLinux編集注意は同スキルに集約する。
+同期対象マトリクス・意図的な差異・ドキュメント章構成・追従作業の手順・gv/lcのLinux編集注意・
+着手時の依存更新・リリース運用・足回りファイルの推奨設定維持は同スキルに集約する。
 依存管理一般のpnpm既知問題は`agent-toolkit:coding-standards`スキルの依存管理節に集約する。
 
 ### プロジェクト一覧
@@ -37,50 +38,5 @@
 | `~/glatasks` | TypeScript Webシステム | TypeScript + Python | Linux | pnpm使用 |
 | `~/gv` | Windows用画像ビューアー | Rust | Windows | このPCでは開発できない（ドキュメント修正等は可能）。文書生成・文書lintでpnpm併用 |
 | `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows | このPCでは開発できない（ドキュメント修正等は可能）。文書生成・文書lintでpnpm併用 |
-
-パッケージ管理系に固有の規範を横展開する場合、対象リポジトリの判定は本一覧の記載だけを根拠とせず、
-対象ファイルまたはロックファイルの実在を確認して確定する。
-
-### 個人プロジェクト着手時の依存更新
-
-上表の個人プロジェクトいずれかのフィードバック処理に着手する際、対象プロジェクトのロックファイルの
-最終コミット日時（`git log -1 --format=%cI -- <ロックファイル>`）が1日以上前であれば、
-着手前に`make update`を実行して依存を最新化する。1日未満なら実行しない。
-
-依存更新後の検証が失敗した場合、配布物の版指定（`pyproject.toml`の`dependencies`等）が破壊を生じる版へ
-到達しうるか否かで扱いを分ける。到達しうる場合は利用者環境で成立している欠陥として同一セッション内で是正し、
-開発環境のロックファイル内に閉じる場合は更新を巻き戻して独立したフィードバックとして登録してよい。
-
-### pyfltr / pytilpackのSKILL更新漏れ注意
-
-pyfltrとpytilpackの使用方法がdotfiles内のSKILL.mdにあるため更新漏れに注意。
-
-- `~/dotfiles/agent-toolkit/skills/pyfltr-usage/SKILL.md`
-- `~/dotfiles/agent-toolkit/skills/pytilpack-usage/SKILL.md`
-
-### リリース運用
-
-`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは`releaser`コマンドで起動する。
-バージョン区分は次のとおりとする。
-
-- バグ修正・軽微な機能追加: パッチ
-- ある程度大きい機能追加や変更: マイナー
-- 大規模な機能追加など: メジャー
-
-### 足回りファイルの推奨設定維持
-
-各プロジェクトの`pyproject.toml`・`.textlintrc.yaml`・`.markdownlint-cli2.yaml`・
-`.pre-commit-config.yaml`・`.github/workflows/`配下は、
-pyfltr配布の推奨ガイド（`~/pyfltr/docs/guide/recommended.md`・
-`~/pyfltr/docs/guide/recommended-nonpython.md`）に揃える。
-
-- 推奨設定を独自判断で緩和しない（ruff・pylint・textlint等のignore追加、lint設定の弱体化）
-  - 緩和を提案する場合は、ignore追加のメリットとデメリットを比較した文面案を提示してユーザーの合意を得る
-- プロジェクト固有事情で推奨から逸脱する設定を導入する場合、該当箇所に理由を述べたコメントを直接記述する
-- lint違反が出た場合は根本原因（コード側）を修正する。設定でのignore追加は避ける
-- 推奨ガイド自体の改訂が必要と判断した場合は、`~/pyfltr`の推奨ガイドを先に更新してから各プロジェクトへ反映する
-
-推奨ガイド・共有ファイルへの追従作業の手順と、更新時の他プロジェクト向けフィードバック投入は
-`/sync-cross-project`スキルが定める。
 
 {{- end }}

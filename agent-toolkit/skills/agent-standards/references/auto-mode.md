@@ -18,6 +18,14 @@ auto modeは次の4区分でルールを判定する。
 - `claude auto-mode config`: 現在有効な設定（デフォルト＋カスタム）を表示する
 - `claude auto-mode critique`: カスタムルールをAIがレビューし、曖昧・冗長・偽陽性のリスクを指摘する
 
+## 権限設定による拒否の確認手順
+
+権限設定によりツール呼び出しが拒否された場合、迂回を試みる前に有効な設定ファイルを`Read`して
+拒否・許可ルールを確認する。対象は`/etc/claude-code/managed-settings.json`・
+`~/.claude/settings.json`・リポジトリ直下の`.claude/settings.json`・`.claude/settings.local.json`とする。
+評価はdeny・ask・allowの順で最初の一致が結果を決めるため、
+拒否ルールに該当する対象は許可・参照範囲の追加では解消しない（努力目標）。
+
 ## カスタムルール追加のワークフロー
 
 1. 拒否事象に遭遇したら`claude auto-mode defaults`でデフォルトルールを確認する

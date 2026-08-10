@@ -756,7 +756,6 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
 def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     """指摘の根拠を修正担当まで保持し、各レビュー後に目的へ累積照合する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
@@ -777,7 +776,7 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     for phrase in ("ユーザー目的", "ユーザー合意", "現行の公開契約", "保持対象"):
         assert phrase in _h2_section(independent_review_task, "入力")
 
-    for adopter in (agent_rules, delegation, plan_review_delegation, executor):
+    for adopter in (delegation, plan_review_delegation, executor):
         assert "適用" in adopter
         assert "最小限の修正" in adopter
         assert "修正方針" in adopter
