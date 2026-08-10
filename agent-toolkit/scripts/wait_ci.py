@@ -116,40 +116,27 @@ def _short_ref(ref: str) -> str:
 
 def _gh_run_list(repository: str, ref: str, sha: str, subprocess_timeout: float) -> list[RunRecord]:
     """repository・ref・SHAを明示した`gh run list`結果を返す。"""
-    try:
-        result = subprocess.run(
-            [
-                "gh",
-                "run",
-                "list",
-                "--repo",
-                repository,
-                "--branch",
-                _short_ref(ref),
-                "--commit",
-                sha,
-                "--limit",
-                "1000",
-                "--json",
-                _GH_JSON_FIELDS,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=subprocess_timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RunListError(f"gh run list timed out after {subprocess_timeout:.0f}s") from exc
-    except FileNotFoundError as exc:
-        raise RunListError("gh command not found") from exc
-    if result.returncode != 0:
-        raise RunListError(f"gh run list failed (exit={result.returncode}): {result.stderr.strip()}")
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RunListError(f"gh run list returned invalid JSON: {exc}") from exc
+    payload = _run_json_command(
+        [
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            repository,
+            "--branch",
+            _short_ref(ref),
+            "--commit",
+            sha,
+            "--limit",
+            "1000",
+            "--json",
+            _GH_JSON_FIELDS,
+        ],
+        subprocess_timeout,
+        "gh run list",
+    )
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
-        raise RunListError(f"gh run list returned unexpected JSON shape: {result.stdout[:200]!r}")
+        raise RunListError(f"gh run list returned unexpected JSON shape: {payload!r}")
     return payload
 
 
@@ -258,40 +245,27 @@ def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout:
     `glab`はJSON出力でGitLab APIの応答オブジェクトを加工せず出力する。
     SHA指定で対象を限定できるサブコマンドは`ci list`のみのため、`ci status`・`ci get`は使わない。
     """
-    try:
-        result = subprocess.run(
-            [
-                "glab",
-                "ci",
-                "list",
-                "--repo",
-                repository,
-                "--ref",
-                _short_ref(ref),
-                "--sha",
-                sha,
-                "-F",
-                "json",
-                "-P",
-                "100",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=subprocess_timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RunListError(f"glab ci list timed out after {subprocess_timeout:.0f}s") from exc
-    except FileNotFoundError as exc:
-        raise RunListError("glab command not found") from exc
-    if result.returncode != 0:
-        raise RunListError(f"glab ci list failed (exit={result.returncode}): {result.stderr.strip()}")
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RunListError(f"glab ci list returned invalid JSON: {exc}") from exc
+    payload = _run_json_command(
+        [
+            "glab",
+            "ci",
+            "list",
+            "--repo",
+            repository,
+            "--ref",
+            _short_ref(ref),
+            "--sha",
+            sha,
+            "-F",
+            "json",
+            "-P",
+            "100",
+        ],
+        subprocess_timeout,
+        "glab ci list",
+    )
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
-        raise RunListError(f"glab ci list returned unexpected JSON shape: {result.stdout[:200]!r}")
+        raise RunListError(f"glab ci list returned unexpected JSON shape: {payload!r}")
     return [_normalize_gitlab_pipeline(item) for item in payload]
 
 
@@ -340,12 +314,11 @@ def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -
 
 
 def _run_json_command(command: list[str], subprocess_timeout: float, description: str) -> Any:
-    """外部CLIのJSON応答を返し、実行・JSON解析エラーを`RunListError`へ統合する。"""
+    """外部CLIのJSON応答をUTF-8で厳格復号し、取得エラーを`RunListError`へ統合する。"""
     try:
         result = subprocess.run(
             command,
             capture_output=True,
-            text=True,
             check=False,
             timeout=subprocess_timeout,
         )
@@ -353,10 +326,15 @@ def _run_json_command(command: list[str], subprocess_timeout: float, description
         raise RunListError(f"{description} timed out after {subprocess_timeout:.0f}s") from exc
     except FileNotFoundError as exc:
         raise RunListError(f"{command[0]} command not found") from exc
-    if result.returncode != 0:
-        raise RunListError(f"{description} failed (exit={result.returncode}): {result.stderr.strip()}")
     try:
-        return json.loads(result.stdout)
+        stdout = result.stdout.decode("utf-8")
+        stderr = result.stderr.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RunListError(f"{description} returned non-UTF-8 output: {exc}") from exc
+    if result.returncode != 0:
+        raise RunListError(f"{description} failed (exit={result.returncode}): {stderr.strip()}")
+    try:
+        return json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise RunListError(f"{description} returned invalid JSON: {exc}") from exc
 

@@ -10,6 +10,7 @@ private helper（`_gh_run_list`・`_resolve_sha`等）は原則として直接�
 from __future__ import annotations
 
 import json
+import locale
 import pathlib
 import signal
 import subprocess
@@ -28,6 +29,7 @@ _gh_run_list = wait_ci._gh_run_list  # pylint: disable=protected-access
 _glab_pipeline_list = wait_ci._glab_pipeline_list  # pylint: disable=protected-access
 _gh_job_list = wait_ci._gh_job_list  # pylint: disable=protected-access
 _glab_job_list = wait_ci._glab_job_list  # pylint: disable=protected-access
+_run_json_command = wait_ci._run_json_command  # pylint: disable=protected-access
 _is_ancestor_of_ref = wait_ci._is_ancestor_of_ref  # pylint: disable=protected-access
 _follow_shas = wait_ci._follow_shas  # pylint: disable=protected-access
 _all_cancelled = wait_ci._all_cancelled  # pylint: disable=protected-access
@@ -1021,6 +1023,7 @@ class TestExplicitFollowSourceRef:
 class TestSignalHandling:
     """実プロセスへシグナルを送信し、`_install_signal_handlers`の実挙動を確認する。"""
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="WindowsのSIGTERMはPythonハンドラを呼び出さない")
     def test_sigterm_exits_with_interrupted_code(self, tmp_path: pathlib.Path):
         """SIGTERM受信時に`EXIT_INTERRUPTED`を返すことを実プロセスで確認する。
 
@@ -1031,28 +1034,32 @@ class TestSignalHandling:
         併せてstderrへ`reentrant call`が出ないことを確認する。ハンドラが`print`で
         書くと`sys.stderr`の`BufferedWriter`へ再入し得るため、その回帰を検出する。
         """
-        script_path = pathlib.Path(__file__).parent / "wait_ci.py"
         baseline_path = tmp_path / "baseline.json"
         baseline_sha = _git(pathlib.Path.cwd(), "rev-parse", "HEAD").stdout.strip()
         _write_test_baseline(baseline_path, sha=baseline_sha)
+        arguments = [
+            "--baseline",
+            str(baseline_path),
+            "--forge=github",
+            "--repo=owner/repository",
+            "--ref=refs/heads/main",
+            "--source-ref=HEAD",
+            f"--sha={baseline_sha}",
+            "--poll-interval=5",
+            "--registration-grace=30",
+            "--timeout=60",
+            "--subprocess-timeout=2",
+        ]
+        child_code = (
+            "import time, wait_ci\n"
+            "wait_ci._gh_run_list = lambda *_args, **_kwargs: time.sleep(60) or []\n"
+            f"raise SystemExit(wait_ci.main({arguments!r}))\n"
+        )
         returncode = None
         for warmup_sec in (1.0, 3.0, 6.0):
             with subprocess.Popen(
-                [
-                    sys.executable,
-                    str(script_path),
-                    "--baseline",
-                    str(baseline_path),
-                    "--forge=github",
-                    "--repo=owner/repository",
-                    "--ref=refs/heads/main",
-                    "--source-ref=HEAD",
-                    f"--sha={baseline_sha}",
-                    "--poll-interval=5",
-                    "--registration-grace=30",
-                    "--timeout=60",
-                    "--subprocess-timeout=2",
-                ],
+                [sys.executable, "-c", child_code],
+                cwd=pathlib.Path(__file__).parent,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -1091,9 +1098,9 @@ class TestMainEntrypoint:
             if cmd[:3] == ["git", "rev-parse", "--verify"]:
                 return mock.Mock(stdout="a" * 40, returncode=0, stderr="")
             if cmd[:3] == ["gh", "run", "list"]:
-                return mock.Mock(stdout=json.dumps([_run()]), returncode=0, stderr="")
+                return mock.Mock(stdout=json.dumps([_run()]).encode(), returncode=0, stderr=b"")
             if cmd[:2] == ["gh", "api"]:
-                return mock.Mock(stdout="[]", returncode=0, stderr="")
+                return mock.Mock(stdout=b"[]", returncode=0, stderr=b"")
             raise AssertionError(cmd)
 
         with mock.patch("subprocess.run", side_effect=fake_run):
@@ -1113,7 +1120,7 @@ class TestMainEntrypoint:
             if cmd[:3] == ["git", "rev-parse", "--verify"]:
                 return mock.Mock(stdout=_FULL_SHA, returncode=0, stderr="")
             if cmd[:3] == ["gh", "run", "list"]:
-                return mock.Mock(stdout=json.dumps([_run(db_id=11), _run(db_id=12)]), returncode=0, stderr="")
+                return mock.Mock(stdout=json.dumps([_run(db_id=11), _run(db_id=12)]).encode(), returncode=0, stderr=b"")
             raise AssertionError(cmd)
 
         args = [
@@ -1435,6 +1442,49 @@ class TestNormalizeGitlabPipeline:
         assert _all_success([record]) is False
 
 
+class TestRunJsonCommand:
+    """forge CLIのJSON出力をbytes境界でUTF-8厳格復号する。"""
+
+    def test_decodes_utf8_from_binary_subprocess(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CP932ロケールでもbytes境界からUTF-8の非ASCII JSONを取得する。"""
+        code = (
+            "import json, sys; "
+            "value = chr(0x65e5) + chr(0x672c) + chr(0x8a9e) + chr(0x2014); "
+            "sys.stdout.buffer.write(json.dumps({'name': value}, ensure_ascii=False).encode('utf-8'))"
+        )
+        original_run = subprocess.run
+        monkeypatch.setattr(locale, "getencoding", lambda: "cp932")
+
+        def run_binary(
+            command: list[str],
+            *,
+            capture_output: bool,
+            check: bool,
+            timeout: float,
+        ) -> subprocess.CompletedProcess[bytes]:
+            return original_run(
+                command,
+                capture_output=capture_output,
+                check=check,
+                timeout=timeout,
+            )
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", run_binary)
+
+        payload = _run_json_command([sys.executable, "-c", code], 5.0, "test command")
+
+        assert payload == {"name": "日本語—"}
+
+    def test_non_utf8_output_raises_run_list_error(self) -> None:
+        """不正UTF-8をJSON型エラーへ変質させず境界エラーとして返す。"""
+        code = "import sys; sys.stdout.buffer.write(bytes([0xff]))"
+
+        with pytest.raises(wait_ci.RunListError, match="UTF-8") as exc_info:
+            _run_json_command([sys.executable, "-c", code], 5.0, "test command")
+
+        assert isinstance(exc_info.value.__cause__, UnicodeDecodeError)
+
+
 class TestGhRunList:
     """GitHub一覧取得がrepository・ref・SHAの全てを明示することを確認する。"""
 
@@ -1452,17 +1502,20 @@ class TestGhRunList:
         ref: str,
         short_ref: str,
     ) -> None:
-        calls: list[list[str]] = []
+        calls: list[tuple[list[str], float, str]] = []
 
-        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
-            calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+        def fake_run_json(command: list[str], timeout: float, description: str) -> list[object]:
+            calls.append((command, timeout, description))
+            return []
 
-        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        monkeypatch.setattr(wait_ci, "_run_json_command", fake_run_json)
         assert _gh_run_list(repository, ref, "deadbeef", 1.0) == []
-        assert calls[0][calls[0].index("--repo") + 1] == repository
-        assert calls[0][calls[0].index("--branch") + 1] == short_ref
-        assert calls[0][calls[0].index("--commit") + 1] == "deadbeef"
+        command, timeout, description = calls[0]
+        assert command[command.index("--repo") + 1] == repository
+        assert command[command.index("--branch") + 1] == short_ref
+        assert command[command.index("--commit") + 1] == "deadbeef"
+        assert timeout == 1.0
+        assert description == "gh run list"
 
 
 class TestGlabPipelineList:
@@ -1470,19 +1523,22 @@ class TestGlabPipelineList:
 
     def test_command_uses_sha_and_json_output(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """glab ci listへSHAとJSON出力指定を渡す。"""
-        calls: list[list[str]] = []
+        calls: list[tuple[list[str], float, str]] = []
 
-        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
-            calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, 0, stdout='[{"id":1,"status":"success"}]', stderr="")
+        def fake_run_json(command: list[str], timeout: float, description: str) -> list[dict[str, object]]:
+            calls.append((command, timeout, description))
+            return [{"id": 1, "status": "success"}]
 
-        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        monkeypatch.setattr(wait_ci, "_run_json_command", fake_run_json)
         records = _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
-        assert calls[0][:3] == ["glab", "ci", "list"]
-        assert calls[0][calls[0].index("--repo") + 1] == "group/repository"
-        assert calls[0][calls[0].index("--ref") + 1] == "main"
-        assert "--sha" in calls[0] and "deadbeef" in calls[0]
-        assert calls[0][calls[0].index("-F") + 1] == "json"
+        command, timeout, description = calls[0]
+        assert command[:3] == ["glab", "ci", "list"]
+        assert command[command.index("--repo") + 1] == "group/repository"
+        assert command[command.index("--ref") + 1] == "main"
+        assert "--sha" in command and "deadbeef" in command
+        assert command[command.index("-F") + 1] == "json"
+        assert timeout == 1.0
+        assert description == "glab ci list"
         assert records[0]["conclusion"] == "success"
 
     def test_non_zero_exit_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1490,7 +1546,7 @@ class TestGlabPipelineList:
         monkeypatch.setattr(
             wait_ci.subprocess,
             "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"),
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout=b"", stderr=b"boom"),
         )
         with pytest.raises(wait_ci.RunListError):
             _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
@@ -1500,7 +1556,7 @@ class TestGlabPipelineList:
         monkeypatch.setattr(
             wait_ci.subprocess,
             "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout='{"message":"x"}', stderr=""),
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=b'{"message":"x"}', stderr=b""),
         )
         with pytest.raises(wait_ci.RunListError):
             _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
@@ -1516,7 +1572,7 @@ class TestGhJobList:
 
         def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
             calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload).encode(), stderr=b"")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
         jobs = _gh_job_list("owner/repository", _run(db_id=7), 1.0)
@@ -1532,7 +1588,7 @@ class TestGhJobList:
 
         def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
             calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout=b"[]", stderr=b"")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
         assert not _gh_job_list("https://github.example.com/owner/repository.git", _run(db_id=7), 1.0)
@@ -1547,7 +1603,7 @@ class TestGhJobList:
         monkeypatch.setattr(
             wait_ci.subprocess,
             "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr=""),
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=payload.encode(), stderr=b""),
         )
         with pytest.raises(wait_ci.RunListError):
             _gh_job_list("owner/repository", _run(), 1.0)
@@ -1569,7 +1625,7 @@ class TestGhJobList:
         monkeypatch.setattr(
             wait_ci.subprocess,
             "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"),
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout=b"", stderr=b"boom"),
         )
         with pytest.raises(wait_ci.RunListError):
             _gh_job_list("owner/repository", _run(), 1.0)
@@ -1597,7 +1653,7 @@ class TestGlabJobList:
 
         def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
             calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload).encode(), stderr=b"")
 
         monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
         jobs = _glab_job_list("group/sub/repository", _run(db_id=8), 1.0)
@@ -1617,7 +1673,7 @@ class TestGlabJobList:
         monkeypatch.setattr(
             wait_ci.subprocess,
             "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=json.dumps([item]), stderr=""),
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=json.dumps([item]).encode(), stderr=b""),
         )
         with pytest.raises(wait_ci.RunListError):
             _glab_job_list("group/repository", _run(), 1.0)
@@ -1626,7 +1682,7 @@ class TestGlabJobList:
         monkeypatch.setattr(
             wait_ci.subprocess,
             "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout="not-json", stderr=""),
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=b"not-json", stderr=b""),
         )
         with pytest.raises(wait_ci.RunListError):
             _glab_job_list("group/repository", _run(), 1.0)
@@ -1635,7 +1691,7 @@ class TestGlabJobList:
         monkeypatch.setattr(
             wait_ci.subprocess,
             "run",
-            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout='{"message":"x"}', stderr=""),
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=b'{"message":"x"}', stderr=b""),
         )
         with pytest.raises(wait_ci.RunListError):
             _glab_job_list("group/repository", _run(), 1.0)
