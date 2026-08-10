@@ -28,6 +28,7 @@ Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常�
 `update-dotfiles`の標準出力へ転送する。失敗時はGitの標準エラー出力を維持する。
 各段のサブプロセスへ`MISE_AUTO_INSTALL=0`を渡し、miseのshimが呼び出したコマンドと
 無関係なツールを自動導入して更新処理を停止させる経路を抑止する。
+取得したchezmoi出力は、プラットフォームの既定値に依存せずUTF-8として厳格に復号する。
 """
 
 import argparse
@@ -66,7 +67,7 @@ def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture:
         cwd=_DOTFILES_ROOT,
         check=False,
         capture_output=capture,
-        text=capture,
+        encoding="utf-8" if capture else None,
         env=_child_env(),
     )
     if capture and result.stderr:
@@ -82,7 +83,7 @@ def _run_git_pull(step_no: int, total: int) -> int:
         cwd=_DOTFILES_ROOT,
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env=_child_env(),
     )
     if result.stdout:

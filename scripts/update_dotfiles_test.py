@@ -23,6 +23,7 @@ def _fake_run(
     stdout_by_command: dict[str, str] | None = None,
     stderr_by_command: dict[str, str] | None = None,
     environments: list[dict[str, str]] | None = None,
+    encodings: list[str | None] | None = None,
 ) -> Any:
     """コマンド名（argv[0:2]相当）ごとの終了コードを返すfake `subprocess.run`。"""
     stdout_by_command = stdout_by_command or {}
@@ -32,12 +33,15 @@ def _fake_run(
         calls.append(list(argv))
         if environments is not None:
             environments.append(cast(dict[str, str], kwargs["env"]))
+        if encodings is not None:
+            encodings.append(cast(str | None, kwargs.get("encoding")))
         key = argv[1] if argv[0] == "chezmoi" else argv[0]
         returncode = returncodes.get(key, 0)
         stdout_text = stdout_by_command.get(key, "")
         stderr_text = stderr_by_command.get(key, "")
-        stdout: Any = stdout_text if kwargs.get("text") else stdout_text.encode()
-        stderr: Any = stderr_text if kwargs.get("text") else stderr_text.encode()
+        text_mode = bool(kwargs.get("text") or kwargs.get("encoding"))
+        stdout: Any = stdout_text if text_mode else stdout_text.encode()
+        stderr: Any = stderr_text if text_mode else stderr_text.encode()
         return subprocess.CompletedProcess(argv, returncode=returncode, stdout=stdout, stderr=stderr)
 
     return fake_run
@@ -53,6 +57,16 @@ def test_run_git_pull_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch
     assert environments[0]["MISE_AUTO_INSTALL"] == "0"
 
 
+def test_run_git_pull_decodes_output_as_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
+    """工程1の取得出力をUTF-8で復号する。"""
+    calls: list[list[str]] = []
+    encodings: list[str | None] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, encodings=encodings))
+
+    assert update_dotfiles._run_git_pull(1, 4) == 0  # pylint: disable=protected-access
+    assert encodings == ["utf-8"]
+
+
 def test_run_step_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) -> None:
     """工程2以降のサブプロセス起動が`MISE_AUTO_INSTALL=0`を含む環境で実行される。"""
     calls: list[list[str]] = []
@@ -63,6 +77,41 @@ def test_run_step_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) ->
 
     assert returncode == 0
     assert environments[0]["MISE_AUTO_INSTALL"] == "0"
+
+
+def test_run_step_decodes_captured_output_as_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
+    """工程2以降の取得出力をUTF-8で復号する。"""
+    calls: list[list[str]] = []
+    encodings: list[str | None] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, encodings=encodings))
+
+    returncode, _output = update_dotfiles._run_step(  # pylint: disable=protected-access
+        3,
+        4,
+        "test",
+        ["chezmoi", "status"],
+        capture=True,
+    )
+
+    assert returncode == 0
+    assert encodings == ["utf-8"]
+
+
+def test_run_step_decodes_utf8_bytes(capsys: pytest.CaptureFixture[str]) -> None:
+    """CP932では復号できないUTF-8出力を文字列として転送する。"""
+    code = "import sys; sys.stdout.buffer.write('日本語—'.encode('utf-8')); sys.stderr.buffer.write('警告—'.encode('utf-8'))"
+
+    returncode, output = update_dotfiles._run_step(  # pylint: disable=protected-access
+        3,
+        4,
+        "test",
+        [sys.executable, "-c", code],
+        capture=True,
+    )
+
+    assert returncode == 0
+    assert output == "日本語—"
+    assert capsys.readouterr().err == "警告—"
 
 
 def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatch) -> None:

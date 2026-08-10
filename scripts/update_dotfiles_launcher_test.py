@@ -14,8 +14,7 @@ _LAUNCHER = _ROOT / "bin" / "update-dotfiles"
 _WINDOWS_LAUNCHER = _ROOT / "bin" / "update-dotfiles.cmd"
 _LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="BashランチャーはLinuxで検証する")
 _UPDATE_WARNING = (
-    "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、"
-    "次回のupdate-dotfiles起動時に自己更新を再試行します。"
+    "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。"
 )
 
 
@@ -60,6 +59,7 @@ def _run_launcher(
     arguments: list[str] | None = None,
     self_update_exit: int = 0,
     run_exit: int = 0,
+    process_loop: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """隔離したHOMEとPATHでLinuxランチャーを実行する。"""
     home = tmp_path / "home"
@@ -78,6 +78,9 @@ def _run_launcher(
             "UV_RUN_EXIT": str(run_exit),
         }
     )
+    environment.pop("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", None)
+    if process_loop:
+        environment["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = "1"
     bash = shutil.which("bash")
     assert bash is not None
     result = subprocess.run(  # noqa: S603
@@ -144,6 +147,32 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
     assert result.stderr.splitlines() == ["uv run stderr", _UPDATE_WARNING]
 
 
+@pytest.mark.parametrize("run_exit", [0, 23])
+@_LINUX_ONLY
+def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib.Path, run_exit: int) -> None:
+    """process-loop起動では自己更新を延期し、runの終了コードを保持する。"""
+    result, calls = _run_launcher(
+        tmp_path,
+        native_uv=True,
+        path_uv=True,
+        self_update_exit=9,
+        run_exit=run_exit,
+        process_loop=True,
+    )
+
+    assert result.returncode == run_exit
+    assert calls == [
+        [
+            "native",
+            "run",
+            "--no-project",
+            "--script",
+            str(_ROOT / "scripts" / "update_dotfiles.py"),
+        ]
+    ]
+    assert result.stderr == "uv run stderr\n"
+
+
 @_LINUX_ONLY
 def test_path_uv_is_not_used_when_native_uv_is_absent(tmp_path: pathlib.Path) -> None:
     """公式パスが存在しない場合はPATH上のuvを選ばず終了する。"""
@@ -173,34 +202,65 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     native = 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"'
     missing = 'if not exist "%UV%" ('
     update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
+    process_loop_guard = 'if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" ('
     update = '"%UV%" self update'
     update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
     run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\scripts\\update_dotfiles.py" %*'
     capture_run_exit = 'set "UPDATE_DOTFILES_EXIT=%ERRORLEVEL%"'
-    warning = f'if "%UV_SELF_UPDATE_FAILED%"=="1" echo {_UPDATE_WARNING} 1>&2'
-    return_run_exit = 'exit /b %UPDATE_DOTFILES_EXIT%'
+    warning_state = f'set "UV_SELF_UPDATE_WARNING={_UPDATE_WARNING}"'
+    warning = 'if "%UV_SELF_UPDATE_FAILED%"=="1" powershell.exe -NoLogo -NoProfile -Command '
+    return_run_exit = "exit /b %UPDATE_DOTFILES_EXIT%"
     assert native in content
     assert missing in content
     assert update_state in content
+    assert process_loop_guard in content
     assert update in content
     assert update_failure in content
     assert 'set "UV=uv"' not in content
     assert run in content
     assert capture_run_exit in content
+    assert warning_state in content
     assert warning in content
+    assert "[Console]::IsErrorRedirected" in content
+    assert "[System.Text.UTF8Encoding]::new($false)" in content
+    assert "[Console]::Error.WriteLine($message)" in content
+    assert f"echo {_UPDATE_WARNING}" not in content
     assert return_run_exit in content
-    assert 'self update || exit /b 1' not in content
+    assert "self update || exit /b 1" not in content
     assert (
         content.index(native)
         < content.index(missing)
         < content.index(update_state)
+        < content.index(process_loop_guard)
         < content.index(update)
         < content.index(update_failure)
         < content.index(run)
         < content.index(capture_run_exit)
+        < content.index(warning_state)
         < content.index(warning)
         < content.index(return_run_exit)
     )
+
+
+@pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShellが必要")
+def test_windows_warning_redirects_as_utf8_without_bom() -> None:
+    """Windows警告のリダイレクト出力がBOMなしUTF-8になる。"""
+    content = _WINDOWS_LAUNCHER.read_bytes().decode("cp932")
+    warning_line = next(line for line in content.splitlines() if "powershell.exe -NoLogo" in line)
+    script = warning_line.split('-Command "', maxsplit=1)[1].removesuffix('"')
+    environment = os.environ.copy()
+    environment["UV_SELF_UPDATE_WARNING"] = _UPDATE_WARNING
+
+    result = subprocess.run(  # noqa: S603
+        ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", script],
+        env=environment,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert not result.stdout
+    assert result.stderr == f"{_UPDATE_WARNING}\r\n".encode()
 
 
 def test_root_mise_files_do_not_manage_uv() -> None:

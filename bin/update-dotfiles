@@ -10,7 +10,9 @@ if [[ ! -x "$UV" ]]; then
     exit 127
 fi
 self_update_failed=0
-"$UV" self update || self_update_failed=1
+if [[ "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != "1" ]]; then
+    "$UV" self update || self_update_failed=1
+fi
 run_exit=0
 "$UV" run --no-project --script "${SCRIPT_DIR}/scripts/update_dotfiles.py" "$@" || run_exit=$?
 if ((self_update_failed != 0)); then
