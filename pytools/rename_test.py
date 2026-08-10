@@ -32,6 +32,18 @@ class TestRename:
         assert (tmp_path / "hello.md").exists()
         assert not (tmp_path / "hello.txt").exists()
 
+    def test_fullpath_rename(self, tmp_path: pathlib.Path) -> None:
+        source_dir = tmp_path / "fullpath_source"
+        source_dir.mkdir()
+        (tmp_path / "fullpath_destination").mkdir()
+        source = source_dir / "item.txt"
+        source.touch()
+
+        self._run("--fullpath", "fullpath_source", "fullpath_destination", str(source), cwd=tmp_path)
+
+        assert (tmp_path / "fullpath_destination" / "item.txt").exists()
+        assert not source.exists()
+
     def test_dry_run(self, tmp_path):
         (tmp_path / "original.txt").touch()
         self._run("--dry-run", "original", "renamed", str(tmp_path / "original.txt"), cwd=tmp_path)

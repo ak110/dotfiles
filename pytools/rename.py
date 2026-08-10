@@ -66,14 +66,16 @@ def main() -> None:
     mode_group.add_argument("--fullpath", action="store_true", help="replace fullpath.")
     enable_completion(parser)
     args = parser.parse_args()
+    pattern: str | None = args.pattern
+    replacement: str | None = args.replacement
 
     setup_logging(verbose=args.verbose)
 
     if args.pattern_file:
         rules = load_pattern_file(args.pattern_file, ignore_case=args.ignore_case)
-        if args.pattern and args.replacement:
+        if pattern and replacement:
             flags = re.IGNORECASE if args.ignore_case else 0
-            rules.append(RenameRule(pattern=re.compile(args.pattern, flags=flags), replacement=args.replacement))
+            rules.append(RenameRule(pattern=re.compile(pattern, flags=flags), replacement=replacement))
         if not rules:
             parser.error("パターンファイルに有効なエントリがありません")
         rename_tree(
@@ -88,8 +90,9 @@ def main() -> None:
         )
         sys.exit(0)
 
-    if not args.pattern or args.replacement is None:
+    if not pattern or replacement is None:
         parser.error("pattern と replacement を指定するか、-f でパターンファイルを指定してください")
+        return
 
     targets = args.targets
     if len(targets) <= 0:
@@ -98,23 +101,22 @@ def main() -> None:
     flags = 0
     if args.ignore_case:
         flags |= re.IGNORECASE
-    regex = re.compile(args.pattern, flags=flags)
-
+    regex = re.compile(pattern, flags=flags)
     for src_path in targets:
         try:
             if args.fullpath:
-                dst_path = pathlib.Path(regex.sub(args.replacement, str(src_path)))
+                dst_path = pathlib.Path(regex.sub(replacement, str(src_path)))
                 if src_path == dst_path:
                     continue
                 print(f"{src_path} -> {dst_path}")
             elif args.name:
-                dst_name = regex.sub(args.replacement, src_path.name).strip()
+                dst_name = regex.sub(replacement, src_path.name).strip()
                 dst_path = src_path.parent / dst_name
                 if src_path == dst_path:
                     continue
                 print(f"{src_path.name} -> {dst_name}")
             else:
-                dst_stem = regex.sub(args.replacement, src_path.stem).strip()
+                dst_stem = regex.sub(replacement, src_path.stem).strip()
                 dst_path = src_path.parent / (dst_stem + src_path.suffix)
                 if src_path == dst_path:
                     continue

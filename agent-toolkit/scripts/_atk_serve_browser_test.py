@@ -380,18 +380,35 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator("#target-filter option").all_text_contents() == ["すべて", "adopted/repo"]
     await page.locator("#entry-list .entry-select").filter(has_text="adopted.md").wait_for(state="visible")
 
-    await page.locator("#clear-filters-button").click()
-    await page.locator("#search-input").fill("編集対象")
+    async with page.expect_response(
+        lambda response: (
+            response.request.method == "GET" and response.url.endswith("/api/entries?type=all&status=active&answered=all")
+        )
+    ):
+        await page.locator("#clear-filters-button").click()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+    await playwright.async_api.expect(page.locator("#result-status")).to_have_text("4件を表示")
+
+    async with page.expect_response(
+        lambda response: (
+            response.request.method == "GET"
+            and response.url.endswith("/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1")
+        )
+    ):
+        await page.locator("#search-input").fill("編集対象")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
+    await playwright.async_api.expect(feedback_row).to_be_visible()
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("1件を表示")
-    status_before_sse = await page.locator("#result-status").text_content()
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
     (harness.root / "inbox" / "sse.md").write_text(
         "---\ntype: feedback\ntarget_repo: sse/repo\nsource: browser\n---\n\n編集対象の外部追加\n",
         encoding="utf-8",
     )
     harness.current_state.publish()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
     await page.locator("#entry-list .entry-select").filter(has_text="sse.md").wait_for(state="visible")
     await playwright.async_api.expect(page.locator('#target-filter option[value="sse/repo"]')).to_have_count(1)
-    assert await page.locator("#result-status").text_content() == status_before_sse
+    await playwright.async_api.expect(page.locator("#result-status")).to_have_text("1件を表示")
 
 
 @pytest.mark.asyncio
