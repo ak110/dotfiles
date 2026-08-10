@@ -9,5 +9,11 @@ if [[ ! -x "$UV" ]]; then
     echo "uvが見つかりません。公式インストーラーでuvを導入してください。" >&2
     exit 127
 fi
-"$UV" self update
-exec "$UV" run --no-project --script "${SCRIPT_DIR}/scripts/update_dotfiles.py" "$@"
+self_update_failed=0
+"$UV" self update || self_update_failed=1
+run_exit=0
+"$UV" run --no-project --script "${SCRIPT_DIR}/scripts/update_dotfiles.py" "$@" || run_exit=$?
+if ((self_update_failed != 0)); then
+    echo "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。" >&2
+fi
+exit "$run_exit"

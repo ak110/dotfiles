@@ -13,6 +13,10 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _LAUNCHER = _ROOT / "bin" / "update-dotfiles"
 _WINDOWS_LAUNCHER = _ROOT / "bin" / "update-dotfiles.cmd"
 _LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="BashランチャーはLinuxで検証する")
+_UPDATE_WARNING = (
+    "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、"
+    "次回のupdate-dotfiles起動時に自己更新を再試行します。"
+)
 
 
 def _write_fake_uv(path: pathlib.Path, name: str) -> None:
@@ -24,6 +28,10 @@ printf '\\036{name}\\000' >> "$UV_CALL_LOG"
 printf '%s\\000' "$@" >> "$UV_CALL_LOG"
 if [[ "${{1-}}" == "self" && "${{2-}}" == "update" ]]; then
     exit "${{UV_SELF_UPDATE_EXIT:-0}}"
+fi
+if [[ "${{1-}}" == "run" ]]; then
+    printf 'uv run stderr\n' >&2
+    exit "${{UV_RUN_EXIT:-0}}"
 fi
 """,
         encoding="utf-8",
@@ -51,6 +59,7 @@ def _run_launcher(
     path_uv: bool,
     arguments: list[str] | None = None,
     self_update_exit: int = 0,
+    run_exit: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """隔離したHOMEとPATHでLinuxランチャーを実行する。"""
     home = tmp_path / "home"
@@ -66,6 +75,7 @@ def _run_launcher(
             "PATH": str(path_dir),
             "UV_CALL_LOG": str(call_log),
             "UV_SELF_UPDATE_EXIT": str(self_update_exit),
+            "UV_RUN_EXIT": str(run_exit),
         }
     )
     bash = shutil.which("bash")
@@ -108,18 +118,30 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
     ]
 
 
+@pytest.mark.parametrize("run_exit", [0, 23])
 @_LINUX_ONLY
-def test_native_uv_update_failure_stops_before_run(tmp_path: pathlib.Path) -> None:
-    """自己更新が失敗した場合はPython実体を起動しない。"""
+def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.Path, run_exit: int) -> None:
+    """自己更新が失敗してもrunを実行し、その終了コードと最終案内を保持する。"""
     result, calls = _run_launcher(
         tmp_path,
         native_uv=True,
         path_uv=True,
         self_update_exit=9,
+        run_exit=run_exit,
     )
 
-    assert result.returncode == 9
-    assert calls == [["native", "self", "update"]]
+    assert result.returncode == run_exit
+    assert calls == [
+        ["native", "self", "update"],
+        [
+            "native",
+            "run",
+            "--no-project",
+            "--script",
+            str(_ROOT / "scripts" / "update_dotfiles.py"),
+        ],
+    ]
+    assert result.stderr.splitlines() == ["uv run stderr", _UPDATE_WARNING]
 
 
 @_LINUX_ONLY
@@ -150,14 +172,35 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
 
     native = 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"'
     missing = 'if not exist "%UV%" ('
-    update = '"%UV%" self update || exit /b 1'
+    update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
+    update = '"%UV%" self update'
+    update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
     run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\scripts\\update_dotfiles.py" %*'
+    capture_run_exit = 'set "UPDATE_DOTFILES_EXIT=%ERRORLEVEL%"'
+    warning = f'if "%UV_SELF_UPDATE_FAILED%"=="1" echo {_UPDATE_WARNING} 1>&2'
+    return_run_exit = 'exit /b %UPDATE_DOTFILES_EXIT%'
     assert native in content
     assert missing in content
+    assert update_state in content
     assert update in content
+    assert update_failure in content
     assert 'set "UV=uv"' not in content
     assert run in content
-    assert content.index(native) < content.index(missing) < content.index(update) < content.index(run)
+    assert capture_run_exit in content
+    assert warning in content
+    assert return_run_exit in content
+    assert 'self update || exit /b 1' not in content
+    assert (
+        content.index(native)
+        < content.index(missing)
+        < content.index(update_state)
+        < content.index(update)
+        < content.index(update_failure)
+        < content.index(run)
+        < content.index(capture_run_exit)
+        < content.index(warning)
+        < content.index(return_run_exit)
+    )
 
 
 def test_root_mise_files_do_not_manage_uv() -> None:
