@@ -373,7 +373,10 @@ class TestApiEndpoints:
     async def test_api_file_renders_markdown(self, tmp_path: Path):
         """`/api/file`がGFM相当のMarkdownをHTMLへ変換して返す。"""
         (tmp_path / "a.md").write_text(
-            "# title\n\n通常 ~~取消~~ https://example.com\n",
+            "# title\n\n"
+            "通常 ~~取消~~ https://example.com www.example.com user@example.com\n\n"
+            "[明示リンク](https://example.net) <https://example.org>\n\n"
+            "| 列 |\n| --- |\n| 値 |\n",
             encoding="utf-8",
         )
         app = _app.create_app(tmp_path, hostname="test")
@@ -384,7 +387,12 @@ class TestApiEndpoints:
         body = await response.get_data(as_text=True)
         assert "<h1>title</h1>" in body
         assert "<s>取消</s>" in body
-        assert '<a href="https://example.com">https://example.com</a>' in body
+        assert '<a href="https://example.com">' not in body
+        assert '<a href="http://www.example.com">' not in body
+        assert '<a href="mailto:user@example.com">' not in body
+        assert '<a href="https://example.net">明示リンク</a>' in body
+        assert '<a href="https://example.org">https://example.org</a>' in body
+        assert "<table>" in body
 
     @pytest.mark.asyncio
     async def test_api_file_renders_diagrams_without_raw_html(self, tmp_path: Path):

@@ -48,6 +48,7 @@ fi
 
 if [ "$needs_reinstall" = 1 ]; then
     echo "  [pytools] ${reason} → 再インストール"
+    # Linuxでは更新対象を保持するプロセスを停止せず、失敗時は既存版とハッシュを温存して次回へ延期する。
     if uv tool install --editable "{{ .chezmoi.workingTree }}" && test_expected_shims; then
         mkdir -p "$cache_dir"
         printf '%s' "$current_hash" >"$hash_file"

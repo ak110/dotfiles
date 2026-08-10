@@ -564,6 +564,94 @@ class TestManagedTempWindows:
         subject.cleanup_managed_temp(target)
         assert not target.exists()
 
+    def test_external_writer_acl_validate_and_cleanup(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """別実行主体の実測相当ACE追加後も公開検証とcleanupが成立する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-external-writer")
+        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
+        external_sid = subject._windows_sid_bytes("S-1-1-0")
+        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE
+        aces = (
+            subject._WindowsAce(
+                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                flags,
+                subject._WINDOWS_FILE_ALL_ACCESS,
+                current_sid,
+            ),
+            subject._WindowsAce(
+                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                flags,
+                subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
+                external_sid,
+            ),
+        )
+        subject._windows_replace_security(target, current_sid, aces, directory=True)
+        (target / "external-content.txt").write_text("remove", encoding="utf-8")
+
+        with pytest.raises(subject.ManagedTempError):
+            subject._validate_windows_security(target)
+        assert subject.validate_managed_temp(target) == target
+
+        subject.cleanup_managed_temp(target)
+        assert not target.exists()
+
+    def test_cleanup_rejects_replacement_before_acl_update_without_changing_replacement(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """ACL再保護用handle取得直前の置換先へsecurity更新を適用しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-acl-race")
+        displaced = tmp_path / "windows-acl-race-displaced"
+        replacement = tmp_path / "windows-acl-race-replacement"
+        replacement.mkdir()
+        current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
+        external_sid = subject._windows_sid_bytes("S-1-1-0")
+        flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE
+        replacement_aces = (
+            subject._WindowsAce(
+                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                flags,
+                subject._WINDOWS_FILE_ALL_ACCESS,
+                current_sid,
+            ),
+            subject._WindowsAce(
+                subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                flags,
+                subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
+                external_sid,
+            ),
+        )
+        subject._windows_replace_security(replacement, current_sid, replacement_aces, directory=True)
+        replacement_security = subject._windows_security_descriptor(replacement)
+        original_update_handle = subject._windows_security_update_handle
+
+        @contextlib.contextmanager
+        def replace_before_security_update(
+            path: pathlib.Path,
+        ) -> typing.Iterator[tuple[int, subject._ByHandleFileInformation, bool]]:
+            if path != target:
+                with original_update_handle(path) as opened:
+                    yield opened
+                return
+            target.rename(displaced)
+            replacement.rename(target)
+            with original_update_handle(path) as opened:
+                yield opened
+
+        monkeypatch.setattr(subject, "_windows_security_update_handle", replace_before_security_update)
+
+        with pytest.raises(subject.ManagedTempError, match="ACL再保護時に置換"):
+            subject.cleanup_managed_temp(target)
+
+        assert subject._windows_security_descriptor(target) == replacement_security
+        assert (displaced / _MARKER_NAME).is_file()
+
     @pytest.mark.parametrize(("kind", "directory"), [("file", False), ("directory", True)])
     def test_secure_path_replaces_owner_and_all_explicit_aces(
         self,
@@ -680,7 +768,7 @@ class TestManagedTempWindows:
         assert sentinel.read_text(encoding="utf-8") == "keep"
         assert target.exists()
 
-    @pytest.mark.parametrize("tamper", ["extra", "deny"])
+    @pytest.mark.parametrize("tamper", ["wrong-mask", "deny", "multiple", "current-user-extra"])
     def test_acl_tamper_is_rejected_and_preserved(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -691,6 +779,8 @@ class TestManagedTempWindows:
         target = subject.create_managed_temp("windows-acl")
         current_sid = subject._windows_sid_bytes(subject._windows_current_sid())
         everyone_sid = subject._windows_sid_bytes("S-1-1-0")
+        authenticated_users_sid = subject._windows_sid_bytes("S-1-5-11")
+        unrelated_sid = subject._windows_sid_bytes("S-1-5-21-1-2-3-1001")
         flags = subject._WINDOWS_OBJECT_INHERIT_ACE | subject._WINDOWS_CONTAINER_INHERIT_ACE
         expected = subject._WindowsAce(
             subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
@@ -698,13 +788,42 @@ class TestManagedTempWindows:
             subject._WINDOWS_FILE_ALL_ACCESS,
             current_sid,
         )
+        valid_external = subject._WindowsAce(
+            subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+            flags,
+            subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
+            everyone_sid,
+        )
         altered = {
-            "extra": (expected, subject._WindowsAce(subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid)),
+            "wrong-mask": (
+                expected,
+                subject._WindowsAce(subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, 0x00120089, everyone_sid),
+            ),
             "deny": (
                 subject._WindowsAce(
                     subject._WINDOWS_ACCESS_DENIED_ACE_TYPE,
                     flags,
-                    subject._WINDOWS_FILE_ALL_ACCESS,
+                    0x00000001,
+                    unrelated_sid,
+                ),
+                expected,
+            ),
+            "multiple": (
+                expected,
+                valid_external,
+                subject._WindowsAce(
+                    subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                    flags,
+                    subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
+                    authenticated_users_sid,
+                ),
+            ),
+            "current-user-extra": (
+                expected,
+                subject._WindowsAce(
+                    subject._WINDOWS_ACCESS_ALLOWED_ACE_TYPE,
+                    flags,
+                    subject._WINDOWS_EXTERNAL_WRITER_ACCESS,
                     current_sid,
                 ),
             ),
@@ -713,6 +832,8 @@ class TestManagedTempWindows:
         with pytest.raises(subject.ManagedTempError):
             subject.validate_managed_temp(target)
         assert target.exists()
+        subject._windows_secure_path(target, directory=True)
+        subject.cleanup_managed_temp(target)
 
     def test_handmade_marker_without_registry_is_rejected(
         self,

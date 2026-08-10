@@ -2008,6 +2008,26 @@ def test_detail_without_frontmatter_is_unchanged(tmp_path: pathlib.Path) -> None
     assert "<p>本文</p>" in rendered
 
 
+def test_detail_disables_only_bare_address_links(tmp_path: pathlib.Path) -> None:
+    """詳細表示は裸アドレスをリンク化せず、明示リンクとGFM拡張を維持する。"""
+    _write_detail_entry(
+        tmp_path,
+        "https://example.com www.example.com user@example.com\n\n"
+        "[明示リンク](https://example.net) <https://example.org>\n\n"
+        "~~取消~~\n\n| 列 |\n| --- |\n| 値 |\n",
+    )
+
+    rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
+
+    assert '<a href="https://example.com">' not in rendered
+    assert '<a href="http://www.example.com">' not in rendered
+    assert '<a href="mailto:user@example.com">' not in rendered
+    assert '<a href="https://example.net">明示リンク</a>' in rendered
+    assert '<a href="https://example.org">https://example.org</a>' in rendered
+    assert "<s>取消</s>" in rendered
+    assert "<table>" in rendered
+
+
 def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """空のfrontmatterは空表を生成せず、分離後の本文だけを整形する。"""
     _write_detail_entry(tmp_path, "---\n---\n\n本文\n")

@@ -32,6 +32,7 @@ _WINDOWS_ACL_REVISION = 2
 _WINDOWS_ERROR_ACCESS_DENIED = 5
 _WINDOWS_CONTAINER_INHERIT_ACE = 0x02
 _WINDOWS_DACL_SECURITY_INFORMATION = 0x00000004
+_WINDOWS_EXTERNAL_WRITER_ACCESS = 0x001301BF
 _WINDOWS_FILE_ALL_ACCESS = 0x001F01FF
 _WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10
 _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
@@ -296,12 +297,28 @@ def _windows_current_sid() -> str:
         kernel32.CloseHandle(token)
 
 
-def _windows_secure_path(path: pathlib.Path, *, directory: bool) -> None:
+def _windows_information_identity(information: _ByHandleFileInformation) -> tuple[int, int]:
+    """取得済みのWindows handle情報からvolumeとfile IDを返す。"""
+    return information.volume, (information.file_index_high << 32) | information.file_index_low
+
+
+def _windows_secure_path(
+    path: pathlib.Path,
+    *,
+    directory: bool,
+    expected_identity: tuple[int, int] | None = None,
+) -> None:
     """OwnerとDACLを現在user SIDだけの保護ACLへ完全置換する。"""
     current_sid = _windows_sid_bytes(_windows_current_sid())
     flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if directory else 0
     ace = _WindowsAce(_WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, _WINDOWS_FILE_ALL_ACCESS, current_sid)
-    _windows_replace_security(path, current_sid, (ace,), directory=directory)
+    _windows_replace_security(
+        path,
+        current_sid,
+        (ace,),
+        directory=directory,
+        expected_identity=expected_identity,
+    )
 
 
 def _windows_replace_security(
@@ -310,6 +327,7 @@ def _windows_replace_security(
     aces: tuple[_WindowsAce, ...],
     *,
     directory: bool,
+    expected_identity: tuple[int, int] | None = None,
 ) -> None:
     """Windows pathのDACLと、必要な場合はOwnerを指定値へ完全置換する。"""
     acl_buffer = _windows_acl_buffer(path, aces)
@@ -317,6 +335,8 @@ def _windows_replace_security(
         actual_directory = bool(information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY)
         if actual_directory != directory:
             raise ManagedTempError(f"Windows pathの種別が指定と一致しない: {path}")
+        if expected_identity is not None and _windows_information_identity(information) != expected_identity:
+            raise ManagedTempError(f"管理対象がACL再保護時に置換された: {path}")
         current_owner = _windows_security_from_handle(handle, information, path).owner
         owner_changed = not _windows_equal_sids(current_owner, owner_sid)
         if owner_changed and not can_write_owner:
@@ -501,31 +521,62 @@ def _windows_security_from_handle(
         kernel32.LocalFree(descriptor)
 
 
+def _windows_security_base_is_valid(security: _WindowsSecurity, current_sid: bytes) -> bool:
+    """Ownerと保護DACLが現在利用者の管理下にあるか返す。"""
+    return security.dacl_present and security.protected and _windows_equal_sids(security.owner, current_sid)
+
+
+def _windows_current_user_ace_is_valid(ace: _WindowsAce, current_sid: bytes, expected_flags: int) -> bool:
+    """ACEが現在利用者のFullControlを表すか返す。"""
+    return (
+        ace.ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE
+        and ace.flags == expected_flags
+        and ace.mask == _WINDOWS_FILE_ALL_ACCESS
+        and ace.sid is not None
+        and _windows_equal_sids(ace.sid, current_sid)
+    )
+
+
+def _windows_external_writer_ace_is_valid(ace: _WindowsAce, current_sid: bytes, expected_flags: int) -> bool:
+    """ACEが管理対象rootで実測した外部書込主体の権限形に一致するか返す。"""
+    return (
+        ace.ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE
+        and ace.flags == expected_flags
+        and ace.mask == _WINDOWS_EXTERNAL_WRITER_ACCESS
+        and ace.sid is not None
+        and not _windows_equal_sids(ace.sid, current_sid)
+    )
+
+
 def _validate_windows_security(path: pathlib.Path) -> None:
+    """内部真正性状態に現在利用者だけの厳格なACLを要求する。"""
     current_sid = _windows_sid_bytes(_windows_current_sid())
     security = _windows_security_descriptor(path)
     expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if security.directory else 0
-    valid_ace = (
-        len(security.aces) == 1
-        and security.aces[0].ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE
-        and security.aces[0].flags == expected_flags
-        and security.aces[0].mask == _WINDOWS_FILE_ALL_ACCESS
-        and security.aces[0].sid is not None
-        and _windows_equal_sids(security.aces[0].sid, current_sid)
+    valid_ace = len(security.aces) == 1 and _windows_current_user_ace_is_valid(security.aces[0], current_sid, expected_flags)
+    if not _windows_security_base_is_valid(security, current_sid) or not valid_ace:
+        raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {path}")
+
+
+def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
+    """管理対象rootでは厳格ACLと実測済みの追加ACE 1件だけを受理する。"""
+    current_sid = _windows_sid_bytes(_windows_current_sid())
+    security = _windows_security_descriptor(path)
+    expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE
+    current_user_aces = [ace for ace in security.aces if _windows_current_user_ace_is_valid(ace, current_sid, expected_flags)]
+    other_aces = [ace for ace in security.aces if not _windows_current_user_ace_is_valid(ace, current_sid, expected_flags)]
+    valid_operational_acl = len(current_user_aces) == 1 and (
+        not other_aces
+        or (len(other_aces) == 1 and _windows_external_writer_ace_is_valid(other_aces[0], current_sid, expected_flags))
     )
-    if (
-        not security.dacl_present
-        or not security.protected
-        or not _windows_equal_sids(security.owner, current_sid)
-        or not valid_ace
-    ):
+    if not security.directory or not _windows_security_base_is_valid(security, current_sid) or not valid_operational_acl:
         raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {path}")
 
 
 def _windows_identity(path: pathlib.Path) -> tuple[int, int]:
     """Reparse pointを開かず、Windows handleからvolumeとfile IDを返す。"""
     with _windows_path_handle(path, _WINDOWS_READ_ATTRIBUTES) as (_, information):
-        return information.volume, (information.file_index_high << 32) | information.file_index_low
+        return _windows_information_identity(information)
 
 
 def _temp_root() -> pathlib.Path:
@@ -813,7 +864,7 @@ def _validate_windows(path_arg: pathlib.Path | str) -> _ValidatedTemp:
         raise ManagedTempError(f"管理対象を検証できない: {path}: {error}") from error
     if not stat.S_ISDIR(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
         raise ManagedTempError(f"管理対象が通常ディレクトリではない: {path}")
-    _validate_windows_security(path)
+    _validate_windows_managed_root_security(path)
     identity = _windows_identity(path)
     marker = _load_private_json(path / _MARKER_NAME)
     registry_path = _registry_path(path)
@@ -953,6 +1004,13 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
     """検証済みの管理対象一時ディレクトリだけを後始末する。"""
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     validated = _validate_posix(path) if os.name == "posix" else _validate_windows(path)
+    if os.name == "nt":
+        # 利用中に追加された受理済みACEを除去し、隔離以降を現在利用者だけのDACLで実行する。
+        _windows_secure_path(
+            path,
+            directory=True,
+            expected_identity=(validated.device, validated.inode),
+        )
     before = _tree_snapshot(path)
     consuming = _consume_registry(validated)
     quarantine = root / f".agent-toolkit-cleanup-{validated.nonce}"

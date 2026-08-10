@@ -8,9 +8,9 @@ import markdown_it
 
 def make_renderer() -> markdown_it.MarkdownIt:
     """Raw HTMLを無効化したGFM相当のMarkdownレンダラを返す。"""
-    # GFM相当プリセットで表・取り消し線・裸URL自動リンクを有効化する。
-    # `html`は明示的に`False`へ上書きしてXSS経路を塞ぐ。
-    return markdown_it.MarkdownIt("gfm-like", {"html": False})
+    # GFM相当プリセットの表・取り消し線は維持し、誤リンクを防ぐため裸URLの自動リンクだけを無効化する。
+    # `html`も明示的に`False`へ上書きしてXSS経路を塞ぐ。
+    return markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 
 
 def render_body(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:

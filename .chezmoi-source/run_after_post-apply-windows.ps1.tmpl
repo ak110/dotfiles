@@ -54,39 +54,56 @@ $uvToolDir = Join-Path $uvToolBaseDir 'pytools'
 $mediaRemotePythonw = Join-Path $uvToolDir 'Scripts\pythonw.exe'
 
 # 再インストール時にuv tool venv配下のexeが起動中だと、uvはディレクトリ削除に
-# アクセス拒否で失敗する。Win32_Process.ExecutablePathで
-# (1) uv tool venv配下を起動元とするプロセス、
-# (2) claude-plans-viewerシム（再起動時に.local\binから起動した親プロセス）を
-# 抽出し一括停止する。停止経路でclaude-plans-viewer・dotfiles-media-remoteの
-# 稼働状態を観測してフラグ変数を設定し、後続の再起動分岐から参照する。
+# アクセス拒否で失敗する。更新対象を保持するプロセスを停止前に分類し、
+# 再起動できる既知プロセスだけなら停止・再導入・復元する。
+# 再起動できないプロセスが含まれる場合は一切停止せず、既存版とハッシュを温存して次回へ延期する。
 $viewerWasRunning = $false
 $mediaRemoteWasRunning = $false
+$reinstallDeferred = $false
 if ($needsReinstall) {
     $prefix = $uvToolDir.TrimEnd('\') + '\'
     $lockingProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         if (-not $_.ExecutablePath) { return $false }
         if ($_.ExecutablePath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
         if ($_.ExecutablePath.Equals($viewerBin, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        if ($_.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
         return $false
     })
+    $restorableProcs = @()
+    $unrestorableProcs = @()
     foreach ($p in $lockingProcs) {
-        if ($p.CommandLine -like '*pytools.media_remote*') {
-            $mediaRemoteWasRunning = $true
+        if ($p.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $p.CommandLine -like '*pytools.media_remote*') {
+            $restorableProcs += $p
+        } elseif ($p.Name -eq 'claude-plans-viewer.exe' -or $p.CommandLine -like '*claude_plans_viewer*') {
+            $restorableProcs += $p
+        } else {
+            $unrestorableProcs += $p
         }
-        if ($p.Name -eq 'claude-plans-viewer.exe' -or $p.CommandLine -like '*claude_plans_viewer*') {
-            $viewerWasRunning = $true
-        }
-        Write-Host "  [pytools] $($p.Name) (PID=$($p.ProcessId)) を一時停止"
-        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
     }
-    if ($lockingProcs.Count -gt 0) {
-        # プロセス停止からファイルハンドル解放までの遅延を吸収するため短時間待機する。
-        Start-Sleep -Milliseconds 500
+    if ($unrestorableProcs.Count -gt 0) {
+        $reinstallDeferred = $true
+        Write-Host '  [pytools] 再起動できないプロセスが更新対象を使用中 → 再インストールを次回へ延期'
+    } else {
+        foreach ($p in $restorableProcs) {
+            if ($p.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $p.CommandLine -like '*pytools.media_remote*') {
+                $mediaRemoteWasRunning = $true
+            } else {
+                $viewerWasRunning = $true
+            }
+            Write-Host "  [pytools] $($p.Name) (PID=$($p.ProcessId)) を一時停止"
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        if ($restorableProcs.Count -gt 0) {
+            # プロセス停止からファイルハンドル解放までの遅延を吸収するため短時間待機する。
+            Start-Sleep -Milliseconds 500
+        }
     }
 }
 
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
-if ($needsReinstall) {
+if ($needsReinstall -and -not $reinstallDeferred) {
     if ($currentHash -ne $cachedHash) {
         Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
     } else {
@@ -110,6 +127,8 @@ if ($needsReinstall) {
     } catch {
         Write-Host "  [pytools] インストールに失敗しました (後続処理は継続): $_"
     }
+} elseif ($reinstallDeferred) {
+    Write-Host '  [pytools] 既存版で後続処理を継続'
 } else {
     Write-Host '  [pytools] 変更なし (ハッシュキャッシュヒット)'
 }

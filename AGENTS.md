@@ -10,7 +10,8 @@
 - コミット前の検証方法: `make test`
   - 特定ファイルに限定する場合はMCP経由の`run_for_agent`へ当該ファイルのパスを渡す。
     MCPを利用できない場合は`uvx pyfltr run <対象ファイルの絶対パス>`を使う。
-    デバッガ・最小再現・環境切り分けでは直接実行してよい
+    デバッガ・最小再現・環境切り分けでは直接実行してよい。
+    `-o addopts=''`で既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
   - 修正後の再実行時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
 - コミットメッセージtypeの判定例: [docs/development/commit-types.md](docs/development/commit-types.md)

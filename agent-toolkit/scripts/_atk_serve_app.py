@@ -38,7 +38,7 @@ _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 Web UIは利用者が画面を閲覧する前提のため短く取る。
 """
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
-_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False})
+_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 
 # pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
 
