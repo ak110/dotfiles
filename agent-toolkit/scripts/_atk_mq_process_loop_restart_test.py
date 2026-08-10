@@ -221,8 +221,12 @@ class TestWaitLoopAutoRestart:
         assert not _command_was_called(subprocess_calls, "update-dotfiles")
         assert not execv_calls
 
-    def test_change_detected_skips_update_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """変更検知（`wait_return=True`）で復帰した場合は更新チェック自体を行わないこと。"""
+    def test_change_detected_defers_update_to_ready_session_boundary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """変更検知だけでは待機中更新を行わず、次のready処理開始境界へ委ねること。"""
         subprocess_calls, execv_calls = self._run_until_stop(
             monkeypatch,
             tmp_path,

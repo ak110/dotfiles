@@ -29,12 +29,14 @@ from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-
 
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_PULL_PRIVATE_NOTES_IMPL = _process_loop._pull_private_notes  # pylint: disable=protected-access  # noqa: SLF001
 
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンドとClaude設定を利用者環境から分離する。"""
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
 
@@ -529,7 +531,7 @@ class TestProcessLoopPromptAndEnv:
         )
         assert prompt == (
             "/goal `agent-toolkit:process-feedbacks`を起動し、"
-            "`/repo`で対象リポジトリ`github.com/example/repo`の"
+            f"`{pathlib.Path('/repo')}`で対象リポジトリ`github.com/example/repo`の"
             "フィードバック処理を完遂してください。"
         )
 
@@ -877,8 +879,9 @@ class TestProcessLoopPromptAndEnv:
         assert len(codex_calls) == 1
         call = codex_calls[0]
         command = call["cmd"]
-        assert command[:2] == ["codex", "--approve-for-me"]
-        assert command[2 : 2 + len(expected_model_argv)] == expected_model_argv
+        assert command[0] == "codex"
+        assert "--approve-for-me" not in command
+        assert command[1 : 1 + len(expected_model_argv)] == expected_model_argv
         assert command[-1].startswith("/goal ")
         assert command[-1].count("/goal ") == 1
         assert "exec" not in command
@@ -888,6 +891,8 @@ class TestProcessLoopPromptAndEnv:
         assert "--autocompact" not in command
         assert call["cwd"] == myrepo
         assert all(key not in call["kwargs"] for key in ("stdin", "stdout", "stderr", "capture_output"))
+        expected_flags = 0x00000200 if os.name == "nt" else 0
+        assert call["kwargs"]["creationflags"] == expected_flags
 
     @pytest.mark.parametrize(
         ("resume_argv", "expected_tail"),
@@ -934,9 +939,188 @@ class TestProcessLoopPromptAndEnv:
 
         assert len(codex_calls) == 1
         command = codex_calls[0]["cmd"]
-        assert command == ["codex", "resume", "--approve-for-me", *expected_tail]
+        assert command == ["codex", "resume", *expected_tail]
         assert all(not arg.startswith("/goal ") for arg in command)
         assert "exec" not in command
+
+
+class TestCodexWindowsSessionConfiguration:
+    """Windows Codexだけに適用するプロセスグループとhook互換PATHを検証する。"""
+
+    def test_windows_codex_uses_new_process_group(self) -> None:
+        """Windows Codexだけが親と別のコンソール制御グループで起動すること。"""
+        assert _process_loop._session_creation_flags("codex", platform="nt") == 0x00000200  # pylint: disable=protected-access  # noqa: SLF001
+        assert _process_loop._session_creation_flags("claude", platform="nt") == 0  # pylint: disable=protected-access  # noqa: SLF001
+        assert _process_loop._session_creation_flags("codex", platform="posix") == 0  # pylint: disable=protected-access  # noqa: SLF001
+
+    def test_windows_codex_alone_prepends_bash_shim(self) -> None:
+        """共通環境を変更せず、Windows Codex用コピーだけへshimを追加すること。"""
+        inherited = {"PATH": os.pathsep.join(("first", "second")), "KEEP": "value"}
+
+        codex_env = _process_loop._session_env(inherited, "codex", platform="nt")  # pylint: disable=protected-access  # noqa: SLF001
+        claude_env = _process_loop._session_env(inherited, "claude", platform="nt")  # pylint: disable=protected-access  # noqa: SLF001
+        posix_env = _process_loop._session_env(inherited, "codex", platform="posix")  # pylint: disable=protected-access  # noqa: SLF001
+
+        shim_dir = pathlib.Path(_process_loop.__file__).resolve().parent / "windows-shims"
+        assert pathlib.Path(codex_env["PATH"].split(os.pathsep, maxsplit=1)[0]) == shim_dir
+        assert claude_env == inherited
+        assert posix_env == inherited
+        assert inherited["PATH"] == os.pathsep.join(("first", "second"))
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows用cmd shimの実機検証")
+    def test_bash_shim_converts_windows_script_path_and_preserves_stdin_and_exit_code(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Git BashへWindowsパスを渡し、hookの入出力契約を保持すること。"""
+        script = tmp_path / "hook.sh"
+        script.write_text(
+            'read -r value || exit 31\n'
+            '[ "$value" = "ok" ] || exit 32\n'
+            '[ "$#" -eq 12 ] || exit 33\n'
+            '[ "${10}" = "ten value" ] || exit 34\n'
+            'exit 23\n',
+            encoding="utf-8",
+        )
+        shim = pathlib.Path(_process_loop.__file__).resolve().parent / "windows-shims" / "bash.cmd"
+        env = os.environ.copy()
+        env["PATH"] = os.pathsep.join((str(shim.parent), env.get("PATH", "")))
+
+        result = subprocess.run(
+            [
+                "cmd.exe",
+                "/d",
+                "/c",
+                "bash",
+                str(script),
+                "one",
+                "two",
+                "three",
+                "four",
+                "five",
+                "six",
+                "seven",
+                "eight",
+                "nine",
+                "ten value",
+                "eleven",
+                "twelve",
+            ],
+            input=b"ok\n",
+            text=False,
+            check=False,
+            env=env,
+        )
+
+        assert result.returncode == 23
+
+
+class TestProcessLoopSessionPreparation:
+    """ready項目の処理前同期と失敗時のfail-closed動作を検証する。"""
+
+    def test_private_notes_pull_runs_under_repo_lock(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """private-notesのpullが同一リポジトリのlock保持中だけ実行されること。"""
+        events: list[str] = []
+
+        @contextlib.contextmanager
+        def fake_lock(path: pathlib.Path) -> Iterator[None]:
+            assert path == tmp_path
+            events.append("lock-enter")
+            yield
+            events.append("lock-exit")
+
+        monkeypatch.setattr(_process_loop, "_repo_lock", fake_lock)
+        monkeypatch.setattr(_process_loop, "_pull", lambda path: events.append(f"pull:{path.name}"))
+
+        assert _PULL_PRIVATE_NOTES_IMPL(tmp_path)
+        assert events == ["lock-enter", f"pull:{tmp_path.name}", "lock-exit"]
+
+    @pytest.mark.parametrize("failure", ["missing", "exit"])
+    def test_update_failure_does_not_repull_or_start_session(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        failure: str,
+    ) -> None:
+        """更新コマンドの未解決又は失敗時は再pullへ進まずFalseを返すこと。"""
+        monkeypatch.setattr(
+            _process_loop,
+            "_resolve_executable",
+            lambda _name: None if failure == "missing" else "update-dotfiles",
+        )
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 1),
+        )
+        monkeypatch.setattr(
+            _process_loop,
+            "_pull_private_notes",
+            lambda _path: pytest.fail("更新失敗後は再pullしないこと"),
+        )
+
+        assert not _process_loop._update_before_session(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path,
+            None,
+            None,
+            ["atk"],
+            {},
+        )
+
+    def test_initial_ready_session_runs_pull_update_repull_before_codex(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """初回ready処理はpull・update・再pull・再集計後にCodexを起動すること。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        events: list[str] = []
+        counts = iter((1, 1))
+
+        def fake_pull(_path: pathlib.Path) -> bool:
+            events.append("pull")
+            return True
+
+        def fake_count(*_args: object, **_kwargs: object) -> int:
+            events.append("count")
+            return next(counts)
+
+        def fake_update(*_args: object, **_kwargs: object) -> bool:
+            events.extend(("update", "repull"))
+            return True
+
+        monkeypatch.setattr(_process_loop, "_pull_private_notes", fake_pull)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", fake_count)
+        monkeypatch.setattr(_process_loop, "_update_before_session", fake_update)
+        base_fake_run = _fake_run_with_remote_url(myrepo, [], 7)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:1] == ["codex"]:
+                events.append("session")
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "process-loop",
+                    f"--target-repo={myrepo}",
+                    "--orchestrator=codex",
+                    "--no-alerts",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 7
+        assert events == ["pull", "count", "update", "repull", "count", "session"]
 
 
 def test_process_loop_parser_orchestrator_contract() -> None:
@@ -1124,10 +1308,11 @@ class TestProcessLoopUpdateAndRestart:
         with pytest.raises(SystemExit):
             atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
 
-        assert len(update_envs) == 1
-        assert update_envs[0] is not None
-        assert "VIRTUAL_ENV" not in update_envs[0]
-        assert update_envs[0]["PATH"] == "/usr/bin"
+        assert len(update_envs) == 2
+        for child_env in update_envs:
+            assert child_env is not None
+            assert "VIRTUAL_ENV" not in child_env
+            assert child_env["PATH"] == "/usr/bin"
 
     def test_wait_loop_update_dotfiles_receives_stripped_env(
         self,
@@ -1164,7 +1349,7 @@ class TestProcessLoopUpdateAndRestart:
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
         _setup_notes(tmp_path)
-        counts = iter([1, 0])
+        counts = iter([1, 1, 0])
         subprocess_calls: list[list[str]] = []
         base_fake_run = _fake_run_with_remote_url(myrepo, [], 0)
 
@@ -1237,7 +1422,7 @@ class TestProcessLoopUpdateAndRestart:
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
         _setup_notes(tmp_path)
-        counts = iter([1, 0])
+        counts = iter([1, 1, 0])
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
         monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(
@@ -1382,8 +1567,8 @@ class TestWorktreeWriterGate:
         with pytest.raises(SystemExit):
             atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
         assert entered == ["atk mq process-loop"]
-        # claude起動・update-dotfiles実行の2回のsubprocess.runそれぞれに1回ずつ続く。
-        assert title_calls == ["atk mq process-loop", "atk mq process-loop"]
+        # 処理前更新・claude起動・終了後更新の3回のsubprocess.runそれぞれに1回ずつ続く。
+        assert title_calls == ["atk mq process-loop"] * 3
         # 非TTY下での制御文字抑止は`TestProcessLoopUpdateAndRestart.test_update_and_execv_called_by_default`が検証する。
 
 

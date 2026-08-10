@@ -68,6 +68,9 @@ _RESTART_EXIT_CODE = 75
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
+# Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数の契約を検査できるよう値を固定する。
+_CREATE_NEW_PROCESS_GROUP = 0x00000200
+
 
 def _strip_inherited_venv(env: dict[str, str]) -> None:
     """起動元ツールのエフェメラル仮想環境を子プロセス環境から除去する。
@@ -105,6 +108,21 @@ def _child_env() -> dict[str, str]:
     _strip_inherited_venv(env)
     env.pop(_RESTART_SPEC_ENV, None)
     return env
+
+
+def _session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.name) -> dict[str, str]:
+    """セッション専用の環境を返し、Windows Codexだけにbash互換層を追加する。"""
+    session_env = env.copy()
+    if platform == "nt" and orchestrator == "codex":
+        shim_dir = pathlib.Path(__file__).resolve().parent / "windows-shims"
+        inherited_path = session_env.get("PATH", "")
+        session_env["PATH"] = os.pathsep.join((str(shim_dir), inherited_path))
+    return session_env
+
+
+def _session_creation_flags(orchestrator: str, *, platform: str = os.name) -> int:
+    """Windows Codexを親process-loopと別のコンソール制御グループで起動する。"""
+    return _CREATE_NEW_PROCESS_GROUP if platform == "nt" and orchestrator == "codex" else 0
 
 
 def _create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
@@ -289,9 +307,7 @@ def _build_session_argv(
 
     argv = ["codex"]
     if resume_pending:
-        argv.extend(("resume", "--approve-for-me"))
-    else:
-        argv.append("--approve-for-me")
+        argv.append("resume")
     if args.model is not None:
         argv.extend(("--model", args.model))
     if resume_pending:
@@ -344,6 +360,17 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
     finally:
         observer.stop()
         observer.join()
+
+
+def _pull_private_notes(private_notes: pathlib.Path) -> bool:
+    """private-notesをlock下で同期し、処理開始に利用できる状態かを返す。"""
+    try:
+        with _repo_lock(private_notes):
+            _pull(private_notes)
+    except subprocess.CalledProcessError as exc:
+        print(f"git pullに失敗（子セッションを起動せず待機します）: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 def _ensure_inbox_dirs(private_notes: pathlib.Path) -> None:
@@ -515,9 +542,40 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
         _restart_process_loop(argv, dotfiles_root)
 
 
+def _update_before_session(
+    private_notes: pathlib.Path,
+    dotfiles_root: pathlib.Path | None,
+    startup_hash: str | None,
+    argv: list[str],
+    env: dict[str, str],
+) -> bool:
+    """ready項目の処理前にdotfilesとprivate-notesを同期する。"""
+    executable = _resolve_executable("update-dotfiles")
+    if executable is None:
+        print("update-dotfilesを利用できないため、子セッションを起動せず待機します。", file=sys.stderr)
+        return False
+    result = subprocess.run([executable, "--force"], check=False, env=env)
+    _console_title.set_console_title("atk mq process-loop")
+    if result.returncode != 0:
+        print(
+            f"update-dotfilesに失敗しました（exit code {result.returncode}）。子セッションを起動せず待機します。",
+            file=sys.stderr,
+        )
+        return False
+    if dotfiles_root is not None and startup_hash is not None:
+        current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
+        if current_hash != startup_hash:
+            print("処理開始前に常駐コードの更新を検知したためprocess-loopを再起動します。")
+            _process_loop_log.append("restart_before_session_update")
+            _restart_process_loop(argv, dotfiles_root)
+    return _pull_private_notes(private_notes)
+
+
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: 選択した対話セッションと待機ループを常駐で繰り返す。
 
+    初回と0件待機からの復帰時はprivate-notesを同期し、ready項目があれば`update-dotfiles`と
+    private-notesの再同期を終えてからセッションを起動する。同期失敗時は子を起動せず待機へ戻る。
     件数は選択したオーケストレーターのセッション起動要否だけに使う。
     分類結果の保存、依存判定、セッション上限、実行順、readiness判定、wave選択は
     process-feedbacksが担う。
@@ -568,13 +626,27 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     os.environ[_LEGACY_PROCESS_LOOP_SESSION_ENV] = "1"
     env = _child_env()
     resume_pending = args.resume is not None
+    refresh_before_session = True
     with _console_title.console_title("atk mq process-loop"):
         try:
             try:
                 while True:
+                    if not _pull_private_notes(private_notes):
+                        print("同期を再試行するまで変更検知を待機します。")
+                        _wait_for_changes(private_notes, target_repo_id)
+                        refresh_before_session = True
+                        continue
                     count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                    if count > 0 and refresh_before_session and not args.no_update:
+                        if not _update_before_session(private_notes, dotfiles_root, startup_hash, sys.argv, env):
+                            print("同期を再試行するまで変更検知を待機します。")
+                            _wait_for_changes(private_notes, target_repo_id)
+                            refresh_before_session = True
+                            continue
+                        count = _count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0:
+                        refresh_before_session = False
                         print(f"{count}件のfeedback/回答済みTBDを検知。{args.orchestrator}へ委譲します。")
                         _process_loop_log.append("session_start")
                         session_started_at = time.monotonic()
@@ -608,8 +680,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         result = subprocess.run(
                             session_argv,
                             check=False,
-                            env=env,
+                            env=_session_env(env, args.orchestrator),
                             cwd=session_path,
+                            creationflags=_session_creation_flags(args.orchestrator),
                         )
                         _console_title.set_console_title("atk mq process-loop")
                         _process_loop_log.append(
@@ -651,9 +724,11 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             _process_loop_log.append("alert_check", submitted=submitted)
                             if submitted > 0:
                                 print(f"アラート監視により{submitted}件のfeedbackを投入しました。")
+                                refresh_before_session = True
                                 continue
                     print("0件のため変更検知を待機します。")
                     changed = _wait_for_changes(private_notes, target_repo_id)
+                    refresh_before_session = True
                     if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:
                         _check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
             except KeyboardInterrupt:

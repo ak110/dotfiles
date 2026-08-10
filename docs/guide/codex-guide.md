@@ -20,6 +20,16 @@ atk mq process-loop --orchestrator=codex
 ready項目がなくなると、終了時の`session-review`を1回実行してgoalを完了する。
 goal完了後に対話UIで`/exit`を入力すると、親の監視ループへ戻る。
 
+初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
+`update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。
+同期に失敗した場合はCodexを起動せず、変更検知を待って再試行する。
+
+process-loopはCodexの承認方針とsandbox設定を上書きせず、利用者のCodex設定を継承する。
+WindowsではCodexを親の監視ループと別のプロセスグループで起動するため、
+Codexの実行中もCtrl+Cで親の監視ループを終了できる。
+また、process-loop内のCodexに限り、Git for Windowsを介してbash形式のplugin hookへ
+Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCodexのPATHは変更しない。
+
 ## プラグイン更新の反映
 
 Codexプラグインはバージョン付きキャッシュへ導入される。
@@ -46,7 +56,8 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 ### フックの信頼確認
 
 Codexはplugin同梱フックの定義が変わると、利用者が再び信頼するまで当該フックをスキップする。
-プラグイン更新後は新しいCodexセッションで`/hooks`を実行し、次の3イベントだけが含まれることを確認する。
+プラグイン更新後は新しいCodexセッションで`/hooks`を実行し、agent-toolkitについて
+次の3イベントが含まれることを確認する。他の有効pluginは、独自のイベントを追加する場合がある。
 
 - `PermissionRequest`
 - `UserPromptSubmit`
