@@ -45,11 +45,11 @@ worktreeと管理対象領域を作成・回収しない。
    同じworktreeへ複数のwriterを割り当てず、依存する単位は先行commitの統合後に一覧の統合用worktreeへ逐次割り当てる
 4. writerとreviewerはAgentツールの`general-purpose`で起動し、executor自身を含む同じ役割種別へ割り当てない。
    writerへ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
-   プロジェクト規範、該当author skillの絶対パス、その単位の識別と完全な対象ファイル集合だけとする。
+   プロジェクト規範、該当author skillの絶対パス、その単位の識別と計画時点で判明している対象ファイル集合だけとする。
    並列可能なwriterは利用できる実行枠内で同時に起動し、その他は依存順に1件ずつ起動する
 5. 各writerの完了後にcommit、差分、検証、cleanな作業ツリーを実測する。
    完了した単位commitは計画の統合順に完全OIDを指定して統合用worktreeへcherry-pickし、
-   各統合後にHEAD、変更ファイル集合、clean状態を計画と照合する。
+   各統合後にHEAD、計画対象の実装漏れ、追加変更の目的への帰属と必要性、clean状態を照合する。
    衝突時は統合用worktreeのcherry-pickだけを中止し、対象重複または依存関係を再調査してから該当単位を再実装する。
    失敗していない単位のcommitとworktreeは巻き戻さない
 6. 単位worktreeと統合用worktreeは作成・回収しない。

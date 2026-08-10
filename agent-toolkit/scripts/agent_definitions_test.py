@@ -500,6 +500,10 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
     ):
         assert phrase in agent_rules
     for phrase in (
+        "目的をユーザーが観測する成果と公開契約から確定",
+        "計画、一覧、clean状態、診断記録などを中間手段へ分類",
+        "中間手段の完全性は独立した目的にせず",
+        "利用者成果に帰属する変更より優先しない",
         "観測事象、発生条件、確認できた頻度、最大影響、許容できる残存リスク",
         "何もしない案、既存操作だけの案、局所運用案、新機構案",
         "作成、更新、失効、復旧、移行、検証の全ライフサイクル",
@@ -508,6 +512,28 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "対応量又は既実装量を理由にした採用継続は認めない",
     ):
         assert phrase in judgment_details
+
+
+def test_plan_targets_are_predictions_not_exclusive_permissions() -> None:
+    """利用者成果へ帰属する追加変更を計画一覧の完全性より優先する。"""
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    commit = _COMMIT_SKILL.read_text(encoding="utf-8")
+
+    for phrase in (
+        "起草時点で変更が必要と確定した対象",
+        "排他的な書込許可または最終差分の完全な予測として扱わない",
+        "対象一覧にないコミット済み差分はエラーにも警告にもしない",
+    ):
+        assert phrase in plan_mode
+    assert "追加機構で内部契約を保存する案より、契約の簡素化または撤去を先に指摘" in review_task
+    assert "追加ファイル、発生理由、必要性は計画との差異として返す" in writer
+    assert "対象一覧にない追加ファイルは、その存在だけで逸脱と判定しない" in plan_review
+    assert "追加変更の目的への帰属と必要性" in executor
+    assert "実装中に目的への帰属と必要性を確認した追加変更" in commit
 
 
 def test_feedback_dependencies_point_to_provider_references() -> None:

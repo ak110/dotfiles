@@ -320,14 +320,15 @@ def test_resolves_project_local_skill_from_worktree(repo: tuple[pathlib.Path, st
     assert not errors
 
 
-def test_base_commit_diff_mismatch_is_error(repo: tuple[pathlib.Path, str]) -> None:
-    """実装後の対象一覧と実差分の不一致をエラーにする。"""
+def test_base_commit_missing_planned_targets_is_error(repo: tuple[pathlib.Path, str]) -> None:
+    """実装後の差分にない予定対象をエラーにする。"""
     work_dir, base = repo
     (work_dir / "existing.py").write_text("new\n", encoding="utf-8")
     _git(work_dir, "add", "existing.py")
     _git(work_dir, "commit", "-qm", "change")
     errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
-    assert any(f"対象ファイル一覧と{base}..HEADのコミット済み差分が一致しない" in error for error in errors)
+    assert any(f"対象ファイル一覧の予定対象が{base}..HEADのコミット済み差分にない" in error for error in errors)
+    assert any("欠落=['new.py', 'old.py']" in error for error in errors)
     assert any("未コミットの作業ツリー差分は照合対象外" in error for error in errors)
     assert not warnings
 
@@ -337,8 +338,8 @@ def test_base_commit_ignores_uncommitted_changes(repo: tuple[pathlib.Path, str])
     work_dir, base = repo
     (work_dir / "existing.py").write_text("new\n", encoding="utf-8")
     errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
-    assert any("対象ファイル一覧と" in error for error in errors)
-    assert all("existing.py']" not in error.rsplit("実差分=", maxsplit=1)[-1] for error in errors)
+    assert any("対象ファイル一覧の予定対象が" in error for error in errors)
+    assert any("existing.py" in error for error in errors)
     assert not warnings
 
 
@@ -349,6 +350,20 @@ def test_base_commit_diff_match_succeeds(repo: tuple[pathlib.Path, str]) -> None
     (work_dir / "new.py").write_text("new\n", encoding="utf-8")
     (work_dir / "old.py").unlink()
     _git(work_dir, "add", "existing.py", "new.py", "old.py")
+    _git(work_dir, "commit", "-qm", "change")
+    errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
+    assert not errors
+    assert not warnings
+
+
+def test_base_commit_diff_with_additional_file_succeeds(repo: tuple[pathlib.Path, str]) -> None:
+    """予定対象をすべて含む追加差分を受理する。"""
+    work_dir, base = repo
+    (work_dir / "existing.py").write_text("new\n", encoding="utf-8")
+    (work_dir / "new.py").write_text("new\n", encoding="utf-8")
+    (work_dir / "extra.py").write_text("extra\n", encoding="utf-8")
+    (work_dir / "old.py").unlink()
+    _git(work_dir, "add", "existing.py", "new.py", "extra.py", "old.py")
     _git(work_dir, "commit", "-qm", "change")
     errors, warnings = _check(work_dir, base, _plan(base), compare_diff=True)
     assert not errors

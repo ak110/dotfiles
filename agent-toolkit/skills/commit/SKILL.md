@@ -37,7 +37,7 @@ description: >
 commit直前に次を実施する。
 
 1. `git status --short`、`git diff --cached`、`git diff`で現在の単位だけがstage済みであることを確認する
-2. 計画の対象ファイルと変更箇所を、差分と特徴的な文字列で照合する
+2. 計画記載の予定対象と、実装中に目的への帰属と必要性を確認した追加変更を、差分と特徴的な文字列で照合する
 3. format、lint、testの結果と警告ゼロを確認する
 4. 競合解決後は`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`で競合マーカーが無いことを確認する
 5. commit後に`git status --short`と`git show --stat --oneline HEAD`で成果を実測する
