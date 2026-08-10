@@ -162,7 +162,8 @@ LLM口調の禁止語彙・対比例は`references/tone-examples-llm-tone.md`に
 uv run --script path/to/writing-standards/scripts/check_dash.py path/to/file.md
 ```
 
-検出対象と検査範囲は`check_dash.py`の実装を正本とする。
+検査範囲は日本語の地の文・見出しであり、コードブロック・インラインコード・URL内は対象外とする。
+検出対象の詳細は`check_dash.py`の実装を正本とする。
 実装段階では`plan-impl-executor`が恒久成果物へ`check_dash.py`を実行する。
 
 ## Markdown記述スタイル

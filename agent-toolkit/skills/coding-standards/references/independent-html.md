@@ -31,10 +31,3 @@ Webシステムの一部として動作するHTML（既存フレームワーク�
 
 標準のHTML/CSS/JavaScriptで成立する範囲は独自実装せず、フレームワークをCDN経由で読み込む。
 外部APIやサーバー連携を要する構成は単体で完結する成果物の用途から外れるため、Webシステム側の規範に従う。
-
-## 参考
-
-- Qiita記事（QUANON氏によるClaude生成HTMLの推奨設計）
-- Claude公式ブログ（Using Claude Code: the unreasonable effectiveness of HTML）
-
-外部リソースの詳細URLは変動しうるため本ファイルに固定URLは記載しない。検索して最新版を参照する。

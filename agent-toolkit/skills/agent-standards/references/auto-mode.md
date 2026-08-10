@@ -51,6 +51,10 @@ auto modeは次の4区分でルールを判定する。
 | リリースワークフローの起動 | 未取得 | ルール追加ではなく利用者自身による実行を第1選択肢とする |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | フィードバック処理由来に限定するルールを追加する |
 
+- `git commit --amend`はデフォルトの`soft_deny`が自身の作成したHEADへのamendを`clears`するが、
+  別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
+- Self Modificationの許可ルールは、正規のフィードバック処理フロー由来・ユーザー投入フィードバック限定
+  （自己生成起点を除外）・計画レビュー工程経由を条件とする
 - 分類名を取得できない場合は、拒否メッセージ本文を根拠として後掲の利用者確認へ進む。
   `claude auto-mode defaults`自体が拒否されて分類名を確認できない場合も同じ扱いとする
 - `kill -TERM $PPID`のルール本文は「`agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、
