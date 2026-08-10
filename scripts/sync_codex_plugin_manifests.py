@@ -189,7 +189,11 @@ def _outputs(root: Path) -> dict[Path, str]:
 def sync(root: Path = REPO_ROOT) -> bool:
     """派生JSONを同期し、差分があった場合は`True`を返す。"""
     expected = _outputs(root)
-    stale = [path for path, content in expected.items() if not (root / path).exists() or (root / path).read_text() != content]
+    stale = [
+        path
+        for path, content in expected.items()
+        if not (root / path).exists() or (root / path).read_text(encoding="utf-8") != content
+    ]
     if HOOKS_TARGET not in expected and (root / HOOKS_TARGET).exists():
         stale.append(HOOKS_TARGET)
     for path, content in expected.items():

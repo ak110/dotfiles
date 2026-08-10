@@ -92,15 +92,15 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
 def test_sync_is_deterministic(manifest_root: Path) -> None:
     assert subject.sync(manifest_root) is True
     assert subject.sync(manifest_root) is False
-    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
+    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8"))
     for key, value in _plugin_data().items():
         assert generated[key] == value
     assert generated["hooks"] == "./hooks/hooks.codex.json"
-    agent_plugin_text = (manifest_root / subject.AGENT_PLUGIN_TARGET).read_text()
+    agent_plugin_text = (manifest_root / subject.AGENT_PLUGIN_TARGET).read_text(encoding="utf-8")
     agent_plugin = json.loads(agent_plugin_text)
     assert agent_plugin == {"$schema": subject.AGENT_PLUGIN_SCHEMA, **_plugin_data()}
     assert agent_plugin_text.endswith("\n")
-    agent_mcp_text = (manifest_root / subject.AGENT_MCP_TARGET).read_text()
+    agent_mcp_text = (manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8")
     assert json.loads(agent_mcp_text) == {
         "$schema": subject.AGENT_MCP_SCHEMA,
         "mcpServers": {
@@ -114,7 +114,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
         },
     }
     assert agent_mcp_text.endswith("\n")
-    generated_hooks = json.loads((manifest_root / subject.HOOKS_TARGET).read_text())
+    generated_hooks = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))
     assert generated_hooks == {
         "hooks": {
             "PermissionRequest": [
@@ -135,13 +135,30 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             ],
         }
     }
-    assert (manifest_root / subject.PLUGIN_TARGET).read_text().endswith("\n")
+    assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
+
+
+def test_sync_reads_all_json_as_utf8(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """同期中の全JSON読取が既定ロケールを使用しないことを確認する。"""
+    subject.sync(manifest_root)
+    original_read_text = Path.read_text
+    encodings: list[str | None] = []
+
+    def read_text(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        encodings.append(encoding)
+        return original_read_text(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+    assert subject.sync(manifest_root) is False
+    assert encodings
+    assert set(encodings) == {"utf-8"}
 
 
 def test_mcp_servers_propagated_when_source_exists(manifest_root: Path) -> None:
     subject.sync(manifest_root)
 
-    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
+    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8"))
     assert generated["mcpServers"] == "./.mcp.json"
 
 
@@ -149,7 +166,7 @@ def test_mcp_servers_absent_when_source_missing(manifest_root: Path) -> None:
     (manifest_root / subject.MCP_SOURCE).unlink()
     subject.sync(manifest_root)
 
-    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
+    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8"))
     assert "mcpServers" not in generated
 
 
@@ -182,7 +199,7 @@ def test_accepts_agent_plugin_cwd_patterns(manifest_root: Path, cwd: str) -> Non
     source = manifest_root / subject.MCP_SOURCE
     source.write_text(json.dumps({"mcpServers": {"pyfltr": {"command": "uvx", "cwd": cwd}}}), encoding="utf-8")
     subject.sync(manifest_root)
-    generated = json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text())
+    generated = json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8"))
     assert generated["mcpServers"]["pyfltr"]["cwd"] == cwd
 
 
@@ -195,20 +212,26 @@ def test_rejects_unportable_mcp_root(manifest_root: Path, source: dict[str, Any]
 
 def test_sync_replaces_stale_outputs(manifest_root: Path) -> None:
     subject.sync(manifest_root)
-    (manifest_root / subject.PLUGIN_TARGET).write_text("{}")
-    (manifest_root / subject.AGENT_PLUGIN_TARGET).write_text("{}")
-    (manifest_root / subject.AGENT_MCP_TARGET).write_text("{}")
+    (manifest_root / subject.PLUGIN_TARGET).write_text("{}", encoding="utf-8")
+    (manifest_root / subject.AGENT_PLUGIN_TARGET).write_text("{}", encoding="utf-8")
+    (manifest_root / subject.AGENT_MCP_TARGET).write_text("{}", encoding="utf-8")
     stale_hooks = manifest_root / subject.HOOKS_TARGET
-    stale_hooks.write_text("{}")
+    stale_hooks.write_text("{}", encoding="utf-8")
     assert subject.sync(manifest_root) is True
-    assert json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())["version"] == "1.2.3"
-    assert json.loads((manifest_root / subject.AGENT_PLUGIN_TARGET).read_text())["$schema"] == subject.AGENT_PLUGIN_SCHEMA
-    assert json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text())["$schema"] == subject.AGENT_MCP_SCHEMA
-    assert json.loads(stale_hooks.read_text())["hooks"]["PermissionRequest"][0]["matcher"] == "Bash"
+    assert json.loads((manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8"))["version"] == "1.2.3"
+    assert (
+        json.loads((manifest_root / subject.AGENT_PLUGIN_TARGET).read_text(encoding="utf-8"))["$schema"]
+        == subject.AGENT_PLUGIN_SCHEMA
+    )
+    assert (
+        json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8"))["$schema"]
+        == subject.AGENT_MCP_SCHEMA
+    )
+    assert json.loads(stale_hooks.read_text(encoding="utf-8"))["hooks"]["PermissionRequest"][0]["matcher"] == "Bash"
 
 
 def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
-    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text())
+    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     hooks["hooks"]["PermissionRequest"] = hooks["hooks"]["PermissionRequest"][:1]
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
     with pytest.raises(ValueError, match="許可済みhandler"):
@@ -217,7 +240,7 @@ def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
 
 @pytest.mark.parametrize("event", ["UserPromptSubmit", "Stop"])
 def test_rejects_missing_shared_allowlisted_handler(manifest_root: Path, event: str) -> None:
-    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text())
+    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     del hooks["hooks"][event]
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
     with pytest.raises(ValueError, match="未知のCodex hookイベント"):
@@ -231,9 +254,9 @@ def test_rejects_unknown_allowlisted_event(manifest_root: Path, monkeypatch: pyt
 
 
 def test_rejects_mismatched_sources(manifest_root: Path) -> None:
-    data = json.loads((manifest_root / subject.MARKETPLACE_SOURCE).read_text())
+    data = json.loads((manifest_root / subject.MARKETPLACE_SOURCE).read_text(encoding="utf-8"))
     data["plugins"][0]["version"] = "9.9.9"
-    (manifest_root / subject.MARKETPLACE_SOURCE).write_text(json.dumps(data))
+    (manifest_root / subject.MARKETPLACE_SOURCE).write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="version"):
         subject.sync(manifest_root)
 
