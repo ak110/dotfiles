@@ -975,11 +975,11 @@ class TestCodexWindowsSessionConfiguration:
         """Git BashへWindowsパスを渡し、hookの入出力契約を保持すること。"""
         script = tmp_path / "hook.sh"
         script.write_text(
-            'read -r value || exit 31\n'
+            "read -r value || exit 31\n"
             '[ "$value" = "ok" ] || exit 32\n'
             '[ "$#" -eq 12 ] || exit 33\n'
             '[ "${10}" = "ten value" ] || exit 34\n'
-            'exit 23\n',
+            "exit 23\n",
             encoding="utf-8",
         )
         shim = pathlib.Path(_process_loop.__file__).resolve().parent / "windows-shims" / "bash.cmd"
