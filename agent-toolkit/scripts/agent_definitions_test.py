@@ -671,6 +671,22 @@ def test_push_ci_explicitly_selects_forge_for_baseline_and_monitoring() -> None:
     assert "`<destination>`、destination ref、remote-tracking refを代用しない" in push_and_ci
 
 
+def test_push_ci_reuses_selected_refspec_for_push() -> None:
+    """引数なしpush不成立時もdry-runと実pushの入力を一致させる。"""
+    push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
+
+    for phrase in (
+        "引数なし`git push --dry-run --porcelain`",
+        "承認済みのremoteとdestinationへの意図したrefspec",
+        "`git push --dry-run --porcelain <remote> <source>:<destination>`",
+        "remote、source、完全なdestination refを省略しない",
+        "明示dry-runが成功し、remoteとdestinationが承認範囲と完全一致する場合だけ",
+        "標準経路ではremote名とbranch名を明示せず`git push`を単独で実行",
+        "`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`",
+    ):
+        assert phrase in push_and_ci
+
+
 def test_codex_plugin_version_change_invalidates_cached_root() -> None:
     """導入版変更後に現行のCodex plugin rootだけを使用する。"""
     version_bump = (

@@ -8,9 +8,14 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 
 1. pushの許可が対象リポジトリと対象branchを含むことを確認する
 2. `git fetch`後に上流との差分を双方向で確認する。上流が進んでいる場合は追随後に検証をやり直す
-3. `git remote -v`、`git branch --show-current`、有効なpush設定、
-   `git push --dry-run --porcelain`の全status lineから、実際のremoteと`<source>:<destination>`をrefごとに確定する。
-   拒否または失敗予定のrefがある場合はpushしない
+3. `git remote -v`、`git branch --show-current`、有効なpush設定から、承認済みのremoteとdestinationを確認する。
+   最初に引数なし`git push --dry-run --porcelain`を実行し、成功して全status lineが
+   承認済みのremoteとdestinationへの意図したrefspecを示す場合は標準経路を選ぶ。
+   引数なし経路が失敗するか意図したrefspecを示さない場合は実pushせず、
+   `git push --dry-run --porcelain <remote> <source>:<destination>`で再確認する。
+   明示経路ではremote、source、完全なdestination refを省略しない。
+   明示dry-runが成功し、remoteとdestinationが承認範囲と完全一致する場合だけ明示経路を選ぶ。
+   いずれの経路でも拒否または失敗予定のrefがある場合はpushしない
 4. 読み込んだ本スキルの絶対パスからplugin rootを確定し、
    `uv run --no-project --script <plugin-root>/scripts/_managed_temp.py create --prefix ci-evidence`を単独で実行する。
    標準出力の絶対パスを保持し、pushごとに別の領域を使う
@@ -33,7 +38,8 @@ baseline作成、push、監視の順で実行する。
 
 ## pushと監視
 
-1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する
+1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する。
+   明示経路では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
 2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
 3. 全対象が終了コード0で完了した場合だけCI通過と判定する。
    終了コードの意味は後掲の表に従う。
