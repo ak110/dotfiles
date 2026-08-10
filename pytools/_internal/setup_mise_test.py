@@ -379,6 +379,50 @@ class TestWindowsProcessPathPriority:
         assert os.environ["PATH"] == str(windows_env["shims_dir"])
 
 
+class TestWindowsMiseSubprocessEnvironment:
+    """Windowsのmise子プロセスが管理対象の.NET共有ルートを優先することを検証する。"""
+
+    def test_prepends_default_dotnet_root(
+        self,
+        windows_env: dict[str, typing.Any],
+        mise_stub: _MiseSubprocessStub,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        del windows_env
+        system_dotnet = r"C:\Program Files\dotnet"
+        monkeypatch.delenv("MISE_DOTNET_ROOT", raising=False)
+        monkeypatch.delenv("MISE_DATA_DIR", raising=False)
+        monkeypatch.setenv("PATH", system_dotnet)
+        mise_data_dir = Path(os.environ["LOCALAPPDATA"]) / "mise"
+        monkeypatch.setattr(_setup_mise.platformdirs, "user_data_dir", lambda *_args, **_kwargs: str(mise_data_dir))
+
+        _setup_mise.run()
+
+        expected_root = str(mise_data_dir / "dotnet-root")
+        for record in mise_stub.records:
+            env_overrides = record["env_overrides"]
+            assert env_overrides["MISE_DOTNET_ROOT"] == expected_root
+            assert env_overrides["PATH"].split(";") == [expected_root, system_dotnet]
+
+    def test_respects_explicit_dotnet_root_without_duplication(
+        self,
+        windows_env: dict[str, typing.Any],
+        mise_stub: _MiseSubprocessStub,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        del windows_env
+        custom_root = r"D:\tools\dotnet"
+        monkeypatch.setenv("MISE_DOTNET_ROOT", custom_root)
+        monkeypatch.setenv("PATH", f"{custom_root};C:\\Program Files\\dotnet;{custom_root.upper()}")
+
+        _setup_mise.run()
+
+        for record in mise_stub.records:
+            env_overrides = record["env_overrides"]
+            assert env_overrides["MISE_DOTNET_ROOT"] == custom_root
+            assert env_overrides["PATH"].split(";") == [custom_root, r"C:\Program Files\dotnet"]
+
+
 class TestNonInteractiveEnvInjection:
     """全mise CLI呼び出しに無人セットアップ用の環境変数が注入されることを確認する。
 

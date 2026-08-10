@@ -5,12 +5,15 @@
 
 import json
 import logging
+import ntpath
 import os
 import shutil
 import subprocess
 import sys
 import typing
 from pathlib import Path
+
+import platformdirs
 
 from pytools._internal import claude_common, log_format, winutils
 from pytools._internal.cli import setup_logging
@@ -41,6 +44,29 @@ _WINDOWS_PATHSEP = ";"
 def _is_windows() -> bool:
     """Windows環境かどうかを返す。テストでmonkeypatchしやすいよう関数化している。"""
     return os.name == "nt"
+
+
+def _mise_env_overrides() -> dict[str, str]:
+    """mise子プロセスへ渡す非対話設定とWindows固有の.NET設定を返す。"""
+    overrides = {
+        "MISE_YES": "1",
+        "CI": "1",
+        "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT": _MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
+    }
+    if not _is_windows():
+        return overrides
+
+    dotnet_root = os.environ.get("MISE_DOTNET_ROOT")
+    if not dotnet_root:
+        mise_data_dir = os.environ.get("MISE_DATA_DIR") or platformdirs.user_data_dir("mise", appauthor=False)
+        dotnet_root = str(Path(mise_data_dir) / "dotnet-root")
+
+    normalized_root = ntpath.normcase(ntpath.normpath(dotnet_root))
+    path_entries = [entry for entry in os.environ.get("PATH", "").split(_WINDOWS_PATHSEP) if entry]
+    retained_entries = [entry for entry in path_entries if ntpath.normcase(ntpath.normpath(entry)) != normalized_root]
+    overrides["MISE_DOTNET_ROOT"] = dotnet_root
+    overrides["PATH"] = _WINDOWS_PATHSEP.join([dotnet_root, *retained_entries])
+    return overrides
 
 
 def main() -> None:
@@ -314,16 +340,14 @@ def _run_mise(
     aqua/npmバックエンドの初回ダウンロード時に確認プロンプトでブロックするのを防ぐ。
     無人セットアップで版一覧取得が短時間のネットワーク遅延により失敗しないよう、
     mise内部の版一覧取得上限も延長する。
+    Windowsではシステム版`dotnet.exe`が先行しても、miseのSDK検証が共有ルートを
+    参照するよう子プロセスだけの`PATH`を設定する。
     """
     return claude_common.run_subprocess(
         [str(mise_bin), *args],
         timeout=timeout,
         tag="mise",
-        env_overrides={
-            "MISE_YES": "1",
-            "CI": "1",
-            "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT": _MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
-        },
+        env_overrides=_mise_env_overrides(),
     )
 
 
