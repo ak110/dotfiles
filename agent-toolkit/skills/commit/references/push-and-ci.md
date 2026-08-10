@@ -15,6 +15,8 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    `uv run --no-project --script <plugin-root>/scripts/_managed_temp.py create --prefix ci-evidence`を単独で実行する。
    標準出力の絶対パスを保持し、pushごとに別の領域を使う
 5. 削除refを除き、更新refごとにsource refを1件確定する。
+   手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
+   refspecの右辺`<destination>`、destination ref、remote-tracking refを代用しない。
    baseline作成時に補助スクリプトがsource refをcommitへ再帰的にpeelし、完全長commit SHAを保存する
    - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
    - commitへpeelできないrefではbaseline作成が失敗するためpushしない

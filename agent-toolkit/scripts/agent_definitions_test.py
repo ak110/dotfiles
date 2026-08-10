@@ -437,6 +437,11 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "完成済み本文は問い直さず" in add_feedback
     assert "通常型の主題だけを受け取った場合" in add_feedback
     assert "保存直前にactive一覧" in add_feedback
+    assert "正確なローカルworktreeが既知" in add_feedback
+    assert "その絶対パスを`atk mq add --target-repo`へ渡し" in add_feedback
+    assert "canonicalな対象リポジトリと作成時点のHEAD完全OID" in add_feedback
+    assert "利用できるローカルworktreeがない場合だけURL" in add_feedback
+    assert "worktreeを推測せず" in add_feedback
     assert "processing項目を変更していない" in add_feedback
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in plan_and_add
     assert "`atk mq add`を実行" not in plan_and_add
@@ -662,6 +667,8 @@ def test_push_ci_explicitly_selects_forge_for_baseline_and_monitoring() -> None:
     assert "`--repo`、`--forge`、`--ref`、`--source-ref`を省略しない" in push_and_ci
     assert "`--forge <github|gitlab>`へ明示" in push_and_ci
     assert "単一refと複数refのいずれでも、GitHubとGitLabの両方" in push_and_ci
+    assert "refspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す" in push_and_ci
+    assert "`<destination>`、destination ref、remote-tracking refを代用しない" in push_and_ci
 
 
 def test_codex_plugin_version_change_invalidates_cached_root() -> None:

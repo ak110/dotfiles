@@ -14,6 +14,9 @@ description: >
 - 完成済み本文は問い直さず、本文、対象リポジトリ、種別、source、plan file、依存関係を受け取る
 - 計画実装型では、producerが計画作成に使ったworktreeの絶対パスと計画base commitを受け取る。
   repo本体や別worktreeへ解決し直さず、同じ絶対パスを作業ディレクトリと対象リポジトリ引数へ渡す
+- 通常型でも対象の正確なローカルworktreeが既知なら、その絶対パスを`atk mq add --target-repo`へ渡し、
+  CLIにcanonicalな対象リポジトリと作成時点のHEAD完全OIDを同時に確定させる。
+  worktreeを推測せず、利用できるローカルworktreeがない場合だけURLを渡す
 - 通常型の主題だけを受け取った場合は利用者向け結果を現在の対話で確定する
 - 計画実装型では、計画へ吸収してrejectedへ移した元項目のfilenameをproducerから受け取る
 
