@@ -5,6 +5,7 @@
 {{- end -}}
 {{- $config = setValueAtPath "project_doc_max_bytes" 131072 $config -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
+{{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.command" "claude" $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.args" (list "mcp" "serve") $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.default_tools_approval_mode" "approve" $config -}}
