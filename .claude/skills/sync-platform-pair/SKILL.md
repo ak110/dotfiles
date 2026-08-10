@@ -29,37 +29,19 @@ description: >
 
 ## PowerShell / `.ps1.tmpl` 側の必須作法
 
-本リポジトリのPowerShellスクリプトはWindows PowerShell 5.1互換を保つ。以下を必ず遵守する。
+改行・厳格モード・エンコーディング指定・パス操作などの記述作法は
+`agent-toolkit:coding-standards`の`references/powershell.md`に従う。
+ペアファイル側で追加する事項は次の2点とする。
 
-- 改行はCRLF: `.gitattributes` で `*.ps1.tmpl` を `eol=crlf` 指定済み。PowerShell 5.1はLF改行のみだと構文解析に失敗する
-  - Claude CodeのWriteツールは常にLFで書き込むため、エディター保存後にgit側でCRLFに正規化される前提
-  - agent-toolkitプラグインのPreToolUseフックがLFのみのペイロード書き込みを検出してブロックする
-- ファイル先頭で厳格モード: 全スクリプト冒頭に以下の2行を記述する
-
-  ```powershell
-  Set-StrictMode -Version Latest
-  $ErrorActionPreference = 'Stop'
-  ```
-
-- UTF-8の明示: ファイル入出力では必ずエンコーディングを指定する。既定のShift-JISでは日本語が正しく扱えない
-
-  ```powershell
-  Get-Content -Encoding UTF8 $path
-  $content | Set-Content -Encoding UTF8 $path
-  ```
-
-  加えて、BOMなしUTF-8で出力する場合は `System.Text.UTF8Encoding` のインスタンスを使う。
-  既存 `install-claude.ps1` の `$script:utf8NoBom` を参照
-
-- パス区切り: ハードコードを避け、`Join-Path` や `[IO.Path]::Combine` を使う
-
-- 環境変数: `$HOME` / `$env:USERPROFILE` のどちらを使うかをスクリプト内で統一し、両者を併用しない
+- BOMなしUTF-8で出力する場合は`System.Text.UTF8Encoding`のインスタンスを使う
+  （既存`install-claude.ps1`の`$script:utf8NoBom`を参照する）
+- `$HOME`と`$env:USERPROFILE`のどちらを使うかをスクリプト内で統一し、両者を併用しない
 
 ## Bash / `.sh.tmpl` 側の対応
 
-- `set -eux` でエラー/未定義変数/コマンド表示を有効化（既存スクリプトに合わせる）
-- パスは必ずダブルクォートで囲む（スペース対応）
-- Windows版と同じ処理を別の記法で書いているだけの場合、両方に同一のコメントを付けて対応関係を示す
+記述作法は`agent-toolkit:coding-standards`の`references/bash.md`に従う。
+ただし`.sh.tmpl`では既存スクリプトに合わせて`set -eux`を使う。
+Windows版と同じ処理を別の記法で書いているだけの場合、両方に同一のコメントを付けて対応関係を示す。
 
 ## 変更フロー
 

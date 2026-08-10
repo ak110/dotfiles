@@ -5,6 +5,7 @@ target repoのactive一覧をinbox・processing双方について取得する。
 
 関連processing項目にplan fileがあれば対象ファイル一覧も読む。target repoの候補worktreeごとにbranch、
 status、`target_commit`以降のcommitと変更ファイルを確認し、計画対象との重なりから対応候補を限定する。
+対象worktreeのリモートURLと完全HEADも確認する。計画実装型では完全HEADと計画base commitを照合する。
 一意に確定できない場合は処理状況を不明と記録し、processing本文を更新せず追随feedbackとして分離する。
 process-loopの生存は観測可能な場合の補助情報とし、queueとGit実体を正本とする。
 
@@ -16,7 +17,8 @@ process-loopの生存は観測可能な場合の補助情報とし、queueとGit
 | 先行完了だけが必要 | `depends_on`を持つ項目として追加 |
 | 実装順序が独立 | 通常追加 |
 
-同一・重複を確定する最小確認の直後に、`reject --if-inbox`で重複inboxを終端する。
+同一・重複を確定する最小確認の直後に、
+`atk mq reject <filename> --if-inbox --note=<移管理由>`で重複inboxを終端する。
 同じ対象リポジトリに回答済みTBDがある場合は、TBDの処理を先に完了する。
 状態更新より前に追加調査、計画起草、review、本文の清書へ進まない。
 計画作成へ移管する場合は、noteに完成後に新規feedbackとして投入する旨と計画パスを記録する。

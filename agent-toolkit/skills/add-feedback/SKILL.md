@@ -23,16 +23,10 @@ description: >
    複数リポジトリの場合だけ
    `references/cross-repository-submission.md`も全文読む
 2. 各本文を単体で意味が完結する形にし、対象、観測事象、期待結果、出典、関連提案との関係を含める
-3. 対象worktreeのリモートURLと完全HEADを確認する。計画実装型は完全HEADと計画base commitも照合する
-4. 保存直前にactive一覧と関連項目を再取得し、事前確認の判断表を再適用する。
+3. 保存直前にactive一覧と関連項目を再取得し、事前確認の判断表を再適用して処置を確定する。
    競合で拒否された場合も同様に再取得して再適用する
-5. 重複inboxは、同じ対象リポジトリにある回答済みTBDを先に終端してから、
-   `atk mq reject <filename> --if-inbox --note=<移管理由>`で終端する。
-   状態競合で拒否された場合はactive一覧を再取得し、processing項目を変更しない
-6. 新規項目は`atk mq add`で保存し、計画実装型は吸収元filenameを本文へ記録する
-7. processing重複は、新情報無しなら追加せず、追加差分なら依存付き追随、順序依存だけなら
-   `depends_on`、独立なら通常追加とする
-8. 完了表示と`atk mq show`でfilename、本文、`target_repo`、`target_commit`、`plan_file`、
+4. 新規項目は`atk mq add`で保存し、計画実装型は吸収元filenameを本文へ記録する
+5. 完了表示と`atk mq show`でfilename、本文、`target_repo`、`target_commit`、`plan_file`、
    `depends_on`を入力と照合する
 
 本文へ引用符・改行を含む場合は、本文をファイルへ保存し`atk mq add --body-file <path>`で渡す

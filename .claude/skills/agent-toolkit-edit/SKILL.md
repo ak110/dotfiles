@@ -80,7 +80,7 @@ description: >
 ## スキル間の連携
 
 `agent-toolkit:plan-mode`から作業を開始し、承認後はAgentツールで`agent-toolkit:plan-impl-executor`を
-起動して引き継ぐ（レビュー実行を含む工程の詳細は各スキル・agent定義を正本とする）。
+起動して引き継ぐ。工程の詳細は各スキル・agent定義を正本とする。
 計画ファイルの実装者向け領域にあるレビューステップへ
 `レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップする。
 
@@ -193,11 +193,9 @@ marketplace配布経路は次のとおり。
 - ローカル編集の反映: `chezmoi apply`（または`update-dotfiles`）でデプロイし、
   Claude Code再起動か`/reload-plugins`で反映する（version bumpは不要）
 
-Agent Plugins向け`plugin.json`・`mcp.json`は専用同期スクリプトで生成する。
-Codex向け`.codex-plugin/plugin.json`・`.agents/plugins/marketplace.json`も同じ生成器の出力である。
-いずれもClaude Code向けmanifestと`.mcp.json`を正本とする。
+Codex向け生成物は`.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`とする。
+生成器と正本の関係は「バージョン更新」節に従う。
 prekは書き込みモードで毎回再生成する。
-Agent Plugins・Codex向け生成物を手動編集せず、正本の変更後に同期スクリプトを実行する。
 Codex hookはイベント名、matcher、入力契約を確認した許可表の定義だけを生成する。
 `chezmoi apply`後処理はCodex marketplaceを登録し、agent-toolkit pluginを導入・更新する。
 

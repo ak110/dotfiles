@@ -37,18 +37,9 @@
   - 一度限りのコマンド実行には`npx`の代わりに`pnpx`を使う（pnpmと同じ依存解決・キャッシュを再利用できるため）
   - リンター／フォーマッター: `Biome`（lint + formatを1ツールで高速に処理）
     - Biomeが対応していないルール（React固有等）が必要な場合のみESLint + Prettierを併用
-- 新しいTypeScriptバージョンの機能を積極的に使う
-  - TS 5.0+: `const`型パラメーター（`function f<const T>(x: T)`）でリテラル型を自動保持する
-    - 呼び出し側で`as const`を書かずにリテラル推論が機能するため
-  - TS 5.0+: `export type *`で型のみの再エクスポートを明示する
-    - 実行時コードと型の分離を徹底するため
-  - TS 5.2+: `using`／`await using`宣言でリソースを自動解放する
-    - `try { } finally { dispose() }`が不要になる
-    - `Symbol.dispose`／`Symbol.asyncDispose`の実装が前提
-  - TS 5.4+: `NoInfer<T>`でデフォルト引数等の型推論から特定の型パラメーターを除外する
-    - デフォルト値と他引数の型不一致をコンパイル時に検出できるため
-  - TS 5.5+: 推論される型述語（inferred type predicates）を活用する
-    - `array.filter(x => x !== null)`の結果が`T[]`へnarrowingされ、明示的な型ガードの記述を削減できる
+- 新しいTypeScriptバージョンの機能を積極的に使う。
+  対象プロジェクトのTypeScriptバージョンで利用できる機能は公式リリースノートで確認する
+  <https://www.typescriptlang.org/docs/handbook/release-notes/overview.html>
 
 ## 非同期処理
 

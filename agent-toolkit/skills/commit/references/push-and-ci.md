@@ -19,47 +19,43 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
    - commitへpeelできないrefではbaseline作成が失敗するためpushしない
    - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
-6. 確定した各`(destination ref, source ref)`について、次をpush前に実行してbaseline JSONを保存する
+6. 確定した各`(destination ref, source ref)`について、push前に
+   `uv run --no-project --script <plugin-root>/scripts/wait_ci.py`を`--write-baseline`付きで実行し、
+   baseline JSONを保存する
 
-```text
-uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
-  --write-baseline <baseline-json> \
-  --repo <owner/repoまたはURL> \
-  --forge <github|gitlab> \
-  --ref <destination-ref> \
-  --source-ref <source-ref>
-```
-
-`--repo`、`--forge`、`--ref`、`--source-ref`は省略しない。
+baseline作成、push、監視の順で実行する。
+いずれの実行でも`--repo`、`--forge`、`--ref`、`--source-ref`を省略しない。
+引数の詳細は`--help`で確認する。
 単一refと複数refのいずれでも、GitHubとGitLabの両方で、選定済みforgeを`--forge <github|gitlab>`へ明示する。
 複数refでは組ごとに別のbaselineを作成し、1件の失敗を理由に他のbaseline作成・監視を省略しない。
 
 ## pushと監視
 
 1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する
-2. push成功後、保存した各baselineに対して次を実行する
-
-```text
-uv run --no-project --script <plugin-root>/scripts/wait_ci.py \
-  --baseline <baseline-json> \
-  --repo <owner/repoまたはURL> \
-  --forge <github|gitlab> \
-  --ref <destination-ref> \
-  --source-ref <source-ref>
-```
-
-1. 全対象が終了コード0で完了した場合だけCI通過と判定する。
-   終了コード1はCI失敗、2はtimeout、3はforge CLIまたは対象判別の失敗、4はrun未登録、130は中断を示す。
+2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
+3. 全対象が終了コード0で完了した場合だけCI通過と判定する。
+   終了コードの意味は後掲の表に従う。
    出力が空の場合や成功完了マーカーが無い場合は未判定として実測へ切り替える。
    判定対象はbaselineへ保存した完全長SHAに対する実行であり、source refがpush後に進んでも再解決しない。
    登録猶予の終了後に登録された実行も判定対象に含む。
    登録猶予は、実行が1件も登録されないまま終わる場合を切り分けるための待機であり、
    判定対象を確定する期限ではない
-2. CI失敗ではrunまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する。
+4. CI失敗ではrunまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する。
    長出力の取得と要約は`agent-toolkit:shell-exec`へ委譲できるが、待機と原因分析は委譲しない
-3. 証拠取得後に`agent-toolkit:bugfix`を起動し、
+5. 証拠取得後に`agent-toolkit:bugfix`を起動し、
    同スキルの`references/ci-failure-handling.md`で帰属と原因を分類する。
    自セッション帰属または帰属未確定なら、直接的原因の明白さを問わず深掘り経路を適用する
+
+`wait_ci.py`の終了コードは次のとおり。
+
+| 終了コード | 意味 |
+| --- | --- |
+| 0 | CI通過 |
+| 1 | CI失敗 |
+| 2 | timeout |
+| 3 | forge CLIまたは対象判別の失敗 |
+| 4 | run未登録 |
+| 130 | 中断 |
 
 ## 後始末
 

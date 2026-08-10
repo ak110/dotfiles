@@ -47,9 +47,7 @@ description: >
 対象は`$CI_PIPELINE_SOURCE`が`schedule`・`tag`・`pipeline`・`web`・`api`・`trigger`の場合で、
 差分判定が成立しないため`changes`条件を通過する。
 
-`schedule`等を導入する際は、対象外としたいジョブを次のいずれかで限定する。
-
-対象外ジョブの`rules`先頭で`schedule`を除外する形式:
+`schedule`等を導入する際は、対象外としたいジョブの`rules`先頭で`schedule`を除外する。
 
 ```yaml
 job:
@@ -57,15 +55,6 @@ job:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
     - changes: [src/**/*]
-```
-
-`schedule`で起動したいジョブのみ`if`で起動条件を限定する形式:
-
-```yaml
-scheduled-check:
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-  script: ./check.sh
 ```
 
 ## lint / 検証
@@ -82,11 +71,6 @@ scheduled-check:
 
 GitLab本体のlintは`include`や`workflow`の評価まで実行するため、
 ローカルの構文チェックだけでは検知できない統合レベルの誤りを検出できる。
-
-## トラブルシューティング指針
-
-CIが意図通りに動作しない場合は、原因の階層（起動条件・rules評価・依存関係・artifacts）を切り分けてから
-[GitLab CI/CDドキュメント](https://docs.gitlab.com/ci/)の該当セクションを参照する。
 
 ## 私設ホスト（自己署名のTLS証明書）でのCI通過確認
 

@@ -102,7 +102,16 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
     assert "必要な場合だけ" in skill
     assert "references/runtime-routing.md" in skill
     assert "受信者固有の作業手順は本referenceへ置かない" in runtime
-    for phrase in ("GPT-5.6-Sol", "GPT-5.6-Luna", "model_reasoning_effort", "読み取り専用", "writerとworktree", "snapshot"):
+    # モデル選択は世代交代で陳腐化しないよう難易度3区分の抽象名で規定する。
+    for phrase in (
+        "上位モデル",
+        "軽量モデル",
+        "標準モデル",
+        "model_reasoning_effort",
+        "読み取り専用",
+        "writerとworktree",
+        "snapshot",
+    ):
         assert phrase in runtime
 
 
@@ -439,9 +448,10 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
 
+    preflight = _COORDINATION_PREFLIGHT.read_text(encoding="utf-8")
     assert "保存直前にactive一覧と関連項目を再取得" in add_feedback
-    assert "processing重複" in add_feedback
-    assert "依存付き追随" in add_feedback
+    assert "processing" in preflight
+    assert "依存付き追随" in preflight
     reject_at = plan_and_add.index("atk mq reject <filename> --if-inbox")
     for later_phase in ("追加調査", "計画起草", "review"):
         assert reject_at < plan_and_add.index(later_phase, reject_at)
@@ -564,7 +574,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         "--repo",
         "--ref",
         "--source-ref",
-        "終了コード1はCI失敗",
+        "| 1 | CI失敗 |",
         "`agent-toolkit:bugfix`を起動",
     ):
         assert phrase in push_and_ci
@@ -646,15 +656,11 @@ def test_push_ci_monitors_one_peeled_commit_per_updated_ref() -> None:
 def test_push_ci_explicitly_selects_forge_for_baseline_and_monitoring() -> None:
     """短縮repository指定でもbaseline作成と監視のforgeを確定する。"""
     push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
-    command_blocks = re.findall(r"```text\n(uv run .*?wait_ci\.py .*?)\n```", push_and_ci, re.DOTALL)
 
-    assert len(command_blocks) == 2
-    assert "--write-baseline" in command_blocks[0]
-    assert "--baseline" in command_blocks[1]
-    for command in command_blocks:
-        for option in ("--repo", "--forge <github|gitlab>", "--ref", "--source-ref"):
-            assert option in command
-    assert "`--forge`、`--ref`" in push_and_ci
+    assert "`--write-baseline`付きで実行" in push_and_ci
+    assert "`--baseline`付きで実行" in push_and_ci
+    assert "`--repo`、`--forge`、`--ref`、`--source-ref`を省略しない" in push_and_ci
+    assert "`--forge <github|gitlab>`へ明示" in push_and_ci
     assert "単一refと複数refのいずれでも、GitHubとGitLabの両方" in push_and_ci
 
 

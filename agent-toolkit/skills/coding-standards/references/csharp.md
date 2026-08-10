@@ -30,22 +30,9 @@
   - ビルド: `dotnet` CLI
   - フォーマッター: `dotnet format`
   - アナライザー: Roslynアナライザー + `Microsoft.CodeAnalysis.NetAnalyzers`（`.editorconfig`で設定）
-- 新しいC#／.NETバージョンの機能を積極的に使う
-  - C# 12+: collection expressions（`[1, 2, 3]`／`[..existing, x]`）で配列・リスト・Spanを簡潔に初期化する
-    - コンテキストに応じた最適な型が選ばれる
-    - 中間コレクションの割り当ても削減される
-  - C# 12+: primary constructorsを非recordのクラス／構造体でも使う
-    - コンストラクタ引数のフィールド代入ボイラープレートを削減できるため
-  - C# 12+: `using MyTuple = (string Name, int Age);`の形式で任意の型をエイリアス化する
-    - タプル型や関数ポインタなどの複雑な型を可読な名前で扱えるため
-  - C# 12+: ラムダ式のデフォルトパラメーター（`(x, y = 10) => ...`）を活用する
-  - C# 13+: `params ReadOnlySpan<T>`／`params IEnumerable<T>`等で配列以外の`params`を受け取る
-    - 呼び出し側の割り当てを抑えられるため
-  - C# 13+（.NET 9+）: 同期ブロックには`System.Threading.Lock`型を使う
-    - `lock(myLock) { ... }`が`Lock.EnterScope()`ベースの高速パスに最適化される
-    - 従来の`lock(object)`より低オーバーヘッドになる
-  - .NET 9+: LINQの`CountBy`／`AggregateBy`を使う
-   （`GroupBy`ベースの集計で発生する中間コレクション生成を回避できるため）
+- 新しいC#／.NETバージョンの機能を積極的に使う。
+  対象プロジェクトの`LangVersion`・`TargetFramework`で利用できる機能は公式ドキュメントで確認する
+  <https://learn.microsoft.com/dotnet/csharp/whats-new/>
 
 ## テストコード（xUnit）
 

@@ -38,20 +38,9 @@
    （sleepループはflakyテストの主要因となるため）
   - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`でcompile-timeに行う
    （Rust 1.79+）。実行時テストにはしない
-- 新しいRustバージョンの機能を積極的に使う
-  - Rust 1.77+: C文字列リテラル（`c"..."`）で`&'static CStr`を直接生成する
-    - FFIでnul終端C文字列を割り当て無しで渡せるため
-  - Rust 1.77+: `std::mem::offset_of!`マクロで`#[repr(C)]`構造体のフィールドオフセットを取得する
-    - unsafe不要でメモリーレイアウト検査ができる
-  - Rust 1.80+: `std::sync::LazyLock`／`std::cell::LazyCell`で遅延初期化する
-    - `lazy_static`／`once_cell`クレートへの依存を排除できる
-  - Rust 1.82+: `extern`ブロック内の個別関数に`safe`／`unsafe`を付けてFFI安全性を明示する
-    - 呼び出し側でunsafeブロックが必要か否かをコンパイラレベルで強制できるため
-  - Rust 1.82+: `impl Trait + use<...>`でprecise capturingを表現する
-    - 不要なlifetimeキャプチャを避けて戻り値型を厳密にできる
-  - Edition 2024（Rust 1.85+）: let chains（`if let Some(x) = foo && x > 0 { ... }`）でネストを削減する
-  - Edition 2024（Rust 1.85+）: asyncクロージャ（`async || { ... }`）と`AsyncFn`系トレイトを使う
-    - 単純な非同期処理で`async-trait`クレートへの依存を削減できる
+- 新しいRustバージョンの機能を積極的に使い、標準ライブラリへ入った機能で代替できる外部クレート依存は排除する。
+  対象プロジェクトの`rust-version`・editionで利用できる機能は公式リリースノートで確認する
+  <https://doc.rust-lang.org/releases.html>
 
 ## テストコード（統合テスト）
 

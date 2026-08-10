@@ -19,3 +19,6 @@ plugin資源のrootが失効したことを観測した場合、以後は保持�
 
 Claude Codeでは、導入版とrootは`~/.claude/plugins/installed_plugins.json`の`installPath`から取得する。
 `~/.claude/plugins/data/`配下はplugin本体の展開先ではない。
+
+Codexでは、実行中スキルのSKILL.md絶対パスから末尾成分（`skills/<skill-name>/SKILL.md`）を除いた
+接頭部をrootとして導出する。導出したrootは配下資源の実在確認を経てから用いる。

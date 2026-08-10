@@ -11,26 +11,8 @@ description: >
 
 ## 使い方
 
-利用可能なオプション:
-
-```text
-スコープ（排他）:
-  FILE...              指定したJSONLファイルを変換
-  --current            現在のセッションを変換
-  --project-dir DIR    指定ディレクトリの全セッションを変換
-  --all                全プロジェクトの全セッションを変換
-
-フィルター:
-  --latest N           直近N件に限定
-
-コンテンツ制御:
-  --include-thinking   thinkingブロックを含める
-  --include-subagents  サブエージェントの会話を含める
-  --no-tool-details    ツール呼び出しを簡略化
-
-出力:
-  --output-dir DIR     出力先ディレクトリ（未指定時はstdout）
-```
+変換対象のスコープを指定し、必要に応じて件数・出力内容・出力先を限定する。
+オプションの全容は`--help`で確認する。
 
 ### 実行例
 

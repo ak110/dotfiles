@@ -38,13 +38,11 @@ prekフック・CI・`make test`など、シェルから起動する処理では
 
 ### 既存プロジェクトでの通常運用
 
-- 通常運用は`uvx pyfltr ...`を使う
-  - v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が本体依存に統合され`uvx pyfltr`単発で揃う
-  - cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される
-- prek hookの`entry:`も`uvx pyfltr fast`に揃える
+- 通常運用は`uvx pyfltr ...`を使う。prek hookの`entry:`も`uvx pyfltr fast`に揃える
   - `uv run`系を使う場合は`--frozen`必須（prekは親環境の`UV_FROZEN`を引き継がないため）
-- pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）のCIジョブではイメージ同梱の`pyfltr ci`を直接呼び出す
 - pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う
+- 同梱ツールの範囲・ランナー解決の既定・公式Dockerイメージ経由の実行方法は版により変わるため、
+  末尾「詳細情報」のllms.txtで現行版の仕様を確認する
 - formatter・linter・tester・プロジェクト固有のカスタムチェックを含む対応ツール全般を個別に直接起動せず、
   常にpyfltrのサブコマンド経由で実行する。設定で無効化しているツールも直接起動すれば動作するため、
   設定による無効化は直接起動への防御にならない。特定ファイルのみを対象にする場合も同じ形でパスを渡す
@@ -96,23 +94,12 @@ pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・prekフック
 複数ファイルに跨る正規表現置換を扱うサブコマンド。
 `pyfltr grep`でマッチを確認し、必要に応じてファイル単位の除外を加えてから`pyfltr replace`で実行する。
 
-代表的なワークフロー:
-
-1. `pyfltr grep PATTERN [paths...]`でマッチを確認する。
-   `--output-file=matches.jsonl`を付けると後続の`replace`へ渡せる
-2. 誤爆や除外対象が混在する場合は次のいずれかで対象を限定する
-    - `pyfltr replace PATTERN REPLACEMENT --exclude-file=path/to/skip.py [paths...]`でファイル単位除外
-    - `matches.jsonl`から残したいファイル集合のみに編集した上で
-      `pyfltr replace PATTERN REPLACEMENT --from-grep=matches.jsonl`に渡す
-      - `--from-grep`はマッチを含むファイル集合への限定のため、同一ファイル内の一部マッチだけを
-        除外したい場合は検索パターン側を限定するか手動編集で対処する
-3. 適用前に`--dry-run`または`--show-changes`で差分を確認する
-4. 結果に問題があれば`pyfltr replace --list-history`／`--undo ID`で取り消す
+対象の限定・差分確認・取り消しの各オプションは`pyfltr grep --help`／`pyfltr replace --help`で確認する。
+`--from-grep`はマッチを含むファイル集合への限定であり、同一ファイル内の一部マッチだけを除外したい場合は
+検索パターン側を限定するか手動編集で対処する。
 
 `-U`（multiline）オプション使用時は`.`が改行をまたぐため、単一行を想定するパターンには
 `.`の代わりに`[^\n]`を使う（例: `^(\s*[-*]\s[^\n]+?)。$`）。
-
-オプションの全容は`pyfltr grep --help`／`pyfltr replace --help`で確認する。
 
 ## JSONL出力
 
@@ -132,34 +119,23 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 
 ### 再実行・調査の手段
 
-失敗ツールの再実行や全文ログ取得には3手段がある。
+失敗ツールの再実行や全文ログ取得には3手段がある。指定方法の詳細は各サブコマンドの`--help`で確認する。
 
 - `command.retry_command`: JSONL出力の失敗`command`レコードに入る、失敗ファイル限定の再実行コマンド文字列
 - `--only-failed`: 直前runの失敗ツール・失敗ファイルのみまとめて再実行する
   （参照runは`--from-run RUN_ID`で明示できる。前方一致または`latest`）
 - `show-run`: 切り詰められた`message`や確定済みrunを実行アーカイブから取得する
 
-```bash
-uvx pyfltr show-run RUN_ID --commands=TOOL --output    # 単一ツールのoutput.log全文
-uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagnostics.jsonl
-```
-
-`--commands`はカンマ区切りで複数指定可、`--output`併用は単一ツール指定のみ、`RUN_ID`に`latest`で最新runを参照する。
-`--commands`にはエイリアス（`format`・`lint`・`test`・`fast`）も指定できる。
-
 ## トラブルシューティング
 
-- エラー内容が`diagnostic`行だけでは把握しづらい場合、
-  `uvx pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
 - bin-runner未提供環境（Windows等でmise経由バイナリを提供しないツール、shellcheck・shfmtなど）では
   対象がある状態で失敗すると`resolution_failed`が出る。
   回避策は`bin-runner`を`direct`に切り替えてシステムのバイナリを使うか、当該ツールを`{tool} = false`で無効化する
 - 特定ツールの解決状況（enable/runner/executable）は`uvx pyfltr command-info --check <tool>`で確認できる
-- 特定ディレクトリが`extend-exclude`等で除外されると検査対象から外れる。一時的に無視するには`--no-exclude`を使う
 - コマンド実行のタイムアウトは`pyproject.toml`の`[tool.pyfltr]`配下（`command-timeout`・`{command}-timeout`）で調整できる。
   ハング由来の停止はJSONLの`command.hints`の`status.timeout`注記で識別できる
-- CIとローカルではmiseが解決する対応ツールの版が異なる場合がある（miseの`minimum_release_age`設定等）。
-  CIでのみ再現した指摘の検証では、bin-runner対応ツールに限り`{command}-version = "<版>"`を一時指定して再現できる
+- CIとローカルでmiseが解決するツール版が異なる場合がある。`{command}-version`の一時指定でCI側の版を固定すると、
+  CI固有の指摘をローカルで再現できる
 
 ## 詳細情報
 

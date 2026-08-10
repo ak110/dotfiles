@@ -71,24 +71,12 @@
     CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
   - 既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
     parse段階の型変換と既定値解決を分離する
-- CLIエントリポイント関数（コマンドラインから直接呼ばれる関数）は`_main`等のprivate命名にせず`main`として公開する
-  - pytestで`pytest.raises(SystemExit)`を用いて終了コードを検証する場合、
-    private関数を直接呼ぶテストはpylintの`W0212: protected-access`を招く
-    - 一括disableで抑止すると本来の保護検知が失われる
-  - 関数本体は成功パスも含めて`sys.exit(exit_code)`を常時明示する
-    - 成功パスで早期`return`して終了する設計では`pytest.raises(SystemExit)`が
-      `Failed: DID NOT RAISE <class 'SystemExit'>`で失敗する
-  - 推奨形（`-> int`を返して`sys.exit(main())`に渡す形も同等に許容する）:
-
-    ```python
-    def main() -> None:
-        has_error = run_process()
-        exit_code = 1 if has_error else 0
-        sys.exit(exit_code)
-    ```
-
-  - `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する
-    - `python -m <package>.<module>`はモジュール実行で`[project.scripts]`を経由せず、参照更新の確認にならない
+- CLIエントリポイント関数（コマンドラインから直接呼ばれる関数）は`_main`等のprivate命名にせず`main`として公開し、
+  成功パスも含めて`sys.exit(exit_code)`を常時明示する（`-> int`を返して`sys.exit(main())`に渡す形も同等に許容する）
+  - private関数を直接呼ぶテストはpylintの`W0212: protected-access`を招き、成功パスで早期`return`する設計では
+    `pytest.raises(SystemExit)`が`Failed: DID NOT RAISE <class 'SystemExit'>`で失敗するため
+- `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する
+  - `python -m <package>.<module>`はモジュール実行で`[project.scripts]`を経由せず、参照更新の確認にならない
 
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
@@ -112,17 +100,6 @@
 - `ty`と`mypy`は型不一致抑制コメントの構文が別系統
   `ty`は`# ty: ignore[<rule>]`、`mypy`は`# type: ignore[<code>]`を要求する。
   プロジェクトで両方有効な場合は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`の形で同一行に併記する
-- `sorted(iterable, key=fn)`で型検査器tyが要素型を`fn`の引数protocol型へ誤って収束させる
-  （2026-08時点のty実装で観測。tyの修正で陳腐化し得るため、再現しなくなった場合は本項を削除する）
-  - 具体例は`key=str`での文字列ソートと`key=len`でのコレクション長ソート
-  - 検出例は`invalid-assignment`・`unresolved-attribute`
-  - `key=lambda x: fn(x)`形式の回避はpylintの`unnecessary-lambda`（W0108）を招き両立しない
-  - 内包表記でリスト化してから`list.sort(key=fn)`を使い、`sorted`の戻り値型推論を回避する
-- `object`型の引数を`isinstance(x, dict)`で判定すると、型検査器tyは型引数を`Never`と推論する
-  （2026-08時点のty実装で観測。tyの修正で陳腐化し得るため、再現しなくなった場合は本項を削除する）
-  - 後続の`x.get("key")`で`invalid-argument-type`（`Expected Never, found Literal["key"]`）を報告する
-  - 引数型を`typing.Any`にして回避する（`mypy`・`pyright`・`ty`・`pylint`・`ruff-check`の全通過を確認済み）
-  - JSON応答やセッション記録など外部由来の任意値を`dict`判定して処理するヘルパーで再発しやすい
 
 ## テストコード（pytest）
 

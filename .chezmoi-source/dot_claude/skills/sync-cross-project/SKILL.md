@@ -139,14 +139,6 @@ description: >
 - Dependabot alertsの有効・無効（dotfiles・GLATasksは有効、pytilpackは無効）:
   pytilpackはライブラリであり、ロックファイルが開発専用のため利用者の実行環境への脆弱性の影響が限定的である
 
-## pnpmに関する既知の注意点
-
-- `pnpm/action-setup` v6は`packageManager`フィールドにSHAハッシュがないとlockfile解析エラーになる場合がある
-  - `corepack use pnpm@<version>`でSHAハッシュ付きに更新する
-- pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）
-  - env var経由の設定反映テストには`npm config get`を使う
-- `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数より優先される
-
 ## ドキュメント章構成の統一
 
 README.md・CLAUDE.md・docs/development/development.mdの標準章構成・共通文面・記述基準・バッジ記法は
@@ -196,7 +188,6 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 
 ### CI / リリース関連
 
-- CI workflow（Python系・lint系のLinuxジョブ）は`ghcr.io/ak110/pyfltr:latest`イメージを`container:`として使う方針
-- container非対応のジョブ（Windows runner必須・chezmoi検証・Docker Compose依存など）は従来どおりrunner上で実行する
-- container化したジョブのキャッシュは`actions/cache`で`/cache`配下を一括キャッシュする方式に統一する
+- CI workflowのLinuxジョブはpyfltr公式イメージの`container:`実行を方針とし、
+  container適用対象・キャッシュ方式の具体は各リポジトリの`.github/workflows/**`をSSOTとして揃える
 - リリース手段とバージョン区分は本スキル「リリース運用」節を参照する

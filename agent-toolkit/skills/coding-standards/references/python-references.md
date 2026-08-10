@@ -20,14 +20,8 @@ PEP 758の`as`節使用時は従来通り括弧必須とする（`except (ValueE
 
 ## 新しいPythonバージョンの機能
 
-- 新しいPythonバージョンの機能を積極的に使う
-  - Python 3.12+: PEP 695型パラメーター構文（`def f[T](x: T) -> T:`／`type Alias[T] = list[T]`）を使う
-    - `TypeVar`宣言が不要になり、ジェネリック定義が簡潔になるため
-  - Python 3.12+: PEP 701のf-string拡張を活用する
-    - 複数行・ネストクォート・バックスラッシュが利用できるようになり可読性が上がる
-  - Python 3.13+: `typing.TypedDict`の`ReadOnly[...]`で不変フィールドを型レベルで表現する
-  - Python 3.13+: `copy.replace(obj, field=value)`で変更コピーを生成する
-    - 対応対象は`dataclass`／`namedtuple`／`__replace__()`定義クラスのみに限定される
-  - Python 3.14+: PEP 750テンプレート文字列（`t"..."`）は構造を保持した`Template`を返す
-    - f-stringと異なり生成済み文字列ではないため、対応レンダラと組み合わせたSQL／HTML生成で使う
-    - `t"..."`自体は注入対策にならない。安全性は後段のレンダラやAPI側に依存する
+- 新しいPythonバージョンの機能を積極的に使う。
+  対象プロジェクトの`requires-python`で利用できる機能は公式のWhat's Newで確認する
+  <https://docs.python.org/3/whatsnew/index.html>
+- PEP 750テンプレート文字列（`t"..."`、Python 3.14+）自体は注入対策にならない。
+  安全性は後段のレンダラやAPI側に依存するため、SQL／HTML生成では対応レンダラと組み合わせて使う

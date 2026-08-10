@@ -20,6 +20,13 @@ SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を�
 黙って無視する。それ以外で解決できない通知は`task_notification_unresolved`として常時ログへ明示出力し、
 通知形式変動による幽霊pendingの発生を検出可能にする。
 
+本モジュールへfail-closedのゲート判定関数を追加する場合は次の2点を守る。
+完了突合は複数キー経路のフォールバック解決とし、いずれの経路でも解決できない通知は
+永続ログへ明示出力して未解決状態を可視化する（起動時に記録した全background taskが
+いずれかの完了通知形式で完了集合へ解決できることを不変条件として維持する）。
+判定は起動集合の非空ではなく`launched - completed`のremainder非空で行う
+（起動集合の非空判定では完了通知の消化後も真を返し続け、以後の素の状態表明がすべてbypassされる）。
+
 常時ログ（`append_stop_log`）と詳細stderr出力（`_emit_debug`）は責務を分離する。
 常時ログはINFO相当（呼び出し側が渡す最終判定ラベルと主要フラグ）を
 `{tempdir}/claude-agent-toolkit-stop-{session_id}.log`へ1行ずつ追記し、

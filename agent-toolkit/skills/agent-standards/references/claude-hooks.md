@@ -36,38 +36,29 @@ matcher仕様を一次資料として参照する。
 
 ## 出力フィールドの使い分け
 
-hookやプラグインのJSON出力で利用できるフィールドは表示先が異なる（詳細は下記表を参照する）。
+各フィールドのスキーマとイベント別の対応可否は公式ドキュメント
+<https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
+本節は経路選択の方針だけを定める。
+
 PreToolUseやPostToolUseでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘導等）は`decision: "block"`＋`reason`を採用する。
 永続ログはstderr出力ではなく`_stop_gate.append_stop_log`等の専用APIに集約する。
 
-### 共通フィールド（全hookイベント）
-
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `systemMessage` | ユーザーのみ | 情報通知。コーディングエージェントに届かない |
-| `stopReason` | ユーザーのみ | `continue: false`時の終了メッセージ |
+| `hookSpecificOutput.additionalContext` | コーディングエージェント | フィードバックを渡す主経路。フックエラー扱いとならずターン継続を妨げない |
+| `reason` | コーディングエージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
+| `permissionDecisionReason` | deny時はコーディングエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
+| `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
+| `decision.*` | PermissionRequest専用 | 許可・拒否の決定。`hookSpecificOutput`直下に置く |
 
-### Stop / PostToolUse
-
-| フィールド | 表示先 | 用途 |
-| --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | コーディングエージェントへフィードバックを渡す主経路とする（フックエラー扱いとならずターン継続を妨げない） |
-| `reason` | コーディングエージェント（`decision: "block"`時のみ） | `decision: "block"`を併用する場合の理由欄として用いる（`block`の挙動はイベント別で、Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。挙動の強制が不要であれば`additionalContext`単独で出力する） |
-
-### PreToolUse
-
-| フィールド | allow/ask時 | deny時 |
-| --- | --- | --- |
-| `permissionDecisionReason` | ユーザーのみ | コーディングエージェント |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | コーディングエージェント |
+`decision: "block"`の挙動はイベント別に異なる。
+Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
+挙動の強制が不要であれば`additionalContext`単独で出力する。
 
 警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する。
 決定を省略すると通常の権限フローが適用され、警告表示が許可プロンプトを省略しない。
-
-PreToolUseの`permissionDecision: "allow"`時にコーディングエージェントへ情報を渡すフィールドは
-`hookSpecificOutput.additionalContext`に限られる。
 
 組み込みのdeny / askルールはhookの戻り値に関わらず評価される。
 `.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできない。
@@ -85,24 +76,14 @@ codexプロセスが承認待ちのまま復帰しないため、書き換えに
 スキーマがPreToolUseと異なり、`hookSpecificOutput`直下に`decision`オブジェクトを置く。
 `hookEventName`は`"PermissionRequest"`を指定する。
 
-| フィールド | 用途 |
-| --- | --- |
-| `decision.behavior` | `"allow"`で許可、`"deny"`で拒否 |
-| `decision.updatedInput` | `allow`時のみ。ツール入力を改変する |
-| `decision.updatedPermissions` | `allow`時のみ。許可ルールの追加など |
-| `decision.message` | `deny`時のみ。コーディングエージェントへ拒否理由を伝える |
-| `decision.interrupt` | `deny`時のみ。`true`でClaudeを停止 |
-
 組み込みdenyルールは`allow`でも上書きできないが、確認ダイアログ（ask相当）はスキップできる。
 `matcher`はツール名で評価する（`Bash` / `Edit|Write`等）。
 入力payloadは`tool_name` / `tool_input`に加え、`permission_suggestions`配列を受け取る。
 
 ### UserPromptSubmit
 
-| フィールド | 表示先 | 用途 |
-| --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | 当該ターンの応答生成前にユーザー発話へ前置注入する誘導に使う（`decision: "block"`非対応） |
-
+`hookSpecificOutput.additionalContext`を当該ターンの応答生成前にユーザー発話へ前置注入する誘導に使う。
+本イベントは`decision: "block"`へ対応しない。
 Claude Codeでは`decision`と独立に注入可能で、stdoutプレーン出力もコンテキストへ追加される。
 Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`とし、`additionalContext`を返す。
 
@@ -133,20 +114,6 @@ CodexのStopは`decision: "block"`と`reason`で同一ターンを継続し、�
 Codex固有の入力には`model`があり、Stopでは`stop_hook_active`と`last_assistant_message`も受け取る。
 Codex rolloutのtranscript形式は安定インターフェースではないため、完了判定や背景作業判定の契約に使わない。
 状態欠落時の回復判定など、必要な標識の有無を確認する限定用途でだけruntime別に変換する。
-
-## Stop hookの背景タスク完了突合
-
-背景タスク（サブエージェント起動・非同期処理等）の起動集合と完了集合を突合するフックでは、
-起動時に記録した識別子と完了通知本文の識別子の対応が通知形式の変動で欠落し得る。
-完了突合は複数キー経路のフォールバック解決とし、いずれの経路でも解決できない通知は
-永続ログへ明示出力して未解決状態を可視化する（起動時に記録した全背景タスクが
-いずれかの完了通知形式で完了集合へ解決できることを不変条件として維持する）。
-
-fail-closed設計の判定関数（Stop hookのゲート判定等）を新規追加する場面では、
-起動集合の非空判定のみでは完了通知の消化後も真を返し続け、以後の素の状態表明がすべてbypassされる。
-`launched - completed`によるremainder非空判定を採用し、ハーネス追跡中のタスク待ちのみを除外する
-fail-closedの意図と整合させる。参考実装は`agent-toolkit/scripts/_stop_gate.py`の
-`is_pending_async_work`および`has_pending_background_launches`とする。
 
 ## 環境変数の一覧
 
@@ -209,10 +176,5 @@ hookは1呼び出しごとに独立プロセスとして起動するため、メ
 
 Claude Codeは並列ツール呼び出しでhookを同時発火するため、複数プロセスから同一の状態ファイルへ書き込みが競合する。
 
-- 状態ファイルへの書き込みは排他ロック付きの`update_state`ヘルパー経由のみで実施する
-  `update_state`はロック取得・読み取り・変更・アトミック書き込みを単一トランザクションとして実行する
-- 直接`write_state`するAPIは公開しない。「`read_state`→操作→直接書き込み」のパターンは禁止する
-- ロックはPython標準ライブラリのみでPOSIX（`fcntl.flock`）とWindows（`msvcrt.locking`）の両環境を扱う
-- 書き込みは同一ディレクトリの一時ファイルへ出力後`os.replace`でアトミックに反映する
-  書き込み中断時は旧ファイル内容が保持される
-- 並行書き込みの回帰テスト（`threading.Thread`による別キー同時書き込みで全キー保持を検証）を必ず備える
+- 状態ファイルの更新は排他ロック付きの`update_state`ヘルパー経由のみとし、直接書き込むAPIを公開しない
+- 並行書き込みの回帰テストを維持する

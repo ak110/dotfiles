@@ -31,26 +31,11 @@ uv add "pytilpack[babel,sqlalchemy]"  # extras指定
 
 ## モジュール分類
 
-### 標準・軽量依存モジュール
+モジュールは、追加依存なしまたは軽量依存で利用できる標準・軽量依存モジュールと、
+対象ライブラリの拡張を提供しextras指定を要するライブラリ用ユーティリティに分かれる。
+extrasが必要なモジュールは`pyproject.toml`の依存指定時にextras名を含めて指定する。
 
-汎用ユーティリティ・標準ライブラリ拡張など、追加依存なしまたは軽量依存で利用できるモジュール。
-
-```text
-asyncio, base64, cache, csv, dataclasses, datetime, environ,
-functools, healthcheck, http, i18n, io, json, jsonc, logging,
-paginator, pathlib, python, random, ratelimit, secrets, sse,
-threading, threadinga, typing, validator, web
-```
-
-### ライブラリ用ユーティリティ（extras指定が必要）
-
-対象ライブラリの拡張機能を提供する。`pyproject.toml`の依存指定時にextras名を含めて指定する。
-
-```text
-babel, crypto, data_url, fastapi, flask, flask_login, fnctl,
-htmlrag, httpx, importlib, markdown, msal, pycrypto, pydantic,
-pytest, quart, quart_auth, sqlalchemy, tiktoken, tqdm, yaml
-```
+収録モジュールの一覧は後述のllms.txtで確認する（版により増減するため本ファイルへ列挙しない）。
 
 ## CLIツール
 

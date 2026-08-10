@@ -32,13 +32,9 @@ rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの
 
 ## 未プッシュ範囲での統合
 
-未プッシュコミットが既に1回以上bumpを含む場合、後続編集ごとに追加でbumpしない。
-`scripts/agent_toolkit_bump.py`は既存bump以下の指定をno-op扱いとし、
-既存bumpがPATCHで後続編集がMINOR相当なら`agent_toolkit_bump.py minor`で上書き格上げする。
-同一push cycle内でno-op出力の正常終了は期待動作であり、bump欠落扱いにしない。
-`git push`実行後の追加commitは新たな未プッシュ範囲の開始として扱い、
-利用者振る舞い変更を含む場合はbumpを再度実施する。
-既往bumpの基準版は`@{u}`→`origin/HEAD`の順にツールが自動解決し、解決できない場合は非ゼロ終了する。
+`scripts/agent_toolkit_bump.py`は既存bump以下の種別指定をno-op扱いとするため、
+未プッシュ範囲では後続編集ごとに追加bumpせず、格上げが必要な場合だけ上位種別を指定する。
+`git push`実行後の追加commitは新たな未プッシュ範囲として扱い、利用者振る舞い変更を含む場合は再度bumpする。
 
 ## Codex導入後のroot再照合
 
