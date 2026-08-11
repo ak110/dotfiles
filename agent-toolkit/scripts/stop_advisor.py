@@ -146,7 +146,7 @@ def main(payload_text: str) -> int:
         sweep_stale_states()
 
     # Claude Codeで構造的にセッション継続中ならapprove。
-    # 非同期待機ツールまたは未完了background task（Agent・Bash双方）が存在するケース。
+    # 非同期待機ツールまたは未完了background task（Agent・Bash・MCP）が存在するケース。
     # Codex rolloutは安定した終了ゲートではないため背景作業判定へ渡さない。
     if not is_codex and is_pending_async_work(transcript_path, session_id):
         append_stop_log(session_id, "approve_pending_async", {})

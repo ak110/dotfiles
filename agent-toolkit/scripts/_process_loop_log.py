@@ -29,6 +29,9 @@ _MAX_BYTES = 1_000_000
 
 def log_path() -> Path:
     """ログファイルのパスを返す。"""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if state_home:
+        return Path(state_home) / "agent-toolkit" / "process-feedbacks.log"
     return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-feedbacks.log"
 
 

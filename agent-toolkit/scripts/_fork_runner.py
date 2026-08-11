@@ -59,6 +59,7 @@ def run_script(
         input=input,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env if env is not None else os.environ.copy(),
         cwd=cwd,
@@ -226,7 +227,7 @@ def _serve() -> None:
 
 
 def _handle_request(request: dict) -> dict:
-    pid = os.fork()
+    pid = os.fork()  # type: ignore[attr-defined]  # Windows型スタブにはPOSIX専用APIが無いため
     if pid == 0:
         _run_child(request)
     returncode, timed_out = _wait_with_timeout(pid, request.get("timeout"))
@@ -242,13 +243,13 @@ def _wait_with_timeout(pid: int, timeout: float | None) -> tuple[int, bool]:
     # 既知の限界: 高頻度にtimeout指定するテストが大量発生するとCPUを消費する。
     # 見直し契機: timeout付きrun_script呼び出しが多数を占め体感の遅延が観測された時点。
     while True:
-        finished_pid, status = os.waitpid(pid, os.WNOHANG)
+        finished_pid, status = os.waitpid(pid, os.WNOHANG)  # type: ignore[attr-defined]  # 同上
         if finished_pid != 0:
             return os.waitstatus_to_exitcode(status), False
         if time.monotonic() >= deadline:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]  # 同上
             os.waitpid(pid, 0)
-            return -signal.SIGKILL, True
+            return -signal.SIGKILL, True  # type: ignore[attr-defined]  # 同上
         time.sleep(0.01)
 
 

@@ -10,7 +10,6 @@ import re
 import subprocess
 
 import _fork_runner
-import platformdirs
 import pretooluse
 import pytest
 from pyfltr.colloquial import check as _colloquial_check
@@ -351,7 +350,14 @@ def _plan_file_state_env(
     env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
     if home_dir is not None:
         env["HOME"] = str(home_dir)
+        env["USERPROFILE"] = str(home_dir)
     return env
+
+
+def _delegation_state_env(tmp_path: pathlib.Path, session_id: str) -> dict[str, str]:
+    """delegation起動済みの後段ゲート検証用に状態ファイルを準備する。"""
+    _write_session_state(tmp_path, session_id, {"delegation_skill_invoked": True})
+    return _plan_file_state_env(tmp_path)
 
 
 def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Path:
@@ -2939,7 +2945,7 @@ class TestPlanImplExecutorPlanPathRecording:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_plan_file_state_env(tmp_path),
+            env_overrides=_delegation_state_env(tmp_path, sid),
         )
         assert result.returncode == 0
         assert _read_session_state(tmp_path, sid)["plan_impl_executor_verified_plan_path"] == str(plan.resolve())
@@ -2954,7 +2960,7 @@ class TestPlanImplExecutorPlanPathRecording:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_plan_file_state_env(tmp_path),
+            env_overrides=_delegation_state_env(tmp_path, sid),
         )
         assert result.returncode == 0
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
@@ -2976,7 +2982,7 @@ class TestAgentNameParameterGate:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_plan_file_state_env(tmp_path),
+            env_overrides=_delegation_state_env(tmp_path, sid),
         )
         assert result.returncode == 2
         assert "`name` parameter is not allowed" in result.stderr
@@ -2992,7 +2998,7 @@ class TestAgentNameParameterGate:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_plan_file_state_env(tmp_path),
+            env_overrides=_delegation_state_env(tmp_path, sid),
         )
         assert result.returncode == 0
         assert "`name` parameter is not allowed" not in result.stderr
@@ -3006,7 +3012,7 @@ class TestAgentNameParameterGate:
                 "session_id": "agent-name-block-route",
                 "permission_mode": "default",
             },
-            env_overrides=_plan_file_state_env(tmp_path),
+            env_overrides=_delegation_state_env(tmp_path, "agent-name-block-route"),
         )
         assert result.returncode == 2
         assert "execution result" in result.stderr
@@ -3017,6 +3023,7 @@ class TestAgentNameParameterGate:
         """ブロックされた起動では`subagent_type`別フラグを記録しない（起動しない呼び出しの副作用を残さない）。"""
         sid = "agent-name-block-no-flag"
         plan = _make_plan_file(tmp_path / "home", "name-block.md")
+        _write_session_state(tmp_path, sid, {"delegation_skill_invoked": True})
         env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
         result = _run(
             {
@@ -3041,18 +3048,19 @@ class TestAgentNameParameterGate:
 class TestSubagentModelOverrideGate:
     """`plan-impl-executor`への`model`引数指定の一律ブロック。"""
 
-    def test_plan_impl_executor_with_model_blocked_short_form(self):
+    def test_plan_impl_executor_with_model_blocked_short_form(self, tmp_path: pathlib.Path):
         result = _run(
             {
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "plan-impl-executor", "model": "haiku", "prompt": "x"},
                 "session_id": "model-override-plan-impl-executor",
                 "permission_mode": "default",
-            }
+            },
+            env_overrides=_delegation_state_env(tmp_path, "model-override-plan-impl-executor"),
         )
         assert result.returncode == 2
 
-    def test_no_model_argument_passes(self):
+    def test_no_model_argument_passes(self, tmp_path: pathlib.Path):
         """`plan-impl-executor`でモデル指定を省略した起動は通過する。"""
         result = _run(
             {
@@ -3060,7 +3068,8 @@ class TestSubagentModelOverrideGate:
                 "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "x"},
                 "session_id": "model-override-none",
                 "permission_mode": "default",
-            }
+            },
+            env_overrides=_delegation_state_env(tmp_path, "model-override-none"),
         )
         assert result.returncode == 0
 
@@ -3080,13 +3089,12 @@ class TestSubagentStartLogOrdering:
     process-loopの所要時間分析の対応関係が崩れるため、ブロック経路ごとに未記録を確認する。
     """
 
-    def _log_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
-        return pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-feedbacks.log"
+    def _log_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        return tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
 
-    def test_model_override_block_does_not_log_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        log_path = self._log_path(monkeypatch, tmp_path)
+    def test_model_override_block_does_not_log_start(self, tmp_path: pathlib.Path):
+        log_path = self._log_path(tmp_path)
+        _write_session_state(tmp_path, "log-order-model-override", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Agent",
@@ -3098,14 +3106,15 @@ class TestSubagentStartLogOrdering:
                 "session_id": "log-order-model-override",
                 "permission_mode": "default",
             },
-            env_overrides=_process_loop_log_env(tmp_path),
+            env_overrides={**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)},
         )
         assert result.returncode == 2
         assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
 
-    def test_all_checks_pass_logs_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    def test_all_checks_pass_logs_start(self, tmp_path: pathlib.Path):
         """モデル指定なし・見出し検査対象外・process7未起動時のexecutorは通過し記録される。"""
-        log_path = self._log_path(monkeypatch, tmp_path)
+        log_path = self._log_path(tmp_path)
+        _write_session_state(tmp_path, "log-order-pass", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Agent",
@@ -3113,7 +3122,7 @@ class TestSubagentStartLogOrdering:
                 "session_id": "log-order-pass",
                 "permission_mode": "default",
             },
-            env_overrides=_process_loop_log_env(tmp_path),
+            env_overrides={**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)},
         )
         assert result.returncode == 0
         assert log_path.exists()
@@ -4185,10 +4194,26 @@ class TestDelegationGateForAgentTask:
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_without_delegation_is_blocked(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-        result = _run({"session_id": "missing", "tool_name": tool_name, "tool_input": {}}, env_overrides=env)
+        sid = f"missing-{tool_name.lower()}"
+        plan = _make_plan_file(tmp_path / "home", f"{tool_name.lower()}-missing.md")
+        env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": tool_name,
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル `{plan}` を実装する。",
+                },
+            },
+            env_overrides=env,
+        )
         assert result.returncode == 2
         assert "agent-toolkit:delegation" in result.stderr
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        assert not state_path.exists()
+        log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
+        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_with_delegation_or_sidechain_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:

@@ -4,11 +4,13 @@
 本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 
-background task起動の検出条件は次の3種を統合して扱う。
+background task起動の検出条件は次の4種を統合して扱う。
 - `toolUseResult.status == "async_launched"`（背景Agent初回起動）
 - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
 - `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつtext本文に
   `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+- 非sidechainのMCP tool_useに対応するtool_result本文に`moved to the background as task`を含む
+  （MCP背景タスク）
 
 SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を持たないため、
 テキストマーカー判定でSendMessage呼び出し由来のtool_resultに限定して識別する。
@@ -81,7 +83,7 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
       `Monitor`、または`Bash`かつ`input.run_in_background == true`）
-    - 未完了のbackground task（Agent・Bash・SendMessage背景再開）が存在する
+    - 未完了のbackground task（Agent・Bash・SendMessage背景再開・MCP）が存在する
 
     後者はtranscript全体を走査して判定する。
     起動集合は非sidechainの`type=="user"`エントリのうち、次のいずれかを持つものから抽出する。
@@ -89,6 +91,8 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
       text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+    - 非sidechainのMCP tool_useに対応するuser tool_result本文に`moved to the background as task`を含む
+      （MCP背景タスク）
 
     完了集合は後続エントリの`<task-notification>`要素から`<tool-use-id>`を抽出する。
     完了通知エントリは次の2形式が併存する。
@@ -388,7 +392,7 @@ def _describe_pending_background_tasks(
 
     起動集合から完了集合を差し引いて1件以上残れば未完了背景タスクありと判定する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
-    Agent・Bash・SendMessage背景再開とも同一の完了通知機構で通知され共通の抽出処理を用いる。
+    Agent・Bash・SendMessage背景再開・MCP背景タスクとも同一の完了通知機構で通知され共通の抽出処理を用いる。
     `kinds`は起動集合へ含める種別を`agent`・`bash`・`sendmessage`・`mcp`から指定する。
     既定値は全種別であり、既存の呼び出し元の挙動を維持する。
     transcript読み取り失敗時は空集合のペアを返す。
