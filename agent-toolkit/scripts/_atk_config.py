@@ -2,12 +2,13 @@
 
 PEP 723 entrypoint`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 XDG関連パス（設定・状態・データ各ディレクトリ、private-notesの解決結果）の確認と、
-codexモデル判定設定（`codex_model`）の確認・変更を提供する。
+工程別モデル設定の確認・変更を提供する。
 """
 
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 import platformdirs
@@ -15,9 +16,16 @@ from _atk_mq_common import _private_notes_path
 
 _CONFIG_FILENAME = "config.json"
 
-# 変更可能な設定キー。XDG関連パスは`platformdirs`からの導出値のため読み取り専用とし、
-# `codex_model`のみ`atk config set`での変更対象とする。
-_MUTABLE_KEYS = frozenset(("codex_model",))
+_DEFAULT_STAGE_MODEL = "codex:gpt-5.6-sol/medium"
+_MUTABLE_KEYS = (
+    "pick_feedbacks_model",
+    "plan_model",
+    "plan_review_model",
+    "execute_model",
+    "execute_review_model",
+    "merge_model",
+)
+_STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/]+(?:/[^/]+)?$")
 
 
 def _config_dir() -> pathlib.Path:
@@ -63,7 +71,7 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
         "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes_path(home)),
-        "codex_model": config.get("codex_model", "(未設定)"),
+        **{key: config.get(key, _DEFAULT_STAGE_MODEL) for key in _MUTABLE_KEYS},
     }
 
 
@@ -90,6 +98,12 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(2)
+    if _STAGE_MODEL_PATTERN.fullmatch(args.value) is None:
+        print(
+            "設定値の書式が不正です。受理可能書式: <claude|codex>:<model>[/<effort>]",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     config = _load_config()
     config[args.key] = args.value
     _save_config(config)
@@ -99,7 +113,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 def build_parser(config: argparse.ArgumentParser) -> None:
     """`config`サブパーサ配下にshow/get/setサブコマンドを登録する。"""
     sub = config.add_subparsers(dest="config_subcommand")
-    sub.add_parser("show", help="XDG関連パスとcodexモデル判定設定を一覧表示する（既定動作）")
+    sub.add_parser("show", help="XDG関連パスと工程別モデル設定を一覧表示する（既定動作）")
     get = sub.add_parser("get", help="単一設定値を取得する")
     get.add_argument("key", metavar="KEY", help="取得するキー（config showの出力キーと同一）。")
     set_ = sub.add_parser("set", help="変更可能な設定値を更新する")

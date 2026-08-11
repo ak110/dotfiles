@@ -9,7 +9,7 @@ import subagent_stop_advisor as advisor
 
 
 def _minimal_report() -> str:
-    """`plan-impl-executor`の現行8欄だけを持つ最小完了報告を返す。"""
+    """委譲調整役の構造化された最小完了報告を返す。"""
     return """status: completed
 summary: 完了
 commits:
@@ -65,7 +65,7 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
     )
 
 
-def test_registered_executor_with_pending_child_is_blocked(
+def test_registered_orchestrator_with_pending_child_is_blocked(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:

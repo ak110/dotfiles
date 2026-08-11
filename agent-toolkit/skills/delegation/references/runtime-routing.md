@@ -13,6 +13,34 @@
 - 専用定義もCodex経路も利用できない場合だけ汎用Agentを使う
 - 起動結果として返されたrouteと識別子を保持し、予定した経路を実績として記録しない
 
+## 工程別モデル設定
+
+次の工程では、消費主体が起動直前に`atk config get <キー>`を実行して実効値を取得する。
+
+| キー | 対応工程 | 消費主体 |
+| --- | --- | --- |
+| `pick_feedbacks_model` | フィードバック調査 | `feedbacks-planner` |
+| `plan_model` | 計画起草とレビュー指摘反映 | `feedbacks-planner` |
+| `plan_review_model` | 計画レビュー | `feedbacks-planner` |
+| `execute_model` | 実装writerと統合後レビュー修正writer | `plan-impl-executor` |
+| `execute_review_model` | 実装後の二系統レビュー | `plan-impl-executor` |
+| `merge_model` | lane commitの適用、競合解消、履歴一本化、検証 | `process-feedbacks`の実行主体 |
+
+設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
+全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。
+モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
+
+1. 設定値を`engine`、`model`、`effort`へ分解する。
+2. `engine=codex`ではCodex MCPを使い、`config`へ`model`と`model_reasoning_effort`を渡す。
+   agents定義の`tools`でMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
+3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
+   effort部は実行機能に相当する引数が無いため適用しない。
+4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す。
+5. Codexは同一threadへ継続接続する。
+   Claudeは完了済み識別子を再利用せず、前回の指摘6列表、反映差分、検査結果などの検収済み状態を渡して新規起動する。
+
+工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
+
 ## modelとreasoning effort
 
 次の基準を上から評価し、最初に該当した項を選ぶ。reasoning effortの既定値は`medium`とする。

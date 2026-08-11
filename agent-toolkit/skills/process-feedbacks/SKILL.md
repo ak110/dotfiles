@@ -39,7 +39,13 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 複数項目を連続処理する場合、新しい項目の調査は前項目の調査結果・仮説・識別子を引き継がず
 独立に確定する（努力目標）。
 
-通常型は次の順で扱う。
+Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、readyな通常型項目ごとに
+`agent-toolkit:feedbacks-planner`を起動する。
+本文はメインが`atk mq show`で取得して渡し、plannerは再取得しない。
+複数のready項目は利用できる実行枠内で並列起動する。
+調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
+
+サブエージェント機能を利用できないCodexホストでは、通常型を次の順で扱う。
 
 1. `references/content-adjustment.md`と`references/review-checklists.md`を全文読む
 2. 原文、現行実装、関連規範、履歴、既存の成功経路を調査する
@@ -66,11 +72,18 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 
 ## 4. 実装と公開
 
-- 通常型の採用項目は実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、調査済み事実と採否を渡す
+- Claude Codeホストの通常型採用項目は、plannerの計画を`atk mq convert-to-plan`で計画実装型へ変換し、
+  `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
+- Codexホストの通常型採用項目は実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、調査済み事実と採否を渡す
 - 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する
 - commit前に実行主体が`agent-toolkit:commit`をSkill機能で起動する
 - 実装と二系統reviewの完了後、呼び出し元がpushとCI通過確認を完遂する
 - 計画の完了条件を満たした対象だけを後始末へ進める
+
+メインはqueue操作、planner・executor・統合スレッドの起動と検収、TBDと新規feedbackの投入、
+上流取得、統合worktreeの作成と回収、push、CI通過確認を担当する。
+lane commitの適用、競合解消、履歴一本化、検証は`atk config get merge_model`で解決した統合writerへ
+`references/merge-task.md`を渡して委譲する。
 
 作業中に独立した新規改善を発見した場合は、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
 完成済み本文と対象リポジトリを渡す。投入コマンドを本スキルから直接構成しない。

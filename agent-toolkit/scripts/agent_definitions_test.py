@@ -10,6 +10,7 @@ _DELEGATION_SKILL = _AGENTS_DIR.parent / "skills" / "delegation" / "SKILL.md"
 _RUNTIME_ROUTING = _DELEGATION_SKILL.parent / "references" / "runtime-routing.md"
 _CLAUDE_CODE_RUNTIME = _DELEGATION_SKILL.parent / "references" / "claude-code-runtime.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
+_FEEDBACKS_PLANNER = _AGENTS_DIR / "feedbacks-planner.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
 _PLAN_MODE_REFERENCES = _PLAN_MODE.parent / "references"
@@ -21,6 +22,8 @@ _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
 _COORDINATION_PREFLIGHT = _ADD_FEEDBACK.parent / "references" / "coordination-preflight.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_IMPL_FEEDBACK_FLOW = _PROCESS_FEEDBACKS.parent / "references" / "plan-impl-feedback-flow.md"
+_FEEDBACKS_PLANNER_RECEPTION = _PROCESS_FEEDBACKS.parent / "references" / "feedbacks-planner-reception.md"
+_MERGE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "merge-task.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
 _BUGFIX_SKILL = _AGENTS_DIR.parent / "skills" / "bugfix" / "SKILL.md"
 _BUGFIX = _BUGFIX_SKILL.parent / "references" / "root-cause-analysis.md"
@@ -79,7 +82,8 @@ def test_delegating_agents_allow_required_tools() -> None:
         parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         metadata, body = parsed
-        if "agent-toolkit:delegation" not in body:
+        declared_skills = metadata.get("skills", "")
+        if "agent-toolkit:delegation" not in body and "agent-toolkit:delegation" not in declared_skills:
             continue
         delegating.append(path.name)
         tools = metadata.get("tools")
@@ -91,6 +95,19 @@ def test_delegating_agents_allow_required_tools() -> None:
 
     assert delegating, "delegationを使うエージェント定義を検出できない"
     assert not missing, f"委譲に必要なツールを許可していないエージェント: {missing}"
+
+
+def test_preloaded_agent_skills_are_not_invoked_again_in_body() -> None:
+    """frontmatterでプリロードした常時参照スキルを本文から再起動しない。"""
+    for path in sorted(_AGENTS_DIR.glob("*.md")):
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, body = parsed
+        declared_skills = metadata.get("skills")
+        if not isinstance(declared_skills, str):
+            continue
+        for skill in (value.strip() for value in declared_skills.split(",")):
+            assert f"`{skill}`を起動" not in body
 
 
 def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
@@ -245,6 +262,8 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
 
     assert metadata["model"] == "sonnet"
     assert metadata["effort"] == "medium"
+    assert metadata["skills"] == "agent-toolkit:delegation"
+    assert "mcp__codex__codex" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
     assert "並列可能な単位はwriterへ同時に割り当て" in text
     assert "依存する単位は順次割り当て" in text
@@ -256,6 +275,78 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
         "implementation-independent-review-task.md",
     ):
         assert task_name in text
+
+
+def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None:
+    """plannerが調査と計画レビューを調整し、成果物とqueueを直接変更しない。"""
+    text = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    metadata, _ = frontmatter.parse_frontmatter(text) or ({}, "")
+    assert metadata["model"] == "sonnet"
+    assert metadata["skills"] == "agent-toolkit:delegation"
+    assert "mcp__codex__codex" in metadata["tools"]
+    for phrase in (
+        "自身は成果物、計画ファイル、queueを変更せず",
+        "`atk mq show`を含むqueue操作",
+        "explore-template.md",
+        "plan-review-task.md",
+        "指摘を加工せずauthorへ全件配送",
+        "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
+    ):
+        assert phrase in text
+
+
+def test_stage_model_routing_and_merge_contracts_are_present() -> None:
+    """工程別モデル解決と統合writerの受信契約を固定する。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    process_feedbacks = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    merge_task = _MERGE_TASK.read_text(encoding="utf-8")
+
+    for key in (
+        "pick_feedbacks_model",
+        "plan_model",
+        "plan_review_model",
+        "execute_model",
+        "execute_review_model",
+        "merge_model",
+    ):
+        assert key in runtime
+    for phrase in (
+        "他engineへ自動切替せず",
+        "effort部は実行機能に相当する引数が無いため適用しない",
+        "Codexは同一thread",
+        "Claudeは完了済み識別子を再利用せず",
+    ):
+        assert phrase in runtime
+    assert "writer工程とcommit統合を開始しない" in executor
+    assert "計画ごとに別reviewer" in executor
+    assert "同領域内の6列表ファイル以外を書き込まない" in executor
+    assert "`atk mq show`で取得して渡し、plannerは再取得しない" in process_feedbacks
+    assert "`atk mq convert-to-plan`" in process_feedbacks
+    assert "計画全文をplannerの完了報告へ要求しない" in reception
+    for phrase in (
+        "単一cherry-pickシーケンス",
+        "rebaseとmerge commitは作成せず",
+        "`git cherry-pick --abort`",
+        "作成時HEADの完全OIDと一致",
+        "push、worktreeの作成と回収、queue変更は禁止",
+        "レビュー修正モード",
+        "applications:",
+    ):
+        assert phrase in merge_task
+    for phrase in (
+        "上流最新OIDから",
+        "複数laneを統合した場合",
+        "単一laneのレビュー済みcommitを同一treeのまま使う場合だけ省略",
+        "non-fast-forward拒否",
+        "安定ID",
+        "適用済みスキップ",
+        "6列表を統合用管理対象領域内へ保存",
+        "queueの`plan_file`から各計画の進捗ログを辿り",
+    ):
+        assert phrase in flow
 
 
 def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:

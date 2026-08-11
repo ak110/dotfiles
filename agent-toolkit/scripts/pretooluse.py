@@ -1189,6 +1189,7 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
 # --- codex sandbox指定（danger-full-access）の保護 (block, FB13) ---
 
 _DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
+    "agent-toolkit/agents/feedbacks-planner.md",
     "agent-toolkit/agents/plan-impl-executor.md",
     "agent-toolkit/skills/delegation/SKILL.md",
     "agent-toolkit/skills/delegation/references/runtime-routing.md",
@@ -1217,7 +1218,8 @@ def _extract_sandbox_assignments(text: str) -> list[str]:
 def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_path: str) -> bool:
     """`danger-full-access`を含む行の削除・変更を遮断する（block）。
 
-    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下5つ:
+    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下6つ:
+    - `agent-toolkit/agents/feedbacks-planner.md`
     - `agent-toolkit/agents/plan-impl-executor.md`
     - `agent-toolkit/skills/delegation/SKILL.md`
     - `agent-toolkit/skills/delegation/references/runtime-routing.md`
@@ -1617,9 +1619,12 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # Agent/Taskツールの`subagent_type`引数として許容するplan-impl-executor識別子。
 # フルネームと短縮名の両方を許容する。
 _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
+_FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:feedbacks-planner", "feedbacks-planner"})
 
-# `model`引数指定を一律禁止する対象。executorは定義済みモデルを使う委譲窓口として動く。
-_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
+# `model`引数指定を一律禁止する対象。調整役は定義済みモデルを使う委譲窓口として動く。
+_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
+    _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES
+)
 
 
 def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict) -> None:
@@ -1682,7 +1687,7 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
-    """`plan-impl-executor`への`model`引数指定を一律ブロックする。
+    """定義済みモデルを使う委譲調整役への`model`引数指定を一律ブロックする。
 
     executorは定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
     """

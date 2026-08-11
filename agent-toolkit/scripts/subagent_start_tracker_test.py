@@ -29,7 +29,15 @@ def _state(state_dir: pathlib.Path, session_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-@pytest.mark.parametrize("agent_type", ["plan-impl-executor", "agent-toolkit:plan-impl-executor"])
+@pytest.mark.parametrize(
+    "agent_type",
+    [
+        "plan-impl-executor",
+        "agent-toolkit:plan-impl-executor",
+        "feedbacks-planner",
+        "agent-toolkit:feedbacks-planner",
+    ],
+)
 def test_executor_names_are_registered(tmp_path: pathlib.Path, agent_type: str) -> None:
     payload = {
         "hook_event_name": "SubagentStart",

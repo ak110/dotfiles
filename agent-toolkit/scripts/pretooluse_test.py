@@ -3046,7 +3046,7 @@ class TestAgentNameParameterGate:
 
 
 class TestSubagentModelOverrideGate:
-    """`plan-impl-executor`への`model`引数指定の一律ブロック。"""
+    """定義済みモデルを使う委譲調整役への`model`引数指定の一律ブロック。"""
 
     def test_plan_impl_executor_with_model_blocked_short_form(self, tmp_path: pathlib.Path):
         result = _run(
@@ -3072,6 +3072,20 @@ class TestSubagentModelOverrideGate:
             env_overrides=_delegation_state_env(tmp_path, "model-override-none"),
         )
         assert result.returncode == 0
+
+    @pytest.mark.parametrize("subagent_type", ["feedbacks-planner", "agent-toolkit:feedbacks-planner"])
+    def test_feedbacks_planner_with_model_is_blocked(self, tmp_path: pathlib.Path, subagent_type: str) -> None:
+        """`feedbacks-planner`の固定モデルを呼び出し側から変更できない。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": subagent_type, "model": "haiku", "prompt": "x"},
+                "session_id": "model-override-feedbacks-planner",
+                "permission_mode": "default",
+            },
+            env_overrides=_delegation_state_env(tmp_path, "model-override-feedbacks-planner"),
+        )
+        assert result.returncode == 2
 
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:

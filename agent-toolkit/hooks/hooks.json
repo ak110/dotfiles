@@ -24,7 +24,7 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "plan-impl-executor|agent-toolkit:plan-impl-executor",
+        "matcher": "plan-impl-executor|agent-toolkit:plan-impl-executor|feedbacks-planner|agent-toolkit:feedbacks-planner",
         "hooks": [
           {
             "type": "command",

@@ -1,7 +1,7 @@
 """SubagentStop hook: 構造的に確定できる未完了状態だけを検査する。
 
 公式仕様の`last_assistant_message`を直参照し、空文字列だけの完了報告をblockする。
-登録済み`plan-impl-executor`では、当該サブエージェント自身の`agent_transcript_path`に
+登録済みの委譲調整役では、当該サブエージェント自身の`agent_transcript_path`に
 未消化の子エージェント起動が構造的に実在する場合もblockする。
 報告本文のラベルや意味は解析せず、成果物と検証結果の妥当性は呼び出し元の実測と
 二系統reviewへ委ねる。`stop_hook_active`真の再呼び出し時はapproveを返す。
@@ -50,8 +50,8 @@ def _resolve_payload_agent_id(payload: dict) -> str | None:
     return _extract_transcript_agent_id(payload.get("transcript_path"))
 
 
-def _is_registered_plan_impl_executor(payload: dict) -> bool:
-    """対象がSubagentStartで登録済みの`plan-impl-executor`かを返す。"""
+def _is_registered_orchestrator(payload: dict) -> bool:
+    """対象がSubagentStartで登録済みの委譲調整役かを返す。"""
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return False
@@ -84,10 +84,10 @@ def main(payload_text: str) -> int:
         session_id if isinstance(session_id, str) else "",
     )
 
-    if _is_registered_plan_impl_executor(payload) and has_pending:
+    if _is_registered_orchestrator(payload) and has_pending:
         reason = _llm_notice(
             "Complete or receive every child agent before stopping."
-            " The registered plan-impl-executor still has an unfinished child agent launch."
+            " The registered orchestration agent still has an unfinished child agent launch."
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0

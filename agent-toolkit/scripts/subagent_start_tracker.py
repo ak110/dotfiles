@@ -1,4 +1,4 @@
-"""SubagentStart hook: `plan-impl-executor`を親セッション状態へ登録する。"""
+"""SubagentStart hook: 子委譲を持つ調整役を親セッション状態へ登録する。"""
 
 from __future__ import annotations
 
@@ -10,13 +10,15 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _tracked_subagent_types import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    TRACKED_SUBAGENT_TYPES,
+)
 
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
-_PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 
 
 def main(payload_text: str) -> int:
-    """対象executorを登録する。入力不備と対象外はfail-openで通過させる。"""
+    """対象の委譲調整役を登録する。入力不備と対象外はfail-openで通過させる。"""
     try:
         payload = json.loads(payload_text or "{}")
     except (json.JSONDecodeError, ValueError):
@@ -32,7 +34,7 @@ def main(payload_text: str) -> int:
         or not isinstance(agent_id, str)
         or not agent_id
         or not isinstance(agent_type, str)
-        or agent_type not in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
+        or agent_type not in TRACKED_SUBAGENT_TYPES
     ):
         return 0
 

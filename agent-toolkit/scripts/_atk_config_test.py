@@ -26,7 +26,7 @@ class TestConfigShow:
     """`atk config`（サブコマンド省略時はshow扱い）・`atk config show`の一覧表示を検証する。"""
 
     def test_show_lists_all_resolved_keys(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """XDG関連パスとcodex_model（未設定時は既定表示）が一覧表示される。"""
+        """XDG関連パスと工程別モデル設定の既定値が一覧表示される。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "show"], home=tmp_path)
 
@@ -36,7 +36,16 @@ class TestConfigShow:
         assert f"state_dir: {tmp_path / 'state'}" in out
         assert f"data_dir: {tmp_path / 'data'}" in out
         assert "private_notes:" in out
-        assert "codex_model: (未設定)" in out
+        for key in (
+            "pick_feedbacks_model",
+            "plan_model",
+            "plan_review_model",
+            "execute_model",
+            "execute_review_model",
+            "merge_model",
+        ):
+            assert f"{key}: codex:gpt-5.6-sol/medium" in out
+        assert "codex_model:" not in out
 
     def test_no_subcommand_defaults_to_show(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """`atk config`（サブコマンド省略）は`show`と同じ出力になる。"""
@@ -58,6 +67,14 @@ class TestConfigGet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == f"{tmp_path / 'config'}\n"
 
+    def test_get_stage_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """未設定の工程別モデルは共通の既定値を返す。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
+
     def test_get_unknown_key_exits_2(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """未知キーはexit 2でエラー案内を出力する。"""
         with pytest.raises(SystemExit) as exc_info:
@@ -70,23 +87,43 @@ class TestConfigGet:
 class TestConfigSet:
     """`atk config set`の変更可能設定更新を検証する。"""
 
-    def test_set_codex_model_persists_and_is_read_back(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    @pytest.mark.parametrize("value", ["codex:gpt-5.6-sol/medium", "claude:sonnet", "claude:opus/high"])
+    def test_set_stage_model_persists_and_is_read_back(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], value: str
     ) -> None:
-        """`codex_model`を設定すると永続化され、以降の`show`・`get`へ反映される。"""
+        """正しい工程別モデル値を永続化し、以降の`get`へ反映する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "set", "codex_model", "gpt-5.6-sol"], home=tmp_path)
+            atk.main(["config", "set", "execute_model", value], home=tmp_path)
         assert exc_info.value.code == 0
-        assert "設定を更新しました: codex_model=gpt-5.6-sol" in capsys.readouterr().out
+        assert f"設定を更新しました: execute_model={value}" in capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "get", "codex_model"], home=tmp_path)
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "gpt-5.6-sol\n"
+        assert capsys.readouterr().out == f"{value}\n"
 
         config_file = tmp_path / "config" / "config.json"
         assert config_file.exists()
-        assert "gpt-5.6-sol" in config_file.read_text(encoding="utf-8")
+        assert value in config_file.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("value", ["gpt-5.6-sol", "other:model", "codex:", "claude:model/"])
+    def test_set_invalid_stage_model_exits_2(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], value: str
+    ) -> None:
+        """不正な工程別モデル値はexit 2で受理可能書式を案内する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", value], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "<claude|codex>:<model>[/<effort>]" in capsys.readouterr().err
+
+    def test_removed_codex_model_is_unknown(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """廃止した`codex_model`は変更可能キーとして受理しない。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "codex_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "変更できない設定キーです" in capsys.readouterr().err
 
     def test_set_immutable_key_exits_2(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """XDGパス等の導出値キーは変更できずexit 2でエラー案内を出力する。"""
