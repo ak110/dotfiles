@@ -34,6 +34,14 @@
 - `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集時は`pytools-edit`を呼び出す
   （配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを集約する）
 - プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`を呼び出して両側を同期する
+- 本リポジトリでコーディングエージェント向け文書の記述指針やフック実装の配置を判断するときは、
+  `agent-toolkit:agent-standards`（`references/agent-skills.md`・`references/claude-hooks.md`を含む）と
+  `agent-toolkit-edit`を正本とする
+  - 公式マーケットプレイスの`plugin-dev`各スキルと`skill-creator`は、frontmatterの項目名と受理値、
+    ディレクトリ構造の要件、フックイベントの入出力契約などの上流仕様を確認するために参照する
+  - 記述スタイル・構成・記述量の指針は自作規範を優先する
+- 本リポジトリでは`claude-code-setup:claude-automation-recommender`が推奨する自動化手段の選定を適用対象外とし、
+  `agent-toolkit:agent-standards`の振り分け規定と`agent-toolkit-edit`の「フック実装の配置先」に従う
 
 ## 固有差分
 
