@@ -811,14 +811,15 @@ def _check_fixed_table(
     lines: list[tuple[int, str]],
     header: tuple[str, ...],
     label: str,
+    minimum_rows: int = 1,
 ) -> tuple[MarkdownTable | None, list[str]]:
-    """列名が一致する表の実在、行数、空cellを検査して(表, エラー)を返す。"""
+    """列名が一致する表の実在、最低行数、空cellを検査して(表, エラー)を返す。"""
     tables = extract_tables(lines)
     table = next((candidate for candidate in tables if candidate.header == header), None)
     if table is None:
         return None, [f"{label}は{list(header)}の列を持つ表にする"]
     errors: list[str] = []
-    if not table.rows:
+    if len(table.rows) < minimum_rows:
         errors.append(f"{label}の表に1行以上の内容が必要")
     for row in table.rows:
         if len(row) != len(header) or any(not cell for cell in row):
@@ -931,7 +932,10 @@ def check_plan_structure(content: str) -> list[str]:
     if progress_index is not None:
         start, end = heading_subtree_range(headings, progress_index)
         _table, table_errors = _check_fixed_table(
-            lines_within(body, start, end), PLAN_PROGRESS_TABLE_HEADER, f"`## {PLAN_H2_PROGRESS}`"
+            lines_within(body, start, end),
+            PLAN_PROGRESS_TABLE_HEADER,
+            f"`## {PLAN_H2_PROGRESS}`",
+            minimum_rows=0,
         )
         errors.extend(table_errors)
 

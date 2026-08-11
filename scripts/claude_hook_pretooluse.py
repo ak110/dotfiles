@@ -12,9 +12,6 @@
 4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
-7. 計画ファイルの実装者向け領域にCodex共有規範のパスを含み
-   `.chezmoi-source/dot_codex/AGENTS.md`を含まない場合の同期漏れ警告（warn、非ブロック）
-
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
@@ -47,7 +44,6 @@ from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-positio
     extract_target_files_from_changes,
 )
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from codex_shared_rules import is_codex_shared_rule  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
 from pretooluse import _collect_new_fields  # noqa: E402
@@ -112,10 +108,6 @@ def main(payload_text: str) -> int:
     plan_bump_warning = _plan_file_bump_declaration_warning(tool_name, fields, file_path)
     if plan_bump_warning is not None:
         warnings.append(plan_bump_warning)
-    plan_agents_md_warning = _plan_file_agents_md_sync_warning(tool_name, fields, file_path)
-    if plan_agents_md_warning is not None:
-        warnings.append(plan_agents_md_warning)
-
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
         # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
@@ -468,45 +460,6 @@ def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, 
             " Per the `agent-toolkit-edit` skill (plan mode handling), include"
             " `scripts/agent_toolkit_bump.py {patch|minor|major}` before the"
             " verification step, or state `bump不要` in the body when no bump applies."
-        )
-    return None
-
-
-def _plan_file_agents_md_sync_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
-    """計画ファイル Write 時のCodex共有規範編集に対するAGENTS.md同期漏れの警告メッセージを返す。
-
-    対象は Write のみ。Edit / MultiEdit の new_string では計画ファイル本文全域を
-    取得できないため判定対象外とする（`_plan_file_bump_declaration_warning`と同じ理由）。
-    対象パスは `is_plan_file` の判定に従い、`.review.md` / `.codex.log` /
-    サブディレクトリ配下は対象外とする。
-    判定対象は人間向け固定領域の後にある実装者向け可変領域のみとし、
-    領域の特定は `_plan_format.extract_implementer_region` に委ねる。
-    変更対象の判定は同領域の `### 対象ファイル一覧` の通常箇条書きに限り、
-    本文中の言及とコードフェンス内の記述は対象としない
-    （抽出は `_plan_format.extract_target_files_from_changes` に委ねる）。
-    Codex共有規範の編集は`scripts/sync_codex_agents.py`が生成する
-    `.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を伴うため、対象ファイル一覧からの
-    漏れをwarnで検出する。検査対象パス（`.chezmoi-source/dot_codex/AGENTS.md`）は
-    dotfilesリポジトリ固有であり、`agent-toolkit/rules/`配下の編集を伴わない計画や
-    生成物同期を別計画へ分離する正当な構成を止めないためblockではなくwarnとする。
-    """
-    if tool_name != "Write":
-        return None
-    if not is_plan_file(file_path):
-        return None
-    for _field, value in fields:
-        targets = extract_target_files_from_changes(value)
-        if not any(path.startswith("agent-toolkit/rules/") and is_codex_shared_rule(path) for path in targets):
-            continue
-        if ".chezmoi-source/dot_codex/AGENTS.md" in targets:
-            continue
-        return (
-            "plan file references `agent-toolkit/rules/` paths in its implementer-facing section but"
-            " does not reference `.chezmoi-source/dot_codex/AGENTS.md`."
-            " Editing Codex-shared rules regenerates that file via"
-            " `scripts/sync_codex_agents.py`; include it in the target file list and"
-            " run `uv run python scripts/sync_generated_files.py` as part of the plan,"
-            " unless the sync is intentionally deferred to a separate plan."
         )
     return None
 

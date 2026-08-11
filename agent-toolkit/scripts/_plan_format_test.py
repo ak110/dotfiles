@@ -102,7 +102,6 @@ _IMPLEMENTER_SECTION = """
 
 | 日時 | 完了した工程 | 結果・特記事項 |
 | --- | --- | --- |
-| 2026-08-09 12:00 | 初版起草 | レビュー待ち。 |
 """
 
 _BUG_SECTION = """
@@ -163,8 +162,8 @@ def test_implementer_region_allows_free_composition() -> None:
         (("## 対応方針", "## 補足\n\n任意。\n\n## 対応方針"), "人間向け固定領域のH2"),
         (
             (
-                "| 2026-08-09 12:00 | 初版起草 | レビュー待ち。 |\n",
-                "| 2026-08-09 12:00 | 初版起草 | レビュー待ち。 |\n\n## 後書き\n\n補足。\n",
+                "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
+                "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n\n## 後書き\n\n補足。\n",
             ),
             "最後のH2にする",
         ),
@@ -181,7 +180,6 @@ def test_implementer_region_allows_free_composition() -> None:
             "`## 変更履歴`は",
         ),
         (("| 日時 | 完了した工程 | 結果・特記事項 |", "| 日時 | 工程 | 結果 |"), "`## 進捗ログ`は"),
-        (("| 2026-08-09 12:00 | 初版起草 | レビュー待ち。 |\n", ""), "1行以上の内容が必要"),
         (
             ("| 対象を更新する | 対象ファイルだけ | P-001 |", "| 対象を更新する | 対象ファイルだけ | P-999 |"),
             "原文参照が提示素材に無い",
@@ -200,6 +198,29 @@ def test_structure_violations_are_rejected(mutation: tuple[str, str], message: s
     content = _VALID_CONTENT.replace(*mutation, 1)
     errors = _plan_format.check_plan_structure(content)
     assert any(message in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        "",
+        "| 2026-08-09 12:00 | 実装 | 成功。 |\n",
+        "| 2026-08-09 12:00 | 実装 | 成功。 |\n| 2026-08-09 13:00 | 検証 | 成功。 |\n",
+    ],
+)
+def test_progress_table_accepts_zero_one_or_multiple_rows(rows: str) -> None:
+    """進捗表だけは0件を許容し、1件以上の既存形式も受理する。"""
+    marker = "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
+    content = _VALID_CONTENT.replace(marker, marker + rows, 1)
+    assert not _plan_format.check_plan_structure(content)
+
+
+def test_progress_table_rejects_empty_cells_when_a_row_exists() -> None:
+    """進捗表に内容行がある場合は従来どおり全cellの値を要求する。"""
+    marker = "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
+    content = _VALID_CONTENT.replace(marker, marker + "| 2026-08-09 12:00 | 実装 |  |\n", 1)
+    errors = _plan_format.check_plan_structure(content)
+    assert any("空cell" in error for error in errors), errors
 
 
 def test_permanence_sections_reject_conclusion_words_only() -> None:

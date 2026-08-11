@@ -111,8 +111,9 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
-  計画の`### 対象ファイル一覧`と実装者向け領域へ同ファイルと`uv run python scripts/sync_generated_files.py`を含める。
-  漏れは`scripts/claude_hook_pretooluse.py`のwarnチェックが検出する
+  計画の`### 対象ファイル一覧`へ編集する正本だけを記載する。
+  `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は実装者向け領域へ記載し、
+  自動生成先は対象ファイル一覧へ記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 
 ## セッション状態フラグ
