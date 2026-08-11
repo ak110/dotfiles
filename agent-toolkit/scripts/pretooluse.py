@@ -322,8 +322,14 @@ def main(payload_text: str) -> int:
         flush_pending_language_warning()
         return 0
 
-    # Agent/Task: process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
+    # Agent/Task: 委譲経路の事前確認 + process-loop観測用のサブエージェント起動時刻記録。
     if tool_name in ("Agent", "Task"):
+        # メインセッションの新規委譲だけを対象とする。sidechainの内部起動は親の
+        # delegation確認を再要求すると、既に確定した委譲経路を不必要に遮断する。
+        if payload.get("isSidechain") is not True:
+            state = read_state(session_id)
+            if _check_delegation_not_invoked(state, tool_name=tool_name):
+                return 2
         # `name`指定は起動記録より前に遮断する（起動しない呼び出しの副作用を残さないため）。
         if _check_agent_name_parameter(tool_name, tool_input):
             return 2
@@ -2747,13 +2753,13 @@ def _record_iss_sidechain_probe(
 
 
 def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:
-    """メインセッションでdelegationが未起動のMCP呼び出しをブロックする。"""
+    """メインセッションでdelegation未起動の新規委譲をブロックする。"""
     if state.get("delegation_skill_invoked", False):
         return False
     print(
         _llm_notice(
             f"{tool_name} call is blocked because `agent-toolkit:delegation` was not invoked."
-            " Invoke the skill before calling codex MCP from the main session.",
+            " Invoke the skill before starting a delegation from the main session.",
             tag="block",
         ),
         file=sys.stderr,

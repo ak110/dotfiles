@@ -123,6 +123,8 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "author自身が正規計画へ" in delegation
     assert "正規計画の書込主体をauthor 1名に保つ" in delegation
     assert "独立reviewer" in delegation
+    assert "意味自己監査" in delegation
+    assert "自己監査は品質形成" in delegation
     assert "plan-review-task.md" in delegation
     assert "計画とリポジトリを修正しない" in task
     assert "総ライフサイクルコスト" in task

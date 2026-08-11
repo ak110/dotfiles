@@ -1333,3 +1333,29 @@ class TestDiffRemoteSnapshots:
         before = {"origin": {"refs/heads/main": "aaa"}}
         after: dict[str, dict[str, str] | None] = {}
         assert self._diff(before, after) == set()
+
+
+class TestDelegationSkillState:
+    """delegation起動記録はメインセッションだけに残す。"""
+
+    def test_sidechain_skill_does_not_set_delegation_state(self, tmp_path: pathlib.Path) -> None:
+        result = _run(
+            {
+                "session_id": "side",
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:delegation"},
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert not (tmp_path / "claude-agent-toolkit-side.json").exists()
+
+    def test_main_skill_sets_delegation_state(self, tmp_path: pathlib.Path) -> None:
+        result = _run(
+            {"session_id": "main", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:delegation"}},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = json.loads((tmp_path / "claude-agent-toolkit-main.json").read_text(encoding="utf-8"))
+        assert state["delegation_skill_invoked"] is True

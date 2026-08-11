@@ -121,6 +121,16 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 events.append(completion)
             continue
 
+        result = entry.get("toolUseResult")
+        if (
+            isinstance(result, dict)
+            and isinstance(result.get("stdout"), str)
+            and SESSION_REVIEW_STARTED_MARKER in result["stdout"]
+        ):
+            event = _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
+            if event:
+                events.append(event)
+
         is_interrupt = (
             entry.get("isInterrupt") is True or entry.get("type") == "interrupt" or entry.get("subtype") == "interrupt"
         )
@@ -203,8 +213,18 @@ def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 event = _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
             elif status == "failed":
                 error = item.get("error")
-                text = output or (error if isinstance(error, str) and error.strip() else json.dumps(item, ensure_ascii=False))
+                stderr = item.get("stderr")
+                text = output or (stderr if isinstance(stderr, str) and stderr.strip() else "")
+                if not text:
+                    text = error if isinstance(error, str) and error.strip() else json.dumps(item, ensure_ascii=False)
                 event = _event("failed-tool", text, tool="CommandExecution")
+                if event:
+                    command = item.get("command")
+                    if isinstance(command, list) and all(isinstance(part, str) for part in command):
+                        event["command"] = _clip(json.dumps(command, ensure_ascii=False))
+                    exit_code = item.get("exit_code")
+                    if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+                        event["exit_code"] = exit_code
             else:
                 event = None
             if event:
@@ -338,6 +358,9 @@ def has_session_review_started(raw_path: str | None) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     """証拠を1イベント1 JSONのJSONLとして標準出力へ書く。"""
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="replace")
     args = sys.argv[1:] if argv is None else argv
     events = load_and_extract(args[0] if len(args) == 1 else None)
     for event in events:

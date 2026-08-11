@@ -195,6 +195,82 @@ def test_codex_failed_command_without_output_keeps_failure_event(tmp_path: pathl
     assert '"exit_code": 1' in events[0]["text"]
 
 
+@pytest.mark.parametrize("command", [["git", "status"], ["tool", "one", "two"], []])
+def test_codex_failed_command_keeps_structured_command_and_exit_code(tmp_path: pathlib.Path, command: list[str]) -> None:
+    """失敗CommandExecutionは配列構造と終了コードを本文とは別に保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "failed",
+                        "command": command,
+                        "exit_code": 17,
+                        "stderr": "失敗",
+                    },
+                },
+            }
+        ],
+    )
+
+    event = evidence.load_and_extract(str(transcript))[0]
+
+    assert event["command"] == json.dumps(command, ensure_ascii=False)
+    assert event["exit_code"] == 17
+    assert event["text"] == "失敗"
+
+
+def test_codex_failed_command_clips_only_long_structured_command(tmp_path: pathlib.Path) -> None:
+    """長大commandは既存の証拠上限と省略標識に従う。"""
+    command = ["x" * 2100]
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "failed",
+                        "command": command,
+                        "aggregated_output": "失敗",
+                    },
+                },
+            }
+        ],
+    )
+
+    event = evidence.load_and_extract(str(transcript))[0]
+
+    assert event["command"].endswith("…[省略]")
+    assert len(event["command"]) == 2000 + len("…[省略]")
+
+
+def test_claude_started_marker_excludes_automatic_review_events(tmp_path: pathlib.Path) -> None:
+    """Claude形式の起動済み標識も自動振り返り境界として扱う。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
+            {"type": "user", "message": {"role": "user", "content": evidence.STOP_ADVISOR_PREFIX + " 誘導"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
+                "message": {"role": "user", "content": []},
+            },
+            {"type": "assistant", "message": {"role": "assistant", "content": "振り返り中"}},
+        ],
+    )
+
+    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+    assert evidence.has_session_review_started(str(transcript)) is True
+
+
 @pytest.mark.parametrize("command", ["/session-review", "/agent-toolkit:session-review"])
 def test_claude_syntax_is_not_codex_manual_review_boundary(tmp_path: pathlib.Path, command: str) -> None:
     transcript = _write_transcript(

@@ -260,6 +260,41 @@ class TestApproveConditions:
         assert "decision" not in decision
         assert "systemMessage" not in decision
 
+    def test_pending_mcp_background_task_approves(self, tmp_path: pathlib.Path):
+        """MCP timeoutで背景化したtaskも完了通知までapproveする。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry(),
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "tool_use", "id": "toolu_mcp", "name": "mcp__codex__codex", "input": {}}],
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_mcp",
+                                "content": [{"type": "text", "text": "moved to the background as task mcp-task-1"}],
+                            }
+                        ],
+                    },
+                },
+                _assistant_text_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "mcp-bg-pending", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        assert "decision" not in _parse_decision(result)
+
     def test_completed_background_bash_reaches_context(
         self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
     ):

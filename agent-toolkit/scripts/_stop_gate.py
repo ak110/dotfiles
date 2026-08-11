@@ -360,7 +360,7 @@ def _describe_pending_background_tasks(
     transcript_path: str,
     session_id: str | None = None,
     *,
-    kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage"),
+    kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
 ) -> tuple[set[str], set[str]]:
     r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
 
@@ -371,7 +371,9 @@ def _describe_pending_background_tasks(
     - `toolUseResult.status == "async_launched"`（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
-      text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+       text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+    - 非sidechain assistantの`mcp__` tool_useに対応するuser tool_result本文が
+      `moved to the background as task`を含む（MCP背景タスク）
 
     完了の記録: 次の2形式から`tool_use_id`を抽出する。
     - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロックの
@@ -387,7 +389,7 @@ def _describe_pending_background_tasks(
     起動集合から完了集合を差し引いて1件以上残れば未完了背景タスクありと判定する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
     Agent・Bash・SendMessage背景再開とも同一の完了通知機構で通知され共通の抽出処理を用いる。
-    `kinds`は起動集合へ含める種別を`agent`・`bash`・`sendmessage`から指定する。
+    `kinds`は起動集合へ含める種別を`agent`・`bash`・`sendmessage`・`mcp`から指定する。
     既定値は全種別であり、既存の呼び出し元の挙動を維持する。
     transcript読み取り失敗時は空集合のペアを返す。
 
@@ -403,7 +405,10 @@ def _describe_pending_background_tasks(
     except (OSError, ValueError):
         return launched, completed
     sendmessage_ids = _collect_sendmessage_tool_use_ids(lines)
+    mcp_ids = _collect_mcp_tool_use_ids(lines)
     task_id_map = _collect_task_id_tool_use_ids(lines)
+    for task_id in _collect_mcp_background_task_ids(lines, mcp_ids):
+        task_id_map.setdefault(task_id, set()).add(task_id)
     monitor_task_ids = _collect_monitor_task_ids(lines)
     for line in lines:
         try:
@@ -432,6 +437,10 @@ def _describe_pending_background_tasks(
                 resumed_id = _extract_sendmessage_bg_resume_id(message, sendmessage_ids)
                 if resumed_id is not None:
                     launched.add(resumed_id)
+            if "mcp" in kinds:
+                mcp_task_id = _extract_mcp_background_task_id(message, mcp_ids)
+                if mcp_task_id is not None:
+                    launched.add(mcp_task_id)
             completed.update(
                 _extract_task_notification_ids(
                     message,
@@ -511,6 +520,37 @@ def _collect_sendmessage_tool_use_ids(lines: list[str]) -> set[str]:
         if isinstance(block_id, str):
             ids.add(block_id)
     return ids
+
+
+def _collect_mcp_tool_use_ids(lines: list[str]) -> set[str]:
+    """非sidechain assistantのMCP tool_use id集合を返す。"""
+    ids: set[str] = set()
+    for _position, block in _iter_assistant_content_blocks(lines):
+        if block.get("type") != "tool_use":
+            continue
+        name = block.get("name")
+        block_id = block.get("id")
+        if isinstance(name, str) and name.startswith("mcp__") and isinstance(block_id, str):
+            ids.add(block_id)
+    return ids
+
+
+def _collect_mcp_background_task_ids(lines: list[str], mcp_ids: set[str]) -> set[str]:
+    """MCP timeout通知に記録された背景task IDを収集する。"""
+    task_ids: set[str] = set()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "user" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if isinstance(message, dict):
+            task_id = _extract_mcp_background_task_id(message, mcp_ids)
+            if task_id is not None:
+                task_ids.add(task_id)
+    return task_ids
 
 
 def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
@@ -625,6 +665,34 @@ def _extract_sendmessage_bg_resume_id(message: dict, sendmessage_ids: set[str]) 
             if isinstance(text, str) and _SENDMESSAGE_BG_RESUME_MARKER in text:
                 return tool_use_id
     return None
+
+
+def _extract_mcp_background_task_id(message: dict, mcp_ids: set[str]) -> str | None:
+    """MCP timeout通知から背景task IDを取得する。"""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_result":
+            continue
+        tool_use_id = block.get("tool_use_id")
+        if not isinstance(tool_use_id, str) or tool_use_id not in mcp_ids:
+            continue
+        texts = _tool_result_text_blocks(block.get("content"))
+        for text in texts:
+            match = re.search(r"moved to the background as task\s+(\S+)", text)
+            if match:
+                return match.group(1)
+    return None
+
+
+def _tool_result_text_blocks(content: object) -> list[str]:
+    """tool_result本文を文字列列へ正規化する。"""
+    if isinstance(content, str):
+        return [content]
+    if not isinstance(content, list):
+        return []
+    return [block["text"] for block in content if isinstance(block, dict) and isinstance(block.get("text"), str)]
 
 
 def _extract_tool_result_id(message: dict) -> str | None:

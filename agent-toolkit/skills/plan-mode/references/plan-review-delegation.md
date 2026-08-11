@@ -10,7 +10,11 @@
 
 ## 独立reviewer
 
-機械検査の成功後、`agent-toolkit:delegation`に従って独立reviewerを起動する。
+機械検査の成功後、authorは独立reviewerを起動する前に意味自己監査を1巡する。提示素材と合意、
+事実主張の実測根拠、表の母集団全件分類、要求と例外、変更履歴と本文、対象と完了条件を
+計画全体で照合する。自己監査は品質形成であり、独立reviewerの検証責務を置き換えない。
+
+自己監査を完了後、`agent-toolkit:delegation`に従って独立reviewerを起動する。
 起動文は受信者への命令を先頭に置き、次の絶対パスと今回のレビュー種別だけを渡す。
 
 - `plan-review-task.md`

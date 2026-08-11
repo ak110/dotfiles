@@ -128,6 +128,12 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 特定ホスト・本リポジトリ限定の内容はリポジトリ直下の`.claude/settings.local.json`（バージョン管理対象外）へ置く。
 読み取り専用コマンドには、引数なしの`Bash`許可を適用する。
 
+プラグインの有効・無効は、永続的な設定値だけで再現できる場合に
+`share/claude_settings_json_managed*.json`の`enabledPlugins`へ置く。設定反映前に
+インストール済みプラグインへCLI遷移が必要な場合だけ
+`pytools/_internal/install_claude_plugins.py`のauto一覧を使う。既存の歴史的重複は
+新規登録の既定にしない。
+
 ## worktreeでの編集時の注意
 
 作業用の複製（git worktree等）で配布物（`agent-toolkit/`配下等）を改訂しても、

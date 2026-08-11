@@ -4178,3 +4178,26 @@ class TestCodexRemoteSnapshotRecording:
         entries = state.get("codex_remote_snapshot_by_key")
         assert entries is not None
         assert entries.get("session:snap-reply", {}).get("cwd") == str(repo)
+
+
+class TestDelegationGateForAgentTask:
+    """新規Agent／Task委譲はdelegation起動後だけ通す。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    def test_main_launch_without_delegation_is_blocked(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        result = _run({"session_id": "missing", "tool_name": tool_name, "tool_input": {}}, env_overrides=env)
+        assert result.returncode == 2
+        assert "agent-toolkit:delegation" in result.stderr
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    def test_main_launch_with_delegation_or_sidechain_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        _write_session_state(tmp_path, "ready", {"delegation_skill_invoked": True})
+        allowed = _run({"session_id": "ready", "tool_name": tool_name, "tool_input": {}}, env_overrides=env)
+        sidechain = _run(
+            {"session_id": "sidechain", "tool_name": tool_name, "tool_input": {}, "isSidechain": True},
+            env_overrides=env,
+        )
+        assert allowed.returncode == 0
+        assert sidechain.returncode == 0

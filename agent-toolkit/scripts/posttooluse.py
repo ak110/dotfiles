@@ -403,7 +403,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             update_state(session_id, _set_process_feedbacks_invoked)
         if isinstance(skill_name, str) and skill_name in _EXIT_SESSION_SKILL_NAMES:
             update_state(session_id, _reset_process_feedbacks_invoked)
-        if isinstance(skill_name, str) and skill_name in _DELEGATION_SKILL_NAMES:
+        if payload.get("isSidechain") is not True and isinstance(skill_name, str) and skill_name in _DELEGATION_SKILL_NAMES:
 
             def _set_delegation_invoked(state: dict) -> dict | None:
                 if state.get("delegation_skill_invoked", False):

@@ -130,3 +130,50 @@ class TestAttachmentTaskIdFallbackCompletion:
         assert is_pending_async_work(str(t), "session-fallback") is True
         log_path = tmp_path / "claude-agent-toolkit-stop-session-fallback.log"
         assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
+
+
+class TestMcpBackgroundTaskCompletion:
+    """MCP timeout通知とtask IDだけの完了通知を突合する。"""
+
+    def test_pending_mcp_task_is_completed_by_task_id_notification(self, tmp_path: pathlib.Path) -> None:
+        entries = [
+            _assistant_entry([{"type": "tool_use", "id": "toolu_mcp", "name": "mcp__codex__codex", "input": {}}]),
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_mcp",
+                            "content": [{"type": "text", "text": "moved to the background as task mcp-task-1"}],
+                        }
+                    ],
+                },
+            },
+            _user_task_notification_entry(None, task_id="mcp-task-1"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_pending_mcp_task_without_completion_remains_pending(self, tmp_path: pathlib.Path) -> None:
+        entries = [
+            _assistant_entry([{"type": "tool_use", "id": "toolu_mcp", "name": "mcp__codex__codex", "input": {}}]),
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_mcp",
+                            "content": [{"type": "text", "text": "moved to the background as task mcp-task-1"}],
+                        }
+                    ],
+                },
+            },
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is True

@@ -58,6 +58,12 @@ class TestUpdateClaudeSettings:
         assert result["permissions"]["allow"] == MANAGED_ALLOW
         assert result["permissions"]["deny"] == MANAGED_DENY
 
+    def test_managed_plugin_disable_is_applied(self, tmp_path: Path):
+        """配布原本のプラグイン無効化は既存設定へマージされる。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"enabledPlugins": {"hookify@claude-plugins-official": True}})
+        assert result["enabledPlugins"]["hookify@claude-plugins-official"] is False
+
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
         """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {

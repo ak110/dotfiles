@@ -22,7 +22,8 @@
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
   `delegation`を起動した場合にPostToolUseが真化する。
-  メインセッションからcodex MCPを呼び出す前の経路検査に使い、セッション終了まで保持する
+  メインセッションからcodex MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
+  セッション終了まで保持する。sidechainのSkill起動は記録しない
 - `plan_impl_executor_active_subagent_sessions`: SubagentStartが`plan-impl-executor`の`agent_id`を
   Agent識別子別に記録し、SubagentStopが完了報告を検査する。正常報告、SendMessage再開、
   plan-mode起動では削除せず、別executorの要素と併存させる。状態JSON全体の寿命は末尾の規定に従う

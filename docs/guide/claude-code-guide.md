@@ -268,6 +268,7 @@ Claude Code向けagent-toolkitプラグインは以下のフックを常時有�
   `mcp__codex__codex`・`mcp__codex__codex-reply`の呼び出しをブロック
 - codex呼び出しのサンドボックス指定を削除・弱体化する編集をブロック
 - AgentまたはTaskツール起動時のnameパラメーター指定をブロック
+- メインセッションで`agent-toolkit:delegation`未起動のAgent／Task起動をブロック
 - 計画レビューでは、メインセッションが機械チェック・修正系と総合レビュー系へ直接委譲する
 - 計画実装では、`plan-impl-executor`がコミット単位ごとのwriterと2つの読み取り専用reviewerを管理し、
   writerがcommit、呼び出し元がpushとCI確認を担当
