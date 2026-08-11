@@ -9,6 +9,7 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 
 import argparse
 import contextlib
+import datetime
 import pathlib
 import subprocess
 import sys
@@ -657,19 +658,20 @@ def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
     first = _write_feedback_file(notes, "first.md")
     second = _write_feedback_file(notes, "second.md")
     _disable_transition_git(monkeypatch)
-    mutations.transition_entries(notes, action="start-processing", filenames=["first.md", "second.md"], now=_FIXED_DT)
+    now = datetime.datetime(2024, 1, 15, 10, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
+    mutations.transition_entries(notes, action="start-processing", filenames=["first.md", "second.md"], now=now)
 
     mutations.transition_entries(
         notes,
         action="return-to-inbox",
         filenames=["first.md", "second.md"],
-        now=_FIXED_DT,
+        now=now,
         cooldown_days=3,
     )
 
     for path in (first, second):
         assert "cooldown_until: '2024-01-18T01:30:00+00:00'" in path.read_text(encoding="utf-8")
-    mutations.transition_entries(notes, action="start-processing", filenames=["first.md"], now=_FIXED_DT)
+    mutations.transition_entries(notes, action="start-processing", filenames=["first.md"], now=now)
     assert "cooldown_until" not in (notes / "processing/first.md").read_text(encoding="utf-8")
 
 
