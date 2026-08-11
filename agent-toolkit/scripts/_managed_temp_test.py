@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import ctypes
 import json
@@ -259,6 +260,18 @@ def _managed_state(target: pathlib.Path, registry: pathlib.Path) -> tuple[object
     return tree, _path_state(target / _MARKER_NAME), _path_state(registry)
 
 
+def _replace_records(target: pathlib.Path, transform: typing.Callable[[dict[str, object]], None]) -> None:
+    """markerとregistryへ同じ改変を保存してデータ契約を検証可能にする。"""
+    marker = target / _MARKER_NAME
+    registry = subject._registry_path(target)
+    for path in (marker, registry):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        transform(record)
+        path.write_text(json.dumps(record), encoding="utf-8")
+        if os.name == "posix":
+            path.chmod(0o600)
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX固有の権限・dirfd検証")
 class TestManagedTempPosix:
     """POSIXの作成・検証・後始末を実ファイルで確認する。"""
@@ -273,6 +286,119 @@ class TestManagedTempPosix:
         assert subject.validate_managed_temp(target) == target
         subject.cleanup_managed_temp(target)
         assert not target.exists()
+
+    def test_validate_accepts_matching_v1_records(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """旧schemaのmarkerとregistryが同じ旧フィールド集合なら互換検証する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("v1-record")
+
+        def convert_to_v1(record: dict[str, object]) -> None:
+            record["schema_version"] = 1
+            del record["prefix"]
+            del record["created_at"]
+
+        _replace_records(target, convert_to_v1)
+
+        assert subject.validate_managed_temp(target) == target
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("prefix", None),
+            ("prefix", "UPPER"),
+            ("prefix", 1),
+            ("created_at", None),
+            ("created_at", "2026-08-12T00:00:00"),
+            ("created_at", "2026-08-12T00:00:00+09:00"),
+            ("created_at", 1),
+        ],
+    )
+    def test_validate_rejects_invalid_v2_prefix_or_created_at(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        field: str,
+        value: object,
+    ) -> None:
+        """v2のprefixとUTC作成時刻は双方で必須かつ型・値を検証する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("invalid-v2")
+
+        def set_invalid(record: dict[str, object]) -> None:
+            if value is None:
+                del record[field]
+            else:
+                record[field] = value
+
+        _replace_records(target, set_invalid)
+
+        with pytest.raises(subject.ManagedTempError, match="内容"):
+            subject.validate_managed_temp(target)
+
+    @pytest.mark.parametrize("marker_only", [True, False])
+    def test_validate_rejects_version_mismatch_and_partial_v2_update(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        marker_only: bool,
+    ) -> None:
+        """version混在と片側だけのv2更新を真正性エラーとして拒否する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("record-mismatch")
+        marker = target / _MARKER_NAME
+        registry = subject._registry_path(target)
+        changed = marker if marker_only else registry
+        record = json.loads(changed.read_text(encoding="utf-8"))
+        if marker_only:
+            record["schema_version"] = 1
+            del record["prefix"]
+            del record["created_at"]
+        else:
+            del record["created_at"]
+        changed.write_text(json.dumps(record), encoding="utf-8")
+        changed.chmod(0o600)
+
+        with pytest.raises(subject.ManagedTempError, match="内容"):
+            subject.validate_managed_temp(target)
+
+    def test_list_mixes_v1_and_v2_as_sorted_jsonl_and_skips_invalid_registry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """listはv1を最古としてJSONL出力し、不正registryを診断して正常項目を継続する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        v1_target = subject.create_managed_temp("legacy")
+        v2_target = subject.create_managed_temp("publish-group")
+
+        def convert_to_v1(record: dict[str, object]) -> None:
+            record["schema_version"] = 1
+            del record["prefix"]
+            del record["created_at"]
+
+        _replace_records(v1_target, convert_to_v1)
+        invalid_registry = subject._state_root() / "invalid.json"
+        invalid_registry.write_text("{}", encoding="utf-8")
+        invalid_registry.chmod(0o600)
+
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+        assert subject.dispatch(parser.parse_args(["list"])) == 0
+        lines = capsys.readouterr()
+        assert [json.loads(line) for line in lines.out.splitlines()] == [
+            {"created_at": None, "path": str(v1_target), "prefix": None},
+            {
+                "created_at": subject._load_private_json(subject._registry_path(v2_target))["created_at"],
+                "path": str(v2_target),
+                "prefix": "publish-group",
+            },
+        ]
+        assert "warning: 管理対象を列挙できない" in lines.err
 
     @pytest.mark.parametrize("prefix", ["", "UPPER", "under_score", "leading-", "-leading", "dot.name"])
     def test_create_rejects_invalid_prefix(

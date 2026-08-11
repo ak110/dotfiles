@@ -1264,6 +1264,13 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
     """終端工程と要件シナリオ走査の到達性を保つ。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    publish_group = (_PROCESS_FEEDBACKS.parent / "references" / "publish-group.md").read_text(encoding="utf-8")
     assert "終端工程はlane又は統合writerへ委譲しない" in process
     assert "push及びCI通過の後、adoptの前" in process
+    assert "active項目から対象filename自身を除外" in process
+    assert "自己依存又は循環が無いことを登録前に検査" in process
+    for field in ("schema_version", "group_final_item", "target_repo", "created_at"):
+        assert field in publish_group
+    for requirement in (".publish-group-marker.json", "排他的作成", "fsync", "symlink", "完全一致を検証"):
+        assert requirement in publish_group
     assert "### 要件シナリオ走査" in review

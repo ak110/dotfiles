@@ -717,21 +717,37 @@ def _record(
     return record
 
 
+def _is_utc_iso8601(value: object) -> bool:
+    """valueがUTC offsetを持つISO 8601日時文字列か返す。"""
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() == datetime.timedelta(0)
+
+
 def _records_match(path: pathlib.Path, marker: dict[str, typing.Any], registry: dict[str, typing.Any]) -> bool:
     nonce = registry.get("nonce")
-    expected = _record(
-        path,
-        typing.cast(str, nonce),
-        prefix=typing.cast(str | None, registry.get("prefix")),
-        created_at=typing.cast(str | None, registry.get("created_at")),
-    )
-    if registry.get("schema_version") == 1:
+    schema_version = registry.get("schema_version")
+    if not isinstance(schema_version, int) or isinstance(schema_version, bool):
+        return False
+    if schema_version == 1:
+        expected = _record(path, typing.cast(str, nonce))
         expected["schema_version"] = 1
+    elif schema_version == 2:
+        prefix = registry.get("prefix")
+        created_at = registry.get("created_at")
+        if not isinstance(prefix, str) or not is_valid_prefix(prefix) or not _is_utc_iso8601(created_at):
+            return False
+        expected = _record(path, typing.cast(str, nonce), prefix=prefix, created_at=typing.cast(str, created_at))
+    else:
+        return False
     return (
         isinstance(nonce, str)
         and re.fullmatch(r"[0-9a-f]{64}", nonce) is not None
         and marker == registry
-        and registry.get("schema_version") in (1, 2)
         and registry == expected
     )
 
