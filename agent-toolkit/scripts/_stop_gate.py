@@ -411,8 +411,8 @@ def _describe_pending_background_tasks(
     sendmessage_ids = _collect_sendmessage_tool_use_ids(lines)
     mcp_ids = _collect_mcp_tool_use_ids(lines)
     task_id_map = _collect_task_id_tool_use_ids(lines)
-    for task_id in _collect_mcp_background_task_ids(lines, mcp_ids):
-        task_id_map.setdefault(task_id, set()).add(task_id)
+    for task_id, tool_use_ids in _collect_mcp_background_task_id_tool_use_ids(lines, mcp_ids).items():
+        task_id_map.setdefault(task_id, set()).update({task_id, *tool_use_ids})
     monitor_task_ids = _collect_monitor_task_ids(lines)
     for line in lines:
         try:
@@ -494,6 +494,10 @@ def _resolve_task_notification_ids(
     """
     ids = set(_TOOL_USE_ID_RE.findall(notification_text))
     if ids:
+        if task_id_map is not None:
+            for task_id, mapped_ids in task_id_map.items():
+                if ids & mapped_ids:
+                    ids.add(task_id)
         return ids
     resolved: set[str] = set()
     if task_id_map is not None:
@@ -539,9 +543,9 @@ def _collect_mcp_tool_use_ids(lines: list[str]) -> set[str]:
     return ids
 
 
-def _collect_mcp_background_task_ids(lines: list[str], mcp_ids: set[str]) -> set[str]:
-    """MCP timeout通知に記録された背景task IDを収集する。"""
-    task_ids: set[str] = set()
+def _collect_mcp_background_task_id_tool_use_ids(lines: list[str], mcp_ids: set[str]) -> dict[str, set[str]]:
+    """MCP timeout通知の背景task IDと起動tool_use IDの対応を収集する。"""
+    result: dict[str, set[str]] = {}
     for line in lines:
         try:
             entry = json.loads(line)
@@ -550,11 +554,13 @@ def _collect_mcp_background_task_ids(lines: list[str], mcp_ids: set[str]) -> set
         if entry.get("type") != "user" or entry.get("isSidechain"):
             continue
         message = entry.get("message")
-        if isinstance(message, dict):
-            task_id = _extract_mcp_background_task_id(message, mcp_ids)
-            if task_id is not None:
-                task_ids.add(task_id)
-    return task_ids
+        if not isinstance(message, dict):
+            continue
+        task_id = _extract_mcp_background_task_id(message, mcp_ids)
+        tool_use_id = _extract_tool_result_id(message)
+        if task_id is not None and tool_use_id is not None:
+            result.setdefault(task_id, set()).add(tool_use_id)
+    return result
 
 
 def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:

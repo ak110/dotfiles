@@ -27,6 +27,42 @@ from _stop_gate_test import (  # noqa: E402  # pylint: disable=wrong-import-posi
 _TEXT = "作業完了。"
 
 
+def _mcp_background_timeout_entries(
+    task_id: str,
+    tool_use_id: str,
+    *,
+    sidechain: bool = False,
+    tool_name: str = "mcp__codex__codex",
+) -> list[dict]:
+    """MCP timeoutによる背景化を記録したassistant・userエントリを生成する。"""
+    return [
+        {
+            "type": "assistant",
+            "isSidechain": sidechain,
+            "message": {
+                "id": f"msg_{tool_use_id}",
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": tool_use_id, "name": tool_name, "input": {}}],
+                "stop_reason": "tool_use",
+            },
+        },
+        {
+            "type": "user",
+            "isSidechain": sidechain,
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": [{"type": "text", "text": f"moved to the background as task {task_id}"}],
+                    }
+                ],
+            },
+        },
+    ]
+
+
 class TestTaskIdFallbackCompletion:
     """旧形式（userエントリの`<task-notification>`）における`<task-id>`フォールバック解決の検証。
 
@@ -173,6 +209,52 @@ class TestMcpBackgroundTaskCompletion:
                     ],
                 },
             },
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is True
+
+    @pytest.mark.parametrize(
+        "notification",
+        [
+            _user_task_notification_entry("toolu_mcp", task_id=None),
+            _attachment_task_notification_entry("toolu_mcp", task_id=None),
+        ],
+    )
+    def test_mcp_task_is_completed_by_tool_use_id_notification(self, tmp_path: pathlib.Path, notification: dict) -> None:
+        """MCP背景化は既存のtool-use-idだけの完了通知でも相殺される。"""
+        entries = [
+            *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp"),
+            notification,
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_sidechain_mcp_timeout_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """sidechain内のMCP背景化はメイン側の未完了タスクに含めない。"""
+        entries = [
+            *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp", sidechain=True),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_non_mcp_timeout_text_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """MCP以外のtool_resultに同じ文言があっても背景化として誤検出しない。"""
+        entries = [
+            *_mcp_background_timeout_entries("mcp-task-1", "toolu_read", tool_name="Read"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_one_of_multiple_mcp_tasks_completed_leaves_other_pending(self, tmp_path: pathlib.Path) -> None:
+        """複数MCP背景化の一部だけが完了すると、未完了のtaskだけが残る。"""
+        entries = [
+            *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp_1"),
+            *_mcp_background_timeout_entries("mcp-task-2", "toolu_mcp_2"),
+            _attachment_task_notification_entry("toolu_mcp_1", task_id=None),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
