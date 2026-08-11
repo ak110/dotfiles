@@ -1271,6 +1271,14 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
     assert "自己依存又は循環が無いことを登録前に検査" in process
     for field in ("schema_version", "group_final_item", "target_repo", "created_at"):
         assert field in publish_group
-    for requirement in (".publish-group-marker.json", "排他的作成", "fsync", "symlink", "完全一致を検証"):
+    for requirement in (
+        ".publish-group-marker.json",
+        "排他的作成",
+        "fsync",
+        "symlink",
+        "完全一致を検証",
+        "同じ`group_final_item`と`target_repo`のmarkerが0件",
+        "二重の領域作成又は公開操作を行わない",
+    ):
         assert requirement in publish_group
     assert "### 要件シナリオ走査" in review

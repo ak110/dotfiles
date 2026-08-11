@@ -542,6 +542,90 @@ def test_set_dependencies_can_clear_dependencies(tmp_path: pathlib.Path, monkeyp
     assert "depends_on" not in parsed[0]
 
 
+@pytest.mark.parametrize(
+    ("existing", "filename", "dependencies"),
+    [
+        (("first.md", "second.md"), "second.md", ("first.md",)),
+        (("first.md", "second.md", "third.md"), "third.md", ("first.md",)),
+    ],
+)
+def test_set_dependencies_rejects_mutual_and_existing_chain_cycles(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing: tuple[str, ...],
+    filename: str,
+    dependencies: tuple[str, ...],
+) -> None:
+    """相互依存と既存長鎖へ閉路を形成する更新をlock内で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    for name in existing:
+        path = _write_convert_feedback(notes, name)
+        if name == "first.md":
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+                encoding="utf-8",
+            )
+        elif name == "second.md" and len(existing) == 3:
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [third.md]\n"),
+                encoding="utf-8",
+            )
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="循環"):
+        mutations.set_entry_dependencies(notes, filename=filename, depends_on=dependencies)
+
+
+def test_set_dependencies_uses_graph_refreshed_after_pull(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pullで競合更新された依存を読んでから新しい閉路を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "first.md")
+    _write_convert_feedback(notes, "second.md")
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    def pull_with_competing_update(_path: pathlib.Path) -> None:
+        first.write_text(
+            first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(mutations, "_pull", pull_with_competing_update)
+
+    with pytest.raises(mutations.WebInputError, match="循環"):
+        mutations.set_entry_dependencies(notes, filename="second.md", depends_on=("first.md",))
+
+
+def test_set_dependencies_cli_rejects_cycle(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """直接CLI呼び出しも循環拒否を利用者向け終了状態へ変換する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "first.md")
+    _write_convert_feedback(notes, "second.md")
+    first.write_text(
+        first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+        encoding="utf-8",
+    )
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as captured:
+        atk.main(
+            ["mq", "set-dependencies", "second.md", "--depends-on", "first.md", "--target-repo", "github.com/example/foo"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert captured.value.code == 1
+    assert "循環する依存" in capsys.readouterr().err
+
+
 def test_convert_to_plan_keeps_saved_change_when_push_fails(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

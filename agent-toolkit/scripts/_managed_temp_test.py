@@ -314,6 +314,8 @@ class TestManagedTempPosix:
             ("created_at", None),
             ("created_at", "2026-08-12T00:00:00"),
             ("created_at", "2026-08-12T00:00:00+09:00"),
+            ("created_at", "2026-08-12X00:00:00+00:00"),
+            ("created_at", "2026-08-12 00:00:00+00:00"),
             ("created_at", 1),
         ],
     )
@@ -399,6 +401,81 @@ class TestManagedTempPosix:
             },
         ]
         assert "warning: 管理対象を列挙できない" in lines.err
+
+    def test_list_sorts_same_created_at_by_path_and_excludes_v1_prefix_filter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """同時刻のv2はpath順に並べ、prefix指定ではv1を返さない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        first = subject.create_managed_temp("publish-group")
+        second = subject.create_managed_temp("publish-group")
+        legacy = subject.create_managed_temp("legacy")
+        created_at = "2026-08-12T00:00:00+00:00"
+
+        def set_created_at(record: dict[str, object]) -> None:
+            record["created_at"] = created_at
+
+        def convert_to_v1(record: dict[str, object]) -> None:
+            record["schema_version"] = 1
+            del record["prefix"]
+            del record["created_at"]
+
+        _replace_records(first, set_created_at)
+        _replace_records(second, set_created_at)
+        _replace_records(legacy, convert_to_v1)
+
+        assert [entry["path"] for entry in subject.list_managed_temp("publish-group")] == sorted((str(first), str(second)))
+
+    def test_list_returns_exit_one_for_an_empty_result(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """該当管理領域が無いlistは慣例どおり終了状態1で終える。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+
+        assert subject.dispatch(parser.parse_args(["list"])) == 1
+        assert capsys.readouterr().out == ""
+
+    @pytest.mark.parametrize("tamper", ["marker", "stale-registry", "symlink", "registry-mode"])
+    def test_list_excludes_untrusted_records_and_keeps_valid_records(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        tamper: str,
+    ) -> None:
+        """listは改変・stale・link・権限不正を出力せず正常項目を継続する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        valid = subject.create_managed_temp("valid")
+        invalid = subject.create_managed_temp("invalid")
+        marker = invalid / _MARKER_NAME
+        registry = subject._registry_path(invalid)
+        if tamper == "marker":
+            marker.write_text("{}", encoding="utf-8")
+            marker.chmod(0o600)
+        elif tamper == "stale-registry":
+            marker.unlink()
+            invalid.rmdir()
+        elif tamper == "symlink":
+            marker.unlink()
+            marker.symlink_to(tmp_path / "outside-marker")
+        else:
+            registry.chmod(0o644)
+
+        assert subject.list_managed_temp() == [
+            {
+                "path": str(valid),
+                "prefix": "valid",
+                "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
+            }
+        ]
+        assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
 
     @pytest.mark.parametrize("prefix", ["", "UPPER", "under_score", "leading-", "-leading", "dot.name"])
     def test_create_rejects_invalid_prefix(
@@ -704,6 +781,30 @@ class TestManagedTempWindows:
         assert subject._windows_equal_sids(security.aces[0].sid, current_sid)
         subject.cleanup_managed_temp(target)
         assert not target.exists()
+
+    @pytest.mark.parametrize("tamper", ["marker", "stale-registry"])
+    def test_list_excludes_tampered_records_and_keeps_valid_record(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        tamper: str,
+    ) -> None:
+        """Windowsでもlistは不正recordを除外し、真正な領域の列挙を継続する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        valid = subject.create_managed_temp("windows-valid")
+        invalid = subject.create_managed_temp("windows-invalid")
+        if tamper == "marker":
+            marker = invalid / _MARKER_NAME
+            marker.write_text("{}", encoding="utf-8")
+        else:
+            subject._write_private_json(subject._state_root() / "stale.json", {})
+
+        expected_paths = {str(valid)}
+        if tamper == "stale-registry":
+            expected_paths.add(str(invalid))
+        assert {entry["path"] for entry in subject.list_managed_temp()} == expected_paths
+        assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
 
     def test_external_writer_acl_validate_and_cleanup(
         self,

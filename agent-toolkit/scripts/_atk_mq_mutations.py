@@ -638,6 +638,10 @@ def set_entry_dependencies(
         canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
         if path.name in canonical_dependencies:
             raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+        dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
+        dependency_graph[path.name] = set(canonical_dependencies)
+        if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
+            raise WebInputError(f"循環する依存を指定できません: {path.name}")
         data.pop("queue_schedule", None)
         if canonical_dependencies:
             data["depends_on"] = list(canonical_dependencies)
@@ -649,6 +653,43 @@ def set_entry_dependencies(
             relative_path = str(path.relative_to(private_notes))
             _commit_and_push(private_notes, "chore: update feedback dependencies", [relative_path])
         return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+
+
+def _active_dependency_graph(inbox_dir: pathlib.Path, processing_dir: pathlib.Path) -> dict[str, set[str]]:
+    """lock内で取得したactive feedbackの依存グラフを返す。"""
+    entries: dict[str, pathlib.Path] = {}
+    for directory in (inbox_dir, processing_dir):
+        if directory.is_dir():
+            entries.update({path.name: path for path in directory.glob("*.md") if path.is_file()})
+    graph: dict[str, set[str]] = {}
+    for name, entry_path in entries.items():
+        entry_text = entry_path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(entry_text)
+        if parsed is None:
+            raise WebInputError(f"active項目のfrontmatterが破損しているため依存を更新できません: {name}")
+        data, _body = parsed
+        if _require_type(entry_path, entry_text) != MQ_TYPE_FEEDBACK:
+            continue
+        raw_dependencies = data.get("depends_on", [])
+        if not isinstance(raw_dependencies, list) or not all(isinstance(value, str) for value in raw_dependencies):
+            raise WebInputError(f"active項目のdepends_onが不正なため依存を更新できません: {name}")
+        graph[name] = {_validate_filename(value, inbox_dir).name for value in raw_dependencies}
+    return graph
+
+
+def _dependency_reaches(graph: dict[str, set[str]], start: str, target: str) -> bool:
+    """startからtargetへ到達できる場合に真を返す。"""
+    pending = [start]
+    visited: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current == target:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        pending.extend(graph.get(current, ()))
+    return False
 
 
 def _cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

@@ -27,6 +27,7 @@ from ctypes import wintypes
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 2
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+_UTC_ISO8601_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+00:00\Z")
 _WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
 _WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
 _WINDOWS_ACL_REVISION = 2
@@ -719,7 +720,7 @@ def _record(
 
 def _is_utc_iso8601(value: object) -> bool:
     """valueがUTC offsetを持つISO 8601日時文字列か返す。"""
-    if not isinstance(value, str):
+    if not isinstance(value, str) or _UTC_ISO8601_RE.fullmatch(value) is None:
         return False
     try:
         parsed = datetime.datetime.fromisoformat(value)
