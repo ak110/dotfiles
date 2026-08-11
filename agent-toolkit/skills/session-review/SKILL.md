@@ -53,6 +53,7 @@ uv run --no-project --script "<plugin root>/scripts/session_review_state.py" <se
 Stopフック起動ではreason、ホスト別の手動コマンド起動では`additionalContext`から、同じpayload由来の
 `session_id`と`transcript_path`を受け取る。受け渡し専用の永続stateや証拠fileは作成しない。
 
+advisorの起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 起動時に必ず読み取り専用の`session-review-advisor`を1つ起動する。メインだけで改善提案の要否を確定しない。
 advisorへ次を渡す。
 

@@ -915,48 +915,79 @@ def _load_queue_entries(
     states: tuple[str, ...],
 ) -> tuple[QueueEntry, ...]:
     """指定状態のfeedback・TBDをreadiness判定用表現へ変換する。"""
+    return tuple(
+        _queue_entry(path, entry_repo, text, state, entry_type)
+        for path, entry_repo, text, state, entry_type in _iter_entries(private_notes, states, target_repo, "all")
+    )
+
+
+def _queue_entry(
+    path: pathlib.Path,
+    entry_repo: str,
+    text: str,
+    state: str,
+    entry_type: str | None,
+) -> QueueEntry:
+    """1件のキュー項目をreadiness判定用表現へ変換する。"""
+    parsed = parse_frontmatter(text)
+    frontmatter_broken = parsed is None
+    data = parsed[0] if parsed is not None else {}
+    repair_target = data.get("repair_target") if entry_type == MQ_TYPE_TBD else None
+    raw_repair_kind = data.get("repair_kind") if entry_type == MQ_TYPE_TBD else None
+    repair_kind: RepairKind | None
+    if not isinstance(repair_target, str):
+        repair_kind = None
+    elif raw_repair_kind is None or raw_repair_kind == "frontmatter":
+        repair_kind = "frontmatter"
+    elif raw_repair_kind == "missing-plan-file":
+        repair_kind = "missing-plan-file"
+    else:
+        repair_kind = None
+    plan_file = data.get("plan_file")
+    raw_dependencies = data.get("depends_on", [])
+    depends_on = (
+        tuple(dict.fromkeys(value for value in raw_dependencies if isinstance(value, str)))
+        if isinstance(raw_dependencies, list) and all(isinstance(value, str) for value in raw_dependencies)
+        else ()
+    )
+    schedule = data.get("queue_schedule")
+    legacy_dependency = schedule.get("dependency") if isinstance(schedule, dict) else None
+    return QueueEntry(
+        filename=path.name,
+        text=text,
+        kind=entry_type,
+        state=state,
+        target_repo=_normalized_repo_or_none(entry_repo),
+        tbd_answered=_is_tbd_answered(text) if entry_type == MQ_TYPE_TBD else None,
+        frontmatter_broken=frontmatter_broken,
+        plan_file=plan_file if isinstance(plan_file, str) else None,
+        depends_on=depends_on,
+        legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
+        repair_target_filename=repair_target if isinstance(repair_target, str) else None,
+        repair_kind=repair_kind,
+    )
+
+
+def _load_referenced_terminal_entries(
+    private_notes: pathlib.Path,
+    dependency_names: set[str],
+) -> tuple[QueueEntry, ...]:
+    """active項目が安全なbasenameで参照する終端項目だけを読み込む。"""
+    safe_names = {
+        name
+        for name in dependency_names
+        if pathlib.Path(name).name == name and "/" not in name and "\\" not in name and name.endswith(".md")
+    }
     entries: list[QueueEntry] = []
-    for path, entry_repo, text, state, entry_type in _iter_entries(private_notes, states, target_repo, "all"):
-        parsed = parse_frontmatter(text)
-        frontmatter_broken = parsed is None
-        data = parsed[0] if parsed is not None else {}
-        repair_target = data.get("repair_target") if entry_type == MQ_TYPE_TBD else None
-        raw_repair_kind = data.get("repair_kind") if entry_type == MQ_TYPE_TBD else None
-        repair_kind: RepairKind | None
-        if not isinstance(repair_target, str):
-            repair_kind = None
-        elif raw_repair_kind is None or raw_repair_kind == "frontmatter":
-            repair_kind = "frontmatter"
-        elif raw_repair_kind == "missing-plan-file":
-            repair_kind = "missing-plan-file"
-        else:
-            repair_kind = None
-        plan_file = data.get("plan_file")
-        raw_dependencies = data.get("depends_on", [])
-        depends_on = (
-            tuple(dict.fromkeys(value for value in raw_dependencies if isinstance(value, str)))
-            if isinstance(raw_dependencies, list) and all(isinstance(value, str) for value in raw_dependencies)
-            else ()
-        )
-        schedule = data.get("queue_schedule")
-        legacy_dependency = schedule.get("dependency") if isinstance(schedule, dict) else None
-        normalized_repo = _normalized_repo_or_none(entry_repo)
-        entries.append(
-            QueueEntry(
-                filename=path.name,
-                text=text,
-                kind=entry_type,
-                state=state,
-                target_repo=normalized_repo,
-                tbd_answered=_is_tbd_answered(text) if entry_type == MQ_TYPE_TBD else None,
-                frontmatter_broken=frontmatter_broken,
-                plan_file=plan_file if isinstance(plan_file, str) else None,
-                depends_on=depends_on,
-                legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
-                repair_target_filename=repair_target if isinstance(repair_target, str) else None,
-                repair_kind=repair_kind,
-            )
-        )
+    for state in (MQ_STATE_ADOPTED, MQ_STATE_REJECTED):
+        state_dir = private_notes / state
+        for name in sorted(safe_names):
+            path = state_dir / name
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            entry_type = _require_type(path, text)
+            entries.append(_queue_entry(path, _parse_target_repo(text), text, state, entry_type))
     return tuple(entries)
 
 
@@ -1093,10 +1124,16 @@ def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
 
 
 def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) -> ReadinessResult:
-    """最新frontmatterとキュー状態から対象リポジトリのreadinessを算出する。"""
-    active = _load_queue_entries(private_notes, target_repo, MQ_ACTIVE_STATES)
-    terminal = _load_queue_entries(private_notes, None, (MQ_STATE_ADOPTED, MQ_STATE_REJECTED))
+    """active全件と参照された終端項目から対象リポジトリのreadinessを算出する。"""
     all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES)
+    active = all_active if target_repo is None else tuple(entry for entry in all_active if entry.target_repo == target_repo)
+    all_dependency_map = {
+        entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
+    }
+    dependency_names = {
+        dependency for dependencies in all_dependency_map.values() if dependencies is not None for dependency in dependencies
+    }
+    terminal = _load_referenced_terminal_entries(private_notes, dependency_names)
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)
         for entry in all_active
@@ -1114,9 +1151,6 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
     missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
 
     dependency_map = {entry.filename: _effective_dependencies(entry) for entry in active if not entry.frontmatter_broken}
-    all_dependency_map = {
-        entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
-    }
     all_entries_by_name = {entry.filename: entry for entry in (*all_active, *terminal)}
     invalid_external_user_targets: set[str] = set()
     for entry in active:

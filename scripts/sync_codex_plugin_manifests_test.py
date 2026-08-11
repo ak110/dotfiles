@@ -230,6 +230,83 @@ def test_sync_replaces_stale_outputs(manifest_root: Path) -> None:
     assert json.loads(stale_hooks.read_text(encoding="utf-8"))["hooks"]["PermissionRequest"][0]["matcher"] == "Bash"
 
 
+def test_check_accepts_current_outputs_without_changes(manifest_root: Path) -> None:
+    subject.sync(manifest_root)
+    before = {
+        path: (manifest_root / path).read_text(encoding="utf-8")
+        for path in (*subject._outputs(manifest_root), *subject.OPTIONAL_TARGETS)  # pylint: disable=protected-access
+        if (manifest_root / path).exists()
+    }
+
+    assert subject.check(manifest_root) is True
+
+    after = {
+        path: (manifest_root / path).read_text(encoding="utf-8")
+        for path in (*subject._outputs(manifest_root), *subject.OPTIONAL_TARGETS)  # pylint: disable=protected-access
+        if (manifest_root / path).exists()
+    }
+    assert after == before
+
+
+@pytest.mark.parametrize("state", ["missing", "stale"])
+def test_check_rejects_missing_or_stale_output_without_repairing(manifest_root: Path, state: str) -> None:
+    subject.sync(manifest_root)
+    target = manifest_root / subject.PLUGIN_TARGET
+    if state == "missing":
+        target.unlink()
+    else:
+        target.write_text("{}", encoding="utf-8")
+    before_exists = target.exists()
+    before_content = target.read_text(encoding="utf-8") if before_exists else None
+
+    assert subject.check(manifest_root) is False
+    assert target.exists() is before_exists
+    assert (target.read_text(encoding="utf-8") if target.exists() else None) == before_content
+
+
+@pytest.mark.parametrize(
+    ("source", "target"),
+    [(subject.MCP_SOURCE, subject.AGENT_MCP_TARGET), (subject.HOOKS_SOURCE, subject.HOOKS_TARGET)],
+)
+def test_optional_output_without_source_is_stale_and_sync_removes_it(
+    manifest_root: Path,
+    source: Path,
+    target: Path,
+) -> None:
+    subject.sync(manifest_root)
+    (manifest_root / source).unlink()
+    target_path = manifest_root / target
+    assert target_path.exists()
+
+    assert subject.check(manifest_root) is False
+    assert target_path.exists()
+    assert subject.sync(manifest_root) is True
+    assert not target_path.exists()
+    assert subject.check(manifest_root) is True
+
+
+def test_main_check_exit_codes(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
+    subject.sync(manifest_root)
+
+    assert subject.main(["--check"]) == 0
+    (manifest_root / subject.PLUGIN_TARGET).write_text("{}", encoding="utf-8")
+    assert subject.main(["--check"]) == 1
+
+
+def test_main_without_arguments_synchronizes_outputs(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(subject, "REPO_ROOT", manifest_root)
+
+    assert subject.main([]) == 0
+    assert subject.check(manifest_root) is True
+
+
+def test_main_rejects_unknown_arguments() -> None:
+    with pytest.raises(SystemExit) as error:
+        subject.main(["--unknown"])
+    assert error.value.code == 2
+
+
 def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     hooks["hooks"]["PermissionRequest"] = hooks["hooks"]["PermissionRequest"][:1]

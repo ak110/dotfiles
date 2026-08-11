@@ -678,6 +678,7 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
 # --- 人間向け固定領域の構造検査 ---
 
 _MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
+_MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^[A-Za-z0-9][0-9A-Za-z_-]*(?:[^:]*:|:\s+\S.*)$")
 _MATERIAL_FENCE_PATTERN = re.compile(r"^\s*(?:`{3,}|~{3,})text\s*$")
 _REFERENCE_SEPARATOR_PATTERN = re.compile(r"[、,・/\s]+")
 
@@ -786,7 +787,10 @@ def _check_materials(
     position = 0
     while position < len(section):
         lineno, line = section[position]
-        match = _MATERIAL_ID_PATTERN.fullmatch(line.strip())
+        stripped = line.strip()
+        match = _MATERIAL_ID_PATTERN.fullmatch(stripped)
+        if match is None and lineno in structural and _MATERIAL_ID_CANDIDATE_PATTERN.fullmatch(stripped) is not None:
+            errors.append(f"提示素材の素材ID行に注記を含めない: {stripped}")
         if match is None or lineno not in structural:
             position += 1
             continue

@@ -251,6 +251,26 @@ def test_materials_require_verbatim_fence() -> None:
     assert any("逐語転記が無い" in error for error in errors)
 
 
+@pytest.mark.parametrize("material_id", ["P-001（利用者発言）:", "P-001: 利用者発言"])
+def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: str) -> None:
+    content = _VALID_CONTENT.replace("P-001:", material_id, 1)
+
+    errors = _plan_format.check_plan_structure(content)
+
+    assert f"提示素材の素材ID行に注記を含めない: {material_id}" in errors
+
+
+def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> None:
+    content = _VALID_CONTENT.replace(
+        "P-001:\n\n```text\n対象を更新してほしい。",
+        "注記: 提示素材の説明\n\nP-001:\n\n```text\nP-999: fence内の文字列\n対象を更新してほしい。",
+    )
+
+    errors = _plan_format.check_plan_structure(content)
+
+    assert not any("素材ID行に注記" in error for error in errors)
+
+
 def test_bug_section_requires_fixed_fourteen_rows() -> None:
     """バグ調査表の14行から1行を削除した計画を拒否する。"""
     content = _plan(bug=True).replace("| 動機的要因 | 更新頻度が低いと仮定した。 |\n", "")

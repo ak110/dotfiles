@@ -252,16 +252,114 @@ def test_codex_failed_command_clips_only_long_structured_command(tmp_path: pathl
 
 
 def test_claude_started_marker_excludes_automatic_review_events(tmp_path: pathlib.Path) -> None:
-    """Claude形式の起動済み標識も自動振り返り境界として扱う。"""
+    """Claude形式ではStop注入だけを除き、起動後の人間介入を保持する。"""
     transcript = _write_transcript(
         tmp_path,
         [
             {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
-            {"type": "user", "message": {"role": "user", "content": evidence.STOP_ADVISOR_PREFIX + " 誘導"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": "Stop hook feedback:\n" + evidence.STOP_ADVISOR_PREFIX + " 誘導",
+                },
+            },
             {
                 "type": "user",
                 "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
                 "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "origin": {"kind": "human"},
+                    "prompt": "開始後の介入",
+                },
+            },
+        ],
+    )
+
+    assert evidence.load_and_extract(str(transcript)) == [
+        {"kind": "final-result", "text": "本来の最終結果", "sequence": 1},
+        {"kind": "user", "text": "開始後の介入", "sequence": 2},
+    ]
+    assert evidence.has_session_review_started(str(transcript)) is True
+
+
+def test_claude_skill_injection_keeps_only_invocation_line(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "通常の依頼"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": "Base directory for this skill: /plugin/skills/example\n# 長いスキル本文\n規範",
+                },
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["kind"] for event in events] == ["user", "skill-invocation"]
+    assert events[1]["text"] == "Base directory for this skill: /plugin/skills/example"
+    assert "長いスキル本文" not in events[1]["text"]
+
+
+def test_claude_queued_commands_keep_only_human_prompts(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "origin": {"kind": "human"},
+                    "prompt": "人間の割り込み",
+                },
+            },
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "origin": {"kind": "peer"},
+                    "prompt": "peer通知",
+                },
+            },
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "origin": {"kind": "human"},
+                    "commandMode": "task-notification",
+                    "prompt": "task通知",
+                },
+            },
+            {"type": "queue-operation", "prompt": "重複記録"},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == ["依頼", "人間の割り込み"]
+
+
+def test_queued_manual_review_command_sets_claude_boundary(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "queued_command",
+                    "origin": {"kind": "human"},
+                    "prompt": "/agent-toolkit:session-review",
+                },
             },
             {"type": "assistant", "message": {"role": "assistant", "content": "振り返り中"}},
         ],

@@ -13,6 +13,7 @@ import datetime
 import pathlib
 import subprocess
 import sys
+import types
 from collections.abc import Callable
 from typing import Any
 
@@ -190,11 +191,27 @@ class TestServeParser:
         def run(*, host: str | None, port: int | None, home: pathlib.Path) -> None:
             calls.append({"host": host, "port": port, "home": home})
 
-        monkeypatch.setattr(atk._serve, "run", run)  # pylint: disable=protected-access  # noqa: SLF001
+        serve = types.ModuleType("_atk_serve")
+        serve.__dict__["run"] = run
+        monkeypatch.setitem(sys.modules, "_atk_serve", serve)
         with pytest.raises(SystemExit) as error:
             atk.main(["serve", "--host", "127.0.0.2", "--port", "28766"], home=tmp_path)
         assert error.value.code == 0
         assert calls == [{"host": "127.0.0.2", "port": 28766, "home": tmp_path}]
+
+    def test_non_serve_import_does_not_load_serve_dependencies(self) -> None:
+        """fresh processでatkを読み込んでもserve実装を解決しない。"""
+        script_dir = pathlib.Path(atk.__file__).resolve().parent
+        code = (
+            "import sys; "
+            f"sys.path.insert(0, {str(script_dir)!r}); "
+            "import atk; "
+            "raise SystemExit(1 if '_atk_serve' in sys.modules else 0)"
+        )
+
+        result = subprocess.run([sys.executable, "-c", code], check=False)
+
+        assert result.returncode == 0
 
 
 class TestAddTargetRepoOptionParser:

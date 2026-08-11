@@ -69,6 +69,7 @@ build-backend = "hatchling.build"
 [tool.uv]
 # サプライチェーン攻撃対策: 公開直後の新バージョンは1日待ってから取り込む
 exclude-newer = "1 day"
+exclude-newer-package = { pyfltr = false, pytilpack = false }
 # semgrepがmcpを完全一致でピン留めしており、単一バージョン解決の下で
 # プロジェクト全体のmcpが脆弱版に固定されるため上書きする。
 # 上書き後もsemgrepは1.166.0のまま維持され静的解析が正常動作することを実機で確認済み。

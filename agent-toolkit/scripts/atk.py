@@ -55,7 +55,6 @@ import _atk_mq_mutations as _mutations  # noqa: E402
 import _atk_mq_process_loop as _process_loop  # noqa: E402
 import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
-import _atk_serve as _serve  # noqa: E402
 import _atk_watch as _watch  # noqa: E402
 import _managed_temp  # noqa: E402
 
@@ -663,6 +662,8 @@ def main(
     if now is None:
         now = datetime.datetime.now()
     if args.command == "serve":
+        import _atk_serve as _serve  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
     if args.command == "managed-temp":

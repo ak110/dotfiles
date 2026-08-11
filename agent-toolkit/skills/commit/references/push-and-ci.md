@@ -48,6 +48,9 @@ baseline作成、push、監視の順で実行する。
 1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する。
    明示経路では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
 2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
+   baselineごとに十分な総待機時間を指定して1回だけ起動する。
+   ホストが実行handleのyield・再開を提供する場合は、60秒未満の観測間隔で同一processへ再接続する。
+   進捗表示のために短い`--timeout`を指定した別processへ分割せず、実行中のplugin root更新を理由に置換しない
 3. 全対象が終了コード0で完了した場合だけCI通過と判定する。
    終了コードの意味は後掲の表に従う。
    出力が空の場合や成功完了マーカーが無い場合は未判定として実測へ切り替える。

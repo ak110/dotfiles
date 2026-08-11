@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Any
 
 import filelock
 import pytest
@@ -380,6 +381,35 @@ class TestReadiness:
 
         assert by_name["plan-item.md"].plan_file == str(plan)
         assert by_name["repair.md"].repair_kind == "frontmatter"
+
+    def test_readiness_reads_active_once_and_only_referenced_terminal_entries(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """activeは1回だけ読み、未参照の終端項目はfrontmatter解析から除外する。"""
+        active_path = _write_feedback(tmp_path, "feedback.md", depends_on=("done.md",))
+        referenced = _write_feedback(tmp_path, "done.md", state="adopted")
+        unreferenced = tmp_path / "rejected" / "unused.md"
+        unreferenced.parent.mkdir(parents=True)
+        unreferenced.write_text("frontmatterではない\n", encoding="utf-8")
+        original_read_text = pathlib.Path.read_text
+        reads: list[pathlib.Path] = []
+
+        def read_text(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
+            reads.append(path)
+            if path == unreferenced:
+                raise AssertionError("未参照の終端項目を読み込んだ")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.ready == ("feedback.md",)
+        assert reads.count(active_path) == 1
+        assert reads.count(referenced) == 1
+        assert unreferenced not in reads
 
 
 class TestWarnSpaceSeparatedOption:

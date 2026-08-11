@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 _MAX_TEXT_LENGTH = 2000
+_SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
 SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
 _FALLBACK_TEXT = (
@@ -112,7 +113,7 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Claude Code形式を共通イベントへ変換する。"""
+    """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
     for entry in entries:
         if entry.get("isSidechain") is True:
@@ -139,12 +140,30 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             events.append(interrupt or {"kind": "interrupt", "text": "interrupt"})
 
         entry_type = entry.get("type")
+        attachment = entry.get("attachment")
+        if entry_type == "attachment" and isinstance(attachment, dict):
+            origin = attachment.get("origin")
+            prompt = attachment.get("prompt")
+            if (
+                attachment.get("type") == "queued_command"
+                and isinstance(origin, dict)
+                and origin.get("kind") == "human"
+                and attachment.get("commandMode") != "task-notification"
+                and isinstance(prompt, str)
+            ):
+                event = _event("user", prompt)
+                if event:
+                    events.append(event)
         message = entry.get("message")
         if isinstance(message, dict):
             role = message.get("role")
             if entry_type == "user" and role == "user":
                 for text in _text_blocks(message.get("content")):
-                    event = _event("user", text)
+                    if STOP_ADVISOR_PREFIX in text:
+                        continue
+                    kind = "skill-invocation" if text.startswith(_SKILL_INVOCATION_PREFIX) else "user"
+                    event_text = text.splitlines()[0] if kind == "skill-invocation" else text
+                    event = _event(kind, event_text)
                     if event and not event["text"].startswith("<task-notification>"):
                         events.append(event)
                 events.extend(_failed_tool_events(entry))
@@ -255,7 +274,7 @@ def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str,
         len(events),
     )
     automatic_boundary = len(events)
-    if started_index < len(events):
+    if runtime == "codex" and started_index < len(events):
         automatic_boundary = next(
             (
                 index
@@ -291,7 +310,7 @@ def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
     entry_types = {entry.get("type") for entry in entries}
     if entry_types & {"response_item", "event_msg"}:
         return "codex"
-    if entry_types & {"user", "assistant", "interrupt"} or any(
+    if entry_types & {"user", "assistant", "interrupt", "attachment", "queue-operation"} or any(
         entry.get("isSidechain") is True or "toolUseResult" in entry for entry in entries
     ):
         return "claude"

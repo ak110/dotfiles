@@ -29,6 +29,7 @@ _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
 _PUSH_AND_CI = _COMMIT_SKILL.parent / "references" / "push-and-ci.md"
 _HISTORY_REWRITE = _COMMIT_SKILL.parent / "references" / "history-rewrite.md"
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
+_AGENT_STANDARDS = _AGENTS_DIR.parent / "skills" / "agent-standards" / "SKILL.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
@@ -149,6 +150,47 @@ def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
     for task in (writer, plan_review, independent_review):
         assert "skills/delegation" not in task
         assert "runtime-routing.md" not in task
+
+
+def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() -> None:
+    """採用feedbackの文書契約と影響検証をauthor・reviewer双方で固定する。"""
+    agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    plan_review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
+    session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
+
+    for phrase in (
+        "変更前の原文と変更後の文面を1対1で照合",
+        "適用条件、禁止範囲、要求する実行時機構が同値",
+        "説明文又はコメントへ置換すると規定が技術的に成立しない",
+    ):
+        assert phrase in agent_standards
+    for task in (writer, independent):
+        for phrase in (
+            "共有gate、dispatcher、parser",
+            "変更分岐へ到達する全呼び出し元",
+            "未変更の既存test class",
+            "0件、1件、複数件、異種混在",
+            "局所識別子の対応",
+        ):
+            assert phrase in task
+    for phrase in ("1回だけ起動", "60秒未満", "同一process", "短い`--timeout`"):
+        assert phrase in push_and_ci
+    assert "advisorの起動前に`agent-toolkit:delegation`をSkill機能で起動" in session_review
+    for phrase in ("名前付きのSSOT", "提示素材の逐語原文は同期対象", "参照又は変動しない要約"):
+        assert phrase in plan_mode
+        assert phrase in plan_review
+    for phrase in (
+        "削除commitから得た項目別の逐語原文と復元文面",
+        "1対1で対応",
+        "親子階層を含む一意な現物anchor",
+        "既存規定との重複",
+    ):
+        assert phrase in plan_mode
+        assert phrase in plan_review
 
 
 def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> None:

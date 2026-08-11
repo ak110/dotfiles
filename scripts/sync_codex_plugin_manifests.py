@@ -5,6 +5,7 @@
 # ///
 """Claude Code向けmanifestからAgent Plugins・Codex向けJSONを生成する。"""
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ AGENT_MCP_TARGET = Path("agent-toolkit/mcp.json")
 PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
+OPTIONAL_TARGETS = frozenset((AGENT_MCP_TARGET, HOOKS_TARGET))
 
 CODEX_PERMISSION_REQUEST_COMMAND = (
     "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest_codex"
@@ -123,7 +125,6 @@ def _agent_mcp(source: dict[str, Any]) -> dict[str, Any]:
 def _outputs(root: Path) -> dict[Path, str]:
     plugin = _load(root, PLUGIN_SOURCE)
     marketplace = _load(root, MARKETPLACE_SOURCE)
-    hooks = _load(root, HOOKS_SOURCE)
     entries = [item for item in marketplace.get("plugins", []) if item.get("name") == plugin.get("name")]
     if len(entries) != 1:
         raise ValueError("Claude Code marketplaceのagent-toolkit entryは1件である必要がある")
@@ -133,20 +134,22 @@ def _outputs(root: Path) -> dict[Path, str]:
             raise ValueError(f"正本間で{key}が一致しない")
 
     selected: dict[str, list[dict[str, Any]]] = {}
-    source_hooks = hooks.get("hooks", {})
-    for event, commands in CODEX_HOOK_ALLOWLIST.items():
-        if event not in CODEX_EVENTS or event not in source_hooks:
-            raise ValueError(f"未知のCodex hookイベント: {event}")
-        projected = []
-        for group in source_hooks[event]:
-            handlers = group.get("hooks", [])
-            chosen = [handler for handler in handlers if handler.get("command") in commands]
-            if len(chosen) != len(commands):
-                continue
-            projected.append({**group, "hooks": chosen})
-        if not projected:
-            raise ValueError(f"許可済みhandlerが正本に存在しない: {event}")
-        selected[event] = projected
+    if (root / HOOKS_SOURCE).exists():
+        hooks = _load(root, HOOKS_SOURCE)
+        source_hooks = hooks.get("hooks", {})
+        for event, commands in CODEX_HOOK_ALLOWLIST.items():
+            if event not in CODEX_EVENTS or event not in source_hooks:
+                raise ValueError(f"未知のCodex hookイベント: {event}")
+            projected = []
+            for group in source_hooks[event]:
+                handlers = group.get("hooks", [])
+                chosen = [handler for handler in handlers if handler.get("command") in commands]
+                if len(chosen) != len(commands):
+                    continue
+                projected.append({**group, "hooks": chosen})
+            if not projected:
+                raise ValueError(f"許可済みhandlerが正本に存在しない: {event}")
+            selected[event] = projected
 
     metadata = {key: plugin[key] for key in PLUGIN_METADATA_FIELDS}
     agent_plugin = {"$schema": AGENT_PLUGIN_SCHEMA, **metadata}
@@ -186,27 +189,44 @@ def _outputs(root: Path) -> dict[Path, str]:
     return result
 
 
+def _existing_outputs(root: Path, expected: dict[Path, str]) -> dict[Path, str]:
+    """既知の派生JSONのうち、現存する内容を返す。"""
+    paths = set(expected) | OPTIONAL_TARGETS
+    return {path: (root / path).read_text(encoding="utf-8") for path in paths if (root / path).exists()}
+
+
+def _differences(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[Path, ...]:
+    """期待集合と現存集合の内容差、欠落、optional targetの残存を返す。"""
+    paths = set(expected) | OPTIONAL_TARGETS
+    return tuple(sorted((path for path in paths if expected.get(path) != existing.get(path)), key=str))
+
+
 def sync(root: Path = REPO_ROOT) -> bool:
     """派生JSONを同期し、差分があった場合は`True`を返す。"""
     expected = _outputs(root)
-    stale = [
-        path
-        for path, content in expected.items()
-        if not (root / path).exists() or (root / path).read_text(encoding="utf-8") != content
-    ]
-    if HOOKS_TARGET not in expected and (root / HOOKS_TARGET).exists():
-        stale.append(HOOKS_TARGET)
+    stale = _differences(expected, _existing_outputs(root, expected))
     for path, content in expected.items():
         if path in stale and not claude_common.atomic_write_text(root / path, content, tag="plugin manifests"):
             raise OSError(f"派生JSONの書き込みに失敗: {path}")
-    if HOOKS_TARGET not in expected and (root / HOOKS_TARGET).exists():
-        (root / HOOKS_TARGET).unlink()
+    for path in OPTIONAL_TARGETS - set(expected):
+        (root / path).unlink(missing_ok=True)
     return bool(stale)
 
 
-def main() -> int:
-    """Agent Plugins・Codex向け派生JSONを冪等同期する。"""
-    sync()
+def check(root: Path = REPO_ROOT) -> bool:
+    """派生JSONを変更せず、期待内容と一致する場合は`True`を返す。"""
+    expected = _outputs(root)
+    return not _differences(expected, _existing_outputs(root, expected))
+
+
+def main(argv: list[str] | None = None) -> int:
+    """通常同期又は非変更検査を実行する。"""
+    parser = argparse.ArgumentParser(description="Agent Plugins・Codex向け派生JSONを同期する。")
+    parser.add_argument("--check", action="store_true", help="派生JSONを変更せず整合性だけを検査する")
+    args = parser.parse_args(argv)
+    if args.check:
+        return 0 if check(REPO_ROOT) else 1
+    sync(REPO_ROOT)
     return 0
 
 
