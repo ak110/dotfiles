@@ -144,23 +144,83 @@ class TestProcessLoopIncludesProcessingInCount:
         captured = capsys.readouterr()
         assert "2件のfeedback/回答済みTBDを検知" in captured.out
 
-    def test_actual_readiness_excludes_cooldown_but_keeps_other_ready_entry(self, tmp_path: pathlib.Path) -> None:
-        """process-loopの実集計は期限待ちだけを除外し、通常ready項目を残す。"""
+    def test_cooldown_only_waits_without_starting_child_cli(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """期限待ちだけなら子CLIを起動せず変更待機へ進む。"""
         notes = _setup_notes(tmp_path)
         inbox = notes / "inbox"
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        target_repo = "github.com/example/myrepo"
+        (inbox / "cooldown.md").write_text(
+            f"---\ntarget_repo: {target_repo}\ntype: feedback\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+        child_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, child_calls, 0))
+
+        def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", stop_wait)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", "--target-repo", str(myrepo), "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert not child_calls
+
+    def test_ready_entry_beside_cooldown_starts_child_cli(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """通常ready項目が混在すれば期限待ちを除外したまま子CLIを起動する。"""
+        notes = _setup_notes(tmp_path)
+        inbox = notes / "inbox"
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
         target_repo = "github.com/example/myrepo"
         (inbox / "cooldown.md").write_text(
             f"---\ntarget_repo: {target_repo}\ntype: feedback\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
             encoding="utf-8",
         )
 
-        assert _process_loop._count_pending_entries(notes, target_repo) == 0  # pylint: disable=protected-access
-
-        (inbox / "ready.md").write_text(
+        ready = inbox / "ready.md"
+        ready.write_text(
             f"---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n本文\n",
             encoding="utf-8",
         )
-        assert _process_loop._count_pending_entries(notes, target_repo) == 1  # pylint: disable=protected-access
+        child_calls: list[dict[str, Any]] = []
+        base_fake_run = _fake_run_with_remote_url(myrepo, child_calls, 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            result = base_fake_run(cmd, *_args, **kwargs)
+            if cmd[:1] == ["claude"]:
+                ready.unlink()
+            return result
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", stop_wait)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", "--target-repo", str(myrepo), "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert len(child_calls) == 1
 
 
 class TestChangeHandler:

@@ -124,6 +124,33 @@ class TestMutationTargetRepoParserOption:
         args = parser.parse_args(["mq", "return-to-inbox", "entry.md", "--cooldown-days=3"])
         assert args.cooldown_days == 3
 
+    def test_return_to_inbox_uses_main_injected_time(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """mainへ注入した基準時刻から再処理抑制期限を保存する。"""
+        notes = _setup_notes(tmp_path)
+        processing = notes / "processing"
+        processing.mkdir()
+        (processing / "entry.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        now = datetime.datetime(2026, 8, 12, 3, 4, 5, tzinfo=datetime.UTC)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "return-to-inbox", "entry.md", "--cooldown-days=3"],
+                home=tmp_path,
+                now=now,
+            )
+
+        assert exc_info.value.code == 0
+        content = (notes / "inbox/entry.md").read_text(encoding="utf-8")
+        assert "cooldown_until: '2026-08-15T03:04:05+00:00'" in content
+
     def test_edit_without_message_remains_interactive(self) -> None:
         """従来の`edit FILENAME`ではMESSAGEを未指定として扱う。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001

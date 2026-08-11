@@ -697,6 +697,10 @@ def test_cooldown_return_rejects_tbd_mixture_without_changes(
     _write_tbd_entry(notes, "tbd.md")
     _disable_transition_git(monkeypatch)
     mutations.transition_entries(notes, action="start-processing", filenames=["feedback.md", "tbd.md"], now=_FIXED_DT)
+    feedback = notes / "processing/feedback.md"
+    tbd_path = notes / "processing/tbd.md"
+    original_feedback = feedback.read_text(encoding="utf-8")
+    original_tbd = tbd_path.read_text(encoding="utf-8")
 
     with pytest.raises(mutations.WebInputError, match="feedback専用"):
         mutations.transition_entries(
@@ -707,8 +711,33 @@ def test_cooldown_return_rejects_tbd_mixture_without_changes(
             cooldown_days=3,
         )
 
-    assert (notes / "processing/feedback.md").is_file()
-    assert (notes / "processing/tbd.md").is_file()
+    assert feedback.read_text(encoding="utf-8") == original_feedback
+    assert tbd_path.read_text(encoding="utf-8") == original_tbd
+
+
+def test_cooldown_return_rejects_tbd_without_frontmatter_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TBD単独指定も移動とfrontmatter更新の前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _write_tbd_entry(notes, "tbd.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="start-processing", filenames=["tbd.md"], now=_FIXED_DT)
+    path = notes / "processing/tbd.md"
+    original = path.read_text(encoding="utf-8")
+
+    with pytest.raises(mutations.WebInputError, match="feedback専用"):
+        mutations.transition_entries(
+            notes,
+            action="return-to-inbox",
+            filenames=["tbd.md"],
+            now=_FIXED_DT,
+            cooldown_days=3,
+        )
+
+    assert path.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox/tbd.md").exists()
 
 
 def test_return_to_inbox_missing_file_reports_processing_state(

@@ -166,14 +166,41 @@ class TestReadiness:
         assert result.actionable_count == 1
 
     def test_pending_cooldown_suppresses_existing_repairs_until_deadline(self, tmp_path: pathlib.Path) -> None:
-        """期限前はmissing planと依存診断を抑制し、期限到達後に再び有効化する。"""
+        """期限前は既存修復診断を抑制し、期限到達後に再び有効化する。"""
         now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
         _write_feedback(
             tmp_path,
-            "feedback.md",
+            "missing.md",
             cooldown_until="2026-08-15T00:00:00+00:00",
             plan_file=tmp_path / "missing-plan.md",
-            depends_on=("missing.md",),
+            depends_on=("absent.md",),
+        )
+        invalid = _write_feedback(
+            tmp_path,
+            "invalid.md",
+            cooldown_until="2026-08-15T00:00:00+00:00",
+        )
+        invalid.write_text(
+            invalid.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: malformed\n"),
+            encoding="utf-8",
+        )
+        _write_feedback(
+            tmp_path,
+            "self.md",
+            cooldown_until="2026-08-15T00:00:00+00:00",
+            depends_on=("self.md",),
+        )
+        _write_feedback(
+            tmp_path,
+            "cycle.md",
+            cooldown_until="2026-08-15T00:00:00+00:00",
+            depends_on=("cycle-peer.md",),
+        )
+        _write_feedback(
+            tmp_path,
+            "cycle-peer.md",
+            target_repo="github.com/example/other",
+            depends_on=("cycle.md",),
         )
 
         pending = _common.calculate_readiness(tmp_path, "github.com/example/repo", now=now)
@@ -185,10 +212,16 @@ class TestReadiness:
 
         assert pending.actionable_count == 0
         assert not pending.missing_plan_file
+        assert not pending.invalid_dependencies
         assert not pending.missing_dependencies
-        assert expired.missing_plan_file == ("feedback.md",)
-        assert expired.missing_dependencies == ("feedback.md",)
-        assert expired.actionable_count == 1
+        assert not pending.self_dependencies
+        assert not pending.cyclic_dependencies
+        assert expired.missing_plan_file == ("missing.md",)
+        assert expired.invalid_dependencies == ("invalid.md",)
+        assert expired.missing_dependencies == ("missing.md",)
+        assert expired.self_dependencies == ("self.md",)
+        assert expired.cyclic_dependencies == ("cycle.md", "self.md")
+        assert expired.actionable_count == 4
 
     def test_broken_frontmatter_remains_actionable_with_target_repo_filter(self, tmp_path: pathlib.Path) -> None:
         """対象repo指定時も破損項目を修復診断へ残し、正常な他repo項目は除外する。"""
