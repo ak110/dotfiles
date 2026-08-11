@@ -65,6 +65,17 @@ _processing_filename_completer = _common.make_filename_completer((_common.MQ_STA
 _tbd_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES, _common.MQ_TYPE_TBD)
 
 
+def _cooldown_days(value: str) -> int:
+    """3以上の再処理抑制日数をargparse向けに検証する。"""
+    try:
+        days = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("3以上の整数を指定してください") from error
+    if days < 3:
+        raise argparse.ArgumentTypeError("3以上の整数を指定してください")
+    return days
+
+
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     """`mq add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
 
@@ -325,6 +336,13 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         nargs="+",
         help="差し戻すprocessingファイル名（1個以上）。",
     ).completer = _processing_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    return_to_inbox.add_argument(
+        "--cooldown-days",
+        type=_cooldown_days,
+        default=None,
+        metavar="DAYS",
+        help="外部条件待ちのfeedbackを指定日数（3以上）だけ再処理対象から除外する。",
+    )
     _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
@@ -680,8 +698,8 @@ def main(
         "add": lambda: _add._cmd_add(args, private_notes, now, home),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
-        "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes),
-        "return-to-inbox": lambda: _mutations._cmd_return_to_inbox(args, private_notes),
+        "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes, now),
+        "return-to-inbox": lambda: _mutations._cmd_return_to_inbox(args, private_notes, now),
         "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
         "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
         "rm": lambda: _mutations._cmd_rm(args, private_notes),

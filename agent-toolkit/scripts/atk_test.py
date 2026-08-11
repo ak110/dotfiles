@@ -111,6 +111,19 @@ class TestMutationTargetRepoParserOption:
         assert args.filename == "20260714-000001-001.md"
         assert args.message == "更新本文"
 
+    @pytest.mark.parametrize("value", ["2", "3.5", "three"])
+    def test_return_to_inbox_rejects_invalid_cooldown_days(self, value: str) -> None:
+        """再処理抑制日数は3以上の整数だけを受理する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        with pytest.raises(SystemExit):
+            parser.parse_args(["mq", "return-to-inbox", "entry.md", f"--cooldown-days={value}"])
+
+    def test_return_to_inbox_accepts_minimum_cooldown_days(self) -> None:
+        """再処理抑制日数の下限3を受理する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["mq", "return-to-inbox", "entry.md", "--cooldown-days=3"])
+        assert args.cooldown_days == 3
+
     def test_edit_without_message_remains_interactive(self) -> None:
         """従来の`edit FILENAME`ではMESSAGEを未指定として扱う。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001

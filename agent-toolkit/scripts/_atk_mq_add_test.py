@@ -274,6 +274,7 @@ def test_flat_add_operation_drops_input_queue_schedule(
     [
         ("repair_target", "broken.md"),
         ("repair_kind", "frontmatter"),
+        ("cooldown_until", "2026-08-15T00:00:00+00:00"),
         ("reservation", "forged"),
         ("reservation_companion", "forged"),
         ("target_commit_history", "forged"),

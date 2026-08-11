@@ -47,6 +47,7 @@ _CATEGORY_GATE_THRESHOLD = 3
 _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
     "target_commit",
     "depends_on",
+    "cooldown_until",
     "repair_target",
     "repair_kind",
     "plan_file",
@@ -153,6 +154,7 @@ def transition_entries(
     force: bool = False,
     state: str | None = None,
     expected_content: str | None = None,
+    cooldown_days: int | None = None,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移又は削除を実行する。
 
@@ -162,6 +164,8 @@ def transition_entries(
     """
     if action not in {"start-processing", "return-to-inbox", "adopt", "reject", "remove"}:
         raise WebInputError(f"未知のエントリ操作です: {action}")
+    if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
+        raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
     state_is_valid = (action == "remove" and state in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}) or (
         action == "reject" and state == MQ_STATE_INBOX
     )
@@ -225,6 +229,12 @@ def transition_entries(
             tbd_paths = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) == MQ_TYPE_TBD]
             if tbd_paths:
                 raise WebInputError(f"--categoryはfeedback専用です: {', '.join(tbd_paths)}")
+        if cooldown_days is not None:
+            non_feedback = [
+                path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK
+            ]
+            if non_feedback:
+                raise WebInputError(f"--cooldown-daysはfeedback専用です: {', '.join(non_feedback)}")
         if action == "remove" and not force:
             protected = [path.name for path in paths if path.parent.name == MQ_STATE_PROCESSING]
             if protected:
@@ -252,6 +262,23 @@ def transition_entries(
                     file=sys.stderr,
                 )
                 sys.exit(2)
+            updated_contents: dict[pathlib.Path, str] = {}
+            if action in {"start-processing", "return-to-inbox"}:
+                for path in paths:
+                    text = path.read_text(encoding="utf-8")
+                    parsed = _frontmatter.parse_frontmatter(text)
+                    if parsed is None:
+                        continue
+                    data, body = parsed
+                    if action == "return-to-inbox" and cooldown_days is not None:
+                        deadline = now.astimezone(datetime.UTC) + datetime.timedelta(days=cooldown_days)
+                        data["cooldown_until"] = deadline.isoformat()
+                    else:
+                        data.pop("cooldown_until", None)
+                    updated_contents[path] = _frontmatter.serialize_frontmatter(data, body)
+            for path, content in updated_contents.items():
+                if content != path.read_text(encoding="utf-8"):
+                    _atomic_write_text(path, content)
             for path in paths:
                 if action in {"adopt", "reject"}:
                     _stamp_result(
@@ -685,7 +712,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     print(f"{len(filenames)}件不採用処理: {', '.join(filenames)}")
 
 
-def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """start-processingサブコマンド: inboxからprocessing/へ移動しcommit・push。
 
     後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
@@ -697,13 +724,13 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path)
         private_notes,
         action="start-processing",
         filenames=args.filenames,
-        now=datetime.datetime.now(),
+        now=now,
         target_repo=args.target_repo,
     )
     print(f"{len(filenames)}件処理開始: {', '.join(filenames)}")
 
 
-def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
@@ -715,8 +742,9 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path) 
         private_notes,
         action="return-to-inbox",
         filenames=args.filenames,
-        now=datetime.datetime.now(),
+        now=now,
         target_repo=args.target_repo,
+        cooldown_days=args.cooldown_days,
     )
     print(f"{len(filenames)}件inboxへ差し戻し: {', '.join(filenames)}")
 

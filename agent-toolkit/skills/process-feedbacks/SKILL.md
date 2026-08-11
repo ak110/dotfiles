@@ -30,7 +30,7 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 
 `start-processing`が状態競合で拒否した場合は、active一覧と必要な本文を再取得し、readiness判定から再開する。
 
-欠落依存、自己依存、循環、frontmatter破損、計画ファイル消失は修復対象とする。
+欠落依存、自己依存、循環、不正な`cooldown_until`、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
 計画実装型を1件以上扱う場合は`references/plan-impl-feedback-flow.md`を全文読む。
 
@@ -62,7 +62,9 @@ Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文�
 ## 3. 保留
 
 保留時は`references/hold-with-tbd-inject.md`を全文読み、解除条件と再開情報を永続化する。
-processing項目は`atk mq return-to-inbox`でinboxへ戻す。
+filenameで表せない、ユーザー判断を伴わない外部条件待ちは本文へ観測方法、現在値、解除条件、再開工程を記録し、
+`atk mq return-to-inbox <filename> --cooldown-days=3`でinboxへ戻す。外部条件に応じて3日より長い日数も指定できる。
+別feedback待ちは`depends_on`、ユーザー判断待ちはTBDと通常の`atk mq return-to-inbox`を使い、cooldownを重ねない。
 回答済みTBDの能動的なpoll、内部待機ループ、同一セッションでの時限待機は行わない。
 TBDの回答が単純な回答を超える指示・是正要求を含む場合は`agent-toolkit:bugfix`の深掘り条件を判定し、
 自律モードの原則（TBD記録と暫定判断での続行）に従って進める。

@@ -5,6 +5,7 @@ feedback/tbd一覧出力・各種フィルター（target-repo・source・type�
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import datetime
 import os
 import pathlib
 import shutil
@@ -72,6 +73,37 @@ class TestListSingle:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
+
+    def test_cooldown_and_invalid_cooldown_display_stable_reasons(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """期限待ちと不正期限を安定した理由で表示する。"""
+        notes = _setup_notes(tmp_path)
+        pending = _write_feedback_file(notes, "pending.md")
+        invalid = _write_feedback_file(notes, "invalid.md")
+        pending.write_text(
+            pending.read_text(encoding="utf-8").replace(
+                "type: feedback\n",
+                "type: feedback\ncooldown_until: '2999-01-01T00:00:00+00:00'\n",
+            ),
+            encoding="utf-8",
+        )
+        invalid.write_text(
+            invalid.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ncooldown_until: bad\n"),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--skip-pull"], home=tmp_path, now=datetime.datetime.now(datetime.UTC))
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "blocked_reason=cooldown-until cooldown_until=2999-01-01T00:00:00+00:00" in output
+        assert "blocked_reason=invalid-cooldown" in output
 
 
 class TestLegacyReservationMigration:

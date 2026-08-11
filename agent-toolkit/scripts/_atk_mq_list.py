@@ -99,11 +99,13 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     """項目の具体的なblocked理由を安定した識別子で返す。"""
     reasons = (
         ("frontmatter-broken", readiness.frontmatter_broken),
+        ("invalid-cooldown", readiness.invalid_cooldowns),
         ("missing-plan-file", readiness.missing_plan_file),
         ("invalid-dependency", readiness.invalid_dependencies),
         ("missing-dependency", readiness.missing_dependencies),
         ("self-dependency", readiness.self_dependencies),
         ("cyclic-dependency", readiness.cyclic_dependencies),
+        ("cooldown-until", readiness.cooldown_pending),
     )
     specific = next((reason for reason, filenames in reasons if filename in filenames), None)
     if specific is not None:
@@ -144,6 +146,9 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 else None
             )
             reason_suffix = f" blocked_reason={reason}" if reason is not None else ""
+            if reason == "cooldown-until":
+                cooldown_until = dict(readiness.cooldown_values)[path.name]
+                reason_suffix += f" cooldown_until={cooldown_until}"
             prefix = f"{path.name}: {display_repo} [{label}]{reason_suffix} "
             available_width = shutil.get_terminal_size().columns - _display_width(prefix)
             summary = (

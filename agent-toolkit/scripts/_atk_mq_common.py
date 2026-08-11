@@ -71,6 +71,8 @@ class QueueEntry:
     tbd_answered: bool | None
     frontmatter_broken: bool
     plan_file: str | None
+    cooldown_present: bool
+    cooldown_until: object | None
     depends_on: tuple[str, ...]
     legacy_dependency: dict[str, object] | None
     repair_target_filename: str | None
@@ -91,6 +93,9 @@ class ReadinessResult:
     missing_dependencies: tuple[str, ...] = ()
     self_dependencies: tuple[str, ...] = ()
     cyclic_dependencies: tuple[str, ...] = ()
+    cooldown_pending: tuple[str, ...] = ()
+    invalid_cooldowns: tuple[str, ...] = ()
+    cooldown_values: tuple[tuple[str, str], ...] = ()
 
     @property
     def actionable_count(self) -> int:
@@ -102,6 +107,7 @@ class ReadinessResult:
             *self.missing_dependencies,
             *self.self_dependencies,
             *self.cyclic_dependencies,
+            *self.invalid_cooldowns,
         }
         return len(set(self.ready) | repair_targets)
 
@@ -961,6 +967,8 @@ def _queue_entry(
         tbd_answered=_is_tbd_answered(text) if entry_type == MQ_TYPE_TBD else None,
         frontmatter_broken=frontmatter_broken,
         plan_file=plan_file if isinstance(plan_file, str) else None,
+        cooldown_present="cooldown_until" in data,
+        cooldown_until=data.get("cooldown_until"),
         depends_on=depends_on,
         legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
         repair_target_filename=repair_target if isinstance(repair_target, str) else None,
@@ -1052,6 +1060,17 @@ def _parse_legacy_recheck_after(value: object) -> datetime.datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
+def _parse_cooldown_until(value: object) -> datetime.datetime | None:
+    """再処理抑制期限をaware datetimeとして返す。"""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
 def _legacy_dependency_is_satisfied(
     entry: QueueEntry,
     *,
@@ -1123,8 +1142,18 @@ def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
     return cyclic
 
 
-def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) -> ReadinessResult:
+def calculate_readiness(
+    private_notes: pathlib.Path,
+    target_repo: str | None,
+    *,
+    now: datetime.datetime | None = None,
+) -> ReadinessResult:
     """active全件と参照された終端項目から対象リポジトリのreadinessを算出する。"""
+    if now is None:
+        now = datetime.datetime.now(datetime.UTC)
+    if now.tzinfo is None:
+        raise ValueError("nowはタイムゾーン付き日時で指定してください")
+    now_utc = now.astimezone(datetime.UTC)
     all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES)
     active = (
         all_active
@@ -1145,11 +1174,32 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
     }
     active_by_name = {entry.filename: entry for entry in all_active}
     terminal_names = {entry.filename for entry in terminal}
+    cooldown_values: dict[str, str] = {}
+    invalid_cooldowns: set[str] = set()
+    cooldown_pending: set[str] = set()
+    for entry in active:
+        if entry.frontmatter_broken or not entry.cooldown_present:
+            continue
+        if entry.kind != MQ_TYPE_FEEDBACK:
+            invalid_cooldowns.add(entry.filename)
+            continue
+        parsed_cooldown = _parse_cooldown_until(entry.cooldown_until)
+        if parsed_cooldown is None:
+            invalid_cooldowns.add(entry.filename)
+        elif parsed_cooldown.astimezone(datetime.UTC) > now_utc:
+            cooldown_pending.add(entry.filename)
+            assert isinstance(entry.cooldown_until, str)
+            cooldown_values[entry.filename] = entry.cooldown_until
+
     broken = tuple(sorted(entry.filename for entry in active if entry.frontmatter_broken))
     broken_needs_tbd = tuple(name for name in broken if (name, "frontmatter") not in existing_repairs)
     missing_plan = tuple(
         sorted(
-            entry.filename for entry in active if entry.plan_file is not None and not pathlib.Path(entry.plan_file).is_file()
+            entry.filename
+            for entry in active
+            if entry.filename not in cooldown_pending
+            and entry.plan_file is not None
+            and not pathlib.Path(entry.plan_file).is_file()
         )
     )
     missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
@@ -1168,24 +1218,34 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
         if target is not None and target.kind != MQ_TYPE_TBD:
             invalid_external_user_targets.add(entry.filename)
     invalid = tuple(
-        sorted({name for name, dependencies in dependency_map.items() if dependencies is None} | invalid_external_user_targets)
+        sorted(
+            ({name for name, dependencies in dependency_map.items() if dependencies is None} | invalid_external_user_targets)
+            - cooldown_pending
+        )
     )
     graph = {name: dependencies for name, dependencies in dependency_map.items() if dependencies is not None}
-    self_dependencies = tuple(sorted(name for name, dependencies in graph.items() if name in dependencies))
+    self_dependencies = tuple(
+        sorted(name for name, dependencies in graph.items() if name in dependencies and name not in cooldown_pending)
+    )
     missing_dependencies = tuple(
         sorted(
             name
             for name, dependencies in graph.items()
-            if any(dependency not in active_by_name and dependency not in terminal_names for dependency in dependencies)
+            if name not in cooldown_pending
+            and any(dependency not in active_by_name and dependency not in terminal_names for dependency in dependencies)
         )
     )
     all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
-    cyclic = tuple(sorted(set(_cycle_members(all_graph)) & set(dependency_map)))
-    permanently_blocked = set((*broken, *missing_plan, *invalid, *self_dependencies, *missing_dependencies, *cyclic))
+    cyclic = tuple(sorted((set(_cycle_members(all_graph)) & set(dependency_map)) - cooldown_pending))
+    permanently_blocked = set(
+        (*broken, *missing_plan, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns)
+    )
     ready: list[str] = []
     blocked: list[str] = []
-    now = datetime.datetime.now(datetime.UTC)
     for entry in active:
+        if entry.filename in cooldown_pending:
+            blocked.append(entry.filename)
+            continue
         if entry.filename in permanently_blocked or (entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False):
             blocked.append(entry.filename)
             continue
@@ -1195,7 +1255,7 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
             all_active=all_active,
             terminal=terminal,
             target_active=active,
-            now=now,
+            now=now_utc,
         )
         if _has_explicit_dependencies(entry):
             waiting = any(dependency in active_by_name for dependency in dependencies)
@@ -1220,6 +1280,9 @@ def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) ->
         missing_dependencies=missing_dependencies,
         self_dependencies=self_dependencies,
         cyclic_dependencies=cyclic,
+        cooldown_pending=tuple(sorted(cooldown_pending)),
+        invalid_cooldowns=tuple(sorted(invalid_cooldowns)),
+        cooldown_values=tuple(sorted(cooldown_values.items())),
     )
 
 

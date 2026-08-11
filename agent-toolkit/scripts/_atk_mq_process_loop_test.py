@@ -144,6 +144,24 @@ class TestProcessLoopIncludesProcessingInCount:
         captured = capsys.readouterr()
         assert "2件のfeedback/回答済みTBDを検知" in captured.out
 
+    def test_actual_readiness_excludes_cooldown_but_keeps_other_ready_entry(self, tmp_path: pathlib.Path) -> None:
+        """process-loopの実集計は期限待ちだけを除外し、通常ready項目を残す。"""
+        notes = _setup_notes(tmp_path)
+        inbox = notes / "inbox"
+        target_repo = "github.com/example/myrepo"
+        (inbox / "cooldown.md").write_text(
+            f"---\ntarget_repo: {target_repo}\ntype: feedback\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+
+        assert _process_loop._count_pending_entries(notes, target_repo) == 0  # pylint: disable=protected-access
+
+        (inbox / "ready.md").write_text(
+            f"---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+        assert _process_loop._count_pending_entries(notes, target_repo) == 1  # pylint: disable=protected-access
+
 
 class TestChangeHandler:
     """_ChangeHandler.on_any_event: 監視対象イベント判定の実動作を検証する。"""

@@ -23,6 +23,7 @@ _COORDINATION_PREFLIGHT = _ADD_FEEDBACK.parent / "references" / "coordination-pr
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_IMPL_FEEDBACK_FLOW = _PROCESS_FEEDBACKS.parent / "references" / "plan-impl-feedback-flow.md"
 _FEEDBACKS_PLANNER_RECEPTION = _PROCESS_FEEDBACKS.parent / "references" / "feedbacks-planner-reception.md"
+_HOLD_WITH_TBD_INJECT = _PROCESS_FEEDBACKS.parent / "references" / "hold-with-tbd-inject.md"
 _MERGE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "merge-task.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
 _BUGFIX_SKILL = _AGENTS_DIR.parent / "skills" / "bugfix" / "SKILL.md"
@@ -57,6 +58,22 @@ for _markdown in _DISTRIBUTION_ROOT.rglob("*.md"):
 _SKILL_MARKDOWN = {
     _skill.name: _skill / "SKILL.md" for _skill in (_DISTRIBUTION_ROOT / "skills").iterdir() if (_skill / "SKILL.md").is_file()
 }
+
+
+def test_process_feedbacks_external_hold_uses_cooldown_without_conflating_other_waits() -> None:
+    """外部条件待ちの期限付き差し戻しと、TBD・depends_onの分離を3規範で固定する。"""
+    texts = [
+        path.read_text(encoding="utf-8") for path in (_PROCESS_FEEDBACKS, _HOLD_WITH_TBD_INJECT, _FEEDBACKS_PLANNER_RECEPTION)
+    ]
+
+    for text in texts:
+        assert "--cooldown-days=3" in text
+        assert "depends_on" in text
+    combined = "\n".join(texts)
+    assert "ユーザー判断待ち" in combined
+    assert "同一セッション内でsleep又は時限待機をしない" in combined
+
+
 # 節参照の記法。pathと節名の間にMarkdown整形用の改行があっても同じ参照として扱う。
 _SKILL_SECTION_REFERENCE_RE = re.compile(r"`agent-toolkit:([a-z0-9-]+)`(?:スキル)?\s*(?:の\s*)?「([^」\n]+)」節")
 _FILE_SECTION_REFERENCE_RE = re.compile(r"`([A-Za-z0-9_./-]+\.md(?:\.tmpl)?)`\s*(?:の\s*)?「([^」\n]+)」節")

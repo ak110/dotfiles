@@ -648,6 +648,69 @@ def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monke
     assert not (notes / "processing/entry.md").exists()
 
 
+def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """複数feedbackへ同じUTC期限を設定し、再開時に期限を除去する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_feedback_file(notes, "first.md")
+    second = _write_feedback_file(notes, "second.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="start-processing", filenames=["first.md", "second.md"], now=_FIXED_DT)
+
+    mutations.transition_entries(
+        notes,
+        action="return-to-inbox",
+        filenames=["first.md", "second.md"],
+        now=_FIXED_DT,
+        cooldown_days=3,
+    )
+
+    for path in (first, second):
+        assert "cooldown_until: '2024-01-18T01:30:00+00:00'" in path.read_text(encoding="utf-8")
+    mutations.transition_entries(notes, action="start-processing", filenames=["first.md"], now=_FIXED_DT)
+    assert "cooldown_until" not in (notes / "processing/first.md").read_text(encoding="utf-8")
+
+
+def test_plain_return_clears_existing_cooldown(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """通常差し戻しでは既存期限を持ち越さない。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_feedback_file(notes, "entry.md")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ncooldown_until: old\n"),
+        encoding="utf-8",
+    )
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="start-processing", filenames=["entry.md"], now=_FIXED_DT)
+    mutations.transition_entries(notes, action="return-to-inbox", filenames=["entry.md"], now=_FIXED_DT)
+    assert "cooldown_until" not in path.read_text(encoding="utf-8")
+
+
+def test_cooldown_return_rejects_tbd_mixture_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TBD混在入力を一括検証し、移動もfrontmatter更新も行わない。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "feedback.md")
+    _write_tbd_entry(notes, "tbd.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="start-processing", filenames=["feedback.md", "tbd.md"], now=_FIXED_DT)
+
+    with pytest.raises(mutations.WebInputError, match="feedback専用"):
+        mutations.transition_entries(
+            notes,
+            action="return-to-inbox",
+            filenames=["feedback.md", "tbd.md"],
+            now=_FIXED_DT,
+            cooldown_days=3,
+        )
+
+    assert (notes / "processing/feedback.md").is_file()
+    assert (notes / "processing/tbd.md").is_file()
+
+
 def test_return_to_inbox_missing_file_reports_processing_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1803,6 +1866,26 @@ class TestNoninteractiveEdit:
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         message = "---\nplan_file: /tmp/plan.md\n---\n\n編集後"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "予約キー" in capsys.readouterr().err
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_edit_rejects_explicit_cooldown_until(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """通常edit経路から再処理抑制期限を注入できない。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "---\ncooldown_until: 2026-08-15T00:00:00+00:00\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)

@@ -1,5 +1,6 @@
 """`atk mq`共通の警告・通知処理を検証する。"""
 
+import datetime
 import os
 import pathlib
 import shutil
@@ -43,6 +44,7 @@ def _write_feedback(
     plan_file: pathlib.Path | None = None,
     state: str = "inbox",
     target_repo: str = "github.com/example/repo",
+    cooldown_until: object | None = None,
 ) -> pathlib.Path:
     """readiness用frontmatterを持つテスト用feedbackを書き込む。"""
     directory = private_notes / state
@@ -55,6 +57,11 @@ def _write_feedback(
         lines.extend(("queue_schedule:", "  dependency:", *legacy_dependency.splitlines()))
     if plan_file is not None:
         lines.append(f"plan_file: {plan_file}")
+    if cooldown_until is not None:
+        if isinstance(cooldown_until, str):
+            lines.append(f"cooldown_until: {cooldown_until!r}")
+        else:
+            lines.append(f"cooldown_until: {cooldown_until!r}".lower())
     lines.extend(("---", "", "本文", ""))
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
@@ -98,6 +105,90 @@ class TestReadiness:
 
         assert result.ready == ("feedback.md",)
         assert result.actionable_count == 1
+
+    def test_cooldown_uses_utc_boundary_and_does_not_block_other_ready_entries(self, tmp_path: pathlib.Path) -> None:
+        """期限前だけ対象項目を抑制し、同値境界では通常のreadinessへ戻す。"""
+        now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
+        _write_feedback(tmp_path, "cooldown.md", cooldown_until="2026-08-12T09:00:00+09:00")
+        _write_feedback(tmp_path, "ready.md")
+
+        before = _common.calculate_readiness(
+            tmp_path,
+            "github.com/example/repo",
+            now=now - datetime.timedelta(microseconds=1),
+        )
+        boundary = _common.calculate_readiness(tmp_path, "github.com/example/repo", now=now)
+
+        assert before.cooldown_pending == ("cooldown.md",)
+        assert before.ready == ("ready.md",)
+        assert before.actionable_count == 1
+        assert boundary.ready == ("cooldown.md", "ready.md")
+
+    @pytest.mark.parametrize("value", ["", "not-a-date", "2026-08-12T00:00:00", 123])
+    def test_invalid_cooldown_is_one_actionable_repair(
+        self,
+        tmp_path: pathlib.Path,
+        value: object,
+    ) -> None:
+        """不正期限をblockedの単一修復対象として数える。"""
+        _write_feedback(tmp_path, "feedback.md", cooldown_until=value)
+
+        result = _common.calculate_readiness(
+            tmp_path,
+            "github.com/example/repo",
+            now=datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC),
+        )
+
+        assert result.invalid_cooldowns == ("feedback.md",)
+        assert result.blocked == ("feedback.md",)
+        assert result.actionable_count == 1
+
+    def test_tbd_cooldown_is_invalid_instead_of_suppressing_user_decision(self, tmp_path: pathlib.Path) -> None:
+        """外部編集でTBDへ設定された期限はユーザー判断待ちへ適用しない。"""
+        _write_tbd(tmp_path, "tbd.md")
+        path = tmp_path / "inbox/tbd.md"
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "type: tbd\n",
+                "type: tbd\ncooldown_until: '2999-01-01T00:00:00+00:00'\n",
+            ),
+            encoding="utf-8",
+        )
+
+        result = _common.calculate_readiness(
+            tmp_path,
+            "github.com/example/repo",
+            now=datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC),
+        )
+
+        assert result.invalid_cooldowns == ("tbd.md",)
+        assert not result.cooldown_pending
+        assert result.actionable_count == 1
+
+    def test_pending_cooldown_suppresses_existing_repairs_until_deadline(self, tmp_path: pathlib.Path) -> None:
+        """期限前はmissing planと依存診断を抑制し、期限到達後に再び有効化する。"""
+        now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            cooldown_until="2026-08-15T00:00:00+00:00",
+            plan_file=tmp_path / "missing-plan.md",
+            depends_on=("missing.md",),
+        )
+
+        pending = _common.calculate_readiness(tmp_path, "github.com/example/repo", now=now)
+        expired = _common.calculate_readiness(
+            tmp_path,
+            "github.com/example/repo",
+            now=now + datetime.timedelta(days=3),
+        )
+
+        assert pending.actionable_count == 0
+        assert not pending.missing_plan_file
+        assert not pending.missing_dependencies
+        assert expired.missing_plan_file == ("feedback.md",)
+        assert expired.missing_dependencies == ("feedback.md",)
+        assert expired.actionable_count == 1
 
     def test_broken_frontmatter_remains_actionable_with_target_repo_filter(self, tmp_path: pathlib.Path) -> None:
         """対象repo指定時も破損項目を修復診断へ残し、正常な他repo項目は除外する。"""

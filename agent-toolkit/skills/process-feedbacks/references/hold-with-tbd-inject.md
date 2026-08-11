@@ -11,15 +11,16 @@
 ## 外部条件
 
 - 別feedbackの完了を待つ場合はトップレベルの`depends_on`へfilenameを記録する
-- filenameで表せない外部条件は、観測方法、現在値、解除条件をfeedback本文へ記録する
+- filenameで表せない外部条件は、観測方法、現在値、解除条件、再開工程をfeedback本文へ記録し、
+  `atk mq return-to-inbox <filename> --cooldown-days=3`で差し戻す。外部条件に応じて3日より長い日数も指定できる
 - ユーザー判断を伴わない外部条件待ちではTBDを生成しない
 
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
 
 ## 保留と再開
 
-保留理由、確認済み事実、解除条件、再開工程をfeedback本文へ記録し、processing項目を
-`atk mq return-to-inbox`でinboxへ戻す。回答済みTBDを能動的にpollせず、時限待機もしない。
+ユーザー判断待ちはTBDを作成して通常の`atk mq return-to-inbox`で差し戻し、別feedback待ちは`depends_on`を使う。
+回答済みTBDを能動的にpollせず、同一セッション内でsleep又は時限待機をしない。
 process-loopがactive状態の変化を検出し、readiness成立後に新しいprocess-feedbacksセッションを起動する。
 
 再開時はfeedbackと対応する回答済みTBDを読み、暫定判断と回答の差分を反映する。
