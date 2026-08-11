@@ -363,6 +363,36 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in flow
 
 
+def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
+    """executorと起動側の入力契約を選択モードごとに分離する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    input_contract = _h2_section(executor, "入力")
+    common = input_contract.partition("### 共通\n")[2].partition("\n### 通常の実装モード\n")[0]
+    normal = input_contract.partition("### 通常の実装モード\n")[2].partition("\n### 統合後レビュー調整モード\n")[0]
+    integrated = input_contract.partition("### 統合後レビュー調整モード\n")[2]
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+
+    assert "モード指定" in common
+    for phrase in ("計画ファイルの絶対パス", "worktree一覧", "feedback filename", "複製元と対象外worktree"):
+        assert phrase in normal
+        assert phrase not in integrated
+    for phrase in (
+        "統合worktree",
+        "最終HEADの完全OID",
+        "統合対応表に含まれる全計画の絶対パス",
+        "統合スレッドの検証結果",
+        "統合用管理対象領域の絶対パス",
+        "既存6列表ファイルの絶対パス",
+    ):
+        assert phrase in integrated
+    assert "共通入力又は選択したモードの必須入力" in input_contract
+    assert "選択していないモードの入力を要求せず" in input_contract
+    assert "手順2から7までは実行しない" in executor
+    assert "モード指定`通常の実装モード`" in caller
+    assert "モード指定`統合後レビュー調整モード`" in flow
+
+
 def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
     """executorが保持したworktreeを公開成功後だけcallerが回収する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
