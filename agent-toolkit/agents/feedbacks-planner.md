@@ -28,17 +28,22 @@ user-invocable: false
 
 ## 実行
 
-1. `atk config get pick_feedbacks_model`、`atk config get plan_model`、
-   `atk config get plan_review_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
+1. 調査スレッドの起動直前に`atk config get pick_feedbacks_model`を実行し、
+   `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
 2. 調査スレッドへ`explore-template.md`をtaskとして渡し、要求ごとの区分、根拠、未検証事項を受領する。
 3. 調査結果を`decision-format.md`へ照合して採否を確定する。
    不採用、保留、TBD候補は計画工程へ進めず返す。
-4. 採用時は起草スレッドへ調査結果、計画保存先、author skillを渡す。
+4. 採用時は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
+   起草スレッドへfeedback filenameと本文、調査結果、確定した採否と利用者合意、対象worktree、プロジェクト規範、
+   計画保存先、`agent-toolkit:plan-mode`などのauthor skill、必要なtask referenceを渡す。
+   queueの状態と他laneの情報は渡さない。
    起草スレッドをauthorとし、計画ファイルの書込み、機械検査、指摘の採否、6列表統合、計画修正を所有させる。
-5. 計画レビュースレッドへ`plan-review-task.md`を渡し、新規識別子で起動する。
+5. 計画レビュースレッドの起動直前に`atk config get plan_review_model`を実行して経路を解決する。
+   `plan-review-task.md`を渡し、新規識別子で起動する。
 6. レビュー指摘を加工せずauthorへ全件配送する。
    reviewerの起動、書込有無のGit状態検収、結果検収は自身が担当し、再レビューと収束は
    `plan-review-delegation.md`、継続方法は`runtime-routing.md`「工程別モデル設定」に従う。
+   authorへの新規起動又は継続接続の直前は`plan_model`、reviewerの再レビュー直前は`plan_review_model`を再取得する。
 7. 計画ファイルの実在と分量、機械検査、レビュー収束、起動前後のGit状態を検収する。
 
 調査とreviewerは対象worktreeを読み取り専用とする。

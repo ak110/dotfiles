@@ -291,6 +291,12 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "plan-review-task.md",
         "指摘を加工せずauthorへ全件配送",
         "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
+        "起草スレッドへfeedback filenameと本文、調査結果、確定した採否と利用者合意",
+        "queueの状態と他laneの情報は渡さない",
+        "authorへの新規起動又は継続接続の直前は`plan_model`",
+        "調査スレッドの起動直前に`atk config get pick_feedbacks_model`",
+        "起草スレッドの起動直前に`atk config get plan_model`",
+        "計画レビュースレッドの起動直前に`atk config get plan_review_model`",
     ):
         assert phrase in text
 
@@ -323,9 +329,13 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "writer工程とcommit統合を開始しない" in executor
     assert "計画ごとに別reviewer" in executor
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
+    assert "各writerの起動直前に`atk config get execute_model`" in executor
+    assert "reviewerの各起動直前に`atk config get execute_review_model`" in executor
+    assert "修正writerと再reviewerの新規起動又は継続接続でも" in executor
     assert "`atk mq show`で取得して渡し、plannerは再取得しない" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文をplannerの完了報告へ要求しない" in reception
+    assert "plannerがauthorへ元の提示素材、確定した採否と合意、対象、規範、author用taskを欠落なく渡せる形" in reception
     for phrase in (
         "単一cherry-pickシーケンス",
         "rebaseとmerge commitは作成せず",
@@ -334,6 +344,10 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "push、worktreeの作成と回収、queue変更は禁止",
         "レビュー修正モード",
         "applications:",
+        "統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力",
+        "レビュー修正モードでは、採用指摘の6列表、関係する全計画の絶対パス、保持契約を必須入力",
+        "lane項目はfeedback filename、lane commit OID、適用後OID",
+        "レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ",
     ):
         assert phrase in merge_task
     for phrase in (

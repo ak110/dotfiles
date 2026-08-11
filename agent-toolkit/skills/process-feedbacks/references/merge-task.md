@@ -5,10 +5,11 @@
 
 ## 入力
 
-- モード、統合worktreeの絶対パス、作成時HEADの完全OID
-- 統合対応表、関係する全計画の絶対パス、プロジェクト規範、author skill
-- 検証コマンド、保持契約、採用指摘の6列表
+- 共通: モード、統合worktreeの絶対パス、プロジェクト規範、author skill、検証コマンド
 - 権限は統合worktree内の編集とcommitだけとし、push、worktreeの作成と回収、queue変更は禁止
+
+統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力とする。
+レビュー修正モードでは、採用指摘の6列表、関係する全計画の絶対パス、保持契約を必須入力とする。
 
 統合worktreeは単一writerとして排他使用する。
 必須入力が欠ける場合は推測せず`needs_escalation`で返す。
@@ -46,7 +47,8 @@ verification:
 conflicts:
 - <解消した競合。無ければ「なし」>
 applications:
-- <各項目の安定ID、適用元OID、適用後OIDまたは適用済みスキップ>
+- <lane項目はfeedback filename、lane commit OID、適用後OID>
+- <レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ>
 write_status: <変更したファイルとcommit。変更なしならその旨>
 blockers:
 - <未完了事項。完了時は「なし」>

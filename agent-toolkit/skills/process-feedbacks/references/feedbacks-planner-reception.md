@@ -17,6 +17,8 @@ readyな通常型feedbackごとに`agent-toolkit:feedbacks-planner`を別識別�
 - `agent-toolkit:plan-mode`などのauthor skillと、バグ対応時は`agent-toolkit:bugfix`
 - 計画ファイルの保存先ディレクトリ
 
+これらはplannerがauthorへ元の提示素材、確定した採否と合意、対象、規範、author用taskを欠落なく渡せる形で指定する。
+
 plannerへqueue変異、push、フィードバック投入、worktree作成と回収の権限を渡さない。
 
 ## 受領
@@ -25,6 +27,7 @@ plannerへqueue変異、push、フィードバック投入、worktree作成と�
 
 - 採否記録と`decision-format.md`
 - 採用時の計画ファイルの実在、分量、機械検査結果、レビュー収束状態
+- 計画の提示素材と合意表が渡したfeedback本文、確定した採否、利用者合意に対応していること
 - planner起動前後のGit状態と`write_status`
 - TBD候補と利用者判断事項
 
