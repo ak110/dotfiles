@@ -418,6 +418,39 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     assert "手順2から7までは実行しない" not in executor
 
 
+def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
+    """通常モードのレビュー修正を統合済み最終HEADへ直接反映する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    common_review = _h2_section(executor, "実行").partition("### 共通の最終二系統レビュー\n")[2]
+    normal_fix = common_review.partition("#### 通常の実装モードのレビュー修正\n")[2].partition(
+        "\n#### 統合後レビュー調整モードのレビュー修正\n"
+    )[0]
+    integrated_fix = common_review.partition("#### 統合後レビュー調整モードのレビュー修正\n")[2].partition(
+        "\n#### 共通の再検証と収束\n"
+    )[0]
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    for phrase in (
+        "全ての実装writerが終端",
+        "統合用worktreeがclean",
+        "HEADがレビュー対象の最終HEADと一致",
+        "同worktreeだけへ単一の修正writer",
+        "単一単位を同じworktreeで実装した場合も",
+        "元の実装writerへ戻さず",
+        "implementation-task.md",
+        "feedback filename",
+        "複製元と対象外worktree",
+        "修正writerの完了と終端",
+        "修正commitがレビュー対象の最終HEADを直接進めた",
+        "HEAD、修正commit、差分、clean状態、検証結果を実測",
+    ):
+        assert phrase in normal_fix
+    assert "指摘が帰属する実装writer" not in executor
+    assert "merge-task.md" not in normal_fix
+    assert "merge-task.md" in integrated_fix
+    assert "統合用worktreeで直接作成され、最終HEADに含まれる" in caller
+
+
 def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
     """executorが保持したworktreeを公開成功後だけcallerが回収する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
