@@ -138,7 +138,6 @@ def _run_json_command(
         result = subprocess.run(
             command,
             capture_output=True,
-            text=True,
             check=False,
             timeout=timeout,
         )
@@ -146,16 +145,23 @@ def _run_json_command(
         raise AlertCollectError(f"{operation}がタイムアウトしました") from exc
     except FileNotFoundError as exc:
         raise AlertCollectError(f"{command[0]}コマンドが見つかりません") from exc
-    if result.returncode != 0:
-        if _is_disabled_response(result.stdout, disabled_messages):
-            raise AlertFeatureDisabledError(f"{operation}: 対象リポジトリで当該機能が無効")
-        raise AlertCollectError(f"{operation}が失敗しました（exit={result.returncode}）: {result.stderr.strip()}")
     try:
-        payload = json.loads(result.stdout)
+        stdout = result.stdout.decode("utf-8") if isinstance(result.stdout, bytes) else result.stdout
+    except UnicodeDecodeError as exc:
+        raise AlertCollectError(f"{operation}の標準出力をUTF-8として復号できません: {exc}") from exc
+    stderr = result.stderr.decode("utf-8", errors="backslashreplace") if isinstance(result.stderr, bytes) else result.stderr
+    assert isinstance(stdout, str)
+    assert isinstance(stderr, str)
+    if result.returncode != 0:
+        if _is_disabled_response(stdout, disabled_messages):
+            raise AlertFeatureDisabledError(f"{operation}: 対象リポジトリで当該機能が無効")
+        raise AlertCollectError(f"{operation}が失敗しました（exit={result.returncode}）: {stderr.strip()}")
+    try:
+        payload = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise AlertCollectError(f"{operation}の応答をJSONとして解析できません: {exc}") from exc
     if not isinstance(payload, list):
-        raise AlertCollectError(f"{operation}の応答形状が不正です: {result.stdout[:200]!r}")
+        raise AlertCollectError(f"{operation}の応答形状が不正です: {stdout[:200]!r}")
     return payload
 
 

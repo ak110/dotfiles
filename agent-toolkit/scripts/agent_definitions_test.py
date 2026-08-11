@@ -467,6 +467,20 @@ def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> 
     assert "介入とエージェントの誤りの因果を確定できない候補には適用しない" in skill
 
 
+def test_session_review_investigates_fourth_review_by_artifact_and_responsibility() -> None:
+    """第4回以降だけを同一成果物・同一責務の原因調査対象として固定する。"""
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+
+    for phrase in (
+        "同じ計画・基点から続く累積実装",
+        "同じ責務系統のreviewer",
+        "第4回以降",
+        "3回以下、結果未返却、別成果物、別責務系統は合算しない",
+        "review側と初版作成・指摘反映側の原因を別々に確定する",
+    ):
+        assert phrase in skill
+
+
 def test_plan_workflows_reread_completion_conditions_before_reporting() -> None:
     """計画関係の各主体が完了条件を再読し、最終行へ根拠を同期する。"""
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")

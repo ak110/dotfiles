@@ -2,7 +2,9 @@
 
 import contextlib
 import datetime
+import json
 import pathlib
+import subprocess
 import sys
 
 import pytest
@@ -243,6 +245,52 @@ def test_collect_new_alerts_warns_on_generic_failure(tmp_path: pathlib.Path, cap
     )
     assert not result
     assert "Dependabotアラートの取得に失敗しました" in capsys.readouterr().err
+
+
+def test_collect_new_alerts_decodes_utf8_json_bytes_without_locale_dependency(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """公開収集経路が非ASCIIのUTF-8 JSON bytesをアラートへ変換する。"""
+    payload = [{"number": 21, "security_advisory": {"summary": "日本語"}, "dependency": {}}]
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        assert "text" not in _kwargs
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload, ensure_ascii=False).encode(), stderr=b"")
+
+    monkeypatch.setattr(alerts.subprocess, "run", fake_run)
+
+    result = alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
+
+    assert [alert.keys for alert in result] == [("github-dependabot:21",)]
+    assert "日本語" in result[0].body
+
+
+def test_collect_new_alerts_warns_when_json_stdout_is_not_utf8(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開収集経路が不正UTF-8 stdoutを原因付き収集エラーとして警告する。"""
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(command, 0, stdout=b"\xff", stderr=b"")
+
+    monkeypatch.setattr(alerts.subprocess, "run", fake_run)
+
+    assert not alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
+    assert "標準出力をUTF-8として復号できません" in capsys.readouterr().err
+
+
+def test_collect_new_alerts_keeps_non_utf8_stderr_as_bytes_notation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開収集経路が非UTF-8診断bytesを警告へ残す。"""
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"failed: \x81")
+
+    monkeypatch.setattr(alerts.subprocess, "run", fake_run)
+
+    assert not alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
+    assert "\\x81" in capsys.readouterr().err
 
 
 def test_is_disabled_response_matches_only_known_message() -> None:
