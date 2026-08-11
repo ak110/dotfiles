@@ -261,7 +261,13 @@ def test_claude_started_marker_excludes_automatic_review_events(tmp_path: pathli
                 "type": "user",
                 "message": {
                     "role": "user",
-                    "content": "Stop hook feedback:\n" + evidence.STOP_ADVISOR_PREFIX + " 誘導",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Stop hook feedback:\n" + evidence.STOP_ADVISOR_PREFIX + " 誘導",
+                        },
+                        {"type": "text", "text": "同じ注入entryの残余本文"},
+                    ],
                 },
             },
             {
@@ -296,7 +302,13 @@ def test_claude_skill_injection_keeps_only_invocation_line(tmp_path: pathlib.Pat
                 "type": "user",
                 "message": {
                     "role": "user",
-                    "content": "Base directory for this skill: /plugin/skills/example\n# 長いスキル本文\n規範",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Base directory for this skill: /plugin/skills/example\n# 長いスキル本文\n規範",
+                        },
+                        {"type": "text", "text": "同じ注入entryの残余本文"},
+                    ],
                 },
             },
         ],
@@ -307,6 +319,28 @@ def test_claude_skill_injection_keeps_only_invocation_line(tmp_path: pathlib.Pat
     assert [event["kind"] for event in events] == ["user", "skill-invocation"]
     assert events[1]["text"] == "Base directory for this skill: /plugin/skills/example"
     assert "長いスキル本文" not in events[1]["text"]
+
+
+def test_claude_normal_user_entry_keeps_multiple_text_blocks_in_order(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "最初の入力"},
+                        {"type": "text", "text": "次の入力"},
+                    ],
+                },
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == ["最初の入力", "次の入力"]
 
 
 def test_claude_queued_commands_keep_only_human_prompts(tmp_path: pathlib.Path) -> None:

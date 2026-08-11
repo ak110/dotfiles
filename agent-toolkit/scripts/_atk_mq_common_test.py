@@ -99,6 +99,20 @@ class TestReadiness:
         assert result.ready == ("feedback.md",)
         assert result.actionable_count == 1
 
+    def test_broken_frontmatter_remains_actionable_with_target_repo_filter(self, tmp_path: pathlib.Path) -> None:
+        """対象repo指定時も破損項目を修復診断へ残し、正常な他repo項目は除外する。"""
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        (inbox / "broken.md").write_text("---\ntarget_repo: [broken\n", encoding="utf-8")
+        _write_feedback(tmp_path, "other.md", target_repo="github.com/example/other")
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.frontmatter_broken == ("broken.md",)
+        assert result.frontmatter_broken_needs_tbd == ("broken.md",)
+        assert result.actionable_count == 1
+        assert "other.md" not in (*result.ready, *result.blocked)
+
     def test_unanswered_tbd_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
         _write_tbd(tmp_path, "answer.md")
         _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))

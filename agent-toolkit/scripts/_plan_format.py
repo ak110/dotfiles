@@ -678,7 +678,7 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
 # --- 人間向け固定領域の構造検査 ---
 
 _MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
-_MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^[A-Za-z0-9][0-9A-Za-z_-]*(?:[^:]*:|:\s+\S.*)$")
+_MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^P-[0-9][0-9A-Za-z_-]*(?:(?:（[^）\n]+）|\([^)\n]+\)):|:\s+\S.*)$")
 _MATERIAL_FENCE_PATTERN = re.compile(r"^\s*(?:`{3,}|~{3,})text\s*$")
 _REFERENCE_SEPARATOR_PATTERN = re.compile(r"[、,・/\s]+")
 

@@ -122,6 +122,20 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 events.append(completion)
             continue
 
+        entry_type = entry.get("type")
+        message = entry.get("message")
+        user_texts: list[str] | None = None
+        if isinstance(message, dict) and entry_type == "user" and message.get("role") == "user":
+            user_texts = _text_blocks(message.get("content"))
+            if any(STOP_ADVISOR_PREFIX in text for text in user_texts):
+                continue
+            skill_invocation = next((text for text in user_texts if text.startswith(_SKILL_INVOCATION_PREFIX)), None)
+            if skill_invocation is not None:
+                event = _event("skill-invocation", skill_invocation.splitlines()[0])
+                if event:
+                    events.append(event)
+                continue
+
         result = entry.get("toolUseResult")
         if (
             isinstance(result, dict)
@@ -139,7 +153,6 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             interrupt = _event("interrupt", json.dumps(entry, ensure_ascii=False))
             events.append(interrupt or {"kind": "interrupt", "text": "interrupt"})
 
-        entry_type = entry.get("type")
         attachment = entry.get("attachment")
         if entry_type == "attachment" and isinstance(attachment, dict):
             origin = attachment.get("origin")
@@ -154,16 +167,11 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 event = _event("user", prompt)
                 if event:
                     events.append(event)
-        message = entry.get("message")
         if isinstance(message, dict):
             role = message.get("role")
             if entry_type == "user" and role == "user":
-                for text in _text_blocks(message.get("content")):
-                    if STOP_ADVISOR_PREFIX in text:
-                        continue
-                    kind = "skill-invocation" if text.startswith(_SKILL_INVOCATION_PREFIX) else "user"
-                    event_text = text.splitlines()[0] if kind == "skill-invocation" else text
-                    event = _event(kind, event_text)
+                for text in user_texts or ():
+                    event = _event("user", text)
                     if event and not event["text"].startswith("<task-notification>"):
                         events.append(event)
                 events.extend(_failed_tool_events(entry))

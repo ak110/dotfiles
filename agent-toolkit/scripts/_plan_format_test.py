@@ -263,7 +263,7 @@ def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: s
 def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> None:
     content = _VALID_CONTENT.replace(
         "P-001:\n\n```text\n対象を更新してほしい。",
-        "注記: 提示素材の説明\n\nP-001:\n\n```text\nP-999: fence内の文字列\n対象を更新してほしい。",
+        "注記: 提示素材の説明\nSource: user transcript\n\nP-001:\n\n```text\nP-999: fence内の文字列\n対象を更新してほしい。",
     )
 
     errors = _plan_format.check_plan_structure(content)

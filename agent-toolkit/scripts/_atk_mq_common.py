@@ -1126,7 +1126,11 @@ def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
 def calculate_readiness(private_notes: pathlib.Path, target_repo: str | None) -> ReadinessResult:
     """active全件と参照された終端項目から対象リポジトリのreadinessを算出する。"""
     all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES)
-    active = all_active if target_repo is None else tuple(entry for entry in all_active if entry.target_repo == target_repo)
+    active = (
+        all_active
+        if target_repo is None
+        else tuple(entry for entry in all_active if entry.frontmatter_broken or entry.target_repo == target_repo)
+    )
     all_dependency_map = {
         entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
     }
