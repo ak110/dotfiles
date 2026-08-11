@@ -674,8 +674,10 @@ def _commit_and_push_retrying_mutation(
 
     `mutation`は全検査を終えてから対象pathだけを書き換え、path群と変更前内容の復元処理を返す。
     push失敗時は未公開commitを取り消して対象pathを変更前内容へ戻すため、再試行はremote同期から開始する。
+    既存の未公開commitはmutation開始前にremoteへ同期し、候補commitと混在させない。
     """
     _assert_repo_lock_held(private_notes)
+    _push_pending_commits(private_notes)
     for attempt in range(2):
         _pull(private_notes)
         head = subprocess.run(

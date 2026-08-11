@@ -28,6 +28,8 @@ import filelock
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 2
+_CLAIM_PENDING_SCHEMA_VERSION = 1
+_OPERATION_SCHEMA_VERSION = 1
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _UTC_ISO8601_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+00:00\Z")
 _WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
@@ -835,6 +837,50 @@ def _claim_digest(prefix: str, key_parts: tuple[str, ...]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _claim_pending_path(digest: str) -> pathlib.Path:
+    return _state_root() / f"claim-{digest}.pending"
+
+
+def _claim_pending_record(
+    path: pathlib.Path,
+    prefix: str,
+    key_parts: tuple[str, ...],
+    digest: str,
+) -> dict[str, typing.Any]:
+    return {
+        "schema_version": _CLAIM_PENDING_SCHEMA_VERSION,
+        "path": str(path),
+        "prefix": prefix,
+        "key_parts": list(key_parts),
+        "digest": digest,
+        "nonce": secrets.token_hex(32),
+        "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+    }
+
+
+def _validate_claim_pending(
+    pending: dict[str, typing.Any],
+    path: pathlib.Path,
+    prefix: str,
+    key_parts: tuple[str, ...],
+    digest: str,
+) -> None:
+    expected_keys = {"schema_version", "path", "prefix", "key_parts", "digest", "nonce", "created_at"}
+    nonce = pending.get("nonce")
+    if (
+        set(pending) != expected_keys
+        or pending.get("schema_version") != _CLAIM_PENDING_SCHEMA_VERSION
+        or pending.get("path") != str(path)
+        or pending.get("prefix") != prefix
+        or pending.get("key_parts") != list(key_parts)
+        or pending.get("digest") != digest
+        or not isinstance(nonce, str)
+        or re.fullmatch(r"[0-9a-f]{64}", nonce) is None
+        or not _is_utc_iso8601(pending.get("created_at"))
+    ):
+        raise ManagedTempError("pending claimが論理キーと一致しない")
+
+
 def _validate_incomplete_claim_path(path: pathlib.Path) -> None:
     try:
         metadata = path.lstat()
@@ -861,29 +907,33 @@ def _load_claim_marker(path: pathlib.Path) -> dict[str, typing.Any]:
         os.close(descriptor)
 
 
-def _complete_claimed_temp(path: pathlib.Path, prefix: str) -> pathlib.Path:
+def _complete_pending_claim(
+    path: pathlib.Path,
+    prefix: str,
+    pending: dict[str, typing.Any],
+) -> pathlib.Path:
     marker_path = path / _MARKER_NAME
     registry_path = _registry_path(path)
+    expected = _record(
+        path,
+        typing.cast(str, pending["nonce"]),
+        prefix=prefix,
+        created_at=typing.cast(str, pending["created_at"]),
+    )
     if marker_path.exists() or marker_path.is_symlink():
         marker = _load_claim_marker(path)
-        if marker.get("schema_version") != _SCHEMA_VERSION or marker.get("prefix") != prefix:
+        if marker != expected:
             raise ManagedTempError(f"claim済み領域の管理情報が論理キーと一致しない: {marker_path}")
-        if not _records_match(path, marker, marker):
-            raise ManagedTempError(f"claim済み領域の管理情報が不正: {marker_path}")
         if not registry_path.exists():
-            _write_private_json(registry_path, marker)
+            _write_private_json(registry_path, expected)
         validate_managed_temp(path)
         return path
     if registry_path.exists() or registry_path.is_symlink():
         raise ManagedTempError(f"claim済み領域のregistryだけが残存している: {registry_path}")
-    record = _record(
-        path,
-        secrets.token_hex(32),
-        prefix=prefix,
-        created_at=datetime.datetime.now(datetime.UTC).isoformat(),
-    )
-    _write_marker(path, record)
-    _write_private_json(registry_path, record)
+    if any(path.iterdir()):
+        raise ManagedTempError(f"管理情報の無いclaim済み領域が空ではない: {path}")
+    _write_marker(path, expected)
+    _write_private_json(registry_path, expected)
     validate_managed_temp(path)
     return path
 
@@ -898,18 +948,40 @@ def claim_managed_temp(prefix: str, key_parts: tuple[str, ...]) -> pathlib.Path:
     path = _temp_root() / f"agent-toolkit-claim-{digest}"
     lock_path = _state_root() / f"claim-{digest}.lock"
     with filelock.FileLock(lock_path):
+        pending_path = _claim_pending_path(digest)
+        if path.exists() or path.is_symlink():
+            try:
+                completed = validate_managed_temp(path)
+            except ManagedTempError:
+                pass
+            else:
+                if pending_path.exists() or pending_path.is_symlink():
+                    pending = _load_private_json(pending_path)
+                    _validate_claim_pending(pending, path, prefix, key_parts, digest)
+                    pending_path.unlink()
+                return completed
+        pending_created = False
+        if pending_path.exists() or pending_path.is_symlink():
+            pending = _load_private_json(pending_path)
+        else:
+            pending = _claim_pending_record(path, prefix, key_parts, digest)
+            _write_private_json(pending_path, pending)
+            pending_created = True
+        _validate_claim_pending(pending, path, prefix, key_parts, digest)
         try:
             path.mkdir(mode=0o700)
             if os.name == "nt":
                 _windows_secure_path(path, directory=True)
-        except FileExistsError:
-            try:
-                validate_managed_temp(path)
-            except ManagedTempError:
-                _validate_incomplete_claim_path(path)
+        except FileExistsError as error:
+            if pending_created:
+                pending_path.unlink()
+                raise ManagedTempError(f"管理情報の無い既存pathはclaimできない: {path}") from error
+            _validate_incomplete_claim_path(path)
         except OSError as error:
             raise ManagedTempError(f"claim済み領域を作成できない: {path}: {error}") from error
-        return _complete_claimed_temp(path, prefix)
+        completed = _complete_pending_claim(path, prefix, pending)
+        pending_path.unlink()
+        return completed
 
 
 def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
@@ -1018,7 +1090,9 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
             raw_path = record.get("path")
             if not isinstance(raw_path, str):
                 raise ManagedTempError("管理情報のpathが文字列ではない")
-            path = pathlib.Path(raw_path)
+            path = pathlib.Path(raw_path).resolve(strict=True)
+            if raw_path != str(path):
+                raise ManagedTempError("管理情報のpathが正規絶対pathではない")
             if registry_path != _registry_path(path):
                 raise ManagedTempError("列挙registryが管理対象pathの正規registryではない")
             validate_managed_temp(path)
@@ -1034,6 +1108,93 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
         except (KeyError, OSError, ValueError, ManagedTempError) as error:
             print(f"warning: 管理対象を列挙できない: {registry_path}: {error}", file=sys.stderr)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
+
+
+def _operation_digest(path: pathlib.Path, name: str) -> str:
+    payload = json.dumps([str(path), name], ensure_ascii=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _operation_state_path(path: pathlib.Path, name: str) -> pathlib.Path:
+    return path / f".agent-toolkit-operation-{_operation_digest(path, name)}.json"
+
+
+def _operation_lock(path: pathlib.Path, name: str) -> filelock.FileLock:
+    return filelock.FileLock(_state_root() / f"operation-{_operation_digest(path, name)}.lock")
+
+
+def _validate_operation_record(record: dict[str, typing.Any], path: pathlib.Path, name: str) -> None:
+    expected_keys = {"schema_version", "path", "name", "status", "token", "created_at", "completed_at"}
+    token = record.get("token")
+    status = record.get("status")
+    completed_at = record.get("completed_at")
+    if (
+        set(record) != expected_keys
+        or record.get("schema_version") != _OPERATION_SCHEMA_VERSION
+        or record.get("path") != str(path)
+        or record.get("name") != name
+        or status not in ("in-progress", "completed")
+        or not isinstance(token, str)
+        or re.fullmatch(r"[0-9a-f]{64}", token) is None
+        or not _is_utc_iso8601(record.get("created_at"))
+        or (status == "in-progress" and completed_at is not None)
+        or (status == "completed" and not _is_utc_iso8601(completed_at))
+    ):
+        raise ManagedTempError(f"外部操作の所有状態が不正: {name}")
+
+
+def _replace_private_json(path: pathlib.Path, value: dict[str, typing.Any]) -> None:
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(16)}.tmp")
+    try:
+        _write_private_json(temporary, value)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def begin_managed_temp_operation(path_arg: pathlib.Path | str, name: str) -> dict[str, str]:
+    """管理対象領域の外部操作を単一所有者だけが開始できる状態へ遷移する。"""
+    if not is_valid_prefix(name):
+        raise ManagedTempError("nameは英小文字・数字・ハイフンだけで指定する")
+    path = validate_managed_temp(path_arg)
+    with _operation_lock(path, name):
+        path = validate_managed_temp(path)
+        state_path = _operation_state_path(path, name)
+        if state_path.exists() or state_path.is_symlink():
+            existing_record = _load_private_json(state_path)
+            _validate_operation_record(existing_record, path, name)
+            return {"status": typing.cast(str, existing_record["status"]), "path": str(path), "name": name}
+        token = secrets.token_hex(32)
+        record: dict[str, typing.Any] = {
+            "schema_version": _OPERATION_SCHEMA_VERSION,
+            "path": str(path),
+            "name": name,
+            "status": "in-progress",
+            "token": token,
+            "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "completed_at": None,
+        }
+        _write_private_json(state_path, record)
+        return {"status": "acquired", "path": str(path), "name": name, "token": token}
+
+
+def complete_managed_temp_operation(path_arg: pathlib.Path | str, name: str, token: str) -> dict[str, str]:
+    """所有tokenが一致する外部操作を完了状態へ遷移する。"""
+    if not is_valid_prefix(name) or re.fullmatch(r"[0-9a-f]{64}", token) is None:
+        raise ManagedTempError("外部操作のname又はtokenが不正")
+    path = validate_managed_temp(path_arg)
+    with _operation_lock(path, name):
+        path = validate_managed_temp(path)
+        state_path = _operation_state_path(path, name)
+        record = _load_private_json(state_path)
+        _validate_operation_record(record, path, name)
+        if record["token"] != token:
+            raise ManagedTempError(f"外部操作の所有tokenが一致しない: {name}")
+        if record["status"] == "in-progress":
+            record["status"] = "completed"
+            record["completed_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+            _replace_private_json(state_path, record)
+        return {"status": "completed", "path": str(path), "name": name}
 
 
 def _clear_directory(descriptor: int) -> None:
@@ -1206,6 +1367,15 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     claim_parser = subparsers.add_parser("claim", help="論理キーごとに単一の管理対象一時ディレクトリを作成する")
     claim_parser.add_argument("--prefix", required=True)
     claim_parser.add_argument("--key-part", action="append", required=True)
+    operation_parser = subparsers.add_parser("operation", help="管理対象領域の外部操作所有権を管理する")
+    operation_subparsers = operation_parser.add_subparsers(dest="operation_command", required=True)
+    operation_begin = operation_subparsers.add_parser("begin", help="外部操作の所有権を取得する")
+    operation_begin.add_argument("--path", required=True, type=pathlib.Path)
+    operation_begin.add_argument("--name", required=True)
+    operation_complete = operation_subparsers.add_parser("complete", help="外部操作の完了を記録する")
+    operation_complete.add_argument("--path", required=True, type=pathlib.Path)
+    operation_complete.add_argument("--name", required=True)
+    operation_complete.add_argument("--token", required=True)
     cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
     cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
     list_parser = subparsers.add_parser("list", help="管理対象一時ディレクトリを列挙する")
@@ -1220,6 +1390,12 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
             print(create_managed_temp(args.prefix))
         elif command == "claim":
             print(claim_managed_temp(args.prefix, tuple(args.key_part)))
+        elif command == "operation":
+            if args.operation_command == "begin":
+                result = begin_managed_temp_operation(args.path, args.name)
+            else:
+                result = complete_managed_temp_operation(args.path, args.name, args.token)
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         elif command == "cleanup":
             cleanup_managed_temp(args.path)
         else:

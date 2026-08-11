@@ -1281,6 +1281,12 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
         "2つのkey-partを論理キー",
         "管理marker保存前の中断",
         "二重の領域作成又は公開操作を行わない",
+        "atk managed-temp operation begin",
+        "status: acquired",
+        "status: in-progress",
+        "status: completed",
+        "atk managed-temp operation complete",
+        "所有権を奪わずTBDへ送る",
     ):
         assert requirement in publish_group
     assert "### 要件シナリオ走査" in review

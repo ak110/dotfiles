@@ -400,6 +400,11 @@ def _write_convert_feedback(
 def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """変換テストでprivate-notesへのgit操作を無効化する。"""
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(
+        mutations,
+        "_suspend_uncommitted_feedback_body",
+        lambda *_args, **_kwargs: contextlib.nullcontext(),
+    )
 
     def run_mutation(
         _private_notes: pathlib.Path,
@@ -680,6 +685,11 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
         return mutation() is not None
 
     monkeypatch.setattr(mutations, "_commit_and_push_retrying_mutation", run_after_competing_update)
+    monkeypatch.setattr(
+        mutations,
+        "_suspend_uncommitted_feedback_body",
+        lambda *_args, **_kwargs: contextlib.nullcontext(),
+    )
 
     with pytest.raises(mutations.WebInputError, match="循環"):
         mutations.set_entry_dependencies(notes, filename="second.md", depends_on=("first.md",))
@@ -722,6 +732,7 @@ def _initialize_dependency_remote(tmp_path: pathlib.Path) -> tuple[pathlib.Path,
         (seed / name / ".gitkeep").touch()
     _write_convert_feedback(seed, "first.md")
     _write_convert_feedback(seed, "second.md")
+    _write_convert_feedback(seed, "third.md")
     for key, value in (("user.name", "test"), ("user.email", "test@example.invalid")):
         subprocess.run(["git", "config", key, value], cwd=seed, check=True)
     subprocess.run(["git", "add", "."], cwd=seed, check=True)
@@ -799,6 +810,233 @@ def test_dependency_updates_revalidate_full_transaction_after_competing_push(
     second_data = frontmatter_parser.parse_frontmatter((verifier / "inbox/second.md").read_text(encoding="utf-8"))
     assert first_data is not None and second_data is not None
     assert bool(first_data[0].get("depends_on")) != bool(second_data[0].get("depends_on"))
+
+
+def test_set_dependencies_pushes_only_metadata_and_preserves_dirty_body(tmp_path: pathlib.Path) -> None:
+    """依存更新の成功時も未commit本文をremoteへ混入させず、localへ保持する。"""
+    remote, clone, _other_clone = _initialize_dependency_remote(tmp_path)
+    path = clone / "inbox/first.md"
+    original_text = path.read_text(encoding="utf-8")
+    dirty_text = original_text.replace("本文\n", "利用者の未commit本文\n")
+    path.write_text(dirty_text, encoding="utf-8")
+
+    mutations.set_entry_dependencies(clone, filename="first.md", depends_on=("second.md",))
+
+    verifier = tmp_path / "verifier"
+    subprocess.run(["git", "clone", str(remote), str(verifier)], check=True, capture_output=True)
+    remote_parsed = frontmatter_parser.parse_frontmatter((verifier / "inbox/first.md").read_text(encoding="utf-8"))
+    local_parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert remote_parsed is not None and local_parsed is not None
+    assert remote_parsed[0]["depends_on"] == ["second.md"]
+    assert "利用者の未commit本文" not in remote_parsed[1]
+    assert local_parsed[0]["depends_on"] == ["second.md"]
+    assert "利用者の未commit本文" in local_parsed[1]
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == " M inbox/first.md\n"
+
+
+def test_set_dependencies_rejects_textually_dirty_frontmatter_without_modifying_it(tmp_path: pathlib.Path) -> None:
+    """意味上同じでもfrontmatterの未commit字面を機械更新で失わない。"""
+    _remote, clone, _other_clone = _initialize_dependency_remote(tmp_path)
+    path = clone / "inbox/first.md"
+    dirty_text = path.read_text(encoding="utf-8").replace(
+        "target_repo: github.com/example/foo",
+        'target_repo: "github.com/example/foo"',
+    )
+    path.write_text(dirty_text, encoding="utf-8")
+
+    with pytest.raises(mutations.WebInputError, match="frontmatterに未commit変更"):
+        mutations.set_entry_dependencies(clone, filename="first.md", depends_on=("second.md",))
+
+    assert path.read_text(encoding="utf-8") == dirty_text
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == " M inbox/first.md\n"
+
+
+def test_set_dependencies_rejects_staged_feedback_without_modifying_it(tmp_path: pathlib.Path) -> None:
+    """stage済み本文を機械更新へ取り込まず、indexと作業ツリーを保持する。"""
+    remote, clone, _other_clone = _initialize_dependency_remote(tmp_path)
+    path = clone / "inbox/first.md"
+    staged_text = path.read_text(encoding="utf-8").replace("本文\n", "stage済み本文\n")
+    path.write_text(staged_text, encoding="utf-8")
+    subprocess.run(["git", "add", "inbox/first.md"], cwd=clone, check=True)
+
+    with pytest.raises(mutations.WebInputError, match="stage済み"):
+        mutations.set_entry_dependencies(clone, filename="first.md", depends_on=("second.md",))
+
+    assert path.read_text(encoding="utf-8") == staged_text
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == "M  inbox/first.md\n"
+    verifier = tmp_path / "verifier"
+    subprocess.run(["git", "clone", str(remote), str(verifier)], check=True, capture_output=True)
+    parsed = frontmatter_parser.parse_frontmatter((verifier / "inbox/first.md").read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert "depends_on" not in parsed[0]
+
+
+def test_set_dependencies_rejects_staged_only_feedback_without_modifying_index(tmp_path: pathlib.Path) -> None:
+    """作業ツリーがcleanでもindexだけにあるfeedback変更を保持して拒否する。"""
+    _remote, clone, _other_clone = _initialize_dependency_remote(tmp_path)
+    path = clone / "inbox/first.md"
+    staged_text = path.read_text(encoding="utf-8").replace("本文\n", "indexだけの本文\n")
+    path.write_text(staged_text, encoding="utf-8")
+    subprocess.run(["git", "add", "inbox/first.md"], cwd=clone, check=True)
+    subprocess.run(["git", "restore", "--worktree", "inbox/first.md"], cwd=clone, check=True)
+    head_text = path.read_text(encoding="utf-8")
+
+    with pytest.raises(mutations.WebInputError, match="stage済み"):
+        mutations.set_entry_dependencies(clone, filename="first.md", depends_on=("second.md",))
+
+    assert path.read_text(encoding="utf-8") == head_text
+    staged = subprocess.run(
+        ["git", "show", ":inbox/first.md"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert staged.stdout == staged_text
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == "M  inbox/first.md\n"
+
+
+def test_set_dependencies_retries_same_path_remote_update_while_body_is_suspended(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同じfeedbackのremote更新後もclean状態でpullし、最新metadataへ未commit本文を戻す。"""
+    remote, dirty_clone, competing_clone = _initialize_dependency_remote(tmp_path)
+    dirty_path = dirty_clone / "inbox/first.md"
+    dirty_path.write_text(
+        dirty_path.read_text(encoding="utf-8").replace("本文\n", "利用者の未commit本文\n"),
+        encoding="utf-8",
+    )
+    dirty_validated = threading.Event()
+    competing_done = threading.Event()
+    dirty_validation_count = 0
+    original = mutations._set_validated_dependencies  # pylint: disable=protected-access  # noqa: SLF001
+
+    def pause_first_dirty_validation(
+        data: dict[str, object],
+        path: pathlib.Path,
+        depends_on: tuple[str, ...],
+        inbox_dir: pathlib.Path,
+        processing_dir: pathlib.Path,
+    ) -> None:
+        nonlocal dirty_validation_count
+        original(data, path, depends_on, inbox_dir, processing_dir)
+        if dirty_clone not in path.parents:
+            return
+        dirty_validation_count += 1
+        if dirty_validation_count == 1:
+            dirty_validated.set()
+            assert competing_done.wait(timeout=10)
+
+    monkeypatch.setattr(mutations, "_set_validated_dependencies", pause_first_dirty_validation)
+    errors: list[Exception] = []
+
+    def competing_update() -> None:
+        try:
+            assert dirty_validated.wait(timeout=10)
+            mutations.set_entry_dependencies(
+                competing_clone,
+                filename="first.md",
+                depends_on=("second.md",),
+            )
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            errors.append(error)
+        finally:
+            competing_done.set()
+
+    thread = threading.Thread(target=competing_update)
+    thread.start()
+    mutations.set_entry_dependencies(dirty_clone, filename="first.md", depends_on=("third.md",))
+    thread.join(timeout=20)
+
+    assert not thread.is_alive()
+    assert not errors
+    assert dirty_validation_count == 2
+    verifier = tmp_path / "verifier"
+    subprocess.run(["git", "clone", str(remote), str(verifier)], check=True, capture_output=True)
+    remote_parsed = frontmatter_parser.parse_frontmatter((verifier / "inbox/first.md").read_text(encoding="utf-8"))
+    local_parsed = frontmatter_parser.parse_frontmatter(dirty_path.read_text(encoding="utf-8"))
+    assert remote_parsed is not None and local_parsed is not None
+    assert remote_parsed[0]["depends_on"] == ["third.md"]
+    assert "利用者の未commit本文" not in remote_parsed[1]
+    assert local_parsed[0]["depends_on"] == ["third.md"]
+    assert "利用者の未commit本文" in local_parsed[1]
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=dirty_clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == " M inbox/first.md\n"
+
+
+def test_set_dependencies_syncs_pending_commit_after_remote_progress(tmp_path: pathlib.Path) -> None:
+    """既存の未push commitをremote進行へrebaseしてから依存更新を公開する。"""
+    remote, pending_clone, remote_clone = _initialize_dependency_remote(tmp_path)
+    (pending_clone / "local-pending.txt").write_text("local\n", encoding="utf-8")
+    subprocess.run(["git", "add", "local-pending.txt"], cwd=pending_clone, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "local pending"],
+        cwd=pending_clone,
+        check=True,
+        capture_output=True,
+    )
+    (remote_clone / "remote-progress.txt").write_text("remote\n", encoding="utf-8")
+    subprocess.run(["git", "add", "remote-progress.txt"], cwd=remote_clone, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote progress"],
+        cwd=remote_clone,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "push"], cwd=remote_clone, check=True, capture_output=True)
+
+    mutations.set_entry_dependencies(pending_clone, filename="first.md", depends_on=("second.md",))
+
+    verifier = tmp_path / "verifier"
+    subprocess.run(["git", "clone", str(remote), str(verifier)], check=True, capture_output=True)
+    parsed = frontmatter_parser.parse_frontmatter((verifier / "inbox/first.md").read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["depends_on"] == ["second.md"]
+    assert (verifier / "local-pending.txt").read_text(encoding="utf-8") == "local\n"
+    assert (verifier / "remote-progress.txt").read_text(encoding="utf-8") == "remote\n"
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=pending_clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == ""
 
 
 def test_cmd_convert_to_plan_displays_saved_metadata(

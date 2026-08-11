@@ -16,7 +16,9 @@ laneへ公開を委譲する案は、公開の重複と認可の分散を生む�
 
 ## キュー依存更新の公開
 
-キュー依存の更新は、remote同期、active依存グラフの再構成、候補の仮適用、循環検査、対象ファイルのcommit及びpushを1試行とする。
+キュー依存の更新は、既存の未公開commitをremote進行へrebaseしてpushした後、remote同期、active依存グラフの再構成、候補の仮適用、循環検査、対象ファイルのcommit及びpushを1試行とする。
+対象feedbackに本文だけの未commit変更がある場合は、本文をrepository外のmemoryへ退避して作業ツリーを`HEAD`へ戻し、全試行の終了後に最新frontmatterと組み合わせて復元する。
+stage済み変更、frontmatterの未commit変更又は未追跡feedbackは、利用者の変更と機械更新を安全に分離できないため更新を拒否する。
 別cloneが先にpushした場合は未公開の候補commitと対象ファイルだけを取り消し、remote同期から同じ試行を再実行する。
 異なるcloneのローカルロックは共有されないため、remote refへのfast-forward pushを公開時の直列化境界とする。
 push失敗後に候補commitをrebaseしてそのまま再送する案は、rebase後の依存グラフを検査できないため採用しない。
@@ -25,5 +27,11 @@ push失敗後に候補commitをrebaseしてそのまま再送する案は、reba
 
 公開グループの一時領域は、終端項目と対象リポジトリを順序付きの論理キーとして取得する。
 管理CLIは論理キーの構造を保つJSONからdigestを作成し、利用者専用の外部状態に置く排他lockと同じ一時領域パスを導出する。
-並行する呼び出しは同じ領域を取得し、領域作成後に管理marker又はregistryの保存前で中断した場合は、残存する真正性状態から不足分を完成させる。
+領域作成前に利用者専用の外部状態へpending claimを排他的に保存する。
+並行する呼び出しは同じ領域を取得し、領域作成後に管理marker又はregistryの保存前で中断した場合は、pending claimと空の領域を照合して不足分を完成させる。
+pending claimが無い既存領域は空でも所有対象へ昇格せず、列挙時はregistryのpathが字句上も正規絶対pathであり、当該pathから導出したregistryと一致する場合だけ受理する。
 列挙結果を確認してから無作為名の領域を作成する案は、確認と作成の間で複数主体が同時に成立するため採用しない。
+
+外部操作は管理領域と操作名から導出する永続状態に、`in-progress`又は`completed`と所有tokenを保存する。
+開始時のcompare-and-setでtokenを取得した主体だけが外部操作し、外部状態を検証した後に同じtokenで完了へ遷移する。
+後続主体は`in-progress`と`completed`のいずれかを受領した場合に同じ操作をしないため、process lockを越えてPR/MR作成、merge及びpushの重複を防ぐ。

@@ -910,11 +910,16 @@ class TestCommitAndPushRetryingMutation:
         subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
         path.write_text("利用者の未commit本文\n", encoding="utf-8")
         mutation_attempts = 0
+        push_attempts = 0
 
         def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
+            nonlocal push_attempts
             if args == ["pull", "--ff-only"]:
                 return
             if args == ["push"]:
+                push_attempts += 1
+                if push_attempts == 1:
+                    return
                 raise subprocess.CalledProcessError(1, ["git", *args])
             subprocess.run(["git", *args], cwd=cwd, check=True)
 
@@ -942,6 +947,7 @@ class TestCommitAndPushRetryingMutation:
             )
 
         assert mutation_attempts == 2
+        assert push_attempts == 3
         assert path.read_text(encoding="utf-8") == "利用者の未commit本文\n"
         assert _git_stdout(tmp_path, "rev-list", "--count", "HEAD") == "1\n"
         assert _git_stdout(tmp_path, "status", "--short") == " M feedback.md\n"

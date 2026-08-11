@@ -11,6 +11,10 @@
 - callerは領域内に公開グループmarkerが無ければ排他的に作成する。markerがあれば同じ`group_final_item`と`target_repo`を完全一致で検証し、不一致なら公開操作を停止してTBDへ送る。
 - callerは領域、marker及び公開グループ表を計画の進捗ログへ記録する。記録前に中断した場合は同じ`claim`から再開し、公開グループ表と外部状態を照合して未実施工程だけを続行する。
 - 同じ論理キーでは、二重の領域作成又は公開操作を行わない。
+- push、PR/MR作成、merge、release又はtag作成など各外部操作の直前に、`atk managed-temp operation begin --path <領域> --name <操作名>`を単独で実行する。操作名は公開グループ表で操作ごとに一意とし、英小文字・数字・ハイフンだけを用いて再開時も同じ値を導出する。
+- `begin`が`status: acquired`と所有`token`を返した主体は、外部操作前にtokenと操作名を公開グループ表へ永続化する。その主体だけが外部操作する。`status: in-progress`又は`status: completed`を返された主体は同じ外部操作をしない。
+- token所有者は外部操作の結果を実測した後、`atk managed-temp operation complete --path <領域> --name <操作名> --token <token>`を単独で実行する。`completed`の後続主体は外部状態との一致を確認して次工程へ進む。
+- `in-progress`から再開する場合は公開グループ表のtokenと外部状態を照合する。tokenを保持する同じ所有者は、外部操作が未成立なら再実行し、成立済みなら`complete`だけを実行する。tokenを取得できない場合は所有権を奪わずTBDへ送る。
 - 公開グループmarkerは固定名`.publish-group-marker.json`とし、管理markerとは別ファイルにする。
 - markerは`schema_version`（数値、初版は1）、`group_final_item`（文字列）、`target_repo`（正規化リモートURLの文字列）、`created_at`（UTC ISO 8601の文字列）の4必須フィールドだけを持つJSON objectとする。
 - markerは排他的作成で書き込み、内容のflush後にfsyncする。既存markerがある場合は失敗として扱う。

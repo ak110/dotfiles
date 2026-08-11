@@ -121,6 +121,82 @@ def test_claim_key_parts_keep_variable_length_boundaries(
     assert first != second
 
 
+@pytest.mark.parametrize("with_content", [False, True])
+def test_claim_rejects_preexisting_unowned_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    with_content: bool,
+) -> None:
+    """pending claimが無い既存領域は空でも管理対象へ昇格しない。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    digest = subject._claim_digest("publish-group", ("final.md", "github.com/example/repo"))
+    foreign = tmp_path / f"agent-toolkit-claim-{digest}"
+    foreign.mkdir(mode=0o700)
+    if with_content:
+        (foreign / "unrelated.txt").write_text("保持対象\n", encoding="utf-8")
+
+    with pytest.raises(subject.ManagedTempError, match="既存path"):
+        subject.claim_managed_temp("publish-group", ("final.md", "github.com/example/repo"))
+
+    assert foreign.is_dir()
+    assert not (foreign / _MARKER_NAME).exists()
+    assert (foreign / "unrelated.txt").exists() is with_content
+
+
+def test_operation_cas_allows_one_parallel_external_action(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """同じ操作を開始する2主体のうち所有token取得者だけが外部操作を1回実行する。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.claim_managed_temp("publish-group", ("final.md", "github.com/example/repo"))
+    barrier = threading.Barrier(3)
+    counter_lock = threading.Lock()
+    external_actions = 0
+    results: list[dict[str, str]] = []
+
+    def worker() -> None:
+        nonlocal external_actions
+        barrier.wait(timeout=10)
+        result = subject.begin_managed_temp_operation(target, "create-pr")
+        results.append(result)
+        token = result.get("token")
+        if token is None:
+            return
+        with counter_lock:
+            external_actions += 1
+        subject.complete_managed_temp_operation(target, "create-pr", token)
+
+    threads = (threading.Thread(target=worker), threading.Thread(target=worker))
+    for thread in threads:
+        thread.start()
+    barrier.wait(timeout=10)
+    for thread in threads:
+        thread.join(timeout=20)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert external_actions == 1
+    assert sum(result["status"] == "acquired" for result in results) == 1
+    assert subject.begin_managed_temp_operation(target, "create-pr")["status"] == "completed"
+
+
+def test_operation_complete_rejects_non_owner_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """外部操作の完了記録はbeginが返した所有tokenだけを受理する。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp("operation")
+    acquired = subject.begin_managed_temp_operation(target, "publish")
+    assert acquired["status"] == "acquired"
+
+    with pytest.raises(subject.ManagedTempError, match="所有token"):
+        subject.complete_managed_temp_operation(target, "publish", "0" * 64)
+
+    token = acquired["token"]
+    assert subject.complete_managed_temp_operation(target, "publish", token)["status"] == "completed"
+
+
 class _WindowsSecurityCalls(typing.NamedTuple):
     opens: list[int]
     security_reads: list[int]
@@ -535,6 +611,38 @@ class TestManagedTempPosix:
         assert len(outputs) == 2
         assert outputs[0] == outputs[1]
 
+    def test_operation_cli_persists_owner_until_completion(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """operation CLIは最初のcallerだけへtokenを返し、所有者だけが完了できる。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("publish-group")
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+        begin = ["operation", "begin", "--path", str(target), "--name", "create-pr"]
+
+        assert subject.dispatch(parser.parse_args(begin)) == 0
+        acquired = json.loads(capsys.readouterr().out)
+        assert acquired["status"] == "acquired"
+        assert subject.dispatch(parser.parse_args(begin)) == 0
+        assert json.loads(capsys.readouterr().out)["status"] == "in-progress"
+
+        complete = [
+            "operation",
+            "complete",
+            "--path",
+            str(target),
+            "--name",
+            "create-pr",
+            "--token",
+            acquired["token"],
+        ]
+        assert subject.dispatch(parser.parse_args(complete)) == 0
+        assert json.loads(capsys.readouterr().out)["status"] == "completed"
+
     @pytest.mark.parametrize("tamper", ["marker", "stale-registry", "symlink", "registry-mode"])
     def test_list_excludes_untrusted_records_and_keeps_valid_records(
         self,
@@ -598,6 +706,30 @@ class TestManagedTempPosix:
         captured = capsys.readouterr()
         assert "正規registryではない" in captured.err
         assert "pathが文字列ではない" in captured.err
+
+    def test_list_rejects_lexical_alias_bound_to_forged_registry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同じ領域を指す`..`付きpathでも正規文字列でなければ列挙しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        valid = subject.create_managed_temp("valid")
+        canonical = subject._load_private_json(subject._registry_path(valid))
+        alias = valid / ".." / valid.name
+        forged = dict(canonical)
+        forged["path"] = str(alias)
+        subject._write_private_json(subject._registry_path(alias), forged)
+
+        assert subject.list_managed_temp() == [
+            {
+                "path": str(valid),
+                "prefix": "valid",
+                "created_at": canonical["created_at"],
+            }
+        ]
+        assert "正規絶対pathではない" in capsys.readouterr().err
 
     @pytest.mark.parametrize("prefix", ["", "UPPER", "under_score", "leading-", "-leading", "dot.name"])
     def test_create_rejects_invalid_prefix(

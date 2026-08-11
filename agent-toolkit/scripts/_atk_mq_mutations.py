@@ -5,6 +5,7 @@
 """
 
 import argparse
+import contextlib
 import datetime
 import os
 import pathlib
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 
 import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
@@ -520,6 +522,71 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def _replace_frontmatter_body(text: str, body: str) -> str:
+    """既存frontmatterの字面を維持して本文だけを置換する。"""
+    parsed = _frontmatter.parse_frontmatter(text)
+    if parsed is None:
+        raise WebInputError("最新feedbackのfrontmatterが破損したため未commit本文を復元できません")
+    return f"{_frontmatter_prefix(text)}{body}"
+
+
+def _frontmatter_prefix(text: str) -> str:
+    """本文開始前までのfrontmatterを字面どおり返す。"""
+    delimiter_end = text.index("\n---\n", 3) + len("\n---\n")
+    return text[:delimiter_end]
+
+
+@contextlib.contextmanager
+def _suspend_uncommitted_feedback_body(
+    private_notes: pathlib.Path,
+    filename: str,
+    inbox_dir: pathlib.Path,
+    processing_dir: pathlib.Path,
+) -> Iterator[None]:
+    """本文だけの未commit変更を同期中に退避し、最新frontmatterへ再適用する。"""
+    path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+    relative_path = str(path.relative_to(private_notes))
+    head_result = subprocess.run(
+        ["git", "show", f"HEAD:{relative_path}"],
+        cwd=private_notes,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if head_result.returncode != 0:
+        raise WebInputError(f"未commitの新規feedbackは依存更新できません: {path.name}")
+    working_text = path.read_text(encoding="utf-8")
+    head_text = head_result.stdout
+    staged_result = subprocess.run(
+        ["git", "diff", "--cached", "--quiet", "--", relative_path],
+        cwd=private_notes,
+        check=False,
+    )
+    if staged_result.returncode not in (0, 1):
+        raise WebInputError(f"feedbackのstage状態を検証できません: {path.name}")
+    if staged_result.returncode == 1:
+        raise WebInputError(f"stage済みのfeedbackは依存更新できません: {path.name}")
+    if working_text == head_text:
+        yield
+        return
+    working_parsed = _frontmatter.parse_frontmatter(working_text)
+    head_parsed = _frontmatter.parse_frontmatter(head_text)
+    if working_parsed is None or head_parsed is None or _frontmatter_prefix(working_text) != _frontmatter_prefix(head_text):
+        raise WebInputError(f"frontmatterに未commit変更があるfeedbackは依存更新できません: {path.name}")
+    dirty_body = working_parsed[1]
+    _atomic_write_text(path, head_text)
+    try:
+        yield
+    finally:
+        candidates = (processing_dir / path.name, inbox_dir / path.name)
+        latest_path = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if latest_path is None:
+            _atomic_write_text(path, working_text)
+        else:
+            latest_text = latest_path.read_text(encoding="utf-8")
+            _atomic_write_text(latest_path, _replace_frontmatter_body(latest_text, dirty_body))
+
+
 def convert_entry_to_plan(
     private_notes: pathlib.Path,
     *,
@@ -575,7 +642,8 @@ def convert_entry_to_plan(
 
             return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
 
-        _commit_and_push_retrying_mutation(private_notes, "chore: convert feedback item to plan", mutation)
+        with _suspend_uncommitted_feedback_body(private_notes, filename, inbox_dir, processing_dir):
+            _commit_and_push_retrying_mutation(private_notes, "chore: convert feedback item to plan", mutation)
         assert result_path is not None
         return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
 
@@ -639,7 +707,8 @@ def set_entry_dependencies(
 
             return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
 
-        _commit_and_push_retrying_mutation(private_notes, "chore: update feedback dependencies", mutation)
+        with _suspend_uncommitted_feedback_body(private_notes, filename, inbox_dir, processing_dir):
+            _commit_and_push_retrying_mutation(private_notes, "chore: update feedback dependencies", mutation)
         assert result_path is not None
         return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
 
