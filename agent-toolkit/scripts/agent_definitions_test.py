@@ -159,6 +159,9 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "`### 提示素材`の逐語原文、元のユーザー指示" in delegation
     assert "項目別の維持・修正・撤去の判定と根拠" in delegation
     assert "要約だけを一次入力にせず" in delegation
+    assert "今回のレビュー種別を全レビュー共通の入力として渡す" in delegation
+    assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
+    assert "今回のレビュー種別だけを渡す" not in delegation
     assert "`## 変更履歴`、前回の6列表" in delegation
     assert "解決済みIDは現行計画に同じ違反が残る場合だけ再提示" in delegation
     assert "対象ファイル、対応する逐語原文を入力へ明示" in delegation
