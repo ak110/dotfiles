@@ -410,8 +410,9 @@ def _describe_pending_background_tasks(
         return launched, completed
     sendmessage_ids = _collect_sendmessage_tool_use_ids(lines)
     mcp_ids = _collect_mcp_tool_use_ids(lines)
+    mcp_background_tasks = _collect_mcp_background_task_id_tool_use_ids(lines, mcp_ids)
     task_id_map = _collect_task_id_tool_use_ids(lines)
-    for task_id, tool_use_ids in _collect_mcp_background_task_id_tool_use_ids(lines, mcp_ids).items():
+    for task_id, tool_use_ids in mcp_background_tasks.items():
         task_id_map.setdefault(task_id, set()).update({task_id, *tool_use_ids})
     monitor_task_ids = _collect_monitor_task_ids(lines)
     for line in lines:
@@ -441,10 +442,6 @@ def _describe_pending_background_tasks(
                 resumed_id = _extract_sendmessage_bg_resume_id(message, sendmessage_ids)
                 if resumed_id is not None:
                     launched.add(resumed_id)
-            if "mcp" in kinds:
-                mcp_task_id = _extract_mcp_background_task_id(message, mcp_ids)
-                if mcp_task_id is not None:
-                    launched.add(mcp_task_id)
             completed.update(
                 _extract_task_notification_ids(
                     message,
@@ -473,6 +470,8 @@ def _describe_pending_background_tasks(
                         monitor_task_ids=monitor_task_ids,
                     )
                 )
+    if "mcp" in kinds:
+        launched.update(mcp_background_tasks)
     return launched, completed
 
 
@@ -544,7 +543,7 @@ def _collect_mcp_tool_use_ids(lines: list[str]) -> set[str]:
 
 
 def _collect_mcp_background_task_id_tool_use_ids(lines: list[str], mcp_ids: set[str]) -> dict[str, set[str]]:
-    """MCP timeout通知の背景task IDと起動tool_use IDの対応を収集する。"""
+    """MCP timeout通知の背景task IDと起動tool_use IDの対応を全`tool_result`から収集する。"""
     result: dict[str, set[str]] = {}
     for line in lines:
         try:
@@ -556,10 +555,19 @@ def _collect_mcp_background_task_id_tool_use_ids(lines: list[str], mcp_ids: set[
         message = entry.get("message")
         if not isinstance(message, dict):
             continue
-        task_id = _extract_mcp_background_task_id(message, mcp_ids)
-        tool_use_id = _extract_tool_result_id(message)
-        if task_id is not None and tool_use_id is not None:
-            result.setdefault(task_id, set()).add(tool_use_id)
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool_use_id = block.get("tool_use_id")
+            if not isinstance(tool_use_id, str) or tool_use_id not in mcp_ids:
+                continue
+            for text in _tool_result_text_blocks(block.get("content")):
+                match = re.search(r"moved to the background as task\s+(\S+)", text)
+                if match:
+                    result.setdefault(match.group(1), set()).add(tool_use_id)
     return result
 
 
@@ -674,25 +682,6 @@ def _extract_sendmessage_bg_resume_id(message: dict, sendmessage_ids: set[str]) 
             text = text_block.get("text", "")
             if isinstance(text, str) and _SENDMESSAGE_BG_RESUME_MARKER in text:
                 return tool_use_id
-    return None
-
-
-def _extract_mcp_background_task_id(message: dict, mcp_ids: set[str]) -> str | None:
-    """MCP timeout通知から背景task IDを取得する。"""
-    content = message.get("content")
-    if not isinstance(content, list):
-        return None
-    for block in content:
-        if not isinstance(block, dict) or block.get("type") != "tool_result":
-            continue
-        tool_use_id = block.get("tool_use_id")
-        if not isinstance(tool_use_id, str) or tool_use_id not in mcp_ids:
-            continue
-        texts = _tool_result_text_blocks(block.get("content"))
-        for text in texts:
-            match = re.search(r"moved to the background as task\s+(\S+)", text)
-            if match:
-                return match.group(1)
     return None
 
 

@@ -259,3 +259,53 @@ class TestMcpBackgroundTaskCompletion:
         ]
         transcript = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(transcript), "") is True
+
+    @pytest.mark.parametrize(
+        ("completed_entries", "expected"),
+        [
+            ([_user_task_notification_entry(None, task_id="mcp-task-1")], True),
+            (
+                [
+                    _user_task_notification_entry(None, task_id="mcp-task-1"),
+                    _attachment_task_notification_entry("toolu_mcp_2", task_id=None),
+                ],
+                False,
+            ),
+        ],
+    )
+    def test_multiple_mcp_results_in_one_user_entry_are_matched_individually(
+        self, tmp_path: pathlib.Path, completed_entries: list[dict], expected: bool
+    ) -> None:
+        """複数MCP結果を同じuserエントリで受けても、各結果と完了通知を対応付ける。"""
+        entries = [
+            _assistant_entry(
+                [
+                    {"type": "tool_use", "id": "toolu_read", "name": "Read", "input": {}},
+                    {"type": "tool_use", "id": "toolu_mcp_1", "name": "mcp__codex__codex", "input": {}},
+                    {"type": "tool_use", "id": "toolu_mcp_2", "name": "mcp__codex__codex", "input": {}},
+                ]
+            ),
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "toolu_read", "content": "read completed"},
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_mcp_1",
+                            "content": "moved to the background as task mcp-task-1",
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_mcp_2",
+                            "content": [{"type": "text", "text": "moved to the background as task mcp-task-2"}],
+                        },
+                    ],
+                },
+            },
+            *completed_entries,
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is expected
