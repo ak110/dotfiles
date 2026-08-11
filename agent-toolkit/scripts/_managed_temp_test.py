@@ -39,6 +39,21 @@ def test_is_valid_prefix(prefix: str, expected: bool) -> None:
     assert subject.is_valid_prefix(prefix) is expected
 
 
+def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """listはregistryではなく真正性検証済みの領域だけを返す。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp("publish-group")
+
+    created_at = subject._load_private_json(subject._registry_path(target))["created_at"]
+    assert subject.list_managed_temp("publish-group") == [
+        {
+            "path": str(target),
+            "prefix": "publish-group",
+            "created_at": created_at,
+        }
+    ]
+
+
 class _WindowsSecurityCalls(typing.NamedTuple):
     opens: list[int]
     security_reads: list[int]

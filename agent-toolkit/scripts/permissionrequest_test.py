@@ -295,6 +295,8 @@ class TestShouldAllowBash:
 
         assert hook.should_allow_bash("atk managed-temp create --prefix agent-work", str(tmp_path)) is True
         assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
+        assert hook.should_allow_bash("atk managed-temp list --prefix agent-work", str(tmp_path)) is True
+        assert hook.should_allow_bash("atk managed-temp list --prefix agent-work extra", str(tmp_path)) is False
 
     @pytest.mark.parametrize(
         "command",

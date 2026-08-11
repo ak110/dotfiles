@@ -59,7 +59,8 @@ push直前のfetch照合、pushのdry-run、実pushで上流進行またはnon-f
 前回の採用指摘と差分は既存6列表ファイルのパスで引き継ぐ。
 
 終了条件は実push成功と当該OIDのCI通過とする。
-完了後に`atk mq adopt`を実行し、成功したlane worktreeを回収する。
+終端工程を持つ項目は、終了条件の後かつadoptの前に本文が列挙した終端工程を統合順で1回だけ実行する。
+完了後に成功した項目だけ`atk mq adopt`を実行し、成功したlane worktreeを回収する。
 統合用管理対象領域はadopt完了後にだけ`atk managed-temp cleanup --path <検収済み絶対パス>`で回収する。
 中断後はqueueの`plan_file`から各計画の進捗ログを辿り、領域の実在、所有、対象feedbackとの対応を照合して再利用する。
 照合できない旧領域は保持し、統合を最初からやり直す。

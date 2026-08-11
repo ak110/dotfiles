@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import ctypes
+import datetime
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ import typing
 from ctypes import wintypes
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
 _WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
@@ -698,9 +699,11 @@ def _path_identity(path: pathlib.Path) -> tuple[int, int]:
     return metadata.st_dev, metadata.st_ino
 
 
-def _record(path: pathlib.Path, nonce: str) -> dict[str, typing.Any]:
+def _record(
+    path: pathlib.Path, nonce: str, *, prefix: str | None = None, created_at: str | None = None
+) -> dict[str, typing.Any]:
     device, inode = _path_identity(path)
-    return {
+    record = {
         "schema_version": _SCHEMA_VERSION,
         "path": str(path),
         "platform": os.name,
@@ -708,15 +711,28 @@ def _record(path: pathlib.Path, nonce: str) -> dict[str, typing.Any]:
         "identity": [device, inode],
         "nonce": nonce,
     }
+    if prefix is not None and created_at is not None:
+        record["prefix"] = prefix
+        record["created_at"] = created_at
+    return record
 
 
 def _records_match(path: pathlib.Path, marker: dict[str, typing.Any], registry: dict[str, typing.Any]) -> bool:
     nonce = registry.get("nonce")
+    expected = _record(
+        path,
+        typing.cast(str, nonce),
+        prefix=typing.cast(str | None, registry.get("prefix")),
+        created_at=typing.cast(str | None, registry.get("created_at")),
+    )
+    if registry.get("schema_version") == 1:
+        expected["schema_version"] = 1
     return (
         isinstance(nonce, str)
         and re.fullmatch(r"[0-9a-f]{64}", nonce) is not None
         and marker == registry
-        and registry == _record(path, nonce)
+        and registry.get("schema_version") in (1, 2)
+        and registry == expected
     )
 
 
@@ -772,7 +788,12 @@ def create_managed_temp(prefix: str) -> pathlib.Path:
     try:
         registry_path = _registry_path(path)
         nonce = secrets.token_hex(32)
-        record = _record(path, nonce)
+        record = _record(
+            path,
+            nonce,
+            prefix=prefix,
+            created_at=datetime.datetime.now(datetime.UTC).isoformat(),
+        )
         _write_marker(path, record)
         _write_private_json(registry_path, record)
         validate_managed_temp(path)
@@ -885,6 +906,30 @@ def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
     raise ManagedTempError(f"未対応platform: {os.name}")
 
 
+def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
+    """真正性検証を通過した管理対象を作成時刻順で返す。"""
+    if prefix is not None and not is_valid_prefix(prefix):
+        raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
+    entries: list[dict[str, str | None]] = []
+    for registry_path in _state_root().glob("*.json"):
+        try:
+            record = _load_private_json(registry_path)
+            path = pathlib.Path(typing.cast(str, record["path"]))
+            validate_managed_temp(path)
+            item_prefix = record.get("prefix") if record.get("schema_version") == 2 else None
+            created_at = record.get("created_at") if record.get("schema_version") == 2 else None
+            if not (item_prefix is None or isinstance(item_prefix, str)) or not (
+                created_at is None or isinstance(created_at, str)
+            ):
+                raise ManagedTempError("管理情報のprefix又はcreated_atが不正")
+            if prefix is not None and item_prefix != prefix:
+                continue
+            entries.append({"path": str(path), "prefix": item_prefix, "created_at": created_at})
+        except (KeyError, OSError, ValueError, ManagedTempError) as error:
+            print(f"warning: 管理対象を列挙できない: {registry_path}: {error}", file=sys.stderr)
+    return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
+
+
 def _clear_directory(descriptor: int) -> None:
     """開いたディレクトリだけを起点に、リンク参照を避けて内容を除去する。"""
     for name in os.listdir(descriptor):
@@ -934,7 +979,7 @@ def _consume_registry(validated: _ValidatedTemp) -> pathlib.Path:
     except OSError as error:
         raise ManagedTempError(f"外部状態を原子的に消費できない: {validated.registry_path}: {error}") from error
     consumed = _load_private_json(consuming)
-    if consumed != _record(validated.path, validated.nonce):
+    if not _records_match(validated.path, consumed, consumed):
         with contextlib.suppress(OSError):
             _restore_registry(consuming, validated.registry_path)
         raise ManagedTempError(f"外部状態が消費時に置換された: {validated.registry_path}")
@@ -1054,6 +1099,8 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     create_parser.add_argument("--prefix", required=True)
     cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
     cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
+    list_parser = subparsers.add_parser("list", help="管理対象一時ディレクトリを列挙する")
+    list_parser.add_argument("--prefix")
 
 
 def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
@@ -1061,8 +1108,13 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
     try:
         if getattr(args, command_dest) == "create":
             print(create_managed_temp(args.prefix))
-        else:
+        elif getattr(args, command_dest) == "cleanup":
             cleanup_managed_temp(args.path)
+        else:
+            entries = list_managed_temp(args.prefix)
+            for entry in entries:
+                print(json.dumps(entry, ensure_ascii=False, sort_keys=True))
+            return 0 if entries else 1
         return 0
     except ManagedTempError as error:
         print(f"error: {error}", file=sys.stderr)

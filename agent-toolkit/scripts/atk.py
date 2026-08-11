@@ -606,7 +606,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     config = top.add_parser("config", help="XDG関連パス・codexモデル判定設定を確認・変更する")
     _config_cmd.build_parser(config)
-    managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・後始末する")
+    managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・列挙・後始末する")
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     watch = top.add_parser("watch", help="委譲先の成果物側の状況を1行で出力する")
     _watch.build_parser(watch)

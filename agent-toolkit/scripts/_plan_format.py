@@ -88,8 +88,8 @@ PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
 )
 """バグ調査表の固定14行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。"""
 
-PLAN_PERMANENCE_TABLE_ROWS: tuple[str, ...] = ("観測事象", "根本原因", "反映先", "反映内容", "対策強度")
-"""通常変更の恒久化表の固定5行。バグ対応はバグ調査表の14行を正本とする。"""
+PLAN_PERMANENCE_TABLE_ROWS: tuple[str, ...] = ("観測事象", "根本原因", "反映先", "反映内容", "対策強度", "設計意図の記録先")
+"""通常変更の恒久化表の固定6行。バグ対応はバグ調査表の14行を正本とする。"""
 
 PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
 PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当件数と箇所")
@@ -864,7 +864,7 @@ def _check_permanence_sections(
         tables = extract_tables(section)
         if heading.text == "恒久化" and work_type == "通常変更":
             if _find_table_with_rows(tables, PLAN_PERMANENCE_TABLE_ROWS) is None:
-                errors.append(f"通常変更の`#### 恒久化`は対象ごとに{list(PLAN_PERMANENCE_TABLE_ROWS)}の5行表を置く")
+                errors.append(f"通常変更の`#### 恒久化`は対象ごとに{list(PLAN_PERMANENCE_TABLE_ROWS)}の6行表を置く")
         elif heading.text == "リファクタリング":
             if _find_table_with_rows(tables, PLAN_REFACTORING_TABLE_ROWS) is None:
                 errors.append(f"`#### リファクタリング`は対象ごとに{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く")

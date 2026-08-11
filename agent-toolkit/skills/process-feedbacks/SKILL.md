@@ -1,4 +1,5 @@
 ---
+<!-- 設計意図: docs/development/design.md の「終端工程」を参照。 -->
 name: process-feedbacks
 description: >
   対象リポジトリのフィードバックを取得・検討・適用するときに起動する。
@@ -24,8 +25,9 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
    後述のprocess-loop用再取得も適用する
 2. 必要なfilenameだけを`atk mq show <filename> --target-repo=<repo-path>`で取得する
 3. `plan_file`を持つfeedbackを計画実装型、それ以外を通常型とする。本文から型を推測しない
-4. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
-5. readyなinbox項目を`atk mq start-processing`でprocessingへ移す。
+4. 本文の順序条件はreadiness判定前に抽出し、active項目を依存先として`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合し、自己依存又は循環はTBDへ送る
+5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
+6. readyなinbox項目を`atk mq start-processing`でprocessingへ移す。
    processing項目は実体を確認し、完了済み工程を再実行せず未完了工程から再開する
 
 `start-processing`が状態競合で拒否した場合は、active一覧と必要な本文を再取得し、readiness判定から再開する。
@@ -74,6 +76,16 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 
 ## 4. 実装と公開
 
+本文を実装要求と、commit作成以降の終端工程（push特別指定、PR/MR、リリース、タグ付け、配布及び公開）へ分離する。
+終端工程はlane又は統合writerへ委譲しない。
+終端工程を持つ項目は、公開する変更集合、公開先及びPR/MR操作集合を本文の明示記載から一意に確定し、不明な要素はTBDへ送る。
+順序条件とPR/MR指定を併せ持つ項目を検出した直後、公開グループの操作前に`references/publish-group.md`を全文読む。
+実装commitをpushする全経路でpush済みOIDのCI通過を確認し、lane commitを未公開のままadoptしない。
+PR/MRの作成、マージ又は作成＋マージ、リリースは、全laneの統合、push及びCI通過の後、adoptの前にメインが1回だけ実行する。
+本文に明記されない不可逆操作はTBDへ送る。
+失敗時はpush済み内容を巻き戻さず、実施済み工程と観測内容を記録したTBDを投入して`atk mq return-to-inbox`で保留する。
+終端工程だけを求める項目は計画を作成せず、終端待機集合へ登録して全laneの統合とpush後にfilename昇順で実行する。
+
 - Claude Codeホストの通常型採用項目は、plannerの計画を`atk mq convert-to-plan`で計画実装型へ変換し、
   `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
 - Codexホストの通常型採用項目は実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、調査済み事実と採否を渡す
@@ -94,13 +106,14 @@ lane commitの適用、競合解消、履歴一本化、検証は統合writerへ
 ## 5. 後始末
 
 - 不採用: 判定確定後に`atk mq reject <filename> --note=<理由>`を実行する
-- 採用: 対象commitのpush完了後に
+- 採用: 終端工程を持つ項目は全終端工程の成功後、持たない項目は対象commitのpushとCI通過確認後に
   `atk mq adopt <filename> --note=<反映概要> --commit=<完全長SHA>`を実行する
 - 回答済みTBD: 回答を反映した処理の完了後に同じ採用経路で終端させる
 
 `adopt`と`reject`は、同じ対象リポジトリに回答済みのactive TBDが残る場合、
 queue lock内の変異直前検査で停止する。通知の有無を処理可否の根拠にしない。
 各コマンドの保存結果を再取得し、対象、採否、note、commitを照合する。
+終端工程を持つ項目のnoteには実施した操作と結果を記録する。
 
 後始末の完了後は再取得したready項目の有無で分岐し、ready項目があれば「2. 調査と採否」へ戻り、
 ready項目が無い場合だけ「6. 振り返りと終了」へ進む。再取得の範囲だけがホストで異なる。

@@ -2,6 +2,7 @@
 name: feedbacks-planner
 description: 呼び出し元側のfeedbacks-planner起動契約が明示する手順からのみ起動する。
 model: sonnet
+# 設計意図: docs/development/design.md の「フィードバック処理の工程別モデル委譲構造」を参照。
 effort: medium
 # Sonnet指定: 複数の委譲経路、採否、計画レビューの状態を検収して収束させるため、指示追従を要する。
 # ツール制限: 調整と検収に専念し、成果物を直接編集しない。Codex経路は明示したMCPツールで起動する。
@@ -33,6 +34,7 @@ user-invocable: false
 2. 調査スレッドへ`explore-template.md`をtaskとして渡し、要求ごとの区分、根拠、未検証事項を受領する。
 3. 調査結果を`decision-format.md`へ照合して採否を確定する。
    不採用、保留、TBD候補は計画工程へ進めず返す。
+   実装変更がない終端工程専用項目は、計画を作成せず、採否、終端工程一覧、認可根拠の逐語引用及び計画なしを返す。
 4. 採用時は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
    起草スレッドへfeedback filenameと本文、調査結果、確定した採否と利用者合意、対象worktree、プロジェクト規範、
    計画保存先、`agent-toolkit:plan-mode`などのauthor skill、必要なtask referenceを渡す。

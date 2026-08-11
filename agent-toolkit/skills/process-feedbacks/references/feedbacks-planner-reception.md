@@ -34,6 +34,8 @@ plannerへqueue変異、push、フィードバック投入、worktree作成と�
 計画全文をplannerの完了報告へ要求しない。
 採用時は`atk mq convert-to-plan <filename> --plan-file=<計画絶対パス> --target-repo=<repo>`を実行し、
 保存結果の`plan_file`を実在する計画パスへ照合する。
+終端工程の一覧、対象及び認可根拠となる本文の逐語引用を照合し、本文にない操作は差し戻す。
+実装変更がない終端工程専用項目は計画なしであることを検収し、終端待機集合へ登録する。
 ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡し、通常の`atk mq return-to-inbox`でinboxへ戻す。
 filenameで表せない外部条件待ちは、観測方法、現在値、解除条件、再開工程を本文へ記録し、
 `atk mq return-to-inbox <filename> --cooldown-days=3`で戻す。別feedback待ちは`depends_on`を使う。

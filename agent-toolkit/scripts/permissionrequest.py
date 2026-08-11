@@ -218,6 +218,8 @@ def should_allow_bash(command: str, cwd: str) -> bool:
 
 def _is_managed_temp_command(tokens: list[str]) -> bool:
     """管理対象一時領域サブコマンドの通常のcreateまたはcleanupだけを許可する。"""
+    if tokens[:3] == [_ATK_COMMAND, _MANAGED_TEMP_SUBCOMMAND, "list"]:
+        return len(tokens) == 3 or (len(tokens) == 5 and tokens[3] == "--prefix" and _managed_temp.is_valid_prefix(tokens[4]))
     if len(tokens) != 5 or tokens[0] != _ATK_COMMAND or tokens[1] != _MANAGED_TEMP_SUBCOMMAND:
         return False
     action, option, value = tokens[2:]

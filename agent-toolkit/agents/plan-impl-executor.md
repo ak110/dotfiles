@@ -2,6 +2,7 @@
 name: plan-impl-executor
 description: 呼び出し元側のplan-impl-executor起動契約が明示する手順からのみ起動する。
 model: sonnet
+# 設計意図: docs/development/design.md の「フィードバック処理の工程別モデル委譲構造」を参照。
 effort: medium
 # Sonnet指定: 委譲と検収に専念する役割であっても、状態値ごとに値が変わる条件分岐、
 # 阻害要因の重複除外規則、実行経路の識別子照合を含む完了報告の契約充足に指示追従を要する。

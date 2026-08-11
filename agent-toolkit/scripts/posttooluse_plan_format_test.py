@@ -215,3 +215,10 @@ class TestPlanPostWrite:
                 plan_mode_skill_invoked=True,
             )
             assert result.stdout.strip() == ""
+
+
+def test_plan_format_exposes_design_intent_row() -> None:
+    """通常変更の恒久化表は設計意図の記録先を持つ。"""
+    import _plan_format
+
+    assert "設計意図の記録先" in _plan_format.PLAN_PERMANENCE_TABLE_ROWS

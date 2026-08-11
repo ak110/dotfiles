@@ -102,6 +102,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 ## 同期先ドキュメント
 
+複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
+
 - `docs/guide/claude-code-guide.md`「agent-toolkit」セクションのチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・

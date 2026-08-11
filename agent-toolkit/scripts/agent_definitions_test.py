@@ -1258,3 +1258,12 @@ def test_workflow_step_reference_pattern_requires_explicit_target() -> None:
     assert _WORKFLOW_STEP_REFERENCE_RE.search(skill_reference) is not None
     assert _WORKFLOW_STEP_REFERENCE_RE.search(file_reference) is not None
     assert _WORKFLOW_STEP_REFERENCE_RE.search("次のステップ2へ進む") is None
+
+
+def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
+    """終端工程と要件シナリオ走査の到達性を保つ。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    assert "終端工程はlane又は統合writerへ委譲しない" in process
+    assert "push及びCI通過の後、adoptの前" in process
+    assert "### 要件シナリオ走査" in review
