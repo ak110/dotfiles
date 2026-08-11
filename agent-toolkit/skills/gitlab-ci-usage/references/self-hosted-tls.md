@@ -1,14 +1,19 @@
 # 私設ホスト（自己署名のTLS証明書）でのCI通過確認
 
-自己署名のTLS証明書のGitLab私設ホストでは、`glab`が既定でTLS証明書検証エラー
-（`tls: failed to verify certificate`）で動作しない場合がある。以下のいずれかで解消する。
+自己署名のTLS証明書のGitLab私設ホストでも、証明書検証を維持したまま`glab`が正常動作する場合は
+設定を変更しない。
+`agent-toolkit:commit`の`references/push-and-ci.md`が示すCI通過確認の手順を使い、forgeへ`gitlab`を指定する。
+pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリポジトリから解決した同じSelf-Managedホストへ問い合わせる。
 
-- `glab`が利用できる場合は、TLS設定後に`agent-toolkit:commit`の`references/push-and-ci.md`が示す
-  CI通過確認の手順をそのまま使い、forgeへ`gitlab`を指定する。
-  pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリポジトリから解決した同じSelf-Managedホストへ問い合わせる
+`glab`でTLS証明書検証エラー（`tls: failed to verify certificate`）が出る場合に限り、次を設定する。
+
 - `glab config set skip_tls_verify true --host <host>`でホスト単位のTLS検証をスキップする
 - 環境変数`GITLAB_HOST=<host>`と`GITLAB_TOKEN=<token>`を併せて設定する
-- `glab`が全く機能しない場合の代替として`curl -k`によるAPI直呼び出しを使う
+
+この設定は`curl -k`と同様にMITM耐性を下げる。
+設定後は`references/push-and-ci.md`の手順を使い、forgeへ`gitlab`を指定する。
+
+`glab`自体が機能しない場合に限り、`curl -k`によるAPI直呼び出しを代替経路とする。
 
 ```text
 curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \

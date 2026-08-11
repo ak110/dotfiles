@@ -53,8 +53,10 @@ plugin cache directory配下の新versionのrootを解決し直す。
 具体的なversion数値は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
 実装フェーズでは検証より前に`scripts/agent_toolkit_bump.py {種別}`を実行する
 （既存bumpとの統合はツール側が吸収する）。bump不要の場合は実装者向け領域へ`bump不要`と根拠を記載する。
-version bumpを伴う計画では、Claude Code向け正本2ファイル、Agent Plugins向け派生manifest、
-Codex向け派生manifestを`### 対象ファイル一覧`へ含める。
+version bumpを伴う計画では、Claude Code向け正本2ファイルと、bumpでメタデータ差分が生じる派生manifestを
+`### 対象ファイル一覧`へ含める。
+version・description欄を持たない派生生成物は対象一覧へ含めず、
+再生成と生成器出力との一致確認だけを実装手順へ含める。
 Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
 正本更新後に`scripts/sync_codex_plugin_manifests.py`で反映する。
 

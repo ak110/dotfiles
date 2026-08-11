@@ -251,8 +251,8 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
         "非重複の並列単位",
         "callerが単位ごとに`atk managed-temp create",
         "計画がcallerによる統合用worktreeの作成も明示",
-        "callerが管理対象領域内へ作成した一時worktreeだけを回収対象",
-        "対象は並列単位worktreeと、計画が作成を明示した統合用worktreeに限る",
+        "callerが管理対象領域内へ作成（並列単位・計画が明示した統合用）",
+        "上記2組合せ以外はexecutorへ渡さない",
         "HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録",
         "借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない",
     ):
@@ -273,9 +273,12 @@ def test_plan_impl_worktree_schema_accepts_only_owned_or_borrowed_combinations()
     assert "管理対象領域の絶対パス、`作成主体=caller`、`回収可否=可`" in flow
     for contract in (caller, executor):
         assert "管理対象領域の絶対パス、借用時は`なし`" in contract
-        assert "`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`の組だけ" in contract
-        assert "`作成主体=caller`、`回収可否=可`の組では管理対象領域の絶対パスを必須" in contract
-        assert "その他の組合せ" in contract
+    assert "| 借用（受領済みの現在worktree） | `既存` | `不可` | `なし` |" in caller
+    assert "| callerが管理対象領域内へ作成（並列単位・計画が明示した統合用） | `caller` | `可` | 絶対パス必須 |" in caller
+    assert "上記2組合せ以外はexecutorへ渡さない" in caller
+    assert "`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`の組だけ" in executor
+    assert "`作成主体=caller`、`回収可否=可`の組では管理対象領域の絶対パスを必須" in executor
+    assert "その他の組合せ" in executor
 
 
 def test_plan_impl_escalation_is_self_contained_and_uses_existing_routes() -> None:
@@ -656,7 +659,7 @@ def test_push_ci_keeps_only_monitoring_inputs() -> None:
     """CI監視に使うrefとcommitだけをpush契約へ残す。"""
     commit_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
     for phrase in (
-        "pushの許可が対象リポジトリと対象branchを含む",
+        "pushの許可（計画ファイルの確定事項・委譲元の起動文・ユーザー指示のいずれか）",
         "`git fetch`後に上流との差分を双方向で確認する",
         "上流が進んでいる場合は追随後に検証をやり直す",
         "更新refごとにsource refを1件確定する",
@@ -717,10 +720,10 @@ def test_push_ci_reuses_selected_refspec_for_push() -> None:
 
     for phrase in (
         "引数なし`git push --dry-run --porcelain`",
-        "承認済みのremoteとdestinationへの意図したrefspec",
+        "承認済みremote・destinationへの意図したrefspec",
         "`git push --dry-run --porcelain <remote> <source>:<destination>`",
         "remote、source、完全なdestination refを省略しない",
-        "明示dry-runが成功し、remoteとdestinationが承認範囲と完全一致する場合だけ",
+        "成功し、remoteとdestinationが承認範囲と完全一致",
         "標準経路ではremote名とbranch名を明示せず`git push`を単独で実行",
         "`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`",
     ):

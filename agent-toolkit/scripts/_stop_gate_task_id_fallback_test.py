@@ -276,7 +276,7 @@ class TestMcpBackgroundTaskCompletion:
     def test_multiple_mcp_results_in_one_user_entry_are_matched_individually(
         self, tmp_path: pathlib.Path, completed_entries: list[dict], expected: bool
     ) -> None:
-        """複数MCP結果を同じuserエントリで受けても、各結果と完了通知を対応付ける。"""
+        """複数MCP結果を同じuserエントリで受領しても、各結果と完了通知を対応付ける。"""
         entries = [
             _assistant_entry(
                 [

@@ -6,15 +6,22 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 
 ## push前
 
-1. pushの許可が対象リポジトリと対象branchを含むことを確認する
+1. pushの許可（計画ファイルの確定事項・委譲元の起動文・ユーザー指示のいずれか）が
+   対象リポジトリと対象branchを含むことを確認する
 2. `git fetch`後に上流との差分を双方向で確認する。上流が進んでいる場合は追随後に検証をやり直す
 3. `git remote -v`、`git branch --show-current`、有効なpush設定から、承認済みのremoteとdestinationを確認する。
-   最初に引数なし`git push --dry-run --porcelain`を実行し、成功して全status lineが
-   承認済みのremoteとdestinationへの意図したrefspecを示す場合は標準経路を選ぶ。
-   引数なし経路が失敗するか意図したrefspecを示さない場合は実pushせず、
-   `git push --dry-run --porcelain <remote> <source>:<destination>`で再確認する。
+   最初に引数なし`git push --dry-run --porcelain`を実行する。
+   引数なし経路が失敗するか意図したrefspecを示さない場合は、
+   `git push --dry-run --porcelain <remote> <source>:<destination>`を実行する。
+   次の表で経路を選ぶ
+
+   | 引数なしdry-runの結果 | 明示dry-runの結果 | 選ぶ経路 |
+   | --- | --- | --- |
+   | 成功し、全status lineが承認済みremote・destinationへの意図したrefspecを示す | 実行不要 | 標準経路 |
+   | 失敗、または意図したrefspecを示さない | 成功し、remoteとdestinationが承認範囲と完全一致 | 明示経路 |
+   | 失敗、または意図したrefspecを示さない | 上記以外 | pushしない |
+
    明示経路ではremote、source、完全なdestination refを省略しない。
-   明示dry-runが成功し、remoteとdestinationが承認範囲と完全一致する場合だけ明示経路を選ぶ。
    いずれの経路でも拒否または失敗予定のrefがある場合はpushしない
 4. 読み込んだ本スキルの絶対パスからplugin rootを確定し、
    `uv run --no-project --script <plugin-root>/scripts/_managed_temp.py create --prefix ci-evidence`を単独で実行する。

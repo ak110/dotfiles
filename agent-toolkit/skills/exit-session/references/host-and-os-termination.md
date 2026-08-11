@@ -40,7 +40,8 @@ Codex CLIでプロセス停止を要求しない理由は次のとおりであ�
 ## シグナル種別の見直し
 
 POSIX互換経路から`kill -TERM $PPID`を実行してもClaude Code本体プロセスが停止しない現象を
-実運用で観測した場合は、`kill -INT $PPID`（SIGINT）へ本referenceを書き換えて対応する。
+実運用で観測した場合は、対象PIDがClaude Code本体を指していたことを確認する。
+確認後に`kill -INT $PPID`（SIGINT）へ本referenceを書き換えて対応する。
 SIGTERM送出後は本体プロセスが停止して後続のツール呼び出しが実行不能となるため、実行時に動的へ切り替える構造は取らない。
 Windows環境で`$PPID`がinit相当の値を返しClaude Code本体プロセスへ到達しない事象は別に観測しており、
 ホストの判定と環境の判定はこの2つの観測に基づく。

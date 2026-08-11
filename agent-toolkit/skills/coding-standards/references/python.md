@@ -2,6 +2,8 @@
 
 ## 言語スタイル
 
+### import・型・docstring
+
 - importについて
   - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない）
   - `import xxx as yyy`の別名は`np`など広く定着した略称、名前衝突回避、互換API差し替えに限る
@@ -19,6 +21,9 @@
   - `ruff`のD規則（pydocstyle由来のD100〜D107等）が有効なプロジェクトでは、自明な内容でも
     public関数（D103）・モジュール（D100）・クラス（D101）等のdocstring省略はlintエラーになる。
     最小限の1行サマリーに留めるか、設計を歪めない範囲で関数を`_`接頭辞のprivate化に切り替える
+
+### 標準ライブラリとログ
+
 - ログは`logging`を使う
   - `logger = logging.getLogger(__name__)`でモジュールごとに取得
   - `exc_info=True`指定時は例外をメッセージへ含めず簡潔に（例: `logger.error("〇〇処理エラー", exc_info=True)`）
@@ -35,6 +40,9 @@
 - `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
   - 数値型を厳格に限定するときは`type(x) is int`または`isinstance(x, int) and not isinstance(x, bool)`で除外する
   - `isinstance(value, type(reference))`形式の型一致チェックでも、`reference`が`int`値のときに`bool`が素通りする
+
+### 入力検証とセキュリティ
+
 - 入力バリデーション: API境界や外部入力は型駆動でバリデーションする（`pydantic` v2等を活用する）
 - セキュリティ上の危険パターン
   - `eval()`／`exec()`／`compile()`はユーザー入力に対して使わない（`ast.literal_eval()`や専用パーサーで代替）
@@ -48,6 +56,9 @@
   - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
   - 一時ファイルは`tempfile`モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
   - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は`secrets`モジュールを使う
+
+### ツールと実行環境
+
 - 他で指定が無い場合のツール推奨:
   - パッケージマネージャー: `uv`（pip互換、Pythonバージョン管理も統合）
   - リンター／フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー、詳細は<https://ak110.github.io/pyfltr/llms.txt>）
@@ -61,6 +72,16 @@
     `.python-version`の指定が優先される
     - 該当Pythonが利用環境に無いと`error: No interpreter found for Python <ver>`で失敗する
     - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で明示指定する
+- `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
+  `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
+  - `appname`単独指定は不可
+  - Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、
+    配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
+  - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
+  - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
+
+### argparseとCLIエントリポイント
+
 - `argparse`で`action="append"`を使う場合の既定値は`default=None`にする
   - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が破綻する
   - list（例: `[]`）を渡すと毎回初期要素として混入する
@@ -77,14 +98,6 @@
     `pytest.raises(SystemExit)`が`Failed: DID NOT RAISE <class 'SystemExit'>`で失敗するため
 - `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する
   - `python -m <package>.<module>`はモジュール実行で`[project.scripts]`を経由せず、参照更新の確認にならない
-
-- `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
-  `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
-  - `appname`単独指定は不可
-  - Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、
-    配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
-  - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
-  - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
 
 ## 静的解析の誤検出と抑制
 

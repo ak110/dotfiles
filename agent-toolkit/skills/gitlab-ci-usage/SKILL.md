@@ -60,7 +60,8 @@ job:
 ## lint / 検証
 
 `.gitlab-ci.yml`の妥当性検証には以下の手段がある。
-ローカルで完結できる場合はまずローカルで確認し、最終確認でGitLab本体のlintを使う。
+ローカルで完結できる場合（`include`解決・変数評価へ依存しない検証だけで完結する場合）はまずローカルで確認し、
+最終確認でGitLab本体のlintを使う。
 
 - [`gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local):
   ローカルでジョブをシミュレート実行できるNode製CLI。構文チェックに加え、rulesの評価結果まで確認したい場合に使用

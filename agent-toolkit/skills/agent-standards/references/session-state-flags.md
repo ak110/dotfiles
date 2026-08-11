@@ -7,13 +7,28 @@
 当該状態と他の記録済み状態を実測する。
 記録契機が発生していない場合は、同じ委譲の再実行以外の対処を選ぶ（努力目標）。
 
+## 検証・git状態系
+
 - `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run_for_agent`成功時に記録し、
   `git commit`未検証警告の抑制に使う。セッション終了まで保持する
 - `git_status_checked`: PostToolUse(Bash)が`git status`・`git log`・`git diff`観測時に記録する
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う
 - `sleep_poll_detected`: PreToolUse(Bash)がsleep直後の状態確認連結を検出した場合に記録する
+
+## plan系
+
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画ファイル検査の適用判定に使う
+- `plan_impl_executor_active_subagent_sessions`: SubagentStartが`plan-impl-executor`の`agent_id`を
+  Agent識別子別に記録し、SubagentStopが完了報告を検査する。正常報告、SendMessage再開、
+  plan-mode起動では削除せず、別executorの要素と併存させる。状態JSON全体の寿命は末尾の規定に従う
+- `current_plan_file_path`: 計画ファイル編集時のパスを記録する
+- `plan_impl_executor_verified_plan_path`: 実在する計画を参照したexecutor起動時の正規化済みパスをPreToolUseが記録し、遡及スキャン対象の解決に使う。plan-mode起動時に削除する
+- `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
+  計画ファイル作成前の直接編集を検知する
+
+## 振り返り・モード系
+
 - `session_review_invoked`: 振り返りスキルの起動を記録し、Stop hookの重複を抑止する。
   Claude CodeではPostToolUseとUserPromptSubmitが記録し、EnterPlanModeで解除する。
   CodexではUserPromptSubmitと振り返りスキルが記録し、同一セッション内の解除経路を設けない。
@@ -24,17 +39,16 @@
   `delegation`を起動した場合にPostToolUseが真化する。
   メインセッションからcodex MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
   セッション終了まで保持する。sidechainのSkill起動は記録しない
-- `plan_impl_executor_active_subagent_sessions`: SubagentStartが`plan-impl-executor`の`agent_id`を
-  Agent識別子別に記録し、SubagentStopが完了報告を検査する。正常報告、SendMessage再開、
-  plan-mode起動では削除せず、別executorの要素と併存させる。状態JSON全体の寿命は末尾の規定に従う
+
+## codex連携系
+
 - `codex_remote_snapshot_by_key`: codex呼び出し直前のリモートrefを記録し、呼び出し後に比較して削除する
 - `codex_remote_cwd_by_key`: 呼び出し元ごとの直近`cwd`を記録し、同じ呼び出し元からの継続時に使う
 - `claude-agent-toolkit-codex-thread-cwd-<threadIdのSHA-256>.json`: codexの`threadId`ごとの`cwd`を
   疑似セッション状態として記録し、オーケストレーターをまたぐ継続呼び出し時の比較対象を解決する
-- `current_plan_file_path`: 計画ファイル編集時のパスを記録する
-- `plan_impl_executor_verified_plan_path`: 実在する計画を参照したexecutor起動時の正規化済みパスをPreToolUseが記録し、遡及スキャン対象の解決に使う。plan-mode起動時に削除する
-- `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
-  計画ファイル作成前の直接編集を検知する
+
+## TBD系
+
 - `tbd_answered_by_repo`: エージェント識別子ごと・対象リポジトリIDごとの回答済みTBDファイル名を
   PostToolUseが記録する。値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とし、
   `transcript_path`から抽出できないメイン会話は`main`をキーとする。
