@@ -161,7 +161,16 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "要約だけを一次入力にせず" in delegation
     assert "`## 変更履歴`、前回の6列表" in delegation
     assert "解決済みIDは現行計画に同じ違反が残る場合だけ再提示" in delegation
+    assert "対象ファイル、対応する逐語原文を入力へ明示" in delegation
+    assert "各修正差分を対象に意味自己監査を1巡" in delegation
+    assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
+    assert "`## 変更履歴`と本文の一致" in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
+    assert "追加した対象範囲、対象ファイル、対応する逐語原文" in task
+    assert "追加した対象範囲と対象ファイルが無い場合は`なし`" in task
+    assert "追加分には逐語原文照合" in task
+    assert "指摘候補の内部的な網羅列挙" in task
+    assert "同じreviewerの同じラウンド" in task
     assert "1対1で照合" in task
     assert "第2列の分類が実際の内容と一致するか" in task
     assert "節名だけを満たす記載、結論語だけの記載" in task
