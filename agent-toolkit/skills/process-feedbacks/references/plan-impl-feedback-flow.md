@@ -31,10 +31,16 @@ lane項目はfeedback filename、lane commitの完全OID、計画ファイルの
 新規レビュー修正だけを追加し、既存項目は統合writerの適用結果で置換更新する。
 
 呼び出し元は`git fetch`後の上流最新OIDから同領域内へ統合worktreeを新規作成する。
-`atk config get merge_model`を実行し、`runtime-routing.md`「工程別モデル設定」で統合writerの経路を解決する。
+
+### 統合writerの起動
+
+統合writerの各新規起動又は継続接続の直前に`atk config get merge_model`を実行し、
+`runtime-routing.md`「工程別モデル設定」で経路を解決する。
 統合writerへ`merge-task.md`、統合worktreeと作成時HEADの完全OID、統合対応表、全計画、プロジェクト規範、
 author skill、検証コマンド、commit可・push不可・worktree作成回収不可・queue変更不可の権限を渡す。
 統合writerはrebaseを行わず、全項目を単一cherry-pickシーケンスで適用する。
+
+初回統合では、統合worktreeの作成後に本節の手順で統合writerを起動する。
 
 複数laneを統合した場合は、内容変化の有無にかかわらず`plan-impl-executor`の統合後レビュー調整モードで
 最終HEADへの二系統レビューを実施する。
@@ -48,7 +54,8 @@ executorは採用指摘の6列表を統合用管理対象領域内へ保存し�
 
 push直前のfetch照合、pushのdry-run、実pushで上流進行またはnon-fast-forward拒否を観測した場合は再統合する。
 統合対応表へ新規レビュー修正commitを追加し、既存レビュー修正項目を適用結果で更新してから旧worktreeを回収する。
-新しい上流最新OIDから統合worktreeを再作成し、全項目の単一cherry-pickシーケンス、検証、最終二系統レビューを再実施する。
+新しい上流最新OIDから統合worktreeを再作成し、本節の手順で統合writerを起動する。
+全項目の単一cherry-pickシーケンス、検証、最終二系統レビューを再実施する。
 前回の採用指摘と差分は既存6列表ファイルのパスで引き継ぐ。
 
 終了条件は実push成功と当該OIDのCI通過とする。

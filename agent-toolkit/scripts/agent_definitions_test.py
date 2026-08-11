@@ -326,12 +326,12 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "Claudeは完了済み識別子を再利用せず",
     ):
         assert phrase in runtime
-    assert "writer工程とcommit統合を開始しない" in executor
+    assert "writer工程とcommit統合を開始せず" in executor
     assert "計画ごとに別reviewer" in executor
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
-    assert "各writerの起動直前に`atk config get execute_model`" in executor
-    assert "reviewerの各起動直前に`atk config get execute_review_model`" in executor
-    assert "修正writerと再reviewerの新規起動又は継続接続でも" in executor
+    assert "各writerの新規起動又は継続接続の直前に`atk config get execute_model`" in executor
+    assert "各reviewerの新規起動又は継続接続の直前に`atk config get execute_review_model`" in executor
+    assert "統合writerの新規起動又は継続接続の直前に`atk config get merge_model`" in process_feedbacks
     assert "`atk mq show`で取得して渡し、plannerは再取得しない" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文をplannerの完了報告へ要求しない" in reception
@@ -359,6 +359,9 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "適用済みスキップ",
         "6列表を統合用管理対象領域内へ保存",
         "queueの`plan_file`から各計画の進捗ログを辿り",
+        "統合writerの各新規起動又は継続接続の直前に`atk config get merge_model`",
+        "初回統合では、統合worktreeの作成後に本節の手順で統合writerを起動",
+        "新しい上流最新OIDから統合worktreeを再作成し、本節の手順で統合writerを起動",
     ):
         assert phrase in flow
 
@@ -388,9 +391,31 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
         assert phrase in integrated
     assert "共通入力又は選択したモードの必須入力" in input_contract
     assert "選択していないモードの入力を要求せず" in input_contract
-    assert "手順2から7までは実行しない" in executor
     assert "モード指定`通常の実装モード`" in caller
     assert "モード指定`統合後レビュー調整モード`" in flow
+
+
+def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
+    """両モードにtask指定を持つ共通の最終二系統レビューを適用する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    execution = _h2_section(executor, "実行")
+    normal = execution.partition("### 通常の実装モードの準備\n")[2].partition("\n### 統合後レビュー調整モードの準備\n")[0]
+    integrated = execution.partition("### 統合後レビュー調整モードの準備\n")[2].partition("\n### 共通の最終二系統レビュー\n")[0]
+    common_review = execution.partition("### 共通の最終二系統レビュー\n")[2]
+
+    assert "統合済みHEADを最終レビュー対象" in normal
+    assert "全計画を最終レビュー対象" in integrated
+    assert "同じ最終HEAD" in common_review
+    assert "別識別子" in common_review
+    assert "implementation-plan-review-task.md" in common_review
+    assert "implementation-independent-review-task.md" in common_review
+    assert "各reviewerの新規起動又は継続接続の直前" in common_review
+    assert "二系統とも指摘0件になるまで" in common_review
+    for mode_preparation in (normal, integrated):
+        assert "implementation-plan-review-task.md" not in mode_preparation
+        assert "implementation-independent-review-task.md" not in mode_preparation
+        assert "atk config get execute_review_model" not in mode_preparation
+    assert "手順2から7までは実行しない" not in executor
 
 
 def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:

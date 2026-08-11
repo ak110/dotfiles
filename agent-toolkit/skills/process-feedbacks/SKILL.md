@@ -82,8 +82,9 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 
 メインはqueue操作、planner・executor・統合スレッドの起動と検収、TBDと新規feedbackの投入、
 上流取得、統合worktreeの作成と回収、push、CI通過確認を担当する。
-lane commitの適用、競合解消、履歴一本化、検証は`atk config get merge_model`で解決した統合writerへ
-`references/merge-task.md`を渡して委譲する。
+lane commitの適用、競合解消、履歴一本化、検証は統合writerへ委譲する。
+統合writerの新規起動又は継続接続の直前に`atk config get merge_model`で経路を解決し、
+`references/merge-task.md`を渡す。
 
 作業中に独立した新規改善を発見した場合は、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
 完成済み本文と対象リポジトリを渡す。投入コマンドを本スキルから直接構成しない。
