@@ -80,6 +80,14 @@ class QueueEntry:
 
 
 @dataclasses.dataclass(frozen=True)
+class _RetryingMutation:
+    """1回の試行で変更したpath群と未公開時の復元処理。"""
+
+    rel_paths: tuple[str, ...]
+    restore: Callable[[], None]
+
+
+@dataclasses.dataclass(frozen=True)
 class ReadinessResult:
     """対象リポジトリのactive項目に対するreadinessと修復診断。"""
 
@@ -655,6 +663,47 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
     _run_git(["add", *rel_list], cwd=private_notes)
     _run_git(["commit", "-m", message], cwd=private_notes)
     _push_pending_commits(private_notes)
+
+
+def _commit_and_push_retrying_mutation(
+    private_notes: pathlib.Path,
+    message: str,
+    mutation: Callable[[], _RetryingMutation | None],
+) -> bool:
+    """remote競合時に検査と変更を最新状態から1回だけ再実行する。
+
+    `mutation`は全検査を終えてから対象pathだけを書き換え、path群と変更前内容の復元処理を返す。
+    push失敗時は未公開commitを取り消して対象pathを変更前内容へ戻すため、再試行はremote同期から開始する。
+    """
+    _assert_repo_lock_held(private_notes)
+    for attempt in range(2):
+        _pull(private_notes)
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=private_notes,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        changed = mutation()
+        if changed is None:
+            return False
+        rel_list = list(changed.rel_paths)
+        if not rel_list:
+            raise RuntimeError("変更を作成したmutationは対象pathを1件以上返す必要がある")
+        _run_git(["commit", "--only", "-m", message, "--", *rel_list], cwd=private_notes)
+        if not _has_remote(private_notes):
+            return True
+        try:
+            _run_git(["push"], cwd=private_notes)
+            return True
+        except subprocess.CalledProcessError:
+            _run_git(["reset", "--soft", head], cwd=private_notes)
+            _run_git(["restore", "--source", head, "--staged", "--", *rel_list], cwd=private_notes)
+            changed.restore()
+            if attempt == 1:
+                raise
+    raise AssertionError("unreachable")
 
 
 def _push_pending_commits(private_notes: pathlib.Path) -> None:

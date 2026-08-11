@@ -13,6 +13,8 @@ import datetime
 import pathlib
 import subprocess
 import sys
+import threading
+from collections.abc import Callable
 
 import pytest
 
@@ -398,9 +400,15 @@ def _write_convert_feedback(
 def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """変換テストでprivate-notesへのgit操作を無効化する。"""
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    def run_mutation(
+        _private_notes: pathlib.Path,
+        _message: str,
+        mutation: Callable[[], mutations._RetryingMutation | None],
+    ) -> bool:
+        return mutation() is not None
+
+    monkeypatch.setattr(mutations, "_commit_and_push_retrying_mutation", run_mutation)
 
 
 @pytest.mark.parametrize("state", ["inbox", "processing"])
@@ -496,6 +504,80 @@ def test_convert_to_plan_rejects_tbd_repo_mismatch_and_self_dependency(
         )
 
 
+def test_convert_to_plan_preserves_dependencies_when_option_is_omitted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """依存指定を省略した変換は既存depends_onを保持する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [existing.md]\n"),
+        encoding="utf-8",
+    )
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["depends_on"] == ["existing.md"]
+
+
+@pytest.mark.parametrize(
+    ("existing", "filename", "dependencies"),
+    [
+        (("first.md", "second.md"), "second.md", ("first.md",)),
+        (("first.md", "second.md", "third.md"), "third.md", ("first.md",)),
+    ],
+)
+def test_convert_to_plan_rejects_mutual_and_existing_chain_cycles(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    existing: tuple[str, ...],
+    filename: str,
+    dependencies: tuple[str, ...],
+) -> None:
+    """直接変換の明示依存も相互循環と長鎖循環を保存しない。"""
+    notes = _setup_notes(tmp_path)
+    for name in existing:
+        path = _write_convert_feedback(notes, name)
+        if name == "first.md":
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+                encoding="utf-8",
+            )
+        elif name == "second.md" and len(existing) == 3:
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [third.md]\n"),
+                encoding="utf-8",
+            )
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as captured:
+        atk.main(
+            [
+                "mq",
+                "convert-to-plan",
+                filename,
+                "--plan-file",
+                str(plan),
+                "--depends-on",
+                dependencies[0],
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert captured.value.code == 1
+    assert "循環する依存" in capsys.readouterr().err
+
+
 def test_set_dependencies_updates_normal_feedback_without_converting_plan(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -585,16 +667,19 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
     first = _write_convert_feedback(notes, "first.md")
     _write_convert_feedback(notes, "second.md")
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
 
-    def pull_with_competing_update(_path: pathlib.Path) -> None:
+    def run_after_competing_update(
+        _private_notes: pathlib.Path,
+        _message: str,
+        mutation: Callable[[], mutations._RetryingMutation | None],
+    ) -> bool:
         first.write_text(
             first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
             encoding="utf-8",
         )
+        return mutation() is not None
 
-    monkeypatch.setattr(mutations, "_pull", pull_with_competing_update)
+    monkeypatch.setattr(mutations, "_commit_and_push_retrying_mutation", run_after_competing_update)
 
     with pytest.raises(mutations.WebInputError, match="循環"):
         mutations.set_entry_dependencies(notes, filename="second.md", depends_on=("first.md",))
@@ -626,63 +711,94 @@ def test_set_dependencies_cli_rejects_cycle(
     assert "循環する依存" in capsys.readouterr().err
 
 
-def test_convert_to_plan_keeps_saved_change_when_push_fails(
+def _initialize_dependency_remote(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+    """依存更新の同時push試験用にbare remoteと2つのcloneを作成する。"""
+    remote = tmp_path / "remote.git"
+    seed = tmp_path / "seed"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "clone", str(remote), str(seed)], check=True, capture_output=True)
+    for name in ("inbox", "processing", "adopted", "rejected"):
+        (seed / name).mkdir()
+        (seed / name / ".gitkeep").touch()
+    _write_convert_feedback(seed, "first.md")
+    _write_convert_feedback(seed, "second.md")
+    for key, value in (("user.name", "test"), ("user.email", "test@example.invalid")):
+        subprocess.run(["git", "config", key, value], cwd=seed, check=True)
+    subprocess.run(["git", "add", "."], cwd=seed, check=True)
+    subprocess.run(["git", "commit", "-m", "initialize"], cwd=seed, check=True, capture_output=True)
+    subprocess.run(["git", "push", "origin", "HEAD"], cwd=seed, check=True, capture_output=True)
+    clones = (tmp_path / "first-clone", tmp_path / "second-clone")
+    for clone in clones:
+        subprocess.run(["git", "clone", str(remote), str(clone)], check=True, capture_output=True)
+        for key, value in (("user.name", "test"), ("user.email", "test@example.invalid")):
+            subprocess.run(["git", "config", key, value], cwd=clone, check=True)
+    return remote, clones[0], clones[1]
+
+
+def test_dependency_updates_revalidate_full_transaction_after_competing_push(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """commit後のpush失敗契約に従い、変換済みファイルを保持して例外を伝播する。"""
-    notes = _setup_notes(tmp_path)
-    path = _write_convert_feedback(notes, "feedback.md")
-    plan = _write_convert_plan(tmp_path, "a" * 40)
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    """双方の検査後に一方がpushしても、敗者は全処理を再実行して循環を拒否する。"""
+    remote, first_clone, second_clone = _initialize_dependency_remote(tmp_path)
+    barrier = threading.Barrier(2)
+    calls = threading.local()
+    original = mutations._set_validated_dependencies  # pylint: disable=protected-access  # noqa: SLF001
 
-    commit_calls: list[tuple[object, ...]] = []
+    def synchronize_first_validation(
+        data: dict[str, object],
+        path: pathlib.Path,
+        depends_on: tuple[str, ...],
+        inbox_dir: pathlib.Path,
+        processing_dir: pathlib.Path,
+    ) -> None:
+        original(data, path, depends_on, inbox_dir, processing_dir)
+        count = getattr(calls, "count", 0)
+        calls.count = count + 1
+        if count == 0:
+            barrier.wait(timeout=10)
 
-    def fail_after_commit(*args: object, **_kwargs: object) -> None:
-        commit_calls.append(args)
-        raise subprocess.CalledProcessError(1, ["git", "push"])
+    monkeypatch.setattr(mutations, "_set_validated_dependencies", synchronize_first_validation)
+    results: list[Exception | None] = []
 
-    monkeypatch.setattr(mutations, "_commit_and_push", fail_after_commit)
+    def worker(clone: pathlib.Path, filename: str, dependency: str) -> None:
+        try:
+            mutations.set_entry_dependencies(clone, filename=filename, depends_on=(dependency,))
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            results.append(error)
+        else:
+            results.append(None)
 
-    with pytest.raises(subprocess.CalledProcessError):
-        mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
-    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
-    assert parsed is not None
-    assert parsed[0]["plan_file"] == str(plan)
-    assert commit_calls[0][2] == ["inbox/feedback.md"]
-
-    push_calls: list[pathlib.Path] = []
-    monkeypatch.setattr(
-        mutations,
-        "_commit_and_push",
-        lambda *_args, **_kwargs: pytest.fail("再実行時に新規commitを作成してはならない"),
+    threads = (
+        threading.Thread(target=worker, args=(first_clone, "first.md", "second.md")),
+        threading.Thread(target=worker, args=(second_clone, "second.md", "first.md")),
     )
-    monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
 
-    mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
-
-    assert push_calls == [notes]
-
-
-def test_convert_to_plan_pushes_pending_commit_before_pull(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """再実行時の未送信commitをff-only pullより先に同期する。"""
-    notes = _setup_notes(tmp_path)
-    _write_convert_feedback(notes, "feedback.md")
-    plan = _write_convert_plan(tmp_path, "a" * 40)
-    events: list[str] = []
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: events.append("push"))
-    monkeypatch.setattr(mutations, "_pull", lambda _path: events.append("pull"))
-    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-
-    mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
-
-    assert events[:2] == ["push", "pull"]
+    assert not any(thread.is_alive() for thread in threads)
+    assert sum(result is None for result in results) == 1
+    errors = [result for result in results if result is not None]
+    assert len(errors) == 1
+    assert isinstance(errors[0], mutations.WebInputError)
+    assert "循環" in str(errors[0])
+    for clone in (first_clone, second_clone):
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=clone,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout == ""
+    verifier = tmp_path / "verifier"
+    subprocess.run(["git", "clone", str(remote), str(verifier)], check=True, capture_output=True)
+    first_data = frontmatter_parser.parse_frontmatter((verifier / "inbox/first.md").read_text(encoding="utf-8"))
+    second_data = frontmatter_parser.parse_frontmatter((verifier / "inbox/second.md").read_text(encoding="utf-8"))
+    assert first_data is not None and second_data is not None
+    assert bool(first_data[0].get("depends_on")) != bool(second_data[0].get("depends_on"))
 
 
 def test_cmd_convert_to_plan_displays_saved_metadata(

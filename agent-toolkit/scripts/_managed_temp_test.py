@@ -13,6 +13,7 @@ import pathlib
 import stat
 import subprocess
 import sys
+import threading
 import typing
 
 import _managed_temp as subject
@@ -53,6 +54,71 @@ def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.Mo
             "created_at": created_at,
         }
     ]
+
+
+def test_claim_returns_one_path_to_two_parallel_callers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """同じ論理キーの並行callerは単一領域を排他的に取得する。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    barrier = threading.Barrier(3)
+    paths: list[pathlib.Path] = []
+
+    def worker() -> None:
+        barrier.wait(timeout=10)
+        paths.append(subject.claim_managed_temp("publish-group", ("final.md", "github.com/example/repo")))
+
+    threads = (threading.Thread(target=worker), threading.Thread(target=worker))
+    for thread in threads:
+        thread.start()
+    barrier.wait(timeout=10)
+    for thread in threads:
+        thread.join(timeout=20)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert len(paths) == 2
+    assert paths[0] == paths[1]
+    assert subject.validate_managed_temp(paths[0]) == paths[0]
+    assert len(list(tmp_path.glob("agent-toolkit-claim-*"))) == 1
+
+
+def test_claim_recovers_interruption_between_directory_and_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """領域作成後にmarker保存前で中断しても、同じ論理キーから完成させる。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    original = subject._write_marker
+
+    def interrupt_before_marker(_path: pathlib.Path, _record: dict[str, typing.Any]) -> None:
+        raise subject.ManagedTempError("marker保存前の中断")
+
+    monkeypatch.setattr(subject, "_write_marker", interrupt_before_marker)
+    with pytest.raises(subject.ManagedTempError, match="中断"):
+        subject.claim_managed_temp("publish-group", ("final.md", "github.com/example/repo"))
+    incomplete = list(tmp_path.glob("agent-toolkit-claim-*"))
+    assert len(incomplete) == 1
+    assert not (incomplete[0] / _MARKER_NAME).exists()
+
+    monkeypatch.setattr(subject, "_write_marker", original)
+    recovered = subject.claim_managed_temp("publish-group", ("final.md", "github.com/example/repo"))
+
+    assert recovered == incomplete[0]
+    assert subject.validate_managed_temp(recovered) == recovered
+
+
+def test_claim_key_parts_keep_variable_length_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """可変長key-partの分割が異なる論理キーを同じpathへ写像しない。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    first = subject.claim_managed_temp("publish-group", ("ab", "c"))
+    second = subject.claim_managed_temp("publish-group", ("a", "bc"))
+
+    assert first != second
 
 
 class _WindowsSecurityCalls(typing.NamedTuple):
@@ -442,6 +508,33 @@ class TestManagedTempPosix:
         assert subject.dispatch(parser.parse_args(["list"])) == 1
         assert capsys.readouterr().out == ""
 
+    def test_claim_cli_reuses_logical_key(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """claim CLIは複数key-partから同じ管理領域を返す。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+        argv = [
+            "claim",
+            "--prefix",
+            "publish-group",
+            "--key-part",
+            "final.md",
+            "--key-part",
+            "github.com/example/repo",
+        ]
+
+        assert subject.dispatch(parser.parse_args(argv)) == 0
+        assert subject.dispatch(parser.parse_args(argv)) == 0
+
+        outputs = capsys.readouterr().out.splitlines()
+        assert len(outputs) == 2
+        assert outputs[0] == outputs[1]
+
     @pytest.mark.parametrize("tamper", ["marker", "stale-registry", "symlink", "registry-mode"])
     def test_list_excludes_untrusted_records_and_keeps_valid_records(
         self,
@@ -476,6 +569,35 @@ class TestManagedTempPosix:
             }
         ]
         assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+
+    def test_list_rejects_noncanonical_registry_and_non_string_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """偽registryとpath型不正を個別診断し、真正な領域の列挙を継続する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        valid = subject.create_managed_temp("valid")
+        canonical = subject._load_private_json(subject._registry_path(valid))
+        forged = dict(canonical)
+        forged["prefix"] = "forged"
+        forged["created_at"] = "2026-08-12T01:02:03+00:00"
+        subject._write_private_json(subject._state_root() / "forged.json", forged)
+        invalid_path = dict(canonical)
+        invalid_path["path"] = 123
+        subject._write_private_json(subject._state_root() / "invalid-path.json", invalid_path)
+
+        assert subject.list_managed_temp() == [
+            {
+                "path": str(valid),
+                "prefix": "valid",
+                "created_at": canonical["created_at"],
+            }
+        ]
+        captured = capsys.readouterr()
+        assert "正規registryではない" in captured.err
+        assert "pathが文字列ではない" in captured.err
 
     @pytest.mark.parametrize("prefix", ["", "UPPER", "under_score", "leading-", "-leading", "dot.name"])
     def test_create_rejects_invalid_prefix(

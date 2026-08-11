@@ -27,13 +27,14 @@ from _atk_mq_common import (
     MQ_TYPE_TBD,
     WebInputError,
     _commit_and_push,
+    _commit_and_push_retrying_mutation,
     _copy_to_tempfile,
     _dedup_positional_filenames,
     _is_tbd_answered,
     _pull,
-    _push_pending_commits,
     _repo_lock,
     _require_type,
+    _RetryingMutation,
     _stamp_result,
     _subdir,
     _validate_filename,
@@ -524,7 +525,7 @@ def convert_entry_to_plan(
     *,
     filename: str,
     plan_file: str,
-    depends_on: tuple[str, ...] = (),
+    depends_on: tuple[str, ...] | None = None,
     target_repo: str | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
@@ -534,53 +535,49 @@ def convert_entry_to_plan(
         raise WebInputError("plan_fileは絶対パスで指定してください")
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
-    _validate_filenames_only([filename, *depends_on], inbox_dir)
+    _validate_filenames_only([filename, *(depends_on or ())], inbox_dir)
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
 
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
-        _pull(private_notes)
-        try:
-            if not plan_path.is_file():
-                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
-        except OSError as error:
-            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+        result_path: pathlib.Path | None = None
 
-        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
-        text = path.read_text(encoding="utf-8")
-        parsed = _frontmatter.parse_frontmatter(text)
-        if parsed is None:
-            raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
-        data, body = parsed
-        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
-            raise WebInputError(f"feedbackだけを計画実装型へ変換できます: {path.name}")
-        raw_entry_repo = data.get("target_repo")
-        if not isinstance(raw_entry_repo, str):
-            raise WebInputError(f"target_repoが不正です: {path.name}")
-        entry_repo = _resolve_repo_id(raw_entry_repo)
-        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
-            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
-
-        target_commit = data.get("target_commit")
-        _add._verify_plan_base_commit(  # pylint: disable=protected-access
-            plan_path,
-            target_commit if isinstance(target_commit, str) else None,
-        )
-        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
-        if path.name in canonical_dependencies:
-            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
-        data["plan_file"] = str(plan_path)
-        data.pop("queue_schedule", None)
-        if canonical_dependencies:
-            data["depends_on"] = list(canonical_dependencies)
-        else:
-            data.pop("depends_on", None)
-        updated_text = _frontmatter.serialize_frontmatter(data, body)
-        if updated_text != text:
+        def mutation() -> _RetryingMutation | None:
+            nonlocal result_path
+            try:
+                if not plan_path.is_file():
+                    raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
+            except OSError as error:
+                raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+            path, text, data, body = _load_feedback_for_metadata_update(
+                filename,
+                inbox_dir,
+                processing_dir,
+                normalized_target_repo,
+                purpose="計画実装型へ変換",
+            )
+            target_commit = data.get("target_commit")
+            _add._verify_plan_base_commit(  # pylint: disable=protected-access
+                plan_path,
+                target_commit if isinstance(target_commit, str) else None,
+            )
+            data["plan_file"] = str(plan_path)
+            data.pop("queue_schedule", None)
+            if depends_on is not None:
+                _set_validated_dependencies(data, path, depends_on, inbox_dir, processing_dir)
+            updated_text = _frontmatter.serialize_frontmatter(data, body)
+            result_path = path
+            if updated_text == text:
+                return None
             _atomic_write_text(path, updated_text)
-            relative_path = str(path.relative_to(private_notes))
-            _commit_and_push(private_notes, "chore: convert feedback item to plan", [relative_path])
-        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+
+            def restore() -> None:
+                _atomic_write_text(path, text)
+
+            return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
+
+        _commit_and_push_retrying_mutation(private_notes, "chore: convert feedback item to plan", mutation)
+        assert result_path is not None
+        return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
 
 
 def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -593,7 +590,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
             private_notes,
             filename=args.filename,
             plan_file=args.plan_file,
-            depends_on=tuple(args.depends_on or ()),
+            depends_on=tuple(args.depends_on) if args.depends_on is not None else None,
             target_repo=target_repo,
         )
     except WebInputError as error:
@@ -618,41 +615,80 @@ def set_entry_dependencies(
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
 
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
-        _pull(private_notes)
-        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
-        text = path.read_text(encoding="utf-8")
-        parsed = _frontmatter.parse_frontmatter(text)
-        if parsed is None:
-            raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
-        data, body = parsed
-        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
-            raise WebInputError(f"feedbackだけ依存を更新できます: {path.name}")
-        raw_entry_repo = data.get("target_repo")
-        if not isinstance(raw_entry_repo, str):
-            raise WebInputError(f"target_repoが不正です: {path.name}")
-        entry_repo = _resolve_repo_id(raw_entry_repo)
-        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
-            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+        result_path: pathlib.Path | None = None
 
-        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
-        if path.name in canonical_dependencies:
-            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
-        dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
-        dependency_graph[path.name] = set(canonical_dependencies)
-        if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
-            raise WebInputError(f"循環する依存を指定できません: {path.name}")
-        data.pop("queue_schedule", None)
-        if canonical_dependencies:
-            data["depends_on"] = list(canonical_dependencies)
-        else:
-            data.pop("depends_on", None)
-        updated_text = _frontmatter.serialize_frontmatter(data, body)
-        if updated_text != text:
+        def mutation() -> _RetryingMutation | None:
+            nonlocal result_path
+            path, text, data, body = _load_feedback_for_metadata_update(
+                filename,
+                inbox_dir,
+                processing_dir,
+                normalized_target_repo,
+                purpose="依存を更新",
+            )
+            _set_validated_dependencies(data, path, depends_on, inbox_dir, processing_dir)
+            data.pop("queue_schedule", None)
+            updated_text = _frontmatter.serialize_frontmatter(data, body)
+            result_path = path
+            if updated_text == text:
+                return None
             _atomic_write_text(path, updated_text)
-            relative_path = str(path.relative_to(private_notes))
-            _commit_and_push(private_notes, "chore: update feedback dependencies", [relative_path])
-        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+
+            def restore() -> None:
+                _atomic_write_text(path, text)
+
+            return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
+
+        _commit_and_push_retrying_mutation(private_notes, "chore: update feedback dependencies", mutation)
+        assert result_path is not None
+        return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
+
+
+def _load_feedback_for_metadata_update(
+    filename: str,
+    inbox_dir: pathlib.Path,
+    processing_dir: pathlib.Path,
+    normalized_target_repo: str | None,
+    *,
+    purpose: str,
+) -> tuple[pathlib.Path, str, dict[str, object], str]:
+    """最新のfeedbackと検証済みfrontmatterを更新処理へ返す。"""
+    path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+    text = path.read_text(encoding="utf-8")
+    parsed = _frontmatter.parse_frontmatter(text)
+    if parsed is None:
+        raise WebInputError(f"frontmatterが破損しているため{purpose}できません: {path.name}")
+    data, body = parsed
+    if _require_type(path, text) != MQ_TYPE_FEEDBACK:
+        raise WebInputError(f"feedbackだけを{purpose}できます: {path.name}")
+    raw_entry_repo = data.get("target_repo")
+    if not isinstance(raw_entry_repo, str):
+        raise WebInputError(f"target_repoが不正です: {path.name}")
+    entry_repo = _resolve_repo_id(raw_entry_repo)
+    if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+        raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+    return path, text, data, body
+
+
+def _set_validated_dependencies(
+    data: dict[str, object],
+    path: pathlib.Path,
+    depends_on: tuple[str, ...],
+    inbox_dir: pathlib.Path,
+    processing_dir: pathlib.Path,
+) -> None:
+    """候補依存を最新グラフへ仮適用し、循環が無い場合だけdataへ反映する。"""
+    canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+    if path.name in canonical_dependencies:
+        raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+    dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
+    dependency_graph[path.name] = set(canonical_dependencies)
+    if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
+        raise WebInputError(f"循環する依存を指定できません: {path.name}")
+    if canonical_dependencies:
+        data["depends_on"] = list(canonical_dependencies)
+    else:
+        data.pop("depends_on", None)
 
 
 def _active_dependency_graph(inbox_dir: pathlib.Path, processing_dir: pathlib.Path) -> dict[str, set[str]]:

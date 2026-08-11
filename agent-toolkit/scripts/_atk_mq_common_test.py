@@ -886,6 +886,67 @@ class TestCommitAndPushRetry:
         assert "手動復旧が必要です" in capsys.readouterr().err
 
 
+class TestCommitAndPushRetryingMutation:
+    """競合時に検査からやり直す変更トランザクションを検証する。"""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_lock_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ロックファイル配置先を実環境の`user_state_dir`から隔離する。"""
+        state_dir = tmp_path.parent / f"{tmp_path.name}-state"
+        monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(state_dir))
+
+    def test_restores_preexisting_worktree_content_after_retry_failure(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """2回のpush失敗後も候補作成前から存在した未commit本文を保持する。"""
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+        path = tmp_path / "feedback.md"
+        path.write_text("公開済み本文\n", encoding="utf-8")
+        subprocess.run(["git", "add", "feedback.md"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+        path.write_text("利用者の未commit本文\n", encoding="utf-8")
+        mutation_attempts = 0
+
+        def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
+            if args == ["pull", "--ff-only"]:
+                return
+            if args == ["push"]:
+                raise subprocess.CalledProcessError(1, ["git", *args])
+            subprocess.run(["git", *args], cwd=cwd, check=True)
+
+        def mutation() -> _common._RetryingMutation:  # pylint: disable=protected-access  # noqa: SLF001
+            nonlocal mutation_attempts
+            mutation_attempts += 1
+            original = path.read_text(encoding="utf-8")
+            path.write_text(f"{original}依存更新候補\n", encoding="utf-8")
+
+            def restore() -> None:
+                path.write_text(original, encoding="utf-8")
+
+            return _common._RetryingMutation(("feedback.md",), restore)  # pylint: disable=protected-access  # noqa: SLF001
+
+        monkeypatch.setattr(_common, "_run_git", fake_run_git)
+
+        with (
+            pytest.raises(subprocess.CalledProcessError),
+            _common._repo_lock(tmp_path),  # pylint: disable=protected-access  # noqa: SLF001
+        ):
+            _common._commit_and_push_retrying_mutation(  # pylint: disable=protected-access  # noqa: SLF001
+                tmp_path,
+                "chore: update dependencies",
+                mutation,
+            )
+
+        assert mutation_attempts == 2
+        assert path.read_text(encoding="utf-8") == "利用者の未commit本文\n"
+        assert _git_stdout(tmp_path, "rev-list", "--count", "HEAD") == "1\n"
+        assert _git_stdout(tmp_path, "status", "--short") == " M feedback.md\n"
+
+
 class TestValidateFilename:
     """`_validate_filename`の拡張子`.md`省略入力の正規化を検証する（fb 20260721-164301-001反映）。"""
 

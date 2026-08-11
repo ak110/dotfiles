@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --no-project --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["filelock>=3.30"]
 # ///
 """agent-toolkitが所有する一時ディレクトリを作成・検証・後始末する。"""
 
@@ -23,6 +23,8 @@ import sys
 import tempfile
 import typing
 from ctypes import wintypes
+
+import filelock
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 2
@@ -828,6 +830,88 @@ def create_managed_temp(prefix: str) -> pathlib.Path:
         raise ManagedTempError(f"管理情報を作成できない: {error}") from error
 
 
+def _claim_digest(prefix: str, key_parts: tuple[str, ...]) -> str:
+    payload = json.dumps([prefix, *key_parts], ensure_ascii=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _validate_incomplete_claim_path(path: pathlib.Path) -> None:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ManagedTempError(f"claim済み領域を検証できない: {path}: {error}") from error
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ManagedTempError(f"claim済み領域が通常ディレクトリではない: {path}")
+    if os.name == "posix":
+        if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
+            raise ManagedTempError(f"claim済み領域の所有者又は権限が不正: {path}")
+    elif os.name == "nt":
+        _validate_windows_security(path)
+    else:
+        raise ManagedTempError(f"未対応platform: {os.name}")
+
+
+def _load_claim_marker(path: pathlib.Path) -> dict[str, typing.Any]:
+    if os.name == "nt":
+        return _load_private_json(path / _MARKER_NAME)
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        return _load_marker(descriptor, path)
+    finally:
+        os.close(descriptor)
+
+
+def _complete_claimed_temp(path: pathlib.Path, prefix: str) -> pathlib.Path:
+    marker_path = path / _MARKER_NAME
+    registry_path = _registry_path(path)
+    if marker_path.exists() or marker_path.is_symlink():
+        marker = _load_claim_marker(path)
+        if marker.get("schema_version") != _SCHEMA_VERSION or marker.get("prefix") != prefix:
+            raise ManagedTempError(f"claim済み領域の管理情報が論理キーと一致しない: {marker_path}")
+        if not _records_match(path, marker, marker):
+            raise ManagedTempError(f"claim済み領域の管理情報が不正: {marker_path}")
+        if not registry_path.exists():
+            _write_private_json(registry_path, marker)
+        validate_managed_temp(path)
+        return path
+    if registry_path.exists() or registry_path.is_symlink():
+        raise ManagedTempError(f"claim済み領域のregistryだけが残存している: {registry_path}")
+    record = _record(
+        path,
+        secrets.token_hex(32),
+        prefix=prefix,
+        created_at=datetime.datetime.now(datetime.UTC).isoformat(),
+    )
+    _write_marker(path, record)
+    _write_private_json(registry_path, record)
+    validate_managed_temp(path)
+    return path
+
+
+def claim_managed_temp(prefix: str, key_parts: tuple[str, ...]) -> pathlib.Path:
+    """論理キーごとに単一の管理対象一時ディレクトリを作成又は回復する。"""
+    if not is_valid_prefix(prefix):
+        raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
+    if not key_parts or any(not isinstance(part, str) or not part for part in key_parts):
+        raise ManagedTempError("key-partは空でない文字列を1件以上指定する")
+    digest = _claim_digest(prefix, key_parts)
+    path = _temp_root() / f"agent-toolkit-claim-{digest}"
+    lock_path = _state_root() / f"claim-{digest}.lock"
+    with filelock.FileLock(lock_path):
+        try:
+            path.mkdir(mode=0o700)
+            if os.name == "nt":
+                _windows_secure_path(path, directory=True)
+        except FileExistsError:
+            try:
+                validate_managed_temp(path)
+            except ManagedTempError:
+                _validate_incomplete_claim_path(path)
+        except OSError as error:
+            raise ManagedTempError(f"claim済み領域を作成できない: {path}: {error}") from error
+        return _complete_claimed_temp(path, prefix)
+
+
 def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     if not path_arg.is_absolute():
         raise ManagedTempError(f"pathは絶対パスで指定する: {path_arg}")
@@ -931,7 +1015,12 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
     for registry_path in _state_root().glob("*.json"):
         try:
             record = _load_private_json(registry_path)
-            path = pathlib.Path(typing.cast(str, record["path"]))
+            raw_path = record.get("path")
+            if not isinstance(raw_path, str):
+                raise ManagedTempError("管理情報のpathが文字列ではない")
+            path = pathlib.Path(raw_path)
+            if registry_path != _registry_path(path):
+                raise ManagedTempError("列挙registryが管理対象pathの正規registryではない")
             validate_managed_temp(path)
             item_prefix = record.get("prefix") if record.get("schema_version") == 2 else None
             created_at = record.get("created_at") if record.get("schema_version") == 2 else None
@@ -1114,6 +1203,9 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     subparsers = parser.add_subparsers(dest=command_dest, required=True)
     create_parser = subparsers.add_parser("create", help="管理対象一時ディレクトリを作成する")
     create_parser.add_argument("--prefix", required=True)
+    claim_parser = subparsers.add_parser("claim", help="論理キーごとに単一の管理対象一時ディレクトリを作成する")
+    claim_parser.add_argument("--prefix", required=True)
+    claim_parser.add_argument("--key-part", action="append", required=True)
     cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
     cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
     list_parser = subparsers.add_parser("list", help="管理対象一時ディレクトリを列挙する")
@@ -1123,9 +1215,12 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
 def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
     """解析済み引数に対応する操作を実行し、終了状態を返す。"""
     try:
-        if getattr(args, command_dest) == "create":
+        command = getattr(args, command_dest)
+        if command == "create":
             print(create_managed_temp(args.prefix))
-        elif getattr(args, command_dest) == "cleanup":
+        elif command == "claim":
+            print(claim_managed_temp(args.prefix, tuple(args.key_part)))
+        elif command == "cleanup":
             cleanup_managed_temp(args.path)
         else:
             entries = list_managed_temp(args.prefix)
