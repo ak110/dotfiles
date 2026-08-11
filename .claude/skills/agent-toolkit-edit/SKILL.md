@@ -120,6 +120,9 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 `agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:agent-standards`スキル本体（SKILL.md）
 「セッション状態フラグ」節に置く。フラグを追加・変更する際は当該節を更新する。
 
+SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず
+警告が返るため、必ずSkillツールで起動する。
+
 ## 権限設定の配置
 
 権限設定を変更する場合は、対象が全利用者向けかを先に判定する。

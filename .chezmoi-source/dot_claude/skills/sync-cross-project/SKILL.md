@@ -82,6 +82,9 @@ description: >
 到達しうるか否かで扱いを分ける。到達しうる場合は利用者環境で成立している欠陥として同一セッション内で是正し、
 開発環境のロックファイル内に閉じる場合は更新を巻き戻して独立したフィードバックとして登録してよい。
 
+破壊的変更の波及判定では、上限の記載があっても破壊を生じる版がその範囲に含まれる場合は波及すると判定する。
+Cargoの既定のキャレット要件のように上限が常に存在する記法があるため、上限の有無そのものを判定基準としない。
+
 ## リリース運用
 
 `gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは`releaser`コマンドで起動する。
@@ -125,6 +128,9 @@ description: >
 | Python CI構成 | ★ | ★ | ★ | ★ | N/A | N/A | N/A |
 
 ★=必須同期、△=確認推奨（smprは厳密一致不要）、N/A=スキップ
+
+パッケージ管理系に固有の規範を横展開する場合、対象リポジトリの判定はコンテキスト上のローカル指示の
+プロジェクト一覧の記載だけを根拠とせず、対象ファイルまたはロックファイルの実在を確認して確定する。
 
 本スキルの対象範囲（ツールチェイン・ドキュメント構成）に該当すると判定済みで、マトリクスに該当行が無い変更内容は、
 「前提」節の対象プロジェクト一覧を候補集合とする。
@@ -171,6 +177,10 @@ README.md・CLAUDE.md・docs/development/development.mdの標準章構成・共�
 - Makefileではなく`mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
 - `package.json`の`lint`/`lint:fix`スクリプトは`CLAUDE.md`もtextlint/markdownlint-cli2対象に含めている
   - 新規Node系プロジェクトでも同様に設定する
+- cargo-denyの導入は`taiki-e/install-action@v2`と`with: tool: cargo-deny`を用い、
+  actionをpinactのハッシュピン対象にする。
+  `taiki-e/install-action@cargo-deny`のshort-handを維持する場合だけ、ツール名タグのSHA固定は
+  更新後に参照不能となり得るため公式に強く非推奨であることから、`.pinact.yaml`で除外する
 
 `~/gv`・`~/lc`の`mise.toml`はWindows前提で`{{ env.LOCALAPPDATA }}`を参照しているため、
 Linux環境ではmiseの評価時に未定義変数エラーで展開に失敗する。
@@ -199,3 +209,13 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 - CI workflowのLinuxジョブはpyfltr公式イメージの`container:`実行を方針とし、
   container適用対象・キャッシュ方式の具体は各リポジトリの`.github/workflows/**`をSSOTとして揃える
 - リリース手段とバージョン区分は本スキル「リリース運用」節を参照する
+
+以下3点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
+
+- container化ジョブではuv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、
+  `pinact run --check`を直接呼び出せる。Pythonバージョンマトリクスは
+  `env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
+  `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
+- `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
+- `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
+  PowerShell系（gv / lc）が`check-suites` API方式

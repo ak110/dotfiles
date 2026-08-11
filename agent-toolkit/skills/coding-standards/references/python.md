@@ -63,6 +63,8 @@
   - パッケージマネージャー: `uv`（pip互換、Pythonバージョン管理も統合）
   - リンター／フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー、詳細は<https://ak110.github.io/pyfltr/llms.txt>）
   - ユーティリティ集: `pytilpack`（便利ライブラリ、詳細は<https://ak110.github.io/pytilpack/llms.txt>）
+- 構文の互換範囲: 構文は、公開互換性として宣言された全対応版（`requires-python`等）で受理されることを
+  確認する。固定された開発・実行版で受理されることを、構文の公開互換性を狭める根拠にしない
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
   - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
     プロジェクトをインストール対象として扱う
