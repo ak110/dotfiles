@@ -272,9 +272,9 @@ class TestDefaultSteps:
         assert names.index("codex MCP サーバーの登録") < names.index("Claude 設定")
 
     def test_codex_logs_step_registered_after_links(self):
-        """Codex診断ログの共有メモリー配置をリンク同期の直後に実行する。"""
+        """Codex診断ログの通常ストレージ復元をリンク同期の直後に実行する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        assert names.index("Codex 診断ログの共有メモリー配置 (Linux)") == names.index("Codex リンクの同期") + 1
+        assert names.index("Codex 診断ログの通常ストレージ復元 (Linux)") == names.index("Codex リンクの同期") + 1
 
     def test_cli_setup_precedes_dependent_steps(self):
         """CLI本体をplugin、リンク、MCPより前に準備する。"""
