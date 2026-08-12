@@ -373,6 +373,34 @@ def test_plugin_update_restores_old_cache_path(kind: str, tmp_path: pathlib.Path
         assert (old_path / "scripts/claude_hook.py").read_text(encoding="utf-8") == "current hook\n"
 
 
+def test_shell_restores_dot_version_to_hyphen_version(tmp_path: pathlib.Path, rules_url: str) -> None:
+    """先頭dotの旧versionを収集し、先頭hyphenの現行versionへ復元する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = tmp_path / "custom-codex"
+    cache_root = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"
+    dot_version = cache_root / ".1.2/scripts"
+    dot_version.mkdir(parents=True)
+    (dot_version / "claude_hook.py").write_text("dot hook\n", encoding="utf-8")
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    _run(
+        "sh",
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.2", True),
+        codex_plugin_after=("-1.2", True),
+        codex_home=codex_home,
+    )
+
+    restored = cache_root / ".1.2"
+    assert restored.is_symlink()
+    assert restored.readlink() == pathlib.Path("-1.2")
+    assert (restored / "scripts/claude_hook.py").read_text(encoding="utf-8") == "current hook\n"
+
+
 @pytest.mark.parametrize("kind", _runners())
 def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """更新前状態を取得できない場合はpluginを変更しない。"""

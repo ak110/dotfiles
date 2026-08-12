@@ -204,8 +204,7 @@ _save_codex_cache_versions() {
         done <"$CODEX_CACHE_COMPAT_VERSIONS"
     fi
     if [ -d "$CODEX_PLUGIN_CACHE_ROOT" ]; then
-        for entry in "$CODEX_PLUGIN_CACHE_ROOT"/*; do
-            [ -e "$entry" ] || [ -L "$entry" ] || continue
+        while IFS= read -r -d '' entry; do
             [ -d "$entry" ] || [ -L "$entry" ] || continue
             version=$(basename "$entry")
             if _valid_codex_version_name "$version"; then
@@ -213,7 +212,7 @@ _save_codex_cache_versions() {
             else
                 echo "不正なCodex plugin cache version名を無視します: '$version'" >&2
             fi
-        done
+        done < <(find "$CODEX_PLUGIN_CACHE_ROOT" -mindepth 1 -maxdepth 1 -print0)
     fi
     sort -u "$temporary" -o "$temporary"
     mv "$temporary" "$CODEX_CACHE_COMPAT_VERSIONS"
@@ -245,7 +244,7 @@ _restore_codex_cache_links() {
             echo "通常entryとCodex plugin互換version名が競合しています: $destination" >&2
             return 1
         fi
-        ln -s "$current_version" "$destination"
+        ln -s -- "$current_version" "$destination"
     done <"$CODEX_CACHE_COMPAT_VERSIONS"
 }
 
