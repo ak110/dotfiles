@@ -66,10 +66,16 @@ def _installed(data: dict[str, Any], plugin_id: str) -> tuple[bool, dict[str, An
     installed = data.get("installed")
     if not isinstance(installed, list):
         return False, None
-    plugin = next(
-        (item for item in installed if isinstance(item, dict) and item.get("pluginId") == plugin_id),
-        None,
-    )
+    plugin = None
+    for item in installed:
+        if not isinstance(item, dict) or not isinstance(item.get("pluginId"), str):
+            return False, None
+        if item["pluginId"] != plugin_id:
+            continue
+        if not isinstance(item.get("version"), str) or not isinstance(item.get("enabled"), bool):
+            return False, None
+        if plugin is None:
+            plugin = item
     return True, plugin
 
 

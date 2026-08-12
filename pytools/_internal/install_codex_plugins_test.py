@@ -166,7 +166,18 @@ def test_version_mismatch_reinstalls_plugin_and_returns_notice(plugin_env: Path,
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
-@pytest.mark.parametrize("plugin_state", [None, {}, {"installed": None}, {"installed": "x"}])
+@pytest.mark.parametrize(
+    "plugin_state",
+    [
+        None,
+        {},
+        {"installed": None},
+        {"installed": "x"},
+        {"installed": [{"version": "1.2.2", "enabled": True}]},
+        {"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "version": 122, "enabled": True}]},
+        {"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "version": "1.2.2", "enabled": "true"}]},
+    ],
+)
 def test_pre_install_json_failure_stops_before_plugin_add(
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -187,6 +198,25 @@ def test_pre_install_json_failure_stops_before_plugin_add(
 
     assert outcome.changed is False
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+
+
+def test_other_plugin_details_do_not_block_install(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """対象外pluginのversionとenabledは対象pluginの状態判定へ影響させない。"""
+    responses = iter(
+        [
+            {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
+            {"installed": [{"pluginId": "other@marketplace", "version": 1, "enabled": "true"}]},
+            _installed_state(),
+        ]
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
 def test_ledger_replace_failure_keeps_existing_ledger(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:

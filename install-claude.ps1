@@ -89,26 +89,25 @@ function Get-CodexPluginState {
     if ($null -eq $installedProperty -or $installedProperty.Value -isnot [System.Array]) { return $null }
     $plugin = $null
     foreach ($item in @($installedProperty.Value)) {
-        if ($null -eq $item) { continue }
+        if ($null -eq $item -or $item.GetType() -ne [System.Management.Automation.PSCustomObject]) { return $null }
         $pluginIdProperty = $item.PSObject.Properties['pluginId']
-        if ($null -ne $pluginIdProperty -and $pluginIdProperty.Value -eq $codexPluginId) {
-            $plugin = $item
-            break
+        if ($null -eq $pluginIdProperty -or $pluginIdProperty.Value -isnot [string]) { return $null }
+        if ($pluginIdProperty.Value -ne $codexPluginId) { continue }
+        $versionProperty = $item.PSObject.Properties['version']
+        $enabledProperty = $item.PSObject.Properties['enabled']
+        if ($null -eq $versionProperty -or $versionProperty.Value -isnot [string] -or
+            $null -eq $enabledProperty -or $enabledProperty.Value -isnot [bool]) {
+            return $null
         }
+        if ($null -eq $plugin) { $plugin = $item }
     }
     if ($null -eq $plugin) {
         return [PSCustomObject]@{ Present = $false; Version = $null; Enabled = $null }
     }
-    $versionProperty = $plugin.PSObject.Properties['version']
-    $enabledProperty = $plugin.PSObject.Properties['enabled']
-    if ($null -eq $versionProperty -or $versionProperty.Value -isnot [string] -or
-        $null -eq $enabledProperty -or $enabledProperty.Value -isnot [bool]) {
-        return $null
-    }
     return [PSCustomObject]@{
         Present = $true
-        Version = $versionProperty.Value
-        Enabled = $enabledProperty.Value
+        Version = $plugin.PSObject.Properties['version'].Value
+        Enabled = $plugin.PSObject.Properties['enabled'].Value
     }
 }
 

@@ -117,17 +117,22 @@ except (json.JSONDecodeError, KeyError, TypeError):
     raise SystemExit(1)
 if not isinstance(installed, list):
     raise SystemExit(1)
+plugin = None
 for item in installed:
-    if not isinstance(item, dict) or item.get("pluginId") != plugin_id:
+    if not isinstance(item, dict) or not isinstance(item.get("pluginId"), str):
+        raise SystemExit(1)
+    if item["pluginId"] != plugin_id:
         continue
     version = item.get("version")
     enabled = item.get("enabled")
     if not isinstance(version, str) or not isinstance(enabled, bool):
         raise SystemExit(1)
-    print(json.dumps({"enabled": enabled, "present": True, "version": version}, sort_keys=True))
-    break
-else:
+    if plugin is None:
+        plugin = {"enabled": enabled, "present": True, "version": version}
+if plugin is None:
     print('{"present": false}')
+else:
+    print(json.dumps(plugin, sort_keys=True))
 PY
 }
 

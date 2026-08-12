@@ -422,6 +422,61 @@ def test_powershell_invalid_plugin_state_stops_before_plugin_add(
     assert not any("codex plugin add" in line for line in _log_lines(stub_log))
 
 
+@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize(
+    "plugin_state",
+    [
+        {"installed": [{"version": "1.2.2", "enabled": True}]},
+        {"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "version": 122, "enabled": True}]},
+        {"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "version": "1.2.2", "enabled": "true"}]},
+    ],
+)
+def test_invalid_target_plugin_entry_stops_before_plugin_add(
+    kind: str,
+    plugin_state: object,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """対象plugin要素の必須項目が不正なら更新を中止する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    result = _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.2", True),
+        codex_plugin_before_json=json.dumps(plugin_state),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
+
+
+@pytest.mark.parametrize("kind", _runners())
+def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """対象外pluginのversionとenabledは対象pluginの状態判定へ影響させない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    plugin_state = {"installed": [{"pluginId": "other@marketplace", "version": 1, "enabled": "true"}]}
+
+    _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before_json=json.dumps(plugin_state),
+    )
+
+    assert any("codex plugin add agent-toolkit@ak110-dotfiles --json" in line for line in _log_lines(stub_log))
+
+
 def test_shell_ledger_replace_failure_keeps_existing_ledger(tmp_path: pathlib.Path, rules_url: str) -> None:
     """shellの台帳置換失敗時は既存内容を保持して更新を中止する。"""
     home = tmp_path / "home"
