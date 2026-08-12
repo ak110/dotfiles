@@ -16,6 +16,7 @@ user-invocable: false
 
 同一waveの通常型feedbackの調査、採否、統合計画の起草、計画レビューを委譲先へ割り当て、結果を検収せよ。
 自身は成果物、計画ファイル、queueを変更せず、委譲先の起動、指摘の配送、完了結果の検収だけを行う。
+受信者専用のtask referenceとauthor skillは読み込まず、絶対パスを受信者へ渡す。
 
 ## 入力
 
@@ -32,7 +33,7 @@ user-invocable: false
 
 1. 調査スレッドの起動直前に`atk config get pick_feedbacks_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
-2. 各feedbackごとの調査スレッドへ`explore-template.md`をtaskとして渡し、利用可能な実行枠内で並列に要求ごとの区分、根拠、未検証事項を受領する。
+2. 各feedbackごとの調査スレッドへ`explore-template.md`の絶対パスをtaskとして渡し、利用可能な実行枠内で並列に要求ごとの区分、根拠、未検証事項を受領する。
 3. 調査結果を`decision-format.md`へ照合して項目ごとの採否を確定する。
    不採用、保留、TBD候補は計画工程へ進めず返す。
    実装変更がない終端工程専用項目は、計画を作成せず、採否、終端工程一覧、認可根拠の逐語引用及び計画なしを返す。
@@ -48,6 +49,9 @@ user-invocable: false
    `plan-review-delegation.md`、継続方法は`runtime-routing.md`「工程別モデル設定」に従う。
    authorへの新規起動又は継続接続の直前は`plan_model`、reviewerの再レビュー直前は`plan_review_model`を再取得する。
 7. 計画ファイルの実在と分量、機械検査、レビュー収束、起動前後のGit状態を検収する。
+
+`explore-template.md`、author skill、バグ調査task、review taskは各受信者が読み込む。
+自身は採否とレビュー収束に使う正本及び成果物の検収に必要な正本だけを読む。
 
 調査とreviewerは対象worktreeを読み取り専用とする。
 authorは指定された計画ファイル保存先だけを書込可能とする。

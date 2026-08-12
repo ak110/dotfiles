@@ -278,6 +278,22 @@ class TestAddTargetRepoOptionParser:
         assert "計画作成に用いた正確なworktreeを指定し" in output
 
 
+@pytest.mark.parametrize("subcommand", ["adopt", "reject"])
+def test_transition_commit_help_describes_resolution_and_warning(
+    subcommand: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """採否のcommit案内が完全OID化と対応不能時の警告継続を説明する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["mq", subcommand, "--help"])
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "対象リポジトリで解決できるrevision" in output
+    assert "記録時に完全OIDへ解決" in output
+    assert "対応付けできない場合は警告" in output
+
+
 def test_add_output_reloads_saved_metadata(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

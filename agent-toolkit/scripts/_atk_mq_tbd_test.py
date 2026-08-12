@@ -910,6 +910,7 @@ class TestTbdAdopt:
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--note・--commit指定時、adopted/配下のファイル末尾に採否・処理日時・対応commit・メモが追記される。"""
         notes = _setup_notes(tmp_path)
@@ -937,7 +938,54 @@ class TestTbdAdopt:
         assert "- 採否: adopted" in adopted_text
         assert "- 処理日時: " in adopted_text
         assert "- 対応commit: xyz9876" in adopted_text
+        assert "未検証のまま記録" in capsys.readouterr().err
         assert "- メモ: TBD採用メモ" in adopted_text
+
+    def test_short_commit_is_resolved_with_explicit_worktree(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """明示作業ツリーに対応するTBDでは短縮revisionを完全OID化する。"""
+        notes = _setup_notes(tmp_path)
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        git_calls: list[_GitCall] = []
+        base_fake = _make_subprocess_fake(git_calls)
+        full_oid = "c" * 40
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(worktree), "remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
+            if cmd == [
+                "git",
+                "-C",
+                str(worktree),
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                "abcdef1^{commit}",
+            ]:
+                return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            return base_fake(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "adopt",
+                    f"{_FIXED_TIMESTAMP}-001.md",
+                    "--target-repo",
+                    str(worktree),
+                    "--commit=abcdef1",
+                ],
+                home=tmp_path,
+            )
+        assert exc_info.value.code == 0
+        content = (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
+        assert f"- 対応commit: {full_oid}" in content
 
     def test_multiple_files_adopted_single_commit(
         self,

@@ -8,6 +8,7 @@ import argparse
 import datetime
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -40,10 +41,16 @@ from _atk_mq_common import (
     _validate_filenames_only,
 )
 from _atk_mq_list import _has_category
-from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo, _verify_target_repo_content
+from _atk_mq_repo import (
+    _normalize_remote_url,
+    _resolve_repo_id,
+    _verify_frontmatter_target_repo,
+    _verify_target_repo_content,
+)
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _CATEGORY_GATE_THRESHOLD = 3
+_GIT_TIMEOUT_SECONDS = 10.0
 _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
     "target_commit",
     "depends_on",
@@ -65,6 +72,108 @@ def _entry_target_repo(path: pathlib.Path, text: str) -> str:
         print(f"frontmatterにtarget_repoがないため採否処理を停止しました: {path}", file=sys.stderr)
         sys.exit(2)
     return _resolve_repo_id(raw_target_repo)
+
+
+def _candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
+    """採否CLIの引数又は現在位置から対応候補の作業ツリーを返す。"""
+    if target_repo is not None:
+        path = pathlib.Path(target_repo).expanduser()
+        return path.resolve() if path.exists() else None
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    output = result.stdout.strip()
+    return pathlib.Path(output) if result.returncode == 0 and output else None
+
+
+def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
+    """作業ツリーのoriginから対象リポジトリ識別子を返す。"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(local_worktree), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return _normalize_remote_url(result.stdout.strip())
+    except ValueError:
+        return None
+
+
+def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> str:
+    """作業ツリーでrevisionを完全なcommit OIDへ解決する。"""
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(local_worktree),
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                f"{revision}^{{commit}}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    commit = result.stdout.strip() if result is not None and result.returncode == 0 else ""
+    if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
+        print(
+            f"対応commitを解決できませんでした。対象作業ツリーでrevisionを取得して再実行してください: "
+            f"{local_worktree} ({revision})",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return commit
+
+
+def _commit_values_by_path(
+    paths: list[pathlib.Path],
+    revision: str | None,
+    local_worktree: pathlib.Path | None,
+) -> dict[pathlib.Path, str | None]:
+    """対象ごとに記録するcommitを解決し、対応不能な群は警告する。"""
+    if revision is None:
+        return {path: None for path in paths}
+    target_repos = {path: _entry_target_repo(path, path.read_text(encoding="utf-8")) for path in paths}
+    candidate_repo = _local_worktree_repo_id(local_worktree) if local_worktree is not None else None
+    resolved = (
+        _resolve_commit(local_worktree, revision)
+        if local_worktree is not None and candidate_repo in target_repos.values()
+        else None
+    )
+    values: dict[pathlib.Path, str | None] = {}
+    warned: set[str] = set()
+    for path, target_repo in target_repos.items():
+        if resolved is not None and target_repo == candidate_repo:
+            values[path] = resolved
+            continue
+        values[path] = revision
+        if target_repo not in warned:
+            print(
+                f"警告: 対象リポジトリに対応するローカル作業ツリーを特定できないため、"
+                f"対応commitを未検証のまま記録します: {target_repo}",
+                file=sys.stderr,
+            )
+            warned.add(target_repo)
+    return values
 
 
 def _answered_tbd_blockers(private_notes: pathlib.Path, mutation_paths: list[pathlib.Path]) -> list[pathlib.Path]:
@@ -155,6 +264,7 @@ def transition_entries(
     state: str | None = None,
     expected_content: str | None = None,
     cooldown_days: int | None = None,
+    local_worktree: pathlib.Path | None = None,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移又は削除を実行する。
 
@@ -244,6 +354,11 @@ def transition_entries(
                     file=sys.stderr,
                 )
                 sys.exit(2)
+        commit_values = (
+            _commit_values_by_path(paths, commit, local_worktree)
+            if action in {"adopt", "reject"}
+            else {path: commit for path in paths}
+        )
         destination_name = {
             "start-processing": MQ_STATE_PROCESSING,
             "return-to-inbox": MQ_STATE_INBOX,
@@ -285,7 +400,7 @@ def transition_entries(
                         path,
                         outcome=destination_name,
                         now=now,
-                        commit=commit,
+                        commit=commit_values[path],
                         note=note,
                         category=category if action == "adopt" else None,
                     )
@@ -745,6 +860,7 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "adopt")
+    local_worktree = _candidate_local_worktree(args.target_repo) if args.commit is not None else None
     filenames = transition_entries(
         private_notes,
         action="adopt",
@@ -754,6 +870,7 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         note=args.note,
         commit=args.commit,
         category=args.category,
+        local_worktree=local_worktree,
     )
     print(f"{len(filenames)}件採用処理: {', '.join(filenames)}")
 
@@ -766,6 +883,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "reject")
+    local_worktree = _candidate_local_worktree(args.target_repo) if args.commit is not None else None
     filenames = transition_entries(
         private_notes,
         action="reject",
@@ -775,6 +893,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
         note=args.note,
         commit=args.commit,
         state=MQ_STATE_INBOX if args.if_inbox else None,
+        local_worktree=local_worktree,
     )
     print(f"{len(filenames)}件不採用処理: {', '.join(filenames)}")
 

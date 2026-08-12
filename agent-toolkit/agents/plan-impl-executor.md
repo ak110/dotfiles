@@ -19,11 +19,13 @@ user-invocable: false
 承認済み計画のコミット単位を1 writerへ同じworktreeで順次割り当てよ。
 異なる計画ファイルのlaneだけを別worktreeで並列に扱える。
 最終差分は独立した二系統のreviewerへ割り当てよ。
+実装task、author skill、review taskは読み込まず、絶対パスを各受信者へ渡せ。
 
 ## 役割
 
 委譲の調整、writerとreviewerの検収、指摘集合の統合を担当する。
 自身は成果物と計画ファイルを直接編集せず、writerが作成したcommitと、渡されたworktreeの検収だけを行う。
+ファイル編集、生成同期、format・lint・testの初回実行、stage、commitはwriterへ割り当てる。
 worktreeと管理対象領域を作成・回収しない。
 `git push`、タグ作成、リモートrefは変更しない。
 
@@ -81,6 +83,11 @@ worktreeと管理対象領域を作成・回収しない。
    失敗または中断中のworktreeも復旧用に保持し、対象外worktreeを変更しない。
    writer結果は呼び出し元が進捗ログへ反映できる時点で単位ごとに返す
 6. 全単位後にlane worktreeの累積差分へ生成同期と最終検証を実測し、同worktreeのHEADを最終レビュー対象とする
+
+検収では`git status`、`git diff`、`git log`、commit実体、報告された検証結果、完了条件を読み取り専用で実測する。
+必要な検証の再実行と`check_dash.py`による文書検収は行える。
+シェル経由のファイル書換え、成果物を変更するformat又は生成コマンド、実装目的の検証は実行しない。
+不足を検出した場合は同じwriterへ必要な作業を返す。
 
 ### 統合後レビュー調整モードの準備
 

@@ -92,6 +92,111 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     assert (notes / "processing/entry.md").is_file()
 
 
+class TestCommitResolution:
+    """採否結果へ記録するrevisionの解決境界を検証する。"""
+
+    def test_matching_worktree_records_full_oid(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """対応作業ツリーでは短縮revisionを完全OIDへ解決する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "feedback.md")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _disable_transition_git(monkeypatch)
+        full_oid = "a" * 40
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
+            if "rev-parse" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            raise AssertionError(cmd)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        mutations.transition_entries(
+            notes,
+            action="adopt",
+            filenames=["feedback.md"],
+            now=_FIXED_DT,
+            commit="abcdef1",
+            local_worktree=worktree,
+        )
+        assert f"- 対応commit: {full_oid}" in (notes / "adopted/feedback.md").read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("revision", ["missing", "--not-an-option", "blob"])
+    def test_invalid_revision_stops_before_mutation(
+        self,
+        revision: str,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """不在、オプション様、commit以外のrevisionは状態変更前に拒否する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "feedback.md")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _disable_transition_git(monkeypatch)
+        calls: list[str] = []
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
+            assert cmd[-2] == "--end-of-options"
+            return subprocess.CompletedProcess(cmd, 1, "", "invalid")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(mutations, "_stamp_result", lambda *_args, **_kwargs: calls.append("stamp"))
+        with pytest.raises(SystemExit) as exc_info:
+            mutations.transition_entries(
+                notes,
+                action="reject",
+                filenames=["feedback.md"],
+                now=_FIXED_DT,
+                commit=revision,
+                local_worktree=worktree,
+            )
+        assert exc_info.value.code == 2
+        assert not calls
+        assert path.is_file()
+        assert not (notes / "rejected/feedback.md").exists()
+
+    def test_multiple_repositories_record_values_per_entry(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """一致する群だけを完全OID化し、他群は警告後に指定値を保つ。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "foo.md", target_repo="github.com/example/foo")
+        _write_feedback_file(notes, "bar.md", target_repo="github.com/example/bar")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _disable_transition_git(monkeypatch)
+        full_oid = "b" * 40
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
+            return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        mutations.transition_entries(
+            notes,
+            action="adopt",
+            filenames=["foo.md", "bar.md"],
+            now=_FIXED_DT,
+            commit="abcdef1",
+            local_worktree=worktree,
+        )
+        assert f"- 対応commit: {full_oid}" in (notes / "adopted/foo.md").read_text(encoding="utf-8")
+        assert "- 対応commit: abcdef1" in (notes / "adopted/bar.md").read_text(encoding="utf-8")
+        assert "github.com/example/bar" in capsys.readouterr().err
+
+
 def test_cli_converts_web_input_error_to_user_facing_rejection(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

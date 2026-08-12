@@ -58,6 +58,30 @@ def test_unknown_config_key_logs_warning(
     assert "unknown" in caplog.text
 
 
+def test_web_transition_warns_and_records_unverified_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Web採否はcloneを探索せず、警告後に指定revisionを記録する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "feedback.md").write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    mutations = serve_app.feedback_mutations
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    result = serve_app.Operations(tmp_path).transition("adopt", ["feedback.md"], commit="abcdef1")
+
+    assert result == ["feedback.md"]
+    assert "- 対応commit: abcdef1" in (tmp_path / "adopted/feedback.md").read_text(encoding="utf-8")
+    assert "github.com/example/foo" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("host", ["", "  ", 1])
 def test_invalid_host(host: object) -> None:
     """空又は非文字列hostを拒否する。"""

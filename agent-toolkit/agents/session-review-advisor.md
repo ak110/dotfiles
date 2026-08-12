@@ -2,7 +2,7 @@
 name: session-review-advisor
 description: agent-toolkit:session-review専用。セッション証拠から恒久改善候補を独立評価する。
 model: opus
-effort: high
+effort: medium
 tools: Read, Bash
 user-invocable: false
 ---

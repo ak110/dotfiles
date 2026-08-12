@@ -318,6 +318,10 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert metadata["skills"] == ["agent-toolkit:delegation"]
     assert "mcp__codex__codex" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
+    assert "実装task、author skill、review taskは読み込まず" in text
+    assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitはwriterへ割り当てる" in text
+    assert "シェル経由のファイル書換え" in text
+    assert "`check_dash.py`による文書検収" in text
     assert "1 writerへ同じworktreeで順次割り当て" in text
     assert "異なる計画ファイルのlaneだけを別worktreeで並列" in text
     assert "同じ計画ファイルのwriterは依存順に1件ずつ起動" in text
@@ -406,6 +410,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     assert "mcp__codex__codex" in metadata["tools"]
     for phrase in (
         "自身は成果物、計画ファイル、queueを変更せず",
+        "受信者専用のtask referenceとauthor skillは読み込まず",
+        "`explore-template.md`、author skill、バグ調査task、review taskは各受信者が読み込む",
         "`atk mq show`を含むqueue操作",
         "explore-template.md",
         "plan-review-task.md",
@@ -420,6 +426,51 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "計画レビュースレッドの起動直前に`atk config get plan_review_model`",
     ):
         assert phrase in text
+
+
+def test_session_review_advisor_uses_default_reasoning_effort() -> None:
+    """セッションレビューadvisorの推論深度を既定のmediumへ合わせる。"""
+    parsed = frontmatter.parse_frontmatter(_SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8"))
+    assert parsed is not None
+    metadata, _ = parsed
+    assert metadata["effort"] == "medium"
+
+
+def test_human_source_contract_covers_direct_and_delegated_inputs() -> None:
+    """直接対話と委譲経路の人間由来入力を区別する。"""
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    assert "起動文の命令は委譲元が構成した情報" in delegation
+    assert "出所表示のない起動文を人間の利用者による発話として扱わない" in delegation
+    assert "直接対話では、実行環境上で実際の利用者メッセージ" in plan_mode
+    assert "受信した起動文全体を機械的に転記せず" in plan_mode
+    assert "直接受領した実際の利用者メッセージ又はsenderが人間由来" in plan_review_delegation
+    assert "authorの起動文、feedback本文、調査資料を利用者発言へ分類しておらず" in plan_review_task
+
+
+def test_codex_new_connection_contract_is_centralized() -> None:
+    """Codex新規接続と読み取り専用の契約を共通referenceへ集約する。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    for phrase in (
+        "新規接続では作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す",
+        "相手プロセスが承認待ちから復帰せず",
+        "実行環境のsandbox値で表現しない",
+        "同一threadへの返信用経路",
+    ):
+        assert phrase in runtime
+
+    for path in sorted(_AGENTS_DIR.glob("*.md")):
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, body = parsed
+        tools = metadata.get("tools")
+        if not isinstance(tools, str) or "mcp__codex__codex" not in tools:
+            continue
+        assert "runtime-routing.md" in body
+        assert "sandbox: danger-full-access" not in body
 
 
 def test_stage_model_routing_and_merge_contracts_are_present() -> None:
@@ -759,7 +810,7 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
     metadata, _ = parsed
 
     assert metadata["model"] == "opus"
-    assert metadata["effort"] == "high"
+    assert metadata["effort"] == "medium"
     assert metadata["user-invocable"] == "false"
     assert metadata["tools"] == "Read, Bash"
     assert "skills" not in metadata

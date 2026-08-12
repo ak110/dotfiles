@@ -358,7 +358,11 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         "--commit",
         metavar="SHA",
         default=None,
-        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。--commit=VALUE形式で渡すことを推奨。",
+        help=(
+            "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
+            "記録時に完全OIDへ解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "--commit=VALUE形式で渡すことを推奨。"
+        ),
     )
     adopt.add_argument(
         "--category",
@@ -381,7 +385,11 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         "--commit",
         metavar="SHA",
         default=None,
-        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。--commit=VALUE形式で渡すことを推奨。",
+        help=(
+            "対象リポジトリで解決できるrevision。対応するローカル作業ツリーが判明した場合は、"
+            "記録時に完全OIDへ解決する。対応付けできない場合は警告し、指定値を記録する。"
+            "--commit=VALUE形式で渡すことを推奨。"
+        ),
     )
     reject.add_argument(
         "--if-inbox",
