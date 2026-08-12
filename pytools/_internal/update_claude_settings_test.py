@@ -223,7 +223,7 @@ class TestProductionManagedSettings:
         assert data["permissions"]["deny"] == MANAGED_DENY
 
     def test_auto_mode_rules_keep_required_scope_without_confirmation_details(self):
-        """自動許可文は5ラベルの対象と安全境界だけを保持する。"""
+        """自動許可文は7ラベルの対象と安全境界だけを保持する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         rules = dict(rule.split(": ", maxsplit=1) for rule in data["autoMode"]["allow"])
         assert set(rules) == {
@@ -232,6 +232,8 @@ class TestProductionManagedSettings:
             "Feedback-Originated Gate Revision",
             "Background Operator Auto-Approval",
             "External Marketplace Registration",
+            "Agent Config Read",
+            "Delegation Continuation Message",
         }
         assert all(
             term in rules["Session-Owned Amend"]
@@ -283,6 +285,14 @@ class TestProductionManagedSettings:
                 "`compact-plus@compact-plus`",
                 "インストール",
             )
+        )
+        assert all(
+            term in rules["Agent Config Read"]
+            for term in ("`atk config get <キー>`", "副作用", "サブエージェント", "`atk config set`", "許可しない")
+        )
+        assert all(
+            term in rules["Delegation Continuation Message"]
+            for term in ("委譲先", "`SendMessage`", "委譲済み範囲内", "不可逆操作", "許可しない")
         )
         assert "AskUserQuestion" not in "\n".join(rules.values())
 

@@ -8,7 +8,9 @@
       "Exit-Session Termination: transcriptにこのエージェントによる`agent-toolkit:exit-session`のSkill呼び出しが直前にあり、同スキルの起動条件を満たす場合、単独の`kill -TERM $PPID`だけを許可する。",
       "Feedback-Originated Gate Revision: transcriptに`agent-toolkit:process-feedbacks`または`agent-toolkit:plan-and-add-feedback`のSkill呼び出しがあり、処理対象がユーザー投入フィードバック（frontmatter `source`が`session-review`等の自己生成起点ではない）で、計画レビュー工程を完了している場合、`~/dotfiles`内のエージェント用規範・フック・検査・承認設定の配布原本の編集とコミットを許可する。hard_deny領域と配布先の直接変更は許可しない。",
       "Background Operator Auto-Approval: `&`による背景実行自体は拒否理由とせず、各subcommandを個別に既存の許可条件で判定する。",
-      "External Marketplace Registration: `claude plugin marketplace add u-ichi/compact-plus`または`codex plugin marketplace add u-ichi/compact-plus`による登録と、`compact-plus@compact-plus`のインストールを許可する。"
+      "External Marketplace Registration: `claude plugin marketplace add u-ichi/compact-plus`または`codex plugin marketplace add u-ichi/compact-plus`による登録と、`compact-plus@compact-plus`のインストールを許可する。",
+      "Agent Config Read: `atk config get <キー>`はagent-toolkitの設定値を標準出力へ返すだけで副作用がないため、メイン・サブエージェントのいずれからの実行も許可する。値の変更を伴う`atk config set`等は許可しない。",
+      "Delegation Continuation Message: 稼働中または再開可能な委譲先への継続指示送信（`SendMessage`など）は、内容が委譲済み範囲内の作業継続・解決済み設定値の伝達・差し戻しへの応答に限られる場合に許可する。委譲範囲外の操作や新たな不可逆操作を認可する指示は許可しない。"
     ]
   },
   "effortLevel": "medium",
