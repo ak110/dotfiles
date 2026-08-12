@@ -18,6 +18,7 @@ import argparse
 import dataclasses
 import datetime
 import hashlib
+import json
 import os
 import pathlib
 import shutil
@@ -30,6 +31,7 @@ from collections.abc import Callable, Iterable, Iterator
 from typing import Any, Literal
 
 import _git_remote
+import _managed_temp
 import filelock
 import platformdirs
 from _atk_mq_formatters import (
@@ -57,6 +59,148 @@ MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_ADOPTED, MQ_STATE_REJ
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 type RepairKind = Literal["frontmatter", "missing-plan-file"]
+type RetryingMutationPhase = Literal["suspended", "prepared", "committed"]
+
+
+@dataclasses.dataclass(frozen=True)
+class _RetryingMutationState:
+    """再試行対象の依存更新と未commit本文をrepo外へ永続化した状態。"""
+
+    transaction_key: str
+    filename: str
+    original_rel_path: str
+    dirty_text: str | None
+    phase: RetryingMutationPhase = "suspended"
+    base_head: str | None = None
+    candidate_head: str | None = None
+    message: str | None = None
+    rel_paths: tuple[str, ...] = ()
+
+
+def _retrying_mutation_key(*parts: object) -> str:
+    """同一の依存更新要求を再開するための決定的な所有キーを返す。"""
+    payload = json.dumps(parts, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _retrying_mutation_state_root() -> pathlib.Path:
+    """依存更新の復旧状態を置く利用者専用ディレクトリを返す。"""
+    root = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "mq-transactions"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name == "posix":
+        root.chmod(0o700)
+    elif os.name == "nt":
+        _managed_temp._windows_secure_path(root, directory=True)  # noqa: SLF001  # pylint: disable=protected-access
+        _managed_temp._validate_windows_security(root)  # noqa: SLF001  # pylint: disable=protected-access
+    else:
+        raise RuntimeError(f"未対応platform: {os.name}")
+    return root
+
+
+def _retrying_mutation_state_path(private_notes: pathlib.Path) -> pathlib.Path:
+    """対象repoに対応する単一の復旧状態pathを返す。"""
+    digest = hashlib.sha256(str(private_notes.resolve()).encode("utf-8")).hexdigest()
+    return _retrying_mutation_state_root() / f"{digest}.json"
+
+
+def _fsync_directory(path: pathlib.Path) -> None:
+    """POSIXでdirectory entryの更新を永続化し、未対応環境では何もしない。"""
+    if os.name != "posix":
+        return
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _load_retrying_mutation_state(private_notes: pathlib.Path) -> _RetryingMutationState | None:
+    """対象repoの復旧状態を検証して読み取る。"""
+    path = _retrying_mutation_state_path(private_notes)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"依存更新の復旧状態を読み取れません: {path}") from error
+    if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+        raise RuntimeError(f"依存更新の復旧状態の形式が不正です: {path}")
+    fields = {
+        "transaction_key": raw.get("transaction_key"),
+        "filename": raw.get("filename"),
+        "original_rel_path": raw.get("original_rel_path"),
+        "dirty_text": raw.get("dirty_text"),
+        "phase": raw.get("phase", "suspended"),
+        "base_head": raw.get("base_head"),
+        "candidate_head": raw.get("candidate_head"),
+        "message": raw.get("message"),
+        "rel_paths": raw.get("rel_paths", []),
+    }
+    if (
+        not all(isinstance(fields[name], str) for name in ("transaction_key", "filename", "original_rel_path"))
+        or fields["dirty_text"] is not None
+        and not isinstance(fields["dirty_text"], str)
+        or fields["phase"] not in ("suspended", "prepared", "committed")
+        or any(
+            fields[name] is not None and not isinstance(fields[name], str)
+            for name in ("base_head", "candidate_head", "message")
+        )
+        or not isinstance(fields["rel_paths"], list)
+        or not all(isinstance(value, str) for value in fields["rel_paths"])
+    ):
+        raise RuntimeError(f"依存更新の復旧状態の値が不正です: {path}")
+    return _RetryingMutationState(
+        transaction_key=fields["transaction_key"],
+        filename=fields["filename"],
+        original_rel_path=fields["original_rel_path"],
+        dirty_text=fields["dirty_text"],
+        phase=fields["phase"],
+        base_head=fields["base_head"],
+        candidate_head=fields["candidate_head"],
+        message=fields["message"],
+        rel_paths=tuple(fields["rel_paths"]),
+    )
+
+
+def _write_retrying_mutation_state(private_notes: pathlib.Path, state: _RetryingMutationState) -> None:
+    """復旧状態を同一filesystem内で原子的に置換する。"""
+    path = _retrying_mutation_state_path(private_notes)
+    payload = {
+        "schema_version": 1,
+        **dataclasses.asdict(state),
+        "rel_paths": list(state.rel_paths),
+    }
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary_path = pathlib.Path(temporary_name)
+    try:
+        if os.name == "posix":
+            os.fchmod(fd, 0o600)
+        stream = os.fdopen(fd, "w", encoding="utf-8")
+        fd = -1
+        with stream:
+            json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if os.name == "nt":
+            _managed_temp._windows_secure_path(  # noqa: SLF001  # pylint: disable=protected-access
+                temporary_path,
+                directory=False,
+            )
+        temporary_path.replace(path)
+        _fsync_directory(path.parent)
+    except BaseException:
+        if fd >= 0:
+            os.close(fd)
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def _delete_retrying_mutation_state(private_notes: pathlib.Path) -> None:
+    """復元完了後の復旧状態だけを削除する。"""
+    path = _retrying_mutation_state_path(private_notes)
+    if path.exists():
+        path.unlink()
+        _fsync_directory(path.parent)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -539,7 +683,7 @@ def _migrate_legacy_reservations(private_notes: pathlib.Path) -> int:
     return migrated_count
 
 
-def _pull(private_notes: pathlib.Path) -> None:
+def _pull(private_notes: pathlib.Path, *, transaction_key: str | None = None) -> None:
     """フィードバック保存リポジトリで`git pull --ff-only`を実行する。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
@@ -547,9 +691,99 @@ def _pull(private_notes: pathlib.Path) -> None:
     pullを省略し、旧予約形式の移行だけを実行する。
     """
     _assert_repo_lock_held(private_notes)
+    state = _assert_retrying_mutation_owner(private_notes, transaction_key)
     if _has_remote(private_notes):
         _run_git(["pull", "--ff-only"], cwd=private_notes)
-    _migrate_legacy_reservations(private_notes)
+    if state is None:
+        _migrate_legacy_reservations(private_notes)
+
+
+def _assert_retrying_mutation_owner(
+    private_notes: pathlib.Path,
+    transaction_key: str | None,
+) -> _RetryingMutationState | None:
+    """未完了の依存更新があれば同一所有キー以外のgit操作を拒否する。"""
+    state = _load_retrying_mutation_state(private_notes)
+    if state is None:
+        return None
+    if transaction_key is None or state.transaction_key != transaction_key:
+        raise RuntimeError(
+            "中断された依存更新が残っているため、別の同期・更新を実行できません。"
+            f"同じ依存更新を再実行してください: {state.filename}"
+        )
+    return state
+
+
+def _git_head(private_notes: pathlib.Path) -> str:
+    """対象repoの完全なHEAD識別子を返す。"""
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=private_notes,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _recover_retrying_mutation_candidate(
+    private_notes: pathlib.Path,
+    transaction_key: str,
+) -> _RetryingMutationState:
+    """中断時の候補変更だけを取り消し、remote再同期前の状態へ戻す。"""
+    state = _assert_retrying_mutation_owner(private_notes, transaction_key)
+    if state is None:
+        raise RuntimeError("依存更新の復旧状態がありません")
+    if state.phase == "suspended":
+        return state
+    if state.base_head is None or state.message is None or not state.rel_paths:
+        raise RuntimeError("依存更新の候補commitを復旧する情報が不足しています")
+    head = _git_head(private_notes)
+    if head != state.base_head:
+        parent = subprocess.run(
+            ["git", "rev-parse", f"{head}^"],
+            cwd=private_notes,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        message = subprocess.run(
+            ["git", "log", "-1", "--format=%B", head],
+            cwd=private_notes,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.rstrip("\n")
+        changed_paths = tuple(
+            sorted(
+                subprocess.run(
+                    ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", head],
+                    cwd=private_notes,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.splitlines()
+            )
+        )
+        if (
+            parent != state.base_head
+            or message != state.message
+            or changed_paths != tuple(sorted(state.rel_paths))
+            or state.phase == "committed"
+            and state.candidate_head != head
+        ):
+            raise RuntimeError("中断後に履歴が変化したため、依存更新候補を自動復旧できません")
+        _run_git(["reset", "--soft", state.base_head], cwd=private_notes)
+    _run_git(["restore", "--source", state.base_head, "--staged", "--worktree", "--", *state.rel_paths], cwd=private_notes)
+    recovered = dataclasses.replace(
+        state,
+        phase="suspended",
+        base_head=None,
+        candidate_head=None,
+        message=None,
+        rel_paths=(),
+    )
+    _write_retrying_mutation_state(private_notes, recovered)
+    return recovered
 
 
 class _ThreadLocalHeldPaths(threading.local):
@@ -659,6 +893,7 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
     commitのみ実行しpushをスキップする。
     """
     _assert_repo_lock_held(private_notes)
+    _assert_retrying_mutation_owner(private_notes, None)
     rel_list = list(rel_paths)
     _run_git(["add", *rel_list], cwd=private_notes)
     _run_git(["commit", "-m", message], cwd=private_notes)
@@ -669,6 +904,8 @@ def _commit_and_push_retrying_mutation(
     private_notes: pathlib.Path,
     message: str,
     mutation: Callable[[], _RetryingMutation | None],
+    *,
+    transaction_key: str,
 ) -> bool:
     """remote競合時に検査と変更を最新状態から1回だけ再実行する。
 
@@ -677,40 +914,84 @@ def _commit_and_push_retrying_mutation(
     既存の未公開commitはmutation開始前にremoteへ同期し、候補commitと混在させない。
     """
     _assert_repo_lock_held(private_notes)
-    _push_pending_commits(private_notes)
+    _recover_retrying_mutation_candidate(private_notes, transaction_key)
+    _push_pending_commits(private_notes, transaction_key=transaction_key)
     for attempt in range(2):
-        _pull(private_notes)
-        head = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=private_notes,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
+        _pull(private_notes, transaction_key=transaction_key)
+        head = _git_head(private_notes)
         changed = mutation()
         if changed is None:
             return False
         rel_list = list(changed.rel_paths)
         if not rel_list:
             raise RuntimeError("変更を作成したmutationは対象pathを1件以上返す必要がある")
+        state = _assert_retrying_mutation_owner(private_notes, transaction_key)
+        assert state is not None
+        prepared = dataclasses.replace(
+            state,
+            phase="prepared",
+            base_head=head,
+            candidate_head=None,
+            message=message,
+            rel_paths=tuple(rel_list),
+        )
+        _write_retrying_mutation_state(private_notes, prepared)
         _run_git(["commit", "--only", "-m", message, "--", *rel_list], cwd=private_notes)
+        committed = dataclasses.replace(prepared, phase="committed", candidate_head=_git_head(private_notes))
+        _write_retrying_mutation_state(private_notes, committed)
         if not _has_remote(private_notes):
+            _write_retrying_mutation_state(
+                private_notes,
+                dataclasses.replace(
+                    committed,
+                    phase="suspended",
+                    base_head=None,
+                    candidate_head=None,
+                    message=None,
+                    rel_paths=(),
+                ),
+            )
             return True
         try:
             _run_git(["push"], cwd=private_notes)
+            _write_retrying_mutation_state(
+                private_notes,
+                dataclasses.replace(
+                    committed,
+                    phase="suspended",
+                    base_head=None,
+                    candidate_head=None,
+                    message=None,
+                    rel_paths=(),
+                ),
+            )
             return True
         except subprocess.CalledProcessError:
             _run_git(["reset", "--soft", head], cwd=private_notes)
             _run_git(["restore", "--source", head, "--staged", "--", *rel_list], cwd=private_notes)
             changed.restore()
+            _write_retrying_mutation_state(
+                private_notes,
+                dataclasses.replace(
+                    committed,
+                    phase="suspended",
+                    base_head=None,
+                    candidate_head=None,
+                    message=None,
+                    rel_paths=(),
+                ),
+            )
             if attempt == 1:
                 raise
     raise AssertionError("unreachable")
 
 
-def _push_pending_commits(private_notes: pathlib.Path) -> None:
+def _push_pending_commits(private_notes: pathlib.Path, *, transaction_key: str | None = None) -> None:
     """ローカルcommitをpushし、競合時はrebase後に1回だけ再試行する。"""
     _assert_repo_lock_held(private_notes)
+    state = _assert_retrying_mutation_owner(private_notes, transaction_key)
+    if state is not None and state.phase != "suspended":
+        raise RuntimeError("再検証前の依存更新候補は通常のpush経路から公開できません")
     if not _has_remote(private_notes):
         return
     try:

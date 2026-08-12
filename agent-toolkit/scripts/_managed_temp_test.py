@@ -56,6 +56,25 @@ def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.Mo
     ]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="symlink loopはPOSIXだけで検証する")
+def test_list_managed_temp_skips_symlink_loop_and_keeps_valid_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """registryのpath解決がsymlink loopでも真正な項目の列挙を継続する。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    valid = subject.create_managed_temp("valid")
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    forged = dict(subject._load_private_json(subject._registry_path(valid)))
+    forged["path"] = str(loop)
+    subject._write_private_json(subject._registry_path(loop), forged)
+
+    assert [item["path"] for item in subject.list_managed_temp()] == [str(valid)]
+    assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+
+
 def test_claim_returns_one_path_to_two_parallel_callers(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -153,21 +172,26 @@ def test_operation_cas_allows_one_parallel_external_action(
     barrier = threading.Barrier(3)
     counter_lock = threading.Lock()
     external_actions = 0
-    results: list[dict[str, str]] = []
+    results: list[tuple[str, dict[str, str]]] = []
+    errors: list[subject.ManagedTempError] = []
 
-    def worker() -> None:
+    def worker(token: str) -> None:
         nonlocal external_actions
         barrier.wait(timeout=10)
-        result = subject.begin_managed_temp_operation(target, "create-pr")
-        results.append(result)
-        token = result.get("token")
-        if token is None:
+        try:
+            result = subject.begin_managed_temp_operation(target, "create-pr", token)
+        except subject.ManagedTempError as error:
+            errors.append(error)
             return
+        results.append((token, result))
         with counter_lock:
             external_actions += 1
         subject.complete_managed_temp_operation(target, "create-pr", token)
 
-    threads = (threading.Thread(target=worker), threading.Thread(target=worker))
+    threads = (
+        threading.Thread(target=worker, args=("a" * 64,)),
+        threading.Thread(target=worker, args=("b" * 64,)),
+    )
     for thread in threads:
         thread.start()
     barrier.wait(timeout=10)
@@ -176,24 +200,51 @@ def test_operation_cas_allows_one_parallel_external_action(
 
     assert not any(thread.is_alive() for thread in threads)
     assert external_actions == 1
-    assert sum(result["status"] == "acquired" for result in results) == 1
-    assert subject.begin_managed_temp_operation(target, "create-pr")["status"] == "completed"
+    assert len(results) == len(errors) == 1
+    owner_token = results[0][0]
+    assert results[0][1]["status"] == "acquired"
+    assert subject.begin_managed_temp_operation(target, "create-pr", owner_token)["status"] == "completed"
+
+
+def test_operation_begin_resumes_after_state_write_interruption(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """beginの返却前に中断しても事前保存tokenで再開し、別tokenを拒否する。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp("operation")
+    owner_token = "c" * 64
+    original_write = subject._write_private_json
+
+    def interrupt_after_write(path: pathlib.Path, value: dict[str, typing.Any]) -> None:
+        original_write(path, value)
+        raise RuntimeError("返却前の中断")
+
+    monkeypatch.setattr(subject, "_write_private_json", interrupt_after_write)
+    with pytest.raises(RuntimeError, match="返却前"):
+        subject.begin_managed_temp_operation(target, "publish", owner_token)
+    monkeypatch.setattr(subject, "_write_private_json", original_write)
+
+    assert subject.begin_managed_temp_operation(target, "publish", owner_token)["status"] == "acquired"
+    with pytest.raises(subject.ManagedTempError, match="所有token"):
+        subject.begin_managed_temp_operation(target, "publish", "d" * 64)
+    assert subject.complete_managed_temp_operation(target, "publish", owner_token)["status"] == "completed"
 
 
 def test_operation_complete_rejects_non_owner_token(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """外部操作の完了記録はbeginが返した所有tokenだけを受理する。"""
+    """外部操作の完了記録はbeginへ渡した所有tokenだけを受理する。"""
     monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("operation")
-    acquired = subject.begin_managed_temp_operation(target, "publish")
+    token = "e" * 64
+    acquired = subject.begin_managed_temp_operation(target, "publish", token)
     assert acquired["status"] == "acquired"
 
     with pytest.raises(subject.ManagedTempError, match="所有token"):
         subject.complete_managed_temp_operation(target, "publish", "0" * 64)
 
-    token = acquired["token"]
     assert subject.complete_managed_temp_operation(target, "publish", token)["status"] == "completed"
 
 
@@ -617,18 +668,19 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """operation CLIは最初のcallerだけへtokenを返し、所有者だけが完了できる。"""
+        """operation CLIは事前保存tokenの所有者だけが再開と完了を実行できる。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("publish-group")
         parser = argparse.ArgumentParser()
         subject.build_parser(parser)
-        begin = ["operation", "begin", "--path", str(target), "--name", "create-pr"]
+        token = "f" * 64
+        begin = ["operation", "begin", "--path", str(target), "--name", "create-pr", "--token", token]
 
         assert subject.dispatch(parser.parse_args(begin)) == 0
         acquired = json.loads(capsys.readouterr().out)
         assert acquired["status"] == "acquired"
         assert subject.dispatch(parser.parse_args(begin)) == 0
-        assert json.loads(capsys.readouterr().out)["status"] == "in-progress"
+        assert json.loads(capsys.readouterr().out)["status"] == "acquired"
 
         complete = [
             "operation",
@@ -638,7 +690,7 @@ class TestManagedTempPosix:
             "--name",
             "create-pr",
             "--token",
-            acquired["token"],
+            token,
         ]
         assert subject.dispatch(parser.parse_args(complete)) == 0
         assert json.loads(capsys.readouterr().out)["status"] == "completed"

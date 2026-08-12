@@ -17,9 +17,13 @@ laneへ公開を委譲する案は、公開の重複と認可の分散を生む�
 ## キュー依存更新の公開
 
 キュー依存の更新は、既存の未公開commitをremote進行へrebaseしてpushした後、remote同期、active依存グラフの再構成、候補の仮適用、循環検査、対象ファイルのcommit及びpushを1試行とする。
-対象feedbackに本文だけの未commit変更がある場合は、本文をrepository外のmemoryへ退避して作業ツリーを`HEAD`へ戻し、全試行の終了後に最新frontmatterと組み合わせて復元する。
+依存更新は、操作引数から決定的に導出した所有キー、未commit本文、候補commitの基点と識別子を利用者専用のrepository外状態へ原子的に保存する。
+対象feedbackに本文だけの未commit変更がある場合は、作業ツリーを`HEAD`へ戻す前に本文を当該状態へ永続化し、全試行の終了後に最新frontmatterと組み合わせて復元する。
+同期中に対象が採用、不採用、削除のいずれかへ変化した場合はactive pathを再作成せず、本文をrepository外のprivate Markdownへ保全して保存先を明示する。
 stage済み変更、frontmatterの未commit変更又は未追跡feedbackは、利用者の変更と機械更新を安全に分離できないため更新を拒否する。
-別cloneが先にpushした場合は未公開の候補commitと対象ファイルだけを取り消し、remote同期から同じ試行を再実行する。
+候補commit前に`prepared`、commit後に`committed`を永続化する。中断後は同じ所有キーの操作だけが候補の親、message及び変更pathを照合して取り消し、remote同期と依存グラフの再検査から再開する。
+通常の同期とpushは未完了状態を検出すると拒否するため、再検査を経ない候補commitを後続操作が公開することはない。
+別cloneが先にpushした場合も未公開の候補commitと対象ファイルだけを取り消し、remote同期から同じ試行を再実行する。
 異なるcloneのローカルロックは共有されないため、remote refへのfast-forward pushを公開時の直列化境界とする。
 push失敗後に候補commitをrebaseしてそのまま再送する案は、rebase後の依存グラフを検査できないため採用しない。
 
@@ -33,5 +37,5 @@ pending claimが無い既存領域は空でも所有対象へ昇格せず、列�
 列挙結果を確認してから無作為名の領域を作成する案は、確認と作成の間で複数主体が同時に成立するため採用しない。
 
 外部操作は管理領域と操作名から導出する永続状態に、`in-progress`又は`completed`と所有tokenを保存する。
-開始時のcompare-and-setでtokenを取得した主体だけが外部操作し、外部状態を検証した後に同じtokenで完了へ遷移する。
-後続主体は`in-progress`と`completed`のいずれかを受領した場合に同じ操作をしないため、process lockを越えてPR/MR作成、merge及びpushの重複を防ぐ。
+callerはtokenを公開グループ表へ先に永続化してから開始時のcompare-and-setへ渡す。同じtokenは返却前の中断後も再開でき、異なるtokenは拒否する。
+token所有者だけが外部操作し、外部状態を検証した後に同じtokenで完了へ遷移するため、process lockを越えてPR/MR作成、merge及びpushの重複を防ぐ。

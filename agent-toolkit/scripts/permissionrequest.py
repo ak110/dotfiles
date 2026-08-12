@@ -253,7 +253,13 @@ def _is_safe_claim_key_part(value: str) -> bool:
 
 
 def _is_managed_temp_operation_begin(tokens: list[str]) -> bool:
-    if len(tokens) != 8 or tokens[4] != "--path" or tokens[6] != "--name":
+    if (
+        len(tokens) != 10
+        or tokens[4] != "--path"
+        or tokens[6] != "--name"
+        or tokens[8] != "--token"
+        or re.fullmatch(r"[0-9a-f]{64}", tokens[9]) is None
+    ):
         return False
     if not _managed_temp.is_valid_prefix(tokens[7]):
         return False

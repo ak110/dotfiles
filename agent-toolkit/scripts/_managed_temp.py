@@ -1105,7 +1105,7 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
             if prefix is not None and item_prefix != prefix:
                 continue
             entries.append({"path": str(path), "prefix": item_prefix, "created_at": created_at})
-        except (KeyError, OSError, ValueError, ManagedTempError) as error:
+        except (KeyError, OSError, RuntimeError, ValueError, ManagedTempError) as error:
             print(f"warning: 管理対象を列挙できない: {registry_path}: {error}", file=sys.stderr)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
 
@@ -1152,10 +1152,10 @@ def _replace_private_json(path: pathlib.Path, value: dict[str, typing.Any]) -> N
         temporary.unlink(missing_ok=True)
 
 
-def begin_managed_temp_operation(path_arg: pathlib.Path | str, name: str) -> dict[str, str]:
+def begin_managed_temp_operation(path_arg: pathlib.Path | str, name: str, token: str) -> dict[str, str]:
     """管理対象領域の外部操作を単一所有者だけが開始できる状態へ遷移する。"""
-    if not is_valid_prefix(name):
-        raise ManagedTempError("nameは英小文字・数字・ハイフンだけで指定する")
+    if not is_valid_prefix(name) or re.fullmatch(r"[0-9a-f]{64}", token) is None:
+        raise ManagedTempError("外部操作のname又はtokenが不正")
     path = validate_managed_temp(path_arg)
     with _operation_lock(path, name):
         path = validate_managed_temp(path)
@@ -1163,8 +1163,10 @@ def begin_managed_temp_operation(path_arg: pathlib.Path | str, name: str) -> dic
         if state_path.exists() or state_path.is_symlink():
             existing_record = _load_private_json(state_path)
             _validate_operation_record(existing_record, path, name)
-            return {"status": typing.cast(str, existing_record["status"]), "path": str(path), "name": name}
-        token = secrets.token_hex(32)
+            if existing_record["token"] != token:
+                raise ManagedTempError(f"外部操作の所有tokenが一致しない: {name}")
+            status = "acquired" if existing_record["status"] == "in-progress" else "completed"
+            return {"status": status, "path": str(path), "name": name}
         record: dict[str, typing.Any] = {
             "schema_version": _OPERATION_SCHEMA_VERSION,
             "path": str(path),
@@ -1175,7 +1177,7 @@ def begin_managed_temp_operation(path_arg: pathlib.Path | str, name: str) -> dic
             "completed_at": None,
         }
         _write_private_json(state_path, record)
-        return {"status": "acquired", "path": str(path), "name": name, "token": token}
+        return {"status": "acquired", "path": str(path), "name": name}
 
 
 def complete_managed_temp_operation(path_arg: pathlib.Path | str, name: str, token: str) -> dict[str, str]:
@@ -1372,6 +1374,7 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     operation_begin = operation_subparsers.add_parser("begin", help="外部操作の所有権を取得する")
     operation_begin.add_argument("--path", required=True, type=pathlib.Path)
     operation_begin.add_argument("--name", required=True)
+    operation_begin.add_argument("--token", required=True)
     operation_complete = operation_subparsers.add_parser("complete", help="外部操作の完了を記録する")
     operation_complete.add_argument("--path", required=True, type=pathlib.Path)
     operation_complete.add_argument("--name", required=True)
@@ -1392,7 +1395,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
             print(claim_managed_temp(args.prefix, tuple(args.key_part)))
         elif command == "operation":
             if args.operation_command == "begin":
-                result = begin_managed_temp_operation(args.path, args.name)
+                result = begin_managed_temp_operation(args.path, args.name, args.token)
             else:
                 result = complete_managed_temp_operation(args.path, args.name, args.token)
             print(json.dumps(result, ensure_ascii=False, sort_keys=True))

@@ -19,6 +19,7 @@ import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_remove_all as _remove_all
 import _atk_mq_tbd as _tbd
+import _managed_temp
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
     MQ_STATE_INBOX,
@@ -32,15 +33,22 @@ from _atk_mq_common import (
     _commit_and_push_retrying_mutation,
     _copy_to_tempfile,
     _dedup_positional_filenames,
+    _delete_retrying_mutation_state,
+    _fsync_directory,
     _is_tbd_answered,
+    _load_retrying_mutation_state,
     _pull,
     _repo_lock,
     _require_type,
+    _retrying_mutation_key,
+    _retrying_mutation_state_root,
     _RetryingMutation,
+    _RetryingMutationState,
     _stamp_result,
     _subdir,
     _validate_filename,
     _validate_filenames_only,
+    _write_retrying_mutation_state,
 )
 from _atk_mq_list import _has_category
 from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo, _verify_target_repo_content
@@ -515,8 +523,10 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
         ) as temporary:
             temporary.write(content)
             temporary.flush()
+            os.fsync(temporary.fileno())
             temporary_path = pathlib.Path(temporary.name)
         temporary_path.replace(path)
+        _fsync_directory(path.parent)
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
@@ -542,49 +552,122 @@ def _suspend_uncommitted_feedback_body(
     filename: str,
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
+    transaction_key: str,
 ) -> Iterator[None]:
-    """本文だけの未commit変更を同期中に退避し、最新frontmatterへ再適用する。"""
-    path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
-    relative_path = str(path.relative_to(private_notes))
-    head_result = subprocess.run(
-        ["git", "show", f"HEAD:{relative_path}"],
-        cwd=private_notes,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if head_result.returncode != 0:
-        raise WebInputError(f"未commitの新規feedbackは依存更新できません: {path.name}")
-    working_text = path.read_text(encoding="utf-8")
-    head_text = head_result.stdout
-    staged_result = subprocess.run(
-        ["git", "diff", "--cached", "--quiet", "--", relative_path],
-        cwd=private_notes,
-        check=False,
-    )
-    if staged_result.returncode not in (0, 1):
-        raise WebInputError(f"feedbackのstage状態を検証できません: {path.name}")
-    if staged_result.returncode == 1:
-        raise WebInputError(f"stage済みのfeedbackは依存更新できません: {path.name}")
-    if working_text == head_text:
-        yield
-        return
-    working_parsed = _frontmatter.parse_frontmatter(working_text)
-    head_parsed = _frontmatter.parse_frontmatter(head_text)
-    if working_parsed is None or head_parsed is None or _frontmatter_prefix(working_text) != _frontmatter_prefix(head_text):
-        raise WebInputError(f"frontmatterに未commit変更があるfeedbackは依存更新できません: {path.name}")
-    dirty_body = working_parsed[1]
-    _atomic_write_text(path, head_text)
+    """依存更新と未commit本文をrepo外へ永続化し、完了後に安全な保存先へ戻す。"""
+    state = _load_retrying_mutation_state(private_notes)
+    if state is None:
+        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+        relative_path = str(path.relative_to(private_notes))
+        head_result = subprocess.run(
+            ["git", "show", f"HEAD:{relative_path}"],
+            cwd=private_notes,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if head_result.returncode != 0:
+            raise WebInputError(f"未commitの新規feedbackは依存更新できません: {path.name}")
+        working_text = path.read_text(encoding="utf-8")
+        head_text = head_result.stdout
+        staged_result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet", "--", relative_path],
+            cwd=private_notes,
+            check=False,
+        )
+        if staged_result.returncode not in (0, 1):
+            raise WebInputError(f"feedbackのstage状態を検証できません: {path.name}")
+        if staged_result.returncode == 1:
+            raise WebInputError(f"stage済みのfeedbackは依存更新できません: {path.name}")
+        dirty_text: str | None = None
+        if working_text != head_text:
+            working_parsed = _frontmatter.parse_frontmatter(working_text)
+            head_parsed = _frontmatter.parse_frontmatter(head_text)
+            if (
+                working_parsed is None
+                or head_parsed is None
+                or _frontmatter_prefix(working_text) != _frontmatter_prefix(head_text)
+            ):
+                raise WebInputError(f"frontmatterに未commit変更があるfeedbackは依存更新できません: {path.name}")
+            dirty_text = working_text
+        state = _RetryingMutationState(transaction_key, filename, relative_path, dirty_text)
+        _write_retrying_mutation_state(private_notes, state)
+        if dirty_text is not None:
+            _atomic_write_text(path, head_text)
+    elif state.transaction_key != transaction_key or state.filename != filename:
+        raise WebInputError(f"中断された別の依存更新が残っています。同じ操作を再実行してください: {state.filename}")
+    elif state.phase == "suspended" and state.dirty_text is not None:
+        original_path = private_notes / state.original_rel_path
+        if original_path.is_file() and original_path.read_text(encoding="utf-8") == state.dirty_text:
+            head_result = subprocess.run(
+                ["git", "show", f"HEAD:{state.original_rel_path}"],
+                cwd=private_notes,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            _atomic_write_text(original_path, head_result.stdout)
     try:
         yield
     finally:
-        candidates = (processing_dir / path.name, inbox_dir / path.name)
-        latest_path = next((candidate for candidate in candidates if candidate.is_file()), None)
-        if latest_path is None:
-            _atomic_write_text(path, working_text)
-        else:
-            latest_text = latest_path.read_text(encoding="utf-8")
-            _atomic_write_text(latest_path, _replace_frontmatter_body(latest_text, dirty_body))
+        latest_state = _load_retrying_mutation_state(private_notes)
+        if latest_state is not None and latest_state.phase == "suspended":
+            if latest_state.dirty_text is None:
+                _delete_retrying_mutation_state(private_notes)
+            else:
+                dirty_parsed = _frontmatter.parse_frontmatter(latest_state.dirty_text)
+                assert dirty_parsed is not None
+                matches = [private_notes / state_name / filename for state_name in MQ_STATES]
+                existing = [candidate for candidate in matches if candidate.is_file()]
+                active = [candidate for candidate in existing if candidate.parent.name in (MQ_STATE_INBOX, MQ_STATE_PROCESSING)]
+                if len(existing) == 1 and len(active) == 1:
+                    latest_text = active[0].read_text(encoding="utf-8")
+                    _atomic_write_text(active[0], _replace_frontmatter_body(latest_text, dirty_parsed[1]))
+                    _delete_retrying_mutation_state(private_notes)
+                else:
+                    recovery_path = _write_private_recovery_text(
+                        _retrying_mutation_state_root(),
+                        transaction_key,
+                        filename,
+                        latest_state.dirty_text,
+                    )
+                    _delete_retrying_mutation_state(private_notes)
+                    raise WebInputError(
+                        "同期中にfeedbackがactive状態から移動または削除されたため、"
+                        "未commit本文をrepo外へ保全しました: "
+                        f"{recovery_path}"
+                    )
+
+
+def _write_private_recovery_text(
+    root: pathlib.Path,
+    transaction_key: str,
+    filename: str,
+    content: str,
+) -> pathlib.Path:
+    """未commit本文を利用者専用の一意なMarkdownへ排他的に保存する。"""
+    fd, recovery_name = tempfile.mkstemp(
+        prefix=f"recovery-{transaction_key}-",
+        suffix=f"-{filename}",
+        dir=root,
+    )
+    recovery_path = pathlib.Path(recovery_name)
+    stream = os.fdopen(fd, "w", encoding="utf-8")
+    try:
+        with stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if os.name == "nt":
+            _managed_temp._windows_secure_path(  # noqa: SLF001  # pylint: disable=protected-access
+                recovery_path,
+                directory=False,
+            )
+        _fsync_directory(root)
+    except BaseException:
+        recovery_path.unlink(missing_ok=True)
+        raise
+    return recovery_path
 
 
 def convert_entry_to_plan(
@@ -604,6 +687,13 @@ def convert_entry_to_plan(
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     _validate_filenames_only([filename, *(depends_on or ())], inbox_dir)
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    transaction_key = _retrying_mutation_key(
+        "convert-to-plan",
+        filename,
+        str(plan_path),
+        depends_on,
+        normalized_target_repo,
+    )
 
     with _repo_lock(private_notes, timeout=lock_timeout):
         result_path: pathlib.Path | None = None
@@ -642,8 +732,19 @@ def convert_entry_to_plan(
 
             return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
 
-        with _suspend_uncommitted_feedback_body(private_notes, filename, inbox_dir, processing_dir):
-            _commit_and_push_retrying_mutation(private_notes, "chore: convert feedback item to plan", mutation)
+        with _suspend_uncommitted_feedback_body(
+            private_notes,
+            filename,
+            inbox_dir,
+            processing_dir,
+            transaction_key,
+        ):
+            _commit_and_push_retrying_mutation(
+                private_notes,
+                "chore: convert feedback item to plan",
+                mutation,
+                transaction_key=transaction_key,
+            )
         assert result_path is not None
         return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
 
@@ -681,6 +782,7 @@ def set_entry_dependencies(
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     _validate_filenames_only([filename, *depends_on], inbox_dir)
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    transaction_key = _retrying_mutation_key("set-dependencies", filename, depends_on, normalized_target_repo)
 
     with _repo_lock(private_notes, timeout=lock_timeout):
         result_path: pathlib.Path | None = None
@@ -707,8 +809,19 @@ def set_entry_dependencies(
 
             return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
 
-        with _suspend_uncommitted_feedback_body(private_notes, filename, inbox_dir, processing_dir):
-            _commit_and_push_retrying_mutation(private_notes, "chore: update feedback dependencies", mutation)
+        with _suspend_uncommitted_feedback_body(
+            private_notes,
+            filename,
+            inbox_dir,
+            processing_dir,
+            transaction_key,
+        ):
+            _commit_and_push_retrying_mutation(
+                private_notes,
+                "chore: update feedback dependencies",
+                mutation,
+                transaction_key=transaction_key,
+            )
         assert result_path is not None
         return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
 

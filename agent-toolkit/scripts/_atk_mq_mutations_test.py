@@ -10,6 +10,7 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 import argparse
 import contextlib
 import datetime
+import os
 import pathlib
 import subprocess
 import sys
@@ -20,6 +21,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_mq_common as common  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
@@ -410,6 +412,7 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
         _private_notes: pathlib.Path,
         _message: str,
         mutation: Callable[[], mutations._RetryingMutation | None],
+        **_kwargs: object,
     ) -> bool:
         return mutation() is not None
 
@@ -677,6 +680,7 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
         _private_notes: pathlib.Path,
         _message: str,
         mutation: Callable[[], mutations._RetryingMutation | None],
+        **_kwargs: object,
     ) -> bool:
         first.write_text(
             first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
@@ -839,6 +843,154 @@ def test_set_dependencies_pushes_only_metadata_and_preserves_dirty_body(tmp_path
         text=True,
     )
     assert status.stdout == " M inbox/first.md\n"
+
+
+def test_interrupted_dependency_candidate_is_revalidated_before_later_publish(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """commit後の中断候補を通常pushせず、remote進行後の循環検査から再開する。"""
+    state_home = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
+    remote, interrupted_clone, competing_clone = _initialize_dependency_remote(tmp_path)
+    original_run_git = common._run_git  # pylint: disable=protected-access  # noqa: SLF001
+
+    def interrupt_candidate_push(args: list[str], cwd: pathlib.Path) -> None:
+        state = common._load_retrying_mutation_state(cwd)  # pylint: disable=protected-access  # noqa: SLF001
+        if args == ["push"] and cwd == interrupted_clone and state is not None and state.phase == "committed":
+            raise KeyboardInterrupt("candidate push前の中断")
+        original_run_git(args, cwd)
+
+    monkeypatch.setattr(common, "_run_git", interrupt_candidate_push)
+    with pytest.raises(KeyboardInterrupt, match="candidate push前"):
+        mutations.set_entry_dependencies(interrupted_clone, filename="first.md", depends_on=("second.md",))
+    state = common._load_retrying_mutation_state(interrupted_clone)  # pylint: disable=protected-access  # noqa: SLF001
+    assert state is not None and state.phase == "committed"
+
+    mutations.set_entry_dependencies(competing_clone, filename="second.md", depends_on=("first.md",))
+    with (
+        common._repo_lock(interrupted_clone),  # pylint: disable=protected-access  # noqa: SLF001
+        pytest.raises(RuntimeError, match="中断された依存更新"),
+    ):
+        common._push_pending_commits(interrupted_clone)  # pylint: disable=protected-access  # noqa: SLF001
+
+    monkeypatch.setattr(common, "_run_git", original_run_git)
+    with pytest.raises(mutations.WebInputError, match="循環"):
+        mutations.set_entry_dependencies(interrupted_clone, filename="first.md", depends_on=("second.md",))
+
+    verifier = tmp_path / "interruption-verifier"
+    subprocess.run(["git", "clone", str(remote), str(verifier)], check=True, capture_output=True)
+    first = frontmatter_parser.parse_frontmatter((verifier / "inbox/first.md").read_text(encoding="utf-8"))
+    second = frontmatter_parser.parse_frontmatter((verifier / "inbox/second.md").read_text(encoding="utf-8"))
+    assert first is not None and second is not None
+    assert "depends_on" not in first[0]
+    assert second[0]["depends_on"] == ["first.md"]
+    assert common._load_retrying_mutation_state(interrupted_clone) is None  # pylint: disable=protected-access  # noqa: SLF001
+
+
+def test_dirty_body_survives_process_exit_after_external_sidecar_write(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """作業ツリーをHEADへ戻した直後にprocessが終了しても同じ操作で本文を復元する。"""
+    state_home = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
+    remote, clone, _other_clone = _initialize_dependency_remote(tmp_path)
+    path = clone / "inbox/first.md"
+    dirty_text = path.read_text(encoding="utf-8").replace("本文\n", "強制終了から復旧する本文\n")
+    path.write_text(dirty_text, encoding="utf-8")
+    script = (
+        "import os,pathlib,sys\n"
+        f"sys.path.insert(0, {str(pathlib.Path(mutations.__file__).parent)!r})\n"
+        "import _atk_mq_common as common\n"
+        "import _atk_mq_mutations as mutations\n"
+        "original = common._run_git\n"
+        "def stop(args, cwd):\n"
+        "    if args == ['push']:\n"
+        "        os._exit(91)\n"
+        "    original(args, cwd)\n"
+        "common._run_git = stop\n"
+        f"mutations.set_entry_dependencies(pathlib.Path({str(clone)!r}), filename='first.md', depends_on=('second.md',))\n"
+    )
+    environment = os.environ.copy()
+    environment["XDG_STATE_HOME"] = str(state_home)
+    interrupted = subprocess.run([sys.executable, "-c", script], check=False, env=environment)
+
+    assert interrupted.returncode == 91
+    assert "強制終了から復旧する本文" not in path.read_text(encoding="utf-8")
+    persisted = common._load_retrying_mutation_state(clone)  # pylint: disable=protected-access  # noqa: SLF001
+    assert persisted is not None and persisted.dirty_text == dirty_text
+
+    mutations.set_entry_dependencies(clone, filename="first.md", depends_on=("second.md",))
+
+    restored = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    original_dirty = frontmatter_parser.parse_frontmatter(dirty_text)
+    assert restored is not None and original_dirty is not None
+    assert restored[0]["depends_on"] == ["second.md"]
+    assert restored[1] == original_dirty[1]
+    verifier = tmp_path / "exit-verifier"
+    subprocess.run(["git", "clone", str(remote), str(verifier)], check=True, capture_output=True)
+    assert "強制終了から復旧する本文" not in (verifier / "inbox/first.md").read_text(encoding="utf-8")
+    assert common._load_retrying_mutation_state(clone) is None  # pylint: disable=protected-access  # noqa: SLF001
+
+
+@pytest.mark.parametrize("destination", ["adopted", "rejected", "deleted"])
+def test_dirty_body_is_recovered_outside_repo_when_remote_removes_active_entry(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination: str,
+) -> None:
+    """同期中に別cloneがactive項目を終端化又は削除しても旧active pathを再作成しない。"""
+    state_home = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
+    _remote, dirty_clone, competing_clone = _initialize_dependency_remote(tmp_path)
+    dirty_path = dirty_clone / "inbox/first.md"
+    dirty_text = dirty_path.read_text(encoding="utf-8").replace("本文\n", "競合時に保全する本文\n")
+    dirty_path.write_text(dirty_text, encoding="utf-8")
+    validated = threading.Event()
+    competing_done = threading.Event()
+    original_validate = mutations._set_validated_dependencies  # pylint: disable=protected-access  # noqa: SLF001
+
+    def pause_validation(
+        data: dict[str, object],
+        path: pathlib.Path,
+        depends_on: tuple[str, ...],
+        inbox_dir: pathlib.Path,
+        processing_dir: pathlib.Path,
+    ) -> None:
+        original_validate(data, path, depends_on, inbox_dir, processing_dir)
+        if dirty_clone in path.parents:
+            validated.set()
+            assert competing_done.wait(timeout=10)
+
+    monkeypatch.setattr(mutations, "_set_validated_dependencies", pause_validation)
+
+    def remove_active_entry() -> None:
+        assert validated.wait(timeout=10)
+        if destination == "deleted":
+            subprocess.run(["git", "rm", "inbox/first.md"], cwd=competing_clone, check=True, capture_output=True)
+        else:
+            subprocess.run(
+                ["git", "mv", "inbox/first.md", f"{destination}/first.md"],
+                cwd=competing_clone,
+                check=True,
+                capture_output=True,
+            )
+        subprocess.run(["git", "commit", "-m", "finish first"], cwd=competing_clone, check=True, capture_output=True)
+        subprocess.run(["git", "push"], cwd=competing_clone, check=True, capture_output=True)
+        competing_done.set()
+
+    thread = threading.Thread(target=remove_active_entry)
+    thread.start()
+    with pytest.raises(mutations.WebInputError, match="repo外へ保全"):
+        mutations.set_entry_dependencies(dirty_clone, filename="first.md", depends_on=("second.md",))
+    thread.join(timeout=20)
+
+    assert not thread.is_alive()
+    assert not dirty_path.exists()
+    recovery_files = list((state_home / "agent-toolkit/mq-transactions").glob("recovery-*-first.md"))
+    assert len(recovery_files) == 1
+    assert recovery_files[0].read_text(encoding="utf-8") == dirty_text
 
 
 def test_set_dependencies_rejects_textually_dirty_frontmatter_without_modifying_it(tmp_path: pathlib.Path) -> None:

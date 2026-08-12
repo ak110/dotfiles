@@ -303,7 +303,7 @@ class TestShouldAllowBash:
         )
         assert (
             hook.should_allow_bash(
-                f"atk managed-temp operation begin --path {target} --name create-pr",
+                f"atk managed-temp operation begin --path {target} --name create-pr --token {'a' * 64}",
                 str(tmp_path),
             )
             is True
@@ -317,7 +317,7 @@ class TestShouldAllowBash:
         )
         assert (
             hook.should_allow_bash(
-                f"atk managed-temp operation begin --name create-pr --path {target}",
+                f"atk managed-temp operation begin --name create-pr --path {target} --token {'a' * 64}",
                 str(tmp_path),
             )
             is False

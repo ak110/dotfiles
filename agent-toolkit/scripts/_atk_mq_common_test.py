@@ -935,6 +935,11 @@ class TestCommitAndPushRetryingMutation:
             return _common._RetryingMutation(("feedback.md",), restore)  # pylint: disable=protected-access  # noqa: SLF001
 
         monkeypatch.setattr(_common, "_run_git", fake_run_git)
+        transaction_key = "a" * 64
+        _common._write_retrying_mutation_state(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path,
+            _common._RetryingMutationState(transaction_key, "feedback.md", "feedback.md", None),  # pylint: disable=protected-access  # noqa: SLF001
+        )
 
         with (
             pytest.raises(subprocess.CalledProcessError),
@@ -944,6 +949,7 @@ class TestCommitAndPushRetryingMutation:
                 tmp_path,
                 "chore: update dependencies",
                 mutation,
+                transaction_key=transaction_key,
             )
 
         assert mutation_attempts == 2
