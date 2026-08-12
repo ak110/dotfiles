@@ -9,6 +9,7 @@
 - 権限は統合worktree内の編集とcommitだけとし、push、worktreeの作成と回収、queue変更は禁止
 
 統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力とする。
+統合対応表の各lane項目は、1件以上のソート済みfeedback filename一覧を持つ。
 レビュー修正モードでは、採用指摘の6列表、関係する全計画の絶対パス、保持契約を必須入力とする。
 
 統合worktreeは単一writerとして排他使用する。
@@ -19,7 +20,7 @@
 
 統合対応表は次の2種類を判別可能に持つ。
 
-- lane項目: feedback filename、lane commitの完全OID、計画ファイルの絶対パス、統合順
+- lane項目: ソート済みfeedback filename一覧、lane commitの完全OID、計画ファイルの絶対パス、統合順
 - レビュー修正項目: 安定ID、関係する全計画パス、指摘ID、適用元OID、再適用後OIDまたは状態`適用済みスキップ`、統合順
 
 rebaseとmerge commitは作成せず、lane項目に続けてレビュー修正項目を統合順の単一cherry-pickシーケンスで適用する。
@@ -53,7 +54,7 @@ verification:
 conflicts:
 - <解消した競合。無ければ「なし」>
 applications:
-- <lane項目はfeedback filename、lane commit OID、適用後OID>
+- <lane項目はソート済みfeedback filename一覧、lane commit OID、適用後OID>
 - <レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ>
 write_status: <変更したファイルとcommit。変更なしならその旨>
 blockers:

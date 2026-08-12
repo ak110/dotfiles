@@ -26,7 +26,7 @@
 - モード指定`通常の実装モード`
 - 計画ファイル、プロジェクト規範の絶対パス。1計画ファイルの実装は1 writerへ順次割り当てること
 - worktreeの完全な一覧。各worktreeへ前掲の記録属性を付し、借用時の管理対象領域は`なし`とする
-- feedback filename
+- 1件以上のソート済みfeedback filename一覧
 - 追加指示と許容済みの挙動変化。該当しない場合は`なし`
 - 複製元と対象外worktree、commit・統合可、worktreeの作成・回収不可、push不可などの権限
 
@@ -66,7 +66,8 @@ callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`
 実装委譲はcommitと二系統reviewまでとする。呼び出し元が`agent-toolkit:commit`の
 `references/push-and-ci.md`を読み、pushとCI通過確認を所有する。
 CI失敗時は`agent-toolkit:bugfix`で原因を確定し、必要な修正、検証、commit、二系統reviewを再実施する。
-pushとCI成功を実測し、feedback filenameが`なし`でない場合は採用処理と保存結果の照合も完了する。
+pushとCI成功を実測し、ソート済みfeedback filename一覧の順で既存の`atk mq adopt`を1件ずつ実行する。
+各採用処理の保存結果を照合する。
 全条件の成立後だけ、進捗ログの記録値と`git worktree list --porcelain`を照合する。
 `作成主体=caller`かつ`回収可否=可`で、管理対象領域を記録したworktreeだけを`git worktree remove <exact-path>`で除去し、
 続いて`atk managed-temp cleanup --path <exact-parent>`で対応する管理対象領域を回収する。

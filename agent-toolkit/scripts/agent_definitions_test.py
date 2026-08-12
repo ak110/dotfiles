@@ -312,6 +312,30 @@ def test_plan_file_is_the_writer_parallelism_boundary() -> None:
     assert "計画ファイルごとに`atk managed-temp create" in caller
 
 
+def test_plan_lane_preserves_sorted_feedback_filename_lists() -> None:
+    """laneの0件拒否と1件以上の一覧追跡を下流契約全体で固定する。"""
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    merge = _MERGE_TASK.read_text(encoding="utf-8")
+
+    assert "feedback filename一覧が0件の場合はlaneを起動しない" in flow
+    assert "1件の場合も一覧として渡し" in flow
+    assert "複数件の場合は項目をfilename昇順に保つ" in flow
+    for text in (caller, executor, writer):
+        assert "1件以上のソート済みfeedback filename一覧" in text
+    for text in (flow, merge):
+        assert "ソート済みfeedback filename一覧" in text
+        assert "lane commit" in text
+    for text in (executor, writer):
+        assert "feedbacks: <受領したソート済みfeedback filename一覧。0件は返さない>" in text
+    assert "ソート済みfeedback filename一覧の順で既存の`atk mq adopt`を1件ずつ実行" in flow
+    assert "ソート済みfeedback filename一覧の順で既存の`atk mq adopt`を1件ずつ実行" in caller
+    for text in (flow, caller, executor, writer, merge):
+        assert "feedback filename、" not in text
+
+
 def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None:
     """plannerが調査と計画レビューを調整し、成果物とqueueを直接変更しない。"""
     text = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
@@ -382,7 +406,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "applications:",
         "統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力",
         "レビュー修正モードでは、採用指摘の6列表、関係する全計画の絶対パス、保持契約を必須入力",
-        "lane項目はfeedback filename、lane commit OID、適用後OID",
+        "lane項目はソート済みfeedback filename一覧、lane commit OID、適用後OID",
         "レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ",
     ):
         assert phrase in merge_task
@@ -413,7 +437,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
     assert "モード指定" in common
-    for phrase in ("計画ファイルの絶対パス", "worktree一覧", "feedback filename", "複製元と対象外worktree"):
+    for phrase in ("計画ファイルの絶対パス", "worktree一覧", "feedback filename一覧", "複製元と対象外worktree"):
         assert phrase in normal
         assert phrase not in integrated
     for phrase in (
@@ -498,7 +522,8 @@ def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
     assert "commit・統合可、worktreeの作成・回収不可、push不可" in caller
     for phrase in (
         "pushとCI成功を実測",
-        "採用処理と保存結果の照合も完了",
+        "ソート済みfeedback filename一覧の順で既存の`atk mq adopt`を1件ずつ実行",
+        "各採用処理の保存結果を照合",
         "用途、正確な絶対パス、状態、完全OID、管理対象領域の絶対パス、借用時は`なし`、作成主体、回収可否も記録",
         "進捗ログの記録値と`git worktree list --porcelain`を照合",
         "`作成主体=caller`かつ`回収可否=可`",
@@ -623,7 +648,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
         "sender契約の正本",
         "借用する現在worktreeを回収不可として含む完全な一覧",
         "lane用統合worktreeと計画が明示する管理対象worktreeを含む完全な一覧",
-        "worktreeの完全な一覧、feedback filename、追加指示",
+        "worktreeの完全な一覧、ソート済みfeedback filename一覧、追加指示",
         "許容済みの挙動変化、権限だけを渡し",
     ):
         assert phrase in flow
@@ -644,7 +669,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     for required_input in (
         "計画ファイル、プロジェクト規範の絶対パス",
         "worktreeの完全な一覧",
-        "feedback filename",
+        "1件以上のソート済みfeedback filename一覧",
         "追加指示と許容済みの挙動変化",
         "複製元と対象外worktree",
     ):

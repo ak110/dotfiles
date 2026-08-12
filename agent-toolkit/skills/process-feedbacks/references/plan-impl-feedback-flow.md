@@ -18,16 +18,18 @@ readyなlaneが1件なら現在のcleanなworktreeで実行する。
 executorの起動と受領に関するsender契約の正本とする。
 readyな計画が1件の場合は、借用する現在worktreeを回収不可として含む完全な一覧を同referenceに従って構成する。
 複数laneの場合は、lane用統合worktreeと計画が明示する管理対象worktreeを含む完全な一覧を同referenceに従って構成する。
-起動文には計画、プロジェクト規範、worktreeの完全な一覧、feedback filename、追加指示、
+起動文には計画、プロジェクト規範、worktreeの完全な一覧、ソート済みfeedback filename一覧、追加指示、
 許容済みの挙動変化、権限だけを渡し、
 実装とreviewのtask本文を複製しない。
+feedback filename一覧が0件の場合はlaneを起動しない。
+1件の場合も一覧として渡し、複数件の場合は項目をfilename昇順に保つ。
 
 laneの結果を受領後、呼び出し元は`atk managed-temp create --prefix <統合用途を示す値>`を単独で実行し、
 標準出力の絶対パスを統合用管理対象領域として保持する。
 同領域内に統合対応表を作成し、領域の絶対パス、用途、所有主体、回収可否を各lane計画の`## 進捗ログ`へ記録する。
 
 統合対応表はlane項目とレビュー修正項目を判別可能にする。
-lane項目はfeedback filename、lane commitの完全OID、計画ファイルの絶対パス、統合順を持つ。
+lane項目はソート済みfeedback filename一覧、lane commitの完全OID、計画ファイルの絶対パス、統合順を持つ。
 レビュー修正項目は安定ID、関係する全計画パス、指摘ID、適用元OID、再適用後OIDまたは
 状態`適用済みスキップ`、統合順を持つ。
 新規レビュー修正だけを追加し、既存項目は統合writerの適用結果で置換更新する。
@@ -62,7 +64,8 @@ push直前のfetch照合、pushのdry-run、実pushで上流進行またはnon-f
 
 終了条件は実push成功と当該OIDのCI通過とする。
 終端工程を持つ項目は、終了条件の後かつadoptの前に本文が列挙した終端工程を統合順で1回だけ実行する。
-完了後に成功した項目だけ`atk mq adopt`を実行し、成功したlane worktreeを回収する。
+完了後に成功した項目へ、ソート済みfeedback filename一覧の順で既存の`atk mq adopt`を1件ずつ実行する。
+各保存結果を照合した後に、成功したlane worktreeを回収する。
 統合用管理対象領域はadopt完了後にだけ`atk managed-temp cleanup --path <検収済み絶対パス>`で回収する。
 中断後はqueueの`plan_file`から各計画の進捗ログを辿り、領域の実在、所有、対象feedbackとの対応を照合して再利用する。
 照合できない旧領域は保持し、統合を最初からやり直す。

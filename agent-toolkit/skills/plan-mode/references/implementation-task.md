@@ -9,7 +9,8 @@
 - 計画ファイル、対象worktree、プロジェクト規範の絶対パス
 - 実装するコミット単位と、計画時点で判明している予定対象
 - 適用するauthor skill名
-- feedback filename、追加指示、許容済みの挙動変化。該当しない値は`なし`
+- 1件以上のソート済みfeedback filename一覧
+- 追加指示、許容済みの挙動変化。該当しない値は`なし`
 - git操作に用いるworktree絶対パス、複製元と対象外worktree
 
 入力が欠ける場合は推測せず`needs_escalation`で返す。
@@ -62,6 +63,7 @@ verification:
 - <コマンド>; exit_code: <整数>; warnings: <整数>
 review_resolution:
 - <指摘ID、原文と適用根拠の確認結果、採用した修正、保持契約の維持結果。該当なしなら「なし」>
+feedbacks: <受領したソート済みfeedback filename一覧。0件は返さない>
 plan_deviation:
 - <差異と調整結果。無ければ「なし」>
 blockers:

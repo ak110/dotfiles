@@ -37,7 +37,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 - 計画ファイルの絶対パス
 - 用途、絶対パス、管理対象領域の絶対パス、借用時は`なし`、完全OID、作成主体、回収可否を持つworktree一覧
-- feedback filename
+- 1件以上のソート済みfeedback filename一覧
 - 複製元と対象外worktree
 
 ### 統合後レビュー調整モード
@@ -119,7 +119,7 @@ worktreeと管理対象領域を作成・回収しない。
    単一単位を同じworktreeで実装した場合も、元の実装writerへ戻さず本項の経路を適用する
 3. 修正writerの新規起動又は継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
    `skills/plan-mode/references/implementation-task.md`、統合用worktree、対象計画、採用指摘を実装単位とした予定対象、
-   統合した6列表、プロジェクト規範、該当author skill、feedback filename、追加指示、許容済みの挙動変化、
+   統合した6列表、プロジェクト規範、該当author skill、ソート済みfeedback filename一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す
 4. 修正writerの完了と終端を確認し、修正commitがレビュー対象の最終HEADを直接進めたことを確認する。
    当該worktreeのHEAD、修正commit、差分、clean状態、検証結果を実測する
@@ -171,6 +171,7 @@ reviews:
 findings:
 - <6列表の指摘と対応結果。無ければ「指摘なし」>
 plan_check: <目的、対応方針、実装者向け領域、対象ファイル一覧、保持対象、累積差分、進捗ログとの照合結果>
+feedbacks: <受領したソート済みfeedback filename一覧。0件は返さない>
 blockers:
 - <未完了事項。完了時は「なし」>
 ```
