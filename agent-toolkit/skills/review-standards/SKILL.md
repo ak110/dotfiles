@@ -3,11 +3,10 @@ name: review-standards
 description: >
   コードレビュー・ドキュメントレビュー実施時に最初に必ず起動する。
   レビュー担当サブエージェント、およびメインエージェント自身がレビューする場面で起動する。
-  計画・設計の採用案やレビュー指摘・想定外の発見の妥当性を評価する場面でも起動する
-  （`references/judgment-details.md`が詳細手順を定める）。
   著者向けスキル（`coding-standards`・`writing-standards`・`agent-standards`）と併用する。
 # 編集時の注意点:
 # レビュアー側の判断指針のみを扱う。
+# レビューイー側はagent-toolkit:reviewee-standardsを正本とする。
 # レビュー工程管理はplan-impl-executorと実装差分レビューの共有referenceが扱う。
 # 著者向け規約はcoding-standards・writing-standards・agent-standards側に置く。
 # 機械チェックが扱う項目は本スキルでも非対象とする方針のため、

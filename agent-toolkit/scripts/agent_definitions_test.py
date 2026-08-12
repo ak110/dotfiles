@@ -12,6 +12,7 @@ _CLAUDE_CODE_RUNTIME = _DELEGATION_SKILL.parent / "references" / "claude-code-ru
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _FEEDBACKS_PLANNER = _AGENTS_DIR / "feedbacks-planner.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
+_REVIEWEE_STANDARDS = _AGENTS_DIR.parent / "skills" / "reviewee-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
 _PLAN_MODE_REFERENCES = _PLAN_MODE.parent / "references"
 _PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "plan-review-task.md"
@@ -106,7 +107,7 @@ def test_agent_skills_are_string_lists() -> None:
     """skillsを文字列配列とし、プリロードしないagentでは省略する。"""
     expected = {
         "feedbacks-planner.md": ["agent-toolkit:delegation"],
-        "plan-impl-executor.md": ["agent-toolkit:delegation"],
+        "plan-impl-executor.md": ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"],
     }
     for name, expected_skills in expected.items():
         path = _AGENTS_DIR / name
@@ -315,7 +316,7 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
 
     assert metadata["model"] == "sonnet"
     assert metadata["effort"] == "medium"
-    assert metadata["skills"] == ["agent-toolkit:delegation"]
+    assert metadata["skills"] == ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"]
     assert "mcp__codex__codex" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
     assert "実装task、author skill、review taskは読み込まず" in text
@@ -1266,18 +1267,12 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針" in independent_task
 
 
-def test_review_findings_and_fixes_recheck_operational_proportionality() -> None:
-    """確定指摘と修正着手を通常運用の再現性・比例性で選別する。"""
+def test_review_findings_recheck_operational_proportionality() -> None:
+    """reviewerが確定指摘を通常運用の再現性・比例性で選別する。"""
     reviewers = (
         _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
         _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
         _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
-    )
-    adopters = (
-        _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
-        _PLAN_IMPL_TASK.read_text(encoding="utf-8"),
-        _MERGE_TASK.read_text(encoding="utf-8"),
-        _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"),
     )
 
     for reviewer in reviewers:
@@ -1292,21 +1287,84 @@ def test_review_findings_and_fixes_recheck_operational_proportionality() -> None
         ):
             assert phrase in reviewer
 
-    for adopter in adopters:
-        for phrase in (
-            "通常運用の再現経路と入力主体",
-            "問題と手段の比例性を独立に再判定",
-            "対象外の入力前提又は異なる脅威モデル",
-            "永続状態、所有権、期限、復旧経路、互換経路の新設",
-            "元の目的と非目標",
-            "何もしない案、既存操作だけの案、局所修正案、新機構案",
-            "単純案が目的を満たす場合は新機構を採用しない",
-        ):
-            assert phrase in adopter
 
-    for adopter in adopters[:3]:
-        assert "reviewerの修正方針を新しい要件として扱わない" in adopter
-    assert "reviewerの修正方針を複写しない" in adopters[3]
+def test_reviewee_contract_is_centralized_by_role() -> None:
+    """受領側の共通判定を新スキルへ集約し、経路固有の契約だけを各文書へ残す。"""
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(reviewee)
+    assert parsed is not None
+    metadata, _ = parsed
+    description = metadata["description"]
+
+    for phrase in (
+        "レビュー指摘・改善提案・レビュー結果を受領し",
+        "計画・設計の採用案や想定外の発見の妥当性を評価する場面",
+        "レビューを実施する主体（reviewer）は起動しない",
+    ):
+        assert phrase in description
+    for phrase in (
+        "各指摘の事実と違反契約を自身でも実測する",
+        "問題と手段の比例性を独立に再判定する",
+        "対象外の入力前提又は異なる脅威モデル",
+        "複写するだけで採用しない",
+        "元の目的と非目標へ差し戻す",
+        "単純案が目的を満たす場合は新機構を採用しない",
+        "同じ修正回で一括修正する",
+        "違反契約の原文を修正後の成果物へ再適用する",
+        "references/judgment-details.md",
+    ):
+        assert phrase in reviewee
+
+    body_references = (
+        _PLAN_REVIEW_DELEGATION,
+        _PLAN_IMPL_TASK,
+        _MERGE_TASK,
+        _DELEGATION_SKILL,
+    )
+    for path in body_references:
+        assert "agent-toolkit:reviewee-standards" in path.read_text(encoding="utf-8")
+
+    parsed_executor = frontmatter.parse_frontmatter(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"))
+    assert parsed_executor is not None
+    executor_metadata, _ = parsed_executor
+    assert "agent-toolkit:reviewee-standards" in executor_metadata["skills"]
+
+    representative_phrases = (
+        "比例性を独立に再判定",
+        "新機構を採用しない",
+        "複写するだけで採用しない",
+        "脅威モデル",
+        "元の目的と非目標へ差し戻す",
+    )
+    reception_paths = (*body_references[:3], _PLAN_IMPL_EXECUTOR, _DELEGATION_SKILL)
+    for path in reception_paths:
+        text = path.read_text(encoding="utf-8")
+        for phrase in representative_phrases:
+            assert phrase not in text
+
+    plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
+    assert "採否と対応結果を6列表へ統合" in plan_review
+    assert "スコープ、公開契約、ユーザー合意を変える修正" in plan_review
+
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    assert "推測して修正せず`needs_escalation`" in writer
+    assert "同じ単位の検証とcommitを再実行" in writer
+    assert "ユーザー合意と衝突する指摘" in writer
+
+    merge = _MERGE_TASK.read_text(encoding="utf-8")
+    assert "採用指摘の6列表" in merge
+    assert "1つの修正commit" in merge
+    assert "指摘の根拠不足、計画との衝突、認可外の変更" in merge
+
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
+    assert "`対応方針`にはexecutorが独立に確定した採否と最小限の修正" in executor
+    assert "`未検証`へ移し、実在欠陥だけをwriterへ一括して返す" in executor
+
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    assert "通番・重大度／観点・区分・箇所・内容" in delegation
+    assert "`未検証`の指摘は修正担当へ渡さない" in delegation
 
 
 def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
@@ -1320,6 +1378,7 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     implementation_plan_review_task = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     independent_review_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
 
     for phrase in ("出典の原文", "適用範囲", "例外条件", "対象への適用", "`未検証`"):
         assert phrase in review_standards
@@ -1332,11 +1391,15 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     for phrase in ("ユーザー目的", "ユーザー合意", "現行の公開契約", "合意済みの除外・保持"):
         assert phrase in _h2_section(independent_review_task, "入力")
 
-    for adopter in (delegation, plan_review_delegation, executor):
+    for adopter in (delegation, executor):
         assert "適用" in adopter
         assert "最小限の修正" in adopter
-        assert "修正方針" in adopter
         assert "`未検証`" in adopter
+    for phrase in ("適用", "最小限", "`未検証`"):
+        assert phrase in reviewee
+    for phrase in ("適用", "最小限の修正"):
+        assert phrase in plan_review_delegation
+    assert "修正方針" in reviewee
     assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
     assert "`対応方針`にはexecutorが独立に確定した採否" in executor
 
