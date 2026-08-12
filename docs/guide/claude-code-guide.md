@@ -28,7 +28,7 @@ agent-toolkitはルールファイルと3形式で共有するプラグインル
 - ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
 - Agent Plugins: `agent-toolkit/`をパッケージルートとして扱う。
-  参照検証器が受理する15スキルとpyfltr MCPを可搬部分として提供する
+  参照検証器が受理する16スキルとpyfltr MCPを可搬部分として提供する
 - Claude Code・Codex: 同じ`skills/`を利用し、形式固有のmanifest、ルール、フック、実行資源を追加する。
   固有frontmatterフィールドを受理するクライアントでは残る2スキルも共有できる
 
