@@ -62,7 +62,8 @@ advisorへ次を渡す。
 - `references/generation-criteria-detail.md`の絶対パス
 - 存在する場合はClaude Codeの`~/.claude/references/session-review-dotfiles.md`または
   Codexの`~/.codex/references/session-review-dotfiles.md`の絶対パス
-- 提案ごとに裏付け手段を示し、裏付けられない内容を`未検証`と明記する要件
+
+提案ごとの裏付け手段と`未検証`表示は`session-review-advisor`定義の出力契約を正本とし、起動文へ複製しない。
 
 advisorは着手時に`agent-toolkit/scripts/_session_review_evidence.py <transcript_path>`を1回だけ実行し、
 標準出力へ抽出された時系列証拠から評価を始める。証拠が不足する場合だけ同じtranscriptを直接読む。
