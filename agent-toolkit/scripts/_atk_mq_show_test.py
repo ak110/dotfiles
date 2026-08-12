@@ -118,6 +118,47 @@ class TestShowMultipleFiles:
         pulls = [call for call in git_calls if call["cmd"][:2] == ["git", "pull"]]
         assert len(pulls) == 1
 
+    def test_multiple_files_use_same_separator_as_all(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """複数指定の区切りは`--all`と同じく各項目の後の空行1行とする。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        _write_feedback_file(notes, "fb-002.md", body="本文2")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "show", "fb-001.md", "fb-002.md"], home=tmp_path)
+        by_name = capsys.readouterr().out
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "show", "--all"], home=tmp_path)
+        by_all = capsys.readouterr().out
+
+        for entry_tail in ("本文1\n\n", "本文2\n\n"):
+            assert entry_tail in by_name
+            assert entry_tail in by_all
+        assert by_name.endswith("\n\n")
+
+    def test_single_file_keeps_output_without_extra_blank_line(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """1件だけ指定した場合は従来どおり末尾へ空行を足さない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "show", "fb-001.md"], home=tmp_path)
+
+        assert capsys.readouterr().out.endswith("本文1\n\n")
+
     def test_normalized_duplicates_are_shown_once_with_warning(
         self,
         monkeypatch: pytest.MonkeyPatch,

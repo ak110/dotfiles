@@ -64,6 +64,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """showサブコマンド: `FILENAME...`指定時は当該項目群、`--all`指定時は全件の本文を表示する。
 
     `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
+    `FILENAME`を2件以上指定した場合の区切りは`--all`と同じく各項目の後の空行1行とし、
+    1件だけ指定した場合は従来どおり空行を付けない。
     `--type`指定時は出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `FILENAME...`指定時は4状態フォルダすべてを探索し、指定順に表示する。
     `--type`・`--target-repo`・`--source`の
@@ -123,7 +125,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             for filename in missing:
                 print(f"全状態フォルダに存在しません: {filename}", file=sys.stderr)
             sys.exit(2)
-        for index, (path, target_repo, text, state, kind) in enumerate(selected_by_name):
+        for path, target_repo, text, state, kind in selected_by_name:
             answered = _is_tbd_answered(text)
             label = f" [{state}]"
             if kind == MQ_TYPE_TBD:
@@ -131,7 +133,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             print(f"## target_repo: {target_repo}")
             print(f"### {path.name}{label}")
             print(text)
-            if index < len(selected_by_name) - 1 and not text.endswith("\n"):
+            if len(selected_by_name) > 1:
                 print()
         return
 

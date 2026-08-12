@@ -44,6 +44,7 @@ class _MiseSubprocessStub:
                 "args": list(sub_args),
                 "env_overrides": kwargs.get("env_overrides"),
                 "timeout": kwargs.get("timeout"),
+                "cwd": kwargs.get("cwd"),
             }
         )
         sorted_keys = list(self.handlers)
@@ -247,6 +248,39 @@ class TestRunInstallStep:
         # インストール処理は通常コマンドより長いタイムアウト（600 秒）で呼ばれる
         assert install_calls[0]["timeout"] == 600
         assert install_calls[0]["env_overrides"] == _EXPECTED_ENV_OVERRIDES
+        # working treeが無い場合は実行位置を指定しない（従来どおりglobal設定だけが対象）
+        assert install_calls[0]["cwd"] is None
+
+    def test_install_runs_in_working_tree_when_config_exists(
+        self,
+        mise_stub: _MiseSubprocessStub,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        """working treeに`mise.toml`がある場合、そこを実行位置として`install`を呼ぶ。
+
+        miseは実行位置から設定を探索するため、実行位置を指定しないと
+        working treeにだけ定義されたツールが恒久的に未導入のまま残る。
+        """
+        (tmp_path / "mise.toml").write_text("[tools]\n", encoding="utf-8")
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        assert _setup_mise.run() is True
+        install_calls = mise_stub.calls_for("install")
+        assert len(install_calls) == 1
+        assert install_calls[0]["cwd"] == tmp_path
+
+    def test_install_omits_working_tree_without_config(
+        self,
+        mise_stub: _MiseSubprocessStub,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        """working treeに`mise.toml`が無い場合は実行位置を指定しない。"""
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        assert _setup_mise.run() is True
+        assert mise_stub.calls_for("install")[0]["cwd"] is None
 
 
 class _WinregFake:

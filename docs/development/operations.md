@@ -54,6 +54,11 @@ dotfilesリポジトリを対象とする`atk mq process-loop`は、miseの`late
 `mise`の終了コードが0以外の場合と600秒でタイムアウトした場合は、結果を標準エラー出力へ警告して常駐処理を続行する。
 ログイン時のシェル初期化処理は`mise install`を実行しない。
 
+`chezmoi apply`の後処理も`mise install`を実行する。
+miseは実行位置から設定ファイルを探索するため、後処理は`CHEZMOI_WORKING_TREE`に`mise.toml`がある場合だけ
+そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
+working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
+
 ## Codex診断ログの通常ストレージ復元
 
 Linuxのpost-apply処理は、旧機構が`/dev/shm/codex-<UID>-<ファイル名>`へ配置した診断ログDBを`~/.codex/`へ復元する。
