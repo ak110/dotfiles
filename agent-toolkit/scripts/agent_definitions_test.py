@@ -198,7 +198,9 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "plan-review-task.md" in delegation
     assert "計画とリポジトリを修正しない" in task
     assert "総ライフサイクルコスト" in task
-    assert "同一箇所へ2ラウンド連続で指摘" in delegation
+    # 再設計へ切り替える判定は、判定材料を観測するreviewer側の出力義務とする。
+    assert "同一見出し配下（`## 変更履歴`の`同期先`が同一）で2ラウンド連続して指摘が成立した場合" in task
+    assert "reviewerが再設計・簡素化・撤去を求めた箇所へ小修正で応じない" in delegation
 
 
 def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
