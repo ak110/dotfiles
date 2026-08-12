@@ -710,7 +710,11 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
 
     リポジトリ管理ファイルに`/home/user/...`のような環境依存パスが書き込まれると
     他環境での再現性が失われるため警告する。警告のみでeditは継続（warn）。
+    Git管理外の作業文書であり、正確な絶対パスを記録する計画ファイルは対象外とする。
     """
+    if is_plan_file(file_path):
+        return False
+
     home_str = str(pathlib.Path.home())
     # ルートなど極端に短いパスは誤検出を避けてスキップ。
     if len(home_str) < 3:
@@ -1340,6 +1344,9 @@ def _check_plan_mode_skill_first(
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
     plan file編集に至るまでは警告を表示しない
     （`process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
+    既存計画へのEdit・MultiEditで、一意かつ最後の`## 進捗ログ`見出し行までの接頭部が
+    編集後も不変である場合は、受領側の正規操作として警告しない。
+    ファイル又は入力を解釈できない場合は警告を維持する。
     警告のみでツール呼び出しは継続する（block降格）。
     呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する。
     戻り値は違反検出の有無を示す（呼び出し元は制御フローに使わない）。
@@ -1354,6 +1361,8 @@ def _check_plan_mode_skill_first(
     state = read_state(session_id)
     if state.get("plan_mode_skill_invoked", False):
         return False
+    if tool_name in {"Edit", "MultiEdit"} and _is_progress_log_only_edit(tool_name, tool_input, file_path_raw):
+        return False
     print(
         _llm_notice(
             "warning: editing a plan file without invoking `agent-toolkit:plan-mode` skill first."
@@ -1366,6 +1375,36 @@ def _check_plan_mode_skill_first(
         file=sys.stderr,
     )
     return True
+
+
+def _is_progress_log_only_edit(tool_name: str, tool_input: dict, file_path: str) -> bool:
+    """既存計画の進捗ログ節だけを変更するEdit又はMultiEditであるかを返す。"""
+    try:
+        existing = pathlib.Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+
+    edited = _apply_edits_to_content(tool_name, tool_input, existing)
+    if edited is None:
+        return False
+    existing_prefix = _progress_log_heading_prefix(existing)
+    edited_prefix = _progress_log_heading_prefix(edited)
+    return existing_prefix is not None and existing_prefix == edited_prefix
+
+
+def _progress_log_heading_prefix(content: str) -> str | None:
+    """一意かつ最後の進捗ログH2見出し行までの接頭部を返す。"""
+    headings = _plan_format.extract_headings(content)
+    progress_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_PROGRESS)
+    if progress_index is None:
+        return None
+    h2_headings = [heading for heading in headings if heading.level == 2]
+    if sum(heading.text == _plan_format.PLAN_H2_PROGRESS for heading in h2_headings) != 1:
+        return None
+    progress_heading = headings[progress_index]
+    if not h2_headings or h2_headings[-1] != progress_heading:
+        return None
+    return "".join(content.splitlines(keepends=True)[: progress_heading.lineno])
 
 
 # --- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続をブロック ---
@@ -1563,17 +1602,8 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     return False
 
 
-def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: str) -> str | None:
-    """Write/Edit/MultiEditを適用した後のファイル内容を構築する。"""
-    if tool_name == "Write":
-        content = tool_input.get("content")
-        return content if isinstance(content, str) else None
-
-    try:
-        existing = pathlib.Path(file_path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        existing = ""
-
+def _apply_edits_to_content(tool_name: str, tool_input: dict, existing: str) -> str | None:
+    """Edit又はMultiEditを既存内容へ適用した文字列を返す。"""
     if tool_name == "Edit":
         old_string = tool_input.get("old_string")
         new_string = tool_input.get("new_string")
@@ -1604,6 +1634,19 @@ def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: 
         return result
 
     return None
+
+
+def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: str) -> str | None:
+    """Write/Edit/MultiEditを適用した後のファイル内容を構築する。"""
+    if tool_name == "Write":
+        content = tool_input.get("content")
+        return content if isinstance(content, str) else None
+
+    try:
+        existing = pathlib.Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        existing = ""
+    return _apply_edits_to_content(tool_name, tool_input, existing)
 
 
 _PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY = "plan_impl_executor_verified_plan_path"

@@ -275,6 +275,24 @@ class TestHomePathCheck:
         )
         assert result.returncode == 0
 
+    def test_home_path_in_plan_file_skipped(self, tmp_path: pathlib.Path):
+        """Git管理外の計画ファイルでは正確なホーム絶対パスを許容する。"""
+        home = tmp_path / "home"
+        plan = _make_plan_file(home, "home-path.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "old_string": "# t",
+                    "new_string": f"対象: {home}/worktree",
+                },
+            },
+            env_overrides=_plan_file_state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "home directory" not in result.stderr
+
 
 class TestColloquialCheck:
     """口語的な日本語表現の混入警告（warn のみ、exit code は 0）。
@@ -387,11 +405,12 @@ _VALID_H2_PLAN_CONTENT = (
 
 
 class TestPlanModeSkillFirstCheck:
-    """plan file編集全般で plan-mode スキル未起動を警告する検査（block降格済み）。
+    """plan fileの起草編集でplan-modeスキル未起動を警告する検査（block降格済み）。
 
     plan-modeスキル未起動でもplan file以外の操作（Read・Bash・他Skill・通常ファイル編集等）は
     一切ブロックも警告もしない。`~/.claude/plans/`直下の`*.md`に対する
-    Write/Edit/MultiEditのみが警告対象となる。`permission_mode`の値には依存しない。
+    Writeと進捗ログ節外を変更するEdit/MultiEditが警告対象となる。`permission_mode`の値には依存しない。
+    既存計画の一意かつ最後の`## 進捗ログ`節だけを変更するEdit/MultiEditは警告しない。
     完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-impl-executor`起動時の
     ブロックへ集約する。
     """
@@ -431,6 +450,66 @@ class TestPlanModeSkillFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 0
+
+    @pytest.mark.parametrize("tool_name", ["Edit", "MultiEdit"])
+    def test_allows_progress_log_only_edit_without_skill(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        """進捗ログ節だけを変更するEditとMultiEditは受領側の正規操作として許容する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "progress-only.md")
+        plan.write_text(
+            "# 計画\n\n## 概要\n\n本文\n\n## 完了条件\n\n維持\n\n## 進捗ログ\n\n旧工程\n旧結果\n",
+            encoding="utf-8",
+        )
+        if tool_name == "Edit":
+            tool_input = {
+                "file_path": str(plan),
+                "old_string": "旧工程\n",
+                "new_string": "旧工程\n新工程\n",
+            }
+        else:
+            tool_input = {
+                "file_path": str(plan),
+                "edits": [
+                    {"old_string": "旧工程", "new_string": "新工程"},
+                    {"old_string": "旧結果", "new_string": "新結果"},
+                ],
+            }
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "session_id": f"progress-only-{tool_name.lower()}",
+                "permission_mode": "default",
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "editing a plan file without invoking" not in result.stderr
+
+    @pytest.mark.parametrize("tool_name", ["Edit", "MultiEdit"])
+    def test_warns_edit_outside_progress_log_without_skill(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        """進捗ログより前を変更するEditと節内外混在MultiEditは警告する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "outside-progress.md")
+        plan.write_text(
+            "# 計画\n\n## 概要\n\n本文\n\n## 完了条件\n\n旧条件\n\n## 進捗ログ\n\n旧工程\n",
+            encoding="utf-8",
+        )
+        edits = [{"old_string": "旧条件", "new_string": "新条件"}]
+        if tool_name == "MultiEdit":
+            edits.append({"old_string": "旧工程", "new_string": "新工程"})
+        tool_input = {"file_path": str(plan), **edits[0]} if tool_name == "Edit" else {"file_path": str(plan), "edits": edits}
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "session_id": f"outside-progress-{tool_name.lower()}",
+                "permission_mode": "default",
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "editing a plan file without invoking" in result.stderr
 
     def test_allows_plan_file_when_skill_invoked(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
