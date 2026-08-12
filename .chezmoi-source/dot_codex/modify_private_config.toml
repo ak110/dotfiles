@@ -6,8 +6,12 @@
 {{- $config = setValueAtPath "project_doc_max_bytes" 131072 $config -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
+{{- $config = setValueAtPath "agents.max_concurrent_threads_per_session" 100 $config -}}
+{{- $config = setValueAtPath "agents.default_subagent_model" "gpt-5.6-luna" $config -}}
+{{- $config = setValueAtPath "agents.default_subagent_reasoning_effort" "max" $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.command" "claude" $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.args" (list "mcp" "serve") $config -}}
 {{- $config = setValueAtPath "mcp_servers.claude.default_tools_approval_mode" "approve" $config -}}
 {{- $config = setValueAtPath "plugins.agent-toolkit@ak110-dotfiles.mcp_servers.pyfltr.default_tools_approval_mode" "approve" $config -}}
-{{ toToml $config }}
+{{- $agentsComment := printf "%s\n%s\n" "# codexが作成するサブエージェントはあまり大きな作業をしないケースが多いので料金を節約したいためデフォルトでluna/maxを使用する。" "# (luna/maxはタスクによるがsol/medium並みの能力を持ち安上がり（だがコンテキスト消費が激しいので小さい作業向け）と言われている。ちなみにterraならhigh～xhighくらい)" -}}
+{{ replace "[agents]\n" (printf "[agents]\n%s" $agentsComment) (toToml $config) }}
