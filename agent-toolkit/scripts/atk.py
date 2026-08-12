@@ -540,6 +540,11 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help="セッション完了後・待機中いずれの経路でもupdate-dotfiles実行と自身再起動を抑止する。",
     )
     loop.add_argument(
+        "--internal-mise-refreshed",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    loop.add_argument(
         "--orchestrator",
         choices=("claude", "codex"),
         default="claude",

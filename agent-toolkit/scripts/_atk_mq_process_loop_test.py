@@ -30,6 +30,7 @@ from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _PULL_PRIVATE_NOTES_IMPL = _process_loop._pull_private_notes  # pylint: disable=protected-access  # noqa: SLF001
+_DOTFILES_REPO_ID = _process_loop._DOTFILES_REPO_ID  # pylint: disable=protected-access  # noqa: SLF001
 
 
 @pytest.fixture(autouse=True)
@@ -1141,13 +1142,13 @@ class TestProcessLoopSessionPreparation:
             lambda _path: pytest.fail("更新失敗後は再pullしないこと"),
         )
 
-        assert not _process_loop._update_before_session(  # pylint: disable=protected-access  # noqa: SLF001
+        assert _process_loop._update_before_session(  # pylint: disable=protected-access  # noqa: SLF001
             tmp_path,
             None,
             None,
             ["atk"],
             {},
-        )
+        ) == (False, False)
 
     def test_initial_ready_session_runs_pull_update_repull_before_codex(
         self,
@@ -1169,9 +1170,9 @@ class TestProcessLoopSessionPreparation:
             events.append("count")
             return next(counts)
 
-        def fake_update(*_args: object, **_kwargs: object) -> bool:
+        def fake_update(*_args: object, **_kwargs: object) -> tuple[bool, bool]:
             events.extend(("update", "repull"))
-            return True
+            return True, True
 
         monkeypatch.setattr(_process_loop, "_pull_private_notes", fake_pull)
         monkeypatch.setattr(_process_loop, "_count_pending_entries", fake_count)
@@ -1201,19 +1202,287 @@ class TestProcessLoopSessionPreparation:
         assert events == ["pull", "count", "update", "repull", "count", "session"]
 
 
-def test_process_loop_parser_orchestrator_contract() -> None:
+def test_process_loop_parser_orchestrator_contract(capsys: pytest.CaptureFixture[str]) -> None:
     """オーケストレーターの既定値と選択肢をargparse境界で固定する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     default_args = parser.parse_args(["mq", "process-loop"])
     codex_args = parser.parse_args(["mq", "process-loop", "--orchestrator=codex"])
+    refreshed_args = parser.parse_args(["mq", "process-loop", "--internal-mise-refreshed"])
 
     assert default_args.orchestrator == "claude"
+    assert default_args.internal_mise_refreshed is False
     assert default_args.model is None
     assert codex_args.orchestrator == "codex"
     assert codex_args.model is None
+    assert refreshed_args.internal_mise_refreshed is True
+    with pytest.raises(SystemExit) as help_exit:
+        parser.parse_args(["mq", "process-loop", "--help"])
+    assert help_exit.value.code == 0
+    assert "--internal-mise-refreshed" not in capsys.readouterr().out
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["mq", "process-loop", "--orchestrator=unknown"])
     assert exc_info.value.code == 2
+
+
+class TestMiseLatestRefresh:
+    """dotfiles向けprocess-loopが所有するmise latest再評価を検証する。"""
+
+    @staticmethod
+    def _run_idle_loop(
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        *,
+        extra_argv: list[str],
+        wait_results: list[bool | BaseException],
+        monotonic_values: list[float] | None = None,
+    ) -> list[pathlib.Path]:
+        _setup_notes(tmp_path)
+        target = tmp_path / "dotfiles-target"
+        target.mkdir()
+        dotfiles_root = tmp_path / "dotfiles-root"
+        dotfiles_root.mkdir()
+        monkeypatch.setattr(_process_loop, "_resolve_local_worktree", lambda _value: target)
+        monkeypatch.setattr(_process_loop, "_resolve_repo_id", lambda *_args, **_kwargs: _DOTFILES_REPO_ID)
+        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: dotfiles_root)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: 0)
+        refresh_calls: list[pathlib.Path] = []
+
+        def fake_refresh(root: pathlib.Path) -> bool:
+            refresh_calls.append(root)
+            return True
+
+        monkeypatch.setattr(_process_loop, "_refresh_mise_tools", fake_refresh)
+        waits = iter(wait_results)
+
+        def fake_wait(*_args: object, **_kwargs: object) -> bool:
+            result = next(waits)
+            if isinstance(result, BaseException):
+                raise result
+            return result
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        if monotonic_values is not None:
+            times = iter(monotonic_values)
+            monkeypatch.setattr(_process_loop.time, "monotonic", lambda: next(times))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={target}", "--no-alerts", *extra_argv],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        return refresh_calls
+
+    @pytest.mark.parametrize(
+        ("extra_argv", "expected_calls"),
+        [
+            ([], 1),
+            (["--internal-mise-refreshed"], 0),
+            (["--no-update"], 0),
+        ],
+    )
+    def test_startup_refresh_contract(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        extra_argv: list[str],
+        expected_calls: int,
+    ) -> None:
+        """手動起動、正常再起動済み、更新無効の各起動契機を区別する。"""
+        calls = self._run_idle_loop(
+            monkeypatch,
+            tmp_path,
+            extra_argv=extra_argv,
+            wait_results=[KeyboardInterrupt()],
+            monotonic_values=[0.0] if expected_calls or "--internal-mise-refreshed" in extra_argv else None,
+        )
+
+        assert len(calls) == expected_calls
+
+    def test_wait_loop_refreshes_at_24_hours_but_not_before(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """期限前の待機復帰では省き、24時間到達時に一度だけ再評価する。"""
+        dotfiles_root = tmp_path / "dotfiles-root"
+        calls = self._run_idle_loop(
+            monkeypatch,
+            tmp_path,
+            extra_argv=[],
+            wait_results=[True, True, KeyboardInterrupt()],
+            monotonic_values=[0.0, 86399.0, 86400.0, 86401.0],
+        )
+
+        assert calls == [dotfiles_root, dotfiles_root]
+
+    def test_successful_update_without_restart_resets_deadline(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """update-dotfiles成功後は起動時刻ではなく成功後から次の24時間を数える。"""
+        _setup_notes(tmp_path)
+        target = tmp_path / "dotfiles-target"
+        target.mkdir()
+        dotfiles_root = tmp_path / "dotfiles-root"
+        dotfiles_root.mkdir()
+        monkeypatch.setattr(_process_loop, "_resolve_local_worktree", lambda _value: target)
+        monkeypatch.setattr(_process_loop, "_resolve_repo_id", lambda *_args, **_kwargs: _DOTFILES_REPO_ID)
+        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: dotfiles_root)
+        counts = iter((1, 0, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: next(counts))
+        monkeypatch.setattr(_process_loop, "_update_before_session", lambda *_args, **_kwargs: (False, True))
+        refresh_calls: list[pathlib.Path] = []
+
+        def fake_refresh(root: pathlib.Path) -> bool:
+            refresh_calls.append(root)
+            return True
+
+        monkeypatch.setattr(_process_loop, "_refresh_mise_tools", fake_refresh)
+        waits = iter((True, True, KeyboardInterrupt()))
+
+        def fake_wait(*_args: object, **_kwargs: object) -> bool:
+            result = next(waits)
+            if isinstance(result, BaseException):
+                raise result
+            return result
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        times = iter((0.0, 100.0, 86450.0))
+        monkeypatch.setattr(_process_loop.time, "monotonic", lambda: next(times))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", f"--target-repo={target}", "--no-alerts"], home=tmp_path)
+
+        assert refresh_calls == [dotfiles_root]
+
+    def test_failed_update_without_restart_keeps_deadline(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """update-dotfiles失敗時は起動時から数えた24時間の期限を維持する。"""
+        _setup_notes(tmp_path)
+        target = tmp_path / "dotfiles-target"
+        target.mkdir()
+        dotfiles_root = tmp_path / "dotfiles-root"
+        dotfiles_root.mkdir()
+        monkeypatch.setattr(_process_loop, "_resolve_local_worktree", lambda _value: target)
+        monkeypatch.setattr(_process_loop, "_resolve_repo_id", lambda *_args, **_kwargs: _DOTFILES_REPO_ID)
+        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: dotfiles_root)
+        counts = iter((1, 0, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: next(counts))
+        monkeypatch.setattr(_process_loop, "_update_before_session", lambda *_args, **_kwargs: (False, False))
+        refresh_calls: list[pathlib.Path] = []
+
+        def fake_refresh(root: pathlib.Path) -> bool:
+            refresh_calls.append(root)
+            return True
+
+        monkeypatch.setattr(_process_loop, "_refresh_mise_tools", fake_refresh)
+        waits = iter((True, True, KeyboardInterrupt()))
+
+        def fake_wait(*_args: object, **_kwargs: object) -> bool:
+            result = next(waits)
+            if isinstance(result, BaseException):
+                raise result
+            return result
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        times = iter((0.0, 86400.0, 86400.0))
+        monkeypatch.setattr(_process_loop.time, "monotonic", lambda: next(times))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", f"--target-repo={target}", "--no-alerts"], home=tmp_path)
+
+        assert refresh_calls == [dotfiles_root, dotfiles_root]
+
+    @pytest.mark.parametrize(("update_returncode", "expected_marker"), [(0, True), (9, False)])
+    def test_session_restart_marks_only_successful_update(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        update_returncode: int,
+        expected_marker: bool,
+    ) -> None:
+        """セッション後更新の成否を次の起動に渡し、失敗時はmise再評価を省かない。"""
+        _setup_notes(tmp_path)
+        target = tmp_path / "dotfiles-target"
+        target.mkdir()
+        dotfiles_root = tmp_path / "dotfiles-root"
+        dotfiles_root.mkdir()
+        monkeypatch.setattr(_process_loop, "_resolve_local_worktree", lambda _value: target)
+        monkeypatch.setattr(_process_loop, "_resolve_repo_id", lambda *_args, **_kwargs: _DOTFILES_REPO_ID)
+        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: dotfiles_root)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: 1)
+        monkeypatch.setattr(_process_loop, "_update_before_session", lambda *_args, **_kwargs: (True, True))
+        monkeypatch.setattr(_process_loop, "_refresh_mise_tools", lambda _root: True)
+        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", lambda *_args: target)
+        monkeypatch.setattr(_process_loop.time, "monotonic", lambda: 0.0)
+
+        def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            returncode = 0 if command[0] == "claude" else update_returncode
+            return subprocess.CompletedProcess(command, returncode, "", "")
+
+        monkeypatch.setattr(_process_loop.subprocess, "run", fake_run)
+        restart_kwargs: list[dict[str, object]] = []
+
+        def fake_restart(*_args: object, **kwargs: object) -> NoReturn:
+            restart_kwargs.append(kwargs)
+            raise SystemExit(0)
+
+        monkeypatch.setattr(_process_loop, "_restart_process_loop", fake_restart)
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", f"--target-repo={target}", "--no-alerts"], home=tmp_path)
+
+        assert restart_kwargs[-1]["mise_refreshed"] is expected_marker
+
+    def test_mise_command_uses_dotfiles_root_and_quiet_mode(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """miseをdotfiles rootで静音実行し、長時間導入用の上限を指定する。"""
+        calls: list[tuple[list[str], dict[str, object]]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        monkeypatch.setattr(_process_loop.subprocess, "run", fake_run)
+
+        assert _process_loop._refresh_mise_tools(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+        command, kwargs = calls[0]
+        assert command == ["/resolved/mise", "install", "--quiet"]
+        assert kwargs["cwd"] == tmp_path
+        assert kwargs["timeout"] == 600
+        assert kwargs["capture_output"] is True
+
+    @pytest.mark.parametrize(("failure", "expected_detail"), [("nonzero", "exit code 7"), ("timeout", "途中出力")])
+    def test_mise_failure_warns_and_returns_false(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        failure: str,
+        expected_detail: str,
+    ) -> None:
+        """0以外の終了とtimeoutを警告へ変換し、常駐処理へ失敗を送出しない。"""
+
+        def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(command, 600, stderr="途中出力")
+            return subprocess.CompletedProcess(command, 7, "", "registry error")
+
+        monkeypatch.setattr(_process_loop.subprocess, "run", fake_run)
+
+        assert not _process_loop._refresh_mise_tools(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+        warning = capsys.readouterr().err
+        assert "process-loopを継続します" in warning
+        assert expected_detail in warning
 
 
 class TestProcessLoopReturncode:

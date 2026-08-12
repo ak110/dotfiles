@@ -51,6 +51,11 @@ _VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
 # 主待機のタイムアウト秒（他端末からのfeedback投入を`git pull`で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0
 
+# `latest`指定ツールを外部registryに対して再評価する間隔と、導入処理の実行上限。
+_MISE_REFRESH_INTERVAL_SEC = 24 * 60 * 60
+_MISE_INSTALL_TIMEOUT_SEC = 600
+_INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
+
 # 変更検知後、追加イベント発火が無くなるまでの畳み込み待機秒
 # （1回のファイル操作で複数イベントが連続発火する実測を吸収する）。
 _DEBOUNCE_SEC = 3.0
@@ -173,6 +178,48 @@ def _resolve_executable(command: str) -> str | None:
     if executable is None:
         print(f"{command}コマンドを利用できないため処理を継続します。", file=sys.stderr)
     return executable
+
+
+def _mise_output_detail(output: str | bytes | None) -> str:
+    """miseの標準出力又は標準エラー出力を警告用の一行へ整形する。"""
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", errors="backslashreplace")
+    return output.strip() if isinstance(output, str) and output.strip() else "出力なし"
+
+
+def _refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
+    """dotfilesのlatest指定ツールを非ログイン経路で再評価し、失敗後も呼び出し元を継続させる。"""
+    executable = _resolve_executable("mise")
+    if executable is None:
+        return False
+    try:
+        result = subprocess.run(
+            [executable, "install", "--quiet"],
+            cwd=dotfiles_root,
+            env=_child_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_MISE_INSTALL_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        detail = _mise_output_detail(exc.stderr or exc.stdout)
+        print(
+            f"mise install --quietが{_MISE_INSTALL_TIMEOUT_SEC}秒でタイムアウトしました"
+            f"（{detail}）。process-loopを継続します。",
+            file=sys.stderr,
+        )
+        return False
+    finally:
+        _console_title.set_console_title("atk mq process-loop")
+    if result.returncode != 0:
+        detail = _mise_output_detail(result.stderr or result.stdout)
+        print(
+            f"mise install --quietに失敗しました（exit code {result.returncode}: {detail}）。process-loopを継続します。",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def _git_output(args: list[str], cwd: pathlib.Path) -> str:
@@ -398,11 +445,17 @@ def _without_resume_args(argv: list[str]) -> list[str]:
     return result
 
 
+def _without_internal_mise_refreshed(argv: list[str]) -> list[str]:
+    """一回限りのmise再評価済み指定を再起動引数から除去する。"""
+    return [arg for arg in argv if arg != _INTERNAL_MISE_REFRESHED_ARG]
+
+
 def _build_restart_target(
     argv: list[str],
     dotfiles_root: pathlib.Path | None = None,
     *,
     resume_consumed: bool = False,
+    mise_refreshed: bool = False,
 ) -> tuple[pathlib.Path, list[str]]:
     """再起動対象のスクリプトパスと引数列を返す。
 
@@ -416,7 +469,11 @@ def _build_restart_target(
         canonical = dotfiles_root / "agent-toolkit" / "scripts" / "atk.py"
         if canonical.exists():
             script = canonical
-    rest = _without_resume_args(argv[1:]) if resume_consumed else argv[1:]
+    rest = _without_internal_mise_refreshed(argv[1:])
+    if resume_consumed:
+        rest = _without_resume_args(rest)
+    if mise_refreshed:
+        rest.append(_INTERNAL_MISE_REFRESHED_ARG)
     return script, rest
 
 
@@ -425,6 +482,7 @@ def _restart_process_loop(
     dotfiles_root: pathlib.Path | None = None,
     *,
     resume_consumed: bool = False,
+    mise_refreshed: bool = False,
 ) -> None:
     """次に起動するスクリプトと引数をランチャーへ渡して再起動を要求する。
 
@@ -434,7 +492,12 @@ def _restart_process_loop(
     PEP 723の依存解決が再実行され、かつプロセス階層が増えない。
     受け渡しファイルの指定が無い直接起動では、従来どおり自プロセスを置き換える。
     """
-    script, rest = _build_restart_target(argv, dotfiles_root, resume_consumed=resume_consumed)
+    script, rest = _build_restart_target(
+        argv,
+        dotfiles_root,
+        resume_consumed=resume_consumed,
+        mise_refreshed=mise_refreshed,
+    )
     spec_path = os.environ.get(_RESTART_SPEC_ENV)
     if spec_path:
         pathlib.Path(spec_path).write_text("\n".join([str(script), *rest]) + "\n", encoding="utf-8")
@@ -516,7 +579,13 @@ def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
         return False
 
 
-def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str, argv: list[str]) -> None:
+def _check_and_restart_on_update(
+    dotfiles_root: pathlib.Path,
+    startup_hash: str,
+    argv: list[str],
+    *,
+    mark_mise_refreshed: bool = False,
+) -> bool:
     """待機ループのタイムアウト復帰時に上流差分確認・`update-dotfiles`実行・再起動判定を行う。
 
     上流差分がある場合のみ`update-dotfiles`を実行し（無条件実行による無出力ノイズを避けるため）、
@@ -524,13 +593,16 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
     ハッシュが変化した場合のみ再起動する（他プロセスが先に`update-dotfiles`を完了させ
     リポジトリが最新化済みのケース、ローカル手編集のケースの双方を検知できる）。
     出力は静音を基本とし、上流差分なし・ハッシュ不変の場合は無出力とする。
+    戻り値は、この呼び出しで`update-dotfiles`が成功したかを表す。
     """
+    update_succeeded = False
     if _has_upstream_diff(dotfiles_root):
         executable = _resolve_executable("update-dotfiles")
         if executable is not None:
             result = subprocess.run([executable, "--force"], check=False, env=_child_env())
             _console_title.set_console_title("atk mq process-loop")
-            if result.returncode != 0:
+            update_succeeded = result.returncode == 0
+            if not update_succeeded:
                 print(
                     f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
                     file=sys.stderr,
@@ -539,7 +611,12 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
     if current_hash != startup_hash:
         print("常駐コードの更新を検知したためprocess-loopを再起動します。")
         _process_loop_log.append("restart_on_wait_loop_update")
-        _restart_process_loop(argv, dotfiles_root)
+        _restart_process_loop(
+            argv,
+            dotfiles_root,
+            mise_refreshed=mark_mise_refreshed and update_succeeded,
+        )
+    return update_succeeded
 
 
 def _update_before_session(
@@ -548,12 +625,17 @@ def _update_before_session(
     startup_hash: str | None,
     argv: list[str],
     env: dict[str, str],
-) -> bool:
-    """ready項目の処理前にdotfilesとprivate-notesを同期する。"""
+    *,
+    mark_mise_refreshed: bool = False,
+) -> tuple[bool, bool]:
+    """ready項目の処理前にdotfilesとprivate-notesを同期する。
+
+    戻り値は、子セッションを起動できるかと`update-dotfiles`が成功したかの組とする。
+    """
     executable = _resolve_executable("update-dotfiles")
     if executable is None:
         print("update-dotfilesを利用できないため、子セッションを起動せず待機します。", file=sys.stderr)
-        return False
+        return False, False
     result = subprocess.run([executable, "--force"], check=False, env=env)
     _console_title.set_console_title("atk mq process-loop")
     if result.returncode != 0:
@@ -561,14 +643,14 @@ def _update_before_session(
             f"update-dotfilesに失敗しました（exit code {result.returncode}）。子セッションを起動せず待機します。",
             file=sys.stderr,
         )
-        return False
+        return False, False
     if dotfiles_root is not None and startup_hash is not None:
         current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
         if current_hash != startup_hash:
             print("処理開始前に常駐コードの更新を検知したためprocess-loopを再起動します。")
             _process_loop_log.append("restart_before_session_update")
-            _restart_process_loop(argv, dotfiles_root)
-    return _pull_private_notes(private_notes)
+            _restart_process_loop(argv, dotfiles_root, mise_refreshed=mark_mise_refreshed)
+    return _pull_private_notes(private_notes), True
 
 
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -607,12 +689,20 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     （`loop_iter_start`・`session_start`・`session_end`）を記録する
     （`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`未設定時はno-op）。
     待機ループ復帰時に自己コード更新を検知して再起動した場合は`restart_on_wait_loop_update`を記録する。
+    dotfilesを対象とし、更新を有効にした起動ではmiseのlatest指定ツールを起動時と24時間ごとに再評価する。
+    成功した`update-dotfiles`直後は再評価時刻を更新し、正常再起動先へ一回限りの内部指定を渡して重複を避ける。
     """
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
     prompt = _build_process_loop_prompt(local_path, target_repo_id, args.orchestrator)
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
+    mise_refresh_root = dotfiles_root if target_repo_id == _DOTFILES_REPO_ID and not args.no_update else None
+    mise_refreshed_at: float | None = None
+    if mise_refresh_root is not None:
+        if not args.internal_mise_refreshed:
+            _refresh_mise_tools(mise_refresh_root)
+        mise_refreshed_at = time.monotonic()
     print(f"atk mq process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     last_alert_check: float | None = None
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
@@ -638,7 +728,17 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         continue
                     count = _count_pending_entries(private_notes, target_repo=target_repo_id)
                     if count > 0 and refresh_before_session and not args.no_update:
-                        if not _update_before_session(private_notes, dotfiles_root, startup_hash, sys.argv, env):
+                        session_ready, update_succeeded = _update_before_session(
+                            private_notes,
+                            dotfiles_root,
+                            startup_hash,
+                            sys.argv,
+                            env,
+                            mark_mise_refreshed=mise_refresh_root is not None,
+                        )
+                        if update_succeeded and mise_refresh_root is not None:
+                            mise_refreshed_at = time.monotonic()
+                        if not session_ready:
                             print("同期を再試行するまで変更検知を待機します。")
                             _wait_for_changes(private_notes, target_repo_id)
                             refresh_before_session = True
@@ -700,9 +800,17 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             executable = _resolve_executable("update-dotfiles")
                             if executable is not None:
                                 print("update-dotfilesを実行してprocess-loopを再起動します。")
-                                subprocess.run([executable, "--force"], check=False, env=env)
+                                update_result = subprocess.run([executable, "--force"], check=False, env=env)
                                 _console_title.set_console_title("atk mq process-loop")
-                                _restart_process_loop(sys.argv, dotfiles_root, resume_consumed=True)
+                                update_succeeded = update_result.returncode == 0
+                                if update_succeeded and mise_refresh_root is not None:
+                                    mise_refreshed_at = time.monotonic()
+                                _restart_process_loop(
+                                    sys.argv,
+                                    dotfiles_root,
+                                    resume_consumed=True,
+                                    mise_refreshed=mise_refresh_root is not None and update_succeeded,
+                                )
                             # 更新を実行できない場合は再読込すべき新しいコードが無いため再起動せず、
                             # 反復を継続する。他プロセスによる更新は待機ループのハッシュ比較が検知する。
                         continue
@@ -729,8 +837,22 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     print("0件のため変更検知を待機します。")
                     changed = _wait_for_changes(private_notes, target_repo_id)
                     refresh_before_session = True
+                    if (
+                        mise_refresh_root is not None
+                        and mise_refreshed_at is not None
+                        and time.monotonic() - mise_refreshed_at >= _MISE_REFRESH_INTERVAL_SEC
+                    ):
+                        _refresh_mise_tools(mise_refresh_root)
+                        mise_refreshed_at = time.monotonic()
                     if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:
-                        _check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
+                        update_succeeded = _check_and_restart_on_update(
+                            dotfiles_root,
+                            startup_hash,
+                            sys.argv,
+                            mark_mise_refreshed=mise_refresh_root is not None,
+                        )
+                        if update_succeeded and mise_refresh_root is not None:
+                            mise_refreshed_at = time.monotonic()
             except KeyboardInterrupt:
                 print("Ctrl+Cを検知しました。常駐モードを終了します。")
         finally:

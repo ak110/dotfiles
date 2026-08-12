@@ -28,6 +28,7 @@ _has_upstream_diff = _process_loop._has_upstream_diff  # pylint: disable=protect
 _restart_process_loop = _process_loop._restart_process_loop  # pylint: disable=protected-access
 _RESTART_SPEC_ENV = _process_loop._RESTART_SPEC_ENV  # pylint: disable=protected-access
 _RESTART_EXIT_CODE = _process_loop._RESTART_EXIT_CODE  # pylint: disable=protected-access
+_INTERNAL_MISE_REFRESHED_ARG = _process_loop._INTERNAL_MISE_REFRESHED_ARG  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)
@@ -407,6 +408,50 @@ def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.Mon
             ["/resolved/uv", "run", "--no-project", "--script", str((tmp_path / "atk.py").resolve()), "mq", "process-loop"],
         )
     ]
+
+
+def test_restart_spec_carries_refreshed_marker_once_and_next_restart_drops_it(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ランチャー経路は更新成功後だけ内部指定を一回渡し、再々起動へ残さない。"""
+    first_spec = tmp_path / "first-restart-spec"
+    script = tmp_path / "atk.py"
+    monkeypatch.setenv(_RESTART_SPEC_ENV, str(first_spec))
+
+    with pytest.raises(SystemExit):
+        _restart_process_loop(
+            [str(script), "mq", "process-loop", _INTERNAL_MISE_REFRESHED_ARG],
+            mise_refreshed=True,
+        )
+
+    first_lines = first_spec.read_text(encoding="utf-8").splitlines()
+    assert first_lines.count(_INTERNAL_MISE_REFRESHED_ARG) == 1
+
+    second_spec = tmp_path / "second-restart-spec"
+    monkeypatch.setenv(_RESTART_SPEC_ENV, str(second_spec))
+    with pytest.raises(SystemExit):
+        _restart_process_loop(first_lines, mise_refreshed=False)
+
+    assert _INTERNAL_MISE_REFRESHED_ARG not in second_spec.read_text(encoding="utf-8").splitlines()
+
+
+def test_direct_restart_carries_refreshed_marker_once(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """直接再起動のexecv引数も既存指定を除去して更新成功の一個だけを渡す。"""
+    calls: list[list[str]] = []
+
+    def record(_path: str, argv: list[str]) -> None:
+        calls.append(argv)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(os, "execv", record)
+    with pytest.raises(SystemExit):
+        _restart_process_loop(
+            [str(tmp_path / "atk.py"), "mq", "process-loop", _INTERNAL_MISE_REFRESHED_ARG],
+            mise_refreshed=True,
+        )
+
+    assert calls[0].count(_INTERNAL_MISE_REFRESHED_ARG) == 1
 
 
 def test_restart_spec_targets_dotfiles_checkout_entry_point(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
