@@ -167,7 +167,8 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
 
     assert "起動文の先頭で受信者への命令を1文で示す" in skill
-    assert "task referenceの手順、品質規範本文、出力schema、過去応答を起動文へ複製しない" in skill
+    assert "task referenceの手順、品質規範本文、出力schema、過去応答に加え、" in skill
+    assert "正本内の合意事項、調査済み事実、完了条件も複製しない" in skill
     assert "必要な場合だけ" in skill
     assert "references/runtime-routing.md" in skill
     assert "受信者固有の作業手順は本referenceへ置かない" in runtime
@@ -463,7 +464,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "レビュー修正モード",
         "applications:",
         "統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力",
-        "レビュー修正モードでは、採用指摘の6列表、関係する全計画の絶対パス、保持契約を必須入力",
+        "レビュー修正モードでは、採用指摘の6列表と関係する全計画の絶対パスを必須入力",
+        "採用指摘の6列表を読み、関係する全計画から保持契約を読み、採用指摘だけを修正",
         "lane項目はソート済みfeedback filename一覧、lane commit OID、適用後OID",
         "レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ",
     ):
