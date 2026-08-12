@@ -4,12 +4,14 @@
 
 ## 実行wave
 
-readyな計画が1件なら現在のcleanなworktreeで実行する。
+同じ計画ファイル（同じ`plan_file`）を持つready項目を1 laneとし、1 laneは1つの計画ファイルを表す。
+readyなlaneが1件なら現在のcleanなworktreeで実行する。
 完全な一覧には`用途=統合用`、`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`として含める。
-複数件なら変更対象ファイルの重複をwave分割条件にせず、利用可能なwriter枠まで上流追随済みの別worktreeへ1計画ずつ割り当てる。
+複数laneなら変更対象ファイルの重複をwave分割条件にせず、利用可能なwriter枠まで上流追随済みの別worktreeへ1計画ファイルずつ割り当てる。
 呼び出し元は管理対象領域内へlane用統合worktreeを作成する。
 完全な一覧には用途、絶対パス、HEADの完全OID、管理対象領域の絶対パス、`作成主体=caller`、`回収可否=可`を記録する。
-1つのworktreeへ複数のwriterを割り当てず、dirty差分を前提とする計画は並列化しない。
+1つの計画ファイルに属する実装単位は、1 writerが同じworktreeで順次実装する。
+異なる計画ファイルのlaneだけを別worktreeで並列化し、dirty差分を前提とする計画は並列化しない。
 
 各laneは`agent-toolkit:delegation`に従って`plan-impl-executor`を起動する。
 各laneの呼び出し元は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読み、

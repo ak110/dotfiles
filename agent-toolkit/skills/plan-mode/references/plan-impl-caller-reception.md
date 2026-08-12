@@ -16,15 +16,15 @@
 
 上記2組合せ以外はexecutorへ渡さない。
 
-計画が非重複の並列単位を明示した場合は、callerが単位ごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
-各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`で単位worktreeを作成する。
+複数の計画ファイルを並列実装する場合は、callerが計画ファイルごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
+各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`で計画ファイル専用worktreeを作成する。
 計画がcallerによる統合用worktreeの作成も明示する場合は、同じ方法で統合用worktreeを作成する。
 作成直後に用途、絶対パス、管理対象領域の絶対パス、HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録する。
 以降、この6項目をworktreeの記録属性と呼ぶ。
 起動文は受信者への命令を先頭に置き、次だけを渡す。
 
 - モード指定`通常の実装モード`
-- 計画ファイル、プロジェクト規範の絶対パス
+- 計画ファイル、プロジェクト規範の絶対パス。1計画ファイルの実装は1 writerへ順次割り当てること
 - worktreeの完全な一覧。各worktreeへ前掲の記録属性を付し、借用時の管理対象領域は`なし`とする
 - feedback filename
 - 追加指示と許容済みの挙動変化。該当しない場合は`なし`

@@ -5,13 +5,14 @@ Claude Codeホストで通常型feedbackを処理する場合に、メインが�
 
 ## 起動
 
-readyな通常型feedbackごとに`agent-toolkit:feedbacks-planner`を別識別子で起動する。
-利用できる実行枠内で並列起動し、同じ対象worktreeを読み取り専用で共有する。
-計画ファイルの保存先は項目ごとに別パスとする。
+active一覧を取得した時点のreadyな通常型feedbackを、対象リポジトリごとの1 waveとして
+`agent-toolkit:feedbacks-planner`へ1回だけ渡す。
+filename昇順の本文一覧を渡し、blocked項目、未回答TBD、スナップショット後に追加された項目は含めない。
+plannerは採用項目を1つの統合計画へまとめ、項目ごとの原文、採否、対象、完了条件、実装単位を識別可能に保つ。
 
 起動文には次の絶対パスと値だけを渡す。
 
-- feedback filenameと、メインが`atk mq show`で一度だけ取得した本文
+- feedback filename一覧と、メインが`atk mq show`で一度だけ取得したfilename昇順の本文一覧
 - 対象worktreeとプロジェクト規範
 - `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`content-adjustment.md`、`review-checklists.md`
 - `agent-toolkit:plan-mode`などのauthor skillと、バグ対応時は`agent-toolkit:bugfix`
@@ -32,8 +33,8 @@ plannerへqueue変異、push、フィードバック投入、worktree作成と�
 - TBD候補と利用者判断事項
 
 計画全文をplannerの完了報告へ要求しない。
-採用時は`atk mq convert-to-plan <filename> --plan-file=<計画絶対パス> --target-repo=<repo>`を実行し、
-保存結果の`plan_file`を実在する計画パスへ照合する。
+採用時は各filenameへ`atk mq convert-to-plan <filename> --plan-file=<計画絶対パス> --target-repo=<repo>`を実行し、
+保存結果の`plan_file`を同じ実在する計画パスへ照合する。
 終端工程の一覧、対象及び認可根拠となる本文の逐語引用を照合し、本文にない操作は差し戻す。
 実装変更がない終端工程専用項目は計画なしであることを検収し、終端待機集合へ登録する。
 ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡し、通常の`atk mq return-to-inbox`でinboxへ戻す。

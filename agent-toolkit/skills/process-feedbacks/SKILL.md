@@ -41,11 +41,11 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 複数項目を連続処理する場合、新しい項目の調査は前項目の調査結果・仮説・識別子を引き継がず
 独立に確定する（努力目標）。
 
-Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、readyな通常型項目ごとに
-`agent-toolkit:feedbacks-planner`を起動する。
+Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
+1 waveとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
 本文はメインが`atk mq show`で取得して渡し、plannerは再取得しない。
-複数のready項目は利用できる実行枠内で並列起動する。
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
+readyな計画実装型laneは通常型waveの計画工程を待たず、利用可能なwriter枠で実装できる。
 
 サブエージェント機能を利用できないCodexホストでは、通常型を次の順で扱う。
 
@@ -86,7 +86,7 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全lane�
 失敗時はpush済み内容を巻き戻さず、実施済み工程と観測内容を記録したTBDを投入して`atk mq return-to-inbox`で保留する。
 終端工程だけを求める項目は計画を作成せず、終端待機集合へ登録して全laneの統合とpush後にfilename昇順で実行する。
 
-- Claude Codeホストの通常型採用項目は、plannerの計画を`atk mq convert-to-plan`で計画実装型へ変換し、
+- Claude Codeホストの通常型採用項目は、plannerの統合計画を各feedbackへ`atk mq convert-to-plan`で記録し、
   `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
 - Codexホストの通常型採用項目は実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、調査済み事実と採否を渡す
 - 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する

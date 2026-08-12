@@ -58,7 +58,8 @@ baseline作成、push、監視の順で実行する。
    登録猶予の終了後に登録された実行も判定対象に含む。
    登録猶予は、実行が1件も登録されないまま終わる場合を切り分けるための待機であり、
    判定対象を確定する期限ではない
-4. CI失敗ではrunまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する。
+4. CI失敗では、最初の失敗jobを検出した時点でrunまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得し、同一SHAのローカル再現と原因調査を開始する。
+   残りのjob監視を継続し、全jobの終端後に失敗集合、ログ、artifactを再照合して修正範囲を確定する。
    長出力の取得と要約は`agent-toolkit:shell-exec`へ委譲できるが、待機と原因分析は委譲しない
 5. 証拠取得後に`agent-toolkit:bugfix`を起動し、
    同スキルの`references/ci-failure-handling.md`で帰属と原因を分類する。

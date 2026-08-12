@@ -282,16 +282,34 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert metadata["skills"] == "agent-toolkit:delegation"
     assert "mcp__codex__codex" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
-    assert "並列可能な単位はwriterへ同時に割り当て" in text
-    assert "依存する単位は順次割り当て" in text
-    assert "並列可能なwriterは利用できる実行枠内で同時に起動" in text
-    assert "その他は依存順に1件ずつ起動" in text
+    assert "1 writerへ同じworktreeで順次割り当て" in text
+    assert "異なる計画ファイルのlaneだけを別worktreeで並列" in text
+    assert "同じ計画ファイルのwriterは依存順に1件ずつ起動" in text
     for task_name in (
         "implementation-task.md",
         "implementation-plan-review-task.md",
         "implementation-independent-review-task.md",
     ):
         assert task_name in text
+
+
+def test_plan_file_is_the_writer_parallelism_boundary() -> None:
+    """同じ計画を複数writerへ分割せず、異なる計画だけを並列化する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    merge = _MERGE_TASK.read_text(encoding="utf-8")
+    rules = _AGENT_RULES.read_text(encoding="utf-8")
+
+    assert "1 waveとして1つの`agent-toolkit:feedbacks-planner`" in process
+    assert "通常型waveの計画工程を待たず" in process
+    assert "同じ計画ファイル（同じ`plan_file`）を持つready項目を1 lane" in flow
+    for text in (flow, executor, writer, merge, rules):
+        assert "同じ計画ファイル" in text
+    assert "異なる計画ファイルのlaneだけを別worktreeで並列化" in flow
+    assert "計画ファイルごとに`atk managed-temp create" in caller
 
 
 def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None:
@@ -308,7 +326,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "plan-review-task.md",
         "指摘を加工せずauthorへ全件配送",
         "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
-        "起草スレッドへfeedback filenameと本文、調査結果、確定した採否と利用者合意",
+        "起草スレッドへfilename一覧と本文一覧、項目ごとの調査結果、確定した採否と利用者合意",
+        "各feedbackごとの調査スレッド",
         "queueの状態と他laneの情報は渡さない",
         "authorへの新規起動又は継続接続の直前は`plan_model`",
         "調査スレッドの起動直前に`atk config get pick_feedbacks_model`",
@@ -500,8 +519,8 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
         "計画から単位、共通のベースコミット、統合順を読み",
         "現在worktreeを統合用として借用",
         "`作成主体=既存`かつ`回収可否=不可`",
-        "非重複の並列単位",
-        "callerが単位ごとに`atk managed-temp create",
+        "複数の計画ファイルを並列実装する場合",
+        "callerが計画ファイルごとに`atk managed-temp create",
         "計画がcallerによる統合用worktreeの作成も明示",
         "callerが管理対象領域内へ作成（並列単位・計画が明示した統合用）",
         "上記2組合せ以外はexecutorへ渡さない",
@@ -937,7 +956,7 @@ def test_push_ci_keeps_only_monitoring_inputs() -> None:
         "各`(destination ref, source ref)`",
         "別のbaselineを作成",
         "他のbaseline作成・監視を省略しない",
-        "runまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得する",
+        "最初の失敗jobを検出した時点でrunまたはpipelineとjobの実識別子、失敗ログ、生成されるartifactを取得し",
         "`agent-toolkit:bugfix`を起動",
     ):
         assert phrase in commit_ci

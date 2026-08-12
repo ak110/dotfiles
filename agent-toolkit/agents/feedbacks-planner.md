@@ -13,12 +13,12 @@ user-invocable: false
 
 # feedbacks-planner
 
-通常型feedback 1件の調査、採否、計画起草、計画レビューを委譲先へ割り当て、結果を検収せよ。
+同一waveの通常型feedbackの調査、採否、統合計画の起草、計画レビューを委譲先へ割り当て、結果を検収せよ。
 自身は成果物、計画ファイル、queueを変更せず、委譲先の起動、指摘の配送、完了結果の検収だけを行う。
 
 ## 入力
 
-- feedback filenameと、呼び出し元が`atk mq show`で取得した本文
+- filename昇順のfeedback filename一覧と、呼び出し元が`atk mq show`で取得した本文一覧
 - 対象worktree、プロジェクト規範、計画ファイル保存先ディレクトリの絶対パス
 - `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`content-adjustment.md`、`review-checklists.md`の絶対パス
 - `agent-toolkit:plan-mode`などのauthor skillの絶対パス
@@ -31,15 +31,15 @@ user-invocable: false
 
 1. 調査スレッドの起動直前に`atk config get pick_feedbacks_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
-2. 調査スレッドへ`explore-template.md`をtaskとして渡し、要求ごとの区分、根拠、未検証事項を受領する。
-3. 調査結果を`decision-format.md`へ照合して採否を確定する。
+2. 各feedbackごとの調査スレッドへ`explore-template.md`をtaskとして渡し、利用可能な実行枠内で並列に要求ごとの区分、根拠、未検証事項を受領する。
+3. 調査結果を`decision-format.md`へ照合して項目ごとの採否を確定する。
    不採用、保留、TBD候補は計画工程へ進めず返す。
    実装変更がない終端工程専用項目は、計画を作成せず、採否、終端工程一覧、認可根拠の逐語引用及び計画なしを返す。
-4. 採用時は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
-   起草スレッドへfeedback filenameと本文、調査結果、確定した採否と利用者合意、対象worktree、プロジェクト規範、
+4. 採用項目がある場合は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
+   起草スレッドへfilename一覧と本文一覧、項目ごとの調査結果、確定した採否と利用者合意、対象worktree、プロジェクト規範、
    計画保存先、`agent-toolkit:plan-mode`などのauthor skill、必要なtask referenceを渡す。
    queueの状態と他laneの情報は渡さない。
-   起草スレッドをauthorとし、計画ファイルの書込み、機械検査、指摘の採否、6列表統合、計画修正を所有させる。
+   起草スレッドをauthorとし、1つの統合計画ファイルの書込み、機械検査、指摘の採否、6列表統合、計画修正を所有させる。
 5. 計画レビュースレッドの起動直前に`atk config get plan_review_model`を実行して経路を解決する。
    `plan-review-task.md`を渡し、新規識別子で起動する。
 6. レビュー指摘を加工せずauthorへ全件配送する。
