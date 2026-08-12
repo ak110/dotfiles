@@ -9,7 +9,8 @@ effort: medium
 # 軽量モデルでは完了報告の必須欄の欠落と必須工程の差し戻しが反復した。
 # ツール制限: 調整役として直接編集を行わず、設定で選択したCodex経路を明示的に利用する。
 tools: Skill, Agent, SendMessage, Read, Bash, mcp__codex__codex, mcp__codex__codex-reply
-skills: agent-toolkit:delegation
+skills:
+  - agent-toolkit:delegation
 user-invocable: false
 ---
 

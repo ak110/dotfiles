@@ -91,6 +91,39 @@ def _h2_section(text: str, heading: str) -> str:
     return remainder.partition("\n## ")[0]
 
 
+def test_agent_tools_are_comma_separated_scalars() -> None:
+    """各agentのtoolsをcomma-separated scalarとして宣言する。"""
+    for path in sorted(_AGENTS_DIR.glob("*.md")):
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, _ = parsed
+        tools = metadata.get("tools")
+        assert isinstance(tools, str)
+        assert all(value.strip() for value in tools.split(","))
+
+
+def test_agent_skills_are_string_lists() -> None:
+    """skillsを文字列配列とし、プリロードしないagentでは省略する。"""
+    expected = {
+        "feedbacks-planner.md": ["agent-toolkit:delegation"],
+        "plan-impl-executor.md": ["agent-toolkit:delegation"],
+    }
+    for name, expected_skills in expected.items():
+        path = _AGENTS_DIR / name
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, _ = parsed
+        skills = metadata.get("skills")
+        assert isinstance(skills, list)
+        assert all(isinstance(skill, str) for skill in skills)
+        assert skills == expected_skills
+
+    advisor = frontmatter.parse_frontmatter(_SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8"))
+    assert advisor is not None
+    metadata, _ = advisor
+    assert "skills" not in metadata
+
+
 def test_delegating_agents_allow_required_tools() -> None:
     """delegation利用agentが起動と受領に必要なツールを許可する。"""
     missing: dict[str, list[str]] = {}
@@ -99,7 +132,8 @@ def test_delegating_agents_allow_required_tools() -> None:
         parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         metadata, body = parsed
-        declared_skills = metadata.get("skills", "")
+        declared_skills = metadata.get("skills", [])
+        assert isinstance(declared_skills, list)
         if "agent-toolkit:delegation" not in body and "agent-toolkit:delegation" not in declared_skills:
             continue
         delegating.append(path.name)
@@ -120,10 +154,10 @@ def test_preloaded_agent_skills_are_not_invoked_again_in_body() -> None:
         parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         metadata, body = parsed
-        declared_skills = metadata.get("skills")
-        if not isinstance(declared_skills, str):
-            continue
-        for skill in (value.strip() for value in declared_skills.split(",")):
+        declared_skills = metadata.get("skills", [])
+        assert isinstance(declared_skills, list)
+        for skill in declared_skills:
+            assert isinstance(skill, str)
             assert f"`{skill}`を起動" not in body
 
 
@@ -278,7 +312,7 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
 
     assert metadata["model"] == "sonnet"
     assert metadata["effort"] == "medium"
-    assert metadata["skills"] == "agent-toolkit:delegation"
+    assert metadata["skills"] == ["agent-toolkit:delegation"]
     assert "mcp__codex__codex" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
     assert "1 writerへ同じworktreeで順次割り当て" in text
@@ -365,7 +399,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     text = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
     metadata, _ = frontmatter.parse_frontmatter(text) or ({}, "")
     assert metadata["model"] == "sonnet"
-    assert metadata["skills"] == "agent-toolkit:delegation"
+    assert metadata["skills"] == ["agent-toolkit:delegation"]
     assert "mcp__codex__codex" in metadata["tools"]
     for phrase in (
         "自身は成果物、計画ファイル、queueを変更せず",
@@ -724,6 +758,7 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
     assert metadata["effort"] == "high"
     assert metadata["user-invocable"] == "false"
     assert metadata["tools"] == "Read, Bash"
+    assert "skills" not in metadata
     assert "必ず読み取り専用の`session-review-advisor`を1つ起動" in skill
     assert "メインだけで改善提案の要否を確定しない" in skill
     assert "Explore" not in skill
