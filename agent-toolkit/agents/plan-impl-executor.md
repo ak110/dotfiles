@@ -22,7 +22,7 @@ user-invocable: false
 ## 役割
 
 委譲の調整、writerとreviewerの検収、指摘集合の統合を担当する。
-自身は成果物と計画ファイルを直接編集せず、writerが作成したcommitの統合と、渡されたworktreeの検収だけを行う。
+自身は成果物と計画ファイルを直接編集せず、writerが作成したcommitと、渡されたworktreeの検収だけを行う。
 worktreeと管理対象領域を作成・回収しない。
 `git push`、タグ作成、リモートrefは変更しない。
 
@@ -57,11 +57,11 @@ worktreeと管理対象領域を作成・回収しない。
    共通のベースコミット、統合順を取得する。単位が明示されていない場合は計画全体を1つの実装単位として扱う。
    1つの計画ファイルに属する単位は対象集合にかかわらず逐次実行する。
    別worktreeのwriter並列化は異なる計画ファイルのlaneだけに限定し、不足値を推測して並列化しない
-2. 渡されたworktree一覧を計画の単位、共通のベースコミット、統合順と照合する。
+2. 渡されたworktree一覧を計画の単位、共通のベースコミット、実装順と照合し、同じ計画の全単位を実装するlane worktreeを1つ確定する。
    `管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`の組だけを借用worktreeとして受理する。
    `作成主体=caller`、`回収可否=可`の組では管理対象領域の絶対パスを必須とし、その他の組合せは受理しない。
-   一覧にないworktreeを補完または作成せず、各単位を一覧で指定されたworktreeだけへ割り当てる。
-   同じworktreeへ複数のwriterを割り当てず、依存する単位は先行commitの統合後に一覧の統合用worktreeへ逐次割り当てる
+   一覧にないworktreeを補完または作成せず、全単位を確定した同じlane worktreeの1 writerへ割り当てる。
+   依存する単位は、先行commitが同worktreeのHEADを進めた後に同じwriterへ逐次割り当てる
 3. 各writerの新規起動又は継続接続の直前に`atk config get execute_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    writerは解決したengineで起動し、executor自身を含む同じ役割種別へ割り当てない。
@@ -70,15 +70,15 @@ worktreeと管理対象領域を作成・回収しない。
    プロジェクト規範、該当author skillの絶対パス、その単位の識別と計画時点で判明している対象ファイル集合だけとする。
    同じ計画ファイルのwriterは依存順に1件ずつ起動する
 4. 各writerの完了後にcommit、差分、検証、cleanな作業ツリーを実測する。
-   完了した単位commitは計画の統合順に完全OIDを指定して統合用worktreeへcherry-pickし、
-   各統合後にHEAD、計画対象の実装漏れ、追加変更の目的への帰属と必要性、clean状態を照合する。
-   衝突時は統合用worktreeのcherry-pickだけを中止し、対象重複または依存関係を再調査してから該当単位を再実装する。
-   失敗していない単位のcommitとworktreeは巻き戻さない
-5. 単位worktreeと統合用worktreeは作成・回収しない。
+   各単位commitが同じlane worktreeの直前に検収したHEADを直接進めたことを確認する。
+   各単位後にHEAD、計画ベースからの累積差分、計画対象の実装漏れ、追加変更の目的への帰属と必要性、clean状態を照合する。
+   HEADが直接進んでいない場合は後続単位を開始せず、実際のcommitとworktreeを`needs_escalation`で返す。
+   検収済みの先行commitとworktreeは巻き戻さない
+5. lane worktreeとその他の受領済みworktreeは作成・回収しない。
    各worktreeについて、用途、正確な絶対パス、管理対象領域の絶対パス、借用時は`なし`、状態、完全OID、作成主体、回収可否を返す。
    失敗または中断中のworktreeも復旧用に保持し、対象外worktreeを変更しない。
    writer結果は呼び出し元が進捗ログへ反映できる時点で単位ごとに返す
-6. 全単位後に統合済みの累積差分へ生成同期と最終検証を実測し、統合済みHEADを最終レビュー対象とする
+6. 全単位後にlane worktreeの累積差分へ生成同期と最終検証を実測し、同worktreeのHEADを最終レビュー対象とする
 
 ### 統合後レビュー調整モードの準備
 
@@ -114,11 +114,11 @@ worktreeと管理対象領域を作成・回収しない。
 
 #### 通常の実装モードのレビュー修正
 
-1. 全ての実装writerが終端し、統合用worktreeがcleanで、HEADがレビュー対象の最終HEADと一致することを実測する
+1. 実装writerが終端し、lane worktreeがcleanで、HEADがレビュー対象の最終HEADと一致することを実測する
 2. 同worktreeだけへ単一の修正writerを割り当てる。
    単一単位を同じworktreeで実装した場合も、元の実装writerへ戻さず本項の経路を適用する
 3. 修正writerの新規起動又は継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
-   `skills/plan-mode/references/implementation-task.md`、統合用worktree、対象計画、採用指摘を実装単位とした予定対象、
+   `skills/plan-mode/references/implementation-task.md`、lane worktree、対象計画、採用指摘を実装単位とした予定対象、
    統合した6列表、プロジェクト規範、該当author skill、ソート済みfeedback filename一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す
 4. 修正writerの完了と終端を確認し、修正commitがレビュー対象の最終HEADを直接進めたことを確認する。

@@ -312,6 +312,31 @@ def test_plan_file_is_the_writer_parallelism_boundary() -> None:
     assert "計画ファイルごとに`atk managed-temp create" in caller
 
 
+def test_single_plan_units_advance_one_lane_worktree_without_cherry_pick() -> None:
+    """同一計画のcommitを1つのlane worktreeへ順次積む。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    normal = (
+        _h2_section(executor, "実行")
+        .partition("### 通常の実装モードの準備\n")[2]
+        .partition("\n### 統合後レビュー調整モードの準備\n")[0]
+    )
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    merge = _MERGE_TASK.read_text(encoding="utf-8")
+
+    for phrase in (
+        "同じ計画の全単位を実装するlane worktreeを1つ確定",
+        "全単位を確定した同じlane worktreeの1 writerへ割り当て",
+        "先行commitが同worktreeのHEADを進めた後に同じwriterへ逐次割り当て",
+        "各単位commitが同じlane worktreeの直前に検収したHEADを直接進めた",
+        "計画ベースからの累積差分",
+        "lane worktreeの累積差分",
+    ):
+        assert phrase in normal
+    assert "cherry-pick" not in normal
+    assert "単一cherry-pickシーケンス" in flow
+    assert "単一のcherry-pickシーケンス" in merge
+
+
 def test_plan_lane_preserves_sorted_feedback_filename_lists() -> None:
     """laneの0件拒否と1件以上の一覧追跡を下流契約全体で固定する。"""
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
@@ -463,7 +488,7 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     integrated = execution.partition("### 統合後レビュー調整モードの準備\n")[2].partition("\n### 共通の最終二系統レビュー\n")[0]
     common_review = execution.partition("### 共通の最終二系統レビュー\n")[2]
 
-    assert "統合済みHEADを最終レビュー対象" in normal
+    assert "同worktreeのHEADを最終レビュー対象" in normal
     assert "全計画を最終レビュー対象" in integrated
     assert "同じ最終HEAD" in common_review
     assert "別識別子" in common_review
@@ -491,8 +516,8 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
     for phrase in (
-        "全ての実装writerが終端",
-        "統合用worktreeがclean",
+        "実装writerが終端",
+        "lane worktreeがclean",
         "HEADがレビュー対象の最終HEADと一致",
         "同worktreeだけへ単一の修正writer",
         "単一単位を同じworktreeで実装した場合も",
@@ -516,7 +541,7 @@ def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
-    assert "単位worktreeと統合用worktreeは作成・回収しない" in executor
+    assert "lane worktreeとその他の受領済みworktreeは作成・回収しない" in executor
     assert "用途、正確な絶対パス、管理対象領域の絶対パス、借用時は`なし`、状態、完全OID、作成主体、回収可否" in executor
     assert "`git worktree remove`" not in executor
     assert "commit・統合可、worktreeの作成・回収不可、push不可" in caller
@@ -553,8 +578,8 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
         "借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない",
     ):
         assert phrase in caller
-    assert "渡されたworktree一覧を計画の単位、共通のベースコミット、統合順と照合" in executor
-    assert "一覧で指定されたworktreeだけへ割り当てる" in executor
+    assert "渡されたworktree一覧を計画の単位、共通のベースコミット、実装順と照合" in executor
+    assert "同じ計画の全単位を実装するlane worktreeを1つ確定" in executor
     for command in ("atk managed-temp create", "git worktree add", "git worktree remove"):
         assert command not in executor
 
