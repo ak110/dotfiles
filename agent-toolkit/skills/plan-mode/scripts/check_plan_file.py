@@ -5,16 +5,12 @@
 # ///
 """計画の成立に必要な情報契約と実体だけを検査する。
 
-既存計画の`## 実装契約`配置と旧`## 背景`配置は読み取り互換として扱い、
-計画メタ情報の配置が複数に分かれる計画は曖昧として拒否する。
-`## 対応方針`を持たない既存計画では`## 実装契約`配下を実装者向け領域として読み、
-`### 対象ファイル一覧`の取得と2系統のPreToolUseの判定も同じ結果を使う。
+計画メタ情報、見出し構造、スキル・サブエージェント参照を共有parserで検査する。
 """
 
 from __future__ import annotations
 
 import argparse
-import collections
 import pathlib
 import re
 import subprocess
@@ -26,7 +22,6 @@ sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
-_BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 _SKILL_PREFIX_MARKER_RE = re.compile(r"(?:Skillツールで|スキル)$")
 _SKILL_SUFFIX_MARKER_RE = re.compile(r"^スキルを(?:起動|呼び出)")
@@ -51,46 +46,6 @@ def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
                 marker = None
     errors = ["閉じていないMarkdownフェンスがある"] if marker is not None else []
     return outside, errors
-
-
-def _git_path_object_type(work_dir: pathlib.Path, base_commit: str, path: str) -> tuple[str | None, str | None]:
-    """基準コミット上のtree entryが宣言するGit object typeを返す。"""
-    result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(work_dir),
-            "--literal-pathspecs",
-            "ls-tree",
-            "--format=%(objectmode) %(objecttype)",
-            base_commit,
-            "--",
-            path,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None, result.stderr.strip() or f"基準コミット上のパス確認に失敗した: {path}"
-    entries = result.stdout.splitlines()
-    if not entries:
-        return None, None
-    if len(entries) != 1 or len(parts := entries[0].split()) != 2:
-        return None, f"基準コミット上のパス確認が不正な結果を返した: {path}"
-    _, object_type = parts
-    return object_type, None
-
-
-def _git_commit_exists(work_dir: pathlib.Path, base_commit: str) -> bool:
-    """完全長SHAが対象リポジトリのcommitとして解決できるかを返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(work_dir), "cat-file", "-e", f"{base_commit}^{{commit}}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.returncode == 0
 
 
 def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
@@ -123,41 +78,6 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
             f"計画メタ情報の対象リポジトリが作業ディレクトリのGitルートと一致しない: 計画={declared_root}, 実際={actual_root}"
         ]
     return []
-
-
-def _check_targets(text: str, work_dir: pathlib.Path, base_commit: str | None) -> tuple[list[str], list[str]]:
-    """対象一覧の構造、パス安全性、基準コミット上の状態を検査する。"""
-    targets = _plan_format.extract_plan_targets(text)
-    errors: list[str] = []
-    invalid_entries = _plan_format.find_invalid_target_entries(text)
-    if invalid_entries:
-        errors.append(f"対象ファイル一覧に契約形式と一致しない箇条書きがある: {invalid_entries}")
-    if not targets:
-        errors.append("対象ファイル一覧が空である（実装者向け領域が新しいH2から始まっていない場合も本エラーになる）")
-        return errors, []
-    paths = [target.path for target in targets]
-    duplicates = sorted(path for path, count in collections.Counter(paths).items() if count > 1)
-    if duplicates:
-        errors.append(f"対象ファイル一覧に重複したパス: {duplicates}")
-    invalid = _plan_format.find_invalid_target_file_paths(text)
-    if invalid:
-        errors.append(f"対象ファイル一覧に危険なパスがある: {invalid}")
-    if base_commit is not None:
-        for target in targets:
-            object_type, error = _git_path_object_type(work_dir, base_commit, target.path)
-            if error is not None:
-                errors.append(error)
-            elif target.state == "new" and object_type is not None:
-                errors.append(f"新設対象が基準コミットに実在する: {target.path}")
-            elif target.state in {"existing", "deleted"} and object_type is None:
-                label = "削除" if target.state == "deleted" else "既存"
-                errors.append(f"{label}対象が基準コミットに実在しない: {target.path}")
-            elif target.state in {"existing", "deleted"} and object_type not in {"blob", "commit"}:
-                label = "削除" if target.state == "deleted" else "既存"
-                errors.append(
-                    f"{label}対象が基準コミット上のファイルまたはgitlinkではない: {target.path} (object type={object_type})"
-                )
-    return errors, paths
 
 
 def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
@@ -210,20 +130,7 @@ def _classify_skill_references(text: str) -> set[str]:
     return references
 
 
-def _git_changed_files(work_dir: pathlib.Path, base_commit: str) -> tuple[list[str] | None, str | None]:
-    """基準コミットからHEADまでに変わったパスを返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(work_dir), "diff", "--name-only", f"{base_commit}..HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None, result.stderr.strip() or "git diffに失敗した"
-    return [line for line in result.stdout.splitlines() if line], None
-
-
-def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | None) -> tuple[list[str], list[str]]:
+def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。"""
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -234,23 +141,7 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path, base_commit: str | No
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
-    normalized_base = _BASE_VALUE_RE.fullmatch(metadata.get("ベースコミット") or "")
-    target_base = base_commit or (normalized_base.group(1) if normalized_base is not None else None)
-    if target_base is not None and not _git_commit_exists(work_dir, target_base):
-        errors.append(f"対象リポジトリでベースコミットを解決できない: {target_base}")
-        target_base = None
-    target_errors, planned_paths = _check_targets(text, work_dir, target_base)
-    errors.extend(target_errors)
     errors.extend(_check_references(text, work_dir))
-    if base_commit is not None:
-        changed, error = _git_changed_files(work_dir, base_commit)
-        if error is not None:
-            errors.append(error)
-        elif missing_paths := sorted(set(planned_paths) - set(changed or ())):
-            errors.append(
-                f"対象ファイル一覧の予定対象が{base_commit}..HEADのコミット済み差分にない"
-                f"（未コミットの作業ツリー差分は照合対象外）: 欠落={missing_paths}"
-            )
     return errors, []
 
 
@@ -259,17 +150,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan_file", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
-    parser.add_argument(
-        "--base-commit",
-        help=(
-            "対象ファイル一覧の予定対象が`<base>..HEAD`のコミット済み差分に含まれるか照合する。"
-            "未コミットの作業ツリー差分は照合対象に含めないため、実装コミットの作成後に指定する。"
-            "起草直後の初版検査では指定しない。"
-        ),
-    )
     try:
         args = parser.parse_args(argv)
-        errors, warnings = check(args.plan_file, args.work_dir, args.base_commit)
+        errors, warnings = check(args.plan_file, args.work_dir)
     except (OSError, UnicodeDecodeError) as error:
         print(f"計画ファイルを読み込めない: {error}", file=sys.stderr)
         return 2

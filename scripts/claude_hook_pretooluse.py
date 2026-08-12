@@ -38,11 +38,6 @@ sys.path.insert(
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    extract_implementer_region,
-    extract_target_files_from_changes,
-)
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -105,9 +100,6 @@ def main(payload_text: str) -> int:
     skill_warning = _agent_toolkit_edit_skill_warning(tool_name, file_path, session_id, dotfiles_root)
     if skill_warning is not None:
         warnings.append(skill_warning)
-    plan_bump_warning = _plan_file_bump_declaration_warning(tool_name, fields, file_path)
-    if plan_bump_warning is not None:
-        warnings.append(plan_bump_warning)
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
         # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
@@ -425,43 +417,6 @@ def _agent_toolkit_edit_skill_warning(
         " Invoke the skill to load bump policy, 200-line guideline,"
         " and editing workflow before proceeding."
     )
-
-
-def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
-    """計画ファイル Write 時の agent-toolkit/ 編集に対する bump 宣言欠落の警告メッセージを返す。
-
-    対象は Write のみ。Edit / MultiEdit の new_string では計画ファイル本文全域を
-    取得できないため判定対象外とする。
-    対象パスは `is_plan_file` の判定に従い、`.review.md` / `.codex.log` /
-    サブディレクトリ配下は対象外とする。
-    判定対象は人間向け固定領域の後にある実装者向け可変領域とし、
-    領域の特定は `_plan_format.extract_implementer_region` に委ねる（見出し文字列を独自に固定しない）。
-    変更対象の判定は同領域の `### 対象ファイル一覧` の通常箇条書きに限り、
-    本文中の言及とコードフェンス内の記述は対象としない
-    （抽出は `_plan_format.extract_target_files_from_changes` に委ねる）。
-    """
-    if tool_name != "Write":
-        return None
-    if not is_plan_file(file_path):
-        return None
-    for _field, value in fields:
-        plan = "\n".join(line for _, line in extract_implementer_region(value))
-        targets = extract_target_files_from_changes(value)
-        if not any(path.startswith("agent-toolkit/") for path in targets):
-            continue
-        if "agent_toolkit_bump.py" in plan:
-            continue
-        if "bump不要" in plan:
-            continue
-        return (
-            "plan file references `agent-toolkit/` paths in its implementer-facing section but"
-            " the implementation contract is missing both an `agent_toolkit_bump.py` invocation"
-            " and an explicit `bump不要` declaration."
-            " Per the `agent-toolkit-edit` skill (plan mode handling), include"
-            " `scripts/agent_toolkit_bump.py {patch|minor|major}` before the"
-            " verification step, or state `bump不要` in the body when no bump applies."
-        )
-    return None
 
 
 def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:

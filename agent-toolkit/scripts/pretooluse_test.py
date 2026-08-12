@@ -377,14 +377,10 @@ def _write_tmp_file(tmp_path: pathlib.Path, relative_path: str, content: str) ->
 
 # 現行の機械検査を通過する最小限の正規計画ファイル内容。
 _VALID_H2_PLAN_CONTENT = (
-    "## 目的\n\nx\n\n"
-    "## 実装契約\n\n"
+    "## 概要\n\nx\n\n"
     "### 計画メタ情報\n\n"
-    "- 計画ファイル: `/tmp/plan.md`\n"
-    f"- ベースコミット: `{'a' * 40}`\n"
-    "- バージョン更新: なし\n\n"
-    "### 対象ファイル一覧\n\n"
-    "- `README.md`\n\n"
+    f"- ベースコミット: `{'a' * 40}`\n\n"
+    "## 実装資料\n\n### 変更説明\n\nREADMEを更新する。\n\n"
     "## 完了条件\n\nx\n\n"
     "## 進捗ログ\n\nx\n"
 )
@@ -3146,8 +3142,8 @@ class TestSubagentStartLogOrdering:
 def _path_section_build_content(recorded_path: str) -> str:
     """撤去済みの末尾パス節検査へ与える計画本文を組み立てる。"""
     return (
-        "## 目的\n\nx\n\n"
-        "## 実装契約\n\n### 対象ファイル一覧\n\n- `README.md`\n\n"
+        "## 概要\n\nx\n\n"
+        "## 実装資料\n\n### 変更説明\n\nREADMEを更新する。\n\n"
         "## 完了条件\n\nx\n\n"
         "## 進捗ログ\n\nx\n\n"
         "## 計画ファイル（本ファイル）のパス\n\n"
@@ -3250,8 +3246,8 @@ class TestPlanFileDoesNotRequireSelfPath:
         env = self._state_env(tmp_path, home)
         sid = "path-nosection"
         content = (
-            "## 目的\n\nx\n\n"
-            "## 実装契約\n\n### 対象ファイル一覧\n\n- `README.md`\n\n"
+            "## 概要\n\nx\n\n"
+            "## 実装資料\n\n### 変更説明\n\nREADMEを更新する。\n\n"
             "## 完了条件\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
             "## 計画ファイル（本ファイル）のパス\n\n\n"
@@ -3634,112 +3630,6 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert state_post["plan_file_written"] is True
         assert state_post["direct_agent_toolkit_edit_count"] == 0
         assert state_post["last_agent_toolkit_edit_path"] is None
-
-
-class TestPlanFileTargetFilePathsRelative:
-    """対象ファイル一覧のパス表記違反警告検査。"""
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-
-    @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str) -> None:
-        _write_session_state(
-            tmp_path,
-            session_id,
-            {
-                "plan_mode_skill_invoked": True,
-            },
-        )
-
-    @staticmethod
-    def _plan_body(target_paths: list[str]) -> str:
-        target_lines = "\n".join(f"- `{p}`" for p in target_paths)
-        return f"## 目的\n\nx\n\n## 実装契約\n\n### 対象ファイル一覧\n\n{target_lines}\n\n## 完了条件\n\nx\n\n## 進捗ログ\n\n"
-
-    @staticmethod
-    def _canonical_plan_body(target_paths: list[str]) -> str:
-        """人間向け固定領域の後にある実装者向け領域へ対象一覧を置く正規形を返す。"""
-        target_lines = "\n".join(f"- `{p}`" for p in target_paths)
-        return (
-            "# 主題\n\n## 変更履歴\n\nx\n\n"
-            "## 目的\n\n### 対象ファイル一覧\n\n- `human/decoy.py`\n\n"
-            "## 対応方針\n\nx\n\n"
-            f"## 変更内容\n\n### 対象ファイル一覧\n\n{target_lines}\n\n"
-            "## 進捗ログ\n\nx\n"
-        )
-
-    def test_warns_on_absolute_path_in_canonical_implementer_region(self, tmp_path: pathlib.Path):
-        """固定領域の同名H3を無視し、実装者向け領域の対象一覧だけを判定する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        sid = "path-canonical"
-        self._prior_flags(tmp_path, sid)
-        content = self._canonical_plan_body(["/home/user/project/foo.py"])
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-            },
-            env_overrides=self._state_env(tmp_path, home),
-        )
-        assert result.returncode == 0
-        assert "/home/user/project/foo.py" in result.stderr
-        assert "human/decoy.py" not in result.stderr
-        assert "`### 対象ファイル一覧` in the implementer-facing section" in result.stderr
-
-    def test_warns_on_absolute_path(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        sid = "path-abs"
-        self._prior_flags(tmp_path, sid)
-        content = self._plan_body(["/home/user/project/foo.py"])
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-            },
-            env_overrides=self._state_env(tmp_path, home),
-        )
-        assert result.returncode == 0
-        assert "absolute paths or parent-directory references" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_warns_on_parent_reference(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        sid = "path-parent"
-        self._prior_flags(tmp_path, sid)
-        content = self._plan_body(["../outside/bar.py"])
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-            },
-            env_overrides=self._state_env(tmp_path, home),
-        )
-        assert result.returncode == 0
-        assert "../outside/bar.py" in result.stderr
-
-    def test_passes_on_relative_paths(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        sid = "path-relative"
-        self._prior_flags(tmp_path, sid)
-        content = self._plan_body(["agent-toolkit/scripts/atk.py"])
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-            },
-            env_overrides=self._state_env(tmp_path, home),
-        )
-        assert result.returncode == 0
-        assert "absolute paths or parent-directory references" not in result.stderr
 
 
 class TestFrontmatterSyncNoteBodyExists:

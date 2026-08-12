@@ -319,9 +319,8 @@ def test_add_operation_classifies_explicit_plan_file(
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
     plan.write_text(
-        "## 目的\n\n成果。\n\n"
-        "## 実装契約\n\n### 計画メタ情報\n\n"
-        "### 対象ファイル一覧\n\n- `README.md`\n\n"
+        "## 概要\n\n成果。\n\n### 計画メタ情報\n\n"
+        "## 実装資料\n\n### 変更説明\n\nREADMEを更新する。\n\n"
         "## 完了条件\n\n検証。\n\n## 進捗ログ\n\n未着手。\n",
         encoding="utf-8",
     )
@@ -640,11 +639,11 @@ def test_add_operation_accepts_canonical_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """新しい正規配置の`## 目的`直下からベースコミットを照合する。"""
+    """新しい正規配置の`## 概要`直下からベースコミットを照合する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "canonical-plan.md"
     plan.write_text(
-        "# 計画\n\n## 目的\n\n### 計画メタ情報\n\n"
+        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n"
         "- 起動経路: `agent-toolkit:plan-mode`\n"
         "- 対象リポジトリ: `/repo`\n"
         "- 作業種別: 通常変更\n"
@@ -673,7 +672,7 @@ def test_add_operation_prefers_canonical_over_legacy_plan_metadata(
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "transitional-plan.md"
     plan.write_text(
-        f"# 計画\n\n## 目的\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n\n"
+        f"# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`\n\n"
         f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n",
         encoding="utf-8",
     )
@@ -727,7 +726,7 @@ def test_add_operation_warns_when_base_commit_lacks_backticks(
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "unquoted-plan.md"
     plan.write_text(
-        f"# 計画\n\n## 目的\n\n### 計画メタ情報\n\n- ベースコミット: {'a' * 40}\n",
+        f"# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- ベースコミット: {'a' * 40}\n",
         encoding="utf-8",
     )
 

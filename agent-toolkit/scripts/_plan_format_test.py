@@ -12,15 +12,7 @@ _BASE = "0123456789012345678901234567890123456789"
 
 _HUMAN_SECTION = """# 計画の主題
 
-## 変更履歴
-
-| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
-| --- | --- | --- | --- | --- |
-| H-001 | 方針転換 | 初版の書式指定 | 固定構造で起草した。 | `目的`、`対応方針` |
-
-## 目的
-
-### 概要
+## 概要
 
 成果を得る。
 
@@ -31,7 +23,19 @@ _HUMAN_SECTION = """# 計画の主題
 - 作業種別: 通常変更
 - ベースコミット: `{base}`
 
-### 提示素材
+## 実施内容
+
+| 実施内容 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- |
+| 対象を更新する | 指示どおり | P-001 |
+
+### 合意済みの除外・保持
+
+| 合意内容 | 対象と箇所 | 原文参照 | 確認方法 |
+| --- | --- | --- | --- |
+| 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |
+
+## 提示素材
 
 P-001:
 
@@ -39,23 +43,15 @@ P-001:
 対象を更新してほしい。
 ```
 
-### ユーザー合意済み事項
+## 変更履歴
 
-| 合意事項 | 適用範囲 | 原文参照 |
-| --- | --- | --- |
-| 対象を更新する | 対象ファイルだけ | P-001 |
+| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
+| --- | --- | --- | --- | --- |
+| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |
 
-## 対応方針
+## 恒久化・リファクタリング内容
 
-### 実施内容
-
-| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 対象を更新する | 指示どおり | P-001が更新を求めている。 |
-
-### 恒久化・リファクタリング内容
-
-#### 恒久化
+### 恒久化
 
 | 項目 | 内容 |
 | --- | --- |
@@ -66,7 +62,7 @@ P-001:
 | 対策強度 | 機械検査で担保する。 |
 | 設計意図の記録先 | docs/development/design.md。 |
 
-#### リファクタリング
+### リファクタリング
 
 | 項目 | 内容 |
 | --- | --- |
@@ -75,7 +71,7 @@ P-001:
 | 対応 | 共通化する。 |
 | 本計画に含めるか | 含める。 |
 
-#### 類似見直し
+### 類似見直し
 
 | 項目 | 内容 |
 | --- | --- |
@@ -85,15 +81,11 @@ P-001:
 """
 
 _IMPLEMENTER_SECTION = """
-## 実装契約
+## 実装資料
 
-### 対象ファイル一覧
+### ファイル群別の変更説明
 
-- `existing.py`
-- `new.py`（新設）
-- `old.py`（削除）
-
-共通変更説明だけで実装を特定する。
+対象の構造と検査を更新する。
 
 ## 完了条件
 
@@ -134,7 +126,7 @@ def _plan(*, base: str = _BASE, bug: bool = False) -> str:
     human = _HUMAN_SECTION.format(base=base)
     if bug:
         human = human.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応")
-        human = human.replace("\n## 対応方針", f"{_BUG_SECTION}\n## 対応方針")
+        human = human.replace("\n## 恒久化・リファクタリング内容", f"{_BUG_SECTION}\n## 恒久化・リファクタリング内容")
     return human + _IMPLEMENTER_SECTION
 
 
@@ -147,51 +139,85 @@ def test_canonical_plan_passes_structure_check() -> None:
     assert not _plan_format.check_plan_structure(_plan(bug=True))
 
 
-def test_implementer_region_allows_free_composition() -> None:
-    """実装者向け領域のH2構成を変えても構造検査は通過する。"""
-    content = _VALID_CONTENT.replace("## 実装契約", "## 変更内容").replace(
-        "## 完了条件", "## 実行方法\n\n手順。\n\n## 完了条件"
-    )
+def test_optional_exclusion_section_may_be_absent() -> None:
+    """除外・保持の合意が無い計画は任意H3を省略できる。"""
+    start = _VALID_CONTENT.index("### 合意済みの除外・保持")
+    end = _VALID_CONTENT.index("## 提示素材")
+    assert not _plan_format.check_plan_structure(_VALID_CONTENT[:start] + _VALID_CONTENT[end:])
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (("| H-001 | ユーザー発言 | P-001 |", "| H-001 | 実装経過 | P-001 |"), "`起点`は"),
+        (("| H-001 | ユーザー発言 | P-001 |", "| H-001 | ユーザー発言 | 要約 |"), "素材IDだけを書く"),
+        (("| H-001 | ユーザー発言 | P-001 |", "| H-001 | ユーザー発言 | P-999 |"), "素材IDが提示素材に無い"),
+    ],
+)
+def test_history_origin_and_user_material_reference_are_checked(mutation: tuple[str, str], message: str) -> None:
+    """変更履歴の起点固定値とユーザー発言の素材ID参照を検査する。"""
+    errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(*mutation, 1))
+    assert any(message in error for error in errors), errors
+
+
+def test_implementation_materials_allows_free_h3_composition() -> None:
+    """実装資料配下では自由なH3構成を受理する。"""
+    content = _VALID_CONTENT.replace("### ファイル群別の変更説明", "### 実行方法\n\n手順。\n\n### 変更説明")
     assert not _plan_format.check_plan_structure(content)
+
+
+def test_permanence_rejects_free_h3() -> None:
+    """恒久化領域では固定3見出し以外のH3を拒否する。"""
+    content = _VALID_CONTENT.replace("\n## 実装資料", "\n### 任意の補足\n\n補足する。\n\n## 実装資料")
+    assert any("固定見出し以外のH3" in error for error in _plan_format.check_plan_structure(content))
 
 
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
         (("# 計画の主題\n\n", ""), "ATX H1が1件必要"),
-        (("## 変更履歴", "## 追加のH2\n\n補足。\n\n## 変更履歴"), "人間向け固定領域のH2"),
-        (("## 対応方針", "## 補足\n\n任意。\n\n## 対応方針"), "人間向け固定領域のH2"),
+        (("成果を得る。\n\n### 計画メタ情報", "### 計画メタ情報"), "直下の地の文"),
+        (("## 変更履歴", "## 追加のH2\n\n補足。\n\n## 変更履歴"), "固定H2は"),
         (
             (
                 "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
                 "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n\n## 後書き\n\n補足。\n",
             ),
-            "最後のH2にする",
+            "固定H2は",
         ),
-        (("### 概要", "### 総論"), "`### 概要`は1件必要"),
-        (("### 提示素材\n\nP-001:", "### ユーザー合意済み事項\n\nP-001:"), "1件必要"),
+        (("### 計画メタ情報", "### 総論"), "`### 計画メタ情報`を検査できない"),
+        (("## 提示素材\n\nP-001:", "## 素材\n\nP-001:"), "固定H2は"),
         (("- 起動経路: `agent-toolkit:plan-mode`\n", ""), "この順序で1行ずつ置く"),
         (("- 作業種別: 通常変更", "- 作業種別: `通常変更`"), "バッククォートで囲まない"),
         (("- 対象リポジトリ: `/repo`", "- 対象リポジトリ: /repo"), "バッククォートで囲む"),
         (("- 作業種別: 通常変更", "- 作業種別: 改善"), "`作業種別`は"),
         ((f"- ベースコミット: `{_BASE}`", "- ベースコミット: `0123456`"), "完全長SHA"),
-        (("| H-001 | 方針転換 | 初版の書式指定 | 固定構造で起草した。 | `目的`、`対応方針` |\n", ""), "1行以上の内容が必要"),
+        (("| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n", ""), "1行以上の内容が必要"),
         (
             ("| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |", "| ID | 起点 | 指摘内容 | 結論 | 同期先 |"),
             "`## 変更履歴`は",
         ),
         (("| 日時 | 完了した工程 | 結果・特記事項 |", "| 日時 | 工程 | 結果 |"), "`## 進捗ログ`は"),
         (
-            ("| 対象を更新する | 対象ファイルだけ | P-001 |", "| 対象を更新する | 対象ファイルだけ | P-999 |"),
+            (
+                "| 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |",
+                "| 公開契約を維持する | 対象の公開API | P-999 | 差分を確認する |",
+            ),
             "原文参照が提示素材に無い",
         ),
         (("| 対象を更新する | 指示どおり |", "| 対象を更新する | 追加対応 |"), "`ユーザー指示との関係`は"),
-        (("| 対象を更新する | 対象ファイルだけ | P-001 |", "| 対象を更新する |  | P-001 |"), "空cell"),
-        (("#### 類似見直し\n", "#### 追加見直し\n"), "`#### 類似見直し`は1件必要"),
+        (
+            (
+                "| 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |",
+                "| 公開契約を維持する |  | P-001 | 差分を確認する |",
+            ),
+            "空cell",
+        ),
+        (("### 類似見直し\n", "### 追加見直し\n"), "`### 類似見直し`は1件必要"),
         (("| 母集団 | リポジトリ全体。 |", "| 対象 | リポジトリ全体。 |"), "3行表を置く"),
         (("| 設計意図の記録先 | docs/development/design.md。 |\n", ""), "6行表を置く"),
         (("| 現状の問題 | 重複がある。 |\n", ""), "4行表を置く"),
-        (("### 対象ファイル一覧", "### 変更対象"), "`### 対象ファイル一覧`は1件必要"),
+        (("## 実装資料", "## 変更対象"), "固定H2は"),
     ],
 )
 def test_structure_violations_are_rejected(mutation: tuple[str, str], message: str) -> None:
@@ -226,7 +252,7 @@ def test_progress_table_rejects_empty_cells_when_a_row_exists() -> None:
 
 def test_permanence_sections_reject_conclusion_words_only() -> None:
     """恒久化等の結論語だけの記載を検討の省略として拒否する。"""
-    content = _VALID_CONTENT[: _VALID_CONTENT.index("#### 類似見直し")] + "#### 類似見直し\n\n該当なし\n" + _IMPLEMENTER_SECTION
+    content = _VALID_CONTENT[: _VALID_CONTENT.index("### 類似見直し")] + "### 類似見直し\n\n該当なし\n" + _IMPLEMENTER_SECTION
     errors = _plan_format.check_plan_structure(content)
     assert any("結論語だけの記載は成立しない" in error for error in errors)
 
@@ -234,8 +260,8 @@ def test_permanence_sections_reject_conclusion_words_only() -> None:
 def test_similar_review_table_is_required_only_for_normal_work_type() -> None:
     """バグ対応の類似見直しはバグ調査表を正本として参照でき、3行表を求めない。"""
     content = _plan(bug=True)
-    reference = "#### 類似見直し\n\n観点と結果はバグ調査表を正本として参照する。\n"
-    content = content[: content.index("#### 類似見直し")] + reference + _IMPLEMENTER_SECTION
+    reference = "### 類似見直し\n\n観点と結果はバグ調査表を正本として参照する。\n"
+    content = content[: content.index("### 類似見直し")] + reference + _IMPLEMENTER_SECTION
     assert not _plan_format.check_plan_structure(content)
 
 
@@ -303,16 +329,16 @@ def test_bug_section_requires_fixed_fourteen_rows() -> None:
 def test_bug_section_is_required_only_for_bug_work_type() -> None:
     """バグ対応でのみバグ調査結果を要求し、通常変更では置かせない。"""
     missing = _plan(bug=True).replace(_BUG_SECTION, "\n")
-    assert any("人間向け固定領域のH2" in error for error in _plan_format.check_plan_structure(missing))
-    extra = _VALID_CONTENT.replace("\n## 対応方針", f"{_BUG_SECTION}\n## 対応方針")
-    assert any("`## バグ調査結果`は置かない" in error for error in _plan_format.check_plan_structure(extra))
+    assert any("固定H2" in error for error in _plan_format.check_plan_structure(missing))
+    extra = _VALID_CONTENT.replace("\n## 恒久化・リファクタリング内容", f"{_BUG_SECTION}\n## 恒久化・リファクタリング内容")
+    assert any("固定H2は" in error for error in _plan_format.check_plan_structure(extra))
 
 
 def test_metadata_prefers_canonical_placement() -> None:
     """正規配置がある計画では旧配置を無視する。"""
     content = _VALID_CONTENT.replace(
-        "### 対象ファイル一覧",
-        f"### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n\n### 対象ファイル一覧",
+        "### ファイル群別の変更説明",
+        f"### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n\n### ファイル群別の変更説明",
     )
     metadata, errors = _plan_format.parse_plan_metadata(content)
     assert not errors
@@ -393,78 +419,6 @@ title: x
 """
     headings = [line for _lineno, line in _plan_format.iter_markdown_body_lines(content) if line.startswith("## ")]
     assert headings == ["## 実在"]
-
-
-def test_extract_plan_targets_supports_existing_new_and_deleted() -> None:
-    """通常箇条書きの3状態を構造化して返す。"""
-    assert _plan_format.extract_plan_targets(_VALID_CONTENT) == [
-        _plan_format.PlanTarget("existing.py"),
-        _plan_format.PlanTarget("new.py", "new"),
-        _plan_format.PlanTarget("old.py", "deleted"),
-    ]
-    assert _plan_format.extract_target_files_from_changes(_VALID_CONTENT) == ["existing.py", "new.py", "old.py"]
-
-
-def test_extract_plan_targets_ignores_human_region_and_fences() -> None:
-    """人間向け固定領域とコードフェンス内の類似項目は抽出しない。"""
-    content = _VALID_CONTENT.replace(
-        "- `existing.py`\n",
-        "```text\n- `hidden.py`\n```\n- `existing.py`\n",
-    ).replace(
-        "### 概要\n",
-        "### 概要\n\n### 対象ファイル一覧\n\n- `human.py`\n",
-    )
-    assert _plan_format.extract_target_files_from_changes(content) == ["existing.py", "new.py", "old.py"]
-
-
-def test_extract_plan_targets_reads_legacy_contract_section() -> None:
-    """`## 対応方針`を持たない既存計画は`## 実装契約`配下を読み取り互換で扱う。"""
-    content = "## 目的\n\nx\n\n## 実装契約\n\n### 対象ファイル一覧\n\n- `legacy.py`\n\n## 進捗ログ\n\nx\n"
-    assert _plan_format.extract_target_files_from_changes(content) == ["legacy.py"]
-
-
-@pytest.mark.parametrize(
-    ("path", "is_invalid"),
-    [
-        ("/abs/file.py", True),
-        ("../outside.py", True),
-        ("C:\\Windows\\system.ini", True),
-        ("D:outside.py", True),
-        ("\\\\server\\share\\system.ini", True),
-        ("\\Windows\\system.ini", True),
-        ("safe/path.py", False),
-    ],
-)
-def test_target_path_boundary(path: str, *, is_invalid: bool) -> None:
-    """全対応形式の対象パス境界を検証する。"""
-    content = _VALID_CONTENT.replace("- `existing.py`", f"- `{path}`")
-    expected = [path] if is_invalid else []
-    assert _plan_format.find_invalid_target_file_paths(content) == expected
-
-
-def test_allowed_repo_root_comment_cannot_authorize_absolute_target() -> None:
-    """本文コメントで絶対パスを自己許可できない。"""
-    content = "<!-- allowed-repo-root: /other -->\n" + _VALID_CONTENT.replace("- `existing.py`", "- `/other/file.py`")
-    assert _plan_format.find_invalid_target_file_paths(content) == ["/other/file.py"]
-
-
-@pytest.mark.parametrize(
-    ("entry", "is_invalid"),
-    [
-        ("* Makefile", True),
-        ("* src/module", True),
-        ("- `Makefile` extra", True),
-        ("- [ ] Makefile", True),
-        ("- plain/path（新設）", True),
-        ("- 変更対象の例は `src/module.py` とする", False),
-        ("- ファイル src/module.py を説明する", False),
-    ],
-)
-def test_target_entry_candidate_boundary(entry: str, *, is_invalid: bool) -> None:
-    """対象項目の構文標識と説明用箇条書きの境界を検証する。"""
-    content = _VALID_CONTENT.replace("- `existing.py`", f"- `existing.py`\n{entry}")
-    invalid = _plan_format.find_invalid_target_entries(content)
-    assert bool(invalid) is is_invalid
 
 
 def test_agent_document_target_paths() -> None:

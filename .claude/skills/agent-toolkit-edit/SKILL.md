@@ -89,7 +89,7 @@ description: >
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同reference「plan modeでの取り扱い」節を読み、
-対象ファイル一覧へ含めるべきファイルを確定する。
+実装資料の変更説明へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
 
@@ -113,9 +113,9 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
-  計画の`### 対象ファイル一覧`へ編集する正本だけを記載する。
+  計画の実装資料へ編集する正本だけを変更説明として記載する。
   `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は実装者向け領域へ記載し、
-  自動生成先は対象ファイル一覧へ記載しない
+  自動生成先は変更対象の説明へ重複して記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 
 ## セッション状態フラグ

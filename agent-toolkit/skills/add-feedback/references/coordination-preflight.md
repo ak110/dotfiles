@@ -3,7 +3,7 @@
 target repoのactive一覧をinbox・processing双方について取得する。同一・関連主題とprocessing項目は
 `show`で本文、`target_commit`、`plan_file`、`depends_on`を読む。
 
-関連processing項目にplan fileがあれば対象ファイル一覧も読む。target repoの候補worktreeごとにbranch、
+関連processing項目にplan fileがあれば実装資料の変更説明も読む。target repoの候補worktreeごとにbranch、
 status、`target_commit`以降のcommitと変更ファイルを確認し、計画対象との重なりから対応候補を限定する。
 対象worktreeのリモートURLと完全HEADも確認する。計画実装型では完全HEADと計画base commitを照合する。
 一意に確定できない場合は処理状況を不明と記録し、processing本文を更新せず追随feedbackとして分離する。

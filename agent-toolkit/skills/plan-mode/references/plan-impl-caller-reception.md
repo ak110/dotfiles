@@ -16,7 +16,8 @@
 
 上記2組合せ以外はexecutorへ渡さない。
 
-複数の計画ファイルを並列実装する場合は、callerが計画ファイルごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
+先行成果へ依存しない複数の計画ファイルを並列実装する場合は、ファイル重複にかかわらず、
+callerが計画ファイルごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
 各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`で計画ファイル専用worktreeを作成する。
 計画がcallerによる統合用worktreeの作成も明示する場合は、同じ方法で統合用worktreeを作成する。
 作成直後に用途、絶対パス、管理対象領域の絶対パス、HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録する。

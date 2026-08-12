@@ -232,24 +232,23 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "`### 提示素材`の逐語原文、元のユーザー指示" in delegation
+    assert "`## 提示素材`の逐語原文、元のユーザー指示" in delegation
     assert "項目別の維持・修正・撤去の判定と根拠" in delegation
     assert "要約だけを一次入力にせず" in delegation
     assert "今回のレビュー種別を全レビュー共通の入力として渡す" in delegation
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
-    assert "`## 変更履歴`、前回の6列表" in delegation
+    assert "再レビューでは既知でない情報だけを渡す" in delegation
+    assert "変更履歴ID、差分要約、追加範囲は計画本文を正本" in delegation
+    assert "起動文へ再記述しない" in delegation
     assert "解決済みIDは現行計画に同じ違反が残る場合だけ再提示" in delegation
-    assert "対象ファイル、対応する逐語原文を入力へ明示" in delegation
     assert "各修正差分を対象に意味自己監査を1巡" in delegation
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
     assert "`## 変更履歴`と本文の一致" in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
-    assert "追加した対象範囲、対象ファイル、対応する逐語原文" in task
-    assert "追加した対象範囲と対象ファイルが無い場合は`なし`" in task
-    assert "追加分には逐語原文照合" in task
-    assert "指摘候補の内部的な網羅列挙" in task
-    assert "同じreviewerの同じラウンド" in task
+    assert "再レビューでは全修正と累積計画全体を再監査" in task
+    assert "現行計画に同じ違反が残る場合だけ再提示" in task
+    assert "指摘候補を内部的に網羅列挙" in task
     assert "1対1で照合" in task
     assert "第2列の分類が実際の内容と一致するか" in task
     assert "節名だけを満たす記載、結論語だけの記載" in task
@@ -262,10 +261,10 @@ def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
     plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
-    assert "人間向け固定領域（`## 変更履歴`から`## 対応方針`まで）をユーザー要求の正本" in writer
+    assert "人間向け固定領域（`## 概要`から`## 変更履歴`まで）をユーザー要求の正本" in writer
     assert "実装者向け領域を実装詳細の正本" in writer
     assert "writerは人間向け固定領域と`## 進捗ログ`を編集せず" in writer
-    assert "`## 目的`、`## 対応方針`、実装者向け領域、`### 対象ファイル一覧`" in plan_review
+    assert "`## 概要`、`## 実施内容`、実装者向け領域、`## 完了条件`" in plan_review
     assert "callerは各commit単位の受領時と最終レビュー時に`## 進捗ログ`の3列表へ行を追記する" in caller
     assert "`## 変更履歴`へ起点、指摘内容、採否、現在の結論、同期先を追記" in caller
 
@@ -866,8 +865,8 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         assert phrase in judgment_details
 
 
-def test_plan_targets_are_predictions_not_exclusive_permissions() -> None:
-    """利用者成果へ帰属する追加変更を計画一覧の完全性より優先する。"""
+def test_plan_change_descriptions_replace_target_list_contracts() -> None:
+    """対象一覧を撤去し、目的と変更説明から実装差分を検収する。"""
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -875,15 +874,15 @@ def test_plan_targets_are_predictions_not_exclusive_permissions() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     commit = _COMMIT_SKILL.read_text(encoding="utf-8")
 
-    for phrase in (
-        "起草時点で変更が必要と確定した対象",
-        "排他的な書込許可または最終差分の完全な予測として扱わない",
-        "対象一覧にないコミット済み差分はエラーにも警告にもしない",
-    ):
-        assert phrase in plan_mode
+    assert "ファイル群別の変更説明を正本" in plan_mode
+    assert "同じパス集合の一覧を複製しない" in plan_mode
+    for text in (plan_mode, review_task, writer, plan_review, executor, commit):
+        assert "### 対象ファイル一覧" not in text
+        assert "対象一覧にない" not in text
     assert "追加機構で内部契約を保存する案より、契約の簡素化または撤去を先に指摘" in review_task
-    assert "追加ファイル、発生理由、必要性は計画との差異として返す" in writer
-    assert "対象一覧にない追加ファイルは、その存在だけで逸脱と判定しない" in plan_review
+    assert "目的と変更説明" in writer
+    assert "計画との差異" in writer
+    assert "計画の目的とファイル群別の変更説明" in plan_review
     assert "追加変更の目的への帰属と必要性" in executor
     assert "実装中に目的への帰属と必要性を確認した追加変更" in commit
 
@@ -922,7 +921,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     assert "`### 計画メタ情報`にある固定値`作業種別`だけ" in review_task
     assert "分類契約の不成立として指摘" in review_task
     assert "コロンはASCIIの`:`、コロン後は半角空白1字" in plan_mode
-    assert "`作業種別`の固定値は`バグ対応`または`通常変更`とする" in plan_mode
+    assert "`作業種別`は`バグ対応`又は`通常変更`とする" in plan_mode
     assert "固定14行の調査表" in review_task
     for phrase in ("固定順で書く", "行の削除、名称変更、順序変更は行わない"):
         assert phrase in root_cause
@@ -1223,7 +1222,7 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
         assert "対象への適用根拠" in reviewer
         assert "修正方針" in reviewer
         assert "変更する認可ではない" in reviewer
-    for phrase in ("ユーザー目的", "ユーザー合意", "現行の公開契約", "保持対象"):
+    for phrase in ("ユーザー目的", "ユーザー合意", "現行の公開契約", "合意済みの除外・保持"):
         assert phrase in _h2_section(independent_review_task, "入力")
 
     for adopter in (delegation, plan_review_delegation, executor):
@@ -1240,9 +1239,9 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     assert "原文と適用根拠の確認結果" in writer
     assert "保持契約の維持結果" in writer
 
-    assert "`### 保持対象`" in plan_mode
-    assert "基準値、期待する方向または目標" in plan_mode
-    assert "別の永続状態を新設しない" in plan_mode
+    assert "`### 合意済みの除外・保持`" in plan_mode
+    assert "基準値、目標及び再実行できる測定方法" in plan_mode
+    assert "別の永続状態を設けない" in plan_review_delegation
     assert "採否の確定前と反映後" in plan_review_delegation
     assert "前回ラウンドとの差分だけで完了を判定しない" in plan_review_delegation
     assert "ベースコミットから現行`HEAD`までの累積差分" in executor

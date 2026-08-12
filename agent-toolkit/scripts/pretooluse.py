@@ -13,10 +13,9 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
-- plan fileのWrite/Edit/MultiEditで対象ファイル一覧に絶対パスまたは親ディレクトリ参照を検出した場合の警告 (warn)
 
 固定見出しと固定表の構造、逐語素材と原文参照、計画メタ情報の4項目と記法、
-対象一覧の状態、フェンス整合、参照実在は
+フェンス整合、参照実在は
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
@@ -214,7 +213,6 @@ def main(payload_text: str) -> int:
     # plan file編集前の必須リファレンス未読の場合は警告（降格）
 
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
-    _check_plan_file_target_file_paths_relative(tool_name, tool_input)
 
     if tool_name == "ExitPlanMode":
         flush_pending_language_warning()
@@ -1625,36 +1623,6 @@ _FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:fe
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
     _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES
 )
-
-
-def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict) -> None:
-    """計画ファイルの対象ファイル一覧に絶対パスまたは親ディレクトリ参照がある場合に警告する。
-
-    判定は`_plan_format.find_invalid_target_file_paths`へ委譲する（SSOT）。
-    違反時はwarn降格の`_llm_notice`を`stderr`へ出力し、ブロックは採用しない。
-    """
-    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return
-    file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
-    if content is None:
-        return
-    invalid = _plan_format.find_invalid_target_file_paths(content)
-    if not invalid:
-        return
-    joined = ", ".join(f"`{p}`" for p in invalid)
-    print(
-        _llm_notice(
-            f"plan file {file_path_raw}: entries containing absolute paths or parent-directory references were"
-            f" detected under `### 対象ファイル一覧` in the implementer-facing section: {joined}."
-            f" Rewrite them as full paths relative to the project root"
-            f" (see `skills/plan-mode/SKILL.md` '計画ファイルの完成条件' section).",
-            tag="warn",
-        ),
-        file=sys.stderr,
-    )
 
 
 def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:

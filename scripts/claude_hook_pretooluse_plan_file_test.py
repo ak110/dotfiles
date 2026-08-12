@@ -19,7 +19,7 @@ class TestPlanFileDotfilesNamesCheck:
     def test_block_name_in_diff_plus_line_under_agent_toolkit_h3_passes(self) -> None:
         """旧拒否分岐へ到達したdiff追加行を受理する。"""
         content = (
-            "## 実装契約\n\n"
+            "## 実装資料\n\n"
             "### `agent-toolkit/skills/plan-mode/SKILL.md`\n\n"
             f"```diff\n+ {self._BLOCK_SCRIPT} を使って処理する\n```\n"
         )
@@ -28,7 +28,7 @@ class TestPlanFileDotfilesNamesCheck:
 
     def test_block_name_in_prose_and_plain_code_block_passes(self) -> None:
         """地の文と通常コードブロックにある固有名も受理する。"""
-        content = f"## 実装契約\n\n{self._BLOCK_SCRIPT}\n\n```text\n{self._BLOCK_SCRIPT}\n```\n"
+        content = f"## 実装資料\n\n{self._BLOCK_SCRIPT}\n\n```text\n{self._BLOCK_SCRIPT}\n```\n"
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
 
