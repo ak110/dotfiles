@@ -88,9 +88,38 @@ def _question_answers_event(pairs: list[tuple[str, list[str]]]) -> dict[str, Any
     return _event("user", "\n".join(sections))
 
 
-def _claude_answers_event(result: Any) -> dict[str, Any] | None:
-    """Claudeの質問定義を伴う文字列answersだけを抽出し、定義内容は読まない。"""
-    if not isinstance(result, dict) or "questions" not in result:
+def _claude_question_call_ids(content: Any) -> set[str]:
+    """AskUserQuestionのtool_use IDだけを取得する。"""
+    if not isinstance(content, list):
+        return set()
+    return {
+        block["id"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and block.get("name") == "AskUserQuestion"
+        and isinstance(block.get("id"), str)
+    }
+
+
+def _claude_answers_event(
+    result: Any,
+    content: Any,
+    pending_question_ids: set[str],
+) -> dict[str, Any] | None:
+    """対応するAskUserQuestionの結果だけを回答イベントへ変換する。"""
+    if not isinstance(content, list):
+        return None
+    result_ids = {
+        block["tool_use_id"]
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str)
+    }
+    matched_ids = pending_question_ids.intersection(result_ids)
+    if not matched_ids:
+        return None
+    pending_question_ids.difference_update(matched_ids)
+    if not isinstance(result, dict):
         return None
     answers = result.get("answers")
     if not isinstance(answers, dict) or not all(
@@ -137,6 +166,7 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
 def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
+    pending_question_ids: set[str] = set()
     for entry in entries:
         if entry.get("isSidechain") is True:
             completion = _completion_event(entry)
@@ -196,11 +226,12 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     event = _event("user", text)
                     if event and not event["text"].startswith("<task-notification>"):
                         events.append(event)
-                answer_event = _claude_answers_event(result)
+                answer_event = _claude_answers_event(result, message.get("content"), pending_question_ids)
                 if answer_event:
                     events.append(answer_event)
                 events.extend(_failed_tool_events(entry))
             elif entry_type == "assistant" and role == "assistant":
+                pending_question_ids.update(_claude_question_call_ids(message.get("content")))
                 for text in _text_blocks(message.get("content")):
                     event = _event("assistant", text)
                     if event:

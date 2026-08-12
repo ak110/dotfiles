@@ -97,6 +97,13 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
         tmp_path,
         [
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "AskUserQuestion", "id": "question"}],
+                },
+            },
+            {
                 "type": "user",
                 "toolUseResult": {
                     "answers": {"最初の質問": "最初の回答", "次の質問": "次の回答"},
@@ -106,7 +113,7 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
                     "role": "user",
                     "content": [{"type": "tool_result", "tool_use_id": "question", "content": "通常出力"}],
                 },
-            }
+            },
         ],
     )
 
@@ -135,10 +142,20 @@ def test_claude_ignores_non_string_answer_maps(tmp_path: pathlib.Path, answers: 
         tmp_path,
         [
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "AskUserQuestion", "id": "question"}],
+                },
+            },
+            {
                 "type": "user",
                 "toolUseResult": {"answers": answers, "questions": []},
-                "message": {"role": "user", "content": []},
-            }
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "question", "content": "通常出力"}],
+                },
+            },
         ],
     )
 
@@ -150,19 +167,96 @@ def test_claude_ignores_non_string_answer_maps(tmp_path: pathlib.Path, answers: 
     [
         {"answers": {"質問": "通常ツールの値"}},
         {"questions": [{"question": "回答がない質問"}]},
+        {"questions": [], "answers": {"項目": "値"}},
     ],
 )
-def test_claude_ignores_normal_tool_results_without_question_answer_pair(
+def test_claude_ignores_unmatched_normal_tool_results(
     tmp_path: pathlib.Path,
     tool_result: dict[str, object],
 ) -> None:
-    """questions又はanswersが欠ける通常tool resultを利用者判断へ変換しない。"""
+    """payload形状にかかわらず未対応の通常tool resultを利用者判断へ変換しない。"""
     transcript = _write_transcript(
         tmp_path,
-        [{"type": "user", "toolUseResult": tool_result, "message": {"role": "user", "content": []}}],
+        [
+            {
+                "type": "user",
+                "toolUseResult": tool_result,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "normal", "content": "通常出力"}],
+                },
+            }
+        ],
     )
 
     assert evidence.load_and_extract(str(transcript)) == []
+
+
+def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_path: pathlib.Path) -> None:
+    """複数の保留IDを個別に対応し、対応済み・未知IDからイベントを捏造しない。"""
+    answer_result = {"answers": {"質問": "回答"}, "questions": []}
+    second_answer_result = {"answers": {"別の質問": "別の回答"}, "questions": []}
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "AskUserQuestion", "id": "known"},
+                        {"type": "tool_use", "name": "AskUserQuestion", "id": "second"},
+                        {"type": "tool_use", "name": "OtherTool", "id": "normal"},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": answer_result,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "unknown", "content": "通常出力"}],
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": answer_result,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "known", "content": "通常出力"}],
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": answer_result,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "known", "content": "通常出力"}],
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": answer_result,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "normal", "content": "通常出力"}],
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": second_answer_result,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "second", "content": "通常出力"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.load_and_extract(str(transcript)) == [
+        {"kind": "user", "text": "質問: 質問\n回答: 回答", "sequence": 1},
+        {"kind": "user", "text": "質問: 別の質問\n回答: 別の回答", "sequence": 2},
+    ]
 
 
 def test_missing_path_returns_fallback_instruction() -> None:
