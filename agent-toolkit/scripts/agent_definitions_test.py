@@ -745,6 +745,17 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
     assert "`agent-toolkit:exit-session`をSkill機能で起動" in completion
 
 
+def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:
+    """フィードバック処理の各入口で最初の委譲前に委譲スキルを起動する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+
+    assert "plannerの起動前に`agent-toolkit:delegation`をSkill機能で起動する。" in process
+    assert "横断調査を委譲する前に`agent-toolkit:delegation`をSkill機能で起動する。" in process
+    assert "executorの起動前に`agent-toolkit:delegation`をSkill機能で起動する。" in flow
+    assert "通常開始又は中断後再開の最初の委譲前に`agent-toolkit:delegation`をSkill機能で起動する。" in flow
+
+
 def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     """単一計画と複数laneの双方でexecutorの必須worktree一覧を構成する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")

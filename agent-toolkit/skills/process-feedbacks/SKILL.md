@@ -41,6 +41,7 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 複数項目を連続処理する場合、新しい項目の調査は前項目の調査結果・仮説・識別子を引き継がず
 独立に確定する（努力目標）。
 
+Claude Codeホストでは、plannerの起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1 waveとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
 本文はメインが`atk mq show`で取得して渡し、plannerは再取得しない。
@@ -52,8 +53,8 @@ readyな計画実装型laneは通常型waveの計画工程を待たず、利用�
 1. `references/content-adjustment.md`と`references/review-checklists.md`を全文読む
 2. 原文、現行実装、関連規範、履歴、既存の成功経路を調査する
 3. バグ・障害・回帰では実行主体が`agent-toolkit:bugfix`をSkill機能で起動する
-4. 横断調査を委譲する場合は`agent-toolkit:delegation`に従い、
-   `references/explore-template.md`だけを受信者用taskとして渡す
+4. 横断調査を委譲する前に`agent-toolkit:delegation`をSkill機能で起動する。
+   起動後は`references/explore-template.md`だけを受信者用taskとして渡す
 5. 単一要求は採用または不採用、独立した複数要求は採用、部分採用、不採用で判定する。
    原文の単一要求を薄めて部分採用しない
 6. `references/decision-format.md`に従って採否と根拠を記録する

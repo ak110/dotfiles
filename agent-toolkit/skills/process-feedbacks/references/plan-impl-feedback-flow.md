@@ -1,6 +1,7 @@
 # 計画実装型フィードバック
 
 トップレベルの`plan_file`を持つactive feedbackだけを計画実装型とする。本文から型を推測しない。
+計画実装型を処理する呼び出し元は、通常開始又は中断後再開の最初の委譲前に`agent-toolkit:delegation`をSkill機能で起動する。
 
 ## 実行wave
 
@@ -13,7 +14,8 @@ readyなlaneが1件なら現在のcleanなworktreeで実行する。
 1つの計画ファイルに属する実装単位は、1 writerが同じworktreeで順次実装する。
 異なる計画ファイルのlaneだけを別worktreeで並列化し、dirty差分を前提とする計画は並列化しない。
 
-各laneは`agent-toolkit:delegation`に従って`plan-impl-executor`を起動する。
+各laneの呼び出し元は、executorの起動前に`agent-toolkit:delegation`をSkill機能で起動する。
+各laneは`plan-impl-executor`を起動する。
 各laneの呼び出し元は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読み、
 executorの起動と受領に関するsender契約の正本とする。
 readyな計画が1件の場合は、借用する現在worktreeを回収不可として含む完全な一覧を同referenceに従って構成する。
