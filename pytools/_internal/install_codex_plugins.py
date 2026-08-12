@@ -318,7 +318,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     plugin_id = f"{plugin_name}@{marketplace_name}"
     before = _codex_json(["plugin", "list", "--json"])
-    current = _installed(before, plugin_id) if before else None
+    if before is None:
+        logger.error(log_format.format_status("codex plugins", "更新前のplugin状態を取得できないため中止"))
+        return _outcome(changed, notices)
+    current = _installed(before, plugin_id)
     if current is not None and current.get("version") == version and current.get("enabled") is True:
         cache_changed = _restore_cache_links(marketplace_name, plugin_name, version)
         legacy_changed = _remove_legacy_links(root)

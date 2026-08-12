@@ -166,6 +166,61 @@ def test_version_mismatch_reinstalls_plugin_and_returns_notice(plugin_env: Path,
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
+def test_pre_install_json_failure_stops_before_plugin_add(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """更新前状態を取得できない場合はpluginを変更しない。"""
+    responses: Iterator[dict[str, Any] | None] = iter(
+        [
+            {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
+            None,
+        ]
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is False
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+
+
+def test_ledger_replace_failure_keeps_existing_ledger(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """台帳のatomic置換失敗時は既存内容を保持して更新を中止する。"""
+    _cache_version("1.2.2", hook="previous")
+    versions = _versions_path()
+    versions.parent.mkdir(parents=True)
+    versions.write_text("1.2.1\n", encoding="utf-8")
+    before = {
+        "installed": [
+            {"pluginId": "agent-toolkit@ak110-dotfiles", "version": "1.2.2", "enabled": True},
+        ]
+    }
+    responses = iter(
+        [
+            {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
+            before,
+        ]
+    )
+    calls: list[list[str]] = []
+    original_replace = Path.replace
+
+    def fail_ledger_replace(source: Path, target: str | Path) -> Path:
+        if Path(target) == versions:
+            raise OSError("injected ledger replace failure")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+    monkeypatch.setattr(Path, "replace", fail_ledger_replace)
+
+    with pytest.raises(OSError, match="injected ledger replace failure"):
+        install_codex_plugins.run()
+
+    assert versions.read_text(encoding="utf-8") == "1.2.1\n"
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+    assert [path.name for path in versions.parent.iterdir()] == ["versions"]
+
+
 def test_version_update_restores_all_safe_cache_names(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """更新で消えた実versionと互換リンクを新versionへ直接復元する。"""
     old = _cache_version("1.2.1", hook="old")

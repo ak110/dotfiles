@@ -207,11 +207,16 @@ function Restore-CodexCacheLink {
             if ($entry.Target -contains $target -or $entry.Target -contains $currentVersion) { continue }
             Remove-Item -LiteralPath $destination -Force
         }
-        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-            New-Item -ItemType Junction -Path $destination -Target $target | Out-Null
-        } else {
-            New-Item -ItemType SymbolicLink -Path $destination -Target $currentVersion | Out-Null
-        }
+        Invoke-CodexCacheLinkCreation $destination $target $currentVersion ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)
+    }
+}
+
+function Invoke-CodexCacheLinkCreation {
+    param([string]$destination, [string]$target, [string]$currentVersion, [bool]$useJunction)
+    if ($useJunction) {
+        New-Item -ItemType Junction -Path $destination -Target $target | Out-Null
+    } else {
+        New-Item -ItemType SymbolicLink -Path $destination -Target $currentVersion | Out-Null
     }
 }
 
@@ -229,7 +234,8 @@ function Install-CodexPlugin {
     Invoke-RequiredNativeCommand codex @('plugin', 'marketplace', 'upgrade', 'ak110-dotfiles', '--json')
     $expectedVersion = Get-CodexExpectedPluginVersion
     $beforeState = Get-CodexPluginState
-    if ($null -ne $beforeState -and $beforeState.Present) {
+    if ($null -eq $beforeState) { throw 'Codex plugin更新前の状態を確認できません。' }
+    if ($beforeState.Present) {
         if ($beforeState.Version -ne $expectedVersion) { Save-CodexCacheVersionLedger }
     }
     Invoke-RequiredNativeCommand codex @('plugin', 'add', $codexPluginId, '--json')

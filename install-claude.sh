@@ -258,13 +258,15 @@ _install_codex_plugin() {
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
     codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
     expected_version=$(_codex_expected_plugin_version)
-    if before_state=$(_codex_plugin_state); then
-        before_state_known=1
-        before_present=$(_codex_state_value "$before_state" present)
-        before_version=$(_codex_state_value "$before_state" version)
-        if [ "$before_present" = "true" ] && [ "$before_version" != "$expected_version" ]; then
-            _save_codex_cache_versions
-        fi
+    if ! before_state=$(_codex_plugin_state); then
+        echo "Codex plugin更新前の状態を確認できません。" >&2
+        return 1
+    fi
+    before_state_known=1
+    before_present=$(_codex_state_value "$before_state" present)
+    before_version=$(_codex_state_value "$before_state" version)
+    if [ "$before_present" = "true" ] && [ "$before_version" != "$expected_version" ]; then
+        _save_codex_cache_versions
     fi
     codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null
     if ! after_state=$(_codex_plugin_state); then

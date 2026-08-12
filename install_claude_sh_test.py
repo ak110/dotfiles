@@ -333,6 +333,105 @@ def test_plugin_update_restores_old_cache_path(kind: str, tmp_path: pathlib.Path
 
 
 @pytest.mark.parametrize("kind", _runners())
+def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """更新前状態を取得できない場合はpluginを変更しない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    result = _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        fail_pattern="codex plugin list --json",
+        codex_plugin_before=("1.2.2", True),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
+
+
+def test_shell_ledger_replace_failure_keeps_existing_ledger(tmp_path: pathlib.Path, rules_url: str) -> None:
+    """shellの台帳置換失敗時は既存内容を保持して更新を中止する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = tmp_path / "custom-codex"
+    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
+    versions.parent.mkdir(parents=True)
+    versions.write_text("1.2.1\n", encoding="utf-8")
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+    mv_stub = stub_bin / "mv"
+    mv_stub.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '    *"/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions") exit 9 ;;\n'
+        "esac\n"
+        'exec /usr/bin/mv "$@"\n',
+        encoding="utf-8",
+    )
+    mv_stub.chmod(mv_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    result = _run(
+        "sh",
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.2", True),
+        codex_plugin_after=("1.2.3", True),
+        codex_home=codex_home,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert versions.read_text(encoding="utf-8") == "1.2.1\n"
+    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+def test_powershell_cache_link_platform_branches(tmp_path: pathlib.Path) -> None:
+    """PowerShellのjunctionとsymbolic link分岐へ決定論的に到達する。"""
+    source_path = str(INSTALL_PS1).replace("'", "''")
+    probe = tmp_path / "probe.ps1"
+    probe.write_text(
+        f"""
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile('{source_path}', [ref]$tokens, [ref]$errors)
+$definition = $ast.Find({{
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-CodexCacheLinkCreation'
+}}, $true)
+Invoke-Expression $definition.Extent.Text
+$script:calls = @()
+function New-Item {{
+    param([string]$ItemType, [string]$Path, [string]$Target)
+    $script:calls += [PSCustomObject]@{{ ItemType = $ItemType; Path = $Path; Target = $Target }}
+}}
+Invoke-CodexCacheLinkCreation 'old-win' 'C:\\cache\\current' '2.0.0' $true
+Invoke-CodexCacheLinkCreation 'old-posix' '/cache/current' '2.0.0' $false
+$script:calls | ConvertTo-Json -Compress
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(probe)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == [
+        {"ItemType": "Junction", "Path": "old-win", "Target": "C:\\cache\\current"},
+        {"ItemType": "SymbolicLink", "Path": "old-posix", "Target": "2.0.0"},
+    ]
+
+
+@pytest.mark.parametrize("kind", _runners())
 def test_same_version_recovers_from_compat_ledger(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """復元途中の中断後は同version再実行で台帳から旧名を回復する。"""
     home = tmp_path / "home"
