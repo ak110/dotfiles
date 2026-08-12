@@ -1091,6 +1091,49 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針" in independent_task
 
 
+def test_review_findings_and_fixes_recheck_operational_proportionality() -> None:
+    """確定指摘と修正着手を通常運用の再現性・比例性で選別する。"""
+    reviewers = (
+        _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+    )
+    adopters = (
+        _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
+        _PLAN_IMPL_TASK.read_text(encoding="utf-8"),
+        _MERGE_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"),
+    )
+
+    for reviewer in reviewers:
+        for phrase in (
+            "確定指摘の前",
+            "通常運用で発生する再現経路と入力主体",
+            "対象外の入力前提又は異なる脅威モデル",
+            "永続状態、所有権、期限、復旧経路、互換経路の新設",
+            "元の目的と非目標",
+            "何もしない案、既存操作だけの案、局所修正案、新機構案",
+            "単純案が目的を満たす場合は新機構を要求しない",
+        ):
+            assert phrase in reviewer
+
+    for adopter in adopters:
+        for phrase in (
+            "通常運用の再現経路と入力主体",
+            "問題と手段の比例性を独立に再判定",
+            "対象外の入力前提又は異なる脅威モデル",
+            "永続状態、所有権、期限、復旧経路、互換経路の新設",
+            "元の目的と非目標",
+            "何もしない案、既存操作だけの案、局所修正案、新機構案",
+            "単純案が目的を満たす場合は新機構を採用しない",
+        ):
+            assert phrase in adopter
+
+    for adopter in adopters[:3]:
+        assert "reviewerの修正方針を新しい要件として扱わない" in adopter
+    assert "reviewerの修正方針を複写しない" in adopters[3]
+
+
 def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     """指摘の根拠を修正担当まで保持し、各レビュー後に目的へ累積照合する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
