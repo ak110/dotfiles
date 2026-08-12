@@ -86,7 +86,7 @@ function Get-CodexPluginState {
     }
     if ($null -eq $data -or $data.GetType() -ne [System.Management.Automation.PSCustomObject]) { return $null }
     $installedProperty = $data.PSObject.Properties['installed']
-    if ($null -eq $installedProperty) { return $null }
+    if ($null -eq $installedProperty -or $installedProperty.Value -isnot [System.Array]) { return $null }
     $plugin = $null
     foreach ($item in @($installedProperty.Value)) {
         if ($null -eq $item) { continue }
@@ -168,17 +168,19 @@ function Save-CodexCacheVersionLedger {
     $versionsDir = Split-Path $codexCacheCompatVersions -Parent
     New-Item -ItemType Directory -Path $versionsDir -Force | Out-Null
     $temporary = Join-Path $versionsDir ("versions." + [System.IO.Path]::GetRandomFileName())
+    $backup = Join-Path $versionsDir ("versions.backup." + [System.IO.Path]::GetRandomFileName())
     try {
         $content = ((Get-CodexCacheVersionSet | Sort-Object -CaseSensitive) -join "`n")
         if ($content) { $content += "`n" }
         [System.IO.File]::WriteAllText($temporary, $content, $script:utf8NoBom)
         if (Test-Path -LiteralPath $codexCacheCompatVersions -PathType Leaf) {
-            [System.IO.File]::Replace($temporary, $codexCacheCompatVersions, $null)
+            [System.IO.File]::Replace($temporary, $codexCacheCompatVersions, $backup)
         } else {
             [System.IO.File]::Move($temporary, $codexCacheCompatVersions)
         }
     } finally {
         if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
+        if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
     }
 }
 

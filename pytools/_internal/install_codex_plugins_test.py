@@ -166,12 +166,17 @@ def test_version_mismatch_reinstalls_plugin_and_returns_notice(plugin_env: Path,
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
-def test_pre_install_json_failure_stops_before_plugin_add(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("plugin_state", [None, {}, {"installed": None}, {"installed": "x"}])
+def test_pre_install_json_failure_stops_before_plugin_add(
+    plugin_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plugin_state: dict[str, Any] | None,
+) -> None:
     """更新前状態を取得できない場合はpluginを変更しない。"""
     responses: Iterator[dict[str, Any] | None] = iter(
         [
             {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
-            None,
+            plugin_state,
         ]
     )
     calls: list[list[str]] = []

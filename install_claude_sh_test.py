@@ -43,6 +43,10 @@ if [ "$command_name $*" = "codex plugin list --json" ]; then
         plugin_enabled="$CODEX_PLUGIN_AFTER_ENABLED"
     fi
     printf '%s\n' "$((state_index + 1))" > "$CODEX_PLUGIN_STATE_FILE"
+    if [ "$state_index" -eq 0 ] && [ -n "$CODEX_PLUGIN_BEFORE_JSON" ]; then
+        printf '%s\n' "$CODEX_PLUGIN_BEFORE_JSON"
+        exit 0
+    fi
     if [ "$plugin_version" = "__missing__" ]; then
         printf '{"installed":[]}\n'
     else
@@ -155,6 +159,7 @@ def _run(
     cwd: pathlib.Path | None = None,
     fail_pattern: str = "__never_match__",
     codex_plugin_before: tuple[str, bool] | None = None,
+    codex_plugin_before_json: str = "",
     codex_plugin_after: tuple[str, bool] | None = ("1.2.3", True),
     codex_daemon_running: bool = True,
     codex_home: pathlib.Path | None = None,
@@ -195,6 +200,7 @@ def _run(
         "CODEX_PLUGIN_STATE_FILE": str(stub_log.with_suffix(".codex-plugin-state")),
         "CODEX_PLUGIN_BEFORE_VERSION": before_version,
         "CODEX_PLUGIN_BEFORE_ENABLED": before_enabled,
+        "CODEX_PLUGIN_BEFORE_JSON": codex_plugin_before_json,
         "CODEX_PLUGIN_AFTER_VERSION": after_version,
         "CODEX_PLUGIN_AFTER_ENABLED": after_enabled,
         "CODEX_DAEMON_RUNNING": "1" if codex_daemon_running else "0",
@@ -216,6 +222,41 @@ def _write_claude_config(home: pathlib.Path, value: object) -> None:
 
 def _log_lines(log_path: pathlib.Path) -> list[str]:
     return [line for line in log_path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _run_powershell_function_probe(
+    tmp_path: pathlib.Path,
+    function_names: list[str],
+    body: str,
+) -> subprocess.CompletedProcess[str]:
+    """インストーラーから指定関数だけを読み込み、分離したprobeで実行する。"""
+    source_path = str(INSTALL_PS1).replace("'", "''")
+    names = json.dumps(function_names).replace("'", "''")
+    probe = tmp_path / "probe.ps1"
+    probe.write_text(
+        f"""
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile('{source_path}', [ref]$tokens, [ref]$errors)
+$functionNames = ConvertFrom-Json -InputObject '{names}'
+foreach ($functionName in $functionNames) {{
+    $definition = $ast.Find({{
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName
+    }}, $true)
+    if ($null -eq $definition) {{ throw "関数が見つかりません: $functionName" }}
+    Invoke-Expression $definition.Extent.Text
+}}
+{body}
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(probe)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.mark.parametrize("kind", _runners())
@@ -354,6 +395,33 @@ def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathl
     assert not any("codex plugin add" in line for line in _log_lines(stub_log))
 
 
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+@pytest.mark.parametrize("plugin_state", [{}, {"installed": None}, {"installed": "x"}])
+def test_powershell_invalid_plugin_state_stops_before_plugin_add(
+    plugin_state: object,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """PowerShellではinstalledが配列でない応答を取得失敗として扱う。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    result = _run(
+        "ps1",
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.2", True),
+        codex_plugin_before_json=json.dumps(plugin_state),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
+
+
 def test_shell_ledger_replace_failure_keeps_existing_ledger(tmp_path: pathlib.Path, rules_url: str) -> None:
     """shellの台帳置換失敗時は既存内容を保持して更新を中止する。"""
     home = tmp_path / "home"
@@ -392,37 +460,97 @@ def test_shell_ledger_replace_failure_keeps_existing_ledger(tmp_path: pathlib.Pa
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+def test_powershell_ledger_replace_failure_keeps_existing_ledger(tmp_path: pathlib.Path) -> None:
+    """PowerShellの台帳置換失敗時は既存内容を保持して更新を中止する。"""
+    versions = tmp_path / "cache-compat/versions"
+    versions.parent.mkdir(parents=True)
+    versions.write_text("1.2.1\n", encoding="utf-8")
+    versions_path = str(versions).replace("'", "''")
+    result = _run_powershell_function_probe(
+        tmp_path,
+        ["Save-CodexCacheVersionLedger", "Install-CodexPlugin"],
+        f"""
+$codexCacheCompatVersions = '{versions_path}'
+$codexPluginId = 'agent-toolkit@ak110-dotfiles'
+$script:utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$script:pluginAddCalled = $false
+function codex {{}}
+function Get-CodexCacheVersionSet {{ @('1.2.1', '1.2.2') }}
+function Get-CodexExpectedPluginVersion {{ '1.2.3' }}
+function Get-CodexPluginState {{ [PSCustomObject]@{{ Present = $true; Version = '1.2.2'; Enabled = $true }} }}
+function Invoke-RequiredNativeCommand {{
+    param([string]$command, [string[]]$arguments)
+    if ($arguments[0] -eq 'plugin' -and $arguments[1] -eq 'add') {{ $script:pluginAddCalled = $true }}
+}}
+$saveDefinition = $ast.Find({{
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Save-CodexCacheVersionLedger'
+}}, $true)
+$replaceCall = '[System.IO.File]::Replace($temporary, $codexCacheCompatVersions, $backup)'
+$saveText = $saveDefinition.Extent.Text.Replace(
+    $replaceCall,
+    "throw 'injected ledger replace failure'"
+)
+if ($saveText -eq $saveDefinition.Extent.Text) {{ throw '置換失敗箇所を注入できません。' }}
+Invoke-Expression $saveText
+try {{ $null = Install-CodexPlugin }} catch {{ $failureMessage = $_.Exception.Message }}
+[PSCustomObject]@{{
+    Content = [System.IO.File]::ReadAllText($codexCacheCompatVersions)
+    PluginAddCalled = $script:pluginAddCalled
+    FailureMessage = $failureMessage
+}} | ConvertTo-Json -Compress
+""".strip(),
+    )
+
+    assert json.loads(result.stdout) == {
+        "Content": "1.2.1\n",
+        "PluginAddCalled": False,
+        "FailureMessage": "injected ledger replace failure",
+    }
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+def test_powershell_existing_ledger_is_replaced_atomically(tmp_path: pathlib.Path) -> None:
+    """PowerShellでは既存台帳をbackup付きのatomic置換で更新する。"""
+    versions = tmp_path / "cache-compat/versions"
+    versions.parent.mkdir(parents=True)
+    versions.write_text("1.2.1\n", encoding="utf-8")
+    versions_path = str(versions).replace("'", "''")
+    result = _run_powershell_function_probe(
+        tmp_path,
+        ["Save-CodexCacheVersionLedger"],
+        f"""
+$codexCacheCompatVersions = '{versions_path}'
+$script:utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+function Get-CodexCacheVersionSet {{ @('1.2.1', '1.2.2') }}
+Save-CodexCacheVersionLedger
+[PSCustomObject]@{{
+    Content = [System.IO.File]::ReadAllText($codexCacheCompatVersions)
+    Files = @((Get-ChildItem -LiteralPath (Split-Path $codexCacheCompatVersions -Parent)).Name)
+}} | ConvertTo-Json -Compress
+""".strip(),
+    )
+
+    assert json.loads(result.stdout) == {"Content": "1.2.1\n1.2.2\n", "Files": ["versions"]}
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
 def test_powershell_cache_link_platform_branches(tmp_path: pathlib.Path) -> None:
     """PowerShellのjunctionとsymbolic link分岐へ決定論的に到達する。"""
-    source_path = str(INSTALL_PS1).replace("'", "''")
-    probe = tmp_path / "probe.ps1"
-    probe.write_text(
-        f"""
-$tokens = $null
-$errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile('{source_path}', [ref]$tokens, [ref]$errors)
-$definition = $ast.Find({{
-    param($node)
-    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-CodexCacheLinkCreation'
-}}, $true)
-Invoke-Expression $definition.Extent.Text
+    result = _run_powershell_function_probe(
+        tmp_path,
+        ["Invoke-CodexCacheLinkCreation"],
+        """
 $script:calls = @()
-function New-Item {{
+function New-Item {
     param([string]$ItemType, [string]$Path, [string]$Target)
-    $script:calls += [PSCustomObject]@{{ ItemType = $ItemType; Path = $Path; Target = $Target }}
-}}
+    $script:calls += [PSCustomObject]@{ ItemType = $ItemType; Path = $Path; Target = $Target }
+}
 Invoke-CodexCacheLinkCreation 'old-win' 'C:\\cache\\current' '2.0.0' $true
 Invoke-CodexCacheLinkCreation 'old-posix' '/cache/current' '2.0.0' $false
 $script:calls | ConvertTo-Json -Compress
-""".lstrip(),
-        encoding="utf-8",
-    )
-
-    result = subprocess.run(
-        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(probe)],
-        check=True,
-        capture_output=True,
-        text=True,
+""".strip(),
     )
 
     assert json.loads(result.stdout) == [

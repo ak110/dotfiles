@@ -62,8 +62,15 @@ def _marketplace_root(data: dict[str, Any], name: str) -> Path | None:
     return None
 
 
-def _installed(data: dict[str, Any], plugin_id: str) -> dict[str, Any] | None:
-    return next((item for item in data.get("installed", []) if item.get("pluginId") == plugin_id), None)
+def _installed(data: dict[str, Any], plugin_id: str) -> tuple[bool, dict[str, Any] | None]:
+    installed = data.get("installed")
+    if not isinstance(installed, list):
+        return False, None
+    plugin = next(
+        (item for item in installed if isinstance(item, dict) and item.get("pluginId") == plugin_id),
+        None,
+    )
+    return True, plugin
 
 
 def _marketplace_entry(data: dict[str, Any], marketplace_name: str) -> dict[str, Any] | None:
@@ -245,7 +252,11 @@ def _install_external_plugins() -> post_apply_outcome.PostApplyOutcome:
         if installed_data is None:
             logger.warning(log_format.format_status(plugin_id, "plugin一覧の取得に失敗したためスキップ"))
             continue
-        if _installed(installed_data, plugin_id) is not None:
+        state_known, installed = _installed(installed_data, plugin_id)
+        if not state_known:
+            logger.warning(log_format.format_status(plugin_id, "plugin一覧の構造が不正なためスキップ"))
+            continue
+        if installed is not None:
             continue
         if not _command(["plugin", "add", plugin_id]):
             logger.warning(log_format.format_status(plugin_id, "plugin導入に失敗したため続行"))
@@ -321,7 +332,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if before is None:
         logger.error(log_format.format_status("codex plugins", "更新前のplugin状態を取得できないため中止"))
         return _outcome(changed, notices)
-    current = _installed(before, plugin_id)
+    state_known, current = _installed(before, plugin_id)
+    if not state_known:
+        logger.error(log_format.format_status("codex plugins", "更新前のplugin状態を取得できないため中止"))
+        return _outcome(changed, notices)
     if current is not None and current.get("version") == version and current.get("enabled") is True:
         cache_changed = _restore_cache_links(marketplace_name, plugin_name, version)
         legacy_changed = _remove_legacy_links(root)
@@ -333,8 +347,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     changed = True
     _append_restart_notice_if_daemon_running(notices)
     after = _codex_json(["plugin", "list", "--json"])
-    installed = _installed(after, plugin_id) if after else None
-    if installed is None or installed.get("version") != version or installed.get("enabled") is not True:
+    after_known, installed = _installed(after, plugin_id) if after is not None else (False, None)
+    if not after_known or installed is None or installed.get("version") != version or installed.get("enabled") is not True:
         raise RuntimeError("Codex plugin更新後の状態が期待値と一致しない")
     if current is not None:
         _require_cache_target(_cache_root(marketplace_name, plugin_name) / version)
