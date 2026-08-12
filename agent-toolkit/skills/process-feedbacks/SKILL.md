@@ -23,7 +23,7 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
    `CLAUDECODE`が設定されている場合は、この一覧のfilenameを本セッションの処理対象として固定する。
    起動goalにCodexオーケストレーターの連続処理と明記されている場合（以下、連続処理モード）は、
    後述のprocess-loop用再取得も適用する
-2. 必要なfilenameだけを`atk mq show <filename> --target-repo=<repo-path>`で取得する
+2. 必要なfilenameだけを1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で取得する
 3. `plan_file`を持つfeedbackを計画実装型、それ以外を通常型とする。本文から型を推測しない
 4. 本文の順序条件はreadiness判定前に抽出し、active項目から対象filename自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
 5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする

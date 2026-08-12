@@ -12,9 +12,10 @@ from _atk_mq_common import (
     MQ_ACTIVE_STATES,
     MQ_STATES,
     MQ_TYPE_TBD,
+    _dedup_positional_filenames,
     _is_tbd_answered,
     _iter_entries,
-    _pull,
+    _pull_with_recent_warning,
     _repo_lock,
     _require_type,
     _validate_filename,
@@ -27,14 +28,14 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     """`show --all`コマンドの出力が通知対象の未回答TBDを全て含むか判定する。
 
     次の全条件を満たす場合に`True`を返す:
-    - `args.filename`が`None`かつ`args.all`が`True`（単一ファイル指定は全集合対象外）
+    - `args.filenames`が空かつ`args.all`が`True`（ファイル指定は全集合対象外）
     - `args.type`が`"all"`または`"tbd"`
     - `args.status`が`"all"`または`"active"`
     - `args.answered`が`"all"`または`"no"`
     - `args.source`が`None`
     """
     return (
-        args.filename is None
+        not args.filenames
         and args.all
         and args.type in ("all", "tbd")
         and args.status in ("all", "active")
@@ -60,11 +61,12 @@ def _state_prefixed_filename_hint(filename: str) -> str | None:
 
 
 def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """showサブコマンド: `FILENAME`指定時は当該1件、`--all`指定時は全件の本文を表示する。
+    """showサブコマンド: `FILENAME...`指定時は当該項目群、`--all`指定時は全件の本文を表示する。
 
     `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
     `--type`指定時は出力対象種別（feedback・tbd・all）を限定する（既定: all）。
-    `FILENAME`指定時は4状態フォルダすべてを探索し、`--type`・`--target-repo`・`--source`の
+    `FILENAME...`指定時は4状態フォルダすべてを探索し、指定順に表示する。
+    `--type`・`--target-repo`・`--source`の
     値で対象を限定する。`--status`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
     状態・回答有無フィルタを迂回する既定挙動であり、既定の`--status=active`によって
     adopted・rejected状態のエントリが参照不能になる事態を避けるためである）。
@@ -75,35 +77,53 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--answered`は`--all`分岐でtbd側の回答状況（yes・no）を限定する（既定: all）。
     """
-    if args.filename is None and not args.all:
+    if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
-    if args.filename is not None:
-        hint = _state_prefixed_filename_hint(args.filename)
+    for filename in args.filenames:
+        hint = _state_prefixed_filename_hint(filename)
         if hint is not None:
             print(hint, file=sys.stderr)
             sys.exit(2)
+    filenames = _dedup_positional_filenames(args.filenames, "show")
+    validated_filenames = [
+        (filename, _validate_filename(filename, private_notes / MQ_STATES[0]).name) for filename in filenames
+    ]
     if not args.skip_pull:
         with _repo_lock(private_notes):
-            _pull(private_notes)
+            _pull_with_recent_warning(private_notes)
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)
 
-    if args.filename is not None:
-        for state in MQ_STATES:
-            base_dir = private_notes / state
-            path = _validate_filename(args.filename, base_dir)
-            if not path.exists():
-                continue
-            text = path.read_text(encoding="utf-8")
-            kind = _require_type(path, text)
-            if args.type not in ("all", kind):
-                continue
-            target_repo = _parse_target_repo(text)
-            if filter_repo is not None and target_repo != filter_repo:
-                continue
-            if args.source is not None and not _source_matches(_parse_source(text), args.source):
-                continue
+    if validated_filenames:
+        selected_by_name: list[tuple[pathlib.Path, str, str, str, str | None]] = []
+        missing: list[str] = []
+        for requested_filename, normalized_filename in validated_filenames:
+            selected_entry: tuple[pathlib.Path, str, str, str, str | None] | None = None
+            for state in MQ_STATES:
+                path = private_notes / state / normalized_filename
+                if not path.exists():
+                    continue
+                text = path.read_text(encoding="utf-8")
+                kind = _require_type(path, text)
+                if args.type not in ("all", kind):
+                    continue
+                target_repo = _parse_target_repo(text)
+                if filter_repo is not None and target_repo != filter_repo:
+                    continue
+                if args.source is not None and not _source_matches(_parse_source(text), args.source):
+                    continue
+                selected_entry = (path, target_repo, text, state, kind)
+                break
+            if selected_entry is None:
+                missing.append(requested_filename)
+            else:
+                selected_by_name.append(selected_entry)
+        if missing:
+            for filename in missing:
+                print(f"全状態フォルダに存在しません: {filename}", file=sys.stderr)
+            sys.exit(2)
+        for index, (path, target_repo, text, state, kind) in enumerate(selected_by_name):
             answered = _is_tbd_answered(text)
             label = f" [{state}]"
             if kind == MQ_TYPE_TBD:
@@ -111,9 +131,9 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             print(f"## target_repo: {target_repo}")
             print(f"### {path.name}{label}")
             print(text)
-            return
-        print(f"全状態フォルダに存在しません: {args.filename}", file=sys.stderr)
-        sys.exit(2)
+            if index < len(selected_by_name) - 1 and not text.endswith("\n"):
+                print()
+        return
 
     states = MQ_ACTIVE_STATES if args.status == "active" else MQ_STATES if args.status == "all" else (args.status,)
     selected = list(_iter_entries(private_notes, states, filter_repo, args.type))

@@ -776,6 +776,28 @@ class TestListSkipPull:
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
 
+    def test_recent_sync_warns_and_still_pulls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """直近の同期形跡がある通常一覧では再利用を案内してpullを実行する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_dir = notes / ".git"
+        git_dir.mkdir()
+        (git_dir / "FETCH_HEAD").touch()
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert any(call["cmd"][:2] == ["git", "pull"] for call in git_calls)
+        assert "`--skip-pull`を指定する" in capsys.readouterr().err
+
 
 class TestListStatusFilter:
     """listサブコマンド: --answeredでtbd側のみ回答状況を限定する。"""

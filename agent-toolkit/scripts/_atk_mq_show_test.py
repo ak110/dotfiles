@@ -91,6 +91,84 @@ class TestShowSingleFile:
         assert "全状態フォルダに存在しません" in captured.err
 
 
+class TestShowMultipleFiles:
+    """showサブコマンド: 複数FILENAMEを指定順にまとめて表示する。"""
+
+    def test_multiple_files_preserve_order_and_pull_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """複数項目を指定順かつ空行区切りで表示し、pullを1回だけ実行する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        second = _write_feedback_file(notes, "fb-002.md", body="本文2")
+        second.write_text(second.read_text(encoding="utf-8").rstrip("\n"), encoding="utf-8")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "show", "fb-002.md", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out.index("### fb-002.md") < captured.out.index("### fb-001.md")
+        assert "本文2\n\n## target_repo" in captured.out
+        pulls = [call for call in git_calls if call["cmd"][:2] == ["git", "pull"]]
+        assert len(pulls) == 1
+
+    def test_normalized_duplicates_are_shown_once_with_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """拡張子省略形と正規形の重複は初出1件へ集約し警告する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "show", "fb-001", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out.count("### fb-001.md") == 1
+        assert "showの引数リストに重複" in captured.err
+
+    def test_any_missing_or_filter_mismatch_suppresses_all_stdout(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """欠落又はフィルター不一致が1件でもあれば全出力を抑制し該当名を全て列挙する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-ok.md", target_repo="github.com/example/foo", body="表示しない本文")
+        _write_feedback_file(notes, "fb-mismatch.md", target_repo="github.com/example/bar", body="不一致本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "show",
+                    "fb-ok.md",
+                    "fb-mismatch.md",
+                    "fb-missing.md",
+                    "--target-repo=github.com/example/foo",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "fb-mismatch.md" in captured.err
+        assert "fb-missing.md" in captured.err
+
+
 class TestShowAll:
     """showサブコマンド: --all指定でtarget_repoごとにグループ化した全件本文を表示する。"""
 
@@ -544,6 +622,28 @@ class TestShowSkipPull:
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
+
+    def test_recent_sync_warns_and_still_pulls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """直近の同期形跡がある通常表示では再利用を案内してpullを実行する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_dir = notes / ".git"
+        git_dir.mkdir()
+        (git_dir / "FETCH_HEAD").touch()
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "show", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert any(call["cmd"][:2] == ["git", "pull"] for call in git_calls)
+        assert "`--skip-pull`を指定する" in capsys.readouterr().err
 
 
 class TestShowStatePrefixedFilename:

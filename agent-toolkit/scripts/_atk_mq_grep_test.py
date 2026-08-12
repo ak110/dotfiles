@@ -18,6 +18,7 @@ import atk  # noqa: E402  # pylint: disable=wrong-import-position
 # pylint: disable-next=wrong-import-position,import-error
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
+    _GitCall,
     _make_subprocess_fake,
     _setup_notes,
     _write_feedback_file,
@@ -63,6 +64,28 @@ class TestGrepBasic:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert captured.out == ""
+
+    def test_recent_sync_warns_and_still_pulls(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """直近の同期形跡がある通常検索では再利用を案内してpullを実行する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="searchword")
+        git_dir = notes / ".git"
+        git_dir.mkdir()
+        (git_dir / "FETCH_HEAD").touch()
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "searchword"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert any(call["cmd"][:2] == ["git", "pull"] for call in git_calls)
+        assert "`--skip-pull`を指定する" in capsys.readouterr().err
 
 
 class TestGrepIgnoreCase:

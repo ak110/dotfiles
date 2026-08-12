@@ -277,11 +277,10 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
 
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")
     show.add_argument(
-        "filename",
+        "filenames",
         metavar="FILENAME",
-        nargs="?",
-        default=None,
-        help="表示する単一のファイル名（省略時は--allの指定が必要）。全状態フォルダを探索する。",
+        nargs="*",
+        help="表示するファイル名（複数指定可。省略時は--allの指定が必要）。全状態フォルダを探索する。",
     ).completer = _queue_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     show.add_argument(
         "--all",
@@ -297,7 +296,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
             "`active`はinbox・processingを指す（feedback・tbd共通）。"
-            "FILENAME単発指定時は本オプションを迂回し全状態フォルダを探索する。"
+            "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
     )
     show.add_argument(

@@ -26,8 +26,10 @@ description: >
    複数リポジトリの場合だけ
    `references/cross-repository-submission.md`も全文読む
 2. 各本文を単体で意味が完結する形にし、対象、観測事象、期待結果、出典、関連提案との関係を含める
-3. 保存直前にactive一覧と関連項目を再取得し、事前確認の判断表を再適用して処置を確定する。
-   競合で拒否された場合も同様に再取得して再適用する
+3. 保存直前にactive一覧を再取得して同期を所有し、同じ確認で関連項目を読む場合だけ、必要なfilenameを
+   1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で再取得する。
+   別操作、時間を空けた確認、この手順をやり直す際のactive一覧取得では同期を省略しない。
+   事前確認の判断表を再適用して処置を確定し、競合で拒否された場合も同様に再取得して再適用する
 4. 新規項目は`atk mq add`で保存し、計画実装型は吸収元filenameを本文へ記録する
 5. 完了表示と`atk mq show`でfilename、本文、`target_repo`、`target_commit`、`plan_file`、
    `depends_on`を入力と照合する

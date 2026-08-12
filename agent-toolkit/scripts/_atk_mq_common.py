@@ -379,11 +379,12 @@ def _run_git(args: list[str], cwd: pathlib.Path) -> None:
 
 
 _PULL_MIN_INTERVAL_SECONDS = 30.0
-"""定期バックグラウンド更新専用の`git pull`レート制限。
+"""直近の`git pull`とみなす時間幅。
 
 直近のpullからの経過時間は`.git/FETCH_HEAD`のmtimeで判定する。
 同ファイルは`git pull`（内部のfetch）が実行されるたびに更新され、プロセスを跨いで参照できるため、
 状態ファイルを別途設けずに済む。
+定期バックグラウンド更新の省略と、利用者操作での同期再利用案内に共用する。
 """
 
 _LEGACY_RESERVATION_INTERNAL_REPO = "internal/agent-toolkit/reservations"
@@ -542,6 +543,22 @@ def _pull(private_notes: pathlib.Path) -> None:
     if _has_remote(private_notes):
         _run_git(["pull", "--ff-only"], cwd=private_notes)
     _migrate_legacy_reservations(private_notes)
+
+
+def _pull_with_recent_warning(private_notes: pathlib.Path) -> None:
+    """直近の同期形跡がある場合は再利用方法を案内したうえでpullする。
+
+    不変条件表明: `_repo_lock`保持下でのみ呼び出す。
+    """
+    _assert_repo_lock_held(private_notes)
+    if _pulled_recently(private_notes):
+        interval = int(_PULL_MIN_INTERVAL_SECONDS)
+        print(
+            f"警告: 直近{interval}秒にfetchを含む同期形跡がある。"
+            "同一連続操作で同期結果を再利用する場合は`--skip-pull`を指定する。",
+            file=sys.stderr,
+        )
+    _pull(private_notes)
 
 
 class _ThreadLocalHeldPaths(threading.local):
@@ -765,8 +782,8 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
 
     正規化後の同一性で重複判定するため、`_normalize_md_filename`で正規化した値をキーに
     順序保存する（例: `name`と`name.md`は同一項目として1件へ集約）。
-    呼び出し元は`_atk_mq_mutations.py`の`_cmd_start_processing`・`_cmd_return_to_inbox`・
-    `_cmd_adopt`・`_cmd_reject`・`_cmd_rm`の5サブコマンドとする。
+    呼び出し元は`_atk_mq_show.py`の`_cmd_show`と、`_atk_mq_mutations.py`の
+    `_cmd_start_processing`・`_cmd_return_to_inbox`・`_cmd_adopt`・`_cmd_reject`・`_cmd_rm`とする。
     戻り値は正規化前の原文字列のうち初出のものを保持する（正規化は判定にのみ用いる）。
     """
     seen: dict[str, str] = {}

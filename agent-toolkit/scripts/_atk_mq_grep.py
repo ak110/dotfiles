@@ -7,7 +7,7 @@ import argparse
 import pathlib
 import re
 
-from _atk_mq_common import _iter_entries, _pull, _repo_lock
+from _atk_mq_common import _iter_entries, _pull_with_recent_warning, _repo_lock
 from _atk_mq_list import _answered_matches, _resolve_states
 from _atk_mq_repo import _resolve_repo_id
 
@@ -30,7 +30,7 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     """
     if not args.skip_pull:
         with _repo_lock(private_notes):
-            _pull(private_notes)
+            _pull_with_recent_warning(private_notes)
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)
