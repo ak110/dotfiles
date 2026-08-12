@@ -300,6 +300,31 @@ def test_same_conflict_digest_reuses_existing_identical_snapshot(
     assert not list(codex_dir.glob(".logs_2-restore-conflict-*"))
 
 
+def test_different_conflict_contents_create_distinct_visible_snapshots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """異なる競合集合は内容別の可視snapshotへ保存し、同一内容だけを再利用する。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
+    _write_targets(pairs)
+    for home_path, _ in pairs:
+        home_path.write_bytes(b"home")
+
+    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    first_snapshots = set((home / ".codex").glob("logs_2-restore-conflict-*"))
+    assert len(first_snapshots) == 1
+
+    pairs[0][1].write_bytes(b"different-conflict")
+    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    second_snapshots = set((home / ".codex").glob("logs_2-restore-conflict-*"))
+    assert len(second_snapshots) == 2
+    assert first_snapshots < second_snapshots
+
+    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+    assert set((home / ".codex").glob("logs_2-restore-conflict-*")) == second_snapshots
+    assert not list((home / ".codex").glob(".logs_2-restore-conflict-*"))
+
+
 def test_existing_different_snapshot_is_not_overwritten(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -313,7 +338,7 @@ def test_existing_different_snapshot_is_not_overwritten(
     destination.mkdir()
     existing_file = destination / pairs[0][1].name
     existing_file.write_bytes(b"existing")
-    monkeypatch.setattr(restore_codex_logs_linux, "_snapshot_digest", lambda _snapshot: "fixed")
+    monkeypatch.setattr(restore_codex_logs_linux, "_snapshot_digest", lambda _snapshot, _pairs: "fixed")
 
     assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
 

@@ -89,8 +89,8 @@ def _question_answers_event(pairs: list[tuple[str, list[str]]]) -> dict[str, Any
 
 
 def _claude_answers_event(result: Any) -> dict[str, Any] | None:
-    """Claude user entryの文字列answersだけを同じ位置へ抽出し、選択肢定義は読まない。"""
-    if not isinstance(result, dict):
+    """Claudeの質問定義を伴う文字列answersだけを抽出し、定義内容は読まない。"""
+    if not isinstance(result, dict) or "questions" not in result:
         return None
     answers = result.get("answers")
     if not isinstance(answers, dict) or not all(

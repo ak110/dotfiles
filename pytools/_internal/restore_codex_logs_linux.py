@@ -208,12 +208,15 @@ def _files_equal(left: pathlib.Path, right: pathlib.Path) -> bool:
                 return True
 
 
-def _snapshot_digest(snapshot: pathlib.Path) -> str:
+def _snapshot_digest(
+    snapshot: pathlib.Path,
+    pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...],
+) -> str:
     """固定したsnapshotのファイル名、存在状態、内容からSHA-256を算出する。"""
     digest = hashlib.sha256()
-    for database_name in _DATABASE_NAMES:
-        snapshot_file = snapshot / database_name
-        name = database_name.encode("utf-8")
+    for _, target_path in pairs:
+        snapshot_file = snapshot / target_path.name
+        name = target_path.name.encode("utf-8")
         digest.update(len(name).to_bytes(4, "big"))
         digest.update(name)
         exists = snapshot_file.is_file()
@@ -246,7 +249,7 @@ def _save_conflict_snapshot(
                 os.fsync(output.fileno())
                 os.fchmod(output.fileno(), 0o600)
         _fsync_directory(temporary)
-        digest = _snapshot_digest(temporary)
+        digest = _snapshot_digest(temporary, pairs)
         destination = codex_dir / f"logs_2-restore-conflict-{digest}"
         if destination.exists():
             if _snapshot_matches(destination, temporary):

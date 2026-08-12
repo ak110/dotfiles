@@ -133,7 +133,33 @@ def test_claude_ignores_non_string_answer_maps(tmp_path: pathlib.Path, answers: 
     """文字列辞書ではないClaude answersから利用者判断を捏造しない。"""
     transcript = _write_transcript(
         tmp_path,
-        [{"type": "user", "toolUseResult": {"answers": answers}, "message": {"role": "user", "content": []}}],
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"answers": answers, "questions": []},
+                "message": {"role": "user", "content": []},
+            }
+        ],
+    )
+
+    assert evidence.load_and_extract(str(transcript)) == []
+
+
+@pytest.mark.parametrize(
+    "tool_result",
+    [
+        {"answers": {"質問": "通常ツールの値"}},
+        {"questions": [{"question": "回答がない質問"}]},
+    ],
+)
+def test_claude_ignores_normal_tool_results_without_question_answer_pair(
+    tmp_path: pathlib.Path,
+    tool_result: dict[str, object],
+) -> None:
+    """questions又はanswersが欠ける通常tool resultを利用者判断へ変換しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "toolUseResult": tool_result, "message": {"role": "user", "content": []}}],
     )
 
     assert evidence.load_and_extract(str(transcript)) == []
