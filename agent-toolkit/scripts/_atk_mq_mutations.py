@@ -524,7 +524,7 @@ def convert_entry_to_plan(
     *,
     filename: str,
     plan_file: str,
-    depends_on: tuple[str, ...] = (),
+    depends_on: tuple[str, ...] | None = None,
     target_repo: str | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
@@ -534,7 +534,7 @@ def convert_entry_to_plan(
         raise WebInputError("plan_fileは絶対パスで指定してください")
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
-    _validate_filenames_only([filename, *depends_on], inbox_dir)
+    _validate_filenames_only([filename, *(depends_on or ())], inbox_dir)
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
 
     with _repo_lock(private_notes, timeout=lock_timeout):
@@ -566,15 +566,20 @@ def convert_entry_to_plan(
             plan_path,
             target_commit if isinstance(target_commit, str) else None,
         )
-        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
-        if path.name in canonical_dependencies:
-            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
         data["plan_file"] = str(plan_path)
         data.pop("queue_schedule", None)
-        if canonical_dependencies:
-            data["depends_on"] = list(canonical_dependencies)
-        else:
-            data.pop("depends_on", None)
+        if depends_on is not None:
+            canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+            if path.name in canonical_dependencies:
+                raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+            dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
+            dependency_graph[path.name] = set(canonical_dependencies)
+            if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
+                raise WebInputError(f"循環する依存を指定できません: {path.name}")
+            if canonical_dependencies:
+                data["depends_on"] = list(canonical_dependencies)
+            else:
+                data.pop("depends_on", None)
         updated_text = _frontmatter.serialize_frontmatter(data, body)
         if updated_text != text:
             _atomic_write_text(path, updated_text)
@@ -593,7 +598,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
             private_notes,
             filename=args.filename,
             plan_file=args.plan_file,
-            depends_on=tuple(args.depends_on or ()),
+            depends_on=tuple(args.depends_on) if args.depends_on is not None else None,
             target_repo=target_repo,
         )
     except WebInputError as error:

@@ -448,6 +448,75 @@ def test_convert_to_plan_replaces_legacy_schedule_with_top_level_metadata(
 
 
 @pytest.mark.parametrize(
+    ("dependency_args", "expected_dependencies"),
+    [
+        ((), ["predecessor.md"]),
+        (("--depends-on", "replacement", "--depends-on", "replacement.md"), ["replacement.md"]),
+    ],
+)
+def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dependency_args: tuple[str, ...],
+    expected_dependencies: list[str],
+) -> None:
+    """変換CLIは依存の省略時に既存値を保持し、明示時だけ置換する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [predecessor.md]\n"),
+        encoding="utf-8",
+    )
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as captured:
+        atk.main(
+            [
+                "mq",
+                "convert-to-plan",
+                "feedback.md",
+                "--plan-file",
+                str(plan),
+                "--target-repo",
+                "github.com/example/foo",
+                *dependency_args,
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert captured.value.code == 0
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["depends_on"] == expected_dependencies
+
+
+def test_convert_to_plan_rejects_explicit_dependency_cycle(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """変換時に依存を明示した場合は既存グラフへ閉路を形成しない。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "first.md")
+    _write_convert_feedback(notes, "second.md")
+    first.write_text(
+        first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+        encoding="utf-8",
+    )
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="循環"):
+        mutations.convert_entry_to_plan(
+            notes,
+            filename="second.md",
+            plan_file=str(plan),
+            depends_on=("first.md",),
+        )
+
+
+@pytest.mark.parametrize(
     ("plan_value", "expected"),
     [("relative.md", "絶対パス"), ("missing", "実在する通常ファイル")],
 )
