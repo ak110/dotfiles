@@ -403,6 +403,23 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
 
 
+def _configure_convert_ancestry(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    current_head: str,
+    merge_base_returncode: int,
+) -> pathlib.Path:
+    """変換時のローカルworktree HEADと祖先判定を固定する。"""
+    worktree = pathlib.Path("/worktree")
+    monkeypatch.setattr(mutations._add, "resolve_head_commit", lambda _worktree: current_head)  # pylint: disable=protected-access
+    monkeypatch.setattr(
+        mutations._add.subprocess,  # pylint: disable=protected-access
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, merge_base_returncode, stdout="", stderr=""),
+    )
+    return worktree
+
+
 @pytest.mark.parametrize("state", ["inbox", "processing"])
 def test_convert_to_plan_replaces_legacy_schedule_with_top_level_metadata(
     tmp_path: pathlib.Path,
@@ -497,6 +514,139 @@ def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
     assert parsed is not None
     assert parsed[0]["depends_on"] == expected_dependencies
     assert "queue_schedule" not in parsed[0]
+
+
+def test_convert_to_plan_cli_accepts_ancestor_target_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ローカルworktreeの現HEADと一致する計画では祖先のtarget_commitを受理する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md", target_commit="a" * 40)
+    plan = _write_convert_plan(tmp_path, "b" * 40)
+    _disable_convert_git(monkeypatch)
+    worktree = _configure_convert_ancestry(monkeypatch, current_head="b" * 40, merge_base_returncode=0)
+    resolved_targets: list[str | None] = []
+
+    def resolve_target(value: str | None) -> tuple[str, pathlib.Path]:
+        resolved_targets.append(value)
+        return "github.com/example/foo", worktree
+
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "resolve_add_target",
+        resolve_target,
+    )
+
+    with pytest.raises(SystemExit) as captured:
+        atk.main(
+            [
+                "mq",
+                "convert-to-plan",
+                "feedback.md",
+                "--plan-file",
+                str(plan),
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert captured.value.code == 0
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["plan_file"] == str(plan)
+    assert resolved_targets == ["github.com/example/foo"]
+
+
+@pytest.mark.parametrize(
+    ("current_head", "merge_base_returncode", "expected"),
+    [
+        ("b" * 40, 1, "祖先ではありません"),
+        ("c" * 40, 0, "対象ローカルworktreeのHEADが一致しません"),
+    ],
+)
+def test_convert_to_plan_rejects_invalid_ancestor_compatibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    current_head: str,
+    merge_base_returncode: int,
+    expected: str,
+) -> None:
+    """非祖先と計画ベースが古いローカルworktreeを変換前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md", target_commit="a" * 40)
+    plan = _write_convert_plan(tmp_path, "b" * 40)
+    original = path.read_text(encoding="utf-8")
+    _disable_convert_git(monkeypatch)
+    worktree = _configure_convert_ancestry(
+        monkeypatch,
+        current_head=current_head,
+        merge_base_returncode=merge_base_returncode,
+    )
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "resolve_add_target",
+        lambda _value: ("github.com/example/foo", worktree),
+    )
+
+    with pytest.raises(SystemExit) as captured:
+        atk.main(
+            [
+                "mq",
+                "convert-to-plan",
+                "feedback.md",
+                "--plan-file",
+                str(plan),
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert captured.value.code == 1
+    assert expected in capsys.readouterr().err
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_convert_to_plan_rejects_url_target_for_mismatched_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ローカルworktreeを特定できないURL指定では不一致変換を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md", target_commit="a" * 40)
+    plan = _write_convert_plan(tmp_path, "b" * 40)
+    original = path.read_text(encoding="utf-8")
+    _disable_convert_git(monkeypatch)
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "resolve_add_target",
+        lambda _value: ("github.com/example/foo", None),
+    )
+
+    with pytest.raises(SystemExit) as captured:
+        atk.main(
+            [
+                "mq",
+                "convert-to-plan",
+                "feedback.md",
+                "--plan-file",
+                str(plan),
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert captured.value.code == 1
+    assert "ローカルworktreeで指定してください" in capsys.readouterr().err
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_convert_to_plan_migrates_legacy_entry_dependencies_when_omitted(

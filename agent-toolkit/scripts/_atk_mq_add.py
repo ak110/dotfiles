@@ -104,13 +104,20 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     return frontmatter, body
 
 
-def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None) -> None:
+def _verify_plan_base_commit(
+    plan_path: pathlib.Path,
+    target_commit: str | None,
+    *,
+    local_worktree: pathlib.Path | None = None,
+) -> None:
     """計画ファイルのベースコミットと投入先作業ツリーのHEADを照合する。
 
     計画メタ情報の解析は`_plan_format.parse_plan_metadata`へ委ねる。
     正規形の`## 目的`直下を優先し、正規形を持たない既存計画だけ旧配置へ読み取り互換で
     フォールバックする。配置が曖昧な計画は投入を拒否する。
-    双方が完全OIDとして得られた場合だけ比較し、不一致なら`WebInputError`を送出する。
+    双方が完全OIDとして得られた場合だけ比較する。既存feedbackの変換で不一致なら、
+    ローカルworktreeのHEADが計画ベースと一致し、feedbackの`target_commit`がその祖先の場合だけ受理する。
+    新規追加は`local_worktree`を渡さないため、従来どおり完全一致だけを受理する。
     計画側が欠落または短縮表記の場合は警告を出力して投入を継続する。
     """
     try:
@@ -133,10 +140,31 @@ def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None)
     plan_commit = candidates[0]
     if target_commit is None or plan_commit.casefold() == target_commit.casefold():
         return
+    if local_worktree is None:
+        raise WebInputError(
+            "計画ファイルのベースコミットと投入先作業ツリーのHEADが一致しません。"
+            f"計画ファイル={plan_commit}、投入先HEAD={target_commit}。"
+            "既存feedbackを別のベースコミットの計画へ変換するには、対象リポジトリをローカルworktreeで指定してください。"
+        )
+    current_head = resolve_head_commit(local_worktree)
+    if plan_commit.casefold() != current_head.casefold():
+        raise WebInputError(
+            "計画ファイルのベースコミットと対象ローカルworktreeのHEADが一致しません。"
+            f"計画ファイル={plan_commit}、対象ローカルworktreeのHEAD={current_head}。"
+            "計画ファイルと対象ローカルworktreeが同じベースコミットを指す状態で再実行してください。"
+        )
+    ancestry = subprocess.run(
+        ["git", "-C", str(local_worktree), "merge-base", "--is-ancestor", target_commit, plan_commit],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if ancestry.returncode == 0:
+        return
     raise WebInputError(
-        "計画ファイルのベースコミットと投入先作業ツリーのHEADが一致しません。"
-        f"計画ファイル={plan_commit}、投入先HEAD={target_commit}。"
-        "計画と投入先の両方を確認し、正しいベースコミットと一致する作業ツリーから再実行してください。"
+        "既存feedbackのtarget_commitが計画ファイルのベースコミットの祖先ではありません。"
+        f"target_commit={target_commit}、計画ファイル={plan_commit}。"
+        "対象feedbackと計画の履歴関係を確認し、祖先関係が成立する計画へ変換してください。"
     )
 
 
