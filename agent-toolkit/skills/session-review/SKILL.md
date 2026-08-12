@@ -65,10 +65,6 @@ advisorへ次を渡す。
 
 提案ごとの裏付け手段と`未検証`表示は`session-review-advisor`定義の出力契約を正本とし、起動文へ複製しない。
 
-advisorは着手時に`agent-toolkit/scripts/_session_review_evidence.py <transcript_path>`を1回だけ実行し、
-標準出力へ抽出された時系列証拠から評価を始める。証拠が不足する場合だけ同じtranscriptを直接読む。
-transcriptを取得できない場合は、Claude Codeでは継承した会話履歴を、Codexでは現在の会話履歴を評価対象にする。
-
 ## 観察対象
 
 advisorには少なくとも次を点検させる。

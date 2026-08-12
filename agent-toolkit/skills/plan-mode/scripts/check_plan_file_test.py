@@ -207,12 +207,33 @@ def test_rejects_unclosed_fence(repo: tuple[pathlib.Path, str]) -> None:
     assert any("閉じていないMarkdownフェンス" in error for error in errors)
 
 
-def test_rejects_missing_skill_reference(repo: tuple[pathlib.Path, str]) -> None:
-    """実在しない明示スキル参照を拒否する。"""
+@pytest.mark.parametrize("spacing", ["", " "])
+@pytest.mark.parametrize(
+    ("invocation", "expected_reference"),
+    [
+        ("Skillツールで{spacing}`missing-skill`を起動する。", "missing-skill"),
+        ("`missing-skill`{spacing}スキルを呼び出す。", "missing-skill"),
+        ("`agent-toolkit:missing-skill`{spacing}を起動する。", "agent-toolkit:missing-skill"),
+        ("スキル{spacing}`missing-skill`{spacing}を呼び出す。", "missing-skill"),
+    ],
+)
+def test_rejects_missing_skill_invocations(
+    repo: tuple[pathlib.Path, str], invocation: str, expected_reference: str, spacing: str
+) -> None:
+    """空白の有無にかかわらず実在しないスキルの起動指示を拒否する。"""
     work_dir, base = repo
-    content = _plan(work_dir, base).replace("対象の構造を更新する。", "Skillツールで`missing-skill`を起動する。")
+    content = _plan(work_dir, base).replace("対象の構造を更新する。", invocation.format(spacing=spacing))
     errors, _warnings = _check(work_dir, content)
-    assert "実在しないスキル参照: missing-skill" in errors
+    assert f"実在しないスキル参照: {expected_reference}" in errors
+
+
+@pytest.mark.parametrize("spacing", ["", " "])
+def test_accepts_new_skill_description_without_invocation(repo: tuple[pathlib.Path, str], spacing: str) -> None:
+    """起動動詞を伴わない新設予定スキルの叙述を受理する。"""
+    work_dir, base = repo
+    description = f"新スキル{spacing}`agent-toolkit:missing-skill`{spacing}を新設する。"
+    errors, _warnings = _check(work_dir, _plan(work_dir, base).replace("対象の構造を更新する。", description))
+    assert "実在しないスキル参照: agent-toolkit:missing-skill" not in errors
 
 
 def test_cli_has_no_base_commit_option() -> None:

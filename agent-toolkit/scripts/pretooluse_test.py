@@ -17,6 +17,7 @@ from pyfltr.colloquial import check as _colloquial_check
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
+_PLAN_MODE_REFERENCES = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references"
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -35,6 +36,18 @@ def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) 
 def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _stage_model_env(tmp_path: pathlib.Path, value: str) -> dict[str, str]:
+    """工程別モデル設定を隔離したXDG設定ディレクトリへ保存する。"""
+    config_home = tmp_path / "config"
+    config_dir = config_home / "agent-toolkit"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text(
+        json.dumps({"execute_review_model": value}),
+        encoding="utf-8",
+    )
+    return {"XDG_CONFIG_HOME": str(config_home)}
 
 
 class TestMojibakeCheck:
@@ -3161,6 +3174,67 @@ class TestSubagentModelOverrideGate:
             env_overrides=_delegation_state_env(tmp_path, "model-override-feedbacks-planner"),
         )
         assert result.returncode == 2
+
+
+class TestExecuteReviewEngineRouteGate:
+    """実装レビューの工程別engineとsidechain起動ツールを一致させる。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize(
+        "task_name",
+        pretooluse._EXECUTE_REVIEW_TASK_PATH_FRAGMENTS,  # noqa: SLF001  # pylint: disable=protected-access
+    )
+    def test_codex_setting_blocks_sidechain_agent_or_task(self, tmp_path: pathlib.Path, tool_name: str, task_name: str) -> None:
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": {"subagent_type": "general-purpose", "prompt": f"{task_name}を読んでレビューする。"},
+                "session_id": "execute-review-codex",
+                "isSidechain": True,
+            },
+            env_overrides=_stage_model_env(tmp_path, "codex:gpt-5.6-sol/high"),
+        )
+        assert result.returncode == 2
+        assert "execute_review_model resolves to `codex:gpt-5.6-sol/high`" in result.stderr
+        assert "model_reasoning_effort=high" in result.stderr
+        assert "needs_escalation" in result.stderr
+
+    def test_claude_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path) -> None:
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "general-purpose",
+                    "prompt": "implementation-plan-review-task.mdを読んでレビューする。",
+                },
+                "session_id": "execute-review-claude",
+                "isSidechain": True,
+            },
+            env_overrides=_stage_model_env(tmp_path, "claude:sonnet/medium"),
+        )
+        assert result.returncode == 0
+
+    def test_codex_setting_allows_main_session_agent(self, tmp_path: pathlib.Path) -> None:
+        session_id = "execute-review-main"
+        env = _stage_model_env(tmp_path, "codex:gpt-5.6-sol/medium")
+        env.update(_delegation_state_env(tmp_path, session_id))
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "general-purpose",
+                    "prompt": "implementation-independent-review-task.mdを読んでレビューする。",
+                },
+                "session_id": session_id,
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_guarded_task_references_exist(self) -> None:
+        for task_name in pretooluse._EXECUTE_REVIEW_TASK_PATH_FRAGMENTS:  # noqa: SLF001  # pylint: disable=protected-access
+            assert (_PLAN_MODE_REFERENCES / task_name).is_file()
 
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:

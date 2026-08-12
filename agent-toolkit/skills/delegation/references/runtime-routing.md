@@ -18,16 +18,16 @@
 
 ## 工程別モデル設定
 
-次の工程では、消費主体が起動直前に`atk config get <キー>`を実行して実効値を取得する。
+次の工程では、委譲する実行主体が起動直前に`atk config get <キー>`を実行して実効値を取得する。
 
-| キー | 対応工程 | 消費主体 |
-| --- | --- | --- |
-| `pick_feedbacks_model` | フィードバック調査 | `feedbacks-planner` |
-| `plan_model` | 計画起草とレビュー指摘反映 | `feedbacks-planner` |
-| `plan_review_model` | 計画レビュー | `feedbacks-planner` |
-| `execute_model` | 実装writerと統合後レビュー修正writer | `plan-impl-executor` |
-| `execute_review_model` | 実装後の二系統レビュー | `plan-impl-executor` |
-| `merge_model` | lane commitの適用、競合解消、履歴一本化、検証 | `process-feedbacks`の実行主体 |
+| キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
+| --- | --- | --- | --- | --- |
+| `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画authorを委譲する`feedbacks-planner` | Codex MCP | Agentツール |
+| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex MCP | Agentツール |
+| `execute_model` | 実装writerと統合後レビュー修正writer | writerを委譲する`plan-impl-executor` | Codex MCP | Agentツール |
+| `execute_review_model` | 実装後の二系統レビュー | reviewerを委譲する`plan-impl-executor` | Codex MCP | Agentツール |
+| `merge_model` | lane commitの適用、競合解消、履歴一本化、検証 | 統合writerを委譲する`process-feedbacks`の実行主体 | Codex MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。

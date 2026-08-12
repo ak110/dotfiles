@@ -277,9 +277,12 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" in delegation
-    assert "変更履歴ID、差分要約、追加範囲は計画本文を正本" in delegation
+    assert "同一threadでは「再レビューを実施せよ」に相当する指示だけを送る" in delegation
+    assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
+    assert "新規起動では初回と同じ入力パス集合と検収済み状態を渡す" in delegation
+    assert "差分要約と追加範囲は計画本文を正本" in delegation
     assert "起動文へ再記述しない" in delegation
-    assert "解決済みIDは現行計画に同じ違反が残る場合だけ再提示" in delegation
+    assert "reviewerの新規起動又は継続接続の直前に`atk config get plan_review_model`" in delegation
     assert "各修正差分を対象に意味自己監査を1巡" in delegation
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
     assert "`## 変更履歴`と本文の一致" in delegation
@@ -287,6 +290,14 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "再レビューでは全修正と累積計画全体を再監査" in task
     assert "現行計画に同じ違反が残る場合だけ再提示" in task
     assert "指摘候補を内部的に網羅列挙" in task
+    for receiver_contract in (
+        "指摘候補を内部的に網羅列挙",
+        "全修正と累積計画全体を再監査",
+        "現行計画に同じ違反が残る場合だけ再提示",
+        "計画起草時に判断可能だった事項、初回レビューの見逃し",
+    ):
+        assert receiver_contract in task
+        assert receiver_contract not in delegation
     assert "1対1で照合" in task
     assert "第2列の分類が実際の内容と一致するか" in task
     assert "節名だけを満たす記載、結論語だけの記載" in task
@@ -710,12 +721,42 @@ def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "指摘候補の全件抽出" in executor
     assert "二系統とも指摘0件になるまで" in executor
     assert "レビュー回数に上限を設けない" in executor
-    assert "確実な指摘は初回で全件提示" in plan_review_delegation
     assert "未解決の実在欠陥がある限り" in plan_review_delegation
+    assert "指摘候補を内部的に網羅列挙" in plan_review_task
     assert "全修正と累積計画全体を再監査" in plan_review_task
+    assert "指摘候補を内部的に網羅列挙" not in plan_review_delegation
+    assert "全修正と累積計画全体を再監査" not in plan_review_delegation
+    assert "指摘候補の全件抽出" not in executor
+
+
+def test_implementation_review_internal_procedures_exist_only_in_receiver_tasks() -> None:
+    """二系統実装レビューの再走査・累積再監査・新欠陥分類を受信taskへ集約する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    tasks = (
+        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+    )
+    for receiver_contract in (
+        "指摘候補を内部的に網羅列挙",
+        "全修正とベースコミットからの累積差分全体を再監査",
+        "計画時に判断可能だった事項、初回レビューの見逃し、直前の修正による混入",
+    ):
+        assert all(receiver_contract in task for task in tasks)
+        assert receiver_contract not in executor
+
+
+def test_session_review_evidence_extraction_exists_only_in_advisor() -> None:
+    """証拠抽出スクリプトの実行手順をadvisorだけの正本とする。"""
+    sender = _SESSION_REVIEW.read_text(encoding="utf-8")
+    receiver = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+
+    assert "scripts/_session_review_evidence.py" in receiver
+    assert "抽出された時系列証拠" in receiver
+    assert "scripts/_session_review_evidence.py" not in sender
+    assert "transcript_path`の絶対パス" in sender
+    assert "提案ごとの裏付け手段と`未検証`表示" in sender
 
 
 def test_removed_codex_exec_contracts_are_absent() -> None:

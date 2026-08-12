@@ -23,7 +23,8 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-_SKILL_PREFIX_MARKER_RE = re.compile(r"(?:Skillツールで|スキル)$")
+_SKILL_TOOL_PREFIX_RE = re.compile(r"Skillツールで$")
+_SKILL_NOUN_PREFIX_RE = re.compile(r"スキル$")
 _SKILL_SUFFIX_MARKER_RE = re.compile(r"^スキルを(?:起動|呼び出)")
 _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
@@ -115,7 +116,7 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
 
 
 def _classify_skill_references(text: str) -> set[str]:
-    """明示標識または現plugin namespaceを持つスキル参照を返す。"""
+    """起動又は呼び出しを指示するスキル参照だけを返す。"""
     references: set[str] = set()
     for match in _INLINE_CODE_RE.finditer(text):
         reference = match.group(1)
@@ -123,8 +124,12 @@ def _classify_skill_references(text: str) -> set[str]:
         line_end = text.find("\n", match.end())
         suffix = text[match.end() : None if line_end < 0 else line_end].lstrip()
         prefix = text[line_start : match.start()].rstrip()
-        has_marker = _SKILL_PREFIX_MARKER_RE.search(prefix) is not None or _SKILL_SUFFIX_MARKER_RE.match(suffix) is not None
-        is_direct_plugin_call = reference.startswith("agent-toolkit:") and _DIRECT_INVOCATION_RE.match(suffix) is not None
+        has_tool_prefix = _SKILL_TOOL_PREFIX_RE.search(prefix) is not None
+        has_suffix = _SKILL_SUFFIX_MARKER_RE.match(suffix) is not None
+        has_noun_prefix = _SKILL_NOUN_PREFIX_RE.search(prefix) is not None
+        has_direct_invocation = _DIRECT_INVOCATION_RE.match(suffix) is not None
+        has_marker = has_tool_prefix or has_suffix or (has_noun_prefix and has_direct_invocation)
+        is_direct_plugin_call = reference.startswith("agent-toolkit:") and has_direct_invocation
         if has_marker or is_direct_plugin_call:
             references.add(reference)
     return references
