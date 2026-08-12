@@ -2,16 +2,20 @@
 
 import json
 import logging
+import os
+import re
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import claude_common, log_format, post_apply_outcome, setup_codex_links
 
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
+_VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
         "Codex pluginを更新しました。実行中のCodexセッションを終了してから、"
@@ -123,6 +127,99 @@ def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.Po
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
 
 
+def _codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME", CODEX_HOME))
+
+
+def _cache_root(marketplace_name: str, plugin_name: str) -> Path:
+    return _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name
+
+
+def _versions_path(marketplace_name: str, plugin_name: str) -> Path:
+    return _codex_home() / "plugins" / "cache-compat" / marketplace_name / plugin_name / "versions"
+
+
+def _valid_version_name(value: str) -> bool:
+    return value not in {"", ".", ".."} and _VERSION_PATTERN.fullmatch(value) is not None
+
+
+def _read_versions(path: Path) -> set[str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return set()
+    versions: set[str] = set()
+    for value in lines:
+        if _valid_version_name(value):
+            versions.add(value)
+        else:
+            logger.warning(log_format.format_status("codex plugins", f"不正な互換version名を無視: {value!r}"))
+    return versions
+
+
+def _cache_versions(cache_root: Path) -> set[str]:
+    try:
+        entries = tuple(cache_root.iterdir())
+    except FileNotFoundError:
+        return set()
+    versions: set[str] = set()
+    for entry in entries:
+        if not _valid_version_name(entry.name):
+            logger.warning(log_format.format_status("codex plugins", f"不正なcache version名を無視: {entry.name!r}"))
+            continue
+        if entry.is_dir() or setup_codex_links._is_link_like(entry):  # pylint: disable=protected-access
+            versions.add(entry.name)
+    return versions
+
+
+def _write_versions(path: Path, versions: set[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = "".join(f"{version}\n" for version in sorted(versions))
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+        temporary_path = Path(stream.name)
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+    try:
+        temporary_path.replace(path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def _save_cache_versions(marketplace_name: str, plugin_name: str) -> set[str]:
+    cache_root = _cache_root(marketplace_name, plugin_name)
+    versions_path = _versions_path(marketplace_name, plugin_name)
+    versions = _read_versions(versions_path) | _cache_versions(cache_root)
+    _write_versions(versions_path, versions)
+    return versions
+
+
+def _restore_cache_links(marketplace_name: str, plugin_name: str, current_version: str) -> bool:
+    versions_path = _versions_path(marketplace_name, plugin_name)
+    if not versions_path.exists():
+        return False
+    versions = _read_versions(versions_path) - {current_version}
+    if not versions:
+        return False
+    cache_root = _cache_root(marketplace_name, plugin_name)
+    target = cache_root / current_version
+    _require_cache_target(target)
+    changed = False
+    for version in sorted(versions):
+        try:
+            changed = setup_codex_links.sync_directory_link(cache_root / version, target) or changed
+        except FileExistsError as error:
+            logger.error(log_format.format_status("codex plugins", f"通常entryと互換version名が競合: {error.args[0]}"))
+            raise
+    return changed
+
+
+def _require_cache_target(target: Path) -> None:
+    if not target.is_dir() or setup_codex_links._is_link_like(target):  # pylint: disable=protected-access
+        raise FileNotFoundError(f"現行plugin cache実体が存在しない: {target}")
+
+
 def _install_external_plugins() -> post_apply_outcome.PostApplyOutcome:
     """外部マーケットプレイスを登録し、未導入のプラグインを導入する。"""
     changed = False
@@ -174,7 +271,7 @@ def _unlink(path: Path) -> None:
 
 def _remove_legacy_links(root: Path) -> bool:
     changed = False
-    skills = CODEX_HOME / "skills"
+    skills = _codex_home() / "skills"
     if not skills.exists():
         return False
     source_root = (root / "agent-toolkit/skills").resolve()
@@ -223,8 +320,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     before = _codex_json(["plugin", "list", "--json"])
     current = _installed(before, plugin_id) if before else None
     if current is not None and current.get("version") == version and current.get("enabled") is True:
+        cache_changed = _restore_cache_links(marketplace_name, plugin_name, version)
         legacy_changed = _remove_legacy_links(root)
-        return _outcome(changed or legacy_changed, notices)
+        return _outcome(changed or cache_changed or legacy_changed, notices)
+    if current is not None:
+        _save_cache_versions(marketplace_name, plugin_name)
     if not _command(["plugin", "add", plugin_id]):
         return _outcome(changed, notices)
     changed = True
@@ -232,6 +332,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     after = _codex_json(["plugin", "list", "--json"])
     installed = _installed(after, plugin_id) if after else None
     if installed is None or installed.get("version") != version or installed.get("enabled") is not True:
-        return _outcome(changed, notices)
+        raise RuntimeError("Codex plugin更新後の状態が期待値と一致しない")
+    if current is not None:
+        _require_cache_target(_cache_root(marketplace_name, plugin_name) / version)
+    cache_changed = _restore_cache_links(marketplace_name, plugin_name, version)
     legacy_changed = _remove_legacy_links(root)
-    return _outcome(changed or legacy_changed, notices)
+    return _outcome(changed or cache_changed or legacy_changed, notices)

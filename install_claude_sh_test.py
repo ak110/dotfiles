@@ -51,6 +51,22 @@ if [ "$command_name $*" = "codex plugin list --json" ]; then
     fi
     exit 0
 fi
+if [ "$command_name $*" = "codex plugin marketplace list --json" ]; then
+    printf '{"marketplaces":[{"name":"ak110-dotfiles","root":"%s"}]}\n' "$STUB_MARKETPLACE_ROOT"
+    exit 0
+fi
+if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json" ]; then
+    rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
+    if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
+        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts"
+        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/claude_hook.py"
+    fi
+    if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
+        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION"
+        printf 'keep\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION/keep"
+    fi
+    exit 0
+fi
 if [ "$command_name $*" = "codex app-server daemon version" ]; then
     [ "$CODEX_DAEMON_RUNNING" = "1" ]
     exit $?
@@ -141,6 +157,9 @@ def _run(
     codex_plugin_before: tuple[str, bool] | None = None,
     codex_plugin_after: tuple[str, bool] | None = ("1.2.3", True),
     codex_daemon_running: bool = True,
+    codex_home: pathlib.Path | None = None,
+    conflict_version: str = "",
+    create_cache: bool = True,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     path_parts = [str(stub_bin)] if stub_bin is not None else []
@@ -158,6 +177,15 @@ def _run(
     after_version, after_enabled = (
         ("__missing__", "false") if codex_plugin_after is None else (codex_plugin_after[0], str(codex_plugin_after[1]).lower())
     )
+    effective_codex_home = codex_home or home / ".codex"
+    marketplace_root = home / "codex-marketplace"
+    manifest = marketplace_root / "agent-toolkit" / ".codex-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps({"version": after_version}), encoding="utf-8")
+    if before_version != "__missing__":
+        old_cache = effective_codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit" / before_version / "scripts"
+        old_cache.mkdir(parents=True, exist_ok=True)
+        (old_cache / "claude_hook.py").write_text("old hook\n", encoding="utf-8")
     env = {
         "HOME": str(home),
         "PATH": os.pathsep.join(path_parts),
@@ -170,6 +198,11 @@ def _run(
         "CODEX_PLUGIN_AFTER_VERSION": after_version,
         "CODEX_PLUGIN_AFTER_ENABLED": after_enabled,
         "CODEX_DAEMON_RUNNING": "1" if codex_daemon_running else "0",
+        "CODEX_HOME": str(effective_codex_home),
+        "CODEX_PLUGIN_CACHE_ROOT": str(effective_codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"),
+        "CODEX_STUB_CONFLICT_VERSION": conflict_version,
+        "CODEX_STUB_CREATE_CACHE": "1" if create_cache else "0",
+        "STUB_MARKETPLACE_ROOT": str(marketplace_root),
     }
     command = (
         ["bash", str(INSTALL_SH)] if kind == "sh" else ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(INSTALL_PS1)]
@@ -265,6 +298,141 @@ def test_restart_notice_requires_codex_plugin_state_change(
     assert sum("codex plugin list --json" in line for line in lines) == 2
     assert ("codex app-server daemon version" in lines) is (before_state != after_state)
     assert ("codex app-server daemon restart" in result.stderr) is expect_notice
+
+
+@pytest.mark.parametrize("kind", _runners())
+def test_plugin_update_restores_old_cache_path(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """更新で削除された旧version名を現行cache実体へのリンクとして復元する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = tmp_path / "custom-codex"
+    cache_root = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"
+    old_compat = cache_root / "1.2.1"
+    old_compat.parent.mkdir(parents=True)
+    old_compat.symlink_to("1.2.2", target_is_directory=True)
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.2", True),
+        codex_plugin_after=("1.2.3", True),
+        codex_home=codex_home,
+    )
+
+    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
+    assert versions.read_text(encoding="utf-8") == "1.2.1\n1.2.2\n"
+    for version in ("1.2.1", "1.2.2"):
+        old_path = cache_root / version
+        assert old_path.is_symlink()
+        assert old_path.resolve() == (cache_root / "1.2.3").resolve()
+        assert (old_path / "scripts/claude_hook.py").read_text(encoding="utf-8") == "current hook\n"
+
+
+@pytest.mark.parametrize("kind", _runners())
+def test_same_version_recovers_from_compat_ledger(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """復元途中の中断後は同version再実行で台帳から旧名を回復する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = tmp_path / "custom-codex"
+    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
+    versions.parent.mkdir(parents=True)
+    versions.write_text("1.2.1\n", encoding="utf-8")
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.3", True),
+        codex_plugin_after=("1.2.3", True),
+        codex_home=codex_home,
+    )
+
+    old_path = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.1"
+    assert old_path.resolve() == (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3").resolve()
+
+
+@pytest.mark.parametrize("kind", _runners())
+def test_same_version_without_ledger_does_not_create_one(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """互換対象がない同version再実行では台帳を新設しない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = tmp_path / "custom-codex"
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.3", True),
+        codex_plugin_after=("1.2.3", True),
+        codex_home=codex_home,
+    )
+
+    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
+    assert not versions.exists()
+
+
+@pytest.mark.parametrize("kind", _runners())
+def test_update_fails_when_current_cache_is_missing(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """更新後の現行version実体が無ければ互換リンクを作成せず失敗する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = tmp_path / "custom-codex"
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    result = _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.2", True),
+        codex_plugin_after=("1.2.3", True),
+        codex_home=codex_home,
+        create_cache=False,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2").exists()
+
+
+@pytest.mark.parametrize("kind", _runners())
+def test_cache_compat_conflict_fails_without_replacing_entry(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """旧名に通常entryがある場合は上書きせず非0で終了する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = tmp_path / "custom-codex"
+    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
+    versions.parent.mkdir(parents=True)
+    versions.write_text("1.2.1\n", encoding="utf-8")
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    result = _run(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.3", True),
+        codex_plugin_after=("1.2.3", True),
+        codex_home=codex_home,
+        conflict_version="1.2.1",
+        check=False,
+    )
+
+    assert result.returncode != 0
+    sentinel = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.1/keep"
+    assert sentinel.read_text(encoding="utf-8") == "keep\n"
 
 
 _REGISTERED_STATES = [

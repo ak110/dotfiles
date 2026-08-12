@@ -95,6 +95,20 @@ agent-toolkitプラグイン、Codex MCP、`atk`ラッパーが設定される�
 `codex plugin add`自体が失敗した場合は、再起動案内を表示しない。daemonが未起動の場合や
 daemonの状態確認に失敗した場合も表示しない。
 
+更新前のCodexプラグインキャッシュにある安全なversion名は、Codex管理キャッシュ外の台帳へ保存される。
+台帳の配置先は`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`である。
+`CODEX_HOME`が未設定の場合は`~/.codex`を使用する。
+更新後は、旧version名を現行versionの実体へ直接向ける互換リンクとして復元する。
+LinuxとmacOSでは相対シンボリックリンク、Windowsでは管理者権限を必要としないディレクトリジャンクションを使う。
+起動済みまたは再開したセッションは、保持している旧絶対パスからフックスクリプトを引き続き実行できる。
+
+再起動案内は新versionを後続セッションへ反映するために表示される。
+互換リンクは既存セッションの旧実行先を保持するため、daemonを自動終了しない運用と併用する。
+旧version名と同名の通常entryがある場合は置換せず、台帳を保持したままインストーラーが失敗する。
+競合を解消して同じversionのインストーラーを再実行すると、台帳から互換リンクを復元できる。
+旧versionの除去は[Codexのstore実装](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs)に基づく。
+旧絶対パスを保持するセッションの事象は[Codex issue #25285](https://github.com/openai/codex/issues/25285)でも報告されている。
+
 インストール後、非公式のプラグインマーケットプレイスはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
 
 1. Claude Code内で`/plugin`を実行

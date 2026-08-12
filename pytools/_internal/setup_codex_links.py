@@ -5,6 +5,7 @@ Linux/macOSではシンボリックリンクを、Windowsではディレクト�
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -48,25 +49,35 @@ def _process_link(dest: Path, target: Path) -> bool:
         logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
         return False
 
+    try:
+        changed = sync_directory_link(dest, target)
+    except FileExistsError:
+        logger.warning(
+            log_format.format_status(
+                "codex links",
+                f"通常ファイル／通常ディレクトリが存在するためスキップ: {dest}",
+            )
+        )
+        return False
+    if not changed:
+        return False
+    logger.info(log_format.format_status("codex links", f"作成: {dest} -> {target}"))
+    return True
+
+
+def sync_directory_link(dest: Path, target: Path) -> bool:
+    """ディレクトリリンクを期待する参照先へ収束させる。"""
     # is_symlink単独だとリンク切れも捕捉できるが、リンク切れのジャンクションは
     # is_symlinkがFalseを返すため_is_link_likeも条件へ加え、CreateJunctionの衝突を避ける。
     if dest.exists() or dest.is_symlink() or _is_link_like(dest):
-        if _is_link_like(dest):
-            if dest.resolve() == target.resolve():
-                return False
-            _remove_link(dest)
-        else:
-            logger.warning(
-                log_format.format_status(
-                    "codex links",
-                    f"通常ファイル／通常ディレクトリが存在するためスキップ: {dest}",
-                )
-            )
+        if not _is_link_like(dest):
+            raise FileExistsError(dest)
+        if dest.resolve() == target.resolve():
             return False
+        _remove_link(dest)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     _create_link(dest, target)
-    logger.info(log_format.format_status("codex links", f"作成: {dest} -> {target}"))
     return True
 
 
@@ -96,4 +107,5 @@ def _create_link(dest: Path, target: Path) -> None:
 
         _winapi.CreateJunction(str(target), str(dest))
     else:
-        dest.symlink_to(target, target_is_directory=True)
+        relative_target = Path(os.path.relpath(target, start=dest.parent))
+        dest.symlink_to(relative_target, target_is_directory=True)

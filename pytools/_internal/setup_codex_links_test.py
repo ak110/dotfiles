@@ -78,6 +78,35 @@ def test_recreates_link_when_target_mismatched(
     assert dest.resolve() == src.resolve()
 
 
+def test_sync_directory_link_uses_relative_target(tmp_path: Path) -> None:
+    """POSIXリンクは移動可能な相対参照先で作成する。"""
+    target = tmp_path / "cache" / "2.0.0"
+    target.mkdir(parents=True)
+    dest = tmp_path / "cache" / "1.0.0"
+
+    assert setup_codex_links.sync_directory_link(dest, target) is True
+
+    assert dest.readlink() == Path("2.0.0")
+    assert setup_codex_links.sync_directory_link(dest, target) is False
+
+
+@pytest.mark.parametrize("entry_kind", ["file", "directory"])
+def test_sync_directory_link_rejects_regular_entry(tmp_path: Path, entry_kind: str) -> None:
+    """通常ファイルと通常ディレクトリは置換しない。"""
+    target = tmp_path / "target"
+    target.mkdir()
+    dest = tmp_path / "dest"
+    if entry_kind == "file":
+        dest.write_text("保持", encoding="utf-8")
+    else:
+        dest.mkdir()
+
+    with pytest.raises(FileExistsError):
+        setup_codex_links.sync_directory_link(dest, target)
+
+    assert not dest.is_symlink()
+
+
 def test_recreates_link_when_dangling(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

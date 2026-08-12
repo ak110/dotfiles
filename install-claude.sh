@@ -18,6 +18,9 @@ LEGACY_DIR="$HOME/.claude/rules/agent-basics"
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 STAGE_ROOT="$HOME/.claude/rules-stage"
 CODEX_PLUGIN_ID="agent-toolkit@ak110-dotfiles"
+CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+CODEX_PLUGIN_CACHE_ROOT="$CODEX_HOME_DIR/plugins/cache/ak110-dotfiles/agent-toolkit"
+CODEX_CACHE_COMPAT_VERSIONS="$CODEX_HOME_DIR/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
 
 # 配布対象ファイル一覧。
 # `scripts/gen-install-files.py`が`agent-toolkit/rules/*.md`から自動生成する。
@@ -128,20 +131,157 @@ else:
 PY
 }
 
+_codex_state_value() {
+    local state="$1"
+    local key="$2"
+    uv run --no-config --no-project --python 3 python - "$key" "$state" <<'PY'
+import json
+import sys
+
+value = json.loads(sys.argv[2]).get(sys.argv[1])
+if isinstance(value, bool):
+    print(str(value).lower())
+elif value is not None:
+    print(value)
+PY
+}
+
+_codex_expected_plugin_version() {
+    local marketplace_json
+    if ! marketplace_json=$(codex plugin marketplace list --json); then
+        return 1
+    fi
+    uv run --no-config --no-project --python 3 python - "$marketplace_json" <<'PY'
+import json
+import pathlib
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+    marketplaces = data["marketplaces"]
+except (json.JSONDecodeError, KeyError, TypeError):
+    raise SystemExit(1)
+for item in marketplaces:
+    if isinstance(item, dict) and item.get("name") == "ak110-dotfiles" and isinstance(item.get("root"), str):
+        manifest = pathlib.Path(item["root"]) / "agent-toolkit/.codex-plugin/plugin.json"
+        try:
+            version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
+        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+            raise SystemExit(1)
+        if not isinstance(version, str):
+            raise SystemExit(1)
+        print(version)
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+_valid_codex_version_name() {
+    local value="$1"
+    [ -n "$value" ] && [ "$value" != "." ] && [ "$value" != ".." ] && [[ "$value" =~ ^[A-Za-z0-9._+-]+$ ]]
+}
+
+_save_codex_cache_versions() {
+    local state_dir
+    local temporary
+    local entry
+    local version
+    state_dir=$(dirname "$CODEX_CACHE_COMPAT_VERSIONS")
+    mkdir -p "$state_dir"
+    temporary=$(mktemp "$state_dir/versions.XXXXXX")
+    if [ -f "$CODEX_CACHE_COMPAT_VERSIONS" ]; then
+        while IFS= read -r version || [ -n "$version" ]; do
+            if _valid_codex_version_name "$version"; then
+                printf '%s\n' "$version" >>"$temporary"
+            else
+                echo "不正なCodex plugin互換version名を無視します: '$version'" >&2
+            fi
+        done <"$CODEX_CACHE_COMPAT_VERSIONS"
+    fi
+    if [ -d "$CODEX_PLUGIN_CACHE_ROOT" ]; then
+        for entry in "$CODEX_PLUGIN_CACHE_ROOT"/*; do
+            [ -e "$entry" ] || [ -L "$entry" ] || continue
+            [ -d "$entry" ] || [ -L "$entry" ] || continue
+            version=$(basename "$entry")
+            if _valid_codex_version_name "$version"; then
+                printf '%s\n' "$version" >>"$temporary"
+            else
+                echo "不正なCodex plugin cache version名を無視します: '$version'" >&2
+            fi
+        done
+    fi
+    sort -u "$temporary" -o "$temporary"
+    mv "$temporary" "$CODEX_CACHE_COMPAT_VERSIONS"
+}
+
+_restore_codex_cache_links() {
+    local current_version="$1"
+    local target="$CODEX_PLUGIN_CACHE_ROOT/$current_version"
+    local destination
+    local link_target
+    local version
+    [ -f "$CODEX_CACHE_COMPAT_VERSIONS" ] || return 0
+    while IFS= read -r version || [ -n "$version" ]; do
+        if ! _valid_codex_version_name "$version"; then
+            echo "不正なCodex plugin互換version名を無視します: '$version'" >&2
+            continue
+        fi
+        [ "$version" != "$current_version" ] || continue
+        if [ ! -d "$target" ] || [ -L "$target" ]; then
+            echo "現行Codex plugin cache実体が存在しません: $target" >&2
+            return 1
+        fi
+        destination="$CODEX_PLUGIN_CACHE_ROOT/$version"
+        if [ -L "$destination" ]; then
+            link_target=$(readlink "$destination")
+            [ "$link_target" = "$current_version" ] && continue
+            rm "$destination"
+        elif [ -e "$destination" ]; then
+            echo "通常entryとCodex plugin互換version名が競合しています: $destination" >&2
+            return 1
+        fi
+        ln -s "$current_version" "$destination"
+    done <"$CODEX_CACHE_COMPAT_VERSIONS"
+}
+
 _install_codex_plugin() {
     local before_state=""
     local before_state_known=0
+    local before_present="false"
+    local before_version=""
+    local expected_version=""
     local after_state=""
+    local after_present="false"
+    local after_version=""
+    local after_enabled="false"
     echo "Codex側のagent-toolkitプラグインを設定します..."
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
     codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
+    expected_version=$(_codex_expected_plugin_version)
     if before_state=$(_codex_plugin_state); then
         before_state_known=1
+        before_present=$(_codex_state_value "$before_state" present)
+        before_version=$(_codex_state_value "$before_state" version)
+        if [ "$before_present" = "true" ] && [ "$before_version" != "$expected_version" ]; then
+            _save_codex_cache_versions
+        fi
     fi
     codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null
-    if [ "$before_state_known" -eq 1 ] && after_state=$(_codex_plugin_state) && [ "$before_state" != "$after_state" ]; then
+    if ! after_state=$(_codex_plugin_state); then
+        echo "Codex plugin更新後の状態を確認できません。" >&2
+        return 1
+    fi
+    after_present=$(_codex_state_value "$after_state" present)
+    after_version=$(_codex_state_value "$after_state" version)
+    after_enabled=$(_codex_state_value "$after_state" enabled)
+    if [ "$before_state_known" -eq 1 ] && [ "$before_state" != "$after_state" ]; then
         CODEX_PLUGIN_UPDATED=1
     fi
+    if [ "$after_present" != "true" ] || [ "$after_enabled" != "true" ] || [ "$after_version" != "$expected_version" ]; then
+        echo "Codex plugin更新後の状態が期待値と一致しません。" >&2
+        return 1
+    fi
+    _restore_codex_cache_links "$after_version"
     echo "Codex側のagent-toolkitプラグインを設定しました。"
 }
 

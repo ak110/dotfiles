@@ -1,6 +1,7 @@
 """install_codex_pluginsのテスト。"""
 
 import json
+import shutil
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -29,7 +30,24 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
     monkeypatch.setattr(install_codex_plugins.shutil, "which", lambda _: "/bin/codex")
     monkeypatch.setattr(install_codex_plugins, "CODEX_HOME", tmp_path / ".codex")
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    _cache_version("1.2.3", hook="current")
     return root
+
+
+def _cache_root() -> Path:
+    return install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit"
+
+
+def _cache_version(version: str, *, hook: str = "hook") -> Path:
+    path = _cache_root() / version
+    (path / "scripts").mkdir(parents=True, exist_ok=True)
+    (path / "scripts/claude_hook.py").write_text(hook, encoding="utf-8")
+    return path
+
+
+def _versions_path() -> Path:
+    return install_codex_plugins.CODEX_HOME / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
 
 
 def _legacy_link(plugin_env: Path, name: str = "coding") -> Path:
@@ -148,6 +166,96 @@ def test_version_mismatch_reinstalls_plugin_and_returns_notice(plugin_env: Path,
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
+def test_version_update_restores_all_safe_cache_names(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """更新で消えた実versionと互換リンクを新versionへ直接復元する。"""
+    old = _cache_version("1.2.1", hook="old")
+    previous = _cache_version("1.2.2", hook="previous")
+    compat = _cache_root() / "1.1.0"
+    compat.symlink_to(old.name, target_is_directory=True)
+    (_cache_root() / "regular.txt").write_text("保持", encoding="utf-8")
+    responses = iter(
+        [
+            {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
+            {"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "version": "1.2.2", "enabled": True}]},
+            _installed_state(),
+        ]
+    )
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+
+    def command(args: list[str]) -> bool:
+        if args == ["plugin", "add", "agent-toolkit@ak110-dotfiles"]:
+            shutil.rmtree(_cache_root())
+            _cache_version("1.2.3", hook="current")
+        return True
+
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert _versions_path().read_text(encoding="utf-8") == "1.1.0\n1.2.1\n1.2.2\n1.2.3\n"
+    for version in ("1.1.0", "1.2.1", "1.2.2"):
+        restored = _cache_root() / version
+        assert restored.is_symlink()
+        assert restored.readlink() == Path("1.2.3")
+        assert (restored / "scripts/claude_hook.py").read_text(encoding="utf-8") == "current"
+    assert previous != old
+
+
+def test_same_version_restores_from_external_ledger(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """同version再実行でもcache外の台帳から中断済みの復元を完了する。"""
+    _cache_version("1.2.3", hook="current")
+    _versions_path().parent.mkdir(parents=True)
+    _versions_path().write_text("1.2.1\ninvalid/name\n", encoding="utf-8")
+    state = _installed_state()
+    responses = iter([{"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]}, state])
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    restored = _cache_root() / "1.2.1"
+    assert outcome.changed is True
+    assert restored.resolve() == (_cache_root() / "1.2.3").resolve()
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+
+
+def test_codex_home_environment_controls_cache_paths(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CODEX_HOME指定時は固定ホームではなく指定先のcacheと台帳を使う。"""
+    codex_home = plugin_env.parent / "custom-codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    current = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3"
+    (current / "scripts").mkdir(parents=True)
+    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
+    versions.parent.mkdir(parents=True)
+    versions.write_text("1.2.2\n", encoding="utf-8")
+    state = _installed_state()
+    responses = iter([{"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]}, state])
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(install_codex_plugins, "_command", lambda _: True)
+
+    install_codex_plugins.run()
+
+    assert (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2").resolve() == current.resolve()
+
+
+def test_cache_conflict_propagates_without_replacing_entry(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """互換名に通常entryがある場合は保持して失敗を呼び出し元へ伝える。"""
+    _cache_version("1.2.3")
+    conflict = _cache_version("1.2.2", hook="keep")
+    _versions_path().parent.mkdir(parents=True)
+    _versions_path().write_text("1.2.2\n", encoding="utf-8")
+    state = _installed_state()
+    responses = iter([{"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]}, state])
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+
+    with pytest.raises(FileExistsError):
+        install_codex_plugins.run()
+
+    assert (conflict / "scripts/claude_hook.py").read_text(encoding="utf-8") == "keep"
+
+
 def test_version_mismatch_omits_notice_when_daemon_is_not_running(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """プラグイン更新後もdaemon未起動なら再起動を案内しない。"""
     before = {
@@ -225,9 +333,8 @@ def test_post_install_json_failure_keeps_legacy_link(plugin_env: Path, monkeypat
     )
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
     monkeypatch.setattr(install_codex_plugins, "_command", lambda _: True)
-    outcome = install_codex_plugins.run()
-    assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
+    with pytest.raises(RuntimeError, match="更新後の状態"):
+        install_codex_plugins.run()
     assert destination.is_symlink()
 
 

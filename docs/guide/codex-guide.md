@@ -46,6 +46,20 @@ codex app-server daemon restart
 エラーの後の最終行へ再起動コマンドを表示し、非0の終了状態を維持する。
 進行中のセッションを保護するため、app-server daemonは自動再起動しない。
 
+更新前に存在した安全なversion名は、`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`へ
+保存される。`CODEX_HOME`が未設定の場合は`~/.codex`を使用する。
+更新後は、保存済みの旧version名を現行versionのキャッシュ実体へ直接向ける。
+LinuxとmacOSでは相対シンボリックリンク、Windowsではディレクトリジャンクションを使う。
+この互換リンクにより、起動済みまたは再開したセッションが保持する旧フックの絶対パスを引き続き利用できる。
+再起動案内は新versionを後続セッションへ反映する役割を持ち、互換リンクは既存セッションの実行先を保持する。
+
+旧version名と同名の通常ファイルまたは通常ディレクトリがある場合、更新処理はそのentryを置換せず失敗する。
+台帳は保持されるため、競合を解消して更新処理を再実行すると互換リンクを復元できる。
+Codexが更新時に旧versionを除去する挙動は、
+[Codexのstore実装](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs)で確認できる。
+起動済みセッションが旧キャッシュの絶対パスを保持する事象は、
+[Codex issue #25285](https://github.com/openai/codex/issues/25285)でも報告されている。
+
 daemonが未起動の場合や状態確認に失敗した場合は、再起動案内を表示しない。
 マーケットプレイスの登録だけが変化した場合、公開インストーラーで導入前後の状態が同じ場合、
 プラグイン状態を確認できない場合、プラグイン追加前の処理または追加自体が失敗した場合も表示しない。
