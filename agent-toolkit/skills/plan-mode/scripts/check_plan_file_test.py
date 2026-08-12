@@ -45,6 +45,7 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 | 合意内容 | 対象と箇所 | 原文参照 | 確認方法 |
 | --- | --- | --- | --- |
 | 公開契約を維持する | 公開API | P-001 | 差分を確認する |
+| 対象外の挙動を変更しない | 対象外の入力処理 | P-001 | 回帰テストを実行する |
 """
     bug_section = ""
     if bug:
@@ -75,14 +76,14 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 
 | 実施内容 | ユーザー指示との関係 | 根拠 |
 | --- | --- | --- |
-| 対象を更新する | 指示どおり | P-001 |
+| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |
 {exclusion}
 ## 提示素材
 
 P-001:
 
 ```text
-対象を更新してほしい。
+診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
 ```
 
 ## 変更履歴
@@ -113,7 +114,7 @@ P-001:
 
 ## 完了条件
 
-検証が成功する。
+基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
 
 ## 進捗ログ
 
@@ -138,10 +139,53 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
     assert not warnings
 
 
+def test_cli_accepts_mixed_agreements_and_numeric_target(repo: tuple[pathlib.Path, str]) -> None:
+    """条項分解した実施・除外・保持と数値目標を含む正規fixtureをCLIで受理する。"""
+    work_dir, base = repo
+    path = work_dir / "mixed-plan.md"
+    path.write_text(_plan(work_dir, base), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--work-dir", str(work_dir), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+
+
+def test_cli_reports_missing_completion_once(repo: tuple[pathlib.Path, str]) -> None:
+    """完了条件の欠落はCLI経由でも診断1件だけを返す。"""
+    work_dir, base = repo
+    path = work_dir / "missing-completion.md"
+    content = _plan(work_dir, base).replace(
+        "## 完了条件\n\n基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。\n\n",
+        "",
+        1,
+    )
+    path.write_text(content, encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--work-dir", str(work_dir), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    diagnostics = [line for line in result.stderr.splitlines() if line]
+    assert result.returncode == 1
+    assert len(diagnostics) == 1, diagnostics
+    assert "`## 完了条件`は1件必要" in diagnostics[0]
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        (("## 完了条件\n\n検証が成功する。\n\n", ""), "固定H2"),
+        (
+            (
+                "## 完了条件\n\n基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。\n\n",
+                "",
+            ),
+            "固定H2",
+        ),
         (("## 実装資料", "## 任意資料"), "固定H2"),
         (("| H-001 | ユーザー発言 | P-001 |", "| H-001 | 実装経過 | P-001 |"), "`起点`は"),
         (("| H-001 | ユーザー発言 | P-001 |", "| H-001 | ユーザー発言 | 要約 |"), "素材IDだけを書く"),

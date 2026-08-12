@@ -11,7 +11,6 @@
 3. 個人用/ローカル専用ファイル言及検出（warn、非ブロック）
 4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
-6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。

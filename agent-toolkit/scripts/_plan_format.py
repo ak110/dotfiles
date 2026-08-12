@@ -604,14 +604,22 @@ def _check_fixed_h2_layout(headings: list[PlanHeading], work_type: str | None) -
     if work_type == "バグ対応":
         expected.append(PLAN_H2_BUG)
     expected.extend((PLAN_H2_PERMANENCE, PLAN_H2_IMPLEMENTATION, PLAN_H2_COMPLETION, PLAN_H2_PROGRESS))
-    if h2_texts != expected:
-        errors.append(f"固定H2は{expected}をこの順序で置く: 実際={h2_texts}")
+    cardinality_error = False
     for name in expected:
         count = h2_texts.count(name)
         if count != 1:
+            cardinality_error = True
             errors.append(f"固定H2`## {name}`は1件必要: 実際={count}件")
-    if work_type == "通常変更" and PLAN_H2_BUG in h2_texts:
+
+    unexpected = [name for name in h2_texts if name not in expected]
+    has_unexpected = bool(unexpected)
+    if work_type == "通常変更" and PLAN_H2_BUG in unexpected:
         errors.append(f"作業種別が`通常変更`の計画に`## {PLAN_H2_BUG}`は置かない")
+        unexpected = [name for name in unexpected if name != PLAN_H2_BUG]
+    if unexpected:
+        errors.append(f"固定H2は{expected}だけをこの順序で置く: 実際={h2_texts}")
+    if not cardinality_error and not has_unexpected and h2_texts != expected:
+        errors.append(f"固定H2は{expected}をこの順序で置く: 実際={h2_texts}")
     return errors
 
 
@@ -713,12 +721,13 @@ def _check_fixed_table(
     label: str,
     minimum_rows: int = 1,
 ) -> tuple[MarkdownTable | None, list[str]]:
-    """列名が一致する表の実在、最低行数、空cellを検査して(表, エラー)を返す。"""
+    """列名が一致する表の件数、最低行数、空cellを検査して(表, エラー)を返す。"""
     tables = extract_tables(lines)
-    table = next((candidate for candidate in tables if candidate.header == header), None)
-    if table is None:
+    matching = [candidate for candidate in tables if candidate.header == header]
+    if not matching:
         return None, [f"{label}は{list(header)}の列を持つ表にする"]
-    errors: list[str] = []
+    table = matching[0]
+    errors = [f"{label}の固定表は1件必要: 実際={len(matching)}件"] if len(matching) != 1 else []
     if len(table.rows) < minimum_rows:
         errors.append(f"{label}の表に1行以上の内容が必要")
     for row in table.rows:
@@ -868,13 +877,17 @@ def check_plan_structure(content: str) -> list[str]:
     if permanence_index is not None:
         errors.extend(_check_permanence_sections(body, headings, permanence_index, work_type))
 
-    allowed_h3_parents = {PLAN_H2_OVERVIEW, PLAN_H2_ACTION, PLAN_H2_BUG, PLAN_H2_PERMANENCE, PLAN_H2_IMPLEMENTATION}
+    allowed_h3_parents = {PLAN_H2_OVERVIEW, PLAN_H2_ACTION, PLAN_H2_BUG, PLAN_H2_PERMANENCE}
     for index, heading in enumerate(headings):
-        if heading.level != 3:
+        if heading.level < 3:
             continue
         parent = next((candidate.text for candidate in reversed(headings[:index]) if candidate.level == 2), "")
-        if parent not in allowed_h3_parents:
+        if parent == PLAN_H2_IMPLEMENTATION:
+            continue
+        if heading.level == 3 and parent not in allowed_h3_parents:
             errors.append(f"`## {parent}`直下に自由なH3は置かない: `### {heading.text}`")
+        elif heading.level > 3:
+            errors.append(f"`## {parent}`配下にH4以深の見出しは置かない: `{'#' * heading.level} {heading.text}`")
     return errors
 
 

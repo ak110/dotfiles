@@ -27,20 +27,21 @@ _HUMAN_SECTION = """# 計画の主題
 
 | 実施内容 | ユーザー指示との関係 | 根拠 |
 | --- | --- | --- |
-| 対象を更新する | 指示どおり | P-001 |
+| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |
 
 ### 合意済みの除外・保持
 
 | 合意内容 | 対象と箇所 | 原文参照 | 確認方法 |
 | --- | --- | --- | --- |
 | 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |
+| 対象外の挙動を変更しない | 対象外の入力処理 | P-001 | 回帰テストを実行する |
 
 ## 提示素材
 
 P-001:
 
 ```text
-対象を更新してほしい。
+診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
 ```
 
 ## 変更履歴
@@ -89,7 +90,7 @@ _IMPLEMENTER_SECTION = """
 
 ## 完了条件
 
-検証が成功する。
+基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
 
 ## 進捗ログ
 
@@ -146,6 +147,14 @@ def test_optional_exclusion_section_may_be_absent() -> None:
     assert not _plan_format.check_plan_structure(_VALID_CONTENT[:start] + _VALID_CONTENT[end:])
 
 
+def test_canonical_fixture_accepts_mixed_agreements_and_numeric_target() -> None:
+    """実施・除外・保持の条項分解と数値目標を含む正規fixtureを受理する。"""
+    assert "診断件数を2件から1件へ減らす" in _VALID_CONTENT
+    assert "対象外の挙動を変更しない" in _VALID_CONTENT
+    assert "基準値は診断2件、目標は1件" in _VALID_CONTENT
+    assert not _plan_format.check_plan_structure(_VALID_CONTENT)
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -170,6 +179,18 @@ def test_permanence_rejects_free_h3() -> None:
     """恒久化領域では固定3見出し以外のH3を拒否する。"""
     content = _VALID_CONTENT.replace("\n## 実装資料", "\n### 任意の補足\n\n補足する。\n\n## 実装資料")
     assert any("固定見出し以外のH3" in error for error in _plan_format.check_plan_structure(content))
+
+
+def test_duplicate_fixed_table_is_rejected() -> None:
+    """同一H2内に複製した固定表を拒否する。"""
+    duplicate = """| 実施内容 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- |
+| 追加の変更 | 具体化 | 検査契約を満たすため |
+
+"""
+    content = _VALID_CONTENT.replace("### 合意済みの除外・保持", duplicate + "### 合意済みの除外・保持", 1)
+    errors = _plan_format.check_plan_structure(content)
+    assert any("固定表は1件必要" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(
@@ -205,7 +226,10 @@ def test_permanence_rejects_free_h3() -> None:
             ),
             "原文参照が提示素材に無い",
         ),
-        (("| 対象を更新する | 指示どおり |", "| 対象を更新する | 追加対応 |"), "`ユーザー指示との関係`は"),
+        (
+            ("| 診断件数を2件から1件へ減らす | 指示どおり |", "| 診断件数を2件から1件へ減らす | 追加対応 |"),
+            "`ユーザー指示との関係`は",
+        ),
         (
             (
                 "| 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |",
@@ -218,6 +242,13 @@ def test_permanence_rejects_free_h3() -> None:
         (("| 設計意図の記録先 | docs/development/design.md。 |\n", ""), "6行表を置く"),
         (("| 現状の問題 | 重複がある。 |\n", ""), "4行表を置く"),
         (("## 実装資料", "## 変更対象"), "固定H2は"),
+        (
+            (
+                "基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。",
+                "基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。\n\n#### 自由なH4",
+            ),
+            "H4以深の見出しは置かない",
+        ),
     ],
 )
 def test_structure_violations_are_rejected(mutation: tuple[str, str], message: str) -> None:
@@ -294,7 +325,10 @@ def test_structure_check_accepts_short_delimiter_tables() -> None:
 
 def test_materials_require_verbatim_fence() -> None:
     """素材IDの直後に逐語fenceが無い提示素材を拒否する。"""
-    content = _VALID_CONTENT.replace("```text\n対象を更新してほしい。\n```", "対象を更新してほしい。")
+    content = _VALID_CONTENT.replace(
+        "```text\n診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。\n```",
+        "診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。",
+    )
     errors = _plan_format.check_plan_structure(content)
     assert any("逐語転記が無い" in error for error in errors)
 
@@ -331,7 +365,7 @@ def test_bug_section_is_required_only_for_bug_work_type() -> None:
     missing = _plan(bug=True).replace(_BUG_SECTION, "\n")
     assert any("固定H2" in error for error in _plan_format.check_plan_structure(missing))
     extra = _VALID_CONTENT.replace("\n## 恒久化・リファクタリング内容", f"{_BUG_SECTION}\n## 恒久化・リファクタリング内容")
-    assert any("固定H2は" in error for error in _plan_format.check_plan_structure(extra))
+    assert any("作業種別が`通常変更`" in error for error in _plan_format.check_plan_structure(extra))
 
 
 def test_metadata_prefers_canonical_placement() -> None:
