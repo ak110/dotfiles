@@ -787,6 +787,11 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "投入するすべての経路で起動" in add_feedback
     assert "完成済み本文は問い直さず" in add_feedback
     assert "通常型の主題だけを受け取った場合" in add_feedback
+    assert "技術主張に該当する証拠集合を調査" in add_feedback
+    assert "producerの証拠を同じ対象と主張へ照合" in add_feedback
+    assert "利用者依存事項はモード別確認又はTBDへ分離" in add_feedback
+    assert "技術的未確定が通常型本文へ残っていない" in add_feedback
+    assert "`agent-toolkit:plan-mode`の調査成果を証拠として再利用" in add_feedback
     assert "保存直前にactive一覧" in add_feedback
     assert "正確なローカルworktreeが既知" in add_feedback
     assert "その絶対パスを`atk mq add --target-repo`へ渡し" in add_feedback
@@ -805,7 +810,8 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
 
     preflight = _COORDINATION_PREFLIGHT.read_text(encoding="utf-8")
-    assert "保存直前にactive一覧と関連項目を再取得" in add_feedback
+    assert "保存直前にactive一覧を再取得して同期を所有" in add_feedback
+    assert "同じ確認で関連項目を読む場合だけ" in add_feedback
     assert "processing" in preflight
     assert "依存付き追随" in preflight
     reject_at = plan_and_add.index("atk mq reject <filename> --if-inbox")
