@@ -45,7 +45,6 @@ Bashコマンド判定の設計方針:
 
 import json
 import pathlib
-import re
 import shlex
 
 import _managed_temp
@@ -218,21 +217,9 @@ def should_allow_bash(command: str, cwd: str) -> bool:
 
 
 def _is_managed_temp_command(tokens: list[str]) -> bool:
-    """管理対象一時領域サブコマンドの引数が正規形へ一致するか返す。"""
+    """管理対象一時領域サブコマンドの通常のcreateまたはcleanupだけを許可する。"""
     if tokens[:3] == [_ATK_COMMAND, _MANAGED_TEMP_SUBCOMMAND, "list"]:
         return len(tokens) == 3 or (len(tokens) == 5 and tokens[3] == "--prefix" and _managed_temp.is_valid_prefix(tokens[4]))
-    if tokens[:3] == [_ATK_COMMAND, _MANAGED_TEMP_SUBCOMMAND, "claim"]:
-        if len(tokens) < 7 or tokens[3] != "--prefix" or not _managed_temp.is_valid_prefix(tokens[4]):
-            return False
-        key_tokens = tokens[5:]
-        return len(key_tokens) % 2 == 0 and all(
-            key_tokens[index] == "--key-part" and _is_safe_claim_key_part(key_tokens[index + 1])
-            for index in range(0, len(key_tokens), 2)
-        )
-    if tokens[:4] == [_ATK_COMMAND, _MANAGED_TEMP_SUBCOMMAND, "operation", "begin"]:
-        return _is_managed_temp_operation_begin(tokens)
-    if tokens[:4] == [_ATK_COMMAND, _MANAGED_TEMP_SUBCOMMAND, "operation", "complete"]:
-        return _is_managed_temp_operation_complete(tokens)
     if len(tokens) != 5 or tokens[0] != _ATK_COMMAND or tokens[1] != _MANAGED_TEMP_SUBCOMMAND:
         return False
     action, option, value = tokens[2:]
@@ -242,46 +229,6 @@ def _is_managed_temp_command(tokens: list[str]) -> bool:
         return False
     try:
         _managed_temp.validate_managed_temp(pathlib.Path(value))
-    except (OSError, ValueError, _managed_temp.ManagedTempError):
-        return False
-    return True
-
-
-def _is_safe_claim_key_part(value: str) -> bool:
-    """shell展開を伴わないfilename又はrepository識別子だけを許可する。"""
-    return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@+-]*", value) is not None
-
-
-def _is_managed_temp_operation_begin(tokens: list[str]) -> bool:
-    if (
-        len(tokens) != 10
-        or tokens[4] != "--path"
-        or tokens[6] != "--name"
-        or tokens[8] != "--token"
-        or re.fullmatch(r"[0-9a-f]{64}", tokens[9]) is None
-    ):
-        return False
-    if not _managed_temp.is_valid_prefix(tokens[7]):
-        return False
-    try:
-        _managed_temp.validate_managed_temp(pathlib.Path(tokens[5]))
-    except (OSError, ValueError, _managed_temp.ManagedTempError):
-        return False
-    return True
-
-
-def _is_managed_temp_operation_complete(tokens: list[str]) -> bool:
-    if (
-        len(tokens) != 10
-        or tokens[4] != "--path"
-        or tokens[6] != "--name"
-        or tokens[8] != "--token"
-        or not _managed_temp.is_valid_prefix(tokens[7])
-        or re.fullmatch(r"[0-9a-f]{64}", tokens[9]) is None
-    ):
-        return False
-    try:
-        _managed_temp.validate_managed_temp(pathlib.Path(tokens[5]))
     except (OSError, ValueError, _managed_temp.ManagedTempError):
         return False
     return True

@@ -286,7 +286,7 @@ class TestShouldAllowBash:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """正規形の作成・取得・操作所有・列挙・後始末だけを許可する。"""
+        """完全一致するcreateと真正性検証済みcleanupだけを許可する。"""
         temp_root = tmp_path / "temp"
         temp_root.mkdir()
         monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
@@ -294,41 +294,6 @@ class TestShouldAllowBash:
         target = _managed_temp.create_managed_temp("permission-test")
 
         assert hook.should_allow_bash("atk managed-temp create --prefix agent-work", str(tmp_path)) is True
-        assert (
-            hook.should_allow_bash(
-                "atk managed-temp claim --prefix publish-group --key-part final.md --key-part github.com/example/repo",
-                str(tmp_path),
-            )
-            is True
-        )
-        assert (
-            hook.should_allow_bash(
-                f"atk managed-temp operation begin --path {target} --name create-pr --token {'a' * 64}",
-                str(tmp_path),
-            )
-            is True
-        )
-        assert (
-            hook.should_allow_bash(
-                f"atk managed-temp operation complete --path {target} --name create-pr --token {'a' * 64}",
-                str(tmp_path),
-            )
-            is True
-        )
-        assert (
-            hook.should_allow_bash(
-                f"atk managed-temp operation begin --name create-pr --path {target} --token {'a' * 64}",
-                str(tmp_path),
-            )
-            is False
-        )
-        assert (
-            hook.should_allow_bash(
-                f"atk managed-temp operation complete --path {target} --name create-pr --token short",
-                str(tmp_path),
-            )
-            is False
-        )
         assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
         assert hook.should_allow_bash("atk managed-temp list --prefix agent-work", str(tmp_path)) is True
         assert hook.should_allow_bash("atk managed-temp list --prefix agent-work extra", str(tmp_path)) is False
@@ -338,11 +303,6 @@ class TestShouldAllowBash:
         [
             "atk managed-temp create --prefix UPPER",
             "atk managed-temp create --prefix agent-work extra",
-            "atk managed-temp claim --prefix publish-group",
-            "atk managed-temp claim --key-part final.md --prefix publish-group",
-            "atk managed-temp claim --prefix publish-group --key-part $HOME",
-            "atk managed-temp claim --prefix publish-group --key-part 'final item.md'",
-            "atk managed-temp claim --prefix publish-group --key-part final.md extra",
             "atk managed-temp cleanup --path relative",
             "atk managed-temp cleanup --path /tmp/unmanaged",
             "atk managed-temp validate --path /tmp/unmanaged",
@@ -496,20 +456,6 @@ class TestEndToEnd:
         payload = {
             "tool_name": "Bash",
             "tool_input": {"command": "atk managed-temp create --prefix agent-work"},
-            "cwd": "/tmp",
-        }
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
-
-    def test_bash_managed_temp_claim_returns_allow(self) -> None:
-        """正規形の論理キーclaimを自動許可する。"""
-        payload = {
-            "tool_name": "Bash",
-            "tool_input": {
-                "command": "atk managed-temp claim --prefix publish-group --key-part final.md "
-                "--key-part github.com/example/repo"
-            },
             "cwd": "/tmp",
         }
         code, stdout = self._run(payload)

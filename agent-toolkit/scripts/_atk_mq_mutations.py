@@ -5,7 +5,6 @@
 """
 
 import argparse
-import contextlib
 import datetime
 import os
 import pathlib
@@ -13,13 +12,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator
 
 import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_remove_all as _remove_all
 import _atk_mq_tbd as _tbd
-import _managed_temp
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
     MQ_STATE_INBOX,
@@ -30,25 +27,17 @@ from _atk_mq_common import (
     MQ_TYPE_TBD,
     WebInputError,
     _commit_and_push,
-    _commit_and_push_retrying_mutation,
     _copy_to_tempfile,
     _dedup_positional_filenames,
-    _delete_retrying_mutation_state,
-    _fsync_directory,
     _is_tbd_answered,
-    _load_retrying_mutation_state,
     _pull,
+    _push_pending_commits,
     _repo_lock,
     _require_type,
-    _retrying_mutation_key,
-    _retrying_mutation_state_root,
-    _RetryingMutation,
-    _RetryingMutationState,
     _stamp_result,
     _subdir,
     _validate_filename,
     _validate_filenames_only,
-    _write_retrying_mutation_state,
 )
 from _atk_mq_list import _has_category
 from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo, _verify_target_repo_content
@@ -523,151 +512,11 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
         ) as temporary:
             temporary.write(content)
             temporary.flush()
-            os.fsync(temporary.fileno())
             temporary_path = pathlib.Path(temporary.name)
         temporary_path.replace(path)
-        _fsync_directory(path.parent)
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
-
-
-def _replace_frontmatter_body(text: str, body: str) -> str:
-    """既存frontmatterの字面を維持して本文だけを置換する。"""
-    parsed = _frontmatter.parse_frontmatter(text)
-    if parsed is None:
-        raise WebInputError("最新feedbackのfrontmatterが破損したため未commit本文を復元できません")
-    return f"{_frontmatter_prefix(text)}{body}"
-
-
-def _frontmatter_prefix(text: str) -> str:
-    """本文開始前までのfrontmatterを字面どおり返す。"""
-    delimiter_end = text.index("\n---\n", 3) + len("\n---\n")
-    return text[:delimiter_end]
-
-
-@contextlib.contextmanager
-def _suspend_uncommitted_feedback_body(
-    private_notes: pathlib.Path,
-    filename: str,
-    inbox_dir: pathlib.Path,
-    processing_dir: pathlib.Path,
-    transaction_key: str,
-) -> Iterator[None]:
-    """依存更新と未commit本文をrepo外へ永続化し、完了後に安全な保存先へ戻す。"""
-    state = _load_retrying_mutation_state(private_notes)
-    if state is None:
-        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
-        relative_path = str(path.relative_to(private_notes))
-        head_result = subprocess.run(
-            ["git", "show", f"HEAD:{relative_path}"],
-            cwd=private_notes,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if head_result.returncode != 0:
-            raise WebInputError(f"未commitの新規feedbackは依存更新できません: {path.name}")
-        working_text = path.read_text(encoding="utf-8")
-        head_text = head_result.stdout
-        staged_result = subprocess.run(
-            ["git", "diff", "--cached", "--quiet", "--", relative_path],
-            cwd=private_notes,
-            check=False,
-        )
-        if staged_result.returncode not in (0, 1):
-            raise WebInputError(f"feedbackのstage状態を検証できません: {path.name}")
-        if staged_result.returncode == 1:
-            raise WebInputError(f"stage済みのfeedbackは依存更新できません: {path.name}")
-        dirty_text: str | None = None
-        if working_text != head_text:
-            working_parsed = _frontmatter.parse_frontmatter(working_text)
-            head_parsed = _frontmatter.parse_frontmatter(head_text)
-            if (
-                working_parsed is None
-                or head_parsed is None
-                or _frontmatter_prefix(working_text) != _frontmatter_prefix(head_text)
-            ):
-                raise WebInputError(f"frontmatterに未commit変更があるfeedbackは依存更新できません: {path.name}")
-            dirty_text = working_text
-        state = _RetryingMutationState(transaction_key, filename, relative_path, dirty_text)
-        _write_retrying_mutation_state(private_notes, state)
-        if dirty_text is not None:
-            _atomic_write_text(path, head_text)
-    elif state.transaction_key != transaction_key or state.filename != filename:
-        raise WebInputError(f"中断された別の依存更新が残っています。同じ操作を再実行してください: {state.filename}")
-    elif state.phase == "suspended" and state.dirty_text is not None:
-        original_path = private_notes / state.original_rel_path
-        if original_path.is_file() and original_path.read_text(encoding="utf-8") == state.dirty_text:
-            head_result = subprocess.run(
-                ["git", "show", f"HEAD:{state.original_rel_path}"],
-                cwd=private_notes,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            _atomic_write_text(original_path, head_result.stdout)
-    try:
-        yield
-    finally:
-        latest_state = _load_retrying_mutation_state(private_notes)
-        if latest_state is not None and latest_state.phase == "suspended":
-            if latest_state.dirty_text is None:
-                _delete_retrying_mutation_state(private_notes)
-            else:
-                dirty_parsed = _frontmatter.parse_frontmatter(latest_state.dirty_text)
-                assert dirty_parsed is not None
-                matches = [private_notes / state_name / filename for state_name in MQ_STATES]
-                existing = [candidate for candidate in matches if candidate.is_file()]
-                active = [candidate for candidate in existing if candidate.parent.name in (MQ_STATE_INBOX, MQ_STATE_PROCESSING)]
-                if len(existing) == 1 and len(active) == 1:
-                    latest_text = active[0].read_text(encoding="utf-8")
-                    _atomic_write_text(active[0], _replace_frontmatter_body(latest_text, dirty_parsed[1]))
-                    _delete_retrying_mutation_state(private_notes)
-                else:
-                    recovery_path = _write_private_recovery_text(
-                        _retrying_mutation_state_root(),
-                        transaction_key,
-                        filename,
-                        latest_state.dirty_text,
-                    )
-                    _delete_retrying_mutation_state(private_notes)
-                    raise WebInputError(
-                        "同期中にfeedbackがactive状態から移動または削除されたため、"
-                        "未commit本文をrepo外へ保全しました: "
-                        f"{recovery_path}"
-                    )
-
-
-def _write_private_recovery_text(
-    root: pathlib.Path,
-    transaction_key: str,
-    filename: str,
-    content: str,
-) -> pathlib.Path:
-    """未commit本文を利用者専用の一意なMarkdownへ排他的に保存する。"""
-    fd, recovery_name = tempfile.mkstemp(
-        prefix=f"recovery-{transaction_key}-",
-        suffix=f"-{filename}",
-        dir=root,
-    )
-    recovery_path = pathlib.Path(recovery_name)
-    stream = os.fdopen(fd, "w", encoding="utf-8")
-    try:
-        with stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if os.name == "nt":
-            _managed_temp._windows_secure_path(  # noqa: SLF001  # pylint: disable=protected-access
-                recovery_path,
-                directory=False,
-            )
-        _fsync_directory(root)
-    except BaseException:
-        recovery_path.unlink(missing_ok=True)
-        raise
-    return recovery_path
 
 
 def convert_entry_to_plan(
@@ -675,7 +524,7 @@ def convert_entry_to_plan(
     *,
     filename: str,
     plan_file: str,
-    depends_on: tuple[str, ...] | None = None,
+    depends_on: tuple[str, ...] = (),
     target_repo: str | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
@@ -685,68 +534,53 @@ def convert_entry_to_plan(
         raise WebInputError("plan_fileは絶対パスで指定してください")
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
-    _validate_filenames_only([filename, *(depends_on or ())], inbox_dir)
+    _validate_filenames_only([filename, *depends_on], inbox_dir)
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
-    transaction_key = _retrying_mutation_key(
-        "convert-to-plan",
-        filename,
-        str(plan_path),
-        depends_on,
-        normalized_target_repo,
-    )
 
     with _repo_lock(private_notes, timeout=lock_timeout):
-        result_path: pathlib.Path | None = None
+        _push_pending_commits(private_notes)
+        _pull(private_notes)
+        try:
+            if not plan_path.is_file():
+                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
+        except OSError as error:
+            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
 
-        def mutation() -> _RetryingMutation | None:
-            nonlocal result_path
-            try:
-                if not plan_path.is_file():
-                    raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
-            except OSError as error:
-                raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
-            path, text, data, body = _load_feedback_for_metadata_update(
-                filename,
-                inbox_dir,
-                processing_dir,
-                normalized_target_repo,
-                purpose="計画実装型へ変換",
-            )
-            target_commit = data.get("target_commit")
-            _add._verify_plan_base_commit(  # pylint: disable=protected-access
-                plan_path,
-                target_commit if isinstance(target_commit, str) else None,
-            )
-            data["plan_file"] = str(plan_path)
-            data.pop("queue_schedule", None)
-            if depends_on is not None:
-                _set_validated_dependencies(data, path, depends_on, inbox_dir, processing_dir)
-            updated_text = _frontmatter.serialize_frontmatter(data, body)
-            result_path = path
-            if updated_text == text:
-                return None
+        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
+        data, body = parsed
+        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
+            raise WebInputError(f"feedbackだけを計画実装型へ変換できます: {path.name}")
+        raw_entry_repo = data.get("target_repo")
+        if not isinstance(raw_entry_repo, str):
+            raise WebInputError(f"target_repoが不正です: {path.name}")
+        entry_repo = _resolve_repo_id(raw_entry_repo)
+        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+
+        target_commit = data.get("target_commit")
+        _add._verify_plan_base_commit(  # pylint: disable=protected-access
+            plan_path,
+            target_commit if isinstance(target_commit, str) else None,
+        )
+        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+        if path.name in canonical_dependencies:
+            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+        data["plan_file"] = str(plan_path)
+        data.pop("queue_schedule", None)
+        if canonical_dependencies:
+            data["depends_on"] = list(canonical_dependencies)
+        else:
+            data.pop("depends_on", None)
+        updated_text = _frontmatter.serialize_frontmatter(data, body)
+        if updated_text != text:
             _atomic_write_text(path, updated_text)
-
-            def restore() -> None:
-                _atomic_write_text(path, text)
-
-            return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
-
-        with _suspend_uncommitted_feedback_body(
-            private_notes,
-            filename,
-            inbox_dir,
-            processing_dir,
-            transaction_key,
-        ):
-            _commit_and_push_retrying_mutation(
-                private_notes,
-                "chore: convert feedback item to plan",
-                mutation,
-                transaction_key=transaction_key,
-            )
-        assert result_path is not None
-        return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
+            relative_path = str(path.relative_to(private_notes))
+            _commit_and_push(private_notes, "chore: convert feedback item to plan", [relative_path])
+        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
 
 
 def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -759,7 +593,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
             private_notes,
             filename=args.filename,
             plan_file=args.plan_file,
-            depends_on=tuple(args.depends_on) if args.depends_on is not None else None,
+            depends_on=tuple(args.depends_on or ()),
             target_repo=target_repo,
         )
     except WebInputError as error:
@@ -782,95 +616,43 @@ def set_entry_dependencies(
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     _validate_filenames_only([filename, *depends_on], inbox_dir)
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
-    transaction_key = _retrying_mutation_key("set-dependencies", filename, depends_on, normalized_target_repo)
 
     with _repo_lock(private_notes, timeout=lock_timeout):
-        result_path: pathlib.Path | None = None
+        _push_pending_commits(private_notes)
+        _pull(private_notes)
+        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
+        data, body = parsed
+        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
+            raise WebInputError(f"feedbackだけ依存を更新できます: {path.name}")
+        raw_entry_repo = data.get("target_repo")
+        if not isinstance(raw_entry_repo, str):
+            raise WebInputError(f"target_repoが不正です: {path.name}")
+        entry_repo = _resolve_repo_id(raw_entry_repo)
+        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
 
-        def mutation() -> _RetryingMutation | None:
-            nonlocal result_path
-            path, text, data, body = _load_feedback_for_metadata_update(
-                filename,
-                inbox_dir,
-                processing_dir,
-                normalized_target_repo,
-                purpose="依存を更新",
-            )
-            _set_validated_dependencies(data, path, depends_on, inbox_dir, processing_dir)
-            data.pop("queue_schedule", None)
-            updated_text = _frontmatter.serialize_frontmatter(data, body)
-            result_path = path
-            if updated_text == text:
-                return None
+        canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
+        if path.name in canonical_dependencies:
+            raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+        dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
+        dependency_graph[path.name] = set(canonical_dependencies)
+        if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
+            raise WebInputError(f"循環する依存を指定できません: {path.name}")
+        data.pop("queue_schedule", None)
+        if canonical_dependencies:
+            data["depends_on"] = list(canonical_dependencies)
+        else:
+            data.pop("depends_on", None)
+        updated_text = _frontmatter.serialize_frontmatter(data, body)
+        if updated_text != text:
             _atomic_write_text(path, updated_text)
-
-            def restore() -> None:
-                _atomic_write_text(path, text)
-
-            return _RetryingMutation((str(path.relative_to(private_notes)),), restore)
-
-        with _suspend_uncommitted_feedback_body(
-            private_notes,
-            filename,
-            inbox_dir,
-            processing_dir,
-            transaction_key,
-        ):
-            _commit_and_push_retrying_mutation(
-                private_notes,
-                "chore: update feedback dependencies",
-                mutation,
-                transaction_key=transaction_key,
-            )
-        assert result_path is not None
-        return _add._read_saved_entry_details(result_path)  # pylint: disable=protected-access
-
-
-def _load_feedback_for_metadata_update(
-    filename: str,
-    inbox_dir: pathlib.Path,
-    processing_dir: pathlib.Path,
-    normalized_target_repo: str | None,
-    *,
-    purpose: str,
-) -> tuple[pathlib.Path, str, dict[str, object], str]:
-    """最新のfeedbackと検証済みfrontmatterを更新処理へ返す。"""
-    path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
-    text = path.read_text(encoding="utf-8")
-    parsed = _frontmatter.parse_frontmatter(text)
-    if parsed is None:
-        raise WebInputError(f"frontmatterが破損しているため{purpose}できません: {path.name}")
-    data, body = parsed
-    if _require_type(path, text) != MQ_TYPE_FEEDBACK:
-        raise WebInputError(f"feedbackだけを{purpose}できます: {path.name}")
-    raw_entry_repo = data.get("target_repo")
-    if not isinstance(raw_entry_repo, str):
-        raise WebInputError(f"target_repoが不正です: {path.name}")
-    entry_repo = _resolve_repo_id(raw_entry_repo)
-    if normalized_target_repo is not None and entry_repo != normalized_target_repo:
-        raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
-    return path, text, data, body
-
-
-def _set_validated_dependencies(
-    data: dict[str, object],
-    path: pathlib.Path,
-    depends_on: tuple[str, ...],
-    inbox_dir: pathlib.Path,
-    processing_dir: pathlib.Path,
-) -> None:
-    """候補依存を最新グラフへ仮適用し、循環が無い場合だけdataへ反映する。"""
-    canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
-    if path.name in canonical_dependencies:
-        raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
-    dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
-    dependency_graph[path.name] = set(canonical_dependencies)
-    if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
-        raise WebInputError(f"循環する依存を指定できません: {path.name}")
-    if canonical_dependencies:
-        data["depends_on"] = list(canonical_dependencies)
-    else:
-        data.pop("depends_on", None)
+            relative_path = str(path.relative_to(private_notes))
+            _commit_and_push(private_notes, "chore: update feedback dependencies", [relative_path])
+        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
 
 
 def _active_dependency_graph(inbox_dir: pathlib.Path, processing_dir: pathlib.Path) -> dict[str, set[str]]:

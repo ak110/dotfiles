@@ -1277,16 +1277,8 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
         "fsync",
         "symlink",
         "完全一致を検証",
-        "atk managed-temp claim --prefix publish-group",
-        "2つのkey-partを論理キー",
-        "管理marker保存前の中断",
+        "同じ`group_final_item`と`target_repo`のmarkerが0件",
         "二重の領域作成又は公開操作を行わない",
-        "atk managed-temp operation begin",
-        "beginの前に生成",
-        "status: acquired",
-        "status: completed",
-        "atk managed-temp operation complete",
-        "所有権を奪わずTBDへ送る",
     ):
         assert requirement in publish_group
     assert "### 要件シナリオ走査" in review

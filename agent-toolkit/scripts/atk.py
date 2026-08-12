@@ -28,7 +28,7 @@
   初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
-- managed-temp create/claim/operation/list/cleanup: 管理対象一時領域の作成・取得・外部操作所有・列挙・後始末
+- managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 
 ハンドラ実装は`_atk_mq_add`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
@@ -450,7 +450,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
 
     convert_to_plan = sub.add_parser(
         "convert-to-plan",
-        help="既存feedbackへ計画ファイルを設定し、計画実装型へ変換してコミット・push",
+        help="既存feedbackへ計画ファイルと依存先を設定し、計画実装型へ変換してコミット・push",
     )
     convert_to_plan.add_argument(
         "filename",
@@ -468,7 +468,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         metavar="FILENAME",
         action="append",
         default=None,
-        help="処理完了を待つキュー項目。複数回指定でき、省略時は既存依存を保持する。",
+        help="処理完了を待つキュー項目。複数回指定でき、重複は初出順で除去する。",
     )
     _add_target_repo_arg(convert_to_plan, help_extra="省略時は現在の作業リポジトリと照合する。")
 
@@ -606,7 +606,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     config = top.add_parser("config", help="XDG関連パス・codexモデル判定設定を確認・変更する")
     _config_cmd.build_parser(config)
-    managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・取得・操作所有・列挙・後始末する")
+    managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・列挙・後始末する")
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     watch = top.add_parser("watch", help="委譲先の成果物側の状況を1行で出力する")
     _watch.build_parser(watch)

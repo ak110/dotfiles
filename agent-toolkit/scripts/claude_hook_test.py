@@ -29,12 +29,6 @@ _SUBCOMMANDS = (
 )
 
 
-def test_pep_723_dependencies_include_managed_temp_runtime() -> None:
-    """共通entrypointがmanaged-temp間接importのfilelockを自己完結して宣言する。"""
-    header = _SCRIPT.read_text(encoding="utf-8").split("# ///", maxsplit=2)[1]
-    assert '"filelock>=3.30"' in header
-
-
 class TestEntrypointExceptionStages:
     """共通エントリポイントが例外の発生段階に応じて出力を分けることを検証する。"""
 
