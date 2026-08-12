@@ -472,8 +472,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in merge_task
     for phrase in (
         "上流最新OIDから",
-        "複数laneを統合した場合",
-        "単一laneのレビュー済みcommitを同一treeのまま使う場合だけ省略",
+        "競合を解消せずに全項目を適用できた場合は統合後のレビューを実施しない",
+        "解消した箇所と同一ファイルの隣接する記述だけを対象",
         "non-fast-forward拒否",
         "安定ID",
         "適用済みスキップ",
@@ -524,7 +524,7 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     common_review = execution.partition("### 共通の最終二系統レビュー\n")[2]
 
     assert "同worktreeのHEADを最終レビュー対象" in normal
-    assert "全計画を最終レビュー対象" in integrated
+    assert "レビュー対象は競合を解消した箇所と" in integrated
     assert "同じ最終HEAD" in common_review
     assert "別識別子" in common_review
     assert "implementation-plan-review-task.md" in common_review
