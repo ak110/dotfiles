@@ -462,7 +462,13 @@ def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
 ) -> None:
     """変換CLIは依存の省略時に既存値を保持し、明示時だけ置換する。"""
     notes = _setup_notes(tmp_path)
-    path = _write_convert_feedback(notes, "feedback.md")
+    path = _write_convert_feedback(
+        notes,
+        "feedback.md",
+        schedule_mapping=(
+            "queue_schedule:\n  dependency:\n    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md\n"
+        ),
+    )
     path.write_text(
         path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [predecessor.md]\n"),
         encoding="utf-8",
@@ -490,6 +496,83 @@ def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
     parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0]["depends_on"] == expected_dependencies
+    assert "queue_schedule" not in parsed[0]
+
+
+def test_convert_to_plan_migrates_legacy_entry_dependencies_when_omitted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """依存指定を省略した変換は旧entries依存をトップレベルへ移行する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(
+        notes,
+        "feedback.md",
+        schedule_mapping=(
+            "queue_schedule:\n  dependency:\n    kind: entries\n    filenames: [predecessor.md, predecessor.md]\n"
+        ),
+    )
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    details = mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["depends_on"] == ["predecessor.md"]
+    assert "queue_schedule" not in parsed[0]
+    assert details["depends_on"] == ["predecessor.md"]
+
+
+def test_convert_to_plan_removes_legacy_none_dependency_when_omitted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """旧none依存は依存なしの意味を保って旧scheduleだけを除去する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(
+        notes,
+        "feedback.md",
+        schedule_mapping="queue_schedule:\n  dependency:\n    kind: none\n",
+    )
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert "depends_on" not in parsed[0]
+    assert "queue_schedule" not in parsed[0]
+
+
+@pytest.mark.parametrize(
+    "legacy_dependency",
+    [
+        "    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md\n",
+        "    kind: entries\n    filenames: []\n",
+    ],
+)
+def test_convert_to_plan_rejects_unrepresentable_legacy_dependency_when_omitted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy_dependency: str,
+) -> None:
+    """トップレベルへ意味を保って移行できない旧依存は非破壊で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(
+        notes,
+        "feedback.md",
+        schedule_mapping=f"queue_schedule:\n  dependency:\n{legacy_dependency}",
+    )
+    original = path.read_text(encoding="utf-8")
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="旧形式の依存"):
+        mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_convert_to_plan_rejects_explicit_dependency_cycle(

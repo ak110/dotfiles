@@ -519,6 +519,22 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def _legacy_entry_dependencies_for_conversion(data: dict[str, object], filename: str) -> tuple[str, ...]:
+    """変換時に意味を保てる旧形式の依存先を返す。"""
+    schedule = data.get("queue_schedule")
+    if not isinstance(schedule, dict):
+        return ()
+    dependency = schedule.get("dependency")
+    if not isinstance(dependency, dict) or dependency.get("kind") in (None, "none"):
+        return ()
+    if dependency.get("kind") != "entries":
+        raise WebInputError(f"旧形式の依存を計画実装型へ移行できません: {filename}")
+    filenames = dependency.get("filenames")
+    if not isinstance(filenames, list) or not filenames or any(not isinstance(value, str) or not value for value in filenames):
+        raise WebInputError(f"旧形式の依存が不正なため変換できません: {filename}")
+    return tuple(dict.fromkeys(filenames))
+
+
 def convert_entry_to_plan(
     private_notes: pathlib.Path,
     *,
@@ -566,6 +582,10 @@ def convert_entry_to_plan(
             plan_path,
             target_commit if isinstance(target_commit, str) else None,
         )
+        if depends_on is None and "depends_on" not in data:
+            legacy_dependencies = _legacy_entry_dependencies_for_conversion(data, path.name)
+            if legacy_dependencies:
+                data["depends_on"] = list(legacy_dependencies)
         data["plan_file"] = str(plan_path)
         data.pop("queue_schedule", None)
         if depends_on is not None:
