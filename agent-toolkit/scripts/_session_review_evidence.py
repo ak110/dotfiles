@@ -78,6 +78,28 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
     return event
 
 
+def _question_answers_event(pairs: list[tuple[str, list[str]]]) -> dict[str, Any] | None:
+    """質問と回答を共通書式の単一userイベントへ変換する。"""
+    sections: list[str] = []
+    for question, answers in pairs:
+        clipped_answers = [_clip(answer) for answer in answers]
+        answer_text = "\n".join(clipped_answers)
+        sections.append(f"質問: {_clip(question)}\n回答: {answer_text}")
+    return _event("user", "\n".join(sections))
+
+
+def _claude_answers_event(result: Any) -> dict[str, Any] | None:
+    """Claude user entryの文字列answersだけを同じ位置へ抽出し、選択肢定義は読まない。"""
+    if not isinstance(result, dict):
+        return None
+    answers = result.get("answers")
+    if not isinstance(answers, dict) or not all(
+        isinstance(question, str) and isinstance(answer, str) for question, answer in answers.items()
+    ):
+        return None
+    return _question_answers_event([(question, [answer]) for question, answer in answers.items()])
+
+
 def _failed_tool_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
     message = entry.get("message")
     if not isinstance(message, dict):
@@ -174,6 +196,9 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     event = _event("user", text)
                     if event and not event["text"].startswith("<task-notification>"):
                         events.append(event)
+                answer_event = _claude_answers_event(result)
+                if answer_event:
+                    events.append(answer_event)
                 events.extend(_failed_tool_events(entry))
             elif entry_type == "assistant" and role == "assistant":
                 for text in _text_blocks(message.get("content")):
@@ -188,11 +213,72 @@ def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _codex_agent_message(payload: dict[str, Any]) -> str:
-    for key in ("message", "text", "content"):
+    """agent_messageの文字列互換を保ち、contentのblock配列を結合する。"""
+    for key in ("message", "text"):
         value = payload.get(key)
         if isinstance(value, str):
             return value
-    return ""
+    return "\n".join(_codex_text_blocks(payload.get("content")))
+
+
+def _json_object(raw: Any) -> dict[str, Any] | None:
+    """JSON文字列がobjectなら返し、破損又は別の値なら`None`を返す。"""
+    if not isinstance(raw, str):
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _codex_question_call(payload: dict[str, Any]) -> tuple[str, dict[str, str]] | None:
+    """request_user_inputからcall_idごとの質問IDと質問文だけを取得する。"""
+    if payload.get("name") != "request_user_input":
+        return None
+    call_id = payload.get("call_id")
+    arguments = _json_object(payload.get("arguments"))
+    if not isinstance(call_id, str) or arguments is None:
+        return None
+    raw_questions = arguments.get("questions")
+    if not isinstance(raw_questions, list):
+        return None
+    questions: dict[str, str] = {}
+    for raw_question in raw_questions:
+        if not isinstance(raw_question, dict):
+            continue
+        question_id = raw_question.get("id")
+        question = raw_question.get("question")
+        if isinstance(question_id, str) and isinstance(question, str):
+            questions.setdefault(question_id, question)
+    return (call_id, questions) if questions else None
+
+
+def _codex_question_output_event(
+    payload: dict[str, Any],
+    pending_questions: dict[str, dict[str, str]],
+) -> dict[str, Any] | None:
+    """対応する回答outputの位置で、call_id内の既知質問だけをuserイベントへ変換する。"""
+    call_id = payload.get("call_id")
+    if not isinstance(call_id, str):
+        return None
+    questions = pending_questions.pop(call_id, None)
+    output = _json_object(payload.get("output"))
+    if questions is None or output is None:
+        return None
+    raw_answers = output.get("answers")
+    if not isinstance(raw_answers, dict):
+        return None
+    pairs: list[tuple[str, list[str]]] = []
+    for question_id, question in questions.items():
+        answer_data = raw_answers.get(question_id)
+        if not isinstance(answer_data, dict):
+            continue
+        answers = answer_data.get("answers")
+        if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
+            continue
+        pairs.append((question, answers))
+    return _question_answers_event(pairs) if pairs else None
 
 
 def _codex_command_output(item: dict[str, Any]) -> str:
@@ -207,13 +293,23 @@ def _codex_command_output(item: dict[str, Any]) -> str:
 def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Codex rollout形式を共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
+    pending_questions: dict[str, dict[str, str]] = {}
     for entry in entries:
         entry_type = entry.get("type")
         payload = entry.get("payload")
         if not isinstance(payload, dict):
             continue
         payload_type = payload.get("type")
-        if entry_type == "response_item" and payload_type == "message":
+        if entry_type == "response_item" and payload_type == "function_call":
+            question_call = _codex_question_call(payload)
+            if question_call is not None:
+                call_id, questions = question_call
+                pending_questions[call_id] = questions
+        elif entry_type == "response_item" and payload_type == "function_call_output":
+            event = _codex_question_output_event(payload, pending_questions)
+            if event:
+                events.append(event)
+        elif entry_type == "response_item" and payload_type == "message":
             role = payload.get("role")
             kind = "user" if role == "user" else "assistant" if role == "assistant" else None
             if kind is not None:
