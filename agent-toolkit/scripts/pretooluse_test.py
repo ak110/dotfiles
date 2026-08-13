@@ -447,6 +447,8 @@ class TestPlanModeSkillFirstCheck:
         assert result.returncode == 0
         assert "plan-mode" in result.stderr
         assert "Phase 1" in result.stderr
+        assert "only correcting values uniquely determined by the artifact and evidence" in result.stderr
+        assert "recording each correction and its evidence in `## 変更履歴`" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):

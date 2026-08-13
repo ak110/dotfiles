@@ -1370,8 +1370,12 @@ def _check_plan_mode_skill_first(
     print(
         _llm_notice(
             "warning: editing a plan file without invoking `agent-toolkit:plan-mode` skill first."
-            " Invoke the skill and restart from Phase 1 (Initial Understanding)"
+            " If you are authoring the plan yourself, invoke the skill and restart from"
+            " Phase 1 (Initial Understanding)"
             " before continuing the plan file edit."
+            " If you are reviewing a delegated plan and only correcting values uniquely"
+            " determined by the artifact and evidence, continue without restarting plan-mode"
+            " after recording each correction and its evidence in `## 変更履歴`."
             " Resolve and verify this warning through the plan-mode direct delegation workflow"
             " before finalizing the plan.",
             tag="warn",
