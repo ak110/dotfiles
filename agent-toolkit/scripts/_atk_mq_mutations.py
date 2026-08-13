@@ -30,7 +30,6 @@ from _atk_mq_common import (
     _commit_and_push,
     _copy_to_tempfile,
     _dedup_positional_filenames,
-    _is_tbd_answered,
     _pull,
     _push_pending_commits,
     _repo_lock,
@@ -176,27 +175,6 @@ def _commit_values_by_path(
     return values
 
 
-def _answered_tbd_blockers(private_notes: pathlib.Path, mutation_paths: list[pathlib.Path]) -> list[pathlib.Path]:
-    """同じ対象repoにある、今回の操作対象外の回答済みactive TBDを返す。"""
-    excluded = set(mutation_paths)
-    target_repos = {_entry_target_repo(path, path.read_text(encoding="utf-8")) for path in mutation_paths}
-    blockers: list[pathlib.Path] = []
-    for state in (MQ_STATE_INBOX, MQ_STATE_PROCESSING):
-        state_dir = private_notes / state
-        if not state_dir.is_dir():
-            continue
-        for path in sorted(state_dir.iterdir()):
-            if path in excluded or path.suffix != ".md":
-                continue
-            text = path.read_text(encoding="utf-8")
-            entry_repo = _entry_target_repo(path, text)
-            if entry_repo not in target_repos:
-                continue
-            if _require_type(path, text) == MQ_TYPE_TBD and _is_tbd_answered(text):
-                blockers.append(path)
-    return blockers
-
-
 def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
     """frontmatterの予約キーが不正に追加・変更・削除されていないかを検証する。
 
@@ -326,15 +304,6 @@ def transition_entries(
         else:
             normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
             _verify_target_repo_content(paths[0], current_content, normalized_target_repo)
-        if action in {"adopt", "reject"}:
-            answered_tbds = _answered_tbd_blockers(private_notes, paths)
-            if answered_tbds:
-                print(
-                    "対象リポジトリに今回の操作対象外の回答済みTBDがあるため、採否処理を停止しました: "
-                    + ", ".join(path.name for path in answered_tbds),
-                    file=sys.stderr,
-                )
-                sys.exit(2)
         if category is not None:
             tbd_paths = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) == MQ_TYPE_TBD]
             if tbd_paths:

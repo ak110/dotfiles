@@ -27,7 +27,9 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 3. `plan_file`を持つfeedbackを計画実装型、それ以外を通常型とする。本文から型を推測しない
 4. 本文の順序条件はreadiness判定前に抽出し、active項目から対象filename自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
 5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
-6. readyなinbox項目を`atk mq start-processing`でprocessingへ移す。
+6. readyな回答済みTBDは、回答が本文へ保存済みであることを確認し、他のready項目より先に
+   `atk mq start-processing`でprocessingへ移す
+7. 残りのreadyなinbox項目を`atk mq start-processing`でprocessingへ移す。
    processing項目は実体を確認し、完了済み工程を再実行せず未完了工程から再開する
 
 `start-processing`が状態競合で拒否した場合は、active一覧と必要な本文を再取得し、readiness判定から再開する。
@@ -61,6 +63,11 @@ readyな計画実装型laneは通常型waveの計画工程を待たず、利用�
 
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
+
+processingへ移した回答済みTBDは、質問、回答及び依存元filenameを保持する。
+回答が本文へ保存済みであることを再確認し、回答内容が独立した新規作業を含む場合だけ
+`agent-toolkit:add-feedback`の経路へ分離する。
+回答済みTBD自体は「5. 後始末」へ進める。
 
 ## 3. 保留
 
@@ -112,10 +119,15 @@ lane commitの適用、競合解消、履歴一本化、検証は統合writerへ
 - 不採用: 判定確定後に`atk mq reject <filename> --note=<理由>`を実行する
 - 採用: 終端工程を持つ項目は全終端工程の成功後、持たない項目は対象commitのpushとCI通過確認後に
   `atk mq adopt <filename> --note=<反映概要> --commit=<完全長SHA>`を実行する
-- 回答済みTBD: 回答を反映した処理の完了後に同じ採用経路で終端させる
+- 回答済みTBD: 回答が本文へ保存済みであることを確認し、回答済みTBDを他の項目より先に採用終端する。
+  終端後にactive一覧とreadinessを再取得し、依存が解除されたfeedbackを通常経路で開始する
 
-`adopt`と`reject`は、同じ対象リポジトリに回答済みのactive TBDが残る場合、
-queue lock内の変異直前検査で停止する。通知の有無を処理可否の根拠にしない。
+依存解除後のfeedbackを調査・再開する際は、feedback本文と依存先filenameを対応付ける。
+`atk mq show <TBD filename> --target-repo=<repo-path>`で終端済みTBDを再取得し、
+保存済みの質問・回答とfeedbackの暫定判断との差分を反映する。
+回答の反映後にfeedbackの実装又は採否が失敗した場合も、TBD本文とterminal状態を回答の正本として維持する。
+再試行では同じfilenameで終端済みTBDを再取得し、TBDをactiveへ戻さない。
+
 各コマンドの保存結果を再取得し、対象、採否、note、commitを照合する。
 終端工程を持つ項目のnoteには実施した操作と結果を記録する。
 

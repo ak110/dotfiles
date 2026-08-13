@@ -21,7 +21,7 @@ user-invocable: false
 ## 入力
 
 - filename昇順のfeedback filename一覧と、呼び出し元が`atk mq show`で取得した本文一覧
-- 対象worktree、プロジェクト規範、計画ファイル保存先ディレクトリの絶対パス
+- 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス
 - `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`content-adjustment.md`、`review-checklists.md`の絶対パス
 - `agent-toolkit:plan-mode`などのauthor skillの絶対パス
 - バグ対応時は`agent-toolkit:bugfix`の絶対パス
@@ -39,7 +39,7 @@ user-invocable: false
    実装変更がない終端工程専用項目は、計画を作成せず、採否、終端工程一覧、認可根拠の逐語引用及び計画なしを返す。
 4. 採用項目がある場合は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
    起草スレッドへfilename一覧と本文一覧、項目ごとの調査結果、確定した採否と利用者合意、対象worktree、プロジェクト規範、
-   計画保存先、`agent-toolkit:plan-mode`などのauthor skill、必要なtask referenceを渡す。
+   計画ファイルの絶対パス、`agent-toolkit:plan-mode`などのauthor skill、必要なtask referenceを渡す。
    queueの状態と他laneの情報は渡さない。
    起草スレッドをauthorとし、1つの統合計画ファイルの書込み、機械検査、指摘の採否、6列表統合、計画修正を所有させる。
 5. 計画レビュースレッドの起動直前に`atk config get plan_review_model`を実行して経路を解決する。

@@ -16,9 +16,11 @@ plannerは採用項目を1つの統合計画へまとめ、項目ごとの原文
 - 対象worktreeとプロジェクト規範
 - `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`content-adjustment.md`、`review-checklists.md`
 - `agent-toolkit:plan-mode`などのauthor skillと、バグ対応時は`agent-toolkit:bugfix`
-- 計画ファイルの保存先ディレクトリ
+- 既存ファイルと衝突しない乱数サフィックス付きで、委譲元が確定した計画ファイルの絶対パス
 
 これらはplannerがauthorへ元の提示素材、確定した採否と合意、対象、規範、author用taskを欠落なく渡せる形で指定する。
+TBD候補は、技術調査と明文化済み方針で確定できず、かつ採用済み本文が要求しない選択肢に限定する。
+採用済み本文が明示する変更自体を確認事項又は実装前提にしない。
 
 plannerへqueue変異、push、フィードバック投入、worktree作成と回収の権限を渡さない。
 

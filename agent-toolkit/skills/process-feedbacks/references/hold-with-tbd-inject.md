@@ -42,6 +42,12 @@ TBDを伴わない外部条件待ちは`--cooldown-days`を使い、`depends_on`
 回答済みTBDを能動的にpollせず、同一セッション内でsleep又は時限待機をしない。
 process-loopがactive状態の変化を検出し、readiness成立後に新しいprocess-feedbacksセッションを起動する。
 
-再開時はfeedbackと対応する回答済みTBDを読み、暫定判断と回答の差分を反映する。
+回答がTBD本文へ保存済みであることを確認し、回答済みTBDを先に採用終端する。
+終端後にactive一覧とreadinessを再取得し、依存が解除されたfeedbackを通常経路で開始する。
+再開時はfeedback本文と依存先filenameを対応付け、
+`atk mq show <TBD filename> --target-repo=<repo-path>`で終端済みTBDを取得する。
+保存済みの質問・回答とfeedbackの暫定判断との差分を反映する。
+回答の反映後にfeedbackの処理が失敗した場合も、TBD本文とterminal状態を回答の正本として維持する。
+再試行では同じfilenameで終端済みTBDを取得し、TBDをactiveへ戻さない。
 回答内容が現在の処理と独立する新規作業なら、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
 完成済み本文と対象リポジトリを渡す。

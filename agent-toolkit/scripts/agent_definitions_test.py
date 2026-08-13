@@ -9,6 +9,7 @@ _AGENTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "agents"
 _DELEGATION_SKILL = _AGENTS_DIR.parent / "skills" / "delegation" / "SKILL.md"
 _RUNTIME_ROUTING = _DELEGATION_SKILL.parent / "references" / "runtime-routing.md"
 _CLAUDE_CODE_RUNTIME = _DELEGATION_SKILL.parent / "references" / "claude-code-runtime.md"
+_WAITING_AND_MONITORING = _DELEGATION_SKILL.parent / "references" / "waiting-and-monitoring.md"
 _PLAN_IMPL_EXECUTOR = _AGENTS_DIR / "plan-impl-executor.md"
 _FEEDBACKS_PLANNER = _AGENTS_DIR / "feedbacks-planner.md"
 _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.md"
@@ -787,6 +788,45 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
     assert "`agent-toolkit:exit-session`をSkill機能で起動" in completion
 
 
+def test_process_feedbacks_terminates_answered_tbd_before_dependent_feedback() -> None:
+    """回答済みTBDの終端と依存解除後の回答反映を固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+
+    for text in (process, hold):
+        assert "終端後にactive一覧とreadinessを再取得" in text
+        assert "終端済みTBD" in text
+        assert "atk mq show <TBD filename> --target-repo=<repo-path>" in text
+        assert "TBDをactiveへ戻さない" in text
+    assert "回答が本文へ保存済みであることを確認" in process
+    assert "回答がTBD本文へ保存済みであることを確認" in hold
+    assert "回答済みTBDを他の項目より先に採用終端" in process
+    assert "回答済みTBDを先に採用終端" in hold
+
+
+def test_delegation_observes_only_identified_artifact_paths() -> None:
+    """新規成果物の観測対象を指定値又は報告値に限定する。"""
+    waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
+
+    assert "委譲元が起動文で指定した値又は委譲先が報告した値" in waiting
+    assert "共有出力ディレクトリの一覧や更新時刻から対象を推定しない" in waiting
+    assert "対象パスが未確定の間は成果物を観測せず" in waiting
+
+
+def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> None:
+    """plannerのsenderとreceiverへ計画パス及びTBD境界を同期する。"""
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    receiver = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+
+    for text in (sender, receiver):
+        assert "委譲元が確定した計画ファイルの絶対パス" in text
+        assert "計画ファイル保存先" + "ディレクトリ" not in text
+    assert "既存ファイルと衝突しない乱数サフィックス付き" in sender
+    assert "TBD候補は、技術調査と明文化済み方針で確定できず" in sender
+    assert "採用済み本文が要求しない選択肢に限定" in sender
+    assert "採用済み本文が明示する変更自体を確認事項又は実装前提にしない" in sender
+
+
 def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:
     """フィードバック処理の各入口で最初の委譲前に委譲スキルを起動する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
@@ -960,7 +1000,8 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
     reject_at = plan_and_add.index("atk mq reject <filename> --if-inbox")
     for later_phase in ("追加調査", "計画起草", "review"):
         assert reject_at < plan_and_add.index(later_phase, reject_at)
-    assert "回答済みTBD" in plan_and_add
+    assert "回答済みTBD" not in plan_and_add
+    assert "回答済みTBD" not in preflight
     assert "新しい計画feedbackを追加" in plan_and_add
     assert "吸収元filename" in plan_and_add
     assert "processing項目を変更しない" in plan_and_add
