@@ -95,6 +95,53 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
 class TestCommitResolution:
     """採否結果へ記録するrevisionの解決境界を検証する。"""
 
+    @pytest.mark.parametrize(
+        ("action", "destination"),
+        [("adopt", "adopted"), ("reject", "rejected")],
+    )
+    def test_url_target_cli_resolves_revision_from_current_worktree(
+        self,
+        action: str,
+        destination: str,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """URL形の対象指定でも現在位置の対応作業ツリーでrevisionを完全OIDへ解決する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "feedback.md")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        monkeypatch.chdir(worktree)
+        _disable_transition_git(monkeypatch)
+        full_oid = "a" * 40
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                return subprocess.CompletedProcess(cmd, 0, str(worktree) + "\n", "")
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
+            if "rev-parse" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            raise AssertionError(cmd)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    action,
+                    "feedback.md",
+                    "--commit=abcdef1",
+                    "--target-repo=github.com/example/foo",
+                ],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+
+        result = (notes / destination / "feedback.md").read_text(encoding="utf-8")
+        assert f"- 対応commit: {full_oid}" in result
+
     def test_matching_worktree_records_full_oid(
         self,
         tmp_path: pathlib.Path,

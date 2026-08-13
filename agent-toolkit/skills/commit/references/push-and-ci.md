@@ -23,8 +23,7 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 
    明示経路ではremote、source、完全なdestination refを省略しない。
    いずれの経路でも拒否または失敗予定のrefがある場合はpushしない
-4. 読み込んだ本スキルの絶対パスからplugin rootを確定し、
-   `uv run --no-project --script <plugin-root>/scripts/_managed_temp.py create --prefix ci-evidence`を単独で実行する。
+4. `atk managed-temp create --prefix ci-evidence`を単独で実行する。
    標準出力の絶対パスを保持し、pushごとに別の領域を使う
 5. 削除refを除き、更新refごとにsource refを1件確定する。
    手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
@@ -33,10 +32,11 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
    - commitへpeelできないrefではbaseline作成が失敗するためpushしない
    - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
-6. 確定した各`(destination ref, source ref)`について、push前に
+6. 読み込んだ本referenceの絶対パスからplugin rootを確定する。
+   確定した各`(destination ref, source ref)`について、push前に
    `uv run --no-project --script <plugin-root>/scripts/wait_ci.py`を`--write-baseline`付きで実行し、
    baseline JSONを保存する。
-   `wait_ci.py`は手順4の`_managed_temp.py`と同じ`<plugin-root>/scripts/`にあり、
+   `wait_ci.py`は確定した`<plugin-root>/scripts/`にあり、
    `<plugin-root>/skills/commit/scripts/`には無い
 
 baseline作成、push、監視の順で実行する。
@@ -90,7 +90,7 @@ CI成功、バグ対応完了、push失敗、監視不能、run未登録、forge
 保持した各領域に対し、plan mode外で次を単独実行し、終了コード0とパスの不在を確認する。
 
 ```text
-uv run --no-project --script <plugin-root>/scripts/_managed_temp.py cleanup --path <保持した絶対パス>
+atk managed-temp cleanup --path <保持した絶対パス>
 ```
 
 追加pushでは新しい領域とbaselineを作成する。次の操作、保持理由、正確なパスを記録した

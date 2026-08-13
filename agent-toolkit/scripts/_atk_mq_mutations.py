@@ -74,10 +74,11 @@ def _entry_target_repo(path: pathlib.Path, text: str) -> str:
 
 
 def _candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
-    """採否CLIの引数又は現在位置から対応候補の作業ツリーを返す。"""
+    """実在パスの引数を優先し、それ以外は現在位置から対応候補の作業ツリーを返す。"""
     if target_repo is not None:
         path = pathlib.Path(target_repo).expanduser()
-        return path.resolve() if path.exists() else None
+        if path.exists():
+            return path.resolve()
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],

@@ -1303,10 +1303,11 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
     """CI証拠の一時領域をpush契約だけが所有する。"""
     push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
     ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
-    assert "_managed_temp.py create --prefix ci-evidence" in push_and_ci
-    assert "_managed_temp.py cleanup --path <保持した絶対パス>" in push_and_ci
-    assert "読み込んだ本スキルの絶対パスからplugin rootを確定" in push_and_ci
+    assert "atk managed-temp create --prefix ci-evidence" in push_and_ci
+    assert "atk managed-temp cleanup --path <保持した絶対パス>" in push_and_ci
+    assert "読み込んだ本referenceの絶対パスからplugin rootを確定" in push_and_ci
     assert "単独で実行" in push_and_ci
+    assert "_managed_temp.py" not in push_and_ci
     assert "_managed_temp.py create" not in ci_failure
     assert "mktemp -d" not in push_and_ci
     agent_operations_rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
