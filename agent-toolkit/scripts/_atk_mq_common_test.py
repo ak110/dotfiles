@@ -1201,7 +1201,9 @@ class TestPullWithRecentWarning:
 
         assert calls == [["pull", "--ff-only"]]
         assert capsys.readouterr().err == (
-            "警告: 直近30秒にfetchを含む同期形跡がある。同一連続操作で同期結果を再利用する場合は`--skip-pull`を指定する。\n"
+            "警告: 直近30秒にfetchを含む同期形跡がある。"
+            "同一連続操作で同期結果を再利用する場合は`list`・`show`・`grep`で"
+            "`--skip-pull`を指定する（状態遷移系のサブコマンドは毎回同期する）。\n"
         )
 
     def test_pulls_without_warning_when_fetch_head_is_old(

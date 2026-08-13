@@ -555,7 +555,8 @@ def _pull_with_recent_warning(private_notes: pathlib.Path) -> None:
         interval = int(_PULL_MIN_INTERVAL_SECONDS)
         print(
             f"警告: 直近{interval}秒にfetchを含む同期形跡がある。"
-            "同一連続操作で同期結果を再利用する場合は`--skip-pull`を指定する。",
+            "同一連続操作で同期結果を再利用する場合は`list`・`show`・`grep`で"
+            "`--skip-pull`を指定する（状態遷移系のサブコマンドは毎回同期する）。",
             file=sys.stderr,
         )
     _pull(private_notes)

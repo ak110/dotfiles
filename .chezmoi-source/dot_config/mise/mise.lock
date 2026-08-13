@@ -95,18 +95,18 @@ url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405851866"
 
 [[tools.glab]]
-version = "1.111.0"
+version = "1.112.0"
 backend = "gitlab:gitlab-org/cli"
 
 [tools.glab."platforms.linux-x64"]
-checksum = "sha256:d3aa186428ce6668455e2e35184c6f60b013840d759c7ea4cf02bac68d2a1827"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.111.0/downloads/glab_1.111.0_linux_amd64.tar.gz"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E111%2E0/glab_1%2E111%2E0_linux_amd64%2Etar%2Egz"
+checksum = "sha256:f1c52907558b665f2032b615787d353cd06e54240b501a81f9489bfc8f6a8ebf"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.112.0/downloads/glab_1.112.0_linux_amd64.tar.gz"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E112%2E0/glab_1%2E112%2E0_linux_amd64%2Etar%2Egz"
 
 [tools.glab."platforms.windows-x64"]
-checksum = "sha256:583acbd311f249e19bed418bcac7c7a5b11cc71a6eaa9f31792a76c37a6fed64"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.111.0/downloads/glab_1.111.0_windows_amd64.zip"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E111%2E0/glab_1%2E111%2E0_windows_amd64%2Ezip"
+checksum = "sha256:783564e2ec5653421cd9fe7ffdce6bf2140d3feed85464009ac21fae720ba5da"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.112.0/downloads/glab_1.112.0_windows_amd64.zip"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E112%2E0/glab_1%2E112%2E0_windows_amd64%2Ezip"
 
 [[tools.glow]]
 version = "2.1.2"
@@ -153,7 +153,7 @@ checksum = "sha256:57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4
 url = "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
-version = "0.53.1"
+version = "0.54.0"
 backend = "npm:@google/gemini-cli"
 
 [[tools."npm:aws-cdk"]]

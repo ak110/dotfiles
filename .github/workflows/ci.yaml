@@ -157,6 +157,13 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 利用者設定から隔離したlockfile検証
+        if: matrix.python-version == '3.12'
+        run: |
+          set -euo pipefail
+          config_dir="$(mktemp -d)"
+          trap 'rm -r -- "$config_dir"' EXIT
+          env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
       - name: safe.directory の設定
         # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
         # pre-commit 等の git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。

@@ -67,7 +67,8 @@ readyな計画実装型laneは通常型waveの計画工程を待たず、利用�
 保留時は`references/hold-with-tbd-inject.md`を全文読み、解除条件と再開情報を永続化する。
 filenameで表せない、ユーザー判断を伴わない外部条件待ちは本文へ観測方法、現在値、解除条件、再開工程を記録し、
 `atk mq return-to-inbox <filename> --cooldown-days=3`でinboxへ戻す。外部条件に応じて3日より長い日数も指定できる。
-別feedback待ちは`depends_on`、ユーザー判断待ちはTBDと通常の`atk mq return-to-inbox`を使い、cooldownを重ねない。
+別feedback待ちとユーザー判断待ちは`depends_on`を使う。ユーザー判断待ちはTBDを作成し、
+TBD filenameを依存先へ加えてcooldownと重ねない。
 回答済みTBDの能動的なpoll、内部待機ループ、同一セッションでの時限待機は行わない。
 TBDの回答が単純な回答を超える指示・是正要求を含む場合は`agent-toolkit:bugfix`の深掘り条件を判定し、
 自律モードの原則（TBD記録と暫定判断での続行）に従って進める。

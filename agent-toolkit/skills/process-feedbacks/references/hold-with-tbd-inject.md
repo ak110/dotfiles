@@ -8,6 +8,12 @@
 再開工程、対象feedbackを完成済み入力として、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動する。
 質問本文の構築、重複判定、保存は同スキルへ委ねる。
 
+既存の未回答TBDへ観測を追記する場合、`atk mq edit <TBD filename> "<本文>"`へは質問本文だけを渡す。
+`## 質問`と`## 回答`以降を含めず、質問本文内の`## 回答方法`は保持する。
+`atk mq show <TBD filename>`の出力を再利用する場合は、表示用のtarget_repo見出し、filename見出し、frontmatterを除外し、
+完全一致の`## 質問`行の直後から完全一致の`## 回答`行の直前までを抽出する。
+新規TBDの質問本文の構築、重複判定、保存は引き続き`agent-toolkit:add-feedback`へ委ねる。
+
 ## 外部条件
 
 - 別feedbackの完了を待つ場合はトップレベルの`depends_on`へfilenameを記録する
@@ -19,7 +25,18 @@
 
 ## 保留と再開
 
-ユーザー判断待ちはTBDを作成して通常の`atk mq return-to-inbox`で差し戻し、別feedback待ちは`depends_on`を使う。
+未回答TBDを解除条件にする場合は、現行feedbackの有効依存を復元してからTBD filenameを追加する。
+トップレベルの`depends_on`があればその全件を採用し、無ければ読取互換の`queue_schedule.dependency`を確認する。
+旧`none`は空集合として扱い、旧`entries`と`external-repo-entry`は既存実装が依存として解釈するfilename集合へ移行する。
+回答済み時点で成立する旧`external-user`、時刻条件の`external-upstream`、集合条件の`inbox-empty`、
+不正又は未知の旧条件はfilename集合へ同じ意味で表現できないため、依存更新と差し戻しを行わず保留更新を停止する。
+
+移行できる場合は、重複を除いた既存の有効依存とTBD filenameをそれぞれ`--depends-on`へ指定して
+`atk mq set-dependencies`を実行する。保存結果で旧形式が除去され、既存依存とTBDがトップレベルに全て保持されたことを
+照合してから通常の`atk mq return-to-inbox`で差し戻す。その後、
+`atk mq list --status=active --target-repo=<repo-path>`の対象行が`blocked`であることを確認する。
+TBDを伴わない外部条件待ちは`--cooldown-days`を使い、`depends_on`と重ねない。
+いずれの方法も設定できない場合はreadyのまま差し戻さず、同一セッション内で終端させる。
 回答済みTBDを能動的にpollせず、同一セッション内でsleep又は時限待機をしない。
 process-loopがactive状態の変化を検出し、readiness成立後に新しいprocess-feedbacksセッションを起動する。
 
