@@ -46,7 +46,7 @@ description: >
 （複数回指定可。位置引数との併用は拒否される）。警告又はエラーが出た場合は
 終了コード0でも保存内容を再取得し、欠落を同じ経路で修復する。
 
-`AGENT_TOOLKIT_PRIVATE_NOTES`配下の`inbox/`または`processing/`にあるキュー管理ファイルを
+`atk config show`が出力する`private_notes`配下の`inbox/`又は`processing/`にあるキュー管理ファイルを
 専用サブコマンド以外で変更した場合は、作業を終える前に`atk mq commit`を実行する。
 
 ## TBD本文の必須要素
