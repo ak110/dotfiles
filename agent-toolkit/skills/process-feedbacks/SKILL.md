@@ -86,6 +86,8 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 PR/MRの作成、マージ又は作成＋マージ、リリースは、全laneの統合、push及びCI通過の後、adoptの前にメインが1回だけ実行する。
 本文に明記されない不可逆操作はTBDへ送る。
 失敗時はpush済み内容を巻き戻さず、実施済み工程と観測内容を記録したTBDを投入して`atk mq return-to-inbox`で保留する。
+投入したTBDの回答を解除条件にする場合は、`references/hold-with-tbd-inject.md`の`保留と再開`に従い、
+既存の有効依存とTBD filenameを登録してから差し戻し、active一覧で`blocked`を確認する。
 終端工程だけを求める項目は計画を作成せず、終端待機集合へ登録して全laneの統合とpush後にfilename昇順で実行する。
 
 - Claude Codeホストの通常型採用項目は、plannerの統合計画を各feedbackへ`atk mq convert-to-plan`で記録し、

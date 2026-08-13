@@ -37,6 +37,8 @@ plannerへqueue変異、push、フィードバック投入、worktree作成と�
 保存結果の`plan_file`を同じ実在する計画パスへ照合する。
 終端工程の一覧、対象及び認可根拠となる本文の逐語引用を照合し、本文にない操作は差し戻す。
 実装変更がない終端工程専用項目は計画なしであることを検収し、終端待機集合へ登録する。
-ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡し、通常の`atk mq return-to-inbox`でinboxへ戻す。
+ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡す。
+`hold-with-tbd-inject.md`の`保留と再開`に従い、既存の有効依存とTBD filenameを登録してから
+通常の`atk mq return-to-inbox`でinboxへ戻し、active一覧で`blocked`を確認する。
 filenameで表せない外部条件待ちは、観測方法、現在値、解除条件、再開工程を本文へ記録し、
 `atk mq return-to-inbox <filename> --cooldown-days=3`で戻す。別feedback待ちは`depends_on`を使う。
