@@ -279,11 +279,18 @@ class TestDefaultSteps:
     def test_cli_setup_precedes_dependent_steps(self):
         """CLI本体をplugin、リンク、MCPより前に準備する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        remove_name = "Codex の Claude MCP 登録削除"
+        codex_name = "Codex CLI の導入と更新"
+        claude_name = "Claude Code CLI の導入と更新"
+        assert names.count(remove_name) == 1
+        assert names.index(remove_name) == names.index(codex_name) + 1
+        assert names.index(remove_name) < names.index(claude_name)
         ordered = [
             "npm/pnpm サプライチェーン対策",
             "mise セットアップ",
-            "Codex CLI の導入と更新",
-            "Claude Code CLI の導入と更新",
+            codex_name,
+            remove_name,
+            claude_name,
             "agent-toolkit ルールの同期",
             "Codex リンクの同期",
             "Claude Code plugin のインストール",
