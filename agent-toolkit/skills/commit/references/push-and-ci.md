@@ -35,7 +35,9 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
 6. 確定した各`(destination ref, source ref)`について、push前に
    `uv run --no-project --script <plugin-root>/scripts/wait_ci.py`を`--write-baseline`付きで実行し、
-   baseline JSONを保存する
+   baseline JSONを保存する。
+   `wait_ci.py`は手順4の`_managed_temp.py`と同じ`<plugin-root>/scripts/`にあり、
+   `<plugin-root>/skills/commit/scripts/`には無い
 
 baseline作成、push、監視の順で実行する。
 いずれの実行でも`--repo`、`--forge`、`--ref`、`--source-ref`を省略しない。
@@ -66,7 +68,10 @@ baseline作成、push、監視の順で実行する。
    自セッション帰属または帰属未確定なら、直接的原因の明白さを問わず深掘り経路を適用する
 6. 診断目的で対象jobを再実行した後も、保存済みの同一baselineに対して`wait_ci.py --baseline`を再起動する。
    自作の待機ループへ置き換えない。許容された再実行後も失敗が残る場合はCI未通過を終端状態として確定し、
-   完了報告、採否記録及び計画の進捗ログへ未通過であることと帰属判定を記録する
+   完了報告、採否記録及び計画の進捗ログへ未通過であることと帰属判定を記録する。
+   対象workflowが同一concurrency groupで`cancel-in-progress: true`を有効にしている場合、
+   再実行の終端前の新規pushは先行runを`cancelled`にし、非決定性とCI通過の判定根拠を失わせる。
+   判定に用いるrunの終端を確定してから次のpushを行う
 
 `wait_ci.py`の終了コードは次のとおり。
 

@@ -46,6 +46,11 @@
 ユーザー合意と衝突する指摘は修正せず`needs_escalation`で返す。
 
 対象worktree以外を編集しない。担当外差分を復元しない。`git push`、タグ作成、リモートrefも変更しない。
+委譲元から着手前の未コミット差分の採否判定を明示的に委ねられ、不採用と判定して破棄する場合は、
+破棄前に差分を退避し、退避識別子を完了報告へ含める。
+merge進行中でなければ`git stash push --include-untracked`相当を使い、merge進行中は
+`agent-toolkit:commit`の`references/history-rewrite.md`「merge進行中の退避」に従う。
+退避の破棄は既存の破壊的操作規範に従い、自動で破棄しない。
 
 ## 出力
 
