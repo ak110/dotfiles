@@ -110,10 +110,6 @@ colloquial-check = true
 markdownlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 lychee-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
-# GitHub Actions上のlycheeがgithub.com宛リンクで`HTTP/2 protocol error`を返して失敗する事象の緩和。
-# ローカルでは再現せず同時接続数が原因という裏付けは取れていないが、GitHub側が接続を拒否している
-# 観測と整合するため、既定の128から4へ減らす。
-lychee-extend-args = ["--max-concurrency=4"]
 # profile_ipy/はIPython自動生成プロファイル、
 # tone-examples.md・tone-examples-llm-tone.mdは危険語彙を含む隔離ファイルのため検査対象外とする。
 extend-exclude = [
