@@ -3574,7 +3574,7 @@ def test_repository_readers_canonicalize_legacy_paths_once_per_operation(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """一覧フィルターと候補収集は旧パス形をURL形に統合する。"""
+    """一覧フィルターと候補収集は旧パス形を統合し、解決不能値の原値を保持する。"""
     local_repo = tmp_path / "target-repo"
     local_repo.mkdir()
     _write_repo_entry(tmp_path, "inbox", "current.md", "github.com/example/repo")
@@ -3582,6 +3582,7 @@ def test_repository_readers_canonicalize_legacy_paths_once_per_operation(
     _write_repo_entry(tmp_path, "inbox", "legacy-b.md", str(local_repo))
     _write_repo_entry(tmp_path, "inbox", "other.md", "github.com/example/other")
     _write_repo_entry(tmp_path, "inbox", "missing.md", str(tmp_path / "missing"))
+    _write_repo_entry(tmp_path, "inbox", "unresolved.md", "example/repo")
     resolved_paths: list[str] = []
 
     def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -3603,8 +3604,17 @@ def test_repository_readers_canonicalize_legacy_paths_once_per_operation(
     assert resolved_paths == [str(local_repo)]
 
     resolved_paths.clear()
-    assert operations.target_repos() == ["github.com/example/other", "github.com/example/repo"]
+    assert operations.target_repos() == [
+        str(tmp_path / "missing"),
+        "example/repo",
+        "github.com/example/other",
+        "github.com/example/repo",
+    ]
     assert resolved_paths == [str(local_repo)]
+
+    unresolved_entries, warnings = operations.entries_with_warnings({"target_repo": "example/repo"})
+    assert [item["filename"] for item in unresolved_entries] == ["unresolved.md"]
+    assert not warnings
 
     unfiltered_entries, warnings = operations.entries_with_warnings({})
     assert not warnings
