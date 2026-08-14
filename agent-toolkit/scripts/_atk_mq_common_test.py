@@ -107,6 +107,22 @@ class TestReadiness:
         assert result.ready == ("feedback.md",)
         assert result.actionable_count == 1
 
+    def test_legacy_local_path_matches_canonical_readiness_target(self, tmp_path: pathlib.Path) -> None:
+        """readinessは旧パス形とURL形を同じ対象リポジトリへ分類する。"""
+        local_repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
+            check=True,
+        )
+        _write_feedback(tmp_path, "legacy.md", target_repo=str(local_repo))
+        _write_feedback(tmp_path, "current.md", target_repo="github.com/example/repo")
+        _write_feedback(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"))
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.ready == ("current.md", "legacy.md")
+
     def test_cooldown_uses_utc_boundary_and_does_not_block_other_ready_entries(self, tmp_path: pathlib.Path) -> None:
         """期限前だけ対象項目を抑制し、同値境界では通常のreadinessへ戻す。"""
         now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
@@ -634,6 +650,52 @@ class TestNotifyUnansweredTbdsIfAny:
             "# tbd\n001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
             "002.md: github.com/example/repo [inbox/unanswered] 質問2\n"
         )
+
+    def test_local_path_filter_notifies_legacy_and_current_repo_forms(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """生のローカルパス指定でも旧パス形とURL形の未回答TBDを通知する。"""
+        local_repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
+            check=True,
+        )
+        _write_tbd(tmp_path, "legacy.md", target_repo=str(local_repo), question="旧形式")
+        _write_tbd(tmp_path, "current.md", target_repo="github.com/example/repo", question="現行形式")
+        _write_tbd(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"), question="対象外")
+
+        _common.notify_unanswered_tbds_if_any(tmp_path, str(local_repo))
+
+        error = capsys.readouterr().err
+        assert "legacy.md" in error
+        assert "current.md" in error
+        assert "missing.md" not in error
+
+    def test_filter_resolves_each_raw_repo_value_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """1回の反復では同じ保存値を複数項目が持っても解決を1回に限定する。"""
+        _write_tbd(tmp_path, "first.md", target_repo="/legacy/repo")
+        _write_tbd(tmp_path, "second.md", target_repo="/legacy/repo")
+        calls: list[str] = []
+
+        def resolve(value: str) -> str | None:
+            calls.append(value)
+            return "github.com/example/repo" if value in {"/legacy/repo", "github.com/example/repo"} else None
+
+        git_remote = _common.__dict__["_git_remote"]
+        monkeypatch.setattr(git_remote, "resolve_repo_identifier", resolve)
+
+        iter_entries = _common.__dict__["_iter_entries"]
+        entries = list(iter_entries(tmp_path, ("inbox",), "github.com/example/repo", "tbd"))
+
+        assert [entry[0].name for entry in entries] == ["first.md", "second.md"]
+        assert calls.count("/legacy/repo") == 1
 
     def test_narrow_terminal_truncates_long_target_repo(
         self,

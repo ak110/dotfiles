@@ -15,6 +15,9 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
+    make_git_remote_fake as _make_git_remote_fake,
+)
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _GitCall,
@@ -89,6 +92,28 @@ class TestShowSingleFile:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert "全状態フォルダに存在しません" in captured.err
+
+    def test_filename_filter_matches_legacy_local_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """FILENAME指定でも旧パス形の保存値を現行URL形と同一視する。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "myrepo"
+        local_repo.mkdir()
+        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo), body="旧形式")
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "show", "legacy.md", "--target-repo=github.com/example/myrepo", "--skip-pull"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert "旧形式" in capsys.readouterr().out
 
 
 class TestShowMultipleFiles:
@@ -212,6 +237,33 @@ class TestShowMultipleFiles:
 
 class TestShowAll:
     """showサブコマンド: --all指定でtarget_repoごとにグループ化した全件本文を表示する。"""
+
+    def test_all_filter_matches_legacy_local_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--allでも旧パス形と現行URL形を同じ対象集合として表示する。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "myrepo"
+        local_repo.mkdir()
+        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo), body="旧形式")
+        _write_feedback_file(notes, "current.md", target_repo="github.com/example/myrepo", body="現行形式")
+        _write_feedback_file(notes, "missing.md", target_repo=str(tmp_path / "missing"), body="対象外")
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "show", "--all", "--target-repo=github.com/example/myrepo", "--skip-pull"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "legacy.md" in output
+        assert "current.md" in output
+        assert "missing.md" not in output
 
     def test_all_shows_every_entry_grouped(
         self,

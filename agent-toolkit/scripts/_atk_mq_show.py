@@ -12,6 +12,7 @@ from _atk_mq_common import (
     MQ_ACTIVE_STATES,
     MQ_STATES,
     MQ_TYPE_TBD,
+    _canonical_repo,
     _dedup_positional_filenames,
     _is_tbd_answered,
     _iter_entries,
@@ -98,6 +99,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         filter_repo = _resolve_repo_id(args.target_repo)
 
     if validated_filenames:
+        resolver_cache: dict[str, str | None] = {}
         selected_by_name: list[tuple[pathlib.Path, str, str, str, str | None]] = []
         missing: list[str] = []
         for requested_filename, normalized_filename in validated_filenames:
@@ -111,7 +113,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 if args.type not in ("all", kind):
                     continue
                 target_repo = _parse_target_repo(text)
-                if filter_repo is not None and target_repo != filter_repo:
+                if filter_repo is not None and _canonical_repo(target_repo, resolver_cache) != filter_repo:
                     continue
                 if args.source is not None and not _source_matches(_parse_source(text), args.source):
                     continue

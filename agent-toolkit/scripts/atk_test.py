@@ -10,6 +10,7 @@ gitリモート応答フェイクは複数テストファイルが共有する�
 """
 
 import datetime
+import os
 import pathlib
 import subprocess
 import sys
@@ -35,6 +36,82 @@ _GitCall = dict[str, Any]
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["mq", "list", "--skip-pull"],
+        ["mq", "show", "--all", "--skip-pull"],
+        ["mq", "grep", ".", "--skip-pull"],
+        ["config", "show"],
+    ],
+)
+def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
+    tmp_path: pathlib.Path,
+    argv: list[str],
+) -> None:
+    """公開出力経路は読取側の早期クローズをTracebackなしのexit 1として処理する。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "feedback.md", body="searchable")
+    read_fd, write_fd = os.pipe()
+    os.close(read_fd)
+    env = os.environ.copy()
+    env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+    with subprocess.Popen(  # noqa: S603
+        ["uv", "run", "--script", str(pathlib.Path(atk.__file__).resolve()), *argv],
+        stdout=write_fd,
+        stderr=subprocess.PIPE,
+        env=env,
+        text=True,
+    ) as process:
+        os.close(write_fd)
+        stderr = process.communicate()[1]
+
+        assert process.returncode == 1
+    assert "Traceback" not in stderr
+    assert "Exception ignored on flushing sys.stdout" not in stderr
+
+
+def test_cli_local_path_filter_notifies_legacy_and_current_tbds(tmp_path: pathlib.Path) -> None:
+    """実CLIはローカルパス指定時に旧パス形とURL形の未回答TBDをともに通知する。"""
+    notes = _setup_notes(tmp_path)
+    local_repo = tmp_path / "repo"
+    subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
+        check=True,
+    )
+    _write_tbd_file(notes, "legacy.md", target_repo=str(local_repo), question="旧形式")
+    _write_tbd_file(notes, "current.md", target_repo="github.com/example/repo", question="現行形式")
+    _write_tbd_file(notes, "other.md", target_repo="github.com/example/other", question="対象外")
+    env = os.environ.copy()
+    env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            "uv",
+            "run",
+            "--script",
+            str(pathlib.Path(atk.__file__).resolve()),
+            "mq",
+            "list",
+            "--count",
+            f"--target-repo={local_repo}",
+            "--skip-pull",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "2\n"
+    assert "legacy.md" in result.stderr
+    assert "current.md" in result.stderr
+    assert "other.md" not in result.stderr
+
 
 # 端末幅の固定化は`conftest.py`の`_fixed_terminal_size`autouseフィクスチャへ集約する
 # （`shutil`モジュール差し替えのため個別テストファイルへの重複定義は不要）。

@@ -120,7 +120,10 @@ def _iter_entries(
             yield path, entry_repo, text, state, entry_type
 
 
-def _normalized_repo_or_none(value: str | None) -> str | None:
+def _normalized_repo_or_none(
+    value: str | None,
+    resolver_cache: dict[str, str | None] | None = None,
+) -> str | None:
     """対象リポジトリを正規化する。解析できない値はNoneを返す。
 
     frontmatterが破損したエントリや対象リポジトリ未設定のエントリが1件でもあると
@@ -128,10 +131,11 @@ def _normalized_repo_or_none(value: str | None) -> str | None:
     """
     if not value:
         return None
-    try:
-        return _git_remote.normalize_remote_url(value)
-    except ValueError:
-        return None
+    if resolver_cache is None:
+        resolver_cache = {}
+    if value not in resolver_cache:
+        resolver_cache[value] = _git_remote.resolve_repo_identifier(value)
+    return resolver_cache[value]
 
 
 def _count_pending_entries(
@@ -146,10 +150,11 @@ def _load_queue_entries(
     private_notes: pathlib.Path,
     target_repo: str | None,
     states: tuple[str, ...],
+    resolver_cache: dict[str, str | None] | None = None,
 ) -> tuple[QueueEntry, ...]:
     """指定状態のfeedback・TBDをreadiness判定用表現へ変換する。"""
     return tuple(
-        _queue_entry(path, entry_repo, text, entry_type)
+        _queue_entry(path, entry_repo, text, entry_type, resolver_cache)
         for path, entry_repo, text, _state, entry_type in _iter_entries(private_notes, states, target_repo)
     )
 
@@ -159,6 +164,7 @@ def _queue_entry(
     entry_repo: str,
     text: str,
     entry_type: str | None,
+    resolver_cache: dict[str, str | None] | None = None,
 ) -> QueueEntry:
     """1件のキュー項目をreadiness判定用表現へ変換する。"""
     parsed = parse_frontmatter(text)
@@ -182,7 +188,7 @@ def _queue_entry(
         filename=path.name,
         text=text,
         kind=entry_type,
-        target_repo=_normalized_repo_or_none(entry_repo),
+        target_repo=_normalized_repo_or_none(entry_repo, resolver_cache),
         tbd_answered=_is_tbd_answered(text) if entry_type == MQ_TYPE_TBD else None,
         frontmatter_broken=frontmatter_broken,
         plan_file=plan_file if isinstance(plan_file, str) else None,
@@ -197,6 +203,7 @@ def _queue_entry(
 def _load_referenced_terminal_entries(
     private_notes: pathlib.Path,
     dependency_names: set[str],
+    resolver_cache: dict[str, str | None] | None = None,
 ) -> tuple[QueueEntry, ...]:
     """active項目が安全なbasenameで参照する終端項目だけを読み込む。"""
     safe_names = {
@@ -213,7 +220,7 @@ def _load_referenced_terminal_entries(
                 continue
             text = path.read_text(encoding="utf-8")
             entry_type = _require_type(path, text)
-            entries.append(_queue_entry(path, _parse_target_repo(text), text, entry_type))
+            entries.append(_queue_entry(path, _parse_target_repo(text), text, entry_type, resolver_cache))
     return tuple(entries)
 
 
@@ -372,11 +379,17 @@ def calculate_readiness(
     if now.tzinfo is None:
         raise ValueError("nowはタイムゾーン付き日時で指定してください")
     now_utc = now.astimezone(datetime.UTC)
-    all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES)
+    resolver_cache: dict[str, str | None] = {}
+    canonical_target = _normalized_repo_or_none(target_repo, resolver_cache)
+    all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES, resolver_cache)
     active = (
         all_active
         if target_repo is None
-        else tuple(entry for entry in all_active if entry.frontmatter_broken or entry.target_repo == target_repo)
+        else tuple(
+            entry
+            for entry in all_active
+            if entry.frontmatter_broken or (canonical_target is not None and entry.target_repo == canonical_target)
+        )
     )
     all_dependency_map = {
         entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
@@ -384,7 +397,7 @@ def calculate_readiness(
     dependency_names = {
         dependency for dependencies in all_dependency_map.values() if dependencies is not None for dependency in dependencies
     }
-    terminal = _load_referenced_terminal_entries(private_notes, dependency_names)
+    terminal = _load_referenced_terminal_entries(private_notes, dependency_names, resolver_cache)
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)
         for entry in all_active

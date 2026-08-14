@@ -23,6 +23,10 @@ description: >
 5. 計画ファイル、成立させる結果、ユーザー指示との差分、レビュー反映状況を提示する
 6. 承認後に`references/plan-impl-caller-reception.md`を読み、`plan-impl-executor`へ引き継ぐ
 
+成果物の内容を確定する原資料の読解・分類・集計は調査工程へ含め、初版の起草前に完了する。
+実装工程では確定済み内容の転記・配置・検証だけを行い、原資料から内容を再確定しない。
+この限定は、実装者が現行の対象ファイルと技術的な成立条件を再調査する義務を妨げない。
+
 バグ対応では`agent-toolkit:bugfix`を起動し、直接的原因、深掘り要否、必要な原因区分、
 類似見直し、是正・横展開・再発防止を確定する。
 委譲を用いる工程では`agent-toolkit:delegation`を起動し、経路固有の条件だけを操作直前に読む。
@@ -176,6 +180,16 @@ frontmatterが`source: session-review`の提示素材は、自己生成起点と
 ### 機械検査
 
 `skills/plan-mode/scripts/check_plan_file.py`が計画の構造と実体を機械検査する。
+本スクリプトはPEP 723スクリプトであり、次の形で実行する。
+
+```sh
+uv run --script /absolute/path/to/plan-mode/scripts/check_plan_file.py /absolute/path/to/plan.md
+```
+
+対象リポジトリがセッションの作業ディレクトリと異なる場合は、
+`--work-dir /absolute/path/to/target-repository`を付ける。
+通常のシェルでは`${CLAUDE_PLUGIN_ROOT}`が展開されないため、読込済みの本`SKILL.md`から
+スキルの絶対ベースディレクトリを確定して指定する。
 構造定数と値抽出は`agent-toolkit/scripts/_plan_format.py`を正本とする。
 原文と要約の意味照合、根拠の妥当性、検討の実質はレビューで確認する。
 

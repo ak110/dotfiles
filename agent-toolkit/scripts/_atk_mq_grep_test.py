@@ -14,6 +14,9 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
+    make_git_remote_fake as _make_git_remote_fake,
+)
 
 # pylint: disable-next=wrong-import-position,import-error
 from atk_test import (  # pylint: disable=wrong-import-position
@@ -150,6 +153,28 @@ class TestGrepFilters:
         captured = capsys.readouterr()
         assert "fb-001.md" in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
+
+    def test_target_repo_filter_matches_legacy_local_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """grepも旧パス形と現行URL形を同じ対象として検索する。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "myrepo"
+        local_repo.mkdir()
+        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo), body="searchword")
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "grep", "searchword", "--target-repo=github.com/example/myrepo", "--skip-pull"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert "legacy.md" in capsys.readouterr().out
 
     def test_type_filter_limits_to_tbd(
         self,

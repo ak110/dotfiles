@@ -29,6 +29,7 @@ from collections.abc import Callable, Iterable, Iterator
 
 import _atk_mq_legacy
 import _git_command
+import _git_remote
 import filelock
 import platformdirs
 from _atk_mq_formatters import (
@@ -505,6 +506,13 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
     return list(seen.values())
 
 
+def _canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
+    """リポジトリ識別子を操作単位のcacheを介してcanonical化する。"""
+    if value not in cache:
+        cache[value] = _git_remote.resolve_repo_identifier(value)
+    return cache[value]
+
+
 def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None) -> Iterator[tuple[pathlib.Path, str, str]]:
     """inbox配下の`.md`ファイルを名前順に走査し、`(path, target_repo, text)`を返す。
 
@@ -513,12 +521,16 @@ def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None)
     """
     if not inbox_dir.exists():
         return
+    resolver_cache: dict[str, str | None] = {}
+    canonical_filter = _canonical_repo(target_repo, resolver_cache) if target_repo is not None else None
     for path in sorted(inbox_dir.iterdir()):
         if path.suffix != ".md":
             continue
         text = path.read_text(encoding="utf-8")
         entry_repo = _parse_target_repo(text)
-        if target_repo is not None and entry_repo != target_repo:
+        if target_repo is not None and (
+            canonical_filter is None or _canonical_repo(entry_repo, resolver_cache) != canonical_filter
+        ):
             continue
         yield path, entry_repo, text
 
@@ -582,11 +594,17 @@ def _iter_entries(
     entry_type: str = "all",
 ) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
     """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。"""
+    resolver_cache: dict[str, str | None] = {}
+    canonical_filter = _canonical_repo(filter_repo, resolver_cache) if filter_repo is not None else None
     for state in states:
         state_dir = private_notes / state
         for path, target_repo, text in _iter_inbox_entries(state_dir):
             actual_type = _require_type(path, text)
-            if filter_repo is not None and actual_type is not None and target_repo != filter_repo:
+            if (
+                filter_repo is not None
+                and actual_type is not None
+                and (canonical_filter is None or _canonical_repo(target_repo, resolver_cache) != canonical_filter)
+            ):
                 continue
             if entry_type not in ("all", actual_type):
                 continue

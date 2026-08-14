@@ -24,6 +24,9 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
   auto modeでのブロック等はPermissionDeniedフックが処理する
+- 観測した状態に応じて警告又はblockの出力有無を切り替えるフックを計画に含める場合、
+  別リポジトリ、別worktree、複数主体の同時実行などの条件が誤って成立する入力と誤って成立しない入力を列挙する。
+  各入力の期待動作と検査を計画の実装者向け領域へ記載する
 
 ## matcher設定
 

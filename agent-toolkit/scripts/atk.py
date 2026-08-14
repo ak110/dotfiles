@@ -38,6 +38,7 @@
 
 import argparse
 import datetime
+import os
 import pathlib
 import sys
 from typing import Any
@@ -753,5 +754,23 @@ def main(
     sys.exit(exit_code)
 
 
+def _run_cli() -> None:
+    """実プロセスの終了コードとstdoutの寿命を所有する。"""
+    try:
+        try:
+            main()
+        except SystemExit as error:
+            exit_code = error.code
+        else:
+            exit_code = 0
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # Python公式の推奨どおり、終了時flushで同じ例外を再送出しないようstdoutを破棄する。
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), sys.stdout.fileno())
+        exit_code = 1
+    raise SystemExit(exit_code)
+
+
 if __name__ == "__main__":
-    main()
+    _run_cli()

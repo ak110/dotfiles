@@ -1,5 +1,8 @@
 """`_git_remote`のリモートURL正規化と取得を検査する。"""
 
+import pathlib
+import subprocess
+
 import _git_remote
 import pytest
 
@@ -28,3 +31,24 @@ def test_normalize_remote_url_rejects_invalid_value(remote_url: str) -> None:
     """解析できない値はValueErrorを送出すること。"""
     with pytest.raises(ValueError, match="リモートURLとして解析できません"):
         _git_remote.normalize_remote_url(remote_url)
+
+
+def test_resolve_repo_identifier_reads_legacy_local_path(tmp_path: pathlib.Path) -> None:
+    """旧ローカルパス形はoriginを介してcanonicalなURL形へ解決する。"""
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "remote", "add", "origin", "git@github.com:Example/Repo.git"],
+        check=True,
+    )
+
+    assert _git_remote.resolve_repo_identifier(str(tmp_path)) == "github.com/example/repo"
+
+
+@pytest.mark.parametrize("kind", ["missing", "no-remote"])
+def test_resolve_repo_identifier_returns_none_for_unresolvable_path(tmp_path: pathlib.Path, kind: str) -> None:
+    """存在しないパスとorigin未設定リポジトリは解決不能として扱う。"""
+    target = tmp_path / kind
+    if kind == "no-remote":
+        subprocess.run(["git", "init", str(target)], check=True, capture_output=True)
+
+    assert _git_remote.resolve_repo_identifier(str(target)) is None

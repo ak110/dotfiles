@@ -24,12 +24,8 @@ def _select_candidates(
     private_notes: pathlib.Path,
     target_repo: str,
 ) -> list[QueueEntryDisplay]:
-    """active項目から対象リポジトリと種別を完全一致で選択する。"""
-    return [
-        entry
-        for entry in _iter_entries(private_notes, MQ_ACTIVE_STATES, None, "all")
-        if entry[1] == target_repo and entry[4] in MQ_TYPES
-    ]
+    """active項目から同じcanonicalリポジトリと有効な種別を選択する。"""
+    return [entry for entry in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, "all") if entry[4] in MQ_TYPES]
 
 
 def _snapshot(candidates: list[QueueEntryDisplay]) -> CandidateSnapshot:

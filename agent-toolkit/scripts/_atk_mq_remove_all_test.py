@@ -3,6 +3,7 @@
 import contextlib
 import io
 import pathlib
+import subprocess
 import sys
 from collections.abc import Callable
 
@@ -231,6 +232,37 @@ class TestRemoveAllScope:
         assert other_repo.exists()
         assert adopted.exists()
         assert rejected.exists()
+
+    def test_removes_legacy_path_and_url_forms_together(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """一括削除は旧パス形とURL形のactive項目を同じ対象として削除する。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "myrepo"
+        subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/myrepo.git"],
+            check=True,
+        )
+        legacy = _write_entry(notes, "inbox", "legacy.md", target_repo=str(local_repo))
+        current = _write_entry(notes, "inbox", "current.md", target_repo="github.com/example/myrepo")
+        missing = _write_entry(notes, "inbox", "missing.md", target_repo=str(tmp_path / "missing"))
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits)
+
+        assert (
+            _run_main(
+                ["mq", "rm", "--all", "--yes", "--target-repo", "github.com/example/myrepo"],
+                tmp_path,
+            )
+            == 0
+        )
+
+        assert not legacy.exists()
+        assert not current.exists()
+        assert missing.exists()
 
     def test_keeps_entries_without_verifiable_target_repo(
         self,

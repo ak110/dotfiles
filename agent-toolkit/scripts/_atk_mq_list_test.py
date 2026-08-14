@@ -542,6 +542,30 @@ class TestListTargetRepoFilter:
         assert "github.com/example/foo" in captured.out
         assert "github.com/example/bar" not in captured.out
 
+    def test_filter_matches_legacy_path_and_url_forms(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """ローカルパス指定は旧パス形と現行URL形を同じ対象集合として列挙する。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "myrepo"
+        local_repo.mkdir()
+        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo))
+        _write_feedback_file(notes, "current.md", target_repo="github.com/example/myrepo")
+        _write_feedback_file(notes, "missing.md", target_repo=str(tmp_path / "missing"))
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", f"--target-repo={local_repo}", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "legacy.md" in output
+        assert "current.md" in output
+        assert "missing.md" not in output
+
     def test_filter_expands_tilde(
         self,
         monkeypatch: pytest.MonkeyPatch,
