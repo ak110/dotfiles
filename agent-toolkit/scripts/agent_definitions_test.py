@@ -824,7 +824,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert "採用済み本文が要求しない選択肢に限定" in sender
     assert "採用済み本文が明示する変更自体を確認事項又は実装前提にしない" in sender
     for phrase in (
-        "plannerのauthorが最も保守的な選択を暫定判断として確定",
+        "plannerのauthorが既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
         "未回答事項による実装・検証の条件分岐を残さない単一経路",
     ):
         assert phrase in sender
