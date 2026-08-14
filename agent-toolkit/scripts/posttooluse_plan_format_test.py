@@ -7,6 +7,7 @@ import subprocess
 
 import _fork_runner
 import _plan_format
+from conftest import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 
@@ -31,17 +32,11 @@ def _run(
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
             state_dir.mkdir(parents=True, exist_ok=True)
-            (state_dir / f"claude-agent-toolkit-{sid}.json").write_text(
+            (state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
                 json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
                 encoding="utf-8",
             )
     return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
-
-
-def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    """セッション状態を読み込む。"""
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:

@@ -14,6 +14,7 @@ import threading
 from typing import cast
 
 import pytest
+from conftest import SESSION_STATE_FILENAME_TEMPLATE
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -259,8 +260,10 @@ class TestSweepStaleStates:
         `update_state`はロックを先に作成するため、状態ファイルの無いロックは
         セッション開始直後にも生じる。
         """
-        starting = tmp_path / "claude-agent-toolkit-starting.json.lock"
-        abandoned = tmp_path / "claude-agent-toolkit-abandoned.json.lock"
+        starting_name = SESSION_STATE_FILENAME_TEMPLATE.format(session_id="starting")
+        abandoned_name = SESSION_STATE_FILENAME_TEMPLATE.format(session_id="abandoned")
+        starting = tmp_path / f"{starting_name}.lock"
+        abandoned = tmp_path / f"{abandoned_name}.lock"
         starting.write_text("", encoding="utf-8")
         abandoned.write_text("", encoding="utf-8")
         self._age(abandoned, STALE_STATE_MAX_AGE_SECONDS + 60)

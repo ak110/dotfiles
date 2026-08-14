@@ -12,6 +12,7 @@ import subprocess
 import _fork_runner
 import pretooluse
 import pytest
+from conftest import SESSION_STATE_FILENAME_TEMPLATE
 from pyfltr.colloquial import check as _colloquial_check
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
@@ -29,12 +30,12 @@ def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subpro
 
 
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -1952,7 +1953,7 @@ class TestBashGitPushAfterAmendDirty:
 
     @staticmethod
     def _read_flag(state_dir_path: pathlib.Path, session_id: str, cwd: str) -> bool:
-        path = state_dir_path / f"claude-agent-toolkit-{session_id}.json"
+        path = state_dir_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
         if not path.exists():
             return False
         state = json.loads(path.read_text(encoding="utf-8"))
@@ -3694,7 +3695,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             assert "[block]" in result.stderr
             assert "without first creating a plan file" in result.stderr
         # block後もstateは更新されず、カウンタは2・直前パスは2件目のままである。
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_after = json.loads(state_path.read_text(encoding="utf-8"))
         assert state_after["direct_agent_toolkit_edit_count"] == 2
         assert state_after["last_agent_toolkit_edit_path"].endswith("bar/SKILL.md")
@@ -3796,7 +3797,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             )
             assert result.returncode == 0
         # warn状態でstate確認: カウンタが2、直前パス記録あり。
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_pre = json.loads(state_path.read_text(encoding="utf-8"))
         assert state_pre["direct_agent_toolkit_edit_count"] == 2
         assert state_pre["last_agent_toolkit_edit_path"] is not None
@@ -4027,12 +4028,10 @@ class TestBodySectionReferenceExists:
 
     def test_passes_existing_section_reference(self, tmp_path):
         """実在する節参照は通過する。"""
-        # 参照先ファイルを作成
-        ref_file = tmp_path / "referenced.md"
+        target_file = tmp_path / "agent-toolkit" / "rules" / "test.md"
+        target_file.parent.mkdir(parents=True)
+        ref_file = target_file.parent / "referenced.md"
         ref_file.write_text("# 存在する節\n\n本文です。", encoding="utf-8")
-
-        # 参照元ファイル
-        target_file = tmp_path / "test.md"
         content = "本文\n\n`referenced.md`「存在する節」節を参照。"
 
         result = _run(
@@ -4041,8 +4040,8 @@ class TestBodySectionReferenceExists:
                 "tool_input": {"file_path": str(target_file), "content": content},
             }
         )
-        # 警告が出ないこと（returncode == 0）を確認
         assert result.returncode == 0
+        assert result.stderr == ""
 
     def test_warns_missing_section_reference(self, tmp_path):
         """不在の節参照に対して警告する。"""
@@ -4335,7 +4334,7 @@ class TestDelegationGateForAgentTask:
         )
         assert result.returncode == 2
         assert "agent-toolkit:delegation" in result.stderr
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         assert not state_path.exists()
         log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
         assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")

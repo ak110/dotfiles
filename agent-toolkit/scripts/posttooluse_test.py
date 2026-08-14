@@ -17,6 +17,7 @@ import types
 
 import _fork_runner
 import pytest
+from conftest import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
@@ -65,7 +66,7 @@ def _run(
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
             state_dir.mkdir(parents=True, exist_ok=True)
-            (state_dir / f"claude-agent-toolkit-{sid}.json").write_text(
+            (state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
                 json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
                 encoding="utf-8",
             )
@@ -82,13 +83,6 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
         input=json.dumps(payload, ensure_ascii=False),
         env=env,
     )
-
-
-def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 class TestTestExecution:
@@ -272,7 +266,7 @@ class TestSessionReviewSkillInvocation:
     def test_enter_plan_mode_resets_session_review_invoked(self, tmp_path: pathlib.Path):
         sid = "review-reset"
         # 事前に複数キーのフラグを書き込み、リセットが辞書全体を空にすることを確認する。
-        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(
                 {
                     "session_review_invoked": {
@@ -310,12 +304,12 @@ class TestSessionReviewSkillInvocation:
             state_dir=tmp_path,
         )
         # 状態ファイル自体が作成されないことを期待する。
-        assert not (tmp_path / f"claude-agent-toolkit-{sid}.json").exists()
+        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).exists()
 
     def test_idempotent_no_rewrite_when_already_true(self, tmp_path: pathlib.Path):
         """既に対象キーが真の場合、状態ファイルへの再書き込みが発生しない（冪等性）。"""
         sid = "review-flag-idem"
-        path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         path.write_text(
             json.dumps(
                 {"session_review_invoked": {self._REVIEW_SKILL: True}, "other": "keep"},
@@ -686,27 +680,23 @@ class TestGitLogChecked:
             assert recorded.get(key) is True, f"{key} not recorded in {recorded}"
 
 
-class TestReadHandler:
-    """textlint-violations.mdのRead判定。
-
-    POSIX区切り・Windows区切り双方のfile_pathに対して同等にセッション状態フラグを立てることを検証する。
-    Windows環境ではClaude Codeがバックスラッシュ区切りのパスをfile_path引数に渡すため、
-    posttooluse.py側で`replace("\\", "/")`による正規化を経てから判定する。
-    """
+class TestReadHandlerNoop:
+    """Readは対象パスによらずセッション状態を更新しない。"""
 
     @pytest.mark.parametrize(
         "file_path",
         [
             "/home/user/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md",
             r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
+            "/tmp/random.txt",
         ],
     )
-    def test_read_sets_flag_for_both_posix_and_windows_paths(
+    def test_read_does_not_set_removed_tracking_flag(
         self,
         tmp_path: pathlib.Path,
         file_path: str,
     ) -> None:
-        """POSIX区切り・Windows区切りいずれの`file_path`でも対応するフラグが立つ。"""
+        """旧追跡対象と無関係パスのいずれでも撤去済みフラグを記録しない。"""
         sid = f"read-textlint-{len(file_path)}"
         _run(
             {
@@ -717,20 +707,6 @@ class TestReadHandler:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("textlint_violations_read") is not True
-
-    def test_read_unrelated_path_does_not_set_flags(self, tmp_path: pathlib.Path) -> None:
-        """無関係ファイルのReadではどのフラグも立たない。"""
-        sid = "read-unrelated"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/tmp/random.txt"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("textlint_violations_read") is not True
 
 
 class TestPlanFilePostWriteNotice:
@@ -886,7 +862,7 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         """exit-session起動でprocess_feedbacks_skill_invokedが偽になる。"""
         sid = f"exit-{skill.replace(':', '-')}"
         # 事前にフラグを立てる。
-        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps({"process_feedbacks_skill_invoked": True}, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -896,7 +872,7 @@ class TestExitSessionResetsProcessFeedbacksFlag:
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
         """既に偽の状態でexit-sessionが起動されても状態は変わらない。"""
         sid = "exit-idem"
-        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps({"process_feedbacks_skill_invoked": False}, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -1118,7 +1094,7 @@ class TestWarnCodexRemoteChange:
 
     @staticmethod
     def _write_snapshot_state(tmp_path: pathlib.Path, sid: str, entries: dict) -> None:
-        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps({"codex_remote_snapshot_by_key": entries}, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -1349,7 +1325,7 @@ class TestDelegationSkillState:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert not (tmp_path / "claude-agent-toolkit-side.json").exists()
+        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="side")).exists()
 
     def test_main_skill_sets_delegation_state(self, tmp_path: pathlib.Path) -> None:
         result = _run(
@@ -1357,5 +1333,6 @@ class TestDelegationSkillState:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        state = json.loads((tmp_path / "claude-agent-toolkit-main.json").read_text(encoding="utf-8"))
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="main")
+        state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state["delegation_skill_invoked"] is True

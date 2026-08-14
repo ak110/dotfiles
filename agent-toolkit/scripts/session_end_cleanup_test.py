@@ -10,6 +10,7 @@ import time
 
 import _fork_runner
 import pytest
+from conftest import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).parent / "claude_hook.py"
 _STALE_AGE_SECONDS = 15 * 24 * 60 * 60
@@ -27,14 +28,15 @@ def _run(payload_text: str, state_dir: pathlib.Path) -> subprocess.CompletedProc
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, *, age_seconds: float = 0.0) -> pathlib.Path:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     path.write_text('{"active": true}', encoding="utf-8")
     _set_age(path, age_seconds)
     return path
 
 
 def _write_lock(state_dir: pathlib.Path, session_id: str, *, age_seconds: float = 0.0) -> pathlib.Path:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json.lock"
+    filename = SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    path = state_dir / f"{filename}.lock"
     path.write_text("", encoding="utf-8")
     _set_age(path, age_seconds)
     return path
@@ -157,7 +159,7 @@ def test_invalid_payload_is_ignored(tmp_path: pathlib.Path, payload_text: str) -
 
 def test_delete_failure_is_reported_and_fails_open(tmp_path: pathlib.Path) -> None:
     # 状態パスをディレクトリにしてunlinkを失敗させる。
-    state_path = tmp_path / "claude-agent-toolkit-sid.json"
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="sid")
     state_path.mkdir()
     result = _run(_session_end("sid", reason="clear"), tmp_path)
     assert result.returncode == 0

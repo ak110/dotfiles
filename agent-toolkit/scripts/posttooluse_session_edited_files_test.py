@@ -14,6 +14,7 @@ import pathlib
 import subprocess
 
 import _fork_runner
+from conftest import _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 
@@ -29,13 +30,6 @@ def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProce
         input=json.dumps(payload, ensure_ascii=False),
         env=env,
     )
-
-
-def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 class TestSessionEditedFilesAccumulation:

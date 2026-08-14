@@ -4,9 +4,15 @@ import json
 import pathlib
 
 from _response_language_check import CheckOutcome, detailed_check
+from conftest import _write_transcript
 
 
-def _write_transcript(tmp_path: pathlib.Path, content_blocks: list[dict], *, is_sidechain: bool = False) -> str:
+def _write_assistant_transcript(
+    tmp_path: pathlib.Path,
+    content_blocks: list[dict],
+    *,
+    is_sidechain: bool = False,
+) -> str:
     """単一のassistantエントリをJSONLとして書き込みパスを返す。"""
     entry: dict = {
         "type": "assistant",
@@ -19,9 +25,7 @@ def _write_transcript(tmp_path: pathlib.Path, content_blocks: list[dict], *, is_
     }
     if is_sidechain:
         entry["isSidechain"] = True
-    path = tmp_path / "transcript.jsonl"
-    path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-    return str(path)
+    return str(_write_transcript(tmp_path, [entry]))
 
 
 def _text_block(text: str) -> dict:
@@ -46,7 +50,7 @@ class TestDetailedCheck:
 
     def test_warn_with_english_text(self, tmp_path: pathlib.Path):
         """英語テキスト50文字以上でWARNを返す。"""
-        path = _write_transcript(tmp_path, [_text_block("A" * 50)])
+        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 50)])
         outcome, body, msg_id = detailed_check(path)
         assert outcome is CheckOutcome.WARN
         assert body is not None
@@ -55,7 +59,7 @@ class TestDetailedCheck:
 
     def test_pass_with_japanese_text(self, tmp_path: pathlib.Path):
         """日本語テキスト50文字以上で比率≧0.30のときPASSを返す。"""
-        path = _write_transcript(tmp_path, [_text_block("あ" * 50)])
+        path = _write_assistant_transcript(tmp_path, [_text_block("あ" * 50)])
         outcome, body, msg_id = detailed_check(path)
         assert outcome is CheckOutcome.PASS
         assert body is None
@@ -63,7 +67,7 @@ class TestDetailedCheck:
 
     def test_skip_short_text(self, tmp_path: pathlib.Path):
         """49文字のテキストはSKIPを返す。"""
-        path = _write_transcript(tmp_path, [_text_block("A" * 49)])
+        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 49)])
         outcome, body, msg_id = detailed_check(path)
         assert outcome is CheckOutcome.SKIP
         assert body is None
@@ -84,7 +88,7 @@ class TestDetailedCheck:
 
     def test_skip_sidechain(self, tmp_path: pathlib.Path):
         """サブエージェント応答はSKIPを返す（テキストが空になるため）。"""
-        path = _write_transcript(tmp_path, [_text_block("A" * 100)], is_sidechain=True)
+        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 100)], is_sidechain=True)
         outcome, body, _ = detailed_check(path)
         assert outcome is CheckOutcome.SKIP
         assert body is None
@@ -92,7 +96,7 @@ class TestDetailedCheck:
     def test_boundary_ratio_0_2857_warns(self, tmp_path: pathlib.Path):
         """語数比0.2857 (<0.30) でWARNを返す。"""
         text = _make_mixed(14, 35)
-        path = _write_transcript(tmp_path, [_text_block(text)])
+        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
         outcome, body, _ = detailed_check(path)
         assert outcome is CheckOutcome.WARN
         assert body is not None
@@ -100,7 +104,7 @@ class TestDetailedCheck:
     def test_boundary_ratio_0_30_passes(self, tmp_path: pathlib.Path):
         """語数比0.30ちょうどでPASSを返す。"""
         text = _make_mixed(15, 35)
-        path = _write_transcript(tmp_path, [_text_block(text)])
+        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
         outcome, body, _ = detailed_check(path)
         assert outcome is CheckOutcome.PASS
         assert body is None
@@ -108,20 +112,20 @@ class TestDetailedCheck:
     def test_boundary_ratio_0_40_passes(self, tmp_path: pathlib.Path):
         """語数比0.40 (>0.30) でPASSを返す。"""
         text = _make_mixed(20, 30)
-        path = _write_transcript(tmp_path, [_text_block(text)])
+        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
         outcome, body, _ = detailed_check(path)
         assert outcome is CheckOutcome.PASS
         assert body is None
 
     def test_boundary_text_length_50(self, tmp_path: pathlib.Path):
         """テキスト長50文字で検査が実行される。"""
-        path = _write_transcript(tmp_path, [_text_block("A" * 50)])
+        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 50)])
         outcome, _, _ = detailed_check(path)
         assert outcome is CheckOutcome.WARN
 
     def test_boundary_text_length_51(self, tmp_path: pathlib.Path):
         """テキスト長51文字で検査が実行される。"""
-        path = _write_transcript(tmp_path, [_text_block("A" * 51)])
+        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 51)])
         outcome, _, _ = detailed_check(path)
         assert outcome is CheckOutcome.WARN
 

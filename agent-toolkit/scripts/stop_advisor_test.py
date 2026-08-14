@@ -15,6 +15,7 @@ from typing import Any
 import _fork_runner
 import pytest
 import stop_advisor
+from conftest import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
@@ -48,13 +49,14 @@ def _block_reason(decision: dict) -> str:
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> pathlib.Path:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
     return path
 
 
 def _write_lock(state_dir: pathlib.Path, session_id: str) -> pathlib.Path:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json.lock"
+    filename = SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    path = state_dir / f"{filename}.lock"
     path.write_text("", encoding="utf-8")
     return path
 
@@ -93,16 +95,6 @@ def _assistant_with_async_tool(tool_name: str) -> dict:
             "stop_reason": "end_turn",
         },
     }
-
-
-def _write_transcript(tmp_path: pathlib.Path, entries: list[dict]) -> pathlib.Path:
-    """JSONLとしてエントリを書き込む。"""
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        "\n".join(json.dumps(e, ensure_ascii=False) for e in entries) + "\n",
-        encoding="utf-8",
-    )
-    return transcript
 
 
 def _codex_message(role: str, text: str) -> dict:
@@ -677,7 +669,7 @@ class TestGitLogCheckedNotResetOnStop:
             {"session_id": "log-no-reset", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
-        state_path = tmp_path / "claude-agent-toolkit-log-no-reset.json"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="log-no-reset")
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state.get("git_log_checked") == initial
 
@@ -689,7 +681,7 @@ class TestGitLogCheckedNotResetOnStop:
             {"session_id": "log-empty", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
-        state_path = tmp_path / "claude-agent-toolkit-log-empty.json"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="log-empty")
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state.get("git_log_checked") == {}
         assert state.get("marker") == 1

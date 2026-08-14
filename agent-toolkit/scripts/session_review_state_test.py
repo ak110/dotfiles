@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import pathlib
 import shlex
@@ -13,6 +12,7 @@ import _fork_runner
 import _session_review_evidence
 import pytest
 import session_review_state
+from conftest import _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "session_review_state.py"
 _PLUGIN_ROOT = _SCRIPT.parent.parent
@@ -37,11 +37,6 @@ def _run(session_id: str, state_dir: pathlib.Path) -> subprocess.CompletedProces
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
     return _fork_runner.run_script(_SCRIPT, argv=(session_id,), env=env)
-
-
-def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_records_session_review_idempotently(tmp_path: pathlib.Path) -> None:

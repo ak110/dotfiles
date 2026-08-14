@@ -9,6 +9,7 @@ import subprocess
 
 import _fork_runner
 import pytest
+from conftest import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).parent / "claude_hook.py"
 
@@ -25,7 +26,7 @@ def _run(subcommand: str, payload: object, state_dir: pathlib.Path) -> subproces
 
 
 def _state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
@@ -84,7 +85,7 @@ def test_duplicate_notification_is_idempotent_and_other_agents_are_preserved(tmp
 def test_invalid_or_unrelated_payload_does_not_create_state(tmp_path: pathlib.Path, payload: object) -> None:
     result = _run("subagent_start_tracker", payload, tmp_path)
     assert result.returncode == 0
-    assert not list(tmp_path.glob("claude-agent-toolkit-*.json"))
+    assert not list(tmp_path.glob(SESSION_STATE_FILENAME_TEMPLATE.format(session_id="*")))
 
 
 def test_first_nonempty_subagent_stop_passes_without_posttooluse(tmp_path: pathlib.Path) -> None:

@@ -1,5 +1,6 @@
-"""pytest conftest: テスト用のgitリポジトリ作成factory fixtureを提供する。"""
+"""pytest conftest: テスト共通ヘルパーとfixtureを提供する。"""
 
+import json
 import os
 import pathlib
 import subprocess
@@ -8,6 +9,25 @@ from collections.abc import Callable
 import pytest
 
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
+SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
+
+
+def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
+    """テスト用一時ディレクトリからセッション状態を読み込む。"""
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_transcript(directory: pathlib.Path, entries: list[dict]) -> pathlib.Path:
+    """エントリ列をJSONL形式のtranscriptへ書き込む。"""
+    transcript = directory / "transcript.jsonl"
+    transcript.write_text(
+        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
+        encoding="utf-8",
+    )
+    return transcript
 
 
 @pytest.fixture(autouse=True)

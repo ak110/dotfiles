@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 
 import _fork_runner
+from conftest import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 _SCRIPT = _SCRIPTS_DIR / "claude_hook.py"
@@ -27,13 +28,6 @@ def _run(
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
     return _fork_runner.run_script(_SCRIPT, argv=("user_prompt_submit",), input=text, env=env)
-
-
-def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 class TestSlashCommandDetection:
@@ -232,7 +226,7 @@ class TestNonMatchingPrompts:
 
     def test_codex_normal_prompt_keeps_session_review_state(self, tmp_path: pathlib.Path):
         sid = "codex-normal-keeps-review"
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(
             json.dumps({"session_review_invoked": {"agent-toolkit:session-review": True}}),
             encoding="utf-8",
@@ -248,7 +242,7 @@ class TestNonMatchingPrompts:
 
     def test_codex_plan_mode_command_keeps_session_review_state(self, tmp_path: pathlib.Path):
         sid = "codex-plan-keeps-review"
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(
             json.dumps({"session_review_invoked": {"agent-toolkit:session-review": True}}),
             encoding="utf-8",

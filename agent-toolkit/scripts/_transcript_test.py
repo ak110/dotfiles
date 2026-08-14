@@ -4,15 +4,7 @@ import json
 import pathlib
 
 from _transcript import assistant_text, iter_latest_assistant_messages, latest_main_assistant_entry
-
-
-def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
-        encoding="utf-8",
-    )
-    return transcript
+from conftest import _write_transcript
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_a", stop_reason: str = "end_turn") -> dict:

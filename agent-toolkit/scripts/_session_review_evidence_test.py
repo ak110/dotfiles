@@ -7,15 +7,7 @@ import pathlib
 
 import _session_review_evidence as evidence
 import pytest
-
-
-def _write_transcript(path: pathlib.Path, entries: list[dict]) -> pathlib.Path:
-    transcript = path / "transcript.jsonl"
-    transcript.write_text(
-        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
-        encoding="utf-8",
-    )
-    return transcript
+from conftest import _write_transcript
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:

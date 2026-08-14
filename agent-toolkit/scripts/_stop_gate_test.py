@@ -21,16 +21,7 @@ from _stop_gate import (
     has_pending_agent_launches,
     is_pending_async_work,
 )
-
-
-def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
-    """dict のリストを JSONL 形式の transcript として書き込む。"""
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
-        encoding="utf-8",
-    )
-    return transcript
+from conftest import _write_transcript
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:

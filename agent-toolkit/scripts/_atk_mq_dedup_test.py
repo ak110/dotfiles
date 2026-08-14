@@ -23,116 +23,42 @@ from atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 
-class TestAdoptDuplicate:
-    """adoptサブコマンド: 位置引数の重複指定を除去して警告する（FB7）。
+@pytest.mark.parametrize(
+    ("subcommand", "present_directories", "commit_message"),
+    [
+        pytest.param("adopt", ("adopted",), "chore: process 1 entry (adopted)", id="adopt"),
+        pytest.param("reject", ("rejected",), "chore: process 1 entry (rejected)", id="reject"),
+        pytest.param("rm", (), "chore: remove 1 entry", id="rm"),
+        pytest.param(
+            "start-processing",
+            ("processing",),
+            "chore: start processing 1 entry",
+            id="start-processing",
+        ),
+    ],
+)
+def test_duplicate_filenames_deduplicated_with_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    subcommand: str,
+    present_directories: tuple[str, ...],
+    commit_message: str,
+) -> None:
+    """重複指定を除去し、各サブコマンドで対象を1回だけ処理して警告する。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "fb-001.md")
+    git_calls: list[_GitCall] = []
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
-    重複除去前は`shutil.move`が1回目の成功後に2回目で対象不在となり
-    `FileNotFoundError`のTracebackが露出していた。
-    """
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", subcommand, "fb-001.md", "fb-001.md"], home=tmp_path)
 
-    def test_duplicate_filenames_deduplicated_with_warning(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。"""
-        notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "adopt", "fb-001.md", "fb-001.md"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert not (notes / "inbox" / "fb-001.md").exists()
-        assert (notes / "adopted" / "fb-001.md").exists()
-        stderr = capsys.readouterr().err
-        assert "重複が含まれます" in stderr
-        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
-        assert len(commit_cmds) == 1
-        assert "chore: process 1 entry (adopted)" in commit_cmds[0]
-
-
-class TestRejectDuplicate:
-    """rejectサブコマンド: 位置引数の重複指定を除去して警告する（FB7）。"""
-
-    def test_duplicate_filenames_deduplicated_with_warning(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。"""
-        notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "reject", "fb-001.md", "fb-001.md"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert not (notes / "inbox" / "fb-001.md").exists()
-        assert (notes / "rejected" / "fb-001.md").exists()
-        stderr = capsys.readouterr().err
-        assert "重複が含まれます" in stderr
-        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
-        assert len(commit_cmds) == 1
-        assert "chore: process 1 entry (rejected)" in commit_cmds[0]
-
-
-class TestRmDuplicate:
-    """rmサブコマンド: 位置引数の重複指定を除去して警告する（FB7）。"""
-
-    def test_duplicate_filenames_deduplicated_with_warning(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ削除されること。"""
-        notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "rm", "fb-001.md", "fb-001.md"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert not (notes / "inbox" / "fb-001.md").exists()
-        stderr = capsys.readouterr().err
-        assert "重複が含まれます" in stderr
-        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
-        assert len(commit_cmds) == 1
-        assert "chore: remove 1 entry" in commit_cmds[0]
-
-
-class TestStartProcessingDuplicate:
-    """start-processingサブコマンド: 位置引数の重複指定を除去して警告する（FB7）。"""
-
-    def test_duplicate_filenames_deduplicated_with_warning(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。"""
-        notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "start-processing", "fb-001.md", "fb-001.md"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert not (notes / "inbox" / "fb-001.md").exists()
-        assert (notes / "processing" / "fb-001.md").exists()
-        stderr = capsys.readouterr().err
-        assert "重複が含まれます" in stderr
-        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
-        assert len(commit_cmds) == 1
-        assert "chore: start processing 1 entry" in commit_cmds[0]
+    assert exc_info.value.code == 0
+    assert not (notes / "inbox" / "fb-001.md").exists()
+    for directory in present_directories:
+        assert (notes / directory / "fb-001.md").exists()
+    assert "重複が含まれます" in capsys.readouterr().err
+    commit_cmds = [call["cmd"] for call in git_calls if "commit" in call["cmd"]]
+    assert len(commit_cmds) == 1
+    assert commit_message in commit_cmds[0]
