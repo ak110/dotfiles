@@ -226,7 +226,7 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
   container適用対象・キャッシュ方式の具体は各リポジトリの`.github/workflows/**`をSSOTとして揃える
 - リリース手段とバージョン区分は本スキル「リリース運用」節を参照する
 
-以下3点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
+以下4点はworkflow編集時の確認観点であり、実値は各リポジトリの`.github/workflows/**`に従う。
 
 - container化ジョブではuv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、
   `pinact run --check`を直接呼び出せる。Pythonバージョンマトリクスは
@@ -235,3 +235,8 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
 - `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
   PowerShell系（gv / lc）が`check-suites` API方式
+- `container:`実行ジョブのstepへ新しいコマンド呼び出しを追加する場合は、先行stepで導入されることを確認するか、
+  ジョブが宣言する`image`上で当該コマンドの存在を確認する
+  - どちらでも利用可能と確認できないコマンドは、呼び出す前に同じジョブで導入する
+  - `ENTRYPOINT`がシェル以外のimageでは、
+    `docker run --rm --entrypoint sh <image> -c 'command -v <command>'`でimage内の存在を確認する
