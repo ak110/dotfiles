@@ -188,11 +188,12 @@ jobs:
 
       - name: ネイティブ依存インストール
         # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
-        # libarchive13 の共有ライブラリを必要とする
+        # libarchive13 の共有ライブラリを必要とする。
+        # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
         run: |
           set -euo pipefail
           apt-get update
-          apt-get install -y --no-install-recommends poppler-utils libarchive13
+          apt-get install -y --no-install-recommends poppler-utils libarchive13 make
 
       - name: Playwright Chromiumの導入
         if: matrix.python-version == '3.12'
