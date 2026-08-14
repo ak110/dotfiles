@@ -305,6 +305,57 @@ class TestReadiness:
         assert result.ready == ("dependency.md",)
         assert result.blocked == ("feedback.md",)
 
+    def test_legacy_external_repo_dependencies_share_readiness_resolver_cache(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """同じ旧パス形の外部依存はreadiness計算全体で1回だけGit解決する。"""
+        external_repo = tmp_path / "external-repo"
+        subprocess.run(["git", "init", str(external_repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(external_repo), "remote", "add", "origin", "git@github.com:example/external.git"],
+            check=True,
+        )
+        legacy_dependency = f"    kind: external-repo-entry\n    filenames:\n      - done.md\n    target_repo: {external_repo}"
+        _write_feedback(tmp_path, "first.md", legacy_dependency=legacy_dependency)
+        _write_feedback(tmp_path, "second.md", legacy_dependency=legacy_dependency)
+        _write_feedback(
+            tmp_path,
+            "done.md",
+            state="adopted",
+            target_repo="github.com/example/external",
+        )
+        original_run = subprocess.run
+        git_resolutions = 0
+
+        def run(
+            args: list[str],
+            *,
+            capture_output: bool,
+            text: bool,
+            check: bool,
+            timeout: float | None = None,
+        ) -> subprocess.CompletedProcess[Any]:
+            nonlocal git_resolutions
+            if args == ["git", "-C", str(external_repo), "remote", "get-url", "origin"]:
+                git_resolutions += 1
+            return original_run(
+                args,
+                capture_output=capture_output,
+                text=text,
+                check=check,
+                timeout=timeout,
+            )
+
+        git_remote = _readiness.__dict__["_git_remote"]
+        monkeypatch.setattr(git_remote.subprocess, "run", run)
+
+        result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
+
+        assert result.ready == ("first.md", "second.md")
+        assert git_resolutions == 1
+
     @pytest.mark.parametrize(
         ("legacy_dependency", "other_active"),
         [

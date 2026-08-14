@@ -224,7 +224,10 @@ def _load_referenced_terminal_entries(
     return tuple(entries)
 
 
-def _effective_dependencies(entry: QueueEntry) -> tuple[str, ...] | None:
+def _effective_dependencies(
+    entry: QueueEntry,
+    resolver_cache: dict[str, str | None],
+) -> tuple[str, ...] | None:
     """トップレベル依存を返し、無い場合はlegacy依存を読み取る。"""
     parsed = parse_frontmatter(entry.text)
     if parsed is not None and "depends_on" in parsed[0]:
@@ -246,7 +249,7 @@ def _effective_dependencies(entry: QueueEntry) -> tuple[str, ...] | None:
             return None
         if kind == "external-repo-entry":
             target_repo = legacy.get("target_repo")
-            if not isinstance(target_repo, str) or _normalized_repo_or_none(target_repo) is None:
+            if not isinstance(target_repo, str) or _normalized_repo_or_none(target_repo, resolver_cache) is None:
                 return None
         return tuple(dict.fromkeys(value for value in filenames if isinstance(value, str)))
     if kind == "external-user":
@@ -303,6 +306,7 @@ def _legacy_dependency_is_satisfied(
     terminal: tuple[QueueEntry, ...],
     target_active: tuple[QueueEntry, ...],
     now: datetime.datetime,
+    resolver_cache: dict[str, str | None],
 ) -> bool | None:
     """legacy固有依存の成立状態を返し、通常のfilename依存ではNoneを返す。"""
     parsed = parse_frontmatter(entry.text)
@@ -331,7 +335,10 @@ def _legacy_dependency_is_satisfied(
     if kind == "external-repo-entry":
         filenames = legacy.get("filenames")
         target_repo = legacy.get("target_repo")
-        dependency_repo = _normalized_repo_or_none(target_repo if isinstance(target_repo, str) else None)
+        dependency_repo = _normalized_repo_or_none(
+            target_repo if isinstance(target_repo, str) else None,
+            resolver_cache,
+        )
         if not isinstance(filenames, list) or any(not isinstance(value, str) for value in filenames) or dependency_repo is None:
             return False
         terminal_pairs = {(candidate.filename, candidate.target_repo) for candidate in terminal}
@@ -392,7 +399,7 @@ def calculate_readiness(
         )
     )
     all_dependency_map = {
-        entry.filename: _effective_dependencies(entry) for entry in all_active if not entry.frontmatter_broken
+        entry.filename: _effective_dependencies(entry, resolver_cache) for entry in all_active if not entry.frontmatter_broken
     }
     dependency_names = {
         dependency for dependencies in all_dependency_map.values() if dependencies is not None for dependency in dependencies
@@ -435,7 +442,9 @@ def calculate_readiness(
     )
     missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
 
-    dependency_map = {entry.filename: _effective_dependencies(entry) for entry in active if not entry.frontmatter_broken}
+    dependency_map = {
+        entry.filename: _effective_dependencies(entry, resolver_cache) for entry in active if not entry.frontmatter_broken
+    }
     all_entries_by_name = {entry.filename: entry for entry in (*all_active, *terminal)}
     invalid_external_user_targets: set[str] = set()
     for entry in active:
@@ -487,6 +496,7 @@ def calculate_readiness(
             terminal=terminal,
             target_active=active,
             now=now_utc,
+            resolver_cache=resolver_cache,
         )
         if _has_explicit_dependencies(entry):
             waiting = any(dependency in active_by_name for dependency in dependencies)
