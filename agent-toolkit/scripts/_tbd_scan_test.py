@@ -1,6 +1,7 @@
 """`_tbd_scan.py`のTBD走査を検証する。"""
 
 import pathlib
+import subprocess
 from collections.abc import Iterator
 
 import _tbd_scan
@@ -63,6 +64,39 @@ class TestScanActiveTbds:
             ],
             complete=True,
         )
+
+    def test_matches_legacy_paths_and_caches_repository_resolution(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """旧パス形とURL形を同一視し、解決不能値は対象から除外する。"""
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        local_repo = tmp_path / "target-repo"
+        local_repo.mkdir()
+        (inbox / "current.md").write_text(_entry(), encoding="utf-8")
+        (inbox / "legacy-a.md").write_text(_entry(target_repo=str(local_repo)), encoding="utf-8")
+        (inbox / "legacy-b.md").write_text(_entry(target_repo=str(local_repo), answer="回答\n"), encoding="utf-8")
+        (inbox / "other.md").write_text(_entry(target_repo="github.com/example/other"), encoding="utf-8")
+        (inbox / "missing.md").write_text(_entry(target_repo=str(tmp_path / "missing")), encoding="utf-8")
+        resolved_paths: list[str] = []
+
+        def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            resolved_paths.append(cmd[2])
+            return subprocess.CompletedProcess(cmd, 0, stdout="https://github.com/ak110/dotfiles.git\n", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert _tbd_scan.scan_active_tbds(tmp_path, _REPO) == _tbd_scan.ActiveTbdScan(
+            entries=[
+                _tbd_scan.ActiveTbd("current.md", False),
+                _tbd_scan.ActiveTbd("legacy-a.md", False),
+                _tbd_scan.ActiveTbd("legacy-b.md", True),
+            ],
+            complete=True,
+        )
+        assert resolved_paths == [str(local_repo)]
 
     def test_marks_unreadable_or_invalid_utf8_scan_incomplete(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

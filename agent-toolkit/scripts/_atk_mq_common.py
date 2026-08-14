@@ -508,9 +508,7 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
 
 def _canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
     """リポジトリ識別子を操作単位のcacheを介してcanonical化する。"""
-    if value not in cache:
-        cache[value] = _git_remote.resolve_repo_identifier(value)
-    return cache[value]
+    return _git_remote.canonical_repo(value, cache)
 
 
 def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None) -> Iterator[tuple[pathlib.Path, str, str]]:

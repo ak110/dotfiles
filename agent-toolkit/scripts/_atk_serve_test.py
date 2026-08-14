@@ -3570,6 +3570,49 @@ def test_target_repos_collects_distinct_values_from_active_states(tmp_path: path
     assert operations.target_repos("adopted") == ["github.com/x/adopted-only"]
 
 
+def test_repository_readers_canonicalize_legacy_paths_once_per_operation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """一覧フィルターと候補収集は旧パス形をURL形に統合する。"""
+    local_repo = tmp_path / "target-repo"
+    local_repo.mkdir()
+    _write_repo_entry(tmp_path, "inbox", "current.md", "github.com/example/repo")
+    _write_repo_entry(tmp_path, "inbox", "legacy-a.md", str(local_repo))
+    _write_repo_entry(tmp_path, "inbox", "legacy-b.md", str(local_repo))
+    _write_repo_entry(tmp_path, "inbox", "other.md", "github.com/example/other")
+    _write_repo_entry(tmp_path, "inbox", "missing.md", str(tmp_path / "missing"))
+    resolved_paths: list[str] = []
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        resolved_paths.append(cmd[2])
+        return subprocess.CompletedProcess(cmd, 0, stdout="https://github.com/example/repo.git\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    operations = serve_app.Operations(tmp_path)
+
+    url_entries, warnings = operations.entries_with_warnings({"target_repo": "github.com/example/repo"})
+    assert [item["filename"] for item in url_entries] == ["legacy-b.md", "legacy-a.md", "current.md"]
+    assert not warnings
+    assert resolved_paths == [str(local_repo)]
+
+    resolved_paths.clear()
+    path_entries, warnings = operations.entries_with_warnings({"target_repo": str(local_repo)})
+    assert [item["filename"] for item in path_entries] == ["legacy-b.md", "legacy-a.md", "current.md"]
+    assert not warnings
+    assert resolved_paths == [str(local_repo)]
+
+    resolved_paths.clear()
+    assert operations.target_repos() == ["github.com/example/other", "github.com/example/repo"]
+    assert resolved_paths == [str(local_repo)]
+
+    unfiltered_entries, warnings = operations.entries_with_warnings({})
+    assert not warnings
+    assert next(item for item in unfiltered_entries if item["filename"] == "missing.md")["target_repo"] == str(
+        tmp_path / "missing"
+    )
+
+
 @pytest.mark.asyncio
 async def test_api_repos_returns_target_repos(tmp_path: pathlib.Path) -> None:
     """`GET /api/repos`は一覧と同じ状態指定で対象リポジトリの一覧を返す。"""

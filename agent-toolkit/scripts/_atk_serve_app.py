@@ -20,6 +20,7 @@ import _atk_mq_tbd as tbd_mutations
 import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
 import _atk_serve_state as serve_state
+import _git_remote
 import filelock
 import markdown_it
 import pytilpack.quart
@@ -286,8 +287,13 @@ class Operations:
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
+        target_repo_filter = filters.get("target_repo")
         query = filters.get("q", "").casefold()
         states = _resolve_states(status_filter)
+        resolver_cache: dict[str, str | None] = {}
+        canonical_target_repo = (
+            _git_remote.canonical_repo(target_repo_filter, resolver_cache) if target_repo_filter is not None else None
+        )
         for state, path, text in self._iter_entry_files(states, warnings):
             try:
                 kind = common.entry_type_of(path, text)
@@ -307,8 +313,14 @@ class Operations:
                 source = item["source"]
                 if not (source is None or isinstance(source, str) and not source.strip()):
                     continue
-            if filters.get("target_repo") and item["target_repo"] != filters["target_repo"]:
-                continue
+            if target_repo_filter is not None:
+                item_target_repo = item["target_repo"]
+                if (
+                    canonical_target_repo is None
+                    or not isinstance(item_target_repo, str)
+                    or _git_remote.canonical_repo(item_target_repo, resolver_cache) != canonical_target_repo
+                ):
+                    continue
             if filters.get("source") and item["source"] != filters["source"]:
                 continue
             searchable = (text, path.name, item["target_repo"], item["source"])
@@ -393,13 +405,16 @@ class Operations:
         `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
         """
         found: set[str] = set()
+        resolver_cache: dict[str, str | None] = {}
         for _state, _path, text in self._iter_entry_files(_resolve_states(status)):
             parsed = frontmatter.parse_frontmatter(text)
             if parsed is None:
                 continue
             target_repo = parsed[0].get("target_repo")
             if isinstance(target_repo, str) and target_repo:
-                found.add(target_repo)
+                canonical_target_repo = _git_remote.canonical_repo(target_repo, resolver_cache)
+                if canonical_target_repo is not None:
+                    found.add(canonical_target_repo)
         return sorted(found)
 
     def edit(

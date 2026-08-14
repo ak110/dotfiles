@@ -75,3 +75,10 @@ def resolve_repo_identifier(value: str) -> str | None:
         return normalize_remote_url(result.stdout.strip())
     except ValueError:
         return None
+
+
+def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
+    """リポジトリ識別子を呼び出し単位のcacheを介してcanonical化する。"""
+    if value not in cache:
+        cache[value] = resolve_repo_identifier(value)
+    return cache[value]

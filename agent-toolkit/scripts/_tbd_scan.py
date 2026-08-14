@@ -12,6 +12,7 @@ import os
 import pathlib
 import typing
 
+import _git_remote
 import platformdirs
 from _atk_mq_frontmatter import parse_frontmatter
 
@@ -117,6 +118,8 @@ def scan_active_tbds(root: pathlib.Path, target_repo: str) -> ActiveTbdScan:
     """
     found: list[ActiveTbd] = []
     complete = True
+    resolver_cache: dict[str, str | None] = {}
+    canonical_target = _git_remote.canonical_repo(target_repo, resolver_cache)
     for state in _ACTIVE_STATES:
         state_dir = root / state
         try:
@@ -144,7 +147,9 @@ def scan_active_tbds(root: pathlib.Path, target_repo: str) -> ActiveTbdScan:
             if not isinstance(entry_type, str) or not isinstance(entry_repo, str):
                 complete = False
                 continue
-            if entry_type != _TBD_TYPE or entry_repo != target_repo:
+            if entry_type != _TBD_TYPE:
+                continue
+            if canonical_target is None or _git_remote.canonical_repo(entry_repo, resolver_cache) != canonical_target:
                 continue
             found.append(ActiveTbd(filename=path.name, answered=is_tbd_answered(text)))
     return ActiveTbdScan(entries=found, complete=complete)
