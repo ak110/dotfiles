@@ -812,7 +812,7 @@ def test_delegation_observes_only_identified_artifact_paths() -> None:
 
 
 def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> None:
-    """plannerのsenderとreceiverへ計画パス及びTBD境界を同期する。"""
+    """plannerのsenderとreceiverへ計画パス、単一経路及びTBD境界を同期する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     receiver = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
 
@@ -823,6 +823,21 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert "TBD候補は、技術調査と明文化済み方針で確定できず" in sender
     assert "採用済み本文が要求しない選択肢に限定" in sender
     assert "採用済み本文が明示する変更自体を確認事項又は実装前提にしない" in sender
+    for phrase in (
+        "plannerのauthorが最も保守的な選択を暫定判断として確定",
+        "未回答事項による実装・検証の条件分岐を残さない単一経路",
+    ):
+        assert phrase in sender
+        assert phrase in receiver
+    for phrase in (
+        "計画本文を編集せず同じplanner系統へ差し戻す",
+        "`agent-toolkit:add-feedback`のTBD投入経路",
+        "回答だけを記録する",
+        "自動追随・自動再開・自動実行の契機としない",
+    ):
+        assert phrase in sender
+    for phrase in ("暫定判断の内容", "根拠", "回答後に必要な追随作業", "検証"):
+        assert phrase in _h2_section(receiver, "出力").partition("user_decisions:\n")[2]
 
 
 def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:
