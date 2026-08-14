@@ -61,18 +61,6 @@ WARNING_BODY = (
 BLOCK_BODY = "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、日本語での応答に切り替えること。"
 
 
-def check(transcript_path: str) -> str | None:
-    """直前のメインエージェント応答の語数比を判定する（後方互換ラッパー）。
-
-    WARNのときのみ警告本文を返し、PASS・SKIPではNoneを返す。
-    判定ロジックの詳細は`detailed_check()`を参照する。
-    """
-    outcome, body, _ = detailed_check(transcript_path)
-    if outcome is CheckOutcome.WARN:
-        return body
-    return None
-
-
 def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]:
     """直前のメインエージェント応答の語数比を判定し、3値で結果を返す。
 

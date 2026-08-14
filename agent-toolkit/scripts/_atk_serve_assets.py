@@ -918,13 +918,6 @@ function hasNonStateFilters() {
     byId('source-empty-filter').checked;
 }
 
-function filtersAreDefault() {
-  return !hasNonStateFilters() &&
-    byId('kind-filter').value === 'all' &&
-    byId('state-filter').value === 'active' &&
-    byId('answer-filter').value === 'all';
-}
-
 function renderEmptyState() {
   const empty = byId('empty-state');
   const message = byId('empty-state-message');

@@ -1979,7 +1979,8 @@ def test_operations_reads_local_entries_and_detail_without_pull(
     monkeypatch.setattr(common, "repo_lock", unexpected)
     monkeypatch.setattr(common, "pull", unexpected)
     operations = serve_app.Operations(tmp_path)
-    result = operations.entries({})
+    result, warnings = operations.entries_with_warnings({})
+    assert not warnings
     assert result[0] | {
         "updated_at": result[0]["updated_at"],
     } == {
@@ -2152,7 +2153,9 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     )
 
     operations = serve_app.Operations(tmp_path)
-    assert [item["filename"] for item in operations.entries({"status": "active"})] == ["z-last.md", "a-first.md"]
+    entries, warnings = operations.entries_with_warnings({"status": "active"})
+    assert not warnings
+    assert [item["filename"] for item in entries] == ["z-last.md", "a-first.md"]
     detail = operations.detail("processing", "a-first.md")
     rendered = typing.cast(str, detail["content_html"])
     assert "<h1>見出し</h1>" in rendered
@@ -2185,7 +2188,8 @@ def test_operations_frontmatter_parser_handles_nested_dependencies_and_broken_ya
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(f"---\n{frontmatter_source}---\n\n要約本文\n", encoding="utf-8")
 
-    result = serve_app.Operations(tmp_path).entries({})
+    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({})
+    assert not warnings
 
     assert result[0]["target_repo"] == expected_repo
     assert result[0]["source"] == expected_source
@@ -2213,7 +2217,8 @@ def test_operations_answered_filter_returns_only_answered_tbds(
         "---\ntype: feedback\ntarget_repo: example/repo\n---\n\nフィードバック本文\n",
         encoding="utf-8",
     )
-    result = serve_app.Operations(tmp_path).entries({"answered": "yes"})
+    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"answered": "yes"})
+    assert not warnings
     assert [item["filename"] for item in result] == ["answered.md"]
 
 
@@ -2231,7 +2236,8 @@ def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.
         encoding="utf-8",
     )
 
-    result = serve_app.Operations(tmp_path).entries({"q": query})
+    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"q": query})
+    assert not warnings
 
     assert [item["filename"] for item in result] == ["entry.md"]
 
@@ -2265,7 +2271,8 @@ def test_operations_source_empty_filter_returns_items_with_missing_or_empty_sour
         "---\ntype: feedback\ntarget_repo: example/repo\nsource: []\n---\n\nリスト形式の投入元\n",
         encoding="utf-8",
     )
-    result = serve_app.Operations(tmp_path).entries({"source_empty": "true"})
+    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"source_empty": "true"})
+    assert not warnings
     filenames = [typing.cast(str, item["filename"]) for item in result]
     filenames.sort()
     assert filenames == ["empty-source.md", "no-source.md", "whitespace-source.md"]
@@ -2898,7 +2905,8 @@ def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.
     )
 
     operations = serve_app.Operations(tmp_path)
-    result = operations.entries({})
+    result, warnings = operations.entries_with_warnings({})
+    assert not warnings
     filenames = [item["filename"] for item in result]
 
     # 未回答TBD、回答済みTBD、フィードバックの順になる。

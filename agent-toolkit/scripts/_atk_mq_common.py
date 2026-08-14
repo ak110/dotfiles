@@ -66,14 +66,12 @@ class QueueEntry:
     filename: str
     text: str
     kind: str | None
-    state: str
     target_repo: str | None
     tbd_answered: bool | None
     frontmatter_broken: bool
     plan_file: str | None
     cooldown_present: bool
     cooldown_until: object | None
-    depends_on: tuple[str, ...]
     legacy_dependency: dict[str, object] | None
     repair_target_filename: str | None
     repair_kind: RepairKind | None
@@ -935,8 +933,8 @@ def _load_queue_entries(
 ) -> tuple[QueueEntry, ...]:
     """指定状態のfeedback・TBDをreadiness判定用表現へ変換する。"""
     return tuple(
-        _queue_entry(path, entry_repo, text, state, entry_type)
-        for path, entry_repo, text, state, entry_type in _iter_entries(private_notes, states, target_repo, "all")
+        _queue_entry(path, entry_repo, text, entry_type)
+        for path, entry_repo, text, _state, entry_type in _iter_entries(private_notes, states, target_repo, "all")
     )
 
 
@@ -944,7 +942,6 @@ def _queue_entry(
     path: pathlib.Path,
     entry_repo: str,
     text: str,
-    state: str,
     entry_type: str | None,
 ) -> QueueEntry:
     """1件のキュー項目をreadiness判定用表現へ変換する。"""
@@ -963,26 +960,18 @@ def _queue_entry(
     else:
         repair_kind = None
     plan_file = data.get("plan_file")
-    raw_dependencies = data.get("depends_on", [])
-    depends_on = (
-        tuple(dict.fromkeys(value for value in raw_dependencies if isinstance(value, str)))
-        if isinstance(raw_dependencies, list) and all(isinstance(value, str) for value in raw_dependencies)
-        else ()
-    )
     schedule = data.get("queue_schedule")
     legacy_dependency = schedule.get("dependency") if isinstance(schedule, dict) else None
     return QueueEntry(
         filename=path.name,
         text=text,
         kind=entry_type,
-        state=state,
         target_repo=_normalized_repo_or_none(entry_repo),
         tbd_answered=_is_tbd_answered(text) if entry_type == MQ_TYPE_TBD else None,
         frontmatter_broken=frontmatter_broken,
         plan_file=plan_file if isinstance(plan_file, str) else None,
         cooldown_present="cooldown_until" in data,
         cooldown_until=data.get("cooldown_until"),
-        depends_on=depends_on,
         legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
         repair_target_filename=repair_target if isinstance(repair_target, str) else None,
         repair_kind=repair_kind,
@@ -1008,7 +997,7 @@ def _load_referenced_terminal_entries(
                 continue
             text = path.read_text(encoding="utf-8")
             entry_type = _require_type(path, text)
-            entries.append(_queue_entry(path, _parse_target_repo(text), text, state, entry_type))
+            entries.append(_queue_entry(path, _parse_target_repo(text), text, entry_type))
     return tuple(entries)
 
 
@@ -1453,37 +1442,14 @@ def repo_lock(private_notes: pathlib.Path, *, timeout: float = -1) -> filelock.F
     return _repo_lock(private_notes, timeout=timeout)
 
 
-def commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Iterable[str]) -> None:
-    """指定差分をcommitしてpushする。"""
-    _commit_and_push(private_notes, message, rel_paths)
-
-
 def is_tbd_answered(text: str) -> bool:
     """TBD本文が回答済みか判定する。"""
     return _is_tbd_answered(text)
 
 
-def count_pending_entries(
-    private_notes: pathlib.Path,
-    target_repo: str | None = None,
-) -> int:
-    """当該対象リポジトリでこのセッションが着手可能な項目数を返す。"""
-    return _count_pending_entries(private_notes, target_repo)
-
-
 def entry_type_of(path: pathlib.Path, text: str) -> str | None:
     """エントリの種別を返す。frontmatter全体が破損している場合はNone。"""
     return _require_type(path, text)
-
-
-def iter_entries(
-    private_notes: pathlib.Path,
-    states: Iterable[str],
-    filter_repo: str | None,
-    entry_type: str = "all",
-) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
-    """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。"""
-    return _iter_entries(private_notes, states, filter_repo, entry_type)
 
 
 def validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
@@ -1492,15 +1458,3 @@ def validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
         return _validate_filename(filename, base_dir)
     except SystemExit as error:
         raise WebInputError(f"不正なファイル名です: {filename}") from error
-
-
-def validate_filenames(filenames: list[str], base_dir: pathlib.Path) -> list[pathlib.Path]:
-    """複数ファイル名を全件検証してから解決結果を返す。"""
-    if not filenames:
-        raise WebInputError("filenamesには1件以上を指定してください")
-    return [validate_filename(filename, base_dir) for filename in filenames]
-
-
-def private_notes_path(home: pathlib.Path) -> pathlib.Path:
-    """フィードバック管理repoのrootパスを返す（公開ラッパー）。"""
-    return _private_notes_path(home)

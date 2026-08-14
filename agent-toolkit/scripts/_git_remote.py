@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
 import re
-import subprocess
 import urllib.parse
 
 _SCP_LIKE_REMOTE_RE = re.compile(r"^[^@\s]+@(?P<host>[^:\s]+):(?P<path>.+)$")
@@ -45,25 +43,3 @@ def normalize_remote_url(remote_url: str) -> str:
     if not normalized_path or "/" not in normalized_path:
         raise ValueError(f"リモートURLとして解析できません: {remote_url!r}")
     return f"{host.lower()}/{normalized_path.lower()}"
-
-
-def get_normalized_origin(repository: pathlib.Path) -> str | None:
-    """リポジトリのoriginを取得して正規化する。取得不能時はNoneを返す。"""
-    if not repository.is_dir():
-        return None
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repository), "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    try:
-        return normalize_remote_url(result.stdout)
-    except ValueError:
-        return None

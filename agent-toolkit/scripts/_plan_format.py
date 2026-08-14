@@ -243,26 +243,6 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
             yield body_start + body_index + 1, line
 
 
-def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
-    """指定したH2見出し配下の本文行を、ファイル先頭基準1始まりの行番号付きで返す。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    対象H2見出しが存在しない場合は空リストを返す。
-    対象H2見出し行自体は本文行に含めず、次のH2見出し行に達した時点で収集を終える。
-    H3見出し行・箇条書き行を含む全ての非除外行を本文行として収集する。
-    `extract_implementer_region`が既存計画の`## 実装契約`を読み取る互換経路で使う。
-    """
-    body: list[tuple[int, str]] = []
-    in_target_h2 = False
-    for lineno, line in iter_markdown_body_lines(content):
-        if line.startswith("## "):
-            in_target_h2 = line[3:].strip() == h2_heading
-            continue
-        if in_target_h2:
-            body.append((lineno, line))
-    return body
-
-
 @dataclass(frozen=True)
 class PlanHeading:
     """Markdown本文で有効な見出し1件を表す。"""

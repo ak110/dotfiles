@@ -3092,48 +3092,6 @@ class TestBashOutputTruncationWarning:
         assert "warn" not in result.stderr
 
 
-class TestPlanImplExecutorPlanPathRecording:
-    """executor起動時の実在計画パス記録。"""
-
-    @pytest.mark.parametrize("same_as_current", [False, True])
-    def test_records_existing_plan(self, tmp_path: pathlib.Path, same_as_current: bool) -> None:
-        home = tmp_path / "home"
-        plan = _make_plan_file(home, "target.md")
-        sid = f"executor-plan-path-{same_as_current}"
-        if same_as_current:
-            _write_session_state(tmp_path, sid, {"current_plan_file_path": str(plan)})
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "prompt": f"計画ファイル `{plan}` を実装する。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, sid),
-        )
-        assert result.returncode == 0
-        assert _read_session_state(tmp_path, sid)["plan_impl_executor_verified_plan_path"] == str(plan.resolve())
-
-    @pytest.mark.parametrize("prompt", ["計画を実装する。", "計画ファイル `.claude/plans/missing.md` を実装する。"])
-    def test_does_not_record_unresolved_plan(self, tmp_path: pathlib.Path, prompt: str) -> None:
-        sid = "executor-plan-path-unresolved"
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": prompt},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, sid),
-        )
-        assert result.returncode == 0
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        assert not state_path.exists() or "plan_impl_executor_verified_plan_path" not in _read_session_state(tmp_path, sid)
-
-
 class TestAgentNameParameterGate:
     """AgentとTask起動時の`name`引数指定の一律ブロック。"""
 
@@ -3206,8 +3164,6 @@ class TestAgentNameParameterGate:
             env_overrides=env,
         )
         assert result.returncode == 2
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        assert not state_path.exists() or "plan_impl_executor_verified_plan_path" not in _read_session_state(tmp_path, sid)
         log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
         assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
 

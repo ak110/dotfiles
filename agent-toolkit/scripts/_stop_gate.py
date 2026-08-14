@@ -127,27 +127,11 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     return pending
 
 
-def has_pending_background_launches(transcript_path: str, session_id: str) -> bool:
-    """ハーネスが追跡するbackgroundタスクのうち、完了未消化のものが1件以上あれば真を返す。
-
-    `is_pending_async_work`と同じ`launched - completed`のremainder非空判定を用いる
-    （起動記録の存在だけで判定すると完了消化後も真を返し続けるため、消化状態を必ず反映する）。
-    `subagent_stop_advisor.py`側で完了報告本文の内容によらない無条件の早期承認判定に使う。
-    起動集合・完了集合の抽出条件は`is_pending_async_work`docstringに定義済み
-    （`toolUseResult.status`・`backgroundTaskId`・SendMessage背景再開マーカー・
-    `<task-notification>`の各条件）。
-
-    transcript読み取り失敗時は偽を返す（fail-closed。ブロック維持側で動作する）。
-    """
-    launched, completed = _describe_pending_background_tasks(transcript_path, session_id)
-    return bool(launched - completed)
-
-
 def has_pending_agent_launches(transcript_path: str, session_id: str) -> bool:
     """配下で起動した孫エージェントのうち、完了未消化のものが1件以上あれば真を返す。
 
-    `has_pending_background_launches`から背景Bash起動を除いた部分集合を対象とする。
-    背景Bashジョブの未消化は完了報告本文の検査を免除する根拠にしないため区別する。
+    背景Bash起動を除き、Agent起動とSendMessageによる再開を対象とする。
+    背景Bashジョブの未消化は完了報告本文の検査を免除する根拠にしない。
     """
     launched, completed = _describe_pending_background_tasks(
         transcript_path,

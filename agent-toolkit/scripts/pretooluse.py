@@ -331,8 +331,6 @@ def main(payload_text: str) -> int:
             return 2
         if _check_execute_review_engine_route(payload, tool_input):
             return 2
-        if isinstance(subagent_type, str) and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES:
-            _record_plan_impl_executor_plan_path(session_id, tool_input)
         # ブロック検査を全通過した場合のみ、実際に起動する種別として開始時刻を記録する。
         # ブロック前に記録すると、起動しなかった種別の`subagent_start`だけが残り
         # `subagent_end`と対応しなくなるため（process-loopの所要時間分析が崩れる）。
@@ -1652,9 +1650,6 @@ def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: 
     return _apply_edits_to_content(tool_name, tool_input, existing)
 
 
-_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY = "plan_impl_executor_verified_plan_path"
-
-
 # --- 計画単位の状態管理 ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
@@ -1760,71 +1755,6 @@ def _check_execute_review_engine_route(payload: dict, tool_input: dict) -> bool:
     return True
 
 
-_PLAN_FILE_PATH_IN_BACKTICK_RE = re.compile(r"`([^`\n]*\.claude[/\\]plans[/\\][^`\n]+\.md)`")
-_PLAN_FILE_PATH_IN_PROMPT_RE = re.compile(r"[^\s`]*\.claude[/\\]plans[/\\][^\s`]+\.md")
-
-
-def _extract_referenced_plan_file_path(prompt: str) -> str | None:
-    r"""起動プロンプト本文から計画ファイルパス（`.claude/plans/*.md`）を抽出する。
-
-    パス区切りは`/`と`\\`の双方を許容する。
-    バッククォート囲み表記を優先し、囲み内は空白を含めて丸ごと抽出する
-    （空白を含むホームディレクトリ名での部分抽出誤りを防ぐため）。
-    一意に定まらない場合（0件または2件以上の異なるパスが検出された場合）は`None`を返す。
-    呼び出し側は`None`を「抽出不能」として安全側（従来どおりブロック判定）に扱う。
-    """
-    matches = {m.group(1) for m in _PLAN_FILE_PATH_IN_BACKTICK_RE.finditer(prompt)}
-    if not matches:
-        matches = {m.group(0) for m in _PLAN_FILE_PATH_IN_PROMPT_RE.finditer(prompt)}
-    if len(matches) != 1:
-        return None
-    return next(iter(matches))
-
-
-def _normalize_plan_file_path(path_text: str) -> pathlib.Path | None:
-    """計画ファイルパスの比較用正規化（`~`展開と絶対化）を行う。
-
-    正規化に失敗した場合（`expanduser`が未解決ユーザーで例外を送出する場合等）は`None`を返す。
-    呼び出し側は`None`を「抽出不能」と同じ従来判定へ倒す。
-    """
-    try:
-        return pathlib.Path(path_text).expanduser().resolve(strict=False)
-    except (OSError, RuntimeError, ValueError):
-        return None
-
-
-def _record_plan_impl_executor_plan_path(session_id: str, tool_input: dict) -> None:
-    """実在する計画を参照したexecutor起動時に当該パスを記録する。"""
-    if not session_id:
-        return
-    prompt = tool_input.get("prompt")
-    if not isinstance(prompt, str):
-        return
-    referenced_path = _extract_referenced_plan_file_path(prompt)
-    if referenced_path is None:
-        return
-    referenced = _normalize_plan_file_path(referenced_path)
-    if referenced is None or not referenced.is_file():
-        return
-    _record_verified_plan_path(session_id, str(referenced))
-
-
-def _record_verified_plan_path(session_id: str, plan_file_path: str) -> None:
-    """実在する計画ファイルを参照した`plan-impl-executor`起動時、当該パスを記録する。
-
-    記録値は正規化済みの絶対パスとし、以降の計画ファイル読み取りで`~`の未展開による失敗を避ける。
-    `current_plan_file_path`は更新せず、計画作成側の状態と実装対象の記録を分離する。
-    """
-
-    def _set(state: dict) -> dict | None:
-        if state.get(_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY) == plan_file_path:
-            return None
-        state[_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY] = plan_file_path
-        return state
-
-    update_state(session_id, _set)
-
-
 def _reset_plan_mode_state(session_id: str) -> None:
     """plan-mode起動時に計画単位の状態をリセットする。"""
     if not session_id:
@@ -1833,9 +1763,6 @@ def _reset_plan_mode_state(session_id: str) -> None:
     def _reset(current: dict) -> dict | None:
         changed = False
         if current.pop("current_plan_file_path", None) is not None:
-            changed = True
-        # 別の既存計画への切替記録も新計画へ持ち越さない。
-        if current.pop(_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY, None) is not None:
             changed = True
         # 直接編集連続checkの状態も新計画へ持ち越さない。
         if current.get("plan_file_written", False):

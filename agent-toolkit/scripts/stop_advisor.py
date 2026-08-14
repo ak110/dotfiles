@@ -51,16 +51,6 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
-def _has_uncommitted_changes(cwd: str) -> bool:
-    """作業ディレクトリに未コミットの変更がある場合に真を返す。
-
-    untrackedファイル（`??`）は対象外とする（意図的に未追跡の場合があるため）。
-    git未導入・リポジトリ外・コマンド失敗時は偽を返す。
-    判定は共有ヘルパー`_git_status.has_tracked_dirty`（`git status --porcelain`実行）へ委ねる。
-    """
-    return bool(_git_status.has_tracked_dirty(cwd))
-
-
 def _git_status_for_display(cwd: str) -> str | None:
     """ユーザー表示用の`git status --short`の出力を返す。
 

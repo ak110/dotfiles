@@ -335,10 +335,6 @@ class Operations:
         )
         return unanswered_tbd_items + other_tbd_items + feedback_items + other_items, warnings
 
-    def entries(self, filters: dict[str, str]) -> list[dict[str, object]]:
-        """後方互換の同期APIとして、条件に一致する一覧だけを返す。"""
-        return self._entries(filters)[0]
-
     def entries_with_warnings(
         self,
         filters: dict[str, str],
