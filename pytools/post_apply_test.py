@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from pytools import post_apply
-from pytools._internal import cleanup_paths, post_apply_outcome
+from pytools._internal import post_apply_outcome
 
 # 配布先cleanup契約の定数を直接検証する。
 # pylint: disable=protected-access
@@ -31,25 +31,100 @@ def test_session_review_reference_is_not_cleanup_target() -> None:
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
     paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
-    assert Path("profile_default") in paths
+    assert Path("profile_default/startup/README") in paths
     assert not any(path.is_relative_to("profile_ipy") for path in paths)
 
 
-def test_removed_ipython_profile_cleanup_preserves_profile_ipy(tmp_path: Path) -> None:
-    """旧profile_defaultをディレクトリごと削除し、利用中のprofile_ipyを保持する。"""
-    default_readme = tmp_path / "profile_default/startup/README"
+def _redirect_removed_paths_to(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Path:
+    """旧配布物削除先を一時ホームへ限定し、IPython配布ファイルだけを登録する。"""
+    home_dir = tmp_path / "home"
+    ipython_dir = home_dir / ".ipython"
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.setattr(
+        post_apply,
+        "_REMOVED_PATHS",
+        {ipython_dir: [Path("profile_default/startup/README")]},
+    )
+    monkeypatch.setattr(post_apply, "_REMOVED_PATHS_IF_CONTENT", {})
+    return ipython_dir
+
+
+def test_removed_ipython_profile_cleanup_removes_empty_parents(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """配布済みREADMEの削除後、空になった親ディレクトリだけを深い順で除去する。"""
+    ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
+    default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)
     default_readme.write_text("old\n", encoding="utf-8")
-    active_config = tmp_path / "profile_ipy/ipython_config.py"
+
+    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+
+    assert changed is True
+    assert not (ipython_dir / "profile_default").exists()
+
+
+def test_removed_ipython_profile_cleanup_preserves_user_file_in_startup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """startupに利用者ファイルが残る場合はprofile_defaultまで保持する。"""
+    ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
+    default_readme = ipython_dir / "profile_default/startup/README"
+    default_readme.parent.mkdir(parents=True)
+    default_readme.write_text("old\n", encoding="utf-8")
+    user_script = default_readme.parent / "00-user.py"
+    user_script.write_text("print('user')\n", encoding="utf-8")
+
+    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+
+    assert changed is True
+    assert not default_readme.exists()
+    assert user_script.read_text(encoding="utf-8") == "print('user')\n"
+    assert (ipython_dir / "profile_default/startup").is_dir()
+    assert (ipython_dir / "profile_default").is_dir()
+
+
+def test_removed_ipython_profile_cleanup_preserves_user_file_in_profile_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """profile_default直下に利用者ファイルが残る場合はルートだけを保持する。"""
+    ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
+    default_readme = ipython_dir / "profile_default/startup/README"
+    default_readme.parent.mkdir(parents=True)
+    default_readme.write_text("old\n", encoding="utf-8")
+    user_config = ipython_dir / "profile_default/ipython_config.py"
+    user_config.write_text("c = get_config()\n", encoding="utf-8")
+    active_config = ipython_dir / "profile_ipy/ipython_config.py"
     active_config.parent.mkdir(parents=True)
     active_config.write_text("active\n", encoding="utf-8")
-    paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
 
-    removed = cleanup_paths.cleanup_paths(tmp_path, paths)
+    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
 
-    assert removed == 1
-    assert not (tmp_path / "profile_default").exists()
+    assert changed is True
+    assert not default_readme.exists()
+    assert not (ipython_dir / "profile_default/startup").exists()
+    assert user_config.read_text(encoding="utf-8") == "c = get_config()\n"
+    assert (ipython_dir / "profile_default").is_dir()
     assert active_config.read_text(encoding="utf-8") == "active\n"
+
+
+def test_removed_ipython_profile_cleanup_skips_missing_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """配布済みファイルも親ディレクトリも存在しない場合は変更なしとする。"""
+    _redirect_removed_paths_to(monkeypatch, tmp_path)
+
+    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+
+    assert changed is False
 
 
 def _make_step(name: str, calls: list[str], changed: bool = False):
