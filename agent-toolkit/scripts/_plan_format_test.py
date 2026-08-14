@@ -288,8 +288,8 @@ def test_permanence_sections_reject_conclusion_words_only() -> None:
     assert any("結論語だけの記載は成立しない" in error for error in errors)
 
 
-def test_similar_review_table_is_required_only_for_normal_work_type() -> None:
-    """バグ対応の類似見直しはバグ調査表を正本として参照でき、3行表を求めない。"""
+def test_structure_check_allows_bug_work_type_without_similar_review_table() -> None:
+    """構造検査はバグ対応へ3行表を一律に要求せず、バグ調査表との意味上の対応をreviewerへ委ねる。"""
     content = _plan(bug=True)
     reference = "### 類似見直し\n\n観点と結果はバグ調査表を正本として参照する。\n"
     content = content[: content.index("### 類似見直し")] + reference + _IMPLEMENTER_SECTION

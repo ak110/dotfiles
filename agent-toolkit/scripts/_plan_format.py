@@ -92,7 +92,10 @@ PLAN_PERMANENCE_TABLE_ROWS: tuple[str, ...] = ("観測事象", "根本原因", "
 
 PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
 PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当件数と箇所")
-"""通常変更の類似見直し表の固定3行。バグ対応はバグ調査表の14行を正本とする。"""
+"""構造検査が通常変更だけに要求する類似見直し表の固定3行。
+
+バグ対応はauthor規定に基づき、バグ調査表との意味上の対応をreviewerが照合する。
+"""
 
 PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})
 """検討結果として成立しない結論語。これだけの記載は検討の省略として拒否する。"""
