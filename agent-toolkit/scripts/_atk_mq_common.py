@@ -737,8 +737,8 @@ def _stamp_result(
 def _normalize_md_filename(filename: str) -> str:
     """拡張子`.md`が省略されたファイル名を正規形（`.md`付き）へ補完して返す。
 
-    `_validate_filename`と`_verify_frontmatter_target_repo`の双方が同一の正規化規約を
-    使うためのSSOT。パス妥当性検証は行わない（呼び出し元が別途`_validate_filename`等で担う）。
+    ファイル名を受け取る全経路が同一の正規化規約を使うためのSSOT。
+    パス妥当性検証は行わない（呼び出し元が別途`_validate_filename`等で担う）。
     """
     if not filename.endswith(".md"):
         return f"{filename}.md"

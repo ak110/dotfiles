@@ -22,7 +22,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 mcp__codex__codex:
 
 - メインセッションで`agent-toolkit:delegation`の起動記録が無いcodex MCP呼び出しのブロック (block)
-- `sandbox`が`danger-full-access`以外（未指定を含む）の呼び出しのブロック (block)
+- `sandbox: danger-full-access`以外（未指定を含む）の呼び出しのブロック (block)
 - `approval-policy`の`never`固定 (auto-fix)
 - 全チェック通過時の強制承認 (auto-approve)
 
@@ -129,16 +129,6 @@ _HOOK_ID = "agent-toolkit/pretooluse"
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
-
-
-def _print_warning_if_present(message: str | None) -> None:
-    """警告降格したcheck関数の戻り値（違反メッセージまたはNone）をstderrへ出力する。
-
-    旧block系checkの戻り値契約（違反メッセージ`str`またはNone）をそのまま流用しつつ、
-    呼び出し元の制御フロー（exit 2）には使わない用途で使う。
-    """
-    if message:
-        print(message, file=sys.stderr)
 
 
 def _language_notice(body: str) -> str:
@@ -269,50 +259,53 @@ def main(payload_text: str) -> int:
             return 0
         cwd_raw = payload.get("cwd", "")
         cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+        # 遮断検査を警告検査より先に完了させ、警告が後続の遮断を回避しない構造を維持する。
+        warnings: list[str] = []
         # sleep直後の状態確認連結を検出（初回warn、セッション内再検出でblock）
         run_in_background = bool(tool_input.get("run_in_background"))
         sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, run_in_background)
         if sleep_poll_result == "block":
             return 2
-        _print_warning_if_present(sleep_poll_result)
+        if sleep_poll_result is not None:
+            warnings.append(sleep_poll_result)
         # git amend / rebaseは直前にgit logを確認していなければブロック
         if _check_bash_amend_rebase_without_log(command, session_id, cwd):
             return 2
         # git push実行前にamend後の未コミット差分残置を機械的にブロック
         if _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd):
             return 2
-        # 一括ステージ実行時にセッション未編集の変更が含まれる場合の警告
-        result = _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd)
-        if result is not None:
-            emit_json(result)
-            return 0
         # uv run python <path>形式の起動は非Pythonプロジェクトでブロック
         if _check_bash_uv_run_python(command, cwd):
             return 2
         # パターン一致によるプロセス終了（pkill/killall）をブロック
         if _check_bash_process_kill_by_pattern(command):
             return 2
-        # 検証コマンド出力のtail/head切り詰めを警告
-        _print_warning_if_present(_check_bash_output_truncation(command))
-        # git commit未検証警告
-        result = _check_bash_git_commit(command, session_id, cwd)
-        if result is not None:
-            emit_json(result)
-            return 0
-        # agent-toolkit/配下のコミット時にversion bump漏れを警告
-        result = _check_bash_agent_toolkit_version_bump(command, cwd)
-        if result is not None:
-            emit_json(result)
-            return 0
+        # 警告検査はメッセージだけを蓄積し、終了コードを変更しない。
+        for warning in (
+            _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
+            _check_bash_output_truncation(command),
+            _check_bash_git_commit(command, session_id, cwd),
+            _check_bash_agent_toolkit_version_bump(command, cwd),
+            _check_bash_codex_exec(command),
+        ):
+            if warning is not None:
+                warnings.append(warning)
         # git log --decorate自動付与
         result = _check_bash_git_log_decorate(command, tool_input)
         if result is not None:
+            if warnings:
+                _append_additional_context(result, "\n".join(warnings))
             emit_json(result)
             return 0
-        # codex exec未決事項の念押し
-        result = _check_bash_codex_exec(command)
-        if result is not None:
-            emit_json(result)
+        if warnings:
+            emit_json(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "additionalContext": "\n".join(warnings),
+                    }
+                }
+            )
             return 0
         flush_pending_language_warning()
         return 0
@@ -1195,17 +1188,19 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
 # --- codex sandbox指定（danger-full-access）の保護 (block, FB13) ---
 
 _DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
-    "agent-toolkit/agents/feedbacks-planner.md",
-    "agent-toolkit/agents/plan-impl-executor.md",
-    "agent-toolkit/skills/delegation/SKILL.md",
     "agent-toolkit/skills/delegation/references/runtime-routing.md",
     "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
     "agent-toolkit/scripts/pretooluse.py",
 )
 _DANGER_FULL_ACCESS_VALUE = "danger-full-access"
-# sandbox指定記述（`sandbox`という語とその直後の値を1組で表す記述）を抽出する。
-# JSON形式・日本語地の文のバッククォート形式の双方を対象とする。
-_SANDBOX_ASSIGNMENT_RE = re.compile(r"[\"`]?sandbox[\"`]?\s*(?::|へ|は|に)\s*[\"`]([A-Za-z0-9_-]+)[\"`]")
+_KNOWN_SANDBOX_VALUES = frozenset({_DANGER_FULL_ACCESS_VALUE, "read-only", "workspace-write"})
+_SANDBOX_VALUE_PATTERN = "|".join(re.escape(value) for value in sorted(_KNOWN_SANDBOX_VALUES))
+# 句全体又はキーと値を個別に囲む表記だけを対象とし、説明文からの誤抽出を防ぐ。
+_SANDBOX_ASSIGNMENT_RE = re.compile(
+    rf'"sandbox"\s*:\s*"(?P<json>{_SANDBOX_VALUE_PATTERN})"'
+    rf"|`sandbox\s*:\s*(?P<inline>{_SANDBOX_VALUE_PATTERN})`"
+    rf"|`sandbox`\s*(?::|へ|は|に|が)\s*`(?P<split>{_SANDBOX_VALUE_PATTERN})`"
+)
 # 行コメント。抽出対象から除く。
 _COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|<!--)")
 
@@ -1217,25 +1212,22 @@ def _extract_sandbox_assignments(text: str) -> list[str]:
         if _COMMENT_LINE_RE.match(line):
             continue
         for match in _SANDBOX_ASSIGNMENT_RE.finditer(line):
-            values.append(match.group(1))
+            value = next(group for group in match.groups() if group is not None)
+            values.append(value)
     return values
 
 
 def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_path: str) -> bool:
     """`danger-full-access`を含む行の削除・変更を遮断する（block）。
 
-    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下6つ:
-    - `agent-toolkit/agents/feedbacks-planner.md`
-    - `agent-toolkit/agents/plan-impl-executor.md`
-    - `agent-toolkit/skills/delegation/SKILL.md`
-    - `agent-toolkit/skills/delegation/references/runtime-routing.md`
-    - `agent-toolkit/skills/agent-standards/references/claude-hooks.md`
-    - `agent-toolkit/scripts/pretooluse.py`
+    保護対象はsandbox指定記述を現に含むファイルだけに限定する。
+    記述を持たないパスを列挙すると、検査が有効であるという誤った保証になるため対象に含めない。
 
     判定は`danger-full-access`という文字列の出現数ではなく、`sandbox`へ値を結びつける記述
     （以下「sandbox指定記述」）を抽出して比較する。sandbox指定記述とは、`sandbox`という語とその直後の値を
-    1組で表す記述であり、`"sandbox": "<値>"`・`` `sandbox`へ`<値>` ``・`` `sandbox`は`<値>` ``・
-    `` `sandbox`: `<値>` ``の各形式を対象とする。行コメント（`#`・`//`・`<!--`で始まる行）は抽出対象から除く。
+    1組で表す記述であり、`"sandbox": "<値>"`・`` `sandbox`へ`<値>` ``・
+    `` `sandbox: <値>` ``等の形式を対象とする。値は既知のsandbox値だけを抽出する。
+    行コメント（`#`・`//`・`<!--`で始まる行）は抽出対象から除く。
     次のいずれかに当たる場合に遮断する:
     - sandbox指定記述の総数が減る（設定そのものの削除）
     - 値が`danger-full-access`でないsandbox指定記述が1件でも新たに出現する（設定の弱体化）
@@ -1254,7 +1246,10 @@ def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_p
         new_content = tool_input.get("content")
         if not isinstance(new_content, str):
             return False
-        old_content = ""
+        try:
+            old_content = pathlib.Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            old_content = ""
     elif tool_name == "Edit":
         old_string = tool_input.get("old_string") or ""
         new_string = tool_input.get("new_string")
@@ -2069,8 +2064,8 @@ def _check_bash_bulk_stage_with_unedited_files(
     command: str,
     session_id: str,
     payload_cwd: str,
-) -> dict | None:
-    """一括ステージ実行時に自セッション未編集の変更が含まれる場合の警告JSONを返す。
+) -> str | None:
+    """一括ステージ実行時に自セッション未編集の変更が含まれる場合の警告文を返す。
 
     `git add -A/--all/.` は未追跡を含む集合、`git add -u/--update` と
     `git commit -a/--all/-am`等は追跡済みのみを対象として作業ツリー変更を判定する。
@@ -2110,19 +2105,14 @@ def _check_bash_bulk_stage_with_unedited_files(
         if not unedited:
             continue
         sample = sorted(unedited)[:5]
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "additionalContext": _llm_notice(
-                    "warn: bulk staging includes files with no recorded edit by the file edit tools"
-                    " in this session. Files changed by shell commands or generators are not recorded,"
-                    " so confirm ownership before staging."
-                    f" Candidates: {sample}."
-                    " Consider switching to per-file staging (`git add <file>`).",
-                    tag="warn",
-                ),
-            },
-        }
+        return _llm_notice(
+            "warn: bulk staging includes files with no recorded edit by the file edit tools"
+            " in this session. Files changed by shell commands or generators are not recorded,"
+            " so confirm ownership before staging."
+            f" Candidates: {sample}."
+            " Consider switching to per-file staging (`git add <file>`).",
+            tag="warn",
+        )
     return None
 
 
@@ -2603,8 +2593,8 @@ def _is_docs_only_commit(event: GitEvent, cwd: str) -> bool:
     return all(path.lower().endswith(".md") for path in files)
 
 
-def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | None:
-    """テスト未実行のままgit commitする場合に警告JSONを返す。
+def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | None:
+    """テスト未実行のままgit commitする場合に警告文を返す。
 
     テスト実行済み（stateの`test_executed`が真）の場合はスキップする。
     状態ファイル不在時は`test_executed` = falseとして扱い警告を表示する。
@@ -2624,15 +2614,10 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | No
         return None
     if _is_docs_only_commit(commit_events[0], cwd):
         return None
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "additionalContext": _llm_notice(
-                "committing without running tests. Follow the verify-then-commit procedure in 01-agent.md and run tests first.",
-                tag="warn",
-            ),
-        },
-    }
+    return _llm_notice(
+        "committing without running tests. Follow the verify-then-commit procedure in 01-agent.md and run tests first.",
+        tag="warn",
+    )
 
 
 # --- Bash: agent-toolkit/配下のversion bump漏れ警告 ---
@@ -2643,7 +2628,7 @@ _AGENT_TOOLKIT_TEST_SUFFIX = "_test.py"
 _AGENT_TOOLKIT_SCRIPTS_PREFIX = "agent-toolkit/scripts/"
 
 
-def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | None:
+def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None:
     """agent-toolkit/配下の変更をコミットする際にversion bump漏れを警告する。
 
     判定:
@@ -2696,20 +2681,15 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | Non
     if unpushed:
         return None
 
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "additionalContext": _llm_notice(
-                "agent-toolkit/ files are staged but"
-                " `agent-toolkit/.claude-plugin/plugin.json` `version` is unchanged"
-                " in this commit and the unpushed range."
-                " If user-facing behavior changes (hook script, skill, agent definition,"
-                " rule file, etc.), bump the `version` field in plugin.json"
-                " (and keep `.claude-plugin/marketplace.json` in sync) before committing.",
-                tag="warn",
-            ),
-        },
-    }
+    return _llm_notice(
+        "agent-toolkit/ files are staged but"
+        " `agent-toolkit/.claude-plugin/plugin.json` `version` is unchanged"
+        " in this commit and the unpushed range."
+        " If user-facing behavior changes (hook script, skill, agent definition,"
+        " rule file, etc.), bump the `version` field in plugin.json"
+        " (and keep `.claude-plugin/marketplace.json` in sync) before committing.",
+        tag="warn",
+    )
 
 
 # --- Bash: git log --decorate自動付与 ---
@@ -2755,24 +2735,19 @@ _CODEX_EXEC_PATTERN = re.compile(r"\bcodex\s+exec\b")
 _CODEX_RESUME_PATTERN_PRE = re.compile(r"\bcodex\s+exec\s+resume\b")
 
 
-def _check_bash_codex_exec(command: str) -> dict | None:
-    """Codex exec（resume以外）を検出した場合に未決事項確認の念押しメッセージを返す。"""
+def _check_bash_codex_exec(command: str) -> str | None:
+    """Codex exec（resume以外）を検出した場合に未決事項確認の警告文を返す。"""
     exec_match = _CODEX_EXEC_PATTERN.search(command)
     if exec_match is None or not _likely_real_command(command, exec_match.start()):
         return None
     if _CODEX_RESUME_PATTERN_PRE.search(command):
         return None
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "additionalContext": _llm_notice(
-                "running codex exec."
-                " If this run submits a plan file for review, check whether any decisions"
-                " were made by assumption rather than user confirmation,"
-                " and resolve open questions with the user before proceeding."
-            ),
-        },
-    }
+    return _llm_notice(
+        "running codex exec."
+        " If this run submits a plan file for review, check whether any decisions"
+        " were made by assumption rather than user confirmation,"
+        " and resolve open questions with the user before proceeding."
+    )
 
 
 # --- mcp__codex__codex / mcp__codex__codex-reply: isSidechainプローブ ---

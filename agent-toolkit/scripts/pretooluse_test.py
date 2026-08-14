@@ -1192,6 +1192,13 @@ class TestHookEntryPointsPep723Dependencies:
 class TestBashSleepPollPattern:
     """sleep直後の読み取り専用な状態確認連結を初回warn・再検出blockで扱う。"""
 
+    @staticmethod
+    def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
+        if not result.stdout:
+            return ""
+        data = json.loads(result.stdout)
+        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
+
     @pytest.mark.parametrize(
         ("command", "session_id"),
         [
@@ -1236,7 +1243,7 @@ class TestBashSleepPollPattern:
             _plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "may cause repeated polling" in result.stderr
+        assert "may cause repeated polling" in self._additional_context(result)
 
     def test_second_detection_in_same_session_blocks(self, tmp_path: pathlib.Path) -> None:
         session_id = "sleep-poll-repeat-test"
@@ -1301,7 +1308,7 @@ class TestBashSleepPollPattern:
         env = _plan_file_state_env(tmp_path)
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id}, env)
         assert result.returncode == 0
-        assert "may cause repeated polling" not in result.stderr
+        assert "may cause repeated polling" not in self._additional_context(result)
         follow_up = _run(
             {
                 "tool_name": "Bash",
@@ -1311,7 +1318,7 @@ class TestBashSleepPollPattern:
             env,
         )
         assert follow_up.returncode == 0
-        assert "may cause repeated polling" in follow_up.stderr
+        assert "may cause repeated polling" in self._additional_context(follow_up)
 
     def test_background_execution_is_not_evaluated(self, tmp_path: pathlib.Path) -> None:
         result = _run(
@@ -2983,6 +2990,73 @@ class TestBashProcessKillByPattern:
         assert result.returncode == 0
 
 
+class TestBashBlockBeforeAccumulatedWarnings:
+    """Bashハンドラーは警告条件との同居時も遮断検査を優先する。"""
+
+    @pytest.mark.parametrize(
+        ("blocking_command", "expected_message"),
+        [
+            ('pkill -f "worker"', "pattern-based process termination"),
+            ("uv run python script.py", "`uv run python` invocation"),
+        ],
+        ids=["process-kill", "uv-run-python"],
+    )
+    def test_bulk_stage_warning_cannot_bypass_block(
+        self,
+        blocking_command: str,
+        expected_message: str,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """一括stage警告より後続の遮断条件を常に優先する。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"tracked.txt": "初期値\n"})
+        (repo / "untracked.txt").write_text("未追跡\n", encoding="utf-8")
+        session_id = f"block-before-warning-{blocking_command.split()[0]}"
+        _write_session_state(tmp_path, session_id, {"session_edited_files": []})
+
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"git add -A; {blocking_command}"},
+                "session_id": session_id,
+                "cwd": str(repo),
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "blocked" in result.stderr
+        assert expected_message in result.stderr
+
+    def test_multiple_warnings_are_accumulated_in_one_output(self, tmp_path: pathlib.Path) -> None:
+        """複数の警告条件を単一PreToolUse応答へ欠落なく蓄積する。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"tracked.txt": "初期値\n"})
+        (repo / "untracked.txt").write_text("未追跡\n", encoding="utf-8")
+        session_id = "accumulate-warnings"
+        _write_session_state(tmp_path, session_id, {"session_edited_files": []})
+
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git add -A; codex exec --help"},
+                "session_id": session_id,
+                "cwd": str(repo),
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        context = output["hookSpecificOutput"]["additionalContext"]
+        assert "bulk staging" in context
+        assert "running codex exec" in context
+
+
 class TestBashOutputTruncationWarning:
     """`Bash`経由の検証コマンド出力`tail`/`head`切り詰め検出（warning、非block）。"""
 
@@ -2996,7 +3070,8 @@ class TestBashOutputTruncationWarning:
     def test_warns(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "warn" in result.stderr
+        output = json.loads(result.stdout)
+        assert "warn" in output["hookSpecificOutput"]["additionalContext"]
 
     def test_tee_saved_log_silent(self):
         command = "uvx pyfltr run-for-agent 2>&1 | tee /tmp/pyfltr.log"
@@ -4043,44 +4118,77 @@ class TestDangerFullAccessPreserved:
 
     def test_blocks_removal_of_sandbox_assignment(self):
         """sandbox指定記述を削除する編集を遮断する。"""
+        file_path = pathlib.Path(pretooluse.__file__).resolve()
         result = _run(
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/scripts/pretooluse.py",
-                    "content": '"sandbox": "read-only"',
+                    "file_path": str(file_path),
+                    "content": "sandbox指定記述を含まない本文",
                 },
             }
         )
         assert result.returncode == 2
         assert "blocked" in result.stderr
+        assert "codex sandbox assignment" in result.stderr
+
+    def test_blocks_edit_removing_sandbox_assignment(self):
+        """Edit経路でsandbox指定記述を削除する操作を遮断する。"""
+        file_path = pathlib.Path(__file__).resolve().parents[1] / "skills/delegation/references/runtime-routing.md"
+        old_string = "作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す"
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(file_path),
+                    "old_string": old_string,
+                    "new_string": "作業ディレクトリの絶対パスを例外なく渡す",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "blocked" in result.stderr
+        assert "codex sandbox assignment" in result.stderr
 
     def test_blocks_weakening_of_sandbox_value(self):
         """sandbox値を弱める編集を遮断する。"""
+        file_path = pathlib.Path(__file__).resolve().parents[1] / "skills/delegation/references/runtime-routing.md"
         result = _run(
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/agents/plan-impl-executor.md",
-                    "content": "`sandbox`へ`workspace-write`と指定",
+                    "file_path": str(file_path),
+                    "content": "`sandbox: workspace-write`を指定する",
                 },
             }
         )
         assert result.returncode == 2
         assert "blocked" in result.stderr
+        assert "codex sandbox assignment" in result.stderr
 
     def test_passes_non_sandbox_change(self):
         """sandbox指定記述を保ったまま説明文を変える編集は通過する。"""
+        file_path = pathlib.Path(pretooluse.__file__).resolve()
+        content = file_path.read_text(encoding="utf-8").replace("統合フック", "統合済みフック", 1)
         result = _run(
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/scripts/pretooluse.py",
-                    "content": '"sandbox": "danger-full-access" # comment',
+                    "file_path": str(file_path),
+                    "content": content,
                 },
             }
         )
         assert result.returncode == 0
+
+    def test_protected_files_contain_only_required_sandbox_assignments(self):
+        """保護対象の各実体から1件以上の固定sandbox値を抽出する。"""
+        repository_root = pathlib.Path(__file__).resolve().parents[2]
+        for relative_path in pretooluse._DANGER_FULL_ACCESS_PROTECTED_PATHS:  # pylint: disable=protected-access
+            content = (repository_root / relative_path).read_text(encoding="utf-8")
+            values = pretooluse._extract_sandbox_assignments(content)  # pylint: disable=protected-access
+            assert values, relative_path
+            assert set(values) == {"danger-full-access"}, relative_path
 
     def test_passes_non_protected_file(self):
         """保護対象外ファイルでは通過する。"""

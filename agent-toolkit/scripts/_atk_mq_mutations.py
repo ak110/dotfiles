@@ -43,7 +43,6 @@ from _atk_mq_list import _has_category
 from _atk_mq_repo import (
     _normalize_remote_url,
     _resolve_repo_id,
-    _verify_frontmatter_target_repo,
     _verify_target_repo_content,
 )
 from _atk_mq_repo import edit_entry as _edit_entry
@@ -267,15 +266,6 @@ def transition_entries(
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        search_dirs = (
-            [private_notes / state]
-            if state is not None
-            else [inbox_dir]
-            if action == "start-processing"
-            else [processing_dir]
-            if action == "return-to-inbox"
-            else [inbox_dir, processing_dir]
-        )
         missing_is_conflict = action == "remove" and expected_content is not None
         paths = (
             _resolve_feedback_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
@@ -299,12 +289,10 @@ def transition_entries(
                 raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
             if current_content != expected_content:
                 raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        if current_content is None:
-            for filename in filenames:
-                _verify_frontmatter_target_repo(filename, search_dirs, target_repo)
-        else:
-            normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
-            _verify_target_repo_content(paths[0], current_content, normalized_target_repo)
+        normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+        for path in paths:
+            content = current_content if current_content is not None else path.read_text(encoding="utf-8")
+            _verify_target_repo_content(path, content, normalized_target_repo)
         if category is not None:
             tbd_paths = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) == MQ_TYPE_TBD]
             if tbd_paths:
@@ -973,8 +961,9 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _pull(private_notes)
             paths = _resolve_processable_targets([args.filename], inbox_dir, processing_dir)
             path = paths[0]
-        _verify_frontmatter_target_repo(path.name, [inbox_dir, processing_dir], args.target_repo)
         snapshot = path.read_bytes()
+        normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
+        _verify_target_repo_content(path, snapshot.decode("utf-8"), normalized_target_repo)
     original = snapshot.decode("utf-8")
     tmp_path: pathlib.Path | None = None
     if message is None:

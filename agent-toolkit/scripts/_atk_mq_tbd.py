@@ -227,7 +227,12 @@ def answer_tbd(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でTBD回答欄を更新する。対象はinbox・processingのTBDに限る。"""
+    """平引数でTBD回答欄を更新する。対象はinbox・processingのTBDに限る。
+
+    呼び出し元に依存せず、共有コア入口で空回答を拒否する。
+    """
+    if not answer.strip():
+        raise WebInputError("回答本文が空です")
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
         try:
@@ -253,8 +258,6 @@ def answer_tbd(
         if text == content:
             return False
         path.write_text(content, encoding="utf-8")
-        if not _is_tbd_answered(content):
-            raise RuntimeError("TBD回答の保存後判定に失敗しました")
         _commit_and_push(private_notes, "chore: answer tbd item", [str(path.relative_to(private_notes))])
     return True
 

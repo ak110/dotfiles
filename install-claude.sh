@@ -347,6 +347,7 @@ _install_atk_wrapper() {
 #!/bin/bash
 # agent-toolkit プラグイン付属の atk コマンドを最新バージョンから起動するラッパー。
 # install-claude.sh が生成する。更新したい場合は同スクリプトを再実行する。
+# バージョン名の辞書順ではなく自然順で最新実体を選択する。
 set -euo pipefail
 plugin_bin=$(ls -d "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/bin 2>/dev/null | sort -V | tail -1)
 if [ -z "$plugin_bin" ] || [ ! -x "$plugin_bin/atk" ]; then

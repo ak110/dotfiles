@@ -13,7 +13,6 @@ import typing
 import _git_remote
 from _atk_mq_common import (
     _commit_and_push,
-    _normalize_md_filename,
     _parse_type,
     _pull,
     _repo_lock,
@@ -172,34 +171,8 @@ def resolve_head_commit(local_worktree: pathlib.Path) -> str:
     return commit
 
 
-def _verify_frontmatter_target_repo(
-    filename: str,
-    inbox_paths: list[pathlib.Path],
-    expected: str | None,
-) -> None:
-    """filenameのfrontmatter`target_repo`が`expected`と一致するか検証する。
-
-    `expected`が`None`（`--target-repo`未指定）ならno-op。`inbox_paths`は先頭から順に
-    実在確認し、最初に見つかった候補のfrontmatterのみ検証する。frontmatterに
-    `target_repo`が無い場合、および正規化後の値が`expected`と不一致の場合はexit 2。
-    候補がいずれのパスにも存在しない場合は後続の存在検証に委ねてno-opとする。
-    `filename`は拡張子`.md`省略入力も`_validate_filename`と同一規約で正規化してから解決する。
-    """
-    if expected is None:
-        return
-    filename = _normalize_md_filename(filename)
-    normalized_expected = _resolve_repo_id(expected)
-    for base_dir in inbox_paths:
-        candidate = base_dir / filename
-        if not candidate.exists():
-            continue
-        text = candidate.read_text(encoding="utf-8")
-        _verify_target_repo_content(candidate, text, normalized_expected)
-        return
-
-
 def _verify_target_repo_content(path: pathlib.Path, content: str, normalized_expected: str | None) -> None:
-    """読取り済み本文の`target_repo`を正規化済み期待値と照合する。"""
+    """解決済み実体の`target_repo`を正規化済み期待値と照合する。"""
     if normalized_expected is None:
         return
     actual = _parse_target_repo(content)
@@ -232,16 +205,17 @@ def edit_entry(
 
     `_atk_mq_mutations.edit_entry_content`が呼び出す。
     編集後の本文frontmatterの`type`が編集前から変更・欠落していないかも検証する
-    （`_verify_frontmatter_target_repo`と同じくexit 2で拒否する。種別は平坦化後の唯一の
+    （`_verify_target_repo_content`と同じくexit 2で拒否する。種別は平坦化後の唯一の
     分類情報であり、編集で書き換わると一覧・集計から静かに脱落するため）。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        _verify_frontmatter_target_repo(filename, [directory], target_repo)
         path = _validate_filename(filename, directory)
         if not path.is_file():
             raise FileNotFoundError(filename)
         previous = path.read_text(encoding="utf-8")
+        normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+        _verify_target_repo_content(path, previous, normalized_target_repo)
         if expected_content is not None and previous != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         if content_validator is not None:

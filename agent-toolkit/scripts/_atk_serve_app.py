@@ -810,8 +810,8 @@ def create_app(
         return quart.jsonify(changed=changed)
 
     async def transition(action: str, allowed: set[str]) -> quart.Response:
-        # target_repoは`_verify_frontmatter_target_repo`の任意検証にのみ使われ、常駐プロセスの
-        # カレントディレクトリには依存しない。Web UIは状態を併用して対象を特定する。
+        # target_repoは状態と併用して特定した対象ファイルの内容に対して検証し、
+        # 常駐プロセスのカレントディレクトリには依存しない。
         # CWD依存回避のため必須化するのは新規追加系（add）のみでよい。
         data = _json_object(await _request_json(), allowed=allowed, required={"filenames"})
         filenames = _strings(data["filenames"], "filenames")

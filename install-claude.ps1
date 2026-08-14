@@ -300,18 +300,18 @@ function Install-AtkWrapper {
     $body = @'
 @echo off
 setlocal enabledelayedexpansion
-set "PLUGIN_ROOT=%USERPROFILE%\.claude\plugins\cache"
 set "LATEST="
-for /f "delims=" %%A in ('dir /b /ad /o-n "%PLUGIN_ROOT%\*\agent-toolkit" 2^>nul') do (
-    for /f "delims=" %%B in ('dir /b /ad /o-n "%PLUGIN_ROOT%\%%A\*" 2^>nul') do (
-        if not defined LATEST set "LATEST=%PLUGIN_ROOT%\%%A\%%B\bin\atk.cmd"
-    )
+rem ディレクトリ名の辞書順ではなく、[version]型の自然順で最新実体を選択する。
+for /f "usebackq delims=" %%A in (`powershell.exe -NoProfile -NonInteractive -Command "$root = Join-Path $env:USERPROFILE '.claude\plugins\cache'; Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object { $plugin = Join-Path $_.FullName 'agent-toolkit'; if (Test-Path -LiteralPath $plugin -PathType Container) { Get-ChildItem -LiteralPath $plugin -Directory | ForEach-Object { $candidate = Join-Path $_.FullName 'bin\atk.cmd'; if (Test-Path -LiteralPath $candidate -PathType Leaf) { [PSCustomObject]@{ Version = [version]$_.Name; Path = $candidate } } } } } | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty Path"`) do (
+    if not defined LATEST set "LATEST=%%A"
 )
-if not defined LATEST (
-    echo atk: agent-toolkit プラグインが見つかりません。install-claude.ps1 を再実行してください。 1>&2
-    exit /b 1
-)
+if not defined LATEST goto :not_found
+if not exist "%LATEST%" goto :not_found
 call "%LATEST%" %*
+exit /b %ERRORLEVEL%
+:not_found
+echo atk: agent-toolkit プラグインが見つかりません。install-claude.ps1 を再実行してください。 1>&2
+exit /b 1
 '@
     Set-Content -LiteralPath $wrapper -Value $body -Encoding ASCII
     Write-Output "配置: $wrapper"

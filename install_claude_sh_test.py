@@ -5,6 +5,7 @@ import http.server
 import json
 import os
 import pathlib
+import re
 import shlex
 import shutil
 import socketserver
@@ -984,3 +985,46 @@ def test_bash_json_check_uses_explicit_python_with_real_uv(tmp_path: pathlib.Pat
     assert any("claude mcp add --scope user codex -- codex mcp-server" in line for line in _log_lines(stub_log))
     assert not (working_directory / ".venv").exists()
     assert not (working_directory / "uv.lock").exists()
+
+
+def test_bash_atk_wrapper_selects_latest_natural_version(tmp_path: pathlib.Path) -> None:
+    """生成するBashラッパーは複数版から自然順で最新実体を選択する。"""
+    source = INSTALL_SH.read_text(encoding="utf-8")
+    match = re.search(r"cat >\"\$wrapper\" <<'EOF'\n(?P<body>.*?)\nEOF", source, re.DOTALL)
+    assert match is not None
+    home = tmp_path / "home"
+    wrapper = tmp_path / "atk"
+    wrapper.write_text(match.group("body") + "\n", encoding="utf-8")
+    wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
+    for version in ("1.2.0", "1.9.0", "1.10.0"):
+        executable = home / ".claude/plugins/cache/market/agent-toolkit" / version / "bin/atk"
+        executable.parent.mkdir(parents=True)
+        executable.write_text(f"#!/bin/sh\nprintf '%s\\n' '{version}'\n", encoding="utf-8")
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+
+    result = subprocess.run(
+        [str(wrapper)],
+        env={**os.environ, "HOME": str(home)},
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert result.stdout == "1.10.0\n"
+
+
+def test_powershell_atk_wrapper_uses_version_objects_and_existing_paths() -> None:
+    """生成するcmdラッパーは版数型による自然順と実体存在を検査する。"""
+    source = INSTALL_PS1.read_text(encoding="utf-8-sig")
+    match = re.search(r"\$body = @'\n(?P<body>.*?)\n'@", source.replace("\r\n", "\n"), re.DOTALL)
+    assert match is not None
+    body = match.group("body")
+    assert "[version]$_.Name" in body
+    assert "Sort-Object Version -Descending" in body
+    assert "Select-Object -First 1 -ExpandProperty Path" in body
+    assert "Get-ChildItem -LiteralPath $root -Directory" in body
+    assert "Test-Path -LiteralPath $candidate -PathType Leaf" in body
+    assert "\\*\\agent-toolkit" not in body
+    assert 'if not exist "%LATEST%" goto :not_found' in body
+    versions = ["1.2.0", "1.9.0", "1.10.0"]
+    assert max(versions) == "1.9.0"

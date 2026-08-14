@@ -1299,6 +1299,26 @@ def test_answer_tbd_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, mon
     assert content.rstrip().endswith("不採用とする")
 
 
+def test_answer_tbd_rejects_empty_answer_without_changing_existing_answer(
+    tmp_path: pathlib.Path,
+) -> None:
+    """空回答は共有コア入口で拒否し、既存回答を1バイトも変更しない。"""
+    notes = _setup_notes(tmp_path)
+    path = notes / "inbox" / "20260101-000000-003.md"
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n"
+        f"{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n既存回答\n",
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+
+    with pytest.raises(tbd_module.WebInputError, match="回答本文が空です"):
+        tbd_module.answer_tbd(notes, filename=path.name, answer=" \n\t")
+
+    assert path.read_bytes() == before
+
+
 def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

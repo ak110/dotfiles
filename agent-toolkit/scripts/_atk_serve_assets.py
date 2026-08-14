@@ -690,6 +690,7 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
 }"""
 
 JS = """const BASE_PATH=__BASE_PATH_JS__;
+// エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
 const STATE_LABELS = {inbox: '未処理', processing: '処理中', adopted: '採用済み', rejected: '不採用'};
 const ACTIVE_STATES = new Set(['inbox', 'processing']);
@@ -1607,7 +1608,7 @@ async function handleFilterChange({reloadRepos = false} = {}) {
 
 async function reloadFromExternalChange() {
   void refreshKnownTbds({notify: true}).catch((error) => {
-    setTextMessage('global-error', messageFromError(error));
+    setTextMessage('global-error', error.message);
   });
   await loadTargetRepos();
   await loadEntries({announce: false});
@@ -1624,52 +1625,58 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
   });
 }
 
-// BIND_EVENTS
-byId('refresh-button').addEventListener('click', synchronizeAndLoad);
-byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
-byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
-byId('empty-create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
-byId('clear-filters-button').addEventListener('click', () => clearFilters());
-byId('empty-clear-button').addEventListener('click', () => clearFilters());
-byId('empty-all-states-button').addEventListener('click', () => {
-  byId('state-filter').value = 'all';
-  handleFilterChange({reloadRepos: true});
-});
-byId('kind-filter').addEventListener('change', () => { void handleFilterChange(); });
-byId('state-filter').addEventListener('change', () => { void handleFilterChange({reloadRepos: true}); });
-byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
-byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
-byId('category-filter').addEventListener('change', () => { void handleFilterChange(); });
-byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
-byId('source-empty-filter').addEventListener('change', () => { void handleFilterChange(); });
-byId('search-input').addEventListener('input', () => {
-  if (searchTimer !== null) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => loadEntries({announce: true}), 250);
-});
-byId('edit-button').addEventListener('click', enterEdit);
-byId('answer-button').addEventListener('click', enterAnswer);
-byId('save-entry-button').addEventListener('click', saveEntry);
-byId('save-answer-button').addEventListener('click', saveAnswer);
-byId('delete-button').addEventListener('click', openDeleteDialog);
-byId('create-kind').addEventListener('change', updateCreateFields);
-byId('create-question-type').addEventListener('change', updateCreateFields);
-byId('create-form').addEventListener('submit', createEntry);
-byId('delete-form').addEventListener('submit', deleteEntry);
-attachDialogCloseHandlers('detail-dialog', 'detail-close-button', closeDetailDialog);
-attachDialogCloseHandlers('create-dialog', 'create-close-button', () => closeDialog(byId('create-dialog')));
-attachDialogCloseHandlers('delete-dialog', 'delete-close-button', closeDeleteDialog);
-
-const eventSource = new EventSource(BASE_PATH + '/api/events');
-eventSource.addEventListener('open', () => { byId('connection-status').textContent = '自動更新に接続済み'; });
-eventSource.addEventListener('error', () => { byId('connection-status').textContent = '自動更新を再接続中'; });
-let initialization;
-eventSource.addEventListener('changed', () => { void initialization.then(reloadFromExternalChange); });
-
-syncFilterDependencies();
-syncNotificationButton();
-initialization = synchronizeAndLoad()
-  .then(() => refreshKnownTbds({notify: false}))
-  .catch((error) => {
-    setTextMessage('global-error', messageFromError(error));
+function bindEvents() {
+  byId('refresh-button').addEventListener('click', synchronizeAndLoad);
+  byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
+  byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
+  byId('empty-create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
+  byId('clear-filters-button').addEventListener('click', () => clearFilters());
+  byId('empty-clear-button').addEventListener('click', () => clearFilters());
+  byId('empty-all-states-button').addEventListener('click', () => {
+    byId('state-filter').value = 'all';
+    handleFilterChange({reloadRepos: true});
   });
+  byId('kind-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('state-filter').addEventListener('change', () => { void handleFilterChange({reloadRepos: true}); });
+  byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('category-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('source-empty-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('search-input').addEventListener('input', () => {
+    if (searchTimer !== null) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadEntries({announce: true}), 250);
+  });
+  byId('edit-button').addEventListener('click', enterEdit);
+  byId('answer-button').addEventListener('click', enterAnswer);
+  byId('save-entry-button').addEventListener('click', saveEntry);
+  byId('save-answer-button').addEventListener('click', saveAnswer);
+  byId('delete-button').addEventListener('click', openDeleteDialog);
+  byId('create-kind').addEventListener('change', updateCreateFields);
+  byId('create-question-type').addEventListener('change', updateCreateFields);
+  byId('create-form').addEventListener('submit', createEntry);
+  byId('delete-form').addEventListener('submit', deleteEntry);
+  attachDialogCloseHandlers('detail-dialog', 'detail-close-button', closeDetailDialog);
+  attachDialogCloseHandlers('create-dialog', 'create-close-button', () => closeDialog(byId('create-dialog')));
+  attachDialogCloseHandlers('delete-dialog', 'delete-close-button', closeDeleteDialog);
+}
+
+let initialization = Promise.resolve();
+
+function initializeApp() {
+  const eventSource = new EventSource(BASE_PATH + '/api/events');
+  eventSource.addEventListener('open', () => { byId('connection-status').textContent = '自動更新に接続済み'; });
+  eventSource.addEventListener('error', () => { byId('connection-status').textContent = '自動更新を再接続中'; });
+  eventSource.addEventListener('changed', () => { void initialization.then(reloadFromExternalChange); });
+  syncFilterDependencies();
+  syncNotificationButton();
+  initialization = synchronizeAndLoad()
+    .then(() => refreshKnownTbds({notify: false}))
+    .catch((error) => {
+      setTextMessage('global-error', error.message);
+    });
+}
+
+bindEvents();
+initializeApp();
 """

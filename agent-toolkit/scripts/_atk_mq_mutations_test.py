@@ -2634,6 +2634,76 @@ class TestTargetRepoVerification:
     既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_feedback_file`既定値）。
     """
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            ["mq", "adopt", "fb-dup.md"],
+            ["mq", "reject", "fb-dup.md"],
+            ["mq", "rm", "--force", "fb-dup.md"],
+        ],
+        ids=["adopt", "reject", "remove"],
+    )
+    def test_resolved_processing_entry_is_verified_when_same_name_exists_in_inbox(
+        self,
+        command: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同名併存時は実際の操作対象であるprocessing側を検証する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-dup.md", target_repo="github.com/example/foo")
+        processing = notes / "processing"
+        processing.mkdir(parents=True, exist_ok=True)
+        processing_path = processing / "fb-dup.md"
+        processing_path.write_text(
+            "---\ntarget_repo: github.com/example/other\ntype: feedback\n---\n\nprocessing本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main([*command, "--target-repo", "github.com/example/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "target_repo不一致" in capsys.readouterr().err
+        assert processing_path.exists()
+
+    def test_edit_verifies_resolved_processing_entry_when_same_name_exists_in_inbox(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """editの事前検査も解決済みprocessing実体へ適用する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-dup.md", target_repo="github.com/example/foo")
+        processing = notes / "processing"
+        processing.mkdir(parents=True, exist_ok=True)
+        processing_path = processing / "fb-dup.md"
+        processing_path.write_text(
+            "---\ntarget_repo: github.com/example/other\ntype: feedback\n---\n\nprocessing本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        editor_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if cmd[0] == "fake-editor":
+                editor_calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "edit", "fb-dup.md", "--target-repo", "github.com/example/foo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert "target_repo不一致" in capsys.readouterr().err
+        assert not editor_calls
+
     def test_adopt_mismatch_exits_2(
         self,
         monkeypatch: pytest.MonkeyPatch,

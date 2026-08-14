@@ -217,7 +217,10 @@ def test_assets_define_all_operation_lifecycles_and_message_regions() -> None:
 
 def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
     """UI関数を最小DOM上で実行し、シナリオのJSON結果を返す。"""
-    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"').partition("// BIND_EVENTS")[0]
+    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"').replace(
+        "\nbindEvents();\ninitializeApp();\n",
+        "\n",
+    )
     executable = (
         source
         + "\n(async () => {\n"
@@ -340,6 +343,10 @@ globalThis.document = {{
 globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
 globalThis.setTimeout = () => 1;
 globalThis.clearTimeout = () => undefined;
+globalThis.EventSource = class {{
+  constructor(url) {{ this.url = url; this.listeners = {{}}; }}
+  addEventListener(name, handler) {{ this.listeners[name] = handler; }}
+}};
 const fetchCalls = [];
 let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: [], warnings: []}})}});
 globalThis.fetch = async (url, options = {{}}) => {{
@@ -356,6 +363,30 @@ eval({json.dumps(executable)});
         check=True,
     )
     return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))
+
+
+def test_assets_execute_error_paths_across_binding_and_initialization_code() -> None:
+    """末尾を含むJS全体で外部更新と初期化の失敗メッセージを表示する。"""
+    result = _run_node_ui(
+        """
+fetchHandler = async url => {
+  if (url.includes('/api/repos?')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+refreshKnownTbds = async () => { throw new Error('外部更新失敗'); };
+await reloadFromExternalChange();
+await Promise.resolve();
+const reloadError = elements['global-error'].textContent;
+elements['global-error'].textContent = '';
+refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
+initializeApp();
+await initialization;
+process.stdout.write(JSON.stringify({reloadError, initializationError: elements['global-error'].textContent}));
+"""
+    )
+    assert result == {"reloadError": "外部更新失敗", "initializationError": "初期化失敗"}
 
 
 def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:
