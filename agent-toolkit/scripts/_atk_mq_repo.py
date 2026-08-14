@@ -179,7 +179,7 @@ def _verify_target_repo_content(path: pathlib.Path, content: str, normalized_exp
     if actual == "(unknown)":
         print(f"frontmatterにtarget_repoがありません: {path}", file=sys.stderr)
         sys.exit(2)
-    normalized_actual = _normalize_remote_url(actual)
+    normalized_actual = _git_remote.resolve_repo_identifier(actual)
     if normalized_actual != normalized_expected:
         print(
             f"target_repo不一致: 期待={normalized_expected} 実際={normalized_actual} ファイル={path}",

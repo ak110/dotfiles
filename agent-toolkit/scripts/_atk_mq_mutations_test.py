@@ -2543,6 +2543,180 @@ class TestTargetRepoVerification:
     @pytest.mark.parametrize(
         "command",
         [
+            ["mq", "edit", "fb-001.md", "編集後"],
+            ["mq", "adopt", "fb-001.md"],
+            ["mq", "reject", "fb-001.md"],
+            ["mq", "start-processing", "fb-001.md"],
+            ["mq", "rm", "fb-001.md"],
+        ],
+        ids=["edit", "adopt", "reject", "start-processing", "remove"],
+    )
+    @pytest.mark.parametrize("target_repo_kind", ["legacy-path", "canonical-url"])
+    def test_active_entry_with_legacy_target_repo_accepts_equivalent_target(
+        self,
+        command: list[str],
+        target_repo_kind: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """旧パス形の保存値は対応するパス形・URL形のどちらとも一致する。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "target-repo"
+        local_repo.mkdir()
+        _write_feedback_file(notes, "fb-001.md", target_repo=str(local_repo), body="編集前")
+        target_repo = {
+            "legacy-path": str(local_repo),
+            "canonical-url": "github.com/example/repo",
+        }[target_repo_kind]
+        git_calls: list[_GitCall] = []
+        fallback = _make_subprocess_fake(git_calls)
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/repo.git\n", "")
+            return fallback(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main([*command, "--target-repo", target_repo], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+
+    @pytest.mark.parametrize("target_repo_kind", ["legacy-path", "canonical-url"])
+    def test_processing_entry_with_legacy_target_repo_accepts_equivalent_target_on_return(
+        self,
+        target_repo_kind: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """return-to-inboxも旧パス形の保存値をパス形・URL形で検証できる。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "target-repo"
+        local_repo.mkdir()
+        path = _write_feedback_file(notes, "fb-001.md", target_repo=str(local_repo))
+        processing = notes / "processing"
+        processing.mkdir()
+        path.replace(processing / path.name)
+        target_repo = {
+            "legacy-path": str(local_repo),
+            "canonical-url": "github.com/example/repo",
+        }[target_repo_kind]
+        fallback = _make_subprocess_fake([])
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/repo.git\n", "")
+            return fallback(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "return-to-inbox", "fb-001.md", "--target-repo", target_repo],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 0
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            ["mq", "edit", "fb-001.md", "編集後"],
+            ["mq", "adopt", "fb-001.md"],
+            ["mq", "reject", "fb-001.md"],
+            ["mq", "start-processing", "fb-001.md"],
+            ["mq", "rm", "fb-001.md"],
+        ],
+        ids=["edit", "adopt", "reject", "start-processing", "remove"],
+    )
+    def test_active_entry_with_legacy_target_repo_rejects_different_target(
+        self,
+        command: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """旧パス形の保存値は別リポジトリのURL形と一致しない。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "target-repo"
+        local_repo.mkdir()
+        _write_feedback_file(notes, "fb-001.md", target_repo=str(local_repo), body="編集前")
+        fallback = _make_subprocess_fake([])
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/repo.git\n", "")
+            return fallback(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main([*command, "--target-repo", "github.com/example/other"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 2
+        assert "target_repo不一致" in capsys.readouterr().err
+
+    def test_processing_entry_with_legacy_target_repo_rejects_different_target_on_return(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """return-to-inboxも旧パス形の保存値を別リポジトリとは判定しない。"""
+        notes = _setup_notes(tmp_path)
+        local_repo = tmp_path / "target-repo"
+        local_repo.mkdir()
+        path = _write_feedback_file(notes, "fb-001.md", target_repo=str(local_repo))
+        processing = notes / "processing"
+        processing.mkdir()
+        path.replace(processing / path.name)
+        fallback = _make_subprocess_fake([])
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/repo.git\n", "")
+            return fallback(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "return-to-inbox", "fb-001.md", "--target-repo", "github.com/example/other"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 2
+        assert "target_repo不一致" in capsys.readouterr().err
+
+    def test_unresolvable_saved_target_repo_exits_2_without_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """解決不能な保存値は不一致としてTraceback無しのexit 2で拒否する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo=str(tmp_path / "missing-repo"))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "adopt", "fb-001.md", "--target-repo", "github.com/example/repo"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "target_repo不一致" in captured.err
+        assert "Traceback" not in captured.err
+
+    @pytest.mark.parametrize(
+        "command",
+        [
             ["mq", "adopt", "fb-dup.md"],
             ["mq", "reject", "fb-dup.md"],
             ["mq", "rm", "--force", "fb-dup.md"],
