@@ -987,7 +987,31 @@ def test_bash_json_check_uses_explicit_python_with_real_uv(tmp_path: pathlib.Pat
     assert not (working_directory / "uv.lock").exists()
 
 
-def test_bash_atk_wrapper_selects_latest_natural_version(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    ("cached_versions", "expected_version"),
+    [
+        pytest.param(
+            (("market", "2.0.0"),),
+            "2.0.0",
+            id="single-version",
+        ),
+        pytest.param(
+            (("market", "1.2.0"), ("market", "1.9.0"), ("market", "1.10.0")),
+            "1.10.0",
+            id="natural-version-order",
+        ),
+        pytest.param(
+            (("a-market", "9.0.0"), ("z-market", "1.0.0")),
+            "9.0.0",
+            id="marketplace-order-conflicts-with-version-order",
+        ),
+    ],
+)
+def test_bash_atk_wrapper_selects_latest_natural_version(
+    tmp_path: pathlib.Path,
+    cached_versions: tuple[tuple[str, str], ...],
+    expected_version: str,
+) -> None:
     """生成するBashラッパーは複数版から自然順で最新実体を選択する。"""
     source = INSTALL_SH.read_text(encoding="utf-8")
     match = re.search(r"cat >\"\$wrapper\" <<'EOF'\n(?P<body>.*?)\nEOF", source, re.DOTALL)
@@ -996,8 +1020,8 @@ def test_bash_atk_wrapper_selects_latest_natural_version(tmp_path: pathlib.Path)
     wrapper = tmp_path / "atk"
     wrapper.write_text(match.group("body") + "\n", encoding="utf-8")
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
-    for version in ("1.2.0", "1.9.0", "1.10.0"):
-        executable = home / ".claude/plugins/cache/market/agent-toolkit" / version / "bin/atk"
+    for marketplace, version in cached_versions:
+        executable = home / ".claude/plugins/cache" / marketplace / "agent-toolkit" / version / "bin/atk"
         executable.parent.mkdir(parents=True)
         executable.write_text(f"#!/bin/sh\nprintf '%s\\n' '{version}'\n", encoding="utf-8")
         executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
@@ -1010,7 +1034,30 @@ def test_bash_atk_wrapper_selects_latest_natural_version(tmp_path: pathlib.Path)
         check=True,
     )
 
-    assert result.stdout == "1.10.0\n"
+    assert result.stdout == f"{expected_version}\n"
+
+
+def test_bash_atk_wrapper_reports_missing_plugin(tmp_path: pathlib.Path) -> None:
+    """生成するBashラッパーは実体が無い場合に案内を返して失敗する。"""
+    source = INSTALL_SH.read_text(encoding="utf-8")
+    match = re.search(r"cat >\"\$wrapper\" <<'EOF'\n(?P<body>.*?)\nEOF", source, re.DOTALL)
+    assert match is not None
+    home = tmp_path / "home"
+    home.mkdir()
+    wrapper = tmp_path / "atk"
+    wrapper.write_text(match.group("body") + "\n", encoding="utf-8")
+    wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
+
+    result = subprocess.run(
+        [str(wrapper)],
+        env={**os.environ, "HOME": str(home)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "agent-toolkit プラグインが見つかりません" in result.stderr
 
 
 def test_powershell_atk_wrapper_uses_version_objects_and_existing_paths() -> None:

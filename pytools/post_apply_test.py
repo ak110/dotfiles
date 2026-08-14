@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from pytools import post_apply
-from pytools._internal import post_apply_outcome
+from pytools._internal import cleanup_paths, post_apply_outcome
 
 # 配布先cleanup契約の定数を直接検証する。
 # pylint: disable=protected-access
@@ -31,8 +31,25 @@ def test_session_review_reference_is_not_cleanup_target() -> None:
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
     paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
-    assert Path("profile_default/startup/README") in paths
+    assert Path("profile_default") in paths
     assert not any(path.is_relative_to("profile_ipy") for path in paths)
+
+
+def test_removed_ipython_profile_cleanup_preserves_profile_ipy(tmp_path: Path) -> None:
+    """旧profile_defaultをディレクトリごと削除し、利用中のprofile_ipyを保持する。"""
+    default_readme = tmp_path / "profile_default/startup/README"
+    default_readme.parent.mkdir(parents=True)
+    default_readme.write_text("old\n", encoding="utf-8")
+    active_config = tmp_path / "profile_ipy/ipython_config.py"
+    active_config.parent.mkdir(parents=True)
+    active_config.write_text("active\n", encoding="utf-8")
+    paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
+
+    removed = cleanup_paths.cleanup_paths(tmp_path, paths)
+
+    assert removed == 1
+    assert not (tmp_path / "profile_default").exists()
+    assert active_config.read_text(encoding="utf-8") == "active\n"
 
 
 def _make_step(name: str, calls: list[str], changed: bool = False):

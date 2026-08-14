@@ -148,7 +148,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("pyfltr/config.toml"),
     ],
     Path.home() / ".ipython": [
-        Path("profile_default/startup/README"),
+        Path("profile_default"),
     ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、

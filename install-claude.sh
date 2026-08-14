@@ -349,7 +349,13 @@ _install_atk_wrapper() {
 # install-claude.sh が生成する。更新したい場合は同スクリプトを再実行する。
 # バージョン名の辞書順ではなく自然順で最新実体を選択する。
 set -euo pipefail
-plugin_bin=$(ls -d "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/bin 2>/dev/null | sort -V | tail -1)
+plugin_bin=$(
+    for candidate in "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/bin; do
+        [ -x "$candidate/atk" ] || continue
+        version_dir=${candidate%/bin}
+        printf '%s\t%s\n' "${version_dir##*/}" "$candidate"
+    done | sort -t "$(printf '\t')" -k1,1V | tail -1 | cut -f2-
+)
 if [ -z "$plugin_bin" ] || [ ! -x "$plugin_bin/atk" ]; then
     echo "atk: agent-toolkit プラグインが見つかりません。install-claude.sh を再実行してください。" >&2
     exit 1
