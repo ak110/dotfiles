@@ -28,6 +28,13 @@ def test_session_review_reference_is_not_cleanup_target() -> None:
         assert Path("references/session-review-dotfiles.md") not in paths
 
 
+def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
+    """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
+    paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
+    assert Path("profile_default/startup/README") in paths
+    assert not any(path.is_relative_to("profile_ipy") for path in paths)
+
+
 def _make_step(name: str, calls: list[str], changed: bool = False):
     """呼び出し記録を残すステップ関数を返すヘルパー。"""
 

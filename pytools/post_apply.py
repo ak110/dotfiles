@@ -147,6 +147,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # dotfiles配布のカスタムコマンド定義（旧`config.toml`）を配布先から除去する。
         Path("pyfltr/config.toml"),
     ],
+    Path.home() / ".ipython": [
+        Path("profile_default/startup/README"),
+    ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、
         # .chezmoi-source/bin/ の配布対象外とする。
