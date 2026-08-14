@@ -82,12 +82,17 @@ def _cmd_config_show(home: pathlib.Path) -> None:
 
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
-    """getサブコマンド: 単一設定値を表示する。未知キーはexit 2。"""
+    """getサブコマンド: 1件以上の設定値を表示する。未知キーはexit 2。"""
     settings = _resolved_settings(home)
-    if args.key not in settings:
-        print(f"未知の設定キーです: {args.key}（利用可能: {', '.join(sorted(settings))}）", file=sys.stderr)
+    unknown_keys = [key for key in args.key if key not in settings]
+    if unknown_keys:
+        print(
+            f"未知の設定キーです: {', '.join(unknown_keys)}（利用可能: {', '.join(sorted(settings))}）",
+            file=sys.stderr,
+        )
         sys.exit(2)
-    print(settings[args.key])
+    for key in args.key:
+        print(settings[key])
 
 
 def _cmd_config_set(args: argparse.Namespace) -> None:
@@ -114,8 +119,8 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     """`config`サブパーサ配下にshow/get/setサブコマンドを登録する。"""
     sub = config.add_subparsers(dest="config_subcommand")
     sub.add_parser("show", help="XDG関連パスと工程別モデル設定を一覧表示する（既定動作）")
-    get = sub.add_parser("get", help="単一設定値を取得する")
-    get.add_argument("key", metavar="KEY", help="取得するキー（config showの出力キーと同一）。")
+    get = sub.add_parser("get", help="1件以上の設定値を取得する")
+    get.add_argument("key", metavar="KEY", nargs="+", help="取得する1件以上のキー（config showの出力キーと同一）。")
     set_ = sub.add_parser("set", help="変更可能な設定値を更新する")
     set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(sorted(_MUTABLE_KEYS))}")
     set_.add_argument("value", metavar="VALUE", help="設定する値。")

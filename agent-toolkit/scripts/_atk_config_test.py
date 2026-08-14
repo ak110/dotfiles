@@ -57,7 +57,7 @@ class TestConfigShow:
 
 
 class TestConfigGet:
-    """`atk config get`の単一キー取得を検証する。"""
+    """`atk config get`の1件以上のキー取得を検証する。"""
 
     def test_get_known_key(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """既知キーの値のみを1行で出力する。"""
@@ -75,13 +75,41 @@ class TestConfigGet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
 
+    def test_get_multiple_keys_in_requested_order(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """複数キーの値を指定順に1行ずつ出力する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "data_dir", "config_dir"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{tmp_path / 'data'}\n{tmp_path / 'config'}\n"
+
     def test_get_unknown_key_exits_2(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """未知キーはexit 2でエラー案内を出力する。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "no-such-key"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "未知の設定キーです" in capsys.readouterr().err
+        captured = capsys.readouterr()
+        assert not captured.out
+        assert captured.err == (
+            "未知の設定キーです: no-such-key（利用可能: config_dir, data_dir, execute_model, "
+            "execute_review_model, merge_model, pick_feedbacks_model, plan_model, plan_review_model, "
+            "private_notes, state_dir）\n"
+        )
+
+    def test_get_known_and_unknown_keys_is_atomic(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """既知キーの間に未知キーがある場合は値を出力せずexit 2とする。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "config_dir", "no-such-key", "data_dir"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert not captured.out
+        assert captured.err == (
+            "未知の設定キーです: no-such-key（利用可能: config_dir, data_dir, execute_model, "
+            "execute_review_model, merge_model, pick_feedbacks_model, plan_model, plan_review_model, "
+            "private_notes, state_dir）\n"
+        )
 
 
 class TestConfigSet:
