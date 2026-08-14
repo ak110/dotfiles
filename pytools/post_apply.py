@@ -223,8 +223,14 @@ def _cleanup_removed_paths() -> bool:
         total_removed += cleanup_paths.cleanup_paths_if_content_matches(base_dir, expected)
     # 配布済みREADMEの親だけを深い順で除去する。rmdirにより利用者ファイルが残るディレクトリは保持する。
     ipython_dir = Path.home() / ".ipython"
+    ipython_resolved = ipython_dir.resolve()
     for relative_dir in (Path("profile_default/startup"), Path("profile_default")):
         target = ipython_dir / relative_dir
+        try:
+            target.resolve().relative_to(ipython_resolved)
+        except ValueError:
+            logger.warning("%s は %s 配下ではないためスキップします", target, ipython_dir)
+            continue
         try:
             target.rmdir()
         except OSError:

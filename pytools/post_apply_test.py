@@ -127,6 +127,26 @@ def test_removed_ipython_profile_cleanup_skips_missing_profile(
     assert changed is False
 
 
+def test_removed_ipython_profile_cleanup_preserves_symlink_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """profile_defaultが外部リンクの場合はリンク先の空ディレクトリを削除しない。"""
+    ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
+    outside_profile = tmp_path / "outside-profile"
+    outside_startup = outside_profile / "startup"
+    outside_startup.mkdir(parents=True)
+    ipython_dir.mkdir(parents=True)
+    profile_link = ipython_dir / "profile_default"
+    profile_link.symlink_to(outside_profile, target_is_directory=True)
+
+    changed = post_apply._cleanup_removed_paths()  # noqa: SLF001
+
+    assert changed is False
+    assert profile_link.is_symlink()
+    assert outside_startup.is_dir()
+
+
 def _make_step(name: str, calls: list[str], changed: bool = False):
     """呼び出し記録を残すステップ関数を返すヘルパー。"""
 
