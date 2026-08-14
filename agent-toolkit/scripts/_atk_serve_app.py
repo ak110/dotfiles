@@ -145,7 +145,6 @@ def _summary(text: str, kind: str) -> str:
 def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, object]:
     parsed = frontmatter.parse_frontmatter(text)
     metadata = parsed[0] if parsed is not None else {}
-    category_match = re.search(r"^- カテゴリ:\s*(.+)$", text, re.MULTILINE)
     answered = common.is_tbd_answered(text) if kind == "tbd" else None
     return {
         "kind": kind,
@@ -154,7 +153,6 @@ def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, ob
         "answered": answered,
         "target_repo": metadata.get("target_repo"),
         "source": metadata.get("source"),
-        "category": category_match.group(1).strip() if category_match else None,
         "summary": _summary(text, kind),
         "updated_at": datetime.datetime.fromtimestamp(
             path.stat().st_mtime,
@@ -309,11 +307,11 @@ class Operations:
                 source = item["source"]
                 if not (source is None or isinstance(source, str) and not source.strip()):
                     continue
-            if any(filters.get(key) and item[key] != filters[key] for key in ("target_repo", "category")):
+            if filters.get("target_repo") and item["target_repo"] != filters["target_repo"]:
                 continue
             if filters.get("source") and item["source"] != filters["source"]:
                 continue
-            searchable = (text, path.name, item["target_repo"], item["category"], item["source"])
+            searchable = (text, path.name, item["target_repo"], item["source"])
             if query and not any(query in str(value or "").casefold() for value in searchable):
                 continue
             result.append(item)
@@ -491,7 +489,6 @@ class Operations:
         *,
         note: str | None = None,
         commit: str | None = None,
-        category: str | None = None,
         target_repo: str | None = None,
         force: bool = False,
         state: str | None = None,
@@ -511,7 +508,6 @@ class Operations:
                 note=note,
                 commit=commit,
                 target_repo=target_repo,
-                category=category,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
                 force=force,
                 state=state,
@@ -702,7 +698,7 @@ def create_app(
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
-        allowed = {"type", "status", "answered", "target_repo", "category", "source", "source_empty", "q"}
+        allowed = {"type", "status", "answered", "target_repo", "source", "source_empty", "q"}
         unknown = set(quart.request.args) - allowed
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
@@ -717,7 +713,7 @@ def create_app(
             raise common.WebInputError("source_emptyはtrueで指定してください")
         if "source" in filters and "source_empty" in filters:
             raise common.WebInputError("sourceとsource_emptyは同時に指定できません")
-        for name in ("target_repo", "category", "source", "q"):
+        for name in ("target_repo", "source", "q"):
             if name in filters and not filters[name].strip():
                 raise common.WebInputError(f"{name}は空でない文字列で指定してください")
         result, warnings = await workers.run(ops.entries_with_warnings, filters)
@@ -815,9 +811,7 @@ def create_app(
         # CWD依存回避のため必須化するのは新規追加系（add）のみでよい。
         data = _json_object(await _request_json(), allowed=allowed, required={"filenames"})
         filenames = _strings(data["filenames"], "filenames")
-        optional = {
-            name: _optional_string(data, name) for name in ("note", "commit", "category", "target_repo") if name in allowed
-        }
+        optional = {name: _optional_string(data, name) for name in ("note", "commit", "target_repo") if name in allowed}
         force = False
         if "force" in allowed and "force" in data:
             if not isinstance(data["force"], bool):
@@ -834,7 +828,6 @@ def create_app(
                 filenames,
                 note=optional.get("note"),
                 commit=optional.get("commit"),
-                category=optional.get("category"),
                 target_repo=optional.get("target_repo"),
                 force=force,
             )
@@ -845,7 +838,6 @@ def create_app(
                 filenames,
                 note=optional.get("note"),
                 commit=optional.get("commit"),
-                category=optional.get("category"),
                 target_repo=optional.get("target_repo"),
                 force=force,
                 state=state_name,
@@ -861,7 +853,7 @@ def create_app(
     async def adopt_feedback() -> quart.Response:
         return await transition(
             "adopt",
-            {"filenames", "note", "commit", "category", "target_repo"},
+            {"filenames", "note", "commit", "target_repo"},
         )
 
     @app.post("/api/entries/reject")

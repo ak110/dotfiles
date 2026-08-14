@@ -34,27 +34,6 @@ from _atk_mq_repo import _resolve_repo_id
 type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 
 
-def _category_line_matches(line: str, category: str) -> bool:
-    """カテゴリ記録行が指定カテゴリと一致するか判定する。"""
-    stripped = line.strip()
-    if stripped.startswith("- "):
-        stripped = stripped[2:].strip()
-    return bool(stripped.startswith("カテゴリ:") and stripped.removeprefix("カテゴリ:").strip() == category)
-
-
-def _has_category(text: str, category: str) -> bool:
-    """`## 処理結果`節に指定カテゴリが記録されているか判定する。"""
-    lines = text.splitlines()
-    in_result_section = False
-    for line in lines:
-        if line.startswith("## "):
-            in_result_section = line.strip() == "## 処理結果"
-            continue
-        if in_result_section and _category_line_matches(line, category):
-            return True
-    return False
-
-
 def _resolve_states(status: str) -> tuple[str, ...]:
     """状態フィルターを走査対象へ変換する。"""
     if status == "active":
@@ -82,7 +61,6 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     - `args.type`が`"all"`または`"tbd"`
     - `args.status`が`"all"`または`"active"`
     - `args.answered`が`"all"`または`"no"`
-    - `args.category`が`None`（category指定時は出力が部分集合になり得るため対象外）
     - `args.source`が`None`（source指定時は出力が部分集合になり得るため対象外）
     """
     return (
@@ -90,7 +68,6 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
         and args.type in ("all", "tbd")
         and args.status in ("all", "active")
         and args.answered in ("all", "no")
-        and args.category is None
         and args.source is None
     )
 
@@ -166,7 +143,6 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     feedback側は`inbox`・`processing`・`adopted`・`rejected`・`all`を解釈する。
     tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`adopted`・`rejected`・`all`は
     tbd側に作用せず、tbd inboxの全件を返す）。
-    `--category`指定時はfeedback側のみを指定ラベルへ限定する。
     `--source`指定時はfeedback・tbd双方をfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
@@ -185,8 +161,6 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     for entry in _iter_entries(private_notes, _resolve_states(args.status), filter_repo, args.type):
         _, _, text, _, entry_type = entry
         if not _answered_matches(entry_type, text, args.answered):
-            continue
-        if args.category is not None and not _has_category(text, args.category):
             continue
         if args.source is not None and not _source_matches(_parse_source(text), args.source):
             continue

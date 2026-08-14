@@ -39,7 +39,6 @@ from _atk_mq_common import (
     _validate_filename,
     _validate_filenames_only,
 )
-from _atk_mq_list import _has_category
 from _atk_mq_repo import (
     _normalize_remote_url,
     _resolve_repo_id,
@@ -47,7 +46,6 @@ from _atk_mq_repo import (
 )
 from _atk_mq_repo import edit_entry as _edit_entry
 
-_CATEGORY_GATE_THRESHOLD = 3
 _GIT_TIMEOUT_SECONDS = 10.0
 _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
     "target_commit",
@@ -236,7 +234,6 @@ def transition_entries(
     target_repo: str | None = None,
     note: str | None = None,
     commit: str | None = None,
-    category: str | None = None,
     lock_timeout: float = -1,
     force: bool = False,
     state: str | None = None,
@@ -293,10 +290,6 @@ def transition_entries(
         for path in paths:
             content = current_content if current_content is not None else path.read_text(encoding="utf-8")
             _verify_target_repo_content(path, content, normalized_target_repo)
-        if category is not None:
-            tbd_paths = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) == MQ_TYPE_TBD]
-            if tbd_paths:
-                raise WebInputError(f"--categoryはfeedback専用です: {', '.join(tbd_paths)}")
         if cooldown_days is not None:
             non_feedback = [
                 path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK
@@ -360,7 +353,6 @@ def transition_entries(
                         now=now,
                         commit=commit_values[path],
                         note=note,
-                        category=category if action == "adopt" else None,
                     )
                 shutil.move(path, destination / path.name)
         count = len(paths)
@@ -374,21 +366,6 @@ def transition_entries(
             "remove": f"chore: remove {count} {item_word}{note_suffix}",
         }[action]
         _commit_and_push(private_notes, message, list(MQ_STATES))
-        if action == "adopt" and category is not None:
-            adopted_dir = _subdir(private_notes, MQ_STATE_ADOPTED)
-            adopted_count = sum(
-                1
-                for entry_path in adopted_dir.iterdir()
-                if entry_path.is_file() and _has_category(entry_path.read_text(encoding="utf-8"), category)
-            )
-            if adopted_count >= _CATEGORY_GATE_THRESHOLD:
-                print(
-                    f"カテゴリ「{category}」の採用件数が{adopted_count}件に到達した。"
-                    "上位カテゴリでの規範化・仕組み化の検討を必須とする"
-                    "（agent-toolkit:process-feedbacks配下references/decision-format.md"
-                    "「上位カテゴリの評価」参照）。",
-                    file=sys.stderr,
-                )
     return [path.name for path in paths]
 
 
@@ -827,7 +804,6 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         target_repo=args.target_repo,
         note=args.note,
         commit=args.commit,
-        category=args.category,
         local_worktree=local_worktree,
     )
     print(f"{len(filenames)}件採用処理: {', '.join(filenames)}")

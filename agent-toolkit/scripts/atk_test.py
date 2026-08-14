@@ -406,19 +406,6 @@ class TestUnansweredTbdNotification:
         captured = capsys.readouterr()
         assert "# tbd" in captured.err
 
-    def test_does_not_suppress_notify_when_list_has_category_filter(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """list --category指定時、通知が抑止されないことを検証する。"""
-        notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--category=test", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "# tbd" in captured.err
-
     def test_does_not_suppress_notify_when_list_has_status_inbox(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:

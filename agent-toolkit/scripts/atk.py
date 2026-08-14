@@ -257,12 +257,6 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         default="all",
         help="TBDの回答状況で限定する（既定: all）。yes・no指定時はfeedbackを除外する。",
     )
-    list_.add_argument(
-        "--category",
-        default=None,
-        help="採用時に付与される再発防止分類ラベル（`## 処理結果`節の`カテゴリ:`行）で、"
-        "指定時は同ラベルが付与されたfeedbackのみへ限定する。",
-    )
     _add_source_arg(list_)
     list_.add_argument(
         "--count",
@@ -363,11 +357,6 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
             "記録時に完全OIDへ解決する。対応付けできない場合は警告し、指定値を記録する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
-    )
-    adopt.add_argument(
-        "--category",
-        default=None,
-        help="採用フィードバックの再発防止分類ラベル（任意）。累積カテゴリ集計の対象になる。",
     )
     _add_target_repo_arg(adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 

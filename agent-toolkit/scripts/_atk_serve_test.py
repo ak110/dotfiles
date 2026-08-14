@@ -132,8 +132,7 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     assert ">確認事項<" not in assets.HTML
     assert assets.HTML.count(">tbd<") == 2
     assert ">今すぐ同期<" in assets.HTML
-    assert 'placeholder="本文・ファイル名・対象・カテゴリ・投入元を検索"' in assets.HTML
-    assert '<label for="category-filter">category</label>' in assets.HTML
+    assert 'placeholder="本文・ファイル名・対象・投入元を検索"' in assets.HTML
     assert "dataset.unansweredTbd" in assets.JS
     assert "種別不明" in assets.JS
 
@@ -285,7 +284,7 @@ class Element {{
 const ids = [
   'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
   'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
-  'target-filter', 'category-filter', 'source-filter', 'source-empty-filter', 'entry-count',
+  'target-filter', 'source-filter', 'source-empty-filter', 'entry-count',
   'result-status', 'list-warning', 'loading-indicator', 'entry-list', 'empty-state',
   'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-create-button',
   'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
@@ -1990,7 +1989,6 @@ def test_operations_reads_local_entries_and_detail_without_pull(
         "answered": None,
         "target_repo": "example/repo",
         "source": "test",
-        "category": None,
         "summary": "要約本文",
         "updated_at": result[0]["updated_at"],
     }
@@ -2874,36 +2872,6 @@ async def test_unrelated_runtime_error_is_not_classified_as_edit_conflict(
         json={"content": "本文"},
     )
     assert response.status_code == 500
-
-
-@pytest.mark.asyncio
-async def test_adopt_api_rejects_category_for_tbd(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """TBDエントリへのカテゴリ付き採用は拒否する。"""
-
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        yield
-
-    monkeypatch.setattr(common, "_repo_lock", lock)
-    monkeypatch.setattr(common, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.feedback_mutations, "_repo_lock", lock)
-    monkeypatch.setattr(serve_app.feedback_mutations, "_pull", lambda _path: None)
-    inbox = tmp_path / "inbox"
-    inbox.mkdir(parents=True)
-    (inbox / "entry.md").write_text(
-        "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n回答\n",
-        encoding="utf-8",
-    )
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        state.ServeState(tmp_path),
-    )
-    response = await app.test_client().post(
-        "/api/entries/adopt",
-        json={"filenames": ["entry.md"], "category": "some-category"},
-    )
-    assert response.status_code == 400
 
 
 def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.Path) -> None:

@@ -60,7 +60,7 @@ HTML = """<!doctype html>
         <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
       </div>
       <label for="search-input">検索</label>
-      <input id="search-input" type="search" placeholder="本文・ファイル名・対象・カテゴリ・投入元を検索">
+      <input id="search-input" type="search" placeholder="本文・ファイル名・対象・投入元を検索">
 
       <div class="filter-grid">
         <label for="kind-filter">種別</label>
@@ -90,8 +90,6 @@ HTML = """<!doctype html>
         <div class="filter-grid">
           <label for="target-filter">対象リポジトリ</label>
           <select id="target-filter"><option value="">すべて</option></select>
-          <label for="category-filter">category</label>
-          <input id="category-filter" type="text">
           <label for="source-filter">投入元</label>
           <input id="source-filter" type="text">
           <label class="checkbox-field" for="source-empty-filter">
@@ -699,7 +697,6 @@ const METADATA_FIELDS = [
   ['state', '状態'],
   ['answered', '回答状況'],
   ['target_repo', '対象リポジトリ'],
-  ['category', 'カテゴリ'],
   ['source', '投入元'],
   ['updated_at', '更新日時']
 ];
@@ -917,7 +914,6 @@ function hasNonStateFilters() {
     byId('kind-filter').value !== 'all' ||
     byId('answer-filter').value !== 'all' ||
     byId('target-filter').value !== '' ||
-    byId('category-filter').value !== '' ||
     byId('source-filter').value !== '' ||
     byId('source-empty-filter').checked;
 }
@@ -982,7 +978,6 @@ function buildQuery() {
   parameters.set('answered', byId('answer-filter').value);
   const values = {
     target_repo: byId('target-filter').value,
-    category: byId('category-filter').value.trim(),
     source: byId('source-filter').value.trim(),
     q: byId('search-input').value.trim()
   };
@@ -1105,7 +1100,6 @@ async function clearFilters({load = true} = {}) {
   byId('state-filter').value = 'active';
   byId('answer-filter').value = 'all';
   byId('target-filter').value = '';
-  byId('category-filter').value = '';
   byId('source-filter').value = '';
   byId('source-empty-filter').checked = false;
   syncFilterDependencies();
@@ -1640,7 +1634,6 @@ function bindEvents() {
   byId('state-filter').addEventListener('change', () => { void handleFilterChange({reloadRepos: true}); });
   byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
-  byId('category-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-empty-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('search-input').addEventListener('input', () => {
