@@ -14,6 +14,10 @@
     `-o addopts=''`で既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
   - 修正後の再実行時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
+- 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
+  OSパッケージの導入には権限が必要となる場合がある
+- `atk serve`又は`claude-plans-viewer`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
+  実ブラウザーテストを変更した場合は`make test-browser`を実行する
 - コミットメッセージtypeの判定例: [docs/development/commit-types.md](docs/development/commit-types.md)
 
 ## 詳細の参照先

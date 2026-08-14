@@ -29,6 +29,10 @@ setup:
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
+# ChromiumとLinuxのシステム依存を初期環境へ導入
+setup-browser:
+	uv run playwright install --with-deps chromium
+
 # Ubuntu/Debian へ pwsh + PSScriptAnalyzer を一括インストールする。
 # prek の PSScriptAnalyzer / chezmoi template check (.ps1.tmpl) を
 # ローカルでも実行可能にするための開発者向けターゲット。
@@ -51,4 +55,11 @@ format:
 test:
 	uvx pyfltr run
 
-.PHONY: help update update-mise-locks update-actions setup setup-pwsh format test
+# 実ブラウザーテストを日常実行
+test-browser:
+	uv run playwright install chromium
+	AGENT_TOOLKIT_SERVE_BROWSER_TESTS=1 CLAUDE_PLANS_VIEWER_BROWSER_TESTS=1 \
+		uv run pytest agent-toolkit/scripts/_atk_serve_browser_test.py \
+		pytools/claude_plans_viewer_browser_test.py -o addopts='' -p no:cacheprovider
+
+.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh format test test-browser
