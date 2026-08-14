@@ -11,6 +11,7 @@ import re
 import socket
 import typing
 
+import markdown_it
 import pytilpack.quart
 import pytilpack.sse
 import quart
@@ -61,6 +62,21 @@ def _resolve_request_target(local_host: str, allowed_remote_hosts: set[str]) -> 
     return host, rel
 
 
+@dataclasses.dataclass(frozen=True)
+class _AppContext:
+    """ルート登録関数が共有するアプリ単位の依存。"""
+
+    root: pathlib.Path
+    hostname: str
+    remote_hosts: list[str]
+    allowed_remote_hosts: set[str]
+    runner: _remote.SshRunner
+    search_coordinator: _remote.RemoteSearchCoordinator
+    renderer: markdown_it.MarkdownIt
+    markdown_cache: _local.MarkdownCache
+    state: _state.BroadcastState
+
+
 def create_app(
     root: pathlib.Path,
     hostname: str | None = None,
@@ -82,6 +98,33 @@ def create_app(
     # 前回の異常終了で残った作成日時インデックスの一時ファイルを起動時に除去する。
     _local.cleanup_creation_time_temporaries()
     app = quart.Quart(__name__)
+    context = _create_app_context(root, hostname, remote_hosts, ssh_runner, remote_search_limit)
+    _configure_app(app, context)
+    _register_lifecycle_handlers(app, context)
+    _register_asset_routes(app, context)
+    _register_listing_routes(app, context)
+    _register_file_routes(app, context)
+    _register_event_routes(app, context)
+
+    # X-Forwarded-Proto/Prefix を解釈してASGI scopeへ反映するミドルウェアを介在させる。
+    # `app.asgi_app`（バウンドメソッド）を入れ替えるQuartの公式パターンを使うことで、
+    # `app.config`等のハンドラ参照は維持しつつ、ASGIディスパッチだけを上流に通す。
+    # 前提: リバースプロキシ前段が`X-Forwarded-Prefix`を保持して転送する構成
+    # （prefixを除去しない構成）であること。Quartは`scope.root_path`をパス冒頭から除去するため、
+    # prefixを除去する構成では404を返す。
+    # method-assignとASGIプロトコル不一致は意図的なため型チェッカは抑制する。
+    app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
+    return app
+
+
+def _create_app_context(
+    root: pathlib.Path,
+    hostname: str | None,
+    remote_hosts: list[str] | None,
+    ssh_runner: _remote.SshRunner | None,
+    remote_search_limit: int,
+) -> _AppContext:
+    """アプリ単位の依存と初期接続状態を生成する。"""
     renderer = _local.make_md_renderer()
     markdown_cache = _local.MarkdownCache()
     state = _state.BroadcastState()
@@ -103,15 +146,33 @@ def create_app(
     # リモート分は接続確立時（初回snapshot受信）にRemoteWatcher側で追加する。
     state.host_info[resolved_hostname] = _local.local_host_info(root)
 
-    # app.configに格納してモジュールレベルの可変状態を避ける。
-    # ルートハンドラからは`quart.current_app.config`経由で参照する。
-    app.config["PLANS_ROOT"] = root
-    app.config["PLANS_RENDERER"] = renderer
-    app.config["PLANS_MARKDOWN_CACHE"] = markdown_cache
-    app.config["PLANS_STATE"] = state
-    app.config["PLANS_HOSTNAME"] = resolved_hostname
-    app.config["PLANS_REMOTE_HOSTS"] = remote_host_list
-    app.config["PLANS_SSH_RUNNER"] = runner
+    return _AppContext(
+        root=root,
+        hostname=resolved_hostname,
+        remote_hosts=remote_host_list,
+        allowed_remote_hosts=allowed_remote_hosts,
+        runner=runner,
+        search_coordinator=search_coordinator,
+        renderer=renderer,
+        markdown_cache=markdown_cache,
+        state=state,
+    )
+
+
+def _configure_app(app: quart.Quart, context: _AppContext) -> None:
+    """公開済みのアプリ設定値を登録する。"""
+    app.config["PLANS_ROOT"] = context.root
+    app.config["PLANS_RENDERER"] = context.renderer
+    app.config["PLANS_MARKDOWN_CACHE"] = context.markdown_cache
+    app.config["PLANS_STATE"] = context.state
+    app.config["PLANS_HOSTNAME"] = context.hostname
+    app.config["PLANS_REMOTE_HOSTS"] = context.remote_hosts
+    app.config["PLANS_SSH_RUNNER"] = context.runner
+
+
+def _register_lifecycle_handlers(app: quart.Quart, context: _AppContext) -> None:
+    """リモートwatchの起動・終了ハンドラを登録する。"""
+    state = context.state
 
     @app.before_serving
     async def _capture_loop() -> None:
@@ -119,7 +180,7 @@ def create_app(
         state.loop = asyncio.get_running_loop()
         # リモートwatchタスクを起動する。test_client経由ではbefore_serving自体が
         # 発火しないため、テスト側は`RemoteWatcher`を直接駆動する。
-        for host in remote_host_list:
+        for host in context.remote_hosts:
             watcher = _remote.RemoteWatcher(host, state)
             # `/api/file`/`/api/raw`がwatch経路のRPCを利用できるよう参照を共有する。
             state.remote_watchers[host] = watcher
@@ -135,18 +196,22 @@ def create_app(
                 await task
         state.remote_tasks.clear()
 
+
+def _register_asset_routes(app: quart.Quart, context: _AppContext) -> None:
+    """画面本体と静的資産のルートを登録する。"""
+
     @app.get("/")
     async def index() -> quart.Response:
         base_path = safe_base_path(quart.request.root_path)
         # ページロード時はローカル分`host_info`のみを注入する。リモート分はSSE経由の
         # `host_info_update`イベント受信、または`/api/host-info`への再取得で反映する。
-        root_dirs_js = {resolved_hostname: state.host_info[resolved_hostname]}
+        root_dirs_js = {context.hostname: context.state.host_info[context.hostname]}
         # HTML属性向けには`html.escape(quote=True)`、JavaScriptリテラル向けには`json.dumps`で
         # 文字列リテラル化し、コンテキスト別のエスケープ経路で埋め込む。
         body = (
             _assets.INDEX_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
             .replace("__BASE_PATH_JS__", json.dumps(base_path))
-            .replace("__LOCAL_HOST_NAME_JS__", json.dumps(resolved_hostname))
+            .replace("__LOCAL_HOST_NAME_JS__", json.dumps(context.hostname))
             .replace("__ROOT_DIRS_JS__", json.dumps(root_dirs_js, ensure_ascii=False))
         )
         return quart.Response(body, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
@@ -204,72 +269,45 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+
+def _register_listing_routes(app: quart.Quart, context: _AppContext) -> None:
+    """ホスト情報・ファイル一覧・本文検索のルートを登録する。"""
+
     @app.get("/api/host-status")
     async def api_host_status() -> quart.Response:
         # SPA起動時の初期同期用。SSE取りこぼし時の救済経路としても使う。
-        async with state.lock:
-            snapshot = dict(state.host_status)
+        async with context.state.lock:
+            snapshot = dict(context.state.host_status)
         body = json.dumps(snapshot, ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/host-info")
     async def api_host_info() -> quart.Response:
         # SPA起動時の初期同期用。`host_info_update`のSSE取りこぼし時の救済経路としても使う。
-        async with state.lock:
-            snapshot = dict(state.host_info)
+        async with context.state.lock:
+            snapshot = dict(context.state.host_info)
         body = json.dumps(snapshot, ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/files")
     async def api_files() -> quart.Response:
-        merged = await _all_entries()
+        merged = await _all_entries(context)
         body = json.dumps([dataclasses.asdict(e) for e in merged], ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
-
-    async def _all_entries() -> list[_state.FileEntry]:
-        """ローカルとリモートの一覧を作成日時の降順で返す。"""
-        # ローカル一覧はリモート集約と並列実行できるよう`asyncio.to_thread`経由で取得する。
-        local_entries = await asyncio.to_thread(_local.list_files, root, resolved_hostname)
-        async with state.lock:
-            remote_entries: list[_state.FileEntry] = []
-            for cached in state.remote_files.values():
-                remote_entries.extend(cached)
-        merged = local_entries + remote_entries
-        merged.sort(key=lambda e: e.ctime_epoch, reverse=True)
-        return merged
 
     @app.get("/api/search")
     async def api_search() -> quart.Response:
         """ローカルと全リモートホストから本文一致するファイル一覧を返す。"""
         query = quart.request.args.get("q", "")
-        entries = await _all_entries()
+        entries = await _all_entries(context)
         if not query:
             matched = entries
         else:
-            local_paths = await asyncio.to_thread(_local.search_files, root, query)
-
-            # SSH検索の同時実行制限は`RemoteSearchCoordinator`が担う。
-            # RPCはプロセスを起動しないため制限対象外とする。
-            async def search_remote(host: str) -> tuple[str, set[str]]:
-                try:
-                    paths = await _remote.search_remote_files(
-                        host,
-                        query,
-                        runner,
-                        state.remote_watchers.get(host),
-                        coordinator=search_coordinator,
-                    )
-                except _remote.RemoteSearchSuperseded:
-                    # 打ち切りは失敗として扱わず、別の検索語の結果で埋めないため呼び出し元へ伝える。
-                    raise
-                except Exception as error:  # noqa: BLE001
-                    logger.warning("リモート本文検索失敗 host=%s: %s", host, error)
-                    paths = set()
-                return host, paths
+            local_paths = await asyncio.to_thread(_local.search_files, context.root, query)
 
             # 1ホストの打ち切りで他ホストの結果が未回収の例外にならないよう、全件を回収してから判定する。
             results = await asyncio.gather(
-                *(search_remote(host) for host in remote_host_list),
+                *(_search_remote(context, host, query) for host in context.remote_hosts),
                 return_exceptions=True,
             )
             remote_matches: dict[str, set[str]] = {}
@@ -284,45 +322,54 @@ def create_app(
             matched = [
                 entry
                 for entry in entries
-                if entry.path in (local_paths if entry.host == resolved_hostname else remote_matches.get(entry.host, set()))
+                if entry.path in (local_paths if entry.host == context.hostname else remote_matches.get(entry.host, set()))
             ]
         body = json.dumps([dataclasses.asdict(entry) for entry in matched], ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 
-    async def _resolve_text_and_mtime(host: str, rel: str) -> tuple[str, float | None] | quart.Response:
-        """`api_file`/`api_raw`共通: 本文と`mtime_epoch`を取得する。
 
-        ローカルは`stat`から、リモートは`fetch_remote_file`が本文と同時取得した値を使う。
-        パスやホストが不正な場合はQuart応答を返す。
-        """
-        if host == resolved_hostname:
-            target = _local.resolve_under_root(root, rel)
-            if target is None:
-                return quart.Response("not found", status=404)
+async def _all_entries(context: _AppContext) -> list[_state.FileEntry]:
+    """ローカルとリモートの一覧を作成日時の降順で返す。"""
+    # ローカル一覧はリモート集約と並列実行できるよう`asyncio.to_thread`経由で取得する。
+    local_entries = await asyncio.to_thread(_local.list_files, context.root, context.hostname)
+    async with context.state.lock:
+        remote_entries: list[_state.FileEntry] = []
+        for cached in context.state.remote_files.values():
+            remote_entries.extend(cached)
+    merged = local_entries + remote_entries
+    merged.sort(key=lambda entry: entry.ctime_epoch, reverse=True)
+    return merged
 
-            def _read_with_mtime(path: pathlib.Path) -> tuple[str, float]:
-                # 本文とstatを連続取得して、`mtime_epoch`の整合を最大限保つ。
-                data = path.read_text(encoding="utf-8", errors="replace")
-                return data, path.stat().st_mtime
 
-            text, mtime = await asyncio.to_thread(_read_with_mtime, target)
-            return text, mtime
-        if not _remote.is_safe_remote_relpath(rel):
-            return quart.Response("invalid path", status=400)
-        watcher = state.remote_watchers.get(host)
-        try:
-            return await _remote.fetch_remote_file(host, rel, runner, watcher)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, e)
-            return quart.Response("not found", status=404)
+async def _search_remote(context: _AppContext, host: str, query: str) -> tuple[str, set[str]]:
+    """1台のリモートホストを本文検索する。"""
+    try:
+        paths = await _remote.search_remote_files(
+            host,
+            query,
+            context.runner,
+            context.state.remote_watchers.get(host),
+            coordinator=context.search_coordinator,
+        )
+    except _remote.RemoteSearchSuperseded:
+        # 打ち切りは失敗として扱わず、別の検索語の結果で埋めないため呼び出し元へ伝える。
+        raise
+    except Exception as error:  # noqa: BLE001
+        logger.warning("リモート本文検索失敗 host=%s: %s", host, error)
+        paths = set()
+    return host, paths
+
+
+def _register_file_routes(app: quart.Quart, context: _AppContext) -> None:
+    """MarkdownのHTML表示と原文取得ルートを登録する。"""
 
     @app.get("/api/file")
     async def api_file() -> quart.Response:
-        resolved = _resolve_request_target(resolved_hostname, allowed_remote_hosts)
+        resolved = _resolve_request_target(context.hostname, context.allowed_remote_hosts)
         if isinstance(resolved, quart.Response):
             return resolved
         host, rel = resolved
-        result = await _resolve_text_and_mtime(host, rel)
+        result = await _resolve_text_and_mtime(context, host, rel)
         if isinstance(result, quart.Response):
             return result
         text, mtime = result
@@ -331,32 +378,63 @@ def create_app(
         cache_key: _local.MarkdownCacheKey | None = (host, rel, mtime) if mtime is not None else None
         rendered: str | None = None
         if cache_key is not None:
-            rendered = markdown_cache.get(cache_key)
+            rendered = context.markdown_cache.get(cache_key)
         if rendered is None:
-            rendered = _local.markdown_to_html(text, renderer)
+            rendered = _local.markdown_to_html(text, context.renderer)
             if cache_key is not None:
-                markdown_cache.put(cache_key, rendered)
+                context.markdown_cache.put(cache_key, rendered)
         return quart.Response(rendered, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/raw")
     async def api_raw() -> quart.Response:
         # クライアントのコピーボタン用に生Markdownを返す。`/api/file`はHTMLレンダリング結果を返すため
         # 経路を分離し、`Cache-Control`扱いやテストを単純に保つ。
-        resolved = _resolve_request_target(resolved_hostname, allowed_remote_hosts)
+        resolved = _resolve_request_target(context.hostname, context.allowed_remote_hosts)
         if isinstance(resolved, quart.Response):
             return resolved
         host, rel = resolved
-        result = await _resolve_text_and_mtime(host, rel)
+        result = await _resolve_text_and_mtime(context, host, rel)
         if isinstance(result, quart.Response):
             return result
         text, _ = result
         return quart.Response(text, content_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
 
+
+async def _resolve_text_and_mtime(
+    context: _AppContext,
+    host: str,
+    rel: str,
+) -> tuple[str, float | None] | quart.Response:
+    """ファイル本文と`mtime_epoch`を取得する。"""
+    if host == context.hostname:
+        target = _local.resolve_under_root(context.root, rel)
+        if target is None:
+            return quart.Response("not found", status=404)
+        return await asyncio.to_thread(_read_with_mtime, target)
+    if not _remote.is_safe_remote_relpath(rel):
+        return quart.Response("invalid path", status=400)
+    watcher = context.state.remote_watchers.get(host)
+    try:
+        return await _remote.fetch_remote_file(host, rel, context.runner, watcher)
+    except Exception as error:  # noqa: BLE001
+        logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, error)
+        return quart.Response("not found", status=404)
+
+
+def _read_with_mtime(path: pathlib.Path) -> tuple[str, float]:
+    """ファイル本文と更新日時を連続して取得する。"""
+    data = path.read_text(encoding="utf-8", errors="replace")
+    return data, path.stat().st_mtime
+
+
+def _register_event_routes(app: quart.Quart, context: _AppContext) -> None:
+    """ファイル更新イベントのSSEルートを登録する。"""
+
     @app.get("/api/events")
     async def api_events() -> quart.Response:
         @pytilpack.sse.generator()
         async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE, None]:
-            q = await _state.subscribe(state)
+            q = await _state.subscribe(context.state)
             try:
                 while True:
                     msg = await q.get()
@@ -364,20 +442,10 @@ def create_app(
                     # event名を付けずdataのみで配信する。
                     yield pytilpack.sse.SSE(data=msg)
             finally:
-                await _state.unsubscribe(state, q)
+                await _state.unsubscribe(context.state, q)
 
         return quart.Response(
             generate(),
             content_type="text/event-stream",
             headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
         )
-
-    # X-Forwarded-Proto/Prefix を解釈してASGI scopeへ反映するミドルウェアを介在させる。
-    # `app.asgi_app`（バウンドメソッド）を入れ替えるQuartの公式パターンを使うことで、
-    # `app.config`等のハンドラ参照は維持しつつ、ASGIディスパッチだけを上流に通す。
-    # 前提: リバースプロキシ前段が`X-Forwarded-Prefix`を保持して転送する構成
-    # （prefixを除去しない構成）であること。Quartは`scope.root_path`をパス冒頭から除去するため、
-    # prefixを除去する構成では404を返す。
-    # method-assignとASGIプロトコル不一致は意図的なため型チェッカは抑制する。
-    app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
-    return app

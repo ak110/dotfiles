@@ -2,6 +2,7 @@
 
 import json
 import logging
+import pathlib
 
 import pytest
 
@@ -463,6 +464,53 @@ class TestRenderSession:
         assert "<details>" in md
         assert "Bash — `ls -la`" in md
         assert "file1\nfile2" in md
+
+    def test_main_and_subagent_turns_share_details_format(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """メインとサブエージェントのthinking・tool詳細を同じ形式で描画する。"""
+        cwd = "/workspace"
+        session_id = "sess1"
+        blocks = [
+            {"type": "thinking", "thinking": "共通思考"},
+            {"type": "tool_use", "id": "tool1", "name": "Read", "input": {"file_path": "/tmp/a"}},
+        ]
+        records = [
+            _make_record(
+                type_="assistant",
+                uuid="main-a1",
+                session_id=session_id,
+                cwd=cwd,
+                message={"role": "assistant", "id": "main-msg", "content": blocks},
+            ),
+        ]
+        subagents_dir = tmp_path / ".claude" / "projects" / encode_project_path(cwd) / session_id / "subagents"
+        subagents_dir.mkdir(parents=True)
+        (subagents_dir / "agent-1.meta.json").write_text(
+            json.dumps({"description": "調査担当", "agentType": "general-purpose"}),
+            encoding="utf-8",
+        )
+        sub_record = _make_record(
+            type_="assistant",
+            uuid="sub-a1",
+            session_id=session_id,
+            cwd=cwd,
+            message={"role": "assistant", "id": "sub-msg", "content": blocks},
+        )
+        (subagents_dir / "agent-1.jsonl").write_text(json.dumps(sub_record), encoding="utf-8")
+
+        def _home(_cls: type[pathlib.Path]) -> pathlib.Path:
+            return tmp_path
+
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(_home))
+
+        md = render_session(records, RenderOptions(include_thinking=True, include_subagents=True))
+
+        assert "## Subagent: 調査担当" in md
+        assert md.count("<summary>Thinking</summary>") == 2
+        assert md.count("<summary>Tool: Read — `/tmp/a`</summary>") == 2
 
     def test_no_tool_details(self) -> None:
         """no_tool_detailsオプションで簡略表示になることをテストする。"""

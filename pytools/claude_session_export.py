@@ -40,6 +40,18 @@ class RenderOptions:
     tool_details: bool = True
 
 
+@dataclass
+class _SessionMetadata:
+    """markdownヘッダーへ出力するセッション情報。"""
+
+    session_id: str = ""
+    cwd: str = ""
+    branch: str = ""
+    slug: str = ""
+    custom_title: str = ""
+    timestamps: list[str] = field(default_factory=list)
+
+
 # --- CLI ---
 
 
@@ -250,206 +262,152 @@ def render_session(records: list[dict], options: RenderOptions | None = None) ->
     if options is None:
         options = RenderOptions()
 
-    lines: list[str] = []
-
-    # メタデータ抽出
-    session_id = ""
-    cwd = ""
-    branch = ""
-    slug = ""
-    custom_title = ""
-    timestamps: list[str] = []
-
-    for r in records:
-        if not session_id:
-            session_id = r.get("sessionId", "")
-        if not cwd:
-            cwd = r.get("cwd", "")
-        if not branch:
-            branch = r.get("gitBranch", "")
-        if not slug and r.get("slug"):
-            slug = r.get("slug", "")
-        if r.get("type") == "custom-title":
-            custom_title = r.get("customTitle", "")
-        ts = r.get("timestamp")
-        if ts:
-            timestamps.append(ts)
-
-    title = custom_title or slug or session_id[:8]
-    lines.append(f"# Session: {title}")
-    lines.append("")
-
-    # メタデータテーブル
-    lines.append("| 項目 | 値 |")
-    lines.append("|---|---|")
-    if session_id:
-        lines.append(f"| セッションID | `{session_id}` |")
-    if cwd:
-        lines.append(f"| プロジェクト | `{cwd}` |")
-    if branch:
-        lines.append(f"| ブランチ | `{branch}` |")
-    if timestamps:
-        sorted_ts = sorted(timestamps)
-        lines.append(f"| 開始 | {_format_timestamp(sorted_ts[0])} |")
-        lines.append(f"| 終了 | {_format_timestamp(sorted_ts[-1])} |")
-    lines.append("")
+    metadata = _extract_session_metadata(records)
+    title = metadata.custom_title or metadata.slug or metadata.session_id[:8]
+    lines = [f"# Session: {title}", "", *_render_metadata_table(metadata)]
 
     # 会話ターン
     for turn in iter_turns(records):
         lines.append("---")
         lines.append("")
+        _render_turn(lines, turn, heading_level=2, options=options)
 
-        if turn.role == "human":
-            lines.append("## Human")
-            lines.append("")
-            for block in turn.content_blocks:
-                text = block.get("text", "")
-                if text:
-                    lines.append(text)
-                    lines.append("")
-        elif turn.role == "assistant":
-            lines.append("## Assistant")
-            lines.append("")
-            for block in turn.content_blocks:
-                block_type = block.get("type")
-
-                if block_type == "text":
-                    text = block.get("text", "")
-                    if text:
-                        lines.append(text)
-                        lines.append("")
-
-                elif block_type == "thinking":
-                    if options.include_thinking:
-                        thinking = block.get("thinking", "")
-                        if thinking:
-                            lines.append("<details>")
-                            lines.append("<summary>Thinking</summary>")
-                            lines.append("")
-                            lines.append(thinking)
-                            lines.append("")
-                            lines.append("</details>")
-                            lines.append("")
-
-                elif block_type == "tool_use":
-                    tool_id = block.get("id", "")
-                    summary = _extract_tool_summary(block)
-
-                    if options.tool_details:
-                        lines.append("<details>")
-                        lines.append(f"<summary>Tool: {summary}</summary>")
-                        lines.append("")
-
-                        # ツール入力
-                        inp = block.get("input", {})
-                        if inp:
-                            lines.append("```json")
-                            lines.append(json.dumps(inp, ensure_ascii=False, indent=2))
-                            lines.append("```")
-                            lines.append("")
-
-                        # ツール結果
-                        if tool_id in turn.tool_results:
-                            result_text = _render_tool_result_content(turn.tool_results[tool_id])
-                            if result_text:
-                                lines.append("**Result:**")
-                                lines.append("")
-                                lines.append("```")
-                                lines.append(result_text)
-                                lines.append("```")
-                                lines.append("")
-
-                        lines.append("</details>")
-                        lines.append("")
-                    else:
-                        # 簡略表示
-                        lines.append(f"> Tool: {summary}")
-                        lines.append("")
-
-    # サブエージェント
     if options.include_subagents:
-        session_dir = _find_session_dir(records)
-        if session_dir:
-            subagents_dir = session_dir / "subagents"
-            if subagents_dir.exists():
-                for meta_path in sorted(subagents_dir.glob("*.meta.json")):
-                    agent_jsonl = meta_path.with_suffix("").with_suffix(".jsonl")
-                    if not agent_jsonl.exists():
-                        continue
-                    try:
-                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                    except (json.JSONDecodeError, OSError):
-                        meta = {}
-                    desc = meta.get("description", meta_path.stem)
-                    agent_type = meta.get("agentType", "")
-
-                    lines.append("---")
-                    lines.append("")
-                    lines.append(f"## Subagent: {desc}")
-                    lines.append("")
-                    if agent_type:
-                        lines.append(f"Type: {agent_type}")
-                        lines.append("")
-
-                    sub_records = load_records(agent_jsonl)
-                    for turn in iter_turns(sub_records, is_subagent=True):
-                        if turn.role == "human":
-                            lines.append("### Human")
-                            lines.append("")
-                            for block in turn.content_blocks:
-                                text = block.get("text", "")
-                                if text:
-                                    lines.append(text)
-                                    lines.append("")
-                        elif turn.role == "assistant":
-                            lines.append("### Assistant")
-                            lines.append("")
-                            for block in turn.content_blocks:
-                                block_type = block.get("type")
-                                if block_type == "text":
-                                    text = block.get("text", "")
-                                    if text:
-                                        lines.append(text)
-                                        lines.append("")
-                                elif block_type == "thinking" and options.include_thinking:
-                                    thinking = block.get("thinking", "")
-                                    if thinking:
-                                        lines.append("<details>")
-                                        lines.append("<summary>Thinking</summary>")
-                                        lines.append("")
-                                        lines.append(thinking)
-                                        lines.append("")
-                                        lines.append("</details>")
-                                        lines.append("")
-                                elif block_type == "tool_use":
-                                    summary = _extract_tool_summary(block)
-                                    tool_id = block.get("id", "")
-                                    if options.tool_details:
-                                        lines.append("<details>")
-                                        lines.append(f"<summary>Tool: {summary}</summary>")
-                                        lines.append("")
-                                        inp = block.get("input", {})
-                                        if inp:
-                                            lines.append("```json")
-                                            lines.append(json.dumps(inp, ensure_ascii=False, indent=2))
-                                            lines.append("```")
-                                            lines.append("")
-                                        if tool_id in turn.tool_results:
-                                            result_text = _render_tool_result_content(turn.tool_results[tool_id])
-                                            if result_text:
-                                                lines.append("**Result:**")
-                                                lines.append("")
-                                                lines.append("```")
-                                                lines.append(result_text)
-                                                lines.append("```")
-                                                lines.append("")
-                                        lines.append("</details>")
-                                        lines.append("")
-                                    else:
-                                        lines.append(f"> Tool: {summary}")
-                                        lines.append("")
+        _render_subagents(lines, records, options)
 
     return "\n".join(lines)
+
+
+def _extract_session_metadata(records: list[dict]) -> _SessionMetadata:
+    """JSONLレコードからヘッダー用メタデータを抽出する。"""
+    metadata = _SessionMetadata()
+    for record in records:
+        if not metadata.session_id:
+            metadata.session_id = record.get("sessionId", "")
+        if not metadata.cwd:
+            metadata.cwd = record.get("cwd", "")
+        if not metadata.branch:
+            metadata.branch = record.get("gitBranch", "")
+        if not metadata.slug and record.get("slug"):
+            metadata.slug = record.get("slug", "")
+        if record.get("type") == "custom-title":
+            metadata.custom_title = record.get("customTitle", "")
+        timestamp = record.get("timestamp")
+        if timestamp:
+            metadata.timestamps.append(timestamp)
+    return metadata
+
+
+def _render_metadata_table(metadata: _SessionMetadata) -> list[str]:
+    """セッションメタデータをmarkdown表として描画する。"""
+    lines = ["| 項目 | 値 |", "|---|---|"]
+    if metadata.session_id:
+        lines.append(f"| セッションID | `{metadata.session_id}` |")
+    if metadata.cwd:
+        lines.append(f"| プロジェクト | `{metadata.cwd}` |")
+    if metadata.branch:
+        lines.append(f"| ブランチ | `{metadata.branch}` |")
+    if metadata.timestamps:
+        sorted_timestamps = sorted(metadata.timestamps)
+        lines.append(f"| 開始 | {_format_timestamp(sorted_timestamps[0])} |")
+        lines.append(f"| 終了 | {_format_timestamp(sorted_timestamps[-1])} |")
+    lines.append("")
+    return lines
+
+
+def _render_turn(lines: list[str], turn: Turn, *, heading_level: int, options: RenderOptions) -> None:
+    """メインとサブエージェントに共通する会話ターンを描画する。"""
+    heading = "#" * heading_level
+    if turn.role == "human":
+        lines.append(f"{heading} Human")
+        lines.append("")
+        for block in turn.content_blocks:
+            text = block.get("text", "")
+            if text:
+                lines.append(text)
+                lines.append("")
+        return
+
+    if turn.role != "assistant":
+        return
+    lines.append(f"{heading} Assistant")
+    lines.append("")
+    for block in turn.content_blocks:
+        _render_assistant_block(lines, turn, block, options)
+
+
+def _render_assistant_block(lines: list[str], turn: Turn, block: dict, options: RenderOptions) -> None:
+    """アシスタントのcontentブロックを種別に応じて描画する。"""
+    block_type = block.get("type")
+    if block_type == "text":
+        text = block.get("text", "")
+        if text:
+            lines.append(text)
+            lines.append("")
+        return
+    if block_type == "thinking":
+        if options.include_thinking:
+            thinking = block.get("thinking", "")
+            if thinking:
+                _render_details(lines, "Thinking", [thinking, ""])
+        return
+    if block_type == "tool_use":
+        _render_tool_use(lines, turn, block, options)
+
+
+def _render_details(lines: list[str], summary: str, body: list[str]) -> None:
+    """本文を折り畳み可能なdetails要素として追記する。"""
+    lines.extend(["<details>", f"<summary>{summary}</summary>", "", *body, "</details>", ""])
+
+
+def _render_tool_use(lines: list[str], turn: Turn, block: dict, options: RenderOptions) -> None:
+    """tool_useブロックを詳細表示または簡略表示で描画する。"""
+    summary = _extract_tool_summary(block)
+    if not options.tool_details:
+        lines.append(f"> Tool: {summary}")
+        lines.append("")
+        return
+
+    body: list[str] = []
+    inp = block.get("input", {})
+    if inp:
+        body.extend(["```json", json.dumps(inp, ensure_ascii=False, indent=2), "```", ""])
+
+    tool_id = block.get("id", "")
+    if tool_id in turn.tool_results:
+        result_text = _render_tool_result_content(turn.tool_results[tool_id])
+        if result_text:
+            body.extend(["**Result:**", "", "```", result_text, "```", ""])
+    _render_details(lines, f"Tool: {summary}", body)
+
+
+def _render_subagents(lines: list[str], records: list[dict], options: RenderOptions) -> None:
+    """サブエージェントの会話をセッション末尾へ描画する。"""
+    session_dir = _find_session_dir(records)
+    if session_dir is None:
+        return
+    subagents_dir = session_dir / "subagents"
+    if not subagents_dir.exists():
+        return
+
+    for meta_path in sorted(subagents_dir.glob("*.meta.json")):
+        agent_jsonl = meta_path.with_suffix("").with_suffix(".jsonl")
+        if not agent_jsonl.exists():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            meta = {}
+        desc = meta.get("description", meta_path.stem)
+        agent_type = meta.get("agentType", "")
+
+        lines.extend(["---", "", f"## Subagent: {desc}", ""])
+        if agent_type:
+            lines.extend([f"Type: {agent_type}", ""])
+
+        sub_records = load_records(agent_jsonl)
+        for turn in iter_turns(sub_records, is_subagent=True):
+            _render_turn(lines, turn, heading_level=3, options=options)
 
 
 # --- 会話ターンの再構成 ---
