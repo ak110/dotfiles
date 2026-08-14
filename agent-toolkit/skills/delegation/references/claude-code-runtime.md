@@ -10,7 +10,6 @@ Claude Codeから委譲を起動する直前に本referenceを全文読む。
 - AgentまたはTask起動では`name`パラメーターを渡さず、`run_in_background`を省略する。
   `run_in_background`の省略は起動形態を固定せず、実際の受領経路は実行結果から判定する。
   `name`を渡さない理由は`agent-toolkit/rules/99-claude-code.md`「委譲起動時の厳守事項」節が定める
-- 独立した複数の呼び出しは同一応答内へ並置する
 - モデル区分は軽量モデルを`haiku`、標準モデルを`sonnet`、上位モデルを`opus`とし、
   共通規範の難易度区分をこの3区分へ対応付ける
 - Agentツールの呼び出しには`effort`に相当するパラメーターが無いため、推論の深さはエージェント定義の
@@ -52,6 +51,10 @@ Bashツールのタイムアウト引数を上限まで引き上げた前景実�
 - 作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成し、
   用途の完了と内容の検収後は`atk managed-temp cleanup --path <検収済み絶対パス>`を単独で実行する。
   `atk`はpluginの`bin/`からBashの`PATH`へ追加され、自身の位置から現行plugin rootの`scripts/_managed_temp.py`を解決する
+- 管理marker（`.agent-toolkit-managed-temp.json`）とprivate registryは同じversioned recordを保持する。
+  schema version 2では`prefix`と`created_at`を必須とし、全項目の完全一致を検証する。
+  schema version 1はversion 1のフィールド集合どうしだけを完全一致で検証する。
+  versionの不一致、片側だけの更新、必須項目の欠落、型不正、余分な項目は拒否する
 - 成果物側の状況は
   `atk watch --worktree [<ラベル>=]<作業ツリーの絶対パス> --file [<ラベル>=]<成果物の絶対パス>`を
   単独で実行して観測する。`--worktree`・`--file`はいずれも複数回指定でき、
@@ -83,7 +86,7 @@ Bashツールのタイムアウト引数を上限まで引き上げた前景実�
   停止指示の成功だけでは停止成立を判定せず、同ツールが返す稼働状態と成果物側の実測を照合する
 - 完了済みの識別子へは`SendMessage`による再開ではなく新規起動で依頼する。
   完了済みエージェントの再開後に完了通知が依頼元へ届かず、依頼元が完了を検知できないまま待ち続ける事象を実測した。
-  `completion.md`またはセッションのJSONL記録を完了検知経路として確実に照会できる場合と、
+  セッションのJSONL記録を完了検知経路として確実に照会できる場合と、
   介入内容の伝達など完了の受領を伴わない用途に限り`SendMessage`で再開してよい。
   新規起動では過去の会話履歴・ツール呼び出しと結果・推論が引き継がれない。
   必要な前提と完了済み工程に参照可能な正本がある場合は、絶対パス、対象ID、未記録の差分だけを渡す。

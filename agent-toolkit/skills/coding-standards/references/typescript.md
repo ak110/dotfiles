@@ -32,13 +32,7 @@
   - オブジェクトのマージ・コピーでプロトタイプ汚染を防ぐ
    （`Object.create(null)`やキーの検証。`__proto__`・`constructor`・`prototype`のキーを拒否する）
   - URL・ファイルパスは文字列結合ではなく`URL`／`path.join`等の専用APIで構築する
-- 他で指定が無い場合のツール推奨:
-  - パッケージマネージャー: `pnpm`（厳密な依存解決でphantom dependencyを防止）
-  - 一度限りのコマンド実行には`npx`の代わりに`pnpx`を使う（pnpmと同じ依存解決・キャッシュを再利用できるため）
-  - リンター／フォーマッター: `Biome`（lint + formatを1ツールで高速に処理）
-    - Biomeが対応していないルール（React固有等）が必要な場合のみESLint + Prettierを併用
-- 新しいTypeScriptバージョンの機能を積極的に使う。
-  対象プロジェクトのTypeScriptバージョンで利用できる機能は公式リリースノートで確認する
+- 対象プロジェクトのTypeScriptバージョンで利用できる機能は公式リリースノートで確認する
   <https://www.typescriptlang.org/docs/handbook/release-notes/overview.html>
 
 ## 非同期処理

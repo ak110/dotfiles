@@ -63,17 +63,13 @@ _SKILL_MARKDOWN = {
 
 
 def test_process_feedbacks_external_hold_uses_cooldown_without_conflating_other_waits() -> None:
-    """外部条件待ちの期限付き差し戻しと、TBD・depends_onの分離を3規範で固定する。"""
-    texts = [
-        path.read_text(encoding="utf-8") for path in (_PROCESS_FEEDBACKS, _HOLD_WITH_TBD_INJECT, _FEEDBACKS_PLANNER_RECEPTION)
-    ]
+    """外部条件待ちとTBD待ちの分離を保留referenceへ集約する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
 
-    for text in texts:
-        assert "--cooldown-days=3" in text
-        assert "depends_on" in text
-    combined = "\n".join(texts)
-    assert "ユーザー判断待ち" in combined
-    assert "同一セッション内でsleep又は時限待機をしない" in combined
+    assert "保留、解除条件、再開情報、TBD回答の扱いは`references/hold-with-tbd-inject.md`を正本" in process
+    for phrase in ("--cooldown-days=3", "depends_on", "ユーザー判断だけをTBD", "同一セッション内でsleep又は時限待機をしない"):
+        assert phrase in hold
 
 
 # 節参照の記法。pathと節名の間にMarkdown整形用の改行があっても同じ参照として扱う。
@@ -354,7 +350,7 @@ def test_plan_file_is_the_writer_parallelism_boundary() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     merge = _MERGE_TASK.read_text(encoding="utf-8")
-    rules = _AGENT_RULES.read_text(encoding="utf-8")
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
 
     assert "1 waveとして1つの`agent-toolkit:feedbacks-planner`" in process
     assert "通常型waveの計画工程を待たず" in process
@@ -516,7 +512,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
     assert "各writerの新規起動又は継続接続の直前に`atk config get execute_model`" in executor
     assert "各reviewerの新規起動又は継続接続の直前に`atk config get execute_review_model`" in executor
-    assert "統合writerの新規起動又は継続接続の直前に`atk config get merge_model`" in process_feedbacks
+    assert "統合writerのモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
+    assert "統合writerの各新規起動又は継続接続の直前に`atk config get merge_model`" in flow
     assert "`atk mq show`で取得して渡し、plannerは再取得しない" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文をplannerの完了報告へ要求しない" in reception
@@ -634,7 +631,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     assert "指摘が帰属する実装writer" not in executor
     assert "merge-task.md" not in normal_fix
     assert "merge-task.md" in integrated_fix
-    assert "統合用worktreeで直接作成され、最終HEADに含まれる" in caller
+    assert "lane worktreeで直接作成され、最終HEADに含まれる" in caller
 
 
 def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
@@ -668,12 +665,12 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
 
     for phrase in (
         "計画から単位、共通のベースコミット、統合順を読み",
-        "現在worktreeを統合用として借用",
+        "現在worktreeをlane worktreeとして借用",
         "`作成主体=既存`かつ`回収可否=不可`",
         "複数の計画ファイルを並列実装する場合",
         "callerが計画ファイルごとに`atk managed-temp create",
-        "計画がcallerによる統合用worktreeの作成も明示",
-        "callerが管理対象領域内へ作成（並列単位・計画が明示した統合用）",
+        "計画がcallerによるlane worktreeの作成も明示",
+        "callerが管理対象領域内へ作成（並列単位・計画が明示したlane）",
         "上記2組合せ以外はexecutorへ渡さない",
         "HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録",
         "借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない",
@@ -692,11 +689,11 @@ def test_plan_impl_worktree_schema_accepts_only_owned_or_borrowed_combinations()
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
 
     assert "`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`" in flow
-    assert "管理対象領域の絶対パス、`作成主体=caller`、`回収可否=可`" in flow
+    assert "完全な一覧の記録属性は`plan-impl-caller-reception.md`を正本" in flow
     for contract in (caller, executor):
         assert "管理対象領域の絶対パス、借用時は`なし`" in contract
     assert "| 借用（受領済みの現在worktree） | `既存` | `不可` | `なし` |" in caller
-    assert "| callerが管理対象領域内へ作成（並列単位・計画が明示した統合用） | `caller` | `可` | 絶対パス必須 |" in caller
+    assert "| callerが管理対象領域内へ作成（並列単位・計画が明示したlane） | `caller` | `可` | 絶対パス必須 |" in caller
     assert "上記2組合せ以外はexecutorへ渡さない" in caller
     assert "`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`の組だけ" in executor
     assert "`作成主体=caller`、`回収可否=可`の組では管理対象領域の絶対パスを必須" in executor
@@ -789,19 +786,20 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
 
 
 def test_process_feedbacks_terminates_answered_tbd_before_dependent_feedback() -> None:
-    """回答済みTBDの終端と依存解除後の回答反映を固定する。"""
+    """回答済みTBDの終端と依存解除後の回答反映を保留referenceへ集約する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
 
-    for text in (process, hold):
-        assert "終端後にactive一覧とreadinessを再取得" in text
-        assert "終端済みTBD" in text
-        assert "atk mq show <TBD filename> --target-repo=<repo-path>" in text
-        assert "TBDをactiveへ戻さない" in text
-    assert "回答が本文へ保存済みであることを確認" in process
-    assert "回答がTBD本文へ保存済みであることを確認" in hold
-    assert "回答済みTBDを他の項目より先に採用終端" in process
-    assert "回答済みTBDを先に採用終端" in hold
+    assert process.count("references/hold-with-tbd-inject.md") >= 3
+    for phrase in (
+        "終端後にactive一覧とreadinessを再取得",
+        "終端済みTBD",
+        "atk mq show <TBD filename> --target-repo=<repo-path>",
+        "TBDをactiveへ戻さない",
+        "回答がTBD本文へ保存済みであることを確認",
+        "回答済みTBDを先に採用終端",
+    ):
+        assert phrase in hold
 
 
 def test_delegation_observes_only_identified_artifact_paths() -> None:
@@ -853,23 +851,15 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
         "plan-impl-caller-reception.md`を全文読み",
         "sender契約の正本",
         "借用する現在worktreeを回収不可として含む完全な一覧",
-        "lane用統合worktreeと計画が明示する管理対象worktreeを含む完全な一覧",
+        "lane worktreeと計画が明示する管理対象worktreeを含む完全な一覧",
         "worktreeの完全な一覧、ソート済みfeedback filename一覧、追加指示",
         "許容済みの挙動変化、権限だけを渡し",
     ):
         assert phrase in flow
-    for single_value in ("`用途=統合用`", "`管理対象領域=なし`", "`作成主体=既存`", "`回収可否=不可`"):
+    for single_value in ("`用途=lane`", "`管理対象領域=なし`", "`作成主体=既存`", "`回収可否=不可`"):
         assert single_value in flow
-    assert "管理対象領域内へlane用統合worktreeを作成" in flow
-    for lane_value in (
-        "用途",
-        "絶対パス",
-        "HEADの完全OID",
-        "管理対象領域の絶対パス",
-        "`作成主体=caller`",
-        "`回収可否=可`",
-    ):
-        assert lane_value in flow
+    assert "管理対象領域内へlane worktreeを作成" in flow
+    assert "完全な一覧の記録属性は`plan-impl-caller-reception.md`を正本" in flow
     for field in ("用途", "絶対パス", "管理対象領域の絶対パス", "HEADの完全OID", "作成主体", "回収可否"):
         assert field in caller
     for required_input in (
@@ -1035,11 +1025,8 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         encoding="utf-8"
     )
 
-    for phrase in (
-        "何もしない案、既存操作だけの案、局所運用案、新機構案",
-        "観測されていない低頻度リスクを除くために恒常的な複雑性を増加させてはならない",
-    ):
-        assert phrase in agent_rules
+    assert "references/judgment-details.md`が定める比較階層" in agent_rules
+    assert "観測されていない低頻度リスクを除くために恒常的な複雑性を増加させてはならない" in agent_rules
     for phrase in (
         "目的をユーザーが観測する成果と公開契約から確定",
         "計画、一覧、clean状態、診断記録などを中間手段へ分類",
@@ -1319,6 +1306,8 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
     assert "atk managed-temp create --prefix <用途>" in codex_agents_base
     assert "atk managed-temp cleanup --path <検収済み絶対パス>" in codex_agents_base
     assert "pluginの`bin/`からBashの`PATH`へ追加" in claude_code_runtime
+    assert "schema version 2では`prefix`と`created_at`を必須" in claude_code_runtime
+    assert "全項目の完全一致を検証" in claude_code_runtime
     assert "管理CLIで作成していない既存領域を自動で後始末しない" in delegation_skill
     assert "mktemp -d" not in agent_operations_rules
     assert "単独で実行" in claude_code_runtime
@@ -1365,7 +1354,7 @@ def test_review_findings_recheck_operational_proportionality() -> None:
             "対象外の入力前提又は異なる脅威モデル",
             "永続状態、所有権、期限、復旧経路、互換経路の新設",
             "元の目的と非目標",
-            "何もしない案、既存操作だけの案、局所修正案、新機構案",
+            "何もしない案、既存操作だけの案、局所運用案、新機構案",
             "単純案が目的を満たす場合は新機構を要求しない",
         ):
             assert phrase in reviewer
@@ -1391,7 +1380,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "対象外の入力前提又は異なる脅威モデル",
         "複写するだけで採用しない",
         "元の目的と非目標へ差し戻す",
-        "単純案が目的を満たす場合は新機構を採用しない",
+        "比較階層と比例性の判定は`agent-toolkit:review-standards`の`references/judgment-details.md`を正本",
         "同じ修正回で一括修正する",
         "違反契約の原文を修正後の成果物へ再適用する",
         "references/judgment-details.md",
@@ -1640,9 +1629,9 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
         "排他的作成",
         "fsync",
         "symlink",
-        "完全一致を検証",
         "同じ`group_final_item`と`target_repo`のmarkerが0件",
         "二重の領域作成又は公開操作を行わない",
     ):
         assert requirement in publish_group
+    assert "managed-tempのmarkerとprivate registryの照合" in publish_group
     assert "### 要件シナリオ走査" in review

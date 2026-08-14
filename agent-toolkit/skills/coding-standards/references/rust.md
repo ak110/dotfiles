@@ -26,11 +26,7 @@
   - 信頼できない入力のデシリアライズは`serde` + 明示的な構造体で行う（`serde_json::Value`のまま後段へ渡さない）
   - パスは`Path`／`PathBuf`で扱い、文字列結合で組み立てない
   - 乱数はセキュリティ用途なら`rand::rngs::OsRng`、それ以外は`rand::thread_rng`
-- 他で指定が無い場合のツール推奨:
-  - ビルド／依存管理: `cargo`
-  - リンター: `cargo clippy`（`-D warnings`で警告ゼロを維持）
-  - フォーマッター: `cargo fmt`
-  - MSRV（最小サポートバージョン）は`Cargo.toml`の`rust-version`に明記する
+- MSRV（最小サポートバージョン）は`Cargo.toml`の`rust-version`に明記する
 - テスト（inline, 最低限）
   - 単体テストは対象モジュール末尾の`#[cfg(test)] mod tests { ... }`に配置する
   - 統合テストはクレートルート直下の`tests/`に置く（後述の統合テスト節を参照）
@@ -38,8 +34,7 @@
    （sleepループはflakyテストの主要因となるため）
   - `#[repr(C)]`構造体のサイズ・オフセット検証は`const { assert!(size_of::<T>() == N) }`でcompile-timeに行う
    （Rust 1.79+）。実行時テストにはしない
-- 新しいRustバージョンの機能を積極的に使い、標準ライブラリへ入った機能で代替できる外部クレート依存は排除する。
-  対象プロジェクトの`rust-version`・editionで利用できる機能は公式リリースノートで確認する
+- 対象プロジェクトの`rust-version`・editionで利用できる機能は公式リリースノートで確認する
   <https://doc.rust-lang.org/releases.html>
 
 ## テストコード（統合テスト）

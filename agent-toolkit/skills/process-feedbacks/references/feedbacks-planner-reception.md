@@ -14,7 +14,7 @@ plannerは採用項目を1つの統合計画へまとめ、項目ごとの原文
 
 - feedback filename一覧と、メインが`atk mq show`で一度だけ取得したfilename昇順の本文一覧
 - 対象worktreeとプロジェクト規範
-- `process-feedbacks/references/`配下の`explore-template.md`、`decision-format.md`、`content-adjustment.md`、`review-checklists.md`
+- `process-feedbacks/references/`配下の`explore-template.md`、`decision-format.md`、`review-checklists.md`
 - `plan-mode/references/plan-review-task.md`
 - `agent-toolkit:plan-mode`などのauthor skillと、バグ対応時は`agent-toolkit:bugfix`
 - 既存ファイルと衝突しない乱数サフィックス付きで、委譲元が確定した計画ファイルの絶対パス

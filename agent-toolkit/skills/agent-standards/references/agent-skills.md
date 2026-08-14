@@ -68,7 +68,7 @@ SKILL.md内で使用できる`${CLAUDE_SKILL_DIR}`は、
 
 YAMLのfrontmatterで`context: fork`を指定するとスキルをサブエージェントコンテキストで実行できる。
 あわせて`agent`フィールドでサブエージェント種別
-（`Explore`・`Plan`・`general-purpose`等）を指定する。
+（`Explore`・`Plan`・`claude`等）を指定する。
 `agent: Explore`または`agent: Plan`を指定したfork配下は親の`CLAUDE.md`・ルール群を継承しないため、
 依存する規範は`${CLAUDE_SKILL_DIR}`または`${CLAUDE_PLUGIN_ROOT}`から
 実行時に明示的に読み込む。

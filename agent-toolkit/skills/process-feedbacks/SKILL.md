@@ -27,8 +27,7 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 3. `plan_file`を持つfeedbackを計画実装型、それ以外を通常型とする。本文から型を推測しない
 4. 本文の順序条件はreadiness判定前に抽出し、active項目から対象filename自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
 5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
-6. readyな回答済みTBDは、回答が本文へ保存済みであることを確認し、他のready項目より先に
-   `atk mq start-processing`でprocessingへ移す
+6. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
 7. 残りのreadyなinbox項目を`atk mq start-processing`でprocessingへ移す。
    processing項目は実体を確認し、完了済み工程を再実行せず未完了工程から再開する
 
@@ -52,7 +51,7 @@ readyな計画実装型laneは通常型waveの計画工程を待たず、利用�
 
 サブエージェント機能を利用できないCodexホストでは、通常型を次の順で扱う。
 
-1. `references/content-adjustment.md`と`references/review-checklists.md`を全文読む
+1. `references/review-checklists.md`を全文読む
 2. 原文、現行実装、関連規範、履歴、既存の成功経路を調査する
 3. バグ・障害・回帰では実行主体が`agent-toolkit:bugfix`をSkill機能で起動する
 4. 横断調査を委譲する前に`agent-toolkit:delegation`をSkill機能で起動する。
@@ -64,21 +63,11 @@ readyな計画実装型laneは通常型waveの計画工程を待たず、利用�
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
 
-processingへ移した回答済みTBDは、質問、回答及び依存元filenameを保持する。
-回答が本文へ保存済みであることを再確認し、回答内容が独立した新規作業を含む場合だけ
-`agent-toolkit:add-feedback`の経路へ分離する。
-回答済みTBD自体は「5. 後始末」へ進める。
+回答済みTBDの処理は`references/hold-with-tbd-inject.md`を正本とする。
 
 ## 3. 保留
 
-保留時は`references/hold-with-tbd-inject.md`を全文読み、解除条件と再開情報を永続化する。
-filenameで表せない、ユーザー判断を伴わない外部条件待ちは本文へ観測方法、現在値、解除条件、再開工程を記録し、
-`atk mq return-to-inbox <filename> --cooldown-days=3`でinboxへ戻す。外部条件に応じて3日より長い日数も指定できる。
-別feedback待ちとユーザー判断待ちは`depends_on`を使う。ユーザー判断待ちはTBDを作成し、
-TBD filenameを依存先へ加えてcooldownと重ねない。
-回答済みTBDの能動的なpoll、内部待機ループ、同一セッションでの時限待機は行わない。
-TBDの回答が単純な回答を超える指示・是正要求を含む場合は`agent-toolkit:bugfix`の深掘り条件を判定し、
-自律モードの原則（TBD記録と暫定判断での続行）に従って進める。
+保留、解除条件、再開情報、TBD回答の扱いは`references/hold-with-tbd-inject.md`を正本とする。
 
 readyな採用項目が無ければ、保留状態を維持して「6. 振り返りと終了」へ進む。
 process-loopがactive状態の変化を検出し、readiness成立後に新しいセッションを起動する。
@@ -92,9 +81,7 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 実装commitをpushする全経路でpush済みOIDのCI通過を確認し、lane commitを未公開のままadoptしない。
 PR/MRの作成、マージ又は作成＋マージ、リリースは、全laneの統合、push及びCI通過の後、adoptの前にメインが1回だけ実行する。
 本文に明記されない不可逆操作はTBDへ送る。
-失敗時はpush済み内容を巻き戻さず、実施済み工程と観測内容を記録したTBDを投入して`atk mq return-to-inbox`で保留する。
-投入したTBDの回答を解除条件にする場合は、`references/hold-with-tbd-inject.md`の`保留と再開`に従い、
-既存の有効依存とTBD filenameを登録してから差し戻し、active一覧で`blocked`を確認する。
+失敗時はpush済み内容を巻き戻さず、`references/hold-with-tbd-inject.md`に従って保留する。
 終端工程だけを求める項目は計画を作成せず、終端待機集合へ登録して全laneの統合とpush後にfilename昇順で実行する。
 
 - Claude Codeホストの通常型採用項目は、plannerの統合計画を各feedbackへ`atk mq convert-to-plan`で記録し、
@@ -108,8 +95,7 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全lane�
 メインはqueue操作、planner・executor・統合スレッドの起動と検収、TBDと新規feedbackの投入、
 上流取得、統合worktreeの作成と回収、push、CI通過確認を担当する。
 lane commitの適用、競合解消、履歴一本化、検証は統合writerへ委譲する。
-統合writerの新規起動又は継続接続の直前に`atk config get merge_model`で経路を解決し、
-`references/merge-task.md`を渡す。
+統合writerのモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本とする。
 
 作業中に独立した新規改善を発見した場合は、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
 完成済み本文と対象リポジトリを渡す。投入コマンドを本スキルから直接構成しない。
@@ -119,14 +105,7 @@ lane commitの適用、競合解消、履歴一本化、検証は統合writerへ
 - 不採用: 判定確定後に`atk mq reject <filename> --note=<理由>`を実行する
 - 採用: 終端工程を持つ項目は全終端工程の成功後、持たない項目は対象commitのpushとCI通過確認後に
   `atk mq adopt <filename> --note=<反映概要> --commit=<完全長SHA>`を実行する
-- 回答済みTBD: 回答が本文へ保存済みであることを確認し、回答済みTBDを他の項目より先に採用終端する。
-  終端後にactive一覧とreadinessを再取得し、依存が解除されたfeedbackを通常経路で開始する
-
-依存解除後のfeedbackを調査・再開する際は、feedback本文と依存先filenameを対応付ける。
-`atk mq show <TBD filename> --target-repo=<repo-path>`で終端済みTBDを再取得し、
-保存済みの質問・回答とfeedbackの暫定判断との差分を反映する。
-回答の反映後にfeedbackの実装又は採否が失敗した場合も、TBD本文とterminal状態を回答の正本として維持する。
-再試行では同じfilenameで終端済みTBDを再取得し、TBDをactiveへ戻さない。
+- 回答済みTBD: `references/hold-with-tbd-inject.md`に従って採用終端し、依存解除後の処理を再開する
 
 各コマンドの保存結果を再取得し、対象、採否、note、commitを照合する。
 終端工程を持つ項目のnoteには実施した操作と結果を記録する。

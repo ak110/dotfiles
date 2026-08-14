@@ -134,5 +134,6 @@ Claude Codeのhookは状態ファイル`{tempdir}/claude-agent-toolkit-{session_
 - `references/agent-skills.md`: スキル編集時（公式リファレンスの参照先を含む）
 - `references/check-script-design.md`: 機械チェックスクリプト新設・改修時
 - `references/claude-hooks.md`（hook編集時）・`references/auto-mode.md`（auto mode編集時・権限拒否時）
+- `references/hook-message-labeling.md`: hookの利用者向けメッセージを新設・改訂する時
 - `references/session-records.md`: セッション記録の集計・分析時
 - `references/tool-operations.md`: 大量の文書読込・大規模ブロック置換・plugin資源のroot失効時

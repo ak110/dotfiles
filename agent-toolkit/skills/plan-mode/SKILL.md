@@ -169,7 +169,7 @@ frontmatterが`source: session-review`の提示素材は、自己生成起点と
 
 ### 機械検査
 
-`scripts/check_plan_file.py`が計画の構造と実体を機械検査する。
+`skills/plan-mode/scripts/check_plan_file.py`が計画の構造と実体を機械検査する。
 構造定数と値抽出は`agent-toolkit/scripts/_plan_format.py`を正本とする。
 原文と要約の意味照合、根拠の妥当性、検討の実質はレビューで確認する。
 

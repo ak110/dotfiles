@@ -26,12 +26,7 @@
   - 信頼できないXMLは`XmlResolver = null`でXXEを無効化する
   - `BinaryFormatter`は使わない（非推奨・安全でない）。`System.Text.Json`やMessagePackで代替
   - 乱数はセキュリティ用途なら`RandomNumberGenerator`、それ以外は`Random.Shared`
-- 他で指定が無い場合のツール推奨:
-  - ビルド: `dotnet` CLI
-  - フォーマッター: `dotnet format`
-  - アナライザー: Roslynアナライザー + `Microsoft.CodeAnalysis.NetAnalyzers`（`.editorconfig`で設定）
-- 新しいC#／.NETバージョンの機能を積極的に使う。
-  対象プロジェクトの`LangVersion`・`TargetFramework`で利用できる機能は公式ドキュメントで確認する
+- 対象プロジェクトの`LangVersion`・`TargetFramework`で利用できる機能は公式ドキュメントで確認する
   <https://learn.microsoft.com/dotnet/csharp/whats-new/>
 
 ## テストコード（xUnit）

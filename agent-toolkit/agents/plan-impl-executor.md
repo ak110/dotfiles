@@ -71,7 +71,7 @@ worktreeと管理対象領域を作成・回収しない。
 3. 各writerの新規起動又は継続接続の直前に`atk config get execute_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    writerは解決したengineで起動し、executor自身を含む同じ役割種別へ割り当てない。
-   `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`general-purpose`を使い、モデル名部分を渡す。
+   `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
    writerへ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
    プロジェクト規範、該当author skillの絶対パス、その単位の識別、目的及び変更説明だけとする。
    同じ計画ファイルのwriterは依存順に1件ずつ起動する
@@ -106,7 +106,7 @@ worktreeと管理対象領域を作成・回収しない。
 1. 各reviewerの新規起動又は継続接続の直前に`atk config get execute_review_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    reviewerは解決したengineで起動し、executor自身を含む同じ役割種別へ割り当てない。
-   `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`general-purpose`を使い、モデル名部分を渡す。
+   `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
    同じ最終HEADを対象として次のreviewerを別識別子で並列起動する
    - 計画準拠系: `skills/plan-mode/references/implementation-plan-review-task.md`
    - 独立系: `skills/plan-mode/references/implementation-independent-review-task.md`

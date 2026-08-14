@@ -20,8 +20,7 @@ PEP 758の`as`節使用時は従来通り括弧必須とする（`except (ValueE
 
 ## 新しいPythonバージョンの機能
 
-- 新しいPythonバージョンの機能を積極的に使う。
-  対象プロジェクトの`requires-python`で利用できる機能は公式のWhat's Newで確認する
+- 対象プロジェクトの`requires-python`で利用できる機能は公式のWhat's Newで確認する
   <https://docs.python.org/3/whatsnew/index.html>
 - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）自体は注入対策にならない。
   安全性は後段のレンダラやAPI側に依存するため、SQL／HTML生成では対応レンダラと組み合わせて使う

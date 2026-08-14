@@ -11,7 +11,6 @@
 
 - `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run_for_agent`成功時に記録し、
   `git commit`未検証警告の抑制に使う。セッション終了まで保持する
-- `git_status_checked`: PostToolUse(Bash)が`git status`・`git log`・`git diff`観測時に記録する
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う
 - `sleep_poll_detected`: PreToolUse(Bash)がsleep直後の状態確認連結を検出した場合に記録する
@@ -32,7 +31,8 @@
   Claude CodeではPostToolUseとUserPromptSubmitが記録し、EnterPlanModeで解除する。
   CodexではUserPromptSubmitと振り返りスキルが記録し、同一セッション内の解除経路を設けない。
   Codexの状態が期限回収された場合は、transcript内の手動起動または起動確定標識から起動済み判定を復元する
-- `agent_toolkit_edit_skill_invoked`: agent-toolkit-edit起動を記録し、編集警告の抑制に使う
+- `agent_toolkit_edit_skill_invoked`: dotfilesリポジトリ固有の
+  `scripts/claude_hook_pretooluse.py`などがagent-toolkit-edit起動を記録し、編集警告の抑制に使う
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
   `delegation`を起動した場合にPostToolUseが真化する。

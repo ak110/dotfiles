@@ -12,8 +12,9 @@ description: >
 
 ## 適用範囲
 
-全プロジェクト・全言語横断のコーディング規範のみを記述する。
-特定言語・特定フレームワーク・特定ライブラリ固有の事項は記述せず、`references/<言語>.md`または`references/<フレームワーク・ライブラリ名>.md`へ置く。
+全プロジェクトへ共通するコーディング規範と、言語横断で照合する標準ツール・構文方針を記述する。
+言語・フレームワーク・ライブラリ固有の詳細は、`references/<言語>.md`または
+`references/<フレームワーク・ライブラリ名>.md`へ置く。
 プロジェクト固有の規約は当該プロジェクトの`CLAUDE.md`・`.claude/rules/`へ置く。
 
 コード編集に着手する前に、編集対象の拡張子に対応する`references/<言語>.md`を必ずReadで読み込む
@@ -48,6 +49,27 @@ description: >
 - Playwright Test（v1系、依存名`@playwright/test`）: `references/playwright.md`
 - Drizzle ORM/Drizzle Kit（0.x系、依存名`drizzle-orm`・`drizzle-kit`）: `references/drizzle.md`
 - Svelte 5/SvelteKit 2（依存名`svelte`・`@sveltejs/kit`）: `references/svelte.md`
+
+## 言語横断のツールと構文
+
+プロジェクトに指定が無い場合は、次の標準ツールを使う。
+
+| 言語 | 依存管理・ビルド | lint・format・補助ツール |
+| --- | --- | --- |
+| Python | `uv` | `pyfltr`、`pytilpack` |
+| TypeScript | `pnpm`、一度限りの実行は`pnpx` | `Biome`。未対応ルールが必要な場合だけESLintとPrettierを併用 |
+| Rust | `cargo` | `cargo clippy -D warnings`、`cargo fmt` |
+| C# | `dotnet` CLI | `dotnet format`、Roslynアナライザー、`Microsoft.CodeAnalysis.NetAnalyzers` |
+| Bash | 該当なし | `shellcheck`、`shfmt` |
+| PowerShell | 該当なし | PSScriptAnalyzer |
+
+公開互換性として宣言した範囲で利用できる新しい言語機能を積極的に使う。
+利用可否は対象プロジェクトの言語バージョンと公式リリースノートで確認する。
+標準ライブラリで代替できる外部依存は排除する。
+
+シェル系言語では、外部入力をコマンドの引数として渡す。
+動的な実行が必要な場合は固定候補へ分岐し、評価系コマンドへ外部入力を渡さない。
+外部入力を含むコマンド文字列を組み立てて実行しない。
 
 ## コーディング品質（全言語共通）
 

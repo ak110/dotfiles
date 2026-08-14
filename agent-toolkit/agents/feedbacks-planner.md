@@ -22,7 +22,7 @@ user-invocable: false
 
 - filename昇順のfeedback filename一覧と、呼び出し元が`atk mq show`で取得した本文一覧
 - 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス
-- `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`content-adjustment.md`、`review-checklists.md`の絶対パス
+- `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`review-checklists.md`の絶対パス
 - `agent-toolkit:plan-mode`などのauthor skillの絶対パス
 - バグ対応時は`agent-toolkit:bugfix`の絶対パス
 

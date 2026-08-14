@@ -4,7 +4,7 @@
 
 ## authorの機械検査
 
-初版の起草後、author自身が正規計画へ`check_plan_file.py`を実行する。
+初版の起草後、author自身が正規計画へ`skills/plan-mode/scripts/check_plan_file.py`を実行する。
 違反は正規計画で修正し、全検査を再実行する。終了コード、警告、修正概要を保持する。
 機械検査を別のwriterへ委譲せず、正規計画の書込主体をauthor 1名に保つ。
 
