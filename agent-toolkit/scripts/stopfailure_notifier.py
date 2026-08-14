@@ -14,6 +14,9 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    locked_rotate_and_append as _locked_rotate_and_append,
+)
 from _transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     assistant_text,
     latest_main_assistant_entry,
@@ -21,6 +24,7 @@ from _transcript import (  # noqa: E402  # pylint: disable=wrong-import-position
 
 # transcript末尾テキスト要約の最大文字数。
 _SUMMARY_MAX = 500
+_LOG_MAX_BYTES = 1_000_000
 
 
 def _log_path() -> pathlib.Path:
@@ -51,9 +55,7 @@ def append_log(payload: dict, *, log_path: pathlib.Path, now: datetime.datetime)
         "input": payload,
         "transcript_summary": _transcript_summary(transcript_path),
     }
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    _locked_rotate_and_append(log_path, json.dumps(record, ensure_ascii=False) + "\n", _LOG_MAX_BYTES)
 
 
 def main(payload_text: str) -> int:

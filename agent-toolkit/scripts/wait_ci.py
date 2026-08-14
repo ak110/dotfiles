@@ -31,6 +31,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote, urlparse
 
+import _json_command
+
 # 以下の終了コードはCLIの公開インターフェース（利用者が`echo $?`等で参照する契約）であり、
 # private実装詳細ではないためアンダースコア接頭辞を付けない。
 # `EXIT_GH_ERROR`はGitHub専用実装だった当時の名称を公開契約として維持する。
@@ -116,7 +118,7 @@ def _short_ref(ref: str) -> str:
 
 def _gh_run_list(repository: str, ref: str, sha: str, subprocess_timeout: float) -> list[RunRecord]:
     """repository・ref・SHAを明示した`gh run list`結果を返す。"""
-    payload = _run_json_command(
+    payload = _run_forge_json_command(
         [
             "gh",
             "run",
@@ -159,7 +161,7 @@ def _gh_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -> 
     ]
     if target.hostname is not None:
         command.extend(["--hostname", target.hostname])
-    payload = _run_json_command(command, subprocess_timeout, "gh api jobs")
+    payload = _run_forge_json_command(command, subprocess_timeout, "gh api jobs")
     if not isinstance(payload, list) or not all(isinstance(page, dict) for page in payload):
         raise RunListError(f"gh api jobs returned unexpected JSON shape: {payload!r}")
     job_pages = [page.get("jobs") for page in payload]
@@ -245,7 +247,7 @@ def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout:
     `glab`はJSON出力でGitLab APIの応答オブジェクトを加工せず出力する。
     SHA指定で対象を限定できるサブコマンドは`ci list`のみのため、`ci status`・`ci get`は使わない。
     """
-    payload = _run_json_command(
+    payload = _run_forge_json_command(
         [
             "glab",
             "ci",
@@ -286,7 +288,7 @@ def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -
     ]
     if target.hostname is not None:
         command.extend(["--hostname", target.hostname])
-    payload = _run_json_command(command, subprocess_timeout, "glab api jobs")
+    payload = _run_forge_json_command(command, subprocess_timeout, "glab api jobs")
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise RunListError(f"glab api jobs returned unexpected JSON shape: {payload!r}")
     jobs: list[JobRecord] = []
@@ -313,30 +315,21 @@ def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -
     return jobs
 
 
-def _run_json_command(command: list[str], subprocess_timeout: float, description: str) -> Any:
+def _run_forge_json_command(command: list[str], subprocess_timeout: float, description: str) -> Any:
     """外部CLIのJSON応答をUTF-8で厳格復号し、取得エラーを`RunListError`へ統合する。"""
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            timeout=subprocess_timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RunListError(f"{description} timed out after {subprocess_timeout:.0f}s") from exc
-    except FileNotFoundError as exc:
-        raise RunListError(f"{command[0]} command not found") from exc
-    try:
-        stdout = result.stdout.decode("utf-8")
-        stderr = result.stderr.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise RunListError(f"{description} returned non-UTF-8 output: {exc}") from exc
-    if result.returncode != 0:
-        raise RunListError(f"{description} failed (exit={result.returncode}): {stderr.strip()}")
-    try:
-        return json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        raise RunListError(f"{description} returned invalid JSON: {exc}") from exc
+
+    def error_factory(failure: _json_command.Failure) -> Exception:
+        if failure.kind == "timeout":
+            return RunListError(f"{description} timed out after {subprocess_timeout:.0f}s")
+        if failure.kind == "not-found":
+            return RunListError(f"{command[0]} command not found")
+        if failure.kind == "decode":
+            return RunListError(f"{description} returned non-UTF-8 output: {failure.detail}")
+        if failure.kind == "exit":
+            return RunListError(f"{description} failed (exit={failure.returncode}): {failure.stderr.strip()}")
+        return RunListError(f"{description} returned invalid JSON: {failure.detail}")
+
+    return _json_command.run(command, subprocess_timeout, error_factory=error_factory)
 
 
 def _resolve_forge(explicit: str, repository: str) -> str | None:
@@ -533,6 +526,67 @@ def _all_cancelled(runs: list[RunRecord]) -> bool:
     return _all_completed(runs) and all(r.get("conclusion") == "cancelled" for r in runs)
 
 
+def _wait_for_completion(
+    *,
+    start: float,
+    timeout: float,
+    poll_interval: float,
+    expected_ids: set[int],
+    fetch_fn: Callable[[], tuple[list[RunRecord], list[JobRecord]]],
+    select_fn: Callable[[list[RunRecord]], list[RunRecord]],
+    forge: str,
+    sleep_fn: Callable[[float], None],
+    now_fn: Callable[[], float],
+    consecutive_failures: int,
+    follow_mode: bool,
+) -> tuple[int, list[RunRecord], float]:
+    """確定したrun集合の完了を待つ主経路・後続SHA経路の共通ループ。"""
+    while True:
+        try:
+            candidates, jobs = fetch_fn()
+            consecutive_failures = 0
+        except RunListError as exc:
+            consecutive_failures += 1
+            elapsed = now_fn() - start
+            prefix = "後続run取得失敗" if follow_mode else "run list error"
+            _print(elapsed, f"{prefix} (attempt {consecutive_failures}): {exc}")
+            if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
+                return EXIT_GH_ERROR, [], elapsed
+            sleep_fn(poll_interval)
+            continue
+        elapsed = now_fn() - start
+        if not follow_mode and (added := _run_ids(candidates) - expected_ids):
+            _print(elapsed, f"追加登録されたrunを待機対象へ追加（{len(added)}件）")
+            expected_ids |= added
+        runs = select_fn(candidates)
+        if len(runs) < len(expected_ids):
+            noun = "期待後続run集合" if follow_mode else "期待run集合"
+            _print(elapsed, f"{noun}の一部が取得結果から欠落（{len(runs)}/{len(expected_ids)}）")
+            if elapsed >= timeout:
+                _emit_summary(runs)
+                return EXIT_TIMEOUT, runs, elapsed
+            sleep_fn(poll_interval)
+            continue
+        if failure := _find_early_failure(runs, jobs, forge):
+            _emit_failure_summary(*failure)
+            return EXIT_CI_FAILED, runs, elapsed
+        if runs and _all_completed(runs):
+            _emit_summary(runs)
+            return (EXIT_SUCCESS if _all_success(runs) else EXIT_CI_FAILED), runs, elapsed
+        if elapsed >= timeout:
+            message = "後続run追跡タイムアウト" if follow_mode else f"タイムアウト（{timeout:.0f}秒経過）"
+            _print(elapsed, message)
+            _emit_summary(runs)
+            return EXIT_TIMEOUT, runs, elapsed
+        pending = [run.get("name", "?") for run in runs if run.get("status") != "completed"]
+        if follow_mode:
+            pending = pending or ["<未検出>"]
+            _print(elapsed, f"後続run未完了: {', '.join(pending)}")
+        else:
+            _print(elapsed, f"未完了run: {', '.join(pending)}")
+        sleep_fn(poll_interval)
+
+
 def wait_for_ci(
     sha: str,
     timeout: float,
@@ -617,70 +671,42 @@ def wait_for_ci(
             return EXIT_TIMEOUT
         sleep_fn(min(poll_interval, max(1.0, registration_grace - elapsed)))
 
-    while True:  # 完了待ちフェーズ
-        try:
-            runs, jobs = _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids)
-            consecutive_failures = 0
-        except RunListError as exc:
-            consecutive_failures += 1
-            _print(now_fn() - start, f"run list error (attempt {consecutive_failures}): {exc}")
-            if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return EXIT_GH_ERROR
-            sleep_fn(poll_interval)
-            continue
-        elapsed = now_fn() - start
-        if added := _run_ids(runs) - expected_ids:
-            # run一覧は対象shaで限定するため、猶予後に現れるrunも同じcommitに対する実行である。
-            # 待機対象へ加えないと当該runの失敗を待たずに通過と判定してしまう。
-            _print(elapsed, f"追加登録されたrunを待機対象へ追加（{len(added)}件）")
-            expected_ids |= added
-        expected_runs = [r for r in runs if r.get("databaseId") in expected_ids] or []
-        if len(expected_runs) < len(expected_ids):
-            _print(elapsed, f"期待run集合の一部が取得結果から欠落（{len(expected_runs)}/{len(expected_ids)}）")
-            if elapsed >= timeout:
-                _emit_summary(expected_runs)
-                return EXIT_TIMEOUT
-            sleep_fn(poll_interval)
-            continue
-        if failure := _find_early_failure(expected_runs, jobs, forge):
-            _emit_failure_summary(*failure)
-            return EXIT_CI_FAILED
-        if _all_completed(expected_runs):
-            _emit_summary(expected_runs)
-            if _all_success(expected_runs):
-                return EXIT_SUCCESS
-            if follow_cancelled and _all_cancelled(expected_runs):
-                if not ancestor_check_fn(sha):
-                    _print(elapsed, f"--follow-cancelled対象外: {sha}は{source_ref}の祖先ではない")
-                    return EXIT_GH_ERROR
-                _print(elapsed, f"全runがcancelled。{source_ref}の後続SHA集合を取得し追跡へ移行")
-                return _follow_cancelled(
-                    sha,
-                    expected_runs,
-                    max(0.0, timeout - elapsed),
-                    poll_interval,
-                    registration_grace,
-                    sleep_fn=sleep_fn,
-                    now_fn=now_fn,
-                    run_list_fn=run_list_fn,
-                    job_list_fn=job_list_fn,
-                    follow_shas_fn=follow_shas_fn,
-                    forge=forge,
-                    excluded_ids=baseline_ids,
-                )
-            return EXIT_CI_FAILED
-        if elapsed >= timeout:
-            _print(elapsed, f"タイムアウト（{timeout:.0f}秒経過）")
-            _emit_summary(expected_runs)
-            return EXIT_TIMEOUT
-        pending = [r.get("name", "?") for r in expected_runs if r.get("status") != "completed"]
-        _print(elapsed, f"未完了run: {', '.join(pending)}")
-        sleep_fn(poll_interval)
+    result, expected_runs, elapsed = _wait_for_completion(
+        start=start,
+        timeout=timeout,
+        poll_interval=poll_interval,
+        expected_ids=expected_ids,
+        fetch_fn=lambda: _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids),
+        select_fn=lambda candidates: [run for run in candidates if run.get("databaseId") in expected_ids],
+        forge=forge,
+        sleep_fn=sleep_fn,
+        now_fn=now_fn,
+        consecutive_failures=consecutive_failures,
+        follow_mode=False,
+    )
+    if result != EXIT_CI_FAILED or not follow_cancelled or not _all_cancelled(expected_runs):
+        return result
+    if not ancestor_check_fn(sha):
+        _print(elapsed, f"--follow-cancelled対象外: {sha}は{source_ref}の祖先ではない")
+        return EXIT_GH_ERROR
+    _print(elapsed, f"全runがcancelled。{source_ref}の後続SHA集合を取得し追跡へ移行")
+    return _follow_cancelled(
+        sha,
+        max(0.0, timeout - elapsed),
+        poll_interval,
+        registration_grace,
+        sleep_fn=sleep_fn,
+        now_fn=now_fn,
+        run_list_fn=run_list_fn,
+        job_list_fn=job_list_fn,
+        follow_shas_fn=follow_shas_fn,
+        forge=forge,
+        excluded_ids=baseline_ids,
+    )
 
 
 def _follow_cancelled(
     original_sha: str,
-    _cancelled_runs: list[RunRecord],
     remaining_timeout: float,
     poll_interval: float,
     registration_grace: float,
@@ -750,47 +776,28 @@ def _follow_cancelled(
             break
         sleep_fn(poll_interval)
 
-    while True:  # 完了待ちフェーズ
-        # 各後続SHAのrunを取得し、expected_idsに属するrunのみを集約する
-        try:
-            candidates, jobs = _fetch_follow_snapshot(
-                follow_shas,
-                run_list_fn,
-                job_list_fn,
-                expected_ids,
-                excluded_ids,
-            )
-            consecutive_failures = 0
-        except RunListError as exc:
-            consecutive_failures += 1
-            elapsed = now_fn() - start
-            _print(elapsed, f"後続run取得失敗 (attempt {consecutive_failures}): {exc}")
-            if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return EXIT_GH_ERROR
-            sleep_fn(poll_interval)
-            continue
-        follow_runs = [r for r in candidates if r.get("headSha") in follow_shas and r.get("databaseId") in expected_ids]
-        elapsed = now_fn() - start
-        if len(follow_runs) < len(expected_ids):
-            _print(elapsed, f"期待後続run集合の一部が取得結果から欠落（{len(follow_runs)}/{len(expected_ids)}）")
-            if elapsed >= remaining_timeout:
-                _emit_summary(follow_runs)
-                return EXIT_TIMEOUT
-            sleep_fn(poll_interval)
-            continue
-        if failure := _find_early_failure(follow_runs, jobs, forge):
-            _emit_failure_summary(*failure)
-            return EXIT_CI_FAILED
-        if follow_runs and _all_completed(follow_runs):
-            _emit_summary(follow_runs)
-            return EXIT_SUCCESS if _all_success(follow_runs) else EXIT_CI_FAILED
-        if elapsed >= remaining_timeout:
-            _print(elapsed, "後続run追跡タイムアウト")
-            _emit_summary(follow_runs)
-            return EXIT_TIMEOUT
-        pending = [r.get("name", "?") for r in follow_runs if r.get("status") != "completed"] or ["<未検出>"]
-        _print(elapsed, f"後続run未完了: {', '.join(pending)}")
-        sleep_fn(poll_interval)
+    result, _, _ = _wait_for_completion(
+        start=start,
+        timeout=remaining_timeout,
+        poll_interval=poll_interval,
+        expected_ids=expected_ids,
+        fetch_fn=lambda: _fetch_follow_snapshot(
+            follow_shas,
+            run_list_fn,
+            job_list_fn,
+            expected_ids,
+            excluded_ids,
+        ),
+        select_fn=lambda candidates: [
+            run for run in candidates if run.get("headSha") in follow_shas and run.get("databaseId") in expected_ids
+        ],
+        forge=forge,
+        sleep_fn=sleep_fn,
+        now_fn=now_fn,
+        consecutive_failures=consecutive_failures,
+        follow_mode=True,
+    )
+    return result
 
 
 def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:

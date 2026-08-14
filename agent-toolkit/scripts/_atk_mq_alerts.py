@@ -12,11 +12,12 @@ import dataclasses
 import datetime
 import json
 import pathlib
-import subprocess
 import sys
 from collections.abc import Callable
 
 import _atk_mq_add as _add
+import _git_command
+import _json_command
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
     MQ_STATE_INBOX,
@@ -95,19 +96,7 @@ def _now_iso() -> str:
 
 def _run_git_capture(local_path: pathlib.Path, args: list[str]) -> str | None:
     """`git -C <local_path> <args>`を実行し、成功時はstdout（末尾改行除去）を返す。"""
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(local_path), *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_GIT_SUBPROCESS_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
+    return _git_command.optional_output(args, local_path, timeout=_GIT_SUBPROCESS_TIMEOUT)
 
 
 def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _run_git_capture) -> str | None:
@@ -126,7 +115,7 @@ def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _r
     return None
 
 
-def _run_json_command(
+def _run_alert_json_command(
     command: list[str], *, timeout: float, operation: str, disabled_messages: tuple[str, ...] = ()
 ) -> list[dict]:
     """外部CLIを実行し、JSON配列応答を返す。
@@ -134,40 +123,29 @@ def _run_json_command(
     `disabled_messages`を渡した呼び出しでは、HTTP 403かつ当該文言と一致する応答を
     `AlertFeatureDisabledError`として区別する。既定は空で、従来どおり全失敗を`AlertCollectError`とする。
     """
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise AlertCollectError(f"{operation}がタイムアウトしました") from exc
-    except FileNotFoundError as exc:
-        raise AlertCollectError(f"{command[0]}コマンドが見つかりません") from exc
-    try:
-        stdout = result.stdout.decode("utf-8") if isinstance(result.stdout, bytes) else result.stdout
-    except UnicodeDecodeError as exc:
-        raise AlertCollectError(f"{operation}の標準出力をUTF-8として復号できません: {exc}") from exc
-    stderr = result.stderr.decode("utf-8", errors="backslashreplace") if isinstance(result.stderr, bytes) else result.stderr
-    assert isinstance(stdout, str)
-    assert isinstance(stderr, str)
-    if result.returncode != 0:
-        if _is_disabled_response(stdout, disabled_messages):
-            raise AlertFeatureDisabledError(f"{operation}: 対象リポジトリで当該機能が無効")
-        raise AlertCollectError(f"{operation}が失敗しました（exit={result.returncode}）: {stderr.strip()}")
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        raise AlertCollectError(f"{operation}の応答をJSONとして解析できません: {exc}") from exc
+
+    def error_factory(failure: _json_command.Failure) -> Exception:
+        if failure.kind == "timeout":
+            return AlertCollectError(f"{operation}がタイムアウトしました")
+        if failure.kind == "not-found":
+            return AlertCollectError(f"{command[0]}コマンドが見つかりません")
+        if failure.kind == "decode":
+            return AlertCollectError(f"{operation}の標準出力をUTF-8として復号できません: {failure.detail}")
+        if failure.kind == "exit":
+            if _is_disabled_response(failure.stdout, disabled_messages):
+                return AlertFeatureDisabledError(f"{operation}: 対象リポジトリで当該機能が無効")
+            return AlertCollectError(f"{operation}が失敗しました（exit={failure.returncode}）: {failure.stderr.strip()}")
+        return AlertCollectError(f"{operation}の応答をJSONとして解析できません: {failure.detail}")
+
+    payload = _json_command.run(command, timeout, error_factory=error_factory, strict_stderr=False)
     if not isinstance(payload, list):
-        raise AlertCollectError(f"{operation}の応答形状が不正です: {stdout[:200]!r}")
+        raise AlertCollectError(f"{operation}の応答形状が不正です: {json.dumps(payload, ensure_ascii=False)[:200]!r}")
     return payload
 
 
 def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
     """`gh run list`結果を返す。"""
-    return _run_json_command(
+    return _run_alert_json_command(
         [
             "gh",
             "run",
@@ -219,7 +197,7 @@ def _run_gh_dependabot_alerts(repo: str) -> list[dict]:
     リポジトリ側でDependabotアラート機能が無効な場合はHTTP 403が返るため、
     当該応答のみ`AlertFeatureDisabledError`として取得失敗と区別する。
     """
-    return _run_json_command(
+    return _run_alert_json_command(
         ["gh", "api", "--paginate", f"/repos/{repo}/dependabot/alerts?state=open&per_page=100"],
         timeout=_GH_SUBPROCESS_TIMEOUT,
         operation=f"dependabot/alerts取得（{repo}）",
@@ -268,7 +246,7 @@ def collect_github_dependabot_alerts(repo: str, *, alerts_fn: GhDependabotAlerts
 
 def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
     """`glab ci list`結果（created_at降順）を返す。"""
-    return _run_json_command(
+    return _run_alert_json_command(
         ["glab", "ci", "list", "-R", repo, "--ref", ref, "-F", "json", "--per-page", "5"],
         timeout=_GLAB_SUBPROCESS_TIMEOUT,
         operation=f"glab ci list（{repo}）",

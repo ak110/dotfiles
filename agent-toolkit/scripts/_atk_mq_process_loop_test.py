@@ -1201,6 +1201,41 @@ class TestProcessLoopSessionPreparation:
         assert exc_info.value.code == 7
         assert events == ["pull", "count", "update", "repull", "count", "session"]
 
+    def test_worktree_preparation_failure_returns_to_wait(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """dotfiles用worktreeを準備できない場合はプロセスを異常終了せず待機へ戻る。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "dotfiles"
+        myrepo.mkdir()
+        session_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, session_calls, 0))
+        monkeypatch.setattr(_process_loop, "_resolve_local_worktree", lambda _value: myrepo)
+        monkeypatch.setattr(_process_loop, "_resolve_repo_id", lambda *_args, **_kwargs: _DOTFILES_REPO_ID)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: 1)
+        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", lambda *_args: None)
+        wait_calls: list[pathlib.Path] = []
+
+        def stop_wait(private_notes: pathlib.Path, _target_repo_id: str | None) -> None:
+            wait_calls.append(private_notes)
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", stop_wait)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert wait_calls == [tmp_path / "private-notes"]
+        assert not session_calls
+        assert "worktree準備を再試行するまで変更検知を待機します。" in capsys.readouterr().out
+
 
 def test_process_loop_parser_orchestrator_contract(capsys: pytest.CaptureFixture[str]) -> None:
     """オーケストレーターの既定値と選択肢をargparse境界で固定する。"""

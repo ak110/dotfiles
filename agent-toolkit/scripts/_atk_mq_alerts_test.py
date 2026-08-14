@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_alerts as alerts  # noqa: E402  # pylint: disable=wrong-import-position
+import _json_command  # noqa: E402  # pylint: disable=wrong-import-position
 
 # 機能無効判定は`collect_new_alerts`経由では応答本文の分岐を網羅できないため直接検証する。
 # private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
@@ -257,7 +258,7 @@ def test_collect_new_alerts_decodes_utf8_json_bytes_without_locale_dependency(
         assert "text" not in _kwargs
         return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload, ensure_ascii=False).encode(), stderr=b"")
 
-    monkeypatch.setattr(alerts.subprocess, "run", fake_run)
+    monkeypatch.setattr(_json_command.subprocess, "run", fake_run)
 
     result = alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
 
@@ -273,7 +274,7 @@ def test_collect_new_alerts_warns_when_json_stdout_is_not_utf8(
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(command, 0, stdout=b"\xff", stderr=b"")
 
-    monkeypatch.setattr(alerts.subprocess, "run", fake_run)
+    monkeypatch.setattr(_json_command.subprocess, "run", fake_run)
 
     assert not alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
     assert "標準出力をUTF-8として復号できません" in capsys.readouterr().err
@@ -287,7 +288,7 @@ def test_collect_new_alerts_keeps_non_utf8_stderr_as_bytes_notation(
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"failed: \x81")
 
-    monkeypatch.setattr(alerts.subprocess, "run", fake_run)
+    monkeypatch.setattr(_json_command.subprocess, "run", fake_run)
 
     assert not alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
     assert "\\x81" in capsys.readouterr().err

@@ -29,7 +29,7 @@ _gh_run_list = wait_ci._gh_run_list  # pylint: disable=protected-access
 _glab_pipeline_list = wait_ci._glab_pipeline_list  # pylint: disable=protected-access
 _gh_job_list = wait_ci._gh_job_list  # pylint: disable=protected-access
 _glab_job_list = wait_ci._glab_job_list  # pylint: disable=protected-access
-_run_json_command = wait_ci._run_json_command  # pylint: disable=protected-access
+_run_json_command = wait_ci._run_forge_json_command  # pylint: disable=protected-access
 _is_ancestor_of_ref = wait_ci._is_ancestor_of_ref  # pylint: disable=protected-access
 _follow_shas = wait_ci._follow_shas  # pylint: disable=protected-access
 _all_cancelled = wait_ci._all_cancelled  # pylint: disable=protected-access
@@ -509,41 +509,62 @@ class TestGhErrorHandling:
             == wait_ci.EXIT_TIMEOUT
         )
 
-    def test_completion_job_failure_recovers(self):
-        run_calls = {"n": 0}
-        job_calls = {"n": 0}
 
-        def run_list_fn(_s):
-            run_calls["n"] += 1
-            if run_calls["n"] == 1:
-                return [_run(status="in_progress", conclusion=None)]
-            return [_run()]
+class TestUnifiedCompletionLoop:
+    """主SHA・後続SHAが共有する完了待機ループを同一条件で検証する。"""
 
-        def job_list_fn(_r):
-            job_calls["n"] += 1
-            if job_calls["n"] == 2:
-                raise wait_ci.RunListError("transient completion jobs failure")
-            return []
+    @pytest.mark.parametrize("follow_mode", [False, True])
+    def test_snapshot_failure_recovers(self, follow_mode: bool) -> None:
+        """一時的な取得失敗後の成功を両経路で受理する。"""
+        calls = 0
 
-        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=job_list_fn) == wait_ci.EXIT_SUCCESS
+        def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord]]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise wait_ci.RunListError("transient completion failure")
+            return [_run()], []
 
-    def test_three_completion_job_failures_return_gh_error(self):
-        calls = {"n": 0}
-
-        def job_list_fn(_r):
-            calls["n"] += 1
-            if calls["n"] > 1:
-                raise wait_ci.RunListError("completion jobs failure")
-            return []
-
-        assert (
-            _run_wait(
-                lambda _s: [_run(status="in_progress", conclusion=None)],
-                registration_grace=0.0,
-                job_list_fn=job_list_fn,
-            )
-            == wait_ci.EXIT_GH_ERROR
+        result, runs, _ = wait_ci._wait_for_completion(  # pylint: disable=protected-access  # noqa: SLF001
+            start=0.0,
+            timeout=10.0,
+            poll_interval=1.0,
+            expected_ids={1},
+            fetch_fn=fetch,
+            select_fn=lambda candidates: candidates,
+            forge="github",
+            sleep_fn=lambda _seconds: None,
+            now_fn=lambda: float(calls),
+            consecutive_failures=0,
+            follow_mode=follow_mode,
         )
+
+        assert result == wait_ci.EXIT_SUCCESS
+        assert runs == [_run()]
+
+    @pytest.mark.parametrize("follow_mode", [False, True])
+    def test_three_snapshot_failures_return_gh_error(self, follow_mode: bool) -> None:
+        """3回連続取得失敗を両経路で同じ終了コードへ変換する。"""
+
+        def fetch() -> tuple[list[wait_ci.RunRecord], list[wait_ci.JobRecord]]:
+            raise wait_ci.RunListError("completion failure")
+
+        result, runs, _ = wait_ci._wait_for_completion(  # pylint: disable=protected-access  # noqa: SLF001
+            start=0.0,
+            timeout=10.0,
+            poll_interval=1.0,
+            expected_ids={1},
+            fetch_fn=fetch,
+            select_fn=lambda candidates: candidates,
+            forge="github",
+            sleep_fn=lambda _seconds: None,
+            now_fn=lambda: 0.0,
+            consecutive_failures=0,
+            follow_mode=follow_mode,
+        )
+
+        assert result == wait_ci.EXIT_GH_ERROR
+        assert not runs
 
 
 class TestFollowCancelled:
@@ -719,54 +740,6 @@ class TestFollowCancelled:
         )
         assert job_calls[3] == 3
         assert job_calls[2] >= 1
-
-    def test_follow_completion_job_failure_recovers(self):
-        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
-        follow = [_run(db_id=2, head_sha="sha2")]
-        calls = {"n": 0}
-
-        def job_list_fn(run):
-            if run["databaseId"] != 2:
-                return []
-            calls["n"] += 1
-            if calls["n"] == 2:
-                raise wait_ci.RunListError("transient follow completion jobs failure")
-            return []
-
-        assert (
-            _run_wait(
-                self._run_list_dispatch(cancelled, {"sha2": follow}),
-                follow_cancelled=True,
-                registration_grace=0.0,
-                follow_shas_fn=lambda _b: ["sha2"],
-                job_list_fn=job_list_fn,
-            )
-            == wait_ci.EXIT_SUCCESS
-        )
-
-    def test_three_follow_completion_job_failures_return_gh_error(self):
-        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
-        follow = [_run(status="in_progress", conclusion=None, db_id=2, head_sha="sha2")]
-        calls = {"n": 0}
-
-        def job_list_fn(run):
-            if run["databaseId"] != 2:
-                return []
-            calls["n"] += 1
-            if calls["n"] > 1:
-                raise wait_ci.RunListError("follow completion jobs failure")
-            return []
-
-        assert (
-            _run_wait(
-                self._run_list_dispatch(cancelled, {"sha2": follow}),
-                follow_cancelled=True,
-                registration_grace=0.0,
-                follow_shas_fn=lambda _b: ["sha2"],
-                job_list_fn=job_list_fn,
-            )
-            == wait_ci.EXIT_GH_ERROR
-        )
 
     def test_follow_cancelled_returns_success_when_follow_succeeds(self):
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
@@ -1508,7 +1481,7 @@ class TestGhRunList:
             calls.append((command, timeout, description))
             return []
 
-        monkeypatch.setattr(wait_ci, "_run_json_command", fake_run_json)
+        monkeypatch.setattr(wait_ci, "_run_forge_json_command", fake_run_json)
         assert _gh_run_list(repository, ref, "deadbeef", 1.0) == []
         command, timeout, description = calls[0]
         assert command[command.index("--repo") + 1] == repository
@@ -1529,7 +1502,7 @@ class TestGlabPipelineList:
             calls.append((command, timeout, description))
             return [{"id": 1, "status": "success"}]
 
-        monkeypatch.setattr(wait_ci, "_run_json_command", fake_run_json)
+        monkeypatch.setattr(wait_ci, "_run_forge_json_command", fake_run_json)
         records = _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
         command, timeout, description = calls[0]
         assert command[:3] == ["glab", "ci", "list"]

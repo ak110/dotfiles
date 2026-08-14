@@ -109,7 +109,7 @@ shfmt = true
 colloquial-check = true
 markdownlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
-lychee-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
+lychee-exclude = [".chezmoi-source/dot_codex/AGENTS.md", "agent-toolkit/scripts/_atk_serve_static/index.html"]
 # profile_ipy/はIPython自動生成プロファイル、
 # tone-examples.md・tone-examples-llm-tone.mdは危険語彙を含む隔離ファイルのため検査対象外とする。
 extend-exclude = [

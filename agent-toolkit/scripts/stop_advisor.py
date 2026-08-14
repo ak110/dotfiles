@@ -13,13 +13,13 @@ Claude Codeが停止しようとするタイミングで発火する。判定分
 import json
 import pathlib
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import _git_command  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_review_evidence import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     has_session_review_started,
 )
@@ -46,9 +46,7 @@ _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
 
 
-def _llm_notice(body: str, *, tag: str = "") -> str:
-    """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
-    return _llm_notice_base(body, _HOOK_ID, tag=tag)
+_llm_notice = _notice_formatter(_HOOK_ID)
 
 
 def _git_status_for_display(cwd: str) -> str | None:
@@ -56,20 +54,10 @@ def _git_status_for_display(cwd: str) -> str | None:
 
     未コミット変更がない場合・untrackedのみの場合・エラー時はNoneを返す。
     """
-    try:
-        result = subprocess.run(
-            ["git", "status", "--short"],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=cwd,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+    lines = _git_command.lines(["status", "--short"], cwd)
+    if lines is None:
         return None
-    if result.returncode != 0:
-        return None
-    output = result.stdout.strip()
+    output = "\n".join(lines).strip()
     if not output:
         return None
     # untrackedファイルのみの場合は表示しない。

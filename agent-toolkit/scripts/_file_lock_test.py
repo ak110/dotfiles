@@ -5,11 +5,38 @@ OS別ロック実装は`_session_state_test.py`の先例に倣い、実行環境
 `pytest.mark.skipif`で有効化し、実際のロックAPI経由で検証する。
 """
 
+import multiprocessing
 import os
 import pathlib
 
 import _file_lock
 import pytest
+
+
+def _append_record(path_text: str, record: str, max_bytes: int) -> None:
+    """別プロセスから共有ログへテストレコードを追記する。"""
+    _file_lock.locked_rotate_and_append(pathlib.Path(path_text), record + "\n", max_bytes)
+
+
+class TestLockedRotateAndAppend:
+    """排他付きローテーションと追記の不可分性を検証する。"""
+
+    def test_concurrent_writers_preserve_all_records_at_rotation_boundary(self, tmp_path: pathlib.Path) -> None:
+        """閾値超過状態からの並行追記で全レコードを保持する。"""
+        path = tmp_path / "parallel.log"
+        max_bytes = 1_000
+        path.write_text("x" * (max_bytes + 1), encoding="utf-8")
+        records = [f"record-{index}" for index in range(20)]
+        processes = [multiprocessing.Process(target=_append_record, args=(str(path), record, max_bytes)) for record in records]
+
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(timeout=10)
+            assert process.exitcode == 0
+
+        assert set(path.read_text(encoding="utf-8").splitlines()) == set(records)
+        assert path.with_suffix(".log.1").read_text(encoding="utf-8") == "x" * (max_bytes + 1)
 
 
 class TestRotateIfNeeded:

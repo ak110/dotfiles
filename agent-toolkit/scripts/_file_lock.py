@@ -47,6 +47,27 @@ def rotate_if_needed(path: Path, max_bytes: int, generations: int = 1) -> None:
     path.replace(path.with_suffix(path.suffix + ".1"))
 
 
+def locked_rotate_and_append(path: Path, line: str, max_bytes: int) -> None:
+    """兄弟ロックファイルの排他下で1世代ローテーションと1行追記を行う。
+
+    ロックファイルはログ本体とinodeを分離するため削除しない。
+    ディレクトリ作成・ローテーション・追記の失敗は、ログ利用側の処理を妨げないよう無視する。
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = path.with_name(path.name + ".lock")
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            acquire_lock(lock_file)
+            try:
+                rotate_if_needed(path, max_bytes)
+                with path.open("a", encoding="utf-8") as log_file:
+                    log_file.write(line)
+            finally:
+                release_lock(lock_file)
+    except OSError:
+        pass
+
+
 if os.name == "nt":
     import msvcrt  # type: ignore[import-not-found]  # pylint: disable=import-error
 

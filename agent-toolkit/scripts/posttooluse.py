@@ -44,7 +44,7 @@ import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import is_agent_facing_md  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -65,9 +65,7 @@ _HOOK_ID = "agent-toolkit/posttooluse"
 _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
 
 
-def _llm_notice(body: str, *, tag: str = "") -> str:
-    """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
-    return _llm_notice_base(body, _HOOK_ID, tag=tag)
+_llm_notice = _notice_formatter(_HOOK_ID)
 
 
 # --- Bashコマンド前処理 ---
@@ -318,215 +316,167 @@ def _warn_codex_remote_change(session_id: str, payload: dict) -> str | None:
     )
 
 
-def _dispatch(payload_text: str, notices: list[str]) -> int:
-    """payloadを解析し、通知本文を`notices`へ蓄積する。終了コードは常に0。"""
+def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] | None:
+    """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
         payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
-        return 0
-
+        return None
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
-        return 0
-
+        return None
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
-        return 0
-
-    hook_event_name = payload.get("hook_event_name", "")
-    if hook_event_name in ("PostToolUseFailure", "PermissionDenied"):
-        return 0
-
-    # cwdはBash分岐とTBD回答完了の検査で使うため、分岐前に一度だけ取得する。
+        return None
+    if payload.get("hook_event_name", "") in ("PostToolUseFailure", "PermissionDenied"):
+        return None
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+    return payload, session_id, tool_name, tool_input, cwd
 
-    # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
-    # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
-    if cwd:
-        tbd_notice = _tbd_completion.build_notice(session_id, cwd, payload.get("transcript_path", ""))
-        if tbd_notice is not None:
-            notices.append(_llm_notice(tbd_notice, tag="notice"))
 
-    # pyfltr MCPのrun_for_agentはPostToolUseへ到達した時点で成功済みである。
-    # CLI経由と同じ検証完了契約として記録し、コミット前の未検証警告を抑制する。
-    if tool_name == _PYFLTR_RUN_FOR_AGENT_TOOL_NAME:
+def _record_test_executed(session_id: str) -> None:
+    """Pyfltr MCPの成功を検証実行済みとして記録する。"""
 
-        def _set_test_executed(state: dict) -> dict | None:
-            if state.get("test_executed", False):
+    def _set_test_executed(state: dict) -> dict | None:
+        if state.get("test_executed", False):
+            return None
+        state["test_executed"] = True
+        return state
+
+    update_state(session_id, _set_test_executed)
+
+
+def _record_plan_mode_entered(session_id: str) -> None:
+    """新しい計画区切りで振り返り済み状態を解除する。"""
+
+    def _reset_review_invoked(state: dict) -> dict | None:
+        if not state.get("session_review_invoked"):
+            return None
+        state["session_review_invoked"] = {}
+        return state
+
+    update_state(session_id, _reset_review_invoked)
+
+
+def _record_skill_use(session_id: str, skill_name: object, *, is_sidechain: bool) -> None:
+    """Skill呼び出しに対応するセッション状態を記録する。"""
+    if not isinstance(skill_name, str):
+        return
+    if skill_name in _PLAN_MODE_SKILL_NAMES:
+
+        def _set_invoked(state: dict) -> dict | None:
+            if state.get("plan_mode_skill_invoked", False):
                 return None
-            state["test_executed"] = True
+            state["plan_mode_skill_invoked"] = True
             return state
 
-        update_state(session_id, _set_test_executed)
-        return 0
+        update_state(session_id, _set_invoked)
+    if skill_name in _SESSION_REVIEW_SKILL_NAMES:
 
-    # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
-    if tool_name == "EnterPlanMode":
-
-        def _reset_review_invoked(state: dict) -> dict | None:
-            if not state.get("session_review_invoked"):
+        def _set_review_invoked(state: dict) -> dict | None:
+            invoked = state.get("session_review_invoked")
+            if not isinstance(invoked, dict):
+                invoked = {}
+            if invoked.get(skill_name) is True:
                 return None
-            state["session_review_invoked"] = {}
+            invoked[skill_name] = True
+            state["session_review_invoked"] = invoked
             return state
 
-        update_state(session_id, _reset_review_invoked)
-        return 0
+        update_state(session_id, _set_review_invoked)
+    if skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
+        update_state(session_id, _set_process_feedbacks_invoked)
+    if skill_name in _EXIT_SESSION_SKILL_NAMES:
+        update_state(session_id, _reset_process_feedbacks_invoked)
+    if not is_sidechain and skill_name in _DELEGATION_SKILL_NAMES:
 
-    # Skill: plan-modeスキル呼び出し検出と振り返りスキル呼び出し検出
-    if tool_name == "Skill":
-        skill_name = tool_input.get("skill")
-        if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
+        def _set_delegation_invoked(state: dict) -> dict | None:
+            if state.get("delegation_skill_invoked", False):
+                return None
+            state["delegation_skill_invoked"] = True
+            return state
 
-            def _set_invoked(state: dict) -> dict | None:
-                if state.get("plan_mode_skill_invoked", False):
-                    return None
-                state["plan_mode_skill_invoked"] = True
-                return state
+        update_state(session_id, _set_delegation_invoked)
 
-            update_state(session_id, _set_invoked)
-        if isinstance(skill_name, str) and skill_name in _SESSION_REVIEW_SKILL_NAMES:
 
-            def _set_review_invoked(state: dict) -> dict | None:
-                invoked = state.get("session_review_invoked")
-                if not isinstance(invoked, dict):
-                    invoked = {}
-                if invoked.get(skill_name) is True:
-                    return None
-                invoked[skill_name] = True
-                state["session_review_invoked"] = invoked
-                return state
+def _record_edited_file(session_id: str, file_path: str) -> None:
+    """自セッションで編集したファイルを重複なしで記録する。"""
+    if not file_path:
+        return
 
-            update_state(session_id, _set_review_invoked)
-        if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
-            update_state(session_id, _set_process_feedbacks_invoked)
-        if isinstance(skill_name, str) and skill_name in _EXIT_SESSION_SKILL_NAMES:
-            update_state(session_id, _reset_process_feedbacks_invoked)
-        if payload.get("isSidechain") is not True and isinstance(skill_name, str) and skill_name in _DELEGATION_SKILL_NAMES:
+    def _append_edited_file(current_state: dict) -> dict | None:
+        edited = current_state.get("session_edited_files", [])
+        if not isinstance(edited, list) or file_path in edited:
+            return None
+        edited.append(file_path)
+        current_state["session_edited_files"] = edited
+        return current_state
 
-            def _set_delegation_invoked(state: dict) -> dict | None:
-                if state.get("delegation_skill_invoked", False):
-                    return None
-                state["delegation_skill_invoked"] = True
-                return state
+    update_state(session_id, _append_edited_file)
 
-            update_state(session_id, _set_delegation_invoked)
-        return 0
 
-    # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
-    if tool_name in ("Agent", "Task"):
-        subagent_type = tool_input.get("subagent_type")
-        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
-            _process_loop_log.append("subagent_end", type=subagent_type)
-        return 0
+def _record_plan_file(session_id: str, file_path: str) -> None:
+    """現在の計画ファイルを記録する。"""
 
-    # codex呼び出し後はリモートrefの変化だけを確認する。
-    if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
-        codex_notice = _warn_codex_remote_change(session_id, payload)
-        if codex_notice is not None:
-            notices.append(codex_notice)
-        return 0
+    def _set_current_plan_file_path(current_state: dict) -> dict | None:
+        if current_state.get("current_plan_file_path") == file_path:
+            return None
+        current_state["current_plan_file_path"] = file_path
+        return current_state
 
-    # Readは本フックで状態更新を行わない。
-    if tool_name == "Read":
-        return 0
+    update_state(session_id, _set_current_plan_file_path)
 
-    # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
-    # git_log_checkedをリセットしない（リセット対象は`_GIT_LOG_RESET_SUBCOMMANDS`が定める
-    # commit / rebase / resetのみとする）。
-    if tool_name in ("Write", "Edit", "MultiEdit"):
-        # plan file形式検査: ~/.claude/plans/直下の.mdのみ対象。
-        # plan-modeスキル未呼び出し時はPreToolUse側の警告で先行催促済みのため、
-        # 構造検査をスキップして二重警告を避ける。
-        state = read_state(session_id)
-        file_path_raw = tool_input.get("file_path")
-        file_path = file_path_raw if isinstance(file_path_raw, str) else ""
-        if is_plan_file(file_path):
-            # 現在の計画ファイルパスを記録する。
-            # pretooluse.py側の遡及スキャン記録検査が再読み込みする用途に使う。
 
-            def _set_current_plan_file_path(current_state: dict, file_path: str = file_path) -> dict | None:
-                if current_state.get("current_plan_file_path") == file_path:
-                    return None
-                current_state["current_plan_file_path"] = file_path
-                return current_state
+def _handle_edit_tool(
+    session_id: str,
+    tool_name: str,
+    tool_input: dict,
+    cwd: str,
+    notices: list[str],
+) -> None:
+    """編集成功後の状態記録と文書検査を処理する。"""
+    state = read_state(session_id)
+    file_path_raw = tool_input.get("file_path")
+    file_path = file_path_raw if isinstance(file_path_raw, str) else ""
+    if is_plan_file(file_path):
+        _record_plan_file(session_id, file_path)
+    _record_edited_file(session_id, file_path)
+    if is_agent_facing_md(file_path):
+        try:
+            prohibition_content = pathlib.Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            prohibition_content = None
+        if prohibition_content is not None:
+            warnings = _check_conditional_prohibition(pathlib.Path(file_path), prohibition_content)
+            if warnings:
+                notices.append(_llm_notice("\n".join(warnings), tag="warn"))
+    if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path) and tool_name == "Write":
+        check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
+        work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
+        notices.append(
+            _llm_notice(
+                f"plan file {file_path} was written. Run the post-write checks:"
+                f" `uv run --script {shlex.quote(str(check_script))}{work_dir_option}"
+                f" {shlex.quote(file_path)}`."
+                " Replace --work-dir if the plan targets a repository other than the session's"
+                " working directory.",
+                tag="notice",
+            )
+        )
 
-            update_state(session_id, _set_current_plan_file_path)
-        # 自セッション編集済みファイルパス蓄積。
-        # pretooluse.pyの一括ステージ警告（_check_bash_bulk_stage_with_unedited_files）が
-        # 「自セッション編集済み集合」として参照する。パスは取得したままの形式で蓄積し、
-        # 参照側で正規化する。
-        if file_path:
 
-            def _append_edited_file(current_state: dict, target: str = file_path) -> dict | None:
-                edited = current_state.get("session_edited_files", [])
-                if not isinstance(edited, list):
-                    return None
-                if target in edited:
-                    return None
-                edited.append(target)
-                current_state["session_edited_files"] = edited
-                return current_state
-
-            update_state(session_id, _append_edited_file)
-        # 条件付き禁止形の警告通知: `is_agent_facing_md`が対象と判定するコーディングエージェント向け
-        # `.md`編集時に、plan-mode起動状態と無関係に常時検査する（対象判定は既存SSOTを再利用）。
-        if is_agent_facing_md(file_path):
-            try:
-                prohibition_content = pathlib.Path(file_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                prohibition_content = None
-            if prohibition_content is not None:
-                prohibition_warnings = _check_conditional_prohibition(pathlib.Path(file_path), prohibition_content)
-                if prohibition_warnings:
-                    notices.append(_llm_notice("\n".join(prohibition_warnings), tag="warn"))
-        # 計画ファイル向け通知: Write成功時の書き込み後チェック案内をadditionalContextへまとめる。
-        # 状態フラグは追加せず、案内のみを一方向で通知する。
-        if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
-            messages: list[str] = []
-            if tool_name == "Write":
-                # 案内文はそのまま実行される。プラグインルートを本プロセスの位置から絶対パスで解決し、
-                # `--work-dir`へpayloadのcwdを埋める。リポジトリ相対のパスは配布元以外で解決できず、
-                # `${CLAUDE_PLUGIN_ROOT}`はコマンドを実行するシェルの環境に存在しない。
-                check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
-                work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
-                messages.append(
-                    _llm_notice(
-                        f"plan file {file_path} was written. Run the post-write checks:"
-                        f" `uv run --script {shlex.quote(str(check_script))}{work_dir_option}"
-                        f" {shlex.quote(file_path)}`."
-                        " Replace --work-dir if the plan targets a repository other than the session's"
-                        " working directory.",
-                        tag="notice",
-                    )
-                )
-            notices.extend(messages)
-        return 0
-
-    # Bash以外はここで終了
-    command = tool_input.get("command")
-    if not isinstance(command, str) or not command:
-        return 0
-
-    # 環境変数代入接頭辞（`LOCALAPPDATA=...`等）と時間制限接頭辞（`timeout 600`等）を
-    # 除去してから検出パターンを適用する。
+def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
+    """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
-
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
         changed = False
-        # テスト実行の検出
-        if not state.get("test_executed", False):
-            for pattern in _TEST_PATTERNS:
-                if pattern.search(command):
-                    state["test_executed"] = True
-                    changed = True
-                    break
-
-        # git_log_checked: log で記録、commit / rebase / reset でリセット。
-        # cwd別の辞書`{cwd: True}`で記録する。cwd空イベントは旧形式の単一bool値で記録する。
+        if not state.get("test_executed", False) and any(pattern.search(command) for pattern in _TEST_PATTERNS):
+            state["test_executed"] = True
+            changed = True
         log_state = state.get("git_log_checked")
         log_modified = False
         for event in git_events:
@@ -551,24 +501,81 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if log_modified:
             state["git_log_checked"] = log_state
             changed = True
-
-        # git commit --amend / --fixup 成功時にcwd別のamend後dirty検査フラグを立てる。
-        # 実送出`git push`（`--dry-run`/`-n`以外）成功時に該当cwdフラグを解除する
-        # （dry-run時はpretooluse側でも解除しないため、posttooluse側でも解除しない）。
         for event in git_events:
             if event.subcommand == "commit" and _git_commit_is_amend_or_fixup(event.subcommand_args):
-                if _set_amend_pending_status_check(state, event.cwd) is not None:
-                    changed = True
+                changed = _set_amend_pending_status_check(state, event.cwd) is not None or changed
             elif (
                 event.subcommand == "push"
                 and _git_status.git_push_is_real_send(event.subcommand_args)
                 and _reset_amend_pending_status_check(state, event.cwd) is not None
             ):
                 changed = True
-
         return state if changed else None
 
     update_state(session_id, _apply_bash_updates)
+
+
+def _dispatch(payload_text: str, notices: list[str]) -> int:
+    """payloadを解析し、通知本文を`notices`へ蓄積する。終了コードは常に0。"""
+    parsed = _parse_hook_payload(payload_text)
+    if parsed is None:
+        return 0
+    payload, session_id, tool_name, tool_input, cwd = parsed
+
+    # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
+    # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
+    if cwd:
+        tbd_notice = _tbd_completion.build_notice(session_id, cwd, payload.get("transcript_path", ""))
+        if tbd_notice is not None:
+            notices.append(_llm_notice(tbd_notice, tag="notice"))
+
+    # pyfltr MCPのrun_for_agentはPostToolUseへ到達した時点で成功済みである。
+    # CLI経由と同じ検証完了契約として記録し、コミット前の未検証警告を抑制する。
+    if tool_name == _PYFLTR_RUN_FOR_AGENT_TOOL_NAME:
+        _record_test_executed(session_id)
+        return 0
+
+    # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
+    if tool_name == "EnterPlanMode":
+        _record_plan_mode_entered(session_id)
+        return 0
+
+    # Skill: plan-modeスキル呼び出し検出と振り返りスキル呼び出し検出
+    if tool_name == "Skill":
+        _record_skill_use(session_id, tool_input.get("skill"), is_sidechain=payload.get("isSidechain") is True)
+        return 0
+
+    # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
+    if tool_name in ("Agent", "Task"):
+        subagent_type = tool_input.get("subagent_type")
+        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
+            _process_loop_log.append("subagent_end", type=subagent_type)
+        return 0
+
+    # codex呼び出し後はリモートrefの変化だけを確認する。
+    if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
+        codex_notice = _warn_codex_remote_change(session_id, payload)
+        if codex_notice is not None:
+            notices.append(codex_notice)
+        return 0
+
+    # Readは本フックで状態更新を行わない。
+    if tool_name == "Read":
+        return 0
+
+    # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
+    # git_log_checkedをリセットしない（リセット対象は`_GIT_LOG_RESET_SUBCOMMANDS`が定める
+    # commit / rebase / resetのみとする）。
+    if tool_name in ("Write", "Edit", "MultiEdit"):
+        _handle_edit_tool(session_id, tool_name, tool_input, cwd, notices)
+        return 0
+
+    # Bash以外はここで終了
+    command = tool_input.get("command")
+    if not isinstance(command, str) or not command:
+        return 0
+
+    _handle_bash_tool(session_id, command, cwd)
     return 0
 
 

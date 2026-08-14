@@ -19,9 +19,7 @@ import time
 from pathlib import Path
 
 import platformdirs
-from _file_lock import acquire_lock as _acquire_lock
-from _file_lock import release_lock as _release_lock
-from _file_lock import rotate_if_needed as _rotate_if_needed
+from _file_lock import locked_rotate_and_append as _locked_rotate_and_append
 
 _ENABLE_ENV_VAR = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _MAX_BYTES = 1_000_000
@@ -49,20 +47,7 @@ def append(event: str, **fields: object) -> None:
     """
     if not _is_enabled():
         return
-    path = log_path()
-    _rotate_if_needed(path, _MAX_BYTES)
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
     rendered = " ".join(f"{key}={value}" for key, value in fields.items())
     line = f"{timestamp} event={event}" + (f" {rendered}" if rendered else "") + "\n"
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path = path.parent / (path.name + ".lock")
-        with open(lock_path, "a+", encoding="utf-8") as lock_file:  # noqa: SIM115 -- ロック保持のため
-            _acquire_lock(lock_file)
-            try:
-                with path.open("a", encoding="utf-8") as f:
-                    f.write(line)
-            finally:
-                _release_lock(lock_file)
-    except OSError:
-        return
+    _locked_rotate_and_append(log_path(), line, _MAX_BYTES)

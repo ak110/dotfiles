@@ -225,6 +225,168 @@ def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:
     return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 
 
+def _validate_transition_options(
+    action: str,
+    filenames: list[str],
+    *,
+    state: str | None,
+    expected_content: str | None,
+    cooldown_days: int | None,
+) -> None:
+    """状態遷移オプション間の制約を検証する。"""
+    if action not in {"start-processing", "return-to-inbox", "adopt", "reject", "remove"}:
+        raise WebInputError(f"未知のエントリ操作です: {action}")
+    if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
+        raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
+    state_is_valid = (action == "remove" and state in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}) or (
+        action == "reject" and state == MQ_STATE_INBOX
+    )
+    if state is not None and not state_is_valid:
+        raise WebInputError("stateはremove、又はinbox限定のrejectでのみ使用できます")
+    if expected_content is not None and (action != "remove" or len(filenames) != 1):
+        raise WebInputError("expected_contentはremoveで1件を指定する場合に限り使用できます")
+
+
+def _resolve_transition_paths(
+    private_notes: pathlib.Path,
+    action: str,
+    filenames: list[str],
+    state: str | None,
+    *,
+    missing_is_conflict: bool,
+) -> list[pathlib.Path]:
+    """操作種別と明示状態から対象エントリを解決する。"""
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
+    if state is not None:
+        return _resolve_feedback_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
+    if action == "start-processing":
+        return _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
+    if action == "return-to-inbox":
+        return _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
+    return _resolve_processable_targets(
+        filenames,
+        inbox_dir,
+        processing_dir,
+        missing_is_conflict=missing_is_conflict,
+    )
+
+
+def _validate_transition_targets(
+    paths: list[pathlib.Path],
+    *,
+    action: str,
+    target_repo: str | None,
+    expected_content: str | None,
+    cooldown_days: int | None,
+    force: bool,
+) -> str | None:
+    """解決済み対象の内容・対象repo・状態保護を検証する。"""
+    current_content: str | None = None
+    if action == "remove" and expected_content is not None:
+        try:
+            current_content = paths[0].read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
+        if current_content != expected_content:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    for path in paths:
+        content = current_content if current_content is not None else path.read_text(encoding="utf-8")
+        _verify_target_repo_content(path, content, normalized_target_repo)
+    if cooldown_days is not None:
+        non_feedback = [
+            path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK
+        ]
+        if non_feedback:
+            raise WebInputError(f"--cooldown-daysはfeedback専用です: {', '.join(non_feedback)}")
+    if action == "remove" and not force:
+        protected = [path.name for path in paths if path.parent.name == MQ_STATE_PROCESSING]
+        if protected:
+            print(
+                "processing状態のファイルは既定で削除を保護します。"
+                f"削除するには--force（Web APIはforce指定）を指定してください: {', '.join(protected)}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+    return current_content
+
+
+def _update_transition_metadata(
+    paths: list[pathlib.Path],
+    *,
+    action: str,
+    now: datetime.datetime,
+    cooldown_days: int | None,
+) -> None:
+    """active状態間の移動前にcooldownメタデータを更新する。"""
+    if action not in {"start-processing", "return-to-inbox"}:
+        return
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            continue
+        data, body = parsed
+        if action == "return-to-inbox" and cooldown_days is not None:
+            deadline = now.astimezone(datetime.UTC) + datetime.timedelta(days=cooldown_days)
+            data["cooldown_until"] = deadline.isoformat()
+        else:
+            data.pop("cooldown_until", None)
+        updated = _frontmatter.serialize_frontmatter(data, body)
+        if updated != text:
+            _atomic_write_text(path, updated)
+
+
+def _apply_transition(
+    private_notes: pathlib.Path,
+    paths: list[pathlib.Path],
+    *,
+    action: str,
+    now: datetime.datetime,
+    note: str | None,
+    commit_values: dict[pathlib.Path, str | None],
+    cooldown_days: int | None,
+) -> None:
+    """検証済みエントリを削除又は目的状態へ移動する。"""
+    destination_name = {
+        "start-processing": MQ_STATE_PROCESSING,
+        "return-to-inbox": MQ_STATE_INBOX,
+        "adopt": MQ_STATE_ADOPTED,
+        "reject": MQ_STATE_REJECTED,
+    }.get(action)
+    if destination_name is None:
+        for path in paths:
+            path.unlink()
+        return
+    destination = _subdir(private_notes, destination_name)
+    conflicts = [path.name for path in paths if (destination / path.name).exists()]
+    if conflicts:
+        print(
+            f"移動先（{destination_name}）に同名エントリが既に存在します: {', '.join(conflicts)}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
+    for path in paths:
+        if action in {"adopt", "reject"}:
+            _stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
+        shutil.move(path, destination / path.name)
+
+
+def _transition_commit_message(action: str, count: int, note: str | None) -> str:
+    """状態遷移の管理repo用コミットメッセージを返す。"""
+    item_word = "entry" if count == 1 else "entries"
+    note_suffix = f" (理由: {note})" if action == "remove" and note else ""
+    return {
+        "start-processing": f"chore: start processing {count} {item_word}",
+        "return-to-inbox": f"chore: return {count} {item_word} to inbox",
+        "adopt": f"chore: process {count} {item_word} (adopted)",
+        "reject": f"chore: process {count} {item_word} (rejected)",
+        "remove": f"chore: remove {count} {item_word}{note_suffix}",
+    }[action]
+
+
 def transition_entries(
     private_notes: pathlib.Path,
     *,
@@ -247,125 +409,48 @@ def transition_entries(
     対象に含まれるとexit 2で拒否する（`atk mq rm`の既定保護。処理中ファイルの
     意図しない削除を防ぐ。解除するには`force=True`を渡す）。
     """
-    if action not in {"start-processing", "return-to-inbox", "adopt", "reject", "remove"}:
-        raise WebInputError(f"未知のエントリ操作です: {action}")
-    if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
-        raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
-    state_is_valid = (action == "remove" and state in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}) or (
-        action == "reject" and state == MQ_STATE_INBOX
+    _validate_transition_options(
+        action,
+        filenames,
+        state=state,
+        expected_content=expected_content,
+        cooldown_days=cooldown_days,
     )
-    if state is not None and not state_is_valid:
-        raise WebInputError("stateはremove、又はinbox限定のrejectでのみ使用できます")
-    if expected_content is not None and (action != "remove" or len(filenames) != 1):
-        raise WebInputError("expected_contentはremoveで1件を指定する場合に限り使用できます")
     inbox_dir = private_notes / MQ_STATE_INBOX
-    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
         missing_is_conflict = action == "remove" and expected_content is not None
-        paths = (
-            _resolve_feedback_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
-            if state is not None
-            else _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
-            if action == "start-processing"
-            else _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
-            if action == "return-to-inbox"
-            else _resolve_processable_targets(
-                filenames,
-                inbox_dir,
-                processing_dir,
-                missing_is_conflict=missing_is_conflict,
-            )
+        paths = _resolve_transition_paths(
+            private_notes,
+            action,
+            filenames,
+            state,
+            missing_is_conflict=missing_is_conflict,
         )
-        current_content: str | None = None
-        if action == "remove" and expected_content is not None:
-            try:
-                current_content = paths[0].read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as error:
-                raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
-            if current_content != expected_content:
-                raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
-        for path in paths:
-            content = current_content if current_content is not None else path.read_text(encoding="utf-8")
-            _verify_target_repo_content(path, content, normalized_target_repo)
-        if cooldown_days is not None:
-            non_feedback = [
-                path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK
-            ]
-            if non_feedback:
-                raise WebInputError(f"--cooldown-daysはfeedback専用です: {', '.join(non_feedback)}")
-        if action == "remove" and not force:
-            protected = [path.name for path in paths if path.parent.name == MQ_STATE_PROCESSING]
-            if protected:
-                print(
-                    "processing状態のファイルは既定で削除を保護します。"
-                    f"削除するには--force（Web APIはforce指定）を指定してください: {', '.join(protected)}",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
+        _validate_transition_targets(
+            paths,
+            action=action,
+            target_repo=target_repo,
+            expected_content=expected_content,
+            cooldown_days=cooldown_days,
+            force=force,
+        )
         commit_values = (
             _commit_values_by_path(paths, commit, local_worktree)
             if action in {"adopt", "reject"}
             else {path: commit for path in paths}
         )
-        destination_name = {
-            "start-processing": MQ_STATE_PROCESSING,
-            "return-to-inbox": MQ_STATE_INBOX,
-            "adopt": MQ_STATE_ADOPTED,
-            "reject": MQ_STATE_REJECTED,
-        }.get(action)
-        if destination_name is None:
-            for path in paths:
-                path.unlink()
-        else:
-            destination = _subdir(private_notes, destination_name)
-            conflicts = [path.name for path in paths if (destination / path.name).exists()]
-            if conflicts:
-                print(
-                    f"移動先（{destination_name}）に同名エントリが既に存在します: {', '.join(conflicts)}",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
-            updated_contents: dict[pathlib.Path, str] = {}
-            if action in {"start-processing", "return-to-inbox"}:
-                for path in paths:
-                    text = path.read_text(encoding="utf-8")
-                    parsed = _frontmatter.parse_frontmatter(text)
-                    if parsed is None:
-                        continue
-                    data, body = parsed
-                    if action == "return-to-inbox" and cooldown_days is not None:
-                        deadline = now.astimezone(datetime.UTC) + datetime.timedelta(days=cooldown_days)
-                        data["cooldown_until"] = deadline.isoformat()
-                    else:
-                        data.pop("cooldown_until", None)
-                    updated_contents[path] = _frontmatter.serialize_frontmatter(data, body)
-            for path, content in updated_contents.items():
-                if content != path.read_text(encoding="utf-8"):
-                    _atomic_write_text(path, content)
-            for path in paths:
-                if action in {"adopt", "reject"}:
-                    _stamp_result(
-                        path,
-                        outcome=destination_name,
-                        now=now,
-                        commit=commit_values[path],
-                        note=note,
-                    )
-                shutil.move(path, destination / path.name)
-        count = len(paths)
-        item_word = "entry" if count == 1 else "entries"
-        note_suffix = f" (理由: {note})" if action == "remove" and note else ""
-        message = {
-            "start-processing": f"chore: start processing {count} {item_word}",
-            "return-to-inbox": f"chore: return {count} {item_word} to inbox",
-            "adopt": f"chore: process {count} {item_word} (adopted)",
-            "reject": f"chore: process {count} {item_word} (rejected)",
-            "remove": f"chore: remove {count} {item_word}{note_suffix}",
-        }[action]
-        _commit_and_push(private_notes, message, list(MQ_STATES))
+        _apply_transition(
+            private_notes,
+            paths,
+            action=action,
+            now=now,
+            note=note,
+            commit_values=commit_values,
+            cooldown_days=cooldown_days,
+        )
+        _commit_and_push(private_notes, _transition_commit_message(action, len(paths), note), list(MQ_STATES))
     return [path.name for path in paths]
 
 

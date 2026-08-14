@@ -517,54 +517,38 @@ class Operations:
         return feedback_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
 
-def create_app(
-    private_notes: pathlib.Path,
-    config: serve_config.ServeConfig,
-    state: serve_state.ServeState,
-    *,
-    operations: Operations | None = None,
-    worker_limit: int = 4,
-) -> quart.Quart:
-    """Quartアプリを生成する。"""
-    app = quart.Quart(__name__)
-    # app.configへ格納してモジュールレベルの可変状態を避ける。
-    # ハンドラからは`quart.current_app.config`経由で参照する。
-    app.config["SERVE_CONFIG"] = config
-    app.config["SERVE_STATE"] = state
-    ops = operations or Operations(private_notes)
-    workers = BoundedWorkers(worker_limit)
-    sync_task: asyncio.Task[bool] | None = None
-    background_task: asyncio.Task[None] | None = None
+class _ServeRuntime:
+    """Webハンドラ間で共有する操作・ワーカー・同期タスクを保持する。"""
 
-    async def background_sync_loop() -> None:
-        """一定間隔でリポジトリを更新する。
+    def __init__(self, operations: Operations, workers: BoundedWorkers) -> None:
+        self.operations = operations
+        self.workers = workers
+        self.sync_task: asyncio.Task[bool] | None = None
+        self.background_task: asyncio.Task[None] | None = None
 
-        利用者の操作のたびにリモートへ問い合わせる代わりに、この周期更新で最新状態を取り込む。
-        個々の操作に対応する経路（明示的な同期要求・変更操作）は従来どおり毎回更新する。
-        更新でファイルが変わった場合の購読者への通知は、
-        `_atk_serve_state`のファイル監視が担うため本関数では行わない。
-        """
-        while True:
-            await asyncio.sleep(_BACKGROUND_SYNC_INTERVAL_SECONDS)
-            try:
-                await workers.run(ops.background_sync)
-            except Exception:  # pylint: disable=broad-exception-caught
-                # 定期更新の失敗でアプリを停止させない。次周期で再試行する。
-                # `asyncio.CancelledError`は`BaseException`の直系のためここでは捕捉せず、
-                # 停止要求はそのままループを抜ける。
-                continue
-
-    async def synchronize() -> bool:
+    async def synchronize(self) -> bool:
         """同時に届いた同期要求へ同じ実行結果を返す。"""
-        nonlocal sync_task
-        if sync_task is None or sync_task.done():
-            sync_task = asyncio.create_task(workers.run(ops.sync))
-        current = sync_task
+        if self.sync_task is None or self.sync_task.done():
+            self.sync_task = asyncio.create_task(self.workers.run(self.operations.sync))
+        current = self.sync_task
         try:
             return await asyncio.shield(current)
         finally:
-            if current.done() and sync_task is current:
-                sync_task = None
+            if current.done() and self.sync_task is current:
+                self.sync_task = None
+
+    async def background_sync_loop(self) -> None:
+        """一定間隔でリポジトリを更新し、失敗時は次周期で再試行する。"""
+        while True:
+            await asyncio.sleep(_BACKGROUND_SYNC_INTERVAL_SECONDS)
+            try:
+                await self.workers.run(self.operations.background_sync)
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
+
+
+def _register_error_handlers(app: quart.Quart) -> None:
+    """Web API共通の例外応答を登録する。"""
 
     @app.errorhandler(common.WebInputError)
     async def input_error(error: common.WebInputError) -> tuple[quart.Response, int]:
@@ -591,6 +575,10 @@ def create_app(
         status = 503 if quart.request.method == "GET" else 500
         return quart.jsonify(error="Git同期に失敗しました"), status
 
+
+def _register_asset_routes(app: quart.Quart) -> None:
+    """HTML・静的資産・PWAメタデータのルートを登録する。"""
+
     @app.get("/")
     async def index() -> quart.Response:
         base_path = _safe_base_path(quart.request.root_path)
@@ -604,8 +592,10 @@ def create_app(
     @app.get("/static/app.js")
     async def javascript() -> quart.Response:
         base_path = _safe_base_path(quart.request.root_path)
-        body = assets.JS.replace("__BASE_PATH_JS__", json.dumps(base_path))
-        return quart.Response(body, content_type="text/javascript; charset=utf-8")
+        return quart.Response(
+            assets.JS.replace("__BASE_PATH_JS__", json.dumps(base_path)),
+            content_type="text/javascript; charset=utf-8",
+        )
 
     @app.get("/manifest.webmanifest")
     async def manifest() -> quart.Response:
@@ -624,66 +614,80 @@ def create_app(
                     "src": f"{base_path}/favicon.svg",
                     "sizes": "192x192 512x512 any",
                     "type": "image/svg+xml",
-                    # `maskable`は宣言しない。maskableはキャンバス全面の不透明背景と、
-                    # 図形を中央80%の安全域へ収めることを前提にOS側がマスクを適用する。
-                    # 本アイコンは背景を透過させ、輪郭が安全域の外へ届く形状のため、
-                    # 宣言するとマスク適用時に角の透過と図形の欠けが生じる。
                     "purpose": "any",
                 }
             ],
         }
-        response = quart.Response(
-            json.dumps(body, ensure_ascii=False),
-            content_type="application/manifest+json",
-        )
+        response = quart.Response(json.dumps(body, ensure_ascii=False), content_type="application/manifest+json")
         response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.get("/favicon.svg")
     async def favicon_svg() -> quart.Response:
-        """タブ識別用のfaviconを返す。"""
         return quart.Response(
             assets.FAVICON_SVG,
             content_type="image/svg+xml; charset=utf-8",
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
-    @app.get("/static/icon-192.png")
-    async def icon_192() -> quart.Response:
-        response = quart.Response(assets.ICON_192_PNG, content_type="image/png")
+    def png_response(content: bytes) -> quart.Response:
+        response = quart.Response(content, content_type="image/png")
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
+
+    @app.get("/static/icon-192.png")
+    async def icon_192() -> quart.Response:
+        return png_response(assets.ICON_192_PNG)
 
     @app.get("/static/icon-512.png")
     async def icon_512() -> quart.Response:
-        response = quart.Response(assets.ICON_512_PNG, content_type="image/png")
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        return response
+        return png_response(assets.ICON_512_PNG)
+
+
+def _register_lifecycle(app: quart.Quart, runtime: _ServeRuntime) -> None:
+    """バックグラウンド同期の開始・終了処理を登録する。"""
 
     @app.before_serving
     async def start_background_sync() -> None:
-        """定期バックグラウンド更新を開始する。"""
-        nonlocal background_task
-        background_task = asyncio.create_task(background_sync_loop())
+        runtime.background_task = asyncio.create_task(runtime.background_sync_loop())
 
     @app.after_serving
     async def stop_background_sync() -> None:
-        """定期バックグラウンド更新を停止する。"""
-        nonlocal background_task
-        if background_task is None:
+        if runtime.background_task is None:
             return
-        background_task.cancel()
+        runtime.background_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await background_task
-        background_task = None
+            await runtime.background_task
+        runtime.background_task = None
+
+
+def _validate_entry_filters(filters: dict[str, str]) -> None:
+    """一覧APIのquery組合せを検証する。"""
+    if filters.get("type", "all") not in {"all", "feedback", "tbd"}:
+        raise common.WebInputError("typeが不正です")
+    if filters.get("status", "all") not in _STATUS_FILTERS:
+        raise common.WebInputError("statusが不正です")
+    if filters.get("answered", "all") not in _ANSWERED_FILTERS:
+        raise common.WebInputError("answeredが不正です")
+    if "source_empty" in filters and filters["source_empty"] != "true":
+        raise common.WebInputError("source_emptyはtrueで指定してください")
+    if "source" in filters and "source_empty" in filters:
+        raise common.WebInputError("sourceとsource_emptyは同時に指定できません")
+    for name in ("target_repo", "source", "q"):
+        if name in filters and not filters[name].strip():
+            raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+
+
+def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
+    """同期・一覧・詳細・イベント購読ルートを登録する。"""
+    ops, workers = runtime.operations, runtime.workers
 
     @app.post("/api/sync")
     async def sync() -> quart.Response:
-        return quart.jsonify(synced=await synchronize())
+        return quart.jsonify(synced=await runtime.synchronize())
 
     @app.get("/api/repos")
     async def repos() -> quart.Response:
-        """既存エントリに現れる対象リポジトリの一覧を返す。"""
         unknown = set(quart.request.args) - {"status"}
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
@@ -699,19 +703,7 @@ def create_app(
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
         filters = dict(quart.request.args.items())
-        if filters.get("type", "all") not in {"all", "feedback", "tbd"}:
-            raise common.WebInputError("typeが不正です")
-        if filters.get("status", "all") not in _STATUS_FILTERS:
-            raise common.WebInputError("statusが不正です")
-        if filters.get("answered", "all") not in _ANSWERED_FILTERS:
-            raise common.WebInputError("answeredが不正です")
-        if "source_empty" in filters and filters["source_empty"] != "true":
-            raise common.WebInputError("source_emptyはtrueで指定してください")
-        if "source" in filters and "source_empty" in filters:
-            raise common.WebInputError("sourceとsource_emptyは同時に指定できません")
-        for name in ("target_repo", "source", "q"):
-            if name in filters and not filters[name].strip():
-                raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+        _validate_entry_filters(filters)
         result, warnings = await workers.run(ops.entries_with_warnings, filters)
         return quart.jsonify(entries=result, warnings=warnings)
 
@@ -719,25 +711,62 @@ def create_app(
     async def detail(state_name: str, filename: str) -> quart.Response:
         return quart.jsonify(entry=await workers.run(ops.detail, state_name, filename))
 
+    @app.get("/api/events")
+    async def events() -> quart.Response:
+        current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
+        return quart.Response(current_state.events(), content_type="text/event-stream")
+
+
+async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[str]) -> quart.Response:
+    """状態遷移APIの共通payloadを解析して操作する。"""
+    data = _json_object(await _request_json(), allowed=allowed, required={"filenames"})
+    filenames = _strings(data["filenames"], "filenames")
+    optional = {name: _optional_string(data, name) for name in ("note", "commit", "target_repo") if name in allowed}
+    force = False
+    if "force" in allowed and "force" in data:
+        if not isinstance(data["force"], bool):
+            raise common.WebInputError("forceはbooleanで指定してください")
+        force = data["force"]
+    state_name = _optional_string(data, "state") if "state" in allowed else None
+    if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
+        raise common.WebInputError("stateはinbox又はprocessingで指定してください")
+    expected_content = _specified_text(data, "expected_content") if "expected_content" in allowed else None
+    if state_name is None and expected_content is None:
+        result = await runtime.workers.run(
+            runtime.operations.transition,
+            action,
+            filenames,
+            note=optional.get("note"),
+            commit=optional.get("commit"),
+            target_repo=optional.get("target_repo"),
+            force=force,
+        )
+    else:
+        result = await runtime.workers.run(
+            runtime.operations.transition,
+            action,
+            filenames,
+            note=optional.get("note"),
+            commit=optional.get("commit"),
+            target_repo=optional.get("target_repo"),
+            force=force,
+            state=state_name,
+            expected_content=expected_content,
+        )
+    return quart.jsonify(filenames=result)
+
+
+def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
+    """編集・投入・回答・状態遷移ルートを登録する。"""
+    ops, workers = runtime.operations, runtime.workers
+
     @app.put("/api/entries/<state_name>/<filename>")
     async def edit_entry(state_name: str, filename: str) -> quart.Response:
-        data = _json_object(
-            await _request_json(),
-            allowed={"content", "expected_content"},
-            required={"content"},
-        )
+        data = _json_object(await _request_json(), allowed={"content", "expected_content"}, required={"content"})
         if not isinstance(data["content"], str) or not data["content"].strip():
             raise common.WebInputError("contentは空でない文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
-        return quart.jsonify(
-            changed=await workers.run(
-                ops.edit,
-                state_name,
-                filename,
-                data["content"],
-                expected_content,
-            )
-        )
+        return quart.jsonify(changed=await workers.run(ops.edit, state_name, filename, data["content"], expected_content))
 
     @app.post("/api/entries")
     async def add_entry() -> tuple[quart.Response, int]:
@@ -752,8 +781,6 @@ def create_app(
         for key in ("source", "target_repo"):
             if key in data and (not isinstance(data[key], str) or not data[key]):
                 raise common.WebInputError(f"{key}は空でない文字列で指定してください")
-        # question_typeの既定値補完はTBDのみに適用する。feedbackへ補完すると
-        # `ops.add`のTBD専用オプション併用検査が誤って発火するため。
         question_type = data.get("question_type")
         if data["type"] == common.MQ_TYPE_TBD and question_type is None:
             question_type = "free-form"
@@ -785,12 +812,7 @@ def create_app(
         if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
             raise common.WebInputError("stateはinbox又はprocessingで指定してください")
         if state_name is None:
-            changed = await workers.run(
-                ops.answer_tbd,
-                data["filename"],
-                data["answer"],
-                expected_content,
-            )
+            changed = await workers.run(ops.answer_tbd, data["filename"], data["answer"], expected_content)
         else:
             changed = await workers.run(
                 ops.answer_tbd,
@@ -801,85 +823,46 @@ def create_app(
             )
         return quart.jsonify(changed=changed)
 
-    async def transition(action: str, allowed: set[str]) -> quart.Response:
-        # target_repoは状態と併用して特定した対象ファイルの内容に対して検証し、
-        # 常駐プロセスのカレントディレクトリには依存しない。
-        # CWD依存回避のため必須化するのは新規追加系（add）のみでよい。
-        data = _json_object(await _request_json(), allowed=allowed, required={"filenames"})
-        filenames = _strings(data["filenames"], "filenames")
-        optional = {name: _optional_string(data, name) for name in ("note", "commit", "target_repo") if name in allowed}
-        force = False
-        if "force" in allowed and "force" in data:
-            if not isinstance(data["force"], bool):
-                raise common.WebInputError("forceはbooleanで指定してください")
-            force = data["force"]
-        state_name = _optional_string(data, "state") if "state" in allowed else None
-        if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
-            raise common.WebInputError("stateはinbox又はprocessingで指定してください")
-        expected_content = _specified_text(data, "expected_content") if "expected_content" in allowed else None
-        if state_name is None and expected_content is None:
-            result = await workers.run(
-                ops.transition,
-                action,
-                filenames,
-                note=optional.get("note"),
-                commit=optional.get("commit"),
-                target_repo=optional.get("target_repo"),
-                force=force,
-            )
-        else:
-            result = await workers.run(
-                ops.transition,
-                action,
-                filenames,
-                note=optional.get("note"),
-                commit=optional.get("commit"),
-                target_repo=optional.get("target_repo"),
-                force=force,
-                state=state_name,
-                expected_content=expected_content,
-            )
-        return quart.jsonify(filenames=result)
+    transition_specs = {
+        "start-processing": {"filenames", "target_repo"},
+        "adopt": {"filenames", "note", "commit", "target_repo"},
+        "reject": {"filenames", "note", "commit", "target_repo"},
+        "remove": {"filenames", "note", "target_repo", "force", "state", "expected_content"},
+    }
 
-    @app.post("/api/entries/start-processing")
-    async def start_processing() -> quart.Response:
-        return await transition("start-processing", {"filenames", "target_repo"})
+    def make_transition_handler(action: str, allowed: set[str]) -> typing.Callable[[], typing.Awaitable[quart.Response]]:
+        async def transition_handler() -> quart.Response:
+            return await _transition_request(runtime, action, allowed)
 
-    @app.post("/api/entries/adopt")
-    async def adopt_feedback() -> quart.Response:
-        return await transition(
-            "adopt",
-            {"filenames", "note", "commit", "target_repo"},
-        )
+        return transition_handler
 
-    @app.post("/api/entries/reject")
-    async def reject_feedback() -> quart.Response:
-        return await transition("reject", {"filenames", "note", "commit", "target_repo"})
-
-    @app.post("/api/entries/remove")
-    async def remove_feedback() -> quart.Response:
-        return await transition(
-            "remove",
-            {"filenames", "note", "target_repo", "force", "state", "expected_content"},
-        )
+    for action, allowed in transition_specs.items():
+        endpoint = action.replace("-", "_")
+        app.add_url_rule(f"/api/entries/{action}", endpoint, make_transition_handler(action, allowed), methods=["POST"])
 
     @app.post("/api/entries/commit")
     async def commit_entries() -> quart.Response:
         _json_object(await _request_json(), allowed=set())
         return quart.jsonify(changed=await workers.run(ops.commit))
 
-    @app.get("/api/events")
-    async def events() -> quart.Response:
-        current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
-        return quart.Response(current_state.events(), content_type="text/event-stream")
 
-    # X-Forwarded-Prefix/ProtoをASGI scopeへ反映するミドルウェアを介在させる。
-    # `app.asgi_app`（バウンドメソッド）を入れ替えるQuartの公式パターンにより、
-    # `app.config`等のハンドラ参照は維持しつつASGIディスパッチだけを上流に通す。
-    # 前提: リバースプロキシ前段が`X-Forwarded-Prefix`を保持して転送する構成
-    # （`/etc/apache2/sites-enabled/mysettings-443.conf`の`/atk/`設定と同様、
-    # prefixを除去しない構成）であること。プレフィクスを除去する構成では
-    # Quartが`scope.root_path`をパス冒頭から除去する前提が崩れ404になる。
-    # method-assignとASGIプロトコル不一致は意図的なため型チェッカーは抑制する。
+def create_app(
+    private_notes: pathlib.Path,
+    config: serve_config.ServeConfig,
+    state: serve_state.ServeState,
+    *,
+    operations: Operations | None = None,
+    worker_limit: int = 4,
+) -> quart.Quart:
+    """Quartアプリを生成する。"""
+    app = quart.Quart(__name__)
+    app.config["SERVE_CONFIG"] = config
+    app.config["SERVE_STATE"] = state
+    runtime = _ServeRuntime(operations or Operations(private_notes), BoundedWorkers(worker_limit))
+    _register_error_handlers(app)
+    _register_asset_routes(app)
+    _register_lifecycle(app, runtime)
+    _register_query_routes(app, runtime)
+    _register_mutation_routes(app, runtime)
     app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
     return app

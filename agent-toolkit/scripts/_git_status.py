@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import subprocess
 
+import _git_command
+
 # `git status --porcelain`実行のタイムアウト秒数。
 _STATUS_TIMEOUT = 10
 
@@ -69,13 +71,11 @@ def run_git_lines(args: list[str], cwd: str) -> list[str] | None:
     `pretooluse.py`内に同名で存在していたプライベート関数`_run_git_lines`を
     本モジュールへ移設し、公開名（アンダースコア無し）とした。
     """
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, check=False, cwd=cwd, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
+    command_args = args[1:] if args and args[0] == "git" else args
+    output = _git_command.lines(command_args, cwd)
+    if output is None:
         return None
-    if result.returncode != 0:
-        return None
-    return [line for line in result.stdout.splitlines() if line.strip()]
+    return [line for line in output if line.strip()]
 
 
 def list_remotes(cwd: str) -> list[str]:

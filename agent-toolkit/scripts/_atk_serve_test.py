@@ -115,6 +115,20 @@ def test_assets_are_self_contained() -> None:
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
 
 
+def test_text_assets_are_bundled_as_plugin_files() -> None:
+    """配布対象のscripts配下に実ファイルを同梱し、Python側がその内容を読む。"""
+    static_dir = pathlib.Path(assets.__file__).with_name("_atk_serve_static")
+    expected = {
+        "index.html": assets.HTML,
+        "app.css": assets.CSS,
+        "app.js": assets.JS,
+    }
+    assert {path.name for path in static_dir.iterdir()} == set(expected)
+    for filename, content in expected.items():
+        bundled = (static_dir / filename).read_text(encoding="utf-8")
+        assert (bundled if filename == "app.js" else bundled.removesuffix("\n")) == content
+
+
 def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     """単一一覧のCLI準拠列順、件数、識別子表示を固定する。"""
     assert assets.HTML.count('<ul id="entry-list"') == 1

@@ -46,9 +46,7 @@ import sys
 import tempfile
 import time
 
-from _file_lock import rotate_if_needed as _rotate_if_needed
-from _transcript import iter_assistant_content_blocks as _iter_assistant_content_blocks
-from _transcript import iter_latest_assistant_messages as _iter_latest_assistant_messages
+from _file_lock import locked_rotate_and_append as _locked_rotate_and_append
 
 # 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終端している場合は
 # セッション継続中と判断する。
@@ -108,17 +106,20 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     `session_id`は常時ログ（`append_stop_log`）の宛先ファイル特定にのみ使う。
     """
     _wait_for_end_turn(transcript_path)
-    last_async = _last_tool_use_is_async_wait(transcript_path)
-    launched, completed = _describe_pending_background_tasks(transcript_path, session_id)
+    entries = _read_transcript_entries(transcript_path)
+    last_tool_use = _get_last_tool_use_block(entries)
+    last_async = _last_tool_use_is_async_wait(last_tool_use)
+    launched, completed = _describe_pending_background_entries(entries, session_id)
     remainder = launched - completed
     pending = last_async or bool(remainder)
-    _emit_debug(transcript_path, pending)
+    last_tool = _describe_last_tool_use(last_tool_use)
+    _emit_debug(pending, last_tool, launched, completed)
     append_stop_log(
         session_id,
         "is_pending_async_work_result",
         {
             "result": pending,
-            "last_tool": _describe_last_tool_use(transcript_path),
+            "last_tool": last_tool,
             "launched": len(launched),
             "pending": len(remainder),
             "pending_ids": ",".join(sorted(remainder)[:3]) if remainder else "-",
@@ -151,15 +152,7 @@ def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bo
     非sidechainの`type=="user"`エントリの`message.content`を対象に走査する。
     transcript読み取り失敗時は偽を返す。
     """
-    try:
-        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return False
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
+    for entry in _read_transcript_entries(transcript_path):
         if entry.get("type") != "user" or entry.get("isSidechain"):
             continue
         message = entry.get("message")
@@ -198,16 +191,10 @@ def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes:
     """
     if not session_id:
         return
-    path = _stop_log_path(session_id)
-    _rotate_if_needed(path, max_bytes)
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
     fields = " ".join(f"{key}={value}" for key, value in context.items())
     line = f"{timestamp} decision={decision}" + (f" {fields}" if fields else "") + "\n"
-    try:
-        with path.open("a", encoding="utf-8") as f:
-            f.write(line)
-    except OSError:
-        return
+    _locked_rotate_and_append(_stop_log_path(session_id), line, max_bytes)
 
 
 def parse_stop_session(raw_stdin: str, approve: collections.abc.Callable[[], None]) -> tuple[str, dict] | None:
@@ -232,7 +219,7 @@ def parse_stop_session(raw_stdin: str, approve: collections.abc.Callable[[], Non
     return session_id, payload
 
 
-def _emit_debug(transcript_path: str, result: bool) -> None:
+def _emit_debug(result: bool, last_tool: str, launched: set[str], completed: set[str]) -> None:
     """環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみstderrへ判定根拠を1行出力する。
 
     出力形式は`key=value`空白区切りとする。
@@ -241,8 +228,6 @@ def _emit_debug(transcript_path: str, result: bool) -> None:
     raw = os.environ.get("AGENT_TOOLKIT_STOP_GATE_DEBUG", "")
     if raw.lower() not in _DEBUG_TRUTHY_VALUES:
         return
-    last_tool = _describe_last_tool_use(transcript_path)
-    launched, completed = _describe_pending_background_tasks(transcript_path)
     remainder = launched - completed
     head_ids = ",".join(sorted(remainder)[:3]) if remainder else "-"
     print(
@@ -286,35 +271,64 @@ def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
         time.sleep(poll)
 
 
-def _get_last_tool_use_block(transcript_path: str) -> dict | None:
+def _read_transcript_entries(transcript_path: str) -> list[dict]:
+    """transcriptを1回読み込み、有効なJSONオブジェクトを時系列で返す。"""
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return []
+    entries: list[dict] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def _iter_assistant_blocks(entries: list[dict]) -> collections.abc.Iterator[dict]:
+    """非sidechain assistantエントリのcontent辞書を時系列で返す。"""
+    for entry in entries:
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        yield from (block for block in content if isinstance(block, dict))
+
+
+def _get_last_tool_use_block(entries: list[dict]) -> dict | None:
     """最新assistantメッセージ内で最後に現れたtool_useブロックを返す。
 
     最初に得た（最新の）メッセージのtool_useのみ対象とし、ターン内で最後に出現したtool_useを使う。
     メッセージをまたいで探さない。tool_useが存在しない場合は`None`を返す。
     """
-    last_tool_use: dict | None = None
-    for message in _iter_latest_assistant_messages(transcript_path):
+    for entry in reversed(entries):
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
         content = message.get("content")
         if not isinstance(content, list):
             continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "tool_use":
-                last_tool_use = block
-        if last_tool_use is not None:
-            break
-    return last_tool_use
+        return next(
+            (block for block in reversed(content) if isinstance(block, dict) and block.get("type") == "tool_use"),
+            None,
+        )
+    return None
 
 
-def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
+def _last_tool_use_is_async_wait(last_tool_use: dict | None) -> bool:
     """直前アシスタントターンの最後のtool_useが非同期待機系の場合に真を返す。
 
     `_ASYNC_WAIT_TOOLS`に含まれるツール名、または`Bash`かつ
     `input.run_in_background == true`の場合に真を返す。
     バックグラウンド処理中のStop hook誤発動を防ぐためのゲート。
     """
-    last_tool_use = _get_last_tool_use_block(transcript_path)
     if last_tool_use is None:
         return False
     name = last_tool_use.get("name", "")
@@ -327,13 +341,12 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
     return False
 
 
-def _describe_last_tool_use(transcript_path: str) -> str:
+def _describe_last_tool_use(last_tool_use: dict | None) -> str:
     """最新assistantターン末尾のtool_use名をデバッグ出力向けに整形して返す。
 
     Bashの場合は`Bash(bg=True)`または`Bash(bg=False)`形式で返す。
     tool_useが存在しない場合は`-`を返す。
     """
-    last_tool_use = _get_last_tool_use_block(transcript_path)
     if last_tool_use is None:
         return "-"
     name = last_tool_use.get("name", "")
@@ -346,6 +359,16 @@ def _describe_last_tool_use(transcript_path: str) -> str:
 
 def _describe_pending_background_tasks(
     transcript_path: str,
+    session_id: str | None = None,
+    *,
+    kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
+) -> tuple[set[str], set[str]]:
+    """transcriptを読み込み、背景タスクの起動集合と完了集合を返す。"""
+    return _describe_pending_background_entries(_read_transcript_entries(transcript_path), session_id, kinds=kinds)
+
+
+def _describe_pending_background_entries(
+    entries: list[dict],
     session_id: str | None = None,
     *,
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
@@ -388,22 +411,14 @@ def _describe_pending_background_tasks(
     """
     launched: set[str] = set()
     completed: set[str] = set()
-    try:
-        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return launched, completed
-    sendmessage_ids = _collect_sendmessage_tool_use_ids(lines)
-    mcp_ids = _collect_mcp_tool_use_ids(lines)
-    mcp_background_tasks = _collect_mcp_background_task_id_tool_use_ids(lines, mcp_ids)
-    task_id_map = _collect_task_id_tool_use_ids(lines)
+    sendmessage_ids = _collect_sendmessage_tool_use_ids(entries)
+    mcp_ids = _collect_mcp_tool_use_ids(entries)
+    mcp_background_tasks = _collect_mcp_background_task_id_tool_use_ids(entries, mcp_ids)
+    task_id_map = _collect_task_id_tool_use_ids(entries)
     for task_id, tool_use_ids in mcp_background_tasks.items():
         task_id_map.setdefault(task_id, set()).update({task_id, *tool_use_ids})
-    monitor_task_ids = _collect_monitor_task_ids(lines)
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
+    monitor_task_ids = _collect_monitor_task_ids(entries)
+    for entry in entries:
         if entry.get("isSidechain"):
             continue
         entry_type = entry.get("type")
@@ -501,10 +516,10 @@ def _resolve_task_notification_ids(
     return resolved
 
 
-def _collect_sendmessage_tool_use_ids(lines: list[str]) -> set[str]:
+def _collect_sendmessage_tool_use_ids(entries: list[dict]) -> set[str]:
     """transcript全行から非sidechain assistantのSendMessage tool_use idを集合として返す。"""
     ids: set[str] = set()
-    for _position, block in _iter_assistant_content_blocks(lines):
+    for block in _iter_assistant_blocks(entries):
         if block.get("type") != "tool_use" or block.get("name") != "SendMessage":
             continue
         block_id = block.get("id")
@@ -513,10 +528,10 @@ def _collect_sendmessage_tool_use_ids(lines: list[str]) -> set[str]:
     return ids
 
 
-def _collect_mcp_tool_use_ids(lines: list[str]) -> set[str]:
+def _collect_mcp_tool_use_ids(entries: list[dict]) -> set[str]:
     """非sidechain assistantのMCP tool_use id集合を返す。"""
     ids: set[str] = set()
-    for _position, block in _iter_assistant_content_blocks(lines):
+    for block in _iter_assistant_blocks(entries):
         if block.get("type") != "tool_use":
             continue
         name = block.get("name")
@@ -526,14 +541,10 @@ def _collect_mcp_tool_use_ids(lines: list[str]) -> set[str]:
     return ids
 
 
-def _collect_mcp_background_task_id_tool_use_ids(lines: list[str], mcp_ids: set[str]) -> dict[str, set[str]]:
+def _collect_mcp_background_task_id_tool_use_ids(entries: list[dict], mcp_ids: set[str]) -> dict[str, set[str]]:
     """MCP timeout通知の背景task IDと起動tool_use IDの対応を全`tool_result`から収集する。"""
     result: dict[str, set[str]] = {}
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
+    for entry in entries:
         if entry.get("type") != "user" or entry.get("isSidechain"):
             continue
         message = entry.get("message")
@@ -555,7 +566,7 @@ def _collect_mcp_background_task_id_tool_use_ids(lines: list[str], mcp_ids: set[
     return result
 
 
-def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
+def _collect_task_id_tool_use_ids(entries: list[dict]) -> dict[str, set[str]]:
     """transcript全行のuserエントリから、agentId（task-id）→tool_use_id集合マップを構築する。
 
     起動を記録した`toolUseResult`に`agentId`（背景タスクの`task-id`）が含まれる場合、
@@ -563,11 +574,7 @@ def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
     `<tool-use-id>`要素が通知形式変動で欠落した場合の解決経路として用いる。
     """
     result: dict[str, set[str]] = {}
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
+    for entry in entries:
         if entry.get("type") != "user" or entry.get("isSidechain"):
             continue
         tool_use_result = entry.get("toolUseResult")
@@ -586,7 +593,7 @@ def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
     return result
 
 
-def _collect_monitor_task_ids(lines: list[str]) -> set[str]:
+def _collect_monitor_task_ids(entries: list[dict]) -> set[str]:
     """transcript全行から、Monitorツール起動に一意に対応する`taskId`の集合を返す。
 
     `toolUseResult.taskId`キーはMonitor専用ではなく、他のツール
@@ -605,7 +612,7 @@ def _collect_monitor_task_ids(lines: list[str]) -> set[str]:
     `_resolve_task_notification_ids`が当該通知を異常系ログから除外する判定に使う。
     """
     monitor_tool_use_ids: set[str] = set()
-    for _position, block in _iter_assistant_content_blocks(lines):
+    for block in _iter_assistant_blocks(entries):
         if block.get("type") != "tool_use" or block.get("name") != "Monitor":
             continue
         block_id = block.get("id")
@@ -614,11 +621,7 @@ def _collect_monitor_task_ids(lines: list[str]) -> set[str]:
 
     monitor_task_ids: set[str] = set()
     non_monitor_task_ids: set[str] = set()
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
+    for entry in entries:
         if entry.get("type") != "user" or entry.get("isSidechain"):
             continue
         tool_use_result = entry.get("toolUseResult")

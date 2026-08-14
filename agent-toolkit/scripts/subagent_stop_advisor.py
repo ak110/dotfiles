@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import has_pending_agent_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -33,9 +33,7 @@ def _is_empty_completion_report(text: object) -> bool:
     return isinstance(text, str) and not text.strip()
 
 
-def _llm_notice(body: str) -> str:
-    """LLM宛て通知メッセージを標準プレフィックス付きで整形する。"""
-    return _llm_notice_base(body, _HOOK_ID, tag="block")
+_llm_notice = _notice_formatter(_HOOK_ID, default_tag="block")
 
 
 def _resolve_payload_agent_id(payload: dict) -> str | None:

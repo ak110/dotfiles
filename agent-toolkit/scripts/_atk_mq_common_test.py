@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_readiness as _readiness  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _write_tbd(
@@ -512,7 +513,7 @@ class TestReadiness:
             encoding="utf-8",
         )
 
-        entries = _common._load_queue_entries(  # pylint: disable=protected-access  # noqa: SLF001
+        entries = _readiness._load_queue_entries(  # pylint: disable=protected-access  # noqa: SLF001
             tmp_path, None, ("inbox",)
         )
         by_name = {entry.filename: entry for entry in entries}

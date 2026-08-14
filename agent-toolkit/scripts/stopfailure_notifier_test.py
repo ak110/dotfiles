@@ -8,6 +8,8 @@ import json
 import pathlib
 
 import _fork_runner
+import pytest
+import stopfailure_notifier
 from stopfailure_notifier import append_log
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
@@ -58,6 +60,21 @@ def test_append_log_appends_across_sessions(tmp_path: pathlib.Path):
     assert len(lines) == 2
     assert json.loads(lines[0])["session_id"] == "s1"
     assert json.loads(lines[1])["session_id"] == "s2"
+
+
+def test_append_log_rotates_one_generation_at_one_megabyte(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """閾値超過済みログを1世代へ退避して新しいレコードを追記する。"""
+    log_path = tmp_path / "stopfailure.jsonl"
+    log_path.write_text("x" * 11, encoding="utf-8")
+    monkeypatch.setattr(stopfailure_notifier, "_LOG_MAX_BYTES", 10)
+
+    append_log({"session_id": "s1"}, log_path=log_path, now=_FIXED_NOW)
+
+    assert log_path.with_suffix(".jsonl.1").read_text(encoding="utf-8") == "x" * 11
+    assert json.loads(log_path.read_text(encoding="utf-8"))["session_id"] == "s1"
 
 
 def test_invalid_json_exits_safely():

@@ -85,7 +85,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _atk_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -98,8 +98,10 @@ from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import
     extract_git_events,
     split_bash_segments,
 )
-from _file_lock import rotate_if_needed as _rotate_if_needed  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    locked_rotate_and_append as _locked_rotate_and_append,
+)
+from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -126,9 +128,7 @@ _FOREIGN_SCRIPT_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-
 _HOOK_ID = "agent-toolkit/pretooluse"
 
 
-def _llm_notice(body: str, *, tag: str = "") -> str:
-    """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
-    return _llm_notice_base(body, _HOOK_ID, tag=tag)
+_llm_notice = _notice_formatter(_HOOK_ID)
 
 
 def _language_notice(body: str) -> str:
@@ -218,161 +218,144 @@ def main(payload_text: str) -> int:
         flush_pending_language_warning()
         return 0
 
-    # mcp__codex__codex: メインセッションのdelegation起動確認 + sandbox・cwd検査。
-    if tool_name == "mcp__codex__codex":
-        _record_iss_sidechain_probe(session_id, tool_name, payload)
-        if payload.get("isSidechain") is not True:
-            state = read_state(session_id)
-            if _check_delegation_not_invoked(state, tool_name=tool_name):
-                return 2
-        if _check_codex_mcp_sandbox(tool_input):
-            return 2
-        if _check_codex_mcp_cwd(tool_input):
-            return 2
-        emit_json(_check_codex_mcp_execution(tool_input))
-        _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
-        return 0
+    if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
+        return _handle_codex_tool(payload, tool_name, tool_input, session_id, emit_json)
 
-    # mcp__codex__codex-reply: メインセッションのdelegation起動確認 + 強制承認。
-    if tool_name == "mcp__codex__codex-reply":
-        _record_iss_sidechain_probe(session_id, tool_name, payload)
-        if payload.get("isSidechain") is not True:
-            state = read_state(session_id)
-            if _check_delegation_not_invoked(state, tool_name=tool_name):
-                return 2
-        emit_json(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "allow",
-                },
-            }
-        )
-        _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
-        return 0
-
-    # Bashは専用ハンドラ
     if tool_name == "Bash":
-        command = tool_input.get("command")
-        if not isinstance(command, str):
-            flush_pending_language_warning()
-            return 0
-        cwd_raw = payload.get("cwd", "")
-        cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-        # 遮断検査を警告検査より先に完了させ、警告が後続の遮断を回避しない構造を維持する。
-        warnings: list[str] = []
-        # sleep直後の状態確認連結を検出（初回warn、セッション内再検出でblock）
-        run_in_background = bool(tool_input.get("run_in_background"))
-        sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, run_in_background)
-        if sleep_poll_result == "block":
-            return 2
-        if sleep_poll_result is not None:
-            warnings.append(sleep_poll_result)
-        # git amend / rebaseは直前にgit logを確認していなければブロック
-        if _check_bash_amend_rebase_without_log(command, session_id, cwd):
-            return 2
-        # git push実行前にamend後の未コミット差分残置を機械的にブロック
-        if _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd):
-            return 2
-        # uv run python <path>形式の起動は非Pythonプロジェクトでブロック
-        if _check_bash_uv_run_python(command, cwd):
-            return 2
-        # パターン一致によるプロセス終了（pkill/killall）をブロック
-        if _check_bash_process_kill_by_pattern(command):
-            return 2
-        # 警告検査はメッセージだけを蓄積し、終了コードを変更しない。
-        for warning in (
-            _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
-            _check_bash_output_truncation(command),
-            _check_bash_git_commit(command, session_id, cwd),
-            _check_bash_agent_toolkit_version_bump(command, cwd),
-            _check_bash_codex_exec(command),
-        ):
-            if warning is not None:
-                warnings.append(warning)
-        # git log --decorate自動付与
-        result = _check_bash_git_log_decorate(command, tool_input)
-        if result is not None:
-            if warnings:
-                _append_additional_context(result, "\n".join(warnings))
-            emit_json(result)
-            return 0
-        if warnings:
-            emit_json(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "additionalContext": "\n".join(warnings),
-                    }
-                }
-            )
-            return 0
-        flush_pending_language_warning()
-        return 0
+        return _handle_bash_tool(payload, tool_input, session_id, emit_json, flush_pending_language_warning)
 
     # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
         flush_pending_language_warning()
         return 0
 
-    # Agent/Task: 委譲経路の事前確認 + process-loop観測用のサブエージェント起動時刻記録。
     if tool_name in ("Agent", "Task"):
-        # メインセッションの新規委譲だけを対象とする。sidechainの内部起動は親の
-        # delegation確認を再要求すると、既に確定した委譲経路を不必要に遮断する。
-        if payload.get("isSidechain") is not True:
-            state = read_state(session_id)
-            if _check_delegation_not_invoked(state, tool_name=tool_name):
-                return 2
-        # `name`指定は起動記録より前に遮断する（起動しない呼び出しの副作用を残さないため）。
-        if _check_agent_name_parameter(tool_name, tool_input):
-            return 2
-        subagent_type = tool_input.get("subagent_type")
-        if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
-            return 2
-        if _check_execute_review_engine_route(payload, tool_input):
-            return 2
-        # ブロック検査を全通過した場合のみ、実際に起動する種別として開始時刻を記録する。
-        # ブロック前に記録すると、起動しなかった種別の`subagent_start`だけが残り
-        # `subagent_end`と対応しなくなるため（process-loopの所要時間分析が崩れる）。
-        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
-            _process_loop_log.append("subagent_start", type=subagent_type)
-        flush_pending_language_warning()
-        return 0
+        return _handle_agent_tool(payload, tool_name, tool_input, session_id, flush_pending_language_warning)
 
-    # Write/Edit/MultiEdit以外は全スキップ
+    return _handle_edit_tool(tool_name, tool_input, flush_pending_language_warning)
+
+
+def _handle_codex_tool(
+    payload: dict,
+    tool_name: str,
+    tool_input: dict,
+    session_id: str,
+    emit_json: Callable[[dict], None],
+) -> int:
+    """Codex MCPの委譲前検査と許可上書きを処理する。"""
+    _record_iss_sidechain_probe(session_id, tool_name, payload)
+    if payload.get("isSidechain") is not True:
+        state = read_state(session_id)
+        if _check_delegation_not_invoked(state, tool_name=tool_name):
+            return 2
+    if tool_name == "mcp__codex__codex":
+        if _check_codex_mcp_sandbox(tool_input) or _check_codex_mcp_cwd(tool_input):
+            return 2
+        emit_json(_check_codex_mcp_execution(tool_input))
+    else:
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})
+    _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
+    return 0
+
+
+def _handle_bash_tool(
+    payload: dict,
+    tool_input: dict,
+    session_id: str,
+    emit_json: Callable[[dict], None],
+    flush_warning: Callable[[], None],
+) -> int:
+    """Bashコマンドの遮断・警告・引数補正を処理する。"""
+    command = tool_input.get("command")
+    if not isinstance(command, str):
+        flush_warning()
+        return 0
+    cwd_raw = payload.get("cwd", "")
+    cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+    warnings: list[str] = []
+    sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, bool(tool_input.get("run_in_background")))
+    if sleep_poll_result == "block":
+        return 2
+    if sleep_poll_result is not None:
+        warnings.append(sleep_poll_result)
+    if (
+        _check_bash_amend_rebase_without_log(command, session_id, cwd)
+        or _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd)
+        or _check_bash_uv_run_python(command, cwd)
+        or _check_bash_process_kill_by_pattern(command)
+    ):
+        return 2
+    for warning in (
+        _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
+        _check_bash_output_truncation(command),
+        _check_bash_git_commit(command, session_id, cwd),
+        _check_bash_agent_toolkit_version_bump(command, cwd),
+        _check_bash_codex_exec(command),
+    ):
+        if warning is not None:
+            warnings.append(warning)
+    result = _check_bash_git_log_decorate(command, tool_input)
+    if result is not None:
+        if warnings:
+            _append_additional_context(result, "\n".join(warnings))
+        emit_json(result)
+        return 0
+    if warnings:
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
+    else:
+        flush_warning()
+    return 0
+
+
+def _handle_agent_tool(
+    payload: dict,
+    tool_name: str,
+    tool_input: dict,
+    session_id: str,
+    flush_warning: Callable[[], None],
+) -> int:
+    """Agent・Task起動の委譲契約と観測ログを処理する。"""
+    if payload.get("isSidechain") is not True:
+        state = read_state(session_id)
+        if _check_delegation_not_invoked(state, tool_name=tool_name):
+            return 2
+    if _check_agent_name_parameter(tool_name, tool_input):
+        return 2
+    subagent_type = tool_input.get("subagent_type")
+    if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
+        return 2
+    if _check_execute_review_engine_route(payload, tool_input):
+        return 2
+    if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
+        _process_loop_log.append("subagent_start", type=subagent_type)
+    flush_warning()
+    return 0
+
+
+def _handle_edit_tool(tool_name: str, tool_input: dict, flush_warning: Callable[[], None]) -> int:
+    """編集ツールの遮断検査と警告検査を処理する。"""
     fields = _collect_new_fields(tool_name, tool_input)
     if fields is None:
-        flush_pending_language_warning()
+        flush_warning()
         return 0
-
     file_path_raw = tool_input.get("file_path")
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
-
-    # --- block系check（最初の違反でexit 2）---
-    if _check_mojibake(tool_name, fields):
+    if (
+        _check_mojibake(tool_name, fields)
+        or _check_foreign_script_mixin(tool_name, fields)
+        or (tool_name == "Write" and _is_ps1(file_path) and _check_ps1_eol(tool_name, fields, file_path))
+        or _check_lockfiles(tool_name, file_path)
+        or _check_secrets(tool_name, file_path)
+        or _check_danger_full_access_preserved(tool_name, tool_input, file_path)
+    ):
         return 2
-    if _check_foreign_script_mixin(tool_name, fields):
-        return 2
-    # Edit/MultiEditは内部的にCRLFを透過的に維持するためチェック不要。
-    # WriteのみLFで書き込むためEOLチェックを実行する。
-    if tool_name == "Write" and _is_ps1(file_path) and _check_ps1_eol(tool_name, fields, file_path):
-        return 2
-    if _check_lockfiles(tool_name, file_path):
-        return 2
-    if _check_secrets(tool_name, file_path):
-        return 2
-    if _check_danger_full_access_preserved(tool_name, tool_input, file_path):
-        return 2
-
-    # --- warn系check（stderrに警告のみ、exit codeは0のまま）---
     _check_manifest(tool_name, file_path)
     _check_home_path(tool_name, fields, file_path)
     _check_colloquial(tool_name, fields, file_path)
     _check_style_negation(tool_name, tool_input, file_path)
     _check_frontmatter_sync_note_body_exists(tool_name, tool_input, file_path)
     _check_body_section_reference_exists(tool_name, tool_input, file_path)
-
-    flush_pending_language_warning()
+    flush_warning()
     return 0
 
 
@@ -2691,13 +2674,12 @@ def _record_iss_sidechain_probe(
     十分なサンプルが集まり代替判定機構が実装された時点で本ヘルパーは削除する。
     ログ出力先はtempfile.gettempdir()起点でsession_id単位に分離する
     （_stop_gate.pyの_stop_log_path先例に揃える）。
-    ローテは_file_lock.rotate_if_neededを再利用する。
+    ローテーションと追記は`_file_lock.locked_rotate_and_append`へ委譲する。
     """
     try:
         log_dir = pathlib.Path(tempfile.gettempdir())
         safe_session_id = re.sub(r"[^A-Za-z0-9_-]", "_", session_id or "unknown")
         log_path = log_dir / f"claude-agent-toolkit-issidechain-{safe_session_id}.log"
-        _rotate_if_needed(log_path, max_bytes=1_000_000, generations=1)
         state = read_state(session_id) if session_id else {}
         entry = {
             "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
@@ -2708,8 +2690,7 @@ def _record_iss_sidechain_probe(
             "cwd": payload.get("cwd"),
             "current_plan_file_path": state.get("current_plan_file_path") if isinstance(state, dict) else None,
         }
-        with log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        _locked_rotate_and_append(log_path, json.dumps(entry, ensure_ascii=False) + "\n", 1_000_000)
     except OSError:
         pass
 

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3157d5">
+  <title>フィードバック管理</title>
+  <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
+  <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-title">
+      <h1>フィードバック管理</h1>
+      <span id="connection-status" class="connection-status" role="status">接続中</span>
+    </div>
+    <div class="header-actions">
+      <span id="sync-result" class="secondary-text" role="status"></span>
+      <button id="notification-button" class="button-secondary" type="button" hidden>通知を有効化</button>
+      <button id="refresh-button" class="button-secondary" type="button">今すぐ同期</button>
+      <button id="create-button" class="button-primary" type="button">新規追加</button>
+    </div>
+  </header>
+
+  <div id="global-error" class="global-error" role="alert" hidden></div>
+
+  <main class="app-layout">
+    <aside class="filters card" aria-label="フィルター条件">
+      <div class="pane-heading">
+        <h2>フィルター</h2>
+        <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
+      </div>
+      <label for="search-input">検索</label>
+      <input id="search-input" type="search" placeholder="本文・ファイル名・対象・投入元を検索">
+
+      <div class="filter-grid">
+        <label for="kind-filter">種別</label>
+        <select id="kind-filter">
+          <option value="all">all</option>
+          <option value="feedback">feedback</option>
+          <option value="tbd">tbd</option>
+        </select>
+        <label for="state-filter">状態</label>
+        <select id="state-filter">
+          <option value="active">active</option>
+          <option value="all">all</option>
+          <option value="inbox">inbox</option>
+          <option value="processing">processing</option>
+          <option value="adopted">adopted</option>
+          <option value="rejected">rejected</option>
+        </select>
+        <label for="answer-filter">回答状況</label>
+        <select id="answer-filter">
+          <option value="all">すべて</option>
+          <option value="no">未回答</option>
+          <option value="yes">回答済み</option>
+        </select>
+      </div>
+
+      <section class="additional-filters" aria-label="追加のフィルター条件">
+        <div class="filter-grid">
+          <label for="target-filter">対象リポジトリ</label>
+          <select id="target-filter"><option value="">すべて</option></select>
+          <label for="source-filter">投入元</label>
+          <input id="source-filter" type="text">
+          <label class="checkbox-field" for="source-empty-filter">
+            <input id="source-empty-filter" type="checkbox">
+            投入元が空
+          </label>
+        </div>
+      </section>
+    </aside>
+
+    <section class="entry-pane card" aria-labelledby="entry-heading">
+      <div class="pane-heading">
+        <h2 id="entry-heading">一覧</h2>
+        <span id="entry-count" class="secondary-text">0件（未回答TBD 0件）</span>
+      </div>
+      <div id="result-status" class="visually-hidden" role="status"></div>
+      <div id="list-warning" class="list-warning" role="alert" hidden></div>
+      <div id="loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
+      <div class="entry-columns" aria-hidden="true">
+        <span>ファイル名</span>
+        <span>対象リポジトリ</span>
+        <span>種別・状態</span>
+        <span>要約</span>
+      </div>
+      <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
+      <div id="empty-state" class="empty-state" hidden>
+        <p id="empty-state-message"></p>
+        <button id="empty-clear-button" class="button-secondary" type="button" hidden>条件をクリア</button>
+        <button id="empty-all-states-button" class="button-secondary" type="button" hidden>すべての状態を表示</button>
+        <button id="empty-create-button" class="button-primary" type="button" hidden>項目を追加</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ダイアログ内は確定操作と［×］だけを置き、終了時の一時入力は破棄する。 -->
+  <dialog id="detail-dialog" class="dialog-shell detail-dialog" aria-labelledby="detail-heading">
+    <article id="detail-shell" class="dialog-frame">
+      <header class="dialog-header">
+        <h2 id="detail-heading">詳細</h2>
+        <button id="detail-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
+      </header>
+      <div id="detail-dialog-body" class="dialog-body" tabindex="0">
+        <div id="detail-alert" class="dialog-message error-message" role="alert" hidden></div>
+        <div id="detail-status" class="dialog-message success-message" role="status" hidden></div>
+        <section id="detail-view" hidden>
+          <div class="detail-title-row">
+            <h3 id="detail-filename"></h3>
+            <span id="detail-state" class="state-badge"></span>
+          </div>
+          <dl id="detail-metadata" class="metadata"></dl>
+          <p id="readonly-notice" class="readonly-notice" hidden>この項目は完了しているため、読取り専用です。</p>
+          <section class="detail-body">
+            <h3>本文</h3>
+            <div id="detail-content" class="entry-content markdown-body"></div>
+          </section>
+        </section>
+        <section id="edit-panel" class="edit-panel" hidden>
+          <h3>ファイル全体を編集</h3>
+          <label for="edit-content">ファイル全体（メタデータを含む、必須）</label>
+          <p class="field-hint">frontmatterを含むMarkdownファイル全体を編集する。</p>
+          <textarea id="edit-content" aria-describedby="edit-content-error" required></textarea>
+          <p id="edit-content-error" class="inline-error" hidden></p>
+        </section>
+        <section id="answer-panel" class="answer-panel" hidden>
+          <h3>回答</h3>
+          <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
+          <label for="answer-input">TBDへの回答（必須）</label>
+          <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
+          <p id="answer-input-error" class="inline-error" hidden></p>
+        </section>
+      </div>
+      <footer id="detail-footer" class="dialog-footer detail-footer">
+        <div class="detail-footer-left">
+          <button id="delete-button" class="button-danger" type="button">削除</button>
+        </div>
+        <div class="detail-footer-right">
+          <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
+          <button id="edit-button" class="button-primary" type="button">編集</button>
+          <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
+          <button id="save-answer-button" class="button-primary" type="button" hidden>回答を保存</button>
+        </div>
+      </footer>
+    </article>
+  </dialog>
+
+  <dialog id="create-dialog" class="dialog-shell" aria-labelledby="create-dialog-heading">
+    <form id="create-form" class="dialog-frame" novalidate>
+      <header class="dialog-header">
+        <h2 id="create-dialog-heading">新規追加</h2>
+        <button id="create-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
+      </header>
+      <div class="dialog-body" tabindex="0">
+        <div id="create-alert" class="dialog-message error-message" role="alert" hidden></div>
+        <div id="create-status" class="dialog-message success-message" role="status" hidden></div>
+        <div class="dialog-form-fields">
+          <label for="create-kind">種別（必須）</label>
+          <select id="create-kind" name="type">
+            <option value="feedback">feedback</option>
+            <option value="tbd">tbd</option>
+          </select>
+          <label for="create-content">本文（必須）</label>
+          <textarea id="create-content" name="message" aria-describedby="create-content-error" required></textarea>
+          <p id="create-content-error" class="inline-error" hidden></p>
+          <label for="create-target">対象リポジトリ（必須）</label>
+          <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error" required>
+          <datalist id="repo-options"></datalist>
+          <p id="create-target-error" class="inline-error" hidden></p>
+          <label for="create-source">投入元（任意）</label>
+          <input id="create-source" name="source">
+          <div id="tbd-fields" class="dialog-form-fields" hidden>
+            <label for="create-scope">確認範囲（任意）</label>
+            <input id="create-scope" name="scope">
+            <label for="create-question-type">回答形式（必須）</label>
+            <select id="create-question-type" name="question_type">
+              <option value="free-form">自由記述</option>
+              <option value="yes-no">はい／いいえ</option>
+              <option value="choice">選択式</option>
+            </select>
+            <div id="choice-fields" class="dialog-form-fields" hidden>
+              <label for="create-choices">選択肢（1行1件、必須）</label>
+              <textarea id="create-choices" name="choices" aria-describedby="create-choices-error"></textarea>
+              <p id="create-choices-error" class="inline-error" hidden></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="dialog-footer">
+        <button id="create-submit-button" class="button-primary" type="submit">追加</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog" class="dialog-shell" aria-labelledby="delete-dialog-heading">
+    <form id="delete-form" class="dialog-frame">
+      <header class="dialog-header">
+        <h2 id="delete-dialog-heading">削除の確認</h2>
+        <button id="delete-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
+      </header>
+      <div class="dialog-body" tabindex="0">
+        <div id="delete-alert" class="dialog-message error-message" role="alert" hidden></div>
+        <div id="delete-status" class="dialog-message success-message" role="status" hidden></div>
+        <dl class="metadata">
+          <dt>対象</dt><dd id="delete-target"></dd>
+          <dt>状態</dt><dd><span id="delete-state" class="state-badge"></span></dd>
+          <dt>対象リポジトリ</dt><dd id="delete-target-repo"></dd>
+          <dt>要約</dt><dd id="delete-summary"></dd>
+        </dl>
+        <label id="force-delete-row" class="force-confirmation" hidden>
+          <input id="force-delete-confirmation" type="checkbox" aria-describedby="delete-error">
+          処理中の項目を強制的に削除する
+        </label>
+        <p id="delete-error" class="inline-error" hidden></p>
+      </div>
+      <footer class="dialog-footer">
+        <button id="delete-submit-button" class="button-danger" type="submit">削除する</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="__BASE_PATH_HTML__/static/app.js"></script>
+</body>
+</html>

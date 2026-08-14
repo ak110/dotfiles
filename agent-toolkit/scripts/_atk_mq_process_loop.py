@@ -18,6 +18,7 @@ import time
 
 import _atk_mq_alerts as _alerts
 import _console_title
+import _git_command
 import _process_loop_log
 import watchdog.events
 import watchdog.observers
@@ -224,9 +225,12 @@ def _refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
 
 def _git_output(args: list[str], cwd: pathlib.Path) -> str:
     """gitコマンドの標準出力を返す。失敗時は空文字を返す。"""
-    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
-    _console_title.set_console_title("atk mq process-loop")
-    return result.stdout.strip() if result.returncode == 0 else ""
+    try:
+        return _git_command.output(args, cwd)
+    except subprocess.CalledProcessError:
+        return ""
+    finally:
+        _console_title.set_console_title("atk mq process-loop")
 
 
 def _worktree_is_clean(worktree_path: pathlib.Path) -> bool:
@@ -653,6 +657,117 @@ def _update_before_session(
     return _pull_private_notes(private_notes), True
 
 
+def _prepare_session_target(
+    local_path: pathlib.Path,
+    target_repo_id: str,
+    orchestrator: str,
+    prompt: str,
+    *,
+    resume_pending: bool,
+) -> tuple[pathlib.Path, str] | None:
+    """新規dotfilesセッション用worktreeを用意して実行先とpromptを返す。"""
+    if resume_pending or target_repo_id != _DOTFILES_REPO_ID:
+        return local_path, prompt
+    # `--worktree`は使わない。CLIのworktree隔離ガードが、gitへの言及を問わず
+    # ANSI-Cクォート・制御構造・コマンド置換など18種のシェル構文を拒否するため。
+    prepared = _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+    if prepared is None:
+        return None
+    return prepared, _build_process_loop_prompt(prepared, target_repo_id, orchestrator)
+
+
+def _run_process_session(
+    args: argparse.Namespace,
+    session_path: pathlib.Path,
+    session_prompt: str,
+    env: dict[str, str],
+    *,
+    resume_pending: bool,
+    dotfiles_root: pathlib.Path | None,
+    mise_refresh_enabled: bool,
+) -> bool:
+    """子セッションを1回実行し、update-dotfilesの成功有無を返す。"""
+    session_argv, hook_debug_log = _build_session_argv(
+        args,
+        session_prompt,
+        env,
+        resume_pending=resume_pending,
+    )
+    if hook_debug_log is not None:
+        print(f"Claude hook診断ログ: {hook_debug_log}")
+    _process_loop_log.append("session_start")
+    session_started_at = time.monotonic()
+    result = subprocess.run(
+        session_argv,
+        check=False,
+        env=_session_env(env, args.orchestrator),
+        cwd=session_path,
+        creationflags=_session_creation_flags(args.orchestrator),
+    )
+    _console_title.set_console_title("atk mq process-loop")
+    _process_loop_log.append(
+        "session_end",
+        elapsed_sec=round(time.monotonic() - session_started_at, 3),
+        returncode=result.returncode,
+    )
+    if not _is_normal_session_exit(args.orchestrator, result.returncode):
+        print(f"{args.orchestrator}がexit code {result.returncode}で異常終了しました。", file=sys.stderr)
+        sys.exit(result.returncode)
+    if args.no_update:
+        return False
+    executable = _resolve_executable("update-dotfiles")
+    if executable is None:
+        return False
+    print("update-dotfilesを実行してprocess-loopを再起動します。")
+    update_result = subprocess.run([executable, "--force"], check=False, env=env)
+    _console_title.set_console_title("atk mq process-loop")
+    update_succeeded = update_result.returncode == 0
+    _restart_process_loop(
+        sys.argv,
+        dotfiles_root,
+        resume_consumed=True,
+        mise_refreshed=mise_refresh_enabled and update_succeeded,
+    )
+    return update_succeeded
+
+
+def _check_process_loop_alerts(
+    args: argparse.Namespace,
+    private_notes: pathlib.Path,
+    target_repo_id: str,
+    local_path: pathlib.Path,
+    last_alert_check: float | None,
+) -> tuple[float | None, int]:
+    """確認間隔を満たす場合だけアラートを収集し、確認時刻と投入件数を返す。"""
+    if args.no_alerts:
+        return last_alert_check, 0
+    monotonic_now = time.monotonic()
+    if last_alert_check is not None and monotonic_now - last_alert_check < args.alert_interval:
+        return last_alert_check, 0
+    try:
+        submitted = _alerts.check_and_submit_alerts(
+            private_notes,
+            target_repo_id,
+            local_path,
+            forge=args.alert_forge,
+            now=datetime.datetime.now(),
+        )
+    except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
+        print(f"警告: アラート確認処理に失敗しました: {exc}", file=sys.stderr)
+        submitted = 0
+    _process_loop_log.append("alert_check", submitted=submitted)
+    return monotonic_now, submitted
+
+
+def _restore_process_loop_env(previous_values: dict[str, str | None]) -> None:
+    """process-loop識別環境変数を呼び出し前の状態へ戻す。"""
+    for key, previous_value in previous_values.items():
+        if previous_value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous_value
+
+
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: 選択した対話セッションと待機ループを常駐で繰り返す。
 
@@ -748,92 +863,45 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     if count > 0:
                         refresh_before_session = False
                         print(f"{count}件のfeedback/回答済みTBDを検知。{args.orchestrator}へ委譲します。")
-                        _process_loop_log.append("session_start")
-                        session_started_at = time.monotonic()
-                        session_path = local_path
-                        session_prompt = prompt
                         current_resume_pending = resume_pending
                         if current_resume_pending:
                             resume_pending = False
-                        else:
-                            if target_repo_id == _DOTFILES_REPO_ID:
-                                # `--worktree`は使わない。CLIのworktree隔離ガードが、gitへの言及を問わず
-                                # ANSI-Cクォート・制御構造・コマンド置換など18種のシェル構文を拒否するため。
-                                # 自前でworktreeを作成してcwdへ渡し、規範が推奨する実行形式を維持する。
-                                prepared = _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
-                                if prepared is None:
-                                    sys.exit(1)
-                                session_path = prepared
-                                session_prompt = _build_process_loop_prompt(
-                                    session_path,
-                                    target_repo_id,
-                                    args.orchestrator,
-                                )
-                        session_argv, hook_debug_log = _build_session_argv(
+                        prepared_target = _prepare_session_target(
+                            local_path,
+                            target_repo_id,
+                            args.orchestrator,
+                            prompt,
+                            resume_pending=current_resume_pending,
+                        )
+                        if prepared_target is None:
+                            print("worktree準備を再試行するまで変更検知を待機します。")
+                            _wait_for_changes(private_notes, target_repo_id)
+                            refresh_before_session = True
+                            continue
+                        session_path, session_prompt = prepared_target
+                        update_succeeded = _run_process_session(
                             args,
+                            session_path,
                             session_prompt,
                             env,
                             resume_pending=current_resume_pending,
+                            dotfiles_root=dotfiles_root,
+                            mise_refresh_enabled=mise_refresh_root is not None,
                         )
-                        if hook_debug_log is not None:
-                            print(f"Claude hook診断ログ: {hook_debug_log}")
-                        result = subprocess.run(
-                            session_argv,
-                            check=False,
-                            env=_session_env(env, args.orchestrator),
-                            cwd=session_path,
-                            creationflags=_session_creation_flags(args.orchestrator),
-                        )
-                        _console_title.set_console_title("atk mq process-loop")
-                        _process_loop_log.append(
-                            "session_end",
-                            elapsed_sec=round(time.monotonic() - session_started_at, 3),
-                            returncode=result.returncode,
-                        )
-                        if not _is_normal_session_exit(args.orchestrator, result.returncode):
-                            print(
-                                f"{args.orchestrator}がexit code {result.returncode}で異常終了しました。",
-                                file=sys.stderr,
-                            )
-                            sys.exit(result.returncode)
-                        if not args.no_update:
-                            executable = _resolve_executable("update-dotfiles")
-                            if executable is not None:
-                                print("update-dotfilesを実行してprocess-loopを再起動します。")
-                                update_result = subprocess.run([executable, "--force"], check=False, env=env)
-                                _console_title.set_console_title("atk mq process-loop")
-                                update_succeeded = update_result.returncode == 0
-                                if update_succeeded and mise_refresh_root is not None:
-                                    mise_refreshed_at = time.monotonic()
-                                _restart_process_loop(
-                                    sys.argv,
-                                    dotfiles_root,
-                                    resume_consumed=True,
-                                    mise_refreshed=mise_refresh_root is not None and update_succeeded,
-                                )
-                            # 更新を実行できない場合は再読込すべき新しいコードが無いため再起動せず、
-                            # 反復を継続する。他プロセスによる更新は待機ループのハッシュ比較が検知する。
+                        if update_succeeded and mise_refresh_root is not None:
+                            mise_refreshed_at = time.monotonic()
                         continue
-                    if not args.no_alerts:
-                        monotonic_now = time.monotonic()
-                        if last_alert_check is None or monotonic_now - last_alert_check >= args.alert_interval:
-                            last_alert_check = monotonic_now
-                            try:
-                                submitted = _alerts.check_and_submit_alerts(
-                                    private_notes,
-                                    target_repo_id,
-                                    local_path,
-                                    forge=args.alert_forge,
-                                    now=datetime.datetime.now(),
-                                )
-                            except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
-                                print(f"警告: アラート確認処理に失敗しました: {exc}", file=sys.stderr)
-                                submitted = 0
-                            _process_loop_log.append("alert_check", submitted=submitted)
-                            if submitted > 0:
-                                print(f"アラート監視により{submitted}件のfeedbackを投入しました。")
-                                refresh_before_session = True
-                                continue
+                    last_alert_check, submitted = _check_process_loop_alerts(
+                        args,
+                        private_notes,
+                        target_repo_id,
+                        local_path,
+                        last_alert_check,
+                    )
+                    if submitted > 0:
+                        print(f"アラート監視により{submitted}件のfeedbackを投入しました。")
+                        refresh_before_session = True
+                        continue
                     print("0件のため変更検知を待機します。")
                     changed = _wait_for_changes(private_notes, target_repo_id)
                     refresh_before_session = True
@@ -856,8 +924,4 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
             except KeyboardInterrupt:
                 print("Ctrl+Cを検知しました。常駐モードを終了します。")
         finally:
-            for key, previous_value in previous_env_values.items():
-                if previous_value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = previous_value
+            _restore_process_loop_env(previous_env_values)
