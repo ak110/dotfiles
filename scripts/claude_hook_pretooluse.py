@@ -11,6 +11,7 @@
 3. 個人用/ローカル専用ファイル言及検出（warn、非ブロック）
 4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
+6. コーディングエージェント向け文書の編集前における参照文書の未読警告（warn、非ブロック）
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
@@ -37,6 +38,7 @@ sys.path.insert(
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_format import is_agent_doc_target_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -99,6 +101,9 @@ def main(payload_text: str) -> int:
     skill_warning = _agent_toolkit_edit_skill_warning(tool_name, file_path, session_id, dotfiles_root)
     if skill_warning is not None:
         warnings.append(skill_warning)
+    reference_docs_warning = _reference_docs_warning(tool_name, file_path, session_id, dotfiles_root)
+    if reference_docs_warning is not None:
+        warnings.append(reference_docs_warning)
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
         # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
@@ -416,6 +421,105 @@ def _agent_toolkit_edit_skill_warning(
         " Invoke the skill to load bump policy, 200-line guideline,"
         " and editing workflow before proceeding."
     )
+
+
+# --- コーディングエージェント向け文書の参照警告 check (warn) ---
+
+_REFERENCE_DOCS: tuple[pathlib.PurePosixPath, ...] = (
+    pathlib.PurePosixPath("docs/development/concepts.md"),
+    pathlib.PurePosixPath("docs/development/incidents.md"),
+)
+
+
+def _reference_docs_warning(
+    tool_name: str,
+    file_path: str,
+    session_id: str,
+    dotfiles_root: pathlib.Path,
+) -> str | None:
+    """同じdotfilesチェックアウトにある参照文書の未読警告を返す。"""
+    if tool_name not in {"Write", "Edit", "MultiEdit"} or not session_id:
+        return None
+    if not is_agent_doc_target_file(file_path):
+        return None
+    checkout_root = _find_git_checkout_root(file_path)
+    if checkout_root is None or not _is_dotfiles_checkout(checkout_root, dotfiles_root):
+        return None
+
+    expected = {
+        str((checkout_root / pathlib.Path(*relative.parts)).resolve(strict=False)): relative.as_posix()
+        for relative in _REFERENCE_DOCS
+    }
+    state = read_state(session_id)
+    recorded_raw = state.get("dotfiles_reference_docs_read", [])
+    recorded = {item for item in recorded_raw if isinstance(item, str)} if isinstance(recorded_raw, list) else set()
+    missing = [relative for absolute, relative in expected.items() if absolute not in recorded]
+    if not missing:
+        return None
+    paths = ", ".join(f"`{path}`" for path in missing)
+    return (
+        f"read {paths} in this checkout before editing coding-agent documentation."
+        " Continue the edit after using Read on the missing reference documents."
+    )
+
+
+def _find_git_checkout_root(file_path: str) -> pathlib.Path | None:
+    """絶対パスの祖先から`.git`を持つ最寄りのチェックアウトルートを返す。"""
+    if not file_path:
+        return None
+    try:
+        target = pathlib.Path(file_path).expanduser()
+        if not target.is_absolute():
+            return None
+        target = target.resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    current = target if target.is_dir() else target.parent
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _resolve_git_dir(checkout_root: pathlib.Path) -> pathlib.Path | None:
+    """チェックアウトの`.git`ディレクトリ又はgitfileの参照先を返す。"""
+    marker = checkout_root / ".git"
+    try:
+        if marker.is_dir():
+            return marker.resolve(strict=False)
+        if not marker.is_file():
+            return None
+        line = marker.read_text(encoding="utf-8").splitlines()[0]
+    except (IndexError, OSError, UnicodeError):
+        return None
+    prefix = "gitdir:"
+    if not line.lower().startswith(prefix):
+        return None
+    raw = pathlib.Path(line[len(prefix) :].strip())
+    if not raw.is_absolute():
+        raw = checkout_root / raw
+    return raw.resolve(strict=False)
+
+
+def _is_dotfiles_checkout(checkout_root: pathlib.Path, dotfiles_root: pathlib.Path) -> bool:
+    """チェックアウトがdotfiles本体又はそのworktreeなら真を返す。"""
+    dotfiles_git_dir = _resolve_git_dir(dotfiles_root)
+    checkout_git_dir = _resolve_git_dir(checkout_root)
+    if dotfiles_git_dir is None or checkout_git_dir is None:
+        return False
+    dotfiles_marker = dotfiles_root / ".git"
+    common_git_dir = (
+        dotfiles_git_dir.parent.parent
+        if dotfiles_marker.is_file() and dotfiles_git_dir.parent.name == "worktrees"
+        else dotfiles_git_dir
+    )
+    if checkout_git_dir == common_git_dir:
+        return True
+    try:
+        relative = checkout_git_dir.relative_to(common_git_dir / "worktrees")
+    except ValueError:
+        return False
+    return bool(relative.parts)
 
 
 def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:

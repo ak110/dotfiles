@@ -33,6 +33,9 @@
   Codexの状態が期限回収された場合は、transcript内の手動起動または起動確定標識から起動済み判定を復元する
 - `agent_toolkit_edit_skill_invoked`: dotfilesリポジトリ固有の
   `scripts/claude_hook_pretooluse.py`などがagent-toolkit-edit起動を記録し、編集警告の抑制に使う
+- `dotfiles_reference_docs_read`: dotfilesの個人PostToolUseフックが参照文書へのReadを解決済み絶対パスの一覧として記録し、
+  個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
+  セッション終了まで保持し、リセット経路は設けない
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
   `delegation`を起動した場合にPostToolUseが真化する。

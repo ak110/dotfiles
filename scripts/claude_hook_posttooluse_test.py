@@ -167,6 +167,51 @@ class TestAgentToolkitEditSkillRecording:
         assert state.get("other_flag") is True
 
 
+class TestReferenceDocsReadRecording:
+    """参照文書へのReadを解決済み絶対パスで記録する。"""
+
+    def test_records_both_docs_and_deduplicates(self, tmp_path: pathlib.Path):
+        env = _state_env(tmp_path)
+        sid = "reference-docs"
+        docs_root = pathlib.Path(__file__).resolve().parent.parent / "docs" / "development"
+        concepts = docs_root / "concepts.md"
+        incidents = docs_root / "incidents.md"
+        for path in (concepts, concepts, incidents):
+            result = _run(
+                {"tool_name": "Read", "tool_input": {"file_path": str(path), "limit": 1}, "session_id": sid},
+                env=env,
+            )
+            assert result.returncode == 0
+        assert _read_state(tmp_path, sid)["dotfiles_reference_docs_read"] == [
+            str(concepts.resolve()),
+            str(incidents.resolve()),
+        ]
+
+    def test_records_matching_path_outside_repository_root(self, tmp_path: pathlib.Path):
+        env = _state_env(tmp_path)
+        sid = "reference-worktree"
+        path = tmp_path / "checkout" / "docs" / "development" / "concepts.md"
+        result = _run(
+            {"tool_name": "Read", "tool_input": {"file_path": str(path), "offset": 10}, "session_id": sid},
+            env=env,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid)["dotfiles_reference_docs_read"] == [str(path.resolve())]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"tool_name": "Read", "tool_input": {"file_path": "/tmp/docs/development/other.md"}, "session_id": "x"},
+            {"tool_name": "Bash", "tool_input": {"file_path": "/tmp/docs/development/concepts.md"}, "session_id": "x"},
+            {"tool_name": "Read", "tool_input": {"file_path": "/tmp/docs/development/concepts.md"}, "session_id": ""},
+        ],
+    )
+    def test_ignores_non_target_conditions(self, tmp_path: pathlib.Path, payload: dict):
+        result = _run(payload, env=_state_env(tmp_path))
+        assert result.returncode == 0
+        assert not list(tmp_path.glob("claude-agent-toolkit-*.json"))
+
+
 class TestAutonomousExitSkillRecording:
     """`agent-toolkit:exit-session`スキル呼び出しを`autonomous_exit_invoked`へ記録する。"""
 

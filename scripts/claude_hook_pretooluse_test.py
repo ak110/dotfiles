@@ -833,6 +833,119 @@ class TestAgentToolkitEditSkillWarning:
         assert "agent-toolkit-edit" in _get_additional_context(result)
 
 
+class TestReferenceDocsWarning:
+    """参照文書のReadを同じdotfilesチェックアウトの編集前に促す。"""
+
+    @staticmethod
+    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {**os.environ, "TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    @staticmethod
+    def _write_state(tmp_path: pathlib.Path, session_id: str, paths: list[pathlib.Path]) -> None:
+        state_path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        state_path.write_text(
+            json.dumps({"dotfiles_reference_docs_read": [str(path.resolve()) for path in paths]}),
+            encoding="utf-8",
+        )
+
+    def test_warns_when_reference_docs_are_unread(self, tmp_path: pathlib.Path):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "content": "harmless"},
+                "session_id": "reference-unread",
+            },
+            env=self._state_env(tmp_path),
+        )
+        message = _get_additional_context(result)
+        assert result.returncode == 0
+        assert "docs/development/concepts.md" in message
+        assert "docs/development/incidents.md" in message
+
+    def test_silent_after_both_docs_are_read_in_worktree(self, tmp_path: pathlib.Path):
+        sid = "reference-worktree"
+        self._write_state(
+            tmp_path,
+            sid,
+            [
+                _DOTFILES_ROOT / "docs" / "development" / "concepts.md",
+                _DOTFILES_ROOT / "docs" / "development" / "incidents.md",
+            ],
+        )
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "old_string": "a", "new_string": "b"},
+                "session_id": sid,
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "reference documents" not in _get_additional_context(result)
+
+    def test_other_checkout_docs_do_not_suppress_warning(self, tmp_path: pathlib.Path):
+        other = tmp_path / "other"
+        (other / ".git").mkdir(parents=True)
+        sid = "reference-other-checkout"
+        self._write_state(
+            tmp_path,
+            sid,
+            [
+                other / "docs" / "development" / "concepts.md",
+                other / "docs" / "development" / "incidents.md",
+            ],
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "content": "harmless"},
+                "session_id": sid,
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert "reference documents" in _get_additional_context(result)
+
+    def test_non_dotfiles_repository_is_not_targeted(self, tmp_path: pathlib.Path):
+        other = tmp_path / "other"
+        (other / ".git").mkdir(parents=True)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(other / "AGENTS.md"), "content": "harmless"},
+                "session_id": "reference-non-dotfiles",
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "reference documents" not in _get_additional_context(result)
+
+    @pytest.mark.parametrize(
+        ("tool_name", "file_path", "session_id"),
+        [
+            ("Read", _DOTFILES_ROOT / "AGENTS.md", "reference-read-tool"),
+            ("Write", _DOTFILES_ROOT / "README.md", "reference-non-agent-doc"),
+            ("Write", _DOTFILES_ROOT / "AGENTS.md", ""),
+        ],
+    )
+    def test_non_target_conditions_are_silent(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        file_path: pathlib.Path,
+        session_id: str,
+    ):
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": {"file_path": str(file_path), "content": "harmless"},
+                "session_id": session_id,
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "reference documents" not in _get_additional_context(result)
+
+
 class TestGeneralBehavior:
     """共通の振る舞い。"""
 

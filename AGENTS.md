@@ -24,6 +24,8 @@
 - 運用機能の詳細（`sync_generated_files.py`の起動形・tmux自動アタッチ・TBD未回答表示・
   常駐サービス・Windows電源設定・post-applyキャッシュ・chezmoiの命名規則）:
   [docs/development/operations.md](docs/development/operations.md)
+- 過去のフィードバックから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)
+- 再発防止の判断材料となる事故・欠陥: [docs/development/incidents.md](docs/development/incidents.md)
 
 ## 編集時に起動するスキル
 
@@ -42,6 +44,9 @@
   - 記述スタイル・構成・記述量の指針は自作規範を優先する
 - 本リポジトリでは`claude-code-setup:claude-automation-recommender`が推奨する自動化手段の選定を適用対象外とし、
   `agent-toolkit:agent-standards`の振り分け規定と`agent-toolkit-edit`の「フック実装の配置先」に従う
+- コーディングエージェント向け文書を編集する前に、`docs/development/concepts.md`と
+  `docs/development/incidents.md`を読み、確定済みの方針・事故対策との整合を確認する。
+  編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
 
 ## 固有差分
 
