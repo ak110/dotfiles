@@ -55,6 +55,8 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 
 失敗TBDへの回答から再処理する場合は、`atk mq show <元feedback filename> --target-repo=<repo-path>`で
 却下済みの元feedbackを取得する。
+`atk mq show`の出力から表示用見出し（`target_repo`見出しとfilename見出し）とYAML frontmatterを除外し、
+feedback本文を検索対象とする。
 feedback本文を末尾から検索し、最後の`## 処理結果`節が`採否: rejected`、ISO形式の`処理日時`、
 対応する失敗TBD filenameと一致する`メモ`だけを持ち、節後がEOFである場合に限り、その1節だけを除外する。
 元本文中の同名見出しと、いずれかの条件に一致しない末尾節は保持する。

@@ -513,6 +513,10 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "Git操作、3分類及び元項目のplanner再開は行わない",
     ):
         assert phrase in sender
+    save_at = sender.index("失敗TBDを`agent-toolkit:add-feedback`で1件保存")
+    verify_at = sender.index("保存内容を照合してから", save_at)
+    terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", verify_at)
+    assert save_at < verify_at < terminal_at
     for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "waveを失敗"):
         assert phrase in process
     for forbidden in ("結果反映済み項目", "結果部分反映項目", "結果未反映項目", "同一wave非再試行"):
@@ -527,6 +531,8 @@ def test_failed_tbd_reprocessing_preserves_user_headings_and_dependency_order() 
     hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
 
     for phrase in (
+        "表示用見出し",
+        "YAML frontmatter",
         "最後の`## 処理結果`節",
         "`採否: rejected`",
         "ISO形式の`処理日時`",
