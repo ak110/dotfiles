@@ -533,6 +533,7 @@ def test_failed_tbd_reprocessing_preserves_user_headings_and_dependency_order() 
     for phrase in (
         "表示用見出し",
         "YAML frontmatter",
+        "CLI付加の末尾改行",
         "最後の`## 処理結果`節",
         "`採否: rejected`",
         "ISO形式の`処理日時`",
