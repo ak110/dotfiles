@@ -290,6 +290,14 @@ def test_permanence_table_accepts_no_candidate_row() -> None:
     assert not _plan_format.check_plan_structure(content)
 
 
+def test_permanence_table_rejects_no_candidate_row_mixed_with_findings() -> None:
+    """候補なしの行と実在する知見の混在を拒否する。"""
+    row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
+    no_candidate = "| 候補なし | 提示素材と調査結果 | 計画限り | 当該計画固有でない知見が無いため。 |"
+    errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(row, f"{no_candidate}\n{row}"))
+    assert any("`候補なし`の行だけを置く" in error for error in errors), errors
+
+
 def test_permanence_table_accepts_multiple_findings() -> None:
     """恒久化表は知見を複数行で記載できる。"""
     row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"

@@ -763,6 +763,8 @@ def _check_permanence_sections(
                 errors.append(f"通常変更の`### 恒久化`は{list(PLAN_PERMANENCE_TABLE_HEADER)}の4列表を置く")
             else:
                 errors.extend(table_errors)
+                if len(table.rows) != 1 and any(row and "候補なし" in row[0] for row in table.rows):
+                    errors.append("通常変更の`### 恒久化`で`候補なし`を記載する場合は、`候補なし`の行だけを置く")
         elif heading.text == "リファクタリング":
             tables = extract_tables(section)
             if _find_table_with_rows(tables, PLAN_REFACTORING_TABLE_ROWS) is None:
