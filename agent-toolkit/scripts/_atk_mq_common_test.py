@@ -1309,7 +1309,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
     """remote未設定のローカル限定リポジトリではpull・pushをスキップすることを検証する。"""
 
     def test_pull_is_noop_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """マーカー付きディレクトリでは`_pull`が`git pull`を実行しない。"""
+        """マーカー付きディレクトリでは`_pull`がremote同期を実行しない。"""
         (tmp_path / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         calls: list[list[str]] = []
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
