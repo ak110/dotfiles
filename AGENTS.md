@@ -33,6 +33,8 @@
 
 ## 編集時に起動するスキル
 
+本節の`agent-toolkit-edit`・`pytools-edit`・`sync-platform-pair`は、リポジトリ直下の`.claude/skills/`配下にあり、配布対象外である。
+
 - `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時はSkillツールで`agent-toolkit-edit`を呼び出す。
   呼び出し漏れは編集時にPreToolUseフックが警告を返す。
   権限設定の配置・marketplace管理・フック実装の配置先判断・version bump手順・worktree編集時の注意も同スキルへ集約する
