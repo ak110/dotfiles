@@ -31,7 +31,7 @@ MANAGED_ALLOW = [
     "mcp__serena",
     "mcp__plugin_serena_serena",
 ]
-MANAGED_DENY = ["Read(*.key)", "Read(*.crt)"]
+MANAGED_DENY = ["Read(*.key)", "Read(*.crt)", "Read(//**/.credentials.json)"]
 MANAGED = {
     "language": "japanese",
     "permissions": {
@@ -217,8 +217,8 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION" not in data["env"]
 
-    def test_managed_deny_keeps_only_key_and_certificate_protection(self):
-        """配布設定の読取禁止は秘密鍵と証明書だけを保護する。"""
+    def test_managed_deny_protects_key_certificate_and_credentials(self):
+        """配布設定は秘密鍵、証明書及び利用者の認証情報ファイルの読取を禁止する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert data["permissions"]["deny"] == MANAGED_DENY
 
@@ -1132,7 +1132,12 @@ class TestStripRemovedListItems:
         mod.run()
 
         result = json.loads(settings_path.read_text(encoding="utf-8"))
-        assert result["permissions"]["deny"] == ["Read(./.secret)", "Read(*.key)", "Read(*.crt)"]
+        assert result["permissions"]["deny"] == [
+            "Read(./.secret)",
+            "Read(*.key)",
+            "Read(*.crt)",
+            "Read(//**/.credentials.json)",
+        ]
 
 
 class TestStripStaleLabeledListItems:
