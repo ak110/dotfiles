@@ -288,7 +288,7 @@ class TestProductionManagedSettings:
         )
         assert all(
             term in rules["Agent Config Read"]
-            for term in ("`atk config get <キー>`", "副作用", "サブエージェント", "`atk config set`", "許可しない")
+            for term in ("`atk config get <キー>...`", "副作用", "サブエージェント", "`atk config set`", "許可しない")
         )
         assert all(
             term in rules["Delegation Continuation Message"]
