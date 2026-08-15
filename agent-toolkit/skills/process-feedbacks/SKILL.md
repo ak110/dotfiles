@@ -23,15 +23,21 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
    `CLAUDECODE`が設定されている場合は、この一覧のfilenameを本セッションの処理対象として固定する。
    起動goalにCodexオーケストレーターの連続処理と明記されている場合（以下、連続処理モード）は、
    後述のprocess-loop用再取得も適用する
-2. 必要なfilenameだけを1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で取得する
+2. 必要なfilenameだけを1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で確認する。
+   本文の原文正本は表示出力から抽出せず、`atk config show`で解決した`private_notes`配下の保存実体から作成する
 3. `plan_file`を持つfeedbackを計画実装型、それ以外を通常型とする。本文から型を推測しない
 4. 本文の順序条件はreadiness判定前に抽出し、active項目から対象filename自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
 5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
 6. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
-7. 残りのreadyなinbox項目を`atk mq start-processing`でprocessingへ移す。
-   processing項目は実体を確認し、完了済み工程を再実行せず未完了工程から再開する
+7. 残りのreadyなinbox項目は、readiness確定後かつ遷移前の`inbox/<filename>`を原文正本へ保存してから
+   `atk mq start-processing`でprocessingへ移す。
+   遷移後は`start-processing` commitの親snapshotと原文正本を完全一致で照合する。
+   processing項目は現在の保存実体から新しい原文正本を作成し、完了済み工程を再実行せず未完了工程から再開する
 
-`start-processing`が状態競合で拒否した場合は、active一覧と必要な本文を再取得し、readiness判定から再開する。
+`start-processing`が状態競合で拒否した場合は、作成済み原文正本を回収し、active一覧と保存本文を再取得してreadiness判定から再開する。
+遷移中の内容差では親snapshotの保存本文から原文正本を再作成し、JSONの読戻し検収後にplannerを起動する。
+遷移commit又は親snapshotを一意に確認できない場合はplannerを起動しない。
+別セッションのprocessing再開では履歴を探索せず、`start-processing`を再実行しない。
 
 欠落依存、自己依存、循環、不正な`cooldown_until`、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
@@ -45,7 +51,9 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 Claude Codeホストでは、plannerの起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1 waveとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
-本文はメインが`atk mq show`で取得して渡し、plannerは再取得しない。
+メインは`references/feedbacks-planner-reception.md`に従って保存本文を単一の`feedback-source.json`へ格納する。
+plannerへは検収済み原文正本の絶対パスと対象filenameだけを渡し、本文を起動文へ複製しない。
+planner、調査担当、author及びreviewerは原文正本を変更せず、queueを再取得しない。
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
 readyな計画実装型laneは通常型waveの計画工程を待たず、利用可能なwriter枠で実装できる。
 
@@ -62,6 +70,11 @@ readyな計画実装型laneは通常型waveの計画工程を待たず、利用�
 
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
+
+planner失敗又は`needs_escalation`を現在のセッションで再試行しない場合は、本文、frontmatter、queue状態を変更しない。
+全対象が`processing`に残ることを照合し、全下流主体の終了後に原文正本を回収して失敗として返す。
+正常な後始末にも振り返りにも進まない。
+次のセッションは再開時点の`processing/<filename>`から新しい原文正本を作成し、未完了のplanner工程を再開する。
 
 回答済みTBDの処理は`references/hold-with-tbd-inject.md`を正本とする。
 

@@ -20,7 +20,8 @@ user-invocable: false
 
 ## 入力
 
-- filename昇順のfeedback filename一覧と、呼び出し元が`atk mq show`で取得した本文一覧
+- 呼び出し元が検収した`feedback-source.json`の絶対パスとfilename昇順の対象一覧
+- 人間由来の利用者指示がある場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実
 - 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス
 - `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`review-checklists.md`の絶対パス
 - `agent-toolkit:plan-mode`などのauthor skillの絶対パス
@@ -28,18 +29,23 @@ user-invocable: false
 
 必須入力が欠ける場合は推測せず`needs_escalation`で返す。
 `atk mq show`を含むqueue操作、push、フィードバック投入、worktreeの作成と回収は行わない。
+原文正本は標準JSON parserで読み、変更しない。
 
 ## 実行
 
 1. 調査スレッドの起動直前に`atk config get pick_feedbacks_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
-2. 各feedbackごとの調査スレッドへ`explore-template.md`の絶対パスをtaskとして渡し、利用可能な実行枠内で並列に要求ごとの区分、根拠、未検証事項を受領する。
+2. 各feedbackごとの調査スレッドへ`explore-template.md`の絶対パス、同じ原文正本の絶対パス及び
+   担当filenameだけを渡す。本文を起動文へ複製せず、利用可能な実行枠内で並列に要求ごとの区分、根拠、未検証事項を受領する。
 3. 調査結果を`decision-format.md`へ照合して項目ごとの採否を確定する。
    不採用、保留、TBD候補は計画工程へ進めず返す。
    実装変更がない終端工程専用項目は、計画を作成せず、採否、終端工程一覧、認可根拠の逐語引用及び計画なしを返す。
 4. 採用項目がある場合は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
-   起草スレッドへfilename一覧と本文一覧、項目ごとの調査結果、確定した採否と利用者合意、対象worktree、プロジェクト規範、
-   計画ファイルの絶対パス、`agent-toolkit:plan-mode`などのauthor skill、必要なtask referenceを渡す。
+   起草スレッドへ同じ原文正本の絶対パスと採用項目のfilename一覧を渡す。
+   項目ごとの調査結果、確定した採否、利用者合意と元の利用者指示の出所情報も渡す。
+   対象worktree、プロジェクト規範、計画ファイルの絶対パス、author skillと必要なtask referenceも渡す。
+   本文を起動文へ複製しない。
+   source-backedの各提示素材フェンスの直後へ`原文正本ID:`を書き、対象feedback filenameをバッククォートで囲んで記録させる。
    queueの状態と他laneの情報は渡さない。
    起草スレッドをplannerのauthorとし、1つの統合計画ファイルの書込み、機械検査、指摘の採否、6列表統合、計画修正を所有させる。
    採用項目内で既存の許可条件と明文化済み方針により確定できる利用者判断事項は、
@@ -58,6 +64,7 @@ user-invocable: false
 
 調査とreviewerは対象worktreeを読み取り専用とする。
 authorは指定された計画ファイル保存先だけを書込可能とする。
+同一waveの調査、起草、初回レビュー、修正及び再レビューでは同じ原文正本を読み取り専用で使用する。
 
 ## 出力
 
@@ -73,5 +80,7 @@ user_decisions:
 blockers:
 - <未完了事項。完了時は「なし」>
 ```
+
+完了報告には原文正本の絶対パス、採用・却下・保留別のfilename及び失敗分類を含める。
 
 計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない。

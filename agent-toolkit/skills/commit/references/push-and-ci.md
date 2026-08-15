@@ -33,9 +33,8 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    - commitへpeelできないrefではbaseline作成が失敗するためpushしない
    - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
 6. 読み込んだ本referenceの絶対パスからplugin rootを確定する。
-   確定した各`(destination ref, source ref)`について、push前に
-   `uv run --no-project --script <plugin-root>/scripts/wait_ci.py`を`--write-baseline`付きで実行し、
-   baseline JSONを保存する。
+   確定した各`(destination ref, source ref)`について、push前に`uv run --no-project --script <plugin-root>/scripts/wait_ci.py`を
+   `--write-baseline <手順4で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。
    `wait_ci.py`は確定した`<plugin-root>/scripts/`にあり、
    `<plugin-root>/skills/commit/scripts/`には無い
 

@@ -25,6 +25,7 @@ _COORDINATION_PREFLIGHT = _ADD_FEEDBACK.parent / "references" / "coordination-pr
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_IMPL_FEEDBACK_FLOW = _PROCESS_FEEDBACKS.parent / "references" / "plan-impl-feedback-flow.md"
 _FEEDBACKS_PLANNER_RECEPTION = _PROCESS_FEEDBACKS.parent / "references" / "feedbacks-planner-reception.md"
+_FEEDBACK_EXPLORE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "explore-template.md"
 _HOLD_WITH_TBD_INJECT = _PROCESS_FEEDBACKS.parent / "references" / "hold-with-tbd-inject.md"
 _MERGE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "merge-task.md"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
@@ -267,7 +268,9 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "`## 提示素材`の逐語原文、元のユーザー指示" in delegation
+    assert "原文正本の絶対パス、対象filename及び計画内の`原文正本ID`対応" in delegation
+    assert "原文正本を受領しない直接起動経路では、`## 提示素材`の逐語原文" in delegation
+    assert "元のユーザー指示は経路と独立した入力" in delegation
     assert "項目別の維持・修正・撤去の判定と根拠" in delegation
     assert "要約だけを一次入力にせず" in delegation
     assert "今回のレビュー種別を全レビュー共通の入力として渡す" in delegation
@@ -276,7 +279,7 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "再レビューでは既知でない情報だけを渡す" in delegation
     assert "同一threadでは「再レビューを実施せよ」に相当する指示だけを送る" in delegation
     assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
-    assert "新規起動では初回と同じ入力パス集合と検収済み状態を渡す" in delegation
+    assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
     assert "差分要約と追加範囲は計画本文を正本" in delegation
     assert "起動文へ再記述しない" in delegation
     assert "reviewerの新規起動又は継続接続の直前に`atk config get plan_review_model`" in delegation
@@ -426,7 +429,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "plan-review-task.md",
         "指摘を加工せずauthorへ全件配送",
         "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
-        "起草スレッドへfilename一覧と本文一覧、項目ごとの調査結果、確定した採否と利用者合意",
+        "起草スレッドへ同じ原文正本の絶対パスと採用項目のfilename一覧",
+        "本文を起動文へ複製しない",
         "各feedbackごとの調査スレッド",
         "queueの状態と他laneの情報は渡さない",
         "authorへの新規起動又は継続接続の直前は`plan_model`",
@@ -435,6 +439,60 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "計画レビュースレッドの起動直前に`atk config get plan_review_model`",
     ):
         assert phrase in text
+
+
+def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
+    """原文正本の生成、読取専用の受渡し、照合及び回収を一続きで固定する。"""
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    for phrase in (
+        "atk managed-temp create --prefix feedbacks-planner-source",
+        "feedback-source.json",
+        "標準JSON serializer",
+        "標準JSON parser",
+        "property集合とfilename集合の一致",
+        "末尾改行の有無",
+        "期限切れ`cooldown_until`や非正規化YAML frontmatter",
+        "JSONのescapeは保存表現",
+        "原文正本のwriterはメインだけ",
+        "同一waveの調査、起草、レビュー及び同一セッション内の再試行",
+        "採用、却下、利用者判断待ち、外部条件待ちが混在するwave",
+        "atk managed-temp cleanup --path <検収済み絶対パス>",
+        "feedback本文、frontmatter、queue状態を変更しない",
+        "全対象が`processing`に残る",
+        "想定した状態のディレクトリにない場合は原文正本を作成しない",
+        "遷移後に`atk mq edit`などで本文を変更した場合",
+        "共有領域の一覧から対象を推測して回収しない",
+    ):
+        assert phrase in sender
+    for phrase in (
+        "readiness確定後かつ遷移前の`inbox/<filename>`",
+        "`start-processing` commitの親snapshot",
+        "processing項目は現在の保存実体から新しい原文正本",
+        "別セッションのprocessing再開では履歴を探索せず",
+        "正常な後始末にも振り返りにも進まない",
+    ):
+        assert phrase in process
+    for document in (planner, explore, plan_mode, delegation, review):
+        assert "原文正本" in document
+    for document in (planner, explore, plan_mode, review):
+        assert "標準JSON parser" in document
+    assert "本文を起動文へ複製しない" in planner
+    assert "queueを参照しない" in explore
+    assert "`原文正本ID:`を書き、対象feedback filenameをバッククォートで囲んで記録" in plan_mode
+    assert "原文正本の絶対パス、対象filename及び計画内の`原文正本ID`対応" in delegation
+    assert "逐語不一致の確定指摘には両者の差分を含め" in review
+    assert "差分を示せない候補は指摘しない" in review
+    assert "常駐自動起動の場合は非該当と起動事実" in planner
+    assert "常駐自動起動の場合は非該当と起動事実" in delegation
+    assert "原文正本を受領しない直接起動経路" in plan_mode
+    assert "原文正本を受領しない直接起動経路" in delegation
 
 
 def test_session_review_advisor_uses_default_reasoning_effort() -> None:
@@ -456,7 +514,8 @@ def test_human_source_contract_covers_direct_and_delegated_inputs() -> None:
     assert "出所表示のない起動文を人間の利用者による発話として扱わない" in delegation
     assert "直接対話では、実行環境上で実際の利用者メッセージ" in plan_mode
     assert "受信した起動文全体を機械的に転記せず" in plan_mode
-    assert "直接受領した実際の利用者メッセージ又はsenderが人間由来" in plan_review_delegation
+    assert "人間由来の場合は出所と引用範囲を付けた逐語文" in plan_review_delegation
+    assert "直接起動経路では、直接受領した実際の利用者メッセージ" in plan_review_delegation
     assert "authorの起動文、feedback本文、調査資料を利用者発言へ分類しておらず" in plan_review_task
 
 
@@ -514,7 +573,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "各reviewerの新規起動又は継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合writerのモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
     assert "統合writerの各新規起動又は継続接続の直前に`atk config get merge_model`" in flow
-    assert "`atk mq show`で取得して渡し、plannerは再取得しない" in process_feedbacks
+    assert "保存本文を単一の`feedback-source.json`へ格納" in process_feedbacks
+    assert "queueを再取得しない" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文をplannerの完了報告へ要求しない" in reception
     assert "plannerがauthorへ元の提示素材、確定した採否と合意、対象、規範、author用taskを欠落なく渡せる形" in reception
@@ -1011,7 +1071,7 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
     assert "吸収元filename" in plan_and_add
     assert "processing項目を変更しない" in plan_and_add
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in process
-    assert "状態競合で拒否した場合は、active一覧と必要な本文を再取得" in process
+    assert "状態競合で拒否した場合は、作成済み原文正本を回収し、active一覧と保存本文を再取得" in process
     assert "## フィードバック投入" not in process
     for removed_command in (
         "reserve-inbox",
@@ -1231,7 +1291,8 @@ def test_push_ci_explicitly_selects_forge_for_baseline_and_monitoring() -> None:
     """短縮repository指定でもbaseline作成と監視のforgeを確定する。"""
     push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
 
-    assert "`--write-baseline`付きで実行" in push_and_ci
+    assert "`--write-baseline <手順4で保持した領域の絶対パス>/" in push_and_ci
+    assert "<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行" in push_and_ci
     assert "`--baseline`付きで実行" in push_and_ci
     assert "`--repo`、`--forge`、`--ref`、`--source-ref`を省略しない" in push_and_ci
     assert "`--forge <github|gitlab>`へ明示" in push_and_ci
