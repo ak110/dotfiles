@@ -611,6 +611,11 @@ def test_feedback_source_nonretry_contract_resumes_only_items_without_saved_resu
     recover_at = sender.index("未完了操作だけを実行", partial_at)
     cleanup_at = sender.index("1回だけ回収", recover_at)
     assert failure_at < stop_at < classify_at < partial_at < recover_at < cleanup_at
+    retry_hold_at = sender.index("同一waveを再試行する場合は回収しない")
+    nonretry_exclusion_at = sender.index("同一waveを再試行しない場合には適用せず", retry_hold_at)
+    nonretry_route_at = sender.index("後述の同一wave非再試行経路の回収条件に従う", nonretry_exclusion_at)
+    assert retry_hold_at < nonretry_exclusion_at < nonretry_route_at < failure_at < cleanup_at
+    assert "同一waveを再試行する場合や未確定項目がある場合は回収しない" not in sender
     assert "全対象が`processing`に残ること" not in sender
 
     for phrase in (
@@ -757,6 +762,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     for phrase in (
         "統合worktree",
         "最終HEADの完全OID",
+        "統合対応表の絶対パス",
         "統合対応表に含まれる全計画の絶対パス",
         "統合スレッドの検証結果",
         "統合用管理対象領域の絶対パス",
@@ -767,6 +773,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     assert "選択していないモードの入力を要求せず" in input_contract
     assert "モード指定`通常の実装モード`" in caller
     assert "モード指定`統合後レビュー調整モード`" in flow
+    assert "統合対応表の絶対パス" in flow
 
 
 def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
@@ -801,6 +808,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
 
     assert "最初のwriter起動前にlane worktreeのclean状態とHEADの完全OIDを検収" in executor
     assert "統合worktree作成時の完全OID" in input_contract
+    assert "統合対応表の絶対パス" in input_contract
     for phrase in (
         "`対応方針`を確定する前",
         "`## 変更履歴`と現在状態を定める後続節の整合",
@@ -830,6 +838,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     assert plan_check_at < authorization_at < policy_at < writer_handoff_at
 
     assert "統合writerへ渡した作成時HEADの完全OIDと同じ文字列" in flow
+    assert "統合対応表の絶対パス" in flow
     assert "統合後HEADはレビュー対象として渡す" in flow
     assert "統合writer以降の差分を公開契約の認可基準へ含めない" in flow
     assert "ベースコミットから現行`HEAD`までの累積差分" in common_review
