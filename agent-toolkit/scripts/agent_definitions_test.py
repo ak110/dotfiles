@@ -463,13 +463,21 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "JSONのescapeは保存表現",
         "原文正本のwriterはメインだけ",
         "対象保存本文の読取りに全件成功した後",
-        "JSONの書込み失敗、読戻し失敗、property集合の不一致又はvalueの不一致",
+        "領域作成後に正本の新規利用や再利用を継続できない状態",
+        "JSONの書込みや読戻しの失敗、property集合やvalueの不一致",
+        "`start-processing`の状態競合",
+        "遷移中の内容差に対する再作成の失敗",
+        "遷移commitか親snapshotを一意に確認できない状態",
+        "比較基準の喪失",
+        "正確な絶対パス、所有主体、marker、内容及び外部状態を読み取り専用で照合",
         "atk managed-temp cleanup --path <作成時に得た絶対パス>",
-        "回収成功後にだけactive一覧と保存本文を再取得",
+        "回収成功後は、未確定項目の有無だけで次の処理を分ける",
+        "検収済み正本と比較基準を再作成し、同一waveを継続する",
+        "全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない",
+        "対象filenameの存在、queue状態、依存関係及び下流主体の稼働状態に予定外の変化がないこと",
+        "検収後の`start-processing`もここに含む",
         "比較基準だけを失った場合",
-        "原文正本又はqueueの現在内容から比較基準を再構築しない",
-        "正確な絶対パス、所有主体、全下流主体の終了及び作成時から外部状態が変化していないこと",
-        "回収成功後にactive一覧と現在の保存本文を再取得し、新しいwaveの正本を作成",
+        "既存の正本から比較基準を再構築せず、作成後失敗の回収手順を適用する",
         "作成時か直近の再開時に検収した比較基準",
         "各valueとメインが作成時か直近の再開時から保持する比較基準の論理文字列が完全一致",
         "原文正本が検収後に改変されていない自己同一性の確認",
@@ -488,10 +496,14 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     create_at = sender.index("atk managed-temp create --prefix feedbacks-planner-source")
     write_at = sender.index("`feedback-source.json`へ単一のJSON objectを書く")
     assert read_all_at < create_at < write_at
-    failed_validation_at = sender.index("領域作成後にJSONの書込み失敗")
-    failed_validation_cleanup_at = sender.index("atk managed-temp cleanup --path <作成時に得た絶対パス>", failed_validation_at)
-    retry_at = sender.index("回収成功後にだけactive一覧と保存本文を再取得", failed_validation_cleanup_at)
-    assert failed_validation_at < failed_validation_cleanup_at < retry_at
+    post_creation_failure_at = sender.index("領域作成後に正本の新規利用や再利用を継続できない状態")
+    failure_cleanup_at = sender.index("atk managed-temp cleanup --path <作成時に得た絶対パス>", post_creation_failure_at)
+    retry_at = sender.index("検収済み正本と比較基準を再作成し、同一waveを継続する", failure_cleanup_at)
+    terminal_at = sender.index("全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない", retry_at)
+    assert write_at < post_creation_failure_at < failure_cleanup_at < retry_at < terminal_at
+    assert "状態競合では作成後失敗の回収手順を適用する" in sender
+    assert "再作成時の書込みや検収に失敗した場合も、作成後失敗の回収手順を適用する" in sender
+    assert "遷移commitと親snapshotのいずれかを一意に確認できない場合も、作成後失敗の回収手順を適用する" in sender
     for phrase in (
         "readiness確定後かつ遷移前の`inbox/<filename>`",
         "`start-processing` commitの親snapshot",
