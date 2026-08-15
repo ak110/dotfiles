@@ -470,9 +470,15 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "遷移commitか親snapshotを一意に確認できない状態",
         "比較基準の喪失",
         "正確な絶対パス、所有主体、marker、内容及び外部状態を読み取り専用で照合",
+        "いずれかが不一致の場合や確認できない場合はcleanupを実行せず、正本を保持する",
+        "plannerを新規起動又は再開せず",
+        "全照合条件の一致を確認できた場合だけ`atk managed-temp cleanup --path <作成時に得た絶対パス>`",
         "atk managed-temp cleanup --path <作成時に得た絶対パス>",
-        "回収成功後は、未確定項目の有無だけで次の処理を分ける",
+        "回収成功後は、全項目の結果と下流への受渡し状態で次の処理を分ける",
+        "当該正本をまだ下流へ渡していない場合",
         "検収済み正本と比較基準を再作成し、同一waveを継続する",
+        "当該正本を既に下流へ渡している場合は同一waveで正本を再作成しない",
+        "`## 受領`末尾の同一wave非再試行経路を適用する",
         "全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない",
         "対象filenameの存在、queue状態、依存関係及び下流主体の稼働状態に予定外の変化がないこと",
         "検収後の`start-processing`もここに含む",
@@ -485,8 +491,14 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "同一waveの調査、起草、レビュー及び同一セッション内の再試行",
         "採用、却下、利用者判断待ち、外部条件待ちが混在するwave",
         "atk managed-temp cleanup --path <検収済み絶対パス>",
+        "いずれかが不一致の場合や確認できない場合はcleanupを実行せず、正本を保持して失敗として返す",
+        "全照合条件の一致を確認できた場合だけ`atk managed-temp cleanup --path <検収済み絶対パス>`",
+        "確認できない場合は回収成功とせず、新しいwaveを開始せず失敗として返す",
+        "作成後失敗がなく、絶対パスと比較基準を保持したまま同一waveを再試行する場合",
         "feedback本文、frontmatter、queue状態を変更しない",
         "全対象が`processing`に残る",
+        "作成後失敗が下流への受渡し後に発生して未確定項目が残る場合",
+        "作成後失敗の回収成功後に同経路を適用する場合は、正本を再度回収せず",
         "読取りに失敗した場合は管理対象一時領域を作成しない",
         "遷移後に`atk mq edit`などで本文を変更した場合",
         "共有領域の一覧から対象を推測して回収しない",
@@ -497,10 +509,21 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     write_at = sender.index("`feedback-source.json`へ単一のJSON objectを書く")
     assert read_all_at < create_at < write_at
     post_creation_failure_at = sender.index("領域作成後に正本の新規利用や再利用を継続できない状態")
+    failed_verification_at = sender.index("いずれかが不一致の場合や確認できない場合", post_creation_failure_at)
     failure_cleanup_at = sender.index("atk managed-temp cleanup --path <作成時に得た絶対パス>", post_creation_failure_at)
-    retry_at = sender.index("検収済み正本と比較基準を再作成し、同一waveを継続する", failure_cleanup_at)
-    terminal_at = sender.index("全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない", retry_at)
-    assert write_at < post_creation_failure_at < failure_cleanup_at < retry_at < terminal_at
+    terminal_at = sender.index("全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない", failure_cleanup_at)
+    retry_at = sender.index("検収済み正本と比較基準を再作成し、同一waveを継続する", terminal_at)
+    no_retry_at = sender.index("当該正本を既に下流へ渡している場合は同一waveで正本を再作成しない", retry_at)
+    assert write_at < post_creation_failure_at < failed_verification_at < failure_cleanup_at
+    assert failure_cleanup_at < terminal_at < retry_at < no_retry_at
+    terminal_verification_failure_at = sender.index(
+        "いずれかが不一致の場合や確認できない場合はcleanupを実行せず、正本を保持して失敗として返す"
+    )
+    terminal_cleanup_rule_at = sender.index(
+        "全照合条件の一致を確認できた場合だけ`atk managed-temp cleanup --path <検収済み絶対パス>`",
+        terminal_verification_failure_at,
+    )
+    assert terminal_verification_failure_at < terminal_cleanup_rule_at
     assert "状態競合では作成後失敗の回収手順を適用する" in sender
     assert "再作成時の書込みや検収に失敗した場合も、作成後失敗の回収手順を適用する" in sender
     assert "遷移commitと親snapshotのいずれかを一意に確認できない場合も、作成後失敗の回収手順を適用する" in sender
