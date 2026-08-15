@@ -298,6 +298,13 @@ def test_permanence_table_rejects_no_candidate_row_mixed_with_findings() -> None
     assert any("`候補なし`の行だけを置く" in error for error in errors), errors
 
 
+def test_permanence_table_accepts_no_candidate_phrase_within_finding() -> None:
+    """予約値を含む通常の知見と別の知見を併記した表を受理する。"""
+    row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
+    additional = "| 候補なし表記の検査を追加する | P-001 | 対象ファイル | 誤った記載を拒否するため。 |"
+    assert not _plan_format.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
+
+
 def test_permanence_table_accepts_multiple_findings() -> None:
     """恒久化表は知見を複数行で記載できる。"""
     row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
