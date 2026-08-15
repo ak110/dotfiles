@@ -29,10 +29,12 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 4. 本文の順序条件はreadiness判定前に抽出し、active項目から対象filename自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
 5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
 6. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
-7. 残りのreadyなinbox項目は、readiness確定後かつ遷移前の`inbox/<filename>`を原文正本へ保存してから
-   `atk mq start-processing`でprocessingへ移す。
+7. Claude Codeホストが`references/feedbacks-planner-reception.md`に従って処理するreadyな通常型waveを、原文正本の作成対象とする。
+   readiness確定後かつ遷移前の`inbox/<filename>`を原文正本へ保存してから`atk mq start-processing`でprocessingへ移す。
    遷移後は`start-processing` commitの親snapshotと原文正本を完全一致で照合する。
-   processing項目は現在の保存実体から新しい原文正本を作成し、完了済み工程を再実行せず未完了工程から再開する
+   それ以外のreadyなinbox項目は、各経路の現行入力契約を維持してprocessingへ移す。
+   同じClaude Codeホスト経路のprocessing項目は現在の保存実体から新しい原文正本を作成し、完了済み工程を再実行せず未完了工程から再開する。
+   それ以外のprocessing項目は各経路の現行入力契約を維持する
 
 `start-processing`が状態競合で拒否した場合は、作成済み原文正本を回収し、active一覧と保存本文を再取得してreadiness判定から再開する。
 遷移中の内容差では親snapshotの保存本文から原文正本を再作成し、JSONの読戻し検収後にplannerを起動する。
@@ -58,6 +60,7 @@ planner、調査担当、author及びreviewerは原文正本を変更せず、qu
 readyな計画実装型laneは通常型waveの計画工程を待たず、利用可能なwriter枠で実装できる。
 
 サブエージェント機能を利用できないCodexホストでは、通常型を次の順で扱う。
+この経路では原文正本を受領せず、`references/explore-template.md`へ対象feedback filenameと取得済み本文を直接渡す。
 
 1. `references/review-checklists.md`を全文読む
 2. 原文、現行実装、関連規範、履歴、既存の成功経路を調査する

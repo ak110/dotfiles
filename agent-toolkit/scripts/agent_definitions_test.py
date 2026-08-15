@@ -457,6 +457,7 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "標準JSON serializer",
         "標準JSON parser",
         "property集合とfilename集合の一致",
+        "本文内の表示用見出しと同じ文字列、コードフェンス行",
         "末尾改行の有無",
         "期限切れ`cooldown_until`や非正規化YAML frontmatter",
         "JSONのescapeは保存表現",
@@ -485,6 +486,10 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         assert "標準JSON parser" in document
     assert "本文を起動文へ複製しない" in planner
     assert "queueを参照しない" in explore
+    assert "排他的な次のいずれか一方" in explore
+    assert "対象feedback filenameと本文" in explore
+    assert "この経路では原文正本を受領せず" in process
+    assert "`references/explore-template.md`へ対象feedback filenameと取得済み本文を直接渡す" in process
     assert "`原文正本ID:`を書き、対象feedback filenameをバッククォートで囲んで記録" in plan_mode
     assert "原文正本の絶対パス、対象filename及び計画内の`原文正本ID`対応" in delegation
     assert "逐語不一致の確定指摘には両者の差分を含め" in review
