@@ -482,6 +482,12 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない",
         "対象filenameの存在、queue状態、依存関係及び下流主体の稼働状態に予定外の変化がないこと",
         "検収後の`start-processing`もここに含む",
+        "正本を下流へ渡す前の`start-processing`が状態競合で拒否された場合",
+        "競合により観測したqueue状態を予定外の変化から除外する",
+        "正確な絶対パス、所有主体、marker及び内容の一致",
+        "回収成功後もqueue状態を変更せず",
+        "active一覧と保存本文を再取得してreadiness判定を再開する",
+        "状態競合と特定できない予定外の変化",
         "比較基準だけを失った場合",
         "既存の正本から比較基準を再構築せず、作成後失敗の回収手順を適用する",
         "作成時か直近の再開時に検収した比較基準",
@@ -516,6 +522,12 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     no_retry_at = sender.index("当該正本を既に下流へ渡している場合は同一waveで正本を再作成しない", retry_at)
     assert write_at < post_creation_failure_at < failed_verification_at < failure_cleanup_at
     assert failure_cleanup_at < terminal_at < retry_at < no_retry_at
+    external_state_at = sender.index("外部状態の照合では")
+    conflict_exclusion_at = sender.index("競合により観測したqueue状態を予定外の変化から除外する")
+    conflict_recovery_at = sender.index("前段の作成後失敗の回収手順に従って正本を回収する")
+    readiness_restart_at = sender.index("active一覧と保存本文を再取得してreadiness判定を再開する")
+    unknown_change_at = sender.index("状態競合と特定できない予定外の変化")
+    assert external_state_at < conflict_exclusion_at < conflict_recovery_at < readiness_restart_at < unknown_change_at
     terminal_verification_failure_at = sender.index(
         "いずれかが不一致の場合や確認できない場合はcleanupを実行せず、正本を保持して失敗として返す"
     )
