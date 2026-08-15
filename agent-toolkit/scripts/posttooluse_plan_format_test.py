@@ -85,14 +85,9 @@ P-001:
 
 ### 恒久化
 
-| 項目 | 内容 |
-| --- | --- |
-| 観測事象 | 対象が古い。 |
-| 根本原因 | 更新経路が無い。 |
-| 反映先 | 対象。 |
-| 反映内容 | 更新する。 |
-| 対策強度 | 検査する。 |
-| 設計意図の記録先 | 設計文書。 |
+| 知見 | 出所 | 反映先 | 根拠 |
+| --- | --- | --- | --- |
+| 更新経路を恒久化する | エージェント判断 | 設計文書 | 後続の更新でも参照するため。 |
 
 ### リファクタリング
 
@@ -209,6 +204,6 @@ class TestPlanPostWrite:
             assert result.stdout.strip() == ""
 
 
-def test_plan_format_exposes_design_intent_row() -> None:
-    """通常変更の恒久化表は設計意図の記録先を持つ。"""
-    assert "設計意図の記録先" in _plan_format.PLAN_PERMANENCE_TABLE_ROWS
+def test_plan_format_exposes_permanence_destination_column() -> None:
+    """通常変更の恒久化表は反映先列を持つ。"""
+    assert "反映先" in _plan_format.PLAN_PERMANENCE_TABLE_HEADER

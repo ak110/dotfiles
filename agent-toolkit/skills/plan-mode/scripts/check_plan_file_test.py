@@ -34,6 +34,18 @@ def _rows_table(rows: tuple[str, ...], filler: str) -> str:
     return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *(f"| {row} | {filler} |" for row in rows)])
 
 
+def _permanence_table() -> str:
+    """恒久化表の固定列を持つ横持ち表を組み立てる。"""
+    header = _plan_format.PLAN_PERMANENCE_TABLE_HEADER
+    return "\n".join(
+        [
+            f"| {' | '.join(header)} |",
+            f"| {' | '.join('---' for _column in header)} |",
+            "| 知見 | エージェント判断 | 反映先 | 検討結果を記載する。 |",
+        ]
+    )
+
+
 def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool = True) -> str:
     """共有構造モジュールの定数から正規計画を組み立てる。"""
     work_type = "バグ対応" if bug else "通常変更"
@@ -54,11 +66,7 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
             + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
             + "\n\n"
         )
-    permanence = (
-        "調査表の処置を正本として参照する。"
-        if bug
-        else _rows_table(_plan_format.PLAN_PERMANENCE_TABLE_ROWS, "検討結果を記載する。")
-    )
+    permanence = "調査表の処置を正本として参照する。" if bug else _permanence_table()
     return f"""# 計画の主題
 
 ## 概要

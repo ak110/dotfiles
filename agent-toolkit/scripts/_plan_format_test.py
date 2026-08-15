@@ -54,14 +54,9 @@ P-001:
 
 ### 恒久化
 
-| 項目 | 内容 |
-| --- | --- |
-| 観測事象 | 対象が古い。 |
-| 根本原因 | 更新経路が無い。 |
-| 反映先 | 対象ファイル。 |
-| 反映内容 | 更新手順を追加する。 |
-| 対策強度 | 機械検査で担保する。 |
-| 設計意図の記録先 | docs/development/design.md。 |
+| 知見 | 出所 | 反映先 | 根拠 |
+| --- | --- | --- | --- |
+| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |
 
 ### リファクタリング
 
@@ -239,7 +234,11 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         ),
         (("### 類似見直し\n", "### 追加見直し\n"), "`### 類似見直し`は1件必要"),
         (("| 母集団 | リポジトリ全体。 |", "| 対象 | リポジトリ全体。 |"), "3行表を置く"),
-        (("| 設計意図の記録先 | docs/development/design.md。 |\n", ""), "6行表を置く"),
+        (("| 知見 | 出所 | 反映先 | 根拠 |", "| 項目 | 内容 |"), "4列表を置く"),
+        (
+            ("| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |\n", ""),
+            "表に1行以上の内容が必要",
+        ),
         (("| 現状の問題 | 重複がある。 |\n", ""), "4行表を置く"),
         (("## 実装資料", "## 変更対象"), "固定H2は"),
         (
@@ -279,6 +278,37 @@ def test_progress_table_rejects_empty_cells_when_a_row_exists() -> None:
     content = _VALID_CONTENT.replace(marker, marker + "| 2026-08-09 12:00 | 実装 |  |\n", 1)
     errors = _plan_format.check_plan_structure(content)
     assert any("空cell" in error for error in errors), errors
+
+
+def test_permanence_table_accepts_no_candidate_row() -> None:
+    """候補0件の理由を記載した1行の恒久化表を受理する。"""
+    no_candidate = "| 候補なし | 提示素材と調査結果 | 計画限り | 当該計画固有でない知見が無いため。 |"
+    content = _VALID_CONTENT.replace(
+        "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |",
+        no_candidate,
+    )
+    assert not _plan_format.check_plan_structure(content)
+
+
+def test_permanence_table_accepts_multiple_findings() -> None:
+    """恒久化表は知見を複数行で記載できる。"""
+    row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
+    additional = "| 公開契約を維持する | P-001 | 計画限り | 既存文書へ記載済みのため。 |"
+    assert not _plan_format.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "| 更新経路を恒久化する | エージェント判断 |  | 後続の更新でも参照するため。 |",
+        "| 更新経路を恒久化する | エージェント判断 | 対象ファイル |",
+    ],
+)
+def test_permanence_table_rejects_empty_cells_and_column_mismatch(row: str) -> None:
+    """恒久化表の空セルと列数不一致を拒否する。"""
+    original = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
+    errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(original, row))
+    assert any("空cellまたは列数不一致" in error for error in errors), errors
 
 
 def test_permanence_sections_reject_conclusion_words_only() -> None:
