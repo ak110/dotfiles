@@ -709,7 +709,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
                 text=True,
                 check=False,
             )
-            if git_result.returncode != 0:
+            if git_result.returncode == 128 and git_result.stderr.startswith("fatal: not a git repository"):
                 return False
     except (OSError, ValueError):
         pass

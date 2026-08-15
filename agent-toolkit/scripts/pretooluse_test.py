@@ -279,6 +279,33 @@ class TestHomePathCheck:
         assert result.returncode == 0
         assert "home directory" in result.stderr
 
+    def test_home_path_warns_when_git_detection_fails(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        """Git判定が確定的な結論に至らない場合は既存警告を維持する。"""
+
+        def _failed_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            del args, kwargs
+            return subprocess.CompletedProcess(["git", "rev-parse"], 128, "", "fatal: invalid gitfile format")
+
+        monkeypatch.setattr(pretooluse.subprocess, "run", _failed_git)
+        target = tmp_path / "repo" / "docs" / "note.md"
+        return_code = pretooluse.main(
+            json.dumps(
+                {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        assert return_code == 0
+        assert "home directory" in capsys.readouterr().err
+
     def test_home_path_in_temp_prefix_sibling_warns(self):
         """一時ルートと文字列prefixだけが同じ兄弟パスは除外しない。"""
         sibling = pathlib.Path(f"{tempfile.gettempdir()}-sibling") / "draft.md"
