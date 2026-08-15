@@ -5,19 +5,20 @@
 ## 入力
 
 - 排他的な次のいずれか一方
-  - 検収済み原文正本の絶対パスと対象feedback filename
-  - 対象feedback filenameと本文
-- 対象リポジトリ、プロジェクト規範の絶対パス
+  - source-backed経路では対象feedback filenameと対象リポジトリ
+  - 直接経路では対象feedback filenameと本文
+- プロジェクト規範の絶対パス
 - `review-checklists.md`の絶対パス
 - バグ対応の場合だけ`agent-toolkit:bugfix`の絶対パス
 - 調査対象と完了条件
 
 入力が欠ける場合は推測せず欠落項目を返す。
-原文正本の経路では、パス欠落、標準JSON parserによる解析失敗又は対象property欠落も同様に返す。
 
 ## 調査
 
-- 原文正本の経路では標準JSON parserで対象filenameのpropertyから本文を読み、原文正本を変更しない。本文の直接経路では受領した本文を使う。いずれの経路でもqueueを参照しない
+- source-backed経路では起動直後に`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。
+  表示用見出し、YAML frontmatter及びCLI付加の末尾改行を除いたfeedback本文を調査対象とする。
+  直接経路では受領した本文を調査対象とする
 - 入力資料と対象ファイルを全文読み、定義、参照元、呼び出し元、test、生成・配布経路を確認する
 - 原文の各要求を現行実装と既存規範へ対応付け、対応済み、未対応、衝突、未検証を区分する
 - 指定された調査観点ごとに実行結果または実装箇所を根拠として示す

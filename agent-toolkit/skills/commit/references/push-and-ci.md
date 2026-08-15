@@ -40,6 +40,7 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 
 baseline作成、push、監視の順で実行する。
 いずれの実行でも`--repo`、`--forge`、`--ref`、`--source-ref`を省略しない。
+`--repo`にはリポジトリ識別子（`owner/repo`、またはホストを含むURL）を渡し、作業ツリーなどのローカルパスを渡さない。
 引数の詳細は`--help`で確認する。
 単一refと複数refのいずれでも、GitHubとGitLabの両方で、選定済みforgeを`--forge <github|gitlab>`へ明示する。
 複数refでは組ごとに別のbaselineを作成し、1件の失敗を理由に他のbaseline作成・監視を省略しない。

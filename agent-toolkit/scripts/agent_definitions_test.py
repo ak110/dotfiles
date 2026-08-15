@@ -28,6 +28,8 @@ _FEEDBACKS_PLANNER_RECEPTION = _PROCESS_FEEDBACKS.parent / "references" / "feedb
 _FEEDBACK_EXPLORE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "explore-template.md"
 _HOLD_WITH_TBD_INJECT = _PROCESS_FEEDBACKS.parent / "references" / "hold-with-tbd-inject.md"
 _MERGE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "merge-task.md"
+_ATK_MQ_MUTATIONS = _AGENTS_DIR.parent / "scripts" / "_atk_mq_mutations.py"
+_ATK_ENTRYPOINT = _AGENTS_DIR.parent / "scripts" / "atk.py"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
 _BUGFIX_SKILL = _AGENTS_DIR.parent / "skills" / "bugfix" / "SKILL.md"
 _BUGFIX = _BUGFIX_SKILL.parent / "references" / "root-cause-analysis.md"
@@ -268,8 +270,8 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "原文正本の絶対パス、対象filename及び計画内の`原文正本ID`対応" in delegation
-    assert "原文正本を受領しない直接起動経路では、`## 提示素材`の逐語原文" in delegation
+    assert "対象feedback filename、対象リポジトリ及び計画内の`原文正本ID`対応" in delegation
+    assert "直接起動経路では、`## 提示素材`の逐語原文" in delegation
     assert "元のユーザー指示は経路と独立した入力" in delegation
     assert "項目別の維持・修正・撤去の判定と根拠" in delegation
     assert "要約だけを一次入力にせず" in delegation
@@ -428,12 +430,12 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "自身は成果物、計画ファイル、queueを変更せず",
         "受信者専用のtask referenceとauthor skillは読み込まず",
         "`explore-template.md`、author skill、バグ調査task、review taskは各受信者が読み込む",
-        "`atk mq show`を含むqueue操作",
+        "push、フィードバック投入、worktreeの作成と回収は行わない",
         "explore-template.md",
         "plan-review-task.md",
         "指摘を加工せずauthorへ全件配送",
         "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
-        "起草スレッドへ同じ原文正本の絶対パスと採用項目のfilename一覧",
+        "起草スレッドへ採用項目のfilename一覧と対象リポジトリ",
         "本文を起動文へ複製しない",
         "各feedbackごとの調査スレッド",
         "queueの状態と他laneの情報は渡さない",
@@ -445,8 +447,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         assert phrase in text
 
 
-def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
-    """原文正本の生成、読取専用の受渡し、照合及び回収を一続きで固定する。"""
+def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
+    """各受信主体がfilename単位で保存本文を取得する契約を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
@@ -455,111 +457,21 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    for phrase in (
-        "atk managed-temp create --prefix feedbacks-planner-source",
-        "feedback-source.json",
-        "標準JSON serializer",
-        "標準JSON parser",
-        "property集合とfilename集合の一致",
-        "本文内の表示用見出しと同じ文字列、コードフェンス行",
-        "末尾改行の有無",
-        "期限切れ`cooldown_until`や非正規化YAML frontmatter",
-        "JSONのescapeは保存表現",
-        "原文正本のwriterはメインだけ",
-        "対象保存本文の読取りに全件成功した後",
-        "領域作成後に正本の新規利用や再利用を継続できない状態",
-        "JSONの書込みや読戻しの失敗、property集合やvalueの不一致",
-        "`start-processing`の状態競合",
-        "遷移中の内容差に対する再作成の失敗",
-        "遷移commitか親snapshotを一意に確認できない状態",
-        "比較基準の喪失",
-        "正確な絶対パス、所有主体、marker、内容及び外部状態を読み取り専用で照合",
-        "いずれかが不一致の場合や確認できない場合はcleanupを実行せず、正本を保持する",
-        "plannerを新規起動又は再開せず",
-        "全照合条件の一致を確認できた場合だけ`atk managed-temp cleanup --path <作成時に得た絶対パス>`",
-        "atk managed-temp cleanup --path <作成時に得た絶対パス>",
-        "回収成功後は、全項目の結果と下流への受渡し状態で次の処理を分ける",
-        "当該正本をまだ下流へ渡していない場合",
-        "検収済み正本と比較基準を再作成し、同一waveを継続する",
-        "当該正本を既に下流へ渡している場合は同一waveで正本を再作成しない",
-        "`## 受領`末尾の同一wave非再試行経路を適用する",
-        "全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない",
-        "対象filenameの存在、queue状態、依存関係及び下流主体の稼働状態に予定外の変化がないこと",
-        "検収後の`start-processing`もここに含む",
-        "正本を下流へ渡す前の`start-processing`が状態競合で拒否された場合",
-        "競合により観測したqueue状態を予定外の変化から除外する",
-        "正確な絶対パス、所有主体、marker及び内容の一致",
-        "回収成功後もqueue状態を変更せず",
-        "active一覧と保存本文を再取得してreadiness判定を再開する",
-        "状態競合と特定できない予定外の変化",
-        "比較基準だけを失った場合",
-        "既存の正本から比較基準を再構築せず、作成後失敗の回収手順を適用する",
-        "作成時か直近の再開時に検収した比較基準",
-        "各valueとメインが作成時か直近の再開時から保持する比較基準の論理文字列が完全一致",
-        "原文正本が検収後に改変されていない自己同一性の確認",
-        "queueの現在内容との比較ではない",
-        "同一waveの調査、起草、レビュー及び同一セッション内の再試行",
-        "採用、却下、利用者判断待ち、外部条件待ちが混在するwave",
-        "atk managed-temp cleanup --path <検収済み絶対パス>",
-        "いずれかが不一致の場合や確認できない場合はcleanupを実行せず、正本を保持して失敗として返す",
-        "全照合条件の一致を確認できた場合だけ`atk managed-temp cleanup --path <検収済み絶対パス>`",
-        "確認できない場合は回収成功とせず、新しいwaveを開始せず失敗として返す",
-        "作成後失敗がなく、絶対パスと比較基準を保持したまま同一waveを再試行する場合",
-        "作成後失敗の回収成功後に同経路を適用する場合は、正本を再度回収せず",
-        "読取りに失敗した場合は管理対象一時領域を作成しない",
-        "遷移後に`atk mq edit`などで本文を変更した場合",
-        "共有領域の一覧から対象を推測して回収しない",
-    ):
-        assert phrase in sender
-    read_all_at = sender.index("対象保存本文の読取りに全件成功した後")
-    create_at = sender.index("atk managed-temp create --prefix feedbacks-planner-source")
-    write_at = sender.index("`feedback-source.json`へ単一のJSON objectを書く")
-    assert read_all_at < create_at < write_at
-    post_creation_failure_at = sender.index("領域作成後に正本の新規利用や再利用を継続できない状態")
-    failed_verification_at = sender.index("いずれかが不一致の場合や確認できない場合", post_creation_failure_at)
-    failure_cleanup_at = sender.index("atk managed-temp cleanup --path <作成時に得た絶対パス>", post_creation_failure_at)
-    terminal_at = sender.index("全項目が確定済みの場合は当該waveを終端し、新しい正本を作成しない", failure_cleanup_at)
-    retry_at = sender.index("検収済み正本と比較基準を再作成し、同一waveを継続する", terminal_at)
-    no_retry_at = sender.index("当該正本を既に下流へ渡している場合は同一waveで正本を再作成しない", retry_at)
-    assert write_at < post_creation_failure_at < failed_verification_at < failure_cleanup_at
-    assert failure_cleanup_at < terminal_at < retry_at < no_retry_at
-    external_state_at = sender.index("外部状態の照合では")
-    conflict_exclusion_at = sender.index("競合により観測したqueue状態を予定外の変化から除外する")
-    conflict_recovery_at = sender.index("前段の作成後失敗の回収手順に従って正本を回収する")
-    readiness_restart_at = sender.index("active一覧と保存本文を再取得してreadiness判定を再開する")
-    unknown_change_at = sender.index("状態競合と特定できない予定外の変化")
-    assert external_state_at < conflict_exclusion_at < conflict_recovery_at < readiness_restart_at < unknown_change_at
-    terminal_verification_failure_at = sender.index(
-        "いずれかが不一致の場合や確認できない場合はcleanupを実行せず、正本を保持して失敗として返す"
-    )
-    terminal_cleanup_rule_at = sender.index(
-        "全照合条件の一致を確認できた場合だけ`atk managed-temp cleanup --path <検収済み絶対パス>`",
-        terminal_verification_failure_at,
-    )
-    assert terminal_verification_failure_at < terminal_cleanup_rule_at
-    assert "状態競合では作成後失敗の回収手順を適用する" in sender
-    assert "再作成時の書込みや検収に失敗した場合も、作成後失敗の回収手順を適用する" in sender
-    assert "遷移commitと親snapshotのいずれかを一意に確認できない場合も、作成後失敗の回収手順を適用する" in sender
-    for phrase in (
-        "readiness確定後かつ遷移前の`inbox/<filename>`",
-        "`start-processing` commitの親snapshot",
-        "processing項目は、原文正本の作成前に保存実体から",
-        "別セッションのprocessing再開では履歴を探索せず",
-        "正常な後始末にも振り返りにも進まない",
-    ):
-        assert phrase in process
-    for document in (planner, explore, plan_mode, delegation, review):
-        assert "原文正本" in document
-    for document in (planner, explore, plan_mode, review):
-        assert "標準JSON parser" in document
-    assert "本文を起動文へ複製しない" in planner
-    assert "queueを参照しない" in explore
-    assert "排他的な次のいずれか一方" in explore
-    assert "対象feedback filenameと本文" in explore
-    assert "この経路では原文正本を受領せず" in process
-    assert "`references/explore-template.md`へ対象feedback filenameと取得済み本文を直接渡す" in process
-    assert "`原文正本ID:`を書き、対象feedback filenameをバッククォートで囲んで記録" in plan_mode
-    assert "原文正本の絶対パス、対象filename及び計画内の`原文正本ID`対応" in delegation
+    command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
+    for document in (sender, planner, explore, plan_mode, delegation, review):
+        assert command in document
+    for document in (sender, planner, process):
+        assert "本文を起動文へ複製しない" in document
+    for document in (sender, explore, plan_mode, review):
+        assert "表示用見出し" in document
+        assert "YAML frontmatter" in document
+        assert "CLI付加の末尾改行" in document
+    assert "filename昇順の対象一覧と対象リポジトリ" in sender
+    assert "担当filename及び対象リポジトリ" in planner
+    assert "対象feedback filenameと対象リポジトリ" in explore
+    assert "直接経路では対象feedback filenameと本文" in explore
+    assert "feedback filenameと対象リポジトリを受領" in plan_mode
+    assert "対象feedback filename、対象リポジトリ及び計画内の`原文正本ID`対応" in delegation
     assert "逐語不一致の確定指摘には両者の差分を含め" in review
     assert "差分を示せない候補は指摘しない" in review
     assert "常駐自動起動の場合は非該当と起動事実" in planner
@@ -570,69 +482,82 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     assert "人間由来の場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実" in review
     assert "人間由来の指示があるのに逐語文、出所又は引用範囲がない場合は入力不足として返す" in review
     assert "元のユーザー指示を非該当とする場合に常駐自動起動の事実がないときも入力不足として返す" in review
-    assert "原文正本を受領しない直接起動経路" in plan_mode
-    assert "原文正本を受領しない直接起動経路" in delegation
+    assert "直接起動経路では、逐語素材の入力と転記に関する現行契約" in plan_mode
+    assert "直接起動経路では、`## 提示素材`の逐語原文" in delegation
+    forbidden = ("feedback-source.json", "標準JSON parser", "親snapshot", "比較基準")
+    for document in (sender, process, planner, explore, plan_mode, delegation, review):
+        for phrase in forbidden:
+            assert phrase not in document
 
 
-def test_feedback_source_nonretry_contract_resumes_only_items_without_saved_result() -> None:
-    """項目別反映の途中失敗を保存済み結果から一意に再開する。"""
+def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:
+    """技術的失敗の終端と結果反映エラー後の全件走査を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
 
     for phrase in (
-        "結果反映済み項目",
-        "結果部分反映項目",
-        "結果未反映項目",
-        "plannerの判定有無ではなく",
-        "各結果が要求する保存後条件の充足",
-        "同じ計画パスの`plan_file`",
-        "却下では`rejected`配置",
-        "利用者判断待ちではTBD依存、`inbox`配置及び`blocked`",
-        "外部条件待ちでは依存又はcooldownと`inbox`配置",
-        "TBD本文に保存された対象feedbackとの対応が一意",
-        "同じTBDを用いた依存登録、`return-to-inbox`及び`blocked`照合",
-        "未回答TBD依存を持つ`processing`項目",
-        "対応が0件又は複数の場合",
-        "新しいTBDを作成しない",
-        "既存readiness条件を満たす場合だけ",
-        "1回だけ回収",
+        "失敗した事象、期待値、実際値、発生条件",
+        "直接的原因、再開に必要な情報、元filename",
+        "失敗TBDを`agent-toolkit:add-feedback`で1件保存",
+        "保存内容を照合してから",
+        "atk mq reject <filename> --note=<失敗TBD filename>",
+        "失敗TBDの保存か照合ができない場合はrejectを実行せず",
+        "一意な失敗TBDとactiveな元feedbackを確認できるときだけrejectを1回再実行",
+        "項目別結果をfilename昇順で各1回反映",
+        "atk mq show <filename> --target-repo=<repo>",
+        "意図した保存後状態を確認できた場合は同じ結果を再実行せず",
+        "当該項目への追加操作だけを止める",
+        "保持済みplanner結果により後続項目をfilename昇順で各1回処理",
+        "結果反映エラーが先頭、中間、末尾のいずれで発生しても、全filenameを各1回処理",
+        "全filenameの走査後に警告・エラーが1件でもあればwaveを失敗",
+        "Git操作、3分類及び元項目のplanner再開は行わない",
     ):
         assert phrase in sender
-    for operation in (
-        "`convert-to-plan`",
-        "`reject`",
-        "TBD作成",
-        "TBD依存登録",
-        "`return-to-inbox`",
-        "保存後照合",
-    ):
-        assert operation in sender
+    for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "waveを失敗"):
+        assert phrase in process
+    for forbidden in ("結果反映済み項目", "結果部分反映項目", "結果未反映項目", "同一wave非再試行"):
+        assert forbidden not in sender
+        assert forbidden not in process
+    assert not (_DISTRIBUTION_ROOT / "scripts" / "_atk_mq_recover.py").exists()
+    assert not (_DISTRIBUTION_ROOT / "scripts" / "_atk_mq_recover_test.py").exists()
 
-    failure_at = sender.index("項目別の結果反映が失敗した時点")
-    stop_at = sender.index("後続項目への反映を止め", failure_at)
-    classify_at = sender.index("対象を次の3種類へ分類する", stop_at)
-    partial_at = sender.index("結果部分反映項目", classify_at)
-    recover_at = sender.index("未完了操作だけを実行", partial_at)
-    cleanup_at = sender.index("1回だけ回収", recover_at)
-    assert failure_at < stop_at < classify_at < partial_at < recover_at < cleanup_at
-    retry_hold_at = sender.index("同一waveを再試行する場合は回収しない")
-    nonretry_exclusion_at = sender.index("同一waveを再試行しない場合には適用せず", retry_hold_at)
-    nonretry_route_at = sender.index("後述の同一wave非再試行経路の回収条件に従う", nonretry_exclusion_at)
-    assert retry_hold_at < nonretry_exclusion_at < nonretry_route_at < failure_at < cleanup_at
-    assert "同一waveを再試行する場合や未確定項目がある場合は回収しない" not in sender
-    assert "全対象が`processing`に残ること" not in sender
+
+def test_failed_tbd_reprocessing_preserves_user_headings_and_dependency_order() -> None:
+    """失敗TBD回答後の再投入本文境界と終端順序を固定する。"""
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
 
     for phrase in (
-        "planner完了報告の受領後",
-        "後続項目への反映を止める",
-        "同一wave非再試行経路を適用する",
-        "readiness判定前に一意な未完了操作だけを完遂",
-        "既存TBDを用いて依存登録",
-        "結果反映済み項目は既存の後続経路",
-        "結果未反映項目だけを次のセッションの既存readiness経路",
-        "原文正本を1回だけ回収",
+        "最後の`## 処理結果`節",
+        "`採否: rejected`",
+        "ISO形式の`処理日時`",
+        "対応する失敗TBD filenameと一致する`メモ`だけ",
+        "節後がEOF",
+        "元本文中の同名見出し",
+        "depends_on=<失敗TBD filename>",
+        "新規feedbackの本文と依存を再取得して照合した後に失敗TBDを採用終端",
+        "失敗TBDをactiveのまま保持",
     ):
-        assert phrase in process
+        assert phrase in hold
+    save_at = hold.index("depends_on=<失敗TBD filename>")
+    verify_at = hold.index("新規feedbackの本文と依存を再取得して照合", save_at)
+    terminal_at = hold.index("失敗TBDを採用終端", verify_at)
+    assert save_at < verify_at < terminal_at
+
+
+def test_feedback_failure_contract_keeps_mq_commit_public_behavior() -> None:
+    """失敗処置がmq commitの用途、出力及びhelpを変更しない契約を固定する。"""
+    mutations = _ATK_MQ_MUTATIONS.read_text(encoding="utf-8")
+    entrypoint = _ATK_ENTRYPOINT.read_text(encoding="utf-8")
+
+    for phrase in (
+        "def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:",
+        "inbox・processing配下の外部編集差分をcommit・push",
+        '"status", "--porcelain", "--", inbox_rel, processing_rel',
+        'print("外部編集分をコミット・pushしました。")',
+        'print("差分なし。")',
+    ):
+        assert phrase in mutations
+    assert 'help="外部編集後にinbox・processing配下の未コミット変更をコミット・push（差分なしなら無動作）"' in entrypoint
 
 
 def test_session_review_advisor_uses_default_reasoning_effort() -> None:
@@ -713,11 +638,11 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "各reviewerの新規起動又は継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合writerのモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
     assert "統合writerの各新規起動又は継続接続の直前に`atk config get merge_model`" in flow
-    assert "保存本文を単一の`feedback-source.json`へ格納" in process_feedbacks
-    assert "queueを再取得しない" in process_feedbacks
+    assert "plannerへは対象filenameと対象リポジトリだけを渡し" in process_feedbacks
+    assert "filenameごとに" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文をplannerの完了報告へ要求しない" in reception
-    assert "plannerがauthorへ元の提示素材、確定した採否と合意、対象、規範、author用taskを欠落なく渡せる形" in reception
+    assert "plannerがauthorへ対象filename、対象リポジトリ、確定した採否と合意、対象、規範" in reception
     for phrase in (
         "単一cherry-pickシーケンス",
         "rebaseとmerge commitは作成せず",
@@ -1258,7 +1183,7 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
     assert "吸収元filename" in plan_and_add
     assert "processing項目を変更しない" in plan_and_add
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in process
-    assert "状態競合で拒否した場合は、作成済み原文正本を回収し、active一覧と保存本文を再取得" in process
+    assert "状態競合で拒否した場合は、active一覧と保存本文を再取得" in process
     assert "## フィードバック投入" not in process
     for removed_command in (
         "reserve-inbox",
@@ -1482,6 +1407,9 @@ def test_push_ci_explicitly_selects_forge_for_baseline_and_monitoring() -> None:
     assert "<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行" in push_and_ci
     assert "`--baseline`付きで実行" in push_and_ci
     assert "`--repo`、`--forge`、`--ref`、`--source-ref`を省略しない" in push_and_ci
+    assert (
+        "`--repo`にはリポジトリ識別子（`owner/repo`、またはホストを含むURL）を渡し、作業ツリーなどのローカルパスを渡さない。"
+    ) in push_and_ci
     assert "`--forge <github|gitlab>`へ明示" in push_and_ci
     assert "単一refと複数refのいずれでも、GitHubとGitLabの両方" in push_and_ci
     assert "refspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す" in push_and_ci

@@ -43,7 +43,7 @@ TBDを伴わない外部条件待ちは`--cooldown-days`を使い、`depends_on`
 回答済みTBDを能動的にpollせず、同一セッション内でsleep又は時限待機をしない。
 process-loopがactive状態の変化を検出し、readiness成立後に新しいprocess-feedbacksセッションを起動する。
 
-回答がTBD本文へ保存済みであることを確認し、回答済みTBDを先に採用終端する。
+通常の回答済みTBDでは、回答がTBD本文へ保存済みであることを確認し、回答済みTBDを先に採用終端する。
 終端後にactive一覧とreadinessを再取得し、依存が解除されたfeedbackを通常経路で開始する。
 再開時はfeedback本文と依存先filenameを対応付け、
 `atk mq show <TBD filename> --target-repo=<repo-path>`で終端済みTBDを取得する。
@@ -52,3 +52,13 @@ process-loopがactive状態の変化を検出し、readiness成立後に新し�
 再試行では同じfilenameで終端済みTBDを取得し、TBDをactiveへ戻さない。
 回答内容が現在の処理と独立する新規作業なら、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
 完成済み本文と対象リポジトリを渡す。
+
+失敗TBDへの回答から再処理する場合は、`atk mq show <元feedback filename> --target-repo=<repo-path>`で
+却下済みの元feedbackを取得する。
+feedback本文を末尾から検索し、最後の`## 処理結果`節が`採否: rejected`、ISO形式の`処理日時`、
+対応する失敗TBD filenameと一致する`メモ`だけを持ち、節後がEOFである場合に限り、その1節だけを除外する。
+元本文中の同名見出しと、いずれかの条件に一致しない末尾節は保持する。
+得た元本文と回答内容を完成済み本文として`agent-toolkit:add-feedback`へ渡し、
+`depends_on=<失敗TBD filename>`を持つ新規feedbackとして保存する。
+新規feedbackの本文と依存を再取得して照合した後に失敗TBDを採用終端する。
+新規feedbackの保存又は照合が失敗した場合は失敗TBDをactiveのまま保持する。
