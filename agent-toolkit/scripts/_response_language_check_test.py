@@ -93,6 +93,41 @@ class TestDetailedCheck:
         assert outcome is CheckOutcome.SKIP
         assert body is None
 
+    def test_skip_when_latest_turn_ends_with_api_error(self, tmp_path: pathlib.Path):
+        """APIエラー終端時は以前の英語assistant本文を言語判定へ含めない。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "previous",
+                        "role": "assistant",
+                        "content": [_text_block("A" * 100)],
+                        "stop_reason": "end_turn",
+                    },
+                },
+                {"type": "user", "message": {"role": "user", "content": "再開"}},
+                {
+                    "type": "assistant",
+                    "isApiErrorMessage": True,
+                    "message": {
+                        "id": "api-error",
+                        "role": "assistant",
+                        "content": [_text_block("The API request failed.")],
+                        "stop_reason": None,
+                    },
+                },
+                {"type": "system", "subtype": "turn_duration"},
+            ],
+        )
+
+        outcome, body, msg_id = detailed_check(str(transcript))
+
+        assert outcome is CheckOutcome.SKIP
+        assert body is None
+        assert msg_id == ""
+
     def test_boundary_ratio_0_2857_warns(self, tmp_path: pathlib.Path):
         """語数比0.2857 (<0.30) でWARNを返す。"""
         text = _make_mixed(14, 35)

@@ -17,6 +17,8 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
       1ターンとして統合する
     - アシスタント以外のエントリ・異なる`message.id`のアシスタントエントリが
       間に介在した時点でターン境界とみなして走査を終える
+    - ハーネスが生成した`isApiErrorMessage`エントリは直前ターンの終端境界とし、
+      APIエラー以前のアシスタント本文へは遡らない
     - 最大3エントリまでさかのぼる
 
     transcript読み取りに失敗した場合（空文字列パス・存在しないパス・OSエラーを含む）は
@@ -33,6 +35,8 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
             entry = json.loads(line)
         except (json.JSONDecodeError, ValueError):
             continue
+        if entry.get("isApiErrorMessage"):
+            return
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
             if first_msg_id is not None:
                 # 別エントリが間に介在 → 同一ターンの探索終了。

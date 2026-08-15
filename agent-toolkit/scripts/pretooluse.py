@@ -689,9 +689,30 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     リポジトリ管理ファイルに`/home/user/...`のような環境依存パスが書き込まれると
     他環境での再現性が失われるため警告する。警告のみでeditは継続（warn）。
     Git管理外の作業文書であり、正確な絶対パスを記録する計画ファイルは対象外とする。
+    一時ルート配下は配置だけでは除外せず、最寄りの既存親をGit worktree外と確定できた
+    一時作業文書だけを対象外とする。Git判定を実行できない場合は既存検査を継続する。
     """
     if is_plan_file(file_path):
         return False
+
+    try:
+        resolved_path = pathlib.Path(file_path).resolve()
+        temp_root = pathlib.Path(tempfile.gettempdir()).resolve()
+        if resolved_path.is_relative_to(temp_root):
+            existing_parent = resolved_path if resolved_path.is_dir() else resolved_path.parent
+            while not existing_parent.exists():
+                existing_parent = existing_parent.parent
+            git_result = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=existing_parent,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if git_result.returncode != 0:
+                return False
+    except (OSError, ValueError):
+        pass
 
     home_str = str(pathlib.Path.home())
     # ルートなど極端に短いパスは誤検出を避けてスキップ。

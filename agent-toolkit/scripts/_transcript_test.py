@@ -128,6 +128,20 @@ class TestIterLatestAssistantMessages:
         assert len(messages) == 1
         assert messages[0]["id"] == "m1"
 
+    def test_api_error_ends_search_without_returning_earlier_assistant(self, tmp_path: pathlib.Path):
+        """APIエラーは過去のassistant本文へ遡らない終端境界となる。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _assistant_entry([_text_block("以前の回答")], msg_id="m0"),
+                _user_entry("次の質問"),
+                _api_error_entry("The API request failed."),
+                _system_entry(),
+            ],
+        )
+
+        assert not list(iter_latest_assistant_messages(str(transcript)))
+
 
 def _system_entry(subtype: str = "turn_duration") -> dict:
     return {"type": "system", "subtype": subtype}

@@ -8,6 +8,7 @@ import os
 import pathlib
 import re
 import subprocess
+import tempfile
 
 import _fork_runner
 import pretooluse
@@ -249,6 +250,44 @@ class TestHomePathCheck:
     def test_home_path_in_content_warns(self):
         content = f"config_path = '{self._HOME}/myproj/config.yaml'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": content}})
+        assert result.returncode == 0
+        assert "home directory" in result.stderr
+
+    def test_home_path_in_non_git_temp_document_is_skipped(self, tmp_path: pathlib.Path):
+        """Git管理外の一時作業文書では正確なホーム絶対パスを許容する。"""
+        target = tmp_path / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            }
+        )
+        assert result.returncode == 0
+        assert "home directory" not in result.stderr
+
+    def test_home_path_in_git_worktree_under_temp_warns(self, tmp_path: pathlib.Path):
+        """一時ルート配下でもGit worktreeの成果物には警告する。"""
+        worktree = tmp_path / "repo"
+        subprocess.run(["git", "init", str(worktree)], check=True, capture_output=True)
+        target = worktree / "docs" / "note.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            }
+        )
+        assert result.returncode == 0
+        assert "home directory" in result.stderr
+
+    def test_home_path_in_temp_prefix_sibling_warns(self):
+        """一時ルートと文字列prefixだけが同じ兄弟パスは除外しない。"""
+        sibling = pathlib.Path(f"{tempfile.gettempdir()}-sibling") / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(sibling), "content": f"対象: {self._HOME}/worktree"},
+            }
+        )
         assert result.returncode == 0
         assert "home directory" in result.stderr
 
