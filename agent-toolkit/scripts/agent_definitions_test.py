@@ -462,6 +462,10 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "期限切れ`cooldown_until`や非正規化YAML frontmatter",
         "JSONのescapeは保存表現",
         "原文正本のwriterはメインだけ",
+        "作成時か直近の再開時に検収した比較基準",
+        "各valueとメインが作成時か直近の再開時から保持する比較基準の論理文字列が完全一致",
+        "原文正本が検収後に改変されていない自己同一性の確認",
+        "queueの現在内容との比較ではない",
         "同一waveの調査、起草、レビュー及び同一セッション内の再試行",
         "採用、却下、利用者判断待ち、外部条件待ちが混在するwave",
         "atk managed-temp cleanup --path <検収済み絶対パス>",
@@ -496,6 +500,9 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     assert "差分を示せない候補は指摘しない" in review
     assert "常駐自動起動の場合は非該当と起動事実" in planner
     assert "常駐自動起動の場合は非該当と起動事実" in delegation
+    assert "直接受領した人間由来の利用者指示がある場合は、出所と引用範囲を付けた逐語文" in sender
+    assert "常駐自動起動で人間由来の利用者指示がない場合は、非該当であることと起動事実" in sender
+    assert "直接起動経路では、`## 提示素材`の逐語原文" in review
     assert "原文正本を受領しない直接起動経路" in plan_mode
     assert "原文正本を受領しない直接起動経路" in delegation
 
