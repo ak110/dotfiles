@@ -33,7 +33,14 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
    readiness確定後かつ遷移前の`inbox/<filename>`を原文正本へ保存してから`atk mq start-processing`でprocessingへ移す。
    遷移後は`start-processing` commitの親snapshotと原文正本を完全一致で照合する。
    それ以外のreadyなinbox項目は、各経路の現行入力契約を維持してprocessingへ移す。
-   同じClaude Codeホスト経路のprocessing項目は現在の保存実体から新しい原文正本を作成し、完了済み工程を再実行せず未完了工程から再開する。
+   同じClaude Codeホスト経路のprocessing項目は、原文正本の作成前に保存実体から結果反映済み、結果部分反映及び
+   結果未反映へ分類する。結果部分反映項目は`references/feedbacks-planner-reception.md`に従い、
+   readiness判定前に一意な未完了操作だけを完遂する。
+   TBD作成済みかつ依存未登録の場合は対象feedbackとの一意な対応から既存TBDを用いて依存登録、
+   `return-to-inbox`及び`blocked`照合を完遂し、未回答TBD依存を持つ`processing`項目では
+   `return-to-inbox`と`blocked`照合を完遂する。
+   結果反映済み項目は既存の後続経路へ進め、結果未反映項目だけを既存readiness条件の成立後に
+   現在の保存実体から新しい原文正本へ格納し、未完了のplanner工程から再開する。
    それ以外のprocessing項目は各経路の現行入力契約を維持する
 
 `start-processing`が状態競合で拒否した場合は、作成済み原文正本を回収し、active一覧と保存本文を再取得してreadiness判定から再開する。
@@ -74,10 +81,15 @@ readyな計画実装型laneは通常型waveの計画工程を待たず、利用�
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
 
-planner失敗又は`needs_escalation`を現在のセッションで再試行しない場合は、本文、frontmatter、queue状態を変更しない。
-全対象が`processing`に残ることを照合し、全下流主体の終了後に原文正本を回収して失敗として返す。
+planner失敗又は`needs_escalation`を現在のセッションで再試行しない場合と、planner完了報告の受領後に
+採用、却下又は保留の項目別結果反映が失敗した場合は、後続項目への反映を止める。
 正常な後始末にも振り返りにも進まない。
-次のセッションは再開時点の`processing/<filename>`から新しい原文正本を作成し、未完了のplanner工程を再開する。
+同一waveでの再試行へ進まず、
+`references/feedbacks-planner-reception.md`の同一wave非再試行経路を適用する。
+保存後条件を満たす結果反映済み項目は既存の後続経路へ進める。
+保存済み前提から残操作を一意に決定できる結果部分反映項目は未完了操作だけを完遂し、
+結果未反映項目だけを次のセッションの既存readiness経路へ渡す。
+全下流主体の終了後に同referenceの条件で原文正本を1回だけ回収し、失敗として返す。
 
 回答済みTBDの処理は`references/hold-with-tbd-inject.md`を正本とする。
 

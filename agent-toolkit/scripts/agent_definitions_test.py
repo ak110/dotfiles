@@ -501,9 +501,6 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "全照合条件の一致を確認できた場合だけ`atk managed-temp cleanup --path <検収済み絶対パス>`",
         "確認できない場合は回収成功とせず、新しいwaveを開始せず失敗として返す",
         "作成後失敗がなく、絶対パスと比較基準を保持したまま同一waveを再試行する場合",
-        "feedback本文、frontmatter、queue状態を変更しない",
-        "全対象が`processing`に残る",
-        "作成後失敗が下流への受渡し後に発生して未確定項目が残る場合",
         "作成後失敗の回収成功後に同経路を適用する場合は、正本を再度回収せず",
         "読取りに失敗した場合は管理対象一時領域を作成しない",
         "遷移後に`atk mq edit`などで本文を変更した場合",
@@ -542,7 +539,7 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     for phrase in (
         "readiness確定後かつ遷移前の`inbox/<filename>`",
         "`start-processing` commitの親snapshot",
-        "processing項目は現在の保存実体から新しい原文正本",
+        "processing項目は、原文正本の作成前に保存実体から",
         "別セッションのprocessing再開では履歴を探索せず",
         "正常な後始末にも振り返りにも進まない",
     ):
@@ -571,6 +568,62 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     assert "元のユーザー指示を非該当とする場合に常駐自動起動の事実がないときも入力不足として返す" in review
     assert "原文正本を受領しない直接起動経路" in plan_mode
     assert "原文正本を受領しない直接起動経路" in delegation
+
+
+def test_feedback_source_nonretry_contract_resumes_only_items_without_saved_result() -> None:
+    """項目別反映の途中失敗を保存済み結果から一意に再開する。"""
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+
+    for phrase in (
+        "結果反映済み項目",
+        "結果部分反映項目",
+        "結果未反映項目",
+        "plannerの判定有無ではなく",
+        "各結果が要求する保存後条件の充足",
+        "同じ計画パスの`plan_file`",
+        "却下では`rejected`配置",
+        "利用者判断待ちではTBD依存、`inbox`配置及び`blocked`",
+        "外部条件待ちでは依存又はcooldownと`inbox`配置",
+        "TBD本文に保存された対象feedbackとの対応が一意",
+        "同じTBDを用いた依存登録、`return-to-inbox`及び`blocked`照合",
+        "未回答TBD依存を持つ`processing`項目",
+        "対応が0件又は複数の場合",
+        "新しいTBDを作成しない",
+        "既存readiness条件を満たす場合だけ",
+        "1回だけ回収",
+    ):
+        assert phrase in sender
+    for operation in (
+        "`convert-to-plan`",
+        "`reject`",
+        "TBD作成",
+        "TBD依存登録",
+        "`return-to-inbox`",
+        "保存後照合",
+    ):
+        assert operation in sender
+
+    failure_at = sender.index("項目別の結果反映が失敗した時点")
+    stop_at = sender.index("後続項目への反映を止め", failure_at)
+    classify_at = sender.index("対象を次の3種類へ分類する", stop_at)
+    partial_at = sender.index("結果部分反映項目", classify_at)
+    recover_at = sender.index("未完了操作だけを実行", partial_at)
+    cleanup_at = sender.index("1回だけ回収", recover_at)
+    assert failure_at < stop_at < classify_at < partial_at < recover_at < cleanup_at
+    assert "全対象が`processing`に残ること" not in sender
+
+    for phrase in (
+        "planner完了報告の受領後",
+        "後続項目への反映を止める",
+        "同一wave非再試行経路を適用する",
+        "readiness判定前に一意な未完了操作だけを完遂",
+        "既存TBDを用いて依存登録",
+        "結果反映済み項目は既存の後続経路",
+        "結果未反映項目だけを次のセッションの既存readiness経路",
+        "原文正本を1回だけ回収",
+    ):
+        assert phrase in process
 
 
 def test_session_review_advisor_uses_default_reasoning_effort() -> None:
@@ -737,6 +790,49 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
         assert "implementation-independent-review-task.md" not in mode_preparation
         assert "atk config get execute_review_model" not in mode_preparation
     assert "手順2から7までは実行しない" not in executor
+
+
+def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> None:
+    """作業前の公開契約と全適用計画を修正方針の認可上限にする。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    input_contract = _h2_section(executor, "入力")
+    common_review = _h2_section(executor, "実行").partition("### 共通の最終二系統レビュー\n")[2]
+
+    assert "最初のwriter起動前にlane worktreeのclean状態とHEADの完全OIDを検収" in executor
+    assert "統合worktree作成時の完全OID" in input_contract
+    for phrase in (
+        "`対応方針`を確定する前",
+        "`## 変更履歴`と現在状態を定める後続節の整合",
+        "`### ファイル群別の変更説明`の変更対象集合からの差異",
+        "後続節で再採用済みなら許容",
+        "追加ファイルは計画目的への帰属と必要性を確認",
+        "最初のwriter起動前に検収したlane worktreeの完全OID",
+        "対象計画、ユーザー合意",
+        "追加指示及び許容済みの挙動変化を合成",
+        "必須入力の統合worktree作成時完全OID",
+        "契約条項の出典及び適用範囲",
+        "適用される全計画と条項を対応付け",
+        "全適用条項と両立する修正だけを認可",
+        "計画準拠reviewerの対象計画又は指摘の出所だけに限定しない",
+        "最初のwriter以降のHEAD又は`review_contract`へ混入した未承認契約",
+        "計画ベースコミットを公開契約基準に用いない",
+        "対応付け不能、計画間衝突又は修正認可の上限を実際に超える方針はwriterへ渡さず",
+        "事象、期待値、実際値、発生条件、直接的原因、対応案及び超過内容",
+        "`needs_escalation`で呼び出し元へ返す",
+    ):
+        assert phrase in common_review
+
+    plan_check_at = common_review.index("`## 変更履歴`と現在状態を定める後続節の整合")
+    authorization_at = common_review.index("モード別の修正認可の上限", plan_check_at)
+    policy_at = common_review.index("`対応方針`にはexecutorが独立に確定", authorization_at)
+    writer_handoff_at = common_review.index("実在欠陥だけをwriterへ一括して返す", policy_at)
+    assert plan_check_at < authorization_at < policy_at < writer_handoff_at
+
+    assert "統合writerへ渡した作成時HEADの完全OIDと同じ文字列" in flow
+    assert "統合後HEADはレビュー対象として渡す" in flow
+    assert "統合writer以降の差分を公開契約の認可基準へ含めない" in flow
+    assert "ベースコミットから現行`HEAD`までの累積差分" in common_review
 
 
 def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
@@ -1586,7 +1682,8 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
     assert "`対応方針`にはexecutorが独立に確定した採否と最小限の修正" in executor
-    assert "`未検証`へ移し、実在欠陥だけをwriterへ一括して返す" in executor
+    assert "根拠と適用条件のいずれかが不足する指摘は`未検証`へ移す" in executor
+    assert "実在欠陥だけをwriterへ一括して返す" in executor
 
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     assert "通番・重大度／観点・区分・箇所・内容" in delegation
