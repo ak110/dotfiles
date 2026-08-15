@@ -435,8 +435,8 @@ def _cmd_add(
     `--target-repo`指定時は、レガシーREPO_PATH位置引数が無くfrontmatterにも`target_repo`が
     無い場合のfallback値として使う。
     エディター経由の本文確定後に対象worktreeのHEADを取得してから`_pull`を実行する順序とし、
-    エディター起動前のブロッキング待ち（他端末の投入分を反映するgit pull）を無くしてUXを改善する。
-    `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
+    エディター起動前のブロッキング待ち（他端末の投入分を反映するremote同期）を無くしてUXを改善する。
+    remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
     計画実装型の分類は`--plan-file`の指定だけで確定する。
     `--body-file`を指定した場合は当該ファイルの内容を本文として扱い、MESSAGE位置引数とは併用を拒否する。
@@ -521,7 +521,7 @@ def _cmd_add(
         print(f"投入を拒否しました: {error}", file=sys.stderr)
         sys.exit(1)
     except subprocess.CalledProcessError:
-        print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
+        print("remote同期に失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
         for message in messages:
             print("---", file=sys.stderr)
             print(message, file=sys.stderr)

@@ -1,6 +1,6 @@
 """atk (agent-toolkit `atk mq`) の拡張サブコマンド・オプションのテスト。
 
-`add --source`・`list`/`show`のpull実行・`commit`・`list`の状態に基づく抽出・
+`add --source`・`list`/`show`のremote同期・`commit`・`list`の状態に基づく抽出・
 エディター経由の`add`・ファイルパス誤投入拒否・`mq add`の`--target-repo`の単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に分離する。
 共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
@@ -82,14 +82,14 @@ class TestAddSourceOption:
 
 
 class TestListPullsBeforeRead:
-    """listサブコマンド: 出力前にgit pull --ff-onlyを実行する。"""
+    """listサブコマンド: 出力前に明示したupstreamへ同期する。"""
 
     def test_list_pulls_before_reading(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """list実行時に最初のgit呼び出しがpullであること。"""
+        """list実行時にfetchと明示upstreamへのfast-forward統合を行うこと。"""
         _setup_notes(tmp_path)
         calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
@@ -99,18 +99,18 @@ class TestListPullsBeforeRead:
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
-        assert git_cmds[0] == ["git", "pull", "--ff-only"]
+        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
 
 
 class TestShowAllPullsBeforeRead:
-    """showサブコマンド: --all指定時も出力前にgit pull --ff-onlyを実行する。"""
+    """showサブコマンド: --all指定時も出力前に明示したupstreamへ同期する。"""
 
     def test_show_all_pulls_before_reading(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """show --all実行時に最初のgit呼び出しがpullであること。"""
+        """show --all実行時にfetchと明示upstreamへのfast-forward統合を行うこと。"""
         _setup_notes(tmp_path)
         calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
@@ -120,7 +120,7 @@ class TestShowAllPullsBeforeRead:
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
-        assert git_cmds[0] == ["git", "pull", "--ff-only"]
+        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
 
 
 class TestCommitSubcommand:
@@ -132,7 +132,7 @@ class TestCommitSubcommand:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """未コミット差分ありの場合、pull→add→commit→pushの順で呼び出される。"""
+        """未コミット差分ありの場合、remote同期→add→commit→pushの順で呼び出される。"""
         notes = _setup_notes(tmp_path)
         calls: list[_GitCall] = []
 
@@ -150,11 +150,11 @@ class TestCommitSubcommand:
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls]
-        assert git_cmds[0] == ["git", "pull", "--ff-only"]
-        assert git_cmds[1][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[2] == ["git", "add", "inbox", "processing"]
-        assert git_cmds[3] == ["git", "commit", "-m", "chore: edit queue items externally"]
-        assert git_cmds[4] == ["git", "push"]
+        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
+        assert git_cmds[2][:3] == ["git", "status", "--porcelain"]
+        assert git_cmds[3] == ["git", "add", "inbox", "processing"]
+        assert git_cmds[4] == ["git", "commit", "-m", "chore: edit queue items externally"]
+        assert git_cmds[5] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()
         assert "外部編集分をコミット" in captured.out

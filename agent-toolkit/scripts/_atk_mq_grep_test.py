@@ -41,7 +41,8 @@ class TestGrepBasic:
         """単一エントリ内の複数行マッチを`<ファイル名>:<行番号>:<該当行>`形式で出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="line1\nline2\nline3")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "grep", "line2", "--skip-pull"], home=tmp_path)
@@ -49,6 +50,7 @@ class TestGrepBasic:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "fb-001.md:7:line2" in captured.out
+        assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for call in git_calls)
 
     def test_grep_finds_no_match_exits_1(
         self,
@@ -87,7 +89,7 @@ class TestGrepBasic:
             atk.main(["mq", "grep", "searchword"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert any(call["cmd"][:2] == ["git", "pull"] for call in git_calls)
+        assert any(call["cmd"][:2] == ["git", "fetch"] for call in git_calls)
         assert "`--skip-pull`を指定する" in capsys.readouterr().err
 
 

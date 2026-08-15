@@ -269,7 +269,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     list_.add_argument(
         "--skip-pull",
         action="store_true",
-        help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
+        help="remote同期全体をスキップする（ログイン時など軽量参照用）。",
     )
 
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")
@@ -306,7 +306,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     show.add_argument(
         "--skip-pull",
         action="store_true",
-        help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
+        help="remote同期全体をスキップする（ログイン時など軽量参照用）。",
     )
     show.set_defaults(subparser=show)
 
@@ -515,7 +515,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         help="TBDの回答状況で限定する（既定: all）。yes・no指定時はfeedbackを除外する。",
     )
     _add_target_repo_arg(grep)
-    grep.add_argument("--skip-pull", action="store_true", help="git pull --ff-onlyをスキップする。")
+    grep.add_argument("--skip-pull", action="store_true", help="remote同期全体をスキップする。")
     grep.set_defaults(subparser=grep)
 
     answer = sub.add_parser(

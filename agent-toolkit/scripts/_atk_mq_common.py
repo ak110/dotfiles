@@ -6,7 +6,7 @@
 不変条件: フィードバック保存リポジトリ（`private_notes`）へのgit操作・ファイル変更は、
 `_repo_lock(private_notes)`保持下でのみ行う。複数プロセスが同一クローンへ並行アクセスする
 運用（`atk mq process-loop`の複数常駐等）を前提とし、当該不変条件を破ると
-pullとファイル操作・commitの交錯によるfast-forward失敗を招く。
+remote同期とファイル操作・commitの交錯によるfast-forward失敗を招く。
 `_repo_lock`はロックファイル名を対象パスから導出するため、フィードバック保存リポジトリ以外の
 git作業コピー（`atk mq process-loop`が上流差分を確認するdotfilesチェックアウト等）にも適用する。
 
@@ -146,7 +146,7 @@ def _has_remote(private_notes: pathlib.Path) -> bool:
 
     `_LOCAL_ONLY_MARKER`が存在する場合のみFalse（`_init_local_private_notes_repo`が
     生成したremote未設定のローカル管理リポジトリ）とみなし、`_pull`・`_commit_and_push`は
-    この判定でpull・push操作をスキップする。マーカー不在時は`git remote`実行結果を問わず
+    この判定でremote同期・push操作をスキップする。マーカー不在時は`git remote`実行結果を問わず
     Trueとして扱う（通常運用のリポジトリを対象とする既存の呼び出し経路を変えないため）。
     """
     return not (private_notes / _LOCAL_ONLY_MARKER).exists()
@@ -158,13 +158,13 @@ def _init_local_private_notes_repo(root: pathlib.Path) -> None:
     `AGENT_TOOLKIT_PRIVATE_NOTES`未設定かつ既定パス`~/private-notes/`が不在の場合に、
     `root`（`platformdirs.user_data_dir("agent-toolkit")`配下）へ生成する。
     remoteは設定せず`_LOCAL_ONLY_MARKER`を配置する（`_has_remote`がFalseを返し、
-    以後の`_pull`・`_commit_and_push`はpush・pullをスキップしてローカルコミットのみで完結する）。
+    以後の`_pull`・`_commit_and_push`はremote同期・pushをスキップしてローカルコミットのみで完結する）。
     """
     root.mkdir(parents=True, exist_ok=True)
     _run_git(["init"], cwd=root)
     (root / _LOCAL_ONLY_MARKER).write_text(
         "このファイルはprivate-notesリポジトリがローカル限定自動生成であることを示すマーカーである。\n"
-        "削除するとpull/pushの自動スキップが解除され、remote未設定のままgit操作が失敗しうる。\n",
+        "削除するとremote同期とpushの自動スキップが解除され、remote未設定のままgit操作が失敗しうる。\n",
         encoding="utf-8",
     )
     for name in MQ_STATES:
@@ -230,30 +230,33 @@ def _migrate_legacy_reservations(private_notes: pathlib.Path) -> int:
 
 
 _PULL_MIN_INTERVAL_SECONDS = 30.0
-"""直近の`git pull`とみなす時間幅。
+"""直近のremote同期とみなす時間幅。
 
-直近のpullからの経過時間は`.git/FETCH_HEAD`のmtimeで判定する。
-同ファイルは`git pull`（内部のfetch）が実行されるたびに更新され、プロセスを跨いで参照できるため、
+直近の同期からの経過時間は`.git/FETCH_HEAD`のmtimeで判定する。
+同ファイルは`git fetch`が実行されるたびに更新され、プロセスを跨いで参照できるため、
 状態ファイルを別途設けずに済む。
 定期バックグラウンド更新の省略と、利用者操作での同期再利用案内に共用する。
 """
 
 
 def _pull(private_notes: pathlib.Path) -> None:
-    """フィードバック保存リポジトリで`git pull --ff-only`を実行する。
+    """フィードバック保存リポジトリを明示したupstreamへfast-forward同期する。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
     remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
-    pullを省略し、旧予約形式の移行だけを実行する。
+    remote同期を省略し、旧予約形式の移行だけを実行する。
+    fetchは共有状態の`FETCH_HEAD`を更新しうるが、統合対象は`@{u}`へ固定して
+    他プロセスのfetch及び`pull.rebase`設定から独立させる。
     """
     _assert_repo_lock_held(private_notes)
     if _has_remote(private_notes):
-        _run_git(["pull", "--ff-only"], cwd=private_notes)
+        _run_git(["fetch"], cwd=private_notes)
+        _run_git(["merge", "--ff-only", "@{u}"], cwd=private_notes)
     _migrate_legacy_reservations(private_notes)
 
 
 def _pull_with_recent_warning(private_notes: pathlib.Path) -> None:
-    """直近の同期形跡がある場合は再利用方法を案内したうえでpullする。
+    """直近の同期形跡がある場合は再利用方法を案内したうえでremote同期する。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
     """
@@ -368,7 +371,7 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
     push失敗時（他プロセス・他端末による先行pushとの非fast-forward等）は
-    `git pull --rebase`を経由してpushを1回だけ再試行する。経由した`pull --rebase`自体が
+    `git fetch`後に明示した`@{u}`へrebaseしてpushを1回だけ再試行する。rebase自体が
     失敗した場合は`git rebase --abort`の成否を確認してからリベース開始前の状態への
     復元結果をstderrへ出力し、元の例外を送出する。
     再試行後のpushが失敗した場合はその例外をそのまま送出する。
@@ -383,7 +386,7 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
 
 
 def _push_pending_commits(private_notes: pathlib.Path) -> None:
-    """ローカルcommitをpushし、競合時はrebase後に1回だけ再試行する。"""
+    """ローカルcommitをpushし、競合時は明示したupstreamへのrebase後に1回だけ再試行する。"""
     _assert_repo_lock_held(private_notes)
     if not _has_remote(private_notes):
         return
@@ -391,7 +394,8 @@ def _push_pending_commits(private_notes: pathlib.Path) -> None:
         _run_git(["push"], cwd=private_notes)
     except subprocess.CalledProcessError:
         try:
-            _run_git(["pull", "--rebase"], cwd=private_notes)
+            _run_git(["fetch"], cwd=private_notes)
+            _run_git(["rebase", "@{u}"], cwd=private_notes)
         except subprocess.CalledProcessError:
             abort_result = subprocess.run(["git", "rebase", "--abort"], cwd=private_notes, check=False)
             if abort_result.returncode != 0:
@@ -745,12 +749,12 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
 
 def pull(private_notes: pathlib.Path) -> None:
-    """リポジトリをfast-forward更新する。"""
+    """リポジトリを明示したupstreamへfast-forward同期する。"""
     _pull(private_notes)
 
 
 def pull_if_stale(private_notes: pathlib.Path) -> bool:
-    """定期更新が必要ならpullし、実行したかを返す。
+    """定期更新が必要ならremote同期し、実行したかを返す。
 
     定期バックグラウンド更新専用とする。利用者の操作に対応する経路
     （変更操作・明示的な同期要求）は`pull`を用い、毎回リモートの最新状態を取得する。
@@ -763,10 +767,10 @@ def pull_if_stale(private_notes: pathlib.Path) -> bool:
 
 
 def _pulled_recently(private_notes: pathlib.Path) -> bool:
-    """直近のpullから`_PULL_MIN_INTERVAL_SECONDS`未満かを返す。
+    """直近のremote同期から`_PULL_MIN_INTERVAL_SECONDS`未満かを返す。
 
     `.git`がファイルの場合（worktree形式）は`stat`が失敗し偽を返すため、
-    レート制限が無効化されてpullを実行する側へ倒れる。
+    レート制限が無効化されてremote同期を実行する側へ倒れる。
     フィードバック保存リポジトリは通常のクローンであり該当しない。
     """
     fetch_head = private_notes / ".git" / "FETCH_HEAD"

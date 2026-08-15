@@ -888,12 +888,12 @@ class TestCommitAndPushRetry:
         """ロックファイル配置先を実環境の`user_state_dir`から隔離する。"""
         monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
 
-    def test_retries_once_after_pull_rebase_on_push_failure(
+    def test_retries_once_after_explicit_upstream_rebase_on_push_failure(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """push失敗時は`pull --rebase`実行後にpushを1回だけ再試行する。"""
+        """push失敗時はfetch後に明示したupstreamへrebaseし、pushを1回だけ再試行する。"""
         calls: list[list[str]] = []
         push_attempts = 0
 
@@ -915,7 +915,8 @@ class TestCommitAndPushRetry:
             ["add", "feedback"],
             ["commit", "-m", "chore: test"],
             ["push"],
-            ["pull", "--rebase"],
+            ["fetch"],
+            ["rebase", "@{u}"],
             ["push"],
         ]
 
@@ -939,18 +940,18 @@ class TestCommitAndPushRetry:
         ):
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
 
-    def test_aborts_rebase_and_reports_success_when_pull_rebase_fails(
+    def test_aborts_rebase_and_reports_success_when_explicit_rebase_fails(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """経由した`pull --rebase`が失敗した場合は`git rebase --abort`を呼び、
+        """明示したupstreamへのrebaseが失敗した場合は`git rebase --abort`を呼び、
         復元成功をstderrへ出力してから例外を送出する。"""
 
         def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
             del cwd
-            if args[0] == "push" or args == ["pull", "--rebase"]:
+            if args[0] == "push" or args == ["rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
 
         abort_calls: list[list[str]] = []
@@ -980,7 +981,7 @@ class TestCommitAndPushRetry:
 
         def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
             del cwd
-            if args[0] == "push" or args == ["pull", "--rebase"]:
+            if args[0] == "push" or args == ["rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
 
         def fake_subprocess_run(args: list[str], cwd: pathlib.Path, check: bool) -> subprocess.CompletedProcess[bytes]:
@@ -998,6 +999,95 @@ class TestCommitAndPushRetry:
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
 
         assert "手動復旧が必要です" in capsys.readouterr().err
+
+
+class TestExplicitUpstreamIntegration:
+    """実Gitで共有`FETCH_HEAD`と利用者設定から独立した同期対象を検証する。"""
+
+    @staticmethod
+    def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        """`root`で実Gitを実行し、診断可能な出力を保持して結果を返す。"""
+        return subprocess.run(
+            ["git", *args],
+            cwd=root,
+            check=check,
+            capture_output=True,
+            text=True,
+        )
+
+    def _make_remote_and_clones(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+        """mainとsideを持つbare remote及び同じmainを追跡する2作業コピーを作成する。"""
+        remote = tmp_path / "remote.git"
+        seed = tmp_path / "seed"
+        old_copy = tmp_path / "old-copy"
+        new_copy = tmp_path / "new-copy"
+        self._git(tmp_path, "init", "--bare", "--initial-branch=main", str(remote))
+        self._git(tmp_path, "init", "--initial-branch=main", str(seed))
+        self._git(seed, "config", "user.email", "test@example.com")
+        self._git(seed, "config", "user.name", "test")
+        (seed / "queue.md").write_text("initial\n", encoding="utf-8")
+        self._git(seed, "add", "queue.md")
+        self._git(seed, "commit", "-m", "initial")
+        self._git(seed, "remote", "add", "origin", str(remote))
+        self._git(seed, "push", "-u", "origin", "main")
+        self._git(seed, "switch", "-c", "side")
+        (seed / "side.md").write_text("side\n", encoding="utf-8")
+        self._git(seed, "add", "side.md")
+        self._git(seed, "commit", "-m", "side")
+        self._git(seed, "push", "-u", "origin", "side")
+        self._git(seed, "switch", "main")
+        self._git(tmp_path, "clone", str(remote), str(old_copy))
+        self._git(tmp_path, "clone", str(remote), str(new_copy))
+        (seed / "queue.md").write_text("updated\n", encoding="utf-8")
+        self._git(seed, "add", "queue.md")
+        self._git(seed, "commit", "-m", "update")
+        self._git(seed, "push")
+        return remote, old_copy, new_copy
+
+    def test_explicit_upstream_succeeds_when_fetch_head_has_multiple_candidates(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """複数fetch候補ではpull再現経路が失敗し、明示upstream同期は成功する。"""
+        _remote, old_copy, new_copy = self._make_remote_and_clones(tmp_path)
+
+        old_result = self._git(
+            old_copy,
+            "-c",
+            "pull.rebase=true",
+            "pull",
+            "origin",
+            "main",
+            "side",
+            check=False,
+        )
+        assert old_result.returncode != 0
+        assert "multiple branches" in old_result.stderr
+
+        original_run_git = _common._run_git  # pylint: disable=protected-access  # noqa: SLF001
+
+        def run_with_competing_fetch(args: list[str], cwd: pathlib.Path) -> None:
+            original_run_git(args, cwd)
+            if args == ["fetch"]:
+                self._git(cwd, "fetch", "origin", "main", "side")
+
+        monkeypatch.setattr(_common, "_run_git", run_with_competing_fetch)
+        with _common._repo_lock(new_copy):  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull(new_copy)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert self._git(new_copy, "rev-parse", "HEAD").stdout == self._git(new_copy, "rev-parse", "@{u}").stdout
+
+    def test_sync_fails_when_upstream_is_unset(self, tmp_path: pathlib.Path) -> None:
+        """upstream未設定では暗黙の別refへ退避せず同期を失敗させる。"""
+        _remote, old_copy, _new_copy = self._make_remote_and_clones(tmp_path)
+        self._git(old_copy, "branch", "--unset-upstream")
+
+        with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(old_copy):  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull(old_copy)  # pylint: disable=protected-access  # noqa: SLF001
 
 
 class TestValidateFilename:
@@ -1266,7 +1356,7 @@ class TestPullIfStale:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             assert _common.pull_if_stale(tmp_path) is True
-        assert calls == [["pull", "--ff-only"]]
+        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
 
     def test_pulls_when_fetch_head_missing(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """`FETCH_HEAD`が無い場合は経過時間を判定できないためpullする。"""
@@ -1274,7 +1364,7 @@ class TestPullIfStale:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             assert _common.pull_if_stale(tmp_path) is True
-        assert calls == [["pull", "--ff-only"]]
+        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
 
     def test_public_pull_ignores_rate_limit(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """利用者の操作に対応する`pull`は直近pullの有無によらず毎回実行する。"""
@@ -1288,7 +1378,7 @@ class TestPullIfStale:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common.pull(tmp_path)
-        assert calls == [["pull", "--ff-only"]]
+        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
 
 
 class TestPullWithRecentWarning:
@@ -1313,7 +1403,7 @@ class TestPullWithRecentWarning:
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull_with_recent_warning(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert calls == [["pull", "--ff-only"]]
+        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
         assert capsys.readouterr().err == (
             "警告: 直近30秒にfetchを含む同期形跡がある。"
             "同一連続操作で同期結果を再利用する場合は`list`・`show`・`grep`で"
@@ -1339,5 +1429,5 @@ class TestPullWithRecentWarning:
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull_with_recent_warning(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert calls == [["pull", "--ff-only"]]
+        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
         assert "同期形跡" not in capsys.readouterr().err

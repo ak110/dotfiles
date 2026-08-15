@@ -316,13 +316,13 @@ class TestWaitForChanges:
         monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
 
         def fake_pull(_path: pathlib.Path) -> None:
-            raise subprocess.CalledProcessError(1, ["git", "pull", "--ff-only"])
+            raise subprocess.CalledProcessError(1, ["git", "merge", "--ff-only", "@{u}"])
 
         monkeypatch.setattr(_process_loop, "_pull", fake_pull)
 
         _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert "git pullに失敗" in capsys.readouterr().err
+        assert "remote同期に失敗" in capsys.readouterr().err
 
     def test_change_event_skips_pull(
         self,

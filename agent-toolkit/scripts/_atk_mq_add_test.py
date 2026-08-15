@@ -955,8 +955,8 @@ class TestAddOrderEditorFirst:
                 call_order.append("editor")
                 pathlib.Path(cmd[1]).write_text("本文テスト", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-            if cmd[:2] == ["git", "pull"]:
-                call_order.append("pull")
+            if cmd[:2] == ["git", "fetch"]:
+                call_order.append("sync")
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -965,16 +965,16 @@ class TestAddOrderEditorFirst:
             atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert call_order == ["editor", "head", "pull"]
+        assert call_order == ["editor", "head", "sync"]
         assert list((notes / "inbox").iterdir())
 
-    def test_message_preserved_when_pull_fails(
+    def test_message_preserved_when_remote_sync_fails(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`_pull`失敗時、エディターで確定済みの本文がstderrへ再表示されたうえで終了コード1になる。"""
+        """remote同期失敗時、エディターで確定済みの本文がstderrへ再表示されたうえで終了コード1になる。"""
         _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -988,7 +988,7 @@ class TestAddOrderEditorFirst:
             if cmd[0] == "fake-editor":
                 pathlib.Path(cmd[1]).write_text("消失させたくない本文", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-            if cmd[:2] == ["git", "pull"]:
+            if cmd[:2] == ["git", "merge"]:
                 raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
@@ -999,6 +999,7 @@ class TestAddOrderEditorFirst:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
+        assert "remote同期に失敗" in captured.err
         assert "消失させたくない本文" in captured.err
 
     def test_explicit_message_still_pulls_before_write(
@@ -1006,7 +1007,7 @@ class TestAddOrderEditorFirst:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """引数指定経路でもpull→書き込み→commitの順序で動作すること。"""
+        """引数指定経路でもremote同期→書き込み→commitの順序で動作すること。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1031,7 +1032,7 @@ class TestAddOrderEditorFirst:
             atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert git_cmds[0] == ["git", "pull", "--ff-only"]
+        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
 
 
 class TestAddRepoPathOverrideCli:

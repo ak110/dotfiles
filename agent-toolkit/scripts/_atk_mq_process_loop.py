@@ -49,7 +49,7 @@ _INHERITED_VENV_ENV_KEYS: tuple[str, ...] = ("VIRTUAL_ENV",)
 # 仮想環境のコマンド格納ディレクトリ名（POSIXは`bin`、Windowsは`Scripts`）。
 _VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
 
-# 主待機のタイムアウト秒（他端末からのfeedback投入を`git pull`で拾う間隔）。
+# 主待機のタイムアウト秒（他端末からのfeedback投入をremote同期で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0
 
 # `latest`指定ツールを外部registryに対して再評価する間隔と、導入処理の実行上限。
@@ -380,7 +380,7 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
     """watchdogでinbox配下を監視し、変更検知またはタイムアウトまで待機する。
 
     変更検知時はデバウンス窓（3秒）で追加イベントを畳み込んでから返る
-    （他端末書き込みは10分タイムアウト側の`_pull`で拾うため、変更検知時は`_pull`しない）。
+    （他端末書き込みは10分タイムアウト側のremote同期で拾うため、変更検知時は同期しない）。
     タイムアウト時は他端末投入を反映するため`_repo_lock`保持下で`_pull`する。
     他プロセスとの一時的な競合・ネットワーク断等で`_pull`が失敗した場合は例外を捕捉して
     stderrへ警告出力し、常駐ループの待機動作を続ける。
@@ -406,7 +406,7 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
             with _repo_lock(private_notes):
                 _pull(private_notes)
         except subprocess.CalledProcessError as exc:
-            print(f"git pullに失敗（pull失敗、待機ループ続行）: {exc}", file=sys.stderr)
+            print(f"remote同期に失敗（待機ループ続行）: {exc}", file=sys.stderr)
         return False
     finally:
         observer.stop()
@@ -419,7 +419,7 @@ def _pull_private_notes(private_notes: pathlib.Path) -> bool:
         with _repo_lock(private_notes):
             _pull(private_notes)
     except subprocess.CalledProcessError as exc:
-        print(f"git pullに失敗（子セッションを起動せず待機します）: {exc}", file=sys.stderr)
+        print(f"remote同期に失敗（子セッションを起動せず待機します）: {exc}", file=sys.stderr)
         return False
     return True
 
@@ -790,7 +790,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
     秒間隔で実行し、新規アラートを検知した場合はfeedbackへ投入して即座に次反復へ進む。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
-    件数0の間はwatchdogによる変更検知と10分間隔の`git pull`を含む待機ループへ進み、
+    件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
     待機に入った旨を1度出力する。
     待機ループがタイムアウト（変更未検知）で復帰した場合、上流差分があれば`update-dotfiles`を実行したうえで、
     `~/dotfiles`チェックアウト内`agent-toolkit/scripts/`配下コードの起動時ハッシュと現在のハッシュを比較し、

@@ -140,8 +140,8 @@ class TestShowMultipleFiles:
         captured = capsys.readouterr()
         assert captured.out.index("### fb-002.md") < captured.out.index("### fb-001.md")
         assert "本文2\n\n## target_repo" in captured.out
-        pulls = [call for call in git_calls if call["cmd"][:2] == ["git", "pull"]]
-        assert len(pulls) == 1
+        fetches = [call for call in git_calls if call["cmd"][:2] == ["git", "fetch"]]
+        assert len(fetches) == 1
 
     def test_multiple_files_use_same_separator_as_all(
         self,
@@ -697,14 +697,14 @@ class TestShowProcessedStates:
 
 
 class TestShowSkipPull:
-    """showサブコマンド: --skip-pull指定時はgit pullをスキップする。"""
+    """showサブコマンド: --skip-pull指定時はremote同期全体をスキップする。"""
 
     def test_skip_pull_omits_git_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--skip-pull指定時はgit pull --ff-onlyが実行されない。"""
+        """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -714,7 +714,7 @@ class TestShowSkipPull:
             atk.main(["mq", "show", "--all", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
+        assert not any(c["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_calls)
 
     def test_recent_sync_warns_and_still_pulls(
         self,
@@ -735,7 +735,7 @@ class TestShowSkipPull:
             atk.main(["mq", "show", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert any(call["cmd"][:2] == ["git", "pull"] for call in git_calls)
+        assert any(call["cmd"][:2] == ["git", "fetch"] for call in git_calls)
         assert "`--skip-pull`を指定する" in capsys.readouterr().err
 
 

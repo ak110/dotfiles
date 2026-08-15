@@ -345,7 +345,7 @@ class TestTbdAddEditorBeforePull:
             if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
                 stdout = f"{_FIXED_HEAD_COMMIT}\n" if kw.get("text") else f"{_FIXED_HEAD_COMMIT}\n".encode()
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd[:2] == ["git", "pull"]:
+            if cmd[:2] == ["git", "merge"]:
                 raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
             if cmd[0] == "fake-editor":
                 editor_calls.append(list(cmd))
@@ -396,7 +396,7 @@ class TestTbdAddEditorBeforePull:
             )
 
         assert exc_info.value.code == 2
-        assert not any(c[:2] == ["git", "pull"] for c in git_cmds)
+        assert not any(c[:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_cmds)
 
 
 class TestTbdAddRepoPathOverrideCli:
@@ -642,14 +642,14 @@ class TestTbdList:
 
 
 class TestTbdListSkipPull:
-    """TBD一覧: --skip-pull指定時はgit pullをスキップする。"""
+    """TBD一覧: --skip-pull指定時はremote同期全体をスキップする。"""
 
     def test_skip_pull_omits_git_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--skip-pull指定時はgit pull --ff-onlyが実行されない。"""
+        """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
         notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         git_calls: list[_GitCall] = []
@@ -659,7 +659,7 @@ class TestTbdListSkipPull:
             atk.main(["mq", "list", "--type=tbd", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
+        assert not any(c["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_calls)
 
 
 class TestTbdEdit:
