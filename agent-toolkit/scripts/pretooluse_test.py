@@ -279,19 +279,53 @@ class TestHomePathCheck:
         assert result.returncode == 0
         assert "home directory" in result.stderr
 
-    def test_home_path_warns_when_git_detection_fails(
+    def test_home_path_git_boundary_does_not_parse_localized_git_diagnostics(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ):
-        """Git判定が確定的な結論に至らない場合は既存警告を維持する。"""
+        """Gitのロケール依存診断文を呼び出しも解析もせず管理外を確定する。"""
 
-        def _failed_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        def _localized_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
             del args, kwargs
-            return subprocess.CompletedProcess(["git", "rev-parse"], 128, "", "fatal: invalid gitfile format")
+            return subprocess.CompletedProcess(
+                ["git", "rev-parse"],
+                128,
+                "",
+                "致命的エラー: Gitリポジトリではありません",
+            )
 
-        monkeypatch.setattr(pretooluse.subprocess, "run", _failed_git)
+        monkeypatch.setattr(pretooluse.subprocess, "run", _localized_git)
+        target = tmp_path / "repo" / "docs" / "note.md"
+        return_code = pretooluse.main(
+            json.dumps(
+                {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        assert return_code == 0
+        assert "home directory" not in capsys.readouterr().err
+
+    def test_home_path_warns_when_git_marker_detection_fails(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        """Git管理マーカーを確認できない場合は既存警告を維持する。"""
+        original_lstat = pathlib.Path.lstat
+
+        def _unreadable_git_marker(path: pathlib.Path, *args: object, **kwargs: object) -> os.stat_result:
+            if path.name == ".git":
+                raise PermissionError(path)
+            return original_lstat(path, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "lstat", _unreadable_git_marker)
         target = tmp_path / "repo" / "docs" / "note.md"
         return_code = pretooluse.main(
             json.dumps(
@@ -305,6 +339,21 @@ class TestHomePathCheck:
 
         assert return_code == 0
         assert "home directory" in capsys.readouterr().err
+
+    def test_home_path_in_temp_worktree_git_file_warns(self, tmp_path: pathlib.Path):
+        """一時ルート配下のworktree用`.git`ファイルもGit管理候補として警告する。"""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        (worktree / ".git").write_text("gitdir: /tmp/example.git/worktrees/worktree\n", encoding="utf-8")
+        target = worktree / "docs" / "note.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            }
+        )
+        assert result.returncode == 0
+        assert "home directory" in result.stderr
 
     def test_home_path_in_temp_prefix_sibling_warns(self):
         """一時ルートと文字列prefixだけが同じ兄弟パスは除外しない。"""
