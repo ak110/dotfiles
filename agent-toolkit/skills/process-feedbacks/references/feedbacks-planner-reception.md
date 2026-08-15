@@ -10,15 +10,16 @@ active一覧を取得した時点のreadyな通常型feedbackを、対象リポ�
 blocked項目、未回答TBD、スナップショット後に追加された項目は含めない。
 plannerは採用項目を1つの統合計画へまとめ、項目ごとの原文、採否、対象、完了条件、実装単位を識別可能に保つ。
 
-メインは`atk config show`で`private_notes`の絶対パスを解決し、
-`atk managed-temp create --prefix feedbacks-planner-source`を単独で実行する。
+メインは`atk config show`で`private_notes`の絶対パスを解決する。
 新規`inbox`項目ではreadiness確定後かつ`atk mq start-processing`前の
 `private_notes/inbox/<filename>`をUTF-8で直接読む。
 既存`processing`項目の再開では、再開時点の`private_notes/processing/<filename>`をUTF-8で直接読む。
-対象パスが存在しない場合又は想定した状態のディレクトリにない場合は原文正本を作成しない。
+全対象のパスが想定した状態のディレクトリに存在し、保存本文の読取りに成功したことを先に確認する。
+対象パスが存在しない場合、想定した状態にない場合又は読取りに失敗した場合は管理対象一時領域を作成しない。
 active一覧と保存内容を再取得し、readiness判定から再開する。
 `atk mq show`は対象確認だけに使い、表示用見出しや複数件の区切りを本文へ含めない。
 
+対象保存本文の読取りに全件成功した後、`atk managed-temp create --prefix feedbacks-planner-source`を単独で実行する。
 メインは管理対象一時領域直下の`feedback-source.json`へ単一のJSON objectを書く。
 feedback filenameをproperty名、frontmatterを含む保存本文の論理文字列をvalueとし、標準JSON serializerを使う。
 標準JSON parserで直後に読み戻し、property集合とfilename集合の一致を確認する。
@@ -30,12 +31,18 @@ JSONのescapeは保存表現とし、parserが返す論理文字列を逐語比�
 遷移中の内容差により原文正本を再作成した場合は、再作成後の読戻しで完全一致を確認した各valueへ比較基準を更新する。
 原文正本のwriterはメインだけとし、planner、調査担当、author、reviewerは読み取り専用とする。
 
+領域作成後にJSONの書込み失敗、読戻し失敗、property集合の不一致又はvalueの不一致を検出した場合は、当該正本を下流へ渡さない。
+`atk managed-temp cleanup --path <作成時に得た絶対パス>`を単独で実行し、終了コード0とパスの不在を確認する。
+回収成功後にだけactive一覧と保存本文を再取得し、readiness判定から新しいwaveを開始する。
+回収の成功を確認できない場合はplannerを起動せず、新しい管理対象一時領域も作成せず失敗として返す。
+
 新規`inbox`項目では読戻し検収後に`atk mq start-processing`を実行し、対象filenameと
 `processing`配置を照合する。
 続いて遷移commitの親snapshotにある各`inbox/<filename>`と原文正本のvalueを完全一致で比較する。
-状態競合では原文正本を回収してactive一覧と保存本文の取得からやり直す。
+状態競合では作成後の検収失敗と同じ回収手順を適用し、active一覧と保存本文の取得からやり直す。
 遷移中の内容差では親snapshotの保存本文から同じJSONを再作成し、読戻し検収が終わるまでplannerを起動しない。
-遷移commit又は親snapshotを一意に確認できない場合もplannerを起動しない。
+再作成時の書込みや検収に失敗した場合も、作成後の検収失敗と同じ回収手順を適用する。
+遷移commitと親snapshotのいずれかを一意に確認できない場合もplannerを起動しない。
 既存`processing`項目の別セッション再開では履歴を探索せず、`start-processing`を再実行しない。
 遷移後に`atk mq edit`などで本文を変更した場合は、再開時点の変更後の保存実体を正本とする。
 
@@ -97,6 +104,11 @@ property集合と対象filename集合の一致に加え、各valueとメイン�
 `atk managed-temp cleanup --path <検収済み絶対パス>`を単独で実行し、終了コード0とパスの不在を確認する。
 同一waveを再試行する場合や未確定項目がある場合は回収しない。
 中断後も保持済みの絶対パスと比較基準で再開できる場合は、回収直前と同じ構造検証と各valueの完全一致を再検収して同じ正本を使う。
+絶対パスを保持していても比較基準だけを失った場合は、原文正本又はqueueの現在内容から比較基準を再構築しない。
+正確な絶対パス、所有主体、全下流主体の終了及び作成時から外部状態が変化していないことを確認する。
+これらを確認できる場合は、内容を読み取り専用で検収してから同じパスを回収する。
+回収成功後にactive一覧と現在の保存本文を再取得し、新しいwaveの正本を作成する。
+安全な回収を確認できない場合は当該正本を再利用せず、新しいwaveも開始せず失敗として返す。
 異常終了で正確なパスを保持できない場合は、共有領域の一覧から対象を推測して回収しない。
 
 planner失敗又は`needs_escalation`を同一waveで再試行しない場合は、feedback本文、frontmatter、queue状態を変更しない。

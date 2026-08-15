@@ -462,6 +462,14 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "期限切れ`cooldown_until`や非正規化YAML frontmatter",
         "JSONのescapeは保存表現",
         "原文正本のwriterはメインだけ",
+        "対象保存本文の読取りに全件成功した後",
+        "JSONの書込み失敗、読戻し失敗、property集合の不一致又はvalueの不一致",
+        "atk managed-temp cleanup --path <作成時に得た絶対パス>",
+        "回収成功後にだけactive一覧と保存本文を再取得",
+        "比較基準だけを失った場合",
+        "原文正本又はqueueの現在内容から比較基準を再構築しない",
+        "正確な絶対パス、所有主体、全下流主体の終了及び作成時から外部状態が変化していないこと",
+        "回収成功後にactive一覧と現在の保存本文を再取得し、新しいwaveの正本を作成",
         "作成時か直近の再開時に検収した比較基準",
         "各valueとメインが作成時か直近の再開時から保持する比較基準の論理文字列が完全一致",
         "原文正本が検収後に改変されていない自己同一性の確認",
@@ -471,11 +479,19 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
         "atk managed-temp cleanup --path <検収済み絶対パス>",
         "feedback本文、frontmatter、queue状態を変更しない",
         "全対象が`processing`に残る",
-        "想定した状態のディレクトリにない場合は原文正本を作成しない",
+        "読取りに失敗した場合は管理対象一時領域を作成しない",
         "遷移後に`atk mq edit`などで本文を変更した場合",
         "共有領域の一覧から対象を推測して回収しない",
     ):
         assert phrase in sender
+    read_all_at = sender.index("対象保存本文の読取りに全件成功した後")
+    create_at = sender.index("atk managed-temp create --prefix feedbacks-planner-source")
+    write_at = sender.index("`feedback-source.json`へ単一のJSON objectを書く")
+    assert read_all_at < create_at < write_at
+    failed_validation_at = sender.index("領域作成後にJSONの書込み失敗")
+    failed_validation_cleanup_at = sender.index("atk managed-temp cleanup --path <作成時に得た絶対パス>", failed_validation_at)
+    retry_at = sender.index("回収成功後にだけactive一覧と保存本文を再取得", failed_validation_cleanup_at)
+    assert failed_validation_at < failed_validation_cleanup_at < retry_at
     for phrase in (
         "readiness確定後かつ遷移前の`inbox/<filename>`",
         "`start-processing` commitの親snapshot",
@@ -503,6 +519,9 @@ def test_feedback_source_contract_is_shared_from_sender_to_reviewer() -> None:
     assert "直接受領した人間由来の利用者指示がある場合は、出所と引用範囲を付けた逐語文" in sender
     assert "常駐自動起動で人間由来の利用者指示がない場合は、非該当であることと起動事実" in sender
     assert "直接起動経路では、`## 提示素材`の逐語原文" in review
+    assert "人間由来の場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実" in review
+    assert "人間由来の指示があるのに逐語文、出所又は引用範囲がない場合は入力不足として返す" in review
+    assert "元のユーザー指示を非該当とする場合に常駐自動起動の事実がないときも入力不足として返す" in review
     assert "原文正本を受領しない直接起動経路" in plan_mode
     assert "原文正本を受領しない直接起動経路" in delegation
 
