@@ -55,7 +55,8 @@ user-invocable: false
    `plan-review-task.md`を渡し、新規識別子で起動する。
 6. レビュー指摘を加工せずauthorへ全件配送する。
    reviewerの起動、書込有無のGit状態検収、結果検収は自身が担当し、再レビューと収束は
-   `plan-review-delegation.md`、継続方法は`runtime-routing.md`「工程別モデル設定」に従う。
+   `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`、継続方法は
+   `runtime-routing.md`「工程別モデル設定」に従う。
    authorへの新規起動又は継続接続の直前は`plan_model`、reviewerの再レビュー直前は`plan_review_model`を再取得する。
 7. 計画ファイルの実在と分量、機械検査、レビュー収束、起動前後のGit状態を検収する。
 
