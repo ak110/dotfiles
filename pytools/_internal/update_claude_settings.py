@@ -59,6 +59,10 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
 # dict は再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
 _REMOVED_ENV_KEYS: tuple[str, ...] = ("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION",)
 
+# 配布元から廃止した設定キーのドット区切りパス。
+# dictは再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
+_REMOVED_KEYS: tuple[str, ...] = ("autoMode.allowMode",)
+
 # settings.json 配下のリスト要素から除去する部分文字列のペア。
 # ドット区切りパスで対象配列を指定し、配列要素のうち部分文字列を含むものを除去する。
 # share/claude_settings_json_managed.* から廃止した配列項目を列挙する。
@@ -83,6 +87,11 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
     (
         "autoMode.allow",
         "自律終了再促フックからの誘導・ユーザーのSkill名明示指定のいずれか",
+    ),
+    # 2026-08: ラベル付きの Personal Repo Default-Branch Push へ移管したため利用者記入の旧文面を除去
+    (
+        "autoMode.allow",
+        "ak110の個人リポジトリ（dotfiles, pytilpack",
     ),
     # 2026-08: ユーザースコープの読取禁止を廃止したため旧管理項目を除去
     (
@@ -160,6 +169,7 @@ def update_claude_settings(
     overrides: list[Path] | None = None,
     removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
     removed_env_keys: tuple[str, ...] = _REMOVED_ENV_KEYS,
+    removed_keys: tuple[str, ...] = _REMOVED_KEYS,
     removed_list_item_substrings: tuple[tuple[str, str], ...] = (),
     stale_labeled_list_paths: tuple[str, ...] = (),
 ) -> bool:
@@ -167,8 +177,9 @@ def update_claude_settings(
 
     `overrides` が与えられた場合は、`managed_path` の内容に上乗せしてからマージする。
     マージ前に `settings_path` から `removed_hook_substrings` に該当する hooks エントリ、
-    `removed_env_keys` に該当する env キー、`removed_list_item_substrings` に該当する
-    配列要素を除去することで、配布元から削除されたエントリが残り続けるのを防ぐ。
+    `removed_env_keys` に該当する env キー、`removed_keys` に該当する設定キー、
+    `removed_list_item_substrings` に該当する配列要素を除去することで、配布元から削除された
+    エントリが残り続けるのを防ぐ。
     現行の管理対象フックもイベント別に一度除去してから再追加し、管理対象側のグループ
     構造を変更した場合に旧構造が残るのを防ぐ。
 
@@ -200,6 +211,7 @@ def update_claude_settings(
     _strip_removed_hooks(data, removed_hook_substrings)
     _strip_managed_hooks(data, managed)
     _strip_removed_env_keys(data, removed_env_keys)
+    _strip_removed_keys(data, removed_keys)
     _strip_removed_list_items(data, removed_list_item_substrings)
     _strip_stale_labeled_list_items(data, managed, stale_labeled_list_paths)
     _merge(data, managed)
@@ -429,6 +441,19 @@ def _resolve_dict_container(value: dict, keys: list[str]) -> tuple[dict, str] | 
     if not isinstance(target, dict):
         return None
     return target, keys[-1]
+
+
+def _strip_removed_keys(data: dict, paths: tuple[str, ...]) -> None:
+    """ドット区切りパスで辿った設定キーを除去する。
+
+    パス途中のキーが存在しない場合や、途中の値がdictでない場合は何もしない。
+    """
+    for path in paths:
+        resolved = _resolve_dict_container(data, path.split("."))
+        if resolved is None:
+            continue
+        target, last_key = resolved
+        target.pop(last_key, None)
 
 
 def _strip_removed_list_items(data: dict, mappings: tuple[tuple[str, str], ...]) -> None:

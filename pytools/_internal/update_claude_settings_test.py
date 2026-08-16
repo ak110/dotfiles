@@ -14,6 +14,11 @@ from pytools._internal.update_claude_settings import update_claude_settings
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PROD_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.json"
 _PROD_MANAGED_CONFIG = _REPO_ROOT / "share" / "claude_json_managed.json"
+_PROD_MANAGED_SETTINGS_FILES = (
+    _PROD_MANAGED_SETTINGS,
+    _PROD_MANAGED_SETTINGS.with_suffix(".posix.json"),
+    _PROD_MANAGED_SETTINGS.with_suffix(".win32.json"),
+)
 
 MANAGED_ALLOW = [
     "Bash",
@@ -223,9 +228,9 @@ class TestProductionManagedSettings:
         assert data["permissions"]["deny"] == MANAGED_DENY
 
     def test_auto_mode_rules_keep_required_scope_without_confirmation_details(self):
-        """自動許可文は7ラベルの対象と安全境界だけを保持する。"""
+        """自動許可文は8ラベルの対象と安全境界だけを保持する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        rules = dict(rule.split(": ", maxsplit=1) for rule in data["autoMode"]["allow"])
+        rules = dict(rule.split(": ", maxsplit=1) for rule in data["autoMode"]["allow"] if rule != "$defaults")
         assert set(rules) == {
             "Session-Owned Amend",
             "Exit-Session Termination",
@@ -234,6 +239,7 @@ class TestProductionManagedSettings:
             "External Marketplace Registration",
             "Agent Config Read",
             "Delegation Continuation Message",
+            "Personal Repo Default-Branch Push",
         }
         assert all(
             term in rules["Session-Owned Amend"]
@@ -247,10 +253,10 @@ class TestProductionManagedSettings:
                 "`agent-toolkit:exit-session`",
                 "Skill呼び出し",
                 "直前",
-                "起動条件",
-                "満たす",
+                "チェーン演算子",
                 "単独",
                 "`kill -TERM $PPID`",
+                "他プロセス",
             )
         )
         assert all(
@@ -294,6 +300,24 @@ class TestProductionManagedSettings:
             term in rules["Delegation Continuation Message"]
             for term in ("委譲先", "`SendMessage`", "委譲済み範囲内", "不可逆操作", "許可しない")
         )
+        assert all(
+            term in rules["Personal Repo Default-Branch Push"]
+            for term in (
+                "github.com/ak110",
+                "master",
+                "main",
+                "通常push",
+                "transcript",
+                "force-push",
+                "履歴書き換え",
+            )
+        )
+        assert data["autoMode"]["allow"][0] == "$defaults"
+        assert data["autoMode"]["environment"] == [
+            "$defaults",
+            "Source control: github.com/ak110 and all repositories under it are the user's own "
+            "personal repositories (trusted).",
+        ]
         assert "AskUserQuestion" not in "\n".join(rules.values())
 
     @pytest.mark.parametrize("suffix", ["posix", "win32"])
@@ -999,6 +1023,57 @@ class TestStripRemovedEnvKeys:
         assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
 
 
+class TestStripRemovedKeys:
+    """配布元から廃止した設定キーの自動除去テスト。"""
+
+    @pytest.mark.parametrize(
+        ("existing", "expected"),
+        [
+            (
+                {"autoMode": {"allowMode": "extend", "allow": ["利用者独自ルール"]}},
+                {"autoMode": {"allow": ["利用者独自ルール"]}},
+            ),
+            (
+                {"autoMode": {"allow": ["利用者独自ルール"]}},
+                {"autoMode": {"allow": ["利用者独自ルール"]}},
+            ),
+        ],
+    )
+    def test_removed_key_is_deleted_or_absent_without_other_changes(
+        self,
+        tmp_path: Path,
+        existing: dict,
+        expected: dict,
+    ) -> None:
+        """登録キーを除去し、キーが存在しない場合は他の設定を変更しない。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text("{}", encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+
+        update_claude_settings(managed_path, target_path, removed_keys=("autoMode.allowMode",))
+
+        assert json.loads(target_path.read_text(encoding="utf-8")) == expected
+
+    def test_run_safely_removes_key_from_settings_and_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`run()`はsettings.jsonと.claude.jsonの廃止キーを安全に除去する。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {})
+        config_path = tmp_path / "claude.json"
+        existing = {"autoMode": {"allowMode": "extend", "allow": ["利用者独自ルール"]}}
+        settings_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+        config_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+
+        mod.run()
+
+        expected = {"autoMode": {"allow": ["利用者独自ルール"]}}
+        assert json.loads(settings_path.read_text(encoding="utf-8")) == expected
+        assert json.loads(config_path.read_text(encoding="utf-8")) == expected
+
+
 class TestStripRemovedListItems:
     """配布元から削除された配列項目の自動削除テスト。"""
 
@@ -1138,6 +1213,33 @@ class TestStripRemovedListItems:
             "Read(*.crt)",
             "Read(//**/.credentials.json)",
         ]
+
+    def test_run_removes_legacy_personal_repo_push_rule(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`run()`は移管前の個人リポジトリpushルールだけを除去する。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {})
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "autoMode": {
+                        "allow": [
+                            "ak110の個人リポジトリ（dotfiles, pytilpack等）ではデフォルトブランチへの直接pushを許可。",
+                            "利用者独自ルール",
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == ["利用者独自ルール"]
 
 
 class TestStripStaleLabeledListItems:
@@ -1297,22 +1399,35 @@ class TestStripStaleLabeledListItems:
         ]
 
 
+class TestManagedAutoModeSchema:
+    """配布原本の`autoMode`サブキーを公式スキーマの許容集合と照合する。"""
+
+    def test_subkeys_match_official_schema_snapshot(self) -> None:
+        """配布原本3ファイルの`autoMode`サブキーは公式スキーマの許容集合に含まれる。"""
+        # https://json.schemastore.org/claude-code-settings.json の autoMode.properties、2026-08-16時点
+        allowed = {"allow", "soft_deny", "environment", "hard_deny", "classifyAllShell"}
+        for path in _PROD_MANAGED_SETTINGS_FILES:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if "autoMode" in data:
+                assert set(data["autoMode"]) <= allowed, path
+
+
 class TestManagedAutoModeAllowLabelFormat:
-    """配布原本`autoMode.allow`の全要素がラベル形式であることを検査する自動チェック。
+    """配布原本`autoMode.allow`の自作要素がラベル形式であることを検査する自動チェック。
 
     `_strip_stale_labeled_list_items`によるラベル単位の旧文面除去は、配布原本側の要素が
-    ラベル形式（`^([A-Za-z][A-Za-z0-9 -]*): `）に一致することを前提とする。ラベルを持たない
-    要素を将来追加すると保護対象になり除去できなくなるため、機械的に検出する。
+    ラベル形式（`^([A-Za-z][A-Za-z0-9 -]*): `）に一致することを前提とする。
+    公式仕様の`"$defaults"`以外にラベルを持たない要素を追加すると保護対象にならないため、機械的に検出する。
     """
 
     def test_all_entries_match_labeled_format(self) -> None:
-        """配布原本`share/claude_settings_json_managed.json`の`autoMode.allow`は全要素がラベル形式。"""
+        """配布原本`autoMode.allow`は`"$defaults"`以外の全要素がラベル形式。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         allow = managed["autoMode"]["allow"]
         unlabeled = [
             item
             for item in allow
-            if not mod._LABELED_LIST_ITEM_PATTERN.match(item)  # pylint: disable=protected-access
+            if item != "$defaults" and not mod._LABELED_LIST_ITEM_PATTERN.match(item)  # pylint: disable=protected-access
         ]
         assert unlabeled == []
 
