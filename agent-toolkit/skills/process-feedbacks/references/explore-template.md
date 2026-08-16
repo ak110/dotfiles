@@ -18,6 +18,7 @@
 
 - source-backed経路では起動直後に`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。
   表示用見出し、YAML frontmatter及びCLI付加の末尾改行を除いたfeedback本文を調査対象とする。
+  同じ表示結果のfrontmatterにある`source`の文字列を改変せず投入元識別子として記録し、欄が無い場合は「値なし」と記録する。
   直接経路では受領した本文を調査対象とする
 - 入力資料と対象ファイルを全文読み、定義、参照元、呼び出し元、test、生成・配布経路を確認する
 - 原文の各要求を現行実装と既存規範へ対応付け、対応済み、未対応、衝突、未検証を区分する
@@ -27,5 +28,5 @@
 
 ## 出力
 
-feedback filename、確認範囲、要求ごとの区分、根拠、未検証事項、`write_status: unchanged`を返す。
+feedback filename、投入元識別子、確認範囲、要求ごとの区分、根拠、未検証事項、`write_status: unchanged`を返す。
 対象リポジトリとfeedback管理領域を変更しない。

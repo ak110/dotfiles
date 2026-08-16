@@ -1381,10 +1381,10 @@ class TestPullIfStale:
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
 
 
-class TestPullWithRecentWarning:
-    """利用者操作のpullが直近同期を警告しつつ必ず実行されることを検証する。"""
+class TestPullWithRecentNotice:
+    """利用者操作のpullが直近同期を注記しつつ必ず実行されることを検証する。"""
 
-    def test_warns_and_pulls_when_fetch_head_is_recent(
+    def test_notices_and_pulls_when_fetch_head_is_recent(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -1401,22 +1401,23 @@ class TestPullWithRecentWarning:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _common._pull_with_recent_warning(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull_with_recent_notice(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
         assert capsys.readouterr().err == (
-            "警告: 直近30秒にfetchを含む同期形跡がある。"
-            "同一連続操作で同期結果を再利用する場合は`list`・`show`・`grep`で"
-            "`--skip-pull`を指定する（状態遷移系のサブコマンドは毎回同期する）。\n"
+            "注記: 直近30秒に他プロセスを含むfetch形跡がある。"
+            "同一の連続操作内で`list`・`show`・`grep`を繰り返す場合は"
+            "`--skip-pull`で同期結果を再利用できる（状態遷移系のサブコマンドは毎回同期する）。"
+            "単発実行では対処不要。\n"
         )
 
-    def test_pulls_without_warning_when_fetch_head_is_old(
+    def test_pulls_without_notice_when_fetch_head_is_old(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """30秒以上前の同期形跡では警告せずpullする。"""
+        """30秒以上前の同期形跡では注記せずpullする。"""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         fetch_head = git_dir / "FETCH_HEAD"
@@ -1427,7 +1428,7 @@ class TestPullWithRecentWarning:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _common._pull_with_recent_warning(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull_with_recent_notice(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
         assert "同期形跡" not in capsys.readouterr().err

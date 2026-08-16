@@ -255,7 +255,7 @@ def _pull(private_notes: pathlib.Path) -> None:
     _migrate_legacy_reservations(private_notes)
 
 
-def _pull_with_recent_warning(private_notes: pathlib.Path) -> None:
+def _pull_with_recent_notice(private_notes: pathlib.Path) -> None:
     """直近の同期形跡がある場合は再利用方法を案内したうえでremote同期する。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
@@ -264,9 +264,10 @@ def _pull_with_recent_warning(private_notes: pathlib.Path) -> None:
     if _pulled_recently(private_notes):
         interval = int(_PULL_MIN_INTERVAL_SECONDS)
         print(
-            f"警告: 直近{interval}秒にfetchを含む同期形跡がある。"
-            "同一連続操作で同期結果を再利用する場合は`list`・`show`・`grep`で"
-            "`--skip-pull`を指定する（状態遷移系のサブコマンドは毎回同期する）。",
+            f"注記: 直近{interval}秒に他プロセスを含むfetch形跡がある。"
+            "同一の連続操作内で`list`・`show`・`grep`を繰り返す場合は"
+            "`--skip-pull`で同期結果を再利用できる（状態遷移系のサブコマンドは毎回同期する）。"
+            "単発実行では対処不要。",
             file=sys.stderr,
         )
     _pull(private_notes)

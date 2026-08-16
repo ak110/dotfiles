@@ -26,6 +26,7 @@ _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKIL
 _PLAN_IMPL_FEEDBACK_FLOW = _PROCESS_FEEDBACKS.parent / "references" / "plan-impl-feedback-flow.md"
 _FEEDBACKS_PLANNER_RECEPTION = _PROCESS_FEEDBACKS.parent / "references" / "feedbacks-planner-reception.md"
 _FEEDBACK_EXPLORE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "explore-template.md"
+_FEEDBACK_DECISION_FORMAT = _PROCESS_FEEDBACKS.parent / "references" / "decision-format.md"
 _HOLD_WITH_TBD_INJECT = _PROCESS_FEEDBACKS.parent / "references" / "hold-with-tbd-inject.md"
 _MERGE_TASK = _PROCESS_FEEDBACKS.parent / "references" / "merge-task.md"
 _ATK_MQ_MUTATIONS = _AGENTS_DIR.parent / "scripts" / "_atk_mq_mutations.py"
@@ -489,6 +490,40 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
     for document in (sender, process, planner, explore, plan_mode, delegation, review):
         for phrase in forbidden:
             assert phrase not in document
+
+
+def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> None:
+    """投入元識別子の値保持と提案成立性検査の順序を固定する。"""
+    explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+
+    assert "`source`の文字列を改変せず投入元識別子として記録" in explore
+    assert "欄が無い場合は「値なし」と記録" in explore
+    assert "feedback filename、投入元識別子、確認範囲" in explore
+    assert "調査結果から投入元識別子を受領し、値を改変せず採否判断へ渡す" in planner
+    assert "追加の`atk mq show`は実行しない" in planner
+    assert planner.index("投入元識別子を受領") < planner.index("`decision-format.md`へ照合")
+    for source in ("`session-review`", "`alert-monitor`", "`plan`", "値なし", "その他の値"):
+        assert source in decision
+    assert "feedback本文又は投入元識別子から、人間由来又は利用者認可を推定しない" in decision
+    assert "全ての提案で確認する" in checklist
+    assert "改訂後の方針案を適用優先順位に照合" in checklist
+    assert "実行前であることだけを全ての提案の不採用根拠にしない" in checklist
+    assert "当該契約が定める工程で検証してから採否を確定" in checklist
+
+
+def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:
+    """成功コマンドの警告走査を証拠抽出後かつ時系列評価前に実行する。"""
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+
+    extraction_at = advisor.index("`scripts/_session_review_evidence.py`へそのパスを渡して1回だけ実行")
+    scan_at = advisor.index("同transcriptを大小文字を区別しない`警告`又は`warn`で検索")
+    timeline_at = advisor.index("抽出された時系列証拠から")
+    assert extraction_at < scan_at < timeline_at
+    assert "一致時は該当コマンドと該当出力だけを読み" in advisor
+    assert "不一致時はその事実を`evidence`へ記録" in advisor
 
 
 def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:

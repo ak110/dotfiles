@@ -70,7 +70,7 @@ class TestGrepBasic:
         captured = capsys.readouterr()
         assert captured.out == ""
 
-    def test_recent_sync_warns_and_still_pulls(
+    def test_recent_sync_notices_and_still_pulls(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -90,7 +90,7 @@ class TestGrepBasic:
 
         assert exc_info.value.code == 0
         assert any(call["cmd"][:2] == ["git", "fetch"] for call in git_calls)
-        assert "`--skip-pull`を指定する" in capsys.readouterr().err
+        assert "`--skip-pull`で同期結果を再利用できる" in capsys.readouterr().err
 
 
 class TestGrepIgnoreCase:
