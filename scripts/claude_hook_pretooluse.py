@@ -37,12 +37,10 @@ sys.path.insert(
     0,
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
+from _hook_tool_input import new_content_fields  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import is_agent_doc_target_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-
-# pylint: disable-next=wrong-import-position,import-error
-from pretooluse import _collect_new_fields  # noqa: E402
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
@@ -71,7 +69,7 @@ def main(payload_text: str) -> int:
     if not isinstance(tool_input, dict):
         return 0
 
-    fields = _collect_new_fields(tool_name, tool_input)
+    fields = new_content_fields(tool_name, tool_input)
     if fields is None:
         return 0
 

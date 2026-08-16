@@ -89,9 +89,37 @@ def test_unregistered_agent_with_pending_child_keeps_existing_approval(
     assert capsys.readouterr().out == ""
 
 
-def test_recursive_hook_is_approved(capsys: pytest.CaptureFixture[str]) -> None:
+def test_recursive_hook_is_approved_with_empty_output(capsys: pytest.CaptureFixture[str]) -> None:
+    """再帰呼び出し時の許可は両ホスト共通で空stdoutとする。"""
     assert advisor.main(json.dumps({"stop_hook_active": True})) == 0
-    assert json.loads(capsys.readouterr().out)["decision"] == "approve"
+    assert capsys.readouterr().out == ""
+
+
+def test_codex_empty_report_is_blocked(capsys: pytest.CaptureFixture[str]) -> None:
+    """Codexでも空の完了報告は遮断する。"""
+    assert advisor.main(json.dumps({**_payload("   "), "turn_id": "turn-1"})) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+
+def test_codex_normal_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
+    """Codexの非空報告は空stdoutで許可する。"""
+    assert advisor.main(json.dumps({**_payload(_minimal_report()), "turn_id": "turn-1"})) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_codex_does_not_consult_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexでは子エージェント検査へtranscriptを渡さない。"""
+
+    def _fail(*_args: object) -> bool:
+        raise AssertionError("Codexではtranscriptを完了判定へ使わない")
+
+    monkeypatch.setattr(advisor, "has_pending_agent_launches", _fail)
+
+    assert advisor.main(json.dumps({**_payload("完了"), "turn_id": "turn-1"})) == 0
+    assert capsys.readouterr().out == ""
 
 
 def test_invalid_payload_fails_open(capsys: pytest.CaptureFixture[str]) -> None:

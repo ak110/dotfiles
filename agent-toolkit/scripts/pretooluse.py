@@ -54,7 +54,7 @@ Agent / Task:
 - `name`引数指定のブロック (block)
 - Codex設定の実装レビューをsidechainのAgent又はTaskで起動する経路逸脱のブロック (block)
 
-Write / Edit / MultiEdit:
+Write / Edit / MultiEdit / apply_patch:
 
 - 文字化け（U+FFFD）検出 (block)
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
@@ -70,10 +70,18 @@ Write / Edit / MultiEdit:
 - codex sandbox指定（`danger-full-access`）を含む行の削除・変更 (block)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
-block系checkの検査対象は「新規に書き込まれる側」（`content` / `new_string`）を基本とする。
-`old_string`は既存内容の修正・削除を妨げないため単独では検査対象としない。
+block系checkの検査対象は「新規に書き込まれる側」（変更後断片）を基本とする。
+変更前断片は既存内容の修正・削除を妨げないため単独では検査対象としない。
 例外は`_check_danger_full_access_preserved`とする。同checkは保護対象文字列の「削除」自体を検出対象とするため、
-`old_string`と`new_string`の出現数を比較する（`_check_style_negation`と同方式）。
+変更前後の全文像からsandbox指定記述を抽出して比較する。
+
+ホスト差の扱い:
+
+- 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、検査本体はホストを区別しない
+- 非空文字列の`turn_id`をCodex判定の正本とし、payload読込直後に一度だけ判定する
+- Bashの終了コードを取得できないCodexでは、成功状態を前提とするamend・rebase、push、commitの各検査を実行しない
+- 外部ファイル解決を伴うfrontmatter同期注記・本文節参照の検査と、PowerShellの改行検査はClaude入力へ限定する
+- 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
 """
 
 import datetime
@@ -90,6 +98,7 @@ from collections.abc import Callable, Sequence
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _atk_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -162,10 +171,15 @@ def main(payload_text: str) -> int:
         return 0
     session_id_raw = payload.get("session_id", "")
     session_id = session_id_raw if isinstance(session_id_raw, str) else ""
+    cwd_raw = payload.get("cwd", "")
+    cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+    # ホスト判定はpayload読込直後に一度だけ行い、以降の検査選択と入力アダプターへ同じ値を渡す。
+    is_codex = _hook_tool_input.is_codex_payload(payload)
 
     # 直前メインエージェント応答の日本語比率警告（任意ツール）。
     # 他warn系checkがJSONを返す場合はadditionalContextの末尾へ追記し、それ以外は単独でJSON出力する。
-    exit_code, language_warning_body = _handle_language_check(payload, session_id)
+    # transcriptを安定インターフェースとして扱えないCodexでは実行しない。
+    exit_code, language_warning_body = (None, None) if is_codex else _handle_language_check(payload, session_id)
     if exit_code == 2:
         return 2
 
@@ -222,7 +236,14 @@ def main(payload_text: str) -> int:
         return _handle_codex_tool(payload, tool_name, tool_input, session_id, emit_json)
 
     if tool_name == "Bash":
-        return _handle_bash_tool(payload, tool_input, session_id, emit_json, flush_pending_language_warning)
+        return _handle_bash_tool(
+            payload,
+            tool_input,
+            session_id,
+            emit_json,
+            flush_pending_language_warning,
+            is_codex=is_codex,
+        )
 
     # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
@@ -232,7 +253,7 @@ def main(payload_text: str) -> int:
     if tool_name in ("Agent", "Task"):
         return _handle_agent_tool(payload, tool_name, tool_input, session_id, flush_pending_language_warning)
 
-    return _handle_edit_tool(tool_name, tool_input, flush_pending_language_warning)
+    return _handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_language_warning, is_codex=is_codex)
 
 
 def _handle_codex_tool(
@@ -264,8 +285,16 @@ def _handle_bash_tool(
     session_id: str,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
+    *,
+    is_codex: bool,
 ) -> int:
-    """Bashコマンドの遮断・警告・引数補正を処理する。"""
+    """Bashコマンドの遮断・警告・引数補正を処理する。
+
+    Bashの終了コードを取得できないCodexでは、成功状態の生産者が存在しない検査
+    （amend・rebase前の`git log`確認、push前のdirty検査、commit前の検証確認）を実行しない。
+    現在の入力とcwdだけで判定する検査、PreToolUse自身が記録するsleep poll検査、
+    成功した編集が記録する`session_edited_files`を使う一括stage警告は両ホストで共有する。
+    """
     command = tool_input.get("command")
     if not isinstance(command, str):
         flush_warning()
@@ -279,8 +308,8 @@ def _handle_bash_tool(
     if sleep_poll_result is not None:
         warnings.append(sleep_poll_result)
     if (
-        _check_bash_amend_rebase_without_log(command, session_id, cwd)
-        or _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd)
+        (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
+        or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
         or _check_bash_uv_run_python(command, cwd)
         or _check_bash_process_kill_by_pattern(command)
     ):
@@ -288,7 +317,7 @@ def _handle_bash_tool(
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         _check_bash_output_truncation(command),
-        _check_bash_git_commit(command, session_id, cwd),
+        None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
     ):
@@ -332,31 +361,117 @@ def _handle_agent_tool(
     return 0
 
 
-def _handle_edit_tool(tool_name: str, tool_input: dict, flush_warning: Callable[[], None]) -> int:
-    """編集ツールの遮断検査と警告検査を処理する。"""
-    fields = _collect_new_fields(tool_name, tool_input)
-    if fields is None:
+def _handle_edit_tool(
+    tool_name: str,
+    tool_input: dict,
+    cwd: str,
+    emit_json: Callable[[dict], None],
+    flush_warning: Callable[[], None],
+    *,
+    is_codex: bool,
+) -> int:
+    """共通編集単位ごとに遮断検査と警告検査を処理する。
+
+    ClaudeのWrite・Edit・MultiEditとCodexの`apply_patch`を`_hook_tool_input`が
+    同一の操作記録へ変換するため、検査本体はホストを区別しない。
+    複数対象・複数検査の警告は1つの`additionalContext`へ結合し、遮断は最初の違反で返す。
+    """
+    operations = _hook_tool_input.parse_operations(tool_name, tool_input, cwd)
+    if operations is None:
         flush_warning()
         return 0
-    file_path_raw = tool_input.get("file_path")
-    file_path = file_path_raw if isinstance(file_path_raw, str) else ""
+    images: dict[int, _hook_tool_input.MaterializedEdit | None] = {}
+    for index, operation in enumerate(operations):
+        if _check_edit_operation_blocks(tool_name, operation, index, images):
+            return 2
+    warnings: list[str] = []
+    for index, operation in enumerate(operations):
+        warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images, is_codex=is_codex))
+    if warnings:
+        emit_json(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "additionalContext": "\n\n".join(warnings),
+                },
+            }
+        )
+    else:
+        flush_warning()
+    return 0
+
+
+def _materialize_cached(
+    operation: _hook_tool_input.EditOperation,
+    index: int,
+    images: dict[int, _hook_tool_input.MaterializedEdit | None],
+) -> _hook_tool_input.MaterializedEdit | None:
+    """操作単位の変更前後像を必要になった時点で1回だけ具体化する。"""
+    if index not in images:
+        images[index] = _hook_tool_input.materialize(operation)
+    return images[index]
+
+
+def _check_edit_operation_blocks(
+    tool_name: str,
+    operation: _hook_tool_input.EditOperation,
+    index: int,
+    images: dict[int, _hook_tool_input.MaterializedEdit | None],
+) -> bool:
+    """1操作分の遮断検査を実行する。"""
+    fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
+    display_path = operation.display_path
     if (
         _check_mojibake(tool_name, fields)
         or _check_foreign_script_mixin(tool_name, fields)
-        or (tool_name == "Write" and _is_ps1(file_path) and _check_ps1_eol(tool_name, fields, file_path))
-        or _check_lockfiles(tool_name, file_path)
-        or _check_secrets(tool_name, file_path)
-        or _check_danger_full_access_preserved(tool_name, tool_input, file_path)
+        # PowerShellの改行要件はpatch断片のLF表現から判定できないため、Claudeの`Write`だけへ適用する。
+        or (tool_name == "Write" and _is_ps1(display_path) and _check_ps1_eol(tool_name, fields, display_path))
     ):
-        return 2
-    _check_manifest(tool_name, file_path)
-    _check_home_path(tool_name, fields, file_path)
-    _check_colloquial(tool_name, fields, file_path)
-    _check_style_negation(tool_name, tool_input, file_path)
-    _check_frontmatter_sync_note_body_exists(tool_name, tool_input, file_path)
-    _check_body_section_reference_exists(tool_name, tool_input, file_path)
-    flush_warning()
-    return 0
+        return True
+    for path in operation.display_paths:
+        if _check_lockfiles(tool_name, path) or _check_secrets(tool_name, path):
+            return True
+    return _check_danger_full_access_preserved(tool_name, operation, index, images)
+
+
+def _collect_edit_operation_warnings(
+    tool_name: str,
+    operation: _hook_tool_input.EditOperation,
+    index: int,
+    images: dict[int, _hook_tool_input.MaterializedEdit | None],
+    *,
+    is_codex: bool,
+) -> list[str]:
+    """1操作分の警告本文を順に集める。"""
+    fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
+    display_path = operation.display_path
+    warnings = [
+        warning
+        for warning in (
+            _check_manifest(tool_name, display_path),
+            _check_home_path(tool_name, fields, display_path),
+            _check_colloquial(tool_name, fields, display_path),
+            _check_style_negation(tool_name, operation, display_path),
+        )
+        if warning is not None
+    ]
+    if is_codex:
+        # 同一patch内で追加・移動する参照先を実ファイルだけで解決できないため、
+        # 外部ファイル解決を伴う2検査はClaude入力へ限定する。
+        return warnings
+    image = _materialize_cached(operation, index, images)
+    content = image.after_image if image is not None else None
+    if content is None:
+        return warnings
+    warnings.extend(
+        warning
+        for warning in (
+            _check_frontmatter_sync_note_body_exists(tool_name, content, display_path),
+            _check_body_section_reference_exists(tool_name, content, display_path),
+        )
+        if warning is not None
+    )
+    return warnings
 
 
 def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, str | None]:
@@ -451,32 +566,6 @@ def _append_additional_context(result: dict, suffix: str) -> None:
         hook_specific["additionalContext"] = f"{existing}\n\n{suffix}"
     else:
         hook_specific["additionalContext"] = suffix
-
-
-def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]] | None:
-    """対象ツールの「新規書き込みフィールド」を（field名, 値）のリストで返す。
-
-    対象外ツールの場合はNoneを返す。文字列でない値はスキップする。
-    """
-    if tool_name == "Write":
-        value = tool_input.get("content")
-        return [("content", value)] if isinstance(value, str) else []
-    if tool_name == "Edit":
-        value = tool_input.get("new_string")
-        return [("new_string", value)] if isinstance(value, str) else []
-    if tool_name == "MultiEdit":
-        edits = tool_input.get("edits") or []
-        if not isinstance(edits, list):
-            return []
-        result: list[tuple[str, str]] = []
-        for index, edit in enumerate(edits):
-            if not isinstance(edit, dict):
-                continue
-            new_string = edit.get("new_string")
-            if isinstance(new_string, str):
-                result.append((f"edits[{index}].new_string", new_string))
-        return result
-    return None
 
 
 def _check_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -> bool:
@@ -651,22 +740,15 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 )
 
 
-def _check_manifest(tool_name: str, file_path: str) -> bool:
-    """manifest手編集を検出したら警告を表示して真を返す（warnのみ、exit codeは変えない）。"""
+def _check_manifest(tool_name: str, file_path: str) -> str | None:
+    """manifest手編集を検出したら警告本文を返す（warnのみ、exit codeは変えない）。"""
     if not file_path:
-        return False
+        return None
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _MANIFEST_RULES:
         if pattern.search(normalized):
-            print(
-                _llm_notice(
-                    f"editing {label} via {tool_name}. {hint}",
-                    tag="warn",
-                ),
-                file=sys.stderr,
-            )
-            return True
-    return False
+            return _llm_notice(f"editing {label} via {tool_name}. {hint}", tag="warn")
+    return None
 
 
 # --- ホームディレクトリパス混入check (warn) ---
@@ -683,8 +765,8 @@ _HOME_PATH_SKIP_SUFFIXES: tuple[str, ...] = (
 )
 
 
-def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """ホームディレクトリの絶対パス混入を検出したら警告を表示して真を返す。
+def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """ホームディレクトリの絶対パス混入を検出したら警告本文を返す。
 
     リポジトリ管理ファイルに`/home/user/...`のような環境依存パスが書き込まれると
     他環境での再現性が失われるため警告する。警告のみでeditは継続（warn）。
@@ -693,7 +775,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     確定できた一時作業文書だけを対象外とする。マーカーの確認不能時は既存検査を継続する。
     """
     if is_plan_file(file_path):
-        return False
+        return None
 
     try:
         resolved_path = pathlib.Path(file_path).resolve()
@@ -711,22 +793,22 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
                     break
                 break
             else:
-                return False
+                return None
     except (OSError, ValueError):
         pass
 
     home_str = str(pathlib.Path.home())
     # ルートなど極端に短いパスは誤検出を避けてスキップ。
     if len(home_str) < 3:
-        return False
+        return None
 
     normalized_path = file_path.replace("\\", "/")
     if normalized_path.endswith(_HOME_PATH_SKIP_SUFFIXES):
-        return False
+        return None
     if normalized_path.endswith("/CLAUDE.local.md") or normalized_path == "CLAUDE.local.md":
-        return False
+        return None
     if normalized_path.endswith("/.claude/settings.local.json"):
-        return False
+        return None
 
     # POSIX正規化された両表記で検査（WindowsからPOSIX風パスが混入するケースに対応）
     candidates = {home_str, home_str.replace("\\", "/")}
@@ -739,18 +821,14 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
             start = max(0, position - 20)
             end = min(len(value), position + len(home) + 20)
             sample = value[start:end]
-            print(
-                _llm_notice(
-                    f"home directory absolute path ({home}) detected in {tool_name}.{field}."
-                    f" In version-controlled files, use `~`, `$HOME`, or `pathlib.Path.home()`"
-                    f" instead to avoid environment-dependent paths."
-                    f" Context: {sample!r}",
-                    tag="warn",
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"home directory absolute path ({home}) detected in {tool_name}.{field}."
+                f" In version-controlled files, use `~`, `$HOME`, or `pathlib.Path.home()`"
+                f" instead to avoid environment-dependent paths."
+                f" Context: {sample!r}",
+                tag="warn",
             )
-            return True
-    return False
+    return None
 
 
 # --- 口語表現混入check (warn) ---
@@ -762,8 +840,8 @@ _COLLOQUIAL_DENY_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.DE
 _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
 
 
-def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """口語的な日本語表現の混入を検出して警告する（warn）。
+def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """口語的な日本語表現の混入を検出して警告本文を返す（warn）。
 
     検出した語そのものは出力に含めない（コーディングエージェントのコンテキスト汚染防止）。
     allowlistに一致する部分を先に除去してからdenylistを適用し、
@@ -773,21 +851,17 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
         if not value:
             continue
         if _colloquial_check.first_hit(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS):
-            print(
-                _llm_notice(
-                    f"colloquial Japanese expressions detected in {tool_name}.{field}."
-                    f" Rewrite the whole sentence containing the detected expression"
-                    f" using formal written-style expressions"
-                    f" (standard technical terminology, dictionary form,"
-                    f" no metaphorical verbs) per agent-toolkit/rules/01-agent.md '日本語' section."
-                    f" Do not just swap the detected word for a synonym; restructure the sentence."
-                    f" Target: {file_path}",
-                    tag="warn",
-                ),
-                file=sys.stderr,
+            return _llm_notice(
+                f"colloquial Japanese expressions detected in {tool_name}.{field}."
+                f" Rewrite the whole sentence containing the detected expression"
+                f" using formal written-style expressions"
+                f" (standard technical terminology, dictionary form,"
+                f" no metaphorical verbs) per agent-toolkit/rules/01-agent.md '日本語' section."
+                f" Do not just swap the detected word for a synonym; restructure the sentence."
+                f" Target: {file_path}",
+                tag="warn",
             )
-            return True
-    return False
+    return None
 
 
 # --- 「Xを根拠にYしない」形式の増加検出 (warn, FB10) ---
@@ -810,55 +884,34 @@ def _count_style_negation_matches(text: str) -> int:
     return sum(len(pattern.findall(text)) for pattern in _STYLE_NEGATION_PATTERNS)
 
 
-def _check_style_negation(tool_name: str, tool_input: dict, file_path: str) -> bool:
-    """『Xを根拠にYしない』『Xを理由にYしない』形式の増加を検出したら警告を表示して真を返す（warn）。
+def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperation, file_path: str) -> str | None:
+    """『Xを根拠にYしない』『Xを理由にYしない』形式の増加を検出したら警告本文を返す（warn）。
 
-    既存側と新規側の出現数を比較し、増加時のみ警告する
-    （既存文字列の保持時は件数同数で誤検出しない）。Writeは`content`全文のマッチ件数が
-    1件以上であれば警告する。
+    全文を書き込む操作（Claudeの`Write`、Codex patchの`*** Add File:`）は変更後全文の
+    マッチ件数が1件以上であれば警告する。断片単位の操作（ClaudeのEdit・MultiEdit、
+    Codex patchの`*** Update File:`）は断片ごとに変更前後の件数を比較し、増加時のみ警告する
+    （既存文字列の保持時は件数同数で誤検出しない）。
     """
     if not _is_style_negation_target_doc(file_path):
-        return False
-    increased = False
-    if tool_name == "Write":
-        content = tool_input.get("content")
-        if isinstance(content, str):
-            increased = _count_style_negation_matches(content) > 0
-    elif tool_name == "Edit":
-        old_string = tool_input.get("old_string") or ""
-        new_string = tool_input.get("new_string")
-        if isinstance(new_string, str):
-            old_string = old_string if isinstance(old_string, str) else ""
-            increased = _count_style_negation_matches(new_string) > _count_style_negation_matches(old_string)
-    elif tool_name == "MultiEdit":
-        edits = tool_input.get("edits") or []
-        if isinstance(edits, list):
-            for edit in edits:
-                if not isinstance(edit, dict):
-                    continue
-                old_string = edit.get("old_string") or ""
-                new_string = edit.get("new_string")
-                if not isinstance(new_string, str):
-                    continue
-                old_string = old_string if isinstance(old_string, str) else ""
-                if _count_style_negation_matches(new_string) > _count_style_negation_matches(old_string):
-                    increased = True
-                    break
+        return None
+    if operation.is_whole_write:
+        increased = _count_style_negation_matches(operation.whole_after_text or "") > 0
+    else:
+        increased = any(
+            _count_style_negation_matches(fragment.after) > _count_style_negation_matches(fragment.before)
+            for fragment in operation.fragments
+        )
     if not increased:
-        return False
-    print(
-        _llm_notice(
-            f"detected an increase in meta-norm phrases of the form '`X`を根拠に`Y`しない' / '`X`を理由に`Y`しない'"
-            f" via {tool_name}. Target: {file_path}."
-            " Such phrasing risks being misread as 'if not X, then it is fine to Y'."
-            " Consider rewriting to the universal-negation form"
-            " ('いかなる理由（例: X）があっても`Y`しない')."
-            " See agent-toolkit/rules/01-agent.md '日本語' section.",
-            tag="warn",
-        ),
-        file=sys.stderr,
+        return None
+    return _llm_notice(
+        f"detected an increase in meta-norm phrases of the form '`X`を根拠に`Y`しない' / '`X`を理由に`Y`しない'"
+        f" via {tool_name}. Target: {file_path}."
+        " Such phrasing risks being misread as 'if not X, then it is fine to Y'."
+        " Consider rewriting to the universal-negation form"
+        " ('いかなる理由（例: X）があっても`Y`しない')."
+        " See agent-toolkit/rules/01-agent.md '日本語' section.",
+        tag="warn",
     )
-    return True
 
 
 # --- frontmatter同期注記の本体該当語句の実在検証check (warn, feedback 2) ---
@@ -992,8 +1045,8 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     return None
 
 
-def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, file_path: str) -> bool:
-    r"""frontmatter同期注記が指す本体側の該当語句の実在を検査して警告する（warn）。
+def _check_frontmatter_sync_note_body_exists(tool_name: str, content: str, file_path: str) -> str | None:
+    r"""frontmatter同期注記が指す本体側の該当語句の実在を検査して警告本文を返す（warn）。
 
     対象は`_is_frontmatter_sync_check_target`が真のファイル。
     frontmatter区間から`# ...と意図的に重複させている`・`# ...と意図的に同期する`・
@@ -1008,13 +1061,10 @@ def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, f
     表記揺れ（同旨表現の同義語形式）による誤検出を許容するためblock化しない。
     """
     if not _is_frontmatter_sync_check_target(file_path):
-        return False
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path)
-    if content is None:
-        return False
+        return None
     notes = _extract_frontmatter_sync_notes(content)
     if not notes:
-        return False
+        return None
 
     # 節名照合の自ファイル側corpusはfrontmatter区間を除いた本文のみとする。
     # frontmatter内の同期注記コメント自体が対象の節名文字列を引用形式で含むため、
@@ -1044,17 +1094,13 @@ def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, f
                 reasons.append(f"section name does not exist: {section}")
 
     if not reasons:
-        return False
-    print(
-        _llm_notice(
-            "the body-side identifier referenced by the frontmatter sync note may not exist"
-            f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
-            " Verify that the sync note body matches the target file and section name.",
-            tag="warn",
-        ),
-        file=sys.stderr,
+        return None
+    return _llm_notice(
+        "the body-side identifier referenced by the frontmatter sync note may not exist"
+        f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
+        " Verify that the sync note body matches the target file and section name.",
+        tag="warn",
     )
-    return True
 
 
 # --- .md規範文書の本文中にある節参照の実在検証check (warn) ---
@@ -1062,8 +1108,8 @@ def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, f
 _BODY_SECTION_REFERENCE_RE = re.compile(r"`([^`\n]+\.md)`「([^」\n]+)」[節項]")
 
 
-def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_path: str) -> bool:
-    """規範文書の本文中にある他ファイルの節参照の実在を検査して警告する（warn）。
+def _check_body_section_reference_exists(tool_name: str, content: str, file_path: str) -> str | None:
+    """規範文書の本文中にある他ファイルの節参照の実在を検査して警告本文を返す（warn）。
 
     `_check_frontmatter_sync_note_body_exists`はfrontmatterコメント区間の同期注記のみを走査するため、
     本文中の参照は当該checkの対象外である。本checkは本文（frontmatter区間を除く）を走査する。
@@ -1071,7 +1117,7 @@ def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_
     """
     # 対象ファイル判定: `agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`配下の`.md`
     if not file_path:
-        return False
+        return None
     normalized = file_path.replace("\\", "/")
     is_target = any(
         pattern.search(normalized)
@@ -1082,11 +1128,7 @@ def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_
         )
     )
     if not is_target:
-        return False
-
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path)
-    if content is None:
-        return False
+        return None
 
     # frontmatter区間を除いた本文のみを走査対象とする。
     frontmatter_match = _FRONTMATTER_BLOCK_RE.match(content)
@@ -1095,7 +1137,7 @@ def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_
     # 本文から節参照を抽出
     references = _BODY_SECTION_REFERENCE_RE.findall(self_body)
     if not references:
-        return False
+        return None
 
     reasons: list[str] = []
     for file_name, section_name in references:
@@ -1119,17 +1161,13 @@ def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_
             reasons.append(f"section name does not exist: `{file_name}` '{section_name}'")
 
     if not reasons:
-        return False
-    print(
-        _llm_notice(
-            "the section reference in the body of the normative document may not exist"
-            f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
-            " Verify that the reference matches the target file and section name.",
-            tag="warn",
-        ),
-        file=sys.stderr,
+        return None
+    return _llm_notice(
+        "the section reference in the body of the normative document may not exist"
+        f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
+        " Verify that the reference matches the target file and section name.",
+        tag="warn",
     )
-    return True
 
 
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
@@ -1222,7 +1260,36 @@ def _extract_sandbox_assignments(text: str) -> list[str]:
     return values
 
 
-def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_path: str) -> bool:
+def _danger_full_access_target(operation: _hook_tool_input.EditOperation) -> str | None:
+    """操作が保護対象パスへ及ぶ場合に、その入力表記を返す。"""
+    for path in operation.display_paths:
+        normalized = path.replace("\\", "/")
+        if any(
+            normalized.endswith(protected) or normalized.endswith("/" + protected)
+            for protected in _DANGER_FULL_ACCESS_PROTECTED_PATHS
+        ):
+            return path
+    return None
+
+
+def _danger_full_access_block_message(file_path: str) -> str:
+    return _llm_notice(
+        f"blocked: a codex sandbox assignment in {file_path} would be removed or set to a value"
+        f" other than `danger-full-access`."
+        f" read-only and workspace-write leave the codex process waiting for approval and never returning,"
+        f" so the caller cannot detect completion. This value is fixed by design."
+        f" Commit ad3d07f4 already reverted one attempt to weaken it."
+        f" A security warning about this setting is not a reason to change, verify, or narrow it."
+        f" To change it intentionally, disable this hook first and record the reason."
+    )
+
+
+def _check_danger_full_access_preserved(
+    tool_name: str,
+    operation: _hook_tool_input.EditOperation,
+    index: int,
+    images: dict[int, _hook_tool_input.MaterializedEdit | None],
+) -> bool:
     """`danger-full-access`を含む行の削除・変更を遮断する（block）。
 
     保護対象はsandbox指定記述を現に含むファイルだけに限定する。
@@ -1234,91 +1301,37 @@ def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_p
     `` `sandbox: <値>` ``等の形式を対象とする。値は既知のsandbox値だけを抽出する。
     行コメント（`#`・`//`・`<!--`で始まる行）は抽出対象から除く。
     次のいずれかに当たる場合に遮断する:
-    - sandbox指定記述の総数が減る（設定そのものの削除）
+    - sandbox指定記述の総数が減る（設定そのものの削除。ファイル全体の削除を含む）
     - 値が`danger-full-access`でないsandbox指定記述が1件でも新たに出現する（設定の弱体化）
+    - 変更前後の全文像を具体化できず、保護を回避できるかを判定できない
     """
-    if not file_path:
+    file_path = _danger_full_access_target(operation)
+    if file_path is None:
         return False
-    normalized = file_path.replace("\\", "/")
-    is_target = any(
-        normalized.endswith(path) or normalized.endswith("/" + path) for path in _DANGER_FULL_ACCESS_PROTECTED_PATHS
-    )
-    if not is_target:
-        return False
-
-    # 新規記述と既存記述のsandbox指定記述値を比較
-    if tool_name == "Write":
-        new_content = tool_input.get("content")
-        if not isinstance(new_content, str):
-            return False
-        try:
-            old_content = pathlib.Path(file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            old_content = ""
-    elif tool_name == "Edit":
-        old_string = tool_input.get("old_string") or ""
-        new_string = tool_input.get("new_string")
-        if not isinstance(new_string, str):
-            return False
-        try:
-            old_content = pathlib.Path(file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            old_content = ""
-        new_content = old_content.replace(old_string, new_string, 1)
-    elif tool_name == "MultiEdit":
-        edits = tool_input.get("edits") or []
-        if not isinstance(edits, list):
-            return False
-        try:
-            old_content = pathlib.Path(file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            old_content = ""
-        new_content = old_content
-        for edit in edits:
-            if not isinstance(edit, dict):
-                continue
-            old_string = edit.get("old_string") or ""
-            new_string = edit.get("new_string")
-            if not isinstance(new_string, str):
-                continue
-            new_content = new_content.replace(old_string, new_string, 1)
-    else:
-        return False
-
-    old_values = _extract_sandbox_assignments(old_content)
-    new_values = _extract_sandbox_assignments(new_content)
-
-    # 総数が減少したか判定
-    if len(new_values) < len(old_values):
+    image = _materialize_cached(operation, index, images)
+    if image is None:
         print(
             _llm_notice(
-                f"blocked: a codex sandbox assignment in {file_path} would be removed or set to a value"
-                f" other than `danger-full-access`."
-                f" read-only and workspace-write leave the codex process waiting for approval and never returning,"
-                f" so the caller cannot detect completion. This value is fixed by design."
-                f" Commit ad3d07f4 already reverted one attempt to weaken it."
-                f" A security warning about this setting is not a reason to change, verify, or narrow it."
-                f" To change it intentionally, disable this hook first and record the reason."
+                f"blocked: {tool_name} targets {file_path}, whose pre-edit and post-edit contents could not be"
+                " reconstructed, so the codex sandbox assignment protection cannot be evaluated."
+                " Re-read the current file, restate the edit against its exact current contents, and retry."
             ),
             file=sys.stderr,
         )
         return True
 
+    old_values = _extract_sandbox_assignments(image.before_image)
+    new_values = _extract_sandbox_assignments(image.after_image)
+
+    # 総数が減少したか判定
+    if len(new_values) < len(old_values):
+        print(_danger_full_access_block_message(file_path), file=sys.stderr)
+        return True
+
     # 値が変わっていないか判定
     for value in new_values:
         if value != _DANGER_FULL_ACCESS_VALUE and value not in old_values:
-            print(
-                _llm_notice(
-                    f"blocked: a codex sandbox assignment in {file_path} would be removed or set to a value"
-                    f" other than `danger-full-access`."
-                    f" read-only and workspace-write leave the codex process waiting for approval and never returning,"
-                    f" so the caller cannot detect completion. This value is fixed by design."
-                    f" Commit ad3d07f4 already reverted one attempt to weaken it."
-                    f" A security warning about this setting is not a reason to change, verify, or narrow it."
-                    f" To change it intentionally, disable this hook first and record the reason."
-                ),
-                file=sys.stderr,
-            )
+            print(_danger_full_access_block_message(file_path), file=sys.stderr)
             return True
 
     return False
@@ -1642,19 +1655,6 @@ def _apply_edits_to_content(tool_name: str, tool_input: dict, existing: str) -> 
         return result
 
     return None
-
-
-def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: str) -> str | None:
-    """Write/Edit/MultiEditを適用した後のファイル内容を構築する。"""
-    if tool_name == "Write":
-        content = tool_input.get("content")
-        return content if isinstance(content, str) else None
-
-    try:
-        existing = pathlib.Path(file_path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        existing = ""
-    return _apply_edits_to_content(tool_name, tool_input, existing)
 
 
 # --- 計画単位の状態管理 ---

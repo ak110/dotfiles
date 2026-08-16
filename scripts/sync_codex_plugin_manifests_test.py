@@ -48,6 +48,28 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
             subject.HOOKS_SOURCE,
             {
                 "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "",
+                            "hooks": [{"type": "command", "command": subject.CODEX_PRE_TOOL_USE_COMMAND}],
+                        }
+                    ],
+                    "PostToolUse": [
+                        {
+                            "matcher": "Write|Edit|MultiEdit|Bash|Skill",
+                            "hooks": [{"type": "command", "command": subject.CODEX_POST_TOOL_USE_COMMAND}],
+                        }
+                    ],
+                    "SubagentStop": [
+                        {
+                            "hooks": [{"type": "command", "command": subject.CODEX_SUBAGENT_STOP_COMMAND}],
+                        }
+                    ],
+                    "SessionEnd": [
+                        {
+                            "hooks": [{"type": "command", "command": subject.CODEX_SESSION_END_COMMAND}],
+                        }
+                    ],
                     "PermissionRequest": [
                         {
                             "matcher": "Write|Edit|MultiEdit|Bash",
@@ -117,6 +139,18 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     generated_hooks = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))
     assert generated_hooks == {
         "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash|Edit|Write",
+                    "hooks": [{"type": "command", "command": subject.CODEX_PRE_TOOL_USE_COMMAND}],
+                }
+            ],
+            "PostToolUse": [
+                {
+                    "matcher": "Edit|Write",
+                    "hooks": [{"type": "command", "command": subject.CODEX_POST_TOOL_USE_COMMAND}],
+                }
+            ],
             "PermissionRequest": [
                 {
                     "matcher": "Bash",
@@ -133,9 +167,51 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [{"type": "command", "command": subject.CODEX_STOP_COMMAND}],
                 }
             ],
+            "SubagentStop": [
+                {
+                    "hooks": [{"type": "command", "command": subject.CODEX_SUBAGENT_STOP_COMMAND}],
+                }
+            ],
+            "SessionEnd": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": subject.CODEX_SESSION_END_COMMAND,
+                            "timeout": subject.CODEX_SESSION_END_TIMEOUT_SECONDS,
+                        }
+                    ],
+                }
+            ],
         }
     }
+    assert len(generated_hooks["hooks"]) == 7
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
+
+
+def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> None:
+    """Claude向けの空matcherと広いmatcherを引き継がず、SessionEndへ上限を明示する。"""
+    subject.sync(manifest_root)
+    generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
+
+    assert generated["PreToolUse"][0]["matcher"] == "Bash|Edit|Write"
+    assert generated["PostToolUse"][0]["matcher"] == "Edit|Write"
+    assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
+    assert "matcher" not in generated["SubagentStop"][0]
+    assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
+
+
+def test_codex_projection_omits_events_without_allowlisted_handler(manifest_root: Path) -> None:
+    """許可表に無いイベントは正本にあってもCodexへ配布しない。"""
+    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
+    hooks["hooks"]["SessionStart"] = [{"hooks": [{"type": "command", "command": "uv run --no-project --script other.py"}]}]
+    (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
+
+    subject.sync(manifest_root)
+
+    generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
+    assert "SessionStart" not in generated
+    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST)
 
 
 def test_sync_reads_all_json_as_utf8(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -315,7 +391,7 @@ def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
         subject.sync(manifest_root)
 
 
-@pytest.mark.parametrize("event", ["UserPromptSubmit", "Stop"])
+@pytest.mark.parametrize("event", ["UserPromptSubmit", "Stop", "PreToolUse", "PostToolUse", "SubagentStop", "SessionEnd"])
 def test_rejects_missing_shared_allowlisted_handler(manifest_root: Path, event: str) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     del hooks["hooks"][event]
@@ -325,7 +401,11 @@ def test_rejects_missing_shared_allowlisted_handler(manifest_root: Path, event: 
 
 
 def test_rejects_unknown_allowlisted_event(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(subject, "CODEX_HOOK_ALLOWLIST", {"UnknownEvent": ("command",)})
+    monkeypatch.setattr(
+        subject,
+        "CODEX_HOOK_ALLOWLIST",
+        {"UnknownEvent": subject.CodexHookProjection(("command",))},
+    )
     with pytest.raises(ValueError, match="未知のCodex hookイベント"):
         subject.sync(manifest_root)
 

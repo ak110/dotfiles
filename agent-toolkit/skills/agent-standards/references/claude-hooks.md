@@ -24,6 +24,9 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
   auto modeでのブロック等はPermissionDeniedフックが処理する
+- CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
+  出力文字列だけが届くため、コマンドの成否を前提とする状態記録へ使わない。
+  `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる
 - 観測した状態に応じて警告又はblockの出力有無を切り替えるフックを計画に含める場合、
   別リポジトリ、別worktree、複数主体の同時実行などの条件が誤って成立する入力と誤って成立しない入力を列挙する。
   各入力の期待動作と検査を計画の実装者向け領域へ記載する
@@ -36,6 +39,30 @@ matcher仕様を一次資料として参照する。
 
 - 個別の早期returnガード: `matcher`を広げた場合、hookスクリプト側で`tool_name`を
   確認し対象外を早期returnすることで処理コストと誤検出を抑える
+- ホスト間でmatcherを共有しない: Claude Code向けの空matcher（全ツール対象）をCodexへそのまま配布すると、
+  入力契約を確認していないツールでもhandlerが起動する。Codexへ射影する場合はツール名を明示して限定する
+
+## Codexの編集ツール入力
+
+Codexの`apply_patch`は、matcher上で`Edit`・`Write`の別名に一致する。
+一方で入力payloadの`tool_name`は`apply_patch`のままであり、変更本文は`tool_input.command`へ
+`*** Begin Patch`から`*** End Patch`までの構文で入る。
+`Add File`・`Update File`・`Delete File`・`Move to`と`@@`区切りのhunkを1回の呼び出しで複数ファイル分含む。
+
+ホスト差を検査本体へ持ち込まないため、編集入力は次の2層で正規化する。
+
+- 操作記録: 入力だけから操作種別、対象パス、順序付き編集断片を求める。ファイルを読まないため
+  PostToolUse（適用後）からも安全に利用できる
+- 変更前後像: 対象ファイルの現在内容へ操作記録を適用して全文を組み立てる。PreToolUse（適用前）だけが使う
+
+patch構文をシェル構文として評価しない。相対パスはpayloadの`cwd`起点で解決する。
+patchを解釈できない場合はhook側で操作を遮断せず、妥当性判定を`apply_patch`本体へ委ねる。
+
+ホスト判定は、Codexがターン単位hookへ付加する非空文字列の`turn_id`を正本とする。
+`model`の有無やツール名の推測を別の判定として併設しない。
+
+複数ファイル・複数検査の警告は1つの`hookSpecificOutput.additionalContext`へ結合して返す。
+stdout全体が1つのJSONとして解析されるため、対象ごとに出力すると複数JSONとなり解析に失敗する。
 
 ## 出力フィールドの使い分け
 

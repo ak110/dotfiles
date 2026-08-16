@@ -30,6 +30,24 @@ def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subpro
     return _fork_runner.run_script(_SCRIPT, argv=("pretooluse",), input=text, env=env)
 
 
+def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
+    """stdoutのJSONから`hookSpecificOutput.additionalContext`を取り出す。"""
+    stdout = result.stdout.strip()
+    if not stdout:
+        return ""
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return ""
+    context = payload.get("hookSpecificOutput", {}).get("additionalContext")
+    return context if isinstance(context, str) else ""
+
+
+def _agent_messages(result: subprocess.CompletedProcess[str]) -> str:
+    """コーディングエージェントへ届く本文（stderrと`additionalContext`）を連結して返す。"""
+    return f"{result.stderr}\n{_additional_context(result)}"
+
+
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
     path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
@@ -222,8 +240,10 @@ class TestManifestCheck:
             }
         )
         assert result.returncode == 0
-        assert "pyproject.toml" in result.stderr
-        assert "uv add" in result.stderr
+        assert "pyproject.toml" in _additional_context(result)
+        assert "uv add" in _additional_context(result)
+        # 編集警告はstderrではなくadditionalContextへ集約する。
+        assert result.stderr == ""
 
     def test_package_json_warns(self):
         result = _run(
@@ -233,13 +253,13 @@ class TestManifestCheck:
             }
         )
         assert result.returncode == 0
-        assert "package.json" in result.stderr
-        assert "pnpm add" in result.stderr
+        assert "package.json" in _additional_context(result)
+        assert "pnpm add" in _additional_context(result)
 
     def test_normal_file_no_warn(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "foo.txt", "content": "x"}})
         assert result.returncode == 0
-        assert result.stderr == ""
+        assert _agent_messages(result).strip() == ""
 
 
 class TestHomePathCheck:
@@ -251,7 +271,7 @@ class TestHomePathCheck:
         content = f"config_path = '{self._HOME}/myproj/config.yaml'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": content}})
         assert result.returncode == 0
-        assert "home directory" in result.stderr
+        assert "home directory" in _additional_context(result)
 
     def test_home_path_in_non_git_temp_document_is_skipped(self, tmp_path: pathlib.Path):
         """Git管理外の一時作業文書では正確なホーム絶対パスを許容する。"""
@@ -263,7 +283,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" not in result.stderr
+        assert "home directory" not in _agent_messages(result)
 
     def test_home_path_in_git_worktree_under_temp_warns(self, tmp_path: pathlib.Path):
         """一時ルート配下でもGit worktreeの成果物には警告する。"""
@@ -277,7 +297,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" in result.stderr
+        assert "home directory" in _additional_context(result)
 
     def test_home_path_git_boundary_does_not_parse_localized_git_diagnostics(
         self,
@@ -309,7 +329,7 @@ class TestHomePathCheck:
         )
 
         assert return_code == 0
-        assert "home directory" not in capsys.readouterr().err
+        assert "home directory" not in capsys.readouterr().out
 
     def test_home_path_warns_when_git_marker_detection_fails(
         self,
@@ -338,7 +358,7 @@ class TestHomePathCheck:
         )
 
         assert return_code == 0
-        assert "home directory" in capsys.readouterr().err
+        assert "home directory" in capsys.readouterr().out
 
     def test_home_path_in_temp_worktree_git_file_warns(self, tmp_path: pathlib.Path):
         """一時ルート配下のworktree用`.git`ファイルもGit管理候補として警告する。"""
@@ -353,7 +373,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" in result.stderr
+        assert "home directory" in _additional_context(result)
 
     def test_home_path_in_temp_prefix_sibling_warns(self):
         """一時ルートと文字列prefixだけが同じ兄弟パスは除外しない。"""
@@ -365,7 +385,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" in result.stderr
+        assert "home directory" in _additional_context(result)
 
     def test_home_path_in_local_md_skipped(self):
         content = f"See {self._HOME}/proj for details."
@@ -420,56 +440,43 @@ class TestHomePathCheck:
             env_overrides=_plan_file_state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "home directory" not in result.stderr
+        assert "home directory" not in _agent_messages(result)
+
+
+@pytest.fixture(name="deny_substring")
+def _deny_substring_fixture() -> str:
+    """辞書ファイルから口語表現の検出サンプルを生成する。
+
+    テスト本体へ口語表現を直接書かないため、allowlistの最初のオーバーラップサンプルから
+    denylist部分文字列を抽出する。本番ロジック`_colloquial_check.load_patterns`と同じ解釈で
+    タブ区切りの置換候補列を除外する。
+    """
+    deny_patterns = [pattern for pattern, _ in _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)]
+    for raw in _colloquial_check.ALLOW_PATH.read_text(encoding="utf-8").splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        sample = re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], stripped)
+        for pattern in deny_patterns:
+            match = pattern.search(sample)
+            if match:
+                return match.group(0)
+    pytest.skip("no overlap between denylist and allowlist; cannot generate test sample")
+    return ""  # unreachable
 
 
 class TestColloquialCheck:
-    """口語的な日本語表現の混入警告（warn のみ、exit code は 0）。
-
-    辞書ファイルから動的にサンプルを生成するため、テスト本体には口語表現を直接書かない。
-    """
-
-    _DENY_PATH = _colloquial_check.DENY_PATH
-    _ALLOW_PATH = _colloquial_check.ALLOW_PATH
-
-    @staticmethod
-    def _expand(pattern_str: str) -> str:
-        return re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], pattern_str)
-
-    @classmethod
-    def _patterns(cls, path: pathlib.Path) -> list[re.Pattern[str]]:
-        """辞書ファイルからパターンのみを抽出する。
-
-        本番ロジック`_colloquial_check.load_patterns`と同じ解釈で
-        タブ区切りの置換候補列を除外し、パターン部だけを返す。
-        """
-        return [pat for pat, _ in _colloquial_check.load_patterns(path)]
-
-    @pytest.fixture(name="deny_substring")
-    def _deny_substring(self) -> str:
-        """allowlistの最初のオーバーラップサンプルから denylist 部分文字列を抽出。"""
-        deny_patterns = self._patterns(self._DENY_PATH)
-        for raw in self._ALLOW_PATH.read_text(encoding="utf-8").splitlines():
-            stripped = raw.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            sample = self._expand(stripped)
-            for dp in deny_patterns:
-                m = dp.search(sample)
-                if m:
-                    return m.group(0)
-        pytest.skip("no overlap between denylist and allowlist; cannot generate test sample")
-        return ""  # unreachable
+    """口語的な日本語表現の混入警告（warn のみ、exit code は 0）。"""
 
     def test_warns_on_deny(self, deny_substring: str):
         content = f"概要は{deny_substring}該当する。\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
         assert result.returncode == 0
-        assert "colloquial" in result.stderr
-        assert "Rewrite the whole sentence containing the detected expression" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+        assert "colloquial" in _additional_context(result)
+        assert "Rewrite the whole sentence containing the detected expression" in _additional_context(result)
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in _additional_context(result)
         # 検出語そのものは出力に含めない（コンテキスト汚染防止）
-        assert deny_substring not in result.stderr
+        assert deny_substring not in _agent_messages(result)
 
     def test_does_not_block(self, deny_substring: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "x.md", "content": deny_substring}})
@@ -478,7 +485,7 @@ class TestColloquialCheck:
     def test_clean_text_no_warn(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x = 1\n"}})
         assert result.returncode == 0
-        assert "colloquial" not in result.stderr
+        assert "colloquial" not in _agent_messages(result)
 
     def test_old_string_not_inspected(self, deny_substring: str):
         result = _run(
@@ -488,7 +495,7 @@ class TestColloquialCheck:
             }
         )
         assert result.returncode == 0
-        assert "colloquial" not in result.stderr
+        assert "colloquial" not in _agent_messages(result)
 
 
 def _plan_file_state_env(
@@ -896,16 +903,6 @@ class TestResponseLanguageCheck:
         path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
         return path
 
-    @staticmethod
-    def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
-        if not result.stdout.strip():
-            return ""
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return ""
-        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
-
     def test_warns_when_response_is_english(self, tmp_path: pathlib.Path):
         """日本語比率0%・プレーンテキスト50文字以上の応答で警告が乗る。"""
         transcript = self._write_transcript(tmp_path, "A" * 100)
@@ -919,7 +916,7 @@ class TestResponseLanguageCheck:
         assert result.returncode == 0
         output = json.loads(result.stdout)
         assert "permissionDecision" not in output["hookSpecificOutput"]
-        ctx = self._additional_context(result)
+        ctx = _additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in ctx
         assert "英語主体" in ctx
         assert "evaluate relevance" not in ctx
@@ -935,7 +932,7 @@ class TestResponseLanguageCheck:
             }
         )
         assert result.returncode == 0
-        assert "英語主体" not in self._additional_context(result)
+        assert "英語主体" not in _additional_context(result)
 
     def test_no_warn_for_sidechain(self, tmp_path: pathlib.Path):
         """payloadのisSidechain=trueは検査対象外。"""
@@ -1118,22 +1115,12 @@ class TestLanguageEscalation:
             env_overrides=env,
         )
 
-    @staticmethod
-    def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
-        if not result.stdout.strip():
-            return ""
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return ""
-        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
-
     def test_first_english_warns(self, tmp_path: pathlib.Path):
         """1回目の英語検出はexit 0 + additionalContextで警告する。"""
         env = self._state_env(tmp_path)
         result = self._invoke(tmp_path, env, "esc-first", "A" * 100, msg_id="m1")
         assert result.returncode == 0
-        ctx = self._additional_context(result)
+        ctx = _additional_context(result)
         assert "英語主体" in ctx
         assert "evaluate relevance" not in ctx
 
@@ -1161,7 +1148,7 @@ class TestLanguageEscalation:
         # 3回目: 英語 → warn（カウンタは1に戻っているのでブロックではない）
         r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
         assert r3.returncode == 0
-        ctx = self._additional_context(r3)
+        ctx = _additional_context(r3)
         assert "英語主体" in ctx
 
     def test_same_msg_id_no_double_count(self, tmp_path: pathlib.Path):
@@ -1193,7 +1180,7 @@ class TestLanguageEscalation:
         env = self._state_env(tmp_path)
         result = self._invoke(tmp_path, env, "esc-suffix-warn", "A" * 100, msg_id="m1")
         assert result.returncode == 0
-        ctx = self._additional_context(result)
+        ctx = _additional_context(result)
         assert ctx  # 警告が出ていること
         assert "Auto-generated hook notice" not in ctx
         assert "evaluate relevance" not in ctx
@@ -1309,13 +1296,6 @@ class TestHookEntryPointsPep723Dependencies:
 class TestBashSleepPollPattern:
     """sleep直後の読み取り専用な状態確認連結を初回warn・再検出blockで扱う。"""
 
-    @staticmethod
-    def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
-        if not result.stdout:
-            return ""
-        data = json.loads(result.stdout)
-        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
-
     @pytest.mark.parametrize(
         ("command", "session_id"),
         [
@@ -1360,7 +1340,7 @@ class TestBashSleepPollPattern:
             _plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "may cause repeated polling" in self._additional_context(result)
+        assert "may cause repeated polling" in _additional_context(result)
 
     def test_second_detection_in_same_session_blocks(self, tmp_path: pathlib.Path) -> None:
         session_id = "sleep-poll-repeat-test"
@@ -1425,7 +1405,7 @@ class TestBashSleepPollPattern:
         env = _plan_file_state_env(tmp_path)
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id}, env)
         assert result.returncode == 0
-        assert "may cause repeated polling" not in self._additional_context(result)
+        assert "may cause repeated polling" not in _additional_context(result)
         follow_up = _run(
             {
                 "tool_name": "Bash",
@@ -1435,7 +1415,7 @@ class TestBashSleepPollPattern:
             env,
         )
         assert follow_up.returncode == 0
-        assert "may cause repeated polling" in self._additional_context(follow_up)
+        assert "may cause repeated polling" in _additional_context(follow_up)
 
     def test_background_execution_is_not_evaluated(self, tmp_path: pathlib.Path) -> None:
         result = _run(
@@ -3592,7 +3572,7 @@ class TestStyleNegationCheck:
             },
         )
         assert result.returncode == 0
-        assert "根拠に" in result.stderr
+        assert "根拠に" in _additional_context(result)
 
     def test_edit_increase_warns(self, tmp_path: pathlib.Path):
         target = self._target_path(tmp_path)
@@ -3610,7 +3590,7 @@ class TestStyleNegationCheck:
             },
         )
         assert result.returncode == 0
-        assert "理由に" in result.stderr
+        assert "理由に" in _additional_context(result)
 
     def test_edit_no_increase_does_not_warn(self, tmp_path: pathlib.Path):
         """既存文字列の保持のみでは警告しない（誤検出解消）。"""
@@ -3629,7 +3609,7 @@ class TestStyleNegationCheck:
             },
         )
         assert result.returncode == 0
-        assert "根拠に" not in result.stderr
+        assert "根拠に" not in _agent_messages(result)
 
     def test_non_target_path_does_not_warn(self, tmp_path: pathlib.Path):
         target = tmp_path / "misc" / "notes.md"
@@ -3644,7 +3624,7 @@ class TestStyleNegationCheck:
             },
         )
         assert result.returncode == 0
-        assert "根拠に" not in result.stderr
+        assert "根拠に" not in _agent_messages(result)
 
 
 class TestDirectAgentToolkitEditsAfterPlanMode:
@@ -4024,7 +4004,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "frontmatter sync note" not in result.stderr
+        assert "frontmatter sync note" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         ("setup", "content", "expected_message", "expected_identifier"),
@@ -4096,8 +4076,8 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert expected_message in result.stderr
-        assert expected_identifier in result.stderr
+        assert expected_message in _additional_context(result)
+        assert expected_identifier in _additional_context(result)
 
 
 # --- 日本語文中への他言語文字の混入検査 (block) ---
@@ -4178,7 +4158,7 @@ class TestBodySectionReferenceExists:
         )
         assert result.returncode == 0
         # 警告が出ること
-        assert "section name does not exist" in result.stderr
+        assert "section name does not exist" in _additional_context(result)
 
 
 # --- codex sandbox指定（danger-full-access）を含む行の削除・変更の遮断 (block) ---
@@ -4466,3 +4446,315 @@ class TestDelegationGateForAgentTask:
         )
         assert allowed.returncode == 0
         assert sidechain.returncode == 0
+
+
+# --- Codex `apply_patch` / Bash の共通検査 ---
+
+_PROTECTED_RELATIVE_PATH = "agent-toolkit/scripts/pretooluse.py"
+_PROTECTED_BODY = "説明文\n`sandbox: danger-full-access`を指定する\n末尾\n"
+
+
+def _patch(*sections: str) -> str:
+    """Codexの`apply_patch`入力本文を組み立てる。"""
+    body = "".join(sections)
+    return f"*** Begin Patch\n{body}*** End Patch\n"
+
+
+def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-edit") -> dict:
+    """Codexの編集payloadを組み立てる。"""
+    return {
+        "tool_name": "apply_patch",
+        "tool_input": {"command": patch_text},
+        "cwd": str(cwd),
+        "session_id": session_id,
+        "turn_id": "turn-1",
+    }
+
+
+def _write_protected_file(repo: pathlib.Path) -> pathlib.Path:
+    """sandbox指定記述を持つ保護対象ファイルを作業ツリーへ用意する。"""
+    target = repo / _PROTECTED_RELATIVE_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_PROTECTED_BODY, encoding="utf-8")
+    return target
+
+
+class TestCodexApplyPatchEditChecks:
+    """Codexの`apply_patch`入力に対する共通編集検査。"""
+
+    def test_add_file_warns_colloquial_without_revealing_word(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        """追加全文の口語表現を警告し、検出語そのものは出力しない。"""
+        patch_text = _patch(f"*** Add File: docs/note.md\n+概要は{deny_substring}該当する。\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 0
+        assert "colloquial" in _additional_context(result)
+        assert deny_substring not in _agent_messages(result)
+
+    def test_removed_lines_only_do_not_warn(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        """削除行だけに該当表現があるpatchは警告しない。"""
+        target = tmp_path / "docs" / "note.md"
+        target.parent.mkdir(parents=True)
+        target.write_text(f"前文\n概要は{deny_substring}該当する。\n後文\n", encoding="utf-8")
+        patch_text = _patch(
+            f"*** Update File: docs/note.md\n@@\n 前文\n-概要は{deny_substring}該当する。\n+概要は条件に該当する。\n 後文\n"
+        )
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
+    def test_multiple_warnings_are_merged_into_single_json(self, tmp_path: pathlib.Path) -> None:
+        """複数対象の警告を1つのadditionalContextへ結合する。"""
+        home = str(pathlib.Path.home())
+        patch_text = _patch(
+            f"*** Add File: src/one.py\n+first = '{home}/a'\n",
+            f"*** Add File: src/two.py\n+second = '{home}/b'\n",
+        )
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 0
+        assert len(result.stdout.strip().splitlines()) == 1
+        assert _additional_context(result).count("home directory absolute path") == 2
+
+    def test_mojibake_in_patch_blocks(self, tmp_path: pathlib.Path) -> None:
+        """patch本文の文字化けを遮断する。"""
+        patch_text = _patch("*** Add File: docs/a.md\n+hello � world\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 2
+        assert "U+FFFD" in result.stderr
+
+    def test_unparsable_patch_passes_through(self, tmp_path: pathlib.Path) -> None:
+        """patch構造を認識できない入力は遮断も警告もせず通過させる。"""
+        result = _run(_codex_payload("not a patch at all\n", tmp_path))
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+    def test_lockfile_path_in_patch_blocks(self, tmp_path: pathlib.Path) -> None:
+        """patchの対象パス判定は既存のパターン検査を共有する。"""
+        patch_text = _patch("*** Update File: uv.lock\n@@\n-old\n+new\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 2
+        assert "uv.lock" in result.stderr
+
+    def test_delete_of_protected_file_blocks(self, tmp_path: pathlib.Path) -> None:
+        """保護対象ファイル全体の削除を遮断する（相対パスをcwd起点で解決する）。"""
+        _write_protected_file(tmp_path)
+        patch_text = _patch(f"*** Delete File: {_PROTECTED_RELATIVE_PATH}\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 2
+        assert "codex sandbox assignment" in result.stderr
+
+    def test_delete_of_unprotected_file_passes(self, tmp_path: pathlib.Path) -> None:
+        """非保護対象の削除はこの検査で誤遮断しない。"""
+        target = tmp_path / "docs" / "old.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("本文\n", encoding="utf-8")
+        patch_text = _patch("*** Delete File: docs/old.md\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 0
+
+    def test_unmaterializable_protected_update_blocks(self, tmp_path: pathlib.Path) -> None:
+        """保護対象の変更前後像を具体化できない場合も遮断する。"""
+        _write_protected_file(tmp_path)
+        patch_text = _patch(f"*** Update File: {_PROTECTED_RELATIVE_PATH}\n@@\n 実在しない文脈行\n-古い行\n+新しい行\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 2
+        assert "could not be reconstructed" in result.stderr
+
+    def test_protected_update_preserving_assignment_passes(self, tmp_path: pathlib.Path) -> None:
+        """sandbox指定記述を保つ更新は通過する。"""
+        _write_protected_file(tmp_path)
+        patch_text = _patch(f"*** Update File: {_PROTECTED_RELATIVE_PATH}\n@@\n-説明文\n+説明文を更新する\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 0
+
+    def test_move_of_protected_file_blocks(self, tmp_path: pathlib.Path) -> None:
+        """保護対象の移動は移動元の消滅として遮断する。"""
+        _write_protected_file(tmp_path)
+        patch_text = _patch(
+            f"*** Update File: {_PROTECTED_RELATIVE_PATH}\n"
+            "*** Move to: agent-toolkit/scripts/moved.py\n@@\n-末尾\n+末尾を更新\n"
+        )
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 2
+        assert "codex sandbox assignment" in result.stderr
+
+    def test_frontmatter_and_body_reference_checks_are_claude_only(self, tmp_path: pathlib.Path) -> None:
+        """外部ファイル解決を伴う2検査はCodex入力で起動しない。"""
+        content = "---\nname: test-agent\n# nonexistent-agent.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n"
+        relative = "agent-toolkit/agents/test-agent.md"
+        patch_text = _patch(f"*** Add File: {relative}\n" + "".join(f"+{line}\n" for line in content.splitlines()))
+        codex = _run(_codex_payload(patch_text, tmp_path))
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        claude = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-claude",
+            }
+        )
+
+        assert codex.returncode == 0
+        assert "frontmatter sync note" not in _agent_messages(codex)
+        assert claude.returncode == 0
+        assert "referenced file path does not exist" in _additional_context(claude)
+
+
+class TestStyleNegationAcrossHosts:
+    """否定規定表現の判定単位がホストごとの契約どおりであること。"""
+
+    @staticmethod
+    def _rule_path(tmp_path: pathlib.Path) -> pathlib.Path:
+        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def test_multiedit_warns_even_when_file_total_is_unchanged(self, tmp_path: pathlib.Path) -> None:
+        """追加と削除がファイル全体で相殺するMultiEditでも追加した編集単位を警告する。"""
+        target = self._rule_path(tmp_path)
+        target.write_text("# rule\n\n作業量を根拠に延期しない\n\n別の記述\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "作業量を根拠に延期しない", "new_string": "作業量に応じて計画を見直す"},
+                        {"old_string": "別の記述", "new_string": "工数を理由に対応しない"},
+                    ],
+                },
+                "session_id": "styleneg-multiedit",
+            },
+        )
+
+        assert result.returncode == 0
+        assert "理由に" in _additional_context(result)
+
+    def test_codex_add_file_uses_whole_text(self, tmp_path: pathlib.Path) -> None:
+        """Codexの追加は追加全文の件数で判定する。"""
+        patch_text = _patch("*** Add File: agent-toolkit/rules/test-rule.md\n+# rule\n+\n+作業量を根拠に延期しない\n")
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 0
+        assert "根拠に" in _additional_context(result)
+
+    def test_codex_update_preserving_existing_phrase_does_not_warn(self, tmp_path: pathlib.Path) -> None:
+        """Codexの更新は断片ごとの増加で判定し、既存表現の保持では警告しない。"""
+        target = self._rule_path(tmp_path)
+        target.write_text("# rule\n\n作業量を根拠に延期しない\n", encoding="utf-8")
+        patch_text = _patch(
+            "*** Update File: agent-toolkit/rules/test-rule.md\n@@\n"
+            "-作業量を根拠に延期しない\n"
+            "+作業量を根拠に延期しない。追記のみ\n"
+        )
+        result = _run(_codex_payload(patch_text, tmp_path))
+
+        assert result.returncode == 0
+        assert "根拠に" not in _agent_messages(result)
+
+
+class TestCodexBashCheckSelection:
+    """同一のBash入力に対するホスト別の検査集合。"""
+
+    @staticmethod
+    def _payload(command: str, cwd: pathlib.Path, session_id: str, *, codex: bool) -> dict:
+        payload: dict = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "session_id": session_id,
+            "cwd": str(cwd),
+        }
+        if codex:
+            payload["turn_id"] = "turn-1"
+        return payload
+
+    def test_amend_without_git_log_is_claude_only(self, tmp_path: pathlib.Path) -> None:
+        """`git log`成功状態に依存するamend検査はCodexで起動しない。"""
+        env = _plan_file_state_env(tmp_path)
+        _write_session_state(tmp_path, "amend-host", {})
+        claude = _run(self._payload("git commit --amend", tmp_path, "amend-host", codex=False), env_overrides=env)
+        codex = _run(self._payload("git commit --amend", tmp_path, "amend-host", codex=True), env_overrides=env)
+
+        assert claude.returncode == 2
+        assert codex.returncode == 0
+
+    def test_commit_verification_warning_is_claude_only(self, tmp_path: pathlib.Path) -> None:
+        """検証実行状態に依存するcommit警告はCodexで起動しない。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"app.py": "x = 1\n"})
+        (repo / "app.py").write_text("x = 2\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+        env = _plan_file_state_env(tmp_path)
+        _write_session_state(tmp_path, "commit-host", {"git_log_checked": {str(repo): True}})
+        claude = _run(self._payload("git commit -m x", repo, "commit-host", codex=False), env_overrides=env)
+        codex = _run(self._payload("git commit -m x", repo, "commit-host", codex=True), env_overrides=env)
+
+        assert "committing without running tests" in _additional_context(claude)
+        assert "committing without running tests" not in _agent_messages(codex)
+
+    def test_bulk_stage_warning_is_shared(self, tmp_path: pathlib.Path) -> None:
+        """成功した編集が記録する状態による一括stage警告は両ホストで動作する。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"tracked.txt": "初期値\n"})
+        (repo / "tracked.txt").write_text("更新\n", encoding="utf-8")
+        _write_session_state(tmp_path, "bulk-codex", {"session_edited_files": []})
+        result = _run(
+            self._payload("git add -A", repo, "bulk-codex", codex=True),
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+        assert "bulk staging includes files" in _additional_context(result)
+
+    def test_input_only_checks_are_shared(self, tmp_path: pathlib.Path) -> None:
+        """現在入力だけで判定する遮断と入力補正は両ホストで動作する。"""
+        blocked = _run(self._payload("uv run python script.py", tmp_path, "codex-uv", codex=True))
+        decorated = _run(self._payload("git log --oneline", tmp_path, "codex-log", codex=True))
+
+        assert blocked.returncode == 2
+        assert decorated.returncode == 0
+        assert "--decorate" in json.loads(decorated.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+
+    def test_transcript_language_check_is_claude_only(self, tmp_path: pathlib.Path) -> None:
+        """transcript由来の言語検査はCodexで起動しない。"""
+        entry = {
+            "type": "assistant",
+            "message": {
+                "id": "m1",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "This is a plain English status report written for the reviewer."}],
+                "stop_reason": "end_turn",
+            },
+        }
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        env = _plan_file_state_env(tmp_path)
+        claude_payload = {
+            **self._payload("ls", tmp_path, "lang-claude", codex=False),
+            "transcript_path": str(transcript),
+        }
+        codex_payload = {
+            **self._payload("ls", tmp_path, "lang-codex", codex=True),
+            "transcript_path": str(transcript),
+        }
+
+        claude_result = _run(claude_payload, env_overrides=env)
+        codex_result = _run(codex_payload, env_overrides=env)
+
+        assert "英語主体" in _additional_context(claude_result)
+        assert codex_result.stdout == ""

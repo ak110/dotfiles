@@ -9,7 +9,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -27,26 +27,66 @@ MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
 OPTIONAL_TARGETS = frozenset((AGENT_MCP_TARGET, HOOKS_TARGET))
 
-CODEX_PERMISSION_REQUEST_COMMAND = (
-    "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest_codex"
-)
-CODEX_USER_PROMPT_SUBMIT_COMMAND = (
-    "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py user_prompt_submit"
-)
-CODEX_STOP_COMMAND = "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py stop_advisor"
-CODEX_HOOK_ALLOWLIST: dict[str, tuple[str, ...]] = {
-    "PermissionRequest": (CODEX_PERMISSION_REQUEST_COMMAND,),
-    "UserPromptSubmit": (CODEX_USER_PROMPT_SUBMIT_COMMAND,),
-    "Stop": (CODEX_STOP_COMMAND,),
+
+def _hook_command(name: str) -> str:
+    return f"uv run --no-project --script ${{CLAUDE_PLUGIN_ROOT}}/scripts/claude_hook.py {name}"
+
+
+CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
+CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
+CODEX_STOP_COMMAND = _hook_command("stop_advisor")
+CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
+CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
+CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
+CODEX_SESSION_END_COMMAND = _hook_command("session_end_cleanup")
+
+# CodexのSessionEndは同期実行のため上限が短い。投影時に明示して超過を避ける。
+CODEX_SESSION_END_TIMEOUT_SECONDS = 3
+
+
+class CodexHookProjection(NamedTuple):
+    """Codexへ射影するhandlerと、ホスト差に合わせた上書き値。
+
+    `matcher`が`None`の場合は正本のmatcherをそのまま引き継ぐ。
+    Claude向けの空matcher（全ツール対象）をそのまま配布すると、
+    入力契約を確認していないCodexのツールでもhandlerが起動するため、
+    ツール名を限定する場合は明示する。
+    """
+
+    commands: tuple[str, ...]
+    matcher: str | None = None
+    timeout: int | None = None
+
+    def project(self, group: dict[str, Any], handlers: list[dict[str, Any]]) -> dict[str, Any]:
+        """正本のmatcher groupへ上書き値を適用した射影結果を返す。"""
+        chosen = [{**handler, "timeout": self.timeout} if self.timeout is not None else handler for handler in handlers]
+        projected = {**group, "hooks": chosen}
+        if self.matcher is not None:
+            projected["matcher"] = self.matcher
+        return projected
+
+
+CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
+    "PreToolUse": CodexHookProjection((CODEX_PRE_TOOL_USE_COMMAND,), matcher="Bash|Edit|Write"),
+    "PostToolUse": CodexHookProjection((CODEX_POST_TOOL_USE_COMMAND,), matcher="Edit|Write"),
+    "PermissionRequest": CodexHookProjection((CODEX_PERMISSION_REQUEST_COMMAND,)),
+    "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
+    "Stop": CodexHookProjection((CODEX_STOP_COMMAND,)),
+    "SubagentStop": CodexHookProjection((CODEX_SUBAGENT_STOP_COMMAND,)),
+    "SessionEnd": CodexHookProjection((CODEX_SESSION_END_COMMAND,), timeout=CODEX_SESSION_END_TIMEOUT_SECONDS),
 }
+# Codex 0.147.0が発火するhookイベント。handlerを持たないイベントは生成しない。
 CODEX_EVENTS = {
     "PreToolUse",
     "PostToolUse",
     "UserPromptSubmit",
     "Stop",
+    "SubagentStart",
     "SubagentStop",
     "SessionStart",
     "SessionEnd",
+    "PreCompact",
+    "PostCompact",
     "PermissionRequest",
 }
 AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -137,16 +177,16 @@ def _outputs(root: Path) -> dict[Path, str]:
     if (root / HOOKS_SOURCE).exists():
         hooks = _load(root, HOOKS_SOURCE)
         source_hooks = hooks.get("hooks", {})
-        for event, commands in CODEX_HOOK_ALLOWLIST.items():
+        for event, projection in CODEX_HOOK_ALLOWLIST.items():
             if event not in CODEX_EVENTS or event not in source_hooks:
                 raise ValueError(f"未知のCodex hookイベント: {event}")
             projected = []
             for group in source_hooks[event]:
                 handlers = group.get("hooks", [])
-                chosen = [handler for handler in handlers if handler.get("command") in commands]
-                if len(chosen) != len(commands):
+                chosen = [handler for handler in handlers if handler.get("command") in projection.commands]
+                if len(chosen) != len(projection.commands):
                     continue
-                projected.append({**group, "hooks": chosen})
+                projected.append(projection.project(group, chosen))
             if not projected:
                 raise ValueError(f"許可済みhandlerが正本に存在しない: {event}")
             selected[event] = projected

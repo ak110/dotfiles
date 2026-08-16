@@ -14,6 +14,12 @@
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う
 - `sleep_poll_detected`: PreToolUse(Bash)がsleep直後の状態確認連結を検出した場合に記録する
+- `session_edited_files`: PostToolUseが成功した編集の対象パスを重複なく記録し、
+  PreToolUse(Bash)の一括stage警告が自セッション編集済み集合として読む。セッション終了まで保持し、
+  リセット経路は設けない。Claude CodeではWrite・Edit・MultiEditが、Codexでは成功した`apply_patch`が
+  記録元となる。Codexの移動では移動元と移動先の双方を記録する。
+  CodexのBashは終了コードを取得できないため、`test_executed`・`git_log_checked`・
+  `amend_pending_status_check`と同様に本フラグの記録元にならない
 
 ## plan系
 

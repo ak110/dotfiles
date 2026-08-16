@@ -23,10 +23,7 @@ from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: dis
 from _session_review_evidence import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     has_session_review_started,
 )
-from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    read_state,
-    sweep_stale_states,
-)
+from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
     has_command_invocation,
@@ -118,10 +115,7 @@ def main(payload_text: str) -> int:
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     is_codex = "model" in payload
 
-    # Codexのhook定義にはSessionEndが無いため、Stopを期限切れ状態の回収契機にも使う。
-    # 期限内の状態は残るため、同じsession_idで再開した場合の起動済み記録は維持される。
-    if is_codex:
-        sweep_stale_states()
+    # 期限切れ状態の回収はSessionEndへ集約する（両ホストで同一契機とし、Stopでは重複実行しない）。
 
     # Claude Codeで構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background task（Agent・Bash・MCP）が存在するケース。

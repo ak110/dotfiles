@@ -1,15 +1,19 @@
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
-Bash / Write / Edit / MultiEdit / Skill / Read / EnterPlanMode / Agent / Taskの実行後にイベントを検出し、
-セッション状態ファイルに記録する。
+Bash / Write / Edit / MultiEdit / apply_patch / Skill / Read / EnterPlanMode / Agent / Taskの実行後に
+イベントを検出し、セッション状態ファイルに記録する。
 PreToolUseやStopフックが参照して警告・提案の判定に使う。
+
+編集入力は`_hook_tool_input`が共通の操作記録へ正規化する。
+Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終了コードを取得できないため登録しない
+（`git log`確認・amend・push・検証実行の成功状態はCodexで記録しない）。
 
 検出対象:
 
 1. テスト実行 (Bash / pyfltr MCPの`run_for_agent`)
 2. git log確認状態の記録・リセット (Bash: logで記録、対象コミットの親子関係が
    変化する操作＝commit/rebase/resetでリセット)
-3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit)
+3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 振り返りスキル呼び出し検出 (Skill)
    （`session_review_invoked`辞書へ記録）
@@ -41,6 +45,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-mode" / "scripts"))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -436,35 +441,55 @@ def _handle_edit_tool(
     cwd: str,
     notices: list[str],
 ) -> None:
-    """編集成功後の状態記録と文書検査を処理する。"""
+    """編集成功後の状態記録と文書検査を処理する。
+
+    ClaudeのWrite・Edit・MultiEditとCodexの成功した`apply_patch`を
+    `_hook_tool_input`が共通の操作記録へ変換する。
+    本フックは適用後に呼ばれるため変更前後像を再構築せず、操作記録のパスだけを状態へ記録する。
+    実ファイルの読み込みを伴う文書検査は、適用後に存在する対象（追加・更新・移動先）へ限定する。
+    """
+    operations = _hook_tool_input.parse_operations(tool_name, tool_input, cwd)
+    if operations is None:
+        return
     state = read_state(session_id)
-    file_path_raw = tool_input.get("file_path")
-    file_path = file_path_raw if isinstance(file_path_raw, str) else ""
-    if is_plan_file(file_path):
-        _record_plan_file(session_id, file_path)
-    _record_edited_file(session_id, file_path)
-    if is_agent_facing_md(file_path):
-        try:
-            prohibition_content = pathlib.Path(file_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            prohibition_content = None
-        if prohibition_content is not None:
-            warnings = _check_conditional_prohibition(pathlib.Path(file_path), prohibition_content)
-            if warnings:
-                notices.append(_llm_notice("\n".join(warnings), tag="warn"))
-    if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path) and tool_name == "Write":
-        check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
-        work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
-        notices.append(
-            _llm_notice(
-                f"plan file {file_path} was written. Run the post-write checks:"
-                f" `uv run --script {shlex.quote(str(check_script))}{work_dir_option}"
-                f" {shlex.quote(file_path)}`."
-                " Replace --work-dir if the plan targets a repository other than the session's"
-                " working directory.",
-                tag="notice",
-            )
-        )
+    plan_mode_invoked = bool(state.get("plan_mode_skill_invoked", False))
+    for operation in operations:
+        for display_path in operation.display_paths:
+            _record_edited_file(session_id, display_path)
+        if not operation.exists_after_apply:
+            continue
+        display_path = operation.display_path
+        if is_plan_file(display_path):
+            _record_plan_file(session_id, display_path)
+        if is_agent_facing_md(display_path):
+            _append_conditional_prohibition_notice(operation.path, display_path, notices)
+        if plan_mode_invoked and is_plan_file(display_path) and operation.is_whole_write:
+            notices.append(_plan_file_check_notice(display_path, cwd))
+
+
+def _append_conditional_prohibition_notice(read_path: str, display_path: str, notices: list[str]) -> None:
+    """適用後の実ファイルを読み、条件付き禁止形の警告があれば通知へ加える。"""
+    try:
+        content = pathlib.Path(read_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return
+    warnings = _check_conditional_prohibition(pathlib.Path(display_path), content)
+    if warnings:
+        notices.append(_llm_notice("\n".join(warnings), tag="warn"))
+
+
+def _plan_file_check_notice(file_path: str, cwd: str) -> str:
+    """計画ファイル全文書き込み後に実行する機械検査の案内文を返す。"""
+    check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
+    work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
+    return _llm_notice(
+        f"plan file {file_path} was written. Run the post-write checks:"
+        f" `uv run --script {shlex.quote(str(check_script))}{work_dir_option}"
+        f" {shlex.quote(file_path)}`."
+        " Replace --work-dir if the plan targets a repository other than the session's"
+        " working directory.",
+        tag="notice",
+    )
 
 
 def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
@@ -566,7 +591,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
     # git_log_checkedをリセットしない（リセット対象は`_GIT_LOG_RESET_SUBCOMMANDS`が定める
     # commit / rebase / resetのみとする）。
-    if tool_name in ("Write", "Edit", "MultiEdit"):
+    if tool_name in ("Write", "Edit", "MultiEdit", _hook_tool_input.CODEX_APPLY_PATCH_TOOL):
         _handle_edit_tool(session_id, tool_name, tool_input, cwd, notices)
         return 0
 

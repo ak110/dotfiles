@@ -266,33 +266,33 @@ agent-toolkitプラグインはpyfltrのMCPサーバーを同梱する。
 検査の実行・横断検索・横断置換・実行履歴の参照をシェルを経由せずに呼び出せる。
 サーバーは`uvx`でpyfltrを取得して起動するため、pyfltr自体の事前インストールは要らない。
 
-Claude Code向けagent-toolkitプラグインは以下のフックを常時有効化する。
+agent-toolkitは以下のフックを常時有効化する。
+識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
+`個人設定`はdotfiles利用者の`~/.claude/settings.json`へ配布される分を指す。
+Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の公式契約で確認した範囲を示す。
 
-- 文字化け（U+FFFD）混入・LF改行のみの`.ps1`への書き込み・自動生成物の手編集をブロック
-- 日本語を含む書き込み内容へのハングル・キリル文字の混入をブロック
-- シークレットらしき値やホームディレクトリの絶対パスのハードコードを警告・ブロック
-- 口語的な日本語表現や営業文書調・宣伝調のフレーズ・主観的修飾語の混入を警告し書き直しを促す
-- メインエージェント応答に占める日本語文字の比率が閾値未満のときに警告し、短文ステータス報告の英語化を抑制する
-- テスト未実行のままの`git commit`を警告
-- `agent-toolkit/`配下のファイルを含む`git commit`で`plugin.json`のversion未変更を警告
-- `git log`実行時に`--decorate`オプションを自動挿入する
-- `codex exec`実行前に未決事項の確認を促す
-- `sleep`直後に状態確認を連結するBash入力をブロックし、1回の待機ループへ誘導する
-- メインセッションでは`agent-toolkit:delegation`の起動記録`delegation_skill_invoked`が無い
-  `mcp__codex__codex`・`mcp__codex__codex-reply`の呼び出しをブロック
-- codex呼び出しのサンドボックス指定を削除・弱体化する編集をブロック
-- AgentまたはTaskツール起動時のnameパラメーター指定をブロック
-- メインセッションで`agent-toolkit:delegation`未起動のAgent／Task起動をブロック
-- Codex設定の実装レビューをsidechainのAgent／Taskで起動するengine逸脱をブロック
-- 計画レビューでは、メインセッションが機械チェック・修正系と総合レビュー系へ直接委譲する
-- 計画実装では、`plan-impl-executor`がコミット単位ごとのwriterと2つの読み取り専用reviewerを管理し、
-  writerがcommit、呼び出し元がpushとCI確認を担当
-- 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
-- APIエラー停止後の入力待ち時にツール呼び出しの解析失敗をベルとデスクトップ通知で警告
-- APIエラーでのターン終了の発生種別をログへ記録
-- plan mode中で最初のツール呼び出しがplan-modeスキル以外の場合に警告
-- `AskUserQuestion`の各フィールド（質問本文・ヘッダー・選択肢のラベルや説明）に
-  作業量・残コンテキスト・既存パターン踏襲・工程省略宣言などを根拠とした縮退誘発フレーズが含まれる場合にブロック
+| フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
+| --- | --- | --- | --- |
+| plugin `PreToolUse/pretooluse` | 編集内容とコマンドの事前検査。文字化け・他言語文字の混入・LF改行のみの`.ps1`書き込み・lockfileやシークレットの直接編集・codexサンドボックス指定の弱体化をブロックし、口語表現・ホーム絶対パスの混入・自動生成manifestの手編集を警告する。Bashでは`sleep`直後の状態確認連結・`uv run python`の誤用・パターン一致によるプロセス終了をブロックし、出力の切り詰め・version未更新・未検証コミット・一括ステージ・`codex exec`前の未決事項を警告し、`git log`へ`--decorate`を自動挿入する | 対応 | 部分対応。編集検査は口語表現・文字化け・他言語文字・ホーム絶対パス・lockfile・シークレット・manifest・否定規定表現・サンドボックス保護に対応する。`.ps1`改行、frontmatter同期注記と本文節参照の実在検証はpatch入力から判定できないため非対応。Bash検査は現在の入力とcwdだけで判定するものと、編集成功状態による一括ステージ警告に対応する。コマンドの終了コードを取得できないため、`git log`確認・amend後の状態・検証実行に依存する検査は非対応 |
+| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みTBDの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
+| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックし、登録済み調整役では未消化の子エージェント起動もブロックする | 対応 | 対応。空の完了報告のブロックに対応する。調整役の子エージェント検査は、完了判定へ利用できる安定したtranscript契約が無いため非対応 |
+| plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
+| plugin `Stop/stop_advisor` | 作業完了時に同一セッションの振り返りを一度だけ継続し、未コミット変更があれば`git status`の件数を表示する | 対応 | 対応 |
+| plugin `UserPromptSubmit/user_prompt_submit` | 手動スキル起動の状態と振り返り対象を記録する | 対応 | 対応 |
+| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
+| plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や`~/.claude/plans/`への書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
+| plugin `SubagentStart/subagent_start_tracker` | 委譲調整役の起動を記録し、SubagentStopの完了判定へ接続する | 対応 | 非対応。Codexの`agent_type`はspawn時のrole名又は`default`であり、現行の公開入力から追跡対象を識別できない |
+| plugin `PostToolUseFailure/posttooluse` | ツール失敗時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
+| plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
+| plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |
+| 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前検査 | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
+| 個人設定 `PostToolUse/posttooluse` | 参照文書へのReadとスキル起動をセッション状態へ記録する | 対応 | 非対応。同上 |
+| 個人設定 `Stop/autonomous_exit` | 自律実行の終了契約に従ってセッションを終了する | 対応 | 非対応。Claude Code固有の自律終了契約に依存する |
+
+Codexの`SessionStart`・`PreCompact`・`PostCompact`は、対応するClaude Code側の実装が無いため新設しない。
+
+計画ファイルと計画運用に関する検査は、上表の`PreToolUse`・`PostToolUse`が扱う。
+
 - 計画ファイルは`概要`、`実施内容`、`提示素材`、`変更履歴`、任意の`バグ調査結果`、
   `恒久化・リファクタリング内容`、`実装資料`、`完了条件`、`進捗ログ`を固定H2として検査する。
   自由な見出しは`実装資料`配下のH3以下だけを許容する
@@ -301,14 +301,13 @@ Claude Code向けagent-toolkitプラグインは以下のフックを常時有�
   恒久化・リファクタリング・類似見直しの検討実体を検査する
 - 変更対象と変更内容は`実装資料`の変更説明へ集約し、独立した対象ファイル一覧や関連検査を持たない
 - 計画レビューは欠落した事実と阻害される判断・検証・成果が対応する指摘だけを受理し、体裁や記述量を指摘理由にしない
-- 規範文書の本文中にある他ファイルの節参照が実在しない場合に警告
-- Gitワークツリー配下のコーディングエージェント向け文書や`~/.claude/plans/`への書き込み時に確認ダイアログを自動許可
+- 計画レビューでは、メインセッションが機械チェック・修正系と総合レビュー系へ直接委譲する
+- 計画実装では、`plan-impl-executor`がコミット単位ごとのwriterと2つの読み取り専用reviewerを管理し、
+  writerがcommit、呼び出し元がpushとCI確認を担当
 
-Codex向けagent-toolkitプラグインは、公式契約を確認済みの次の3イベントだけを配布する。
-
-- `PermissionRequest`: BashのCodex起動条件を検査する
-- `UserPromptSubmit`: 手動スキル起動の状態と振り返り対象を記録する
-- `Stop`: 作業完了時に同一セッションの振り返りを一度だけ継続する
+このほか、メインエージェント応答に占める日本語文字の比率が閾値未満のときの警告、
+`agent-toolkit:delegation`未起動での委譲開始のブロック、`AskUserQuestion`への縮退誘発フレーズ混入のブロックを
+Claude Codeで有効化する。
 
 ### オンデマンドのスキル
 

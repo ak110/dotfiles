@@ -393,10 +393,6 @@ class TestSessionReviewCommandInvocation:
         assert "decision" not in _parse_decision(result)
 
     def test_codex_started_marker_approves_after_state_expiry(self, tmp_path: pathlib.Path):
-        stale_state = _write_state(tmp_path, "codex-started-marker", {"marker": True})
-        stale_lock = _write_lock(tmp_path, "codex-started-marker")
-        _set_stale(stale_state)
-        _set_stale(stale_lock)
         transcript = _write_transcript(
             tmp_path,
             [
@@ -415,14 +411,12 @@ class TestSessionReviewCommandInvocation:
         )
 
         assert "decision" not in _parse_decision(result)
-        assert not stale_state.exists()
-        assert not stale_lock.exists()
 
-    def test_codex_stop_collects_stale_sessions_and_preserves_fresh_invocation(self, tmp_path: pathlib.Path):
+    def test_codex_stop_does_not_collect_stale_states(self, tmp_path: pathlib.Path):
+        """期限切れ状態の回収はSessionEndへ集約し、Stopでは重複実行しない。"""
         stale_state = _write_state(tmp_path, "codex-stale", {"marker": True})
         stale_lock = _write_lock(tmp_path, "codex-stale")
-        orphan_lock = _write_lock(tmp_path, "codex-orphan")
-        for path in (stale_state, stale_lock, orphan_lock):
+        for path in (stale_state, stale_lock):
             _set_stale(path)
         fresh_state = _write_state(
             tmp_path,
@@ -442,9 +436,8 @@ class TestSessionReviewCommandInvocation:
         )
 
         assert "decision" not in _parse_decision(result)
-        assert not stale_state.exists()
-        assert not stale_lock.exists()
-        assert not orphan_lock.exists()
+        assert stale_state.exists()
+        assert stale_lock.exists()
         assert fresh_state.exists()
         assert fresh_lock.exists()
 
