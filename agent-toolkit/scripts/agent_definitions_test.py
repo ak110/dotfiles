@@ -43,6 +43,7 @@ _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "refe
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
+_SESSION_REVIEW_CRITERIA = _SESSION_REVIEW.parent / "references" / "generation-criteria-detail.md"
 _SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
 _SESSION_REVIEW_EVIDENCE = _AGENTS_DIR.parent / "scripts" / "_session_review_evidence.py"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE_REFERENCES / "plan-review-delegation.md"
@@ -1099,6 +1100,18 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
     assert "1回だけ実行" in advisor_text
     assert "対象を変更せず、`atk mq add`、外部送信、サブエージェント起動も行わない" in advisor_text
     assert _SESSION_REVIEW_EVIDENCE.is_file()
+
+
+def test_session_review_existing_means_contract_is_synchronized() -> None:
+    """新規機構候補の既存手段確認を判断契約とadvisor出力で同期する。"""
+    criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+
+    assert "既存コマンド若しくは既存経路で得られるかを確認した手段と結果" in criteria
+    assert "既存手段による代替可否を確認していない場合も候補を抑止" in criteria
+    assert "existing_means_check" in advisor
+    assert "既存手段の確認手段と結果" in advisor
+    assert "新規機構に該当しない場合は「非該当」" in advisor
 
 
 def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> None:
