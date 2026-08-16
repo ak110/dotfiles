@@ -156,6 +156,41 @@ def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib
     assert not stale_lock.exists()
 
 
+def test_codex_other_reason_keeps_own_expired_state(tmp_path: pathlib.Path) -> None:
+    """当該セッションの状態は期限を過ぎていても残し、別セッションの期限切れは回収する。"""
+    own = _write_state(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
+    own_lock = _write_lock(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
+    stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
+    payload = json.dumps(
+        {
+            "hook_event_name": "SessionEnd",
+            "session_id": "codex-session",
+            "reason": "other",
+            "turn_id": "turn-1",
+        }
+    )
+
+    result = _run(payload, tmp_path)
+
+    assert result.returncode == 0
+    assert not result.stdout
+    assert not result.stderr
+    assert own.exists()
+    assert own_lock.exists()
+    assert not stale.exists()
+
+
+def test_own_expired_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -> None:
+    """会話破棄時は、当該セッションの期限切れ状態も削除する。"""
+    own = _write_state(tmp_path, "target", age_seconds=_STALE_AGE_SECONDS)
+
+    result = _run(_session_end("target", reason="clear"), tmp_path)
+
+    assert result.returncode == 0
+    assert not result.stderr
+    assert not own.exists()
+
+
 def test_missing_state_is_success(tmp_path: pathlib.Path) -> None:
     result = _run(_session_end("missing", reason="clear"), tmp_path)
     assert result.returncode == 0

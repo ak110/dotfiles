@@ -272,6 +272,31 @@ class TestSweepStaleStates:
         assert starting.exists()
         assert not abandoned.exists()
 
+    def test_kept_session_survives_expiry(self) -> None:
+        """`keep_session_id`の状態とロックは、期限を過ぎても回収しない。"""
+        update_state("ending", lambda current: {**current, "a": 1})
+        update_state("stale", lambda current: {**current, "a": 1})
+        target = state_path("ending")
+        lock = target.parent / (target.name + ".lock")
+        self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(state_path("stale"), STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        assert sweep_stale_states(keep_session_id="ending") == 1
+        assert read_state("ending") == {"a": 1}
+        assert lock.exists()
+        assert not state_path("stale").exists()
+
+    def test_kept_session_orphan_lock_survives_expiry(self, tmp_path: pathlib.Path) -> None:
+        """`keep_session_id`の状態ファイルが無くても、対のロックは残す。"""
+        name = SESSION_STATE_FILENAME_TEMPLATE.format(session_id="ending")
+        lock = tmp_path / f"{name}.lock"
+        lock.write_text("", encoding="utf-8")
+        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        assert sweep_stale_states(keep_session_id="ending") == 0
+        assert lock.exists()
+
     def test_other_sessions_are_untouched(self) -> None:
         """期限内の別セッションの状態は回収しない。"""
         update_state("stale", lambda current: {**current, "a": 1})

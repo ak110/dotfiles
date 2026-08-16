@@ -45,10 +45,16 @@ def state_path(session_id: str) -> pathlib.Path:
 
 def sweep_stale_states(
     *,
+    keep_session_id: str | None = None,
     now: float | None = None,
     max_age_seconds: float = STALE_STATE_MAX_AGE_SECONDS,
 ) -> int:
     """期限を過ぎた状態ファイルとロックファイルを回収し、削除した状態ファイル数を返す。
+
+    `keep_session_id`を渡すと、当該セッションの状態ファイルとロックファイルを
+    期限にかかわらず回収対象から除く。セッション終了イベントを契機に呼ぶ場合、
+    当該セッションは`--continue`・`--resume`・`/resume`で戻れる一方、
+    更新時刻は最後の記録時点のままとなり、長く記録が無いだけで削除されうるため。
 
     状態ファイルは更新時刻が期限を超えた場合に、対のロックファイルとともに削除する。
     対応する状態ファイルが無いロックファイルは、ロック自身の更新時刻で判定する。
@@ -64,14 +70,17 @@ def sweep_stale_states(
     """
     directory = pathlib.Path(tempfile.gettempdir())
     threshold = (time.time() if now is None else now) - max_age_seconds
+    kept_name = state_path(keep_session_id).name if keep_session_id else None
     removed = 0
     for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"):
-        if not _is_stale(path, threshold):
+        if path.name == kept_name or not _is_stale(path, threshold):
             continue
         if _unlink_quietly(path):
             removed += 1
         _unlink_quietly(path.parent / (path.name + _LOCK_SUFFIX))
     for lock_path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}{_LOCK_SUFFIX}"):
+        if kept_name is not None and lock_path.name == kept_name + _LOCK_SUFFIX:
+            continue
         if (lock_path.parent / lock_path.name[: -len(_LOCK_SUFFIX)]).exists():
             continue
         if _is_stale(lock_path, threshold):
