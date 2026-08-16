@@ -466,6 +466,7 @@ class TestColloquialCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
         assert result.returncode == 0
         assert "colloquial" in result.stderr
+        assert "Rewrite the whole sentence containing the detected expression" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
         # 検出語そのものは出力に含めない（コンテキスト汚染防止）
         assert deny_substring not in result.stderr

@@ -776,9 +776,11 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
             print(
                 _llm_notice(
                     f"colloquial Japanese expressions detected in {tool_name}.{field}."
-                    f" Rewrite using formal written-style expressions"
+                    f" Rewrite the whole sentence containing the detected expression"
+                    f" using formal written-style expressions"
                     f" (standard technical terminology, dictionary form,"
                     f" no metaphorical verbs) per agent-toolkit/rules/01-agent.md '日本語' section."
+                    f" Do not just swap the detected word for a synonym; restructure the sentence."
                     f" Target: {file_path}",
                     tag="warn",
                 ),
