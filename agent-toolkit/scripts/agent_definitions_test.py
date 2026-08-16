@@ -1030,6 +1030,8 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     """plannerのsenderとreceiverへ計画パス、単一経路及びTBD境界を同期する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     receiver = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    decision_format = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
 
     for text in (sender, receiver):
         assert "委譲元が確定した計画ファイルの絶対パス" in text
@@ -1038,6 +1040,20 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert "TBD候補は、技術調査と明文化済み方針で確定できず" in sender
     assert "採用済み本文が要求しない選択肢に限定" in sender
     assert "採用済み本文が明示する変更自体を確認事項又は実装前提にしない" in sender
+    for phrase in (
+        "コーディングエージェント向け規範文書の文言、列挙及び節配置",
+        "技術判断として確定",
+        "`user_decisions`へ含めない",
+        "`agent-toolkit/rules/01-agent.md`「協調と自律」節の確認境界",
+    ):
+        assert phrase in sender
+        assert phrase in receiver
+    receiver_exclusion = receiver.index("採用済み本文が明示する変更を`user_decisions`から先に除外")
+    receiver_boundary = receiver.index("残る事項だけを`agent-toolkit/rules/01-agent.md`「協調と自律」節の確認境界")
+    assert receiver_exclusion < receiver_boundary
+    assert "feedback原文が示す文言案、列挙及び節配置を利用者合意とみなさない" in checklist
+    assert "原文との差異と根拠を採否記録へ残す" in checklist
+    assert "差異と根拠を`理由`又は`反映内容`へ記録" in decision_format
     for phrase in (
         "plannerのauthorが既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
         "未回答事項による実装・検証の条件分岐を残さない単一経路",
@@ -1214,6 +1230,11 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "利用できるローカルworktreeがない場合だけURL" in add_feedback
     assert "worktreeを推測せず" in add_feedback
     assert "processing項目を変更していない" in add_feedback
+    assert "全TBDは、回答者が回答対象を識別できる問いを疑問文で1文以上含める" in add_feedback
+    assert "`--question-type=choice`では選択肢の提示を問いとして扱う" in add_feedback
+    assert "全TBDは本文だけで判断できるよう、対象、背景及び判断根拠を含める" in add_feedback
+    assert "識別子は、対象との関係を示す文脈語とともに用い" in add_feedback
+    assert "識別子の列挙で文脈を代替しない" in add_feedback
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in plan_and_add
     assert "`atk mq add`を実行" not in plan_and_add
 

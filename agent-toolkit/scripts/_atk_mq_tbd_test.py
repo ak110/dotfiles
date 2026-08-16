@@ -157,7 +157,8 @@ class TestCmdTbdAddSelfContainmentWarning:
             )
         assert exc_info.value.code == 0
         stderr = capsys.readouterr().err
-        assert "自己完結" in stderr
+        assert "agent-toolkit:add-feedbackが定める自己完結要件" in stderr
+        assert "agent-toolkit:process-feedbacks" not in stderr
 
 
 class TestTbdAdd:

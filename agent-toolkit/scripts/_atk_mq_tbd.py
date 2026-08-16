@@ -149,7 +149,7 @@ def warn_question_quality(filename: str, message: str, question_type: str | None
     if reason is not None:
         print(
             f"警告: {filename}の質問本文が単独で判断可能な情報を欠く可能性があります（{reason}）。"
-            "agent-toolkit:process-feedbacksが定める自己完結要件を満たす形に見直してください。",
+            "agent-toolkit:add-feedbackが定める自己完結要件を満たす形に見直してください。",
             file=sys.stderr,
         )
 
