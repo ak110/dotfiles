@@ -84,6 +84,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 - 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
 """
 
+import dataclasses
 import datetime
 import hashlib
 import json
@@ -1800,11 +1801,6 @@ def _likely_real_command(command: str, pos: int) -> bool:
     return "<<" not in prefix
 
 
-# --- Bash: 関連定数（git commit検出）---
-
-_GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
-
-
 # --- Bash: git amend / rebaseをlog未確認でブロック ---
 
 
@@ -2189,6 +2185,335 @@ def _cwd_is_python_project(cwd: str) -> bool:
     return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
 
 
+# --- Bash: 実行位置のトークン列抽出（助言用検査の共通入口）---
+
+# 本ヘルパーの利用者は助言用の3検査（出力切り詰め・`codex exec`・agent-toolkit版更新漏れ）に限る。
+# 遮断を伴う`_check_bash_process_kill_by_pattern`は、コマンド置換・サブシェル・オプション終端まで
+# 解決できる解析を用意できるまで現行のコマンド文字列全体への一致判定を維持し、本ヘルパーを使わない
+# （解析の不足で既存の保護を外さないため）。
+
+_EXEC_PREFIX_WITH_ENV_ASSIGNMENTS: frozenset[str] = frozenset({"sudo", "env"})
+"""続く`KEY=VALUE`形式の代入を走査対象から除く実行前置語。
+
+`-`始まりトークンが続く場合は、引数を取るか否かが実装・版により異なり値の境界を確定できないため、
+当該区間を実行位置未確定として扱う。
+"""
+
+_EXEC_PREFIX_WITHOUT_OPTIONS: frozenset[str] = frozenset({"command", "nohup", "uvx", "xargs"})
+"""次のトークンを実行位置候補とする実行前置語。
+
+`-`始まりトークンが続く場合は`_EXEC_PREFIX_WITH_ENV_ASSIGNMENTS`と同じ理由で実行位置未確定とする。
+"""
+
+_TIMEOUT_DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
+
+_SHELL_TOKENS: frozenset[str] = frozenset({"sh", "bash"})
+
+_UV_TERMINAL_OPTIONS: frozenset[str] = frozenset({"--help", "-h", "--version", "-V"})
+"""後続の指定を実行しない終端オプション。走査中のコマンド自身を実行位置として確定する。"""
+
+_UV_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "--allow-insecure-host",
+        "--cache-dir",
+        "--color",
+        "--config-file",
+        "--directory",
+        "--project",
+    }
+)
+"""`uv --help`（uv 0.12.3）の出力から機械抽出した、値を1つ取るグローバルオプション。
+
+長形と短縮形の双方を保持する。`sudo`・`env`・`xargs`・`timeout`が表を持たず`-`始まりトークンで
+一律に実行位置未確定へ倒すのに対し、`uv`だけがオプション表を持つのは、導入版の`--help`出力から
+オプション全体を一次資料として取得できるためである。
+表に無い`-`始まりトークンは意味を確定できないため当該区間を実行位置未確定として扱う。
+uvの新版でオプションが増減した場合は、`uv --help`と`uv run --help`の出力から本表と関連3表を再作成する。
+"""
+
+_UV_GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--managed-python",
+        "--no-cache",
+        "--no-config",
+        "--no-managed-python",
+        "--no-progress",
+        "--no-python-downloads",
+        "--offline",
+        "--quiet",
+        "--system-certs",
+        "--verbose",
+        "-n",
+        "-q",
+        "-v",
+    }
+)
+"""`uv --help`の出力から機械抽出した、値を取らないグローバルオプション。取得元は`_UV_GLOBAL_OPTIONS_WITH_VALUE`参照。"""
+
+_UV_RUN_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "--allow-insecure-host",
+        "--cache-dir",
+        "--color",
+        "--config-file",
+        "--config-setting",
+        "--config-settings-package",
+        "--default-index",
+        "--directory",
+        "--env-file",
+        "--exclude-newer",
+        "--exclude-newer-package",
+        "--extra",
+        "--extra-index-url",
+        "--find-links",
+        "--fork-strategy",
+        "--group",
+        "--index",
+        "--index-strategy",
+        "--index-url",
+        "--keyring-provider",
+        "--link-mode",
+        "--no-binary-package",
+        "--no-build-isolation-package",
+        "--no-build-package",
+        "--no-editable-package",
+        "--no-extra",
+        "--no-group",
+        "--no-sources-package",
+        "--only-group",
+        "--package",
+        "--prerelease",
+        "--prerelease-package",
+        "--project",
+        "--python",
+        "--python-platform",
+        "--refresh-package",
+        "--reinstall-package",
+        "--resolution",
+        "--upgrade-group",
+        "--upgrade-package",
+        "--with",
+        "--with-editable",
+        "--with-requirements",
+        "-C",
+        "-P",
+        "-f",
+        "-i",
+        "-p",
+        "-w",
+    }
+)
+"""`uv run --help`の出力から機械抽出した、値を1つ取る`run`オプション。取得元は`_UV_GLOBAL_OPTIONS_WITH_VALUE`参照。"""
+
+_UV_RUN_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--active",
+        "--all-extras",
+        "--all-groups",
+        "--all-packages",
+        "--compile-bytecode",
+        "--exact",
+        "--frozen",
+        "--gui-script",
+        "--isolated",
+        "--locked",
+        "--managed-python",
+        "--module",
+        "--no-binary",
+        "--no-build",
+        "--no-build-isolation",
+        "--no-cache",
+        "--no-config",
+        "--no-default-groups",
+        "--no-dev",
+        "--no-editable",
+        "--no-env-file",
+        "--no-index",
+        "--no-managed-python",
+        "--no-progress",
+        "--no-project",
+        "--no-python-downloads",
+        "--no-sources",
+        "--no-sync",
+        "--offline",
+        "--only-dev",
+        "--quiet",
+        "--refresh",
+        "--reinstall",
+        "--script",
+        "--system-certs",
+        "--upgrade",
+        "--verbose",
+        "-U",
+        "-m",
+        "-n",
+        "-q",
+        "-s",
+        "-v",
+    }
+)
+"""`uv run --help`の出力から機械抽出した、値を取らない`run`オプション。取得元は`_UV_GLOBAL_OPTIONS_WITH_VALUE`参照。"""
+
+
+@dataclasses.dataclass(frozen=True)
+class _ExecutionSegment:
+    """Bashコマンドの1区間について、実行位置以降のトークン列と実行位置の確定可否を表す。
+
+    `resolved`が偽の区間では`tokens`を空とし、助言用検査は当該区間で検出しない。
+    """
+
+    tokens: tuple[str, ...]
+    resolved: bool
+
+
+def _extract_execution_segments(command: str, *, expand_shell: bool = True) -> list[_ExecutionSegment]:
+    """Bashコマンドを区間へ分割し、各区間の実行位置以降のトークン列を返す。
+
+    区間分割は`split_bash_segments`（`;`・`&&`・`||`・`|`・`&`で分割し、クォート内のメタ文字を除く）、
+    トークン化は`shlex.split(segment, posix=True)`を使う。
+    `sh -c`・`bash -c`（`-lc`等の結合形を含む）に続く文字列引数は1段だけ同じ手順で展開し、
+    展開結果の区間を呼び出し元の区間列へ並べる。2段以上の入れ子は展開せず実行位置未確定とする。
+
+    本ヘルパーはコマンド置換・サブシェル・`--`によるオプション終端・前置語の値境界を解決しない。
+    この解析水準で成立するのは、実行を止めない助言用の判定に限る。
+    """
+    segments: list[_ExecutionSegment] = []
+    for raw_segment in split_bash_segments(command):
+        try:
+            tokens = shlex.split(raw_segment, posix=True)
+        except ValueError:
+            segments.append(_ExecutionSegment((), False))
+            continue
+        shell_argument = _shell_c_argument(tokens)
+        if shell_argument is not None:
+            if expand_shell:
+                segments.extend(_extract_execution_segments(shell_argument, expand_shell=False))
+            else:
+                segments.append(_ExecutionSegment((), False))
+            continue
+        segments.append(_resolve_execution_segment(tokens))
+    return segments
+
+
+def _shell_c_argument(tokens: list[str]) -> str | None:
+    """`sh -c`・`bash -c`形式が実行するコマンド文字列を返す。該当しない場合はNoneを返す。"""
+    index = _skip_env_assignments(tokens, 0)
+    if index >= len(tokens) or tokens[index] not in _SHELL_TOKENS:
+        return None
+    for position in range(index + 1, len(tokens)):
+        token = tokens[position]
+        if not token.startswith("-") or token.startswith("--"):
+            return None
+        if "c" in token[1:]:
+            return tokens[position + 1] if position + 1 < len(tokens) else None
+    return None
+
+
+def _resolve_execution_segment(tokens: list[str]) -> _ExecutionSegment:
+    """トークン列の実行位置を求め、実行位置以降のトークン列と確定可否を返す。
+
+    先頭の`KEY=VALUE`形式の環境変数代入の次の位置から、既知の実行前置語を順に走査対象から除く。
+    除いた後の位置が存在しない場合、または当該トークンが`-`で始まる場合は、
+    前置語の引数境界を確定できていないため実行位置未確定とする。
+    """
+    index = _skip_env_assignments(tokens, 0)
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _EXEC_PREFIX_WITH_ENV_ASSIGNMENTS:
+            index = _skip_env_assignments(tokens, index + 1)
+            continue
+        if token in _EXEC_PREFIX_WITHOUT_OPTIONS:
+            index += 1
+            continue
+        if token == "timeout":
+            index += 1
+            if index < len(tokens) and _TIMEOUT_DURATION_RE.match(tokens[index]):
+                index += 1
+            continue
+        if token == "uv":
+            uv_index = _resolve_uv_execution_index(tokens, index)
+            if uv_index is None:
+                return _ExecutionSegment((), False)
+            if uv_index == index:
+                break
+            index = uv_index
+            continue
+        if _is_python_token(token) and index + 1 < len(tokens) and tokens[index + 1] == "-m":
+            index += 2
+            continue
+        break
+    if index >= len(tokens) or tokens[index].startswith("-"):
+        return _ExecutionSegment((), False)
+    return _ExecutionSegment(tuple(tokens[index:]), True)
+
+
+def _resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
+    """`uv`トークンの位置から実行位置の添字を求める。実行位置未確定の場合はNoneを返す。
+
+    `uv`のグローバル区間と`run`区間へ同じ優先順位の走査（`_scan_uv_options`）を適用する。
+    終端オプションを含む区間と`run`以外のサブコマンドは、`uv`自身を実行位置として確定する
+    （検証コマンド・`codex exec`のいずれとも一致しないため検出対象にならない）。
+    """
+    index, state = _scan_uv_options(tokens, uv_index + 1, _UV_GLOBAL_OPTIONS_WITH_VALUE, _UV_GLOBAL_OPTIONS_WITHOUT_VALUE)
+    if state == "terminal":
+        return uv_index
+    if state != "reached":
+        return None
+    if tokens[index] != "run":
+        return uv_index
+    index, state = _scan_uv_options(tokens, index + 1, _UV_RUN_OPTIONS_WITH_VALUE, _UV_RUN_OPTIONS_WITHOUT_VALUE)
+    if state == "terminal":
+        return uv_index
+    if state != "reached":
+        return None
+    return index
+
+
+def _scan_uv_options(
+    tokens: list[str],
+    start: int,
+    with_value: frozenset[str],
+    without_value: frozenset[str],
+) -> tuple[int, str]:
+    """`uv`のオプション列を走査し、到達位置と走査結果の状態を返す。
+
+    解析の前提は「意味を確定できる構文だけを受理する」ことであり、個別のオプション名を事象ごとに追加しない。
+    各トークンは次の5状態のいずれか1つへ排他的に定まる。判定はこの優先順位で行い、
+    先に一致した状態で確定して以降の状態を評価しない。
+
+    1. 終端状態: 終端オプション。当該区間は後続の指定を実行しないため走査を終える（状態`terminal`）
+    2. 値あり状態: 値ありオプション表と完全一致する。トークンと続く1トークンを走査対象から除く。
+       `--name=value`形式は`--name`が同表と完全一致する場合に1トークンだけを除く
+    3. 値なし状態: 値なしオプション表と完全一致する。トークン1つを除く
+    4. 非オプション状態: `-`で始まらない。当該トークンを走査の到達点とする（状態`reached`）
+    5. 未分類状態: 上記のいずれにも当たらない（表に無い長形、2文字以上の結合短縮形、表に無い短縮形など）。
+       区間全体を実行位置未確定とする（状態`unresolved`）
+
+    5状態は排他かつ網羅であり、優先順位が固定されているため同じトークンが2つの状態へ当たることはない。
+    値なしオプション表に`--help`・`-h`が含まれていても、終端状態を最優先で判定するため状態1で確定する。
+    新しいオプションや未知の記法が現れても個別の規則追加を要さず状態5へ倒れ、助言用検査は非検出となる。
+    """
+    index = start
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _UV_TERMINAL_OPTIONS:
+            return index, "terminal"
+        if token in with_value:
+            index += 2
+            continue
+        name, separator, _ = token.partition("=")
+        if separator and name in with_value:
+            index += 1
+            continue
+        if token in without_value:
+            index += 1
+            continue
+        if not token.startswith("-"):
+            return index, "reached"
+        return index, "unresolved"
+    return index, "unresolved"
+
+
 # --- Bash: sleep直後の読み取り専用状態確認連結の検出 ---
 
 _SLEEP_COMMAND = "sleep"
@@ -2460,22 +2785,50 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
 
 # --- Bash: 検証コマンド出力の切り詰め検出 ---
 
-_VERIFICATION_TOOL_RE = re.compile(r"\b(pyfltr|pytest|cargo\s+test|dotnet\s+test|npm\s+(run\s+)?test|vitest|make\s+test)\b")
-_OUTPUT_TRUNCATION_RE = re.compile(r"\|\s*(tail|head)\b")
-_TEE_RE = re.compile(r"\btee\b")
+_VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+    ("pyfltr",),
+    ("pytest",),
+    ("cargo", "test"),
+    ("dotnet", "test"),
+    ("npm", "test"),
+    ("npm", "run", "test"),
+    ("vitest",),
+    ("make", "test"),
+)
+_OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
+_OUTPUT_FULL_SAVE_COMMAND = "tee"
+
+
+def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) -> bool:
+    """区間の実行位置以降のトークン列が指定の接頭トークン列で始まるかを返す。"""
+    return segment.resolved and segment.tokens[: len(prefix)] == prefix
 
 
 def _check_bash_output_truncation(command: str) -> str | None:
     """検証コマンドの出力を`tail`・`head`で切り詰める指定を検出し、全量保存を促す警告を返す。
 
     実行自体は止めない。全量をファイルへ保存してから必要部分を抽出する形を促す。
-    `tee`で全量を先に保存してから`tail`・`head`で抽出する形は、切り詰めに該当しないため対象外とする。
+    検証コマンドを実行する区間より後方の区間で`tail`・`head`が実行され、かつ当該検証区間より
+    後方に`tee`を実行する区間が無い場合だけ警告する。
+    判定は`_extract_execution_segments`が返す実行位置で行うため、検証ツール名を検索語・引数として
+    含むだけの読み取り操作は検出しない。実行位置を確定できない区間と、実行位置以外で起動される
+    検証コマンドも検出しない（助言であり非検出側の誤差の実害が小さいため）。
     """
-    if not _VERIFICATION_TOOL_RE.search(command):
+    segments = _extract_execution_segments(command)
+    verification_index = next(
+        (
+            index
+            for index, segment in enumerate(segments)
+            if any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES)
+        ),
+        None,
+    )
+    if verification_index is None:
         return None
-    if not _OUTPUT_TRUNCATION_RE.search(command):
+    following = segments[verification_index + 1 :]
+    if not any(segment.resolved and segment.tokens[0] in _OUTPUT_TRUNCATION_COMMANDS for segment in following):
         return None
-    if _TEE_RE.search(command):
+    if any(_segment_starts_with(segment, (_OUTPUT_FULL_SAVE_COMMAND,)) for segment in following):
         return None
     return _llm_notice(
         "warn: verification command output is piped through `tail`/`head`, truncating it."
@@ -2567,7 +2920,9 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
 
     判定:
 
-    1. `git commit`を検出した場合のみ動作する
+    1. `extract_git_events`が`commit`サブコマンドを1件以上返した場合のみ動作する
+       （`_check_bash_git_commit`と同じ検出方式であり、`git commit`という文字列を引数として
+       含むだけの読み取り操作では動作しない）
     2. ステージ済みファイルに`agent-toolkit/`配下を含まない、または
        `agent-toolkit/scripts/*_test.py`のみの場合は警告しない
     3. ステージ済み差分に`agent-toolkit/.claude-plugin/plugin.json`を
@@ -2579,8 +2934,7 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
        解決できない場合は警告側へ倒す
     5. 上記いずれにも該当しない場合、warn JSONを返す
     """
-    match = _GIT_COMMIT_PATTERN.search(command)
-    if match is None or not _likely_real_command(command, match.start()):
+    if not any(event.subcommand == "commit" for event in extract_git_events(command, cwd)):
         return None
     if not cwd:
         return None
@@ -2665,16 +3019,26 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
 
 # --- Bash: codex exec未決事項の念押し ---
 
-_CODEX_EXEC_PATTERN = re.compile(r"\bcodex\s+exec\b")
-_CODEX_RESUME_PATTERN_PRE = re.compile(r"\bcodex\s+exec\s+resume\b")
+_CODEX_EXEC_PREFIX: tuple[str, ...] = ("codex", "exec")
+_CODEX_EXEC_RESUME_PREFIX: tuple[str, ...] = ("codex", "exec", "resume")
 
 
 def _check_bash_codex_exec(command: str) -> str | None:
-    """Codex exec（resume以外）を検出した場合に未決事項確認の警告文を返す。"""
-    exec_match = _CODEX_EXEC_PATTERN.search(command)
-    if exec_match is None or not _likely_real_command(command, exec_match.start()):
-        return None
-    if _CODEX_RESUME_PATTERN_PRE.search(command):
+    """Codex exec（resume以外）を検出した場合に未決事項確認の警告文を返す。
+
+    判定は`_extract_execution_segments`が返す実行位置で行い、実行位置のトークン列が`codex exec`で
+    始まる区間を対象とする。当該区間が`codex exec resume`である場合は除外する。
+    `codex exec`という文字列を引数として含むだけの読み取り操作は検出しない。
+    実行位置を確定できない区間と、実行位置以外で起動される`codex exec`も検出しない
+    （助言であり非検出側の誤差の実害が小さいため）。
+    """
+    for segment in _extract_execution_segments(command):
+        if not _segment_starts_with(segment, _CODEX_EXEC_PREFIX):
+            continue
+        if _segment_starts_with(segment, _CODEX_EXEC_RESUME_PREFIX):
+            continue
+        break
+    else:
         return None
     return _llm_notice(
         "running codex exec."

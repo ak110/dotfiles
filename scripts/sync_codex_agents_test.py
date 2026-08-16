@@ -80,6 +80,8 @@ def test_current_output_is_synced() -> None:
         "atk managed-temp create --prefix <用途>",
         "atk managed-temp cleanup --path <検収済み絶対パス>",
         "atk watch --worktree",
+        "出力予算内に収まる組へ分割",
+        "読了として扱わない",
     ):
         assert stable_command in content
     for version_dependent_command in (

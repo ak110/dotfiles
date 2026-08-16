@@ -1640,6 +1640,19 @@ class TestBashCodexExecNudge:
         assert result.returncode == 0
         assert result.stdout == ""
 
+    def test_no_nudge_when_name_is_in_argument_position(self):
+        """`codex exec`を引数として含むだけの読み取り操作は警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "echo 'codex exec is documented here'"}})
+        assert result.returncode == 0
+        assert "running codex exec" not in _agent_messages(result)
+
+    def test_nudge_follows_execution_position(self):
+        """実行位置の`codex exec`は警告し、同じ位置の`codex exec resume`は警告しない。"""
+        executed = _run({"tool_name": "Bash", "tool_input": {"command": 'codex exec "review the plan"'}})
+        resumed = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec resume 01ABCDEF"}})
+        assert "running codex exec" in _agent_messages(executed)
+        assert "running codex exec" not in _agent_messages(resumed)
+
 
 class TestBashAmendRebaseBlock:
     """git amend / rebaseのlog未確認ブロック。
@@ -3061,6 +3074,13 @@ class TestBashAgentToolkitVersionBump:
         assert result.returncode == 0
         assert self._has_version_bump_warning(result)
 
+    def test_commit_string_in_argument_position_no_warn(self, tmp_path: pathlib.Path):
+        """`git commit`を検索語として含むだけの読み取り操作は警告しない。"""
+        repo = self._make_repo(tmp_path, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
+        result = self._invoke("grep -rn 'git commit' docs", str(repo))
+        assert result.returncode == 0
+        assert not self._has_version_bump_warning(result)
+
 
 class TestBashProcessKillByPattern:
     """`Bash`経由のパターン一致プロセス終了（`pkill`・`killall`）検出（block）。"""
@@ -3187,6 +3207,41 @@ class TestBashOutputTruncationWarning:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log | head -5"}})
         assert result.returncode == 0
         assert "warn" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "grep -n 'pyfltr' pyproject.toml | head -40",
+            "rg pytest docs | head -20",
+            "uv run --with pytest ruff check | head -5",
+            "uv run -w pytest ruff check | head -5",
+            "uv run -qw pytest ruff check | head -5",
+            "uv run --help pytest | head -5",
+        ],
+        ids=["grep", "rg", "with-long", "with-short", "combined-short", "terminal-option"],
+    )
+    def test_verification_name_outside_execution_position_silent(self, command: str) -> None:
+        """検証ツール名を検索語・オプションの値として含むだけのコマンドは警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "uv run --no-project pytest -q | tail -5",
+            "uv --directory /tmp run pytest -q | tail -5",
+            "uv run pytest -q | tail -5",
+            "python -m pytest | head -5",
+            "timeout 600 uvx pyfltr run | tail -20",
+        ],
+        ids=["run-option", "global-option-with-value", "no-option", "python-module", "timeout-uvx"],
+    )
+    def test_verification_in_execution_position_warns(self, command: str) -> None:
+        """前置語とオプションを介して実行位置へ現れる検証コマンドは警告を維持する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
 
 
 class TestAgentNameParameterGate:

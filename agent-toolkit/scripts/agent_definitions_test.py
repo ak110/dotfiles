@@ -312,6 +312,27 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "現存箇所と破る契約を示す" in task
 
 
+def test_plan_review_audits_shared_representation_and_overview_sync() -> None:
+    """反映後照合の対象に`## 概要`を含め、共有表現の修正時に影響経路を再列挙する契約を固定する。"""
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+
+    for phrase in (
+        "`## 概要`、`## 提示素材`",
+        "実施内容とファイル群別の変更説明と同じ内容",
+        "全生産者、全消費者、公開入口",
+        "単純な文面変更と局所修正は本再列挙の対象外",
+    ):
+        assert phrase in delegation
+
+
+def test_plan_save_requires_unique_replacement_boundary() -> None:
+    """計画の機械的な部分差し替え前に境界の一意性を確認する契約を固定する。"""
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+
+    assert "境界文字列の一致件数を先に数え" in plan_mode
+    assert "行頭完全一致の見出し行" in plan_mode
+
+
 def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
     """writerと計画準拠reviewerの参照範囲を固定領域と実装者向け領域で分ける。"""
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
