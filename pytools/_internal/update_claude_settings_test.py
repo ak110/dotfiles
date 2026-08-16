@@ -228,7 +228,7 @@ class TestProductionManagedSettings:
         assert data["permissions"]["deny"] == MANAGED_DENY
 
     def test_auto_mode_rules_keep_required_scope_without_confirmation_details(self):
-        """自動許可文は8ラベルの対象と安全境界だけを保持する。"""
+        """自動許可文は9ラベルの対象と安全境界だけを保持する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         rules = dict(rule.split(": ", maxsplit=1) for rule in data["autoMode"]["allow"] if rule != "$defaults")
         assert set(rules) == {
@@ -239,6 +239,7 @@ class TestProductionManagedSettings:
             "External Marketplace Registration",
             "Agent Config Read",
             "Delegation Continuation Message",
+            "Release Workflow Dispatch",
             "Personal Repo Default-Branch Push",
         }
         assert all(
@@ -300,6 +301,29 @@ class TestProductionManagedSettings:
             term in rules["Delegation Continuation Message"]
             for term in ("委譲先", "`SendMessage`", "委譲済み範囲内", "不可逆操作", "許可しない")
         )
+        assert all(
+            term in rules["Release Workflow Dispatch"]
+            for term in (
+                "github.com/ak110",
+                "`.github/workflows/release.yaml`",
+                "`releaser patch`",
+                "`releaser minor`",
+                "`releaser major`",
+                "`gh workflow run release.yaml --field=bump=<PATCH|MINOR|MAJOR>`",
+                "`gh api`",
+                "`gh run list`",
+                "`gh run view`",
+                "`gh run watch <id> --exit-status`",
+                "`git fetch --tags --prune`",
+                "`git pull --ff-only`",
+                "hard_deny",
+                "branch protectionの変更",
+                "CIチェックの無効化・スキップ",
+                "github.com/ak110以外",
+                "許可しない",
+            )
+        )
+        assert "`git push`" not in rules["Release Workflow Dispatch"]
         assert all(
             term in rules["Personal Repo Default-Branch Push"]
             for term in (

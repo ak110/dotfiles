@@ -11,6 +11,7 @@
       "External Marketplace Registration: `claude plugin marketplace add u-ichi/compact-plus`または`codex plugin marketplace add u-ichi/compact-plus`による登録と、`compact-plus@compact-plus`のインストールを許可する。",
       "Agent Config Read: `atk config get <キー>...`は1件以上のagent-toolkit設定値を標準出力へ返すだけで副作用がないため、メイン・サブエージェントのいずれからの実行も許可する。値の変更を伴う`atk config set`等は許可しない。",
       "Delegation Continuation Message: 稼働中または再開可能な委譲先への継続指示送信（`SendMessage`など）は、内容が委譲済み範囲内の作業継続・解決済み設定値の伝達・差し戻しへの応答に限られる場合に許可する。委譲範囲外の操作や新たな不可逆操作を認可する指示は許可しない。",
+      "Release Workflow Dispatch: github.com/ak110配下の個人リポジトリで、`.github/workflows/release.yaml`が存在する場合、`releaser patch`・`releaser minor`・`releaser major`と、それらが実行する`gh workflow run release.yaml --field=bump=<PATCH|MINOR|MAJOR>`、`gh api`によるワークフロー名取得、`gh run list`・`gh run view`・`gh run watch <id> --exit-status`による完了確認、成功後の`git fetch --tags --prune`・`git pull --ff-only`を許可する。hard_deny領域、branch protectionの変更、CIチェックの無効化・スキップ、github.com/ak110以外のリポジトリへの操作は許可しない。",
       "Personal Repo Default-Branch Push: remoteがgithub.com/ak110配下のリポジトリでは、デフォルトブランチ（master・main）への通常pushを許可する。transcript中の計画またはユーザー指示が当該pushを含む場合に適用する。本許可は宛先のみを対象とし、内容の機密判定・force-push・履歴書き換えには適用しない。"
     ],
     "environment": [
