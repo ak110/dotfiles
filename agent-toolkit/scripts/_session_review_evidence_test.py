@@ -1243,7 +1243,10 @@ def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """複数ブロックを持つエントリでも、詳細本文の合計を1エントリ分の上限内へ収める。"""
+    """複数ブロックを持つエントリでも、詳細本文の合計を1エントリ分の上限内へ収める。
+
+    残り予算が0となった後の非空本文は省略標識のみとなるため、合計は上限へ標識の長さを加えた範囲に収まる。
+    """
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1255,6 +1258,7 @@ def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
                         {"type": "tool_use", "name": "Agent", "id": "c1", "input": {"prompt": "あ" * 9000}},
                         {"type": "tool_use", "name": "Agent", "id": "c2", "input": {"prompt": "い" * 9000}},
                         {"type": "tool_result", "tool_use_id": "c3", "content": "う" * 9000},
+                        {"type": "tool_result", "tool_use_id": "c4", "content": ""},
                     ],
                 },
             }
@@ -1266,10 +1270,11 @@ def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
     events = _read_jsonl(capsys)
     total = sum(len(event["input"]["prompt"]) for event in events if "input" in event)
     total += sum(len(event["text"]) for event in events if "text" in event)
-    assert total <= 8000
+    assert total <= 8000 + len("…[省略]") * len(events)
     assert events[0]["input"]["prompt"].endswith("…[省略]")
-    assert events[1]["input"]["prompt"] == ""
-    assert events[2]["text"] == ""
+    assert events[1]["input"]["prompt"] == "…[省略]"
+    assert events[2]["text"] == "…[省略]"
+    assert events[3]["text"] == ""
 
 
 def test_detail_mode_formats_entry_without_tool_blocks(

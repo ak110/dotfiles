@@ -61,21 +61,26 @@ class _DetailBudget:
     """1エントリの詳細出力が共有する残り文字数。
 
     詳細は`--detail`の指定行ごとに複数の文字列へ分かれるため、上限を文字列単位で適用すると
-    1エントリの出力量が指定上限を超える。残り予算を出現順に配分して合計を上限内へ収める。
+    1エントリの出力量が指定上限を超える。残り予算を出現順に配分して本文の合計を上限内へ収める。
+    残り予算が0となった後の本文は省略標識へ置換し、本文が空である場合と区別可能な出力を維持する。
     """
 
     def __init__(self, limit: int) -> None:
         self.remaining = limit
 
     def clip(self, text: str) -> str:
-        """残り予算の範囲で本文を制限し、消費した分を予算から差し引く。"""
+        """残り予算の範囲で本文を制限し、消費した分を予算から差し引く。
+
+        予算を超える非空の本文は、収まる範囲の先頭と省略標識を返す。
+        予算が尽きている場合も空文字列を返さず省略標識だけを返し、省略済みである事実を残す。
+        """
         normalized = text.strip()
         if len(normalized) <= self.remaining:
             self.remaining -= len(normalized)
             return normalized
-        room = self.remaining - len(_OMISSION_MARK)
+        room = max(self.remaining - len(_OMISSION_MARK), 0)
         self.remaining = 0
-        return normalized[:room] + _OMISSION_MARK if room > 0 else ""
+        return normalized[:room] + _OMISSION_MARK
 
 
 def _text_blocks(content: Any, *, include_tool_results: bool = False) -> list[str]:
