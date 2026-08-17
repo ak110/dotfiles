@@ -2355,15 +2355,53 @@ _UV_RUN_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
 """`uv run --help`の出力から機械抽出した、値を取らない`run`オプション。取得元は`_UV_GLOBAL_OPTIONS_WITH_VALUE`参照。"""
 
 
+_PIPE_SEPARATORS: frozenset[str] = frozenset({"|", "|&"})
+"""前後の区間を同一パイプラインへ属させる区切り演算子。
+
+`;`・`&&`・`||`・`&`は前段の標準出力を後段へ渡さないため、別のパイプラインの開始として扱う。
+"""
+
+
 @dataclasses.dataclass(frozen=True)
 class _ExecutionSegment:
     """Bashコマンドの1区間について、実行位置以降のトークン列と実行位置の確定可否を表す。
 
     `resolved`が偽の区間では`tokens`を空とし、助言用検査は当該区間で検出しない。
+    `pipeline`は同一パイプライン（`|`だけで連結された一続きの区間列）へ属する区間で等しくなる識別子であり、
+    前段の出力が後段へ渡るか否かを要件とする検査は同じ値の区間だけを突き合わせる。
     """
 
     tokens: tuple[str, ...]
     resolved: bool
+    pipeline: tuple[int, ...]
+
+
+def _split_bash_segments_with_pipe_flags(command: str) -> list[tuple[bool, str]]:
+    """`split_bash_segments`の分割結果へ、直前の区切りがパイプであるかの別を添えて返す。
+
+    分割そのものは`split_bash_segments`を正本とし、本関数は境界の分類だけを行う。
+    各区間の元コマンド内の位置を先頭から順に求め、区間の間に残る文字列（空白と区切り演算子だけからなる）で
+    判定する。位置を求められない場合は継続とみなさない。
+    """
+    result: list[tuple[bool, str]] = []
+    segments = split_bash_segments(command)
+    position = 0
+    for index, segment in enumerate(segments):
+        start = command.find(segment, position)
+        separator = command[position:start].strip() if start >= 0 else ""
+        previous = segments[index - 1] if index > 0 else ""
+        result.append((index > 0 and _is_pipeline_continuation(previous, separator, segment), segment))
+        position = (start if start >= 0 else position) + len(segment)
+    return result
+
+
+def _is_pipeline_continuation(previous: str, separator: str, following: str) -> bool:
+    """区間の境界が同一パイプラインの継続であるかを、前後の区間と区切り文字列から判定する。"""
+    if separator in _PIPE_SEPARATORS:
+        return True
+    # `2>&1`・`&>log`等のリダイレクトに含まれる`&`は、`split_bash_segments`が区切りとして分割するが
+    # コマンドの終端ではないため継続として扱う（前段の出力は後段のパイプへ渡る）。
+    return separator == "&" and (previous.endswith((">", "<")) or following.startswith(">"))
 
 
 def _extract_execution_segments(command: str, *, expand_shell: bool = True) -> list[_ExecutionSegment]:
@@ -2371,36 +2409,48 @@ def _extract_execution_segments(command: str, *, expand_shell: bool = True) -> l
 
     区間分割は`split_bash_segments`（`;`・`&&`・`||`・`|`・`&`で分割し、クォート内のメタ文字を除く）、
     トークン化は`shlex.split(segment, posix=True)`を使う。
-    `sh -c`・`bash -c`（`-lc`等の結合形を含む）に続く文字列引数は1段だけ同じ手順で展開し、
+    実行前置語（`sudo`・`env`・`uv run`等）を解決した後の実行位置が`sh -c`・`bash -c`
+    （`-lc`等の結合形を含む）である場合、続く文字列引数を1段だけ同じ手順で展開し、
     展開結果の区間を呼び出し元の区間列へ並べる。2段以上の入れ子は展開せず実行位置未確定とする。
+    展開した区間は外側のパイプラインとは別の`pipeline`を持つ。内側の出力は外側の後段へ渡るが、
+    内側の区間構造を外側のパイプラインへ平坦化すると、内側で`&&`・`;`により連結しただけの
+    コマンドを同一パイプラインと誤認するため、非検出側へ倒す。
 
     本ヘルパーはコマンド置換・サブシェル・`--`によるオプション終端・前置語の値境界を解決しない。
     この解析水準で成立するのは、実行を止めない助言用の判定に限る。
     """
     segments: list[_ExecutionSegment] = []
-    for raw_segment in split_bash_segments(command):
+    pipeline = 0
+    for index, (continues_pipeline, raw_segment) in enumerate(_split_bash_segments_with_pipe_flags(command)):
+        if index > 0 and not continues_pipeline:
+            pipeline += 1
         try:
             tokens = shlex.split(raw_segment, posix=True)
         except ValueError:
-            segments.append(_ExecutionSegment((), False))
+            segments.append(_ExecutionSegment((), False, (pipeline,)))
             continue
-        shell_argument = _shell_c_argument(tokens)
-        if shell_argument is not None:
-            if expand_shell:
-                segments.extend(_extract_execution_segments(shell_argument, expand_shell=False))
-            else:
-                segments.append(_ExecutionSegment((), False))
+        segment = _resolve_execution_segment(tokens, (pipeline,))
+        shell_argument = _shell_c_argument(segment.tokens) if segment.resolved else None
+        if shell_argument is None:
+            segments.append(segment)
             continue
-        segments.append(_resolve_execution_segment(tokens))
+        if not expand_shell:
+            segments.append(_ExecutionSegment((), False, (pipeline,)))
+            continue
+        for inner in _extract_execution_segments(shell_argument, expand_shell=False):
+            segments.append(dataclasses.replace(inner, pipeline=(pipeline, *inner.pipeline)))
     return segments
 
 
-def _shell_c_argument(tokens: list[str]) -> str | None:
-    """`sh -c`・`bash -c`形式が実行するコマンド文字列を返す。該当しない場合はNoneを返す。"""
-    index = _skip_env_assignments(tokens, 0)
-    if index >= len(tokens) or tokens[index] not in _SHELL_TOKENS:
+def _shell_c_argument(tokens: Sequence[str]) -> str | None:
+    """実行位置以降のトークン列が`sh -c`・`bash -c`形式であれば、実行するコマンド文字列を返す。
+
+    該当しない場合はNoneを返す。判定対象は実行前置語を解決した後のトークン列であり、
+    `sudo sh -c '...'`のように前置語と組み合わせた形も展開対象となる。
+    """
+    if not tokens or tokens[0] not in _SHELL_TOKENS:
         return None
-    for position in range(index + 1, len(tokens)):
+    for position in range(1, len(tokens)):
         token = tokens[position]
         if not token.startswith("-") or token.startswith("--"):
             return None
@@ -2409,7 +2459,7 @@ def _shell_c_argument(tokens: list[str]) -> str | None:
     return None
 
 
-def _resolve_execution_segment(tokens: list[str]) -> _ExecutionSegment:
+def _resolve_execution_segment(tokens: list[str], pipeline: tuple[int, ...]) -> _ExecutionSegment:
     """トークン列の実行位置を求め、実行位置以降のトークン列と確定可否を返す。
 
     先頭の`KEY=VALUE`形式の環境変数代入の次の位置から、既知の実行前置語を順に走査対象から除く。
@@ -2433,7 +2483,7 @@ def _resolve_execution_segment(tokens: list[str]) -> _ExecutionSegment:
         if token == "uv":
             uv_index = _resolve_uv_execution_index(tokens, index)
             if uv_index is None:
-                return _ExecutionSegment((), False)
+                return _ExecutionSegment((), False, pipeline)
             if uv_index == index:
                 break
             index = uv_index
@@ -2443,8 +2493,8 @@ def _resolve_execution_segment(tokens: list[str]) -> _ExecutionSegment:
             continue
         break
     if index >= len(tokens) or tokens[index].startswith("-"):
-        return _ExecutionSegment((), False)
-    return _ExecutionSegment(tuple(tokens[index:]), True)
+        return _ExecutionSegment((), False, pipeline)
+    return _ExecutionSegment(tuple(tokens[index:]), True, pipeline)
 
 
 def _resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
@@ -2808,8 +2858,9 @@ def _check_bash_output_truncation(command: str) -> str | None:
     """検証コマンドの出力を`tail`・`head`で切り詰める指定を検出し、全量保存を促す警告を返す。
 
     実行自体は止めない。全量をファイルへ保存してから必要部分を抽出する形を促す。
-    検証コマンドを実行する区間より後方の区間で`tail`・`head`が実行され、かつ当該検証区間より
-    後方に`tee`を実行する区間が無い場合だけ警告する。
+    検証コマンドと同一のパイプライン（`|`だけで連結された一続きの区間列）の後方で`tail`・`head`が
+    実行され、かつ同じパイプラインの後方に`tee`を実行する区間が無い場合だけ警告する。
+    `;`・`&&`・`||`・`&`で連結した後続コマンドは検証コマンドの出力を受け取らないため対象外とする。
     判定は`_extract_execution_segments`が返す実行位置で行うため、検証ツール名を検索語・引数として
     含むだけの読み取り操作は検出しない。実行位置を確定できない区間と、実行位置以外で起動される
     検証コマンドも検出しない（助言であり非検出側の誤差の実害が小さいため）。
@@ -2825,7 +2876,8 @@ def _check_bash_output_truncation(command: str) -> str | None:
     )
     if verification_index is None:
         return None
-    following = segments[verification_index + 1 :]
+    pipeline = segments[verification_index].pipeline
+    following = [segment for segment in segments[verification_index + 1 :] if segment.pipeline == pipeline]
     if not any(segment.resolved and segment.tokens[0] in _OUTPUT_TRUNCATION_COMMANDS for segment in following):
         return None
     if any(_segment_starts_with(segment, (_OUTPUT_FULL_SAVE_COMMAND,)) for segment in following):

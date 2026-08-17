@@ -3243,6 +3243,36 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         assert "truncating it" in _agent_messages(result)
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytest -q && head -5 report.txt",
+            "pytest -q; head -5 report.txt",
+            "pytest -q || head -5 report.txt",
+            "pytest -q & head -5 report.txt",
+        ],
+        ids=["and", "semicolon", "or", "background"],
+    )
+    def test_truncation_outside_verification_pipeline_silent(self, command: str) -> None:
+        """検証コマンドの出力を受け取らない後続コマンドの`head`・`tail`は警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "sudo sh -c 'pytest -q | head -5'",
+            "pytest -q 2>&1 | head -5",
+        ],
+        ids=["prefixed-shell-c", "stderr-redirect"],
+    )
+    def test_truncation_inside_verification_pipeline_warns(self, command: str) -> None:
+        """前置語付きの`sh -c`展開と標準エラー統合を伴う形も同一パイプラインとして警告する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
+
 
 class TestAgentNameParameterGate:
     """AgentとTask起動時の`name`引数指定の一律ブロック。"""
