@@ -56,6 +56,10 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   `elicitation_dialog`・`elicitation_url_dialog`・`agent_needs_input`）で鳴らす
   （許可待ちは約6秒後、アイドルは応答終了約60秒後に発火する）。
   AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationに依存させない
+- `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
+  `@catppuccin_window_flags_icon_format`をベル分岐だけへ上書きし、表示対象をベルアイコンに限定する
+- tmux本体はアタッチ済みセッションの現在のwindowへベルフラグを設定しないため、
+  アクティブなwindow自身ではベルアイコンが増えない（仕様どおりの挙動であり是正対象ではない）
 - Windowsはtmux運用外のため対象外とする
 
 ## mise latestの非ログイン再評価
