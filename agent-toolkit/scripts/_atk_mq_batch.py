@@ -299,6 +299,7 @@ def _dependency_warnings(
     *,
     assignments: dict[str, str],
     existing: set[str],
+    case_sensitive: bool,
 ) -> list[str]:
     """取り込み先に実在しない`depends_on`参照を警告文へ列挙する。
 
@@ -306,12 +307,16 @@ def _dependency_warnings(
     （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
     及び再採番で確定した保存名の3種とする。
     判定対象の依存先は`_declared_dependencies`が返す列とし、スカラー形式の`depends_on`も含める。
+    実在判定は`_comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
+    大小の綴りだけが異なる参照を不在と誤判定しない。警告文には参照の原文を用いる。
     """
     warnings: list[str] = []
-    imported = set(assignments) | set(assignments.values())
+    key = functools.partial(_comparison_key, case_sensitive=case_sensitive)
+    resolvable = {key(name) for name in assignments} | {key(name) for name in assignments.values()}
+    resolvable |= {key(name) for name in existing}
     for entry in entries:
         for dependency in _declared_dependencies(entry):
-            if dependency in imported or dependency in existing:
+            if key(dependency) in resolvable:
                 continue
             warnings.append(f"{assignments[entry.original_name]}のdepends_onが参照する{dependency}は取り込み先に実在しません")
     return warnings
@@ -365,7 +370,12 @@ def add_batch_entries(
         contents = [(assignments[entry.original_name], _rewrite_depends_on(entry, renames)) for entry in entries]
         for filename, content in contents:
             (inbox_dir / filename).write_text(content, encoding="utf-8")
-        warnings = _dependency_warnings(entries, assignments=assignments, existing=existing)
+        warnings = _dependency_warnings(
+            entries,
+            assignments=assignments,
+            existing=existing,
+            case_sensitive=case_sensitive,
+        )
         count = len(entries)
         _commit_and_push(
             private_notes,

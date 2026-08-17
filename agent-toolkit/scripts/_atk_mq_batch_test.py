@@ -470,6 +470,25 @@ def test_import_warns_for_missing_scalar_dependency(
     assert warnings == ["plan.mdのdepends_onが参照するmissing.mdは取り込み先に実在しません"]
 
 
+def test_import_does_not_warn_for_dependency_differing_only_by_case(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """大文字小文字を区別しないファイルシステムでは、大小差だけの既存参照を不在と誤判定しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    _assume_case_insensitive(monkeypatch)
+    (notes / "adopted" / "dep.md").write_text("既存\n", encoding="utf-8")
+    dependent = (
+        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on:\n- Dep.md\n---\n\n本文\n\n"
+    )
+
+    _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
+
+    assert not warnings
+    assert "- Dep.md\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+
+
 def test_import_does_not_warn_for_dependency_on_renumbered_name(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
