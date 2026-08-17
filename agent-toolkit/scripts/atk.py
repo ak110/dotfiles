@@ -216,6 +216,7 @@ def _add_mq_add_parser(sub: Any) -> None:
             "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
             "構造見出し（`# feedback`・`# tbd`・`## target_repo: ...`）と同形の末尾行を"
             "復元できない点は限界として許容する。"
+            "改行はCRLF・単独CRを含む入力もLFへ正規化して保存する。"
         ),
     )
     add.add_argument("--type", choices=("feedback", "tbd"), default=None)

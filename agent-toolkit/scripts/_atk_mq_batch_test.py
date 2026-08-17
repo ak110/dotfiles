@@ -75,6 +75,16 @@ def test_parse_ignores_answered_label_of_tbd() -> None:
     assert entries[0].frontmatter["type"] == "tbd"
 
 
+def test_parse_accepts_crlf_line_endings() -> None:
+    """CRLF改行の入力でも境界を検出し、保存対象の生テキストをLFへ正規化する。"""
+    text = ("# feedback\n## target_repo: github.com/example/foo\n" + _entry_text("a.md")).replace("\n", "\r\n")
+
+    entries = batch.parse_show_batch(text)
+
+    assert [entry.original_name for entry in entries] == ["a.md"]
+    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n"
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -233,6 +243,54 @@ def test_import_rewrites_only_renamed_depends_on_element_lines(
     assert not warnings
 
 
+def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """読み替えた要素行の値だけを差し替え、行末のコメントを字面ごと残す。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+    dependent = (
+        "### plan.md [inbox]\n"
+        "---\n"
+        "target_repo: github.com/example/foo\n"
+        "type: feedback\n"
+        "depends_on:\n"
+        "- dep.md  # 依存の由来\n"
+        "---\n\n本文\n\n"
+    )
+
+    mapping, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
+
+    renamed = dict(mapping)["dep.md"]
+    assert f"- {renamed}  # 依存の由来\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+
+
+def test_import_rejects_quoted_depends_on_element_needing_rewrite(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """値とコメントの境界を一意に特定できない引用符付き要素行の読み替えは全件拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+    dependent = (
+        "### plan.md [inbox]\n"
+        "---\n"
+        "target_repo: github.com/example/foo\n"
+        "type: feedback\n"
+        "depends_on:\n"
+        '- "dep.md"\n'
+        "---\n\n本文\n\n"
+    )
+
+    with pytest.raises(WebInputError):
+        batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
+
+    assert not (notes / "inbox" / "plan.md").exists()
+
+
 def test_import_rejects_non_canonical_depends_on_needing_rewrite(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -266,6 +324,22 @@ def test_import_warns_for_missing_external_dependency(
         "depends_on:\n"
         "- missing.md\n"
         "---\n\n本文\n\n"
+    )
+
+    _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
+
+    assert warnings == ["plan.mdのdepends_onが参照するmissing.mdは取り込み先に実在しません"]
+
+
+def test_import_warns_for_missing_scalar_dependency(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """スカラー形式の`depends_on`でも取り込み先に実在しない依存先を警告する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    dependent = (
+        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on: missing.md\n---\n\n本文\n\n"
     )
 
     _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)

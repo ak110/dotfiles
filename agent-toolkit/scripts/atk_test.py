@@ -1173,6 +1173,41 @@ class TestAddBatchOption:
         assert exc_info.value.code == 0
         assert (notes / "inbox" / "keep.md").is_file()
 
+    @staticmethod
+    def _patch_editor(monkeypatch: pytest.MonkeyPatch, saved_text: str) -> None:
+        """$EDITOR相当の実行を、指定テキストを一時ファイルへ保存するだけの動作へ差し替える。"""
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        def fake_run(cmd: list[str], *_args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[1]).write_text(saved_text, encoding="utf-8")
+                return subprocess.CompletedProcess(cmd, returncode=0)
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+    def test_imports_via_editor_preserving_raw_text(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """MESSAGE・`--body-file`いずれも省略時はエディター経路の生テキストを原文保持で取り込む。"""
+        notes = _setup_notes(tmp_path)
+        self._patch_batch_repo_operations(monkeypatch)
+        entry = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文  \n"
+        self._patch_editor(monkeypatch, f"\n{entry}")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--batch"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8") == (
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文  \n"
+        )
+        assert "1件取り込み:" in capsys.readouterr().out
+
     def test_rejects_non_show_format_input(
         self,
         tmp_path: pathlib.Path,

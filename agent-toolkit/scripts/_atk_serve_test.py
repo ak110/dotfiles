@@ -4234,6 +4234,25 @@ async def test_batch_api_imports_entries(tmp_path: pathlib.Path, monkeypatch: py
 
 
 @pytest.mark.asyncio
+async def test_batch_api_imports_crlf_text(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CRLF改行の一括登録テキストも取り込み、保存内容の改行をLFへ正規化する。"""
+    _patch_batch_repo_operations(monkeypatch)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().post("/api/entries/batch", json={"text": _BATCH_TEXT.replace("\n", "\r\n")})
+
+    assert response.status_code == 201
+    assert (await response.get_json())["filenames"] == ["keep.md"]
+    assert (tmp_path / "inbox" / "keep.md").read_text(encoding="utf-8") == (
+        "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文\n"
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload",
     [{}, {"text": ""}, {"text": "  "}, {"text": 1}, {"text": "ただの本文\n"}, {"text": _BATCH_TEXT, "type": "feedback"}],

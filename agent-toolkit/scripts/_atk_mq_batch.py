@@ -5,7 +5,7 @@
 `target_commit`の再取得・TBD見出しと回答欄の再生成・予約frontmatterキーの破棄を適用しない。
 取り込みが保存内容へ加える変更は次の2点だけとする。
 
-1. 末尾改行の正規化（`show`が付加する区切りの空行を除去し、末尾改行1つへ揃える）。
+1. 改行の正規化（CRLF・単独CRをLFへ揃え、`show`が付加する区切りの空行を除去して末尾改行1つへ揃える）。
 2. 再採番が生じたエントリを参照する`depends_on`要素行の値の差し替え。
 
 `show --all`の出力は可逆な直列化ではないため、次の限界がある（利用者確認済み）。
@@ -52,6 +52,13 @@ _TYPE_HEADING_RE = re.compile(r"# (?:feedback|tbd)")
 _REPO_HEADING_RE = re.compile(r"## target_repo: .*")
 _DEPENDS_ON_HEADING_RE = re.compile(r"depends_on:(?P<inline>.*)")
 _DEPENDS_ON_ELEMENT_RE = re.compile(r"(?P<indent>[ \t]*)- (?P<value>.*)")
+_DEPENDS_ON_VALUE_RE = re.compile(r"(?P<scalar>.*?)(?P<trailing>\s+#.*|\s*)")
+"""要素行の値部分を、YAMLのプレーンスカラーと以降の空白・コメントへ分ける。
+
+YAMLでは空白に続く`#`だけがコメントの開始となるため、最初の「空白＋`#`」以降と末尾の空白を
+`trailing`へ分離する。分離結果が解析済みの依存先名と一致しない値（引用符付き等）は
+境界を一意に特定できないものとして扱う。
+"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -112,8 +119,10 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
     それ以外を含む入力と境界が1件も無い入力は`WebInputError`で拒否する。
     各エントリの生テキストは境界の次行から次境界の前までとし、末尾の構造見出しと空行を除去してから
     末尾改行1つへ正規化する。frontmatterと本文はこの生テキストのまま保持する。
+    行分割の前にCRLF・単独CRをLFへ正規化し、別環境（Windows等）から持ち込んだ入力でも
+    境界行を検出できるようにする（保存内容の改行もLFへ揃う）。
     """
-    lines = text.split("\n")
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     boundaries = _entry_boundaries(lines)
     if not boundaries:
         raise WebInputError("show形式のエントリ見出し（`### <ファイル名>`とその直後のfrontmatter）が見つかりません")
@@ -178,8 +187,10 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
 
     差し替えはfrontmatter内の`depends_on`ブロック（行頭`depends_on:`行と直後に続く
     シーケンス要素行）に限定し、他のキー・コメント・本文の字面を保持する。
+    差し替えは要素行の値部分だけを対象とし、値より後ろの空白・コメントは字面ごと残す。
     `depends_on`は本CLIの`serialize_frontmatter`が生成するブロック形式シーケンスを正準形とし、
-    flow形式など読み替え位置を行単位で確定できない形式は`WebInputError`で拒否する。
+    flow形式など読み替え位置を行単位で確定できない形式と、引用符付きなど値とコメントの境界を
+    一意に特定できない要素行は`WebInputError`で拒否する。
     """
     raw_dependencies = entry.frontmatter.get("depends_on")
     dependencies: list[typing.Any] = raw_dependencies if isinstance(raw_dependencies, list) else []
@@ -210,12 +221,33 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
     parsed_block = _frontmatter.parse_frontmatter(block)
     if parsed_block is None or parsed_block[0].get("depends_on") != dependencies:
         raise WebInputError(f"depends_onの要素行を一意に特定できないため読み替えできません: {entry.original_name}")
-    for (index, indent, _value), dependency in zip(elements, dependencies, strict=True):
-        if isinstance(dependency, str) and dependency in renames:
-            # 差し替え先は本モジュールが採番した`{タイムスタンプ}-{連番}.md`形式であり、
-            # 引用符を必要としないYAMLのプレーンスカラーに該当する。
-            lines[index] = f"{indent}- {renames[dependency]}"
+    for (index, indent, value), dependency in zip(elements, dependencies, strict=True):
+        if not isinstance(dependency, str) or dependency not in renames:
+            continue
+        split = _DEPENDS_ON_VALUE_RE.fullmatch(value)
+        assert split is not None
+        if split.group("scalar") != dependency:
+            raise WebInputError(
+                f"depends_onの要素行で値とコメントの境界を特定できないため読み替えできません: {entry.original_name}（{value}）"
+            )
+        # 差し替え先は本モジュールが採番した`{タイムスタンプ}-{連番}.md`形式であり、
+        # 引用符を必要としないYAMLのプレーンスカラーに該当する。値以降の空白とコメントは字面ごと残す。
+        lines[index] = f"{indent}- {renames[dependency]}{split.group('trailing')}"
     return "\n".join(lines)
+
+
+def _declared_dependencies(entry: BatchEntry) -> list[str]:
+    """`depends_on`が宣言する依存先名を列として返す。
+
+    ブロック形式・flow形式のシーケンスに加え、`_rewrite_depends_on`が読み替え不要時に受理する
+    スカラー（文字列1件）形式も1要素の依存として扱う。
+    """
+    declared = entry.frontmatter.get("depends_on")
+    if isinstance(declared, str):
+        return [declared]
+    if isinstance(declared, list):
+        return [value for value in declared if isinstance(value, str)]
+    return []
 
 
 def _dependency_warnings(
@@ -229,15 +261,13 @@ def _dependency_warnings(
     取り込み後に実在する名前は、4状態フォルダの既存名、バッチ内エントリの元名
     （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
     及び再採番で確定した保存名の3種とする。
+    判定対象の依存先は`_declared_dependencies`が返す列とし、スカラー形式の`depends_on`も含める。
     """
     warnings: list[str] = []
     imported = set(assignments) | set(assignments.values())
     for entry in entries:
-        dependencies = entry.frontmatter.get("depends_on")
-        if not isinstance(dependencies, list):
-            continue
-        for dependency in dependencies:
-            if not isinstance(dependency, str) or dependency in imported or dependency in existing:
+        for dependency in _declared_dependencies(entry):
+            if dependency in imported or dependency in existing:
                 continue
             warnings.append(f"{assignments[entry.original_name]}のdepends_onが参照する{dependency}は取り込み先に実在しません")
     return warnings
