@@ -115,6 +115,7 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
         {
             "kind": "user",
             "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答",
+            "line": 1,
             "sequence": 1,
         }
     ]
@@ -246,8 +247,8 @@ def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_pa
     )
 
     assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "user", "text": "質問: 質問\n回答: 回答", "sequence": 1},
-        {"kind": "user", "text": "質問: 別の質問\n回答: 別の回答", "sequence": 2},
+        {"kind": "user", "text": "質問: 質問\n回答: 回答", "line": 1, "sequence": 1},
+        {"kind": "user", "text": "質問: 別の質問\n回答: 別の回答", "line": 1, "sequence": 2},
     ]
 
 
@@ -272,7 +273,7 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     assert output.err == ""
     lines = output.out.splitlines()
     assert len(lines) == 1
-    assert json.loads(lines[0]) == {"kind": "user", "text": "入力", "sequence": 1}
+    assert json.loads(lines[0]) == {"kind": "user", "text": "入力", "line": 1, "sequence": 1}
 
 
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
@@ -377,10 +378,11 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
     events = evidence.load_and_extract(str(transcript))
 
     assert events == [
-        {"kind": "final-result", "text": "回答待ち", "sequence": 1},
+        {"kind": "final-result", "text": "回答待ち", "line": 2, "sequence": 1},
         {
             "kind": "user",
             "text": "質問: 最初の質問\n回答: 最初の回答\n質問: 次の質問\n回答: 次の回答1\n次の回答2",
+            "line": 1,
             "sequence": 2,
         },
     ]
@@ -520,7 +522,7 @@ def test_codex_agent_message_block_array_extracts_only_final_answer(tmp_path: pa
 
     events = evidence.load_and_extract(str(transcript))
 
-    assert events == [{"kind": "agent-completion", "text": "Message Type: FINAL_ANSWER\n完了報告", "sequence": 1}]
+    assert events == [{"kind": "agent-completion", "text": "Message Type: FINAL_ANSWER\n完了報告", "line": 2, "sequence": 1}]
 
 
 @pytest.mark.parametrize("key", ["message", "text", "content"])
@@ -662,8 +664,8 @@ def test_claude_started_marker_excludes_automatic_review_events(tmp_path: pathli
     )
 
     assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "final-result", "text": "本来の最終結果", "sequence": 1},
-        {"kind": "user", "text": "開始後の介入", "sequence": 2},
+        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1},
+        {"kind": "user", "text": "開始後の介入", "line": 4, "sequence": 2},
     ]
     assert evidence.has_session_review_started(str(transcript)) is True
 
@@ -774,7 +776,9 @@ def test_queued_manual_review_command_sets_claude_boundary(tmp_path: pathlib.Pat
         ],
     )
 
-    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+    assert evidence.load_and_extract(str(transcript)) == [
+        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1}
+    ]
     assert evidence.has_session_review_started(str(transcript)) is True
 
 
@@ -853,7 +857,9 @@ def test_dollar_manual_review_invocation_excludes_following_codex_events(tmp_pat
         ],
     )
 
-    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+    assert evidence.load_and_extract(str(transcript)) == [
+        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1}
+    ]
     assert evidence.has_session_review_started(str(transcript)) is True
 
 
@@ -925,7 +931,7 @@ def test_automatic_review_boundary_uses_last_stop_notice_before_started_marker(t
 
     events = evidence.load_and_extract(str(transcript))
 
-    assert events[-1] == {"kind": "final-result", "text": "本来の最終結果", "sequence": 4}
+    assert events[-1] == {"kind": "final-result", "text": "本来の最終結果", "line": 4, "sequence": 4}
     assert any(event["text"] == "追加作業" for event in events)
     assert all(event["kind"] != "session-review-started" for event in events)
     assert evidence.has_session_review_started(str(transcript)) is True
@@ -993,7 +999,9 @@ def test_manual_review_invocation_excludes_following_claude_events(tmp_path: pat
         ],
     )
 
-    assert evidence.load_and_extract(str(transcript)) == [{"kind": "final-result", "text": "本来の最終結果", "sequence": 1}]
+    assert evidence.load_and_extract(str(transcript)) == [
+        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1}
+    ]
 
 
 @pytest.mark.parametrize("command", ["$session-review", "$agent-toolkit:session-review"])
@@ -1024,3 +1032,229 @@ def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> 
     events = evidence.load_and_extract(str(transcript))
 
     assert [event["kind"] for event in events] == ["fallback"]
+
+
+def test_default_output_line_points_at_source_transcript_line(tmp_path: pathlib.Path) -> None:
+    """既定出力の各イベントへ、由来したtranscript行の1始まり行番号を付ける。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "作業中"}]}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "最終結果"}]}},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["line"] for event in events] == [1, 2, 3]
+    raw_lines = transcript.read_text(encoding="utf-8").splitlines()
+    for event in events:
+        assert event["text"] in raw_lines[event["line"] - 1]
+
+
+def _read_jsonl(capsys: pytest.CaptureFixture[str]) -> list[dict]:
+    """標準出力のJSONLを辞書列として読む。"""
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    return [json.loads(line) for line in captured.out.splitlines()]
+
+
+def test_warn_mode_reports_matching_entries_with_line_and_tool(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """警告に一致したエントリだけを、行番号と手掛かりのツール識別子付きで照会する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "call-1", "input": {"command": "make test"}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "warning: 警告が出た"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["warning"]
+    assert events[0]["line"] == 3
+    assert events[0]["tool"] == "call-1"
+    assert events[0]["text"] == "warning: 警告が出た"
+
+
+def test_warn_mode_ignores_matches_outside_visible_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """可視テキスト外の構造キー・メタ情報への一致を警告として報告しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "warningState": "warn", "message": {"role": "user", "content": "依頼"}}],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+def test_warn_mode_reports_absence_when_no_entry_matches(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """一致が無い場合も、事実を1行で照会結果として返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+def test_detail_mode_keeps_tool_use_input_shapes_and_result_body(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """入力形態を問わずtool_useの`input`全体を保持し、tool_result本文も照会する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "atk mq list", "n": 1}},
+                        {"type": "tool_use", "name": "Read", "id": "c2", "input": {"file_path": "/tmp/x.md"}},
+                        {"type": "tool_use", "name": "Agent", "id": "c3", "input": {"prompt": "依頼本文"}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "結果本文"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--detail", "1", "2"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["line"] for event in events] == [1, 1, 1, 2]
+    assert [event.get("name") for event in events[:3]] == ["Bash", "Read", "Agent"]
+    assert events[0]["input"] == {"command": "atk mq list", "n": 1}
+    assert events[1]["input"] == {"file_path": "/tmp/x.md"}
+    assert events[2]["input"] == {"prompt": "依頼本文"}
+    assert events[3] == {"kind": "detail", "line": 2, "tool": "c1", "text": "結果本文"}
+
+
+def test_detail_mode_formats_entry_without_tool_blocks(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """tool_useもtool_resultも持たないエントリはJSON整形本文で照会する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--detail", "1"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["detail"]
+    assert "依頼" in events[0]["text"]
+
+
+def test_detail_mode_rejects_line_number_outside_transcript(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """範囲外の行番号は照会不能として終了コード2で返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--detail", "9"]) == 2
+
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "行番号9は範囲外"}]
+
+
+def test_grep_mode_reports_matching_lines_and_entry_count(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """tool_use入力とtool_result本文を含む可視テキストから一致行と一致エントリ数を照会する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "atk mq list"}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "失敗: atk mq list"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--grep", "atk mq"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["match", "match", "summary"]
+    assert [event["line"] for event in events[:2]] == [2, 3]
+    assert events[-1]["count"] == 2
+
+
+def test_grep_mode_rejects_invalid_regular_expression(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """不正な正規表現は照会不能として終了コード2で返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--grep", "["]) == 2
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["error"]
+    assert "正規表現が不正" in events[0]["text"]
+
+
+def test_query_modes_are_mutually_exclusive(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """照会モードの併用は引数誤用として終了コード2で返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--warn", "--grep", "依頼"]) == 2
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["error"]
+    assert "併用できない" in events[0]["text"]

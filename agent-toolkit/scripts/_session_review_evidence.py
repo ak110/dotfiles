@@ -3,16 +3,29 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出する。"""
+"""Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
+
+既定モードは時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
+`--warn`・`--grep`・`--detail`の照会モードは、抽出結果に無い詳細をtranscriptから
+1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
+
+本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
+`agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
+引数誤用と照会不能（モード併用・不正な正規表現・範囲外の行番号）を終了コード2とする区分だけを踏襲する。
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 _MAX_TEXT_LENGTH = 2000
+_MAX_DETAIL_LENGTH = 8000
+_WARNING_PATTERN = re.compile("警告|warn", re.IGNORECASE)
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
 SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
@@ -27,12 +40,20 @@ _MANUAL_REVIEW_COMMANDS: dict[_Runtime, tuple[str, ...]] = {
 }
 
 
-def _clip(text: str) -> str:
+class _Record(NamedTuple):
+    """transcriptの1エントリと、その由来行の1始まり行番号・原文。"""
+
+    line: int
+    text: str
+    entry: dict[str, Any]
+
+
+def _clip(text: str, limit: int = _MAX_TEXT_LENGTH) -> str:
     """証拠の意味を保ったまま巨大な本文を制限する。"""
     normalized = text.strip()
-    if len(normalized) <= _MAX_TEXT_LENGTH:
+    if len(normalized) <= limit:
         return normalized
-    return normalized[:_MAX_TEXT_LENGTH] + "…[省略]"
+    return normalized[:limit] + "…[省略]"
 
 
 def _text_blocks(content: Any, *, include_tool_results: bool = False) -> list[str]:
@@ -105,9 +126,12 @@ def _claude_question_call_ids(content: Any) -> set[str]:
 def _claude_answers_event(
     result: Any,
     content: Any,
-    pending_question_ids: set[str],
+    pending_question_lines: dict[str, int],
 ) -> dict[str, Any] | None:
-    """対応するAskUserQuestionの結果だけを回答イベントへ変換する。"""
+    """対応するAskUserQuestionの結果だけを回答イベントへ変換する。
+
+    質問と回答は別の行に由来するため、行番号には質問側（先頭行）の値を用いる。
+    """
     if not isinstance(content, list):
         return None
     result_ids = {
@@ -115,10 +139,10 @@ def _claude_answers_event(
         for block in content
         if isinstance(block, dict) and block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str)
     }
-    matched_ids = pending_question_ids.intersection(result_ids)
+    matched_ids = set(pending_question_lines).intersection(result_ids)
     if not matched_ids:
         return None
-    pending_question_ids.difference_update(matched_ids)
+    question_line = min(pending_question_lines.pop(matched_id) for matched_id in matched_ids)
     if not isinstance(result, dict):
         return None
     answers = result.get("answers")
@@ -126,7 +150,10 @@ def _claude_answers_event(
         isinstance(question, str) and isinstance(answer, str) for question, answer in answers.items()
     ):
         return None
-    return _question_answers_event([(question, [answer]) for question, answer in answers.items()])
+    event = _question_answers_event([(question, [answer]) for question, answer in answers.items()])
+    if event is not None:
+        event["line"] = question_line
+    return event
 
 
 def _failed_tool_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
@@ -163,83 +190,90 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _extract_claude(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
     """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
-    pending_question_ids: set[str] = set()
-    for entry in entries:
-        if entry.get("isSidechain") is True:
-            completion = _completion_event(entry)
-            if completion:
-                events.append(completion)
-            continue
+    pending_question_lines: dict[str, int] = {}
+    for line, entry in zip(lines, entries, strict=True):
+        for event in _claude_entry_events(entry, line, pending_question_lines):
+            event.setdefault("line", line)
+            events.append(event)
+    return events
 
-        entry_type = entry.get("type")
-        message = entry.get("message")
-        user_texts: list[str] | None = None
-        if isinstance(message, dict) and entry_type == "user" and message.get("role") == "user":
-            user_texts = _text_blocks(message.get("content"))
-            if any(STOP_ADVISOR_PREFIX in text for text in user_texts):
-                continue
-            skill_invocation = next((text for text in user_texts if text.startswith(_SKILL_INVOCATION_PREFIX)), None)
-            if skill_invocation is not None:
-                event = _event("skill-invocation", skill_invocation.splitlines()[0])
-                if event:
-                    events.append(event)
-                continue
 
-        result = entry.get("toolUseResult")
-        if (
-            isinstance(result, dict)
-            and isinstance(result.get("stdout"), str)
-            and SESSION_REVIEW_STARTED_MARKER in result["stdout"]
-        ):
-            event = _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
-            if event:
-                events.append(event)
-
-        is_interrupt = (
-            entry.get("isInterrupt") is True or entry.get("type") == "interrupt" or entry.get("subtype") == "interrupt"
-        )
-        if is_interrupt:
-            interrupt = _event("interrupt", json.dumps(entry, ensure_ascii=False))
-            events.append(interrupt or {"kind": "interrupt", "text": "interrupt"})
-
-        attachment = entry.get("attachment")
-        if entry_type == "attachment" and isinstance(attachment, dict):
-            origin = attachment.get("origin")
-            prompt = attachment.get("prompt")
-            if (
-                attachment.get("type") == "queued_command"
-                and isinstance(origin, dict)
-                and origin.get("kind") == "human"
-                and attachment.get("commandMode") != "task-notification"
-                and isinstance(prompt, str)
-            ):
-                event = _event("user", prompt)
-                if event:
-                    events.append(event)
-        if isinstance(message, dict):
-            role = message.get("role")
-            if entry_type == "user" and role == "user":
-                for text in user_texts or ():
-                    event = _event("user", text)
-                    if event and not event["text"].startswith("<task-notification>"):
-                        events.append(event)
-                answer_event = _claude_answers_event(result, message.get("content"), pending_question_ids)
-                if answer_event:
-                    events.append(answer_event)
-                events.extend(_failed_tool_events(entry))
-            elif entry_type == "assistant" and role == "assistant":
-                pending_question_ids.update(_claude_question_call_ids(message.get("content")))
-                for text in _text_blocks(message.get("content")):
-                    event = _event("assistant", text)
-                    if event:
-                        events.append(event)
-
+def _claude_entry_events(
+    entry: dict[str, Any],
+    line: int,
+    pending_question_lines: dict[str, int],
+) -> list[dict[str, Any]]:
+    """Claude Codeの1エントリから共通イベントを取得する。"""
+    events: list[dict[str, Any]] = []
+    if entry.get("isSidechain") is True:
         completion = _completion_event(entry)
         if completion:
             events.append(completion)
+        return events
+
+    entry_type = entry.get("type")
+    message = entry.get("message")
+    user_texts: list[str] | None = None
+    if isinstance(message, dict) and entry_type == "user" and message.get("role") == "user":
+        user_texts = _text_blocks(message.get("content"))
+        if any(STOP_ADVISOR_PREFIX in text for text in user_texts):
+            return events
+        skill_invocation = next((text for text in user_texts if text.startswith(_SKILL_INVOCATION_PREFIX)), None)
+        if skill_invocation is not None:
+            event = _event("skill-invocation", skill_invocation.splitlines()[0])
+            if event:
+                events.append(event)
+            return events
+
+    result = entry.get("toolUseResult")
+    if isinstance(result, dict) and isinstance(result.get("stdout"), str) and SESSION_REVIEW_STARTED_MARKER in result["stdout"]:
+        event = _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
+        if event:
+            events.append(event)
+
+    is_interrupt = entry.get("isInterrupt") is True or entry.get("type") == "interrupt" or entry.get("subtype") == "interrupt"
+    if is_interrupt:
+        interrupt = _event("interrupt", json.dumps(entry, ensure_ascii=False))
+        events.append(interrupt or {"kind": "interrupt", "text": "interrupt"})
+
+    attachment = entry.get("attachment")
+    if entry_type == "attachment" and isinstance(attachment, dict):
+        origin = attachment.get("origin")
+        prompt = attachment.get("prompt")
+        if (
+            attachment.get("type") == "queued_command"
+            and isinstance(origin, dict)
+            and origin.get("kind") == "human"
+            and attachment.get("commandMode") != "task-notification"
+            and isinstance(prompt, str)
+        ):
+            event = _event("user", prompt)
+            if event:
+                events.append(event)
+    if isinstance(message, dict):
+        role = message.get("role")
+        if entry_type == "user" and role == "user":
+            for text in user_texts or ():
+                event = _event("user", text)
+                if event and not event["text"].startswith("<task-notification>"):
+                    events.append(event)
+            answer_event = _claude_answers_event(result, message.get("content"), pending_question_lines)
+            if answer_event:
+                events.append(answer_event)
+            events.extend(_failed_tool_events(entry))
+        elif entry_type == "assistant" and role == "assistant":
+            pending_question_lines.update({call_id: line for call_id in _claude_question_call_ids(message.get("content"))})
+            for text in _text_blocks(message.get("content")):
+                event = _event("assistant", text)
+                if event:
+                    events.append(event)
+
+    completion = _completion_event(entry)
+    if completion:
+        events.append(completion)
     return events
 
 
@@ -287,16 +321,20 @@ def _codex_question_call(payload: dict[str, Any]) -> tuple[str, dict[str, str]] 
 
 def _codex_question_output_event(
     payload: dict[str, Any],
-    pending_questions: dict[str, dict[str, str]],
+    pending_questions: dict[str, tuple[int, dict[str, str]]],
 ) -> dict[str, Any] | None:
-    """対応する回答outputの位置で、call_id内の既知質問だけをuserイベントへ変換する。"""
+    """対応する回答outputの位置で、call_id内の既知質問だけをuserイベントへ変換する。
+
+    質問と回答は別の行に由来するため、行番号には質問側（先頭行）の値を用いる。
+    """
     call_id = payload.get("call_id")
     if not isinstance(call_id, str):
         return None
-    questions = pending_questions.pop(call_id, None)
+    pending = pending_questions.pop(call_id, None)
     output = _json_object(payload.get("output"))
-    if questions is None or output is None:
+    if pending is None or output is None:
         return None
+    question_line, questions = pending
     raw_answers = output.get("answers")
     if not isinstance(raw_answers, dict):
         return None
@@ -309,7 +347,12 @@ def _codex_question_output_event(
         if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
             continue
         pairs.append((question, answers))
-    return _question_answers_event(pairs) if pairs else None
+    if not pairs:
+        return None
+    event = _question_answers_event(pairs)
+    if event is not None:
+        event["line"] = question_line
+    return event
 
 
 def _codex_command_output(item: dict[str, Any]) -> str:
@@ -321,69 +364,87 @@ def _codex_command_output(item: dict[str, Any]) -> str:
     return ""
 
 
-def _extract_codex(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _extract_codex(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
     """Codex rollout形式を共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
-    pending_questions: dict[str, dict[str, str]] = {}
-    for entry in entries:
-        entry_type = entry.get("type")
-        payload = entry.get("payload")
-        if not isinstance(payload, dict):
-            continue
-        payload_type = payload.get("type")
-        if entry_type == "response_item" and payload_type == "function_call":
-            question_call = _codex_question_call(payload)
-            if question_call is not None:
-                call_id, questions = question_call
-                pending_questions[call_id] = questions
-        elif entry_type == "response_item" and payload_type == "function_call_output":
-            event = _codex_question_output_event(payload, pending_questions)
-            if event:
-                events.append(event)
-        elif entry_type == "response_item" and payload_type == "message":
-            role = payload.get("role")
-            kind = "user" if role == "user" else "assistant" if role == "assistant" else None
-            if kind is not None:
-                for text in _codex_text_blocks(payload.get("content")):
-                    event = _event(kind, text)
-                    if event:
-                        events.append(event)
-        elif entry_type == "response_item" and payload_type == "agent_message":
-            text = _codex_agent_message(payload)
-            if text.lstrip().startswith("Message Type: FINAL_ANSWER"):
-                event = _event("agent-completion", text)
+    pending_questions: dict[str, tuple[int, dict[str, str]]] = {}
+    for line, entry in zip(lines, entries, strict=True):
+        for event in _codex_entry_events(entry, line, pending_questions):
+            event.setdefault("line", line)
+            events.append(event)
+    return events
+
+
+def _codex_entry_events(
+    entry: dict[str, Any],
+    line: int,
+    pending_questions: dict[str, tuple[int, dict[str, str]]],
+) -> list[dict[str, Any]]:
+    """Codexの1エントリから共通イベントを取得する。"""
+    events: list[dict[str, Any]] = []
+    entry_type = entry.get("type")
+    payload = entry.get("payload")
+    if not isinstance(payload, dict):
+        return events
+    payload_type = payload.get("type")
+    if entry_type == "response_item" and payload_type == "function_call":
+        question_call = _codex_question_call(payload)
+        if question_call is not None:
+            call_id, questions = question_call
+            pending_questions[call_id] = (line, questions)
+    elif entry_type == "response_item" and payload_type == "function_call_output":
+        event = _codex_question_output_event(payload, pending_questions)
+        if event:
+            events.append(event)
+    elif entry_type == "response_item" and payload_type == "message":
+        role = payload.get("role")
+        kind = "user" if role == "user" else "assistant" if role == "assistant" else None
+        if kind is not None:
+            for text in _codex_text_blocks(payload.get("content")):
+                event = _event(kind, text)
                 if event:
                     events.append(event)
-        elif entry_type == "event_msg" and payload_type == "turn_aborted":
-            event = _event("interrupt", json.dumps(payload, ensure_ascii=False))
-            events.append(event or {"kind": "interrupt", "text": "turn_aborted"})
-        elif entry_type == "event_msg" and payload_type == "item_completed":
-            item = payload.get("item")
-            if not isinstance(item, dict) or item.get("type") != "CommandExecution":
-                continue
-            status = item.get("status")
-            output = _codex_command_output(item)
-            if status == "completed" and SESSION_REVIEW_STARTED_MARKER in output:
-                event = _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
-            elif status == "failed":
-                error = item.get("error")
-                stderr = item.get("stderr")
-                text = output or (stderr if isinstance(stderr, str) and stderr.strip() else "")
-                if not text:
-                    text = error if isinstance(error, str) and error.strip() else json.dumps(item, ensure_ascii=False)
-                event = _event("failed-tool", text, tool="CommandExecution")
-                if event:
-                    command = item.get("command")
-                    if isinstance(command, list) and all(isinstance(part, str) for part in command):
-                        event["command"] = _clip(json.dumps(command, ensure_ascii=False))
-                    exit_code = item.get("exit_code")
-                    if isinstance(exit_code, int) and not isinstance(exit_code, bool):
-                        event["exit_code"] = exit_code
-            else:
-                event = None
+    elif entry_type == "response_item" and payload_type == "agent_message":
+        text = _codex_agent_message(payload)
+        if text.lstrip().startswith("Message Type: FINAL_ANSWER"):
+            event = _event("agent-completion", text)
             if event:
                 events.append(event)
+    elif entry_type == "event_msg" and payload_type == "turn_aborted":
+        event = _event("interrupt", json.dumps(payload, ensure_ascii=False))
+        events.append(event or {"kind": "interrupt", "text": "turn_aborted"})
+    elif entry_type == "event_msg" and payload_type == "item_completed":
+        event = _codex_command_event(payload)
+        if event:
+            events.append(event)
     return events
+
+
+def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """完了したCodexコマンド実行から証拠となるイベントだけを取得する。"""
+    item = payload.get("item")
+    if not isinstance(item, dict) or item.get("type") != "CommandExecution":
+        return None
+    status = item.get("status")
+    output = _codex_command_output(item)
+    if status == "completed" and SESSION_REVIEW_STARTED_MARKER in output:
+        return _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
+    if status != "failed":
+        return None
+    error = item.get("error")
+    stderr = item.get("stderr")
+    text = output or (stderr if isinstance(stderr, str) and stderr.strip() else "")
+    if not text:
+        text = error if isinstance(error, str) and error.strip() else json.dumps(item, ensure_ascii=False)
+    event = _event("failed-tool", text, tool="CommandExecution")
+    if event:
+        command = item.get("command")
+        if isinstance(command, list) and all(isinstance(part, str) for part in command):
+            event["command"] = _clip(json.dumps(command, ensure_ascii=False))
+        exit_code = item.get("exit_code")
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+            event["exit_code"] = exit_code
+    return event
 
 
 def _is_manual_review_invocation(text: str, runtime: _Runtime) -> bool:
@@ -430,14 +491,17 @@ def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str,
     return events
 
 
-def extract(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """transcript形式を判定し、対象イベントを順序どおり抽出する。"""
+def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> list[dict[str, Any]]:
+    """transcript形式を判定し、対象イベントを順序どおり抽出する。
+
+    `lines`はエントリごとのtranscript行番号。省略時はエントリの並び順を行番号とみなす。
+    """
     if not entries:
         return []
     runtime = _detect_runtime(entries)
     if runtime is None:
         return _fallback()
-    return _finalize(_extract_for_runtime(entries, runtime), runtime)
+    return _finalize(_extract_for_runtime(entries, runtime, lines), runtime)
 
 
 def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
@@ -452,17 +516,22 @@ def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
     return None
 
 
-def _extract_for_runtime(entries: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str, Any]]:
+def _extract_for_runtime(
+    entries: list[dict[str, Any]],
+    runtime: _Runtime,
+    lines: list[int] | None = None,
+) -> list[dict[str, Any]]:
     """確定したruntimeに対応する共通イベントへ変換する。"""
-    return _extract_codex(entries) if runtime == "codex" else _extract_claude(entries)
+    numbers = lines if lines is not None else list(range(1, len(entries) + 1))
+    return _extract_codex(entries, numbers) if runtime == "codex" else _extract_claude(entries, numbers)
 
 
 def _fallback() -> list[dict[str, Any]]:
     return [{"sequence": 1, "kind": "fallback", "text": _FALLBACK_TEXT}]
 
 
-def _load_entries(raw_path: str | None) -> list[dict[str, Any]] | None:
-    """絶対パスのJSONLを読み、失敗時は`None`を返す。"""
+def _load_records(raw_path: str | None) -> list[_Record] | None:
+    """絶対パスのJSONLを行番号付きで読み、失敗時は`None`を返す。"""
     if not raw_path:
         return None
     path = Path(raw_path)
@@ -473,36 +542,42 @@ def _load_entries(raw_path: str | None) -> list[dict[str, Any]] | None:
     except OSError:
         return None
 
-    entries: list[dict[str, Any]] = []
+    records: list[_Record] = []
     try:
-        for line in text.splitlines():
+        for number, line in enumerate(text.splitlines(), start=1):
             if not line.strip():
                 continue
             parsed = json.loads(line)
             if isinstance(parsed, dict):
-                entries.append(parsed)
+                records.append(_Record(number, line, parsed))
     except (json.JSONDecodeError, ValueError):
         return None
-    return entries
+    return records
 
 
 def load_and_extract(raw_path: str | None) -> list[dict[str, Any]]:
     """絶対パスのJSONLを一度読み、抽出結果またはfallbackを返す。"""
-    entries = _load_entries(raw_path)
-    if entries is None:
+    records = _load_records(raw_path)
+    if records is None:
         return _fallback()
-    return extract(entries)
+    return _extract_records(records)
+
+
+def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
+    """読み込み済みレコードから行番号付きの時系列イベントを取得する。"""
+    return extract([record.entry for record in records], [record.line for record in records])
 
 
 def has_session_review_started(raw_path: str | None) -> bool:
     """対応するtranscriptに振り返りの手動起動または起動確定標識があれば真を返す。"""
-    entries = _load_entries(raw_path)
-    if entries is None:
+    records = _load_records(raw_path)
+    if records is None:
         return False
+    entries = [record.entry for record in records]
     runtime = _detect_runtime(entries)
     if runtime is None:
         return False
-    events = _extract_for_runtime(entries, runtime)
+    events = _extract_for_runtime(entries, runtime, [record.line for record in records])
     return any(
         event["kind"] == "session-review-started"
         or (event["kind"] == "user" and _is_manual_review_invocation(event["text"], runtime))
@@ -510,15 +585,230 @@ def has_session_review_started(raw_path: str | None) -> bool:
     )
 
 
+def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
+    """警告に一致した可視テキスト行を行番号付きで返す。一致なしはその事実を返す。
+
+    走査対象を`--grep`と同じ可視テキストへ揃える。エントリの生JSON行を対象にすると、
+    識別子や構造キーへの一致で出力が肥大し、advisorの照会1回が出力退避を伴う規模になる。
+    """
+    events: list[dict[str, Any]] = []
+    for record in records:
+        matched_lines = [
+            line_text
+            for text in _entry_texts(record.entry)
+            for line_text in text.splitlines()
+            if _WARNING_PATTERN.search(line_text)
+        ]
+        if not matched_lines:
+            continue
+        hint = _tool_hint(record.entry)
+        for line_text in matched_lines:
+            event: dict[str, Any] = {"kind": "warning", "line": record.line, "text": _clip(line_text)}
+            if hint:
+                event["tool"] = hint
+            events.append(event)
+    return events or [{"kind": "warning", "text": "一致なし"}]
+
+
+def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[str, Any]]:
+    """可視テキストの一致行と、一致したエントリ数の要約を返す。"""
+    events: list[dict[str, Any]] = []
+    matched = 0
+    for record in records:
+        hit = False
+        for text in _entry_texts(record.entry):
+            for line_text in text.splitlines():
+                if pattern.search(line_text):
+                    events.append({"kind": "match", "line": record.line, "text": _clip(line_text)})
+                    hit = True
+        matched += 1 if hit else 0
+    events.append({"kind": "summary", "count": matched})
+    return events
+
+
+def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dict[str, Any]], int]:
+    """指定行のエントリを整形して返す。範囲外の行番号はエラーと終了コード2を返す。"""
+    index = {record.line: record.entry for record in records}
+    events: list[dict[str, Any]] = []
+    for number in numbers:
+        entry = index.get(number)
+        if entry is None:
+            return [{"kind": "error", "text": f"行番号{number}は範囲外"}], 2
+        events.extend(_entry_detail_events(number, entry))
+    return events, 0
+
+
+def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。"""
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    events: list[dict[str, Any]] = []
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                events.append(
+                    {
+                        "kind": "detail",
+                        "line": line,
+                        "name": str(block.get("name", "")),
+                        "input": _clip_structure(block.get("input")),
+                    }
+                )
+            elif block.get("type") == "tool_result":
+                body = "\n".join(_text_blocks(block.get("content")))
+                events.append(
+                    {
+                        "kind": "detail",
+                        "line": line,
+                        "tool": str(block.get("tool_use_id", "")),
+                        "text": _clip(body, _MAX_DETAIL_LENGTH),
+                    }
+                )
+    if events:
+        return events
+    return [
+        {"kind": "detail", "line": line, "text": _clip(json.dumps(entry, ensure_ascii=False, indent=2), _MAX_DETAIL_LENGTH)}
+    ]
+
+
+def _clip_structure(value: Any) -> Any:
+    """入力の構造を保ったまま、文字列だけを詳細用の上限で制限する。"""
+    if isinstance(value, str):
+        return _clip(value, _MAX_DETAIL_LENGTH)
+    if isinstance(value, dict):
+        return {key: _clip_structure(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clip_structure(item) for item in value]
+    return value
+
+
+def _entry_texts(entry: dict[str, Any]) -> list[str]:
+    """runtimeを問わず、1エントリの検索対象テキストを取得する。
+
+    Claude Codeではtool_result本文とtool_use入力、Codexではメッセージ本文と
+    コマンド出力・関数呼び出しのJSON本文を対象とする。
+    """
+    message = entry.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        texts = _text_blocks(content, include_tool_results=True)
+        if isinstance(content, list):
+            texts.extend(
+                json.dumps(block.get("input") or {}, ensure_ascii=False)
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "tool_use"
+            )
+        return [text for text in texts if text]
+
+    payload = entry.get("payload")
+    if not isinstance(payload, dict):
+        return []
+    texts = _codex_text_blocks(payload.get("content"))
+    texts.extend(value for key in ("message", "text", "arguments", "output") if isinstance(value := payload.get(key), str))
+    item = payload.get("item")
+    if isinstance(item, dict):
+        texts.append(_codex_command_output(item))
+        texts.append(json.dumps(item.get("command"), ensure_ascii=False) if item.get("command") else "")
+    return [text for text in texts if text]
+
+
+def _tool_hint(entry: dict[str, Any]) -> str | None:
+    """エントリに含まれるコマンド先頭行またはtool_use_idを取得する。"""
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                command = (block.get("input") or {}).get("command")
+                if isinstance(command, str) and command.strip():
+                    return _clip(command.splitlines()[0])
+                if isinstance(block.get("id"), str):
+                    return block["id"]
+            if block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
+                return block["tool_use_id"]
+
+    payload = entry.get("payload")
+    item = payload.get("item") if isinstance(payload, dict) else None
+    command = item.get("command") if isinstance(item, dict) else None
+    if isinstance(command, list) and command:
+        return _clip(" ".join(part for part in command if isinstance(part, str)).splitlines()[0])
+    return None
+
+
+def _print_events(events: list[dict[str, Any]]) -> None:
+    """イベント列を1イベント1 JSONのJSONLとして標準出力へ書く。"""
+    for event in events:
+        print(json.dumps(event, ensure_ascii=False))
+
+
+def _print_error(text: str) -> int:
+    """照会不能を示すエラーを出力し、終了コード2を返す。"""
+    _print_events([{"kind": "error", "text": text}])
+    return 2
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """既定の抽出と照会モードの引数を定義する。"""
+    parser = argparse.ArgumentParser(description="transcriptから振り返り用の時系列証拠を抽出・照会する。")
+    parser.add_argument(
+        "transcript_path",
+        nargs="?",
+        help="transcriptの絶対パス。省略時と読み込み失敗時はfallback指示を出力する。",
+    )
+    parser.add_argument(
+        "--warn",
+        action="store_true",
+        help="可視テキストのうち警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
+    )
+    parser.add_argument(
+        "--grep",
+        metavar="REGEX",
+        help="可視テキストを正規表現で検索し、一致行と一致エントリ数を照会する。",
+    )
+    parser.add_argument(
+        "--detail",
+        metavar="LINE",
+        nargs="+",
+        type=int,
+        help="指定した行番号のエントリの詳細（tool_useの入力全体・tool_result本文）を照会する。",
+    )
+    return parser
+
+
 def main(argv: list[str] | None = None) -> int:
-    """証拠を1イベント1 JSONのJSONLとして標準出力へ書く。"""
+    """証拠または照会結果を1イベント1 JSONのJSONLとして標準出力へ書く。"""
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
-    args = sys.argv[1:] if argv is None else argv
-    events = load_and_extract(args[0] if len(args) == 1 else None)
-    for event in events:
-        print(json.dumps(event, ensure_ascii=False))
+    args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
+    if sum((args.warn, args.grep is not None, args.detail is not None)) > 1:
+        return _print_error("--warn・--grep・--detailは併用できない")
+
+    records = _load_records(args.transcript_path)
+    if records is None:
+        _print_events(_fallback())
+        return 0
+
+    if args.warn:
+        _print_events(_warning_events(records))
+        return 0
+    if args.grep is not None:
+        try:
+            pattern = re.compile(args.grep)
+        except re.error as error:
+            return _print_error(f"正規表現が不正: {error}")
+        _print_events(_grep_events(records, pattern))
+        return 0
+    if args.detail is not None:
+        events, exit_code = _detail_events(records, args.detail)
+        _print_events(events)
+        return exit_code
+
+    _print_events(_extract_records(records))
     return 0
 
 

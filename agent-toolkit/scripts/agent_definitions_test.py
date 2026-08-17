@@ -560,15 +560,31 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
 
 
 def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:
-    """成功コマンドの警告走査を証拠抽出後かつ時系列評価前に実行する。"""
+    """成功コマンドの警告走査を証拠抽出後かつ時系列評価前に照会モードで実行する。"""
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     extraction_at = advisor.index("`scripts/_session_review_evidence.py`へそのパスを渡して1回だけ実行")
-    scan_at = advisor.index("同transcriptを大小文字を区別しない`警告`又は`warn`で検索")
+    scan_at = advisor.index("同スクリプトへ`--warn`を付けて1回実行")
     timeline_at = advisor.index("抽出された時系列証拠から")
     assert extraction_at < scan_at < timeline_at
-    assert "一致時は該当コマンドと該当出力だけを読み" in advisor
+    assert "一致イベントがある場合は該当`line`を`--detail`で照会し" in advisor
     assert "不一致時はその事実を`evidence`へ記録" in advisor
+
+
+def test_session_review_advisor_queries_before_reading_transcript_directly() -> None:
+    """追加調査を照会モード優先とし、transcriptの直接読解をfallbackへ限定する。"""
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+
+    assert "`--grep <正規表現>`・`--detail <行番号>`で" in advisor
+    assert "照会で確定できない場合に限りtranscriptを直接読む" in advisor
+
+
+def test_session_review_advisor_checks_duplicates_with_scoped_queue_list() -> None:
+    """activeなフィードバックとの重複確認を、対象限定かつremote同期なしの一覧取得へ固定する。"""
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+
+    assert "atk mq list --status=active --target-repo=<受領した対象リポジトリの絶対パス> --skip-pull" in advisor
+    assert "1回実行して確認し、他リポジトリ宛の一覧は取得しない" in advisor
 
 
 def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:
