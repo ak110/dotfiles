@@ -147,6 +147,19 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
     assert not warnings
 
 
+@pytest.mark.parametrize(("total_lines", "expected_warnings"), [(1200, 0), (1201, 1)])
+def test_warns_above_line_threshold_only(repo: tuple[pathlib.Path, str], total_lines: int, expected_warnings: int) -> None:
+    """行数の閾値ちょうどでは警告せず、1行超過で警告1件を返す。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base)
+    padding = total_lines - len(content.splitlines())
+    content = content.replace("対象の構造を更新する。", "\n".join(["対象の構造を更新する。"] * (padding + 1)), 1)
+    assert len(content.splitlines()) == total_lines
+    errors, warnings = _check(work_dir, content)
+    assert not errors, errors
+    assert len(warnings) == expected_warnings, warnings
+
+
 def test_cli_accepts_mixed_agreements_and_numeric_target(repo: tuple[pathlib.Path, str]) -> None:
     """条項分解した実施・除外・保持と数値目標を含む正規fixtureをCLIで受理する。"""
     work_dir, base = repo

@@ -30,6 +30,11 @@ _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 _BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
+# 計画の分量を警告する行数の閾値。
+# 既存計画380件の実測分布（中央値443行、第75百分位732行、第90百分位1312行、最大3476行）の
+# 第75百分位と第90百分位の間から選び、通常規模の計画を警告せず肥大した計画だけを検出する。
+# 閾値を超えても計画として成立し得るため、エラーではなく警告に留める。
+_PLAN_LINE_WARNING_THRESHOLD = 1200
 
 
 def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
@@ -165,6 +170,16 @@ def _classify_skill_references(text: str) -> set[str]:
     return references
 
 
+def _check_plan_size(lines: list[str]) -> list[str]:
+    """計画の行数が閾値を超える場合に警告を返す。"""
+    if len(lines) <= _PLAN_LINE_WARNING_THRESHOLD:
+        return []
+    return [
+        f"計画の行数が閾値を超えている: {len(lines)}行（閾値{_PLAN_LINE_WARNING_THRESHOLD}行）。"
+        "重複する記述を単一の情報源へ集約し、実装工程の入力として参照する素材を外部ファイルへ分けることを検討する"
+    ]
+
+
 def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。"""
     text = plan_path.read_text(encoding="utf-8")
@@ -178,7 +193,7 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
     errors.extend(_check_references(text, work_dir))
-    return errors, []
+    return errors, _check_plan_size(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
