@@ -2,7 +2,8 @@ r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 
 任意ツールの実行前に以下のチェックを順に実行する。
 block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
-warn種別のcheckはstderrまたはstdoutに警告を表示しつつ処理を継続する。
+warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を載せつつ処理を継続する
+（exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
 
@@ -184,45 +185,42 @@ def main(payload_text: str) -> int:
     if exit_code == 2:
         return 2
 
+    # 終了コード0で出力する通知の一覧。exit 0のstderrはコーディングエージェントへ届かないため、
+    # 全てstdoutの`hookSpecificOutput.additionalContext`へ結合して出力する。
+    pending_notices: list[str] = []
+    if language_warning_body is not None:
+        pending_notices.append(_language_notice(language_warning_body))
+
     def emit_json(result: dict) -> None:
-        nonlocal language_warning_body
-        if language_warning_body is not None:
-            _append_additional_context(result, _language_notice(language_warning_body))
-            language_warning_body = None
+        for notice in pending_notices:
+            _append_additional_context(result, notice)
+        pending_notices.clear()
         print(json.dumps(result, ensure_ascii=False))
 
-    def flush_pending_language_warning() -> None:
-        nonlocal language_warning_body
-        if language_warning_body is None:
+    def flush_pending_notices() -> None:
+        if not pending_notices:
             return
-        body = language_warning_body
-        language_warning_body = None
-        print(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "additionalContext": _language_notice(body),
-                    },
-                },
-                ensure_ascii=False,
-            ),
-        )
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse"}})
 
     # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）。
     # 呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する
-    _check_plan_mode_skill_first(tool_name, tool_input, session_id)
+    plan_mode_notice = _check_plan_mode_skill_first(tool_name, tool_input, session_id)
+    if plan_mode_notice is not None:
+        pending_notices.append(plan_mode_notice)
 
     # plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続をブロック
-    if _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id):
+    blocked, direct_edit_notice = _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id)
+    if blocked:
         return 2
+    if direct_edit_notice is not None:
+        pending_notices.append(direct_edit_notice)
 
     # plan file編集前の必須リファレンス未読の場合は警告（降格）
 
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name == "ExitPlanMode":
-        flush_pending_language_warning()
+        flush_pending_notices()
         return 0
 
     # Skill: plan-mode起動時は計画単位の状態をリセット
@@ -230,7 +228,7 @@ def main(payload_text: str) -> int:
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
             _reset_plan_mode_state(session_id)
-        flush_pending_language_warning()
+        flush_pending_notices()
         return 0
 
     if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
@@ -242,19 +240,19 @@ def main(payload_text: str) -> int:
             tool_input,
             session_id,
             emit_json,
-            flush_pending_language_warning,
+            flush_pending_notices,
             is_codex=is_codex,
         )
 
     # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
-        flush_pending_language_warning()
+        flush_pending_notices()
         return 0
 
     if tool_name in ("Agent", "Task"):
-        return _handle_agent_tool(payload, tool_name, tool_input, session_id, flush_pending_language_warning)
+        return _handle_agent_tool(payload, tool_name, tool_input, session_id, flush_pending_notices)
 
-    return _handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_language_warning, is_codex=is_codex)
+    return _handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex)
 
 
 def _handle_codex_tool(
@@ -1347,7 +1345,7 @@ def _check_plan_mode_skill_first(
     tool_name: str,
     tool_input: dict,
     session_id: str,
-) -> bool:
+) -> str | None:
     """plan-modeスキル未起動のままplan fileを編集しようとした場合に警告する。
 
     判定条件:
@@ -1367,36 +1365,33 @@ def _check_plan_mode_skill_first(
     ファイル又は入力を解釈できない場合は警告を維持する。
     警告のみでツール呼び出しは継続する（block降格）。
     呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する。
-    戻り値は違反検出の有無を示す（呼び出し元は制御フローに使わない）。
+    違反を検出した場合は通知本文を返し、呼び出し元が`additionalContext`へ結合する。
+    違反が無い場合はNoneを返す。
     """
     if not session_id:
-        return False
+        return None
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return False
+        return None
     file_path_raw = tool_input.get("file_path")
     if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return False
+        return None
     state = read_state(session_id)
     if state.get("plan_mode_skill_invoked", False):
-        return False
+        return None
     if tool_name in {"Edit", "MultiEdit"} and _is_progress_log_only_edit(tool_name, tool_input, file_path_raw):
-        return False
-    print(
-        _llm_notice(
-            "warning: editing a plan file without invoking `agent-toolkit:plan-mode` skill first."
-            " If you are authoring the plan yourself, invoke the skill and restart from"
-            " Phase 1 (Initial Understanding)"
-            " before continuing the plan file edit."
-            " If you are reviewing a delegated plan and only correcting values uniquely"
-            " determined by the artifact and evidence, continue without restarting plan-mode"
-            " after recording each correction and its evidence in `## 変更履歴`."
-            " Resolve and verify this warning through the plan-mode direct delegation workflow"
-            " before finalizing the plan.",
-            tag="warn",
-        ),
-        file=sys.stderr,
+        return None
+    return _llm_notice(
+        "warning: editing a plan file without invoking `agent-toolkit:plan-mode` skill first."
+        " If you are authoring the plan yourself, invoke the skill and restart from"
+        " Phase 1 (Initial Understanding)"
+        " before continuing the plan file edit."
+        " If you are reviewing a delegated plan and only correcting values uniquely"
+        " determined by the artifact and evidence, continue without restarting plan-mode"
+        " after recording each correction and its evidence in `## 変更履歴`."
+        " Resolve and verify this warning through the plan-mode direct delegation workflow"
+        " before finalizing the plan.",
+        tag="warn",
     )
-    return True
 
 
 def _is_progress_log_only_edit(tool_name: str, tool_input: dict, file_path: str) -> bool:
@@ -1502,7 +1497,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     tool_name: str,
     tool_input: dict,
     session_id: str,
-) -> bool:
+) -> tuple[bool, str | None]:
     """plan-modeスキル起動後、計画ファイル未作成のまま`agent-toolkit`配下の直接編集連続を検知する。
 
     判定条件:
@@ -1516,25 +1511,26 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     直前と異なるパスのときのみ`direct_agent_toolkit_edit_count`をincrementする。
     `~/.claude/plans/`配下のWrite/Edit時は`plan_file_written`を真にしてカウンタをリセットする。
     対象外パスへの編集時もカウンタをリセットする。
-    カウンタ2件目でwarn（stderr出力＋Falseを返して進行を継続）、
-    3件目以上でblock（stderr出力＋Trueを返してツール呼び出しを中断）する。
+    カウンタ2件目でwarn（`additionalContext`へ載せる通知本文を返して進行を継続）、
+    3件目以上でblock（stderr出力＋第1要素にTrueを返してツール呼び出しを中断）する。
     block時は`direct_agent_toolkit_edit_count`と`last_agent_toolkit_edit_path`を更新しない。
     block後にコーディングエージェントが同一パスを再試行した場合、
     直前パス一致条件によるカウンタ加算スキップで素通りする回避を防ぐため、
     カウンタは加算直前の値のまま保持し、再試行時に再度加算されblockが継続する。
-    warn／blockの2段階はstderr出力のtagで区別し、
-    ハンドラの戻り値は既存の`_check_plan_mode_skill_first`等と同じくbool型とする。
+
+    Returns:
+        （block判定, 通知本文またはNone）のタプル。
     """
     if not session_id:
-        return False
+        return False, None
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return False
+        return False, None
     file_path_raw = tool_input.get("file_path")
     if not isinstance(file_path_raw, str) or not file_path_raw:
-        return False
+        return False, None
     state = read_state(session_id)
     if not state.get("plan_mode_skill_invoked", False):
-        return False
+        return False, None
 
     # 計画ファイル編集時は`plan_file_written`を真にしカウンタをリセットする。
     if is_plan_file(file_path_raw):
@@ -1553,11 +1549,11 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             return current if changed else None
 
         update_state(session_id, _mark_plan_written)
-        return False
+        return False, None
 
     # 計画ファイルが既に作成済みの場合は本checkの対象外。
     if state.get("plan_file_written", False):
-        return False
+        return False, None
 
     # 対象外パスへの編集ならカウンタをリセットして通過。
     if not _is_direct_agent_toolkit_edit_target(file_path_raw):
@@ -1570,12 +1566,12 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             return current
 
         update_state(session_id, _reset_counter)
-        return False
+        return False, None
 
     # 直前と同一パスの場合はincrementしない（連続判定は異なるファイルに対する編集を対象とする）。
     last_path = state.get("last_agent_toolkit_edit_path")
     if isinstance(last_path, str) and last_path == file_path_raw:
-        return False
+        return False, None
 
     # 並列edit時のlost update回避のため、都度ロック内で加算する。
     # `_mark_plan_written`・`_reset_counter`と同様、`update_state`のmutator内で
@@ -1609,19 +1605,16 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             ),
             file=sys.stderr,
         )
-        return True
+        return True, None
     if new_count == 2:
-        print(
-            _llm_notice(
-                f"warn: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
-                f" operations targeted files under agent-toolkit/ without first creating a plan file."
-                " The next such edit will be blocked."
-                " Create a plan file under `~/.claude/plans/` first.",
-                tag="warn",
-            ),
-            file=sys.stderr,
+        return False, _llm_notice(
+            f"warn: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
+            f" operations targeted files under agent-toolkit/ without first creating a plan file."
+            " The next such edit will be blocked."
+            " Create a plan file under `~/.claude/plans/` first.",
+            tag="warn",
         )
-    return False
+    return False, None
 
 
 def _apply_edits_to_content(tool_name: str, tool_input: dict, existing: str) -> str | None:

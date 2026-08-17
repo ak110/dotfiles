@@ -215,6 +215,29 @@ def test_rejects_unclosed_fence(repo: tuple[pathlib.Path, str]) -> None:
     assert any("閉じていないMarkdownフェンス" in error for error in errors)
 
 
+def test_rejects_unresolvable_base_commit(repo: tuple[pathlib.Path, str]) -> None:
+    """対象リポジトリで解決できないベースコミットを拒否する。"""
+    work_dir, base = repo
+    errors, _warnings = _check(work_dir, _plan(work_dir, base).replace(base, "f" * 40))
+    assert any("対象リポジトリでベースコミットを解決できない" in error for error in errors), errors
+
+
+def test_rejects_target_repo_mismatched_with_worktree(repo: tuple[pathlib.Path, str]) -> None:
+    """宣言リポジトリと作業ディレクトリのGitルートが異なる計画を拒否する。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace(f"- 対象リポジトリ: `{work_dir.resolve()}`", "- 対象リポジトリ: `/other`")
+    errors, _warnings = _check(work_dir, content)
+    assert any("対象リポジトリが作業ディレクトリのGitルートと一致しない" in error for error in errors), errors
+
+
+def test_accepts_relative_target_repo_matching_worktree(repo: tuple[pathlib.Path, str]) -> None:
+    """相対表記の対象リポジトリを正規化してGitルートと照合する。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace(f"- 対象リポジトリ: `{work_dir.resolve()}`", "- 対象リポジトリ: `.`")
+    errors, _warnings = _check(work_dir, content)
+    assert not errors, errors
+
+
 @pytest.mark.parametrize("spacing", ["", " "])
 @pytest.mark.parametrize(
     ("invocation", "expected_reference"),
@@ -242,6 +265,36 @@ def test_accepts_new_skill_description_without_invocation(repo: tuple[pathlib.Pa
     description = f"新スキル{spacing}`agent-toolkit:missing-skill`{spacing}を新設する。"
     errors, _warnings = _check(work_dir, _plan(work_dir, base).replace("対象の構造を更新する。", description))
     assert "実在しないスキル参照: agent-toolkit:missing-skill" not in errors
+
+
+def test_rejects_missing_agent_reference(repo: tuple[pathlib.Path, str]) -> None:
+    """実在しない専用agentの参照を拒否する。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace("対象の構造を更新する。", "Agentツールで`missing-agent`を使う。")
+    errors, _warnings = _check(work_dir, content)
+    assert any("実在しないサブエージェント参照" in error for error in errors), errors
+
+
+def test_resolves_plugin_resources_outside_plugin_worktree(repo: tuple[pathlib.Path, str]) -> None:
+    """利用先worktreeに複製されないplugin同梱resourceをplugin rootから解決する。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace(
+        "対象の構造を更新する。",
+        "`agent-toolkit:plan-mode`を起動し、Agentツールで`agent-toolkit:plan-impl-executor`を起動する。",
+    )
+    errors, _warnings = _check(work_dir, content)
+    assert not errors, errors
+
+
+def test_resolves_project_local_skill_from_worktree(repo: tuple[pathlib.Path, str]) -> None:
+    """プロジェクトローカルskillは利用先worktreeから解決する。"""
+    work_dir, base = repo
+    skill = work_dir / ".claude" / "skills" / "local-skill" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# local\n", encoding="utf-8")
+    content = _plan(work_dir, base).replace("対象の構造を更新する。", "スキル`local-skill`を起動する。")
+    errors, _warnings = _check(work_dir, content)
+    assert not errors, errors
 
 
 def test_cli_has_no_base_commit_option() -> None:

@@ -3,6 +3,7 @@
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
+import ast
 import json
 import os
 import pathlib
@@ -11,6 +12,7 @@ import subprocess
 import tempfile
 
 import _fork_runner
+import claude_hook
 import pretooluse
 import pytest
 from conftest import SESSION_STATE_FILENAME_TEMPLATE
@@ -44,8 +46,57 @@ def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def _agent_messages(result: subprocess.CompletedProcess[str]) -> str:
-    """コーディングエージェントへ届く本文（stderrと`additionalContext`）を連結して返す。"""
-    return f"{result.stderr}\n{_additional_context(result)}"
+    """コーディングエージェントへ届く本文を連結して返す。
+
+    Claude Codeの公式仕様では、exit 0で終了したフックのstderrはデバッグログだけに送られ
+    コーディングエージェントへ渡らない。そのためstderrはexit 2（ブロック）の場合だけ含める。
+    """
+    stderr = result.stderr if result.returncode == 2 else ""
+    return f"{stderr}\n{_additional_context(result)}"
+
+
+def _stderr_warn_offenders(source: str) -> list[int]:
+    """warn通知をstderrへ出力する箇所の行番号を返す。
+
+    `print(..., tag="warn"の呼び出し, file=sys.stderr)`の直接形に加え、
+    warn通知を変数へ束縛してからstderrへ渡す形も検出する。
+    """
+    tree = ast.parse(source)
+
+    def has_warn_tag(node: ast.AST) -> bool:
+        return any(
+            isinstance(inner, ast.keyword) and inner.arg == "tag" and getattr(inner.value, "value", None) == "warn"
+            for inner in ast.walk(node)
+        )
+
+    warn_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and has_warn_tag(node.value):
+            warn_names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+        if (
+            isinstance(node, ast.AnnAssign)
+            and node.value is not None
+            and has_warn_tag(node.value)
+            and isinstance(node.target, ast.Name)
+        ):
+            warn_names.add(node.target.id)
+
+    offenders: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "print":
+            continue
+        if not any(keyword.arg == "file" and ast.unparse(keyword.value) == "sys.stderr" for keyword in node.keywords):
+            continue
+        if has_warn_tag(node) or any(isinstance(arg, ast.Name) and arg.id in warn_names for arg in node.args):
+            offenders.append(node.lineno)
+    return sorted(set(offenders))
+
+
+@pytest.mark.parametrize("module_name", sorted(claude_hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
+def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
+    """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""
+    source = (pathlib.Path(pretooluse.__file__).parent / f"{module_name}.py").read_text(encoding="utf-8")
+    assert _stderr_warn_offenders(source) == [], module_name
 
 
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
@@ -569,13 +620,16 @@ class TestPlanModeSkillFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "plan-mode" in result.stderr
-        assert "Phase 1" in result.stderr
-        assert "reviewing a delegated plan" in result.stderr
-        assert "only correcting values uniquely determined by the artifact and evidence" in result.stderr
-        assert "continue without restarting plan-mode" in result.stderr
-        assert "recording each correction and its evidence in `## 変更履歴`" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+        messages = _agent_messages(result)
+        assert "plan-mode" in messages
+        assert "Phase 1" in messages
+        assert "reviewing a delegated plan" in messages
+        assert "only correcting values uniquely determined by the artifact and evidence" in messages
+        assert "continue without restarting plan-mode" in messages
+        assert "recording each correction and its evidence in `## 変更履歴`" in messages
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in messages
+        assert "editing a plan file without invoking" in _additional_context(result)
+        assert "editing a plan file without invoking" not in result.stderr
 
     def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -625,7 +679,7 @@ class TestPlanModeSkillFirstCheck:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "editing a plan file without invoking" not in result.stderr
+        assert "editing a plan file without invoking" not in _agent_messages(result)
 
     @pytest.mark.parametrize("tool_name", ["Edit", "MultiEdit"])
     def test_warns_edit_outside_progress_log_without_skill(self, tmp_path: pathlib.Path, tool_name: str) -> None:
@@ -650,7 +704,7 @@ class TestPlanModeSkillFirstCheck:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "editing a plan file without invoking" in result.stderr
+        assert "editing a plan file without invoking" in _agent_messages(result)
 
     def test_allows_plan_file_when_skill_invoked(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -738,7 +792,7 @@ class TestPlanModeSkillFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "plan-mode" in result.stderr
+        assert "plan-mode" in _agent_messages(result)
 
 
 class TestPlanModeSkillCallSites:
@@ -2654,7 +2708,7 @@ class TestCodexMcpReply:
 class TestCodexMcpLanguageWarningMerge:
     """codex MCP強制承認時に保留言語警告が単一JSONへ統合されることを検証する。
 
-    `flush_pending_language_warning()`を廃止し`emit_json()`単独で承認とadditionalContextを
+    `flush_pending_notices()`を廃止し`emit_json()`単独で承認とadditionalContextを
     出力する回帰を防ぐ。stdoutが2件のJSONへ分裂しないこと・`additionalContext`に
     警告本文が統合されることを確認する。
     """
@@ -3748,7 +3802,7 @@ class TestStyleNegationCheck:
 class TestDirectAgentToolkitEditsAfterPlanMode:
     """plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続を検知。
 
-    2件目でwarn（stderr出力＋通過）、3件目でblock。
+    2件目でwarn（`additionalContext`出力＋通過）、3件目でblock。
     直前と同一パスの繰り返しはincrementしない。
     対象外パスへの編集はカウンタをリセットし通過する。
     """
@@ -3785,7 +3839,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "without first creating a plan file" not in result.stderr
+        assert "without first creating a plan file" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         ("file_path", "expected_count"),
@@ -3839,12 +3893,13 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             )
             if i == 0:
                 assert result.returncode == 0
-                assert "[warn]" not in result.stderr
+                assert "[warn]" not in _agent_messages(result)
             else:
                 # 2件目はwarnして通過する（returncode 0）。
                 assert result.returncode == 0
-                assert "[warn]" in result.stderr
-                assert "without first creating a plan file" in result.stderr
+                assert "[warn]" in _agent_messages(result)
+                assert "without first creating a plan file" in _agent_messages(result)
+                assert "without first creating a plan file" not in result.stderr
 
     def test_third_target_edit_blocks(self, tmp_path: pathlib.Path):
         sid = "direct-edit-block"
@@ -3930,7 +3985,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 env_overrides=env,
             )
             assert result.returncode == 0
-            assert "[warn]" not in result.stderr
+            assert "[warn]" not in _agent_messages(result)
             assert "[block]" not in result.stderr
 
     def test_non_target_path_edit_passes(self, tmp_path: pathlib.Path):
@@ -4281,6 +4336,10 @@ class TestBodySectionReferenceExists:
 
 # --- codex sandbox指定（danger-full-access）を含む行の削除・変更の遮断 (block) ---
 
+# 保護対象パスの相対表記と、sandbox指定記述を持つ検体本文。Claude入力とCodex `apply_patch`の双方で使う。
+_PROTECTED_RELATIVE_PATH = "agent-toolkit/scripts/pretooluse.py"
+_PROTECTED_BODY = "説明文\n`sandbox: danger-full-access`を指定する\n末尾\n"
+
 
 class TestDangerFullAccessPreserved:
     """codex sandbox指定を含む行の削除・変更の遮断。"""
@@ -4358,6 +4417,32 @@ class TestDangerFullAccessPreserved:
             values = pretooluse._extract_sandbox_assignments(content)  # pylint: disable=protected-access
             assert values, relative_path
             assert set(values) == {"danger-full-access"}, relative_path
+
+    _WRITE_CONTENT = "`sandbox: danger-full-access`を指定する\n"
+
+    def test_write_over_undecodable_protected_file_blocks(self, tmp_path: pathlib.Path) -> None:
+        """既存の保護対象を復号できないWriteは判定不能として遮断する。"""
+        target = tmp_path / _PROTECTED_RELATIVE_PATH
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"\xff\xfe`sandbox: danger-full-access`\n")
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": self._WRITE_CONTENT}})
+        assert result.returncode == 2
+        assert "could not be reconstructed" in result.stderr
+
+    def test_write_over_unreadable_protected_path_blocks(self, tmp_path: pathlib.Path) -> None:
+        """対象不在を確定できない読み取り失敗（対象がディレクトリ）でも遮断する。"""
+        target = tmp_path / _PROTECTED_RELATIVE_PATH
+        target.mkdir(parents=True, exist_ok=True)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": self._WRITE_CONTENT}})
+        assert result.returncode == 2
+        assert "could not be reconstructed" in result.stderr
+
+    def test_write_creating_new_protected_file_passes(self, tmp_path: pathlib.Path) -> None:
+        """未作成の保護対象パスへの新規Writeは従来どおり通過する。"""
+        target = tmp_path / _PROTECTED_RELATIVE_PATH
+        target.parent.mkdir(parents=True, exist_ok=True)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": self._WRITE_CONTENT}})
+        assert result.returncode == 0
 
     def test_passes_non_protected_file(self):
         """保護対象外ファイルでは通過する。"""
@@ -4567,9 +4652,6 @@ class TestDelegationGateForAgentTask:
 
 
 # --- Codex `apply_patch` / Bash の共通検査 ---
-
-_PROTECTED_RELATIVE_PATH = "agent-toolkit/scripts/pretooluse.py"
-_PROTECTED_BODY = "説明文\n`sandbox: danger-full-access`を指定する\n末尾\n"
 
 
 def _patch(*sections: str) -> str:

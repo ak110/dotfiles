@@ -151,10 +151,14 @@ def materialize(operation: EditOperation) -> MaterializedEdit | None:
     if operation.kind == KIND_ADD:
         return MaterializedEdit(operation, "", operation.whole_after_text or "")
     read_path = operation.source_path if operation.kind == KIND_MOVE else operation.path
-    before = _read_text(read_path)
     if operation.kind == KIND_WRITE:
-        # Claudeの`Write`は新規作成でも既存上書きでも変更後全文が入力で確定する。
-        return MaterializedEdit(operation, before or "", operation.whole_after_text or "")
+        # Claudeの`Write`は変更後全文が入力で確定するが、変更前像は既存ファイルの読み取りに依存する。
+        # 対象が存在しないと確定した場合だけ空の変更前像とし、他の読み取り失敗は判定不能として返す。
+        before_text, missing = _read_text_for_overwrite(read_path)
+        if before_text is None and not missing:
+            return None
+        return MaterializedEdit(operation, before_text or "", operation.whole_after_text or "")
+    before = _read_text(read_path)
     if before is None:
         return None
     if operation.kind == KIND_DELETE:
@@ -172,6 +176,25 @@ def _read_text(path: str | None) -> str | None:
         return pathlib.Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError, ValueError):
         return None
+
+
+def _read_text_for_overwrite(path: str | None) -> tuple[str | None, bool]:
+    """全文上書き前の内容と、対象が存在しないと確定できたかを返す。
+
+    変更後全文が入力で確定することと、変更前像を復元できることは独立した条件である。
+    `FileNotFoundError`だけを対象不在の確定として扱う。
+    権限不足・文字コードエラー・パス種別の不一致などは、対象の有無を確定できない読み取り失敗とする。
+    `pathlib.Path.exists()`はOSErrorとValueErrorを偽として扱い、親ディレクトリへ到達できない場合に
+    既存ファイルと未作成パスを区別できないため、存在確認関数は用いない。
+    """
+    if not path:
+        return None, True
+    try:
+        return pathlib.Path(path).read_text(encoding="utf-8"), False
+    except FileNotFoundError:
+        return None, True
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None, False
 
 
 # --- Claude Code入力の解析 ---

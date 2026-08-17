@@ -29,6 +29,7 @@ _SKILL_SUFFIX_MARKER_RE = re.compile(r"^スキルを(?:起動|呼び出)")
 _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
+_BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
 
 
 def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
@@ -47,6 +48,35 @@ def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
                 marker = None
     errors = ["閉じていないMarkdownフェンスがある"] if marker is not None else []
     return outside, errors
+
+
+def _git_commit_exists(work_dir: pathlib.Path, base_commit: str) -> bool:
+    """完全長SHAが対象リポジトリのcommitとして解決できるかを返す。"""
+    result = subprocess.run(
+        ["git", "-C", str(work_dir), "cat-file", "-e", f"{base_commit}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _check_base_commit(declared_value: str | None, work_dir: pathlib.Path) -> list[str]:
+    """計画メタ情報のベースコミットを対象リポジトリのcommitとして解決できるかを検査する。
+
+    値の取得元は計画メタ情報だけとし、CLIオプションからは受け取らない。
+    HEADとの一致は求めない。計画作成後にHEADが進む正常な経路を拒否しないためである。
+    完全長SHAでない値は共有構造検査が書式違反として報告するため、ここでは扱わない。
+    """
+    if declared_value is None:
+        return []
+    match = _BASE_VALUE_RE.fullmatch(declared_value)
+    if match is None:
+        return []
+    base_commit = match.group(1)
+    if not _git_commit_exists(work_dir, base_commit):
+        return [f"対象リポジトリでベースコミットを解決できない: {base_commit}"]
+    return []
 
 
 def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
@@ -146,6 +176,7 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
+    errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
     errors.extend(_check_references(text, work_dir))
     return errors, []
 
