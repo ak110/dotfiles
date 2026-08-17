@@ -20,6 +20,7 @@ import argparse
 import collections
 import dataclasses
 import datetime
+import os
 import pathlib
 import re
 import subprocess
@@ -53,7 +54,7 @@ _REPO_HEADING_RE = re.compile(r"## target_repo: .*")
 _DEPENDS_ON_HEADING_RE = re.compile(r"depends_on:(?P<inline>.*)")
 _DEPENDS_ON_ELEMENT_RE = re.compile(r"(?P<indent>[ \t]*)- (?P<value>.*)")
 _DEPENDS_ON_VALUE_RE = re.compile(r"(?P<scalar>.*?)(?P<trailing>\s+#.*|\s*)")
-"""要素行の値部分を、YAMLのプレーンスカラーと以降の空白・コメントへ分ける。
+"""`depends_on`の見出し行と要素行の値部分を、YAMLのプレーンスカラーと以降の空白・コメントへ分ける。
 
 YAMLでは空白に続く`#`だけがコメントの開始となるため、最初の「空白＋`#`」以降と末尾の空白を
 `trailing`へ分離する。分離結果が解析済みの依存先名と一致しない値（引用符付き等）は
@@ -164,22 +165,34 @@ def _assign_filenames(
     元名を維持できるエントリを先に確定し、4状態フォルダの既存名と衝突するエントリだけを
     通常の投入経路と同じ採番規則で再採番する。再採番候補は既存名・元名を維持するエントリの元名・
     割り当て済みの保存名を予約集合として除外する。
+    衝突判定は`os.path.normcase`で畳み込んだ名前で行い、大文字小文字を区別しないファイルシステムでも
+    既存ファイルを上書きしない。保存名自体は元の大文字小文字を維持する。
     """
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    assignments = {entry.original_name: entry.original_name for entry in entries if entry.original_name not in existing}
-    reserved = existing | set(assignments)
+    reserved = {os.path.normcase(name) for name in existing}
+    assignments = {
+        entry.original_name: entry.original_name for entry in entries if os.path.normcase(entry.original_name) not in reserved
+    }
+    reserved |= {os.path.normcase(name) for name in assignments}
     counter = _max_existing_seq(private_notes, timestamp) + 1
     for entry in entries:
         if entry.original_name in assignments:
             continue
         candidate = f"{timestamp}-{counter:03d}.md"
-        while candidate in reserved:
+        while os.path.normcase(candidate) in reserved:
             counter += 1
             candidate = f"{timestamp}-{counter:03d}.md"
         assignments[entry.original_name] = candidate
-        reserved.add(candidate)
+        reserved.add(os.path.normcase(candidate))
         counter += 1
     return assignments
+
+
+def _has_inline_value(inline: str) -> bool:
+    """`depends_on:`見出し行の`:`以降に、YAMLコメントを除いた値が書かれているかを判定する。"""
+    split = _DEPENDS_ON_VALUE_RE.fullmatch(inline)
+    assert split is not None
+    return bool(split.group("scalar").strip())
 
 
 def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
@@ -191,6 +204,7 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
     `depends_on`は本CLIの`serialize_frontmatter`が生成するブロック形式シーケンスを正準形とし、
     flow形式など読み替え位置を行単位で確定できない形式と、引用符付きなど値とコメントの境界を
     一意に特定できない要素行は`WebInputError`で拒否する。
+    見出し行末尾のYAMLコメントは値と見なさず、後続の要素行をブロックとして受理する。
     """
     raw_dependencies = entry.frontmatter.get("depends_on")
     dependencies: list[typing.Any] = raw_dependencies if isinstance(raw_dependencies, list) else []
@@ -204,11 +218,12 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
     heading_index: int | None = None
     for index in range(1, frontmatter_end):
         heading = _DEPENDS_ON_HEADING_RE.fullmatch(lines[index])
-        if heading is not None and not heading.group("inline").strip():
-            heading_index = index
-            break
-        if heading is not None:
+        if heading is None:
+            continue
+        if _has_inline_value(heading.group("inline")):
             raise WebInputError(f"depends_onがブロック形式シーケンスではないため読み替えできません: {entry.original_name}")
+        heading_index = index
+        break
     if heading_index is None:
         raise WebInputError(f"depends_onのブロックを特定できないため読み替えできません: {entry.original_name}")
     elements: list[tuple[int, str, str]] = []
@@ -284,13 +299,15 @@ def add_batch_entries(
 
     戻り値は`(元ファイル名, 保存ファイル名)`の対応リストと警告リストとする。
     元ファイル名は連結後の全体集合で重複を検査し、重複があれば`depends_on`の読み替え先が
-    一意に定まらないため全件拒否する。ファイル名は取り込み先と衝突しない限り元名を維持する。
+    一意に定まらないため全件拒否する。重複の検査は`os.path.normcase`で畳み込んだ名前で行い、
+    大文字小文字を区別しないファイルシステムで書き込みが互いを上書きする組も拒否する。
+    ファイル名は取り込み先と衝突しない限り元名を維持する。
     """
     if not texts:
         raise WebInputError("取り込む本文を1件以上指定してください")
     entries = [entry for text in texts for entry in parse_show_batch(text)]
-    counts = collections.Counter(entry.original_name for entry in entries)
-    duplicated = sorted(name for name, count in counts.items() if count > 1)
+    counts = collections.Counter(os.path.normcase(entry.original_name) for entry in entries)
+    duplicated = sorted({entry.original_name for entry in entries if counts[os.path.normcase(entry.original_name)] > 1})
     if duplicated:
         raise WebInputError(f"元ファイル名が重複しています: {'、'.join(duplicated)}")
     inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)

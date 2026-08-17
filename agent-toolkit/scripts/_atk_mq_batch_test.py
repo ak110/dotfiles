@@ -9,6 +9,7 @@
 import argparse
 import contextlib
 import datetime
+import os
 import pathlib
 import types
 from collections.abc import Iterator
@@ -43,6 +44,11 @@ def _patch_repo_operations(monkeypatch: pytest.MonkeyPatch, module: types.Module
     monkeypatch.setattr(module, "_pull", lambda _path: None)
     monkeypatch.setattr(module, "_commit_and_push", lambda _path, message, _rel: messages.append(message))
     return messages
+
+
+def _fold_filename_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    """大文字小文字を区別しないファイルシステム（Windows等）の名前畳み込みを再現する。"""
+    monkeypatch.setattr(os.path, "normcase", str.lower)
 
 
 def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body: str = "本文") -> str:
@@ -183,6 +189,38 @@ def test_import_avoids_renumbering_onto_kept_original_name(
     assert (notes / "inbox" / kept).read_text(encoding="utf-8").endswith("本文\n")
 
 
+def test_import_renumbers_name_colliding_only_by_case(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """大文字小文字だけが異なる既存ファイルとの衝突も再採番し、既存ファイルを上書きしない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    _fold_filename_case(monkeypatch)
+    (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
+
+    mapping, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md")], now=_FIXED_DT)
+
+    assert mapping == [("clash.md", f"{_FIXED_TIMESTAMP}-001.md")]
+    assert not (notes / "inbox" / "clash.md").exists()
+    assert (notes / "adopted" / "Clash.md").read_text(encoding="utf-8") == "既存\n"
+
+
+def test_import_rejects_original_names_duplicated_only_by_case(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """大文字小文字だけが異なる元名の組も、書き込みが互いを上書きし得るため全件拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    _fold_filename_case(monkeypatch)
+
+    with pytest.raises(WebInputError):
+        batch.add_batch_entries(notes, texts=[_entry_text("Same.md"), _entry_text("same.md")], now=_FIXED_DT)
+
+    assert not list((notes / "inbox").iterdir())
+
+
 def test_import_rejects_duplicated_original_names_across_texts(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -265,6 +303,31 @@ def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
 
     renamed = dict(mapping)["dep.md"]
     assert f"- {renamed}  # 依存の由来\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+
+
+def test_import_rewrites_depends_on_with_commented_heading_line(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`depends_on:`見出し行に行末コメントがあっても後続のブロック形式を読み替える。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+    dependent = (
+        "### plan.md [inbox]\n"
+        "---\n"
+        "target_repo: github.com/example/foo\n"
+        "type: feedback\n"
+        "depends_on:  # 依存の由来\n"
+        "- dep.md\n"
+        "---\n\n本文\n\n"
+    )
+
+    mapping, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
+
+    renamed = dict(mapping)["dep.md"]
+    saved = (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+    assert f"depends_on:  # 依存の由来\n- {renamed}\n" in saved
 
 
 def test_import_rejects_quoted_depends_on_element_needing_rewrite(
