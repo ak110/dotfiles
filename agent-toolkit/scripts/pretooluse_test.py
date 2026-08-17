@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
+import textwrap
 
 import _fork_runner
 import claude_hook
@@ -60,6 +61,8 @@ def _stderr_warn_offenders(source: str) -> list[int]:
 
     `print(..., tag="warn"の呼び出し, file=sys.stderr)`の直接形に加え、
     warn通知を変数へ束縛してからstderrへ渡す形も検出する。
+    束縛元がwarn通知を返す関数の呼び出しである間接形も対象とし、
+    定義順に依存しないよう関数名と変数名の収集を不動点まで繰り返す。
     """
     tree = ast.parse(source)
 
@@ -69,17 +72,36 @@ def _stderr_warn_offenders(source: str) -> list[int]:
             for inner in ast.walk(node)
         )
 
+    # warn通知を保持する変数名と、warn通知を返す関数名。
     warn_names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and has_warn_tag(node.value):
-            warn_names.update(target.id for target in node.targets if isinstance(target, ast.Name))
-        if (
-            isinstance(node, ast.AnnAssign)
-            and node.value is not None
-            and has_warn_tag(node.value)
-            and isinstance(node.target, ast.Name)
-        ):
-            warn_names.add(node.target.id)
+    warn_functions: set[str] = set()
+
+    def is_warn_value(node: ast.expr) -> bool:
+        if has_warn_tag(node):
+            return True
+        if isinstance(node, ast.Name) and node.id in warn_names:
+            return True
+        return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in warn_functions
+
+    while True:
+        before = (len(warn_names), len(warn_functions))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and is_warn_value(node.value):
+                warn_names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and node.value is not None
+                and is_warn_value(node.value)
+                and isinstance(node.target, ast.Name)
+            ):
+                warn_names.add(node.target.id)
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and any(
+                isinstance(inner, ast.Return) and inner.value is not None and is_warn_value(inner.value)
+                for inner in ast.walk(node)
+            ):
+                warn_functions.add(node.name)
+        if (len(warn_names), len(warn_functions)) == before:
+            break
 
     offenders: list[int] = []
     for node in ast.walk(tree):
@@ -87,7 +109,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
             continue
         if not any(keyword.arg == "file" and ast.unparse(keyword.value) == "sys.stderr" for keyword in node.keywords):
             continue
-        if has_warn_tag(node) or any(isinstance(arg, ast.Name) and arg.id in warn_names for arg in node.args):
+        if has_warn_tag(node) or any(is_warn_value(arg) for arg in node.args):
             offenders.append(node.lineno)
     return sorted(set(offenders))
 
@@ -97,6 +119,35 @@ def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
     """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""
     source = (pathlib.Path(pretooluse.__file__).parent / f"{module_name}.py").read_text(encoding="utf-8")
     assert _stderr_warn_offenders(source) == [], module_name
+
+
+def test_stderr_warn_offenders_detects_indirect_binding() -> None:
+    """warn通知を返す関数の結果を束縛してstderrへ渡す形を、定義順に依存せず検出する。"""
+    source = textwrap.dedent(
+        """\
+        import sys
+
+
+        def _llm_notice(text, tag):
+            return f"{tag}: {text}"
+
+
+        def _compose_notice():
+            return _warn_remote_change()
+
+
+        def _warn_remote_change():
+            return _llm_notice("body", tag="warn")
+
+
+        def main():
+            notice = _compose_notice()
+            print(notice, file=sys.stderr)
+            print("plain", file=sys.stderr)
+        """
+    )
+    expected_lineno = source.splitlines().index("    print(notice, file=sys.stderr)") + 1
+    assert _stderr_warn_offenders(source) == [expected_lineno]
 
 
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
