@@ -3268,6 +3268,8 @@ class TestBashOutputTruncationWarning:
             "sh -c 'pytest -q' | head -5",
             "sh -c 'ls; pytest -q | head -5'",
             "sh -c 'ls; pytest -q' | head -5",
+            'sh -c "pytest -q | head -5; echo done" | tee /tmp/full.log',
+            "pytest -q | head -5 | tee /tmp/test.log",
         ],
         ids=[
             "prefixed-shell-c",
@@ -3276,6 +3278,8 @@ class TestBashOutputTruncationWarning:
             "shell-c-into-outer-pipe",
             "shell-c-inner-pipeline",
             "multi-statement-shell-into-outer-pipe",
+            "tee-after-inner-truncation",
+            "tee-after-truncation",
         ],
     )
     def test_truncation_inside_verification_pipeline_warns(self, command: str) -> None:

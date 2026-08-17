@@ -2889,16 +2889,26 @@ def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) ->
 def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment]) -> bool:
     """1つのパイプライン内で、検証コマンドの出力が全量保存されないまま切り詰められるかを判定する。
 
-    検証コマンドより後方に`tail`・`head`があり、かつ後方に`tee`が無い場合に真を返す。
+    検証コマンドより後方で最初に現れる`tail`・`head`を切り詰めの発生点とし、
+    その手前に`tee`が無い場合に真を返す。`tee`で全量を先に保存してから抽出する形は対象外とし、
+    切り詰めた後に`tee`で保存する形は保存内容が既に切り詰め後であるため対象とする。
     同一パイプラインに検証コマンドが複数ある場合は、いずれか1件でも該当すれば真を返す。
     """
     for index, segment in enumerate(pipeline):
         if not any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES):
             continue
         following = pipeline[index + 1 :]
-        if not any(item.resolved and item.tokens[0] in _OUTPUT_TRUNCATION_COMMANDS for item in following):
+        truncation_index = next(
+            (
+                position
+                for position, item in enumerate(following)
+                if item.resolved and item.tokens[0] in _OUTPUT_TRUNCATION_COMMANDS
+            ),
+            None,
+        )
+        if truncation_index is None:
             continue
-        if any(_segment_starts_with(item, (_OUTPUT_FULL_SAVE_COMMAND,)) for item in following):
+        if any(_segment_starts_with(item, (_OUTPUT_FULL_SAVE_COMMAND,)) for item in following[:truncation_index]):
             continue
         return True
     return False
