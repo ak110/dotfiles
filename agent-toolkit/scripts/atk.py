@@ -438,6 +438,11 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         action="store_true",
         help="processing状態のファイルも削除する（既定では処理中のファイルを保護し拒否する）。",
     )
+    rm.add_argument(
+        "--skip-pull",
+        action="store_true",
+        help=("削除対象の選定・確認をremote同期せずローカル状態で行う（削除直前は毎回同期する）。--all指定時のみ有効。"),
+    )
     rm.add_argument("--note", metavar="TEXT", default=None)
     _add_target_repo_arg(
         rm,
@@ -677,6 +682,8 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
         args.subparser.error("削除するFILENAME、または--allを指定してください。")
     if args.yes:
         args.subparser.error("--yesは--allとともに指定してください。")
+    if args.skip_pull:
+        args.subparser.error("--skip-pullは--allとともに指定してください。")
 
 
 def _validate_add_args(args: argparse.Namespace) -> None:

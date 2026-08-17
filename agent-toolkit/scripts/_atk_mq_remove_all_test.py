@@ -44,6 +44,35 @@ def _write_entry(
     return path
 
 
+class _PullTracker:
+    """`_pull`の呼び出し回数を数え、指定回目の呼び出しで並行変更を起こす。"""
+
+    def __init__(self, action: Callable[[], None] | None = None, *, at_call: int = 1) -> None:
+        self.count = 0
+        self._action = action
+        self._at_call = at_call
+
+    def __call__(self) -> None:
+        """呼び出し回数を進め、指定回目でだけ変更操作を実行する。"""
+        self.count += 1
+        if self._action is not None and self.count == self._at_call:
+            self._action()
+
+
+def _change_action(change: str, path: pathlib.Path) -> Callable[[], None]:
+    """並行変更の種別（状態移動・本文変更・消失）に対応する変更操作を返す。"""
+
+    def move() -> None:
+        target = path.parent.parent / "processing" / path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        path.rename(target)
+
+    def edit() -> None:
+        path.write_text(path.read_text(encoding="utf-8") + "\n更新\n", encoding="utf-8")
+
+    return {"move": move, "edit": edit, "remove": path.unlink}[change]
+
+
 def _patch_storage(
     monkeypatch: pytest.MonkeyPatch,
     commit_calls: list[tuple[str, list[str]]],
@@ -83,6 +112,7 @@ class TestRemoveAllArguments:
             ["mq", "rm", "--all", "--target-repo", "github.com/example/foo", "entry.md"],
             ["mq", "rm"],
             ["mq", "rm", "--yes", "entry.md"],
+            ["mq", "rm", "--skip-pull", "entry.md"],
         ],
     )
     def test_rejects_invalid_combinations(
@@ -365,42 +395,129 @@ class TestRemoveAllProcessingProtection:
 
 
 class TestRemoveAllConcurrentChanges:
-    """確認前後の候補変更を検出する。"""
+    """確認後の並行変更時に、確認済みで内容が変わらない項目だけを削除する挙動を検証する。"""
 
-    @pytest.mark.parametrize("change", ["add", "move", "edit", "remove"])
-    def test_rejects_changed_snapshot(
+    @pytest.mark.parametrize("change", ["move", "edit", "remove"])
+    def test_keeps_changed_entries_and_reports_them(
         self,
         change: str,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """追加・移動・本文変更・削除のいずれでも全件削除を中止する。"""
+        """確認後に状態移動・本文変更・消失した項目は削除せず報告し、commitしない。"""
         notes = _setup_notes(tmp_path)
         original = _write_entry(notes, "inbox", "original.md")
         commits: list[tuple[str, list[str]]] = []
-        pull_count = 0
-
-        def change_on_second_pull() -> None:
-            nonlocal pull_count
-            pull_count += 1
-            if pull_count != 2:
-                return
-            if change == "add":
-                _write_entry(notes, "inbox", "added.md")
-            elif change == "move":
-                target = notes / "processing/original.md"
-                target.parent.mkdir(parents=True, exist_ok=True)
-                original.rename(target)
-            elif change == "edit":
-                original.write_text(original.read_text(encoding="utf-8") + "\n更新\n", encoding="utf-8")
-            else:
-                original.unlink()
-
-        _patch_storage(monkeypatch, commits, on_pull=change_on_second_pull)
+        _patch_storage(monkeypatch, commits, on_pull=_PullTracker(_change_action(change, original), at_call=2))
         monkeypatch.setattr(sys, "stdin", _TtyInput("yes\n"))
 
-        assert _run_main(["mq", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 2
+        assert _run_main(["mq", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
+        captured = capsys.readouterr()
+        assert "確認後に変更されたため削除しません: original.md" in captured.out
+        assert "削除対象なし: github.com/example/foo" in captured.out
         assert not commits
-        assert "確認後に削除対象が変更された" in capsys.readouterr().err
+
+    def test_removes_confirmed_entry_and_keeps_added_entry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """確認後に追加された項目は削除対象へ加えず、確認済み項目だけを削除する。"""
+        notes = _setup_notes(tmp_path)
+        original = _write_entry(notes, "inbox", "original.md")
+        added = notes / "inbox/added.md"
+        commits: list[tuple[str, list[str]]] = []
+
+        def add_entry() -> None:
+            _write_entry(notes, "inbox", "added.md")
+
+        _patch_storage(monkeypatch, commits, on_pull=_PullTracker(add_entry, at_call=2))
+        monkeypatch.setattr(sys, "stdin", _TtyInput("yes\n"))
+
+        assert _run_main(["mq", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
+
+        assert not original.exists()
+        assert added.exists()
+        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "adopted", "rejected"])]
+        assert "確認後に変更されたため削除しません" not in capsys.readouterr().out
+
+    def test_removes_only_unchanged_entry_of_two(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """確認済み2件のうち1件だけ変化した場合、内容不変の1件だけを削除する。"""
+        notes = _setup_notes(tmp_path)
+        unchanged = _write_entry(notes, "inbox", "unchanged.md")
+        changed = _write_entry(notes, "inbox", "changed.md")
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits, on_pull=_PullTracker(_change_action("move", changed), at_call=2))
+        monkeypatch.setattr(sys, "stdin", _TtyInput("yes\n"))
+
+        assert _run_main(["mq", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
+
+        assert not unchanged.exists()
+        assert (notes / "processing/changed.md").exists()
+        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "adopted", "rejected"])]
+        assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out
+
+
+class TestRemoveAllSkipPull:
+    """`--skip-pull`が選定・確認をローカル状態で行い削除直前だけ同期する挙動を検証する。"""
+
+    def test_syncs_only_before_removal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """対話フローで`_pull`が削除フェーズの1回だけになる。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "feedback.md")
+        commits: list[tuple[str, list[str]]] = []
+        tracker = _PullTracker()
+        _patch_storage(monkeypatch, commits, on_pull=tracker)
+        monkeypatch.setattr(sys, "stdin", _TtyInput("y\n"))
+
+        assert (
+            _run_main(
+                ["mq", "rm", "--all", "--skip-pull", "--target-repo", "github.com/example/foo"],
+                tmp_path,
+            )
+            == 0
+        )
+
+        assert tracker.count == 1
+        assert not path.exists()
+        assert len(commits) == 1
+
+    def test_yes_syncs_once_and_keeps_changed_entry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--yes`併用時も削除直前に1回同期し、同期後に変化した項目を削除しない。"""
+        notes = _setup_notes(tmp_path)
+        unchanged = _write_entry(notes, "inbox", "unchanged.md")
+        changed = _write_entry(notes, "inbox", "changed.md")
+        commits: list[tuple[str, list[str]]] = []
+        tracker = _PullTracker(_change_action("edit", changed))
+        _patch_storage(monkeypatch, commits, on_pull=tracker)
+
+        assert (
+            _run_main(
+                ["mq", "rm", "--all", "--yes", "--skip-pull", "--target-repo", "github.com/example/foo"],
+                tmp_path,
+            )
+            == 0
+        )
+
+        assert tracker.count == 1
+        assert not unchanged.exists()
+        assert changed.exists()
+        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "adopted", "rejected"])]
+        assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out

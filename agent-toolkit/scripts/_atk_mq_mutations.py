@@ -963,6 +963,7 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             assume_yes=args.yes,
             force=args.force,
             note=args.note,
+            skip_pull=args.skip_pull,
         )
         if filenames:
             print(f"{len(filenames)}件削除: {', '.join(filenames)}")

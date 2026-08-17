@@ -1406,8 +1406,9 @@ class TestPullWithRecentNotice:
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
         assert capsys.readouterr().err == (
             "注記: 直近30秒に他プロセスを含むfetch形跡がある。"
-            "同一の連続操作内で`list`・`show`・`grep`を繰り返す場合は"
-            "`--skip-pull`で同期結果を再利用できる（状態遷移系のサブコマンドは毎回同期する）。"
+            "同一の連続操作内で`list`・`show`・`grep`・`rm --all`を繰り返す場合は"
+            "`--skip-pull`で同期結果を再利用できる"
+            "（`rm --all`は削除直前だけ同期し、他の状態遷移系のサブコマンドは毎回同期する）。"
             "単発実行では対処不要。\n"
         )
 
