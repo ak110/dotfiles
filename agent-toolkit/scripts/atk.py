@@ -213,7 +213,9 @@ def _add_mq_add_parser(sub: Any) -> None:
             "--type・--scope・--question-type・--choices・--plan-file・--depends-on・"
             "--target-repo・--sourceとは併用できない。"
             "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
-            "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行を復元できない点は限界として許容する。"
+            "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
+            "構造見出し（`# feedback`・`# tbd`・`## target_repo: ...`）と同形の末尾行を"
+            "復元できない点は限界として許容する。"
         ),
     )
     add.add_argument("--type", choices=("feedback", "tbd"), default=None)

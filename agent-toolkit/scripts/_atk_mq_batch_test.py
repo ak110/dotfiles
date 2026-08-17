@@ -273,6 +273,32 @@ def test_import_warns_for_missing_external_dependency(
     assert warnings == ["plan.mdのdepends_onが参照するmissing.mdは取り込み先に実在しません"]
 
 
+def test_import_does_not_warn_for_dependency_on_renumbered_name(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """再採番で確定した保存名を直接参照する依存先を警告しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    (notes / "inbox" / "clash.md").write_text("既存\n", encoding="utf-8")
+    renumbered = f"{_FIXED_TIMESTAMP}-001.md"
+    dependent = (
+        "### plan.md [inbox]\n"
+        "---\n"
+        "target_repo: github.com/example/foo\n"
+        "type: feedback\n"
+        "depends_on:\n"
+        f"- {renumbered}\n"
+        "---\n\n本文\n\n"
+    )
+
+    mapping, warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md") + dependent], now=_FIXED_DT)
+
+    assert dict(mapping)["clash.md"] == renumbered
+    assert not warnings
+    assert f"- {renumbered}\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+
+
 def test_import_keeps_unresolvable_legacy_target_repo(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

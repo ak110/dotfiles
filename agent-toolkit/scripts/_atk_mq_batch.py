@@ -224,14 +224,20 @@ def _dependency_warnings(
     assignments: dict[str, str],
     existing: set[str],
 ) -> list[str]:
-    """取り込み先に実在しない`depends_on`参照を警告文へ列挙する。"""
+    """取り込み先に実在しない`depends_on`参照を警告文へ列挙する。
+
+    取り込み後に実在する名前は、4状態フォルダの既存名、バッチ内エントリの元名
+    （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
+    及び再採番で確定した保存名の3種とする。
+    """
     warnings: list[str] = []
+    imported = set(assignments) | set(assignments.values())
     for entry in entries:
         dependencies = entry.frontmatter.get("depends_on")
         if not isinstance(dependencies, list):
             continue
         for dependency in dependencies:
-            if not isinstance(dependency, str) or dependency in assignments or dependency in existing:
+            if not isinstance(dependency, str) or dependency in imported or dependency in existing:
                 continue
             warnings.append(f"{assignments[entry.original_name]}のdepends_onが参照する{dependency}は取り込み先に実在しません")
     return warnings
