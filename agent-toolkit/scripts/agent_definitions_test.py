@@ -743,6 +743,19 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in flow
 
 
+def test_merge_table_coverage_is_verified_before_merge_agent_launch() -> None:
+    """統合対応表の作成直後にレーン項目と母集団の出現回数を照合し、不一致では統合担当を起動しない。"""
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+
+    for phrase in (
+        "--type=feedback --status=processing",
+        "出現回数が1回",
+        "母集団に含まれないファイル名の出現回数が0回",
+        "いずれかを検出した場合は統合担当を起動しない",
+    ):
+        assert phrase in flow
+
+
 def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     """`plan-impl-executor`と呼び出し元の入力契約を選択モードごとに分離する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
