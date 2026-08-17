@@ -152,6 +152,10 @@ def _running_codex_processes() -> tuple[str, ...]:
     `/dev/shm/codex-<UID>-logs_2.sqlite`は所有者限定権限であり、復元先の`~/.codex`も
     所有者以外は書き込めないため、他ユーザーのプロセスは保護対象を書き換えられない。
     自ユーザー所有プロセスに限り、判定素材を1つも取得できない場合だけ安全側で稼働中と扱う。
+
+    判定素材は役割で分ける。実行名、実行ファイルパス、command line第1要素は実行体を表す値であり
+    `_is_codex_process_value`で判定する。command line第2要素以降はファイルパスやプロンプト文字列など
+    任意の値を含むため、実行体の識別規則を適用せず`_is_codex_argument_value`で判定する。
     """
     uid = os.getuid()
     labels: list[str] = []
@@ -167,10 +171,13 @@ def _running_codex_processes() -> tuple[str, ...]:
         cmdline_values = [value for value in cmdline_items if isinstance(value, str)]
         name = name_value if isinstance(name_value, str) else ""
         exe = exe_value if isinstance(exe_value, str) else ""
-        values = [value for value in (name, exe, *cmdline_values) if value]
-        if not values:
+        executable_values = [value for value in (name, exe, *cmdline_values[:1]) if value]
+        argument_values = [value for value in cmdline_values[1:] if value]
+        if not executable_values and not argument_values:
             labels.append(f"pid {process.pid}")
-        elif any(_is_codex_process_value(value) for value in values):
+        elif any(_is_codex_process_value(value) for value in executable_values) or any(
+            _is_codex_argument_value(value) for value in argument_values
+        ):
             labels.append(_process_label(name, exe, cmdline_values, process.pid))
     return tuple(labels)
 
@@ -206,10 +213,23 @@ def _format_running_processes(labels: tuple[str, ...]) -> str:
 
 
 def _is_codex_process_value(value: str) -> bool:
-    """実行名又はcommand line要素がCodex launcher/packageを示すか判定する。"""
+    """実行体を表す値がCodex launcher/packageを示すか判定する。
+
+    適用対象は実行名、実行ファイルパス、command line第1要素に限る。
+    `bin/codex-medium`のようなラッパー起動を拾うため`codex-`接頭辞の前方一致を含める。
+    """
     normalized = value.replace("\\", "/").lower()
     stem = _executable_name(normalized)
     return stem == "codex" or stem.startswith("codex-") or "@openai/codex" in normalized
+
+
+def _is_codex_argument_value(value: str) -> bool:
+    """Command line第2要素以降がCodexのパッケージ指定を示すか判定する。
+
+    引数はファイルパスやプロンプト文字列など任意の値を含み、`codex-`接頭辞のファイル名も現れ得るため、
+    実行体の識別規則を適用せず`@openai/codex`の包含だけを根拠とする。
+    """
+    return "@openai/codex" in value.replace("\\", "/").lower()
 
 
 def _copy_to_temporary_files(

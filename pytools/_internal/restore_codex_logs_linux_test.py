@@ -435,6 +435,20 @@ def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakePr
             True,
             id="own-unrelated-process",
         ),
+        pytest.param(
+            [
+                _FakeProcess(
+                    {
+                        "name": "textlint",
+                        "exe": "/usr/bin/node",
+                        "cmdline": ["node", "scripts/codex-agents-base.md"],
+                        "uids": _uids(_OWN_UID),
+                    }
+                )
+            ],
+            True,
+            id="own-process-with-codex-prefixed-argument",
+        ),
     ],
 )
 def test_restore_proceeds_unless_own_codex_process_exists(
