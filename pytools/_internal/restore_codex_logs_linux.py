@@ -25,6 +25,8 @@ _COPY_BUFFER_SIZE = 1024 * 1024
 _ACCESS_DENIED = object()
 # codex --helpのCommands一覧のうち、常駐して診断ログDBを開き得る起動形を表示対象とする。
 _CODEX_LABEL_SUBCOMMANDS = frozenset({"app-server", "exec", "exec-server", "mcp-server", "remote-control"})
+# `node <package entry point>`形式でCodexを起動する実行体の名前。
+_NODE_EXECUTABLE_NAMES = frozenset({"node", "nodejs"})
 
 
 def run(
@@ -155,7 +157,8 @@ def _running_codex_processes() -> tuple[str, ...]:
 
     判定素材は役割で分ける。実行名、実行ファイルパス、command line第1要素は実行体を表す値であり
     `_is_codex_process_value`で判定する。command line第2要素以降はファイルパスやプロンプト文字列など
-    任意の値を含むため、実行体の識別規則を適用せず`_is_codex_argument_value`で判定する。
+    任意の値を含むため、実行体の識別規則を適用しない。node系実行体の場合だけ、
+    パッケージのentry pointに当たるcommand line第2要素を`_is_codex_argument_value`で判定する。
     """
     uid = os.getuid()
     labels: list[str] = []
@@ -173,11 +176,10 @@ def _running_codex_processes() -> tuple[str, ...]:
         exe = exe_value if isinstance(exe_value, str) else ""
         executable_values = [value for value in (name, exe, *cmdline_values[:1]) if value]
         argument_values = [value for value in cmdline_values[1:] if value]
+        entry_point = cmdline_values[1] if len(cmdline_values) >= 2 and _is_node_executable(name, exe) else ""
         if not executable_values and not argument_values:
             labels.append(f"pid {process.pid}")
-        elif any(_is_codex_process_value(value) for value in executable_values) or any(
-            _is_codex_argument_value(value) for value in argument_values
-        ):
+        elif any(_is_codex_process_value(value) for value in executable_values) or _is_codex_argument_value(entry_point):
             labels.append(_process_label(name, exe, cmdline_values, process.pid))
     return tuple(labels)
 
@@ -223,11 +225,18 @@ def _is_codex_process_value(value: str) -> bool:
     return stem == "codex" or stem.startswith("codex-") or "@openai/codex" in normalized
 
 
-def _is_codex_argument_value(value: str) -> bool:
-    """Command line第2要素以降がCodexのパッケージ指定を示すか判定する。
+def _is_node_executable(name: str, exe: str) -> bool:
+    """実行名又は実行ファイルパスがnode系実行体を示すか判定する。"""
+    return any(_executable_name(value.replace("\\", "/").lower()) in _NODE_EXECUTABLE_NAMES for value in (name, exe))
 
-    引数はファイルパスやプロンプト文字列など任意の値を含み、`codex-`接頭辞のファイル名も現れ得るため、
-    実行体の識別規則を適用せず`@openai/codex`の包含だけを根拠とする。
+
+def _is_codex_argument_value(value: str) -> bool:
+    """node系起動のcommand line第2要素がCodexのパッケージ指定を示すか判定する。
+
+    適用対象は`node <package entry point>`のentry pointに当たる位置に限る。
+    引数はファイルパスやプロンプト文字列など任意の値を含み、`@openai/codex`という文字列自体も
+    検索語などとして現れ得るため、実行体の識別規則を適用せず、entry point位置での
+    `@openai/codex`の包含だけを根拠とする。
     """
     return "@openai/codex" in value.replace("\\", "/").lower()
 

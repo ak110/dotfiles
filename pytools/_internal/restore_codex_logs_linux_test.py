@@ -449,6 +449,20 @@ def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakePr
             True,
             id="own-process-with-codex-prefixed-argument",
         ),
+        pytest.param(
+            [
+                _FakeProcess(
+                    {
+                        "name": "grep",
+                        "exe": "/usr/bin/grep",
+                        "cmdline": ["grep", "@openai/codex", "pytools"],
+                        "uids": _uids(_OWN_UID),
+                    }
+                )
+            ],
+            True,
+            id="own-process-with-codex-package-argument",
+        ),
     ],
 )
 def test_restore_proceeds_unless_own_codex_process_exists(
