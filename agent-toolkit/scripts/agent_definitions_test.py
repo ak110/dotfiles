@@ -518,6 +518,25 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
             assert phrase not in document
 
 
+def test_plan_mode_requires_test_design_in_plans() -> None:
+    """テストコードを含む計画へテスト設計の記載を要求し、計画レビューが照合する契約を固定する。"""
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    for text in (plan_mode, review):
+        assert "テストコードの新規作成又は変更を含む計画では" in text
+    assert "`## 実装資料`配下へテスト設計を記載する" in plan_mode
+    assert "テストが保証する契約（検出対象とする契約違反）" in plan_mode
+    assert "想定する主要な失敗様態（異常系・境界値を含む）" in plan_mode
+    assert "各失敗様態を検証するテストレイヤーの選択" in plan_mode
+    assert "期待値は要求仕様・契約から導出して確定する" in plan_mode
+    assert "`## 実装資料`のテスト設計を照合する" in review
+    assert "保証する契約と失敗様態が要求挙動から導出され" in review
+    assert "異常系・境界値が検討され" in review
+    assert "各失敗様態を検証するテストレイヤーの選択と対応が示され" in review
+    assert "期待値が要求仕様・契約から導出されて実装の実行出力に依存していない" in review
+
+
 def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> None:
     """投入元識別子の値保持と提案成立性検査の順序を固定する。"""
     explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
