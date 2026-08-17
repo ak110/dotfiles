@@ -5,7 +5,6 @@ import pathlib
 import stat
 from types import SimpleNamespace
 
-import psutil
 import pytest
 
 from pytools._internal import restore_codex_logs_linux
@@ -17,10 +16,16 @@ from pytools._internal import restore_codex_logs_linux
 def _prepare(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    *,
+    stop_codex: bool = True,
 ) -> tuple[pathlib.Path, pathlib.Path, tuple[tuple[pathlib.Path, pathlib.Path], ...]]:
-    """LinuxかつCodex停止中のホームディレクトリ、共有メモリー相当のパス、3組のパスを返す。"""
+    """Linuxのホームディレクトリ、共有メモリー相当のパス、3組のパスを返す。
+
+    `stop_codex`が真なら稼働判定をCodex停止中へ固定し、偽なら判定処理をそのまま実行させる。
+    """
     monkeypatch.setattr(restore_codex_logs_linux.sys, "platform", "linux")
-    monkeypatch.setattr(restore_codex_logs_linux, "_codex_is_running", lambda: False)
+    if stop_codex:
+        monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", lambda: ())
     home = tmp_path / "home"
     shm_root = tmp_path / "shm"
     codex_dir = home / ".codex"
@@ -62,7 +67,7 @@ def test_running_at_start_defers_without_changes(
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     contents = _write_targets(pairs)
     _link_all(pairs)
-    monkeypatch.setattr(restore_codex_logs_linux, "_codex_is_running", lambda: True)
+    monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", lambda: ("codex mcp-server",))
 
     assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
@@ -77,8 +82,12 @@ def test_running_after_copy_discards_only_temporary_files(
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)
-    results = iter((False, True))
-    monkeypatch.setattr(restore_codex_logs_linux, "_codex_is_running", lambda: next(results))
+    results = iter(((), ("codex mcp-server",)))
+
+    def running_codex_processes() -> tuple[str, ...]:
+        return next(results)
+
+    monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", running_codex_processes)
 
     assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
     assert all(home_path.is_symlink() for home_path, _ in pairs)
@@ -96,14 +105,14 @@ def test_write_after_second_check_is_detected_as_conflict_on_retry(
     _link_all(pairs)
     calls = 0
 
-    def check_and_write() -> bool:
+    def check_and_write() -> tuple[str, ...]:
         nonlocal calls
         calls += 1
         if calls == 2:
             pairs[0][1].write_bytes(b"written-after-check")
-        return False
+        return ()
 
-    monkeypatch.setattr(restore_codex_logs_linux, "_codex_is_running", check_and_write)
+    monkeypatch.setattr(restore_codex_logs_linux, "_running_codex_processes", check_and_write)
     assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is True
     assert pairs[0][0].read_bytes() == original[pairs[0][1]]
 
@@ -349,58 +358,155 @@ def test_existing_different_snapshot_is_not_overwritten(
 
 
 class _FakeProcess:
-    """psutil.Process.infoだけを提供するテスト用process。"""
+    """psutil.Process.infoとpidだけを提供するテスト用process。"""
 
-    def __init__(self, info: dict[str, object]) -> None:
+    def __init__(self, info: dict[str, object], pid: int = 1000) -> None:
         self.info = info
+        self.pid = pid
 
 
-class _DeniedProcess:
-    """process情報へのアクセス拒否を再現する。"""
+_OWN_UID = os.getuid()
+_OTHER_UID = _OWN_UID + 1
+_DENIED = restore_codex_logs_linux._ACCESS_DENIED
 
-    @property
-    def info(self) -> dict[str, object]:
-        """psutilと同じAccessDeniedを送出する。"""
-        raise psutil.AccessDenied()
+
+def _uids(uid: int) -> SimpleNamespace:
+    """psutilの戻り値と同じく`.real`で参照できるuid情報を生成する。"""
+    return SimpleNamespace(real=uid, effective=uid, saved=uid)
+
+
+def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakeProcess]) -> None:
+    """`psutil.process_iter`を固定のプロセス集合へ差し替える。"""
+
+    def process_iter(_attrs: list[str], **_kwargs: object) -> list[_FakeProcess]:
+        return processes
+
+    monkeypatch.setattr(restore_codex_logs_linux.psutil, "process_iter", process_iter)
 
 
 @pytest.mark.parametrize(
-    "process",
+    ("processes", "restored"),
     [
-        _FakeProcess({"name": "codex", "exe": None, "cmdline": []}),
-        _FakeProcess({"name": "node", "exe": "/usr/bin/node", "cmdline": ["node", "@openai/codex/bin/codex.js"]}),
-        _DeniedProcess(),
+        pytest.param(
+            [_FakeProcess({"name": "codex", "exe": None, "cmdline": [], "uids": _uids(_OWN_UID)})],
+            False,
+            id="own-codex-launcher",
+        ),
+        pytest.param(
+            [
+                _FakeProcess(
+                    {
+                        "name": "node",
+                        "exe": "/usr/bin/node",
+                        "cmdline": ["node", "/opt/node_modules/@openai/codex/bin/codex.js"],
+                        "uids": _uids(_OWN_UID),
+                    }
+                )
+            ],
+            False,
+            id="own-codex-package",
+        ),
+        pytest.param(
+            [_FakeProcess({"name": _DENIED, "exe": _DENIED, "cmdline": _DENIED, "uids": _uids(_OWN_UID)})],
+            False,
+            id="own-all-attributes-unavailable",
+        ),
+        pytest.param(
+            [_FakeProcess({"name": _DENIED, "exe": _DENIED, "cmdline": _DENIED, "uids": _uids(_OTHER_UID)})],
+            True,
+            id="other-user-all-attributes-unavailable",
+        ),
+        pytest.param(
+            [_FakeProcess({"name": _DENIED, "exe": _DENIED, "cmdline": _DENIED, "uids": _DENIED})],
+            True,
+            id="owner-unavailable",
+        ),
+        pytest.param(
+            [_FakeProcess({"name": "sshd", "exe": _DENIED, "cmdline": ["sshd: user@pts/0"], "uids": _uids(_OWN_UID)})],
+            True,
+            id="own-executable-path-unavailable",
+        ),
+        pytest.param(
+            [
+                _FakeProcess(
+                    {"name": "python", "exe": "/usr/bin/python", "cmdline": ["python", "worker.py"], "uids": _uids(_OWN_UID)}
+                )
+            ],
+            True,
+            id="own-unrelated-process",
+        ),
     ],
 )
-def test_codex_process_or_access_denial_is_treated_as_running(
+def test_restore_proceeds_unless_own_codex_process_exists(
     monkeypatch: pytest.MonkeyPatch,
-    process: object,
+    tmp_path: pathlib.Path,
+    processes: list[_FakeProcess],
+    restored: bool,
 ) -> None:
-    """Codex launcher/package又は除外不能なprocessを稼働中と判定する。"""
-    monkeypatch.setattr(
-        restore_codex_logs_linux.psutil,
-        "process_iter",
-        lambda _attrs, **_kwargs: [process],
+    """自ユーザー所有のCodexと判定材料を欠くプロセスだけが復元を延期させる。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path, stop_codex=False)
+    contents = _write_targets(pairs)
+    _link_all(pairs)
+    _patch_process_iter(monkeypatch, processes)
+
+    assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is restored
+    for home_path, target_path in pairs:
+        assert home_path.is_symlink() is not restored
+        assert target_path.read_bytes() == contents[target_path]
+
+
+def test_running_warning_aggregates_labels_without_argument_values(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """延期の警告はラベルごとの件数を示し、実行ファイルパスとオプション値を含めない。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path, stop_codex=False)
+    _write_targets(pairs)
+    _link_all(pairs)
+    processes = [
+        _FakeProcess(
+            {
+                "name": "codex",
+                "exe": f"/opt/codex-{index}/bin/codex",
+                "cmdline": ["/opt/codex/bin/codex", "mcp-server", "--config", f"model=secret-{index}"],
+                "uids": _uids(_OWN_UID),
+            },
+            pid=1000 + index,
+        )
+        for index in (1, 2)
+    ]
+    _patch_process_iter(monkeypatch, processes)
+
+    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
+        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+
+    warning = "\n".join(record.getMessage() for record in caplog.records)
+    assert "Codexが稼働中のため通常ストレージへの復元を延期: codex mcp-server (2件)" in warning
+    assert "/opt/codex" not in warning
+    assert "--config" not in warning
+    assert "secret-1" not in warning
+
+
+def test_normal_launch_label_excludes_user_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """通常起動の第2要素はプロンプトになり得るため、ラベルを実行名だけにする。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path, stop_codex=False)
+    _write_targets(pairs)
+    _link_all(pairs)
+    prompt = "診断ログの状態を調べて"
+    process = _FakeProcess(
+        {"name": "codex", "exe": "/usr/bin/codex", "cmdline": ["codex", prompt], "uids": _uids(_OWN_UID)},
+        pid=2000,
     )
-    assert restore_codex_logs_linux._codex_is_running() is True
+    _patch_process_iter(monkeypatch, [process])
 
+    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
+        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
 
-def test_process_iter_access_denied_value_is_treated_as_running(monkeypatch: pytest.MonkeyPatch) -> None:
-    """一括取得でAccessDeniedとなったprocessを候補から除外せず稼働中とする。"""
-
-    def process_iter(_attrs: list[str], *, ad_value: object) -> list[_FakeProcess]:
-        return [_FakeProcess({"name": ad_value, "exe": None, "cmdline": []})]
-
-    monkeypatch.setattr(restore_codex_logs_linux.psutil, "process_iter", process_iter)
-    assert restore_codex_logs_linux._codex_is_running() is True
-
-
-def test_unrelated_process_is_not_treated_as_codex(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Codexと無関係なprocessだけなら停止中と判定する。"""
-    process = _FakeProcess({"name": "python", "exe": "/usr/bin/python", "cmdline": ["python", "worker.py"]})
-    monkeypatch.setattr(
-        restore_codex_logs_linux.psutil,
-        "process_iter",
-        lambda _attrs, **_kwargs: [process],
-    )
-    assert restore_codex_logs_linux._codex_is_running() is False
+    warning = "\n".join(record.getMessage() for record in caplog.records)
+    assert "Codexが稼働中のため通常ストレージへの復元を延期: codex (1件)" in warning
+    assert prompt not in warning

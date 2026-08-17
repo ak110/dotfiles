@@ -4,6 +4,7 @@
 復元と共有メモリー側の回収を別のpost-apply実行へ分け、競合時は両方を保持する。
 """
 
+import collections
 import hashlib
 import logging
 import os
@@ -11,7 +12,6 @@ import pathlib
 import shutil
 import sys
 import tempfile
-from collections.abc import Iterable
 
 import psutil
 
@@ -23,6 +23,8 @@ _DATABASE_NAMES = ("logs_2.sqlite", "logs_2.sqlite-wal", "logs_2.sqlite-shm")
 _SHM_ROOT = pathlib.Path("/dev/shm")
 _COPY_BUFFER_SIZE = 1024 * 1024
 _ACCESS_DENIED = object()
+# codex --helpのCommands一覧のうち、常駐して診断ログDBを開き得る起動形を表示対象とする。
+_CODEX_LABEL_SUBCOMMANDS = frozenset({"app-server", "exec", "exec-server", "mcp-server", "remote-control"})
 
 
 def run(
@@ -33,8 +35,14 @@ def run(
     """管理対象の診断ログを通常ストレージへ復元し、安全な後続実行で旧targetを回収する。"""
     if sys.platform != "linux":
         return False
-    if _codex_is_running():
-        logger.warning(log_format.format_status("codex-logs", "Codexが稼働中のため通常ストレージへの復元を延期"))
+    running = _running_codex_processes()
+    if running:
+        logger.warning(
+            log_format.format_status(
+                "codex-logs",
+                f"Codexが稼働中のため通常ストレージへの復元を延期: {_format_running_processes(running)}",
+            )
+        )
         return False
 
     codex_dir = (home_dir or pathlib.Path.home()) / ".codex"
@@ -98,9 +106,13 @@ def run(
 
     temporary_paths = _copy_to_temporary_files(restore_pairs)
     try:
-        if _codex_is_running():
+        running = _running_codex_processes()
+        if running:
             logger.warning(
-                log_format.format_status("codex-logs", "コピー中にCodexの起動を検知したため通常ストレージへの置換を延期")
+                log_format.format_status(
+                    "codex-logs",
+                    f"コピー中にCodexの起動を検知したため通常ストレージへの置換を延期: {_format_running_processes(running)}",
+                )
             )
             return changed
         for home_path, _ in restore_pairs:
@@ -133,32 +145,53 @@ def _home_state(home_path: pathlib.Path, target_path: pathlib.Path) -> str:
     return "unrelated"
 
 
-def _codex_is_running() -> bool:
-    """Codex候補プロセス又は情報取得不能なプロセスがあれば安全側で真を返す。"""
-    try:
-        processes: Iterable[psutil.Process] = psutil.process_iter(
-            ["name", "exe", "cmdline"],
-            ad_value=_ACCESS_DENIED,
-        )
-        for process in processes:
-            try:
-                info = getattr(process, "info", None)
-            except (psutil.AccessDenied, psutil.ZombieProcess):
-                return True
-            except psutil.NoSuchProcess:
-                continue
-            if not isinstance(info, dict):
-                return True
-            if any(info.get(key) is _ACCESS_DENIED for key in ("name", "exe", "cmdline")):
-                return True
-            cmdline = info.get("cmdline")
-            cmdline_values = cmdline if isinstance(cmdline, (list, tuple)) else []
-            values = [info.get("name"), info.get("exe"), *cmdline_values]
-            if any(_is_codex_process_value(value) for value in values if isinstance(value, str)):
-                return True
-    except (psutil.AccessDenied, psutil.ZombieProcess):
-        return True
-    return False
+def _running_codex_processes() -> tuple[str, ...]:
+    """稼働中と判定したCodexプロセスの表示ラベルを走査順に返し、空タプルで停止中を表す。
+
+    判定対象は自ユーザー所有プロセスに限る。保護対象である共有メモリー側DB
+    `/dev/shm/codex-<UID>-logs_2.sqlite`は所有者限定権限であり、復元先の`~/.codex`も
+    所有者以外は書き込めないため、他ユーザーのプロセスは保護対象を書き換えられない。
+    自ユーザー所有プロセスに限り、判定素材を1つも取得できない場合だけ安全側で稼働中と扱う。
+    """
+    uid = os.getuid()
+    labels: list[str] = []
+    for process in psutil.process_iter(["name", "exe", "cmdline", "uids"], ad_value=_ACCESS_DENIED):
+        try:
+            info = process.info
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        if getattr(info.get("uids"), "real", None) != uid:
+            continue
+        cmdline, name_value, exe_value = info.get("cmdline"), info.get("name"), info.get("exe")
+        cmdline_items = cmdline if isinstance(cmdline, (list, tuple)) else []
+        cmdline_values = [value for value in cmdline_items if isinstance(value, str)]
+        name = name_value if isinstance(name_value, str) else ""
+        exe = exe_value if isinstance(exe_value, str) else ""
+        values = [value for value in (name, exe, *cmdline_values) if value]
+        if not values:
+            labels.append(f"pid {process.pid}")
+        elif any(_is_codex_process_value(value) for value in values):
+            labels.append(_process_label(name, cmdline_values, process.pid))
+    return tuple(labels)
+
+
+def _process_label(name: str, cmdline_values: list[str], pid: int) -> str:
+    """実行名と、許可した第2要素のサブコマンド名だけでラベルを構成する。
+
+    `codex [OPTIONS] [PROMPT]`の通常起動では第2要素が利用者のプロンプトになり得るため、
+    完全一致で許可したサブコマンド名以外はラベルへ含めない。
+    """
+    if not name:
+        return f"pid {pid}"
+    if len(cmdline_values) >= 2 and cmdline_values[1] in _CODEX_LABEL_SUBCOMMANDS:
+        return f"{name} {cmdline_values[1]}"
+    return name
+
+
+def _format_running_processes(labels: tuple[str, ...]) -> str:
+    """ラベルごとの件数を数え、ラベル昇順で`<ラベル> (<件数>件)`を連結する。"""
+    counts = collections.Counter(labels)
+    return ", ".join(f"{label} ({count}件)" for label, count in sorted(counts.items()))
 
 
 def _is_codex_process_value(value: str) -> bool:
