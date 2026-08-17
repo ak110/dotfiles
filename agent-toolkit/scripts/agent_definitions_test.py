@@ -281,7 +281,10 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" in delegation
-    assert "同一threadでは「再レビューを実施せよ」に相当する指示だけを送る" in delegation
+    assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" in delegation
+    assert "初回レビュー起動後に人間由来の入力" in delegation
+    assert "追送しない限り当該発話を根拠とする実施又は除外を計画へ書かない" in delegation
+    assert "当該ラウンドの採用件数と追加した履歴行数が一致すること" in delegation
     assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
     assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
     assert "差分要約と追加範囲は計画本文を正本" in delegation
@@ -310,6 +313,7 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "第2列の分類が実際の内容と一致するか" in task
     assert "節名だけを満たす記載、結論語だけの記載" in task
     assert "現存箇所と破る契約を示す" in task
+    assert "実機再現の典拠" in task
 
 
 def test_plan_review_audits_shared_representation_and_overview_sync() -> None:
