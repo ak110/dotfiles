@@ -209,10 +209,12 @@ atk mq process-loop --orchestrator=codex
 ```
 
 登録経路は、要求の難易度と、計画を事前にレビューしたいかどうかで選ぶ。
+一括での移行・復元は`atk serve`の新規追加ダイアログでも種別「一括登録（show形式）」から実行できる。
 
 | 登録経路 | 選ぶ場面 |
 | --- | --- |
 | `atk mq add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
+| `atk mq add --batch` | 別環境の`atk mq show --all`の出力を複数件まとめて移行・復元したい |
 | `/agent-toolkit:add-feedback` | 依頼内容を対話で確定してから登録したい |
 | `/agent-toolkit:plan-and-add-feedback` | 計画の作成とレビューまで先に済ませ、実装だけを自律実行へ渡したい |
 

@@ -12,6 +12,7 @@ import subprocess
 import typing
 
 import _atk_mq_add as feedback_add
+import _atk_mq_batch as feedback_batch
 import _atk_mq_common as common
 import _atk_mq_frontmatter as frontmatter
 import _atk_mq_mutations as feedback_mutations
@@ -449,7 +450,11 @@ class Operations:
         question_type: str | None = None,
         choices: list[str] | None = None,
     ) -> list[str]:
-        """エントリを原子的に追加する。"""
+        """エントリを原子的に追加する。
+
+        `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`を必須とし、
+        検証は`add_entries`の共通経路へ委ねる。
+        """
         if entry_type not in common.MQ_TYPES:
             raise common.WebInputError("typeが不正です")
         if entry_type == common.MQ_TYPE_FEEDBACK and (scope or question_type or choices):
@@ -461,10 +466,12 @@ class Operations:
                 raise common.WebInputError("choice形式には2件以上のchoicesが必要です")
             if question_type != "choice" and choices is not None:
                 raise common.WebInputError("choicesはchoice形式でのみ指定できます")
-        try:
-            resolved_target_repo = feedback_repo.resolve_repo_id(target_repo)
-        except SystemExit as error:
-            raise common.WebInputError("target_repoを解決できません") from error
+        resolved_target_repo: str | None = None
+        if target_repo is not None:
+            try:
+                resolved_target_repo = feedback_repo.resolve_repo_id(target_repo)
+            except SystemExit as error:
+                raise common.WebInputError("target_repoを解決できません") from error
         return feedback_add.add_entries(
             self.private_notes,
             messages=messages,
@@ -477,6 +484,23 @@ class Operations:
             choices=",".join(choices) if choices else None,
             lock_timeout=_WEB_LOCK_TIMEOUT,
         )
+
+    def add_batch(self, text: str) -> dict[str, object]:
+        """`atk mq show --all`の出力形式のテキストからエントリを一括で取り込む。
+
+        原文保持の契約はCLIと共通の`_atk_mq_batch.add_batch_entries`が担う。
+        """
+        mapping, warnings = feedback_batch.add_batch_entries(
+            self.private_notes,
+            texts=[text],
+            now=datetime.datetime.now(),
+            lock_timeout=_WEB_LOCK_TIMEOUT,
+        )
+        return {
+            "filenames": [saved for _original, saved in mapping],
+            "mapping": dict(mapping),
+            "warnings": warnings,
+        }
 
     def answer_tbd(
         self,
@@ -790,7 +814,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         data = _json_object(
             await _request_json(),
             allowed={"type", "messages", "source", "target_repo", "scope", "question_type", "choices"},
-            required={"type", "messages", "target_repo"},
+            required={"type", "messages"},
         )
         if data["type"] not in common.MQ_TYPES:
             raise common.WebInputError("typeが不正です")
@@ -812,6 +836,14 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             choices=_strings(data["choices"], "choices") if "choices" in data else None,
         )
         return quart.jsonify(filenames=filenames), 201
+
+    @app.post("/api/entries/batch")
+    async def add_batch() -> tuple[quart.Response, int]:
+        data = _json_object(await _request_json(), allowed={"text"}, required={"text"})
+        if not isinstance(data["text"], str) or not data["text"].strip():
+            raise common.WebInputError("textは空でない文字列で指定してください")
+        result = await workers.run(ops.add_batch, data["text"])
+        return quart.jsonify(**result), 201
 
     @app.post("/api/entries/answer")
     async def answer_tbd() -> quart.Response:

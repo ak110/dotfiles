@@ -307,7 +307,8 @@ const ids = [
   'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
   'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button',
   'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
-  'create-kind', 'create-content', 'create-content-error', 'create-target',
+  'create-kind', 'create-content', 'create-content-label', 'create-content-error',
+  'create-repo-fields', 'create-target',
   'create-target-error', 'create-source', 'tbd-fields', 'create-scope',
   'create-question-type', 'choice-fields', 'create-choices', 'create-choices-error',
   'create-submit-button', 'delete-dialog', 'delete-form', 'delete-close-button',
@@ -1784,6 +1785,7 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/api/sync",
         "/api/repos",
         "/api/entries",
+        "/api/entries/batch",
         "/api/entries/<state_name>/<filename>",
         "/api/entries/start-processing",
         "/api/entries/adopt",
@@ -4132,3 +4134,203 @@ process.stdout.write(JSON.stringify({
         "candidates": ["", "active/repo"],
         "error": "",
     }
+
+
+_BATCH_TEXT = (
+    "# feedback\n## target_repo: github.com/example/foo\n"
+    "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文\n\n"
+)
+
+
+def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """一括取り込み経路のロック・remote同期・commitを無効化する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(serve_app.feedback_batch, "_repo_lock", lock)
+    monkeypatch.setattr(serve_app.feedback_batch, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.feedback_batch, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+
+@pytest.mark.asyncio
+async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本文frontmatterにtarget_repoがあれば対象リポジトリ指定を省略できる。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(common, "_repo_lock", lock)
+    monkeypatch.setattr(common, "_pull", lambda _path: None)
+    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(serve_app.feedback_add, "_repo_lock", lock)
+    monkeypatch.setattr(serve_app.feedback_add, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.feedback_add, "_commit_and_push", lambda *_args, **_kwargs: None)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().post(
+        "/api/entries",
+        json={"type": "feedback", "messages": ["---\ntarget_repo: github.com/Example/Repo\n---\n\n本文"]},
+    )
+
+    assert response.status_code == 201
+    body = await response.get_json()
+    content = (tmp_path / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
+    assert "target_repo: github.com/example/repo" in content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    ["---\ntarget_repo:\n- github.com/example/repo\n---\n\n本文", "本文だけ"],
+)
+async def test_add_api_rejects_omitted_target_repo_without_frontmatter_value(
+    tmp_path: pathlib.Path,
+    message: str,
+) -> None:
+    """frontmatterのtarget_repoが欠落・非文字列の場合は400で拒否する。"""
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().post("/api/entries", json={"type": "feedback", "messages": [message]})
+
+    assert response.status_code == 400
+    assert "target_repo" in (await response.get_json())["error"]
+
+
+@pytest.mark.asyncio
+async def test_batch_api_imports_entries(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """一括登録APIが保存名・対応・警告を返し、原文保持で保存する。"""
+    _patch_batch_repo_operations(monkeypatch)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().post("/api/entries/batch", json={"text": _BATCH_TEXT})
+
+    assert response.status_code == 201
+    assert await response.get_json() == {
+        "filenames": ["keep.md"],
+        "mapping": {"keep.md": "keep.md"},
+        "warnings": [],
+    }
+    assert (tmp_path / "inbox" / "keep.md").read_text(encoding="utf-8") == (
+        "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文\n"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [{}, {"text": ""}, {"text": "  "}, {"text": 1}, {"text": "ただの本文\n"}, {"text": _BATCH_TEXT, "type": "feedback"}],
+)
+async def test_batch_api_rejects_invalid_inputs(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+) -> None:
+    """必須キー・型・空文字・未知キー・show形式外の入力を400で拒否する。"""
+    _patch_batch_repo_operations(monkeypatch)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().post("/api/entries/batch", json=payload)
+
+    assert response.status_code == 400
+    assert not (tmp_path / "inbox").exists() or not list((tmp_path / "inbox").iterdir())
+
+
+def test_assets_offer_batch_creation_without_required_target_repo() -> None:
+    """新規追加ダイアログが一括登録種別を持ち、対象リポジトリの必須指定を外す。"""
+    assert '<option value="batch">一括登録（show形式）</option>' in assets.HTML
+    assert 'id="create-repo-fields"' in assets.HTML
+    assert "対象リポジトリ（frontmatterに無い場合は必須）" in assets.HTML
+    assert '<input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">' in (
+        assets.HTML
+    )
+    assert "'/api/entries/batch'" in assets.JS
+    assert "対象リポジトリを入力してください" not in assets.JS
+
+
+def test_batch_creation_sends_raw_text_and_hides_frontmatter_driven_fields() -> None:
+    """一括登録では生テキストを送り、対象リポジトリ欄と投入元欄を隠す。"""
+    result = _run_node_ui(
+        """
+elements['create-dialog'].open = true;
+dialogStack.push('create-dialog');
+elements['create-kind'].value = 'batch';
+updateCreateFields();
+const hiddenRepoFields = elements['create-repo-fields'].hidden;
+const contentLabel = elements['create-content-label'].textContent;
+elements['create-content'].value = '  show形式テキスト  ';
+fetchHandler = async (url) => {
+  if (url.endsWith('/api/entries/batch')) {
+    return {
+      ok: true, status: 201, statusText: 'Created',
+      json: async () => ({filenames: ['new.md'], mapping: {'old.md': 'new.md'}, warnings: ['依存先が不在']})
+    };
+  }
+  if (url.endsWith('/api/repos?status=active')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+await createEntry({preventDefault() {}});
+const call = fetchCalls.find(item => item.url.endsWith('/api/entries/batch'));
+process.stdout.write(JSON.stringify({
+  hiddenRepoFields,
+  contentLabel,
+  body: JSON.parse(call.options.body),
+  toast: elements['toast'].textContent,
+  detailOpen: elements['detail-dialog'].open
+}));
+"""
+    )
+    assert result == {
+        "hiddenRepoFields": True,
+        "contentLabel": "show形式テキスト（必須）",
+        "body": {"text": "  show形式テキスト  "},
+        "toast": "1件を取り込みました。改名: old.md -> new.md 警告: 依存先が不在",
+        "detailOpen": False,
+    }
+
+
+def test_normal_creation_omits_empty_target_repo_from_payload() -> None:
+    """対象リポジトリ欄が空の通常追加では、target_repoを送らずサーバー検証へ委ねる。"""
+    result = _run_node_ui(
+        """
+elements['create-dialog'].open = true;
+dialogStack.push('create-dialog');
+elements['create-content'].value = '---\\ntarget_repo: example/repo\\n---\\n\\n本文';
+fetchHandler = async (url) => {
+  if (url.endsWith('/api/entries')) {
+    return {ok: true, status: 201, statusText: 'Created', json: async () => ({filenames: ['new.md']})};
+  }
+  if (url.endsWith('/api/repos?status=active')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+await createEntry({preventDefault() {}});
+const call = fetchCalls.find(item => item.url.endsWith('/api/entries'));
+process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body)}));
+"""
+    )
+    assert result == {"body": {"type": "feedback", "messages": ["---\ntarget_repo: example/repo\n---\n\n本文"]}}

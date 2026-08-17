@@ -161,16 +161,19 @@
           <select id="create-kind" name="type">
             <option value="feedback">feedback</option>
             <option value="tbd">tbd</option>
+            <option value="batch">一括登録（show形式）</option>
           </select>
-          <label for="create-content">本文（必須）</label>
+          <label id="create-content-label" for="create-content">本文（必須）</label>
           <textarea id="create-content" name="message" aria-describedby="create-content-error" required></textarea>
           <p id="create-content-error" class="inline-error" hidden></p>
-          <label for="create-target">対象リポジトリ（必須）</label>
-          <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error" required>
-          <datalist id="repo-options"></datalist>
-          <p id="create-target-error" class="inline-error" hidden></p>
-          <label for="create-source">投入元（任意）</label>
-          <input id="create-source" name="source">
+          <div id="create-repo-fields" class="dialog-form-fields">
+            <label for="create-target">対象リポジトリ（frontmatterに無い場合は必須）</label>
+            <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">
+            <datalist id="repo-options"></datalist>
+            <p id="create-target-error" class="inline-error" hidden></p>
+            <label for="create-source">投入元（任意）</label>
+            <input id="create-source" name="source">
+          </div>
           <div id="tbd-fields" class="dialog-form-fields" hidden>
             <label for="create-scope">確認範囲（任意）</label>
             <input id="create-scope" name="scope">

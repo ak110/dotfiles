@@ -52,6 +52,8 @@ class _BrowserOperations(serve_app.Operations):
         self.remove_release.set()
         self.remove_calls = 0
         self.persist_mutations = False
+        self.add_calls: list[dict[str, Any]] = []
+        self.batch_calls: list[str] = []
 
     def sync(self) -> bool:
         """テストでは外部Git操作を行わない。"""
@@ -113,6 +115,47 @@ class _BrowserOperations(serve_app.Operations):
                     raise TimeoutError("削除処理の解放を待機できませんでした")
                 self.delay_remove = False
         return filenames
+
+    def add(
+        self,
+        messages: list[str],
+        *,
+        entry_type: str,
+        target_repo: str | None,
+        source: str | None,
+        scope: str | None = None,
+        question_type: str | None = None,
+        choices: list[str] | None = None,
+    ) -> list[str]:
+        """Gitを使わず、対象リポジトリの必須検証と一時リポジトリへの書込みだけを行う。"""
+        del source, scope, question_type, choices
+        self.add_calls.append({"messages": messages, "target_repo": target_repo})
+        filenames: list[str] = []
+        for index, message in enumerate(messages):
+            parsed = serve_app.frontmatter.parse_frontmatter(message)
+            metadata, body = parsed if parsed is not None else ({}, message)
+            repo = target_repo if target_repo is not None else metadata.get("target_repo")
+            if not isinstance(repo, str) or not repo:
+                raise serve_app.common.WebInputError("target_repoを指定するか各メッセージのfrontmatterへ記載してください")
+            filename = f"created-{len(self.add_calls)}-{index}.md"
+            (self.private_notes / "inbox" / filename).write_text(
+                f"---\ntarget_repo: {repo}\ntype: {entry_type}\n---\n\n{body.strip()}\n",
+                encoding="utf-8",
+            )
+            filenames.append(filename)
+        return filenames
+
+    def add_batch(self, text: str) -> dict[str, object]:
+        """Gitを使わず、実装と同じ解析結果を一時リポジトリへ原文保持で書き込む。"""
+        self.batch_calls.append(text)
+        entries = serve_app.feedback_batch.parse_show_batch(text)
+        for entry in entries:
+            (self.private_notes / "inbox" / entry.original_name).write_text(entry.raw_text, encoding="utf-8")
+        return {
+            "filenames": [entry.original_name for entry in entries],
+            "mapping": {entry.original_name: entry.original_name for entry in entries},
+            "warnings": [],
+        }
 
     def answer_tbd(
         self,
@@ -1008,3 +1051,49 @@ async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict
     await playwright.async_api.expect(detail.get_by_role("button", name="削除")).to_be_disabled()
     await playwright.async_api.expect(detail.get_by_role("button", name="編集")).to_be_disabled()
     assert conflict_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """一括登録種別の入力切替と取り込み、frontmatter指定による対象リポジトリ省略投入を検証する。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+
+    await page.get_by_role("button", name="新規追加").click()
+    create_dialog = page.get_by_role("dialog", name="新規追加")
+    await create_dialog.wait_for(state="visible")
+    await create_dialog.locator("#create-kind").select_option("batch")
+    await playwright.async_api.expect(create_dialog.locator("#create-repo-fields")).to_be_hidden()
+    await playwright.async_api.expect(create_dialog.locator("#create-content-label")).to_have_text("show形式テキスト（必須）")
+    batch_text = (
+        "# feedback\n## target_repo: batch/repo\n"
+        "### imported.md [inbox]\n---\ntarget_repo: batch/repo\ntype: feedback\n---\n\n一括取り込みの本文\n\n"
+    )
+    await create_dialog.locator("#create-content").fill(batch_text)
+    async with page.expect_request("**/api/entries/batch") as batch_request_info:
+        await create_dialog.get_by_role("button", name="追加").click()
+    batch_request = await batch_request_info.value
+    assert batch_request.post_data_json == {"text": batch_text}
+    await create_dialog.wait_for(state="hidden")
+    await page.get_by_role("status").filter(has_text="1件を取り込みました").wait_for(state="visible")
+    await page.locator('.entry-select[data-key="inbox/imported.md"]').wait_for(state="visible")
+    assert (harness.root / "inbox" / "imported.md").read_text(encoding="utf-8") == (
+        "---\ntarget_repo: batch/repo\ntype: feedback\n---\n\n一括取り込みの本文\n"
+    )
+
+    await page.get_by_role("button", name="新規追加").click()
+    await create_dialog.wait_for(state="visible")
+    await playwright.async_api.expect(create_dialog.locator("#create-repo-fields")).to_be_visible()
+    await playwright.async_api.expect(create_dialog.locator("#create-target")).to_have_value("")
+    await create_dialog.locator("#create-content").fill("---\ntarget_repo: frontmatter/repo\n---\n\nfrontmatter指定の本文")
+    async with page.expect_request(lambda request: request.url.endswith("/api/entries") and request.method == "POST"):
+        await create_dialog.get_by_role("button", name="追加").click()
+    await create_dialog.wait_for(state="hidden")
+    assert harness.operations.add_calls[-1]["target_repo"] is None
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.wait_for(state="visible")
+    await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("frontmatter指定の本文")

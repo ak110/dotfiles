@@ -1606,3 +1606,51 @@ def test_add_entries_accepts_plain_tbd_body(tmp_path: pathlib.Path, monkeypatch:
     assert content.count(tbd_module.ANSWER_MARKER) == 1
     assert content.count(f"\n{tbd_module.ANSWER_HEADING}\n") == 1
     assert content.count(f"\n{tbd_module.QUESTION_HEADING}\n") == 1
+
+
+def test_add_entries_uses_frontmatter_target_repo_when_omitted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`target_repo`省略時はメッセージfrontmatterの値を解決して保存する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["---\ntarget_repo: github.com/Example/Repo\n---\n\n本文"],
+        target_repo=None,
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert "target_repo: github.com/example/repo" in content
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "本文のみ",
+        "---\ntarget_repo:\n- github.com/example/repo\n---\n\n本文",
+        "---\ntarget_repo: ''\n---\n\n本文",
+        "---\ntarget_repo: 解決できない値\n---\n\n本文",
+    ],
+)
+def test_add_entries_rejects_missing_or_invalid_frontmatter_target_repo(
+    message: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`target_repo`省略時にfrontmatterの値が欠落・非文字列・空・解決不能なら投入しない。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+
+    with pytest.raises(WebInputError):
+        add_module.add_entries(
+            notes,
+            messages=[message],
+            target_repo=None,
+            source=None,
+            now=_FIXED_DT,
+        )
+
+    assert not list((notes / "inbox").iterdir())

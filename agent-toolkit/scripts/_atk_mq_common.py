@@ -714,9 +714,11 @@ def _reject_bare_repo_path_override(
     )
 
 
-def _collect_message_via_editor() -> str | None:
-    """$EDITORで一時ファイルを開き、保存内容をstripして返す。
+def _collect_message_via_editor(*, strip: bool = True) -> str | None:
+    """$EDITORで一時ファイルを開き、保存内容を返す。
 
+    既定では保存内容をstripして返す。`strip=False`は保存内容を原文のまま返し、
+    空判定だけをstrip結果で行う（原文保持が必要な一括取り込み経路が用いる）。
     $EDITOR未設定・エディター非ゼロ終了・保存内容が空のいずれもNoneを返し、
     原因をstderrへ出力する。一時ファイルは終了時に必ず削除する。
     """
@@ -731,11 +733,11 @@ def _collect_message_via_editor() -> str | None:
         if result.returncode != 0:
             print(f"エディターが終了コード{result.returncode}で終了しました。", file=sys.stderr)
             return None
-        message = tmp_path.read_text(encoding="utf-8").strip()
-        if not message:
+        saved = tmp_path.read_text(encoding="utf-8")
+        if not saved.strip():
             print("本文が空のため投入を中止しました。", file=sys.stderr)
             return None
-        return message
+        return saved.strip() if strip else saved
     finally:
         tmp_path.unlink(missing_ok=True)
 

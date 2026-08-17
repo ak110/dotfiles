@@ -18,7 +18,8 @@
 `atk managed-temp <sub>`・`atk watch`形式とする。
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
-- mq add/list/show: エントリの投入・一覧・本文表示
+- mq add/list/show: エントリの投入・一覧・本文表示。
+  `mq add --batch`は`mq show --all`の出力形式を原文保持で一括取り込みする（移行・復元用途）
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
 - mq convert-to-plan/set-dependencies: 既存フィードバックの計画実装型への変換・明示依存の更新
@@ -31,7 +32,7 @@
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 
-ハンドラ実装は`_atk_mq_add`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
+ハンドラ実装は`_atk_mq_add`・`_atk_mq_batch`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
 `_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントを保持する。
 """
@@ -50,6 +51,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 import _atk_config as _config_cmd  # noqa: E402
 import _atk_mq_add as _add  # noqa: E402
+import _atk_mq_batch as _batch  # noqa: E402
 import _atk_mq_common as _common  # noqa: E402
 import _atk_mq_grep as _grep  # noqa: E402
 import _atk_mq_list as _list  # noqa: E402
@@ -199,7 +201,22 @@ def _add_mq_add_parser(sub: Any) -> None:
             "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
         ),
     )
-    add.add_argument("--type", choices=("feedback", "tbd"), default="feedback")
+    add.add_argument(
+        "--batch",
+        action="store_true",
+        help=(
+            "`atk mq show --all`の出力形式で複数エントリを一括登録する。"
+            "移行・復元用途であり、frontmatter・本文を原文保持で取り込み"
+            "（target_commitの再取得・TBD見出しの再生成を行わない）、"
+            "ファイル名は取り込み先と衝突しない限り元名を維持する。"
+            "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
+            "--type・--scope・--question-type・--choices・--plan-file・--depends-on・"
+            "--target-repo・--sourceとは併用できない。"
+            "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
+            "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行を復元できない点は限界として許容する。"
+        ),
+    )
+    add.add_argument("--type", choices=("feedback", "tbd"), default=None)
     add.add_argument("--scope", metavar="NAME", default=None)
     add.add_argument("--question-type", choices=("free-form", "yes-no", "choice"), default=None)
     add.add_argument("--choices", metavar="A,B,C", default=None)
@@ -659,6 +676,34 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
         args.subparser.error("--yesは--allとともに指定してください。")
 
 
+def _validate_add_args(args: argparse.Namespace) -> None:
+    """`mq add`の`--batch`併用制約を検証し、種別の既定値を確定する。
+
+    `--type`の既定値を`None`とすることで、`--batch`との併用判定で明示指定
+    （`--type=feedback`を含む）を区別する。検証後に通常add経路の既定値`feedback`へ正規化する。
+    """
+    if args.batch:
+        conflicting = [
+            name
+            for name, value in (
+                ("--type", args.type),
+                ("--scope", args.scope),
+                ("--question-type", args.question_type),
+                ("--choices", args.choices),
+                ("--plan-file", args.plan_file),
+                ("--depends-on", args.depends_on),
+                ("--target-repo", args.target_repo),
+                ("--source", args.source),
+                ("REPO_PATH", args.repo_path_override),
+            )
+            if value is not None
+        ]
+        if conflicting:
+            args.subparser.error(f"{'・'.join(conflicting)}は--batchと併用できません。")
+    if args.type is None:
+        args.type = "feedback"
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -683,6 +728,8 @@ def main(
     args = parser.parse_args(raw_argv)
     _validate_rm_args(args)
     args.repo_path_override = repo_path_override
+    if args.command == "mq" and args.mq_subcommand == "add":
+        _validate_add_args(args)
     if args.command == "mq" and args.mq_subcommand == "add" and args.type != "tbd":
         tbd_only = [
             name
@@ -725,7 +772,11 @@ def main(
     sub = args.mq_subcommand
     private_notes = _common._ensure_environment(home)
     dispatch = {
-        "add": lambda: _add._cmd_add(args, private_notes, now, home),
+        "add": lambda: (
+            _batch._cmd_add_batch(args, private_notes, now, home)
+            if args.batch
+            else _add._cmd_add(args, private_notes, now, home)
+        ),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
         "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes, now),

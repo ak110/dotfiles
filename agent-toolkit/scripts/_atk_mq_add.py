@@ -168,6 +168,24 @@ def _verify_plan_base_commit(
     )
 
 
+def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, object], str]]) -> None:
+    """`target_repo`省略時に、全メッセージのfrontmatterが解決可能な対象リポジトリを持つことを検証する。
+
+    キー欠落・非文字列値・空文字列・解決不能をいずれも原因別の`WebInputError`で拒否し、
+    `_repo_lock`取得前に全件を確定する。
+    """
+    for frontmatter, _body in parsed_messages:
+        raw_target_repo = frontmatter.get("target_repo")
+        if raw_target_repo is None:
+            raise WebInputError("target_repoを指定するか各メッセージのfrontmatterへ記載してください")
+        if not isinstance(raw_target_repo, str) or not raw_target_repo.strip():
+            raise WebInputError("メッセージfrontmatterのtarget_repoは空でない文字列で指定してください")
+        try:
+            _resolve_repo_id(raw_target_repo)
+        except SystemExit as error:
+            raise WebInputError(f"target_repoを解決できません: {raw_target_repo}") from error
+
+
 def _verify_plan_target_repos(
     parsed_messages: list[tuple[dict[str, object], str]],
     target_repo: str,
@@ -245,7 +263,7 @@ def _add_entries_locked(
     private_notes: pathlib.Path,
     *,
     parsed_messages: list[tuple[dict[str, object], str]],
-    target_repo: str,
+    target_repo: str | None,
     source: str | None,
     now: datetime.datetime,
     entry_type: str,
@@ -258,7 +276,11 @@ def _add_entries_locked(
     repair_kinds: list[str | None] | None = None,
     depends_on: tuple[str, ...] = (),
 ) -> list[str]:
-    """取得済みrepoロック内でエントリを書き込み、生成ファイル名を返す。"""
+    """取得済みrepoロック内でエントリを書き込み、生成ファイル名を返す。
+
+    `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`だけを採用する
+    （呼び出し元の`add_entries`が全件の存在と解決可否を検証済みとする）。
+    """
     effective_repair_targets: list[str | None] = [None for _ in parsed_messages] if repair_targets is None else repair_targets
     effective_repair_kinds: list[str | None] = [None for _ in parsed_messages] if repair_kinds is None else repair_kinds
     if len(effective_repair_targets) != len(parsed_messages):
@@ -326,7 +348,7 @@ def add_entries(
     private_notes: pathlib.Path,
     *,
     messages: list[str],
-    target_repo: str,
+    target_repo: str | None,
     source: str | None,
     now: datetime.datetime,
     entry_type: str = MQ_TYPE_FEEDBACK,
@@ -344,15 +366,19 @@ def add_entries(
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     TBD種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
     `_tbd.reject_reserved_tbd_markup`が`WebInputError`を送出する（CLIとWeb UIの共通経路）。
+    `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
+    `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
     """
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
     if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
         raise WebInputError("target_commitは40桁または64桁の完全OIDで指定してください")
-    try:
-        normalized_target_repo = _resolve_repo_id(target_repo)
-    except SystemExit as error:
-        raise WebInputError(f"target_repoを解決できません: {target_repo}") from error
+    normalized_target_repo: str | None = None
+    if target_repo is not None:
+        try:
+            normalized_target_repo = _resolve_repo_id(target_repo)
+        except SystemExit as error:
+            raise WebInputError(f"target_repoを解決できません: {target_repo}") from error
     plan_path: pathlib.Path | None = None
     if plan_file is not None:
         if entry_type != MQ_TYPE_FEEDBACK:
@@ -368,7 +394,11 @@ def add_entries(
     if entry_type != MQ_TYPE_FEEDBACK and question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError("question_typeが不正です")
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
+    if normalized_target_repo is None:
+        _verify_frontmatter_target_repos(parsed_messages)
     if plan_path is not None:
+        if normalized_target_repo is None:
+            raise WebInputError("plan_file指定時はtarget_repoを指定してください")
         _verify_plan_target_repos(parsed_messages, normalized_target_repo)
         _verify_plan_base_commit(plan_path, target_commit)
     if entry_type != MQ_TYPE_FEEDBACK and question_type == "choice" and not choices:

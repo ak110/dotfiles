@@ -9,6 +9,7 @@ TBD共通ヘルパーは本ファイルと分割先テストの双方から使�
 gitリモート応答フェイクは複数テストファイルが共有するため`_atk_git_fake_test_helpers.py`に集約する。
 """
 
+import contextlib
 import datetime
 import os
 import pathlib
@@ -1051,3 +1052,140 @@ def _write_tbd_file(
         encoding="utf-8",
     )
     return path
+
+
+class TestAddBatchOption:
+    """`mq add --batch`のCLI分岐と併用制約を検証する。"""
+
+    _ENTRY = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文\n\n"
+
+    @staticmethod
+    def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+        """一括取り込み側のロック・remote同期・commitを無効化する。"""
+        import _atk_mq_batch as batch_module  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr(batch_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+        monkeypatch.setattr(batch_module, "_pull", lambda _path: None)
+        monkeypatch.setattr(batch_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    def test_type_option_defaults_to_none_before_normalization(self) -> None:
+        """`--type`省略時のargparse既定値はNoneとし、明示指定と区別する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        assert parser.parse_args(["mq", "add", "本文"]).type is None
+        assert parser.parse_args(["mq", "add", "--type=feedback", "本文"]).type == "feedback"
+
+    def test_normal_add_normalizes_omitted_type_to_feedback(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--type`省略の通常addは従来どおりfeedbackとして保存する。"""
+        notes = _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        contents = [path.read_text(encoding="utf-8") for path in (notes / "inbox").iterdir()]
+        assert all("type: feedback" in content for content in contents)
+
+    @pytest.mark.parametrize(
+        "options",
+        [
+            ["--type=feedback"],
+            ["--type=tbd"],
+            ["--target-repo=github.com/example/foo"],
+            ["--source=session-review"],
+            ["--scope=name"],
+            ["--question-type=free-form"],
+            ["--choices=A,B"],
+            ["--plan-file=/tmp/plan.md"],
+            ["--depends-on=other.md"],
+        ],
+    )
+    def test_rejects_options_conflicting_with_batch(
+        self,
+        options: list[str],
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--batch`と併用できないオプション指定をusage表示付きでexit 2にする。"""
+        _setup_notes(tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--batch", *options, self._ENTRY], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 2
+        assert "--batchと併用できません" in capsys.readouterr().err
+
+    def test_rejects_positional_message_with_body_file(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """MESSAGE位置引数と`--body-file`の併用を明示拒否する。"""
+        _setup_notes(tmp_path)
+        self._patch_batch_repo_operations(monkeypatch)
+        body_path = tmp_path / "batch.md"
+        body_path.write_text(self._ENTRY, encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--batch", "--body-file", str(body_path), self._ENTRY], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 2
+        assert "併用できません" in capsys.readouterr().err
+
+    def test_imports_from_positional_message(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """MESSAGE位置引数のshow形式テキストを元名のまま取り込む。"""
+        notes = _setup_notes(tmp_path)
+        self._patch_batch_repo_operations(monkeypatch)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--batch", self._ENTRY], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8").endswith("取り込む本文\n")
+        assert "1件取り込み:" in capsys.readouterr().out
+
+    def test_imports_from_body_file(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--body-file`経由でも同じ内容を取り込む。"""
+        notes = _setup_notes(tmp_path)
+        self._patch_batch_repo_operations(monkeypatch)
+        body_path = tmp_path / "batch.md"
+        body_path.write_text(self._ENTRY, encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--batch", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        assert (notes / "inbox" / "keep.md").is_file()
+
+    def test_rejects_non_show_format_input(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """show形式として解析できない入力はexit 1で全件拒否する。"""
+        notes = _setup_notes(tmp_path)
+        self._patch_batch_repo_operations(monkeypatch)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", "--batch", "ただの本文\n"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        assert "投入を拒否しました" in capsys.readouterr().err
+        assert not list((notes / "inbox").iterdir())

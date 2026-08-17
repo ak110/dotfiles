@@ -769,10 +769,15 @@ function resetCreateForm() {
 }
 
 function updateCreateFields() {
-  const isTbd = byId('create-kind').value === 'tbd';
+  const kind = byId('create-kind').value;
+  const isBatch = kind === 'batch';
+  const isTbd = kind === 'tbd';
   const isChoice = isTbd && byId('create-question-type').value === 'choice';
   byId('tbd-fields').hidden = !isTbd;
   byId('choice-fields').hidden = !isChoice;
+  // 一括登録は各エントリのfrontmatterの値だけを用いるため、対象リポジトリ欄と投入元欄を隠す。
+  byId('create-repo-fields').hidden = isBatch;
+  byId('create-content-label').textContent = isBatch ? 'show形式テキスト（必須）' : '本文（必須）';
 }
 
 function openCreateDialog(origin = null) {
@@ -781,39 +786,59 @@ function openCreateDialog(origin = null) {
   openDialog(byId('create-dialog'), origin || document.activeElement, byId('create-content'));
 }
 
+function createResultMessage(isBatch, result) {
+  const filenames = Array.isArray(result.filenames) ? result.filenames : [];
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  const renamed = Object.entries(result.mapping || {}).filter(([original, saved]) => original !== saved);
+  const summary = isBatch
+    ? `${filenames.length}件を取り込みました。` +
+      (renamed.length ? `改名: ${renamed.map(([original, saved]) => `${original} -> ${saved}`).join('、')}` : '')
+    : (filenames[0] ? `${filenames[0]}を追加しました。` : '項目を追加しました。');
+  return warnings.length ? `${summary} 警告: ${warnings.join('、')}` : summary;
+}
+
 async function createEntry(event) {
   event.preventDefault();
   const type = byId('create-kind').value;
-  const message = byId('create-content').value.trim();
+  const isBatch = type === 'batch';
+  // 一括登録は原文保持のため、送信値へtrimを適用せず入力の生テキストをそのまま送る。
+  const rawContent = byId('create-content').value;
+  const message = rawContent.trim();
   const targetRepo = byId('create-target').value.trim();
   const choiceValues = byId('create-choices').value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
-  setFieldError(byId('create-content'), byId('create-content-error'), message ? '' : '本文を入力してください。');
-  setFieldError(byId('create-target'), byId('create-target-error'), targetRepo ? '' : '対象リポジトリを入力してください。');
+  setFieldError(
+    byId('create-content'), byId('create-content-error'),
+    message ? '' : (isBatch ? 'show形式テキストを入力してください。' : '本文を入力してください。')
+  );
   const choiceInvalid = type === 'tbd' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
   setFieldError(byId('create-choices'), byId('create-choices-error'), choiceInvalid ? '選択肢を2件以上入力してください。' : '');
-  if (firstInvalid([byId('create-content'), byId('create-target'), byId('create-choices')])) return;
-  const payload = {type, messages: [message], target_repo: targetRepo};
-  const source = byId('create-source').value.trim();
-  if (source) payload.source = source;
-  if (type === 'tbd') {
-    const scope = byId('create-scope').value.trim();
-    if (scope) payload.scope = scope;
-    payload.question_type = byId('create-question-type').value;
-    if (payload.question_type === 'choice') payload.choices = choiceValues;
+  if (firstInvalid([byId('create-content'), byId('create-choices')])) return;
+  const payload = isBatch ? {text: rawContent} : {type, messages: [message]};
+  if (!isBatch) {
+    if (targetRepo) payload.target_repo = targetRepo;
+    const source = byId('create-source').value.trim();
+    if (source) payload.source = source;
+    if (type === 'tbd') {
+      const scope = byId('create-scope').value.trim();
+      if (scope) payload.scope = scope;
+      payload.question_type = byId('create-question-type').value;
+      if (payload.question_type === 'choice') payload.choices = choiceValues;
+    }
   }
   clearDialogMessages('create');
   try {
     const result = await runPending('create', {
       container: byId('create-form'), button: byId('create-submit-button'), busyLabel: '追加中'
-    }, () => api('/api/entries', {method: 'POST', body: JSON.stringify(payload)}));
-    const filename = result.filenames?.[0];
+    }, () => api(isBatch ? '/api/entries/batch' : '/api/entries', {method: 'POST', body: JSON.stringify(payload)}));
     closeDialog(byId('create-dialog'));
     await clearFilters({load: false});
     await loadTargetRepos();
     await loadEntries({announce: true});
-    const created = entries.find(entry => entry.filename === filename);
-    if (created) await selectEntry(created, byId('create-button'));
-    deliverOperationMessage(filename ? `${filename}を追加しました。` : '項目を追加しました。');
+    if (!isBatch) {
+      const created = entries.find(entry => entry.filename === result.filenames?.[0]);
+      if (created) await selectEntry(created, byId('create-button'));
+    }
+    deliverOperationMessage(createResultMessage(isBatch, result));
   } catch (error) {
     deliverOperationMessage(`項目を追加できませんでした。 ${error.message}`, true);
     if (byId('create-dialog').open) byId('create-content').focus();
