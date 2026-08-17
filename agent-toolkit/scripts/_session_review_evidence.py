@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
@@ -28,7 +29,12 @@ _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
 _WARNING_PATTERN = re.compile("警告|warn", re.IGNORECASE)
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
-_SELF_INVOCATION_MARKER = "_session_review_evidence"
+_SELF_SCRIPT_STEM = "_session_review_evidence"
+_SEGMENT_SEPARATORS = re.compile(r"[;&|]+")
+_PATH_SEPARATORS = re.compile(r"[/\\]")
+_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_SHELL_NAMES = frozenset({"sh", "bash", "zsh"})
+_SCRIPT_RUNNERS = frozenset({"uv", "uvx", "env"})
 _PERSISTED_OUTPUT_PREFIX = "<persisted-output>"
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
 SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
@@ -95,6 +101,15 @@ _METADATA_KEYS = frozenset(
         "worktreePath",
         "worktreeName",
         "worktreeBranch",
+    }
+)
+_BODY_KEYS = frozenset(
+    {
+        # 自由形式の本文を保持するフィールド。内部のキー名は利用者の入力に由来する
+        "input",
+        "output",
+        "arguments",
+        "prompt",
     }
 )
 _Runtime = Literal["claude", "codex"]
@@ -728,7 +743,7 @@ def _self_invocation_call_ids(entry: dict[str, Any]) -> set[str] | None:
     """本スクリプト自身を呼び出した記録なら呼び出しIDの集合を、そうでなければ`None`を返す。
 
     実行結果を呼び出しと同じ記録へ含む形式では対応付けが不要なため、空集合を返す場合がある。
-    判定対象は実行したコマンド文字列に限り、スクリプト自身を読み書きする操作は自己呼び出しとみなさない。
+    判定対象は実行されたコマンドに限り、スクリプトを検索・閲覧・編集する操作は自己呼び出しとみなさない。
     """
     call_ids: set[str] = set()
     invoked = False
@@ -740,32 +755,95 @@ def _self_invocation_call_ids(entry: dict[str, Any]) -> set[str] | None:
                 continue
             block_input = block.get("input")
             command = block_input.get("command") if isinstance(block_input, dict) else None
-            if not isinstance(command, str) or _SELF_INVOCATION_MARKER not in command:
+            if not isinstance(command, str) or not _runs_self_script(_shell_tokens(command)):
                 continue
             invoked = True
             if isinstance(block.get("id"), str):
                 call_ids.add(block["id"])
 
     payload = entry.get("payload")
-    if isinstance(payload, dict) and _SELF_INVOCATION_MARKER in _payload_command(payload):
+    if isinstance(payload, dict) and _runs_self_script(_payload_command_tokens(payload)):
         invoked = True
         if isinstance(payload.get("call_id"), str):
             call_ids.add(payload["call_id"])
     return call_ids if invoked else None
 
 
-def _payload_command(payload: dict[str, Any]) -> str:
-    """Codexの記録から、実行したコマンドに当たる文字列を取得する。"""
+def _runs_self_script(tokens: list[str]) -> bool:
+    """トークン列のいずれかのコマンドが本スクリプトを実行しているかを判定する。
+
+    スクリプト名が現れるだけでは実行と扱わない。検索・閲覧・編集コマンドの引数として
+    ファイル名を渡す操作を実行と誤認すると、その実行結果に含まれる実在の警告を照会できなくなる。
+    """
+    if not any(_SELF_SCRIPT_STEM in token for token in tokens):
+        return False
+    return any(_command_runs_self(segment) for segment in _command_segments(tokens))
+
+
+def _command_segments(tokens: list[str]) -> list[list[str]]:
+    """区切り記号（`;`・`&&`・`|`など）でトークン列を個々のコマンドへ分ける。"""
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        for index, part in enumerate(_SEGMENT_SEPARATORS.split(token)):
+            if index:
+                segments.append([])
+            if part:
+                segments[-1].append(part)
+    return [segment for segment in segments if segment]
+
+
+def _command_runs_self(tokens: list[str]) -> bool:
+    """1つのコマンドの実行形式と引数の並びから、本スクリプトの実行かどうかを判定する。
+
+    先頭語がスクリプト自身なら直接起動、インタープリターなら引数の位置での起動と扱う。
+    シェルへコマンド文字列を渡す形式では、その文字列を1つのコマンドとして再帰的に判定する。
+    """
+    index = 0
+    while index < len(tokens) and _ENV_ASSIGNMENT.match(tokens[index]):
+        index += 1
+    words = tokens[index:]
+    if not words:
+        return False
+    if _is_self_script(words[0]):
+        return True
+    name = _basename(words[0])
+    if name in _SHELL_NAMES:
+        return any(_runs_self_script(_shell_tokens(word)) for word in words[1:] if not word.startswith("-"))
+    if name in _SCRIPT_RUNNERS or name.startswith("python"):
+        return any(_is_self_script(word) for word in words[1:])
+    return False
+
+
+def _is_self_script(token: str) -> bool:
+    """トークンが本スクリプトのファイルを指しているかを返す。"""
+    return _basename(token).startswith(_SELF_SCRIPT_STEM)
+
+
+def _basename(token: str) -> str:
+    """パス区切りを除いたトークン末尾の名前を返す。"""
+    return _PATH_SEPARATORS.split(token)[-1]
+
+
+def _shell_tokens(command: str) -> list[str]:
+    """コマンド文字列をシェルの引用規則で分解する。分解できない場合は空白で分ける。"""
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return command.split()
+
+
+def _payload_command_tokens(payload: dict[str, Any]) -> list[str]:
+    """Codexの記録から、実行したコマンドのトークン列を取得する。"""
     item = payload.get("item")
     for source in (_json_object(payload.get("arguments")), item if isinstance(item, dict) else None):
         if source is None:
             continue
         command = source.get("command")
         if isinstance(command, list):
-            return " ".join(part for part in command if isinstance(part, str))
+            return [part for part in command if isinstance(part, str)]
         if isinstance(command, str):
-            return command
-    return ""
+            return _shell_tokens(command)
+    return []
 
 
 def _result_call_ids(entry: dict[str, Any]) -> set[str]:
@@ -872,28 +950,35 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
     hook通知が入る`attachment`配下のような未知のフィールドも対象となる。
     既知フィールドを列挙する方式は、通知の格納先が増えるたびに検索対象から漏れるため採らない。
     `_METADATA_KEYS`の値は本文を持たない管理用の値（識別子・時刻・形式名・実行環境）であり、
-    走査しても一致を増やすだけとなるためエントリ直下に限って除外する。
-    入れ子の値では同名キーでも除外しない。tool_use入力やattachment本文の内部では、
-    `mode`・`status`のような汎用語のキーが利用者の入力そのものを保持するためである。
+    走査しても一致を増やすだけとなるため除外する。
+    除外の可否は深さではなく、値を保持するフィールドの構造上の役割で判定する。
+    エントリ・`message`・`payload`・`item`・各ブロックのようなプロトコル構造は、
+    深さを問わず区分値と識別子を保持するため除外の対象とする。
+    `input`・`output`・`arguments`・`prompt`のような自由形式の本文フィールドでは、
+    `mode`・`status`のような汎用語のキーが利用者の入力そのものを保持するため、
+    その内部のキーを除外しない。
     """
     texts: list[str] = []
-    _collect_texts(entry, texts, top_level=True)
+    _collect_texts(entry, texts)
     return texts
 
 
-def _collect_texts(value: Any, texts: list[str], *, top_level: bool = False) -> None:
-    """構造をたどり、エントリ直下の管理用フィールドを除く文字列値を`texts`へ追加する。"""
+def _collect_texts(value: Any, texts: list[str], *, in_body: bool = False) -> None:
+    """構造をたどり、プロトコル構造が持つ管理用フィールドを除く文字列値を`texts`へ追加する。
+
+    `in_body`は、自由形式の本文を保持するフィールドの内部を走査中であることを表す。
+    """
     if isinstance(value, str):
         if value.strip():
             texts.append(value)
     elif isinstance(value, dict):
         for key, item in value.items():
-            if top_level and key in _METADATA_KEYS:
+            if not in_body and key in _METADATA_KEYS:
                 continue
-            _collect_texts(item, texts)
+            _collect_texts(item, texts, in_body=in_body or key in _BODY_KEYS)
     elif isinstance(value, list):
         for item in value:
-            _collect_texts(item, texts)
+            _collect_texts(item, texts, in_body=in_body)
 
 
 def _matched_lines(entry: dict[str, Any], pattern: re.Pattern[str]) -> list[str]:
@@ -962,14 +1047,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warn",
         action="store_true",
-        help="エントリ内の全本文（hook通知を含む。エントリ直下の管理用フィールドと"
+        help="エントリ内の全本文（hook通知を含む。管理用フィールドと"
         "本スクリプト自身の実行記録は除く）のうち"
         "警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
     )
     parser.add_argument(
         "--grep",
         metavar="REGEX",
-        help="エントリ内の全本文（hook通知を含む。エントリ直下の管理用フィールドと"
+        help="エントリ内の全本文（hook通知を含む。管理用フィールドと"
         "本スクリプト自身の実行記録は除く）を正規表現で検索し、"
         "一致行と一致エントリ数を照会する。",
     )

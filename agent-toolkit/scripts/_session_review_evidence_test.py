@@ -1270,12 +1270,22 @@ def _self_invocation_entries(command: str) -> list[dict]:
     ]
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl",
+        "uv run --no-project --script /plugin/scripts/_session_review_evidence.py /tmp/foo.jsonl",
+        "./agent-toolkit/scripts/_session_review_evidence.py --grep 'warn' /tmp/foo.jsonl",
+        "cd /repo && python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl",
+        "bash -lc 'python3 /plugin/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl'",
+    ],
+)
 def test_query_modes_ignore_own_invocation_and_its_result(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    command: str,
 ) -> None:
-    """本スクリプトを呼び出したコマンドとその照会結果を、警告・一致として報告しない。"""
-    command = "python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl"
+    """起動形式を問わず、本スクリプトを実行したコマンドとその照会結果を報告しない。"""
     transcript = _write_transcript(tmp_path, _self_invocation_entries(command))
 
     assert evidence.main([str(transcript), "--warn"]) == 0
@@ -1308,6 +1318,92 @@ def test_query_modes_keep_warnings_outside_own_invocation(
     events = _read_jsonl(capsys)
     assert [event["text"] for event in events] == ["warning: 実在の警告"]
     assert [event["line"] for event in events] == [3]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rg -n _session_review_evidence agent-toolkit/scripts",
+        "grep -rn TODO agent-toolkit/scripts/_session_review_evidence.py",
+        "cat agent-toolkit/scripts/_session_review_evidence.py",
+        "sed -n '1,20p' agent-toolkit/scripts/_session_review_evidence.py",
+        "head -n 5 agent-toolkit/scripts/_session_review_evidence_test.py",
+        "tail -n 5 agent-toolkit/scripts/_session_review_evidence.py",
+        "vim agent-toolkit/scripts/_session_review_evidence.py",
+        "bash -lc 'rg -n _session_review_evidence agent-toolkit/scripts'",
+    ],
+)
+def test_query_modes_keep_records_that_only_reference_the_script_file(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    """スクリプトを検索・閲覧・編集するだけのコマンドは実行と扱わず、その警告を照会し続ける。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": command}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "c1",
+                            "content": [{"type": "text", "text": "warning: relevant output"}],
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["text"] for event in events] == ["warning: relevant output"]
+    assert [event["line"] for event in events] == [2]
+
+
+def test_query_modes_ignore_structural_values_of_codex_envelopes(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codex形式の入れ子構造が持つ区分値・識別子は一致とせず、実行結果の本文は検索する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "id": "exec-1",
+                        "command": ["echo", "ok"],
+                        "status": "completed",
+                        "stdout": "done",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--grep", "completed"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "summary", "count": 0}]
+
+    assert evidence.main([str(transcript), "--grep", "done"]) == 0
+    assert _read_jsonl(capsys) == [
+        {"kind": "match", "line": 1, "text": "done"},
+        {"kind": "summary", "count": 1},
+    ]
 
 
 def test_grep_mode_searches_nested_values_under_management_named_keys(
