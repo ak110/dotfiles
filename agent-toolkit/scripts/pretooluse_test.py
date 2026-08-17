@@ -578,6 +578,7 @@ class TestColloquialCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
         assert result.returncode == 0
         assert "colloquial" in _additional_context(result)
+        assert "First match: line 1, column 4. Matches: 1." in _additional_context(result)
         assert "Rewrite the whole sentence containing the detected expression" in _additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in _additional_context(result)
         # 検出語そのものは出力に含めない（コンテキスト汚染防止）
@@ -2346,6 +2347,13 @@ class TestBashUvRunPythonBlock:
         return str(tmp_path)
 
     @staticmethod
+    def _make_child_directory(tmp_path: pathlib.Path) -> pathlib.Path:
+        """子ディレクトリを作成して返す。"""
+        child = tmp_path / "child"
+        child.mkdir()
+        return child
+
+    @staticmethod
     def _invoke(command: str, cwd: str) -> subprocess.CompletedProcess[str]:
         return _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd})
 
@@ -2366,6 +2374,21 @@ class TestBashUvRunPythonBlock:
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 0
+
+    def test_child_of_python_project_allowed(self, tmp_path: pathlib.Path) -> None:
+        """祖先の`[project]`を解決する子ディレクトリでは正規実行を許容する。"""
+        self._make_python_project(tmp_path)
+        cwd = self._make_child_directory(tmp_path)
+        result = self._invoke("uv run python -c 'print(1)'", str(cwd))
+        assert result.returncode == 0
+
+    def test_nearest_non_python_project_blocks_ancestor_project(self, tmp_path: pathlib.Path) -> None:
+        """直近が`[tool.uv]`のみなら祖先に`[project]`があっても遮断する。"""
+        self._make_python_project(tmp_path)
+        cwd = self._make_child_directory(tmp_path)
+        self._make_non_python_project(cwd)
+        result = self._invoke("uv run python -c 'print(1)'", str(cwd))
+        assert result.returncode == 2
 
     @pytest.mark.parametrize(
         "command",
@@ -4754,6 +4777,18 @@ class TestDelegationGateForAgentTask:
         )
         assert allowed.returncode == 0
         assert sidechain.returncode == 0
+
+    def test_claude_code_guide_without_delegation_passes(self, tmp_path: pathlib.Path) -> None:
+        """公式資料照会専用エージェントは委譲スキル未起動でも許容する。"""
+        result = _run(
+            {
+                "session_id": "guide-without-delegation",
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude-code-guide", "prompt": "公式資料を確認する。"},
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
 
 
 # --- Codex `apply_patch` / Bash の共通検査 ---

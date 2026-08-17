@@ -359,13 +359,15 @@ def _handle_agent_tool(
     flush_warning: Callable[[], None],
 ) -> int:
     """Agent・Task起動の委譲契約と観測ログを処理する。"""
-    if payload.get("isSidechain") is not True:
+    subagent_type = tool_input.get("subagent_type")
+    if payload.get("isSidechain") is not True and not (
+        isinstance(subagent_type, str) and subagent_type in _DELEGATION_GATE_EXEMPT_SUBAGENT_TYPES
+    ):
         state = read_state(session_id)
         if _check_delegation_not_invoked(state, tool_name=tool_name):
             return 2
     if _check_agent_name_parameter(tool_name, tool_input):
         return 2
-    subagent_type = tool_input.get("subagent_type")
     if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
         return 2
     if _check_execute_review_engine_route(payload, tool_input):
@@ -858,16 +860,20 @@ _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.A
 def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """口語的な日本語表現の混入を検出して警告本文を返す（warn）。
 
-    検出した語そのものは出力に含めない（コーディングエージェントのコンテキスト汚染防止）。
+    検出語・行抜粋・置換候補は出力せず、先頭の位置（行・列）と件数だけを示す
+    （コーディングエージェントのコンテキスト汚染防止）。
     allowlistに一致する部分を先に除去してからdenylistを適用し、
     複合動詞・複合名詞などの標準用語が誤検出されることを抑える。
     """
     for field, value in fields:
         if not value:
             continue
-        if _colloquial_check.first_hit(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS):
+        hits = _colloquial_check.scan_text(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS)
+        if hits:
+            line_no, column, *_ = hits[0]
             return _llm_notice(
                 f"colloquial Japanese expressions detected in {tool_name}.{field}."
+                f" First match: line {line_no}, column {column}. Matches: {len(hits)}."
                 f" Rewrite the whole sentence containing the detected expression"
                 f" using formal written-style expressions"
                 f" (standard technical terminology, dictionary form,"
@@ -1681,6 +1687,8 @@ _FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:fe
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
     _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES
 )
+# 公式資料照会専用で委譲契約が関与しない種別は、委譲未起動ゲートから除外する。
+_DELEGATION_GATE_EXEMPT_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude-code-guide"})
 _EXECUTE_REVIEW_TASK_PATH_FRAGMENTS: tuple[str, ...] = (
     "implementation-plan-review-task.md",
     "implementation-independent-review-task.md",
@@ -2058,9 +2066,9 @@ def _check_bash_bulk_stage_with_unedited_files(
 # --- Bash: uv run python <path>形式の起動ブロック ---
 
 # 副作用の理由:
-# cwdのpyproject.tomlが[tool.uv]のみで[project]セクションを持たない場合、
-# `uv run python <path>`はcwdをプロジェクト解決対象として扱い`.venv`と
-# `uv.lock`を生成する（uvの仕様）。
+# cwd又はその祖先で最初に見つかるpyproject.tomlが[tool.uv]のみで
+# [project]セクションを持たない場合、`uv run python <path>`は当該ディレクトリを
+# プロジェクト解決対象として扱い`.venv`と`uv.lock`を生成する（uvの仕様）。
 # エージェントがPEP 723スクリプトを誤って`uv run python <path>`形式で起動する
 # 事故を予防的にblockする。
 #
@@ -2069,8 +2077,9 @@ def _check_bash_bulk_stage_with_unedited_files(
 # 1. `uv run`と`python`の間（uv run自身のオプション位置）に`--script`または
 #    `--no-project`が現れる場合は許容する（cwdの依存解決を行わないため副作用なし）。
 # 2. cwd変更経路（Bashの`cd` / `pushd`先行・`uv --directory` / `uv --project`）
-#    が無く、cwdのpyproject.tomlが[project]セクションを持つPythonプロジェクト
-#    の場合は許容する（`uv run python -c '...'`等の正規利用を妨げない）。
+#    が無く、cwd又はその祖先で最初に見つかるpyproject.tomlが[project]
+#    セクションを持つPythonプロジェクトの場合は許容する
+#    （`uv run python -c '...'`等の正規利用を妨げない）。
 # 3. それ以外はblockする。
 #
 # cwd変更経路を伴う場合はpayload上のcwdを判定根拠に採用できないため、Python
@@ -2088,7 +2097,8 @@ _UV_RUN_PYTHON_BLOCK_MSG = (
     " Alternatives:"
     " (1) for a PEP 723 script, use `uv run --script <path>` or invoke the executable shebang directly;"
     " (2) to skip cwd project resolution, use `uv run --no-project python ...`;"
-    " (3) inside a Python project, run it from that directory as a separate command."
+    " (3) as a separate command, run it from a directory where the first `pyproject.toml`"
+    " found in the cwd or its ancestors has a `[project]` section."
     " A `cd` in the same command line does not help: this check does not resolve the effective"
     " working directory after an in-line `cd` and blocks such invocations on the safe side."
 )
@@ -2117,7 +2127,7 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
         if info is not None:
             has_script_or_no_project, directory_or_project_overridden = info
             if not has_script_or_no_project and (
-                directory_or_project_overridden or cwd_changed_before or not _cwd_is_python_project(cwd)
+                directory_or_project_overridden or cwd_changed_before or not _cwd_in_python_project(cwd)
             ):
                 print(_llm_notice(_UV_RUN_PYTHON_BLOCK_MSG), file=sys.stderr)
                 return True
@@ -2180,18 +2190,25 @@ def _parse_uv_run_python(tokens: list[str]) -> tuple[bool, bool] | None:
     return has_script_or_no_project, directory_or_project_overridden
 
 
-def _cwd_is_python_project(cwd: str) -> bool:
-    """cwdの`pyproject.toml`が`[project]`セクションを持つ場合に真を返す。
+def _cwd_in_python_project(cwd: str) -> bool:
+    """cwdから祖先方向へ最初に見つかる`pyproject.toml`が`[project]`を持つ場合に真を返す。
 
-    `pyproject.toml`不在・読み込み失敗・`[project]`セクション欠如の場合は偽を返す。
+    uvのプロジェクト解決と同じ探索順序に合わせる。直近の`pyproject.toml`が`[project]`を
+    欠く場合、uvは当該ディレクトリへ`.venv`と`uv.lock`を生成するため偽を返す。
+    祖先まで見つからない場合と読み込みに失敗した場合も偽を返す。
     """
     if not cwd:
         return False
-    try:
-        text = (pathlib.Path(cwd) / "pyproject.toml").read_text(encoding="utf-8", errors="replace")
-    except (OSError, ValueError):
-        return False
-    return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
+    cwd_path = pathlib.Path(cwd)
+    for directory in (cwd_path, *cwd_path.parents):
+        try:
+            text = (directory / "pyproject.toml").read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return False
+        return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
+    return False
 
 
 # --- Bash: 実行位置のトークン列抽出（助言用検査の共通入口）---
