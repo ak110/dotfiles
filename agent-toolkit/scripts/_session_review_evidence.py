@@ -34,6 +34,67 @@ _FALLBACK_TEXT = (
     "transcript_pathを読み取れないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
 )
+_METADATA_KEYS = frozenset(
+    {
+        # 識別子・署名
+        "uuid",
+        "parentUuid",
+        "leafUuid",
+        "sessionId",
+        "session_id",
+        "bridgeSessionId",
+        "requestId",
+        "promptId",
+        "messageId",
+        "id",
+        "call_id",
+        "tool_use_id",
+        "toolUseID",
+        "sourceToolUseID",
+        "sourceToolAssistantUUID",
+        "agentId",
+        "taskId",
+        "ownerAccountUuid",
+        "ownerOrganizationUuid",
+        "signature",
+        # 時刻
+        "timestamp",
+        "backupTime",
+        # 形式・区分の名称
+        "type",
+        "subtype",
+        "kind",
+        "role",
+        "status",
+        "stop_reason",
+        "stopReason",
+        "sessionKind",
+        "hookEvent",
+        "hookEventName",
+        "permissionMode",
+        "mode",
+        "userType",
+        "entrypoint",
+        "promptSource",
+        # 実行環境・モデル設定
+        "version",
+        "model",
+        "resolvedModel",
+        "effort",
+        "service_tier",
+        "inference_geo",
+        "speed",
+        "cwd",
+        "originalCwd",
+        "preEnterOriginalCwd",
+        "gitBranch",
+        "originalBranch",
+        "originalHeadCommit",
+        "worktreePath",
+        "worktreeName",
+        "worktreeBranch",
+    }
+)
 _Runtime = Literal["claude", "codex"]
 _MANUAL_REVIEW_COMMANDS: dict[_Runtime, tuple[str, ...]] = {
     "claude": ("/session-review", "/agent-toolkit:session-review"),
@@ -83,22 +144,17 @@ class _DetailBudget:
         return normalized[:room] + _OMISSION_MARK
 
 
-def _text_blocks(content: Any, *, include_tool_results: bool = False) -> list[str]:
+def _text_blocks(content: Any) -> list[str]:
     """Message contentから可視テキストを取得する。"""
     if isinstance(content, str):
         return [content]
     if not isinstance(content, list):
         return []
-    result: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        block_type = block.get("type")
-        if block_type == "text" and isinstance(block.get("text"), str):
-            result.append(block["text"])
-        elif include_tool_results and block_type == "tool_result":
-            result.extend(_text_blocks(block.get("content"), include_tool_results=False))
-    return result
+    return [
+        block["text"]
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
+    ]
 
 
 def _codex_text_blocks(content: Any) -> list[str]:
@@ -615,18 +671,13 @@ def has_session_review_started(raw_path: str | None) -> bool:
 def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
     """警告に一致した行を行番号付きで返す。一致なしはその事実を返す。
 
-    走査対象を`--grep`と同じ本文（可視テキストとツール実行結果の生出力）へ揃える。
+    走査対象は`--grep`と同じく`_entry_texts`が集めるエントリ内の全本文とする。
     エントリの生JSON行を対象にすると、識別子や構造キーへの一致で出力が肥大し、
     advisorの照会1回が出力退避を伴う規模になる。
     """
     events: list[dict[str, Any]] = []
     for record in records:
-        matched_lines = [
-            line_text
-            for text in _entry_texts(record.entry)
-            for line_text in text.splitlines()
-            if _WARNING_PATTERN.search(line_text)
-        ]
+        matched_lines = _matched_lines(record.entry, _WARNING_PATTERN)
         if not matched_lines:
             continue
         hint = _tool_hint(record.entry)
@@ -639,17 +690,13 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
 
 
 def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[str, Any]]:
-    """可視テキストとツール実行結果の一致行と、一致したエントリ数の要約を返す。"""
+    """エントリ内の全本文から一致行を集め、一致したエントリ数の要約を末尾へ付ける。"""
     events: list[dict[str, Any]] = []
     matched = 0
     for record in records:
-        hit = False
-        for text in _entry_texts(record.entry):
-            for line_text in text.splitlines():
-                if pattern.search(line_text):
-                    events.append({"kind": "match", "line": record.line, "text": _clip(line_text)})
-                    hit = True
-        matched += 1 if hit else 0
+        matched_lines = _matched_lines(record.entry, pattern)
+        events.extend({"kind": "match", "line": record.line, "text": _clip(line_text)} for line_text in matched_lines)
+        matched += 1 if matched_lines else 0
     events.append({"kind": "summary", "count": matched})
     return events
 
@@ -714,53 +761,51 @@ def _clip_structure(value: Any, budget: _DetailBudget) -> Any:
     return value
 
 
-def _tool_use_result_texts(entry: dict[str, Any], visible_texts: list[str]) -> list[str]:
-    """ツール実行結果の生出力のうち、可視テキストに現れない本文だけを取得する。
-
-    大きなBash出力は本文が外部ファイルへ退避され、可視テキストには退避通知だけが残る。
-    退避された本文は`toolUseResult`側にしか無いため、検索対象から欠落させない。
-    通常の出力は可視テキストと同一になるため、一致行の重複を防ぐ目的で除外する。
-    """
-    result = entry.get("toolUseResult")
-    if not isinstance(result, dict):
-        return []
-    visible = "\n".join(visible_texts)
-    return [
-        value
-        for key in ("stdout", "stderr")
-        if isinstance(value := result.get(key), str) and value.strip() and value.strip() not in visible
-    ]
-
-
 def _entry_texts(entry: dict[str, Any]) -> list[str]:
-    """runtimeを問わず、1エントリの検索対象テキストを取得する。
+    """runtimeを問わず、1エントリの検索対象テキストを出現順に取得する。
 
-    Claude Codeではtool_result本文・tool_use入力とツール実行結果の生出力、Codexではメッセージ本文と
-    コマンド出力・関数呼び出しのJSON本文を対象とする。
+    エントリの構造を再帰的にたどり、文字列値をすべて集める。
+    メッセージ本文・tool_use入力・tool_result本文・ツール実行結果の生出力に加え、
+    hook通知が入る`attachment`配下のような未知のフィールドも対象となる。
+    既知フィールドを列挙する方式は、通知の格納先が増えるたびに検索対象から漏れるため採らない。
+    `_METADATA_KEYS`の値は本文を持たない管理用の値（識別子・時刻・形式名・実行環境）であり、
+    走査しても一致を増やすだけとなるため除外する。
     """
-    message = entry.get("message")
-    if isinstance(message, dict) or isinstance(entry.get("toolUseResult"), dict):
-        content = message.get("content") if isinstance(message, dict) else None
-        texts = _text_blocks(content, include_tool_results=True)
-        if isinstance(content, list):
-            texts.extend(
-                json.dumps(block.get("input") or {}, ensure_ascii=False)
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "tool_use"
-            )
-        texts.extend(_tool_use_result_texts(entry, texts))
-        return [text for text in texts if text]
+    texts: list[str] = []
+    _collect_texts(entry, texts)
+    return texts
 
-    payload = entry.get("payload")
-    if not isinstance(payload, dict):
-        return []
-    texts = _codex_text_blocks(payload.get("content"))
-    texts.extend(value for key in ("message", "text", "arguments", "output") if isinstance(value := payload.get(key), str))
-    item = payload.get("item")
-    if isinstance(item, dict):
-        texts.append(_codex_command_output(item))
-        texts.append(json.dumps(item.get("command"), ensure_ascii=False) if item.get("command") else "")
-    return [text for text in texts if text]
+
+def _collect_texts(value: Any, texts: list[str]) -> None:
+    """構造をたどり、管理用フィールドを除く文字列値を`texts`へ追加する。"""
+    if isinstance(value, str):
+        if value.strip():
+            texts.append(value)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key not in _METADATA_KEYS:
+                _collect_texts(item, texts)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_texts(item, texts)
+
+
+def _matched_lines(entry: dict[str, Any], pattern: re.Pattern[str]) -> list[str]:
+    """エントリ内で一致した行を、同一本文の重複を除いて出現順に返す。
+
+    退避された実行結果と可視テキストのように、同一の本文が複数のフィールドへ重複して格納される場合がある。
+    そのため、本文が一致する行は最初の1件だけを照会結果とする。
+    """
+    seen: set[str] = set()
+    matched: list[str] = []
+    for text in _entry_texts(entry):
+        for line_text in text.splitlines():
+            stripped = line_text.strip()
+            if not pattern.search(line_text) or stripped in seen:
+                continue
+            seen.add(stripped)
+            matched.append(line_text)
+    return matched
 
 
 def _tool_hint(entry: dict[str, Any]) -> str | None:
@@ -811,12 +856,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warn",
         action="store_true",
-        help="本文（可視テキストとツール実行結果）のうち警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
+        help="エントリ内の全本文（hook通知を含む。管理用フィールドは除く）のうち"
+        "警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
     )
     parser.add_argument(
         "--grep",
         metavar="REGEX",
-        help="本文（可視テキストとツール実行結果）を正規表現で検索し、一致行と一致エントリ数を照会する。",
+        help="エントリ内の全本文（hook通知を含む。管理用フィールドは除く）を正規表現で検索し、"
+        "一致行と一致エントリ数を照会する。",
     )
     parser.add_argument(
         "--detail",

@@ -1095,19 +1095,76 @@ def test_warn_mode_reports_matching_entries_with_line_and_tool(
     assert events[0]["text"] == "warning: 警告が出た"
 
 
-def test_warn_mode_ignores_matches_outside_visible_text(
+def test_warn_mode_ignores_identifier_only_management_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """可視テキスト外の構造キー・メタ情報への一致を警告として報告しない。"""
+    """識別子・時刻・形式名・実行環境といった管理用の値への一致を警告として報告しない。"""
     transcript = _write_transcript(
         tmp_path,
-        [{"type": "user", "warningState": "warn", "message": {"role": "user", "content": "依頼"}}],
+        [
+            {
+                "type": "warning",
+                "uuid": "warn-0001",
+                "sessionId": "warning-session",
+                "timestamp": "2026-08-18T00:00:00.000Z",
+                "cwd": "/tmp/warn",
+                "message": {"role": "user", "content": "依頼"},
+            }
+        ],
     )
 
     assert evidence.main([str(transcript), "--warn"]) == 0
 
     assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+def test_query_modes_search_hook_notice_stored_under_attachment(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """hook通知のようにattachment配下へ格納された警告行を`--warn`・`--grep`の双方で照会する。
+
+    走査対象は既知フィールドの列挙ではなくエントリ内の全本文であり、
+    hook通知の格納先（実行結果のJSON・追加コンテキストの配列）を問わず一致する。
+    """
+    notice = "[auto-generated: agent-toolkit/pretooluse][warn] 検証コマンドの出力を切り詰めている"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "attachment",
+                "uuid": "hook-success",
+                "attachment": {
+                    "type": "hook_success",
+                    "hookName": "PreToolUse:Bash",
+                    "stdout": json.dumps({"hookSpecificOutput": {"additionalContext": notice}}, ensure_ascii=False),
+                    "stderr": "",
+                    "exitCode": 0,
+                },
+            },
+            {
+                "type": "attachment",
+                "uuid": "hook-context",
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "content": [notice],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    warnings = _read_jsonl(capsys)
+    assert [event["line"] for event in warnings] == [1, 2]
+    assert notice in warnings[0]["text"]
+    assert warnings[1]["text"] == notice
+
+    assert evidence.main([str(transcript), "--grep", "切り詰めている"]) == 0
+    matches = _read_jsonl(capsys)
+    assert [event["line"] for event in matches[:2]] == [1, 2]
+    assert matches[-1] == {"kind": "summary", "count": 2}
 
 
 def test_warn_mode_reports_matches_found_only_in_tool_use_result(
