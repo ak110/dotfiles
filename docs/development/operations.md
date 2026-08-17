@@ -41,6 +41,23 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 `--skip-pull`でログイン時のリポジトリアクセスを避け、0件時は出力なしで終了する。
 実行条件は、対話シェルかつ`atk`コマンド存在（`command -v atk`）とする。
 
+## Claude Code入力待ちの通知ベル
+
+Linuxでは、Claude Codeの入力待ち時に端末ベルを送出するフックを
+`share/claude_settings_json_managed.posix.json`で配布する。
+tmux内では`monitor-bell`（既定有効）がwindowへベルフラグを設定し、
+catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベルアイコンが表示される。
+
+- フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないため、JSON出力の
+  `terminalSequence`フィールドでBELを返し、Claude Code自身の端末書き込み経路で送出させる
+  （公式仕様でtmux内動作が明記されている。対話セッションで画面表示中のみ送出される）
+- 質問（AskUserQuestion）は`PreToolUse`のツール名matcherで表示と同時に確定的に鳴らす。
+  許可待ち・アイドル等は`Notification`の入力待ち系5種別（`permission_prompt`・`idle_prompt`・
+  `elicitation_dialog`・`elicitation_url_dialog`・`agent_needs_input`）で鳴らす
+  （許可待ちは約6秒後、アイドルは応答終了約60秒後に発火する）。
+  AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationに依存させない
+- Windowsはtmux運用外のため対象外とする
+
 ## mise latestの非ログイン再評価
 
 dotfilesリポジトリを対象とする`atk mq process-loop`は、miseの`latest`指定ツールを非ログイン経路で再評価する。

@@ -11,6 +11,26 @@
             "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf %s '{\"terminalSequence\":\"\\u0007\"}'"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf %s '{\"terminalSequence\":\"\\u0007\"}'"
+          }
+        ]
       }
     ],
     "PostToolUse": [
