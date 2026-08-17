@@ -224,6 +224,12 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust/claude-statusline
+      # miseはrustをstableチャンネルへ導入してcomponentsをそこへ適用する一方、
+      # RUSTUP_TOOLCHAINへはlockfileのバージョン（例: 1.97.1）を設定する。
+      # 両者は別のtoolchain識別子として解決されるため、バージョン側にrustfmt・clippyが無く
+      # `cargo fmt`が'cargo-fmt' is not installedで失敗する。実効toolchainへ明示的に導入する。
+      - name: rustup component add rustfmt clippy
+        run: rustup component add rustfmt clippy
       - name: cargo fmt --check
         run: cargo fmt --check
       - name: cargo clippy
