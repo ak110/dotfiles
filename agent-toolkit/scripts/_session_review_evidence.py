@@ -25,6 +25,7 @@ from typing import Any, Literal, NamedTuple
 
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
+_OMISSION_MARK = "…[省略]"
 _WARNING_PATTERN = re.compile("警告|warn", re.IGNORECASE)
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
@@ -53,7 +54,28 @@ def _clip(text: str, limit: int = _MAX_TEXT_LENGTH) -> str:
     normalized = text.strip()
     if len(normalized) <= limit:
         return normalized
-    return normalized[:limit] + "…[省略]"
+    return normalized[:limit] + _OMISSION_MARK
+
+
+class _DetailBudget:
+    """1エントリの詳細出力が共有する残り文字数。
+
+    詳細は`--detail`の指定行ごとに複数の文字列へ分かれるため、上限を文字列単位で適用すると
+    1エントリの出力量が指定上限を超える。残り予算を出現順に配分して合計を上限内へ収める。
+    """
+
+    def __init__(self, limit: int) -> None:
+        self.remaining = limit
+
+    def clip(self, text: str) -> str:
+        """残り予算の範囲で本文を制限し、消費した分を予算から差し引く。"""
+        normalized = text.strip()
+        if len(normalized) <= self.remaining:
+            self.remaining -= len(normalized)
+            return normalized
+        room = self.remaining - len(_OMISSION_MARK)
+        self.remaining = 0
+        return normalized[:room] + _OMISSION_MARK if room > 0 else ""
 
 
 def _text_blocks(content: Any, *, include_tool_results: bool = False) -> list[str]:
@@ -586,10 +608,11 @@ def has_session_review_started(raw_path: str | None) -> bool:
 
 
 def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
-    """警告に一致した可視テキスト行を行番号付きで返す。一致なしはその事実を返す。
+    """警告に一致した行を行番号付きで返す。一致なしはその事実を返す。
 
-    走査対象を`--grep`と同じ可視テキストへ揃える。エントリの生JSON行を対象にすると、
-    識別子や構造キーへの一致で出力が肥大し、advisorの照会1回が出力退避を伴う規模になる。
+    走査対象を`--grep`と同じ本文（可視テキストとツール実行結果の生出力）へ揃える。
+    エントリの生JSON行を対象にすると、識別子や構造キーへの一致で出力が肥大し、
+    advisorの照会1回が出力退避を伴う規模になる。
     """
     events: list[dict[str, Any]] = []
     for record in records:
@@ -611,7 +634,7 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
 
 
 def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[str, Any]]:
-    """可視テキストの一致行と、一致したエントリ数の要約を返す。"""
+    """可視テキストとツール実行結果の一致行と、一致したエントリ数の要約を返す。"""
     events: list[dict[str, Any]] = []
     matched = 0
     for record in records:
@@ -639,7 +662,11 @@ def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dic
 
 
 def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。"""
+    """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。
+
+    クリップの上限はエントリ全体で共有し、ブロックの出現順に予算を配分する。
+    """
+    budget = _DetailBudget(_MAX_DETAIL_LENGTH)
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     events: list[dict[str, Any]] = []
@@ -653,7 +680,7 @@ def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any
                         "kind": "detail",
                         "line": line,
                         "name": str(block.get("name", "")),
-                        "input": _clip_structure(block.get("input")),
+                        "input": _clip_structure(block.get("input"), budget),
                     }
                 )
             elif block.get("type") == "tool_result":
@@ -663,36 +690,52 @@ def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any
                         "kind": "detail",
                         "line": line,
                         "tool": str(block.get("tool_use_id", "")),
-                        "text": _clip(body, _MAX_DETAIL_LENGTH),
+                        "text": budget.clip(body),
                     }
                 )
     if events:
         return events
-    return [
-        {"kind": "detail", "line": line, "text": _clip(json.dumps(entry, ensure_ascii=False, indent=2), _MAX_DETAIL_LENGTH)}
-    ]
+    return [{"kind": "detail", "line": line, "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2))}]
 
 
-def _clip_structure(value: Any) -> Any:
-    """入力の構造を保ったまま、文字列だけを詳細用の上限で制限する。"""
+def _clip_structure(value: Any, budget: _DetailBudget) -> Any:
+    """入力の構造を保ったまま、文字列だけをエントリ共有の予算で制限する。"""
     if isinstance(value, str):
-        return _clip(value, _MAX_DETAIL_LENGTH)
+        return budget.clip(value)
     if isinstance(value, dict):
-        return {key: _clip_structure(item) for key, item in value.items()}
+        return {key: _clip_structure(item, budget) for key, item in value.items()}
     if isinstance(value, list):
-        return [_clip_structure(item) for item in value]
+        return [_clip_structure(item, budget) for item in value]
     return value
+
+
+def _tool_use_result_texts(entry: dict[str, Any], visible_texts: list[str]) -> list[str]:
+    """ツール実行結果の生出力のうち、可視テキストに現れない本文だけを取得する。
+
+    大きなBash出力は本文が外部ファイルへ退避され、可視テキストには退避通知だけが残る。
+    退避された本文は`toolUseResult`側にしか無いため、検索対象から欠落させない。
+    通常の出力は可視テキストと同一になるため、一致行の重複を防ぐ目的で除外する。
+    """
+    result = entry.get("toolUseResult")
+    if not isinstance(result, dict):
+        return []
+    visible = "\n".join(visible_texts)
+    return [
+        value
+        for key in ("stdout", "stderr")
+        if isinstance(value := result.get(key), str) and value.strip() and value.strip() not in visible
+    ]
 
 
 def _entry_texts(entry: dict[str, Any]) -> list[str]:
     """runtimeを問わず、1エントリの検索対象テキストを取得する。
 
-    Claude Codeではtool_result本文とtool_use入力、Codexではメッセージ本文と
+    Claude Codeではtool_result本文・tool_use入力とツール実行結果の生出力、Codexではメッセージ本文と
     コマンド出力・関数呼び出しのJSON本文を対象とする。
     """
     message = entry.get("message")
-    if isinstance(message, dict):
-        content = message.get("content")
+    if isinstance(message, dict) or isinstance(entry.get("toolUseResult"), dict):
+        content = message.get("content") if isinstance(message, dict) else None
         texts = _text_blocks(content, include_tool_results=True)
         if isinstance(content, list):
             texts.extend(
@@ -700,6 +743,7 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
                 for block in content
                 if isinstance(block, dict) and block.get("type") == "tool_use"
             )
+        texts.extend(_tool_use_result_texts(entry, texts))
         return [text for text in texts if text]
 
     payload = entry.get("payload")
@@ -762,12 +806,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warn",
         action="store_true",
-        help="可視テキストのうち警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
+        help="本文（可視テキストとツール実行結果）のうち警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
     )
     parser.add_argument(
         "--grep",
         metavar="REGEX",
-        help="可視テキストを正規表現で検索し、一致行と一致エントリ数を照会する。",
+        help="本文（可視テキストとツール実行結果）を正規表現で検索し、一致行と一致エントリ数を照会する。",
     )
     parser.add_argument(
         "--detail",

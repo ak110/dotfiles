@@ -1110,6 +1110,83 @@ def test_warn_mode_ignores_matches_outside_visible_text(
     assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
 
 
+def test_warn_mode_reports_matches_found_only_in_tool_use_result(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """本文が外部退避されたBash出力の警告を、ツール実行結果側から照会する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 退避された警告", "stderr": "警告: 標準エラー"},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "<persisted-output>"}],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["text"] for event in events] == ["warning: 退避された警告", "警告: 標準エラー"]
+    assert [event["line"] for event in events] == [1, 1]
+
+
+def test_warn_mode_does_not_duplicate_tool_use_result_already_visible(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """可視テキストと同一の実行結果を重ねて照会しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 同じ警告\n"},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "warning: 同じ警告\n"}],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert [event["text"] for event in _read_jsonl(capsys)] == ["warning: 同じ警告"]
+
+
+def test_grep_mode_searches_tool_use_result_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--grep`も`--warn`と同じくツール実行結果の生出力を走査対象に含める。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "退避された本文の照合語"},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "<persisted-output>"}],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--grep", "照合語"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["match", "summary"]
+    assert events[0] == {"kind": "match", "line": 1, "text": "退避された本文の照合語"}
+    assert events[-1]["count"] == 1
+
+
 def test_warn_mode_reports_absence_when_no_entry_matches(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1160,6 +1237,39 @@ def test_detail_mode_keeps_tool_use_input_shapes_and_result_body(
     assert events[1]["input"] == {"file_path": "/tmp/x.md"}
     assert events[2]["input"] == {"prompt": "依頼本文"}
     assert events[3] == {"kind": "detail", "line": 2, "tool": "c1", "text": "結果本文"}
+
+
+def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数ブロックを持つエントリでも、詳細本文の合計を1エントリ分の上限内へ収める。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Agent", "id": "c1", "input": {"prompt": "あ" * 9000}},
+                        {"type": "tool_use", "name": "Agent", "id": "c2", "input": {"prompt": "い" * 9000}},
+                        {"type": "tool_result", "tool_use_id": "c3", "content": "う" * 9000},
+                    ],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--detail", "1"]) == 0
+
+    events = _read_jsonl(capsys)
+    total = sum(len(event["input"]["prompt"]) for event in events if "input" in event)
+    total += sum(len(event["text"]) for event in events if "text" in event)
+    assert total <= 8000
+    assert events[0]["input"]["prompt"].endswith("…[省略]")
+    assert events[1]["input"]["prompt"] == ""
+    assert events[2]["text"] == ""
 
 
 def test_detail_mode_formats_entry_without_tool_blocks(
