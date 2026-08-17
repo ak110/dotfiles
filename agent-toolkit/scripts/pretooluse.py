@@ -714,19 +714,37 @@ _SECRETS_PATTERN = re.compile(
 
 _SECRETS_EXEMPT_SUFFIXES: tuple[str, ...] = (".example", ".sample", "-example", "-sample")
 
+# `.env`・`.env.<接尾辞>`だけを対象とする案内付加用のパターン。
+# 遮断対象と戻り値は`_SECRETS_PATTERN`が決めるため、本パターンは案内の有無だけを分ける。
+_ENV_FILE_PATTERN = re.compile(r"(^|/)\.env(\..+)?$")
+
+# `.env`系の遮断時だけ添える代替経路の案内。
+# 対象を`.env`系へ限定するのは、鍵・証明書へBash経由の改変経路を案内しないためである。
+_ENV_FILE_GUIDANCE = (
+    " To make a git worktree runnable, copy the original with `cp` via Bash."
+    " To add, change, or remove a value for a quick check, append or edit lines via Bash"
+    " (`echo ... >>`, `sed -i`) instead of rewriting the file through an edit tool."
+)
+
 
 def _check_secrets(tool_name: str, file_path: str) -> bool:
-    """シークレット / 鍵ファイルへの直接編集を検出した場合に真を返す。"""
+    """シークレット / 鍵ファイルへの直接編集を検出した場合に真を返す。
+
+    遮断対象が`.env`・`.env.<接尾辞>`の場合だけ、遮断理由の直後へ
+    `cp`による複製とBash経由の値操作という代替経路の案内を添える。
+    鍵・証明書などの他の対象では遮断理由だけを表示する。
+    """
     if not file_path:
         return False
     normalized = file_path.replace("\\", "/")
     if normalized.endswith(_SECRETS_EXEMPT_SUFFIXES):
         return False
     if _SECRETS_PATTERN.search(normalized):
+        guidance = _ENV_FILE_GUIDANCE if _ENV_FILE_PATTERN.search(normalized) else ""
         print(
             _llm_notice(
                 f"blocked: direct edit of secret / key files is prohibited by {tool_name}."
-                f" Accidental edits can cause service outages or data leaks. Target: {file_path}"
+                f" Accidental edits can cause service outages or data leaks.{guidance} Target: {file_path}"
             ),
             file=sys.stderr,
         )

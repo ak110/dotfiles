@@ -24,6 +24,10 @@ _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
 _PLAN_MODE_REFERENCES = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references"
 
+# `.env`系の遮断メッセージだけへ添える案内の照合断片（`TestSecretsCheck`が使う）。
+_SECRETS_COPY_GUIDANCE = "copy the original with `cp` via Bash"
+_SECRETS_VALUE_EDIT_GUIDANCE = "append or edit lines via Bash"
+
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
@@ -302,23 +306,40 @@ class TestSecretsCheck:
     """シークレット/鍵ファイルの直接編集ブロック。"""
 
     @pytest.mark.parametrize(
-        "file_path",
+        ("file_path", "expects_guidance"),
         [
-            ".env",
-            ".env.local",
-            "app/.env.production",
-            ".encrypt_key",
-            ".secret_key",
-            "github_action",
-            "keys/github_action.pub",
-            "certs/server.pem",
-            "private.key",
+            (".env", True),
+            (".env.local", True),
+            ("app/.env.production", True),
+            (".encrypt_key", False),
+            (".secret_key", False),
+            ("github_action", False),
+            ("keys/github_action.pub", False),
+            ("certs/server.pem", False),
+            ("private.key", False),
         ],
     )
-    def test_blocked(self, file_path: str):
+    def test_blocked(self, file_path: str, expects_guidance: bool):
+        """遮断と、`.env`系だけへ代替経路を案内する契約を検証する。"""
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
         assert "secret" in result.stderr
+        assert (_SECRETS_COPY_GUIDANCE in result.stderr) is expects_guidance
+        assert (_SECRETS_VALUE_EDIT_GUIDANCE in result.stderr) is expects_guidance
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cp .env ../wt/.env",
+            "echo FLAG=x >> .env",
+            "sed -i /FLAG/d .env",
+            "sed -i s/A=1/A=2/ .env",
+        ],
+    )
+    def test_bash_env_operations_allowed(self, command: str):
+        """Bash経由の`.env`複製・追記・行削除・値の置換は遮断しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
 
     @pytest.mark.parametrize(
         "file_path",
