@@ -69,6 +69,41 @@ def _user_async_launched_entry(
     }
 
 
+def _assistant_agent_entry(tool_use_id: str, *, sidechain: bool = True) -> dict:
+    """Agent呼び出しを記録するassistantエントリを生成する。"""
+    return {
+        "type": "assistant",
+        "isSidechain": sidechain,
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": tool_use_id, "name": "Agent", "input": {}}],
+            "stop_reason": "tool_use",
+        },
+    }
+
+
+def _user_agent_launch_marker_entry(tool_use_id: str, *, status: str | None = None) -> dict:
+    """起動成功本文を持つsidechainのAgent結果を実記録形状で生成する。"""
+    tool_use_result: dict[str, object] = {"isAsync": True, "agentId": "agent-real-shape"}
+    if status is not None:
+        tool_use_result["status"] = status
+    return {
+        "type": "user",
+        "isSidechain": True,
+        "toolUseResult": tool_use_result,
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": "Async agent launched successfully"}],
+                }
+            ],
+        },
+    }
+
+
 def _user_background_bash_entry(tool_use_id: str, *, sidechain: bool = False) -> dict:
     """background Bash起動を記録するuserエントリを生成する。
 
@@ -90,6 +125,31 @@ def _user_background_bash_entry(tool_use_id: str, *, sidechain: bool = False) ->
                     "type": "tool_result",
                     "tool_use_id": tool_use_id,
                     "content": [{"type": "text", "text": "Background command launched"}],
+                }
+            ],
+        },
+    }
+
+
+def _user_task_stop_success_entry(stopped_task_id: str, *, tool_use_id: str = "toolu_stop") -> dict:
+    """`TaskStop`の停止成功結果を実記録形状で生成する。"""
+    return {
+        "type": "user",
+        "isSidechain": False,
+        "toolUseResult": {
+            "message": f"Successfully stopped task: {stopped_task_id} (sleep 60)",
+            "task_id": stopped_task_id,
+            "task_type": "local_bash",
+            "command": "sleep 60",
+        },
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": f"Successfully stopped task: {stopped_task_id}",
+                    "is_error": False,
                 }
             ],
         },
@@ -517,6 +577,35 @@ class TestIsPendingAsyncWork:
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is False
 
+    def test_task_stop_success_completes_background_bash(self, tmp_path: pathlib.Path) -> None:
+        """停止成功結果だけが残る場合は背景Bashを完了済みとして扱う。"""
+        entries = [
+            _user_background_bash_entry("toolu_bash1"),
+            _user_task_stop_success_entry("bash-task-x"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is False
+
+    def test_task_stop_for_other_id_keeps_background_bash_pending(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """別識別子の停止結果では対象の背景Bashを未完了のまま保つ。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        entries = [
+            _user_background_bash_entry("toolu_bash1"),
+            _user_task_stop_success_entry("bash-task-other"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "sess-stop-unresolved") is True
+        log_path = tmp_path / "claude-agent-toolkit-stop-sess-stop-unresolved.log"
+        assert "decision=task_notification_unresolved" in log_path.read_text(encoding="utf-8")
+
     def test_foreground_agent_is_not_tracked(self, tmp_path: pathlib.Path):
         """foreground Agent（`toolUseResult.status == "completed"`）は未完了扱いしない。"""
         entries = [
@@ -744,6 +833,28 @@ class TestHasPendingAgentLaunches:
             ],
         )
         assert has_pending_agent_launches(str(t), "sess-sendmessage") is True
+
+    def test_returns_true_for_sidechain_launch_marker_without_status(self, tmp_path: pathlib.Path) -> None:
+        """sidechainの起動成功本文から未消化の子エージェントを検出する。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _assistant_agent_entry("toolu_sidechain_pending"),
+                _user_agent_launch_marker_entry("toolu_sidechain_pending"),
+            ],
+        )
+        assert has_pending_agent_launches(str(t), "sess-sidechain-pending") is True
+
+    def test_sync_completed_sidechain_launch_marker_is_not_pending(self, tmp_path: pathlib.Path) -> None:
+        """同期完了statusを持つ起動成功本文は未消化へ計上しない。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _assistant_agent_entry("toolu_sidechain_completed"),
+                _user_agent_launch_marker_entry("toolu_sidechain_completed", status="completed"),
+            ],
+        )
+        assert has_pending_agent_launches(str(t), "sess-sidechain-completed") is False
 
 
 class TestDebugOutput:

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 import subagent_stop_advisor as advisor
+
+_REAL_HAS_PENDING_AGENT_LAUNCHES = advisor.has_pending_agent_launches
 
 
 def _minimal_report() -> str:
@@ -72,6 +75,50 @@ def test_registered_orchestrator_with_pending_child_is_blocked(
     monkeypatch.setattr(advisor, "has_pending_agent_launches", lambda *_args: True)
 
     assert advisor.main(json.dumps(_payload(_minimal_report()))) == 0
+
+    decision = json.loads(capsys.readouterr().out)
+    assert decision["decision"] == "block"
+    assert "Complete or receive every child agent before stopping" in decision["reason"]
+
+
+def test_real_sidechain_transcript_with_pending_child_is_blocked(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実記録形状のsidechain起動を実判定関数で検出して遮断する。"""
+    monkeypatch.setattr(advisor, "has_pending_agent_launches", _REAL_HAS_PENDING_AGENT_LAUNCHES)
+    transcript = tmp_path / "agent.jsonl"
+    entries = [
+        {
+            "type": "assistant",
+            "isSidechain": True,
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "toolu_child", "name": "Agent", "input": {}}],
+                "stop_reason": "tool_use",
+            },
+        },
+        {
+            "type": "user",
+            "isSidechain": True,
+            "toolUseResult": {"isAsync": True, "agentId": "child-agent"},
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_child",
+                        "content": [{"type": "text", "text": "Async agent launched successfully"}],
+                    }
+                ],
+            },
+        },
+    ]
+    transcript.write_text("".join(f"{json.dumps(entry, ensure_ascii=False)}\n" for entry in entries), encoding="utf-8")
+
+    payload = {**_payload(_minimal_report()), "agent_transcript_path": str(transcript)}
+    assert advisor.main(json.dumps(payload, ensure_ascii=False)) == 0
 
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"

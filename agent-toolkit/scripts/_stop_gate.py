@@ -5,7 +5,8 @@
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 
 background task起動の検出条件は次の4種を統合して扱う。
-- `toolUseResult.status == "async_launched"`（背景Agent初回起動）
+- `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
+  `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent初回起動）
 - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
 - `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつtext本文に
   `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
@@ -15,6 +16,12 @@ background task起動の検出条件は次の4種を統合して扱う。
 SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を持たないため、
 テキストマーカー判定でSendMessage呼び出し由来のtool_resultに限定して識別する。
 
+完了集合は`<task-notification>`による完了通知と、TaskStopの停止成功結果から構成する。
+停止成功は`toolUseResult`が文字列の`task_id`と`_TASK_STOP_SUCCESS_PREFIX`で始まる`message`を持ち、
+対応する`tool_result`の`is_error`が真でない場合に限る。
+走査範囲は呼び出し経路ごとに切り替え、メインのStop判定では非sidechainに限定し、
+SubagentStop判定ではsidechainを含める。
+
 `<task-notification>`要素に`<tool-use-id>`が含まれない通知形式では、
 `<task-id>`要素とagentId→tool_use_id集合マップ（`_collect_task_id_tool_use_ids`）による
 フォールバック解決を行う。両者で解決できない通知のうち、対応するassistant側`tool_use`の
@@ -23,9 +30,9 @@ SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を�
 通知形式変動による幽霊pendingの発生を検出可能にする。
 
 本モジュールへfail-closedのゲート判定関数を追加する場合は次の2点を守る。
-完了突合は複数キー経路のフォールバック解決とし、いずれの経路でも解決できない通知は
+完了突合は複数キー経路のフォールバック解決とし、いずれの経路でも解決できない通知又は停止結果は
 永続ログへ明示出力して未解決状態を可視化する（起動時に記録した全background taskが
-いずれかの完了通知形式で完了集合へ解決できることを不変条件として維持する）。
+完了通知又は停止成功結果のいずれかで完了集合へ解決できることを不変条件として維持する）。
 判定は起動集合の非空ではなく`launched - completed`のremainder非空で行う
 （起動集合の非空判定では完了通知の消化後も真を返し続け、以後の素の状態表明がすべてbypassされる）。
 
@@ -71,6 +78,14 @@ _TASK_ID_RE = re.compile(r"<task-id>([^<]+)</task-id>")
 # 同期SendMessage応答は本文言を含まないため、背景再開ケースのみ加算される。
 _SENDMESSAGE_BG_RESUME_MARKER = "resumed from transcript in the background"
 
+# Agent・Task起動結果の状態値と、statusを欠く実記録で起動成功を示す本文マーカー。
+_AGENT_ASYNC_LAUNCH_STATUS = "async_launched"
+_AGENT_SYNC_COMPLETION_STATUSES: frozenset[str] = frozenset({"completed", "teammate_spawned"})
+_AGENT_ASYNC_LAUNCH_MARKER = "Async agent launched successfully"
+
+# TaskStop成功時の`toolUseResult.message`先頭に現れる固有マーカー。
+_TASK_STOP_SUCCESS_PREFIX = "Successfully stopped task"
+
 # `AGENT_TOOLKIT_STOP_GATE_DEBUG`環境変数の真値集合。小文字一致で判定する。
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
@@ -85,14 +100,17 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
 
     後者はtranscript全体を走査して判定する。
     起動集合は非sidechainの`type=="user"`エントリのうち、次のいずれかを持つものから抽出する。
-    - `toolUseResult.status == "async_launched"`（背景Agent起動）
+    - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
+      `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
       text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
     - 非sidechainのMCP tool_useに対応するuser tool_result本文に`moved to the background as task`を含む
       （MCP背景タスク）
 
-    完了集合は後続エントリの`<task-notification>`要素から`<tool-use-id>`を抽出する。
+    完了集合は後続エントリの`<task-notification>`要素とTaskStopの停止成功結果から構成する。
+    停止成功結果は`toolUseResult.task_id`を背景Bashの`backgroundTaskId`対応表又は
+    agentId→tool_use_id集合マップで解決する。
     完了通知エントリは次の2形式が併存する。
     - 旧形式: 非sidechainの`type=="user"`エントリのtext content内に含まれる`<task-notification>`要素
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
@@ -100,7 +118,11 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     `<task-notification>`要素に`<tool-use-id>`が含まれない場合は`<task-id>`要素と
     agentId→tool_use_id集合マップによるフォールバック解決を試み、それでも解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
+    停止成功結果を同じ2経路で解決できない場合も同形式で常時ログへ明示出力する。
     起動集合から完了集合を差し引いて1件以上残れば「未完了background taskあり」と判断する。
+
+    本経路は非sidechainエントリだけを走査する。
+    SubagentStop経路の`has_pending_agent_launches`は同じ収集処理へsidechainを含む指定を渡す。
 
     transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
     `session_id`は常時ログ（`append_stop_log`）の宛先ファイル特定にのみ使う。
@@ -133,10 +155,12 @@ def has_pending_agent_launches(transcript_path: str, session_id: str) -> bool:
 
     背景Bash起動を除き、Agent起動とSendMessageによる再開を対象とする。
     背景Bashジョブの未消化は完了報告本文の検査を免除する根拠にしない。
+    SubagentStopが渡すサブエージェント自身の記録を扱うため、sidechainエントリも走査する。
     """
     launched, completed = _describe_pending_background_tasks(
         transcript_path,
         session_id,
+        include_sidechain=True,
         kinds=("agent", "sendmessage"),
     )
     return bool(launched - completed)
@@ -288,10 +312,15 @@ def _read_transcript_entries(transcript_path: str) -> list[dict]:
     return entries
 
 
-def _iter_assistant_blocks(entries: list[dict]) -> collections.abc.Iterator[dict]:
-    """非sidechain assistantエントリのcontent辞書を時系列で返す。"""
+def _entry_in_scan_scope(entry: dict, *, include_sidechain: bool) -> bool:
+    """エントリが呼び出し経路ごとの走査範囲に含まれる場合に真を返す。"""
+    return include_sidechain or entry.get("isSidechain") is not True
+
+
+def _iter_assistant_blocks(entries: list[dict], *, include_sidechain: bool = False) -> collections.abc.Iterator[dict]:
+    """走査範囲内のassistantエントリのcontent辞書を時系列で返す。"""
     for entry in entries:
-        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+        if entry.get("type") != "assistant" or not _entry_in_scan_scope(entry, include_sidechain=include_sidechain):
             continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -361,32 +390,41 @@ def _describe_pending_background_tasks(
     transcript_path: str,
     session_id: str | None = None,
     *,
+    include_sidechain: bool = False,
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
 ) -> tuple[set[str], set[str]]:
-    """transcriptを読み込み、背景タスクの起動集合と完了集合を返す。"""
-    return _describe_pending_background_entries(_read_transcript_entries(transcript_path), session_id, kinds=kinds)
+    """transcriptを読み込み、指定した走査範囲の背景タスク起動集合と完了集合を返す。"""
+    return _describe_pending_background_entries(
+        _read_transcript_entries(transcript_path),
+        session_id,
+        include_sidechain=include_sidechain,
+        kinds=kinds,
+    )
 
 
 def _describe_pending_background_entries(
     entries: list[dict],
     session_id: str | None = None,
     *,
+    include_sidechain: bool = False,
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
 ) -> tuple[set[str], set[str]]:
     r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
 
-    検出スコープは非sidechainエントリに限定する（`isSidechain`が真のエントリは除外）。
+    `include_sidechain`が偽の場合はメインのStop判定用に非sidechainエントリへ限定する。
+    真の場合はSubagentStop判定用にsidechainエントリも走査する。
     前景起動の`Agent`はメインターン内で同期完了するため対象外。
 
     起動の記録: 次のいずれかを持つuserエントリ。
-    - `toolUseResult.status == "async_launched"`（背景Agent起動）
+    - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
+      `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
        text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
     - 非sidechain assistantの`mcp__` tool_useに対応するuser tool_result本文が
       `moved to the background as task`を含む（MCP背景タスク）
 
-    完了の記録: 次の2形式から`tool_use_id`を抽出する。
+    完了通知の記録: 次の2形式から`tool_use_id`を抽出する。
     - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロックの
       `<task-notification>`要素の`<tool-use-id>(toolu_[\\w]+)</tool-use-id>`
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
@@ -396,6 +434,12 @@ def _describe_pending_background_entries(
     （`task_id_map`）で解決するフォールバック経路を共有ヘルパー
     `_resolve_task_notification_ids`経由で適用する。両者で解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
+
+    TaskStopの停止成功結果も完了集合へ加える。
+    `toolUseResult`が文字列の`task_id`と`_TASK_STOP_SUCCESS_PREFIX`で始まる`message`を持ち、
+    対応する`tool_result`の`is_error`が真でない場合に停止成功とする。
+    `task_id`は背景Bashの`backgroundTaskId`対応表と既存の`task_id_map`で解決し、
+    解決できない停止結果は通知と同じ`task_notification_unresolved`形式で常時ログへ出力する。
 
     起動集合から完了集合を差し引いて1件以上残れば未完了背景タスクありと判定する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
@@ -411,15 +455,24 @@ def _describe_pending_background_entries(
     """
     launched: set[str] = set()
     completed: set[str] = set()
-    sendmessage_ids = _collect_sendmessage_tool_use_ids(entries)
-    mcp_ids = _collect_mcp_tool_use_ids(entries)
-    mcp_background_tasks = _collect_mcp_background_task_id_tool_use_ids(entries, mcp_ids)
-    task_id_map = _collect_task_id_tool_use_ids(entries)
+    sendmessage_ids = _collect_sendmessage_tool_use_ids(entries, include_sidechain=include_sidechain)
+    agent_ids = _collect_agent_tool_use_ids(entries, include_sidechain=include_sidechain)
+    mcp_ids = _collect_mcp_tool_use_ids(entries, include_sidechain=include_sidechain)
+    mcp_background_tasks = _collect_mcp_background_task_id_tool_use_ids(
+        entries,
+        mcp_ids,
+        include_sidechain=include_sidechain,
+    )
+    task_id_map = _collect_task_id_tool_use_ids(entries, include_sidechain=include_sidechain)
+    background_task_id_map = _collect_background_task_id_tool_use_ids(
+        entries,
+        include_sidechain=include_sidechain,
+    )
     for task_id, tool_use_ids in mcp_background_tasks.items():
         task_id_map.setdefault(task_id, set()).update({task_id, *tool_use_ids})
-    monitor_task_ids = _collect_monitor_task_ids(entries)
+    monitor_task_ids = _collect_monitor_task_ids(entries, include_sidechain=include_sidechain)
     for entry in entries:
-        if entry.get("isSidechain"):
+        if not _entry_in_scan_scope(entry, include_sidechain=include_sidechain):
             continue
         entry_type = entry.get("type")
         if entry_type == "user":
@@ -427,9 +480,14 @@ def _describe_pending_background_entries(
             if not isinstance(message, dict):
                 continue
             tool_use_result = entry.get("toolUseResult")
-            if (
-                isinstance(tool_use_result, dict) and tool_use_result.get("status") == "async_launched" and "agent" in kinds
-            ) or (
+            agent_launch_id = (
+                _extract_agent_launch_id(message, tool_use_result, agent_ids)
+                if isinstance(tool_use_result, dict) and "agent" in kinds
+                else None
+            )
+            if agent_launch_id is not None:
+                launched.add(agent_launch_id)
+            elif (
                 isinstance(tool_use_result, dict)
                 and isinstance(tool_use_result.get("backgroundTaskId"), str)
                 and "bash" in kinds
@@ -441,6 +499,16 @@ def _describe_pending_background_entries(
                 resumed_id = _extract_sendmessage_bg_resume_id(message, sendmessage_ids)
                 if resumed_id is not None:
                     launched.add(resumed_id)
+            if isinstance(tool_use_result, dict):
+                completed.update(
+                    _extract_task_stop_ids(
+                        message,
+                        tool_use_result,
+                        background_task_id_map,
+                        task_id_map,
+                        session_id,
+                    )
+                )
             completed.update(
                 _extract_task_notification_ids(
                     message,
@@ -507,19 +575,25 @@ def _resolve_task_notification_ids(
         notification_task_ids = set(_TASK_ID_RE.findall(notification_text))
         if notification_task_ids and notification_task_ids <= monitor_task_ids:
             return resolved
-    if session_id is not None:
-        append_stop_log(
-            session_id,
-            "task_notification_unresolved",
-            {"notification": notification_text[:500]},
-        )
+    _log_unresolved_completion(session_id, notification_text)
     return resolved
 
 
-def _collect_sendmessage_tool_use_ids(entries: list[dict]) -> set[str]:
-    """transcript全行から非sidechain assistantのSendMessage tool_use idを集合として返す。"""
+def _log_unresolved_completion(session_id: str | None, detail: str) -> None:
+    """未解決の完了経路を既存の通知未解決ログ形式で記録する。"""
+    if session_id is None:
+        return
+    append_stop_log(
+        session_id,
+        "task_notification_unresolved",
+        {"notification": detail[:500]},
+    )
+
+
+def _collect_sendmessage_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
+    """走査範囲内のassistantエントリからSendMessage tool_use id集合を返す。"""
     ids: set[str] = set()
-    for block in _iter_assistant_blocks(entries):
+    for block in _iter_assistant_blocks(entries, include_sidechain=include_sidechain):
         if block.get("type") != "tool_use" or block.get("name") != "SendMessage":
             continue
         block_id = block.get("id")
@@ -528,10 +602,22 @@ def _collect_sendmessage_tool_use_ids(entries: list[dict]) -> set[str]:
     return ids
 
 
-def _collect_mcp_tool_use_ids(entries: list[dict]) -> set[str]:
-    """非sidechain assistantのMCP tool_use id集合を返す。"""
+def _collect_agent_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
+    """走査範囲内のassistantエントリからAgent・Task tool_use id集合を返す。"""
     ids: set[str] = set()
-    for block in _iter_assistant_blocks(entries):
+    for block in _iter_assistant_blocks(entries, include_sidechain=include_sidechain):
+        if block.get("type") != "tool_use" or block.get("name") not in {"Agent", "Task"}:
+            continue
+        block_id = block.get("id")
+        if isinstance(block_id, str):
+            ids.add(block_id)
+    return ids
+
+
+def _collect_mcp_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
+    """走査範囲内のassistantエントリからMCP tool_use id集合を返す。"""
+    ids: set[str] = set()
+    for block in _iter_assistant_blocks(entries, include_sidechain=include_sidechain):
         if block.get("type") != "tool_use":
             continue
         name = block.get("name")
@@ -541,11 +627,19 @@ def _collect_mcp_tool_use_ids(entries: list[dict]) -> set[str]:
     return ids
 
 
-def _collect_mcp_background_task_id_tool_use_ids(entries: list[dict], mcp_ids: set[str]) -> dict[str, set[str]]:
+def _collect_mcp_background_task_id_tool_use_ids(
+    entries: list[dict],
+    mcp_ids: set[str],
+    *,
+    include_sidechain: bool = False,
+) -> dict[str, set[str]]:
     """MCPタイムアウト通知の背景タスクIDと起動`tool_use` IDの対応を全`tool_result`から収集する。"""
     result: dict[str, set[str]] = {}
     for entry in entries:
-        if entry.get("type") != "user" or entry.get("isSidechain"):
+        if entry.get("type") != "user" or not _entry_in_scan_scope(
+            entry,
+            include_sidechain=include_sidechain,
+        ):
             continue
         message = entry.get("message")
         if not isinstance(message, dict):
@@ -566,7 +660,7 @@ def _collect_mcp_background_task_id_tool_use_ids(entries: list[dict], mcp_ids: s
     return result
 
 
-def _collect_task_id_tool_use_ids(entries: list[dict]) -> dict[str, set[str]]:
+def _collect_task_id_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> dict[str, set[str]]:
     """transcript全行のuserエントリから、agentId（task-id）→tool_use_id集合マップを構築する。
 
     起動を記録した`toolUseResult`に`agentId`（背景タスクの`task-id`）が含まれる場合、
@@ -575,7 +669,10 @@ def _collect_task_id_tool_use_ids(entries: list[dict]) -> dict[str, set[str]]:
     """
     result: dict[str, set[str]] = {}
     for entry in entries:
-        if entry.get("type") != "user" or entry.get("isSidechain"):
+        if entry.get("type") != "user" or not _entry_in_scan_scope(
+            entry,
+            include_sidechain=include_sidechain,
+        ):
             continue
         tool_use_result = entry.get("toolUseResult")
         if not isinstance(tool_use_result, dict):
@@ -593,7 +690,35 @@ def _collect_task_id_tool_use_ids(entries: list[dict]) -> dict[str, set[str]]:
     return result
 
 
-def _collect_monitor_task_ids(entries: list[dict]) -> set[str]:
+def _collect_background_task_id_tool_use_ids(
+    entries: list[dict],
+    *,
+    include_sidechain: bool = False,
+) -> dict[str, set[str]]:
+    """背景Bashの`backgroundTaskId`から起動`tool_use_id`への対応を返す。"""
+    result: dict[str, set[str]] = {}
+    for entry in entries:
+        if entry.get("type") != "user" or not _entry_in_scan_scope(
+            entry,
+            include_sidechain=include_sidechain,
+        ):
+            continue
+        tool_use_result = entry.get("toolUseResult")
+        if not isinstance(tool_use_result, dict):
+            continue
+        task_id = tool_use_result.get("backgroundTaskId")
+        if not isinstance(task_id, str) or not task_id:
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        tool_use_id = _extract_tool_result_id(message)
+        if tool_use_id is not None:
+            result.setdefault(task_id, set()).add(tool_use_id)
+    return result
+
+
+def _collect_monitor_task_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
     """transcript全行から、Monitorツール起動に一意に対応する`taskId`の集合を返す。
 
     `toolUseResult.taskId`キーはMonitor専用ではなく、他のツール
@@ -612,7 +737,7 @@ def _collect_monitor_task_ids(entries: list[dict]) -> set[str]:
     `_resolve_task_notification_ids`が当該通知を異常系ログから除外する判定に使う。
     """
     monitor_tool_use_ids: set[str] = set()
-    for block in _iter_assistant_blocks(entries):
+    for block in _iter_assistant_blocks(entries, include_sidechain=include_sidechain):
         if block.get("type") != "tool_use" or block.get("name") != "Monitor":
             continue
         block_id = block.get("id")
@@ -622,7 +747,10 @@ def _collect_monitor_task_ids(entries: list[dict]) -> set[str]:
     monitor_task_ids: set[str] = set()
     non_monitor_task_ids: set[str] = set()
     for entry in entries:
-        if entry.get("type") != "user" or entry.get("isSidechain"):
+        if entry.get("type") != "user" or not _entry_in_scan_scope(
+            entry,
+            include_sidechain=include_sidechain,
+        ):
             continue
         tool_use_result = entry.get("toolUseResult")
         if not isinstance(tool_use_result, dict):
@@ -639,6 +767,64 @@ def _collect_monitor_task_ids(entries: list[dict]) -> set[str]:
         else:
             non_monitor_task_ids.add(task_id)
     return monitor_task_ids - non_monitor_task_ids
+
+
+def _extract_task_stop_ids(
+    message: dict,
+    tool_use_result: dict,
+    background_task_id_map: dict[str, set[str]],
+    task_id_map: dict[str, set[str]],
+    session_id: str | None,
+) -> set[str]:
+    """TaskStop成功結果から完了した起動`tool_use_id`集合を解決する。"""
+    task_id = tool_use_result.get("task_id")
+    result_message = tool_use_result.get("message")
+    if not isinstance(task_id, str) or not task_id:
+        return set()
+    if not isinstance(result_message, str) or not result_message.startswith(_TASK_STOP_SUCCESS_PREFIX):
+        return set()
+    if not _message_has_non_error_tool_result(message):
+        return set()
+    resolved = set(background_task_id_map.get(task_id, set()))
+    resolved.update(task_id_map.get(task_id, set()))
+    if resolved:
+        return resolved
+    _log_unresolved_completion(session_id, result_message)
+    return resolved
+
+
+def _message_has_non_error_tool_result(message: dict) -> bool:
+    """messageが`is_error`真でないtool_resultを持つ場合に真を返す。"""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error") is not True
+        for block in content
+    )
+
+
+def _extract_agent_launch_id(message: dict, tool_use_result: dict, agent_ids: set[str]) -> str | None:
+    """Agent・Task結果が非同期起動を示す場合に`tool_use_id`を返す。"""
+    tool_use_id = _extract_tool_result_id(message)
+    if tool_use_id is None:
+        return None
+    status = tool_use_result.get("status")
+    if status == _AGENT_ASYNC_LAUNCH_STATUS:
+        return tool_use_id
+    if status in _AGENT_SYNC_COMPLETION_STATUSES or tool_use_id not in agent_ids:
+        return None
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_result":
+            continue
+        if block.get("tool_use_id") != tool_use_id:
+            continue
+        if any(_AGENT_ASYNC_LAUNCH_MARKER in text for text in _tool_result_text_blocks(block.get("content"))):
+            return tool_use_id
+    return None
 
 
 def _extract_sendmessage_bg_resume_id(message: dict, sendmessage_ids: set[str]) -> str | None:
