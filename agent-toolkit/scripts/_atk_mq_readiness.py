@@ -24,7 +24,7 @@ type RepairKind = Literal["frontmatter", "missing-plan-file"]
 
 @dataclasses.dataclass(frozen=True)
 class QueueEntry:
-    """readiness判定に必要なキュー項目の現行状態。"""
+    """着手可否判定に必要なキュー項目の現行状態。"""
 
     filename: str
     text: str
@@ -42,7 +42,7 @@ class QueueEntry:
 
 @dataclasses.dataclass(frozen=True)
 class ReadinessResult:
-    """対象リポジトリのactive項目に対するreadinessと修復診断。"""
+    """対象リポジトリの`active`項目に対する着手可否と修復診断。"""
 
     ready: tuple[str, ...] = ()
     blocked: tuple[str, ...] = ()
@@ -104,7 +104,7 @@ def _iter_entries(
     states: Iterable[str],
     filter_repo: str | None,
 ) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
-    """指定状態のエントリをreadiness判定用に列挙する。"""
+    """指定状態のエントリを着手可否判定用に列挙する。"""
     for state in states:
         state_dir = private_notes / state
         if not state_dir.exists():
@@ -152,7 +152,7 @@ def _load_queue_entries(
     states: tuple[str, ...],
     resolver_cache: dict[str, str | None] | None = None,
 ) -> tuple[QueueEntry, ...]:
-    """指定状態のfeedback・TBDをreadiness判定用表現へ変換する。"""
+    """指定状態のフィードバック・TBDを着手可否判定用表現へ変換する。"""
     return tuple(
         _queue_entry(path, entry_repo, text, entry_type, resolver_cache)
         for path, entry_repo, text, _state, entry_type in _iter_entries(private_notes, states, target_repo)
@@ -166,7 +166,7 @@ def _queue_entry(
     entry_type: str | None,
     resolver_cache: dict[str, str | None] | None = None,
 ) -> QueueEntry:
-    """1件のキュー項目をreadiness判定用表現へ変換する。"""
+    """1件のキュー項目を着手可否判定用表現へ変換する。"""
     parsed = parse_frontmatter(text)
     frontmatter_broken = parsed is None
     data = parsed[0] if parsed is not None else {}
@@ -308,7 +308,7 @@ def _legacy_dependency_is_satisfied(
     now: datetime.datetime,
     resolver_cache: dict[str, str | None],
 ) -> bool | None:
-    """legacy固有依存の成立状態を返し、通常のfilename依存ではNoneを返す。"""
+    """通常のファイル名依存では`None`を返す。"""
     parsed = parse_frontmatter(entry.text)
     if parsed is not None and "depends_on" in parsed[0]:
         return None
@@ -380,7 +380,7 @@ def calculate_readiness(
     *,
     now: datetime.datetime | None = None,
 ) -> ReadinessResult:
-    """active全件と参照された終端項目から対象リポジトリのreadinessを算出する。"""
+    """`active`全件と参照された終端項目から対象リポジトリの着手可否を算出する。"""
     if now is None:
         now = datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:

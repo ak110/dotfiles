@@ -1,7 +1,7 @@
 # 実行経路の選択
 
 委譲の起動直前に、実際に利用できる経路へ該当する節だけを読む。
-受信者固有の作業手順は本referenceへ置かない。
+受信者固有の作業手順は本文書へ置かない。
 
 ## 経路
 
@@ -23,11 +23,11 @@
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画authorを委譲する`feedbacks-planner` | Codex MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex MCP | Agentツール |
-| `execute_model` | 実装writerと統合後レビュー修正writer | writerを委譲する`plan-impl-executor` | Codex MCP | Agentツール |
-| `execute_review_model` | 実装後の二系統レビュー | reviewerを委譲する`plan-impl-executor` | Codex MCP | Agentツール |
-| `merge_model` | lane commitの適用、競合解消、履歴一本化、検証 | 統合writerを委譲する`process-feedbacks`の実行主体 | Codex MCP | Agentツール |
+| `execute_model` | 実装担当と統合後のレビュー修正の書込担当 | 書込担当を委譲する`plan-impl-executor` | Codex MCP | Agentツール |
+| `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex MCP | Agentツール |
+| `merge_model` | レーンのcommitの適用、競合解消、履歴一本化、検証 | 統合担当を委譲する`process-feedbacks`の実行主体 | Codex MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。
@@ -51,29 +51,29 @@
 
 次の基準を上から評価し、最初に該当した項を選ぶ。reasoning effortの既定値は`medium`とする。
 
-1. 設計判断を伴う実装とreviewは上位モデルを選ぶ
+1. 設計判断を伴う実装とレビューは上位モデルを選ぶ
 2. 内容が確定済みで低リスクな機械作業は軽量モデルとreasoning effort `max`を選ぶ
 3. その他は標準モデルを選ぶ
 
 モデルを明示する経路ではreasoning effortも併せて指定する。
 指定モデルを利用できない場合は、作業を成立させる利用可能なモデルへ切り替える。
-価格やquotaの固定比較ではなく、失敗時の再試行を含む総ライフサイクルコストで選ぶ。
+価格や利用枠の固定比較ではなく、失敗時の再試行を含む総ライフサイクルコストで選ぶ。
 前記の選択基準は努力目標とし、指定モデルを利用できないことだけで作業を停止しない。
 
 ## 読み取り専用
 
-reviewerと調査担当は対象成果物を読み取り専用とする。
-起動前後の`git status --short`と対象commitを比較し、書き込みがあれば結果を採用せず報告する。
+レビュー担当と調査担当は対象成果物を読み取り専用とする。
+レビュー担当と調査担当を起動した委譲元が、起動前後の`git status --short`と対象commitを比較し、書き込みがあれば結果を採用せず自身の呼び出し元へ報告する。
 再現証跡が必要な場合は、管理対象一時領域だけを書込可能にする。
 読み取り専用の担保に、実行環境のsandbox値による書込制限を用いない。
 
-## writerとworktree
+## 書込担当とworktree
 
-- 1つのworktreeへ同時に起動するwriterは1つだけとする
-- writer起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する
+- 1つのworktreeへ同時に起動する書込担当は1つだけとする
+- 書込担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない
-- reviewerはwriterの終端後に起動し、相互に独立したreviewerは別識別子で並列起動できる
+- レビュー担当は書込担当の終端後に起動し、相互に独立したレビュー担当は別識別子で並列起動できる
 - 作業用の複製（git worktree等）内でセッションを起動する場合は、調査・計画作成への着手前に
   `git fetch`後の分岐元との差分を双方向で確認し、分岐元が進んでいる場合は先に追随してから着手するよう
   起動文で指示する（努力目標）

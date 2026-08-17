@@ -7,7 +7,7 @@ uvは公式インストーラーを使用する。
 uvはbootstrap自身の実行基盤であるため、ルートのmise設定では管理しない。
 手動起動した`update-dotfiles`は、公式インストーラー版uvの自己更新を起動時に試行する。
 WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換できずに自己更新が失敗することがある。
-この場合もインストール済みのuvでdotfiles更新を続行し、処理の最後に失敗と次回の再試行を案内する。
+この場合も`update-dotfiles`はインストール済みのuvで更新を続行し、処理の最後に失敗と次回の再試行を案内する。
 `atk mq process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、
 次回の手動起動まで延期する。補助的なuv自己更新を理由として、dotfiles更新を停止させないためである。
 
@@ -15,10 +15,10 @@ WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換�
 mise bootstrap
 ```
 
-`mise bootstrap`はリポジトリ用ツールを導入し、`bootstrap`taskでPython依存、prek hook、
+`mise bootstrap`はリポジトリ用ツールを導入し、`bootstrap`タスクでPython依存、prek hook、
 コミットメッセージテンプレート、ローカルCLIを設定する。
 Python依存の同期では、Makefileから継承する`UV_FROZEN=1`を解除して`uv sync --locked`を実行する。
-`make setup`も同じtaskを呼ぶため、`uv.lock`が不整合な場合はどちらも失敗する。
+`make setup`も同じタスクを呼ぶため、`uv.lock`が不整合な場合はどちらも失敗する。
 
 適用内容だけを確認する場合は`mise bootstrap --dry-run`を使う。
 宣言済み状態との差分は`mise bootstrap status`で確認する。
@@ -69,7 +69,7 @@ uv sync --reinstall  # .venvを再構築する場合
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
   無効化する方針を採用する。あわせて`.github/workflows/audit.yaml`が`uv audit`を定期実行し、
   検出結果をSARIFでCode Scanningへ送る。Dependabot alertsの未解決分は
-  `atk mq process-loop`がfeedbackとして自動投入する（Code Scanning由来のアラートは
+  `atk mq process-loop`がフィードバックとして自動投入する（Code Scanning由来のアラートは
   当該自動投入の対象に含まない）。
   実測でDependabot alertsは有効である（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）。
   自動修正PRの作成は無効である（`gh api repos/ak110/dotfiles/automated-security-fixes`が

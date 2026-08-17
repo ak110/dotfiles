@@ -441,7 +441,7 @@ def extract(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
-    """transcriptのentry形式から手動構文を解釈するruntimeを返す。"""
+    """transcriptのエントリ形式から手動構文を解釈する実行系を返す。"""
     entry_types = {entry.get("type") for entry in entries}
     if entry_types & {"response_item", "event_msg"}:
         return "codex"

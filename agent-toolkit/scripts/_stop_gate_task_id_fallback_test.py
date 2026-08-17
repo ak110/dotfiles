@@ -169,7 +169,7 @@ class TestAttachmentTaskIdFallbackCompletion:
 
 
 class TestMcpBackgroundTaskCompletion:
-    """MCP timeout通知とtask IDだけの完了通知を突合する。"""
+    """MCPタイムアウト通知とタスクIDだけの完了通知を突合する。"""
 
     def test_pending_mcp_task_is_completed_by_task_id_notification(self, tmp_path: pathlib.Path) -> None:
         entries = [
@@ -250,7 +250,7 @@ class TestMcpBackgroundTaskCompletion:
         assert is_pending_async_work(str(transcript), "") is False
 
     def test_one_of_multiple_mcp_tasks_completed_leaves_other_pending(self, tmp_path: pathlib.Path) -> None:
-        """複数MCP背景化の一部だけが完了すると、未完了のtaskだけが残る。"""
+        """複数MCP背景化の一部だけが完了すると、未完了のタスクだけが残る。"""
         entries = [
             *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp_1"),
             *_mcp_background_timeout_entries("mcp-task-2", "toolu_mcp_2"),

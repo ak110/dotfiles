@@ -104,7 +104,7 @@ LinuxとmacOSでは相対シンボリックリンク、Windowsでは管理者権
 
 再起動案内は新versionを後続セッションへ反映するために表示される。
 互換リンクは既存セッションの旧実行先を保持するため、daemonを自動終了しない運用と併用する。
-旧version名と同名の通常entryがある場合は置換せず、台帳を保持したままインストーラーが失敗する。
+旧version名と同名の通常エントリがある場合は置換せず、台帳を保持したままインストーラーが失敗する。
 競合を解消して同じversionのインストーラーを再実行すると、台帳から互換リンクを復元できる。
 旧versionの除去は[Codexのstore実装](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs)に基づく。
 旧絶対パスを保持するセッションの事象は[Codex issue #25285](https://github.com/openai/codex/issues/25285)でも報告されている。
@@ -302,8 +302,8 @@ Codexの`SessionStart`・`PreCompact`・`PostCompact`は、対応するClaude Co
 - 変更対象と変更内容は`実装資料`の変更説明へ集約し、独立した対象ファイル一覧や関連検査を持たない
 - 計画レビューは欠落した事実と阻害される判断・検証・成果が対応する指摘だけを受理し、体裁や記述量を指摘理由にしない
 - 計画レビューでは、メインセッションが機械チェック・修正系と総合レビュー系へ直接委譲する
-- 計画実装では、`plan-impl-executor`がコミット単位ごとのwriterと2つの読み取り専用reviewerを管理し、
-  writerがcommit、呼び出し元がpushとCI確認を担当
+- 計画実装では、`plan-impl-executor`がコミット単位ごとの書込担当と2つの読み取り専用のレビュー担当を管理し、
+  書込担当がcommit、呼び出し元がpushとCI確認を担当
 
 このほか、メインエージェント応答に占める日本語文字の比率が閾値未満のときの警告、
 `agent-toolkit:delegation`未起動での委譲開始のブロック、`AskUserQuestion`への縮退誘発フレーズ混入のブロックを
@@ -343,7 +343,7 @@ Claude Codeで有効化する。
 ### 明示呼び出し専用のスキル
 
 - `agent-toolkit:session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
-  独立した読み取り専用advisorが恒久改善候補を評価する
+  独立した読み取り専用の`session-review-advisor`が恒久改善候補を評価する
 
 ## 更新方法
 

@@ -117,13 +117,13 @@ def run(
 
 
 def _database_pairs(codex_dir: pathlib.Path, shm_root: pathlib.Path) -> tuple[tuple[pathlib.Path, pathlib.Path], ...]:
-    """home側pathと旧機構が所有する共有メモリー側targetを対応付ける。"""
+    """ホームディレクトリ側のパスと、旧機構が所有する共有メモリー側の`target`を対応付ける。"""
     uid = os.getuid()
     return tuple((codex_dir / name, shm_root / f"codex-{uid}-{name}") for name in _DATABASE_NAMES)
 
 
 def _home_state(home_path: pathlib.Path, target_path: pathlib.Path) -> str:
-    """home側pathを管理link、regular、missing、管理対象外へ分類する。"""
+    """ホームディレクトリ側のパスを、管理対象のsymlink（`managed`）、`regular`、`missing`、管理対象外へ分類する。"""
     if home_path.is_symlink():
         return "managed" if home_path.readlink() == target_path else "unrelated"
     if home_path.is_file():
@@ -171,7 +171,7 @@ def _is_codex_process_value(value: str) -> bool:
 def _copy_to_temporary_files(
     restore_pairs: list[tuple[pathlib.Path, pathlib.Path]],
 ) -> dict[pathlib.Path, pathlib.Path]:
-    """全targetをhomeと同じディレクトリの所有者限定一時ファイルへコピーする。"""
+    """全`target`をホームディレクトリと同じディレクトリの所有者限定一時ファイルへコピーする。"""
     temporary_paths: dict[pathlib.Path, pathlib.Path] = {}
     try:
         for home_path, target_path in restore_pairs:
@@ -292,9 +292,9 @@ def _warn_conflict(
     logger.warning(
         log_format.format_status(
             "codex-logs",
-            "復元未完了: homeと共有メモリーの内容が一致しないため自動変更を停止。"
+            "復元未完了: ホームディレクトリと共有メモリーの内容が一致しないため自動変更を停止。"
             f"home=[{home_paths}] target=[{target_paths}] snapshot={snapshot}。"
-            "Codexを停止したままSQLiteのDB・WAL・SHMを一組として照合し、homeへ復旧する。"
+            "Codexを停止したままSQLiteのDB・WAL・SHMを一組として照合し、ホームディレクトリへ復旧する。"
             "復旧後に内容を検証し、共有メモリー側targetと競合snapshotを手動で回収する。"
             f"home directory={codex_dir}",
         )

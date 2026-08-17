@@ -21,7 +21,7 @@ class TestHomeShort:
     """`home_short()` のホームディレクトリ短縮処理。"""
 
     def test_inside_home(self, tmp_path: Path):
-        """home 配下のパスは `~/...` に短縮される。"""
+        """ホームディレクトリ配下のパスは `~/...` に短縮される。"""
         assert _log_format.home_short(tmp_path / ".config" / "x.toml", home=tmp_path) == "~/.config/x.toml"
 
     def test_home_itself(self, tmp_path: Path):
@@ -29,7 +29,7 @@ class TestHomeShort:
         assert _log_format.home_short(tmp_path, home=tmp_path) == "~"
 
     def test_outside_home(self, tmp_path: Path):
-        """home 配下でないパスはそのまま str()。"""
+        """ホームディレクトリ配下でないパスはそのまま`str()`で文字列化する。"""
         outside = tmp_path / "etc" / "config"
         assert _log_format.home_short(outside, home=tmp_path / "user") == str(outside)
 

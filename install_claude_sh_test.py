@@ -719,7 +719,7 @@ def test_update_fails_when_current_cache_is_missing(kind: str, tmp_path: pathlib
 
 @pytest.mark.parametrize("kind", _runners())
 def test_cache_compat_conflict_fails_without_replacing_entry(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """旧名に通常entryがある場合は上書きせず非0で終了する。"""
+    """旧名に通常エントリがある場合は上書きせず非0で終了する。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = tmp_path / "custom-codex"

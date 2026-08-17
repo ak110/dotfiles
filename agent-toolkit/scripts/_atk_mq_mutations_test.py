@@ -62,7 +62,7 @@ def test_add_empty_feedback_keeps_detailed_rejection(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実質空feedbackのCLI拒否案内に判定条件と対象先頭を含める。"""
+    """実質空フィードバックのCLI拒否案内に判定条件と対象先頭を含める。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -756,7 +756,7 @@ def test_convert_to_plan_rejects_tbd_repo_mismatch_and_self_dependency(
     plan = _write_convert_plan(tmp_path, "a" * 40)
     _disable_convert_git(monkeypatch)
     _write_convert_feedback(notes, "tbd.md", entry_type="tbd")
-    with pytest.raises(mutations.WebInputError, match="feedbackだけ"):
+    with pytest.raises(mutations.WebInputError, match="フィードバックだけ"):
         mutations.convert_entry_to_plan(notes, filename="tbd.md", plan_file=str(plan))
 
     _write_convert_feedback(notes, "feedback.md")
@@ -780,7 +780,7 @@ def test_set_dependencies_updates_normal_feedback_without_converting_plan(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """通常feedbackの型と本文を保ち、依存だけを正規化して更新する。"""
+    """通常フィードバックの型と本文を保ち、依存だけを正規化して更新する。"""
     notes = _setup_notes(tmp_path)
     path = _write_convert_feedback(
         notes,
@@ -1017,7 +1017,7 @@ def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """複数feedbackへ同じUTC期限を設定し、再開時に期限を除去する。"""
+    """複数フィードバックへ同じUTC期限を設定し、再開時に期限を除去する。"""
     notes = _setup_notes(tmp_path)
     first = _write_feedback_file(notes, "first.md")
     second = _write_feedback_file(notes, "second.md")
@@ -1068,7 +1068,7 @@ def test_cooldown_return_rejects_tbd_mixture_without_changes(
     original_feedback = feedback.read_text(encoding="utf-8")
     original_tbd = tbd_path.read_text(encoding="utf-8")
 
-    with pytest.raises(mutations.WebInputError, match="feedback専用"):
+    with pytest.raises(mutations.WebInputError, match="フィードバック専用"):
         mutations.transition_entries(
             notes,
             action="return-to-inbox",
@@ -1093,7 +1093,7 @@ def test_cooldown_return_rejects_tbd_without_frontmatter_changes(
     path = notes / "processing/tbd.md"
     original = path.read_text(encoding="utf-8")
 
-    with pytest.raises(mutations.WebInputError, match="feedback専用"):
+    with pytest.raises(mutations.WebInputError, match="フィードバック専用"):
         mutations.transition_entries(
             notes,
             action="return-to-inbox",
@@ -1847,7 +1847,7 @@ class TestNoninteractiveEdit:
         ("message", "exit_code", "error_fragment"),
         [
             ("---\ntype: tbd\n---\n\n本文", 2, "typeを変更"),
-            ("---\nscope: item\n---\n\n本文", 1, "feedbackでは指定できない"),
+            ("---\nscope: item\n---\n\n本文", 1, "フィードバックでは指定できない"),
             (" \n-\n ", 1, "実質空"),
         ],
     )
@@ -1936,7 +1936,7 @@ class TestNoninteractiveEdit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """processing配下のfeedbackも非対話で編集する。"""
+        """`processing`配下のフィードバックも非対話で編集する。"""
         notes = _setup_notes(tmp_path)
         processing = notes / "processing"
         processing.mkdir()

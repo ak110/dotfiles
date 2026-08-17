@@ -156,10 +156,10 @@ def _api_error_entry(text: str) -> dict:
 
 
 class TestLatestMainAssistantEntry:
-    """末尾entry取得の単体テスト。"""
+    """末尾エントリ取得の単体テスト。"""
 
     def test_returns_entry_with_top_level_flag(self, tmp_path: pathlib.Path):
-        """APIエラーエントリの後にsystemエントリが続いてもentry全体を返し、トップレベルフラグを保持する。"""
+        """APIエラーエントリの後に`system`エントリが続いてもエントリ全体を返し、トップレベルフラグを保持する。"""
         transcript = _write_transcript(
             tmp_path,
             [

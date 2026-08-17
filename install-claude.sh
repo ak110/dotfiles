@@ -241,7 +241,7 @@ _restore_codex_cache_links() {
             [ "$link_target" = "$current_version" ] && continue
             rm "$destination"
         elif [ -e "$destination" ]; then
-            echo "通常entryとCodex plugin互換version名が競合しています: $destination" >&2
+            echo "通常エントリとCodex plugin互換バージョン名が競合しています: $destination" >&2
             return 1
         fi
         ln -s -- "$current_version" "$destination"

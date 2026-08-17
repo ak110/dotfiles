@@ -73,7 +73,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     値で対象を限定する。`--status`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
     状態・回答有無フィルタを迂回する既定挙動であり、既定の`--status=active`によって
     adopted・rejected状態のエントリが参照不能になる事態を避けるためである）。
-    `--all`指定時のfeedback・tbd双方の走査対象は`--status`と連動する
+    `--all`指定時のフィードバック・`tbd`双方の走査対象は`--status`と連動する
     （既定`active`はinbox・processing、`all`は4状態フォルダ全連結、個別状態指定は当該状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。

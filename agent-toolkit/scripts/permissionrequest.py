@@ -400,7 +400,7 @@ def _is_under(target: pathlib.Path, base: pathlib.Path) -> bool:
 
 
 def _is_scratchpad_path(target: pathlib.Path) -> bool:
-    """パス構成要素として `scratchpad` を含み、かつ `/tmp/` または home 配下か判定する。
+    """パス構成要素として `scratchpad` を含み、かつ `/tmp/` またはホームディレクトリ配下か判定する。
 
     「パス構成要素として含む」とは `target.parts` 内に `"scratchpad"` が要素として
     現れることを指す。ファイル名の一部（`scratchpad-notes.md` 等）は対象外とする。

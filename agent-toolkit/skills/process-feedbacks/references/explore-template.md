@@ -5,8 +5,8 @@
 ## 入力
 
 - 排他的な次のいずれか一方
-  - source-backed経路では対象feedback filenameと対象リポジトリ
-  - 直接経路では対象feedback filenameと本文
+  - フィードバック原文経路では対象のフィードバックファイル名と対象リポジトリ
+  - 直接経路では対象のフィードバックファイル名と本文
 - プロジェクト規範の絶対パス
 - `review-checklists.md`の絶対パス
 - バグ対応の場合だけ`agent-toolkit:bugfix`の絶対パス
@@ -16,8 +16,8 @@
 
 ## 調査
 
-- source-backed経路では起動直後に`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。
-  表示用見出し、YAML frontmatter及びCLI付加の末尾改行を除いたfeedback本文を調査対象とする。
+- フィードバック原文経路では起動直後に`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。
+  表示用見出し、YAML frontmatter及びCLI付加の末尾改行を除いたフィードバック本文を調査対象とする。
   同じ表示結果のfrontmatterにある`source`の文字列を改変せず投入元識別子として記録し、欄が無い場合は「値なし」と記録する。
   直接経路では受領した本文を調査対象とする
 - 入力資料と対象ファイルを全文読み、定義、参照元、呼び出し元、test、生成・配布経路を確認する
@@ -28,5 +28,5 @@
 
 ## 出力
 
-feedback filename、投入元識別子、確認範囲、要求ごとの区分、根拠、未検証事項、`write_status: unchanged`を返す。
-対象リポジトリとfeedback管理領域を変更しない。
+フィードバックファイル名、投入元識別子、確認範囲、要求ごとの区分、根拠、未検証事項、`write_status: unchanged`を返す。
+対象リポジトリとフィードバック管理領域を変更しない。

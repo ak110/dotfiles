@@ -56,7 +56,7 @@
 `pyproject.toml`の`[project.scripts]`由来のコマンドは`completions/_pytools.bash`へ書き込む。
 `agent-toolkit/scripts/*.py`のうちargcompleteマーカーを持つスクリプトが対象で、
 対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンド（`atk`等）に限る。
-これらは`agent-toolkit/completions/atk.bash`へ書き込む。
+これらの補完は`scripts/gen-completions.py`が`agent-toolkit/completions/atk.bash`へ書き込む。
 
 新しいCLIに補完を追加する場合は、CLIモジュールへのマーカー配置と`enable_completion()`呼び出しをコード側コメントに従い追加し、
 補完スクリプトを再生成する。

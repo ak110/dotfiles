@@ -15,14 +15,14 @@ user-invocable: false
 
 - transcriptの絶対パス。取得できない場合はその事実
 - 対象リポジトリの絶対パス
-- 提案基準referenceの絶対パス
-- 存在する場合は環境固有referenceの絶対パス
+- 提案基準の参照文書の絶対パス
+- 存在する場合は環境固有の参照文書の絶対パス
 
 入力されたファイル、リポジトリ、セッション状態、フィードバックを変更しない。
 
 ## 実行
 
-1. 提案基準referenceと、渡された環境固有referenceを全文読む
+1. 提案基準の参照文書と、渡された環境固有の参照文書を全文読む
 2. transcriptの絶対パスを受け取った場合は、現行plugin rootの
    `scripts/_session_review_evidence.py`へそのパスを渡して1回だけ実行する
 3. transcriptの絶対パスを受け取った場合は、抽出実行後に同transcriptを大小文字を区別しない`警告`又は`warn`で検索する。
@@ -51,7 +51,7 @@ proposals:
   lifecycle_cost: <恒常費、副作用、保守費>
   alternatives: <比較案と不採用理由>
   existing_means_check: <既存手段の確認手段と結果。新規機構に該当しない場合は「非該当」>
-  duplicate_check: <既存規範・active feedbackとの重複>
+  duplicate_check: <既存規範・activeなフィードバックとの重複>
   unverified: <未検証事項。なければ「なし」>
 suppressed:
 - <抑止した候補と理由。なければ「なし」>

@@ -1,4 +1,4 @@
-"""SubagentStop advisorの構造的な完了判定を検証する。"""
+"""`SubagentStop`の助言フックの構造的な完了判定を検証する。"""
 
 from __future__ import annotations
 

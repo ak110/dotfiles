@@ -512,7 +512,7 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
 
 
 def _canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
-    """リポジトリ識別子を操作単位のcacheを介してcanonical化する。"""
+    """リポジトリ識別子を操作単位のキャッシュを介して正規化する。"""
     return _git_remote.canonical_repo(value, cache)
 
 

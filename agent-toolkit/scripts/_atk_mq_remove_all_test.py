@@ -106,7 +106,7 @@ class TestRemoveAllConfirmation:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """feedbackとTBDを一覧表示し、1回の承認で単一commitへまとめる。"""
+        """フィードバックとTBDを一覧表示し、1回の承認で単一commitへまとめる。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "feedback.md")
         _write_entry(notes, "inbox", "question.md", entry_type="tbd", body="## 質問\n\n確認事項\n\n## 回答\n")

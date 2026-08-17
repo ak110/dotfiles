@@ -1,4 +1,4 @@
-"""SubagentStartによるexecutor追跡開始のテスト。"""
+"""`SubagentStart`による`plan-impl-executor`追跡開始のテスト。"""
 
 from __future__ import annotations
 

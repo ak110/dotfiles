@@ -64,7 +64,7 @@ def latest_main_assistant_entry(transcript_path: str) -> dict | None:
     """末尾（最新側）で最初に見つかる非sidechainのassistantエントリ全体を返す。
 
     `iter_latest_assistant_messages`がmessage dictのみを返すのに対し、本関数は
-    `isApiErrorMessage`などentryトップレベルのフラグを参照できるようentry全体を返す。
+    `isApiErrorMessage`などエントリのトップレベルのフラグを参照できるようエントリ全体を返す。
     APIエラー停止のassistantエントリ直後にsystemエントリ（turn_duration）が続く配置でも、
     後方から走査して直近のassistantエントリを拾う。
 

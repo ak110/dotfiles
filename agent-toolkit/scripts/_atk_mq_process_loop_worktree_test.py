@@ -99,7 +99,7 @@ class TestSyncWorktreeWithUpstream:
     def test_aborts_rebase_and_warns_on_conflict(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """rebase失敗時は中断したうえで警告を発し、writerを起動しない。"""
+        """rebase失敗時は中断したうえで警告を発し、実装セッションを起動しない。"""
         self._make_worktree(tmp_path)
         calls: list[list[str]] = []
 
@@ -115,4 +115,4 @@ class TestSyncWorktreeWithUpstream:
         _process_loop._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
         assert ["git", "rebase", "--abort"] in calls
-        assert "追随に失敗したためwriterを起動しません" in capsys.readouterr().err
+        assert "追随に失敗したため実装セッションを起動しません" in capsys.readouterr().err

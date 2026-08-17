@@ -34,7 +34,7 @@ def test_normalize_remote_url_rejects_invalid_value(remote_url: str) -> None:
 
 
 def test_resolve_repo_identifier_reads_legacy_local_path(tmp_path: pathlib.Path) -> None:
-    """旧ローカルパス形はoriginを介してcanonicalなURL形へ解決する。"""
+    """旧ローカルパス形はoriginを介して正規なURL形へ解決する。"""
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(tmp_path), "remote", "add", "origin", "git@github.com:Example/Repo.git"],

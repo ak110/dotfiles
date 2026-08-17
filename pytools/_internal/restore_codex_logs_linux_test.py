@@ -18,7 +18,7 @@ def _prepare(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> tuple[pathlib.Path, pathlib.Path, tuple[tuple[pathlib.Path, pathlib.Path], ...]]:
-    """LinuxかつCodex停止中のhome、共有メモリー相当path、3組のpathを返す。"""
+    """LinuxかつCodex停止中のホームディレクトリ、共有メモリー相当のパス、3組のパスを返す。"""
     monkeypatch.setattr(restore_codex_logs_linux.sys, "platform", "linux")
     monkeypatch.setattr(restore_codex_logs_linux, "_codex_is_running", lambda: False)
     home = tmp_path / "home"
@@ -40,13 +40,13 @@ def _write_targets(
 
 
 def _link_all(pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...]) -> None:
-    """home側の3pathを対応する管理対象targetへのsymlinkにする。"""
+    """ホームディレクトリ側の3つのパスを、対応する管理対象`target`へのsymlinkにする。"""
     for home_path, target_path in pairs:
         home_path.symlink_to(target_path)
 
 
 def test_non_linux_is_noop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """Linux以外ではhomeを作成せず何もしない。"""
+    """Linux以外ではホームディレクトリを作成せず何もしない。"""
     monkeypatch.setattr(restore_codex_logs_linux.sys, "platform", "win32")
     home = tmp_path / "home"
 
@@ -147,7 +147,7 @@ def test_restore_keeps_targets_until_later_matching_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回はhomeへ復元してtargetを保持し、次回に一致を検証して回収する。"""
+    """初回はホームディレクトリへ復元して`target`を保持し。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     contents = _write_targets(pairs)
     _link_all(pairs)
@@ -200,7 +200,7 @@ def test_copy_failure_removes_temporary_files_only(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """コピー失敗時はhomeの管理linkとtargetを保持し、一時ファイルを除く。"""
+    """コピー失敗時はホームディレクトリの管理対象symlinkと`target`を保持し。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)

@@ -21,12 +21,12 @@
 - mq add/list/show: エントリの投入・一覧・本文表示
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
-- mq convert-to-plan/set-dependencies: 既存feedbackの計画実装型への変換・明示依存の更新
+- mq convert-to-plan/set-dependencies: 既存フィードバックの計画実装型への変換・明示依存の更新
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
 - mq process-loop: Claude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
-  待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
+  待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
@@ -221,7 +221,7 @@ def _add_mq_add_parser(sub: Any) -> None:
         metavar="FILENAME",
         action="append",
         default=None,
-        help="feedbackが処理完了を待つキュー項目。--type=feedbackでのみ指定でき、複数回指定できる。",
+        help="フィードバックが処理完了を待つキュー項目。--type=feedbackでのみ指定でき、複数回指定できる。",
     )
     add.add_argument(
         "--source",
@@ -241,7 +241,7 @@ def _add_mq_add_parser(sub: Any) -> None:
 
 def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
-    list_ = sub.add_parser("list", help="エントリを1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する")
+    list_ = sub.add_parser("list", help="エントリを1件1行（ファイル名・target_repo・状態ラベル・本文冒頭要約）で出力する")
     _add_target_repo_arg(list_)
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
@@ -250,7 +250,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active）。"
-            "`active`はinbox・processingを指す（feedback・tbd共通）。"
+            "`active`は`inbox`・`processing`を指す（フィードバック・`tbd`共通）。"
             "回答状況での限定は`--answered`で別途行う。"
         ),
     )
@@ -258,7 +258,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all）。yes・no指定時はfeedbackを除外する。",
+        help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
     )
     _add_source_arg(list_)
     list_.add_argument(
@@ -292,7 +292,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
-            "`active`はinbox・processingを指す（feedback・tbd共通）。"
+            "`active`は`inbox`・`processing`を指す（フィードバック・`tbd`共通）。"
             "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
     )
@@ -300,7 +300,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all、--all指定時のみ有効）。yes・no指定時はfeedbackを除外する。",
+        help="TBDの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はフィードバックを除外する。",
     )
     _add_source_arg(show)
     show.add_argument(
@@ -315,7 +315,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     """状態遷移・削除サブコマンドを登録する。"""
     start_processing = sub.add_parser(
         "start-processing",
-        help="feedbackをinboxからprocessing/へ移動し処理中状態に遷移させコミット・push",
+        help="フィードバックを`inbox`から`processing/`へ移動し処理中状態に遷移させコミット・push",
     )
     start_processing.add_argument(
         "filenames",
@@ -323,11 +323,11 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         nargs="+",
         help="処理開始するinboxファイル名（1個以上）。",
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
-    _add_target_repo_arg(start_processing, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+    _add_target_repo_arg(start_processing, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
     return_to_inbox = sub.add_parser(
         "return-to-inbox",
-        help="feedbackをprocessing/からinboxへ戻し未処理状態に遷移させコミット・push",
+        help="フィードバックを`processing/`から`inbox`へ戻し未処理状態に遷移させコミット・push",
     )
     return_to_inbox.add_argument(
         "filenames",
@@ -340,9 +340,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         type=_cooldown_days,
         default=None,
         metavar="DAYS",
-        help="外部条件待ちのfeedbackを指定日数（3以上）だけ再処理対象から除外する。",
+        help="外部条件待ちのフィードバックを指定日数（3以上）だけ再処理対象から除外する。",
     )
-    _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+    _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
     adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
     adopt.add_argument(
@@ -364,7 +364,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
-    _add_target_repo_arg(adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+    _add_target_repo_arg(adopt, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
     reject = sub.add_parser("reject", help="不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push")
     reject.add_argument(
@@ -391,7 +391,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         action="store_true",
         help="pull後も全対象がinboxにある場合だけ不採用とし、processingへ移った対象があれば全体を変更しない。",
     )
-    _add_target_repo_arg(reject, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+    _add_target_repo_arg(reject, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
     rm = sub.add_parser(
         "rm",
@@ -450,17 +450,17 @@ def _add_mq_edit_parsers(sub: Any) -> None:
             "先頭frontmatterで明示したメタデータだけを更新し、未指定メタデータを保持する。"
         ),
     )
-    _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+    _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 
     convert_to_plan = sub.add_parser(
         "convert-to-plan",
-        help="既存feedbackへ計画ファイルと依存先を設定し、計画実装型へ変換してコミット・push",
+        help="既存フィードバックへ計画ファイルと依存先を設定し、計画実装型へ変換してコミット・push",
     )
     convert_to_plan.add_argument(
         "filename",
         metavar="FILENAME",
-        help="変換するinboxまたはprocessingのfeedbackファイル名。",
+        help="変換する`inbox`または`processing`のフィードバックファイル名。",
     ).completer = _active_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--plan-file",
@@ -479,12 +479,12 @@ def _add_mq_edit_parsers(sub: Any) -> None:
 
     set_dependencies = sub.add_parser(
         "set-dependencies",
-        help="既存feedbackの明示依存だけを更新してコミット・push",
+        help="既存フィードバックの明示依存だけを更新してコミット・push",
     )
     set_dependencies.add_argument(
         "filename",
         metavar="FILENAME",
-        help="更新するinboxまたはprocessingのfeedbackファイル名。",
+        help="更新する`inbox`または`processing`のフィードバックファイル名。",
     ).completer = _active_filename_completer  # type: ignore[attr-defined]
     set_dependencies.add_argument(
         "--depends-on",
@@ -512,7 +512,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all）。yes・no指定時はfeedbackを除外する。",
+        help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
     )
     _add_target_repo_arg(grep)
     grep.add_argument("--skip-pull", action="store_true", help="remote同期全体をスキップする。")
@@ -538,7 +538,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     """常駐処理サブコマンドを登録する。"""
     loop = sub.add_parser(
         "process-loop",
-        help="対象リポジトリのfeedback消化を選択したオーケストレーターの常駐起動で反復実行する",
+        help="対象リポジトリのフィードバック消化を選択したオーケストレーターの常駐起動で反復実行する",
     )
     loop.add_argument(
         "--target-repo",

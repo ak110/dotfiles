@@ -125,7 +125,7 @@ def test_collect_new_alerts_filters_keys_per_repository(tmp_path: pathlib.Path) 
 def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.Path) -> None:
     """`alert_keys`未指定・カンマ区切り複数・空文字列の各書式を公開関数経由で検証する。
 
-    `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つfeedbackファイルを
+    `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つフィードバックファイルを
     実際に配置して`existing_alert_keys`経由で検証する
     （`coding-standards`の`references/testing.md`「private関数の直接テスト禁止」節に従う）。
     """
@@ -158,7 +158,7 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
 
 def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """新規アラートをfeedbackへ投入し、件数とfrontmatterを返す。"""
+    """新規アラートをフィードバックへ投入し、件数とfrontmatterを返す。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(  # pylint: disable=protected-access

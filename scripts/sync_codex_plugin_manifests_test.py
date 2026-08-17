@@ -387,7 +387,7 @@ def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     hooks["hooks"]["PermissionRequest"] = hooks["hooks"]["PermissionRequest"][:1]
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
-    with pytest.raises(ValueError, match="許可済みhandler"):
+    with pytest.raises(ValueError, match="許可済みハンドラー"):
         subject.sync(manifest_root)
 
 

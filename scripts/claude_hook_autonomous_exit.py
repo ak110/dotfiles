@@ -67,7 +67,7 @@ _REASON_BODY = """\
 This session was launched in autonomous execution mode by the atk mq process-loop CLI.
 After processing completes, you must call /agent-toolkit:exit-session to end the session.
 Before calling exit-session, fully complete the following steps.
-1. All applicable work in the process-feedbacks sections "入力とreadiness", "調査と採否", "保留",
+1. All applicable work in the process-feedbacks sections "入力と着手可否", "調査と採否", "保留",
    "実装と公開", and "後始末" (including feedback disposition, commit, push, and cleanup)
 2. The process-feedbacks section "振り返りと終了"
    (the agent-toolkit:session-review skill, including its independent advisor assessment)

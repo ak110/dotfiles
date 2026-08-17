@@ -223,7 +223,7 @@ def _write_adopted_file(
 
 
 class TestListFeedbackStatusDefaultAll:
-    """listサブコマンド既定: feedbackはinbox・processing両方を表示する。"""
+    """`list`サブコマンド既定: フィードバックは`inbox`・`processing`両方を表示する。"""
 
     def test_default_shows_inbox_and_processing(
         self,
@@ -231,7 +231,7 @@ class TestListFeedbackStatusDefaultAll:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`省略時、feedback側はinbox配下とprocessing配下の両方を出力する。"""
+        """`--status`省略時、フィードバック側は`inbox`配下と`processing`配下の両方を出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -247,7 +247,7 @@ class TestListFeedbackStatusDefaultAll:
 
 
 class TestListFeedbackStatusProcessing:
-    """listサブコマンド `--status=processing`: feedbackはprocessing配下のみを表示する。"""
+    """listサブコマンド `--status=processing`: フィードバックは`processing`配下のみを表示する。"""
 
     def test_processing_shows_processing_only(
         self,
@@ -255,7 +255,7 @@ class TestListFeedbackStatusProcessing:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=processing`指定時、feedback側はprocessing配下のみ出力する。"""
+        """`--status=processing`指定時、フィードバック側は`processing`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -271,7 +271,7 @@ class TestListFeedbackStatusProcessing:
 
 
 class TestListFeedbackStatusAdopted:
-    """listサブコマンド `--status=adopted`: feedbackはadopted配下のみを表示する。"""
+    """listサブコマンド `--status=adopted`: フィードバックは`adopted`配下のみを表示する。"""
 
     def test_adopted_shows_adopted_only(
         self,
@@ -279,7 +279,7 @@ class TestListFeedbackStatusAdopted:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=adopted`指定時、feedback側はadopted配下のみ出力する。"""
+        """`--status=adopted`指定時、フィードバック側は`adopted`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -297,7 +297,7 @@ class TestListFeedbackStatusAdopted:
 
 
 class TestListFeedbackStatusAll:
-    """listサブコマンド `--status=all`: feedbackはinbox・processing双方を表示する。"""
+    """listサブコマンド `--status=all`: フィードバックは`inbox`・`processing`双方を表示する。"""
 
     def test_all_shows_both(
         self,
@@ -305,7 +305,7 @@ class TestListFeedbackStatusAll:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=all`指定時、feedback側はinbox・processing両方を出力する。"""
+        """`--status=all`指定時、フィードバック側は`inbox`・`processing`両方を出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -321,7 +321,7 @@ class TestListFeedbackStatusAll:
 
 
 class TestListFeedbackStatusActive:
-    """listサブコマンド `--status=active`: feedbackはinbox・processingのみを表示しadopted・rejectedを除外する。"""
+    """listサブコマンド `--status=active`: フィードバックは`inbox`・`processing`のみを表示し`adopted`・`rejected`を除外する。"""
 
     def test_active_excludes_adopted_and_rejected(
         self,
@@ -329,7 +329,7 @@ class TestListFeedbackStatusActive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=active`指定時、feedback側はadopted・rejected配下を除外しinbox・processingのみ出力する。"""
+        """`--status=active`指定時、フィードバック側は`adopted`・`rejected`配下を除外し`inbox`・`processing`のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -358,7 +358,7 @@ class TestListFeedbackStatusActive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`省略時、feedback側はadopted配下を除外し、tbd側は未回答を除外する（`--status=active`と同じ結果）。"""
+        """`--status`省略時、フィードバック側は`adopted`配下を除外し、`tbd`側は未回答を除外する（`--status=active`と同じ結果）。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
         _write_adopted_file(notes, "fb-adopted.md", body="adopted本文")
@@ -384,7 +384,7 @@ class TestListFeedbackStatusActive:
 
 
 class TestListFeedbackStatusRejected:
-    """listサブコマンド `--status=rejected`: feedbackはrejected配下のみを表示する。"""
+    """listサブコマンド `--status=rejected`: フィードバックは`rejected`配下のみを表示する。"""
 
     def test_rejected_shows_rejected_only(
         self,
@@ -392,7 +392,7 @@ class TestListFeedbackStatusRejected:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=rejected`指定時、feedback側はrejected配下のみ出力する。"""
+        """`--status=rejected`指定時、フィードバック側は`rejected`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         rejected_dir = notes / "rejected"
@@ -471,7 +471,7 @@ class TestAddViaEditor:
     `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
     捕捉する。エラー経路のテストでは`_pull`等のgit呼び出しもfake_runへ吸収されるが、
     検証焦点は`_collect_message_via_editor`の早期None返却にあり、git経路到達有無は
-    別経路（feedbackディレクトリへのファイル生成有無）で間接確認する。
+    別経路（フィードバックディレクトリへのファイル生成有無）で間接確認する。
     """
 
     def test_editor_path_generates_file_with_content(
@@ -480,7 +480,7 @@ class TestAddViaEditor:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """messages省略時にエディターが呼ばれ書き込み内容がfeedbackへ保存される。"""
+        """messages省略時にエディターが呼ばれ書き込み内容がフィードバックへ保存される。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"

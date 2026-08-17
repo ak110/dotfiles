@@ -629,7 +629,7 @@ class TestTbdList:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--answered=noで未回答のみが1件1行（filename・target_repo・summary）形式で出力される。"""
+        """--answered=noで未回答のみが1件1行（ファイル名・target_repo・要約）形式で出力される。"""
         notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")

@@ -48,7 +48,7 @@ def normalize_remote_url(remote_url: str) -> str:
 
 
 def resolve_repo_identifier(value: str) -> str | None:
-    """保存済みリポジトリ識別子をcanonicalなURL形へ解決する。
+    """保存済みリポジトリ識別子を正規なURL形へ解決する。
 
     URL形は直接正規化し、実在するローカルパスはoriginのURLを取得して正規化する。
     空値、存在しないパス、Git管理外、origin未設定、不正なURLは解決不能としてNoneを返す。
@@ -78,7 +78,7 @@ def resolve_repo_identifier(value: str) -> str | None:
 
 
 def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
-    """リポジトリ識別子を呼び出し単位のcacheを介してcanonical化する。"""
+    """リポジトリ識別子を呼び出し単位のキャッシュを介して正規化する。"""
     if value not in cache:
         cache[value] = resolve_repo_identifier(value)
     return cache[value]

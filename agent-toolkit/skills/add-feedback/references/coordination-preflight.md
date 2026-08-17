@@ -1,13 +1,13 @@
 # 処理状況の事前確認
 
-target repoのactive一覧をinbox・processing双方について取得する。同一・関連主題とprocessing項目は
+対象リポジトリのactive一覧をinbox・processing双方について取得する。同一・関連主題とprocessing項目は
 `show`で本文、`target_commit`、`plan_file`、`depends_on`を読む。
 
-関連processing項目にplan fileがあれば実装資料の変更説明も読む。target repoの候補worktreeごとにbranch、
+関連processing項目に計画ファイルがあれば実装資料の変更説明も読む。対象リポジトリの候補worktreeごとにbranch、
 status、`target_commit`以降のcommitと変更ファイルを確認し、計画対象との重なりから対応候補を限定する。
 対象worktreeのリモートURLと完全HEADも確認する。計画実装型では完全HEADと計画base commitを照合する。
-一意に確定できない場合は処理状況を不明と記録し、processing本文を更新せず追随feedbackとして分離する。
-process-loopの生存は観測可能な場合の補助情報とし、queueとGit実体を正本とする。
+一意に確定できない場合は処理状況を不明と記録し、processing本文を更新せず追随のフィードバックとして分離する。
+`process-loop`の生存は観測可能な場合の補助情報とし、キューとGit実体を正本とする。
 
 | 観測状態 | 処置 |
 | --- | --- |
@@ -19,12 +19,12 @@ process-loopの生存は観測可能な場合の補助情報とし、queueとGit
 
 同一・重複を確定する最小確認の直後に、
 `atk mq reject <filename> --if-inbox --note=<移管理由>`で重複inboxを終端する。
-状態更新より前に追加調査、計画起草、review、本文の清書へ進まない。
-計画作成へ移管する場合は、noteに完成後に新規feedbackとして投入する旨と計画パスを記録する。
+状態更新より前に追加調査、計画起草、レビュー、本文の清書へ進まない。
+計画作成へ移管する場合は、noteに完成後に新規のフィードバックとして投入する旨と計画パスを記録する。
 通常のadd経路では、実際の終端理由をnoteに記録する。
 
 状態競合でprocessingへ移っていた場合は当該項目を変更しない。
-計画に新情報がある場合だけ、processingのfilenameを`depends_on`へ指定した追随feedbackを完成後に追加する。
-計画を投入せず終了する場合は、rejectedへ保存した本文を入力としてadd-feedbackから再投入する。
+計画に新情報がある場合だけ、processingのファイル名を`depends_on`へ指定した追随のフィードバックを完成後に追加する。
+計画を投入せず終了する場合は、rejectedへ保存した本文を入力として`agent-toolkit:add-feedback`から再投入する。
 
-plan-and-add-feedbackの計画前確認とadd-feedbackの保存直前確認では、後者の最新状態を優先する。
+`agent-toolkit:plan-and-add-feedback`の計画前確認と`agent-toolkit:add-feedback`の保存直前確認では、後者の最新状態を優先する。

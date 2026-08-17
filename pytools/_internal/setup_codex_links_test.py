@@ -189,7 +189,7 @@ def test_links_contains_dotfiles_skills() -> None:
 
 
 def test_links_replaces_session_review_skill_with_reference_directory() -> None:
-    """独立スキルを除去し、振り返りの追加観点をreferenceとして共有する。"""
+    """独立スキルを除去し、振り返りの追加観点を参照文書として共有する。"""
     assert "skills/session-review-dotfiles" not in setup_codex_links._LINKS
     assert setup_codex_links._LINKS["references"] == ".chezmoi-source/dot_claude/references"
 

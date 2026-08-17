@@ -1,4 +1,4 @@
-"""`~/.codex/`配下にdotfiles固有スキル・reference・agent-toolkit補助資料へのリンクを生成する。
+"""`~/.codex/`配下にdotfiles固有スキル・参照文書・agent-toolkit補助資料へのリンクを生成する。
 
 chezmoiの`symlink_`はWindowsで`CreateSymbolicLinkW`の特権不足により失敗するため採用しない。
 Linux/macOSではシンボリックリンクを、Windowsではディレクトリジャンクションを生成する。

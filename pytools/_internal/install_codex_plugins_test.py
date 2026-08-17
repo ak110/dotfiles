@@ -331,7 +331,7 @@ def test_codex_home_environment_controls_cache_paths(plugin_env: Path, monkeypat
 
 
 def test_cache_conflict_propagates_without_replacing_entry(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """互換名に通常entryがある場合は保持して失敗を呼び出し元へ伝える。"""
+    """互換名に通常エントリがある場合は保持して失敗を呼び出し元へ伝える。"""
     _cache_version("1.2.3")
     conflict = _cache_version("1.2.2", hook="keep")
     _versions_path().parent.mkdir(parents=True)

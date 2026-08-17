@@ -1,36 +1,37 @@
-# lane成果統合writerタスク
+# レーン成果統合担当タスク
 
 統合モードでは、渡された統合対応表のcommitを単一のcherry-pickシーケンスで適用し、検証して履歴を一本化せよ。
 レビュー修正モードでは、採用指摘だけを修正してcommitせよ。
+本タスクが扱うレーンは、1つの計画ファイル専用のworktreeと書込担当で構成する並列実装の単位である。
 
 ## 入力
 
-- 共通: モード、統合worktreeの絶対パス、プロジェクト規範、author skill、検証コマンド
-- 権限は統合worktree内の編集とcommitだけとし、push、worktreeの作成と回収、queue変更は禁止
+- 共通: モード、統合worktreeの絶対パス、プロジェクト規範、起草規範スキル、検証コマンド
+- 権限は統合worktree内の編集とcommitだけとし、push、worktreeの作成と回収、キュー変更は禁止
 
 統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力とする。
-統合対応表の各lane項目は、1件以上のソート済みfeedback filename一覧を持つ。
+統合対応表の各レーン項目は、1件以上のソート済みフィードバックファイル名一覧を持つ。
 レビュー修正モードでは、採用指摘の6列表と関係する全計画の絶対パスを必須入力とする。
 
-統合worktreeは単一writerとして排他使用する。
-同じ計画ファイルに属するcommitは、実装段階から1 writerが順次作成したものだけを受理する。
+統合worktreeは単一の書込担当として排他使用する。
+同じ計画ファイルに属するcommitは、実装段階から1つの書込担当が順次作成したものだけを受理する。
 必須入力が欠ける場合は推測せず`needs_escalation`で返す。
 
 ## 統合モード
 
 統合対応表は次の2種類を判別可能に持つ。
 
-- lane項目: ソート済みfeedback filename一覧、lane commitの完全OID、計画ファイルの絶対パス、統合順
+- レーン項目: ソート済みフィードバックファイル名一覧、レーンのcommitの完全OID、計画ファイルの絶対パス、統合順
 - レビュー修正項目: 安定ID、関係する全計画パス、指摘ID、適用元OID、再適用後OIDまたは状態`適用済みスキップ`、統合順
 
-rebaseとmerge commitは作成せず、lane項目に続けてレビュー修正項目を統合順の単一cherry-pickシーケンスで適用する。
+rebaseとmerge commitは作成せず、レーン項目に続けてレビュー修正項目を統合順の単一cherry-pickシーケンスで適用する。
 cherry-pickが空の場合は`git cherry-pick --skip`で続行し、当該レビュー修正項目を`適用済みスキップ`として返す。
 競合は関係する全計画の目的へ帰属する最小限だけを解消する。
 
 解消不能または計画と合意の変更を要する場合は`git cherry-pick --abort`で中止する。
 HEADが作成時HEADの完全OIDと一致し、作業ツリーがcleanであることを確認してから、対象commit、競合ファイル、観測内容を
 `needs_escalation`で返す。
-成功済みlaneの元commitとlane worktreeは変更しない。
+成功済みレーンの元commitとレーンのworktreeは変更しない。
 
 ## レビュー修正モード
 
@@ -51,7 +52,7 @@ verification:
 conflicts:
 - <解消した競合。無ければ「なし」>
 applications:
-- <lane項目はソート済みfeedback filename一覧、lane commit OID、適用後OID>
+- <レーン項目はソート済みフィードバックファイル名一覧、レーンのcommit OID、適用後OID>
 - <レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ>
 write_status: <変更したファイルとcommit。変更なしならその旨>
 blockers:

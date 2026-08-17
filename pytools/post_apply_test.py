@@ -23,7 +23,7 @@ def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
 
 
 def test_session_review_reference_is_not_cleanup_target() -> None:
-    """新しいreferenceを旧資産cleanupへ含めない。"""
+    """新しい参照文書を旧資産の後始末対象へ含めない。"""
     for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
         assert Path("references/session-review-dotfiles.md") not in paths
 

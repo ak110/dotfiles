@@ -1,6 +1,6 @@
 # dotfiles環境の振り返り観点
 
-`agent-toolkit:session-review`が独立advisorへ渡す追加観点である。
+`agent-toolkit:session-review`が独立した`session-review-advisor`へ渡す追加観点である。
 
 ## pyfltr
 
@@ -14,9 +14,9 @@ CLI自体の改善で同じ失敗を防げる観測事象がある場合だけ�
 
 - chezmoi原本と配布先、Claude CodeとCodex、POSIXとWindowsの同期境界
 - agent-toolkitのplugin、rules、skills、agents、hooks、settings、生成物の責務境界
-- 常時ロード文書から条件付きreferenceへ移せる手順や、不要になった状態・フック・リンク
-- 配布、更新、旧資産のcleanup、バージョン更新、生成物同期に必要な追随
-- project固有規範と全利用者向け配布規範の反映先の妥当性
+- 常時ロード文書から条件付きの参照文書へ移せる手順や、不要になった状態・フック・リンク
+- 配布、更新、旧資産の後始末、バージョン更新、生成物同期に必要な追随
+- プロジェクト固有規範と全利用者向け配布規範の反映先の妥当性
 
 対象が別リポジトリの場合は、観測事象がdotfiles配布物に起因すると裏付けられた候補だけをdotfiles向け提案とし、
 対象プロジェクトの改善提案と混同しない。

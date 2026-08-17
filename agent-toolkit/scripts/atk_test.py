@@ -265,7 +265,7 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
 
 
 def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:
-    """set-dependenciesが既存feedbackと複数の依存先を受理する。"""
+    """`set-dependencies`が既存フィードバックと複数の依存先を受理する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     args = parser.parse_args(["mq", "set-dependencies", "feedback.md", "--depends-on", "first", "--depends-on", "second.md"])
     assert args.filename == "feedback.md"

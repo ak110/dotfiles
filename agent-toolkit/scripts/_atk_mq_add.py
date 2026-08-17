@@ -65,7 +65,7 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
 
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
-    """CLIの依存filenameを検証し、`.md`付きの初出順へ正規化する。"""
+    """CLIの依存ファイル名を検証し、`.md`付きの初出順へ正規化する。"""
     return tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in (values or ())))
 
 
@@ -91,7 +91,7 @@ def _body_is_effectively_empty(body: str) -> bool:
     return all(line in ("-", "*", "+") for line in non_empty_lines)
 
 
-_EMPTY_FEEDBACK_ERROR = "feedback本文が実質空です"
+_EMPTY_FEEDBACK_ERROR = "フィードバック本文が実質空です"
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -115,8 +115,8 @@ def _verify_plan_base_commit(
     計画メタ情報の解析は`_plan_format.parse_plan_metadata`へ委ねる。
     正規形の`## 概要`直下を優先し、正規形を持たない既存計画だけ旧配置へ読み取り互換で
     フォールバックする。配置が曖昧な計画は投入を拒否する。
-    双方が完全OIDとして得られた場合だけ比較する。既存feedbackの変換で不一致なら、
-    ローカルworktreeのHEADが計画ベースと一致し、feedbackの`target_commit`がその祖先の場合だけ受理する。
+    双方が完全OIDとして得られた場合だけ比較する。既存フィードバックの変換で不一致なら、
+    ローカルworktreeのHEADが計画ベースと一致し、フィードバックの`target_commit`がその祖先の場合だけ受理する。
     新規追加は`local_worktree`を渡さないため、従来どおり完全一致だけを受理する。
     計画側が欠落または短縮表記の場合は警告を出力して投入を継続する。
     """
@@ -144,7 +144,7 @@ def _verify_plan_base_commit(
         raise WebInputError(
             "計画ファイルのベースコミットと投入先作業ツリーのHEADが一致しません。"
             f"計画ファイル={plan_commit}、投入先HEAD={target_commit}。"
-            "既存feedbackを別のベースコミットの計画へ変換するには、対象リポジトリをローカルworktreeで指定してください。"
+            "既存フィードバックを別のベースコミットの計画へ変換するには、対象リポジトリをローカルworktreeで指定してください。"
         )
     current_head = resolve_head_commit(local_worktree)
     if plan_commit.casefold() != current_head.casefold():
@@ -162,9 +162,9 @@ def _verify_plan_base_commit(
     if ancestry.returncode == 0:
         return
     raise WebInputError(
-        "既存feedbackのtarget_commitが計画ファイルのベースコミットの祖先ではありません。"
+        "既存フィードバックの`target_commit`が計画ファイルのベースコミットの祖先ではありません。"
         f"target_commit={target_commit}、計画ファイル={plan_commit}。"
-        "対象feedbackと計画の履歴関係を確認し、祖先関係が成立する計画へ変換してください。"
+        "対象フィードバックと計画の履歴関係を確認し、祖先関係が成立する計画へ変換してください。"
     )
 
 

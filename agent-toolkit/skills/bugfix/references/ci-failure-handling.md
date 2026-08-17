@@ -129,8 +129,8 @@ CI設定側の抑制に関する具体的な禁止条件へ該当する。
    `agent-toolkit:bugfix`本体「初動と深掘り判定」に従って直接的原因と深掘り要否を確定し、
    深掘り経路では`root-cause-analysis.md`に従う
 5. 原因箇所を環境起因又はセッション帰属を自セッションと無関係と分類した場合は、
-   `atk mq list --type=feedback --status=active --target-repo=<repo-path>`で同一事象を扱うactive feedbackを確認する。
-   該当filenameがあれば、`atk mq show <filename> --target-repo=<repo-path> --skip-pull`で本文を取得し、
+   `atk mq list --type=feedback --status=active --target-repo=<repo-path>`で同一事象を扱うactiveなフィードバックを確認する。
+   該当するファイル名があれば、`atk mq show <filename> --target-repo=<repo-path> --skip-pull`で本文を取得し、
    本文が示す緩和策を判定表の対処選択肢と同じ階層で比較する
 6. 確定した原因に適用可能な対処を判定表から選定し、調査工程を完了してから、
    計画の有無に応じた基準情報、CIの生の観測事実、分析結果、選定した対処を引き継いだ新しいバグ計画の初版を起草する

@@ -59,15 +59,15 @@ description: >
 
 - 名前付きサブエージェントの定義と起動文を編集する場合は、`agent-toolkit:agent-standards`の
   `agent-toolkit/skills/agent-standards/references/agent-skills.md`を適用する
-- 呼び出し元の専用referenceを起動契約、agent定義を受信側の恒常手順としてペアで更新する
-- 呼び出し元スキルとreferenceからagent定義をReadする手順を除外する
+- 呼び出し元の専用の参照文書を起動契約、agent定義を受信側の恒常手順としてペアで更新する
+- 呼び出し元スキルと参照文書からagent定義をReadする手順を除外する
 - 独立入口間の重複は、各入口の読込コンテキストを実測し、
   参照だけでは実行判断に必要な情報が欠ける場合に限って許容する
 - 相互参照が発生する共通観点は横断スキル配下`references/`へ集約してよい
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
 - agent-toolkit同梱スキル参照は`agent-toolkit:<skill-name>`形式に統一する。
-  サブエージェント名の表記規約は起動指示を完全修飾形、地の文呼称を短縮形とする。
+  サブエージェント名の表記規約は、起動指示・地の文とも完全名称（`feedbacks-planner`等）とする。
   プロジェクトローカルスキル（`.claude/skills/`配下）はプラグイン接頭辞を付けず素のスキル名で参照する
 
 ### プラグイン内リソースの参照書式
@@ -88,7 +88,7 @@ description: >
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
-`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同reference「plan modeでの取り扱い」節を読み、
+`agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
 実装資料の変更説明へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
@@ -109,7 +109,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
   `agent-toolkit/rules/`配下のmdファイル一覧は完全一致を保つ
-  （整合性は`install_script_ssot_test.py`検査、自動同期手段は持たない）
+  （整合性は`install_script_ssot_test.py`が検査する。この一覧の自動同期手段は無い）
 - 配布物スキル本体の外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）へ
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
@@ -158,7 +158,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 3. `scripts/sync_codex_plugin_manifests.py`を実行してAgent Plugins・Codex向け派生JSONを同期する
 4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
 5. MCP経由の`run_for_agent`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
-   `["."]`を渡し、SSOTテストを含む全テストがgreenであることを確認する。
+   `["."]`を渡し、SSOTテストを含む全テストが成功することを確認する。
    必要に応じて`commands`配列でSSOTテストなど特定ツールを指定する。
    MCPを利用できない場合は`uvx pyfltr run-for-agent`を使う
 6. 変更をコミットする
@@ -182,7 +182,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
 個人プロジェクト名固定リストは当該スクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
-スキル名・pytoolsコマンド名・scripts名はhook実行時にディレクトリをスキャンして動的取得する。
+スキル名・pytoolsコマンド名・scripts名は、`scripts/claude_hook_pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
 外部CLI参照は`_EXTERNAL_CLI_ALLOWED`登録識別子に限り`command -v`等の存在検査経由で許容する。
 
 ## 複数hook共存時の識別子
@@ -208,8 +208,8 @@ marketplace配布経路は次のとおり。
 
 Codex向け生成物は`.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`とする。
 生成器と正本の関係は「バージョン更新」節に従う。
-prekは書き込みモードで毎回再生成する。
-Codex hookはイベント名、matcher、入力契約を確認した許可表の定義だけを生成する。
+prek経由のpyfltr（書き込みモード）が`sync-generated-files`でCodex向け生成物を毎回再生成する。
+Codex hookの定義は、`scripts/sync_codex_plugin_manifests.py`がイベント名、matcher、入力契約を確認した許可表の分だけを生成する。
 `chezmoi apply`後処理はCodex marketplaceを登録し、agent-toolkit pluginを導入・更新する。
 
 ## コミットメッセージ方針と.gitmessage

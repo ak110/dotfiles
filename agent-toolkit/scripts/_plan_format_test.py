@@ -334,7 +334,7 @@ def test_permanence_sections_reject_conclusion_words_only() -> None:
 
 
 def test_structure_check_allows_bug_work_type_without_similar_review_table() -> None:
-    """構造検査はバグ対応へ3行表を一律に要求せず、バグ調査表との意味上の対応をreviewerへ委ねる。"""
+    """構造検査はバグ対応へ3行表を一律に要求せず、バグ調査表との意味上の対応をレビュー担当へ委ねる。"""
     content = _plan(bug=True)
     reference = "### 類似見直し\n\n観点と結果はバグ調査表を正本として参照する。\n"
     content = content[: content.index("### 類似見直し")] + reference + _IMPLEMENTER_SECTION

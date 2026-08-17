@@ -452,7 +452,7 @@ class TestEndToEnd:
         assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
 
     def test_bash_managed_temp_create_returns_allow(self) -> None:
-        """canonical launcherのcreate確認を自動許可する。"""
+        """正規のランチャーの`create`確認を自動許可する。"""
         payload = {
             "tool_name": "Bash",
             "tool_input": {"command": "atk managed-temp create --prefix agent-work"},

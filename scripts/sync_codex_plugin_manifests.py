@@ -167,7 +167,7 @@ def _outputs(root: Path) -> dict[Path, str]:
     marketplace = _load(root, MARKETPLACE_SOURCE)
     entries = [item for item in marketplace.get("plugins", []) if item.get("name") == plugin.get("name")]
     if len(entries) != 1:
-        raise ValueError("Claude Code marketplaceのagent-toolkit entryは1件である必要がある")
+        raise ValueError("Claude Codeのmarketplaceのagent-toolkitエントリは1件である必要がある")
     entry = entries[0]
     for key in ("version", "description"):
         if entry.get(key) != plugin.get(key):
@@ -188,7 +188,7 @@ def _outputs(root: Path) -> dict[Path, str]:
                     continue
                 projected.append(projection.project(group, chosen))
             if not projected:
-                raise ValueError(f"許可済みhandlerが正本に存在しない: {event}")
+                raise ValueError(f"許可済みハンドラーが正本に存在しない: {event}")
             selected[event] = projected
 
     metadata = {key: plugin[key] for key in PLUGIN_METADATA_FIELDS}

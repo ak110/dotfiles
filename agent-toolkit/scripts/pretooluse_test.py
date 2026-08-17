@@ -3525,7 +3525,7 @@ class TestSubagentStartLogOrdering:
         assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
 
     def test_all_checks_pass_logs_start(self, tmp_path: pathlib.Path):
-        """モデル指定なし・見出し検査対象外・process7未起動時のexecutorは通過し記録される。"""
+        """モデル指定なし・見出し検査対象外・`process7`未起動時の`plan-impl-executor`は通過し記録される。"""
         log_path = self._log_path(tmp_path)
         _write_session_state(tmp_path, "log-order-pass", {"delegation_skill_invoked": True})
         result = _run(
@@ -4036,7 +4036,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
 
 
 class TestFrontmatterSyncNoteBodyExists:
-    """frontmatter同期注記の本体該当語句の実在検証（feedback 2、warn）。"""
+    """frontmatter同期注記の本体該当語句の実在検証（フィードバック2、warn）。"""
 
     @staticmethod
     def _target(tmp_path: pathlib.Path, name: str = "test-agent.md") -> pathlib.Path:

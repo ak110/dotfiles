@@ -24,7 +24,7 @@ def _select_candidates(
     private_notes: pathlib.Path,
     target_repo: str,
 ) -> list[QueueEntryDisplay]:
-    """active項目から同じcanonicalリポジトリと有効な種別を選択する。"""
+    """`active`項目から同じ正規リポジトリと有効な種別を選択する。"""
     return [entry for entry in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, "all") if entry[4] in MQ_TYPES]
 
 

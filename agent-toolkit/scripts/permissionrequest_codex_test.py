@@ -144,7 +144,7 @@ def test_rejects_handmade_marker_without_external_state(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """管理対象内のmarkerだけを模造しても承認しない。"""
+    """管理対象内のマーカーファイルだけを模造しても承認しない。"""
     plugin_root = pathlib.Path(__file__).resolve().parent.parent
     temp_root = tmp_path / "temp"
     temp_root.mkdir()

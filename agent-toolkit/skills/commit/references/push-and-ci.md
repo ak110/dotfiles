@@ -1,6 +1,6 @@
 # pushとCI通過確認
 
-実際にpushする直前に本referenceを全文読む。push主体がpush先、更新ref、基準情報、CI監視、
+実際にpushする直前に本文書を全文読む。push主体がpush先、更新ref、基準情報、CI監視、
 証拠用一時領域のライフサイクルを所有する。通常commit、stage、messageは親スキル、
 CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
 
@@ -32,7 +32,7 @@ CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
    - annotated tagとlightweight tagのどちらでもraw tag OIDではなくpeeledしたcommit SHAを保存する
    - commitへpeelできないrefではbaseline作成が失敗するためpushしない
    - GitHubではpush workflowのSHAが更新refのtipであり、GitLabではpipelineがcommit単位ではなくpush単位で起動する
-6. 読み込んだ本referenceの絶対パスからplugin rootを確定する。
+6. 読み込んだ本文書の絶対パスからplugin rootを確定する。
    確定した各`(destination ref, source ref)`について、push前に`uv run --no-project --script <plugin-root>/scripts/wait_ci.py`を
    `--write-baseline <手順4で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。
    `wait_ci.py`は確定した`<plugin-root>/scripts/`にあり、
@@ -51,7 +51,7 @@ baseline作成、push、監視の順で実行する。
    明示経路では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
 2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
    baselineごとに十分な総待機時間を指定して1回だけ起動する。
-   ホストが実行handleのyield・再開を提供する場合は、60秒未満の観測間隔で同一processへ再接続する。
+   ホストが実行ハンドルのyield・再開を提供する場合は、60秒未満の観測間隔で同一processへ再接続する。
    進捗表示のために短い`--timeout`を指定した別processへ分割せず、実行中のplugin root更新を理由に置換しない
 3. 全対象が終了コード0で完了した場合だけCI通過と判定する。
    終了コードの意味は後掲の表に従う。

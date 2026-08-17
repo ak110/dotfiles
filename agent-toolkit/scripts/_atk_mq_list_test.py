@@ -1,6 +1,6 @@
 """atk (agent-toolkit `atk mq`) のlistサブコマンドのテスト。
 
-feedback/tbd一覧出力・各種フィルター（target-repo・source・type・status・skip-pull・count）の
+フィードバック/`tbd`一覧出力・各種フィルター（target-repo・source・type・status・skip-pull・count）の
 単体テストを集約する。他サブコマンドの分割先はatk_test.pyの分割方針一覧docstringを参照する。
 共通ヘルパーは`atk_test.py`から再利用する。
 """
@@ -62,7 +62,7 @@ class TestListSingle:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """1件のフィードバックがfilename・target_repo・本文冒頭要約のtab区切り1行で出力されること。"""
+        """1件のフィードバックがファイル名・`target_repo`・本文冒頭要約のタブ区切り1行で出力されること。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -200,7 +200,7 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """破損予約の未検証filenameで通常依存を削除しない。"""
+        """破損予約の未検証ファイル名で通常依存を削除しない。"""
         notes = _setup_notes(tmp_path)
         self._write_legacy_main(
             notes,
@@ -679,7 +679,7 @@ class TestListSourceFilter:
 
 
 class TestListTypeFilter:
-    """listサブコマンド: --typeでfeedback/tbd出力を限定する。"""
+    """`list`サブコマンド: `--type`でフィードバック/`tbd`出力を限定する。"""
 
     def test_type_feedback_outputs_only_feedback_section(
         self,
@@ -687,7 +687,7 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=feedback指定時はfeedback部のみ出力されtbdヘッダは出力されない。"""
+        """`--type=feedback`指定時はフィードバック部のみ出力され`tbd`ヘッダは出力されない。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
@@ -882,7 +882,7 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--answered=yes指定時に回答概念を持たないfeedbackは除外される。"""
+        """--answered=yes指定時に回答概念を持たないフィードバックは除外される。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
@@ -907,7 +907,7 @@ class TestListStatusFilter:
     def test_active_and_rejected_are_accepted_choices(self, status: str) -> None:
         """--status=active・--status=rejectedがargparseのchoicesとして受理されること。
 
-        機能的な出力検証（feedback側の状態別除外・tbd側の回答状況連動）は
+        機能的な出力検証（フィードバック側の状態別除外・`tbd`側の回答状況連動）は
         `_atk_mq_extras_test.py`のTestListFeedbackStatusActive・
         TestListFeedbackStatusRejectedへ集約する。
         """
@@ -925,7 +925,7 @@ class TestListCount:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--count指定時にfeedback件数とTBD件数の合計が整数1行で出力される。"""
+        """`--count`指定時にフィードバック件数とTBD件数の合計が整数1行で出力される。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
@@ -997,7 +997,7 @@ class TestListCount:
 class TestMultipleFiltersCombinedAsAnd:
     """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。
 
-    `--answered`はfeedbackを無条件除外する仕様（`_answered_matches`が`entry_type != MQ_TYPE_TBD`時に
+    `--answered`はフィードバックを無条件除外する仕様（`_answered_matches`が`entry_type != MQ_TYPE_TBD`時に
     `False`を返す）のため、`--answered=no`とtype不一致（feedback）を1回の呼び出しへ同居させると
     type条件の除外効果がanswered条件の除外効果と区別できなくなる。
     target-repo・source・type・statusの4条件は`--answered=all`（無効化）の下で検証し、
@@ -1024,7 +1024,7 @@ class TestMultipleFiltersCombinedAsAnd:
         )
         # sourceのみ不一致。
         _write_tbd_file(notes, "tbd-other-source.md", target_repo=matching_repo, source="user-issue")
-        # typeのみ不一致（--answered=allのためfeedbackも回答状況フィルターでは除外されない）。
+        # typeのみ不一致（`--answered=all`のためフィードバックも回答状況フィルターでは除外されない）。
         _write_feedback_file(notes, "fb-other-type.md", target_repo=matching_repo, source="session-review")
         # statusのみ不一致（processing配下、--status=inboxで除外される）。
         processing_dir = notes / "processing"
@@ -1113,7 +1113,7 @@ class TestListNarrowTerminalTargetRepo:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """feedback部の各出力行が50桁以内に収まる。"""
+        """フィードバック部の各出力行が50桁以内に収まる。"""
         terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:

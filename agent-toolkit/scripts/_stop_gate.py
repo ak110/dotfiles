@@ -376,7 +376,7 @@ def _describe_pending_background_entries(
     r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
 
     検出スコープは非sidechainエントリに限定する（`isSidechain`が真のエントリは除外）。
-    foreground起動のAgentはメインターン内で同期完了するため対象外。
+    前景起動の`Agent`はメインターン内で同期完了するため対象外。
 
     起動の記録: 次のいずれかを持つuserエントリ。
     - `toolUseResult.status == "async_launched"`（背景Agent起動）
@@ -542,7 +542,7 @@ def _collect_mcp_tool_use_ids(entries: list[dict]) -> set[str]:
 
 
 def _collect_mcp_background_task_id_tool_use_ids(entries: list[dict], mcp_ids: set[str]) -> dict[str, set[str]]:
-    """MCP timeout通知の背景task IDと起動tool_use IDの対応を全`tool_result`から収集する。"""
+    """MCPタイムアウト通知の背景タスクIDと起動`tool_use` IDの対応を。"""
     result: dict[str, set[str]] = {}
     for entry in entries:
         if entry.get("type") != "user" or entry.get("isSidechain"):

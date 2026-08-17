@@ -41,7 +41,7 @@ def test_is_valid_prefix(prefix: str, expected: bool) -> None:
 
 
 def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """listはregistryではなく真正性検証済みの領域だけを返す。"""
+    """`list`は登録簿ではなく真正性検証済みの領域だけを返す。"""
     monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("publish-group")
 
@@ -161,7 +161,7 @@ def test_secure_path_uses_adopted_handle_for_owner_check_and_update(
     expected_handle: int,
     owner_changed: bool,
 ) -> None:
-    """採用handleをOwner判定からsecurity更新まで再利用する契約を確認する。"""
+    """採用ハンドルを所有者判定からセキュリティ更新まで再利用する契約を確認する。"""
     calls = _install_windows_security_doubles(
         monkeypatch,
         directory=directory,
@@ -190,7 +190,7 @@ def test_secure_path_fails_closed_when_minimal_handle_owner_differs(
     tmp_path: pathlib.Path,
     directory: bool,
 ) -> None:
-    """WRITE_OWNER無しの採用handleではOwner相違時にDACLも変更しない。"""
+    """`WRITE_OWNER`無しの採用ハンドルでは所有者相違時に`DACL`も変更しない。"""
     calls = _install_windows_security_doubles(
         monkeypatch,
         directory=directory,
@@ -198,7 +198,7 @@ def test_secure_path_fails_closed_when_minimal_handle_owner_differs(
         full_open_error=subject._WINDOWS_ERROR_ACCESS_DENIED,
     )
 
-    with pytest.raises(subject.ManagedTempError, match="ownerを変更できるhandle"):
+    with pytest.raises(subject.ManagedTempError, match="所有者を変更できるハンドル"):
         subject._windows_secure_path(tmp_path / "target", directory=directory)
 
     full_access = subject._WINDOWS_READ_CONTROL | subject._WINDOWS_WRITE_DAC | subject._WINDOWS_WRITE_OWNER
@@ -253,7 +253,7 @@ def _path_sort_key(path: pathlib.Path) -> str:
 
 
 def _managed_state(target: pathlib.Path, registry: pathlib.Path) -> tuple[object, ...]:
-    """対象tree、marker、外部registryの実在・内容・権限を取得する。"""
+    """対象ツリー、マーカーファイル、外部の登録簿の実在・内容・権限を取得する。"""
     tree = tuple(
         (str(path.relative_to(target)), _path_state(path)) for path in sorted((target, *target.rglob("*")), key=_path_sort_key)
     )
@@ -261,7 +261,7 @@ def _managed_state(target: pathlib.Path, registry: pathlib.Path) -> tuple[object
 
 
 def _replace_records(target: pathlib.Path, transform: typing.Callable[[dict[str, object]], None]) -> None:
-    """markerとregistryへ同じ改変を保存してデータ契約を検証可能にする。"""
+    """マーカーファイルと登録簿へ同じ改変を保存してデータ契約を検証可能にする。"""
     marker = target / _MARKER_NAME
     registry = subject._registry_path(target)
     for path in (marker, registry):
@@ -292,7 +292,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """旧schemaのmarkerとregistryが同じ旧フィールド集合なら互換検証する。"""
+        """旧スキーマのマーカーファイルと登録簿が同じ旧フィールド集合なら互換検証する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("v1-record")
 
@@ -373,7 +373,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """listはv1を最古としてJSONL出力し、不正registryを診断して正常項目を継続する。"""
+        """`list`は`v1`を最古としてJSONL出力し、不正な登録簿を診断して正常項目を継続する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         v1_target = subject.create_managed_temp("legacy")
         v2_target = subject.create_managed_temp("publish-group")
@@ -846,7 +846,7 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """ACL再保護用handle取得直前の置換先へsecurity更新を適用しない。"""
+        """`ACL`再保護用ハンドル取得直前の置換先へセキュリティ更新を適用しない。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-acl-race")
         displaced = tmp_path / "windows-acl-race-displaced"
@@ -923,7 +923,7 @@ class TestManagedTempWindows:
             subject._windows_replace_security(target, administrators_sid, initial_aces, directory=directory)
         except subject.ManagedTempError as error:
             error_code = error.error_code if isinstance(error, subject._WindowsApiError) else None
-            cannot_change_owner = "Windows ownerを変更できるhandleを取得できない" in str(error)
+            cannot_change_owner = "Windowsの所有者を変更できるハンドルを取得できない" in str(error)
             if error_code in (5, 1307, 1314) or cannot_change_owner:
                 pytest.skip(f"別ownerを設定できるWindows tokenではない: {error}")
             raise

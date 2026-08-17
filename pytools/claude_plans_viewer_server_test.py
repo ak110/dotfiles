@@ -620,7 +620,7 @@ class TestEventsEndpoint:
         # client.request()の戻り値はProtocol型のためcastで実装クラスへキャストする。
         # QuartのTestHTTPConnectionは`__aexit__`の型注釈が`exc_type: type`固定のため、
         # 厳格な型検査(ty)では`async with`の実装として認識されない。ライブラリ側の型注釈の
-        # 限界に起因するfalse positiveのためここでは`ty: ignore`で抑制する。
+        # 限界に起因する誤検出のためここでは`ty: ignore`で抑制する。
         raw_connection = client.request(path="/api/events", method="GET")
         conn = typing.cast(_TestHTTPConnection, raw_connection)
         async with conn:  # ty: ignore[invalid-context-manager]

@@ -2213,7 +2213,7 @@ def test_operations_answered_filter_returns_only_answered_tbds(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`answered=yes`は回答済みTBDのみを返し、未回答TBD・feedbackを除外する。"""
+    """`answered=yes`は回答済みTBDのみを返し、未回答TBD・フィードバックを除外する。"""
     monkeypatch.setattr(common, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
     monkeypatch.setattr(common, "pull", lambda _path: None)
     inbox = tmp_path / "inbox"
@@ -2309,7 +2309,7 @@ async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_add_api_rejects_tbd_only_scope_on_feedback(tmp_path: pathlib.Path) -> None:
-    """TBD専用の`scope`をfeedbackへ指定すると拒否する。"""
+    """TBD専用の`scope`をフィードバックへ指定すると拒否する。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -2356,7 +2356,7 @@ async def test_tbd_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatc
 
 @pytest.mark.asyncio
 async def test_answer_api_rejects_feedback_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """feedbackエントリへの回答送信は拒否する。"""
+    """フィードバックエントリへの回答送信は拒否する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:

@@ -47,7 +47,7 @@ def _write_feedback(
     target_repo: str = "github.com/example/repo",
     cooldown_until: object | None = None,
 ) -> pathlib.Path:
-    """readiness用frontmatterを持つテスト用feedbackを書き込む。"""
+    """着手可否用frontmatterを持つテスト用フィードバックを書き込む。"""
     directory = private_notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
@@ -97,7 +97,7 @@ def test_make_filename_completer_matches_prefix_and_sorts(tmp_path: pathlib.Path
 
 
 class TestReadiness:
-    """明示依存、TBD、修復診断からreadinessを算出する。"""
+    """明示依存、TBD、修復診断から着手可否を算出する。"""
 
     def test_ready_feedback_is_actionable(self, tmp_path: pathlib.Path) -> None:
         _write_feedback(tmp_path, "feedback.md")
@@ -108,7 +108,7 @@ class TestReadiness:
         assert result.actionable_count == 1
 
     def test_legacy_local_path_matches_canonical_readiness_target(self, tmp_path: pathlib.Path) -> None:
-        """readinessは旧パス形とURL形を同じ対象リポジトリへ分類する。"""
+        """着手可否判定は旧パス形とURL形を同じ対象リポジトリへ分類する。"""
         local_repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
         subprocess.run(
@@ -124,7 +124,7 @@ class TestReadiness:
         assert result.ready == ("current.md", "legacy.md")
 
     def test_cooldown_uses_utc_boundary_and_does_not_block_other_ready_entries(self, tmp_path: pathlib.Path) -> None:
-        """期限前だけ対象項目を抑制し、同値境界では通常のreadinessへ戻す。"""
+        """期限前だけ対象項目を抑制し、同値境界では通常の着手可否へ戻す。"""
         now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
         _write_feedback(tmp_path, "cooldown.md", cooldown_until="2026-08-12T09:00:00+09:00")
         _write_feedback(tmp_path, "ready.md")
@@ -310,7 +310,7 @@ class TestReadiness:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """同じ旧パス形の外部依存はreadiness計算全体で1回だけGit解決する。"""
+        """同じ旧パス形の外部依存は着手可否計算全体で1回だけGit解決する。"""
         external_repo = tmp_path / "external-repo"
         subprocess.run(["git", "init", str(external_repo)], check=True, capture_output=True)
         subprocess.run(
@@ -424,7 +424,7 @@ class TestReadiness:
 
     @pytest.mark.parametrize("state", ["inbox", "adopted"])
     def test_legacy_external_user_rejects_non_tbd_target(self, tmp_path: pathlib.Path, state: str) -> None:
-        """legacyのユーザー依存がfeedbackを参照した場合は修復対象として示す。"""
+        """旧形式のユーザー依存がフィードバックを参照した場合。"""
         _write_feedback(tmp_path, "answer.md", state=state)
         _write_feedback(
             tmp_path,

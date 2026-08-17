@@ -142,7 +142,7 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=feedbackでfeedback種別のみを対象とする。"""
+        """`--type=feedback`でフィードバック種別のみを対象とする。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="searchword")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")

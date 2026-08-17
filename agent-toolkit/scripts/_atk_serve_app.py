@@ -317,7 +317,7 @@ class Operations:
                 item_target_repo = item["target_repo"]
                 if not isinstance(item_target_repo, str):
                     continue
-                # canonical化は旧パス形とURL形の統合にだけ用い、解決不能な保存値は原値で照合する。
+                # 正規化は旧パス形とURL形の統合にだけ用い、解決不能な保存値は原値で照合する。
                 if canonical_target_repo is None:
                     if item_target_repo != target_repo_filter:
                         continue
@@ -415,7 +415,7 @@ class Operations:
             target_repo = parsed[0].get("target_repo")
             if isinstance(target_repo, str) and target_repo:
                 canonical_target_repo = _git_remote.canonical_repo(target_repo, resolver_cache)
-                # canonical化は同一リポジトリの候補統合にだけ用い、解決不能な保存値は原値を保持する。
+                # 正規化は同一リポジトリの候補統合にだけ用い、解決不能な保存値は原値を保持する。
                 found.add(canonical_target_repo if canonical_target_repo is not None else target_repo)
         return sorted(found)
 

@@ -135,20 +135,20 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
 
 
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """listサブコマンド: feedback/tbdを1件1行（filename・target_repo・状態・要約）で出力する。
+    """`list`サブコマンド: フィードバック/`tbd`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: active）。
-    `active`はfeedback側`inbox`・`processing`とtbd側`answered`を出力する。
-    feedback側は`inbox`・`processing`・`adopted`・`rejected`・`all`を解釈する。
+    `active`はフィードバック側`inbox`・`processing`とtbd側`answered`を出力する。
+    フィードバック側は`inbox`・`processing`・`adopted`・`rejected`・`all`を解釈する。
     tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`adopted`・`rejected`・`all`は
     tbd側に作用せず、tbd inboxの全件を返す）。
-    `--source`指定時はfeedback・tbd双方をfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
+    `--source`指定時はフィードバック・`tbd`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
-    出力はfeedback・tbdの種別でグループ化し、各グループ内を状態によらずファイル名の昇順で整列する。
+    出力はフィードバック・`tbd`の種別でグループ化し、各グループ内を状態によらずファイル名の昇順で整列する。
     該当エントリが1件以上ある種別だけ見出しを出力する。
-    `--count`指定時は、フィルター適用後のfeedback件数とTBD件数の合計を整数のみで出力し、
+    `--count`指定時は、フィルター適用後のフィードバック件数とTBD件数の合計を整数のみで出力し、
     種別見出し・エントリ行は出力しない。
     """
     if not args.skip_pull:

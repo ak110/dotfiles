@@ -17,8 +17,8 @@ atk mq process-loop --orchestrator=codex
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
-ready項目がなくなると、終了時の`session-review`を1回実行してgoalを完了する。
-goal完了後に対話UIで`/exit`を入力すると、親の監視ループへ戻る。
+ready項目がなくなると、終了時の`session-review`を1回実行して`/goal`で登録した目的を完了する。
+目的の完了後に対話UIで`/exit`を入力すると、親の監視ループへ戻る。
 
 初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
 `update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。
@@ -53,7 +53,7 @@ LinuxとmacOSでは相対シンボリックリンク、Windowsではディレク
 この互換リンクにより、起動済みまたは再開したセッションが保持する旧フックの絶対パスを引き続き利用できる。
 再起動案内は新versionを後続セッションへ反映する役割を持ち、互換リンクは既存セッションの実行先を保持する。
 
-旧version名と同名の通常ファイルまたは通常ディレクトリがある場合、更新処理はそのentryを置換せず失敗する。
+旧version名と同名の通常ファイルまたは通常ディレクトリがある場合、更新処理はそのエントリを置換せず失敗する。
 台帳は保持されるため、競合を解消して更新処理を再実行すると互換リンクを復元できる。
 Codexが更新時に旧versionを除去する挙動は、
 [Codexのstore実装](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs)で確認できる。

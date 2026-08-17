@@ -32,7 +32,7 @@ mcp__codex__codex-reply:
 
 Bash:
 
-- `sleep`直後に読み取り専用の状態確認コマンドを連結するforeground待機の検出 (warn/block)
+- `sleep`直後に読み取り専用の状態確認コマンドを連結する前景待機の検出 (warn/block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
 - 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
@@ -915,7 +915,7 @@ def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperat
     )
 
 
-# --- frontmatter同期注記の本体該当語句の実在検証check (warn, feedback 2) ---
+# --- frontmatter同期注記の本体該当語句の実在検証（`warn`、フィードバック2） ---
 
 # 対象は`agent-toolkit/`・`.chezmoi-source/dot_claude/`配下の`.md`ファイル全般
 # （`_plan_format.is_agent_doc_target_file`より対象範囲が広い専用判定）。
@@ -1681,7 +1681,7 @@ _EXECUTE_REVIEW_TASK_PATH_FRAGMENTS: tuple[str, ...] = (
 def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
     """AgentまたはTask起動時の`name`引数指定を値によらずブロックする。
 
-    `name`付きbackground起動は完了通知が本来の起動元へ配送されず停滞するため、
+    `name`付きの背景起動は完了通知が本来の起動元へ配送されず停滞するため、
     `agent-toolkit/rules/99-claude-code.md`「委譲起動時の厳守事項」節が`name`の指定を厳守規定として禁じる。
     キーの存在のみで判定し、空文字列・`None`を含め値の内容は問わない。
     """
@@ -1710,7 +1710,7 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
     """定義済みモデルを使う委譲調整役への`model`引数指定を一律ブロックする。
 
-    executorは定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
+    `plan-impl-executor`は定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
     """
     if subagent_type not in _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES:
         return False
@@ -1734,8 +1734,8 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
 def _check_execute_review_engine_route(payload: dict, tool_input: dict) -> bool:
     """Codex設定の対象実装レビューをsidechainのAgent又はTaskで起動させない。
 
-    対象task referenceと工程別設定の実効値を同時に観測できるAgent／Taskの起動境界へ限定する。
-    `engine=claude`、メインセッション、他のtask referenceは既存経路を維持する。
+    対象のタスク文書と工程別設定の実効値を同時に観測できるAgent／Taskの起動境界へ限定する。
+    `engine=claude`、メインセッション、他のタスク文書は既存経路を維持する。
     """
     if payload.get("isSidechain") is not True:
         return False

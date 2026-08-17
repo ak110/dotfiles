@@ -90,7 +90,7 @@ def _raise_system_exit_0(*_a: object, **_kw: object) -> NoReturn:  # os.execvの
 
 
 class TestProcessLoopIncludesProcessingInCount:
-    """process-loopがfeedback inbox・processing双方を検知件数に含めることを公開CLI経由で検証する。"""
+    """`process-loop`がフィードバックの`inbox`・`processing`双方を検知件数に含めることを公開CLI経由で検証する。"""
 
     def test_inbox_and_processing_entries_are_both_counted(
         self,
@@ -99,7 +99,7 @@ class TestProcessLoopIncludesProcessingInCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inbox・processing双方に`.md`を配置した状態でprocess-loopを起動し、
-        検知メッセージ`{count}件のfeedback/回答済みTBDを検知`の件数が合算値になること。
+        検知メッセージ`{count}件のフィードバック/回答済みTBDを検知`の件数が合算値になること。
         """
         _setup_notes(tmp_path)
         private_notes = tmp_path / "private-notes"
@@ -143,7 +143,7 @@ class TestProcessLoopIncludesProcessingInCount:
             )
 
         captured = capsys.readouterr()
-        assert "2件のfeedback/回答済みTBDを検知" in captured.out
+        assert "2件のフィードバック/回答済みTBDを検知" in captured.out
 
     def test_cooldown_only_waits_without_starting_child_cli(
         self,
@@ -602,7 +602,7 @@ class TestProcessLoopPromptAndEnv:
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
     def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:
-        """新規セッションのgoalが対象と起動スキルだけを伝えること。"""
+        """新規セッションの目的文が対象と起動スキルだけを伝えること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
@@ -639,7 +639,7 @@ class TestProcessLoopPromptAndEnv:
         assert "agent-toolkit:process-feedbacks" in prompt
 
     def test_codex_prompt_declares_continuous_ready_processing(self) -> None:
-        """Codexのgoalだけが追加ready項目の連続処理と終了判定を明示する。"""
+        """Codexの目的文だけが追加`ready`項目の連続処理と終了判定を明示する。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
@@ -926,7 +926,7 @@ class TestProcessLoopPromptAndEnv:
         model_argv: list[str],
         expected_model_argv: list[str],
     ) -> None:
-        """Codex新規起動は対話CLIへ単一goalを渡し、標準入出力を捕捉しない。"""
+        """Codex新規起動は対話CLIへ単一の目的文を渡し、標準入出力を捕捉しない。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -988,7 +988,7 @@ class TestProcessLoopPromptAndEnv:
         resume_argv: list[str],
         expected_tail: list[str],
     ) -> None:
-        """Codex再開はpicker又はIDを使い、新しいgoalを渡さない。"""
+        """Codex再開は対話の選択画面又はIDを使い、新しい目的文を渡さない。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1850,7 +1850,7 @@ class TestConsoleTitleReset:
 
 
 class TestWorktreeWriterGate:
-    """writer起動前のclean判定と上流追随のfail-closed契約を検証する。"""
+    """実装セッション起動前のclean判定と上流追随のfail-closed契約を検証する。"""
 
     def test_missing_worktree_is_created_from_upstream(
         self,
@@ -1914,7 +1914,7 @@ class TestWorktreeWriterGate:
         tmp_path: pathlib.Path,
         failed_step: str,
     ) -> None:
-        """fetch又はrebase失敗時はwriterを起動可能と判定しない。"""
+        """fetch又はrebase失敗時は実装セッションを起動可能と判定しない。"""
         local_path = tmp_path / "repo"
         (local_path / ".claude" / "worktrees" / "process-loop").mkdir(parents=True)
         monkeypatch.setattr(_process_loop, "_worktree_is_clean", lambda _path: True)

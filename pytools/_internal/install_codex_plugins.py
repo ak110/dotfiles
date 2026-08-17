@@ -223,7 +223,7 @@ def _restore_cache_links(marketplace_name: str, plugin_name: str, current_versio
         try:
             changed = setup_codex_links.sync_directory_link(cache_root / version, target) or changed
         except FileExistsError as error:
-            logger.error(log_format.format_status("codex plugins", f"通常entryと互換version名が競合: {error.args[0]}"))
+            logger.error(log_format.format_status("codex plugins", f"通常エントリと互換バージョン名が競合: {error.args[0]}"))
             raise
     return changed
 

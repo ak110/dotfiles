@@ -203,7 +203,7 @@ function Restore-CodexCacheLink {
         if ($null -ne $entry) {
             $linkType = $entry.PSObject.Properties['LinkType']
             if ($null -eq $linkType -or -not $linkType.Value) {
-                throw "通常entryとCodex plugin互換version名が競合しています: $destination"
+                throw "通常エントリとCodex plugin互換バージョン名が競合しています: $destination"
             }
             if ($entry.Target -contains $target -or $entry.Target -contains $currentVersion) { continue }
             Remove-Item -LiteralPath $destination -Force

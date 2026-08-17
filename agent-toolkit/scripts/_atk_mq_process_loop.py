@@ -49,10 +49,10 @@ _INHERITED_VENV_ENV_KEYS: tuple[str, ...] = ("VIRTUAL_ENV",)
 # 仮想環境のコマンド格納ディレクトリ名（POSIXは`bin`、Windowsは`Scripts`）。
 _VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
 
-# 主待機のタイムアウト秒（他端末からのfeedback投入をremote同期で拾う間隔）。
+# 主待機のタイムアウト秒（他端末からのフィードバック投入を`remote`同期で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0
 
-# `latest`指定ツールを外部registryに対して再評価する間隔と、導入処理の実行上限。
+# `latest`指定ツールを外部の登録簿に対して再評価する間隔と、導入処理の実行上限。
 _MISE_REFRESH_INTERVAL_SEC = 24 * 60 * 60
 _MISE_INSTALL_TIMEOUT_SEC = 600
 _INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
@@ -260,12 +260,12 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     上流に既にある変更を未実装と誤認して同一内容を二重に実装し、履歴が分岐する。
 
     worktree未作成の反復では上流最新から新規作成する。
-    追随失敗またはdirty状態では`None`を返し、呼び出し元はwriterを起動しない。
+    追随失敗またはdirty状態では`None`を返し、呼び出し元は実装セッションを起動しない。
     """
     worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
     upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
     if not upstream_branch:
-        print(f"上流ブランチを解決できないためwriterを起動しません: {worktree_path}", file=sys.stderr)
+        print(f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
         return None
     created_worktree = False
     if not worktree_path.exists():
@@ -296,7 +296,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         print(f"worktreeの配置先がディレクトリではありません: {worktree_path}", file=sys.stderr)
         return None
     if not _worktree_is_clean(worktree_path):
-        print(f"worktreeに未コミット変更があるためwriterを起動しません: {worktree_path}", file=sys.stderr)
+        print(f"worktreeに未コミット変更があるため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
         return None
     if not created_worktree:
         fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
@@ -310,19 +310,19 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         if _worktree_is_clean(worktree_path):
             return worktree_path
-        print(f"追随後のworktreeがdirtyなためwriterを起動しません: {worktree_path}", file=sys.stderr)
+        print(f"追随後のworktreeがdirtyなため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
         return None
     subprocess.run(["git", "rebase", "--abort"], cwd=worktree_path, capture_output=True, text=True, check=False)
     _console_title.set_console_title("atk mq process-loop")
     print(
-        f"worktreeの{upstream_branch}への追随に失敗したためwriterを起動しません（{rebase.stderr.strip()}）。",
+        f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。",
         file=sys.stderr,
     )
     return None
 
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str, orchestrator: str) -> str:
-    """対象リポジトリのフィードバック処理を依頼する短いgoalを構築する。"""
+    """対象リポジトリのフィードバック処理を依頼する短い目的文を構築する。"""
     prompt = (
         "/goal `agent-toolkit:process-feedbacks`を起動し、"
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
@@ -774,7 +774,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     初回と0件待機からの復帰時はprivate-notesを同期し、ready項目があれば`update-dotfiles`と
     private-notesの再同期を終えてからセッションを起動する。同期失敗時は子を起動せず待機へ戻る。
     件数は選択したオーケストレーターのセッション起動要否だけに使う。
-    分類結果の保存、依存判定、セッション上限、実行順、readiness判定、wave選択は
+    分類結果の保存、依存判定、セッション上限、実行順、着手可否判定、バッチ選択は
     process-feedbacksが担う。
     初回再開時は選択したCLIのresume形式だけを渡し、再開後のプロンプト入力は利用者へ委ねる。
     新規起動は対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
@@ -788,7 +788,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     `_restart_process_loop`でランチャーへ再起動を要求する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
-    秒間隔で実行し、新規アラートを検知した場合はfeedbackへ投入して即座に次反復へ進む。
+    秒間隔で実行し、新規アラートを検知した場合はフィードバックへ投入して即座に次反復へ進む。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
     待機に入った旨を1度出力する。
@@ -862,7 +862,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0:
                         refresh_before_session = False
-                        print(f"{count}件のfeedback/回答済みTBDを検知。{args.orchestrator}へ委譲します。")
+                        print(f"{count}件のフィードバック/回答済みTBDを検知。{args.orchestrator}へ委譲します。")
                         current_resume_pending = resume_pending
                         if current_resume_pending:
                             resume_pending = False
@@ -899,7 +899,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         last_alert_check,
                     )
                     if submitted > 0:
-                        print(f"アラート監視により{submitted}件のfeedbackを投入しました。")
+                        print(f"アラート監視により{submitted}件のフィードバックを投入しました。")
                         refresh_before_session = True
                         continue
                     print("0件のため変更検知を待機します。")

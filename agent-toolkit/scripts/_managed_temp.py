@@ -68,7 +68,7 @@ class _WindowsApiError(ManagedTempError):
 
 
 class _WindowsHandleOpenError(_WindowsApiError):
-    """Windows path handleを開けなかったことを示す。"""
+    """Windowsのパスハンドルを開けなかったことを示す。"""
 
 
 class _ValidatedTemp(typing.NamedTuple):
@@ -147,7 +147,7 @@ def _windows_error(action: str, path: pathlib.Path | None = None) -> _WindowsApi
 
 
 def _windows_handle_open_error(action: str, path: pathlib.Path) -> _WindowsHandleOpenError:
-    """最後のWindows error codeを含むhandle取得エラーを作成する。"""
+    """最後のWindowsエラーコードを含むハンドル取得エラーを作成する。"""
     error_code = typing.cast(typing.Any, ctypes).get_last_error()
     return _WindowsHandleOpenError(action, path, error_code)
 
@@ -189,7 +189,7 @@ def _windows_path_handle(
     path: pathlib.Path,
     access: int,
 ) -> typing.Iterator[tuple[int, _ByHandleFileInformation]]:
-    """Reparse pointを追跡しないpath handleと属性を返す。"""
+    """再解析ポイントを追跡しないパスハンドルと属性を返す。"""
     kernel32 = _windows_dll("kernel32")
     create_file = kernel32.CreateFileW
     create_file.argtypes = [
@@ -217,7 +217,7 @@ def _windows_path_handle(
         None,
     )
     if handle == wintypes.HANDLE(-1).value:
-        raise _windows_handle_open_error("Windows path handleを取得できない", path)
+        raise _windows_handle_open_error("Windowsのパスハンドルを取得できない", path)
     try:
         information = _ByHandleFileInformation()
         if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
@@ -233,7 +233,7 @@ def _windows_path_handle(
 def _windows_security_update_handle(
     path: pathlib.Path,
 ) -> typing.Iterator[tuple[int, _ByHandleFileInformation, bool]]:
-    """Owner更新可否を判定した単一のsecurity更新用handleを返す。"""
+    """所有者更新可否を判定した単一のセキュリティ更新用ハンドルを返す。"""
     full_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC | _WINDOWS_WRITE_OWNER
     minimal_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC
     with contextlib.ExitStack() as stack:
@@ -300,7 +300,7 @@ def _windows_current_sid() -> str:
 
 
 def _windows_information_identity(information: _ByHandleFileInformation) -> tuple[int, int]:
-    """取得済みのWindows handle情報からvolumeとfile IDを返す。"""
+    """取得済みのWindowsハンドル情報からボリュームとファイルのIDを返す。"""
     return information.volume, (information.file_index_high << 32) | information.file_index_low
 
 
@@ -342,7 +342,7 @@ def _windows_replace_security(
         current_owner = _windows_security_from_handle(handle, information, path).owner
         owner_changed = not _windows_equal_sids(current_owner, owner_sid)
         if owner_changed and not can_write_owner:
-            raise ManagedTempError(f"Windows ownerを変更できるhandleを取得できない: {path}")
+            raise ManagedTempError(f"Windowsの所有者を変更できるハンドルを取得できない: {path}")
         security_information = _WINDOWS_DACL_SECURITY_INFORMATION | _WINDOWS_PROTECTED_DACL_SECURITY_INFORMATION
         owner_to_set: bytes | None = None
         if owner_changed:
@@ -396,7 +396,7 @@ def _windows_set_security(
     owner_sid: bytes | None,
     acl_buffer: typing.Any,
 ) -> None:
-    """開いているhandleへOwnerとDACLを設定する。"""
+    """開いているハンドルへ所有者と`DACL`を設定する。"""
     advapi32 = _windows_dll("advapi32")
     advapi32.SetSecurityInfo.argtypes = [
         wintypes.HANDLE,
@@ -433,7 +433,7 @@ def _windows_security_from_handle(
     information: _ByHandleFileInformation,
     path: pathlib.Path,
 ) -> _WindowsSecurity:
-    """開いているhandleのsecurity descriptorをraw SIDとACEへ分解して返す。"""
+    """開いているハンドルのセキュリティ記述子をraw SIDとACEへ分解して返す。"""
     advapi32 = _windows_dll("advapi32")
     kernel32 = _windows_dll("kernel32")
     advapi32.GetSecurityInfo.argtypes = [
@@ -576,7 +576,7 @@ def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
 
 
 def _windows_identity(path: pathlib.Path) -> tuple[int, int]:
-    """Reparse pointを開かず、Windows handleからvolumeとfile IDを返す。"""
+    """Reparse pointを開かず、WindowsハンドルからボリュームとファイルのIDを返す。"""
     with _windows_path_handle(path, _WINDOWS_READ_ATTRIBUTES) as (_, information):
         return _windows_information_identity(information)
 

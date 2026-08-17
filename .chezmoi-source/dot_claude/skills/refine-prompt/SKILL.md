@@ -3,7 +3,7 @@ name: refine-prompt
 description: >
   agentへのテキスト指示を、バイアスを排した実行者として動作するサブエージェントに読ませて改善提案リストを得て、
   人間が採否判断しながら反映する手法。
-  対象はskill・slash command・taskプロンプト・CLAUDE.md節・コード生成プロンプトなど。
+  対象はskill・slash command・タスクプロンプト・CLAUDE.md節・コード生成プロンプトなど。
   プロンプトやskillを新規作成・大幅改訂した直後、
   またはエージェントの挙動が期待通りにならない原因を指示側の曖昧さに求めたい場合に使用する。
 # 元ネタ: https://zenn.dev/mizchi/articles/empirical-prompt-tuning

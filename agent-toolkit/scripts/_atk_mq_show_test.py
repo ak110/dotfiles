@@ -522,7 +522,7 @@ def _write_feedback_state_file(
     target_repo: str = "github.com/example/foo",
     body: str = "state本文",
 ) -> pathlib.Path:
-    """指定状態配下にfeedbackファイルを書き込み、絶対パスを返す。"""
+    """指定状態配下にフィードバックファイルを書き込み、絶対パスを返す。"""
     state_dir = notes / state
     state_dir.mkdir(parents=True, exist_ok=True)
     path = state_dir / filename

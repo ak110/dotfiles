@@ -274,7 +274,7 @@ def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiList
 
 
 def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[str]:
-    """対象リポジトリに限定したfeedback全状態の`alert_keys`を集合として返す。"""
+    """対象リポジトリに限定したフィードバック全状態の`alert_keys`を集合として返す。"""
     keys: set[str] = set()
     for _path, _entry_repo, text, _state, _entry_type in _iter_entries(
         private_notes, _ALL_FEEDBACK_STATES, target_repo, "feedback"
@@ -346,7 +346,7 @@ def check_and_submit_alerts(
     dependabot_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts,
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
 ) -> int:
-    """アラートを収集・重複除外し、新規分をfeedbackへ投入した件数を返す。"""
+    """アラートを収集・重複除外し、新規分をフィードバックへ投入した件数を返す。"""
     alerts = collect_new_alerts(
         repo_id,
         resolve_target_branch(local_path, git_fn=git_fn),

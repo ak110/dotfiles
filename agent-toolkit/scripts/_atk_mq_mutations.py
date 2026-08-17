@@ -299,7 +299,7 @@ def _validate_transition_targets(
             path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK
         ]
         if non_feedback:
-            raise WebInputError(f"--cooldown-daysはfeedback専用です: {', '.join(non_feedback)}")
+            raise WebInputError(f"--`cooldown-days`はフィードバック専用です: {', '.join(non_feedback)}")
     if action == "remove" and not force:
         protected = [path.name for path in paths if path.parent.name == MQ_STATE_PROCESSING]
         if protected:
@@ -464,7 +464,7 @@ def edit_entry_content(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でfeedback本文を更新する。
+    """平引数でフィードバック本文を更新する。
 
     保存前に新旧frontmatterを比較し、内部管理用予約キーの追加・変更・削除を禁止する。
     """
@@ -507,7 +507,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     if entry_type != MQ_TYPE_TBD:
         tbd_only_keys = sorted({"scope", "question_type", "choices"} & message_frontmatter.keys())
         if tbd_only_keys:
-            raise WebInputError(f"feedbackでは指定できないメタデータです: {', '.join(tbd_only_keys)}")
+            raise WebInputError(f"フィードバックでは指定できないメタデータです: {', '.join(tbd_only_keys)}")
 
     updates = dict(message_frontmatter)
     if "target_repo" in updates:
@@ -680,7 +680,7 @@ def convert_entry_to_plan(
     local_worktree: pathlib.Path | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
-    """既存feedbackを計画実装型へ変換し、保存済みメタデータを返す。"""
+    """既存フィードバックを計画実装型へ変換し、保存済みメタデータを返す。"""
     plan_path = pathlib.Path(plan_file)
     if not plan_path.is_absolute():
         raise WebInputError("plan_fileは絶対パスで指定してください")
@@ -705,7 +705,7 @@ def convert_entry_to_plan(
             raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
         data, body = parsed
         if _require_type(path, text) != MQ_TYPE_FEEDBACK:
-            raise WebInputError(f"feedbackだけを計画実装型へ変換できます: {path.name}")
+            raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
         if not isinstance(raw_entry_repo, str):
             raise WebInputError(f"target_repoが不正です: {path.name}")
@@ -772,7 +772,7 @@ def set_entry_dependencies(
     target_repo: str | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
-    """既存feedbackの明示依存だけを更新し、保存済みメタデータを返す。"""
+    """既存フィードバックの明示依存だけを更新し、保存済みメタデータを返す。"""
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     _validate_filenames_only([filename, *depends_on], inbox_dir)
@@ -788,7 +788,7 @@ def set_entry_dependencies(
             raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
         data, body = parsed
         if _require_type(path, text) != MQ_TYPE_FEEDBACK:
-            raise WebInputError(f"feedbackだけ依存を更新できます: {path.name}")
+            raise WebInputError(f"フィードバックだけ依存を更新できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
         if not isinstance(raw_entry_repo, str):
             raise WebInputError(f"target_repoが不正です: {path.name}")
@@ -817,7 +817,7 @@ def set_entry_dependencies(
 
 
 def _active_dependency_graph(inbox_dir: pathlib.Path, processing_dir: pathlib.Path) -> dict[str, set[str]]:
-    """lock内で取得したactive feedbackの依存グラフを返す。"""
+    """ロック内で取得した`active`なフィードバックの依存グラフを返す。"""
     entries: dict[str, pathlib.Path] = {}
     for directory in (inbox_dir, processing_dir):
         if directory.is_dir():

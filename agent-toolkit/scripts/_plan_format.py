@@ -94,7 +94,7 @@ PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "�
 PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当件数と箇所")
 """構造検査が通常変更だけに要求する類似見直し表の固定3行。
 
-バグ対応はauthor規定に基づき、バグ調査表との意味上の対応をreviewerが照合する。
+バグ対応は起草担当の規定に基づき、バグ調査表との意味上の対応をレビュー担当が照合する。
 """
 
 PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})
@@ -783,7 +783,7 @@ def check_plan_structure(content: str) -> list[str]:
 
     検査対象は見出しの欠落、重複、順序違反、固定領域への追加H2、固定表の列と行、
     空cell、原文参照先の欠落、恒久化等の空欄または結論語だけの記載とする。
-    原文と要約の意味照合、根拠の妥当性、検討の実質はreviewerが判定する。
+    原文と要約の意味照合、根拠の妥当性、検討の実質はレビュー担当が判定する。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
