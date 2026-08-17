@@ -1244,6 +1244,100 @@ def test_grep_mode_searches_tool_use_result_output(
     assert events[-1]["count"] == 1
 
 
+def _self_invocation_entries(command: str) -> list[dict]:
+    """本スクリプト自身を呼び出したBashコマンドと、その照会結果からなるエントリ列を構成する。"""
+    return [
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": command}}],
+            },
+        },
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tu1",
+                        "content": json.dumps({"kind": "warning", "text": "過去の照会結果"}, ensure_ascii=False),
+                    }
+                ],
+            },
+        },
+    ]
+
+
+def test_query_modes_ignore_own_invocation_and_its_result(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """本スクリプトを呼び出したコマンドとその照会結果を、警告・一致として報告しない。"""
+    command = "python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl"
+    transcript = _write_transcript(tmp_path, _self_invocation_entries(command))
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+    assert evidence.main([str(transcript), "--grep", "warning"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "summary", "count": 0}]
+
+
+def test_query_modes_keep_warnings_outside_own_invocation(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """自己呼び出しの除外は当該記録に限り、無関係なエントリの警告は照会し続ける。"""
+    command = "python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl"
+    entries = [
+        *_self_invocation_entries(command),
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "tu2", "content": "warning: 実在の警告"}],
+            },
+        },
+    ]
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["text"] for event in events] == ["warning: 実在の警告"]
+    assert [event["line"] for event in events] == [3]
+
+
+def test_grep_mode_searches_nested_values_under_management_named_keys(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """入れ子の汎用語キーが持つtool_use入力を検索し、エントリ直下の管理用の値は除外し続ける。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "uuid": "needle-value-uuid",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "c1", "name": "SomeTool", "input": {"mode": "needle-value"}}],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--grep", "needle-value"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert events == [
+        {"kind": "match", "line": 1, "text": "needle-value"},
+        {"kind": "summary", "count": 1},
+    ]
+
+
 def test_warn_mode_reports_absence_when_no_entry_matches(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1294,6 +1388,48 @@ def test_detail_mode_keeps_tool_use_input_shapes_and_result_body(
     assert events[1]["input"] == {"file_path": "/tmp/x.md"}
     assert events[2]["input"] == {"prompt": "依頼本文"}
     assert events[3] == {"kind": "detail", "line": 2, "tool": "c1", "text": "結果本文"}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "<persisted-output>",
+        "<persisted-output>\nOutput too large (76.4KB). Full output saved to: /tmp/tool-results/x.txt",
+        "",
+    ],
+)
+def test_detail_mode_returns_persisted_body_from_tool_use_result(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    content: str,
+) -> None:
+    """本文が退避されたtool_resultでは、退避通知ではなく実行結果側の本文を詳細として返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "echo warning: real output"}}
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": content}],
+                },
+                "toolUseResult": {"stdout": "warning: real output", "stderr": ""},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--detail", "2"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "detail", "line": 2, "tool": "c1", "text": "warning: real output"}]
 
 
 def test_detail_mode_shares_one_clip_budget_across_entry_blocks(

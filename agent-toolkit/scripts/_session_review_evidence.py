@@ -28,6 +28,8 @@ _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
 _WARNING_PATTERN = re.compile("警告|warn", re.IGNORECASE)
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
+_SELF_INVOCATION_MARKER = "_session_review_evidence"
+_PERSISTED_OUTPUT_PREFIX = "<persisted-output>"
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
 SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
 _FALLBACK_TEXT = (
@@ -676,7 +678,7 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
     advisorの照会1回が出力退避を伴う規模になる。
     """
     events: list[dict[str, Any]] = []
-    for record in records:
+    for record in _scannable_records(records):
         matched_lines = _matched_lines(record.entry, _WARNING_PATTERN)
         if not matched_lines:
             continue
@@ -693,12 +695,95 @@ def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[
     """エントリ内の全本文から一致行を集め、一致したエントリ数の要約を末尾へ付ける。"""
     events: list[dict[str, Any]] = []
     matched = 0
-    for record in records:
+    for record in _scannable_records(records):
         matched_lines = _matched_lines(record.entry, pattern)
         events.extend({"kind": "match", "line": record.line, "text": _clip(line_text)} for line_text in matched_lines)
         matched += 1 if matched_lines else 0
     events.append({"kind": "summary", "count": matched})
     return events
+
+
+def _scannable_records(records: list[_Record]) -> list[_Record]:
+    """照会の走査対象から、本スクリプト自身の実行記録を除いたレコードを返す。
+
+    本スクリプトを呼び出したコマンドの記録には、`--warn`のフラグ文字列や過去の照会結果本文が
+    そのまま残る。これらは検索語へ機械的に一致し、実在しない警告・一致として報告される。
+    除外対象は自己呼び出しの記録と、対応する実行結果の記録だけとし、
+    本文が同じ文字列を含むだけの無関係な記録は走査対象に残す。
+    """
+    self_call_ids: set[str] = set()
+    scannable: list[_Record] = []
+    for record in records:
+        call_ids = _self_invocation_call_ids(record.entry)
+        if call_ids is not None:
+            self_call_ids |= call_ids
+            continue
+        if _result_call_ids(record.entry) & self_call_ids:
+            continue
+        scannable.append(record)
+    return scannable
+
+
+def _self_invocation_call_ids(entry: dict[str, Any]) -> set[str] | None:
+    """本スクリプト自身を呼び出した記録なら呼び出しIDの集合を、そうでなければ`None`を返す。
+
+    実行結果を呼び出しと同じ記録へ含む形式では対応付けが不要なため、空集合を返す場合がある。
+    判定対象は実行したコマンド文字列に限り、スクリプト自身を読み書きする操作は自己呼び出しとみなさない。
+    """
+    call_ids: set[str] = set()
+    invoked = False
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            block_input = block.get("input")
+            command = block_input.get("command") if isinstance(block_input, dict) else None
+            if not isinstance(command, str) or _SELF_INVOCATION_MARKER not in command:
+                continue
+            invoked = True
+            if isinstance(block.get("id"), str):
+                call_ids.add(block["id"])
+
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and _SELF_INVOCATION_MARKER in _payload_command(payload):
+        invoked = True
+        if isinstance(payload.get("call_id"), str):
+            call_ids.add(payload["call_id"])
+    return call_ids if invoked else None
+
+
+def _payload_command(payload: dict[str, Any]) -> str:
+    """Codexの記録から、実行したコマンドに当たる文字列を取得する。"""
+    item = payload.get("item")
+    for source in (_json_object(payload.get("arguments")), item if isinstance(item, dict) else None):
+        if source is None:
+            continue
+        command = source.get("command")
+        if isinstance(command, list):
+            return " ".join(part for part in command if isinstance(part, str))
+        if isinstance(command, str):
+            return command
+    return ""
+
+
+def _result_call_ids(entry: dict[str, Any]) -> set[str]:
+    """エントリが返しているツール実行結果の呼び出しIDを取得する。"""
+    call_ids: set[str] = set()
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        call_ids |= {
+            block["tool_use_id"]
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str)
+        }
+
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and payload.get("type") == "function_call_output" and isinstance(payload.get("call_id"), str):
+        call_ids.add(payload["call_id"])
+    return call_ids
 
 
 def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dict[str, Any]], int]:
@@ -736,18 +821,36 @@ def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any
                     }
                 )
             elif block.get("type") == "tool_result":
-                body = "\n".join(_text_blocks(block.get("content")))
                 events.append(
                     {
                         "kind": "detail",
                         "line": line,
                         "tool": str(block.get("tool_use_id", "")),
-                        "text": budget.clip(body),
+                        "text": budget.clip(_tool_result_body(block, entry)),
                     }
                 )
     if events:
         return events
     return [{"kind": "detail", "line": line, "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2))}]
+
+
+def _tool_result_body(block: dict[str, Any], entry: dict[str, Any]) -> str:
+    """tool_resultブロックの実体本文を取得する。
+
+    大きなツール出力は退避先ファイルへ移され、message側のcontentには退避通知だけが残る。
+    この形態ではmessage側から実際の出力を取得できないため、
+    同エントリのツール実行結果が持つ標準出力・標準エラーを本文とする。
+    """
+    body = "\n".join(_text_blocks(block.get("content")))
+    if body.strip() and not body.lstrip().startswith(_PERSISTED_OUTPUT_PREFIX):
+        return body
+    result = entry.get("toolUseResult")
+    if isinstance(result, str):
+        return result or body
+    if not isinstance(result, dict):
+        return body
+    streams = [value for key in ("stdout", "stderr") if isinstance(value := result.get(key), str) and value.strip()]
+    return "\n".join(streams) or body
 
 
 def _clip_structure(value: Any, budget: _DetailBudget) -> Any:
@@ -769,22 +872,25 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
     hook通知が入る`attachment`配下のような未知のフィールドも対象となる。
     既知フィールドを列挙する方式は、通知の格納先が増えるたびに検索対象から漏れるため採らない。
     `_METADATA_KEYS`の値は本文を持たない管理用の値（識別子・時刻・形式名・実行環境）であり、
-    走査しても一致を増やすだけとなるため除外する。
+    走査しても一致を増やすだけとなるためエントリ直下に限って除外する。
+    入れ子の値では同名キーでも除外しない。tool_use入力やattachment本文の内部では、
+    `mode`・`status`のような汎用語のキーが利用者の入力そのものを保持するためである。
     """
     texts: list[str] = []
-    _collect_texts(entry, texts)
+    _collect_texts(entry, texts, top_level=True)
     return texts
 
 
-def _collect_texts(value: Any, texts: list[str]) -> None:
-    """構造をたどり、管理用フィールドを除く文字列値を`texts`へ追加する。"""
+def _collect_texts(value: Any, texts: list[str], *, top_level: bool = False) -> None:
+    """構造をたどり、エントリ直下の管理用フィールドを除く文字列値を`texts`へ追加する。"""
     if isinstance(value, str):
         if value.strip():
             texts.append(value)
     elif isinstance(value, dict):
         for key, item in value.items():
-            if key not in _METADATA_KEYS:
-                _collect_texts(item, texts)
+            if top_level and key in _METADATA_KEYS:
+                continue
+            _collect_texts(item, texts)
     elif isinstance(value, list):
         for item in value:
             _collect_texts(item, texts)
@@ -856,13 +962,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warn",
         action="store_true",
-        help="エントリ内の全本文（hook通知を含む。管理用フィールドは除く）のうち"
+        help="エントリ内の全本文（hook通知を含む。エントリ直下の管理用フィールドと"
+        "本スクリプト自身の実行記録は除く）のうち"
         "警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
     )
     parser.add_argument(
         "--grep",
         metavar="REGEX",
-        help="エントリ内の全本文（hook通知を含む。管理用フィールドは除く）を正規表現で検索し、"
+        help="エントリ内の全本文（hook通知を含む。エントリ直下の管理用フィールドと"
+        "本スクリプト自身の実行記録は除く）を正規表現で検索し、"
         "一致行と一致エントリ数を照会する。",
     )
     parser.add_argument(
@@ -870,7 +978,8 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="LINE",
         nargs="+",
         type=int,
-        help="指定した行番号のエントリの詳細（tool_useの入力全体・tool_result本文）を照会する。",
+        help="指定した行番号のエントリの詳細（tool_useの入力全体・tool_result本文。"
+        "本文が退避されている場合はツール実行結果側の本文）を照会する。",
     )
     return parser
 
