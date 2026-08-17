@@ -2373,23 +2373,25 @@ class _ExecutionSegment:
     resolved: bool
 
 
-def _split_bash_segments_with_pipe_flags(command: str) -> list[tuple[bool, str]]:
-    """`split_bash_segments`の分割結果へ、直前の区切りがパイプであるかの別を添えて返す。
+def _split_bash_pipelines(command: str) -> list[list[str]]:
+    """`split_bash_segments`の分割結果を、パイプラインごとの区間列へまとめて返す。
 
-    分割そのものは`split_bash_segments`を正本とし、本関数は境界の分類だけを行う。
+    分割そのものは`split_bash_segments`を正本とし、本関数は境界の分類とまとめ直しだけを行う。
     各区間の元コマンド内の位置を先頭から順に求め、区間の間に残る文字列（空白と区切り演算子だけからなる）で
-    判定する。位置を求められない場合は継続とみなさない。
+    同一パイプラインの継続かを判定する。位置を求められない場合は継続とみなさない。
     """
-    result: list[tuple[bool, str]] = []
+    pipelines: list[list[str]] = []
     segments = split_bash_segments(command)
     position = 0
     for index, segment in enumerate(segments):
         start = command.find(segment, position)
         separator = command[position:start].strip() if start >= 0 else ""
         previous = segments[index - 1] if index > 0 else ""
-        result.append((index > 0 and _is_pipeline_continuation(previous, separator, segment), segment))
+        if index == 0 or not _is_pipeline_continuation(previous, separator, segment):
+            pipelines.append([])
+        pipelines[-1].append(segment)
         position = (start if start >= 0 else position) + len(segment)
-    return result
+    return pipelines
 
 
 def _is_pipeline_continuation(previous: str, separator: str, following: str) -> bool:
@@ -2413,20 +2415,31 @@ def _extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> 
     実行前置語（`sudo`・`env`・`uv run`等）を解決した後の実行位置が`sh -c`・`bash -c`
     （`-lc`等の結合形を含む）である場合、続く文字列引数を1段だけ同じ手順で展開する。
     2段以上の入れ子は展開せず実行位置未確定とする。
-    展開結果が1つのパイプラインへ収まる場合だけ、呼び出し元のパイプラインへ連結する。
-    内側が`;`・`&&`等により複数の文へ分かれる場合、外側のパイプから渡る標準入力をどの文が消費するかは
-    実行時の消費順に依存し、静的なトークン列の解析では確定できない。この場合は当該区間を
-    実行位置未確定として外側のパイプラインへ接続せず、内側の各文だけを独立したパイプラインとして並べる。
+    展開結果が1つのパイプラインへ収まる場合は、上流・下流とも呼び出し元のパイプラインへ連結する。
+    内側が`;`・`&&`等により複数の文へ分かれる場合、上流と下流を非対称に扱う。
+
+    - 下流（`sh -c '...' | 後続`）は連結する。内側の各文は同じ標準出力を継承し実行順に書き込むため、
+      どの文の出力も後続へ渡る。内側の各文それぞれの末尾へ後続の区間列を複製して連結する
+    - 上流（`前段 | sh -c '...'`）は連結しない。渡された標準入力をどの文が消費するかは
+      実行時の消費順に依存し、静的なトークン列の解析では確定できないため、当該区間を実行位置未確定とする
 
     本ヘルパーはコマンド置換・サブシェル・`--`によるオプション終端・前置語の値境界を解決しない。
     この解析水準で成立するのは、実行を止めない助言用の判定に限る。
     """
     pipelines: list[list[_ExecutionSegment]] = []
+    for raw_pipeline in _split_bash_pipelines(command):
+        pipelines.extend(_resolve_pipeline(raw_pipeline, expand_shell=expand_shell))
+    return [pipeline for pipeline in pipelines if pipeline]
+
+
+def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> list[list[_ExecutionSegment]]:
+    """1つのパイプラインの区間列を解決する。
+
+    戻り値の先頭は当該パイプライン自身であり、2件目以降は`sh -c`展開により生じた独立したパイプラインとする。
+    展開の接続規則は`_extract_execution_pipelines`のdocstringが定める。
+    """
     current: list[_ExecutionSegment] = []
-    for index, (continues_pipeline, raw_segment) in enumerate(_split_bash_segments_with_pipe_flags(command)):
-        if index == 0 or not continues_pipeline:
-            current = []
-            pipelines.append(current)
+    for index, raw_segment in enumerate(raw_segments):
         try:
             tokens = shlex.split(raw_segment, posix=True)
         except ValueError:
@@ -2441,14 +2454,16 @@ def _extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> 
             current.append(_ExecutionSegment((), False))
             continue
         inner = _extract_execution_pipelines(shell_argument, expand_shell=False)
-        if len(inner) == 1:
-            current.extend(inner[0])
+        if len(inner) <= 1:
+            current.extend(inner[0] if inner else ())
             continue
-        # 内側が複数の文へ分かれる場合は外側と接続せず、当該区間を実行位置未確定とする。
-        # 内側の各文は呼び出し元のパイプラインより前に実行されるため、その直前へ並べる。
+        # 内側が複数の文へ分かれる場合、上流は接続せず当該区間を実行位置未確定とする。
+        # 下流の区間列は内側の各文へ複製して連結し、それぞれを独立したパイプラインとする。
         current.append(_ExecutionSegment((), False))
-        pipelines[-1:-1] = inner
-    return [pipeline for pipeline in pipelines if pipeline]
+        rest = _resolve_pipeline(raw_segments[index + 1 :], expand_shell=expand_shell)
+        downstream = rest[0] if rest else []
+        return [current, *(inner_pipeline + downstream for inner_pipeline in inner), *rest[1:]]
+    return [current]
 
 
 def _extract_execution_segments(command: str) -> list[_ExecutionSegment]:
