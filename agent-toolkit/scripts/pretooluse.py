@@ -2413,9 +2413,10 @@ def _extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> 
     実行前置語（`sudo`・`env`・`uv run`等）を解決した後の実行位置が`sh -c`・`bash -c`
     （`-lc`等の結合形を含む）である場合、続く文字列引数を1段だけ同じ手順で展開する。
     2段以上の入れ子は展開せず実行位置未確定とする。
-    展開結果のうち最後のパイプラインだけを呼び出し元のパイプラインへ連結する。
-    シェル全体の標準出力を外側の後段が受け取るのは内側の最後のパイプラインであり、
-    内側で`;`・`&&`等により先行するパイプラインは独立したパイプラインとして並べる。
+    展開結果が1つのパイプラインへ収まる場合だけ、呼び出し元のパイプラインへ連結する。
+    内側が`;`・`&&`等により複数の文へ分かれる場合、外側のパイプから渡る標準入力をどの文が消費するかは
+    実行時の消費順に依存し、静的なトークン列の解析では確定できない。この場合は当該区間を
+    実行位置未確定として外側のパイプラインへ接続せず、内側の各文だけを独立したパイプラインとして並べる。
 
     本ヘルパーはコマンド置換・サブシェル・`--`によるオプション終端・前置語の値境界を解決しない。
     この解析水準で成立するのは、実行を止めない助言用の判定に限る。
@@ -2440,11 +2441,13 @@ def _extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> 
             current.append(_ExecutionSegment((), False))
             continue
         inner = _extract_execution_pipelines(shell_argument, expand_shell=False)
-        if not inner:
+        if len(inner) == 1:
+            current.extend(inner[0])
             continue
-        # 内側の先行パイプラインは呼び出し元のパイプラインより前に実行されるため、その直前へ並べる。
-        pipelines[-1:-1] = inner[:-1]
-        current.extend(inner[-1])
+        # 内側が複数の文へ分かれる場合は外側と接続せず、当該区間を実行位置未確定とする。
+        # 内側の各文は呼び出し元のパイプラインより前に実行されるため、その直前へ並べる。
+        current.append(_ExecutionSegment((), False))
+        pipelines[-1:-1] = inner
     return [pipeline for pipeline in pipelines if pipeline]
 
 

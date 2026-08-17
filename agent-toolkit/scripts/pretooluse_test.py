@@ -3266,15 +3266,30 @@ class TestBashOutputTruncationWarning:
             "pytest -q 2>&1 | head -5",
             "pytest -q; pytest -q | head -5",
             "sh -c 'pytest -q' | head -5",
-            "sh -c 'ls; pytest -q' | head -5",
+            "sh -c 'ls; pytest -q | head -5'",
         ],
-        ids=["prefixed-shell-c", "stderr-redirect", "second-of-multiple", "shell-c-into-outer-pipe", "shell-c-last-pipeline"],
+        ids=["prefixed-shell-c", "stderr-redirect", "second-of-multiple", "shell-c-into-outer-pipe", "shell-c-inner-pipeline"],
     )
     def test_truncation_inside_verification_pipeline_warns(self, command: str) -> None:
         """`sh -c`展開・標準エラー統合・2件目の検証コマンドを含む形も同一パイプラインとして警告する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'pytest -q | sh -c "tee /tmp/x1.log; head -5"',
+            'pytest -q | sh -c "head -5; tee /tmp/x2.log"',
+            "sh -c 'ls; pytest -q' | head -5",
+        ],
+        ids=["tee-then-head", "head-then-tee", "outer-pipe-after-multi"],
+    )
+    def test_multi_statement_shell_not_connected_to_outer_pipeline_silent(self, command: str) -> None:
+        """内側が複数の文へ分かれる`sh -c`は、外側と入出力をやり取りする文を確定できないため警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
 
 
 class TestAgentNameParameterGate:
