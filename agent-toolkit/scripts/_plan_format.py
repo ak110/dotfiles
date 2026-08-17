@@ -91,7 +91,7 @@ PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先"
 """通常変更の恒久化表の固定4列。バグ対応はバグ調査表の14行を正本とする。"""
 
 PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
-PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当件数と箇所")
+PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当箇所")
 """構造検査が通常変更だけに要求する類似見直し表の固定3行。
 
 バグ対応は起草担当の規定に基づき、バグ調査表との意味上の対応をレビュー担当が照合する。
