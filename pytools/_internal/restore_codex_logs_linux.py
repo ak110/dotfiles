@@ -171,21 +171,32 @@ def _running_codex_processes() -> tuple[str, ...]:
         if not values:
             labels.append(f"pid {process.pid}")
         elif any(_is_codex_process_value(value) for value in values):
-            labels.append(_process_label(name, cmdline_values, process.pid))
+            labels.append(_process_label(name, exe, cmdline_values, process.pid))
     return tuple(labels)
 
 
-def _process_label(name: str, cmdline_values: list[str], pid: int) -> str:
+def _process_label(name: str, exe: str, cmdline_values: list[str], pid: int) -> str:
     """実行名と、許可した第2要素のサブコマンド名だけでラベルを構成する。
 
+    `name`を取得できない場合は、Codexの識別に用いた`exe`又は`cmdline`第1要素から実行名を導く。
+    いずれからも実行名を得られない場合だけ`pid <pid>`とする。
     `codex [OPTIONS] [PROMPT]`の通常起動では第2要素が利用者のプロンプトになり得るため、
     完全一致で許可したサブコマンド名以外はラベルへ含めない。
     """
-    if not name:
+    candidates = (_executable_name(value) for value in (name, exe, cmdline_values[0] if cmdline_values else ""))
+    executable = next((candidate for candidate in candidates if candidate), "")
+    if not executable:
         return f"pid {pid}"
     if len(cmdline_values) >= 2 and cmdline_values[1] in _CODEX_LABEL_SUBCOMMANDS:
-        return f"{name} {cmdline_values[1]}"
-    return name
+        return f"{executable} {cmdline_values[1]}"
+    return executable
+
+
+def _executable_name(value: str) -> str:
+    """パス表記を含み得る値から、拡張子を除いた実行ファイル名を取り出す。"""
+    if not value:
+        return ""
+    return pathlib.PurePosixPath(value.replace("\\", "/")).name.removesuffix(".exe")
 
 
 def _format_running_processes(labels: tuple[str, ...]) -> str:
@@ -197,7 +208,7 @@ def _format_running_processes(labels: tuple[str, ...]) -> str:
 def _is_codex_process_value(value: str) -> bool:
     """実行名又はcommand line要素がCodex launcher/packageを示すか判定する。"""
     normalized = value.replace("\\", "/").lower()
-    stem = pathlib.PurePosixPath(normalized).name.removesuffix(".exe")
+    stem = _executable_name(normalized)
     return stem == "codex" or stem.startswith("codex-") or "@openai/codex" in normalized
 
 

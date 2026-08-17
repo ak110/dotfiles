@@ -510,3 +510,41 @@ def test_normal_launch_label_excludes_user_prompt(
     warning = "\n".join(record.getMessage() for record in caplog.records)
     assert "Codexが稼働中のため通常ストレージへの復元を延期: codex (1件)" in warning
     assert prompt not in warning
+
+
+@pytest.mark.parametrize(
+    ("info", "label"),
+    [
+        pytest.param(
+            {"name": _DENIED, "exe": "/usr/bin/codex", "cmdline": _DENIED},
+            "codex",
+            id="executable-path-only",
+        ),
+        pytest.param(
+            {"name": _DENIED, "exe": _DENIED, "cmdline": ["/opt/codex/bin/codex", "mcp-server", "--config", "model=x"]},
+            "codex mcp-server",
+            id="command-line-only",
+        ),
+    ],
+)
+def test_label_uses_executable_name_when_process_name_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+    info: dict[str, object],
+    label: str,
+) -> None:
+    """実行名を取得できなくても、Codexを識別できた実行ファイル名を警告のラベルへ用いる。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path, stop_codex=False)
+    _write_targets(pairs)
+    _link_all(pairs)
+    _patch_process_iter(monkeypatch, [_FakeProcess({**info, "uids": _uids(_OWN_UID)}, pid=3000)])
+
+    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
+        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+
+    warning = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"Codexが稼働中のため通常ストレージへの復元を延期: {label} (1件)" in warning
+    assert "pid 3000" not in warning
+    assert "/opt/codex" not in warning
+    assert "--config" not in warning
