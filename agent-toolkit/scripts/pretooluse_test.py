@@ -3264,11 +3264,14 @@ class TestBashOutputTruncationWarning:
         [
             "sudo sh -c 'pytest -q | head -5'",
             "pytest -q 2>&1 | head -5",
+            "pytest -q; pytest -q | head -5",
+            "sh -c 'pytest -q' | head -5",
+            "sh -c 'ls; pytest -q' | head -5",
         ],
-        ids=["prefixed-shell-c", "stderr-redirect"],
+        ids=["prefixed-shell-c", "stderr-redirect", "second-of-multiple", "shell-c-into-outer-pipe", "shell-c-last-pipeline"],
     )
     def test_truncation_inside_verification_pipeline_warns(self, command: str) -> None:
-        """前置語付きの`sh -c`展開と標準エラー統合を伴う形も同一パイプラインとして警告する。"""
+        """`sh -c`展開・標準エラー統合・2件目の検証コマンドを含む形も同一パイプラインとして警告する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "truncating it" in _agent_messages(result)
