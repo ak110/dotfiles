@@ -185,8 +185,9 @@ def main(payload_text: str) -> int:
     if exit_code == 2:
         return 2
 
-    # 終了コード0で出力する通知の一覧。exit 0のstderrはコーディングエージェントへ届かないため、
-    # 全てstdoutの`hookSpecificOutput.additionalContext`へ結合して出力する。
+    # 出力を保留する通知の一覧。exit 0のstderrはコーディングエージェントへ届かないため、
+    # 通常はstdoutの`hookSpecificOutput.additionalContext`へ結合して出力する。
+    # 遮断で終える場合はJSONを出力しないため、`exit_with`がstderrへ出力して消費する。
     pending_notices: list[str] = []
     if language_warning_body is not None:
         pending_notices.append(_language_notice(language_warning_body))
@@ -202,6 +203,19 @@ def main(payload_text: str) -> int:
             return
         emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse"}})
 
+    def exit_with(code: int) -> int:
+        """終了コードを返す直前に、遮断時だけ保留通知をstderrへ出力して消費する。
+
+        exit 2ではstdoutの構造化JSONが評価されず、保留通知を`additionalContext`で渡せない。
+        出力しないまま返すと、検査側のカウンタと最終パスだけが更新されるため、
+        同じ入力を再試行しても通知が再生成されず失われる。
+        exit 2のstderrはコーディングエージェントへ届くため、遮断理由と同じ経路で出力する。
+        """
+        if code == 2 and pending_notices:
+            print("\n".join(pending_notices), file=sys.stderr)
+            pending_notices.clear()
+        return code
+
     # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合は警告（降格）。
     # 呼び出し元はplan-modeの直接委譲手順で計画確定前に警告を解消・検収する
     plan_mode_notice = _check_plan_mode_skill_first(tool_name, tool_input, session_id)
@@ -211,7 +225,7 @@ def main(payload_text: str) -> int:
     # plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続をブロック
     blocked, direct_edit_notice = _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id)
     if blocked:
-        return 2
+        return exit_with(2)
     if direct_edit_notice is not None:
         pending_notices.append(direct_edit_notice)
 
@@ -232,16 +246,18 @@ def main(payload_text: str) -> int:
         return 0
 
     if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
-        return _handle_codex_tool(payload, tool_name, tool_input, session_id, emit_json)
+        return exit_with(_handle_codex_tool(payload, tool_name, tool_input, session_id, emit_json))
 
     if tool_name == "Bash":
-        return _handle_bash_tool(
-            payload,
-            tool_input,
-            session_id,
-            emit_json,
-            flush_pending_notices,
-            is_codex=is_codex,
+        return exit_with(
+            _handle_bash_tool(
+                payload,
+                tool_input,
+                session_id,
+                emit_json,
+                flush_pending_notices,
+                is_codex=is_codex,
+            )
         )
 
     # Readは変更を伴わないため、個別の事前検査を行わない。
@@ -250,9 +266,9 @@ def main(payload_text: str) -> int:
         return 0
 
     if tool_name in ("Agent", "Task"):
-        return _handle_agent_tool(payload, tool_name, tool_input, session_id, flush_pending_notices)
+        return exit_with(_handle_agent_tool(payload, tool_name, tool_input, session_id, flush_pending_notices))
 
-    return _handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex)
+    return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex))
 
 
 def _handle_codex_tool(

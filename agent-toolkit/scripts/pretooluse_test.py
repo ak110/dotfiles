@@ -59,10 +59,13 @@ def _agent_messages(result: subprocess.CompletedProcess[str]) -> str:
 def _stderr_warn_offenders(source: str) -> list[int]:
     """warn通知をstderrへ出力する箇所の行番号を返す。
 
-    `print(..., tag="warn"の呼び出し, file=sys.stderr)`の直接形に加え、
-    warn通知を変数へ束縛してからstderrへ渡す形も検出する。
-    束縛元がwarn通知を返す関数の呼び出しである間接形も対象とし、
+    検出するのは`print(..., file=sys.stderr)`の引数へwarn通知が現れる2形とする。
+    1つは`tag="warn"`の呼び出しを引数へ直接書く形、
+    もう1つはwarn通知を変数へ束縛してから引数へ渡す形である。
+    後者には束縛元がwarn通知を返す関数の呼び出しである場合も含め、
     定義順に依存しないよう関数名と変数名の収集を不動点まで繰り返す。
+    warn通知を関数の引数として別のヘルパーへ渡し、渡された先のヘルパーがstderrへ出力する
+    間接的な受け渡しは検出しない。仮引数へ渡る値の由来を追跡しないためである。
     """
     tree = ast.parse(source)
 
@@ -3951,6 +3954,57 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 assert "[warn]" in _agent_messages(result)
                 assert "without first creating a plan file" in _agent_messages(result)
                 assert "without first creating a plan file" not in result.stderr
+
+    def test_second_target_edit_warn_survives_block(self, tmp_path: pathlib.Path):
+        """2件目の警告と同じ呼び出しで遮断が成立しても、警告をコーディングエージェントへ届ける。
+
+        遮断時点でカウンタと直前パスは更新済みのため、同一パスを安全に再試行しても
+        警告は再生成されない。遮断で終える直前に出力しなければ警告が失われる。
+        """
+        sid = "direct-edit-warn-with-block"
+        self._write_flag_state(tmp_path, sid)
+        env = self._state_env(tmp_path)
+        first = self._target(tmp_path, "foo/SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(first), "old_string": "stub", "new_string": "stub2"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        # 2件目は警告対象であり、同じ入力が文字化け検査で遮断される。
+        second = self._target(tmp_path, "bar/SKILL.md")
+        blocked = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(second),
+                    "old_string": "stub",
+                    "new_string": "stub2" + chr(0xFFFD),
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert blocked.returncode == 2
+        assert "U+FFFD" in blocked.stderr
+        assert "The next such edit will be blocked." in _agent_messages(blocked)
+        # 同一パスの安全な再試行では警告が再生成されない。
+        retried = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(second), "old_string": "stub", "new_string": "stub2"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert retried.returncode == 0
+        assert "The next such edit will be blocked." not in _agent_messages(retried)
 
     def test_third_target_edit_blocks(self, tmp_path: pathlib.Path):
         sid = "direct-edit-block"
