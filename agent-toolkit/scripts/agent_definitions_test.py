@@ -359,12 +359,13 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert metadata["skills"] == ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"]
     assert "mcp__codex__codex" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
-    assert "実装タスク文書、起草規範スキル、レビュータスク文書は読み込まず" in text
+    assert "実装タスク文書、作成規範スキル、レビュータスク文書は読み込まず" in text
     assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは書込担当へ割り当てる" in text
     assert "シェル経由のファイル書換え" in text
     assert "`check_dash.py`による文書検収" in text
     assert "1つの書込担当へ同じworktreeで順次割り当て" in text
     assert "異なる計画ファイルのレーン" in text
+    assert "だけを別worktreeで並列に扱える" in text
     assert "同じ計画ファイルの書込担当は依存順に1件ずつ起動" in text
     for task_name in (
         "implementation-task.md",
@@ -451,8 +452,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     assert "mcp__codex__codex" in metadata["tools"]
     for phrase in (
         "自身は成果物、計画ファイル、キューを変更せず",
-        "受信者専用のタスク文書と起草規範スキルは読み込まず",
-        "`explore-template.md`、起草規範スキル、バグ調査のタスク文書、レビュータスク文書は各受信者が読み込む",
+        "受信者専用のタスク文書と作成規範スキルは読み込まず",
+        "`explore-template.md`、作成規範スキル、バグ調査のタスク文書、レビュータスク文書は各受信者が読み込む",
         "push、フィードバック投入、worktreeの作成と回収は行わない",
         "explore-template.md",
         "plan-review-task.md",

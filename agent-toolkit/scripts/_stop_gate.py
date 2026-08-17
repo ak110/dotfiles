@@ -542,7 +542,7 @@ def _collect_mcp_tool_use_ids(entries: list[dict]) -> set[str]:
 
 
 def _collect_mcp_background_task_id_tool_use_ids(entries: list[dict], mcp_ids: set[str]) -> dict[str, set[str]]:
-    """MCPタイムアウト通知の背景タスクIDと起動`tool_use` IDの対応を。"""
+    """MCPタイムアウト通知の背景タスクIDと起動`tool_use` IDの対応を全`tool_result`から収集する。"""
     result: dict[str, set[str]] = {}
     for entry in entries:
         if entry.get("type") != "user" or entry.get("isSidechain"):

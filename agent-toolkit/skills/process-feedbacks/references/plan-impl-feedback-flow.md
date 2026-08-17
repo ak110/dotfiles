@@ -44,7 +44,7 @@ readyな計画が1件の場合は、借用する現在worktreeを回収不可と
 統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`を実行し、
 `runtime-routing.md`「工程別モデル設定」で経路を解決する。
 統合担当へ`merge-task.md`、統合worktreeと作成時HEADの完全OID、統合対応表、全計画、プロジェクト規範、
-起草規範スキル、検証コマンド、commit可・push不可・worktree作成回収不可・キュー変更不可の権限を渡す。
+作成規範スキル、検証コマンド、commit可・push不可・worktree作成回収不可・キュー変更不可の権限を渡す。
 統合担当はrebaseを行わず、全項目を単一cherry-pickシーケンスで適用する。
 
 初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動する。

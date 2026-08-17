@@ -32,7 +32,7 @@ mcp__codex__codex-reply:
 
 Bash:
 
-- `sleep`直後に読み取り専用の状態確認コマンドを連結する前景待機の検出 (warn/block)
+- `sleep`直後に読み取り専用の状態確認コマンドを連結する前景待機の検出 (`warn/block`)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
 - 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
@@ -1734,7 +1734,7 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
 def _check_execute_review_engine_route(payload: dict, tool_input: dict) -> bool:
     """Codex設定の対象実装レビューをsidechainのAgent又はTaskで起動させない。
 
-    対象のタスク文書と工程別設定の実効値を同時に観測できるAgent／Taskの起動境界へ限定する。
+    対象のタスク文書と工程別設定の実効値を同時に観測できる`Agent`／`Task`の起動境界へ限定する。
     `engine=claude`、メインセッション、他のタスク文書は既存経路を維持する。
     """
     if payload.get("isSidechain") is not True:

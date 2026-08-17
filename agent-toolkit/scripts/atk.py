@@ -241,7 +241,7 @@ def _add_mq_add_parser(sub: Any) -> None:
 
 def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
-    list_ = sub.add_parser("list", help="エントリを1件1行（ファイル名・target_repo・状態ラベル・本文冒頭要約）で出力する")
+    list_ = sub.add_parser("list", help="エントリを1件1行（ファイル名・`target_repo`・状態ラベル・本文冒頭要約）で出力する")
     _add_target_repo_arg(list_)
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(

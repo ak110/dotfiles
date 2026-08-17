@@ -147,7 +147,7 @@ def test_restore_keeps_targets_until_later_matching_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回はホームディレクトリへ復元して`target`を保持し。"""
+    """初回はホームディレクトリへ復元して`target`を保持し、次回に一致を検証して回収する。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     contents = _write_targets(pairs)
     _link_all(pairs)
@@ -200,7 +200,7 @@ def test_copy_failure_removes_temporary_files_only(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """コピー失敗時はホームディレクトリの管理対象symlinkと`target`を保持し。"""
+    """コピー失敗時はホームディレクトリの管理対象symlinkと`target`を保持し、一時ファイルを除く。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)

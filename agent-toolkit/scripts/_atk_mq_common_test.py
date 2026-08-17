@@ -424,7 +424,7 @@ class TestReadiness:
 
     @pytest.mark.parametrize("state", ["inbox", "adopted"])
     def test_legacy_external_user_rejects_non_tbd_target(self, tmp_path: pathlib.Path, state: str) -> None:
-        """旧形式のユーザー依存がフィードバックを参照した場合。"""
+        """旧形式のユーザー依存がフィードバックを参照した場合は修復対象として示す。"""
         _write_feedback(tmp_path, "answer.md", state=state)
         _write_feedback(
             tmp_path,

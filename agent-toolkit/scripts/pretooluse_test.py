@@ -4036,7 +4036,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
 
 
 class TestFrontmatterSyncNoteBodyExists:
-    """frontmatter同期注記の本体該当語句の実在検証（フィードバック2、warn）。"""
+    """frontmatter同期注記の本体該当語句の実在検証（フィードバック2、`warn`）。"""
 
     @staticmethod
     def _target(tmp_path: pathlib.Path, name: str = "test-agent.md") -> pathlib.Path:

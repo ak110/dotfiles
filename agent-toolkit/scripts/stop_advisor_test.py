@@ -253,7 +253,7 @@ class TestApproveConditions:
         assert "systemMessage" not in decision
 
     def test_pending_mcp_background_task_approves(self, tmp_path: pathlib.Path):
-        """MCPタイムアウトで背景化したタスクも完了通知までapproveする。"""
+        """MCPタイムアウトで背景化したタスクも完了通知まで`approve`する。"""
         transcript = _write_transcript(
             tmp_path,
             [

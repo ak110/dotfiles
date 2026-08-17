@@ -4,7 +4,7 @@
 
 ## 入力
 
-- 対象worktree、プロジェクト規範、該当する起草規範スキル、`agent-toolkit:review-standards`の絶対パス
+- 対象worktree、プロジェクト規範、該当する作成規範スキル、`agent-toolkit:review-standards`の絶対パス
 - 計画着手前SHA、レビュー対象commit、変更ファイル一覧、検証結果
 - `review_contract`: ユーザー目的、現行の公開契約、ユーザー合意、合意済みの除外・保持、入力生成主体、信頼境界、
   通常入力、対象外入力、誤許可と誤拒否の利用者影響

@@ -24,7 +24,7 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 - 対象worktreeとプロジェクト規範
 - `process-feedbacks/references/`配下の`explore-template.md`、`decision-format.md`、`review-checklists.md`
 - `plan-mode/references/plan-review-task.md`
-- `agent-toolkit:plan-mode`などの起草規範スキルと、バグ対応時は`agent-toolkit:bugfix`
+- `agent-toolkit:plan-mode`などの作成規範スキルと、バグ対応時は`agent-toolkit:bugfix`
 - 既存ファイルと衝突しない乱数サフィックス付きで、委譲元が確定した計画ファイルの絶対パス
 
 これらは`feedbacks-planner`が起草担当へ対象ファイル名、対象リポジトリ、確定した採否と合意、対象、規範、

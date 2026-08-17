@@ -308,7 +308,7 @@ def _legacy_dependency_is_satisfied(
     now: datetime.datetime,
     resolver_cache: dict[str, str | None],
 ) -> bool | None:
-    """通常のファイル名依存では`None`を返す。"""
+    """legacy固有依存の成立状態を返し、通常のファイル名依存では`None`を返す。"""
     parsed = parse_frontmatter(entry.text)
     if parsed is not None and "depends_on" in parsed[0]:
         return None

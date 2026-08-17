@@ -25,7 +25,7 @@ description: >
 5. 完成後、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、本文、対象worktreeの絶対パス、
    base commit、plan file、source `plan`、依存、吸収元のファイル名を渡す。
    add-feedbackは保存直前に最新状態を再確認し、新しい計画型のフィードバックを追加する
-6. 保存後のファイル名、metadata、本文、吸収元のファイル名を利用者へ提示する
+6. 保存後のファイル名、frontmatter情報、本文、吸収元のファイル名を利用者へ提示する
 
 計画を投入せず終了する場合や継続不能時は、rejectedへ保存した本文を入力として
 `agent-toolkit:add-feedback`をSkill機能で起動し、同一セッション内で再投入する。

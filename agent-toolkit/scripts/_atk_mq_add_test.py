@@ -398,7 +398,7 @@ def test_add_operation_records_top_level_dependencies(
 
 
 def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Path) -> None:
-    """`add` CLIの依存を単純ファイル名へ限定し。"""
+    """`add` CLIの依存を単純ファイル名へ限定し、拡張子省略と重複を正規化する。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
 
