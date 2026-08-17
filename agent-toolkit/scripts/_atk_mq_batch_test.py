@@ -9,7 +9,6 @@
 import argparse
 import contextlib
 import datetime
-import os
 import pathlib
 import types
 from collections.abc import Iterator
@@ -46,9 +45,14 @@ def _patch_repo_operations(monkeypatch: pytest.MonkeyPatch, module: types.Module
     return messages
 
 
-def _fold_filename_case(monkeypatch: pytest.MonkeyPatch) -> None:
-    """大文字小文字を区別しないファイルシステム（Windows等）の名前畳み込みを再現する。"""
-    monkeypatch.setattr(os.path, "normcase", str.lower)
+def _assume_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """取り込み先が大文字小文字を区別しないファイルシステムである状況を再現する。
+
+    Linuxの一時ディレクトリでは実際に区別しないファイルシステムを用意できないため、
+    実測結果だけを差し替える。プローブ処理そのものは`test_case_sensitivity_probe_*`と
+    差し替えを行わない他のテストが実経路で検証する。
+    """
+    monkeypatch.setattr(batch, "_is_case_sensitive", lambda _directory: False)
 
 
 def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body: str = "本文") -> str:
@@ -189,6 +193,62 @@ def test_import_avoids_renumbering_onto_kept_original_name(
     assert (notes / "inbox" / kept).read_text(encoding="utf-8").endswith("本文\n")
 
 
+def test_case_sensitivity_probe_reports_linux_filesystem_as_case_sensitive(tmp_path: pathlib.Path) -> None:
+    """実際のプローブ処理が一時ディレクトリを大文字小文字を区別すると判定し、残留物を残さない。"""
+    assert batch._is_case_sensitive(tmp_path) is True
+    assert not list(tmp_path.iterdir())
+
+
+def test_case_sensitivity_probe_detects_case_insensitive_directory(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """名前を畳み込むディレクトリでは、反転名の実在をもって区別しないと判定する。"""
+    original_exists = pathlib.Path.exists
+
+    def case_folding_exists(self: pathlib.Path) -> bool:
+        """名前の大文字小文字を無視して実在判定するファイルシステムを模擬する。"""
+        if original_exists(self):
+            return True
+        return any(entry.name.lower() == self.name.lower() for entry in self.parent.iterdir())
+
+    monkeypatch.setattr(pathlib.Path, "exists", case_folding_exists)
+
+    assert batch._is_case_sensitive(tmp_path) is False
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("case_sensitive", "expected"),
+    [(True, False), (False, True)],
+)
+def test_comparison_key_folds_case_only_when_insensitive(case_sensitive: bool, expected: bool) -> None:
+    """比較キーは大文字小文字を区別しない場合だけ同名として畳み込む。"""
+    left = batch._comparison_key("Same.md", case_sensitive=case_sensitive)
+    right = batch._comparison_key("same.md", case_sensitive=case_sensitive)
+
+    assert (left == right) is expected
+
+
+def test_import_keeps_names_differing_only_by_case_on_case_sensitive_filesystem(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """大文字小文字を区別するファイルシステムでは、大小差だけの名前を衝突と判定せず元名を維持する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
+
+    mapping, _warnings = batch.add_batch_entries(
+        notes,
+        texts=[_entry_text("clash.md"), _entry_text("Same.md"), _entry_text("same.md")],
+        now=_FIXED_DT,
+    )
+
+    assert mapping == [("clash.md", "clash.md"), ("Same.md", "Same.md"), ("same.md", "same.md")]
+    assert (notes / "adopted" / "Clash.md").read_text(encoding="utf-8") == "既存\n"
+
+
 def test_import_renumbers_name_colliding_only_by_case(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -196,7 +256,7 @@ def test_import_renumbers_name_colliding_only_by_case(
     """大文字小文字だけが異なる既存ファイルとの衝突も再採番し、既存ファイルを上書きしない。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
-    _fold_filename_case(monkeypatch)
+    _assume_case_insensitive(monkeypatch)
     (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
 
     mapping, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md")], now=_FIXED_DT)
@@ -213,7 +273,7 @@ def test_import_rejects_original_names_duplicated_only_by_case(
     """大文字小文字だけが異なる元名の組も、書き込みが互いを上書きし得るため全件拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
-    _fold_filename_case(monkeypatch)
+    _assume_case_insensitive(monkeypatch)
 
     with pytest.raises(WebInputError):
         batch.add_batch_entries(notes, texts=[_entry_text("Same.md"), _entry_text("same.md")], now=_FIXED_DT)

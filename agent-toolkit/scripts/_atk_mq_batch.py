@@ -20,11 +20,13 @@ import argparse
 import collections
 import dataclasses
 import datetime
+import functools
 import os
 import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import typing
 
 import _atk_mq_frontmatter as _frontmatter
@@ -153,37 +155,64 @@ def _existing_filenames(private_notes: pathlib.Path) -> set[str]:
     }
 
 
+def _is_case_sensitive(directory: pathlib.Path) -> bool:
+    """指定ディレクトリのファイルシステムがファイル名の大文字小文字を区別するかを実測する。
+
+    OS種別から推定すると誤る（`os.path.normcase`はPOSIX実装では恒等関数であり、
+    大文字小文字を区別しないファイルシステムを既定とする環境でも名前を畳み込まない）ため、
+    一意な名前の空ファイルを当該ディレクトリへ作成し、名前の大文字小文字を反転させたパスが
+    存在するかどうかで判定する。プローブ用ファイルは判定後に必ず削除する。
+    """
+    handle, created = tempfile.mkstemp(prefix=".atk-case-probe-", dir=directory)
+    os.close(handle)
+    probe = pathlib.Path(created)
+    try:
+        return not probe.with_name(probe.name.swapcase()).exists()
+    finally:
+        probe.unlink()
+
+
+def _comparison_key(name: str, *, case_sensitive: bool) -> str:
+    """ファイル名の衝突判定に用いる比較キーを返す。
+
+    大文字小文字を区別しないファイルシステムでは同一物理パスへ解決される名前を同一視するため
+    小文字化したキーを返し、区別するファイルシステムでは元の名前をそのまま返す。
+    保存名自体はこのキーと分離し、常に元の大文字小文字を維持する。
+    """
+    return name if case_sensitive else name.lower()
+
+
 def _assign_filenames(
     private_notes: pathlib.Path,
     entries: list[BatchEntry],
     *,
     existing: set[str],
     now: datetime.datetime,
+    case_sensitive: bool,
 ) -> dict[str, str]:
     """元ファイル名から保存ファイル名への対応を書き込み前に一括確定する。
 
     元名を維持できるエントリを先に確定し、4状態フォルダの既存名と衝突するエントリだけを
     通常の投入経路と同じ採番規則で再採番する。再採番候補は既存名・元名を維持するエントリの元名・
     割り当て済みの保存名を予約集合として除外する。
-    衝突判定は`os.path.normcase`で畳み込んだ名前で行い、大文字小文字を区別しないファイルシステムでも
-    既存ファイルを上書きしない。保存名自体は元の大文字小文字を維持する。
+    既存名との衝突判定と予約集合の判定は`_comparison_key`が返す比較キーで行い、
+    大文字小文字を区別しないファイルシステムでも既存ファイルを上書きしない。
     """
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    reserved = {os.path.normcase(name) for name in existing}
-    assignments = {
-        entry.original_name: entry.original_name for entry in entries if os.path.normcase(entry.original_name) not in reserved
-    }
-    reserved |= {os.path.normcase(name) for name in assignments}
+    key = functools.partial(_comparison_key, case_sensitive=case_sensitive)
+    reserved = {key(name) for name in existing}
+    assignments = {entry.original_name: entry.original_name for entry in entries if key(entry.original_name) not in reserved}
+    reserved |= {key(name) for name in assignments}
     counter = _max_existing_seq(private_notes, timestamp) + 1
     for entry in entries:
         if entry.original_name in assignments:
             continue
         candidate = f"{timestamp}-{counter:03d}.md"
-        while os.path.normcase(candidate) in reserved:
+        while key(candidate) in reserved:
             counter += 1
             candidate = f"{timestamp}-{counter:03d}.md"
         assignments[entry.original_name] = candidate
-        reserved.add(os.path.normcase(candidate))
+        reserved.add(key(candidate))
         counter += 1
     return assignments
 
@@ -299,24 +328,39 @@ def add_batch_entries(
 
     戻り値は`(元ファイル名, 保存ファイル名)`の対応リストと警告リストとする。
     元ファイル名は連結後の全体集合で重複を検査し、重複があれば`depends_on`の読み替え先が
-    一意に定まらないため全件拒否する。重複の検査は`os.path.normcase`で畳み込んだ名前で行い、
-    大文字小文字を区別しないファイルシステムで書き込みが互いを上書きする組も拒否する。
+    一意に定まらないため全件拒否する。
+    重複の検査と既存名との衝突判定は、取り込み先ディレクトリの大文字小文字の区別を
+    `_is_case_sensitive`で実測した結果に基づく比較キーで行い、大文字小文字を区別しない
+    ファイルシステムで書き込みが互いを上書きする組も拒否する。
     ファイル名は取り込み先と衝突しない限り元名を維持する。
     """
     if not texts:
         raise WebInputError("取り込む本文を1件以上指定してください")
     entries = [entry for text in texts for entry in parse_show_batch(text)]
-    counts = collections.Counter(os.path.normcase(entry.original_name) for entry in entries)
-    duplicated = sorted({entry.original_name for entry in entries if counts[os.path.normcase(entry.original_name)] > 1})
-    if duplicated:
-        raise WebInputError(f"元ファイル名が重複しています: {'、'.join(duplicated)}")
     inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)
     for entry in entries:
         validate_filename(entry.original_name, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
+        case_sensitive = _is_case_sensitive(inbox_dir)
+        counts = collections.Counter(_comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries)
+        duplicated = sorted(
+            {
+                entry.original_name
+                for entry in entries
+                if counts[_comparison_key(entry.original_name, case_sensitive=case_sensitive)] > 1
+            }
+        )
+        if duplicated:
+            raise WebInputError(f"元ファイル名が重複しています: {'、'.join(duplicated)}")
         existing = _existing_filenames(private_notes)
-        assignments = _assign_filenames(private_notes, entries, existing=existing, now=now)
+        assignments = _assign_filenames(
+            private_notes,
+            entries,
+            existing=existing,
+            now=now,
+            case_sensitive=case_sensitive,
+        )
         renames = {original: saved for original, saved in assignments.items() if original != saved}
         contents = [(assignments[entry.original_name], _rewrite_depends_on(entry, renames)) for entry in entries]
         for filename, content in contents:
