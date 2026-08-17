@@ -9,6 +9,7 @@ import pytest
 from pytools.claude_plans_viewer import _remote, _state
 from pytools.claude_plans_viewer_remote_test_helpers import aiter_lines as _aiter_lines
 from pytools.claude_plans_viewer_remote_test_helpers import attach_fake_connection as _attach_fake_connection
+from pytools.claude_plans_viewer_remote_test_helpers import settle_event_loop as _settle
 
 _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
 
@@ -390,8 +391,9 @@ class TestRemoteWatcherRpc:
         proc = _attach_fake_connection(watcher)
 
         async def _drive() -> None:
-            # `request`が送信を完了してpendingに登録されるまで少し待つ。
-            await asyncio.sleep(0.05)
+            # 経過時間ではなく、対象要求がpendingへ登録された状態を確認してから応答を注入する。
+            await _settle()
+            assert 1 in watcher._pending  # pylint: disable=protected-access  # noqa: SLF001  # 応答注入前に対象要求の保留登録を確認する
             # サーバー側のJSON行から取り出した応答を`_handle_event`へ渡す。
             await watcher._handle_event({"type": "response", "id": 1, "ok": True, "data": "QUJD", "mtime_epoch": 12.5})  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess stdoutから配信されるイベントを単体で注入するため）
 
@@ -427,7 +429,8 @@ class TestRemoteWatcherRpc:
         _attach_fake_connection(watcher)
 
         async def _drive() -> None:
-            await asyncio.sleep(0.05)
+            await _settle()
+            assert 1 in watcher._pending  # pylint: disable=protected-access  # noqa: SLF001  # 切断注入前に対象要求の保留登録を確認する
             watcher._fail_pending(ConnectionError("disconnected"))  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（run()のキャンセル/切断経路を単体で発火するにはSSH/subprocess起動が必要）
 
         request_task = asyncio.create_task(watcher.request("read", {"path": "Zg=="}))

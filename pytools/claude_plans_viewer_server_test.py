@@ -13,7 +13,7 @@ import watchdog.events
 from quart.testing.connections import TestHTTPConnection as _TestHTTPConnection
 
 from pytools import claude_plans_viewer_remote_test_helpers as _remote_test_helpers
-from pytools.claude_plans_viewer import _app, _local, _state
+from pytools.claude_plans_viewer import _app, _local, _remote, _state
 
 # テスト用debounce短縮値。本番既定値(0.3秒)を検証する対象は
 # TestEventsEndpoint.test_sse_stream_contract（アプリ生成経由の統合テスト）のみで、
@@ -527,11 +527,21 @@ class TestApiSearchSupersession:
     """置き換えられたリモート検索要求に対する`/api/search`の応答契約を検証する。"""
 
     @pytest.mark.asyncio
-    async def test_superseded_request_returns_conflict(self, tmp_path: Path) -> None:
+    async def test_superseded_request_returns_conflict(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """置き換えられた要求へは409を返し、別の検索語の結果を返さない。"""
         (tmp_path / "q1.md").write_text("q1", encoding="utf-8")
         (tmp_path / "q3.md").write_text("q3", encoding="utf-8")
         runner = _remote_test_helpers.BlockingSearchRunner()
+        coordinator = _remote.RemoteSearchCoordinator()
+
+        def _coordinator_factory(_limit: int) -> _remote.RemoteSearchCoordinator:
+            return coordinator
+
+        monkeypatch.setattr(_remote, "RemoteSearchCoordinator", _coordinator_factory)
         app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1"], ssh_runner=runner)
         client = app.test_client()
 
@@ -539,9 +549,16 @@ class TestApiSearchSupersession:
         # 先行要求がSSHフォールバックを開始するまで待ち、以降の要求が待機列へ入る前提を整える。
         await _wait_until(lambda: bool(runner.started))
         second = asyncio.create_task(client.get("/api/search", query_string={"q": "q2"}))
-        await asyncio.sleep(0.1)
+        # 経過時間ではなく、制御譲渡後に検索要求が待機列へ到達したことを状態から確認する。
+        await _remote_test_helpers.settle_event_loop()
+        await _wait_until(lambda: "host1" in coordinator._pending)  # pylint: disable=protected-access  # noqa: SLF001  # 待機列到達の直接観測
+        assert runner.started == [("host1", "q1")]
+        second_pending = coordinator._pending["host1"]  # pylint: disable=protected-access  # noqa: SLF001  # 3件目による置き換えの観測基準
         third = asyncio.create_task(client.get("/api/search", query_string={"q": "q3"}))
-        await asyncio.sleep(0.1)
+        # 3件目が待機要求を置き換えた状態を観測し、SSH実行が増えていないことを確認する。
+        await _remote_test_helpers.settle_event_loop()
+        await _wait_until(lambda: coordinator._pending.get("host1") is not second_pending)  # pylint: disable=protected-access  # noqa: SLF001  # 待機要求の置き換えを直接観測
+        assert runner.started == [("host1", "q1")]
         runner.release()
         responses = await asyncio.wait_for(asyncio.gather(first, second, third), timeout=5.0)
 

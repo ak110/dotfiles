@@ -221,7 +221,8 @@ class TestFetchRemoteFile:
         runner = _FakeSshRunner()
 
         async def _drive() -> None:
-            await asyncio.sleep(0.05)
+            await _settle()
+            assert 1 in watcher._pending  # pylint: disable=protected-access  # noqa: SLF001  # 応答注入前に対象要求の保留登録を確認する
             await watcher._handle_event(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess stdoutから配信されるイベントを単体で注入するため）
                 {
                     "type": "response",
@@ -268,7 +269,8 @@ class TestFetchRemoteFile:
         _attach_fake_connection(watcher)
 
         async def _drive() -> None:
-            await asyncio.sleep(0.05)
+            await _settle()
+            assert 1 in watcher._pending  # pylint: disable=protected-access  # noqa: SLF001  # 応答注入前に対象要求の保留登録を確認する
             await watcher._handle_event({"type": "response", "id": 1, "ok": False, "error": "permission denied"})  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess stdoutから配信されるイベントを単体で注入するため）
 
         drive_task = asyncio.create_task(_drive())
