@@ -26,6 +26,12 @@ _MUTABLE_KEYS = (
     "merge_model",
 )
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/]+(?:/[^/]+)?$")
+# 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
+_KNOWN_MODELS = {
+    "claude": frozenset({"haiku", "sonnet", "opus", "sonnet[1m]", "opus[1m]"}),
+    "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}),
+}
+_KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
 
 def _config_dir() -> pathlib.Path:
@@ -109,6 +115,20 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(2)
+    engine, _, rest = args.value.partition(":")
+    model, effort_sep, effort = rest.partition("/")
+    if model not in _KNOWN_MODELS[engine]:
+        print(
+            f"警告: モデル名`{model}`は主に使うモデルの一覧（{', '.join(sorted(_KNOWN_MODELS[engine]))}）にありません。"
+            "設定は保存します。利用可否は実行時に各engineが判定します。",
+            file=sys.stderr,
+        )
+    if effort_sep and effort not in _KNOWN_EFFORTS:
+        print(
+            f"警告: effort`{effort}`は主に使う値の一覧（{', '.join(sorted(_KNOWN_EFFORTS))}）にありません。"
+            "設定は保存します。利用可否は実行時に各engineが判定します。",
+            file=sys.stderr,
+        )
     config = _load_config()
     config[args.key] = args.value
     _save_config(config)

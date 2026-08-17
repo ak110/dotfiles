@@ -123,7 +123,9 @@ class TestConfigSet:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "set", "execute_model", value], home=tmp_path)
         assert exc_info.value.code == 0
-        assert f"設定を更新しました: execute_model={value}" in capsys.readouterr().out
+        captured = capsys.readouterr()
+        assert f"設定を更新しました: execute_model={value}" in captured.out
+        assert not captured.err
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "execute_model"], home=tmp_path)
@@ -133,6 +135,63 @@ class TestConfigSet:
         config_file = tmp_path / "config" / "config.json"
         assert config_file.exists()
         assert value in config_file.read_text(encoding="utf-8")
+
+    def test_set_unknown_model_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """参考一覧に無いモデル名は警告を表示したうえで受理し、永続化する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "execute_model", "claude:fable"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "設定を更新しました: execute_model=claude:fable" in captured.out
+        assert "警告: モデル名`fable`は主に使うモデルの一覧" in captured.err
+        assert "利用可否は実行時に各engineが判定します" in captured.err
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "claude:fable\n"
+
+    def test_set_unknown_effort_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """参考一覧に無いeffortは警告を表示したうえで受理し、永続化する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", "codex:gpt-5.6-sol/ultra"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "警告: effort`ultra`は主に使う値の一覧" in captured.err
+        assert "利用可否は実行時に各engineが判定します" in captured.err
+        assert "警告: モデル名" not in captured.err
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "plan_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "codex:gpt-5.6-sol/ultra\n"
+
+    def test_set_unknown_model_and_effort_warns_both(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """モデル名とeffortがともに参考一覧外の場合は両方の警告を表示して受理する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "merge_model", "codex:new-model/ultra"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "警告: モデル名`new-model`は主に使うモデルの一覧" in captured.err
+        assert "警告: effort`ultra`は主に使う値の一覧" in captured.err
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "merge_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "codex:new-model/ultra\n"
+
+    def test_set_known_value_without_effort_no_warning(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """参考一覧内のモデル名をeffort省略で設定した場合は警告を表示しない。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_review_model", "codex:gpt-5.6-terra"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not capsys.readouterr().err
 
     @pytest.mark.parametrize("value", ["gpt-5.6-sol", "other:model", "codex:", "claude:model/"])
     def test_set_invalid_stage_model_exits_2(

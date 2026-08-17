@@ -32,6 +32,7 @@
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。
 モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
+`atk config set`は主に使うモデル名・effortの参考一覧に無い値へ警告を表示するが、新モデルの利用を妨げないため受理する。
 
 1. 設定値を`engine`、`model`、`effort`へ分解する。
 2. `engine=codex`ではCodex MCPを使い、`config`へ`model`と`model_reasoning_effort`を渡す。
