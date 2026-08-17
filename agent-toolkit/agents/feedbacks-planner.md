@@ -62,7 +62,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    レビュー担当の起動、書込有無のGit状態検収、結果検収は自身が担当し、再レビューと収束は
    `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`、継続方法は
    `runtime-routing.md`「工程別モデル設定」に従う。
-   起草担当への新規起動又は継続接続の直前は`plan_model`、レビュー担当の再レビュー直前は`plan_review_model`を再取得する。
+   起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`、レビュー担当の再レビュー直前は`plan_review_model`を再取得する。
 7. 計画ファイルの実在と分量、機械検査、レビュー収束、起動前後のGit状態を検収する。
 
 `explore-template.md`、作成規範スキル、バグ調査のタスク文書、レビュータスク文書は各受信者が読み込む。

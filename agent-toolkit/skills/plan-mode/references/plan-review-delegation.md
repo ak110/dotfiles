@@ -16,7 +16,7 @@
 
 自己監査を完了後、起草担当を起動した調整主体がある場合は調整主体が独立したレビュー担当を起動する。
 調整主体が無い場合は起草担当が`agent-toolkit:delegation`に従って起動する。
-起動主体はレビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`を実行し、
+起動主体はレビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get plan_review_model`を実行し、
 `agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
 起動文は受信者への命令を先頭に置き、次の絶対パスと今回のレビュー種別を全レビュー共通の入力として渡す。
 初回・再レビュー固有の入力は、後続の規定に従って追加する。

@@ -289,7 +289,7 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
     assert "差分要約と追加範囲は計画本文を正本" in delegation
     assert "起動文へ再記述しない" in delegation
-    assert "レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`" in delegation
+    assert "レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get plan_review_model`" in delegation
     assert "各修正差分を対象に意味自己監査を1巡" in delegation
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
     assert "`## 変更履歴`と本文の一致" in delegation
@@ -467,7 +467,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "本文を起動文へ複製しない",
         "各フィードバックごとの調査スレッド",
         "キューの状態と他のレーンの情報は渡さない",
-        "起草担当への新規起動又は継続接続の直前は`plan_model`",
+        "起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`",
         "調査スレッドの起動直前に`atk config get pick_feedbacks_model`",
         "起草スレッドの起動直前に`atk config get plan_model`",
         "計画レビュースレッドの起動直前に`atk config get plan_review_model`",
@@ -722,10 +722,10 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
-    assert "各書込担当の新規起動又は継続接続の直前に`atk config get execute_model`" in executor
-    assert "各レビュー担当の新規起動又は継続接続の直前に`atk config get execute_review_model`" in executor
+    assert "各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`" in executor
+    assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
-    assert "統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`" in flow
+    assert "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`" in flow
     assert "`feedbacks-planner`へは対象ファイル名と対象リポジトリだけを渡し" in process_feedbacks
     assert "ファイル名ごとに" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
@@ -755,11 +755,23 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "適用済みスキップ",
         "6列表を統合用管理対象領域内へ保存",
         "キューの`plan_file`から各計画の進捗ログを辿り",
-        "統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",
+        "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",
         "初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動",
         "新しい上流最新OIDから統合worktreeを再作成し、本節の手順で統合担当を起動",
     ):
         assert phrase in flow
+
+
+def test_launch_points_limit_thread_continuation_to_codex_route() -> None:
+    """起動地点の記載で継続接続をCodex経路へ限定する。
+
+    Claude経路で完了済み識別子を再利用すると完了通知が起動元へ配送されないため、
+    実行系を限定しない継続接続の記述を起動地点へ残さない。
+    """
+    for path in (_PLAN_IMPL_EXECUTOR, _FEEDBACKS_PLANNER, _PLAN_REVIEW_DELEGATION, _PLAN_IMPL_FEEDBACK_FLOW):
+        text = path.read_text(encoding="utf-8")
+        for unrestricted in ("又は継続接続", "または継続接続"):
+            assert unrestricted not in text, f"{path.relative_to(_REPOSITORY_ROOT)}: 実行系を限定しない継続接続の記述"
 
 
 def test_merge_table_coverage_is_verified_before_merge_agent_launch() -> None:
@@ -820,7 +832,7 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     assert "別識別子" in common_review
     assert "implementation-plan-review-task.md" in common_review
     assert "implementation-independent-review-task.md" in common_review
-    assert "各レビュー担当の新規起動又は継続接続の直前" in common_review
+    assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前" in common_review
     assert "二系統とも指摘0件になるまで" in common_review
     for mode_preparation in (normal, integrated):
         assert "implementation-plan-review-task.md" not in mode_preparation

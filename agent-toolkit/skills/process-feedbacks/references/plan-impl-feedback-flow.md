@@ -51,7 +51,7 @@ readyな計画が1件の場合は、借用する現在worktreeを回収不可と
 
 ### 統合担当の起動
 
-統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`を実行し、
+統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`を実行し、
 `runtime-routing.md`「工程別モデル設定」で経路を解決する。
 統合担当へ`merge-task.md`、統合worktreeと作成時HEADの完全OID、統合対応表、全計画、プロジェクト規範、
 作成規範スキル、検証コマンド、commit可・push不可・worktree作成回収不可・キュー変更不可の権限を渡す。

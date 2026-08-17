@@ -70,7 +70,7 @@ worktreeと管理対象領域を作成・回収しない。
    一覧にないworktreeを補完または作成せず、全単位を確定した同じレーンのworktreeの1つの書込担当へ割り当てる。
    依存する単位は、先行commitが同worktreeのHEADを進めた後に同じ書込担当へ逐次割り当てる。
    最初の書込担当の起動前にレーンのworktreeのclean状態とHEADの完全OIDを検収し、通常モードの公開契約基準として保持する
-3. 各書込担当の新規起動又は継続接続の直前に`atk config get execute_model`を実行し、
+3. 各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    書込担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
@@ -105,7 +105,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 ### 共通の最終二系統レビュー
 
-1. 各レビュー担当の新規起動又は継続接続の直前に`atk config get execute_review_model`を実行し、
+1. 各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    レビュー担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
@@ -141,7 +141,7 @@ worktreeと管理対象領域を作成・回収しない。
 1. 実装担当が終端し、レーンのworktreeがcleanで、HEADがレビュー対象の最終HEADと一致することを実測する
 2. 同worktreeだけへ単一の修正用の書込担当を割り当てる。
    単一単位を同じworktreeで実装した場合も、元の実装担当へ戻さず本項の経路を適用する
-3. 修正用の書込担当の新規起動又は継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
+3. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
    `skills/plan-mode/references/implementation-task.md`、レーンのworktree、対象計画、採用指摘を実装単位とした目的及び変更説明、
    統合した6列表、プロジェクト規範、該当する作成規範スキル、ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す
@@ -150,7 +150,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 #### 統合後レビュー調整モードのレビュー修正
 
-1. 修正用の書込担当の新規起動又は継続接続の直前に
+1. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に
    `atk config get execute_model`を実行して経路を解決する。
    修正用の書込担当へ`skills/process-feedbacks/references/merge-task.md`の
    レビュー修正モードと6列表を渡す
