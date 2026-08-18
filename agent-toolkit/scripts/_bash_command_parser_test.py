@@ -163,23 +163,18 @@ class TestExtractGitEvents:
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
 
-    def test_cd_single_quoted_metacharacters_are_resolved(self) -> None:
-        events = extract_git_events("cd '/tmp/project[1]' && git log", "/cwd")
-        assert events[0].cwd == os.path.normpath("/tmp/project[1]")
-        assert events[0].cwd_resolved is True
-
-    def test_cd_double_quoted_variable_expansion_is_unresolved(self) -> None:
-        events = extract_git_events('cd "/tmp/$X" && git log', "/cwd")
-        assert events[0].cwd == ""
-        assert events[0].cwd_resolved is False
-
-    def test_cd_double_quoted_glob_is_resolved(self) -> None:
-        events = extract_git_events('cd "literal[1]" && git log', "/cwd")
-        assert events[0].cwd == os.path.normpath("/cwd/literal[1]")
-        assert events[0].cwd_resolved is True
-
-    def test_cd_partially_quoted_glob_is_unresolved(self) -> None:
-        events = extract_git_events("cd 'literal'*rest && git log", "/cwd")
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cd '/tmp/project[1]' && git log",
+            'cd "literal[1]" && git log',
+            r"cd /tmp/project\[1\] && git log",
+            "git -C '/tmp/project[1]' log",
+        ],
+    )
+    def test_shell_metacharacters_are_unresolved_regardless_of_quoting(self, command: str) -> None:
+        """引用符・エスケープの有無によらずメタ文字を含む対象を解決不能とする。"""
+        events = extract_git_events(command, "/cwd")
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
 

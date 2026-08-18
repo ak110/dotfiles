@@ -141,37 +141,6 @@ def split_bash_segments(command: str) -> list[str]:
     return [s.strip() for s in segments if s.strip()]
 
 
-def split_bash_tokens(segment: str) -> tuple[list[str], list[str] | None]:
-    """Bashセグメントを意味トークンと引用符保持トークンへ分割する。"""
-    tokens = shlex.split(segment, posix=True)
-    raw_tokens = shlex.split(segment, posix=False)
-    return tokens, _align_raw_tokens(tokens, raw_tokens)
-
-
-def _align_raw_tokens(tokens: list[str], raw_tokens: list[str]) -> list[str] | None:
-    """引用符保持トークンを意味トークンと同じ順序へ対応付ける。"""
-    aligned: list[str] = []
-    raw_index = 0
-    for token in tokens:
-        matched: str | None = None
-        for end in range(raw_index + 1, len(raw_tokens) + 1):
-            raw_token = "".join(raw_tokens[raw_index:end])
-            try:
-                parsed = shlex.split(raw_token, posix=True)
-            except ValueError:
-                continue
-            if parsed == [token]:
-                matched = raw_token
-                raw_index = end
-                break
-        if matched is None:
-            return None
-        aligned.append(matched)
-    if raw_index != len(raw_tokens):
-        return None
-    return aligned
-
-
 def extract_git_events(command: str, payload_cwd: str) -> list[GitEvent]:
     """Bashコマンドからgit呼び出しイベント列を抽出する。
 
@@ -187,14 +156,14 @@ def extract_git_events(command: str, payload_cwd: str) -> list[GitEvent]:
     current_cwd = CwdResolution(payload_cwd, bool(payload_cwd))
     for segment in split_bash_segments(command):
         try:
-            tokens, raw_tokens = split_bash_tokens(segment)
+            tokens = shlex.split(segment, posix=True)
         except ValueError:
             continue
         start = _skip_env_assignments(tokens, 0)
         if start >= len(tokens):
             continue
         head = tokens[start]
-        cwd_change = resolve_cwd_change(tokens, current_cwd, raw_tokens)
+        cwd_change = resolve_cwd_change(tokens, current_cwd)
         if cwd_change is not None:
             current_cwd = cwd_change
             continue
@@ -213,21 +182,19 @@ def _skip_env_assignments(tokens: list[str], start: int) -> int:
     return i
 
 
-def resolve_cwd_change(
-    tokens: list[str], current_cwd: CwdResolution, raw_tokens: list[str] | None = None
-) -> CwdResolution | None:
+def resolve_cwd_change(tokens: list[str], current_cwd: CwdResolution) -> CwdResolution | None:
     """cwdを変更するセグメントの解決結果を返す。"""
     start = _skip_env_assignments(tokens, 0)
     if start >= len(tokens):
         return None
     if tokens[start] in ("cd", "pushd"):
-        return _apply_cd(tokens, start, current_cwd, raw_tokens)
+        return _apply_cd(tokens, start, current_cwd)
     if tokens[start] == "popd":
         return CwdResolution("", False)
     return None
 
 
-def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution, raw_tokens: list[str] | None = None) -> CwdResolution:
+def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdResolution:
     """`cd`・`pushd`の引数を解釈して新しいcwdの解決結果を返す。
 
     引数なし・オプション（`-`等）・シェル展開を含む場合は解決不能とする。
@@ -252,45 +219,24 @@ def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution, raw_tok
             return CwdResolution("", False)
         target = arguments[target_index]
     else:
-        target_index = 0
         target = arguments[0]
-    target_token_index = start + 1 + target_index
-    raw_target = raw_tokens[target_token_index] if raw_tokens is not None and len(raw_tokens) == len(tokens) else None
-    if not target or target.startswith("-") or _contains_shell_expansion(target, raw_target):
+    if not target or target.startswith("-") or _contains_shell_expansion(target):
         return CwdResolution("", False)
-    return _normalize_relative(target, current_cwd, raw_target)
+    return _normalize_relative(target, current_cwd)
 
 
-def _quoted_token_kind(raw_token: str) -> str | None:
-    """Raw token全体が単一引用符または二重引用符で囲まれる場合に引用符を返す。"""
-    if len(raw_token) < 2 or raw_token[0] not in ("'", '"') or raw_token[-1] != raw_token[0]:
-        return None
-    quote = raw_token[0]
-    i = 1
-    while i < len(raw_token) - 1:
-        if quote == '"' and raw_token[i] == "\\":
-            i += 2
-            continue
-        if raw_token[i] == quote:
-            return None
-        i += 1
-    return quote
-
-
-def _contains_shell_expansion(value: str, raw_token: str | None = None) -> bool:
+# 引用符・エスケープで保護されたリテラルなメタ文字を解決済みとして救済する試みは、
+# `--`終端・`pushd`オプション以外の全シェル字句規則の再実装を要する。
+# バックスラッシュ・部分引用・`git -C`引数等で継続的に穴が生じた実績があり、費用対効果に見合わない。
+# メタ文字を含む対象は常に解決不能とし、安全側（過剰block/warn）で運用する。
+def _contains_shell_expansion(value: str) -> bool:
     """静的解析で解決できないシェル展開の記号を含むか判定する。"""
-    if raw_token is not None:
-        quote = _quoted_token_kind(raw_token)
-        if quote == "'":
-            return False
-        if quote == '"':
-            return any(marker in value for marker in ("$", "`"))
     return any(marker in value for marker in ("$", "`", "~", "*", "?", "[", "{"))
 
 
-def _normalize_relative(target: str, current_cwd: CwdResolution, raw_token: str | None = None) -> CwdResolution:
+def _normalize_relative(target: str, current_cwd: CwdResolution) -> CwdResolution:
     """相対パスを現在cwd基点で正規化し、解決結果を返す。"""
-    if _contains_shell_expansion(target, raw_token):
+    if _contains_shell_expansion(target):
         return CwdResolution("", False)
     if os.path.isabs(target):
         return CwdResolution(os.path.normpath(target), True)

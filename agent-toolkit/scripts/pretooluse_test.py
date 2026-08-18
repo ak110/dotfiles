@@ -2546,15 +2546,15 @@ class TestBashUvRunPythonBlock:
         result = self._invoke(f"cd {target} && uv run python /tmp/foo.py", str(payload_cwd))
         assert result.returncode == 0
 
-    def test_quoted_cd_to_python_project_allowed(self, tmp_path: pathlib.Path) -> None:
-        """引用符で保護した`cd`先のglob文字をリテラルとして解決する。"""
+    def test_quoted_cd_to_python_project_blocks_for_safety(self, tmp_path: pathlib.Path) -> None:
+        """引用符で保護した`cd`先でもglob文字を含むcwdは安全側で遮断する。"""
         payload_cwd = tmp_path / "payload"
         payload_cwd.mkdir()
         target = tmp_path / "python-target[1]"
         target.mkdir()
         self._make_python_project(target)
         result = self._invoke(f"cd '{target}' && uv run python /tmp/foo.py", str(payload_cwd))
-        assert result.returncode == 0
+        assert result.returncode == 2
 
     def test_cd_to_non_python_project_blocks(self, tmp_path: pathlib.Path) -> None:
         """静的に解決できる`cd`先がPythonプロジェクトでなければ遮断する。"""
