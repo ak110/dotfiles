@@ -492,9 +492,12 @@ class TestEndToEnd:
         assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
 
     def test_bash_heredoc_append_to_plans_returns_allow(self, home: pathlib.Path) -> None:
-        """計画ファイルへのヒアドキュメント追記を入口経路で自動許可する。"""
-        plans = home / ".claude" / "plans"
-        command = f"cat >> {plans}/plan.md <<'PLAN_EOF'\n## 進捗ログ\n\n本文\nPLAN_EOF\n"
+        """計画ファイルへのヒアドキュメント追記を`~`表記のまま入口経路で自動許可する。
+
+        `_fork_runner.run_script`は呼び出し時点の`os.environ`を子へ渡すため、
+        `home` fixtureの`HOME`差し替えが子プロセスの`~`展開へ反映される。
+        """
+        command = "cat >> ~/.claude/plans/plan.md <<'PLAN_EOF'\n## 進捗ログ\n\n本文\nPLAN_EOF\n"
         payload = {
             "tool_name": "Bash",
             "tool_input": {"command": command},
