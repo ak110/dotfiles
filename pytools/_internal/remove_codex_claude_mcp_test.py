@@ -33,10 +33,25 @@ def _fake_runner(results: list[Result], calls: list[Call]) -> Callable[..., Resu
     return run
 
 
-def test_run_skips_removal_when_claude_mcp_is_not_registered(monkeypatch: pytest.MonkeyPatch) -> None:
-    """未登録なら取得だけを実行して変更なしを返す。"""
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "Error: No MCP server named 'claude' found.\n",
+        (
+            "(node:40712) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental,"
+            " expect them to change at any time.\n"
+            "(Use `node --trace-warnings ...` to show where the warning was created)\n"
+            "Error: No MCP server named 'claude' found.\n"
+        ),
+    ],
+)
+def test_run_skips_removal_when_claude_mcp_is_not_registered(monkeypatch: pytest.MonkeyPatch, stderr: str) -> None:
+    """未登録なら取得だけを実行して変更なしを返す。
+
+    実行環境が付加する警告が標準エラーへ先行する場合も未登録と判定する。
+    """
     calls: list[Call] = []
-    results: list[Result] = [_result(1, stderr="Error: No MCP server named 'claude' found.\n")]
+    results: list[Result] = [_result(1, stderr=stderr)]
     monkeypatch.setattr(
         remove_codex_claude_mcp.claude_common,
         "run_subprocess",
@@ -69,6 +84,7 @@ def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> N
     [
         (None, "実行に失敗"),
         (_result(2, stderr="permission denied"), "stderr: permission denied"),
+        (_result(1, stderr="Error: config file is invalid"), "stderr: Error: config file is invalid"),
     ],
 )
 def test_run_raises_when_get_fails(
@@ -76,7 +92,10 @@ def test_run_raises_when_get_fails(
     result: Result,
     error_detail: str,
 ) -> None:
-    """取得不能と想定外の非ゼロ終了を例外として上位へ伝える。"""
+    """取得不能と想定外の非ゼロ終了を例外として上位へ伝える。
+
+    期待するエラー文言を含まない終了コード1の失敗を未登録と誤判定しない。
+    """
     calls: list[Call] = []
     monkeypatch.setattr(
         remove_codex_claude_mcp.claude_common,

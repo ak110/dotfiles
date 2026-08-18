@@ -871,32 +871,35 @@ class TestParseArgsConfigFile:
         assert args_alternate.root == "/tmp/plans-alternate"
 
 
-@pytest.mark.usefixtures("_parse_args_isolate_env")
+@pytest.fixture(name="_restore_root_logger")
+def _restore_root_logger_fixture():
+    """root loggerのハンドラー・レベルを退避し、テスト後に復元する。
+
+    `main()`は`logging.basicConfig(force=True)`でroot loggerを再初期化するため、
+    検証後に復元しないと他テストのログ捕捉（`caplog`等）へ副作用が及ぶ。
+    """
+    root_logger = logging.getLogger()
+    saved_handlers = root_logger.handlers[:]
+    saved_level = root_logger.level
+    yield
+    root_logger.handlers[:] = saved_handlers
+    root_logger.setLevel(saved_level)
+
+
+@pytest.mark.usefixtures("_parse_args_isolate_env", "_restore_root_logger")
 class TestMainLoggingConfig:
     """`main()`が構成する`logging`ハンドラーのフォーマットを検証する。"""
-
-    @pytest.fixture(autouse=True)
-    def _restore_root_logger(self):
-        """root loggerのハンドラー・レベルを退避し、テスト後に復元する。
-
-        `main()`は`logging.basicConfig(force=True)`でroot loggerを再初期化するため、
-        検証後に復元しないと他テストのログ捕捉（`caplog`等）へ副作用が及ぶ。
-        """
-        root_logger = logging.getLogger()
-        saved_handlers = root_logger.handlers[:]
-        saved_level = root_logger.level
-        yield
-        root_logger.handlers[:] = saved_handlers
-        root_logger.setLevel(saved_level)
 
     def test_main_configures_logging_format_with_datetime_and_level(self, tmp_path: Path):
         """`logging.basicConfig`の`format`引数に日時・ロガー名・レベルが含まれることを確認する。
 
         `force=True`により、pytest実行環境で既存ハンドラーが付与済みでも再初期化される。
-        `main()`本体のhypercorn起動・observer起動はディレクトリ不在エラーで
-        早期returnさせることで回避する（`root`検証は`app`生成より前に実行されるため）。
+        `main()`本体のhypercorn起動・observer起動は、設定ファイルの構文エラーによる
+        早期returnで回避する（`parse_args`は`logging`構成より後に実行されるため）。
         """
-        result = _cli.main(["--root", str(tmp_path / "missing")])
+        (tmp_path / "config.toml").write_text("root =\n", encoding="utf-8")
+
+        result = _cli.main([])
 
         assert result == 1
         handler = logging.getLogger().handlers[0]
@@ -905,6 +908,28 @@ class TestMainLoggingConfig:
         )
         formatted = handler.format(record)
         assert re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} test-logger INFO hello$", formatted), formatted
+
+
+@pytest.mark.usefixtures("_parse_args_isolate_env", "_restore_root_logger")
+class TestMainRootDirectory:
+    """`main()`が扱うローカル計画ディレクトリの契約を検証する。"""
+
+    def test_missing_root_is_created_and_served(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """ディレクトリ不在から起動してもディレクトリが作成され配信へ進む。"""
+        root = tmp_path / "missing" / "plans"
+        served: list[tuple[str, int]] = []
+
+        async def fake_serve(app: typing.Any, host: str, port: int, **kwargs: typing.Any) -> None:
+            del app, kwargs
+            served.append((host, port))
+
+        monkeypatch.setattr(_cli, "serve", fake_serve)
+
+        result = _cli.main(["--root", str(root), "--host", "127.0.0.1", "--port", "28999"])
+
+        assert result == 0
+        assert root.is_dir()
+        assert served == [("127.0.0.1", 28999)]
 
 
 class TestBuildConsoleTitle:

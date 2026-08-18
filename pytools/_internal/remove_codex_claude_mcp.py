@@ -15,7 +15,9 @@ def run() -> bool:
     )
     if result is None:
         raise RuntimeError(f"Claude MCP登録の取得に失敗: {claude_common.format_cli_error(result)}")
-    if result.returncode == 1 and (result.stderr or "").strip() == _NOT_FOUND_ERROR:
+    # 標準エラーは実行環境がNode.jsの警告などを付加し得る通路のため、完全一致では判定しない。
+    # 終了コード1の条件は、無関係な失敗を未登録と誤判定しないために併せて維持する。
+    if result.returncode == 1 and _NOT_FOUND_ERROR in (result.stderr or ""):
         return False
     if result.returncode != 0:
         raise RuntimeError(f"Claude MCP登録の取得に失敗: {claude_common.format_cli_error(result)}")

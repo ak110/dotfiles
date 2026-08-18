@@ -219,9 +219,10 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("設定エラー: %s", e)
         return 1
     root = pathlib.Path(args.root).expanduser().resolve()
-    if not root.is_dir():
-        logger.error("ディレクトリが見つかりません: %s", root)
-        return 1
+    # 計画ディレクトリの不在は設定誤りではなく正常な起動条件として扱う。
+    # 初回利用時に未作成である場合と、リモートホストのみを閲覧する場合があるため、
+    # `_remote_helper.py`のリモート側経路と同じく不在時は作成する。
+    root.mkdir(parents=True, exist_ok=True)
 
     try:
         app = _app.create_app(
