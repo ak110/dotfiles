@@ -233,6 +233,25 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
 )
 
 
+# 旧配置への出戻り検査で照合する行の抽出条件。
+# 見出し記号・箇条書き記号・番号・表の区切りを除いた実質文字数が本値未満の行は照合対象から外す。
+# 節名だけの行（`## 実施内容`など最長11文字）とコードフェンス（```mdなど）は、
+# 旧配置が移設先を案内する目次・参照として正当に保持するため、除外しないと誤検出になる。
+# 移設対象の実質的な契約文は最短でも12文字（「次の情報は候補から除く。」）のため、閾値を12文字とする。
+_PLAN_STANDARDS_RESIDUAL_MIN_LENGTH = 12
+_PLAN_STANDARDS_LINE_MARKER_RE = re.compile(r"^(?:#+|[-*]|\d+\.|\|)\s*")
+
+
+def _plan_standards_residual_lines(block: str) -> tuple[str, ...]:
+    """ブロック内で旧配置への再混入を個別に照合する実質的な内容行を返す。"""
+    lines: list[str] = []
+    for raw in block.splitlines():
+        line = raw.strip()
+        if len(_PLAN_STANDARDS_LINE_MARKER_RE.sub("", line)) >= _PLAN_STANDARDS_RESIDUAL_MIN_LENGTH:
+            lines.append(line)
+    return tuple(lines)
+
+
 def _plan_standards_migrated_blocks() -> tuple[str, ...]:
     """移設元の旧本文を見出し行の境界でブロックへ分ける。"""
     baseline = _PLAN_STANDARDS_MIGRATION_BASELINE.read_text(encoding="utf-8")
@@ -293,7 +312,11 @@ def test_plan_file_standards_own_plan_contracts_alone() -> None:
     for block in blocks:
         head = block.splitlines()[0]
         assert block in standards, head
-        assert block not in plan_mode, head
+        residual_lines = _plan_standards_residual_lines(block)
+        assert residual_lines, head
+        # ブロック全体の逐語一致だけでは、1行だけの再混入を検出できないため内容行ごとに照合する。
+        for line in residual_lines:
+            assert line not in plan_mode, f"{head}: {line}"
     assert "references/plan-file-standards.md" in plan_mode
     assert "plan-file-standards.md" in review_task
     assert "plan-file-standards.md" in delegation
