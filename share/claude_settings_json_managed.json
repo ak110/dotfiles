@@ -65,6 +65,6 @@
     ]
   },
   "showClearContextOnPlanAccept": false,
-  "showThinkingSummaries": false,
+  "showThinkingSummaries": true,
   "viewMode": "verbose"
 }
