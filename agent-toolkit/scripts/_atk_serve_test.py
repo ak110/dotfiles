@@ -1065,7 +1065,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_clear_self_write_sse_alert_after_save_and_answer_success() -> None:
-    """保存・回答の応答前にSSEが届いても、成功後は競合警告を残さない。"""
+    """保存・回答の応答前にSSEが届いても、成功後は競合警告を残さず、回答成功では詳細を閉じる。"""
     result = _run_node_ui(
         """
 async function runSave() {
@@ -1102,6 +1102,8 @@ async function runSave() {
     during,
     after: elements['detail-alert'].textContent,
     status: elements['detail-status'].textContent,
+    toast: elements['toast'].textContent,
+    open: elements['detail-dialog'].open,
     mode: currentDetailMode()
   };
 }
@@ -1141,6 +1143,8 @@ async function runAnswer() {
     during,
     after: elements['detail-alert'].textContent,
     status: elements['detail-status'].textContent,
+    toast: elements['toast'].textContent,
+    open: elements['detail-dialog'].open,
     mode: currentDetailMode()
   };
 }
@@ -1156,12 +1160,16 @@ process.stdout.write(JSON.stringify({saved, answered}));
             "during": warning,
             "after": "",
             "status": "inbox/entry.mdを保存しました。",
+            "toast": "",
+            "open": True,
             "mode": "view",
         },
         "answered": {
             "during": warning,
             "after": "",
-            "status": "inbox/question.mdへ回答しました。",
+            "status": "",
+            "toast": "inbox/question.mdへ回答しました。",
+            "open": False,
             "mode": "view",
         },
     }

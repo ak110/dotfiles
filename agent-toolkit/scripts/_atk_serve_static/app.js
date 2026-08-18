@@ -737,15 +737,14 @@ async function saveAnswer() {
       container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
     }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)}));
     await loadEntries();
+    // 回答の確定は次の項目へ移る操作単位のため、保存後は詳細を閉じて一覧へ戻す。
+    // 本文編集の保存は同じ対象を続けて編集する操作単位のため閉じない（saveEntry参照）。
+    // 保存中に別項目へ切り替わった場合は、切り替え先の詳細を閉じない。
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
-      const refreshed = await api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`);
-      if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
-          sessionGeneration === detailSessionGeneration) {
-        displayEntry(refreshed.entry);
-        byId('detail-dialog-body').focus();
-      }
+      closeDetailDialog();
     }
+    // 詳細を閉じた後に配送し、成功メッセージを一覧側の共通通知へ表示する。
     deliverOperationMessage(`${key}へ回答しました。`);
   } catch (error) {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;

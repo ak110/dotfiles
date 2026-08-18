@@ -387,10 +387,10 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await answer.fill("Aを補足")
     assert await answer.input_value() == "Aを補足"
     await dialog.get_by_role("button", name="回答を保存").click()
-    await playwright.async_api.expect(dialog.locator("#detail-dialog-body")).to_be_focused()
-    assert harness.operations.answer_calls == 1
-    await page.keyboard.press("Escape")
+    await dialog.wait_for(state="hidden")
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     await playwright.async_api.expect(row).to_be_focused()
+    assert harness.operations.answer_calls == 1
 
     await feedback_row.click()
     detail = page.get_by_role("dialog", name="詳細")
@@ -642,8 +642,8 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await detail.get_by_role("button", name="回答", exact=True).click()
     await detail.locator("#answer-input").fill("回答済みにする")
     await detail.get_by_role("button", name="回答を保存").click()
+    await detail.wait_for(state="hidden")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
-    await page.keyboard.press("Escape")
     await playwright.async_api.expect(page.locator("#empty-clear-button")).to_be_focused()
 
     await page.locator("#empty-clear-button").click()
@@ -792,9 +792,11 @@ async def test_self_write_sse_alert_clears_after_save_and_answer_success(
         await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible", timeout=4_000)
     finally:
         release_answer_response.set()
-    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
-    await playwright.async_api.expect(detail.locator("#detail-alert")).to_be_hidden()
+    await detail.wait_for(state="hidden")
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     await page.unroute("**/api/entries/answer", delay_answer_response)
+    await question_row.click()
+    await detail.wait_for(state="visible")
     async with page.expect_response(
         lambda response: response.request.method == "GET" and response.url.endswith("/api/entries/inbox/question.md")
     ):
@@ -908,10 +910,10 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
     answer_payload = answer_request.post_data_json
     assert isinstance(answer_payload, dict)
     assert answer_payload["state"] == "inbox"
-    await detail.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
+    await detail.wait_for(state="hidden")
+    await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     assert (harness.root / "inbox/answer-same.md").read_text(encoding="utf-8").endswith("未処理側だけへの回答\n")
     assert (processing / "answer-same.md").read_text(encoding="utf-8") == tbd_content
-    await page.keyboard.press("Escape")
 
     remove_row = page.locator('.entry-select[data-key="inbox/remove-same.md"]')
     await remove_row.click()
