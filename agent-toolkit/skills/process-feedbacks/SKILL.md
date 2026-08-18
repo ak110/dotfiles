@@ -45,7 +45,7 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
-`feedbacks-planner`へは対象ファイル名と対象リポジトリだけを渡し、本文を起動文へ複製しない。
+`feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし、本文を起動文へ複製しない。
 `feedbacks-planner`は各調査担当と起草担当へ同じ入力を渡し、各受信主体がファイル名ごとに
 `atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行して本文を取得する。
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。

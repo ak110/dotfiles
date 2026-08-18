@@ -22,11 +22,10 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 - 直接受領した人間由来の利用者指示がある場合は、出所と引用範囲を付けた逐語文
 - 常駐自動起動で人間由来の利用者指示がない場合は、非該当であることと起動事実
 - 対象worktreeとプロジェクト規範
-- `process-feedbacks/references/`配下の`explore-template.md`、`decision-format.md`、`review-checklists.md`
-- `plan-mode/references/plan-file-standards.md`と`plan-mode/references/plan-review-task.md`
-- `agent-toolkit:plan-mode`などの作成規範スキルと、バグ対応時は`agent-toolkit:bugfix`
+- バグ対応時はその旨
 - 既存ファイルと衝突しない乱数サフィックス付きで、委譲元が確定した計画ファイルの絶対パス
 
+agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パスの解決、および作成規範スキルの選定は`feedbacks-planner`が自身で確定するため渡さない。
 これらは`feedbacks-planner`が起草担当へ対象ファイル名、対象リポジトリ、確定した採否と合意、対象、規範、
 起草担当用のタスク文書を欠落なく渡せる形で指定する。
 フィードバック本文を起動文へ複製しない。

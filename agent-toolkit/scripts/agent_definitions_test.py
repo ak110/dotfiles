@@ -635,6 +635,11 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     for phrase in (
         "自身は成果物、計画ファイル、キューを変更せず",
         "受信者専用のタスク文書と作成規範スキルは読み込まず",
+        "注入済みの`agent-toolkit:delegation`スキル本文に付随する所在ディレクトリ",
+        "現行plugin rootとして確定し",
+        "受信者へ渡す前又は自身で読む前に実在を確認する",
+        "plugin rootを確定できない場合と実在しないパスがある場合は`needs_escalation`で返す",
+        "調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキル",
         "`explore-template.md`、作成規範スキル、バグ調査のタスク文書、レビュータスク文書は各受信者が読み込む",
         "push、フィードバック投入、worktreeの作成と回収は行わない",
         "explore-template.md",
@@ -684,6 +689,7 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
     assert "常駐自動起動の場合は非該当と起動事実" in delegation
     assert "直接受領した人間由来の利用者指示がある場合は、出所と引用範囲を付けた逐語文" in sender
     assert "常駐自動起動で人間由来の利用者指示がない場合は、非該当であることと起動事実" in sender
+    assert "作成規範スキルの選定は`feedbacks-planner`が自身で確定するため渡さない" in sender
     assert "直接起動経路では、`## 提示素材`の逐語原文" in review
     assert "人間由来の場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実" in review
     assert "人間由来の指示があるのに逐語文、出所又は引用範囲がない場合は入力不足として返す" in review
@@ -926,7 +932,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
     assert "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`" in flow
-    assert "`feedbacks-planner`へは対象ファイル名と対象リポジトリだけを渡し" in process_feedbacks
+    assert "`feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし" in process_feedbacks
     assert "ファイル名ごとに" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文を`feedbacks-planner`の完了報告へ要求しない" in reception

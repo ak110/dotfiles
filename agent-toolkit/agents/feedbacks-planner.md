@@ -23,10 +23,23 @@ user-invocable: false
 - ファイル名昇順の対象一覧と対象リポジトリ
 - 人間由来の利用者指示がある場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実
 - 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス
-- `explore-template.md`、`plan-file-standards.md`、`plan-review-task.md`、`decision-format.md`、`review-checklists.md`の絶対パス
-- `agent-toolkit:plan-mode`などの作成規範スキルの絶対パス
-- バグ対応時は`agent-toolkit:bugfix`の絶対パス
+- バグ対応の項目を含む場合はその旨
 
+agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パスは、委譲元から受け取らず自身で解決する。
+注入済みの`agent-toolkit:delegation`スキル本文に付随する所在ディレクトリの絶対パスから、
+一致した末尾成分`skills/delegation`を除いた接頭部分を現行plugin rootとして確定し、
+次のplugin root相対パスを絶対パス化して用いる。
+
+- 調査担当へ渡す`skills/process-feedbacks/references/explore-template.md`と`skills/process-feedbacks/references/review-checklists.md`
+- 採否確定で自身が読む`skills/process-feedbacks/references/decision-format.md`
+- 起草担当へ渡す`skills/plan-mode/SKILL.md`と`skills/plan-mode/references/plan-file-standards.md`
+- 調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキルの`SKILL.md`を起草担当へ渡す
+- 作成規範スキルの例は`skills/coding-standards/SKILL.md`、`skills/writing-standards/SKILL.md`、`skills/agent-standards/SKILL.md`など
+- レビュー担当へ渡す`skills/plan-mode/references/plan-review-task.md`と`skills/review-standards/SKILL.md`
+- バグ対応の項目を含む場合に調査担当と起草担当へ渡す`skills/bugfix/SKILL.md`
+
+解決した各絶対パスは、受信者へ渡す前又は自身で読む前に実在を確認する。
+plugin rootを確定できない場合と実在しないパスがある場合は`needs_escalation`で返す。
 必須入力が欠ける場合は推測せず`needs_escalation`で返す。
 push、フィードバック投入、worktreeの作成と回収は行わない。
 
