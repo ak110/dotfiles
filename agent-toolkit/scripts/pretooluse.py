@@ -53,7 +53,6 @@ Agent / Task:
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
 - `name`引数指定のブロック (block)
-- Codex設定の実装レビューをsidechainのAgent又はTaskで起動する経路逸脱のブロック (block)
 
 Write / Edit / MultiEdit / apply_patch:
 
@@ -98,7 +97,6 @@ import tempfile
 from collections.abc import Callable, Sequence
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-import _atk_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -369,8 +367,6 @@ def _handle_agent_tool(
     if _check_agent_name_parameter(tool_name, tool_input):
         return 2
     if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
-        return 2
-    if _check_execute_review_engine_route(payload, tool_input):
         return 2
     if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
         _process_loop_log.append("subagent_start", type=subagent_type)
@@ -1707,10 +1703,6 @@ _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
 )
 # 公式資料照会専用で委譲契約が関与しない種別は、委譲未起動ゲートから除外する。
 _DELEGATION_GATE_EXEMPT_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude-code-guide"})
-_EXECUTE_REVIEW_TASK_PATH_FRAGMENTS: tuple[str, ...] = (
-    "implementation-plan-review-task.md",
-    "implementation-independent-review-task.md",
-)
 
 
 def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
@@ -1759,38 +1751,6 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
             " actual work through `agent-toolkit:delegation`; no per-call model override is defined.\n"
             "Normal fix: omit the `model` parameter and let the agent definition's default"
             " apply.",
-            tag="block",
-        ),
-        file=sys.stderr,
-    )
-    return True
-
-
-def _check_execute_review_engine_route(payload: dict, tool_input: dict) -> bool:
-    """Codex設定の対象実装レビューをsidechainのAgent又はTaskで起動させない。
-
-    対象のタスク文書と工程別設定の実効値を同時に観測できる`Agent`／`Task`の起動境界へ限定する。
-    `engine=claude`、メインセッション、他のタスク文書は既存経路を維持する。
-    """
-    if payload.get("isSidechain") is not True:
-        return False
-    prompt = tool_input.get("prompt")
-    if not isinstance(prompt, str) or not any(fragment in prompt for fragment in _EXECUTE_REVIEW_TASK_PATH_FRAGMENTS):
-        return False
-    setting = _atk_config._resolved_settings(pathlib.Path.home())[  # noqa: SLF001  # pylint: disable=protected-access
-        "execute_review_model"
-    ]
-    engine, separator, model_and_effort = setting.partition(":")
-    if separator == "" or engine != "codex":
-        return False
-    model, effort_separator, effort = model_and_effort.partition("/")
-    resolved_effort = effort if effort_separator else "medium"
-    print(
-        _llm_notice(
-            f"blocked: execute_review_model resolves to `{setting}`, so this review must use Codex MCP.\n"
-            "Normal fix: launch the reviewer through Codex MCP and pass"
-            f" `model={model}` and `model_reasoning_effort={resolved_effort}` in `config`.\n"
-            "If the Codex route is unavailable, return `needs_escalation`; do not switch to Agent or Task.",
             tag="block",
         ),
         file=sys.stderr,

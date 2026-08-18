@@ -28,6 +28,12 @@ _PLAN_MODE_REFERENCES = pathlib.Path(__file__).resolve().parents[1] / "skills" /
 _SECRETS_COPY_GUIDANCE = "copy the original with `cp` via Bash"
 _SECRETS_VALUE_EDIT_GUIDANCE = "append or edit lines via Bash"
 
+# 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
+_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = (
+    "implementation-plan-review-task.md",
+    "implementation-independent-review-task.md",
+)
+
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
@@ -3578,28 +3584,24 @@ class TestSubagentModelOverrideGate:
         assert result.returncode == 2
 
 
-class TestExecuteReviewEngineRouteGate:
-    """実装レビューの工程別engineとsidechain起動ツールを一致させる。"""
+class TestExecuteReviewAlternateRouteAllowed:
+    """`execute_review_model`が指すengineによらず実装レビューのAgent起動が通過する。"""
 
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    @pytest.mark.parametrize(
-        "task_name",
-        pretooluse._EXECUTE_REVIEW_TASK_PATH_FRAGMENTS,  # noqa: SLF001  # pylint: disable=protected-access
-    )
-    def test_codex_setting_blocks_sidechain_agent_or_task(self, tmp_path: pathlib.Path, tool_name: str, task_name: str) -> None:
+    @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
+    def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
+        """可用性起因の代替としてClaude経路へ切り替えた実装レビュー起動を遮断しない。"""
         result = _run(
             {
-                "tool_name": tool_name,
+                "tool_name": "Agent",
                 "tool_input": {"subagent_type": "general-purpose", "prompt": f"{task_name}を読んでレビューする。"},
                 "session_id": "execute-review-codex",
                 "isSidechain": True,
             },
             env_overrides=_stage_model_env(tmp_path, "codex:gpt-5.6-sol/high"),
         )
-        assert result.returncode == 2
-        assert "execute_review_model resolves to `codex:gpt-5.6-sol/high`" in result.stderr
-        assert "model_reasoning_effort=high" in result.stderr
-        assert "needs_escalation" in result.stderr
+        assert result.returncode == 0
+        assert "blocked:" not in result.stderr
+        assert "execute_review_model" not in result.stderr
 
     def test_claude_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path) -> None:
         result = _run(
@@ -3635,7 +3637,8 @@ class TestExecuteReviewEngineRouteGate:
         assert result.returncode == 0
 
     def test_guarded_task_references_exist(self) -> None:
-        for task_name in pretooluse._EXECUTE_REVIEW_TASK_PATH_FRAGMENTS:  # noqa: SLF001  # pylint: disable=protected-access
+        """回帰検査が与えるタスク文書名の実在を確認し、改名による空振りを検出する。"""
+        for task_name in _EXECUTE_REVIEW_TASK_NAMES:
             assert (_PLAN_MODE_REFERENCES / task_name).is_file()
 
 
