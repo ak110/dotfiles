@@ -87,7 +87,9 @@ rejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフ�
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
 意図した保存後状態を確認できた場合は同じ結果を再実行せず次のファイル名へ進む。
 元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存し、
-保存内容を確認してから`atk mq reject <filename> --note=<失敗TBD filename>`を実行する。
+保存コマンドの完了表示にエラーが無いことを確認する。
+警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
+確認後に`atk mq reject <filename> --note=<失敗TBD filename>`を実行する。
 rejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
 再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目をファイル名昇順で各1回処理する。
