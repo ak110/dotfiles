@@ -140,7 +140,9 @@ class _DetailBudget:
 
     詳細は`--detail`の指定行ごとに複数の文字列へ分かれるため、上限を文字列単位で適用すると
     1エントリの出力量が指定上限を超える。残り予算を出現順に配分して本文の合計を上限内へ収める。
-    残り予算が0となった後の本文は省略標識へ置換し、本文が空である場合と区別可能な出力を維持する。
+    省略の発生は、残り予算の上限へ達した本文の末尾へ付加する省略標識が示す。
+    予算が尽きた後の本文は空文字列とする。標識を本文ごとに付けると、
+    文字列値の個数に比例して1エントリの出力が上限を超えて増えるためである。
     """
 
     def __init__(self, limit: int) -> None:
@@ -149,16 +151,16 @@ class _DetailBudget:
     def clip(self, text: str) -> str:
         """残り予算の範囲で本文を制限し、消費した分を予算から差し引く。
 
-        予算を超える非空の本文は、収まる範囲の先頭と省略標識を返す。
-        予算が尽きている場合も空文字列を返さず省略標識だけを返し、省略済みである事実を残す。
+        予算を超える非空の本文は、省略標識の分を残した範囲の先頭と省略標識を返す。
+        標識を置く余地も無い場合と予算が尽きている場合は空文字列を返す。
         """
         normalized = text.strip()
         if len(normalized) <= self.remaining:
             self.remaining -= len(normalized)
             return normalized
-        room = max(self.remaining - len(_OMISSION_MARK), 0)
+        room = self.remaining - len(_OMISSION_MARK)
         self.remaining = 0
-        return normalized[:room] + _OMISSION_MARK
+        return normalized[:room] + _OMISSION_MARK if room > 0 else ""
 
 
 def _text_blocks(content: Any) -> list[str]:
@@ -833,16 +835,21 @@ def _shell_tokens(command: str) -> list[str]:
 
 
 def _payload_command_tokens(payload: dict[str, Any]) -> list[str]:
-    """Codexの記録から、実行したコマンドのトークン列を取得する。"""
+    """Codexの記録から、実行したコマンドのトークン列を取得する。
+
+    コマンドを保持するキー名は記録の種類で異なり、コマンド実行の呼び出し引数は`cmd`、
+    完了項目は`command`を用いる。いずれの記録も同じ判定へ渡すため、両方のキーを探す。
+    """
     item = payload.get("item")
     for source in (_json_object(payload.get("arguments")), item if isinstance(item, dict) else None):
         if source is None:
             continue
-        command = source.get("command")
-        if isinstance(command, list):
-            return [part for part in command if isinstance(part, str)]
-        if isinstance(command, str):
-            return _shell_tokens(command)
+        for key in ("command", "cmd"):
+            command = source.get(key)
+            if isinstance(command, list):
+                return [part for part in command if isinstance(part, str)]
+            if isinstance(command, str):
+                return _shell_tokens(command)
     return []
 
 

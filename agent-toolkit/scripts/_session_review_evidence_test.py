@@ -1295,6 +1295,42 @@ def test_query_modes_ignore_own_invocation_and_its_result(
     assert _read_jsonl(capsys) == [{"kind": "summary", "count": 0}]
 
 
+def test_query_modes_ignore_own_invocation_recorded_as_codex_exec_command(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexのコマンド実行記録（`arguments`が`cmd`キーを持つ形式）の自己呼び出しも報告しない。"""
+    command = "python3 /plugin/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"cmd": command, "workdir": "/repo"}, ensure_ascii=False),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-1",
+                    "output": json.dumps({"kind": "warning", "text": "過去の照会結果"}, ensure_ascii=False),
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+    assert evidence.main([str(transcript), "--grep", "warning"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "summary", "count": 0}]
+
+
 def test_query_modes_keep_warnings_outside_own_invocation(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1534,7 +1570,7 @@ def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
 ) -> None:
     """複数ブロックを持つエントリでも、詳細本文の合計を1エントリ分の上限内へ収める。
 
-    残り予算が0となった後の非空本文は省略標識のみとなるため、合計は上限へ標識の長さを加えた範囲に収まる。
+    省略標識は予算の上限へ達した本文だけへ付き、以降の本文は空文字列となる。
     """
     transcript = _write_transcript(
         tmp_path,
@@ -1559,11 +1595,45 @@ def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
     events = _read_jsonl(capsys)
     total = sum(len(event["input"]["prompt"]) for event in events if "input" in event)
     total += sum(len(event["text"]) for event in events if "text" in event)
-    assert total <= 8000 + len("…[省略]") * len(events)
+    assert total <= 8000
     assert events[0]["input"]["prompt"].endswith("…[省略]")
-    assert events[1]["input"]["prompt"] == "…[省略]"
-    assert events[2]["text"] == "…[省略]"
+    assert events[1]["input"]["prompt"] == ""
+    assert events[2]["text"] == ""
     assert events[3]["text"] == ""
+
+
+def test_detail_mode_keeps_total_within_limit_for_many_string_values(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """文字列値を多数持つ入力でも、詳細本文の合計が1エントリ分の上限を超えない。
+
+    予算が尽きた後も本文ごとに省略標識を付けると、合計が文字列値の個数に比例して増える。
+    """
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Bash",
+                            "id": "c1",
+                            "input": {f"key{index}": "あ" * 20 for index in range(5000)},
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--detail", "1"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert sum(len(value) for value in events[0]["input"].values()) <= 8000
 
 
 def test_detail_mode_formats_entry_without_tool_blocks(
