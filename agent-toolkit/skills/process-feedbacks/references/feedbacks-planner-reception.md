@@ -23,7 +23,7 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 - 常駐自動起動で人間由来の利用者指示がない場合は、非該当であることと起動事実
 - 対象worktreeとプロジェクト規範
 - `process-feedbacks/references/`配下の`explore-template.md`、`decision-format.md`、`review-checklists.md`
-- `plan-mode/references/plan-review-task.md`
+- `plan-mode/references/plan-file-standards.md`と`plan-mode/references/plan-review-task.md`
 - `agent-toolkit:plan-mode`などの作成規範スキルと、バグ対応時は`agent-toolkit:bugfix`
 - 既存ファイルと衝突しない乱数サフィックス付きで、委譲元が確定した計画ファイルの絶対パス
 

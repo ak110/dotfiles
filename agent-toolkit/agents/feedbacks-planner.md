@@ -23,7 +23,7 @@ user-invocable: false
 - ファイル名昇順の対象一覧と対象リポジトリ
 - 人間由来の利用者指示がある場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実
 - 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス
-- `explore-template.md`、`plan-review-task.md`、`decision-format.md`、`review-checklists.md`の絶対パス
+- `explore-template.md`、`plan-file-standards.md`、`plan-review-task.md`、`decision-format.md`、`review-checklists.md`の絶対パス
 - `agent-toolkit:plan-mode`などの作成規範スキルの絶対パス
 - バグ対応時は`agent-toolkit:bugfix`の絶対パス
 
@@ -43,7 +43,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 4. 採用項目がある場合は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
    起草スレッドへ採用項目のファイル名一覧と対象リポジトリを渡す。
    項目ごとの調査結果、確定した採否、利用者合意と元の利用者指示の出所情報も渡す。
-   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキルと必要なタスク文書も渡す。
+   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキル、`plan-file-standards.md`と必要なタスク文書も渡す。
    本文を起動文へ複製しない。
    フィードバック原文経路の各提示素材フェンスの直後へ`原文正本ID:`を書き、対象のフィードバックファイル名をバッククォートで囲んで記録させる。
    キューの状態と他のレーンの情報は渡さない。

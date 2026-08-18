@@ -16,6 +16,7 @@ _REVIEW_STANDARDS = _AGENTS_DIR.parent / "skills" / "review-standards" / "SKILL.
 _REVIEWEE_STANDARDS = _AGENTS_DIR.parent / "skills" / "reviewee-standards" / "SKILL.md"
 _PLAN_MODE = _AGENTS_DIR.parent / "skills" / "plan-mode" / "SKILL.md"
 _PLAN_MODE_REFERENCES = _PLAN_MODE.parent / "references"
+_PLAN_FILE_STANDARDS = _PLAN_MODE_REFERENCES / "plan-file-standards.md"
 _PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "plan-review-task.md"
 _PLAN_IMPL_TASK = _PLAN_MODE_REFERENCES / "implementation-task.md"
 _PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-plan-review-task.md"
@@ -219,6 +220,73 @@ def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> No
     assert "同一内容が既に退避済みである場合は追加の退避を作成しない" in writer
 
 
+# 消失検査の対応表1。`plan-mode`のSKILL.mdから`plan-file-standards.md`へ移設した各節の代表文面。
+# 作成基準側だけが保持することを検査し、移設漏れと旧配置への出戻りを検出する。
+_PLAN_STANDARDS_MIGRATED_PHRASES: tuple[str, ...] = (
+    "計画はH1の主題に続けて次のH2を固定順で置く",
+    "変動しやすい事実は名前付きのSSOTを1箇所だけ持ち",
+    "コロンはASCIIの`:`、コロン後は半角空白1字",
+    "第2列は`指示どおり`、`具体化`、`エージェント追加`のいずれかとする",
+    "素材IDは`P-001:`だけの行とし",
+    "現在状態の正本は後続の各節とし",
+    "バグ単位のH3ごとに`項目`と`内容`の2列表を置き",
+    "`なし`、`不要`、`該当なし`だけの記載は認めず",
+    "ファイル群別の変更説明を正本",
+    "`## 完了条件`を全文再読",
+    "削除commitから得た項目別の逐語原文と復元文面を1対1で対応させる",
+    "構造定数と値抽出は`agent-toolkit/scripts/_plan_format.py`を正本とする",
+    "保持、不変性又は完全復元を計画の契約とし",
+)
+
+# 消失検査の対応表2。`plan-review-task.md`から削除した鏡像項目の文面と、
+# 同じ要件を保持する`plan-file-standards.md`側の文面の対応。
+_PLAN_REVIEW_MIRROR_REMOVALS: tuple[tuple[str, str], ...] = (
+    ("実機再現の典拠（実行条件と結果）が計画に記載されているか", "実機再現の典拠（実行条件と結果）を計画へ記載する"),
+    ("第2列の分類が実際の内容と一致するか", "第2列は`指示どおり`、`具体化`、`エージェント追加`のいずれかとする"),
+    ("`## 実装資料`のテスト設計を照合する", "`## 実装資料`配下へテスト設計を記載する"),
+    ("節名だけを満たす記載、結論語だけの記載", "`なし`、`不要`、`該当なし`だけの記載は認めず"),
+    ("各行の`反映先`が実在する成果物内のファイルと節", "反映先には反映先のファイルと節を書き"),
+    (
+        "バグ対応で恒久化がバグ調査表を参照する場合",
+        "バグ対応では、恒久化と類似見直しの双方でバグ調査表の対応行を正本として参照し",
+    ),
+    ("`## 変更履歴`の各行の`同期先`が現在の本文と矛盾しない", "現在状態の正本は後続の各節とし"),
+    ("変動しやすい事実が名前付きのSSOTを一箇所だけ持ち", "変動しやすい事実は名前付きのSSOTを1箇所だけ持ち"),
+    ("外部の可変な対象に属する事実は、取得コマンドと判定規則が書かれているか", "外部の可変な対象に属する事実"),
+    (
+        "削除commitから得た項目別の逐語原文と復元文面が1対1で対応するか",
+        "削除commitから得た項目別の逐語原文と復元文面を1対1で対応させる",
+    ),
+    (
+        "既存の該当箇所へ遡及適用するかの方針が記載されているか",
+        "既存の該当箇所へ遡及適用するか、今後の新規・変更箇所だけへ適用するかを",
+    ),
+    ("変更対象を参照する既存箇所の追従方針が記載されているか", "変更対象を参照する既存箇所の追従方針を記載する"),
+    ("正常系と主要な境界条件を計画単体から復元できるか", "正常系と主要な境界条件を計画単体から復元できる粒度で記載する"),
+    ("既存コマンドや導入済み機能の利用不可化を列挙する", "既存機能の利用不可化を列挙する"),
+)
+
+
+def test_plan_file_standards_own_plan_contracts_alone() -> None:
+    """計画ファイルの成果物契約を作成基準だけが保持し、レビュー用タスク文書が鏡像を持たない。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+
+    assert "レビュー用のタスク文書へ検査項目を追加しない" in standards
+    assert "\n## 要件の成立性\n" in standards
+    for phrase in _PLAN_STANDARDS_MIGRATED_PHRASES:
+        assert phrase in standards, phrase
+        assert phrase not in plan_mode, phrase
+    assert "references/plan-file-standards.md" in plan_mode
+    assert "plan-file-standards.md" in review_task
+    assert "plan-file-standards.md" in delegation
+    for removed, migrated in _PLAN_REVIEW_MIRROR_REMOVALS:
+        assert removed not in review_task, removed
+        assert migrated in standards, migrated
+
+
 def test_plan_review_keeps_author_as_the_only_writer() -> None:
     """計画の起草担当が検査・修正を所有し、レビュー担当を読み取り専用にする。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
@@ -262,7 +330,7 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     plan_review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
     session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
@@ -286,16 +354,15 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
         assert phrase in push_and_ci
     assert "`session-review-advisor`の起動前に`agent-toolkit:delegation`をSkill機能で起動" in session_review
     for phrase in ("名前付きのSSOT", "提示素材の逐語原文は同期対象", "参照又は変動しない要約"):
-        assert phrase in plan_mode
-        assert phrase in plan_review
+        assert phrase in standards
+        assert phrase not in plan_review
     for phrase in (
         "削除commitから得た項目別の逐語原文と復元文面",
-        "1対1で対応",
         "親子階層を含む一意な現物の挿入位置",
         "既存規定との重複",
     ):
-        assert phrase in plan_mode
-        assert phrase in plan_review
+        assert phrase in standards
+        assert phrase not in plan_review
 
 
 def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> None:
@@ -341,10 +408,7 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
         assert receiver_contract in task
         assert receiver_contract not in delegation
     assert "1対1で照合" in task
-    assert "第2列の分類が実際の内容と一致するか" in task
-    assert "節名だけを満たす記載、結論語だけの記載" in task
     assert "現存箇所と破る契約を示す" in task
-    assert "実機再現の典拠" in task
 
 
 def test_plan_review_audits_shared_representation_and_overview_sync() -> None:
@@ -512,16 +576,16 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
     explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
     command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
-    for document in (sender, planner, explore, plan_mode, delegation, review):
+    for document in (sender, planner, explore, standards, delegation, review):
         assert command in document
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
-    for document in (sender, explore, plan_mode, review):
+    for document in (sender, explore, standards, review):
         assert "表示用見出し" in document
         assert "YAML frontmatter" in document
         assert "CLI付加の末尾改行" in document
@@ -529,7 +593,7 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
     assert "担当ファイル名及び対象リポジトリ" in planner
     assert "対象のフィードバックファイル名と対象リポジトリ" in explore
     assert "直接経路では対象のフィードバックファイル名と本文" in explore
-    assert "フィードバックファイル名と対象リポジトリを受領" in plan_mode
+    assert "フィードバックファイル名と対象リポジトリを受領" in standards
     assert "対象のフィードバックファイル名、対象リポジトリ及び計画内の`原文正本ID`対応" in delegation
     assert "逐語不一致の確定指摘には両者の差分を含め" in review
     assert "差分を示せない候補は指摘しない" in review
@@ -541,31 +605,26 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
     assert "人間由来の場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実" in review
     assert "人間由来の指示があるのに逐語文、出所又は引用範囲がない場合は入力不足として返す" in review
     assert "元のユーザー指示を非該当とする場合に常駐自動起動の事実がないときも入力不足として返す" in review
-    assert "直接起動経路では、逐語素材の入力と転記に関する現行契約" in plan_mode
+    assert "直接起動経路では、逐語素材の入力と転記に関する現行契約" in standards
     assert "直接起動経路では、`## 提示素材`の逐語原文" in delegation
     forbidden = ("feedback-source.json", "標準JSON parser", "親snapshot", "比較基準")
-    for document in (sender, process, planner, explore, plan_mode, delegation, review):
+    for document in (sender, process, planner, explore, standards, delegation, review):
         for phrase in forbidden:
             assert phrase not in document
 
 
-def test_plan_mode_requires_test_design_in_plans() -> None:
-    """テストコードを含む計画へテスト設計の記載を要求し、計画レビューが照合する契約を固定する。"""
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+def test_plan_standards_require_test_design_in_plans() -> None:
+    """テストコードを含む計画へのテスト設計の要求を作成基準だけが持つ契約を固定する。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    for text in (plan_mode, review):
-        assert "テストコードの新規作成又は変更を含む計画では" in text
-    assert "`## 実装資料`配下へテスト設計を記載する" in plan_mode
-    assert "テストが保証する契約（検出対象とする契約違反）" in plan_mode
-    assert "想定する主要な失敗様態（異常系・境界値を含む）" in plan_mode
-    assert "各失敗様態を検証するテストレイヤーの選択" in plan_mode
-    assert "期待値は要求仕様・契約から導出して確定する" in plan_mode
-    assert "`## 実装資料`のテスト設計を照合する" in review
-    assert "保証する契約と失敗様態が要求挙動から導出され" in review
-    assert "異常系・境界値が検討され" in review
-    assert "各失敗様態を検証するテストレイヤーの選択と対応が示され" in review
-    assert "期待値が要求仕様・契約から導出されて実装の実行出力に依存していない" in review
+    assert "テストコードの新規作成又は変更を含む計画では" in standards
+    assert "`## 実装資料`配下へテスト設計を記載する" in standards
+    assert "テストが保証する契約（検出対象とする契約違反）" in standards
+    assert "想定する主要な失敗様態（異常系・境界値を含む）" in standards
+    assert "各失敗様態を検証するテストレイヤーの選択" in standards
+    assert "期待値は要求仕様・契約から導出して確定する" in standards
+    assert "テストコードの新規作成又は変更を含む計画では" not in review
 
 
 def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> None:
@@ -706,14 +765,14 @@ def test_session_review_advisor_uses_default_reasoning_effort() -> None:
 def test_human_source_contract_covers_direct_and_delegated_inputs() -> None:
     """直接対話と委譲経路の人間由来入力を区別する。"""
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
     assert "起動文の命令は委譲元が構成した情報" in delegation
     assert "出所表示のない起動文を人間の利用者による発話として扱わない" in delegation
-    assert "直接対話では、実行環境上で実際の利用者メッセージ" in plan_mode
-    assert "受信した起動文全体を機械的に転記せず" in plan_mode
+    assert "直接対話では、実行環境上で実際の利用者メッセージ" in standards
+    assert "受信した起動文全体を機械的に転記せず" in standards
     assert "人間由来の場合は出所と引用範囲を付けた逐語文" in plan_review_delegation
     assert "直接起動経路では、直接受領した実際の利用者メッセージ" in plan_review_delegation
     assert "起草担当の起動文、フィードバック本文、調査資料を利用者発言へ分類しておらず" in plan_review_task
@@ -1309,11 +1368,11 @@ def test_session_review_investigates_fourth_review_by_artifact_and_responsibilit
 
 def test_plan_workflows_reread_completion_conditions_before_reporting() -> None:
     """計画関係の各主体が完了条件を再読し、最終行へ根拠を同期する。"""
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
-    for text in (plan_mode, executor, caller):
+    for text in (standards, executor, caller):
         assert "報告の直前" in text
         assert "`## 完了条件`を全文再読" in text
         assert "進捗ログの最終行" in text
@@ -1424,16 +1483,16 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
 
 def test_plan_change_descriptions_replace_target_list_contracts() -> None:
     """対象一覧を撤去し、目的と変更説明から実装差分を検収する。"""
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     commit = _COMMIT_SKILL.read_text(encoding="utf-8")
 
-    assert "ファイル群別の変更説明を正本" in plan_mode
-    assert "同じパス集合の一覧を複製しない" in plan_mode
-    for text in (plan_mode, review_task, writer, plan_review, executor, commit):
+    assert "ファイル群別の変更説明を正本" in standards
+    assert "同じパス集合の一覧を複製しない" in standards
+    for text in (standards, review_task, writer, plan_review, executor, commit):
         assert "### 対象ファイル一覧" not in text
         assert "対象一覧にない" not in text
     assert "追加機構で内部契約を保存する案より、契約の簡素化または撤去を先に指摘" in review_task
@@ -1463,7 +1522,7 @@ def test_feedback_dependencies_point_to_provider_references() -> None:
 def test_bug_response_prompt_contracts_are_synchronized() -> None:
     """バグ対応・commit・CIの正本境界と条件付き参照を固定する。"""
     agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     review_checklists = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     bugfix_skill = _BUGFIX_SKILL.read_text(encoding="utf-8")
@@ -1477,8 +1536,8 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         assert "観測上の同等性にかかわらず、仕様変更" in document
     assert "`### 計画メタ情報`にある固定値`作業種別`だけ" in review_task
     assert "分類契約の不成立として指摘" in review_task
-    assert "コロンはASCIIの`:`、コロン後は半角空白1字" in plan_mode
-    assert "`作業種別`は`バグ対応`又は`通常変更`とする" in plan_mode
+    assert "コロンはASCIIの`:`、コロン後は半角空白1字" in standards
+    assert "`作業種別`は`バグ対応`又は`通常変更`とする" in standards
     assert "固定14行の調査表" in review_task
     for phrase in ("固定順で書く", "行の削除、名称変更、順序変更は行わない"):
         assert phrase in root_cause
@@ -1642,8 +1701,9 @@ def test_codex_plugin_version_change_invalidates_cached_root() -> None:
         assert phrase in version_bump
 
 
-def test_plan_review_detects_new_success_path_restrictions() -> None:
-    """新設制約が失わせる現行の成功経路を公開契約変更として検査する。"""
+def test_plan_standards_require_success_paths_for_new_restrictions() -> None:
+    """新設制約が失わせる現行の成功経路を公開契約変更として作成基準だけが要求する。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
     for restriction in (
@@ -1652,13 +1712,12 @@ def test_plan_review_detects_new_success_path_restrictions() -> None:
         "容量・件数制限",
         "ネットワーク遮断",
         "権限強化",
-        "既存コマンドや導入済み機能の利用不可化",
+        "既存機能の利用不可化",
     ):
-        assert restriction in review_task
-    assert "現行実装で成功する利用シナリオ" in review_task
-    assert "成功経路を失う場合" in review_task
-    assert "公開契約変更として扱い" in review_task
-    assert "ユーザー合意の根拠を要求する" in review_task
+        assert restriction in standards
+    assert "現行実装で成功する利用シナリオ" in standards
+    assert "公開契約変更として利用者合意の根拠を記載する" in standards
+    assert "受理する入力値の縮小" not in review_task
 
 
 def test_plan_impl_executor_description_limits_invocation_route() -> None:
@@ -1828,7 +1887,7 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     """指摘の根拠を修正担当まで保持し、各レビュー後に目的へ累積照合する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
-    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -1866,8 +1925,8 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     assert "原文と適用根拠の確認結果" in writer
     assert "保持契約の維持結果" in writer
 
-    assert "`### 合意済みの除外・保持`" in plan_mode
-    assert "基準値、目標及び再実行できる測定方法" in plan_mode
+    assert "`### 合意済みの除外・保持`" in standards
+    assert "基準値、目標及び再実行できる測定方法" in standards
     assert "別の永続状態を設けない" in plan_review_delegation
     assert "採否の確定前と反映後" in plan_review_delegation
     assert "前回ラウンドとの差分だけで完了を判定しない" in plan_review_delegation

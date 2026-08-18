@@ -3,7 +3,7 @@
 構造検査（`check_plan_file.py`）、フィードバック登録（`_atk_mq_add.py`）、
 2系統のPreToolUse（`pretooluse.py`・`scripts/claude_hook_pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
-SSOTは`agent-toolkit/skills/plan-mode/SKILL.md`の「計画ファイルの完成条件」節。
+SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の「計画ファイルの完成条件」節。
 
 構造認識と原記法の検査は分離する。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
