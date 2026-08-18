@@ -189,6 +189,9 @@ Codexを使う場合は次のコマンドを実行する。
 atk mq process-loop --orchestrator=codex
 ```
 
+dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq process-loop --worktree[=NAME]`を指定する。
+`NAME`を省略すると`process-loop`を使い、dotfilesリポジトリではオプションを指定しなくても自動的にworktreeを使う。
+
 登録経路は、要求の難易度と、計画を事前にレビューしたいかどうかで選ぶ。
 一括での移行・復元は`atk serve`の新規追加ダイアログでも種別「一括登録（show形式）」から実行できる。
 

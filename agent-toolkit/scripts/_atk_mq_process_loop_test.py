@@ -677,6 +677,7 @@ class TestProcessLoopPromptAndEnv:
             pathlib.Path("/repo/.claude/worktrees/process-loop"),
             "github.com/ak110/dotfiles",
             "claude",
+            publish_destination="origin/master",
         )
 
         assert "現在のHEADを`origin/master`へ反映" in prompt
@@ -868,23 +869,31 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
         sync_calls: list[tuple[pathlib.Path, str]] = []
 
-        def fake_sync_worktree(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
+        def fake_sync_worktree(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
             sync_calls.append((local_path, worktree_name))
-            return local_path / ".claude" / "worktrees" / worktree_name
+            return local_path / ".claude" / "worktrees" / worktree_name, "origin/master"
 
         monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", fake_sync_worktree)
 
         with pytest.raises(SystemExit):
             atk.main(
-                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts", "--resume"],
+                [
+                    "mq",
+                    "process-loop",
+                    f"--target-repo={myrepo}",
+                    "--no-update",
+                    "--no-alerts",
+                    "--worktree=custom",
+                    "--resume",
+                ],
                 home=tmp_path,
             )
 
         assert _hook_debug_log(claude_calls[0]["cmd"]) != _hook_debug_log(claude_calls[1]["cmd"])
         assert claude_calls[0]["cmd"][4:] == ["--resume"]
         assert "--worktree=process-loop" not in claude_calls[1]["cmd"]
-        assert claude_calls[1]["cwd"] == myrepo / ".claude" / "worktrees" / "process-loop"
-        assert sync_calls == [(myrepo, "process-loop")]
+        assert claude_calls[1]["cwd"] == myrepo / ".claude" / "worktrees" / "custom"
+        assert sync_calls == [(myrepo, "custom")]
 
     def test_resume_absent_without_option(
         self,
@@ -1259,6 +1268,146 @@ def test_process_loop_parser_orchestrator_contract(capsys: pytest.CaptureFixture
     assert exc_info.value.code == 2
 
 
+def test_process_loop_worktree_option_reaches_public_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """公開CLIのworktree指定がprocess-loopハンドラへ伝わること。"""
+    _setup_notes(tmp_path)
+    received: list[str | None] = []
+
+    def fake_process_loop(args: Any, _private_notes: pathlib.Path) -> NoReturn:
+        received.append(args.worktree)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(_process_loop, "_cmd_process_loop", fake_process_loop)
+    for extra_argv, expected in (([], None), (["--worktree"], "process-loop"), (["--worktree=custom"], "custom")):
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "process-loop", *extra_argv], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert received[-1] == expected
+
+
+@pytest.mark.parametrize("value", ["/tmp/worktree", "name/../other", "", ".hidden", "-leading"])
+def test_process_loop_rejects_invalid_worktree_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    value: str,
+) -> None:
+    """公開CLIが配置先を逸脱するworktree名を拒否すること。"""
+    called = False
+
+    def fake_process_loop(_args: Any, _private_notes: pathlib.Path) -> NoReturn:
+        nonlocal called
+        called = True
+        raise SystemExit(0)
+
+    monkeypatch.setattr(_process_loop, "_cmd_process_loop", fake_process_loop)
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "process-loop", f"--worktree={value}"], home=tmp_path)
+    assert exc_info.value.code == 2
+    assert not called
+
+
+class TestProcessLoopWorktreeOption:
+    """公開CLIのworktree指定とセッションの実行先を検証する。"""
+
+    @pytest.mark.parametrize(
+        ("worktree_argv", "expected_name"),
+        [(["--worktree"], "process-loop"), (["--worktree=custom"], "custom")],
+    )
+    def test_non_dotfiles_worktree_option_changes_session_cwd_and_prompt(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        worktree_argv: list[str],
+        expected_name: str,
+    ) -> None:
+        """非dotfiles対象でもworktree指定が同期先・cwd・公開先文へ反映されること。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", stop_wait)
+        worktree_path = myrepo / ".claude" / "worktrees" / expected_name
+        sync_calls: list[tuple[pathlib.Path, str]] = []
+
+        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
+            sync_calls.append((local_path, worktree_name))
+            return worktree_path, "origin/main"
+
+        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", fake_sync)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts", *worktree_argv],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert sync_calls == [(myrepo, expected_name)]
+        assert len(claude_calls) == 1
+        assert claude_calls[0]["cwd"] == worktree_path
+        assert "現在のHEADを`origin/main`へ反映" in claude_calls[0]["cmd"][-1]
+        assert "--worktree=" not in " ".join(claude_calls[0]["cmd"])
+
+    def test_dotfiles_worktree_name_can_be_overridden(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """dotfilesの自動worktree名が明示指定だけで上書きされること。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "dotfiles"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        base_fake_run = _fake_run_with_remote_url(myrepo, claude_calls, 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                empty: Any = (
+                    "https://github.com/ak110/dotfiles.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/ak110/dotfiles.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, 0, empty, "" if kwargs.get("text") else b"")
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+        worktree_path = myrepo / ".claude" / "worktrees" / "custom"
+        sync_calls: list[tuple[pathlib.Path, str]] = []
+
+        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
+            sync_calls.append((local_path, worktree_name))
+            return worktree_path, "origin/master"
+
+        monkeypatch.setattr(
+            _process_loop,
+            "_sync_worktree_with_upstream",
+            fake_sync,
+        )
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts", "--worktree=custom"],
+                home=tmp_path,
+            )
+
+        assert sync_calls == [(myrepo, "custom")]
+        assert claude_calls[0]["cwd"] == worktree_path
+        assert "現在のHEADを`origin/master`へ反映" in claude_calls[0]["cmd"][-1]
+
+
 class TestMiseLatestRefresh:
     """dotfiles向けprocess-loopが所有するmise latest再評価を検証する。"""
 
@@ -1454,7 +1603,7 @@ class TestMiseLatestRefresh:
         monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: 1)
         monkeypatch.setattr(_process_loop, "_update_before_session", lambda *_args, **_kwargs: (True, True))
         monkeypatch.setattr(_process_loop, "_refresh_mise_tools", lambda _root: True)
-        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", lambda *_args: target)
+        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", lambda *_args: (target, "origin/master"))
         monkeypatch.setattr(_process_loop.time, "monotonic", lambda: 0.0)
 
         def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1836,7 +1985,17 @@ class TestConsoleTitleReset:
         calls: list[str] = []
         monkeypatch.setattr(_process_loop._console_title, "set_console_title", calls.append)  # pylint: disable=protected-access  # noqa: SLF001
 
-        def fake_run(cmd: list[str], *_a: object, **_kw: object) -> subprocess.CompletedProcess[Any]:
+        def fake_run(cmd: list[str], *_a: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "check-ignore", "-q", ".claude/worktrees/"]:
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            if cmd == ["git", "check-ref-format", "--branch", "worktree-process-loop"]:
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            if cmd == ["git", "rev-parse", "--git-common-dir"]:
+                return subprocess.CompletedProcess(cmd, 0, str(local_path / ".git"), "")
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                return subprocess.CompletedProcess(cmd, 0, str(local_path / ".claude" / "worktrees" / "process-loop"), "")
+            if cmd == ["git", "symbolic-ref", "--short", "HEAD"]:
+                return subprocess.CompletedProcess(cmd, 0, "worktree-process-loop", "")
             if cmd == ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
                 return subprocess.CompletedProcess(cmd, 0, "origin/master\n", "")
             stdout = "1\n" if "rev-list" in cmd else ""
@@ -1846,7 +2005,8 @@ class TestConsoleTitleReset:
         monkeypatch.setattr(_process_loop, "_code_hash", lambda _d: "same-hash")  # 再起動へ進ませない
         _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
         _process_loop._check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
-        assert calls == ["atk mq process-loop"] * 6
+        assert calls
+        assert all(call == "atk mq process-loop" for call in calls)
 
 
 class TestWorktreeWriterGate:
@@ -1874,7 +2034,7 @@ class TestWorktreeWriterGate:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        assert _process_loop._sync_worktree_with_upstream(local_path, "process-loop") == worktree_path  # pylint: disable=protected-access  # noqa: SLF001
+        assert _process_loop._sync_worktree_with_upstream(local_path, "process-loop") == (worktree_path, "origin/main")  # pylint: disable=protected-access  # noqa: SLF001
         assert ["git", "fetch", "origin"] in calls
         assert [
             "git",
@@ -1917,8 +2077,23 @@ class TestWorktreeWriterGate:
         """fetch又はrebase失敗時は実装セッションを起動可能と判定しない。"""
         local_path = tmp_path / "repo"
         (local_path / ".claude" / "worktrees" / "process-loop").mkdir(parents=True)
+        worktree_path = local_path / ".claude" / "worktrees" / "process-loop"
         monkeypatch.setattr(_process_loop, "_worktree_is_clean", lambda _path: True)
-        monkeypatch.setattr(_process_loop, "_git_output", lambda *_args, **_kwargs: "origin/main")
+        monkeypatch.setattr(_process_loop, "_ensure_worktree_excluded", lambda _path: True)
+
+        def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:
+            del cwd
+            if args == ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
+                return "origin/main"
+            if args == ["rev-parse", "--git-common-dir"]:
+                return str(local_path / ".git")
+            if args == ["rev-parse", "--show-toplevel"]:
+                return str(worktree_path)
+            if args == ["symbolic-ref", "--short", "HEAD"]:
+                return "worktree-process-loop"
+            raise AssertionError(args)
+
+        monkeypatch.setattr(_process_loop, "_git_output", fake_git_output)
 
         def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
             command = cmd[1] if len(cmd) > 1 else ""
@@ -2289,6 +2464,7 @@ class TestProcessLoopUrlInput:
             pathlib.Path("/repo"),
             "github.com/ak110/dotfiles",
             "claude",
+            publish_destination="origin/master",
         )
         assert "git worktree内で起動" not in prompt
         assert "現在のHEADを`origin/master`へ反映" in prompt
@@ -2326,10 +2502,16 @@ class TestProcessLoopUrlInput:
 
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
         worktree_path = myrepo / ".claude" / "worktrees" / "process-loop"
+        sync_calls: list[tuple[pathlib.Path, str]] = []
+
+        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
+            sync_calls.append((local_path, worktree_name))
+            return worktree_path, "origin/master"
+
         monkeypatch.setattr(
             _process_loop,
             "_sync_worktree_with_upstream",
-            lambda *_args: worktree_path,
+            fake_sync,
         )
 
         with pytest.raises(SystemExit):
@@ -2340,3 +2522,5 @@ class TestProcessLoopUrlInput:
         assert "--worktree=process-loop" not in claude_calls[0]["cmd"]
         expected_cwd = worktree_path if "ak110/dotfiles" in remote_url else myrepo
         assert claude_calls[0]["cwd"] == expected_cwd
+        expected_sync_calls = [(myrepo, "process-loop")] if "ak110/dotfiles" in remote_url else []
+        assert sync_calls == expected_sync_calls

@@ -163,14 +163,14 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
         self._change_event.set()
 
 
-# github.com/ak110/dotfiles編集時のみ、影響範囲の大きいホーム直下チェックアウトを避けるため
-# git worktreeを作成してセッションのcwdにする。worktree名は反復ごとに固定値とし、常駐ループの再起動
-# （`--no-update`未指定時の再起動）を経ても同一worktreeを継続利用させる。
+# `--worktree`指定時またはgithub.com/ak110/dotfiles編集時は、影響範囲の大きい作業ツリー直接編集を避けるため
+# git worktreeを作成してセッションのcwdにする。worktree名は反復ごとに固定値とし、常駐ループの再起動を経ても
+# 同一worktreeを継続利用させる。
 _DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
-_DOTFILES_WORKTREE_NAME = "process-loop"
-_DOTFILES_PUBLISH_DESTINATION = "origin/master"
+_DEFAULT_WORKTREE_NAME = "process-loop"
 # process-loopが作成するworktreeの配置先（対象リポジトリのroot相対）。
 _WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
+_WORKTREE_IGNORE_PATTERN = "/.claude/worktrees/"
 
 
 def _resolve_executable(command: str) -> str | None:
@@ -227,7 +227,7 @@ def _git_output(args: list[str], cwd: pathlib.Path) -> str:
     """gitコマンドの標準出力を返す。失敗時は空文字を返す。"""
     try:
         return _git_command.output(args, cwd)
-    except subprocess.CalledProcessError:
+    except (OSError, subprocess.CalledProcessError):
         return ""
     finally:
         _console_title.set_console_title("atk mq process-loop")
@@ -251,7 +251,113 @@ def _worktree_is_clean(worktree_path: pathlib.Path) -> bool:
     return untracked.returncode == 0 and not untracked.stdout.strip()
 
 
-def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path | None:
+def _run_worktree_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    """worktree準備用のgitコマンドを実行し、コンソールタイトルを復元する。"""
+    command = ["git", *args]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        result = subprocess.CompletedProcess(command, returncode=127, stdout="", stderr=str(error))
+    finally:
+        _console_title.set_console_title("atk mq process-loop")
+    return result
+
+
+def _resolve_git_path(output: str, cwd: pathlib.Path) -> pathlib.Path | None:
+    """Gitのパス出力をコマンド実行時のcwd基準で絶対化する。"""
+    if not output:
+        return None
+    path = pathlib.Path(output)
+    if not path.is_absolute():
+        path = cwd / path
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
+def _warn_worktree_preparation_failure(message: str, path: pathlib.Path) -> None:
+    """worktree準備を停止する警告を共通形式で出力する。"""
+    print(f"{message}ため実装セッションを起動しません: {path}", file=sys.stderr)
+
+
+def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
+    """worktree配置先の除外を確認し、必要な場合だけ`info/exclude`へ追加する。"""
+    check = _run_worktree_git(["check-ignore", "-q", f"{_WORKTREE_PARENT_REL}/"], local_path)
+    if check.returncode == 0:
+        return True
+    if check.returncode != 1:
+        _warn_worktree_preparation_failure("worktree配置先の除外判定に失敗した", local_path)
+        return False
+
+    exclude_output = _git_output(["rev-parse", "--git-path", "info/exclude"], cwd=local_path)
+    exclude_path = _resolve_git_path(exclude_output, local_path)
+    if exclude_path is None:
+        _warn_worktree_preparation_failure("Gitの除外設定のパスを解決できなかった", local_path)
+        return False
+    try:
+        existing = exclude_path.read_text(encoding="utf-8") if exclude_path.exists() else ""
+        if _WORKTREE_IGNORE_PATTERN not in existing.splitlines():
+            exclude_path.parent.mkdir(parents=True, exist_ok=True)
+            prefix = "" if not existing or existing.endswith(("\n", "\r")) else "\n"
+            with exclude_path.open("a", encoding="utf-8") as exclude_file:
+                exclude_file.write(f"{prefix}{_WORKTREE_IGNORE_PATTERN}\n")
+    except (OSError, UnicodeError):
+        _warn_worktree_preparation_failure("Gitの除外設定を更新できなかった", exclude_path)
+        return False
+
+    check = _run_worktree_git(["check-ignore", "-q", f"{_WORKTREE_PARENT_REL}/"], local_path)
+    if check.returncode != 0:
+        _warn_worktree_preparation_failure("worktree配置先の除外を確認できなかった", local_path)
+        return False
+    return True
+
+
+def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib.Path, branch: str) -> bool:
+    """既存worktreeが対象リポジトリの専用worktreeであることを検証する。"""
+    if not worktree_path.is_dir():
+        _warn_worktree_preparation_failure("worktreeの配置先がディレクトリではない", worktree_path)
+        return False
+    try:
+        resolved_worktree_path = worktree_path.resolve()
+    except (OSError, RuntimeError):
+        _warn_worktree_preparation_failure("既存worktreeの実体パスを解決できない", worktree_path)
+        return False
+
+    worktree_common = _git_output(["rev-parse", "--git-common-dir"], cwd=worktree_path)
+    local_common = _git_output(["rev-parse", "--git-common-dir"], cwd=local_path)
+    worktree_top = _git_output(["rev-parse", "--show-toplevel"], cwd=worktree_path)
+    current_branch = _git_output(["symbolic-ref", "--short", "HEAD"], cwd=worktree_path)
+    if not all((worktree_common, local_common, worktree_top, current_branch)):
+        _warn_worktree_preparation_failure("既存worktreeのGit照会が失敗した", worktree_path)
+        return False
+
+    resolved_worktree_common = _resolve_git_path(worktree_common, worktree_path)
+    resolved_local_common = _resolve_git_path(local_common, local_path)
+    resolved_worktree_top = _resolve_git_path(worktree_top, worktree_path)
+    if (
+        resolved_worktree_common is None
+        or resolved_local_common is None
+        or resolved_worktree_top is None
+        or resolved_worktree_common != resolved_local_common
+        or resolved_worktree_top != resolved_worktree_path
+        or current_branch != branch
+    ):
+        _warn_worktree_preparation_failure("既存worktreeのGit検証条件が成立しなかった", worktree_path)
+        return False
+    if not _worktree_is_clean(worktree_path):
+        _warn_worktree_preparation_failure("worktreeに未コミット変更がある", worktree_path)
+        return False
+    return True
+
+
+def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str] | None:
     """worktreeを準備して対象リポジトリの上流最新へ追随させる。
 
     worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
@@ -262,58 +368,62 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     worktree未作成の反復では上流最新から新規作成する。
     追随失敗またはdirty状態では`None`を返し、呼び出し元は実装セッションを起動しない。
     """
+    branch = f"worktree-{worktree_name}"
     worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
+    ref_check = _run_worktree_git(["check-ref-format", "--branch", branch], local_path)
+    if ref_check.returncode != 0:
+        _warn_worktree_preparation_failure("worktree名から有効なGitブランチ名を作成できない", worktree_path)
+        return None
+    if not _ensure_worktree_excluded(local_path):
+        return None
     upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
     if not upstream_branch:
         print(f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
         return None
     created_worktree = False
     if not worktree_path.exists():
-        fetch = subprocess.run(["git", "fetch", "origin"], cwd=local_path, capture_output=True, text=True, check=False)
-        _console_title.set_console_title("atk mq process-loop")
+        try:
+            worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            _warn_worktree_preparation_failure("worktreeの親ディレクトリを作成できなかった", worktree_path)
+            return None
+        fetch = _run_worktree_git(["fetch", "origin"], local_path)
         if fetch.returncode != 0:
             print(f"worktree作成前のfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
             return None
-        branch = f"worktree-{worktree_name}"
         branch_exists = (
-            subprocess.run(
-                ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
-                cwd=local_path,
-                check=False,
-            ).returncode
-            == 0
+            _run_worktree_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], local_path).returncode == 0
         )
         command = ["git", "worktree", "add", str(worktree_path), branch]
         if not branch_exists:
             command = ["git", "worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
-        created = subprocess.run(command, cwd=local_path, capture_output=True, text=True, check=False)
-        _console_title.set_console_title("atk mq process-loop")
+        created = _run_worktree_git(command[1:], local_path)
         if created.returncode != 0:
             print(f"worktreeの作成に失敗しました: {created.stderr.strip()}", file=sys.stderr)
             return None
         created_worktree = True
-    if not worktree_path.is_dir():
-        print(f"worktreeの配置先がディレクトリではありません: {worktree_path}", file=sys.stderr)
+    elif not _validate_existing_worktree(local_path, worktree_path, branch):
         return None
-    if not _worktree_is_clean(worktree_path):
-        print(f"worktreeに未コミット変更があるため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
-        return None
+    if created_worktree:
+        if not worktree_path.is_dir():
+            _warn_worktree_preparation_failure("worktreeの配置先がディレクトリではない", worktree_path)
+            return None
+        if not _worktree_is_clean(worktree_path):
+            _warn_worktree_preparation_failure("worktreeに未コミット変更がある", worktree_path)
+            return None
     if not created_worktree:
-        fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
-        _console_title.set_console_title("atk mq process-loop")
+        fetch = _run_worktree_git(["fetch", "origin"], worktree_path)
         if fetch.returncode != 0:
             print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
             return None
-    rebase = subprocess.run(["git", "rebase", upstream_branch], cwd=worktree_path, capture_output=True, text=True, check=False)
-    _console_title.set_console_title("atk mq process-loop")
+    rebase = _run_worktree_git(["rebase", upstream_branch], worktree_path)
     if rebase.returncode == 0:
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         if _worktree_is_clean(worktree_path):
-            return worktree_path
-        print(f"追随後のworktreeがdirtyなため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
+            return worktree_path, upstream_branch
+        _warn_worktree_preparation_failure("追随後のworktreeがdirtyになった", worktree_path)
         return None
-    subprocess.run(["git", "rebase", "--abort"], cwd=worktree_path, capture_output=True, text=True, check=False)
-    _console_title.set_console_title("atk mq process-loop")
+    _run_worktree_git(["rebase", "--abort"], worktree_path)
     print(
         f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。",
         file=sys.stderr,
@@ -321,15 +431,21 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     return None
 
 
-def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str, orchestrator: str) -> str:
+def _build_process_loop_prompt(
+    local_path: pathlib.Path,
+    target_repo_id: str,
+    orchestrator: str,
+    *,
+    publish_destination: str | None = None,
+) -> str:
     """対象リポジトリのフィードバック処理を依頼する短い目的文を構築する。"""
     prompt = (
         "/goal `agent-toolkit:process-feedbacks`を起動し、"
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
         "フィードバック処理を完遂してください。"
     )
-    if target_repo_id == _DOTFILES_REPO_ID:
-        prompt += f"公開時は現在のHEADを`{_DOTFILES_PUBLISH_DESTINATION}`へ反映してください。"
+    if publish_destination is not None:
+        prompt += f"公開時は現在のHEADを`{publish_destination}`へ反映してください。"
     if orchestrator == "codex":
         prompt += (
             "Codexオーケストレーターの連続処理として、開始後に追加されたready項目も同じセッションで順次処理し、"
@@ -663,17 +779,27 @@ def _prepare_session_target(
     orchestrator: str,
     prompt: str,
     *,
+    worktree_name: str | None,
     resume_pending: bool,
 ) -> tuple[pathlib.Path, str] | None:
-    """新規dotfilesセッション用worktreeを用意して実行先とpromptを返す。"""
-    if resume_pending or target_repo_id != _DOTFILES_REPO_ID:
+    """worktreeを必要とする新規セッションの実行先とpromptを返す。"""
+    if resume_pending:
+        return local_path, prompt
+    if worktree_name is None and target_repo_id != _DOTFILES_REPO_ID:
         return local_path, prompt
     # `--worktree`は使わない。CLIのworktree隔離ガードが、gitへの言及を問わず
     # ANSI-Cクォート・制御構造・コマンド置換など18種のシェル構文を拒否するため。
-    prepared = _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+    effective_name = worktree_name or _DEFAULT_WORKTREE_NAME
+    prepared = _sync_worktree_with_upstream(local_path, effective_name)
     if prepared is None:
         return None
-    return prepared, _build_process_loop_prompt(prepared, target_repo_id, orchestrator)
+    worktree_path, upstream_branch = prepared
+    return worktree_path, _build_process_loop_prompt(
+        worktree_path,
+        target_repo_id,
+        orchestrator,
+        publish_destination=upstream_branch,
+    )
 
 
 def _run_process_session(
@@ -778,6 +904,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     process-feedbacksが担う。
     初回再開時は選択したCLIのresume形式だけを渡し、再開後のプロンプト入力は利用者へ委ねる。
     新規起動は対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
+    `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
+    `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
     Claude Codeは既定modelの`opus`、権限mode、コンパクション設定を従来どおり使う。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
@@ -871,6 +999,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             target_repo_id,
                             args.orchestrator,
                             prompt,
+                            worktree_name=args.worktree,
                             resume_pending=current_resume_pending,
                         )
                         if prepared_target is None:

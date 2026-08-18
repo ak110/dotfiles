@@ -41,6 +41,7 @@ import argparse
 import datetime
 import os
 import pathlib
+import re
 import sys
 from typing import Any
 
@@ -142,6 +143,15 @@ def _port_type(value: str) -> int:
     if not 1 <= port <= 65535:
         raise argparse.ArgumentTypeError("portは1から65535までの整数で指定してください")
     return port
+
+
+def _worktree_name(value: str) -> str:
+    """worktree名としてパス逸脱を起こさない値を検証する。"""
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value) is None or ".." in value:
+        raise argparse.ArgumentTypeError(
+            "worktree名は英数字で始め、英数字・`.`・`_`・`-`だけで指定し、`..`を含めないでください"
+        )
+    return value
 
 
 def _add_source_arg(parser: argparse.ArgumentParser) -> None:
@@ -570,6 +580,19 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         metavar="REPO",
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）。既定は現在の作業リポジトリ。",
+    )
+    loop.add_argument(
+        "--worktree",
+        nargs="?",
+        const="process-loop",
+        default=None,
+        type=_worktree_name,
+        metavar="NAME",
+        help=(
+            "対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備してセッションを起動する。"
+            "NAME省略時はprocess-loopを使う。dotfilesリポジトリでは未指定でも自動有効となり、"
+            "指定時はworktree名だけを上書きする。"
+        ),
     )
     loop.add_argument(
         "--no-update",

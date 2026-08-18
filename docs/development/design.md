@@ -26,6 +26,29 @@ toolkitは自身の排他区間外で他プロセスが行うfetchを管理し�
 未回答TBDを能動的に監視し続ける案も、外部入力がない状態で実行主体を占有するため採用しない。
 別の作業複製間を独自の永続状態で競合調停する構造は、通常運用の責務に比例しないため設けない。
 
+## process-loopのworktree隔離
+
+`atk mq process-loop`は、影響範囲の大きい主作業ツリーを直接編集せずにセッションを起動する。
+`--worktree[=NAME]`を指定すると任意の対象リポジトリでこの隔離を有効にする。
+dotfilesリポジトリでは、オプションを指定しない場合も従来どおり隔離を有効にする。
+
+worktreeは対象リポジトリ配下の`.claude/worktrees/<NAME>`へ配置し、専用ブランチ`worktree-<NAME>`を割り当てる。
+`NAME`を省略した場合は`process-loop`を使用する。
+worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対象であることを確認する。
+無視されていない場合は、対象リポジトリの`info/exclude`へ`/.claude/worktrees/`の完全一致行を独立して追加する。
+追加後の`git check-ignore`が成功した場合だけ、worktreeの作成または再利用へ進む。
+除外判定の失敗、設定の更新失敗、再判定の失敗では、worktreeとセッションを起動せず待機へ戻る。
+
+既存worktreeは、Gitの照会がすべて非空の成功値を返すことを確認してから再利用する。
+`--git-common-dir`を対象リポジトリと一致させ、`--show-toplevel`をworktreeの配置先と一致させる。
+現在のブランチが`worktree-<NAME>`であり、worktreeがcleanであることも再利用の条件とする。
+条件のいずれかを確認できない場合はfetchとrebaseを実行せず、セッションを起動しない。
+条件を満たしたworktreeは`origin/HEAD`から解決した上流ブランチへfetchとrebaseで追随させる。
+解決した上流ブランチは、セッションの公開先としてプロンプトへ明示する。
+
+Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
+`atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
+
 ## 一括取り込みと原文保持
 
 別環境からの移行と復元では、キューの保存内容を字面のまま新しい環境へ複製する。
