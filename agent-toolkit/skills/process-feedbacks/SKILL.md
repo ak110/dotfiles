@@ -69,16 +69,17 @@ readyな計画実装型のレーンは通常型バッチの計画工程を待た
 `feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
-`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容を照合してから、
-`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。
-失敗TBDの保存か照合ができない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
+失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
+警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
+確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。
+失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
 rejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できる場合だけrejectを1回再実行する。
 3分類、元のフィードバックの`feedbacks-planner`再開、Git状態の回復は行わない。
 
 `feedbacks-planner`完了後の項目別結果はファイル名昇順で各1回反映する。
 結果反映コマンドが警告・エラーを返した場合は、同じコマンドを再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
-意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、照合、rejectを各1回実行する。
+意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認、rejectを各1回実行する。
 再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目を各1回処理し、全件走査後に警告・エラーが1件でもあればバッチを失敗として返す。
 

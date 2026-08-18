@@ -75,9 +75,10 @@ TBD候補は、技術調査と明文化済み方針で確定できず、かつ�
 `feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で1件保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
-`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容を照合してから、
-`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。
-失敗TBDの保存か照合ができない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
+失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
+警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
+確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。
+失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
 rejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
 それ以外では新しいTBDを作成せず、Git操作も`feedbacks-planner`の再開も行わず失敗として返す。
 
