@@ -1266,6 +1266,53 @@ class TestHasCommandInvocation:
         transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
         assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
 
+    def test_string_content_task_notification_ignored(self, tmp_path: pathlib.Path) -> None:
+        """文字列contentのシステム生成通知内にパターンのリテラルがあっても偽。
+
+        task-notificationはcontentが文字列のエントリとしても記録されるため、
+        文字列content限定だけでは通知本文への誤一致を防げない。
+        """
+        transcript = tmp_path / "t.jsonl"
+        entry = {
+            "type": "user",
+            "message": {
+                "content": (
+                    "<task-notification>\n<task-id>abc</task-id>\n"
+                    "<summary><command-name>/foo</command-name></summary>\n</task-notification>"
+                )
+            },
+        }
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
+
+    def test_string_content_teammate_message_ignored(self, tmp_path: pathlib.Path) -> None:
+        """他セッションからの受信メッセージ内にパターンのリテラルがあっても偽。"""
+        transcript = tmp_path / "t.jsonl"
+        entry = {
+            "type": "user",
+            "message": {
+                "content": (
+                    "Another Claude session sent a message:\n"
+                    '<teammate-message teammate_id="x" summary="調査結果">\n'
+                    "検出源は`<command-name>/foo</command-name>`の走査\n</teammate-message>"
+                )
+            },
+        }
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
+
+    def test_command_invocation_after_task_notification_detected(self, tmp_path: pathlib.Path) -> None:
+        """システム生成通知を除いた残りに起動痕跡があれば真を返す。"""
+        transcript = tmp_path / "t.jsonl"
+        entry = {
+            "type": "user",
+            "message": {
+                "content": ("<task-notification><task-id>abc</task-id></task-notification>\n<command-name>/foo</command-name>")
+            },
+        }
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
+
     def test_sidechain_ignored(self, tmp_path: pathlib.Path) -> None:
         """sidechainのユーザーエントリは対象外。"""
         transcript = tmp_path / "t.jsonl"

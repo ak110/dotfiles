@@ -66,6 +66,11 @@ _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "Monit
 # `re.DOTALL`で本文中の改行も拾う。
 _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
 
+# 文字列contentへ埋め込まれるシステム生成要素（background taskの完了通知・他セッションからの
+# 受信メッセージ）を非貪欲に切り出す正規表現。利用者自身の発話ではないため、
+# スラッシュコマンド起動痕跡の照合前に除去する。
+_SYSTEM_EMBEDDED_ELEMENT_RE = re.compile(r"<(task-notification|teammate-message)\b.*?</\1>", re.DOTALL)
+
 # `<task-notification>`要素内の`<tool-use-id>toolu_xxx</tool-use-id>`から
 # `toolu_xxx`を抽出する正規表現。
 _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
@@ -179,10 +184,10 @@ def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bo
     本関数はUserPromptSubmit hookがfail-openで記録漏れした場合のsafety netとして、
     transcript走査による代替検出手段を提供する。
     非sidechainの`type=="user"`エントリのうち、`message.content`が文字列のものだけを走査する。
-    照合対象はcontentが文字列のエントリ（スラッシュコマンド起動の実測済み記録形式）のみとする。
-    リスト形式のcontentはツール結果とシステム生成通知（task-notification等）を含み、
-    これらを照合すると検出パターンのリテラルを含むソースコードの閲覧結果や通知本文へ誤一致し、
-    振り返り誘導が不発となる。
+    リスト形式のcontentはツール結果を含み、照合すると検出パターンのリテラルを含む
+    ソースコードの閲覧結果へ誤一致し、振り返り誘導が不発となる。
+    文字列contentにもシステム生成要素（background taskの完了通知・他セッションからの受信メッセージ）が
+    埋め込まれるため、当該要素を除去してから照合し、その本文のリテラルを起動痕跡と判定しない。
     transcript読み取り失敗時は偽を返す。
     """
     for entry in _read_transcript_entries(transcript_path):
@@ -194,7 +199,7 @@ def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bo
         content = message.get("content")
         if not isinstance(content, str):
             continue
-        if pattern.search(content):
+        if pattern.search(_SYSTEM_EMBEDDED_ELEMENT_RE.sub("", content)):
             return True
     return False
 
