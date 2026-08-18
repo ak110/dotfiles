@@ -38,6 +38,7 @@ from pytools._internal import (
     update_claude_settings,
     update_npmrc,
     update_vscode_settings,
+    warmup_hook_scripts,
 )
 
 logger = logging.getLogger(__name__)
@@ -264,6 +265,8 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
     ("Claude Code plugin のインストール", install_claude_plugins.run),
     ("Codex plugin のインストール", install_codex_plugins.run),
+    # hookが参照するインストール先を対象にするため、両プラグインの導入・更新の後に実行する。
+    ("hookスクリプトのuv環境ウォームアップ", warmup_hook_scripts.run),
     ("codex MCP サーバーの登録", install_codex_mcp.run),
     ("Claude 設定", update_claude_settings.run),
     ("libarchive (Windows)", install_libarchive_windows.run),

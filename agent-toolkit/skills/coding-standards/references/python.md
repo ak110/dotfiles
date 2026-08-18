@@ -70,6 +70,12 @@
     `.python-version`の指定が優先される
     - 該当Pythonが利用環境に無いと`error: No interpreter found for Python <ver>`で失敗する
     - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で明示指定する
+  - `uv run --script`のvenvキャッシュはスクリプトパスに依存し得る。
+    Linux・uv 0.12.3の実測では、依存メタデータが同一でもパスが異なるスクリプトはvenvを再構築した。
+    パッケージ・解決結果のキャッシュは共有され、ウォーム状態での再構築は1秒未満だった。
+    公式資料はキャッシュキーを規定していない。
+    hook等の制限時間内実行が必要なスクリプトを事前ウォームアップする場合は、
+    パス非依存を前提にせず、実行時に参照される実パスを対象にする
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
   - `appname`単独指定は不可

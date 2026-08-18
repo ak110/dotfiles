@@ -420,6 +420,13 @@ class TestDefaultSteps:
         indexes = [names.index(name) for name in ordered]
         assert indexes == sorted(indexes)
 
+    def test_warmup_hook_scripts_follows_codex_plugin_install(self) -> None:
+        """hookスクリプトのuv環境ウォームアップをCodex plugin導入の直後に1回登録する。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        warmup_name = "hookスクリプトのuv環境ウォームアップ"
+        assert names.count(warmup_name) == 1
+        assert names.index(warmup_name) == names.index("Codex plugin のインストール") + 1
+
     def test_atk_serve_follows_plans_viewer_before_windows_steps(self) -> None:
         """atk serveセットアップをplans viewer直後かつWindows固有処理前に1回登録する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
