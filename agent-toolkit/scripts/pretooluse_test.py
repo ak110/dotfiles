@@ -825,7 +825,8 @@ class TestPlanModeSkillFirstCheck:
             pytest.param("Bash", {"command": "ls"}, False, 0, id="bash-without-skill"),
             pytest.param(
                 "Skill",
-                {"skill": "agent-toolkit:process-feedbacks"},
+                # 委譲を伴う工程を定めないスキルを選び、delegation未起動の事前案内と混在させない。
+                {"skill": "agent-toolkit:coding-standards"},
                 False,
                 0,
                 id="other-skill-without-plan-mode-skill",
@@ -878,13 +879,18 @@ class TestPlanModeSkillFirstCheck:
 
 
 class TestPlanModeSkillCallSites:
-    """plan-modeスキル呼び出しの素通り保証。"""
+    """plan-modeスキル呼び出しの素通り保証。
+
+    plan-modeは委譲を伴う工程を定めるため、delegation未起動では事前案内（warn）が載る。
+    遮断はせず`returncode`は0を保つ。
+    """
 
     _state_env = staticmethod(_plan_file_state_env)
 
     @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
     def test_allowed_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
         env = self._state_env(tmp_path)
+        _write_session_state(tmp_path, "outside-plan", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Skill",
@@ -899,6 +905,7 @@ class TestPlanModeSkillCallSites:
 
     def test_allowed_in_plan_mode(self, tmp_path: pathlib.Path):
         env = self._state_env(tmp_path)
+        _write_session_state(tmp_path, "inside-plan", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Skill",
@@ -4813,6 +4820,106 @@ class TestDelegationGateForAgentTask:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
+
+
+class TestDelegationSkillReminderOnSkillInvocation:
+    """委譲を伴う工程のスキル起動時にdelegation未起動を事前案内する。
+
+    事前案内はAgent・Task起動プロンプトを構成する前の最後の観測点で1回返し、
+    既存のAgent・Task遮断判定とセッション状態は変えない。
+    """
+
+    @pytest.mark.parametrize(
+        "skill_name",
+        [
+            "agent-toolkit:plan-mode",
+            "plan-mode",
+            "agent-toolkit:process-feedbacks",
+            "process-feedbacks",
+            "agent-toolkit:session-review",
+            "session-review",
+            "agent-toolkit:bugfix",
+            "bugfix",
+        ],
+    )
+    def test_notice_for_delegation_workflow_skill(self, tmp_path: pathlib.Path, skill_name: str) -> None:
+        """対象スキルの起動かつdelegation未起動では案内が1回返る。"""
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": skill_name},
+                "session_id": "reminder-target",
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        context = _additional_context(result)
+        assert result.returncode == 0
+        assert context.count("agent-toolkit:delegation") == 1
+        assert skill_name in context
+
+    def test_no_notice_when_delegation_already_invoked(self, tmp_path: pathlib.Path) -> None:
+        """delegation起動済みでは案内を返さない。"""
+        _write_session_state(tmp_path, "reminder-done", {"delegation_skill_invoked": True})
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
+                "session_id": "reminder-done",
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
+        """委譲を伴う工程を定めないスキルでは案内を返さない。"""
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:coding-standards"},
+                "session_id": "reminder-other",
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:
+        """サイドチェーンでは案内を返さない。"""
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "session_id": "reminder-sidechain",
+                "isSidechain": True,
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_notice_does_not_unblock_agent_launch(self, tmp_path: pathlib.Path) -> None:
+        """案内を返した後もAgent起動の遮断判定は変わらない。"""
+        env = _plan_file_state_env(tmp_path)
+        skill_result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "session_id": "reminder-then-agent",
+            },
+            env_overrides=env,
+        )
+        agent_result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "general-purpose", "prompt": "調査する。"},
+                "session_id": "reminder-then-agent",
+            },
+            env_overrides=env,
+        )
+        assert "agent-toolkit:delegation" in _additional_context(skill_result)
+        assert agent_result.returncode == 2
+        assert "agent-toolkit:delegation" in agent_result.stderr
 
 
 # --- Codex `apply_patch` / Bash の共通検査 ---

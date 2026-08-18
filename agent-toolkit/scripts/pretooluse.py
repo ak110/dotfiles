@@ -46,6 +46,7 @@ Bash:
 Skill:
 
 - `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
+- 委譲を伴う工程を定めるスキル起動時の`agent-toolkit:delegation`未起動の事前案内 (warn)
 
 Agent / Task:
 
@@ -235,11 +236,17 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
-    # Skill: plan-mode起動時は計画単位の状態をリセット
+    # Skill: plan-mode起動時は計画単位の状態をリセットし、
+    # 委譲を伴う工程のスキル起動時はdelegation未起動を事前に案内する。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
-        if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
-            _reset_plan_mode_state(session_id)
+        if isinstance(skill_name, str):
+            if skill_name in _PLAN_MODE_SKILL_NAMES:
+                _reset_plan_mode_state(session_id)
+            if payload.get("isSidechain") is not True:
+                delegation_notice = _check_delegation_skill_not_invoked_yet(skill_name, session_id)
+                if delegation_notice is not None:
+                    pending_notices.append(delegation_notice)
         flush_pending_notices()
         return 0
 
@@ -3181,6 +3188,41 @@ def _record_iss_sidechain_probe(
         _locked_rotate_and_append(log_path, json.dumps(entry, ensure_ascii=False) + "\n", 1_000_000)
     except OSError:
         pass
+
+
+# 本文が並行委譲・調査委譲・サブエージェント起動を手順として定めるスキル。
+# フルネームと接頭辞なし表記の両方を許容する。
+_DELEGATION_WORKFLOW_SKILL_NAMES: frozenset[str] = frozenset(
+    {
+        "agent-toolkit:plan-mode",
+        "plan-mode",
+        "agent-toolkit:process-feedbacks",
+        "process-feedbacks",
+        "agent-toolkit:session-review",
+        "session-review",
+        "agent-toolkit:bugfix",
+        "bugfix",
+    }
+)
+
+
+def _check_delegation_skill_not_invoked_yet(skill_name: str, session_id: str) -> str | None:
+    """委譲を伴う工程のスキル起動時にdelegation未起動なら事前案内の本文を返す。
+
+    スキル起動時点はAgent・Task起動プロンプトを構成する前の最後の観測点であり、
+    ここで案内すると構成済みプロンプトが遮断で破棄される往復を避けられる。
+    `delegation_skill_invoked`は読むだけで書き換えず、Agent・Task起動時の遮断判定は変えない。
+    """
+    if skill_name not in _DELEGATION_WORKFLOW_SKILL_NAMES:
+        return None
+    if read_state(session_id).get("delegation_skill_invoked", False):
+        return None
+    return _llm_notice(
+        f"`{skill_name}` defines steps that delegate work to subagents."
+        " Invoke `agent-toolkit:delegation` before composing an Agent or Task call;"
+        " otherwise the call is blocked and the composed prompt is discarded.",
+        tag="warn",
+    )
 
 
 def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:

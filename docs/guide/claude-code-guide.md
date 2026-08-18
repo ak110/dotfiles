@@ -311,6 +311,7 @@ Codexの`SessionStart`・`PreCompact`・`PostCompact`は、対応するClaude Co
 このほか、メインエージェント応答に占める日本語文字の比率が閾値未満のときの警告、
 `agent-toolkit:delegation`未起動での委譲開始のブロック、`AskUserQuestion`への縮退誘発フレーズ混入のブロックを
 Claude Codeで有効化する。
+委譲を伴う工程のスキルを起動した時点で`agent-toolkit:delegation`が未起動の場合は、起動を促す案内を返す。
 
 ### オンデマンドのスキル
 

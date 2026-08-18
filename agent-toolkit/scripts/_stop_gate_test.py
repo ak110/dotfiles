@@ -211,6 +211,42 @@ def _user_sendmessage_bg_resume_entry(
     }
 
 
+def _user_sendmessage_bg_resume_current_entry(
+    tool_use_id: str,
+    *,
+    sidechain: bool = False,
+    resumed_agent_id: object = "aecb02dc74cf84e99",
+    resume_text: str | None = None,
+) -> dict:
+    """現行形式のSendMessage背景再開を記録するuserエントリを生成する。
+
+    `toolUseResult`が`resumedAgentId`と`Resuming agent <id>`形式の`message`を持ち、
+    tool_result本文が旧マーカーを含まない実記録の形式を再現する。
+    `resumed_agent_id`へ非文字列を渡すと構造化フィールド判定が成立しない検体になり、
+    `resume_text`を渡すとtool_result本文を差し替えられる。
+    """
+    body = resume_text if resume_text is not None else f"Resuming agent {resumed_agent_id}"
+    return {
+        "type": "user",
+        "isSidechain": sidechain,
+        "toolUseResult": {
+            "success": True,
+            "message": f"Resuming agent {resumed_agent_id}",
+            "resumedAgentId": resumed_agent_id,
+        },
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": body}],
+                }
+            ],
+        },
+    }
+
+
 def _task_notification_body(tool_use_id: str | None, *, task_id: str | None = "task-x", status: str = "completed") -> str:
     """`<task-notification>`要素の本文を組み立てる。
 
@@ -351,6 +387,11 @@ class TestIsPendingAsyncWork:
     SendMessage背景再開テスト群は以下の観点を網羅する。
 
     - SendMessage呼び出しと背景再開tool_resultが存在する場合に`True`を返す（誤発動防止のコア）
+    - 現行形式（`toolUseResult.resumedAgentId`を持ち本文に旧マーカーを含まない）でも`True`を返し、
+      同`tool_use_id`の完了通知で`False`へ相殺される
+    - `resumedAgentId`を持たない旧形式は本文マーカー照合へフォールバックして`True`を返す（後方互換）
+    - `resumedAgentId`が非文字列の場合は構造化フィールド判定が成立せず本文マーカーの有無で決まる
+    - 現行形式でもSendMessage呼び出し由来でない`tool_use_id`は加算しない（誤検知防止）
     - 同`tool_use_id`の旧形式完了通知（user textブロック内`<task-notification>`）で`False`へ相殺される
     - 同`tool_use_id`の新形式完了通知（`type=="attachment"`・`commandMode=="task-notification"`）でも`False`へ相殺される
     - tool_result contentが文字列形式でも`True`を返す（content形式バリエーション）
@@ -717,6 +758,95 @@ class TestIsPendingAsyncWork:
         ]
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is True
+
+    def test_sendmessage_bg_resume_current_format_detected(self, tmp_path: pathlib.Path):
+        """現行形式（`toolUseResult.resumedAgentId`）の背景再開を`True`と判定する。
+
+        構造化フィールド優先の観点。tool_result本文が旧マーカーを含まなくても
+        起動集合へ加算されることを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            _user_sendmessage_bg_resume_current_entry("toolu_sm1"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is True
+
+    def test_sendmessage_bg_resume_current_format_completed_by_notification(self, tmp_path: pathlib.Path):
+        """現行形式の背景再開も同`tool_use_id`の完了通知で相殺され`False`を返す。
+
+        永続pending防止の観点。起動集合と完了集合が同じ`tool_use_id`名前空間で突合することを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            _user_sendmessage_bg_resume_current_entry("toolu_sm1"),
+            _user_task_notification_entry("toolu_sm1"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is False
+
+    def test_sendmessage_bg_resume_legacy_marker_with_tool_use_result_detected(self, tmp_path: pathlib.Path):
+        """`resumedAgentId`を持たない`toolUseResult`では旧マーカー照合へフォールバックする。
+
+        後方互換の観点。構造化フィールドを欠く結果でも旧形式の検出が維持されることを確認する。
+        """
+        entry = _user_sendmessage_bg_resume_entry("toolu_sm1")
+        entry["toolUseResult"] = {"success": True, "message": "Agent received your message."}
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            entry,
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is True
+
+    @pytest.mark.parametrize(
+        ("resume_text", "expected"),
+        [
+            ("Agent aecb02dc74cf84e99 resumed from transcript in the background with your message.", True),
+            ("Resuming agent aecb02dc74cf84e99", False),
+        ],
+    )
+    def test_sendmessage_bg_resume_non_string_resumed_agent_id(self, tmp_path: pathlib.Path, resume_text: str, expected: bool):
+        """`resumedAgentId`が非文字列の場合は本文マーカーの有無だけで判定する。
+
+        異常系の観点。構造化フィールドが型契約を満たさない結果を起動の根拠にしないことを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            _user_sendmessage_bg_resume_current_entry("toolu_sm1", resumed_agent_id=None, resume_text=resume_text),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is expected
+
+    def test_sendmessage_bg_resume_current_format_without_sendmessage_call_returns_false(self, tmp_path: pathlib.Path):
+        """SendMessage呼び出し由来でない`tool_use_id`は現行形式でも加算しない。
+
+        境界の観点。`sendmessage_ids`に含まれない`tool_use_id`は構造化フィールドがあっても対象外とする。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_entry(
+                [{"type": "tool_use", "id": "toolu_read1", "name": "Read", "input": {"file_path": "/tmp/x"}}],
+                stop_reason="tool_use",
+            ),
+            _user_sendmessage_bg_resume_current_entry("toolu_read1"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is False
 
     def test_sendmessage_sync_only_returns_false(self, tmp_path: pathlib.Path):
         """マーカーを含まない同期SendMessage tool_resultのみの場合は`False`を返す。

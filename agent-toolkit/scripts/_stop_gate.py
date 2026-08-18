@@ -8,13 +8,15 @@ background task起動の検出条件は次の4種を統合して扱う。
 - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
   `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent初回起動）
 - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
-- `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつtext本文に
-  `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+- `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、`toolUseResult.resumedAgentId`が
+  文字列で存在するか、text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む
+  （SendMessageによるサブエージェント背景再開）
 - 非sidechainのMCP tool_useに対応するtool_result本文に`moved to the background as task`を含む
   （MCP背景タスク）
 
-SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を持たないため、
-テキストマーカー判定でSendMessage呼び出し由来のtool_resultに限定して識別する。
+SendMessage背景再開は前2者と異なり`toolUseResult`側に起動状態を示すstatusを持たないため、
+SendMessage呼び出し由来のtool_resultへ限定したうえで`resumedAgentId`の有無で識別する。
+当該フィールドを持たない旧形式に限りテキストマーカー判定へフォールバックする。
 
 完了集合は`<task-notification>`による完了通知と、TaskStopの停止成功結果から構成する。
 停止成功は`toolUseResult`が文字列の`task_id`と`_TASK_STOP_SUCCESS_PREFIX`で始まる`message`を持ち、
@@ -72,10 +74,12 @@ _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
 # task-notification本文に`<tool-use-id>`が含まれない形式のフォールバック解決に用いる。
 _TASK_ID_RE = re.compile(r"<task-id>([^<]+)</task-id>")
 
-# SendMessage背景再開時のtool_result text先頭に現れる固有マーカー。
+# SendMessage背景再開時のtool_result text先頭に現れる固有マーカー（旧形式）。
 # `Agent ... resumed from transcript in the background with your message.`形式で
 # 出力されるため、`resumed from transcript in the background`を一致条件とする。
 # 同期SendMessage応答は本文言を含まないため、背景再開ケースのみ加算される。
+# 現行形式は本文言を持たず`toolUseResult.resumedAgentId`を持つため、本マーカーの照合は
+# `resumedAgentId`を欠く結果に対する後方互換のフォールバックとしてのみ用いる。
 _SENDMESSAGE_BG_RESUME_MARKER = "resumed from transcript in the background"
 
 # Agent・Task起動結果の状態値と、statusを欠く実記録で起動成功を示す本文マーカー。
@@ -103,8 +107,9 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
       `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
-    - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
-      text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+    - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、
+      `toolUseResult.resumedAgentId`が文字列で存在するか、text本文に
+      `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
     - 非sidechainのMCP tool_useに対応するuser tool_result本文に`moved to the background as task`を含む
       （MCP背景タスク）
 
@@ -419,8 +424,9 @@ def _describe_pending_background_entries(
     - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
       `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
-    - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
-       text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+    - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ、
+       `toolUseResult.resumedAgentId`が文字列で存在するか、text本文に
+       `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
     - 非sidechain assistantの`mcp__` tool_useに対応するuser tool_result本文が
       `moved to the background as task`を含む（MCP背景タスク）
 
@@ -450,8 +456,8 @@ def _describe_pending_background_entries(
 
     走査は2段構成とする。
     第1段でtranscript全行から非sidechain assistantのSendMessage tool_use id集合を構築する。
-    第2段ではtranscriptを時系列に走査し、`toolUseResult`条件に該当しないuserエントリに対して
-    SendMessage集合を参照したテキストマーカー判定を追加し、背景再開のtool_resultを起動集合へ加算する。
+    第2段ではtranscriptを時系列に走査し、`toolUseResult`の起動条件に該当しないuserエントリに対して
+    SendMessage集合を参照した背景再開判定を追加し、背景再開のtool_resultを起動集合へ加算する。
     """
     launched: set[str] = set()
     completed: set[str] = set()
@@ -496,7 +502,7 @@ def _describe_pending_background_entries(
                 if tool_use_id is not None:
                     launched.add(tool_use_id)
             elif "sendmessage" in kinds:
-                resumed_id = _extract_sendmessage_bg_resume_id(message, sendmessage_ids)
+                resumed_id = _extract_sendmessage_bg_resume_id(message, tool_use_result, sendmessage_ids)
                 if resumed_id is not None:
                     launched.add(resumed_id)
             if isinstance(tool_use_result, dict):
@@ -827,8 +833,15 @@ def _extract_agent_launch_id(message: dict, tool_use_result: dict, agent_ids: se
     return None
 
 
-def _extract_sendmessage_bg_resume_id(message: dict, sendmessage_ids: set[str]) -> str | None:
-    """SendMessage由来のtool_resultにSendMessage背景再開マーカーが含まれる場合に`tool_use_id`を返す。"""
+def _extract_sendmessage_bg_resume_id(message: dict, tool_use_result: object, sendmessage_ids: set[str]) -> str | None:
+    """SendMessage由来のtool_resultが背景再開を示す場合に`tool_use_id`を返す。
+
+    判定は`toolUseResult.resumedAgentId`が文字列として存在するかを第一とし、
+    当該フィールドを欠く結果に限り本文の`_SENDMESSAGE_BG_RESUME_MARKER`照合へフォールバックする。
+    ハーネスが返す応答文面は版更新で変わり字面一致では追随できないため、
+    同じ結果が持つ構造化フィールドを検出契約の正本とし、文面照合は旧形式の後方互換に限る。
+    """
+    has_resumed_agent_id = isinstance(tool_use_result, dict) and isinstance(tool_use_result.get("resumedAgentId"), str)
     content = message.get("content")
     if not isinstance(content, list):
         return None
@@ -840,6 +853,8 @@ def _extract_sendmessage_bg_resume_id(message: dict, sendmessage_ids: set[str]) 
         tool_use_id = block.get("tool_use_id")
         if not isinstance(tool_use_id, str) or tool_use_id not in sendmessage_ids:
             continue
+        if has_resumed_agent_id:
+            return tool_use_id
         inner = block.get("content")
         if isinstance(inner, str):
             if _SENDMESSAGE_BG_RESUME_MARKER in inner:
