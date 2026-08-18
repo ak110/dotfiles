@@ -769,9 +769,11 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "失敗した事象、期待値、実際値、発生条件",
         "直接的原因、再開に必要な情報、元のファイル名",
         "失敗TBDを`agent-toolkit:add-feedback`で1件保存",
-        "保存内容を照合してから",
+        "失敗TBDの保存コマンドの完了表示にエラーが無いことを確認",
+        "警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`",
+        "保存内容に欠落が無いことを確認",
         "atk mq reject <filename> --note=<失敗TBD filename>",
-        "失敗TBDの保存か照合ができない場合はrejectを実行せず",
+        "失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず",
         "一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行",
         "項目別結果をファイル名昇順で各1回反映",
         "atk mq show <filename> --target-repo=<repo>",
@@ -784,9 +786,10 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     ):
         assert phrase in sender
     save_at = sender.index("失敗TBDを`agent-toolkit:add-feedback`で1件保存")
-    verify_at = sender.index("保存内容を照合してから", save_at)
-    terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", verify_at)
-    assert save_at < verify_at < terminal_at
+    completion_at = sender.index("失敗TBDの保存コマンドの完了表示にエラーが無いことを確認", save_at)
+    warning_at = sender.index("警告が出た場合は`atk mq show", completion_at)
+    terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", warning_at)
+    assert save_at < completion_at < warning_at < terminal_at
     for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "バッチを失敗"):
         assert phrase in process
     for forbidden in ("結果反映済み項目", "結果部分反映項目", "結果未反映項目", "同一バッチ非再試行"):
