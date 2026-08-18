@@ -877,12 +877,16 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
 _COLLOQUIAL_DENY_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
 _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
 
+_COLLOQUIAL_MAX_LISTED_MATCHES = 5
+"""口語表現検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
+
 
 def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """口語的な日本語表現の混入を検出して警告本文を返す（warn）。
 
-    検出語・行抜粋・置換候補は出力せず、先頭の位置（行・列）と件数だけを示す
-    （コーディングエージェントのコンテキスト汚染防止）。
+    検出語・行抜粋・置換候補は出力せず、総件数と先頭`_COLLOQUIAL_MAX_LISTED_MATCHES`件までの
+    位置（行・列）だけを示す（コーディングエージェントのコンテキスト汚染防止）。
+    上限を超える一致は総件数だけで示す。
     allowlistに一致する部分を先に除去してからdenylistを適用し、
     複合動詞・複合名詞などの標準用語が誤検出されることを抑える。
     """
@@ -891,10 +895,12 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
             continue
         hits = _colloquial_check.scan_text(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS)
         if hits:
-            line_no, column, *_ = hits[0]
+            listed = "; ".join(
+                f"line {line_no}, column {column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES]
+            )
             return _llm_notice(
                 f"colloquial Japanese expressions detected in {tool_name}.{field}."
-                f" First match: line {line_no}, column {column}. Matches: {len(hits)}."
+                f" Matches: {len(hits)} ({listed})."
                 f" Rewrite the whole sentence containing the detected expression"
                 f" using formal written-style expressions"
                 f" (standard technical terminology, dictionary form,"

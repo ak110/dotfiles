@@ -605,11 +605,30 @@ class TestColloquialCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
         assert result.returncode == 0
         assert "colloquial" in _additional_context(result)
-        assert "First match: line 1, column 4. Matches: 1." in _additional_context(result)
+        assert "Matches: 1 (line 1, column 4)." in _additional_context(result)
         assert "Rewrite the whole sentence containing the detected expression" in _additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in _additional_context(result)
         # 検出語そのものは出力に含めない（コンテキスト汚染防止）
         assert deny_substring not in _agent_messages(result)
+
+    def test_lists_every_match_position_within_limit(self, deny_substring: str):
+        content = f"概要は{deny_substring}該当する。\n" * 5
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
+        assert result.returncode == 0
+        assert (
+            "Matches: 5 (line 1, column 4; line 2, column 4; line 3, column 4; line 4, column 4; line 5, column 4)."
+            in _additional_context(result)
+        )
+
+    def test_omits_match_positions_beyond_limit(self, deny_substring: str):
+        content = f"概要は{deny_substring}該当する。\n" * 6
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
+        assert result.returncode == 0
+        assert (
+            "Matches: 6 (line 1, column 4; line 2, column 4; line 3, column 4; line 4, column 4; line 5, column 4)."
+            in _additional_context(result)
+        )
+        assert "line 6" not in _additional_context(result)
 
     def test_does_not_block(self, deny_substring: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "x.md", "content": deny_substring}})
