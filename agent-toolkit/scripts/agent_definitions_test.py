@@ -41,6 +41,7 @@ _PUSH_AND_CI = _COMMIT_SKILL.parent / "references" / "push-and-ci.md"
 _HISTORY_REWRITE = _COMMIT_SKILL.parent / "references" / "history-rewrite.md"
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _AGENT_STANDARDS = _AGENTS_DIR.parent / "skills" / "agent-standards" / "SKILL.md"
+_WRITING_STANDARDS = _AGENTS_DIR.parent / "skills" / "writing-standards" / "SKILL.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
@@ -1462,6 +1463,24 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "識別子の列挙で文脈を代替しない" in add_feedback
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in plan_and_add
     assert "`atk mq add`を実行" not in plan_and_add
+
+
+def test_user_facing_body_paths_invoke_writing_standards() -> None:
+    """利用者が読む本文の生成経路へ文章品質規範の起動契約を保つ。
+
+    節スコープの完全一致で照合するため、コメント化・別節への移動・文言の書き換えを検出する。
+    同一節内での物理的な記載位置の順序は保証しない。
+    順序契約は「起草前に」という挿入文言自体が自己記述し、その書き換えは完全一致の失敗で検出される。
+    """
+    add_feedback = _h2_section(_ADD_FEEDBACK.read_text(encoding="utf-8"), "手順")
+    session_review = _h2_section(_SESSION_REVIEW.read_text(encoding="utf-8"), "改善提案の表示")
+    parsed = frontmatter.parse_frontmatter(_WRITING_STANDARDS.read_text(encoding="utf-8"))
+    assert parsed is not None
+    metadata, _ = parsed
+
+    assert "本文の起草前に`agent-toolkit:writing-standards`をSkill機能で起動する" in add_feedback
+    assert "表示本文の起草前に`agent-toolkit:writing-standards`をSkill機能で起動する" in session_review
+    assert "フィードバック・TBDの本文起草時" in metadata["description"]
 
 
 def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
