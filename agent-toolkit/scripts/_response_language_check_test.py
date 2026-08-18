@@ -2,9 +2,17 @@
 
 import json
 import pathlib
+import re
 
+import pytest
 from _response_language_check import CheckOutcome, detailed_check
 from conftest import _write_transcript
+
+_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
+_RULES_FILE = _SCRIPTS_DIR.parent / "rules" / "01-agent.md"
+
+# hookメッセージが規範文書の見出しを鉤括弧付きで引用する形式。
+_RULE_HEADING_REFERENCE_PATTERN = re.compile(r"01-agent\.md「([^」]+)」")
 
 
 def _write_assistant_transcript(
@@ -180,3 +188,87 @@ class TestDetailedCheck:
         outcome, _, msg_id = detailed_check(str(path))
         assert outcome is CheckOutcome.WARN
         assert msg_id == "msg_custom_123"
+
+
+class TestEnglishOnlyShortText:
+    """日本語文字を含まない短文に対する判定の検証。"""
+
+    def test_warn_english_only_below_length_threshold(self, tmp_path: pathlib.Path):
+        """日本語文字0・英単語2語の短文は長さ下限を適用せずWARNを返す。"""
+        path = _write_assistant_transcript(tmp_path, [_text_block("Done here.")])
+        outcome, body, _ = detailed_check(path)
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
+    def test_skip_english_single_word(self, tmp_path: pathlib.Path):
+        """日本語文字0でも英単語1語だけの短文は従来どおりSKIPを返す。"""
+        path = _write_assistant_transcript(tmp_path, [_text_block("Done.")])
+        outcome, body, _ = detailed_check(path)
+        assert outcome is CheckOutcome.SKIP
+        assert body is None
+
+
+class TestDiscourseMarker:
+    """地の文の先頭に置かれた英語の談話標識に対する判定の検証。"""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Now、調査を続ける。",
+            "Next 実装単位へ進む。",
+            "Then: 検証結果を確認する。",
+            "First 対象ファイルを読む。",
+            "Also、既存テストを維持する。",
+            "Finally、コミットする。",
+            "Let's 実装へ着手する。",
+            "Let me 実装へ着手する。",
+            "So、方針を確定する。",
+            "Okay、方針を確定する。",
+            "OK、方針を確定する。",
+            "now、小文字表記でも検出する。",
+        ],
+    )
+    def test_warn_when_plain_text_starts_with_marker(self, tmp_path: pathlib.Path, text: str):
+        """長さ下限未満でも先頭の談話標識でWARNを返す。"""
+        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
+        outcome, body, _ = detailed_check(path)
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
+    def test_pass_product_name_form(self, tmp_path: pathlib.Path):
+        """標識の直後が`.`と英字の並び（製品名形式）である場合は該当しない。"""
+        path = _write_assistant_transcript(tmp_path, [_text_block("Next.jsの構成を確認する。" + "あ" * 50)])
+        outcome, body, _ = detailed_check(path)
+        assert outcome is CheckOutcome.PASS
+        assert body is None
+
+    def test_pass_marker_inside_inline_code(self, tmp_path: pathlib.Path):
+        """バッククォート内の標識は地の文の先頭判定へ現れない。"""
+        path = _write_assistant_transcript(tmp_path, [_text_block("`Now` は識別子である。" + "あ" * 50)])
+        outcome, body, _ = detailed_check(path)
+        assert outcome is CheckOutcome.PASS
+        assert body is None
+
+    def test_pass_marker_without_word_boundary(self, tmp_path: pathlib.Path):
+        """標識の直後に語境界が無い場合は該当しない。"""
+        path = _write_assistant_transcript(tmp_path, [_text_block("Nowここから確認する。" + "あ" * 50)])
+        outcome, body, _ = detailed_check(path)
+        assert outcome is CheckOutcome.PASS
+        assert body is None
+
+
+class TestRuleHeadingReference:
+    """hookメッセージが引用する規範文書の見出しが実在することの検証。"""
+
+    def test_quoted_headings_exist_in_rules(self):
+        """scripts配下の引用名がすべて01-agent.mdの見出しに実在する。"""
+        headings = {
+            line.lstrip("#").strip() for line in _RULES_FILE.read_text(encoding="utf-8").splitlines() if line.startswith("#")
+        }
+        quoted: dict[str, list[str]] = {}
+        for script in sorted(_SCRIPTS_DIR.glob("*.py")):
+            for name in _RULE_HEADING_REFERENCE_PATTERN.findall(script.read_text(encoding="utf-8")):
+                quoted.setdefault(name, []).append(script.name)
+        assert quoted, "走査対象に規範文書の見出し引用が1件も無い"
+        missing = {name: files for name, files in quoted.items() if name not in headings}
+        assert not missing, f"01-agent.mdに実在しない見出しを引用している: {missing}"

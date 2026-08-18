@@ -1,9 +1,11 @@
-"""Claude Code agent-toolkit: メインエージェント応答の言語比率検査。
+"""Claude Code agent-toolkit: メインエージェント応答の言語検査。
 
 直前のアシスタントターン（非サブエージェント）のテキストブロックを集約し、
-コードブロック・インラインコード・URLを除いた地の文の語数比を判定する。
+コードブロック・インラインコード・URLを除いた地の文を判定する。
+判定条件は、日本語文字を含まない英語だけの地の文、地の文の先頭に置かれた英語の談話標識、
+語数比が閾値未満であることの3種とする。
 語数比は日本語文字数を、日本語文字数と英単語数（連続英字列）の和で割った値とする。
-比率が閾値未満なら警告メッセージを返し、PreToolUseのadditionalContext経由で
+いずれかの条件へ該当すると警告メッセージを返し、PreToolUseのadditionalContext経由で
 コーディングエージェントへ通知する。
 """
 
@@ -12,8 +14,10 @@ import re
 
 from _transcript import iter_latest_assistant_messages
 
-# プレーンテキストがこの文字数に満たない場合は検査をスキップする。
+# プレーンテキストがこの文字数に満たない場合は語数比の判定をスキップする。
 # 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。
+# 日本語文字数0かつ英単語2語以上の地の文へは適用しない。当該入力は日本語が1文字も無く、
+# 下限が防ごうとしている誤発火（日本語の短文が英語判定される事態）が原理的に生じないため。
 _MIN_PLAIN_TEXT_LENGTH = 50
 
 # 語数比の閾値。地の文の日本語文字数を、日本語文字数と英単語数の和で割った値が
@@ -40,6 +44,22 @@ _JAPANESE_CHAR_PATTERN = re.compile("[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4
 # 英単語（連続するASCII英字列）。連続1列を1語として数える。
 _ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]+")
 
+# 日本語文字を含まない地の文を英語応答と判定するための英単語数の下限。
+# 1語だけの地の文は識別子・コマンド名の単独提示と区別できないため対象外とする。
+_MIN_ENGLISH_WORD_COUNT = 2
+
+# 地の文の先頭に置かれたら英語応答と判定する談話標識。
+# 閉集合とする理由は、英単語一般を対象とする開いた集合にすると、
+# 正当な日本語応答の冒頭へ置かれた製品名・識別子で誤発火するため。
+# 直後が`.`と英字の並び（`Next.js`等の製品名形式）である場合と、
+# 直後に語境界（空白・改行・読点・句点・コロン）が無い場合は標識と見なさない。
+# インラインコードは地の文の収集時に空白へ置換済みのため、バッククォート内の語は先頭判定へ現れない。
+_DISCOURSE_MARKERS = ("finally", "first", "let's", "okay", "next", "then", "also", "let", "now", "ok", "so")
+_DISCOURSE_MARKER_PATTERN = re.compile(
+    r"^(?:" + "|".join(_DISCOURSE_MARKERS) + r")(?![.．][A-Za-z])(?=[\s、，。．.:：])",
+    re.IGNORECASE,
+)
+
 
 class CheckOutcome(enum.Enum):
     """言語検査の判定結果。"""
@@ -54,7 +74,7 @@ class CheckOutcome(enum.Enum):
 WARNING_BODY = (
     "直前のアシスタント応答が英語主体で記述されている。"
     "ユーザーは英語の発話を読まないため、日本語で言い直すこと。"
-    "01-agent.md「言語表現」章に従い、進捗報告・判断・ステータス更新を"
+    "01-agent.md「日本語」節に従い、進捗報告・判断・ステータス更新を"
     "ツール呼び出し前後の短文ステータスも含めて日本語で記述すること。"
 )
 
@@ -62,12 +82,12 @@ BLOCK_BODY = "英語主体の応答が2ターン連続で検出された。ユ�
 
 
 def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]:
-    """直前のメインエージェント応答の語数比を判定し、3値で結果を返す。
+    """直前のメインエージェント応答の記述言語を判定し、3値で結果を返す。
 
     判定対象テキストはアシスタントターン内の`type == "text"`ブロックのみで、
     フェンス付きコードブロック・インラインコード・URLを除外する。
-    語数比は日本語文字数 ÷（日本語文字数 ＋ 英単語数）で求める。
-    閾値はモジュール定数を参照する。
+    長さ下限を適用しない2条件（英語だけの地の文、先頭の談話標識）を先に判定し、
+    どちらにも該当しない場合だけ長さ下限付きの語数比判定へ進む。
 
     Returns:
         (判定結果, 警告本文またはNone, message ID)のタプル。
@@ -77,17 +97,35 @@ def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]
     if not transcript_path:
         return (CheckOutcome.SKIP, None, "")
     plain_text, msg_id = _collect_plain_text(transcript_path)
-    if len(plain_text) < _MIN_PLAIN_TEXT_LENGTH:
-        return (CheckOutcome.SKIP, None, msg_id)
     japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
     english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
-    denominator = japanese_count + english_word_count
-    if denominator == 0:
+    if _is_english_only(japanese_count, english_word_count):
+        return (CheckOutcome.WARN, WARNING_BODY, msg_id)
+    if _starts_with_discourse_marker(plain_text):
+        return (CheckOutcome.WARN, WARNING_BODY, msg_id)
+    if len(plain_text) < _MIN_PLAIN_TEXT_LENGTH or japanese_count + english_word_count == 0:
         return (CheckOutcome.SKIP, None, msg_id)
-    ratio = japanese_count / denominator
-    if ratio >= _MIN_JAPANESE_WORD_RATIO:
-        return (CheckOutcome.PASS, None, msg_id)
-    return (CheckOutcome.WARN, WARNING_BODY, msg_id)
+    if _is_below_word_ratio(japanese_count, english_word_count):
+        return (CheckOutcome.WARN, WARNING_BODY, msg_id)
+    return (CheckOutcome.PASS, None, msg_id)
+
+
+def _is_english_only(japanese_count: int, english_word_count: int) -> bool:
+    """日本語文字を含まず英単語が下限以上の地の文かを返す。"""
+    return japanese_count == 0 and english_word_count >= _MIN_ENGLISH_WORD_COUNT
+
+
+def _starts_with_discourse_marker(plain_text: str) -> bool:
+    """地の文の先頭が英語の談話標識かを返す。"""
+    return _DISCOURSE_MARKER_PATTERN.match(plain_text.lstrip()) is not None
+
+
+def _is_below_word_ratio(japanese_count: int, english_word_count: int) -> bool:
+    """語数比が閾値未満かを返す。
+
+    語数比は日本語文字数 ÷（日本語文字数 ＋ 英単語数）で求める。
+    """
+    return japanese_count / (japanese_count + english_word_count) < _MIN_JAPANESE_WORD_RATIO
 
 
 def _collect_plain_text(transcript_path: str) -> tuple[str, str]:
