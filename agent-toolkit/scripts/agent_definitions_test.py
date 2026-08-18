@@ -220,23 +220,35 @@ def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> No
     assert "同一内容が既に退避済みである場合は追加の退避を作成しない" in writer
 
 
-# 消失検査の対応表1。`plan-mode`のSKILL.mdから`plan-file-standards.md`へ移設した各節の代表文面。
-# 作成基準側だけが保持することを検査し、移設漏れと旧配置への出戻りを検出する。
-_PLAN_STANDARDS_MIGRATED_PHRASES: tuple[str, ...] = (
-    "計画はH1の主題に続けて次のH2を固定順で置く",
-    "変動しやすい事実は名前付きのSSOTを1箇所だけ持ち",
-    "コロンはASCIIの`:`、コロン後は半角空白1字",
-    "第2列は`指示どおり`、`具体化`、`エージェント追加`のいずれかとする",
-    "素材IDは`P-001:`だけの行とし",
-    "現在状態の正本は後続の各節とし",
-    "バグ単位のH3ごとに`項目`と`内容`の2列表を置き",
-    "`なし`、`不要`、`該当なし`だけの記載は認めず",
-    "ファイル群別の変更説明を正本",
-    "`## 完了条件`を全文再読",
-    "削除commitから得た項目別の逐語原文と復元文面を1対1で対応させる",
-    "構造定数と値抽出は`agent-toolkit/scripts/_plan_format.py`を正本とする",
-    "保持、不変性又は完全復元を計画の契約とし",
+# 消失検査の対応表1。`plan-mode`のSKILL.mdから`plan-file-standards.md`へ移設した旧本文の全文。
+# 移設元はコミット`d71eba38`時点のSKILL.mdの「設計の判断基準」末尾段落と「計画ファイルの完成条件」配下の全節。
+# 見出し行を境界とするブロック単位の逐語一致で、節内の一部だけの消失・改変と旧配置への出戻りを検出する。
+_PLAN_STANDARDS_MIGRATION_BASELINE = _AGENTS_DIR.parent / "scripts" / "testdata" / "plan_file_standards_migration_baseline.txt"
+_PLAN_STANDARDS_MIGRATED_BLOCK_COUNT = 12
+
+# 移設時に意図して改めた文面。移設元の本文へ同じ置換を適用してから照合する。
+# 作成基準側の文面を意図して改める場合は本表へ追加し、無記録の改変と区別する。
+_PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
+    ("読込済みの本`SKILL.md`から", "読込済みの本書の絶対パスから"),
 )
+
+
+def _plan_standards_migrated_blocks() -> tuple[str, ...]:
+    """移設元の旧本文を見出し行の境界でブロックへ分ける。"""
+    baseline = _PLAN_STANDARDS_MIGRATION_BASELINE.read_text(encoding="utf-8")
+    for before, after in _PLAN_STANDARDS_MIGRATION_REWRITES:
+        assert before in baseline, before
+        baseline = baseline.replace(before, after)
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in baseline.splitlines():
+        if line.startswith("#") and current:
+            blocks.append("\n".join(current).strip())
+            current = []
+        current.append(line)
+    blocks.append("\n".join(current).strip())
+    return tuple(block for block in blocks if block)
+
 
 # 消失検査の対応表2。`plan-review-task.md`から削除した鏡像項目の文面と、
 # 同じ要件を保持する`plan-file-standards.md`側の文面の対応。
@@ -276,9 +288,12 @@ def test_plan_file_standards_own_plan_contracts_alone() -> None:
 
     assert "レビュー用のタスク文書へ検査項目を追加しない" in standards
     assert "\n## 要件の成立性\n" in standards
-    for phrase in _PLAN_STANDARDS_MIGRATED_PHRASES:
-        assert phrase in standards, phrase
-        assert phrase not in plan_mode, phrase
+    blocks = _plan_standards_migrated_blocks()
+    assert len(blocks) == _PLAN_STANDARDS_MIGRATED_BLOCK_COUNT
+    for block in blocks:
+        head = block.splitlines()[0]
+        assert block in standards, head
+        assert block not in plan_mode, head
     assert "references/plan-file-standards.md" in plan_mode
     assert "plan-file-standards.md" in review_task
     assert "plan-file-standards.md" in delegation
