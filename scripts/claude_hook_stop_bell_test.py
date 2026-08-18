@@ -2,7 +2,7 @@
 
 応答終了で入力待ちになった場合だけ端末ベルを鳴らすStopフックのテスト。独立スクリプトなので
 fork-server経由（フォールバック時はsubprocess）で起動しstdout（JSON）を検証する。
-判定分岐は自律セッション・非同期待機中・通常終了・入力不正を検証する。
+判定分岐は再帰呼び出し・自律セッション・非同期待機中・通常終了・入力不正を検証する。
 """
 
 import json
@@ -84,7 +84,16 @@ class TestRingCondition:
 
 
 class TestSilentConditions:
-    """ベルを鳴らさない条件: 自律セッション・背景稼働中・判定材料の欠落。"""
+    """ベルを鳴らさない条件: 再帰呼び出し・自律セッション・背景稼働中・判定材料の欠落。"""
+
+    def test_stop_hook_active_is_silent(self, tmp_path: pathlib.Path):
+        """他のStop hookのblock後の再呼び出し → 入力待ちではないため鳴らさない。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
+        result = _run(
+            {"session_id": "recursive", "transcript_path": str(transcript), "stop_hook_active": True},
+            state_dir=tmp_path,
+        )
+        assert "terminalSequence" not in _output(result)
 
     def test_process_loop_session_is_silent(self, tmp_path: pathlib.Path):
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])

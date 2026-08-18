@@ -8,15 +8,18 @@ r"""Claude Code Stopフック: 応答終了で入力待ちになったときに�
 判定順序は以下のとおり。
 
 1. ペイロード解析失敗または`session_id`欠落: 判定材料が無いためベルを鳴らさない
-2. 常駐ループから起動された自律セッション: 利用者の入力を待たないためベルを鳴らさない
-3. 背景のサブエージェント・コマンド等が未完了: 待機の継続でありベルを鳴らさない
-4. 上記いずれでもない: ベルを鳴らす
+2. 他のStop系hookがターン継続をblockした後の再呼び出し（`stop_hook_active`が真）:
+   応答は終了しておらずベルを鳴らさない
+3. 常駐ループから起動された自律セッション: 利用者の入力を待たないためベルを鳴らさない
+4. 背景のサブエージェント・コマンド等が未完了: 待機の継続でありベルを鳴らさない
+5. 上記いずれでもない: ベルを鳴らす
 
 ベルはフック出力JSONの`terminalSequence`フィールドで返し、Claude Code自身の端末書き込み経路で
 送出させる。フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないためである。
 
 他のStop系hookの判定（`agent-toolkit`の振り返り誘導、`claude_hook_autonomous_exit.py`の
-終了工程の再促）とは独立に動き、当該hookがターン継続をblockした場合は先行してベルが鳴る。
+終了工程の再促）とは独立に動くため、同一Stopサイクルの1回目では当該hookのblockに先行して
+ベルが鳴り得る。block後の再呼び出しは`stop_hook_active`により鳴らさない。
 """
 
 import json
@@ -64,6 +67,13 @@ def main(payload_text: str) -> int:
     if resolved is None:
         return 0
     session_id, payload = resolved
+
+    # 他のStop hookがターン継続をblockした後の再呼び出し。応答は終了しておらず
+    # 利用者の入力待ちでもないため、判定処理を行わずベルを鳴らさない。
+    if payload.get("stop_hook_active") is True:
+        append_stop_log(session_id, "silent_stop_hook_active", {"stop_hook_active": True})
+        _approve()
+        return 0
 
     if os.environ.get(_ENV_PROCESS_LOOP) == "1" or os.environ.get(_LEGACY_ENV_PROCESS_LOOP) == "1":
         append_stop_log(session_id, "silent_autonomous_session", {})
