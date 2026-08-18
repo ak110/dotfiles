@@ -163,9 +163,50 @@ class TestExtractGitEvents:
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
 
+    def test_cd_single_quoted_metacharacters_are_resolved(self) -> None:
+        events = extract_git_events("cd '/tmp/project[1]' && git log", "/cwd")
+        assert events[0].cwd == os.path.normpath("/tmp/project[1]")
+        assert events[0].cwd_resolved is True
+
+    def test_cd_double_quoted_variable_expansion_is_unresolved(self) -> None:
+        events = extract_git_events('cd "/tmp/$X" && git log', "/cwd")
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
+
+    def test_cd_double_quoted_glob_is_resolved(self) -> None:
+        events = extract_git_events('cd "literal[1]" && git log', "/cwd")
+        assert events[0].cwd == os.path.normpath("/cwd/literal[1]")
+        assert events[0].cwd_resolved is True
+
+    def test_cd_partially_quoted_glob_is_unresolved(self) -> None:
+        events = extract_git_events("cd 'literal'*rest && git log", "/cwd")
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
+
     def test_pushd_acts_like_cd(self) -> None:
         events = extract_git_events("pushd sub && git log", "/cwd")
         assert events[0].cwd == os.path.normpath("/cwd/sub")
+
+    def test_pushd_no_cwd_change_option_preserves_current_cwd(self) -> None:
+        events = extract_git_events("pushd -n -- /tmp && git commit --amend", "/cwd")
+        assert events[0].cwd == "/cwd"
+        assert events[0].cwd_resolved is True
+
+    def test_pushd_no_cwd_change_option_without_terminator_preserves_current_cwd(self) -> None:
+        events = extract_git_events("pushd -n /tmp && git log", "/cwd")
+        assert events[0].cwd == "/cwd"
+        assert events[0].cwd_resolved is True
+
+    @pytest.mark.parametrize("command", ["pushd +1 && git log", "pushd -1 && git log"])
+    def test_pushd_stack_rotation_is_unresolved(self, command: str) -> None:
+        events = extract_git_events(command, "/cwd")
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
+
+    def test_pushd_directory_target_remains_resolved(self) -> None:
+        events = extract_git_events("pushd /tmp && git log", "/cwd")
+        assert events[0].cwd == os.path.normpath("/tmp")
+        assert events[0].cwd_resolved is True
 
     def test_popd_is_unresolved(self) -> None:
         events = extract_git_events("popd && git log", "/cwd")

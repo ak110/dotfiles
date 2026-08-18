@@ -110,6 +110,7 @@ from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import
     extract_git_events,
     resolve_cwd_change,
     split_bash_segments,
+    split_bash_tokens,
 )
 from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
@@ -2140,10 +2141,10 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
     current_cwd = CwdResolution(cwd, bool(cwd))
     for segment in segments:
         try:
-            tokens = shlex.split(segment, posix=True)
+            tokens, raw_tokens = split_bash_tokens(segment)
         except ValueError:
             return False
-        cwd_change = resolve_cwd_change(tokens, current_cwd)
+        cwd_change = resolve_cwd_change(tokens, current_cwd, raw_tokens)
         if cwd_change is not None:
             current_cwd = cwd_change
             continue
