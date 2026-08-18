@@ -188,6 +188,37 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         assert phrase in runtime
 
 
+def test_delegation_forbids_reusing_completed_identifiers() -> None:
+    """完了報告を受領して停止した識別子の再利用禁止を委譲スキル本体へ置く。"""
+    continuation = _h2_section(_DELEGATION_SKILL.read_text(encoding="utf-8"), "継続と新規起動")
+
+    assert "中断済み、完了報告を受領して停止済み、完了配送不能、前提が無効化された識別子は再利用せず" in continuation
+    assert "停止済みの識別子を再開すると完了通知が依頼元へ配送されず待機が解けない" in continuation
+    assert "稼働中の識別子への継続だけを認める" in continuation
+    assert "references/claude-code-runtime.md" in continuation
+
+
+def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> None:
+    """退避物の回収責務をcommit契約・受領検収・実装担当タスクで連動させる。"""
+    removal = _h2_section(_COMMIT_SKILL.read_text(encoding="utf-8"), "作業用ブランチと退避物の削除")
+    reception = _h2_section(_DELEGATION_SKILL.read_text(encoding="utf-8"), "受領と検収")
+    writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
+
+    assert "`git stash`による退避、別パスへの複製" in removal
+    assert "呼び出し元が受領時の検収で本節により処置する" in removal
+    assert "git stash show --include-untracked -p <識別子>" in removal
+    assert "git stash drop <識別子>" in removal
+    assert "いずれかの帰属または反映状況が未確定である間は削除しない" in removal
+    # 履歴一本化後の統合先ではpatch-id比較が成立しないため、代替の検収手段を併記する。
+    assert "git diff <対象ブランチ> <統合先> -- <files>" in removal
+    for text in (reception, writer, history_rewrite):
+        assert "`agent-toolkit:commit`の「作業用ブランチと退避物の削除」節" in text
+    assert "完了報告が退避識別子または複製パスを開示した場合" in reception
+    assert "退避物の回収は呼び出し元の責務" in writer
+    assert "同一内容が既に退避済みである場合は追加の退避を作成しない" in writer
+
+
 def test_plan_review_keeps_author_as_the_only_writer() -> None:
     """計画の起草担当が検査・修正を所有し、レビュー担当を読み取り専用にする。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")

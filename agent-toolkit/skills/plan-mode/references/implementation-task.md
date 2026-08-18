@@ -51,6 +51,8 @@
 merge進行中でなければ`git stash push --include-untracked`相当を使い、merge進行中は
 `agent-toolkit:commit`の`references/history-rewrite.md`「merge進行中の退避」に従う。
 退避の破棄は既存の破壊的操作規範に従い、自動で破棄しない。
+退避物の回収は呼び出し元の責務であり、呼び出し元は`agent-toolkit:commit`の「作業用ブランチと退避物の削除」節に従って処置する。
+同一内容が既に退避済みである場合は追加の退避を作成しない。
 
 ## 出力
 
