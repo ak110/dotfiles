@@ -1512,9 +1512,8 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
 def test_user_facing_body_paths_invoke_writing_standards() -> None:
     """利用者が読む本文の生成経路へ文章品質規範の起動契約を保つ。
 
-    節スコープの完全一致で照合するため、コメント化・別節への移動・文言の書き換えを検出する。
-    同一節内での物理的な記載位置の順序は保証しない。
-    順序契約は「起草前に」という挿入文言自体が自己記述し、その書き換えは完全一致の失敗で検出される。
+    該当するH2節の本文に指定文字列が含まれるかだけを検査する。節からの削除と別節への移動は検出するが、
+    コメント化された記述や、一致箇所より後方へ置かれた打ち消しの記述は検出しない。
     """
     add_feedback = _h2_section(_ADD_FEEDBACK.read_text(encoding="utf-8"), "手順")
     session_review = _h2_section(_SESSION_REVIEW.read_text(encoding="utf-8"), "改善提案の表示")
