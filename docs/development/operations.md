@@ -52,10 +52,12 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   `terminalSequence`フィールドでBELを返し、Claude Code自身の端末書き込み経路で送出させる
   （公式仕様でtmux内動作が明記されている。対話セッションで画面表示中のみ送出される）
 - 質問（AskUserQuestion）は`PreToolUse`のツール名matcherで表示と同時に確定的に鳴らす。
-  許可待ち・アイドル等は`Notification`の入力待ち系5種別（`permission_prompt`・`idle_prompt`・
-  `elicitation_dialog`・`elicitation_url_dialog`・`agent_needs_input`）で鳴らす
-  （許可待ちは約6秒後、アイドルは応答終了約60秒後に発火する）。
+  許可待ち等は`Notification`の入力待ち系4種別（`permission_prompt`・`elicitation_dialog`・
+  `elicitation_url_dialog`・`agent_needs_input`）で鳴らす（許可待ちは約6秒後に発火する）。
   AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationに依存させない
+- アイドル（`idle_prompt`）はベルの対象に含めない。応答終了の約60秒後に発火するため、
+  背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も入力待ちと同じ扱いで発火し、
+  利用者の入力を要さない待機でベルが鳴るためである
 - `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
   `@catppuccin_window_flags_icon_format`をベル分岐だけへ上書きし、表示対象をベルアイコンに限定する
 - tmux本体はアタッチ済みセッションの現在のwindowへベルフラグを設定しないため、
