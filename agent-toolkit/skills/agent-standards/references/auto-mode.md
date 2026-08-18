@@ -28,6 +28,11 @@ auto modeは次の4区分でルールを判定する。
 `~/.claude/settings.json`・リポジトリ直下の`.claude/settings.json`・`.claude/settings.local.json`とする。
 評価はdeny・ask・allowの順で最初の一致が結果を決めるため、
 拒否ルールに該当する対象は許可・参照範囲の追加では解消しない（努力目標）。
+権限評価はpermissionsルール（deny→ask→allowの順で最初の一致が確定）→作業ディレクトリ内編集等の自動承認→
+auto mode classifierの順で行われる。
+PreToolUseフックの`permissionDecision: "allow"`はpermissions評価を迂回しない。
+auto modeの拒否ではなく従来の確認ダイアログが対象の場合は本節の対象外であり、
+`references/claude-hooks.md`「PermissionRequest」節のフックで自動許可を扱う。
 
 ## カスタムルール追加のワークフロー
 
@@ -52,7 +57,7 @@ auto modeは次の4区分でルールを判定する。
 
 ## 既知の誤拒否パターンと対応
 
-次の4事例を実機で観測した。
+次の事例を実機で観測した。
 分類名は`claude auto-mode defaults`の出力で確認できる区分を指す。
 
 | 拒否される操作 | 分類名 | 対応 |
@@ -61,11 +66,16 @@ auto modeは次の4区分でルールを判定する。
 | `exit-session`からの`kill -TERM $PPID` | Interfere With Workloads | transcriptの直前のツール呼び出しを条件とするルールを追加する |
 | リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 設定に`Release Workflow Dispatch`が存在する場合、個人リポジトリの`release.yaml`起動に限定して同ルールを使う |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | フィードバック処理由来に限定するルールを追加する |
+| MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | マージ操作を無条件に許可するルールを追加する（必須レビュー・チェックの迂回形態とhard_deny領域は対象外のまま） |
 
 - `git commit --amend`はデフォルトの`soft_deny`が自身の作成したHEADへのamendを`clears`するが、
   別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
 - Self Modificationの許可ルールは、正規のフィードバック処理フロー由来・ユーザー投入フィードバック限定
   （自己生成起点を除外）・計画レビュー工程経由を条件とする
+- マージ許可ルールは承認条件を付けない無条件許可とする（利用者意向、2026-08）。
+  フィードバック本文・TBD回答による承認はtranscript外の実体でありclassifierが参照できないため、
+  承認条件付きのルールでは承認済みマージの再拒否が残る。
+  必須レビュー・チェックの迂回形態（`--admin`・`--force`等）はCI Bypass領域として対象外を維持する
 - リリースワークフロー起動の拒否本文には分類名が含まれないため、`Production Deploy`は既定の
   `soft_deny`との対応から見た有力候補にとどまり、確認済みの分類名として扱わない
 - `Release Workflow Dispatch`は`autoMode.environment`の信頼境界と一致する個人リポジトリに限定し、

@@ -41,10 +41,17 @@ Bashコマンド判定の設計方針:
   （値がパスとなり得るオプションの誤許可を避けるため）
 - `echo`は文字列出力だけのサブコマンドとして許可する。リダイレクトを伴う場合は
   リダイレクト先のパス検査を行う
+- `cat > <path> <<'<DELIM>'`・`cat >> <path> <<'<DELIM>'`のヒアドキュメント形式は、
+  トークン化より前にコマンド全文への構造一致で判定する。引用形デリミターは本文の展開を
+  起こさないため、本文を字義どおりのデータとして扱い、本文中のメタ文字・改行を
+  サブコマンド分割とメタ文字検査の対象にしない。
+  引用なしデリミター（`<<DELIM`）は本文へ`$`・バッククォートの展開が作用するため対象外とする。
+  最初の終端デリミター行より後に空行以外が残る入力は、後続コマンドを伴うため対象外とする
 """
 
 import json
 import pathlib
+import re
 import shlex
 
 import _managed_temp
@@ -80,6 +87,14 @@ _FILE_OP_NON_PATH_PREFIX_ARGS = {"chmod": 1, "chown": 1}
 
 # Bash 自動許可の対象となる文字列出力コマンド。
 _BASH_ECHO_OPS = frozenset({"echo"})
+
+# ヒアドキュメント追記形式の先頭行。`cat` によるリダイレクトと引用形デリミターだけを対象とし、
+# リダイレクト先パスには空白・引用符・シェルメタ文字を含む形を許容しない。
+_HEREDOC_HEADER_RE = re.compile(
+    r"^cat[ \t]+(?:>>|>)[ \t]*"
+    r"(?P<path>'[^']*'|\"[^\"$`\\]*\"|[^\s'\"<>|&;()$`]+)"
+    r"[ \t]+<<[ \t]*'(?P<delimiter>[A-Za-z_][A-Za-z0-9_]*)'[ \t]*$"
+)
 
 # 自動許可の対象として明瞭でないシェルメタ文字。`>` `>>` のリダイレクトと `;` のサブコマンド区切りは
 # 別途トークンレベルで扱う。
@@ -195,9 +210,14 @@ def should_allow_bash(command: str, cwd: str) -> bool:
     `&&` / `||` で結合された複数サブコマンドは、すべてのサブコマンドが
     個別に許可条件を満たす場合にのみ全体を許可する。
     単独 `&`（バックグラウンド実行）・単独 `|`（パイプ）は拒否する。
+    引用形デリミターのヒアドキュメント追記形式は、本文の展開が起きないため
+    トークン化より前に構造一致で判定する。
     """
     if not command:
         return False
+    cwd_base = _resolve_cwd(cwd)
+    if _is_allowed_heredoc_write(command, cwd_base):
+        return True
     # echoの通常の変数表示は維持し、コマンド置換を含む複雑な入力だけ確認へ戻す。
     if "$(" in command or "`" in command:
         return False
@@ -211,9 +231,34 @@ def should_allow_bash(command: str, cwd: str) -> bool:
     # 各演算子の意味論はモジュール冒頭docstringの「Bashコマンド判定の設計方針」節を参照する。
     if any(token not in ("&&", "||") and ("&" in token or "|" in token) for token in tokens):
         return False
-    cwd_base = _resolve_cwd(cwd)
     subcommands = _split_by_logical_ops(tokens)
     return bool(subcommands) and all(_evaluate_subcommand(subcommand, cwd_base) for subcommand in subcommands)
+
+
+def _is_allowed_heredoc_write(command: str, cwd_base: pathlib.Path | None) -> bool:
+    """`cat > <path> <<'<DELIM>'` 形式のヒアドキュメント書き込みが自動許可対象か判定する。
+
+    引用形デリミターだけを対象とし、本文は展開の起きない字義どおりのデータとして扱う。
+    最初の終端デリミター行より後に空行以外が残る入力は、後続コマンドを伴うため False を返す。
+    リダイレクト先が自動許可対象配下の場合にのみ True を返す。
+    """
+    header, separator, rest = command.partition("\n")
+    if not separator:
+        return False
+    matched = _HEREDOC_HEADER_RE.match(header.strip())
+    if matched is None:
+        return False
+    body_lines = rest.split("\n")
+    delimiter = matched.group("delimiter")
+    if delimiter not in body_lines:
+        return False
+    if any(line.strip() for line in body_lines[body_lines.index(delimiter) + 1 :]):
+        return False
+    path_arg = matched.group("path")
+    if path_arg[:1] in ("'", '"'):
+        path_arg = path_arg[1:-1]
+    target = _normalize_path(path_arg, cwd_base=cwd_base)
+    return target is not None and _is_target_path(target)
 
 
 def _is_managed_temp_command(tokens: list[str]) -> bool:

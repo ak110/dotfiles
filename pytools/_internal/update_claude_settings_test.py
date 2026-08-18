@@ -228,7 +228,7 @@ class TestProductionManagedSettings:
         assert data["permissions"]["deny"] == MANAGED_DENY
 
     def test_auto_mode_rules_keep_required_scope_without_confirmation_details(self):
-        """自動許可文は9ラベルの対象と安全境界だけを保持する。"""
+        """自動許可文は各ラベルの対象と安全境界だけを保持する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         rules = dict(rule.split(": ", maxsplit=1) for rule in data["autoMode"]["allow"] if rule != "$defaults")
         assert set(rules) == {
@@ -241,6 +241,8 @@ class TestProductionManagedSettings:
             "Delegation Continuation Message",
             "Release Workflow Dispatch",
             "Personal Repo Default-Branch Push",
+            "Merge Approval",
+            "Plan File Write",
         }
         assert all(
             term in rules["Session-Owned Amend"]
@@ -334,6 +336,31 @@ class TestProductionManagedSettings:
                 "transcript",
                 "force-push",
                 "履歴書き換え",
+            )
+        )
+        assert all(
+            term in rules["Merge Approval"]
+            for term in (
+                "マージ操作",
+                "`glab mr merge`",
+                "`gh pr merge`",
+                "transcript",
+                "`--admin`",
+                "`--force`",
+                "branch protectionの変更",
+                "CIチェックの無効化・スキップ",
+                "hard_deny",
+            )
+        )
+        assert all(
+            term in rules["Plan File Write"]
+            for term in (
+                "`~/.claude/plans/`配下",
+                "作成・追記・編集",
+                "Write・Edit・Bash",
+                "承認ゲートの緩和・規範改訂",
+                "同ディレクトリ外",
+                "hard_deny",
             )
         )
         assert data["autoMode"]["allow"][0] == "$defaults"

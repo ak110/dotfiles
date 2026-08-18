@@ -276,6 +276,43 @@ class TestShouldAllowBash:
     def test_echo_standalone_allowed(self, command: str, home: pathlib.Path) -> None:
         assert hook.should_allow_bash(command, str(home)) is True
 
+    @pytest.mark.parametrize(
+        ("command_template", "cwd_template", "expected"),
+        [
+            # 許可対象への追記・作成は、本文のメタ文字・見出し・空行を問わず許可する。
+            ("cat >> {plans}/plan.md <<'PLAN_EOF'\n## 見出し\n\n$(touch /outside) `date`\nPLAN_EOF\n", "{home}", True),
+            ("cat > {plans}/plan.md <<'PLAN_EOF'\n本文\nPLAN_EOF\n", "{home}", True),
+            ("cat >>{plans}/plan.md <<'EOF'\n本文\nEOF", "{home}", True),
+            # plans 以外の許可対象（scratchpad・Git ワークツリー内のエージェント文書）も同じ扱いとする。
+            ("cat >> {home}/.claude/scratchpad/notes.md <<'EOF'\n本文\nEOF\n", "{home}", True),
+            ("cat >> {repo}/AGENTS.md <<'EOF'\n本文\nEOF\n", "{repo}", True),
+            # 引用なしデリミターは本文へ展開が作用するため対象外とする。
+            ("cat >> {plans}/plan.md <<PLAN_EOF\n本文\nPLAN_EOF\n", "{home}", False),
+            # リダイレクト先が許可対象外のパスの場合は拒否する。
+            ("cat >> {home}/elsewhere.md <<'EOF'\n本文\nEOF\n", "{home}", False),
+            # 終端デリミター行より後に入力が残る形は拒否する。
+            ("cat >> {plans}/plan.md <<'EOF'\n本文\nEOF\nrm {home}/elsewhere.md\n", "{home}", False),
+            ("cat >> {plans}/plan.md <<'EOF'\nEOF\n本文の続き\n", "{home}", False),
+            # 終端デリミター行が現れない入力は拒否する。
+            ("cat >> {plans}/plan.md <<'EOF'\n本文\n", "{home}", False),
+            # `cat` 以外のコマンドとリダイレクトのない形は対象外のまま。
+            ("python3 - <<'PY'\nprint(1)\nPY\n", "{home}", False),
+            ("cat <<'EOF'\n本文\nEOF\n", "{home}", False),
+        ],
+    )
+    def test_heredoc_write_allowance(
+        self,
+        home: pathlib.Path,
+        repo: pathlib.Path,
+        command_template: str,
+        cwd_template: str,
+        expected: bool,
+    ) -> None:
+        format_args = {"home": home, "repo": repo, "plans": home / ".claude" / "plans"}
+        cmd = command_template.format(**format_args)
+        cwd = cwd_template.format(**format_args)
+        assert hook.should_allow_bash(cmd, cwd) is expected
+
     def test_rm_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # `/tmp/` 配下は一時ファイル領域として自動許可対象に含める
         monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
@@ -445,6 +482,19 @@ class TestEndToEnd:
         payload = {
             "tool_name": "Bash",
             "tool_input": {"command": f"cp {scratchpad}/x.md {plans}/y.md && wc -l {plans}/y.md"},
+            "cwd": str(home),
+        }
+        code, stdout = self._run(payload)
+        assert code == 0
+        assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
+
+    def test_bash_heredoc_append_to_plans_returns_allow(self, home: pathlib.Path) -> None:
+        """計画ファイルへのヒアドキュメント追記を入口経路で自動許可する。"""
+        plans = home / ".claude" / "plans"
+        command = f"cat >> {plans}/plan.md <<'PLAN_EOF'\n## 進捗ログ\n\n本文\nPLAN_EOF\n"
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
             "cwd": str(home),
         }
         code, stdout = self._run(payload)
