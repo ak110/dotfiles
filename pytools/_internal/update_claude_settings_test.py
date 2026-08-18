@@ -344,7 +344,7 @@ class TestProductionManagedSettings:
                 "マージ操作",
                 "`glab mr merge`",
                 "`gh pr merge`",
-                "transcript",
+                "人間のレビュー・承認の証跡がtranscriptに無いことを拒否理由にしない",
                 "`--admin`",
                 "`--force`",
                 "branch protectionの変更",

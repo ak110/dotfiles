@@ -283,6 +283,9 @@ class TestShouldAllowBash:
             ("cat >> {plans}/plan.md <<'PLAN_EOF'\n## 見出し\n\n$(touch /outside) `date`\nPLAN_EOF\n", "{home}", True),
             ("cat > {plans}/plan.md <<'PLAN_EOF'\n本文\nPLAN_EOF\n", "{home}", True),
             ("cat >>{plans}/plan.md <<'EOF'\n本文\nEOF", "{home}", True),
+            # デリミターは識別子形式に限らず、単一引用符で囲まれた任意の文字列を受理する。
+            ("cat >> {plans}/plan.md <<'END-PLAN'\n本文\nEND-PLAN\n", "{home}", True),
+            ("cat >> {plans}/plan.md <<'PLAN 1'\n本文\nPLAN 1\n", "{home}", True),
             # plans 以外の許可対象（scratchpad・Git ワークツリー内のエージェント文書）も同じ扱いとする。
             ("cat >> {home}/.claude/scratchpad/notes.md <<'EOF'\n本文\nEOF\n", "{home}", True),
             ("cat >> {repo}/AGENTS.md <<'EOF'\n本文\nEOF\n", "{repo}", True),
