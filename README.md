@@ -39,13 +39,8 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 ```
 
 agent-toolkitは、Agent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
-Agent Plugins互換クライアントは`agent-toolkit/`をパッケージルートとして扱える。
-可搬部分は参照検証器が受理する16スキルとpyfltr MCPで構成される。
-クライアント固有のフィールドを受理する環境では、残る2スキルも同じ`skills/`から利用できる。
-Claude Code・Codex固有の資源は同じルートに残り、対応するクライアントが利用する。
 単体導入にはClaude Code CLI、Codex CLI、uvを使用する。
-dotfiles配布では、Claude CodeとCodex CLIを`chezmoi apply`後の処理が公式インストーラーから導入し、更新する。
-Codex CLIは公式スタンドアローン版を使用する。
+dotfiles配布では、`chezmoi apply`後の処理がこれらの導入と更新を担う。
 統合導入は[agent-toolkit導入ガイド](docs/guide/claude-code-guide.md)、
 Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参照する。
 

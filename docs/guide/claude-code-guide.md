@@ -28,12 +28,12 @@ agent-toolkitはルールファイルと3形式で共有するプラグインル
 - ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
 - Agent Plugins: `agent-toolkit/`をパッケージルートとして扱う。
-  参照検証器が受理する16スキルとpyfltr MCPを可搬部分として提供する
+  Agent Plugins仕様の範囲で利用できるスキルとpyfltr MCPを提供する
 - Claude Code・Codex: 同じ`skills/`を利用し、形式固有のmanifest、ルール、フック、実行資源を追加する。
-  固有frontmatterフィールドを受理するクライアントでは残る2スキルも共有できる
+  固有のフィールドを受理するクライアントでは、`skills/`のすべてのスキルを共有できる
 
 Agent Pluginsが定義しないClaude Code・Codex固有のディレクトリも同じルートに存在する。
-Agent Plugins互換クライアントは未対応の資源を可搬部分として扱わない。
+Agent Plugins互換クライアントは、それらの未対応の資源を読み込まない。
 
 両者は相互依存しており、基本的に同時に導入することを前提とする。
 
@@ -85,29 +85,10 @@ Codexの双方を設定する。3コマンドのいずれかを検出できな�
 agent-toolkitプラグイン、Codex MCP、`atk`ラッパーが設定される。
 再実行すると最新版へ同期される。
 
-両インストーラーは再実行時にもCodexプラグインを更新する。
-`codex plugin add`の前後で導入済みプラグインのversionとenabledを比較し、いずれかが変化すると、
-`codex app-server daemon version`でdaemonの稼働状態を確認する。状態確認が成功した場合だけ、
-後続処理の成否にかかわらずstderrの最終行へ`codex app-server daemon restart`を表示する。
-後続処理が失敗した場合は、エラーを先に表示し、
-非0の終了状態を維持する。進行中のセッションを保護するため、セッションの完了後に案内されたコマンドを実行する。
-導入前後の状態が同じ場合、状態を確認できない場合、プラグイン追加前の処理または
-`codex plugin add`自体が失敗した場合は、再起動案内を表示しない。daemonが未起動の場合や
-daemonの状態確認に失敗した場合も表示しない。
-
-更新前のCodexプラグインキャッシュにある安全なversion名は、Codex管理キャッシュ外の台帳へ保存される。
-台帳の配置先は`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`である。
-`CODEX_HOME`が未設定の場合は`~/.codex`を使用する。
-更新後は、旧version名を現行versionの実体へ直接向ける互換リンクとして復元する。
-LinuxとmacOSでは相対シンボリックリンク、Windowsでは管理者権限を必要としないディレクトリジャンクションを使う。
-起動済みまたは再開したセッションは、保持している旧絶対パスからフックスクリプトを引き続き実行できる。
-
-再起動案内は新versionを後続セッションへ反映するために表示される。
-互換リンクは既存セッションの旧実行先を保持するため、daemonを自動終了しない運用と併用する。
-旧version名と同名の通常エントリがある場合は置換せず、台帳を保持したままインストーラーが失敗する。
-競合を解消して同じversionのインストーラーを再実行すると、台帳から互換リンクを復元できる。
-旧versionの除去は[Codexのstore実装](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs)に基づく。
-旧絶対パスを保持するセッションの事象は[Codex issue #25285](https://github.com/openai/codex/issues/25285)でも報告されている。
+両インストーラーは再実行時にCodexプラグインも更新する。
+更新でCodexプラグインの状態が変化し、app-server daemonの稼働を確認できた場合は、daemonの再起動コマンドが案内される。
+実行中のセッションは互換リンクにより更新前の実行先を保つため、案内されたコマンドはセッションの完了後に実行する。
+互換リンクの仕組みと再起動案内の条件は[Codex利用ガイド](codex-guide.md)の「プラグイン更新の反映」を参照。
 
 インストール後、非公式のプラグインマーケットプレイスはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
 
