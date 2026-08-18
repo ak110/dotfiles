@@ -778,6 +778,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "項目別結果をファイル名昇順で各1回反映",
         "atk mq show <filename> --target-repo=<repo>",
         "意図した保存後状態を確認できた場合は同じ結果を再実行せず",
+        "元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存",
         "当該項目への追加操作だけを止める",
         "保持済みの`feedbacks-planner`結果により後続項目をファイル名昇順で各1回処理",
         "結果反映エラーが先頭、中間、末尾のいずれで発生しても、全ファイル名を各1回処理",
@@ -790,6 +791,13 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     warning_at = sender.index("警告が出た場合は`atk mq show", completion_at)
     terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", warning_at)
     assert save_at < completion_at < warning_at < terminal_at
+    reflect_save_at = sender.index(
+        "元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存", terminal_at
+    )
+    reflect_completion_at = sender.index("保存コマンドの完了表示にエラーが無いことを確認", reflect_save_at)
+    reflect_warning_at = sender.index("警告が出た場合は`atk mq show", reflect_completion_at)
+    reflect_terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", reflect_warning_at)
+    assert terminal_at < reflect_save_at < reflect_completion_at < reflect_warning_at < reflect_terminal_at
     for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "バッチを失敗"):
         assert phrase in process
     for forbidden in ("結果反映済み項目", "結果部分反映項目", "結果未反映項目", "同一バッチ非再試行"):
