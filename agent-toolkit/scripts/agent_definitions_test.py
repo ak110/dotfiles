@@ -52,6 +52,7 @@ _SESSION_REVIEW_EVIDENCE = _AGENTS_DIR.parent / "scripts" / "_session_review_evi
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE_REFERENCES / "plan-review-delegation.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
+_RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
@@ -2182,3 +2183,45 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
         assert requirement in publish_group
     assert "`managed-temp`のマーカーファイルと利用者専用登録簿の照合" in publish_group
     assert "### 要件シナリオ走査" in review
+
+
+def _return_path_contract_targets() -> tuple[pathlib.Path, ...]:
+    """能動送付を実行できる委譲先の受信タスク文書とagent定義を列挙する。"""
+    targets: list[pathlib.Path] = []
+    for path in sorted((_DISTRIBUTION_ROOT / "skills").glob("*/references/*.md")):
+        text = path.read_text(encoding="utf-8")
+        if "\n## 入力\n" in text and "\n## 出力\n" in text:
+            targets.append(path)
+    for path in sorted(_AGENTS_DIR.glob("*.md")):
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, _ = parsed
+        tools = metadata.get("tools")
+        assert isinstance(tools, str)
+        if "SendMessage" in {name.strip() for name in tools.split(",")}:
+            targets.append(path)
+    return tuple(targets)
+
+
+def test_return_path_contract_covers_definitions_that_can_send_messages() -> None:
+    """能動送付を実行できる委譲先の全定義へ完了報告の返却経路契約を置く。"""
+    targets = _return_path_contract_targets()
+    assert targets, "返却経路契約の母集団を検出できない"
+    missing = sorted(
+        str(path.relative_to(_REPOSITORY_ROOT))
+        for path in targets
+        if _RETURN_PATH_CONTRACT not in path.read_text(encoding="utf-8")
+    )
+    assert not missing, f"完了報告の返却経路契約を欠く文書: {missing}"
+
+    runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
+    assert (
+        "当該タスク文書又はagent定義の側に、完了報告をツール戻り値で1回返し`SendMessage`で能動送付しない契約を含める" in runtime
+    )
+
+
+def test_feedback_explore_task_confirms_recorded_triggers_in_project_documents() -> None:
+    """発生契機を特定できない調査で開発・運用文書の記録済み契機を確認させる。"""
+    explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
+    for phrase in ("開発・運用文書", "記録済みの発火契機"):
+        assert phrase in explore
