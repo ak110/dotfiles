@@ -58,11 +58,15 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
 - アイドル（`idle_prompt`）はベルの対象に含めない。応答終了の約60秒後に発火するため、
   背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も入力待ちと同じ扱いで発火し、
   利用者の入力を要さない待機でベルが鳴るためである
+- 応答終了そのものは`Stop`のフック（`scripts/claude_hook_stop_bell.py`）で鳴らす。
+  常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
+  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/scripts/_stop_gate.py`の判定を用いる。
+  他のStop系フックがターン継続をblockした場合は、当該ターンの終了前にベルが鳴る
+- Windowsはtmux運用外のため、ベルの各経路は`share/claude_settings_json_managed.win32.json`へ追加しない
 - `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
   `@catppuccin_window_flags_icon_format`をベル分岐だけへ上書きし、表示対象をベルアイコンに限定する
 - tmux本体はアタッチ済みセッションの現在のwindowへベルフラグを設定しないため、
   アクティブなwindow自身ではベルアイコンが増えない（仕様どおりの挙動であり是正対象ではない）
-- Windowsはtmux運用外のため対象外とする
 
 ## mise latestの非ログイン再評価
 

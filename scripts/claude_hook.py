@@ -26,16 +26,17 @@ import pathlib
 import sys
 import traceback
 
-_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "autonomous_exit"})
+_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "autonomous_exit", "stop_bell"})
 
 _MODULE_NAMES: dict[str, str] = {
     "pretooluse": "claude_hook_pretooluse",
     "posttooluse": "claude_hook_posttooluse",
     "autonomous_exit": "claude_hook_autonomous_exit",
+    "stop_bell": "claude_hook_stop_bell",
 }
 
 # 例外時に`_approve()`（空JSON応答）フォールバックを呼ぶ対象（Stop系のみ、既存挙動を維持）。
-_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"autonomous_exit"})
+_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"autonomous_exit", "stop_bell"})
 
 
 def _configure_standard_output() -> None:
