@@ -633,9 +633,13 @@ def _state_root() -> pathlib.Path:
     return root
 
 
+def _registry_name(path: pathlib.Path) -> str:
+    """管理対象pathに対応する登録ファイル名を返す。"""
+    return f"{hashlib.sha256(os.fsencode(path)).hexdigest()}.json"
+
+
 def _registry_path(path: pathlib.Path) -> pathlib.Path:
-    digest = hashlib.sha256(os.fsencode(path)).hexdigest()
-    return _state_root() / f"{digest}.json"
+    return _state_root() / _registry_name(path)
 
 
 def _write_private_json(path: pathlib.Path, value: dict[str, typing.Any]) -> None:
@@ -924,14 +928,27 @@ def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
 
 
 def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
-    """真正性検証を通過した管理対象を作成時刻順で返す。"""
+    """真正性検証を通過した管理対象を作成時刻順で返す。
+
+    実体に依存しない検証（`path`欄の型と登録ファイル名との対応）を通過した登録のうち、
+    実体を失ったものは登録ファイルごと削除する。実体を失った登録には当該領域を使用中の
+    主体が存在しないため、登録ファイルの削除が利用中の管理対象へ影響しない。
+    """
     if prefix is not None and not is_valid_prefix(prefix):
         raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
     entries: list[dict[str, str | None]] = []
     for registry_path in _state_root().glob("*.json"):
         try:
             record = _load_private_json(registry_path)
-            path = pathlib.Path(typing.cast(str, record["path"]))
+            recorded_path = record["path"]
+            if not isinstance(recorded_path, str):
+                raise ManagedTempError("管理情報のpathが文字列ではない")
+            path = pathlib.Path(recorded_path)
+            if _registry_name(path) != registry_path.name:
+                raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
+            if not os.path.lexists(path):
+                registry_path.unlink(missing_ok=True)
+                continue
             validate_managed_temp(path)
             item_prefix = record.get("prefix") if record.get("schema_version") == 2 else None
             created_at = record.get("created_at") if record.get("schema_version") == 2 else None

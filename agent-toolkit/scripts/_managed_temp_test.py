@@ -260,6 +260,16 @@ def _managed_state(target: pathlib.Path, registry: pathlib.Path) -> tuple[object
     return tree, _path_state(target / _MARKER_NAME), _path_state(registry)
 
 
+def _replace_registry(target: pathlib.Path, transform: typing.Callable[[dict[str, object]], None]) -> None:
+    """登録簿だけへ改変を保存し、登録ファイル名と`path`の対応を検証可能にする。"""
+    registry = subject._registry_path(target)
+    record = json.loads(registry.read_text(encoding="utf-8"))
+    transform(record)
+    registry.write_text(json.dumps(record), encoding="utf-8")
+    if os.name == "posix":
+        registry.chmod(0o600)
+
+
 def _replace_records(target: pathlib.Path, transform: typing.Callable[[dict[str, object]], None]) -> None:
     """マーカーファイルと登録簿へ同じ改変を保存してデータ契約を検証可能にする。"""
     marker = target / _MARKER_NAME
@@ -442,7 +452,7 @@ class TestManagedTempPosix:
         assert subject.dispatch(parser.parse_args(["list"])) == 1
         assert capsys.readouterr().out == ""
 
-    @pytest.mark.parametrize("tamper", ["marker", "stale-registry", "symlink", "registry-mode"])
+    @pytest.mark.parametrize("tamper", ["marker", "registry-name", "symlink", "registry-mode"])
     def test_list_excludes_untrusted_records_and_keeps_valid_records(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -450,7 +460,7 @@ class TestManagedTempPosix:
         capsys: pytest.CaptureFixture[str],
         tamper: str,
     ) -> None:
-        """listは改変・stale・link・権限不正を出力せず正常項目を継続する。"""
+        """listは改変・不対応・link・権限不正を出力せず、登録を残して正常項目を継続する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("valid")
         invalid = subject.create_managed_temp("invalid")
@@ -459,9 +469,12 @@ class TestManagedTempPosix:
         if tamper == "marker":
             marker.write_text("{}", encoding="utf-8")
             marker.chmod(0o600)
-        elif tamper == "stale-registry":
-            marker.unlink()
-            invalid.rmdir()
+        elif tamper == "registry-name":
+
+            def rename_recorded_path(record: dict[str, object]) -> None:
+                record["path"] = f"{invalid}-renamed"
+
+            _replace_registry(invalid, rename_recorded_path)
         elif tamper == "symlink":
             marker.unlink()
             marker.symlink_to(tmp_path / "outside-marker")
@@ -476,6 +489,31 @@ class TestManagedTempPosix:
             }
         ]
         assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+        assert registry.exists()
+
+    def test_list_removes_registry_of_a_missing_target_without_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """実体を失った登録は警告を出力せず登録ファイルごと回収する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        valid = subject.create_managed_temp("valid")
+        missing = subject.create_managed_temp("missing")
+        registry = subject._registry_path(missing)
+        (missing / _MARKER_NAME).unlink()
+        missing.rmdir()
+
+        assert subject.list_managed_temp() == [
+            {
+                "path": str(valid),
+                "prefix": "valid",
+                "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
+            }
+        ]
+        assert capsys.readouterr().err == ""
+        assert not registry.exists()
 
     @pytest.mark.parametrize("prefix", ["", "UPPER", "under_score", "leading-", "-leading", "dot.name"])
     def test_create_rejects_invalid_prefix(
@@ -782,7 +820,7 @@ class TestManagedTempWindows:
         subject.cleanup_managed_temp(target)
         assert not target.exists()
 
-    @pytest.mark.parametrize("tamper", ["marker", "stale-registry"])
+    @pytest.mark.parametrize("tamper", ["marker", "registry-name"])
     def test_list_excludes_tampered_records_and_keeps_valid_record(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -790,21 +828,42 @@ class TestManagedTempWindows:
         capsys: pytest.CaptureFixture[str],
         tamper: str,
     ) -> None:
-        """Windowsでもlistは不正recordを除外し、真正な領域の列挙を継続する。"""
+        """Windowsでもlistは不正recordを除外し、登録を残して真正な領域の列挙を継続する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("windows-valid")
         invalid = subject.create_managed_temp("windows-invalid")
+        registry = subject._registry_path(invalid)
         if tamper == "marker":
             marker = invalid / _MARKER_NAME
             marker.write_text("{}", encoding="utf-8")
         else:
-            subject._write_private_json(subject._state_root() / "stale.json", {})
 
-        expected_paths = {str(valid)}
-        if tamper == "stale-registry":
-            expected_paths.add(str(invalid))
-        assert {entry["path"] for entry in subject.list_managed_temp()} == expected_paths
+            def rename_recorded_path(record: dict[str, object]) -> None:
+                record["path"] = f"{invalid}-renamed"
+
+            _replace_registry(invalid, rename_recorded_path)
+
+        assert {entry["path"] for entry in subject.list_managed_temp()} == {str(valid)}
         assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+        assert registry.exists()
+
+    def test_list_removes_registry_of_a_missing_target_without_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Windowsでも実体を失った登録は警告を出力せず登録ファイルごと回収する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        valid = subject.create_managed_temp("windows-valid")
+        missing = subject.create_managed_temp("windows-missing")
+        registry = subject._registry_path(missing)
+        (missing / _MARKER_NAME).unlink()
+        missing.rmdir()
+
+        assert {entry["path"] for entry in subject.list_managed_temp()} == {str(valid)}
+        assert capsys.readouterr().err == ""
+        assert not registry.exists()
 
     def test_external_writer_acl_validate_and_cleanup(
         self,
