@@ -4,6 +4,8 @@
 現在ディレクトリを追跡しながら、各git呼び出しごとに`GitEvent`を返す。
 `git -C <dir>`の相対パスは出現時点の現在cwdを基点に正規化する。
 
+シェル展開を含むcwdは静的に解決できないため、解決不能として明示する。
+
 `pretooluse` / `posttooluse`の両方が同一のイベント列を消費する形に統一している。
 """
 
@@ -53,6 +55,14 @@ _GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
 
 
 @dataclasses.dataclass(frozen=True)
+class CwdResolution:
+    """シェルコマンドから得たcwdの解決結果を表す。"""
+
+    path: str
+    resolved: bool
+
+
+@dataclasses.dataclass(frozen=True)
 class GitEvent:
     """Bashコマンド内の1回のgit呼び出しを表す。
 
@@ -61,7 +71,10 @@ class GitEvent:
     - `subcommand`: gitのサブコマンド名（`log`・`commit`・`rebase`・`push`等）。
       サブコマンドに到達せずグローバルオプションのみで終わる場合は空文字列。
     - `cwd`: そのgit呼び出しの実効作業ディレクトリ。`cd`・`pushd`・`git -C`の
-      効果を反映したパスを保持する。`payload_cwd`が空かつcdが無い場合は空文字列。
+      効果を反映した、解決済みのパスを保持する。解決不能な場合は空文字列。
+    - `cwd_resolved`: `cwd`が実効作業ディレクトリとして解決済みなら真。
+      `cd`・`pushd`・`git -C`の引数にシェル展開が含まれる場合や、初期cwdが不明な場合は偽。
+      解決不能なイベントでは、消費側がpayloadのcwdへ戻って状態を参照しない。
     - `global_options`: サブコマンド前に出現したgitのグローバルオプションのトークン列。
     - `subcommand_args`: サブコマンド名以降のトークン列。
     """
@@ -70,6 +83,7 @@ class GitEvent:
     cwd: str
     global_options: list[str]
     subcommand_args: list[str]
+    cwd_resolved: bool = True
 
 
 def split_bash_segments(command: str) -> list[str]:
@@ -129,14 +143,15 @@ def extract_git_events(command: str, payload_cwd: str) -> list[GitEvent]:
     """Bashコマンドからgit呼び出しイベント列を抽出する。
 
     `payload_cwd`を初期cwdとして`split_bash_segments`の結果を順に評価する。
-    `cd`・`pushd`が先頭にあるセグメントでは現在cwdを更新する（`popd`は厳密スタックを
-    持たず無視する）。先頭が`git`のセグメントでは`GitEvent`を1件記録する。
+    `cd`・`pushd`が先頭にあるセグメントでは現在cwdを更新する。
+    `popd`はスタックを静的に追跡できないためcwdを解決不能にする。
+    先頭が`git`のセグメントでは`GitEvent`を1件記録する。
     その他のコマンドは現在cwdに影響を与えない。
 
     `shlex.split`で解釈不能なセグメント（クォート閉じ忘れ等）は無視する。
     """
     events: list[GitEvent] = []
-    current_cwd = payload_cwd or ""
+    current_cwd = CwdResolution(payload_cwd, bool(payload_cwd))
     for segment in split_bash_segments(command):
         try:
             tokens = shlex.split(segment, posix=True)
@@ -146,10 +161,9 @@ def extract_git_events(command: str, payload_cwd: str) -> list[GitEvent]:
         if start >= len(tokens):
             continue
         head = tokens[start]
-        if head in ("cd", "pushd"):
-            current_cwd = _apply_cd(tokens, start, current_cwd)
-            continue
-        if head == "popd":
+        cwd_change = resolve_cwd_change(tokens, current_cwd)
+        if cwd_change is not None:
+            current_cwd = cwd_change
             continue
         if head == "git":
             event = _parse_git_call(tokens[start:], current_cwd)
@@ -166,30 +180,49 @@ def _skip_env_assignments(tokens: list[str], start: int) -> int:
     return i
 
 
-def _apply_cd(tokens: list[str], start: int, current_cwd: str) -> str:
-    """`cd`・`pushd`の引数を解釈して新しい現在cwdを返す。
+def resolve_cwd_change(tokens: list[str], current_cwd: CwdResolution) -> CwdResolution | None:
+    """cwdを変更するセグメントの解決結果を返す。"""
+    start = _skip_env_assignments(tokens, 0)
+    if start >= len(tokens):
+        return None
+    if tokens[start] in ("cd", "pushd"):
+        return _apply_cd(tokens, start, current_cwd)
+    if tokens[start] == "popd":
+        return CwdResolution("", False)
+    return None
 
-    引数なし・オプション（`-`等）・解析不能時は現在cwdを変更しない。
-    相対パスは現在cwd基点で`os.path.normpath`正規化する。
+
+def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdResolution:
+    """`cd`・`pushd`の引数を解釈して新しいcwdの解決結果を返す。
+
+    引数なし・オプション（`-`等）・シェル展開を含む場合は解決不能とする。
+    相対パスは解決済みの現在cwdを基点に`os.path.normpath`で正規化する。
     """
     if start + 1 >= len(tokens):
-        return current_cwd
+        return CwdResolution("", False)
     target = tokens[start + 1]
-    if not target or target.startswith("-"):
-        return current_cwd
+    if not target or target.startswith("-") or _contains_shell_expansion(target):
+        return CwdResolution("", False)
     return _normalize_relative(target, current_cwd)
 
 
-def _normalize_relative(target: str, current_cwd: str) -> str:
-    """相対パスを現在cwd基点で正規化する。絶対パスはそのまま正規化する。"""
+def _contains_shell_expansion(value: str) -> bool:
+    """静的解析で解決できないシェル展開の記号を含むか判定する。"""
+    return any(marker in value for marker in ("$", "`", "~"))
+
+
+def _normalize_relative(target: str, current_cwd: CwdResolution) -> CwdResolution:
+    """相対パスを現在cwd基点で正規化し、解決結果を返す。"""
+    if _contains_shell_expansion(target):
+        return CwdResolution("", False)
     if os.path.isabs(target):
-        return os.path.normpath(target)
-    if current_cwd:
-        return os.path.normpath(os.path.join(current_cwd, target))
-    return os.path.normpath(target)
+        return CwdResolution(os.path.normpath(target), True)
+    if not current_cwd.resolved:
+        return CwdResolution("", False)
+    return CwdResolution(os.path.normpath(os.path.join(current_cwd.path, target)), True)
 
 
-def _parse_git_call(tokens: list[str], current_cwd: str) -> GitEvent | None:
+def _parse_git_call(tokens: list[str], current_cwd: CwdResolution) -> GitEvent | None:
     """`git ...`形式のトークン列を解析してGitEventを返す。
 
     `tokens[0]`は`git`である前提。グローバルオプションを順次解釈して`-C`の効果を
@@ -232,13 +265,15 @@ def _parse_git_call(tokens: list[str], current_cwd: str) -> GitEvent | None:
         # サブコマンド到達。
         return GitEvent(
             subcommand=token,
-            cwd=effective_cwd,
+            cwd=effective_cwd.path,
             global_options=global_options,
             subcommand_args=list(tokens[i + 1 :]),
+            cwd_resolved=effective_cwd.resolved,
         )
     return GitEvent(
         subcommand="",
-        cwd=effective_cwd,
+        cwd=effective_cwd.path,
         global_options=global_options,
         subcommand_args=[],
+        cwd_resolved=effective_cwd.resolved,
     )

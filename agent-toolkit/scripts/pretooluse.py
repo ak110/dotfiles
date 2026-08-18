@@ -23,7 +23,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 mcp__codex__codex:
 
 - メインセッションで`agent-toolkit:delegation`の起動記録が無いcodex MCP呼び出しのブロック (block)
-- `sandbox: danger-full-access`以外（未指定を含む）の呼び出しのブロック (block)
+- `sandbox: danger-full-access`以外（未指定を含む）の呼び出しの自動補正 (auto-fix)
 - `approval-policy`の`never`固定 (auto-fix)
 - 全チェック通過時の強制承認 (auto-approve)
 
@@ -34,6 +34,7 @@ mcp__codex__codex-reply:
 Bash:
 
 - `sleep`直後に読み取り専用の状態確認コマンドを連結する前景待機の検出 (`warn/block`)
+- パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
 - 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
@@ -104,8 +105,10 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    CwdResolution,
     GitEvent,
     extract_git_events,
+    resolve_cwd_change,
     split_bash_segments,
 )
 from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -290,7 +293,7 @@ def _handle_codex_tool(
         if _check_delegation_not_invoked(state, tool_name=tool_name):
             return 2
     if tool_name == "mcp__codex__codex":
-        if _check_codex_mcp_sandbox(tool_input) or _check_codex_mcp_cwd(tool_input):
+        if _check_codex_mcp_cwd(tool_input):
             return 2
         emit_json(_check_codex_mcp_execution(tool_input))
     else:
@@ -1828,17 +1831,31 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
     判定は`extract_git_events`の結果を消費し、各git呼び出しの実効cwd
     （`cd`・`pushd`・`git -C`の影響を反映）ごとに行う。
     """
-    targets: list[tuple[str, str]] = []
+    targets: list[tuple[GitEvent, str]] = []
     for event in extract_git_events(command, cwd):
         if event.subcommand == "commit" and "--amend" in event.subcommand_args:
-            targets.append((event.cwd, "git commit --amend"))
+            targets.append((event, "git commit --amend"))
         elif event.subcommand == "rebase":
-            targets.append((event.cwd, "git rebase"))
+            targets.append((event, "git rebase"))
     if not targets:
         return False
+    unresolved = next(((event, op) for event, op in targets if not event.cwd_resolved), None)
+    if unresolved is not None:
+        _, op = unresolved
+        print(
+            _llm_notice(
+                f"blocked: {op}."
+                " The command changes its working directory through an unresolved shell expression."
+                " Run `git log --oneline --decorate` from the target repository first,"
+                " then retry with a statically resolvable working directory."
+            ),
+            file=sys.stderr,
+        )
+        return True
     state = read_state(session_id)
     log_state = state.get("git_log_checked", False)
-    for event_cwd, op in targets:
+    for event, op in targets:
+        event_cwd = event.cwd
         if isinstance(log_state, dict):
             if event_cwd and log_state.get(event_cwd, False):
                 continue
@@ -1881,9 +1898,19 @@ def _check_bash_git_push_after_amend_with_dirty_status(command: str, session_id:
     if not isinstance(flags, dict):
         return False
     for event in push_events:
-        if not flags.get(event.cwd, False):
+        if not event.cwd_resolved:
+            if any(value is True for value in flags.values()):
+                print(
+                    _llm_notice(
+                        "blocked: git push after an amend/fixup could not resolve its working directory."
+                        " Review the amend state and retry with a statically resolvable working directory.",
+                        tag="block",
+                    ),
+                    file=sys.stderr,
+                )
+                return True
             continue
-        if not event.cwd:
+        if not flags.get(event.cwd, False):
             continue
         dirty = _git_status.has_tracked_dirty(event.cwd)
         if dirty is None:
@@ -2014,7 +2041,9 @@ def _check_bash_bulk_stage_with_unedited_files(
         mode = _detect_bulk_stage_mode(event)
         if mode is None:
             continue
-        effective_cwd = event.cwd or payload_cwd
+        if not event.cwd_resolved:
+            continue
+        effective_cwd = event.cwd
         if not effective_cwd:
             continue
         try:
@@ -2068,14 +2097,13 @@ def _check_bash_bulk_stage_with_unedited_files(
 # 1. `uv run`と`python`の間（uv run自身のオプション位置）に`--script`または
 #    `--no-project`が現れる場合は許容する（cwdの依存解決を行わないため副作用なし）。
 # 2. cwd変更経路（Bashの`cd` / `pushd`先行・`uv --directory` / `uv --project`）
-#    が無く、cwd又はその祖先で最初に見つかるpyproject.tomlが[project]
-#    セクションを持つPythonプロジェクトの場合は許容する
+#    の実効cwdが解決済みで、cwd又はその祖先で最初に見つかるpyproject.tomlが
+#    [project]セクションを持つPythonプロジェクトの場合は許容する
 #    （`uv run python -c '...'`等の正規利用を妨げない）。
 # 3. それ以外はblockする。
 #
-# cwd変更経路を伴う場合はpayload上のcwdを判定根拠に採用できないため、Python
-# プロジェクト判定をスキップしてblock側に倒す（副作用の有無を確実に判定できない
-# ため安全側の挙動とする）。
+# cwd変更経路の引数にシェル展開が含まれる場合は、実効cwdとPythonプロジェクトの
+# 種別を静的に確定できないため、プロジェクト判定を行わずblock側に倒す。
 # 環境変数経由のcwd / project切り替え（UV_WORKING_DIR / UV_PROJECT）は
 # 利用頻度が低く実装コストに見合わないため対応スコープ外とする。
 
@@ -2090,8 +2118,9 @@ _UV_RUN_PYTHON_BLOCK_MSG = (
     " (2) to skip cwd project resolution, use `uv run --no-project python ...`;"
     " (3) as a separate command, run it from a directory where the first `pyproject.toml`"
     " found in the cwd or its ancestors has a `[project]` section."
-    " A `cd` in the same command line does not help: this check does not resolve the effective"
-    " working directory after an in-line `cd` and blocks such invocations on the safe side."
+    " A statically resolvable `cd` target is evaluated as the effective working directory."
+    " An unresolved shell expansion in a cwd change blocks this invocation because the project"
+    " type cannot be confirmed."
 )
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
@@ -2108,22 +2137,24 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
     if "<<" in command:
         return False
     segments = split_bash_segments(command)
-    cwd_changed_before = False
+    current_cwd = CwdResolution(cwd, bool(cwd))
     for segment in segments:
         try:
             tokens = shlex.split(segment, posix=True)
         except ValueError:
             return False
+        cwd_change = resolve_cwd_change(tokens, current_cwd)
+        if cwd_change is not None:
+            current_cwd = cwd_change
+            continue
         info = _parse_uv_run_python(tokens)
         if info is not None:
             has_script_or_no_project, directory_or_project_overridden = info
             if not has_script_or_no_project and (
-                directory_or_project_overridden or cwd_changed_before or not _cwd_in_python_project(cwd)
+                directory_or_project_overridden or not current_cwd.resolved or not _cwd_in_python_project(current_cwd.path)
             ):
                 print(_llm_notice(_UV_RUN_PYTHON_BLOCK_MSG), file=sys.stderr)
                 return True
-        if _segment_changes_cwd(tokens):
-            cwd_changed_before = True
     return False
 
 
@@ -2133,14 +2164,6 @@ def _skip_env_assignments(tokens: list[str], start: int) -> int:
     while i < len(tokens) and _ENV_ASSIGN_PATTERN.match(tokens[i]):
         i += 1
     return i
-
-
-def _segment_changes_cwd(tokens: list[str]) -> bool:
-    """セグメント先頭のコマンドが`cd` / `pushd` / `popd`の場合に真を返す。"""
-    i = _skip_env_assignments(tokens, 0)
-    if i >= len(tokens):
-        return False
-    return tokens[i] in ("cd", "pushd", "popd")
 
 
 def _is_python_token(token: str) -> bool:
@@ -3012,7 +3035,13 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
     state = read_state(session_id)
     if state.get("test_executed", False):
         return None
-    if _is_docs_only_commit(commit_events[0], cwd):
+    if any(not event.cwd_resolved for event in commit_events):
+        return _llm_notice(
+            "committing without running tests. Follow the verify-then-commit procedure in 01-agent.md and run tests first.",
+            tag="warn",
+        )
+    commit_event = commit_events[0]
+    if _is_docs_only_commit(commit_event, commit_event.cwd):
         return None
     return _llm_notice(
         "committing without running tests. Follow the verify-then-commit procedure in 01-agent.md and run tests first.",
@@ -3047,12 +3076,14 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
        解決できない場合は警告側へ倒す
     5. 上記いずれにも該当しない場合、warn JSONを返す
     """
-    if not any(event.subcommand == "commit" for event in extract_git_events(command, cwd)):
+    commit_events = [event for event in extract_git_events(command, cwd) if event.subcommand == "commit"]
+    if not commit_events or any(not event.cwd_resolved for event in commit_events):
         return None
-    if not cwd:
+    effective_cwd = commit_events[0].cwd
+    if not effective_cwd:
         return None
 
-    staged = _git_status.run_git_lines(["git", "diff", "--cached", "--name-only"], cwd)
+    staged = _git_status.run_git_lines(["git", "diff", "--cached", "--name-only"], effective_cwd)
     if staged is None or not staged:
         return None
     agent_toolkit_files = [p for p in staged if p.startswith(_AGENT_TOOLKIT_PREFIX)]
@@ -3070,14 +3101,14 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
 
     unpushed = _git_status.run_git_lines(
         ["git", "rev-list", "@{u}..HEAD", "--", _AGENT_TOOLKIT_PLUGIN_MANIFEST],
-        cwd,
+        effective_cwd,
     )
     if unpushed is None:
-        default_branch = _git_status.resolve_default_branch(cwd)
+        default_branch = _git_status.resolve_default_branch(effective_cwd)
         if default_branch is not None:
             unpushed = _git_status.run_git_lines(
                 ["git", "rev-list", f"{default_branch}..HEAD", "--", _AGENT_TOOLKIT_PLUGIN_MANIFEST],
-                cwd,
+                effective_cwd,
             )
     if unpushed:
         return None
@@ -3126,7 +3157,6 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
             "permissionDecision": "allow",
             "updatedInput": updated_input,
         },
-        "systemMessage": "[agent-toolkit] auto-inserted --decorate into git log.",
     }
 
 
@@ -3249,27 +3279,11 @@ def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:
 # --- mcp__codex__codex: sandbox明示指定の強制・approval-policy自動修正 ---
 
 
-def _check_codex_mcp_sandbox(tool_input: dict) -> bool:
-    """`sandbox`が`danger-full-access`以外の呼び出しを検出してブロック要否を返す。
-
-    未指定も対象に含める。`read-only`・`workspace-write`ではcodexプロセスが承認待ちのまま
-    復帰せず、呼び出し元が完了を検知できないまま停止する事象を実測している。
-    `updatedInput`による書き換えは承認ダイアログの発生自体を抑止できないため、
-    書き換えに依存せず呼び出し側へ明示指定を求める。
-    """
-    if tool_input.get("sandbox") == "danger-full-access":
-        return False
-    specified = tool_input.get("sandbox")
-    actual = f"`{specified}`" if isinstance(specified, str) else "unspecified"
-    print(
-        _llm_notice(
-            f'blocked: mcp__codex__codex requires sandbox="danger-full-access" (got {actual}).'
-            " Other sandbox modes leave the codex process waiting for approval and it never returns."
-            ' Retry with sandbox="danger-full-access".'
-        ),
-        file=sys.stderr,
-    )
-    return True
+def _check_codex_mcp_sandbox(tool_input: dict) -> dict:
+    """Codex MCPの`sandbox`を`danger-full-access`へ補正した入力を返す。"""
+    updated_input = dict(tool_input)
+    updated_input["sandbox"] = "danger-full-access"
+    return updated_input
 
 
 def _check_codex_mcp_cwd(tool_input: dict) -> bool:
@@ -3311,16 +3325,12 @@ def _check_codex_mcp_execution(tool_input: dict) -> dict:
     本環境では承認プロンプト抑止を優先し安全側の強制固定を採用する。
     フィードバック反映等で「利用者の明示指定を尊重する」形へ再度変更しないこと。
     """
-    updated_input = dict(tool_input)
-    approval_ok = tool_input.get("approval-policy") == "never"
+    updated_input = _check_codex_mcp_sandbox(tool_input)
     updated_input["approval-policy"] = "never"
-    result: dict = {
+    return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "updatedInput": updated_input,
         },
     }
-    if not approval_ok:
-        result["systemMessage"] = "[agent-toolkit] forced codex MCP approval-policy to never."
-    return result

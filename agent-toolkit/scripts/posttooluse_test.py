@@ -486,7 +486,7 @@ class TestGitLogChecked:
     """git_log_checked 状態の管理。
 
     cwdを伴うpayloadではcwd別辞書`{cwd: True}`で記録する。
-    cwd空文字列環境では旧形式の単一bool値で記録し後方互換を保つ。
+    cwdを静的に解決できないイベントは記録しない。
     リセット対象は対象コミットの親子関係が変化する操作（commit / rebase / reset）に限定する。
     push・Write / Edit / MultiEditはリセットしない
     （push・ファイル編集はコミット木を書き換えないため再確認を強制する必要がない）。
@@ -506,12 +506,44 @@ class TestGitLogChecked:
         state = _read_state(tmp_path, sid)
         assert state.get("git_log_checked") == {"/repo/a": True}
 
-    def test_git_log_sets_legacy_bool_when_cwd_absent(self, tmp_path: pathlib.Path):
-        """cwd未指定では旧形式の単一bool値で記録する（後方互換）。"""
-        sid = "log-check-nocwd"
-        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}}, state_dir=tmp_path)
+    def test_unresolved_git_log_does_not_record(self, tmp_path: pathlib.Path):
+        """shell展開を含むgit logはcwdを解決できないため状態を作成しない。"""
+        sid = "log-check-unresolved"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": 'cd "$TARGET" && git log --oneline -5'},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
         state = _read_state(tmp_path, sid)
-        assert state.get("git_log_checked") is True
+        assert "git_log_checked" not in state
+
+    def test_unresolved_git_log_does_not_allow_following_amend(self, tmp_path: pathlib.Path):
+        """解決不能なgit log後に、payload cwdの確認済み状態としてamendを許可しない。"""
+        sid = "log-check-unresolved-amend"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": 'cd "$TARGET" && git log --oneline'},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        result = _run_pretooluse(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit --amend --no-edit"},
+                "cwd": "/repo/a",
+            },
+            tmp_path,
+        )
+        assert result.returncode == 2
+        assert "amend" in result.stderr
 
     @pytest.mark.parametrize(
         ("label", "reset_command", "reset_cwd"),
@@ -557,13 +589,29 @@ class TestGitLogChecked:
         # `/repo/a`のみリセットされ、`/repo/b`のエントリは残る。
         assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/b": True}
 
-    def test_legacy_bool_reset_back_to_false(self, tmp_path: pathlib.Path):
-        """旧形式bool値はcommit時に`False`へ戻す（従来挙動）。"""
-        sid = "log-legacy-reset"
-        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("git_log_checked") is True
-        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git commit -m 'x'"}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("git_log_checked") is False
+    def test_resolved_log_reset_removes_target_entry(self, tmp_path: pathlib.Path):
+        """解決済みcwdのcommitは該当cwdの確認状態だけをリセットする。"""
+        sid = "log-resolved-reset"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/a": True}
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'x'"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {}
 
     @pytest.mark.parametrize(
         ("edit_payload"),
@@ -989,6 +1037,56 @@ class TestAmendPendingStatusCheck:
             state_dir=tmp_path,
         )
         assert self._flag(_read_state(tmp_path, sid), os.path.normpath("/repo/x")) is True
+
+    def test_unresolved_amend_does_not_set_flag_or_affect_following_push(self, tmp_path: pathlib.Path):
+        """解決不能なamendは状態を作成せず、後続pushへ確認待ちを持ち越さない。"""
+        sid = "amend-flag-unresolved"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": 'cd "$TARGET" && git commit --amend --no-edit'},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert "amend_pending_status_check" not in state
+        result = _run_pretooluse(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git push origin master"},
+                "cwd": "/repo/a",
+            },
+            tmp_path,
+        )
+        assert result.returncode == 0
+
+    def test_unresolved_push_does_not_clear_existing_flag(self, tmp_path: pathlib.Path):
+        """解決不能なpushは空文字列キーを操作せず、既存worktreeのフラグを保持する。"""
+        sid = "amend-flag-push-unresolved"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit --amend --no-edit"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": 'cd "$TARGET" && git push origin master'},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert self._flag(state, "/repo/a") is True
+        assert not (isinstance(state.get("amend_pending_status_check"), dict) and "" in state["amend_pending_status_check"])
 
     def test_git_status_does_not_reset_flag(self, tmp_path: pathlib.Path):
         sid = "amend-flag-status-noop"

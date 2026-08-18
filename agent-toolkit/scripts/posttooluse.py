@@ -505,6 +505,8 @@ def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
         log_state = state.get("git_log_checked")
         log_modified = False
         for event in git_events:
+            if not event.cwd_resolved:
+                continue
             if event.subcommand == "log":
                 if event.cwd:
                     if not isinstance(log_state, dict):
@@ -512,9 +514,6 @@ def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
                     if not log_state.get(event.cwd, False):
                         log_state[event.cwd] = True
                         log_modified = True
-                elif not isinstance(log_state, dict) and not log_state:
-                    log_state = True
-                    log_modified = True
             elif event.subcommand in _GIT_LOG_RESET_SUBCOMMANDS:
                 if isinstance(log_state, dict):
                     if event.cwd and event.cwd in log_state:
@@ -527,6 +526,8 @@ def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
             state["git_log_checked"] = log_state
             changed = True
         for event in git_events:
+            if not event.cwd_resolved:
+                continue
             if event.subcommand == "commit" and _git_commit_is_amend_or_fixup(event.subcommand_args):
                 changed = _set_amend_pending_status_check(state, event.cwd) is not None or changed
             elif (

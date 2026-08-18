@@ -77,6 +77,7 @@ stdout全体が1つのJSONとして解析されるため、対象ごとに出力
 
 PreToolUseやPostToolUseでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
+`systemMessage`の情報通知は利用者の判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動して利用者の対応を要しない事象には付けない。
 Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘導等）は`decision: "block"`＋`reason`を採用する。
 永続ログはstderr出力ではなく`_stop_gate.append_stop_log`等の専用APIに集約する。
 
@@ -100,10 +101,12 @@ Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolU
 確認ダイアログを抑制したい場合はPermissionRequestイベントで`decision.behavior: "allow"`を返す。
 
 `updatedInput`による入力書き換えは、確認ダイアログの発生自体を抑止しない。
-ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う
-（`sandbox: danger-full-access`の検査がこの一例である。この値以外では
-codexプロセスが承認待ちのまま復帰しないため、書き換えに依存せず呼び出し側へ明示指定を求める）。
-呼び出し側の明示指定を尊重する形への回帰は禁止する（停止事象の回避を優先する）。
+ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
+ただし、Codex MCPの`sandbox`はPreToolUseで`sandbox: danger-full-access`へ自動補正する。
+この補正が実環境で承認待ちを回避できることは配布後のフィードバックで実測し、結果を反映する。
+
+エージェントへ特定の行動・引数を要求するblockを新設する場合は、要求する要件を実行主体が事前に読み得る規範文書（常時ロードのルール、または当該作業で起動されるスキルの本文・参照文書）へ明示する。遮断メッセージだけを要件の初出にしない。
+blockの新設時は、対象環境で文書化済みの正式コマンド形（スキル・`AGENTS.md`・タスクランナー定義が指定する起動形）への発動有無を確認し、正当な運用が遮断される場合は判定条件を見直してから導入する。
 
 ### PermissionRequest
 

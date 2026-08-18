@@ -1741,6 +1741,35 @@ class TestBashGitCommitWarning:
         else:
             assert result.stdout == ""
 
+    def test_commit_warning_uses_effective_cd_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """`cd`後のdocs-only commitは移動先のステージ内容で判定する。"""
+        target_base = tmp_path / "target"
+        target_base.mkdir()
+        payload_base = tmp_path / "payload"
+        payload_base.mkdir()
+        target = self._make_repo_with_staged(target_base, {"docs/a.md": "# docs\n"})
+        payload = self._make_repo_with_staged(payload_base, {})
+        result = self._invoke(
+            f"cd {target} && git commit -m 'docs'",
+            "effective-commit-cwd",
+            state_dir,
+            cwd=str(payload),
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_unresolved_commit_warns_without_payload_fallback(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """解決不能なcommitはpayload cwdのdocs-only状態へフォールバックせず警告する。"""
+        payload = self._make_repo_with_staged(tmp_path, {"docs/a.md": "# docs\n"})
+        result = self._invoke(
+            'cd "$TARGET" && git commit -m "docs"',
+            "unresolved-commit-cwd",
+            state_dir,
+            cwd=str(payload),
+        )
+        assert result.returncode == 0
+        assert self._has_additional_context(result, "committing without running tests")
+
 
 class TestBashGitLogDecorate:
     """git log --decorate自動付与。"""
@@ -1752,6 +1781,7 @@ class TestBashGitLogDecorate:
         assert data["hookSpecificOutput"]["permissionDecision"] == "allow"
         updated = data["hookSpecificOutput"]["updatedInput"]["command"]
         assert "--decorate" in updated
+        assert "systemMessage" not in data
 
     def test_skips_when_decorate_present(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log --oneline --decorate -5"}})
@@ -1820,7 +1850,7 @@ class TestBashAmendRebaseBlock:
     """git amend / rebaseのlog未確認ブロック。
 
     `git_log_checked`はcwd別辞書`{cwd: True}`で管理する。
-    cwd空文字列環境向けに旧形式の単一bool値も後方互換として受け入れる。
+    既存状態に残る旧形式の単一bool値も後方互換として受け入れる。
     """
 
     @pytest.fixture(name="state_dir")
@@ -1853,15 +1883,15 @@ class TestBashAmendRebaseBlock:
         assert "rebase" in result.stderr
 
     def test_amend_allowed_with_legacy_bool_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """旧形式bool値`True`はcwd空文字列環境向けの後方互換として受け入れる。"""
+        """既存状態の旧形式bool値`True`は解決済みcwdで後方互換として受け入れる。"""
         self._write_state(tmp_path, "with-log", {"git_log_checked": True})
         cmd = "git commit " + "--amend --no-edit"
-        result = self._invoke(cmd, "with-log", state_dir)
+        result = self._invoke(cmd, "with-log", state_dir, cwd="/repo/a")
         assert result.returncode == 0
 
     def test_rebase_allowed_with_legacy_bool_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         self._write_state(tmp_path, "with-log-rb", {"git_log_checked": True})
-        result = self._invoke("GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2", "with-log-rb", state_dir)
+        result = self._invoke("GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2", "with-log-rb", state_dir, cwd="/repo/a")
         assert result.returncode == 0
 
     def test_normal_commit_not_blocked(self, state_dir: dict[str, str]):
@@ -1929,6 +1959,14 @@ class TestBashAmendRebaseBlock:
         result = self._invoke(command, sid, state_dir, cwd=payload_cwd)
         assert result.returncode == expected_returncode
 
+    def test_unresolved_cwd_is_blocked_without_payload_fallback(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """shell展開を含むcwdは、payloadのcwdに記録された確認結果へフォールバックしない。"""
+        sid = "unresolved-amend-cwd"
+        self._write_state(tmp_path, sid, {"git_log_checked": {"/repo/a": True}})
+        result = self._invoke('cd "$TARGET" && git commit --amend --no-edit', sid, state_dir, cwd="/repo/a")
+        assert result.returncode == 2
+        assert "unresolved" in result.stderr
+
 
 def _init_git_repo(path: pathlib.Path) -> None:
     """一括ステージ警告テスト用の最小git repo初期化。"""
@@ -1954,6 +1992,7 @@ class TestBashBulkStageWithUneditedFiles:
     - `git add -A/--all/.` は未追跡を含む集合を対象とする
     - `git add -u/--update` と `git commit -a/--all/-am`等 は追跡済みのみを対象とする
     - 実効cwdは `event.cwd`（`cd`・`git -C`の影響を反映）で判定する
+    - 解決不能なcwdではpayloadのcwdへフォールバックしない
     """
 
     @pytest.fixture(name="state_dir")
@@ -2191,6 +2230,20 @@ class TestBashBulkStageWithUneditedFiles:
         ctx = self._assert_warns(result)
         assert "sub_unedited.txt" in ctx
 
+    def test_unresolved_cwd_skips_without_payload_fallback(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """shell展開を含むcwdでは、payload cwd側の未編集ファイルを誤って警告しない。"""
+        repo = tmp_path / "repo-unresolved"
+        repo.mkdir()
+        _init_git_repo(repo)
+        (repo / "unedited.txt").write_text("x", encoding="utf-8")
+        self._write_state(tmp_path, "add-unresolved", {"session_edited_files": []})
+        result = self._invoke('cd "$TARGET" && git add -A', "add-unresolved", state_dir, cwd=str(repo))
+        self._assert_no_warn(result)
+
 
 class TestBashGitPushAfterAmendDirty:
     """`git push`前のamend後dirty状態ブロック検査（fb3）。
@@ -2341,6 +2394,16 @@ class TestBashGitPushAfterAmendDirty:
         result = self._invoke(f"cd {repo} && git push origin master", sid, state_dir, cwd=str(tmp_path))
         assert result.returncode == 2
 
+    def test_unresolved_push_blocks_when_any_worktree_is_pending(
+        self, state_dir: dict[str, str], tmp_path: pathlib.Path
+    ) -> None:
+        """解決不能なpushは、いずれかのworktreeにamend後確認待ちがあれば遮断する。"""
+        sid = "push-unresolved"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {"/repo/a": True}})
+        result = self._invoke('cd "$TARGET" && git push origin master', sid, state_dir, cwd=str(tmp_path))
+        assert result.returncode == 2
+        assert "amend" in result.stderr
+
     def test_dry_run_dirty_block_range_matches_real_push(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """判定範囲の統一: `--dry-run`でもdirty判定は実施される（再確認）。"""
         repo = tmp_path / "repo-dryrange"
@@ -2473,18 +2536,31 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python --no-project s.py", cwd)
         assert result.returncode == 2
 
-    def test_inline_cd_is_blocked_and_separate_cwd_change_passes(self, tmp_path: pathlib.Path) -> None:
-        """同一コマンドの移動はブロックし、別コマンドで移動済みのcwdは通過する。"""
-        cwd = self._make_python_project(tmp_path)
-        blocked = self._invoke("cd /tmp && uv run python /tmp/foo.py", cwd)
-        assert blocked.returncode == 2
-        # 案内する対処が判定の通過条件と一致することを、代表語で確認する。
-        # 同一コマンド内の`cd`を対処として案内すると、そのとおり実行しても再びブロックされる。
-        assert "separate command" in blocked.stderr
-        assert "`cd` to the project root before running" not in blocked.stderr
+    def test_cd_to_python_project_allowed(self, tmp_path: pathlib.Path) -> None:
+        """静的に解決できる`cd`先がPythonプロジェクトなら許容する。"""
+        payload_cwd = tmp_path / "payload"
+        payload_cwd.mkdir()
+        target = tmp_path / "python-target"
+        target.mkdir()
+        self._make_python_project(target)
+        result = self._invoke(f"cd {target} && uv run python /tmp/foo.py", str(payload_cwd))
+        assert result.returncode == 0
 
-        allowed = self._invoke("uv run python /tmp/foo.py", cwd)
-        assert allowed.returncode == 0
+    def test_cd_to_non_python_project_blocks(self, tmp_path: pathlib.Path) -> None:
+        """静的に解決できる`cd`先がPythonプロジェクトでなければ遮断する。"""
+        payload_cwd = tmp_path / "payload"
+        payload_cwd.mkdir()
+        target = tmp_path / "non-python-target"
+        target.mkdir()
+        self._make_non_python_project(target)
+        result = self._invoke(f"cd {target} && uv run python /tmp/foo.py", str(payload_cwd))
+        assert result.returncode == 2
+
+    def test_unresolved_cd_blocks(self, tmp_path: pathlib.Path) -> None:
+        """shell展開を含む`cd`は、payload cwdがPythonプロジェクトでも遮断する。"""
+        payload_cwd = self._make_python_project(tmp_path)
+        result = self._invoke('cd "$TARGET" && uv run python /tmp/foo.py', payload_cwd)
+        assert result.returncode == 2
 
     def test_pushd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)
@@ -2601,44 +2677,54 @@ class TestCodexMcpExecution:
     _write_state = staticmethod(_write_session_state)
 
     def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandboxが未指定の場合はブロックする。"""
+        """sandbox未指定の場合は`danger-full-access`へ自動補正する。"""
         self._write_state(tmp_path, "fix1", {"delegation_skill_invoked": True})
         result = _run(
-            {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "fix1"},
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "cwd": "/tmp/workdir"},
+                "session_id": "fix1",
+            },
             env_overrides=state_dir,
         )
-        assert result.returncode == 2
-        assert "danger-full-access" in result.stderr
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["updatedInput"]["sandbox"] == "danger-full-access"
+        assert "systemMessage" not in out
 
     @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
     def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """`danger-full-access`以外のsandbox指定はブロックする。"""
+        """`danger-full-access`以外のsandbox指定は自動補正する。"""
         self._write_state(tmp_path, "fix2", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": sandbox},
+                "tool_input": {"prompt": "hello", "sandbox": sandbox, "cwd": "/tmp/workdir"},
                 "session_id": "fix2",
             },
             env_overrides=state_dir,
         )
-        assert result.returncode == 2
-        assert "danger-full-access" in result.stderr
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["updatedInput"]["sandbox"] == "danger-full-access"
+        assert "systemMessage" not in out
 
     def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """サブエージェント内部からの呼び出しでもsandbox検査を適用する。"""
+        """サブエージェント内部からの呼び出しでもsandboxを自動補正する。"""
         self._write_state(tmp_path, "fix_side", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "read-only"},
+                "tool_input": {"prompt": "hello", "sandbox": "read-only", "cwd": "/tmp/workdir"},
                 "session_id": "fix_side",
                 "isSidechain": True,
             },
             env_overrides=state_dir,
         )
-        assert result.returncode == 2
-        assert "danger-full-access" in result.stderr
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["updatedInput"]["sandbox"] == "danger-full-access"
+        assert "systemMessage" not in out
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandbox・approval-policyが共に既定値の場合、updatedInputは返すがsystemMessageを含めない。"""
@@ -2684,26 +2770,26 @@ class TestCodexMcpExecution:
         updated = out["hookSpecificOutput"]["updatedInput"]
         assert updated["sandbox"] == "danger-full-access"
         assert updated["approval-policy"] == "never"
-        assert "forced" in out["systemMessage"]
+        assert "systemMessage" not in out
 
 
 class TestCheckCodexMcpSandbox:
-    """`_check_codex_mcp_sandbox`単体テスト（`danger-full-access`明示指定の強制）。"""
+    """`_check_codex_mcp_sandbox`単体テスト（`danger-full-access`への自動補正）。"""
 
     @pytest.mark.parametrize("sandbox", ["read-only", "workspace-write"])
-    def test_blocks_other_sandbox_modes(self, sandbox: str, capsys: pytest.CaptureFixture[str]) -> None:
-        blocked = pretooluse._check_codex_mcp_sandbox({"prompt": "test", "sandbox": sandbox})  # noqa: SLF001  # pylint: disable=protected-access
-        assert blocked is True
-        assert sandbox in capsys.readouterr().err
+    def test_corrects_other_sandbox_modes(self, sandbox: str, capsys: pytest.CaptureFixture[str]) -> None:
+        updated = pretooluse._check_codex_mcp_sandbox({"prompt": "test", "sandbox": sandbox})  # noqa: SLF001  # pylint: disable=protected-access
+        assert updated["sandbox"] == "danger-full-access"
+        assert capsys.readouterr().err == ""
 
-    def test_blocks_unspecified_sandbox(self, capsys: pytest.CaptureFixture[str]) -> None:
-        blocked = pretooluse._check_codex_mcp_sandbox({"prompt": "test"})  # noqa: SLF001  # pylint: disable=protected-access
-        assert blocked is True
-        assert "unspecified" in capsys.readouterr().err
+    def test_corrects_unspecified_sandbox(self, capsys: pytest.CaptureFixture[str]) -> None:
+        updated = pretooluse._check_codex_mcp_sandbox({"prompt": "test"})  # noqa: SLF001  # pylint: disable=protected-access
+        assert updated["sandbox"] == "danger-full-access"
+        assert capsys.readouterr().err == ""
 
-    def test_allows_danger_full_access(self, capsys: pytest.CaptureFixture[str]) -> None:
-        blocked = pretooluse._check_codex_mcp_sandbox({"prompt": "test", "sandbox": "danger-full-access"})  # noqa: SLF001  # pylint: disable=protected-access
-        assert blocked is False
+    def test_preserves_danger_full_access(self, capsys: pytest.CaptureFixture[str]) -> None:
+        updated = pretooluse._check_codex_mcp_sandbox({"prompt": "test", "sandbox": "danger-full-access"})  # noqa: SLF001  # pylint: disable=protected-access
+        assert updated["sandbox"] == "danger-full-access"
         assert capsys.readouterr().err == ""
 
 
@@ -2792,9 +2878,10 @@ class TestCheckCodexMcpExecution:
     """`_check_codex_mcp_execution`単体テスト（approval-policyの強制固定）。"""
 
     def test_forces_approval_policy(self) -> None:
-        tool_input = {"prompt": "test", "sandbox": "danger-full-access"}
+        tool_input = {"prompt": "test"}
         result = pretooluse._check_codex_mcp_execution(tool_input)  # noqa: SLF001  # pylint: disable=protected-access
         updated = result["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
         assert updated["approval-policy"] == "never"
 
     def test_overrides_user_specified_value(self) -> None:
@@ -2802,7 +2889,8 @@ class TestCheckCodexMcpExecution:
         result = pretooluse._check_codex_mcp_execution(tool_input)  # noqa: SLF001  # pylint: disable=protected-access
         updated = result["hookSpecificOutput"]["updatedInput"]
         assert updated["approval-policy"] == "never"
-        assert "forced" in result["systemMessage"]
+        assert updated["sandbox"] == "danger-full-access"
+        assert "systemMessage" not in result
 
     def test_no_system_message_when_already_correct(self) -> None:
         tool_input = {"prompt": "test", "sandbox": "danger-full-access", "approval-policy": "never"}
@@ -3218,6 +3306,25 @@ class TestBashAgentToolkitVersionBump:
         output = json.loads(result.stdout)
         assert "permissionDecision" not in output["hookSpecificOutput"]
         assert self._has_version_bump_warning(result)
+
+    def test_commit_uses_effective_cd_cwd(self, tmp_path: pathlib.Path):
+        """`cd`後のcommitはpayload cwdではなく移動先の差分でversion警告を判定する。"""
+        target_base = tmp_path / "target"
+        target_base.mkdir()
+        payload_base = tmp_path / "payload"
+        payload_base.mkdir()
+        target = self._make_repo(target_base, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
+        payload_repo = self._make_repo(payload_base)
+        result = self._invoke(f"cd {target} && git commit -m 'skill'", str(payload_repo))
+        assert result.returncode == 0
+        assert self._has_version_bump_warning(result)
+
+    def test_commit_with_unresolved_cwd_suppresses_version_warning(self, tmp_path: pathlib.Path):
+        """shell展開を含むcommitではpayload cwdへフォールバックしてversion警告を抑止する。"""
+        payload_repo = self._make_repo(tmp_path, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
+        result = self._invoke('cd "$TARGET" && git commit -m "skill"', str(payload_repo))
+        assert result.returncode == 0
+        assert not self._has_version_bump_warning(result)
 
     def test_plugin_manifest_in_staged_no_warn(self, tmp_path: pathlib.Path):
         repo = self._make_repo(

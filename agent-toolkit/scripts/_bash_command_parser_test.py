@@ -63,7 +63,7 @@ class TestExtractGitEvents:
 
     def test_empty_payload_cwd_yields_empty_event_cwd(self) -> None:
         events = extract_git_events("git log", "")
-        assert events == [GitEvent(subcommand="log", cwd="", global_options=[], subcommand_args=[])]
+        assert events == [GitEvent(subcommand="log", cwd="", global_options=[], subcommand_args=[], cwd_resolved=False)]
 
     def test_dash_capital_c_absolute(self) -> None:
         events = extract_git_events("git -C /abs/path log", "/cwd")
@@ -140,23 +140,26 @@ class TestExtractGitEvents:
         assert "--work-tree" in events[0].global_options
         assert "/repo" in events[0].global_options
 
-    def test_cd_no_arg_keeps_cwd(self) -> None:
-        """`cd`引数なしはHOMEへの遷移だが追跡対象外。現在cwdを変更しない。"""
+    def test_cd_no_arg_is_unresolved(self) -> None:
+        """`cd`引数なしはHOMEへの遷移を静的に解決できないため解決不能とする。"""
         events = extract_git_events("cd && git log", "/cwd")
-        assert events[0].cwd == "/cwd"
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
 
-    def test_cd_dash_option_keeps_cwd(self) -> None:
-        """`cd -`は前ディレクトリへの遷移だが追跡対象外。現在cwdを変更しない。"""
+    def test_cd_dash_option_is_unresolved(self) -> None:
+        """`cd -`は前ディレクトリへの遷移を静的に解決できないため解決不能とする。"""
         events = extract_git_events("cd - && git log", "/cwd")
-        assert events[0].cwd == "/cwd"
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
 
     def test_pushd_acts_like_cd(self) -> None:
         events = extract_git_events("pushd sub && git log", "/cwd")
         assert events[0].cwd == os.path.normpath("/cwd/sub")
 
-    def test_popd_does_not_change_cwd(self) -> None:
+    def test_popd_is_unresolved(self) -> None:
         events = extract_git_events("popd && git log", "/cwd")
-        assert events[0].cwd == "/cwd"
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
 
     def test_unparsable_segment_skipped(self) -> None:
         """shlex解析に失敗するセグメントは無視する。"""
@@ -171,6 +174,23 @@ class TestExtractGitEvents:
     def test_env_assignment_before_cd(self) -> None:
         events = extract_git_events("FOO=bar cd sub && git log", "/cwd")
         assert events[0].cwd == os.path.normpath("/cwd/sub")
+
+    @pytest.mark.parametrize("command", ["cd $VAR && git log", "cd `pwd` && git log", "cd ~ && git log"])
+    def test_cd_shell_expansion_is_unresolved(self, command: str) -> None:
+        events = extract_git_events(command, "/cwd")
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
+
+    def test_pushd_shell_expansion_is_unresolved(self) -> None:
+        events = extract_git_events("pushd $DIR && git log", "/cwd")
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
+
+    @pytest.mark.parametrize("command", ["git -C $DIR log", "git -C `pwd` log", "git -C ~ log"])
+    def test_git_dash_capital_c_shell_expansion_is_unresolved(self, command: str) -> None:
+        events = extract_git_events(command, "/cwd")
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
 
     @pytest.mark.parametrize(
         ("command", "expected_cwd"),
