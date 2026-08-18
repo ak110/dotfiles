@@ -145,6 +145,13 @@ class TestSyncWorktreeWithUpstream:
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append(list(cmd))
+            if cmd[1:4] == ["worktree", "list", "--porcelain"]:
+                return subprocess.CompletedProcess(
+                    cmd,
+                    returncode=0,
+                    stdout="worktree /existing/worktree\nbranch refs/heads/worktree-process-loop\n",
+                    stderr="",
+                )
             if cmd[1:3] == ["worktree", "add"]:
                 worktree.mkdir(parents=True)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
@@ -156,8 +163,8 @@ class TestSyncWorktreeWithUpstream:
         assert ["git", "worktree", "add", str(worktree), "worktree-process-loop"] in calls
         assert ["git", "rebase", "origin/master"] in calls
 
-    def test_recreated_worktree_rebases_existing_branch_onto_upstream(self, tmp_path: pathlib.Path) -> None:
-        """遅れた専用ブランチのworktreeを再作成して上流へ追随させる。"""
+    def test_existing_unregistered_branch_is_not_recreated_or_rebased(self, tmp_path: pathlib.Path) -> None:
+        """worktree未登録の既存ブランチは再作成・rebaseせずOIDを維持する。"""
         origin = tmp_path / "origin.git"
         seed = tmp_path / "seed"
         local_path = tmp_path / "repo"
@@ -176,6 +183,7 @@ class TestSyncWorktreeWithUpstream:
         run_git(["push", "-u", "origin", "master"], cwd=seed)
         run_git(["clone", str(origin), str(local_path)])
         run_git(["branch", "worktree-process-loop"], cwd=local_path)
+        before = run_git(["rev-parse", "refs/heads/worktree-process-loop"], cwd=local_path).stdout.strip()
 
         (seed / "state.txt").write_text("upstream\n", encoding="utf-8")
         run_git(["commit", "-am", "upstream"], cwd=seed)
@@ -184,9 +192,10 @@ class TestSyncWorktreeWithUpstream:
         worktree = local_path / ".claude" / "worktrees" / "process-loop"
         result = _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert result == (worktree, "origin/master")
-        ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", "origin/master", "HEAD"], cwd=worktree, check=False)
-        assert ancestry.returncode == 0
+        after = run_git(["rev-parse", "refs/heads/worktree-process-loop"], cwd=local_path).stdout.strip()
+        assert result is None
+        assert before == after
+        assert not worktree.exists()
 
     def test_aborts_rebase_and_warns_on_conflict(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -363,6 +372,69 @@ class TestPublicWorktreePreparation:
         assert not session_calls
         assert exclude_path.read_text(encoding="utf-8") == before
         assert not (local_path / ".claude").exists()
+
+    def test_exclusion_append_failure_does_not_start_session_or_create_worktree(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """info/excludeへの追記が失敗した場合はworktree準備を停止する。"""
+        local_path = _make_remote_repository(tmp_path, "target")
+        exclude_path = local_path / ".git" / "info" / "exclude"
+        before = exclude_path.read_text(encoding="utf-8")
+        real_open: Any = pathlib.Path.open
+        append_attempted = False
+
+        def fail_append(
+            path: pathlib.Path,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Any:
+            nonlocal append_attempted
+            mode = args[0] if args else kwargs.get("mode", "r")
+            if path == exclude_path and isinstance(mode, str) and mode.startswith("a"):
+                append_attempted = True
+                raise OSError("simulated info/exclude write failure")
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "open", fail_append)
+        session_calls, git_calls = _run_public_process_loop(
+            monkeypatch,
+            tmp_path,
+            local_path,
+            ["--worktree=custom"],
+        )
+
+        assert append_attempted
+        assert not session_calls
+        assert exclude_path.read_text(encoding="utf-8") == before
+        assert not (local_path / ".claude").exists()
+        assert not any(len(command) > 1 and command[1] in ("fetch", "rebase", "worktree") for command in git_calls)
+
+    def test_existing_unregistered_branch_is_not_reused_or_rebased(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """配置先不在ブランチの所有権を確認できない場合はOIDを変更せず停止する。"""
+        local_path = _make_remote_repository(tmp_path, "target")
+        _run_git(["branch", "worktree-process-loop"], local_path)
+        before = _run_git(["rev-parse", "refs/heads/worktree-process-loop"], local_path).stdout.strip()
+
+        session_calls, git_calls = _run_public_process_loop(
+            monkeypatch,
+            tmp_path,
+            local_path,
+            ["--worktree"],
+        )
+
+        after = _run_git(["rev-parse", "refs/heads/worktree-process-loop"], local_path).stdout.strip()
+        assert not session_calls
+        assert before == after
+        assert not (local_path / ".claude").exists()
+        assert any(command[1:4] == ["worktree", "list", "--porcelain"] for command in git_calls)
+        assert not any(len(command) > 1 and command[1] in ("fetch", "rebase") for command in git_calls)
+        assert not any(command[1:3] == ["worktree", "add"] for command in git_calls)
 
     def test_exclusion_append_is_idempotent_when_higher_priority_ignore_negates_it(
         self,

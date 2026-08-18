@@ -382,6 +382,15 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         return None
     created_worktree = False
     if not worktree_path.exists():
+        branch_exists = (
+            _run_worktree_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], local_path).returncode == 0
+        )
+        if branch_exists:
+            registered_worktrees = _run_worktree_git(["worktree", "list", "--porcelain"], local_path)
+            branch_line = f"branch refs/heads/{branch}"
+            if registered_worktrees.returncode != 0 or branch_line not in registered_worktrees.stdout.splitlines():
+                _warn_worktree_preparation_failure("既存ブランチのworktree登録を確認できない", worktree_path)
+                return None
         try:
             worktree_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError:
@@ -391,9 +400,6 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         if fetch.returncode != 0:
             print(f"worktree作成前のfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
             return None
-        branch_exists = (
-            _run_worktree_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], local_path).returncode == 0
-        )
         command = ["git", "worktree", "add", str(worktree_path), branch]
         if not branch_exists:
             command = ["git", "worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
