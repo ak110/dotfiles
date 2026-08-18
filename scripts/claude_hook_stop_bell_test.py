@@ -36,29 +36,12 @@ def _user_entry(text: str = "hello") -> dict:
     return {"type": "user", "message": {"role": "user", "content": text}}
 
 
-def _assistant_text_only(text: str = "対応した。") -> dict:
-    return {
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [{"type": "text", "text": text}],
-            "stop_reason": "end_turn",
-        },
-    }
-
-
-def _assistant_with_async_tool(tool_name: str = "Agent") -> dict:
-    return {
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "委譲する。"},
-                {"type": "tool_use", "id": "x", "name": tool_name, "input": {}},
-            ],
-            "stop_reason": "end_turn",
-        },
-    }
+def _assistant_entry(*, async_tool: str | None = None) -> dict:
+    content: list[dict[str, object]] = [{"type": "text", "text": "対応した。"}]
+    if async_tool is not None:
+        content.append({"type": "tool_use", "id": "x", "name": async_tool, "input": {}})
+    message: dict[str, object] = {"role": "assistant", "content": content, "stop_reason": "end_turn"}
+    return {"type": "assistant", "message": message}
 
 
 def _run(
@@ -87,7 +70,7 @@ class TestRingCondition:
     """ベルを鳴らす条件: 対話セッションで背景の稼働が無い状態の応答終了。"""
 
     def test_interactive_turn_end_rings(self, tmp_path: pathlib.Path):
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {"session_id": "interactive", "transcript_path": str(transcript)},
             state_dir=tmp_path,
@@ -104,7 +87,7 @@ class TestSilentConditions:
     """ベルを鳴らさない条件: 自律セッション・背景稼働中・判定材料の欠落。"""
 
     def test_process_loop_session_is_silent(self, tmp_path: pathlib.Path):
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {"session_id": "autonomous", "transcript_path": str(transcript)},
             state_dir=tmp_path,
@@ -114,7 +97,7 @@ class TestSilentConditions:
 
     def test_legacy_process_loop_env_is_silent(self, tmp_path: pathlib.Path):
         """旧process-loopの移行互換名だけが設定された場合も鳴らさない。"""
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {"session_id": "legacy-autonomous", "transcript_path": str(transcript)},
             state_dir=tmp_path,
@@ -124,7 +107,7 @@ class TestSilentConditions:
 
     def test_pending_async_work_is_silent(self, tmp_path: pathlib.Path):
         """直前ターンの最後のtool_useが非同期待機系 → 待機の継続のため鳴らさない。"""
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_with_async_tool()])
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry(async_tool="Agent")])
         result = _run(
             {"session_id": "pending-async", "transcript_path": str(transcript)},
             state_dir=tmp_path,

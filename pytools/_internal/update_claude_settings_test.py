@@ -372,14 +372,14 @@ class TestProductionManagedSettings:
         assert "AskUserQuestion" not in "\n".join(rules.values())
 
     @pytest.mark.parametrize("suffix", ["posix", "win32"])
-    def test_only_autonomous_exit_personal_stop_hook_remains(self, suffix: str):
-        """OS別設定の個人Stop hookは自律終了検査だけを保持する。"""
+    def test_personal_stop_hooks_match_platform_contract(self, suffix: str):
+        """OS別設定の個人Stop hookが各プラットフォームの契約と一致する。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(f".{suffix}.json")
         data = json.loads(path.read_text(encoding="utf-8"))
         commands = [hook["command"] for group in data["hooks"]["Stop"] for hook in group["hooks"]]
-        assert len(commands) == 1
-        assert "claude_hook.py autonomous_exit" in commands[0]
-        assert "claude_hook.py stop" not in commands[0]
+        assert sum("claude_hook.py autonomous_exit" in command for command in commands) == 1
+        assert sum("claude_hook.py stop_bell" in command for command in commands) == (1 if suffix == "posix" else 0)
+        assert all("claude_hook.py stop;" not in command for command in commands)
 
 
 class TestUpdateClaudeConfig:

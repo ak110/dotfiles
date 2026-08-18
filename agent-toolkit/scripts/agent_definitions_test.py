@@ -230,6 +230,10 @@ _PLAN_STANDARDS_MIGRATED_BLOCK_COUNT = 12
 # 作成基準側の文面を意図して改める場合は本表へ追加し、無記録の改変と区別する。
 _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     ("読込済みの本`SKILL.md`から", "読込済みの本書の絶対パスから"),
+    (
+        "利用者が確認への回答に付した選択理由・補足",
+        "利用者が確認への回答（`AskUserQuestion`の回答とTBDの`## 回答`節を含む）に付した判断基準・選択理由・補足",
+    ),
 )
 
 

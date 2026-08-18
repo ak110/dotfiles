@@ -159,9 +159,9 @@ class TestNormalizeManagedHooks:
     ):
         """実在するOS別配布元で旧個別要素を正規化し、再実行しても変更しない。"""
         override = json.loads(override_path.read_text(encoding="utf-8"))
-        managed_entry = override["hooks"]["Stop"][0]
-        managed_hooks = managed_entry["hooks"]
-        existing_entries = [{"hooks": [hook]} for hook in managed_hooks] + [managed_entry]
+        managed_entries = override["hooks"]["Stop"]
+        managed_hooks = [hook for entry in managed_entries for hook in entry["hooks"]]
+        existing_entries = [{"hooks": [hook]} for hook in managed_hooks] + managed_entries
         target_path = tmp_path / "target.json"
         target_path.write_text(
             json.dumps({"hooks": {"Stop": existing_entries}}, ensure_ascii=False),
@@ -187,7 +187,7 @@ class TestNormalizeManagedHooks:
         )
         second = json.loads(target_path.read_text(encoding="utf-8"))
 
-        assert first["hooks"]["Stop"] == [managed_entry]
+        assert first["hooks"]["Stop"] == managed_entries
         assert second == first
         assert not changed_again
 
