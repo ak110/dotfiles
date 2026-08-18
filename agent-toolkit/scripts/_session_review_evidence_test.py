@@ -1571,6 +1571,7 @@ def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
     """複数ブロックを持つエントリでも、詳細本文の合計を1エントリ分の上限内へ収める。
 
     省略標識は予算の上限へ達した本文だけへ付き、以降の本文は空文字列となる。
+    省略が生じた事実はエントリの全イベントへ付く`omitted`が示す。
     """
     transcript = _write_transcript(
         tmp_path,
@@ -1600,6 +1601,42 @@ def test_detail_mode_shares_one_clip_budget_across_entry_blocks(
     assert events[1]["input"]["prompt"] == ""
     assert events[2]["text"] == ""
     assert events[3]["text"] == ""
+    assert all(event["omitted"] is True for event in events)
+
+
+def test_detail_mode_marks_omission_when_budget_ends_exactly_before_next_value(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """先行する本文の長さが上限と一致する場合も、後続の非空値の省略を判別できる。
+
+    上限に達した後の本文は空文字列となるため、`omitted`が無ければ
+    元から空の値と省略された値を区別できない。
+    """
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Agent", "id": "c1", "input": {"prompt": "あ" * 8000}},
+                        {"type": "tool_use", "name": "Read", "id": "c2", "input": {"file_path": "/tmp/x.md"}},
+                        {"type": "tool_result", "tool_use_id": "c3", "content": "後続本文"},
+                    ],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--detail", "1"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert len(events[0]["input"]["prompt"]) == 8000
+    assert events[1]["input"]["file_path"] == ""
+    assert events[2]["text"] == ""
+    assert all(event["omitted"] is True for event in events)
 
 
 def test_detail_mode_keeps_total_within_limit_for_many_string_values(
@@ -1608,7 +1645,7 @@ def test_detail_mode_keeps_total_within_limit_for_many_string_values(
 ) -> None:
     """文字列値を多数持つ入力でも、詳細本文の合計が1エントリ分の上限を超えない。
 
-    予算が尽きた後も本文ごとに省略標識を付けると、合計が文字列値の個数に比例して増える。
+    上限へ達した後も本文ごとに省略標識を付けると、合計が文字列値の個数に比例して増える。
     """
     transcript = _write_transcript(
         tmp_path,
@@ -1634,6 +1671,7 @@ def test_detail_mode_keeps_total_within_limit_for_many_string_values(
 
     events = _read_jsonl(capsys)
     assert sum(len(value) for value in events[0]["input"].values()) <= 8000
+    assert events[0]["omitted"] is True
 
 
 def test_detail_mode_formats_entry_without_tool_blocks(

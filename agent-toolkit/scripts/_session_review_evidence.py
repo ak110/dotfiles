@@ -136,31 +136,36 @@ def _clip(text: str, limit: int = _MAX_TEXT_LENGTH) -> str:
 
 
 class _DetailBudget:
-    """1エントリの詳細出力が共有する残り文字数。
+    """1エントリの詳細出力が共有する残り文字数と、省略の発生有無。
 
     詳細は`--detail`の指定行ごとに複数の文字列へ分かれるため、上限を文字列単位で適用すると
     1エントリの出力量が指定上限を超える。残り予算を出現順に配分して本文の合計を上限内へ収める。
-    省略の発生は、残り予算の上限へ達した本文の末尾へ付加する省略標識が示す。
-    予算が尽きた後の本文は空文字列とする。標識を本文ごとに付けると、
-    文字列値の個数に比例して1エントリの出力が上限を超えて増えるためである。
+    省略標識も返す文字数として予算から差し引くため、文字列値の個数が増えても合計は上限を超えない。
+    予算が標識の長さに満たない時点以降の本文は空文字列となり、本文が元から空である場合と
+    文字列単体では区別できない。この区別のため、省略が1回でも生じたかを`omitted`が保持し、
+    呼び出し側が当該エントリのイベントへ標識として付ける。
     """
 
     def __init__(self, limit: int) -> None:
         self.remaining = limit
+        self.omitted = False
 
     def clip(self, text: str) -> str:
-        """残り予算の範囲で本文を制限し、消費した分を予算から差し引く。
+        """残り予算の範囲で本文を制限し、返した文字数を予算から差し引く。
 
-        予算を超える非空の本文は、省略標識の分を残した範囲の先頭と省略標識を返す。
-        標識を置く余地も無い場合と予算が尽きている場合は空文字列を返す。
+        予算を超える非空の本文は、省略標識を含めて残り予算へ収まる範囲まで切り詰める。
+        省略標識を置く余地も無い場合は空文字列を返す。いずれの場合も省略の発生を記録する。
         """
         normalized = text.strip()
         if len(normalized) <= self.remaining:
             self.remaining -= len(normalized)
             return normalized
-        room = self.remaining - len(_OMISSION_MARK)
-        self.remaining = 0
-        return normalized[:room] + _OMISSION_MARK if room > 0 else ""
+        self.omitted = True
+        if self.remaining < len(_OMISSION_MARK):
+            return ""
+        clipped = normalized[: self.remaining - len(_OMISSION_MARK)] + _OMISSION_MARK
+        self.remaining -= len(clipped)
+        return clipped
 
 
 def _text_blocks(content: Any) -> list[str]:
@@ -887,6 +892,9 @@ def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any
     """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。
 
     クリップの上限はエントリ全体で共有し、ブロックの出現順に予算を配分する。
+    予算超過で省略が生じたエントリは、当該エントリの全イベントへ`omitted`を付ける。
+    予算が尽きた後の本文は空文字列となるため、この標識が無ければ
+    空の出力が元から空だったのか省略の結果なのかを判別できない。
     """
     budget = _DetailBudget(_MAX_DETAIL_LENGTH)
     message = entry.get("message")
@@ -914,9 +922,12 @@ def _entry_detail_events(line: int, entry: dict[str, Any]) -> list[dict[str, Any
                         "text": budget.clip(_tool_result_body(block, entry)),
                     }
                 )
-    if events:
-        return events
-    return [{"kind": "detail", "line": line, "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2))}]
+    if not events:
+        events = [{"kind": "detail", "line": line, "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2))}]
+    if budget.omitted:
+        for event in events:
+            event["omitted"] = True
+    return events
 
 
 def _tool_result_body(block: dict[str, Any], entry: dict[str, Any]) -> str:
@@ -1071,7 +1082,8 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=int,
         help="指定した行番号のエントリの詳細（tool_useの入力全体・tool_result本文。"
-        "本文が退避されている場合はツール実行結果側の本文）を照会する。",
+        "本文が退避されている場合はツール実行結果側の本文）を照会する。"
+        "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
     )
     return parser
 
