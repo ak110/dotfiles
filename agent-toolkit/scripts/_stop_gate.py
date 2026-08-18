@@ -178,7 +178,11 @@ def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bo
     `session_review_invoked`辞書へ記録する。
     本関数はUserPromptSubmit hookがfail-openで記録漏れした場合のsafety netとして、
     transcript走査による代替検出手段を提供する。
-    非sidechainの`type=="user"`エントリの`message.content`を対象に走査する。
+    非sidechainの`type=="user"`エントリのうち、`message.content`が文字列のものだけを走査する。
+    照合対象はcontentが文字列のエントリ（スラッシュコマンド起動の実測済み記録形式）のみとする。
+    リスト形式のcontentはツール結果とシステム生成通知（task-notification等）を含み、
+    これらを照合すると検出パターンのリテラルを含むソースコードの閲覧結果や通知本文へ誤一致し、
+    振り返り誘導が不発となる。
     transcript読み取り失敗時は偽を返す。
     """
     for entry in _read_transcript_entries(transcript_path):
@@ -188,8 +192,9 @@ def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bo
         if not isinstance(message, dict):
             continue
         content = message.get("content")
-        text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
-        if pattern.search(text):
+        if not isinstance(content, str):
+            continue
+        if pattern.search(content):
             return True
     return False
 

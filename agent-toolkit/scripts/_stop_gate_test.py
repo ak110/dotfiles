@@ -1227,6 +1227,45 @@ class TestHasCommandInvocation:
         transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
         assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
 
+    def test_tool_result_content_ignored(self, tmp_path: pathlib.Path) -> None:
+        """ツール結果ブロック内にパターンのリテラルがあっても偽。
+
+        検出パターンのリテラルを含むソースコードを閲覧した場合、その内容がツール結果として
+        transcriptへ記録される。これを利用者のコマンド起動と判定してはならない。
+        """
+        transcript = tmp_path / "t.jsonl"
+        entry = {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": "<command-name>/foo</command-name>",
+                    }
+                ]
+            },
+        }
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
+
+    def test_system_notification_text_block_ignored(self, tmp_path: pathlib.Path) -> None:
+        """システム生成通知のtextブロック内にパターンのリテラルがあっても偽。"""
+        transcript = tmp_path / "t.jsonl"
+        entry = {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "<task-notification><command-name>/foo</command-name></task-notification>",
+                    }
+                ]
+            },
+        }
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
+
     def test_sidechain_ignored(self, tmp_path: pathlib.Path) -> None:
         """sidechainのユーザーエントリは対象外。"""
         transcript = tmp_path / "t.jsonl"
