@@ -61,6 +61,11 @@ version bumpを伴う計画では、Claude Code向け正本2ファイルを実�
 派生manifestの完全性は生成コマンドの実行と生成器出力との一致確認で保証する。
 Agent Plugins・Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象ではなく、
 正本更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、同スクリプトの`--check`で非変更検査する。
+bumpの完了条件は、実装開始時点の版との増加比較で判定しない。
+公開済み基準（`git push`済みの最新版のplugin manifest）に対して要求種別以上のbumpが含まれること、及び正本2ファイルと派生manifestの`version`が一致することで判定する。
+既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
+複数レーンを並列実装するフィードバック処理では、各レーンはbump種別（`bump不要`を含む）と選定根拠、MAJORの場合は認可根拠を計画へ記録するに留める。
+呼び出し元が本規定の適用対象となるレーンの記録から最も上位の種別を確定し、統合担当が統合段階で1回だけ実行する。
 
 ## 新規CLI公開時の疎通経路確認
 
