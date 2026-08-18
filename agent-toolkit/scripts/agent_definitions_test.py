@@ -1566,6 +1566,7 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
 
     assert "references/judgment-details.md`が定める比較階層" in agent_rules
     assert "観測されていない低頻度リスクを除くために恒常的な複雑性を増加させてはならない" in agent_rules
+    assert "「問題と手段の比例性」及び「解決案の比較」を読み" in agent_rules
     for phrase in (
         "目的をユーザーが観測する成果と公開契約から確定",
         "計画、一覧、clean状態、診断記録などを中間手段へ分類",
@@ -1577,6 +1578,8 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "個別対策を追加する前に採用案を候補比較へ戻す",
         "各レビューラウンド",
         "対応量又は既実装量を理由にした採用継続は認めない",
+        "対策を追加する案を利用者への選択肢に含める場合",
+        "対策を追加しない案を推奨とする",
     ):
         assert phrase in judgment_details
 
