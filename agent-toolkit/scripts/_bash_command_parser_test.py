@@ -152,6 +152,17 @@ class TestExtractGitEvents:
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
 
+    def test_cd_option_terminator_resolves_target(self) -> None:
+        events = extract_git_events("cd -- /tmp && git log", "/cwd")
+        assert events[0].cwd == os.path.normpath("/tmp")
+        assert events[0].cwd_resolved is True
+
+    @pytest.mark.parametrize("command", ["cd -- && git log", "cd -- -- /tmp && git log"])
+    def test_cd_option_terminator_without_unique_target_is_unresolved(self, command: str) -> None:
+        events = extract_git_events(command, "/cwd")
+        assert events[0].cwd == ""
+        assert events[0].cwd_resolved is False
+
     def test_pushd_acts_like_cd(self) -> None:
         events = extract_git_events("pushd sub && git log", "/cwd")
         assert events[0].cwd == os.path.normpath("/cwd/sub")
@@ -175,7 +186,18 @@ class TestExtractGitEvents:
         events = extract_git_events("FOO=bar cd sub && git log", "/cwd")
         assert events[0].cwd == os.path.normpath("/cwd/sub")
 
-    @pytest.mark.parametrize("command", ["cd $VAR && git log", "cd `pwd` && git log", "cd ~ && git log"])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cd $VAR && git log",
+            "cd `pwd` && git log",
+            "cd ~ && git log",
+            "cd agent-* && git log",
+            "cd foo? && git log",
+            "cd [ab] && git log",
+            "cd {a,b} && git log",
+        ],
+    )
     def test_cd_shell_expansion_is_unresolved(self, command: str) -> None:
         events = extract_git_events(command, "/cwd")
         assert events[0].cwd == ""

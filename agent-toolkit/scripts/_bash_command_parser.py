@@ -200,7 +200,17 @@ def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdR
     """
     if start + 1 >= len(tokens):
         return CwdResolution("", False)
-    target = tokens[start + 1]
+    arguments = tokens[start + 1 :]
+    terminators = [index for index, argument in enumerate(arguments) if argument == "--"]
+    if len(terminators) > 1:
+        return CwdResolution("", False)
+    if terminators:
+        target_index = terminators[0] + 1
+        if target_index >= len(arguments):
+            return CwdResolution("", False)
+        target = arguments[target_index]
+    else:
+        target = arguments[0]
     if not target or target.startswith("-") or _contains_shell_expansion(target):
         return CwdResolution("", False)
     return _normalize_relative(target, current_cwd)
@@ -208,7 +218,7 @@ def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdR
 
 def _contains_shell_expansion(value: str) -> bool:
     """静的解析で解決できないシェル展開の記号を含むか判定する。"""
-    return any(marker in value for marker in ("$", "`", "~"))
+    return any(marker in value for marker in ("$", "`", "~", "*", "?", "[", "{"))
 
 
 def _normalize_relative(target: str, current_cwd: CwdResolution) -> CwdResolution:

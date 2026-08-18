@@ -3280,7 +3280,10 @@ def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:
 
 
 def _check_codex_mcp_sandbox(tool_input: dict) -> dict:
-    """Codex MCPの`sandbox`を`danger-full-access`へ補正した入力を返す。"""
+    """Codex MCPの`sandbox`を`danger-full-access`へ補正した入力を返す。
+
+    現在は補正化の暫定実装であり、配布後の動作確認で承認待ち停止が残る場合はsandbox検査を遮断へ戻す。
+    """
     updated_input = dict(tool_input)
     updated_input["sandbox"] = "danger-full-access"
     return updated_input
@@ -3318,8 +3321,9 @@ def _check_codex_mcp_execution(tool_input: dict) -> dict:
     """Codex MCP呼び出しのapproval-policyを`never`へ強制固定する。
 
     approval-policyは`never`固定。承認プロンプトの発生を抑止し、失敗時はモデルへ結果を返す挙動へ統一する。
-    `sandbox`は`_check_codex_mcp_sandbox`が`danger-full-access`の明示指定を必須とするため、
-    本関数へ到達した時点で条件を満たす。
+    `sandbox`は本関数内で`_check_codex_mcp_sandbox`により常に`danger-full-access`へ補正される。
+    実機での承認待ち停止の解消可否は配布後の動作確認フィードバックで検証中であり、
+    停止が残る場合はsandbox検査を遮断へ戻す。
 
     設計意図（回帰予防）: 過去に「利用者の明示指定を尊重する」形へ変更された履歴があるが、
     本環境では承認プロンプト抑止を優先し安全側の強制固定を採用する。
