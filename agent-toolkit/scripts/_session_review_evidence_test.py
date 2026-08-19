@@ -2016,6 +2016,68 @@ def test_stats_uses_codex_final_token_count_and_tool_pair(tmp_path: pathlib.Path
     assert _events_by_kind(events, "stats-slow-call")[0]["line"] == 3
 
 
+def _codex_token_count_entry(timestamp: str, usage: dict[str, int]) -> dict:
+    """Codexの`token_count`エントリを作成する。累積と直近の内訳へ同じ値を与える。"""
+    return {
+        "type": "response_item",
+        "timestamp": timestamp,
+        "payload": {"type": "token_count", "info": {"total_token_usage": usage, "last_token_usage": usage}},
+    }
+
+
+def _codex_usage(input_tokens: int, cached: int, cache_write: int, output_tokens: int, reasoning: int) -> dict[str, int]:
+    """Codex形式の6成分`token_usage`を作成する。`total_tokens`は入力と出力の合計とする。"""
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached,
+        "cache_write_input_tokens": cache_write,
+        "output_tokens": output_tokens,
+        "reasoning_output_tokens": reasoning,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def test_stats_sums_codex_token_usage_per_monotonic_segment(tmp_path: pathlib.Path, capsys) -> None:
+    """リセットを含むCodexの累積トークンを、単調増加区間ごとの最終値の合算として集計する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_token_count_entry("2026-08-19T00:00:00Z", _codex_usage(100, 80, 5, 20, 10)),
+            _codex_token_count_entry("2026-08-19T00:00:01Z", _codex_usage(300, 250, 7, 40, 20)),
+            _codex_token_count_entry("2026-08-19T00:00:02Z", _codex_usage(50, 30, 1, 5, 2)),
+            _codex_token_count_entry("2026-08-19T00:00:03Z", _codex_usage(90, 60, 2, 9, 3)),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    summary = _events_by_kind(events, "stats-summary")[0]
+    assert summary["tokens"] == _codex_usage(390, 310, 9, 49, 23)
+    assert summary["api_messages"] == 4
+    assert _events_by_kind(events, "stats-total")[0]["tokens"] == {
+        "input_tokens": 80,
+        "output_tokens": 49,
+        "cache_creation_input_tokens": 9,
+        "cache_read_input_tokens": 310,
+    }
+
+
+def test_stats_token_peak_normalizes_codex_cache_components(tmp_path: pathlib.Path, capsys) -> None:
+    """Codexの`stats-token-peak`はキャッシュ成分をClaude形式へ変換して出力する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [_codex_token_count_entry("2026-08-19T00:00:00Z", _codex_usage(300, 250, 7, 40, 20))],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    peak = _events_by_kind(_read_jsonl(capsys), "stats-token-peak")[0]
+    assert peak["total_tokens"] == 340
+    assert peak["input_tokens"] == 50
+    assert peak["cache_read_input_tokens"] == 250
+    assert peak["cache_creation_input_tokens"] == 7
+    assert peak["output_tokens"] == 40
+
+
 def test_stats_collects_subagents_and_excludes_review_descendants(tmp_path: pathlib.Path, capsys) -> None:
     """通常のサブエージェントだけを主体別集計へ含め、振り返り系と子孫を除外する。"""
     transcript = _write_transcript(
@@ -2084,9 +2146,14 @@ def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathl
 
 
 def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """Codex委譲の構造化完了形状を重複排除し、引用本文を収集しない。"""
+    """Codex委譲の構造化完了形状を重複排除し、引用本文を収集せずrollout欠落をスキップする。
+
+    引用UUIDにも対応するrolloutを配置するため、誤って収集した場合は当該スレッドの
+    `stats-codex-thread`が出力され、本テストが失敗する。
+    """
     thread_id = "11111111-1111-4111-8111-111111111111"
     quoted_id = "22222222-2222-4222-8222-222222222222"
+    missing_id = "44444444-4444-4444-8444-444444444444"
     codex_home = tmp_path / "codex"
     rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
     rollout_dir.mkdir(parents=True)
@@ -2106,6 +2173,9 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
         )
         + "\n"
     )
+    _write_rollout(
+        codex_home, quoted_id, [("2026-08-19T00:00:00Z", {"input_tokens": 6, "output_tokens": 7, "total_tokens": 13})]
+    )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     transcript = _write_transcript(
         tmp_path,
@@ -2115,6 +2185,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                 "timestamp": "2026-08-19T00:00:00Z",
                 "message": {"role": "user", "content": "引用本文にはthreadId: " + quoted_id},
             },
+            _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-missing", missing_id),
             {
                 "type": "assistant",
                 "timestamp": "2026-08-19T00:00:01Z",
@@ -2140,6 +2211,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     assert threads[0]["thread"] == thread_id
     assert threads[0]["tokens"]["total_tokens"] == 9
     assert quoted_id not in {event["thread"] for event in threads}
+    assert missing_id not in {event["thread"] for event in threads}
 
 
 def test_stats_boundary_excludes_manual_review_and_rejects_combination(tmp_path: pathlib.Path, capsys) -> None:

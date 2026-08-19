@@ -793,6 +793,34 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
     return usages
 
 
+def _codex_usage_total(tokens: dict[str, int]) -> int:
+    """区間の単調性判定に用いる累積量を返す。
+
+    `total_tokens`は入力と出力の合計であり、当該キーを持たない記録では成分から同値を求める。
+    """
+    return tokens.get("total_tokens") or tokens.get("input_tokens", 0) + tokens.get("output_tokens", 0)
+
+
+def _codex_cumulative_tokens(usages: list[tuple[_Record, dict[str, int], int]]) -> dict[str, int]:
+    """単調増加区間ごとの最終値を合算した累積トークンを返す。
+
+    Codexの`info.total_token_usage`は区間の切り替わりでリセットされ、セッション全体では単調累積ではない
+    （実測で1セッション内の複数回のリセットを観測）。最後の値だけを採用すると、リセット前の各区間の消費が
+    まるごと欠落し、リセットが生じる長時間・高コストのスレッドを選択的に過小報告する。
+    そのため直前より値が減少した位置を区間の境界とみなし、各区間の最終値を合算する。
+    リセットが生じない記録では最後の値と一致する。
+    """
+    totals: dict[str, int] = {key: 0 for key in _CODEX_TOKEN_KEYS}
+    previous: dict[str, int] | None = None
+    for _, tokens, _ in usages:
+        if previous is not None and _codex_usage_total(tokens) < _codex_usage_total(previous):
+            _add_tokens(totals, previous)
+        previous = tokens
+    if previous is not None:
+        _add_tokens(totals, previous)
+    return totals
+
+
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
     timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     summary: dict[str, Any] = {}
@@ -821,7 +849,7 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
     usages = _codex_token_usages(records)
     if not usages:
         return summary
-    tokens = dict(usages[-1][1])
+    tokens = _codex_cumulative_tokens(usages)
     summary.update(
         tokens=tokens,
         max_context_tokens=max(context for _, _, context in usages),
@@ -1073,17 +1101,18 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
             usage = info.get("last_token_usage") if isinstance(info, dict) else None
             if not isinstance(usage, dict):
                 continue
-            input_tokens = _token_value(usage.get("input_tokens"))
-            output_tokens = _token_value(usage.get("output_tokens"))
+            # `last_token_usage`は`total_token_usage`と同じ6成分を持ち、`cached_input_tokens`が
+            # `input_tokens`へ内包される関係も同じであるため、同じ変換でClaude形式の4成分へ揃える。
+            # 変換しないとキャッシュ済み入力が非キャッシュ入力の欄へ混入し、
+            # 同じ走行の`stats-total`（変換済み）と数値が矛盾する。
+            raw = {key: _token_value(usage.get(key)) for key in _CODEX_TOKEN_KEYS}
+            normalized = _codex_normalized_tokens(raw)
             candidates.append(
                 {
-                    "total_tokens": input_tokens + output_tokens,
-                    "output_tokens": output_tokens,
-                    "cache_creation_input_tokens": 0,
-                    "cache_read_input_tokens": 0,
-                    "input_tokens": input_tokens,
+                    "total_tokens": raw["input_tokens"] + raw["output_tokens"],
+                    **normalized,
                     "line": record.line,
-                    "new_tokens": output_tokens,
+                    "new_tokens": normalized["output_tokens"] + normalized["cache_creation_input_tokens"],
                 }
             )
     by_total = sorted(candidates, key=lambda item: (-item["total_tokens"], item["line"]))[:10]
