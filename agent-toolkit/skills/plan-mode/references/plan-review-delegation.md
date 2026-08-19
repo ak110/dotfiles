@@ -57,8 +57,9 @@
 
 ## 指摘の検収と修正
 
-起草担当は`agent-toolkit:reviewee-standards`を起動し、
+起草担当は`agent-toolkit:reviewee-standards`を適用し、
 `agent-toolkit:review-standards`配下の`references/judgment-details.md`を全文読んで指摘の採否と修正を確定する。
+調整主体が指摘を配送する場合は、`agent-toolkit:reviewee-standards`と`agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスを起草担当への配送文へ含める。
 一部しか解消していない指摘は、残余を同じラウンド内で修正してから再レビューへ送る（努力目標）。
 計画の目的と合意済みの除外・保持を満たす最小限の修正を選ぶ。
 採否と対応結果を6列表へ統合してから、採用指摘を正規計画へ一括反映する。

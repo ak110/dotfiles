@@ -56,7 +56,8 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 4. 採用項目がある場合は起草スレッドの起動直前に`atk config get plan_model`を実行して経路を解決する。
    起草スレッドへ採用項目のファイル名一覧と対象リポジトリを渡す。
    項目ごとの調査結果、確定した採否、利用者合意と元の利用者指示の出所情報も渡す。
-   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキル、`plan-file-standards.md`と必要なタスク文書も渡す。
+   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキル、`plan-file-standards.md`、
+   `plan-review-delegation.md`と必要なタスク文書も渡す。
    本文を起動文へ複製しない。
    フィードバック原文経路の各提示素材フェンスの直後へ`原文正本ID:`を書き、対象のフィードバックファイル名をバッククォートで囲んで記録させる。
    キューの状態と他のレーンの情報は渡さない。
@@ -72,6 +73,8 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 5. 計画レビュースレッドの起動直前に`atk config get plan_review_model`を実行して経路を解決する。
    `plan-review-task.md`を渡し、新規識別子で起動する。
 6. レビュー指摘を加工せず起草担当へ全件配送する。
+   配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。
+   起草担当の応答では、各指摘の採否と比例性の判断根拠が6列表へ記録されていることを検収する。
    レビュー担当の起動、書込有無のGit状態検収、結果検収は自身が担当し、再レビューと収束は
    `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`、継続方法は
    `runtime-routing.md`「工程別モデル設定」に従う。

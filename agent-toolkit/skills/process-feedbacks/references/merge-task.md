@@ -49,7 +49,7 @@ HEADが作成時HEADの完全OIDと一致し、作業ツリーがcleanである�
 ## レビュー修正モード
 
 採用指摘の6列表を読み、関係する全計画から保持契約を読み、採用指摘だけを修正する。
-`agent-toolkit:reviewee-standards`を起動し、指摘の採否と修正を確定する。
+`agent-toolkit:reviewee-standards`を適用し、指摘の採否と修正を確定する。
 同スキルで不採用と確定した候補は修正せず`needs_escalation`で返す。
 近接検証と指定された全検証を実施し、1つの修正commitを作成してcleanな状態で返す。
 指摘の根拠不足、計画との衝突、認可外の変更が必要な場合は修正せず`needs_escalation`で返す。

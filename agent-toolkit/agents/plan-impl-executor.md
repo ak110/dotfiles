@@ -35,7 +35,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 ### 共通
 
-- モード指定、プロジェクト規範の絶対パス
+- モード指定、プロジェクト規範の絶対パス、該当する作成規範スキルの絶対パス
 - 追加指示、許容済みの挙動変化、git操作の制約
 
 ### 通常の実装モード
@@ -149,7 +149,8 @@ worktreeと管理対象領域を作成・回収しない。
    単一単位を同じworktreeで実装した場合も、元の実装担当へ戻さず本項の経路を適用する
 3. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
    `skills/plan-mode/references/implementation-task.md`、レーンのworktree、対象計画、採用指摘を実装単位とした目的及び変更説明、
-   統合した6列表、プロジェクト規範、該当する作成規範スキル、ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
+   統合した6列表、プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス、
+   ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す
 4. 修正用の書込担当の完了と終端を確認し、修正commitがレビュー対象の最終HEADを直接進めたことを確認する。
    当該worktreeのHEAD、修正commit、差分、clean状態、検証結果を実測する
@@ -158,8 +159,8 @@ worktreeと管理対象領域を作成・回収しない。
 
 1. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に
    `atk config get execute_model`を実行して経路を解決する。
-   修正用の書込担当へ`skills/process-feedbacks/references/merge-task.md`の
-   レビュー修正モードと6列表を渡す
+   修正用の書込担当へ`skills/process-feedbacks/references/merge-task.md`のレビュー修正モード、6列表、
+   プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パスを渡す
 
 #### 共通の再検証と収束
 

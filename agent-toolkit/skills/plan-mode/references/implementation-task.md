@@ -41,7 +41,7 @@
 
 レビュー指摘の修正を受け取った場合は、検証済みの実際値、期待値、違反契約、対象への適用根拠、
 保持契約が指摘ごとにそろうことを確認する。いずれかが欠ける場合は推測して修正せず`needs_escalation`で返す。
-`agent-toolkit:reviewee-standards`と該当する作成規範スキルを読み、指摘の採否と修正を確定する。
+`agent-toolkit:reviewee-standards`と該当する作成規範スキルを適用し、指摘の採否と修正を確定する。
 同スキルで不採用と確定した候補は修正せず`needs_escalation`で返す。
 同じ単位の検証とcommitを再実行する。
 ユーザー合意と衝突する指摘は修正せず`needs_escalation`で返す。

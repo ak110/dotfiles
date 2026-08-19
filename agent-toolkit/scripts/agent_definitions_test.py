@@ -173,6 +173,13 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
 
     assert "起動文の先頭で受信者への命令を1文で示す" in skill
+    for phrase in (
+        "起動文の命令は、受信者のタスク文書、agent定義及び適用スキルが定める手順の範囲を狭めない",
+        "受信者が行う判断工程を除く語",
+        "受信者が適用する規範スキルが作業手順の正本となる委譲では、当該スキル名を起動文の必須入力へ含める",
+        "同欄の記述は委譲元が確定した判断の記録であり、受信者の作業手順ではないため、起動文の命令へ転写しない",
+    ):
+        assert phrase in skill
     assert "タスク文書の手順、品質規範本文、出力書式、過去応答に加え、" in skill
     assert "正本内の合意事項、調査済み事実、完了条件も複製しない" in skill
     assert "必要な場合だけ" in skill
@@ -1467,7 +1474,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     for field in ("用途", "絶対パス", "管理対象領域の絶対パス", "HEADの完全OID", "作成主体", "回収可否"):
         assert field in caller
     for required_input in (
-        "計画ファイル、プロジェクト規範の絶対パス",
+        "計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス",
         "worktreeの完全な一覧",
         "1件以上のソート済みフィードバックファイル名一覧",
         "追加指示と許容済みの挙動変化",
@@ -2090,6 +2097,11 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
             assert phrase not in text
 
     plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    assert executor.count("受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス") == 2
+    assert "調整主体が指摘を配送する場合は" in plan_review
+    assert "配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め" in planner
     assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
     assert "採否と対応結果を6列表へ統合" in plan_review
     assert "スコープ、公開契約、ユーザー合意を変える修正" in plan_review
@@ -2100,6 +2112,13 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert "ユーザー合意と衝突する指摘" in writer
 
     merge = _MERGE_TASK.read_text(encoding="utf-8")
+    for document in (writer, merge, plan_review):
+        assert "`agent-toolkit:reviewee-standards`を起動" not in document
+    writer_reviewee_phrase = "`agent-toolkit:reviewee-standards`と該当する作成規範スキルを適用し、指摘の採否と修正を確定する。"
+    merge_reviewee_phrase = "`agent-toolkit:reviewee-standards`を適用し、指摘の採否と修正を確定する。"
+    assert writer_reviewee_phrase in writer
+    assert merge_reviewee_phrase in merge
+    assert "起草担当は`agent-toolkit:reviewee-standards`を適用し、" in plan_review
     assert "採用指摘の6列表" in merge
     assert "1つの修正commit" in merge
     assert "指摘の根拠不足、計画との衝突、認可外の変更" in merge
