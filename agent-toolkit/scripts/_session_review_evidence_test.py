@@ -2219,6 +2219,33 @@ def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathl
     assert _events_by_kind(events, "stats-total")[0]["subagent_count"] == 0
 
 
+def test_stats_reports_zero_subagent_total_when_all_records_excluded(tmp_path: pathlib.Path, capsys) -> None:
+    """記録が振り返り系だけの場合も合算イベントを出力し、除外件数を観測可能にする。
+
+    サブエージェントを使わなかったセッションと、活動が振り返り自身だけだったセッションを
+    出力から区別できる状態を保証する。
+    """
+    transcript = _write_transcript(
+        tmp_path,
+        [_assistant_usage_entry("2026-08-19T00:00:00Z", "main", _usage(2, 3))],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-review",
+        [_assistant_usage_entry("2026-08-19T00:00:01Z", "review", _usage(100, 200))],
+        meta={"agentType": "agent-toolkit:session-review-advisor"},
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-subagent") == []
+    total = _events_by_kind(events, "stats-subagent-total")[0]
+    assert total["count"] == 0
+    assert total["tokens"] == _usage(0)
+    assert total["excluded_review_agents"] == 1
+    assert _events_by_kind(events, "stats-total")[0]["subagent_count"] == 0
+
+
 def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
     """Codex委譲の入力形態表の全形状からthreadIdを収集し、引用本文を収集せずrollout欠落をスキップする。
 

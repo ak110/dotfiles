@@ -878,13 +878,19 @@ def _stats_main_records(records: list[_Record], runtime: _Runtime) -> tuple[list
 def _stats_subagent_records(
     transcript_path: str,
     boundary_timestamp: datetime.datetime | None,
-) -> tuple[list[tuple[str, str | None, list[_Record]]], int]:
+) -> tuple[list[tuple[str, str | None, list[_Record]]], int, int]:
+    """サブエージェント記録の選択結果、除外件数、列挙した記録ファイル数を返す。
+
+    記録ファイル数は境界判定・振り返り系除外を適用する前の母集団の大きさであり、
+    主体別集計イベントを出力するかどうかの判定に用いる。
+    選択結果が0件でも記録自体が存在する場合は、除外の実数を含む合算イベントを出力する必要がある。
+    """
     path = Path(transcript_path)
     subagent_dir = path.with_suffix("") / "subagents"
     try:
         paths = sorted(subagent_dir.glob("agent-*.jsonl"))
     except OSError:
-        return [], 0
+        return [], 0, 0
     metadata: dict[str, tuple[str | None, str | None]] = {}
     for record_path in paths:
         agent_id = record_path.stem
@@ -926,7 +932,7 @@ def _stats_subagent_records(
             excluded_count += 1
             continue
         selected.append((agent_id, metadata.get(agent_id, (None, None))[0], records))
-    return selected, excluded_count
+    return selected, excluded_count, len(paths)
 
 
 def _thread_id_from_mapping(value: Any) -> str | None:
@@ -1160,8 +1166,9 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
     summary = _stats_summary_data(main_records, runtime)
     subagents: list[tuple[str, str | None, list[_Record]]] = []
     excluded_review_agents = 0
+    subagent_record_count = 0
     if runtime == "claude":
-        subagents, excluded_review_agents = _stats_subagent_records(transcript_path, boundary_timestamp)
+        subagents, excluded_review_agents, subagent_record_count = _stats_subagent_records(transcript_path, boundary_timestamp)
     threads = _stats_thread_records(main_records, subagents)
     thread_summaries: list[tuple[str, dict[str, Any], int, str | None]] = []
     for thread_id, (line, agent_id) in threads.items():
@@ -1257,9 +1264,11 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
         events.append(event)
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
 
-    if subagents:
+    # 記録ファイルが1件でもあれば、全件が振り返り系・境界外で選択0件になっても
+    # 除外の実数を`excluded_review_agents`で観測できるよう合算イベントを出力する。
+    if subagent_record_count:
         subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
-        subagent_total: dict[str, int] = {}
+        subagent_total: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
         for agent_id, agent_type, subagent_records in subagents:
             sub_summary = _stats_summary_data(subagent_records, "claude")
             row: dict[str, Any] = {"agent": agent_id, **sub_summary}
