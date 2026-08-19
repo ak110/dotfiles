@@ -1841,3 +1841,310 @@ def test_query_modes_are_mutually_exclusive(
     events = _read_jsonl(capsys)
     assert [event["kind"] for event in events] == ["error"]
     assert "併用できない" in events[0]["text"]
+
+
+def _events_by_kind(events: list[dict], kind: str) -> list[dict]:
+    return [event for event in events if event.get("kind") == kind]
+
+
+def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pathlib.Path, capsys) -> None:
+    """Claudeの重複messageとツール所要時間を集計し、呼び出し行を保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "id": "message-1",
+                    "usage": {
+                        "input_tokens": 3,
+                        "output_tokens": 4,
+                        "cache_creation_input_tokens": 5,
+                        "cache_read_input_tokens": 6,
+                    },
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "call-1", "input": {"command": "make test"}}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-08-19T00:00:04Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "完了"}]},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:01:10Z",
+                "message": {
+                    "role": "assistant",
+                    "id": "message-1",
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 20,
+                        "cache_creation_input_tokens": 30,
+                        "cache_read_input_tokens": 40,
+                    },
+                    "content": [{"type": "text", "text": "結果"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    summary = _events_by_kind(events, "stats-summary")[0]
+    assert summary["tokens"] == {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "cache_creation_input_tokens": 30,
+        "cache_read_input_tokens": 40,
+    }
+    assert summary["api_messages"] == 1
+    assert summary["elapsed_seconds"] == 70
+    assert _events_by_kind(events, "stats-tool") == [{"kind": "stats-tool", "tool": "Bash", "count": 1, "total_seconds": 3.0}]
+    assert _events_by_kind(events, "stats-slow-call")[0]["line"] == 2
+    assert _events_by_kind(events, "stats-token-peak")[0]["line"] == 4
+
+
+def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, capsys) -> None:
+    """空白区間、同一入力の反復、単一順位では除外されるトークン極値を出力する。"""
+    entries: list[dict] = [
+        {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+    ]
+    for index in range(11):
+        timestamp = f"2026-08-19T00:{2 + index:02d}:00Z"
+        entries.append(
+            {
+                "type": "assistant",
+                "timestamp": timestamp,
+                "message": {
+                    "role": "assistant",
+                    "id": f"message-{index}",
+                    "usage": {
+                        "input_tokens": 100 if index < 10 else 1,
+                        "output_tokens": 1 if index < 10 else 150,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    },
+                    "content": [
+                        {"type": "tool_use", "name": "Read", "id": f"read-{index}", "input": {"command": "same input"}}
+                    ],
+                },
+            }
+        )
+        entries.append(
+            {
+                "type": "user",
+                "timestamp": f"2026-08-19T00:{2 + index:02d}:01Z",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": f"read-{index}", "content": "完了"}],
+                },
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    gaps = _events_by_kind(events, "stats-gap")
+    assert gaps and gaps[0]["seconds"] >= 60
+    repeats = _events_by_kind(events, "stats-repeat")
+    assert repeats and repeats[0]["tool"] == "Read" and repeats[0]["count"] == 11
+    peak_lines = {event["line"] for event in _events_by_kind(events, "stats-token-peak")}
+    assert 22 in peak_lines
+
+
+def test_stats_uses_codex_final_token_count_and_tool_pair(tmp_path: pathlib.Path, capsys) -> None:
+    """Codexの累積token_countは最後の値だけを使い、call_idで時間を対応付ける。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {"type": "message", "role": "user", "content": "依頼"},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {"input_tokens": 2, "output_tokens": 3},
+                        "last_token_usage": {"input_tokens": 2, "output_tokens": 3},
+                    },
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:02Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"command": ["make", "test"]}),
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:04Z",
+                "payload": {"type": "custom_tool_call_output", "call_id": "call-1", "output": "完了"},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:05Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {"input_tokens": 20, "output_tokens": 30, "total_tokens": 50},
+                        "last_token_usage": {"input_tokens": 20, "output_tokens": 30},
+                    },
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["total_tokens"] == 50
+    assert _events_by_kind(events, "stats-tool")[0]["total_seconds"] == 2.0
+    assert _events_by_kind(events, "stats-slow-call")[0]["line"] == 3
+
+
+def test_stats_collects_subagents_and_excludes_review_descendants(tmp_path: pathlib.Path, capsys) -> None:
+    """通常のサブエージェントだけを主体別集計へ含め、振り返り系と子孫を除外する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
+    )
+    subagents = transcript.with_suffix("") / "subagents"
+    subagents.mkdir(parents=True)
+    normal = subagents / "agent-normal.jsonl"
+    normal.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "message": {"role": "assistant", "id": "n", "usage": {"input_tokens": 2, "output_tokens": 3}},
+            }
+        )
+        + "\n"
+    )
+    (subagents / "agent-normal.meta.json").write_text(json.dumps({"agentType": "Explore"}))
+    review = subagents / "agent-review.jsonl"
+    review.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "message": {"role": "assistant", "id": "r", "usage": {"input_tokens": 100, "output_tokens": 100}},
+            }
+        )
+        + "\n"
+    )
+    (subagents / "agent-review.meta.json").write_text(json.dumps({"agentType": "session-review-advisor"}))
+    child = subagents / "agent-child.jsonl"
+    child.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "message": {"role": "assistant", "id": "c", "usage": {"input_tokens": 200, "output_tokens": 200}},
+            }
+        )
+        + "\n"
+    )
+    (subagents / "agent-child.meta.json").write_text(json.dumps({"parentAgentId": "agent-review", "agentType": "Explore"}))
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert [event["agent"] for event in _events_by_kind(events, "stats-subagent")] == ["agent-normal"]
+    total = _events_by_kind(events, "stats-subagent-total")[0]
+    assert total["count"] == 1 and total["excluded_review_agents"] == 2
+    assert total["tokens"]["input_tokens"] == 2
+
+
+def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """Codex委譲の構造化完了形状を重複排除し、引用本文を収集しない。"""
+    thread_id = "11111111-1111-4111-8111-111111111111"
+    quoted_id = "22222222-2222-4222-8222-222222222222"
+    codex_home = tmp_path / "codex"
+    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
+    rollout_dir.mkdir(parents=True)
+    rollout = rollout_dir / f"rollout-test-{thread_id}.jsonl"
+    rollout.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {"input_tokens": 4, "output_tokens": 5, "total_tokens": 9},
+                        "last_token_usage": {"input_tokens": 4, "output_tokens": 5},
+                    },
+                },
+            }
+        )
+        + "\n"
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "message": {"role": "user", "content": "引用本文にはthreadId: " + quoted_id},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "mcp__codex__codex", "id": "a", "input": {"threadId": thread_id}}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-08-19T00:00:02Z",
+                "mcpMeta": {"structuredContent": {"threadId": thread_id}},
+                "toolUseResult": json.dumps({"conversationId": thread_id}),
+                "message": {"role": "user", "content": "完了"},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    threads = _events_by_kind(events, "stats-codex-thread")
+    assert len(threads) == 1
+    assert threads[0]["thread"] == thread_id
+    assert threads[0]["tokens"]["total_tokens"] == 9
+    assert quoted_id not in {event["thread"] for event in threads}
+
+
+def test_stats_boundary_excludes_manual_review_and_rejects_combination(tmp_path: pathlib.Path, capsys) -> None:
+    """手動起動境界以降を集計せず、statsと既存照会モードの併用を拒否する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "作業"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "message": {"role": "assistant", "id": "before", "usage": {"input_tokens": 2, "output_tokens": 3}},
+            },
+            {"type": "user", "timestamp": "2026-08-19T00:00:02Z", "message": {"role": "user", "content": "/session-review"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:03Z",
+                "message": {"role": "assistant", "id": "after", "usage": {"input_tokens": 100, "output_tokens": 100}},
+            },
+        ],
+    )
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["input_tokens"] == 2
+    assert evidence.main([str(transcript), "--stats", "--warn"]) == 2
+    assert _read_jsonl(capsys)[0]["kind"] == "error"

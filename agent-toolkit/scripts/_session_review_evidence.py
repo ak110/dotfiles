@@ -17,7 +17,9 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import os
 import re
 import shlex
 import sys
@@ -565,6 +567,20 @@ def _is_manual_review_invocation(text: str, runtime: _Runtime) -> bool:
 
 def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str, Any]]:
     """手動・自動振り返り境界を適用し、最終結果と連番を確定する。"""
+    boundary = _review_boundary_index(events, runtime)
+    events = [event for event in events[:boundary] if event["kind"] != "session-review-started"]
+
+    for event in reversed(events):
+        if event["kind"] == "assistant":
+            event["kind"] = "final-result"
+            break
+    for sequence, event in enumerate(events, start=1):
+        event["sequence"] = sequence
+    return events
+
+
+def _review_boundary_index(events: list[dict[str, Any]], runtime: _Runtime) -> int:
+    """既存の抽出契約に従う振り返り境界のイベント位置を返す。"""
     manual_boundary = next(
         (
             index
@@ -588,15 +604,7 @@ def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str,
             len(events),
         )
     boundary = min(manual_boundary, automatic_boundary)
-    events = [event for event in events[:boundary] if event["kind"] != "session-review-started"]
-
-    for event in reversed(events):
-        if event["kind"] == "assistant":
-            event["kind"] = "final-result"
-            break
-    for sequence, event in enumerate(events, start=1):
-        event["sequence"] = sequence
-    return events
+    return boundary
 
 
 def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> list[dict[str, Any]]:
@@ -674,6 +682,518 @@ def load_and_extract(raw_path: str | None) -> list[dict[str, Any]]:
 def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
     """読み込み済みレコードから行番号付きの時系列イベントを取得する。"""
     return extract([record.entry for record in records], [record.line for record in records])
+
+
+_CLAUDE_TOKEN_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+)
+_CODEX_TOKEN_KEYS = (
+    "input_tokens",
+    "cached_input_tokens",
+    "cache_write_input_tokens",
+    "output_tokens",
+    "reasoning_output_tokens",
+    "total_tokens",
+)
+_THREAD_ID_KEYS = ("threadId", "conversationId")
+_CODEX_TOOL_NAMES = frozenset({"mcp__codex__codex", "mcp__codex__codex-reply"})
+_TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
+
+
+def _record_timestamp(record: _Record) -> datetime.datetime | None:
+    value = record.entry.get("timestamp")
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
+
+
+def _token_value(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _claude_tokens(usage: dict[str, Any]) -> dict[str, int]:
+    return {key: _token_value(usage.get(key)) for key in _CLAUDE_TOKEN_KEYS}
+
+
+def _token_total(tokens: dict[str, int]) -> int:
+    return sum(value for value in tokens.values())
+
+
+def _add_tokens(target: dict[str, int], source: dict[str, int]) -> None:
+    for key, value in source.items():
+        target[key] = target.get(key, 0) + value
+
+
+def _latest_claude_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
+    """同一`message.id`の重複エントリを最後のusageだけへ畳み込む。
+
+    Claude Code transcriptでは同一`message.id`のエントリが複数現れ、各エントリのusageを合算すると
+    トークン消費量が数倍になる。実測した重複形状に合わせ、最後に現れたusageを採用する。
+    """
+    latest: dict[str, tuple[_Record, dict[str, int]]] = {}
+    for record in records:
+        message = record.entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        usage = message.get("usage")
+        if not isinstance(usage, dict):
+            continue
+        message_id = message.get("id")
+        key = f"message:{message_id}" if isinstance(message_id, str) else f"line:{record.line}"
+        latest[key] = (record, _claude_tokens(usage))
+    return list(latest.values())
+
+
+def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int], int]]:
+    usages: list[tuple[_Record, dict[str, int], int]] = []
+    for record in records:
+        payload = record.entry.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "token_count":
+            continue
+        info = payload.get("info")
+        if not isinstance(info, dict):
+            continue
+        total_usage = info.get("total_token_usage")
+        last_usage = info.get("last_token_usage")
+        if not isinstance(total_usage, dict):
+            continue
+        tokens = {key: _token_value(total_usage.get(key)) for key in _CODEX_TOKEN_KEYS}
+        context = _token_value(last_usage.get("input_tokens")) if isinstance(last_usage, dict) else 0
+        usages.append((record, tokens, context))
+    return usages
+
+
+def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
+    timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
+    summary: dict[str, Any] = {}
+    if timestamps:
+        first_record, first_timestamp = min(timestamps, key=lambda item: item[1])
+        last_record, last_timestamp = max(timestamps, key=lambda item: item[1])
+        summary["start"] = first_record.entry["timestamp"]
+        summary["end"] = last_record.entry["timestamp"]
+        summary["elapsed_seconds"] = int((last_timestamp - first_timestamp).total_seconds())
+
+    if runtime == "claude":
+        usages = _latest_claude_usages(records)
+        if not usages:
+            return summary
+        tokens: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
+        max_context = 0
+        for _, usage in usages:
+            _add_tokens(tokens, usage)
+            max_context = max(
+                max_context,
+                usage["cache_read_input_tokens"] + usage["cache_creation_input_tokens"] + usage["input_tokens"],
+            )
+        summary.update(tokens=tokens, max_context_tokens=max_context, api_messages=len(usages))
+        return summary
+
+    usages = _codex_token_usages(records)
+    if not usages:
+        return summary
+    tokens = dict(usages[-1][1])
+    summary.update(
+        tokens=tokens,
+        max_context_tokens=max(context for _, _, context in usages),
+        api_messages=len(usages),
+    )
+    return summary
+
+
+def _stats_boundary_line(records: list[_Record], runtime: _Runtime) -> int | None:
+    events = _extract_for_runtime([record.entry for record in records], runtime, [record.line for record in records])
+    boundary = _review_boundary_index(events, runtime)
+    if boundary >= len(events):
+        return None
+    line = events[boundary].get("line")
+    return line if isinstance(line, int) else None
+
+
+def _stats_main_records(records: list[_Record], runtime: _Runtime) -> tuple[list[_Record], datetime.datetime | None]:
+    boundary_line = _stats_boundary_line(records, runtime)
+    if boundary_line is None:
+        return records, None
+    boundary_record = next((record for record in records if record.line == boundary_line), None)
+    return [record for record in records if record.line < boundary_line], (
+        _record_timestamp(boundary_record) if boundary_record is not None else None
+    )
+
+
+def _stats_subagent_records(
+    transcript_path: str,
+    boundary_timestamp: datetime.datetime | None,
+) -> tuple[list[tuple[str, str | None, list[_Record]]], int]:
+    path = Path(transcript_path)
+    subagent_dir = path.with_suffix("") / "subagents"
+    try:
+        paths = sorted(subagent_dir.glob("agent-*.jsonl"))
+    except OSError:
+        return [], 0
+    metadata: dict[str, tuple[str | None, str | None]] = {}
+    for record_path in paths:
+        agent_id = record_path.stem
+        meta_path = record_path.with_name(f"{agent_id}.meta.json")
+        try:
+            raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            raw_meta = {}
+        if not isinstance(raw_meta, dict):
+            raw_meta = {}
+        agent_type = raw_meta.get("agentType") if isinstance(raw_meta.get("agentType"), str) else None
+        parent = raw_meta.get("parentAgentId") if isinstance(raw_meta.get("parentAgentId"), str) else None
+        metadata[agent_id] = (agent_type, parent)
+
+    excluded: set[str] = {
+        agent_id for agent_id, (agent_type, _) in metadata.items() if agent_type and "session-review-advisor" in agent_type
+    }
+    changed = True
+    while changed:
+        changed = False
+        for agent_id, (_, parent) in metadata.items():
+            if agent_id not in excluded and parent in excluded:
+                excluded.add(agent_id)
+                changed = True
+
+    selected: list[tuple[str, str | None, list[_Record]]] = []
+    excluded_count = 0
+    for record_path in paths:
+        agent_id = record_path.stem
+        records = _load_records(str(record_path))
+        if records is None:
+            continue
+        if boundary_timestamp is not None:
+            starts = [_record_timestamp(record) for record in records]
+            start = min((value for value in starts if value is not None), default=None)
+            if start is None or start >= boundary_timestamp:
+                continue
+        if agent_id in excluded:
+            excluded_count += 1
+            continue
+        selected.append((agent_id, metadata.get(agent_id, (None, None))[0], records))
+    return selected, excluded_count
+
+
+def _thread_id_from_mapping(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    for key in _THREAD_ID_KEYS:
+        thread = value.get(key)
+        if isinstance(thread, str) and thread:
+            return thread
+    return None
+
+
+def _thread_ids_from_record(record: _Record) -> list[str]:
+    entry = record.entry
+    thread_ids: list[str] = []
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use" or block.get("name") not in _CODEX_TOOL_NAMES:
+                continue
+            thread = _thread_id_from_mapping(block.get("input"))
+            if thread:
+                thread_ids.append(thread)
+
+    mcp_meta = entry.get("mcpMeta")
+    if isinstance(mcp_meta, dict):
+        thread = _thread_id_from_mapping(mcp_meta.get("structuredContent"))
+        if thread:
+            thread_ids.append(thread)
+
+    tool_result = entry.get("toolUseResult")
+    if isinstance(tool_result, dict):
+        thread = _thread_id_from_mapping(tool_result)
+        if thread:
+            thread_ids.append(thread)
+    elif isinstance(tool_result, str):
+        thread = _thread_id_from_mapping(_json_object(tool_result))
+        if thread:
+            thread_ids.append(thread)
+
+    notification_texts: list[str] = []
+    if entry.get("type") == "queue-operation":
+        notification_texts.extend(_text_blocks(entry.get("content")))
+    notification_texts.extend(_text_blocks(content))
+    for text in notification_texts:
+        for match in _TASK_RESULT_PATTERN.finditer(text):
+            result = _json_object(match.group(1))
+            thread = _thread_id_from_mapping(result)
+            if thread:
+                thread_ids.append(thread)
+    return list(dict.fromkeys(thread_ids))
+
+
+def _rollout_path(thread_id: str) -> Path | None:
+    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+    escaped_thread = re.escape(thread_id)
+    candidates = sorted(
+        path
+        for path in codex_home.glob(f"sessions/*/*/*/rollout-*{thread_id}.jsonl")
+        if re.search(rf"rollout-.*{escaped_thread}\.jsonl$", path.name)
+    )
+    return candidates[0] if candidates else None
+
+
+def _stats_thread_records(
+    main_records: list[_Record],
+    subagents: list[tuple[str, str | None, list[_Record]]],
+) -> dict[str, tuple[int, str | None]]:
+    threads: dict[str, tuple[int, str | None]] = {}
+    for record in main_records:
+        for thread_id in _thread_ids_from_record(record):
+            threads.setdefault(thread_id, (record.line, None))
+    for agent_id, _, records in subagents:
+        for record in records:
+            for thread_id in _thread_ids_from_record(record):
+                threads.setdefault(thread_id, (record.line, agent_id))
+    return threads
+
+
+def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
+    calls: dict[str, tuple[str, str | None, int, datetime.datetime]] = {}
+    results: dict[str, list[datetime.datetime]] = {}
+    for record in records:
+        timestamp = _record_timestamp(record)
+        if timestamp is None:
+            continue
+        if runtime == "claude":
+            message = record.entry.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                if block_type == "tool_use" and isinstance(block.get("id"), str):
+                    block_input = block.get("input")
+                    command = block_input.get("command") if isinstance(block_input, dict) else None
+                    hint = _clip(command.splitlines()[0]) if isinstance(command, str) and command.strip() else None
+                    calls.setdefault(block["id"], (str(block.get("name", "")), hint, record.line, timestamp))
+                elif block_type == "tool_result" and isinstance(block.get("tool_use_id"), str):
+                    results.setdefault(block["tool_use_id"], []).append(timestamp)
+            continue
+
+        payload = record.entry.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        payload_type = payload.get("type")
+        if payload_type in {"custom_tool_call", "function_call"} and isinstance(payload.get("call_id"), str):
+            arguments = _json_object(payload.get("arguments"))
+            command = arguments.get("command") if isinstance(arguments, dict) else None
+            if isinstance(command, list):
+                hint = _clip(" ".join(part for part in command if isinstance(part, str)).splitlines()[0]) if command else None
+            elif isinstance(command, str) and command.strip():
+                hint = _clip(command.splitlines()[0])
+            else:
+                hint = None
+            calls.setdefault(payload["call_id"], (str(payload.get("name", "")), hint, record.line, timestamp))
+        elif payload_type in {"custom_tool_call_output", "function_call_output"} and isinstance(payload.get("call_id"), str):
+            results.setdefault(payload["call_id"], []).append(timestamp)
+
+    paired: list[dict[str, Any]] = []
+    for call_id, (name, hint, line, started) in calls.items():
+        finished = next((value for value in results.get(call_id, []) if value >= started), None)
+        if finished is None:
+            continue
+        item: dict[str, Any] = {
+            "tool": name,
+            "seconds": (finished - started).total_seconds(),
+            "line": line,
+        }
+        if hint:
+            item["hint"] = hint
+        paired.append(item)
+    return paired
+
+
+def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    if runtime == "claude":
+        usages = _latest_claude_usages(records)
+        for record, tokens in usages:
+            candidates.append(
+                {
+                    "total_tokens": _token_total(tokens),
+                    **tokens,
+                    "line": record.line,
+                    "new_tokens": tokens["output_tokens"] + tokens["cache_creation_input_tokens"],
+                }
+            )
+    else:
+        for record, _, _ in _codex_token_usages(records):
+            payload = record.entry.get("payload")
+            info = payload.get("info") if isinstance(payload, dict) else None
+            usage = info.get("last_token_usage") if isinstance(info, dict) else None
+            if not isinstance(usage, dict):
+                continue
+            input_tokens = _token_value(usage.get("input_tokens"))
+            output_tokens = _token_value(usage.get("output_tokens"))
+            candidates.append(
+                {
+                    "total_tokens": input_tokens + output_tokens,
+                    "output_tokens": output_tokens,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "input_tokens": input_tokens,
+                    "line": record.line,
+                    "new_tokens": output_tokens,
+                }
+            )
+    by_total = sorted(candidates, key=lambda item: (-item["total_tokens"], item["line"]))[:10]
+    by_new = sorted(candidates, key=lambda item: (-item["new_tokens"], item["line"]))[:10]
+    selected = {item["line"]: item for item in by_total}
+    selected.update({item["line"]: item for item in by_new})
+    return [
+        {key: value for key, value in item.items() if key != "new_tokens"}
+        for item in sorted(selected.values(), key=lambda value: (-value["total_tokens"], value["line"]))
+    ]
+
+
+def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: str) -> list[dict[str, Any]]:
+    main_records, boundary_timestamp = _stats_main_records(records, runtime)
+    summary = _stats_summary_data(main_records, runtime)
+    subagents: list[tuple[str, str | None, list[_Record]]] = []
+    excluded_review_agents = 0
+    if runtime == "claude":
+        subagents, excluded_review_agents = _stats_subagent_records(transcript_path, boundary_timestamp)
+    threads = _stats_thread_records(main_records, subagents)
+    thread_summaries: list[tuple[str, dict[str, Any], int, str | None]] = []
+    for thread_id, (line, agent_id) in threads.items():
+        rollout = _rollout_path(thread_id)
+        if rollout is None:
+            continue
+        rollout_records = _load_records(str(rollout))
+        if rollout_records is None:
+            continue
+        thread_summary = _stats_summary_data(rollout_records, "codex")
+        thread_summaries.append((thread_id, thread_summary, line, agent_id))
+
+    total_tokens: dict[str, int] = {}
+    if isinstance(summary.get("tokens"), dict):
+        _add_tokens(total_tokens, summary["tokens"])
+    for _, _, subagent_records in subagents:
+        sub_summary = _stats_summary_data(subagent_records, "claude")
+        if isinstance(sub_summary.get("tokens"), dict):
+            _add_tokens(total_tokens, sub_summary["tokens"])
+    for _, thread_summary, _, _ in thread_summaries:
+        if isinstance(thread_summary.get("tokens"), dict):
+            _add_tokens(total_tokens, thread_summary["tokens"])
+
+    total_event: dict[str, Any] = {
+        "kind": "stats-total",
+        "tokens": total_tokens,
+        "subagent_count": len(subagents),
+        "codex_thread_count": len(thread_summaries),
+    }
+    if "elapsed_seconds" in summary:
+        total_event["elapsed_seconds"] = summary["elapsed_seconds"]
+    events = [total_event]
+    events.append({"kind": "stats-summary", **summary} if summary else {"kind": "stats-summary", "text": "集計対象なし"})
+
+    timestamped_records = [
+        (record, timestamp) for record in main_records if (timestamp := _record_timestamp(record)) is not None
+    ]
+    gaps = sorted(
+        (
+            (after_timestamp - before_timestamp).total_seconds(),
+            before.line,
+            after.line,
+        )
+        for (before, before_timestamp), (after, after_timestamp) in zip(
+            timestamped_records, timestamped_records[1:], strict=False
+        )
+        if (after_timestamp - before_timestamp).total_seconds() >= 60
+    )
+    events.extend(
+        {"kind": "stats-gap", "seconds": round(seconds, 1), "before_line": before, "after_line": after}
+        for seconds, before, after in sorted(gaps, reverse=True)[:10]
+    )
+
+    calls = _stats_call_entries(main_records, runtime)
+    tool_groups: dict[str, list[dict[str, Any]]] = {}
+    for call in calls:
+        tool_groups.setdefault(call["tool"], []).append(call)
+    events.extend(
+        {
+            "kind": "stats-tool",
+            "tool": tool,
+            "count": len(items),
+            "total_seconds": round(sum(item["seconds"] for item in items), 1),
+        }
+        for tool, items in sorted(tool_groups.items(), key=lambda item: (-sum(call["seconds"] for call in item[1]), item[0]))[
+            :20
+        ]
+    )
+    repeats: dict[tuple[str, str | None], list[dict[str, Any]]] = {}
+    for call in calls:
+        repeats.setdefault((call["tool"], call.get("hint")), []).append(call)
+    for (tool, hint), items in sorted(repeats.items(), key=lambda item: (-len(item[1]), item[0][0])):
+        if len(items) < 2:
+            continue
+        event: dict[str, Any] = {
+            "kind": "stats-repeat",
+            "tool": tool,
+            "count": len(items),
+            "lines": [item["line"] for item in items],
+        }
+        if hint:
+            event["hint"] = hint
+        events.append(event)
+    for call in sorted(calls, key=lambda item: (-item["seconds"], item["line"]))[:10]:
+        event = {"kind": "stats-slow-call", "tool": call["tool"], "seconds": round(call["seconds"], 1), "line": call["line"]}
+        if call.get("hint"):
+            event["hint"] = call["hint"]
+        events.append(event)
+    events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
+
+    if subagents:
+        subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
+        subagent_total: dict[str, int] = {}
+        for agent_id, agent_type, subagent_records in subagents:
+            sub_summary = _stats_summary_data(subagent_records, "claude")
+            row: dict[str, Any] = {"agent": agent_id, **sub_summary}
+            if agent_type:
+                row["agent_type"] = agent_type
+            row["elapsed_seconds"] = sub_summary.get("elapsed_seconds", 0)
+            row["tokens"] = sub_summary.get("tokens", {key: 0 for key in _CLAUDE_TOKEN_KEYS})
+            row["api_messages"] = sub_summary.get("api_messages", 0)
+            subagent_rows.append((agent_id, agent_type, row))
+            _add_tokens(subagent_total, row["tokens"])
+        for _, _, row in sorted(subagent_rows, key=lambda item: (-_token_total(item[2]["tokens"]), item[0])):
+            events.append({"kind": "stats-subagent", **row})
+        events.append(
+            {
+                "kind": "stats-subagent-total",
+                "count": len(subagents),
+                "tokens": subagent_total,
+                "excluded_review_agents": excluded_review_agents,
+            }
+        )
+
+    for thread_id, thread_summary, line, agent_id in sorted(
+        thread_summaries,
+        key=lambda item: (-_token_total(item[1].get("tokens", {})), item[0]),
+    ):
+        thread_event: dict[str, Any] = {
+            "kind": "stats-codex-thread",
+            "thread": thread_id,
+            **thread_summary,
+            "line": line,
+        }
+        if agent_id:
+            thread_event["agent"] = agent_id
+        events.append(thread_event)
+    return events
 
 
 def has_session_review_started(raw_path: str | None) -> bool:
@@ -1071,7 +1591,14 @@ def _print_error(text: str) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     """既定の抽出と照会モードの引数を定義する。"""
-    parser = argparse.ArgumentParser(description="transcriptから振り返り用の時系列証拠を抽出・照会する。")
+    parser = argparse.ArgumentParser(
+        description=(
+            "transcriptから振り返り用の時系列証拠を抽出・照会する。--statsは経過時間、トークン消費、"
+            "ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を返す。"
+            "メイン記録は振り返り境界より前のレコードを対象とし、補助記録は境界より前に起動した"
+            "処理単位の全体を帰属させる。stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。"
+        )
+    )
     parser.add_argument(
         "transcript_path",
         nargs="?",
@@ -1100,6 +1627,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "本文が退避されている場合はツール実行結果側の本文）を照会する。"
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
     )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。",
+    )
     return parser
 
 
@@ -1109,8 +1641,8 @@ def main(argv: list[str] | None = None) -> int:
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if sum((args.warn, args.grep is not None, args.detail is not None)) > 1:
-        return _print_error("--warn・--grep・--detailは併用できない")
+    if sum((args.warn, args.grep is not None, args.detail is not None, args.stats)) > 1:
+        return _print_error("--warn・--grep・--detail・--statsは併用できない")
 
     records = _load_records(args.transcript_path)
     if records is None:
@@ -1131,6 +1663,13 @@ def main(argv: list[str] | None = None) -> int:
         events, exit_code = _detail_events(records, args.detail)
         _print_events(events)
         return exit_code
+    if args.stats:
+        runtime = _detect_runtime([record.entry for record in records])
+        if runtime is None:
+            _print_events(_fallback())
+            return 0
+        _print_events(_stats_events(records, runtime, args.transcript_path or ""))
+        return 0
 
     _print_events(_extract_records(records))
     return 0
