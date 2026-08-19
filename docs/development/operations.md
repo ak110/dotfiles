@@ -72,7 +72,8 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
 
 Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.json`で`5m`を配布する。
 対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
-計時はアイドル時間を基準とし、キー入力・マウス操作でリセットされる。
+計時はアイドル時間を基準とし、キー入力でリセットされる。
+フォーカスを報告する端末では、ウィンドウへの切り替えでもリセットされる。
 
 `atk mq process-loop`のClaude起動では、利用者設定に依存せず`--settings`で同じ値を明示する。
 CLI設定はユーザー設定より優先されるため、配布設定を持たないプラグイン単体利用でも起動時の値を揃えられる。

@@ -578,7 +578,11 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     """常駐処理サブコマンドを登録する。"""
     loop = sub.add_parser(
         "process-loop",
-        help="対象リポジトリのフィードバック消化を選択したオーケストレーターの常駐起動で反復実行する",
+        help=(
+            "対象リポジトリのフィードバック消化をオーケストレーターの常駐起動で反復実行する。"
+            "オーケストレーター・model・effortはatk configのorchestrate_model設定"
+            "（既定claude:opus[1m]/medium、書式<claude|codex>:<model>[/<effort>]）で決まる。"
+        ),
     )
     loop.add_argument(
         "--target-repo",
@@ -634,7 +638,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         default=None,
         metavar="SESSION_ID",
         help=(
-            "初回に選択したオーケストレーターの過去セッションを再開する。"
+            "初回にorchestrate_model設定で決まったオーケストレーターの過去セッションを再開する。"
             "SESSION_ID省略時はセッション選択画面を開き、指定時は該当セッションを直接再開する。"
             "2回目以降は新規セッションとして起動する。"
         ),
