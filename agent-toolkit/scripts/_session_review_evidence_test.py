@@ -2600,6 +2600,53 @@ def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathli
     assert threads[0]["agent"] == "agent-normal"
 
 
+def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """`line`はメイン記録発の委譲だけに付け、サブエージェント記録発の委譲には付けない。
+
+    `line`は`--detail`が解決するメインtranscriptの行番号であり、サブエージェント記録の行番号を
+    同じキーで出力すると`--detail`が無関係なエントリを返すため。
+    """
+    main_thread = "88888888-8888-4888-8888-888888888888"
+    sub_thread = "99999999-9999-4999-8999-999999999999"
+    codex_home = tmp_path / "codex"
+    _write_rollout(
+        codex_home, main_thread, [("2026-08-19T00:00:02Z", {"input_tokens": 10, "output_tokens": 10, "total_tokens": 20})]
+    )
+    _write_rollout(
+        codex_home, sub_thread, [("2026-08-19T00:00:02Z", {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7})]
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-main", main_thread),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-sub",
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:01Z", "message": {"role": "user", "content": "委譲"}},
+            {"type": "user", "timestamp": "2026-08-19T00:00:01Z", "message": {"role": "user", "content": "追記"}},
+            _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-sub", sub_thread),
+        ],
+        {"agentType": "Explore"},
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    threads = {event["thread"]: event for event in _events_by_kind(events, "stats-codex-thread")}
+    assert threads[main_thread]["line"] == 2
+    assert "agent" not in threads[main_thread]
+    assert threads[sub_thread]["agent"] == "agent-sub"
+    assert "line" not in threads[sub_thread]
+
+    assert evidence.main([str(transcript), "--detail", "2"]) == 0
+    detail = "".join(json.dumps(event, ensure_ascii=False) for event in _read_jsonl(capsys))
+    assert main_thread in detail
+
+
 def test_stats_total_sums_main_subagent_and_normalized_codex(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
     """`stats-total`はCodex分をClaude形式の4成分へ変換してから3区分を合算する。"""
     thread_id = "77777777-7777-4777-8777-777777777777"

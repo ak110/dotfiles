@@ -44,7 +44,8 @@ _HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message"
 _HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
 _HOOK_NOTICE_KIND_LENGTH = 80
 # 通知本文の可変部（語頭から始まるパスと、TBD識別子・行番号などの数値）。種別キーの分裂を防ぐため置換する。
-# パスは語頭に限定し、`github.com/ak110/dotfiles`のように語中へ現れる固定の識別子を残す。
+# パスは語頭に限定するが、数値列は語頭・語中を問わず置換するため、`github.com/ak110/dotfiles`のような
+# 固定の識別子も数値部分が置換される。
 _HOOK_NOTICE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
 _HOOK_NOTICE_VARIABLE_PLACEHOLDER = "<var>"
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
@@ -1304,14 +1305,17 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
         thread_summaries,
         key=lambda item: (-item[1].get("tokens", {}).get("total_tokens", 0), item[0]),
     ):
+        # `line`はメインtranscriptの行番号を指す`--detail`用の値であるため、
+        # サブエージェント記録から見つけたスレッド（`agent_id`が非null）では付けない。
         thread_event: dict[str, Any] = {
             "kind": "stats-codex-thread",
             "thread": thread_id,
             **thread_summary,
-            "line": line,
         }
         if agent_id:
             thread_event["agent"] = agent_id
+        else:
+            thread_event["line"] = line
         events.append(thread_event)
     return events
 
