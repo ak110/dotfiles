@@ -1921,11 +1921,13 @@ def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, c
                 "message": {
                     "role": "assistant",
                     "id": f"message-{index}",
+                    # 先行10件はキャッシュ読取が支配し全成分合計が大きい。
+                    # 末尾1件は生成が支配し、全成分合計では11位となる。
                     "usage": {
-                        "input_tokens": 100 if index < 10 else 1,
-                        "output_tokens": 1 if index < 10 else 150,
-                        "cache_creation_input_tokens": 0,
-                        "cache_read_input_tokens": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 1 if index < 10 else 100,
+                        "cache_creation_input_tokens": 0 if index < 10 else 50,
+                        "cache_read_input_tokens": 1000 if index < 10 else 0,
                     },
                     "content": [
                         {"type": "tool_use", "name": "Read", "id": f"read-{index}", "input": {"command": "same input"}}
@@ -1951,8 +1953,10 @@ def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, c
     assert gaps and gaps[0]["seconds"] >= 60
     repeats = _events_by_kind(events, "stats-repeat")
     assert repeats and repeats[0]["tool"] == "Read" and repeats[0]["count"] == 11
-    peak_lines = {event["line"] for event in _events_by_kind(events, "stats-token-peak")}
-    assert 22 in peak_lines
+    peaks = _events_by_kind(events, "stats-token-peak")
+    generative = next(event for event in peaks if event["line"] == 22)
+    assert generative["total_tokens"] == 150
+    assert all(event["total_tokens"] > generative["total_tokens"] for event in peaks if event["line"] != 22)
 
 
 def test_stats_uses_codex_final_token_count_and_tool_pair(tmp_path: pathlib.Path, capsys) -> None:
@@ -2063,6 +2067,20 @@ def test_stats_collects_subagents_and_excludes_review_descendants(tmp_path: path
     total = _events_by_kind(events, "stats-subagent-total")[0]
     assert total["count"] == 1 and total["excluded_review_agents"] == 2
     assert total["tokens"]["input_tokens"] == 2
+
+
+def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathlib.Path, capsys) -> None:
+    """`subagents/`が無い場合は主体別集計のイベントを出力しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [_assistant_usage_entry("2026-08-19T00:00:00Z", "main", _usage(2, 3))],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-subagent") == []
+    assert _events_by_kind(events, "stats-subagent-total") == []
+    assert _events_by_kind(events, "stats-total")[0]["subagent_count"] == 0
 
 
 def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
@@ -2381,8 +2399,8 @@ def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathli
     assert threads[0]["agent"] == "agent-normal"
 
 
-def test_stats_total_sums_main_subagent_and_codex_shared_keys(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """`stats-total`はメイン・サブエージェント・Codexの3区分を同義キーだけで合算する。"""
+def test_stats_total_sums_main_subagent_and_normalized_codex(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """`stats-total`はCodex分をClaude形式の4成分へ変換してから3区分を合算する。"""
     thread_id = "77777777-7777-4777-8777-777777777777"
     codex_home = tmp_path / "codex"
     _write_rollout(
@@ -2434,14 +2452,54 @@ def test_stats_total_sums_main_subagent_and_codex_shared_keys(tmp_path: pathlib.
     events = _read_jsonl(capsys)
     total = _events_by_kind(events, "stats-total")[0]
     assert total["tokens"] == {
-        "input_tokens": 112,
+        "input_tokens": 22,
         "output_tokens": 63,
-        "cache_creation_input_tokens": 4,
-        "cache_read_input_tokens": 5,
+        "cache_creation_input_tokens": 11,
+        "cache_read_input_tokens": 95,
     }
     assert total["subagent_count"] == 1
     assert total["codex_thread_count"] == 1
-    assert _events_by_kind(events, "stats-codex-thread")[0]["tokens"]["total_tokens"] == 140
+    thread_tokens = _events_by_kind(events, "stats-codex-thread")[0]["tokens"]
+    assert thread_tokens["total_tokens"] == 140
+    assert thread_tokens["cached_input_tokens"] == 90
+
+
+def test_stats_total_normalizes_codex_main_record(tmp_path: pathlib.Path, capsys) -> None:
+    """メイン記録がCodex形式でも`stats-total`はClaude形式の4成分だけを持つ。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 1000,
+                            "cached_input_tokens": 900,
+                            "cache_write_input_tokens": 8,
+                            "output_tokens": 60,
+                            "reasoning_output_tokens": 20,
+                            "total_tokens": 1060,
+                        },
+                        "last_token_usage": {"input_tokens": 1000, "output_tokens": 60},
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    total = _events_by_kind(events, "stats-total")[0]
+    assert total["tokens"] == {
+        "input_tokens": 100,
+        "output_tokens": 60,
+        "cache_creation_input_tokens": 8,
+        "cache_read_input_tokens": 900,
+    }
+    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["total_tokens"] == 1060
 
 
 def test_stats_claude_automatic_start_keeps_records_after_marker(tmp_path: pathlib.Path, capsys) -> None:
@@ -2564,14 +2622,14 @@ def test_stats_repeat_limits_to_ten_groups_and_requires_hint(tmp_path: pathlib.P
                 }
             )
     for index in range(3):
-        call_id = f"read-{index}"
+        call_id = f"todo-{index}"
         entries.append(
             {
                 "type": "assistant",
                 "timestamp": f"2026-08-19T00:30:{index:02d}Z",
                 "message": {
                     "role": "assistant",
-                    "content": [{"type": "tool_use", "name": "Read", "id": call_id, "input": {"file_path": f"/tmp/{index}"}}],
+                    "content": [{"type": "tool_use", "name": "TodoWrite", "id": call_id, "input": {"todos": []}}],
                 },
             }
         )
@@ -2590,3 +2648,39 @@ def test_stats_repeat_limits_to_ten_groups_and_requires_hint(tmp_path: pathlib.P
     assert len(repeats) == 10
     assert {event["tool"] for event in repeats} == {"Bash"}
     assert all(event["hint"].startswith("command-") for event in repeats)
+
+
+def test_stats_repeat_uses_target_input_keys_of_tools_without_command(tmp_path: pathlib.Path, capsys) -> None:
+    """`command`を持たないツールでも対象を表す入力キーをヒントとし、反復を集計する。"""
+    entries: list[dict] = []
+    inputs = [{"file_path": "/tmp/same.py"}] * 3 + [{"pattern": "同じ検索語"}] * 2 + [{"file_path": "/tmp/other.py"}]
+    names = ["Read"] * 3 + ["Grep"] * 2 + ["Read"]
+    for index, (name, block_input) in enumerate(zip(names, inputs, strict=True)):
+        call_id = f"call-{index}"
+        entries.append(
+            {
+                "type": "assistant",
+                "timestamp": f"2026-08-19T00:00:{index:02d}Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": name, "id": call_id, "input": block_input}],
+                },
+            }
+        )
+        entries.append(
+            {
+                "type": "user",
+                "timestamp": f"2026-08-19T00:00:{index:02d}Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "済"}]},
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    repeats = _events_by_kind(events, "stats-repeat")
+    assert [(event["tool"], event["hint"], event["count"]) for event in repeats] == [
+        ("Read", "/tmp/same.py", 3),
+        ("Grep", "同じ検索語", 2),
+    ]
+    assert repeats[0]["lines"] == [1, 3, 5]

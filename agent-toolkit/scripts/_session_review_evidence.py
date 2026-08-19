@@ -698,7 +698,7 @@ _CODEX_TOKEN_KEYS = (
     "reasoning_output_tokens",
     "total_tokens",
 )
-_CODEX_SUMMABLE_TOKEN_KEYS = ("input_tokens", "output_tokens")
+_CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
 _THREAD_ID_KEYS = ("threadId", "conversationId")
 _CODEX_TOOL_NAMES = frozenset({"mcp__codex__codex", "mcp__codex__codex-reply"})
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
@@ -732,15 +732,26 @@ def _add_tokens(target: dict[str, int], source: dict[str, int]) -> None:
         target[key] = target.get(key, 0) + value
 
 
-def _codex_summable_tokens(tokens: dict[str, int]) -> dict[str, int]:
-    """Codexの内訳から、Claude形式と同じ意味を持つキーだけを取り出す。
+def _codex_normalized_tokens(tokens: dict[str, int]) -> dict[str, int]:
+    """Codexの内訳をClaude形式の4成分へ意味的に変換する。
 
-    Codexの`cached_input_tokens`は`input_tokens`へ、`reasoning_output_tokens`は`output_tokens`へ
-    内包され、`total_tokens`は入力と出力の合計である。全キーをClaude形式の内訳へ加算すると
-    同一の消費が多重計上され、Codex分の総計がセッション全体の総計であるかのように現れる。
-    セッション全体の合算では、同名かつ同義の2キーだけを用いる。
+    Codexの`input_tokens`はキャッシュ済み入力（`cached_input_tokens`）を内包する総入力であり、
+    非キャッシュ入力だけを表すClaude形式の同名キーとは同義ではない。同名のまま合算すると
+    キャッシュ済み入力が非キャッシュ入力の欄へ混入する。`total_tokens`は入力と出力の合計であり、
+    加算すれば他成分の再合算となる。そのため次の対応で変換した値だけを合算へ用いる。
+
+    - `cache_read_input_tokens` ← `cached_input_tokens`
+    - `input_tokens` ← `input_tokens - cached_input_tokens`（内包関係は実測で確認済み）
+    - `output_tokens` ← `output_tokens`（`reasoning_output_tokens`は内包されるため加算しない）
+    - `cache_creation_input_tokens` ← `cache_write_input_tokens`
     """
-    return {key: tokens[key] for key in _CODEX_SUMMABLE_TOKEN_KEYS if key in tokens}
+    cached = tokens.get("cached_input_tokens", 0)
+    return {
+        "input_tokens": max(tokens.get("input_tokens", 0) - cached, 0),
+        "output_tokens": tokens.get("output_tokens", 0),
+        "cache_creation_input_tokens": tokens.get("cache_write_input_tokens", 0),
+        "cache_read_input_tokens": cached,
+    }
 
 
 def _latest_claude_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
@@ -970,6 +981,22 @@ def _stats_thread_records(
     return threads
 
 
+def _claude_call_hint(block_input: Any) -> str | None:
+    """tool_use入力から反復照会の識別に用いる代表的な対象値を取得する。
+
+    `command`を持たないツール（`Read`・`Edit`・`Grep`など）では、対象を表す入力キーを
+    定義順に探す。列挙は全ツール種別の網羅を目的とせず、取得できた値だけをヒントとする。
+    いずれのキーも持たない呼び出しはヒントなしとし、反復集計の対象から外れる。
+    """
+    if not isinstance(block_input, dict):
+        return None
+    for key in _CLAUDE_HINT_KEYS:
+        value = block_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return _clip(value.splitlines()[0])
+    return None
+
+
 def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
     calls: dict[str, tuple[str, str | None, int, datetime.datetime]] = {}
     results: dict[str, list[datetime.datetime]] = {}
@@ -987,9 +1014,7 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
                     continue
                 block_type = block.get("type")
                 if block_type == "tool_use" and isinstance(block.get("id"), str):
-                    block_input = block.get("input")
-                    command = block_input.get("command") if isinstance(block_input, dict) else None
-                    hint = _clip(command.splitlines()[0]) if isinstance(command, str) and command.strip() else None
+                    hint = _claude_call_hint(block.get("input"))
                     calls.setdefault(block["id"], (str(block.get("name", "")), hint, record.line, timestamp))
                 elif block_type == "tool_result" and isinstance(block.get("tool_use_id"), str):
                     results.setdefault(block["tool_use_id"], []).append(timestamp)
@@ -1076,8 +1101,9 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
 
     `stats-total`はメイン記録・全サブエージェント記録・全Codexスレッドの3区分の合算とする。
     3区分は記録ファイルが互いに排他であり、トークンが重複しない。
-    Codex分の内訳はClaude形式と成分が異なるため、合算へは同義の2キーだけを用いる
-    （`_codex_summable_tokens`）。個別スレッドの`stats-codex-thread`はCodexの全成分を表示する。
+    Codex形式の内訳はClaude形式と成分の意味が異なるため、合算前に`_codex_normalized_tokens`で
+    4成分へ変換する。メイン記録自体がCodex形式である場合も同じ変換を適用する。
+    個別表示の`stats-summary`と`stats-codex-thread`はCodexの全成分をそのまま表示する。
     """
     main_records, boundary_timestamp = _stats_main_records(records, runtime)
     summary = _stats_summary_data(main_records, runtime)
@@ -1099,14 +1125,14 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
 
     total_tokens: dict[str, int] = {}
     if isinstance(summary.get("tokens"), dict):
-        _add_tokens(total_tokens, summary["tokens"])
+        _add_tokens(total_tokens, _codex_normalized_tokens(summary["tokens"]) if runtime == "codex" else summary["tokens"])
     for _, _, subagent_records in subagents:
         sub_summary = _stats_summary_data(subagent_records, "claude")
         if isinstance(sub_summary.get("tokens"), dict):
             _add_tokens(total_tokens, sub_summary["tokens"])
     for _, thread_summary, _, _ in thread_summaries:
         if isinstance(thread_summary.get("tokens"), dict):
-            _add_tokens(total_tokens, _codex_summable_tokens(thread_summary["tokens"]))
+            _add_tokens(total_tokens, _codex_normalized_tokens(thread_summary["tokens"]))
 
     total_event: dict[str, Any] = {
         "kind": "stats-total",
@@ -1153,8 +1179,8 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
             :20
         ]
     )
-    # 入力ヒントを取れない呼び出し（Read・Edit・Agentなど`command`を持たないツール）は
-    # 対象が異なっても同じ組へ集まり、反復照会の実態と異なる件数を報告する。集計対象から除く。
+    # 入力ヒントを取れない呼び出しは対象が異なっても同じ組へ集まり、
+    # 反復照会の実態と異なる件数を報告する。集計対象から除く。
     repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for call in calls:
         hint = call.get("hint")
