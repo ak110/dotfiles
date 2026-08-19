@@ -2159,8 +2159,8 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     ) in _h2_section(plan_review, "指摘の検収と修正")
     # 起草担当が採否確定の正本へ到達する経路は、資料の受け渡しと配送時の明示の両方が成立して初めて成り立つ。
     assert (
-        "   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキル、`plan-file-standards.md`、\n"
-        "   `plan-review-delegation.md`と必要なタスク文書も渡す。\n"
+        "   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキル、`plan-mode/SKILL.md`、\n"
+        "   `plan-file-standards.md`、`plan-review-delegation.md`と必要なタスク文書も渡す。\n"
     ) in planner
     assert (
         "6. レビュー指摘を加工せず起草担当へ全件配送する。\n"
