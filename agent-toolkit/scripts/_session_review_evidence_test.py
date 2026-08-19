@@ -2075,6 +2075,51 @@ def test_stats_sums_codex_last_token_usage_across_rewind(tmp_path: pathlib.Path,
     }
 
 
+def test_stats_skips_codex_duplicate_token_count_records(tmp_path: pathlib.Path, capsys) -> None:
+    """同一リクエストを再送した`token_count`は合計へ加算しない。
+
+    Codexはターン終了時に直前と同一の`total_token_usage`・`last_token_usage`を持つレコードを
+    再記録する。無条件加算では入力が200となり、実際のリクエスト2件分の150と一致しない。
+    """
+    duplicated = _codex_usage(150, 120, 7, 30, 14)
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_token_count_entry(
+                "2026-08-19T00:00:00Z", _codex_usage(100, 80, 5, 20, 10), _codex_usage(100, 80, 5, 20, 10)
+            ),
+            _codex_token_count_entry("2026-08-19T00:00:01Z", _codex_usage(50, 40, 2, 10, 4), duplicated),
+            _codex_token_count_entry("2026-08-19T00:00:02Z", _codex_usage(50, 40, 2, 10, 4), duplicated),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    summary = _events_by_kind(_read_jsonl(capsys), "stats-summary")[0]
+    assert summary["tokens"] == duplicated
+    assert summary["api_messages"] == 2
+
+
+def test_stats_skips_codex_zero_usage_record_after_compact(tmp_path: pathlib.Path, capsys) -> None:
+    """compact直後の実消費0のレコードは合計へ影響しない。
+
+    当該レコードは`last_token_usage`の6成分が全て0でありながら`total_token_usage`は直前と同一のため、
+    加算対象へ含めると`api_messages`が実際のリクエスト数を上回る。
+    """
+    cumulative = _codex_usage(100, 80, 5, 20, 10)
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_token_count_entry("2026-08-19T00:00:00Z", _codex_usage(100, 80, 5, 20, 10), cumulative),
+            _codex_token_count_entry("2026-08-19T00:00:01Z", _codex_usage(0, 0, 0, 0, 0), cumulative),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    summary = _events_by_kind(_read_jsonl(capsys), "stats-summary")[0]
+    assert summary["tokens"] == cumulative
+    assert summary["api_messages"] == 1
+
+
 def test_stats_token_peak_normalizes_codex_cache_components(tmp_path: pathlib.Path, capsys) -> None:
     """Codexの`stats-token-peak`はキャッシュ成分をClaude形式へ変換して出力する。"""
     transcript = _write_transcript(

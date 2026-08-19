@@ -785,8 +785,19 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
     区間合算方式では実消費`3086405`に対し`3577208`を報告していた）。
     `last_token_usage`は1リクエスト当たりの実消費であり、巻き戻しの有無にかかわらず単純加算で
     セッション全体の消費量が得られる（実測: 走査した4398 rolloutの全`token_count`レコードに存在する）。
+
+    ただしCodexは同一リクエストの`token_count`を複数回記録する（ターン終了時の再送、compact直後の
+    記録など。後者は`last_token_usage`の6成分が全て0となる）。重複記録では`total_token_usage`が
+    直前の採用レコードと完全に一致するため、一致するレコードを加算対象から除外する
+    （実測: `~/.codex/sessions/2026/08/`配下1942セッションのうち707セッションで無条件加算が実消費を
+    上回り、最大54.8%の過大計上となった。除外方式を実rollout 476件へ適用すると474件で加算値が
+    セッション内の最終`total_token_usage`と一致した）。巻き戻しでは`total_token_usage`が直前と
+    異なる値へ変わるため、減少後のレコードは加算対象へ残る。
+    `total_token_usage`がdictでないか`total_tokens`を欠くレコードは判別条件を適用できないため、
+    安全側として常に加算対象へ含める。
     """
     usages: list[tuple[_Record, dict[str, int]]] = []
+    previous_total: dict[str, Any] | None = None
     for record in records:
         payload = record.entry.get("payload")
         if not isinstance(payload, dict) or payload.get("type") != "token_count":
@@ -797,6 +808,11 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
         last_usage = info.get("last_token_usage")
         if not isinstance(last_usage, dict):
             continue
+        total_usage = info.get("total_token_usage")
+        comparable = isinstance(total_usage, dict) and "total_tokens" in total_usage
+        if comparable and previous_total is not None and total_usage == previous_total:
+            continue
+        previous_total = total_usage if comparable else None
         usages.append((record, {key: _token_value(last_usage.get(key)) for key in _CODEX_TOKEN_KEYS}))
     return usages
 
