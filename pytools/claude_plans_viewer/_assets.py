@@ -78,7 +78,7 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 _INDEX_CSS = """\
   html, body { height: 100%; }
   body { margin: 0; max-width: none; padding: 0; }
-  #app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  #app { display: grid; grid-template-columns: 320px 1fr; height: 100svh; }
   aside {
     border-right: 1px solid #e6e6e6;
     overflow: auto;
@@ -186,7 +186,7 @@ _INDEX_CSS = """\
       left: 0;
       width: 280px;
       max-width: 85vw;
-      height: 100vh;
+      height: 100svh;
       z-index: 20;
       transform: translateX(-100%);
       transition: transform 0.2s ease-out;
@@ -199,7 +199,7 @@ _INDEX_CSS = """\
       top: 0;
       left: 0;
       width: 100vw;
-      height: 100vh;
+      height: 100svh;
       background: rgba(0, 0, 0, 0.4);
       z-index: 10;
     }

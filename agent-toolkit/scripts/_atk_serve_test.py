@@ -211,6 +211,18 @@ def test_assets_style_markdown_and_inputs_by_purpose() -> None:
     assert "button,\n  input,\n  select,\n  textarea" not in mobile
 
 
+def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
+    """高さを決めるビューポート単位を無印`vh`ではなく`svh`で書く。
+
+    無印`vh`は大ビューポート基準のため、モバイルのブラウザーUI展開時に
+    ダイアログの外枠が可視領域を超え、ヘッダーとフッターが隠れる。
+    `dvh`ではなく`svh`を採用するのは、スクロールに伴うブラウザーUIの伸縮で
+    枠の高さが再レイアウトされることを避け、常に可視な下限側へ収めるためである。
+    """
+    assert not re.findall(r"\dvh\b", assets.CSS)
+    assert "100svh" in assets.CSS
+
+
 def test_assets_define_all_operation_lifecycles_and_message_regions() -> None:
     """5更新操作を共通pending処理へ接続し、結果領域を操作場所ごとに持つ。"""
     assert "async function runPending(" in assets.JS

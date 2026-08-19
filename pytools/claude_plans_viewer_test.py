@@ -986,6 +986,17 @@ class TestIndexHtml:
         """同一オリジンのfaviconとMarkdown画像を遮断するCSPを埋め込まない。"""
         assert "Content-Security-Policy" not in _assets.INDEX_HTML
 
+    def test_index_html_sizes_panes_with_small_viewport_height_unit(self):
+        """高さを決めるビューポート単位を無印`vh`ではなく`svh`で書く。
+
+        無印`vh`は大ビューポート基準のため、モバイルのブラウザーUI展開時に
+        ペインの高さが可視領域を超え、下端の内容が隠れる。
+        `dvh`ではなく`svh`を採用するのは、スクロールに伴うブラウザーUIの伸縮で
+        高さが再レイアウトされることを避け、常に可視な下限側へ収めるためである。
+        """
+        assert not re.findall(r"\dvh\b", _assets.INDEX_HTML)
+        assert "100svh" in _assets.INDEX_HTML
+
     def test_index_html_explicitly_configures_mermaid_strict_security(self):
         """Mermaidの既定値に依存せず`strict`を明示する。"""
         assert 'securityLevel: "strict"' in _assets.INDEX_HTML
