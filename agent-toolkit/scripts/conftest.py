@@ -20,6 +20,9 @@ def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     実行環境のGit設定の混入を断つ。これにより、リポジトリ生成箇所が`git config user.*`を
     設定していなくても`git commit`が成功し、開発機と継続的インテグレーションで成否が一致する。
 
+    global・system設定を遮断するため、本リポジトリの作業ツリーに対してgitを実行するテストは
+    `safe.directory`の設定を受け取れない。テストは自身が生成したリポジトリに対してgitを実行する。
+
     既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
     環境変数は当該設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
     このディレクトリ配下のテストを単独で実行する場合にも同じ前提が成立するよう、

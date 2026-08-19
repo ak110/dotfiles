@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import locale
+import os
 import pathlib
 import signal
 import subprocess
@@ -997,7 +998,7 @@ class TestSignalHandling:
     """実プロセスへシグナルを送信し、`_install_signal_handlers`の実挙動を確認する。"""
 
     @pytest.mark.skipif(sys.platform == "win32", reason="WindowsのSIGTERMはPythonハンドラを呼び出さない")
-    def test_sigterm_exits_with_interrupted_code(self, tmp_path: pathlib.Path):
+    def test_sigterm_exits_with_interrupted_code(self, tmp_path: pathlib.Path, git_repository: tuple[pathlib.Path, str]):
         """SIGTERM受信時に`EXIT_INTERRUPTED`を返すことを実プロセスで確認する。
 
         ハンドラ登録は`main`冒頭で行われるため、送信までの待機が起動所要時間を下回ると
@@ -1006,9 +1007,13 @@ class TestSignalHandling:
 
         併せてstderrへ`reentrant call`が出ないことを確認する。ハンドラが`print`で
         書くと`sys.stderr`の`BufferedWriter`へ再入し得るため、その回帰を検出する。
+
+        子プロセスは`--sha`を`git rev-parse`で解決するため、テスト用repositoryを作業ディレクトリに
+        与える。共通fixtureがgitのglobal・system設定を遮断するので、本リポジトリの作業ツリーを
+        使うと所有者が異なる実行環境で解決に失敗する。
         """
+        repository, baseline_sha = git_repository
         baseline_path = tmp_path / "baseline.json"
-        baseline_sha = _git(pathlib.Path.cwd(), "rev-parse", "HEAD").stdout.strip()
         _write_test_baseline(baseline_path, sha=baseline_sha)
         arguments = [
             "--baseline",
@@ -1032,7 +1037,8 @@ class TestSignalHandling:
         for warmup_sec in (1.0, 3.0, 6.0):
             with subprocess.Popen(
                 [sys.executable, "-c", child_code],
-                cwd=pathlib.Path(__file__).parent,
+                cwd=repository,
+                env={**os.environ, "PYTHONPATH": str(pathlib.Path(__file__).parent)},
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
