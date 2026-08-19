@@ -1499,6 +1499,9 @@ class TestBashSleepPollPattern:
                 "sleep-poll-first-20",
             ),
             ("while true; do sleep 1; done; sleep 5; git status --short", "sleep-poll-first-21"),
+            # ループ開始セグメントの直前にある待機は、後続がループでも検出する。
+            ("sleep 570; while true; do sleep 1; done", "sleep-poll-first-22"),
+            ("sleep 420; until test -f /tmp/marker; do sleep 1; done", "sleep-poll-first-23"),
         ],
     )
     def test_first_detection_warns_and_allows(
@@ -1546,6 +1549,8 @@ class TestBashSleepPollPattern:
             ("attempt=0; until test -f /tmp/marker; do echo waiting; sleep 60; done", "sleep-poll-allow-30"),
             # `done`を伴わない入力では、ループ予約語以降の全体をループ本体として通過させる。
             ("until test -f /tmp/marker; do sleep 60; echo waiting", "sleep-poll-allow-31"),
+            # ループ本体にある閾値以上の待機は、直後に状態確認コマンドが続く場合も通過させる。
+            ("while true; do echo waiting; sleep 570; git status --short; done", "sleep-poll-allow-32"),
             ("printf 'sleep 1; git status'", "sleep-poll-allow-4"),
             ("sleep 1 || git status --short", "sleep-poll-allow-5"),
             ("sleep 1 | cat", "sleep-poll-allow-6"),

@@ -2890,6 +2890,20 @@ def _is_sleep_poll_pair(left: str, right: str) -> bool:
     return tuple(right_args[:1]) == _CURL_COMMAND and not _curl_args_have_write_indicator(right_args[1:])
 
 
+def _has_foreground_sleep_wait(segments: list[str]) -> bool:
+    """ループ本体の外にある`sleep`が検出条件を満たすかを判定する。
+
+    除外の要否は`sleep`候補自身が属する範囲だけで決める。
+    直後のセグメントは検出条件の判定にだけ用い、その所属は除外条件へ混ぜない。
+    """
+    in_loop_body = _loop_scope_flags(segments)
+    return any(
+        not in_loop_body[index]
+        and (_is_long_fixed_sleep(segments[index]) or _is_sleep_poll_pair(segments[index], segments[index + 1]))
+        for index in range(len(segments) - 1)
+    )
+
+
 def _check_bash_sleep_poll_pattern(
     command: str,
     session_id: str,
@@ -2910,13 +2924,7 @@ def _check_bash_sleep_poll_pattern(
     """
     if run_in_background:
         return None
-    segments = _split_serial_shell_commands(command)
-    loop_scope = _loop_scope_flags(segments)
-    if not any(
-        not (loop_scope[index] or loop_scope[index + 1])
-        and (_is_long_fixed_sleep(segments[index]) or _is_sleep_poll_pair(segments[index], segments[index + 1]))
-        for index in range(len(segments) - 1)
-    ):
+    if not _has_foreground_sleep_wait(_split_serial_shell_commands(command)):
         return None
 
     already_detected = False
