@@ -97,6 +97,14 @@ def _h2_section(text: str, heading: str) -> str:
     return remainder.partition("\n## ")[0]
 
 
+def _h4_section(text: str, heading: str) -> str:
+    """指定したH4節の本文を返す。後続の任意階層の見出しを境界とする。"""
+    marker = f"#### {heading}\n"
+    _, separator, remainder = text.partition(marker)
+    assert separator, f"H4節が存在しない: {heading}"
+    return re.split(r"\n#{1,4} ", remainder)[0]
+
+
 def test_agent_tools_are_comma_separated_scalars() -> None:
     """各agentのtoolsをcomma-separated scalarとして宣言する。"""
     for path in sorted(_AGENTS_DIR.glob("*.md")):
@@ -173,13 +181,19 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
 
     assert "起動文の先頭で受信者への命令を1文で示す" in skill
-    for phrase in (
-        "起動文の命令は、受信者のタスク文書、agent定義及び適用スキルが定める手順の範囲を狭めない",
-        "受信者が行う判断工程を除く語",
-        "受信者が適用する規範スキルが作業手順の正本となる委譲では、当該スキル名を起動文の必須入力へ含める",
-        "同欄の記述は委譲元が確定した判断の記録であり、受信者の作業手順ではないため、起動文の命令へ転写しない",
-    ):
-        assert phrase in skill
+    # 文頭句だけの一致では禁止語の例示や必須入力の対象スキル名が消えても検出できないため、段落全体を逐語固定する。
+    assert (
+        "   起動文の命令は、受信者のタスク文書、agent定義及び適用スキルが定める手順の範囲を狭めない。\n"
+        "   対象、権限および完了条件を示す語だけを使い、"
+        "受信者が行う判断工程を除く語（最小修正、指摘どおり、そのまま反映など）を書かない。\n"
+        "   受信者が適用する規範スキルが作業手順の正本となる委譲では、当該スキル名を起動文の必須入力へ含める。\n"
+        "   指摘、改善提案又はレビュー結果の修正を委譲する場合は、"
+        "`agent-toolkit:reviewee-standards`を当該必須入力へ含める。\n"
+    ) in _h2_section(skill, "送信")
+    assert (
+        "  - レビュー指摘の`対応方針`には、最上位の主体が独立に確定した採否、最小限の修正、変更してはならない契約を残す。\n"
+        "    同欄の記述は委譲元が確定した判断の記録であり、受信者の作業手順ではないため、起動文の命令へ転写しない\n"
+    ) in _h2_section(skill, "受領と検収")
     assert "タスク文書の手順、品質規範本文、出力書式、過去応答に加え、" in skill
     assert "正本内の合意事項、調査済み事実、完了条件も複製しない" in skill
     assert "必要な場合だけ" in skill
@@ -1088,8 +1102,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
-    assert "モード指定" in common
-    assert "該当する作成規範スキルの絶対パス" in common
+    assert "- モード指定、プロジェクト規範の絶対パス、該当する作成規範スキルの絶対パス\n" in common
     for phrase in ("計画ファイルの絶対パス", "worktree一覧", "フィードバックファイル名一覧", "複製元と対象外worktree"):
         assert phrase in normal
         assert phrase not in integrated
@@ -2105,9 +2118,36 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
-    assert executor.count("受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス") == 2
-    assert "調整主体が指摘を配送する場合は" in plan_review
-    assert "配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め" in planner
+    # 出現回数だけでは経路ごとの入力列挙を区別できないため、2つのレビュー修正手順を節ごとに逐語固定する。
+    assert (
+        "   `skills/plan-mode/references/implementation-task.md`、レーンのworktree、対象計画、"
+        "採用指摘を実装単位とした目的及び変更説明、\n"
+        "   統合した6列表、プロジェクト規範、該当する作成規範スキル、"
+        "受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス、\n"
+        "   ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、\n"
+        "   複製元と対象外worktree、git操作の制約を渡す\n"
+    ) in _h4_section(executor, "通常の実装モードのレビュー修正")
+    assert (
+        "   修正用の書込担当へ`skills/process-feedbacks/references/merge-task.md`のレビュー修正モード、6列表、\n"
+        "   プロジェクト規範、該当する作成規範スキル、"
+        "受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パスを渡す\n"
+    ) in _h4_section(executor, "統合後レビュー調整モードのレビュー修正")
+    assert (
+        "調整主体が指摘を配送する場合は、`agent-toolkit:reviewee-standards`と"
+        "`agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスを起草担当への配送文へ含める。\n"
+    ) in _h2_section(plan_review, "指摘の検収と修正")
+    # 起草担当が採否確定の正本へ到達する経路は、資料の受け渡しと配送時の明示の両方が成立して初めて成り立つ。
+    assert (
+        "   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキル、`plan-file-standards.md`、\n"
+        "   `plan-review-delegation.md`と必要なタスク文書も渡す。\n"
+    ) in planner
+    assert (
+        "6. レビュー指摘を加工せず起草担当へ全件配送する。\n"
+        "   配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め、"
+        "採否の確定に用いる正本として示す。\n"
+        "   `agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
+        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が6列表へ記録されていることを検収する。\n"
+    ) in planner
     assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
     assert "採否と対応結果を6列表へ統合" in plan_review
     assert "スコープ、公開契約、ユーザー合意を変える修正" in plan_review
