@@ -2647,6 +2647,7 @@ _LONG_SLEEP_SECONDS = 30
 読み取り専用の状態確認コマンドが続く場合だけを検出対象とする。
 """
 _LOOP_KEYWORDS = frozenset({"until", "while", "for"})
+_LOOP_END_KEYWORD = "done"
 _POLL_COMMAND_PREFIXES = (
     ("ls",),
     ("cat",),
@@ -2842,13 +2843,37 @@ def _is_long_fixed_sleep(command: str) -> bool:
     return seconds >= _LONG_SLEEP_SECONDS
 
 
-def _starts_loop_keyword(command: str) -> bool:
-    """コマンドの先頭トークンが条件ループの予約語であるかを判定する。"""
+def _first_token(command: str) -> str | None:
+    """コマンドの先頭トークンを返す（分割できない場合と空の場合はNone）。"""
     try:
         args = shlex.split(command, posix=True)
     except ValueError:
-        return False
-    return bool(args) and args[0] in _LOOP_KEYWORDS
+        return None
+    return args[0] if args else None
+
+
+def _starts_loop_keyword(command: str) -> bool:
+    """コマンドの先頭トークンが条件ループの予約語であるかを判定する。"""
+    return _first_token(command) in _LOOP_KEYWORDS
+
+
+def _loop_scope_flags(segments: list[str]) -> list[bool]:
+    """各セグメントがループ予約語から対応する`done`までの範囲に属するかを返す。
+
+    ループを開くセグメントと対応する`done`のセグメント自身も範囲に含める。
+    `done`が現れないまま入力が終わる場合は、末尾までを当該ループの範囲として扱う。
+    """
+    flags: list[bool] = []
+    depth = 0
+    for segment in segments:
+        if _starts_loop_keyword(segment):
+            depth += 1
+            flags.append(True)
+            continue
+        flags.append(depth > 0)
+        if depth > 0 and _first_token(segment) == _LOOP_END_KEYWORD:
+            depth -= 1
+    return flags
 
 
 def _is_sleep_poll_pair(left: str, right: str) -> bool:
@@ -2875,7 +2900,9 @@ def _check_bash_sleep_poll_pattern(
     検出条件は、閾値以上の`sleep`の直後に任意のコマンドが続く形と、
     閾値未満の`sleep`の直後に読み取り専用の状態確認コマンドが続く形の2つとする。
     前者は待機後に続くコマンドの種類に依存しないため、状態確認コマンド名の追随保守を要しない。
-    条件成立で抜けるループ（`until`・`while`・`for`）内の`sleep`は検出対象から除く。
+    条件成立で抜けるループ（`until`・`while`・`for`）の本体、すなわちループ予約語から
+    対応する`done`までの範囲にある`sleep`は検出対象から除く。当該範囲の外にある`sleep`は、
+    同一のBash呼び出しにループが含まれる場合も通常どおり判定する。
 
     簡略化: クォート外の`;`・`&&`直列連結だけを検出する,
     既知の限界: サブシェルで包んだ状態確認は検出しない,
@@ -2884,11 +2911,11 @@ def _check_bash_sleep_poll_pattern(
     if run_in_background:
         return None
     segments = _split_serial_shell_commands(command)
-    if any(_starts_loop_keyword(segment) for segment in segments):
-        return None
+    loop_scope = _loop_scope_flags(segments)
     if not any(
-        _is_long_fixed_sleep(left) or _is_sleep_poll_pair(left, right)
-        for left, right in zip(segments, segments[1:], strict=False)
+        not (loop_scope[index] or loop_scope[index + 1])
+        and (_is_long_fixed_sleep(segments[index]) or _is_sleep_poll_pair(segments[index], segments[index + 1]))
+        for index in range(len(segments) - 1)
     ):
         return None
 

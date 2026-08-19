@@ -950,6 +950,8 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
     実体に依存しない検証（`path`欄の型と登録ファイル名との対応）を通過した登録のうち、
     実体を失ったものは登録ファイルごと削除する。実体を失った登録には当該領域を使用中の
     主体が存在しないため、登録ファイルの削除が利用中の管理対象へ影響しない。
+    この回収では登録簿の`path`と実体の不在だけを確認する。記録時と列挙時で一時領域の設定が
+    異なる登録も回収対象へ含めるため、現在の一時領域直下であることは条件としない。
     """
     if prefix is not None and not is_valid_prefix(prefix):
         raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
@@ -963,7 +965,7 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
             path = pathlib.Path(recorded_path)
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
-            if is_missing_registered_temp(path):
+            if not os.path.lexists(path):
                 registry_path.unlink(missing_ok=True)
                 continue
             validate_managed_temp(path)

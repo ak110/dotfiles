@@ -515,6 +515,30 @@ class TestManagedTempPosix:
         assert capsys.readouterr().err == ""
         assert not registry.exists()
 
+    def test_list_removes_registry_of_a_missing_target_recorded_under_another_temp_root(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """記録時と列挙時で一時領域が異なる実体不在の登録も、警告を出力せずに回収する。"""
+        recorded_root = tmp_path / "recorded"
+        listed_root = tmp_path / "listed"
+        recorded_root.mkdir()
+        listed_root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(recorded_root))
+        missing = subject.create_managed_temp("moved-root")
+        registry = subject._registry_path(missing)
+        (missing / _MARKER_NAME).unlink()
+        missing.rmdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(listed_root))
+
+        # 一時領域直下を要求する厳格判定は、cleanupと権限判定のために従来どおり維持する。
+        assert subject.is_missing_registered_temp(missing) is False
+        assert subject.list_managed_temp() == []
+        assert capsys.readouterr().err == ""
+        assert not registry.exists()
+
     def test_cleanup_consumes_registry_of_a_missing_target(
         self,
         monkeypatch: pytest.MonkeyPatch,

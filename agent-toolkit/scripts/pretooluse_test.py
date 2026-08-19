@@ -1493,6 +1493,12 @@ class TestBashSleepPollPattern:
             ("sleep 570; atk watch --worktree /tmp/lane-example/wt", "sleep-poll-first-17"),
             ("sleep 420; cd /tmp/lane-example/wt && ./scripts/check_state.sh", "sleep-poll-first-18"),
             ("sleep 30; echo done", "sleep-poll-first-19"),
+            # ループの外にある待機は、同一のBash呼び出しにループが含まれる場合も検出する。
+            (
+                "until test -f /tmp/marker; do sleep 1; done; sleep 570; echo do_something_important",
+                "sleep-poll-first-20",
+            ),
+            ("while true; do sleep 1; done; sleep 5; git status --short", "sleep-poll-first-21"),
         ],
     )
     def test_first_detection_warns_and_allows(
@@ -1538,6 +1544,8 @@ class TestBashSleepPollPattern:
             ("while true; do echo waiting; sleep 60; done", "sleep-poll-allow-28"),
             ("for i in 1 2 3; do echo $i; sleep 60; done", "sleep-poll-allow-29"),
             ("attempt=0; until test -f /tmp/marker; do echo waiting; sleep 60; done", "sleep-poll-allow-30"),
+            # `done`を伴わない入力では、ループ予約語以降の全体をループ本体として通過させる。
+            ("until test -f /tmp/marker; do sleep 60; echo waiting", "sleep-poll-allow-31"),
             ("printf 'sleep 1; git status'", "sleep-poll-allow-4"),
             ("sleep 1 || git status --short", "sleep-poll-allow-5"),
             ("sleep 1 | cat", "sleep-poll-allow-6"),
