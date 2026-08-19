@@ -2899,6 +2899,40 @@ def test_stats_repeat_distinguishes_multiline_commands_sharing_first_line(tmp_pa
     ]
 
 
+def test_stats_repeat_distinguishes_long_commands_sharing_clipped_prefix(tmp_path: pathlib.Path, capsys) -> None:
+    """表示上の切り詰め長を超えて前方一致するだけの呼び出しは、同じ反復組へ集約しない。"""
+    shared_prefix = "echo " + "a" * 2100
+    commands = [f"{shared_prefix} first", f"{shared_prefix} second", f"{shared_prefix} first"]
+    entries: list[dict] = []
+    for index, command in enumerate(commands):
+        call_id = f"call-{index}"
+        entries.append(
+            {
+                "type": "assistant",
+                "timestamp": f"2026-08-19T00:00:{index * 2:02d}Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
+                },
+            }
+        )
+        entries.append(
+            {
+                "type": "user",
+                "timestamp": f"2026-08-19T00:00:{index * 2 + 1:02d}Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "済"}]},
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    repeats = _events_by_kind(events, "stats-repeat")
+    assert [(event["tool"], event["count"], event["lines"]) for event in repeats] == [("Bash", 2, [1, 5])]
+    assert repeats[0]["hint"].endswith("…[省略]")
+    assert len(repeats[0]["hint"]) == 2000 + len("…[省略]")
+
+
 def test_stats_takes_codex_hint_from_input_without_arguments(tmp_path: pathlib.Path, capsys) -> None:
     """`arguments`を持たないCodexの呼び出しでは`input`の本文をヒントとする。"""
     command_input = 'const out = await sh({cmd: "rg -n \'foo\' src", workdir: "/repo"});'

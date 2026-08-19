@@ -1014,16 +1014,17 @@ def _claude_call_hint(block_input: Any) -> str | None:
     定義順に探す。列挙は全ツール種別の網羅を目的とせず、取得できた値だけをヒントとする。
     いずれのキーも持たない呼び出しはヒントなしとし、反復集計の対象から外れる。
 
-    値は先頭行へ切り詰めず全体を`_clip`へ通す。複数行のコマンドは先頭行が
+    値は先頭行への切り詰めも文字数の切り詰めも行わず全体を返す。複数行のコマンドは先頭行が
     `cd <ディレクトリ>`・変数代入・ヒアドキュメント開始行などで一致しやすく、
     先頭行だけをヒントにすると内容の異なる呼び出しが同じ反復組へ集まるためである。
+    同じ理由で文字数の切り詰めも反復判定より後段（表示時）へ置く。
     """
     if not isinstance(block_input, dict):
         return None
     for key in _CLAUDE_HINT_KEYS:
         value = block_input.get(key)
         if isinstance(value, str) and value.strip():
-            return _clip(value)
+            return value.strip()
     return None
 
 
@@ -1033,7 +1034,7 @@ def _codex_call_hint(payload: dict[str, Any]) -> str | None:
     実行内容の格納先は呼び出しの種類で異なり、`arguments`のJSONへ`command`又は`cmd`を持つ
     呼び出しと、`arguments`を持たず自由形式の`input`へ実行内容を埋め込む呼び出し（`exec`など）が
     実在する。前者から取得できない場合は`input`の文字列をそのままヒントとする。
-    値は`_claude_call_hint`と同じ理由で先頭行へ切り詰めず、`_clip`の上限だけで抑える。
+    値は`_claude_call_hint`と同じ理由で先頭行へも文字数へも切り詰めず全体を返す。
     """
     arguments = _json_object(payload.get("arguments"))
     if arguments is not None:
@@ -1042,16 +1043,22 @@ def _codex_call_hint(payload: dict[str, Any]) -> str | None:
             if isinstance(command, list):
                 joined = " ".join(part for part in command if isinstance(part, str))
                 if joined.strip():
-                    return _clip(joined)
+                    return joined.strip()
             elif isinstance(command, str) and command.strip():
-                return _clip(command)
+                return command.strip()
     value = payload.get("input")
     if isinstance(value, str) and value.strip():
-        return _clip(value)
+        return value.strip()
     return None
 
 
 def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
+    """ツール呼び出しと結果を対応付け、所要時間と入力ヒントを持つ呼び出しエントリを返す。
+
+    エントリは表示用の`hint`（`_clip`で切り詰めた値）と、反復判定用の`hint_key`（切り詰め前の原文）を
+    分けて持つ。切り詰め後の値で反復を判定すると、上限まで前方一致するだけの別内容の呼び出しが
+    同じ反復組へ集約されるためである（実測: 上限2000文字の一致で内容の異なる組が実記録に存在する）。
+    """
     calls: dict[str, tuple[str, str | None, int, datetime.datetime]] = {}
     results: dict[str, list[datetime.datetime]] = {}
     for record in records:
@@ -1095,7 +1102,8 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
             "line": line,
         }
         if hint:
-            item["hint"] = hint
+            item["hint"] = _clip(hint)
+            item["hint_key"] = hint
         paired.append(item)
     return paired
 
@@ -1226,18 +1234,18 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
     # 反復照会の実態と異なる件数を報告する。集計対象から除く。
     repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for call in calls:
-        hint = call.get("hint")
-        if hint:
-            repeats.setdefault((call["tool"], hint), []).append(call)
+        hint_key = call.get("hint_key")
+        if hint_key:
+            repeats.setdefault((call["tool"], hint_key), []).append(call)
     events.extend(
         {
             "kind": "stats-repeat",
             "tool": tool,
-            "hint": hint,
+            "hint": items[0]["hint"],
             "count": len(items),
             "lines": [item["line"] for item in items],
         }
-        for (tool, hint), items in sorted(
+        for (tool, _), items in sorted(
             ((key, items) for key, items in repeats.items() if len(items) >= 2),
             key=lambda item: (-len(item[1]), item[0]),
         )[:10]
