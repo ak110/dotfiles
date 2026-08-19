@@ -825,7 +825,9 @@ class TestProcessLoopPromptAndEnv:
 
         assert exc_info.value.code == 2
         assert not session_calls
-        assert "atk config set orchestrate_model invalid" in capsys.readouterr().err
+        stderr = capsys.readouterr().err
+        assert "現在の設定値: invalid" in stderr
+        assert "atk config set orchestrate_model claude:opus[1m]/medium" in stderr
 
     def test_resume_applied_to_first_session_only(
         self,
@@ -1345,6 +1347,17 @@ def test_process_loop_rejects_removed_options(
         atk.main(["mq", "process-loop", deprecated_option], home=tmp_path)
     assert exc_info.value.code == 2
     assert not handler_calls
+
+
+def test_process_loop_internal_mise_refreshed_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    """内部専用オプションの既定値・指定時の値・help非露出をargparse境界で固定する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    assert parser.parse_args(["mq", "process-loop"]).internal_mise_refreshed is False
+    assert parser.parse_args(["mq", "process-loop", "--internal-mise-refreshed"]).internal_mise_refreshed is True
+    with pytest.raises(SystemExit) as help_exit:
+        parser.parse_args(["mq", "process-loop", "--help"])
+    assert help_exit.value.code == 0
+    assert "--internal-mise-refreshed" not in capsys.readouterr().out
 
 
 def test_process_loop_worktree_option_reaches_public_handler(

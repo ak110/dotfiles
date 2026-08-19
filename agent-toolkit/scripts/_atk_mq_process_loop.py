@@ -472,8 +472,11 @@ def _resolve_orchestrator_spec() -> tuple[str, str, str]:
     config = _config._load_config()  # pylint: disable=protected-access
     value = config.get("orchestrate_model", _config._ORCHESTRATE_MODEL_DEFAULT)  # pylint: disable=protected-access
     if _config._STAGE_MODEL_PATTERN.fullmatch(value) is None:  # pylint: disable=protected-access
+        default = _config._ORCHESTRATE_MODEL_DEFAULT  # pylint: disable=protected-access
         print(
-            f"orchestrate_modelの設定値が不正です。`atk config set orchestrate_model {value}`で修正してください。",
+            f"orchestrate_modelの設定値が不正です（現在の設定値: {value}）。"
+            f"`atk config set orchestrate_model {default}`のように"
+            "`<claude|codex>:<model>[/<effort>]`形式の値で修正してください。",
             file=sys.stderr,
         )
         sys.exit(2)
