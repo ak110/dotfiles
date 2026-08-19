@@ -6,7 +6,7 @@
 """Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
 
 既定モードは時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
-`--warn`・`--grep`・`--detail`・`--hook-notices`の照会モードは、抽出結果に無い詳細をtranscriptから
+`--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
@@ -43,6 +43,10 @@ _PERSISTED_OUTPUT_PREFIX = "<persisted-output>"
 _HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message", "hook_blocking_error", "hook_success"})
 _HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
 _HOOK_NOTICE_KIND_LENGTH = 80
+# 通知本文の可変部（語頭から始まるパスと、TBD識別子・行番号などの数値）。種別キーの分裂を防ぐため置換する。
+# パスは語頭に限定し、`github.com/ak110/dotfiles`のように語中へ現れる固定の識別子を残す。
+_HOOK_NOTICE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
+_HOOK_NOTICE_VARIABLE_PLACEHOLDER = "<var>"
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
 SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
 _FALLBACK_TEXT = (
@@ -906,7 +910,9 @@ def _stats_subagent_records(
         if not isinstance(raw_meta, dict):
             raw_meta = {}
         agent_type = raw_meta.get("agentType") if isinstance(raw_meta.get("agentType"), str) else None
-        parent = raw_meta.get("parentAgentId") if isinstance(raw_meta.get("parentAgentId"), str) else None
+        parent_id = raw_meta.get("parentAgentId") if isinstance(raw_meta.get("parentAgentId"), str) else None
+        # 記録ファイル名は`agent-<parentAgentId>`の形式のため、親の照合キーをファイル名由来の形式へ揃える。
+        parent = f"agent-{parent_id}" if parent_id else None
         metadata[agent_id] = (agent_type, parent)
 
     excluded: set[str] = {
@@ -1460,8 +1466,9 @@ def _hook_notice_key(body: str, hook_name: str | None) -> _HookNoticeKey | None:
     """通知本文を、hook識別子・タグ・正規化した種別へ分解する。空の本文は`None`を返す。
 
     標識を持たない本文は識別子とタグを`None`とし、発動元と種別だけで分類する。
-    種別は、標識を除いた本文の連続する空白を単一の空白へ正規化した先頭一定長とする。
-    本文全体を種別とすると対象パスなどの可変部により同種の通知が複数の種別へ分かれ、
+    種別は、標識を除いた本文の連続する空白を単一の空白へ正規化し、
+    対象パスや識別子などの可変部を固定の記号へ置換した先頭一定長とする。
+    可変部を残すと同種の通知が複数の種別へ分かれ、
     長さが不足すると別判定の通知が同一種別へ統合されるため、長さは実測に基づいて確定する。
     """
     normalized = " ".join(body.split())
@@ -1471,7 +1478,8 @@ def _hook_notice_key(body: str, hook_name: str | None) -> _HookNoticeKey | None:
     hook = matched.group("hook") if matched is not None else None
     tag = matched.group("tag") if matched is not None else None
     text = normalized[matched.end() :].strip() if matched is not None else normalized
-    return _HookNoticeKey(hook or None, hook_name, tag or None, text[:_HOOK_NOTICE_KIND_LENGTH])
+    kind_text = _HOOK_NOTICE_VARIABLE.sub(_HOOK_NOTICE_VARIABLE_PLACEHOLDER, text)
+    return _HookNoticeKey(hook or None, hook_name, tag or None, kind_text[:_HOOK_NOTICE_KIND_LENGTH])
 
 
 def _scannable_records(records: list[_Record]) -> list[_Record]:

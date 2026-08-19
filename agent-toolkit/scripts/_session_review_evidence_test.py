@@ -2195,7 +2195,7 @@ def test_stats_collects_subagents_and_excludes_review_descendants(tmp_path: path
         )
         + "\n"
     )
-    (subagents / "agent-child.meta.json").write_text(json.dumps({"parentAgentId": "agent-review", "agentType": "Explore"}))
+    (subagents / "agent-child.meta.json").write_text(json.dumps({"parentAgentId": "review", "agentType": "Explore"}))
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
@@ -3155,7 +3155,7 @@ def test_hook_notices_mode_separates_kinds_by_leading_body_and_skips_empty_bodie
                     "type": "hook_additional_context",
                     "hookName": "PreToolUse:Bash",
                     "toolUseID": "call-1",
-                    "content": [f"{prefix}{head}1 対象A", f"{prefix}{head}2 対象B"],
+                    "content": [f"{prefix}{head}x 対象A", f"{prefix}{head}y 対象B"],
                 }
             ),
             _hook_attachment(
@@ -3163,7 +3163,7 @@ def test_hook_notices_mode_separates_kinds_by_leading_body_and_skips_empty_bodie
                     "type": "hook_additional_context",
                     "hookName": "PreToolUse:Bash",
                     "toolUseID": "call-2",
-                    "content": [f"{prefix}{head}1 対象C"],
+                    "content": [f"{prefix}{head}x 対象C"],
                 }
             ),
             _hook_attachment(
@@ -3176,7 +3176,42 @@ def test_hook_notices_mode_separates_kinds_by_leading_body_and_skips_empty_bodie
 
     events = _read_jsonl(capsys)
     assert [(event["kind_text"], event["count"]) for event in events[:-1]] == [
-        (f"{head}1", 2),
-        (f"{head}2", 1),
+        (f"{head}x", 2),
+        (f"{head}y", 1),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 3}
+
+
+def test_hook_notices_mode_merges_kinds_differing_only_by_variable_parts(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """パスや識別子だけが異なる同種の通知を1つの種別へ集約する。"""
+    prefix = "[auto-generated: agent-toolkit/posttooluse][notice] "
+    bodies = [
+        f"{prefix}plan file /home/aki/.claude/plans/alpha-1.md was written.",
+        f"{prefix}plan file /home/aki/.claude/plans/beta-2.md was written.",
+        f"{prefix}plan file ~/.claude/plans/gamma-3.md was written.",
+    ]
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PostToolUse:Write",
+                    "toolUseID": f"call-{index}",
+                    "content": [body],
+                }
+            )
+            for index, body in enumerate(bodies)
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [(event["kind_text"], event["count"]) for event in events[:-1]] == [
+        ("plan file <var> was written.", 3),
     ]
     assert events[-1] == {"kind": "summary", "count": 3}
