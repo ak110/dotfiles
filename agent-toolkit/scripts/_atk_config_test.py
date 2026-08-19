@@ -45,6 +45,7 @@ class TestConfigShow:
             "merge_model",
         ):
             assert f"{key}: codex:gpt-5.6-sol/medium" in out
+        assert "orchestrate_model: claude:opus[1m]/medium" in out
         assert "codex_model:" not in out
 
     def test_no_subcommand_defaults_to_show(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -75,6 +76,14 @@ class TestConfigGet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
 
+    def test_get_orchestrate_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """未設定のオーケストレーター設定はClaude Codeの既定値を返す。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "claude:opus[1m]/medium\n"
+
     def test_get_multiple_keys_in_requested_order(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """複数キーの値を指定順に1行ずつ出力する。"""
         with pytest.raises(SystemExit) as exc_info:
@@ -93,7 +102,7 @@ class TestConfigGet:
         assert not captured.out
         assert captured.err == (
             "未知の設定キーです: no-such-key（利用可能: config_dir, data_dir, execute_model, "
-            "execute_review_model, merge_model, pick_feedbacks_model, plan_model, plan_review_model, "
+            "execute_review_model, merge_model, orchestrate_model, pick_feedbacks_model, plan_model, plan_review_model, "
             "private_notes, state_dir）\n"
         )
 
@@ -107,7 +116,7 @@ class TestConfigGet:
         assert not captured.out
         assert captured.err == (
             "未知の設定キーです: no-such-key（利用可能: config_dir, data_dir, execute_model, "
-            "execute_review_model, merge_model, pick_feedbacks_model, plan_model, plan_review_model, "
+            "execute_review_model, merge_model, orchestrate_model, pick_feedbacks_model, plan_model, plan_review_model, "
             "private_notes, state_dir）\n"
         )
 
@@ -135,6 +144,23 @@ class TestConfigSet:
         config_file = tmp_path / "config" / "config.json"
         assert config_file.exists()
         assert value in config_file.read_text(encoding="utf-8")
+
+    def test_set_orchestrate_model_persists_and_is_read_back(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """オーケストレーター設定を永続化し、以降の`get`へ反映する。"""
+        value = "codex:gpt-5.6-sol/high"
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "orchestrate_model", value], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == f"設定を更新しました: orchestrate_model={value}\n"
+        assert not captured.err
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{value}\n"
 
     def test_set_unknown_model_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """参考一覧に無いモデル名は警告を表示したうえで受理し、永続化する。"""

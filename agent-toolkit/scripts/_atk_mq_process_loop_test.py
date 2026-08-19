@@ -22,6 +22,7 @@ import watchdog.events
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_config as _config  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
@@ -36,6 +37,7 @@ _DOTFILES_REPO_ID = _process_loop._DOTFILES_REPO_ID  # pylint: disable=protected
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンドとClaude設定を利用者環境から分離する。"""
+    monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
@@ -44,6 +46,13 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 def _command_was_called(calls: list[list[str]], command: str) -> bool:
     """呼び出し配列の先頭要素を基底名で照合する。"""
     return any(pathlib.Path(call[0]).stem.lower() == command for call in calls)
+
+
+def _set_orchestrate_model(tmp_path: pathlib.Path, value: str) -> None:
+    """テスト用の`orchestrate_model`を公開設定CLI経由で保存する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["config", "set", "orchestrate_model", value], home=tmp_path)
+    assert exc_info.value.code == 0
 
 
 def _hook_debug_log(command: list[str]) -> pathlib.Path:
@@ -459,7 +468,16 @@ class TestProcessLoopPromptAndEnv:
         assert debug_log.parent == tmp_path / ".claude" / "debug"
         if os.name != "nt":
             assert stat.S_IMODE(debug_log.stat().st_mode) == 0o600
-        assert command[4:7] == ["--permission-mode=auto", "--model", "opus"]
+        assert command[4:11] == [
+            "--settings",
+            '{"askUserQuestionTimeout": "5m"}',
+            "--permission-mode=auto",
+            "--model",
+            "opus[1m]",
+            "--effort",
+            "medium",
+        ]
+        assert "--autocompact" not in command
         assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ENV] == "1"
         assert claude_calls[0]["env"][_LEGACY_PROCESS_LOOP_SESSION_ENV] == "1"
         assert "AGENT_TOOLKIT_RESTART_SPEC" not in claude_calls[0]["env"]
@@ -729,13 +747,21 @@ class TestProcessLoopPromptAndEnv:
         assert explicit.returncode == 0
         assert "HEAD:refs/heads/master" in explicit.stdout
 
-    def test_model_override(
+    @pytest.mark.parametrize(
+        ("config_value", "expected_model", "expected_effort"),
+        [("claude:sonnet/high", "sonnet", "high"), ("claude:sonnet", "sonnet", "medium")],
+    )
+    def test_configured_model_and_effort_are_passed_to_claude(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
+        config_value: str,
+        expected_model: str,
+        expected_effort: str,
     ) -> None:
-        """`--model`引数の値がclaude起動コマンドへ反映される。"""
+        """`orchestrate_model`設定のmodelとeffortがClaude起動コマンドへ反映される。"""
         _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, config_value)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
@@ -756,14 +782,50 @@ class TestProcessLoopPromptAndEnv:
 
         with pytest.raises(SystemExit):
             atk.main(
-                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--model=sonnet"],
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"],
                 home=tmp_path,
             )
 
         assert len(claude_calls) == 1
         command = claude_calls[0]["cmd"]
         _hook_debug_log(command)
-        assert command[4:7] == ["--permission-mode=auto", "--model", "sonnet"]
+        assert command[4:11] == [
+            "--settings",
+            '{"askUserQuestionTimeout": "5m"}',
+            "--permission-mode=auto",
+            "--model",
+            expected_model,
+            "--effort",
+            expected_effort,
+        ]
+
+    def test_invalid_saved_orchestrate_model_exits_before_starting_session(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """保存済み設定の書式不正はセッションを起動せずexit 2とする。"""
+        _setup_notes(tmp_path)
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text('{"orchestrate_model": "invalid"}\n', encoding="utf-8")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        session_calls: list[list[str]] = []
+
+        def fail_if_started(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
+            session_calls.append(cmd)
+            raise AssertionError("不正な設定ではセッションを起動しないこと")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_started)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert not session_calls
+        assert "atk config set orchestrate_model invalid" in capsys.readouterr().err
 
     def test_resume_applied_to_first_session_only(
         self,
@@ -796,8 +858,18 @@ class TestProcessLoopPromptAndEnv:
         first_debug_log = _hook_debug_log(first_command)
         second_debug_log = _hook_debug_log(second_command)
         assert first_debug_log != second_debug_log
-        assert first_command[4:] == ["--resume"]
-        assert second_command[4:7] == ["--permission-mode=auto", "--model", "opus"]
+        assert first_command[4:] == ["--settings", '{"askUserQuestionTimeout": "5m"}', "--resume"]
+        assert "--model" not in first_command
+        assert "--effort" not in first_command
+        assert second_command[4:11] == [
+            "--settings",
+            '{"askUserQuestionTimeout": "5m"}',
+            "--permission-mode=auto",
+            "--model",
+            "opus[1m]",
+            "--effort",
+            "medium",
+        ]
         assert "--resume" not in second_command
         assert "--continue" not in second_command
         assert second_command[-1].startswith("/goal ")
@@ -833,8 +905,16 @@ class TestProcessLoopPromptAndEnv:
         first_command = claude_calls[0]["cmd"]
         second_command = claude_calls[1]["cmd"]
         assert _hook_debug_log(first_command) != _hook_debug_log(second_command)
-        assert first_command[4:] == ["--resume=session-id"]
-        assert second_command[4:7] == ["--permission-mode=auto", "--model", "opus"]
+        assert first_command[4:] == ["--settings", '{"askUserQuestionTimeout": "5m"}', "--resume=session-id"]
+        assert second_command[4:11] == [
+            "--settings",
+            '{"askUserQuestionTimeout": "5m"}',
+            "--permission-mode=auto",
+            "--model",
+            "opus[1m]",
+            "--effort",
+            "medium",
+        ]
         assert second_command[-1].startswith("/goal ")
 
     def test_dotfiles_resume_defers_worktree_until_next_session(
@@ -890,7 +970,7 @@ class TestProcessLoopPromptAndEnv:
             )
 
         assert _hook_debug_log(claude_calls[0]["cmd"]) != _hook_debug_log(claude_calls[1]["cmd"])
-        assert claude_calls[0]["cmd"][4:] == ["--resume"]
+        assert claude_calls[0]["cmd"][4:] == ["--settings", '{"askUserQuestionTimeout": "5m"}', "--resume"]
         assert "--worktree=process-loop" not in claude_calls[1]["cmd"]
         assert claude_calls[1]["cwd"] == myrepo / ".claude" / "worktrees" / "custom"
         assert sync_calls == [(myrepo, "custom")]
@@ -926,17 +1006,20 @@ class TestProcessLoopPromptAndEnv:
         assert "--resume" not in claude_calls[0]["cmd"]
 
     @pytest.mark.parametrize(
-        ("model_argv", "expected_model_argv"), [([], []), (["--model", "gpt-5.5"], ["--model", "gpt-5.5"])]
+        ("config_value", "expected_model", "expected_effort"),
+        [("codex:gpt-5.6-sol/medium", "gpt-5.6-sol", "medium"), ("codex:gpt-5.6-sol/high", "gpt-5.6-sol", "high")],
     )
     def test_codex_new_session_uses_interactive_cli(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
-        model_argv: list[str],
-        expected_model_argv: list[str],
+        config_value: str,
+        expected_model: str,
+        expected_effort: str,
     ) -> None:
-        """Codex新規起動は対話CLIへ単一の目的文を渡し、標準入出力を捕捉しない。"""
+        """Codex新規起動は設定値を対話CLIへ渡し、標準入出力を捕捉しない。"""
         _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, config_value)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         codex_calls: list[dict[str, Any]] = []
@@ -955,10 +1038,8 @@ class TestProcessLoopPromptAndEnv:
                     "mq",
                     "process-loop",
                     f"--target-repo={myrepo}",
-                    "--orchestrator=codex",
                     "--no-update",
                     "--no-alerts",
-                    *model_argv,
                 ],
                 home=tmp_path,
             )
@@ -969,12 +1050,10 @@ class TestProcessLoopPromptAndEnv:
         command = call["cmd"]
         assert command[0] == "codex"
         assert "--approve-for-me" not in command
-        assert command[1 : 1 + len(expected_model_argv)] == expected_model_argv
+        assert command[1:5] == ["--model", expected_model, "-c", f"model_reasoning_effort={expected_effort}"]
         assert command[-1].startswith("/goal ")
         assert command[-1].count("/goal ") == 1
         assert "exec" not in command
-        if not expected_model_argv:
-            assert "--model" not in command
         assert "--debug=hooks" not in command
         assert "--autocompact" not in command
         assert call["cwd"] == myrepo
@@ -987,7 +1066,6 @@ class TestProcessLoopPromptAndEnv:
         [
             (["--resume"], []),
             (["--resume", "session-id"], ["session-id"]),
-            (["--resume=session-id", "--model", "gpt-5.5"], ["--model", "gpt-5.5", "session-id"]),
         ],
     )
     def test_codex_resume_uses_interactive_cli_without_prompt(
@@ -999,6 +1077,7 @@ class TestProcessLoopPromptAndEnv:
     ) -> None:
         """Codex再開は対話の選択画面又はIDを使い、新しい目的文を渡さない。"""
         _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/high")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         codex_calls: list[dict[str, Any]] = []
@@ -1017,7 +1096,6 @@ class TestProcessLoopPromptAndEnv:
                     "mq",
                     "process-loop",
                     f"--target-repo={myrepo}",
-                    "--orchestrator=codex",
                     "--no-update",
                     "--no-alerts",
                     *resume_argv,
@@ -1027,7 +1105,15 @@ class TestProcessLoopPromptAndEnv:
 
         assert len(codex_calls) == 1
         command = codex_calls[0]["cmd"]
-        assert command == ["codex", "resume", *expected_tail]
+        assert command == [
+            "codex",
+            "resume",
+            "--model",
+            "gpt-5.6-sol",
+            "-c",
+            "model_reasoning_effort=high",
+            *expected_tail,
+        ]
         assert all(not arg.startswith("/goal ") for arg in command)
         assert "exec" not in command
 
@@ -1166,6 +1252,7 @@ class TestProcessLoopSessionPreparation:
     ) -> None:
         """初回ready処理はpull・update・再pull・再集計後にCodexを起動すること。"""
         _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/medium")
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
         events: list[str] = []
@@ -1201,7 +1288,6 @@ class TestProcessLoopSessionPreparation:
                     "mq",
                     "process-loop",
                     f"--target-repo={myrepo}",
-                    "--orchestrator=codex",
                     "--no-alerts",
                 ],
                 home=tmp_path,
@@ -1246,26 +1332,19 @@ class TestProcessLoopSessionPreparation:
         assert "worktree準備を再試行するまで変更検知を待機します。" in capsys.readouterr().out
 
 
-def test_process_loop_parser_orchestrator_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    """オーケストレーターの既定値と選択肢をargparse境界で固定する。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    default_args = parser.parse_args(["mq", "process-loop"])
-    codex_args = parser.parse_args(["mq", "process-loop", "--orchestrator=codex"])
-    refreshed_args = parser.parse_args(["mq", "process-loop", "--internal-mise-refreshed"])
-
-    assert default_args.orchestrator == "claude"
-    assert default_args.internal_mise_refreshed is False
-    assert default_args.model is None
-    assert codex_args.orchestrator == "codex"
-    assert codex_args.model is None
-    assert refreshed_args.internal_mise_refreshed is True
-    with pytest.raises(SystemExit) as help_exit:
-        parser.parse_args(["mq", "process-loop", "--help"])
-    assert help_exit.value.code == 0
-    assert "--internal-mise-refreshed" not in capsys.readouterr().out
+@pytest.mark.parametrize("deprecated_option", ["--orchestrator=claude", "--model=opus"])
+def test_process_loop_rejects_removed_options(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deprecated_option: str,
+) -> None:
+    """廃止したオーケストレーター・モデル指定を公開CLI境界でexit 2にする。"""
+    handler_calls: list[object] = []
+    monkeypatch.setattr(_process_loop, "_cmd_process_loop", lambda *_args: handler_calls.append(True))
     with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["mq", "process-loop", "--orchestrator=unknown"])
+        atk.main(["mq", "process-loop", deprecated_option], home=tmp_path)
     assert exc_info.value.code == 2
+    assert not handler_calls
 
 
 def test_process_loop_worktree_option_reaches_public_handler(
@@ -1737,6 +1816,7 @@ class TestProcessLoopReturncode:
     ) -> None:
         """CodexではClaude Code用SIGTERM終了コードを正常扱いしない。"""
         _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/medium")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         codex_calls: list[dict[str, Any]] = []
@@ -1751,7 +1831,7 @@ class TestProcessLoopReturncode:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["mq", "process-loop", f"--target-repo={myrepo}", "--orchestrator=codex", "--no-update"],
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"],
                 home=tmp_path,
             )
 

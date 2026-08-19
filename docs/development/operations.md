@@ -68,6 +68,15 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
 - tmux本体はアタッチ済みセッションの現在のwindowへベルフラグを設定しないため、
   アクティブなwindow自身ではベルアイコンが増えない（仕様どおりの挙動であり是正対象ではない）
 
+## 質問自動継続タイムアウトの配布
+
+Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.json`で`5m`を配布する。
+対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
+計時はアイドル時間を基準とし、キー入力・マウス操作でリセットされる。
+
+`atk mq process-loop`のClaude起動では、利用者設定に依存せず`--settings`で同じ値を明示する。
+CLI設定はユーザー設定より優先されるため、配布設定を持たないプラグイン単体利用でも起動時の値を揃えられる。
+
 ## mise latestの非ログイン再評価
 
 dotfilesリポジトリを対象とする`atk mq process-loop`は、miseの`latest`指定ツールを非ログイン経路で再評価する。

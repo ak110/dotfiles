@@ -13,7 +13,8 @@ Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグイ�
 次のコマンドはCodexの対話UIを起動し、対象リポジトリのフィードバックを継続して処理する。
 
 ```bash
-atk mq process-loop --orchestrator=codex
+atk config set orchestrate_model codex:gpt-5.6-sol/medium
+atk mq process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。

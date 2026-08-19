@@ -30,7 +30,7 @@
 | `merge_model` | レーンのcommitの適用、競合解消、履歴一本化、検証 | 統合担当を委譲する`process-feedbacks`の実行主体 | Codex MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
-全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。
+上表の全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。
 モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ警告を表示するが、新モデルの利用を妨げないため受理する。
 

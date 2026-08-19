@@ -176,17 +176,19 @@ claude-plugins-officialから以下を導入する。
 登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
 要件を本文だけで説明できる作業に向く。
 
-Claude Codeを使う場合は次のコマンドを実行する。
-`--orchestrator`を省略した場合もClaude Codeを使う。
+オーケストレーター・モデル・effortは`atk config`の`orchestrate_model`へ設定する。
+書式は`<claude|codex>:<model>[/<effort>]`、既定値は`claude:opus[1m]/medium`（Claude Code）である。
+Claude Codeを使う場合は設定を変更せず、次のコマンドを実行する。
 
 ```bash
-atk mq process-loop --orchestrator=claude
+atk mq process-loop
 ```
 
-Codexを使う場合は次のコマンドを実行する。
+Codexへ切り替える場合は、設定を保存してから起動する。設定は以後の起動へ適用される。
 
 ```bash
-atk mq process-loop --orchestrator=codex
+atk config set orchestrate_model codex:gpt-5.6-sol/medium
+atk mq process-loop
 ```
 
 dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq process-loop --worktree[=NAME]`を指定する。

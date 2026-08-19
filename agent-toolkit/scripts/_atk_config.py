@@ -17,14 +17,16 @@ from _atk_mq_common import _private_notes_path
 _CONFIG_FILENAME = "config.json"
 
 _DEFAULT_STAGE_MODEL = "codex:gpt-5.6-sol/medium"
-_MUTABLE_KEYS = (
-    "pick_feedbacks_model",
-    "plan_model",
-    "plan_review_model",
-    "execute_model",
-    "execute_review_model",
-    "merge_model",
-)
+_ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
+_MUTABLE_KEY_DEFAULTS = {
+    "pick_feedbacks_model": _DEFAULT_STAGE_MODEL,
+    "plan_model": _DEFAULT_STAGE_MODEL,
+    "plan_review_model": _DEFAULT_STAGE_MODEL,
+    "execute_model": _DEFAULT_STAGE_MODEL,
+    "execute_review_model": _DEFAULT_STAGE_MODEL,
+    "merge_model": _DEFAULT_STAGE_MODEL,
+    "orchestrate_model": _ORCHESTRATE_MODEL_DEFAULT,
+}
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/]+(?:/[^/]+)?$")
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
@@ -77,7 +79,7 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
         "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes_path(home)),
-        **{key: config.get(key, _DEFAULT_STAGE_MODEL) for key in _MUTABLE_KEYS},
+        **{key: config.get(key, default) for key, default in _MUTABLE_KEY_DEFAULTS.items()},
     }
 
 
@@ -103,9 +105,9 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
 
 def _cmd_config_set(args: argparse.Namespace) -> None:
     """setサブコマンド: 変更可能設定を更新する。対象外キーはexit 2。"""
-    if args.key not in _MUTABLE_KEYS:
+    if args.key not in _MUTABLE_KEY_DEFAULTS:
         print(
-            f"変更できない設定キーです: {args.key}（変更可能: {', '.join(sorted(_MUTABLE_KEYS))}）",
+            f"変更できない設定キーです: {args.key}（変更可能: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}）",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -115,15 +117,14 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(2)
-    engine, _, rest = args.value.partition(":")
-    model, effort_sep, effort = rest.partition("/")
+    engine, model, effort = _parse_stage_model(args.value)
     if model not in _KNOWN_MODELS[engine]:
         print(
             f"警告: モデル名`{model}`は主に使うモデルの一覧（{', '.join(sorted(_KNOWN_MODELS[engine]))}）にありません。"
             "設定は保存します。利用可否は実行時に各engineが判定します。",
             file=sys.stderr,
         )
-    if effort_sep and effort not in _KNOWN_EFFORTS:
+    if effort is not None and effort not in _KNOWN_EFFORTS:
         print(
             f"警告: effort`{effort}`は主に使う値の一覧（{', '.join(sorted(_KNOWN_EFFORTS))}）にありません。"
             "設定は保存します。利用可否は実行時に各engineが判定します。",
@@ -135,6 +136,13 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
     print(f"設定を更新しました: {args.key}={args.value}")
 
 
+def _parse_stage_model(value: str) -> tuple[str, str, str | None]:
+    """検証済み設定値をengine・model・effort（未指定はNone）へ分解する。"""
+    engine, _, rest = value.partition(":")
+    model, effort_sep, effort = rest.partition("/")
+    return engine, model, effort if effort_sep else None
+
+
 def build_parser(config: argparse.ArgumentParser) -> None:
     """`config`サブパーサ配下にshow/get/setサブコマンドを登録する。"""
     sub = config.add_subparsers(dest="config_subcommand")
@@ -142,7 +150,7 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     get = sub.add_parser("get", help="1件以上の設定値を取得する")
     get.add_argument("key", metavar="KEY", nargs="+", help="取得する1件以上のキー（config showの出力キーと同一）。")
     set_ = sub.add_parser("set", help="変更可能な設定値を更新する")
-    set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(sorted(_MUTABLE_KEYS))}")
+    set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}")
     set_.add_argument("value", metavar="VALUE", help="設定する値。")
 
 

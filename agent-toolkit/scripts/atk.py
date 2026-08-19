@@ -25,10 +25,10 @@
 - mq convert-to-plan/set-dependencies: 既存フィードバックの計画実装型への変換・明示依存の更新
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
-- mq process-loop: Claude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
+- mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
-- config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
+- config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 
@@ -610,17 +610,6 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         help=argparse.SUPPRESS,
     )
     loop.add_argument(
-        "--orchestrator",
-        choices=("claude", "codex"),
-        default="claude",
-        help="起動するオーケストレーター（claude又はcodex、既定: claude）。",
-    )
-    loop.add_argument(
-        "--model",
-        default=None,
-        help=("選択したオーケストレーターへ渡すモデル。省略時はclaudeだけopusを使い、codexは設定済みの既定モデルを使う。"),
-    )
-    loop.add_argument(
         "--no-alerts",
         action="store_true",
         help="CI失敗・Dependabotアラートの自動検出を無効化する（既定は有効）。",
@@ -687,7 +676,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_port_type,
         help="待受ポート（環境変数 AGENT_TOOLKIT_SERVE_PORT、設定ファイルからも参照）",
     )
-    config = top.add_parser("config", help="XDG関連パス・codexモデル判定設定を確認・変更する")
+    config = top.add_parser("config", help="XDG関連パス・工程別モデル設定を確認・変更する")
     _config_cmd.build_parser(config)
     managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・列挙・後始末する")
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")

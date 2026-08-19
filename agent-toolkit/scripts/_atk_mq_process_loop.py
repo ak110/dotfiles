@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 
+import _atk_config as _config
 import _atk_mq_alerts as _alerts
 import _console_title
 import _git_command
@@ -76,6 +77,8 @@ _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数の契約を検査できるよう値を固定する。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+_ASK_USER_QUESTION_TIMEOUT_SETTINGS = '{"askUserQuestionTimeout": "5m"}'
 
 
 def _strip_inherited_venv(env: dict[str, str]) -> None:
@@ -460,29 +463,55 @@ def _build_process_loop_prompt(
     return prompt
 
 
+def _resolve_orchestrator_spec() -> tuple[str, str, str]:
+    """orchestrate_model設定を解決し、(orchestrator, model, effort)を返す。
+
+    書式不正（設定ファイルの手編集等）の場合は修正手順を案内してexit 2で終了する。
+    effort未指定は`medium`を補完する。
+    """
+    config = _config._load_config()  # pylint: disable=protected-access
+    value = config.get("orchestrate_model", _config._ORCHESTRATE_MODEL_DEFAULT)  # pylint: disable=protected-access
+    if _config._STAGE_MODEL_PATTERN.fullmatch(value) is None:  # pylint: disable=protected-access
+        print(
+            f"orchestrate_modelの設定値が不正です。`atk config set orchestrate_model {value}`で修正してください。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    orchestrator, model, effort = _config._parse_stage_model(value)  # pylint: disable=protected-access
+    return orchestrator, model, effort or "medium"
+
+
 def _build_session_argv(
     args: argparse.Namespace,
     prompt: str,
     env: dict[str, str],
     *,
+    orchestrator: str,
+    model: str,
+    effort: str,
     resume_pending: bool,
 ) -> tuple[list[str], pathlib.Path | None]:
     """選択したオーケストレーターの対話セッション用argvを構築する。"""
-    if args.orchestrator == "claude":
+    if orchestrator == "claude":
         hook_debug_log = _create_hook_debug_log(env)
-        argv = ["claude", "--debug=hooks", "--debug-file", str(hook_debug_log)]
+        argv = [
+            "claude",
+            "--debug=hooks",
+            "--debug-file",
+            str(hook_debug_log),
+            "--settings",
+            _ASK_USER_QUESTION_TIMEOUT_SETTINGS,
+        ]
         if resume_pending:
             argv.append("--resume" if not args.resume else f"--resume={args.resume}")
         else:
-            model = args.model or "opus"
-            argv.extend(("--permission-mode=auto", "--model", model, "--autocompact", "1m", prompt))
+            argv.extend(("--permission-mode=auto", "--model", model, "--effort", effort, prompt))
         return argv, hook_debug_log
 
     argv = ["codex"]
     if resume_pending:
         argv.append("resume")
-    if args.model is not None:
-        argv.extend(("--model", args.model))
+    argv.extend(("--model", model, "-c", f"model_reasoning_effort={effort}"))
     if resume_pending:
         if args.resume:
             argv.append(args.resume)
@@ -814,6 +843,9 @@ def _run_process_session(
     session_prompt: str,
     env: dict[str, str],
     *,
+    orchestrator: str,
+    model: str,
+    effort: str,
     resume_pending: bool,
     dotfiles_root: pathlib.Path | None,
     mise_refresh_enabled: bool,
@@ -823,6 +855,9 @@ def _run_process_session(
         args,
         session_prompt,
         env,
+        orchestrator=orchestrator,
+        model=model,
+        effort=effort,
         resume_pending=resume_pending,
     )
     if hook_debug_log is not None:
@@ -832,9 +867,9 @@ def _run_process_session(
     result = subprocess.run(
         session_argv,
         check=False,
-        env=_session_env(env, args.orchestrator),
+        env=_session_env(env, orchestrator),
         cwd=session_path,
-        creationflags=_session_creation_flags(args.orchestrator),
+        creationflags=_session_creation_flags(orchestrator),
     )
     _console_title.set_console_title("atk mq process-loop")
     _process_loop_log.append(
@@ -842,8 +877,8 @@ def _run_process_session(
         elapsed_sec=round(time.monotonic() - session_started_at, 3),
         returncode=result.returncode,
     )
-    if not _is_normal_session_exit(args.orchestrator, result.returncode):
-        print(f"{args.orchestrator}がexit code {result.returncode}で異常終了しました。", file=sys.stderr)
+    if not _is_normal_session_exit(orchestrator, result.returncode):
+        print(f"{orchestrator}がexit code {result.returncode}で異常終了しました。", file=sys.stderr)
         sys.exit(result.returncode)
     if args.no_update:
         return False
@@ -912,10 +947,11 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     新規起動は対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
     `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
-    Claude Codeは既定modelの`opus`、権限mode、コンパクション設定を従来どおり使う。
+    オーケストレーター・model・effortは`orchestrate_model`設定（既定`claude:opus[1m]/medium`）から
+    常駐起動時に1回解決する。Claude Codeの新規起動には設定値を渡し、resume時はmodel・effortを上書きしない。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
-    Codexは対話CLIを使い、model未指定時はCodex設定の既定値を使う。
+    Codexは対話CLIを使い、設定値のmodel・effortを起動引数へ渡す。
     Claude Codeは0・-15・15・143、Codexは0を正常終了とする。
     正常終了した場合、
     `--no-update`未指定なら`update-dotfiles`を実行してから
@@ -941,9 +977,10 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     dotfilesを対象とし、更新を有効にした起動ではmiseのlatest指定ツールを起動時と24時間ごとに再評価する。
     成功した`update-dotfiles`直後は再評価時刻を更新し、正常再起動先へ一回限りの内部指定を渡して重複を避ける。
     """
+    orchestrator, model, effort = _resolve_orchestrator_spec()
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
-    prompt = _build_process_loop_prompt(local_path, target_repo_id, args.orchestrator)
+    prompt = _build_process_loop_prompt(local_path, target_repo_id, orchestrator)
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
     mise_refresh_root = dotfiles_root if target_repo_id == _DOTFILES_REPO_ID and not args.no_update else None
@@ -996,14 +1033,14 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0:
                         refresh_before_session = False
-                        print(f"{count}件のフィードバック/回答済みTBDを検知。{args.orchestrator}へ委譲します。")
+                        print(f"{count}件のフィードバック/回答済みTBDを検知。{orchestrator}へ委譲します。")
                         current_resume_pending = resume_pending
                         if current_resume_pending:
                             resume_pending = False
                         prepared_target = _prepare_session_target(
                             local_path,
                             target_repo_id,
-                            args.orchestrator,
+                            orchestrator,
                             prompt,
                             worktree_name=args.worktree,
                             resume_pending=current_resume_pending,
@@ -1019,6 +1056,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             session_path,
                             session_prompt,
                             env,
+                            orchestrator=orchestrator,
+                            model=model,
+                            effort=effort,
                             resume_pending=current_resume_pending,
                             dotfiles_root=dotfiles_root,
                             mise_refresh_enabled=mise_refresh_root is not None,
