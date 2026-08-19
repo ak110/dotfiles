@@ -1326,8 +1326,8 @@ def test_plan_impl_escalation_is_self_contained_and_uses_existing_routes() -> No
         assert phrase in executor
     assert "認可範囲外の変更を成果へ混入させない" in caller
     assert "`agent-toolkit:bugfix`を起動" in caller
-    assert "原因分析結果をモード別経路でフィードバックへ送る" in caller
-    assert "ユーザー判断事項も同じモード別確認経路へ送" in caller
+    assert "原因分析結果を確認経路でフィードバックへ送る" in caller
+    assert "ユーザー判断事項も同じ確認経路へ送" in caller
 
 
 def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
@@ -1626,7 +1626,7 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "通常型の主題だけを受け取った場合" in add_feedback
     assert "技術主張に該当する証拠集合を調査" in add_feedback
     assert "投入元の証拠を同じ対象と主張へ照合" in add_feedback
-    assert "利用者依存事項はモード別確認又はTBDへ分離" in add_feedback
+    assert "利用者依存事項は確認又はTBDへ分離" in add_feedback
     assert "技術的未確定が通常型本文へ残っていない" in add_feedback
     assert "`agent-toolkit:plan-mode`の調査成果を証拠として再利用" in add_feedback
     assert "保存直前にactive一覧" in add_feedback
