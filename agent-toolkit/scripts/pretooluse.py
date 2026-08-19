@@ -33,7 +33,7 @@ mcp__codex__codex-reply:
 
 Bash:
 
-- `sleep`直後に読み取り専用の状態確認コマンドを連結する前景待機の検出 (`warn/block`)
+- 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
@@ -2636,9 +2636,17 @@ def _scan_uv_options(
     return index, "unresolved"
 
 
-# --- Bash: sleep直後の読み取り専用状態確認連結の検出 ---
+# --- Bash: 固定sleep後に処理が続く前景待機の検出 ---
 
 _SLEEP_COMMAND = "sleep"
+_LONG_SLEEP_SECONDS = 30
+"""前景の固定待機として扱う`sleep`の秒数。
+
+観測した固定待機は420秒から570秒であり、この範囲を後続コマンドの種類によらず検出する。
+一方で短い待機は処理の一部として用いられるため、既存の通過検体`sleep 5`を含む範囲は
+読み取り専用の状態確認コマンドが続く場合だけを検出対象とする。
+"""
+_LOOP_KEYWORDS = frozenset({"until", "while", "for"})
 _POLL_COMMAND_PREFIXES = (
     ("ls",),
     ("cat",),
@@ -2819,6 +2827,30 @@ def _split_serial_shell_commands(command: str) -> list[str]:
     return [segment for segment in segments if segment]
 
 
+def _is_long_fixed_sleep(command: str) -> bool:
+    """コマンドが閾値以上の数値リテラルを与える`sleep`単体であるかを判定する。"""
+    try:
+        args = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    if len(args) != 2 or args[0] != _SLEEP_COMMAND:
+        return False
+    try:
+        seconds = float(args[1])
+    except ValueError:
+        return False
+    return seconds >= _LONG_SLEEP_SECONDS
+
+
+def _starts_loop_keyword(command: str) -> bool:
+    """コマンドの先頭トークンが条件ループの予約語であるかを判定する。"""
+    try:
+        args = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    return bool(args) and args[0] in _LOOP_KEYWORDS
+
+
 def _is_sleep_poll_pair(left: str, right: str) -> bool:
     """隣接する2コマンドがsleepと読み取り専用状態確認の組であるかを判定する。"""
     try:
@@ -2838,16 +2870,26 @@ def _check_bash_sleep_poll_pattern(
     session_id: str,
     run_in_background: bool,
 ) -> str | None:
-    """sleep直後の読み取り専用状態確認を初回warn、同一セッション内再検出でblockする。
+    """固定sleep後に処理が続く前景待機を初回warn、同一セッション内再検出でblockする。
+
+    検出条件は、閾値以上の`sleep`の直後に任意のコマンドが続く形と、
+    閾値未満の`sleep`の直後に読み取り専用の状態確認コマンドが続く形の2つとする。
+    前者は待機後に続くコマンドの種類に依存しないため、状態確認コマンド名の追随保守を要しない。
+    条件成立で抜けるループ（`until`・`while`・`for`）内の`sleep`は検出対象から除く。
 
     簡略化: クォート外の`;`・`&&`直列連結だけを検出する,
     既知の限界: サブシェルで包んだ状態確認は検出しない,
     見直し契機: サブシェル包みの反復ポーリングを実測した場合
     """
-    if run_in_background or re.match(r"^\s*until\b", command):
+    if run_in_background:
         return None
     segments = _split_serial_shell_commands(command)
-    if not any(_is_sleep_poll_pair(left, right) for left, right in zip(segments, segments[1:], strict=False)):
+    if any(_starts_loop_keyword(segment) for segment in segments):
+        return None
+    if not any(
+        _is_long_fixed_sleep(left) or _is_sleep_poll_pair(left, right)
+        for left, right in zip(segments, segments[1:], strict=False)
+    ):
         return None
 
     already_detected = False
@@ -2868,14 +2910,14 @@ def _check_bash_sleep_poll_pattern(
     if already_detected:
         print(
             _llm_notice(
-                f"block: foreground sleep followed by a status check was detected again in this session.\n{guidance}",
+                f"block: foreground sleep followed by another command was detected again in this session.\n{guidance}",
                 tag="block",
             ),
             file=sys.stderr,
         )
         return "block"
     return _llm_notice(
-        f"warn: foreground sleep followed by a status check may cause repeated polling.\n{guidance}",
+        f"warn: foreground sleep followed by another command may cause repeated polling.\n{guidance}",
         tag="warn",
     )
 

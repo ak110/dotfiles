@@ -6,7 +6,7 @@
 """Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
 
 既定モードは時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
-`--warn`・`--grep`・`--detail`の照会モードは、抽出結果に無い詳細をtranscriptから
+`--warn`・`--grep`・`--detail`・`--hook-notices`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime
 import json
 import os
@@ -39,6 +40,9 @@ _ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _SHELL_NAMES = frozenset({"sh", "bash", "zsh"})
 _SCRIPT_RUNNERS = frozenset({"uv", "uvx", "env"})
 _PERSISTED_OUTPUT_PREFIX = "<persisted-output>"
+_HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message", "hook_blocking_error", "hook_success"})
+_HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
+_HOOK_NOTICE_KIND_LENGTH = 80
 STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
 SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
 _FALLBACK_TEXT = (
@@ -1356,6 +1360,120 @@ def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[
     return events
 
 
+class _HookNoticeKey(NamedTuple):
+    """通知の分類軸。標識を持たない通知では`hook`と`tag`が`None`になる。"""
+
+    hook: str | None
+    hook_name: str | None
+    tag: str | None
+    kind_text: str
+
+
+def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
+    """hook実行の記録から通知本文だけを集計し、分類軸ごとの件数を件数降順で返す。
+
+    母集団はhook実行の記録4種であり、`--warn`のような本文への文字列一致は用いない。
+    hookの発動を伴わない本文（ソースの引用、会話中の言及）は記録の種別で除かれる。
+    同一ツール呼び出しの通知は実行成功記録の標準出力と追加コンテキストの双方へ格納されるため、
+    分類軸とツール呼び出し識別子の組で重複を除いてから数える。
+    """
+    seen: set[tuple[str | None, _HookNoticeKey]] = set()
+    counts: collections.Counter[_HookNoticeKey] = collections.Counter()
+    for record in records:
+        for hook_record in _hook_records(record.entry):
+            tool_use_id = hook_record.get("toolUseID")
+            hook_name = hook_record.get("hookName")
+            for body in _hook_notice_bodies(hook_record):
+                key = _hook_notice_key(body, hook_name if isinstance(hook_name, str) else None)
+                if key is None:
+                    continue
+                identity = (tool_use_id if isinstance(tool_use_id, str) else None, key)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                counts[key] += 1
+    events: list[dict[str, Any]] = [
+        {
+            "kind": "hook-notice",
+            "hook": key.hook,
+            "hook_name": key.hook_name,
+            "tag": key.tag,
+            "kind_text": key.kind_text,
+            "count": count,
+        }
+        for key, count in sorted(counts.items(), key=lambda item: (-item[1], tuple(str(part) for part in item[0])))
+    ]
+    events.append({"kind": "summary", "count": sum(counts.values())})
+    return events
+
+
+def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """エントリを再帰的にたどり、hook実行の記録を出現順に集める。
+
+    記録の格納先は`attachment`配下などruntimeの版で変わるため、位置ではなく`type`で判定する。
+    """
+    found: list[dict[str, Any]] = []
+    _collect_hook_records(entry, found)
+    return found
+
+
+def _collect_hook_records(value: Any, found: list[dict[str, Any]]) -> None:
+    if isinstance(value, dict):
+        if value.get("type") in _HOOK_RECORD_TYPES:
+            found.append(value)
+        for item in value.values():
+            _collect_hook_records(item, found)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_hook_records(item, found)
+
+
+def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
+    """hook実行の記録から通知本文を、記録の種別に応じた格納先から取り出す。
+
+    実行成功記録は標準出力の追加コンテキストと標準エラー出力の双方を通知の格納先とする。
+    追加コンテキストを伴わずに標準エラー出力だけで警告を返すhookがあるため、両方を対象とする。
+    """
+    record_type = hook_record.get("type")
+    content = hook_record.get("content")
+    if record_type == "hook_additional_context":
+        return [item for item in content if isinstance(item, str)] if isinstance(content, list) else []
+    if record_type == "hook_system_message":
+        return [content] if isinstance(content, str) else []
+    if record_type == "hook_blocking_error":
+        blocking_error = hook_record.get("blockingError")
+        body = blocking_error.get("blockingError") if isinstance(blocking_error, dict) else None
+        return [body] if isinstance(body, str) else []
+    bodies: list[str] = []
+    stdout = _json_object(hook_record.get("stdout"))
+    specific_output = stdout.get("hookSpecificOutput") if stdout is not None else None
+    additional_context = specific_output.get("additionalContext") if isinstance(specific_output, dict) else None
+    if isinstance(additional_context, str):
+        bodies.append(additional_context)
+    stderr = hook_record.get("stderr")
+    if isinstance(stderr, str):
+        bodies.append(stderr)
+    return bodies
+
+
+def _hook_notice_key(body: str, hook_name: str | None) -> _HookNoticeKey | None:
+    """通知本文を、hook識別子・タグ・正規化した種別へ分解する。空の本文は`None`を返す。
+
+    標識を持たない本文は識別子とタグを`None`とし、発動元と種別だけで分類する。
+    種別は、標識を除いた本文の連続する空白を単一の空白へ正規化した先頭一定長とする。
+    本文全体を種別とすると対象パスなどの可変部により同種の通知が複数の種別へ分かれ、
+    長さが不足すると別判定の通知が同一種別へ統合されるため、長さは実測に基づいて確定する。
+    """
+    normalized = " ".join(body.split())
+    if not normalized:
+        return None
+    matched = _HOOK_NOTICE_MARKER.match(normalized)
+    hook = matched.group("hook") if matched is not None else None
+    tag = matched.group("tag") if matched is not None else None
+    text = normalized[matched.end() :].strip() if matched is not None else normalized
+    return _HookNoticeKey(hook or None, hook_name, tag or None, text[:_HOOK_NOTICE_KIND_LENGTH])
+
+
 def _scannable_records(records: list[_Record]) -> list[_Record]:
     """照会の走査対象から、本スクリプト自身の実行記録を除いたレコードを返す。
 
@@ -1744,6 +1862,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
         "サブエージェント別集計とCodexスレッド別集計はClaude Code形式のtranscriptでのみ出力する。",
     )
+    parser.add_argument(
+        "--hook-notices",
+        action="store_true",
+        help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
+        "格納された通知本文だけを集計し、hook識別子・発動元・タグ・種別ごとの件数と"
+        "重複を除いた通知件数を照会する。",
+    )
     return parser
 
 
@@ -1753,8 +1878,8 @@ def main(argv: list[str] | None = None) -> int:
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if sum((args.warn, args.grep is not None, args.detail is not None, args.stats)) > 1:
-        return _print_error("--warn・--grep・--detail・--statsは併用できない")
+    if sum((args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices)) > 1:
+        return _print_error("--warn・--grep・--detail・--stats・--hook-noticesは併用できない")
 
     records = _load_records(args.transcript_path)
     if records is None:
@@ -1781,6 +1906,9 @@ def main(argv: list[str] | None = None) -> int:
             _print_events(_fallback())
             return 0
         _print_events(_stats_events(records, runtime, args.transcript_path or ""))
+        return 0
+    if args.hook_notices:
+        _print_events(_hook_notice_events(records))
         return 0
 
     _print_events(_extract_records(records))

@@ -278,7 +278,9 @@ def _is_managed_temp_command(tokens: list[str]) -> bool:
     try:
         _managed_temp.validate_managed_temp(pathlib.Path(value))
     except (OSError, ValueError, _managed_temp.ManagedTempError):
-        return False
+        # 実体を失い登録だけが残る管理対象は真正性検証を通過しない。
+        # 登録の整合だけを行うcleanupは正規コマンドの範囲に含めるため、当該条件を別途判定する。
+        return _managed_temp.is_missing_registered_temp(pathlib.Path(value))
     return True
 
 

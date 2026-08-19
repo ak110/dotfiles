@@ -9,6 +9,7 @@ import permissionrequest as hook
 import pytest
 
 _SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_MARKER_NAME = ".agent-toolkit-managed-temp.json"
 
 
 @pytest.fixture(name="_disable_tmp_root_allow", autouse=True)
@@ -337,6 +338,39 @@ class TestShouldAllowBash:
         assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
         assert hook.should_allow_bash("atk managed-temp list --prefix agent-work", str(tmp_path)) is True
         assert hook.should_allow_bash("atk managed-temp list --prefix agent-work extra", str(tmp_path)) is False
+
+    def test_managed_temp_cleanup_of_a_missing_target_allowed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """実体を失い登録だけが残る管理対象のcleanupを登録の整合として許可する。"""
+        temp_root = tmp_path / "temp"
+        temp_root.mkdir()
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+        target = _managed_temp.create_managed_temp("permission-missing")
+        (target / _MARKER_NAME).unlink()
+        target.rmdir()
+
+        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
+
+    def test_managed_temp_cleanup_of_an_untrusted_or_unregistered_target_not_allowed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """実体が残り検証に失敗する管理対象と、登録の無い不在パスは許可しない。"""
+        temp_root = tmp_path / "temp"
+        temp_root.mkdir()
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+        target = _managed_temp.create_managed_temp("permission-untrusted")
+        (target / _MARKER_NAME).unlink()
+
+        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is False
+        unregistered = temp_root / "permission-absent"
+        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {unregistered}", str(tmp_path)) is False
 
     @pytest.mark.parametrize(
         "command",

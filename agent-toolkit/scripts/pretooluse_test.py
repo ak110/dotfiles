@@ -1456,7 +1456,7 @@ class TestHookEntryPointsPep723Dependencies:
 
 
 class TestBashSleepPollPattern:
-    """sleep直後の読み取り専用な状態確認連結を初回warn・再検出blockで扱う。"""
+    """固定sleep後に処理が続く前景待機を初回warn・再検出blockで扱う。"""
 
     @pytest.mark.parametrize(
         ("command", "session_id"),
@@ -1489,6 +1489,10 @@ class TestBashSleepPollPattern:
                 "sleep 1 \\\n; git status --short",
                 "sleep-poll-first-16",
             ),
+            # 閾値以上の固定待機は、後続コマンドが状態確認コマンド一覧に無くても検出する。
+            ("sleep 570; atk watch --worktree /tmp/lane-example/wt", "sleep-poll-first-17"),
+            ("sleep 420; cd /tmp/lane-example/wt && ./scripts/check_state.sh", "sleep-poll-first-18"),
+            ("sleep 30; echo done", "sleep-poll-first-19"),
         ],
     )
     def test_first_detection_warns_and_allows(
@@ -1526,6 +1530,14 @@ class TestBashSleepPollPattern:
             ("sleep 1", "sleep-poll-allow-1"),
             ("sleep 1; echo done", "sleep-poll-allow-2"),
             ("until ps -p 123 >/dev/null; do sleep 5; done", "sleep-poll-allow-3"),
+            # 閾値未満の待機は、後続が状態確認コマンドでない限り通過させる。
+            ("sleep 5; echo done", "sleep-poll-allow-25"),
+            ("sleep 29; echo done", "sleep-poll-allow-26"),
+            # 条件成立で抜けるループ内の長い待機は、ループ予約語の位置を問わず通過させる。
+            ("until test -f /tmp/marker; do echo waiting; sleep 60; done", "sleep-poll-allow-27"),
+            ("while true; do echo waiting; sleep 60; done", "sleep-poll-allow-28"),
+            ("for i in 1 2 3; do echo $i; sleep 60; done", "sleep-poll-allow-29"),
+            ("attempt=0; until test -f /tmp/marker; do echo waiting; sleep 60; done", "sleep-poll-allow-30"),
             ("printf 'sleep 1; git status'", "sleep-poll-allow-4"),
             ("sleep 1 || git status --short", "sleep-poll-allow-5"),
             ("sleep 1 | cat", "sleep-poll-allow-6"),

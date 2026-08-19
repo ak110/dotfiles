@@ -515,6 +515,52 @@ class TestManagedTempPosix:
         assert capsys.readouterr().err == ""
         assert not registry.exists()
 
+    def test_cleanup_consumes_registry_of_a_missing_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """実体を失った管理対象のcleanupは、真正性検証を経ず登録の削除だけで完了する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("missing-target")
+        registry = subject._registry_path(target)
+        (target / _MARKER_NAME).unlink()
+        target.rmdir()
+
+        assert subject.is_missing_registered_temp(target) is True
+        subject.cleanup_managed_temp(target)
+        assert not registry.exists()
+
+    def test_cleanup_of_an_existing_untrusted_target_keeps_failing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """実体が残り真正性検証に失敗する管理対象は、登録も実体も消費せず失敗する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("untrusted-target")
+        registry = subject._registry_path(target)
+        (target / _MARKER_NAME).unlink()
+
+        assert subject.is_missing_registered_temp(target) is False
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(target)
+        assert target.exists()
+        assert registry.exists()
+
+    def test_cleanup_of_a_missing_target_without_registry_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """登録簿に一致する記録を持たない不在パスは消滅と判定せず失敗する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        unregistered = tmp_path / "unregistered-target"
+
+        assert subject.is_missing_registered_temp(unregistered) is False
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(unregistered)
+
     @pytest.mark.parametrize("prefix", ["", "UPPER", "under_score", "leading-", "-leading", "dot.name"])
     def test_create_rejects_invalid_prefix(
         self,
@@ -864,6 +910,39 @@ class TestManagedTempWindows:
         assert {entry["path"] for entry in subject.list_managed_temp()} == {str(valid)}
         assert capsys.readouterr().err == ""
         assert not registry.exists()
+
+    def test_cleanup_consumes_registry_of_a_missing_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Windowsでも実体を失った管理対象のcleanupは登録の削除だけで完了する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-missing-target")
+        registry = subject._registry_path(target)
+        (target / _MARKER_NAME).unlink()
+        target.rmdir()
+
+        assert subject.is_missing_registered_temp(target) is True
+        subject.cleanup_managed_temp(target)
+        assert not registry.exists()
+
+    def test_cleanup_of_an_existing_untrusted_target_keeps_failing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Windowsでも実体が残り検証に失敗する管理対象は登録も実体も消費せず失敗する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-untrusted-target")
+        registry = subject._registry_path(target)
+        (target / _MARKER_NAME).unlink()
+
+        assert subject.is_missing_registered_temp(target) is False
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(target)
+        assert target.exists()
+        assert registry.exists()
 
     def test_external_writer_acl_validate_and_cleanup(
         self,

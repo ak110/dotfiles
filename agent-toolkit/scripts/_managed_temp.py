@@ -927,6 +927,23 @@ def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
     raise ManagedTempError(f"未対応platform: {os.name}")
 
 
+def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
+    """登録だけが残り実体を失った管理対象であるかを判定する。
+
+    真を返す条件は、一時領域直下の絶対パスであること、当該pathを記録した登録ファイルが
+    存在すること、実体が存在しないことの3つをすべて満たす場合とする。
+    実体を失った領域には当該領域を使用中の主体が存在しないため、この条件に限り
+    真正性検証（所有者・権限・マーカー）を経ずに登録の消滅として扱う。
+    実体が残る管理対象は本判定の対象外とし、従来どおり真正性検証で扱う。
+    """
+    try:
+        _, path = _validate_path_shape(pathlib.Path(path_arg))
+        registry = _load_private_json(_registry_path(path))
+    except (OSError, ValueError, ManagedTempError):
+        return False
+    return registry.get("path") == str(path) and not os.path.lexists(path)
+
+
 def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
     """真正性検証を通過した管理対象を作成時刻順で返す。
 
@@ -946,7 +963,7 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
             path = pathlib.Path(recorded_path)
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
-            if not os.path.lexists(path):
+            if is_missing_registered_temp(path):
                 registry_path.unlink(missing_ok=True)
                 continue
             validate_managed_temp(path)
@@ -1080,8 +1097,14 @@ def _cleanup_windows(
 
 
 def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
-    """検証済みの管理対象一時ディレクトリだけを後始末する。"""
+    """検証済みの管理対象一時ディレクトリだけを後始末する。
+
+    実体を失った管理対象は、登録ファイルの削除だけで整合させる。
+    """
     root, path = _validate_path_shape(pathlib.Path(path_arg))
+    if is_missing_registered_temp(path):
+        _registry_path(path).unlink(missing_ok=True)
+        return
     validated = _validate_posix(path) if os.name == "posix" else _validate_windows(path)
     if os.name == "nt":
         # 利用中に追加された受理済みACEを除去し、隔離以降を現在利用者だけのDACLで実行する。

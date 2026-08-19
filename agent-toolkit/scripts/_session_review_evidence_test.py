@@ -3004,3 +3004,179 @@ def test_stats_takes_codex_hint_from_input_without_arguments(tmp_path: pathlib.P
         {"kind": "stats-slow-call", "tool": "exec", "seconds": 6.0, "line": 4, "hint": command_input},
         {"kind": "stats-slow-call", "tool": "exec", "seconds": 2.0, "line": 2, "hint": command_input},
     ]
+
+
+def test_hook_notices_mode_is_exclusive_with_other_query_modes(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """構造化集計モードも他の照会モードとの併用を引数誤用として拒否する。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--hook-notices", "--warn"]) == 2
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["error"]
+    assert "--hook-notices" in events[0]["text"]
+
+
+def _hook_attachment(attachment: dict) -> dict:
+    """hook実行の記録をtranscriptのエントリ形式へ包む。"""
+    return {"type": "attachment", "attachment": attachment}
+
+
+def test_hook_notices_mode_counts_notices_by_hook_origin_tag_and_kind(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """hook実行の記録4種の通知だけを、hook識別子・発動元・タグ・種別ごとに数える。
+
+    同一ツール呼び出しの標準出力と追加コンテキストへ重複して格納された通知は1件へ集約し、
+    追加コンテキストを伴わない標準エラー出力の通知と、標識を持たないシステムメッセージも計上する。
+    hookの記録でない本文（会話中の引用）は同じ文字列でも母集団へ含めない。
+    """
+    truncation = "[auto-generated: agent-toolkit/pretooluse][warn] warn: 出力を切り詰めている"
+    fixed_wait = "[auto-generated: agent-toolkit/pretooluse][block] block: 固定待機を検出した"
+    stop_notice = "[auto-generated: dotfiles/claude_hook_stop] 応答の完了可否を明示すること"
+    system_message = "[agent-toolkit] auto-inserted --decorate into git log."
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {
+                    "type": "hook_success",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "stdout": json.dumps({"hookSpecificOutput": {"additionalContext": truncation}}, ensure_ascii=False),
+                    "stderr": "",
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "content": [truncation],
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_success",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-2",
+                    "stdout": "{}",
+                    "stderr": fixed_wait,
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_success",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-3",
+                    "stdout": "{}",
+                    "stderr": fixed_wait,
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_system_message",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-4",
+                    "content": system_message,
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_blocking_error",
+                    "hookName": "Stop",
+                    "toolUseID": "call-5",
+                    "blockingError": {"blockingError": stop_notice},
+                }
+            ),
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": truncation}]}},
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert events[-1] == {"kind": "summary", "count": 5}
+    assert events[0] == {
+        "kind": "hook-notice",
+        "hook": "agent-toolkit/pretooluse",
+        "hook_name": "PreToolUse:Bash",
+        "tag": "block",
+        "kind_text": "block: 固定待機を検出した",
+        "count": 2,
+    }
+    assert sorted(json.dumps(event, ensure_ascii=False, sort_keys=True) for event in events[1:-1]) == sorted(
+        json.dumps(event, ensure_ascii=False, sort_keys=True)
+        for event in [
+            {
+                "kind": "hook-notice",
+                "hook": "agent-toolkit/pretooluse",
+                "hook_name": "PreToolUse:Bash",
+                "tag": "warn",
+                "kind_text": "warn: 出力を切り詰めている",
+                "count": 1,
+            },
+            {
+                "kind": "hook-notice",
+                "hook": "dotfiles/claude_hook_stop",
+                "hook_name": "Stop",
+                "tag": None,
+                "kind_text": "応答の完了可否を明示すること",
+                "count": 1,
+            },
+            {
+                "kind": "hook-notice",
+                "hook": None,
+                "hook_name": "PreToolUse:Bash",
+                "tag": None,
+                "kind_text": system_message,
+                "count": 1,
+            },
+        ]
+    )
+
+
+def test_hook_notices_mode_separates_kinds_by_leading_body_and_skips_empty_bodies(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """先頭一定長が異なる通知を別種別として数え、本文が空の記録は数えない。"""
+    prefix = "[auto-generated: agent-toolkit/pretooluse][warn] "
+    head = "a" * 79  # 種別キーの長さ80文字の直前まで同一とし、80文字目だけを違えて別種別とする
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "content": [f"{prefix}{head}1 対象A", f"{prefix}{head}2 対象B"],
+                }
+            ),
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-2",
+                    "content": [f"{prefix}{head}1 対象C"],
+                }
+            ),
+            _hook_attachment(
+                {"type": "hook_success", "hookName": "Stop", "toolUseID": "call-3", "stdout": "{}", "stderr": "   "}
+            ),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert [(event["kind_text"], event["count"]) for event in events[:-1]] == [
+        (f"{head}1", 2),
+        (f"{head}2", 1),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 3}
