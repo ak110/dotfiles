@@ -493,25 +493,29 @@ def _write_plan_with_base_commit(tmp_path: pathlib.Path, value: str | None) -> p
     return plan
 
 
-def test_add_operation_rejects_plan_file_with_mismatched_base_commit(
+def test_add_operation_warns_on_mismatched_base_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """計画ベースと`target_commit`の不一致は警告に留め、投入を継続する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
 
-    with pytest.raises(WebInputError, match="ベースコミット"):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="b" * 40,
-            plan_file=str(plan),
-        )
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="b" * 40,
+        plan_file=str(plan),
+    )
 
-    assert not list((notes / "inbox").iterdir())
+    assert len(generated) == 1
+    captured_err = capsys.readouterr().err
+    assert f"計画ファイル={'a' * 40}" in captured_err
+    assert f"target_commit={'b' * 40}" in captured_err
 
 
 def test_add_operation_accepts_plan_file_with_matching_base_commit(
@@ -534,11 +538,12 @@ def test_add_operation_accepts_plan_file_with_matching_base_commit(
     assert len(generated) == 1
 
 
-def test_add_operation_rejects_annotated_base_commit_mismatch(
+def test_add_operation_warns_on_annotated_base_commit_mismatch(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """閉じバッククォート以降に注記がある既存記法でもHEAD照合を省略しない。"""
+    """閉じバッククォート以降に注記がある既存記法でも照合を省略しない。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
@@ -546,18 +551,18 @@ def test_add_operation_rejects_annotated_base_commit_mismatch(
         encoding="utf-8",
     )
 
-    with pytest.raises(WebInputError, match="ベースコミット"):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="b" * 40,
-            plan_file=str(plan),
-        )
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="b" * 40,
+        plan_file=str(plan),
+    )
 
-    assert not list((notes / "inbox").iterdir())
+    assert len(generated) == 1
+    assert f"計画ファイル={'a' * 40}" in capsys.readouterr().err
 
 
 def test_add_operation_rejects_spoofed_or_duplicate_plan_metadata(
@@ -590,7 +595,9 @@ def test_add_operation_rejects_spoofed_or_duplicate_plan_metadata(
 def test_add_operation_ignores_blockquoted_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """引用中のメタ情報は候補に採らず、本文側の値で照合結果を警告する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
@@ -599,18 +606,18 @@ def test_add_operation_ignores_blockquoted_plan_metadata(
         encoding="utf-8",
     )
 
-    with pytest.raises(WebInputError, match="ベースコミット"):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
 
-    assert not list((notes / "inbox").iterdir())
+    assert len(generated) == 1
+    assert f"計画ファイル={'b' * 40}" in capsys.readouterr().err
 
 
 def test_add_operation_warns_when_plan_file_lacks_base_commit(
@@ -795,7 +802,9 @@ def test_add_operation_warns_when_legacy_plan_lacks_metadata(
 def test_add_operation_ignores_base_commit_inside_metadata_code_fence(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """コードフェンス内のメタ情報は候補に採らず、フェンス外の値で照合結果を警告する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
@@ -803,18 +812,18 @@ def test_add_operation_ignores_base_commit_inside_metadata_code_fence(
         encoding="utf-8",
     )
 
-    with pytest.raises(WebInputError, match="ベースコミット"):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
 
-    assert not list((notes / "inbox").iterdir())
+    assert len(generated) == 1
+    assert f"計画ファイル={'b' * 40}" in capsys.readouterr().err
 
 
 def test_add_operation_rejects_duplicate_base_commit_candidates(

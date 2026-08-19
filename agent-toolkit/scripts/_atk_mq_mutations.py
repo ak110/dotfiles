@@ -713,7 +713,6 @@ def convert_entry_to_plan(
     plan_file: str,
     depends_on: tuple[str, ...] | None = None,
     target_repo: str | None = None,
-    local_worktree: pathlib.Path | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
     """既存フィードバックを計画実装型へ変換し、保存済みメタデータを返す。"""
@@ -753,7 +752,6 @@ def convert_entry_to_plan(
         _add._verify_plan_base_commit(  # pylint: disable=protected-access
             plan_path,
             target_commit if isinstance(target_commit, str) else None,
-            local_worktree=local_worktree,
         )
         if depends_on is None and "depends_on" not in data:
             legacy_dependencies = _legacy_entry_dependencies_for_conversion(data, path.name)
@@ -783,7 +781,7 @@ def convert_entry_to_plan(
 
 def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """convert-to-planサブコマンドを実行する。"""
-    target_repo, local_worktree = _add.resolve_add_target(args.target_repo)
+    target_repo, _local_worktree = _add.resolve_add_target(args.target_repo)
     try:
         details = convert_entry_to_plan(
             private_notes,
@@ -791,7 +789,6 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
             plan_file=args.plan_file,
             depends_on=tuple(args.depends_on) if args.depends_on is not None else None,
             target_repo=target_repo,
-            local_worktree=local_worktree,
         )
     except WebInputError as error:
         print(f"変換を拒否しました: {error}", file=sys.stderr)
