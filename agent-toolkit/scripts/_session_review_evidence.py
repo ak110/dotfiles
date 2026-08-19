@@ -774,8 +774,19 @@ def _latest_claude_usages(records: list[_Record]) -> list[tuple[_Record, dict[st
     return list(latest.values())
 
 
-def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int], int]]:
-    usages: list[tuple[_Record, dict[str, int], int]] = []
+def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
+    """各`token_count`レコードの`info.last_token_usage`（1リクエストの実消費）を返す。
+
+    同じレコードの`info.total_token_usage`はセッション内の累積値だが、Codexは過去のチェックポイントへ
+    巻き戻すと累積器を巻き戻し先の値へ戻して再累積する。巻き戻し後の値には巻き戻し先までの
+    消費が既に含まれるため、減少を境界とみなして減少前の値を加算すると当該プレフィックスを二重計上する
+    （実測: 累積が`1246611`から`579472`へ減少した記録で、減少後の値から同レコードの
+    `last_token_usage.total_tokens`を引いた`490803`が8レコード前の累積値と一致した。
+    区間合算方式では実消費`3086405`に対し`3577208`を報告していた）。
+    `last_token_usage`は1リクエスト当たりの実消費であり、巻き戻しの有無にかかわらず単純加算で
+    セッション全体の消費量が得られる（実測: 走査した4398 rolloutの全`token_count`レコードに存在する）。
+    """
+    usages: list[tuple[_Record, dict[str, int]]] = []
     for record in records:
         payload = record.entry.get("payload")
         if not isinstance(payload, dict) or payload.get("type") != "token_count":
@@ -783,42 +794,11 @@ def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str,
         info = payload.get("info")
         if not isinstance(info, dict):
             continue
-        total_usage = info.get("total_token_usage")
         last_usage = info.get("last_token_usage")
-        if not isinstance(total_usage, dict):
+        if not isinstance(last_usage, dict):
             continue
-        tokens = {key: _token_value(total_usage.get(key)) for key in _CODEX_TOKEN_KEYS}
-        context = _token_value(last_usage.get("input_tokens")) if isinstance(last_usage, dict) else 0
-        usages.append((record, tokens, context))
+        usages.append((record, {key: _token_value(last_usage.get(key)) for key in _CODEX_TOKEN_KEYS}))
     return usages
-
-
-def _codex_usage_total(tokens: dict[str, int]) -> int:
-    """区間の単調性判定に用いる累積量を返す。
-
-    `total_tokens`は入力と出力の合計であり、当該キーを持たない記録では成分から同値を求める。
-    """
-    return tokens.get("total_tokens") or tokens.get("input_tokens", 0) + tokens.get("output_tokens", 0)
-
-
-def _codex_cumulative_tokens(usages: list[tuple[_Record, dict[str, int], int]]) -> dict[str, int]:
-    """単調増加区間ごとの最終値を合算した累積トークンを返す。
-
-    Codexの`info.total_token_usage`は区間の切り替わりでリセットされ、セッション全体では単調累積ではない
-    （実測で1セッション内の複数回のリセットを観測）。最後の値だけを採用すると、リセット前の各区間の消費が
-    まるごと欠落し、リセットが生じる長時間・高コストのスレッドを選択的に過小報告する。
-    そのため直前より値が減少した位置を区間の境界とみなし、各区間の最終値を合算する。
-    リセットが生じない記録では最後の値と一致する。
-    """
-    totals: dict[str, int] = {key: 0 for key in _CODEX_TOKEN_KEYS}
-    previous: dict[str, int] | None = None
-    for _, tokens, _ in usages:
-        if previous is not None and _codex_usage_total(tokens) < _codex_usage_total(previous):
-            _add_tokens(totals, previous)
-        previous = tokens
-    if previous is not None:
-        _add_tokens(totals, previous)
-    return totals
 
 
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
@@ -849,10 +829,12 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
     usages = _codex_token_usages(records)
     if not usages:
         return summary
-    tokens = _codex_cumulative_tokens(usages)
+    tokens = {key: 0 for key in _CODEX_TOKEN_KEYS}
+    for _, usage in usages:
+        _add_tokens(tokens, usage)
     summary.update(
         tokens=tokens,
-        max_context_tokens=max(context for _, _, context in usages),
+        max_context_tokens=max(usage["input_tokens"] for _, usage in usages),
         api_messages=len(usages),
     )
     return summary
@@ -1095,17 +1077,10 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
                 }
             )
     else:
-        for record, _, _ in _codex_token_usages(records):
-            payload = record.entry.get("payload")
-            info = payload.get("info") if isinstance(payload, dict) else None
-            usage = info.get("last_token_usage") if isinstance(info, dict) else None
-            if not isinstance(usage, dict):
-                continue
-            # `last_token_usage`は`total_token_usage`と同じ6成分を持ち、`cached_input_tokens`が
-            # `input_tokens`へ内包される関係も同じであるため、同じ変換でClaude形式の4成分へ揃える。
+        for record, raw in _codex_token_usages(records):
+            # `cached_input_tokens`が`input_tokens`へ内包される関係は`last_token_usage`でも同じであり、
             # 変換しないとキャッシュ済み入力が非キャッシュ入力の欄へ混入し、
             # 同じ走行の`stats-total`（変換済み）と数値が矛盾する。
-            raw = {key: _token_value(usage.get(key)) for key in _CODEX_TOKEN_KEYS}
             normalized = _codex_normalized_tokens(raw)
             candidates.append(
                 {
@@ -1132,6 +1107,8 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
     3区分は記録ファイルが互いに排他であり、トークンが重複しない。
     Codex形式の内訳はClaude形式と成分の意味が異なるため、合算前に`_codex_normalized_tokens`で
     4成分へ変換する。メイン記録自体がCodex形式である場合も同じ変換を適用する。
+    変換は成分ごとの加減算だけで構成され、`cached_input_tokens`は各レコードで`input_tokens`へ
+    内包されるため、レコード単位で変換してから合算した値と、合算してから変換した値は一致する。
     個別表示の`stats-summary`と`stats-codex-thread`はCodexの全成分をそのまま表示する。
     """
     main_records, boundary_timestamp = _stats_main_records(records, runtime)
@@ -1676,6 +1653,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を返す。"
             "メイン記録は振り返り境界より前のレコードを対象とし、補助記録は境界より前に起動した"
             "処理単位の全体を帰属させる。stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。"
+            "サブエージェント別集計とCodexスレッド別集計はClaude Code形式のtranscriptでのみ出力する。"
         )
     )
     parser.add_argument(
@@ -1709,7 +1687,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stats",
         action="store_true",
-        help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。",
+        help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
+        "サブエージェント別集計とCodexスレッド別集計はClaude Code形式のtranscriptでのみ出力する。",
     )
     return parser
 

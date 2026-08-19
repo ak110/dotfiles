@@ -1959,8 +1959,8 @@ def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, c
     assert all(event["total_tokens"] > generative["total_tokens"] for event in peaks if event["line"] != 22)
 
 
-def test_stats_uses_codex_final_token_count_and_tool_pair(tmp_path: pathlib.Path, capsys) -> None:
-    """Codexの累積token_countは最後の値だけを使い、call_idで時間を対応付ける。"""
+def test_stats_sums_codex_last_token_usage_and_pairs_tool_calls(tmp_path: pathlib.Path, capsys) -> None:
+    """Codexのトークンは各`token_count`の実消費の加算とし、call_idで所要時間を対応付ける。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1975,8 +1975,8 @@ def test_stats_uses_codex_final_token_count_and_tool_pair(tmp_path: pathlib.Path
                 "payload": {
                     "type": "token_count",
                     "info": {
-                        "total_token_usage": {"input_tokens": 2, "output_tokens": 3},
-                        "last_token_usage": {"input_tokens": 2, "output_tokens": 3},
+                        "total_token_usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+                        "last_token_usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
                     },
                 },
             },
@@ -2001,8 +2001,8 @@ def test_stats_uses_codex_final_token_count_and_tool_pair(tmp_path: pathlib.Path
                 "payload": {
                     "type": "token_count",
                     "info": {
-                        "total_token_usage": {"input_tokens": 20, "output_tokens": 30, "total_tokens": 50},
-                        "last_token_usage": {"input_tokens": 20, "output_tokens": 30},
+                        "total_token_usage": {"input_tokens": 22, "output_tokens": 33, "total_tokens": 55},
+                        "last_token_usage": {"input_tokens": 20, "output_tokens": 30, "total_tokens": 50},
                     },
                 },
             },
@@ -2011,17 +2011,24 @@ def test_stats_uses_codex_final_token_count_and_tool_pair(tmp_path: pathlib.Path
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["total_tokens"] == 50
+    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["total_tokens"] == 55
     assert _events_by_kind(events, "stats-tool")[0]["total_seconds"] == 2.0
     assert _events_by_kind(events, "stats-slow-call")[0]["line"] == 3
 
 
-def _codex_token_count_entry(timestamp: str, usage: dict[str, int]) -> dict:
-    """Codexの`token_count`エントリを作成する。累積と直近の内訳へ同じ値を与える。"""
+def _codex_token_count_entry(timestamp: str, usage: dict[str, int], cumulative: dict[str, int] | None = None) -> dict:
+    """Codexの`token_count`エントリを作成する。
+
+    `usage`は当該リクエストの実消費（`last_token_usage`）、`cumulative`はセッション累積
+    （`total_token_usage`）とする。`cumulative`を省略した場合は同じ値を与える。
+    """
     return {
         "type": "response_item",
         "timestamp": timestamp,
-        "payload": {"type": "token_count", "info": {"total_token_usage": usage, "last_token_usage": usage}},
+        "payload": {
+            "type": "token_count",
+            "info": {"total_token_usage": usage if cumulative is None else cumulative, "last_token_usage": usage},
+        },
     }
 
 
@@ -2037,28 +2044,34 @@ def _codex_usage(input_tokens: int, cached: int, cache_write: int, output_tokens
     }
 
 
-def test_stats_sums_codex_token_usage_per_monotonic_segment(tmp_path: pathlib.Path, capsys) -> None:
-    """リセットを含むCodexの累積トークンを、単調増加区間ごとの最終値の合算として集計する。"""
+def test_stats_sums_codex_last_token_usage_across_rewind(tmp_path: pathlib.Path, capsys) -> None:
+    """累積値が巻き戻る記録でも、各リクエストの実消費の単純加算として集計する。
+
+    Codexは過去のチェックポイントへ戻ると`total_token_usage`を巻き戻し先の値へ戻して再累積するため、
+    累積値の減少を区間境界とみなして減少前の値を加算すると、巻き戻し先までの消費を二重計上する。
+    本フィクスチャでは減少前の累積（入力150）を加算すると入力が280となり、実消費の合計180と一致しない。
+    """
     transcript = _write_transcript(
         tmp_path,
         [
-            _codex_token_count_entry("2026-08-19T00:00:00Z", _codex_usage(100, 80, 5, 20, 10)),
-            _codex_token_count_entry("2026-08-19T00:00:01Z", _codex_usage(300, 250, 7, 40, 20)),
-            _codex_token_count_entry("2026-08-19T00:00:02Z", _codex_usage(50, 30, 1, 5, 2)),
-            _codex_token_count_entry("2026-08-19T00:00:03Z", _codex_usage(90, 60, 2, 9, 3)),
+            _codex_token_count_entry(
+                "2026-08-19T00:00:00Z", _codex_usage(100, 80, 5, 20, 10), _codex_usage(100, 80, 5, 20, 10)
+            ),
+            _codex_token_count_entry("2026-08-19T00:00:01Z", _codex_usage(50, 40, 2, 10, 4), _codex_usage(150, 120, 7, 30, 14)),
+            _codex_token_count_entry("2026-08-19T00:00:02Z", _codex_usage(30, 20, 1, 5, 2), _codex_usage(130, 100, 6, 25, 12)),
         ],
     )
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     summary = _events_by_kind(events, "stats-summary")[0]
-    assert summary["tokens"] == _codex_usage(390, 310, 9, 49, 23)
-    assert summary["api_messages"] == 4
+    assert summary["tokens"] == _codex_usage(180, 140, 8, 35, 16)
+    assert summary["api_messages"] == 3
     assert _events_by_kind(events, "stats-total")[0]["tokens"] == {
-        "input_tokens": 80,
-        "output_tokens": 49,
-        "cache_creation_input_tokens": 9,
-        "cache_read_input_tokens": 310,
+        "input_tokens": 40,
+        "output_tokens": 35,
+        "cache_creation_input_tokens": 8,
+        "cache_read_input_tokens": 140,
     }
 
 
@@ -2146,12 +2159,15 @@ def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathl
 
 
 def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """Codex委譲の構造化完了形状を重複排除し、引用本文を収集せずrollout欠落をスキップする。
+    """Codex委譲の入力形態表の全形状からthreadIdを収集し、引用本文を収集せずrollout欠落をスキップする。
 
+    `tool_use`入力・`mcpMeta.structuredContent`・JSON文字列型`toolUseResult`は同一threadIdへ重複排除し、
+    タスク通知の`<result>`要素だけで到達するthreadIdも収集する。
     引用UUIDにも対応するrolloutを配置するため、誤って収集した場合は当該スレッドの
     `stats-codex-thread`が出力され、本テストが失敗する。
     """
     thread_id = "11111111-1111-4111-8111-111111111111"
+    notified_id = "33333333-3333-4333-8333-333333333333"
     quoted_id = "22222222-2222-4222-8222-222222222222"
     missing_id = "44444444-4444-4444-8444-444444444444"
     codex_home = tmp_path / "codex"
@@ -2166,7 +2182,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                     "type": "token_count",
                     "info": {
                         "total_token_usage": {"input_tokens": 4, "output_tokens": 5, "total_tokens": 9},
-                        "last_token_usage": {"input_tokens": 4, "output_tokens": 5},
+                        "last_token_usage": {"input_tokens": 4, "output_tokens": 5, "total_tokens": 9},
                     },
                 },
             }
@@ -2175,6 +2191,16 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     )
     _write_rollout(
         codex_home, quoted_id, [("2026-08-19T00:00:00Z", {"input_tokens": 6, "output_tokens": 7, "total_tokens": 13})]
+    )
+    _write_rollout(
+        codex_home, notified_id, [("2026-08-19T00:00:00Z", {"input_tokens": 8, "output_tokens": 9, "total_tokens": 17})]
+    )
+    notification = (
+        "<task-notification>\n"
+        "<source>codex/codex</source>\n"
+        "<status>completed</status>\n"
+        f"<result>{json.dumps({'threadId': notified_id})}</result>\n"
+        "</task-notification>"
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     transcript = _write_transcript(
@@ -2201,15 +2227,19 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                 "toolUseResult": json.dumps({"conversationId": thread_id}),
                 "message": {"role": "user", "content": "完了"},
             },
+            {
+                "type": "user",
+                "timestamp": "2026-08-19T00:00:03Z",
+                "message": {"role": "user", "content": [{"type": "text", "text": notification}]},
+            },
         ],
     )
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     threads = _events_by_kind(events, "stats-codex-thread")
-    assert len(threads) == 1
-    assert threads[0]["thread"] == thread_id
-    assert threads[0]["tokens"]["total_tokens"] == 9
+    assert [event["thread"] for event in threads] == [notified_id, thread_id]
+    assert [event["tokens"]["total_tokens"] for event in threads] == [17, 9]
     assert quoted_id not in {event["thread"] for event in threads}
     assert missing_id not in {event["thread"] for event in threads}
 
@@ -2271,16 +2301,27 @@ def _write_subagent(directory: pathlib.Path, agent_id: str, entries: list[dict],
 
 
 def _write_rollout(codex_home: pathlib.Path, thread_id: str, usages: list[tuple[str, dict[str, int]]]) -> None:
-    """`CODEX_HOME`配下へthreadIdに対応するrolloutを書き込む。"""
+    """`CODEX_HOME`配下へthreadIdに対応するrolloutを書き込む。
+
+    `usages`の各要素は当該リクエストの実消費（`last_token_usage`）とし、
+    `total_token_usage`にはそこまでの走行合計を与える。
+    """
     rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
     rollout_dir.mkdir(parents=True, exist_ok=True)
-    entries = [
-        {
-            "timestamp": timestamp,
-            "payload": {"type": "token_count", "info": {"total_token_usage": usage, "last_token_usage": usage}},
-        }
-        for timestamp, usage in usages
-    ]
+    entries = []
+    cumulative: dict[str, int] = {}
+    for timestamp, usage in usages:
+        for key, value in usage.items():
+            cumulative[key] = cumulative.get(key, 0) + value
+        entries.append(
+            {
+                "timestamp": timestamp,
+                "payload": {
+                    "type": "token_count",
+                    "info": {"total_token_usage": dict(cumulative), "last_token_usage": usage},
+                },
+            }
+        )
     (rollout_dir / f"rollout-test-{thread_id}.jsonl").write_text(
         "\n".join(json.dumps(entry) for entry in entries) + "\n",
         encoding="utf-8",
@@ -2427,7 +2468,7 @@ def test_stats_attributes_whole_record_started_before_boundary(tmp_path: pathlib
     assert subagent["tokens"] == _usage(16)
     thread = _events_by_kind(events, "stats-codex-thread")[0]
     assert thread["thread"] == thread_id
-    assert thread["tokens"]["total_tokens"] == 30
+    assert thread["tokens"]["total_tokens"] == 32
 
 
 def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
@@ -2555,7 +2596,14 @@ def test_stats_total_normalizes_codex_main_record(tmp_path: pathlib.Path, capsys
                             "reasoning_output_tokens": 20,
                             "total_tokens": 1060,
                         },
-                        "last_token_usage": {"input_tokens": 1000, "output_tokens": 60},
+                        "last_token_usage": {
+                            "input_tokens": 1000,
+                            "cached_input_tokens": 900,
+                            "cache_write_input_tokens": 8,
+                            "output_tokens": 60,
+                            "reasoning_output_tokens": 20,
+                            "total_tokens": 1060,
+                        },
                     },
                 },
             }
@@ -2612,7 +2660,7 @@ def test_stats_codex_automatic_boundary_excludes_review_records(tmp_path: pathli
                     "type": "token_count",
                     "info": {
                         "total_token_usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
-                        "last_token_usage": {"input_tokens": 2, "output_tokens": 3},
+                        "last_token_usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
                     },
                 },
             },
@@ -2631,8 +2679,8 @@ def test_stats_codex_automatic_boundary_excludes_review_records(tmp_path: pathli
                 "payload": {
                     "type": "token_count",
                     "info": {
-                        "total_token_usage": {"input_tokens": 500, "output_tokens": 500, "total_tokens": 1000},
-                        "last_token_usage": {"input_tokens": 500, "output_tokens": 500},
+                        "total_token_usage": {"input_tokens": 502, "output_tokens": 503, "total_tokens": 1005},
+                        "last_token_usage": {"input_tokens": 500, "output_tokens": 500, "total_tokens": 1000},
                     },
                 },
             },
