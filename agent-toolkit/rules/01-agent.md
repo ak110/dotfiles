@@ -118,7 +118,7 @@
 
 「確認を要する事項」項が挙げる事項は、いずれのモードでも`AskUserQuestion`で確認する。
 `AskUserQuestion`を持たない実行主体は、確認事項を呼び出し元へ差し戻す。
-回答を得られない場合は、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
+`AskUserQuestion`を発行できる実行主体は、回答を得られない場合に`agent-toolkit:add-feedback`をSkill機能で起動し、
 確認事項をTBDとして記録して暫定判断で続行する。
 回答を得られないと判定する契機は実行環境により異なる。
 `askUserQuestionTimeout`のような回答期限を提供する実行環境では、当該期限の超過を契機とする。
