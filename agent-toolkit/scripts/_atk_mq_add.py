@@ -126,7 +126,7 @@ def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None)
     if not candidates or len(candidates[0]) not in {40, 64}:
         print(
             "警告: 計画ファイルの`### 計画メタ情報`からベースコミットの完全OIDを抽出できないため、"
-            "投入先作業ツリーのHEADとの照合を省略します。",
+            "投入先の`target_commit`との照合を省略します。",
             file=sys.stderr,
         )
         return

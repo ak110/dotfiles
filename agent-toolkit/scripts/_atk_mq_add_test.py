@@ -729,7 +729,7 @@ def test_add_operation_warns_when_base_commit_lacks_backticks(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """囲み違反のベースコミットは候補として採らずHEAD照合を省略する。"""
+    """囲み違反のベースコミットは候補として採らず`target_commit`との照合を省略する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "unquoted-plan.md"
     plan.write_text(
