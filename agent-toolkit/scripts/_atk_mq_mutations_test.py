@@ -2311,6 +2311,110 @@ class TestNoninteractiveEdit:
         assert "frontmatterが破損" in capsys.readouterr().err
 
 
+class TestAppendEdit:
+    """`edit --append`のraw bytes保持・競合・TBD拒否を検証する。"""
+
+    def test_append_preserves_lf_bytes_and_adds_utf8_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """LF本文の元bytesを変更せず、区切りとUTF-8本文を末尾へ追加する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md", body="本文")
+        original = path.read_bytes()
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "--append", "fb-001.md", "追記本文"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_bytes() == original + b"\n\n" + "追記本文".encode()
+
+    def test_append_preserves_crlf_bytes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """CRLF本文の改行を変換せず、元bytesへ追記する。"""
+        notes = _setup_notes(tmp_path)
+        path = notes / "inbox" / "fb-001.md"
+        path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: feedback\r\n---\r\n\r\n" + "本文\r\n".encode())
+        original = path.read_bytes()
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "--append", "fb-001.md", "追記本文"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_bytes() == original + b"\n\n" + "追記本文".encode()
+
+    @pytest.mark.parametrize("answer", ["", "既存回答"])
+    def test_append_rejects_tbd_before_writing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        answer: str,
+    ) -> None:
+        """未回答・回答済みを問わずTBDへの追記を拒否する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_tbd_entry(notes, "tbd-001.md", answer=answer)
+        original = path.read_bytes()
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "--append", "tbd-001.md", "追記本文"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "TBDには追記できません" in capsys.readouterr().err
+        assert path.read_bytes() == original
+
+    def test_append_expected_bytes_conflict_keeps_message_unapplied(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """snapshot後の競合時は追記本文を反映しない。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md", body="本文")
+        original_append = mutations.append_entry_content
+
+        def conflict(
+            private_notes: pathlib.Path,
+            *,
+            state: str,
+            filename: str,
+            content: bytes,
+            target_repo: str | None = None,
+            lock_timeout: float = -1,
+            expected_content: bytes | None = None,
+        ) -> bool:
+            path.write_bytes(path.read_bytes() + "競合側の変更".encode())
+            return original_append(
+                private_notes,
+                state=state,
+                filename=filename,
+                content=content,
+                target_repo=target_repo,
+                lock_timeout=lock_timeout,
+                expected_content=expected_content,
+            )
+
+        monkeypatch.setattr(mutations, "append_entry_content", conflict)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "--append", "fb-001.md", "追記本文"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "fb-001.md" in captured.err
+        assert "反映されていません" in captured.err
+        assert "追記本文".encode() not in path.read_bytes()
+
+
 class TestEditNoArg:
     """editサブコマンド: 無引数時はinbox配下のファイル名順最大値（最終追加分）を対象とする。"""
 

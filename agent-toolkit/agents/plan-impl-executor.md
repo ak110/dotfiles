@@ -8,7 +8,7 @@ effort: medium
 # 阻害要因の重複除外規則、実行経路の識別子照合を含む完了報告の契約充足に指示追従を要する。
 # 軽量モデルでは完了報告の必須欄の欠落と必須工程の差し戻しが反復した。
 # ツール制限: 調整役として直接編集を行わず、設定で選択したCodex経路を明示的に利用する。
-tools: Skill, Agent, SendMessage, Read, Bash, mcp__codex__codex, mcp__codex__codex-reply
+tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__codex__codex, mcp__codex__codex-reply
 skills:
   - agent-toolkit:delegation
   # 指摘の採否を確定する主体であるため常時注入する。

@@ -27,10 +27,15 @@
 - レビュー修正項目: 安定ID、関係する全計画パス、指摘ID、適用元OID、再適用後OIDまたは状態`適用済みスキップ`、統合順
 
 rebaseとmerge commitは作成せず、レーン項目に続けてレビュー修正項目を統合順の単一cherry-pickシーケンスで適用する。
-cherry-pickが空の場合は`git cherry-pick --skip`で続行し、当該レビュー修正項目を`適用済みスキップ`として返す。
+競合を生じ得るcherry-pickと、その競合解消後の`--continue`・空commit時の`--skip`は、各呼び出しへ
+`git -c rerere.enabled=true -c rerere.autoUpdate=false`を付けて実行する。
+競合解消後は`git diff`で意図した差分を確認し、未解消マーカー（`<<<<<<<`・`=======`・`>>>>>>>`）がないことと
+`git status --short`で状態を確認してから`git add`又は継続操作を行う。
+競合前のイメージが異なりrerereの解消結果が再利用されない場合は、通常の競合解消手順へ戻る。
+cherry-pickが空の場合は`git -c rerere.enabled=true -c rerere.autoUpdate=false cherry-pick --skip`で続行し、当該レビュー修正項目を`適用済みスキップ`として返す。
 競合は関係する全計画の目的へ帰属する最小限だけを解消する。
 
-解消不能または計画と合意の変更を要する場合は`git cherry-pick --abort`で中止する。
+解消不能または計画と合意の変更を要する場合は`git -c rerere.enabled=true -c rerere.autoUpdate=false cherry-pick --abort`で中止する。
 HEADが作成時HEADの完全OIDと一致し、作業ツリーがcleanであることを確認してから、対象commit、競合ファイル、観測内容を
 `needs_escalation`で返す。
 成功済みレーンの元commitとレーンのworktreeは変更しない。

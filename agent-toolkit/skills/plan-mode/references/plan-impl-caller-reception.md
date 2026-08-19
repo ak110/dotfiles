@@ -66,7 +66,11 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 
 実装委譲はcommitと二系統のレビューまでとする。呼び出し元が`agent-toolkit:commit`の
 `references/push-and-ci.md`を読み、pushとCI通過確認を所有する。
-CI失敗時は`agent-toolkit:bugfix`で原因を確定し、必要な修正、検証、commit、二系統のレビューを再実施する。
+CI失敗時は`agent-toolkit:bugfix`で原因を確定する。原因分析によりコード・テスト・設定の修正commitが必要と確定した場合だけ、
+通常モードの`plan-impl-executor`へ元計画を再投入せず、呼び出し元が`runtime-routing.md`の`execute_model`を起動直前に解決して
+単一の書込担当へ委譲する。入力は対象worktree、原因分析結果、修正の認可根拠となる承認済み計画、適用規範、許容する変更、
+対象外worktree、push禁止とする。担当は修正、検証、commitを完了し、呼び出し元は二系統レビュー、再push、CI確認へ戻る。
+外部基盤障害など修正commitを要しない失敗では修正担当を起動せず、既存の原因別経路を維持する。
 pushとCI成功を実測し、ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行する。
 各採用処理の保存結果を照合する。
 全条件の成立後だけ、進捗ログの記録値と`git worktree list --porcelain`を照合する。
@@ -74,6 +78,17 @@ pushとCI成功を実測し、ソート済みフィードバックファイル�
 続いて`atk managed-temp cleanup --path <exact-parent>`で対応する管理対象領域を回収する。
 借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない。
 中断または失敗時は全領域を保持し、対象外worktreeを変更しない。
+
+## P-013のキュー終端
+
+`20260819-010327-001.md`は実装担当、後続の`adopt`へ渡さない。呼び出し元は実装、push、CI成功、キュー状態の確定後、
+次の単発操作で理由付きの不採用終端を行う。
+
+```sh
+atk mq reject 20260819-010327-001.md \
+  --note='到達不能OIDだけでは履歴書換え後の旧commitと削除済み別branchの無関係なcommitを区別できず、受理経路は誤紐付け防止を弱めるため不採用' \
+  --target-repo=github.com/ak110/dotfiles
+```
 
 全工程の完了後、呼び出し元は次の構成で完了報告を利用者へ提示する。
 完了報告のメッセージはこの構成だけとし、枠の前後へ地の文を加えない。

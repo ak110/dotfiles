@@ -1217,6 +1217,77 @@ def test_warn_mode_does_not_duplicate_tool_use_result_already_visible(
     assert [event["text"] for event in _read_jsonl(capsys)] == ["warning: 同じ警告"]
 
 
+@pytest.mark.parametrize(
+    ("option", "pattern"),
+    [("--warn", None), ("--grep", "warning")],
+)
+def test_query_modes_normalize_line_number_prefix_across_body_fields(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+    pattern: str | None,
+) -> None:
+    """別本文間だけ行番号接頭辞を正規化し、最初に現れた原文を表示する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "text", "text": "12\twarning: 同じ本文"}]},
+                "toolUseResult": {"stdout": "warning: 同じ本文"},
+            }
+        ],
+    )
+
+    arguments = [str(transcript), option]
+    if pattern is not None:
+        arguments.append(pattern)
+    assert evidence.main(arguments) == 0
+
+    events = _read_jsonl(capsys)
+    assert events[0] == {"kind": "warning" if option == "--warn" else "match", "line": 1, "text": "12\twarning: 同じ本文"}
+    if option == "--grep":
+        assert events[-1] == {"kind": "summary", "count": 1}
+        assert len(events) == 2
+    else:
+        assert len(events) == 1
+
+
+@pytest.mark.parametrize(
+    ("option", "pattern"),
+    [("--warn", None), ("--grep", "warning")],
+)
+def test_query_modes_keep_numbered_and_unnumbered_lines_in_one_body_distinct(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+    pattern: str | None,
+) -> None:
+    """同一本文内の行番号接頭辞は、別行を表すため重複として除かない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "12\twarning: 本文\nwarning: 本文"},
+            }
+        ],
+    )
+
+    arguments = [str(transcript), option]
+    if pattern is not None:
+        arguments.append(pattern)
+    assert evidence.main(arguments) == 0
+
+    events = _read_jsonl(capsys)
+    assert [event["text"] for event in events if event["kind"] in {"warning", "match"}] == [
+        "12\twarning: 本文",
+        "warning: 本文",
+    ]
+    if option == "--grep":
+        assert events[-1] == {"kind": "summary", "count": 1}
+
+
 def test_grep_mode_searches_tool_use_result_output(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

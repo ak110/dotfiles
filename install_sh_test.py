@@ -25,6 +25,7 @@ INSTALL_SH = REPO_ROOT / "install.sh"
 
 
 @pytest.mark.skipif(shutil.which("chezmoi") is None, reason="chezmoi未インストール")
+@pytest.mark.timeout(300)
 def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     """install.sh が chezmoi でルールを ~/.claude/rules/ に配置する。"""
     fake_home = tmp_path / "home"

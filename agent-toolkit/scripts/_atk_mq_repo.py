@@ -237,3 +237,45 @@ def edit_entry(
         path.write_text(content, encoding="utf-8")
         _commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))])
     return True
+
+
+def append_entry(
+    private_notes: pathlib.Path,
+    *,
+    directory: pathlib.Path,
+    filename: str,
+    content: bytes,
+    target_repo: str | None,
+    lock_timeout: float,
+    expected_content: bytes | None,
+    commit_message: str,
+    content_validator: typing.Callable[[str, str], None] | None = None,
+) -> bool:
+    """フィードバック本文をraw bytesのまま追記し、競合を検出してcommitまで行う。"""
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        path = _validate_filename(filename, directory)
+        if not path.is_file():
+            raise FileNotFoundError(filename)
+        previous_bytes = path.read_bytes()
+        previous = previous_bytes.decode("utf-8")
+        updated = content.decode("utf-8")
+        normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+        _verify_target_repo_content(path, previous, normalized_target_repo)
+        if expected_content is not None and previous_bytes != expected_content:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        if content_validator is not None:
+            content_validator(previous, updated)
+        if previous_bytes == content:
+            return False
+        previous_type = _require_type(path, previous)
+        new_type = _parse_type(updated)
+        if new_type != previous_type:
+            print(
+                f"typeを変更または欠落させることはできません（現在値: {previous_type}）: {filename}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        path.write_bytes(content)
+        _commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))])
+    return True

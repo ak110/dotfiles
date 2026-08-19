@@ -6,7 +6,7 @@ model: sonnet
 effort: medium
 # Sonnet指定: 複数の委譲経路、採否、計画レビューの状態を検収して収束させるため、指示追従を要する。
 # ツール制限: 調整と検収に専念し、成果物を直接編集しない。Codex経路は明示したMCPツールで起動する。
-tools: Skill, Agent, SendMessage, Read, Bash, mcp__codex__codex, mcp__codex__codex-reply
+tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__codex__codex, mcp__codex__codex-reply
 skills:
   - agent-toolkit:delegation
 user-invocable: false

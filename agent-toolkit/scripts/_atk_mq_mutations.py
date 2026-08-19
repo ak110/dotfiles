@@ -44,6 +44,7 @@ from _atk_mq_repo import (
     _resolve_repo_id,
     _verify_target_repo_content,
 )
+from _atk_mq_repo import append_entry as _append_entry
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _GIT_TIMEOUT_SECONDS = 10.0
@@ -483,6 +484,41 @@ def edit_entry_content(
         commit_message="chore: edit feedback item",
         content_validator=_validate_no_reserved_frontmatter_modification,
         content_transformer=_invalidate_repo_bound_metadata,
+    )
+
+
+def append_entry_content(
+    private_notes: pathlib.Path,
+    *,
+    state: str,
+    filename: str,
+    content: bytes,
+    target_repo: str | None = None,
+    lock_timeout: float = -1,
+    expected_content: bytes | None = None,
+) -> bool:
+    """フィードバック本文をraw bytesのまま追記する。TBDは拒否する。"""
+    if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}:
+        raise WebInputError("追記可能状態はinbox又はprocessingです")
+
+    directory = private_notes / state
+    path = directory / filename
+
+    def validate(previous: str, updated: str) -> None:
+        _validate_no_reserved_frontmatter_modification(previous, updated)
+        if _require_type(path, previous) == MQ_TYPE_TBD:
+            raise WebInputError("TBDには追記できません")
+
+    return _append_entry(
+        private_notes,
+        directory=directory,
+        filename=filename,
+        content=content,
+        target_repo=target_repo,
+        lock_timeout=lock_timeout,
+        expected_content=expected_content,
+        commit_message="chore: append feedback item",
+        content_validator=validate,
     )
 
 
@@ -988,6 +1024,11 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
     """
     message = args.message
+    if args.append:
+        if args.filename is None or message is None:
+            args.subparser.error("--appendではFILENAMEとMESSAGEを指定してください。")
+        _cmd_append(args, private_notes)
+        return
     if message is not None and args.filename is None:
         args.subparser.error("MESSAGEを指定する場合はFILENAMEも指定してください。")
     if message is not None:
@@ -1070,6 +1111,49 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if tmp_path is not None:
         tmp_path.unlink(missing_ok=True)
     print(f"編集反映: {path.name}")
+
+
+def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """Edit --appendサブコマンド: 既存raw bytesを保ってMESSAGEを末尾へ追記する。"""
+    assert args.filename is not None
+    assert args.message is not None
+    try:
+        _add.reject_message_file_path(
+            args.message,
+            file_input_hint="MESSAGEには追記する本文を指定してください。",
+        )
+    except WebInputError as error:
+        print(f"追記を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
+
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
+    with _repo_lock(private_notes):
+        _validate_filenames_only([args.filename], inbox_dir)
+        _pull(private_notes)
+        path = _resolve_processable_targets([args.filename], inbox_dir, processing_dir)[0]
+        snapshot = path.read_bytes()
+        normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
+        _verify_target_repo_content(path, snapshot.decode("utf-8"), normalized_target_repo)
+
+    content = snapshot + b"\n\n" + args.message.encode("utf-8")
+    try:
+        append_entry_content(
+            private_notes,
+            state=path.parent.name,
+            filename=path.name,
+            content=content,
+            target_repo=args.target_repo,
+            expected_content=snapshot,
+        )
+    except RuntimeError:
+        print(
+            f"追記中に他プロセスが対象を変更しました: {path.name}。"
+            "指定したMESSAGEは反映されていません。同じFILENAMEとMESSAGEで再実行してください。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"追記反映: {path.name}")
 
 
 def _cmd_commit(private_notes: pathlib.Path) -> None:

@@ -67,7 +67,8 @@ readyな計画が1件の場合は、借用する現在worktreeを回収不可と
 `runtime-routing.md`「工程別モデル設定」で経路を解決する。
 統合担当へ`merge-task.md`、統合worktreeと作成時HEADの完全OID、統合対応表、全計画、プロジェクト規範、
 作成規範スキル、検証コマンド、統合段階で1回だけ適用する変更、commit可・push不可・worktree作成回収不可・キュー変更不可の権限を渡す。
-統合担当はrebaseを行わず、全項目を単一cherry-pickシーケンスで適用する。
+統合担当はrebaseを行わず、全項目を単一cherry-pickシーケンスで適用する。競合処理のGit操作と検収は`merge-task.md`を正本とし、
+統合担当は完了報告の`conflicts`と`integration_changes`へ結果を返し、呼び出し元は返却値だけを検収する。
 
 初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動する。
 

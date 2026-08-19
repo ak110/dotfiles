@@ -28,6 +28,7 @@ _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
 _WARNING_PATTERN = re.compile("警告|warn", re.IGNORECASE)
+_LINE_NUMBER_PREFIX = re.compile(r"^\s*\d+\t(.*)$")
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
 _SELF_SCRIPT_STEM = "_session_review_evidence"
 _SEGMENT_SEPARATORS = re.compile(r"[;&|]+")
@@ -1003,16 +1004,30 @@ def _matched_lines(entry: dict[str, Any], pattern: re.Pattern[str]) -> list[str]
     """エントリ内で一致した行を、同一本文の重複を除いて出現順に返す。
 
     退避された実行結果と可視テキストのように、同一の本文が複数のフィールドへ重複して格納される場合がある。
-    そのため、本文が一致する行は最初の1件だけを照会結果とする。
+    また、退避出力だけへ付く行番号接頭辞を別本文の番号なし行と突き合わせる場合がある。
+    そのため、別本文に同じ番号なし行がある行番号付き行だけを本文の重複として扱い、表示は最初に現れた原文を保つ。
     """
+    texts = _entry_texts(entry)
+    unnumbered_lines_by_text = [
+        {line_text.strip() for line_text in text.splitlines() if _LINE_NUMBER_PREFIX.match(line_text) is None} for text in texts
+    ]
     seen: set[str] = set()
     matched: list[str] = []
-    for text in _entry_texts(entry):
+    for index, text in enumerate(texts):
         for line_text in text.splitlines():
             stripped = line_text.strip()
-            if not pattern.search(line_text) or stripped in seen:
+            if not pattern.search(line_text):
                 continue
-            seen.add(stripped)
+            key = stripped
+            numbered = _LINE_NUMBER_PREFIX.match(line_text)
+            if numbered and any(
+                other_index != index and numbered.group(1).strip() in other_lines
+                for other_index, other_lines in enumerate(unnumbered_lines_by_text)
+            ):
+                key = numbered.group(1).strip()
+            if key in seen:
+                continue
+            seen.add(key)
             matched.append(line_text)
     return matched
 

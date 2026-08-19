@@ -485,6 +485,11 @@ def _add_mq_edit_parsers(sub: Any) -> None:
             "先頭frontmatterで明示したメタデータだけを更新し、未指定メタデータを保持する。"
         ),
     )
+    edit.add_argument(
+        "--append",
+        action="store_true",
+        help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。TBDは対象外。",
+    )
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 

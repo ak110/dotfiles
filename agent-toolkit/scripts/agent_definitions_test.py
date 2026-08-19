@@ -51,7 +51,7 @@ _SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
 _SESSION_REVIEW_EVIDENCE = _AGENTS_DIR.parent / "scripts" / "_session_review_evidence.py"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE_REFERENCES / "plan-review-delegation.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
-_REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash"}
+_REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
@@ -249,7 +249,22 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "`実施内容`の各行は、対象ファイルのパス、設定名・関数名・ジョブ名などの識別子及び変更内容を書き、"
         "値の変更を伴う場合は変更前後の値も書く。\n"
         "外部仕様への言い換えだけの記述は用いない（`agent-toolkit/rules/01-agent.md`「役割分担」節の識別子を避ける方針より優先する）。\n"
+        "実施内容表と任意の合意表における`指示どおり`は、根拠に引く提示素材が対象と範囲を明示している場合に限る。\n"
+        "原文が問い、提案的表現、弱い自信の表現に留まる場合は、当該素材を`指示どおり`の根拠にしない。\n"
+        "この場合は、範囲を確定する問いをモード別の確認経路へ送り、受領した回答を根拠へ併記する。\n"
         "利用者合意に対応する",
+    ),
+    (
+        "確認済み回答は、`AskUserQuestion`で受領した回答、又は確認事項を記録したTBDの`## 回答`節へ記録された回答とする。\n",
+        "確認済み回答には、`AskUserQuestion`で受領した回答と、確認事項を記録したTBDの`## 回答`節へ記録された回答を含める。\n",
+    ),
+    (
+        "原文正本IDはフェンス外に置き、計画内の素材IDとフィードバックファイル名を一意に対応付ける。\n"
+        "直接起動経路では、逐語素材の入力と転記に関する現行契約を維持する。",
+        "原文正本IDはフェンス外に置き、計画内の素材IDとフィードバックファイル名を一意に対応付ける。\n"
+        "保存本文に終端改行がない場合は、閉じフェンス直後へ`<!-- source-final-newline: absent -->`を置いて終端状態を表す。"
+        "この注記と閉じフェンスのための改行は保存本文へ含めない。\n"
+        "直接起動経路では、逐語素材の入力と転記に関する現行契約を維持する。",
     ),
     (
         "（厳守規定。未合意の削除と撤去漏れを防ぐため）。\n",
@@ -368,6 +383,31 @@ def test_plan_file_standards_own_plan_contracts_alone() -> None:
     for removed, migrated in _PLAN_REVIEW_MIRROR_REMOVALS:
         assert removed not in review_task, removed
         assert migrated in standards, migrated
+
+
+def test_plan_creation_and_review_external_command_contracts_are_synchronized() -> None:
+    """計画作成と2ラウンドレビューの外部コマンド実測契約を同期する。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    for document in (standards, review_task):
+        for phrase in (
+            "終了コードの意味",
+            "出力が相対か絶対か",
+            "オプションの導入バージョン",
+            "設定の優先順位",
+            "安全な実行",
+            "管理対象一時領域での同等再現",
+            "公式仕様は実測条件・結果の補足に限り",
+        ):
+            assert phrase in document
+
+    assert "実施内容表と任意の合意表" in standards
+    assert "原文が問い、提案的表現、弱い自信の表現に留まる場合" in standards
+    assert "理由を問わず未検証範囲" in standards
+    assert "source-final-newline: absent" in standards
+    assert "当該機構が呼ぶ全コマンドを同一ラウンド" in review_task
+    assert "理由と未検証範囲" in review_task
 
 
 def test_plan_review_keeps_author_as_the_only_writer() -> None:
@@ -940,7 +980,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     for phrase in (
         "単一cherry-pickシーケンス",
         "rebaseとmerge commitは作成せず",
-        "`git cherry-pick --abort`",
+        "`git -c rerere.enabled=true -c rerere.autoUpdate=false cherry-pick --abort`",
         "作成時HEADの完全OIDと一致",
         "push、worktreeの作成と回収、キュー変更は禁止",
         "レビュー修正モード",
@@ -966,6 +1006,44 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "新しい上流最新OIDから統合worktreeを再作成し、本節の手順で統合担当を起動",
     ):
         assert phrase in flow
+
+
+def test_merge_conflict_git_options_are_owned_by_merge_task() -> None:
+    """rerere設定と競合確認を統合担当の正本だけへ置く。"""
+    merge_task = _MERGE_TASK.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+
+    for phrase in (
+        "競合を生じ得るcherry-pick",
+        "`git -c rerere.enabled=true -c rerere.autoUpdate=false`",
+        "`git diff`で意図した差分を確認",
+        "未解消マーカー（`<<<<<<<`・`=======`・`>>>>>>>`）がない",
+        "`git status --short`で状態を確認してから`git add`又は継続操作",
+        "競合前のイメージが異なりrerereの解消結果が再利用されない場合は、通常の競合解消手順へ戻る",
+    ):
+        assert phrase in merge_task
+    assert "merge-task.md`を正本" in flow
+    assert "完了報告の`conflicts`と`integration_changes`へ結果を返し" in flow
+    assert "rerere.enabled=true" not in flow
+
+
+def test_ci_repair_commits_are_delegated_by_caller() -> None:
+    """修正commitを要するCI失敗だけをcaller起点の単一書込へ接続する。"""
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
+    routing = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+
+    for text in (caller, ci_failure):
+        assert "原因分析によりコード・テスト・設定の修正commitが必要と確定" in text
+        assert "通常モードの`plan-impl-executor`へ" in text
+        assert "元計画を再投入せず" in text
+        assert "`execute_model`を" in text
+        assert "起動直前に解決" in text
+        assert "単一の書込担当" in text
+        assert "二系統レビュー、再push、CI確認" in text
+        assert "外部基盤障害など修正commitを要しない失敗" in text
+    assert "原因分析で修正commitが必要と確定した場合に呼び出し元が起動直前に解決" in routing
+    assert "直接修正して再push" not in ci_failure
 
 
 def test_launch_points_limit_thread_continuation_to_codex_route() -> None:
@@ -1268,6 +1346,10 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
 
     assert "`CLAUDECODE`が設定されている場合は、この一覧のファイル名を本セッションの処理対象として固定" in text
     assert "起動時の目的文にCodexオーケストレーターの連続処理と明記" in text
+    assert "Claude Codeホストでは、ready項目を再取得せず" in cleanup
+    assert "更新された規範は次セッションの起動時に読み込む" in cleanup
+    assert "残る項目を次セッションで再集約して" in cleanup
+    assert "並列調査・統合計画化できるため、時間・コストを抑える" in cleanup
     assert "Codexでは実装と後始末の間にactive一覧を再取得" in cleanup
     assert "取得済みのready項目を終端させたか保留した後にactive一覧を再取得" in cleanup
     assert "依存関係の有無を問わず追加分を含むready項目" in cleanup
@@ -1847,6 +1929,36 @@ def test_plan_impl_executor_description_limits_invocation_route() -> None:
     metadata, _ = parsed
     expected = "呼び出し元側のplan-impl-executor起動契約が明示する手順から" + "のみ起動する。"
     assert metadata["description"] == expected
+
+
+def test_regulated_agent_descriptions_and_inputs_are_minimal() -> None:
+    """委譲先が規範から導ける入力を重複して受け取らず、起動経路を限定する。"""
+    for path, expected in (
+        (_FEEDBACKS_PLANNER, "呼び出し元側のfeedbacks-planner起動契約が明示する手順からのみ起動する。"),
+        (_PLAN_IMPL_EXECUTOR, "呼び出し元側のplan-impl-executor起動契約が明示する手順からのみ起動する。"),
+        (_SESSION_REVIEW_ADVISOR, "agent-toolkit:session-review経路だけから起動する。"),
+    ):
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, _ = parsed
+        assert metadata["description"] == expected
+
+    agent_standards = (_AGENTS_DIR.parent / "skills" / "agent-standards" / "references" / "agent-skills.md").read_text(
+        encoding="utf-8"
+    )
+    assert "一意に導けない値だけを渡す" in agent_standards
+    assert "受信者が自ら選択できるスキル、文書、手順を入力へ重複させない" in agent_standards
+
+
+def test_delegation_runtime_keeps_normal_completion_separate_from_tree_withdrawal() -> None:
+    """委譲ツリーの取下げ中に子の完了経路を再開せず、通常経路を保持する。"""
+    runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
+
+    assert "委譲元を先に停止し、続けて子孫を停止したうえで`ListAgents`" in runtime
+    assert "取下げの途中で子孫の完了通知を受領しても" in runtime
+    assert "通常経路の完了通知処理へ戻らない" in runtime
+    assert "`plan-impl-executor`と`feedbacks-planner`は、許可された`ListAgents`" in runtime
+    assert "通常経路では既存どおり、完了通知を受領してから完了報告を検収する" in runtime
 
 
 def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
