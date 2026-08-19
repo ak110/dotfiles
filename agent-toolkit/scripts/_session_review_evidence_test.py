@@ -7,7 +7,7 @@ import pathlib
 
 import _session_review_evidence as evidence
 import pytest
-from conftest import _write_transcript
+from _test_helpers import _write_transcript
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:

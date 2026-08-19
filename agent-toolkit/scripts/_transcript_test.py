@@ -3,8 +3,8 @@
 import json
 import pathlib
 
+from _test_helpers import _write_transcript
 from _transcript import assistant_text, iter_latest_assistant_messages, latest_main_assistant_entry
-from conftest import _write_transcript
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_a", stop_reason: str = "end_turn") -> dict:

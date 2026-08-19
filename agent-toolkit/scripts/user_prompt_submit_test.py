@@ -11,7 +11,7 @@ import pathlib
 import subprocess
 
 import _fork_runner
-from conftest import SESSION_STATE_FILENAME_TEMPLATE, _read_state
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 _SCRIPT = _SCRIPTS_DIR / "claude_hook.py"

@@ -15,7 +15,7 @@ import subprocess
 
 import _fork_runner
 import pytest
-from conftest import _read_state
+from _test_helpers import _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 

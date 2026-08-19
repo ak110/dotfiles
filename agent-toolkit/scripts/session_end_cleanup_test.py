@@ -10,7 +10,7 @@ import time
 
 import _fork_runner
 import pytest
-from conftest import SESSION_STATE_FILENAME_TEMPLATE
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).parent / "claude_hook.py"
 _STALE_AGE_SECONDS = 15 * 24 * 60 * 60

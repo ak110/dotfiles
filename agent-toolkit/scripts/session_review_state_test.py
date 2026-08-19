@@ -12,7 +12,7 @@ import _fork_runner
 import _session_review_evidence
 import pytest
 import session_review_state
-from conftest import _read_state
+from _test_helpers import _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "session_review_state.py"
 _PLUGIN_ROOT = _SCRIPT.parent.parent

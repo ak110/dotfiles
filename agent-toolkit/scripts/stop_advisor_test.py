@@ -15,7 +15,7 @@ from typing import Any
 import _fork_runner
 import pytest
 import stop_advisor
-from conftest import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 

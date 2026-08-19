@@ -16,7 +16,7 @@ import _fork_runner
 import claude_hook
 import pretooluse
 import pytest
-from conftest import SESSION_STATE_FILENAME_TEMPLATE
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 from pyfltr.colloquial import check as _colloquial_check
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"

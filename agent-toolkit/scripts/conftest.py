@@ -1,6 +1,5 @@
-"""pytest conftest: テスト共通ヘルパーとfixtureを提供する。"""
+"""pytest conftest: このディレクトリ配下のテストへ共通のfixtureを提供する。"""
 
-import json
 import os
 import pathlib
 import subprocess
@@ -9,25 +8,29 @@ from collections.abc import Callable
 import pytest
 
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
-SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
+_GIT_IDENTITY_NAME = "test"
+_GIT_IDENTITY_EMAIL = "test@example.invalid"
 
 
-def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    """テスト用一時ディレクトリからセッション状態を読み込む。"""
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+@pytest.fixture(autouse=True)
+def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """テストが生成するGitリポジトリのコミッター識別情報を実行環境から独立させる。
 
+    識別情報を環境変数で与え、`GIT_CONFIG_GLOBAL`・`GIT_CONFIG_SYSTEM`を`os.devnull`へ向けて
+    実行環境のGit設定の混入を断つ。これにより、リポジトリ生成箇所が`git config user.*`を
+    設定していなくても`git commit`が成功し、開発機と継続的インテグレーションで成否が一致する。
 
-def _write_transcript(directory: pathlib.Path, entries: list[dict]) -> pathlib.Path:
-    """エントリ列をJSONL形式のtranscriptへ書き込む。"""
-    transcript = directory / "transcript.jsonl"
-    transcript.write_text(
-        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
-        encoding="utf-8",
-    )
-    return transcript
+    既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
+    環境変数は当該設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
+    このディレクトリ配下のテストを単独で実行する場合にも同じ前提が成立するよう、
+    上位ディレクトリのfixtureへ依存せず本ファイルで定義する。
+    """
+    monkeypatch.setenv("GIT_AUTHOR_NAME", _GIT_IDENTITY_NAME)
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", _GIT_IDENTITY_EMAIL)
+    monkeypatch.setenv("GIT_COMMITTER_NAME", _GIT_IDENTITY_NAME)
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", _GIT_IDENTITY_EMAIL)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
 
 
 @pytest.fixture(autouse=True)

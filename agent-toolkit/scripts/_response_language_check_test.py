@@ -6,7 +6,7 @@ import re
 
 import pytest
 from _response_language_check import CheckOutcome, detailed_check
-from conftest import _write_transcript
+from _test_helpers import _write_transcript
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 _RULES_FILE = _SCRIPTS_DIR.parent / "rules" / "01-agent.md"

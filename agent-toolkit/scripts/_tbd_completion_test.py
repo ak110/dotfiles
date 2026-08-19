@@ -8,7 +8,7 @@ import tempfile
 import _tbd_completion
 import _tbd_scan
 import pytest
-from conftest import SESSION_STATE_FILENAME_TEMPLATE
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _REPO = "github.com/ak110/dotfiles"
 

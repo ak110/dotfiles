@@ -17,7 +17,7 @@ import types
 
 import _fork_runner
 import pytest
-from conftest import SESSION_STATE_FILENAME_TEMPLATE, _read_state
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"

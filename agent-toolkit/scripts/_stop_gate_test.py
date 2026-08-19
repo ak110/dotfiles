@@ -21,7 +21,7 @@ from _stop_gate import (
     has_pending_agent_launches,
     is_pending_async_work,
 )
-from conftest import _write_transcript
+from _test_helpers import _write_transcript
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:

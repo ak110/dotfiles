@@ -104,6 +104,11 @@ ty = true
 # scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する
 ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "agent-toolkit/scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
 pylint-args = ["--jobs=4"]
+# リポジトリ直下とagent-toolkit/scripts/の`conftest.py`は、いずれもトップレベルのモジュール`conftest`へ
+# 解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
+# 除外指定はパスではなくファイル名で一致するため、両方の`conftest.py`をmypyの対象から外す。
+# 両ファイルはruff・pylint・pyright・tyが引き続き検査する。
+mypy-exclude = ["conftest.py"]
 shellcheck = true
 shfmt = true
 colloquial-check = true

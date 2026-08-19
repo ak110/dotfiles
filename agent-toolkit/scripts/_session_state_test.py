@@ -14,7 +14,7 @@ import threading
 from typing import cast
 
 import pytest
-from conftest import SESSION_STATE_FILENAME_TEMPLATE
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 

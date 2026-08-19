@@ -9,7 +9,7 @@ import subprocess
 
 import _fork_runner
 import pytest
-from conftest import SESSION_STATE_FILENAME_TEMPLATE
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).parent / "claude_hook.py"
 
