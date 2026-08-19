@@ -698,6 +698,7 @@ _CODEX_TOKEN_KEYS = (
     "reasoning_output_tokens",
     "total_tokens",
 )
+_CODEX_SUMMABLE_TOKEN_KEYS = ("input_tokens", "output_tokens")
 _THREAD_ID_KEYS = ("threadId", "conversationId")
 _CODEX_TOOL_NAMES = frozenset({"mcp__codex__codex", "mcp__codex__codex-reply"})
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
@@ -729,6 +730,17 @@ def _token_total(tokens: dict[str, int]) -> int:
 def _add_tokens(target: dict[str, int], source: dict[str, int]) -> None:
     for key, value in source.items():
         target[key] = target.get(key, 0) + value
+
+
+def _codex_summable_tokens(tokens: dict[str, int]) -> dict[str, int]:
+    """Codexの内訳から、Claude形式と同じ意味を持つキーだけを取り出す。
+
+    Codexの`cached_input_tokens`は`input_tokens`へ、`reasoning_output_tokens`は`output_tokens`へ
+    内包され、`total_tokens`は入力と出力の合計である。全キーをClaude形式の内訳へ加算すると
+    同一の消費が多重計上され、Codex分の総計がセッション全体の総計であるかのように現れる。
+    セッション全体の合算では、同名かつ同義の2キーだけを用いる。
+    """
+    return {key: tokens[key] for key in _CODEX_SUMMABLE_TOKEN_KEYS if key in tokens}
 
 
 def _latest_claude_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
@@ -1060,6 +1072,13 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
 
 
 def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: str) -> list[dict[str, Any]]:
+    """振り返り境界を適用した集計イベント列を返す。
+
+    `stats-total`はメイン記録・全サブエージェント記録・全Codexスレッドの3区分の合算とする。
+    3区分は記録ファイルが互いに排他であり、トークンが重複しない。
+    Codex分の内訳はClaude形式と成分が異なるため、合算へは同義の2キーだけを用いる
+    （`_codex_summable_tokens`）。個別スレッドの`stats-codex-thread`はCodexの全成分を表示する。
+    """
     main_records, boundary_timestamp = _stats_main_records(records, runtime)
     summary = _stats_summary_data(main_records, runtime)
     subagents: list[tuple[str, str | None, list[_Record]]] = []
@@ -1087,7 +1106,7 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
             _add_tokens(total_tokens, sub_summary["tokens"])
     for _, thread_summary, _, _ in thread_summaries:
         if isinstance(thread_summary.get("tokens"), dict):
-            _add_tokens(total_tokens, thread_summary["tokens"])
+            _add_tokens(total_tokens, _codex_summable_tokens(thread_summary["tokens"]))
 
     total_event: dict[str, Any] = {
         "kind": "stats-total",
@@ -1134,21 +1153,26 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
             :20
         ]
     )
-    repeats: dict[tuple[str, str | None], list[dict[str, Any]]] = {}
+    # 入力ヒントを取れない呼び出し（Read・Edit・Agentなど`command`を持たないツール）は
+    # 対象が異なっても同じ組へ集まり、反復照会の実態と異なる件数を報告する。集計対象から除く。
+    repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for call in calls:
-        repeats.setdefault((call["tool"], call.get("hint")), []).append(call)
-    for (tool, hint), items in sorted(repeats.items(), key=lambda item: (-len(item[1]), item[0][0])):
-        if len(items) < 2:
-            continue
-        event: dict[str, Any] = {
+        hint = call.get("hint")
+        if hint:
+            repeats.setdefault((call["tool"], hint), []).append(call)
+    events.extend(
+        {
             "kind": "stats-repeat",
             "tool": tool,
+            "hint": hint,
             "count": len(items),
             "lines": [item["line"] for item in items],
         }
-        if hint:
-            event["hint"] = hint
-        events.append(event)
+        for (tool, hint), items in sorted(
+            ((key, items) for key, items in repeats.items() if len(items) >= 2),
+            key=lambda item: (-len(item[1]), item[0]),
+        )[:10]
+    )
     for call in sorted(calls, key=lambda item: (-item["seconds"], item["line"]))[:10]:
         event = {"kind": "stats-slow-call", "tool": call["tool"], "seconds": round(call["seconds"], 1), "line": call["line"]}
         if call.get("hint"):
@@ -1182,7 +1206,7 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
 
     for thread_id, thread_summary, line, agent_id in sorted(
         thread_summaries,
-        key=lambda item: (-_token_total(item[1].get("tokens", {})), item[0]),
+        key=lambda item: (-item[1].get("tokens", {}).get("total_tokens", 0), item[0]),
     ):
         thread_event: dict[str, Any] = {
             "kind": "stats-codex-thread",

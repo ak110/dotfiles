@@ -2148,3 +2148,445 @@ def test_stats_boundary_excludes_manual_review_and_rejects_combination(tmp_path:
     assert _events_by_kind(events, "stats-summary")[0]["tokens"]["input_tokens"] == 2
     assert evidence.main([str(transcript), "--stats", "--warn"]) == 2
     assert _read_jsonl(capsys)[0]["kind"] == "error"
+
+
+def _usage(input_tokens: int, output_tokens: int = 0) -> dict[str, int]:
+    """Claude形式の4成分usageを作成する。"""
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+    }
+
+
+def _assistant_usage_entry(timestamp: str, message_id: str, usage: dict[str, int]) -> dict:
+    """usageだけを持つassistantエントリを作成する。"""
+    return {
+        "type": "assistant",
+        "timestamp": timestamp,
+        "message": {"role": "assistant", "id": message_id, "usage": usage},
+    }
+
+
+def _write_subagent(directory: pathlib.Path, agent_id: str, entries: list[dict], meta: dict | None = None) -> None:
+    """`subagents/`配下へサブエージェント記録と付随metaを書き込む。"""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{agent_id}.jsonl").write_text(
+        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
+        encoding="utf-8",
+    )
+    if meta is not None:
+        (directory / f"{agent_id}.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+def _write_rollout(codex_home: pathlib.Path, thread_id: str, usages: list[tuple[str, dict[str, int]]]) -> None:
+    """`CODEX_HOME`配下へthreadIdに対応するrolloutを書き込む。"""
+    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
+    rollout_dir.mkdir(parents=True, exist_ok=True)
+    entries = [
+        {
+            "timestamp": timestamp,
+            "payload": {"type": "token_count", "info": {"total_token_usage": usage, "last_token_usage": usage}},
+        }
+        for timestamp, usage in usages
+    ]
+    (rollout_dir / f"rollout-test-{thread_id}.jsonl").write_text(
+        "\n".join(json.dumps(entry) for entry in entries) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _codex_tool_use_entry(timestamp: str, call_id: str, thread_id: str) -> dict:
+    """Codex委譲のtool_useを持つassistantエントリを作成する。"""
+    return {
+        "type": "assistant",
+        "timestamp": timestamp,
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "name": "mcp__codex__codex", "id": call_id, "input": {"threadId": thread_id}}],
+        },
+    }
+
+
+def test_stats_outputs_every_subagent_without_limit(tmp_path: pathlib.Path, capsys) -> None:
+    """21件以上のサブエージェント記録を件数制限なく全成分合計降順で出力する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
+    )
+    subagents = transcript.with_suffix("") / "subagents"
+    for index in range(21):
+        _write_subagent(
+            subagents,
+            f"agent-{index:02d}",
+            [_assistant_usage_entry("2026-08-19T00:00:01Z", f"message-{index}", _usage(index + 1))],
+        )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    rows = _events_by_kind(events, "stats-subagent")
+    assert [row["agent"] for row in rows] == [f"agent-{index:02d}" for index in range(20, -1, -1)]
+    total = _events_by_kind(events, "stats-subagent-total")[0]
+    assert total["count"] == 21
+    assert total["tokens"] == _usage(sum(range(1, 22)))
+
+
+def test_stats_outputs_every_codex_thread_without_limit(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """21件以上のCodexスレッドを件数制限なく`total_tokens`降順で出力する。"""
+    codex_home = tmp_path / "codex"
+    thread_ids = [f"{index:08d}-0000-4000-8000-000000000000" for index in range(21)]
+    entries: list[dict] = [
+        {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}}
+    ]
+    for index, thread_id in enumerate(thread_ids):
+        _write_rollout(
+            codex_home,
+            thread_id,
+            [("2026-08-19T00:00:01Z", {"input_tokens": index + 1, "output_tokens": 1, "total_tokens": index + 2})],
+        )
+        entries.append(_codex_tool_use_entry("2026-08-19T00:00:01Z", f"call-{index}", thread_id))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    threads = _events_by_kind(events, "stats-codex-thread")
+    assert [event["thread"] for event in threads] == list(reversed(thread_ids))
+    assert [event["tokens"]["total_tokens"] for event in threads] == list(range(22, 1, -1))
+
+
+def test_stats_excludes_auxiliary_records_started_after_boundary(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """手動起動境界以降に起動した補助記録を主体別集計と全体合算から除く。"""
+    thread_id = "33333333-3333-4333-8333-333333333333"
+    codex_home = tmp_path / "codex"
+    _write_rollout(
+        codex_home,
+        thread_id,
+        [("2026-08-19T00:10:00Z", {"input_tokens": 500, "output_tokens": 500, "total_tokens": 1000})],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "作業"}},
+            _assistant_usage_entry("2026-08-19T00:00:01Z", "before", _usage(2, 3)),
+            {"type": "user", "timestamp": "2026-08-19T00:05:00Z", "message": {"role": "user", "content": "/session-review"}},
+        ],
+    )
+    subagents = transcript.with_suffix("") / "subagents"
+    _write_subagent(
+        subagents,
+        "agent-before",
+        [_assistant_usage_entry("2026-08-19T00:00:02Z", "sub-before", _usage(7))],
+    )
+    _write_subagent(
+        subagents,
+        "agent-after",
+        [
+            _assistant_usage_entry("2026-08-19T00:06:00Z", "sub-after", _usage(900)),
+            _codex_tool_use_entry("2026-08-19T00:06:01Z", "call-after", thread_id),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert [row["agent"] for row in _events_by_kind(events, "stats-subagent")] == ["agent-before"]
+    assert _events_by_kind(events, "stats-codex-thread") == []
+    total = _events_by_kind(events, "stats-total")[0]
+    assert total["tokens"] == _usage(9, 3)
+    assert total["subagent_count"] == 1
+    assert total["codex_thread_count"] == 0
+
+
+def test_stats_attributes_whole_record_started_before_boundary(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """境界前に起動した補助記録は、境界後のtimestamp・トークンも含めて全体を集計する。"""
+    thread_id = "44444444-4444-4444-8444-444444444444"
+    codex_home = tmp_path / "codex"
+    _write_rollout(
+        codex_home,
+        thread_id,
+        [
+            ("2026-08-19T00:00:03Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+            ("2026-08-19T00:07:00Z", {"input_tokens": 20, "output_tokens": 10, "total_tokens": 30}),
+        ],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "作業"}},
+            _assistant_usage_entry("2026-08-19T00:00:01Z", "before", _usage(2)),
+            {"type": "user", "timestamp": "2026-08-19T00:05:00Z", "message": {"role": "user", "content": "/session-review"}},
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-span",
+        [
+            _codex_tool_use_entry("2026-08-19T00:00:02Z", "call-span", thread_id),
+            _assistant_usage_entry("2026-08-19T00:00:03Z", "span-1", _usage(5)),
+            _assistant_usage_entry("2026-08-19T00:06:00Z", "span-2", _usage(11)),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    subagent = _events_by_kind(events, "stats-subagent")[0]
+    assert subagent["agent"] == "agent-span"
+    assert subagent["tokens"] == _usage(16)
+    thread = _events_by_kind(events, "stats-codex-thread")[0]
+    assert thread["thread"] == thread_id
+    assert thread["tokens"]["total_tokens"] == 30
+
+
+def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """通常サブエージェント発の委譲は`agent`キー付きで出力し、振り返り系発の委譲は出力しない。"""
+    normal_thread = "55555555-5555-4555-8555-555555555555"
+    review_thread = "66666666-6666-4666-8666-666666666666"
+    codex_home = tmp_path / "codex"
+    _write_rollout(
+        codex_home,
+        normal_thread,
+        [("2026-08-19T00:00:02Z", {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7})],
+    )
+    _write_rollout(
+        codex_home,
+        review_thread,
+        [("2026-08-19T00:00:02Z", {"input_tokens": 300, "output_tokens": 400, "total_tokens": 700})],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
+    )
+    subagents = transcript.with_suffix("") / "subagents"
+    _write_subagent(
+        subagents,
+        "agent-normal",
+        [_codex_tool_use_entry("2026-08-19T00:00:01Z", "call-normal", normal_thread)],
+        {"agentType": "Explore"},
+    )
+    _write_subagent(
+        subagents,
+        "agent-review",
+        [_codex_tool_use_entry("2026-08-19T00:00:01Z", "call-review", review_thread)],
+        {"agentType": "session-review-advisor"},
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    threads = _events_by_kind(events, "stats-codex-thread")
+    assert [event["thread"] for event in threads] == [normal_thread]
+    assert threads[0]["agent"] == "agent-normal"
+
+
+def test_stats_total_sums_main_subagent_and_codex_shared_keys(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """`stats-total`はメイン・サブエージェント・Codexの3区分を同義キーだけで合算する。"""
+    thread_id = "77777777-7777-4777-8777-777777777777"
+    codex_home = tmp_path / "codex"
+    _write_rollout(
+        codex_home,
+        thread_id,
+        [
+            (
+                "2026-08-19T00:00:03Z",
+                {
+                    "input_tokens": 100,
+                    "cached_input_tokens": 90,
+                    "cache_write_input_tokens": 7,
+                    "output_tokens": 40,
+                    "reasoning_output_tokens": 30,
+                    "total_tokens": 140,
+                },
+            )
+        ],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "id": "main",
+                    "usage": {
+                        "input_tokens": 2,
+                        "output_tokens": 3,
+                        "cache_creation_input_tokens": 4,
+                        "cache_read_input_tokens": 5,
+                    },
+                },
+            },
+            _codex_tool_use_entry("2026-08-19T00:00:02Z", "call-1", thread_id),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-normal",
+        [_assistant_usage_entry("2026-08-19T00:00:02Z", "sub", _usage(10, 20))],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    total = _events_by_kind(events, "stats-total")[0]
+    assert total["tokens"] == {
+        "input_tokens": 112,
+        "output_tokens": 63,
+        "cache_creation_input_tokens": 4,
+        "cache_read_input_tokens": 5,
+    }
+    assert total["subagent_count"] == 1
+    assert total["codex_thread_count"] == 1
+    assert _events_by_kind(events, "stats-codex-thread")[0]["tokens"]["total_tokens"] == 140
+
+
+def test_stats_claude_automatic_start_keeps_records_after_marker(tmp_path: pathlib.Path, capsys) -> None:
+    """Claude形式の自動起動では境界を設けず、開始マーカー後の記録も集計する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _assistant_usage_entry("2026-08-19T00:00:00Z", "before", _usage(2)),
+            {
+                "type": "user",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
+                "message": {"role": "user", "content": []},
+            },
+            _assistant_usage_entry("2026-08-19T00:00:02Z", "after", _usage(100)),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-summary")[0]["tokens"] == _usage(102)
+
+
+def test_stats_codex_automatic_boundary_excludes_review_records(tmp_path: pathlib.Path, capsys) -> None:
+    """Codex形式の自動起動ではstop通知起点の境界を適用し、境界後の記録を集計しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "結果"}]},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+                        "last_token_usage": {"input_tokens": 2, "output_tokens": 3},
+                    },
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:02Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 誘導"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:03Z",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {"input_tokens": 500, "output_tokens": 500, "total_tokens": 1000},
+                        "last_token_usage": {"input_tokens": 500, "output_tokens": 500},
+                    },
+                },
+            },
+            {
+                "type": "event_msg",
+                "timestamp": "2026-08-19T00:00:04Z",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "completed",
+                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
+                    },
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["total_tokens"] == 5
+
+
+def test_stats_reports_no_target_without_timestamp_and_tokens(tmp_path: pathlib.Path, capsys) -> None:
+    """timestampもトークン情報も無い入力では集計対象なしを返し、終了コード0で終わる。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "message": {"role": "user", "content": "依頼"}}],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-summary") == [{"kind": "stats-summary", "text": "集計対象なし"}]
+
+
+def test_stats_repeat_limits_to_ten_groups_and_requires_hint(tmp_path: pathlib.Path, capsys) -> None:
+    """反復呼び出しは入力ヒントを持つ組だけを回数降順で最大10件出力する。"""
+    entries: list[dict] = []
+    for index in range(12):
+        for repetition in range(2):
+            call_id = f"bash-{index}-{repetition}"
+            entries.append(
+                {
+                    "type": "assistant",
+                    "timestamp": f"2026-08-19T00:{index:02d}:{repetition:02d}Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": f"command-{index}"}}
+                        ],
+                    },
+                }
+            )
+            entries.append(
+                {
+                    "type": "user",
+                    "timestamp": f"2026-08-19T00:{index:02d}:{repetition:02d}Z",
+                    "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "済"}]},
+                }
+            )
+    for index in range(3):
+        call_id = f"read-{index}"
+        entries.append(
+            {
+                "type": "assistant",
+                "timestamp": f"2026-08-19T00:30:{index:02d}Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Read", "id": call_id, "input": {"file_path": f"/tmp/{index}"}}],
+                },
+            }
+        )
+        entries.append(
+            {
+                "type": "user",
+                "timestamp": f"2026-08-19T00:30:{index:02d}Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "済"}]},
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    repeats = _events_by_kind(events, "stats-repeat")
+    assert len(repeats) == 10
+    assert {event["tool"] for event in repeats} == {"Bash"}
+    assert all(event["hint"].startswith("command-") for event in repeats)
