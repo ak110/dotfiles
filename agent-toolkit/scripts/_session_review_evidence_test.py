@@ -1865,13 +1865,21 @@ def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pa
                         "cache_creation_input_tokens": 5,
                         "cache_read_input_tokens": 6,
                     },
-                    "content": [{"type": "tool_use", "name": "Bash", "id": "call-1", "input": {"command": "make test"}}],
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "id": "call-1", "input": {"command": "make test"}},
+                        {"type": "tool_use", "name": "Read", "id": "call-2", "input": {"file_path": "/tmp/target.py"}},
+                    ],
                 },
             },
             {
                 "type": "user",
                 "timestamp": "2026-08-19T00:00:04Z",
                 "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "完了"}]},
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-08-19T00:00:11Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call-2", "content": "本文"}]},
             },
             {
                 "type": "assistant",
@@ -1902,9 +1910,15 @@ def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pa
     }
     assert summary["api_messages"] == 1
     assert summary["elapsed_seconds"] == 70
-    assert _events_by_kind(events, "stats-tool") == [{"kind": "stats-tool", "tool": "Bash", "count": 1, "total_seconds": 3.0}]
-    assert _events_by_kind(events, "stats-slow-call")[0]["line"] == 2
-    assert _events_by_kind(events, "stats-token-peak")[0]["line"] == 4
+    assert _events_by_kind(events, "stats-tool") == [
+        {"kind": "stats-tool", "tool": "Read", "count": 1, "total_seconds": 10.0},
+        {"kind": "stats-tool", "tool": "Bash", "count": 1, "total_seconds": 3.0},
+    ]
+    assert _events_by_kind(events, "stats-slow-call") == [
+        {"kind": "stats-slow-call", "tool": "Read", "seconds": 10.0, "line": 2, "hint": "/tmp/target.py"},
+        {"kind": "stats-slow-call", "tool": "Bash", "seconds": 3.0, "line": 2, "hint": "make test"},
+    ]
+    assert _events_by_kind(events, "stats-token-peak")[0]["line"] == 5
 
 
 def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, capsys) -> None:
@@ -1950,7 +1964,9 @@ def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, c
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     gaps = _events_by_kind(events, "stats-gap")
-    assert gaps and gaps[0]["seconds"] >= 60
+    # 60秒以上の空白は先頭の依頼から最初のassistantまでの1件だけで、59秒の空白は出力されない。
+    assert gaps == [{"kind": "stats-gap", "seconds": 120.0, "before_line": 1, "after_line": 2}]
+    assert all(event["seconds"] >= 60 for event in gaps)
     repeats = _events_by_kind(events, "stats-repeat")
     assert repeats and repeats[0]["tool"] == "Read" and repeats[0]["count"] == 11
     peaks = _events_by_kind(events, "stats-token-peak")
@@ -2849,3 +2865,81 @@ def test_stats_repeat_uses_target_input_keys_of_tools_without_command(tmp_path: 
         ("Grep", "同じ検索語", 2),
     ]
     assert repeats[0]["lines"] == [1, 3, 5]
+
+
+def test_stats_repeat_distinguishes_multiline_commands_sharing_first_line(tmp_path: pathlib.Path, capsys) -> None:
+    """先頭行が同一の複数行コマンドは、本体が異なれば同じ反復組へ集約しない。"""
+    commands = ["cd /repo\nmake test", "cd /repo\nmake lint", "cd /repo\nmake test"]
+    entries: list[dict] = []
+    for index, command in enumerate(commands):
+        call_id = f"call-{index}"
+        entries.append(
+            {
+                "type": "assistant",
+                "timestamp": f"2026-08-19T00:00:{index * 2:02d}Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}}],
+                },
+            }
+        )
+        entries.append(
+            {
+                "type": "user",
+                "timestamp": f"2026-08-19T00:00:{index * 2 + 1:02d}Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "済"}]},
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-repeat") == [
+        {"kind": "stats-repeat", "tool": "Bash", "hint": "cd /repo\nmake test", "count": 2, "lines": [1, 5]}
+    ]
+
+
+def test_stats_takes_codex_hint_from_input_without_arguments(tmp_path: pathlib.Path, capsys) -> None:
+    """`arguments`を持たないCodexの呼び出しでは`input`の本文をヒントとする。"""
+    command_input = 'const out = await sh({cmd: "rg -n \'foo\' src", workdir: "/repo"});'
+    entries: list[dict] = [
+        {
+            "type": "response_item",
+            "timestamp": "2026-08-19T00:00:00Z",
+            "payload": {"type": "message", "role": "user", "content": "依頼"},
+        }
+    ]
+    for index, seconds in enumerate((2, 6)):
+        call_id = f"call-{index}"
+        started = index * 10 + 1
+        entries.append(
+            {
+                "type": "response_item",
+                "timestamp": f"2026-08-19T00:00:{started:02d}Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "status": "completed",
+                    "call_id": call_id,
+                    "name": "exec",
+                    "input": command_input,
+                },
+            }
+        )
+        entries.append(
+            {
+                "type": "response_item",
+                "timestamp": f"2026-08-19T00:00:{started + seconds:02d}Z",
+                "payload": {"type": "custom_tool_call_output", "call_id": call_id, "output": "完了"},
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert _events_by_kind(events, "stats-repeat") == [
+        {"kind": "stats-repeat", "tool": "exec", "hint": command_input, "count": 2, "lines": [2, 4]}
+    ]
+    assert _events_by_kind(events, "stats-slow-call") == [
+        {"kind": "stats-slow-call", "tool": "exec", "seconds": 6.0, "line": 4, "hint": command_input},
+        {"kind": "stats-slow-call", "tool": "exec", "seconds": 2.0, "line": 2, "hint": command_input},
+    ]

@@ -1013,13 +1013,41 @@ def _claude_call_hint(block_input: Any) -> str | None:
     `command`を持たないツール（`Read`・`Edit`・`Grep`など）では、対象を表す入力キーを
     定義順に探す。列挙は全ツール種別の網羅を目的とせず、取得できた値だけをヒントとする。
     いずれのキーも持たない呼び出しはヒントなしとし、反復集計の対象から外れる。
+
+    値は先頭行へ切り詰めず全体を`_clip`へ通す。複数行のコマンドは先頭行が
+    `cd <ディレクトリ>`・変数代入・ヒアドキュメント開始行などで一致しやすく、
+    先頭行だけをヒントにすると内容の異なる呼び出しが同じ反復組へ集まるためである。
     """
     if not isinstance(block_input, dict):
         return None
     for key in _CLAUDE_HINT_KEYS:
         value = block_input.get(key)
         if isinstance(value, str) and value.strip():
-            return _clip(value.splitlines()[0])
+            return _clip(value)
+    return None
+
+
+def _codex_call_hint(payload: dict[str, Any]) -> str | None:
+    """Codexのツール呼び出しpayloadから反復照会の識別に用いる対象値を取得する。
+
+    実行内容の格納先は呼び出しの種類で異なり、`arguments`のJSONへ`command`又は`cmd`を持つ
+    呼び出しと、`arguments`を持たず自由形式の`input`へ実行内容を埋め込む呼び出し（`exec`など）が
+    実在する。前者から取得できない場合は`input`の文字列をそのままヒントとする。
+    値は`_claude_call_hint`と同じ理由で先頭行へ切り詰めず、`_clip`の上限だけで抑える。
+    """
+    arguments = _json_object(payload.get("arguments"))
+    if arguments is not None:
+        for key in ("command", "cmd"):
+            command = arguments.get(key)
+            if isinstance(command, list):
+                joined = " ".join(part for part in command if isinstance(part, str))
+                if joined.strip():
+                    return _clip(joined)
+            elif isinstance(command, str) and command.strip():
+                return _clip(command)
+    value = payload.get("input")
+    if isinstance(value, str) and value.strip():
+        return _clip(value)
     return None
 
 
@@ -1051,14 +1079,7 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
             continue
         payload_type = payload.get("type")
         if payload_type in {"custom_tool_call", "function_call"} and isinstance(payload.get("call_id"), str):
-            arguments = _json_object(payload.get("arguments"))
-            command = arguments.get("command") if isinstance(arguments, dict) else None
-            if isinstance(command, list):
-                hint = _clip(" ".join(part for part in command if isinstance(part, str)).splitlines()[0]) if command else None
-            elif isinstance(command, str) and command.strip():
-                hint = _clip(command.splitlines()[0])
-            else:
-                hint = None
+            hint = _codex_call_hint(payload)
             calls.setdefault(payload["call_id"], (str(payload.get("name", "")), hint, record.line, timestamp))
         elif payload_type in {"custom_tool_call_output", "function_call_output"} and isinstance(payload.get("call_id"), str):
             results.setdefault(payload["call_id"], []).append(timestamp)
