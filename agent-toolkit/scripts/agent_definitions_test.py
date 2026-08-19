@@ -568,6 +568,27 @@ def test_plan_review_audits_shared_representation_and_overview_sync() -> None:
         assert phrase in delegation
 
 
+def test_plan_review_terminates_non_converging_units() -> None:
+    """撤去と復元の双方を観測した箇所を収束不能と判定し、分離して返す終端条件を固定する。"""
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    for phrase in (
+        "いったん採用して反映した変更の撤去と、その後の同一内容の復元をともに観測した場合",
+        "当該箇所を収束不能と判定する",
+        "撤回だけ、又は訂正だけで収束した箇所は本判定の対象としない",
+        "`## 変更履歴`へ起点`方針転換`として分離の事実と、採用した撤去指摘のIDおよび復元指摘のIDを1行記録する",
+        "分離した単位は`needs_escalation`として調整主体へ返す",
+    ):
+        assert phrase in delegation, phrase
+    # 分離した単位は既存のreject終端契約ではなく保留経路で扱う。
+    for phrase in (
+        "計画レビューの収束不能判定により分離した単位の`needs_escalation`は、失敗TBDと`atk mq reject`の対象としない",
+        "`atk mq return-to-inbox`でinboxへ戻し、active一覧で`blocked`であることを確認する",
+    ):
+        assert phrase in reception, phrase
+
+
 def test_plan_save_requires_unique_replacement_boundary() -> None:
     """計画の機械的な部分差し替え前に境界の一意性を確認する契約を固定する。"""
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")

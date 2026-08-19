@@ -81,6 +81,10 @@ TBD候補は、技術調査と明文化済み方針で確定できず、かつ�
 rejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
 それ以外では新しいTBDを作成せず、Git操作も`feedbacks-planner`の再開も行わず失敗として返す。
 
+計画レビューの収束不能判定により分離した単位の`needs_escalation`は、失敗TBDと`atk mq reject`の対象としない。
+当該単位はTBDを記録し、現行の有効依存を保持したままTBDのファイル名を明示依存へ追加して
+`atk mq return-to-inbox`でinboxへ戻し、active一覧で`blocked`であることを確認する。
+
 `feedbacks-planner`の完了後は項目別結果をファイル名昇順で各1回反映する。
 各結果反映コマンドが警告・エラーを返した場合は、同じ結果を再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
