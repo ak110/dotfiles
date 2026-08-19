@@ -50,6 +50,8 @@ def _make_remote_repository(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
     _run_git(["remote", "add", "origin", str(remote)], seed)
     _run_git(["push", "-u", "origin", "main"], seed)
     _run_git(["clone", str(remote), str(local)], tmp_path)
+    _run_git(["config", "user.name", "test"], local)
+    _run_git(["config", "user.email", "test@example.invalid"], local)
     _run_git(["remote", "set-head", "origin", "-a"], local)
     return local
 
