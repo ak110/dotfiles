@@ -74,6 +74,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    `plan-review-task.md`を渡し、新規識別子で起動する。
 6. レビュー指摘を加工せず起草担当へ全件配送する。
    配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。
+   `agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスも同じ配送文へ含める。
    起草担当の応答では、各指摘の採否と比例性の判断根拠が6列表へ記録されていることを検収する。
    レビュー担当の起動、書込有無のGit状態検収、結果検収は自身が担当し、再レビューと収束は
    `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`、継続方法は

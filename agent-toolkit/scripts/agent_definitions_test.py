@@ -1089,6 +1089,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
     assert "モード指定" in common
+    assert "該当する作成規範スキルの絶対パス" in common
     for phrase in ("計画ファイルの絶対パス", "worktree一覧", "フィードバックファイル名一覧", "複製元と対象外worktree"):
         assert phrase in normal
         assert phrase not in integrated
@@ -1107,6 +1108,11 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     assert "モード指定`通常の実装モード`" in caller
     assert "モード指定`統合後レビュー調整モード`" in flow
     assert "統合対応表の絶対パス" in flow
+    assert "### 統合担当の起動" in flow
+    lane_launch = flow.partition("### 統合担当の起動")[0]
+    integrated_launch = flow.partition("モード指定`統合後レビュー調整モード`")[2]
+    assert "該当する作成規範スキルの絶対パス" in lane_launch
+    assert "該当する作成規範スキルの絶対パス" in integrated_launch
 
 
 def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
