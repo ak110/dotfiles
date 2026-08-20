@@ -311,7 +311,7 @@ const ids = [
   'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
   'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
   'target-filter', 'source-filter', 'source-empty-filter', 'entry-count',
-  'result-status', 'list-warning', 'loading-indicator', 'entry-list', 'empty-state',
+  'result-status', 'list-warning', 'list-fallback-notice', 'loading-indicator', 'entry-list', 'empty-state',
   'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-create-button',
   'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
   'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
@@ -3952,6 +3952,211 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "rows": ["new.md"],
         "loading": "false",
+    }
+
+
+def test_assets_search_fallback_obeys_boundaries_and_keeps_filters() -> None:
+    """検索結果0件時の補助検索を境界値、通常一致、検索語なしで検証する。"""
+    result = _run_node_ui(
+        """
+const fallbackNotice =
+  '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
+  'フィルターの選択値は変更していません。';
+const initialWarnings = [{filename: 'initial.md', reason: '初回警告'}];
+const runCase = async (token, count) => {
+  fetchCalls.length = 0;
+  elements['search-input'].value = token;
+  elements['kind-filter'].value = 'all';
+  elements['state-filter'].value = 'active';
+  elements['answer-filter'].value = 'all';
+  elements['target-filter'].value = '';
+  elements['source-filter'].value = '';
+  elements['source-empty-filter'].checked = false;
+  const fallbackEntries = Array.from({length: count}, (_, index) => ({
+    kind: 'feedback', state: 'adopted', filename: `${token}-${index}.md`, summary: token
+  }));
+  fetchHandler = async url => {
+    if (url.includes('status=active')) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: initialWarnings})};
+    }
+    if (url === `/atk/api/entries?q=${token}`) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: fallbackEntries, warnings: []})};
+    }
+    throw new Error('想定外のURL: ' + url);
+  };
+  await loadEntries({announce: true});
+  return {
+    count,
+    rows: entries.map(entry => entry.filename),
+    notice: elements['list-fallback-notice'].textContent,
+    noticeHidden: elements['list-fallback-notice'].hidden,
+    status: elements['result-status'].textContent,
+    warning: elements['list-warning'].textContent,
+    filters: {
+      kind: elements['kind-filter'].value,
+      state: elements['state-filter'].value,
+      answer: elements['answer-filter'].value,
+      target: elements['target-filter'].value,
+      source: elements['source-filter'].value,
+      sourceEmpty: elements['source-empty-filter'].checked
+    },
+    urls: fetchCalls.map(call => call.url)
+  };
+};
+const one = await runCase('one', 1);
+const five = await runCase('five', 5);
+const none = await runCase('none', 0);
+const six = await runCase('six', 6);
+
+fetchCalls.length = 0;
+elements['search-input'].value = 'normal';
+fetchHandler = async url => {
+  if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+    entries: [{kind: 'feedback', state: 'inbox', filename: 'normal.md', summary: 'normal'}], warnings: []
+  })};
+};
+await loadEntries({announce: true});
+const normal = {
+  rows: entries.map(entry => entry.filename),
+  noticeHidden: elements['list-fallback-notice'].hidden,
+  urls: fetchCalls.map(call => call.url)
+};
+
+fetchCalls.length = 0;
+elements['search-input'].value = '';
+fetchHandler = async url => {
+  if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+await loadEntries({announce: true});
+const emptySearch = {
+  rows: entries.map(entry => entry.filename),
+  noticeHidden: elements['list-fallback-notice'].hidden,
+  urls: fetchCalls.map(call => call.url)
+};
+process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, fallbackNotice}));
+"""
+    )
+    expected_notice = (
+        "状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。"
+        "フィルターの選択値は変更していません。"
+    )
+    assert result["one"]["rows"] == ["one-0.md"]
+    assert result["five"]["rows"] == [f"five-{index}.md" for index in range(5)]
+    for name in ("one", "five"):
+        assert result[name]["notice"] == expected_notice
+        assert result[name]["noticeHidden"] is False
+        assert result[name]["warning"] == ""
+        assert result[name]["urls"] == [
+            f"/atk/api/entries?type=all&status=active&answered=all&q={name}",
+            f"/atk/api/entries?q={name}",
+        ]
+        assert result[name]["filters"] == {
+            "kind": "all",
+            "state": "active",
+            "answer": "all",
+            "target": "",
+            "source": "",
+            "sourceEmpty": False,
+        }
+    for name in ("none", "six"):
+        assert result[name]["rows"] == []
+        assert result[name]["notice"] == ""
+        assert result[name]["noticeHidden"] is True
+        assert result[name]["warning"] == "一覧から除外したファイル: initial.md（初回警告）"
+        assert result[name]["status"] == "一致する項目はありません"
+        assert result[name]["urls"] == [
+            f"/atk/api/entries?type=all&status=active&answered=all&q={name}",
+            f"/atk/api/entries?q={name}",
+        ]
+    assert result["normal"] == {
+        "rows": ["normal.md"],
+        "noticeHidden": True,
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all&q=normal"],
+    }
+    assert result["emptySearch"] == {
+        "rows": [],
+        "noticeHidden": True,
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all"],
+    }
+    assert result["fallbackNotice"] == expected_notice
+
+
+def test_assets_search_fallback_failure_keeps_initial_empty_result() -> None:
+    """補助検索が失敗しても初回の空一覧とエラー表示を維持する。"""
+    result = _run_node_ui(
+        """
+elements['search-input'].value = '失敗する検索';
+fetchHandler = async url => {
+  if (url.includes('status=active')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  return {ok: false, status: 503, statusText: 'Unavailable', json: async () => ({error: '補助検索に失敗'})};
+};
+await loadEntries({announce: true});
+process.stdout.write(JSON.stringify({
+  rows: entries.map(entry => entry.filename),
+  notice: elements['list-fallback-notice'].textContent,
+  status: elements['result-status'].textContent,
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result == {
+        "rows": [],
+        "notice": "",
+        "status": "一致する項目はありません",
+        "error": "補助検索に失敗",
+    }
+
+
+def test_assets_discard_stale_search_fallback_response() -> None:
+    """後発の一覧要求が完了した後に補助応答が到着しても表示を上書きしない。"""
+    result = _run_node_ui(
+        """
+let resolveFallback;
+let fallbackStarted;
+const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
+elements['search-input'].value = 'old';
+fetchHandler = async url => {
+  if (url.endsWith('q=old')) {
+    fallbackStarted();
+    return new Promise(resolve => { resolveFallback = resolve; });
+  }
+  if (url.includes('q=old')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  if (url.includes('q=new')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+      entries: [{kind: 'feedback', state: 'inbox', filename: 'new.md', summary: 'new'}], warnings: []
+    })};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+const oldRequest = loadEntries({announce: true});
+await fallbackReady;
+elements['search-input'].value = 'new';
+const newRequest = loadEntries({announce: true});
+await newRequest;
+resolveFallback({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entries: [{kind: 'feedback', state: 'adopted', filename: 'old.md', summary: 'old'}], warnings: []})
+});
+await oldRequest;
+process.stdout.write(JSON.stringify({
+  rows: entries.map(entry => entry.filename),
+  state: entries[0]?.state,
+  notice: elements['list-fallback-notice'].textContent,
+  status: elements['result-status'].textContent
+}));
+"""
+    )
+    assert result == {
+        "rows": ["new.md"],
+        "state": "inbox",
+        "notice": "",
+        "status": "1件を表示",
     }
 
 
