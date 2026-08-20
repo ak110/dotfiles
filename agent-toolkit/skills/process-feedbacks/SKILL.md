@@ -51,9 +51,12 @@ TBDへ永続化して暫定判断で進める。
 回答が得られない場合は同じ質問内容を不採用確認用TBDへ保存して保留し、回答又はTBDを確認できない状態ではrejectしない。
 保留確認後は保留結果を同じ`feedbacks-planner`系統へ返し、保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
 部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲及び理由を採否記録へ残す。起草担当又は実行主体へはバッチ全項目を渡し、
-実施内容へは採用又は部分採用の採用範囲だけを反映する。別リポジトリ項目は保持済みの原文を正しい`target_repo`へ
-`agent-toolkit:add-feedback`で登録し、sourceがある場合は同じ値を渡す。sourceを指定した場合は移管先のsource、本文、`target_repo`を
-`atk mq show`で照合し、指定していない場合は本文と`target_repo`だけを照合した後に元項目を終端する。
+実施内容へは採用又は部分採用の採用範囲だけを反映する。
+別リポジトリ項目は、元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ`agent-toolkit:add-feedback`で登録する。
+sourceがある場合は同じ値を渡す。
+`alert_keys`などの非予約frontmatterは元項目の値を保持する。
+移管先では`atk mq show`でsource（指定時）、本文、`target_repo`及び元項目の非予約frontmatter全体を照合する。
+照合後に元項目を終端する。
 
 Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を

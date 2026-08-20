@@ -886,7 +886,8 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "部分採用を理由にAskUserQuestionを機械的に発行せず",
         "回答が得られない場合は同じ質問内容をTBDへ保存",
         "回答又はTBDを確認できない状態では`reject`を実行しない",
-        "保持済みの本文を正しい`target_repo`へ移管して登録し、sourceがある場合は同じ値を渡す",
+        "元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する",
+        "`alert_keys`などの非予約frontmatterは元項目の値を保持する",
         "不採用確認用`user_decisions`は通常の将来判断TBDと区別する",
     ):
         assert phrase in decision
@@ -917,8 +918,8 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
 
     assert "sourceを受領した場合だけ同じ値を" in add_feedback
-    assert "`atk mq add --source=<source>`へ渡し" in add_feedback
-    assert "sourceを受領していない場合は`--source`を省略する" in add_feedback
+    assert "`atk mq add --source=<source>`へ渡す" in add_feedback
+    assert "sourceを受領していない場合は`--source`を省略し" in add_feedback
     assert "`atk mq show <filename> --target-repo=<repo-path> --skip-pull`" in add_feedback
     assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
     assert "sourceの欠落・不一致では完了扱いにせず" in add_feedback
@@ -944,11 +945,17 @@ def test_feedback_transfer_requires_successful_registration_before_rejection() -
     assert "指定済みsource" in sender
     assert "source欄がない場合はsourceを指定しない" in sender
     assert "sourceを指定した場合は移管先のsource" in sender
-    assert "sourceを指定しない場合は本文、`target_repo`だけを同じshow経路で照合する" in sender
-    assert "本文、`target_repo`を`atk mq show" in sender
-    assert "sourceを指定した場合は移管先の`source`、本文、`target_repo`、移管先ファイル名を`atk mq show`" in decision
-    assert "sourceを指定しない場合は本文、`target_repo`、移管先ファイル名だけを照合" in decision
-    assert "sourceを指定した場合は移管先のsource、本文、`target_repo`を既存の`atk mq show`で照合" in checklist
+    assert "sourceを指定しない場合は本文、`target_repo`、非予約frontmatter全体を同じshow経路で照合する" in sender
+    assert "照合には`atk mq show <移管先ファイル名> --target-repo=<target_repo> --skip-pull`を使う" in sender
+    assert (
+        "sourceを指定した場合は移管先の`source`、本文、`target_repo`、非予約frontmatter全体、移管先ファイル名を`atk mq show`"
+        in decision
+    )
+    assert "sourceを指定しない場合は本文、`target_repo`、非予約frontmatter全体、移管先ファイル名を照合する" in decision
+    assert (
+        "sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を既存の`atk mq show`で照合"
+        in checklist
+    )
     registration = sender.index("`agent-toolkit:add-feedback`へ渡して登録・照合する")
     terminal = sender.index("元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする")
     assert registration < terminal

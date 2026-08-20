@@ -43,12 +43,17 @@ description: >
    1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で再取得する。
    別操作、時間を空けた確認、この手順をやり直す際のactive一覧取得では同期を省略しない。
    事前確認の判断表を再適用して処置を確定し、競合で拒否された場合も同様に再取得して再適用する
-6. 新規項目は`atk mq add`で保存し、計画実装型は吸収元のファイル名を本文へ記録する。sourceを受領した場合だけ同じ値を
-   `atk mq add --source=<source>`へ渡し、sourceを受領していない場合は`--source`を省略する。sourceを推測、必須化又は別値へ置換しない
+6. 新規項目は`atk mq add`で保存し、計画実装型は吸収元のファイル名を本文へ記録する。
+   別リポジトリ移管では、元項目のfrontmatterと本文を含むメッセージ全体を渡す。
+   sourceを受領した場合だけ同じ値を`atk mq add --source=<source>`へ渡す。
+   sourceを受領していない場合は`--source`を省略し、sourceを推測、必須化又は別値へ置換しない
 7. 完了表示のファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`を入力と照合する。sourceを受領した場合は、
    保存後に既存の`atk mq show <filename> --target-repo=<repo-path> --skip-pull`で項目を再取得し、frontmatterのsourceが入力値と一致することを照合する。
    sourceの欠落・不一致では完了扱いにせず、同じ経路で修復する。sourceを受領していない場合は追加のsource照合をしない。
    警告やエラーが出た場合も、終了コード0であっても`atk mq show <filename> --target-repo=<repo-path>`で保存内容を再取得し、欠落を同じ経路で修復する
+   別リポジトリ移管では、移管先の`target_repo`と本文を照合する。
+   元項目の非予約frontmatter（`alert_keys`など）も照合する。
+   予約frontmatterは`atk mq add`の管理値と照合する
 
 本文へ引用符・改行を含む場合は、本文をファイルへ保存し`atk mq add --body-file <path>`で渡す
 （複数回指定可。位置引数との併用は拒否される）。

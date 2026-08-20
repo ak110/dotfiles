@@ -119,10 +119,13 @@ Git操作、3分類及び元項目の`feedbacks-planner`再開は行わない。
 
 採用結果では`atk mq convert-to-plan <filename> --plan-file=<計画絶対パス> --target-repo=<repo>`を実行し、
 保存結果の`plan_file`を同じ実在する計画パスへ照合する。
-別リポジトリ項目は終端結果として扱わず、保持済みの原文本文、指定済みsource及び正しい`target_repo`を
-`agent-toolkit:add-feedback`へ渡して登録・照合する。source欄がない場合はsourceを指定しない。
-sourceを指定した場合は移管先のsource、本文、`target_repo`を`atk mq show <移管先ファイル名> --target-repo=<target_repo> --skip-pull`で照合する。
-sourceを指定しない場合は本文、`target_repo`だけを同じshow経路で照合する。
+別リポジトリ項目は終端結果として扱わず、元項目のfrontmatterと本文を含むメッセージ全体、指定済みsource及び正しい`target_repo`を
+`agent-toolkit:add-feedback`へ渡して登録・照合する。
+`alert_keys`などの非予約frontmatterは元項目の値を保持する。
+source欄がない場合はsourceを指定しない。
+sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を照合する。
+照合には`atk mq show <移管先ファイル名> --target-repo=<target_repo> --skip-pull`を使う。
+sourceを指定しない場合は本文、`target_repo`、非予約frontmatter全体を同じshow経路で照合する。
 登録・照合の結果から移管先ファイル名と本文を照合できた場合だけ、
 元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする。登録又は照合に失敗した場合は元項目を保持する。
 ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡す。

@@ -103,9 +103,12 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 `AskUserQuestion`又はTBD保留へ接続する。不採用確認用`user_decisions`は通常の将来判断TBDと区別する。
 直接回答は出所と引用範囲を付けた逐語文で同じ`feedbacks-planner`系統へ返し、回答なしではTBD保存、依存設定、`blocked`確認後の
 保留結果を同じ系統へ返す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない場合は元項目を終端しない。
-別リポジトリ項目は、既存の`agent-toolkit:add-feedback`で正しい`target_repo`へ
-原文を登録し、sourceがある場合は同じ値を渡す。sourceを指定した場合は移管先のsource、本文、`target_repo`を
-`atk mq show`で照合し、指定しない場合は本文と`target_repo`だけを照合した後、移管先ファイル名を記録して元項目を終端する。
+別リポジトリ項目は、元項目のfrontmatterと本文を含むメッセージ全体を既存の`agent-toolkit:add-feedback`で正しい`target_repo`へ
+登録する。sourceがある場合は同じ値を渡す。
+`alert_keys`などの非予約frontmatterは元項目の値を保持する。
+sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を`atk mq show`で照合する。
+sourceを指定しない場合は本文、`target_repo`及び非予約frontmatter全体を照合した後、
+移管先ファイル名を記録して元項目を終端する。
 
 この境界では項目単位の永続的な由来スキーマを新設せず、既存のsourceを判定に用いる。
 sourceによる由来境界の判定と利用者認可の確認を分け、source又はフィードバック本文から利用者認可を推定しない。
