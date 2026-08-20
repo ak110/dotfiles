@@ -110,6 +110,24 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 後続節で再採用済みの論点と計画目的へ帰属して必要な追加ファイルは許容し、
 対応付け不能、計画間衝突又は認可上限の超過は書込担当へ渡さず呼び出し元へ返す。
 
+通常の実装モードでレビュー修正を委譲する場合は、`plan-impl-executor`が採用指摘を実装単位commitの完全OIDへ対応付け、
+書込担当が未pushの実装単位履歴へ修正を統合し、呼び出し元が履歴書換え前後のOID、順序、件数、差分帰属及びclean状態を受領する。
+最終単位だけはamend、過去単位だけはfixupとautosquash、両方は過去単位だけを先に実装してautosquashした後、2回目のpush済み判定後に最終単位を実装・stageしてamendし、レビュー修正専用commitを残さない。
+複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行する。
+過去単位と最終単位が対象の場合は、autosquash成功後の2回目のpush済み判定が成功した後にだけ最終単位の修正をamendする。
+書込担当は履歴書換え直前に`git remote`で全remoteを列挙し、各remoteへ`git ls-remote --heads --tags --refs <remote>`を実行する。
+全remoteが広告するbranch・tagを公開済み判定の母集団とし、local object databaseに存在しない広告OIDだけをremote単位で数値添字の一時refへ取得して、広告集合の再照合後に回収する。
+remote-tracking ref、local tag、remote設定、`FETCH_HEAD`は変更しない。
+広告OIDとobjectの実在、最終参照先の型を確認する。広告branch tipには`git merge-base --is-ancestor <対象OID> <branchTip>`を実行し、終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）の場合だけ公開済みと判定する。広告tagは最終参照先がcommitの場合だけ同じ祖先を判定し、commit以外は祖先判定から除外する。
+autosquash成功後は書込担当が`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目の再判定対象を当該OIDへ置換する。
+書換え前の各対象OIDと書換え後の全実装単位OIDの対応は履歴検収用に保持する。
+remote列挙、広告取得、不足OIDのfetch、広告集合の再照合、object確認、tag解決、祖先判定又は一時ref回収で失敗した場合は履歴を書き換えず`needs_escalation`で返す。
+`rewrite_guard`には対象完全OID、Git版、検収済みHEAD、remote別の広告取得・不足OID fetch・再照合終了コード、正規化済みref・OID、一時ref回収結果、各Gitコマンドの終了コード、判定結果及び秘密情報を除去した必要最小限のエラー要約だけを残す。Git出力、URL又は認証情報を保存しない。
+executorは書込担当の完了後に履歴と`rewrite_guard`を検収し、履歴書換え前の中間受渡しを設けない。
+実行系は開始前に確定し、Codex経路は同じthreadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
+再判定不能や対象OIDのpush済み検出がある場合は`needs_escalation`で返す。
+統合後レビュー調整モードは統合差分へ1つの修正commitを作成する経路を維持する。
+
 利用者の認証情報ファイルは既定の認証解決経路に留め、委譲の作業領域へ移さない。
 配布設定はClaude Codeの組み込み`Read`を拒否し、常時規範は委譲元と委譲先による再配置を禁止する。
 委譲手順は、認証を要する検証で既定の認証解決経路を維持する。
@@ -239,6 +257,16 @@ activeなフィードバックの一覧をadvisorの起動文へ複製する案�
 モード別の作業前OIDと承認済み計画から修正認可の上限を検査する。
 各書込担当以降のHEAD又は`review_contract`へ混入した未承認契約は認可根拠に含めず、
 修正後の累積差分照合は重複確認として維持する。
+
+通常モードのレビュー修正では、指摘と実装単位commitの対応が確定し、各中間commitの公開契約と近接検証を維持できる場合だけ、
+書込担当へ履歴統合を認可する。対応不能又は履歴統合に失敗した場合は新規commitへフォールバックせず、`needs_escalation`で呼び出し元へ返す。
+書込担当は修正適用後、`git remote`で列挙した全remoteへ`git ls-remote --heads --tags --refs <remote>`を実行し、全remoteの広告branch・tagを母集団とする。広告branch tipには`git merge-base --is-ancestor <対象OID> <branchTip>`を実行し、終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）の場合だけ、履歴書換え直前の公開済み再判定と遮断をする。広告tagは最終参照先がcommitの場合だけ同じ祖先を判定し、commit以外は除外する。
+不足する広告OIDだけを数値添字の一時refへ取得し、広告集合の再照合後に回収する。remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない。
+remote広告tagの最終参照先がcommit以外の場合は正常な除外とし、object欠落、OID不一致、広告集合の変化又はGitエラーだけを`needs_escalation`とする。
+実行系は開始前に確定し、Codex経路は同じthreadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
+autosquash成功後は書込担当が取得した書換え後HEADの完全OIDへautosquash成功後の2回目のpush済み判定対象を置換し、調整担当は元の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
+executorは書込担当の完了後に`rewrite_guard`を検収し、呼び出し元は変更前後のOID対応と最小化済み証跡を進捗ログへ記録する。
+Git出力、URL、認証情報を無加工で受領せず、統合後レビュー調整モードの新規修正commitと混同しない。
 
 実行環境が委譲元の起動文を`user` roleで配送しても、そのtransport上のroleは人間の発話者を証明しない。
 直接対話で受領した実際の利用者メッセージと、委譲元が人間由来として出所と範囲を明示した逐語引用だけを利用者指示及び合意へ分類する。

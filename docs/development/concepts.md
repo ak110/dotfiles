@@ -179,6 +179,21 @@
   （事故対策。虚偽報告・捏造値の観測に由来。incidents.md参照）
 - 実装委譲は計画のコミット単位で区切る（1対話へ積み続けた結果、
   累積入力1億トークン超・利用上限94%消費に達した実測に由来）
+- 通常の実装モードで採用したレビュー修正は、指摘IDと実装単位commitの完全OIDを対応付けて未pushの実装履歴へ統合する。
+  最終単位だけはamend、過去単位だけはfixupとautosquash、両方は過去単位だけを先に実装してautosquashした後、2回目のpush済み判定後に最終単位を実装・stageしてamendし、レビュー修正専用commitを残さない。
+  対応不能又は中間契約を維持できない場合は新規commitへフォールバックせず`needs_escalation`で返す。
+  複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行する。
+  過去単位と最終単位が対象の場合は、autosquash成功後の2回目のpush済み判定が成功した後にだけ最終単位の修正をamendする。
+  書込担当は履歴書換え直前に`git remote`で全remoteを列挙し、各remoteへ`git ls-remote --heads --tags --refs <remote>`を実行する。
+  全remoteが広告するbranch・tagを公開済み判定の母集団とし、local object databaseに存在しない広告OIDだけをremote単位で数値添字の一時refへ取得して、広告集合の再照合後に回収する。
+  remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない。
+  広告OIDとobjectの実在、最終参照先の型を確認する。広告branch tipには`git merge-base --is-ancestor <対象OID> <branchTip>`を実行し、終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）の場合だけ公開済みと判定する。広告tagは最終参照先がcommitの場合だけ同じ祖先を判定し、commit以外は祖先判定から除外する。
+  再判定不能、対象OIDのpush済み検出又は一時refの回収失敗がある場合は`needs_escalation`で返す。
+  実行系は開始前に確定し、Codex経路は同じthreadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
+  executorは書込担当の完了後に最小化済み`rewrite_guard`を検収し、履歴書換え前の中間受渡し、Git出力、URL、認証情報の無加工な受渡しは行わない。
+  autosquashとamendの両方を実行する場合は、autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。
+  書換え前の各対象OIDと書換え後の全実装単位OIDの対応は履歴検収用に保持する。
+  統合後レビュー調整モードは`merge-task.md`に従い、統合差分へ1つの修正commitを作成する既存経路を維持する
 
 ## フィードバックキューの運用
 
