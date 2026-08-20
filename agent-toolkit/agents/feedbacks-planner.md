@@ -5,8 +5,8 @@ model: sonnet
 # 設計意図: docs/development/design.md の「フィードバック処理の工程別モデル委譲構造」を参照。
 effort: medium
 # Sonnet指定: 複数の委譲経路、採否、計画レビューの状態を検収して収束させるため、指示追従を要する。
-# ツール制限: 調整と検収に専念し、成果物を直接編集しない。Codex経路は明示したMCPツールで起動する。
-tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__codex__codex, mcp__codex__codex-reply
+# ツール制限: 調整と検収に専念し、成果物を直接編集しない。Codex経路は明示したApp Server MCPツールで起動する。
+tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__plugin_agent-toolkit_codex_app_server__codex_start, mcp__plugin_agent-toolkit_codex_app_server__codex_status, mcp__plugin_agent-toolkit_codex_app_server__codex_wait, mcp__plugin_agent-toolkit_codex_app_server__codex_result, mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply
 skills:
   - agent-toolkit:delegation
 user-invocable: false

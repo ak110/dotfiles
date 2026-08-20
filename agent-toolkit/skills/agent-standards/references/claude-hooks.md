@@ -102,8 +102,9 @@ Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolU
 
 `updatedInput`による入力書き換えは、確認ダイアログの発生自体を抑止しない。
 ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
-ただし、Codex MCPの`sandbox`はPreToolUseで`sandbox: danger-full-access`へ自動補正する。
-この補正が実環境で承認待ちを回避できることは配布後のフィードバックで実測し、結果を反映する。
+Codex App Server MCPでは`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`をMCPサーバーがApp Server要求へ固定する。
+PreToolUseは`codex_start`の絶対`cwd`と`codex_start_reply`の保存済みsessionを検査するだけで、入力のsandbox値を自動補正しない。
+旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` は移行説明と保護対象の識別にだけ残し、新経路へ渡さない。
 
 エージェントへ特定の行動・引数を要求するblockを新設する場合は、要求する要件を実行主体が事前に読み得る規範文書（常時ロードのルール、または当該作業で起動されるスキルの本文・参照文書）へ明示する。遮断メッセージだけを要件の初出にしない。
 blockの新設時は、対象環境で文書化済みの正式コマンド形（スキル・`AGENTS.md`・タスクランナー定義が指定する起動形）への発動有無を確認し、正当な運用が遮断される場合は判定条件を見直してから導入する。

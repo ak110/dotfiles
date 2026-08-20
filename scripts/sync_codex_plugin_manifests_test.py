@@ -122,8 +122,9 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     agent_plugin = json.loads(agent_plugin_text)
     assert agent_plugin == {"$schema": subject.AGENT_PLUGIN_SCHEMA, **_plugin_data()}
     assert agent_plugin_text.endswith("\n")
+    codex_mcp_text = (manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8")
     agent_mcp_text = (manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8")
-    assert json.loads(agent_mcp_text) == {
+    expected_mcp = {
         "$schema": subject.AGENT_MCP_SCHEMA,
         "mcpServers": {
             "pyfltr": {
@@ -135,6 +136,9 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             }
         },
     }
+    assert json.loads(codex_mcp_text) == expected_mcp
+    assert json.loads(agent_mcp_text) == expected_mcp
+    assert codex_mcp_text.endswith("\n")
     assert agent_mcp_text.endswith("\n")
     generated_hooks = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))
     assert generated_hooks == {
@@ -235,7 +239,7 @@ def test_mcp_servers_propagated_when_source_exists(manifest_root: Path) -> None:
     subject.sync(manifest_root)
 
     generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8"))
-    assert generated["mcpServers"] == "./.mcp.json"
+    assert generated["mcpServers"] == "./.mcp.codex.json"
 
 
 def test_mcp_servers_absent_when_source_missing(manifest_root: Path) -> None:

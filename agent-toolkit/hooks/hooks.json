@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__codex__codex|mcp__codex__codex-reply|mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__plugin_agent-toolkit_codex_app_server__codex_start|mcp__plugin_agent-toolkit_codex_app_server__codex_status|mcp__plugin_agent-toolkit_codex_app_server__codex_wait|mcp__plugin_agent-toolkit_codex_app_server__codex_result|mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply|mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
         "hooks": [
           {
             "type": "command",
@@ -35,7 +35,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Agent|Task",
+        "matcher": "Agent|Task|mcp__plugin_agent-toolkit_codex_app_server__codex_start|mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
         "hooks": [
           {
             "type": "command",
@@ -111,6 +111,16 @@
           {
             "type": "command",
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest_codex"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py session_start"
           }
         ]
       }

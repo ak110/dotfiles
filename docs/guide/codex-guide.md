@@ -1,11 +1,11 @@
 # Codex利用ガイド
 
-Codexはagent-toolkitの標準構成に含まれる。単体インストーラーはCodexプラグインと、
-Claude CodeからCodexを呼び出すCodex MCPを設定する。
+Codexはagent-toolkitの標準構成に含まれる。単体インストーラーはCodexプラグインと共有スキルを設定する。
+Claude CodeからCodexを呼び出すCodex App Server MCPはClaude Code plugin専用であり、Codex向けmanifestへ再公開しない。
 
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル
 `AGENTS.md`と共有リンク群を展開しない。dotfiles利用者は`update-dotfiles`または`chezmoi apply`により、
-Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグイン、Codex MCPを一括設定する。
+Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグインを一括設定する。
 プラグイン導入後は、次の手順で更新を反映する。
 
 ## フィードバックの常駐処理
@@ -43,8 +43,9 @@ Codexプラグインはバージョン付きキャッシュへ導入される。
 codex app-server daemon restart
 ```
 
-公開インストーラーでは、プラグイン追加後のCodex MCP登録または`atk`配置が失敗した場合も、
-エラーの後の最終行へ再起動コマンドを表示し、非0の終了状態を維持する。
+公開インストーラーでは、プラグイン追加または`atk`配置が失敗した場合も、エラーの後の最終行へ
+必要な再起動コマンドを表示し、非0の終了状態を維持する。Codex App Server MCPの登録や
+`~/.claude.json`のUser scope設定は行わない。
 進行中のセッションを保護するため、app-server daemonは自動再起動しない。
 
 更新前に存在した安全なversion名は、`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`へ
@@ -64,8 +65,27 @@ Codexが更新時に旧versionを除去する挙動は、
 再起動案内は、ローカルと外部のいずれかのプラグインを実際に追加または更新し、daemonの稼働状態を確認できた場合だけ表示される。
 daemonの未起動、状態確認の失敗、マーケットプレイスの登録だけの変化、公開インストーラーでの導入前後の状態の一致、
 プラグイン追加前の処理と追加自体のいずれかの失敗、外部プラグインの導入済みなど、それ以外の場合は表示しない。
-案内されたコマンドは、Codex、Codex MCP、remote-controlを利用する実行中セッションの終了後に実行する。
+案内されたコマンドは、Codex plugin、remote-controlを利用する実行中セッションの終了後に実行する。
 daemonを利用しない既存のCLI・IDEセッションは、作業完了後に新しいセッションを開始する。
+
+## Claude CodeからのCodex委譲
+
+Claude Code pluginの`codex_app_server`は、Claude Codeセッションの要求に応じて
+`codex app-server --stdio`を子プロセスとして起動する。共有daemonや永続registryは使用せず、
+MCPプロセスの終了時に自身が起動した子プロセスだけを終了する。
+
+Claude Code側では`codex_start`、`codex_status`、`codex_wait`、`codex_result`、
+`codex_start_reply`を使用する。`codex_start`の`cwd`は既存ディレクトリの絶対パスとし、
+`codex_wait`は公開terminal statusで復帰する。状態応答の`result_available`で結果回収可否を確認でき、既定timeoutは300秒である。
+非対応server requestや未知methodで`status=failed`を返しても`result_available=false`なら`turn/completed`未受信のため
+`codex_result`が拒否される。`result_available=true`を確認してから`codex_result`を実行する。
+`codex_result`で終端結果を回収してから、
+同じ`session_id`へ`codex_start_reply`で継続する。Codex向けmanifestは共有MCPの`pyfltr`だけを含み、
+Claude Code専用の`codex_app_server`をCodex自身へ提供しない。
+
+App Serverから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
+対応turnを`failed`としてwaiterを起床させる。`turn/interrupt`の予約だけでは結果を回収済みとせず、
+`turn/completed`の受信後に`codex_result`を実行する。未回収結果がある間は、Claude CodeのStopを許可しない。
 
 ### フックの信頼確認
 

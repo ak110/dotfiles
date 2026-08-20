@@ -495,25 +495,20 @@ def _setup_run_paths(
 
 
 class TestCodexMcpTimeout:
-    """`run()`経由でCodex MCPのtimeout管理契約を検証する。"""
+    """`run()`経由で旧Codex MCP timeoutの一回限りの除去を検証する。"""
 
-    def test_production_config_sets_two_hour_timeout(self) -> None:
-        """配布設定はCodex MCPのtimeoutを2時間に設定する。"""
+    def test_production_config_does_not_manage_codex_mcp(self) -> None:
+        """配布設定は旧Codex MCP定義を新規作成しない。"""
         managed = json.loads(_PROD_MANAGED_CONFIG.read_text(encoding="utf-8"))
-        assert managed["mcpServers"]["codex"]["timeout"] == 7_200_000
+        assert managed["mcpServers"] == {}
 
-    def test_complete_stdio_definition_gets_timeout_and_preserves_fields(
+    def test_legacy_timeout_is_removed_and_other_fields_preserved(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """完全なstdio定義ではtimeoutだけを更新し、既存フィールドを保持する。"""
-        _setup_run_paths(
-            tmp_path,
-            monkeypatch,
-            {},
-            {"mcpServers": {"codex": {"timeout": 7_200_000}}},
-        )
+        """旧管理値だけを除去し、旧定義の他フィールドは保持する。"""
+        _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
         existing_codex = {
             "type": "stdio",
@@ -521,35 +516,67 @@ class TestCodexMcpTimeout:
             "args": ["mcp-server"],
             "env": {"CUSTOM": "value"},
             "customField": True,
-            "timeout": 1_000,
+            "timeout": 7_200_000,
         }
         config_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
 
         mod.run()
 
         result = json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
-        assert result == {**existing_codex, "timeout": 7_200_000}
+        assert result == {key: value for key, value in existing_codex.items() if key != "timeout"}
 
-    def test_stdio_definition_without_type_gets_timeout(
+    def test_settings_json_does_not_strip_legacy_timeout(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """type省略のstdio定義にもtimeoutを付加する。"""
-        _setup_run_paths(
-            tmp_path,
-            monkeypatch,
-            {},
-            {"mcpServers": {"codex": {"timeout": 7_200_000}}},
-        )
+        """User scope設定ではないsettings.jsonの同名キーを変更しない。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {})
+        existing_codex = {"command": "codex", "args": ["mcp-server"], "timeout": 7_200_000}
+        settings_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
+
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
+        assert result == existing_codex
+
+    @pytest.mark.parametrize(
+        "existing_codex",
+        [
+            {"command": "other", "args": ["mcp-server"], "timeout": 7_200_000},
+            {"type": "http", "command": "codex", "args": ["mcp-server"], "timeout": 7_200_000},
+            {"command": "codex", "args": ["other"], "timeout": 7_200_000},
+        ],
+    )
+    def test_non_legacy_definition_preserves_timeout(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        existing_codex: dict,
+    ) -> None:
+        """旧定義と一致しない同名serverのtimeoutを保持する。"""
+        _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
-        existing = {"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"]}}}
+        config_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
+
+        mod.run()
+
+        assert json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"] == existing_codex
+
+    def test_custom_timeout_is_preserved(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """従来管理値と異なるtimeoutは利用者設定として保持する。"""
+        _setup_run_paths(tmp_path, monkeypatch, {})
+        config_path = tmp_path / "claude.json"
+        existing = {"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"], "timeout": 1_000}}}
         config_path.write_text(json.dumps(existing), encoding="utf-8")
 
         mod.run()
 
-        result = json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
-        assert result == {"command": "codex", "args": ["mcp-server"], "timeout": 7_200_000}
+        assert json.loads(config_path.read_text(encoding="utf-8")) == existing
 
     @pytest.mark.parametrize(
         "existing",
@@ -571,7 +598,7 @@ class TestCodexMcpTimeout:
             tmp_path,
             monkeypatch,
             {},
-            {"mcpServers": {"codex": {"timeout": 7_200_000}}},
+            {},
         )
         config_path = tmp_path / "claude.json"
         config_path.write_text(json.dumps(existing), encoding="utf-8")

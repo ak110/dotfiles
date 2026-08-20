@@ -2305,7 +2305,14 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                 "timestamp": "2026-08-19T00:00:01Z",
                 "message": {
                     "role": "assistant",
-                    "content": [{"type": "tool_use", "name": "mcp__codex__codex", "id": "a", "input": {"threadId": thread_id}}],
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                            "id": "a",
+                            "input": {"threadId": thread_id},
+                        }
+                    ],
                 },
             },
             {
@@ -2423,7 +2430,14 @@ def _codex_tool_use_entry(timestamp: str, call_id: str, thread_id: str) -> dict:
         "timestamp": timestamp,
         "message": {
             "role": "assistant",
-            "content": [{"type": "tool_use", "name": "mcp__codex__codex", "id": call_id, "input": {"threadId": thread_id}}],
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                    "id": call_id,
+                    "input": {"threadId": thread_id},
+                }
+            ],
         },
     }
 

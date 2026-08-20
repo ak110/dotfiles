@@ -291,7 +291,7 @@ _install_codex_plugin() {
     echo "Codex側のagent-toolkitプラグインを設定しました。"
 }
 
-_has_user_codex_mcp() {
+_legacy_user_codex_mcp_status() {
     local config_path="$HOME/.claude.json"
     uv run --no-config --no-project --python 3 python - "$config_path" <<'PY'
 import json
@@ -309,29 +309,59 @@ if not isinstance(config, dict):
     raise SystemExit(2)
 if "mcpServers" not in config:
     raise SystemExit(1)
-mcp_servers = config["mcpServers"]
-if not isinstance(mcp_servers, dict):
+servers = config["mcpServers"]
+if not isinstance(servers, dict):
     raise SystemExit(2)
-raise SystemExit(0 if "codex" in mcp_servers else 1)
+value = servers.get("codex")
+if not isinstance(value, dict):
+    raise SystemExit(1)
+if set(value) - {"type", "command", "args", "timeout"}:
+    raise SystemExit(3)
+if value.get("type") not in (None, "stdio"):
+    raise SystemExit(3)
+# argsは文字列1件の配列、timeoutは数値7200000だけを旧定義とみなす（PowerShell版と同じ契約）。
+if value.get("command") != "codex" or value.get("args") != ["mcp-server"]:
+    raise SystemExit(3)
+if value.get("timeout") not in (None, 7200000):
+    raise SystemExit(3)
+raise SystemExit(0)
 PY
 }
 
-_install_codex_mcp() {
+_migrate_legacy_codex_mcp() {
     local status
-    if _has_user_codex_mcp; then
-        echo "Codex MCPはUser scopeへ登録済みです。既存設定を維持します。"
-        return 0
+    if _legacy_user_codex_mcp_status; then
+        status=0
     else
         status=$?
     fi
-
     if [ "$status" -eq 1 ]; then
-        claude mcp add --scope user codex -- codex mcp-server >/dev/null
-        echo "Codex MCPをUser scopeへ登録しました。"
         return 0
     fi
+    if [ "$status" -eq 3 ]; then
+        echo "User scopeのcodex MCP定義は利用者固有設定のため保持します。必要なら claude mcp remove --scope user codex を手動実行してください。" >&2
+        return 0
+    fi
+    if [ "$status" -ne 0 ]; then
+        echo "$HOME/.claude.jsonから旧Codex MCPのUser scope登録を判定できません。設定を変更せず終了します。" >&2
+        return 1
+    fi
 
-    echo "$HOME/.claude.jsonからCodex MCPのUser scope登録を判定できません。設定を変更せず終了します。" >&2
+    # CLI実行直前にも完全一致を再照合し、並行変更された定義を削除しない。
+    if _legacy_user_codex_mcp_status; then
+        status=0
+    else
+        status=$?
+    fi
+    if [ "$status" -ne 0 ]; then
+        echo "User scopeのcodex MCP定義が再照合時に変化したため移行を見送ります。" >&2
+        return 0
+    fi
+    if claude mcp remove --scope user codex >/dev/null; then
+        echo "旧Codex MCPのUser scope登録を削除しました。"
+        return 0
+    fi
+    echo "旧Codex MCPのUser scope登録を削除できませんでした。" >&2
     return 1
 }
 
@@ -409,9 +439,9 @@ main() {
 
     _install_agent_toolkit
     _install_codex_plugin
-    _install_codex_mcp
+    _migrate_legacy_codex_mcp
     _install_atk_wrapper
-    echo "Claude Code・Codex、Codex MCP、atkの設定が完了しました。"
+    echo "Claude Code・Codex、agent-toolkit、atkの設定が完了しました。"
 }
 
 main "$@"

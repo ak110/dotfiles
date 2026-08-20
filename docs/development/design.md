@@ -37,6 +37,29 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 利用者合意で廃止した。設定値を反復ごとに再解決する案は、既定運用がセッションごとに自己再起動するため、
 恒常的な処理費用に見合わないことから採用しない。
 
+## Codex App Server MCPの委譲経路
+
+Claude Codeからの長時間Codex委譲は、plugin同梱の薄いMCPサーバーが公式stdio App Serverを
+セッション単位で所有する。MCPサーバーは`codex app-server --stdio`を必要時に起動し、
+JSON-RPCのreaderとsession単位の状態・待機者を管理する。Unix限定の共有daemonや永続job registryは
+使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、LinuxとWindowsで寿命契約を揃えられる。
+
+公開APIは`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`の5つに固定する。
+`codex_start`は絶対`cwd`を受け取り、`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`を
+内部で固定してApp Serverへ渡し、完了を待たず`session_id`を返す。`codex_wait`の既定timeoutは300秒で、
+公開terminal statusになった時点、または期限到達時の状態を返す。状態応答は
+`result_available`で結果回収可否を明示する。公開statusが`failed`でも`result_available=false`なら、
+`turn/completed`未受信のため`codex_result`は拒否される。
+`result_available=true`を確認して`codex_result`で結果を回収した後だけ、
+同じ`session_id`へ`codex_start_reply`で次turnを開始できる。
+
+App Serverからのserver requestは公開toolを増やさず、elicitationをcancelし、それ以外を非対話の
+非対応エラーとして応答する。承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、
+関連turnをfailedへ遷移してwaiterを解放する。`turn/interrupt`は停止要求を送るだけであり、
+`result_available=true`になるまで`codex_result`の回収を許可しない。通知のdeltaは進捗表示にだけ用い、
+`turn/completed`をturn完了とする。
+この境界により、Claude Codeは実行中の状態を照会でき、完了結果を回収しないままStopで終了する経路も遮断できる。
+
 ## process-loopのworktree隔離
 
 `atk mq process-loop`は、影響範囲の大きい主作業ツリーを直接編集せずにセッションを起動する。
@@ -180,7 +203,7 @@ Git状態の回復、失敗結果の3分類及び元項目の`feedbacks-planner`
 transcriptの機械的な抽出と照会は`agent-toolkit/scripts/_session_review_evidence.py`が所有し、証拠の評価は`session-review-advisor`が所有する。
 照会CLIは、既定モードの時系列抽出に加えて、`--warn`が警告に一致した行、`--grep`が任意の正規表現の一致行、
 `--detail`が指定行のtool_use入力全体とtool_result本文を返す。
-`--stats`は経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を返す。
+`--stats`は経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codex session別の集計を返す。
 メイン記録は振り返り境界より前のレコードを対象とし、補助記録は境界より前に起動した処理単位の全体を帰属させる。
 `--detail`の出力量の上限は1エントリ単位で共有し、省略標識も上限へ算入することで、
 文字列値の個数によらず1エントリの出力を上限内へ収める。
@@ -345,7 +368,7 @@ patchを扱わないホストの入力へ限定する。
 実装後の二系統レビューでは、`execute_review_model`が指すengineと実際の起動ツールの一致を
 フックで強制せず、`runtime-routing.md`「工程別モデル設定」と`plan-impl-executor`の手順で統制する。
 フックは設定値、タスク文書及び起動ツールを同時に観測できる一方、当該engineが実際に応答するかを
-観測できない。Codexを指定した状態でCodex MCP経路自体を利用できない場合、
+観測できない。Codexを指定した状態でCodex App Server MCP経路自体を利用できない場合、
 可用性に起因する正当な代替であるClaude経路の起動まで遮断され、代替の候補が残らない。
 経路の逸脱は、代替時に記録する観測した失敗と実際に用いた組合せから事後に判定する。
 

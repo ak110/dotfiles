@@ -20,12 +20,14 @@ PLUGIN_SOURCE = Path("agent-toolkit/.claude-plugin/plugin.json")
 MARKETPLACE_SOURCE = Path(".claude-plugin/marketplace.json")
 HOOKS_SOURCE = Path("agent-toolkit/hooks/hooks.json")
 MCP_SOURCE = Path("agent-toolkit/.mcp.json")
+MCP_CODEX_TARGET = Path("agent-toolkit/.mcp.codex.json")
 AGENT_PLUGIN_TARGET = Path("agent-toolkit/plugin.json")
 AGENT_MCP_TARGET = Path("agent-toolkit/mcp.json")
 PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
-OPTIONAL_TARGETS = frozenset((AGENT_MCP_TARGET, HOOKS_TARGET))
+OPTIONAL_TARGETS = frozenset((MCP_CODEX_TARGET, AGENT_MCP_TARGET, HOOKS_TARGET))
+SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr"})
 
 
 def _hook_command(name: str) -> str:
@@ -197,7 +199,7 @@ def _outputs(root: Path) -> dict[Path, str]:
     codex_plugin["skills"] = "./skills/"
     codex_plugin["hooks"] = "./hooks/hooks.codex.json" if selected else {"hooks": {}}
     if (root / MCP_SOURCE).exists():
-        codex_plugin["mcpServers"] = "./.mcp.json"
+        codex_plugin["mcpServers"] = "./.mcp.codex.json"
     codex_plugin["interface"] = {
         "displayName": "agent-toolkit",
         "shortDescription": "コード、文書、計画、レビューの作業指針",
@@ -223,7 +225,18 @@ def _outputs(root: Path) -> dict[Path, str]:
         MARKETPLACE_TARGET: json.dumps(codex_marketplace, ensure_ascii=False, indent=2) + "\n",
     }
     if (root / MCP_SOURCE).exists():
-        result[AGENT_MCP_TARGET] = json.dumps(_agent_mcp(_load(root, MCP_SOURCE)), ensure_ascii=False, indent=2) + "\n"
+        source = _load(root, MCP_SOURCE)
+        # 正本全体のschemaを先に検証する。Codex向けへ射影しないClaude専用serverも
+        # 不正な定義を残したままにしないため、allowlist適用前に検査する。
+        _agent_mcp(source)
+        servers = source.get("mcpServers")
+        if not isinstance(servers, dict):
+            raise ValueError("MCP正本はmcpServers objectを持つ必要がある")
+        shared = {name: value for name, value in servers.items() if name in SHARED_MCP_SERVER_NAMES}
+        shared_source = {"mcpServers": shared}
+        projected = json.dumps(_agent_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"
+        result[MCP_CODEX_TARGET] = projected
+        result[AGENT_MCP_TARGET] = projected
     if selected:
         result[HOOKS_TARGET] = json.dumps({"hooks": selected}, ensure_ascii=False, indent=2) + "\n"
     return result

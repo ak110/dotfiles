@@ -85,6 +85,18 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+def _run_stop(payload: dict, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    """同じ一時状態ディレクトリでStop hookを実行する。"""
+    env = os.environ.copy()
+    env.update({"TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)})
+    return _fork_runner.run_script(
+        _SCRIPT,
+        argv=("stop_advisor",),
+        input=json.dumps(payload, ensure_ascii=False),
+        env=env,
+    )
+
+
 class TestTestExecution:
     """テスト実行検出。"""
 
@@ -196,6 +208,19 @@ class TestTestExecution:
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
         assert re.fullmatch(matcher, _PYFLTR_RUN_FOR_AGENT_TOOL_NAME) is not None
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+            "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+        ],
+    )
+    def test_posttooluse_failure_matcher_routes_codex_start_points(self, tool_name: str):
+        """Codex開始点の内部失敗をPostToolUseFailureへ配送するmatcherを維持する。"""
+        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
+        assert re.fullmatch(matcher, tool_name) is not None
 
 
 class TestPlanModeSkillInvocation:
@@ -1167,7 +1192,7 @@ class TestAmendPendingStatusCheck:
 
 
 class TestWarnCodexRemoteChange:
-    """`mcp__codex__codex`/`mcp__codex__codex-reply`呼び出し前後のリモート参照比較による警告。
+    """`mcp__plugin_agent-toolkit_codex_app_server__codex_start`/`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`呼び出し前後のリモート参照比較による警告。
 
     codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
     行う事象への機械チェック（事後検知）のうち、比較・警告・後始末側（PostToolUse）を検証する。
@@ -1197,32 +1222,48 @@ class TestWarnCodexRemoteChange:
             encoding="utf-8",
         )
 
+    @staticmethod
+    def _result_payload(sid: str, *, key: str | None = None) -> dict:
+        """codex_resultのPostToolUse payloadを作成する。"""
+        payload = {
+            "session_id": sid,
+            "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_result",
+            "tool_input": {"session_id": "thread-1"},
+            "tool_response": {
+                "structuredContent": {
+                    "session_id": "thread-1",
+                    "turn_id": "turn-1",
+                    "status": "completed",
+                    "agent_message": "完了",
+                    "error": None,
+                },
+            },
+            "isSidechain": True,
+        }
+        if key is not None:
+            payload["transcript_path"] = f"/x/agent-{key}.jsonl"
+        return payload
+
     def test_no_warning_when_no_change(self, tmp_path: pathlib.Path):
         """記録済みスナップショットと現在値が一致する場合は警告しない。"""
         repo, _ = self._init_repo_with_remote(tmp_path)
         sid = "warn-nochange"
         self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
-        result = _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
-            state_dir=tmp_path,
-        )
+        result = _run(self._result_payload(sid), state_dir=tmp_path)
         assert result.returncode == 0
         assert "remote refs changed" not in result.stdout
         assert _read_state(tmp_path, sid).get("codex_remote_snapshot_by_key") == {}
 
-    def test_remote_check_survives_cross_session_thread_handoff(self, tmp_path: pathlib.Path):
-        """異なるsession_idとagentIdへ`threadId`を引き継いでもリモート変更を検知する。"""
+    def test_remote_check_tracks_result_for_same_session(self, tmp_path: pathlib.Path):
+        """開始応答からsessionを記録し、結果回収時に同じsnapshotと比較する。"""
         repo, _ = self._init_repo_with_remote(tmp_path)
-        finalizer_session = "finalizer-session"
-        executor_session = "executor-session"
-        thread_id = "th_shared"
-
+        sid = "same-session"
         initial_pre = _run_pretooluse(
             {
-                "session_id": finalizer_session,
-                "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "実装", "sandbox": "danger-full-access", "cwd": str(repo)},
-                "transcript_path": "/x/agent-finalizer.jsonl",
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                "tool_use_id": "start-1",
                 "isSidechain": True,
             },
             tmp_path,
@@ -1230,42 +1271,289 @@ class TestWarnCodexRemoteChange:
         assert initial_pre.returncode == 0
         initial_post = _run(
             {
-                "session_id": finalizer_session,
-                "tool_name": "mcp__codex__codex",
-                "tool_input": {},
-                "tool_response": {"threadId": thread_id},
-                "transcript_path": "/x/agent-finalizer.jsonl",
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                "tool_use_id": "start-1",
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-1",
+                        "turn_id": "turn-1",
+                        "status": "running",
+                    }
+                },
                 "isSidechain": True,
             },
             state_dir=tmp_path,
         )
         assert initial_post.returncode == 0
-
-        reply_pre = _run_pretooluse(
-            {
-                "session_id": executor_session,
-                "tool_name": "mcp__codex__codex-reply",
-                "tool_input": {"threadId": thread_id, "prompt": "続行"},
-                "transcript_path": "/x/agent-executor.jsonl",
-                "isSidechain": True,
-            },
-            tmp_path,
-        )
-        assert reply_pre.returncode == 0
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        reply_post = _run(
+        reply_post = _run(self._result_payload(sid), state_dir=tmp_path)
+        assert reply_post.returncode == 0
+        assert "remote refs changed" in reply_post.stdout
+
+    def test_reply_failure_blocks_stop_until_result_and_keeps_snapshot(self, tmp_path: pathlib.Path):
+        """内部開始失敗は未回収としてStopを遮断し、結果回収時だけsnapshotを比較・解放する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "reply-failure"
+        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+        reply_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply"
+
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        assert (
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "tool_response": {
+                        "structuredContent": {
+                            "session_id": "thread-1",
+                            "turn_id": "turn-1",
+                            "status": "running",
+                        }
+                    },
+                    "isSidechain": True,
+                },
+                state_dir=tmp_path,
+            ).returncode
+            == 0
+        )
+        assert _run(self._result_payload(sid), state_dir=tmp_path).returncode == 0
+
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": reply_tool,
+                    "tool_input": {"session_id": "thread-1", "prompt": "続けて実装"},
+                    "tool_use_id": "reply-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        failure = _run(
             {
-                "session_id": executor_session,
-                "tool_name": "mcp__codex__codex-reply",
-                "tool_input": {"threadId": thread_id},
-                "tool_response": {"threadId": thread_id},
-                "transcript_path": "/x/agent-executor.jsonl",
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": reply_tool,
+                "tool_input": {"session_id": "thread-1", "prompt": "続けて実装"},
+                "tool_use_id": "reply-1",
+                "tool_response": {"error": "turn/start failed"},
                 "isSidechain": True,
             },
             state_dir=tmp_path,
         )
-        assert reply_post.returncode == 0
-        assert "remote refs changed" in reply_post.stdout
+        assert failure.returncode == 0
+        failed_state = _read_state(tmp_path, sid)
+        failed_record = failed_state["codex_app_server_sessions"]["thread-1"]
+        assert failed_record["status"] == "failed"
+        assert failed_record["turn_id"] == ""
+        assert failed_record["result_retrieved"] is False
+        assert failed_record["snapshot_key"] == "reply-1"
+        assert "reply-1" in failed_state["codex_remote_snapshot_by_key"]
+
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:session-review"},
+            },
+            state_dir=tmp_path,
+        )
+        stop_before_result = _run_stop({"session_id": sid}, tmp_path)
+        assert stop_before_result.returncode == 0
+        stop_before_payload = json.loads(stop_before_result.stdout)
+        assert stop_before_payload["decision"] == "block"
+        assert "codex_result" in stop_before_payload["reason"]
+
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result_payload = self._result_payload(sid)
+        result_payload["tool_use_id"] = "result-1"
+        result_payload["tool_response"]["structuredContent"].update({"status": "failed", "error": "turn/start failed"})
+        result = _run(result_payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+        retrieved_state = _read_state(tmp_path, sid)
+        retrieved_record = retrieved_state["codex_app_server_sessions"]["thread-1"]
+        assert retrieved_record["result_retrieved"] is True
+        assert retrieved_state["codex_remote_snapshot_by_key"] == {}
+
+        stop_after_result = _run_stop({"session_id": sid}, tmp_path)
+        assert stop_after_result.returncode == 0
+        assert "decision" not in json.loads(stop_after_result.stdout)
+
+    def test_initial_start_response_loss_keeps_session_until_completion_and_result(self, tmp_path: pathlib.Path):
+        """初回turn/start応答喪失をturn終端まで保持し、Stopとsnapshotを管理する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "initial-start-failure"
+        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        start = _run(
+            {
+                "session_id": sid,
+                "tool_name": start_tool,
+                "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                "tool_use_id": "start-1",
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-1",
+                        "turn_id": "",
+                        "status": "running",
+                        "error": {"message": "turn/start response lost"},
+                    }
+                },
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert start.returncode == 0
+        ambiguous_state = _read_state(tmp_path, sid)
+        ambiguous_record = ambiguous_state["codex_app_server_sessions"]["thread-1"]
+        assert ambiguous_record["status"] == "running"
+        assert ambiguous_record["result_retrieved"] is False
+        assert ambiguous_record["snapshot_key"] == "start-1"
+        assert "start-1" in ambiguous_state["codex_remote_snapshot_by_key"]
+
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:session-review"},
+            },
+            state_dir=tmp_path,
+        )
+        stop_before_result = _run_stop({"session_id": sid}, tmp_path)
+        assert json.loads(stop_before_result.stdout)["decision"] == "block"
+
+        completed = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_wait",
+                "tool_input": {"session_id": "thread-1", "timeout": 300},
+                "tool_use_id": "wait-1",
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-1",
+                        "turn_id": "turn-1",
+                        "status": "completed",
+                        "error": None,
+                    }
+                },
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert completed.returncode == 0
+
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result_payload = self._result_payload(sid)
+        result_payload["tool_response"]["structuredContent"].update({"turn_id": "turn-1", "status": "completed", "error": None})
+        result = _run(result_payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+        retrieved_state = _read_state(tmp_path, sid)
+        retrieved_record = retrieved_state["codex_app_server_sessions"]["thread-1"]
+        assert retrieved_record["result_retrieved"] is True
+        assert retrieved_state["codex_remote_snapshot_by_key"] == {}
+
+        stop_after_result = _run_stop({"session_id": sid}, tmp_path)
+        assert "decision" not in json.loads(stop_after_result.stdout)
+
+    def test_result_failure_before_completion_keeps_snapshot(self, tmp_path: pathlib.Path):
+        """未終端turnのcodex_result失敗では次の結果回収までsnapshotを保持する。"""
+        sid = "result-before-completion"
+        state = {
+            "codex_app_server_sessions": {
+                "thread-1": {
+                    "session_id": "thread-1",
+                    "status": "running",
+                    "turn_id": "turn-1",
+                    "result_retrieved": False,
+                    "snapshot_key": "start-1",
+                }
+            },
+            "codex_remote_snapshot_by_key": {"start-1": {"cwd": str(tmp_path), "snapshot": {}}},
+        }
+        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+        failure = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_result",
+                "tool_input": {"session_id": "thread-1"},
+                "tool_use_id": "result-1",
+                "tool_response": {"error": "the Codex turn has not completed"},
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert failure.returncode == 0
+        assert _read_state(tmp_path, sid)["codex_remote_snapshot_by_key"] == {"start-1": {"cwd": str(tmp_path), "snapshot": {}}}
+
+    def test_reply_input_failure_preserves_session_state_and_clears_snapshot(self, tmp_path: pathlib.Path):
+        """入力検証失敗は新しい未回収ターンに変換せず、対応するsnapshotだけを破棄する。"""
+        sid = "reply-input-failure"
+        state = {
+            "codex_app_server_sessions": {
+                "thread-1": {
+                    "session_id": "thread-1",
+                    "status": "completed",
+                    "turn_id": "turn-1",
+                    "result_retrieved": True,
+                }
+            },
+            "codex_remote_snapshot_by_key": {"reply-invalid": {"cwd": str(tmp_path), "snapshot": {}}},
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            json.dumps(state, ensure_ascii=False), encoding="utf-8"
+        )
+        result = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+                "tool_input": {"session_id": "thread-1", "prompt": ""},
+                "tool_use_id": "reply-invalid",
+                "tool_response": {"error": "prompt must not be empty"},
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state_after = _read_state(tmp_path, sid)
+        assert state_after["codex_app_server_sessions"]["thread-1"]["status"] == "completed"
+        assert state_after["codex_app_server_sessions"]["thread-1"]["result_retrieved"] is True
+        assert state_after["codex_remote_snapshot_by_key"] == {}
 
     def test_warns_and_clears_state_when_remote_changed(self, tmp_path: pathlib.Path):
         """codex呼び出し中にリモートへpushされた変化を検知して警告し、記録済みスナップショットを削除する。"""
@@ -1273,10 +1561,12 @@ class TestWarnCodexRemoteChange:
         sid = "warn-changed"
         self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        result = _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
-            state_dir=tmp_path,
-        )
+        state = _read_state(tmp_path, sid)
+        state["codex_app_server_sessions"] = {
+            "thread-1": {"session_id": "thread-1", "status": "running", "snapshot_key": f"session:{sid}"}
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(json.dumps(state), encoding="utf-8")
+        result = _run(self._result_payload(sid), state_dir=tmp_path)
         assert result.returncode == 0
         assert "remote refs changed" in result.stdout
         assert "origin" in result.stdout
@@ -1288,16 +1578,12 @@ class TestWarnCodexRemoteChange:
         sid = "warn-agent"
         self._write_snapshot_state(tmp_path, sid, {"abc123": {"cwd": str(repo), "snapshot": {}}})
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        result = _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__codex__codex",
-                "tool_input": {},
-                "transcript_path": "/x/agent-abc123.jsonl",
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
+        state = _read_state(tmp_path, sid)
+        state["codex_app_server_sessions"] = {
+            "thread-1": {"session_id": "thread-1", "status": "running", "snapshot_key": "abc123"}
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(json.dumps(state), encoding="utf-8")
+        result = _run(self._result_payload(sid, key="abc123"), state_dir=tmp_path)
         assert result.returncode == 0
         assert "remote refs changed" in result.stdout
         assert _read_state(tmp_path, sid).get("codex_remote_snapshot_by_key") == {}
@@ -1305,10 +1591,7 @@ class TestWarnCodexRemoteChange:
     def test_no_warning_when_no_recorded_entry(self, tmp_path: pathlib.Path):
         """記録済みスナップショットが存在しない場合は比較せず警告しない。"""
         sid = "warn-none"
-        result = _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
-            state_dir=tmp_path,
-        )
+        result = _run(self._result_payload(sid), state_dir=tmp_path)
         assert result.returncode == 0
         assert "remote refs changed" not in result.stdout
 
@@ -1316,23 +1599,17 @@ class TestWarnCodexRemoteChange:
         """記録済みエントリの`cwd`が不正な場合は比較せず警告しない。"""
         sid = "warn-badcwd"
         self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": None, "snapshot": {}}})
-        result = _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
-            state_dir=tmp_path,
-        )
+        result = _run(self._result_payload(sid), state_dir=tmp_path)
         assert result.returncode == 0
         assert "remote refs changed" not in result.stdout
 
     def test_codex_reply_also_warns(self, tmp_path: pathlib.Path):
-        """`mcp__codex__codex-reply`呼び出し後も同様に比較・警告する。"""
+        """`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`呼び出し後も同様に比較・警告する。"""
         repo, _ = self._init_repo_with_remote(tmp_path)
         sid = "warn-reply"
         self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        result = _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex-reply", "tool_input": {}, "isSidechain": True},
-            state_dir=tmp_path,
-        )
+        result = _run(self._result_payload(sid), state_dir=tmp_path)
         assert result.returncode == 0
         assert "remote refs changed" in result.stdout
 
@@ -1347,10 +1624,7 @@ class TestWarnCodexRemoteChange:
         sid = "warn-context"
         self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        result = _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
-            state_dir=tmp_path,
-        )
+        result = _run(self._result_payload(sid), state_dir=tmp_path)
         assert result.returncode == 0
         assert result.stderr == ""
         payload = json.loads(result.stdout)
