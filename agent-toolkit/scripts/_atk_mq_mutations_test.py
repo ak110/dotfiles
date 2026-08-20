@@ -18,6 +18,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_mq_common as common  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
@@ -2526,19 +2527,42 @@ class TestStartProcessingFailureBoundaries:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """遷移commit後のpush失敗はprocessing配置だけで完了扱いしない。"""
+        """遷移commit後のpush失敗はcleanな未pushcommitを残し、完了扱いしない。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
-        monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+        for state in ("processing", "adopted", "rejected"):
+            (notes / state).mkdir()
+        subprocess.run(["git", "init", "--initial-branch=main"], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "add", "."], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "commit", "-m", "base"], cwd=notes, capture_output=True, text=True, check=True)
+        remote = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=main", str(remote)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "push", "--set-upstream", "origin", "main"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+        before_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
+        ).stdout.strip()
         calls: list[str] = []
 
-        def fail_push(*_args: object, **_kwargs: object) -> None:
-            calls.append("commit")
+        def fail_push(_path: pathlib.Path) -> None:
+            calls.append("push")
             raise subprocess.CalledProcessError(1, ["git", "push"])
 
-        monkeypatch.setattr(mutations, "_commit_and_push", fail_push)
+        monkeypatch.setattr(common, "_push_pending_commits", fail_push)
         with pytest.raises(subprocess.CalledProcessError) as exc_info:
             mutations.transition_entries(
                 notes,
@@ -2549,9 +2573,23 @@ class TestStartProcessingFailureBoundaries:
             )
 
         assert exc_info.value.cmd == ["git", "push"]
-        assert calls == ["commit"]
+        assert calls == ["push"]
         assert sorted(path.name for path in (notes / "processing").iterdir()) == ["fb-001.md", "fb-002.md"]
         assert not list((notes / "inbox").iterdir())
+        after_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        assert after_head != before_head
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=notes, capture_output=True, text=True, check=True)
+        assert status.stdout == ""
+        upstream_check = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", after_head, "@{u}"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert upstream_check.returncode != 0
 
 
 class TestStartProcessingMissing:

@@ -1111,7 +1111,22 @@ def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
     assert "追加修正とcommitを行わず" in task
     assert "基準OID、未コミット差分、失敗コマンド" in executor
     assert "同じworktreeへfix担当を1件だけ起動する" in executor
+    assert "同一threadを継続せず、新規threadとして" in executor
+    assert "implementation-task.md`の共通必須入力一式" in executor
+    for required_input in (
+        "ソート済みフィードバックファイル名一覧",
+        "追加指示",
+        "許容済み挙動変化",
+        "修正前後の検証結果",
+        "fast担当の終端確認",
+    ):
+        assert required_input in executor
     assert "dirty worktree" in executor
+    assert "`execute_fast_model`から`execute_fix_model`への引継ぎでは新規threadを起動" in runtime
+    assert "起動直前に`execute_fix_model`を解決してfix担当へ適用する" in runtime
+    assert "担当種別が`fast担当`の場合だけ" in task
+    assert "担当種別が`レビュー修正担当`、`CI修正担当`の場合は" in task
+    assert "追加のモデル昇格をせずに" in task
     for review_mode in ("#### 通常の実装モードのレビュー修正", "#### 統合後レビュー調整モードのレビュー修正"):
         section = executor.partition(review_mode)[2]
         assert "`atk config get execute_fix_model`" in section

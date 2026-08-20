@@ -229,6 +229,24 @@ class TestConfigSet:
         assert saved["execute_fix_model"] == "claude:sonnet/high"
         assert "execute_model" not in saved
         assert saved["other_setting"] == "keep"
+        assert "pick_feedbacks_model" not in saved
+        assert "execute_review_model" not in saved
+
+    def test_set_preserves_unconfigured_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """旧キーがない設定保存では、未設定の既定値を永続化しない。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps({"other_setting": "keep"}) + "\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", "codex:gpt-5.6-terra/medium"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not capsys.readouterr().err
+        assert json.loads(config_file.read_text(encoding="utf-8")) == {
+            "other_setting": "keep",
+            "plan_model": "codex:gpt-5.6-terra/medium",
+        }
 
     def test_set_orchestrate_model_persists_and_is_read_back(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]

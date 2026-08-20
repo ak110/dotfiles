@@ -85,6 +85,16 @@ def _resolved_mutable_settings(config: dict[str, str]) -> dict[str, str]:
     return settings
 
 
+def _migrate_legacy_execute_model(config: dict[str, str]) -> None:
+    """旧`execute_model`がある場合だけ新2キーを補い、辞書をその場で更新する。"""
+    legacy_value = config.get(_LEGACY_EXECUTE_MODEL_KEY)
+    if legacy_value is None:
+        return
+    for key in ("execute_fast_model", "execute_fix_model"):
+        config.setdefault(key, legacy_value)
+    config.pop(_LEGACY_EXECUTE_MODEL_KEY, None)
+
+
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
     config = _load_config()
@@ -146,8 +156,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
     config = _load_config()
-    config.update(_resolved_mutable_settings(config))
-    config.pop(_LEGACY_EXECUTE_MODEL_KEY, None)
+    _migrate_legacy_execute_model(config)
     config[args.key] = args.value
     _save_config(config)
     print(f"設定を更新しました: {args.key}={args.value}")

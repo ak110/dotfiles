@@ -11,6 +11,7 @@
   - 他のsandbox値又は作業ディレクトリの欠落では相手プロセスが承認待ちから復帰せず、呼び出し元が完了を検知できないため、この値を使う
   - 読み取り専用は`## 読み取り専用`の手順で担保し、実行環境のsandbox値で表現しない
   - 継続接続は同一threadへの返信用経路を使い、作業ディレクトリとsandboxを再送しない
+  - `execute_fast_model`から`execute_fix_model`への引継ぎは同一threadへの継続接続を使わず、新規threadを起動する。起動直前に`execute_fix_model`を解決してfix担当へ適用する
   - モデルを指定する場合は`config`へ`model_reasoning_effort`も渡し、意図した深さを明示する
 - Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える
 - 専用定義もCodex経路も利用できない場合だけ汎用Agentを使う
@@ -41,7 +42,7 @@
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
-5. Codexは同一threadへ継続接続する。
+5. `execute_fast_model`から`execute_fix_model`への引継ぎでは新規threadを起動し、それ以外ではCodexは同一threadへ継続接続する。
    Claudeは完了済み識別子を再利用せず新規起動する。
    計画、進捗ログ、保存済み6列表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
