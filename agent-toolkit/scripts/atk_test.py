@@ -956,24 +956,29 @@ class TestParseLeadingFrontmatter:
 
 
 class TestAddFrontmatterOverride:
-    """addサブコマンド: メッセージ先頭のfrontmatterがCLIオプションより優先されること。"""
+    """addサブコマンド: 明示した移管先とメッセージfrontmatterの優先順位を検証する。"""
 
-    def test_message_frontmatter_overrides_cli_target_repo(
+    def test_message_frontmatter_overrides_implicit_target_repo(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """メッセージ先頭frontmatterの`target_repo`がCLIオプションより優先される。"""
+        """対象リポジトリを省略した場合はメッセージfrontmatterの`target_repo`が優先される。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
+        def resolve_target(_target: str | None) -> tuple[str, pathlib.Path]:
+            return "github.com/example/myrepo", myrepo
+
+        monkeypatch.setattr(_add, "resolve_add_target", resolve_target)
+
         message = "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\nテスト本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         inbox = notes / "inbox"
@@ -984,6 +989,33 @@ class TestAddFrontmatterOverride:
         assert "source: session-review" in content
         body = content.split("---\n\n", 1)[1]
         assert body == "テスト本文"
+
+    def test_explicit_target_repo_replaces_message_frontmatter_target_repo(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """明示した移管先がメッセージfrontmatterの予約キー`target_repo`を置き換える。"""
+        notes = _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+        message = "---\ntarget_repo: github.com/source/repo\nsource: session-review\n---\n\nテスト本文"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", str(myrepo), message], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+
+        inbox = notes / "inbox"
+        files = list(inbox.iterdir())
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/myrepo" in content
+        assert "target_repo: github.com/source/repo" not in content
+        assert "source: session-review" in content
+        assert content.split("---\n\n", 1)[1] == "テスト本文"
 
     def test_multiple_messages_mixed_frontmatter(
         self,
@@ -1009,17 +1041,18 @@ class TestAddFrontmatterOverride:
         assert len(files) == 2
         content_first = files[0].read_text(encoding="utf-8")
         content_second = files[1].read_text(encoding="utf-8")
-        assert "target_repo: github.com/override/repo" in content_first
+        assert "target_repo: github.com/example/myrepo" in content_first
+        assert "target_repo: github.com/override/repo" not in content_first
         assert content_first.split("---\n\n", 1)[1] == "fm付き本文"
         assert "target_repo: github.com/example/myrepo" in content_second
         assert content_second.split("---\n\n", 1)[1] == msg_plain + "\n"
 
-    def test_frontmatter_target_repo_only_falls_back_to_cli_source(
+    def test_explicit_target_repo_replaces_frontmatter_and_keeps_cli_source(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """frontmatterに`target_repo`のみで`source`未指定の場合、CLIオプション値を採用する。"""
+        """明示した移管先でfrontmatterの`target_repo`を置き換え、CLIのsourceを補う。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1036,7 +1069,8 @@ class TestAddFrontmatterOverride:
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
-        assert "target_repo: github.com/other/repo" in content
+        assert "target_repo: github.com/example/myrepo" in content
+        assert "target_repo: github.com/other/repo" not in content
         assert "source: cli-source" in content
 
 

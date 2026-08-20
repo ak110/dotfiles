@@ -245,20 +245,21 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """移管先target_repoを指定したメッセージでもalert_keys等の非予約キーを保持する。"""
+    """元項目のfrontmatterをそのまま渡しても移管先target_repoへ置き換え、非予約キーを保持する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    message = "---\ntarget_repo: github.com/target/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
+    message = "---\ntarget_repo: github.com/source/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
 
     generated = add_module.add_entries(
         notes,
         messages=[message],
-        target_repo="github.com/source/repo",
+        target_repo="github.com/target/repo",
         source=None,
         now=_FIXED_DT,
+        replace_target_repo=True,
     )
 
     parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))

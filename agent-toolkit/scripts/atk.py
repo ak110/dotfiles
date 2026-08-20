@@ -197,7 +197,8 @@ def _add_mq_add_parser(sub: Any) -> None:
             "投入する本文（省略時は$EDITORで編集する）。--type=feedback（既定）・tbdで種別を切り替える。"
             "対象リポジトリは省略時にカレントworktree、ローカルパス指定時に指定worktree、"
             "正規化リモートURL指定時にローカルHEADを持たないリポジトリ識別子として解決する。"
-            "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
+            "メッセージ先頭がYAML frontmatter形式の場合はsourceをCLIオプションより優先し、"
+            "--target-repo指定時はtarget_repoを移管先へ置き換える。"
         ),
     )
     add.add_argument(
@@ -263,7 +264,7 @@ def _add_mq_add_parser(sub: Any) -> None:
     )
     _add_target_repo_arg(
         add,
-        help_extra="frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。",
+        help_extra="明示時はfrontmatterの予約キーtarget_repoをこの値へ置き換える。",
     )
     add.set_defaults(subparser=add)
 

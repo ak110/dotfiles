@@ -991,9 +991,10 @@ def test_session_review_advisor_checks_duplicates_with_scoped_queue_list() -> No
 
 
 def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:
-    """技術的失敗の終端と結果反映エラー後の全件走査を固定する。"""
+    """技術的失敗の由来別終端と結果反映エラー後の全件走査を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
 
     for phrase in (
         "失敗した事象、期待値、実際値、発生条件",
@@ -1002,6 +1003,10 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "失敗TBDの保存コマンドの完了表示にエラーが無いことを確認",
         "警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`",
         "保存内容に欠落が無いことを確認",
+        "`source: session-review`と確認できる項目は",
+        "それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い",
+        "失敗TBDを依存へ追加して`blocked`まで確認する",
+        "元のフィードバックをrejectせず、失敗TBDの回答後に不採用確認を再開する",
         "atk mq reject <filename> --note=<失敗TBD filename>",
         "失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず",
         "一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行",
@@ -1019,8 +1024,10 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     save_at = sender.index("失敗TBDを`agent-toolkit:add-feedback`で1件保存")
     completion_at = sender.index("失敗TBDの保存コマンドの完了表示にエラーが無いことを確認", save_at)
     warning_at = sender.index("警告が出た場合は`atk mq show", completion_at)
+    source_branch_at = sender.index("`source: session-review`と確認できる項目は", warning_at)
+    human_branch_at = sender.index("それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い", source_branch_at)
     terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", warning_at)
-    assert save_at < completion_at < warning_at < terminal_at
+    assert save_at < completion_at < warning_at < source_branch_at < terminal_at < human_branch_at
     reflect_save_at = sender.index(
         "元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存", terminal_at
     )
@@ -1030,6 +1037,23 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     assert terminal_at < reflect_save_at < reflect_completion_at < reflect_warning_at < reflect_terminal_at
     for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "バッチを失敗"):
         assert phrase in process
+    for phrase in (
+        "source: session-review",
+        "失敗TBDを依存へ追加",
+        "TBD依存を設定し、`blocked`を確認して保留する",
+        "不採用確認を経ずに元のフィードバックをrejectしない",
+    ):
+        assert phrase in process
+    for phrase in (
+        "## 技術的失敗",
+        "元項目をrejectせず",
+        "現行の有効依存を復元して失敗TBDのファイル名を追加",
+        "`atk mq set-dependencies`",
+        "`atk mq return-to-inbox`で元項目をinboxへ戻し",
+        "対象行が`blocked`であることを確認する",
+        "通常の不採用確認経路を再開する",
+    ):
+        assert phrase in hold
     for forbidden in ("結果反映済み項目", "結果部分反映項目", "結果未反映項目", "同一バッチ非再試行"):
         assert forbidden not in sender
         assert forbidden not in process
