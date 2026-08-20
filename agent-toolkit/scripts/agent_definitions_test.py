@@ -39,6 +39,7 @@ _CI_FAILURE_HANDLING = _BUGFIX.parent / "ci-failure-handling.md"
 _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
 _PUSH_AND_CI = _COMMIT_SKILL.parent / "references" / "push-and-ci.md"
 _HISTORY_REWRITE = _COMMIT_SKILL.parent / "references" / "history-rewrite.md"
+_REVIEW_TABLE_CONTRACT = "重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由"
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _AGENT_STANDARDS = _AGENTS_DIR.parent / "skills" / "agent-standards" / "SKILL.md"
 _WRITING_STANDARDS = _AGENTS_DIR.parent / "skills" / "writing-standards" / "SKILL.md"
@@ -191,8 +192,9 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         "`agent-toolkit:reviewee-standards`を当該必須入力へ含める。\n"
     ) in _h2_section(skill, "送信")
     assert (
-        "  - レビュー指摘の`対応方針`には、最上位の主体が独立に確定した採否、最小限の修正、変更してはならない契約を残す。\n"
-        "    同欄の記述は委譲元が確定した判断の記録であり、受信者の作業手順ではないため、起動文の命令へ転写しない\n"
+        "  - `対応要否`がyesの場合は`対応内容`へ最上位の主体が独立に確定した採否、最小限の修正、変更してはならない契約を残す\n"
+        "  - `対応要否`がnoの場合は`対応不要理由`へ、メイン判断又はユーザー判断の別と理由を記録する\n"
+        "  - 後半3列の記述は委譲元が確定した判断の記録であり、受信者の作業手順ではないため起動文の命令へ転写しない\n"
     ) in _h2_section(skill, "受領と検収")
     assert "タスク文書の手順、品質規範本文、出力書式、過去応答に加え、" in skill
     assert "正本内の合意事項、調査済み事実、完了条件も複製しない" in skill
@@ -210,6 +212,30 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         "snapshot",
     ):
         assert phrase in runtime
+
+
+def test_review_table_contract_is_shared_by_all_producers_and_consumers() -> None:
+    """永続レビュー表を扱う全経路が同じ固定6列を参照する。"""
+    documents = (
+        _DELEGATION_SKILL,
+        _RUNTIME_ROUTING,
+        _FEEDBACKS_PLANNER,
+        _PLAN_IMPL_EXECUTOR,
+        _PLAN_REVIEW_DELEGATION,
+        _PLAN_REVIEW_TASK,
+        _PLAN_IMPL_PLAN_REVIEW_TASK,
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _REVIEWEE_STANDARDS,
+        _PLAN_IMPL_TASK,
+        _PLAN_IMPL_FEEDBACK_FLOW,
+        _MERGE_TASK,
+    )
+    for path in documents:
+        assert _REVIEW_TABLE_CONTRACT in path.read_text(encoding="utf-8"), path
+
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    assert "通番・重大度／観点・区分・箇所・内容" not in delegation
+    assert "レビュー指摘の`対応方針`" not in delegation
 
 
 def test_delegation_forbids_reusing_completed_identifiers() -> None:
@@ -1100,7 +1126,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in runtime
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
-    assert "同領域内の6列表ファイル以外を書き込まない" in executor
+    assert "同領域内の固定6列TSVファイル以外を書き込まない" in executor
     assert "各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`" in executor
     assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
@@ -1119,8 +1145,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "レビュー修正モード",
         "applications:",
         "統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力",
-        "レビュー修正モードでは、採用指摘の6列表と関係する全計画の絶対パスを必須入力",
-        "採用指摘の6列表を読み、関係する全計画から保持契約を読み、採用指摘だけを修正",
+        "レビュー修正モードでは、採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）と関係する全計画の絶対パスを必須入力",
+        "採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）を読み、関係する全計画から保持契約を読み、採用指摘だけを修正",
         "レーン項目はソート済みフィードバックファイル名一覧、レーンのcommit OID、適用後OID",
         "レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ",
     ):
@@ -1132,7 +1158,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "non-fast-forward拒否",
         "安定ID",
         "適用済みスキップ",
-        "6列表を統合用管理対象領域内へ保存",
+        "固定6列TSVを統合用管理対象領域内へ保存",
         "キューの`plan_file`から各計画の進捗ログを辿り",
         "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",
         "初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動",
@@ -1225,7 +1251,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
         "統合対応表に含まれる全計画の絶対パス",
         "統合スレッドの検証結果",
         "統合用管理対象領域の絶対パス",
-        "既存6列表ファイルの絶対パス",
+        "既存の固定6列TSVファイルの絶対パス",
     ):
         assert phrase in integrated
     assert "共通入力又は選択したモードの必須入力" in input_contract
@@ -1274,7 +1300,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     assert "統合worktree作成時の完全OID" in input_contract
     assert "統合対応表の絶対パス" in input_contract
     for phrase in (
-        "`対応方針`を確定する前",
+        "`対応要否`と後半の対応欄を確定する前",
         "`## 変更履歴`と現在状態を定める後続節の整合",
         "`### ファイル群別の変更説明`の変更対象集合からの差異",
         "後続節で再採用済みなら許容",
@@ -1297,7 +1323,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
 
     plan_check_at = common_review.index("`## 変更履歴`と現在状態を定める後続節の整合")
     authorization_at = common_review.index("モード別の修正認可の上限", plan_check_at)
-    policy_at = common_review.index("`対応方針`には`plan-impl-executor`が独立に確定", authorization_at)
+    policy_at = common_review.index("`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定", authorization_at)
     writer_handoff_at = common_review.index("実在欠陥だけを書込担当へ一括して返す", policy_at)
     assert plan_check_at < authorization_at < policy_at < writer_handoff_at
 
@@ -2235,13 +2261,13 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert (
         "   `plan-mode/references/implementation-task.md`の呼び出し元指定絶対パス、レーンのworktree、対象計画、"
         "採用指摘を実装単位とした目的及び変更説明、\n"
-        "   統合した6列表、プロジェクト規範、該当する作成規範スキル、"
+        "   統合した固定6列TSV、プロジェクト規範、該当する作成規範スキル、"
         "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パス、\n"
         "   ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、\n"
         "   複製元と対象外worktree、git操作の制約を渡す\n"
     ) in _h4_section(executor, "通常の実装モードのレビュー修正")
     assert (
-        "   修正用の書込担当へ`process-feedbacks/references/merge-task.md`の呼び出し元指定絶対パス、6列表、\n"
+        "   修正用の書込担当へ`process-feedbacks/references/merge-task.md`の呼び出し元指定絶対パス、固定6列TSV、\n"
         "   プロジェクト規範、該当する作成規範スキル、"
         "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パスを渡す\n"
     ) in _h4_section(executor, "統合後レビュー調整モードのレビュー修正")
@@ -2259,10 +2285,10 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "   配送文へ`reviewee-standards/SKILL.md`と`plan-review-delegation.md`の絶対パスを含め、"
         "採否の確定に用いる正本として示す。\n"
         "   `review-standards/references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
-        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が6列表へ記録されていることを検収する。\n"
+        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が固定6列TSVへ記録されていることを検収する。\n"
     ) in planner
     assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
-    assert "採否と対応結果を6列表へ統合" in plan_review
+    assert "採否と対応結果を`atk review-table`の固定6列TSV" in plan_review
     assert "スコープ、公開契約、ユーザー合意を変える修正" in plan_review
 
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -2278,18 +2304,18 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert writer_reviewee_phrase in writer
     assert merge_reviewee_phrase in merge
     assert "起草担当は`../../reviewee-standards/SKILL.md`を適用し、" in plan_review
-    assert "採用指摘の6列表" in merge
+    assert "採用指摘の固定6列TSV" in merge
     assert "1つの修正commit" in merge
     assert "指摘の根拠不足、計画との衝突、認可外の変更" in merge
 
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
-    assert "`対応方針`には`plan-impl-executor`が独立に確定した採否と最小限の修正" in executor
+    assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
+    assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否と最小限の修正" in executor
     assert "根拠と適用条件のいずれかが不足する指摘は`未検証`へ移す" in executor
     assert "実在欠陥だけを書込担当へ一括して返す" in executor
 
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
-    assert "通番・重大度／観点・区分・箇所・内容" in delegation
+    assert "固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）" in delegation
     assert "`未検証`の指摘は修正担当へ渡さない" in delegation
 
 
@@ -2326,8 +2352,8 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     for phrase in ("適用", "最小限の修正"):
         assert phrase in plan_review_delegation
     assert "修正方針" in reviewee
-    assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
-    assert "`対応方針`には`plan-impl-executor`が独立に確定した採否" in executor
+    assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
+    assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否" in executor
 
     for phrase in ("検証済みの実際値、期待値、違反契約、対象への適用根拠", "保持契約が指摘ごとにそろう"):
         assert phrase in writer

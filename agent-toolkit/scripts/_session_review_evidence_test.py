@@ -1159,12 +1159,24 @@ def test_warn_mode_accepts_structured_warning_fields_and_grep_keeps_arbitrary_se
         tmp_path,
         [
             {"type": "user", "message": {"role": "user", "content": "警告という語の説明"}},
-            {"type": "event", "warning_message": "構造化された警告"},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": json.dumps({"warning_message": "構造化された警告"}, ensure_ascii=False),
+                        }
+                    ],
+                },
+            },
         ],
     )
 
     assert evidence.main([str(transcript), "--warn"]) == 0
-    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": "構造化された警告"}]
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": "構造化された警告", "tool": "call-1"}]
 
     assert evidence.main([str(transcript), "--grep", "警告"]) == 0
     matches = _read_jsonl(capsys)
@@ -1180,8 +1192,16 @@ def test_warn_mode_accepts_case_variants_of_structured_warning_fields(
     transcript = _write_transcript(
         tmp_path,
         [
-            {"type": "event", "WarningMessage": "構造化警告"},
-            {"type": "event", "message": "本文途中の WarningMessage"},
+            {
+                "type": "user",
+                "toolUseResult": {"WarningMessage": "構造化警告"},
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"message": "本文途中の WarningMessage"},
+                "message": {"role": "user", "content": []},
+            },
         ],
     )
 
@@ -1199,15 +1219,18 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
         tmp_path,
         [
             {
-                "type": "event",
-                "warning_message": "構造化警告",
-                "message": "通常本文",
+                "type": "user",
+                "toolUseResult": {"warning_message": "構造化警告", "message": "通常本文"},
+                "message": {"role": "user", "content": []},
             },
             {
-                "type": "event",
-                "kind": "warning",
-                "text": "直接表す警告本文",
-                "message": "通常の兄弟本文",
+                "type": "user",
+                "toolUseResult": {
+                    "kind": "warning",
+                    "text": "直接表す警告本文",
+                    "message": "通常の兄弟本文",
+                },
+                "message": {"role": "user", "content": []},
             },
         ],
     )
@@ -1217,6 +1240,62 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
     assert _read_jsonl(capsys) == [
         {"kind": "warning", "line": 1, "text": "構造化警告"},
         {"kind": "warning", "line": 2, "text": "直接表す警告本文"},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("entry", "grep_pattern", "expected_text"),
+    [
+        (
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "SomeTool",
+                            "id": "call-1",
+                            "input": {"warning_message": "入力内JSONの警告"},
+                        }
+                    ],
+                },
+            },
+            "入力内JSON",
+            "入力内JSONの警告",
+        ),
+        (
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"warning_message": "引数内JSONの警告"}, ensure_ascii=False),
+                },
+            },
+            "引数内JSON",
+            '{"warning_message": "引数内JSONの警告"}',
+        ),
+    ],
+)
+def test_warn_mode_ignores_structured_warning_json_in_inputs_but_grep_finds_it(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    entry: dict[str, object],
+    grep_pattern: str,
+    expected_text: str,
+) -> None:
+    """入力の構造化警告を`--warn`へ昇格させず、`--grep`では検索する。"""
+    transcript = _write_transcript(tmp_path, [entry])
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+    assert evidence.main([str(transcript), "--grep", grep_pattern]) == 0
+    assert _read_jsonl(capsys) == [
+        {"kind": "match", "line": 1, "text": expected_text},
+        {"kind": "summary", "count": 1},
     ]
 
 

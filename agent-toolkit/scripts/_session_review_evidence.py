@@ -1452,11 +1452,54 @@ def _structured_warning_value_texts(value: Any) -> list[str]:
     return [text for item in value.values() if isinstance(item, (dict, list)) for text in _structured_warning_value_texts(item)]
 
 
+def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """入力本文を除外してhook通知の記録だけを集める。"""
+    found: list[dict[str, Any]] = []
+
+    def collect(value: Any, *, in_body: bool = False) -> None:
+        if isinstance(value, dict):
+            if not in_body and value.get("type") in _HOOK_RECORD_TYPES:
+                found.append(value)
+                return
+            for key, item in value.items():
+                collect(item, in_body=in_body or key in _BODY_KEYS)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item, in_body=in_body)
+
+    collect(entry)
+    return found
+
+
+def _warning_result_values(entry: dict[str, Any]) -> list[Any]:
+    """構造化警告を抽出できる実行結果領域の値だけを返す。"""
+    values: list[Any] = []
+
+    if "toolUseResult" in entry:
+        values.append(entry["toolUseResult"])
+
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        values.extend(block for block in content if isinstance(block, dict) and block.get("type") == "tool_result")
+
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and payload.get("type") == "function_call_output":
+        values.append(payload.get("output"))
+    if isinstance(payload, dict) and payload.get("type") == "event_msg":
+        item = payload.get("item")
+        if isinstance(item, dict) and item.get("type") == "CommandExecution":
+            values.extend(item.get(key) for key in ("aggregated_output", "output", "stdout", "stderr"))
+
+    values.extend(_warning_hook_records(entry))
+    return values
+
+
 def _warning_texts(entry: dict[str, Any]) -> list[str]:
-    """行頭マーカー又は構造化警告フィールドに対応する本文行を返す。"""
+    """行頭マーカー又は実行結果内の構造化警告フィールドに対応する本文行を返す。"""
     bodies: list[tuple[str, bool]] = []
 
-    def collect(value: Any) -> None:
+    def collect_markers(value: Any) -> None:
         if isinstance(value, str):
             bodies.append((value, True))
             try:
@@ -1464,7 +1507,23 @@ def _warning_texts(entry: dict[str, Any]) -> list[str]:
             except (json.JSONDecodeError, TypeError, ValueError):
                 return
             if isinstance(parsed, (dict, list)):
-                collect(parsed)
+                collect_markers(parsed)
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                collect_markers(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect_markers(item)
+
+    def collect_structured(value: Any) -> None:
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return
+            if isinstance(parsed, (dict, list)):
+                collect_structured(parsed)
             return
         if isinstance(value, dict):
             warning_values, direct_warning = _structured_warning_fields(value)
@@ -1475,12 +1534,14 @@ def _warning_texts(entry: dict[str, Any]) -> list[str]:
                 for text in _structured_warning_value_texts(value):
                     bodies.append((text, False))
             for item in value.values():
-                collect(item)
+                collect_structured(item)
         elif isinstance(value, list):
             for item in value:
-                collect(item)
+                collect_structured(item)
 
-    collect(entry)
+    collect_markers(entry)
+    for result_value in _warning_result_values(entry):
+        collect_structured(result_value)
     unnumbered_by_body = [
         {line.strip() for line in text.splitlines() if _LINE_NUMBER_PREFIX.match(line) is None} for text, _ in bodies
     ]
