@@ -47,12 +47,14 @@ JSON-RPCのreaderとsession単位の状態・待機者を管理する。Unix限�
 公開APIは`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`の5つに固定する。
 `codex_start`は絶対`cwd`を受け取り、`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`を
 内部で固定してApp Serverへ渡し、完了を待たず`session_id`を返す。`codex_wait`の既定timeoutは300秒で、
-期限到達時はturnを継続したまま状態を返す。`codex_result`で`turn/completed`を回収した後だけ、
+公開terminal statusになった時点、または期限到達時の状態を返す。公開statusが`failed`でも、
+`turn/completed`未受信の障害経路では結果を回収できず、`codex_result`は拒否される。
+`turn/completed`を受信して`codex_result`で結果を回収した後だけ、
 同じ`session_id`へ`codex_start_reply`で次turnを開始できる。
 
 App Serverからのserver requestは公開toolを増やさず、elicitationをcancelし、それ以外を非対話の
 非対応エラーとして応答する。承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、
-対応turnをfailedへ遷移してwaiterを解放する。`turn/interrupt`は停止要求を送るだけであり、
+関連turnをfailedへ遷移してwaiterを解放する。`turn/interrupt`は停止要求を送るだけであり、
 `turn/completed`を受信するまで`codex_result`の回収を許可しない。通知のdeltaは進捗表示にだけ用い、
 `turn/completed`をturn完了とする。
 この境界により、Claude Codeは実行中の状態を照会でき、完了結果を回収しないままStopで終了する経路も遮断できる。

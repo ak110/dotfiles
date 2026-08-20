@@ -76,7 +76,10 @@ MCPプロセスの終了時に自身が起動した子プロセスだけを終�
 
 Claude Code側では`codex_start`、`codex_status`、`codex_wait`、`codex_result`、
 `codex_start_reply`を使用する。`codex_start`の`cwd`は既存ディレクトリの絶対パスとし、
-`codex_wait`の既定timeoutは300秒である。`codex_result`で終端結果を回収してから、
+`codex_wait`は公開terminal statusで復帰する。既定timeoutは300秒である。
+非対応server requestや未知methodで`failed`を返しても、`turn/completed`未受信の場合は結果を回収できず、
+`codex_result`が拒否される。完了通知を受信してから`codex_result`を実行する。
+`codex_result`で終端結果を回収してから、
 同じ`session_id`へ`codex_start_reply`で継続する。Codex向けmanifestは共有MCPの`pyfltr`だけを含み、
 Claude Code専用の`codex_app_server`をCodex自身へ提供しない。
 

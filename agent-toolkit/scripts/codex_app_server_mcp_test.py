@@ -461,8 +461,7 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
     assert client.sent[-1]["id"] == 2
     assert "error" in client.sent[-1]
     assert manager.status("thread-1")["status"] == "failed"
-    await asyncio.sleep(0)
-    assert not waiter.done()
+    assert (await waiter)["status"] == "failed"
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
     await asyncio.sleep(0)
@@ -483,10 +482,10 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
 
 
 @pytest.mark.asyncio
-async def test_interrupt_json_rpc_error_marks_target_failed_and_waits_for_completion(
+async def test_interrupt_json_rpc_error_releases_waiter_before_completion(
     tmp_path: pathlib.Path,
 ) -> None:
-    """非対応requestはfailedを公開し、turn/completedまで結果回収を許可しない。"""
+    """非対応requestはfailedを公開してwaiterを解放するが、turn/completedまで結果回収を許可しない。"""
     manager = subject.AppServerManager()
     client = InterruptResponseErrorClient()
     manager.client = cast(subject.JsonRpcProcess, client)
@@ -511,8 +510,7 @@ async def test_interrupt_json_rpc_error_marks_target_failed_and_waits_for_comple
     assert unrelated["status"] == "running"
     assert target["error"] == {"message": "turn/interrupt: turn is already completing"}
     assert unrelated["error"] is None
-    await asyncio.sleep(0)
-    assert not waiter.done()
+    assert (await waiter)["status"] == "failed"
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
 
@@ -532,20 +530,38 @@ async def test_interrupt_json_rpc_error_marks_target_failed_and_waits_for_comple
 
 
 @pytest.mark.asyncio
-async def test_unknown_request_without_identifier_fails_all_active_sessions(tmp_path: pathlib.Path) -> None:
+async def test_unknown_request_fails_all_active_sessions_and_releases_waiters(tmp_path: pathlib.Path) -> None:
     manager = subject.AppServerManager()
     client = FakeClient()
     manager.client = cast(subject.JsonRpcProcess, client)
     manager.sessions["thread-1"] = subject.SessionState("thread-1", str(tmp_path), turn_id="turn-1")
     manager.sessions["thread-2"] = subject.SessionState("thread-2", str(tmp_path), turn_id="turn-2")
 
-    await manager._fail_for_request({}, "unknown/server/request")  # noqa: SLF001
+    waiters = [asyncio.create_task(manager.wait(session_id, timeout=10)) for session_id in ("thread-1", "thread-2")]
+    await manager._handle_server_request(  # noqa: SLF001
+        {"id": "unknown-1", "method": "unknown/server/request", "params": {}}
+    )
 
     assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"failed"}
-    await manager._handle_client_failure(subject.AppServerError("connection closed"))
-    assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"failed"}
-    assert manager.result("thread-1")["status"] == "failed"
-    assert manager.result("thread-2")["status"] == "failed"
+    assert [status["status"] for status in await asyncio.gather(*waiters)] == ["failed", "failed"]
+    with pytest.raises(ValueError, match="not completed"):
+        manager.result("thread-1")
+    with pytest.raises(ValueError, match="not completed"):
+        manager.result("thread-2")
+
+    await asyncio.gather(*tuple(manager._background_tasks))  # noqa: SLF001
+    assert client.sent[-1]["error"]["message"] == "Unsupported non-interactive server request: unknown/server/request"
+    for session_id, turn_id in (("thread-1", "turn-1"), ("thread-2", "turn-2")):
+        await manager._handle_notification(  # noqa: SLF001
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": session_id,
+                    "turn": {"id": turn_id, "status": "failed", "error": None},
+                },
+            }
+        )
+        assert manager.result(session_id)["status"] == "failed"
 
 
 @pytest.mark.asyncio

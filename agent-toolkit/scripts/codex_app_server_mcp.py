@@ -117,7 +117,7 @@ class SessionState:
 
     @property
     def result_available(self) -> bool:
-        """最新turnの結果を回収できる状態であるかを返す。"""
+        """最新turnが終端し、turn/completed受信済みで結果を回収できる状態であるかを返す。"""
         return self.terminal and self.turn_completed and not self.turn_start_ambiguous
 
     def touch(self) -> None:
@@ -579,15 +579,15 @@ class AppServerManager:
         return self._get_session(session_id).public_status()
 
     async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-        """指定sessionの結果を回収できるまで待機し、タイムアウト時は現状態を返す。"""
+        """指定sessionが公開terminal statusになるまで待機し、タイムアウト時は現状態を返す。"""
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
         session = self._get_session(session_id)
-        if not session.result_available:
+        if not session.terminal:
             try:
                 async with self._condition:
                     await asyncio.wait_for(
-                        self._condition.wait_for(lambda: session.result_available),
+                        self._condition.wait_for(lambda: session.terminal),
                         timeout=timeout,
                     )
             except TimeoutError:
@@ -595,7 +595,7 @@ class AppServerManager:
         return session.public_status()
 
     def result(self, session_id: str) -> dict[str, Any]:
-        """終端したsessionの結果を返し、取得済みとして記録する。"""
+        """turn/completed受信済みの終端sessionの結果を返し、取得済みとして記録する。"""
         session = self._get_session(session_id)
         if not session.result_available:
             raise ValueError("the Codex turn has not completed")
@@ -908,13 +908,13 @@ async def codex_status(session_id: str) -> dict[str, Any]:
 
 @mcp.tool(name="codex_wait", structured_output=True)
 async def codex_wait(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-    """Codex sessionの終端又はtimeoutまで待つ。timeout到達はエラーにしない。"""
+    """Codex sessionが公開terminal statusになるまで待つ。timeout到達はエラーにしない。"""
     return await _MANAGER.wait(session_id, timeout)
 
 
 @mcp.tool(name="codex_result", structured_output=True)
 async def codex_result(session_id: str) -> dict[str, Any]:
-    """終端済みCodex turnの最終agentMessageを回収する。"""
+    """turn/completed受信済みの終端Codex turnから最終agentMessageを回収する。"""
     return _MANAGER.result(session_id)
 
 

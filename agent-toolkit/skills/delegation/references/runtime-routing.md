@@ -9,7 +9,8 @@
 - Codex App Server MCPを利用できるClaude Code環境では、ToolSearchで5つの実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`codex_start(prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`model`と`effort`は両方指定するか、両方省略する
   - `approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`はMCPサーバーが固定してApp Serverへ渡す。呼び出し側は値を上書きしない
-  - `codex_status`または`codex_wait`で進捗を観測し、`codex_result`で終端結果を回収する。`codex_wait`の既定timeoutは300秒である
+  - `codex_status`または`codex_wait`で進捗を観測し、`codex_result`で終端結果を回収する。`codex_wait`は公開terminal statusになるまで待機し、既定timeoutは300秒である
+  - `codex_wait`が`failed`を返しても`turn/completed`未受信なら結果は回収可能になっていないため、`codex_result`の拒否を確認してから完了通知後に再実行する
   - 継続は先行turnの`codex_result`回収後に`codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
 - Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える
@@ -35,7 +36,8 @@
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ警告を表示するが、新モデルの利用を妨げないため受理する。
 
 1. 設定値を`engine`、`model`、`effort`へ分解する。
-2. `engine=codex`ではCodex App Server MCPを使う。`codex_start`へ`model`と`effort`を両方渡し、開始後は`codex_status`・`codex_wait`・`codex_result`で状態と結果を回収する。
+2. `engine=codex`ではCodex App Server MCPを使う。`codex_start`へ`model`と`effort`を両方渡し、開始後は`codex_status`・`codex_wait`で状態を観測し、`codex_result`で結果を回収する。
+   `codex_wait`は公開terminal statusで復帰するが、`turn/completed`未受信の`failed`では`codex_result`が拒否されるため、完了通知後に結果を回収する。
    agents定義の`tools`で5つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
