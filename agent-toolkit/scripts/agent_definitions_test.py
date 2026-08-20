@@ -627,9 +627,11 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
         assert "同一thread継続では実施指示だけを渡す" not in reviewer
     assert "今回の系統・ラウンドに対応するレビュー指摘管理表と対応`.lock`の絶対パス" in delegation
     assert (
-        "今回の系統・ラウンド表と同じ系統の過去全ラウンド表及び対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
+        "今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
         in delegation
     )
+    assert "同一threadでは、前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
+    assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" not in delegation
     assert "計画準拠系の表と対応`.lock`はこの一覧へ含めない" in independent_review
     assert "独立系へ計画準拠系の表や出力を渡さない" in executor
@@ -696,10 +698,10 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert (
-        "再レビューでは、同一thread継続でも新規起動でも、今回の系統・ラウンド表と同じ系統の過去全ラウンド表及び対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
+        "再レビューでは、同一thread継続でも新規起動でも、今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
         in delegation
     )
-    assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" in delegation
+    assert "同一threadでは、前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
     assert "追送しない限り当該発話を根拠とする実施又は除外を計画へ書かない" in delegation
     assert "当該ラウンドの採用件数と追加した履歴行数が一致すること" in delegation
