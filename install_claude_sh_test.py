@@ -815,6 +815,18 @@ _LEGACY_USER_CODEX_STATES = [
 ]
 
 
+_POWERSHELL_CUSTOM_USER_CODEX_STATES = [
+    pytest.param(
+        {"mcpServers": {"codex": {"command": "codex", "args": "mcp-server"}}},
+        id="scalar-args",
+    ),
+    pytest.param(
+        {"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"], "timeout": "7200000"}}},
+        id="string-timeout",
+    ),
+]
+
+
 @pytest.mark.parametrize("kind", _runners())
 @pytest.mark.parametrize("config", _LEGACY_USER_CODEX_STATES)
 def test_removes_exact_legacy_user_codex_mcp(
@@ -833,6 +845,27 @@ def test_removes_exact_legacy_user_codex_mcp(
 
     assert sum("claude mcp remove --scope user codex" in line for line in _log_lines(stub_log)) == 1
     assert not any("claude mcp add" in line for line in _log_lines(stub_log))
+
+
+@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("config", _POWERSHELL_CUSTOM_USER_CODEX_STATES)
+def test_platforms_preserve_scalar_args_and_string_timeout(
+    kind: str,
+    config: object,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """両プラットフォーム版は型に一致しない利用者定義を旧定義として削除しない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    _write_claude_config(home, config)
+    before = (home / ".claude.json").read_bytes()
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+
+    assert (home / ".claude.json").read_bytes() == before
+    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in _log_lines(stub_log))
 
 
 _INVALID_STATES = [

@@ -289,9 +289,15 @@ function Get-LegacyUserCodexMcpStatus {
     $commandProperty = $definition.PSObject.Properties['command']
     if ($null -eq $commandProperty -or $commandProperty.Value -ne 'codex') { return 'custom' }
     $argsProperty = $definition.PSObject.Properties['args']
-    if ($null -eq $argsProperty -or @($argsProperty.Value).Count -ne 1 -or @($argsProperty.Value)[0] -ne 'mcp-server') { return 'custom' }
+    $argsValue = $null
+    if ($null -ne $argsProperty) { $argsValue = $argsProperty.Value }
+    if ($argsValue -isnot [System.Array] -or $argsValue.Count -ne 1 -or $argsValue[0] -isnot [string] -or $argsValue[0] -cne 'mcp-server') { return 'custom' }
     $timeoutProperty = $definition.PSObject.Properties['timeout']
-    if ($null -ne $timeoutProperty -and $null -ne $timeoutProperty.Value -and [int64]$timeoutProperty.Value -ne 7200000) { return 'custom' }
+    if ($null -ne $timeoutProperty -and $null -ne $timeoutProperty.Value) {
+        $timeoutValue = $timeoutProperty.Value
+        $numericTypes = @([byte], [sbyte], [int16], [uint16], [int32], [uint32], [int64], [uint64], [single], [double], [decimal])
+        if (-not ($numericTypes | Where-Object { $_.IsInstanceOfType($timeoutValue) }) -or [decimal]$timeoutValue -ne 7200000) { return 'custom' }
+    }
     return 'legacy'
 }
 

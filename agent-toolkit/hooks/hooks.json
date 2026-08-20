@@ -35,7 +35,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Agent|Task",
+        "matcher": "Agent|Task|mcp__plugin_agent-toolkit_codex_app_server__codex_start|mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
         "hooks": [
           {
             "type": "command",

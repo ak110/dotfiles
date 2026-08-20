@@ -23,7 +23,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 mcp__plugin_agent-toolkit_codex_app_server__codex_start / codex_start_reply:
 
 - メインセッションで`agent-toolkit:delegation`の起動記録が無いCodex App Server MCP呼び出しのブロック (block)
-- App Serverへ渡す絶対`cwd`の検査 (block)
+- App Serverへ渡す絶対`cwd`と`codex_start_reply`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 codex_status / codex_wait / codex_result:
@@ -3377,7 +3377,14 @@ def _check_codex_app_server_cwd(tool_input: dict) -> bool:
 
 
 def _check_codex_app_server_reply_input(session_id: str, tool_input: dict) -> bool:
-    """`codex_start_reply`のsession_idと保存済みcwdを検査する。"""
+    """`codex_start_reply`の入力と保存済みcwdを検査する。"""
+    prompt = tool_input.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        print(
+            _llm_notice("blocked: codex_start_reply requires a non-empty prompt."),
+            file=sys.stderr,
+        )
+        return True
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         print(

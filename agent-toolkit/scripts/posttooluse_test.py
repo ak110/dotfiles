@@ -85,6 +85,18 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+def _run_stop(payload: dict, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    """同じ一時状態ディレクトリでStop hookを実行する。"""
+    env = os.environ.copy()
+    env.update({"TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)})
+    return _fork_runner.run_script(
+        _SCRIPT,
+        argv=("stop_advisor",),
+        input=json.dumps(payload, ensure_ascii=False),
+        env=env,
+    )
+
+
 class TestTestExecution:
     """テスト実行検出。"""
 
@@ -196,6 +208,19 @@ class TestTestExecution:
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
         assert re.fullmatch(matcher, _PYFLTR_RUN_FOR_AGENT_TOOL_NAME) is not None
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+            "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+        ],
+    )
+    def test_posttooluse_failure_matcher_routes_codex_start_points(self, tool_name: str):
+        """Codex開始点の内部失敗をPostToolUseFailureへ配送するmatcherを維持する。"""
+        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
+        assert re.fullmatch(matcher, tool_name) is not None
 
 
 class TestPlanModeSkillInvocation:
@@ -1266,6 +1291,146 @@ class TestWarnCodexRemoteChange:
         reply_post = _run(self._result_payload(sid), state_dir=tmp_path)
         assert reply_post.returncode == 0
         assert "remote refs changed" in reply_post.stdout
+
+    def test_reply_failure_blocks_stop_until_result_and_keeps_snapshot(self, tmp_path: pathlib.Path):
+        """内部開始失敗は未回収としてStopを遮断し、結果回収時だけsnapshotを比較・解放する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "reply-failure"
+        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+        reply_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply"
+
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        assert (
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "tool_response": {
+                        "structuredContent": {
+                            "session_id": "thread-1",
+                            "turn_id": "turn-1",
+                            "status": "running",
+                        }
+                    },
+                    "isSidechain": True,
+                },
+                state_dir=tmp_path,
+            ).returncode
+            == 0
+        )
+        assert _run(self._result_payload(sid), state_dir=tmp_path).returncode == 0
+
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": reply_tool,
+                    "tool_input": {"session_id": "thread-1", "prompt": "続けて実装"},
+                    "tool_use_id": "reply-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        failure = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": reply_tool,
+                "tool_input": {"session_id": "thread-1", "prompt": "続けて実装"},
+                "tool_use_id": "reply-1",
+                "tool_response": {"error": "turn/start failed"},
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert failure.returncode == 0
+        failed_state = _read_state(tmp_path, sid)
+        failed_record = failed_state["codex_app_server_sessions"]["thread-1"]
+        assert failed_record["status"] == "failed"
+        assert failed_record["turn_id"] == ""
+        assert failed_record["result_retrieved"] is False
+        assert failed_record["snapshot_key"] == "reply-1"
+        assert "reply-1" in failed_state["codex_remote_snapshot_by_key"]
+
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:session-review"},
+            },
+            state_dir=tmp_path,
+        )
+        stop_before_result = _run_stop({"session_id": sid}, tmp_path)
+        assert stop_before_result.returncode == 0
+        stop_before_payload = json.loads(stop_before_result.stdout)
+        assert stop_before_payload["decision"] == "block"
+        assert "codex_result" in stop_before_payload["reason"]
+
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result_payload = self._result_payload(sid)
+        result_payload["tool_use_id"] = "result-1"
+        result_payload["tool_response"]["structuredContent"].update({"status": "failed", "error": "turn/start failed"})
+        result = _run(result_payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+        retrieved_state = _read_state(tmp_path, sid)
+        retrieved_record = retrieved_state["codex_app_server_sessions"]["thread-1"]
+        assert retrieved_record["result_retrieved"] is True
+        assert retrieved_state["codex_remote_snapshot_by_key"] == {}
+
+        stop_after_result = _run_stop({"session_id": sid}, tmp_path)
+        assert stop_after_result.returncode == 0
+        assert "decision" not in json.loads(stop_after_result.stdout)
+
+    def test_reply_input_failure_preserves_session_state_and_clears_snapshot(self, tmp_path: pathlib.Path):
+        """入力検証失敗は新しい未回収ターンに変換せず、対応するsnapshotだけを破棄する。"""
+        sid = "reply-input-failure"
+        state = {
+            "codex_app_server_sessions": {
+                "thread-1": {
+                    "session_id": "thread-1",
+                    "status": "completed",
+                    "turn_id": "turn-1",
+                    "result_retrieved": True,
+                }
+            },
+            "codex_remote_snapshot_by_key": {"reply-invalid": {"cwd": str(tmp_path), "snapshot": {}}},
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            json.dumps(state, ensure_ascii=False), encoding="utf-8"
+        )
+        result = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+                "tool_input": {"session_id": "thread-1", "prompt": ""},
+                "tool_use_id": "reply-invalid",
+                "tool_response": {"error": "prompt must not be empty"},
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state_after = _read_state(tmp_path, sid)
+        assert state_after["codex_app_server_sessions"]["thread-1"]["status"] == "completed"
+        assert state_after["codex_app_server_sessions"]["thread-1"]["result_retrieved"] is True
+        assert state_after["codex_remote_snapshot_by_key"] == {}
 
     def test_warns_and_clears_state_when_remote_changed(self, tmp_path: pathlib.Path):
         """codex呼び出し中にリモートへpushされた変化を検知して警告し、記録済みスナップショットを削除する。"""

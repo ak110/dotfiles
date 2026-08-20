@@ -319,6 +319,7 @@ if set(value) - {"type", "command", "args", "timeout"}:
     raise SystemExit(3)
 if value.get("type") not in (None, "stdio"):
     raise SystemExit(3)
+# argsは文字列1件の配列、timeoutは数値7200000だけを旧定義とみなす（PowerShell版と同じ契約）。
 if value.get("command") != "codex" or value.get("args") != ["mcp-server"]:
     raise SystemExit(3)
 if value.get("timeout") not in (None, 7200000):
