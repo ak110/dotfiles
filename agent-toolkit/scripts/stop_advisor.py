@@ -1,7 +1,8 @@
 """Claude Code・Codex plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
-概要は次のとおり。`stop_hook_active`真時・非同期作業継続中は無条件approve、
+概要は次のとおり。未回収Codex App Server結果がある場合は`stop_hook_active`真時もblockし、
+結果回収済みの`stop_hook_active`真時・非同期作業継続中はapprove、
 `agent-toolkit:session-review`起動済み時はapproveとする。
 いずれにも該当しない通常終了時は、transcriptの絶対パスを含む振り返り誘導文をblockで返す。
 終了判定の言語的基準は`agent-toolkit:session-review`「起動方針」節をSSOTとし、
@@ -99,6 +100,16 @@ def main(payload_text: str) -> int:
         return 0
     session_id, payload = resolved
 
+    if has_uncollected_codex_turns(session_id):
+        append_stop_log(session_id, "block_codex_result_uncollected", {})
+        reason = _llm_notice(
+            "A Codex App Server turn has reached or may reach a terminal state, but its result"
+            " has not been collected. Call `codex_result` for each started session before stopping."
+        )
+        raw_cwd = payload.get("cwd", "")
+        _emit_block_with_status(reason, cwd=raw_cwd if isinstance(raw_cwd, str) else "")
+        return 0
+
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
     # 構造判定・通知生成・git status出力をせず即座にapproveする。
@@ -125,14 +136,6 @@ def main(payload_text: str) -> int:
         return 0
 
     state = read_state(session_id)
-    if has_uncollected_codex_turns(session_id):
-        append_stop_log(session_id, "block_codex_result_uncollected", {})
-        reason = _llm_notice(
-            "A Codex App Server turn has reached or may reach a terminal state, but its result"
-            " has not been collected. Call `codex_result` for each started session before stopping."
-        )
-        _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
-        return 0
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
     # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録するほか、
     # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。

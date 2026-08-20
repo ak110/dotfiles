@@ -47,7 +47,7 @@ TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 PUBLIC_STATUSES = frozenset({"running", *TERMINAL_STATUSES})
 
 # Codex CLI 0.148.0のServerRequest schemaで確認した全server-initiated request。
-# 承認用の公開MCP toolは設けず、readerで必ず応答してturnを止めない。
+# 承認用の公開MCP toolは設けず、readerで必ず応答して非対話要求をfailedへ記録する。
 SERVER_REQUEST_METHODS = frozenset(
     {
         "item/commandExecution/requestApproval",
@@ -105,6 +105,8 @@ class SessionState:
     reply_retryable: bool = False
     turn_start_ambiguous: bool = False
     interrupt_requested: bool = False
+    turn_completed: bool = False
+    failure_pending_completion: bool = False
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     reply_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
 
@@ -227,9 +229,8 @@ class JsonRpcProcess:
             if isinstance(error, dict):
                 message = _as_text(error.get("message")) or "JSON-RPC request failed"
                 raise JsonRpcResponseError(method, error.get("code"), message, error.get("data"))
-            else:
-                message = "JSON-RPC request failed"
-                raise JsonRpcResponseError(method, None, message)
+            message = "JSON-RPC request failed"
+            raise JsonRpcResponseError(method, None, message)
         result = response.get("result", {})
         return result if isinstance(result, dict) else {}
 
@@ -481,6 +482,8 @@ class AppServerManager:
         session.reply_retryable = False
         session.turn_start_ambiguous = False
         session.interrupt_requested = False
+        session.turn_completed = False
+        session.failure_pending_completion = False
         session.touch()
 
     async def _mark_failed(
@@ -508,6 +511,8 @@ class AppServerManager:
         session.reply_retryable = retryable
         session.turn_start_ambiguous = False
         session.interrupt_requested = False
+        session.turn_completed = True
+        session.failure_pending_completion = False
         session.touch()
         await self._notify_waiters()
 
@@ -521,6 +526,8 @@ class AppServerManager:
         session.reply_retryable = False
         session.turn_start_ambiguous = True
         session.interrupt_requested = False
+        session.turn_completed = False
+        session.failure_pending_completion = False
         session.touch()
         await self._notify_waiters()
 
@@ -557,6 +564,8 @@ class AppServerManager:
         session.status = "running"
         if session.reply_attempted:
             session.reply_turn_started = True
+        session.turn_completed = False
+        session.failure_pending_completion = False
         session.touch()
         await self._notify_waiters()
 
@@ -583,7 +592,7 @@ class AppServerManager:
     def result(self, session_id: str) -> dict[str, Any]:
         """終端したsessionの結果を返し、取得済みとして記録する。"""
         session = self._get_session(session_id)
-        if not session.terminal or session.turn_start_ambiguous:
+        if not session.terminal or session.turn_start_ambiguous or not session.turn_completed:
             raise ValueError("the Codex turn has not completed")
         session.result_retrieved = True
         session.touch()
@@ -624,14 +633,19 @@ class AppServerManager:
                     session.turn_id = turn_id
                     if session.reply_attempted:
                         session.reply_turn_started = True
-            session.status = "running"
+            if not session.failure_pending_completion:
+                session.status = "running"
         elif method == "turn/completed":
+            failure_pending_completion = session.failure_pending_completion
             if isinstance(turn, dict):
                 turn_id = turn.get("id")
                 if isinstance(turn_id, str):
                     session.turn_id = turn_id
-                session.status = _public_turn_status(turn.get("status"))
-                session.error = turn.get("error")
+                if not failure_pending_completion:
+                    session.status = _public_turn_status(turn.get("status"))
+                turn_error = turn.get("error")
+                if turn_error is not None or not failure_pending_completion:
+                    session.error = turn_error
                 self._consume_items(session, turn.get("items"))
                 session.interrupt_requested = False
                 session.turn_start_ambiguous = False
@@ -640,6 +654,8 @@ class AppServerManager:
                 session.error = "turn/completed did not contain turn"
                 session.interrupt_requested = False
                 session.turn_start_ambiguous = False
+            session.turn_completed = True
+            session.failure_pending_completion = False
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
         elif method == "turn/plan/updated":
@@ -680,7 +696,7 @@ class AppServerManager:
             return
         if not isinstance(request_id, (int, str)) or isinstance(request_id, bool):
             # IDなしの異常なserver requestへはJSON-RPC応答を返せないため、
-            # 接続上のactive turnへinterruptを予約し、接続停止時の終端を待つ。
+            # 接続上のactive turnをfailedへ遷移させ、turn完了通知を待つ。
             await self._fail_for_request(params, method)
             return
         if method == "mcpServer/elicitation/request":
@@ -711,15 +727,19 @@ class AppServerManager:
             sessions = [item for item in self.sessions.values() if not item.terminal]
         interrupt_targets: list[tuple[str, str]] = []
         for active in sessions:
+            has_active_turn = bool(active.turn_id)
+            active.status = "failed"
             active.error = {"message": f"Codex requested interactive server input: {method}"}
             active.protocol_warnings.append(f"unsupported server request: {method}")
-            if active.turn_id and not active.interrupt_requested:
+            active.turn_completed = not has_active_turn
+            active.failure_pending_completion = has_active_turn
+            if has_active_turn and not active.interrupt_requested:
                 interrupt_targets.append((active.session_id, active.turn_id))
-            active.interrupt_requested = True
+            active.interrupt_requested = has_active_turn
             active.touch()
         await self._notify_waiters()
         # reader task cannot await a request response for turn/interrupt: that would
-        # deadlock the same reader. Schedule it while keeping the turn nonterminal.
+        # deadlock the same reader. Schedule it after publishing failed and waking waiters.
         for session_id, turn_id in interrupt_targets:
             if self.client is not None:
                 self._schedule(self._interrupt(session_id, turn_id))
@@ -738,7 +758,7 @@ class AppServerManager:
     async def _handle_interrupt_response_error(self, session_id: str, turn_id: str, error: JsonRpcResponseError) -> None:
         """turn/interruptのJSON-RPC errorを対象turnだけへ記録する。"""
         session = self.sessions.get(session_id)
-        if session is None or session.terminal or session.turn_id != turn_id:
+        if session is None or session.turn_completed or session.turn_id != turn_id:
             return
         session.error = {"message": str(error) or error.__class__.__name__}
         session.protocol_warnings.append(f"turn/interrupt failed: {error}")
@@ -750,11 +770,14 @@ class AppServerManager:
         detail = str(error) or error.__class__.__name__
         changed = False
         for session in self.sessions.values():
-            if not session.terminal:
+            if not session.terminal or session.failure_pending_completion:
                 session.status = "failed"
-                session.error = {"message": f"Codex App Server stopped: {detail}"}
+                if not session.failure_pending_completion:
+                    session.error = {"message": f"Codex App Server stopped: {detail}"}
                 session.interrupt_requested = False
                 session.turn_start_ambiguous = False
+                session.turn_completed = True
+                session.failure_pending_completion = False
                 session.touch()
                 changed = True
         if changed:

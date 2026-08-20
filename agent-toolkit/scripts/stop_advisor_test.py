@@ -170,6 +170,59 @@ class TestApproveConditions:
         assert "hookSpecificOutput" not in decision
         assert "systemMessage" not in decision
 
+    def test_stop_hook_active_blocks_uncollected_codex_until_result_is_collected(self, tmp_path: pathlib.Path):
+        """`stop_hook_active`が真でも、Codex結果の回収前はblockし、回収後だけapproveする。"""
+        session_id = "stop-hook-active-codex"
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
+            tmp_path,
+            session_id,
+            {
+                "codex_app_server_sessions": {
+                    "thread-1": {
+                        "session_id": "thread-1",
+                        "status": "failed",
+                        "result_retrieved": False,
+                    }
+                }
+            },
+        )
+        blocked = _run(
+            {
+                "session_id": session_id,
+                "transcript_path": str(transcript),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        blocked_decision = _parse_decision(blocked)
+        assert blocked_decision.get("decision") == "block"
+        assert "codex_result" in _block_reason(blocked_decision)
+
+        state_path = _write_state(
+            tmp_path,
+            session_id,
+            {
+                "codex_app_server_sessions": {
+                    "thread-1": {
+                        "session_id": "thread-1",
+                        "status": "failed",
+                        "result_retrieved": True,
+                    }
+                }
+            },
+        )
+        assert state_path.is_file()
+        approved = _run(
+            {
+                "session_id": session_id,
+                "transcript_path": str(transcript),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert "decision" not in _parse_decision(approved)
+
     def test_block_then_active_approves(self, tmp_path: pathlib.Path):
         """`stop_hook_active`が真の場合、直前のblock後の再呼び出しでもapproveを返す。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])

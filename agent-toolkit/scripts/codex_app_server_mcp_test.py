@@ -454,12 +454,14 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
     assert client.sent[-1] == {"id": "elicitation-1", "result": {"action": "cancel", "content": None, "_meta": None}}
     assert manager.status("thread-1")["status"] == "running"
 
+    waiter = asyncio.create_task(manager.wait("thread-1", timeout=10))
     await manager._handle_server_request(  # noqa: SLF001
         {"id": 2, "method": "item/tool/requestUserInput", "params": {"threadId": "thread-1"}}
     )
     assert client.sent[-1]["id"] == 2
     assert "error" in client.sent[-1]
-    assert manager.status("thread-1")["status"] == "running"
+    assert manager.status("thread-1")["status"] == "failed"
+    assert (await waiter)["status"] == "failed"
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
     await asyncio.sleep(0)
@@ -473,14 +475,16 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
             },
         }
     )
-    assert manager.result("thread-1")["status"] == "interrupted"
+    result = manager.result("thread-1")
+    assert result["status"] == "failed"
+    assert result["error"] == {"message": "Codex requested interactive server input: item/tool/requestUserInput"}
 
 
 @pytest.mark.asyncio
-async def test_interrupt_json_rpc_error_keeps_both_sessions_nonterminal_until_target_completes(
+async def test_interrupt_json_rpc_error_marks_target_failed_and_waits_for_completion(
     tmp_path: pathlib.Path,
 ) -> None:
-    """turn/interruptの通常エラーで対象外sessionをfailedにせず、対象turnの完了を待つ。"""
+    """非対応requestはfailedを公開し、turn/completedまで結果回収を許可しない。"""
     manager = subject.AppServerManager()
     client = InterruptResponseErrorClient()
     manager.client = cast(subject.JsonRpcProcess, client)
@@ -501,11 +505,13 @@ async def test_interrupt_json_rpc_error_keeps_both_sessions_nonterminal_until_ta
 
     target = manager.status("thread-1")
     unrelated = manager.status("thread-2")
-    assert target["status"] == "running"
+    assert target["status"] == "failed"
     assert unrelated["status"] == "running"
     assert target["error"] == {"message": "turn/interrupt: turn is already completing"}
     assert unrelated["error"] is None
-    assert not waiter.done()
+    assert (await waiter)["status"] == "failed"
+    with pytest.raises(ValueError, match="not completed"):
+        manager.result("thread-1")
 
     await manager._handle_notification(  # noqa: SLF001
         {
@@ -516,8 +522,9 @@ async def test_interrupt_json_rpc_error_keeps_both_sessions_nonterminal_until_ta
             },
         }
     )
-    assert (await waiter)["status"] == "interrupted"
-    assert manager.result("thread-1")["status"] == "interrupted"
+    result = manager.result("thread-1")
+    assert result["status"] == "failed"
+    assert result["error"] == {"message": "turn/interrupt: turn is already completing"}
 
 
 @pytest.mark.asyncio
@@ -530,9 +537,11 @@ async def test_unknown_request_without_identifier_fails_all_active_sessions(tmp_
 
     await manager._fail_for_request({}, "unknown/server/request")  # noqa: SLF001
 
-    assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"running"}
+    assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"failed"}
     await manager._handle_client_failure(subject.AppServerError("connection closed"))
     assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"failed"}
+    assert manager.result("thread-1")["status"] == "failed"
+    assert manager.result("thread-2")["status"] == "failed"
 
 
 @pytest.mark.asyncio

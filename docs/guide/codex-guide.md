@@ -80,6 +80,10 @@ Claude Code側では`codex_start`、`codex_status`、`codex_wait`、`codex_resul
 同じ`session_id`へ`codex_start_reply`で継続する。Codex向けmanifestは共有MCPの`pyfltr`だけを含み、
 Claude Code専用の`codex_app_server`をCodex自身へ提供しない。
 
+App Serverから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
+対応turnを`failed`としてwaiterを起床させる。`turn/interrupt`の予約だけでは結果を回収済みとせず、
+`turn/completed`の受信後に`codex_result`を実行する。未回収結果がある間は、Claude CodeのStopを許可しない。
+
 ### フックの信頼確認
 
 Codexはplugin同梱フックの定義が変わると、利用者が再び信頼するまで当該フックをスキップする。

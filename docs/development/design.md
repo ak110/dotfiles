@@ -52,7 +52,9 @@ JSON-RPCのreaderとsession単位の状態・待機者を管理する。Unix限�
 
 App Serverからのserver requestは公開toolを増やさず、elicitationをcancelし、それ以外を非対話の
 非対応エラーとして応答する。承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、
-対応turnをfailedへ遷移してwaiterを解放する。通知のdeltaは進捗表示にだけ用い、`turn/completed`を終端とする。
+対応turnをfailedへ遷移してwaiterを解放する。`turn/interrupt`は停止要求を送るだけであり、
+`turn/completed`を受信するまで`codex_result`の回収を許可しない。通知のdeltaは進捗表示にだけ用い、
+`turn/completed`をturn完了とする。
 この境界により、Claude Codeは実行中の状態を照会でき、完了結果を回収しないままStopで終了する経路も遮断できる。
 
 ## process-loopのworktree隔離
