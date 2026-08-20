@@ -54,6 +54,7 @@ _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
+_DESIGN = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
 _SECTION_REFERENCE_SOURCE_ROOTS = (
@@ -805,6 +806,20 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     for document in (sender, process, planner, explore, standards, delegation, review):
         for phrase in forbidden:
             assert phrase not in document
+
+
+def test_direct_material_records_preserve_receipt_order() -> None:
+    """直接受領素材を受領順のレコード集合として渡す契約を固定する。"""
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    design = _DESIGN.read_text(encoding="utf-8")
+
+    for document in (sender, planner, design):
+        collection = document.index("受領順を保持した素材レコード集合")
+        fields = document.index("種別、出所及び引用範囲をこの順で")
+        assert collection < fields
+
+    assert "逐語本文・回答全文をレコードの末尾へ続ける" in sender
 
 
 def test_material_and_requirement_ids_remain_stable_across_parallel_work_and_revisions() -> None:
