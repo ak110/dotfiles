@@ -20,16 +20,15 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__codex__codex:
+mcp__plugin_agent-toolkit_codex_app_server__codex_start / codex_start_reply:
 
-- メインセッションで`agent-toolkit:delegation`の起動記録が無いcodex MCP呼び出しのブロック (block)
-- `sandbox: danger-full-access`以外（未指定を含む）の呼び出しの自動補正 (auto-fix)
-- `approval-policy`の`never`固定 (auto-fix)
+- メインセッションで`agent-toolkit:delegation`の起動記録が無いCodex App Server MCP呼び出しのブロック (block)
+- App Serverへ渡す絶対`cwd`と`codex_start_reply`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
-mcp__codex__codex-reply:
+codex_status / codex_wait / codex_result:
 
-- `agent-toolkit:delegation`起動後のcodex継続呼び出しの強制承認 (auto-approve)
+- 既存sessionの観測・結果回収として通過 (pass-through)
 
 Bash:
 
@@ -88,7 +87,6 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 
 import dataclasses
 import datetime
-import hashlib
 import json
 import pathlib
 import re
@@ -253,7 +251,7 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
-    if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
+    if tool_name in _CODEX_APP_SERVER_TOOL_NAMES:
         return exit_with(_handle_codex_tool(payload, tool_name, tool_input, session_id, emit_json))
 
     if tool_name == "Bash":
@@ -286,19 +284,22 @@ def _handle_codex_tool(
     session_id: str,
     emit_json: Callable[[dict], None],
 ) -> int:
-    """Codex MCPの委譲前検査と許可上書きを処理する。"""
+    """Codex App Serverの開始点・観測点を分離して検査する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
-    if payload.get("isSidechain") is not True:
+    if tool_name in _CODEX_APP_SERVER_START_TOOLS and payload.get("isSidechain") is not True:
         state = read_state(session_id)
         if _check_delegation_not_invoked(state, tool_name=tool_name):
             return 2
-    if tool_name == "mcp__codex__codex":
-        if _check_codex_mcp_cwd(tool_input):
+    if tool_name == _CODEX_APP_SERVER_START_TOOL:
+        if _check_codex_app_server_cwd(tool_input):
             return 2
-        emit_json(_check_codex_mcp_execution(tool_input))
+    elif tool_name == _CODEX_APP_SERVER_REPLY_TOOL and _check_codex_app_server_reply_input(session_id, tool_input):
+        return 2
+    if tool_name in _CODEX_APP_SERVER_START_TOOLS:
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})
+        _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
     else:
         emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})
-    _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
     return 0
 
 
@@ -1221,20 +1222,28 @@ def _check_body_section_reference_exists(tool_name: str, content: str, file_path
     )
 
 
+# Codex App Serverの完全修飾MCP tool名。Claude Codeはplugin名とserver名からこの
+# namespaceを生成するため、旧User scope `codex`のtool名と混同しない。
+_CODEX_APP_SERVER_NAMESPACE = "mcp__plugin_agent-toolkit_codex_app_server__"
+_CODEX_APP_SERVER_START_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start"
+_CODEX_APP_SERVER_REPLY_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start_reply"
+_CODEX_APP_SERVER_OBSERVE_TOOLS = frozenset(
+    {
+        f"{_CODEX_APP_SERVER_NAMESPACE}codex_status",
+        f"{_CODEX_APP_SERVER_NAMESPACE}codex_wait",
+        f"{_CODEX_APP_SERVER_NAMESPACE}codex_result",
+    }
+)
+_CODEX_APP_SERVER_START_TOOLS = frozenset({_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL})
+_CODEX_APP_SERVER_TOOL_NAMES = _CODEX_APP_SERVER_START_TOOLS | _CODEX_APP_SERVER_OBSERVE_TOOLS
+# App Serverのthread/startへ渡す既存の全権限契約。新しいhook入力へ転記せず、
+# `codex_app_server_mcp.py`のturn/startでは`dangerFullAccess`を指定する。
+_CODEX_APP_SERVER_SANDBOX_PAYLOAD = {"sandbox": "danger-full-access", "sandboxPolicy": {"type": "dangerFullAccess"}}
+
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
-# `posttooluse.py`が同一キーで読み取り、比較後に削除する共有SSOT。
+# `posttooluse.py`が同じtool_use_idで読み取り、codex_result後だけ比較を完了する共有SSOT。
 _CODEX_REMOTE_SNAPSHOT_KEY = "codex_remote_snapshot_by_key"
-
-# キーごとの直近codex呼び出し対象cwdを保持する状態辞書のキー（永続、比較後も削除しない）。
-# `mcp__codex__codex-reply`は`tool_input`へ`cwd`を持たないため、同一スレッド（同一key）の
-# 直近`mcp__codex__codex`呼び出しで記録したcwdを引き継いで使う。
-_CODEX_REMOTE_CWD_KEY = "codex_remote_cwd_by_key"
-
-
-def _codex_thread_cwd_state_id(thread_id: str) -> str:
-    """`threadId`単位の共有cwd状態ファイルに使う疑似セッションIDを返す。"""
-    digest = hashlib.sha256(thread_id.encode()).hexdigest()
-    return f"codex-thread-cwd-{digest}"
+_CODEX_SESSION_CWD_KEY = "codex_app_server_cwd_by_session"
 
 
 def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict, tool_input: dict) -> None:
@@ -1244,27 +1253,21 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
     抽出できない場合（主セッション自身の直接呼び出し時）は`session_id`とする。
 
     比較対象のcwdはcodexが実際に実行される作業ディレクトリでなければならない。
-    `mcp__codex__codex`は`tool_input["cwd"]`（`_check_codex_mcp_cwd`が絶対パス検証済み）を用いる。
-    `payload["cwd"]`（呼び出し元セッション自身の作業ディレクトリ）は使わない。worktree内から
-    起動したセッションでも本体リポジトリを指す場合があり、実行対象と異なり得るためである
-    （`_check_codex_mcp_cwd`のdocstring参照）。
-    `mcp__codex__codex-reply`は`tool_input`に`cwd`を持たないため、`threadId`に対応するcwdを
-    `threadId`単位の共有状態から取得する。同一オーケストレーター内の旧記録との互換用に、
-    共有状態から取得できない場合は同一キーの直近cwdを`_CODEX_REMOTE_CWD_KEY`から引き継ぐ。
+    `codex_start`はtool入力の絶対cwdを使い、`codex_start_reply`は初回結果が
+    保存したsession_id→cwd対応表から復元する。`payload["cwd"]`（呼び出し元Claude
+    sessionのcwd）は使わない。Codex実行対象と異なり得るためである。
     cwdを取得できない場合は比較対象が無いため記録をスキップする。
     """
     agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
-    key = agent_id if agent_id is not None else f"session:{session_id}"
-    if tool_name == "mcp__codex__codex":
+    tool_use_id = payload.get("tool_use_id")
+    key = tool_use_id if isinstance(tool_use_id, str) and tool_use_id else (agent_id or f"session:{session_id}")
+    state = read_state(session_id)
+    if tool_name == _CODEX_APP_SERVER_START_TOOL:
         cwd_raw = tool_input.get("cwd")
     else:
-        state = read_state(session_id)
-        thread_id = tool_input.get("threadId") or tool_input.get("thread_id")
-        cwd_map = state.get(_CODEX_REMOTE_CWD_KEY)
-        thread_state = read_state(_codex_thread_cwd_state_id(thread_id)) if isinstance(thread_id, str) else {}
-        cwd_raw = thread_state.get("cwd")
-        if cwd_raw is None:
-            cwd_raw = cwd_map.get(key) if isinstance(cwd_map, dict) else None
+        session_key = tool_input.get("session_id")
+        cwd_map = state.get(_CODEX_SESSION_CWD_KEY)
+        cwd_raw = cwd_map.get(session_key) if isinstance(cwd_map, dict) and isinstance(session_key, str) else None
     if not isinstance(cwd_raw, str) or not cwd_raw:
         return
     snapshot = _git_status.snapshot_remote_refs(cwd_raw)
@@ -1272,8 +1275,6 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
     def _mutator(state: dict) -> dict | None:
         entries = state.setdefault(_CODEX_REMOTE_SNAPSHOT_KEY, {})
         entries[key] = {"cwd": cwd_raw, "snapshot": snapshot}
-        cwd_map = state.setdefault(_CODEX_REMOTE_CWD_KEY, {})
-        cwd_map[key] = cwd_raw
         return state
 
     update_state(session_id, _mutator)
@@ -3268,7 +3269,7 @@ def _check_bash_codex_exec(command: str) -> str | None:
     )
 
 
-# --- mcp__codex__codex / mcp__codex__codex-reply: isSidechainプローブ ---
+# --- Codex App Server: isSidechainプローブ ---
 
 
 def _record_iss_sidechain_probe(
@@ -3353,29 +3354,11 @@ def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:
     return True
 
 
-# --- mcp__codex__codex: sandbox明示指定の強制・approval-policy自動修正 ---
+# --- codex_app_server: 開始点の絶対cwd検査 ---
 
 
-def _check_codex_mcp_sandbox(tool_input: dict) -> dict:
-    """Codex MCPの`sandbox`を`danger-full-access`へ補正した入力を返す。
-
-    現在は補正化の暫定実装であり、配布後の動作確認で承認待ち停止が残る場合はsandbox検査を遮断へ戻す。
-    """
-    updated_input = dict(tool_input)
-    updated_input["sandbox"] = "danger-full-access"
-    return updated_input
-
-
-def _check_codex_mcp_cwd(tool_input: dict) -> bool:
-    """`cwd`が非空の絶対パスでない呼び出しを検出してブロック要否を返す。
-
-    未指定・相対パスの場合、セッションの作業ディレクトリはMCPサーバープロセスの作業ディレクトリを
-    起点に解決される。worktree内から起動したセッションであっても本体リポジトリを指す場合があり、
-    委譲プロンプト本文で作業ディレクトリを伝えてもツール側の作業ディレクトリは変わらない。
-    値の実在確認（対象パスの存在・worktree一致）は呼び出し元の環境依存のため本関数の対象外とし、
-    絶対パス形式であることのみを検査する。相対パスは、たとえ非空でも本チェックの対象とする
-    （相対パスのままではMCPサーバープロセスの作業ディレクトリ基準で解決され、根本原因を解消しない）。
-    """
+def _check_codex_app_server_cwd(tool_input: dict) -> bool:
+    """`codex_start.cwd`が非空の絶対パスでない呼び出しを検出する。"""
     cwd = tool_input.get("cwd")
     if isinstance(cwd, str) and cwd.strip() != "" and pathlib.PurePath(cwd).is_absolute():
         return False
@@ -3383,10 +3366,9 @@ def _check_codex_mcp_cwd(tool_input: dict) -> bool:
     actual = f"`{specified}`" if isinstance(specified, str) and specified != "" else "unspecified"
     print(
         _llm_notice(
-            f"blocked: mcp__codex__codex requires a non-empty absolute cwd parameter (got {actual})."
-            " Without it, the session's working directory resolves to the MCP server"
-            " process's working directory, which may point at the main repository"
-            " even when invoked from inside a worktree."
+            f"blocked: codex_start requires a non-empty absolute cwd parameter (got {actual})."
+            " Without it, Codex resolves the working directory from the App Server"
+            " process rather than the requested worktree."
             " Retry with cwd set to the absolute path of the target working directory."
         ),
         file=sys.stderr,
@@ -3394,24 +3376,31 @@ def _check_codex_mcp_cwd(tool_input: dict) -> bool:
     return True
 
 
-def _check_codex_mcp_execution(tool_input: dict) -> dict:
-    """Codex MCP呼び出しのapproval-policyを`never`へ強制固定する。
-
-    approval-policyは`never`固定。承認プロンプトの発生を抑止し、失敗時はモデルへ結果を返す挙動へ統一する。
-    `sandbox`は本関数内で`_check_codex_mcp_sandbox`により常に`danger-full-access`へ補正される。
-    実機での承認待ち停止の解消可否は配布後の動作確認フィードバックで検証中であり、
-    停止が残る場合はsandbox検査を遮断へ戻す。
-
-    設計意図（回帰予防）: 過去に「利用者の明示指定を尊重する」形へ変更された履歴があるが、
-    本環境では承認プロンプト抑止を優先し安全側の強制固定を採用する。
-    フィードバック反映等で「利用者の明示指定を尊重する」形へ再度変更しないこと。
-    """
-    updated_input = _check_codex_mcp_sandbox(tool_input)
-    updated_input["approval-policy"] = "never"
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "updatedInput": updated_input,
-        },
-    }
+def _check_codex_app_server_reply_input(session_id: str, tool_input: dict) -> bool:
+    """`codex_start_reply`の入力と保存済みcwdを検査する。"""
+    prompt = tool_input.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        print(
+            _llm_notice("blocked: codex_start_reply requires a non-empty prompt."),
+            file=sys.stderr,
+        )
+        return True
+    remote_session_id = tool_input.get("session_id")
+    if not isinstance(remote_session_id, str) or not remote_session_id:
+        print(
+            _llm_notice("blocked: codex_start_reply requires a non-empty session_id."),
+            file=sys.stderr,
+        )
+        return True
+    state = read_state(session_id)
+    cwd_map = state.get(_CODEX_SESSION_CWD_KEY)
+    if not isinstance(cwd_map, dict) or not isinstance(cwd_map.get(remote_session_id), str):
+        print(
+            _llm_notice(
+                "blocked: codex_start_reply session_id has no stored absolute cwd."
+                " Call codex_start successfully before continuing the session."
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False

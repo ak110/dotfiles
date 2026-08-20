@@ -3,6 +3,10 @@ const BASE_PATH=__BASE_PATH_JS__;
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
 const STATE_LABELS = {inbox: '未処理', processing: '処理中', adopted: '採用済み', rejected: '不採用'};
 const ACTIVE_STATES = new Set(['inbox', 'processing']);
+const SEARCH_FALLBACK_MAX_RESULTS = 5;
+const SEARCH_FALLBACK_NOTICE =
+  '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
+  'フィルターの選択値は変更していません。';
 const METADATA_FIELDS = [
   ['kind', '種別'],
   ['state', '状態'],
@@ -31,6 +35,7 @@ const knownTbdFilenames = new Set();
 const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
+let refreshFocusIntent = null;
 
 const byId = id => document.getElementById(id);
 const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
@@ -58,6 +63,34 @@ function setTextMessage(id, message) {
   const element = byId(id);
   element.textContent = message;
   element.hidden = !message;
+}
+
+function setGlobalError(message) {
+  refreshFocusIntent = null;
+  byId('global-error-message').textContent = message;
+  byId('global-error').hidden = !message;
+}
+
+function focusRefreshButton() {
+  const refreshButton = byId('refresh-button');
+  if (refreshButton.disabled) {
+    refreshFocusIntent = byId('global-error-close-button');
+    return;
+  }
+  refreshFocusIntent = null;
+  refreshButton.focus();
+}
+
+function restoreRefreshFocus() {
+  const intent = refreshFocusIntent;
+  refreshFocusIntent = null;
+  if (!intent || document.activeElement !== intent) return;
+  const refreshButton = byId('refresh-button');
+  if (refreshButton.disabled) {
+    refreshFocusIntent = intent;
+    return;
+  }
+  refreshButton.focus();
 }
 
 function clearDialogMessages(dialogName) {
@@ -88,7 +121,7 @@ function deliverOperationMessage(message, isError = false) {
     setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
     return;
   }
-  if (isError) setTextMessage('global-error', message);
+  if (isError) setGlobalError(message);
   else showToast(message);
 }
 
@@ -147,6 +180,7 @@ async function runPending(key, {container, button, busyLabel}, operation) {
     pendingOperations.delete(key);
     syncFilterDependencies();
     syncDetailMutationAvailability();
+    restoreRefreshFocus();
   }
 }
 
@@ -263,11 +297,12 @@ function renderWarnings(warnings) {
   warning.hidden = false;
 }
 
-function renderList(warnings = [], announce = false) {
+function renderList(warnings = [], announce = false, searchFallback = false) {
   const list = byId('entry-list');
   list.replaceChildren(...entries.map(renderEntry));
   const unanswered = entries.filter(entry => entry.kind === 'tbd' && entry.answered === false).length;
   byId('entry-count').textContent = `${entries.length}件（未回答TBD ${unanswered}件）`;
+  setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
   renderWarnings(warnings);
   renderEmptyState();
   if (announce) {
@@ -290,6 +325,12 @@ function buildQuery() {
   return parameters;
 }
 
+function hasSearchFallbackFilters(query) {
+  return query.get('type') !== 'all' || query.get('status') !== 'all' ||
+    query.get('answered') !== 'all' || query.has('target_repo') || query.has('source') ||
+    query.get('source_empty') === 'true';
+}
+
 function setListLoading(value) {
   pendingListRequests += value ? 1 : -1;
   pendingListRequests = Math.max(0, pendingListRequests);
@@ -300,22 +341,45 @@ function setListLoading(value) {
 
 async function loadEntries({announce = false} = {}) {
   pendingListAnnouncement = pendingListAnnouncement || announce;
+  const query = buildQuery();
+  const searchTerm = query.get('q') || '';
+  const canSearchFallback = searchTerm !== '' && hasSearchFallbackFilters(query);
   const generation = ++listRequestGeneration;
   setListLoading(true);
   try {
-    const payload = await api(`/api/entries?${buildQuery().toString()}`);
+    const payload = await api(`/api/entries?${query.toString()}`);
     if (generation !== listRequestGeneration) return entries;
-    entries = Array.isArray(payload.entries) ? payload.entries : [];
+    const initialEntries = Array.isArray(payload.entries) ? payload.entries : [];
+    let selectedPayload = payload;
+    let searchFallback = false;
+    let fallbackError = null;
+    if (canSearchFallback && initialEntries.length === 0) {
+      try {
+        const fallbackQuery = new URLSearchParams({q: searchTerm});
+        const fallbackPayload = await api(`/api/entries?${fallbackQuery.toString()}`);
+        if (generation !== listRequestGeneration) return entries;
+        const fallbackEntries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
+        if (fallbackEntries.length > 0 && fallbackEntries.length <= SEARCH_FALLBACK_MAX_RESULTS) {
+          selectedPayload = fallbackPayload;
+          searchFallback = true;
+        }
+      } catch (error) {
+        fallbackError = error;
+      }
+    }
+    if (generation !== listRequestGeneration) return entries;
+    entries = Array.isArray(selectedPayload.entries) ? selectedPayload.entries : [];
     const selected = entries.find(item => entryKey(item) === entryKey(currentEntry));
     if (selected) currentEntry = {...currentEntry, ...selected};
     const shouldAnnounce = pendingListAnnouncement;
     pendingListAnnouncement = false;
-    renderList(Array.isArray(payload.warnings) ? payload.warnings : [], shouldAnnounce);
+    renderList(Array.isArray(selectedPayload.warnings) ? selectedPayload.warnings : [], shouldAnnounce, searchFallback);
+    if (fallbackError) setGlobalError(fallbackError.message);
     return entries;
   } catch (error) {
     if (generation === listRequestGeneration) {
       pendingListAnnouncement = false;
-      setTextMessage('global-error', error.message);
+      setGlobalError(error.message);
     }
     return entries;
   } finally {
@@ -384,7 +448,7 @@ async function loadTargetRepos() {
     return true;
   } catch (error) {
     const isCurrent = generation === targetRepoRequestGeneration && byId('state-filter').value === requestedState;
-    if (isCurrent) setTextMessage('global-error', error.message);
+    if (isCurrent) setGlobalError(error.message);
     return isCurrent;
   }
 }
@@ -532,7 +596,7 @@ async function selectEntry(entry, origin = null) {
     displayEntry(payload.entry);
     openDialog(byId('detail-dialog'), detailOrigin, byId('detail-dialog-body'));
   } catch (error) {
-    if (requestGeneration === detailRequestGeneration) setTextMessage('global-error', error.message);
+    if (requestGeneration === detailRequestGeneration) setGlobalError(error.message);
   }
 }
 
@@ -628,7 +692,7 @@ async function reloadOpenDetailFromExternalChange() {
     }
     if (candidates.length > 1) {
       closeDetailDialog();
-      setTextMessage('global-error', `${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
+      setGlobalError(`${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
       return;
     }
     resolvedEntry = candidates[0] || null;
@@ -930,7 +994,7 @@ async function handleFilterChange({reloadRepos = false} = {}) {
 
 async function reloadFromExternalChange() {
   void refreshKnownTbds({notify: true}).catch((error) => {
-    setTextMessage('global-error', error.message);
+    setGlobalError(error.message);
   });
   await loadTargetRepos();
   await loadEntries({announce: false});
@@ -948,6 +1012,13 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
 }
 
 function bindEvents() {
+  document.addEventListener('focusin', () => {
+    refreshFocusIntent = null;
+  });
+  byId('global-error-close-button').addEventListener('click', () => {
+    setGlobalError('');
+    focusRefreshButton();
+  });
   byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
   byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
@@ -994,7 +1065,7 @@ function initializeApp() {
   initialization = synchronizeAndLoad()
     .then(() => refreshKnownTbds({notify: false}))
     .catch((error) => {
-      setTextMessage('global-error', error.message);
+      setGlobalError(error.message);
     });
 }
 

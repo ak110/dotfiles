@@ -148,7 +148,11 @@ def run() -> bool:
         removed_list_item_substrings=_REMOVED_LIST_ITEM_SUBSTRINGS,
         stale_labeled_list_paths=_STALE_LABELED_LIST_PATHS,
     )
-    changed_config = update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
+    changed_config = update_claude_settings(
+        _MANAGED_CONFIG_PATH,
+        _CONFIG_PATH,
+        strip_legacy_codex_timeout=True,
+    )
     return changed_settings or changed_config
 
 
@@ -172,6 +176,7 @@ def update_claude_settings(
     removed_keys: tuple[str, ...] = _REMOVED_KEYS,
     removed_list_item_substrings: tuple[tuple[str, str], ...] = (),
     stale_labeled_list_paths: tuple[str, ...] = (),
+    strip_legacy_codex_timeout: bool = False,
 ) -> bool:
     """`managed_path` の設定を `settings_path` にマージして書き込む。
 
@@ -207,7 +212,8 @@ def update_claude_settings(
     data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
 
     original = copy.deepcopy(data)
-    _strip_codex_timeout_without_stdio_server(data, managed)
+    if strip_legacy_codex_timeout:
+        _strip_legacy_codex_timeout(data)
     _strip_removed_hooks(data, removed_hook_substrings)
     _strip_managed_hooks(data, managed)
     _strip_removed_env_keys(data, removed_env_keys)
@@ -230,27 +236,28 @@ def update_claude_settings(
     return True
 
 
-def _strip_codex_timeout_without_stdio_server(data: dict, managed: dict) -> None:
-    """完全なCodex stdio定義が無い場合は管理対象のtimeoutを除外する。"""
-    managed_servers = managed.get("mcpServers")
-    if not isinstance(managed_servers, dict):
+def _strip_legacy_codex_timeout(data: dict) -> None:
+    """完全な旧User scope Codex定義から管理値のtimeoutだけを除去する。"""
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
         return
-    managed_codex = managed_servers.get("codex")
-    if not isinstance(managed_codex, dict) or "timeout" not in managed_codex:
+    codex = servers.get("codex")
+    if not _is_legacy_codex_definition(codex):
         return
+    assert isinstance(codex, dict)
+    del codex["timeout"]
 
-    existing_servers = data.get("mcpServers")
-    existing_codex = existing_servers.get("codex") if isinstance(existing_servers, dict) else None
-    is_stdio = isinstance(existing_codex, dict) and ("type" not in existing_codex or existing_codex.get("type") == "stdio")
-    command = existing_codex.get("command") if isinstance(existing_codex, dict) else None
-    if is_stdio and isinstance(command, str) and command:
-        return
 
-    del managed_codex["timeout"]
-    if not managed_codex:
-        del managed_servers["codex"]
-    if not managed_servers:
-        del managed["mcpServers"]
+def _is_legacy_codex_definition(value: object) -> bool:
+    """旧installerのCodex stdio定義であるかを判定する。"""
+    if not isinstance(value, dict):
+        return False
+    return (
+        value.get("type") in (None, "stdio")
+        and value.get("command") == "codex"
+        and value.get("args") == ["mcp-server"]
+        and value.get("timeout") == 7_200_000
+    )
 
 
 def _substitute_home_placeholder(value: object) -> object:

@@ -3,6 +3,15 @@
     "pyfltr": {
       "command": "uvx",
       "args": ["--from", "pyfltr>=3.16", "pyfltr", "mcp"]
+    },
+    "codex_app_server": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--no-project",
+        "--script",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/codex_app_server_mcp.py"
+      ]
     }
   }
 }

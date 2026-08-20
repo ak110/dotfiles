@@ -259,9 +259,9 @@ function Test-CodexDaemonRunning {
     return $LASTEXITCODE -eq 0
 }
 
-function Test-UserCodexMcp {
+function Get-LegacyUserCodexMcpStatus {
     $configPath = Join-Path $HOME '.claude.json'
-    if (-not (Test-Path -LiteralPath $configPath)) { return $false }
+    if (-not (Test-Path -LiteralPath $configPath)) { return 'missing' }
 
     try {
         $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
@@ -273,20 +273,50 @@ function Test-UserCodexMcp {
     }
 
     $mcpProperty = $config.PSObject.Properties['mcpServers']
-    if ($null -eq $mcpProperty) { return $false }
+    if ($null -eq $mcpProperty) { return 'missing' }
     if ($null -eq $mcpProperty.Value -or $mcpProperty.Value.GetType() -ne [System.Management.Automation.PSCustomObject]) {
         throw "$configPath のmcpServersがJSONオブジェクトではないため、Codex MCPの設定を変更しません。"
     }
-    return $null -ne $mcpProperty.Value.PSObject.Properties['codex']
+    $codexProperty = $mcpProperty.Value.PSObject.Properties['codex']
+    if ($null -eq $codexProperty -or $null -eq $codexProperty.Value) { return 'missing' }
+    $definition = $codexProperty.Value
+    $allowed = @('type', 'command', 'args', 'timeout')
+    foreach ($property in $definition.PSObject.Properties) {
+        if ($property.Name -notin $allowed) { return 'custom' }
+    }
+    $typeProperty = $definition.PSObject.Properties['type']
+    if ($null -ne $typeProperty -and $null -ne $typeProperty.Value -and $typeProperty.Value -ne 'stdio') { return 'custom' }
+    $commandProperty = $definition.PSObject.Properties['command']
+    if ($null -eq $commandProperty -or $commandProperty.Value -ne 'codex') { return 'custom' }
+    $argsProperty = $definition.PSObject.Properties['args']
+    $argsValue = $null
+    if ($null -ne $argsProperty) { $argsValue = $argsProperty.Value }
+    if ($argsValue -isnot [System.Array] -or $argsValue.Count -ne 1 -or $argsValue[0] -isnot [string] -or $argsValue[0] -cne 'mcp-server') { return 'custom' }
+    $timeoutProperty = $definition.PSObject.Properties['timeout']
+    if ($null -ne $timeoutProperty -and $null -ne $timeoutProperty.Value) {
+        $timeoutValue = $timeoutProperty.Value
+        $numericTypes = @([byte], [sbyte], [int16], [uint16], [int32], [uint32], [int64], [uint64], [single], [double], [decimal])
+        if (-not ($numericTypes | Where-Object { $_.IsInstanceOfType($timeoutValue) }) -or [decimal]$timeoutValue -ne 7200000) { return 'custom' }
+    }
+    return 'legacy'
 }
 
-function Install-CodexMcp {
-    if (Test-UserCodexMcp) {
-        Write-Output 'Codex MCPはUser scopeへ登録済みです。既存設定を維持します。'
+function Move-LegacyCodexMcp {
+    $status = Get-LegacyUserCodexMcpStatus
+    if ($status -eq 'missing') {
         return
     }
-    Invoke-RequiredNativeCommand claude @('mcp', 'add', '--scope', 'user', 'codex', '--', 'codex', 'mcp-server')
-    Write-Output 'Codex MCPをUser scopeへ登録しました。'
+    if ($status -eq 'custom') {
+        Write-Warning 'User scopeのcodex MCP定義は利用者固有設定のため保持します。必要なら claude mcp remove --scope user codex を手動実行してください。'
+        return
+    }
+    # CLI実行直前にも再照合し、並行変更された定義を削除しない。
+    if ((Get-LegacyUserCodexMcpStatus) -ne 'legacy') {
+        Write-Warning 'User scopeのcodex MCP定義が再照合時に変化したため移行を見送ります。'
+        return
+    }
+    Invoke-RequiredNativeCommand claude @('mcp', 'remove', '--scope', 'user', 'codex')
+    Write-Output '旧Codex MCPのUser scope登録を削除しました。'
 }
 
 # ~/.local/bin/atk.cmd へラッパーを配置する。
@@ -367,9 +397,9 @@ function Main {
 
         Install-AgentToolkitPlugin
         Install-CodexPlugin
-        Install-CodexMcp
+        Move-LegacyCodexMcp
         Install-AtkWrapper
-        Write-Output 'Claude Code・Codex、Codex MCP、atkの設定が完了しました。'
+        Write-Output 'Claude Code・Codex、agent-toolkit、atkの設定が完了しました。'
     } finally {
         # 差し替え前にエラー終了した場合、既存環境を復元する。
         if (-not $replaced -and $oldDir -and (Test-Path -LiteralPath $oldDir) -and -not (Test-Path -LiteralPath $targetDir)) {

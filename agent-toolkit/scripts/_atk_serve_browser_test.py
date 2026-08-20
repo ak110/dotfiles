@@ -232,6 +232,8 @@ def _write_entries(root: Path) -> None:
     inbox.mkdir(parents=True)
     adopted = root / "adopted"
     adopted.mkdir()
+    rejected = root / "rejected"
+    rejected.mkdir()
     long_body = "\n\n".join(f"段落{i} `inline-{i}`" for i in range(80))
     (inbox / "question.md").write_text(
         "---\ntype: tbd\ntarget_repo: example/repo\nquestion_type: choice\nchoices: A, B\n---\n\n"
@@ -253,6 +255,15 @@ def _write_entries(root: Path) -> None:
         "---\ntype: feedback\ntarget_repo: adopted/repo\nsource: browser\n---\n\n採用済みの本文\n",
         encoding="utf-8",
     )
+    (rejected / "rejected.md").write_text(
+        "---\ntype: feedback\ntarget_repo: rejected/repo\nsource: browser\n---\n\n不採用の本文\n",
+        encoding="utf-8",
+    )
+    for index in range(6):
+        (rejected / f"many-terminal-{index}.md").write_text(
+            "---\ntype: feedback\ntarget_repo: rejected/repo\nsource: browser\n---\n\n多数終端検索\n",
+            encoding="utf-8",
+        )
 
 
 @pytest_asyncio.fixture(name="browser_harness")
@@ -349,6 +360,78 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
             assert header_box["height"] < 150
         await page.keyboard.press("Escape")
         await playwright.async_api.expect(row).to_be_focused()
+
+
+@pytest.mark.asyncio
+async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """共通エラーをキーボードで消去し、後続の失敗で再表示できることを検証する。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+
+    error_region = page.locator("#global-error")
+    error_message = page.locator("#global-error-message")
+    close_button = page.get_by_role("button", name="エラーメッセージを閉じる")
+
+    async def fail_first_list_request(route: playwright.async_api.Route) -> None:
+        await route.fulfill(
+            status=500,
+            content_type="application/json",
+            body='{"error":"一覧取得失敗"}',
+        )
+
+    await page.route("**/api/entries?*", fail_first_list_request)
+    await page.locator("#refresh-button").click()
+    await playwright.async_api.expect(error_message).to_have_text("一覧取得失敗")
+    await playwright.async_api.expect(error_region).to_be_visible()
+    await page.locator("#refresh-button").focus()
+    await page.keyboard.press("Tab")
+    await page.keyboard.press("Tab")
+    await playwright.async_api.expect(close_button).to_be_focused()
+    await page.keyboard.press("Enter")
+    await playwright.async_api.expect(error_region).to_be_hidden()
+    await playwright.async_api.expect(error_message).to_have_text("")
+    await playwright.async_api.expect(page.locator("#refresh-button")).to_be_focused()
+    await page.unroute("**/api/entries?*", fail_first_list_request)
+
+    async def fail_second_list_request(route: playwright.async_api.Route) -> None:
+        await route.fulfill(
+            status=500,
+            content_type="application/json",
+            body='{"error":"後続のエラー"}',
+        )
+
+    await page.route("**/api/entries?*", fail_second_list_request)
+    await page.locator("#refresh-button").click()
+    await playwright.async_api.expect(error_message).to_have_text("後続のエラー")
+    await playwright.async_api.expect(error_region).to_be_visible()
+
+    metrics = await error_region.evaluate(
+        """element => {
+          const message = document.getElementById('global-error-message').getBoundingClientRect();
+          const close = document.getElementById('global-error-close-button').getBoundingClientRect();
+          return {
+            scrollWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+            regionRight: element.getBoundingClientRect().right,
+            messageRight: message.right,
+            closeLeft: close.left,
+            closeRight: close.right,
+            closeWidth: close.width,
+            closeHeight: close.height
+          };
+        }"""
+    )
+    assert metrics["scrollWidth"] <= metrics["viewportWidth"]
+    assert metrics["regionRight"] <= metrics["viewportWidth"]
+    assert metrics["messageRight"] <= metrics["closeLeft"]
+    assert metrics["closeRight"] <= metrics["viewportWidth"]
+    assert metrics["closeWidth"] >= 44
+    assert metrics["closeHeight"] >= 44
+    await page.unroute("**/api/entries?*", fail_second_list_request)
 
 
 @pytest.mark.asyncio
@@ -452,6 +535,82 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#entry-list .entry-select").filter(has_text="sse.md").wait_for(state="visible")
     await playwright.async_api.expect(page.locator('#target-filter option[value="sse/repo"]')).to_have_count(1)
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("1件を表示")
+
+
+@pytest.mark.asyncio
+async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """既定状態で終端状態を検索し、少数結果だけを補助表示して条件を維持する。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    notice = page.locator("#list-fallback-notice")
+    expected_notice = (
+        "状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。"
+        "フィルターの選択値は変更していません。"
+    )
+
+    async with page.expect_response(
+        lambda response: response.url.endswith("/api/entries?q=%E6%8E%A1%E7%94%A8%E6%B8%88%E3%81%BF")
+    ):
+        await page.locator("#search-input").fill("採用済み")
+    await page.locator('.entry-select[data-key="adopted/adopted.md"]').wait_for(state="visible")
+    await playwright.async_api.expect(notice).to_have_text(expected_notice)
+    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
+    await playwright.async_api.expect(page.locator("#kind-filter")).to_have_value("all")
+    await playwright.async_api.expect(page.locator("#answer-filter")).to_have_value("all")
+
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=%E4%B8%8D%E6%8E%A1%E7%94%A8")):
+        await page.locator("#search-input").fill("不採用")
+    await page.locator('.entry-select[data-key="rejected/rejected.md"]').wait_for(state="visible")
+    await playwright.async_api.expect(notice).to_be_visible()
+    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
+
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=many-terminal")):
+        await page.locator("#search-input").fill("many-terminal")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
+    await playwright.async_api.expect(notice).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
+
+    request_urls: list[str] = []
+    page.on("request", lambda request: request_urls.append(request.url) if "/api/entries?" in request.url else None)
+    await page.locator("#search-input").fill("")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+    await page.wait_for_timeout(100)
+    assert request_urls == [f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all"]
+
+    request_urls.clear()
+    async with page.expect_response(
+        lambda response: response.url.endswith(
+            "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1"
+        )
+    ):
+        await page.locator("#search-input").fill("編集対象")
+    await page.locator('.entry-select[data-key="inbox/feedback.md"]').wait_for(state="visible")
+    await playwright.async_api.expect(notice).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
+    await page.wait_for_timeout(100)
+    assert request_urls == [
+        f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1"
+    ]
+
+    await page.locator("#kind-filter").select_option("all")
+    await page.locator("#state-filter").select_option("all")
+    await page.locator("#answer-filter").select_option("all")
+    await page.locator("#target-filter").select_option("")
+    await page.locator("#source-filter").fill("")
+    await page.locator("#source-empty-filter").uncheck()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    request_urls.clear()
+    async with page.expect_response(
+        lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all&q=all-filters-only")
+    ):
+        await page.locator("#search-input").fill("all-filters-only")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
+    await playwright.async_api.expect(notice).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    assert request_urls == [f"{browser_harness.base_url}/api/entries?type=all&status=all&answered=all&q=all-filters-only"]
 
 
 @pytest.mark.asyncio

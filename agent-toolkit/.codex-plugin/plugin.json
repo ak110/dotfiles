@@ -1,6 +1,6 @@
 {
   "name": "agent-toolkit",
-  "version": "2.64.0",
+  "version": "2.65.0",
   "description": "Agent Plugins、Claude Code、Codex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針と、フックによる機械検査を提供する。",
   "author": {
     "name": "aki",
@@ -19,7 +19,7 @@
   ],
   "skills": "./skills/",
   "hooks": "./hooks/hooks.codex.json",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./.mcp.codex.json",
   "interface": {
     "displayName": "agent-toolkit",
     "shortDescription": "コード、文書、計画、レビューの作業指針",

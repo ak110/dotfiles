@@ -23,7 +23,10 @@
     </div>
   </header>
 
-  <div id="global-error" class="global-error" role="alert" hidden></div>
+  <div id="global-error" class="global-error" hidden>
+    <div id="global-error-message" role="alert"></div>
+    <button id="global-error-close-button" class="global-error-close" type="button" aria-label="エラーメッセージを閉じる">×</button>
+  </div>
 
   <main class="app-layout">
     <aside class="filters card" aria-label="フィルター条件">
@@ -77,6 +80,7 @@
         <h2 id="entry-heading">一覧</h2>
         <span id="entry-count" class="secondary-text">0件（未回答TBD 0件）</span>
       </div>
+      <div id="list-fallback-notice" class="list-fallback-notice" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
       <div id="list-warning" class="list-warning" role="alert" hidden></div>
       <div id="loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>

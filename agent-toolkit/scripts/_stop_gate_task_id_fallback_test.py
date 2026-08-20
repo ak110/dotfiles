@@ -32,7 +32,7 @@ def _mcp_background_timeout_entries(
     tool_use_id: str,
     *,
     sidechain: bool = False,
-    tool_name: str = "mcp__codex__codex",
+    tool_name: str = "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
 ) -> list[dict]:
     """MCP timeoutによる背景化を記録したassistant・userエントリを生成する。"""
     return [
@@ -173,7 +173,16 @@ class TestMcpBackgroundTaskCompletion:
 
     def test_pending_mcp_task_is_completed_by_task_id_notification(self, tmp_path: pathlib.Path) -> None:
         entries = [
-            _assistant_entry([{"type": "tool_use", "id": "toolu_mcp", "name": "mcp__codex__codex", "input": {}}]),
+            _assistant_entry(
+                [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_mcp",
+                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "input": {},
+                    }
+                ]
+            ),
             {
                 "type": "user",
                 "message": {
@@ -195,7 +204,16 @@ class TestMcpBackgroundTaskCompletion:
 
     def test_pending_mcp_task_without_completion_remains_pending(self, tmp_path: pathlib.Path) -> None:
         entries = [
-            _assistant_entry([{"type": "tool_use", "id": "toolu_mcp", "name": "mcp__codex__codex", "input": {}}]),
+            _assistant_entry(
+                [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_mcp",
+                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "input": {},
+                    }
+                ]
+            ),
             {
                 "type": "user",
                 "message": {
@@ -281,8 +299,18 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry(
                 [
                     {"type": "tool_use", "id": "toolu_read", "name": "Read", "input": {}},
-                    {"type": "tool_use", "id": "toolu_mcp_1", "name": "mcp__codex__codex", "input": {}},
-                    {"type": "tool_use", "id": "toolu_mcp_2", "name": "mcp__codex__codex", "input": {}},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_mcp_1",
+                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "input": {},
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_mcp_2",
+                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "input": {},
+                    },
                 ]
             ),
             {

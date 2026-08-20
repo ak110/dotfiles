@@ -8,7 +8,7 @@ effort: medium
 # 阻害要因の重複除外規則、実行経路の識別子照合を含む完了報告の契約充足に指示追従を要する。
 # 軽量モデルでは完了報告の必須欄の欠落と必須工程の差し戻しが反復した。
 # ツール制限: 調整役として直接編集を行わず、設定で選択したCodex経路を明示的に利用する。
-tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__codex__codex, mcp__codex__codex-reply
+tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__plugin_agent-toolkit_codex_app_server__codex_start, mcp__plugin_agent-toolkit_codex_app_server__codex_status, mcp__plugin_agent-toolkit_codex_app_server__codex_wait, mcp__plugin_agent-toolkit_codex_app_server__codex_result, mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply
 skills:
   - agent-toolkit:delegation
   # 指摘の採否を確定する主体であるため常時注入する。
@@ -73,7 +73,7 @@ worktreeと管理対象領域を作成・回収しない。
 3. 各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    書込担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
-   `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
+   `engine=codex`はCodex App Server MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名とeffortを契約どおり渡す。
    書込担当へ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
    プロジェクト規範、該当する作成規範スキルの絶対パス、その単位の識別、目的及び変更説明だけとする。
    同じ計画ファイルの書込担当は依存順に1件ずつ起動する
@@ -114,7 +114,7 @@ worktreeと管理対象領域を作成・回収しない。
 1. 各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    レビュー担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
-   `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
+   `engine=codex`はCodex App Server MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名とeffortを契約どおり渡す。
    同じ最終HEADを対象として次のレビュー担当を別識別子で並列起動する
    - 計画準拠系: `skills/plan-mode/references/implementation-plan-review-task.md`
    - 独立系: `skills/plan-mode/references/implementation-independent-review-task.md`

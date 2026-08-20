@@ -1,7 +1,8 @@
 """Claude Code・Codex plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
-概要は次のとおり。`stop_hook_active`真時・非同期作業継続中は無条件approve、
+概要は次のとおり。未回収Codex App Server結果がある場合は`stop_hook_active`真時もblockし、
+結果回収済みの`stop_hook_active`真時・非同期作業継続中はapprove、
 `agent-toolkit:session-review`起動済み時はapproveとする。
 いずれにも該当しない通常終了時は、transcriptの絶対パスを含む振り返り誘導文をblockで返す。
 終了判定の言語的基準は`agent-toolkit:session-review`「起動方針」節をSSOTとし、
@@ -27,6 +28,7 @@ from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-imp
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
     has_command_invocation,
+    has_uncollected_codex_turns,
     is_pending_async_work,
 )
 
@@ -98,6 +100,16 @@ def main(payload_text: str) -> int:
         return 0
     session_id, payload = resolved
 
+    if has_uncollected_codex_turns(session_id):
+        append_stop_log(session_id, "block_codex_result_uncollected", {})
+        reason = _llm_notice(
+            "A Codex App Server turn has reached or may reach a terminal state, but its result"
+            " has not been collected. Call `codex_result` for each started session before stopping."
+        )
+        raw_cwd = payload.get("cwd", "")
+        _emit_block_with_status(reason, cwd=raw_cwd if isinstance(raw_cwd, str) else "")
+        return 0
+
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
     # 構造判定・通知生成・git status出力をせず即座にapproveする。
@@ -113,14 +125,12 @@ def main(payload_text: str) -> int:
     cwd = payload.get("cwd", "")
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
-    is_codex = "model" in payload
-
     # 期限切れ状態の回収はSessionEndへ集約する（両ホストで同一契機とし、Stopでは重複実行しない）。
 
     # Claude Codeで構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background task（Agent・Bash・MCP）が存在するケース。
     # Codex rolloutは安定した終了ゲートではないため背景作業判定へ渡さない。
-    if not is_codex and is_pending_async_work(transcript_path, session_id):
+    if is_pending_async_work(transcript_path, session_id):
         append_stop_log(session_id, "approve_pending_async", {})
         _approve()
         return 0
@@ -131,8 +141,8 @@ def main(payload_text: str) -> int:
     # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
     invoked = state.get("session_review_invoked")
     state_invoked = isinstance(invoked, dict) and invoked.get(_SESSION_REVIEW_SKILL) is True
-    command_invoked = not is_codex and has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
-    recovered_invocation = is_codex and not state_invoked and has_session_review_started(transcript_path)
+    command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
+    recovered_invocation = not state_invoked and has_session_review_started(transcript_path)
     if state_invoked or command_invoked or recovered_invocation:
         append_stop_log(
             session_id,

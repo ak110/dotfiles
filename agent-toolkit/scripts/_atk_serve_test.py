@@ -115,6 +115,28 @@ def test_assets_are_self_contained() -> None:
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
 
 
+def test_assets_define_dismissible_global_error_region() -> None:
+    """共通エラーに本文、アクセシブルな消去操作及び十分な操作領域を持たせる。"""
+    assert '<div id="global-error" class="global-error" hidden>' in assets.HTML
+    assert '<div id="global-error-message" role="alert"></div>' in assets.HTML
+    assert (
+        '<button id="global-error-close-button" class="global-error-close" type="button" '
+        'aria-label="エラーメッセージを閉じる">×</button>'
+    ) in assets.HTML
+    global_error = re.search(r"\.global-error \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert global_error is not None
+    assert "display: flex;" in global_error.group(1)
+    message = re.search(r"\.global-error-message \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert message is not None
+    assert "overflow-wrap: anywhere;" in message.group(1)
+    close = re.search(r"\.global-error-close \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert close is not None
+    assert "width: 2.75rem;" in close.group(1)
+    assert "height: 2.75rem;" in close.group(1)
+    assert "min-width: 2.75rem;" in close.group(1)
+    assert "min-height: 2.75rem;" in close.group(1)
+
+
 def test_text_assets_are_bundled_as_plugin_files() -> None:
     """配布対象のscripts配下に実ファイルを同梱し、Python側がその内容を読む。"""
     static_dir = pathlib.Path(assets.__file__).with_name("_atk_serve_static")
@@ -305,13 +327,19 @@ class Element {{
   querySelectorAll() {{ return globalThis.controlGroups[this.id] || []; }}
   showModal() {{ this.open = true; }}
   close() {{ this.open = false; }}
-  focus() {{ document.activeElement = this; globalThis.focused = this.dataset.key || this.id; }}
+  focus() {{
+    if (this.disabled) return;
+    document.activeElement = this;
+    globalThis.focused = this.dataset.key || this.id;
+    document.listeners.focusin?.({{target: this}});
+  }}
 }}
 const ids = [
   'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
+  'global-error-message', 'global-error-close-button',
   'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
   'target-filter', 'source-filter', 'source-empty-filter', 'entry-count',
-  'result-status', 'list-warning', 'loading-indicator', 'entry-list', 'empty-state',
+  'result-status', 'list-warning', 'list-fallback-notice', 'loading-indicator', 'entry-list', 'empty-state',
   'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-create-button',
   'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
   'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
@@ -357,7 +385,9 @@ const appHeader = new Element('app-header');
 globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
 globalThis.document = {{
   activeElement: null,
+  listeners: {{}},
   getElementById(id) {{ return elements[id] || null; }},
+  addEventListener(name, handler) {{ this.listeners[name] = handler; }},
   createElement(tagName) {{ return new Element('', tagName.toUpperCase()); }},
   createTextNode(text) {{ const node = new Element('', '#TEXT'); node.textContent = text; return node; }},
   querySelector(selector) {{ return selector === '.app-header' ? appHeader : null; }},
@@ -404,15 +434,209 @@ fetchHandler = async url => {
 refreshKnownTbds = async () => { throw new Error('外部更新失敗'); };
 await reloadFromExternalChange();
 await Promise.resolve();
-const reloadError = elements['global-error'].textContent;
-elements['global-error'].textContent = '';
+const reloadError = elements['global-error-message'].textContent;
+setGlobalError('');
 refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
-process.stdout.write(JSON.stringify({reloadError, initializationError: elements['global-error'].textContent}));
+process.stdout.write(JSON.stringify({reloadError, initializationError: elements['global-error-message'].textContent}));
 """
     )
     assert result == {"reloadError": "外部更新失敗", "initializationError": "初期化失敗"}
+
+
+def test_assets_global_error_uses_shared_lifecycle_for_all_generators() -> None:
+    """共通エラーの消去・再表示と、各生成元の同一表示経路を検証する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+setGlobalError('最初のエラー');
+const shown = {
+  message: elements['global-error-message'].textContent,
+  hidden: elements['global-error'].hidden
+};
+elements['global-error-close-button'].listeners.click();
+const cleared = {
+  message: elements['global-error-message'].textContent,
+  hidden: elements['global-error'].hidden,
+  focused
+};
+setGlobalError('後続のエラー');
+const redisplayed = {
+  message: elements['global-error-message'].textContent,
+  hidden: elements['global-error'].hidden
+};
+const failures = [];
+fetchHandler = async () => ({
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '一覧取得失敗'})
+});
+await loadEntries();
+failures.push(elements['global-error-message'].textContent);
+fetchHandler = async () => ({
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '対象取得失敗'})
+});
+await loadTargetRepos();
+failures.push(elements['global-error-message'].textContent);
+fetchHandler = async () => ({
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '詳細取得失敗'})
+});
+await selectEntry({state: 'inbox', filename: 'detail.md'}, new Element('detail-origin', 'BUTTON'));
+failures.push(elements['global-error-message'].textContent);
+const ambiguous = {
+  kind: 'feedback', state: 'processing', filename: 'ambiguous.md', content: '本文', body_html: '<p>本文</p>'
+};
+displayEntry(ambiguous);
+detailOriginKey = entryKey(ambiguous);
+elements['detail-dialog'].open = true;
+fetchHandler = async url => {
+  if (url.includes('/processing/')) {
+    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+  }
+  if (url.includes('/inbox/') || url.includes('/adopted/')) {
+    const state = url.includes('/inbox/') ? 'inbox' : 'adopted';
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: {...ambiguous, state}})};
+  }
+  return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+};
+await reloadOpenDetailFromExternalChange();
+failures.push(elements['global-error-message'].textContent);
+refreshKnownTbds = async () => { throw new Error('SSE更新失敗'); };
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})
+});
+await reloadFromExternalChange();
+await Promise.resolve();
+failures.push(elements['global-error-message'].textContent);
+deliverOperationMessage('ダイアログ外失敗', true);
+failures.push(elements['global-error-message'].textContent);
+refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
+initializeApp();
+await initialization;
+failures.push(elements['global-error-message'].textContent);
+process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
+"""
+    )
+    assert result == {
+        "shown": {"message": "最初のエラー", "hidden": False},
+        "cleared": {"message": "", "hidden": True, "focused": "refresh-button"},
+        "redisplayed": {"message": "後続のエラー", "hidden": False},
+        "failures": [
+            "一覧取得失敗",
+            "対象取得失敗",
+            "詳細取得失敗",
+            "ambiguous.mdの移動先を一意に特定できません。詳細を開き直してください。",
+            "SSE更新失敗",
+            "ダイアログ外失敗",
+            "初期化失敗",
+        ],
+    }
+
+
+def test_assets_global_error_focuses_refresh_after_synchronization() -> None:
+    """同期中の共通エラー消去後も、再び操作可能になった同期ボタンへフォーカスを移す。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+let releaseSync;
+let syncCalls = 0;
+const syncBlocked = new Promise(resolve => { releaseSync = resolve; });
+fetchHandler = async url => {
+  if (url.endsWith('/api/sync')) {
+    syncCalls += 1;
+    await syncBlocked;
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})};
+};
+const synchronization = elements['refresh-button'].listeners.click();
+await Promise.resolve();
+const disabled = elements['refresh-button'].disabled;
+const duplicateSynchronization = elements['refresh-button'].listeners.click();
+setGlobalError('同期中の外部更新失敗');
+elements['global-error-close-button'].focus();
+elements['global-error-close-button'].listeners.click();
+const during = {
+  hidden: elements['global-error'].hidden,
+  focused
+};
+releaseSync();
+await Promise.all([synchronization, duplicateSynchronization]);
+process.stdout.write(JSON.stringify({
+  disabled,
+  syncCalls,
+  during,
+  after: {
+    disabled: elements['refresh-button'].disabled,
+    focused,
+    hidden: elements['global-error'].hidden
+  }
+}));
+"""
+    )
+    assert result == {
+        "disabled": True,
+        "syncCalls": 1,
+        "during": {"hidden": True, "focused": "global-error-close-button"},
+        "after": {"disabled": False, "focused": "refresh-button", "hidden": True},
+    }
+
+
+def test_assets_global_error_does_not_restore_refresh_after_user_focus_move() -> None:
+    """同期中の消去後に利用者が別の入力へ移動した場合は、そのフォーカスを維持する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+let releaseSync;
+const syncBlocked = new Promise(resolve => { releaseSync = resolve; });
+fetchHandler = async url => {
+  if (url.endsWith('/api/sync')) await syncBlocked;
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})};
+};
+const synchronization = elements['refresh-button'].listeners.click();
+await Promise.resolve();
+setGlobalError('同期中の外部更新失敗');
+elements['global-error-close-button'].focus();
+elements['global-error-close-button'].listeners.click();
+elements['search-input'].focus();
+releaseSync();
+await synchronization;
+process.stdout.write(JSON.stringify({focused, hidden: elements['global-error'].hidden}));
+"""
+    )
+    assert result == {"focused": "search-input", "hidden": True}
+
+
+def test_assets_global_error_does_not_restore_refresh_after_later_error() -> None:
+    """同期中の消去後に後続エラーが再表示された場合は閉じる操作のフォーカスを維持する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+let releaseSync;
+const syncBlocked = new Promise(resolve => { releaseSync = resolve; });
+fetchHandler = async url => {
+  if (url.endsWith('/api/sync')) await syncBlocked;
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})};
+};
+const synchronization = elements['refresh-button'].listeners.click();
+await Promise.resolve();
+setGlobalError('同期中の最初のエラー');
+elements['global-error-close-button'].focus();
+elements['global-error-close-button'].listeners.click();
+setGlobalError('同期中の後続エラー');
+elements['global-error-close-button'].focus();
+releaseSync();
+await synchronization;
+process.stdout.write(JSON.stringify({
+  focused,
+  hidden: elements['global-error'].hidden,
+  message: elements['global-error-message'].textContent
+}));
+"""
+    )
+    assert result == {
+        "focused": "global-error-close-button",
+        "hidden": False,
+        "message": "同期中の後続エラー",
+    }
 
 
 def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:
@@ -943,7 +1167,7 @@ process.stdout.write(JSON.stringify({
   ambiguous: {
     detailOpen: elements['detail-dialog'].open,
     currentEntryIsNull: currentEntry === null,
-    error: elements['global-error'].textContent
+    error: elements['global-error-message'].textContent
   }
 }));
 """
@@ -1457,7 +1681,7 @@ deliverOperationMessage('保存完了');
 process.stdout.write(JSON.stringify({
   detailMessage,
   toast: elements['toast'].textContent,
-  globalError: elements['global-error'].textContent
+  globalError: elements['global-error-message'].textContent
 }));
 """
     )
@@ -3828,7 +4052,7 @@ await handleFilterChange({reloadRepos: true});
 process.stdout.write(JSON.stringify({
   listUrls,
   rows: entries.map(entry => entry.filename),
-  error: elements['global-error'].textContent
+  error: elements['global-error-message'].textContent
 }));
 """
     )
@@ -3952,6 +4176,299 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "rows": ["new.md"],
         "loading": "false",
+    }
+
+
+def test_assets_search_fallback_obeys_boundaries_and_keeps_filters() -> None:
+    """検索結果0件時の補助検索を境界値、通常一致、検索語なしで検証する。"""
+    result = _run_node_ui(
+        """
+const fallbackNotice =
+  '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
+  'フィルターの選択値は変更していません。';
+const initialWarnings = [{filename: 'initial.md', reason: '初回警告'}];
+const runCase = async (token, count) => {
+  fetchCalls.length = 0;
+  elements['search-input'].value = token;
+  elements['kind-filter'].value = 'all';
+  elements['state-filter'].value = 'active';
+  elements['answer-filter'].value = 'all';
+  elements['target-filter'].value = '';
+  elements['source-filter'].value = '';
+  elements['source-empty-filter'].checked = false;
+  const fallbackEntries = Array.from({length: count}, (_, index) => ({
+    kind: 'feedback', state: 'adopted', filename: `${token}-${index}.md`, summary: token
+  }));
+  fetchHandler = async url => {
+    if (url.includes('status=active')) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: initialWarnings})};
+    }
+    if (url === `/atk/api/entries?q=${token}`) {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: fallbackEntries, warnings: []})};
+    }
+    throw new Error('想定外のURL: ' + url);
+  };
+  await loadEntries({announce: true});
+  return {
+    count,
+    rows: entries.map(entry => entry.filename),
+    notice: elements['list-fallback-notice'].textContent,
+    noticeHidden: elements['list-fallback-notice'].hidden,
+    status: elements['result-status'].textContent,
+    warning: elements['list-warning'].textContent,
+    filters: {
+      kind: elements['kind-filter'].value,
+      state: elements['state-filter'].value,
+      answer: elements['answer-filter'].value,
+      target: elements['target-filter'].value,
+      source: elements['source-filter'].value,
+      sourceEmpty: elements['source-empty-filter'].checked
+    },
+    urls: fetchCalls.map(call => call.url)
+  };
+};
+const one = await runCase('one', 1);
+const five = await runCase('five', 5);
+const none = await runCase('none', 0);
+const six = await runCase('six', 6);
+
+fetchCalls.length = 0;
+elements['search-input'].value = 'normal';
+fetchHandler = async url => {
+  if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+    entries: [{kind: 'feedback', state: 'inbox', filename: 'normal.md', summary: 'normal'}], warnings: []
+  })};
+};
+await loadEntries({announce: true});
+const normal = {
+  rows: entries.map(entry => entry.filename),
+  noticeHidden: elements['list-fallback-notice'].hidden,
+  urls: fetchCalls.map(call => call.url)
+};
+
+fetchCalls.length = 0;
+elements['search-input'].value = '';
+fetchHandler = async url => {
+  if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+await loadEntries({announce: true});
+const emptySearch = {
+  rows: entries.map(entry => entry.filename),
+  noticeHidden: elements['list-fallback-notice'].hidden,
+  urls: fetchCalls.map(call => call.url)
+};
+
+fetchCalls.length = 0;
+elements['search-input'].value = 'all-filters-only';
+elements['kind-filter'].value = 'all';
+elements['state-filter'].value = 'all';
+elements['answer-filter'].value = 'all';
+elements['target-filter'].value = '';
+elements['source-filter'].value = '';
+elements['source-empty-filter'].checked = false;
+fetchHandler = async url => {
+  if (url !== '/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only') {
+    throw new Error('想定外のURL: ' + url);
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+await loadEntries({announce: true});
+const allFilters = {
+  rows: entries.map(entry => entry.filename),
+  noticeHidden: elements['list-fallback-notice'].hidden,
+  urls: fetchCalls.map(call => call.url)
+};
+process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, allFilters, fallbackNotice}));
+"""
+    )
+    expected_notice = (
+        "状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。"
+        "フィルターの選択値は変更していません。"
+    )
+    assert result["one"]["rows"] == ["one-0.md"]
+    assert result["five"]["rows"] == [f"five-{index}.md" for index in range(5)]
+    for name in ("one", "five"):
+        assert result[name]["notice"] == expected_notice
+        assert result[name]["noticeHidden"] is False
+        assert result[name]["warning"] == ""
+        assert result[name]["urls"] == [
+            f"/atk/api/entries?type=all&status=active&answered=all&q={name}",
+            f"/atk/api/entries?q={name}",
+        ]
+        assert result[name]["filters"] == {
+            "kind": "all",
+            "state": "active",
+            "answer": "all",
+            "target": "",
+            "source": "",
+            "sourceEmpty": False,
+        }
+    for name in ("none", "six"):
+        assert result[name]["rows"] == []
+        assert result[name]["notice"] == ""
+        assert result[name]["noticeHidden"] is True
+        assert result[name]["warning"] == "一覧から除外したファイル: initial.md（初回警告）"
+        assert result[name]["status"] == "一致する項目はありません"
+        assert result[name]["urls"] == [
+            f"/atk/api/entries?type=all&status=active&answered=all&q={name}",
+            f"/atk/api/entries?q={name}",
+        ]
+    assert result["normal"] == {
+        "rows": ["normal.md"],
+        "noticeHidden": True,
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all&q=normal"],
+    }
+    assert result["emptySearch"] == {
+        "rows": [],
+        "noticeHidden": True,
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all"],
+    }
+    assert result["allFilters"] == {
+        "rows": [],
+        "noticeHidden": True,
+        "urls": ["/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only"],
+    }
+    assert result["fallbackNotice"] == expected_notice
+
+
+def test_assets_search_fallback_failure_keeps_initial_empty_result() -> None:
+    """補助検索が失敗しても初回の空一覧とエラー表示を維持する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+elements['search-input'].value = '失敗する検索';
+fetchHandler = async url => {
+  if (url.includes('status=active')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  return {ok: false, status: 503, statusText: 'Unavailable', json: async () => ({error: '補助検索に失敗'})};
+};
+await loadEntries({announce: true});
+const shown = {
+  message: elements['global-error-message'].textContent,
+  hidden: elements['global-error'].hidden
+};
+elements['global-error-close-button'].focus();
+elements['global-error-close-button'].listeners.click();
+process.stdout.write(JSON.stringify({
+  rows: entries.map(entry => entry.filename),
+  notice: elements['list-fallback-notice'].textContent,
+  status: elements['result-status'].textContent,
+  shown,
+  cleared: {
+    message: elements['global-error-message'].textContent,
+    hidden: elements['global-error'].hidden,
+    focused
+  }
+}));
+"""
+    )
+    assert result == {
+        "rows": [],
+        "notice": "",
+        "status": "一致する項目はありません",
+        "shown": {"message": "補助検索に失敗", "hidden": False},
+        "cleared": {"message": "", "hidden": True, "focused": "refresh-button"},
+    }
+
+
+def test_assets_discard_stale_search_fallback_response() -> None:
+    """後発の一覧要求が完了した後に補助応答が到着しても表示を上書きしない。"""
+    result = _run_node_ui(
+        """
+let resolveFallback;
+let fallbackStarted;
+const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
+elements['search-input'].value = 'old';
+fetchHandler = async url => {
+  if (url === '/atk/api/entries?q=old') {
+    fallbackStarted();
+    return new Promise(resolve => { resolveFallback = resolve; });
+  }
+  if (url.includes('q=old')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  if (url.includes('q=new')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+      entries: [{kind: 'feedback', state: 'inbox', filename: 'new.md', summary: 'new'}], warnings: []
+    })};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+const oldRequest = loadEntries({announce: true});
+await fallbackReady;
+elements['search-input'].value = 'new';
+const newRequest = loadEntries({announce: true});
+await newRequest;
+resolveFallback({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entries: [{kind: 'feedback', state: 'adopted', filename: 'old.md', summary: 'old'}], warnings: []})
+});
+await oldRequest;
+process.stdout.write(JSON.stringify({
+  rows: entries.map(entry => entry.filename),
+  state: entries[0]?.state,
+  notice: elements['list-fallback-notice'].textContent,
+  status: elements['result-status'].textContent
+}));
+"""
+    )
+    assert result == {
+        "rows": ["new.md"],
+        "state": "inbox",
+        "notice": "",
+        "status": "1件を表示",
+    }
+
+
+def test_assets_discard_stale_search_fallback_error_without_overwriting_global_error() -> None:
+    """失効した補助検索のエラーが後発要求のglobal-errorを上書きしない。"""
+    result = _run_node_ui(
+        """
+let rejectFallback;
+let fallbackStarted;
+const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
+elements['search-input'].value = 'old';
+fetchHandler = async url => {
+  if (url === '/atk/api/entries?q=old') {
+    fallbackStarted();
+    return new Promise((_resolve, reject) => { rejectFallback = reject; });
+  }
+  if (url.includes('q=old')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  if (url.includes('q=new')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+      entries: [{kind: 'feedback', state: 'inbox', filename: 'new.md', summary: 'new'}], warnings: []
+    })};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+const oldRequest = loadEntries({announce: true});
+await fallbackReady;
+elements['search-input'].value = 'new';
+const newRequest = loadEntries({announce: true});
+await newRequest;
+elements['global-error'].textContent = '後発要求のエラー';
+rejectFallback(new Error('失効した補助検索エラー'));
+await oldRequest;
+process.stdout.write(JSON.stringify({
+  rows: entries.map(entry => entry.filename),
+  state: entries[0]?.state,
+  notice: elements['list-fallback-notice'].textContent,
+  status: elements['result-status'].textContent,
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result == {
+        "rows": ["new.md"],
+        "state": "inbox",
+        "notice": "",
+        "status": "1件を表示",
+        "error": "後発要求のエラー",
     }
 
 
@@ -4146,7 +4663,7 @@ rejectAdopted(new Error('旧要求の失敗'));
 await stale;
 process.stdout.write(JSON.stringify({
   candidates: elements['target-filter'].children.map(option => option.value),
-  error: elements['global-error'].textContent
+  error: elements['global-error-message'].textContent
 }));
 """
     )

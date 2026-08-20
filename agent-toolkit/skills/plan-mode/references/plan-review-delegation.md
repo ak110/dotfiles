@@ -103,7 +103,8 @@ TBDの`### <filename> [<状態>/<answered|unanswered>]`を項目境界として�
 調整主体がある場合は調整主体が同じ論理レビュー系統へ前掲の最小入力で再レビューを指示し、調整主体が無い場合は起草担当が`agent-toolkit:delegation`に従って指示する。
 起草担当は調整主体が担当する再レビューの実施及びその結果を主張しない。
 実識別子は実行系別のライフサイクルに従う。
-Codexは`runtime-routing.md`の実効3値一致時だけ同一threadを継続する。
+Codexは`runtime-routing.md`の実効3値一致時だけ同じthreadを継続し、先行turnを`codex_result`で回収した後に
+同じ`session_id`へ`codex_start_reply`で接続する。
 不一致時は検収済み状態を渡して解決後のengineで新規起動する。
 Claudeは検収済み状態を渡して新規起動する。
 
