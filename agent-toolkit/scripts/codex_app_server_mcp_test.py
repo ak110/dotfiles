@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import json
 import pathlib
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
@@ -159,6 +160,62 @@ class FakeProcessWithStderr:
         self.stderr = FakeStderr(lines)
 
 
+class FakeAppServerStdin:
+    """App Server要求へ応答する非同期入力。"""
+
+    def __init__(self, process: "FakeAppServerProcess") -> None:
+        self.process = process
+
+    def write(self, data: bytes) -> None:
+        for raw_line in data.splitlines():
+            request = json.loads(raw_line)
+            if isinstance(request, dict) and "id" in request:
+                self.process.emit(self.process.response_for(request))
+
+    async def drain(self) -> None:
+        """テスト用stdinの書込み完了を直ちに返す。"""
+
+
+class FakeAppServerProcess:
+    """JsonRpcProcessが利用するstdio subprocessの最小実装。"""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.stdout = asyncio.StreamReader(limit=limit)
+        self.stderr = asyncio.StreamReader(limit=limit)
+        self.stdin = FakeAppServerStdin(self)
+        self.returncode: int | None = None
+        self.requests: list[dict[str, Any]] = []
+
+    def response_for(self, request: dict[str, Any]) -> dict[str, Any]:
+        self.requests.append(request)
+        method = request.get("method")
+        if method in {"thread/start", "thread/resume"}:
+            result: dict[str, Any] = {"thread": {"id": "thread-1"}}
+        elif method == "turn/start":
+            result = {"turn": {"id": "turn-1"}}
+        else:
+            result = {}
+        return {"id": request["id"], "result": result}
+
+    def emit(self, message: dict[str, Any]) -> None:
+        encoded = (json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+        self.stdout.feed_data(encoded)
+
+    def terminate(self) -> None:
+        self.returncode = -15
+        self.stdout.feed_eof()
+        self.stderr.feed_eof()
+
+    def kill(self) -> None:
+        self.returncode = -9
+        self.stdout.feed_eof()
+        self.stderr.feed_eof()
+
+    async def wait(self) -> int:
+        return self.returncode if self.returncode is not None else 0
+
+
 def _seed_completed_reply_session(session: subject.SessionState) -> None:
     """前turn由来の値を設定し、失敗時の残留を検証できるようにする。"""
     session.status = "completed"
@@ -219,6 +276,78 @@ async def test_start_passes_fixed_noninteractive_policy_and_returns_immediately(
     assert turn_params["sandboxPolicy"] == {"type": "dangerFullAccess"}
     assert turn_params["model"] == "gpt-test"
     assert turn_params["effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_large_jsonl_notifications_keep_connection_and_result_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """64KiBを超えるplan・diff通知後も後続通知を処理して結果を回収できる。"""
+    processes: list[FakeAppServerProcess] = []
+
+    async def create_subprocess(*args: Any, **kwargs: Any) -> FakeAppServerProcess:
+        del args
+        process = FakeAppServerProcess(kwargs["limit"])
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(subject.asyncio, "create_subprocess_exec", create_subprocess)
+    manager = subject.AppServerManager()
+    try:
+        response = await manager.start("開始", str(tmp_path))
+        assert response["status"] == "running"
+        process = processes[0]
+        assert process.limit == subject.APP_SERVER_STREAM_LIMIT_BYTES
+
+        large_plan = "p" * (80 * 1024)
+        plan_notification = {
+            "method": "turn/plan/updated",
+            "params": {"threadId": "thread-1", "plan": [{"text": large_plan}]},
+        }
+        plan_line = json.dumps(plan_notification, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        assert len(plan_line) > 64 * 1024
+        process.stdout.feed_data(plan_line + b"\n")
+
+        large_diff = "d" * (80 * 1024)
+        diff_notification = {
+            "method": "turn/diff/updated",
+            "params": {"threadId": "thread-1", "diff": large_diff},
+        }
+        diff_line = json.dumps(diff_notification, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        assert len(diff_line) > 64 * 1024
+        process.stdout.feed_data(diff_line + b"\n")
+        process.emit(
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "item": {"type": "agentMessage", "text": "最終結果"},
+                },
+            }
+        )
+        process.emit(
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-1", "status": "completed", "error": None},
+                },
+            }
+        )
+
+        status = await manager.wait("thread-1", timeout=1)
+        assert status["status"] == "completed"
+        assert status["plan"] == [{"text": large_plan}]
+        assert status["diff_changed"] is True
+        assert manager.client is not None
+        assert manager.client.reader_failure is None
+        assert manager.client.closed is False
+        result = manager.result("thread-1")
+        assert result["agent_message"] == "最終結果"
+        assert result["result_available"] is True
+        assert (await manager.start_reply("thread-1", "継続"))["status"] == "running"
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

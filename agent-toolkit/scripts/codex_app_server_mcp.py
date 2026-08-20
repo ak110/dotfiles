@@ -44,6 +44,10 @@ _LOG = logging.getLogger("agent-toolkit.codex-app-server")
 
 APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
 DEFAULT_WAIT_TIMEOUT = 300.0
+# App ServerのJSONL通知用StreamReader上限（バイト）。
+# asyncioの既定値は64KiBで、turnのplan・diffなどの有効な通知が上限を超えると
+# readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
+APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 PUBLIC_STATUSES = frozenset({"running", *TERMINAL_STATUSES})
 
@@ -197,6 +201,7 @@ class JsonRpcProcess:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=APP_SERVER_STREAM_LIMIT_BYTES,
             )
         except OSError as exc:
             raise AppServerError(f"failed to start {' '.join(APP_SERVER_COMMAND)}: {exc}") from exc
