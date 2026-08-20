@@ -72,6 +72,16 @@ class AppServerError(RuntimeError):
     """App Serverとの通信又は要求検証に失敗した。"""
 
 
+class JsonRpcResponseError(AppServerError):
+    """App ServerがJSON-RPC error responseを返した。"""
+
+    def __init__(self, method: str, code: Any, message: str, data: Any = None) -> None:
+        super().__init__(f"{method}: {message}")
+        self.method = method
+        self.code = code
+        self.data = data
+
+
 @dataclasses.dataclass
 class SessionState:
     """MCPから観測できる1つのCodex threadと最新turnの状態。"""
@@ -216,9 +226,10 @@ class JsonRpcProcess:
             error = response.get("error")
             if isinstance(error, dict):
                 message = _as_text(error.get("message")) or "JSON-RPC request failed"
+                raise JsonRpcResponseError(method, error.get("code"), message, error.get("data"))
             else:
                 message = "JSON-RPC request failed"
-            raise AppServerError(f"{method}: {message}")
+                raise JsonRpcResponseError(method, None, message)
         result = response.get("result", {})
         return result if isinstance(result, dict) else {}
 
@@ -397,10 +408,12 @@ class AppServerManager:
         session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort)
         self.sessions[session_id] = session
         try:
-            await self._start_turn(session, prompt)
+            await self._start_turn(session, prompt, client)
         except Exception as exc:
-            # thread.idを取得済みの場合は、turn/startの応答喪失後も結果回収単位を保持する。
-            await self._mark_failed(session, exc, retryable=False, turn_start_ambiguous=True)
+            if self._turn_start_response_is_ambiguous(client, exc):
+                await self._mark_turn_start_ambiguous(session, exc)
+            else:
+                await self._mark_failed(session, exc, retryable=False)
             return session.public_status()
         return session.public_status()
 
@@ -441,8 +454,11 @@ class AppServerManager:
                 await self._mark_failed(session, exc, retryable=True)
                 raise
             try:
-                await self._start_turn(session, prompt)
+                await self._start_turn(session, prompt, client)
             except Exception as exc:
+                if self._turn_start_response_is_ambiguous(client, exc):
+                    await self._mark_turn_start_ambiguous(session, exc)
+                    return session.public_status()
                 await self._mark_failed(session, exc, retryable=False)
                 raise
             return session.public_status()
@@ -473,7 +489,6 @@ class AppServerManager:
         error: BaseException,
         *,
         retryable: bool,
-        turn_start_ambiguous: bool = False,
     ) -> None:
         """要求開始の失敗を終端状態へ反映し、待機者を起床する。
 
@@ -491,13 +506,37 @@ class AppServerManager:
         session.result_retrieved = False
         session.reply_turn_started = False
         session.reply_retryable = retryable
-        session.turn_start_ambiguous = turn_start_ambiguous
+        session.turn_start_ambiguous = False
         session.interrupt_requested = False
         session.touch()
         await self._notify_waiters()
 
-    async def _start_turn(self, session: SessionState, prompt: str) -> None:
-        client = await self._ensure_client()
+    async def _mark_turn_start_ambiguous(self, session: SessionState, error: BaseException) -> None:
+        """turn/start応答喪失を非終端状態へ反映する。"""
+        if session.terminal:
+            return
+        session.status = "running"
+        session.error = {"message": str(error) or error.__class__.__name__}
+        session.result_retrieved = False
+        session.reply_retryable = False
+        session.turn_start_ambiguous = True
+        session.interrupt_requested = False
+        session.touch()
+        await self._notify_waiters()
+
+    @staticmethod
+    def _turn_start_response_is_ambiguous(client: Any, error: BaseException) -> bool:
+        """turn/startの失敗が実行状態を判定できない応答喪失であるかを返す。"""
+        if isinstance(error, JsonRpcResponseError):
+            return False
+        if bool(getattr(client, "closed", False)) or getattr(client, "reader_failure", None) is not None:
+            return False
+        process = getattr(client, "process", None)
+        return process is None or getattr(process, "returncode", None) is None
+
+    async def _start_turn(self, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None:
+        if client is None:
+            client = await self._ensure_client()
         params: dict[str, Any] = {
             "threadId": session.session_id,
             "input": [{"type": "text", "text": prompt}],
@@ -544,7 +583,7 @@ class AppServerManager:
     def result(self, session_id: str) -> dict[str, Any]:
         """終端したsessionの結果を返し、取得済みとして記録する。"""
         session = self._get_session(session_id)
-        if not session.terminal:
+        if not session.terminal or session.turn_start_ambiguous:
             raise ValueError("the Codex turn has not completed")
         session.result_retrieved = True
         session.touch()
@@ -583,6 +622,8 @@ class AppServerManager:
                 turn_id = turn.get("id")
                 if isinstance(turn_id, str):
                     session.turn_id = turn_id
+                    if session.reply_attempted:
+                        session.reply_turn_started = True
             session.status = "running"
         elif method == "turn/completed":
             if isinstance(turn, dict):
@@ -593,10 +634,12 @@ class AppServerManager:
                 session.error = turn.get("error")
                 self._consume_items(session, turn.get("items"))
                 session.interrupt_requested = False
+                session.turn_start_ambiguous = False
             else:
                 session.status = "failed"
                 session.error = "turn/completed did not contain turn"
                 session.interrupt_requested = False
+                session.turn_start_ambiguous = False
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
         elif method == "turn/plan/updated":
@@ -687,8 +730,20 @@ class AppServerManager:
             return
         try:
             await client.request("turn/interrupt", {"threadId": session_id, "turnId": turn_id})
+        except JsonRpcResponseError as exc:
+            await self._handle_interrupt_response_error(session_id, turn_id, exc)
         except Exception as exc:
             await self._handle_client_failure(exc)
+
+    async def _handle_interrupt_response_error(self, session_id: str, turn_id: str, error: JsonRpcResponseError) -> None:
+        """turn/interruptのJSON-RPC errorを対象turnだけへ記録する。"""
+        session = self.sessions.get(session_id)
+        if session is None or session.terminal or session.turn_id != turn_id:
+            return
+        session.error = {"message": str(error) or error.__class__.__name__}
+        session.protocol_warnings.append(f"turn/interrupt failed: {error}")
+        session.touch()
+        await self._notify_waiters()
 
     async def _handle_client_failure(self, error: BaseException) -> None:
         """reader異常時に全active turnをfailedへ遷移させて待機者を起こす。"""
@@ -699,6 +754,7 @@ class AppServerManager:
                 session.status = "failed"
                 session.error = {"message": f"Codex App Server stopped: {detail}"}
                 session.interrupt_requested = False
+                session.turn_start_ambiguous = False
                 session.touch()
                 changed = True
         if changed:

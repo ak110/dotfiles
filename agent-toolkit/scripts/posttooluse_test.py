@@ -1398,8 +1398,8 @@ class TestWarnCodexRemoteChange:
         assert stop_after_result.returncode == 0
         assert "decision" not in json.loads(stop_after_result.stdout)
 
-    def test_initial_start_failure_keeps_session_until_result(self, tmp_path: pathlib.Path):
-        """初回turn/start失敗の構造化応答を結果回収まで保持し、Stopとsnapshotを管理する。"""
+    def test_initial_start_response_loss_keeps_session_until_completion_and_result(self, tmp_path: pathlib.Path):
+        """初回turn/start応答喪失をturn終端まで保持し、Stopとsnapshotを管理する。"""
         repo, _ = self._init_repo_with_remote(tmp_path)
         sid = "initial-start-failure"
         start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
@@ -1427,7 +1427,7 @@ class TestWarnCodexRemoteChange:
                     "structuredContent": {
                         "session_id": "thread-1",
                         "turn_id": "",
-                        "status": "failed",
+                        "status": "running",
                         "error": {"message": "turn/start response lost"},
                     }
                 },
@@ -1436,12 +1436,12 @@ class TestWarnCodexRemoteChange:
             state_dir=tmp_path,
         )
         assert start.returncode == 0
-        failed_state = _read_state(tmp_path, sid)
-        failed_record = failed_state["codex_app_server_sessions"]["thread-1"]
-        assert failed_record["status"] == "failed"
-        assert failed_record["result_retrieved"] is False
-        assert failed_record["snapshot_key"] == "start-1"
-        assert "start-1" in failed_state["codex_remote_snapshot_by_key"]
+        ambiguous_state = _read_state(tmp_path, sid)
+        ambiguous_record = ambiguous_state["codex_app_server_sessions"]["thread-1"]
+        assert ambiguous_record["status"] == "running"
+        assert ambiguous_record["result_retrieved"] is False
+        assert ambiguous_record["snapshot_key"] == "start-1"
+        assert "start-1" in ambiguous_state["codex_remote_snapshot_by_key"]
 
         _run(
             {
@@ -1454,11 +1454,29 @@ class TestWarnCodexRemoteChange:
         stop_before_result = _run_stop({"session_id": sid}, tmp_path)
         assert json.loads(stop_before_result.stdout)["decision"] == "block"
 
+        completed = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_wait",
+                "tool_input": {"session_id": "thread-1", "timeout": 300},
+                "tool_use_id": "wait-1",
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-1",
+                        "turn_id": "turn-1",
+                        "status": "completed",
+                        "error": None,
+                    }
+                },
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert completed.returncode == 0
+
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
         result_payload = self._result_payload(sid)
-        result_payload["tool_response"]["structuredContent"].update(
-            {"turn_id": "", "status": "failed", "error": {"message": "turn/start response lost"}}
-        )
+        result_payload["tool_response"]["structuredContent"].update({"turn_id": "turn-1", "status": "completed", "error": None})
         result = _run(result_payload, state_dir=tmp_path)
         assert result.returncode == 0
         assert "remote refs changed" in result.stdout
