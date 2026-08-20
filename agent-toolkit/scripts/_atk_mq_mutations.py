@@ -62,11 +62,11 @@ def _entry_target_repo(path: pathlib.Path, text: str) -> str:
     """エントリの`target_repo`を検証し、正規化した識別子を返す。"""
     parsed = _frontmatter.parse_frontmatter(text)
     if parsed is None:
-        print(f"frontmatterを解析できないため採否処理を停止しました: {path}", file=sys.stderr)
+        print(f"frontmatterを解析できないため処理を停止しました: {path}", file=sys.stderr)
         sys.exit(2)
     raw_target_repo = parsed[0].get("target_repo")
     if not isinstance(raw_target_repo, str) or not raw_target_repo:
-        print(f"frontmatterにtarget_repoがないため採否処理を停止しました: {path}", file=sys.stderr)
+        print(f"frontmatterにtarget_repoがないため処理を停止しました: {path}", file=sys.stderr)
         sys.exit(2)
     return _resolve_repo_id(raw_target_repo)
 
@@ -294,7 +294,17 @@ def _validate_transition_targets(
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
     for path in paths:
         content = current_content if current_content is not None else path.read_text(encoding="utf-8")
-        _verify_target_repo_content(path, content, normalized_target_repo)
+        if action == "start-processing":
+            _require_type(path, content)
+            actual_target_repo = _entry_target_repo(path, content)
+            if normalized_target_repo is not None and actual_target_repo != normalized_target_repo:
+                print(
+                    f"target_repo不一致: 期待={normalized_target_repo} 実際={actual_target_repo} ファイル={path}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+        else:
+            _verify_target_repo_content(path, content, normalized_target_repo)
     if cooldown_days is not None:
         non_feedback = [
             path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK

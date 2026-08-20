@@ -2471,6 +2471,59 @@ class TestStartProcessingMultiple:
         assert (notes / "inbox" / "fb-001.md").exists()
         assert not (notes / "processing" / "fb-001.md").exists()
 
+    @pytest.mark.parametrize(
+        ("invalid_frontmatter", "target_args"),
+        [
+            (
+                "type: [\ntarget_repo: github.com/example/foo",
+                ["--target-repo", "github.com/example/foo"],
+            ),
+            (
+                "target_repo: github.com/example/foo",
+                ["--target-repo", "github.com/example/foo"],
+            ),
+            ("type: feedback", []),
+            (
+                "type: unknown\ntarget_repo: github.com/example/foo",
+                ["--target-repo", "github.com/example/foo"],
+            ),
+        ],
+        ids=["malformed", "missing-type", "missing-target-repo", "invalid-type"],
+    )
+    def test_invalid_frontmatter_rejects_entire_batch_before_moving(
+        self,
+        invalid_frontmatter: str,
+        target_args: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """集合内の1件で必須frontmatterが不正な場合は適合項目も移動しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        (notes / "inbox" / "fb-002.md").write_text(
+            f"---\n{invalid_frontmatter}\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "start-processing",
+                    "fb-001.md",
+                    "fb-002.md",
+                    *target_args,
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "inbox" / "fb-002.md").exists()
+        assert not (notes / "processing" / "fb-001.md").exists()
+        assert not (notes / "processing" / "fb-002.md").exists()
+
 
 class TestStartProcessingFailureBoundaries:
     """一括移動後のcommit・push失敗と限定復旧の境界を検証する。"""

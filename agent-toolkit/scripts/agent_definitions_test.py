@@ -534,9 +534,12 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" in delegation
-    assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" in delegation
+    assert "実効3値一致により同一threadを継続する場合は" in delegation
+    assert "「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
-    assert "追送しない限り当該発話を根拠とする実施又は除外を計画へ書かない" in delegation
+    assert "同一threadの継続では当該情報を追送し" in delegation
+    assert "新規起動では初回と同じ入力パス集合及び検収済み状態とともに渡す" in delegation
+    assert "当該情報を渡さない限り、その発話を根拠とする実施又は除外を計画へ書かない" in delegation
     assert "当該ラウンドの採用件数と追加した履歴行数が一致すること" in delegation
     assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
     assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
@@ -690,7 +693,7 @@ def test_single_plan_units_advance_one_lane_worktree_without_cherry_pick() -> No
     for phrase in (
         "同じ計画の全単位を実装するレーンのworktreeを1つ確定",
         "全単位を確定した同じレーンのworktreeへ、同時に1つの書込担当だけを順次割り当て",
-        "先行commitが同worktreeのHEADを進めた後に同じ書込担当へ逐次割り当て",
+        "先行commitが同worktreeのHEADを進めた後に後続の新規書込担当へ逐次割り当て",
         "各単位commitが同じレーンのworktreeの直前に検収したHEADを直接進めた",
         "計画ベースからの累積差分",
         "レーンのworktreeの累積差分",
@@ -1040,17 +1043,22 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     for phrase in (
         "他engineへ自動切替せず",
         "effort部は実行機能に相当する引数が無いため適用しない",
-        "場合だけCodexの同一threadへ継続接続する",
+        "実効`engine`、`model`及び`effort`",
+        "3値がすべて一致し、いずれも`engine=codex`の場合だけ同一threadへ継続接続する",
+        "`execute_fast_model`又は`execute_fix_model`を適用する書込担当は、前の担当の識別子を再利用せず新規threadで起動する",
         "Claudeは完了済み識別子を再利用せず",
     ):
         assert phrase in runtime
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
-    assert "各単位の最初のfast担当の新規起動又はCodex経路の継続接続の直前に" in executor
+    assert "各単位の最初のfast担当を新規起動する直前に" in executor
     assert "複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する" in executor
     assert "`atk config get execute_fix_model`を起動直前に実行する" in executor
-    assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
+    assert (
+        "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前に`atk config get execute_review_model`"
+        in executor
+    )
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
     assert "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`" in flow
     assert "`feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし" in process_feedbacks
@@ -1088,6 +1096,44 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "新しい上流最新OIDから統合worktreeを再作成し、本節の手順で統合担当を起動",
     ):
         assert phrase in flow
+
+
+def test_all_codex_stage_continuations_recheck_effective_routing_values() -> None:
+    """全工程のCodex継続を実効engine・model・effortの完全一致時だけ許可する。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+
+    for phrase in (
+        "新たに用いる実効`engine`、`model`及び`effort`",
+        "現在のthreadの起動に用いた実効3値と比較する",
+        "いずれかが異なる場合は同一threadを継続せず",
+        "検収済み状態を渡して解決後のengineで新規起動する",
+    ):
+        assert phrase in runtime
+
+    launch_contracts = {
+        _FEEDBACKS_PLANNER: (
+            "起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`",
+            "レビュー担当の再レビュー直前は`plan_review_model`",
+        ),
+        _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get plan_review_model`",),
+        _PLAN_IMPL_EXECUTOR: (
+            "各単位の最初のfast担当を新規起動する直前に",
+            "修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`",
+            "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前に`atk config get execute_review_model`",
+        ),
+        _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",),
+    }
+    for path, phrases in launch_contracts.items():
+        text = path.read_text(encoding="utf-8")
+        for phrase in phrases:
+            assert phrase in text
+
+    assert "実効3値一致時だけ同一thread" in plan_review
+    assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in plan_review
+    assert "継続直前の実効3値が一致する場合だけ同じthreadを継続し" in executor
+    assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in executor
 
 
 def test_merge_conflict_git_options_are_owned_by_merge_task() -> None:
@@ -1192,12 +1238,11 @@ def test_fast_model_is_resolved_once_per_unit_before_each_first_launch() -> None
     assert resolve_at < first_launch_at
     assert "各単位の最初のfast担当" in launch
     assert "複数単位でも前の単位の解決値を次の単位へ流用せず" in launch
-    assert "今回解決した`engine`、`model`及び`effort`を前の単位の実効値と比較する" in launch
-    assert "3値がすべて一致する場合だけ前の単位のthreadへ継続接続し" in launch
+    assert "前の単位の実効値と一致する場合も前の担当のthreadを継続せず" in launch
     assert "検収済みの先行commit" in launch
     assert "各単位の最初のfast担当" in runtime
     assert "単位ごとに1回解決し" in runtime
-    assert "3値がすべて一致する場合だけ前のthreadへ継続接続する" in runtime
+    assert "前の単位と実効3値が一致する場合も、前の担当のthreadを継続せず新規threadを起動する" in runtime
 
 
 def test_implementation_task_requires_role_specific_handoff_records() -> None:
@@ -1269,17 +1314,17 @@ def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> No
     assert "fast担当と起動した全プロセスの終端確認" not in task
 
 
-def test_clean_worktree_and_codex_thread_contracts_allow_only_fast_fix_handoff() -> None:
-    """clean開始とCodex同一threadの例外を同一失敗箇所の引継ぎだけに限定する。"""
+def test_clean_worktree_exception_and_thread_lifecycle_are_limited() -> None:
+    """dirty引継ぎを同一失敗箇所に限定し、担当間のthread再利用を防ぐ。"""
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
 
     assert "書込担当の起動前に上流追随済みで" in runtime
     assert "fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す" in runtime
     assert "`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外" in runtime
-    assert "連続する実装単位の`engine`、`model`及び`effort`がすべて一致する場合だけ同じthreadを継続する" in executor
-    assert "いずれかが異なる場合は、検収済み状態を渡して新規threadを起動する" in executor
-    assert "fast担当の終端確認後に修正引継ぎ記録とdirty差分をfix担当へ渡す新規thread" in executor
+    assert "fast担当とfix担当は、実効3値にかかわらず担当ごとに新規threadで起動する" in executor
+    assert "同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合に限る" in executor
+    assert "fast担当の終端確認後に修正引継ぎ記録とdirty差分を渡す新規thread" in executor
     assert "同一失敗箇所の残存" in executor
 
 
@@ -1314,8 +1359,8 @@ def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
     ):
         assert required_input in executor
     assert "dirty worktree" in executor
-    assert "`execute_fast_model`から`execute_fix_model`への引継ぎでは新規threadを起動" in runtime
-    assert "起動直前に`execute_fix_model`を解決してfix担当へ適用する" in runtime
+    assert "`execute_fast_model`又は`execute_fix_model`を適用する書込担当は毎回新規threadで起動する" in runtime
+    assert "継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う" in runtime
     assert "担当種別が`fast担当`の場合だけ" in task
     assert "担当種別が`fix担当`の場合は" in task
     assert "担当種別が`レビュー修正担当`の場合は" in task
@@ -1365,8 +1410,6 @@ def test_start_processing_batch_failure_boundary_is_documented() -> None:
     """一括処理開始の移動前拒否と移動後の公開完了境界を文書で固定する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
-    rules = (_DISTRIBUTION_ROOT / "rules" / "02-agent-operations.md").read_text(encoding="utf-8")
-
     for text in (process, reception):
         assert "`atk mq start-processing <filename>... --target-repo=" in text
         assert "移動前" in text
@@ -1381,21 +1424,24 @@ def test_start_processing_batch_failure_boundary_is_documented() -> None:
         assert "`atk mq commit`を1回" in text
         assert "項目別コマンド" in text
         assert "未完了" in text
-    assert "複数の識別子を同一工程で取得又は処理する場合" in rules
 
 
-def test_batch_contract_requires_shared_conditions_and_splits_differences() -> None:
-    """一括化が対象間のオプション、前提及び処理条件の共有を要求する契約を固定する。"""
+def test_batch_contract_is_limited_to_reads_and_start_processing() -> None:
+    """一括化を読取系と処理開始へ限定し、状態終端の逐次契約を保つ。"""
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
-    assert "同じ対象リポジトリから複数の識別子を同一工程" in rules
-    assert "コマンドオプション、前提及び処理条件を共有" in rules
-    assert "いずれかの条件が異なる対象は集合を分ける" in rules
+    assert "複数の識別子を同一工程で取得又は処理する場合" not in rules
     for text in (process, reception):
-        assert "<filename>..." in text
+        assert "atk mq show <filename>..." in text
+        assert "atk mq start-processing <filename>..." in text
         assert "項目別コマンド" in text
+    assert "複数のファイル名を1回の`atk mq adopt`へ渡さない" in process
+    for text in (flow, caller):
+        assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in text
 
 
 def test_start_processing_failure_observes_local_transition_and_upstream_boundary() -> None:
@@ -1512,7 +1558,7 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     assert "別識別子" in common_review
     assert "implementation-plan-review-task.md" in common_review
     assert "implementation-independent-review-task.md" in common_review
-    assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前" in common_review
+    assert "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前" in common_review
     assert "二系統とも指摘0件になるまで" in common_review
     for mode_preparation in (normal, integrated):
         assert "implementation-plan-review-task.md" not in mode_preparation
