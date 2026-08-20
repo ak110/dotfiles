@@ -287,14 +287,14 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
         "codex plugin marketplace add ak110/dotfiles --json",
         "codex plugin marketplace upgrade ak110-dotfiles --json",
         "codex plugin add agent-toolkit@ak110-dotfiles --json",
-        "claude mcp add --scope user codex -- codex mcp-server",
     ]
     last_index = -1
     for command in expected:
         index = joined.find(command, last_index + 1)
         assert index > last_index, f"未呼び出しまたは順序違反: {command!r}\nlog={joined}"
         last_index = index
-    assert "claude mcp get" not in joined
+    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp remove" in line for line in _log_lines(stub_log))
     assert result.stderr.splitlines()[-1] == "codex app-server daemon restart"
     assert result.stderr.count("Codex pluginを更新しました。") == 1
 
@@ -774,7 +774,7 @@ def test_preserves_existing_user_codex_mcp(
     _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
     assert (home / ".claude.json").read_bytes() == before
-    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in _log_lines(stub_log))
 
 
 _UNREGISTERED_STATES = [
@@ -788,7 +788,7 @@ _UNREGISTERED_STATES = [
 
 @pytest.mark.parametrize("kind", _runners())
 @pytest.mark.parametrize("config", _UNREGISTERED_STATES)
-def test_adds_user_codex_mcp_when_only_non_user_state_exists(
+def test_does_not_register_user_codex_mcp_when_only_non_user_state_exists(
     kind: str,
     config: object | None,
     tmp_path: pathlib.Path,
@@ -802,7 +802,37 @@ def test_adds_user_codex_mcp_when_only_non_user_state_exists(
 
     _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    assert sum("claude mcp add --scope user codex -- codex mcp-server" in line for line in _log_lines(stub_log)) == 1
+    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp remove" in line for line in _log_lines(stub_log))
+
+
+_LEGACY_USER_CODEX_STATES = [
+    pytest.param({"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"]}}}, id="without-type-timeout"),
+    pytest.param(
+        {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "timeout": 7200000}}},
+        id="with-managed-timeout",
+    ),
+]
+
+
+@pytest.mark.parametrize("kind", _runners())
+@pytest.mark.parametrize("config", _LEGACY_USER_CODEX_STATES)
+def test_removes_exact_legacy_user_codex_mcp(
+    kind: str,
+    config: object,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """完全一致する旧User scope定義だけをUser scope限定で削除する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    _write_claude_config(home, config)
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+
+    assert sum("claude mcp remove --scope user codex" in line for line in _log_lines(stub_log)) == 1
+    assert not any("claude mcp add" in line for line in _log_lines(stub_log))
 
 
 _INVALID_STATES = [
@@ -871,7 +901,6 @@ def test_exits_before_writing_when_required_command_is_missing(
         "claude plugin update",
         "codex plugin marketplace upgrade",
         "codex plugin add",
-        "claude mcp add",
     ],
 )
 def test_propagates_required_setup_failures(
@@ -904,7 +933,6 @@ def test_propagates_required_setup_failures(
         pytest.param("claude plugin marketplace update", False, False, id="before-codex-plugin"),
         pytest.param("codex plugin marketplace upgrade", False, False, id="marketplace-upgrade"),
         pytest.param("codex plugin add", False, False, id="plugin-add"),
-        pytest.param("claude mcp add", False, True, id="after-plugin-mcp"),
         pytest.param("__never_match__", True, True, id="after-plugin-atk-wrapper"),
     ],
 )
@@ -982,7 +1010,7 @@ def test_bash_json_check_uses_explicit_python_with_real_uv(tmp_path: pathlib.Pat
 
     _run("sh", home, rules_url, stub_bin=stub_bin, stub_log=stub_log, cwd=working_directory)
 
-    assert any("claude mcp add --scope user codex -- codex mcp-server" in line for line in _log_lines(stub_log))
+    assert not any("claude mcp add" in line or "claude mcp remove" in line for line in _log_lines(stub_log))
     assert not (working_directory / ".venv").exists()
     assert not (working_directory / "uv.lock").exists()
 

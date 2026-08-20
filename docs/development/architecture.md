@@ -84,8 +84,8 @@ uvx pyfltr fast                                         # 高速ツールと生�
 
 | 対象 | 役割と生成経路 |
 | --- | --- |
-| `.claude-plugin/plugin.json`・`.mcp.json` | Claude Code向け設定であり、metadataとMCP server定義の正本 |
-| `plugin.json`・`mcp.json` | Agent Plugins v1向け生成物。正本から固定schemaへ写像する |
+| `.claude-plugin/plugin.json`・`.mcp.json` | Claude Code向け設定であり、metadataとClaude専用を含むMCP server定義の正本 |
+| `plugin.json`・`.mcp.codex.json`・`mcp.json` | Agent Plugins v1向け生成物。正本から共有許可済みserverだけを固定schemaへ写像する |
 | `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。正本から許可済みの要素だけを写像する |
 | `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 
@@ -98,14 +98,27 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 | 経路 | マーケットプレイス | 設定対象 |
 | --- | --- | --- |
-| 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、Codex MCP、`atk` |
+| 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、Claude Code専用Codex App Server MCP、`atk` |
 | dotfiles `post_apply` | ローカル生成物 | 単体経路の対象に加え、Codex向け`AGENTS.md`と共有リンク |
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
 - `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のagents・rulesだけをリンクする
-- `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、Codex MCPの順に処理する
+- `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
+
+### Codex App Server MCPの配置と寿命
+
+Claude Code pluginの`.mcp.json`だけが`codex_app_server`を定義し、
+`${CLAUDE_PLUGIN_ROOT}/scripts/codex_app_server_mcp.py`を`uv run --no-project --script`で起動する。
+生成器はClaude用MCPから共有許可リストの`pyfltr`だけを`.mcp.codex.json`と`mcp.json`へ射影するため、
+CodexまたはAgent PluginsへClaude専用MCPを再公開しない。
+
+MCPサーバーは必要時に公式の`codex app-server --stdio`を子プロセスとして起動し、
+`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`を公開する。
+`codex_start`は絶対`cwd`と固定の`approvalPolicy=never`・`dangerFullAccess`でthreadを開始し、
+完了を待たず`session_id`を返す。`codex_result`で先行turnを回収してから同じsessionを継続する。
+MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 ## ホーム配下のファイルを編集する前の確認
 

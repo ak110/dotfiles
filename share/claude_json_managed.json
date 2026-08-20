@@ -1,5 +1,5 @@
 {
   "autoInstallIdeExtension": false,
-  "mcpServers": {"codex": {"timeout": 7200000}},
+  "mcpServers": {},
   "verbose": true
 }

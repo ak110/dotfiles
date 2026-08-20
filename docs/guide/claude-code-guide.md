@@ -1,7 +1,7 @@
 # agent-toolkit導入ガイド（Agent Plugins・Claude Code・Codex）
 
 agent-toolkitはAgent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
-Claude Codeは対話、フック、ルールの読み込み、作業全体の統括を担う。Codex CLIはMCP経由の
+Claude Codeは対話、フック、ルールの読み込み、作業全体の統括を担う。Codex CLIはCodex App Server MCP経由の
 調査・実装・レビューに加え、Codexセッションで共有スキルを直接実行する。uvは配布スクリプトと
 `atk`コマンドの実行基盤である。
 
@@ -82,7 +82,7 @@ Codexの双方を設定する。3コマンドのいずれかを検出できな�
     ```
 
 ルールファイルが`~/.claude/rules/agent-toolkit/`へ配置され、Claude CodeとCodexの
-agent-toolkitプラグイン、Codex MCP、`atk`ラッパーが設定される。
+agent-toolkitプラグイン、Claude Code専用のCodex App Server MCP、`atk`ラッパーが設定される。
 再実行すると最新版へ同期される。
 
 両インストーラーは再実行時にCodexプラグインも更新する。
@@ -104,13 +104,14 @@ agent-toolkitプラグイン、Codex MCP、`atk`ラッパーが設定される�
 2. Claude Codeルールを原子的に配置する
 3. Claude Codeのマーケットプレイスとプラグインを設定する
 4. Codexのマーケットプレイスとプラグインを設定する
-5. User scopeにCodex MCPが無い場合だけ登録する
+5. User scopeに残る旧Codex MCPの完全一致定義を照合し、該当時だけ移行する
 6. `atk`ラッパーを配置する
 
-`~/.claude.json`トップレベルに既存のCodex MCPがある場合は、そのUser scope登録を上書きしない。
-Local scopeまたはProject scopeだけに同名登録がある場合はUser scopeへ追加する。
-dotfiles配布利用者が`chezmoi apply`を実行すると、完全なUser scopeのCodex MCP定義へ
-2時間のper-server timeoutを付加する。この設定はCodex MCPだけに適用する。
+新しいMCPサーバーはClaude Code plugin内の`codex_app_server`であり、User scopeへ登録しない。
+インストーラーと`chezmoi apply`後処理は、過去の手順で登録されたUser scope
+`codex`が`codex mcp-server`の完全一致定義である場合だけ、直前に再照合して削除する。
+追加フィールド、別のcommand・args・timeout、Local・Project scopeの設定は変更しない。
+plugin更新だけの経路では外部設定を変更せず、必要な場合は診断と手動削除手順を表示する。
 
 ## 設定確認
 
@@ -122,7 +123,13 @@ codex plugin list
 claude plugin list
 ```
 
-上から順に、Claude Codeから利用するCodex MCP、Codexプラグイン、Claude Codeプラグインの状態を表示する。
+`claude mcp get codex`は旧User scope定義の有無を確認する診断である。Codex App Server MCPは
+Claude Code pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
+
+Codex委譲は次の5ツールで行う。`codex_start`は既存ディレクトリを絶対パスで指定して即時に
+`session_id`を返し、`codex_status`または`codex_wait`で状態を観測する。`codex_wait`の既定timeoutは300秒である。
+`codex_result`で終端結果を回収した後、同じ`session_id`へ`codex_start_reply`で次のturnを開始する。
+App Serverへ渡す`approvalPolicy=never`と`dangerFullAccess`はMCP内部で固定され、承認・停止・一覧操作は公開しない。
 
 ## Claude Codeの推奨設定
 
@@ -210,16 +217,18 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 Claude Codeのサブエージェントを回復経路として使用する。
 
 更新時はクイックスタートのインストーラーを再実行する。アンインストール時は双方のプラグインを除去し、
-`~/.claude/rules/agent-toolkit/`と生成された`atk`ラッパーを削除する。Codex MCPは利用者の既存設定を
-保護するため自動削除しない。
+`~/.claude/rules/agent-toolkit/`と生成された`atk`ラッパーを削除する。plugin更新だけでは旧Codex MCPを
+自動削除しない。単体インストーラーまたは`chezmoi apply`後処理では、完全一致した旧User scope定義だけを移行する。
 
 自動登録に失敗した場合は、設定ファイルのJSON構造を修復してから次の診断・復旧コマンドを実行する。
 
 ```bash
-claude mcp add --scope user codex -- codex mcp-server
+claude mcp get codex
+claude mcp remove --scope user codex
 ```
 
-dotfiles配布利用者は手動登録後に次のコマンドを実行し、Codex MCPへ2時間のtimeoutを反映する。
+上記の削除は、`claude mcp get codex`で旧`codex mcp-server`定義を確認した場合だけ実行する。
+custom定義を削除する場合は利用者が内容を確認してから明示的に実行する。2時間のtimeoutは新経路へ引き継がない。
 
 ```bash
 chezmoi apply
@@ -344,5 +353,7 @@ Claude Codeで有効化する。
 
 「ツールキットのインストール」のワンライナーを再実行すると更新される。
 dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。
-いずれの単体インストーラーも初回導入専用ではない。Codexプラグインの更新後、daemonが稼働中の場合だけ
-`codex app-server daemon restart`を表示する。進行中のCodexセッションを完了してから実行する。
+いずれの単体インストーラーも初回導入専用ではない。Codex App ServerはClaude Code pluginが
+セッション単位でstdio子プロセスとして所有するため、共有daemonの再起動は行わない。
+Codex plugin本体の更新で既存セッションへ反映できない場合は、Codex pluginの案内に従い、
+進行中の作業を回収してから新しいセッションを開始する。

@@ -207,7 +207,7 @@ def update_claude_settings(
     data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
 
     original = copy.deepcopy(data)
-    _strip_codex_timeout_without_stdio_server(data, managed)
+    _strip_legacy_codex_timeout(data)
     _strip_removed_hooks(data, removed_hook_substrings)
     _strip_managed_hooks(data, managed)
     _strip_removed_env_keys(data, removed_env_keys)
@@ -230,27 +230,19 @@ def update_claude_settings(
     return True
 
 
-def _strip_codex_timeout_without_stdio_server(data: dict, managed: dict) -> None:
-    """完全なCodex stdio定義が無い場合は管理対象のtimeoutを除外する。"""
-    managed_servers = managed.get("mcpServers")
-    if not isinstance(managed_servers, dict):
-        return
-    managed_codex = managed_servers.get("codex")
-    if not isinstance(managed_codex, dict) or "timeout" not in managed_codex:
-        return
+def _strip_legacy_codex_timeout(data: dict) -> None:
+    """既存設定に残る旧管理値のtimeoutだけを一度除去する。
 
-    existing_servers = data.get("mcpServers")
-    existing_codex = existing_servers.get("codex") if isinstance(existing_servers, dict) else None
-    is_stdio = isinstance(existing_codex, dict) and ("type" not in existing_codex or existing_codex.get("type") == "stdio")
-    command = existing_codex.get("command") if isinstance(existing_codex, dict) else None
-    if is_stdio and isinstance(command, str) and command:
+    新しいplugin MCPはUser scopeのcodex定義を管理しないため、managed側の内容を
+    条件にして利用者設定を削除しない。異なるtimeoutや同じserverの他フィールドは保持する。
+    """
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
         return
-
-    del managed_codex["timeout"]
-    if not managed_codex:
-        del managed_servers["codex"]
-    if not managed_servers:
-        del managed["mcpServers"]
+    codex = servers.get("codex")
+    if not isinstance(codex, dict) or codex.get("timeout") != 7_200_000:
+        return
+    del codex["timeout"]
 
 
 def _substitute_home_placeholder(value: object) -> object:

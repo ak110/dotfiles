@@ -262,7 +262,14 @@ class TestApproveConditions:
                     "type": "assistant",
                     "message": {
                         "role": "assistant",
-                        "content": [{"type": "tool_use", "id": "toolu_mcp", "name": "mcp__codex__codex", "input": {}}],
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_mcp",
+                                "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                                "input": {},
+                            }
+                        ],
                     },
                 },
                 {
@@ -587,7 +594,7 @@ class TestContextConditions:
             state_dir=tmp_path,
         )
 
-        assert _parse_decision(result).get("decision") == "block"
+        assert "decision" not in _parse_decision(result)
 
 
 class TestUncommittedChangesAfterReview:

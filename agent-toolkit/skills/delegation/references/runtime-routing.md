@@ -6,12 +6,12 @@
 ## 経路
 
 - 専用agent定義がある作業は、その定義を実装する実行機能で起動する
-- Codex MCPを利用できるClaude Code環境では、ToolSearchで実在とスキーマを確認してから初回接続または継続接続を選ぶ
-  - 新規接続では作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す
-  - 他のsandbox値又は作業ディレクトリの欠落では相手プロセスが承認待ちから復帰せず、呼び出し元が完了を検知できないため、この値を使う
-  - 読み取り専用は`## 読み取り専用`の手順で担保し、実行環境のsandbox値で表現しない
-  - 継続接続は同一threadへの返信用経路を使い、作業ディレクトリとsandboxを再送しない
-  - モデルを指定する場合は`config`へ`model_reasoning_effort`も渡し、意図した深さを明示する
+- Codex App Server MCPを利用できるClaude Code環境では、ToolSearchで5つの実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+  - 新規開始は`codex_start(prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`model`と`effort`は両方指定するか、両方省略する
+  - `approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`はMCPサーバーが固定してApp Serverへ渡す。呼び出し側は値を上書きしない
+  - `codex_status`または`codex_wait`で進捗を観測し、`codex_result`で終端結果を回収する。`codex_wait`の既定timeoutは300秒である
+  - 継続は先行turnの`codex_result`回収後に`codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する
+  - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
 - Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える
 - 専用定義もCodex経路も利用できない場合だけ汎用Agentを使う
 - 起動結果として返されたrouteと識別子を保持し、予定した経路を実績として記録しない
@@ -22,12 +22,12 @@
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
-| `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
-| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex MCP | Agentツール |
-| `execute_model` | 実装担当と統合後のレビュー修正の書込担当。CI失敗修正では、原因分析で修正commitが必要と確定した場合に呼び出し元が起動直前に解決する書込担当 | 実装担当と統合後のレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex MCP | Agentツール |
-| `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex MCP | Agentツール |
-| `merge_model` | レーンのcommitの適用、競合解消、履歴一本化、検証 | 統合担当を委譲する`process-feedbacks`の実行主体 | Codex MCP | Agentツール |
+| `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
+| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex App Server MCP | Agentツール |
+| `execute_model` | 実装担当と統合後のレビュー修正の書込担当。CI失敗修正では、原因分析で修正commitが必要と確定した場合に呼び出し元が起動直前に解決する書込担当 | 実装担当と統合後のレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex App Server MCP | Agentツール |
+| `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
+| `merge_model` | レーンのcommitの適用、競合解消、履歴一本化、検証 | 統合担当を委譲する`process-feedbacks`の実行主体 | Codex App Server MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 上表の全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。
@@ -35,12 +35,12 @@
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ警告を表示するが、新モデルの利用を妨げないため受理する。
 
 1. 設定値を`engine`、`model`、`effort`へ分解する。
-2. `engine=codex`ではCodex MCPを使い、`config`へ`model`と`model_reasoning_effort`を渡す。
-   agents定義の`tools`でMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
+2. `engine=codex`ではCodex App Server MCPを使う。`codex_start`へ`model`と`effort`を両方渡し、開始後は`codex_status`・`codex_wait`・`codex_result`で状態と結果を回収する。
+   agents定義の`tools`で5つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
-5. Codexは同一threadへ継続接続する。
+5. Codexは先行turnの`codex_result`回収後、同じ`session_id`へ`codex_start_reply`で継続接続する。
    Claudeは完了済み識別子を再利用せず新規起動する。
    計画、進捗ログ、保存済み6列表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。

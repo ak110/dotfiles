@@ -199,7 +199,7 @@ class TestRun:
             ("npm/pnpm サプライチェーン対策", _make_step("npmrc", calls, changed=True)),
             ("mise セットアップ", _make_step("mise", calls)),
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
-            ("codex MCP サーバーの登録", _make_step("codex", calls)),
+            ("旧Codex User scope MCP登録の移行", _make_step("codex-migration", calls)),
             ("libarchive (Windows)", _make_step("libarchive", calls)),
             ("claude-plans-viewer 再起動 (Linux)", _make_step("plans-viewer-restart-linux", calls)),
         ]
@@ -214,7 +214,7 @@ class TestRun:
             "npmrc",
             "mise",
             "plugins",
-            "codex",
+            "codex-migration",
             "libarchive",
             "plans-viewer-restart-linux",
         ]
@@ -244,7 +244,7 @@ class TestRun:
             ("npm/pnpm サプライチェーン対策", _make_step("npmrc", calls)),
             ("mise セットアップ", _make_step("mise", calls)),
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
-            ("codex MCP サーバーの登録", _make_step("codex", calls)),
+            ("旧Codex User scope MCP登録の移行", _make_step("codex-migration", calls)),
             ("libarchive (Windows)", _make_step("libarchive", calls)),
             ("claude-plans-viewer 再起動 (Linux)", _make_step("plans-viewer-restart-linux", calls)),
         ]
@@ -259,7 +259,7 @@ class TestRun:
             "npmrc",
             "mise",
             "plugins",
-            "codex",
+            "codex-migration",
             "libarchive",
             "plans-viewer-restart-linux",
         ]
@@ -383,12 +383,12 @@ class TestDefaultSteps:
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
 
     def test_codex_plugin_step_order(self):
-        """Codex pluginはリンクとClaude pluginの後、Codex MCPの前に導入する。"""
+        """Codex pluginはリンクとClaude pluginの後、旧User scope移行の前に導入する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert names.index("Codex リンクの同期") < names.index("Codex plugin のインストール")
         assert names.index("Claude Code plugin のインストール") < names.index("Codex plugin のインストール")
-        assert names.index("Codex plugin のインストール") < names.index("codex MCP サーバーの登録")
-        assert names.index("codex MCP サーバーの登録") < names.index("Claude 設定")
+        assert names.index("Codex plugin のインストール") < names.index("旧Codex User scope MCP登録の移行")
+        assert names.index("旧Codex User scope MCP登録の移行") < names.index("Claude 設定")
 
     def test_codex_logs_step_registered_after_links(self):
         """Codex診断ログの通常ストレージ復元をリンク同期の直後に実行する。"""
@@ -396,7 +396,7 @@ class TestDefaultSteps:
         assert names.index("Codex 診断ログの通常ストレージ復元 (Linux)") == names.index("Codex リンクの同期") + 1
 
     def test_cli_setup_precedes_dependent_steps(self):
-        """CLI本体をplugin、リンク、MCPより前に準備する。"""
+        """CLI本体をplugin、リンク、旧User scope移行より前に準備する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         remove_name = "Codex の Claude MCP 登録削除"
         codex_name = "Codex CLI の導入と更新"
@@ -414,7 +414,7 @@ class TestDefaultSteps:
             "Codex リンクの同期",
             "Claude Code plugin のインストール",
             "Codex plugin のインストール",
-            "codex MCP サーバーの登録",
+            "旧Codex User scope MCP登録の移行",
             "Claude 設定",
         ]
         indexes = [names.index(name) for name in ordered]

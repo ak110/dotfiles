@@ -204,7 +204,7 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         "上位モデル",
         "軽量モデル",
         "標準モデル",
-        "model_reasoning_effort",
+        "`model`と`effort`",
         "読み取り専用",
         "書込担当とworktree",
         "snapshot",
@@ -622,7 +622,7 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert metadata["model"] == "sonnet"
     assert metadata["effort"] == "medium"
     assert metadata["skills"] == ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"]
-    assert "mcp__codex__codex" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_start" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
     assert "実装タスク文書、作成規範スキル、レビュータスク文書は読み込まず" in text
     assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは書込担当へ割り当てる" in text
@@ -714,7 +714,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     metadata, _ = frontmatter.parse_frontmatter(text) or ({}, "")
     assert metadata["model"] == "sonnet"
     assert metadata["skills"] == ["agent-toolkit:delegation"]
-    assert "mcp__codex__codex" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_start" in metadata["tools"]
     for phrase in (
         "自身は成果物、計画ファイル、キューを変更せず",
         "受信者専用のタスク文書と作成規範スキルは読み込まず",
@@ -965,10 +965,11 @@ def test_codex_new_connection_contract_is_centralized() -> None:
     """Codex新規接続と読み取り専用の契約を共通参照文書へ集約する。"""
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     for phrase in (
-        "新規接続では作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す",
-        "相手プロセスが承認待ちから復帰せず",
-        "実行環境のsandbox値で表現しない",
-        "同一threadへの返信用経路",
+        "Codex App Server MCP",
+        "`codex_start`",
+        "作業ディレクトリの絶対パス",
+        "`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`",
+        "`codex_start_reply(session_id, prompt)`",
     ):
         assert phrase in runtime
 
@@ -977,7 +978,7 @@ def test_codex_new_connection_contract_is_centralized() -> None:
         assert parsed is not None
         metadata, body = parsed
         tools = metadata.get("tools")
-        if not isinstance(tools, str) or "mcp__codex__codex" not in tools:
+        if not isinstance(tools, str) or "mcp__plugin_agent-toolkit_codex_app_server__codex_start" not in tools:
             continue
         assert "runtime-routing.md" in body
         assert "sandbox: danger-full-access" not in body
@@ -1004,7 +1005,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     for phrase in (
         "他engineへ自動切替せず",
         "effort部は実行機能に相当する引数が無いため適用しない",
-        "Codexは同一thread",
+        "Codexは先行turnの`codex_result`回収後",
         "Claudeは完了済み識別子を再利用せず",
     ):
         assert phrase in runtime

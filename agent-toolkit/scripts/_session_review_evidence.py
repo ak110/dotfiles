@@ -708,8 +708,16 @@ _CODEX_TOKEN_KEYS = (
     "total_tokens",
 )
 _CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
-_THREAD_ID_KEYS = ("threadId", "conversationId")
-_CODEX_TOOL_NAMES = frozenset({"mcp__codex__codex", "mcp__codex__codex-reply"})
+_THREAD_ID_KEYS = ("session_id", "sessionId", "threadId", "conversationId")
+_CODEX_TOOL_NAMES = frozenset(
+    {
+        "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+        "mcp__plugin_agent-toolkit_codex_app_server__codex_status",
+        "mcp__plugin_agent-toolkit_codex_app_server__codex_wait",
+        "mcp__plugin_agent-toolkit_codex_app_server__codex_result",
+        "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+    }
+)
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
 
 

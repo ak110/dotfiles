@@ -19,7 +19,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
    （`session_review_invoked`辞書へ記録）
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
-9. codex MCP呼び出し後のリモートref変化確認
+9. Codex App Server MCP呼び出し後のリモートref変化確認
 10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
@@ -35,7 +35,6 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
 18. 対象リポジトリで新たに回答されたTBDファイルの通知（全ツール共通）
 """
 
-import hashlib
 import json
 import pathlib
 import re
@@ -169,15 +168,26 @@ _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-sessi
 
 _DELEGATION_SKILL_NAMES = frozenset({"agent-toolkit:delegation", "delegation"})
 
+# Codex App Serverの完全修飾MCP tool名。
+_CODEX_APP_SERVER_NAMESPACE = "mcp__plugin_agent-toolkit_codex_app_server__"
+_CODEX_APP_SERVER_START_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start"
+_CODEX_APP_SERVER_REPLY_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start_reply"
+_CODEX_APP_SERVER_RESULT_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_result"
+_CODEX_APP_SERVER_TOOL_NAMES = frozenset(
+    {
+        _CODEX_APP_SERVER_START_TOOL,
+        f"{_CODEX_APP_SERVER_NAMESPACE}codex_status",
+        f"{_CODEX_APP_SERVER_NAMESPACE}codex_wait",
+        _CODEX_APP_SERVER_RESULT_TOOL,
+        _CODEX_APP_SERVER_REPLY_TOOL,
+    }
+)
+
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
-# `pretooluse.py`が同一キーで書き込み、本スクリプトが読み取り・削除する共有SSOT。
+# `pretooluse.py`がtool_use_id単位で書き込み、本スクリプトがcodex_result後に読み取り・削除する共有SSOT。
 _CODEX_REMOTE_SNAPSHOT_KEY = "codex_remote_snapshot_by_key"
-
-
-def _codex_thread_cwd_state_id(thread_id: str) -> str:
-    """`threadId`単位の共有cwd状態ファイルに使う疑似セッションIDを返す。"""
-    digest = hashlib.sha256(thread_id.encode()).hexdigest()
-    return f"codex-thread-cwd-{digest}"
+_CODEX_SESSION_CWD_KEY = "codex_app_server_cwd_by_session"
+_CODEX_SESSION_STATE_KEY = "codex_app_server_sessions"
 
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
@@ -263,41 +273,126 @@ def _diff_remote_snapshots(
     return changed
 
 
-def _warn_codex_remote_change(session_id: str, payload: dict) -> str | None:
-    """codex呼び出し前後でリモート参照が変化した場合に警告本文を返す。
+def _record_codex_session_cwd(session_id: str, payload: dict) -> None:
+    """開始・継続応答のsession_idと開始snapshotのcwdを状態へ保存する。"""
+    tool_response = payload.get("tool_response", {})
+    structured = tool_response.get("structuredContent") if isinstance(tool_response, dict) else None
+    if not isinstance(structured, dict):
+        structured = tool_response if isinstance(tool_response, dict) else {}
+    remote_session_id = structured.get("session_id")
+    if not isinstance(remote_session_id, str) or not remote_session_id:
+        return
+    snapshot_key = _codex_snapshot_key(payload, session_id)
+    tool_input = payload.get("tool_input")
+    cwd = tool_input.get("cwd") if isinstance(tool_input, dict) else None
+    if not isinstance(cwd, str) or not cwd:
+        entries = read_state(session_id).get(_CODEX_REMOTE_SNAPSHOT_KEY)
+        recorded = entries.get(snapshot_key) if isinstance(entries, dict) else None
+        cwd = recorded.get("cwd") if isinstance(recorded, dict) else None
+    if not isinstance(cwd, str) or not cwd:
+        return
+    _record_codex_session_state(session_id, structured, cwd=cwd, snapshot_key=snapshot_key)
 
-    PreToolUse側が記録をスキップした場合（`cwd`未取得等）は比較せず終了する。
-    比較後は記録済みスナップショットを削除し、次回呼び出しでの記録漏れによる
-    古いスナップショットとの誤比較を防ぐ。警告はコーディングエージェントへ確実に届ける
-    ため`hookSpecificOutput.additionalContext`経由で出力する
-    （`agent-toolkit/skills/agent-standards/references/claude-hooks.md`
-    「出力フィールドの使い分け」節: PostToolUseで行動を促す場合の第一経路）。
-    """
+
+def _codex_snapshot_key(payload: dict, session_id: str) -> str:
+    """PreToolUseとPostToolUseで共有するCodex snapshotキーを返す。"""
+    tool_use_id = payload.get("tool_use_id")
+    if isinstance(tool_use_id, str) and tool_use_id:
+        return tool_use_id
     agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
-    key = agent_id if agent_id is not None else f"session:{session_id}"
+    return agent_id or f"session:{session_id}"
+
+
+def _record_codex_session_state(
+    session_id: str,
+    structured: dict,
+    *,
+    cwd: str | None = None,
+    snapshot_key: str | None = None,
+) -> None:
+    """Codex App Serverの各tool応答をStop判定用状態へ記録する。"""
+    remote_session_id = structured.get("session_id")
+    if not isinstance(remote_session_id, str) or not remote_session_id:
+        return
+    turn_id = structured.get("turn_id")
+    status = structured.get("status")
+    if not isinstance(status, str):
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.setdefault(_CODEX_SESSION_STATE_KEY, {})
+        previous = sessions.get(remote_session_id)
+        previous = previous if isinstance(previous, dict) else {}
+        record = dict(previous)
+        record.update({"session_id": remote_session_id, "status": status})
+        if isinstance(turn_id, str) and turn_id:
+            record["turn_id"] = turn_id
+        if isinstance(cwd, str) and cwd:
+            record["cwd"] = cwd
+        if isinstance(snapshot_key, str) and snapshot_key:
+            record["snapshot_key"] = snapshot_key
+        if structured.get("status") in {"running"}:
+            record["result_retrieved"] = False
+        if structured.get("status") in {"completed", "failed", "interrupted"} and structured.get("error") is not None:
+            record["error"] = structured.get("error")
+        if structured.get("agent_message") is not None:
+            record["agent_message"] = structured.get("agent_message")
+        if structured.get("status") in {"completed", "failed", "interrupted"}:
+            # codex_resultだけが回収済みを表す。result tool以外のterminal観測はFalseを保持する。
+            record["result_retrieved"] = bool(record.get("result_retrieved", False))
+        if sessions.get(remote_session_id) == record:
+            return None
+        sessions[remote_session_id] = record
+        cwd_map = state.setdefault(_CODEX_SESSION_CWD_KEY, {})
+        if isinstance(cwd, str) and cwd and cwd_map.get(remote_session_id) != cwd:
+            cwd_map[remote_session_id] = cwd
+        return state
+
+    update_state(session_id, _mutator)
+
+
+def _warn_codex_remote_change(session_id: str, payload: dict) -> str | None:
+    """codex_result受領後に開始時点との差分を比較し、必要なら警告本文を返す。"""
     state = read_state(session_id)
     entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
-    recorded = entries.get(key) if isinstance(entries, dict) else None
-
-    def _clear(state: dict) -> dict | None:
-        entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
-        if isinstance(entries, dict) and key in entries:
-            del entries[key]
-            return state
-        return None
 
     tool_response = payload.get("tool_response", {})
-    thread_id = tool_response.get("threadId") or tool_response.get("thread_id") if isinstance(tool_response, dict) else None
+    structured = tool_response.get("structuredContent") if isinstance(tool_response, dict) else None
+    if not isinstance(structured, dict):
+        structured = tool_response if isinstance(tool_response, dict) else {}
+    remote_session_id = structured.get("session_id")
+    sessions = state.get(_CODEX_SESSION_STATE_KEY)
+    session_record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
+    key = session_record.get("snapshot_key") if isinstance(session_record, dict) else None
+    if not isinstance(key, str) or not key:
+        key = _codex_snapshot_key(payload, session_id)
+    recorded = entries.get(key) if isinstance(entries, dict) else None
     cwd = recorded.get("cwd") if isinstance(recorded, dict) else None
-    if isinstance(thread_id, str) and thread_id and isinstance(cwd, str) and cwd:
+    if isinstance(remote_session_id, str) and remote_session_id and isinstance(cwd, str) and cwd:
 
-        def _record_thread_cwd(state: dict) -> dict | None:
-            if state.get("cwd") == cwd:
+        def _record_session_cwd(state: dict) -> dict | None:
+            cwd_map = state.setdefault(_CODEX_SESSION_CWD_KEY, {})
+            if cwd_map.get(remote_session_id) == cwd:
                 return None
-            state["cwd"] = cwd
+            cwd_map[remote_session_id] = cwd
             return state
 
-        update_state(_codex_thread_cwd_state_id(thread_id), _record_thread_cwd)
+        update_state(session_id, _record_session_cwd)
+
+    def _clear(state: dict) -> dict | None:
+        changed = False
+        snapshot_entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
+        if isinstance(snapshot_entries, dict) and key in snapshot_entries:
+            del snapshot_entries[key]
+            changed = True
+        session_entries = state.get(_CODEX_SESSION_STATE_KEY)
+        if isinstance(session_entries, dict) and isinstance(remote_session_id, str):
+            current = session_entries.get(remote_session_id)
+            if isinstance(current, dict) and current.get("snapshot_key") == key:
+                current.pop("snapshot_key", None)
+                session_entries[remote_session_id] = current
+                changed = True
+        return state if changed else None
 
     update_state(session_id, _clear)
     if recorded is None:
@@ -578,11 +673,36 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             _process_loop_log.append("subagent_end", type=subagent_type)
         return 0
 
-    # codex呼び出し後はリモートrefの変化だけを確認する。
-    if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
-        codex_notice = _warn_codex_remote_change(session_id, payload)
-        if codex_notice is not None:
-            notices.append(codex_notice)
+    # 開始点のstructuredContentからsession_id→cwdを保存し、codex_result受領時だけ
+    # 開始時点のremote refと比較する。status/waitは稼働中のため比較を完了しない。
+    if tool_name in _CODEX_APP_SERVER_TOOL_NAMES:
+        tool_response = payload.get("tool_response", {})
+        structured = tool_response.get("structuredContent") if isinstance(tool_response, dict) else None
+        if not isinstance(structured, dict):
+            structured = tool_response if isinstance(tool_response, dict) else {}
+        if tool_name == _CODEX_APP_SERVER_RESULT_TOOL:
+            _record_codex_session_state(session_id, structured)
+
+            def _mark_result_retrieved(state: dict) -> dict | None:
+                remote_session_id = structured.get("session_id")
+                sessions = state.get(_CODEX_SESSION_STATE_KEY)
+                if not isinstance(remote_session_id, str) or not isinstance(sessions, dict):
+                    return None
+                record = sessions.get(remote_session_id)
+                if not isinstance(record, dict) or record.get("result_retrieved") is True:
+                    return None
+                record["result_retrieved"] = True
+                sessions[remote_session_id] = record
+                return state
+
+            update_state(session_id, _mark_result_retrieved)
+            codex_notice = _warn_codex_remote_change(session_id, payload)
+            if codex_notice is not None:
+                notices.append(codex_notice)
+        elif tool_name in (_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL):
+            _record_codex_session_cwd(session_id, payload)
+        else:
+            _record_codex_session_state(session_id, structured)
         return 0
 
     # Readは本フックで状態更新を行わない。

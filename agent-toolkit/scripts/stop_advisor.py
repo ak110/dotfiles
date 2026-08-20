@@ -27,6 +27,7 @@ from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-imp
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
     has_command_invocation,
+    has_uncollected_codex_turns,
     is_pending_async_work,
 )
 
@@ -113,26 +114,32 @@ def main(payload_text: str) -> int:
     cwd = payload.get("cwd", "")
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
-    is_codex = "model" in payload
-
     # 期限切れ状態の回収はSessionEndへ集約する（両ホストで同一契機とし、Stopでは重複実行しない）。
 
     # Claude Codeで構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background task（Agent・Bash・MCP）が存在するケース。
     # Codex rolloutは安定した終了ゲートではないため背景作業判定へ渡さない。
-    if not is_codex and is_pending_async_work(transcript_path, session_id):
+    if is_pending_async_work(transcript_path, session_id):
         append_stop_log(session_id, "approve_pending_async", {})
         _approve()
         return 0
 
     state = read_state(session_id)
+    if has_uncollected_codex_turns(session_id):
+        append_stop_log(session_id, "block_codex_result_uncollected", {})
+        reason = _llm_notice(
+            "A Codex App Server turn has reached or may reach a terminal state, but its result"
+            " has not been collected. Call `codex_result` for each started session before stopping."
+        )
+        _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
+        return 0
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
     # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録するほか、
     # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
     invoked = state.get("session_review_invoked")
     state_invoked = isinstance(invoked, dict) and invoked.get(_SESSION_REVIEW_SKILL) is True
-    command_invoked = not is_codex and has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
-    recovered_invocation = is_codex and not state_invoked and has_session_review_started(transcript_path)
+    command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
+    recovered_invocation = not state_invoked and has_session_review_started(transcript_path)
     if state_invoked or command_invoked or recovered_invocation:
         append_stop_log(
             session_id,

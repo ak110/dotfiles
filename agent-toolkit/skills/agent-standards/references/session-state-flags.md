@@ -45,15 +45,15 @@
 - `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
   `delegation`を起動した場合にPostToolUseが真化する。
-  メインセッションからcodex MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
+  メインセッションからCodex App Server MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
   セッション終了まで保持する。sidechainのSkill起動は記録しない
 
 ## codex連携系
 
-- `codex_remote_snapshot_by_key`: codex呼び出し直前のリモートrefを記録し、呼び出し後に比較して削除する
-- `codex_remote_cwd_by_key`: 呼び出し元ごとの直近`cwd`を記録し、同じ呼び出し元からの継続時に使う
-- `claude-agent-toolkit-codex-thread-cwd-<threadIdのSHA-256>.json`: codexの`threadId`ごとの`cwd`を
-  疑似セッション状態として記録し、オーケストレーターをまたぐ継続呼び出し時の比較対象を解決する
+- `codex_remote_snapshot_by_key`: Codex App Serverの`codex_start`または`codex_start_reply`直前のリモートrefを記録し、対応する`codex_result`後に比較して削除する
+- `codex_app_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`codex_start_reply`の検査に使う
+- `codex_app_server_sessions`: `session_id`ごとのturn、状態、cwd、`result_retrieved`を記録する。
+  terminal statusだけでは回収済みとせず、`codex_result`成功後にStopゲートから除外する。thread IDをハッシュ化した状態ファイルは作成しない
 
 ## TBD系
 
