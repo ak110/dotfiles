@@ -461,7 +461,8 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
     assert client.sent[-1]["id"] == 2
     assert "error" in client.sent[-1]
     assert manager.status("thread-1")["status"] == "failed"
-    assert (await waiter)["status"] == "failed"
+    await asyncio.sleep(0)
+    assert not waiter.done()
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
     await asyncio.sleep(0)
@@ -475,6 +476,7 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
             },
         }
     )
+    assert (await waiter)["status"] == "failed"
     result = manager.result("thread-1")
     assert result["status"] == "failed"
     assert result["error"] == {"message": "Codex requested interactive server input: item/tool/requestUserInput"}
@@ -509,7 +511,8 @@ async def test_interrupt_json_rpc_error_marks_target_failed_and_waits_for_comple
     assert unrelated["status"] == "running"
     assert target["error"] == {"message": "turn/interrupt: turn is already completing"}
     assert unrelated["error"] is None
-    assert (await waiter)["status"] == "failed"
+    await asyncio.sleep(0)
+    assert not waiter.done()
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
 
@@ -522,6 +525,7 @@ async def test_interrupt_json_rpc_error_marks_target_failed_and_waits_for_comple
             },
         }
     )
+    assert (await waiter)["status"] == "failed"
     result = manager.result("thread-1")
     assert result["status"] == "failed"
     assert result["error"] == {"message": "turn/interrupt: turn is already completing"}

@@ -115,6 +115,11 @@ class SessionState:
         """最新turnが終端状態であるかを返す。"""
         return self.status in TERMINAL_STATUSES
 
+    @property
+    def result_available(self) -> bool:
+        """最新turnの結果を回収できる状態であるかを返す。"""
+        return self.terminal and self.turn_completed and not self.turn_start_ambiguous
+
     def touch(self) -> None:
         """更新時刻をUTC ISO 8601へ更新する。"""
         self.updated_at = _utc_now()
@@ -574,15 +579,15 @@ class AppServerManager:
         return self._get_session(session_id).public_status()
 
     async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-        """指定sessionが終端するまで待機し、タイムアウト時は現状態を返す。"""
+        """指定sessionの結果を回収できるまで待機し、タイムアウト時は現状態を返す。"""
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
         session = self._get_session(session_id)
-        if not session.terminal:
+        if not session.result_available:
             try:
                 async with self._condition:
                     await asyncio.wait_for(
-                        self._condition.wait_for(lambda: session.terminal),
+                        self._condition.wait_for(lambda: session.result_available),
                         timeout=timeout,
                     )
             except TimeoutError:
@@ -592,7 +597,7 @@ class AppServerManager:
     def result(self, session_id: str) -> dict[str, Any]:
         """終端したsessionの結果を返し、取得済みとして記録する。"""
         session = self._get_session(session_id)
-        if not session.terminal or session.turn_start_ambiguous or not session.turn_completed:
+        if not session.result_available:
             raise ValueError("the Codex turn has not completed")
         session.result_retrieved = True
         session.touch()
