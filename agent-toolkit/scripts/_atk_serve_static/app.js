@@ -31,6 +31,7 @@ const knownTbdFilenames = new Set();
 const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
+let refreshFocusPending = false;
 
 const byId = id => document.getElementById(id);
 const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
@@ -63,6 +64,16 @@ function setTextMessage(id, message) {
 function setGlobalError(message) {
   byId('global-error-message').textContent = message;
   byId('global-error').hidden = !message;
+}
+
+function focusRefreshButton() {
+  const refreshButton = byId('refresh-button');
+  if (refreshButton.disabled) {
+    refreshFocusPending = true;
+    return;
+  }
+  refreshFocusPending = false;
+  refreshButton.focus();
 }
 
 function clearDialogMessages(dialogName) {
@@ -152,6 +163,7 @@ async function runPending(key, {container, button, busyLabel}, operation) {
     pendingOperations.delete(key);
     syncFilterDependencies();
     syncDetailMutationAvailability();
+    if (refreshFocusPending) focusRefreshButton();
   }
 }
 
@@ -955,7 +967,7 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
 function bindEvents() {
   byId('global-error-close-button').addEventListener('click', () => {
     setGlobalError('');
-    byId('refresh-button').focus();
+    focusRefreshButton();
   });
   byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('notification-button').addEventListener('click', () => { void enableNotifications(); });

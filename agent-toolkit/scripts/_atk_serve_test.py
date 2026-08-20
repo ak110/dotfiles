@@ -327,7 +327,11 @@ class Element {{
   querySelectorAll() {{ return globalThis.controlGroups[this.id] || []; }}
   showModal() {{ this.open = true; }}
   close() {{ this.open = false; }}
-  focus() {{ document.activeElement = this; globalThis.focused = this.dataset.key || this.id; }}
+  focus() {{
+    if (this.disabled) return;
+    document.activeElement = this;
+    globalThis.focused = this.dataset.key || this.id;
+  }}
 }}
 const ids = [
   'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
@@ -522,6 +526,47 @@ process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
             "ダイアログ外失敗",
             "初期化失敗",
         ],
+    }
+
+
+def test_assets_global_error_focuses_refresh_after_synchronization() -> None:
+    """同期中の共通エラー消去後も、再び操作可能になった同期ボタンへフォーカスを移す。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+let releaseSync;
+const syncBlocked = new Promise(resolve => { releaseSync = resolve; });
+fetchHandler = async url => {
+  if (url.endsWith('/api/sync')) await syncBlocked;
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})};
+};
+const synchronization = elements['refresh-button'].listeners.click();
+await Promise.resolve();
+const disabled = elements['refresh-button'].disabled;
+setGlobalError('同期中の外部更新失敗');
+elements['global-error-close-button'].focus();
+elements['global-error-close-button'].listeners.click();
+const during = {
+  hidden: elements['global-error'].hidden,
+  focused
+};
+releaseSync();
+await synchronization;
+process.stdout.write(JSON.stringify({
+  disabled,
+  during,
+  after: {
+    disabled: elements['refresh-button'].disabled,
+    focused,
+    hidden: elements['global-error'].hidden
+  }
+}));
+"""
+    )
+    assert result == {
+        "disabled": True,
+        "during": {"hidden": True, "focused": "global-error-close-button"},
+        "after": {"disabled": False, "focused": "refresh-button", "hidden": True},
     }
 
 
