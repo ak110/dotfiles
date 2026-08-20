@@ -22,6 +22,16 @@ def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     assert capsys.readouterr().out == path.read_text(encoding="utf-8")
 
 
+def test_table_lock_is_kept_as_the_sibling_management_artifact(tmp_path: pathlib.Path) -> None:
+    """表の排他制御に使う対応ロック成果物を管理領域の検収対象として確認する。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "重大", "module.py:10", "修正が必要")
+
+    lock_path = path.with_name(path.name + ".lock")
+    assert lock_path.is_file()
+
+
 def test_initial_review_can_validate_structure_before_response_and_strict_after_response(
     tmp_path: pathlib.Path,
 ) -> None:

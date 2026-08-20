@@ -1486,6 +1486,8 @@ def _warning_result_values(entry: dict[str, Any]) -> list[Any]:
     payload = entry.get("payload")
     if isinstance(payload, dict) and payload.get("type") == "function_call_output":
         values.append(payload.get("output"))
+    if isinstance(payload, dict) and payload.get("type") == "custom_tool_call_output":
+        values.append(payload.get("output"))
     if isinstance(payload, dict) and payload.get("type") == "event_msg":
         item = payload.get("item")
         if isinstance(item, dict) and item.get("type") == "CommandExecution":
@@ -1496,7 +1498,7 @@ def _warning_result_values(entry: dict[str, Any]) -> list[Any]:
 
 
 def _warning_texts(entry: dict[str, Any]) -> list[str]:
-    """行頭マーカー又は実行結果内の構造化警告フィールドに対応する本文行を返す。"""
+    """実行結果領域内の行頭マーカー又は構造化警告フィールドに対応する本文行を返す。"""
     bodies: list[tuple[str, bool]] = []
 
     def collect_markers(value: Any) -> None:
@@ -1539,8 +1541,8 @@ def _warning_texts(entry: dict[str, Any]) -> list[str]:
             for item in value:
                 collect_structured(item)
 
-    collect_markers(entry)
     for result_value in _warning_result_values(entry):
+        collect_markers(result_value)
         collect_structured(result_value)
     unnumbered_by_body = [
         {line.strip() for line in text.splitlines() if _LINE_NUMBER_PREFIX.match(line) is None} for text, _ in bodies

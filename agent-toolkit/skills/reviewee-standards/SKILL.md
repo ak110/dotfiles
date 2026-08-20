@@ -48,7 +48,8 @@ description: >
 ## 修正後の自己点検
 
 レビュー指摘管理表は重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由の固定6列TSVとする。
-表が指定されている場合は、`atk review-table validate --allow-unanswered <レビュー表>`を実行してから表を全文読み、
+表が指定されている場合は、各ラウンドの開始時に`atk review-table validate --allow-unanswered <レビュー表>`を実行して構造を検証する。
+検証後に表を全文読み、
 各行の複合キーを指定して`atk review-table respond`で対応要否・対応内容・対応不要理由だけを更新する。
 先頭3列は変更せず、応答更新後は同じ構造検証を再実行する。全行への応答を終えたら
 `atk review-table validate <レビュー表>`で全件応答済みを検証する。

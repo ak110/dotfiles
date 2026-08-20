@@ -16,8 +16,7 @@
 
 ## レビュー
 
-初回レビュー開始前は`atk review-table validate --allow-unanswered <レビュー表>`、再レビュー開始前は
-`atk review-table validate <レビュー表>`を実行し、レビュー表を全文読んでから成果物を点検する。
+各ラウンドの二系統並列レビュー起動前は調整主体が前ラウンドの`atk review-table validate <レビュー表>`を実行する。レビュー担当はラウンド開始時に`atk review-table validate --allow-unanswered <レビュー表>`を実行して構造を検証し、レビュー表を全文読んでから成果物を点検する。
 指摘はレビュー表へ`atk review-table add`で追加し、先頭3列（重要度・指摘箇所・指摘内容）の複合キーを変更しない。
 レビュー表の列は重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由の6列に固定する。
 

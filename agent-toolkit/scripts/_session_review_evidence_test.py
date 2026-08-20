@@ -1141,7 +1141,13 @@ def test_warn_mode_accepts_real_line_start_markers_only(
         tmp_path,
         [
             {"type": "user", "message": {"role": "user", "content": "本文途中の warning と warn"}},
-            {"type": "user", "message": {"role": "user", "content": warning_line}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "content": warning_line}],
+                },
+            },
         ],
     )
 
@@ -1182,6 +1188,44 @@ def test_warn_mode_accepts_structured_warning_fields_and_grep_keeps_arbitrary_se
     matches = _read_jsonl(capsys)
     assert [event["line"] for event in matches[:-1]] == [1, 2]
     assert matches[-1] == {"kind": "summary", "count": 2}
+
+
+def test_warn_mode_accepts_codex_custom_tool_call_output_structured_warning(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexの実行結果出力を構造化警告として受理し、入力は`--grep`だけで検索する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"warning_message": "引数内の警告"}, ensure_ascii=False),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-1",
+                    "output": json.dumps({"warning_message": "Codex実行結果の警告"}, ensure_ascii=False),
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": "Codex実行結果の警告"}]
+
+    assert evidence.main([str(transcript), "--grep", "引数内の警告"]) == 0
+    assert _read_jsonl(capsys) == [
+        {"kind": "match", "line": 1, "text": '{"warning_message": "引数内の警告"}'},
+        {"kind": "summary", "count": 1},
+    ]
 
 
 def test_warn_mode_accepts_case_variants_of_structured_warning_fields(
@@ -1266,6 +1310,24 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
         ),
         (
             {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "SomeTool",
+                            "id": "call-1",
+                            "input": {"command": "warning: 入力内マーカー"},
+                        }
+                    ],
+                },
+            },
+            "入力内マーカー",
+            "warning: 入力内マーカー",
+        ),
+        (
+            {
                 "type": "response_item",
                 "payload": {
                     "type": "function_call",
@@ -1277,16 +1339,29 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
             "引数内JSON",
             '{"warning_message": "引数内JSONの警告"}',
         ),
+        (
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"command": "warning: 引数内マーカー"}, ensure_ascii=False),
+                },
+            },
+            "引数内マーカー",
+            '{"command": "warning: 引数内マーカー"}',
+        ),
     ],
 )
-def test_warn_mode_ignores_structured_warning_json_in_inputs_but_grep_finds_it(
+def test_warn_mode_ignores_warning_markers_and_structured_json_in_inputs_but_grep_finds_it(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     entry: dict[str, object],
     grep_pattern: str,
     expected_text: str,
 ) -> None:
-    """入力の構造化警告を`--warn`へ昇格させず、`--grep`では検索する。"""
+    """入力の行頭マーカーと構造化警告を`--warn`へ昇格させず、`--grep`では検索する。"""
     transcript = _write_transcript(tmp_path, [entry])
 
     assert evidence.main([str(transcript), "--warn"]) == 0
@@ -1307,9 +1382,17 @@ def test_warn_mode_excludes_records_after_review_boundary(
     transcript = _write_transcript(
         tmp_path,
         [
-            {"type": "user", "message": {"role": "user", "content": "warning: 作業中の警告"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 作業中の警告"},
+                "message": {"role": "user", "content": []},
+            },
             {"type": "user", "message": {"role": "user", "content": "/session-review"}},
-            {"type": "user", "message": {"role": "user", "content": "warning: 振り返り中の警告"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 振り返り中の警告"},
+                "message": {"role": "user", "content": []},
+            },
         ],
     )
 
@@ -1326,13 +1409,21 @@ def test_warn_mode_excludes_records_after_claude_automatic_review_marker(
     transcript = _write_transcript(
         tmp_path,
         [
-            {"type": "user", "message": {"role": "user", "content": "warning: マーカー前の警告"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: マーカー前の警告"},
+                "message": {"role": "user", "content": []},
+            },
             {
                 "type": "user",
                 "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
                 "message": {"role": "user", "content": []},
             },
-            {"type": "user", "message": {"role": "user", "content": "warning: マーカー後の警告"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: マーカー後の警告"},
+                "message": {"role": "user", "content": []},
+            },
         ],
     )
 
@@ -1455,8 +1546,13 @@ def test_query_modes_normalize_line_number_prefix_across_body_fields(
         [
             {
                 "type": "user",
-                "message": {"role": "user", "content": [{"type": "text", "text": "12\twarning: 同じ本文"}]},
-                "toolUseResult": {"stdout": "warning: 同じ本文"},
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "content": "12\twarning: 同じ本文"},
+                        {"type": "tool_result", "content": "warning: 同じ本文"},
+                    ],
+                },
             }
         ],
     )
@@ -1491,7 +1587,10 @@ def test_query_modes_keep_numbered_and_unnumbered_lines_in_one_body_distinct(
         [
             {
                 "type": "user",
-                "message": {"role": "user", "content": "12\twarning: 本文\nwarning: 本文"},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "content": "12\twarning: 本文\nwarning: 本文"}],
+                },
             }
         ],
     )

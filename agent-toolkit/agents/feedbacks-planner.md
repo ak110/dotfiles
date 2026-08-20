@@ -21,9 +21,7 @@ user-invocable: false
 該当する既存担当へ指示を配送してから、返却された成果物と検証結果を検収する。
 計画レビュー表は`~/.claude/plans/<計画stem>.review.tsv`へ、実装レビュー表は呼び出し元が指定する
 managed temp領域へ保存する。両表は`atk review-table`の固定6列TSVとし、列順を重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由に固定する。
-初回並列レビューとレビューイーの応答前は
-`atk review-table validate --allow-unanswered <レビュー表>`で構造を検証し、応答後と収束前は
-`atk review-table validate <レビュー表>`で全件応答済みまで検証する。
+各ラウンドの二系統並列レビュー起動前は、調整主体が前ラウンドの`atk review-table validate <レビュー表>`を実行して全件応答済みを検証する。各レビュー担当とレビューイーはラウンド開始時に`atk review-table validate --allow-unanswered <レビュー表>`で構造を検証し、レビューイーの全行への応答後は次ラウンド起動前のstrict検証へ戻る。
 
 ## 入力
 

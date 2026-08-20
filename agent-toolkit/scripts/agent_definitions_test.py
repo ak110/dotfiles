@@ -555,9 +555,21 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
         assert structural in document, path
         assert strict in document, path
 
+    coordinator_phrase = "各ラウンドの二系統並列レビュー起動前は"
+    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR, _PLAN_REVIEW_DELEGATION):
+        assert coordinator_phrase in path.read_text(encoding="utf-8"), path
+    reviewer_phrase = "各レビュー担当とレビューイーはラウンド開始時に"
+    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR, _PLAN_REVIEW_TASK, _PLAN_REVIEW_DELEGATION):
+        assert reviewer_phrase in path.read_text(encoding="utf-8"), path
+    for path in (_PLAN_IMPL_PLAN_REVIEW_TASK, _PLAN_IMPL_INDEPENDENT_REVIEW_TASK):
+        assert "レビュー担当はラウンド開始時に" in path.read_text(encoding="utf-8"), path
+
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    assert executor.index("初回レビューとレビューイーの応答前") < executor.index("応答後と収束前")
+    assert "各ラウンドの二系統並列レビュー起動前は、調整主体が前ラウンドの" in executor
+    assert "各レビュー担当とレビューイーはラウンド開始時に" in executor
+    assert executor.index("調整主体が前ラウンドの") < executor.index("各レビュー担当とレビューイーはラウンド開始時に")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    assert "各ラウンドの開始時に" in reviewee
     assert reviewee.index("構造検証") < reviewee.index("全行への応答")
 
 
@@ -1126,7 +1138,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in runtime
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
-    assert "同領域内の固定6列TSVファイル以外を書き込まない" in executor
+    assert "対応`.lock`一時成果物だけを指定された統合用管理対象領域内へ保存し、それ以外を書き込まない" in executor
     assert "各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`" in executor
     assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
@@ -1158,7 +1170,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "non-fast-forward拒否",
         "安定ID",
         "適用済みスキップ",
-        "固定6列TSVを統合用管理対象領域内へ保存",
+        "固定6列TSVと対応`.lock`一時成果物だけを統合用管理対象領域内へ保存",
         "キューの`plan_file`から各計画の進捗ログを辿り",
         "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",
         "初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動",
