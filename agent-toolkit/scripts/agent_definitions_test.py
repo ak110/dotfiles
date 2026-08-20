@@ -817,9 +817,8 @@ def test_direct_material_records_preserve_receipt_order() -> None:
     for document in (sender, planner, design):
         collection = document.index("受領順を保持した素材レコード集合")
         fields = document.index("種別、出所及び引用範囲をこの順で")
-        assert collection < fields
-
-    assert "逐語本文・回答全文をレコードの末尾へ続ける" in sender
+        trailing_body = document.index("逐語本文・回答全文をレコードの末尾へ続ける")
+        assert collection < fields < trailing_body
 
 
 def test_material_and_requirement_ids_remain_stable_across_parallel_work_and_revisions() -> None:
