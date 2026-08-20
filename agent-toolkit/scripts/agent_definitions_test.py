@@ -895,7 +895,7 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         assert "`source: session-review`" in document
     for phrase in (
         "バッチ全項目の採否記録",
-        "実施内容へは採用又は部分採用の採用範囲だけ",
+        "実施内容へは、対象項目の採用範囲だけを反映する",
         "同じ`feedbacks-planner`系列の新しい識別子",
         "依存設定と`blocked`確認後",
         "元項目をrejectしない",
