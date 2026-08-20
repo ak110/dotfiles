@@ -171,8 +171,9 @@ def _json_sort_key(value: typing.Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-def _json_compatible(value: typing.Any) -> typing.Any:
+def _json_compatible(value: typing.Any, active_ids: set[int] | None = None) -> typing.Any:
     """YAML値を厳格なJSONが受理する表示用の値へ再帰的に変換する。"""
+    active = set() if active_ids is None else active_ids
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float):
@@ -186,11 +187,45 @@ def _json_compatible(value: typing.Any) -> typing.Any:
     if isinstance(value, datetime.datetime | datetime.date | datetime.time):
         return value.isoformat()
     if isinstance(value, collections.abc.Mapping):
-        return {str(_json_compatible(key)): _json_compatible(item) for key, item in value.items()}
+        value_id = id(value)
+        if value_id in active:
+            return "[Circular]"
+        active.add(value_id)
+        try:
+            if all(isinstance(key, str) for key in value):
+                return {key: _json_compatible(item, active) for key, item in value.items()}
+            return {
+                "__mapping__": [
+                    {
+                        "key": {
+                            "type": type(key).__name__,
+                            "value": _json_compatible(key, active),
+                        },
+                        "value": _json_compatible(item, active),
+                    }
+                    for key, item in value.items()
+                ]
+            }
+        finally:
+            active.remove(value_id)
     if isinstance(value, (list, tuple)):
-        return [_json_compatible(item) for item in value]
+        value_id = id(value)
+        if value_id in active:
+            return "[Circular]"
+        active.add(value_id)
+        try:
+            return [_json_compatible(item, active) for item in value]
+        finally:
+            active.remove(value_id)
     if isinstance(value, (set, frozenset)):
-        normalized = [_json_compatible(item) for item in value]
+        value_id = id(value)
+        if value_id in active:
+            return "[Circular]"
+        active.add(value_id)
+        try:
+            normalized = [_json_compatible(item, active) for item in value]
+        finally:
+            active.remove(value_id)
         return sorted(normalized, key=_json_sort_key)
     return str(value)
 
@@ -787,7 +822,11 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
 
     @app.get("/api/entries/<state_name>/<filename>")
     async def detail(state_name: str, filename: str) -> quart.Response:
-        return quart.jsonify(entry=await workers.run(ops.detail, state_name, filename))
+        entry = await workers.run(ops.detail, state_name, filename)
+        return quart.Response(
+            json.dumps({"entry": entry}, ensure_ascii=False, separators=(",", ":"), allow_nan=False),
+            content_type="application/json",
+        )
 
     @app.get("/api/events")
     async def events() -> quart.Response:

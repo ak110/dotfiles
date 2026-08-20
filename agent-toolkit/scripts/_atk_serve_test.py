@@ -2164,6 +2164,48 @@ async def test_detail_api_round_trips_frontmatter_as_strict_json(tmp_path: pathl
     }
 
 
+@pytest.mark.asyncio
+async def test_detail_api_preserves_frontmatter_order_cycles_and_mapping_keys(tmp_path: pathlib.Path) -> None:
+    """詳細HTTP APIはfrontmatterの順序、循環参照、非文字列キーを保持して返す。"""
+    _write_detail_entry(
+        tmp_path,
+        "---\n"
+        "type: feedback\n"
+        "z_key: z\n"
+        "a_key: a\n"
+        "m_key: m\n"
+        "queue_schedule:\n"
+        "  1: numeric\n"
+        '  "1": textual\n'
+        "  cyclic: &cyclic\n"
+        "    kept: value\n"
+        "    self: *cyclic\n"
+        "---\n\n本文\n",
+    )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().get("/api/entries/inbox/entry.md")
+
+    assert response.status_code == 200
+    payload = json.loads(await response.get_data())
+    frontmatter = payload["entry"]["frontmatter"]
+    assert list(frontmatter) == ["type", "z_key", "a_key", "m_key", "queue_schedule"]
+    assert frontmatter["queue_schedule"] == {
+        "__mapping__": [
+            {"key": {"type": "int", "value": 1}, "value": "numeric"},
+            {"key": {"type": "str", "value": "1"}, "value": "textual"},
+            {
+                "key": {"type": "str", "value": "cyclic"},
+                "value": {"kept": "value", "self": "[Circular]"},
+            },
+        ]
+    }
+
+
 def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:
     """詳細表示テスト用の入力ファイルを作成する。"""
     inbox = tmp_path / "inbox"
