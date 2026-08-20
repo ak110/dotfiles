@@ -143,7 +143,7 @@ dotfiles固有の参照文書を適用した候補は、利用環境全体の提
 
 ## 改善提案の投入と終了
 
-表示した各提案は、実行主体が提案ごとに`agent-toolkit:add-feedback`をSkill機能で起動し、本文を変えず
+表示した各提案は、実行主体が提案ごとに`agent-toolkit:add-feedback`をSkill機能で起動し、source `session-review`を明示して、本文を変えず
 完成済み入力として渡して投入する。
 対象リポジトリ、重複判定、保存結果の照合、警告時の修復は同スキルの契約に従う。
 振り返りが`agent-toolkit:process-feedbacks`の終了工程として起動された場合も、

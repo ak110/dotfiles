@@ -266,6 +266,19 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n",
     ),
     (
+        "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n"
+        "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
+        "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n"
+        "\n"
+        "`agent-toolkit:process-feedbacks`が複数の通常型フィードバックを1つの統合計画へまとめる場合は、概要の説明直後かつ\n"
+        "`### 計画メタ情報`の前へ、バッチに含まれる全フィードバックを1行ずつ示す次の4列表を置く。\n"
+        "列は`フィードバック`、`原文参照`、`採否`、`理由・差異説明`とし、`フィードバック`にはファイル名、`原文参照`には提示素材IDを書く。\n"
+        "完全採用以外の結果では`理由・差異説明`へ項目固有の理由又は原文との差異を記録し、部分採用では採用範囲と除外範囲の両方を記載する。\n"
+        "この一覧は統合計画の現在の採否を示し、経緯、旧方針及び指摘の反映記録を担う`## 変更履歴`の代用にはしない。\n"
+        "\n"
+        "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
+    ),
+    (
         "自己生成起点として`エージェント追加`へ分類する。\n利用者合意に対応する",
         "自己生成起点として`エージェント追加`へ分類する。\n"
         "`実施内容`の各行は、対象ファイルのパス、設定名・関数名・ジョブ名などの識別子及び変更内容を書き、"
@@ -729,7 +742,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "plan-review-task.md",
         "指摘を加工せず起草担当へ全件配送",
         "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
-        "起草スレッドへ採用項目のファイル名一覧と対象リポジトリ",
+        "起草スレッドへバッチ全項目のファイル名",
         "本文を起動文へ複製しない",
         "各フィードバックごとの調査スレッド",
         "キューの状態と他のレーンの情報は渡さない",
@@ -814,11 +827,106 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     assert planner.index("投入元識別子を受領") < planner.index("`decision-format.md`へ照合")
     for source in ("`session-review`", "`alert-monitor`", "`plan`", "値なし", "その他の値"):
         assert source in decision
-    assert "フィードバック本文又は投入元識別子から、人間由来又は利用者認可を推定しない" in decision
+    assert "`source: session-review`だけをエージェント由来" in decision
+    for source in (
+        "`source: plan`",
+        "`source: alert-monitor`",
+        "その他のsource",
+        "source欠落及び不明",
+    ):
+        assert source in decision
     assert "全ての提案で確認する" in checklist
     assert "改訂後の方針案を適用優先順位に照合" in checklist
     assert "実行前であることだけを全ての提案の不採用根拠にしない" in checklist
     assert "当該契約が定める工程で検証してから採否を確定" in checklist
+
+
+def test_integrated_plan_overview_lists_every_feedback_with_exceptions() -> None:
+    """通常型統合計画の全項目一覧を計画様式の正本へ固定する。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    overview = standards.index("`agent-toolkit:process-feedbacks`が複数の通常型フィードバック")
+    metadata = standards.index("直下のH3は`### 計画メタ情報`だけとし", overview)
+    assert overview < metadata
+    for column in ("`フィードバック`", "`原文参照`", "`採否`", "`理由・差異説明`"):
+        assert column in standards
+    for phrase in (
+        "バッチに含まれる全フィードバックを1行ずつ",
+        "完全採用以外の結果では`理由・差異説明`へ項目固有の理由又は原文との差異",
+        "部分採用では採用範囲と除外範囲の両方",
+        "`## 変更履歴`の代用にはしない",
+    ):
+        assert phrase in standards
+    assert "概要の説明直後かつ" not in review_task
+
+
+def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> None:
+    """項目別の根拠、由来境界、確認後確定及びTBD保留を同期する。"""
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    for phrase in (
+        "原文正本ID",
+        "人間由来の指示又は方針の優先度",
+        "調査根拠",
+        "欠陥原因",
+        "採否理由",
+        "完全採用以外の結果は項目固有の理由・原文との差異",
+        "関連性の低い項目を同じ包括理由だけで一括判断せず",
+        "`source: session-review`だけをエージェント由来",
+        "その他のsource、source欠落及び不明は人間由来",
+        "部分採用を理由にAskUserQuestionを機械的に発行せず",
+        "回答が得られない場合は同じ質問内容をTBDへ保存",
+        "回答又はTBDを確認できない状態では`reject`を実行しない",
+        "正しい`target_repo`へ原文を移管して登録・照合",
+    ):
+        assert phrase in decision
+    for document in (sender, planner, process, hold):
+        assert "`source: session-review`" in document
+    for phrase in (
+        "バッチ全項目の採否記録",
+        "実施内容へは採用又は部分採用の採用範囲だけ",
+        "同じ`feedbacks-planner`系統へ返す",
+        "依存設定・inbox差し戻し・`blocked`確認",
+        "元項目をrejectしない",
+    ):
+        assert phrase in sender or phrase in planner or phrase in process or phrase in hold
+
+
+def test_feedback_source_passthrough_and_storage_verification_contract() -> None:
+    """source指定時だけCLIへ値を渡し、保存後に既存show経路で照合する。"""
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
+
+    assert "sourceを受領した場合だけ同じ値を" in add_feedback
+    assert "`atk mq add --source=<source>`へ渡し" in add_feedback
+    assert "sourceを受領していない場合は`--source`を省略する" in add_feedback
+    assert "`atk mq show <filename> --target-repo=<repo-path> --skip-pull`" in add_feedback
+    assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
+    assert "sourceの欠落・不一致では完了扱いにせず" in add_feedback
+    assert "sourceを受領していない場合は追加のsource照合をしない" in add_feedback
+    assert "source `plan`を明示" in plan_and_add
+    assert "source `session-review`を明示" in session_review
+
+
+def test_feedback_transfer_requires_successful_registration_before_rejection() -> None:
+    """別リポジトリ項目の登録・照合・元項目終端の順序を固定する。"""
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+
+    for document in (sender, decision, design):
+        assert "正しい`target_repo`" in document
+        assert "登録・照合" in document
+        assert "移管先ファイル名" in document
+    registration = sender.index("`agent-toolkit:add-feedback`へ渡して登録・照合する")
+    terminal = sender.index("元項目を移管先リポジトリ及びファイル名付きの項目固有メモでrejectする")
+    assert registration < terminal
+    assert "登録又は照合に失敗した場合は元項目を保持する" in sender
 
 
 def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:

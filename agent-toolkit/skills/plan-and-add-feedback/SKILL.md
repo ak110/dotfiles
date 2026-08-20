@@ -28,7 +28,7 @@ description: >
 6. 「完了報告の形式」に従う完了報告を利用者へ提示する
 
 計画を投入せず終了する場合や継続不能時は、rejectedへ保存した本文を入力として
-`agent-toolkit:add-feedback`をSkill機能で起動し、同一セッション内で再投入する。
+`agent-toolkit:add-feedback`をSkill機能で起動し、source `plan`を明示して同一セッション内で再投入する。
 
 本スキルは協調モードで動作する。利用者の選好は計画確定前に確認し、完成済み本文を
 add-feedbackへ渡した後は問い直さない。

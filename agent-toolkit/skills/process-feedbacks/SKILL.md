@@ -44,6 +44,12 @@ TBDへ永続化して暫定判断で進める。
 複数項目を連続処理する場合、新しい項目の調査は前項目の調査結果・仮説・識別子を引き継がず
 独立に確定する（努力目標）。
 
+通常型の採否確定では、全項目の原文正本ID、人間由来の指示又は方針の優先度、調査根拠、欠陥原因、採否理由及び投入元を
+項目ごとに対応付ける。`source: session-review`だけをエージェント由来と判定し、それ以外のsource、source欠落及び不明の不採用候補は
+原文との差異と技術的理由を示す`AskUserQuestion`へ送る。回答が得られない場合は同じ質問内容をTBDへ保存して保留し、回答又はTBDを確認できない状態ではrejectしない。
+部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲及び理由を採否記録へ残す。起草担当又は実行主体へはバッチ全項目を渡し、
+実施内容へは採用又は部分採用の採用範囲だけを反映する。別リポジトリ項目は`agent-toolkit:add-feedback`で正しい`target_repo`へ登録・照合した後だけ元項目を終端する。
+
 Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
@@ -64,6 +70,11 @@ readyな計画実装型のレーンは通常型バッチの計画工程を待た
 5. 単一要求は採用または不採用、独立した複数要求は採用、部分採用、不採用で判定する。
    原文の単一要求を薄めて部分採用しない
 6. `references/decision-format.md`に従って採否と根拠を記録する
+
+Claude Codeホストの通常型で`feedbacks-planner`から不採用候補を受領した場合は、`source: session-review`と確認できる項目だけを
+利用者確認から除外する。その他のsource、source欠落及び不明の項目ごとに原文との差異と技術的理由を示す`AskUserQuestion`を発行し、
+回答を得た場合は逐語文を同じ`feedbacks-planner`系統へ返して採否記録を再検収する。回答なしでは
+`references/hold-with-tbd-inject.md`に従い同内容のTBDを保存し、元項目を保留する。
 
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。

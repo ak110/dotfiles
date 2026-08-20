@@ -11,7 +11,7 @@ description: >
 
 ## 入力
 
-- 完成済み本文は問い直さず、本文、対象リポジトリ、種別、source、plan file、依存関係を受け取る
+- 完成済み本文は問い直さず、本文、対象リポジトリ、種別、source、plan file、依存関係を受け取る。sourceは任意で、受領した値を改変しない
 - 完成済みの通常型本文では、投入元が同じ対象と技術主張について完了した調査の証拠を持つ場合に受け取る。
   証拠には計画、調査結果、実行結果を含み、再利用できない範囲の調査は本スキルが担う
 - 計画実装型では、投入元が計画作成に使ったworktreeの絶対パスと計画base commitを受け取る。
@@ -43,10 +43,12 @@ description: >
    1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で再取得する。
    別操作、時間を空けた確認、この手順をやり直す際のactive一覧取得では同期を省略しない。
    事前確認の判断表を再適用して処置を確定し、競合で拒否された場合も同様に再取得して再適用する
-6. 新規項目は`atk mq add`で保存し、計画実装型は吸収元のファイル名を本文へ記録する
-7. 完了表示のファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`を入力と照合する。
-   警告又はエラーが出た場合だけ、終了コード0でも`atk mq show <filename> --target-repo=<repo-path>`で
-   保存内容を再取得し、欠落を同じ経路で修復する
+6. 新規項目は`atk mq add`で保存し、計画実装型は吸収元のファイル名を本文へ記録する。sourceを受領した場合だけ同じ値を
+   `atk mq add --source=<source>`へ渡し、sourceを受領していない場合は`--source`を省略する。sourceを推測、必須化又は別値へ置換しない
+7. 完了表示のファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`を入力と照合する。sourceを受領した場合は、
+   保存後に既存の`atk mq show <filename> --target-repo=<repo-path> --skip-pull`で項目を再取得し、frontmatterのsourceが入力値と一致することを照合する。
+   sourceの欠落・不一致では完了扱いにせず、同じ経路で修復する。sourceを受領していない場合は追加のsource照合をしない。
+   警告やエラーが出た場合も、終了コード0であっても`atk mq show <filename> --target-repo=<repo-path>`で保存内容を再取得し、欠落を同じ経路で修復する
 
 本文へ引用符・改行を含む場合は、本文をファイルへ保存し`atk mq add --body-file <path>`で渡す
 （複数回指定可。位置引数との併用は拒否される）。
