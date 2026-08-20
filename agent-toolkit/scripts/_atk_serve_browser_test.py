@@ -234,7 +234,8 @@ def _write_entries(root: Path) -> None:
     adopted.mkdir()
     long_body = "\n\n".join(f"段落{i} `inline-{i}`" for i in range(80))
     (inbox / "question.md").write_text(
-        "---\ntype: tbd\ntarget_repo: example/repo\nquestion_type: choice\nchoices: A, B\n---\n\n"
+        "---\ntype: tbd\ntarget_repo: example/repo\nsource: browser\npriority: high\n"
+        "metadata:\n  branch: main\n  flags:\n    - one\nquestion_type: choice\nchoices: A, B\n---\n\n"
         f"## 質問\n\n{long_body}\n\n```text\n折り返す長いコード {'x' * 240}\n```\n\n"
         "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n",
         encoding="utf-8",
@@ -322,6 +323,13 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
         assert await page.locator(".entry-columns").is_visible() is columns_visible
         row = await _open_question(page)
         dialog = page.get_by_role("dialog", name="詳細")
+        await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text("priority")
+        await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text('"branch": "main"')
+        metadata_columns = await dialog.locator("#detail-metadata").evaluate(
+            "element => getComputedStyle(element).gridTemplateColumns.trim().split(/\\s+/).length"
+        )
+        assert metadata_columns == (1 if width < 1024 else 2)
+        assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         close_button = dialog.get_by_role("button", name="閉じる")
         close_box = await close_button.bounding_box()
         assert close_box is not None

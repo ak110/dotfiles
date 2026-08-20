@@ -561,7 +561,7 @@ displayEntry({
 });
 process.stdout.write(JSON.stringify({
   heading: elements['detail-state'].textContent,
-  metadata: elements['detail-metadata'].children.map(child => child.textContent),
+  metadata: elements['detail-metadata'].children.map(child => child.children.map(item => item.textContent).join(':')),
   readonly: !elements['readonly-notice'].hidden,
   editHidden: elements['edit-button'].hidden,
   answerHidden: elements['answer-button'].hidden,
@@ -572,22 +572,53 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "heading": "tbd / adopted",
         "metadata": [
-            "種別",
-            "tbd",
-            "状態",
-            "adopted",
-            "回答状況",
-            "回答済み",
-            "対象リポジトリ",
-            "example/repo",
-            "更新日時",
-            "—",
+            "回答状況:回答済み",
+            "対象リポジトリ:example/repo",
+            "更新日時:—",
         ],
         "readonly": True,
         "editHidden": True,
         "answerHidden": True,
         "deleteHidden": True,
     }
+
+
+def test_assets_render_all_frontmatter_without_repeating_detail_badges() -> None:
+    """詳細メタデータは種別・状態を除き、任意の入れ子値を構造付きで表示する。"""
+    result = _run_node_ui(
+        """
+displayEntry({
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  target_repo: 'legacy/repo', source: 'legacy',
+  frontmatter: {
+    type: 'feedback', target_repo: 'example/repo', source: 'web', priority: 'high',
+    nested: {branch: 'main', flags: ['x']}, values: ['one', {enabled: true}],
+  }, body_html: '<p>本文</p>'
+});
+const items = elements['detail-metadata'].children.map(item => ({
+  label: item.children[0].textContent,
+  value: item.children[1].textContent,
+  className: item.className
+}));
+process.stdout.write(JSON.stringify({items, heading: elements['detail-state'].textContent}));
+"""
+    )
+    assert result["heading"] == "feedback / inbox"
+    assert [item["label"] for item in result["items"]] == [
+        "対象リポジトリ",
+        "投入元",
+        "priority",
+        "nested",
+        "values",
+        "更新日時",
+    ]
+    assert [item["className"] for item in result["items"]] == ["metadata-item"] * 6
+    assert result["items"][0]["value"] == "example/repo"
+    assert result["items"][1]["value"] == "web"
+    assert result["items"][2]["value"] == "high"
+    assert result["items"][3]["value"] == '{\n  "branch": "main",\n  "flags": [\n    "x"\n  ]\n}'
+    assert result["items"][4]["value"] == '[\n  "one",\n  {\n    "enabled": true\n  }\n]'
+    assert all("[object Object]" not in item["value"] for item in result["items"])
 
 
 def test_assets_notify_only_new_active_unanswered_tbd_after_permission() -> None:
@@ -2046,6 +2077,91 @@ def test_detail_returns_existing_tbd_answer(tmp_path: pathlib.Path) -> None:
     detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
 
     assert detail["answer"] == "既存回答\n2行目"
+
+
+def test_detail_preserves_frontmatter_as_strict_json_values(tmp_path: pathlib.Path) -> None:
+    """詳細APIはfrontmatterの入れ子値とYAML固有型を厳格JSON互換値へ変換する。"""
+    _write_detail_entry(
+        tmp_path,
+        "---\n"
+        "type: feedback\n"
+        "target_repo: example/repo\n"
+        "source: test\n"
+        "binary_value: !!binary |\n"
+        "  SGVsbG8=\n"
+        "set_value: !!set\n"
+        "  alpha: null\n"
+        "  beta: null\n"
+        "ordered: !!omap\n"
+        "  - first: 1\n"
+        "  - second: 2\n"
+        "nested:\n"
+        "  label: value\n"
+        "  values:\n"
+        "    - one\n"
+        "    - two\n"
+        "queue_schedule:\n"
+        "  timestamp: 2026-08-20T12:34:56Z\n"
+        "  day: 2026-08-20\n"
+        "  nan: .nan\n"
+        "  positive: .inf\n"
+        "  negative: -.inf\n"
+        "---\n\n本文\n",
+    )
+
+    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+    frontmatter = typing.cast(dict[str, typing.Any], detail["frontmatter"])
+
+    json.dumps(detail, ensure_ascii=False, allow_nan=False)
+    assert frontmatter["binary_value"] == "SGVsbG8="
+    assert frontmatter["set_value"] == ["alpha", "beta"]
+    assert frontmatter["ordered"] == [["first", "1"], ["second", "2"]]
+    assert frontmatter["nested"] == {"label": "value", "values": ["one", "two"]}
+    assert frontmatter["queue_schedule"] == {
+        "timestamp": "2026-08-20T12:34:56+00:00",
+        "day": "2026-08-20",
+        "nan": "NaN",
+        "positive": "Infinity",
+        "negative": "-Infinity",
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["本文のみ\n", "---\ninvalid: [unterminated\n---\n本文\n"],
+)
+def test_detail_returns_empty_frontmatter_when_unavailable(tmp_path: pathlib.Path, text: str) -> None:
+    """frontmatterが無い又は解析できない詳細は空の表示用マッピングを返す。"""
+    _write_detail_entry(tmp_path, text)
+    detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
+    assert not detail["frontmatter"]
+
+
+@pytest.mark.asyncio
+async def test_detail_api_round_trips_frontmatter_as_strict_json(tmp_path: pathlib.Path) -> None:
+    """詳細HTTP APIは非有限浮動小数点を含むfrontmatterも標準JSONとして返す。"""
+    _write_detail_entry(
+        tmp_path,
+        "---\ntype: feedback\nqueue_schedule:\n  nan: .nan\n  positive: .inf\n---\n\n本文\n",
+    )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().get("/api/entries/inbox/entry.md")
+
+    assert response.status_code == 200
+
+    def reject_constant(_value: str) -> typing.NoReturn:
+        raise ValueError("非標準JSON定数です")
+
+    payload = json.loads(await response.get_data(), parse_constant=reject_constant)
+    assert payload["entry"]["frontmatter"] == {
+        "type": "feedback",
+        "queue_schedule": {"nan": "NaN", "positive": "Infinity"},
+    }
 
 
 def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:

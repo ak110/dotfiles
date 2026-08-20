@@ -1,11 +1,14 @@
 """`atk serve`のQuartアプリケーション。"""
 
 import asyncio
+import base64
+import collections.abc
 import contextlib
 import datetime
 import functools
 import html
 import json
+import math
 import pathlib
 import re
 import subprocess
@@ -163,6 +166,35 @@ def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, ob
     }
 
 
+def _json_sort_key(value: typing.Any) -> str:
+    """正規化済み値をJSON表現の辞書順で並べるためのキーを返す。"""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _json_compatible(value: typing.Any) -> typing.Any:
+    """YAML値を厳格なJSONが受理する表示用の値へ再帰的に変換する。"""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value
+        if math.isnan(value):
+            return "NaN"
+        return "Infinity" if value > 0 else "-Infinity"
+    if isinstance(value, bytes):
+        return base64.b64encode(value).decode("ascii")
+    if isinstance(value, datetime.datetime | datetime.date | datetime.time):
+        return value.isoformat()
+    if isinstance(value, collections.abc.Mapping):
+        return {str(_json_compatible(key)): _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_compatible(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        normalized = [_json_compatible(item) for item in value]
+        return sorted(normalized, key=_json_sort_key)
+    return str(value)
+
+
 def _render_frontmatter_table(metadata: dict[str, typing.Any]) -> str:
     """解析済みfrontmatterをキーと値の2列表のHTMLへ整形する。
 
@@ -173,11 +205,12 @@ def _render_frontmatter_table(metadata: dict[str, typing.Any]) -> str:
         return ""
     rows: list[str] = []
     for key, value in metadata.items():
-        if isinstance(value, (dict, list)):
-            formatted = json.dumps(value, ensure_ascii=False, indent=2)
+        normalized = _json_compatible(value)
+        if isinstance(normalized, (dict, list)):
+            formatted = json.dumps(normalized, ensure_ascii=False, indent=2, allow_nan=False)
             cell = f"<pre>{html.escape(formatted)}</pre>"
         else:
-            cell = html.escape("" if value is None else str(value))
+            cell = html.escape("" if normalized is None else str(normalized))
         rows.append(f"<tr><th>{html.escape(str(key))}</th><td>{cell}</td></tr>")
     return '<table class="frontmatter">' + "".join(rows) + "</table>"
 
@@ -367,11 +400,15 @@ class Operations:
             parsed = frontmatter.parse_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}
             question_type, choices = _question_metadata(metadata, kind or "unknown")
+            detail_entry = _entry(path, kind or "unknown", state, text)
+            detail_entry["target_repo"] = _json_compatible(detail_entry["target_repo"])
+            detail_entry["source"] = _json_compatible(detail_entry["source"])
             return {
-                **_entry(path, kind or "unknown", state, text),
+                **detail_entry,
                 "content": text,
                 "content_html": _render_content(text),
                 "body_html": _render_body(text),
+                "frontmatter": _json_compatible(metadata),
                 "question_type": question_type,
                 "choices": choices,
                 "answer": _tbd_answer(text, kind or "unknown"),

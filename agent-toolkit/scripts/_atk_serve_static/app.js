@@ -3,14 +3,8 @@ const BASE_PATH=__BASE_PATH_JS__;
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
 const STATE_LABELS = {inbox: '未処理', processing: '処理中', adopted: '採用済み', rejected: '不採用'};
 const ACTIVE_STATES = new Set(['inbox', 'processing']);
-const METADATA_FIELDS = [
-  ['kind', '種別'],
-  ['state', '状態'],
-  ['answered', '回答状況'],
-  ['target_repo', '対象リポジトリ'],
-  ['source', '投入元'],
-  ['updated_at', '更新日時']
-];
+const FRONTMATTER_LABELS = {target_repo: '対象リポジトリ', source: '投入元'};
+const FRONTMATTER_EXCLUDED_KEYS = new Set(['type']);
 
 let entries = [];
 let currentEntry = null;
@@ -435,29 +429,41 @@ function detailReturnTarget() {
   return emptyAction || byId('search-input');
 }
 
-function metadataValue(entry, key) {
-  if (key === 'kind') return entry.kind || 'unknown';
-  if (key === 'state') return entry.state || 'unknown';
-  if (key === 'answered') return entry.answered === true ? '回答済み' : entry.answered === false ? '未回答' : '';
-  if (key === 'updated_at') {
-    const parts = formatDateParts(entry.updated_at);
-    return parts.time ? `${parts.date} ${parts.time}` : parts.date;
-  }
-  return entry[key] == null ? '' : String(entry[key]);
+function formatMetadataValue(value) {
+  if (value !== null && typeof value === 'object') return JSON.stringify(value, null, 2);
+  return value === null ? 'null' : String(value);
+}
+
+function appendMetadataItem(metadata, label, value) {
+  if (value === undefined) return;
+  const item = document.createElement('div');
+  item.className = 'metadata-item';
+  const term = document.createElement('dt');
+  term.textContent = label;
+  const definition = document.createElement('dd');
+  definition.textContent = formatMetadataValue(value);
+  item.append(term, definition);
+  metadata.append(item);
 }
 
 function renderMetadata(entry) {
   const metadata = byId('detail-metadata');
   metadata.replaceChildren();
-  METADATA_FIELDS.forEach(([key, label]) => {
-    const value = metadataValue(entry, key);
-    if (!value) return;
-    const term = document.createElement('dt');
-    term.textContent = label;
-    const definition = document.createElement('dd');
-    definition.textContent = value;
-    metadata.append(term, definition);
-  });
+  if (entry.answered === true || entry.answered === false) {
+    appendMetadataItem(metadata, '回答状況', entry.answered ? '回答済み' : '未回答');
+  }
+  const frontmatter = entry.frontmatter && typeof entry.frontmatter === 'object' && !Array.isArray(entry.frontmatter)
+    ? {...entry.frontmatter} : {};
+  for (const key of ['target_repo', 'source']) {
+    if (!(key in frontmatter) && entry[key] !== undefined && entry[key] !== null) frontmatter[key] = entry[key];
+  }
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (FRONTMATTER_EXCLUDED_KEYS.has(key)) continue;
+    const label = Object.prototype.hasOwnProperty.call(FRONTMATTER_LABELS, key) ? FRONTMATTER_LABELS[key] : key;
+    appendMetadataItem(metadata, label, value);
+  }
+  const parts = formatDateParts(entry.updated_at);
+  appendMetadataItem(metadata, '更新日時', parts.time ? `${parts.date} ${parts.time}` : parts.date);
 }
 
 function setDetailMode(mode) {

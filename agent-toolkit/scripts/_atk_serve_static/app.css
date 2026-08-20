@@ -314,6 +314,16 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
 }
 .metadata dt { font-weight: 700; }
 .metadata dd { margin: 0; overflow-wrap: anywhere; }
+#detail-metadata {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+  gap: var(--space-3);
+}
+#detail-metadata .metadata-item {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+#detail-metadata dd { white-space: pre-wrap; }
 .detail-body { margin-top: var(--space-4); }
 .entry-content {
   padding: var(--space-3);
