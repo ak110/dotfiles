@@ -74,6 +74,9 @@ worktreeと管理対象領域を作成・回収しない。
 3. 各実装単位を依存順に1件ずつ処理し、各単位の最初のfast担当の新規起動又はCodex経路の継続接続の直前に
    `atk config get execute_fast_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従ってfast経路を解決する。
    複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する。
+   前の単位もCodex経路で実行した場合は、今回解決した`engine`、`model`及び`effort`を前の単位の実効値と比較する。
+   3値がすべて一致する場合だけ前の単位のthreadへ継続接続し、いずれかが異なる場合は検収済みの先行commit、
+   検証結果及び未完了の実装単位を渡して新規threadを起動する。
    書込担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
    書込担当へ`skills/plan-mode/references/implementation-task.md`、計画ファイル、対象worktree、プロジェクト規範の絶対パス、
@@ -87,7 +90,8 @@ worktreeと管理対象領域を作成・回収しない。
    昇格せず、fast担当が新しい失敗箇所を初回修正として扱う
 4. fast担当から`status: fast_fix_handoff`を受領した場合だけ、fast担当へ追加修正とcommitをさせず終端させる。
    `repair_handoff`の`failure_location`、`failed_command`、`verification_before`、`verification_after`、`baseline_oid`、
-   `existing_diff`及び`fast_termination`を必須入力として検証する。fast担当のagentと起動した全プロセスの終了、
+   `existing_diff`及び`process_termination`を必須入力として検証する。戻り値を受領した後にfast担当のagentの終端を直接確認し、
+   fast担当が起動した全プロセスの終了証跡、
    起動前の基準OID、未コミット差分、失敗コマンド、修正前後2回の結果及び同一失敗箇所の対応を実測し、すべて一致した場合だけ
    `atk config get execute_fix_model`を起動直前に実行する。
    `status: completed`は通常のcommit済み完了として扱い、`status: needs_escalation`又は状態・`repair_handoff`の欠落や不一致は
@@ -206,7 +210,8 @@ worktreeと管理対象領域を作成・回収しない。
 1つのworktreeへ割り当てる書込担当は同時に1つだけとし、レビュー担当は読み取り専用とする。
 タスク文書の内容、規範本文、出力書式を起動文へ複製しない。
 継続時は実行系別のライフサイクルに従う。
-Codexは、同一失敗箇所の残存を確認したfast担当からfix担当への引継ぎを除き、同じthreadを継続する。
+Codexでは、連続する実装単位の`engine`、`model`及び`effort`がすべて一致する場合だけ同じthreadを継続する。
+いずれかが異なる場合は、検収済み状態を渡して新規threadを起動する。
 この引継ぎは、fast担当の終端確認後に修正引継ぎ記録とdirty差分をfix担当へ渡す新規threadで実施する。
 Claudeは検収済み状態を渡して新規起動する。
 

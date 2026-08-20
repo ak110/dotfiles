@@ -42,7 +42,10 @@
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
-5. `execute_fast_model`から`execute_fix_model`への引継ぎでは新規threadを起動し、それ以外ではCodexは同一threadへ継続接続する。
+5. `execute_fast_model`から`execute_fix_model`への引継ぎでは新規threadを起動する。
+   連続する実装単位では、各単位で解決した`engine`、`model`及び`effort`がすべて一致し、いずれも`engine=codex`の場合だけCodexの同一threadへ継続接続する。
+   いずれかが異なる場合は、検収済み状態を渡して新規threadを起動する。
+   その他のCodex経路の同一工程継続では同一threadへ継続接続する。
    Claudeは完了済み識別子を再利用せず新規起動する。
    計画、進捗ログ、保存済み6列表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
@@ -67,6 +70,8 @@
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
 同じ計画に複数の実装単位がある場合も、`plan-impl-executor`は各単位の最初のfast担当を起動又は継続接続する直前に
 `execute_fast_model`を単位ごとに1回解決し、前単位の解決値を再利用しない。
+前の単位もCodex経路で実行した場合は、今回解決した`engine`、`model`及び`effort`を前の単位の実効値と比較し、
+3値がすべて一致する場合だけ前のthreadへ継続接続する。
 
 `execute_fast_model`から`execute_fix_model`への昇格は、検証コマンドの終了コードだけで判定しない。
 fast担当が修正対象として記録したテストID・診断識別子等が、同じコマンドの直後の再検証にも残った場合だけ、

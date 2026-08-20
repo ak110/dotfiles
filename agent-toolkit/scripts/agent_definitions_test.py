@@ -1040,7 +1040,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     for phrase in (
         "他engineへ自動切替せず",
         "effort部は実行機能に相当する引数が無いため適用しない",
-        "Codexは同一thread",
+        "場合だけCodexの同一threadへ継続接続する",
         "Claudeは完了済み識別子を再利用せず",
     ):
         assert phrase in runtime
@@ -1192,8 +1192,12 @@ def test_fast_model_is_resolved_once_per_unit_before_each_first_launch() -> None
     assert resolve_at < first_launch_at
     assert "各単位の最初のfast担当" in launch
     assert "複数単位でも前の単位の解決値を次の単位へ流用せず" in launch
+    assert "今回解決した`engine`、`model`及び`effort`を前の単位の実効値と比較する" in launch
+    assert "3値がすべて一致する場合だけ前の単位のthreadへ継続接続し" in launch
+    assert "検収済みの先行commit" in launch
     assert "各単位の最初のfast担当" in runtime
     assert "単位ごとに1回解決し" in runtime
+    assert "3値がすべて一致する場合だけ前のthreadへ継続接続する" in runtime
 
 
 def test_implementation_task_requires_role_specific_handoff_records() -> None:
@@ -1229,7 +1233,7 @@ def test_fast_failure_handoff_terminates_before_following_commit_steps() -> None
         "`verification_after`",
         "`baseline_oid`",
         "`existing_diff`",
-        "`fast_termination`",
+        "`process_termination`",
     ):
         assert field in fast
     assert "後続の共有追加検証、差分検収、stage、commit、cleanな作業ツリーの確認を" in fast
@@ -1252,7 +1256,7 @@ def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> No
         "verification_after:",
         "baseline_oid:",
         "existing_diff:",
-        "fast_termination:",
+        "process_termination:",
     ):
         assert field in output
     assert "fast_fix_handoff" in delegation
@@ -1260,6 +1264,9 @@ def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> No
     assert "`status: fast_fix_handoff`を受領した場合だけ" in executor
     assert "`status: completed`は通常のcommit済み完了として扱い" in executor
     assert "`status: needs_escalation`又は状態・`repair_handoff`の欠落や不一致" in executor
+    assert "戻り値を受領した後にfast担当のagentの終端を直接確認し" in executor
+    assert "fast_termination" not in task
+    assert "fast担当と起動した全プロセスの終端確認" not in task
 
 
 def test_clean_worktree_and_codex_thread_contracts_allow_only_fast_fix_handoff() -> None:
@@ -1270,7 +1277,8 @@ def test_clean_worktree_and_codex_thread_contracts_allow_only_fast_fix_handoff()
     assert "書込担当の起動前に上流追随済みで" in runtime
     assert "fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す" in runtime
     assert "`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外" in runtime
-    assert "同一失敗箇所の残存を確認したfast担当からfix担当への引継ぎを除き、同じthreadを継続する" in executor
+    assert "連続する実装単位の`engine`、`model`及び`effort`がすべて一致する場合だけ同じthreadを継続する" in executor
+    assert "いずれかが異なる場合は、検収済み状態を渡して新規threadを起動する" in executor
     assert "fast担当の終端確認後に修正引継ぎ記録とdirty差分をfix担当へ渡す新規thread" in executor
     assert "同一失敗箇所の残存" in executor
 
