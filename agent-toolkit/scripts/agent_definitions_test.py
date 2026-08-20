@@ -261,6 +261,7 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "フィードバックファイル名と対象リポジトリを受領した委譲経路では、同じ対象リポジトリかつ同じ条件の複数ファイル名を\n"
         "`atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、対象リポジトリごとに1回実行する。\n"
         "対象リポジトリ又は条件が異なる場合は集合を分ける。\n"
+        "複数項目の表示用見出しと本文が衝突して対応を一意に確定できない場合は一括出力を破棄し、当該各項目を単数取得する。\n"
         "単一項目の調査、警告・エラー後の当該項目だけの再取得とTBD回答確認は、\n"
         "`atk mq show <filename> --target-repo=<repo> --skip-pull`を単数形で1回実行する。",
     ),
@@ -778,6 +779,9 @@ def test_feedback_source_contract_batches_same_repository_reads() -> None:
     for document in (sender, planner, process, standards, delegation, review):
         assert batch_command in document
         assert "対象リポジトリごとに1回" in document
+        assert "表示用見出しと本文が衝突して対応を一意に確定できない場合は一括出力を破棄" in document
+        assert "当該各項目を" in document
+        assert "単数取得する" in document
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
     for document in (sender, explore, standards, review):
@@ -1178,8 +1182,8 @@ def test_ci_repair_commits_are_delegated_by_caller() -> None:
     assert "担当種別`CI修正担当`" in ci_failure
 
 
-def test_ci_repair_launches_pass_all_task_inputs_and_complete_independently() -> None:
-    """CI修正担当へ共通必須入力を一対一で渡し、fast手順から独立して完遂させる。"""
+def test_ci_repair_launches_accept_plan_specific_and_general_authorization_inputs() -> None:
+    """CI修正担当は計画起因と一般CIの認可根拠を区別し、fast手順から独立して完遂する。"""
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
     task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -1187,10 +1191,8 @@ def test_ci_repair_launches_pass_all_task_inputs_and_complete_independently() ->
     required_inputs = (
         "`skills/plan-mode/references/implementation-task.md`",
         "担当種別`CI修正担当`",
-        "計画ファイル、対象worktree、プロジェクト規範の絶対パス",
         "実装単位、その目的及び変更説明",
         "適用する作成規範スキル名と絶対パス",
-        "1件以上のソート済みフィードバックファイル名一覧",
         "追加指示、許容済みの挙動変化",
         "git操作に用いるworktree絶対パス、複製元及び対象外worktree",
         "CIの原因分析結果",
@@ -1200,6 +1202,15 @@ def test_ci_repair_launches_pass_all_task_inputs_and_complete_independently() ->
             assert required_input in text
         assert "CI修正担当にはfast担当の1回修正とfastからfixへの昇格判定を適用しない" in text
         assert "CI記録の原因修正、全検証、差分検収、stage及びcommitを完了" in text
+    assert "計画ファイル、対象worktree、プロジェクト規範の絶対パス" in caller
+    assert "1件以上のソート済みフィードバックファイル名一覧" in caller
+    assert "計画ファイルは計画起因の場合だけ" in ci_failure
+    assert "フィードバックファイル名一覧はフィードバック起因の場合だけ" in ci_failure
+    assert "利用者指示、公開契約のいずれか" in ci_failure
+    assert "一般のCI失敗では計画ファイルとフィードバックファイル名一覧が存在しないことを入力不足としない" in ci_failure
+    assert "計画ファイルは`CI修正担当`以外では必須" in task
+    assert "`CI修正担当`ではフィードバック起因の場合だけ渡す" in task
+    assert "計画を受領しない`CI修正担当`" in task
     fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
     ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
     assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" in ci
@@ -1456,6 +1467,18 @@ def test_start_processing_failure_observes_local_transition_and_upstream_boundar
         assert "遷移commit" in text
         assert "upstream包含" in text
         assert "git -C <private-notes-path> merge-base --is-ancestor" in text
+
+
+def test_start_processing_recovery_refuses_commit_for_unsafe_states() -> None:
+    """集合外差分、状態混在又はrebase中間状態では`atk mq commit`を実行しない。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    for text in (process, reception):
+        assert "集合外差分" in text
+        assert "状態混在" in text or "inbox・processing混在" in text
+        assert "rebase中間状態" in text
+        assert "集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない" in text
 
 
 def test_start_processing_failure_resolves_management_repo_before_git_checks() -> None:

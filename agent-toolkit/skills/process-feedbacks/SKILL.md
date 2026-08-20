@@ -26,6 +26,7 @@ TBDへ永続化して暫定判断で進める。
    起動時の目的文にCodexオーケストレーターの連続処理と明記されている場合（以下、連続処理モード）は、
    後述の`process-loop`用再取得も適用する
 2. 必要なファイル名だけを1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で確認する
+   複数項目の表示用見出しと本文が衝突して対応を一意に確定できない場合は一括出力を破棄し、当該各項目を単数取得する
 3. `plan_file`を持つフィードバックを計画実装型、それ以外を通常型とする。本文から型を推測しない
 4. 本文の順序条件は着手可否の判定前に抽出し、active項目から対象ファイル名自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
 5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
@@ -39,6 +40,7 @@ TBDへ永続化して暫定判断で進める。
 移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで集合のprocessing配置と保存本文を確認する。
 `atk mq list --status=active --target-repo=<repo-path> --skip-pull`と
 `atk mq show <filename>... --target-repo=<repo-path> --skip-pull`を実行する。
+複数項目の表示用見出しと本文が衝突して対応を一意に確定できない場合は一括出力を破棄し、当該各項目を単数取得する。
 管理リポジトリの検査を開始する前に、既存の`atk config get private_notes`を実行して標準出力から絶対パスを取得する。
 取得に失敗した場合は未完了で停止する。
 標準出力を絶対パスとして検証できない場合も同様とする。
@@ -56,6 +58,7 @@ commit前の失敗で未コミット差分が指定集合の移動だけと一�
 remoteが遷移commitを含まないcleanなローカルcommit、集合のinbox・processing混在、集合外差分、遷移commitの対応付け不能では、
 項目別コマンドや`start-processing`を再実行せず未完了で停止する。rebase中間状態、`atk mq commit`失敗及び
 upstream包含の確認不能でも同様に未完了で停止する。
+集合のinbox・processing混在、集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない。
 
 欠落依存、自己依存、循環、不正な`cooldown_until`、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
@@ -74,6 +77,7 @@ Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文�
 各調査担当は担当ファイル名1件を`atk mq show <filename> --target-repo=<repo> --skip-pull`で取得する。
 起草担当は同じ対象リポジトリの全ファイル名を
 `atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、対象リポジトリごとに1回で取得する。
+複数項目の表示用見出しと本文が衝突して対応を一意に確定できない場合は一括出力を破棄し、当該各項目を単数取得する。
 警告・エラー後の当該項目だけの再取得は単数形を維持する。
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
 readyな計画実装型のレーンは通常型バッチの計画工程を待たず、利用可能な書込担当枠で実装できる。
