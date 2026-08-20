@@ -99,8 +99,11 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 通常型のバッチでは、項目別調査担当が原文、実測、履歴及び投入元識別子の事実を返し、
 `feedbacks-planner`が採否確定工程で項目ごとの原文正本ID、人間由来の指示又は方針の優先度、調査根拠、欠陥原因及び採否理由を対応付ける。
 起草担当はバッチ全項目の採否記録を受け取り、概要の一覧へ全項目を記載し、実施内容へは採用又は部分採用の採用範囲だけを反映する。
-`source: session-review`だけをエージェント由来とし、それ以外のsource、source欠落及び不明の不採用は`AskUserQuestion`又はTBD保留へ接続する。
-回答又はTBDの保存・依存設定を確認できない場合は元項目を終端しない。別リポジトリ項目は、既存の`agent-toolkit:add-feedback`で正しい`target_repo`へ
+`source: session-review`だけをエージェント由来とし、それ以外のsource、source欠落及び不明の不採用は不採用確認用`user_decisions`として
+`AskUserQuestion`又はTBD保留へ接続する。不採用確認用`user_decisions`は通常の将来判断TBDと区別する。
+直接回答は出所と引用範囲を付けた逐語文で同じ`feedbacks-planner`系統へ返し、回答なしではTBD保存、依存設定、`blocked`確認後の
+保留結果を同じ系統へ返す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない場合は元項目を終端しない。
+別リポジトリ項目は、既存の`agent-toolkit:add-feedback`で正しい`target_repo`へ
 原文を登録し、sourceがある場合は同じ値を渡す。sourceを指定した場合は移管先のsource、本文、`target_repo`を
 `atk mq show`で照合し、指定しない場合は本文と`target_repo`だけを照合した後、移管先ファイル名を記録して元項目を終端する。
 

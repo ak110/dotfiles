@@ -887,18 +887,19 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "回答が得られない場合は同じ質問内容をTBDへ保存",
         "回答又はTBDを確認できない状態では`reject`を実行しない",
         "保持済みの本文を正しい`target_repo`へ移管して登録し、sourceがある場合は同じ値を渡す",
+        "不採用確認用`user_decisions`は通常の将来判断TBDと区別する",
     ):
         assert phrase in decision
-    for document in (sender, planner, process, hold):
+    for document in (sender, planner, process, hold, decision):
         assert "`source: session-review`" in document
     for phrase in (
         "バッチ全項目の採否記録",
         "実施内容へは採用又は部分採用の採用範囲だけ",
-        "同じ`feedbacks-planner`系統へ返す",
-        "依存設定・inbox差し戻し・`blocked`確認",
+        "同じ`feedbacks-planner`系統へ返し",
+        "依存設定と保留確認後",
         "元項目をrejectしない",
     ):
-        assert phrase in sender or phrase in planner or phrase in process or phrase in hold
+        assert phrase in sender or phrase in planner or phrase in process or phrase in hold or phrase in decision
 
 
 def test_feedback_source_passthrough_and_storage_verification_contract() -> None:
@@ -1566,7 +1567,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert "委譲元が確定した計画ファイルの絶対パス" in text
         assert "計画ファイル保存先" + "ディレクトリ" not in text
     assert "既存ファイルと衝突しない乱数サフィックス付き" in sender
-    assert "TBD候補は、技術調査と明文化済み方針で確定できず" in sender
+    assert "通常の将来判断TBD候補は、技術調査と明文化済み方針で確定できず" in sender
     assert "採用済み本文が要求しない選択肢に限定" in sender
     assert "採用済み本文が明示する変更自体を確認事項又は実装前提にしない" in sender
     for phrase in (
@@ -1580,6 +1581,17 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     receiver_exclusion = receiver.index("採用済み本文が明示する変更を`user_decisions`から先に除外")
     receiver_boundary = receiver.index("残る事項だけを`agent-toolkit/rules/01-agent.md`「協調と自律」節の確認境界")
     assert receiver_exclusion < receiver_boundary
+    for phrase in (
+        "不採用確認用`user_decisions`",
+        "`user_decisions`は通常の将来判断TBDと区別",
+        "直接回答を受領した場合",
+        "保留結果を同じ`feedbacks-planner`系統へ返",
+    ):
+        assert phrase in sender
+        assert phrase in receiver
+    assert "保留項目を含む" in sender
+    assert "全項目の採否一覧と採用範囲だけで計画起草を続行" in sender
+    assert "保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行" in receiver
     assert "フィードバック原文が示す文言案、列挙及び節配置を利用者合意とみなさない" in checklist
     assert "原文との差異と根拠を採否記録へ残す" in checklist
     assert "差異と根拠を`採否理由`又は`反映内容`へ記録" in decision_format
@@ -1595,13 +1607,20 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert phrase in receiver
     for phrase in (
         "計画本文を編集せず同じ`feedbacks-planner`系統へ差し戻す",
-        "`agent-toolkit:add-feedback`のTBD投入経路",
+        "不採用確認用TBDとして`agent-toolkit:add-feedback`へ渡し",
+        "通常の将来判断TBDを受領した場合だけ",
         "回答だけを記録する",
         "自動追随・自動再開・自動実行の契機としない",
+        "保留結果を同じ`feedbacks-planner`系統へ返し",
     ):
         assert phrase in sender
+    output = _h2_section(receiver, "出力")
+    tbd_output = output.partition("tbd:\n")[2].partition("user_decisions:\n")[0]
+    user_decisions_output = output.partition("user_decisions:\n")[2]
     for phrase in ("暫定判断の内容", "根拠", "回答後に必要な追随作業", "検証"):
-        assert phrase in _h2_section(receiver, "出力").partition("user_decisions:\n")[2]
+        assert phrase in tbd_output
+        assert phrase not in user_decisions_output
+    assert "通常の将来判断TBDは含めない" in user_decisions_output
 
 
 def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:
