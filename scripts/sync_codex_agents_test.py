@@ -1,5 +1,6 @@
 """sync_codex_agentsのテスト。"""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -115,3 +116,38 @@ def test_current_output_is_synced() -> None:
     ):
         assert shared_contract in operations_source
         assert shared_contract in shared_operations
+
+    for skill_invocation in (
+        "`agent-toolkit:add-feedback`をSkill機能で起動",
+        "`agent-toolkit:plan-and-add-feedback`の実行中",
+        "`agent-toolkit:bugfix`が定義する",
+        "`agent-toolkit:process-feedbacks`の起動中",
+        "`agent-toolkit:reviewee-standards`を起動",
+        "`agent-toolkit:delegation`を正本とし",
+    ):
+        assert skill_invocation in shared_rules
+    assert "../skills/" not in shared_rules
+    assert "agent-toolkit/skills/" not in shared_rules
+
+
+def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:
+    """共有ルールの参照資料が両配布経路のplugin rootから解決できることを固定する。"""
+    skill_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`")
+    reference_pattern = re.compile(
+        r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`スキルの`SKILL\.md`を含むディレクトリを基準に"
+        r"相対解決した`(?P<reference>references/[A-Za-z0-9._/-]+)`"
+    )
+    rule_paths = sorted((subject.REPO_ROOT / "agent-toolkit/rules").glob("*.md"))
+    source_rules = "\n".join(path.read_text(encoding="utf-8") for path in rule_paths)
+    generated = subject.render()
+
+    for distribution_text in (source_rules, generated):
+        assert "../skills/" not in distribution_text
+        for skill_name in set(skill_pattern.findall(distribution_text)):
+            assert (subject.REPO_ROOT / "agent-toolkit/skills" / skill_name / "SKILL.md").is_file(), skill_name
+        matches = reference_pattern.findall(distribution_text)
+        assert matches
+        for skill_name, reference in matches:
+            skill_root = subject.REPO_ROOT / "agent-toolkit/skills" / skill_name
+            assert (skill_root / "SKILL.md").is_file(), skill_name
+            assert (skill_root / reference).is_file(), reference

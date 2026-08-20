@@ -42,6 +42,16 @@ def _write_lock(state_dir: pathlib.Path, session_id: str, *, age_seconds: float 
     return path
 
 
+def _write_title_state(state_dir: pathlib.Path, session_id: str) -> tuple[pathlib.Path, pathlib.Path]:
+    directory = state_dir / "claude-agent-toolkit-session-title"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{session_id}.json"
+    path.write_text(json.dumps({"last_hook_session_title": "plan"}), encoding="utf-8")
+    lock = path.with_name(path.name + ".lock")
+    lock.write_text("", encoding="utf-8")
+    return path, lock
+
+
 def _set_age(path: pathlib.Path, age_seconds: float) -> None:
     if age_seconds <= 0:
         return
@@ -59,6 +69,7 @@ def _session_end(session_id: str, reason: str | None = None) -> str:
 def test_state_is_preserved_when_session_can_resume(tmp_path: pathlib.Path) -> None:
     """会話破棄以外の理由では、自セッションの状態を残す。"""
     target = _write_state(tmp_path, "target")
+    title, title_lock = _write_title_state(tmp_path, "target")
 
     result = _run(_session_end("target", reason="prompt_input_exit"), tmp_path)
 
@@ -66,6 +77,8 @@ def test_state_is_preserved_when_session_can_resume(tmp_path: pathlib.Path) -> N
     assert not result.stdout
     assert not result.stderr
     assert target.exists()
+    assert title.exists()
+    assert title_lock.exists()
 
 
 def test_state_is_preserved_when_reason_is_absent(tmp_path: pathlib.Path) -> None:
@@ -79,8 +92,10 @@ def test_state_is_preserved_when_reason_is_absent(tmp_path: pathlib.Path) -> Non
 
 
 def test_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -> None:
-    """会話が破棄された場合は自セッションの状態を削除し、他セッションは残す。"""
+    """会話破棄時は自セッションの両状態とロックを削除し、他セッションを残す。"""
     target = _write_state(tmp_path, "target")
+    target_lock = _write_lock(tmp_path, "target")
+    title, title_lock = _write_title_state(tmp_path, "target")
     other = _write_state(tmp_path, "other")
 
     result = _run(_session_end("target", reason="clear"), tmp_path)
@@ -89,6 +104,9 @@ def test_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -
     assert not result.stdout
     assert not result.stderr
     assert not target.exists()
+    assert not target_lock.exists()
+    assert not title.exists()
+    assert not title_lock.exists()
     assert other.exists()
 
 
@@ -98,6 +116,7 @@ def test_stale_state_and_its_lock_are_collected(tmp_path: pathlib.Path) -> None:
     stale_lock = _write_lock(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
     fresh = _write_state(tmp_path, "fresh")
     fresh_lock = _write_lock(tmp_path, "fresh")
+    stale_title, stale_title_lock = _write_title_state(tmp_path, "stale")
 
     result = _run(_session_end("other", reason="logout"), tmp_path)
 
@@ -106,6 +125,8 @@ def test_stale_state_and_its_lock_are_collected(tmp_path: pathlib.Path) -> None:
     assert not stale_lock.exists()
     assert fresh.exists()
     assert fresh_lock.exists()
+    assert stale_title.exists()
+    assert stale_title_lock.exists()
 
 
 def test_fresh_state_keeps_its_old_lock(tmp_path: pathlib.Path) -> None:

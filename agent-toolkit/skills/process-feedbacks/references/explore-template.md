@@ -9,7 +9,7 @@
   - 直接経路では対象の素材IDと本文、投入元及び引用範囲
 - プロジェクト規範の絶対パス
 - `review-checklists.md`の絶対パス
-- バグ対応の場合だけ`agent-toolkit:bugfix`の絶対パス
+- バグ対応の場合だけ`<plugin root>/skills/bugfix/SKILL.md`の絶対パス
 - 調査対象と完了条件
 
 入力が欠ける場合は推測せず欠落項目を返す。

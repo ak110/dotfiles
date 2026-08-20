@@ -2,7 +2,7 @@
 
 自己署名のTLS証明書のGitLab私設ホストでも、証明書検証を維持したまま`glab`が正常動作する場合は
 設定を変更しない。
-`agent-toolkit:commit`の`references/push-and-ci.md`が示すCI通過確認の手順を使い、forgeへ`gitlab`を指定する。
+`../../commit/references/push-and-ci.md`が示すCI通過確認の手順を使い、forgeへ`gitlab`を指定する。
 pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリポジトリから解決した同じSelf-Managedホストへ問い合わせる。
 
 `glab`でTLS証明書検証エラー（`tls: failed to verify certificate`）が出る場合に限り、次を設定する。
@@ -11,7 +11,7 @@ pipeline一覧と対象pipelineの全ページのjob一覧を、カレントリ�
 - 環境変数`GITLAB_HOST=<host>`と`GITLAB_TOKEN=<token>`を併せて設定する
 
 この設定は`curl -k`と同様にMITM耐性を下げる。
-設定後は`references/push-and-ci.md`の手順を使い、forgeへ`gitlab`を指定する。
+設定後は`../../commit/references/push-and-ci.md`の手順を使い、forgeへ`gitlab`を指定する。
 
 `glab`自体が機能しない場合に限り、`curl -k`によるAPI直呼び出しを代替経路とする。
 

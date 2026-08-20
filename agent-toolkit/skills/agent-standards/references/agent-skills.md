@@ -57,6 +57,8 @@ Claude Code固有の挙動には節ごとに「Claude Code固有」の注記を�
 - スキル間引継ぎでは利用側スキルが必要とする完成済み入力を提供側スキルが返し、利用側スキルは暗黙の会話履歴へ依存しない
 - 提供側スキルは利用側スキル固有の参照文書へ依存しない。共通判断は提供側スキル又は実際の判断主体へ置く
 - 必須の指示文書ルートから到達しない参照文書を実行時の配布物へ残さない。履歴保管は配布物外へ分離する
+- 他スキルの参照資料を指す場合は、`agent-toolkit:<skill-name>`でスキルを識別し、その`SKILL.md`を含むディレクトリを基準に
+  `references/<file>`を相対解決して参照資料を読む。参照資料だけを読むために別スキルを起動せず、起動が必要な場合は起動主体、入力及び返却値を明記する
 
 ## サブエージェント実行とパス解決（Claude Code固有）
 
@@ -114,8 +116,9 @@ fork形態の公式制約は次のとおりで、fork配下のスキル・サブ
 
 ## 公式リファレンス（Claude Code）
 
-スキル新規作成・hook実装では公式マーケットプレイス（`anthropics/claude-plugins-official`）の
+スキル新規作成・hook実装、ホスト機能の可否・入出力契約の判定では公式マーケットプレイス（`anthropics/claude-plugins-official`）の
 `skill-creator:skill-creator`・`plugin-dev`各スキルを参照する。
+まず各スキルの`references/`、次に公式ドキュメント、最後に実行時の内部観測の順で確認する。
 各スキルの`references/`に記載のない仕様と、記載と認識が相違する事項は公式ドキュメントで確認する。
 参照先は`https://code.claude.com/docs/ja/`配下（`memory.md`・`skills.md`・`sub-agents.md`・
 `hooks.md`・`plugins.md`・`plugins-reference.md`など）とする。

@@ -2,6 +2,7 @@
 
 配布物のhook間で共有する状態の記録元、利用先、寿命を定める。
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
+計画名の再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`へ分離する。
 
 フックがセッション状態の不足を理由にブロックした場合は、状態ファイルを`Read`して
 当該状態と他の記録済み状態を実測する。
@@ -28,6 +29,10 @@
   Agent識別子別に記録し、SubagentStopが完了報告を検査する。記録した要素は、正常報告、SendMessage再開、
   plan-mode起動のいずれでも削除されず、別の調整役の要素と併存する。状態JSON全体の寿命は末尾の規定に従う
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
+- `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値を記録する。
+  値が存在する間は同一セッションで再出力しない。通常状態JSONへ複製せず、専用の排他ロック下で
+  再出力抑止記録へ先に保存できた呼び出しだけが出力する。通常状態の期限回収と通常のSessionEndでは保持し、
+  終了理由が`clear`の場合だけ通常状態、再出力抑止記録及び双方のロックを削除する
 - `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
   計画ファイル作成前の直接編集を検知する
 
@@ -42,7 +47,10 @@
 - `dotfiles_reference_docs_read`: dotfilesの個人PostToolUseフックが参照文書へのReadを解決済み絶対パスの一覧として記録し、
   個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
   セッション終了まで保持し、リセット経路は設けない
-- `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
+- `process_feedbacks_skill_invoked`・`plan_and_add_feedback_skill_invoked`・`add_feedback_skill_invoked`:
+  それぞれ対応するフィードバック処理スキルの起動を記録する。Stop hookの自動session-review起動条件に使う。
+  PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に3フラグをまとめて偽へ戻す。
+  手動session-review起動はこれらのフラグを必要としない。セッション終了まで保持する
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
   `delegation`を起動した場合にPostToolUseが真化する。
   メインセッションからCodex App Server MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
@@ -77,6 +85,8 @@
 `--continue`・`--resume`・`/resume`で戻ると同じ`session_id`で会話が続くため、削除すると再開後の記録が失われる。
 回収は更新から一定期間が経過した状態JSONに限り、対のロックファイルも同時に破棄する。
 対応する状態JSONが無いロックファイルは、ロック自身の更新時刻が同じ期間を超えた場合だけ破棄する。
-例外は終了理由が`clear`の場合とし、会話が破棄されたことが確定するため排他ロック下で当該セッションの状態JSONを削除する。
+ロックの取得開始と削除は共通の調整ロックで直列化し、使用中又は取得待ちのロックファイルを削除しない。
+例外は終了理由が`clear`の場合とし、会話が破棄されたことが確定するため排他ロック下で当該セッションの
+通常状態、再出力抑止記録及び双方のロックを削除する。
 サブエージェント側で記録される状態は呼び出し元へ自動伝播しないため、
 親側で必要な値は完了報告の構造化欄から厳格に解析する。

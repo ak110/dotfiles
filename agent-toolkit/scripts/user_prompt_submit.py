@@ -10,6 +10,8 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し�
 - plan-mode → `plan_mode_skill_invoked`
 - session-review → `session_review_invoked`（辞書。キーは`agent-toolkit:session-review`で正規化）
 - process-feedbacks → `process_feedbacks_skill_invoked`
+- plan-and-add-feedback → `plan_and_add_feedback_skill_invoked`
+- add-feedback → `add_feedback_skill_invoked`
 
 例外時はfail-openで exit 0 を返す。
 session-reviewの手動コマンド完全一致時は、payloadの`session_id`と`transcript_path`を
@@ -25,9 +27,17 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+from _hook_tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    claim_session_title,
+    read_state,
+    update_state,
+)
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _ADD_FEEDBACK_SKILL_NAMES,
+    _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES,
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_FEEDBACKS_SKILL_NAMES,
     _SESSION_REVIEW_SKILL_NAMES,
@@ -54,6 +64,8 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
 _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _SESSION_REVIEW_NAMES_EXTENDED = _extend_with_short_names(_SESSION_REVIEW_SKILL_NAMES)
 _PROCESS_FEEDBACKS_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_FEEDBACKS_SKILL_NAMES)
+_PLAN_AND_ADD_FEEDBACK_NAMES_EXTENDED = _extend_with_short_names(_PLAN_AND_ADD_FEEDBACK_SKILL_NAMES)
+_ADD_FEEDBACK_NAMES_EXTENDED = _extend_with_short_names(_ADD_FEEDBACK_SKILL_NAMES)
 
 # ホスト判定後の手動コマンドから<name>を抽出する。
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
@@ -114,23 +126,45 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
     return state
 
 
-def _emit_session_review_context(session_id: str, transcript_path: str) -> None:
-    """手動振り返りへpayloadのセッション識別子とtranscript絶対パスを渡す。"""
-    context = _llm_notice_base(
+def _set_named_flag(key: str):
+    """指定した自動振り返り起点フラグを冪等に真化する。"""
+
+    def _mutator(state: dict) -> dict | None:
+        if state.get(key, False):
+            return None
+        state[key] = True
+        return state
+
+    return _mutator
+
+
+def _session_review_context(session_id: str, transcript_path: str) -> str:
+    """手動振り返りへpayloadのセッション識別子とtranscript絶対パスを渡す本文を返す。"""
+    return _llm_notice_base(
         f"Use these exact values for agent-toolkit:session-review: session_id={session_id}; transcript_path={transcript_path}",
         _HOOK_ID,
     )
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": context,
-                }
-            },
-            ensure_ascii=False,
-        )
-    )
+
+
+def _plan_session_title(session_id: str) -> str | None:
+    """計画ファイルのstemをClaude CodeのsessionTitleへ一度だけ反映する。"""
+    raw_plan_path = read_state(session_id).get("current_plan_file_path")
+    if not isinstance(raw_plan_path, str) or not raw_plan_path or not is_plan_file(raw_plan_path):
+        return None
+    plan_stem = pathlib.Path(raw_plan_path).stem
+    if not plan_stem or not claim_session_title(session_id, plan_stem):
+        return None
+    return plan_stem
+
+
+def _emit_hook_output(*, additional_context: str | None = None, session_title_output: str | None = None) -> None:
+    """UserPromptSubmitの追加情報とsessionTitleを1つの応答JSONへまとめて出力する。"""
+    hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
+    if additional_context is not None:
+        hook_specific_output["additionalContext"] = additional_context
+    if session_title_output is not None:
+        hook_specific_output["sessionTitle"] = session_title_output
+    print(json.dumps({"hookSpecificOutput": hook_specific_output}, ensure_ascii=False))
 
 
 def main(payload_text: str) -> int:
@@ -156,14 +190,26 @@ def main(payload_text: str) -> int:
     if _is_harness_message(prompt):
         return 0
 
+    is_codex = "model" in payload or is_codex_payload(payload)
+
+    # Claude CodeのUserPromptSubmitだけがsessionTitleを出力する。
+    # Codexはスキル起動の状態記録だけを行い、計画名を出力しない。
+    plan_session_title = None
+    if not is_codex:
+        plan_session_title = _plan_session_title(session_id)
+
     # 先頭行のみを取り出して照合する（先頭行以外は無視）。
     first_line = prompt.split("\n", 1)[0].strip()
-    command_prefix = "$" if "model" in payload else "/"
+    command_prefix = "$" if is_codex else "/"
     if not first_line.startswith(command_prefix):
+        if plan_session_title is not None:
+            _emit_hook_output(session_title_output=plan_session_title)
         return 0
 
     match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
     if match is None:
+        if plan_session_title is not None:
+            _emit_hook_output(session_title_output=plan_session_title)
         return 0
 
     name = match.group(1)
@@ -174,14 +220,22 @@ def main(payload_text: str) -> int:
     # 対応スキル別にフラグを設定する。
     if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
         update_state(session_id, _set_plan_mode_invoked)
+    additional_context = None
     if name in _SESSION_REVIEW_NAMES_EXTENDED or full_name in _SESSION_REVIEW_SKILL_NAMES:
         canonical = _resolve_canonical_name(name, _SESSION_REVIEW_NAMES_EXTENDED, _SESSION_REVIEW_SKILL_NAMES) or full_name
         update_state(session_id, _make_session_review_mutator(canonical))
         raw_transcript_path = payload.get("transcript_path")
         transcript_path = raw_transcript_path if isinstance(raw_transcript_path, str) else ""
         if exact_session_review_command:
-            _emit_session_review_context(session_id, transcript_path)
+            additional_context = _session_review_context(session_id, transcript_path)
     if name in _PROCESS_FEEDBACKS_NAMES_EXTENDED or full_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
         update_state(session_id, _set_process_feedbacks_invoked)
+    if name in _PLAN_AND_ADD_FEEDBACK_NAMES_EXTENDED or full_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
+        update_state(session_id, _set_named_flag("plan_and_add_feedback_skill_invoked"))
+    if name in _ADD_FEEDBACK_NAMES_EXTENDED or full_name in _ADD_FEEDBACK_SKILL_NAMES:
+        update_state(session_id, _set_named_flag("add_feedback_skill_invoked"))
+
+    if additional_context is not None or plan_session_title is not None:
+        _emit_hook_output(additional_context=additional_context, session_title_output=plan_session_title)
 
     return 0

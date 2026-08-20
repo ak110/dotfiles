@@ -126,6 +126,13 @@ blockの新設時は、対象環境で文書化済みの正式コマンド形（
 Claude Codeでは`decision`と独立に注入可能で、stdoutプレーン出力もコンテキストへ追加される。
 Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`とし、`additionalContext`を返す。
 
+Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得する入力値は得られない。
+計画ファイルを扱うhookは、同一セッションでまだ出力していない場合だけ計画ファイル名のstemを
+`sessionTitle`へ一度だけ出力する。
+`sessionTitle`と`additionalContext`が同じ呼び出しで必要な場合は、`hookSpecificOutput`へ両方を含む1つのJSONを返す。
+この契約はClaude Code専用であり、Codex payload（`model`又はCodexのターン識別子を持つ入力）では
+`sessionTitle`を出力しない。
+
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
 Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、
@@ -199,6 +206,8 @@ hookは1呼び出しごとに独立プロセスとして起動するため、メ
   検査は対象ファイル実体への直接実行・直接読み取りで代替し、フラグは実施済み・読了済みの単純な記録に限定する
 - フラグの用途・書き込み元・読み取り元の対応表をプラグインごとにドキュメント化する。
   `agent-toolkit`自身の一覧SSOTは`session-state-flags.md`に置き、本ファイルへ再掲しない
+- 通常状態の期限より長く保持する記録は通常状態JSONへ混在させず、用途別の保存先と排他ロックへ分離する。
+  `agent-toolkit`の計画名再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`を使う
 
 ### 完了報告からの状態読み取り
 
@@ -215,5 +224,6 @@ hookは1呼び出しごとに独立プロセスとして起動するため、メ
 
 Claude Codeは並列ツール呼び出しでhookを同時発火するため、複数プロセスから同一の状態ファイルへ書き込みが競合する。
 
-- 状態ファイルの更新は排他ロック付きの`update_state`ヘルパー経由のみとし、直接書き込むAPIを公開しない
+- 通常状態の更新は排他ロック付きの`update_state`、計画名の記録は専用の`claim_session_title`を経由し、直接書き込むAPIを公開しない
+- 状態ロックの取得開始と削除を調整ロックで直列化し、取得済み又は取得待ちのロックファイルを削除しない
 - 並行書き込みの回帰テストを維持する

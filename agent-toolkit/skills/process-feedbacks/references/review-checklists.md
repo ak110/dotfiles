@@ -21,7 +21,7 @@
 - コード、設定、プロジェクト文書、横断規範のうち、判断主体と適用範囲が一致する場所を選ぶ
 - 複数の成果物へ一般化できる原則は上位規範を候補にし、固有名を除いても成立するか確認する
 - SRP、共有状態、排他、非同期処理が判断を左右する場合だけ、
-  `agent-toolkit:coding-standards`の`references/design-heuristics.md`から該当節を読む
+  `../../coding-standards/references/design-heuristics.md`から該当節を読む
 - 公式資料の参照だけで確認できる外部ツールの操作方法は恒常規範へ転記しない
 
 ### 保持する情報
@@ -71,5 +71,5 @@
 - 因果主張は原文、現行実装、履歴の対応を確認し、既存対処が目的を満たす場合は重複追加しない
 - 不採用は目的不達、技術的不成立、公開契約又は明文化方針との衝突を示す実測根拠を記録する
 
-一般的な原因分析と類似見直しは`agent-toolkit:bugfix`、文章品質は`agent-toolkit:writing-standards`、
+一般的な原因分析と類似見直しは`../../bugfix/SKILL.md`、文章品質は`../../writing-standards/SKILL.md`、
 調査と判断の共通契約は`agent-toolkit/rules/01-agent.md`を正本とする。

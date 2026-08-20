@@ -3,6 +3,11 @@
 対象リポジトリのactive一覧をinbox・processing双方について取得する。同一・関連主題とprocessing項目は
 `show`で本文、`target_commit`、`plan_file`、`depends_on`を読む。
 
+同一・関連主題の候補は`atk mq grep <主題語> --target-repo=<repo-path>`で本文を検索し、`atk mq list`
+は状態の要約確認だけに使う。`list`の要約が切り詰められている場合は判断根拠にせず、該当項目を
+`show`で再取得する。`atk config show`の`private_notes`を直接検索してキューの状態を推測しない。
+公開CLIの検索結果と`show`の本文を正本とする。
+
 関連processing項目に計画ファイルがあれば実装資料の変更説明も読む。対象リポジトリの候補worktreeごとにbranch、
 status、`target_commit`以降のcommitと変更ファイルを確認し、計画対象との重なりから対応候補を限定する。
 対象worktreeのリモートURLと完全HEADも確認する。計画実装型では完全HEADと計画base commitを照合する。

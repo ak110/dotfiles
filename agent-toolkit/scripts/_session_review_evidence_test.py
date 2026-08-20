@@ -1099,12 +1099,12 @@ def test_warn_mode_ignores_identifier_only_management_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """識別子・時刻・形式名・実行環境といった管理用の値への一致を警告として報告しない。"""
+    """警告形式でない管理用の値への一致を警告として報告しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
             {
-                "type": "warning",
+                "type": "event",
                 "uuid": "warn-0001",
                 "sessionId": "warning-session",
                 "timestamp": "2026-08-18T00:00:00.000Z",
@@ -1117,6 +1117,339 @@ def test_warn_mode_ignores_identifier_only_management_values(
     assert evidence.main([str(transcript), "--warn"]) == 0
 
     assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+@pytest.mark.parametrize(
+    "warning_line",
+    [
+        "[warn] 実行時警告",
+        "[warning] 実行時警告",
+        "[auto-generated: agent-toolkit/pretooluse][warn] 実行時警告",
+        "warning: 実行時警告",
+        "warn: 実行時警告",
+        "警告: 実行時警告",
+        "⚠: 実行時警告",
+        "⚠ 実行時警告",
+        "⚠    実行時警告",
+    ],
+)
+def test_warn_mode_accepts_real_line_start_markers_only(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    warning_line: str,
+) -> None:
+    """実在する行頭マーカーを受理し、本文途中の同語を警告へ昇格させない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "本文途中の warning と warn"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "content": warning_line}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": warning_line}]
+
+
+def test_warn_mode_accepts_structured_warning_fields_and_grep_keeps_arbitrary_search(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """構造化警告は受理し、任意本文の検索は`--grep`へ分離する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "警告という語の説明"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": json.dumps({"warning_message": "構造化された警告"}, ensure_ascii=False),
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": "構造化された警告", "tool": "call-1"}]
+
+    assert evidence.main([str(transcript), "--grep", "警告"]) == 0
+    matches = _read_jsonl(capsys)
+    assert [event["line"] for event in matches[:-1]] == [1, 2]
+    assert matches[-1] == {"kind": "summary", "count": 2}
+
+
+def test_warn_mode_accepts_codex_custom_tool_call_output_structured_warning(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexの実行結果出力を構造化警告として受理し、入力は`--grep`だけで検索する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"warning_message": "引数内の警告"}, ensure_ascii=False),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-1",
+                    "output": json.dumps({"warning_message": "Codex実行結果の警告"}, ensure_ascii=False),
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": "Codex実行結果の警告"}]
+
+    assert evidence.main([str(transcript), "--grep", "引数内の警告"]) == 0
+    assert _read_jsonl(capsys) == [
+        {"kind": "match", "line": 1, "text": '{"warning_message": "引数内の警告"}'},
+        {"kind": "summary", "count": 1},
+    ]
+
+
+def test_warn_mode_accepts_case_variants_of_structured_warning_fields(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """構造化警告フィールドの大文字表記差を許容し、本文途中の語は拾わない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"WarningMessage": "構造化警告"},
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"message": "本文途中の WarningMessage"},
+                "message": {"role": "user", "content": []},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "構造化警告"}]
+
+
+def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """警告キーの値又は直接警告辞書の本文だけを抽出し、兄弟の通常本文を除外する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"warning_message": "構造化警告", "message": "通常本文"},
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {
+                    "kind": "warning",
+                    "text": "直接表す警告本文",
+                    "message": "通常の兄弟本文",
+                },
+                "message": {"role": "user", "content": []},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [
+        {"kind": "warning", "line": 1, "text": "構造化警告"},
+        {"kind": "warning", "line": 2, "text": "直接表す警告本文"},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("entry", "grep_pattern", "expected_text"),
+    [
+        (
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "SomeTool",
+                            "id": "call-1",
+                            "input": {"warning_message": "入力内JSONの警告"},
+                        }
+                    ],
+                },
+            },
+            "入力内JSON",
+            "入力内JSONの警告",
+        ),
+        (
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "SomeTool",
+                            "id": "call-1",
+                            "input": {"command": "warning: 入力内マーカー"},
+                        }
+                    ],
+                },
+            },
+            "入力内マーカー",
+            "warning: 入力内マーカー",
+        ),
+        (
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "SomeTool",
+                            "id": "call-1",
+                            "input": {"command": "⚠ 入力内マーカー"},
+                        }
+                    ],
+                },
+            },
+            "入力内マーカー",
+            "⚠ 入力内マーカー",
+        ),
+        (
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"warning_message": "引数内JSONの警告"}, ensure_ascii=False),
+                },
+            },
+            "引数内JSON",
+            '{"warning_message": "引数内JSONの警告"}',
+        ),
+        (
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-1",
+                    "arguments": json.dumps({"command": "warning: 引数内マーカー"}, ensure_ascii=False),
+                },
+            },
+            "引数内マーカー",
+            '{"command": "warning: 引数内マーカー"}',
+        ),
+    ],
+)
+def test_warn_mode_ignores_warning_markers_and_structured_json_in_inputs_but_grep_finds_it(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    entry: dict[str, object],
+    grep_pattern: str,
+    expected_text: str,
+) -> None:
+    """入力の行頭マーカーと構造化警告を`--warn`へ昇格させず、`--grep`では検索する。"""
+    transcript = _write_transcript(tmp_path, [entry])
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+    assert evidence.main([str(transcript), "--grep", grep_pattern]) == 0
+    assert _read_jsonl(capsys) == [
+        {"kind": "match", "line": 1, "text": expected_text},
+        {"kind": "summary", "count": 1},
+    ]
+
+
+def test_warn_mode_excludes_records_after_review_boundary(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """振り返り起動後に記録された警告を照会対象へ含めない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 作業中の警告"},
+                "message": {"role": "user", "content": []},
+            },
+            {"type": "user", "message": {"role": "user", "content": "/session-review"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 振り返り中の警告"},
+                "message": {"role": "user", "content": []},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: 作業中の警告"}]
+
+
+def test_warn_mode_excludes_records_after_claude_automatic_review_marker(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Claude自動session-review開始マーカー後の同形式警告を照会対象へ含めない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: マーカー前の警告"},
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: マーカー後の警告"},
+                "message": {"role": "user", "content": []},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: マーカー前の警告"}]
 
 
 def test_query_modes_search_hook_notice_stored_under_attachment(
@@ -1233,8 +1566,13 @@ def test_query_modes_normalize_line_number_prefix_across_body_fields(
         [
             {
                 "type": "user",
-                "message": {"role": "user", "content": [{"type": "text", "text": "12\twarning: 同じ本文"}]},
-                "toolUseResult": {"stdout": "warning: 同じ本文"},
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "content": "12\twarning: 同じ本文"},
+                        {"type": "tool_result", "content": "warning: 同じ本文"},
+                    ],
+                },
             }
         ],
     )
@@ -1269,7 +1607,10 @@ def test_query_modes_keep_numbered_and_unnumbered_lines_in_one_body_distinct(
         [
             {
                 "type": "user",
-                "message": {"role": "user", "content": "12\twarning: 本文\nwarning: 本文"},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "content": "12\twarning: 本文\nwarning: 本文"}],
+                },
             }
         ],
     )
@@ -2145,7 +2486,7 @@ def test_stats_token_peak_normalizes_codex_cache_components(tmp_path: pathlib.Pa
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     peak = _events_by_kind(_read_jsonl(capsys), "stats-token-peak")[0]
-    assert peak["total_tokens"] == 340
+    assert peak["total_tokens"] == 347
     assert peak["input_tokens"] == 50
     assert peak["cache_read_input_tokens"] == 250
     assert peak["cache_creation_input_tokens"] == 7
@@ -2337,6 +2678,129 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     assert [event["tokens"]["total_tokens"] for event in threads] == [17, 9]
     assert quoted_id not in {event["thread"] for event in threads}
     assert missing_id not in {event["thread"] for event in threads}
+
+
+def test_stats_recursively_discovers_native_subagent_activity_without_cycles(
+    tmp_path: pathlib.Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """native `SubAgentActivity`の子孫を重複なく再帰集計し、循環参照で停止しない。"""
+    root_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    child_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    grandchild_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    codex_home = tmp_path / "codex"
+    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
+    rollout_dir.mkdir(parents=True)
+
+    def write_rollout(thread_id: str, entries: list[dict]) -> None:
+        (rollout_dir / f"rollout-test-{thread_id}.jsonl").write_text(
+            "\n".join(json.dumps(entry) for entry in entries) + "\n",
+            encoding="utf-8",
+        )
+
+    def activity(thread_id: str) -> dict:
+        return {"type": "SubAgentActivity", "agent_thread_id": thread_id}
+
+    write_rollout(
+        root_id,
+        [
+            _codex_token_count_entry("2026-08-19T00:00:01Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+            {"timestamp": "2026-08-19T00:00:02Z", "payload": {"type": "message", "activity": activity(child_id)}},
+            {"timestamp": "2026-08-19T00:00:03Z", "payload": {"type": "message", "activity": activity(child_id)}},
+        ],
+    )
+    write_rollout(
+        child_id,
+        [
+            _codex_token_count_entry("2026-08-19T00:00:04Z", {"input_tokens": 2, "output_tokens": 2, "total_tokens": 4}),
+            {"timestamp": "2026-08-19T00:00:05Z", "payload": {"type": "message", "activity": activity(grandchild_id)}},
+            {"timestamp": "2026-08-19T00:00:06Z", "payload": {"type": "message", "activity": activity(root_id)}},
+        ],
+    )
+    write_rollout(
+        grandchild_id,
+        [_codex_token_count_entry("2026-08-19T00:00:07Z", {"input_tokens": 3, "output_tokens": 3, "total_tokens": 6})],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {"type": "message", "role": "assistant", "activity": activity(root_id)},
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    threads = _events_by_kind(events, "stats-codex-thread")
+    assert [event["thread"] for event in threads] == [grandchild_id, child_id, root_id]
+    assert [event["tokens"]["total_tokens"] for event in threads] == [6, 4, 2]
+    assert _events_by_kind(events, "stats-total")[0]["tokens"] == {
+        "input_tokens": 6,
+        "output_tokens": 6,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+    }
+
+
+def test_stats_drops_native_subagent_activity_started_after_review_boundary(
+    tmp_path: pathlib.Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """振り返り境界後に起動したnative子孫threadを全体集計から除外する。"""
+    root_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    after_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    codex_home = tmp_path / "codex"
+    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / f"rollout-test-{root_id}.jsonl").write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                _codex_token_count_entry("2026-08-19T00:00:01Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+                {
+                    "timestamp": "2026-08-19T00:00:02Z",
+                    "payload": {"activity": {"type": "SubAgentActivity", "agent_thread_id": after_id}},
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_rollout(
+        codex_home,
+        after_id,
+        [("2026-08-19T00:00:03Z", {"input_tokens": 90, "output_tokens": 90, "total_tokens": 180})],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "activity": {"type": "SubAgentActivity", "agent_thread_id": root_id},
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:02Z",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "$session-review"}]},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert [event["thread"] for event in _events_by_kind(events, "stats-codex-thread")] == [root_id]
 
 
 def test_stats_boundary_excludes_manual_review_and_rejects_combination(tmp_path: pathlib.Path, capsys) -> None:

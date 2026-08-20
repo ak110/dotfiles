@@ -20,8 +20,9 @@ def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     実行環境のGit設定の混入を断つ。これにより、リポジトリ生成箇所が`git config user.*`を
     設定していなくても`git commit`が成功し、開発機と継続的インテグレーションで成否が一致する。
 
-    global・system設定を遮断するため、本リポジトリの作業ツリーに対してgitを実行するテストは
-    `safe.directory`の設定を受け取れない。テストは自身が生成したリポジトリに対してgitを実行する。
+    global・system設定を遮断しつつ、テストが生成した作業ツリーを所有者差で拒否しないよう
+    `safe.directory=*`をコマンドスコープのGit設定として与える。本リポジトリの作業ツリーを
+    対象にするテストも同じfixtureで実行できる。
 
     既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
     環境変数は当該設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
@@ -34,6 +35,9 @@ def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_COMMITTER_EMAIL", _GIT_IDENTITY_EMAIL)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "safe.directory")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "*")
 
 
 @pytest.fixture(autouse=True)

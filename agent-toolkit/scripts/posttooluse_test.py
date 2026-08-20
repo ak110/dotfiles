@@ -905,13 +905,17 @@ class TestPlanFilePostWriteNotice:
 
 
 class TestFeedbackSkillFlags:
-    """process-feedbacksスキル呼び出しのセッション状態フラグ記録。"""
+    """自動振り返りの起点となるスキル呼び出しの状態フラグ記録。"""
 
     @pytest.mark.parametrize(
         ("skill", "flag"),
         [
             ("agent-toolkit:process-feedbacks", "process_feedbacks_skill_invoked"),
             ("process-feedbacks", "process_feedbacks_skill_invoked"),
+            ("agent-toolkit:plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
+            ("plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
+            ("agent-toolkit:add-feedback", "add_feedback_skill_invoked"),
+            ("add-feedback", "add_feedback_skill_invoked"),
         ],
     )
     def test_skill_records_flag(self, tmp_path: pathlib.Path, skill: str, flag: str) -> None:
@@ -921,7 +925,7 @@ class TestFeedbackSkillFlags:
 
 
 class TestExitSessionResetsProcessFeedbacksFlag:
-    """exit-sessionスキル起動検知時のprocess_feedbacks_skill_invokedフラグリセット。
+    """exit-sessionスキル起動検知時の自動振り返り起点フラグリセット。
 
     `agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端するため、
     exit-session起動を完了シグナルとする。
@@ -934,13 +938,23 @@ class TestExitSessionResetsProcessFeedbacksFlag:
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
         """exit-session起動でprocess_feedbacks_skill_invokedが偽になる。"""
         sid = f"exit-{skill.replace(':', '-')}"
-        # 事前にフラグを立てる。
+        # 事前に全ての自動振り返り起点フラグを立てる。
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps({"process_feedbacks_skill_invoked": True}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "process_feedbacks_skill_invoked": True,
+                    "plan_and_add_feedback_skill_invoked": True,
+                    "add_feedback_skill_invoked": True,
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is False
+        state = _read_state(tmp_path, sid)
+        assert state.get("process_feedbacks_skill_invoked") is False
+        assert state.get("plan_and_add_feedback_skill_invoked") is False
+        assert state.get("add_feedback_skill_invoked") is False
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
         """既に偽の状態でexit-sessionが起動されても状態は変わらない。"""

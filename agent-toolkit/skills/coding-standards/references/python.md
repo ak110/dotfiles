@@ -142,7 +142,7 @@
 - 大規模テストスイートを対象とするプロジェクトでは`pyfltr`の`command-timeout`を延伸する
   - 具体値・延伸判定・実測手順は各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ
     実測ベースで記録し、そこをSSOTとする（本ファイル側の数値記載はしない）
-  - `command-timeout`の既定値と挙動仕様は`agent-toolkit:pyfltr-usage`スキルを参照する
+  - `command-timeout`の既定値と挙動仕様は`../../pyfltr-usage/SKILL.md`を参照する
 
 ### Fixtureのコーディングルール
 

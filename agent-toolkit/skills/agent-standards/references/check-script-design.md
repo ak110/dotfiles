@@ -42,9 +42,9 @@ Markdownなどの構造化文書を検査する場合は、構造認識と原記
   （パス・スキル名・節見出しの実在確認失敗等）
 - 計画の成立可否に影響しない体裁・表現規範は新規の機械チェック対象にしない。
   同一文書内の列挙・表から導出できる件数を明記しない規定
-  （`agent-toolkit:writing-standards`「改訂・保守」節）は、
+  （`../../writing-standards/SKILL.md`「改訂・保守」節）は、
   機械チェック対象化を明示的に禁じているためこの区分に属し、機械チェックを持たない
 - 体裁・表記系（textlint・markdownlint・typos・口語表現等）は`warning`出力に限定し、
-  exit codeへ算入しない。判断根拠は`agent-toolkit:plan-mode`の
+  exit codeへ算入しない。判断根拠は`../../plan-mode/SKILL.md`の
   「計画作成プロセス自体を変更する場合」節の改訂方針（体裁・表記の指摘は警告に留める）に従う
 - 新設検査を追加する場合、`error`・`warning`区分の判定根拠を検査スクリプトのdocstringへ明記する

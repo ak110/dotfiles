@@ -11,6 +11,7 @@ gitリモート応答フェイクは複数テストファイルが共有する�
 
 import contextlib
 import datetime
+import json
 import os
 import pathlib
 import subprocess
@@ -412,6 +413,43 @@ class TestSubcommandSubparserDefault:
             ["mq", "add", *type_option, "本文"]
         )
         assert args.subparser.prog == "atk mq add"
+
+
+def test_review_table_subcommands_are_public() -> None:
+    """レビュー表の4操作がトップレベルCLIへ登録されている。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    for subcommand in ("init", "add", "respond", "show", "validate"):
+        argv = ["review-table", subcommand, "review.tsv"]
+        if subcommand == "add":
+            argv.extend(["重大", "位置", "指摘"])
+        elif subcommand == "respond":
+            argv.extend(["重大", "位置", "指摘", "--response-needed=yes", "--response=修正"])
+        args = parser.parse_args(argv)
+        assert args.command == "review-table"
+        assert args.review_table_subcommand == subcommand
+
+
+def test_public_review_table_validate_rejects_unanswered_rows(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """公開CLIは構造検証の明示指定を許容し、既定では未応答行を拒否する。"""
+    path = tmp_path / "review.tsv"
+    path.write_text(
+        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("重大", "位置", "指摘", "", "", "")) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as structural_exc_info:
+        atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
+    assert structural_exc_info.value.code == 0
+    assert "構造検証成功" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "validate", str(path)])
+
+    assert exc_info.value.code == 1
+    assert "対応要否が未回答" in capsys.readouterr().err
 
 
 class TestSpaceSeparatedOptionWarning:

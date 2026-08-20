@@ -18,15 +18,21 @@
 
 先行成果へ依存しない複数の計画ファイルを並列実装する場合は、ファイル重複にかかわらず、
 呼び出し元が計画ファイルごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
+変更ファイルの重複を理由に先行レーンの完了を待たず、各計画ファイルを専用worktreeへ割り当てる。
 各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`で計画ファイル専用worktreeを作成する。
 計画が呼び出し元によるレーンのworktreeの作成も明示する場合は、同じ方法でレーンのworktreeを作成する。
 作成直後に用途、絶対パス、管理対象領域の絶対パス、HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録する。
 以降、この6項目をworktreeの記録属性と呼ぶ。
+
+通常の実装モードでは、呼び出し元が各レーンの起動前に`atk managed-temp create --prefix <レビュー用途>`を単独で実行し、標準出力の絶対パスを実装レビュー用managed temp領域として保持する。
+借用worktreeを使う場合も実装レビュー用managed temp領域を作成する。
+作成した実装レビュー用managed temp領域の用途と絶対パスを、対応する計画の`## 進捗ログ`へ記録する。
 起動文は受信者への命令を先頭に置き、次だけを渡す。
 
 - モード指定`通常の実装モード`
 - 計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス。同じ計画ファイルの実装単位は同じworktreeへ順次割り当て、同時に1つの書込担当だけを置くこと
 - worktreeの完全な一覧。各worktreeへ前掲の記録属性を付し、借用時の管理対象領域は`なし`とする
+- 通常の実装レビュー用managed temp領域の絶対パス
 - 1件以上のソート済みフィードバックファイル名一覧
 - 追加指示と許容済みの挙動変化。該当しない場合は`なし`
 - 複製元と対象外worktree、commit・統合可、worktreeの作成・回収不可、push不可などの権限
@@ -42,7 +48,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 1. 計画が明示した単位に対応するcommitと変更ファイル。単位の指定が無い場合は計画全体に対応する単一commit
 2. cleanな作業ツリーと担当外差分の有無
 3. 近接検証と最終検証の実行結果
-4. 二系統のレビューの対象commit、読み取り専用状態、指摘と対応結果
+4. 二系統のレビューの対象commit、読み取り専用状態、指摘と対応結果、系統・ラウンド別レビュー表と対応`.lock`の実在
 5. 計画の完了条件と`## 進捗ログ`
 6. 共通base、統合順、全単位commit、各worktreeの前掲の記録属性と状態
 7. 通常の実装モードで生じたレビュー修正commitがレーンのworktreeで直接作成され、最終HEADに含まれること
@@ -64,7 +70,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 
 ## pushとCI
 
-実装委譲はcommitと二系統のレビューまでとする。呼び出し元が`agent-toolkit:commit`の
+実装委譲はcommitと二系統のレビューまでとする。呼び出し元が`../../commit/SKILL.md`の
 `references/push-and-ci.md`を読み、pushとCI通過確認を所有する。
 CI失敗時は`agent-toolkit:bugfix`で原因を確定する。原因分析によりコード・テスト・設定の修正commitが必要と確定した場合だけ、
 通常モードの`plan-impl-executor`へ元計画を再投入せず、呼び出し元が`runtime-routing.md`の`execute_fix_model`を起動直前に解決して
@@ -88,6 +94,7 @@ pushとCI成功を実測し、ソート済みフィードバックファイル�
 全条件の成立後だけ、進捗ログの記録値と`git worktree list --porcelain`を照合する。
 `作成主体=caller`かつ`回収可否=可`で、管理対象領域を記録したworktreeだけを`git worktree remove <exact-path>`で除去し、
 続いて`atk managed-temp cleanup --path <exact-parent>`で対応する管理対象領域を回収する。
+実装レビュー用managed temp領域も、レビュー表と対応`.lock`の検収、push、CI、採用処理の完了後に`atk managed-temp cleanup --path <exact-parent>`で回収する。
 借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない。
 中断または失敗時は全領域を保持し、対象外worktreeを変更しない。
 

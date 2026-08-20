@@ -30,7 +30,19 @@ from typing import Any, Literal, NamedTuple
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
-_WARNING_PATTERN = re.compile("警告|warn", re.IGNORECASE)
+_WARNING_LINE_PATTERN = re.compile(
+    r"^\s*(?:\d+\t)?(?:"
+    r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
+    r"⚠(?:\s+|\s*[:：])|"
+    r"(?:warning|warn|警告)\s*[:：]"
+    r")",
+    re.IGNORECASE,
+)
+_STRUCTURED_WARNING_VALUES = frozenset({"warn", "warning", "警告"})
+_STRUCTURED_WARNING_KEYS = frozenset({"warning", "warnings", "warning_message", "warningmessage", "is_warning"})
+_STRUCTURED_SEVERITY_KEYS = frozenset({"severity", "level"})
+_STRUCTURED_WARNING_BODY_KEYS = ("text", "message", "detail", "description", "output", "content")
+_STRUCTURED_WARNING_STREAM_KEYS = ("stdout", "stderr")
 _LINE_NUMBER_PREFIX = re.compile(r"^\s*\d+\t(.*)$")
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
 _SELF_SCRIPT_STEM = "_session_review_evidence"
@@ -966,7 +978,7 @@ def _thread_id_from_mapping(value: Any) -> str | None:
 
 def _thread_ids_from_record(record: _Record) -> list[str]:
     entry = record.entry
-    thread_ids: list[str] = []
+    thread_ids: list[str] = _native_agent_thread_ids(entry)
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if isinstance(content, list):
@@ -1006,6 +1018,22 @@ def _thread_ids_from_record(record: _Record) -> list[str]:
     return list(dict.fromkeys(thread_ids))
 
 
+def _native_agent_thread_ids(value: Any) -> list[str]:
+    """Codexの`SubAgentActivity.agent_thread_id`を構造化フィールドから再帰取得する。"""
+    found: list[str] = []
+    if isinstance(value, dict):
+        if value.get("type") == "SubAgentActivity":
+            thread_id = value.get("agent_thread_id")
+            if isinstance(thread_id, str) and thread_id:
+                found.append(thread_id)
+        for item in value.values():
+            found.extend(_native_agent_thread_ids(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.extend(_native_agent_thread_ids(item))
+    return list(dict.fromkeys(found))
+
+
 def _rollout_path(thread_id: str) -> Path | None:
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     escaped_thread = re.escape(thread_id)
@@ -1020,15 +1048,50 @@ def _rollout_path(thread_id: str) -> Path | None:
 def _stats_thread_records(
     main_records: list[_Record],
     subagents: list[tuple[str, str | None, list[_Record]]],
+    boundary_timestamp: datetime.datetime | None = None,
 ) -> dict[str, tuple[int, str | None]]:
+    """主記録・補助記録からCodexスレッドを再帰列挙する。
+
+    直接の委譲先だけでなく、rollout内の`SubAgentActivity`から得られる子孫も探索する。
+    同じrolloutを複数の親が参照しても一度だけ処理し、循環した委譲木で停止しない。
+    """
     threads: dict[str, tuple[int, str | None]] = {}
+    pending: list[tuple[str, int, str | None]] = []
+
+    def add(thread_id: str, line: int, agent_id: str | None) -> None:
+        if thread_id not in threads:
+            threads[thread_id] = (line, agent_id)
+            pending.append((thread_id, line, agent_id))
+
     for record in main_records:
         for thread_id in _thread_ids_from_record(record):
-            threads.setdefault(thread_id, (record.line, None))
+            add(thread_id, record.line, None)
     for agent_id, _, records in subagents:
         for record in records:
             for thread_id in _thread_ids_from_record(record):
-                threads.setdefault(thread_id, (record.line, agent_id))
+                add(thread_id, record.line, agent_id)
+
+    visited: set[str] = set()
+    while pending:
+        thread_id, line, agent_id = pending.pop(0)
+        if thread_id in visited:
+            continue
+        visited.add(thread_id)
+        rollout = _rollout_path(thread_id)
+        if rollout is None:
+            continue
+        rollout_records = _load_records(str(rollout))
+        if rollout_records is None:
+            continue
+        if boundary_timestamp is not None:
+            starts = [_record_timestamp(record) for record in rollout_records]
+            start = min((value for value in starts if value is not None), default=None)
+            if start is None or start >= boundary_timestamp:
+                threads.pop(thread_id, None)
+                continue
+        for record in rollout_records:
+            for child_id in _native_agent_thread_ids(record.entry):
+                add(child_id, line, agent_id)
     return threads
 
 
@@ -1154,7 +1217,7 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
             normalized = _codex_normalized_tokens(raw)
             candidates.append(
                 {
-                    "total_tokens": raw["input_tokens"] + raw["output_tokens"],
+                    "total_tokens": _token_total(normalized),
                     **normalized,
                     "line": record.line,
                     "new_tokens": normalized["output_tokens"] + normalized["cache_creation_input_tokens"],
@@ -1188,7 +1251,7 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
     subagent_record_count = 0
     if runtime == "claude":
         subagents, excluded_review_agents, subagent_record_count = _stats_subagent_records(transcript_path, boundary_timestamp)
-    threads = _stats_thread_records(main_records, subagents)
+    threads = _stats_thread_records(main_records, subagents, boundary_timestamp)
     thread_summaries: list[tuple[str, dict[str, Any], int, str | None]] = []
     for thread_id, (line, agent_id) in threads.items():
         rollout = _rollout_path(thread_id)
@@ -1345,16 +1408,208 @@ def has_session_review_started(raw_path: str | None) -> bool:
     )
 
 
-def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
-    """警告に一致した行を行番号付きで返す。一致なしはその事実を返す。
+def _structured_warning_fields(value: dict[str, Any]) -> tuple[list[Any], bool]:
+    """辞書から警告キーの値と直接警告を表す標識を取り出す。"""
+    warning_values: list[Any] = []
+    direct_warning = False
+    for key, item in value.items():
+        normalized_key = key.casefold() if isinstance(key, str) else ""
+        if normalized_key in _STRUCTURED_WARNING_KEYS:
+            if normalized_key == "is_warning":
+                direct_warning |= item is True
+            elif item is True:
+                direct_warning = True
+            elif item not in (None, "", [], {}):
+                warning_values.append(item)
+            continue
+        if (
+            normalized_key in _STRUCTURED_SEVERITY_KEYS
+            and isinstance(item, str)
+            and item.casefold() in _STRUCTURED_WARNING_VALUES
+        ):
+            direct_warning = True
+        if normalized_key in {"type", "kind"} and isinstance(item, str) and item.casefold() in _STRUCTURED_WARNING_VALUES:
+            direct_warning = True
+    return warning_values, direct_warning
 
-    走査対象は`--grep`と同じく`_entry_texts`が集めるエントリ内の全本文とする。
-    エントリの生JSON行を対象にすると、識別子や構造キーへの一致で出力が肥大し、
-    advisorの照会1回が出力退避を伴う規模になる。
-    """
+
+def _structured_warning_value_texts(value: Any) -> list[str]:
+    """構造化警告の値又は直接警告辞書から本文だけを取り出す。"""
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return [value] if value.strip() else []
+        if isinstance(parsed, (dict, list)):
+            return _structured_warning_value_texts(parsed)
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [text for item in value for text in _structured_warning_value_texts(item)]
+    if not isinstance(value, dict):
+        return []
+
+    warning_values, _ = _structured_warning_fields(value)
+    if warning_values:
+        return [text for item in warning_values for text in _structured_warning_value_texts(item)]
+    normalized = {key.casefold(): item for key, item in value.items() if isinstance(key, str)}
+    for key in _STRUCTURED_WARNING_BODY_KEYS:
+        if key in normalized:
+            return _structured_warning_value_texts(normalized[key])
+    stream_values = [normalized[key] for key in _STRUCTURED_WARNING_STREAM_KEYS if key in normalized]
+    if stream_values:
+        return [text for item in stream_values for text in _structured_warning_value_texts(item)]
+    return [text for item in value.values() if isinstance(item, (dict, list)) for text in _structured_warning_value_texts(item)]
+
+
+def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """入力本文を除外してhook通知の記録だけを集める。"""
+    found: list[dict[str, Any]] = []
+
+    def collect(value: Any, *, in_body: bool = False) -> None:
+        if isinstance(value, dict):
+            if not in_body and value.get("type") in _HOOK_RECORD_TYPES:
+                found.append(value)
+                return
+            for key, item in value.items():
+                collect(item, in_body=in_body or key in _BODY_KEYS)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item, in_body=in_body)
+
+    collect(entry)
+    return found
+
+
+def _warning_result_values(entry: dict[str, Any]) -> list[Any]:
+    """構造化警告を抽出できる実行結果領域の値だけを返す。"""
+    values: list[Any] = []
+
+    if "toolUseResult" in entry:
+        values.append(entry["toolUseResult"])
+
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        values.extend(block for block in content if isinstance(block, dict) and block.get("type") == "tool_result")
+
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and payload.get("type") == "function_call_output":
+        values.append(payload.get("output"))
+    if isinstance(payload, dict) and payload.get("type") == "custom_tool_call_output":
+        values.append(payload.get("output"))
+    if isinstance(payload, dict) and payload.get("type") == "event_msg":
+        item = payload.get("item")
+        if isinstance(item, dict) and item.get("type") == "CommandExecution":
+            values.extend(item.get(key) for key in ("aggregated_output", "output", "stdout", "stderr"))
+
+    values.extend(_warning_hook_records(entry))
+    return values
+
+
+def _warning_texts(entry: dict[str, Any]) -> list[str]:
+    """実行結果領域内の行頭マーカー又は構造化警告フィールドに対応する本文行を返す。"""
+    bodies: list[tuple[str, bool]] = []
+
+    def collect_markers(value: Any) -> None:
+        if isinstance(value, str):
+            bodies.append((value, True))
+            try:
+                parsed = json.loads(value)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return
+            if isinstance(parsed, (dict, list)):
+                collect_markers(parsed)
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                collect_markers(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect_markers(item)
+
+    def collect_structured(value: Any) -> None:
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return
+            if isinstance(parsed, (dict, list)):
+                collect_structured(parsed)
+            return
+        if isinstance(value, dict):
+            warning_values, direct_warning = _structured_warning_fields(value)
+            for warning_value in warning_values:
+                for text in _structured_warning_value_texts(warning_value):
+                    bodies.append((text, False))
+            if direct_warning and not warning_values:
+                for text in _structured_warning_value_texts(value):
+                    bodies.append((text, False))
+            for item in value.values():
+                collect_structured(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect_structured(item)
+
+    for result_value in _warning_result_values(entry):
+        collect_markers(result_value)
+        collect_structured(result_value)
+    unnumbered_by_body = [
+        {line.strip() for line in text.splitlines() if _LINE_NUMBER_PREFIX.match(line) is None} for text, _ in bodies
+    ]
+    seen: set[str] = set()
+    result: list[str] = []
+    for body_index, (text, marker_only) in enumerate(bodies):
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or not (not marker_only or _WARNING_LINE_PATTERN.search(line)):
+                continue
+            numbered = _LINE_NUMBER_PREFIX.match(line)
+            key = stripped
+            if numbered:
+                normalized = numbered.group(1).strip()
+                if any(
+                    other_index != body_index and normalized in other_lines
+                    for other_index, other_lines in enumerate(unnumbered_by_body)
+                ):
+                    key = normalized
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(line)
+    return result
+
+
+def _warning_boundary_line(records: list[_Record]) -> int | None:
+    """警告抽出へ適用する振り返り境界のtranscript行番号を返す。"""
+    runtime = _detect_runtime([record.entry for record in records])
+    if runtime is None:
+        return None
+    events = _extract_for_runtime([record.entry for record in records], runtime, [record.line for record in records])
+    boundary = _review_boundary_index(events, runtime)
+    if runtime == "claude":
+        automatic_boundary = next(
+            (index for index, event in enumerate(events) if event["kind"] == "session-review-started"),
+            len(events),
+        )
+        boundary = min(boundary, automatic_boundary)
+    if boundary >= len(events):
+        return None
+    for event in events[boundary:]:
+        line = event.get("line")
+        if isinstance(line, int):
+            return line
+    return None
+
+
+def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
+    """振り返り境界より前の実行時警告を行番号付きで返す。一致なしはその事実を返す。"""
     events: list[dict[str, Any]] = []
-    for record in _scannable_records(records):
-        matched_lines = _matched_lines(record.entry, _WARNING_PATTERN)
+    boundary_line = _warning_boundary_line(records)
+    scannable = _scannable_records(records)
+    if boundary_line is not None:
+        scannable = [record for record in scannable if record.line < boundary_line]
+    for record in scannable:
+        matched_lines = _warning_texts(record.entry)
         if not matched_lines:
             continue
         hint = _tool_hint(record.entry)
@@ -1856,9 +2111,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warn",
         action="store_true",
-        help="エントリ内の全本文（hook通知を含む。管理用フィールドと"
-        "本スクリプト自身の実行記録は除く）のうち"
-        "警告（`警告`・`warn`、大小文字を区別しない）に一致した行を照会する。",
+        help="振り返り境界より前のエントリから、行頭の警告マーカーまたは"
+        "構造化された警告フィールドを持つ実行時警告だけを照会する。任意文字列の検索は`--grep`を使う。",
     )
     parser.add_argument(
         "--grep",

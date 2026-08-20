@@ -17,6 +17,16 @@ user-invocable: false
 同一バッチの通常型のフィードバックの調査、採否、統合計画の起草、計画レビューを委譲先へ割り当て、結果を検収せよ。
 自身は成果物、計画ファイル、キューを変更せず、委譲先の起動、指摘の配送、完了結果の検収だけを行う。
 受信者専用のタスク文書と作成規範スキルは読み込まず、絶対パスを受信者へ渡す。
+調査・起草・レビューの工程で追加指示が生じた場合も、自身で成果物を修正せず、現在の書込担当又は
+該当する既存担当へ指示を配送してから、返却された成果物と検証結果を検収する。
+計画レビュー表は`~/.claude/plans/<計画stem>-round-<ラウンド>-<系統>.tsv`へ、実装レビュー表は呼び出し元が指定する
+managed temp領域の`<ラウンド>-<系統>.tsv`へ保存する。各表は対応する同名`.lock`と組にし、系統とラウンドごとに別の固定6列TSVへ分離する。
+列順は重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由に固定する。同じ先頭3列の複合キーを次ラウンドで再提示できるよう、ラウンドをまたいで同じ表を再利用しない。
+各ラウンドの二系統並列レビュー起動前は、調整主体が前ラウンドの各系統別`atk review-table validate <レビュー表>`を実行して全件応答済みを検証する。
+初回を含め、strict検証の前に各系統・ラウンドの表へ`atk review-table init <レビュー表>`を実行する。各レビュー担当とレビューイーはラウンド開始時に
+`atk review-table validate --allow-unanswered <レビュー表>`で自身の表の構造を検証し、レビューイーの全行への応答後は次ラウンド起動前のstrict検証へ戻る。
+両系統の担当が終端した後に、調整主体が各表を個別に全文読取して指摘と対応結果を系統・ラウンドの帰属を保ったまま統合する。
+独立系へ計画準拠系の表や出力を渡さず、同じ表へ混在させない。両系統とも0件の場合も、初期化後のstrict検証と完了検収を行う。
 
 ## 入力
 
@@ -31,13 +41,13 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 一致した末尾成分`skills/delegation`を除いた接頭部分を現行plugin rootとして確定し、
 次のplugin root相対パスを絶対パス化して用いる。
 
-- 調査担当へ渡す`skills/process-feedbacks/references/explore-template.md`と`skills/process-feedbacks/references/review-checklists.md`
-- 採否確定で自身が読む`skills/process-feedbacks/references/decision-format.md`
-- 起草担当へ渡す`skills/plan-mode/SKILL.md`と`skills/plan-mode/references/plan-file-standards.md`
-- 調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキルの`SKILL.md`を起草担当へ渡す
-- 作成規範スキルの例は`skills/coding-standards/SKILL.md`、`skills/writing-standards/SKILL.md`、`skills/agent-standards/SKILL.md`など
-- レビュー担当へ渡す`skills/plan-mode/references/plan-review-task.md`と`skills/review-standards/SKILL.md`
-- バグ対応の項目を含む場合に調査担当と起草担当へ渡す`skills/bugfix/SKILL.md`
+- 調査担当へ渡す`<plugin root>/skills/process-feedbacks/references/explore-template.md`と`<plugin root>/skills/process-feedbacks/references/review-checklists.md`
+- 採否確定で自身が読む`<plugin root>/skills/process-feedbacks/references/decision-format.md`
+- 起草担当へ渡す`<plugin root>/skills/plan-mode/SKILL.md`と`<plugin root>/skills/plan-mode/references/plan-file-standards.md`
+- 調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキルの`<plugin root>/skills/<skill>/SKILL.md`を起草担当へ渡す
+- 作成規範スキルの代表例は`<plugin root>/skills/coding-standards/SKILL.md`など
+- レビュー担当へ渡す`<plugin root>/skills/plan-mode/references/plan-review-task.md`と`<plugin root>/skills/review-standards/SKILL.md`
+- バグ対応の項目を含む場合に調査担当と起草担当へ渡す`<plugin root>/skills/bugfix/SKILL.md`
 
 解決した各絶対パスは、受信者へ渡す前又は自身で読む前に実在を確認する。
 plugin rootを確定できない場合と実在しないパスがある場合は`needs_escalation`で返す。
@@ -74,7 +84,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    終了コード2では起草担当が標準出力の部分結果を使わず、計画を作成しないで入力不足として起動主体へ返す。
    該当素材が無い場合は取得を省略させ、他の種別の出所と引用範囲をそのまま保持させる。
    キューの状態と他のレーンの情報は渡さない。
-   起草スレッドを`feedbacks-planner`の起草担当とし、1つの統合計画ファイルの書込み、機械検査、指摘の採否、要求表統合、計画修正を所有させる。
+   起草スレッドを`feedbacks-planner`の起草担当とし、1つの統合計画ファイルの書込み、機械検査、指摘の採否、要求表と固定6列TSVの統合、計画修正を所有させる。
    目的と指定された外部可視要素を維持するコーディングエージェント向け規範文書の文言、列挙及び節配置は、
    `feedbacks-planner`の起草担当が技術判断として確定する。
    `feedbacks-planner`の起草担当は構造化入力との差異と根拠を採否記録と計画へ残し、`user_decisions`へ含めない。
@@ -87,11 +97,11 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    `plan-review-task.md`を渡し、新規識別子で起動する。
    キューにない素材の逐語本文・回答全文は計画外の明示入力として、起草担当へ渡した値を初回レビュー担当へも保持して渡す。
 7. レビュー指摘を加工せず起草担当へ全件配送する。
-   配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。
-   `agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスも同じ配送文へ含める。
-   起草担当の応答では、各指摘の採否と比例性の判断根拠が要求表と変更履歴へ記録されていることを検収する。
+   配送文へ`reviewee-standards/SKILL.md`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。
+   `review-standards/references/judgment-details.md`の絶対パスも同じ配送文へ含める。
+   起草担当の応答では、各指摘の採否と比例性の判断根拠が固定6列TSV、要求表及び変更履歴へ記録されていることを検収する。
    レビュー担当の起動、書込有無のGit状態検収、結果検収は自身が担当し、再レビューと収束は
-   `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`、継続方法は
+   `plan-mode/references/plan-review-delegation.md`の絶対パス、継続方法は
    `runtime-routing.md`「工程別モデル設定」に従う。
    起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`、レビュー担当の再レビュー直前は`plan_review_model`を再取得する。
 8. 計画ファイルの実在と分量、機械検査、レビュー収束、起動前後のGit状態を検収する。

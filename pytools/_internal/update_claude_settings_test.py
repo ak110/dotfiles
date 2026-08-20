@@ -382,9 +382,52 @@ class TestProductionManagedSettings:
         path = _PROD_MANAGED_SETTINGS.with_suffix(f".{suffix}.json")
         data = json.loads(path.read_text(encoding="utf-8"))
         commands = [hook["command"] for group in data["hooks"]["Stop"] for hook in group["hooks"]]
-        assert sum("claude_hook.py autonomous_exit" in command for command in commands) == 1
-        assert sum("claude_hook.py stop_bell" in command for command in commands) == (1 if suffix == "posix" else 0)
+        assert sum("claude_hook.py" in command and "autonomous_exit" in command for command in commands) == 1
+        assert sum("claude_hook.py" in command and "stop_bell" in command for command in commands) == (
+            1 if suffix == "posix" else 0
+        )
         assert all("claude_hook.py stop;" not in command for command in commands)
+
+    def test_windows_hook_commands_use_home_placeholder(self):
+        """Windows個人hookの実行パスが介在シェルに依存しないプレースホルダー形式である。"""
+        path = _PROD_MANAGED_SETTINGS.with_suffix(".win32.json")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        commands = [
+            hook["command"]
+            for groups in data["hooks"].values()
+            for group in groups
+            for hook in group["hooks"]
+            if hook.get("type") == "command"
+        ]
+        hook_commands = [command for command in commands if "claude_hook.py" in command]
+        assert len(hook_commands) == 3
+        assert all("--script '__HOME__\\dotfiles\\scripts\\claude_hook.py'" in command for command in hook_commands)
+        assert all("$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py" not in command for command in hook_commands)
+
+    def test_windows_hook_generation_quotes_home_path_with_spaces(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Windows個人hookの生成結果は空白を含むホームパスを単一引数として扱う。"""
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("C:\\Users\\Aki User")))
+        target_path = tmp_path / "settings.json"
+        update_claude_settings(
+            _PROD_MANAGED_SETTINGS,
+            target_path,
+            overrides=[_PROD_MANAGED_SETTINGS.with_suffix(".win32.json")],
+            removed_hook_substrings=(),
+            removed_env_keys=(),
+            removed_list_item_substrings=(),
+        )
+
+        data = json.loads(target_path.read_text(encoding="utf-8"))
+        commands = [
+            hook["command"]
+            for groups in data["hooks"].values()
+            for group in groups
+            for hook in group["hooks"]
+            if hook.get("type") == "command" and "claude_hook.py" in hook.get("command", "")
+        ]
+        assert len(commands) == 3
+        assert all("--script 'C:/Users/Aki User\\dotfiles\\scripts\\claude_hook.py'" in command for command in commands)
 
 
 class TestUpdateClaudeConfig:

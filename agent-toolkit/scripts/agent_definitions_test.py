@@ -39,6 +39,7 @@ _CI_FAILURE_HANDLING = _BUGFIX.parent / "ci-failure-handling.md"
 _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
 _PUSH_AND_CI = _COMMIT_SKILL.parent / "references" / "push-and-ci.md"
 _HISTORY_REWRITE = _COMMIT_SKILL.parent / "references" / "history-rewrite.md"
+_REVIEW_TABLE_CONTRACT = "重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由"
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _AGENT_STANDARDS = _AGENTS_DIR.parent / "skills" / "agent-standards" / "SKILL.md"
 _WRITING_STANDARDS = _AGENTS_DIR.parent / "skills" / "writing-standards" / "SKILL.md"
@@ -192,8 +193,9 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         "`agent-toolkit:reviewee-standards`を当該必須入力へ含める。\n"
     ) in _h2_section(skill, "送信")
     assert (
-        "  - レビュー指摘の`対応方針`には、最上位の主体が独立に確定した採否、最小限の修正、変更してはならない契約を残す。\n"
-        "    同欄の記述は委譲元が確定した判断の記録であり、受信者の作業手順ではないため、起動文の命令へ転写しない\n"
+        "  - `対応要否`がyesの場合は`対応内容`へ最上位の主体が独立に確定した採否、最小限の修正、変更してはならない契約を残す\n"
+        "  - `対応要否`がnoの場合は`対応不要理由`へ、メイン判断又はユーザー判断の別と理由を記録する\n"
+        "  - 後半3列の記述は委譲元が確定した判断の記録であり、受信者の作業手順ではないため起動文の命令へ転写しない\n"
     ) in _h2_section(skill, "受領と検収")
     assert "タスク文書の手順、品質規範本文、出力書式、過去応答に加え、" in skill
     assert "正本内の合意事項、調査済み事実、完了条件も複製しない" in skill
@@ -211,6 +213,30 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         "snapshot",
     ):
         assert phrase in runtime
+
+
+def test_review_table_contract_is_shared_by_all_producers_and_consumers() -> None:
+    """永続レビュー表を扱う全経路が同じ固定6列を参照する。"""
+    documents = (
+        _DELEGATION_SKILL,
+        _RUNTIME_ROUTING,
+        _FEEDBACKS_PLANNER,
+        _PLAN_IMPL_EXECUTOR,
+        _PLAN_REVIEW_DELEGATION,
+        _PLAN_REVIEW_TASK,
+        _PLAN_IMPL_PLAN_REVIEW_TASK,
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _REVIEWEE_STANDARDS,
+        _PLAN_IMPL_TASK,
+        _PLAN_IMPL_FEEDBACK_FLOW,
+        _MERGE_TASK,
+    )
+    for path in documents:
+        assert _REVIEW_TABLE_CONTRACT in path.read_text(encoding="utf-8"), path
+
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    assert "通番・重大度／観点・区分・箇所・内容" not in delegation
+    assert "レビュー指摘の`対応方針`" not in delegation
 
 
 def test_delegation_forbids_reusing_completed_identifiers() -> None:
@@ -237,8 +263,9 @@ def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> No
     assert "いずれかの帰属または反映状況が未確定である間は削除しない" in removal
     # 履歴一本化後の統合先ではpatch-id比較が成立しないため、代替の検収手段を併記する。
     assert "git diff <対象ブランチ> <統合先> -- <files>" in removal
-    for text in (reception, writer, history_rewrite):
-        assert "`agent-toolkit:commit`の「作業用ブランチと退避物の削除」節" in text
+    assert "`../commit/SKILL.md`の「作業用ブランチと退避物の削除」節" in reception
+    assert "`../../commit/SKILL.md`の「作業用ブランチと退避物の削除」節" in writer
+    assert "`../SKILL.md`の「作業用ブランチと退避物の削除」節" in history_rewrite
     assert "完了報告が退避識別子または複製パスを開示した場合" in reception
     assert "退避物の回収は呼び出し元の責務" in writer
     assert "同一内容が既に退避済みである場合は追加の退避を作成しない" in writer
@@ -246,7 +273,7 @@ def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> No
 
 # 消失検査の対応表1。`plan-mode`のSKILL.mdから`plan-file-standards.md`へ移設した旧本文の全文。
 # 移設元はコミット`d71eba38`時点のSKILL.mdの「設計の判断基準」末尾段落と「計画ファイルの完成条件」配下の全節。
-# 見出し行を境界とするブロック単位の逐語一致で、節内の一部だけの消失・改変と旧配置への出戻りを検出する。
+# 見出し行を境界とするブロック単位の対応と内容行の逐語一致で、節内の一部だけの消失・改変と旧配置への出戻りを検出する。
 _PLAN_STANDARDS_MIGRATION_BASELINE = _AGENTS_DIR.parent / "scripts" / "testdata" / "plan_file_standards_migration_baseline.txt"
 _PLAN_STANDARDS_MIGRATED_BLOCK_COUNT = 12
 
@@ -294,6 +321,14 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     (
         "確認済み回答は、`AskUserQuestion`で受領した回答、又は確認事項を記録したTBDの`## 回答`節へ記録された回答とする。\n",
         "確認済み回答には、`AskUserQuestion`で受領した回答と、確認事項を記録したTBDの`## 回答`節へ記録された回答を含める。\n",
+    ),
+    (
+        "`agent-toolkit:bugfix`の固定14行を記載する。",
+        "`../../bugfix/SKILL.md`の固定14行を記載する。",
+    ),
+    (
+        "（`agent-toolkit:writing-standards`「ユーザー入力素材の取扱い」と同じ扱い）",
+        "（`../../writing-standards/SKILL.md`「ユーザー入力素材の取扱い」と同じ扱い）",
     ),
     (
         "原文正本IDはフェンス外に置き、計画内の素材IDとフィードバックファイル名を一意に対応付ける。\n"
@@ -419,7 +454,8 @@ def test_plan_file_standards_own_plan_contracts_alone() -> None:
         head = block.splitlines()[0]
         if head in intentionally_rewritten:
             continue
-        assert block in standards, head
+        for line in (line for line in block.splitlines() if line):
+            assert line in standards, f"{head}: {line}"
         residual_lines = _plan_standards_residual_lines(block)
         assert residual_lines, head
         # ブロック全体の逐語一致だけでは、1行だけの再混入を検出できないため内容行ごとに照合する。
@@ -458,13 +494,44 @@ def test_plan_creation_and_review_external_command_contracts_are_synchronized() 
     assert "理由と未検証範囲" in review_task
 
 
+def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary() -> None:
+    """レビューイーの独立検証と計画レビューの細部境界を双方の正本へ反映する。"""
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    reviewer = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    for phrase in (
+        "レビュー担当の指摘は、レビュー担当が立証済みの事実として扱わない",
+        "通常運用での再現経路及び利用者影響を独立に測定",
+        "必要十分な対策だけを選ぶ",
+    ):
+        assert phrase in reviewee
+    assert "裏付けを取得できない候補は`未検証`と明記して確定指摘から分離する" in reviewer
+
+    excluded = ("変数名", "利用者が観測しない文言", "局所的な制御フロー")
+    retained = (
+        "対象ファイルと識別子",
+        "外部可視の入出力",
+        "状態遷移",
+        "分岐条件",
+        "異常系",
+        "生成・配布経路",
+        "合否を判定する観測値",
+    )
+    for phrase in excluded + retained:
+        assert phrase in standards
+        assert phrase in review_task
+    assert "追記させず" in review_task
+
+
 def test_plan_review_keeps_author_as_the_only_writer() -> None:
     """計画の起草担当が検査・修正を所有し、レビュー担当を読み取り専用にする。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "起草担当自身が正規計画へ" in delegation
-    assert "正規計画の書込主体を起草担当1名に保つ" in delegation
+    assert "通常モードでは起草担当が正規計画へ書き込み" in delegation
+    assert "各パスの書込主体は常に1名とする" in delegation
     assert "独立したレビュー担当" in delegation
     assert "意味自己監査" in delegation
     assert "自己監査は品質形成" in delegation
@@ -494,6 +561,127 @@ def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
     for task in (writer, plan_review, independent_review):
         assert "skills/delegation" not in task
         assert "runtime-routing.md" not in task
+
+
+def test_review_table_validation_modes_match_review_lifecycle() -> None:
+    """レビュー表の初回・応答中・収束時の検証モードを役割文書で同期する。"""
+    documents = (
+        _FEEDBACKS_PLANNER,
+        _PLAN_IMPL_EXECUTOR,
+        _REVIEWEE_STANDARDS,
+        _PLAN_REVIEW_TASK,
+        _PLAN_IMPL_PLAN_REVIEW_TASK,
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _PLAN_REVIEW_DELEGATION,
+    )
+    structural = "`atk review-table validate --allow-unanswered <レビュー表>`"
+    strict = "`atk review-table validate <レビュー表>`"
+    for path in documents:
+        document = path.read_text(encoding="utf-8")
+        assert structural in document, path
+        assert strict in document, path
+
+    coordinator_phrase = "各ラウンドの二系統並列レビュー起動前は"
+    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR, _PLAN_REVIEW_DELEGATION):
+        assert coordinator_phrase in path.read_text(encoding="utf-8"), path
+    reviewer_phrase = "各レビュー担当とレビューイーはラウンド開始時に"
+    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR, _PLAN_REVIEW_TASK, _PLAN_REVIEW_DELEGATION):
+        assert reviewer_phrase in path.read_text(encoding="utf-8"), path
+    for path in (_PLAN_IMPL_PLAN_REVIEW_TASK, _PLAN_IMPL_INDEPENDENT_REVIEW_TASK):
+        assert "レビュー担当はラウンド開始時に" in path.read_text(encoding="utf-8"), path
+
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    assert "各ラウンドの二系統並列レビュー起動前は、調整主体が前ラウンドの" in executor
+    assert "各レビュー担当とレビューイーはラウンド開始時に" in executor
+    assert executor.index("調整主体が前ラウンドの") < executor.index("各レビュー担当とレビューイーはラウンド開始時に")
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    assert "各ラウンドの開始時に" in reviewee
+    assert reviewee.index("構造検証") < reviewee.index("全行への応答")
+
+
+def test_review_table_paths_preserve_system_and_round_independence() -> None:
+    """二系統を別表へ分離し、初回0件と次ラウンド再提示の工程を各文書で同期する。"""
+    documents = (
+        _FEEDBACKS_PLANNER,
+        _PLAN_IMPL_EXECUTOR,
+        _PLAN_REVIEW_DELEGATION,
+        _PLAN_REVIEW_TASK,
+        _PLAN_IMPL_PLAN_REVIEW_TASK,
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _REVIEWEE_STANDARDS,
+    )
+    for path in documents:
+        document = path.read_text(encoding="utf-8")
+        assert "系統・ラウンド" in document, path
+        assert ".lock" in document, path
+        assert "atk review-table init <レビュー表>" in document, path
+        assert "両系統" in document or "二系統" in document, path
+
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    assert "独立系へ計画準拠系の表や出力を渡さない" in executor
+    assert "計画準拠系の表や出力を受け取らず" in independent
+    assert "両系統の担当が終端した後" in executor
+    assert "未解消の同一複合キーを再提示" in _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+
+def test_review_table_rereviews_require_delta_inputs_and_current_table_additions() -> None:
+    """同一thread継続でも履歴を入力し、指摘を今回表だけへ追加する契約を固定する。"""
+    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    merge = _MERGE_TASK.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+
+    for reviewer in (plan_review, independent_review, plan_review_task):
+        for phrase in (
+            "同一thread継続でも新規起動でも",
+            "必須差分入力",
+            "同じ系統の過去全ラウンド表",
+            "ラウンド昇順",
+            "過去表へは追記しない",
+            "過去表の先頭3列を今回の表へ追加せず",
+            "今回の系統・ラウンド表だけへ`atk review-table add`で追加する",
+            "全文読取",
+        ):
+            assert phrase in reviewer
+        assert "同一thread継続では実施指示だけを渡す" not in reviewer
+    for reviewer in (plan_review, independent_review):
+        assert "今回の系統・ラウンド表と対応`.lock`" in reviewer
+    assert "今回の系統・ラウンドに対応するレビュー指摘管理表と対応`.lock`の絶対パス" in delegation
+    assert (
+        "今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
+        in delegation
+    )
+    assert "同一threadでは、前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
+    assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" not in delegation
+    assert "再レビューでは既知でない情報だけを渡す" not in delegation
+    assert "計画準拠系の表と対応`.lock`はこの一覧へ含めない" in independent_review
+    assert "独立系へ計画準拠系の表や出力を渡さない" in executor
+    assert "修正対象となる全系統・全ラウンド表" in executor
+    for phrase in (
+        "通常の実装レビュー用managed temp領域の絶対パス",
+        "各レビュー担当の新規起動とCodex経路の同一thread継続のいずれでも",
+        "今回の系統・ラウンド表と対応`.lock`",
+        "同じ系統の過去全ラウンド表と対応`.lock`",
+        "必須差分入力として渡す",
+        "初回は過去全ラウンド表と対応`.lock`の一覧が空",
+    ):
+        assert phrase in executor
+    assert (
+        "再レビューでは、各系統の過去全ラウンド表と対応`.lock`をラウンド昇順で各担当へ渡し、今回の表と対応`.lock`だけを追加対象として指定する"
+        in executor
+    )
+    assert "各系統の過去全ラウンド表をラウンド順に並べた一覧" in flow
+    assert "今回の系統・ラウンド表だけへ指摘を追加する" in flow
+    assert "同じ系統の過去全ラウンド表をラウンド昇順で検証・全文読取し、今回の系統・ラウンド表だけへ指摘を追加する" in reviewee
+    for adopter in (implementation_task, reviewee, merge):
+        assert "修正対象となる全系統・全ラウンド表" in adopter
+        assert "全文読取" in adopter
 
 
 def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() -> None:
@@ -555,12 +743,16 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "キューにない素材の逐語本文・回答全文は計画外の明示入力として、初回レビュー担当へ渡す" in delegation
     assert "再レビューへの追送には、キューにない素材の逐語本文・回答全文も計画外の明示入力として含め" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
-    assert "再レビューでは既知でない情報だけを渡す" in delegation
+    assert "再レビューでは、既知でない情報に加えて" in delegation
     assert "実効3値一致により同一threadを継続する場合は" in delegation
-    assert "「再レビューを実施せよ」に相当する指示を送る" in delegation
+    assert (
+        "今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
+        in delegation
+    )
+    assert "前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
     assert "同一threadの継続では当該情報を追送し" in delegation
-    assert "新規起動では初回と同じ入力パス集合及び検収済み状態とともに渡す" in delegation
+    assert "新規起動では初回と同じ入力パス集合と検収済み状態を渡す" in delegation
     assert "当該情報を渡さない限り、その発話を根拠とする実施又は除外を計画へ書かない" in delegation
     assert "当該ラウンドの採用件数と追加した履歴行数が一致すること" in delegation
     assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
@@ -700,6 +892,31 @@ def test_plan_file_is_the_writer_parallelism_boundary() -> None:
     assert "この限定例外として扱う" in merge
     assert "異なる計画ファイルのレーンだけを別worktreeで並列化" in flow
     assert "計画ファイルごとに`atk managed-temp create" in caller
+
+
+def test_overlapping_plan_lanes_run_parallel_and_merge_all_plan_intents() -> None:
+    """変更ファイルが重複する計画を並列化し、統合時に双方の意図を照合する。"""
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    merge = _MERGE_TASK.read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
+
+    assert "同じworktreeへ後続の書込担当を起動する場合に限り" in rules
+    assert "変更ファイルが重複しても相互に待機しない" in rules
+    assert "変更対象ファイルの重複を待機又は分割の条件にせず" in flow
+    assert "変更ファイルの重複を理由に先行レーンの完了を待たず" in caller
+    for text in (design, incidents):
+        assert "異なる計画ファイル" in text
+        assert "別worktree" in text
+        assert "全計画" in text
+    for phrase in (
+        "関係する全計画ファイルを全文読み",
+        "各計画の目的、実施内容、設計判断及び完了条件",
+        "各計画の契約を両立させる最小限の解消",
+    ):
+        assert phrase in merge
 
 
 def test_single_plan_units_advance_one_lane_worktree_without_cherry_pick() -> None:
@@ -1141,7 +1358,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in runtime
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
-    assert "同領域内の6列表ファイル以外を書き込まない" in executor
+    assert "対応`.lock`一時成果物だけを指定された統合用管理対象領域内へ保存し、それ以外を書き込まない" in executor
     assert "各単位の最初のfast担当を新規起動する直前に" in executor
     assert "複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する" in executor
     assert "`atk config get execute_fix_model`を起動直前に実行する" in executor
@@ -1166,8 +1383,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "レビュー修正モード",
         "applications:",
         "統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力",
-        "レビュー修正モードでは、採用指摘の6列表と関係する全計画の絶対パスを必須入力",
-        "採用指摘の6列表を読み、関係する全計画から保持契約を読み、採用指摘だけを修正",
+        "レビュー修正モードでは、採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）、修正対象となる全系統・全ラウンド表の絶対パス及び関係する全計画の絶対パスを必須入力",
+        "採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）と修正対象となる全系統・全ラウンド表を全文読取し、関係する全計画から保持契約を読み、採用指摘だけを修正",
         "レーン項目はソート済みフィードバックファイル名一覧、レーンのcommit OID、適用後OID",
         "レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ",
     ):
@@ -1179,7 +1396,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "non-fast-forward拒否",
         "安定ID",
         "適用済みスキップ",
-        "6列表を統合用管理対象領域内へ保存",
+        "固定6列TSVと対応`.lock`一時成果物だけを統合用管理対象領域内へ保存",
         "キューの`plan_file`から各計画の進捗ログを辿り",
         "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",
         "初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動",
@@ -1648,7 +1865,13 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
     assert "- モード指定、プロジェクト規範の絶対パス、該当する作成規範スキルの絶対パス\n" in common
-    for phrase in ("計画ファイルの絶対パス", "worktree一覧", "フィードバックファイル名一覧", "複製元と対象外worktree"):
+    for phrase in (
+        "計画ファイルの絶対パス",
+        "worktree一覧",
+        "通常の実装レビュー用managed temp領域の絶対パス",
+        "フィードバックファイル名一覧",
+        "複製元と対象外worktree",
+    ):
         assert phrase in normal
         assert phrase not in integrated
     for phrase in (
@@ -1658,7 +1881,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
         "統合対応表に含まれる全計画の絶対パス",
         "統合スレッドの検証結果",
         "統合用管理対象領域の絶対パス",
-        "既存6列表ファイルの絶対パス",
+        "今回の系統・ラウンド表、各系統の過去全ラウンド表をラウンド順に並べた一覧、及び修正対象となる全系統・全ラウンド表と対応`.lock`の絶対パス",
     ):
         assert phrase in integrated
     assert "共通入力又は選択したモードの必須入力" in input_contract
@@ -1707,7 +1930,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     assert "統合worktree作成時の完全OID" in input_contract
     assert "統合対応表の絶対パス" in input_contract
     for phrase in (
-        "`対応方針`を確定する前",
+        "`対応要否`と後半の対応欄を確定する前",
         "`## 変更履歴`と現在状態を定める後続節の整合",
         "`### ファイル群別の変更説明`の変更対象集合からの差異",
         "後続節で再採用済みなら許容",
@@ -1730,7 +1953,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
 
     plan_check_at = common_review.index("`## 変更履歴`と現在状態を定める後続節の整合")
     authorization_at = common_review.index("モード別の修正認可の上限", plan_check_at)
-    policy_at = common_review.index("`対応方針`には`plan-impl-executor`が独立に確定", authorization_at)
+    policy_at = common_review.index("`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定", authorization_at)
     writer_handoff_at = common_review.index("実在欠陥だけを書込担当へ一括して返す", policy_at)
     assert plan_check_at < authorization_at < policy_at < writer_handoff_at
 
@@ -2035,7 +2258,9 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
         "委譲元契約の正本",
         "借用する現在worktreeを回収不可として含む完全な一覧",
         "レーンのworktreeと計画が明示する管理対象worktreeを含む完全な一覧",
-        "worktreeの完全な一覧、ソート済みフィードバックファイル名一覧、追加指示",
+        "各レーンの起動前に`atk managed-temp create --prefix <レビュー用途>`を単独で実行",
+        "worktreeの完全な一覧、通常の実装レビュー用managed temp領域の絶対パス、"
+        "ソート済みフィードバックファイル名一覧、追加指示",
         "許容済みの挙動変化、権限だけを渡し",
     ):
         assert phrase in flow
@@ -2048,6 +2273,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     for required_input in (
         "計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス",
         "worktreeの完全な一覧",
+        "通常の実装レビュー用managed temp領域の絶対パス",
         "1件以上のソート済みフィードバックファイル名一覧",
         "追加指示と許容済みの挙動変化",
         "複製元と対象外worktree",
@@ -2159,7 +2385,7 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "投入元の証拠を同じ対象と主張へ照合" in add_feedback
     assert "利用者依存事項は確認又はTBDへ分離" in add_feedback
     assert "技術的未確定が通常型本文へ残っていない" in add_feedback
-    assert "`agent-toolkit:plan-mode`の調査成果を証拠として再利用" in add_feedback
+    assert "`../plan-mode/SKILL.md`の調査成果を証拠として再利用" in add_feedback
     assert "保存直前にactive一覧" in add_feedback
     assert "正確なローカルworktreeが既知" in add_feedback
     assert "その絶対パスを`atk mq add --target-repo`へ渡し" in add_feedback
@@ -2366,7 +2592,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         "支持する事実",
         "反証する事実",
         "判別実験",
-        "`agent-toolkit:bugfix`本体「初動と深掘り判定」に従って直接的原因と深掘り要否を確定",
+        "`../SKILL.md`「初動と深掘り判定」に従って直接的原因と深掘り要否を確定",
     ):
         assert phrase in ci_failure
     assert "scripts/wait_ci.py" not in ci_failure
@@ -2634,7 +2860,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "対象外の入力前提又は異なる脅威モデル",
         "複写するだけで採用しない",
         "元の目的と非目標へ差し戻す",
-        "比較階層と比例性の判定は`agent-toolkit:review-standards`の`references/judgment-details.md`を正本",
+        "比較階層と比例性の判定は、`../review-standards/references/judgment-details.md`を解決して正本",
         "同じ修正回で一括修正する",
         "違反契約の原文を修正後の成果物へ再適用する",
         "references/judgment-details.md",
@@ -2648,7 +2874,8 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         _DELEGATION_SKILL,
     )
     for path in body_references:
-        assert "agent-toolkit:reviewee-standards" in path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
+        assert "agent-toolkit:reviewee-standards" in text or "reviewee-standards/SKILL.md" in text
 
     parsed_executor = frontmatter.parse_frontmatter(_PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"))
     assert parsed_executor is not None
@@ -2673,21 +2900,23 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
     # 出現回数だけでは経路ごとの入力列挙を区別できないため、2つのレビュー修正手順を節ごとに逐語固定する。
     assert (
-        "   `skills/plan-mode/references/implementation-task.md`、レーンのworktree、対象計画、"
+        "   `plan-mode/references/implementation-task.md`の呼び出し元指定絶対パス、レーンのworktree、対象計画、"
         "採用指摘を実装単位とした目的及び変更説明、\n"
-        "   統合した6列表、プロジェクト規範、該当する作成規範スキル、"
-        "受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス、\n"
+        "   系統・ラウンド別に統合した固定6列TSV、修正対象となる全系統・全ラウンド表の絶対パス一覧、"
+        "プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして"
+        "`reviewee-standards/SKILL.md`の絶対パス、\n"
         "   ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、\n"
         "   複製元と対象外worktree、git操作の制約を渡す\n"
     ) in _h4_section(executor, "通常の実装モードのレビュー修正")
     assert (
-        "   修正用の書込担当へ`skills/process-feedbacks/references/merge-task.md`のレビュー修正モード、6列表、\n"
+        "   修正用の書込担当へ`process-feedbacks/references/merge-task.md`の呼び出し元指定絶対パス、"
+        "系統・ラウンド別の固定6列TSV、修正対象となる全系統・全ラウンド表の絶対パス一覧、\n"
         "   プロジェクト規範、該当する作成規範スキル、"
-        "受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パスを渡す\n"
+        "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パスを渡す\n"
     ) in _h4_section(executor, "統合後レビュー調整モードのレビュー修正")
     assert (
-        "調整主体が指摘を配送する場合は、`agent-toolkit:reviewee-standards`と"
-        "`agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスを起草担当への配送文へ含める。\n"
+        "調整主体が指摘を配送する場合は、`../../reviewee-standards/SKILL.md`と解決済みの\n"
+        "`review-standards/references/judgment-details.md`の絶対パスを起草担当への配送文へ含める。\n"
     ) in _h2_section(plan_review, "指摘の検収と修正")
     # 起草担当が採否確定の正本へ到達する経路は、資料の受け渡しと配送時の明示の両方が成立して初めて成り立つ。
     assert (
@@ -2696,13 +2925,14 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     ) in planner
     assert (
         "7. レビュー指摘を加工せず起草担当へ全件配送する。\n"
-        "   配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め、"
+        "   配送文へ`reviewee-standards/SKILL.md`と`plan-review-delegation.md`の絶対パスを含め、"
         "採否の確定に用いる正本として示す。\n"
-        "   `agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
-        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が要求表と変更履歴へ記録されていることを検収する。\n"
+        "   `review-standards/references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
+        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が"
+        "固定6列TSV、要求表及び変更履歴へ記録されていることを検収する。\n"
     ) in planner
     assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
-    assert "採否と対応結果を要求表と変更履歴へ統合" in plan_review
+    assert "採否と対応結果を要求表、変更履歴及び`atk review-table`の固定6列TSV" in plan_review
     assert "スコープ、公開契約、ユーザー合意を変える修正" in plan_review
 
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -2713,23 +2943,23 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     merge = _MERGE_TASK.read_text(encoding="utf-8")
     for document in (writer, merge, plan_review):
         assert "`agent-toolkit:reviewee-standards`を起動" not in document
-    writer_reviewee_phrase = "`agent-toolkit:reviewee-standards`と該当する作成規範スキルを適用し、指摘の採否と修正を確定する。"
-    merge_reviewee_phrase = "`agent-toolkit:reviewee-standards`を適用し、指摘の採否と修正を確定する。"
+    writer_reviewee_phrase = "`../../reviewee-standards/SKILL.md`と該当する作成規範スキルを適用し、指摘の採否と修正を確定する。"
+    merge_reviewee_phrase = "`../../reviewee-standards/SKILL.md`を適用し、指摘の採否と修正を確定する。"
     assert writer_reviewee_phrase in writer
     assert merge_reviewee_phrase in merge
-    assert "起草担当は`agent-toolkit:reviewee-standards`を適用し、" in plan_review
-    assert "採用指摘の6列表" in merge
+    assert "起草担当は`../../reviewee-standards/SKILL.md`を適用し、" in plan_review
+    assert "採用指摘の固定6列TSV" in merge
     assert "1つの修正commit" in merge
     assert "指摘の根拠不足、計画との衝突、認可外の変更" in merge
 
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
-    assert "`対応方針`には`plan-impl-executor`が独立に確定した採否と最小限の修正" in executor
+    assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
+    assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否と最小限の修正" in executor
     assert "根拠と適用条件のいずれかが不足する指摘は`未検証`へ移す" in executor
     assert "実在欠陥だけを書込担当へ一括して返す" in executor
 
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
-    assert "通番・重大度／観点・区分・箇所・内容" in delegation
+    assert "固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）" in delegation
     assert "`未検証`の指摘は修正担当へ渡さない" in delegation
 
 
@@ -2766,10 +2996,13 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     for phrase in ("適用", "最小限の修正"):
         assert phrase in plan_review_delegation
     assert "修正方針" in reviewee
-    assert "`内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
-    assert "`対応方針`には`plan-impl-executor`が独立に確定した採否" in executor
+    assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
+    assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否" in executor
 
-    for phrase in ("検証済みの実際値、期待値、違反契約、対象への適用根拠", "保持契約が指摘ごとにそろう"):
+    for phrase in (
+        "検証済みの実際値、期待値及び違反契約を確認する",
+        "対象への適用根拠と保持契約が指摘ごとにそろうことも確認する",
+    ):
         assert phrase in writer
     assert "推測して修正せず`needs_escalation`" in writer
     assert "要求と適用根拠の確認結果" in writer

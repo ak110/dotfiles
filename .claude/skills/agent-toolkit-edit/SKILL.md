@@ -18,7 +18,7 @@ description: >
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk mq`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
-  `agent-toolkit:agent-standards`の`references/claude-hooks.md`が扱う
+  `<plugin root>/skills/agent-standards/references/claude-hooks.md`が扱う
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
@@ -53,7 +53,7 @@ description: >
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
   利用者には挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する節
-    （`agent-toolkit:agent-standards`「セッション状態フラグ」節等）は本規定の対象外とする
+    （`<plugin root>/skills/agent-standards/SKILL.md`「セッション状態フラグ」節等）は本規定の対象外とする
 
 スキル・サブエージェント編集時は次を守る。
 
@@ -214,4 +214,4 @@ Codex hookの定義は、`scripts/sync_codex_plugin_manifests.py`がイベント
 
 ## コミットメッセージ方針と.gitmessage
 
-`agent-toolkit:commit`スキルのコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。
+`<plugin root>/skills/commit/SKILL.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。
