@@ -145,6 +145,14 @@ Codex App Server MCPの`codex_start`では`cwd`へ作業ディレクトリの絶
 - 参照可能な状態の正本がない場合は、未完了事項と検収済み状態を起動文内で完結させる。
   固定6列TSVの保存先がない場合は、呼び出し元が管理対象領域へ表を作成してから継続する。
   表の内容を起動文へ埋め込む経路は採用しない
+- `feedbacks-planner`が`awaiting_confirmation`を返した場合は、呼び出し元が確認回答又は保存済みTBDを受領した後、
+   停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列（同じバッチと計画）の新しい識別子を起動する。
+  初回起動には再開コンテキストを含めない。
+  確認待ち後の再開起動だけへ元のバッチ全項目の調査結果全文を渡す。
+  原文frontmatterの`source`原値（欠落は値なし）、`decision`を含むIDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答・保存TBD、
+  初回起動と同じ計画ファイルの絶対パスも全て渡す。
+   元の調査結果を再調査せず要約もしない。
+   回答とTBDを対応する採否記録へ統合し、確定済みの`decision`を再判断せず起草担当へ渡す
 - 独立したレビュー系統、異なる観点、先行履歴に依存しない評価は新しい識別子で起動する
 - 同じ識別子への追送は先行応答の受領後に行い、同一識別子への並列追送を行わない。
   稼働中は方針を逐次差し替えず、確定した差分を1回で送る
@@ -172,13 +180,16 @@ Codex App Server MCPの`codex_start`では`cwd`へ作業ディレクトリの絶
 ```text
 route: <実際に使った経路>
 identifier: <threadまたはagent識別子>
-status: completed | fast_fix_handoff | needs_escalation
+status: completed | fast_fix_handoff | awaiting_confirmation | needs_escalation
 response: <受信者の最小完了報告>
 ```
 
 `fast_fix_handoff`は`implementation-task.md`のfast担当が同一失敗箇所の残存とdirty差分を
 構造化した`repair_handoff`として返す専用状態であり、`completed`又は`needs_escalation`へ読み替えない。
 
+`awaiting_confirmation`は、`feedbacks-planner`が不採用確認用`user_decisions`を返して確認を待つ状態を表す。
+呼び出し元はこれを失敗として処理せず、確認回答又はTBDを受領して同じ系列の新しい識別子を起動する。
+構造化された`status: awaiting_confirmation`は受領可能な状態であり、単なる待機表明とは区別する。
 待機表明だけの応答、必須結果不足、成果物との不一致は完了と扱わない。
 記録経路は通常配送不能を実測した場合だけ使用し、所有主体の終端と内容検収後に管理対象一時領域を後始末する。
 

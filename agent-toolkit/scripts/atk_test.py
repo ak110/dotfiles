@@ -994,14 +994,14 @@ class TestParseLeadingFrontmatter:
 
 
 class TestAddFrontmatterOverride:
-    """addサブコマンド: メッセージ先頭のfrontmatterがCLIオプションより優先されること。"""
+    """addサブコマンド: CLI指定とメッセージfrontmatterの優先順位を検証する。"""
 
     def test_message_frontmatter_overrides_cli_target_repo(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """メッセージ先頭frontmatterの`target_repo`がCLIオプションより優先される。"""
+        """メッセージfrontmatterの`target_repo`がCLI指定より優先される。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1011,7 +1011,11 @@ class TestAddFrontmatterOverride:
         message = "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\nテスト本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(
+                ["mq", "add", str(myrepo), message, "--source", "cli-source"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
         assert exc_info.value.code == 0
 
         inbox = notes / "inbox"

@@ -308,6 +308,19 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n",
     ),
     (
+        "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n"
+        "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
+        "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n"
+        "\n"
+        "`agent-toolkit:process-feedbacks`が複数の通常型フィードバックを1つの統合計画へまとめる場合は、概要の説明直後かつ\n"
+        "`### 計画メタ情報`の前へ、バッチに含まれる全フィードバックを1行ずつ示す次の4列表を置く。\n"
+        "列は`フィードバック`、`原文参照`、`採否`、`理由・差異説明`とし、`フィードバック`にはファイル名、`原文参照`には提示素材IDを書く。\n"
+        "完全採用以外の結果では`理由・差異説明`へ項目固有の理由又は原文との差異を記録し、部分採用では採用範囲と除外範囲の両方を記載する。\n"
+        "この一覧は統合計画の現在の採否を示し、経緯、旧方針及び指摘の反映記録を担う`## 変更履歴`の代用にはしない。\n"
+        "\n"
+        "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
+    ),
+    (
         "自己生成起点として`エージェント追加`へ分類する。\n利用者合意に対応する",
         "自己生成起点として`エージェント追加`へ分類する。\n"
         "`実施内容`の各行は、対象ファイルのパス、設定名・関数名・ジョブ名などの識別子及び変更内容を書き、"
@@ -988,8 +1001,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "explore-template.md",
         "plan-review-task.md",
         "指摘を加工せず起草担当へ全件配送",
-        "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
-        "起草スレッドへ採用項目のファイル名一覧と対象リポジトリ",
+        "通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない",
+        "起草スレッドへバッチ全項目のファイル名",
         "本文を起動文へ複製しない",
         "各フィードバックごとの調査スレッド",
         "キューの状態と他のレーンの情報は渡さない",
@@ -1148,6 +1161,7 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
     decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
     checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
     assert "`source`の文字列を改変せず投入元識別子として記録" in explore
     assert "欄が無い場合は「値なし」と記録" in explore
@@ -1157,11 +1171,144 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     assert planner.index("調査結果から投入元と引用範囲を受領") < planner.index("`decision-format.md`へ照合")
     for source in ("`session-review`", "`alert-monitor`", "`plan`", "値なし", "その他の値"):
         assert source in decision
-    assert "フィードバック本文又は投入元識別子から、人間由来又は利用者認可を推定しない" in decision
+    assert "`source: session-review`だけをエージェント由来" in decision
+    assert "sourceによる由来境界の判定と利用者認可の確認を分ける" in decision
+    assert "sourceは由来境界の判定にだけ用い、source又はフィードバック本文から利用者認可を推定しない" in decision
+    assert "投入元識別子で由来境界を判定するが、投入元識別子やフィードバック本文から利用者認可を推定しない" in design
+    assert "投入元識別子やフィードバック本文から、人間由来若しくは利用者認可を推定しない" not in design
+    for source in (
+        "`source: plan`",
+        "`source: alert-monitor`",
+        "その他のsource",
+        "source欠落及び不明",
+    ):
+        assert source in decision
     assert "全ての提案で確認する" in checklist
     assert "改訂後の方針案を適用優先順位に照合" in checklist
     assert "実行前であることだけを全ての提案の不採用根拠にしない" in checklist
     assert "当該契約が定める工程で検証してから採否を確定" in checklist
+
+
+def test_integrated_plan_overview_lists_every_feedback_with_exceptions() -> None:
+    """通常型統合計画の全項目一覧を計画様式の正本へ固定する。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    overview = standards.index("`agent-toolkit:process-feedbacks`が複数の通常型フィードバック")
+    metadata = standards.index("直下のH3は`### 計画メタ情報`だけとし", overview)
+    assert overview < metadata
+    for column in ("`フィードバック`", "`原文参照`", "`採否`", "`理由・差異説明`"):
+        assert column in standards
+    for phrase in (
+        "バッチに含まれる全フィードバックを1行ずつ",
+        "完全採用以外の結果では`理由・差異説明`へ項目固有の理由又は原文との差異",
+        "部分採用では採用範囲と除外範囲の両方",
+        "`## 変更履歴`の代用にはしない",
+    ):
+        assert phrase in standards
+    assert "概要の説明直後かつ" not in review_task
+
+
+def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> None:
+    """項目別の根拠、由来境界、確認後確定及びTBD保留を同期する。"""
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    for phrase in (
+        "原文正本ID",
+        "人間由来の指示又は方針の優先度",
+        "調査根拠",
+        "欠陥原因",
+        "採否理由",
+        "完全採用以外の結果は項目固有の採否理由・原文との差異",
+        "関連性の低い項目を同じ包括理由だけで一括判断せず",
+        "`source: session-review`だけをエージェント由来",
+        "その他のsource、source欠落及び不明は人間由来",
+        "部分採用を理由にAskUserQuestionを機械的に発行せず",
+        "回答が得られない場合は同じ質問内容をTBDへ保存",
+        "回答又はTBDを確認できない状態では`reject`を実行しない",
+        "元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する",
+        "`alert_keys`などの非予約frontmatterは元項目の値を保持する",
+        "不採用確認用`user_decisions`は通常の将来判断TBDと区別する",
+    ):
+        assert phrase in decision
+    for document in (sender, planner, process, hold, decision):
+        assert "`source: session-review`" in document
+    for phrase in (
+        "バッチ全項目の採否記録",
+        "実施内容へは、対象項目の採用範囲だけを反映する",
+        "同じ`feedbacks-planner`系列の新しい識別子",
+        "依存設定と`blocked`確認後",
+        "元項目をrejectしない",
+        "元のバッチ全項目の調査結果全文",
+        "原文frontmatterの`source`原値",
+        "`user_decisions`原文",
+        "同じ計画ファイルの絶対パス",
+    ):
+        assert phrase in sender or phrase in planner or phrase in process or phrase in hold or phrase in decision
+    for phrase in (
+        "`user_decisions`を返した時点で本工程を中断",
+        "呼び出し元へ返却してターンを終端する",
+        "呼び出し元は`user_decisions`ごとに`AskUserQuestion`",
+        "`status: awaiting_confirmation`として",
+        "これは失敗ではない",
+        "停止済みの識別子へ継続せず",
+        "計画起草、キュー操作及びrejectを開始しない",
+    ):
+        assert phrase in planner
+
+
+def test_feedback_source_passthrough_and_storage_verification_contract() -> None:
+    """source指定時だけCLIへ値を渡し、保存後に既存show経路で照合する。"""
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
+
+    assert "sourceを受領した場合だけ同じ値を" in add_feedback
+    assert "`atk mq add --source=<source>`へ渡す" in add_feedback
+    assert "sourceを受領していない場合は`--source`を省略し" in add_feedback
+    assert "`atk mq show <filename> --target-repo=<repo-path> --skip-pull`" in add_feedback
+    assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
+    assert "sourceの欠落・不一致では完了扱いにせず" in add_feedback
+    assert "sourceを受領していない場合は追加のsource照合をしない" in add_feedback
+    assert "手順7のsource照合後" in add_feedback
+    assert "手順6の照合後" not in add_feedback
+    assert "source `plan`を明示" in plan_and_add
+    assert "source `session-review`を明示" in session_review
+
+
+def test_feedback_transfer_requires_successful_registration_before_rejection() -> None:
+    """別リポジトリ項目の登録・照合・元項目終端の順序を固定する。"""
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+
+    for document in (sender, decision, checklist, design):
+        assert "正しい`target_repo`" in document
+        assert "登録" in document
+        assert "照合" in document
+        assert "移管先ファイル名" in document
+    assert "指定済みsource" in sender
+    assert "source欄がない場合はsourceを指定しない" in sender
+    assert "sourceを指定した場合は移管先のsource" in sender
+    assert "sourceを指定しない場合は本文、`target_repo`、非予約frontmatter全体を同じshow経路で照合する" in sender
+    assert "照合には`atk mq show <移管先ファイル名> --target-repo=<target_repo> --skip-pull`を使う" in sender
+    assert (
+        "sourceを指定した場合は移管先の`source`、本文、`target_repo`、非予約frontmatter全体、移管先ファイル名を`atk mq show`"
+        in decision
+    )
+    assert "sourceを指定しない場合は本文、`target_repo`、非予約frontmatter全体、移管先ファイル名を照合する" in decision
+    assert (
+        "sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を既存の`atk mq show`で照合"
+        in checklist
+    )
+    registration = sender.index("`agent-toolkit:add-feedback`へ渡して登録・照合する")
+    terminal = sender.index("元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする")
+    assert registration < terminal
+    assert "登録又は照合に失敗した場合は元項目を保持する" in sender
 
 
 def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:
@@ -1193,9 +1340,10 @@ def test_session_review_advisor_checks_duplicates_with_scoped_queue_list() -> No
 
 
 def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:
-    """技術的失敗の終端と結果反映エラー後の全件走査を固定する。"""
+    """技術的失敗の由来別終端と結果反映エラー後の全件走査を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
 
     for phrase in (
         "失敗した事象、期待値、実際値、発生条件",
@@ -1204,6 +1352,10 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "失敗TBDの保存コマンドの完了表示にエラーが無いことを確認",
         "警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`",
         "保存内容に欠落が無いことを確認",
+        "`source: session-review`と確認できる項目は",
+        "それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い",
+        "失敗TBDを依存へ追加して`blocked`まで確認する",
+        "元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する",
         "atk mq reject <filename> --note=<失敗TBD filename>",
         "失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず",
         "一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行",
@@ -1221,8 +1373,10 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     save_at = sender.index("失敗TBDを`agent-toolkit:add-feedback`で1件保存")
     completion_at = sender.index("失敗TBDの保存コマンドの完了表示にエラーが無いことを確認", save_at)
     warning_at = sender.index("警告が出た場合は`atk mq show", completion_at)
+    source_branch_at = sender.index("`source: session-review`と確認できる項目は", warning_at)
+    human_branch_at = sender.index("それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い", source_branch_at)
     terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", warning_at)
-    assert save_at < completion_at < warning_at < terminal_at
+    assert save_at < completion_at < warning_at < source_branch_at < terminal_at < human_branch_at
     reflect_save_at = sender.index(
         "元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存", terminal_at
     )
@@ -1232,6 +1386,24 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     assert terminal_at < reflect_save_at < reflect_completion_at < reflect_warning_at < reflect_terminal_at
     for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "バッチを失敗"):
         assert phrase in process
+    for phrase in (
+        "source: session-review",
+        "失敗TBDを依存へ追加",
+        "TBD依存を設定し、`blocked`を確認して保留する",
+        "不採用確認を経ずに元のフィードバックをrejectしない",
+        "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する",
+    ):
+        assert phrase in process
+    for phrase in (
+        "## 技術的失敗",
+        "元項目をrejectせず",
+        "現行の有効依存を復元して失敗TBDのファイル名を追加",
+        "`atk mq set-dependencies`",
+        "`atk mq return-to-inbox`で元項目をinboxへ戻し",
+        "対象行が`blocked`であることを確認する",
+        "失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する",
+    ):
+        assert phrase in hold
     for forbidden in ("結果反映済み項目", "結果部分反映項目", "結果未反映項目", "同一バッチ非再試行"):
         assert forbidden not in sender
         assert forbidden not in process
@@ -1239,9 +1411,24 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     assert not (_DISTRIBUTION_ROOT / "scripts" / "_atk_mq_recover_test.py").exists()
 
 
-def test_failed_tbd_reprocessing_preserves_user_headings_and_dependency_order() -> None:
-    """失敗TBD回答後の再投入本文境界と終端順序を固定する。"""
+def test_saved_confirmation_tbd_is_excluded_from_final_result_failure_handling() -> None:
+    """保存済み確認TBDの最終結果反映で再保留処理を実行しない。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    for document in (process, reception):
+        saved_tbd = document.index("保存済みの不採用確認用TBD")
+        excluded = document.index("結果反映時の失敗処理対象から除外する")
+        assert saved_tbd < excluded
+        result_section = document[excluded:]
+        for phrase in ("失敗TBDの再投入", "再依存", "再inboxとrejectを実行せず"):
+            assert phrase in result_section
+
+
+def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
+    """失敗TBD回答後の由来別再開経路と終端順序を固定する。"""
     hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
     for phrase in (
         "表示用見出し",
@@ -1256,12 +1443,27 @@ def test_failed_tbd_reprocessing_preserves_user_headings_and_dependency_order() 
         "depends_on=<失敗TBD filename>",
         "新規のフィードバックの本文と依存を再取得して照合した後に失敗TBDを採用終端",
         "失敗TBDをactiveのまま保持",
+        "それ以外の項目の失敗TBDへ回答された場合は、回答済みTBDを先に採用終端する",
+        "停止済みの`feedbacks-planner`系統を再開・再利用せず",
+        "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で再開する",
+        "元のフィードバックの採否候補へ反映する",
     ):
         assert phrase in hold
-    save_at = hold.index("depends_on=<失敗TBD filename>")
+    session_review_at = hold.index("`source: session-review`と確認できる項目の失敗TBDへ回答された場合は")
+    save_at = hold.index("depends_on=<失敗TBD filename>", session_review_at)
     verify_at = hold.index("新規のフィードバックの本文と依存を再取得して照合", save_at)
     terminal_at = hold.index("失敗TBDを採用終端", verify_at)
-    assert save_at < verify_at < terminal_at
+    human_source_at = hold.index("それ以外の項目の失敗TBDへ回答された場合は", terminal_at)
+    human_terminal_at = hold.index("回答済みTBDを先に採用終端する", human_source_at)
+    human_resume_at = hold.index("停止済みの`feedbacks-planner`系統を再開・再利用せず", human_terminal_at)
+    assert session_review_at < save_at < verify_at < terminal_at < human_source_at < human_terminal_at < human_resume_at
+    for phrase in (
+        "`source: session-review`と確認できる項目は、却下済みの元本文と回答を失敗TBDへ依存する新規のフィードバックへ反映し",
+        "本文と依存を照合してから失敗TBDを採用終端する",
+        "それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留する",
+        "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する",
+    ):
+        assert phrase in design
 
 
 def test_feedback_failure_contract_keeps_mq_commit_public_behavior() -> None:
@@ -2191,7 +2393,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert "委譲元が確定した計画ファイルの絶対パス" in text
         assert "計画ファイル保存先" + "ディレクトリ" not in text
     assert "既存ファイルと衝突しない乱数サフィックス付き" in sender
-    assert "TBD候補は、技術調査と明文化済み方針で確定できず" in sender
+    assert "通常の将来判断TBD候補は、技術調査と明文化済み方針で確定できず" in sender
     assert "採用済み本文が要求しない選択肢に限定" in sender
     assert "採用済み本文が明示する変更自体を確認事項又は実装前提にしない" in sender
     for phrase in (
@@ -2205,9 +2407,30 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     receiver_exclusion = receiver.index("採用済み本文が明示する変更を`user_decisions`から先に除外")
     receiver_boundary = receiver.index("残る事項だけを`agent-toolkit/rules/01-agent.md`「協調と自律」節の確認境界")
     assert receiver_exclusion < receiver_boundary
+    for phrase in (
+        "不採用確認用`user_decisions`",
+        "`user_decisions`は通常の将来判断TBDと区別",
+    ):
+        assert phrase in sender
+        assert phrase in receiver
+    for phrase in (
+        "直接回答を受領した場合",
+        "同じ`feedbacks-planner`系列の新しい識別子",
+        "元のバッチ全項目の調査結果全文",
+        "原文frontmatterの`source`原値",
+        "同じ計画ファイルの絶対パス",
+    ):
+        assert phrase in sender
+    assert "保留項目を含む" in sender
+    assert "全項目の採否一覧と採用範囲だけで計画起草を続行" in sender
+    assert "保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行" in receiver
     assert "フィードバック原文が示す文言案、列挙及び節配置を利用者合意とみなさない" in checklist
     assert "原文との差異と根拠を採否記録へ残す" in checklist
-    assert "差異と根拠を`理由`又は`反映内容`へ記録" in decision_format
+    assert "差異と根拠を`採否理由`又は`反映内容`へ記録" in decision_format
+    assert "- 理由:" not in decision_format
+    assert "項目固有の採否理由" in decision_format
+    assert "--note=<採否理由>" in decision_format
+    assert "`decision-format.md`の理由又は" not in sender
     for phrase in (
         "`feedbacks-planner`の起草担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
         "未回答事項による実装・検証の条件分岐を残さない単一経路",
@@ -2222,13 +2445,196 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert "`## 実施内容`の`根拠`は採用要求だけ" in decision_format
     for phrase in (
         "計画本文を編集せず同じ`feedbacks-planner`系統へ差し戻す",
-        "`agent-toolkit:add-feedback`のTBD投入経路",
+        "不採用確認用TBDとして`agent-toolkit:add-feedback`へ渡し",
+        "通常の将来判断TBDを受領した場合だけ",
         "回答だけを記録する",
         "自動追随・自動再開・自動実行の契機としない",
+        "保留結果を渡して同じ系列の新しい識別子を起動",
     ):
         assert phrase in sender
+    for phrase in (
+        "status: completed | awaiting_confirmation | needs_escalation",
+        "confirmation_context:",
+        "original_investigations:",
+        "raw_sources:",
+        "answer_or_tbd:",
+        "plan_path:",
+    ):
+        assert phrase in receiver
+    output = _h2_section(receiver, "出力")
+    tbd_output = output.partition("tbd:\n")[2].partition("user_decisions:\n")[0]
+    user_decisions_output = output.partition("user_decisions:\n")[2]
     for phrase in ("暫定判断の内容", "根拠", "回答後に必要な追随作業", "検証"):
-        assert phrase in _h2_section(receiver, "出力").partition("user_decisions:\n")[2]
+        assert phrase in tbd_output
+        assert phrase not in user_decisions_output
+    assert "通常の将来判断TBDは含めない" in user_decisions_output
+
+
+def test_feedback_confirmation_wait_restarts_same_series_with_full_context() -> None:
+    """確認待ちを失敗と分け、停止済みIDを再利用せず元の調査情報を新規起動へ渡す。"""
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+
+    assert "status: completed | awaiting_confirmation | needs_escalation" in planner
+    assert "confirmation_context:" in planner
+    assert "awaiting_confirmation" in delegation
+    assert "同じ`feedbacks-planner`系列" in delegation
+    assert "停止済みの識別子へ継続せず" in delegation
+    for document in (planner, reception, process, hold, decision, checklist, concepts, design):
+        for phrase in (
+            "元のバッチ全項目の調査結果全文",
+            "原文frontmatterの`source`原値",
+            "同じ計画ファイルの絶対パス",
+        ):
+            assert phrase in document
+        assert any(
+            phrase in document
+            for phrase in (
+                "逐語回答又は保存TBD",
+                "逐語回答又は保存したTBD",
+                "逐語回答・保存TBD",
+            )
+        )
+        assert (
+            "同じ`feedbacks-planner`系列の新しい識別子" in document
+            or "同じ`feedbacks-planner`系列（同じバッチと計画）の" in document
+        )
+
+    for document in (reception, process):
+        confirmation = document.index("awaiting_confirmation")
+        failure = document.index("needs_escalation", confirmation)
+        assert confirmation < failure
+    assert reception.index("完了報告の`status`を最初に確認") < reception.index("needs_escalation")
+    assert process.index("`status: awaiting_confirmation`は上記の確認待ち経路") < process.index(
+        "失敗又は解消不能な`needs_escalation`"
+    )
+
+
+def test_feedbacks_planner_initial_input_excludes_confirmation_context() -> None:
+    """初回起動と確認待ち再開の入力を混在させず、再開時だけ根拠を渡す。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+
+    planner_initial_start = planner.index("初回起動では、次の入力だけを受け取る")
+    planner_reentry_start = planner.index("`awaiting_confirmation`後の再開起動では", planner_initial_start)
+    planner_initial = planner[planner_initial_start:planner_reentry_start]
+    planner_reentry = planner[planner_reentry_start : planner.index("agent-toolkitプラグイン内", planner_reentry_start)]
+    for phrase in ("元のバッチ全項目の調査結果全文", "原文frontmatterの`source`原値", "逐語回答又は保存したTBD"):
+        assert phrase not in planner_initial
+        assert phrase in planner_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd"):
+        assert f"`{key}`" not in planner_initial
+    assert "初回起動と同じ計画ファイルの絶対パス" in planner_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd", "plan_path"):
+        assert f"`{key}`" in planner_reentry
+
+    reception_reentry_context_start = reception.index("確認待ち後の再開起動には、`confirmation_context`")
+    reception_initial_start = reception.index("初回起動文には次の絶対パスと値だけを渡す")
+    reception_initial_end = reception.index("確認待ち後の再開起動文には", reception_initial_start)
+    reception_initial = reception[reception_initial_start:reception_initial_end]
+    reception_reentry = reception[reception_reentry_context_start:reception_initial_start]
+    for phrase in ("元のバッチ全項目の調査結果全文", "原文frontmatterの`source`原値", "逐語回答又は保存TBD"):
+        assert phrase not in reception_initial
+        assert phrase in reception_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd"):
+        assert f"`{key}`" not in reception_initial
+    assert "初回起動と同じ計画ファイルの絶対パス" in reception_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd", "plan_path"):
+        assert f"`{key}`" in reception_reentry
+
+    process_context = process[process.index("初回起動には再開コンテキストを渡さない") :]
+    for phrase in ("元のバッチ全項目の調査結果全文", "原文frontmatterの`source`原値", "逐語回答又は保存TBD"):
+        assert phrase in process_context
+
+
+def test_saved_confirmation_tbd_reentry_only_verifies_existing_state() -> None:
+    """保存済み確認TBDの再開で汎用保留処理を重複実行せず、既存状態だけを照合する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+
+    for document in (process, reception, hold):
+        assert "保存済みの不採用確認用TBD" in document
+        assert "既存TBD" in document
+        assert "`blocked`状態" in document
+        assert "TBD再投入" in document
+        assert "再依存" in document
+        assert "再inbox" in document
+        assert "再実行しない" in document or "実行しない" in document
+        assert "atk mq show <TBD filename> --target-repo=<repo-path> --skip-pull" in document
+        assert "atk mq list --status=active --target-repo=<repo-path>" in document
+
+
+def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dependency() -> None:
+    """確認サイクルをまたぐID別記録と保存済み確認TBDの依存保持を同期する。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+
+    for document in (planner, process, reception, decision, hold, checklist, concepts, design):
+        assert "原文正本IDごとの累積" in document
+        for field in ("`raw`", "`question`", "`answer_or_tbd`", "`unanswered`", "`resolution`", "`decision`"):
+            assert field in document
+        assert "過去の確認サイクルのレコードを削除又は上書きしない" in document
+        for resolution in ("`未確定`", "`回答による確定`", "`TBDによる保留`"):
+            assert resolution in document
+        for decision_value in ("`採用`", "`部分採用`", "`不採用`", "`保留`"):
+            assert decision_value in document
+        assert "再判断せず" in document
+
+    output = _h2_section(planner, "出力")
+    for field in ("id:", "raw:", "question:", "answer_or_tbd:", "unanswered:", "resolution:", "decision:"):
+        assert field in output
+
+    # Aの回答後にBの確認待ちだけが残っても、次のplannerへAの確定結果を渡せる。
+    resolved_a = {
+        "id": "A",
+        "answer_or_tbd": "回答",
+        "unanswered": False,
+        "resolution": "回答による確定",
+        "decision": "不採用",
+    }
+    pending_b = {
+        "id": "B",
+        "answer_or_tbd": "未受領",
+        "unanswered": True,
+        "resolution": "未確定",
+        "decision": "未確定",
+    }
+    next_planner_input = {"user_decisions": [resolved_a, pending_b]}
+    next_user_decisions = next_planner_input["user_decisions"]
+    assert [record["id"] for record in next_user_decisions] == ["A", "B"]
+    assert next_user_decisions[0]["resolution"] == "回答による確定"
+    assert next_user_decisions[0]["decision"] == "不採用"
+    assert next_user_decisions[1]["resolution"] == "未確定"
+    assert next_user_decisions[1]["decision"] == "未確定"
+
+    for document in (planner, process, reception, decision, hold, concepts, design):
+        assert "同じ依存として保持" in document
+        assert "新しい失敗TBDを作成しない" in document
+
+    process_saved_failure = process.index("保存済みの不採用確認用TBDを受領した再開で失敗した項目")
+    process_generic_failure = process.index("それ以外の`feedbacks-planner`の失敗", process_saved_failure)
+    assert process_saved_failure < process_generic_failure
+    reception_saved_failure = reception.index("保存済みの不採用確認用TBDを受領した再開での失敗")
+    reception_generic_failure = reception.index("それ以外の`feedbacks-planner`の失敗", reception_saved_failure)
+    assert reception_saved_failure < reception_generic_failure
+    hold_saved_failure = hold.index("保存済みの不採用確認用TBDを受領した再開での失敗")
+    hold_generic_failure = hold.index("`source: session-review`と確認できない項目で", hold_saved_failure)
+    assert hold_saved_failure < hold_generic_failure
 
 
 def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:

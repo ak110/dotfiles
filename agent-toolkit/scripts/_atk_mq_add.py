@@ -223,7 +223,8 @@ _RESERVED_FRONTMATTER_KEYS = (
 同名キーが含まれていても`frontmatter_data.update()`による辞書更新で
 入力値を除外する。このうち`target_repo`・`source`は明示された入力側の値を
 CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
-保存する。`type`・`scope`・`question_type`・`choices`はCLIオプション
+保存する。
+`type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
 `reservation`・`reservation_companion`・`target_commit_history`は利用者による直接指定を禁止し、

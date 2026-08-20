@@ -75,6 +75,30 @@ upstream包含の確認不能でも同様に未完了で停止する。
 複数項目を連続処理する場合、新しい項目の調査は前項目の調査結果・仮説・識別子を引き継がず
 独立に確定する（努力目標）。
 
+通常型の採否確定では、全項目の原文正本ID、人間由来の指示又は方針の優先度、調査根拠、欠陥原因、採否理由及び投入元を
+項目ごとに対応付ける。`source: session-review`だけをエージェント由来と判定し、それ以外のsource、source欠落及び不明の不採用候補は
+原文との差異と技術的理由を示す不採用確認用`user_decisions`へ送る。`user_decisions`は通常の将来判断TBDと区別する。
+回答が得られた場合は、停止済みの識別子へ継続せず、出所と引用範囲を付けた逐語文を渡して
+同じ`feedbacks-planner`系列（同じバッチと計画）の新しい識別子を起動し、当該項目の採否を確定する。
+回答が得られない場合は同じ質問内容を不採用確認用TBDへ保存して保留し、回答を得られずTBDを確認できない状態ではrejectしない。
+保留確認後は、停止済みの識別子へ継続せず、保留結果を渡して同じ系列の新しい`feedbacks-planner`識別子を起動する。
+確認待ちを複数サイクルで処理する場合、`user_decisions`は現在の未解決項目だけへ置き換えず、原文正本IDごとの累積レコードとして渡す。
+各レコードは`id`、`raw`、`question`、`answer_or_tbd`、`unanswered`、`resolution`、`decision`を保持し、新しい回答・TBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
+`resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は`回答による確定`、保存TBDで保留した場合は`TBDによる保留`とする。`decision`は未受領なら`未確定`、逐語回答による確定では`採用`・`部分採用`・`不採用`のいずれか、保存TBDによる保留では`保留`とする。再開した`feedbacks-planner`は確定済みの`decision`を再判断せず、当該採否を起草担当へ渡す。
+初回起動には再開コンテキストを渡さない。
+`awaiting_confirmation`後の再開起動だけは、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、IDごとの累積`user_decisions`、
+出所と引用範囲付きの逐語回答・保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
+保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
+部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲、理由を採否記録へ残す。起草担当か実行主体へはバッチ全項目を渡し、
+実施内容へは、対象項目の採用範囲だけを反映する。
+別リポジトリ項目は、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
+元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ`agent-toolkit:add-feedback`で登録する。
+通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。
+sourceがある場合は同じ値を渡す。
+`alert_keys`などの非予約frontmatterは元項目の値を保持する。
+移管先では`atk mq show`でsource（指定時）、本文、`target_repo`及び元項目の非予約frontmatter全体を照合する。
+照合後に元項目を終端する。
+
 Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
@@ -108,23 +132,47 @@ readyな計画実装型のレーンは通常型バッチの計画工程を待た
    未確定要求が1件以上ある場合はファイルをholdする
 6. `references/decision-format.md`に従って採否と根拠を記録する
 
+Claude Codeホストの通常型で`feedbacks-planner`から`status: awaiting_confirmation`と不採用確認用`user_decisions`を受領した場合は、確認待ち経路へ進む。
+`status`を失敗処理より先に確認し、`awaiting_confirmation`を失敗又は`needs_escalation`として扱わない。
+`source: session-review`と確認できる項目だけを利用者確認から除外する。その他のsource、source欠落及び不明の項目ごとに
+原文との差異と技術的理由を示す`AskUserQuestion`を発行し、回答を得た場合は逐語文を渡して同じ系列の新しい`feedbacks-planner`識別子を起動し、
+採否記録を再検収する。
+回答なしでは`references/hold-with-tbd-inject.md`に従い不採用確認用TBDを初回だけ保存する。
+依存設定と`blocked`確認後の保留結果を渡して同じ系列の新しい識別子を起動する。
+保存済みの不採用確認用TBDを受領した再開では、既存TBDと元項目の`blocked`状態を照合する。
+`atk mq show <TBD filename> --target-repo=<repo-path> --skip-pull`で既存TBDを照合し、
+`atk mq list --status=active --target-repo=<repo-path>`で元項目の`blocked`状態を照合する。
+既存TBDと`blocked`状態の照合以外の汎用保留処理を実行せず、`agent-toolkit:add-feedback`によるTBD再投入、`atk mq set-dependencies`による再依存、
+`atk mq return-to-inbox`による再inboxを実行しない。
+照合できない場合は新しい識別子を起動せず、失敗として返す。
+保存済みの不採用確認用TBDを受領した再開の工程が照合後に失敗した場合も、既存の確認TBDを同じ依存として保持する。
+新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持した失敗を返す。
+`awaiting_confirmation`後の再開起動には元の全調査結果、原文frontmatterの`source`原値、IDごとの累積`user_decisions`、逐語回答又は保存TBD及び同じ計画ファイルの絶対パスを含める。
+保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、元項目を保留する。
+
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
 
-`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で保存する。
+`status: awaiting_confirmation`は上記の確認待ち経路で処理し、失敗TBDを作成しない。
+ただし保存済みの不採用確認用TBDを受領した再開で失敗した項目は、既存の確認TBDを同じ依存として保持する専用経路を先に適用する。
+この経路では新しい失敗TBD、再依存及び再inboxを作成又は実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
+それ以外の`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。
+`source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`references/hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
 失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
-rejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できる場合だけrejectを1回再実行する。
+`source: session-review`と確認できる項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できる場合だけrejectを1回再実行する。
 3分類、元のフィードバックの`feedbacks-planner`再開、Git状態の回復は行わない。
 
 `feedbacks-planner`完了後の項目別結果はファイル名昇順で各1回反映する。
+保存済みの不採用確認用TBDを受領して再開した項目は、既存TBDの保存内容と元項目の`blocked`状態を確認済みであるため、結果反映時の失敗処理対象から除外する。
+この項目では失敗TBDの再投入、`atk mq set-dependencies`による再依存、`atk mq return-to-inbox`による再inboxとrejectを実行せず、保持済みの結果を反映して次の項目へ進む。
 結果反映コマンドが警告・エラーを返した場合は、同じコマンドを再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
-意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認、rejectを各1回実行する。
+意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認及び由来に応じた終端処置を各1回実行する。`source: session-review`と確認できる項目はrejectで終端し、それ以外の項目は`references/hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。後者では不採用確認を経ずに元のフィードバックをrejectしない。
+保存済みの不採用確認用TBDを受領して再開した項目で結果反映が失敗した場合は、保持済みの確認TBDを同じ依存として残し、新しい失敗TBDを作成しない。
 再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目を各1回処理し、全件走査後に警告・エラーが1件でもあればバッチを失敗として返す。
 
