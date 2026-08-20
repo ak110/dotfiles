@@ -900,6 +900,14 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "元項目をrejectしない",
     ):
         assert phrase in sender or phrase in planner or phrase in process or phrase in hold or phrase in decision
+    for phrase in (
+        "`user_decisions`を返した時点で本工程を中断",
+        "呼び出し元へ返却してターンを終端する",
+        "呼び出し元は`user_decisions`ごとに`AskUserQuestion`",
+        "継続入力として受領した場合",
+        "計画起草、キュー操作及びrejectを開始しない",
+    ):
+        assert phrase in planner
 
 
 def test_feedback_source_passthrough_and_storage_verification_contract() -> None:
@@ -915,6 +923,8 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
     assert "sourceの欠落・不一致では完了扱いにせず" in add_feedback
     assert "sourceを受領していない場合は追加のsource照合をしない" in add_feedback
+    assert "手順7のsource照合後" in add_feedback
+    assert "手順6の照合後" not in add_feedback
     assert "source `plan`を明示" in plan_and_add
     assert "source `session-review`を明示" in session_review
 
@@ -1584,11 +1594,14 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     for phrase in (
         "不採用確認用`user_decisions`",
         "`user_decisions`は通常の将来判断TBDと区別",
+    ):
+        assert phrase in sender
+        assert phrase in receiver
+    for phrase in (
         "直接回答を受領した場合",
         "保留結果を同じ`feedbacks-planner`系統へ返",
     ):
         assert phrase in sender
-        assert phrase in receiver
     assert "保留項目を含む" in sender
     assert "全項目の採否一覧と採用範囲だけで計画起草を続行" in sender
     assert "保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行" in receiver
