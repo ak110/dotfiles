@@ -17,7 +17,7 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 - 1つの応答内で先頭のツール呼び出しがブロック・エラーでキャンセルされると後続の独立呼び出しも連鎖キャンセルされる。
   各呼び出しの成否を`git diff`・`Read`で個別確認してから次工程へ進む
 - auto modeまたは権限設定でツール呼び出しが拒否された場合、推測でフラグ追加・迂回を試みず
-  `../skills/agent-standards/references/auto-mode.md`を参照して対応を判断する
+  `agent-toolkit:agent-standards`スキルの`SKILL.md`を含むディレクトリを基準に相対解決した`references/auto-mode.md`を参照して対応を判断する
 - Bashツールで`run_in_background=true`により背景実行したコマンドを停止する場合は、
   起動結果が返したタスクIDを`TaskStop`ツールへ渡す。
   前景起動が実行環境の判断で背景実行へ移行し、移行通知がタスクIDを示した場合も同様とする。
@@ -27,7 +27,7 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 
 ## 委譲起動時の厳守事項
 
-Claude Codeで委譲を起動する場合の実装手順は、`../skills/delegation/references/claude-code-runtime.md`が定める。
+Claude Codeで委譲を起動する場合の実装手順は、`agent-toolkit:delegation`スキルの`SKILL.md`を含むディレクトリを基準に相対解決した`references/claude-code-runtime.md`が定める。
 本節には、委譲スキルを経由しない起動でも成立させる厳守規定だけを置く。
 
 - AgentまたはTask起動では`name`パラメーターを渡さない。
