@@ -5,7 +5,8 @@
 # ///
 """計画の成立に必要な情報契約と実体だけを検査する。
 
-計画メタ情報、見出し構造、スキル・サブエージェント参照を共有parserで検査する。
+計画メタ情報、見出し構造、提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
+旧形式は読み取り互換で受理するが、新形式への移行をwarningで案内する。
 """
 
 from __future__ import annotations
@@ -188,12 +189,17 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     structure_lines = ["" if index < body_start else line for index, line in enumerate(lines)]
     _outside, errors = _outside_fences(structure_lines)
     errors.extend(_plan_format.check_plan_structure(text))
+    materials, _material_errors = _plan_format.parse_plan_materials(text)
+    warnings: list[str] = []
+    if materials is not None and materials.is_legacy:
+        warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
     errors.extend(_check_references(text, work_dir))
-    return errors, _check_plan_size(lines)
+    warnings.extend(_check_plan_size(lines))
+    return errors, warnings
 
 
 def main(argv: list[str] | None = None) -> int:

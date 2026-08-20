@@ -54,6 +54,7 @@ _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
+_DESIGN = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
 _SECTION_REFERENCE_SOURCE_ROOTS = (
@@ -379,7 +380,7 @@ _PLAN_REVIEW_MIRROR_REMOVALS: tuple[tuple[str, str], ...] = (
     ("外部の可変な対象に属する事実は、取得コマンドと判定規則が書かれているか", "外部の可変な対象に属する事実"),
     (
         "削除commitから得た項目別の逐語原文と復元文面が1対1で対応するか",
-        "削除commitから得た項目別の逐語原文と復元文面を1対1で対応させる",
+        "削除commitから得た項目別の対象記述と復元文面を1対1で対応させる",
     ),
     (
         "既存の該当箇所へ遡及適用するかの方針が記載されているか",
@@ -402,8 +403,19 @@ def test_plan_file_standards_own_plan_contracts_alone() -> None:
     assert "\n## 要件の成立性\n" in standards
     blocks = _plan_standards_migrated_blocks()
     assert len(blocks) == _PLAN_STANDARDS_MIGRATED_BLOCK_COUNT
+    intentionally_rewritten = {
+        "## 計画ファイルの完成条件",
+        "変動しやすい事実は名前付きのSSOTを1箇所だけ持ち、他の箇所は参照又は変動しない要約を使う。",
+        "### 実施内容と合意済みの除外・保持",
+        "### 提示素材",
+        "### 復元・巻き戻し型の変更",
+        "### 機械検査",
+        "削除commitから得た項目別の逐語原文と復元文面を1対1で対応させる。",
+    }
     for block in blocks:
         head = block.splitlines()[0]
+        if head in intentionally_rewritten:
+            continue
         assert block in standards, head
         residual_lines = _plan_standards_residual_lines(block)
         assert residual_lines, head
@@ -438,7 +450,7 @@ def test_plan_creation_and_review_external_command_contracts_are_synchronized() 
     assert "実施内容表と任意の合意表" in standards
     assert "原文が問い、提案的表現、弱い自信の表現に留まる場合" in standards
     assert "理由を問わず未検証範囲" in standards
-    assert "source-final-newline: absent" in standards
+    assert "素材表と要求表を正本とし、フィードバック原文全文を計画へ転記しない" in standards
     assert "当該機構が呼ぶ全コマンドを同一ラウンド" in review_task
     assert "理由と未検証範囲" in review_task
 
@@ -509,11 +521,11 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
     for phrase in ("1回だけ起動", "60秒未満", "同一process", "短い`--timeout`"):
         assert phrase in push_and_ci
     assert "`session-review-advisor`の起動前に`agent-toolkit:delegation`をSkill機能で起動" in session_review
-    for phrase in ("名前付きのSSOT", "提示素材の逐語原文は同期対象", "参照又は変動しない要約"):
+    for phrase in ("名前付きのSSOT", "新規作成・新規改訂の提示素材は素材表と要求表を正本", "参照又は変動しない要約"):
         assert phrase in standards
         assert phrase not in plan_review
     for phrase in (
-        "削除commitから得た項目別の逐語原文と復元文面",
+        "削除commitから得た項目別の対象記述と復元文面",
         "親子階層を含む一意な現物の挿入位置",
         "既存規定との重複",
     ):
@@ -521,26 +533,32 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
         assert phrase not in plan_review
 
 
-def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> None:
-    """初回レビュー担当へ逐語素材、再レビュー担当へ変更履歴と解決表を渡す契約を固定する。"""
+def test_plan_review_inputs_cover_structured_materials_and_resolved_history() -> None:
+    """初回レビュー担当へ構造化素材、再レビュー担当へ変更履歴と解決表を渡す契約を固定する。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "対象のフィードバックファイル名、対象リポジトリ及び計画内の`原文正本ID`対応" in delegation
-    assert "直接起動経路では、`## 提示素材`の逐語原文" in delegation
+    assert "対象のフィードバックファイル名、対象リポジトリ及び計画内の素材表・要求表" in delegation
+    assert "直接起動経路では、素材表・要求表と出所・引用範囲" in delegation
+    assert "投入元を`AskUserQuestion`、引用範囲を`回答全文`" in delegation
+    assert "`AskUserQuestion`又は`TBD:<filename>#回答`なら`回答全文`" in standards
+    assert "参考素材と処理対象資料も明示された出所と引用範囲" in standards
     assert "元のユーザー指示は経路と独立した入力" in delegation
     assert "項目別の維持・修正・撤去の判定と根拠" in delegation
     assert "要約だけを一次入力にせず" in delegation
     assert "今回のレビュー種別を全レビュー共通の入力として渡す" in delegation
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
+    assert "キューにない素材の逐語本文・回答全文は計画外の明示入力として、初回レビュー担当へ渡す" in delegation
+    assert "再レビューへの追送には、キューにない素材の逐語本文・回答全文も計画外の明示入力として含め" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" in delegation
     assert "実効3値一致により同一threadを継続する場合は" in delegation
     assert "「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
     assert "同一threadの継続では当該情報を追送し" in delegation
-    assert "新規起動では初回と同じ入力パス集合及び検収済み状態とともに渡す" in delegation
-    assert "当該情報を渡さない限り、その発話を根拠とする実施又は除外を計画へ書かない" in delegation
+    assert "新規起動では初回と同じ入力パス集合に検収済み状態を添えて渡す" in delegation
+    assert "追送しない限り当該入力を根拠とする実施又は除外を計画へ書かない" in delegation
     assert "当該ラウンドの採用件数と追加した履歴行数が一致すること" in delegation
     assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
     assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
@@ -556,6 +574,7 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
     assert "再レビューでは全修正と累積計画全体を再監査" in task
+    assert "キューにない素材の逐語本文・回答全文が、調査、起草、初回レビュー、再レビューの明示入力として保持" in task
     assert "現行計画に同じ違反が残る場合だけ再提示" in task
     assert "指摘候補を内部的に網羅列挙" in task
     for receiver_contract in (
@@ -755,8 +774,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         assert phrase in text
 
 
-def test_feedback_source_contract_uses_role_specific_queue_reads() -> None:
-    """調査は単数、起草とレビューは一括で保存本文を取得する契約を固定する。"""
+def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
+    """調査担当の単独取得と起草・初回レビューの一括取得境界を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
@@ -773,29 +792,30 @@ def test_feedback_source_contract_uses_role_specific_queue_reads() -> None:
         assert batch_command in document
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
-    for document in (sender, explore, standards, review):
+    for document in (sender, explore):
         assert "表示用見出し" in document
         assert "YAML frontmatter" in document
         assert "CLI付加の末尾改行" in document
     assert "ファイル名昇順の対象一覧と対象リポジトリ" in sender
-    assert "担当ファイル名及び対象リポジトリ" in planner
-    assert "対象のフィードバックファイル名と対象リポジトリ" in explore
-    assert "直接経路では対象のフィードバックファイル名と本文" in explore
-    assert "フィードバックファイル名と対象リポジトリを受領" in standards
-    assert "対象のフィードバックファイル名、対象リポジトリ及び計画内の`原文正本ID`対応" in delegation
-    assert "逐語不一致の確定指摘には両者の差分を含め" in review
-    assert "差分を示せない候補は指摘しない" in review
-    assert "常駐自動起動の場合は非該当と起動事実" in planner
-    assert "常駐自動起動の場合は非該当と起動事実" in delegation
-    assert "直接受領した人間由来の利用者指示がある場合は、出所と引用範囲を付けた逐語文" in sender
-    assert "常駐自動起動で人間由来の利用者指示がない場合は、非該当であることと起動事実" in sender
+    assert "担当ファイル名、対象リポジトリ及び事前割当した素材ID" in planner
+    assert "対象のフィードバックファイル名、対象リポジトリ及び事前割当した素材ID" in explore
+    assert "直接経路では対象の素材IDと本文、投入元及び引用範囲" in explore
+    assert "フィードバック由来素材が存在するとき" in sender
+    assert "原文正本ID" in delegation
+    assert "要求ID、素材参照、採否、範囲及び根拠へ照合する" in review
+    assert "種別を起動事実、投入元を常駐自動起動、引用範囲を非該当" in review
+    assert "種別、出所及び引用範囲" in sender
+    for document in (sender, planner, process, standards, delegation, review):
+        assert "キューにない素材の逐語本文・回答全文" in document
+        assert "計画外の明示入力" in document
+    assert "種別を起動事実、投入元を常駐自動起動、引用範囲を非該当" in sender
     assert "作成規範スキルの選定は`feedbacks-planner`が自身で確定するため渡さない" in sender
-    assert "直接起動経路では、`## 提示素材`の逐語原文" in review
-    assert "人間由来の場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実" in review
-    assert "人間由来の指示があるのに逐語文、出所又は引用範囲がない場合は入力不足として返す" in review
+    assert "直接起動経路では、`## 提示素材`の素材表・要求表、投入元及び引用範囲" in review
+    assert "人間由来の場合は種別、出所及び引用範囲" in review
+    assert "人間由来の指示があるのに種別、出所又は引用範囲がない場合は入力不足として返す" in review
     assert "元のユーザー指示を非該当とする場合に常駐自動起動の事実がないときも入力不足として返す" in review
-    assert "直接起動経路では、逐語素材の入力と転記に関する現行契約" in standards
-    assert "直接起動経路では、`## 提示素材`の逐語原文" in delegation
+    assert "旧形式の素材ID、`text`フェンス、`原文参照`列は読み取り互換" in standards
+    assert "直接起動経路では、素材表・要求表と出所・引用範囲" in delegation
     forbidden = ("feedback-source.json", "標準JSON parser", "親snapshot", "比較基準")
     for document in (sender, process, planner, explore, standards, delegation, review):
         for phrase in forbidden:
@@ -823,6 +843,62 @@ def test_batched_feedback_readers_refetch_ambiguous_sources_individually() -> No
         assert "1件ずつ再取得" in document
 
 
+def test_direct_material_records_preserve_receipt_order() -> None:
+    """直接受領素材を受領順のレコード集合として渡す契約を固定する。"""
+    sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    design = _DESIGN.read_text(encoding="utf-8")
+
+    for document in (sender, planner, design):
+        collection = document.index("受領順を保持した素材レコード集合")
+        fields = document.index("種別、出所及び引用範囲をこの順で")
+        trailing_body = document.index("逐語本文・回答全文をレコードの末尾へ続ける")
+        assert collection < fields < trailing_body
+
+
+def test_material_and_requirement_ids_remain_stable_across_parallel_work_and_revisions() -> None:
+    """素材・要求IDの初回割当、並列統合及び改訂時の安定性を固定する。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    for phrase in (
+        "フィードバックファイル名昇順と後続入力の受領順",
+        "既存IDのうち`P-[0-9]{3,}`へ完全一致するIDだけから最大数値",
+        "該当する既存IDが無い場合は`P-001`",
+        "`P-999`の次は`P-1000`",
+        "非数値や混在形式の既存IDは維持",
+        "初回割当後の素材IDを再採番しない",
+        "複数素材が共同で新しい要求を確定する場合は素材参照の最小ID",
+        "原文位置にかかわらず同じ名前空間の最大連番+1",
+        "先頭の維持部分へ既存IDを残し",
+        "統合用IDを生成しない",
+        "要求IDを維持して素材参照へ該当する素材IDを加える",
+    ):
+        assert phrase in standards
+    for phrase in ("一括割当", "並列調査の起動前", "担当間で要求数を共有しない"):
+        assert phrase in planner
+    for phrase in ("本文出現順", "中央統合時に再採番しない", "最大連番+1", "統合用IDを生成しない"):
+        assert phrase in explore
+    assert "再レビューでは更新済み計画と追送された人間由来入力を正本" in review
+
+
+def test_bulk_queue_read_failure_discards_partial_output_before_planning_or_review() -> None:
+    """一括取得の終了コード2で部分出力を使わず起動主体へ返す契約を固定する。"""
+    documents = (
+        _FEEDBACKS_PLANNER.read_text(encoding="utf-8"),
+        _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8"),
+        _PLAN_FILE_STANDARDS.read_text(encoding="utf-8"),
+        _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
+        _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+    )
+    for document in documents:
+        assert "終了コード2" in document
+        assert "標準出力の部分結果を使" in document
+        assert "入力不足として起動主体へ返す" in document
+
+
 def test_plan_standards_require_test_design_in_plans() -> None:
     """テストコードを含む計画へのテスト設計の要求を作成基準だけが持つ契約を固定する。"""
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
@@ -846,10 +922,10 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
 
     assert "`source`の文字列を改変せず投入元識別子として記録" in explore
     assert "欄が無い場合は「値なし」と記録" in explore
-    assert "フィードバックファイル名、投入元識別子、確認範囲" in explore
-    assert "調査結果から投入元識別子を受領し、値を改変せず採否判断へ渡す" in planner
+    assert "フィードバックファイル名、素材ID、投入元識別子、引用範囲" in explore
+    assert "調査結果から投入元と引用範囲を受領し、値を改変せず採否判断へ渡す" in planner
     assert "追加の`atk mq show`は実行しない" in planner
-    assert planner.index("投入元識別子を受領") < planner.index("`decision-format.md`へ照合")
+    assert planner.index("調査結果から投入元と引用範囲を受領") < planner.index("`decision-format.md`へ照合")
     for source in ("`session-review`", "`alert-monitor`", "`plan`", "値なし", "その他の値"):
         assert source in decision
     assert "フィードバック本文又は投入元識別子から、人間由来又は利用者認可を推定しない" in decision
@@ -994,7 +1070,7 @@ def test_human_source_contract_covers_direct_and_delegated_inputs() -> None:
     assert "出所表示のない起動文を人間の利用者による発話として扱わない" in delegation
     assert "直接対話では、実行環境上で実際の利用者メッセージ" in standards
     assert "受信した起動文全体を機械的に転記せず" in standards
-    assert "人間由来の場合は出所と引用範囲を付けた逐語文" in plan_review_delegation
+    assert "人間由来の場合は種別、出所及び引用範囲" in plan_review_delegation
     assert "直接起動経路では、直接受領した実際の利用者メッセージ" in plan_review_delegation
     assert "起草担当の起動文、フィードバック本文、調査資料を利用者発言へ分類しておらず" in plan_review_task
 
@@ -1549,6 +1625,12 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     ):
         assert phrase in sender
         assert phrase in receiver
+    for text in (sender, receiver, decision_format):
+        assert "採用要求が1件以上" in text
+        assert "全要求が不採用" in text
+        assert "未確定要求" in text
+    assert "不採用要求の採否理由と除外範囲" in decision_format
+    assert "`## 実施内容`の`根拠`は採用要求だけ" in decision_format
     for phrase in (
         "計画本文を編集せず同じ`feedbacks-planner`系統へ差し戻す",
         "`agent-toolkit:add-feedback`のTBD投入経路",
@@ -2247,14 +2329,14 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "   `plan-file-standards.md`、`plan-review-delegation.md`と必要なタスク文書も渡す。\n"
     ) in planner
     assert (
-        "6. レビュー指摘を加工せず起草担当へ全件配送する。\n"
+        "7. レビュー指摘を加工せず起草担当へ全件配送する。\n"
         "   配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め、"
         "採否の確定に用いる正本として示す。\n"
         "   `agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
-        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が6列表へ記録されていることを検収する。\n"
+        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が要求表と変更履歴へ記録されていることを検収する。\n"
     ) in planner
     assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
-    assert "採否と対応結果を6列表へ統合" in plan_review
+    assert "採否と対応結果を要求表と変更履歴へ統合" in plan_review
     assert "スコープ、公開契約、ユーザー合意を変える修正" in plan_review
 
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -2324,7 +2406,7 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     for phrase in ("検証済みの実際値、期待値、違反契約、対象への適用根拠", "保持契約が指摘ごとにそろう"):
         assert phrase in writer
     assert "推測して修正せず`needs_escalation`" in writer
-    assert "原文と適用根拠の確認結果" in writer
+    assert "要求と適用根拠の確認結果" in writer
     assert "保持契約の維持結果" in writer
 
     assert "`### 合意済みの除外・保持`" in standards
