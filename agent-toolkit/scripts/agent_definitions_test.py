@@ -599,6 +599,36 @@ def test_review_table_paths_preserve_system_and_round_independence() -> None:
     assert "未解消の同一複合キーを再提示" in _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
 
+def test_review_table_rereviews_read_same_system_history_and_reviewee_reads_all_tables() -> None:
+    """再レビュー担当の履歴参照とレビューイーの全表読取を系統境界とともに固定する。"""
+    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    merge = _MERGE_TASK.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+
+    for reviewer in (plan_review, independent_review):
+        for phrase in (
+            "今回の系統・ラウンド表だけを指摘追加対象",
+            "同じ系統の過去全ラウンド表",
+            "ラウンド昇順",
+            "過去表へは追記しない",
+            "過去表の先頭3列を今回の表へ追加せず",
+            "全文読取",
+        ):
+            assert phrase in reviewer
+    assert "計画準拠系の表と対応`.lock`はこの一覧へ含めない" in independent_review
+    assert "独立系へ計画準拠系の表や出力を渡さない" in executor
+    assert "修正対象となる全系統・全ラウンド表" in executor
+    assert "各系統の過去全ラウンド表をラウンド順に並べた一覧" in flow
+    assert "今回の系統・ラウンド表だけへ指摘を追加する" in flow
+    for adopter in (implementation_task, reviewee, merge):
+        assert "修正対象となる全系統・全ラウンド表" in adopter
+        assert "全文読取" in adopter
+
+
 def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() -> None:
     """採用フィードバックの文書契約と影響検証を起草担当・レビュー担当双方で固定する。"""
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
@@ -1183,8 +1213,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "レビュー修正モード",
         "applications:",
         "統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力",
-        "レビュー修正モードでは、採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）と関係する全計画の絶対パスを必須入力",
-        "採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）を読み、関係する全計画から保持契約を読み、採用指摘だけを修正",
+        "レビュー修正モードでは、採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）、修正対象となる全系統・全ラウンド表の絶対パス及び関係する全計画の絶対パスを必須入力",
+        "採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）と修正対象となる全系統・全ラウンド表を全文読取し、関係する全計画から保持契約を読み、採用指摘だけを修正",
         "レーン項目はソート済みフィードバックファイル名一覧、レーンのcommit OID、適用後OID",
         "レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ",
     ):
@@ -1289,7 +1319,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
         "統合対応表に含まれる全計画の絶対パス",
         "統合スレッドの検証結果",
         "統合用管理対象領域の絶対パス",
-        "既存の固定6列TSVファイルと対応`.lock`の絶対パス",
+        "今回の系統・ラウンド表、各系統の過去全ラウンド表をラウンド順に並べた一覧、及び修正対象となる全系統・全ラウンド表と対応`.lock`の絶対パス",
     ):
         assert phrase in integrated
     assert "共通入力又は選択したモードの必須入力" in input_contract
@@ -2299,14 +2329,15 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert (
         "   `plan-mode/references/implementation-task.md`の呼び出し元指定絶対パス、レーンのworktree、対象計画、"
         "採用指摘を実装単位とした目的及び変更説明、\n"
-        "   系統・ラウンド別に統合した固定6列TSV、プロジェクト規範、該当する作成規範スキル、"
-        "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パス、\n"
+        "   系統・ラウンド別に統合した固定6列TSV、修正対象となる全系統・全ラウンド表の絶対パス一覧、"
+        "プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして"
+        "`reviewee-standards/SKILL.md`の絶対パス、\n"
         "   ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、\n"
         "   複製元と対象外worktree、git操作の制約を渡す\n"
     ) in _h4_section(executor, "通常の実装モードのレビュー修正")
     assert (
         "   修正用の書込担当へ`process-feedbacks/references/merge-task.md`の呼び出し元指定絶対パス、"
-        "系統・ラウンド別の固定6列TSV、\n"
+        "系統・ラウンド別の固定6列TSV、修正対象となる全系統・全ラウンド表の絶対パス一覧、\n"
         "   プロジェクト規範、該当する作成規範スキル、"
         "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パスを渡す\n"
     ) in _h4_section(executor, "統合後レビュー調整モードのレビュー修正")
