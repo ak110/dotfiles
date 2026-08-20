@@ -199,7 +199,9 @@
 回答が得られない場合は同じ質問内容を不採用確認用TBDへ保存し、元項目への依存設定、inbox差し戻し、`blocked`確認を完了した後、
 保留結果を同じ系統へ返す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、部分採用はこの確認へ機械的に含めない。
 sourceによる由来境界の判定と利用者認可の確認を分け、source又は本文から利用者認可を推定しない。
-別リポジトリ項目は元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する。
+別リポジトリ項目は投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
+元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する。通常の`atk mq add`はfrontmatterの
+`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を`atk mq show`で照合する。

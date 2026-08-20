@@ -103,8 +103,9 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 `AskUserQuestion`又はTBD保留へ接続する。不採用確認用`user_decisions`は通常の将来判断TBDと区別する。
 直接回答は出所と引用範囲を付けた逐語文で同じ`feedbacks-planner`系統へ返し、回答なしではTBD保存、依存設定、`blocked`確認後の
 保留結果を同じ系統へ返す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない場合は元項目を終端しない。
-別リポジトリ項目は、元項目のfrontmatterと本文を含むメッセージ全体を既存の`agent-toolkit:add-feedback`で正しい`target_repo`へ
-登録する。sourceがある場合は同じ値を渡す。
+別リポジトリ項目は、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
+元項目のfrontmatterと本文を含むメッセージ全体を既存の`agent-toolkit:add-feedback`で正しい`target_repo`へ登録する。
+通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を`atk mq show`で照合する。
 sourceを指定しない場合は本文、`target_repo`及び非予約frontmatter全体を照合した後、
@@ -161,7 +162,8 @@ agent-toolkitプラグイン内のタスク文書と作成規範の絶対パス�
 当該項目の確定可否にかかわらず、保持済みの`feedbacks-planner`結果で全項目を一巡した後にバッチを失敗として返す。
 Git状態の回復、失敗結果の3分類及び元項目の`feedbacks-planner`再開は行わない。
 `source: session-review`と確認できる項目は、却下済みの元本文と回答を失敗TBDへ依存する新規のフィードバックへ反映し、本文と依存を照合してから失敗TBDを採用終端する。
-それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留し、失敗TBDを採用終端して依存を解除した後に、通常経路で元項目を再開する。
+それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留する。失敗TBDを採用終端して依存を解除する。
+停止済みの`feedbacks-planner`系統は再開・再利用しない。次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する。
 実作業担当は成果物の編集、生成、初回検証、stageとcommitを所有する。
 調整役はGit状態、差分、成果物と報告済み検証結果を読み取り専用で実測し、完了条件への適合を検収する。
 背景の書込担当では、書込担当が所有する全プロセスの終了確認、残る`TaskStop`対象の停止、

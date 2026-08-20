@@ -41,7 +41,8 @@
 - 不採用確認用`user_decisions`を通常の将来判断TBDと区別し、直接回答を同じ`feedbacks-planner`系統へ返し、回答なしでは保留結果を同じ系統へ返すことを確認する
 - 保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行できることを確認する
 - 部分採用を利用者確認へ機械的に含めず、差異、採用範囲、除外範囲及び採否理由を記録することを確認する
-- 別リポジトリ項目は元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ登録することを確認する
+- 別リポジトリ項目は投入前処理で予約frontmatterキー`target_repo`だけを移管先の値へ置き換え、元項目のfrontmatterと本文を含む
+  メッセージ全体を正しい`target_repo`へ登録することを確認する（通常の`atk mq add`はfrontmatter値を優先する）
 - `alert_keys`などの非予約frontmatterを保持することを確認する
 - sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を既存の`atk mq show`で照合することを確認する
 - 照合後だけ元項目を移管先ファイル名付きで終端することを確認する

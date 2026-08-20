@@ -221,9 +221,9 @@ _RESERVED_FRONTMATTER_KEYS = (
 
 出力frontmatterはここに列挙したキーを必ず単一の値へ確定させ、入力メッセージのfrontmatterへ
 同名キーが含まれていても`frontmatter_data.update()`による辞書更新で
-入力値を除外する。`source`は明示された入力側の値をCLIオプションより優先して採用する。
-`target_repo`は移管先を明示する呼び出しでCLIオプションの値を採用し、`_resolve_repo_id`で正規化してから
-保存する。移管先を明示しない呼び出しでは、メッセージfrontmatterの`target_repo`を採用する。
+入力値を除外する。このうち`target_repo`・`source`は明示された入力側の値を
+CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
+保存する。
 `type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
@@ -238,7 +238,6 @@ def _add_entries_locked(
     parsed_messages: list[tuple[dict[str, object], str]],
     target_repo: str | None,
     source: str | None,
-    replace_target_repo: bool,
     now: datetime.datetime,
     entry_type: str,
     scope: str | None,
@@ -252,9 +251,8 @@ def _add_entries_locked(
 ) -> list[str]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名を返す。
 
-    `replace_target_repo`が真の場合は、各メッセージのfrontmatterにある予約キー`target_repo`を
-    呼び出し元の移管先で置き換える。偽の場合に`target_repo`が`None`なら、各メッセージのfrontmatterの
-    `target_repo`だけを採用する（呼び出し元の`add_entries`が全件の存在と解決可否を検証済みとする）。
+    `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`だけを採用する
+    （呼び出し元の`add_entries`が全件の存在と解決可否を検証済みとする）。
     """
     effective_repair_targets: list[str | None] = [None for _ in parsed_messages] if repair_targets is None else repair_targets
     effective_repair_kinds: list[str | None] = [None for _ in parsed_messages] if repair_kinds is None else repair_kinds
@@ -277,9 +275,7 @@ def _add_entries_locked(
         effective_repair_kinds,
         strict=True,
     ):
-        raw_target_repo = (
-            target_repo if replace_target_repo and target_repo is not None else frontmatter.get("target_repo", target_repo)
-        )
+        raw_target_repo = frontmatter.get("target_repo", target_repo)
         raw_source = frontmatter.get("source", source)
         try:
             item_target_repo = _resolve_repo_id(raw_target_repo) if isinstance(raw_target_repo, str) else target_repo
@@ -328,7 +324,6 @@ def add_entries(
     target_repo: str | None,
     source: str | None,
     now: datetime.datetime,
-    replace_target_repo: bool = False,
     entry_type: str = MQ_TYPE_FEEDBACK,
     scope: str | None = None,
     question_type: str | None = None,
@@ -344,8 +339,7 @@ def add_entries(
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     TBD種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
     `_tbd.reject_reserved_tbd_markup`が`WebInputError`を送出する（CLIとWeb UIの共通経路）。
-    `replace_target_repo`が真の場合は、明示された移管先を各メッセージのfrontmatterの`target_repo`へ設定する。
-    偽で`target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
+    `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
     """
     if not messages:
@@ -389,7 +383,6 @@ def add_entries(
             parsed_messages=parsed_messages,
             target_repo=normalized_target_repo,
             source=source,
-            replace_target_repo=replace_target_repo,
             now=now,
             entry_type=entry_type,
             scope=scope,
@@ -441,9 +434,9 @@ def _cmd_add(
     対象リポジトリは常にカレントディレクトリから解決する。ただし`mq add`直後のトークンが実在
     ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
     当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
-    各メッセージ先頭がYAML frontmatter形式の場合は`source`をCLIオプションより優先する。
-    `--target-repo`またはレガシーREPO_PATH位置引数を指定した場合は、その値を移管先として
-    frontmatterの予約キー`target_repo`へ設定する。対象指定がない場合はfrontmatterの値を使う。
+    各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
+    `--target-repo`指定時は、レガシーREPO_PATH位置引数が無くfrontmatterにも`target_repo`が
+    無い場合のfallback値として使う。
     エディター経由の本文確定後に対象worktreeのHEADを取得してから`_pull`を実行する順序とし、
     エディター起動前のブロッキング待ち（他端末の投入分を反映するremote同期）を無くしてUXを改善する。
     remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
@@ -518,7 +511,6 @@ def _cmd_add(
             target_repo=target_repo,
             source=args.source,
             now=now,
-            replace_target_repo=repo_path_override is not None or args.target_repo is not None,
             entry_type=args.type,
             scope=args.scope,
             question_type=args.question_type,

@@ -44,7 +44,9 @@ description: >
    別操作、時間を空けた確認、この手順をやり直す際のactive一覧取得では同期を省略しない。
    事前確認の判断表を再適用して処置を確定し、競合で拒否された場合も同様に再取得して再適用する
 6. 新規項目は`atk mq add`で保存し、計画実装型は吸収元のファイル名を本文へ記録する。
-   別リポジトリ移管では、元項目のfrontmatterと本文を含むメッセージ全体を渡す。
+   別リポジトリ移管では、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを
+   移管先の値へ一時的に置き換えてから、元項目のfrontmatterと本文を含むメッセージ全体を渡す。
+   通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。
    sourceを受領した場合だけ同じ値を`atk mq add --source=<source>`へ渡す。
    sourceを受領していない場合は`--source`を省略し、sourceを推測、必須化又は別値へ置換しない
 7. 完了表示のファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`を入力と照合する。sourceを受領した場合は、

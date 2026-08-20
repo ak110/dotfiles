@@ -1006,7 +1006,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "`source: session-review`と確認できる項目は",
         "それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い",
         "失敗TBDを依存へ追加して`blocked`まで確認する",
-        "元のフィードバックをrejectせず、失敗TBDの回答後に不採用確認を再開する",
+        "元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する",
         "atk mq reject <filename> --note=<失敗TBD filename>",
         "失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず",
         "一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行",
@@ -1042,6 +1042,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "失敗TBDを依存へ追加",
         "TBD依存を設定し、`blocked`を確認して保留する",
         "不採用確認を経ずに元のフィードバックをrejectしない",
+        "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する",
     ):
         assert phrase in process
     for phrase in (
@@ -1080,7 +1081,8 @@ def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
         "新規のフィードバックの本文と依存を再取得して照合した後に失敗TBDを採用終端",
         "失敗TBDをactiveのまま保持",
         "それ以外の項目の失敗TBDへ回答された場合は、回答済みTBDを先に採用終端する",
-        "依存が解除された元のフィードバックを通常経路で再開する",
+        "停止済みの`feedbacks-planner`系統を再開・再利用せず",
+        "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で再開する",
         "元のフィードバックの採否候補へ反映する",
     ):
         assert phrase in hold
@@ -1090,13 +1092,13 @@ def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
     terminal_at = hold.index("失敗TBDを採用終端", verify_at)
     human_source_at = hold.index("それ以外の項目の失敗TBDへ回答された場合は", terminal_at)
     human_terminal_at = hold.index("回答済みTBDを先に採用終端する", human_source_at)
-    human_resume_at = hold.index("依存が解除された元のフィードバックを通常経路で再開する", human_terminal_at)
+    human_resume_at = hold.index("停止済みの`feedbacks-planner`系統を再開・再利用せず", human_terminal_at)
     assert session_review_at < save_at < verify_at < terminal_at < human_source_at < human_terminal_at < human_resume_at
     for phrase in (
         "`source: session-review`と確認できる項目は、却下済みの元本文と回答を失敗TBDへ依存する新規のフィードバックへ反映し",
         "本文と依存を照合してから失敗TBDを採用終端する",
-        "それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留し",
-        "依存を解除した後に、通常経路で元項目を再開する",
+        "それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留する",
+        "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する",
     ):
         assert phrase in design
 

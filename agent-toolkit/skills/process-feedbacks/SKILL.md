@@ -52,7 +52,9 @@ TBDへ永続化して暫定判断で進める。
 保留確認後は保留結果を同じ`feedbacks-planner`系統へ返し、保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
 部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲及び理由を採否記録へ残す。起草担当又は実行主体へはバッチ全項目を渡し、
 実施内容へは採用又は部分採用の採用範囲だけを反映する。
-別リポジトリ項目は、元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ`agent-toolkit:add-feedback`で登録する。
+別リポジトリ項目は、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
+元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ`agent-toolkit:add-feedback`で登録する。
+通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 移管先では`atk mq show`でsource（指定時）、本文、`target_repo`及び元項目の非予約frontmatter全体を照合する。
@@ -93,7 +95,7 @@ Claude Codeホストの通常型で`feedbacks-planner`から不採用確認用`u
 直接的原因、再開に必要な情報、元のファイル名も含める。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-`source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`references/hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後に不採用確認を再開する。
+`source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`references/hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
 失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
 `source: session-review`と確認できる項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できる場合だけrejectを1回再実行する。
 3分類、元のフィードバックの`feedbacks-planner`再開、Git状態の回復は行わない。

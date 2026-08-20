@@ -93,7 +93,7 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 直接的原因、再開に必要な情報、元のファイル名も含める。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-`source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後に不採用確認を再開する。
+`source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
 失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
 `source: session-review`と確認できる項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
 それ以外では新しいTBDを作成せず、Git操作も`feedbacks-planner`の再開も行わず失敗として返す。
@@ -119,8 +119,10 @@ Git操作、3分類及び元項目の`feedbacks-planner`再開は行わない。
 
 採用結果では`atk mq convert-to-plan <filename> --plan-file=<計画絶対パス> --target-repo=<repo>`を実行し、
 保存結果の`plan_file`を同じ実在する計画パスへ照合する。
-別リポジトリ項目は終端結果として扱わず、元項目のfrontmatterと本文を含むメッセージ全体、指定済みsource及び正しい`target_repo`を
-`agent-toolkit:add-feedback`へ渡して登録・照合する。
+別リポジトリ項目は終端結果として扱わない。投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを
+移管先の値へ一時的に置き換える。元項目のfrontmatterと本文を含むメッセージ全体、指定済みsource及び正しい`target_repo`を
+`agent-toolkit:add-feedback`へ渡して登録・照合する。通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、
+frontmatterの値を優先する。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 source欄がない場合はsourceを指定しない。
 sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を照合する。

@@ -44,7 +44,9 @@
 回答が得られない場合は同じ質問内容をTBDへ保存して元項目を保留し、回答又はTBDを確認できない状態では`reject`を実行しない。
 不採用確認用`user_decisions`は通常の将来判断TBDと区別する。直接回答は同じ`feedbacks-planner`系統へ返し、回答なしで保存したTBDは依存設定と保留確認後の結果を同じ系統へ返す。
 保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、通常の将来判断TBDの暫定判断を不採用確認へ混在させない。
-別リポジトリ項目は、元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する。
+別リポジトリ項目は、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
+元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する。通常の`atk mq add`はfrontmatterの
+`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 sourceを指定した場合は移管先の`source`、本文、`target_repo`、非予約frontmatter全体、移管先ファイル名を`atk mq show`で照合する。

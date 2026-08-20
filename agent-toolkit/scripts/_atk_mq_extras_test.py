@@ -674,7 +674,7 @@ class TestAddFilePathArgumentRejected:
 
 
 class TestAddTargetRepoOption:
-    """`mq add --target-repo`の投入先指定とfrontmatter置換を検証する。"""
+    """`mq add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,
@@ -706,12 +706,12 @@ class TestAddTargetRepoOption:
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/otherrepo" in content
 
-    def test_explicit_target_repo_replaces_frontmatter_target_repo(
+    def test_frontmatter_target_repo_overrides_cli_option(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """frontmatterでtarget_repoが明示されても`--target-repo`の値へ置き換える。"""
+        """frontmatterでtarget_repoが明示された本文は`--target-repo`より優先される。"""
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
@@ -735,8 +735,7 @@ class TestAddTargetRepoOption:
 
         assert exc_info.value.code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
-        assert "target_repo: github.com/example/otherrepo" in content
-        assert "target_repo: github.com/example/fmrepo" not in content
+        assert "target_repo: github.com/example/fmrepo" in content
 
 
 class TestTbdAddTargetRepoOption:
