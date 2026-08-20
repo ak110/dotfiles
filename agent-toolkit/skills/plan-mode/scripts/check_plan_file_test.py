@@ -96,6 +96,7 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 | 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |
+| R-P-001-002 | P-001 | 対象外の検査を追加しない。 | 不採用 | 非該当 | 対象外の検査 | 実装上不要であるため。 |
 
 ## 変更履歴
 
@@ -199,6 +200,26 @@ def test_cli_accepts_mixed_agreements_and_numeric_target(repo: tuple[pathlib.Pat
     )
     assert result.returncode == 0, result.stderr
     assert not result.stderr
+
+
+def test_cli_rejects_action_reference_to_rejected_requirement(repo: tuple[pathlib.Path, str]) -> None:
+    """CLI経由でも実施内容から不採用要求への参照を拒否する。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace(
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-002 |",
+        1,
+    )
+    path = work_dir / "rejected-reference-plan.md"
+    path.write_text(content, encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--work-dir", str(work_dir), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "不採用要求を参照できない: R-P-001-002" in result.stderr
 
 
 def test_cli_reports_missing_completion_once(repo: tuple[pathlib.Path, str]) -> None:

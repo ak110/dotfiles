@@ -537,6 +537,8 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "要約だけを一次入力にせず" in delegation
     assert "今回のレビュー種別を全レビュー共通の入力として渡す" in delegation
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
+    assert "キューにない素材の逐語本文・回答全文は計画外の明示入力として、初回レビュー担当へ渡す" in delegation
+    assert "再レビューへの追送には、キューにない素材の逐語本文・回答全文も計画外の明示入力として含め" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" in delegation
     assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" in delegation
@@ -557,6 +559,7 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
     assert "再レビューでは全修正と累積計画全体を再監査" in task
+    assert "キューにない素材の逐語本文・回答全文が、調査、起草、初回レビュー、再レビューの明示入力として保持" in task
     assert "現行計画に同じ違反が残る場合だけ再提示" in task
     assert "指摘候補を内部的に網羅列挙" in task
     for receiver_contract in (
@@ -787,6 +790,9 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     assert "要求ID、素材参照、採否、範囲及び根拠へ照合する" in review
     assert "種別を起動事実、投入元を常駐自動起動、引用範囲を非該当" in review
     assert "種別、出所及び引用範囲" in sender
+    for document in (sender, planner, process, standards, delegation, review):
+        assert "キューにない素材の逐語本文・回答全文" in document
+        assert "計画外の明示入力" in document
     assert "種別を起動事実、投入元を常駐自動起動、引用範囲を非該当" in sender
     assert "作成規範スキルの選定は`feedbacks-planner`が自身で確定するため渡さない" in sender
     assert "直接起動経路では、`## 提示素材`の素材表・要求表、投入元及び引用範囲" in review
@@ -1525,6 +1531,12 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     ):
         assert phrase in sender
         assert phrase in receiver
+    for text in (sender, receiver, decision_format):
+        assert "採用要求が1件以上" in text
+        assert "全要求が不採用" in text
+        assert "未確定要求" in text
+    assert "不採用要求の採否理由と除外範囲" in decision_format
+    assert "`## 実施内容`の`根拠`は採用要求だけ" in decision_format
     for phrase in (
         "計画本文を編集せず同じ`feedbacks-planner`系統へ差し戻す",
         "`agent-toolkit:add-feedback`のTBD投入経路",

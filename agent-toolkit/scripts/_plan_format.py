@@ -347,6 +347,7 @@ class PlanMaterials:
     material_ids: frozenset[str]
     requirement_ids: frozenset[str]
     is_legacy: bool
+    adopted_requirement_ids: frozenset[str] = frozenset()
 
 
 @functools.cache
@@ -785,6 +786,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
         identifiers.add(row[0])
 
     requirement_ids: set[str] = set()
+    adopted_requirement_ids: set[str] = set()
     requirements = requirement_tables[0] if requirement_tables else None
     if requirements is not None:
         if not requirements.rows:
@@ -823,6 +825,8 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
                 errors.append(f"要求{requirement_id}の素材名前空間を素材参照に含める: {namespace}")
             if decision not in {"採用", "不採用"}:
                 errors.append(f"要求{requirement_id}の採否は採用又は不採用にする: {decision}")
+            elif decision == "採用":
+                adopted_requirement_ids.add(requirement_id)
             if decision == "採用" and (adopted == PLAN_NON_QUEUE_VALUE or excluded != PLAN_NON_QUEUE_VALUE):
                 errors.append(f"要求{requirement_id}の採用範囲又は除外範囲が不正である")
             if decision == "不採用" and (adopted != PLAN_NON_QUEUE_VALUE or excluded == PLAN_NON_QUEUE_VALUE):
@@ -860,7 +864,12 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
             and row[1] not in {"参考素材", "処理対象資料", "起動事実"}
         ):
             errors.append(f"素材{row[0]}が要求表から参照されていない")
-    return PlanMaterials(frozenset(identifiers), frozenset(requirement_ids), False), errors
+    return PlanMaterials(
+        frozenset(identifiers),
+        frozenset(requirement_ids),
+        False,
+        frozenset(adopted_requirement_ids),
+    ), errors
 
 
 def parse_plan_materials(content: str) -> tuple[PlanMaterials | None, list[str]]:
@@ -1033,6 +1042,7 @@ def check_plan_structure(content: str) -> list[str]:
     materials_index = find_heading_index(headings, 2, PLAN_H2_MATERIALS)
     identifiers: set[str] = set()
     requirement_ids: set[str] = set()
+    adopted_requirement_ids: set[str] = set()
     materials: PlanMaterials | None = None
     if materials_index is not None:
         materials, material_errors = parse_plan_materials(content)
@@ -1040,6 +1050,7 @@ def check_plan_structure(content: str) -> list[str]:
         if materials is not None:
             identifiers = set(materials.material_ids)
             requirement_ids = set(materials.requirement_ids)
+            adopted_requirement_ids = set(materials.adopted_requirement_ids)
 
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
     if action_index is not None:
@@ -1050,7 +1061,7 @@ def check_plan_structure(content: str) -> list[str]:
         if table is not None:
             errors.extend(_check_action_relations(table))
             if materials is not None and not materials.is_legacy:
-                errors.extend(_check_action_references(table, requirement_ids))
+                errors.extend(_check_action_references(table, requirement_ids, adopted_requirement_ids))
         children = child_headings(headings, action_index, 3)
         if any(heading.text != PLAN_EXCLUSION_H3 for _position, heading in children) or len(children) > 1:
             errors.append(f"`## 実施内容`直下のH3は任意の`### {PLAN_EXCLUSION_H3}`だけにする")
@@ -1116,8 +1127,12 @@ def check_plan_structure(content: str) -> list[str]:
     return errors
 
 
-def _check_action_references(table: MarkdownTable, requirement_ids: set[str]) -> list[str]:
-    """新形式の実施内容表が要求IDを参照するかを検査する。"""
+def _check_action_references(
+    table: MarkdownTable,
+    requirement_ids: set[str],
+    adopted_requirement_ids: set[str],
+) -> list[str]:
+    """新形式の実施内容表が採用要求だけを参照するかを検査する。"""
     column = table.header.index("根拠")
     errors: list[str] = []
     for row in table.rows:
@@ -1131,6 +1146,8 @@ def _check_action_references(table: MarkdownTable, requirement_ids: set[str]) ->
         for reference in references:
             if reference not in requirement_ids:
                 errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
+            elif reference not in adopted_requirement_ids:
+                errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
     return errors
 
 

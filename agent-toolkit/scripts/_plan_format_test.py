@@ -46,6 +46,7 @@ _HUMAN_SECTION = """# 計画の主題
 | 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |
+| R-P-001-002 | P-001 | 対象外の検査を追加しない。 | 不採用 | 非該当 | 対象外の検査 | 実装上不要であるため。 |
 | R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |
 
 ## 変更履歴
@@ -418,8 +419,9 @@ def test_parse_plan_materials_returns_structured_ids_and_legacy_flag() -> None:
     assert not errors
     assert materials == _plan_format.PlanMaterials(
         frozenset({"P-001", "P-002"}),
-        frozenset({"R-P-001-001", "R-P-002-001"}),
+        frozenset({"R-P-001-001", "R-P-001-002", "R-P-002-001"}),
         False,
+        frozenset({"R-P-001-001", "R-P-002-001"}),
     )
 
     legacy_materials, legacy_errors = _plan_format.parse_plan_materials(_LEGACY_CONTENT)
@@ -452,13 +454,29 @@ def test_structured_material_ids_preserve_full_namespace() -> None:
         "| R-P-alpha_1-x-001 | P-002, P-alpha_1-x | 診断件数を2件から1件へ減らす。 | "
         "採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |"
     )
+    rejected = (
+        "| R-P-alpha_1-x-002 | P-alpha_1-x | 対象外の検査を追加しない。 | 不採用 | 非該当 | "
+        "対象外の検査 | 実装上不要であるため。 |"
+    )
     second = "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |"
-    content = content.replace(f"{first}\n{second}", f"{second}\n{first}", 1)
+    content = content.replace(f"{first}\n{rejected}\n{second}", f"{second}\n{first}\n{rejected}", 1)
     materials, errors = _plan_format.parse_plan_materials(content)
     assert not errors
     assert materials is not None
     assert materials.material_ids == frozenset({"P-alpha_1-x", "P-002"})
-    assert materials.requirement_ids == frozenset({"R-P-alpha_1-x-001", "R-P-002-001"})
+    assert materials.requirement_ids == frozenset({"R-P-alpha_1-x-001", "R-P-alpha_1-x-002", "R-P-002-001"})
+    assert materials.adopted_requirement_ids == frozenset({"R-P-alpha_1-x-001", "R-P-002-001"})
+
+
+def test_action_references_rejected_requirement_are_rejected() -> None:
+    """実施内容の根拠に不採用要求を指定できない。"""
+    content = _VALID_CONTENT.replace(
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-002 |",
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert any("不採用要求を参照できない: R-P-001-002" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(
@@ -557,8 +575,9 @@ def test_structured_material_contract_rejects_requirement_table_order() -> None:
         "| R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | "
         "診断件数の更新 | 非該当 | 指示と合意を反映するため。 |"
     )
+    rejected = "| R-P-001-002 | P-001 | 対象外の検査を追加しない。 | 不採用 | 非該当 | 対象外の検査 | 実装上不要であるため。 |"
     second = "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |"
-    content = _VALID_CONTENT.replace(f"{first}\n{second}", f"{second}\n{first}", 1)
+    content = _VALID_CONTENT.replace(f"{first}\n{rejected}\n{second}", f"{second}\n{rejected}\n{first}", 1)
     _materials, errors = _plan_format.parse_plan_materials(content)
     assert any("要求表は要求ID昇順" in error for error in errors), errors
 
