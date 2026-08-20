@@ -31,6 +31,7 @@ const knownTbdFilenames = new Set();
 const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
+let refreshFocusIntent = null;
 
 const byId = id => document.getElementById(id);
 const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
@@ -58,6 +59,34 @@ function setTextMessage(id, message) {
   const element = byId(id);
   element.textContent = message;
   element.hidden = !message;
+}
+
+function setGlobalError(message) {
+  refreshFocusIntent = null;
+  byId('global-error-message').textContent = message;
+  byId('global-error').hidden = !message;
+}
+
+function focusRefreshButton() {
+  const refreshButton = byId('refresh-button');
+  if (refreshButton.disabled) {
+    refreshFocusIntent = byId('global-error-close-button');
+    return;
+  }
+  refreshFocusIntent = null;
+  refreshButton.focus();
+}
+
+function restoreRefreshFocus() {
+  const intent = refreshFocusIntent;
+  refreshFocusIntent = null;
+  if (!intent || document.activeElement !== intent) return;
+  const refreshButton = byId('refresh-button');
+  if (refreshButton.disabled) {
+    refreshFocusIntent = intent;
+    return;
+  }
+  refreshButton.focus();
 }
 
 function clearDialogMessages(dialogName) {
@@ -88,7 +117,7 @@ function deliverOperationMessage(message, isError = false) {
     setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
     return;
   }
-  if (isError) setTextMessage('global-error', message);
+  if (isError) setGlobalError(message);
   else showToast(message);
 }
 
@@ -147,6 +176,7 @@ async function runPending(key, {container, button, busyLabel}, operation) {
     pendingOperations.delete(key);
     syncFilterDependencies();
     syncDetailMutationAvailability();
+    restoreRefreshFocus();
   }
 }
 
@@ -315,7 +345,7 @@ async function loadEntries({announce = false} = {}) {
   } catch (error) {
     if (generation === listRequestGeneration) {
       pendingListAnnouncement = false;
-      setTextMessage('global-error', error.message);
+      setGlobalError(error.message);
     }
     return entries;
   } finally {
@@ -384,7 +414,7 @@ async function loadTargetRepos() {
     return true;
   } catch (error) {
     const isCurrent = generation === targetRepoRequestGeneration && byId('state-filter').value === requestedState;
-    if (isCurrent) setTextMessage('global-error', error.message);
+    if (isCurrent) setGlobalError(error.message);
     return isCurrent;
   }
 }
@@ -532,7 +562,7 @@ async function selectEntry(entry, origin = null) {
     displayEntry(payload.entry);
     openDialog(byId('detail-dialog'), detailOrigin, byId('detail-dialog-body'));
   } catch (error) {
-    if (requestGeneration === detailRequestGeneration) setTextMessage('global-error', error.message);
+    if (requestGeneration === detailRequestGeneration) setGlobalError(error.message);
   }
 }
 
@@ -628,7 +658,7 @@ async function reloadOpenDetailFromExternalChange() {
     }
     if (candidates.length > 1) {
       closeDetailDialog();
-      setTextMessage('global-error', `${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
+      setGlobalError(`${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
       return;
     }
     resolvedEntry = candidates[0] || null;
@@ -930,7 +960,7 @@ async function handleFilterChange({reloadRepos = false} = {}) {
 
 async function reloadFromExternalChange() {
   void refreshKnownTbds({notify: true}).catch((error) => {
-    setTextMessage('global-error', error.message);
+    setGlobalError(error.message);
   });
   await loadTargetRepos();
   await loadEntries({announce: false});
@@ -948,6 +978,13 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
 }
 
 function bindEvents() {
+  document.addEventListener('focusin', () => {
+    refreshFocusIntent = null;
+  });
+  byId('global-error-close-button').addEventListener('click', () => {
+    setGlobalError('');
+    focusRefreshButton();
+  });
   byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
   byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
@@ -994,7 +1031,7 @@ function initializeApp() {
   initialization = synchronizeAndLoad()
     .then(() => refreshKnownTbds({notify: false}))
     .catch((error) => {
-      setTextMessage('global-error', error.message);
+      setGlobalError(error.message);
     });
 }
 

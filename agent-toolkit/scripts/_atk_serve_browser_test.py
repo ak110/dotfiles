@@ -352,6 +352,78 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
 
 
 @pytest.mark.asyncio
+async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """共通エラーをキーボードで消去し、後続の失敗で再表示できることを検証する。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+
+    error_region = page.locator("#global-error")
+    error_message = page.locator("#global-error-message")
+    close_button = page.get_by_role("button", name="エラーメッセージを閉じる")
+
+    async def fail_first_list_request(route: playwright.async_api.Route) -> None:
+        await route.fulfill(
+            status=500,
+            content_type="application/json",
+            body='{"error":"一覧取得失敗"}',
+        )
+
+    await page.route("**/api/entries?*", fail_first_list_request)
+    await page.locator("#refresh-button").click()
+    await playwright.async_api.expect(error_message).to_have_text("一覧取得失敗")
+    await playwright.async_api.expect(error_region).to_be_visible()
+    await page.locator("#refresh-button").focus()
+    await page.keyboard.press("Tab")
+    await page.keyboard.press("Tab")
+    await playwright.async_api.expect(close_button).to_be_focused()
+    await page.keyboard.press("Enter")
+    await playwright.async_api.expect(error_region).to_be_hidden()
+    await playwright.async_api.expect(error_message).to_have_text("")
+    await playwright.async_api.expect(page.locator("#refresh-button")).to_be_focused()
+    await page.unroute("**/api/entries?*", fail_first_list_request)
+
+    async def fail_second_list_request(route: playwright.async_api.Route) -> None:
+        await route.fulfill(
+            status=500,
+            content_type="application/json",
+            body='{"error":"後続のエラー"}',
+        )
+
+    await page.route("**/api/entries?*", fail_second_list_request)
+    await page.locator("#refresh-button").click()
+    await playwright.async_api.expect(error_message).to_have_text("後続のエラー")
+    await playwright.async_api.expect(error_region).to_be_visible()
+
+    metrics = await error_region.evaluate(
+        """element => {
+          const message = document.getElementById('global-error-message').getBoundingClientRect();
+          const close = document.getElementById('global-error-close-button').getBoundingClientRect();
+          return {
+            scrollWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+            regionRight: element.getBoundingClientRect().right,
+            messageRight: message.right,
+            closeLeft: close.left,
+            closeRight: close.right,
+            closeWidth: close.width,
+            closeHeight: close.height
+          };
+        }"""
+    )
+    assert metrics["scrollWidth"] <= metrics["viewportWidth"]
+    assert metrics["regionRight"] <= metrics["viewportWidth"]
+    assert metrics["messageRight"] <= metrics["closeLeft"]
+    assert metrics["closeRight"] <= metrics["viewportWidth"]
+    assert metrics["closeWidth"] >= 44
+    assert metrics["closeHeight"] >= 44
+    await page.unroute("**/api/entries?*", fail_second_list_request)
+
+
+@pytest.mark.asyncio
 async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harness: _BrowserHarness) -> None:
     """回答・削除フォーカス、条件依存、警告、利用者起点だけの件数通知を検証する。"""
     harness = browser_harness
