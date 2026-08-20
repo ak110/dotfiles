@@ -599,8 +599,8 @@ def test_review_table_paths_preserve_system_and_round_independence() -> None:
     assert "未解消の同一複合キーを再提示" in _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
 
-def test_review_table_rereviews_read_same_system_history_and_reviewee_reads_all_tables() -> None:
-    """再レビュー担当の履歴参照とレビューイーの全表読取を系統境界とともに固定する。"""
+def test_review_table_rereviews_require_delta_inputs_and_current_table_additions() -> None:
+    """同一thread継続でも履歴を入力し、指摘を今回表だけへ追加する契約を固定する。"""
     plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
@@ -611,19 +611,24 @@ def test_review_table_rereviews_read_same_system_history_and_reviewee_reads_all_
 
     for reviewer in (plan_review, independent_review):
         for phrase in (
-            "今回の系統・ラウンド表だけを指摘追加対象",
+            "同一thread継続でも新規起動でも",
+            "必須差分入力",
+            "今回の系統・ラウンド表と同じ系統の過去全ラウンド表",
             "同じ系統の過去全ラウンド表",
             "ラウンド昇順",
             "過去表へは追記しない",
             "過去表の先頭3列を今回の表へ追加せず",
+            "今回の系統・ラウンド表だけへ`atk review-table add`で追加する",
             "全文読取",
         ):
             assert phrase in reviewer
+        assert "同一thread継続では実施指示だけを渡す" not in reviewer
     assert "計画準拠系の表と対応`.lock`はこの一覧へ含めない" in independent_review
     assert "独立系へ計画準拠系の表や出力を渡さない" in executor
     assert "修正対象となる全系統・全ラウンド表" in executor
     assert "各系統の過去全ラウンド表をラウンド順に並べた一覧" in flow
     assert "今回の系統・ラウンド表だけへ指摘を追加する" in flow
+    assert "同じ系統の過去全ラウンド表をラウンド昇順で検証・全文読取し、今回の系統・ラウンド表だけへ指摘を追加する" in reviewee
     for adopter in (implementation_task, reviewee, merge):
         assert "修正対象となる全系統・全ラウンド表" in adopter
         assert "全文読取" in adopter
