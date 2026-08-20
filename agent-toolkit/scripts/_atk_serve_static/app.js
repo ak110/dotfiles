@@ -15,6 +15,8 @@ const METADATA_FIELDS = [
   ['source', '投入元'],
   ['updated_at', '更新日時']
 ];
+const FRONTMATTER_LABELS = {target_repo: '対象リポジトリ', source: '投入元'};
+const FRONTMATTER_EXCLUDED_KEYS = new Set(['type']);
 
 let entries = [];
 let currentEntry = null;
@@ -499,29 +501,70 @@ function detailReturnTarget() {
   return emptyAction || byId('search-input');
 }
 
-function metadataValue(entry, key) {
-  if (key === 'kind') return entry.kind || 'unknown';
-  if (key === 'state') return entry.state || 'unknown';
-  if (key === 'answered') return entry.answered === true ? '回答済み' : entry.answered === false ? '未回答' : '';
-  if (key === 'updated_at') {
-    const parts = formatDateParts(entry.updated_at);
-    return parts.time ? `${parts.date} ${parts.time}` : parts.date;
+function formatMetadataValue(value) {
+  if (value !== null && typeof value === 'object') return JSON.stringify(value, null, 2);
+  return value === null ? 'null' : String(value);
+}
+
+function formatMetadataKey(key) {
+  if (key && typeof key === 'object' && !Array.isArray(key) &&
+      typeof key.type === 'string' && Object.prototype.hasOwnProperty.call(key, 'value')) {
+    if (key.type === 'str') return String(key.value);
+    return `${key.type}: ${formatMetadataValue(key.value)}`;
   }
-  return entry[key] == null ? '' : String(entry[key]);
+  return String(key);
+}
+
+function metadataEntries(entry) {
+  let result;
+  if (Array.isArray(entry.frontmatter_entries)) {
+    result = entry.frontmatter_entries.map(item => ({key: item.key, value: item.value}));
+  } else {
+    const frontmatter = entry.frontmatter && typeof entry.frontmatter === 'object' && !Array.isArray(entry.frontmatter)
+      ? entry.frontmatter : {};
+    const legacyEntries = Object.keys(frontmatter).length === 1 && Array.isArray(frontmatter.__mapping__)
+      ? frontmatter.__mapping__ : null;
+    result = legacyEntries
+      ? legacyEntries.map(item => ({key: item.key, value: item.value}))
+      : Object.entries(frontmatter).map(([key, value]) => ({key: {type: 'str', value: key}, value}));
+  }
+  for (const key of ['target_repo', 'source']) {
+    if (!result.some(item => item.key?.type === 'str' && item.key.value === key) &&
+        entry[key] !== undefined && entry[key] !== null) {
+      result.push({key: {type: 'str', value: key}, value: entry[key]});
+    }
+  }
+  return result;
+}
+
+function appendMetadataItem(metadata, label, value) {
+  if (value === undefined) return;
+  const item = document.createElement('div');
+  item.className = 'metadata-item';
+  const term = document.createElement('dt');
+  term.textContent = label;
+  const definition = document.createElement('dd');
+  definition.textContent = formatMetadataValue(value);
+  item.append(term, definition);
+  metadata.append(item);
 }
 
 function renderMetadata(entry) {
   const metadata = byId('detail-metadata');
   metadata.replaceChildren();
-  METADATA_FIELDS.forEach(([key, label]) => {
-    const value = metadataValue(entry, key);
-    if (!value) return;
-    const term = document.createElement('dt');
-    term.textContent = label;
-    const definition = document.createElement('dd');
-    definition.textContent = value;
-    metadata.append(term, definition);
-  });
+  if (entry.answered === true || entry.answered === false) {
+    appendMetadataItem(metadata, '回答状況', entry.answered ? '回答済み' : '未回答');
+  }
+  for (const item of metadataEntries(entry)) {
+    const key = item.key;
+    if (key?.type === 'str' && FRONTMATTER_EXCLUDED_KEYS.has(key.value)) continue;
+    const keyValue = key?.type === 'str' ? key.value : undefined;
+    const label = keyValue !== undefined && Object.prototype.hasOwnProperty.call(FRONTMATTER_LABELS, keyValue)
+      ? FRONTMATTER_LABELS[keyValue] : formatMetadataKey(key);
+    appendMetadataItem(metadata, label, item.value);
+  }
+  const parts = formatDateParts(entry.updated_at);
+  appendMetadataItem(metadata, '更新日時', parts.time ? `${parts.date} ${parts.time}` : parts.date);
 }
 
 function setDetailMode(mode) {
