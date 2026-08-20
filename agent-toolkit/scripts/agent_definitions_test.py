@@ -1061,9 +1061,10 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     assert not (_DISTRIBUTION_ROOT / "scripts" / "_atk_mq_recover_test.py").exists()
 
 
-def test_failed_tbd_reprocessing_preserves_user_headings_and_dependency_order() -> None:
-    """失敗TBD回答後の再投入本文境界と終端順序を固定する。"""
+def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
+    """失敗TBD回答後の由来別再開経路と終端順序を固定する。"""
     hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
     for phrase in (
         "表示用見出し",
@@ -1078,12 +1079,26 @@ def test_failed_tbd_reprocessing_preserves_user_headings_and_dependency_order() 
         "depends_on=<失敗TBD filename>",
         "新規のフィードバックの本文と依存を再取得して照合した後に失敗TBDを採用終端",
         "失敗TBDをactiveのまま保持",
+        "それ以外の項目の失敗TBDへ回答された場合は、回答済みTBDを先に採用終端する",
+        "依存が解除された元のフィードバックを通常経路で再開する",
+        "元のフィードバックの採否候補へ反映する",
     ):
         assert phrase in hold
-    save_at = hold.index("depends_on=<失敗TBD filename>")
+    session_review_at = hold.index("`source: session-review`と確認できる項目の失敗TBDへ回答された場合は")
+    save_at = hold.index("depends_on=<失敗TBD filename>", session_review_at)
     verify_at = hold.index("新規のフィードバックの本文と依存を再取得して照合", save_at)
     terminal_at = hold.index("失敗TBDを採用終端", verify_at)
-    assert save_at < verify_at < terminal_at
+    human_source_at = hold.index("それ以外の項目の失敗TBDへ回答された場合は", terminal_at)
+    human_terminal_at = hold.index("回答済みTBDを先に採用終端する", human_source_at)
+    human_resume_at = hold.index("依存が解除された元のフィードバックを通常経路で再開する", human_terminal_at)
+    assert session_review_at < save_at < verify_at < terminal_at < human_source_at < human_terminal_at < human_resume_at
+    for phrase in (
+        "`source: session-review`と確認できる項目は、却下済みの元本文と回答を失敗TBDへ依存する新規のフィードバックへ反映し",
+        "本文と依存を照合してから失敗TBDを採用終端する",
+        "それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留し",
+        "依存を解除した後に、通常経路で元項目を再開する",
+    ):
+        assert phrase in design
 
 
 def test_feedback_failure_contract_keeps_mq_commit_public_behavior() -> None:
