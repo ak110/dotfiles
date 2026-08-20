@@ -4,8 +4,7 @@
 `--continue`・`--resume`・`/resume`で戻ると同じ`session_id`で会話が続くため、
 当該イベントを契機に状態を削除すると再開後の記録が失われる。
 そのため通常は削除せず、更新から一定期間が経過した他セッションの状態だけを回収する。
-期限回収時も、同じ`session_id`の再開で一回限りの計画名出力を維持できるよう、
-`last_hook_session_title`があればその値だけを残す。
+計画名の再出力抑止記録は通常状態と別の保存先で保持し、期限回収の対象に含めない。
 当該セッション自身の状態は、記録が無いまま期間が経過した場合も回収対象から除く。
 
 例外は終了理由が`clear`の場合とする。この理由は会話が破棄されたことを示し、
@@ -22,7 +21,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    delete_state,
+    clear_session_state,
     sweep_stale_states,
 )
 
@@ -46,7 +45,7 @@ def main(payload_text: str) -> int:
     sweep_stale_states(keep_session_id=session_id)
     if payload.get("reason") != _DISCARDED_REASON or session_id is None:
         return 0
-    if not delete_state(session_id):
+    if not clear_session_state(session_id):
         print(
             f"[session_end_cleanup] セッション状態を削除できませんでした: session_id={session_id}",
             file=sys.stderr,

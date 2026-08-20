@@ -11,7 +11,7 @@ import pathlib
 import sys
 import tempfile
 import threading
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
@@ -20,10 +20,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     STALE_STATE_MAX_AGE_SECONDS,
+    claim_session_title,
+    clear_session_state,
     delete_state,
     read_state,
     state_path,
     sweep_stale_states,
+    title_state_path,
     update_state,
 )
 
@@ -164,17 +167,50 @@ class TestReadState:
         assert read_state("array") == {}
 
 
+class TestClaimSessionTitle:
+    """計画名の独立記録と失敗時の抑止。"""
+
+    def test_first_claim_wins_and_normal_state_is_unchanged(self) -> None:
+        update_state("sid", lambda current: {**current, "active": True})
+
+        assert claim_session_title("sid", "first-plan") is True
+        assert claim_session_title("sid", "second-plan") is False
+
+        assert read_state("sid") == {"active": True}
+        assert json.loads(title_state_path("sid").read_text(encoding="utf-8")) == {"last_hook_session_title": "first-plan"}
+
+    def test_corrupt_record_fails_without_replacement(self) -> None:
+        path = title_state_path("sid")
+        path.parent.mkdir(parents=True)
+        path.write_text("{", encoding="utf-8")
+
+        assert claim_session_title("sid", "plan") is False
+        assert path.read_text(encoding="utf-8") == "{"
+
+    def test_write_failure_returns_false(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _fail_write(_path: pathlib.Path, _content: str) -> None:
+            raise PermissionError("simulated failure")
+
+        monkeypatch.setattr("_session_state._atomic_write", _fail_write)
+
+        assert claim_session_title("sid", "plan") is False
+        assert not title_state_path("sid").exists()
+
+
 class TestDeleteState:
     """状態JSON削除の入力・寿命境界。"""
 
-    def test_existing_state_is_deleted_and_lock_is_retained(self) -> None:
+    def test_existing_state_and_lock_are_deleted(self) -> None:
         update_state("sid", lambda current: {**current, "a": 1})
         path = state_path("sid")
         lock_path = path.parent / (path.name + ".lock")
 
         assert delete_state("sid") is True
         assert not path.exists()
-        assert lock_path.exists()
+        assert not lock_path.exists()
 
     def test_missing_state_is_success(self) -> None:
         assert delete_state("missing") is True
@@ -239,25 +275,31 @@ class TestSweepStaleStates:
         assert not target.exists()
         assert not lock.exists()
 
-    def test_stale_state_retains_session_title_only(self) -> None:
-        """期限切れ状態はsessionTitleの一回限り記録だけを残す。"""
+    def test_stale_state_is_collected_without_title_record(self) -> None:
+        """期限切れの通常状態だけを回収し、独立した計画名記録を残す。"""
         update_state(
             "titled",
             lambda current: {
                 **current,
                 "current_plan_file_path": "/home/example/.claude/plans/plan.md",
-                "last_hook_session_title": "plan",
             },
         )
+        assert claim_session_title("titled", "plan") is True
         target = state_path("titled")
         lock = target.parent / (target.name + ".lock")
+        title_target = title_state_path("titled")
+        title_lock = title_target.with_name(title_target.name + ".lock")
         self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
         self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(title_target, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(title_lock, STALE_STATE_MAX_AGE_SECONDS + 60)
 
-        assert sweep_stale_states() == 0
-        assert read_state("titled") == {"last_hook_session_title": "plan"}
-        assert target.exists()
-        assert lock.exists()
+        assert sweep_stale_states() == 1
+        assert read_state("titled") == {}
+        assert not target.exists()
+        assert not lock.exists()
+        assert json.loads(title_target.read_text(encoding="utf-8")) == {"last_hook_session_title": "plan"}
+        assert title_lock.exists()
 
     def test_old_lock_is_kept_while_state_is_fresh(self) -> None:
         """状態ファイルが期限内なら、対のロックが古くても残す。
@@ -326,6 +368,141 @@ class TestSweepStaleStates:
         assert sweep_stale_states() == 1
         assert not state_path("stale").exists()
         assert read_state("live") == {"a": 1}
+
+    def test_waiting_update_starts_after_stale_lock_is_deleted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """期限回収は使用中のロックを削除せず、後続更新を新しいロックへ直列化する。"""
+        session_id = "stale-update-race"
+        update_state(session_id, lambda current: {**current, "expired": True})
+        target = state_path(session_id)
+        lock = target.with_name(target.name + ".lock")
+        self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        first_started = threading.Event()
+        allow_first = threading.Event()
+        sweep_coordination_acquired = threading.Event()
+        lock_deleted = threading.Event()
+        second_started = threading.Event()
+        original_atomic_write = vars(sys.modules["_session_state"])["_atomic_write"]
+        original_acquire_lock = vars(sys.modules["_session_state"])["_acquire_lock"]
+        original_unlink = pathlib.Path.unlink
+
+        def _atomic_write(path: pathlib.Path, content: str) -> None:
+            original_atomic_write(path, content)
+            if path == target and '"first"' in content:
+                self._age(path, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        def _unlink(path: pathlib.Path, *, missing_ok: bool = False) -> None:
+            if path == lock:
+                assert not second_started.is_set()
+                lock_deleted.set()
+            original_unlink(path, missing_ok=missing_ok)
+
+        def _acquire_lock(lock_file: Any) -> None:
+            original_acquire_lock(lock_file)
+            if threading.current_thread().name == "state-sweep":
+                sweep_coordination_acquired.set()
+
+        monkeypatch.setattr("_session_state._atomic_write", _atomic_write)
+        monkeypatch.setattr("_session_state._acquire_lock", _acquire_lock)
+        monkeypatch.setattr(pathlib.Path, "unlink", _unlink)
+
+        def _first_mutator(current: dict) -> dict:
+            first_started.set()
+            assert allow_first.wait(timeout=5)
+            return {**current, "first": True}
+
+        def _second_mutator(current: dict) -> dict:
+            second_started.set()
+            return {**current, "second": True}
+
+        first = threading.Thread(target=update_state, args=(session_id, _first_mutator))
+        first.start()
+        assert first_started.wait(timeout=5)
+        sweep = threading.Thread(target=sweep_stale_states, name="state-sweep")
+        sweep.start()
+        assert sweep_coordination_acquired.wait(timeout=5)
+        second = threading.Thread(target=update_state, args=(session_id, _second_mutator))
+        second.start()
+        allow_first.set()
+
+        first.join(timeout=5)
+        sweep.join(timeout=5)
+        second.join(timeout=5)
+        assert not first.is_alive()
+        assert not sweep.is_alive()
+        assert not second.is_alive()
+        assert lock_deleted.is_set()
+        assert second_started.is_set()
+        assert read_state(session_id) == {"second": True}
+
+    def test_sweep_rechecks_age_after_waiting_for_update(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """期限判定後に更新された通常状態を回収しない。"""
+        session_id = "stale-refresh-race"
+        update_state(session_id, lambda current: {**current, "expired": True})
+        target = state_path(session_id)
+        lock = target.with_name(target.name + ".lock")
+        self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        update_started = threading.Event()
+        allow_update = threading.Event()
+        sweep_coordination_acquired = threading.Event()
+        original_acquire_lock = vars(sys.modules["_session_state"])["_acquire_lock"]
+
+        def _acquire_lock(lock_file: Any) -> None:
+            original_acquire_lock(lock_file)
+            if threading.current_thread().name == "state-sweep":
+                sweep_coordination_acquired.set()
+
+        monkeypatch.setattr("_session_state._acquire_lock", _acquire_lock)
+
+        def _refresh(current: dict) -> dict:
+            update_started.set()
+            assert allow_update.wait(timeout=5)
+            return {**current, "refreshed": True}
+
+        update = threading.Thread(target=update_state, args=(session_id, _refresh))
+        update.start()
+        assert update_started.wait(timeout=5)
+        sweep = threading.Thread(target=sweep_stale_states, name="state-sweep")
+        sweep.start()
+        assert sweep_coordination_acquired.wait(timeout=5)
+        allow_update.set()
+
+        update.join(timeout=5)
+        sweep.join(timeout=5)
+        assert not update.is_alive()
+        assert not sweep.is_alive()
+        assert read_state(session_id) == {"expired": True, "refreshed": True}
+        assert lock.exists()
+
+
+class TestClearSessionState:
+    """会話破棄時の通常状態と計画名記録の一括削除。"""
+
+    def test_state_title_and_both_locks_are_deleted(self) -> None:
+        update_state("sid", lambda current: {**current, "active": True})
+        assert claim_session_title("sid", "plan") is True
+        normal = state_path("sid")
+        title = title_state_path("sid")
+
+        assert clear_session_state("sid") is True
+
+        assert not normal.exists()
+        assert not normal.with_name(normal.name + ".lock").exists()
+        assert not title.exists()
+        assert not title.with_name(title.name + ".lock").exists()
+
+    def test_invalid_session_ids_fail(self) -> None:
+        assert clear_session_state("") is False
+        assert clear_session_state(cast(str, 123)) is False
 
 
 def test_session_state_persists_delegation_flags() -> None:

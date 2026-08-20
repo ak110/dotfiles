@@ -9,15 +9,11 @@ import json
 import os
 import pathlib
 import subprocess
-import tempfile
 import threading
 import time
-from typing import Any
 
 import _fork_runner
-import _session_state
 import pytest
-import user_prompt_submit
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
@@ -314,6 +310,10 @@ class TestClaudePlanSessionTitle:
     def _state_path(state_dir: pathlib.Path, session_id: str) -> pathlib.Path:
         return state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
 
+    @staticmethod
+    def _title_state_path(state_dir: pathlib.Path, session_id: str) -> pathlib.Path:
+        return state_dir / "claude-agent-toolkit-session-title" / f"{session_id}.json"
+
     def _prepare_plan(
         self,
         tmp_path: pathlib.Path,
@@ -346,7 +346,9 @@ class TestClaudePlanSessionTitle:
         assert result.returncode == 0
         output = json.loads(result.stdout)
         assert output["hookSpecificOutput"]["sessionTitle"] == "feedback-batch"
-        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "feedback-batch"
+        assert "last_hook_session_title" not in _read_state(tmp_path, sid)
+        title_state = json.loads(self._title_state_path(tmp_path, sid).read_text(encoding="utf-8"))
+        assert title_state == {"last_hook_session_title": "feedback-batch"}
 
     def test_same_session_does_not_emit_title_again(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         sid = "plan-title-repeat"
@@ -365,13 +367,10 @@ class TestClaudePlanSessionTitle:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         sid = "plan-title-update"
-        old_plan = self._prepare_plan(
-            tmp_path,
-            monkeypatch,
-            sid,
-            "old-plan.md",
-            last_hook_session_title="old-plan",
-        )
+        old_plan = self._prepare_plan(tmp_path, monkeypatch, sid, "old-plan.md")
+        first = _run({"session_id": sid, "prompt": "最初の入力"}, state_dir=tmp_path)
+        assert first.returncode == 0
+        assert json.loads(first.stdout)["hookSpecificOutput"]["sessionTitle"] == "old-plan"
         new_plan = old_plan.parent / "new-plan.md"
         new_plan.write_text("# 新計画\n", encoding="utf-8")
         state_path = self._state_path(tmp_path, sid)
@@ -383,7 +382,8 @@ class TestClaudePlanSessionTitle:
 
         assert result.returncode == 0
         assert result.stdout == ""
-        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "old-plan"
+        title_state = json.loads(self._title_state_path(tmp_path, sid).read_text(encoding="utf-8"))
+        assert title_state == {"last_hook_session_title": "old-plan"}
 
     def test_expired_state_resume_and_plan_edit_do_not_emit_title_again(self, tmp_path: pathlib.Path) -> None:
         """期限回収後に同じsession_idを再開して計画を編集しても再出力しない。"""
@@ -427,7 +427,9 @@ class TestClaudePlanSessionTitle:
             state_dir=tmp_path,
         )
         assert cleanup.returncode == 0
-        assert _read_state(tmp_path, sid) == {"last_hook_session_title": "original-plan"}
+        assert _read_state(tmp_path, sid) == {}
+        title_state_path = self._title_state_path(tmp_path, sid)
+        assert json.loads(title_state_path.read_text(encoding="utf-8")) == {"last_hook_session_title": "original-plan"}
 
         resumed_plan = plans / "resumed-plan.md"
         resumed_plan.write_text("# 再開後の計画\n", encoding="utf-8")
@@ -451,108 +453,50 @@ class TestClaudePlanSessionTitle:
         )
         assert next_prompt.returncode == 0
         assert next_prompt.stdout == ""
-        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "original-plan"
+        assert json.loads(title_state_path.read_text(encoding="utf-8")) == {"last_hook_session_title": "original-plan"}
 
-    def test_sweep_rechecks_expiry_after_concurrent_title_record(
+    def test_concurrent_prompts_emit_title_once(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """期限判定後に計画名が記録されても、再開後の二回目の計画名を出力しない。"""
-        sid = "plan-title-sweep-race"
-        home = tmp_path / "home"
-        plans = home / ".claude" / "plans"
-        plans.mkdir(parents=True)
-        plan = plans / "original-plan.md"
-        plan.write_text("# 元の計画\n", encoding="utf-8")
-        monkeypatch.setenv("HOME", str(home))
-        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        state_path.write_text(json.dumps({"current_plan_file_path": str(plan)}), encoding="utf-8")
-        stale_time = time.time() - (14 * 24 * 60 * 60 + 60)
-        os.utime(state_path, (stale_time, stale_time))
+        """同一セッションの並行入力では一方だけが計画名を出力する。"""
+        sid = "plan-title-concurrent"
+        self._prepare_plan(tmp_path, monkeypatch, sid, "concurrent-plan.md")
+        results: list[subprocess.CompletedProcess[str]] = []
 
-        # UserPromptSubmitの状態更新を原子的置換の直前で停止し、期限判定後の競合順序を固定する。
-        atomic_write_started = threading.Event()
-        allow_atomic_write = threading.Event()
-        phase_condition = threading.Condition()
-        sweep_phase: list[str] = []
-        original_atomic_write = vars(_session_state)["_atomic_write"]
+        def _submit() -> None:
+            results.append(_run({"session_id": sid, "prompt": "並行入力"}, state_dir=tmp_path))
 
-        def _atomic_write(path: pathlib.Path, content: str) -> None:
-            if path == state_path and not atomic_write_started.is_set():
-                atomic_write_started.set()
-                assert allow_atomic_write.wait(timeout=5)
-            original_atomic_write(path, content)
+        threads = [threading.Thread(target=_submit) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
 
-        monkeypatch.setattr("_session_state._atomic_write", _atomic_write)
-        original_acquire_lock = vars(_session_state)["_acquire_lock"]
+        assert all(not thread.is_alive() for thread in threads)
+        assert all(result.returncode == 0 for result in results)
+        outputs = [result.stdout for result in results if result.stdout]
+        assert len(outputs) == 1
+        assert json.loads(outputs[0])["hookSpecificOutput"]["sessionTitle"] == "concurrent-plan"
 
-        def _acquire_lock(lock_file: Any) -> None:
-            if atomic_write_started.is_set():
-                with phase_condition:
-                    if not sweep_phase:
-                        sweep_phase.append("lock")
-                        phase_condition.notify()
-            original_acquire_lock(lock_file)
+    def test_corrupt_title_record_suppresses_output(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """再出力抑止記録が破損している場合は計画名を出力しない。"""
+        sid = "plan-title-corrupt"
+        self._prepare_plan(tmp_path, monkeypatch, sid, "corrupt-plan.md")
+        title_path = self._title_state_path(tmp_path, sid)
+        title_path.parent.mkdir(parents=True)
+        title_path.write_text("{", encoding="utf-8")
 
-        monkeypatch.setattr("_session_state._acquire_lock", _acquire_lock)
-        original_retain_session_title = vars(_session_state)["_retain_session_title"]
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
-        def _retain_session_title(path: pathlib.Path) -> bool:
-            if path != state_path or not atomic_write_started.is_set():
-                return original_retain_session_title(path)
-            snapshot = json.loads(path.read_text(encoding="utf-8"))
-            with phase_condition:
-                if not sweep_phase:
-                    sweep_phase.append("read")
-                    phase_condition.notify()
-            assert allow_atomic_write.wait(timeout=5)
-            return bool(snapshot.get("last_hook_session_title"))
-
-        monkeypatch.setattr("_session_state._retain_session_title", _retain_session_title)
-        sweep_result: list[int] = []
-
-        prompt_result: list[int] = []
-
-        def _submit_prompt() -> None:
-            prompt_result.append(user_prompt_submit.main(json.dumps({"session_id": sid, "prompt": "再開後の入力"})))
-
-        prompt_thread = threading.Thread(target=_submit_prompt)
-        prompt_thread.start()
-        assert atomic_write_started.wait(timeout=5)
-
-        def _sweep() -> None:
-            sweep_result.append(_session_state.sweep_stale_states())
-
-        sweep_thread = threading.Thread(target=_sweep)
-        sweep_thread.start()
-        with phase_condition:
-            assert phase_condition.wait_for(lambda: bool(sweep_phase), timeout=5)
-        allow_atomic_write.set()
-        prompt_thread.join(timeout=5)
-        sweep_thread.join(timeout=5)
-        assert not prompt_thread.is_alive()
-        assert not sweep_thread.is_alive()
-        assert prompt_result == [0]
-        assert sweep_result == [0]
-        first_output = json.loads(capsys.readouterr().out)
-        assert first_output["hookSpecificOutput"]["sessionTitle"] == "original-plan"
-
-        resumed_plan = plans / "resumed-plan.md"
-        resumed_plan.write_text("# 再開後の計画\n", encoding="utf-8")
-        assert (
-            _session_state.update_state(
-                sid,
-                lambda current: {**current, "current_plan_file_path": str(resumed_plan)},
-            )
-            is True
-        )
-
-        assert user_prompt_submit.main(json.dumps({"session_id": sid, "prompt": "再開後の二回目の入力"})) == 0
-        assert capsys.readouterr().out == ""
-        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "original-plan"
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert title_path.read_text(encoding="utf-8") == "{"
 
     @pytest.mark.parametrize("invalid_path", [None, 42, "relative.md", "/tmp/not-a-plan.md"])
     def test_invalid_or_missing_plan_path_fails_open(
@@ -574,7 +518,7 @@ class TestClaudePlanSessionTitle:
 
         assert result.returncode == 0
         assert result.stdout == ""
-        assert "last_hook_session_title" not in _read_state(tmp_path, sid)
+        assert not self._title_state_path(tmp_path, sid).exists()
 
     def test_codex_payload_does_not_emit_plan_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
         sid = "plan-title-codex"
@@ -587,7 +531,7 @@ class TestClaudePlanSessionTitle:
 
         assert result.returncode == 0
         assert result.stdout == ""
-        assert "last_hook_session_title" not in _read_state(tmp_path, sid)
+        assert not self._title_state_path(tmp_path, sid).exists()
 
     def test_session_review_context_and_plan_title_share_one_json_response(
         self,

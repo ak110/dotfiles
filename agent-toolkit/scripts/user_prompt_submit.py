@@ -30,7 +30,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _hook_tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    claim_session_title,
+    read_state,
+    update_state,
+)
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _ADD_FEEDBACK_SKILL_NAMES,
     _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES,
@@ -144,25 +148,13 @@ def _session_review_context(session_id: str, transcript_path: str) -> str:
 
 def _plan_session_title(session_id: str) -> str | None:
     """計画ファイルのstemをClaude CodeのsessionTitleへ一度だけ反映する。"""
-    emitted: list[str] = []
-
-    def _set_title(state: dict) -> dict | None:
-        raw_plan_path = state.get("current_plan_file_path")
-        if not isinstance(raw_plan_path, str) or not raw_plan_path or not is_plan_file(raw_plan_path):
-            return None
-        plan_stem = pathlib.Path(raw_plan_path).stem
-        if not plan_stem:
-            return None
-
-        if state.get("last_hook_session_title"):
-            return None
-
-        state["last_hook_session_title"] = plan_stem
-        emitted.append(plan_stem)
-        return state
-
-    update_state(session_id, _set_title)
-    return emitted[0] if emitted else None
+    raw_plan_path = read_state(session_id).get("current_plan_file_path")
+    if not isinstance(raw_plan_path, str) or not raw_plan_path or not is_plan_file(raw_plan_path):
+        return None
+    plan_stem = pathlib.Path(raw_plan_path).stem
+    if not plan_stem or not claim_session_title(session_id, plan_stem):
+        return None
+    return plan_stem
 
 
 def _emit_hook_output(*, additional_context: str | None = None, session_title_output: str | None = None) -> None:
