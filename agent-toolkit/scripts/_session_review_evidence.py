@@ -33,7 +33,8 @@ _OMISSION_MARK = "…[省略]"
 _WARNING_LINE_PATTERN = re.compile(
     r"^\s*(?:\d+\t)?(?:"
     r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
-    r"(?:⚠|warning|warn|警告)\s*[:：]"
+    r"⚠(?:\s+|\s*[:：])|"
+    r"(?:warning|warn|警告)\s*[:：]"
     r")",
     re.IGNORECASE,
 )

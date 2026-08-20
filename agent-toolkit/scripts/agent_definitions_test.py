@@ -573,6 +573,32 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
     assert reviewee.index("構造検証") < reviewee.index("全行への応答")
 
 
+def test_review_table_paths_preserve_system_and_round_independence() -> None:
+    """二系統を別表へ分離し、初回0件と次ラウンド再提示の工程を各文書で同期する。"""
+    documents = (
+        _FEEDBACKS_PLANNER,
+        _PLAN_IMPL_EXECUTOR,
+        _PLAN_REVIEW_DELEGATION,
+        _PLAN_REVIEW_TASK,
+        _PLAN_IMPL_PLAN_REVIEW_TASK,
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _REVIEWEE_STANDARDS,
+    )
+    for path in documents:
+        document = path.read_text(encoding="utf-8")
+        assert "系統・ラウンド" in document, path
+        assert ".lock" in document, path
+        assert "atk review-table init <レビュー表>" in document, path
+        assert "両系統" in document or "二系統" in document, path
+
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    assert "独立系へ計画準拠系の表や出力を渡さない" in executor
+    assert "計画準拠系の表や出力を受け取らず" in independent
+    assert "両系統の担当が終端した後" in executor
+    assert "未解消の同一複合キーを再提示" in _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+
 def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() -> None:
     """採用フィードバックの文書契約と影響検証を起草担当・レビュー担当双方で固定する。"""
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
@@ -1263,7 +1289,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
         "統合対応表に含まれる全計画の絶対パス",
         "統合スレッドの検証結果",
         "統合用管理対象領域の絶対パス",
-        "既存の固定6列TSVファイルの絶対パス",
+        "既存の固定6列TSVファイルと対応`.lock`の絶対パス",
     ):
         assert phrase in integrated
     assert "共通入力又は選択したモードの必須入力" in input_contract
@@ -2273,13 +2299,14 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert (
         "   `plan-mode/references/implementation-task.md`の呼び出し元指定絶対パス、レーンのworktree、対象計画、"
         "採用指摘を実装単位とした目的及び変更説明、\n"
-        "   統合した固定6列TSV、プロジェクト規範、該当する作成規範スキル、"
+        "   系統・ラウンド別に統合した固定6列TSV、プロジェクト規範、該当する作成規範スキル、"
         "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パス、\n"
         "   ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、\n"
         "   複製元と対象外worktree、git操作の制約を渡す\n"
     ) in _h4_section(executor, "通常の実装モードのレビュー修正")
     assert (
-        "   修正用の書込担当へ`process-feedbacks/references/merge-task.md`の呼び出し元指定絶対パス、固定6列TSV、\n"
+        "   修正用の書込担当へ`process-feedbacks/references/merge-task.md`の呼び出し元指定絶対パス、"
+        "系統・ラウンド別の固定6列TSV、\n"
         "   プロジェクト規範、該当する作成規範スキル、"
         "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パスを渡す\n"
     ) in _h4_section(executor, "統合後レビュー調整モードのレビュー修正")
@@ -2367,7 +2394,10 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
     assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否" in executor
 
-    for phrase in ("検証済みの実際値、期待値、違反契約、対象への適用根拠", "保持契約が指摘ごとにそろう"):
+    for phrase in (
+        "検証済みの実際値、期待値及び違反契約を確認する",
+        "対象への適用根拠と保持契約が指摘ごとにそろうことも確認する",
+    ):
         assert phrase in writer
     assert "推測して修正せず`needs_escalation`" in writer
     assert "原文と適用根拠の確認結果" in writer

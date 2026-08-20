@@ -32,6 +32,42 @@ def test_table_lock_is_kept_as_the_sibling_management_artifact(tmp_path: pathlib
     assert lock_path.is_file()
 
 
+def test_empty_review_systems_strictly_validate_after_exclusive_initialization(tmp_path: pathlib.Path) -> None:
+    """二系統とも指摘が無い初回ラウンドでも、初期化・strict検証・完了検収を成立させる。"""
+    paths = (
+        tmp_path / "round-1-plan-conformance.tsv",
+        tmp_path / "round-1-independent.tsv",
+    )
+
+    for path in paths:
+        assert table.init(path) == 0
+        assert table.validate(path) == 0
+        assert path.read_text(encoding="utf-8") == ""
+        assert path.with_name(path.name + ".lock").is_file()
+
+
+def test_same_composite_key_can_be_represented_again_in_a_later_round(tmp_path: pathlib.Path) -> None:
+    """未解消指摘を別ラウンドで再提示しても、ラウンド別表の複合キー検証を壊さない。"""
+    key = ("中", "module.py:10", "同じ契約違反")
+    first_round = tmp_path / "round-1-plan-conformance.tsv"
+    parallel_system = tmp_path / "round-1-independent.tsv"
+    next_round = tmp_path / "round-2-plan-conformance.tsv"
+
+    for path in (first_round, parallel_system, next_round):
+        table.init(path)
+        table.add(path, *key)
+        assert table.validate(path, require_responses=False) == 0
+
+    table.respond(first_round, *key, "yes", "初回修正を追加", "")
+    assert table.validate(first_round) == 0
+
+    table.respond(parallel_system, *key, "yes", "独立系の修正を追加", "")
+    assert table.validate(parallel_system) == 0
+
+    table.respond(next_round, *key, "yes", "残る違反を再修正", "")
+    assert table.validate(next_round) == 0
+
+
 def test_initial_review_can_validate_structure_before_response_and_strict_after_response(
     tmp_path: pathlib.Path,
 ) -> None:

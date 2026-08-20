@@ -1129,6 +1129,8 @@ def test_warn_mode_ignores_identifier_only_management_values(
         "warn: 実行時警告",
         "警告: 実行時警告",
         "⚠: 実行時警告",
+        "⚠ 実行時警告",
+        "⚠    実行時警告",
     ],
 )
 def test_warn_mode_accepts_real_line_start_markers_only(
@@ -1325,6 +1327,24 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
             },
             "入力内マーカー",
             "warning: 入力内マーカー",
+        ),
+        (
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "SomeTool",
+                            "id": "call-1",
+                            "input": {"command": "⚠ 入力内マーカー"},
+                        }
+                    ],
+                },
+            },
+            "入力内マーカー",
+            "⚠ 入力内マーカー",
         ),
         (
             {

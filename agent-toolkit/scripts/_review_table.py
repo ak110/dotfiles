@@ -153,9 +153,15 @@ def init(path: str | Path) -> int:
     """存在しない表を作成する。"""
     target = _path(str(path))
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        raise ValueError(f"レビュー表が既に存在する: {target}")
-    _write_atomic(target, [])
+    lock_path = target.with_name(target.name + ".lock")
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        acquire_lock(lock_file)
+        try:
+            if target.exists():
+                raise ValueError(f"レビュー表が既に存在する: {target}")
+            _write_atomic(target, [])
+        finally:
+            release_lock(lock_file)
     print(target)
     return 0
 
