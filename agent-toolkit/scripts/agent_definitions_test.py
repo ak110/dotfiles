@@ -615,7 +615,6 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
         for phrase in (
             "同一thread継続でも新規起動でも",
             "必須差分入力",
-            "今回の系統・ラウンド表と同じ系統の過去全ラウンド表",
             "同じ系統の過去全ラウンド表",
             "ラウンド昇順",
             "過去表へは追記しない",
@@ -625,6 +624,8 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
         ):
             assert phrase in reviewer
         assert "同一thread継続では実施指示だけを渡す" not in reviewer
+    for reviewer in (plan_review, independent_review):
+        assert "今回の系統・ラウンド表と対応`.lock`" in reviewer
     assert "今回の系統・ラウンドに対応するレビュー指摘管理表と対応`.lock`の絶対パス" in delegation
     assert (
         "今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
@@ -636,6 +637,19 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     assert "計画準拠系の表と対応`.lock`はこの一覧へ含めない" in independent_review
     assert "独立系へ計画準拠系の表や出力を渡さない" in executor
     assert "修正対象となる全系統・全ラウンド表" in executor
+    for phrase in (
+        "通常の実装レビュー用managed temp領域の絶対パス",
+        "各レビュー担当の新規起動とCodex経路の同一thread継続のいずれでも",
+        "今回の系統・ラウンド表と対応`.lock`",
+        "同じ系統の過去全ラウンド表と対応`.lock`",
+        "必須差分入力として渡す",
+        "初回は過去全ラウンド表と対応`.lock`の一覧が空",
+    ):
+        assert phrase in executor
+    assert (
+        "再レビューでは、各系統の過去全ラウンド表と対応`.lock`をラウンド昇順で各担当へ渡し、今回の表と対応`.lock`だけを追加対象として指定する"
+        in executor
+    )
     assert "各系統の過去全ラウンド表をラウンド順に並べた一覧" in flow
     assert "今回の系統・ラウンド表だけへ指摘を追加する" in flow
     assert "同じ系統の過去全ラウンド表をラウンド昇順で検証・全文読取し、今回の系統・ラウンド表だけへ指摘を追加する" in reviewee
@@ -1327,7 +1341,13 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
     assert "- モード指定、プロジェクト規範の絶対パス、該当する作成規範スキルの絶対パス\n" in common
-    for phrase in ("計画ファイルの絶対パス", "worktree一覧", "フィードバックファイル名一覧", "複製元と対象外worktree"):
+    for phrase in (
+        "計画ファイルの絶対パス",
+        "worktree一覧",
+        "通常の実装レビュー用managed temp領域の絶対パス",
+        "フィードバックファイル名一覧",
+        "複製元と対象外worktree",
+    ):
         assert phrase in normal
         assert phrase not in integrated
     for phrase in (
@@ -1706,7 +1726,9 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
         "委譲元契約の正本",
         "借用する現在worktreeを回収不可として含む完全な一覧",
         "レーンのworktreeと計画が明示する管理対象worktreeを含む完全な一覧",
-        "worktreeの完全な一覧、ソート済みフィードバックファイル名一覧、追加指示",
+        "各レーンの起動前に`atk managed-temp create --prefix <レビュー用途>`を単独で実行",
+        "worktreeの完全な一覧、通常の実装レビュー用managed temp領域の絶対パス、"
+        "ソート済みフィードバックファイル名一覧、追加指示",
         "許容済みの挙動変化、権限だけを渡し",
     ):
         assert phrase in flow
@@ -1719,6 +1741,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     for required_input in (
         "計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス",
         "worktreeの完全な一覧",
+        "通常の実装レビュー用managed temp領域の絶対パス",
         "1件以上のソート済みフィードバックファイル名一覧",
         "追加指示と許容済みの挙動変化",
         "複製元と対象外worktree",
