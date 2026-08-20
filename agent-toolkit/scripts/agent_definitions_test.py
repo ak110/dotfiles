@@ -1159,6 +1159,26 @@ def test_ci_repair_launches_pass_all_task_inputs_and_complete_independently() ->
     assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" not in fast
 
 
+def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
+    """初回fast担当へ実装タスクの共通必須入力を全て渡す契約を固定する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    launch = executor.partition("3. 最初の書込担当の新規起動又はCodex経路の継続接続の直前")[2].partition("\n4. ")[0]
+
+    required_inputs = (
+        "`skills/plan-mode/references/implementation-task.md`",
+        "計画ファイル、対象worktree、プロジェクト規範の絶対パス",
+        "実装するコミット単位、その目的及び変更説明",
+        "適用する作成規範スキル名と絶対パス",
+        "1件以上のソート済みフィードバックファイル名一覧",
+        "追加指示、許容済みの挙動変化",
+        "git操作に用いるworktree絶対パス、複製元と対象外worktree",
+        "git操作の制約",
+    )
+    for required_input in required_inputs:
+        assert required_input in launch
+    assert "起動文へ担当種別を`fast担当`として明示" in launch
+
+
 def test_implementation_task_requires_role_specific_handoff_records() -> None:
     """各書込担当へ担当種別に対応する記録だけを要求する契約を固定する。"""
     task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -1176,6 +1196,16 @@ def test_implementation_task_requires_role_specific_handoff_records() -> None:
     assert "受領したCI記録" not in review
     assert "受領した修正引継ぎ記録" not in ci
     assert "受領した採用指摘" not in ci
+
+
+def test_fast_failure_handoff_terminates_before_following_commit_steps() -> None:
+    """同一失敗箇所が残ったfast担当を引継ぎ記録の返却で終端する契約を固定する。"""
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. ")[0]
+
+    assert "修正引継ぎ記録として返してfast担当を終端する" in fast
+    assert "後続の共有追加検証、差分検収、stage、commit、cleanな作業ツリーの確認を" in fast
+    assert "対象外とし、実施しない" in fast
 
 
 def test_clean_worktree_and_codex_thread_contracts_allow_only_fast_fix_handoff() -> None:

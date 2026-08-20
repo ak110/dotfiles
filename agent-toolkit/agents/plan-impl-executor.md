@@ -75,8 +75,10 @@ worktreeと管理対象領域を作成・回収しない。
    `runtime-routing.md`「工程別モデル設定」に従ってfast経路を解決する。
    書込担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
-   書込担当へ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
-   プロジェクト規範、該当する作成規範スキルの絶対パス、その単位の識別、目的及び変更説明だけとする。
+   書込担当へ`skills/plan-mode/references/implementation-task.md`、計画ファイル、対象worktree、プロジェクト規範の絶対パス、
+   実装するコミット単位、その目的及び変更説明、適用する作成規範スキル名と絶対パス、
+   1件以上のソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
+   git操作に用いるworktree絶対パス、複製元と対象外worktree及びgit操作の制約を渡す。
    起動文へ担当種別を`fast担当`として明示する
    同じ計画ファイルの書込担当は依存順に1件ずつ起動する
    fast担当は初回実装と近接検証を行い、検証コマンドが失敗した場合はテストID・診断識別子等で失敗箇所を記録し、
