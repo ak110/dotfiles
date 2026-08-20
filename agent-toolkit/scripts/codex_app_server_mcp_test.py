@@ -5,6 +5,7 @@
 
 import asyncio
 import pathlib
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import codex_app_server_mcp as subject
@@ -47,6 +48,27 @@ class FakeClient:
         """テスト用の接続終了を同じイベントループへ記録する。"""
         self._closed = True
         self.close_loop = asyncio.get_running_loop()
+
+
+class CompletionBeforeTurnResponseClient(FakeClient):
+    """turn/start応答より先にturn/completed通知を配送する偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.before_turn_response: Callable[[str], Awaitable[None]] | None = None
+        self._turn_start_count = 0
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method != "turn/start":
+            return await super().request(method, params)
+        self._turn_start_count += 1
+        self.requests.append((method, params or {}))
+        turn_id = f"turn-{self._turn_start_count}"
+        callback = self.before_turn_response
+        if callback is not None:
+            self.before_turn_response = None
+            await callback(turn_id)
+        return {"turn": {"id": turn_id}}
 
 
 class BlockingReplyClient(FakeClient):
@@ -188,6 +210,7 @@ async def test_start_passes_fixed_noninteractive_policy_and_returns_immediately(
 
     assert response["session_id"] == "thread-1"
     assert response["status"] == "running"
+    assert response["result_available"] is False
     assert [method for method, _ in client.requests] == ["thread/start", "turn/start"]
     thread_params = client.requests[0][1]
     assert thread_params["approvalPolicy"] == "never"
@@ -214,6 +237,7 @@ async def test_initial_turn_start_response_loss_keeps_thread_until_completion(
 
     assert response["session_id"] == "thread-1"
     assert response["status"] == "running"
+    assert response["result_available"] is False
     assert manager.status("thread-1")["session_id"] == "thread-1"
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
@@ -230,6 +254,83 @@ async def test_initial_turn_start_response_loss_keeps_thread_until_completion(
     )
     result = manager.result("thread-1")
     assert result["status"] == "completed"
+    assert result["result_available"] is True
+
+
+@pytest.mark.asyncio
+async def test_initial_completion_before_turn_start_response_preserves_terminal_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """初回turn/completed通知がturn/start応答より先でも終端状態をrunningへ戻さない。"""
+    manager = subject.AppServerManager()
+    client = CompletionBeforeTurnResponseClient()
+
+    async def ensure_client() -> CompletionBeforeTurnResponseClient:
+        return client
+
+    async def complete_before_response(turn_id: str) -> None:
+        await manager._handle_notification(  # noqa: SLF001
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": turn_id, "status": "completed", "error": None},
+                },
+            }
+        )
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    client.before_turn_response = complete_before_response
+    response = await manager.start("開始", str(tmp_path))
+
+    assert response["status"] == "completed"
+    assert response["turn_id"] == "turn-1"
+    assert response["result_available"] is True
+    assert manager.result("thread-1")["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_reply_completion_before_turn_start_response_preserves_terminal_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """replyのturn/completed通知がturn/start応答より先でも終端状態をrunningへ戻さない。"""
+    manager = subject.AppServerManager()
+    client = CompletionBeforeTurnResponseClient()
+
+    async def ensure_client() -> CompletionBeforeTurnResponseClient:
+        return client
+
+    async def complete_before_response(turn_id: str) -> None:
+        await manager._handle_notification(  # noqa: SLF001
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": turn_id, "status": "completed", "error": None},
+                },
+            }
+        )
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    await manager._handle_notification(  # noqa: SLF001
+        {
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-1", "status": "completed", "error": None},
+            },
+        }
+    )
+    manager.result("thread-1")
+    client.before_turn_response = complete_before_response
+
+    response = await manager.start_reply("thread-1", "続行")
+
+    assert response["status"] == "completed"
+    assert response["turn_id"] == "turn-2"
+    assert response["result_available"] is True
+    assert manager.result("thread-1")["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -286,9 +387,12 @@ async def test_notifications_complete_turn_and_result_then_reply(
             },
         }
     )
-    assert manager.status("thread-1")["status"] == "completed"
+    status = manager.status("thread-1")
+    assert status["status"] == "completed"
+    assert status["result_available"] is True
     result = manager.result("thread-1")
     assert result["agent_message"] == "最終結果"
+    assert result["result_available"] is True
     await manager.start_reply("thread-1", "続行")
     assert [method for method, _ in client.requests][-2:] == ["thread/resume", "turn/start"]
     assert client.requests[-2][1]["approvalPolicy"] == "never"
@@ -461,7 +565,10 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
     assert client.sent[-1]["id"] == 2
     assert "error" in client.sent[-1]
     assert manager.status("thread-1")["status"] == "failed"
-    assert (await waiter)["status"] == "failed"
+    assert manager.status("thread-1")["result_available"] is False
+    waited = await waiter
+    assert waited["status"] == "failed"
+    assert waited["result_available"] is False
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
     await asyncio.sleep(0)
@@ -478,6 +585,7 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
     assert (await waiter)["status"] == "failed"
     result = manager.result("thread-1")
     assert result["status"] == "failed"
+    assert result["result_available"] is True
     assert result["error"] == {"message": "Codex requested interactive server input: item/tool/requestUserInput"}
 
 
@@ -507,10 +615,13 @@ async def test_interrupt_json_rpc_error_releases_waiter_before_completion(
     target = manager.status("thread-1")
     unrelated = manager.status("thread-2")
     assert target["status"] == "failed"
+    assert target["result_available"] is False
     assert unrelated["status"] == "running"
     assert target["error"] == {"message": "turn/interrupt: turn is already completing"}
     assert unrelated["error"] is None
-    assert (await waiter)["status"] == "failed"
+    waited = await waiter
+    assert waited["status"] == "failed"
+    assert waited["result_available"] is False
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
 
@@ -526,6 +637,7 @@ async def test_interrupt_json_rpc_error_releases_waiter_before_completion(
     assert (await waiter)["status"] == "failed"
     result = manager.result("thread-1")
     assert result["status"] == "failed"
+    assert result["result_available"] is True
     assert result["error"] == {"message": "turn/interrupt: turn is already completing"}
 
 
@@ -542,8 +654,12 @@ async def test_unknown_request_fails_all_active_sessions_and_releases_waiters(tm
         {"id": "unknown-1", "method": "unknown/server/request", "params": {}}
     )
 
-    assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"failed"}
-    assert [status["status"] for status in await asyncio.gather(*waiters)] == ["failed", "failed"]
+    statuses = [manager.status(session_id) for session_id in ("thread-1", "thread-2")]
+    assert {status["status"] for status in statuses} == {"failed"}
+    assert not any(status["result_available"] for status in statuses)
+    waited = await asyncio.gather(*waiters)
+    assert [status["status"] for status in waited] == ["failed", "failed"]
+    assert not any(status["result_available"] for status in waited)
     with pytest.raises(ValueError, match="not completed"):
         manager.result("thread-1")
     with pytest.raises(ValueError, match="not completed"):
@@ -561,7 +677,9 @@ async def test_unknown_request_fails_all_active_sessions_and_releases_waiters(tm
                 },
             }
         )
-        assert manager.result(session_id)["status"] == "failed"
+        result = manager.result(session_id)
+        assert result["status"] == "failed"
+        assert result["result_available"] is True
 
 
 @pytest.mark.asyncio
@@ -570,5 +688,6 @@ async def test_wait_timeout_returns_current_state_without_failing(tmp_path: path
     manager.sessions["thread-1"] = subject.SessionState("thread-1", str(tmp_path), turn_id="turn-1")
     result = await manager.wait("thread-1", timeout=0)
     assert result["status"] == "running"
+    assert result["result_available"] is False
     with pytest.raises(ValueError, match="non-negative"):
         await manager.wait("thread-1", timeout=-1)

@@ -127,9 +127,10 @@ claude plugin list
 Claude Code pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
 Codex委譲は次の5ツールで行う。`codex_start`は既存ディレクトリを絶対パスで指定して即時に
-`session_id`を返し、`codex_status`または`codex_wait`で状態を観測する。`codex_wait`は公開terminal statusで復帰し、既定timeoutは300秒である。
-非対応server requestによる`failed`を返しても、`turn/completed`未受信の場合は結果を回収できず、`codex_result`が拒否される。
-完了通知を受信してから`codex_result`を再実行する。
+`session_id`を返し、`codex_status`または`codex_wait`で状態を観測する。状態応答の`result_available`で結果回収可否を確認する。
+`codex_wait`は公開terminal statusで復帰し、既定timeoutは300秒である。非対応server requestによる`failed`でも
+`result_available=false`なら`turn/completed`未受信のため`codex_result`が拒否される。
+`result_available=true`を確認してから`codex_result`を再実行する。
 `codex_result`で終端結果を回収した後、同じ`session_id`へ`codex_start_reply`で次のturnを開始する。
 App Serverへ渡す`approvalPolicy=never`と`dangerFullAccess`はMCP内部で固定され、承認・停止・一覧操作は公開しない。
 

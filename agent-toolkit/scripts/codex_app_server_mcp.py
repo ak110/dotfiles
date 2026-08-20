@@ -8,7 +8,8 @@
 このMCPは、Claude CodeのMCPプロセスと同じ寿命で
 ``codex app-server --stdio``を1つだけ所有する。App ServerのJSON-RPC通信は
 標準ライブラリで扱い、MCP層へ公開する操作を開始・状態照会・待機・結果回収・
-同一threadの継続の5つに限定する。
+同一threadの継続の5つに限定する。状態照会と待機の応答には、結果を回収できる状態かを
+示す``result_available``を含める。
 
 App Serverのwire protocolはJSON-RPC 2.0に準拠するが、stdioの各行では
 ``jsonrpc``フィールドを省略できる（OpenAI公式資料）。この実装では送信時に
@@ -125,11 +126,12 @@ class SessionState:
         self.updated_at = _utc_now()
 
     def public_status(self) -> dict[str, Any]:
-        """公開MCP応答用に内部状態を必要最小限へ射影する。"""
+        """公開MCP応答用に内部状態と結果回収可否を必要最小限へ射影する。"""
         return {
             "session_id": self.session_id,
             "turn_id": self.turn_id,
             "status": self.status,
+            "result_available": self.result_available,
             "plan": list(self.plan),
             "current_item": self.current_item,
             "commentary": self.commentary,
@@ -413,6 +415,7 @@ class AppServerManager:
         session_id = thread["id"]
         session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort)
         self.sessions[session_id] = session
+        self._initialize_turn(session)
         try:
             await self._start_turn(session, prompt, client)
         except Exception as exc:
@@ -470,8 +473,8 @@ class AppServerManager:
             return session.public_status()
 
     @staticmethod
-    def _begin_reply(session: SessionState) -> None:
-        """直前turnの値を公開状態から除去し、新しいreply開始を準備する。"""
+    def _initialize_turn(session: SessionState) -> None:
+        """新しいturnの開始前に公開状態と完了境界を初期化する。"""
         session.turn_id = ""
         session.status = "running"
         session.plan = []
@@ -482,13 +485,19 @@ class AppServerManager:
         session.agent_message = ""
         session.protocol_warnings = []
         session.result_retrieved = False
-        session.reply_attempted = True
-        session.reply_turn_started = False
         session.reply_retryable = False
         session.turn_start_ambiguous = False
         session.interrupt_requested = False
         session.turn_completed = False
         session.failure_pending_completion = False
+        session.touch()
+
+    @staticmethod
+    def _begin_reply(session: SessionState) -> None:
+        """直前turnの値を公開状態から除去し、新しいreply開始を準備する。"""
+        AppServerManager._initialize_turn(session)
+        session.reply_attempted = True
+        session.reply_turn_started = False
         session.touch()
 
     async def _mark_failed(
@@ -566,11 +575,8 @@ class AppServerManager:
         if not isinstance(turn_id, str) or not turn_id:
             raise AppServerError("turn/start returned no turn.id")
         session.turn_id = turn_id
-        session.status = "running"
         if session.reply_attempted:
             session.reply_turn_started = True
-        session.turn_completed = False
-        session.failure_pending_completion = False
         session.touch()
         await self._notify_waiters()
 
@@ -579,7 +585,7 @@ class AppServerManager:
         return self._get_session(session_id).public_status()
 
     async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-        """指定sessionが公開terminal statusになるまで待機し、タイムアウト時は現状態を返す。"""
+        """公開terminal statusまで待機し、結果回収可否とともにタイムアウト時は現状態を返す。"""
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
         session = self._get_session(session_id)
@@ -595,7 +601,7 @@ class AppServerManager:
         return session.public_status()
 
     def result(self, session_id: str) -> dict[str, Any]:
-        """turn/completed受信済みの終端sessionの結果を返し、取得済みとして記録する。"""
+        """result_availableが真の終端sessionの結果を返し、取得済みとして記録する。"""
         session = self._get_session(session_id)
         if not session.result_available:
             raise ValueError("the Codex turn has not completed")
@@ -605,6 +611,7 @@ class AppServerManager:
             "session_id": session.session_id,
             "turn_id": session.turn_id,
             "status": session.status,
+            "result_available": session.result_available,
             "agent_message": session.agent_message,
             "error": session.error,
             "updated_at": session.updated_at,
@@ -896,25 +903,25 @@ async def codex_start(
     model: str | None = None,
     effort: str | None = None,
 ) -> dict[str, Any]:
-    """Codex turnを開始し、完了を待たず状態を返す。"""
+    """Codex turnを開始し、完了を待たず状態と結果回収可否を返す。"""
     return await _MANAGER.start(prompt, cwd, model, effort)
 
 
 @mcp.tool(name="codex_status", structured_output=True)
 async def codex_status(session_id: str) -> dict[str, Any]:
-    """Codex sessionの最新状態を返す。"""
+    """Codex sessionの最新状態と結果回収可否を返す。"""
     return _MANAGER.status(session_id)
 
 
 @mcp.tool(name="codex_wait", structured_output=True)
 async def codex_wait(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-    """Codex sessionが公開terminal statusになるまで待つ。timeout到達はエラーにしない。"""
+    """公開terminal statusまで待ち、結果回収可否を返す。timeout到達はエラーにしない。"""
     return await _MANAGER.wait(session_id, timeout)
 
 
 @mcp.tool(name="codex_result", structured_output=True)
 async def codex_result(session_id: str) -> dict[str, Any]:
-    """turn/completed受信済みの終端Codex turnから最終agentMessageを回収する。"""
+    """result_availableが真の終端Codex turnから最終agentMessageを回収する。"""
     return _MANAGER.result(session_id)
 
 
