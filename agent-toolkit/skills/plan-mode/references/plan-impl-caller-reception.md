@@ -48,19 +48,22 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 7. 通常の実装モードでレビュー修正を受領した場合は、レビュー対象の最終HEAD完全OIDと指摘ID・統合先commit完全OIDの対応表を確認する。
    単位ごとの変更前OIDと変更後OID、commit数と順序、commitメッセージを確認する。
    各commitの差分帰属、最終HEAD、レビュー修正専用commitが残っていないことも確認する。
-   書込担当が履歴書換え直前に`git remote`で全remoteを列挙し、各remoteへ`git ls-remote --heads --tags --refs <remote>`を実行して再判定と遮断を完結させたことを確認する。
-   不足OIDだけを`git fetch --no-tags --no-write-fetch-head`でremote単位の数値添字の一時refへ取得し、広告集合を再照合してから一時refを回収したことを確認する。
-   `rewrite_guard`の対象完全OID、Git版、検収済みHEAD、remote別の広告取得・不足OID fetch・再照合終了コード、正規化済み広告ref・OID、一時ref回収結果、各Gitコマンドの終了コード、判定結果及び秘密情報を除去した必要最小限のエラー要約を履歴実体と照合する。
-   remote広告branch・tagの広告集合だけを対象とし、対象OIDの子孫であるremote広告branch tip（`git merge-base --is-ancestor <対象OID> <branchTip>`の終了コード0）又は同じ判定で対象OIDの子孫であるremote広告tagだけを公開済みと判定し、local-only tag、remoteが広告しないtag及び最終参照先がcommit以外のtagを誤って公開済みと判定していないことを確認する。
-   remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`が変更されていないことを確認する。
-   Gitコマンドの出力、remote URL、stderr全文又は認証情報が無加工で受渡しされていないことを確認する。
-   executorが書込担当の完了後に`rewrite_guard`を検収し、履歴書換え前の中間受渡しを設けていないことを確認する。
-   実行系に応じた担当の引継ぎが開始前に一度だけ行われ、Codex経路は同じthreadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡して新しい書込担当を起動したことを確認する。開始後は同じ書込担当が再判定からamendまでを所有したことを確認する。
+   書込担当が各fixup作成前、autosquash直前とamend直前の各phaseで`git remote`により全remoteを列挙したことを確認する。
+   各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得したことを確認する。remote別のfetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数を確認する。全remoteの集合を正規化した1つの照会URL集合へ統合して重複を除く。各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行して全照会URL endpointの再判定と遮断を完結させたことを確認する。全照会URL endpointの広告取得・不足OID fetch・再照合完了が記録されていない場合は、履歴を書き換えず`needs_escalation`で返したことを確認する。
+   URL取得、正規化・重複排除または広告照会の失敗時に残りの結果を判定材料とせず、履歴を書き換えず`needs_escalation`で返したことも確認する。
+   不足OIDだけを`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`で照会URLごとの数値添字の一時refへ取得し、広告集合を再照合してから一時refを回収したことを確認する。
+   URL取得、正規化・重複排除、広告取得、不足OIDのfetch、広告集合の再照合、一時ref回収のいずれかに失敗した場合は、履歴を書き換えず`needs_escalation`で返したことも確認する。
+   phaseごとに反復された`rewrite_guard`の履歴順`target_oids`、Git版及び検収済みHEADを履歴実体と照合する。`remote_fetch_url_enumeration_exit_codes`と`remote_push_url_enumeration_exit_codes`を照合する。`query_url_count_before_deduplication`、`query_url_count_after_deduplication`と`all_query_endpoints_completed`も照合する。remote別のURL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの広告取得・不足OID fetchと再照合完了、URL単位の各終了コードも照合する。URL値は受け取らず、URL列挙終了コードと件数だけを照合する。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は全過去単位のOIDを順序どおり含める。autosquashでは`target_oids`の各OIDを公開済み判定して遮断し、1件でも公開済みなら履歴を書き換えていないことを確認する。正規化済み広告ref・OID、一時ref回収結果、各Gitコマンドの終了コード、判定結果と秘密情報を除去した必要最小限のエラー要約も照合する。非commit tagの`noncommit_tag_peeled_object_exists`にpeeled objectの実在確認結果が記録されていることを照合する。`noncommit_tag_final_oid_and_type`に最終OIDとobject typeが記録されていることを照合する。`noncommit_tag_exclusion_reason`に祖先判定からの除外理由が記録されていることを照合する。
+   remote広告branch・tagの広告集合だけを対象とする。対象OIDの子孫であるremote広告branch tip（`git merge-base --is-ancestor <対象OID> <branchTip>`の終了コード0）又は同じ判定で対象OIDの子孫であるremote広告tagだけを公開済みと判定する。終了コード1は未公開として扱い、その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返したことを確認する。local-only tag、remoteが広告しないtagと最終参照先がcommit以外のtagを誤って公開済みと判定していないことを確認する。
+   remote-tracking ref、local tag、remote設定と`FETCH_HEAD`が変更されていないことを確認する。
+   Gitコマンドの出力、stderr全文と認証情報が無加工で受渡しされず、URLが照会中の一時値としてのみ扱われ、`rewrite_guard`、完了報告その他の受渡しへ記録されていないことを確認する。
+   executorが書込担当の完了後にphaseごとの`rewrite_guard`反復証跡を検収し、履歴書換え前の中間受渡しを設けていないことを確認する。
+   実行系に応じた担当の引継ぎが開始前に一度だけ行われ、Codex経路は元の実装担当threadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡して新しい書込担当を起動したことを確認する。開始後は同じ書込担当が再判定からamendまでを所有したことを確認する。
    autosquashとamendの両方を実行した場合は、autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換したことを確認する。
    書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持したことも確認する。
    開始前の担当引継ぎ以外に、履歴書換え途中の担当引継ぎを行っていないことも確認する。
    複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行したことを確認する。
-   過去単位と最終単位が混在する場合は、autosquash前の反復対象を過去単位だけに限定し、autosquash成功後の2回目の再判定後にだけ最終単位の修正を実装・stageしてamendしたことを確認する
+   過去単位と最終単位が混在する場合は、autosquash前の反復対象を過去単位だけに限定し、autosquash成功後に最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の再判定後にだけamendしたことを確認する
 
 呼び出し元は各commit単位の受領時と最終レビュー時に`## 進捗ログ`の3列表へ行を追記する。
 単位ごとのレーンのworktreeについて、用途、正確な絶対パス、状態、完全OID、管理対象領域の絶対パス、借用時は`なし`、作成主体、回収可否も記録する。

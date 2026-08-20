@@ -29,7 +29,7 @@ user-invocable: false
 自身は成果物と計画ファイルを直接編集せず、書込担当が作成したcommitと、渡されたworktreeの検収だけを行う。
 ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは書込担当へ割り当てる。
 worktreeと管理対象領域を作成・回収しない。
-`git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正における公開済み判定、履歴書換え直前の再判定及び遮断は書込担当へ委譲する。executorは書込担当の完了後に最小化済み`rewrite_guard`を検収し、履歴書換え前の中間受渡しは設けない。
+`git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正におけるphaseごとの公開済み判定、履歴書換え直前の再判定及び遮断は書込担当へ委譲する。executorは書込担当の完了後にphaseごとの最小化済み`rewrite_guard`反復証跡を検収し、履歴書換え前の中間受渡しは設けない。
 
 ## 入力
 
@@ -44,7 +44,6 @@ worktreeと管理対象領域を作成・回収しない。
 - 用途、絶対パス、管理対象領域の絶対パス、借用時は`なし`、完全OID、作成主体、回収可否を持つworktree一覧
 - 1件以上のソート済みフィードバックファイル名一覧
 - 複製元と対象外worktree
-- 通常モードのレビュー修正では、レビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表、実行系、継続又は新規起動に用いる識別子、前担当の終端確認及びexecutorが検収したHEAD・作業ツリー・検証結果
 
 ### 統合後レビュー調整モード
 
@@ -77,7 +76,7 @@ worktreeと管理対象領域を作成・回収しない。
    `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
    書込担当へ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
    プロジェクト規範、該当する作成規範スキルの絶対パス、その単位の識別、目的及び変更説明だけとする。
-   同じ計画ファイルの書込担当は依存順に1件ずつ起動する。レビュー修正をCodexで引き継ぐ場合は当該レーンの同じthreadを継続する。Claude混在経路では旧担当の終端を実行状態と識別子で確認し、検収済み状態を開始前に一度だけ渡して新しい書込担当を起動する。開始後は同じ書込担当が履歴書換えを完結する
+   同じ計画ファイルの書込担当は依存順に1件ずつ起動する。レビュー修正をCodexで引き継ぐ場合は当該レーンの元の実装担当threadを継続する。Claude混在経路では旧担当の終端を実行状態と識別子で確認し、検収済み状態を開始前に一度だけ渡して新しい書込担当を起動する。開始後は同じ書込担当が履歴書換えを完結する
 4. 各書込担当の完了後にcommit、差分、検証、cleanな作業ツリーを実測する。
    各単位commitが同じレーンのworktreeの直前に検収したHEADを直接進めたことを確認する。
    各単位後にHEAD、計画ベースからの累積差分、変更説明との一致、追加変更の目的への帰属と必要性、clean状態を照合する。
@@ -145,25 +144,19 @@ worktreeと管理対象領域を作成・回収しない。
 
 #### 通常の実装モードのレビュー修正
 
-1. 実装担当が終端し、レーンのworktreeがcleanで、HEADがレビュー対象の最終HEADと一致することを実測する。
-2. 採用指摘ごとに計画の実装単位、実装commitの差分及び指摘対象を照合し、指摘IDと統合先の実装単位commit完全OIDを対応付ける。
+1. 実装担当が終端し、レーンのworktreeがcleanであることを実測し、HEADの完全OIDをレビュー対象の最終HEADとして内部確定する。
+2. 採用指摘ごとに計画の実装単位、実装commitの差分及び指摘対象を照合し、指摘IDと統合先の実装単位commit完全OIDの対応表を内部確定する。
    対応不能、複数単位へ不可分にまたがる修正、又は各中間commitの公開契約を維持できない修正は書込担当へ渡さず、`needs_escalation`で返す。
 3. 同worktreeだけへ単一の修正用の書込担当を割り当てる。
-   単一単位を同じworktreeで実装した場合も、元の実装担当へ戻さず本項の経路を適用する。
 4. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
-   実行系は開始前に確定し、Codexでは同じthreadを継続し、Claudeでは旧担当の終端確認後に検収済み状態を渡して新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
+   実行系は開始前に確定し、Codexでは元の実装担当threadを継続し、Claudeでは旧担当の終端確認後に検収済み状態を渡して新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
    レビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表、検収済みHEAD、cleanな作業ツリー及び検証結果を含め、次を渡す。
    `skills/plan-mode/references/implementation-task.md`、レーンのworktree、対象計画、採用指摘を実装単位とした目的及び変更説明、
    統合した6列表、プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス、
    ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す。
-5. 書込担当は、過去単位を履歴順に修正して近接検証を実行し、修正差分だけをstageして対象commitへのfixupを作成する。最終単位と過去単位が混在する場合は、最終単位の修正実装とstageをautosquash成功後へ延期する。最終単位だけが対象の場合は、修正と近接検証までを完了する。
-6. 書込担当は、fixup作成前、autosquash直前又はamend直前に、`git remote`で全remoteを列挙し、各remoteへ`git ls-remote --heads --tags --refs <remote>`を実行する。全remoteが広告するbranch・tagを母集団とし、祖先判定に不足する広告OIDだけをremote単位で`git fetch --no-tags --no-write-fetch-head <remote> <OID>:<一時ref>...`の数値添字の一時refへ取得する。remote列挙、広告取得、fetch、広告集合の再照合・一時ref回収の失敗が発生した場合は残存refを判定材料にせず、履歴を書き換えず`needs_escalation`で返す。
-   一時refを回収した後、対象OIDの子孫である広告branch tip（`git merge-base --is-ancestor <対象OID> <branchTip>`の終了コード0、すなわちbranch tipが対象OIDの子孫）がある場合は履歴を書き換えず`needs_escalation`で返す。同じ判定で対象OIDの子孫となるcommitを指す広告tagがある場合も履歴を書き換えず`needs_escalation`で返す。remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない。
-   `rewrite_guard`には対象完全OID、導入環境のGit版、検収済みHEAD、remote別の広告取得・不足OID fetch・再照合終了コード、正規化済み広告ref・OID、一時ref回収結果、各Gitコマンドの終了コード及び公開済み判定結果だけを保持する。最終参照先がcommit以外のtagは型と除外判定を記録して祖先判定から除外し、エラー時は秘密情報を除去した必要最小限の要約だけを加える。Gitコマンドの出力、remote URL、stderr全文又は認証情報は保存しない。
-7. 開始済みの同じ書込担当は再判定成功後に、過去単位だけなら`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`を実行し、最終単位だけなら`git commit --amend`を実行する。両方が対象ならautosquash成功後に`git rev-parse HEAD`で書換え後HEADを取得し、2回目の再判定成功後に最終単位をstageしてamendする。再判定から履歴統合までの途中で書込担当を再起動又は引き継がない。
-8. autosquashが非0終了した場合はrebase進行状態を実測し、進行中の場合だけ`git rebase --abort`を実行する。未開始の場合はabortせず、HEAD、fixup commit、stage、作業ツリー、rebase進行状態及び秘密情報を除去した必要最小限のエラー要約を保持して`needs_escalation`で返す。amendの非0終了時も追加の履歴操作をせず同じ経路で返す。
-9. 書込担当の完了後、executorは履歴書換え前後の全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果、clean状態及び`rewrite_guard`を検収する。レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
+5. レビュー修正の実装、再判定、履歴統合及び完了報告は`skills/plan-mode/references/implementation-task.md`を正本とし、executorは個別手順を再掲しない。
+6. 書込担当の完了後、executorは履歴書換え前後の全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果とclean状態を検収する。`rewrite_guard`反復証跡はremote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数と全照会URL endpointの完了フラグを含める。`noncommit_tag_peeled_object_exists`、`noncommit_tag_final_oid_and_type`と`noncommit_tag_exclusion_reason`も検収する。URL値は受け取らず、URL列挙終了コードと件数だけを検収する。レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
 
 #### 統合後レビュー調整モードのレビュー修正
 
@@ -191,7 +184,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 1つのworktreeへ割り当てる書込担当は同時に1つだけとし、レビュー担当は読み取り専用とする。
 タスク文書の内容、規範本文、出力書式を起動文へ複製しない。
-継続時は実行系別のライフサイクルに従い、Codexは同じthreadを継続し、Claudeは検収済み状態を渡して新規起動する。
+継続時は実行系別のライフサイクルに従い、Codexは元の実装担当threadを継続し、Claudeは検収済み状態を渡して新規起動する。
 
 ## 出力
 
@@ -211,15 +204,24 @@ findings:
 plan_check: <概要、実施内容、任意の合意済みの除外・保持、実装者向け領域、完了条件、累積差分、進捗ログとの照合結果>
 feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>
 rewrite_guard:
-- target_oid: <対象完全OID>
-- git_version: <Git版>
-- verified_head: <検収済みHEAD>
-- remote_command_exit_codes: <remote別の広告取得・不足OID fetch・再照合終了コード>
-- advertised_refs_and_oids: <正規化済み広告ref・OID>
-- temporary_ref_cleanup: <一時ref回収結果>
-- git_command_exit_codes: <各Gitコマンドの終了コード>
-- published_decision: <公開済み判定結果>
-- error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
+- phase: <fixup:<単位順>|autosquash|amend>
+  target_oids: <履歴順の対象完全OID一覧。単一対象も1要素の配列>
+  git_version: <Git版>
+  verified_head: <検収済みHEAD>
+  remote_fetch_url_enumeration_exit_codes: <remote別fetch URL列挙終了コード（URLは記録しない）>
+  remote_push_url_enumeration_exit_codes: <remote別push URL列挙終了コード（URLは記録しない）>
+  query_url_count_before_deduplication: <重複排除前の照会URL件数>
+  query_url_count_after_deduplication: <重複排除後の照会URL件数>
+  all_query_endpoints_completed: <全照会URL endpointの広告取得・不足OID fetch・再照合完了>
+  query_url_command_exit_codes: <重複排除した照会URL単位（URLは記録しない）の広告取得・不足OID fetch・再照合終了コード>
+  advertised_refs_and_oids: <正規化済み広告ref・OID>
+  noncommit_tag_peeled_object_exists: <非commit tagのpeeled object実在確認結果>
+  noncommit_tag_final_oid_and_type: <非commit tagの最終OIDとobject type>
+  noncommit_tag_exclusion_reason: <非commit tagを祖先判定から除外した理由>
+  temporary_ref_cleanup: <一時ref回収結果>
+  git_command_exit_codes: <各Gitコマンドの終了コード>
+  published_decision: <公開済み判定結果>
+  error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
 blockers:
 - <未完了事項。完了時は「なし」>
 ```

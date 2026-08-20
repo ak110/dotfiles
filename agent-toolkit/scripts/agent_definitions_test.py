@@ -1128,6 +1128,19 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     for phrase in ("計画ファイルの絶対パス", "worktree一覧", "フィードバックファイル名一覧", "複製元と対象外worktree"):
         assert phrase in normal
         assert phrase not in integrated
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    for phrase in (
+        "レビュー対象の最終HEAD完全OID",
+        "実行系",
+        "継続又は新規起動に用いる識別子",
+        "前担当の終端確認",
+        "executorが検収したHEAD・作業ツリー・検証結果",
+    ):
+        assert phrase not in normal
+        assert phrase in implementation_task
+    assert "指摘IDと統合先commit完全OIDの対応表" not in normal
+    assert "採用指摘IDと統合先の実装単位commit完全OIDの対応表" in implementation_task
+    assert "レビュー対象の最終HEAD完全OID" not in integrated
     for phrase in (
         "統合worktree",
         "最終HEADの完全OID",
@@ -1219,7 +1232,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
 
 
 def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
-    """通常モードのレビュー修正を最終実装単位へ安全に統合する契約を検査する。"""
+    """通常モードのレビュー修正をphase別再判定後に安全に統合する契約を検査する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     common_review = _h2_section(executor, "実行").partition("### 共通の最終二系統レビュー\n")[2]
     normal_fix = common_review.partition("#### 通常の実装モードのレビュー修正\n")[2].partition(
@@ -1238,17 +1251,15 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     for phrase in (
         "実装担当が終端",
         "レーンのworktreeがclean",
-        "HEADがレビュー対象の最終HEADと一致",
+        "HEADの完全OIDをレビュー対象の最終HEADとして内部確定する",
         "同worktreeだけへ単一の修正用の書込担当",
-        "単一単位を同じworktreeで実装した場合も",
-        "元の実装担当へ戻さず",
         "implementation-task.md",
         "フィードバックファイル名",
         "複製元と対象外worktree",
         "レビュー対象の最終HEAD完全OID",
         "指摘IDと統合先commit完全OIDの対応表",
         "対応不能、複数単位へ不可分にまたがる修正",
-        "Codexでは同じthreadを継続し",
+        "Codexでは元の実装担当threadを継続し",
         "Claudeでは旧担当の終端確認後",
         "レビュー修正専用commitを残さず",
     ):
@@ -1260,22 +1271,40 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     assert "commit数と順序" in caller
     assert "レビュー修正専用commitが残っていない" in caller
     assert "レビュー修正を受領した場合は、履歴書換え前後のOID対応" in caller
+    assert "phaseごとに反復された`rewrite_guard`" in caller
+    assert (
+        "autosquash成功後に最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の再判定後にだけamendした" in caller
+    )
 
     for phrase in (
         "通常実装モードのレビュー修正では、レビュー対象の最終HEAD完全OID、採用指摘IDと統合先の実装単位commit完全OIDの対応表",
         "`git remote`で全remoteを列挙",
-        "各remoteへ`git ls-remote --heads --tags --refs <remote>`を実行",
+        (
+            "各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（"
+            "`git remote get-url --all --push <remote>`）を取得"
+        ),
+        "fetch URL列挙とpush URL列挙のremote別終了コード",
+        "全remoteの集合を正規化した1つの照会URL集合へ統合して重複を除き",
+        "重複排除前後の照会URL件数を計数",
+        "全照会URL endpointの広告取得・不足OID fetch・再照合が完了したことを確認できない場合",
+        "各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行",
+        "URL取得、正規化・重複排除又は広告照会に失敗した場合",
         "正規化した全広告ref・OIDを母集団",
-        "local object databaseに存在しない広告OIDだけをremoteごとにまとめ",
-        "`git fetch --no-tags --no-write-fetch-head <remote> <OID>:<一時ref>...`",
+        "local object databaseに存在しない広告OIDだけを照会URLごとにまとめ",
+        "`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`",
         "取得後に同じ`ls-remote`を再実行して広告集合の不変を確認",
         "期待OIDを指定した`git update-ref -d`",
         "remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない",
         "local-only tag、remoteが広告しないtag",
         "最終参照先がcommit以外のtagは正規化済みOID、型及び除外判定を保持して祖先判定から除外する",
         "対象OIDの子孫であるremote広告branch tip（`git merge-base --is-ancestor <対象OID> <branchTip>`の終了コード0）",
-        "`rewrite_guard`には対象完全OID",
-        "標準出力・標準エラーの無加工な全文、remote URL又は認証情報を保存しない",
+        "終了コード1は未公開として判定を継続",
+        "その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す",
+        "`rewrite_guard`には各再判定phase",
+        "非commit tagについては、peeled objectの実在確認結果を`noncommit_tag_peeled_object_exists`へ正規化して記録する",
+        "最終OIDとobject typeは`noncommit_tag_final_oid_and_type`へ正規化して記録する",
+        "祖先判定から除外した理由は`noncommit_tag_exclusion_reason`へ正規化して記録する",
+        "URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない",
         "通常`plan-impl`レビュー修正だけに適用する",
         "autosquashが非0終了した場合はrebase進行状態を実測",
         "amendが非0終了した場合も追加の履歴操作をせず",
@@ -1311,7 +1340,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する",
         "各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認",
         "全過去単位のfixupを作成した後に1回だけautosquashを実行",
-        "最終単位の修正差分だけを適用してamendする",
+        "最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする",
     ):
         assert phrase in history_rewrite
     assert "1つの修正commitを作成" in merge_task
@@ -1334,21 +1363,57 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     for document in (executor, caller, concepts, design):
         assert "`rewrite_guard`" in document
         assert "履歴書換え前の中間受渡し" in document
-    assert "各remoteへ`git ls-remote --heads --tags --refs <remote>`を実行" in normal_fix
-    assert "全remoteが広告するbranch・tagを母集団" in normal_fix
-    assert "remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない" in normal_fix
-    assert "Gitコマンドの出力、remote URL、stderr全文又は認証情報は保存しない" in normal_fix
-    for document in (executor, implementation_task, caller, concepts, design):
+    for document in (concepts, design):
+        assert "履歴統合前に指摘の原文" in document
+        assert "採用済みの指摘だけを" in document
+        assert "不採用、または採否未確定" in document
+    for document in (implementation_task,):
+        assert "各再判定phase" in document
+        assert "`fixup:<単位順>`" in document
+    for document in (concepts, design):
+        assert "各再判定phase" in document
+        assert "各fixup作成前" in document
+    for document in (implementation_task,):
+        assert "`autosquash`" in document
+        assert "`amend`" in document
+    for document in (concepts, design):
+        assert "autosquash" in document
+        assert "amend" in document
+    assert "executorは個別手順を再掲しない" in normal_fix
+    for phrase in (
+        "各remoteのfetch URL",
+        "各remoteについてfetch URL集合",
+        "全remoteの集合を正規化した1つの照会URL集合へ統合して重複を除き",
+        "`git remote`で全remoteを列挙",
+        "各URLへ`git ls-remote --heads --tags --refs <URL>`を実行",
+        "全広告ref・OIDを母集団",
+        "remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない",
+        "`git merge-base --is-ancestor <対象OID> <branchTip>`",
+    ):
+        assert phrase not in normal_fix
+    for document in (implementation_task, caller, concepts, design):
         assert "`git merge-base --is-ancestor <対象OID> <branchTip>`" in document
-    for document in (executor, implementation_task, concepts, design):
+        assert "終了コード0" in document
+        assert "終了コード1" in document
+        assert "Git実行失敗" in document
+    for document in (implementation_task, concepts, design):
         assert "branch tipが対象OIDの子孫" in document
 
     rewrite_guard_fields = (
-        "target_oid: <対象完全OID>",
+        "phase: <fixup:<単位順>|autosquash|amend>",
+        "target_oids: <履歴順の対象完全OID一覧。単一対象も1要素の配列>",
         "git_version: <Git版>",
         "verified_head: <検収済みHEAD>",
-        "remote_command_exit_codes: <remote別の広告取得・不足OID fetch・再照合終了コード>",
+        "remote_fetch_url_enumeration_exit_codes: <remote別fetch URL列挙終了コード（URLは記録しない）>",
+        "remote_push_url_enumeration_exit_codes: <remote別push URL列挙終了コード（URLは記録しない）>",
+        "query_url_count_before_deduplication: <重複排除前の照会URL件数>",
+        "query_url_count_after_deduplication: <重複排除後の照会URL件数>",
+        "all_query_endpoints_completed: <全照会URL endpointの広告取得・不足OID fetch・再照合完了>",
+        "query_url_command_exit_codes: <重複排除した照会URL単位（URLは記録しない）の広告取得・不足OID fetch・再照合終了コード>",
         "advertised_refs_and_oids: <正規化済み広告ref・OID>",
+        "noncommit_tag_peeled_object_exists: <非commit tagのpeeled object実在確認結果>",
+        "noncommit_tag_final_oid_and_type: <非commit tagの最終OIDとobject type>",
+        "noncommit_tag_exclusion_reason: <非commit tagを祖先判定から除外した理由>",
         "temporary_ref_cleanup: <一時ref回収結果>",
         "git_command_exit_codes: <各Gitコマンドの終了コード>",
         "published_decision: <公開済み判定結果>",
@@ -1357,8 +1422,42 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     executor_guard = executor.partition("rewrite_guard:\n")[2].partition("blockers:")[0]
     writer_guard = implementation_task.partition("rewrite_guard:\n")[2].partition("plan_deviation:")[0]
     assert executor_guard == writer_guard
+    assert executor_guard.startswith("- phase: <fixup:<単位順>|autosquash|amend>\n")
+    assert "\n  target_oids: <履歴順の対象完全OID一覧。単一対象も1要素の配列>" in executor_guard
+    assert "\n  target_oid: " not in executor_guard
+    assert "\n  git_version: <Git版>" in executor_guard
+    assert "\n- git_version: <Git版>" not in executor_guard
     for field in rewrite_guard_fields:
         assert field in executor_guard
+
+    for document in (implementation_task, executor, caller):
+        for field in (
+            "noncommit_tag_peeled_object_exists",
+            "noncommit_tag_final_oid_and_type",
+            "noncommit_tag_exclusion_reason",
+        ):
+            assert field in document
+    for phrase in (
+        "非commit tagの`noncommit_tag_peeled_object_exists`にpeeled objectの実在確認結果が記録されていることを照合する。",
+        "`noncommit_tag_final_oid_and_type`に最終OIDとobject typeが記録されていることを照合する。",
+        "`noncommit_tag_exclusion_reason`に祖先判定からの除外理由が記録されていることを照合する。",
+    ):
+        assert phrase in caller
+
+    target_oids_contract = (
+        "各再判定phaseの対象は履歴順の`target_oids`配列で確定する。",
+        "`fixup:<単位順>`と`amend`は対象が1件でも1要素の配列を使い、",
+        "`autosquash`は全過去単位のOIDを同じ配列へ履歴順で含める。",
+        "`autosquash` phaseでは配列の各OIDについて公開済み判定と遮断を反復し、1件でも公開済みなら履歴を書き換えない。",
+    )
+    for document in (implementation_task,):
+        for phrase in target_oids_contract:
+            assert phrase in document
+    for document in (caller, concepts, design):
+        assert "履歴順`target_oids`" in document or "履歴順の`target_oids`" in document
+        assert "単一対象でも1要素の配列" in document
+        assert "全過去単位のOID" in document
+        assert "各OID" in document
 
     normal_mode_at = implementation_task.index("通常実装モードでは手順3〜7の通常実装手順を実行する")
     review_mode_at = implementation_task.index("レビュー修正モードでは手順1〜2を実行した後")
@@ -1373,25 +1472,67 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "修正差分だけをstageし、対応する`fixup`を作成する",
         "対象OID、件名及び作業ツリーがcleanであることを確認してから次の過去単位へ進む",
         "過去単位と最終単位が対象の場合、autosquash前の反復対象を過去単位だけに限定する",
-        "全過去単位の反復後、書込担当が履歴書換え直前の再判定と遮断を完了する。",
-        "最終単位だけが対象の場合も、書込担当がamend直前の再判定と遮断を完了する。",
+        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前の再判定と遮断を完了する。",
+        (
+            "最終単位だけが対象の場合は、最終単位の修正を実装し、近接検証を実行してstageした後、"
+            "`amend` phaseの再判定と遮断を完了する。"
+        ),
         (
             "過去単位と最終単位が対象の場合、autosquash成功後に`git rev-parse HEAD`で"
-            "書換え後HEADの完全OIDを取得し、2回目の再判定成功後に最終単位をstageしてamendする"
+            "書換え後HEADの完全OIDを取得し、最終単位の修正差分を実装し、近接検証を実行してstageする。"
+            "その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする"
         ),
-        "実行系は開始前に確定し、Codex経路では同じthreadを継続し、Claude経路では旧担当の終端を確認して検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定、履歴統合、amendを完結する",
+        "実行系は開始前に確定し、Codex経路では元の実装担当threadを継続し、Claude経路では旧担当の終端を確認して検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定、履歴統合、amendを完結する",
     )
     loop_positions = [review_loop.index(phrase) for phrase in loop_phrases]
     assert loop_positions == sorted(loop_positions)
     past_clean_at = review_loop.index("対象OID、件名及び作業ツリーがcleanであることを確認してから次の過去単位へ進む")
-    autosquash_at = review_loop.index("全過去単位の反復後、書込担当が履歴書換え直前の再判定と遮断を完了する。")
-    final_only_amend_at = review_loop.index("最終単位だけが対象の場合も、書込担当がamend直前の再判定と遮断を完了する。")
+    autosquash_at = review_loop.index(
+        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前の再判定と遮断を完了する。"
+    )
+    final_only_amend_at = review_loop.index(
+        "最終単位だけが対象の場合は、最終単位の修正を実装し、近接検証を実行してstageした後、"
+        "`amend` phaseの再判定と遮断を完了する。"
+    )
     mixed_amend_at = review_loop.index(
         "過去単位と最終単位が対象の場合、autosquash成功後に`git rev-parse HEAD`で"
-        "書換え後HEADの完全OIDを取得し、2回目の再判定成功後に最終単位をstageしてamendする"
+        "書換え後HEADの完全OIDを取得し、最終単位の修正差分を実装し、近接検証を実行してstageする。"
+        "その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする"
     )
     final_clean_at = review_loop.rindex("対象OID、件名、作業ツリーのclean状態を確認する")
     assert past_clean_at < autosquash_at < final_only_amend_at < mixed_amend_at < final_clean_at
+
+    detailed_mixed = implementation_task.partition("最終単位と過去単位の両方が対象の場合は、")[2].partition(
+        "\nいずれもレビュー修正専用commitを残さない。"
+    )[0]
+    mixed_stage_at = detailed_mixed.index("近接検証を実行してstageする")
+    mixed_guard_at = detailed_mixed.index("`amend` phaseの再判定が成功した場合だけ")
+    assert mixed_stage_at < mixed_guard_at
+
+
+def test_review_resolution_precedes_history_rewrite_and_preserves_unadopted_history() -> None:
+    """レビュー根拠の確認と採否確定を履歴書換えより先に行い、未採用指摘の履歴を変更しない契約を検査する。"""
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    resolution_at = implementation_task.index("レビュー指摘の修正を受け取った場合は、履歴書換えを開始する前に")
+    unit_loop_at = implementation_task.index("### レビュー修正の単位別反復")
+    resolution = implementation_task[resolution_at:unit_loop_at]
+
+    assert resolution_at < unit_loop_at
+    for phrase in (
+        "指摘が根拠とする原文と対象への適用条件を確認し",
+        "通常運用の再現経路と入力主体へ照合して問題を再現する",
+        "各指摘の事実と違反契約を自身でも実測し",
+        "採否確定前に指摘の成立性と修正方法を独立に判定し",
+        "採用済みと確定した指摘だけを修正対象とし",
+        "対応する実装単位commitを履歴統合の対象へ含める",
+        "不採用、または採否未確定（`未検証`を含む）の指摘は修正対象及び`target_oids`へ含めず",
+        "履歴と作業ツリーを変更しないまま`needs_escalation`で返す",
+        "レビュー修正の採否、対象実装単位及び対応表が確定するまで",
+    ):
+        assert phrase in resolution
+    for rewrite_marker in ("対応するfixupを作成する", "`git commit --amend`", "GIT_SEQUENCE_EDITOR=:"):
+        assert rewrite_marker not in resolution
+        assert unit_loop_at < implementation_task.index(rewrite_marker)
 
 
 def test_normal_review_push_check_rejects_tag_only_publication() -> None:
@@ -1402,19 +1543,31 @@ def test_normal_review_push_check_rejects_tag_only_publication() -> None:
 
     for document in (implementation_task,):
         assert "`git remote`で全remoteを列挙" in document
-        assert "`git ls-remote --heads --tags --refs <remote>`" in document
-        assert "`git fetch --no-tags --no-write-fetch-head" in document
+        assert (
+            "各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（"
+            "`git remote get-url --all --push <remote>`）を取得" in document
+        )
+        assert "fetch URL列挙とpush URL列挙のremote別終了コード" in document
+        assert "全remoteの集合を正規化した1つの照会URL集合へ統合して重複を除き" in document
+        assert "重複排除前後の照会URL件数を計数" in document
+        assert "全照会URL endpointの広告取得・不足OID fetch・再照合が完了したことを確認できない場合" in document
+        assert "各照会URLへ`git ls-remote --heads --tags --refs <URL>`" in document
+        assert "`git fetch --no-tags --no-write-fetch-head <URL>" in document
+        assert "照会URLごと" in document
         assert "local-only tag" in document
         assert "commit以外" in document or "commit以外なら" in document
+        assert "終了コード1は未公開として判定を継続" in document
+        assert "その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す" in document
         assert "needs_escalation" in document
-    assert "`git remote`で全remoteを列挙" in executor
-    assert "`git ls-remote --heads --tags --refs <remote>`" in executor
-    assert "全remoteが広告するbranch・tagを母集団" in executor
-    assert "対象OIDの子孫である広告branch tip" in executor
-    assert "`git fetch --no-tags --no-write-fetch-head" in executor
+    assert "`git remote`で全remoteを列挙" not in executor
+    assert "各remoteについてfetch URL集合" not in executor
+    assert "各照会URLへ`git ls-remote --heads --tags --refs <URL>`" not in executor
+    assert "全広告ref・OIDを母集団" not in executor
+    assert "対象OIDの子孫である広告branch tip" not in executor
+    assert "`git fetch --no-tags --no-write-fetch-head" not in executor
     assert "`git update-ref -d`" in implementation_task
     assert "`refs/tags/`全体の検索結果は判定材料にしない" in implementation_task
-    assert "標準出力・標準エラーの無加工な全文、remote URL又は認証情報を保存しない" in implementation_task
+    assert "URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない" in implementation_task
 
     generic_history = history_rewrite.partition("## プッシュ済み判定\n")[2]
     assert "`git fetch --all --prune`" in generic_history
