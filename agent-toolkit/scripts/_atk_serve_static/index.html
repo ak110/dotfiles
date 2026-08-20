@@ -23,7 +23,10 @@
     </div>
   </header>
 
-  <div id="global-error" class="global-error" role="alert" hidden></div>
+  <div id="global-error" class="global-error" hidden>
+    <div id="global-error-message" role="alert"></div>
+    <button id="global-error-close-button" class="global-error-close" type="button" aria-label="エラーメッセージを閉じる">×</button>
+  </div>
 
   <main class="app-layout">
     <aside class="filters card" aria-label="フィルター条件">

@@ -60,6 +60,11 @@ function setTextMessage(id, message) {
   element.hidden = !message;
 }
 
+function setGlobalError(message) {
+  byId('global-error-message').textContent = message;
+  byId('global-error').hidden = !message;
+}
+
 function clearDialogMessages(dialogName) {
   setTextMessage(`${dialogName}-alert`, '');
   setTextMessage(`${dialogName}-status`, '');
@@ -88,7 +93,7 @@ function deliverOperationMessage(message, isError = false) {
     setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
     return;
   }
-  if (isError) setTextMessage('global-error', message);
+  if (isError) setGlobalError(message);
   else showToast(message);
 }
 
@@ -315,7 +320,7 @@ async function loadEntries({announce = false} = {}) {
   } catch (error) {
     if (generation === listRequestGeneration) {
       pendingListAnnouncement = false;
-      setTextMessage('global-error', error.message);
+      setGlobalError(error.message);
     }
     return entries;
   } finally {
@@ -384,7 +389,7 @@ async function loadTargetRepos() {
     return true;
   } catch (error) {
     const isCurrent = generation === targetRepoRequestGeneration && byId('state-filter').value === requestedState;
-    if (isCurrent) setTextMessage('global-error', error.message);
+    if (isCurrent) setGlobalError(error.message);
     return isCurrent;
   }
 }
@@ -532,7 +537,7 @@ async function selectEntry(entry, origin = null) {
     displayEntry(payload.entry);
     openDialog(byId('detail-dialog'), detailOrigin, byId('detail-dialog-body'));
   } catch (error) {
-    if (requestGeneration === detailRequestGeneration) setTextMessage('global-error', error.message);
+    if (requestGeneration === detailRequestGeneration) setGlobalError(error.message);
   }
 }
 
@@ -628,7 +633,7 @@ async function reloadOpenDetailFromExternalChange() {
     }
     if (candidates.length > 1) {
       closeDetailDialog();
-      setTextMessage('global-error', `${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
+      setGlobalError(`${filename}の移動先を一意に特定できません。詳細を開き直してください。`);
       return;
     }
     resolvedEntry = candidates[0] || null;
@@ -930,7 +935,7 @@ async function handleFilterChange({reloadRepos = false} = {}) {
 
 async function reloadFromExternalChange() {
   void refreshKnownTbds({notify: true}).catch((error) => {
-    setTextMessage('global-error', error.message);
+    setGlobalError(error.message);
   });
   await loadTargetRepos();
   await loadEntries({announce: false});
@@ -948,6 +953,10 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
 }
 
 function bindEvents() {
+  byId('global-error-close-button').addEventListener('click', () => {
+    setGlobalError('');
+    byId('refresh-button').focus();
+  });
   byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
   byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
@@ -994,7 +1003,7 @@ function initializeApp() {
   initialization = synchronizeAndLoad()
     .then(() => refreshKnownTbds({notify: false}))
     .catch((error) => {
-      setTextMessage('global-error', error.message);
+      setGlobalError(error.message);
     });
 }
 

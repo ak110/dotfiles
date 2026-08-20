@@ -115,6 +115,28 @@ def test_assets_are_self_contained() -> None:
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
 
 
+def test_assets_define_dismissible_global_error_region() -> None:
+    """共通エラーに本文、アクセシブルな消去操作及び十分な操作領域を持たせる。"""
+    assert '<div id="global-error" class="global-error" hidden>' in assets.HTML
+    assert '<div id="global-error-message" role="alert"></div>' in assets.HTML
+    assert (
+        '<button id="global-error-close-button" class="global-error-close" type="button" '
+        'aria-label="エラーメッセージを閉じる">×</button>'
+    ) in assets.HTML
+    global_error = re.search(r"\.global-error \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert global_error is not None
+    assert "display: flex;" in global_error.group(1)
+    message = re.search(r"\.global-error-message \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert message is not None
+    assert "overflow-wrap: anywhere;" in message.group(1)
+    close = re.search(r"\.global-error-close \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert close is not None
+    assert "width: 2.75rem;" in close.group(1)
+    assert "height: 2.75rem;" in close.group(1)
+    assert "min-width: 2.75rem;" in close.group(1)
+    assert "min-height: 2.75rem;" in close.group(1)
+
+
 def test_text_assets_are_bundled_as_plugin_files() -> None:
     """配布対象のscripts配下に実ファイルを同梱し、Python側がその内容を読む。"""
     static_dir = pathlib.Path(assets.__file__).with_name("_atk_serve_static")
@@ -309,6 +331,7 @@ class Element {{
 }}
 const ids = [
   'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
+  'global-error-message', 'global-error-close-button',
   'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
   'target-filter', 'source-filter', 'source-empty-filter', 'entry-count',
   'result-status', 'list-warning', 'loading-indicator', 'entry-list', 'empty-state',
@@ -404,15 +427,102 @@ fetchHandler = async url => {
 refreshKnownTbds = async () => { throw new Error('外部更新失敗'); };
 await reloadFromExternalChange();
 await Promise.resolve();
-const reloadError = elements['global-error'].textContent;
-elements['global-error'].textContent = '';
+const reloadError = elements['global-error-message'].textContent;
+setGlobalError('');
 refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
-process.stdout.write(JSON.stringify({reloadError, initializationError: elements['global-error'].textContent}));
+process.stdout.write(JSON.stringify({reloadError, initializationError: elements['global-error-message'].textContent}));
 """
     )
     assert result == {"reloadError": "外部更新失敗", "initializationError": "初期化失敗"}
+
+
+def test_assets_global_error_uses_shared_lifecycle_for_all_generators() -> None:
+    """共通エラーの消去・再表示と、各生成元の同一表示経路を検証する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+setGlobalError('最初のエラー');
+const shown = {
+  message: elements['global-error-message'].textContent,
+  hidden: elements['global-error'].hidden
+};
+elements['global-error-close-button'].listeners.click();
+const cleared = {
+  message: elements['global-error-message'].textContent,
+  hidden: elements['global-error'].hidden,
+  focused
+};
+setGlobalError('後続のエラー');
+const redisplayed = {
+  message: elements['global-error-message'].textContent,
+  hidden: elements['global-error'].hidden
+};
+const failures = [];
+fetchHandler = async () => ({
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '一覧取得失敗'})
+});
+await loadEntries();
+failures.push(elements['global-error-message'].textContent);
+fetchHandler = async () => ({
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '対象取得失敗'})
+});
+await loadTargetRepos();
+failures.push(elements['global-error-message'].textContent);
+fetchHandler = async () => ({
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '詳細取得失敗'})
+});
+await selectEntry({state: 'inbox', filename: 'detail.md'}, new Element('detail-origin', 'BUTTON'));
+failures.push(elements['global-error-message'].textContent);
+const ambiguous = {
+  kind: 'feedback', state: 'processing', filename: 'ambiguous.md', content: '本文', body_html: '<p>本文</p>'
+};
+displayEntry(ambiguous);
+detailOriginKey = entryKey(ambiguous);
+elements['detail-dialog'].open = true;
+fetchHandler = async url => {
+  if (url.includes('/processing/')) {
+    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+  }
+  if (url.includes('/inbox/') || url.includes('/adopted/')) {
+    const state = url.includes('/inbox/') ? 'inbox' : 'adopted';
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: {...ambiguous, state}})};
+  }
+  return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+};
+await reloadOpenDetailFromExternalChange();
+failures.push(elements['global-error-message'].textContent);
+refreshKnownTbds = async () => { throw new Error('SSE更新失敗'); };
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})
+});
+await reloadFromExternalChange();
+await Promise.resolve();
+failures.push(elements['global-error-message'].textContent);
+deliverOperationMessage('ダイアログ外失敗', true);
+failures.push(elements['global-error-message'].textContent);
+refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
+initializeApp();
+await initialization;
+failures.push(elements['global-error-message'].textContent);
+process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
+"""
+    )
+    assert result == {
+        "shown": {"message": "最初のエラー", "hidden": False},
+        "cleared": {"message": "", "hidden": True, "focused": "refresh-button"},
+        "redisplayed": {"message": "後続のエラー", "hidden": False},
+        "failures": [
+            "一覧取得失敗",
+            "対象取得失敗",
+            "詳細取得失敗",
+            "ambiguous.mdの移動先を一意に特定できません。詳細を開き直してください。",
+            "SSE更新失敗",
+            "ダイアログ外失敗",
+            "初期化失敗",
+        ],
+    }
 
 
 def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:
@@ -943,7 +1053,7 @@ process.stdout.write(JSON.stringify({
   ambiguous: {
     detailOpen: elements['detail-dialog'].open,
     currentEntryIsNull: currentEntry === null,
-    error: elements['global-error'].textContent
+    error: elements['global-error-message'].textContent
   }
 }));
 """
@@ -1457,7 +1567,7 @@ deliverOperationMessage('保存完了');
 process.stdout.write(JSON.stringify({
   detailMessage,
   toast: elements['toast'].textContent,
-  globalError: elements['global-error'].textContent
+  globalError: elements['global-error-message'].textContent
 }));
 """
     )
@@ -3828,7 +3938,7 @@ await handleFilterChange({reloadRepos: true});
 process.stdout.write(JSON.stringify({
   listUrls,
   rows: entries.map(entry => entry.filename),
-  error: elements['global-error'].textContent
+  error: elements['global-error-message'].textContent
 }));
 """
     )
@@ -4146,7 +4256,7 @@ rejectAdopted(new Error('旧要求の失敗'));
 await stale;
 process.stdout.write(JSON.stringify({
   candidates: elements['target-filter'].children.map(option => option.value),
-  error: elements['global-error'].textContent
+  error: elements['global-error-message'].textContent
 }));
 """
     )
