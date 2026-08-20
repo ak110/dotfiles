@@ -26,7 +26,7 @@
 | `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex MCP | Agentツール |
-| `execute_fast_model` | 承認済み計画の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | Codex MCP | Agentツール |
+| `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | Codex MCP | Agentツール |
 | `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、通常・統合後レビュー修正、CI失敗修正 | 同一失敗箇所の引継ぎとレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex MCP | Agentツール |
 | `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex MCP | Agentツール |
 | `merge_model` | レーンのcommitの適用、競合解消、履歴一本化、検証 | 統合担当を委譲する`process-feedbacks`の実行主体 | Codex MCP | Agentツール |
@@ -65,6 +65,8 @@
 代替の判断と起動は委譲を起動した主体が行う。
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
+同じ計画に複数の実装単位がある場合も、`plan-impl-executor`は各単位の最初のfast担当を起動又は継続接続する直前に
+`execute_fast_model`を単位ごとに1回解決し、前単位の解決値を再利用しない。
 
 `execute_fast_model`から`execute_fix_model`への昇格は、検証コマンドの終了コードだけで判定しない。
 fast担当が修正対象として記録したテストID・診断識別子等が、同じコマンドの直後の再検証にも残った場合だけ、

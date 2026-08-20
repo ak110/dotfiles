@@ -71,8 +71,9 @@ worktreeと管理対象領域を作成・回収しない。
    一覧にないworktreeを補完または作成せず、全単位を確定した同じレーンのworktreeへ、同時に1つの書込担当だけを順次割り当てる。
    依存する単位は、先行commitが同worktreeのHEADを進めた後に同じ書込担当へ逐次割り当てる。
    最初の書込担当の起動前にレーンのworktreeのclean状態とHEADの完全OIDを検収し、通常モードの公開契約基準として保持する
-3. 最初の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_fast_model`を実行し、
-   `runtime-routing.md`「工程別モデル設定」に従ってfast経路を解決する。
+3. 各実装単位を依存順に1件ずつ処理し、各単位の最初のfast担当の新規起動又はCodex経路の継続接続の直前に
+   `atk config get execute_fast_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従ってfast経路を解決する。
+   複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する。
    書込担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
    書込担当へ`skills/plan-mode/references/implementation-task.md`、計画ファイル、対象worktree、プロジェクト規範の絶対パス、
@@ -84,9 +85,13 @@ worktreeと管理対象領域を作成・回収しない。
    fast担当は初回実装と近接検証を行い、検証コマンドが失敗した場合はテストID・診断識別子等で失敗箇所を記録し、
    原因を修正して同じコマンドを直後に1回再実行する。修正対象が解消して別の失敗箇所だけが現れた場合は
    昇格せず、fast担当が新しい失敗箇所を初回修正として扱う
-4. fast担当の再検証に修正対象とした同一失敗箇所が残った場合は、fast担当へ追加修正とcommitをさせず終端させる。
-   fast担当のagentと起動した全プロセスの終了、起動前の基準OID、未コミット差分、失敗コマンド、修正前後2回の結果及び
-   同一失敗箇所の対応を実測し、すべて一致した場合だけ`atk config get execute_fix_model`を起動直前に実行する。
+4. fast担当から`status: fast_fix_handoff`を受領した場合だけ、fast担当へ追加修正とcommitをさせず終端させる。
+   `repair_handoff`の`failure_location`、`failed_command`、`verification_before`、`verification_after`、`baseline_oid`、
+   `existing_diff`及び`fast_termination`を必須入力として検証する。fast担当のagentと起動した全プロセスの終了、
+   起動前の基準OID、未コミット差分、失敗コマンド、修正前後2回の結果及び同一失敗箇所の対応を実測し、すべて一致した場合だけ
+   `atk config get execute_fix_model`を起動直前に実行する。
+   `status: completed`は通常のcommit済み完了として扱い、`status: needs_escalation`又は状態・`repair_handoff`の欠落や不一致は
+   dirty差分をfix担当へ渡さず`needs_escalation`で返す。
    同一threadを継続せず、新規threadとして、同じworktreeへfix担当を1件だけ逐次起動する。
    起動文へ`implementation-task.md`の共通必須入力一式（担当種別、計画ファイル、対象worktree、プロジェクト規範の絶対パス）を渡す。
    実装単位・目的・変更説明、作成規範スキル名と絶対パス、ソート済みフィードバックファイル名一覧、追加指示、許容済み挙動変化、git操作用worktree絶対パス、複製元と対象外worktreeも起動文へ渡す。

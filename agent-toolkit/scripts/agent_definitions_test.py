@@ -1047,7 +1047,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
-    assert "最初の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_fast_model`" in executor
+    assert "各単位の最初のfast担当の新規起動又はCodex経路の継続接続の直前に" in executor
+    assert "複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する" in executor
     assert "`atk config get execute_fix_model`を起動直前に実行する" in executor
     assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
@@ -1162,7 +1163,7 @@ def test_ci_repair_launches_pass_all_task_inputs_and_complete_independently() ->
 def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
     """初回fast担当へ実装タスクの共通必須入力を全て渡す契約を固定する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    launch = executor.partition("3. 最初の書込担当の新規起動又はCodex経路の継続接続の直前")[2].partition("\n4. ")[0]
+    launch = executor.partition("3. 各実装単位を依存順に1件ずつ処理し")[2].partition("\n4. ")[0]
 
     required_inputs = (
         "`skills/plan-mode/references/implementation-task.md`",
@@ -1177,6 +1178,22 @@ def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
     for required_input in required_inputs:
         assert required_input in launch
     assert "起動文へ担当種別を`fast担当`として明示" in launch
+
+
+def test_fast_model_is_resolved_once_per_unit_before_each_first_launch() -> None:
+    """複数実装単位でもfastモデルを単位ごとの最初の起動直前に解決する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    launch = executor.partition("3. 各実装単位を依存順に1件ずつ処理し")[2].partition("\n4. ")[0]
+
+    assert launch.count("`atk config get execute_fast_model`") == 1
+    resolve_at = launch.index("`atk config get execute_fast_model`")
+    first_launch_at = launch.index("書込担当は解決した実行系で起動し")
+    assert resolve_at < first_launch_at
+    assert "各単位の最初のfast担当" in launch
+    assert "複数単位でも前の単位の解決値を次の単位へ流用せず" in launch
+    assert "各単位の最初のfast担当" in runtime
+    assert "単位ごとに1回解決し" in runtime
 
 
 def test_implementation_task_requires_role_specific_handoff_records() -> None:
@@ -1203,9 +1220,46 @@ def test_fast_failure_handoff_terminates_before_following_commit_steps() -> None
     task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. ")[0]
 
-    assert "修正引継ぎ記録として返してfast担当を終端する" in fast
+    assert "`status: fast_fix_handoff`として返してfast担当を終端する" in fast
+    assert "`repair_handoff`へ修正引継ぎ記録として" in fast
+    for field in (
+        "`failure_location`",
+        "`failed_command`",
+        "`verification_before`",
+        "`verification_after`",
+        "`baseline_oid`",
+        "`existing_diff`",
+        "`fast_termination`",
+    ):
+        assert field in fast
     assert "後続の共有追加検証、差分検収、stage、commit、cleanな作業ツリーの確認を" in fast
     assert "対象外とし、実施しない" in fast
+
+
+def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> None:
+    """dirty引継ぎを完了・エスカレーションと混同せず構造化して受領する。"""
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
+
+    assert "status: completed | fast_fix_handoff | needs_escalation" in output
+    assert "repair_handoff:" in output
+    for field in (
+        "failure_location:",
+        "failed_command:",
+        "verification_before:",
+        "verification_after:",
+        "baseline_oid:",
+        "existing_diff:",
+        "fast_termination:",
+    ):
+        assert field in output
+    assert "fast_fix_handoff" in delegation
+    assert "`completed`又は`needs_escalation`へ読み替えない" in delegation
+    assert "`status: fast_fix_handoff`を受領した場合だけ" in executor
+    assert "`status: completed`は通常のcommit済み完了として扱い" in executor
+    assert "`status: needs_escalation`又は状態・`repair_handoff`の欠落や不一致" in executor
 
 
 def test_clean_worktree_and_codex_thread_contracts_allow_only_fast_fix_handoff() -> None:

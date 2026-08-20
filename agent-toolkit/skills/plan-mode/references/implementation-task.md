@@ -38,8 +38,10 @@
    検証コマンドが失敗した場合は、テストID・診断識別子等で修正対象の失敗箇所を記録し、原因を修正して同じコマンドを直後に1回再実行する。
    修正対象が解消して別の失敗箇所だけが現れた場合はfast担当を継続し、新しい失敗箇所を同じ手順で扱う。
    修正対象が再検証にも残る場合は追加修正とcommitを行わず、失敗コマンド、修正前後の結果、失敗箇所、基準OID、差分と全プロセスの終了を
-   修正引継ぎ記録として返してfast担当を終端する。この場合は後続の共有追加検証、差分検収、stage、commit、cleanな作業ツリーの確認を
-   対象外とし、実施しない。
+   `status: fast_fix_handoff`として返してfast担当を終端する。この場合は後続の共有追加検証、差分検収、stage、commit、cleanな作業ツリーの確認を
+   対象外とし、実施しない。`repair_handoff`へ修正引継ぎ記録として、`failure_location`（失敗箇所）、`failed_command`（失敗コマンド）、
+   `verification_before`（修正前の結果）、`verification_after`（直後の再検証結果）、`baseline_oid`（基準OID）、
+   `existing_diff`（既存差分）及び`fast_termination`（fast担当と起動した全プロセスの終端確認）を構造化して返す。
 5. 担当種別が`fix担当`の場合は、受領した修正引継ぎ記録と現行のdirty差分を照合し、同一失敗箇所の原因修正、全検証、差分検収とcommitまで完遂する。
    fast手順と追加のモデル昇格を適用しない。
 6. 担当種別が`レビュー修正担当`の場合は、受領した採用指摘の原因修正、全検証、差分検収とcommitまで完遂する。
@@ -78,7 +80,7 @@ merge進行中でなければ`git stash push --include-untracked`相当を使い
 ## 出力
 
 ```text
-status: completed | needs_escalation
+status: completed | fast_fix_handoff | needs_escalation
 commit: <完全長SHAまたはなし>
 changed:
 - <計画項目と変更結果>
@@ -91,6 +93,14 @@ plan_deviation:
 - <差異と調整結果。無ければ「なし」>
 blockers:
 - <未完了事項。完了時は「なし」>
+repair_handoff:
+  failure_location: <修正対象として記録した失敗箇所。`fast_fix_handoff`以外はなし>
+  failed_command: <失敗コマンド。`fast_fix_handoff`以外はなし>
+  verification_before: <修正前の検証結果。`fast_fix_handoff`以外はなし>
+  verification_after: <直後の再検証結果。`fast_fix_handoff`以外はなし>
+  baseline_oid: <基準OID。`fast_fix_handoff`以外はなし>
+  existing_diff: <fast担当が残した既存差分。`fast_fix_handoff`以外はなし>
+  fast_termination: <fast担当と起動した全プロセスの終端確認。`fast_fix_handoff`以外はなし>
 ```
 
 成果物を書き込んだ場合は、成果物の絶対パスと実在・分量を示す実行結果も含める。

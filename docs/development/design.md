@@ -113,6 +113,8 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 直後の再検証にも残った場合の修正は`execute_fix_model`へ割り当てる。fast担当が追加修正を行わず終端した後、
 `plan-impl-executor`が基準OID、dirty差分、修正前後の検証結果、失敗箇所の一致及び全プロセスの終了を確認してから、
 同じworktreeへfix担当を起動する。この引継ぎだけはclean開始契約の限定例外とし、同時に1つの書込主体だけを置く。
+fast担当の正常なdirty引継ぎは`status: fast_fix_handoff`と構造化した`repair_handoff`で返し、
+`completed`や`needs_escalation`とは区別する。
 同一失敗箇所が解消して別の失敗箇所だけが現れた場合はfast担当を継続し、レビュー修正とCI修正は常にfix担当へ渡す。
 
 フィードバック本文が示す文言案、列挙及び節配置は、投入元識別子にかかわらず利用者合意とみなさない。

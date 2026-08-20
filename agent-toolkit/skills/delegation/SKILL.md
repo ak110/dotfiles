@@ -163,9 +163,12 @@ Codex MCPの新規接続では`cwd`へ作業ディレクトリの絶対パスを
 ```text
 route: <実際に使った経路>
 identifier: <threadまたはagent識別子>
-status: completed | needs_escalation
+status: completed | fast_fix_handoff | needs_escalation
 response: <受信者の最小完了報告>
 ```
+
+`fast_fix_handoff`は`implementation-task.md`のfast担当が同一失敗箇所の残存とdirty差分を
+構造化した`repair_handoff`として返す専用状態であり、`completed`又は`needs_escalation`へ読み替えない。
 
 待機表明だけの応答、必須結果不足、成果物との不一致は完了と扱わない。
 記録経路は通常配送不能を実測した場合だけ使用し、所有主体の終端と内容検収後に管理対象一時領域を後始末する。
