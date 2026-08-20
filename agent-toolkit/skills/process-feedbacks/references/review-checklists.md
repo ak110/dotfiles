@@ -40,7 +40,7 @@
 - `source: session-review`と確認できる項目だけを不採用時の利用者確認から除外し、その他のsource、欠落及び不明は確認対象にすることを確認する
 - `feedbacks-planner`の`status`を失敗処理より先に確認し、`awaiting_confirmation`を失敗として扱わないことを確認する
 - 不採用確認用`user_decisions`を通常の将来判断TBDと区別し、停止済みの識別子へ継続せず、直接回答又は保留結果を同じ`feedbacks-planner`系列の新しい識別子へ渡すことを確認する
-- 初回起動には再開コンテキストを含めず、`awaiting_confirmation`後の新規起動だけへ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、原文正本IDごとの累積`user_decisions`、逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡すことを確認する。累積レコードは`raw`、`question`、`answer_or_tbd`、`unanswered`及び`resolution`を保持し、過去の確認サイクルのレコードを削除又は上書きしないことも確認する。`resolution`が未受領では`未確定`、逐語回答では`回答による確定`、保存TBDでは`TBDによる保留`であることを確認する
+- 初回起動には再開コンテキストを含めず、`awaiting_confirmation`後の新規起動だけへ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、原文正本IDごとの累積`user_decisions`、逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡すことを確認する。累積レコードは`raw`、`question`、`answer_or_tbd`、`unanswered`、`resolution`及び`decision`を保持し、過去の確認サイクルのレコードを削除又は上書きしないことも確認する。`resolution`が未受領では`未確定`、逐語回答では`回答による確定`、保存TBDでは`TBDによる保留`であることを確認する。`decision`が未受領では`未確定`、逐語回答では`採用`、`部分採用`又は`不採用`、保存TBDでは`保留`であり、再開した`feedbacks-planner`が確定済みのIDを再判断せず当該採否を起草担当へ渡すことを確認する
 - 保存済みの不採用確認用TBDを受領した再開では既存TBDと元項目の`blocked`状態だけを照合し、TBD再投入、再依存及び再inboxを実行しないことを確認する
 - 保存済みの不採用確認用TBDを受領した再開の工程が失敗しても、既存の確認TBDを同じ依存として保持し、新しい失敗TBD、再依存及び再inboxを作成又は実行しないことを確認する
 - 保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行できることを確認する
