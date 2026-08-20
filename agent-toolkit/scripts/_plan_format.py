@@ -64,9 +64,33 @@ PLAN_METADATA_FALLBACK_H2: tuple[str, ...] = ("目的", "実装契約", "背景"
 PLAN_HISTORY_TABLE_HEADER: tuple[str, ...] = ("ID", "起点", "指摘内容", "採否・現在の結論", "同期先")
 PLAN_HISTORY_ORIGINS: tuple[str, ...] = ("ユーザー発言", "レビュー指摘", "方針転換")
 PLAN_PROGRESS_TABLE_HEADER: tuple[str, ...] = ("日時", "完了した工程", "結果・特記事項")
-PLAN_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "原文参照", "確認方法")
+PLAN_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "素材・要求参照", "確認方法")
+PLAN_LEGACY_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "原文参照", "確認方法")
 PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
 PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
+
+PLAN_MATERIAL_TABLE_HEADER: tuple[str, ...] = ("素材ID", "種別", "キューID", "投入元", "引用範囲")
+PLAN_REQUIREMENT_TABLE_HEADER: tuple[str, ...] = (
+    "要求ID",
+    "素材参照",
+    "実装に必要な要件",
+    "採否",
+    "採用範囲",
+    "除外範囲",
+    "根拠",
+)
+PLAN_MATERIAL_TYPES: tuple[str, ...] = (
+    "フィードバック",
+    "利用者指示",
+    "利用者合意",
+    "参考素材",
+    "処理対象資料",
+    "起動事実",
+)
+PLAN_NON_QUEUE_VALUE: str = "非該当"
+PLAN_MATERIAL_ID_PATTERN = re.compile(r"^P-[0-9A-Za-z][0-9A-Za-z_-]*$")
+PLAN_REQUIREMENT_ID_PATTERN = re.compile(r"^R-(?P<material>P-[0-9A-Za-z][0-9A-Za-z_-]*)-(?P<sequence>[0-9]{3})$")
+PLAN_QUEUE_ID_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9]{3,}\.md$")
 
 PLAN_BUG_TABLE_HEADER: tuple[str, ...] = ("項目", "内容")
 PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
@@ -316,6 +340,15 @@ class MarkdownTable:
         return tuple(row[0] if row else "" for row in self.rows)
 
 
+@dataclass(frozen=True)
+class PlanMaterials:
+    """計画の提示素材と要求の解析結果を表す。"""
+
+    material_ids: frozenset[str]
+    requirement_ids: frozenset[str]
+    is_legacy: bool
+
+
 @functools.cache
 def _table_parser() -> markdown_it.MarkdownIt:
     """GFM表を解釈するMarkdownパーサーを返す。
@@ -559,8 +592,8 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
 
 # --- 人間向け固定領域の構造検査 ---
 
-_MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
-_MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^P-[0-9][0-9A-Za-z_-]*(?:(?:（[^）\n]+）|\([^)\n]+\)):|:\s+\S.*)$")
+_LEGACY_MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
+_MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^P-[0-9A-Za-z][0-9A-Za-z_-]*(?:(?:（[^）\n]+）|\([^)\n]+\)):|:\s+\S.*)$")
 _MATERIAL_FENCE_PATTERN = re.compile(r"^\s*(?:`{3,}|~{3,})text\s*$")
 _REFERENCE_SEPARATOR_PATTERN = re.compile(r"[、,・/\s]+")
 
@@ -661,6 +694,190 @@ def _check_metadata_block(content: str) -> tuple[str | None, list[str]]:
     return work_type, errors
 
 
+def _materials_section(
+    content: str,
+    headings: list[PlanHeading],
+    index: int,
+) -> list[tuple[int, str]]:
+    """提示素材H2の本文を、行番号付きで返す。"""
+    raw_lines = content.splitlines()
+    start, end = heading_subtree_range(headings, index)
+    upper = len(raw_lines) if end is None else end - 1
+    return [(lineno, raw_lines[lineno - 1]) for lineno in range(start + 1, min(upper, len(raw_lines)) + 1)]
+
+
+def _split_material_references(value: str) -> list[str]:
+    """素材参照cellを区切って返す。"""
+    return [token for token in _REFERENCE_SEPARATOR_PATTERN.split(value.strip()) if token]
+
+
+def _requirement_references(value: str) -> list[str]:
+    """説明文から要求IDの参照を抽出する。"""
+    return [match.group(0) for match in re.finditer(r"R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}", value)]
+
+
+def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[str]:
+    """新形式の素材表1行を検査する。"""
+    material_id, material_type, queue_id, source, citation = row
+    errors: list[str] = []
+    if not PLAN_MATERIAL_ID_PATTERN.fullmatch(material_id):
+        errors.append(f"提示素材の素材IDが不正である: {material_id}")
+    elif material_id in identifiers:
+        errors.append(f"提示素材の素材IDが重複している: {material_id}")
+    if material_type not in PLAN_MATERIAL_TYPES:
+        errors.append(f"提示素材の種別が不正である: {material_type}")
+        return errors
+
+    if material_type == "フィードバック":
+        if PLAN_QUEUE_ID_PATTERN.fullmatch(queue_id) is None:
+            errors.append(f"フィードバック素材のキューIDが不正である: {queue_id}")
+        if citation != "本文全文":
+            errors.append("フィードバック素材の引用範囲は本文全文にする")
+    elif queue_id != PLAN_NON_QUEUE_VALUE:
+        errors.append(f"{material_type}素材のキューIDは非該当にする")
+
+    if material_type == "利用者指示":
+        if source == "本セッション" and citation != "全文":
+            errors.append("利用者指示素材は本セッションの引用範囲を全文にする")
+    elif material_type == "利用者合意":
+        if source == "本セッション" and citation != "全文":
+            errors.append("本セッションの利用者合意素材の引用範囲を全文にする")
+        elif (source == "AskUserQuestion" or source.startswith("TBD:")) and citation != "回答全文":
+            errors.append("AskUserQuestion又はTBDの利用者合意素材の引用範囲を回答全文にする")
+    elif material_type in {"参考素材", "処理対象資料"} and citation == PLAN_NON_QUEUE_VALUE:
+        errors.append(f"{material_type}素材の引用範囲は非該当にしない")
+    elif material_type == "起動事実" and (source != "常駐自動起動" or citation != PLAN_NON_QUEUE_VALUE):
+        errors.append("起動事実素材は投入元を常駐自動起動、引用範囲を非該当にする")
+
+    if material_type != "起動事実" and not source:
+        errors.append(f"{material_type}素材の投入元が空である")
+    if not citation:
+        errors.append(f"{material_type}素材の引用範囲が空である")
+    return errors
+
+
+def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials, list[str]]:
+    """新形式の素材表と要求表を検査する。"""
+    tables = extract_tables(section)
+    material_tables = [table for table in tables if table.header == PLAN_MATERIAL_TABLE_HEADER]
+    requirement_tables = [table for table in tables if table.header == PLAN_REQUIREMENT_TABLE_HEADER]
+    errors: list[str] = []
+    if len(material_tables) != 1:
+        errors.append(f"提示素材の素材表は{list(PLAN_MATERIAL_TABLE_HEADER)}の1件だけを置く: 実際={len(material_tables)}件")
+    if len(requirement_tables) != 1:
+        errors.append(
+            f"提示素材の要求表は{list(PLAN_REQUIREMENT_TABLE_HEADER)}の1件だけを置く: 実際={len(requirement_tables)}件"
+        )
+    if len(tables) != 2:
+        errors.append(f"提示素材には素材表と要求表だけを置く: 実際={len(tables)}件")
+    identifiers: set[str] = set()
+    if not material_tables:
+        return PlanMaterials(frozenset(), frozenset(), False), errors
+
+    material_table = material_tables[0]
+    if not material_table.rows:
+        errors.append("提示素材の素材表に1行以上の内容が必要")
+    for row in material_table.rows:
+        if len(row) != len(PLAN_MATERIAL_TABLE_HEADER) or any(not cell for cell in row):
+            errors.append(f"提示素材の素材表に空cellまたは列数不一致の行がある: {list(row)}")
+            continue
+        errors.extend(_validate_material_row(row, identifiers))
+        identifiers.add(row[0])
+
+    requirement_ids: set[str] = set()
+    requirements = requirement_tables[0] if requirement_tables else None
+    if requirements is not None:
+        if not requirements.rows:
+            errors.append("提示素材の要求表に1行以上の内容が必要")
+        requirement_id_values = [row[0] for row in requirements.rows if row]
+        if requirement_id_values != sorted(requirement_id_values):
+            errors.append("提示素材の要求表は要求ID昇順で並べる")
+        for row in requirements.rows:
+            if len(row) != len(PLAN_REQUIREMENT_TABLE_HEADER) or any(not cell for cell in row):
+                errors.append(f"提示素材の要求表に空cellまたは列数不一致の行がある: {list(row)}")
+                continue
+            requirement_id, references, _description, decision, adopted, excluded, _reason = row
+            match = PLAN_REQUIREMENT_ID_PATTERN.fullmatch(requirement_id)
+            if match is None:
+                errors.append(f"要求IDが不正である: {requirement_id}")
+                continue
+            if requirement_id in requirement_ids:
+                errors.append(f"要求IDが重複している: {requirement_id}")
+            requirement_ids.add(requirement_id)
+            namespace = match.group("material")
+            if namespace not in identifiers:
+                errors.append(f"要求IDの素材名前空間が素材表に無い: {namespace}")
+            refs = _split_material_references(references)
+            if not refs:
+                errors.append(f"要求{requirement_id}の素材参照が空である")
+            elif references != ", ".join(refs):
+                errors.append(f"要求{requirement_id}の素材参照は`P-001, P-002`形式で記載する: {references}")
+            if refs != sorted(refs):
+                errors.append(f"要求{requirement_id}の素材参照はID昇順で並べる: {references}")
+            if len(refs) != len(set(refs)):
+                errors.append(f"要求{requirement_id}の素材参照が重複している: {references}")
+            for reference in refs:
+                if reference not in identifiers:
+                    errors.append(f"要求{requirement_id}の素材参照が素材表に無い: {reference}")
+            if namespace not in refs:
+                errors.append(f"要求{requirement_id}の素材名前空間を素材参照に含める: {namespace}")
+            if decision not in {"採用", "不採用"}:
+                errors.append(f"要求{requirement_id}の採否は採用又は不採用にする: {decision}")
+            if decision == "採用" and (adopted == PLAN_NON_QUEUE_VALUE or excluded != PLAN_NON_QUEUE_VALUE):
+                errors.append(f"要求{requirement_id}の採用範囲又は除外範囲が不正である")
+            if decision == "不採用" and (adopted != PLAN_NON_QUEUE_VALUE or excluded == PLAN_NON_QUEUE_VALUE):
+                errors.append(f"要求{requirement_id}の採用範囲又は除外範囲が不正である")
+
+        sequences_by_namespace: dict[str, list[int]] = {}
+        for requirement_id in requirement_ids:
+            match = PLAN_REQUIREMENT_ID_PATTERN.fullmatch(requirement_id)
+            assert match is not None
+            sequences_by_namespace.setdefault(match.group("material"), []).append(int(match.group("sequence")))
+        for namespace, sequences in sequences_by_namespace.items():
+            if sorted(sequences) != list(range(1, len(sequences) + 1)):
+                errors.append(f"素材{namespace}の要求ID末尾連番が001から欠番なく続かない")
+
+    if material_tables and requirement_tables:
+        material_end = material_tables[0].lineno + len(material_tables[0].rows) + 1
+        requirement_lineno = requirement_tables[0].lineno
+        section_lines = dict(section)
+        intervening = [
+            section_lines[lineno] for lineno in range(material_end + 1, requirement_lineno) if lineno in section_lines
+        ]
+        if material_tables[0].lineno > requirement_lineno or any(line.strip() for line in intervening):
+            errors.append("提示素材の素材表の直後に要求表を置く")
+
+    referenced = {
+        reference
+        for row in (requirements.rows if requirements is not None else ())
+        if len(row) == len(PLAN_REQUIREMENT_TABLE_HEADER)
+        for reference in _split_material_references(row[1])
+    }
+    for row in material_table.rows:
+        if (
+            len(row) == len(PLAN_MATERIAL_TABLE_HEADER)
+            and row[0] not in referenced
+            and row[1] not in {"参考素材", "処理対象資料", "起動事実"}
+        ):
+            errors.append(f"素材{row[0]}が要求表から参照されていない")
+    return PlanMaterials(frozenset(identifiers), frozenset(requirement_ids), False), errors
+
+
+def parse_plan_materials(content: str) -> tuple[PlanMaterials | None, list[str]]:
+    """提示素材を新形式または旧形式として解析する。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    index = find_heading_index(headings, 2, PLAN_H2_MATERIALS)
+    if index is None:
+        return None, ["固定H2の提示素材を検査できない"]
+    section = _materials_section(content, headings, index)
+    tables = extract_tables(section)
+    if any(table.header in {PLAN_MATERIAL_TABLE_HEADER, PLAN_REQUIREMENT_TABLE_HEADER} for table in tables):
+        return _check_new_materials(section)
+    identifiers, errors = _check_materials(content, body, headings, index)
+    return PlanMaterials(frozenset(identifiers), frozenset(), True), errors
+
+
 def _check_materials(
     content: str,
     body: list[tuple[int, str]],
@@ -679,7 +896,7 @@ def _check_materials(
     while position < len(section):
         lineno, line = section[position]
         stripped = line.strip()
-        match = _MATERIAL_ID_PATTERN.fullmatch(stripped)
+        match = _LEGACY_MATERIAL_ID_PATTERN.fullmatch(stripped)
         if match is None and lineno in structural and _MATERIAL_ID_CANDIDATE_PATTERN.fullmatch(stripped) is not None:
             errors.append(f"提示素材の素材ID行に注記を含めない: {stripped}")
         if match is None or lineno not in structural:
@@ -782,8 +999,8 @@ def check_plan_structure(content: str) -> list[str]:
     """計画の人間向け固定領域と実装者向け領域の境界を検査して違反一覧を返す。
 
     検査対象は見出しの欠落、重複、順序違反、固定領域への追加H2、固定表の列と行、
-    空cell、原文参照先の欠落、恒久化等の空欄または結論語だけの記載とする。
-    原文と要約の意味照合、根拠の妥当性、検討の実質はレビュー担当が判定する。
+    空cell、素材・要求参照先の欠落、恒久化等の空欄または結論語だけの記載とする。
+    素材と要求の意味照合、根拠の妥当性、検討の実質はレビュー担当が判定する。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -815,9 +1032,14 @@ def check_plan_structure(content: str) -> list[str]:
 
     materials_index = find_heading_index(headings, 2, PLAN_H2_MATERIALS)
     identifiers: set[str] = set()
+    requirement_ids: set[str] = set()
+    materials: PlanMaterials | None = None
     if materials_index is not None:
-        identifiers, material_errors = _check_materials(content, body, headings, materials_index)
+        materials, material_errors = parse_plan_materials(content)
         errors.extend(material_errors)
+        if materials is not None:
+            identifiers = set(materials.material_ids)
+            requirement_ids = set(materials.requirement_ids)
 
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
     if action_index is not None:
@@ -827,18 +1049,29 @@ def check_plan_structure(content: str) -> list[str]:
         errors.extend(table_errors)
         if table is not None:
             errors.extend(_check_action_relations(table))
+            if materials is not None and not materials.is_legacy:
+                errors.extend(_check_action_references(table, requirement_ids))
         children = child_headings(headings, action_index, 3)
         if any(heading.text != PLAN_EXCLUSION_H3 for _position, heading in children) or len(children) > 1:
             errors.append(f"`## 実施内容`直下のH3は任意の`### {PLAN_EXCLUSION_H3}`だけにする")
         if children:
             position, _heading = children[0]
             child_start, child_end = heading_subtree_range(headings, position)
-            exclusion, exclusion_errors = _check_fixed_table(
-                lines_within(body, child_start, child_end), PLAN_EXCLUSION_TABLE_HEADER, f"`### {PLAN_EXCLUSION_H3}`"
+            exclusion, exclusion_errors, exclusion_is_new = _check_exclusion_table(
+                lines_within(body, child_start, child_end),
+                "合意済みの除外・保持",
             )
             errors.extend(exclusion_errors)
             if exclusion is not None:
-                errors.extend(_check_reference_ids(exclusion, identifiers, f"`### {PLAN_EXCLUSION_H3}`"))
+                errors.extend(
+                    _check_reference_ids(
+                        exclusion,
+                        identifiers,
+                        requirement_ids,
+                        "合意済みの除外・保持",
+                        exclusion_is_new,
+                    )
+                )
 
     history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
     if history_index is not None:
@@ -883,16 +1116,63 @@ def check_plan_structure(content: str) -> list[str]:
     return errors
 
 
-def _check_reference_ids(table: MarkdownTable, identifiers: set[str], label: str) -> list[str]:
-    """表の`原文参照`が提示素材の素材IDを指すかを検査する。"""
-    column = table.header.index("原文参照")
+def _check_action_references(table: MarkdownTable, requirement_ids: set[str]) -> list[str]:
+    """新形式の実施内容表が要求IDを参照するかを検査する。"""
+    column = table.header.index("根拠")
     errors: list[str] = []
     for row in table.rows:
         if len(row) <= column or not row[column]:
+            errors.append("`## 実施内容`の`根拠`へ要求IDを1件以上記載する")
             continue
-        for token in _REFERENCE_SEPARATOR_PATTERN.split(row[column]):
-            if token and token not in identifiers:
-                errors.append(f"{label}の原文参照が提示素材に無い: {token}")
+        references = _requirement_references(row[column])
+        if not references:
+            errors.append(f"`## 実施内容`の`根拠`は要求IDを参照する: {row[column]}")
+            continue
+        for reference in references:
+            if reference not in requirement_ids:
+                errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
+    return errors
+
+
+def _check_exclusion_table(
+    lines: list[tuple[int, str]],
+    label: str,
+) -> tuple[MarkdownTable | None, list[str], bool]:
+    """新旧の合意表を新形式優先で検査し、形式を返す。"""
+    tables = extract_tables(lines)
+    if any(table.header == PLAN_EXCLUSION_TABLE_HEADER for table in tables):
+        table, errors = _check_fixed_table(lines, PLAN_EXCLUSION_TABLE_HEADER, label)
+        return table, errors, True
+    if any(table.header == PLAN_LEGACY_EXCLUSION_TABLE_HEADER for table in tables):
+        table, errors = _check_fixed_table(lines, PLAN_LEGACY_EXCLUSION_TABLE_HEADER, label)
+        return table, errors, False
+    return None, [f"{label}は{list(PLAN_EXCLUSION_TABLE_HEADER)}の列を持つ表にする"], True
+
+
+def _check_reference_ids(
+    table: MarkdownTable,
+    identifiers: set[str],
+    requirement_ids: set[str],
+    label: str,
+    is_new: bool,
+) -> list[str]:
+    """新旧合意表の素材・要求参照を検査する。"""
+    column_name = "素材・要求参照" if is_new else "原文参照"
+    column = table.header.index(column_name)
+    errors: list[str] = []
+    valid_ids = identifiers | requirement_ids
+    for row in table.rows:
+        if len(row) <= column or not row[column]:
+            continue
+        references = _split_material_references(row[column])
+        for token in references:
+            if token not in valid_ids:
+                errors.append(f"{label}の{column_name}が提示素材に無い: {token}")
+        if is_new:
+            if not any(token in identifiers for token in references):
+                errors.append(f"{label}の{column_name}へ素材IDを1件以上記載する: {row[column]}")
+            if not any(token in requirement_ids for token in references):
+                errors.append(f"{label}の{column_name}へ要求IDを1件以上記載する: {row[column]}")
     return errors
 
 
@@ -908,7 +1188,7 @@ def _check_history_rows(table: MarkdownTable, identifiers: set[str]) -> list[str
         if origin != "ユーザー発言":
             continue
         references = [token for token in re.split(r",\s*", detail) if token]
-        if not references or any(re.fullmatch(r"P-[0-9][0-9A-Za-z_-]*", token) is None for token in references):
+        if not references or any(PLAN_MATERIAL_ID_PATTERN.fullmatch(token) is None for token in references):
             errors.append(f"`## 変更履歴`のユーザー発言行は`指摘内容`へ素材IDだけを書く: {detail}")
         for reference in references:
             if reference not in identifiers:

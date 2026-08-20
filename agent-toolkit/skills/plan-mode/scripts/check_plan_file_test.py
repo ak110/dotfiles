@@ -8,7 +8,7 @@ import check_plan_file
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
+import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -54,10 +54,10 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
         exclusion = """
 ### 合意済みの除外・保持
 
-| 合意内容 | 対象と箇所 | 原文参照 | 確認方法 |
+| 合意内容 | 対象と箇所 | 素材・要求参照 | 確認方法 |
 | --- | --- | --- | --- |
-| 公開契約を維持する | 公開API | P-001 | 差分を確認する |
-| 対象外の挙動を変更しない | 対象外の入力処理 | P-001 | 回帰テストを実行する |
+| 公開契約を維持する | 公開API | P-001, R-P-001-001 | 差分を確認する |
+| 対象外の挙動を変更しない | 対象外の入力処理 | P-001, R-P-001-001 | 回帰テストを実行する |
 """
     bug_section = ""
     if bug:
@@ -84,15 +84,18 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 
 | 実施内容 | ユーザー指示との関係 | 根拠 |
 | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |
+| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
 {exclusion}
 ## 提示素材
 
-P-001:
+| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
+| --- | --- | --- | --- | --- |
+| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
+| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |
 
-```text
-診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
-```
+| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
+| --- | --- | --- | --- | --- | --- | --- |
+| R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |
 
 ## 変更履歴
 
@@ -136,6 +139,29 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
     path = repo / "plan.md"
     path.write_text(content, encoding="utf-8")
     return check_plan_file.check(path, repo)
+
+
+def _legacy_plan(repo: pathlib.Path, base: str) -> str:
+    """旧形式の素材と合意表を持つ計画fixtureを返す。"""
+    content = _plan(repo, base)
+    start = content.index("## 提示素材")
+    end = content.index("## 変更履歴")
+    legacy = """## 提示素材
+
+P-001:
+
+```text
+診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
+```
+
+"""
+    content = content[:start] + legacy + content[end:]
+    content = content.replace(
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |", "| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |"
+    )
+    content = content.replace("素材・要求参照", "原文参照")
+    content = content.replace("P-001, R-P-001-001", "P-001")
+    return content
 
 
 @pytest.mark.parametrize(("bug", "exclusions"), [(False, True), (False, False), (True, True)])
@@ -197,6 +223,21 @@ def test_cli_reports_missing_completion_once(repo: tuple[pathlib.Path, str]) -> 
     assert "`## 完了条件`は1件必要" in diagnostics[0]
 
 
+def test_cli_warns_for_legacy_materials_without_changing_exit_code(repo: tuple[pathlib.Path, str]) -> None:
+    """旧形式は移行warningを出力するが終了コード0で受理する。"""
+    work_dir, base = repo
+    path = work_dir / "legacy-plan.md"
+    path.write_text(_legacy_plan(work_dir, base), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--work-dir", str(work_dir), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "旧形式" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -223,7 +264,7 @@ def test_rejects_structure_violations(repo: tuple[pathlib.Path, str], mutation: 
 def test_rejects_unclosed_fence(repo: tuple[pathlib.Path, str]) -> None:
     """閉じていないMarkdownフェンスを拒否する。"""
     work_dir, base = repo
-    content = _plan(work_dir, base).replace("```\n\n## 変更履歴", "\n\n## 変更履歴", 1)
+    content = _legacy_plan(work_dir, base).replace("```\n\n## 変更履歴", "\n\n## 変更履歴", 1)
     errors, _warnings = _check(work_dir, content)
     assert any("閉じていないMarkdownフェンス" in error for error in errors)
 

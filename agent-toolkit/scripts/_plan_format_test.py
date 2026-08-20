@@ -27,22 +27,26 @@ _HUMAN_SECTION = """# 計画の主題
 
 | 実施内容 | ユーザー指示との関係 | 根拠 |
 | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |
+| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
 
 ### 合意済みの除外・保持
 
-| 合意内容 | 対象と箇所 | 原文参照 | 確認方法 |
+| 合意内容 | 対象と箇所 | 素材・要求参照 | 確認方法 |
 | --- | --- | --- | --- |
-| 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |
-| 対象外の挙動を変更しない | 対象外の入力処理 | P-001 | 回帰テストを実行する |
+| 公開契約を維持する | 対象の公開API | P-001, R-P-001-001 | 差分を確認する |
+| 対象外の挙動を変更しない | 対象外の入力処理 | P-001, R-P-001-001 | 回帰テストを実行する |
 
 ## 提示素材
 
-P-001:
+| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
+| --- | --- | --- | --- | --- |
+| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
+| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |
 
-```text
-診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
-```
+| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
+| --- | --- | --- | --- | --- | --- | --- |
+| R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |
+| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |
 
 ## 変更履歴
 
@@ -129,6 +133,36 @@ def _plan(*, base: str = _BASE, bug: bool = False) -> str:
 _VALID_CONTENT = _plan()
 
 
+def _legacy_plan() -> str:
+    """旧形式の素材と合意表を持つ互換fixtureを返す。"""
+    start = _VALID_CONTENT.index("## 提示素材")
+    end = _VALID_CONTENT.index("## 変更履歴")
+    legacy_materials = """## 提示素材
+
+P-001:
+
+```text
+診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
+```
+
+"""
+    content = _VALID_CONTENT[:start] + legacy_materials + _VALID_CONTENT[end:]
+    content = content.replace(
+        "| 実施内容 | ユーザー指示との関係 | 根拠 |\n"
+        "| --- | --- | --- |\n"
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
+        "| 実施内容 | ユーザー指示との関係 | 根拠 |\n"
+        "| --- | --- | --- |\n"
+        "| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |",
+    )
+    content = content.replace("素材・要求参照", "原文参照")
+    content = content.replace("P-001, R-P-001-001", "P-001")
+    return content
+
+
+_LEGACY_CONTENT = _legacy_plan()
+
+
 def test_canonical_plan_passes_structure_check() -> None:
     """通常変更とバグ対応の正規形はいずれも構造検査を通過する。"""
     assert not _plan_format.check_plan_structure(_VALID_CONTENT)
@@ -202,7 +236,7 @@ def test_duplicate_fixed_table_is_rejected() -> None:
             "固定H2は",
         ),
         (("### 計画メタ情報", "### 総論"), "`### 計画メタ情報`を検査できない"),
-        (("## 提示素材\n\nP-001:", "## 素材\n\nP-001:"), "固定H2は"),
+        (("## 提示素材", "## 素材"), "固定H2は"),
         (("- 起動経路: `agent-toolkit:plan-mode`\n", ""), "この順序で1行ずつ置く"),
         (("- 作業種別: 通常変更", "- 作業種別: `通常変更`"), "バッククォートで囲まない"),
         (("- 対象リポジトリ: `/repo`", "- 対象リポジトリ: /repo"), "バッククォートで囲む"),
@@ -216,10 +250,10 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         (("| 日時 | 完了した工程 | 結果・特記事項 |", "| 日時 | 工程 | 結果 |"), "`## 進捗ログ`は"),
         (
             (
-                "| 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |",
+                "| 公開契約を維持する | 対象の公開API | P-001, R-P-001-001 | 差分を確認する |",
                 "| 公開契約を維持する | 対象の公開API | P-999 | 差分を確認する |",
             ),
-            "原文参照が提示素材に無い",
+            "素材・要求参照が提示素材に無い",
         ),
         (
             ("| 診断件数を2件から1件へ減らす | 指示どおり |", "| 診断件数を2件から1件へ減らす | 追加対応 |"),
@@ -227,8 +261,8 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         ),
         (
             (
-                "| 公開契約を維持する | 対象の公開API | P-001 | 差分を確認する |",
-                "| 公開契約を維持する |  | P-001 | 差分を確認する |",
+                "| 公開契約を維持する | 対象の公開API | P-001, R-P-001-001 | 差分を確認する |",
+                "| 公開契約を維持する |  | P-001, R-P-001-001 | 差分を確認する |",
             ),
             "空cell",
         ),
@@ -368,9 +402,9 @@ def test_structure_check_accepts_short_delimiter_tables() -> None:
     assert not _plan_format.check_plan_structure(_VALID_CONTENT.replace(" --- ", " - "))
 
 
-def test_materials_require_verbatim_fence() -> None:
-    """素材IDの直後に逐語fenceが無い提示素材を拒否する。"""
-    content = _VALID_CONTENT.replace(
+def test_legacy_materials_require_verbatim_fence() -> None:
+    """旧形式では素材IDの直後に逐語fenceが無い提示素材を拒否する。"""
+    content = _LEGACY_CONTENT.replace(
         "```text\n診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。\n```",
         "診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。",
     )
@@ -378,9 +412,232 @@ def test_materials_require_verbatim_fence() -> None:
     assert any("逐語転記が無い" in error for error in errors)
 
 
+def test_parse_plan_materials_returns_structured_ids_and_legacy_flag() -> None:
+    """新旧形式の素材と要求を識別し、ID集合を返す。"""
+    materials, errors = _plan_format.parse_plan_materials(_VALID_CONTENT)
+    assert not errors
+    assert materials == _plan_format.PlanMaterials(
+        frozenset({"P-001", "P-002"}),
+        frozenset({"R-P-001-001", "R-P-002-001"}),
+        False,
+    )
+
+    legacy_materials, legacy_errors = _plan_format.parse_plan_materials(_LEGACY_CONTENT)
+    assert not legacy_errors
+    assert legacy_materials == _plan_format.PlanMaterials(frozenset({"P-001"}), frozenset(), True)
+
+
+def test_new_material_tables_take_priority_over_legacy_fence() -> None:
+    """新形式の表と旧形式の素材記法が混在する場合は新形式を解析する。"""
+    legacy_tail = """
+P-999:
+
+```text
+旧形式の本文。
+```
+"""
+    content = _VALID_CONTENT.replace("\n## 変更履歴", f"{legacy_tail}\n## 変更履歴", 1)
+    materials, errors = _plan_format.parse_plan_materials(content)
+    assert not errors
+    assert materials is not None
+    assert not materials.is_legacy
+    assert materials.material_ids == frozenset({"P-001", "P-002"})
+
+
+def test_structured_material_ids_preserve_full_namespace() -> None:
+    """英字、ハイフン及びアンダースコアを含む素材IDを要求IDの名前空間へ保持する。"""
+    content = _VALID_CONTENT.replace("P-001", "P-alpha_1-x")
+    content = content.replace("P-alpha_1-x, P-002", "P-002, P-alpha_1-x")
+    first = (
+        "| R-P-alpha_1-x-001 | P-002, P-alpha_1-x | 診断件数を2件から1件へ減らす。 | "
+        "採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |"
+    )
+    second = "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |"
+    content = content.replace(f"{first}\n{second}", f"{second}\n{first}", 1)
+    materials, errors = _plan_format.parse_plan_materials(content)
+    assert not errors
+    assert materials is not None
+    assert materials.material_ids == frozenset({"P-alpha_1-x", "P-002"})
+    assert materials.requirement_ids == frozenset({"R-P-alpha_1-x-001", "R-P-002-001"})
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+            "| P-002 | 利用者合意 | queue.md | 本セッション | 全文 |",
+            "キューIDは非該当にする",
+        ),
+        (
+            "| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
+            "| P-001 | フィードバック | 非該当 | 値なし | 本文全文 |",
+            "フィードバック素材のキューIDが不正である",
+        ),
+        (
+            "| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
+            "| P-001 | フィードバック | feedback.md | 値なし | 本文全文 |",
+            "フィードバック素材のキューIDが不正である",
+        ),
+        (
+            "| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
+            "| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 要約 |",
+            "引用範囲は本文全文にする",
+        ),
+        (
+            "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+            "| P-002 | 利用者合意 | 非該当 | AskUserQuestion | 全文 |",
+            "回答全文にする",
+        ),
+        (
+            "R-P-002-001 | P-002 |",
+            "R-P-002-000 | P-002 |",
+            "末尾連番が001から欠番なく続かない",
+        ),
+        (
+            "R-P-002-001 | P-002 |",
+            "R-P-999-001 | P-002 |",
+            "素材表に無い",
+        ),
+        (
+            "R-P-001-001 | P-001, P-002 |",
+            "R-P-001-001 | P-002, P-001 |",
+            "素材参照はID昇順で並べる",
+        ),
+        (
+            "R-P-001-001 | P-001, P-002 |",
+            "R-P-001-001 | P-001, P-001 |",
+            "素材参照が重複している",
+        ),
+        (
+            "R-P-001-001 | P-001, P-002 |",
+            "R-P-001-001 | P-001/P-002 |",
+            "素材参照は`P-001, P-002`形式で記載する",
+        ),
+        (
+            "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 |",
+            "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 保留 | 診断件数の更新 | 非該当 |",
+            "採否は採用又は不採用にする",
+        ),
+        (
+            "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 |",
+            "R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 非該当 | 非該当 |",
+            "採用範囲又は除外範囲が不正である",
+        ),
+    ],
+)
+def test_structured_material_contract_rejects_invalid_combinations(old: str, new: str, message: str) -> None:
+    """素材種別、参照、要求ID及び採否の不整合を拒否する。"""
+    materials, errors = _plan_format.parse_plan_materials(_VALID_CONTENT.replace(old, new, 1))
+    assert materials is not None
+    assert any(message in error for error in errors), errors
+
+
+def test_structured_material_contract_rejects_duplicate_material_id() -> None:
+    """素材IDの重複を拒否する。"""
+    content = _VALID_CONTENT.replace(
+        "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+        "| P-001 | 利用者合意 | 非該当 | 本セッション | 全文 |\n| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+        1,
+    )
+    _materials, errors = _plan_format.parse_plan_materials(content)
+    assert any("素材IDが重複している" in error for error in errors), errors
+
+
+def test_structured_material_contract_rejects_requirement_order_and_gap() -> None:
+    """要求表のID順序と素材内連番の欠落を拒否する。"""
+    content = _VALID_CONTENT.replace("R-P-002-001 | P-002 |", "R-P-002-003 | P-002 |", 1)
+    _materials, errors = _plan_format.parse_plan_materials(content)
+    assert any("末尾連番が001から欠番なく続かない" in error for error in errors), errors
+
+
+def test_structured_material_contract_rejects_requirement_table_order() -> None:
+    """要求表を要求IDの昇順以外で並べた場合に拒否する。"""
+    first = (
+        "| R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | "
+        "診断件数の更新 | 非該当 | 指示と合意を反映するため。 |"
+    )
+    second = "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |"
+    content = _VALID_CONTENT.replace(f"{first}\n{second}", f"{second}\n{first}", 1)
+    _materials, errors = _plan_format.parse_plan_materials(content)
+    assert any("要求表は要求ID昇順" in error for error in errors), errors
+
+
+def test_structured_material_contract_requires_adjacent_tables() -> None:
+    """素材表と要求表の間に説明文又は別表を置かない。"""
+    content = _VALID_CONTENT.replace(
+        "\n| 要求ID | 素材参照 |",
+        "\n説明文を配置する。\n\n| 要求ID | 素材参照 |",
+        1,
+    )
+    _materials, errors = _plan_format.parse_plan_materials(content)
+    assert any("素材表の直後に要求表" in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "| P-002 | 利用者指示 | 非該当 | 本セッション | 全文 |",
+        "| P-002 | 利用者指示 | 非該当 | 委譲元:user message | 第1段落 |",
+        "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+        "| P-002 | 利用者合意 | 非該当 | AskUserQuestion | 回答全文 |",
+        "| P-002 | 利用者合意 | 非該当 | TBD:decision.md#回答 | 回答全文 |",
+        "| P-002 | 参考素材 | 非該当 | docs/reference.md | 節1 |",
+        "| P-002 | 処理対象資料 | 非該当 | input.json | $.items |",
+        "| P-002 | 起動事実 | 非該当 | 常駐自動起動 | 非該当 |",
+    ],
+)
+def test_structured_material_types_preserve_source_and_citation(row: str) -> None:
+    """フィードバック以外の素材種別も投入元と引用範囲を保持して受理する。"""
+    content = _VALID_CONTENT.replace(
+        "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+        row,
+        1,
+    )
+    materials, errors = _plan_format.parse_plan_materials(content)
+    assert not errors
+    assert materials is not None
+    assert not materials.is_legacy
+
+
+@pytest.mark.parametrize("material_type", ["参考素材", "処理対象資料", "起動事実"])
+def test_structured_material_types_may_be_unreferenced(material_type: str) -> None:
+    """参考素材、処理対象資料及び起動事実は要求を直接持たなくても受理する。"""
+    row = {
+        "参考素材": "| P-002 | 参考素材 | 非該当 | docs/reference.md | 節1 |",
+        "処理対象資料": "| P-002 | 処理対象資料 | 非該当 | input.json | $.items |",
+        "起動事実": "| P-002 | 起動事実 | 非該当 | 常駐自動起動 | 非該当 |",
+    }[material_type]
+    content = _VALID_CONTENT.replace(
+        "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+        row,
+        1,
+    )
+    content = content.replace("P-001, P-002", "P-001", 1)
+    content = content.replace(
+        "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |\n",
+        "",
+        1,
+    )
+    materials, errors = _plan_format.parse_plan_materials(content)
+    assert not errors
+    assert materials is not None
+
+
+def test_structured_material_types_reject_unreferenced_user_agreement() -> None:
+    """利用者指示又は利用者合意を要求表から未参照にしない。"""
+    content = _VALID_CONTENT.replace("P-001, P-002", "P-001", 1).replace(
+        "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |\n",
+        "",
+        1,
+    )
+    _materials, errors = _plan_format.parse_plan_materials(content)
+    assert any("要求表から参照されていない" in error for error in errors), errors
+
+
 @pytest.mark.parametrize("material_id", ["P-001（利用者発言）:", "P-001: 利用者発言"])
 def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: str) -> None:
-    content = _VALID_CONTENT.replace("P-001:", material_id, 1)
+    content = _LEGACY_CONTENT.replace("P-001:", material_id, 1)
 
     errors = _plan_format.check_plan_structure(content)
 
@@ -388,7 +645,7 @@ def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: s
 
 
 def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> None:
-    content = _VALID_CONTENT.replace(
+    content = _LEGACY_CONTENT.replace(
         "P-001:\n\n```text\n対象を更新してほしい。",
         "注記: 提示素材の説明\nSource: user transcript\n\nP-001:\n\n```text\nP-999: fence内の文字列\n対象を更新してほしい。",
     )
