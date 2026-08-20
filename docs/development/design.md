@@ -104,7 +104,8 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 `feedbacks-planner`は不採用確認用`user_decisions`を返すと`status: awaiting_confirmation`で確認待ちとして終端する。
 呼び出し元は直接回答、保存TBDのいずれかを受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列（同じバッチと計画）の
 新しい識別子を起動する。確認待ちを複数サイクルで処理する場合、`user_decisions`は現在の未解決項目だけへ置き換えず、原文正本IDごとの累積レコードとして渡す。
-各レコードは`id`、`raw`、`question`、`answer_or_tbd`と`unanswered`を保持し、新しい回答・TBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
+各レコードは`id`、`raw`、`question`、`answer_or_tbd`、`unanswered`、`resolution`を保持し、新しい回答・TBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
+`resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は`回答による確定`、保存TBDで保留した場合は`TBDによる保留`とする。
 初回起動には再開コンテキストを含めない。
 確認待ち後の再開起動へだけ元のバッチ全項目の調査結果全文を渡す。
 原文frontmatterの`source`原値（欠落は値なし）、IDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答・保存TBD、
@@ -120,7 +121,7 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を`atk mq show`で照合する。
-sourceを指定しない場合は本文、`target_repo`及び非予約frontmatter全体を照合した後、
+sourceを指定しない場合は本文、`target_repo`、非予約frontmatter全体を照合した後、
 移管先ファイル名を記録して元項目を終端する。
 
 この境界では項目単位の永続的な由来スキーマを新設せず、既存のsourceを判定に用いる。

@@ -198,7 +198,8 @@
 不採用確認用`user_decisions`は通常の将来判断TBDと区別する。`feedbacks-planner`の`status: awaiting_confirmation`は失敗ではなく、
 呼び出し元が直接回答、保存TBDのいずれかを受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列の新しい識別子を起動する。
 確認待ちを複数サイクルで処理する場合、`user_decisions`は現在の未解決項目だけへ置き換えず、原文正本IDごとの累積レコードとして渡す。
-各レコードは`id`、`raw`、`question`、`answer_or_tbd`及び`unanswered`を保持し、新しい回答又はTBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
+各レコードは`id`、`raw`、`question`、`answer_or_tbd`、`unanswered`及び`resolution`を保持し、新しい回答又はTBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
+`resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は`回答による確定`、保存TBDで保留した場合は`TBDによる保留`とする。
 初回起動には再開コンテキストを含めず、確認待ち後の再開起動へだけ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、
 IDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答又は保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
 保存済みの不採用確認用TBDを受領した再開では既存TBDと元項目の`blocked`状態だけを照合し、TBD再投入、再依存及び再inboxを実行しない。

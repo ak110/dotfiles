@@ -1832,13 +1832,23 @@ def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dep
 
     for document in (planner, process, reception, decision, hold, checklist, concepts, design):
         assert "原文正本IDごとの累積" in document
-        for field in ("`raw`", "`question`", "`answer_or_tbd`", "`unanswered`"):
+        for field in ("`raw`", "`question`", "`answer_or_tbd`", "`unanswered`", "`resolution`"):
             assert field in document
         assert "過去の確認サイクルのレコードを削除又は上書きしない" in document
+        for resolution in ("`未確定`", "`回答による確定`", "`TBDによる保留`"):
+            assert resolution in document
 
     output = _h2_section(planner, "出力")
-    for field in ("id:", "raw:", "question:", "answer_or_tbd:", "unanswered:"):
+    for field in ("id:", "raw:", "question:", "answer_or_tbd:", "unanswered:", "resolution:"):
         assert field in output
+
+    # Aの回答後にBの確認待ちだけが残っても、次のplannerへAの確定結果を渡せる。
+    resolved_a = {"id": "A", "answer_or_tbd": "回答", "unanswered": False, "resolution": "回答による確定"}
+    pending_b = {"id": "B", "answer_or_tbd": "未受領", "unanswered": True, "resolution": "未確定"}
+    cumulative_user_decisions = [resolved_a, pending_b]
+    assert [record["id"] for record in cumulative_user_decisions] == ["A", "B"]
+    assert cumulative_user_decisions[0]["resolution"] == "回答による確定"
+    assert cumulative_user_decisions[1]["resolution"] == "未確定"
 
     for document in (planner, process, reception, decision, hold, concepts, design):
         assert "同じ依存として保持" in document

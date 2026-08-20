@@ -32,7 +32,7 @@ user-invocable: false
 
 - `original_investigations`: 元のバッチ全項目の調査結果全文
 - `raw_sources`: 原文frontmatterの`source`原値（欠落は値なし）
-- `user_decisions`: 不採用確認用`user_decisions`の原文を、原文正本IDごとの累積レコードとして保持したもの。各レコードは`id`、`raw`、`question`、`answer_or_tbd`及び`unanswered`を持ち、過去の確認サイクルのレコードを削除又は上書きしない
+- `user_decisions`: 不採用確認用`user_decisions`の原文を、原文正本IDごとの累積レコードとして保持したもの。各レコードは`id`、`raw`、`question`、`answer_or_tbd`、`unanswered`及び`resolution`を持ち、過去の確認サイクルのレコードを削除又は上書きしない
 - `answer_or_tbd`: 出所と引用範囲付きの逐語回答又は保存したTBDを当サイクルのID付き値として保持したもの。未受領のIDは`unanswered`として明記し、累積`user_decisions`にも残す
 - `plan_path`: 初回起動と同じ計画ファイルの絶対パス
 
@@ -67,7 +67,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    採否及び項目固有の採否理由を対応付けて採否候補を確定する。`source: session-review`だけをエージェント由来と判定し、
    それ以外のsource、source欠落及び不明の不採用候補は、原文との差異と技術的理由を示す不採用確認用`user_decisions`へ返す。
    `awaiting_confirmation`後の新規起動では、受領した逐語回答又は保存TBDを対応する`user_decisions`へ先に統合する。
-   逐語回答は採否を確定し、TBDは保留として記録する。確定又は保留した項目は新たな`user_decisions`へ戻さない。
+   逐語回答は採否を確定し、TBDは保留として記録する。`resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は`回答による確定`、保存TBDで保留した場合は`TBDによる保留`とする。確定又は保留した項目は新たな`user_decisions`へ戻さない。
    `user_decisions`は通常の将来判断TBDと区別し、不採用候補の採否確定だけに用いる。部分採用は`user_decisions`へ機械的に含めず、
    差異、採用範囲、除外範囲及び採否理由を記録する。`user_decisions`を返した時点で本工程を中断し、
    `status: awaiting_confirmation`として呼び出し元へ返却してターンを終端する。これは失敗ではない。
@@ -75,7 +75,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    呼び出し元は回答又は保留結果を受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列の新しい識別子を起動する。
    `awaiting_confirmation`後の再開起動では、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、IDごとの累積`user_decisions`、
    出所と引用範囲を付けた逐語回答又は保存したTBD、同じ計画ファイルの絶対パスを受領する。`user_decisions`は原文正本IDごとに`raw`、`question`、
-   `answer_or_tbd`及び`unanswered`を保持し、新しい回答又はTBDだけを対応するIDへ追記して、過去の確認サイクルのレコードを失わずに採否を確定する。
+   `answer_or_tbd`、`unanswered`及び`resolution`を保持し、新しい回答又はTBDだけを対応するIDへ追記して、過去の確認サイクルのレコードを失わずに採否を確定する。
    保存済みの不採用確認用TBDを受領した再開で自身の工程が失敗した場合は、同じ確認TBDを同じ依存として保持したまま失敗を返し、新しい失敗TBDを作成しない。
    回答又は保留結果を受領するまで計画起草、キュー操作及びrejectを開始しない。
    保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない項目はrejectしない。
@@ -137,13 +137,14 @@ user_decisions:
   question: <このIDへ発行したAskUserQuestionの逐語文>
   answer_or_tbd: <このIDで受領した逐語回答又は保存TBD。未受領は「未受領」>
   unanswered: <回答又はTBDが未受領ならtrue、受領済みならfalse>
+  resolution: <未確定 | 回答による確定 | TBDによる保留>
   detail: <原文との差異、技術的理由、回答なしの場合に保存する同内容のTBD本文。通常の将来判断TBDは含めない>
 blockers:
 - <未完了事項。完了時は「なし」>
 confirmation_context:
 - original_investigations: <元のバッチ全項目の調査結果全文。`awaiting_confirmation`時は必須>
 - raw_sources: <原文frontmatterの`source`原値を項目ごとに保持。欠落は値なし。`awaiting_confirmation`時は必須>
-- user_decisions: <原文正本IDごとの累積レコード。各IDのraw、question、answer_or_tbd、unansweredを保持し、`awaiting_confirmation`時は必須>
+- user_decisions: <原文正本IDごとの累積レコード。各IDのraw、question、answer_or_tbd、unanswered、resolutionを保持し、`awaiting_confirmation`時は必須>
 - answer_or_tbd: <当サイクルで受領した回答又は保存TBDをID付きで列挙したもの。未受領のIDはunansweredとして記す>
 - plan_path: <同じ計画ファイルの絶対パス>
 ```

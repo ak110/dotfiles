@@ -23,7 +23,8 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 新しい識別子を起動する。確認待ち後の再開起動には、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、
 原文正本IDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡す。
 調査結果、原文source及び`user_decisions`は再取得、再調査、要約をしない。回答又はTBDを対応する採否記録へ統合する。
-`user_decisions`は現在の未解決項目だけへ置き換えず、各IDの`raw`、`question`、`answer_or_tbd`及び`unanswered`を保持する累積レコードとする。
+`user_decisions`は現在の未解決項目だけへ置き換えず、各IDの`raw`、`question`、`answer_or_tbd`、`unanswered`及び`resolution`を保持する累積レコードとする。
+`resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は`回答による確定`、保存TBDで保留した場合は`TBDによる保留`とする。
 新しい回答又はTBDは対応するIDへ追記し、過去の確認サイクルのレコードを削除又は上書きしない。
 
 初回起動には再開コンテキストを含めない。
