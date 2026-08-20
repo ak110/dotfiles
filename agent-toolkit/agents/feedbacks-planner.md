@@ -32,8 +32,8 @@ user-invocable: false
 
 - `original_investigations`: 元のバッチ全項目の調査結果全文
 - `raw_sources`: 原文frontmatterの`source`原値（欠落は値なし）
-- `user_decisions`: 不採用確認用`user_decisions`の原文
-- `answer_or_tbd`: 出所と引用範囲付きの逐語回答又は保存したTBD
+- `user_decisions`: 不採用確認用`user_decisions`の原文を、原文正本IDごとの累積レコードとして保持したもの。各レコードは`id`、`raw`、`question`、`answer_or_tbd`及び`unanswered`を持ち、過去の確認サイクルのレコードを削除又は上書きしない
+- `answer_or_tbd`: 出所と引用範囲付きの逐語回答又は保存したTBDを当サイクルのID付き値として保持したもの。未受領のIDは`unanswered`として明記し、累積`user_decisions`にも残す
 - `plan_path`: 初回起動と同じ計画ファイルの絶対パス
 
 agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パスは、委譲元から受け取らず自身で解決する。
@@ -73,8 +73,10 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    `status: awaiting_confirmation`として呼び出し元へ返却してターンを終端する。これは失敗ではない。
    呼び出し元は`user_decisions`ごとに`AskUserQuestion`、TBD保存、依存設定、inbox差し戻し及び`blocked`確認を担当する。
    呼び出し元は回答又は保留結果を受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列の新しい識別子を起動する。
-   `awaiting_confirmation`後の再開起動では、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、`user_decisions`の原文、
-   出所と引用範囲を付けた逐語回答又は保存したTBD、同じ計画ファイルの絶対パスを受領し、対応する項目の採否記録へ統合して採否を確定する。
+   `awaiting_confirmation`後の再開起動では、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、IDごとの累積`user_decisions`、
+   出所と引用範囲を付けた逐語回答又は保存したTBD、同じ計画ファイルの絶対パスを受領する。`user_decisions`は原文正本IDごとに`raw`、`question`、
+   `answer_or_tbd`及び`unanswered`を保持し、新しい回答又はTBDだけを対応するIDへ追記して、過去の確認サイクルのレコードを失わずに採否を確定する。
+   保存済みの不採用確認用TBDを受領した再開で自身の工程が失敗した場合は、同じ確認TBDを同じ依存として保持したまま失敗を返し、新しい失敗TBDを作成しない。
    回答又は保留結果を受領するまで計画起草、キュー操作及びrejectを開始しない。
    保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない項目はrejectしない。
    実装変更がない終端工程専用項目は、計画を作成せず、採否、終端工程一覧、認可根拠の逐語引用及び計画なしを返す。
@@ -130,14 +132,19 @@ review: <収束状態、検査結果、write_status>
 tbd:
 - <不採用確認用`user_decisions`とは別の、通常の将来判断TBD候補。暫定判断の内容、根拠、回答後に必要な追随作業、検証を含める。無ければ「なし」>
 user_decisions:
-- <不採用確認用の採否候補。原文との差異、技術的理由、回答なしの場合に保存する同内容のTBD本文を含め、通常の将来判断TBDは含めない。無ければ「なし」>
+- id: <原文正本ID（原文ファイル名）>
+  raw: <不採用確認用の採否候補の原文。過去サイクルの値を保持>
+  question: <このIDへ発行したAskUserQuestionの逐語文>
+  answer_or_tbd: <このIDで受領した逐語回答又は保存TBD。未受領は「未受領」>
+  unanswered: <回答又はTBDが未受領ならtrue、受領済みならfalse>
+  detail: <原文との差異、技術的理由、回答なしの場合に保存する同内容のTBD本文。通常の将来判断TBDは含めない>
 blockers:
 - <未完了事項。完了時は「なし」>
 confirmation_context:
 - original_investigations: <元のバッチ全項目の調査結果全文。`awaiting_confirmation`時は必須>
 - raw_sources: <原文frontmatterの`source`原値を項目ごとに保持。欠落は値なし。`awaiting_confirmation`時は必須>
-- user_decisions: <不採用確認用`user_decisions`の原文。`awaiting_confirmation`時は必須>
-- answer_or_tbd: <出所と引用範囲付きの逐語回答又は保存したTBD。確認待ちでは未受領と記す>
+- user_decisions: <原文正本IDごとの累積レコード。各IDのraw、question、answer_or_tbd、unansweredを保持し、`awaiting_confirmation`時は必須>
+- answer_or_tbd: <当サイクルで受領した回答又は保存TBDをID付きで列挙したもの。未受領のIDはunansweredとして記す>
 - plan_path: <同じ計画ファイルの絶対パス>
 ```
 
@@ -146,5 +153,5 @@ confirmation_context:
 
 通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない。
 `status: awaiting_confirmation`の報告だけは、停止済み識別子を再利用せず新規起動できるよう
-`confirmation_context`へ元の調査結果全文、raw source、`user_decisions`原文及び計画ファイル絶対パスを含める。
+`confirmation_context`へ元の調査結果全文、raw source、原文正本IDごとの累積`user_decisions`及び計画ファイル絶対パスを含める。
 完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。

@@ -21,12 +21,14 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 `feedbacks-planner`が`status: awaiting_confirmation`を返した場合、メインはこれを失敗として処理しない。
 確認回答、保存済みTBDのいずれかを受領する。受領後は停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列（同じバッチと計画）の
 新しい識別子を起動する。確認待ち後の再開起動には、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、
-`user_decisions`の原文、出所と引用範囲付きの逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡す。
+原文正本IDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡す。
 調査結果、原文source及び`user_decisions`は再取得、再調査、要約をしない。回答又はTBDを対応する採否記録へ統合する。
+`user_decisions`は現在の未解決項目だけへ置き換えず、各IDの`raw`、`question`、`answer_or_tbd`及び`unanswered`を保持する累積レコードとする。
+新しい回答又はTBDは対応するIDへ追記し、過去の確認サイクルのレコードを削除又は上書きしない。
 
 初回起動には再開コンテキストを含めない。
-確認待ち後の再開起動には、`confirmation_context`の`original_investigations`、`raw_sources`、`user_decisions`、`answer_or_tbd`、`plan_path`を全て渡す。
-各値は元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、`user_decisions`の原文、
+確認待ち後の再開起動には、`confirmation_context`の`original_investigations`、`raw_sources`、IDごとの累積`user_decisions`、`answer_or_tbd`、`plan_path`を全て渡す。
+各値は元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、原文正本IDごとの累積確認レコード、
 出所と引用範囲付きの逐語回答又は保存TBD、初回起動と同じ計画ファイルの絶対パスに対応させる。
 
 初回起動文には次の絶対パスと値だけを渡す。
@@ -68,6 +70,8 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 この再開では既存TBDと`blocked`状態の照合だけを行い、`agent-toolkit:add-feedback`によるTBD再投入、
 `atk mq set-dependencies`による再依存と`atk mq return-to-inbox`による再inboxを実行しない。
 既存TBD又は`blocked`状態を照合できない場合は新しい識別子を起動せず失敗として返す。
+保存済みの不採用確認用TBDを受領した再開の工程が照合後に失敗した場合も、既存の確認TBDを同じ依存として保持する。
+新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持した失敗を返す。
 保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
 採用項目内で既存の許可条件と明文化済み方針により確定できる利用者判断事項は、
 `feedbacks-planner`の起草担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定する。
@@ -79,7 +83,7 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 
 完了報告の`status`を最初に確認する。`awaiting_confirmation`は確認待ちであり、`needs_escalation`の失敗経路より先に
 上記の新規起動経路へ渡す。
-`awaiting_confirmation`では`confirmation_context`の元の調査結果全文、raw source、`user_decisions`原文、回答又はTBD、
+`awaiting_confirmation`では`confirmation_context`の元の調査結果全文、raw source、原文正本IDごとの累積`user_decisions`、回答又はTBD、
 同じ計画ファイルの絶対パスを照合する。計画ファイルの起草とレビューは新規起動後に検収する。
 完了報告を次の実体へ照合する。
 
@@ -110,7 +114,9 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 通常の将来判断TBDでは、暫定判断の内容、根拠、回答後に必要な追随作業、検証をTBD本文へ残し、将来の専用処理経路又は
 利用者が参照する情報とする。これらの情報を自動追随・自動再開・自動実行の契機としない。
 
-`awaiting_confirmation`を処理した後、`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で1件保存する。
+保存済みの不採用確認用TBDを受領した再開での失敗は、一般の失敗処理より先に専用経路で扱う。既存の確認TBDを同じ依存として保持し、
+新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
+それ以外の`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で1件保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
@@ -126,7 +132,8 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 
 `feedbacks-planner`の完了後は項目別結果をファイル名昇順で各1回反映する。
 保存済みの不採用確認用TBDを受領して再開した項目は、既存TBDの保存内容と元項目の`blocked`状態を照合済みであるため、結果反映時の失敗処理対象から除外する。
-この項目では失敗TBDの再投入、`atk mq set-dependencies`による再依存、`atk mq return-to-inbox`による再inboxとrejectを実行せず、保持済みの結果を反映して次の項目へ進む。
+この項目では保持済みの確認TBDを同じ依存として維持し、失敗TBDの再投入と新しい失敗TBDの作成をしない。
+`atk mq set-dependencies`による再依存、`atk mq return-to-inbox`による再inboxとrejectを実行せず、保持済みの結果を反映して次の項目へ進む。
 各結果反映コマンドが警告・エラーを返した場合は、同じ結果を再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
 意図した保存後状態を確認できた場合は同じ結果を再実行せず次のファイル名へ進む。

@@ -51,9 +51,11 @@ TBDへ永続化して暫定判断で進める。
 同じ`feedbacks-planner`系列（同じバッチと計画）の新しい識別子を起動し、当該項目の採否を確定する。
 回答が得られない場合は同じ質問内容を不採用確認用TBDへ保存して保留し、回答を得られずTBDを確認できない状態ではrejectしない。
 保留確認後は、停止済みの識別子へ継続せず、保留結果を渡して同じ系列の新しい`feedbacks-planner`識別子を起動する。
+確認待ちを複数サイクルで処理する場合、`user_decisions`は現在の未解決項目だけへ置き換えず、原文正本IDごとの累積レコードとして渡す。
+各レコードは`id`、`raw`、`question`、`answer_or_tbd`と`unanswered`を保持し、新しい回答・TBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
 初回起動には再開コンテキストを渡さない。
-`awaiting_confirmation`後の再開起動だけは、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、`user_decisions`の原文、
-出所と引用範囲付きの逐語回答又は保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
+`awaiting_confirmation`後の再開起動だけは、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、IDごとの累積`user_decisions`、
+出所と引用範囲付きの逐語回答・保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
 保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
 部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲及び理由を採否記録へ残す。起草担当又は実行主体へはバッチ全項目を渡し、
 実施内容へは採用又は部分採用の採用範囲だけを反映する。
@@ -99,14 +101,18 @@ Claude Codeホストの通常型で`feedbacks-planner`から`status: awaiting_co
 既存TBDと`blocked`状態の照合以外の汎用保留処理を実行せず、`agent-toolkit:add-feedback`によるTBD再投入、`atk mq set-dependencies`による再依存、
 `atk mq return-to-inbox`による再inboxを実行しない。
 照合できない場合は新しい識別子を起動せず、失敗として返す。
-`awaiting_confirmation`後の再開起動には元の全調査結果、原文frontmatterの`source`原値、`user_decisions`原文、逐語回答又は保存TBD及び同じ計画ファイルの絶対パスを含める。
+保存済みの不採用確認用TBDを受領した再開の工程が照合後に失敗した場合も、既存の確認TBDを同じ依存として保持する。
+新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持した失敗を返す。
+`awaiting_confirmation`後の再開起動には元の全調査結果、原文frontmatterの`source`原値、IDごとの累積`user_decisions`、逐語回答又は保存TBD及び同じ計画ファイルの絶対パスを含める。
 保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、元項目を保留する。
 
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
 
 `status: awaiting_confirmation`は上記の確認待ち経路で処理し、失敗TBDを作成しない。
-`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で保存する。
+ただし保存済みの不採用確認用TBDを受領した再開で失敗した項目は、既存の確認TBDを同じ依存として保持する専用経路を先に適用する。
+この経路では新しい失敗TBD、再依存及び再inboxを作成又は実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
+それ以外の`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
@@ -122,6 +128,7 @@ Claude Codeホストの通常型で`feedbacks-planner`から`status: awaiting_co
 結果反映コマンドが警告・エラーを返した場合は、同じコマンドを再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
 意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認及び由来に応じた終端処置を各1回実行する。`source: session-review`と確認できる項目はrejectで終端し、それ以外の項目は`references/hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。後者では不採用確認を経ずに元のフィードバックをrejectしない。
+保存済みの不採用確認用TBDを受領して再開した項目で結果反映が失敗した場合は、保持済みの確認TBDを同じ依存として残し、新しい失敗TBDを作成しない。
 再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目を各1回処理し、全件走査後に警告・エラーが1件でもあればバッチを失敗として返す。
 

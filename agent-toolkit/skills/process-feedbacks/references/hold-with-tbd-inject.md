@@ -14,10 +14,12 @@
 inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了する。回答を得られず、TBDの保存・依存設定を確認できない場合は
 元項目をrejectせずactiveのまま保持して失敗を返す。通常型の`feedbacks-planner`から受領した項目では、停止済みの識別子へ継続せず、
 保留結果を同じ`feedbacks-planner`系列の新しい識別子へ渡す。
-初回起動には再開コンテキストを含めず、`awaiting_confirmation`後の再開起動へ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、
-`user_decisions`原文、出所と引用範囲付きの逐語回答又は保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
+初回起動には再開コンテキストを含めない。`awaiting_confirmation`後の再開起動へ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、
+原文正本IDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答・保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
+確認待ちを複数サイクルで処理する場合、`user_decisions`は現在の未解決項目だけへ置き換えず、原文正本IDごとの累積レコードとして渡す。
+各レコードは`id`、`raw`、`question`、`answer_or_tbd`と`unanswered`を保持し、新しい回答・TBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
 保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
-部分採用にはこの確認を機械的に適用せず、原文との差異、採用範囲、除外範囲及び理由を採否記録へ残す。
+部分採用にはこの確認を機械的に適用せず、原文との差異、採用範囲、除外範囲と理由を採否記録へ残す。
 
 保存済みの不採用確認用TBDを確認待ち再開の入力として受領した場合は、
 `atk mq show <TBD filename> --target-repo=<repo-path> --skip-pull`で既存TBDを照合する。
@@ -25,6 +27,8 @@ inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了す
 この再開では、初回保留で完了した`agent-toolkit:add-feedback`によるTBD再投入、`atk mq set-dependencies`による再依存及び`atk mq return-to-inbox`による再inboxを実行しない。
 既存TBD又は`blocked`状態を照合できない場合は、保留結果を新しい`feedbacks-planner`識別子へ渡さず失敗として返す。
 この場合は後述の汎用保留処理を適用しない。
+保存済みの不採用確認用TBDを受領した再開の工程が照合後に失敗した場合も、既存の確認TBDを同じ依存として保持する。
+新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持した失敗を返す。
 
 既存の未回答TBDへ観測を追記する場合、`atk mq edit <TBD filename> "<本文>"`へは質問本文だけを渡す。
 `## 質問`と`## 回答`以降を含めず、質問本文内の`## 回答方法`は保持する。
@@ -45,6 +49,9 @@ inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了す
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
 
 ## 技術的失敗
+
+保存済みの不採用確認用TBDを受領した再開での失敗は、以下の汎用的な失敗TBD処理より先に扱う。既存の確認TBDを同じ依存として保持し、
+新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
 
 `source: session-review`と確認できない項目で、`feedbacks-planner`の失敗又は結果反映の失敗により失敗TBDを保存した場合は、元項目をrejectせず、失敗TBDを元項目の依存へ追加して保留する。失敗TBDの保存結果を確認した後、現行の有効依存を復元して失敗TBDのファイル名を追加し、`atk mq set-dependencies`の保存結果で全依存を照合する。
 

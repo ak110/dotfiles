@@ -1819,6 +1819,42 @@ def test_saved_confirmation_tbd_reentry_only_verifies_existing_state() -> None:
         assert "atk mq list --status=active --target-repo=<repo-path>" in document
 
 
+def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dependency() -> None:
+    """確認サイクルをまたぐID別記録と保存済み確認TBDの依存保持を同期する。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+
+    for document in (planner, process, reception, decision, hold, checklist, concepts, design):
+        assert "原文正本IDごとの累積" in document
+        for field in ("`raw`", "`question`", "`answer_or_tbd`", "`unanswered`"):
+            assert field in document
+        assert "過去の確認サイクルのレコードを削除又は上書きしない" in document
+
+    output = _h2_section(planner, "出力")
+    for field in ("id:", "raw:", "question:", "answer_or_tbd:", "unanswered:"):
+        assert field in output
+
+    for document in (planner, process, reception, decision, hold, concepts, design):
+        assert "同じ依存として保持" in document
+        assert "新しい失敗TBDを作成しない" in document
+
+    process_saved_failure = process.index("保存済みの不採用確認用TBDを受領した再開で失敗した項目")
+    process_generic_failure = process.index("それ以外の`feedbacks-planner`の失敗", process_saved_failure)
+    assert process_saved_failure < process_generic_failure
+    reception_saved_failure = reception.index("保存済みの不採用確認用TBDを受領した再開での失敗")
+    reception_generic_failure = reception.index("それ以外の`feedbacks-planner`の失敗", reception_saved_failure)
+    assert reception_saved_failure < reception_generic_failure
+    hold_saved_failure = hold.index("保存済みの不採用確認用TBDを受領した再開での失敗")
+    hold_generic_failure = hold.index("`source: session-review`と確認できない項目で", hold_saved_failure)
+    assert hold_saved_failure < hold_generic_failure
+
+
 def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:
     """フィードバック処理の各入口で最初の委譲前に委譲スキルを起動する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
