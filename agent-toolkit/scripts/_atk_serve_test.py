@@ -590,10 +590,16 @@ def test_assets_render_all_frontmatter_without_repeating_detail_badges() -> None
 displayEntry({
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
   target_repo: 'legacy/repo', source: 'legacy',
-  frontmatter: {
-    type: 'feedback', target_repo: 'example/repo', source: 'web', priority: 'high',
-    nested: {branch: 'main', flags: ['x']}, values: ['one', {enabled: true}],
-  }, body_html: '<p>本文</p>'
+  frontmatter_entries: [
+    {key: {type: 'str', value: 'type'}, value: 'feedback'},
+    {key: {type: 'str', value: 'target_repo'}, value: 'example/repo'},
+    {key: {type: 'str', value: 'source'}, value: 'web'},
+    {key: {type: 'str', value: 'priority'}, value: 'high'},
+    {key: {type: 'int', value: 1}, value: 'numeric'},
+    {key: {type: 'str', value: '1'}, value: 'textual'},
+    {key: {type: 'str', value: 'nested'}, value: {branch: 'main', flags: ['x']}},
+    {key: {type: 'str', value: 'values'}, value: ['one', {enabled: true}]},
+  ], body_html: '<p>本文</p>'
 });
 const items = elements['detail-metadata'].children.map(item => ({
   label: item.children[0].textContent,
@@ -608,16 +614,20 @@ process.stdout.write(JSON.stringify({items, heading: elements['detail-state'].te
         "対象リポジトリ",
         "投入元",
         "priority",
+        "int: 1",
+        "1",
         "nested",
         "values",
         "更新日時",
     ]
-    assert [item["className"] for item in result["items"]] == ["metadata-item"] * 6
+    assert [item["className"] for item in result["items"]] == ["metadata-item"] * 8
     assert result["items"][0]["value"] == "example/repo"
     assert result["items"][1]["value"] == "web"
     assert result["items"][2]["value"] == "high"
-    assert result["items"][3]["value"] == '{\n  "branch": "main",\n  "flags": [\n    "x"\n  ]\n}'
-    assert result["items"][4]["value"] == '[\n  "one",\n  {\n    "enabled": true\n  }\n]'
+    assert result["items"][3]["value"] == "numeric"
+    assert result["items"][4]["value"] == "textual"
+    assert result["items"][5]["value"] == '{\n  "branch": "main",\n  "flags": [\n    "x"\n  ]\n}'
+    assert result["items"][6]["value"] == '[\n  "one",\n  {\n    "enabled": true\n  }\n]'
     assert all("[object Object]" not in item["value"] for item in result["items"])
 
 
@@ -2194,6 +2204,12 @@ async def test_detail_api_preserves_frontmatter_order_cycles_and_mapping_keys(tm
     payload = json.loads(await response.get_data())
     frontmatter = payload["entry"]["frontmatter"]
     assert list(frontmatter) == ["type", "z_key", "a_key", "m_key", "queue_schedule"]
+    assert payload["entry"]["frontmatter_entries"][:4] == [
+        {"key": {"type": "str", "value": "type"}, "value": "feedback"},
+        {"key": {"type": "str", "value": "z_key"}, "value": "z"},
+        {"key": {"type": "str", "value": "a_key"}, "value": "a"},
+        {"key": {"type": "str", "value": "m_key"}, "value": "m"},
+    ]
     assert frontmatter["queue_schedule"] == {
         "__mapping__": [
             {"key": {"type": "int", "value": 1}, "value": "numeric"},
@@ -2204,6 +2220,52 @@ async def test_detail_api_preserves_frontmatter_order_cycles_and_mapping_keys(tm
             },
         ]
     }
+
+
+@pytest.mark.asyncio
+async def test_detail_api_preserves_top_level_key_types_and_order(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """詳細HTTP APIは整数形式キーを含むトップレベル項目の型と挿入順を保持する。"""
+    _write_detail_entry(
+        tmp_path,
+        "---\ntype: feedback\nz_key: z\na_key: a\n---\n\n本文\n",
+    )
+
+    original_parse = serve_app.frontmatter.parse_frontmatter
+
+    def parse_with_integer_key(text: str) -> tuple[dict[typing.Any, typing.Any], str] | None:
+        parsed = original_parse(text)
+        if parsed is None:
+            return None
+        metadata, body = parsed
+        enriched: dict[typing.Any, typing.Any] = {}
+        for key, value in metadata.items():
+            enriched[key] = value
+            if key == "z_key":
+                enriched[1] = "numeric"
+                enriched["1"] = "textual"
+        return enriched, body
+
+    monkeypatch.setattr(serve_app.frontmatter, "parse_frontmatter", parse_with_integer_key)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().get("/api/entries/inbox/entry.md")
+
+    assert response.status_code == 200
+    payload = json.loads(await response.get_data())
+    assert payload["entry"]["frontmatter_entries"] == [
+        {"key": {"type": "str", "value": "type"}, "value": "feedback"},
+        {"key": {"type": "str", "value": "z_key"}, "value": "z"},
+        {"key": {"type": "int", "value": 1}, "value": "numeric"},
+        {"key": {"type": "str", "value": "1"}, "value": "textual"},
+        {"key": {"type": "str", "value": "a_key"}, "value": "a"},
+    ]
 
 
 def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:

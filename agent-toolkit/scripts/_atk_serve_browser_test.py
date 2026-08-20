@@ -235,6 +235,7 @@ def _write_entries(root: Path) -> None:
     long_body = "\n\n".join(f"段落{i} `inline-{i}`" for i in range(80))
     (inbox / "question.md").write_text(
         "---\ntype: tbd\ntarget_repo: example/repo\nsource: browser\npriority: high\n"
+        "z_key: z\na_key: a\n"
         "metadata:\n  branch: main\n  flags:\n    - one\nquestion_type: choice\nchoices: A, B\n---\n\n"
         f"## 質問\n\n{long_body}\n\n```text\n折り返す長いコード {'x' * 240}\n```\n\n"
         "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n",
@@ -257,8 +258,27 @@ def _write_entries(root: Path) -> None:
 
 
 @pytest_asyncio.fixture(name="browser_harness")
-async def _browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_BrowserHarness]:
+async def _browser_harness_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncGenerator[_BrowserHarness]:
     _write_entries(tmp_path)
+    original_parse = serve_app.frontmatter.parse_frontmatter
+
+    def parse_with_integer_key(text: str) -> tuple[dict[Any, Any], str] | None:
+        parsed = original_parse(text)
+        if parsed is None or "priority: high\n" not in text:
+            return parsed
+        metadata, body = parsed
+        enriched: dict[Any, Any] = {}
+        for key, value in metadata.items():
+            enriched[key] = value
+            if key == "z_key":
+                enriched[1] = "numeric"
+                enriched["1"] = "textual"
+        return enriched, body
+
+    monkeypatch.setattr(serve_app.frontmatter, "parse_frontmatter", parse_with_integer_key)
     current_state = serve_state.ServeState(tmp_path)
     operations = _BrowserOperations(tmp_path)
     app = serve_app.create_app(
@@ -325,6 +345,10 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
         dialog = page.get_by_role("dialog", name="詳細")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text("priority")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text('"branch": "main"')
+        metadata_labels = await dialog.locator("#detail-metadata dt").all_text_contents()
+        assert metadata_labels.index("z_key") < metadata_labels.index("int: 1")
+        assert metadata_labels.index("int: 1") < metadata_labels.index("1")
+        assert metadata_labels.index("1") < metadata_labels.index("a_key")
         metadata_columns = await dialog.locator("#detail-metadata").evaluate(
             "element => getComputedStyle(element).gridTemplateColumns.trim().split(/\\s+/).length"
         )

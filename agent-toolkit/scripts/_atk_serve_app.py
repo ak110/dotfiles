@@ -230,6 +230,26 @@ def _json_compatible(value: typing.Any, active_ids: set[int] | None = None) -> t
     return str(value)
 
 
+def _json_compatible_mapping_entries(
+    value: collections.abc.Mapping[typing.Any, typing.Any],
+) -> list[dict[str, typing.Any]]:
+    """マッピングの挿入順とキー型を保持したJSON互換のentry列へ変換する。"""
+    active = {id(value)}
+    try:
+        return [
+            {
+                "key": {
+                    "type": type(key).__name__,
+                    "value": _json_compatible(key, active),
+                },
+                "value": _json_compatible(item, active),
+            }
+            for key, item in value.items()
+        ]
+    finally:
+        active.remove(id(value))
+
+
 def _render_frontmatter_table(metadata: dict[str, typing.Any]) -> str:
     """解析済みfrontmatterをキーと値の2列表のHTMLへ整形する。
 
@@ -444,6 +464,9 @@ class Operations:
                 "content_html": _render_content(text),
                 "body_html": _render_body(text),
                 "frontmatter": _json_compatible(metadata),
+                "frontmatter_entries": (
+                    _json_compatible_mapping_entries(metadata) if isinstance(metadata, collections.abc.Mapping) else []
+                ),
                 "question_type": question_type,
                 "choices": choices,
                 "answer": _tbd_answer(text, kind or "unknown"),
