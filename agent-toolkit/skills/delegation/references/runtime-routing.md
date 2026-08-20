@@ -9,9 +9,10 @@
 - Codex App Server MCPを利用できるClaude Code環境では、ToolSearchで5つの実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`codex_start(prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`model`と`effort`は両方指定するか、両方省略する
   - `approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`はMCPサーバーが固定してApp Serverへ渡す。呼び出し側は値を上書きしない
-  - `codex_status`または`codex_wait`で進捗を観測し、`codex_result`で終端結果を回収する。状態応答の`result_available`で結果回収可否を確認する。`codex_wait`は公開terminal statusになるまで待機し、既定timeoutは300秒である
-  - `codex_wait`が`status=failed`かつ`result_available=false`を返した場合は`turn/completed`未受信であるため、`codex_result`を実行せず、`result_available=true`を確認してから再実行する
-  - 継続は先行turnの`codex_result`回収後に`codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する。結果未回収の間はStopを許可しない
+  - `codex_status`または`codex_wait`で進捗を観測し、`codex_result`で終端結果を回収する。`codex_wait`の既定timeoutは300秒である
+  - Codexは先行turnの`codex_result`回収後に`codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する
+  - `execute_fast_model`又は`execute_fix_model`を適用する書込担当は毎回新規threadで起動する
+  - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
 - Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える
 - 専用定義もCodex経路も利用できない場合だけ汎用Agentを使う
@@ -26,29 +27,30 @@
 | `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex App Server MCP | Agentツール |
-| `execute_model` | 実装担当と統合後のレビュー修正の書込担当。CI失敗修正では、原因分析で修正commitが必要と確定した場合に呼び出し元が起動直前に解決する書込担当 | 実装担当と統合後のレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex App Server MCP | Agentツール |
+| `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
+| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、通常・統合後レビュー修正、CI失敗修正 | 同一失敗箇所の引継ぎとレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex App Server MCP | Agentツール |
 | `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
 | `merge_model` | レーンのcommitの適用、競合解消、履歴一本化、検証 | 統合担当を委譲する`process-feedbacks`の実行主体 | Codex App Server MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
-上表の全キーの未設定時の実効値は`codex:gpt-5.6-sol/medium`とし、effort省略時は`medium`とする。
+上表の未設定時の実効値は、`execute_fast_model`が`codex:gpt-5.6-luna/max`、その他のキーが`codex:gpt-5.6-sol/medium`とする。effort省略時は`medium`とする。
 モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ警告を表示するが、新モデルの利用を妨げないため受理する。
 
 1. 設定値を`engine`、`model`、`effort`へ分解する。
-2. `engine=codex`ではCodex App Server MCPを使う。`codex_start`へ`model`と`effort`を両方渡し、開始後は`codex_status`・`codex_wait`で状態を観測し、`result_available=true`を確認してから`codex_result`で結果を回収する。
-   `codex_wait`は公開terminal statusで復帰する。`status=failed`でも`result_available=false`なら`turn/completed`未受信のため`codex_result`が拒否される。
+2. `engine=codex`ではCodex App Server MCPを使う。`codex_start`へ`model`と`effort`を両方渡し、開始後は`codex_status`・`codex_wait`・`codex_result`で状態と結果を回収する。
    agents定義の`tools`で5つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
-5. `execute_fast_model`から`execute_fix_model`への引継ぎでは、実効値にかかわらず新規threadを起動する。
-   その他の工程別モデル設定を再取得したCodex経路では、新たに用いる実効`engine`、`model`及び`effort`を、
+5. `execute_fast_model`又は`execute_fix_model`を適用する書込担当は、前の担当の識別子を再利用せず新規threadで起動する。
+   fast担当からfix担当への引継ぎ、別の実装単位、別のレビュー修正及びCI修正は、実効3値が一致しても別の担当として扱う。
+6. Codex経路の継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ使う。
+   継続直前に工程別モデル設定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、
    現在のthreadの起動に用いた実効3値と比較する。
-   3値がすべて一致し、いずれも`engine=codex`の場合だけ、先行turnの`codex_result`回収後に
-   同じ`session_id`へ`codex_start_reply`で継続接続する。
+   3値がすべて一致し、いずれも`engine=codex`の場合だけ同一threadへ継続接続する。
+   Codexは先行turnの`codex_result`回収後に、同じ`session_id`へ`codex_start_reply`で継続接続する。
    いずれかが異なる場合は同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。
-   解決後も`engine=codex`の場合は新規threadを起動する。
    Claudeは完了済み識別子を再利用せず新規起動する。
    計画、進捗ログ、保存済み6列表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
@@ -71,6 +73,14 @@
 代替の判断と起動は委譲を起動した主体が行う。
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
+同じ計画に複数の実装単位がある場合も、`plan-impl-executor`は各単位の最初のfast担当を新規起動する直前に
+`execute_fast_model`を単位ごとに1回解決し、前単位の解決値を再利用しない。
+前の単位と実効3値が一致する場合も、前の担当のthreadを継続せず新規threadを起動する。
+
+`execute_fast_model`から`execute_fix_model`への昇格は、検証コマンドの終了コードだけで判定しない。
+fast担当が修正対象として記録したテストID・診断識別子等が、同じコマンドの直後の再検証にも残った場合だけ、
+fast担当を終端して修正引継ぎ記録を作成し、fix担当へdirtyな同一worktreeを渡す。
+修正対象が解消して別の失敗箇所だけが現れた場合は昇格せず、fast担当が新しい失敗箇所を次の初回修正として扱う。
 
 ## modelとreasoning effort
 
@@ -119,7 +129,8 @@
 ## 書込担当とworktree
 
 - 1つのworktreeへ同時に起動する書込担当は1つだけとする
-- 書込担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する
+- 書込担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
+  ただし、fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す、`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外とする
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない
 - レビュー担当は書込担当の終端後に起動し、相互に独立したレビュー担当は別識別子で並列起動できる

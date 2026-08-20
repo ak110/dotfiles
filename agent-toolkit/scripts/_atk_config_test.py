@@ -3,6 +3,7 @@
 `atk config show`（既定動作）・`get`・`set`の3操作と、XDG関連パスの解決結果を検証する。
 """
 
+import json
 import pathlib
 import sys
 
@@ -40,11 +41,13 @@ class TestConfigShow:
             "pick_feedbacks_model",
             "plan_model",
             "plan_review_model",
-            "execute_model",
             "execute_review_model",
             "merge_model",
         ):
             assert f"{key}: codex:gpt-5.6-sol/medium" in out
+        assert "execute_fast_model: codex:gpt-5.6-luna/max" in out
+        assert "execute_fix_model: codex:gpt-5.6-sol/medium" in out
+        assert "execute_model:" not in out
         assert "orchestrate_model: claude:opus[1m]/medium" in out
         assert "codex_model:" not in out
 
@@ -68,13 +71,22 @@ class TestConfigGet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == f"{tmp_path / 'config'}\n"
 
-    def test_get_stage_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """未設定の工程別モデルは共通の既定値を返す。"""
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            ("execute_fast_model", "codex:gpt-5.6-luna/max"),
+            ("execute_fix_model", "codex:gpt-5.6-sol/medium"),
+        ],
+    )
+    def test_get_execute_model_defaults(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, expected: str
+    ) -> None:
+        """未設定の実装工程モデルはfastとfixで異なる既定値を返す。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "get", "execute_model"], home=tmp_path)
+            atk.main(["config", "get", key], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
+        assert capsys.readouterr().out == f"{expected}\n"
 
     def test_get_orchestrate_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """未設定のオーケストレーター設定はClaude Codeの既定値を返す。"""
@@ -100,11 +112,9 @@ class TestConfigGet:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert not captured.out
-        assert captured.err == (
-            "未知の設定キーです: no-such-key（利用可能: config_dir, data_dir, execute_model, "
-            "execute_review_model, merge_model, orchestrate_model, pick_feedbacks_model, plan_model, plan_review_model, "
-            "private_notes, state_dir）\n"
-        )
+        assert "execute_model" not in captured.err
+        assert "execute_fast_model" in captured.err
+        assert "execute_fix_model" in captured.err
 
     def test_get_known_and_unknown_keys_is_atomic(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """既知キーの間に未知キーがある場合は値を出力せずexit 2とする。"""
@@ -114,36 +124,129 @@ class TestConfigGet:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert not captured.out
-        assert captured.err == (
-            "未知の設定キーです: no-such-key（利用可能: config_dir, data_dir, execute_model, "
-            "execute_review_model, merge_model, orchestrate_model, pick_feedbacks_model, plan_model, plan_review_model, "
-            "private_notes, state_dir）\n"
-        )
+        assert "execute_model" not in captured.err
+        assert "execute_fast_model" in captured.err
+        assert "execute_fix_model" in captured.err
 
 
 class TestConfigSet:
     """`atk config set`の変更可能設定更新を検証する。"""
 
+    @pytest.mark.parametrize("key", ["execute_fast_model", "execute_fix_model"])
     @pytest.mark.parametrize("value", ["codex:gpt-5.6-sol/medium", "claude:sonnet", "claude:opus/high"])
     def test_set_stage_model_persists_and_is_read_back(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], value: str
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, value: str
     ) -> None:
         """正しい工程別モデル値を永続化し、以降の`get`へ反映する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "set", "execute_model", value], home=tmp_path)
+            atk.main(["config", "set", key, value], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"設定を更新しました: execute_model={value}" in captured.out
+        assert f"設定を更新しました: {key}={value}" in captured.out
         assert not captured.err
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "get", "execute_model"], home=tmp_path)
+            atk.main(["config", "get", key], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == f"{value}\n"
 
         config_file = tmp_path / "config" / "config.json"
         assert config_file.exists()
         assert value in config_file.read_text(encoding="utf-8")
+
+    def test_legacy_execute_model_is_rejected(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """旧`execute_model`は公開設定キーとして変更できない。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "execute_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "変更できない設定キーです: execute_model" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        ("stored", "expected_fast", "expected_fix"),
+        [
+            ({"execute_model": "claude:sonnet/high"}, "claude:sonnet/high", "claude:sonnet/high"),
+            (
+                {"execute_model": "claude:sonnet/high", "execute_fast_model": "codex:gpt-5.6-luna/max"},
+                "codex:gpt-5.6-luna/max",
+                "claude:sonnet/high",
+            ),
+            (
+                {"execute_model": "claude:sonnet/high", "execute_fix_model": "codex:gpt-5.6-sol/medium"},
+                "claude:sonnet/high",
+                "codex:gpt-5.6-sol/medium",
+            ),
+            (
+                {
+                    "execute_model": "claude:sonnet/high",
+                    "execute_fast_model": "codex:gpt-5.6-luna/max",
+                    "execute_fix_model": "codex:gpt-5.6-sol/medium",
+                },
+                "codex:gpt-5.6-luna/max",
+                "codex:gpt-5.6-sol/medium",
+            ),
+        ],
+    )
+    def test_legacy_execute_model_is_lazily_migrated_with_new_key_precedence(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        stored: dict[str, str],
+        expected_fast: str,
+        expected_fix: str,
+    ) -> None:
+        """旧キーは読み取り時に新2キーへ補い、新キーの明示値を優先する。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps(stored) + "\n", encoding="utf-8")
+        original = config_file.read_text(encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "execute_fast_model", "execute_fix_model"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{expected_fast}\n{expected_fix}\n"
+        assert config_file.read_text(encoding="utf-8") == original
+
+    def test_next_set_persists_resolved_new_keys_and_removes_legacy_key(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """次回の設定保存時に旧キーを除き、解決済みの新2キーを永続化する。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(
+            json.dumps({"execute_model": "claude:sonnet/high", "other_setting": "keep"}) + "\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", "codex:gpt-5.6-terra/medium"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not capsys.readouterr().err
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["execute_fast_model"] == "claude:sonnet/high"
+        assert saved["execute_fix_model"] == "claude:sonnet/high"
+        assert "execute_model" not in saved
+        assert saved["other_setting"] == "keep"
+        assert "pick_feedbacks_model" not in saved
+        assert "execute_review_model" not in saved
+
+    def test_set_preserves_unconfigured_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """旧キーがない設定保存では、未設定の既定値を永続化しない。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps({"other_setting": "keep"}) + "\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", "codex:gpt-5.6-terra/medium"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not capsys.readouterr().err
+        assert json.loads(config_file.read_text(encoding="utf-8")) == {
+            "other_setting": "keep",
+            "plan_model": "codex:gpt-5.6-terra/medium",
+        }
 
     def test_set_orchestrate_model_persists_and_is_read_back(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -165,16 +268,16 @@ class TestConfigSet:
     def test_set_unknown_model_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """参考一覧に無いモデル名は警告を表示したうえで受理し、永続化する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "set", "execute_model", "claude:fable"], home=tmp_path)
+            atk.main(["config", "set", "execute_fast_model", "claude:fable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "設定を更新しました: execute_model=claude:fable" in captured.out
+        assert "設定を更新しました: execute_fast_model=claude:fable" in captured.out
         assert "警告: モデル名`fable`は主に使うモデルの一覧" in captured.err
         assert "利用可否は実行時に各engineが判定します" in captured.err
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "get", "execute_model"], home=tmp_path)
+            atk.main(["config", "get", "execute_fast_model"], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == "claude:fable\n"
 

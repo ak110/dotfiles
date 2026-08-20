@@ -18,6 +18,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_mq_common as common  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
@@ -2419,6 +2420,229 @@ class TestStartProcessingMultiple:
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: start processing 2 entries" in commit_cmds[0]
+
+    def test_mixed_target_repo_rejects_entire_batch_before_moving(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """集合内の1件でも`target_repo`が異なる場合は一括移動を開始しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "start-processing",
+                    "fb-001.md",
+                    "fb-002.md",
+                    "--target-repo",
+                    "github.com/example/foo",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "inbox" / "fb-002.md").exists()
+        assert not (notes / "processing" / "fb-001.md").exists()
+        assert not (notes / "processing" / "fb-002.md").exists()
+
+    def test_missing_member_rejects_entire_batch_before_moving(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """集合内の1件でもinboxに存在しない場合は適合項目も移動しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "start-processing", "fb-001.md", "missing.md", "--target-repo", "github.com/example/foo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert (notes / "inbox" / "fb-001.md").exists()
+        assert not (notes / "processing" / "fb-001.md").exists()
+
+    @pytest.mark.parametrize(
+        ("invalid_frontmatter", "target_args"),
+        [
+            (
+                "type: [\ntarget_repo: github.com/example/foo",
+                ["--target-repo", "github.com/example/foo"],
+            ),
+            (
+                "target_repo: github.com/example/foo",
+                ["--target-repo", "github.com/example/foo"],
+            ),
+            ("type: feedback", []),
+            (
+                "type: unknown\ntarget_repo: github.com/example/foo",
+                ["--target-repo", "github.com/example/foo"],
+            ),
+        ],
+        ids=["malformed", "missing-type", "missing-target-repo", "invalid-type"],
+    )
+    def test_invalid_frontmatter_rejects_entire_batch_before_moving(
+        self,
+        invalid_frontmatter: str,
+        target_args: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """集合内の1件で必須frontmatterが不正な場合は適合項目も移動しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        (notes / "inbox" / "fb-002.md").write_text(
+            f"---\n{invalid_frontmatter}\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "start-processing",
+                    "fb-001.md",
+                    "fb-002.md",
+                    *target_args,
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "inbox" / "fb-002.md").exists()
+        assert not (notes / "processing" / "fb-001.md").exists()
+        assert not (notes / "processing" / "fb-002.md").exists()
+
+
+class TestStartProcessingFailureBoundaries:
+    """一括移動後のcommit・push失敗と限定復旧の境界を検証する。"""
+
+    def test_commit_failure_leaves_only_requested_moves_and_commit_recovers_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """commit前失敗後は指定移動だけを`atk mq commit`で1回復旧できる。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
+        monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+        monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+        transition_calls: list[str] = []
+
+        def fail_commit(*_args: object, **_kwargs: object) -> None:
+            transition_calls.append("transition")
+            raise subprocess.CalledProcessError(1, ["git", "commit"])
+
+        monkeypatch.setattr(mutations, "_commit_and_push", fail_commit)
+        with pytest.raises(subprocess.CalledProcessError):
+            mutations.transition_entries(
+                notes,
+                action="start-processing",
+                filenames=["fb-001.md", "fb-002.md"],
+                target_repo="github.com/example/foo",
+                now=_FIXED_DT,
+            )
+
+        assert transition_calls == ["transition"]
+        assert sorted(path.name for path in (notes / "processing").iterdir()) == ["fb-001.md", "fb-002.md"]
+        assert not list((notes / "inbox").iterdir())
+
+        status_outputs = [" M processing/fb-001.md\n M processing/fb-002.md\n", ""]
+        recovery_calls: list[tuple[object, ...]] = []
+
+        def fake_status(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            assert cmd[:3] == ["git", "status", "--porcelain"]
+            return subprocess.CompletedProcess(cmd, 0, status_outputs.pop(0), "")
+
+        def recover_commit(*args: object, **_kwargs: object) -> None:
+            recovery_calls.append(args)
+
+        monkeypatch.setattr(subprocess, "run", fake_status)
+        monkeypatch.setattr(mutations, "_commit_and_push", recover_commit)
+        assert mutations.commit_entries(notes) is True
+        assert mutations.commit_entries(notes) is False
+        assert len(recovery_calls) == 1
+
+    def test_push_failure_after_transition_commit_is_not_success(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """遷移commit後のpush失敗はcleanな未pushcommitを残し、完了扱いしない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
+        for state in ("processing", "adopted", "rejected"):
+            (notes / state).mkdir()
+        subprocess.run(["git", "init", "--initial-branch=main"], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "add", "."], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "commit", "-m", "base"], cwd=notes, capture_output=True, text=True, check=True)
+        remote = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=main", str(remote)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "push", "--set-upstream", "origin", "main"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+        before_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        calls: list[str] = []
+
+        def fail_push(_path: pathlib.Path) -> None:
+            calls.append("push")
+            raise subprocess.CalledProcessError(1, ["git", "push"])
+
+        monkeypatch.setattr(common, "_push_pending_commits", fail_push)
+        with pytest.raises(subprocess.CalledProcessError) as exc_info:
+            mutations.transition_entries(
+                notes,
+                action="start-processing",
+                filenames=["fb-001.md", "fb-002.md"],
+                target_repo="github.com/example/foo",
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.cmd == ["git", "push"]
+        assert calls == ["push"]
+        assert sorted(path.name for path in (notes / "processing").iterdir()) == ["fb-001.md", "fb-002.md"]
+        assert not list((notes / "inbox").iterdir())
+        after_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        assert after_head != before_head
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=notes, capture_output=True, text=True, check=True)
+        assert status.stdout == ""
+        upstream_check = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", after_head, "@{u}"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert upstream_check.returncode != 0
 
 
 class TestStartProcessingMissing:

@@ -18,7 +18,8 @@ user-invocable: false
 
 # plan-impl-executor
 
-承認済み計画のコミット単位を1つの書込担当へ同じworktreeで順次割り当てよ。
+承認済み計画のコミット単位を同じworktreeへ順次割り当て、同時に1つの書込担当だけを置け。
+fast担当の終端確認後に同一失敗箇所が残る場合だけ、fix担当へdirty差分を逐次引き継げ。
 異なる計画ファイルのレーン（1つの計画ファイル専用のworktreeと書込担当で構成する並列実装の単位）だけを別worktreeで並列に扱える。
 最終差分は独立した二系統のレビュー担当へ割り当てよ。
 実装タスク文書、作成規範スキル、レビュータスク文書は読み込まず、絶対パスを各受信者へ渡せ。
@@ -68,26 +69,49 @@ worktreeと管理対象領域を作成・回収しない。
 2. 渡されたworktree一覧を計画の単位、共通のベースコミット、実装順と照合し、同じ計画の全単位を実装するレーンのworktreeを1つ確定する。
    `管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`の組だけを借用worktreeとして受理する。
    `作成主体=caller`、`回収可否=可`の組では管理対象領域の絶対パスを必須とし、その他の組合せは受理しない。
-   一覧にないworktreeを補完または作成せず、全単位を確定した同じレーンのworktreeの1つの書込担当へ割り当てる。
-   依存する単位は、先行commitが同worktreeのHEADを進めた後に同じ書込担当へ逐次割り当てる。
+   一覧にないworktreeを補完または作成せず、全単位を確定した同じレーンのworktreeへ、同時に1つの書込担当だけを順次割り当てる。
+   依存する単位は、先行commitが同worktreeのHEADを進めた後に後続の新規書込担当へ逐次割り当てる。
    最初の書込担当の起動前にレーンのworktreeのclean状態とHEADの完全OIDを検収し、通常モードの公開契約基準として保持する
-3. 各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行し、
-   `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
+3. 各実装単位を依存順に1件ずつ処理し、各単位の最初のfast担当を新規起動する直前に
+   `atk config get execute_fast_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従ってfast経路を解決する。
+   複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する。
+   前の単位の実効値と一致する場合も前の担当のthreadを継続せず、検収済みの先行commit、検証結果及び未完了の実装単位を渡して新規threadを起動する。
    書込担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex App Server MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名とeffortを契約どおり渡す。
-   書込担当へ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
-   プロジェクト規範、該当する作成規範スキルの絶対パス、その単位の識別、目的及び変更説明だけとする。
+   書込担当へ`skills/plan-mode/references/implementation-task.md`、計画ファイル、対象worktree、プロジェクト規範の絶対パス、
+   実装するコミット単位、その目的及び変更説明、適用する作成規範スキル名と絶対パス、
+   1件以上のソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
+   git操作に用いるworktree絶対パス、複製元と対象外worktree及びgit操作の制約を渡す。
+   起動文へ担当種別を`fast担当`として明示する
    同じ計画ファイルの書込担当は依存順に1件ずつ起動する
-4. 各書込担当の完了後にcommit、差分、検証、cleanな作業ツリーを実測する。
+   fast担当は初回実装と近接検証を行い、検証コマンドが失敗した場合はテストID・診断識別子等で失敗箇所を記録し、
+   原因を修正して同じコマンドを直後に1回再実行する。修正対象が解消して別の失敗箇所だけが現れた場合は
+   昇格せず、fast担当が新しい失敗箇所を初回修正として扱う
+4. fast担当から`status: fast_fix_handoff`を受領した場合だけ、fast担当へ追加修正とcommitをさせず終端させる。
+   `repair_handoff`の`failure_location`、`failed_command`、`verification_before`、`verification_after`、`baseline_oid`、
+   `existing_diff`及び`process_termination`を必須入力として検証する。戻り値を受領した後にfast担当のagentの終端を直接確認し、
+   fast担当が起動した全プロセスの終了証跡、
+   起動前の基準OID、未コミット差分、失敗コマンド、修正前後2回の結果及び同一失敗箇所の対応を実測し、すべて一致した場合だけ
+   `atk config get execute_fix_model`を起動直前に実行する。
+   `status: completed`は通常のcommit済み完了として扱い、`status: needs_escalation`又は状態・`repair_handoff`の欠落や不一致は
+   dirty差分をfix担当へ渡さず`needs_escalation`で返す。
+   同一threadを継続せず、新規threadとして、同じworktreeへfix担当を1件だけ逐次起動する。
+   起動文へ`implementation-task.md`の共通必須入力一式（担当種別、計画ファイル、対象worktree、プロジェクト規範の絶対パス）を渡す。
+   実装単位・目的・変更説明、作成規範スキル名と絶対パス、ソート済みフィードバックファイル名一覧、追加指示、許容済み挙動変化、git操作用worktree絶対パス、複製元と対象外worktreeも起動文へ渡す。
+   修正引継ぎ記録（修正対象の失敗箇所、修正前後の検証結果、基準OID、既存差分とfast担当の終端確認）と現行のdirty差分を追加する。
+   担当種別は`fix担当`として明示し、直前に解決した`execute_fix_model`を適用する。
+   このdirty worktreeの引継ぎは同一失敗箇所の残存を観測した実装単位に限る一般的なclean開始契約の例外であり、
+   1つのworktreeへ同時に1つの書込主体だけを置く契約は維持する
+5. 各書込担当の完了後にcommit、差分、検証、cleanな作業ツリーを実測する。
    各単位commitが同じレーンのworktreeの直前に検収したHEADを直接進めたことを確認する。
    各単位後にHEAD、計画ベースからの累積差分、変更説明との一致、追加変更の目的への帰属と必要性、clean状態を照合する。
    HEADが直接進んでいない場合は後続単位を開始せず、実際のcommitとworktreeを`needs_escalation`で返す。
    検収済みの先行commitとworktreeは巻き戻さない
-5. レーンのworktreeとその他の受領済みworktreeは作成・回収しない。
+6. レーンのworktreeとその他の受領済みworktreeは作成・回収しない。
    各worktreeについて、用途、正確な絶対パス、管理対象領域の絶対パス、借用時は`なし`、状態、完全OID、作成主体、回収可否を返す。
    失敗または中断中のworktreeも復旧用に保持し、対象外worktreeを変更しない。
    書込担当の結果は呼び出し元が進捗ログへ反映できる時点で単位ごとに返す
-6. 全単位後にレーンのworktreeの累積差分へ生成同期と最終検証を実測し、同worktreeのHEADを最終レビュー対象とする
+7. 全単位後にレーンのworktreeの累積差分へ生成同期と最終検証を実測し、同worktreeのHEADを最終レビュー対象とする
 
 検収では`git status`、`git diff`、`git log`、commit実体、報告された検証結果、完了条件を読み取り専用で実測する。
 必要な検証の再実行と`check_dash.py`による文書検収は行える。
@@ -112,7 +136,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 ### 共通の最終二系統レビュー
 
-1. 各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`を実行し、
+1. 各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前に`atk config get execute_review_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
    レビュー担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex App Server MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名とeffortを契約どおり渡す。
@@ -148,20 +172,22 @@ worktreeと管理対象領域を作成・回収しない。
 1. 実装担当が終端し、レーンのworktreeがcleanで、HEADがレビュー対象の最終HEADと一致することを実測する
 2. 同worktreeだけへ単一の修正用の書込担当を割り当てる。
    単一単位を同じworktreeで実装した場合も、元の実装担当へ戻さず本項の経路を適用する
-3. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
+3. 修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`を実行して経路を解決する。
    `skills/plan-mode/references/implementation-task.md`、レーンのworktree、対象計画、採用指摘を実装単位とした目的及び変更説明、
    統合した6列表、プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス、
    ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す
+   起動文へ担当種別を`レビュー修正担当`として明示する
 4. 修正用の書込担当の完了と終端を確認し、修正commitがレビュー対象の最終HEADを直接進めたことを確認する。
    当該worktreeのHEAD、修正commit、差分、clean状態、検証結果を実測する
 
 #### 統合後レビュー調整モードのレビュー修正
 
-1. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に
-   `atk config get execute_model`を実行して経路を解決する。
+1. 修正用の書込担当を新規起動する直前に
+   `atk config get execute_fix_model`を実行して経路を解決する。
    修正用の書込担当へ`skills/process-feedbacks/references/merge-task.md`のレビュー修正モード、6列表、
    プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パスを渡す
+   起動文へ担当種別を`レビュー修正担当`として明示する
 
 #### 共通の再検証と収束
 
@@ -182,10 +208,10 @@ worktreeと管理対象領域を作成・回収しない。
 
 1つのworktreeへ割り当てる書込担当は同時に1つだけとし、レビュー担当は読み取り専用とする。
 タスク文書の内容、規範本文、出力書式を起動文へ複製しない。
-継続時は実行系別のライフサイクルに従う。
-`execute_fast_model`から`execute_fix_model`への引継ぎは、実効3値にかかわらず新規threadで起動する。
-その他のCodex継続は`runtime-routing.md`の実効3値一致時だけ同じthreadを継続する。
-不一致時は検収済み状態を渡して解決後のengineで新規起動する。
+fast担当とfix担当は、実効3値にかかわらず担当ごとに新規threadで起動する。
+Codexの継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合に限る。
+継続直前の実効3値が一致する場合だけ同じthreadを継続し、不一致時は検収済み状態を渡して解決後のengineで新規起動する。
+fast担当からfix担当への引継ぎは、fast担当の終端確認後に修正引継ぎ記録とdirty差分を渡す新規threadで実施する。
 Claudeは検収済み状態を渡して新規起動する。
 
 ## 出力

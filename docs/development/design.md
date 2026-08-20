@@ -11,6 +11,24 @@
 commitとpushを伴う状態遷移系は同期を省略せず、変更直前のキュー状態を毎回確定する。
 remote同期はfetch後の統合対象を現在のブランチの`@{u}`へ明示し、fast-forward更新とpush再試行時のrebaseを
 共有状態の`FETCH_HEAD`と利用者の`pull.rebase`設定から独立させる。
+
+同じ対象リポジトリの複数項目を同一工程で読む場合は、`atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、
+ファイル名見出しから本文を対応付ける。readyなinbox集合の処理開始も、ファイル名昇順の
+`atk mq start-processing <filename>... --target-repo=<repo>`を1回実行する。
+処理開始コマンドは全対象の存在、状態及び`target_repo`を移動前に検証するため、一部不適合で集合全体を拒否できる。
+移動開始後にI/O、commit又はpushが失敗した場合は、指定集合のprocessing配置、管理リポジトリの未コミット差分、
+集合の移動だけを含む遷移commit及びremote設定時のupstream包含を分けて確認する。
+管理リポジトリの検査を開始する前に、`atk config get private_notes`の標準出力から絶対パスを取得する。
+取得したパスを`<private-notes-path>`として管理リポジトリのGit操作対象にする。
+全てのGit操作へ`git -C <private-notes-path>`を付け、対象リポジトリのcwdを使用しない。
+絶対パスを取得できない場合はGit検査をせず未完了で停止する。
+`git -C <private-notes-path> status --porcelain`で管理リポジトリの状態を確認する。
+`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`で遷移commitを取得する。
+remote設定時は`git -C <private-notes-path> fetch`を実行する。
+その後、`git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
+commit前失敗で指定集合の移動だけが残る場合に限り`atk mq commit`を1回使って再検査し、
+未pushのcleanなローカルcommitだけの場合や集合の状態が混在する場合は、項目別再実行で補わず未完了として停止する。
+単一項目の調査、警告・エラー後の再取得及びTBD回答確認は、情報の対応関係を保つため単数形を維持する。
 toolkitは自身の排他区間外で他プロセスが行うfetchを管理しないため、`FETCH_HEAD`の更新は許容し、
 統合対象だけを明示refで固定する。`git pull`を継続する案と失敗時の再試行を加える案は、
 共有状態への依存を残し、恒常的な再試行の複雑性を増やすため採用しない。
@@ -47,17 +65,12 @@ JSON-RPCのreaderとsession単位の状態・待機者を管理する。Unix限�
 公開APIは`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`の5つに固定する。
 `codex_start`は絶対`cwd`を受け取り、`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`を
 内部で固定してApp Serverへ渡し、完了を待たず`session_id`を返す。`codex_wait`の既定timeoutは300秒で、
-公開terminal statusになった時点、または期限到達時の状態を返す。状態応答は
-`result_available`で結果回収可否を明示する。公開statusが`failed`でも`result_available=false`なら、
-`turn/completed`未受信のため`codex_result`は拒否される。
-`result_available=true`を確認して`codex_result`で結果を回収した後だけ、
+期限到達時はturnを継続したまま状態を返す。`codex_result`で`turn/completed`を回収した後だけ、
 同じ`session_id`へ`codex_start_reply`で次turnを開始できる。
 
 App Serverからのserver requestは公開toolを増やさず、elicitationをcancelし、それ以外を非対話の
 非対応エラーとして応答する。承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、
-関連turnをfailedへ遷移してwaiterを解放する。`turn/interrupt`は停止要求を送るだけであり、
-`result_available=true`になるまで`codex_result`の回収を許可しない。通知のdeltaは進捗表示にだけ用い、
-`turn/completed`をturn完了とする。
+対応turnをfailedへ遷移してwaiterを解放する。通知のdeltaは進捗表示にだけ用い、`turn/completed`を終端とする。
 この境界により、Claude Codeは実行中の状態を照会でき、完了結果を回収しないままStopで終了する経路も遮断できる。
 
 ## process-loopのworktree隔離
@@ -111,11 +124,25 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 
 フィードバック処理は、調査と分解を`feedbacks-planner`、実装単位の調整を`plan-impl-executor`、変更の作成を書込担当へ分ける。
 各主体は担当工程に必要な正本だけを受け取り、統合担当がcommitを取り込んで履歴を一本化する。
-1つの計画ファイルに属する実装単位は1つの書込担当が1つのworktreeで順次実装し、異なる計画ファイルのレーン（1つの計画ファイル専用のworktreeと書込担当で構成する並列実装の単位）だけを別worktreeで並列化する。
-`execute_fast_model`から`execute_fix_model`への引継ぎは、担当する役割が変わるため常に新規threadを起動する。
-その他の工程別モデル設定を用いるCodexの継続では、継続直前に再取得した実効`engine`、`model`及び`effort`を
-現在のthreadの起動値と照合する。
-3値の一致時だけ同一threadを継続し、不一致時は検収済み状態を新規の実行主体へ渡す。
+1つの計画ファイルに属する実装単位は同じworktreeで順次実装し、同時に1つの書込担当だけを置く。
+異なる計画ファイルのレーン（1つの計画ファイル専用のworktreeと書込担当で構成する並列実装の単位）だけを別worktreeで並列化する。
+
+実装単位の初回実装と近接検証は`execute_fast_model`、修正対象としたテストID・診断識別子等の同一失敗箇所が
+直後の再検証にも残った場合の修正は`execute_fix_model`へ割り当てる。fast担当が追加修正を行わず引継ぎ結果を返す場合、
+fast担当は自身が起動した全プロセスの終了証跡を返す。
+`plan-impl-executor`が戻り値の受領後にfast担当の終端を直接確認し、基準OID、dirty差分、修正前後の検証結果、失敗箇所の一致及び全プロセスの終了を確認してから、
+同じworktreeへfix担当を起動する。この引継ぎだけはclean開始契約の限定例外とし、同時に1つの書込主体だけを置く。
+fast担当の正常なdirty引継ぎは`status: fast_fix_handoff`と構造化した`repair_handoff`で返し、
+`completed`や`needs_escalation`とは区別する。
+同一失敗箇所が解消して別の失敗箇所だけが現れた場合はfast担当を継続し、レビュー修正とCI修正は常にfix担当へ渡す。
+CI修正の認可根拠には、承認済み計画の該当箇所、原因となった変更を認可した利用者指示の逐語文、又は既存の公開契約の該当箇所を使用する。
+一般のCI失敗では計画ファイルとフィードバックファイル名一覧を必須とせず、存在しない資料の合成を避ける。
+CI修正担当の共通出力は`feedbacks`を維持し、フィードバック起因でない場合は`なし`を返す。
+`repair_handoff`は`fast_fix_handoff`だけが返し、一般のCI修正担当には要求しない。
+fast担当とfix担当は、工程別モデル設定の実効値が一致する場合も担当ごとに新規threadで起動する。
+同一threadへの継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応や再レビューを返す場合に限る。
+継続直前に再取得した`engine`・`model`・`effort`の実効値が起動値と一致する場合だけ継続し、
+不一致時は検収済み状態を新規threadへ渡す。
 設定変更後も同一threadを継続する案は、threadが保持する実行条件と工程の実効設定を一致させられないため採用しない。
 
 フィードバック本文が示す文言案、列挙及び節配置は、投入元識別子にかかわらず利用者合意とみなさない。
@@ -250,11 +277,13 @@ activeなフィードバックの一覧をadvisorの起動文へ複製する案�
 
 この境界により、計画単位の起動・統合費用を抑えながら、調査・実装・公開判断の混同を防ぐ。
 単一主体へ全工程を集約する案は、独立した検証と公開認可の境界を失うため採用しない。
-同じ計画の実装単位を複数の書込担当へ分散する案も、同一作業ツリーの書き込み所有者を複数にするため採用しない。
+同じ計画の実装単位を複数の書込担当へ同時並行で分散する案も、同一作業ツリーに複数の書込所有者を同時に置くため採用しない。
+実装単位間では、先行する書込担当の終端を確認してから次の書込担当へ逐次引き継げる。
 機械的な`Read`拒否だけに依存する案はBash経由を扱えず、認証情報を別領域へ複製する案は信頼境界を越えるため採用しない。
 キューCLIの表示用見出し、YAML frontmatter、CLI付加の末尾改行は構造化素材との照合対象へ含めない。
 調査担当は担当ファイルを1件ずつ取得し、起草担当と初回計画レビュー担当はフィードバック由来素材があるときだけ
-キューID群を一括取得する。複数件表示の区切りや末尾のTBD一覧を素材の引用範囲へ含めない。
+同一対象リポジトリのキューID群を1回の`show <filename>...`で取得する。
+複数件表示の区切りや末尾のTBD一覧を素材の引用範囲へ含めず、警告・エラー後の再取得は単数形を使う。
 起動文へ本文を複製する案は、起草担当とレビュー担当が同じ保存項目を独立に取得できないため採用しない。
 専用の原文ファイルを共有する案は、キューCLIから同じ保存本文を取得できる一方で、作成・検収・保持・回収が増えるため採用しない。
 採否判定後のキュー原文をスナップショット又はハッシュで固定し、変更時に遮断する案も採用しない。
@@ -280,7 +309,7 @@ activeなフィードバックの一覧をadvisorの起動文へ複製する案�
 委譲元は起動命令と人間由来の素材を区別し、起草担当は種別・投入元・引用範囲に基づいて分類し、レビュー担当は委譲命令の混入と直接対話の脱落を検査する。
 起動文全体の転記は委譲元の命令を利用者合意へ昇格させるため採用しない。
 
-初回レビューの起動後に受領した人間由来の入力は、素材ID、種別、出所、引用範囲、要求IDとの対応及び合意と参考素材の別を
+初回レビューの起動後に受領した人間由来の入力は、素材の種別、逐語文、出所、引用範囲及び合意と参考素材の別を
 レビュー担当へ渡してから再レビューを指示する。
 キューにない素材の逐語本文・回答全文も計画外の明示入力として追送し、初回から同じ値を再レビューへ保持する。
 実効3値が一致するCodex経路では同一threadへ追送し、不一致時の新規起動では初回入力とともに渡す。

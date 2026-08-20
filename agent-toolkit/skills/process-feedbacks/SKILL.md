@@ -26,18 +26,45 @@ TBDへ永続化して暫定判断で進める。
    起動時の目的文にCodexオーケストレーターの連続処理と明記されている場合（以下、連続処理モード）は、
    後述の`process-loop`用再取得も適用する
 2. 必要なファイル名だけを1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で確認する
-3. 複数件出力では、行頭から始まるフィードバックの`### <filename> [<状態>]`又はTBDの`### <filename> [<状態>/<answered|unanswered>]`を項目境界として使う
-4. 各対象の境界行が出力全体に1件だけ存在することを確認する。
-   本文内の同形見出しとの衝突により一意に対応付けられない場合は複数件出力を破棄し、
-   `atk mq show <filename> --target-repo=<repo-path> --skip-pull`で1件ずつ再取得する
-5. `plan_file`を持つフィードバックを計画実装型、それ以外を通常型とする。本文から型を推測しない
-6. 本文の順序条件は着手可否の判定前に抽出し、active項目から対象ファイル名自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
-7. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
-8. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
-9. readyなinbox項目を`atk mq start-processing`でprocessingへ移し、対象ファイル名と配置を照合する。
+   一括出力は、要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と
+   `### <filename> [<state>]`行が各1回だけ現れ、両行の並びが要求順と一致する場合だけ採用する
+   各本文は、対応するファイル名・状態行の直後から次の`## target_repo:`行の直前までを一意に切り出す
+   余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれかが1件でもあれば、一括出力全体を破棄し、要求した全項目を単数取得する
+3. `plan_file`を持つフィードバックを計画実装型、それ以外を通常型とする。本文から型を推測しない
+4. 本文の順序条件は着手可否の判定前に抽出し、active項目から対象ファイル名自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
+5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
+6. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
+7. 同じ対象リポジトリのreadyなinbox項目をファイル名昇順でまとめ、
+   `atk mq start-processing <filename>... --target-repo=<repo-path>`を1回実行してprocessingへ移し、対象集合と配置を照合する。
+   コマンドは全ファイルの存在、inbox配置、frontmatter及び`target_repo`一致を移動前に検証するため、1件でも失敗した場合は集合全体を拒否し、どの項目も移動しない。
    既存のprocessing項目では`start-processing`を再実行せず、同コマンドの再実行を未完了の`feedbacks-planner`工程の再開起点にしない
 
 `start-processing`が状態競合で拒否した場合は、active一覧と保存本文を再取得して着手可否の判定から再開する。
+移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで集合のprocessing配置と保存本文を確認する。
+`atk mq list --status=active --target-repo=<repo-path> --skip-pull`と
+`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`を実行する。
+一括出力は、要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と
+`### <filename> [<state>]`行が各1回だけ現れ、両行の並びが要求順と一致する場合だけ採用する。
+各本文は、対応するファイル名・状態行の直後から次の`## target_repo:`行の直前までを一意に切り出す。
+余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれかが1件でもあれば、一括出力全体を破棄し、要求した全項目を単数取得する。
+管理リポジトリの検査を開始する前に、既存の`atk config get private_notes`を実行して標準出力から絶対パスを取得する。
+取得に失敗した場合は未完了で停止する。
+標準出力を絶対パスとして検証できない場合も同様とする。
+対象リポジトリのcwdでGit検査をしない。
+取得したパスを`<private-notes-path>`として、管理リポジトリの状態を
+`git -C <private-notes-path> status --porcelain`で確認する。
+遷移commitは`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`で取得し、未コミット差分と照合する。
+remote設定時は遷移commitの完全OIDを取得する。
+`git -C <private-notes-path> fetch`を実行した後、
+`git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
+全項目がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
+remote設定時にupstream包含が確認できた場合だけ成功とする。processing配置だけ、ローカルcommitだけでは成功扱いしない。
+commit前の失敗で未コミット差分が指定集合の移動だけと一致し、集合外差分とrebase中間状態がない場合に限り、
+既存の`atk mq commit`を1回実行してから全条件を再検査する。push失敗時にremoteが遷移commitを既に含む場合は追加操作なしで復旧完了とする。
+remoteが遷移commitを含まないcleanなローカルcommit、集合のinbox・processing混在、集合外差分、遷移commitの対応付け不能では、
+項目別コマンドや`start-processing`を再実行せず未完了で停止する。rebase中間状態、`atk mq commit`失敗及び
+upstream包含の確認不能でも同様に未完了で停止する。
+集合のinbox・processing混在、集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない。
 
 欠落依存、自己依存、循環、不正な`cooldown_until`、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
@@ -53,11 +80,16 @@ Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文�
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
 `feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし、キュー経路では本文を起動文へ複製しない。
 キューにない素材の逐語本文・回答全文は計画外の明示入力として、調査、起草、初回レビュー、再レビューへ同じ値を保持する。
-`feedbacks-planner`は各調査担当へ事前割当した素材IDとファイル名を渡し、調査担当はファイル名ごとに
-`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。起草担当は構造化入力に
-フィードバック由来素材があるときだけ、全キューIDを`atk mq show <filename>... --target-repo=<repo> --skip-pull`で一括取得し、素材表・要求表と照合する。
-初回レビュー担当も同じ一括取得を行う。複数件出力の項目境界を一意に対応付けられない場合は複数件出力を破棄し、
-`atk mq show <filename> --target-repo=<repo> --skip-pull`で1件ずつ再取得する。
+`feedbacks-planner`は各調査担当へ事前割当した素材IDとファイル名を渡す。
+各調査担当は担当ファイル名1件を`atk mq show <filename> --target-repo=<repo> --skip-pull`で取得する。
+起草担当は構造化入力にフィードバック由来素材があるときだけ、同じ対象リポジトリの全キューIDを
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、対象リポジトリごとに1回で取得する。
+一括出力は、要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と
+`### <filename> [<state>]`行が各1回だけ現れ、両行の並びが要求順と一致する場合だけ採用する。
+各本文は、対応するファイル名・状態行の直後から次の`## target_repo:`行の直前までを一意に切り出す。
+余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれかが1件でもあれば、一括出力全体を破棄し、要求した全項目を単数取得する。
+警告・エラー後の当該項目だけの再取得は単数形を維持する。
+起草担当は取得した本文を素材表・要求表と照合する。
 フィードバック由来素材が無い場合、起草担当は取得を省略して出所と引用範囲を保持する。
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
 readyな計画実装型のレーンは通常型バッチの計画工程を待たず、利用可能な書込担当枠で実装できる。
@@ -142,6 +174,7 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
 - 回答済みTBD: `references/hold-with-tbd-inject.md`に従って採用終端し、依存解除後の処理を再開する
 
 各コマンドの保存結果を再取得し、対象、採否、note、commitを照合する。
+複数の採用項目もファイル名昇順で1件ずつ終端し、複数のファイル名を1回の`atk mq adopt`へ渡さない。
 終端工程を持つ項目のnoteには実施した操作と結果を記録する。
 
 Codexホストと連続処理モードでは、後始末の完了後は再取得したready項目の有無で分岐し、ready項目があれば「2. 調査と採否」へ戻り、

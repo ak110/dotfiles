@@ -54,7 +54,7 @@ _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
-_DESIGN = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
+_DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
 _SECTION_REFERENCE_SOURCE_ROOTS = (
@@ -256,6 +256,20 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     ("読込済みの本`SKILL.md`から", "読込済みの本書の絶対パスから"),
     ("モード別の確認へ送る", "確認へ送る"),
     (
+        "フィードバックファイル名と対象リポジトリを受領した委譲経路では、各ファイル名について\n"
+        "`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。",
+        "フィードバックファイル名と対象リポジトリを受領した委譲経路では、同じ対象リポジトリかつ同じ条件の複数ファイル名を\n"
+        "`atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、対象リポジトリごとに1回実行する。\n"
+        "対象リポジトリ又は条件が異なる場合は集合を分ける。\n"
+        "一括出力は、要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と\n"
+        "`### <filename> [<state>]`行が各1回だけ現れ、両行の並びが要求順と一致する場合だけ採用する。\n"
+        "各本文は、対応するファイル名・状態行の直後から次の`## target_repo:`行の直前までを一意に切り出す。\n"
+        "余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれかが1件でもあれば、"
+        "一括出力全体を破棄し、要求した全項目を単数取得する。\n"
+        "単一項目の調査、警告・エラー後の当該項目だけの再取得とTBD回答確認は、\n"
+        "`atk mq show <filename> --target-repo=<repo> --skip-pull`を単数形で1回実行する。",
+    ),
+    (
         "利用者が確認への回答に付した選択理由・補足",
         "利用者が確認への回答（`AskUserQuestion`の回答とTBDの`## 回答`節を含む）に付した判断基準・選択理由・補足",
     ),
@@ -280,17 +294,6 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     (
         "確認済み回答は、`AskUserQuestion`で受領した回答、又は確認事項を記録したTBDの`## 回答`節へ記録された回答とする。\n",
         "確認済み回答には、`AskUserQuestion`で受領した回答と、確認事項を記録したTBDの`## 回答`節へ記録された回答を含める。\n",
-    ),
-    (
-        "フィードバックファイル名と対象リポジトリを受領した委譲経路では、各ファイル名について\n"
-        "`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。\n",
-        "フィードバックファイル名と対象リポジトリを受領した委譲経路では、同一対象リポジトリの全ファイル名を\n"
-        "`atk mq show <filename>... --target-repo=<repo> --skip-pull`へ1回で渡す。\n"
-        "複数件出力では、行頭から始まるフィードバックの`### <filename> [<状態>]`又は\n"
-        "TBDの`### <filename> [<状態>/<answered|unanswered>]`を項目境界として使う。\n"
-        "各対象の境界行が出力全体に1件だけ存在することを確認する。\n"
-        "本文内の同形見出しとの衝突により一意に対応付けられない場合は複数件出力を破棄し、\n"
-        "`atk mq show <filename> --target-repo=<repo> --skip-pull`で1件ずつ再取得する。\n",
     ),
     (
         "原文正本IDはフェンス外に置き、計画内の素材IDとフィードバックファイル名を一意に対応付ける。\n"
@@ -557,8 +560,8 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
     assert "同一threadの継続では当該情報を追送し" in delegation
-    assert "新規起動では初回と同じ入力パス集合に検収済み状態を添えて渡す" in delegation
-    assert "追送しない限り当該入力を根拠とする実施又は除外を計画へ書かない" in delegation
+    assert "新規起動では初回と同じ入力パス集合及び検収済み状態とともに渡す" in delegation
+    assert "当該情報を渡さない限り、その発話を根拠とする実施又は除外を計画へ書かない" in delegation
     assert "当該ラウンドの採用件数と追加した履歴行数が一致すること" in delegation
     assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
     assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
@@ -661,7 +664,7 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは書込担当へ割り当てる" in text
     assert "シェル経由のファイル書換え" in text
     assert "`check_dash.py`による文書検収" in text
-    assert "1つの書込担当へ同じworktreeで順次割り当て" in text
+    assert "同じworktreeへ順次割り当て、同時に1つの書込担当だけを置け" in text
     assert "異なる計画ファイルのレーン" in text
     assert "だけを別worktreeで並列に扱える" in text
     assert "同じ計画ファイルの書込担当は依存順に1件ずつ起動" in text
@@ -682,12 +685,19 @@ def test_plan_file_is_the_writer_parallelism_boundary() -> None:
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     merge = _MERGE_TASK.read_text(encoding="utf-8")
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
 
     assert "1バッチとして1つの`agent-toolkit:feedbacks-planner`" in process
     assert "通常型バッチの計画工程を待たず" in process
     assert "同じ計画ファイル（同じ`plan_file`）を持つready項目を1レーン" in flow
-    for text in (flow, executor, writer, merge, rules):
+    for text in (flow, executor, writer, merge, rules, caller):
         assert "同じ計画ファイル" in text
+    for text in (executor, writer, rules, design, flow, merge, caller):
+        assert "同時に1つの書込担当" in text
+    assert "fast担当が同一失敗箇所の残存を確認して終端した後にfix担当へ移行する場合だけ" in rules
+    assert "この引継ぎだけはclean開始契約の限定例外" in design
+    assert "同一失敗箇所の残存後は、fast担当の終端確認が完了した後だけ" in flow
+    assert "この限定例外として扱う" in merge
     assert "異なる計画ファイルのレーンだけを別worktreeで並列化" in flow
     assert "計画ファイルごとに`atk managed-temp create" in caller
 
@@ -705,8 +715,8 @@ def test_single_plan_units_advance_one_lane_worktree_without_cherry_pick() -> No
 
     for phrase in (
         "同じ計画の全単位を実装するレーンのworktreeを1つ確定",
-        "全単位を確定した同じレーンのworktreeの1つの書込担当へ割り当て",
-        "先行commitが同worktreeのHEADを進めた後に同じ書込担当へ逐次割り当て",
+        "全単位を確定した同じレーンのworktreeへ、同時に1つの書込担当だけを順次割り当て",
+        "先行commitが同worktreeのHEADを進めた後に後続の新規書込担当へ逐次割り当て",
         "各単位commitが同じレーンのworktreeの直前に検収したHEADを直接進めた",
         "計画ベースからの累積差分",
         "レーンのworktreeの累積差分",
@@ -733,8 +743,8 @@ def test_plan_lane_preserves_sorted_feedback_filename_lists() -> None:
     for text in (flow, merge):
         assert "ソート済みフィードバックファイル名一覧" in text
         assert "レーンのcommit" in text
-    for text in (executor, writer):
-        assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>" in text
+    assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>" in executor
+    assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。一般のCI失敗で受領していない場合は「なし」>" in writer
     assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in flow
     assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in caller
     for text in (flow, caller, executor, writer, merge):
@@ -784,12 +794,21 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    single_command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
+    command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
+    for document in (sender, planner, explore, standards):
+        assert command in document
     batch_command = "atk mq show <filename>... --target-repo=<repo> --skip-pull"
-    for document in (sender, planner, explore, standards, delegation, review):
-        assert single_command in document
-    for document in (sender, planner, standards, delegation, review):
+    for document in (sender, planner, process, standards, delegation, review):
         assert batch_command in document
+        assert "対象リポジトリごとに1回" in document
+        assert "行頭から行末まで完全一致する`## target_repo: <target_repo>`行" in document
+        assert "`### <filename> [<state>]`行が各1回だけ現れ" in document
+        assert "両行の並びが要求順と一致する場合だけ採用" in document
+        assert "次の`## target_repo:`行の直前までを一意に切り出す" in document
+        assert "余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれか" in document
+        assert "一括出力全体を破棄し" in document
+        assert "要求した全項目を" in document
+        assert "単数取得する" in document
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
     for document in (sender, explore):
@@ -822,32 +841,25 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
             assert phrase not in document
 
 
-def test_batched_feedback_readers_refetch_ambiguous_sources_individually() -> None:
-    """一括取得する全正本が境界衝突時に単数取得へ戻す契約を固定する。"""
-    documents = (
-        _FEEDBACKS_PLANNER.read_text(encoding="utf-8"),
-        _PLAN_FILE_STANDARDS.read_text(encoding="utf-8"),
-        _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
-        _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
-        _PROCESS_FEEDBACKS.read_text(encoding="utf-8"),
-        _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8"),
-    )
+def test_plan_file_batch_read_contract_limits_single_form_to_single_items() -> None:
+    """計画基準の一括取得と単一項目の再取得を適用範囲ごとに分ける。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
 
-    for document in documents:
-        assert "atk mq show <filename>... --target-repo=" in document
-        assert "### <filename> [<状態>]" in document
-        assert "### <filename> [<状態>/<answered|unanswered>]" in document
-        assert "各対象の境界行が出力全体に1件だけ存在することを確認" in document
-        assert "本文内の同形見出しとの衝突により一意に対応付けられない場合" in document
-        assert "複数件出力を破棄" in document
-        assert "1件ずつ再取得" in document
+    batch_command = "atk mq show <filename>... --target-repo=<repo> --skip-pull"
+    single_command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
+    assert "同じ対象リポジトリかつ同じ条件の複数ファイル名" in standards
+    assert batch_command in standards
+    assert single_command in standards
+    assert standards.count(single_command) == 1
+    assert "各ファイル名について\n`atk mq show <filename> --target-repo=<repo> --skip-pull`" not in standards
+    assert "単一項目の調査、警告・エラー後の当該項目だけの再取得とTBD回答確認" in standards
 
 
 def test_direct_material_records_preserve_receipt_order() -> None:
     """直接受領素材を受領順のレコード集合として渡す契約を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
-    design = _DESIGN.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
 
     for document in (sender, planner, design):
         collection = document.index("受領順を保持した素材レコード集合")
@@ -1111,7 +1123,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "pick_feedbacks_model",
         "plan_model",
         "plan_review_model",
-        "execute_model",
+        "execute_fast_model",
+        "execute_fix_model",
         "execute_review_model",
         "merge_model",
     ):
@@ -1120,22 +1133,27 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "他engineへ自動切替せず",
         "effort部は実行機能に相当する引数が無いため適用しない",
         "実効`engine`、`model`及び`effort`",
-        "3値がすべて一致し、いずれも`engine=codex`の場合だけ",
-        "先行turnの`codex_result`回収後",
-        "同じ`session_id`へ`codex_start_reply`で継続接続する",
-        "解決後も`engine=codex`の場合は新規threadを起動する",
+        "3値がすべて一致し、いずれも`engine=codex`の場合だけ同一threadへ継続接続する",
+        "`execute_fast_model`又は`execute_fix_model`を適用する書込担当は、前の担当の識別子を再利用せず新規threadで起動する",
+        "Codexは先行turnの`codex_result`回収後",
         "Claudeは完了済み識別子を再利用せず",
     ):
         assert phrase in runtime
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
-    assert "各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`" in executor
-    assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
+    assert "各単位の最初のfast担当を新規起動する直前に" in executor
+    assert "複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する" in executor
+    assert "`atk config get execute_fix_model`を起動直前に実行する" in executor
+    assert (
+        "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前に`atk config get execute_review_model`"
+        in executor
+    )
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
     assert "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`" in flow
     assert "`feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし" in process_feedbacks
-    assert "atk mq show <filename>... --target-repo=<repo> --skip-pull" in process_feedbacks
+    assert "ファイル名昇順でまとめ" in process_feedbacks
+    assert "`atk mq start-processing <filename>... --target-repo=<repo-path>`" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文を`feedbacks-planner`の完了報告へ要求しない" in reception
     assert "`feedbacks-planner`が起草担当へ対象ファイル名、対象リポジトリ、確定した採否と合意、対象、規範" in reception
@@ -1170,15 +1188,13 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in flow
 
 
-def test_codex_stage_continuations_except_fast_fix_recheck_effective_routing_values() -> None:
-    """fastからfixは新規threadとし、その他のCodex継続だけ実効3値を照合する。"""
+def test_all_codex_stage_continuations_recheck_effective_routing_values() -> None:
+    """全工程のCodex継続を実効engine・model・effortの完全一致時だけ許可する。"""
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
 
     for phrase in (
-        "`execute_fast_model`から`execute_fix_model`への引継ぎでは、実効値にかかわらず新規threadを起動する",
-        "その他の工程別モデル設定を再取得したCodex経路では",
         "新たに用いる実効`engine`、`model`及び`effort`",
         "現在のthreadの起動に用いた実効3値と比較する",
         "いずれかが異なる場合は同一threadを継続せず",
@@ -1193,8 +1209,9 @@ def test_codex_stage_continuations_except_fast_fix_recheck_effective_routing_val
         ),
         _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get plan_review_model`",),
         _PLAN_IMPL_EXECUTOR: (
-            "各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`",
-            "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`",
+            "各単位の最初のfast担当を新規起動する直前に",
+            "修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`",
+            "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前に`atk config get execute_review_model`",
         ),
         _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",),
     }
@@ -1203,11 +1220,10 @@ def test_codex_stage_continuations_except_fast_fix_recheck_effective_routing_val
         for phrase in phrases:
             assert phrase in text
 
-    for text in (plan_review, executor):
-        assert "実効3値一致時だけ同一thread" in text or "実効3値一致時だけ同じthread" in text
-        assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in text
-
-    assert "`execute_fast_model`から`execute_fix_model`への引継ぎは、実効3値にかかわらず新規threadで起動する" in executor
+    assert "実効3値一致時だけ同一thread" in plan_review
+    assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in plan_review
+    assert "継続直前の実効3値が一致する場合だけ同じthreadを継続し" in executor
+    assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in executor
 
 
 def test_merge_conflict_git_options_are_owned_by_merge_task() -> None:
@@ -1239,13 +1255,361 @@ def test_ci_repair_commits_are_delegated_by_caller() -> None:
         assert "原因分析によりコード・テスト・設定の修正commitが必要と確定" in text
         assert "通常モードの`plan-impl-executor`へ" in text
         assert "元計画を再投入せず" in text
-        assert "`execute_model`を" in text
+        assert "`execute_fix_model`を" in text
         assert "起動直前に解決" in text
         assert "単一の書込担当" in text
         assert "二系統レビュー、再push、CI確認" in text
         assert "外部基盤障害など修正commitを要しない失敗" in text
-    assert "原因分析で修正commitが必要と確定した場合に呼び出し元が起動直前に解決" in routing
+    assert "`execute_fix_model`" in routing
     assert "直接修正して再push" not in ci_failure
+    assert "`skills/plan-mode/references/implementation-task.md`" in caller
+    assert "担当種別`CI修正担当`" in caller
+    assert "`skills/plan-mode/references/implementation-task.md`" in ci_failure
+    assert "担当種別`CI修正担当`" in ci_failure
+
+
+def test_ci_repair_launches_accept_plan_specific_and_general_authorization_inputs() -> None:
+    """CI修正担当は計画起因と一般CIの認可根拠を区別し、fast手順から独立して完遂する。"""
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+
+    required_inputs = (
+        "`skills/plan-mode/references/implementation-task.md`",
+        "担当種別`CI修正担当`",
+        "実装単位、その目的及び変更説明",
+        "適用する作成規範スキル名と絶対パス",
+        "追加指示、許容済みの挙動変化",
+        "git操作に用いるworktree絶対パス、複製元及び対象外worktree",
+        "CIの原因分析結果",
+    )
+    for text in (caller, ci_failure):
+        for required_input in required_inputs:
+            assert required_input in text
+        assert "CI修正担当にはfast担当の1回修正とfastからfixへの昇格判定を適用しない" in text
+        assert "CI記録の原因修正、全検証、差分検収、stage及びcommitを完了" in text
+    assert "対象worktreeとプロジェクト規範の絶対パス。計画ファイルは計画起因の場合だけ渡す" in caller
+    assert "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す" in caller
+    assert "計画ファイルは計画起因の場合だけ" in ci_failure
+    assert "フィードバックファイル名一覧はフィードバック起因の場合だけ" in ci_failure
+    for text in (caller, ci_failure, task):
+        assert "承認済み計画の該当箇所" in text
+        assert "原因となった変更を認可した利用者指示の逐語文" in text
+        assert "既存の公開契約の該当箇所" in text
+    assert "一般のCI失敗では計画ファイルとフィードバックファイル名一覧が存在しないことを入力不足としない" in ci_failure
+    assert "計画ファイルは`CI修正担当`以外では必須" in task
+    assert "`CI修正担当`ではフィードバック起因の場合だけ渡す" in task
+    assert "計画を受領しない`CI修正担当`" in task
+    common_output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
+    for field in (
+        "status:",
+        "commit:",
+        "changed:",
+        "verification:",
+        "review_resolution:",
+        "feedbacks:",
+        "plan_deviation:",
+        "blockers:",
+    ):
+        assert field in common_output
+    assert "一般のCI失敗で受領していない場合は「なし」" in common_output
+    assert "repair_handoff:" not in common_output
+    assert "`status: fast_fix_handoff`の場合だけ、共通出力へ次の修正引継ぎ記録を追加する" in task
+    fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
+    ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
+    assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" in ci
+    assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" not in fast
+
+
+def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
+    """初回fast担当へ実装タスクの共通必須入力を全て渡す契約を固定する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    launch = executor.partition("3. 各実装単位を依存順に1件ずつ処理し")[2].partition("\n4. ")[0]
+
+    required_inputs = (
+        "`skills/plan-mode/references/implementation-task.md`",
+        "計画ファイル、対象worktree、プロジェクト規範の絶対パス",
+        "実装するコミット単位、その目的及び変更説明",
+        "適用する作成規範スキル名と絶対パス",
+        "1件以上のソート済みフィードバックファイル名一覧",
+        "追加指示、許容済みの挙動変化",
+        "git操作に用いるworktree絶対パス、複製元と対象外worktree",
+        "git操作の制約",
+    )
+    for required_input in required_inputs:
+        assert required_input in launch
+    assert "起動文へ担当種別を`fast担当`として明示" in launch
+
+
+def test_fast_model_is_resolved_once_per_unit_before_each_first_launch() -> None:
+    """複数実装単位でもfastモデルを単位ごとの最初の起動直前に解決する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    launch = executor.partition("3. 各実装単位を依存順に1件ずつ処理し")[2].partition("\n4. ")[0]
+
+    assert launch.count("`atk config get execute_fast_model`") == 1
+    resolve_at = launch.index("`atk config get execute_fast_model`")
+    first_launch_at = launch.index("書込担当は解決した実行系で起動し")
+    assert resolve_at < first_launch_at
+    assert "各単位の最初のfast担当" in launch
+    assert "複数単位でも前の単位の解決値を次の単位へ流用せず" in launch
+    assert "前の単位の実効値と一致する場合も前の担当のthreadを継続せず" in launch
+    assert "検収済みの先行commit" in launch
+    assert "各単位の最初のfast担当" in runtime
+    assert "単位ごとに1回解決し" in runtime
+    assert "前の単位と実効3値が一致する場合も、前の担当のthreadを継続せず新規threadを起動する" in runtime
+
+
+def test_implementation_task_requires_role_specific_handoff_records() -> None:
+    """各書込担当へ担当種別に対応する記録だけを要求する契約を固定する。"""
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    fix = task.partition("5. 担当種別が`fix担当`の場合は")[2].partition("\n6. ")[0]
+    review = task.partition("6. 担当種別が`レビュー修正担当`の場合は")[2].partition("\n7. ")[0]
+    ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
+
+    assert "修正引継ぎ記録" in task.partition("## 実装")[0]
+    assert "受領した修正引継ぎ記録と現行のdirty差分" in fix
+    assert "受領した採用指摘" in review
+    assert "受領したCI記録" in ci
+    assert "受領した採用指摘" not in fix
+    assert "受領したCI記録" not in fix
+    assert "受領した修正引継ぎ記録" not in review
+    assert "受領したCI記録" not in review
+    assert "受領した修正引継ぎ記録" not in ci
+    assert "受領した採用指摘" not in ci
+
+
+def test_fast_failure_handoff_terminates_before_following_commit_steps() -> None:
+    """同一失敗箇所が残ったfast担当を引継ぎ記録の返却で終端する契約を固定する。"""
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. ")[0]
+
+    assert "`status: fast_fix_handoff`として返してfast担当を終端する" in fast
+    assert "`repair_handoff`へ修正引継ぎ記録として" in fast
+    for field in (
+        "`failure_location`",
+        "`failed_command`",
+        "`verification_before`",
+        "`verification_after`",
+        "`baseline_oid`",
+        "`existing_diff`",
+        "`process_termination`",
+    ):
+        assert field in fast
+    assert "後続の共有追加検証、差分検収、stage、commit、cleanな作業ツリーの確認を" in fast
+    assert "対象外とし、実施しない" in fast
+
+
+def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> None:
+    """dirty引継ぎを完了・エスカレーションと混同せず構造化して受領する。"""
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
+
+    assert "status: completed | fast_fix_handoff | needs_escalation" in output
+    assert "repair_handoff:" not in output
+    handoff_output = task.partition("`status: fast_fix_handoff`の場合だけ、共通出力へ次の修正引継ぎ記録を追加する。")[2]
+    assert "repair_handoff:" in handoff_output
+    for field in (
+        "failure_location:",
+        "failed_command:",
+        "verification_before:",
+        "verification_after:",
+        "baseline_oid:",
+        "existing_diff:",
+        "process_termination:",
+    ):
+        assert field in handoff_output
+    assert "fast_fix_handoff" in delegation
+    assert "`completed`又は`needs_escalation`へ読み替えない" in delegation
+    assert "`status: fast_fix_handoff`を受領した場合だけ" in executor
+    assert "`status: completed`は通常のcommit済み完了として扱い" in executor
+    assert "`status: needs_escalation`又は状態・`repair_handoff`の欠落や不一致" in executor
+    assert "戻り値を受領した後にfast担当のagentの終端を直接確認し" in executor
+    assert "fast_termination" not in task
+    assert "fast担当と起動した全プロセスの終端確認" not in task
+
+
+def test_clean_worktree_exception_and_thread_lifecycle_are_limited() -> None:
+    """dirty引継ぎを同一失敗箇所に限定し、担当間のthread再利用を防ぐ。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+
+    assert "書込担当の起動前に上流追随済みで" in runtime
+    assert "fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す" in runtime
+    assert "`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外" in runtime
+    assert "fast担当とfix担当は、実効3値にかかわらず担当ごとに新規threadで起動する" in executor
+    assert "同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合に限る" in executor
+    assert "fast担当の終端確認後に修正引継ぎ記録とdirty差分を渡す新規thread" in executor
+    assert "同一失敗箇所の残存" in executor
+
+
+def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
+    """fast担当は同じ失敗箇所の残存だけでfix担当へdirty差分を引き継ぐ。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    for text in (runtime, executor, task):
+        assert "テストID・診断識別子" in text
+        assert "同じコマンド" in text
+        assert "直後" in text
+    for text in (rules, executor, task, design):
+        assert "同時に1つの書込担当" in text
+    assert "修正対象とした同一失敗箇所が直後の再検証にも残った場合" in runtime
+    assert "修正対象が解消して別の失敗箇所だけが現れた場合は" in executor
+    assert "追加修正とcommitを行わず" in task
+    assert "fast担当が同一失敗箇所の残存を記録し、呼び出し元が終端確認を完了した後" in task
+    assert "基準OID、未コミット差分、失敗コマンド" in executor
+    assert "同じworktreeへfix担当を1件だけ逐次起動する" in executor
+    assert "同一threadを継続せず、新規threadとして" in executor
+    assert "implementation-task.md`の共通必須入力一式" in executor
+    for required_input in (
+        "ソート済みフィードバックファイル名一覧",
+        "追加指示",
+        "許容済み挙動変化",
+        "修正前後の検証結果",
+        "fast担当の終端確認",
+    ):
+        assert required_input in executor
+    assert "dirty worktree" in executor
+    assert "`execute_fast_model`又は`execute_fix_model`を適用する書込担当は毎回新規threadで起動する" in runtime
+    assert "継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う" in runtime
+    assert "担当種別が`fast担当`の場合だけ" in task
+    assert "担当種別が`fix担当`の場合は" in task
+    assert "担当種別が`レビュー修正担当`の場合は" in task
+    assert "担当種別が`CI修正担当`の場合は" in task
+    assert "追加のモデル昇格をせずに" in task
+    for review_mode in ("#### 通常の実装モードのレビュー修正", "#### 統合後レビュー調整モードのレビュー修正"):
+        section = executor.partition(review_mode)[2]
+        assert "`atk config get execute_fix_model`" in section
+
+
+def test_shared_structure_checks_are_common_to_all_write_roles() -> None:
+    """共有分岐と反復構造の追加検証をfast専用手順から分離する。"""
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+
+    common = task.partition("8. 全ての書込担当は")[1] + task.partition("8. 全ての書込担当は")[2].partition("\n9. ")[0]
+    fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
+
+    for phrase in (
+        "共有の判定処理、振り分け処理、解析処理",
+        "変更分岐へ到達する全呼び出し元",
+        "未変更の既存test class",
+        "0件、1件、複数件、異種混在",
+        "局所識別子の対応",
+    ):
+        assert phrase in common
+        assert phrase not in fast
+
+
+def test_implementation_task_type_is_explicit_at_each_launch_point() -> None:
+    """fast、fix、レビュー修正及びCI修正の起動文が担当種別を渡す契約を固定する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
+
+    assert "担当種別（`fast担当`、`fix担当`、`レビュー修正担当`又は`CI修正担当`" in task
+    assert "起動文へ担当種別を`fast担当`として明示" in executor
+    assert "担当種別は`fix担当`として明示" in executor
+    assert executor.count("起動文へ担当種別を`レビュー修正担当`として明示") == 2
+    assert "起動文へ担当種別を`CI修正担当`として明示" in caller
+    assert "担当種別`CI修正担当`" in caller
+    assert "担当種別`CI修正担当`" in ci_failure
+    assert "起動文へ担当種別を`CI修正担当`として明示" in ci_failure
+
+
+def test_start_processing_batch_failure_boundary_is_documented() -> None:
+    """一括処理開始の移動前拒否と移動後の公開完了境界を文書で固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    for text in (process, reception):
+        assert "`atk mq start-processing <filename>... --target-repo=" in text
+        assert "移動前" in text
+        assert "集合全体" in text
+        assert "`atk mq list --status=active --target-repo=" in text
+        assert "--skip-pull`" in text
+        assert "`atk mq show <filename>..." in text
+        assert "`atk config get private_notes`" in text
+        assert "`git -C <private-notes-path> status --porcelain`" in text
+        assert "`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`" in text
+        assert "`git -C <private-notes-path> merge-base --is-ancestor" in text
+        assert "`atk mq commit`を1回" in text
+        assert "項目別コマンド" in text
+        assert "未完了" in text
+
+
+def test_batch_contract_is_limited_to_reads_and_start_processing() -> None:
+    """一括化を読取系と処理開始へ限定し、状態終端の逐次契約を保つ。"""
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    assert "複数の識別子を同一工程で取得又は処理する場合" not in rules
+    for text in (process, reception):
+        assert "atk mq show <filename>..." in text
+        assert "atk mq start-processing <filename>..." in text
+        assert "項目別コマンド" in text
+    assert "複数のファイル名を1回の`atk mq adopt`へ渡さない" in process
+    for text in (flow, caller):
+        assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in text
+
+
+def test_start_processing_failure_observes_local_transition_and_upstream_boundary() -> None:
+    """開始失敗後にprocessing配置からupstream包含まで観測する契約を固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    assert "`atk mq list --status=active --target-repo=<repo-path> --skip-pull`" in process
+    assert "`atk mq list --status=active --target-repo=<repo> --skip-pull`" in reception
+    for text in (process, reception):
+        assert "processing配置" in text
+        assert "遷移commit" in text
+        assert "upstream包含" in text
+        assert "git -C <private-notes-path> merge-base --is-ancestor" in text
+
+
+def test_start_processing_recovery_refuses_commit_for_unsafe_states() -> None:
+    """集合外差分、状態混在又はrebase中間状態では`atk mq commit`を実行しない。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    for text in (process, reception):
+        assert "集合外差分" in text
+        assert "状態混在" in text or "inbox・processing混在" in text
+        assert "rebase中間状態" in text
+        assert "集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない" in text
+
+
+def test_start_processing_failure_resolves_management_repo_before_git_checks() -> None:
+    """管理リポジトリの絶対パスを解決してから全Git検査を行う契約を固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    required = (
+        "`atk config get private_notes`",
+        "絶対パス",
+        "`git -C <private-notes-path> status --porcelain`",
+        "`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`",
+        "`git -C <private-notes-path> fetch`",
+        "`git -C <private-notes-path> merge-base --is-ancestor",
+        "対象リポジトリのcwd",
+    )
+    for text in (process, reception, design):
+        for phrase in required:
+            assert phrase in text
+        assert text.index("`atk config get private_notes`") < text.index("`git -C <private-notes-path> status")
+        assert "`git status --porcelain`" not in text
+        assert "`git show --name-status --format=%H%n%s HEAD`" not in text
+        assert "`git fetch`" not in text
+        assert "`git merge-base --is-ancestor" not in text
 
 
 def test_launch_points_limit_thread_continuation_to_codex_route() -> None:
@@ -1323,7 +1687,7 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     assert "別識別子" in common_review
     assert "implementation-plan-review-task.md" in common_review
     assert "implementation-independent-review-task.md" in common_review
-    assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前" in common_review
+    assert "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前" in common_review
     assert "二系統とも指摘0件になるまで" in common_review
     for mode_preparation in (normal, integrated):
         assert "implementation-plan-review-task.md" not in mode_preparation
@@ -1404,6 +1768,8 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "HEAD、修正commit、差分、clean状態、検証結果を実測",
     ):
         assert phrase in normal_fix
+    assert "`atk config get execute_fix_model`" in normal_fix
+    assert "`atk config get execute_fix_model`" in integrated_fix
     assert "指摘が帰属する実装writer" not in executor
     assert "merge-task.md" not in normal_fix
     assert "merge-task.md" in integrated_fix

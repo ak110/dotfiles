@@ -143,6 +143,40 @@ class TestShowMultipleFiles:
         fetches = [call for call in git_calls if call["cmd"][:2] == ["git", "fetch"]]
         assert len(fetches) == 1
 
+    def test_multiple_files_filter_same_target_repo_without_extra_pull(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同一対象リポジトリの複数指定は1回の取得で対象を絞り、`--skip-pull`では同期しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2")
+        _write_feedback_file(notes, "other.md", target_repo="github.com/example/bar", body="対象外")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "show",
+                    "fb-001.md",
+                    "fb-002.md",
+                    "--target-repo=github.com/example/foo",
+                    "--skip-pull",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-001.md" in captured.out
+        assert "### fb-002.md" in captured.out
+        assert "対象外" not in captured.out
+        assert not [call for call in git_calls if call["cmd"][:2] == ["git", "fetch"]]
+
     def test_multiple_files_use_same_separator_as_all(
         self,
         monkeypatch: pytest.MonkeyPatch,

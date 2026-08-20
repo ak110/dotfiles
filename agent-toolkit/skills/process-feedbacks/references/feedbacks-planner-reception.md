@@ -12,11 +12,37 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 採用要求が1件以上ある項目は、不採用要求も要求表へ残し、ファイル単位で採用終端へ進める。
 全要求が不採用の項目だけをrejectし、未確定要求を含む項目はholdする。
 
-新規`inbox`項目では着手可否の確定後に`atk mq start-processing`を実行し、対象ファイル名と
-`processing`配置を照合する。
+新規`inbox`項目では着手可否の確定後に、同じ対象リポジトリのreadyなファイル名を昇順でまとめ、
+`atk mq start-processing <filename>... --target-repo=<repo>`を1回実行し、対象集合と`processing`配置を照合する。
+全対象の存在、inbox配置、frontmatter及び`target_repo`一致は移動前に検証する。1件でも不適合なら集合全体を拒否し、どの対象も移動しない。
 状態競合で拒否された場合はactive一覧と保存本文を再取得し、着手可否の判定から再開する。
 既存`processing`項目の別セッション再開では履歴を探索せず、`start-processing`を再実行しない。
 既存`processing`項目を未完了の`feedbacks-planner`工程の再開起点にしない。
+
+移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで指定集合のprocessing配置と保存本文を確認する。
+`atk mq list --status=active --target-repo=<repo> --skip-pull`と
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`を実行する。
+一括出力は、要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と
+`### <filename> [<state>]`行が各1回だけ現れ、両行の並びが要求順と一致する場合だけ採用する。
+各本文は、対応するファイル名・状態行の直後から次の`## target_repo:`行の直前までを一意に切り出す。
+余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれかが1件でもあれば、一括出力全体を破棄し、要求した全項目を単数取得する。
+管理リポジトリの検査を開始する前に、既存の`atk config get private_notes`を実行して標準出力から絶対パスを取得する。
+取得に失敗した場合は未完了で停止する。
+標準出力を絶対パスとして検証できない場合も同様とする。
+対象リポジトリのcwdでGit検査をしない。
+取得したパスを`<private-notes-path>`として、管理リポジトリの状態を
+`git -C <private-notes-path> status --porcelain`で確認する。
+遷移commitは`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`で取得し、未コミット差分と照合する。
+remote設定時は遷移commitの完全OIDを取得する。
+`git -C <private-notes-path> fetch`を実行した後、
+`git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
+全対象がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
+remote設定時にupstream包含を確認できた場合だけ完了とする。
+commit前失敗で指定集合の移動だけが未コミット差分として残り、集合外差分とrebase中間状態がない場合に限り、
+`atk mq commit`を1回実行して全条件を再検査する。push失敗後にremoteが遷移commitを含む場合は追加操作なしで完了とする。
+remoteが遷移commitを含まないcleanなローカルcommit、集合の状態混在、集合外差分、遷移commitの対応付け不能、
+rebase中間状態、復旧失敗及びupstream包含の確認不能では、項目別コマンドを再実行せず未完了で停止する。
+集合の状態混在、集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない。
 
 起動文には次の絶対パスと値だけを渡す。
 
@@ -35,15 +61,15 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 フィードバック本文を起動文へ複製しない。
 キューにない素材は素材IDを付けずに渡し、`feedbacks-planner`が並列調査の起動前に新規素材へ素材IDを一括割当する。
 キューにない素材の逐語本文・回答全文は計画へ転記せず、調査、起草、初回レビュー、再レビューの各起動入力へ同じ値を明示的に渡す。
-調査担当は事前割当した素材IDごとに
-`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行して保存本文を取得する。
-起草担当と初回レビュー担当はフィードバック由来素材が存在するとき、その全キューIDを
-`atk mq show <filename>... --target-repo=<repo> --skip-pull`で一括取得する。
-複数件出力では、行頭から始まるフィードバックの`### <filename> [<状態>]`又は
-TBDの`### <filename> [<状態>/<answered|unanswered>]`を項目境界として使う。
-各対象の境界行が出力全体に1件だけ存在することを確認する。
-本文内の同形見出しとの衝突により一意に対応付けられない場合は複数件出力を破棄し、
-`atk mq show <filename> --target-repo=<repo> --skip-pull`で1件ずつ再取得する。
+調査担当は事前割当した素材IDごとに`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。
+起草担当と初回レビュー担当はフィードバック由来素材が存在するとき、同じ対象リポジトリの全キューIDをまとめ、
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`を対象リポジトリごとに1回実行して保存本文を取得する。
+表示用見出しから本文を項目へ対応付ける。
+一括出力は、要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と
+`### <filename> [<state>]`行が各1回だけ現れ、両行の並びが要求順と一致する場合だけ採用する。
+各本文は、対応するファイル名・状態行の直後から次の`## target_repo:`行の直前までを一意に切り出す。
+余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれかが1件でもあれば、一括出力全体を破棄し、要求した全項目を単数取得する。
+警告・エラー後の当該項目だけの再取得は単数形を維持する。
 終了コード0かつ全項目出力時だけ構造化情報と照合する。
 終了コード2では標準出力の部分結果を使わず、計画作成又は初回レビューを開始しないで入力不足として起動主体へ返す。
 フィードバック由来素材が無い場合は取得を省略する。表示用見出し、YAML frontmatter、CLI付加の末尾改行は構造化情報へ転記しない。
