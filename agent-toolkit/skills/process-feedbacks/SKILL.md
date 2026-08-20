@@ -48,7 +48,9 @@ TBDへ永続化して暫定判断で進める。
 項目ごとに対応付ける。`source: session-review`だけをエージェント由来と判定し、それ以外のsource、source欠落及び不明の不採用候補は
 原文との差異と技術的理由を示す`AskUserQuestion`へ送る。回答が得られない場合は同じ質問内容をTBDへ保存して保留し、回答又はTBDを確認できない状態ではrejectしない。
 部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲及び理由を採否記録へ残す。起草担当又は実行主体へはバッチ全項目を渡し、
-実施内容へは採用又は部分採用の採用範囲だけを反映する。別リポジトリ項目は`agent-toolkit:add-feedback`で正しい`target_repo`へ登録・照合した後だけ元項目を終端する。
+実施内容へは採用又は部分採用の採用範囲だけを反映する。別リポジトリ項目は保持済みの原文を正しい`target_repo`へ
+`agent-toolkit:add-feedback`で登録し、sourceがある場合は同じ値を渡す。sourceを指定した場合は移管先のsource、本文、`target_repo`を
+`atk mq show`で照合し、指定していない場合は本文と`target_repo`だけを照合した後に元項目を終端する。
 
 Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を

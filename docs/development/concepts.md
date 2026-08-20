@@ -196,7 +196,10 @@
 `source: session-review`だけをエージェント由来とし、`source: plan`、その他のsource、source欠落、不明の不採用は、
 原文との差異と技術的理由を示す`AskUserQuestion`の回答後だけ確定する。回答が得られない場合は同じ質問内容をTBDへ保存し、
 元項目への依存設定、inbox差し戻し、`blocked`確認を完了するまで保留する。部分採用はこの確認へ機械的に含めない。
-別リポジトリ項目は正しい`target_repo`へ原文を移管して登録・照合した後だけ、移管先ファイル名を記録して元項目を終端する。
+sourceによる由来境界の判定と利用者認可の確認を分け、source又は本文から利用者認可を推定しない。
+別リポジトリ項目は保持済みの原文を正しい`target_repo`へ移管して登録し、sourceがある場合は同じ値を渡す。
+sourceを指定した場合は移管先のsource、本文、`target_repo`を`atk mq show`で照合し、指定しない場合は本文と`target_repo`だけを照合した後、
+移管先ファイル名を記録して元項目を終端する。
 各投入経路は指定されたsourceだけを保持し、`add-feedback`はsource受領時だけ`atk mq add --source`へ渡して、保存後に既存の`atk mq show`で照合する。
 
 ## セキュリティと環境

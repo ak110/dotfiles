@@ -9,7 +9,7 @@ active一覧を取得した時点のreadyな通常型のフィードバックを
 `agent-toolkit:feedbacks-planner`へ1回だけ渡す。
 blocked項目、未回答TBD、一覧取得後に追加された項目は含めない。
 `feedbacks-planner`はバッチ全項目について、原文正本ID、投入元、人間由来の指示又は方針の優先度、調査根拠、欠陥原因、
-採否及び項目固有の理由を記録し、採用又は部分採用の採用範囲だけを1つの統合計画の実施内容へ反映する。
+採否及び項目固有の採否理由を記録し、採用又は部分採用の採用範囲だけを1つの統合計画の実施内容へ反映する。
 不採用、保留、対象外及び別リポジトリへの移管を含む全項目の記録を概要の採否一覧へ渡し、項目ごとの原文、対象、完了条件、実装単位を識別可能に保つ。
 
 新規`inbox`項目では着手可否の確定後に`atk mq start-processing`を実行し、対象ファイル名と
@@ -42,9 +42,9 @@ TBD候補は、技術調査と明文化済み方針で確定できず、かつ�
 目的及びフィードバック本文が指定する外部可視要素を維持したコーディングエージェント向け規範文書の文言、列挙及び節配置は、
 `feedbacks-planner`の起草担当が技術判断として確定する。
 これらの差異は`user_decisions`へ含めない。
-差異と根拠は`decision-format.md`の理由又は反映内容と計画へ記録する。
+差異と根拠は`decision-format.md`の採否理由又は反映内容と計画へ記録する。
 採否確定工程では`source: session-review`だけをエージェント由来と判定し、それ以外のsource、source欠落及び不明の不採用候補を
-原文との差異と技術的理由付きの`user_decisions`へ返す。部分採用はこの確認へ機械的に含めず、差異、採用範囲、除外範囲、理由を採否記録へ残す。
+原文との差異と技術的理由付きの`user_decisions`へ返す。部分採用はこの確認へ機械的に含めず、差異、採用範囲、除外範囲、採否理由を採否記録へ残す。
 メインは`user_decisions`ごとに`AskUserQuestion`を発行し、回答を得た場合は出所と引用範囲付きの逐語文を同じ`feedbacks-planner`系統へ返す。
 回答が無い場合は同じ質問内容を`agent-toolkit:add-feedback`へ渡してTBDとして保存し、保存・依存設定・inbox差し戻し・`blocked`確認が完了するまで元項目をrejectしない。
 採用項目内で既存の許可条件と明文化済み方針により確定できる利用者判断事項は、
@@ -113,9 +113,12 @@ Git操作、3分類及び元項目の`feedbacks-planner`再開は行わない。
 
 採用結果では`atk mq convert-to-plan <filename> --plan-file=<計画絶対パス> --target-repo=<repo>`を実行し、
 保存結果の`plan_file`を同じ実在する計画パスへ照合する。
-別リポジトリ項目は終端結果として扱わず、保持済みの原文本文と正しい`target_repo`を
-`agent-toolkit:add-feedback`へ渡して登録・照合する。登録・照合の結果から移管先ファイル名と本文を照合できた場合だけ、
-元項目を移管先リポジトリ及びファイル名付きの項目固有メモでrejectする。登録又は照合に失敗した場合は元項目を保持する。
+別リポジトリ項目は終端結果として扱わず、保持済みの原文本文、指定済みsource及び正しい`target_repo`を
+`agent-toolkit:add-feedback`へ渡して登録・照合する。source欄がない場合はsourceを指定しない。
+sourceを指定した場合は移管先のsource、本文、`target_repo`を`atk mq show <移管先ファイル名> --target-repo=<target_repo> --skip-pull`で照合する。
+sourceを指定しない場合は本文、`target_repo`だけを同じshow経路で照合する。
+登録・照合の結果から移管先ファイル名と本文を照合できた場合だけ、
+元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする。登録又は照合に失敗した場合は元項目を保持する。
 ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡す。
 `hold-with-tbd-inject.md`の`保留と再開`に従い、既存の有効依存とTBDのファイル名を登録してから
 通常の`atk mq return-to-inbox`でinboxへ戻し、active一覧で`blocked`を確認する。

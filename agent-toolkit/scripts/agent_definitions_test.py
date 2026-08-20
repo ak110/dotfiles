@@ -818,6 +818,7 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
     decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
     checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
     assert "`source`の文字列を改変せず投入元識別子として記録" in explore
     assert "欄が無い場合は「値なし」と記録" in explore
@@ -828,6 +829,10 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     for source in ("`session-review`", "`alert-monitor`", "`plan`", "値なし", "その他の値"):
         assert source in decision
     assert "`source: session-review`だけをエージェント由来" in decision
+    assert "sourceによる由来境界の判定と利用者認可の確認を分ける" in decision
+    assert "sourceは由来境界の判定にだけ用い、source又はフィードバック本文から利用者認可を推定しない" in decision
+    assert "投入元識別子で由来境界を判定するが、投入元識別子やフィードバック本文から利用者認可を推定しない" in design
+    assert "投入元識別子やフィードバック本文から、人間由来若しくは利用者認可を推定しない" not in design
     for source in (
         "`source: plan`",
         "`source: alert-monitor`",
@@ -874,14 +879,14 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "調査根拠",
         "欠陥原因",
         "採否理由",
-        "完全採用以外の結果は項目固有の理由・原文との差異",
+        "完全採用以外の結果は項目固有の採否理由・原文との差異",
         "関連性の低い項目を同じ包括理由だけで一括判断せず",
         "`source: session-review`だけをエージェント由来",
         "その他のsource、source欠落及び不明は人間由来",
         "部分採用を理由にAskUserQuestionを機械的に発行せず",
         "回答が得られない場合は同じ質問内容をTBDへ保存",
         "回答又はTBDを確認できない状態では`reject`を実行しない",
-        "正しい`target_repo`へ原文を移管して登録・照合",
+        "保持済みの本文を正しい`target_repo`へ移管して登録し、sourceがある場合は同じ値を渡す",
     ):
         assert phrase in decision
     for document in (sender, planner, process, hold):
@@ -917,14 +922,24 @@ def test_feedback_transfer_requires_successful_registration_before_rejection() -
     """別リポジトリ項目の登録・照合・元項目終端の順序を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
     design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
-    for document in (sender, decision, design):
+    for document in (sender, decision, checklist, design):
         assert "正しい`target_repo`" in document
-        assert "登録・照合" in document
+        assert "登録" in document
+        assert "照合" in document
         assert "移管先ファイル名" in document
+    assert "指定済みsource" in sender
+    assert "source欄がない場合はsourceを指定しない" in sender
+    assert "sourceを指定した場合は移管先のsource" in sender
+    assert "sourceを指定しない場合は本文、`target_repo`だけを同じshow経路で照合する" in sender
+    assert "本文、`target_repo`を`atk mq show" in sender
+    assert "sourceを指定した場合は移管先の`source`、本文、`target_repo`、移管先ファイル名を`atk mq show`" in decision
+    assert "sourceを指定しない場合は本文、`target_repo`、移管先ファイル名だけを照合" in decision
+    assert "sourceを指定した場合は移管先のsource、本文、`target_repo`を既存の`atk mq show`で照合" in checklist
     registration = sender.index("`agent-toolkit:add-feedback`へ渡して登録・照合する")
-    terminal = sender.index("元項目を移管先リポジトリ及びファイル名付きの項目固有メモでrejectする")
+    terminal = sender.index("元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする")
     assert registration < terminal
     assert "登録又は照合に失敗した場合は元項目を保持する" in sender
 
@@ -1567,7 +1582,11 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert receiver_exclusion < receiver_boundary
     assert "フィードバック原文が示す文言案、列挙及び節配置を利用者合意とみなさない" in checklist
     assert "原文との差異と根拠を採否記録へ残す" in checklist
-    assert "差異と根拠を`理由`又は`反映内容`へ記録" in decision_format
+    assert "差異と根拠を`採否理由`又は`反映内容`へ記録" in decision_format
+    assert "- 理由:" not in decision_format
+    assert "項目固有の採否理由" in decision_format
+    assert "--note=<採否理由>" in decision_format
+    assert "`decision-format.md`の理由又は" not in sender
     for phrase in (
         "`feedbacks-planner`の起草担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
         "未回答事項による実装・検証の条件分岐を残さない単一経路",
