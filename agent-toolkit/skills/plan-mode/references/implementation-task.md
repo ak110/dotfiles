@@ -15,7 +15,8 @@
 - git操作に用いるworktree絶対パス、複製元と対象外worktree
 - `fix担当`の場合は、修正対象の失敗箇所、修正前後の検証結果、基準OID、既存差分及びfast担当の終端確認を含む修正引継ぎ記録と現行のdirty差分
 - `レビュー修正担当`の場合は、検証済みの実際値、期待値、違反契約、対象への適用根拠及び保持契約を含む採用指摘
-- `CI修正担当`の場合は、原因分析結果、修正の認可根拠及び対象の検証結果を含むCI記録。認可根拠は承認済み計画に限定せず、原因となった変更を認可した利用者指示又は公開契約を使用できる
+- `CI修正担当`の場合は、原因分析結果、修正の認可根拠及び対象の検証結果を含むCI記録。
+  認可根拠には承認済み計画の該当箇所、原因となった変更を認可した利用者指示の逐語文、又は既存の公開契約の該当箇所を含める
 
 担当種別に応じた必須入力が欠ける場合は推測せず`needs_escalation`で返す。
 本タスク以外の委譲の内部資料は読まず、受領した計画又はCI記録の修正認可根拠と作成規範スキルを作業契約の正本とする。
@@ -89,19 +90,24 @@ verification:
 - <コマンド>; exit_code: <整数>; warnings: <整数>
 review_resolution:
 - <指摘ID、原文と適用根拠の確認結果、採用した修正、保持契約の維持結果。該当なしなら「なし」>
-feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>
+feedbacks: <受領したソート済みフィードバックファイル名一覧。一般のCI失敗で受領していない場合は「なし」>
 plan_deviation:
 - <差異と調整結果。無ければ「なし」>
 blockers:
 - <未完了事項。完了時は「なし」>
+```
+
+`status: fast_fix_handoff`の場合だけ、共通出力へ次の修正引継ぎ記録を追加する。
+
+```text
 repair_handoff:
-  failure_location: <修正対象として記録した失敗箇所。`fast_fix_handoff`以外はなし>
-  failed_command: <失敗コマンド。`fast_fix_handoff`以外はなし>
-  verification_before: <修正前の検証結果。`fast_fix_handoff`以外はなし>
-  verification_after: <直後の再検証結果。`fast_fix_handoff`以外はなし>
-  baseline_oid: <基準OID。`fast_fix_handoff`以外はなし>
-  existing_diff: <fast担当が残した既存差分。`fast_fix_handoff`以外はなし>
-  process_termination: <fast担当が起動した全プロセスの終了証跡。`fast_fix_handoff`以外はなし>
+  failure_location: <修正対象として記録した失敗箇所>
+  failed_command: <失敗コマンド>
+  verification_before: <修正前の検証結果>
+  verification_after: <直後の再検証結果>
+  baseline_oid: <基準OID>
+  existing_diff: <fast担当が残した既存差分>
+  process_termination: <fast担当が起動した全プロセスの終了証跡>
 ```
 
 成果物を書き込んだ場合は、成果物の絶対パスと実在・分量を示す実行結果も含める。

@@ -261,7 +261,11 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "フィードバックファイル名と対象リポジトリを受領した委譲経路では、同じ対象リポジトリかつ同じ条件の複数ファイル名を\n"
         "`atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、対象リポジトリごとに1回実行する。\n"
         "対象リポジトリ又は条件が異なる場合は集合を分ける。\n"
-        "複数項目の表示用見出しと本文が衝突して対応を一意に確定できない場合は一括出力を破棄し、当該各項目を単数取得する。\n"
+        "一括出力は、要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と\n"
+        "`### <filename> [<state>]`行が各1回だけ現れ、両行の並びが要求順と一致する場合だけ採用する。\n"
+        "各本文は、対応するファイル名・状態行の直後から次の`## target_repo:`行の直前までを一意に切り出す。\n"
+        "余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれかが1件でもあれば、"
+        "一括出力全体を破棄し、要求した全項目を単数取得する。\n"
         "単一項目の調査、警告・エラー後の当該項目だけの再取得とTBD回答確認は、\n"
         "`atk mq show <filename> --target-repo=<repo> --skip-pull`を単数形で1回実行する。",
     ),
@@ -721,8 +725,8 @@ def test_plan_lane_preserves_sorted_feedback_filename_lists() -> None:
     for text in (flow, merge):
         assert "ソート済みフィードバックファイル名一覧" in text
         assert "レーンのcommit" in text
-    for text in (executor, writer):
-        assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>" in text
+    assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>" in executor
+    assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。一般のCI失敗で受領していない場合は「なし」>" in writer
     assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in flow
     assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in caller
     for text in (flow, caller, executor, writer, merge):
@@ -779,8 +783,13 @@ def test_feedback_source_contract_batches_same_repository_reads() -> None:
     for document in (sender, planner, process, standards, delegation, review):
         assert batch_command in document
         assert "対象リポジトリごとに1回" in document
-        assert "表示用見出しと本文が衝突して対応を一意に確定できない場合は一括出力を破棄" in document
-        assert "当該各項目を" in document
+        assert "行頭から行末まで完全一致する`## target_repo: <target_repo>`行" in document
+        assert "`### <filename> [<state>]`行が各1回だけ現れ" in document
+        assert "両行の並びが要求順と一致する場合だけ採用" in document
+        assert "次の`## target_repo:`行の直前までを一意に切り出す" in document
+        assert "余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれか" in document
+        assert "一括出力全体を破棄し" in document
+        assert "要求した全項目を" in document
         assert "単数取得する" in document
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
@@ -1202,15 +1211,33 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
             assert required_input in text
         assert "CI修正担当にはfast担当の1回修正とfastからfixへの昇格判定を適用しない" in text
         assert "CI記録の原因修正、全検証、差分検収、stage及びcommitを完了" in text
-    assert "計画ファイル、対象worktree、プロジェクト規範の絶対パス" in caller
-    assert "1件以上のソート済みフィードバックファイル名一覧" in caller
+    assert "対象worktreeとプロジェクト規範の絶対パス。計画ファイルは計画起因の場合だけ渡す" in caller
+    assert "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す" in caller
     assert "計画ファイルは計画起因の場合だけ" in ci_failure
     assert "フィードバックファイル名一覧はフィードバック起因の場合だけ" in ci_failure
-    assert "利用者指示、公開契約のいずれか" in ci_failure
+    for text in (caller, ci_failure, task):
+        assert "承認済み計画の該当箇所" in text
+        assert "原因となった変更を認可した利用者指示の逐語文" in text
+        assert "既存の公開契約の該当箇所" in text
     assert "一般のCI失敗では計画ファイルとフィードバックファイル名一覧が存在しないことを入力不足としない" in ci_failure
     assert "計画ファイルは`CI修正担当`以外では必須" in task
     assert "`CI修正担当`ではフィードバック起因の場合だけ渡す" in task
     assert "計画を受領しない`CI修正担当`" in task
+    common_output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
+    for field in (
+        "status:",
+        "commit:",
+        "changed:",
+        "verification:",
+        "review_resolution:",
+        "feedbacks:",
+        "plan_deviation:",
+        "blockers:",
+    ):
+        assert field in common_output
+    assert "一般のCI失敗で受領していない場合は「なし」" in common_output
+    assert "repair_handoff:" not in common_output
+    assert "`status: fast_fix_handoff`の場合だけ、共通出力へ次の修正引継ぎ記録を追加する" in task
     fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
     ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
     assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" in ci
@@ -1304,7 +1331,9 @@ def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> No
     output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
 
     assert "status: completed | fast_fix_handoff | needs_escalation" in output
-    assert "repair_handoff:" in output
+    assert "repair_handoff:" not in output
+    handoff_output = task.partition("`status: fast_fix_handoff`の場合だけ、共通出力へ次の修正引継ぎ記録を追加する。")[2]
+    assert "repair_handoff:" in handoff_output
     for field in (
         "failure_location:",
         "failed_command:",
@@ -1314,7 +1343,7 @@ def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> No
         "existing_diff:",
         "process_termination:",
     ):
-        assert field in output
+        assert field in handoff_output
     assert "fast_fix_handoff" in delegation
     assert "`completed`又は`needs_escalation`へ読み替えない" in delegation
     assert "`status: fast_fix_handoff`を受領した場合だけ" in executor
