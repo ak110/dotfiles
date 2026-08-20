@@ -148,7 +148,11 @@ def run() -> bool:
         removed_list_item_substrings=_REMOVED_LIST_ITEM_SUBSTRINGS,
         stale_labeled_list_paths=_STALE_LABELED_LIST_PATHS,
     )
-    changed_config = update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
+    changed_config = update_claude_settings(
+        _MANAGED_CONFIG_PATH,
+        _CONFIG_PATH,
+        strip_legacy_codex_timeout=True,
+    )
     return changed_settings or changed_config
 
 
@@ -172,6 +176,7 @@ def update_claude_settings(
     removed_keys: tuple[str, ...] = _REMOVED_KEYS,
     removed_list_item_substrings: tuple[tuple[str, str], ...] = (),
     stale_labeled_list_paths: tuple[str, ...] = (),
+    strip_legacy_codex_timeout: bool = False,
 ) -> bool:
     """`managed_path` の設定を `settings_path` にマージして書き込む。
 
@@ -207,7 +212,8 @@ def update_claude_settings(
     data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
 
     original = copy.deepcopy(data)
-    _strip_legacy_codex_timeout(data)
+    if strip_legacy_codex_timeout:
+        _strip_legacy_codex_timeout(data)
     _strip_removed_hooks(data, removed_hook_substrings)
     _strip_managed_hooks(data, managed)
     _strip_removed_env_keys(data, removed_env_keys)
@@ -231,18 +237,27 @@ def update_claude_settings(
 
 
 def _strip_legacy_codex_timeout(data: dict) -> None:
-    """既存設定に残る旧管理値のtimeoutだけを一度除去する。
-
-    新しいplugin MCPはUser scopeのcodex定義を管理しないため、managed側の内容を
-    条件にして利用者設定を削除しない。異なるtimeoutや同じserverの他フィールドは保持する。
-    """
+    """完全な旧User scope Codex定義から管理値のtimeoutだけを除去する。"""
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
         return
     codex = servers.get("codex")
-    if not isinstance(codex, dict) or codex.get("timeout") != 7_200_000:
+    if not _is_legacy_codex_definition(codex):
         return
+    assert isinstance(codex, dict)
     del codex["timeout"]
+
+
+def _is_legacy_codex_definition(value: object) -> bool:
+    """旧installerのCodex stdio定義であるかを判定する。"""
+    if not isinstance(value, dict):
+        return False
+    return (
+        value.get("type") in (None, "stdio")
+        and value.get("command") == "codex"
+        and value.get("args") == ["mcp-server"]
+        and value.get("timeout") == 7_200_000
+    )
 
 
 def _substitute_home_placeholder(value: object) -> object:

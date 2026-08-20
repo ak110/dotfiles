@@ -27,8 +27,9 @@ import json
 import logging
 import os
 import pathlib
+import sys
 import warnings
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -90,6 +91,7 @@ class SessionState:
     protocol_warnings: list[str] = dataclasses.field(default_factory=list)
     result_retrieved: bool = False
     updated_at: str = dataclasses.field(default_factory=_utc_now)
+    reply_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
 
     @property
     def terminal(self) -> bool:
@@ -281,11 +283,19 @@ class JsonRpcProcess:
 
     async def _read_stderr(self) -> None:
         assert self.process is not None and self.process.stderr is not None
-        while True:
-            line = await self.process.stderr.readline()
-            if not line:
-                return
-            _LOG.debug("codex app-server: %s", line.decode("utf-8", errors="replace").rstrip())
+        try:
+            while True:
+                line = await self.process.stderr.readline()
+                if not line:
+                    return
+                print(
+                    line.decode("utf-8", errors="replace"),
+                    end="",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        except OSError as exc:
+            _LOG.debug("Codex App Server stderrの読取を終了しました: %s", exc)
 
     async def close(self) -> None:
         """自身が起動した子プロセスだけを終了し、関連taskを回収する。"""
@@ -293,6 +303,14 @@ class JsonRpcProcess:
             return
         self._closed = True
         process = self.process
+        tasks = tuple(
+            task for task in (self._reader_task, self._stderr_task) if task is not None and task is not asyncio.current_task()
+        )
+        self._reader_task = None
+        self._stderr_task = None
+        for task in tasks:
+            if not task.done():
+                task.cancel()
         if process is not None:
             with contextlib.suppress(OSError, ProcessLookupError):
                 if process.returncode is None:
@@ -305,14 +323,8 @@ class JsonRpcProcess:
                     process.kill()
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(process.wait(), timeout=5)
-        for task in (self._reader_task, self._stderr_task):
-            if task is None or task.done() or task is asyncio.current_task():
-                continue
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        self._reader_task = None
-        self._stderr_task = None
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         self.process = None
         error = AppServerError("Codex App Server client closed")
         for future in tuple(self._pending.values()):
@@ -329,6 +341,13 @@ class AppServerManager:
         self.sessions: dict[str, SessionState] = {}
         self._condition = asyncio.Condition()
         self._lock = asyncio.Lock()
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    def _schedule(self, awaitable: Coroutine[Any, Any, None]) -> None:
+        """同じイベントループで回収する管理対象taskを登録する。"""
+        task: asyncio.Task[None] = asyncio.create_task(awaitable)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _ensure_client(self) -> JsonRpcProcess:
         async with self._lock:
@@ -383,31 +402,44 @@ class AppServerManager:
         """結果取得済みのthreadを再開して新しいturnを開始する。"""
         _validate_prompt(prompt)
         session = self._get_session(session_id)
-        if not session.terminal:
-            raise ValueError("the previous Codex turn is still running")
-        if not session.result_retrieved:
-            raise ValueError("codex_result must be called before starting a reply")
-        client = await self._ensure_client()
-        resume_params: dict[str, Any] = {
-            "threadId": session.session_id,
-            "cwd": session.cwd,
-            "approvalPolicy": "never",
-            "sandbox": "danger-full-access",
-        }
-        if session.model is not None:
-            resume_params["model"] = session.model
-        await client.request("thread/resume", resume_params)
-        session.status = "running"
-        session.error = None
-        session.agent_message = ""
-        session.current_item = None
-        session.commentary = ""
-        session.plan = []
-        session.diff_changed = False
+        async with session.reply_lock:
+            if not session.terminal:
+                raise ValueError("the previous Codex turn is still running")
+            if not session.result_retrieved:
+                raise ValueError("codex_result must be called before starting a reply")
+            try:
+                client = await self._ensure_client()
+                resume_params: dict[str, Any] = {
+                    "threadId": session.session_id,
+                    "cwd": session.cwd,
+                    "approvalPolicy": "never",
+                    "sandbox": "danger-full-access",
+                }
+                if session.model is not None:
+                    resume_params["model"] = session.model
+                await client.request("thread/resume", resume_params)
+                session.status = "running"
+                session.error = None
+                session.agent_message = ""
+                session.current_item = None
+                session.commentary = ""
+                session.plan = []
+                session.diff_changed = False
+                session.result_retrieved = False
+                session.touch()
+                await self._start_turn(session, prompt)
+            except Exception as exc:
+                await self._mark_failed(session, exc)
+                raise
+            return session.public_status()
+
+    async def _mark_failed(self, session: SessionState, error: BaseException) -> None:
+        """要求開始の失敗を終端状態へ反映し、待機者を起床する。"""
+        session.status = "failed"
+        session.error = {"message": str(error) or error.__class__.__name__}
         session.result_retrieved = False
         session.touch()
-        await self._start_turn(session, prompt)
-        return session.public_status()
+        await self._notify_waiters()
 
     async def _start_turn(self, session: SessionState, prompt: str) -> None:
         client = await self._ensure_client()
@@ -582,7 +614,7 @@ class AppServerManager:
         # deadlock the same reader. Schedule it after marking the state terminal.
         for active in sessions:
             if active.turn_id and self.client is not None:
-                _ = asyncio.create_task(self._interrupt(active.session_id, active.turn_id))
+                self._schedule(self._interrupt(active.session_id, active.turn_id))
 
     async def _interrupt(self, session_id: str, turn_id: str) -> None:
         client = self.client
@@ -637,6 +669,13 @@ class AppServerManager:
 
     async def close(self) -> None:
         """自身が起動したApp Server接続を終了する。"""
+        current_task = asyncio.current_task()
+        tasks = tuple(task for task in self._background_tasks if task is not current_task)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         client, self.client = self.client, None
         if client is not None:
             await client.close()
@@ -677,6 +716,15 @@ def _validate_model_effort(model: str | None, effort: str | None) -> None:
 _MANAGER = AppServerManager()
 
 
+@contextlib.asynccontextmanager
+async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncIterator[None]:
+    """MCPと同じイベントループでApp Serverの終了・task回収を行う。"""
+    try:
+        yield
+    finally:
+        await _MANAGER.close()
+
+
 with warnings.catch_warnings():
     # mcp 1.28系のFastMCP Settingsが未解決の汎用型を警告するが、stdio運用では
     # lifespan設定を使わないため実行へ影響しない。依存版が型を公開する場合だけ抑制する。
@@ -685,6 +733,7 @@ with warnings.catch_warnings():
     mcp = FastMCP(
         "codex_app_server",
         instructions="非同期のCodex App Server委譲。承認・停止・一覧操作は公開しない。",
+        lifespan=_mcp_lifespan,
     )
 
 
@@ -726,12 +775,7 @@ async def codex_start_reply(session_id: str, prompt: str) -> dict[str, Any]:
 def main() -> None:
     """MCP stdio transportを起動する。"""
     logging.basicConfig(level=os.environ.get("AGENT_TOOLKIT_CODEX_LOG_LEVEL", "WARNING"))
-    try:
-        mcp.run(transport="stdio")
-    finally:
-        # FastMCPのstdio runは同期APIであるため、run終了後に自身の子だけを回収する。
-        with contextlib.suppress(Exception):
-            asyncio.run(_MANAGER.close())
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

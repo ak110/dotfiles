@@ -525,6 +525,44 @@ class TestCodexMcpTimeout:
         result = json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
         assert result == {key: value for key, value in existing_codex.items() if key != "timeout"}
 
+    def test_settings_json_does_not_strip_legacy_timeout(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """User scope設定ではないsettings.jsonの同名キーを変更しない。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {})
+        existing_codex = {"command": "codex", "args": ["mcp-server"], "timeout": 7_200_000}
+        settings_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
+
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
+        assert result == existing_codex
+
+    @pytest.mark.parametrize(
+        "existing_codex",
+        [
+            {"command": "other", "args": ["mcp-server"], "timeout": 7_200_000},
+            {"type": "http", "command": "codex", "args": ["mcp-server"], "timeout": 7_200_000},
+            {"command": "codex", "args": ["other"], "timeout": 7_200_000},
+        ],
+    )
+    def test_non_legacy_definition_preserves_timeout(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        existing_codex: dict,
+    ) -> None:
+        """旧定義と一致しない同名serverのtimeoutを保持する。"""
+        _setup_run_paths(tmp_path, monkeypatch, {})
+        config_path = tmp_path / "claude.json"
+        config_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
+
+        mod.run()
+
+        assert json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"] == existing_codex
+
     def test_custom_timeout_is_preserved(
         self,
         tmp_path: Path,

@@ -19,6 +19,7 @@ class FakeClient:
         self.responses: list[dict[str, Any]] = []
         self.sent: list[dict[str, Any]] = []
         self._closed = False
+        self.close_loop: asyncio.AbstractEventLoop | None = None
 
     @property
     def closed(self) -> bool:
@@ -41,6 +42,64 @@ class FakeClient:
     async def send(self, message: dict[str, Any]) -> None:
         """テスト用のJSON-RPC応答を記録する。"""
         await self._send(message)
+
+    async def close(self) -> None:
+        """テスト用の接続終了を同じイベントループへ記録する。"""
+        self._closed = True
+        self.close_loop = asyncio.get_running_loop()
+
+
+class BlockingReplyClient(FakeClient):
+    """replyのturn/startを停止して同一sessionの競合を再現する偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reply_turn_started = asyncio.Event()
+        self.release_reply_turn = asyncio.Event()
+        self._turn_start_count = 0
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method != "turn/start":
+            return await super().request(method, params)
+        self._turn_start_count += 1
+        self.requests.append((method, params or {}))
+        if self._turn_start_count >= 2:
+            self.reply_turn_started.set()
+            await self.release_reply_turn.wait()
+        return {"turn": {"id": f"turn-{len(self.requests)}"}}
+
+
+class FailingReplyClient(FakeClient):
+    """replyのturn/startだけを失敗させる偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._turn_start_count = 0
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method == "turn/start":
+            self._turn_start_count += 1
+            if self._turn_start_count >= 2:
+                self.requests.append((method, params or {}))
+                raise subject.AppServerError("turn/start failed")
+        return await super().request(method, params)
+
+
+class FakeStderr:
+    """stderrのreadlineを再現する非同期入力。"""
+
+    def __init__(self, lines: list[bytes]) -> None:
+        self.lines = lines
+
+    async def readline(self) -> bytes:
+        return self.lines.pop(0)
+
+
+class FakeProcessWithStderr:
+    """JsonRpcProcess._read_stderrが要求する最小の偽プロセス。"""
+
+    def __init__(self, lines: list[bytes]) -> None:
+        self.stderr = FakeStderr(lines)
 
 
 def test_tools_are_exactly_the_five_async_operations() -> None:
@@ -134,6 +193,95 @@ async def test_notifications_complete_turn_and_result_then_reply(
     await manager.start_reply("thread-1", "続行")
     assert [method for method, _ in client.requests][-2:] == ["thread/resume", "turn/start"]
     assert client.requests[-2][1]["approvalPolicy"] == "never"
+
+
+@pytest.mark.asyncio
+async def test_start_reply_serializes_same_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """同一sessionの並行replyを直列化し、後続要求を二重開始しない。"""
+    manager = subject.AppServerManager()
+    client = BlockingReplyClient()
+
+    async def ensure_client() -> BlockingReplyClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    session = manager.sessions["thread-1"]
+    session.status = "completed"
+    session.result_retrieved = True
+
+    first = asyncio.create_task(manager.start_reply("thread-1", "続行1"))
+    await client.reply_turn_started.wait()
+    second = asyncio.create_task(manager.start_reply("thread-1", "続行2"))
+    await asyncio.sleep(0)
+    assert not second.done()
+
+    client.release_reply_turn.set()
+    assert (await first)["status"] == "running"
+    with pytest.raises(ValueError, match="still running"):
+        await second
+    assert [method for method, _ in client.requests].count("thread/resume") == 1
+    assert [method for method, _ in client.requests].count("turn/start") == 2
+
+
+@pytest.mark.asyncio
+async def test_start_reply_failure_marks_failed_and_wakes_waiters(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """replyのturn/start失敗をfailedへ確定し、codex_waitを解放する。"""
+    manager = subject.AppServerManager()
+    client = FailingReplyClient()
+
+    async def ensure_client() -> FailingReplyClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    session = manager.sessions["thread-1"]
+    session.status = "completed"
+    session.result_retrieved = True
+    waiter = asyncio.create_task(manager.wait("thread-1", timeout=10))
+
+    with pytest.raises(subject.AppServerError, match="turn/start failed"):
+        await manager.start_reply("thread-1", "続行")
+
+    result = await waiter
+    assert result["status"] == "failed"
+    assert result["error"] == {"message": "turn/start failed"}
+
+
+@pytest.mark.asyncio
+async def test_app_server_stderr_is_forwarded_only_to_stderr(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """App Server stderrをMCP stdoutへ混ぜず、そのままstderrへ転送する。"""
+    client = subject.JsonRpcProcess(lambda _: asyncio.sleep(0), lambda _: asyncio.sleep(0))
+    client.process = cast(Any, FakeProcessWithStderr([b"diagnostic\n", b""]))
+
+    await client._read_stderr()  # noqa: SLF001
+
+    captured = capsys.readouterr()
+    assert captured.err == "diagnostic\n"
+    assert not captured.out
+
+
+@pytest.mark.asyncio
+async def test_mcp_lifespan_closes_app_server_on_current_event_loop() -> None:
+    """MCP終了時の子接続回収を稼働中のイベントループへ結び付ける。"""
+    manager = subject.AppServerManager()
+    client = FakeClient()
+    manager.client = cast(subject.JsonRpcProcess, client)
+    original_manager = subject._MANAGER
+    subject._MANAGER = manager
+    try:
+        loop = asyncio.get_running_loop()
+        async with subject._mcp_lifespan(cast(subject.FastMCP[Any], None)):  # noqa: SLF001
+            pass
+    finally:
+        subject._MANAGER = original_manager
+
+    assert client.close_loop is loop
+    assert manager.client is None
 
 
 @pytest.mark.asyncio
