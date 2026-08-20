@@ -90,6 +90,9 @@ class SessionState:
     agent_message: str = ""
     protocol_warnings: list[str] = dataclasses.field(default_factory=list)
     result_retrieved: bool = False
+    reply_attempted: bool = False
+    reply_turn_started: bool = False
+    reply_retryable: bool = False
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     reply_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
 
@@ -407,6 +410,14 @@ class AppServerManager:
                 raise ValueError("the previous Codex turn is still running")
             if not session.result_retrieved:
                 raise ValueError("codex_result must be called before starting a reply")
+            if (
+                session.status == "failed"
+                and session.reply_attempted
+                and not session.reply_turn_started
+                and not session.reply_retryable
+            ):
+                raise ValueError("codex_start_reply cannot retry an ambiguous turn/start failure")
+            self._begin_reply(session)
             try:
                 client = await self._ensure_client()
                 resume_params: dict[str, Any] = {
@@ -417,27 +428,61 @@ class AppServerManager:
                 }
                 if session.model is not None:
                     resume_params["model"] = session.model
-                await client.request("thread/resume", resume_params)
-                session.status = "running"
-                session.error = None
-                session.agent_message = ""
-                session.current_item = None
-                session.commentary = ""
-                session.plan = []
-                session.diff_changed = False
-                session.result_retrieved = False
-                session.touch()
+                resume_response = await client.request("thread/resume", resume_params)
+                resumed_thread = resume_response.get("thread")
+                if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
+                    raise AppServerError("thread/resume returned an unexpected thread.id")
+            except Exception as exc:
+                await self._mark_failed(session, exc, retryable=True)
+                raise
+            try:
                 await self._start_turn(session, prompt)
             except Exception as exc:
-                await self._mark_failed(session, exc)
+                await self._mark_failed(session, exc, retryable=False)
                 raise
             return session.public_status()
 
-    async def _mark_failed(self, session: SessionState, error: BaseException) -> None:
-        """要求開始の失敗を終端状態へ反映し、待機者を起床する。"""
-        session.status = "failed"
-        session.error = {"message": str(error) or error.__class__.__name__}
+    @staticmethod
+    def _begin_reply(session: SessionState) -> None:
+        """直前turnの値を公開状態から除去し、新しいreply開始を準備する。"""
+        session.turn_id = ""
+        session.status = "running"
+        session.plan = []
+        session.current_item = None
+        session.commentary = ""
+        session.diff_changed = False
+        session.error = None
+        session.agent_message = ""
+        session.protocol_warnings = []
         session.result_retrieved = False
+        session.reply_attempted = True
+        session.reply_turn_started = False
+        session.reply_retryable = False
+        session.touch()
+
+    async def _mark_failed(
+        self,
+        session: SessionState,
+        error: BaseException,
+        *,
+        retryable: bool,
+    ) -> None:
+        """要求開始の失敗を終端状態へ反映し、待機者を起床する。
+
+        `retryable`が真の場合だけ、失敗結果の回収後に同じreplyを明示的に再試行できる。
+        """
+        session.turn_id = ""
+        session.status = "failed"
+        session.plan = []
+        session.current_item = None
+        session.commentary = ""
+        session.diff_changed = False
+        session.error = {"message": str(error) or error.__class__.__name__}
+        session.agent_message = ""
+        session.protocol_warnings = []
+        session.result_retrieved = False
+        session.reply_turn_started = False
+        session.reply_retryable = retryable
         session.touch()
         await self._notify_waiters()
 
@@ -461,6 +506,8 @@ class AppServerManager:
             raise AppServerError("turn/start returned no turn.id")
         session.turn_id = turn_id
         session.status = "running"
+        if session.reply_attempted:
+            session.reply_turn_started = True
         session.touch()
         await self._notify_waiters()
 

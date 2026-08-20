@@ -85,6 +85,21 @@ class FailingReplyClient(FakeClient):
         return await super().request(method, params)
 
 
+class FailingResumeClient(FakeClient):
+    """replyのthread/resumeを最初の一度だけ失敗させる偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_resume = True
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method == "thread/resume" and self.fail_resume:
+            self.fail_resume = False
+            self.requests.append((method, params or {}))
+            raise subject.AppServerError("thread/resume failed")
+        return await super().request(method, params)
+
+
 class FakeStderr:
     """stderrのreadlineを再現する非同期入力。"""
 
@@ -100,6 +115,19 @@ class FakeProcessWithStderr:
 
     def __init__(self, lines: list[bytes]) -> None:
         self.stderr = FakeStderr(lines)
+
+
+def _seed_completed_reply_session(session: subject.SessionState) -> None:
+    """前turn由来の値を設定し、失敗時の残留を検証できるようにする。"""
+    session.status = "completed"
+    session.turn_id = "turn-previous"
+    session.plan = [{"id": "previous-plan"}]
+    session.current_item = {"type": "commandExecution", "id": "previous-item"}
+    session.commentary = "previous commentary"
+    session.diff_changed = True
+    session.agent_message = "previous result"
+    session.protocol_warnings = ["previous warning"]
+    session.result_retrieved = True
 
 
 def test_tools_are_exactly_the_five_async_operations() -> None:
@@ -228,7 +256,7 @@ async def test_start_reply_serializes_same_session(monkeypatch: pytest.MonkeyPat
 async def test_start_reply_failure_marks_failed_and_wakes_waiters(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """replyのturn/start失敗をfailedへ確定し、codex_waitを解放する。"""
+    """replyのturn/start失敗をfailedへ確定し、前turnの値を残さない。"""
     manager = subject.AppServerManager()
     client = FailingReplyClient()
 
@@ -238,16 +266,72 @@ async def test_start_reply_failure_marks_failed_and_wakes_waiters(
     monkeypatch.setattr(manager, "_ensure_client", ensure_client)
     await manager.start("開始", str(tmp_path))
     session = manager.sessions["thread-1"]
-    session.status = "completed"
-    session.result_retrieved = True
+    _seed_completed_reply_session(session)
     waiter = asyncio.create_task(manager.wait("thread-1", timeout=10))
 
     with pytest.raises(subject.AppServerError, match="turn/start failed"):
         await manager.start_reply("thread-1", "続行")
 
-    result = await waiter
-    assert result["status"] == "failed"
-    assert result["error"] == {"message": "turn/start failed"}
+    waited = await waiter
+    status = manager.status("thread-1")
+    result = manager.result("thread-1")
+    assert waited == status
+    assert status["status"] == result["status"] == "failed"
+    assert status["session_id"] == result["session_id"] == "thread-1"
+    assert status["turn_id"] == result["turn_id"] == ""
+    assert status["error"] == result["error"] == {"message": "turn/start failed"}
+    assert status["plan"] == []
+    assert status["current_item"] is None
+    assert status["commentary"] == ""
+    assert status["diff_changed"] is False
+    assert status["protocol_warnings"] == []
+    assert result["agent_message"] == ""
+    status_after_result = manager.status("thread-1")
+    assert status_after_result["status"] == result["status"]
+    assert status_after_result["turn_id"] == result["turn_id"]
+    assert status_after_result["error"] == result["error"]
+    with pytest.raises(ValueError, match="ambiguous"):
+        await manager.start_reply("thread-1", "再試行")
+
+
+@pytest.mark.asyncio
+async def test_start_reply_resume_failure_clears_previous_state_and_allows_explicit_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """thread/resume失敗を最新failed状態へ反映し、結果回収後の安全な再試行を許可する。"""
+    manager = subject.AppServerManager()
+    client = FailingResumeClient()
+
+    async def ensure_client() -> FailingResumeClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    _seed_completed_reply_session(manager.sessions["thread-1"])
+
+    with pytest.raises(subject.AppServerError, match="thread/resume failed"):
+        await manager.start_reply("thread-1", "続行")
+
+    status = manager.status("thread-1")
+    result = manager.result("thread-1")
+    assert status["status"] == result["status"] == "failed"
+    assert status["session_id"] == result["session_id"] == "thread-1"
+    assert status["turn_id"] == result["turn_id"] == ""
+    assert status["error"] == result["error"] == {"message": "thread/resume failed"}
+    assert status["plan"] == []
+    assert status["current_item"] is None
+    assert status["commentary"] == ""
+    assert status["diff_changed"] is False
+    assert status["protocol_warnings"] == []
+    assert result["agent_message"] == ""
+    status_after_result = manager.status("thread-1")
+    assert status_after_result["status"] == result["status"]
+    assert status_after_result["turn_id"] == result["turn_id"]
+    assert status_after_result["error"] == result["error"]
+
+    retry = await manager.start_reply("thread-1", "再試行")
+    assert retry["status"] == "running"
+    assert [method for method, _ in client.requests].count("thread/resume") == 2
 
 
 @pytest.mark.asyncio
