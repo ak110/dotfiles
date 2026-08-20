@@ -788,6 +788,18 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
             assert phrase not in document
 
 
+def test_feedbacks_planner_refetches_ambiguous_batched_sources() -> None:
+    """複数原文の境界見出しが本文と衝突した場合に単数取得へ戻す契約を固定する。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+
+    assert "atk mq show <filename>... --target-repo=<repo> --skip-pull" in planner
+    assert "### <filename> [<状態>]" in planner
+    assert "### <filename> [<状態>/<answered|unanswered>]" in planner
+    assert "各対象の境界行が出力全体に1件だけ存在することを確認" in planner
+    assert "本文内の同形見出しとの衝突により一意に対応付けられない場合" in planner
+    assert "複数件出力を破棄して対象ファイルを前記の単数形コマンドで1件ずつ再取得" in planner
+
+
 def test_plan_standards_require_test_design_in_plans() -> None:
     """テストコードを含む計画へのテスト設計の要求を作成基準だけが持つ契約を固定する。"""
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
