@@ -9,10 +9,15 @@ import json
 import os
 import pathlib
 import subprocess
+import tempfile
+import threading
 import time
+from typing import Any
 
 import _fork_runner
+import _session_state
 import pytest
+import user_prompt_submit
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
@@ -446,6 +451,107 @@ class TestClaudePlanSessionTitle:
         )
         assert next_prompt.returncode == 0
         assert next_prompt.stdout == ""
+        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "original-plan"
+
+    def test_sweep_rechecks_expiry_after_concurrent_title_record(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """期限判定後に計画名が記録されても、再開後の二回目の計画名を出力しない。"""
+        sid = "plan-title-sweep-race"
+        home = tmp_path / "home"
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        plan = plans / "original-plan.md"
+        plan.write_text("# 元の計画\n", encoding="utf-8")
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        state_path.write_text(json.dumps({"current_plan_file_path": str(plan)}), encoding="utf-8")
+        stale_time = time.time() - (14 * 24 * 60 * 60 + 60)
+        os.utime(state_path, (stale_time, stale_time))
+
+        # UserPromptSubmitの状態更新を原子的置換の直前で停止し、期限判定後の競合順序を固定する。
+        atomic_write_started = threading.Event()
+        allow_atomic_write = threading.Event()
+        phase_condition = threading.Condition()
+        sweep_phase: list[str] = []
+        original_atomic_write = vars(_session_state)["_atomic_write"]
+
+        def _atomic_write(path: pathlib.Path, content: str) -> None:
+            if path == state_path and not atomic_write_started.is_set():
+                atomic_write_started.set()
+                assert allow_atomic_write.wait(timeout=5)
+            original_atomic_write(path, content)
+
+        monkeypatch.setattr("_session_state._atomic_write", _atomic_write)
+        original_acquire_lock = vars(_session_state)["_acquire_lock"]
+
+        def _acquire_lock(lock_file: Any) -> None:
+            if atomic_write_started.is_set():
+                with phase_condition:
+                    if not sweep_phase:
+                        sweep_phase.append("lock")
+                        phase_condition.notify()
+            original_acquire_lock(lock_file)
+
+        monkeypatch.setattr("_session_state._acquire_lock", _acquire_lock)
+        original_retain_session_title = vars(_session_state)["_retain_session_title"]
+
+        def _retain_session_title(path: pathlib.Path) -> bool:
+            if path != state_path or not atomic_write_started.is_set():
+                return original_retain_session_title(path)
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+            with phase_condition:
+                if not sweep_phase:
+                    sweep_phase.append("read")
+                    phase_condition.notify()
+            assert allow_atomic_write.wait(timeout=5)
+            return bool(snapshot.get("last_hook_session_title"))
+
+        monkeypatch.setattr("_session_state._retain_session_title", _retain_session_title)
+        sweep_result: list[int] = []
+
+        prompt_result: list[int] = []
+
+        def _submit_prompt() -> None:
+            prompt_result.append(user_prompt_submit.main(json.dumps({"session_id": sid, "prompt": "再開後の入力"})))
+
+        prompt_thread = threading.Thread(target=_submit_prompt)
+        prompt_thread.start()
+        assert atomic_write_started.wait(timeout=5)
+
+        def _sweep() -> None:
+            sweep_result.append(_session_state.sweep_stale_states())
+
+        sweep_thread = threading.Thread(target=_sweep)
+        sweep_thread.start()
+        with phase_condition:
+            assert phase_condition.wait_for(lambda: bool(sweep_phase), timeout=5)
+        allow_atomic_write.set()
+        prompt_thread.join(timeout=5)
+        sweep_thread.join(timeout=5)
+        assert not prompt_thread.is_alive()
+        assert not sweep_thread.is_alive()
+        assert prompt_result == [0]
+        assert sweep_result == [0]
+        first_output = json.loads(capsys.readouterr().out)
+        assert first_output["hookSpecificOutput"]["sessionTitle"] == "original-plan"
+
+        resumed_plan = plans / "resumed-plan.md"
+        resumed_plan.write_text("# 再開後の計画\n", encoding="utf-8")
+        assert (
+            _session_state.update_state(
+                sid,
+                lambda current: {**current, "current_plan_file_path": str(resumed_plan)},
+            )
+            is True
+        )
+
+        assert user_prompt_submit.main(json.dumps({"session_id": sid, "prompt": "再開後の二回目の入力"})) == 0
+        assert capsys.readouterr().out == ""
         assert _read_state(tmp_path, sid)["last_hook_session_title"] == "original-plan"
 
     @pytest.mark.parametrize("invalid_path", [None, 42, "relative.md", "/tmp/not-a-plan.md"])

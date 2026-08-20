@@ -20,7 +20,7 @@ import os
 import pathlib
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from _file_lock import acquire_lock as _acquire_lock
 from _file_lock import release_lock as _release_lock
@@ -42,6 +42,19 @@ STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 def state_path(session_id: str) -> pathlib.Path:
     """セッション状態ファイルのパスを返す。"""
     return pathlib.Path(tempfile.gettempdir()) / f"{_FILENAME_PREFIX}{session_id}{_FILENAME_SUFFIX}"
+
+
+@contextlib.contextmanager
+def _locked_state(path: pathlib.Path) -> Iterator[None]:
+    """状態ファイルと同じセッション別ロックを取得して処理を実行する。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.parent / (path.name + _LOCK_SUFFIX)
+    with open(lock_path, "a+", encoding="utf-8") as lock_file:  # noqa: SIM115 -- ロック保持のため
+        _acquire_lock(lock_file)
+        try:
+            yield
+        finally:
+            _release_lock(lock_file)
 
 
 def sweep_stale_states(
@@ -78,11 +91,21 @@ def sweep_stale_states(
     for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"):
         if path.name == kept_name or not _is_stale(path, threshold):
             continue
-        if _retain_session_title(path):
+        removed_state = False
+        lock_path = path.parent / (path.name + _LOCK_SUFFIX)
+        try:
+            with _locked_state(path):
+                # 初回の期限判定からロック取得までに更新された状態を回収しない。
+                if not _is_stale(path, threshold):
+                    continue
+                if _retain_session_title(path):
+                    continue
+                removed_state = _unlink_quietly(path)
+        except OSError:
             continue
-        if _unlink_quietly(path):
+        if removed_state:
             removed += 1
-        _unlink_quietly(path.parent / (path.name + _LOCK_SUFFIX))
+            _unlink_quietly(lock_path)
     for lock_path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}{_LOCK_SUFFIX}"):
         if kept_name is not None and lock_path.name == kept_name + _LOCK_SUFFIX:
             continue
@@ -164,20 +187,14 @@ def update_state(session_id: str, mutator: Callable[[dict], dict | None]) -> boo
     if not isinstance(session_id, str) or not session_id:
         return False
     path = state_path(session_id)
-    lock_path = path.parent / (path.name + ".lock")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, "a+", encoding="utf-8") as lock_file:  # noqa: SIM115 -- ロック保持のため
-            _acquire_lock(lock_file)
-            try:
-                current = _read_locked(path)
-                updated = mutator(current)
-                if updated is None:
-                    return False
-                _atomic_write(path, json.dumps(updated, ensure_ascii=False))
-                return True
-            finally:
-                _release_lock(lock_file)
+        with _locked_state(path):
+            current = _read_locked(path)
+            updated = mutator(current)
+            if updated is None:
+                return False
+            _atomic_write(path, json.dumps(updated, ensure_ascii=False))
+            return True
     except OSError:
         return False
 
@@ -191,16 +208,10 @@ def delete_state(session_id: str) -> bool:
     if not isinstance(session_id, str) or not session_id:
         return False
     path = state_path(session_id)
-    lock_path = path.parent / (path.name + ".lock")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, "a+", encoding="utf-8") as lock_file:  # noqa: SIM115 -- ロック保持のため
-            _acquire_lock(lock_file)
-            try:
-                path.unlink(missing_ok=True)
-                return True
-            finally:
-                _release_lock(lock_file)
+        with _locked_state(path):
+            path.unlink(missing_ok=True)
+            return True
     except OSError:
         return False
 
