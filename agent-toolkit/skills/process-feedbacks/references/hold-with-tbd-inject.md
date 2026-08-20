@@ -37,7 +37,7 @@ inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了す
 
 `source: session-review`と確認できない項目で、`feedbacks-planner`の失敗又は結果反映の失敗により失敗TBDを保存した場合は、元項目をrejectせず、失敗TBDを元項目の依存へ追加して保留する。失敗TBDの保存結果を確認した後、現行の有効依存を復元して失敗TBDのファイル名を追加し、`atk mq set-dependencies`の保存結果で全依存を照合する。
 
-依存を照合した後に通常の`atk mq return-to-inbox`で元項目をinboxへ戻し、`atk mq list --status=active --target-repo=<repo-path>`で対象行が`blocked`であることを確認する。失敗TBDの回答後に、通常の不採用確認経路を再開する。失敗TBDの保存、依存設定、差し戻し又は`blocked`確認のいずれかに失敗した場合も、元項目をrejectせずactiveのまま保持して失敗を返す。
+依存を照合した後に通常の`atk mq return-to-inbox`で元項目をinboxへ戻し、`atk mq list --status=active --target-repo=<repo-path>`で対象行が`blocked`であることを確認する。失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する。失敗TBDの保存、依存設定、差し戻し又は`blocked`確認のいずれかに失敗した場合も、元項目をrejectせずactiveのまま保持して失敗を返す。
 
 ## 保留と再開
 

@@ -1052,7 +1052,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "`atk mq set-dependencies`",
         "`atk mq return-to-inbox`で元項目をinboxへ戻し",
         "対象行が`blocked`であることを確認する",
-        "通常の不採用確認経路を再開する",
+        "失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する",
     ):
         assert phrase in hold
     for forbidden in ("結果反映済み項目", "結果部分反映項目", "結果未反映項目", "同一バッチ非再試行"):
