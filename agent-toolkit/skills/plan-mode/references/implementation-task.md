@@ -74,21 +74,27 @@ executorは書込担当の完了後にphaseごとの`rewrite_guard`を検収し�
 手順3・4を採用指摘全体へ一括適用せず、各反復で当該単位の修正だけを扱う。
 過去単位の反復では、当該単位の修正を実装し、近接検証を実行して警告を解消する。
 修正差分をstageした後、各fixup作成前の`fixup:<単位順>` phaseで書込担当が再判定と遮断を完了する。
-修正差分だけをstageし、対応する`fixup`を作成する。
+修正差分だけをstageし、`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`で対応する`fixup`を作成する。
 対象OID、件名及び作業ツリーがcleanであることを確認してから次の過去単位へ進む。
 過去単位と最終単位が対象の場合、autosquash前の反復対象を過去単位だけに限定する。
+過去単位を含む場合は、単位別反復を開始する前にfixup対象の最古commitと履歴書換え前の元HEADを完全OIDで確定する。
+`GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でautosquashのrebase範囲を列挙する。
+`GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
+範囲列挙、merge確認、元HEADの確定のいずれかに失敗した場合は、fixupを1件も作成せず`needs_escalation`で返す。
+範囲にmergeが含まれる場合も同じ扱いとする。
 全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前の再判定と遮断を完了する。
 最終単位だけが対象の場合は、最終単位の修正を実装し、近接検証を実行してstageした後、`amend` phaseの再判定と遮断を完了する。
-過去単位と最終単位が対象の場合、autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、最終単位の修正差分を実装し、近接検証を実行してstageする。その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする。
+過去単位と最終単位が対象の場合、autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、最終単位の修正差分を実装し、近接検証を実行してstageする。その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする。
 実行系は開始前に確定し、Codex経路では元の実装担当threadを継続し、Claude経路では旧担当の終端を確認して検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定、履歴統合、amendを完結する。
 Codex経路では同一の書込担当を継続し、中間引継ぎを行わない。
 各操作後に対象OID、件名、作業ツリーのclean状態を確認する。
 
 複数の過去単位が対象の場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。
 各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認してから、次の単位の修正差分を適用する。
-最終単位だけが対象の場合は最終単位の修正差分だけを適用し、近接検証を実行してstageした後、`amend` phaseの再判定が成功した場合だけ`git commit --amend`を実行する。
-過去単位だけが対象の場合は、全過去単位のfixup作成後に`autosquash` phaseの再判定が成功した場合だけ、`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`を実行する。
-最終単位と過去単位の両方が対象の場合は、過去単位のautosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換し、開始済みの同じ書込担当が最終単位の修正差分だけを実装し、近接検証を実行してstageする。その後、`amend` phaseの再判定が成功した場合だけ書換え後HEADへamendする。
+最終単位だけが対象の場合は最終単位の修正差分だけを適用し、近接検証を実行してstageした後、`amend` phaseの再判定が成功した場合だけ`GIT_NO_REPLACE_OBJECTS=1 git commit --amend`を実行する。
+過去単位だけが対象の場合は、全過去単位のfixup作成後に、事前に保持した元HEADまでのfirst-parent全OIDを対象とする。
+`autosquash` phaseの再判定が成功した場合だけ、`GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <最古fixup対象>^`を実行する。
+最終単位と過去単位の両方が対象の場合は、過去単位のautosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換し、開始済みの同じ書込担当が最終単位の修正差分だけを実装し、近接検証を実行してstageする。その後、`amend` phaseの再判定が成功した場合だけ書換え後HEADへamendする。
 いずれもレビュー修正専用commitを残さない。
 開始済みの書込担当はfixup作成前、autosquash直前、amend直前に、`git remote`で全remoteを列挙する。
 各再判定phaseで`git rev-parse --is-shallow-repository`を実行し、終了コードと出力を確認する。終了コード0かつ出力が`false`の場合だけ広告照会と祖先判定を継続する。終了コード0で出力が`true`の場合、終了コードが非0の場合、出力が`true`と`false`のいずれでもない場合は、履歴を書き換えず`needs_escalation`で返す。
@@ -96,22 +102,27 @@ Codex経路では同一の書込担当を継続し、中間引継ぎを行わな
 URL取得、重複排除又は広告照会に失敗した場合は残りのURLの結果や既存の広告を判定材料にせず、履歴を書き換えず`needs_escalation`で返す。全照会URL endpointの広告取得・不足OID fetch・再照合が完了したことを確認できない場合も、履歴を書き換えず`needs_escalation`で返す。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。
 この専用再判定では汎用の`git fetch --all --prune`を実行せず、各照会URLの広告取得と不足OIDだけの一時ref取得に限定する。
 正規化した全広告ref・OIDを母集団とし、local object databaseに存在しない広告OIDだけを照会URLごとにまとめる。衝突しない数値添字の`refs/agent-toolkit/rewrite-guard/<実行識別子>/<照会URL番号>/<OID番号>`へ`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`で取得する。
-取得後に同じ`ls-remote`を再実行して広告集合の不変を確認する。全照会URL endpointの広告取得・不足OID fetch・再照合が完了した場合だけ、広告branchのOIDをcommitとして解決し、広告tagのOIDを再帰的に参照先へ解決する。広告branch tipには`git merge-base --is-ancestor <対象OID> <branchTip>`を実行する。終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）の場合は公開済み、終了コード1（対象OIDがbranch tipの祖先でない）の場合は未公開と判定する。その他の終了コードはGit実行失敗として遮断する。広告tagは最終参照先がcommitの場合だけ同じ祖先判定する。終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は除外する。
+取得後に同じ`ls-remote`を再実行して広告集合の不変を確認する。全照会URL endpointの広告取得・不足OID fetch・再照合が完了した場合だけ、広告branchのOIDをcommitとして解決し、広告tagのOIDを再帰的に参照先へ解決する。広告branch tipには`GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor <対象OID> <branchTip>`を実行する。終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）の場合は公開済み、終了コード1（対象OIDがbranch tipの祖先でない）の場合は未公開と判定する。その他の終了コードはGit実行失敗として遮断する。広告tagは最終参照先がcommitの場合だけ同じ祖先判定する。終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は除外する。
+広告OIDの実在確認、branchまたはtagのobject解決とtagの再帰的なpeel、rebase範囲の列挙及び祖先判定には`GIT_NO_REPLACE_OBJECTS=1`を付ける。
+replace refやgraftによって置換されたobjectや親関係を混入させない。
+祖先判定は`GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor <対象OID> <branchTip>`として実行する。
 各判定後と失敗時に期待OIDを指定した`git update-ref -d`で作成済み一時refだけを削除し、実行識別子のref名前空間が空であることを確認する。
 
 remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない。
 remote列挙、URL取得、重複排除、広告取得、不足OIDのfetch、広告集合の再照合、全照会URL endpointの完了確認、一時ref回収又は祖先判定（終了コード0・1以外を含む）が失敗した場合は履歴を書き換えず`needs_escalation`で返す。
-各再判定phaseの対象は履歴順の`target_oids`配列で確定する。`fixup:<単位順>`と`amend`は対象が1件でも1要素の配列を使い、`autosquash`は全過去単位のOIDを同じ配列へ履歴順で含める。`autosquash` phaseでは配列の各OIDについて公開済み判定と遮断を反復し、1件でも公開済みなら履歴を書き換えない。
+各再判定phaseの対象は履歴順の`target_oids`配列で確定する。`fixup:<単位順>`と`amend`は対象が1件でも1要素の配列を使い、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを同じ配列へ履歴順で含める。
+`autosquash` phaseでは配列のfirst-parent全OIDについて公開済み判定と遮断を反復する。
+1件でも公開済み・判定不能のOIDがあるか、範囲にmergeを含む場合は履歴を書き換えない。
 `rewrite_guard`には各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。各要素へ同じ順序の`target_oids`、Git版、検収済みHEADを記録する。remote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの広告取得・不足OID fetch・再照合完了と、照会URL単位の各終了コードも記録する。URL値は記録せず、URL列挙終了コードと件数だけを保持する。正規化済み広告ref・OID、一時ref回収結果、各Gitコマンドの終了コードと公開済み判定結果だけを保持する。
 `rewrite_guard`には`shallow_repository_check_exit_code`へ`git rev-parse --is-shallow-repository`の終了コードを、`is_shallow_repository`へ終了コード0で得た出力を正規化したboolを記録する。終了コードが非0の場合のboolは「なし」とする。
 非commit tagについては、peeled objectの実在確認結果を`noncommit_tag_peeled_object_exists`へ正規化して記録する。最終OIDとobject typeは`noncommit_tag_final_oid_and_type`へ正規化して記録する。祖先判定から除外した理由は`noncommit_tag_exclusion_reason`へ正規化して記録する。レビュー修正モードでは必須完了出力とし、書込担当は`completed`と`needs_escalation`のいずれでも返す。
 エラー時は秘密情報を除去した必要最小限の要約だけを加え、標準出力・標準エラーの無加工な全文と認証情報を保存しない。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。成功時と失敗時のどちらも、URL値を保存しない。
 最終参照先がcommit以外のtagは正規化済みOID、型及び除外判定を保持して祖先判定から除外する。
 local-only tag、remoteが広告しないtag、`refs/tags/`全体の検索結果は判定材料にしない。
-対象OIDの子孫であるremote広告branch tip（`git merge-base --is-ancestor <対象OID> <branchTip>`の終了コード0）が1件以上あれば、履歴を書き換えず`needs_escalation`で返す。終了コード1は未公開として判定を継続し、その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す。同じ判定で対象OIDの子孫であるremote広告tagの最終commitが1件以上ある場合も、履歴を書き換えず`needs_escalation`で返す。
+対象OIDの子孫であるremote広告branch tip（`GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor <対象OID> <branchTip>`の終了コード0）が1件以上あれば、履歴を書き換えず`needs_escalation`で返す。終了コード1は未公開として判定を継続し、その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す。同じ判定で対象OIDの子孫であるremote広告tagの最終commitが1件以上ある場合も、履歴を書き換えず`needs_escalation`で返す。
 公開済み判定と履歴書換え直前の遮断は、検証済み対応表を伴う通常`plan-impl`レビュー修正だけに適用する。
 通常のamend・fixup・autosquash、`history-rewrite.md`の汎用公開済み判定、統合後レビュー調整モードへ強化判定を波及させない。
-autosquashが非0終了した場合はrebase進行状態を実測し、進行中の場合だけ`git rebase --abort`を実行する。
+autosquashが非0終了した場合はrebase進行状態を実測し、進行中の場合だけ`GIT_NO_REPLACE_OBJECTS=1 git rebase --abort`を実行する。
 未開始の場合はabortせず、autosquash終了コード、HEAD、fixup commit、stage、作業ツリー、rebase進行状態と秘密情報を除去した必要最小限のエラー要約を保持して`needs_escalation`で返す。
 amendが非0終了した場合も追加の履歴操作をせず、失敗時点のHEAD、stage、作業ツリーと診断を保持して`needs_escalation`で返す。
 履歴統合後は各実装単位の変更前後OID、件名、順序、件数、親子関係、差分帰属を実測する。
@@ -145,7 +156,7 @@ review_resolution:
 feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>
 rewrite_guard:
 - phase: <fixup:<単位順>|autosquash|amend>
-  target_oids: <履歴順の対象完全OID一覧。単一対象も1要素の配列>
+  target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
   git_version: <Git版>
   verified_head: <検収済みHEAD>
   shallow_repository_check_exit_code: <`git rev-parse --is-shallow-repository`の終了コード>

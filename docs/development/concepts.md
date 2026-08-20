@@ -184,6 +184,13 @@
   最終単位だけは修正・近接検証・stage後にamend直前再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・近接検証・stageした後、amend直前の再判定後にamendする。レビュー修正専用commitは残さない。
   対応不能又は中間契約を維持できない場合は新規commitへフォールバックせず`needs_escalation`で返す。
   複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行する。
+  過去単位を含む場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを保持する。
+  `GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でautosquashのrebase範囲に含めるfirst-parent全OIDを確定する。
+  `GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
+  範囲列挙、merge確認、元HEADの確定のいずれかに失敗する場合、範囲にmergeが含まれる場合は、fixupを作成せず`needs_escalation`で返す。
+  fixupは`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`で作成する。
+  rebaseは`GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で実行する。
+  amendは`GIT_NO_REPLACE_OBJECTS=1 git commit --amend`で実行する。
   過去単位と最終単位が対象の場合は、autosquash成功後に最終単位の修正を実装・近接検証・stageし、amend直前の2回目のpush済み判定が成功した後にだけ最終単位の修正をamendする。
   書込担当は各fixup作成前、autosquash直前及びamend直前の各phaseで`git remote`により全remoteを列挙する。
   各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得する。fetch URL列挙・push URL列挙のremote別終了コードを保持し、URL値は保持しない。全remoteの集合を1つの照会URL集合へ統合し、URL文字列が完全一致するものだけ重複を除き、重複排除前後の照会URL件数を計数する。以後の広告照会・不足OIDのfetch・終了コードを照会URL単位で扱い、各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行する。全照会URL endpointの広告取得・不足OID fetch・再照合を完了させる。
@@ -193,12 +200,16 @@
   local object databaseに存在しない広告OIDだけを照会URLごとにまとめ、数値添字の一時refへ`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`で取得して、広告集合の再照合後に回収する。
   remote-tracking ref、local tag、remote設定と`FETCH_HEAD`は変更しない。
   各再判定phaseで`git rev-parse --is-shallow-repository`を実行し、終了コード0かつ出力が`false`の場合だけ広告集合と祖先判定を継続する。出力が`true`、終了コードが非0、又は出力が`true`と`false`のいずれでもない場合は、履歴を書き換えず`needs_escalation`で返す。
-  広告OIDとobjectの実在、最終参照先の型を確認する。全照会URL endpointの広告取得・不足OID fetch・再照合完了後、広告branch tipへ`git merge-base --is-ancestor <対象OID> <branchTip>`を実行する。終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）は公開済みと判定する。終了コード1（対象OIDがbranch tipの祖先でない）は未公開と判定する。その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す。広告tagは最終参照先がcommitの場合だけ同じ祖先判定する。終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は祖先判定から除外する。
-  各phaseの対象は履歴順の`target_oids`配列で扱う。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は全過去単位のOIDを配列へ含める。autosquashでは配列の各OIDを判定し、1件でも公開済みなら遮断する。
+  広告OIDとobjectの実在、最終参照先の型を確認する。広告OIDの実在確認、branchまたはtagのobject解決とtagの再帰的なpeel、rebase範囲の列挙及び祖先判定には`GIT_NO_REPLACE_OBJECTS=1`を付ける。
+  replace refやgraftの影響を除外する。全照会URL endpointの広告取得・不足OID fetch・再照合完了後、広告branch tipへ`GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor <対象OID> <branchTip>`を実行する。
+  終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）は公開済みと判定する。終了コード1（対象OIDがbranch tipの祖先でない）は未公開と判定する。
+  その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す。広告tagは最終参照先がcommitの場合だけ同じ祖先判定する。
+  終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は祖先判定から除外する。
+  各phaseの対象は履歴順の`target_oids`配列で扱う。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを配列へ含める。autosquashでは配列のfirst-parent全OIDを判定し、1件でも公開済み・判定不能又は範囲にmergeを含む場合は遮断する。
   URL取得、重複排除、広告取得、不足OIDのfetch、広告集合の再照合または一時refの回収に失敗した場合、残りの結果を判定材料とせず履歴を書き換えず`needs_escalation`で返す。再判定不能、対象OIDのpush済み検出がある場合も`needs_escalation`で返す。
   実行系は開始前に確定し、Codex経路は元の実装担当threadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
   `rewrite_guard`のphaseは通常の`plan-impl`レビュー修正だけに記録し、通常実装のレビュー修正以外及び統合後レビュー調整モードでは`not_applicable`とする。executorは書込担当の完了後に各再判定phaseの履歴順`target_oids`を含む最小化済み`rewrite_guard`反復証跡を検収する。証跡にはshallow判定の終了コードと正規化済みbool、remote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの完了フラグ、URL単位の各終了コード及び判定結果を含める。URL値、Git出力又は認証情報の無加工な受渡しは行わず、履歴書換え前の中間受渡しも設けない。
-  autosquashとamendの両方を実行する場合は、autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。
+  autosquashとamendの両方を実行する場合は、autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。
   書換え前の各対象OIDと書換え後の全実装単位OIDの対応は履歴検収用に保持する。
   統合後レビュー調整モードは`merge-task.md`に従い、統合差分へ1つの修正commitを作成する既存経路を維持する
 

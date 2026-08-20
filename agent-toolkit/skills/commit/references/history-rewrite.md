@@ -28,14 +28,14 @@ remote広告tagを含む強化判定と`rewrite_guard`の受渡しは、`impleme
 各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認し、その確認後にだけ次の過去単位の修正差分を適用する。
 全過去単位のfixupを作成した後に1回だけautosquashを実行する。
 最終単位と過去単位の両方が対象の場合は、autosquash前の反復対象を過去単位だけに限定する。最終単位の修正実装と近接検証、stageはautosquash成功後へ延期する。
-autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
+autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
 autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。開始済みの同じ書込担当が最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする。
 
-- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend`を使う
+- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`GIT_NO_REPLACE_OBJECTS=1 git commit --amend`を使う
 - それより前の未プッシュコミットを完成させる修正は、統合後のメッセージ変更要否でfixup形式を選ぶ
-  - メッセージを変更しない場合は`git commit --fixup=<sha>`を使う
-  - メッセージへ帰属情報などを追加または更新する場合は`git commit --fixup=amend:<sha>`を使う
-  - コード差分を含めずメッセージだけを変更する場合は`git commit --fixup=reword:<sha>`を使う
+  - メッセージを変更しない場合は`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<sha>`を使う
+  - メッセージへ帰属情報などを追加または更新する場合は`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=amend:<sha>`を使う
+  - コード差分を含めずメッセージだけを変更する場合は`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=reword:<sha>`を使う
 - 上記の例外に該当しない独立した変更目的を持つ修正、または統合先に適する未プッシュコミットがない修正は新規コミットを作成する
 
 ## fixupの実行上の制約
@@ -49,7 +49,11 @@ autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換す�
 - `--fixup`は`-m`・`-F`と併用できない
   （`fatal: options '-m' and '--fixup:reword' cannot be used together`で失敗する）。
   非対話環境では`GIT_EDITOR`へ1行目を保持したまま以降を差し替える処理を指定する
-- 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で行う
+- autosquashを実行する場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを完全OIDで保持する。
+  `GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でrebase範囲のfirst-parent全OIDを確定する。
+  replace refやgraftの影響を除外する。
+  `GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`がmerge commitを返す場合、範囲の確定又は判定のいずれかに失敗した場合は、fixupを作成せずautosquashを中止する
+- 統合は`GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で行う
   （`<base>`は対象コミットの親以前を指す）
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する帰属情報を統合後に1回だけ残す

@@ -158,6 +158,10 @@ worktreeと管理対象領域を作成・回収しない。
    複製元と対象外worktree、git操作の制約を渡す。
 5. レビュー修正の実装、再判定、履歴統合及び完了報告は`skills/plan-mode/references/implementation-task.md`を正本とし、executorは個別手順を再掲しない。
 6. 書込担当の完了後、executorは履歴書換え前後の全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果とclean状態を検収する。`rewrite_guard`反復証跡はremote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数と全照会URL endpointの完了フラグを含める。`shallow_repository_check_exit_code`と`is_shallow_repository`を検収し、終了コード0かつboolが`false`の場合だけ後続判定を許可し、boolが`true`又は終了コードが非0の場合は`needs_escalation`で返したことを確認する。`noncommit_tag_peeled_object_exists`、`noncommit_tag_final_oid_and_type`と`noncommit_tag_exclusion_reason`も検収する。URL値は受け取らず、URL列挙終了コードと件数だけを検収する。レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
+   `autosquash`では、fixup対象の最古commitから履歴書換え前に保持した元HEADまでのfirst-parent全OIDが`target_oids`へ履歴順で含まれ、範囲にmerge commitが無いことを、fixup作成前の事前遮断を含めて検収する。広告OIDの実在確認、object解決、tag peel及び祖先判定へ`GIT_NO_REPLACE_OBJECTS=1`を付け、replace refまたはgraftの影響を除外したことも検収する。範囲列挙、merge確認、OID解決、tag peel、祖先判定又は`target_oids`各OIDの公開済み判定に1件でも失敗があれば、履歴書換えを適用せず`needs_escalation`で返したことを確認する。
+   fixupは`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`で実行したことを検収する。
+   rebaseは`GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で実行したことを検収する。
+   amendは`GIT_NO_REPLACE_OBJECTS=1 git commit --amend`で実行したことを検収する。
 
 #### 統合後レビュー調整モードのレビュー修正
 
@@ -206,7 +210,7 @@ plan_check: <概要、実施内容、任意の合意済みの除外・保持、�
 feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>
 rewrite_guard:
 - phase: <fixup:<単位順>|autosquash|amend>
-  target_oids: <履歴順の対象完全OID一覧。単一対象も1要素の配列>
+  target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
   git_version: <Git版>
   verified_head: <検収済みHEAD>
   shallow_repository_check_exit_code: <`git rev-parse --is-shallow-repository`の終了コード>
