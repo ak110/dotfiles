@@ -37,7 +37,7 @@ TBDへ永続化して暫定判断で進める。
 
 `start-processing`が状態競合で拒否した場合は、active一覧と保存本文を再取得して着手可否の判定から再開する。
 移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで集合のprocessing配置と保存本文を確認する。
-`atk mq list --status=active --target-repo=<repo-path>`と
+`atk mq list --status=active --target-repo=<repo-path> --skip-pull`と
 `atk mq show <filename>... --target-repo=<repo-path> --skip-pull`を実行する。
 管理リポジトリでは`git status --porcelain`及び
 `git show --name-status --format=%H%n%s HEAD`を実行し、未コミット差分と遷移commitを照合する。

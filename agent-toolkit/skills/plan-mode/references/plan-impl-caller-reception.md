@@ -69,7 +69,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 CI失敗時は`agent-toolkit:bugfix`で原因を確定する。原因分析によりコード・テスト・設定の修正commitが必要と確定した場合だけ、
 通常モードの`plan-impl-executor`へ元計画を再投入せず、呼び出し元が`runtime-routing.md`の`execute_fix_model`を起動直前に解決して
 単一の書込担当へ委譲する。入力は対象worktree、原因分析結果、修正の認可根拠となる承認済み計画、適用規範、許容する変更、
-対象外worktree、push禁止とする。担当は修正、検証、commitを完了し、呼び出し元は二系統レビュー、再push、CI確認へ戻る。
+対象外worktree、push禁止、`skills/plan-mode/references/implementation-task.md`及び担当種別`CI修正担当`とする。起動文へ担当種別を`CI修正担当`として明示する。担当は修正、検証、commitを完了し、呼び出し元は二系統レビュー、再push、CI確認へ戻る。
 外部基盤障害など修正commitを要しない失敗では修正担当を起動せず、既存の原因別経路を維持する。
 pushとCI成功を実測し、ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行する。
 各採用処理の保存結果を照合する。

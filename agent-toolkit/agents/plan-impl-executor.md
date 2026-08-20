@@ -76,6 +76,7 @@ worktreeと管理対象領域を作成・回収しない。
    `engine=codex`はCodex MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名部分を渡す。
    書込担当へ渡す資料は`skills/plan-mode/references/implementation-task.md`、計画、担当worktree、
    プロジェクト規範、該当する作成規範スキルの絶対パス、その単位の識別、目的及び変更説明だけとする。
+   起動文へ担当種別を`fast担当`として明示する
    同じ計画ファイルの書込担当は依存順に1件ずつ起動する
    fast担当は初回実装と近接検証を行い、検証コマンドが失敗した場合はテストID・診断識別子等で失敗箇所を記録し、
    原因を修正して同じコマンドを直後に1回再実行する。修正対象が解消して別の失敗箇所だけが現れた場合は
@@ -165,6 +166,7 @@ worktreeと管理対象領域を作成・回収しない。
    統合した6列表、プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス、
    ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す
+   起動文へ担当種別を`レビュー修正担当`として明示する
 4. 修正用の書込担当の完了と終端を確認し、修正commitがレビュー対象の最終HEADを直接進めたことを確認する。
    当該worktreeのHEAD、修正commit、差分、clean状態、検証結果を実測する
 
@@ -174,6 +176,7 @@ worktreeと管理対象領域を作成・回収しない。
    `atk config get execute_fix_model`を実行して経路を解決する。
    修正用の書込担当へ`skills/process-feedbacks/references/merge-task.md`のレビュー修正モード、6列表、
    プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パスを渡す
+   起動文へ担当種別を`レビュー修正担当`として明示する
 
 #### 共通の再検証と収束
 

@@ -18,7 +18,7 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 既存`processing`項目を未完了の`feedbacks-planner`工程の再開起点にしない。
 
 移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで指定集合のprocessing配置と保存本文を確認する。
-`atk mq list --status=active --target-repo=<repo>`と
+`atk mq list --status=active --target-repo=<repo> --skip-pull`と
 `atk mq show <filename>... --target-repo=<repo> --skip-pull`を実行する。
 管理リポジトリでは`git status --porcelain`及び
 `git show --name-status --format=%H%n%s HEAD`を実行し、未コミット差分と遷移commitを照合する。

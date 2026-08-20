@@ -1094,6 +1094,10 @@ def test_ci_repair_commits_are_delegated_by_caller() -> None:
         assert "外部基盤障害など修正commitを要しない失敗" in text
     assert "`execute_fix_model`" in routing
     assert "直接修正して再push" not in ci_failure
+    assert "`skills/plan-mode/references/implementation-task.md`" in caller
+    assert "担当種別`CI修正担当`" in caller
+    assert "`skills/plan-mode/references/implementation-task.md`" in ci_failure
+    assert "担当種別`CI修正担当`" in ci_failure
 
 
 def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
@@ -1132,6 +1136,23 @@ def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
         assert "`atk config get execute_fix_model`" in section
 
 
+def test_implementation_task_type_is_explicit_at_each_launch_point() -> None:
+    """fast、fix、レビュー修正及びCI修正の起動文が担当種別を渡す契約を固定する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
+
+    assert "担当種別（`fast担当`、`fix担当`、`レビュー修正担当`又は`CI修正担当`" in task
+    assert "起動文へ担当種別を`fast担当`として明示" in executor
+    assert "担当種別は`fix担当`として明示" in executor
+    assert executor.count("起動文へ担当種別を`レビュー修正担当`として明示") == 2
+    assert "起動文へ担当種別を`CI修正担当`として明示" in caller
+    assert "担当種別`CI修正担当`" in caller
+    assert "担当種別`CI修正担当`" in ci_failure
+    assert "起動文へ担当種別を`CI修正担当`として明示" in ci_failure
+
+
 def test_start_processing_batch_failure_boundary_is_documented() -> None:
     """一括処理開始の移動前拒否と移動後の公開完了境界を文書で固定する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
@@ -1143,6 +1164,7 @@ def test_start_processing_batch_failure_boundary_is_documented() -> None:
         assert "移動前" in text
         assert "集合全体" in text
         assert "`atk mq list --status=active --target-repo=" in text
+        assert "--skip-pull`" in text
         assert "`atk mq show <filename>..." in text
         assert "git status --porcelain" in text
         assert "git show --name-status --format=%H%n%s HEAD" in text
@@ -1151,6 +1173,34 @@ def test_start_processing_batch_failure_boundary_is_documented() -> None:
         assert "項目別コマンド" in text
         assert "未完了" in text
     assert "複数の識別子を同一工程で取得又は処理する場合" in rules
+
+
+def test_batch_contract_requires_shared_conditions_and_splits_differences() -> None:
+    """一括化が対象間のオプション、前提及び処理条件の共有を要求する契約を固定する。"""
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    assert "同じ対象リポジトリから複数の識別子を同一工程" in rules
+    assert "コマンドオプション、前提及び処理条件を共有" in rules
+    assert "いずれかの条件が異なる対象は集合を分ける" in rules
+    for text in (process, reception):
+        assert "<filename>..." in text
+        assert "項目別コマンド" in text
+
+
+def test_start_processing_failure_observes_local_transition_and_upstream_boundary() -> None:
+    """開始失敗後にprocessing配置からupstream包含まで観測する契約を固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    assert "`atk mq list --status=active --target-repo=<repo-path> --skip-pull`" in process
+    assert "`atk mq list --status=active --target-repo=<repo> --skip-pull`" in reception
+    for text in (process, reception):
+        assert "processing配置" in text
+        assert "遷移commit" in text
+        assert "upstream包含" in text
+        assert "git merge-base --is-ancestor" in text
 
 
 def test_launch_points_limit_thread_continuation_to_codex_route() -> None:

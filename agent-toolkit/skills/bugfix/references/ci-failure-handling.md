@@ -17,6 +17,8 @@ formatter未適用・単純なテスト期待値の未追随など）と確定�
 - 起動直前に解決した`execute_fix_model`
 - 対象worktree、原因分析結果、修正の認可根拠となる承認済み計画及び適用規範
 - 許容する変更、対象外worktree及びpush禁止
+- `skills/plan-mode/references/implementation-task.md`及び担当種別`CI修正担当`
+- 起動文へ担当種別を`CI修正担当`として明示する
 
 書込担当は修正、検証、commitを完了し、呼び出し元は二系統レビュー、再push、CI確認へ戻る。
 外部基盤障害など修正commitを要しない失敗では書込担当を起動せず、既存の原因別経路を維持する。
