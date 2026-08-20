@@ -20,16 +20,22 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで指定集合のprocessing配置と保存本文を確認する。
 `atk mq list --status=active --target-repo=<repo> --skip-pull`と
 `atk mq show <filename>... --target-repo=<repo> --skip-pull`を実行する。
-管理リポジトリでは`git status --porcelain`及び
-`git show --name-status --format=%H%n%s HEAD`を実行し、未コミット差分と遷移commitを照合する。
-remote設定時は遷移commitの完全OIDを取得し、`git fetch`後に
-`git merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
+管理リポジトリの検査を開始する前に、既存の`atk config get private_notes`を実行して標準出力から絶対パスを取得する。
+取得に失敗した場合は未完了で停止する。
+標準出力を絶対パスとして検証できない場合も同様とする。
+対象リポジトリのcwdでGit検査をしない。
+取得したパスを`<private-notes-path>`として、管理リポジトリの状態を
+`git -C <private-notes-path> status --porcelain`で確認する。
+遷移commitは`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`で取得し、未コミット差分と照合する。
+remote設定時は遷移commitの完全OIDを取得する。
+`git -C <private-notes-path> fetch`を実行した後、
+`git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
 全対象がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
 remote設定時にupstream包含を確認できた場合だけ完了とする。
 commit前失敗で指定集合の移動だけが未コミット差分として残り、集合外差分とrebase中間状態がない場合に限り、
 `atk mq commit`を1回実行して全条件を再検査する。push失敗後にremoteが遷移commitを含む場合は追加操作なしで完了とする。
 remoteが遷移commitを含まないcleanなローカルcommit、集合の状態混在、集合外差分、遷移commitの対応付け不能、
-rebase中間状態、復旧失敗又はupstream包含の確認不能では、項目別コマンドを再実行せず未完了で停止する。
+rebase中間状態、復旧失敗及びupstream包含の確認不能では、項目別コマンドを再実行せず未完了で停止する。
 
 起動文には次の絶対パスと値だけを渡す。
 

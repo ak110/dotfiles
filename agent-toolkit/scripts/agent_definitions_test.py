@@ -1248,9 +1248,10 @@ def test_start_processing_batch_failure_boundary_is_documented() -> None:
         assert "`atk mq list --status=active --target-repo=" in text
         assert "--skip-pull`" in text
         assert "`atk mq show <filename>..." in text
-        assert "git status --porcelain" in text
-        assert "git show --name-status --format=%H%n%s HEAD" in text
-        assert "git merge-base --is-ancestor" in text
+        assert "`atk config get private_notes`" in text
+        assert "`git -C <private-notes-path> status --porcelain`" in text
+        assert "`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`" in text
+        assert "`git -C <private-notes-path> merge-base --is-ancestor" in text
         assert "`atk mq commit`を1回" in text
         assert "項目別コマンド" in text
         assert "未完了" in text
@@ -1282,7 +1283,32 @@ def test_start_processing_failure_observes_local_transition_and_upstream_boundar
         assert "processing配置" in text
         assert "遷移commit" in text
         assert "upstream包含" in text
-        assert "git merge-base --is-ancestor" in text
+        assert "git -C <private-notes-path> merge-base --is-ancestor" in text
+
+
+def test_start_processing_failure_resolves_management_repo_before_git_checks() -> None:
+    """管理リポジトリの絶対パスを解決してから全Git検査を行う契約を固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    required = (
+        "`atk config get private_notes`",
+        "絶対パス",
+        "`git -C <private-notes-path> status --porcelain`",
+        "`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`",
+        "`git -C <private-notes-path> fetch`",
+        "`git -C <private-notes-path> merge-base --is-ancestor",
+        "対象リポジトリのcwd",
+    )
+    for text in (process, reception, design):
+        for phrase in required:
+            assert phrase in text
+        assert text.index("`atk config get private_notes`") < text.index("`git -C <private-notes-path> status")
+        assert "`git status --porcelain`" not in text
+        assert "`git show --name-status --format=%H%n%s HEAD`" not in text
+        assert "`git fetch`" not in text
+        assert "`git merge-base --is-ancestor" not in text
 
 
 def test_launch_points_limit_thread_continuation_to_codex_route() -> None:

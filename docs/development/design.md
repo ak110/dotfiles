@@ -18,6 +18,14 @@ remote同期はfetch後の統合対象を現在のブランチの`@{u}`へ明示
 処理開始コマンドは全対象の存在、状態及び`target_repo`を移動前に検証するため、一部不適合で集合全体を拒否できる。
 移動開始後にI/O、commit又はpushが失敗した場合は、指定集合のprocessing配置、管理リポジトリの未コミット差分、
 集合の移動だけを含む遷移commit及びremote設定時のupstream包含を分けて確認する。
+管理リポジトリの検査を開始する前に、`atk config get private_notes`の標準出力から絶対パスを取得する。
+取得したパスを`<private-notes-path>`として管理リポジトリのGit操作対象にする。
+全てのGit操作へ`git -C <private-notes-path>`を付け、対象リポジトリのcwdを使用しない。
+絶対パスを取得できない場合はGit検査をせず未完了で停止する。
+`git -C <private-notes-path> status --porcelain`で管理リポジトリの状態を確認する。
+`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`で遷移commitを取得する。
+remote設定時は`git -C <private-notes-path> fetch`を実行する。
+その後、`git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
 commit前失敗で指定集合の移動だけが残る場合に限り`atk mq commit`を1回使って再検査し、
 未pushのcleanなローカルcommitだけの場合や集合の状態が混在する場合は、項目別再実行で補わず未完了として停止する。
 単一項目の調査、警告・エラー後の再取得及びTBD回答確認は、情報の対応関係を保つため単数形を維持する。
