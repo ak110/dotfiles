@@ -125,6 +125,8 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 `atk mq return-to-inbox`でinboxへ戻し、active一覧で`blocked`であることを確認する。
 
 `feedbacks-planner`の完了後は項目別結果をファイル名昇順で各1回反映する。
+保存済みの不採用確認用TBDを受領して再開した項目は、既存TBDの保存内容と元項目の`blocked`状態を照合済みであるため、結果反映時の失敗処理対象から除外する。
+この項目では失敗TBDの再投入、`atk mq set-dependencies`による再依存、`atk mq return-to-inbox`による再inboxとrejectを実行せず、保持済みの結果を反映して次の項目へ進む。
 各結果反映コマンドが警告・エラーを返した場合は、同じ結果を再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
 意図した保存後状態を確認できた場合は同じ結果を再実行せず次のファイル名へ進む。

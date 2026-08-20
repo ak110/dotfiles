@@ -1068,6 +1068,20 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     assert not (_DISTRIBUTION_ROOT / "scripts" / "_atk_mq_recover_test.py").exists()
 
 
+def test_saved_confirmation_tbd_is_excluded_from_final_result_failure_handling() -> None:
+    """保存済み確認TBDの最終結果反映で再保留処理を実行しない。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+
+    for document in (process, reception):
+        saved_tbd = document.index("保存済みの不採用確認用TBD")
+        excluded = document.index("結果反映時の失敗処理対象から除外する")
+        assert saved_tbd < excluded
+        result_section = document[excluded:]
+        for phrase in ("失敗TBDの再投入", "再依存", "再inboxとrejectを実行せず"):
+            assert phrase in result_section
+
+
 def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
     """失敗TBD回答後の由来別再開経路と終端順序を固定する。"""
     hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
