@@ -44,8 +44,8 @@ TBDへ永続化して暫定判断で進める。
 複数項目を連続処理する場合、新しい項目の調査は前項目の調査結果・仮説・識別子を引き継がず
 独立に確定する（努力目標）。
 
-Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
-Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
+Claude CodeとCodexの双方で、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
+双方で`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
 `feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし、本文を起動文へ複製しない。
 `feedbacks-planner`は各調査担当と起草担当へ同じ入力を渡し、各受信主体がファイル名ごとに
@@ -53,17 +53,7 @@ Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文�
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
 readyな計画実装型のレーンは通常型バッチの計画工程を待たず、利用可能な書込担当枠で実装できる。
 
-サブエージェント機能を利用できないCodexホストでは、通常型を次の順で扱う。
-この経路では`references/explore-template.md`へ対象のフィードバックファイル名と対象リポジトリを渡す。
-
-1. `references/review-checklists.md`を全文読む
-2. 原文、現行実装、関連規範、履歴、既存の成功経路を調査する
-3. バグ・障害・回帰では実行主体が`agent-toolkit:bugfix`をSkill機能で起動する
-4. 横断調査を委譲する前に`agent-toolkit:delegation`をSkill機能で起動する。
-   起動後は`references/explore-template.md`だけを受信者用のタスク文書として渡す
-5. 単一要求は採用または不採用、独立した複数要求は採用、部分採用、不採用で判定する。
-   原文の単一要求を薄めて部分採用しない
-6. `references/decision-format.md`に従って採否と根拠を記録する
+agent定義の欠落、frontmatterの写像不能又は`feedbacks-planner`の起動失敗は、メイン主体の別経路へ迂回せず失敗として返す。
 
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
@@ -106,9 +96,8 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
 失敗時はpush済み内容を巻き戻さず、`references/hold-with-tbd-inject.md`に従って保留する。
 終端工程だけを求める項目は計画を作成せず、終端待機集合へ登録して全レーンの統合とpush後にファイル名昇順で実行する。
 
-- Claude Codeホストの通常型採用項目は、`feedbacks-planner`の統合計画を各フィードバックへ`atk mq convert-to-plan`で記録し、
+- Claude CodeとCodexの双方の通常型採用項目は、`feedbacks-planner`の統合計画を各フィードバックへ`atk mq convert-to-plan`で記録し、
   `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
-- Codexホストの通常型採用項目は実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、調査済み事実と採否を渡す
 - 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する
 - commit前に実行主体が`agent-toolkit:commit`をSkill機能で起動する
 - 実装と二系統レビューの完了後、呼び出し元がpushとCI通過確認を完遂する

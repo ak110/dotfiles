@@ -115,3 +115,79 @@ def test_current_output_is_synced() -> None:
     ):
         assert shared_contract in operations_source
         assert shared_contract in shared_operations
+
+
+def test_current_output_contains_codex_compatibility_and_native_plan_contracts() -> None:
+    """生成されたCodex向けAGENTSへagent互換手順とnative-firstのPlan modeを同期する。"""
+    content = subject.render()
+
+    for phrase in (
+        "~/.codex/agent-toolkit/agents/<agent-name>.md",
+        "YAML frontmatter",
+        "Markdown本文",
+        "未知のfrontmatterフィールド",
+        "`needs_escalation`として返し",
+        "ネイティブPlan modeを有効にしている場合",
+        "ターン開始時点でPlan modeでない場合",
+        "`request_user_input`が公開される場合",
+        "明示起動又はdescription一致による暗黙起動",
+        "`SKILL.md`を全文読む",
+    ):
+        assert phrase in content
+    assert "Codexには同等のネイティブ機能が存在しない" not in content
+
+
+def test_current_output_preserves_codex_model_mapping() -> None:
+    """生成されたCodex向けAGENTSへモデル区分の写像を同期する。"""
+    content = subject.render()
+
+    for model, codex_model in (
+        ("haiku", "gpt-5.6-luna"),
+        ("sonnet", "gpt-5.6-terra"),
+        ("opus", "gpt-5.6-sol"),
+    ):
+        assert content.count(f"| `{model}` | `{codex_model}` |") == 1
+    for phrase in (
+        "Claude Codeの`model`区分は`haiku`（軽量）、`sonnet`（標準）、`opus`（上位）の順",
+        "`runtime-routing.md`のCodexモデル・effort対応に基づき",
+    ):
+        assert phrase in content
+
+
+def test_current_output_contains_codex_tool_mapping_contracts() -> None:
+    """生成されたCodex向けAGENTSへ主要ツールの対応区分と代替不能範囲を同期する。"""
+    content = subject.render()
+
+    for direct_mapping in (
+        ("`TaskStop`", "`interrupt_agent`", "`list_agents`"),
+        ("`TeamCreate`", "`spawn_agent`", "`followup_task`", "`send_message`", "`list_agents`"),
+        ("`Monitor`", "`list_agents`", "`wait_agent`"),
+    ):
+        for phrase in direct_mapping:
+            assert phrase in content
+    for phrase in (
+        "`ToolSearch`",
+        "実行時に公開されたツール一覧又は検索機能を確認",
+        "必須能力が公開されない場合は差し戻す",
+        "`ScheduleWakeup`・`CronCreate`",
+        "現行セッションで公開された能力を確認できない場合",
+        "手動運用又は利用者への依頼へ切り替える",
+        "対応表は直接対応、条件付き対応及び代替不能な範囲を区別する",
+    ):
+        assert phrase in content
+
+
+def test_current_output_preserves_engine_selection_boundary() -> None:
+    """生成されたCodex向けAGENTSへ工程別engineの選択境界を同期する。"""
+    content = subject.render()
+
+    for phrase in (
+        "名前付きagentの互換実行におけるモデル写像は次表で確定する",
+        "この写像は`engine=codex`で名前付きagentを起動するときだけ適用",
+        "工程別モデル設定と名前付きagentの互換起動は別の判断である",
+        "工程別設定が`engine=claude`の場合",
+        "指定engineの経路を利用できない場合",
+        "`engine=claude`をCodexの`spawn_agent`へ置換してはならない",
+    ):
+        assert phrase in content
+    assert "Codexでは`spawn_agent`経路へ一本化する。" not in content

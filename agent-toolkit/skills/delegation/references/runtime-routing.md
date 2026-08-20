@@ -13,6 +13,7 @@
   - 継続接続は同一threadへの返信用経路を使い、作業ディレクトリとsandboxを再送しない
   - モデルを指定する場合は`config`へ`model_reasoning_effort`も渡し、意図した深さを明示する
 - Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える
+- 名前付きagentのCodex互換起動は、工程別設定が`engine=codex`の場合だけ`spawn_agent`へ読み替える
 - 専用定義もCodex経路も利用できない場合だけ汎用Agentを使う
 - 起動結果として返されたrouteと識別子を保持し、予定した経路を実績として記録しない
 
@@ -40,6 +41,7 @@
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
+   `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 5. Codexは同一threadへ継続接続する。
    Claudeは完了済み識別子を再利用せず新規起動する。
    計画、進捗ログ、保存済み6列表のいずれかで検収済み状態を一意に参照できる場合は、

@@ -138,6 +138,114 @@ def test_agent_skills_are_string_lists() -> None:
     assert "skills" not in metadata
 
 
+def test_codex_agent_compatibility_covers_current_frontmatter_and_body() -> None:
+    """Codex互換手順が現行agent定義のfrontmatterと本文を全て扱う。"""
+    base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
+    current_fields: set[str] = set()
+    for path in sorted(_AGENTS_DIR.glob("*.md")):
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, _ = parsed
+        current_fields.update(metadata)
+
+    for field in sorted(current_fields):
+        assert f"`{field}`" in base, f"Codex互換手順にfrontmatter項目がない: {field}"
+    for phrase in (
+        "~/.codex/agent-toolkit/agents/<agent-name>.md",
+        "ファイル全体を読む",
+        "YAML frontmatter",
+        "Markdown本文",
+        "`task_name`へ許可文字に正規化した一意な名前",
+        "定義名自体を委譲文へ保持",
+        "`spawn_agent`",
+        "frontmatterコメント",
+        "`SKILL.md`を絶対パスから全文読み",
+        "read-only要件は変更前後のGit状態で検収",
+        "未知のfrontmatterフィールド",
+        "黙って破棄しない",
+        "`needs_escalation`として返し",
+    ):
+        assert phrase in base
+
+
+def test_codex_agent_compatibility_maps_frontmatter_models_and_effort() -> None:
+    """現行agentのモデル区分とeffortをCodex引数へ一意に写像する。"""
+    base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
+    current_models: set[str] = set()
+    for path in sorted(_AGENTS_DIR.glob("*.md")):
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, _ = parsed
+        model = metadata.get("model")
+        assert isinstance(model, str)
+        current_models.add(model)
+
+    model_mapping = {
+        "haiku": "gpt-5.6-luna",
+        "sonnet": "gpt-5.6-terra",
+        "opus": "gpt-5.6-sol",
+    }
+    assert current_models <= model_mapping.keys()
+    for model, codex_model in model_mapping.items():
+        row = f"| `{model}` | `{codex_model}` |"
+        assert base.count(row) == 1
+    for phrase in (
+        "Claude Codeの`model`区分は`haiku`（軽量）、`sonnet`（標準）、`opus`（上位）の順",
+        "`runtime-routing.md`のCodexモデル・effort対応に基づき",
+        "frontmatterの`effort`は同じ値を`reasoning_effort`へ渡す",
+        "`effort`が無い場合は`runtime-routing.md`の既定値`medium`を使う",
+        "表にない`model`値又はCodexが受理できない`reasoning_effort`",
+    ):
+        assert phrase in base
+
+
+def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
+    """主要ツールの直接対応、条件付き対応及び代替不能範囲を検査する。"""
+    base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
+
+    for direct_mapping in (
+        ("`TaskStop`", "`interrupt_agent`", "`list_agents`"),
+        ("`TeamCreate`", "`spawn_agent`", "`followup_task`", "`send_message`", "`list_agents`"),
+        ("`Monitor`", "`list_agents`", "`wait_agent`"),
+    ):
+        for phrase in direct_mapping:
+            assert phrase in base
+    for phrase in (
+        "`ToolSearch`",
+        "実行時に公開されたツール一覧又は検索機能を確認",
+        "必須能力が公開されない場合は差し戻す",
+        "`ScheduleWakeup`・`CronCreate`",
+        "現行セッションで公開された能力を確認できない場合",
+        "手動運用又は利用者への依頼へ切り替える",
+        "対応表は直接対応、条件付き対応及び代替不能な範囲を区別する",
+    ):
+        assert phrase in base
+
+
+def test_codex_named_agent_compatibility_preserves_stage_engine() -> None:
+    """名前付きagentの互換起動が工程別engineを無断変更しない。"""
+    base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+
+    for phrase in (
+        "名前付きagentのCodex互換起動",
+        "工程別設定が`engine=codex`の場合",
+        "`engine=claude`",
+        "`needs_escalation`又は未完了として返す",
+    ):
+        assert phrase in base
+    for phrase in (
+        "名前付きagentのCodex互換起動",
+        "工程別設定が`engine=codex`の場合",
+        "`engine=claude`",
+        "他engineへ自動切替せず",
+        "`needs_escalation`または未完了として返す",
+    ):
+        assert phrase in runtime
+    assert "Codexでは`spawn_agent`経路へ一本化する。" not in base
+    assert "`engine=claude`をCodexの`spawn_agent`へ置換してはならない" in runtime
+
+
 def test_delegating_agents_allow_required_tools() -> None:
     """delegation利用agentが起動と受領に必要なツールを許可する。"""
     missing: dict[str, list[str]] = {}
@@ -1389,11 +1497,18 @@ def test_removed_codex_exec_contracts_are_absent() -> None:
 def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() -> None:
     """通常Codexの再取得とprocess-loopの明示的な連続処理を両立する。"""
     text = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     cleanup = _h2_section(text, "5. 後始末")
     completion = _h2_section(text, "6. 振り返りと終了")
 
     assert "`CLAUDECODE`が設定されている場合は、この一覧のファイル名を本セッションの処理対象として固定" in text
     assert "起動時の目的文にCodexオーケストレーターの連続処理と明記" in text
+    assert "Claude CodeとCodexの双方で、`feedbacks-planner`の起動前" in text
+    assert "Claude CodeとCodexで通常型のフィードバックを処理" in reception
+    assert "サブエージェント機能を利用できないCodexホスト" not in text
+    assert "Codexホストの通常型採用項目は実行主体が`agent-toolkit:plan-mode`" not in text
+    assert "frontmatterの写像不能又は`feedbacks-planner`の起動失敗は" in text
+    assert "Claude CodeとCodexの双方の通常型採用項目は" in text
     assert "Claude Codeホストでは、ready項目を再取得せず" in cleanup
     assert "更新された規範は次セッションの起動時に読み込む" in cleanup
     assert "残る項目を次セッションで再集約して" in cleanup
@@ -1483,7 +1598,6 @@ def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() ->
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
     assert "`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。" in process
-    assert "横断調査を委譲する前に`agent-toolkit:delegation`をSkill機能で起動する。" in process
     assert "`plan-impl-executor`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。" in flow
     assert "通常開始又は中断後再開の最初の委譲前に`agent-toolkit:delegation`をSkill機能で起動する。" in flow
 
@@ -1713,6 +1827,10 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
 
     assert "references/judgment-details.md`が定める比較階層" in agent_rules
     assert "観測されていない低頻度リスクを除くために恒常的な複雑性を増加させてはならない" in agent_rules
+    assert (
+        "変更対象に含まれる既存の例外、互換経路及びフォールバックも、新規追加と同じ基準で"
+        "明示要件、規範的制約又は観測済み欠陥へ個別に対応付ける。対応先がないものは撤去する（厳守規定" in agent_rules
+    )
     assert "「問題と手段の比例性」及び「解決案の比較」を読み" in agent_rules
     for phrase in (
         "目的をユーザーが観測する成果と公開契約から確定",
@@ -1727,6 +1845,8 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "対応量又は既実装量を理由にした採用継続は認めない",
         "対策を追加する案を利用者への選択肢に含める場合",
         "対策を追加しない案を推奨とする",
+        "変更する判定経路に既存の例外、互換経路又はフォールバックが含まれる場合は",
+        "旧版、無効設定、限定ホストなど未観測の条件を新たな維持根拠にしない（厳守規定）",
     ):
         assert phrase in judgment_details
 

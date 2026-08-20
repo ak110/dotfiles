@@ -248,6 +248,7 @@ class TestProductionManagedSettings:
             "Personal Repo Default-Branch Push",
             "Merge Approval",
             "Plan File Write",
+            "Feedback Queue State Transition",
         }
         assert all(
             term in rules["Session-Owned Amend"]
@@ -366,6 +367,18 @@ class TestProductionManagedSettings:
                 "承認ゲートの緩和・規範改訂",
                 "同ディレクトリ外",
                 "hard_deny",
+            )
+        )
+        assert all(
+            term in rules["Feedback Queue State Transition"]
+            for term in (
+                "`atk mq`",
+                "キュー管理サブコマンド",
+                "`--target-repo`",
+                "指定先を問わず",
+                "利用者個人のフィードバックキュー",
+                "private-notes",
+                "コミット・push",
             )
         )
         assert data["autoMode"]["allow"][0] == "$defaults"
