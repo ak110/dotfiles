@@ -523,6 +523,23 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
         f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1"
     ]
 
+    await page.locator("#kind-filter").select_option("all")
+    await page.locator("#state-filter").select_option("all")
+    await page.locator("#answer-filter").select_option("all")
+    await page.locator("#target-filter").select_option("")
+    await page.locator("#source-filter").fill("")
+    await page.locator("#source-empty-filter").uncheck()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    request_urls.clear()
+    async with page.expect_response(
+        lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all&q=all-filters-only")
+    ):
+        await page.locator("#search-input").fill("all-filters-only")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
+    await playwright.async_api.expect(notice).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    assert request_urls == [f"{browser_harness.base_url}/api/entries?type=all&status=all&answered=all&q=all-filters-only"]
+
 
 @pytest.mark.asyncio
 async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:

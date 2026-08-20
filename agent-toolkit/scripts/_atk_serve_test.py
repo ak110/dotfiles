@@ -4035,7 +4035,28 @@ const emptySearch = {
   noticeHidden: elements['list-fallback-notice'].hidden,
   urls: fetchCalls.map(call => call.url)
 };
-process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, fallbackNotice}));
+
+fetchCalls.length = 0;
+elements['search-input'].value = 'all-filters-only';
+elements['kind-filter'].value = 'all';
+elements['state-filter'].value = 'all';
+elements['answer-filter'].value = 'all';
+elements['target-filter'].value = '';
+elements['source-filter'].value = '';
+elements['source-empty-filter'].checked = false;
+fetchHandler = async url => {
+  if (url !== '/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only') {
+    throw new Error('想定外のURL: ' + url);
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+};
+await loadEntries({announce: true});
+const allFilters = {
+  rows: entries.map(entry => entry.filename),
+  noticeHidden: elements['list-fallback-notice'].hidden,
+  urls: fetchCalls.map(call => call.url)
+};
+process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, allFilters, fallbackNotice}));
 """
     )
     expected_notice = (
@@ -4080,6 +4101,11 @@ process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, 
         "noticeHidden": True,
         "urls": ["/atk/api/entries?type=all&status=active&answered=all"],
     }
+    assert result["allFilters"] == {
+        "rows": [],
+        "noticeHidden": True,
+        "urls": ["/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only"],
+    }
     assert result["fallbackNotice"] == expected_notice
 
 
@@ -4120,7 +4146,7 @@ let fallbackStarted;
 const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
 elements['search-input'].value = 'old';
 fetchHandler = async url => {
-  if (url.endsWith('q=old')) {
+  if (url === '/atk/api/entries?q=old') {
     fallbackStarted();
     return new Promise(resolve => { resolveFallback = resolve; });
   }
@@ -4157,6 +4183,55 @@ process.stdout.write(JSON.stringify({
         "state": "inbox",
         "notice": "",
         "status": "1件を表示",
+    }
+
+
+def test_assets_discard_stale_search_fallback_error_without_overwriting_global_error() -> None:
+    """失効した補助検索のエラーが後発要求のglobal-errorを上書きしない。"""
+    result = _run_node_ui(
+        """
+let rejectFallback;
+let fallbackStarted;
+const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
+elements['search-input'].value = 'old';
+fetchHandler = async url => {
+  if (url === '/atk/api/entries?q=old') {
+    fallbackStarted();
+    return new Promise((_resolve, reject) => { rejectFallback = reject; });
+  }
+  if (url.includes('q=old')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  }
+  if (url.includes('q=new')) {
+    return {ok: true, status: 200, statusText: 'OK', json: async () => ({
+      entries: [{kind: 'feedback', state: 'inbox', filename: 'new.md', summary: 'new'}], warnings: []
+    })};
+  }
+  throw new Error('想定外のURL: ' + url);
+};
+const oldRequest = loadEntries({announce: true});
+await fallbackReady;
+elements['search-input'].value = 'new';
+const newRequest = loadEntries({announce: true});
+await newRequest;
+elements['global-error'].textContent = '後発要求のエラー';
+rejectFallback(new Error('失効した補助検索エラー'));
+await oldRequest;
+process.stdout.write(JSON.stringify({
+  rows: entries.map(entry => entry.filename),
+  state: entries[0]?.state,
+  notice: elements['list-fallback-notice'].textContent,
+  status: elements['result-status'].textContent,
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result == {
+        "rows": ["new.md"],
+        "state": "inbox",
+        "notice": "",
+        "status": "1件を表示",
+        "error": "後発要求のエラー",
     }
 
 
