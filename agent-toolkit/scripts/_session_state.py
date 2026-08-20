@@ -28,6 +28,7 @@ from _file_lock import release_lock as _release_lock
 _FILENAME_PREFIX = "claude-agent-toolkit-"
 _FILENAME_SUFFIX = ".json"
 _LOCK_SUFFIX = ".lock"
+_SESSION_TITLE_KEY = "last_hook_session_title"
 
 STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 """状態ファイルを回収するまでの経過時間。
@@ -57,6 +58,8 @@ def sweep_stale_states(
     更新時刻は最後の記録時点のままとなり、長く記録が無いだけで削除されうるため。
 
     状態ファイルは更新時刻が期限を超えた場合に、対のロックファイルとともに削除する。
+    ただし、計画ファイル名を一度出力した記録は同じ`session_id`の再開後も必要なため、
+    `last_hook_session_title`だけを残して他の状態を破棄する。
     対応する状態ファイルが無いロックファイルは、ロック自身の更新時刻で判定する。
     ロックは`open(path, "a+")`で開くだけで内容を書かないため更新時刻が進まず、
     当該値は作成時刻に等しい。対の状態ファイルがある間は、そちらの更新時刻のほうが
@@ -74,6 +77,8 @@ def sweep_stale_states(
     removed = 0
     for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"):
         if path.name == kept_name or not _is_stale(path, threshold):
+            continue
+        if _retain_session_title(path):
             continue
         if _unlink_quietly(path):
             removed += 1
@@ -102,6 +107,32 @@ def _unlink_quietly(path: pathlib.Path) -> bool:
         path.unlink()
     except OSError:
         return False
+    return True
+
+
+def _retain_session_title(path: pathlib.Path) -> bool:
+    """期限切れ状態からsessionTitleの一回限り記録だけを残す。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError:
+        # 読み取れない状態を削除すると、タイトル記録を失う可能性があるため、
+        # 次回の回収へ残す。
+        return True
+    except (json.JSONDecodeError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    title = data.get(_SESSION_TITLE_KEY)
+    if not isinstance(title, str) or not title:
+        return False
+    retained = {_SESSION_TITLE_KEY: title}
+    if data == retained:
+        return True
+    try:
+        _atomic_write(path, json.dumps(retained, ensure_ascii=False))
+    except OSError:
+        # 書き換えに失敗した場合も既存のタイトル記録を保護し、次回に再試行する。
+        return True
     return True
 
 

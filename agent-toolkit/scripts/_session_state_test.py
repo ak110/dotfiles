@@ -239,6 +239,26 @@ class TestSweepStaleStates:
         assert not target.exists()
         assert not lock.exists()
 
+    def test_stale_state_retains_session_title_only(self) -> None:
+        """期限切れ状態はsessionTitleの一回限り記録だけを残す。"""
+        update_state(
+            "titled",
+            lambda current: {
+                **current,
+                "current_plan_file_path": "/home/example/.claude/plans/plan.md",
+                "last_hook_session_title": "plan",
+            },
+        )
+        target = state_path("titled")
+        lock = target.parent / (target.name + ".lock")
+        self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
+        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
+
+        assert sweep_stale_states() == 0
+        assert read_state("titled") == {"last_hook_session_title": "plan"}
+        assert target.exists()
+        assert lock.exists()
+
     def test_old_lock_is_kept_while_state_is_fresh(self) -> None:
         """状態ファイルが期限内なら、対のロックが古くても残す。
 

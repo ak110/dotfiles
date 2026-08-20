@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import subprocess
+import time
 
 import _fork_runner
 import pytest
@@ -22,13 +23,26 @@ def _run(
     payload: dict | str,
     *,
     state_dir: pathlib.Path,
+    home_dir: pathlib.Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return _run_subcommand("user_prompt_submit", payload, state_dir=state_dir, home_dir=home_dir)
+
+
+def _run_subcommand(
+    subcommand: str,
+    payload: dict | str,
+    *,
+    state_dir: pathlib.Path,
+    home_dir: pathlib.Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
-    return _fork_runner.run_script(_SCRIPT, argv=("user_prompt_submit",), input=text, env=env)
+    if home_dir is not None:
+        env["HOME"] = str(home_dir)
+    return _fork_runner.run_script(_SCRIPT, argv=(subcommand,), input=text, env=env)
 
 
 class TestSlashCommandDetection:
@@ -365,6 +379,74 @@ class TestClaudePlanSessionTitle:
         assert result.returncode == 0
         assert result.stdout == ""
         assert _read_state(tmp_path, sid)["last_hook_session_title"] == "old-plan"
+
+    def test_expired_state_resume_and_plan_edit_do_not_emit_title_again(self, tmp_path: pathlib.Path) -> None:
+        """期限回収後に同じsession_idを再開して計画を編集しても再出力しない。"""
+        sid = "plan-title-expired-resume"
+        cleanup_sid = "plan-title-cleanup"
+        home = tmp_path / "home"
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        original_plan = plans / "original-plan.md"
+        original_plan.write_text("# 元の計画\n", encoding="utf-8")
+
+        recorded = _run_subcommand(
+            "posttooluse",
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(original_plan), "content": "# 元の計画\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        assert recorded.returncode == 0
+
+        first = _run(
+            {"session_id": sid, "prompt": "最初の入力"},
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        assert first.returncode == 0
+        assert json.loads(first.stdout)["hookSpecificOutput"]["sessionTitle"] == "original-plan"
+
+        state_path = self._state_path(tmp_path, sid)
+        lock_path = state_path.with_name(state_path.name + ".lock")
+        stale_time = time.time() - (14 * 24 * 60 * 60 + 60)
+        os.utime(state_path, (stale_time, stale_time))
+        os.utime(lock_path, (stale_time, stale_time))
+
+        cleanup = _run_subcommand(
+            "session_end_cleanup",
+            {"hook_event_name": "SessionEnd", "session_id": cleanup_sid, "reason": "logout"},
+            state_dir=tmp_path,
+        )
+        assert cleanup.returncode == 0
+        assert _read_state(tmp_path, sid) == {"last_hook_session_title": "original-plan"}
+
+        resumed_plan = plans / "resumed-plan.md"
+        resumed_plan.write_text("# 再開後の計画\n", encoding="utf-8")
+        resumed_edit = _run_subcommand(
+            "posttooluse",
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(resumed_plan), "content": "# 再開後の計画\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        assert resumed_edit.returncode == 0
+        assert _read_state(tmp_path, sid)["current_plan_file_path"] == str(resumed_plan)
+
+        next_prompt = _run(
+            {"session_id": sid, "prompt": "再開後の入力"},
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        assert next_prompt.returncode == 0
+        assert next_prompt.stdout == ""
+        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "original-plan"
 
     @pytest.mark.parametrize("invalid_path", [None, 42, "relative.md", "/tmp/not-a-plan.md"])
     def test_invalid_or_missing_plan_path_fails_open(

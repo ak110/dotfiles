@@ -29,7 +29,8 @@
   plan-mode起動のいずれでも削除されず、別の調整役の要素と併存する。状態JSON全体の寿命は末尾の規定に従う
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
 - `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値を記録する。
-  値が存在する間は同一セッションで再出力しない。sessionTitle出力時だけ更新し、既存の状態JSONクリア又は保持期限を過ぎた回収で除去する
+  値が存在する間は同一セッションで再出力しない。sessionTitle出力時だけ更新し、状態JSONの保持期限を過ぎた回収でも
+  この値だけを残す。既存の状態JSONクリア時に除去する
 - `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
   計画ファイル作成前の直接編集を検知する
 
@@ -81,6 +82,7 @@
 状態JSONはセッション終了イベントを契機に削除しない。同イベントは同じセッションへ後から戻る場合にも発火し、
 `--continue`・`--resume`・`/resume`で戻ると同じ`session_id`で会話が続くため、削除すると再開後の記録が失われる。
 回収は更新から一定期間が経過した状態JSONに限り、対のロックファイルも同時に破棄する。
+ただし`last_hook_session_title`が存在する状態は、この値だけを残して他のキーを破棄する。
 対応する状態JSONが無いロックファイルは、ロック自身の更新時刻が同じ期間を超えた場合だけ破棄する。
 例外は終了理由が`clear`の場合とし、会話が破棄されたことが確定するため排他ロック下で当該セッションの状態JSONを削除する。
 サブエージェント側で記録される状態は呼び出し元へ自動伝播しないため、
