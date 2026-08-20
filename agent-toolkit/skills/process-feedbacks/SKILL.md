@@ -51,8 +51,10 @@ TBDへ永続化して暫定判断で進める。
 同じ`feedbacks-planner`系列（同じバッチと計画）の新しい識別子を起動し、当該項目の採否を確定する。
 回答が得られない場合は同じ質問内容を不採用確認用TBDへ保存して保留し、回答を得られずTBDを確認できない状態ではrejectしない。
 保留確認後は、停止済みの識別子へ継続せず、保留結果を渡して同じ系列の新しい`feedbacks-planner`識別子を起動する。
-新規起動へ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、`user_decisions`の原文を渡す。
-逐語回答又は保存TBD、同じ計画ファイルの絶対パスも渡す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
+初回起動には再開コンテキストを渡さない。
+`awaiting_confirmation`後の再開起動だけは、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、`user_decisions`の原文、
+出所と引用範囲付きの逐語回答又は保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
+保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
 部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲及び理由を採否記録へ残す。起草担当又は実行主体へはバッチ全項目を渡し、
 実施内容へは採用又は部分採用の採用範囲だけを反映する。
 別リポジトリ項目は、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
@@ -88,9 +90,17 @@ Claude Codeホストの通常型で`feedbacks-planner`から`status: awaiting_co
 `status`を失敗処理より先に確認し、`awaiting_confirmation`を失敗又は`needs_escalation`として扱わない。
 `source: session-review`と確認できる項目だけを利用者確認から除外する。その他のsource、source欠落及び不明の項目ごとに
 原文との差異と技術的理由を示す`AskUserQuestion`を発行し、回答を得た場合は逐語文を渡して同じ系列の新しい`feedbacks-planner`識別子を起動し、
-採否記録を再検収する。回答なしでは`references/hold-with-tbd-inject.md`に従い不採用確認用TBDを保存し、依存設定と`blocked`確認後の
-保留結果を渡して同じ系列の新しい識別子を起動する。新規起動には元の全調査結果、原文frontmatterの`source`原値、`user_decisions`原文、
-逐語回答又は保存TBD及び同じ計画ファイルの絶対パスを含める。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、元項目を保留する。
+採否記録を再検収する。
+回答なしでは`references/hold-with-tbd-inject.md`に従い不採用確認用TBDを初回だけ保存する。
+依存設定と`blocked`確認後の保留結果を渡して同じ系列の新しい識別子を起動する。
+保存済みの不採用確認用TBDを受領した再開では、既存TBDと元項目の`blocked`状態を照合する。
+`atk mq show <TBD filename> --target-repo=<repo-path> --skip-pull`で既存TBDを照合し、
+`atk mq list --status=active --target-repo=<repo-path>`で元項目の`blocked`状態を照合する。
+既存TBDと`blocked`状態の照合以外の汎用保留処理を実行せず、`agent-toolkit:add-feedback`によるTBD再投入、`atk mq set-dependencies`による再依存、
+`atk mq return-to-inbox`による再inboxを実行しない。
+照合できない場合は新しい識別子を起動せず、失敗として返す。
+`awaiting_confirmation`後の再開起動には元の全調査結果、原文frontmatterの`source`原値、`user_decisions`原文、逐語回答又は保存TBD及び同じ計画ファイルの絶対パスを含める。
+保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、元項目を保留する。
 
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。

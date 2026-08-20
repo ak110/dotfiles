@@ -197,8 +197,10 @@
 不採用確認用`user_decisions`として原文との差異と技術的理由を示す`AskUserQuestion`へ送る。
 不採用確認用`user_decisions`は通常の将来判断TBDと区別する。`feedbacks-planner`の`status: awaiting_confirmation`は失敗ではなく、
 呼び出し元が直接回答、保存TBDのいずれかを受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列の新しい識別子を起動する。
-新規起動へ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、`user_decisions`原文、
-出所と引用範囲付きの逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、
+初回起動には再開コンテキストを含めず、確認待ち後の再開起動へだけ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、
+`user_decisions`原文、出所と引用範囲付きの逐語回答又は保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
+保存済みの不採用確認用TBDを受領した再開では既存TBDと元項目の`blocked`状態だけを照合し、TBD再投入、再依存及び再inboxを実行しない。
+保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、
 部分採用はこの確認へ機械的に含めない。
 sourceによる由来境界の判定と利用者認可の確認を分け、sourceと本文のいずれからも利用者認可を推定しない。
 別リポジトリ項目は投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
@@ -207,7 +209,7 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を`atk mq show`で照合する。
-sourceを指定しない場合は本文、`target_repo`及び非予約frontmatter全体を照合する。
+sourceを指定しない場合は本文、`target_repo`と非予約frontmatter全体を照合する。
 照合後に移管先ファイル名を記録して元項目を終端する。
 各投入経路は指定されたsourceだけを保持し、`add-feedback`はsource受領時だけ`atk mq add --source`へ渡して、保存後に既存の`atk mq show`で照合する。
 

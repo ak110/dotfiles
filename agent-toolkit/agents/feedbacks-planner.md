@@ -20,15 +20,21 @@ user-invocable: false
 
 ## 入力
 
+初回起動では、次の入力だけを受け取る。
+
 - ファイル名昇順の対象一覧と対象リポジトリ
 - 人間由来の利用者指示がある場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実
 - 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス
 - バグ対応の項目を含む場合はその旨
-- `awaiting_confirmation`後の新規起動では、同じ`feedbacks-planner`系列の新しい識別子を使う
-  同じ系列は同じバッチと計画を指す
-- 元のバッチ全項目の調査結果全文をそのまま受け取る
-- 原文frontmatterの`source`原値（欠落は値なし）と`user_decisions`の原文をそのまま受け取る
-- 出所と引用範囲付きの逐語回答又は保存したTBD、同じ計画ファイルの絶対パスを受け取る
+
+`awaiting_confirmation`後の再開起動では、停止済みの識別子を再利用せず、同じバッチと計画を指す同じ`feedbacks-planner`系列の新しい識別子を使う。
+再開起動は初回入力に加えて、次の確認待ち再開コンテキストを全て受け取る。
+
+- `original_investigations`: 元のバッチ全項目の調査結果全文
+- `raw_sources`: 原文frontmatterの`source`原値（欠落は値なし）
+- `user_decisions`: 不採用確認用`user_decisions`の原文
+- `answer_or_tbd`: 出所と引用範囲付きの逐語回答又は保存したTBD
+- `plan_path`: 初回起動と同じ計画ファイルの絶対パス
 
 agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パスは、委譲元から受け取らず自身で解決する。
 注入済みの`agent-toolkit:delegation`スキル本文に付随する所在ディレクトリの絶対パスから、
@@ -67,7 +73,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    `status: awaiting_confirmation`として呼び出し元へ返却してターンを終端する。これは失敗ではない。
    呼び出し元は`user_decisions`ごとに`AskUserQuestion`、TBD保存、依存設定、inbox差し戻し及び`blocked`確認を担当する。
    呼び出し元は回答又は保留結果を受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列の新しい識別子を起動する。
-   新規起動では、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、`user_decisions`の原文、
+   `awaiting_confirmation`後の再開起動では、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、`user_decisions`の原文、
    出所と引用範囲を付けた逐語回答又は保存したTBD、同じ計画ファイルの絶対パスを受領し、対応する項目の採否記録へ統合して採否を確定する。
    回答又は保留結果を受領するまで計画起草、キュー操作及びrejectを開始しない。
    保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない項目はrejectしない。

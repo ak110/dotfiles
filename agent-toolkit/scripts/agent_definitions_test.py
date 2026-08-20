@@ -1749,6 +1749,62 @@ def test_feedback_confirmation_wait_restarts_same_series_with_full_context() -> 
     )
 
 
+def test_feedbacks_planner_initial_input_excludes_confirmation_context() -> None:
+    """初回起動と確認待ち再開の入力を混在させず、再開時だけ根拠を渡す。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+
+    planner_initial_start = planner.index("初回起動では、次の入力だけを受け取る")
+    planner_reentry_start = planner.index("`awaiting_confirmation`後の再開起動では", planner_initial_start)
+    planner_initial = planner[planner_initial_start:planner_reentry_start]
+    planner_reentry = planner[planner_reentry_start : planner.index("agent-toolkitプラグイン内", planner_reentry_start)]
+    for phrase in ("元のバッチ全項目の調査結果全文", "原文frontmatterの`source`原値", "逐語回答又は保存したTBD"):
+        assert phrase not in planner_initial
+        assert phrase in planner_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd"):
+        assert f"`{key}`" not in planner_initial
+    assert "初回起動と同じ計画ファイルの絶対パス" in planner_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd", "plan_path"):
+        assert f"`{key}`" in planner_reentry
+
+    reception_reentry_context_start = reception.index("確認待ち後の再開起動には、`confirmation_context`")
+    reception_initial_start = reception.index("初回起動文には次の絶対パスと値だけを渡す")
+    reception_initial_end = reception.index("確認待ち後の再開起動文には", reception_initial_start)
+    reception_initial = reception[reception_initial_start:reception_initial_end]
+    reception_reentry = reception[reception_reentry_context_start:reception_initial_start]
+    for phrase in ("元のバッチ全項目の調査結果全文", "原文frontmatterの`source`原値", "逐語回答又は保存TBD"):
+        assert phrase not in reception_initial
+        assert phrase in reception_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd"):
+        assert f"`{key}`" not in reception_initial
+    assert "初回起動と同じ計画ファイルの絶対パス" in reception_reentry
+    for key in ("original_investigations", "raw_sources", "user_decisions", "answer_or_tbd", "plan_path"):
+        assert f"`{key}`" in reception_reentry
+
+    process_context = process[process.index("初回起動には再開コンテキストを渡さない") :]
+    for phrase in ("元のバッチ全項目の調査結果全文", "原文frontmatterの`source`原値", "逐語回答又は保存TBD"):
+        assert phrase in process_context
+
+
+def test_saved_confirmation_tbd_reentry_only_verifies_existing_state() -> None:
+    """保存済み確認TBDの再開で汎用保留処理を重複実行せず、既存状態だけを照合する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+
+    for document in (process, reception, hold):
+        assert "保存済みの不採用確認用TBD" in document
+        assert "既存TBD" in document
+        assert "`blocked`状態" in document
+        assert "TBD再投入" in document
+        assert "再依存" in document
+        assert "再inbox" in document
+        assert "再実行しない" in document or "実行しない" in document
+        assert "atk mq show <TBD filename> --target-repo=<repo-path> --skip-pull" in document
+        assert "atk mq list --status=active --target-repo=<repo-path>" in document
+
+
 def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:
     """フィードバック処理の各入口で最初の委譲前に委譲スキルを起動する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
