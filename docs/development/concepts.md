@@ -195,10 +195,12 @@
 部分採用は原文との差異、採用範囲、除外範囲、理由を記録する。
 `source: session-review`だけをエージェント由来とし、`source: plan`、その他のsource、source欠落、不明の不採用は、
 不採用確認用`user_decisions`として原文との差異と技術的理由を示す`AskUserQuestion`へ送る。
-不採用確認用`user_decisions`は通常の将来判断TBDと区別し、直接回答は同じ`feedbacks-planner`系統へ逐語返却して採否を確定する。
-回答が得られない場合は同じ質問内容を不採用確認用TBDへ保存し、元項目への依存設定、inbox差し戻し、`blocked`確認を完了した後、
-保留結果を同じ系統へ返す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、部分採用はこの確認へ機械的に含めない。
-sourceによる由来境界の判定と利用者認可の確認を分け、source又は本文から利用者認可を推定しない。
+不採用確認用`user_decisions`は通常の将来判断TBDと区別する。`feedbacks-planner`の`status: awaiting_confirmation`は失敗ではなく、
+呼び出し元が直接回答、保存TBDのいずれかを受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列の新しい識別子を起動する。
+新規起動へ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、`user_decisions`原文、
+出所と引用範囲付きの逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、
+部分採用はこの確認へ機械的に含めない。
+sourceによる由来境界の判定と利用者認可の確認を分け、sourceと本文のいずれからも利用者認可を推定しない。
 別リポジトリ項目は投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
 元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する。通常の`atk mq add`はfrontmatterの
 `target_repo`をCLI値で置き換えず、frontmatterの値を優先する。

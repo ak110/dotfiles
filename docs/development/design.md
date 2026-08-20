@@ -101,8 +101,14 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 起草担当はバッチ全項目の採否記録を受け取り、概要の一覧へ全項目を記載し、実施内容へは採用又は部分採用の採用範囲だけを反映する。
 `source: session-review`だけをエージェント由来とし、それ以外のsource、source欠落及び不明の不採用は不採用確認用`user_decisions`として
 `AskUserQuestion`又はTBD保留へ接続する。不採用確認用`user_decisions`は通常の将来判断TBDと区別する。
-直接回答は出所と引用範囲を付けた逐語文で同じ`feedbacks-planner`系統へ返し、回答なしではTBD保存、依存設定、`blocked`確認後の
-保留結果を同じ系統へ返す。保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない場合は元項目を終端しない。
+`feedbacks-planner`は不採用確認用`user_decisions`を返すと`status: awaiting_confirmation`で確認待ちとして終端する。
+呼び出し元は直接回答、保存TBDのいずれかを受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列（同じバッチと計画）の
+新しい識別子を起動する。新規起動へ元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、
+`user_decisions`原文、出所と引用範囲付きの逐語回答・保存TBD、同じ計画ファイルの絶対パスを渡す。
+元の調査結果を再調査や要約の対象にしないため、採否の根拠とsourceの由来境界を保持したまま採否を確定できる。
+保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない場合は元項目を終端しない。
+専用の`awaiting_confirmation`を失敗判定より先に扱うことで、利用者確認待ちと技術的失敗のTBDを混同しない。
+停止済み識別子への継続は完了通知を受領できず、調査結果を要約して再起動する経路は根拠とsourceの原値を失うため採用しない。
 別リポジトリ項目は、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
 元項目のfrontmatterと本文を含むメッセージ全体を既存の`agent-toolkit:add-feedback`で正しい`target_repo`へ登録する。
 通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。sourceがある場合は同じ値を渡す。

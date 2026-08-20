@@ -24,6 +24,11 @@ user-invocable: false
 - 人間由来の利用者指示がある場合は出所と引用範囲を付けた逐語文、常駐自動起動の場合は非該当と起動事実
 - 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス
 - バグ対応の項目を含む場合はその旨
+- `awaiting_confirmation`後の新規起動では、同じ`feedbacks-planner`系列の新しい識別子を使う
+  同じ系列は同じバッチと計画を指す
+- 元のバッチ全項目の調査結果全文をそのまま受け取る
+- 原文frontmatterの`source`原値（欠落は値なし）と`user_decisions`の原文をそのまま受け取る
+- 出所と引用範囲付きの逐語回答又は保存したTBD、同じ計画ファイルの絶対パスを受け取る
 
 agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パスは、委譲元から受け取らず自身で解決する。
 注入済みの`agent-toolkit:delegation`スキル本文に付随する所在ディレクトリの絶対パスから、
@@ -47,17 +52,23 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 
 1. 調査スレッドの起動直前に`atk config get pick_feedbacks_model`を実行し、
    `runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
-2. 各フィードバックごとの調査スレッドへ`explore-template.md`の絶対パス、担当ファイル名及び対象リポジトリを渡す。
+2. 初回起動では、各フィードバックごとの調査スレッドへ`explore-template.md`の絶対パス、担当ファイル名及び対象リポジトリを渡す。
    本文を起動文へ複製せず、利用可能な実行枠内で並列に要求ごとの区分、根拠、未検証事項を受領する。
-   調査結果から投入元識別子を受領し、値を改変せず採否判断へ渡す。追加の`atk mq show`は実行しない。
+   調査結果から投入元識別子を受領し、値を改変せず採否判断へ渡す。
+   `awaiting_confirmation`後の新規起動では、入力された全調査結果、原文frontmatterの`source`原値及び
+   `user_decisions`を再調査又は要約せず、そのまま採否判断へ用いる。いずれの経路でも追加の`atk mq show`は実行しない。
 3. 全調査結果を`decision-format.md`へ照合し、項目ごとに原文正本ID、人間由来の指示又は方針の優先度、調査根拠、欠陥原因、
    採否及び項目固有の採否理由を対応付けて採否候補を確定する。`source: session-review`だけをエージェント由来と判定し、
    それ以外のsource、source欠落及び不明の不採用候補は、原文との差異と技術的理由を示す不採用確認用`user_decisions`へ返す。
+   `awaiting_confirmation`後の新規起動では、受領した逐語回答又は保存TBDを対応する`user_decisions`へ先に統合する。
+   逐語回答は採否を確定し、TBDは保留として記録する。確定又は保留した項目は新たな`user_decisions`へ戻さない。
    `user_decisions`は通常の将来判断TBDと区別し、不採用候補の採否確定だけに用いる。部分採用は`user_decisions`へ機械的に含めず、
    差異、採用範囲、除外範囲及び採否理由を記録する。`user_decisions`を返した時点で本工程を中断し、
-   呼び出し元へ返却してターンを終端する。呼び出し元は`user_decisions`ごとに`AskUserQuestion`、TBD保存、依存設定、
-   inbox差し戻し及び`blocked`確認を担当する。呼び出し元から出所と引用範囲を付けた逐語文による回答又はTBD保留結果を
-   継続入力として受領した場合は、対応する項目の採否記録へ統合して採否を確定する。
+   `status: awaiting_confirmation`として呼び出し元へ返却してターンを終端する。これは失敗ではない。
+   呼び出し元は`user_decisions`ごとに`AskUserQuestion`、TBD保存、依存設定、inbox差し戻し及び`blocked`確認を担当する。
+   呼び出し元は回答又は保留結果を受領した後、停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列の新しい識別子を起動する。
+   新規起動では、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値、`user_decisions`の原文、
+   出所と引用範囲を付けた逐語回答又は保存したTBD、同じ計画ファイルの絶対パスを受領し、対応する項目の採否記録へ統合して採否を確定する。
    回答又は保留結果を受領するまで計画起草、キュー操作及びrejectを開始しない。
    保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行し、回答又は保留結果を確認できない項目はrejectしない。
    実装変更がない終端工程専用項目は、計画を作成せず、採否、終端工程一覧、認可根拠の逐語引用及び計画なしを返す。
@@ -104,7 +115,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 ## 出力
 
 ```text
-status: completed | needs_escalation
+status: completed | awaiting_confirmation | needs_escalation
 decision: <採否とdecision-format.mdに基づく根拠>
 decisions:
 - <バッチ全項目のファイル名、提示素材ID、採否、理由・差異、部分採用範囲、移管先及び確認・保留状態。0件は返さない>
@@ -116,10 +127,18 @@ user_decisions:
 - <不採用確認用の採否候補。原文との差異、技術的理由、回答なしの場合に保存する同内容のTBD本文を含め、通常の将来判断TBDは含めない。無ければ「なし」>
 blockers:
 - <未完了事項。完了時は「なし」>
+confirmation_context:
+- original_investigations: <元のバッチ全項目の調査結果全文。`awaiting_confirmation`時は必須>
+- raw_sources: <原文frontmatterの`source`原値を項目ごとに保持。欠落は値なし。`awaiting_confirmation`時は必須>
+- user_decisions: <不採用確認用`user_decisions`の原文。`awaiting_confirmation`時は必須>
+- answer_or_tbd: <出所と引用範囲付きの逐語回答又は保存したTBD。確認待ちでは未受領と記す>
+- plan_path: <同じ計画ファイルの絶対パス>
 ```
 
 完了報告には採用・却下・保留・技術的失敗別のファイル名を含める。
 技術的失敗には、失敗TBDに必要な事象、期待値、実際値、発生条件、直接的原因、再開に必要な情報及び元のファイル名を含める。
 
-計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない。
+通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない。
+`status: awaiting_confirmation`の報告だけは、停止済み識別子を再利用せず新規起動できるよう
+`confirmation_context`へ元の調査結果全文、raw source、`user_decisions`原文及び計画ファイル絶対パスを含める。
 完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。

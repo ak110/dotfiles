@@ -6,7 +6,7 @@ Claude Codeホストで通常型のフィードバックを処理する場合に
 ## 起動
 
 active一覧を取得した時点のreadyな通常型のフィードバックを、対象リポジトリごとの1バッチとして
-`agent-toolkit:feedbacks-planner`へ1回だけ渡す。
+初回の`agent-toolkit:feedbacks-planner`へ1回だけ渡す。
 blocked項目、未回答TBD、一覧取得後に追加された項目は含めない。
 `feedbacks-planner`はバッチ全項目について、原文正本ID、投入元、人間由来の指示又は方針の優先度、調査根拠、欠陥原因、
 採否及び項目固有の採否理由を記録し、採用又は部分採用の採用範囲だけを1つの統合計画の実施内容へ反映する。
@@ -17,6 +17,12 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 状態競合で拒否された場合はactive一覧と保存本文を再取得し、着手可否の判定から再開する。
 既存`processing`項目の別セッション再開では履歴を探索せず、`start-processing`を再実行しない。
 既存`processing`項目を未完了の`feedbacks-planner`工程の再開起点にしない。
+
+`feedbacks-planner`が`status: awaiting_confirmation`を返した場合、メインはこれを失敗として処理しない。
+確認回答、保存済みTBDのいずれかを受領する。受領後は停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列（同じバッチと計画）の
+新しい識別子を起動する。新規起動には、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、
+`user_decisions`の原文、出所と引用範囲付きの逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡す。
+調査結果、原文source及び`user_decisions`は再取得、再調査、要約をしない。回答又はTBDを対応する採否記録へ統合する。
 
 起動文には次の絶対パスと値だけを渡す。
 
@@ -46,11 +52,11 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 採否確定工程では`source: session-review`だけをエージェント由来と判定し、それ以外のsource、source欠落及び不明の不採用候補を
 原文との差異と技術的理由付きの不採用確認用`user_decisions`へ返す。`user_decisions`は通常の将来判断TBDと区別し、
 不採用候補の採否確定だけに用いる。部分採用はこの確認へ機械的に含めず、差異、採用範囲、除外範囲、採否理由を採否記録へ残す。
-メインは不採用確認用`user_decisions`ごとに`AskUserQuestion`を発行し、直接回答を受領した場合は出所と引用範囲付きの逐語文を
-同じ`feedbacks-planner`系統へ返して当該項目の採否を確定する。
+メインは不採用確認用`user_decisions`ごとに`AskUserQuestion`を発行し、直接回答を受領した場合は出所と引用範囲付きの逐語文を渡して
+同じ`feedbacks-planner`系列の新しい識別子を起動し、当該項目の採否を確定する。
 回答が無い場合は同じ質問内容を不採用確認用TBDとして`agent-toolkit:add-feedback`へ渡し、保存・依存設定・inbox差し戻し・
-`blocked`確認が完了するまで元項目をrejectしない。保留確認後は保留結果を同じ`feedbacks-planner`系統へ返し、保留項目を含む
-全項目の採否一覧と採用範囲だけで計画起草を続行する。
+`blocked`確認が完了するまで元項目をrejectしない。保留確認後は保留結果を渡して同じ系列の新しい識別子を起動し、
+保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行する。
 採用項目内で既存の許可条件と明文化済み方針により確定できる利用者判断事項は、
 `feedbacks-planner`の起草担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定する。
 成果物は未回答事項による実装・検証の条件分岐を残さない単一経路の計画とする。
@@ -59,6 +65,10 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 
 ## 受領
 
+完了報告の`status`を最初に確認する。`awaiting_confirmation`は確認待ちであり、`needs_escalation`の失敗経路より先に
+上記の新規起動経路へ渡す。
+`awaiting_confirmation`では`confirmation_context`の元の調査結果全文、raw source、`user_decisions`原文、回答又はTBD、
+同じ計画ファイルの絶対パスを照合する。計画ファイルの起草とレビューは新規起動後に検収する。
 完了報告を次の実体へ照合する。
 
 - 採否記録と`decision-format.md`
@@ -81,14 +91,14 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 受理した不採用確認用`user_decisions`の各項目は、`agent-toolkit/rules/01-agent.md`「協調と自律」節の確認境界に
 該当することを照合してから確認する。
 確認境界に該当しない技術判断が含まれる場合は、計画本文を編集せず同じ`feedbacks-planner`系統へ差し戻す。
-不採用確認用`user_decisions`への直接回答は、出所と引用範囲を付けた逐語文で同じ`feedbacks-planner`系統へ返し、
-更新された採否記録を再検収する。回答なしで保存した不採用確認用TBDは、依存設定と`blocked`確認後の保留結果を同じ系統へ返し、
+不採用確認用`user_decisions`への直接回答は、出所と引用範囲を付けた逐語文を渡して同じ系列の新しい`feedbacks-planner`識別子を起動し、
+更新された採否記録を再検収する。回答なしで保存した不採用確認用TBDは、依存設定と`blocked`確認後の保留結果を渡して同じ系列の新しい識別子を起動し、
 全項目の採否一覧と採用範囲だけで計画起草を続行する。
 通常の将来判断TBDを受領した場合だけ、`agent-toolkit/rules/01-agent.md`「協調と自律」のTBD受領規定に従い、回答だけを記録する。
 通常の将来判断TBDでは、暫定判断の内容、根拠、回答後に必要な追随作業、検証をTBD本文へ残し、将来の専用処理経路又は
 利用者が参照する情報とする。これらの情報を自動追随・自動再開・自動実行の契機としない。
 
-`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で1件保存する。
+`awaiting_confirmation`を処理した後、`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で1件保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。

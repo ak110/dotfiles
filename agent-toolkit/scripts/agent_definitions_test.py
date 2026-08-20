@@ -741,7 +741,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "explore-template.md",
         "plan-review-task.md",
         "指摘を加工せず起草担当へ全件配送",
-        "計画全文、調査結果の内訳、レビュー指摘の内訳は完了報告へ含めない",
+        "通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない",
         "起草スレッドへバッチ全項目のファイル名",
         "本文を起動文へ複製しない",
         "各フィードバックごとの調査スレッド",
@@ -896,16 +896,22 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
     for phrase in (
         "バッチ全項目の採否記録",
         "実施内容へは採用又は部分採用の採用範囲だけ",
-        "同じ`feedbacks-planner`系統へ返し",
-        "依存設定と保留確認後",
+        "同じ`feedbacks-planner`系列の新しい識別子",
+        "依存設定と`blocked`確認後",
         "元項目をrejectしない",
+        "元のバッチ全項目の調査結果全文",
+        "原文frontmatterの`source`原値",
+        "`user_decisions`原文",
+        "同じ計画ファイルの絶対パス",
     ):
         assert phrase in sender or phrase in planner or phrase in process or phrase in hold or phrase in decision
     for phrase in (
         "`user_decisions`を返した時点で本工程を中断",
         "呼び出し元へ返却してターンを終端する",
         "呼び出し元は`user_decisions`ごとに`AskUserQuestion`",
-        "継続入力として受領した場合",
+        "`status: awaiting_confirmation`として",
+        "これは失敗ではない",
+        "停止済みの識別子へ継続せず",
         "計画起草、キュー操作及びrejectを開始しない",
     ):
         assert phrase in planner
@@ -1647,7 +1653,10 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert phrase in receiver
     for phrase in (
         "直接回答を受領した場合",
-        "保留結果を同じ`feedbacks-planner`系統へ返",
+        "同じ`feedbacks-planner`系列の新しい識別子",
+        "元のバッチ全項目の調査結果全文",
+        "原文frontmatterの`source`原値",
+        "同じ計画ファイルの絶対パス",
     ):
         assert phrase in sender
     assert "保留項目を含む" in sender
@@ -1672,9 +1681,18 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         "通常の将来判断TBDを受領した場合だけ",
         "回答だけを記録する",
         "自動追随・自動再開・自動実行の契機としない",
-        "保留結果を同じ`feedbacks-planner`系統へ返し",
+        "保留結果を渡して同じ系列の新しい識別子を起動",
     ):
         assert phrase in sender
+    for phrase in (
+        "status: completed | awaiting_confirmation | needs_escalation",
+        "confirmation_context:",
+        "original_investigations:",
+        "raw_sources:",
+        "answer_or_tbd:",
+        "plan_path:",
+    ):
+        assert phrase in receiver
     output = _h2_section(receiver, "出力")
     tbd_output = output.partition("tbd:\n")[2].partition("user_decisions:\n")[0]
     user_decisions_output = output.partition("user_decisions:\n")[2]
@@ -1682,6 +1700,53 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert phrase in tbd_output
         assert phrase not in user_decisions_output
     assert "通常の将来判断TBDは含めない" in user_decisions_output
+
+
+def test_feedback_confirmation_wait_restarts_same_series_with_full_context() -> None:
+    """確認待ちを失敗と分け、停止済みIDを再利用せず元の調査情報を新規起動へ渡す。"""
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
+    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+
+    assert "status: completed | awaiting_confirmation | needs_escalation" in planner
+    assert "confirmation_context:" in planner
+    assert "awaiting_confirmation" in delegation
+    assert "同じ`feedbacks-planner`系列" in delegation
+    assert "停止済みの識別子へ継続せず" in delegation
+    for document in (planner, reception, process, hold, decision, checklist, concepts, design):
+        for phrase in (
+            "元のバッチ全項目の調査結果全文",
+            "原文frontmatterの`source`原値",
+            "同じ計画ファイルの絶対パス",
+        ):
+            assert phrase in document
+        assert any(
+            phrase in document
+            for phrase in (
+                "逐語回答又は保存TBD",
+                "逐語回答又は保存したTBD",
+                "逐語回答・保存TBD",
+            )
+        )
+        assert (
+            "同じ`feedbacks-planner`系列の新しい識別子" in document
+            or "同じ`feedbacks-planner`系列（同じバッチと計画）の" in document
+        )
+
+    for document in (reception, process):
+        confirmation = document.index("awaiting_confirmation")
+        failure = document.index("needs_escalation", confirmation)
+        assert confirmation < failure
+    assert reception.index("完了報告の`status`を最初に確認") < reception.index("needs_escalation")
+    assert process.index("`status: awaiting_confirmation`は上記の確認待ち経路") < process.index(
+        "失敗又は解消不能な`needs_escalation`"
+    )
 
 
 def test_process_feedbacks_invokes_delegation_skill_before_first_delegation() -> None:
