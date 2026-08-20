@@ -603,13 +603,15 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     """同一thread継続でも履歴を入力し、指摘を今回表だけへ追加する契約を固定する。"""
     plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
     merge = _MERGE_TASK.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
-    for reviewer in (plan_review, independent_review):
+    for reviewer in (plan_review, independent_review, plan_review_task):
         for phrase in (
             "同一thread継続でも新規起動でも",
             "必須差分入力",
@@ -623,6 +625,12 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
         ):
             assert phrase in reviewer
         assert "同一thread継続では実施指示だけを渡す" not in reviewer
+    assert "今回の系統・ラウンドに対応するレビュー指摘管理表と対応`.lock`の絶対パス" in delegation
+    assert (
+        "今回の系統・ラウンド表と同じ系統の過去全ラウンド表及び対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
+        in delegation
+    )
+    assert "再レビューでは既知でない情報だけを渡す" not in delegation
     assert "計画準拠系の表と対応`.lock`はこの一覧へ含めない" in independent_review
     assert "独立系へ計画準拠系の表や出力を渡さない" in executor
     assert "修正対象となる全系統・全ラウンド表" in executor
@@ -687,7 +695,10 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "今回のレビュー種別を全レビュー共通の入力として渡す" in delegation
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
-    assert "再レビューでは既知でない情報だけを渡す" in delegation
+    assert (
+        "再レビューでは、同一thread継続でも新規起動でも、今回の系統・ラウンド表と同じ系統の過去全ラウンド表及び対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
+        in delegation
+    )
     assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
     assert "追送しない限り当該発話を根拠とする実施又は除外を計画へ書かない" in delegation
