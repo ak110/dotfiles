@@ -173,6 +173,7 @@ class TestApproveConditions:
     def test_block_then_active_approves(self, tmp_path: pathlib.Path):
         """`stop_hook_active`が真の場合、直前のblock後の再呼び出しでもapproveを返す。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "block-then-active", {"process_feedbacks_skill_invoked": True})
         # 1回目: block を返す（stop_hook_active 未設定）
         result_first = _run(
             {"session_id": "block-then-active", "transcript_path": str(transcript)},
@@ -322,6 +323,7 @@ class TestApproveConditions:
                 _assistant_text_only(),
             ],
         )
+        _write_state(tmp_path, "bash-bg-done", {"process_feedbacks_skill_invoked": True})
         result = _run(
             {"session_id": "bash-bg-done", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -366,15 +368,37 @@ class TestSessionReviewCommandInvocation:
         decision = _parse_decision(result)
         assert "decision" not in decision
 
-    def test_no_command_invocation_blocks(self, tmp_path: pathlib.Path):
-        """コマンド起動痕跡が無い場合は通常通りblockされる。"""
+    def test_no_command_invocation_approves_without_feedback_processing(self, tmp_path: pathlib.Path):
+        """対象スキルを実行していない通常セッションは自動振り返りを誘導しない。"""
         transcript = _write_transcript(tmp_path, [_user_entry("通常の作業依頼"), _assistant_text_only()])
         result = _run(
             {"session_id": "command-not-invoked", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
+        assert "decision" not in decision
+
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            "process_feedbacks_skill_invoked",
+            "plan_and_add_feedback_skill_invoked",
+            "add_feedback_skill_invoked",
+        ],
+    )
+    def test_feedback_processing_flags_enable_automatic_review(self, tmp_path: pathlib.Path, flag: str):
+        """自動振り返り起点スキルの各フラグが立つセッションは振り返りを誘導する。"""
+        session_id = f"eligible-{flag}"
+        transcript = _write_transcript(tmp_path, [_user_entry("通常の作業依頼"), _assistant_text_only()])
+        _write_state(tmp_path, session_id, {flag: True})
+        result = _run(
+            {"session_id": session_id, "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+
+        decision = _parse_decision(result)
         assert decision.get("decision") == "block"
+        assert _SESSION_REVIEW_SKILL in _block_reason(decision)
 
     def test_codex_manual_invocation_in_rollout_approves_without_state(self, tmp_path: pathlib.Path):
         transcript = _write_transcript(
@@ -450,6 +474,7 @@ class TestSessionReviewCommandInvocation:
                 _codex_message("assistant", "追加作業後に完了"),
             ],
         )
+        _write_state(tmp_path, "codex-stop-notice-only", {"process_feedbacks_skill_invoked": True})
         result = _run(
             {
                 "session_id": "codex-stop-notice-only",
@@ -486,6 +511,7 @@ class TestAppendStopLog:
     def test_block_logs_decision(self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]):
         repo = make_clean_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "log-block", {"process_feedbacks_skill_invoked": True})
         _run(
             {"session_id": "log-block", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -515,7 +541,7 @@ class TestAppendStopLog:
 
 
 class TestContextConditions:
-    """block条件: 機械ゲート通過かつスキル未起動 → 毎回`decision: block`＋`reason`を返す。"""
+    """block条件: 機械ゲート通過かつ自動振り返り起点スキル実行済み。"""
 
     def test_clean_repo_context_review_only(
         self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
@@ -523,6 +549,7 @@ class TestContextConditions:
         """未コミット変更なし → 振り返り誘導のみの`reason`フィールド。"""
         repo = make_clean_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "clean-context", {"process_feedbacks_skill_invoked": True})
         result = _run(
             {"session_id": "clean-context", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -544,6 +571,7 @@ class TestContextConditions:
         """未コミット変更あり → `reason`に振り返り誘導、`systemMessage`にgit status件数サマリーを返す。"""
         repo = make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "dirty-context", {"process_feedbacks_skill_invoked": True})
         result = _run(
             {"session_id": "dirty-context", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -562,6 +590,7 @@ class TestContextConditions:
         """同一transcriptで2回連続Stopしても、スキル未起動なら毎回`decision: block`＋`reason`を返す。"""
         repo = make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "repeat", {"process_feedbacks_skill_invoked": True})
         first = _run(
             {"session_id": "repeat", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -578,6 +607,7 @@ class TestContextConditions:
             tmp_path,
             [_user_entry(), _assistant_with_async_tool("Agent")],
         )
+        _write_state(tmp_path, "codex-ignore-claude-background", {"process_feedbacks_skill_invoked": True})
         result = _run(
             {
                 "session_id": "codex-ignore-claude-background",
@@ -625,6 +655,7 @@ class TestEdgeCases:
 
         フックは安全側で動作し、振り返り誘導本文を返す。
         """
+        _write_state(tmp_path, "no-transcript", {"process_feedbacks_skill_invoked": True})
         result = _run(
             {"session_id": "no-transcript", "transcript_path": "/nonexistent/file"},
             state_dir=tmp_path,

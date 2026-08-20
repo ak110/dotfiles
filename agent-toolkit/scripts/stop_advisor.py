@@ -38,6 +38,11 @@ _HOOK_ID = "agent-toolkit/stop_advisor"
 
 # 振り返り誘導の対象スキル名。
 _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
+_AUTO_SESSION_REVIEW_FLAGS = (
+    "process_feedbacks_skill_invoked",
+    "plan_and_add_feedback_skill_invoked",
+    "add_feedback_skill_invoked",
+)
 
 # Claude Code transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
@@ -146,7 +151,14 @@ def main(payload_text: str) -> int:
         _approve(cwd=cwd)
         return 0
 
-    # --- セッション振り返り誘導（毎回提示）---
+    # 自動振り返りはフィードバック処理系スキルを実行したセッションだけへ限定する。
+    # session-reviewの手動起動は上の分岐で既にapproveしているため、この制限の対象外である。
+    if not any(state.get(key) is True for key in _AUTO_SESSION_REVIEW_FLAGS):
+        append_stop_log(session_id, "approve_review_not_eligible", {"flags": list(_AUTO_SESSION_REVIEW_FLAGS)})
+        _approve(cwd=cwd if isinstance(cwd, str) else "")
+        return 0
+
+    # --- セッション振り返り誘導 ---
     # 終了判定の基準・振り返り手順はスキル本体の「起動方針」節に集約する。
     # 誘導文の先頭にSESSION_REVIEW_PRECHECKを付与し、質問直後など終了相当の
     # ケースではスキル起動自体を抑止する。

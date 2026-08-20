@@ -17,6 +17,10 @@ user-invocable: false
 同一バッチの通常型のフィードバックの調査、採否、統合計画の起草、計画レビューを委譲先へ割り当て、結果を検収せよ。
 自身は成果物、計画ファイル、キューを変更せず、委譲先の起動、指摘の配送、完了結果の検収だけを行う。
 受信者専用のタスク文書と作成規範スキルは読み込まず、絶対パスを受信者へ渡す。
+調査・起草・レビューの工程で追加指示が生じた場合も、自身で成果物を修正せず、現在の書込担当又は
+該当する既存担当へ指示を配送してから、返却された成果物と検証結果を検収する。
+計画レビュー表は`~/.claude/plans/<計画stem>.review.tsv`へ、実装レビュー表は呼び出し元が指定する
+managed temp領域へ保存し、双方とも`atk review-table`の6列・複合キー・全件検証契約を使う。
 
 ## 入力
 
@@ -30,13 +34,13 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 一致した末尾成分`skills/delegation`を除いた接頭部分を現行plugin rootとして確定し、
 次のplugin root相対パスを絶対パス化して用いる。
 
-- 調査担当へ渡す`skills/process-feedbacks/references/explore-template.md`と`skills/process-feedbacks/references/review-checklists.md`
-- 採否確定で自身が読む`skills/process-feedbacks/references/decision-format.md`
-- 起草担当へ渡す`skills/plan-mode/SKILL.md`と`skills/plan-mode/references/plan-file-standards.md`
-- 調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキルの`SKILL.md`を起草担当へ渡す
-- 作成規範スキルの例は`skills/coding-standards/SKILL.md`、`skills/writing-standards/SKILL.md`、`skills/agent-standards/SKILL.md`など
-- レビュー担当へ渡す`skills/plan-mode/references/plan-review-task.md`と`skills/review-standards/SKILL.md`
-- バグ対応の項目を含む場合に調査担当と起草担当へ渡す`skills/bugfix/SKILL.md`
+- 調査担当へ渡す`<plugin root>/skills/process-feedbacks/references/explore-template.md`と`<plugin root>/skills/process-feedbacks/references/review-checklists.md`
+- 採否確定で自身が読む`<plugin root>/skills/process-feedbacks/references/decision-format.md`
+- 起草担当へ渡す`<plugin root>/skills/plan-mode/SKILL.md`と`<plugin root>/skills/plan-mode/references/plan-file-standards.md`
+- 調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキルの`<plugin root>/skills/<skill>/SKILL.md`を起草担当へ渡す
+- 作成規範スキルの代表例は`<plugin root>/skills/coding-standards/SKILL.md`など
+- レビュー担当へ渡す`<plugin root>/skills/plan-mode/references/plan-review-task.md`と`<plugin root>/skills/review-standards/SKILL.md`
+- バグ対応の項目を含む場合に調査担当と起草担当へ渡す`<plugin root>/skills/bugfix/SKILL.md`
 
 解決した各絶対パスは、受信者へ渡す前又は自身で読む前に実在を確認する。
 plugin rootを確定できない場合と実在しないパスがある場合は`needs_escalation`で返す。
@@ -73,11 +77,11 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 5. 計画レビュースレッドの起動直前に`atk config get plan_review_model`を実行して経路を解決する。
    `plan-review-task.md`を渡し、新規識別子で起動する。
 6. レビュー指摘を加工せず起草担当へ全件配送する。
-   配送文へ`agent-toolkit:reviewee-standards`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。
-   `agent-toolkit:review-standards`配下の`references/judgment-details.md`の絶対パスも同じ配送文へ含める。
+   配送文へ`reviewee-standards/SKILL.md`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。
+   `review-standards/references/judgment-details.md`の絶対パスも同じ配送文へ含める。
    起草担当の応答では、各指摘の採否と比例性の判断根拠が6列表へ記録されていることを検収する。
    レビュー担当の起動、書込有無のGit状態検収、結果検収は自身が担当し、再レビューと収束は
-   `agent-toolkit:plan-mode`の`references/plan-review-delegation.md`、継続方法は
+   `plan-mode/references/plan-review-delegation.md`の絶対パス、継続方法は
    `runtime-routing.md`「工程別モデル設定」に従う。
    起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`、レビュー担当の再レビュー直前は`plan_review_model`を再取得する。
 7. 計画ファイルの実在と分量、機械検査、レビュー収束、起動前後のGit状態を検収する。

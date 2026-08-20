@@ -473,7 +473,7 @@ def _collect_edit_operation_warnings(
         for warning in (
             _check_manifest(tool_name, display_path),
             _check_home_path(tool_name, fields, display_path),
-            _check_colloquial(tool_name, fields, display_path),
+            _check_colloquial(tool_name, fields, operation.path),
             _check_style_negation(tool_name, operation, display_path),
         )
         if warning is not None
@@ -893,6 +893,10 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     allowlistに一致する部分を先に除去してからdenylistを適用し、
     複合動詞・複合名詞などの標準用語が誤検出されることを抑える。
     """
+    # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
+    # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
+    if is_plan_file(file_path):
+        return None
     for field, value in fields:
         if not value:
             continue

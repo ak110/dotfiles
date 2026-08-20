@@ -28,6 +28,9 @@
   Agent識別子別に記録し、SubagentStopが完了報告を検査する。記録した要素は、正常報告、SendMessage再開、
   plan-mode起動のいずれでも削除されず、別の調整役の要素と併存する。状態JSON全体の寿命は末尾の規定に従う
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
+- `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した最後の値を記録する。
+  次回入力の`session_title`が利用者による明示renameか、計画ファイル名に追従可能な状態かを判定する。
+  sessionTitle出力時だけ更新し、明示rename時は保持する。同じセッション内で保持し、既存の状態JSONクリア又は保持期限を過ぎた回収で除去する
 - `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
   計画ファイル作成前の直接編集を検知する
 
@@ -42,7 +45,10 @@
 - `dotfiles_reference_docs_read`: dotfilesの個人PostToolUseフックが参照文書へのReadを解決済み絶対パスの一覧として記録し、
   個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
   セッション終了まで保持し、リセット経路は設けない
-- `process_feedbacks_skill_invoked`: process-feedbacks起動中の自律モード判定に使う
+- `process_feedbacks_skill_invoked`・`plan_and_add_feedback_skill_invoked`・`add_feedback_skill_invoked`:
+  それぞれ対応するフィードバック処理スキルの起動を記録する。Stop hookの自動session-review起動条件に使う。
+  PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に3フラグをまとめて偽へ戻す。
+  手動session-review起動はこれらのフラグを必要としない。セッション終了まで保持する
 - `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
   `delegation`を起動した場合にPostToolUseが真化する。
   メインセッションからcodex MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、

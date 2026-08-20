@@ -14,7 +14,7 @@
 - マーカーファイルは排他的作成で書き込み、内容のflush後にfsyncする。既存のマーカーファイルがある場合は失敗として扱う。
 - マーカーファイルの読込前にsymlinkではない通常ファイルであること、現在利用者が所有し利用者専用登録簿と同じ利用者専用の権限であることを確認する。JSON解析後は4必須フィールドの欠落、余分な項目、型又は値の不正を照合失敗として扱う。
 - `managed-temp`のマーカーファイルと利用者専用登録簿の照合は、
-  `agent-toolkit:delegation`の`references/claude-code-runtime.md`を正本とする。
+  `../../delegation/references/claude-code-runtime.md`を正本とする。
 - 領域内の公開グループ表は、終端項目、構成項目、ブランチ、OID、PR/MR識別子及び完了済み操作の永続SSOTとする。
 - 中断後は`depends_on`、計画、進捗ログ、領域パスの順で再発見し、`atk managed-temp list --prefix publish-group`とマーカーファイルで照合する。
 - 構成項目は対象ブランチへ直接pushせず、ソースブランチのpush済みOIDをCI通過後にadoptする。

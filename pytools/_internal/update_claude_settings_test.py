@@ -386,6 +386,22 @@ class TestProductionManagedSettings:
         assert sum("claude_hook.py stop_bell" in command for command in commands) == (1 if suffix == "posix" else 0)
         assert all("claude_hook.py stop;" not in command for command in commands)
 
+    def test_windows_hook_commands_use_home_placeholder(self):
+        """Windows個人hookの実行パスが介在シェルに依存しないプレースホルダー形式である。"""
+        path = _PROD_MANAGED_SETTINGS.with_suffix(".win32.json")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        commands = [
+            hook["command"]
+            for groups in data["hooks"].values()
+            for group in groups
+            for hook in group["hooks"]
+            if hook.get("type") == "command"
+        ]
+        hook_commands = [command for command in commands if "claude_hook.py" in command]
+        assert len(hook_commands) == 3
+        assert all("__HOME__\\dotfiles\\scripts\\claude_hook.py" in command for command in hook_commands)
+        assert all("$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py" not in command for command in hook_commands)
+
 
 class TestUpdateClaudeConfig:
     """~/.claude.json 向けの単純上書きマージテスト。"""

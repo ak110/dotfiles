@@ -3,7 +3,8 @@ name: agent-standards
 description: >
   コーディングエージェント向け文書（`AGENTS.md`・`CLAUDE.md`・`.agents/`配下・
   `.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）の
-  新規作成・修正・計画・レビュー時に`agent-toolkit:writing-standards`と必ず併用して呼び出す。
+  新規作成・修正・計画・レビュー時、及びホスト機能の可否・入出力契約を調査するときに
+  `agent-toolkit:writing-standards`と必ず併用して呼び出す。
   セッション記録（`~/.claude/projects`配下）の集計・分析時も呼び出す
   （`references/session-records.md`が構造を定める）。
 ---

@@ -39,6 +39,9 @@ user-invocable: false
    activeなフィードバックとの重複は`atk mq list --status=active --target-repo=<受領した対象リポジトリの絶対パス> --skip-pull`を
    1回実行して確認し、他リポジトリ宛の一覧は取得しない
 10. 観測事実に裏付けられ、提案基準を満たす候補だけを報告する
+11. 抑止する候補は、抑止を確定する前に`layer`、`norm_violation`及び`other_layers_evaluated`を
+    それぞれ埋める。`other_layers_evaluated`は他階層を評価した事実と結果を示し、未評価の場合は
+    その理由を明記する
 
 対象を変更せず、`atk mq add`、外部送信、サブエージェント起動も行わない。
 
@@ -60,7 +63,11 @@ proposals:
   duplicate_check: <既存規範・activeなフィードバックとの重複>
   unverified: <未検証事項。なければ「なし」>
 suppressed:
-- <抑止した候補と理由。なければ「なし」>
+- layer: <層番号または層名>
+  norm_violation: <規範違反の有無と根拠>
+  other_layers_evaluated: <他階層を評価した事実と結果。未評価なら理由>
+  reason: <抑止した候補と理由>
+  （抑止候補が無い場合は「なし」）
 ```
 
 提案がない場合は`proposals`へ「提案なし」と記載する。各指摘の裏付け手段を示し、

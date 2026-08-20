@@ -2,7 +2,7 @@
 
 実際にpushする直前に本文書を全文読む。push主体がpush先、更新ref、基準情報、CI監視、
 証拠用一時領域のライフサイクルを所有する。通常commit、stage、messageは親スキル、
-CI失敗の帰属と原因分析は`agent-toolkit:bugfix`を正本とする。
+CI失敗の帰属と原因分析は`../../bugfix/SKILL.md`を正本とする。
 
 ## push前
 

@@ -23,7 +23,7 @@
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex MCP（plan modeではサンドボックス書込経路） | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex MCP | Agentツール |
 | `execute_model` | 実装担当と統合後のレビュー修正の書込担当。CI失敗修正では、原因分析で修正commitが必要と確定した場合に呼び出し元が起動直前に解決する書込担当 | 実装担当と統合後のレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex MCP | Agentツール |
 | `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex MCP | Agentツール |

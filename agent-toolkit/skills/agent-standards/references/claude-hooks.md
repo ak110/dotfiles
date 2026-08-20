@@ -125,6 +125,14 @@ blockの新設時は、対象環境で文書化済みの正式コマンド形（
 Claude Codeでは`decision`と独立に注入可能で、stdoutプレーン出力もコンテキストへ追加される。
 Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`とし、`additionalContext`を返す。
 
+Claude CodeのUserPromptSubmit payloadにある`session_title`は現在のセッション名を表し、
+同イベントの`hookSpecificOutput.sessionTitle`は次のセッション名を設定する。
+計画ファイルを扱うhookは、`session_title`が空、若しくは直前に同hookが設定した値と一致する場合だけ
+計画ファイル名のstemを`sessionTitle`へ出力し、利用者が`/rename`又は`/name`で設定した値は上書きしない。
+`sessionTitle`と`additionalContext`が同じ呼び出しで必要な場合は、`hookSpecificOutput`へ両方を含む1つのJSONを返す。
+この契約はClaude Code専用であり、Codex payload（`model`又はCodexのターン識別子を持つ入力）では
+`sessionTitle`を出力しない。
+
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
 Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、

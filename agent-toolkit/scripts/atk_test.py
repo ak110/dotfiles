@@ -414,6 +414,20 @@ class TestSubcommandSubparserDefault:
         assert args.subparser.prog == "atk mq add"
 
 
+def test_review_table_subcommands_are_public() -> None:
+    """レビュー表の4操作がトップレベルCLIへ登録されている。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    for subcommand in ("init", "add", "respond", "show", "validate"):
+        argv = ["review-table", subcommand, "review.tsv"]
+        if subcommand == "add":
+            argv.extend(["重大", "位置", "指摘"])
+        elif subcommand == "respond":
+            argv.extend(["重大", "位置", "指摘", "--response-needed=yes", "--response=修正"])
+        args = parser.parse_args(argv)
+        assert args.command == "review-table"
+        assert args.review_table_subcommand == subcommand
+
+
 class TestSpaceSeparatedOptionWarning:
     """mainがparse前に空白区切りオプションを警告することを検証する。"""
 

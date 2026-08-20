@@ -25,6 +25,10 @@ description: >
 ユーザーからClaude Codeの`/agent-toolkit:session-review`またはCodexの
 `$agent-toolkit:session-review`で手動起動された場合は終了判定をせず、証拠収集へ進む。
 
+Stop hookからの自動起動は、同一セッションで`process-feedbacks`、`plan-and-add-feedback`又は
+`add-feedback`のいずれかを実行した場合だけ行う。対象フラグが無い通常セッションはStop hookが
+振り返り誘導を表示せずに終了を許可する。手動起動は対象フラグの有無にかかわらず維持する。
+
 Stopフックから呼ばれた場合は、直前のアシスタントターンが作業完了の言い切りで終わっている場合だけ進む。
 質問・確認・承認待ち、バックグラウンド処理待ち、外部完了通知待ちは完了に含めない。
 起動条件を満たさない場合は現在の状態と次の契機を示して終了する。

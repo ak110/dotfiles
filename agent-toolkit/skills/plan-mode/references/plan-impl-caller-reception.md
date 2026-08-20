@@ -18,6 +18,7 @@
 
 先行成果へ依存しない複数の計画ファイルを並列実装する場合は、ファイル重複にかかわらず、
 呼び出し元が計画ファイルごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
+変更ファイルの重複を理由に先行レーンの完了を待たず、各計画ファイルを専用worktreeへ割り当てる。
 各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`で計画ファイル専用worktreeを作成する。
 計画が呼び出し元によるレーンのworktreeの作成も明示する場合は、同じ方法でレーンのworktreeを作成する。
 作成直後に用途、絶対パス、管理対象領域の絶対パス、HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録する。
@@ -64,7 +65,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 
 ## pushとCI
 
-実装委譲はcommitと二系統のレビューまでとする。呼び出し元が`agent-toolkit:commit`の
+実装委譲はcommitと二系統のレビューまでとする。呼び出し元が`../../commit/SKILL.md`の
 `references/push-and-ci.md`を読み、pushとCI通過確認を所有する。
 CI失敗時は`agent-toolkit:bugfix`で原因を確定する。原因分析によりコード・テスト・設定の修正commitが必要と確定した場合だけ、
 通常モードの`plan-impl-executor`へ元計画を再投入せず、呼び出し元が`runtime-routing.md`の`execute_model`を起動直前に解決して

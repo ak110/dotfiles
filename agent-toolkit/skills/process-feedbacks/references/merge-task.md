@@ -33,6 +33,8 @@ rebaseとmerge commitは作成せず、レーン項目に続けてレビュー�
 `git status --short`で状態を確認してから`git add`又は継続操作を行う。
 競合前のイメージが異なりrerereの解消結果が再利用されない場合は、通常の競合解消手順へ戻る。
 cherry-pickが空の場合は`git -c rerere.enabled=true -c rerere.autoUpdate=false cherry-pick --skip`で続行し、当該レビュー修正項目を`適用済みスキップ`として返す。
+競合が発生した場合は、統合対応表に含まれる関係する全計画ファイルを全文読み、各計画の目的、実施内容、設計判断及び完了条件を変更へ対応付ける。
+各計画の契約を両立させる最小限の解消だけを行い、いずれかの計画の意図を未確認のまま優先しない。
 競合は関係する全計画の目的へ帰属する最小限だけを解消する。
 
 解消不能または計画と合意の変更を要する場合は`git -c rerere.enabled=true -c rerere.autoUpdate=false cherry-pick --abort`で中止する。
@@ -49,7 +51,7 @@ HEADが作成時HEADの完全OIDと一致し、作業ツリーがcleanである�
 ## レビュー修正モード
 
 採用指摘の6列表を読み、関係する全計画から保持契約を読み、採用指摘だけを修正する。
-`agent-toolkit:reviewee-standards`を適用し、指摘の採否と修正を確定する。
+`../../reviewee-standards/SKILL.md`を適用し、指摘の採否と修正を確定する。
 同スキルで不採用と確定した候補は修正せず`needs_escalation`で返す。
 近接検証と指定された全検証を実施し、1つの修正commitを作成してcleanな状態で返す。
 指摘の根拠不足、計画との衝突、認可外の変更が必要な場合は修正せず`needs_escalation`で返す。

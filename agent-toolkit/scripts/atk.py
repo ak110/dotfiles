@@ -15,7 +15,7 @@
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
 サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`・
-`atk managed-temp <sub>`・`atk watch`形式とする。
+`atk managed-temp <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
@@ -62,6 +62,7 @@ import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_watch as _watch  # noqa: E402
 import _managed_temp  # noqa: E402
+import _review_table  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
 _active_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES)
@@ -685,6 +686,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     watch = top.add_parser("watch", help="委譲先の成果物側の状況を1行で出力する")
     _watch.build_parser(watch)
+    _review_table.build_parser(top)
     return parser
 
 
@@ -797,6 +799,12 @@ def main(
         sys.exit(_watch.dispatch(args, now=now))
     if args.command == "config":
         _config_cmd.dispatch(args, home)
+    if args.command == "review-table":
+        try:
+            sys.exit(_review_table.dispatch(args))
+        except ValueError as error:
+            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
     if args.command != "mq":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
     sub = args.mq_subcommand

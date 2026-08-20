@@ -649,6 +649,29 @@ class TestColloquialCheck:
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
 
+    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
+    def test_plan_file_skips_colloquial_warning_for_claude_edit_tools(
+        self, tmp_path: pathlib.Path, deny_substring: str, tool_name: str
+    ) -> None:
+        """計画ファイルではClaudeの3編集操作すべてで口語警告を出力しない。"""
+        plan = _make_plan_file(tmp_path / "home", "colloquial.md")
+        content = f"概要は{deny_substring}該当する。\n"
+        if tool_name == "Write":
+            tool_input = {"file_path": str(plan), "content": content}
+        elif tool_name == "Edit":
+            tool_input = {"file_path": str(plan), "old_string": "# t\n", "new_string": content}
+        else:
+            tool_input = {
+                "file_path": str(plan),
+                "edits": [{"old_string": "# t\n", "new_string": content}],
+            }
+        result = _run(
+            {"tool_name": tool_name, "tool_input": tool_input},
+            env_overrides=_plan_file_state_env(tmp_path, tmp_path / "home"),
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
 
 def _plan_file_state_env(
     tmp_path: pathlib.Path,
@@ -5163,6 +5186,19 @@ class TestCodexApplyPatchEditChecks:
 
         assert result.returncode == 0
         assert result.stdout == ""
+
+    def test_plan_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        """計画ファイルではCodexの`apply_patch`でも口語警告を出力しない。"""
+        home = tmp_path / "home"
+        plan = _make_plan_file(home, "codex-colloquial.md")
+        relative = pathlib.Path(plan).relative_to(home)
+        patch_text = _patch(f"*** Update File: {relative.as_posix()}\n@@\n-# t\n+概要は{deny_substring}該当する。\n")
+        result = _run(
+            _codex_payload(patch_text, home),
+            env_overrides=_plan_file_state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
         assert result.stderr == ""
 
     def test_lockfile_path_in_patch_blocks(self, tmp_path: pathlib.Path) -> None:

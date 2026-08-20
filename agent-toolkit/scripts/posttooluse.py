@@ -163,6 +163,10 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 # Stop hookの拡張照合カテゴリ有効化判定に使う。
 _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
 
+# session-reviewを自動起動する起点となる処理スキル。
+_PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
+_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedback"})
+
 # exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
 # （`agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端する）。
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
@@ -228,10 +232,16 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
 
 
 def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
-    """process-feedbacksスキル起動フラグを偽へ戻す。既に偽ならNoneを返す（冪等）。"""
-    if not state.get("process_feedbacks_skill_invoked", False):
+    """自動振り返りの起点フラグを偽へ戻す。全て偽ならNoneを返す（冪等）。"""
+    keys = (
+        "process_feedbacks_skill_invoked",
+        "plan_and_add_feedback_skill_invoked",
+        "add_feedback_skill_invoked",
+    )
+    if not any(state.get(key, False) for key in keys):
         return None
-    state["process_feedbacks_skill_invoked"] = False
+    for key in keys:
+        state[key] = False
     return state
 
 
@@ -393,6 +403,24 @@ def _record_skill_use(session_id: str, skill_name: object, *, is_sidechain: bool
         update_state(session_id, _set_review_invoked)
     if skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
         update_state(session_id, _set_process_feedbacks_invoked)
+    if skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
+
+        def _set_plan_and_add_feedback_invoked(state: dict) -> dict | None:
+            if state.get("plan_and_add_feedback_skill_invoked", False):
+                return None
+            state["plan_and_add_feedback_skill_invoked"] = True
+            return state
+
+        update_state(session_id, _set_plan_and_add_feedback_invoked)
+    if skill_name in _ADD_FEEDBACK_SKILL_NAMES:
+
+        def _set_add_feedback_invoked(state: dict) -> dict | None:
+            if state.get("add_feedback_skill_invoked", False):
+                return None
+            state["add_feedback_skill_invoked"] = True
+            return state
+
+        update_state(session_id, _set_add_feedback_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
         update_state(session_id, _reset_process_feedbacks_invoked)
     if not is_sidechain and skill_name in _DELEGATION_SKILL_NAMES:

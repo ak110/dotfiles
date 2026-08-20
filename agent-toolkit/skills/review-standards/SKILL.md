@@ -6,7 +6,7 @@ description: >
   著者向けスキル（`coding-standards`・`writing-standards`・`agent-standards`）と併用する。
 # 編集時の注意点:
 # レビュアー側の判断指針のみを扱う。
-# レビューイー側はagent-toolkit:reviewee-standardsを正本とする。
+# レビューイー側は`../reviewee-standards/SKILL.md`を正本とする。
 # レビュー工程管理はplan-impl-executorと実装差分レビューの共有参照文書が扱う。
 # 著者向け規約はcoding-standards・writing-standards・agent-standards側に置く。
 # 機械チェックが扱う項目は本スキルでも非対象とする方針のため、

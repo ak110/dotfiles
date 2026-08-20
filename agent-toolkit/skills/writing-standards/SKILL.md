@@ -164,7 +164,7 @@ uvx pyfltr run --commands=colloquial-check --enable=colloquial-check <対象フ�
 pyfltr内蔵の辞書ファイルは、メインから直接読み込まない。
 対象は`Read`に限らず、シェルコマンドによる内容表示を含む全ての読み込み経路とする。
 構造調査など、調査目的の内容確認も対象に含む。
-内容確認や修正を委譲する場合は`agent-toolkit:delegation`の経路選択に従う。
+内容確認や修正を委譲する場合は`../delegation/SKILL.md`の経路選択に従う。
 口語禁止語を計画ファイル本文・PR説明・チャット転記等で議論する場合は語そのものを書かず、
 `references/tone-examples.md`の節名（比喩動詞・主観評価語など）で間接参照する。
 LLM口調の禁止語彙・対比例は`references/tone-examples-llm-tone.md`に従う。

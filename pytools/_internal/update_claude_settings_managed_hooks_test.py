@@ -6,12 +6,13 @@ TestWarnOrphanDotfilesHookCommands、TestNormalizeManagedHooks を含む。
 
 import json
 import logging
+import typing
 from pathlib import Path
 
 import pytest
 
 from pytools._internal._test_helpers import run_update_claude_settings
-from pytools._internal.update_claude_settings import update_claude_settings
+from pytools._internal.update_claude_settings import _substitute_home_placeholder, update_claude_settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PROD_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.json"
@@ -160,8 +161,12 @@ class TestNormalizeManagedHooks:
         """実在するOS別配布元で旧個別要素を正規化し、再実行しても変更しない。"""
         override = json.loads(override_path.read_text(encoding="utf-8"))
         managed_entries = override["hooks"]["Stop"]
-        managed_hooks = [hook for entry in managed_entries for hook in entry["hooks"]]
-        existing_entries = [{"hooks": [hook]} for hook in managed_hooks] + managed_entries
+        expected_entries = typing.cast(
+            list[dict[str, list[dict[str, str]]]],
+            _substitute_home_placeholder(managed_entries),
+        )
+        managed_hooks = [hook for entry in expected_entries for hook in entry["hooks"]]
+        existing_entries = [{"hooks": [hook]} for hook in managed_hooks] + expected_entries
         target_path = tmp_path / "target.json"
         target_path.write_text(
             json.dumps({"hooks": {"Stop": existing_entries}}, ensure_ascii=False),
@@ -187,7 +192,7 @@ class TestNormalizeManagedHooks:
         )
         second = json.loads(target_path.read_text(encoding="utf-8"))
 
-        assert first["hooks"]["Stop"] == managed_entries
+        assert first["hooks"]["Stop"] == expected_entries
         assert second == first
         assert not changed_again
 

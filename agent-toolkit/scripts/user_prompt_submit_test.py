@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 
 import _fork_runner
+import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
@@ -59,6 +60,34 @@ class TestSlashCommandDetection:
         )
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
+
+    @pytest.mark.parametrize(
+        ("prompt", "flag"),
+        [
+            ("/agent-toolkit:plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
+            ("/plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
+            ("$agent-toolkit:plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
+            ("$plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
+            ("/agent-toolkit:add-feedback", "add_feedback_skill_invoked"),
+            ("/add-feedback", "add_feedback_skill_invoked"),
+            ("$agent-toolkit:add-feedback", "add_feedback_skill_invoked"),
+            ("$add-feedback", "add_feedback_skill_invoked"),
+        ],
+    )
+    def test_detects_feedback_submission_skill_commands(
+        self,
+        tmp_path: pathlib.Path,
+        prompt: str,
+        flag: str,
+    ) -> None:
+        sid = f"feedback-command-{prompt[0]}-{flag}"
+        payload = {"session_id": sid, "prompt": prompt}
+        if prompt.startswith("$"):
+            payload["model"] = "gpt-5"
+        result = _run(payload, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get(flag) is True
 
     def test_detects_short_skill_command_session_review(self, tmp_path: pathlib.Path):
         """短縮名`/session-review`もフルスキル名キーで正規化して保存する。"""
@@ -257,3 +286,153 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         assert state["plan_mode_skill_invoked"] is True
         assert state["session_review_invoked"]["agent-toolkit:session-review"] is True
+
+
+class TestClaudePlanSessionTitle:
+    """Claude Codeの計画ファイルstemとsessionTitleの同期契約を検証する。"""
+
+    @staticmethod
+    def _state_path(state_dir: pathlib.Path, session_id: str) -> pathlib.Path:
+        return state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+
+    def _prepare_plan(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        session_id: str,
+        name: str = "draft-plan.md",
+        **state_values: object,
+    ) -> pathlib.Path:
+        home = tmp_path / "home"
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(home))
+        plan = plans / name
+        plan.write_text("# 計画\n", encoding="utf-8")
+        state = {"current_plan_file_path": str(plan), **state_values}
+        self._state_path(tmp_path, session_id).write_text(json.dumps(state), encoding="utf-8")
+        return plan
+
+    def test_empty_session_title_receives_current_plan_stem(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        sid = "plan-title-initial"
+        self._prepare_plan(tmp_path, monkeypatch, sid, "feedback-batch.md")
+
+        result = _run({"session_id": sid, "prompt": "計画を続けます", "session_title": ""}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert output["hookSpecificOutput"]["sessionTitle"] == "feedback-batch"
+        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "feedback-batch"
+
+    def test_same_hook_title_is_not_emitted_again(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        sid = "plan-title-repeat"
+        self._prepare_plan(
+            tmp_path,
+            monkeypatch,
+            sid,
+            "feedback-batch.md",
+            last_hook_session_title="feedback-batch",
+        )
+
+        result = _run({"session_id": sid, "prompt": "通常の入力", "session_title": "feedback-batch"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_later_plan_edit_updates_title_when_previous_hook_title_is_input(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        sid = "plan-title-update"
+        old_plan = self._prepare_plan(
+            tmp_path,
+            monkeypatch,
+            sid,
+            "old-plan.md",
+            last_hook_session_title="old-plan",
+        )
+        new_plan = old_plan.parent / "new-plan.md"
+        new_plan.write_text("# 新計画\n", encoding="utf-8")
+        state_path = self._state_path(tmp_path, sid)
+        state = _read_state(tmp_path, sid)
+        state["current_plan_file_path"] = str(new_plan)
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+        result = _run({"session_id": sid, "prompt": "計画を更新", "session_title": "old-plan"}, state_dir=tmp_path)
+
+        output = json.loads(result.stdout)
+        assert output["hookSpecificOutput"]["sessionTitle"] == "new-plan"
+        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "new-plan"
+
+    def test_explicit_rename_is_preserved(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        sid = "plan-title-rename"
+        self._prepare_plan(
+            tmp_path,
+            monkeypatch,
+            sid,
+            "plan-name.md",
+            last_hook_session_title="old-name",
+        )
+
+        result = _run({"session_id": sid, "prompt": "名前を変更", "session_title": "manual-name"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "old-name"
+
+    @pytest.mark.parametrize("invalid_path", [None, 42, "relative.md", "/tmp/not-a-plan.md"])
+    def test_invalid_or_missing_plan_path_fails_open(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        invalid_path: object,
+    ) -> None:
+        sid = f"plan-title-invalid-{type(invalid_path).__name__}"
+        home = tmp_path / "home"
+        (home / ".claude" / "plans").mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(home))
+        self._state_path(tmp_path, sid).write_text(
+            json.dumps({"current_plan_file_path": invalid_path}),
+            encoding="utf-8",
+        )
+
+        result = _run({"session_id": sid, "prompt": "通常の入力", "session_title": ""}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert "last_hook_session_title" not in _read_state(tmp_path, sid)
+
+    def test_codex_payload_does_not_emit_plan_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        sid = "plan-title-codex"
+        self._prepare_plan(tmp_path, monkeypatch, sid, "codex-plan.md")
+
+        result = _run(
+            {"session_id": sid, "prompt": "通常の入力", "session_title": "", "model": "gpt-5"},
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert "last_hook_session_title" not in _read_state(tmp_path, sid)
+
+    def test_session_review_context_and_plan_title_share_one_json_response(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid = "plan-title-and-review"
+        self._prepare_plan(tmp_path, monkeypatch, sid, "review-plan.md")
+
+        result = _run(
+            {
+                "session_id": sid,
+                "prompt": "/session-review",
+                "session_title": "",
+                "transcript_path": "/tmp/review.jsonl",
+            },
+            state_dir=tmp_path,
+        )
+
+        output = json.loads(result.stdout)
+        hook_output = output["hookSpecificOutput"]
+        assert hook_output["sessionTitle"] == "review-plan"
+        assert "session_id=plan-title-and-review" in hook_output["additionalContext"]
