@@ -19,6 +19,7 @@ import pytest_asyncio
 
 _BROWSER_TEST_ENV = "AGENT_TOOLKIT_SERVE_BROWSER_TESTS"
 _SERVER_START_TIMEOUT_SEC = 10.0
+_LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
 
 
 def _browser_tests_enabled() -> bool:
@@ -235,7 +236,7 @@ def _write_entries(root: Path) -> None:
     long_body = "\n\n".join(f"段落{i} `inline-{i}`" for i in range(80))
     (inbox / "question.md").write_text(
         "---\ntype: tbd\ntarget_repo: example/repo\nsource: browser\npriority: high\n"
-        "z_key: z\na_key: a\n"
+        f"z_key: z\na_key: a\n{_LONG_UNKNOWN_FRONTMATTER_KEY}: long\n"
         "metadata:\n  branch: main\n  flags:\n    - one\nquestion_type: choice\nchoices: A, B\n---\n\n"
         f"## 質問\n\n{long_body}\n\n```text\n折り返す長いコード {'x' * 240}\n```\n\n"
         "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n",
@@ -345,6 +346,7 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
         dialog = page.get_by_role("dialog", name="詳細")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text("priority")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text('"branch": "main"')
+        assert await dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY).count() == 1
         metadata_labels = await dialog.locator("#detail-metadata dt").all_text_contents()
         assert metadata_labels.index("z_key") < metadata_labels.index("int: 1")
         assert metadata_labels.index("int: 1") < metadata_labels.index("1")
@@ -381,6 +383,29 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
             assert header_box["height"] < 150
         await page.keyboard.press("Escape")
         await playwright.async_api.expect(row).to_be_focused()
+
+
+@pytest.mark.asyncio
+async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """狭幅画面で500文字の未知キーを折り返し、横overflowを生じさせない。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_question(page)
+
+    dialog = page.get_by_role("dialog", name="詳細")
+    long_key_term = dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY)
+    await playwright.async_api.expect(long_key_term).to_have_count(1)
+    term_box = await long_key_term.bounding_box()
+    metadata_box = await dialog.locator("#detail-metadata").bounding_box()
+    assert term_box is not None
+    assert metadata_box is not None
+    assert term_box["width"] <= metadata_box["width"]
+    assert await long_key_term.evaluate("element => element.scrollWidth <= element.clientWidth")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.mark.asyncio

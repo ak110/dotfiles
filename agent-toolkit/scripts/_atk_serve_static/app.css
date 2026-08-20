@@ -323,6 +323,7 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
   display: grid;
   gap: var(--space-1);
 }
+#detail-metadata dt { overflow-wrap: anywhere; }
 #detail-metadata dd { white-space: pre-wrap; }
 .detail-body { margin-top: var(--space-4); }
 .entry-content {
