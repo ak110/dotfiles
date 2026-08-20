@@ -8,19 +8,33 @@ import _review_table as table
 import pytest
 
 
-def test_init_add_validate_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "review.tsv"
     assert table.init(path) == 0
     assert table.add(path, "重大", "module.py:10", "修正が必要") == 0
     assert table.add(path, "軽微", "README.md", "説明が不足") == 0
-    assert table.validate(path) == 0
     output = capsys.readouterr().out
-    assert "検証成功" in output
+    assert "追加成功" in output
     lines = path.read_text(encoding="utf-8").splitlines()
     assert all(len(line.split("\t")) == 6 for line in lines)
     assert all(isinstance(json.loads(cell), str) for line in lines for cell in line.split("\t"))
     assert table.show(path) == 0
     assert capsys.readouterr().out == path.read_text(encoding="utf-8")
+
+
+def test_validate_rejects_unanswered_rows_until_every_row_is_responded(tmp_path: pathlib.Path) -> None:
+    """公開検証は全行の応答完了まで成功させず、既存の追加・応答操作は維持する。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "重大", "module.py:10", "修正が必要")
+    table.add(path, "軽微", "README.md", "説明が不足")
+
+    with pytest.raises(ValueError, match="対応要否が未回答"):
+        table.validate(path)
+
+    table.respond(path, "重大", "module.py:10", "修正が必要", "yes", "条件を追加した", "")
+    table.respond(path, "軽微", "README.md", "説明が不足", "no", "対象外", "既存契約を維持する")
+    assert table.validate(path) == 0
 
 
 def test_respond_updates_only_reviewee_columns(tmp_path: pathlib.Path) -> None:
@@ -60,7 +74,7 @@ def test_validate_rejects_unanswered_response(tmp_path: pathlib.Path) -> None:
         "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="対応要否なし"):
+    with pytest.raises(ValueError, match="対応要否が未回答"):
         table.validate(path)
 
 
@@ -83,6 +97,9 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
 
     target = entries[3]
     assert table.respond(path, *target, "yes", "再現経路を追加", "") == 0
+    for entry in entries:
+        if entry != target:
+            assert table.respond(path, *entry, "no", "", "既存契約を維持する") == 0
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     matching = [row for row in rows if row[:3] == list(target)]

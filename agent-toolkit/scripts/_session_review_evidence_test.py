@@ -1190,6 +1190,36 @@ def test_warn_mode_accepts_case_variants_of_structured_warning_fields(
     assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "構造化警告"}]
 
 
+def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """警告キーの値又は直接警告辞書の本文だけを抽出し、兄弟の通常本文を除外する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event",
+                "warning_message": "構造化警告",
+                "message": "通常本文",
+            },
+            {
+                "type": "event",
+                "kind": "warning",
+                "text": "直接表す警告本文",
+                "message": "通常の兄弟本文",
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [
+        {"kind": "warning", "line": 1, "text": "構造化警告"},
+        {"kind": "warning", "line": 2, "text": "直接表す警告本文"},
+    ]
+
+
 def test_warn_mode_excludes_records_after_review_boundary(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

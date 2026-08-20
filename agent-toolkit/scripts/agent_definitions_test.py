@@ -579,7 +579,7 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "`## 変更履歴`と本文の一致" in delegation
     assert (
         "調整主体がある場合は調整主体が同じ論理レビュー系統へ前掲の最小入力で再レビューを指示し、"
-        "調整主体が無い場合は起草担当が`../../delegation/SKILL.md`に従って指示する"
+        "調整主体が無い場合は起草担当が`agent-toolkit:delegation`に従って指示する"
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
     assert "再レビューでは全修正と累積計画全体を再監査" in task

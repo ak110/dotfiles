@@ -11,6 +11,7 @@ gitリモート応答フェイクは複数テストファイルが共有する�
 
 import contextlib
 import datetime
+import json
 import os
 import pathlib
 import subprocess
@@ -426,6 +427,24 @@ def test_review_table_subcommands_are_public() -> None:
         args = parser.parse_args(argv)
         assert args.command == "review-table"
         assert args.review_table_subcommand == subcommand
+
+
+def test_public_review_table_validate_rejects_unanswered_rows(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """公開CLIのvalidateは未応答行を成功扱いしない。"""
+    path = tmp_path / "review.tsv"
+    path.write_text(
+        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("重大", "位置", "指摘", "", "", "")) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "validate", str(path)])
+
+    assert exc_info.value.code == 1
+    assert "対応要否が未回答" in capsys.readouterr().err
 
 
 class TestSpaceSeparatedOptionWarning:

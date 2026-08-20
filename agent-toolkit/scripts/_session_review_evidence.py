@@ -40,6 +40,8 @@ _WARNING_LINE_PATTERN = re.compile(
 _STRUCTURED_WARNING_VALUES = frozenset({"warn", "warning", "警告"})
 _STRUCTURED_WARNING_KEYS = frozenset({"warning", "warnings", "warning_message", "warningmessage", "is_warning"})
 _STRUCTURED_SEVERITY_KEYS = frozenset({"severity", "level"})
+_STRUCTURED_WARNING_BODY_KEYS = ("text", "message", "detail", "description", "output", "content")
+_STRUCTURED_WARNING_STREAM_KEYS = ("stdout", "stderr")
 _LINE_NUMBER_PREFIX = re.compile(r"^\s*\d+\t(.*)$")
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
 _SELF_SCRIPT_STEM = "_session_review_evidence"
@@ -1397,30 +1399,57 @@ def has_session_review_started(raw_path: str | None) -> bool:
     )
 
 
-def _has_structured_warning(value: Any) -> bool:
-    """構造化された警告フィールドを持つ値か判定する。任意本文の部分一致は行わない。"""
-    if isinstance(value, dict):
-        for key, item in value.items():
-            normalized_key = key.casefold() if isinstance(key, str) else ""
-            if normalized_key in _STRUCTURED_WARNING_KEYS:
-                if normalized_key == "is_warning":
-                    if item is True:
-                        return True
-                elif item not in (None, "", [], {}):
-                    return True
-            if (
-                normalized_key in _STRUCTURED_SEVERITY_KEYS
-                and isinstance(item, str)
-                and item.casefold() in _STRUCTURED_WARNING_VALUES
-            ):
-                return True
-            if normalized_key in {"type", "kind"} and isinstance(item, str) and item.casefold() in _STRUCTURED_WARNING_VALUES:
-                return True
-            if _has_structured_warning(item):
-                return True
-    elif isinstance(value, list):
-        return any(_has_structured_warning(item) for item in value)
-    return False
+def _structured_warning_fields(value: dict[str, Any]) -> tuple[list[Any], bool]:
+    """辞書から警告キーの値と直接警告を表す標識を取り出す。"""
+    warning_values: list[Any] = []
+    direct_warning = False
+    for key, item in value.items():
+        normalized_key = key.casefold() if isinstance(key, str) else ""
+        if normalized_key in _STRUCTURED_WARNING_KEYS:
+            if normalized_key == "is_warning":
+                direct_warning |= item is True
+            elif item is True:
+                direct_warning = True
+            elif item not in (None, "", [], {}):
+                warning_values.append(item)
+            continue
+        if (
+            normalized_key in _STRUCTURED_SEVERITY_KEYS
+            and isinstance(item, str)
+            and item.casefold() in _STRUCTURED_WARNING_VALUES
+        ):
+            direct_warning = True
+        if normalized_key in {"type", "kind"} and isinstance(item, str) and item.casefold() in _STRUCTURED_WARNING_VALUES:
+            direct_warning = True
+    return warning_values, direct_warning
+
+
+def _structured_warning_value_texts(value: Any) -> list[str]:
+    """構造化警告の値又は直接警告辞書から本文だけを取り出す。"""
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return [value] if value.strip() else []
+        if isinstance(parsed, (dict, list)):
+            return _structured_warning_value_texts(parsed)
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [text for item in value for text in _structured_warning_value_texts(item)]
+    if not isinstance(value, dict):
+        return []
+
+    warning_values, _ = _structured_warning_fields(value)
+    if warning_values:
+        return [text for item in warning_values for text in _structured_warning_value_texts(item)]
+    normalized = {key.casefold(): item for key, item in value.items() if isinstance(key, str)}
+    for key in _STRUCTURED_WARNING_BODY_KEYS:
+        if key in normalized:
+            return _structured_warning_value_texts(normalized[key])
+    stream_values = [normalized[key] for key in _STRUCTURED_WARNING_STREAM_KEYS if key in normalized]
+    if stream_values:
+        return [text for item in stream_values for text in _structured_warning_value_texts(item)]
+    return [text for item in value.values() if isinstance(item, (dict, list)) for text in _structured_warning_value_texts(item)]
 
 
 def _warning_texts(entry: dict[str, Any]) -> list[str]:
@@ -1438,8 +1467,12 @@ def _warning_texts(entry: dict[str, Any]) -> list[str]:
                 collect(parsed)
             return
         if isinstance(value, dict):
-            if _has_structured_warning(value):
-                for text in _entry_texts(value):
+            warning_values, direct_warning = _structured_warning_fields(value)
+            for warning_value in warning_values:
+                for text in _structured_warning_value_texts(warning_value):
+                    bodies.append((text, False))
+            if direct_warning and not warning_values:
+                for text in _structured_warning_value_texts(value):
                     bodies.append((text, False))
             for item in value.values():
                 collect(item)

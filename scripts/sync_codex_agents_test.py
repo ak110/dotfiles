@@ -115,3 +115,20 @@ def test_current_output_is_synced() -> None:
     ):
         assert shared_contract in operations_source
         assert shared_contract in shared_operations
+
+    for skill_invocation in (
+        "`agent-toolkit:add-feedback`をSkill機能で起動",
+        "`agent-toolkit:plan-and-add-feedback`の実行中",
+        "`agent-toolkit:bugfix`が定義する",
+        "`agent-toolkit:process-feedbacks`の起動中",
+        "`agent-toolkit:reviewee-standards`を起動",
+        "`agent-toolkit:delegation`を正本とし",
+    ):
+        assert skill_invocation in shared_rules
+    for invalid_reference in (
+        "`../skills/add-feedback/SKILL.md`を解決してSkill機能で起動",
+        "`../skills/process-feedbacks/SKILL.md`の起動中",
+        "`../skills/delegation/SKILL.md`を正本とし",
+    ):
+        assert invalid_reference not in shared_rules
+    assert "`../skills/review-standards/references/judgment-details.md`" in shared_rules

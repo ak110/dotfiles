@@ -74,7 +74,7 @@ def _key(row: list[str]) -> tuple[str, str, str]:
     return (_normalized(row[0]), _normalized(row[1]), _normalized(row[2]))
 
 
-def _validate_rows(rows: list[list[str]]) -> None:
+def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) -> None:
     """6列、複合キー一意性及び応答分岐を検証する。"""
     keys: set[tuple[str, str, str]] = set()
     for index, row in enumerate(rows, start=1):
@@ -90,6 +90,8 @@ def _validate_rows(rows: list[list[str]]) -> None:
         response = row[4].strip()
         reason = row[5].strip()
         if not response_needed:
+            if require_responses:
+                raise ValueError(f"{index}行の対応要否が未回答である")
             if response or reason:
                 raise ValueError(f"{index}行は対応要否なしで応答欄を埋められない")
             continue
@@ -107,7 +109,7 @@ def validate(path: str | Path) -> int:
     """表全体を検証し、件数を標準出力へ表示する。"""
     target = _path(str(path))
     rows = _read(target)
-    _validate_rows(rows)
+    _validate_rows(rows, require_responses=True)
     print(f"検証成功: {target} ({len(rows)}件)")
     return 0
 
