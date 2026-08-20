@@ -100,6 +100,16 @@ class FailingResumeClient(FakeClient):
         return await super().request(method, params)
 
 
+class FailingInitialTurnClient(FakeClient):
+    """初回turn/startの応答喪失を再現する偽クライアント。"""
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method == "turn/start":
+            self.requests.append((method, params or {}))
+            raise subject.AppServerError("turn/start response lost")
+        return await super().request(method, params)
+
+
 class FakeStderr:
     """stderrのreadlineを再現する非同期入力。"""
 
@@ -176,6 +186,47 @@ async def test_start_passes_fixed_noninteractive_policy_and_returns_immediately(
     assert turn_params["sandboxPolicy"] == {"type": "dangerFullAccess"}
     assert turn_params["model"] == "gpt-test"
     assert turn_params["effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_initial_turn_start_failure_keeps_thread_for_result_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """thread.id確定後の初回turn/start失敗でもsessionを保持し、結果回収を許可する。"""
+    manager = subject.AppServerManager()
+    client = FailingInitialTurnClient()
+
+    async def ensure_client() -> FailingInitialTurnClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    response = await manager.start("開始", str(tmp_path))
+
+    assert response["session_id"] == "thread-1"
+    assert response["status"] == "failed"
+    assert manager.status("thread-1")["session_id"] == "thread-1"
+    result = manager.result("thread-1")
+    assert result["status"] == "failed"
+    assert result["error"] == {"message": "turn/start response lost"}
+    with pytest.raises(ValueError, match="ambiguous"):
+        await manager.start_reply("thread-1", "再試行")
+
+
+@pytest.mark.asyncio
+async def test_input_validation_failure_does_not_create_thread(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """thread開始前の入力検証失敗はsessionを作成しない。"""
+    manager = subject.AppServerManager()
+    client = FakeClient()
+
+    async def ensure_client() -> FakeClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    with pytest.raises(ValueError, match="non-empty"):
+        await manager.start("", str(tmp_path))
+
+    assert not manager.sessions
+    assert not client.requests
 
 
 @pytest.mark.asyncio
@@ -388,9 +439,21 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
     )
     assert client.sent[-1]["id"] == 2
     assert "error" in client.sent[-1]
-    assert manager.status("thread-1")["status"] == "failed"
+    assert manager.status("thread-1")["status"] == "running"
+    with pytest.raises(ValueError, match="not completed"):
+        manager.result("thread-1")
     await asyncio.sleep(0)
     assert client.requests[-1][0] == "turn/interrupt"
+    await manager._handle_notification(  # noqa: SLF001
+        {
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-1", "status": "interrupted", "error": None},
+            },
+        }
+    )
+    assert manager.result("thread-1")["status"] == "interrupted"
 
 
 @pytest.mark.asyncio
@@ -403,6 +466,8 @@ async def test_unknown_request_without_identifier_fails_all_active_sessions(tmp_
 
     await manager._fail_for_request({}, "unknown/server/request")  # noqa: SLF001
 
+    assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"running"}
+    await manager._handle_client_failure(subject.AppServerError("connection closed"))
     assert {manager.status("thread-1")["status"], manager.status("thread-2")["status"]} == {"failed"}
 
 

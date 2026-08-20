@@ -334,6 +334,20 @@ def _codex_failure_message(payload: dict) -> str:
     return " ".join(messages).lower()
 
 
+def _codex_result_failure_keeps_snapshot(session_id: str, payload: dict) -> bool:
+    """未終端sessionの結果回収失敗時にsnapshotを保持する。"""
+    tool_input = payload.get("tool_input")
+    remote_session_id = tool_input.get("session_id") if isinstance(tool_input, dict) else None
+    state = read_state(session_id)
+    sessions = state.get(_CODEX_SESSION_STATE_KEY)
+    record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
+    return (
+        isinstance(record, dict)
+        and record.get("status") in {"running", "completed", "failed", "interrupted"}
+        and record.get("result_retrieved") is not True
+    )
+
+
 def _record_codex_reply_failure(payload: dict, session_id: str) -> None:
     """内部失敗だけを最新ターン未回収として記録する。"""
     tool_input = payload.get("tool_input")
@@ -776,6 +790,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if payload.get("hook_event_name") == "PostToolUseFailure":
             if tool_name == _CODEX_APP_SERVER_REPLY_TOOL:
                 _record_codex_reply_failure(payload, session_id)
+            elif tool_name == _CODEX_APP_SERVER_RESULT_TOOL and _codex_result_failure_keeps_snapshot(session_id, payload):
+                return 0
             else:
                 _clear_codex_remote_snapshot(payload, session_id)
             return 0

@@ -1398,6 +1398,111 @@ class TestWarnCodexRemoteChange:
         assert stop_after_result.returncode == 0
         assert "decision" not in json.loads(stop_after_result.stdout)
 
+    def test_initial_start_failure_keeps_session_until_result(self, tmp_path: pathlib.Path):
+        """初回turn/start失敗の構造化応答を結果回収まで保持し、Stopとsnapshotを管理する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "initial-start-failure"
+        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        start = _run(
+            {
+                "session_id": sid,
+                "tool_name": start_tool,
+                "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                "tool_use_id": "start-1",
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-1",
+                        "turn_id": "",
+                        "status": "failed",
+                        "error": {"message": "turn/start response lost"},
+                    }
+                },
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert start.returncode == 0
+        failed_state = _read_state(tmp_path, sid)
+        failed_record = failed_state["codex_app_server_sessions"]["thread-1"]
+        assert failed_record["status"] == "failed"
+        assert failed_record["result_retrieved"] is False
+        assert failed_record["snapshot_key"] == "start-1"
+        assert "start-1" in failed_state["codex_remote_snapshot_by_key"]
+
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:session-review"},
+            },
+            state_dir=tmp_path,
+        )
+        stop_before_result = _run_stop({"session_id": sid}, tmp_path)
+        assert json.loads(stop_before_result.stdout)["decision"] == "block"
+
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result_payload = self._result_payload(sid)
+        result_payload["tool_response"]["structuredContent"].update(
+            {"turn_id": "", "status": "failed", "error": {"message": "turn/start response lost"}}
+        )
+        result = _run(result_payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+        retrieved_state = _read_state(tmp_path, sid)
+        retrieved_record = retrieved_state["codex_app_server_sessions"]["thread-1"]
+        assert retrieved_record["result_retrieved"] is True
+        assert retrieved_state["codex_remote_snapshot_by_key"] == {}
+
+        stop_after_result = _run_stop({"session_id": sid}, tmp_path)
+        assert "decision" not in json.loads(stop_after_result.stdout)
+
+    def test_result_failure_before_completion_keeps_snapshot(self, tmp_path: pathlib.Path):
+        """未終端turnのcodex_result失敗では次の結果回収までsnapshotを保持する。"""
+        sid = "result-before-completion"
+        state = {
+            "codex_app_server_sessions": {
+                "thread-1": {
+                    "session_id": "thread-1",
+                    "status": "running",
+                    "turn_id": "turn-1",
+                    "result_retrieved": False,
+                    "snapshot_key": "start-1",
+                }
+            },
+            "codex_remote_snapshot_by_key": {"start-1": {"cwd": str(tmp_path), "snapshot": {}}},
+        }
+        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+        failure = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_result",
+                "tool_input": {"session_id": "thread-1"},
+                "tool_use_id": "result-1",
+                "tool_response": {"error": "the Codex turn has not completed"},
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert failure.returncode == 0
+        assert _read_state(tmp_path, sid)["codex_remote_snapshot_by_key"] == {"start-1": {"cwd": str(tmp_path), "snapshot": {}}}
+
     def test_reply_input_failure_preserves_session_state_and_clears_snapshot(self, tmp_path: pathlib.Path):
         """入力検証失敗は新しい未回収ターンに変換せず、対応するsnapshotだけを破棄する。"""
         sid = "reply-input-failure"

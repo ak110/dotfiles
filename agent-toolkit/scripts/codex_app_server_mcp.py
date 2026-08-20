@@ -93,6 +93,8 @@ class SessionState:
     reply_attempted: bool = False
     reply_turn_started: bool = False
     reply_retryable: bool = False
+    turn_start_ambiguous: bool = False
+    interrupt_requested: bool = False
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     reply_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
 
@@ -396,9 +398,10 @@ class AppServerManager:
         self.sessions[session_id] = session
         try:
             await self._start_turn(session, prompt)
-        except Exception:
-            self.sessions.pop(session_id, None)
-            raise
+        except Exception as exc:
+            # thread.idを取得済みの場合は、turn/startの応答喪失後も結果回収単位を保持する。
+            await self._mark_failed(session, exc, retryable=False, turn_start_ambiguous=True)
+            return session.public_status()
         return session.public_status()
 
     async def start_reply(self, session_id: str, prompt: str) -> dict[str, Any]:
@@ -410,6 +413,8 @@ class AppServerManager:
                 raise ValueError("the previous Codex turn is still running")
             if not session.result_retrieved:
                 raise ValueError("codex_result must be called before starting a reply")
+            if session.turn_start_ambiguous:
+                raise ValueError("cannot retry an ambiguous turn/start failure")
             if (
                 session.status == "failed"
                 and session.reply_attempted
@@ -458,6 +463,8 @@ class AppServerManager:
         session.reply_attempted = True
         session.reply_turn_started = False
         session.reply_retryable = False
+        session.turn_start_ambiguous = False
+        session.interrupt_requested = False
         session.touch()
 
     async def _mark_failed(
@@ -466,6 +473,7 @@ class AppServerManager:
         error: BaseException,
         *,
         retryable: bool,
+        turn_start_ambiguous: bool = False,
     ) -> None:
         """要求開始の失敗を終端状態へ反映し、待機者を起床する。
 
@@ -483,6 +491,8 @@ class AppServerManager:
         session.result_retrieved = False
         session.reply_turn_started = False
         session.reply_retryable = retryable
+        session.turn_start_ambiguous = turn_start_ambiguous
+        session.interrupt_requested = False
         session.touch()
         await self._notify_waiters()
 
@@ -582,9 +592,11 @@ class AppServerManager:
                 session.status = _public_turn_status(turn.get("status"))
                 session.error = turn.get("error")
                 self._consume_items(session, turn.get("items"))
+                session.interrupt_requested = False
             else:
                 session.status = "failed"
                 session.error = "turn/completed did not contain turn"
+                session.interrupt_requested = False
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
         elif method == "turn/plan/updated":
@@ -625,7 +637,7 @@ class AppServerManager:
             return
         if not isinstance(request_id, (int, str)) or isinstance(request_id, bool):
             # IDなしの異常なserver requestへはJSON-RPC応答を返せないため、
-            # 接続上のactive turnをfailedへ遷移してwaiterを解放する。
+            # 接続上のactive turnへinterruptを予約し、接続停止時の終端を待つ。
             await self._fail_for_request(params, method)
             return
         if method == "mcpServer/elicitation/request":
@@ -650,25 +662,33 @@ class AppServerManager:
 
     async def _fail_for_request(self, params: Any, method: str) -> None:
         session = self._find_session(params)
-        sessions = [session] if session is not None else [item for item in self.sessions.values() if not item.terminal]
+        if session is not None:
+            sessions = [session] if not session.terminal else []
+        else:
+            sessions = [item for item in self.sessions.values() if not item.terminal]
+        interrupt_targets: list[tuple[str, str]] = []
         for active in sessions:
-            active.status = "failed"
             active.error = {"message": f"Codex requested interactive server input: {method}"}
             active.protocol_warnings.append(f"unsupported server request: {method}")
+            if active.turn_id and not active.interrupt_requested:
+                interrupt_targets.append((active.session_id, active.turn_id))
+            active.interrupt_requested = True
             active.touch()
         await self._notify_waiters()
         # reader task cannot await a request response for turn/interrupt: that would
-        # deadlock the same reader. Schedule it after marking the state terminal.
-        for active in sessions:
-            if active.turn_id and self.client is not None:
-                self._schedule(self._interrupt(active.session_id, active.turn_id))
+        # deadlock the same reader. Schedule it while keeping the turn nonterminal.
+        for session_id, turn_id in interrupt_targets:
+            if self.client is not None:
+                self._schedule(self._interrupt(session_id, turn_id))
 
     async def _interrupt(self, session_id: str, turn_id: str) -> None:
         client = self.client
         if client is None or client.closed:
             return
-        with contextlib.suppress(Exception):
+        try:
             await client.request("turn/interrupt", {"threadId": session_id, "turnId": turn_id})
+        except Exception as exc:
+            await self._handle_client_failure(exc)
 
     async def _handle_client_failure(self, error: BaseException) -> None:
         """reader異常時に全active turnをfailedへ遷移させて待機者を起こす。"""
@@ -678,6 +698,7 @@ class AppServerManager:
             if not session.terminal:
                 session.status = "failed"
                 session.error = {"message": f"Codex App Server stopped: {detail}"}
+                session.interrupt_requested = False
                 session.touch()
                 changed = True
         if changed:
