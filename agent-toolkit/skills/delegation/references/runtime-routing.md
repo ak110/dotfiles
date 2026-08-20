@@ -118,7 +118,8 @@ fast担当を終端して修正引継ぎ記録を作成し、fix担当へdirty�
 ## 書込担当とworktree
 
 - 1つのworktreeへ同時に起動する書込担当は1つだけとする
-- 書込担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する
+- 書込担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
+  ただし、fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す、`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外とする
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない
 - レビュー担当は書込担当の終端後に起動し、相互に独立したレビュー担当は別識別子で並列起動できる

@@ -1154,9 +1154,41 @@ def test_ci_repair_launches_pass_all_task_inputs_and_complete_independently() ->
         assert "CI修正担当にはfast担当の1回修正とfastからfixへの昇格判定を適用しない" in text
         assert "CI記録の原因修正、全検証、差分検収、stage及びcommitを完了" in text
     fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
-    independent = task.partition("5. 担当種別が")[2].partition("\n6. ")[0]
-    assert "受領した指摘又はCI記録の原因修正、全検証、差分検収とcommitまで完遂する" in independent
-    assert "受領した指摘又はCI記録の原因修正、全検証、差分検収とcommitまで完遂する" not in fast
+    ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
+    assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" in ci
+    assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" not in fast
+
+
+def test_implementation_task_requires_role_specific_handoff_records() -> None:
+    """各書込担当へ担当種別に対応する記録だけを要求する契約を固定する。"""
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    fix = task.partition("5. 担当種別が`fix担当`の場合は")[2].partition("\n6. ")[0]
+    review = task.partition("6. 担当種別が`レビュー修正担当`の場合は")[2].partition("\n7. ")[0]
+    ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
+
+    assert "修正引継ぎ記録" in task.partition("## 実装")[0]
+    assert "受領した修正引継ぎ記録と現行のdirty差分" in fix
+    assert "受領した採用指摘" in review
+    assert "受領したCI記録" in ci
+    assert "受領した採用指摘" not in fix
+    assert "受領したCI記録" not in fix
+    assert "受領した修正引継ぎ記録" not in review
+    assert "受領したCI記録" not in review
+    assert "受領した修正引継ぎ記録" not in ci
+    assert "受領した採用指摘" not in ci
+
+
+def test_clean_worktree_and_codex_thread_contracts_allow_only_fast_fix_handoff() -> None:
+    """clean開始とCodex同一threadの例外を同一失敗箇所の引継ぎだけに限定する。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+
+    assert "書込担当の起動前に上流追随済みで" in runtime
+    assert "fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す" in runtime
+    assert "`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外" in runtime
+    assert "同一失敗箇所の残存を確認したfast担当からfix担当への引継ぎを除き、同じthreadを継続する" in executor
+    assert "fast担当の終端確認後に修正引継ぎ記録とdirty差分をfix担当へ渡す新規thread" in executor
+    assert "同一失敗箇所の残存" in executor
 
 
 def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
@@ -1193,7 +1225,9 @@ def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
     assert "`execute_fast_model`から`execute_fix_model`への引継ぎでは新規threadを起動" in runtime
     assert "起動直前に`execute_fix_model`を解決してfix担当へ適用する" in runtime
     assert "担当種別が`fast担当`の場合だけ" in task
-    assert "担当種別が`fix担当`、`レビュー修正担当`又は`CI修正担当`の場合は" in task
+    assert "担当種別が`fix担当`の場合は" in task
+    assert "担当種別が`レビュー修正担当`の場合は" in task
+    assert "担当種別が`CI修正担当`の場合は" in task
     assert "追加のモデル昇格をせずに" in task
     for review_mode in ("#### 通常の実装モードのレビュー修正", "#### 統合後レビュー調整モードのレビュー修正"):
         section = executor.partition(review_mode)[2]
@@ -1204,7 +1238,7 @@ def test_shared_structure_checks_are_common_to_all_write_roles() -> None:
     """共有分岐と反復構造の追加検証をfast専用手順から分離する。"""
     task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
 
-    common = task.partition("6. 全ての書込担当は")[1] + task.partition("6. 全ての書込担当は")[2].partition("\n7. ")[0]
+    common = task.partition("8. 全ての書込担当は")[1] + task.partition("8. 全ての書込担当は")[2].partition("\n9. ")[0]
     fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
 
     for phrase in (
