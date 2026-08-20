@@ -281,6 +281,17 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "確認済み回答には、`AskUserQuestion`で受領した回答と、確認事項を記録したTBDの`## 回答`節へ記録された回答を含める。\n",
     ),
     (
+        "フィードバックファイル名と対象リポジトリを受領した委譲経路では、各ファイル名について\n"
+        "`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。\n",
+        "フィードバックファイル名と対象リポジトリを受領した委譲経路では、同一対象リポジトリの全ファイル名を\n"
+        "`atk mq show <filename>... --target-repo=<repo> --skip-pull`へ1回で渡す。\n"
+        "複数件出力では、行頭から始まるフィードバックの`### <filename> [<状態>]`又は\n"
+        "TBDの`### <filename> [<状態>/<answered|unanswered>]`を項目境界として使う。\n"
+        "各対象の境界行が出力全体に1件だけ存在することを確認する。\n"
+        "本文内の同形見出しとの衝突により一意に対応付けられない場合は複数件出力を破棄し、\n"
+        "`atk mq show <filename> --target-repo=<repo> --skip-pull`で1件ずつ再取得する。\n",
+    ),
+    (
         "原文正本IDはフェンス外に置き、計画内の素材IDとフィードバックファイル名を一意に対応付ける。\n"
         "直接起動経路では、逐語素材の入力と転記に関する現行契約を維持する。",
         "原文正本IDはフェンス外に置き、計画内の素材IDとフィードバックファイル名を一意に対応付ける。\n"
@@ -744,8 +755,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         assert phrase in text
 
 
-def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
-    """各受信主体がファイル名単位で保存本文を取得する契約を固定する。"""
+def test_feedback_source_contract_uses_role_specific_queue_reads() -> None:
+    """調査は単数、起草とレビューは一括で保存本文を取得する契約を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
@@ -754,9 +765,12 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
+    single_command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
+    batch_command = "atk mq show <filename>... --target-repo=<repo> --skip-pull"
     for document in (sender, planner, explore, standards, delegation, review):
-        assert command in document
+        assert single_command in document
+    for document in (sender, planner, standards, delegation, review):
+        assert batch_command in document
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
     for document in (sender, explore, standards, review):
@@ -788,16 +802,25 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
             assert phrase not in document
 
 
-def test_feedbacks_planner_refetches_ambiguous_batched_sources() -> None:
-    """複数原文の境界見出しが本文と衝突した場合に単数取得へ戻す契約を固定する。"""
-    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+def test_batched_feedback_readers_refetch_ambiguous_sources_individually() -> None:
+    """一括取得する全正本が境界衝突時に単数取得へ戻す契約を固定する。"""
+    documents = (
+        _FEEDBACKS_PLANNER.read_text(encoding="utf-8"),
+        _PLAN_FILE_STANDARDS.read_text(encoding="utf-8"),
+        _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
+        _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PROCESS_FEEDBACKS.read_text(encoding="utf-8"),
+        _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8"),
+    )
 
-    assert "atk mq show <filename>... --target-repo=<repo> --skip-pull" in planner
-    assert "### <filename> [<状態>]" in planner
-    assert "### <filename> [<状態>/<answered|unanswered>]" in planner
-    assert "各対象の境界行が出力全体に1件だけ存在することを確認" in planner
-    assert "本文内の同形見出しとの衝突により一意に対応付けられない場合" in planner
-    assert "複数件出力を破棄して対象ファイルを前記の単数形コマンドで1件ずつ再取得" in planner
+    for document in documents:
+        assert "atk mq show <filename>... --target-repo=" in document
+        assert "### <filename> [<状態>]" in document
+        assert "### <filename> [<状態>/<answered|unanswered>]" in document
+        assert "各対象の境界行が出力全体に1件だけ存在することを確認" in document
+        assert "本文内の同形見出しとの衝突により一意に対応付けられない場合" in document
+        assert "複数件出力を破棄" in document
+        assert "1件ずつ再取得" in document
 
 
 def test_plan_standards_require_test_design_in_plans() -> None:
@@ -1033,7 +1056,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
     assert "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`" in flow
     assert "`feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし" in process_feedbacks
-    assert "ファイル名ごとに" in process_feedbacks
+    assert "atk mq show <filename>... --target-repo=<repo> --skip-pull" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文を`feedbacks-planner`の完了報告へ要求しない" in reception
     assert "`feedbacks-planner`が起草担当へ対象ファイル名、対象リポジトリ、確定した採否と合意、対象、規範" in reception

@@ -26,11 +26,15 @@ TBDへ永続化して暫定判断で進める。
    起動時の目的文にCodexオーケストレーターの連続処理と明記されている場合（以下、連続処理モード）は、
    後述の`process-loop`用再取得も適用する
 2. 必要なファイル名だけを1回の`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`で確認する
-3. `plan_file`を持つフィードバックを計画実装型、それ以外を通常型とする。本文から型を推測しない
-4. 本文の順序条件は着手可否の判定前に抽出し、active項目から対象ファイル名自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
-5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
-6. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
-7. readyなinbox項目を`atk mq start-processing`でprocessingへ移し、対象ファイル名と配置を照合する。
+3. 複数件出力では、行頭から始まるフィードバックの`### <filename> [<状態>]`又はTBDの`### <filename> [<状態>/<answered|unanswered>]`を項目境界として使う
+4. 各対象の境界行が出力全体に1件だけ存在することを確認する。
+   本文内の同形見出しとの衝突により一意に対応付けられない場合は複数件出力を破棄し、
+   `atk mq show <filename> --target-repo=<repo-path> --skip-pull`で1件ずつ再取得する
+5. `plan_file`を持つフィードバックを計画実装型、それ以外を通常型とする。本文から型を推測しない
+6. 本文の順序条件は着手可否の判定前に抽出し、active項目から対象ファイル名自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
+7. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
+8. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
+9. readyなinbox項目を`atk mq start-processing`でprocessingへ移し、対象ファイル名と配置を照合する。
    既存のprocessing項目では`start-processing`を再実行せず、同コマンドの再実行を未完了の`feedbacks-planner`工程の再開起点にしない
 
 `start-processing`が状態競合で拒否した場合は、active一覧と保存本文を再取得して着手可否の判定から再開する。
@@ -48,8 +52,12 @@ Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:de
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
 `feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし、本文を起動文へ複製しない。
-`feedbacks-planner`は各調査担当と起草担当へ同じ入力を渡し、各受信主体がファイル名ごとに
-`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行して本文を取得する。
+`feedbacks-planner`は各調査担当と起草担当へ同じ入力を渡す。
+各調査担当は担当する1ファイルを`atk mq show <filename> --target-repo=<repo> --skip-pull`で取得する。
+起草担当とレビュー担当は同一対象リポジトリの全ファイル名を
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`へ1回で渡す。
+複数件出力を一意に対応付けられない場合は、
+`atk mq show <filename> --target-repo=<repo> --skip-pull`で1件ずつ再取得する。
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
 readyな計画実装型のレーンは通常型バッチの計画工程を待たず、利用可能な書込担当枠で実装できる。
 
