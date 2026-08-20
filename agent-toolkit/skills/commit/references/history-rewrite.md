@@ -22,6 +22,8 @@ remote広告tagを含む強化判定と`rewrite_guard`の受渡しは、`impleme
 本書の汎用公開済み判定、通常のamend・fixup・autosquash及び統合後レビュー調整モードへ強化判定を追加しない。
 統合後レビュー調整モードは`merge-task.md`に従い、統合差分へ1つの修正commitを作成する既定を維持する。
 
+通常実装モードの`plan-impl-executor`が検証済みの採用指摘IDと実装単位commit完全OIDの対応表を渡すレビュー修正では、下記の汎用判定を適用せず、`implementation-task.md`の専用再判定を優先する。この経路では`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`を実行しない。各fetch URL及びpush URL endpointの広告取得と不足OIDだけの一時ref取得を用いる。通常のamend、fixup、autosquashと統合後レビュー調整モードは下記の汎用判定を維持する。
+
 過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。
 各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認し、その確認後にだけ次の過去単位の修正差分を適用する。
 全過去単位のfixupを作成した後に1回だけautosquashを実行する。

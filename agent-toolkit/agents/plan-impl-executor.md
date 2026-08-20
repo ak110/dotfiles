@@ -30,6 +30,7 @@ user-invocable: false
 ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは書込担当へ割り当てる。
 worktreeと管理対象領域を作成・回収しない。
 `git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正におけるphaseごとの公開済み判定、履歴書換え直前の再判定及び遮断は書込担当へ委譲する。executorは書込担当の完了後にphaseごとの最小化済み`rewrite_guard`反復証跡を検収し、履歴書換え前の中間受渡しは設けない。
+`rewrite_guard`のphaseは通常モードのレビュー修正だけに適用し、通常モードのレビュー修正以外、統合後レビュー調整モードでは`rewrite_guard: not_applicable`とする。
 
 ## 入力
 
@@ -148,15 +149,15 @@ worktreeと管理対象領域を作成・回収しない。
 2. 採用指摘ごとに計画の実装単位、実装commitの差分及び指摘対象を照合し、指摘IDと統合先の実装単位commit完全OIDの対応表を内部確定する。
    対応不能、複数単位へ不可分にまたがる修正、又は各中間commitの公開契約を維持できない修正は書込担当へ渡さず、`needs_escalation`で返す。
 3. 同worktreeだけへ単一の修正用の書込担当を割り当てる。
-4. 修正用の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
-   実行系は開始前に確定し、Codexでは元の実装担当threadを継続し、Claudeでは旧担当の終端確認後に検収済み状態を渡して新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
-   レビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表、検収済みHEAD、cleanな作業ツリー及び検証結果を含め、次を渡す。
+4. 修正用の書込担当の起動またはCodex経路の継続接続の直前に`atk config get execute_model`を実行して経路を解決する。
+   実行系は開始前に確定し、Codexでは元の実装担当threadを継続し、Claudeでは旧担当の終端確認後に検収済み状態を渡して新しい書込担当を起動する。書込担当への受け渡しには実行系、継続又は新規起動に用いる識別子、前担当の終端確認結果を明示する。開始後は同じ書込担当が再判定からamendまでを完結する。
+   レビュー検収後にexecutorが内部確定したレビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表、検収済みHEAD、cleanな作業ツリー及び検証結果を含め、次を渡す。
    `skills/plan-mode/references/implementation-task.md`、レーンのworktree、対象計画、採用指摘を実装単位とした目的及び変更説明、
    統合した6列表、プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`agent-toolkit:reviewee-standards`の絶対パス、
    ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
    複製元と対象外worktree、git操作の制約を渡す。
 5. レビュー修正の実装、再判定、履歴統合及び完了報告は`skills/plan-mode/references/implementation-task.md`を正本とし、executorは個別手順を再掲しない。
-6. 書込担当の完了後、executorは履歴書換え前後の全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果とclean状態を検収する。`rewrite_guard`反復証跡はremote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数と全照会URL endpointの完了フラグを含める。`noncommit_tag_peeled_object_exists`、`noncommit_tag_final_oid_and_type`と`noncommit_tag_exclusion_reason`も検収する。URL値は受け取らず、URL列挙終了コードと件数だけを検収する。レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
+6. 書込担当の完了後、executorは履歴書換え前後の全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果とclean状態を検収する。`rewrite_guard`反復証跡はremote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数と全照会URL endpointの完了フラグを含める。`shallow_repository_check_exit_code`と`is_shallow_repository`を検収し、終了コード0かつboolが`false`の場合だけ後続判定を許可し、boolが`true`又は終了コードが非0の場合は`needs_escalation`で返したことを確認する。`noncommit_tag_peeled_object_exists`、`noncommit_tag_final_oid_and_type`と`noncommit_tag_exclusion_reason`も検収する。URL値は受け取らず、URL列挙終了コードと件数だけを検収する。レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
 
 #### 統合後レビュー調整モードのレビュー修正
 
@@ -208,6 +209,8 @@ rewrite_guard:
   target_oids: <履歴順の対象完全OID一覧。単一対象も1要素の配列>
   git_version: <Git版>
   verified_head: <検収済みHEAD>
+  shallow_repository_check_exit_code: <`git rev-parse --is-shallow-repository`の終了コード>
+  is_shallow_repository: <終了コード0で取得したbool。取得不能時は「なし」>
   remote_fetch_url_enumeration_exit_codes: <remote別fetch URL列挙終了コード（URLは記録しない）>
   remote_push_url_enumeration_exit_codes: <remote別push URL列挙終了コード（URLは記録しない）>
   query_url_count_before_deduplication: <重複排除前の照会URL件数>

@@ -50,6 +50,7 @@
    書込担当は人間向け固定領域と`## 進捗ログ`を編集せず、進捗の追記は呼び出し元が行う
 通常実装モードのレビュー修正では、書込担当の完了報告に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）の`rewrite_guard`を反復した配列を必ず含める。
 executorは書込担当の完了後にphaseごとの`rewrite_guard`を検収し、executorの完了報告にも同じ反復証跡を必ず含める。
+`rewrite_guard`のphaseは通常実装モードのレビュー修正だけに記録し、レビュー修正以外の通常実装モードでは`rewrite_guard: not_applicable`とする。
 
 レビュー指摘の修正を受け取った場合は、履歴書換えを開始する前に、指摘が根拠とする原文と対象への適用条件を確認し、指摘の成立性と修正方法を別々に確定する。
 各指摘の事実と違反契約を自身でも実測し、通常運用の再現経路と入力主体へ照合して問題を再現する。
@@ -90,16 +91,19 @@ Codex経路では同一の書込担当を継続し、中間引継ぎを行わな
 最終単位と過去単位の両方が対象の場合は、過去単位のautosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換し、開始済みの同じ書込担当が最終単位の修正差分だけを実装し、近接検証を実行してstageする。その後、`amend` phaseの再判定が成功した場合だけ書換え後HEADへamendする。
 いずれもレビュー修正専用commitを残さない。
 開始済みの書込担当はfixup作成前、autosquash直前、amend直前に、`git remote`で全remoteを列挙する。
-各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得する。fetch URL列挙とpush URL列挙のremote別終了コードを保持するが、URL値は保持しない。全remoteの集合を正規化した1つの照会URL集合へ統合して重複を除き、重複排除前後の照会URL件数を計数する。以後の広告照会・不足OIDのfetch・終了コードは照会URL単位で扱い、各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行する。全照会URL endpointの広告取得・不足OID fetch・再照合を完了させる。
-URL取得、正規化・重複排除又は広告照会に失敗した場合は残りのURLの結果や既存の広告を判定材料にせず、履歴を書き換えず`needs_escalation`で返す。全照会URL endpointの広告取得・不足OID fetch・再照合が完了したことを確認できない場合も、履歴を書き換えず`needs_escalation`で返す。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。
+各再判定phaseで`git rev-parse --is-shallow-repository`を実行し、終了コードと出力を確認する。終了コード0かつ出力が`false`の場合だけ広告照会と祖先判定を継続する。終了コード0で出力が`true`の場合、終了コードが非0の場合、出力が`true`と`false`のいずれでもない場合は、履歴を書き換えず`needs_escalation`で返す。
+各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得する。fetch URL列挙とpush URL列挙のremote別終了コードを保持するが、URL値は保持しない。全remoteの集合を1つの照会URL集合へ統合し、URL文字列が完全一致するものだけ重複を除き、重複排除前後の照会URL件数を計数する。以後の広告照会・不足OIDのfetch・終了コードは照会URL単位で扱い、各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行する。全照会URL endpointの広告取得・不足OID fetch・再照合を完了させる。
+URL取得、重複排除又は広告照会に失敗した場合は残りのURLの結果や既存の広告を判定材料にせず、履歴を書き換えず`needs_escalation`で返す。全照会URL endpointの広告取得・不足OID fetch・再照合が完了したことを確認できない場合も、履歴を書き換えず`needs_escalation`で返す。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。
+この専用再判定では汎用の`git fetch --all --prune`を実行せず、各照会URLの広告取得と不足OIDだけの一時ref取得に限定する。
 正規化した全広告ref・OIDを母集団とし、local object databaseに存在しない広告OIDだけを照会URLごとにまとめる。衝突しない数値添字の`refs/agent-toolkit/rewrite-guard/<実行識別子>/<照会URL番号>/<OID番号>`へ`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`で取得する。
 取得後に同じ`ls-remote`を再実行して広告集合の不変を確認する。全照会URL endpointの広告取得・不足OID fetch・再照合が完了した場合だけ、広告branchのOIDをcommitとして解決し、広告tagのOIDを再帰的に参照先へ解決する。広告branch tipには`git merge-base --is-ancestor <対象OID> <branchTip>`を実行する。終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）の場合は公開済み、終了コード1（対象OIDがbranch tipの祖先でない）の場合は未公開と判定する。その他の終了コードはGit実行失敗として遮断する。広告tagは最終参照先がcommitの場合だけ同じ祖先判定する。終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は除外する。
 各判定後と失敗時に期待OIDを指定した`git update-ref -d`で作成済み一時refだけを削除し、実行識別子のref名前空間が空であることを確認する。
 
 remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない。
-remote列挙、URL取得、正規化・重複排除、広告取得、不足OIDのfetch、広告集合の再照合、全照会URL endpointの完了確認、一時ref回収又は祖先判定（終了コード0・1以外を含む）が失敗した場合は履歴を書き換えず`needs_escalation`で返す。
+remote列挙、URL取得、重複排除、広告取得、不足OIDのfetch、広告集合の再照合、全照会URL endpointの完了確認、一時ref回収又は祖先判定（終了コード0・1以外を含む）が失敗した場合は履歴を書き換えず`needs_escalation`で返す。
 各再判定phaseの対象は履歴順の`target_oids`配列で確定する。`fixup:<単位順>`と`amend`は対象が1件でも1要素の配列を使い、`autosquash`は全過去単位のOIDを同じ配列へ履歴順で含める。`autosquash` phaseでは配列の各OIDについて公開済み判定と遮断を反復し、1件でも公開済みなら履歴を書き換えない。
 `rewrite_guard`には各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。各要素へ同じ順序の`target_oids`、Git版、検収済みHEADを記録する。remote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの広告取得・不足OID fetch・再照合完了と、照会URL単位の各終了コードも記録する。URL値は記録せず、URL列挙終了コードと件数だけを保持する。正規化済み広告ref・OID、一時ref回収結果、各Gitコマンドの終了コードと公開済み判定結果だけを保持する。
+`rewrite_guard`には`shallow_repository_check_exit_code`へ`git rev-parse --is-shallow-repository`の終了コードを、`is_shallow_repository`へ終了コード0で得た出力を正規化したboolを記録する。終了コードが非0の場合のboolは「なし」とする。
 非commit tagについては、peeled objectの実在確認結果を`noncommit_tag_peeled_object_exists`へ正規化して記録する。最終OIDとobject typeは`noncommit_tag_final_oid_and_type`へ正規化して記録する。祖先判定から除外した理由は`noncommit_tag_exclusion_reason`へ正規化して記録する。レビュー修正モードでは必須完了出力とし、書込担当は`completed`と`needs_escalation`のいずれでも返す。
 エラー時は秘密情報を除去した必要最小限の要約だけを加え、標準出力・標準エラーの無加工な全文と認証情報を保存しない。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。成功時と失敗時のどちらも、URL値を保存しない。
 最終参照先がcommit以外のtagは正規化済みOID、型及び除外判定を保持して祖先判定から除外する。
@@ -144,6 +148,8 @@ rewrite_guard:
   target_oids: <履歴順の対象完全OID一覧。単一対象も1要素の配列>
   git_version: <Git版>
   verified_head: <検収済みHEAD>
+  shallow_repository_check_exit_code: <`git rev-parse --is-shallow-repository`の終了コード>
+  is_shallow_repository: <終了コード0で取得したbool。取得不能時は「なし」>
   remote_fetch_url_enumeration_exit_codes: <remote別fetch URL列挙終了コード（URLは記録しない）>
   remote_push_url_enumeration_exit_codes: <remote別push URL列挙終了コード（URLは記録しない）>
   query_url_count_before_deduplication: <重複排除前の照会URL件数>

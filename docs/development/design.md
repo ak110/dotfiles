@@ -117,17 +117,19 @@ frontmatter全体を再直列化する案は、引用符や配列表記の字面
 複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行する。
 過去単位と最終単位が対象の場合は、autosquash成功後に最終単位の修正を実装・近接検証・stageし、amend直前の2回目のpush済み判定が成功した後にだけ最終単位の修正をamendする。
 書込担当は各fixup作成前、autosquash直前とamend直前の各phaseで`git remote`により全remoteを列挙する。
-各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得する。fetch URL列挙・push URL列挙のremote別終了コードを保持し、URL値は保持しない。全remoteの集合を正規化した1つの照会URL集合へ統合して重複を除き、重複排除前後の照会URL件数を計数する。以後の広告照会・不足OIDのfetch・終了コードを照会URL単位で扱い、各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行する。全照会URL endpointの広告取得・不足OID fetch・再照合を完了させる。
-URL取得、正規化・重複排除又は広告照会に失敗した場合は残りのURLの結果や既存の広告を判定材料にせず、履歴を書き換えず`needs_escalation`で返す。全照会URL endpointの広告取得・不足OID fetch・再照合完了を確認できない場合も履歴を書き換えず`needs_escalation`で返す。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。
+各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得する。fetch URL列挙・push URL列挙のremote別終了コードを保持し、URL値は保持しない。全remoteの集合を1つの照会URL集合へ統合し、URL文字列が完全一致するものだけ重複を除き、重複排除前後の照会URL件数を計数する。以後の広告照会・不足OIDのfetch・終了コードを照会URL単位で扱い、各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行する。全照会URL endpointの広告取得・不足OID fetch・再照合を完了させる。
+URL取得、重複排除又は広告照会に失敗した場合は残りのURLの結果や既存の広告を判定材料にせず、履歴を書き換えず`needs_escalation`で返す。全照会URL endpointの広告取得・不足OID fetch・再照合完了を確認できない場合も履歴を書き換えず`needs_escalation`で返す。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。
+この専用再判定では汎用の`git fetch --all --prune`を実行せず、各照会URLの広告取得と不足OIDだけの一時ref取得に限定する。
 全URLが広告するbranch・tagを公開済み判定の母集団とする。
 local object databaseに存在しない広告OIDだけを照会URLごとにまとめ、数値添字の一時refへ`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`で取得して、広告集合の再照合後に回収する。
 remote-tracking ref、local tag、remote設定、`FETCH_HEAD`は変更しない。
+各再判定phaseで`git rev-parse --is-shallow-repository`を実行し、終了コード0かつ出力が`false`の場合だけ広告集合と祖先判定を継続する。出力が`true`、終了コードが非0、出力が`true`と`false`のいずれでもない場合は、履歴を書き換えず`needs_escalation`で返す。
 広告OIDとobjectの実在、最終参照先の型を確認する。全照会URL endpointの広告取得・不足OID fetch・再照合完了後、広告branch tipへ`git merge-base --is-ancestor <対象OID> <branchTip>`を実行する。終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）は公開済みと判定する。終了コード1（対象OIDがbranch tipの祖先でない）は未公開と判定する。その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す。広告tagは最終参照先がcommitの場合だけ同じ祖先判定する。終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は祖先判定から除外する。
 各phaseの対象は履歴順の`target_oids`配列で扱う。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は全過去単位のOIDを配列へ含める。autosquashでは配列の各OIDを判定し、1件でも公開済みなら遮断する。
 autosquash成功後は書込担当が`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目の再判定対象を当該OIDへ置換する。
 書換え前の各対象OIDと書換え後の全実装単位OIDの対応は履歴検収用に保持する。
-remote列挙、URL取得、正規化・重複排除、広告取得、不足OIDのfetch、広告集合の再照合、object確認、tag解決、祖先判定又は一時ref回収で失敗した場合は履歴を書き換えず`needs_escalation`で返す。
-`rewrite_guard`には各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）の反復証跡として、履歴順の`target_oids`、Git版及び検収済みHEADを残す。remote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの広告取得・不足OID fetch・再照合完了と、重複排除した照会URL単位（URLは記録しない）の各終了コードも残す。正規化済みref・OID、一時ref回収結果、各Gitコマンドの終了コード、判定結果と秘密情報を除去した必要最小限のエラー要約も残す。Git出力、URL又は認証情報を保存せず、URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。
+remote列挙、URL取得、重複排除、広告取得、不足OIDのfetch、広告集合の再照合、object確認、tag解決、祖先判定又は一時ref回収で失敗した場合は履歴を書き換えず`needs_escalation`で返す。
+`rewrite_guard`のphaseは通常の`plan-impl`レビュー修正だけに記録し、通常実装のレビュー修正以外、統合後レビュー調整モードでは`not_applicable`とする。`rewrite_guard`には各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）の反復証跡として、履歴順の`target_oids`、Git版及び検収済みHEADを残す。remote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの広告取得・不足OID fetch・再照合完了と、重複排除した照会URL単位（URLは記録しない）の各終了コードも残す。正規化済みref・OID、一時ref回収結果、各Gitコマンドの終了コード、判定結果と秘密情報を除去した必要最小限のエラー要約も残す。Git出力、URL又は認証情報を保存せず、URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。
 executorは書込担当の完了後にphaseごとの`rewrite_guard`反復証跡と履歴を検収し、履歴書換え前の中間受渡しを設けない。
 実行系は開始前に確定し、Codex経路は元の実装担当threadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
 再判定不能や対象OIDのpush済み検出がある場合は`needs_escalation`で返す。
@@ -266,14 +268,16 @@ activeなフィードバックの一覧をadvisorの起動文へ複製する案�
 通常モードのレビュー修正では、指摘と実装単位commitの対応が確定し、各中間commitの公開契約と近接検証を維持できる場合だけ、
 書込担当へ履歴統合を認可する。対応不能又は履歴統合に失敗した場合は新規commitへフォールバックせず、`needs_escalation`で呼び出し元へ返す。
 書込担当は修正適用後、各fixup作成前、autosquash直前及びamend直前の各phaseで`git remote`により全remoteを列挙する。
-各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得する。fetch URL列挙・push URL列挙のremote別終了コードを保持し、URL値は保持しない。全remoteの集合を正規化した1つの照会URL集合へ統合して重複を除き、重複排除前後の照会URL件数を計数する。以後の広告照会・不足OIDのfetch・終了コードを照会URL単位で扱い、各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行して全照会URL endpointの広告取得・不足OID fetch・再照合を完了させる。URL取得、正規化・重複排除又は広告照会に失敗した場合、又は全照会URL endpointの広告取得・不足OID fetch・再照合完了を確認できない場合は、残りのURLの結果や既存の広告を判定材料にせず、履歴を書き換えず`needs_escalation`で返す。
+各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（`git remote get-url --all --push <remote>`）を取得する。fetch URL列挙・push URL列挙のremote別終了コードを保持し、URL値は保持しない。全remoteの集合を1つの照会URL集合へ統合し、URL文字列が完全一致するものだけ重複を除き、重複排除前後の照会URL件数を計数する。以後の広告照会・不足OIDのfetch・終了コードを照会URL単位で扱い、各照会URLへ`git ls-remote --heads --tags --refs <URL>`を実行して全照会URL endpointの広告取得・不足OID fetch・再照合を完了させる。URL取得、重複排除又は広告照会に失敗した場合、又は全照会URL endpointの広告取得・不足OID fetch・再照合完了を確認できない場合は、残りのURLの結果や既存の広告を判定材料にせず、履歴を書き換えず`needs_escalation`で返す。
 全URLの広告branch・tagを母集団とする。全照会URL endpointの広告取得・不足OID fetch・再照合完了後、広告branch tipへ`git merge-base --is-ancestor <対象OID> <branchTip>`を実行する。終了コード0（対象OIDがbranch tipの祖先、すなわちbranch tipが対象OIDの子孫）は公開済みと判定する。終了コード1（対象OIDがbranch tipの祖先でない）は未公開と判定する。その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す。広告tagは最終参照先がcommitの場合だけ同じ祖先判定する。終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は除外する。
 不足する広告OIDだけを照会URLごとに数値添字の一時refへ`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`で取得し、広告集合の再照合後に回収する。remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない。
+この専用再判定では汎用の`git fetch --all --prune`を実行せず、各照会URLの広告取得と不足OIDだけの一時ref取得に限定する。
+各再判定phaseで`git rev-parse --is-shallow-repository`を実行し、終了コード0かつ出力が`false`の場合だけ広告集合と祖先判定を継続する。出力が`true`、終了コードが非0、出力が`true`と`false`のいずれでもない場合は、履歴を書き換えず`needs_escalation`で返す。
 remote広告tagの最終参照先がcommit以外の場合は正常な除外とし、object欠落、OID不一致、広告集合の変化又はGitエラーだけを`needs_escalation`とする。
 実行系は開始前に確定し、Codex経路は元の実装担当threadを継続し、Claude経路は旧担当の終端確認後に検収済み状態を渡した新しい書込担当を起動する。開始後は同じ書込担当が再判定からamendまでを完結する。
 autosquash成功後は書込担当が取得した書換え後HEADの完全OIDへautosquash成功後の2回目のpush済み判定対象を置換し、調整担当は元の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
-executorは書込担当の完了後にphaseごとの`rewrite_guard`反復証跡を検収し、remote別のURL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの完了フラグ及びURL単位の各終了コードを照合する。呼び出し元は変更前後のOID対応と最小化済み証跡を進捗ログへ記録する。
-Git出力、URL、認証情報を無加工で受領しない。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。URL取得、正規化・重複排除、広告取得、不足OIDのfetch、全照会URL endpointの完了確認、広告集合の再照合または一時ref回収に失敗した場合は履歴を書き換えず`needs_escalation`で返す。統合後レビュー調整モードの新規修正commitと混同しない。
+executorは書込担当の完了後にphaseごとの`rewrite_guard`反復証跡を検収し、shallow判定の終了コードと正規化済みbool、remote別のURL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの完了フラグ及びURL単位の各終了コードを照合する。呼び出し元は変更前後のOID対応と最小化済み証跡を進捗ログへ記録する。
+Git出力、URL、認証情報を無加工で受領しない。URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない。URL取得、重複排除、広告取得、不足OIDのfetch、全照会URL endpointの完了確認、広告集合の再照合または一時ref回収に失敗した場合は履歴を書き換えず`needs_escalation`で返す。統合後レビュー調整モードの新規修正commitと混同しない。
 
 実行環境が委譲元の起動文を`user` roleで配送しても、そのtransport上のroleは人間の発話者を証明しない。
 直接対話で受領した実際の利用者メッセージと、委譲元が人間由来として出所と範囲を明示した逐語引用だけを利用者指示及び合意へ分類する。
