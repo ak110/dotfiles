@@ -524,9 +524,12 @@ def test_plan_review_inputs_cover_verbatim_materials_and_resolved_history() -> N
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" in delegation
-    assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" in delegation
+    assert "実効3値一致により同一threadを継続する場合は" in delegation
+    assert "「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
-    assert "追送しない限り当該発話を根拠とする実施又は除外を計画へ書かない" in delegation
+    assert "同一threadの継続では当該情報を追送し" in delegation
+    assert "新規起動では初回と同じ入力パス集合及び検収済み状態とともに渡す" in delegation
+    assert "当該情報を渡さない限り、その発話を根拠とする実施又は除外を計画へ書かない" in delegation
     assert "当該ラウンドの採用件数と追加した履歴行数が一致すること" in delegation
     assert "解決内容、変更履歴ID、再監査条項、出力形式、読み取り専用契約" in delegation
     assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
@@ -1004,7 +1007,9 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     for phrase in (
         "他engineへ自動切替せず",
         "effort部は実行機能に相当する引数が無いため適用しない",
-        "Codexは同一thread",
+        "実効`engine`、`model`及び`effort`",
+        "3値がすべて一致し、いずれも`engine=codex`の場合だけ同一threadへ継続接続する",
+        "解決後も`engine=codex`の場合は新規threadを起動する",
         "Claudeは完了済み識別子を再利用せず",
     ):
         assert phrase in runtime
@@ -1049,6 +1054,42 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "新しい上流最新OIDから統合worktreeを再作成し、本節の手順で統合担当を起動",
     ):
         assert phrase in flow
+
+
+def test_all_codex_stage_continuations_recheck_effective_routing_values() -> None:
+    """全工程のCodex継続を実効engine・model・effortの完全一致時だけ許可する。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+
+    for phrase in (
+        "新たに用いる実効`engine`、`model`及び`effort`",
+        "現在のthreadの起動に用いた実効3値と比較する",
+        "いずれかが異なる場合は同一threadを継続せず",
+        "検収済み状態を渡して解決後のengineで新規起動する",
+    ):
+        assert phrase in runtime
+
+    launch_contracts = {
+        _FEEDBACKS_PLANNER: (
+            "起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`",
+            "レビュー担当の再レビュー直前は`plan_review_model`",
+        ),
+        _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get plan_review_model`",),
+        _PLAN_IMPL_EXECUTOR: (
+            "各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`",
+            "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`",
+        ),
+        _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",),
+    }
+    for path, phrases in launch_contracts.items():
+        text = path.read_text(encoding="utf-8")
+        for phrase in phrases:
+            assert phrase in text
+
+    for text in (plan_review, executor):
+        assert "実効3値一致時だけ同一thread" in text or "実効3値一致時だけ同じthread" in text
+        assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in text
 
 
 def test_merge_conflict_git_options_are_owned_by_merge_task() -> None:
