@@ -105,12 +105,13 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
             raise ValueError(f"{index}行の対応要否がyes/noではない")
 
 
-def validate(path: str | Path) -> int:
+def validate(path: str | Path, *, require_responses: bool = True) -> int:
     """表全体を検証し、件数を標準出力へ表示する。"""
     target = _path(str(path))
     rows = _read(target)
-    _validate_rows(rows, require_responses=True)
-    print(f"検証成功: {target} ({len(rows)}件)")
+    _validate_rows(rows, require_responses=require_responses)
+    label = "検証成功" if require_responses else "構造検証成功"
+    print(f"{label}: {target} ({len(rows)}件)")
     return 0
 
 
@@ -251,9 +252,15 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     respond_parser.add_argument("--response-needed", required=True, choices=("yes", "no", "対応要", "対応不要"))
     respond_parser.add_argument("--response", default="")
     respond_parser.add_argument("--no-response-reason", default="")
-    for name in ("show", "validate"):
-        parser = sub.add_parser(name, help=f"レビュー表を{name}する")
-        parser.add_argument("path")
+    show_parser = sub.add_parser("show", help="レビュー表を表示する")
+    show_parser.add_argument("path")
+    validate_parser = sub.add_parser("validate", help="レビュー表を検証する")
+    validate_parser.add_argument(
+        "--allow-unanswered",
+        action="store_true",
+        help="未応答行を許容し、6列と複合キーなどの構造だけを検証する。",
+    )
+    validate_parser.add_argument("path")
 
 
 def dispatch(args: argparse.Namespace) -> int:
@@ -264,7 +271,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if command == "show":
         return show(args.path)
     if command == "validate":
-        return validate(args.path)
+        return validate(args.path, require_responses=not args.allow_unanswered)
     severity = _required_value(args, "severity", "severity_arg")
     location = _required_value(args, "location", "location_arg")
     issue = _required_value(args, "issue", "issue_arg")

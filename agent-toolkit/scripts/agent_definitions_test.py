@@ -511,6 +511,30 @@ def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
         assert "runtime-routing.md" not in task
 
 
+def test_review_table_validation_modes_match_review_lifecycle() -> None:
+    """レビュー表の初回・応答中・収束時の検証モードを役割文書で同期する。"""
+    documents = (
+        _FEEDBACKS_PLANNER,
+        _PLAN_IMPL_EXECUTOR,
+        _REVIEWEE_STANDARDS,
+        _PLAN_REVIEW_TASK,
+        _PLAN_IMPL_PLAN_REVIEW_TASK,
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _PLAN_REVIEW_DELEGATION,
+    )
+    structural = "`atk review-table validate --allow-unanswered <レビュー表>`"
+    strict = "`atk review-table validate <レビュー表>`"
+    for path in documents:
+        document = path.read_text(encoding="utf-8")
+        assert structural in document, path
+        assert strict in document, path
+
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    assert executor.index("初回レビューとレビューイーの応答前") < executor.index("応答後と収束前")
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    assert reviewee.index("構造検証") < reviewee.index("全行への応答")
+
+
 def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() -> None:
     """採用フィードバックの文書契約と影響検証を起草担当・レビュー担当双方で固定する。"""
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")

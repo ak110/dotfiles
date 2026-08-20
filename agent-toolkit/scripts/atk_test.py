@@ -433,12 +433,17 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIのvalidateは未応答行を成功扱いしない。"""
+    """公開CLIは構造検証の明示指定を許容し、既定では未応答行を拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
         "\t".join(json.dumps(value, ensure_ascii=False) for value in ("重大", "位置", "指摘", "", "", "")) + "\n",
         encoding="utf-8",
     )
+
+    with pytest.raises(SystemExit) as structural_exc_info:
+        atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
+    assert structural_exc_info.value.code == 0
+    assert "構造検証成功" in capsys.readouterr().out
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["review-table", "validate", str(path)])

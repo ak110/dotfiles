@@ -1239,6 +1239,29 @@ def test_warn_mode_excludes_records_after_review_boundary(
     assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: 作業中の警告"}]
 
 
+def test_warn_mode_excludes_records_after_claude_automatic_review_marker(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Claude自動session-review開始マーカー後の同形式警告を照会対象へ含めない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "warning: マーカー前の警告"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
+                "message": {"role": "user", "content": []},
+            },
+            {"type": "user", "message": {"role": "user", "content": "warning: マーカー後の警告"}},
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: マーカー前の警告"}]
+
+
 def test_query_modes_search_hook_notice_stored_under_attachment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

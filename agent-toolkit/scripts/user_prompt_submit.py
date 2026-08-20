@@ -142,16 +142,8 @@ def _session_review_context(session_id: str, transcript_path: str) -> str:
     )
 
 
-def _plan_session_title(session_id: str, session_title: str | None) -> str | None:
-    """計画ファイルのstemをClaude CodeのsessionTitleへ反映し、出力した値を返す。
-
-    `session_title`が最後に本フックが設定した値と異なる場合は、利用者が明示的に
-    renameした値として扱い、計画ファイル名で上書きしない。状態更新と判定は同じ
-    `update_state`の排他区間で行うため、並行した編集後hookが値を取り違えない。
-    """
-    if session_title is None:
-        return None
-
+def _plan_session_title(session_id: str) -> str | None:
+    """計画ファイルのstemをClaude CodeのsessionTitleへ一度だけ反映する。"""
     emitted: list[str] = []
 
     def _set_title(state: dict) -> dict | None:
@@ -162,12 +154,7 @@ def _plan_session_title(session_id: str, session_title: str | None) -> str | Non
         if not plan_stem:
             return None
 
-        last_hook_title = state.get("last_hook_session_title")
-        if last_hook_title is not None and not isinstance(last_hook_title, str):
-            last_hook_title = None
-        if session_title and last_hook_title != session_title:
-            return None
-        if last_hook_title == plan_stem:
+        if state.get("last_hook_session_title"):
             return None
 
         state["last_hook_session_title"] = plan_stem
@@ -178,13 +165,13 @@ def _plan_session_title(session_id: str, session_title: str | None) -> str | Non
     return emitted[0] if emitted else None
 
 
-def _emit_hook_output(*, additional_context: str | None = None, session_title: str | None = None) -> None:
+def _emit_hook_output(*, additional_context: str | None = None, session_title_output: str | None = None) -> None:
     """UserPromptSubmitの追加情報とsessionTitleを1つの応答JSONへまとめて出力する。"""
     hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
     if additional_context is not None:
         hook_specific_output["additionalContext"] = additional_context
-    if session_title is not None:
-        hook_specific_output["sessionTitle"] = session_title
+    if session_title_output is not None:
+        hook_specific_output["sessionTitle"] = session_title_output
     print(json.dumps({"hookSpecificOutput": hook_specific_output}, ensure_ascii=False))
 
 
@@ -213,26 +200,24 @@ def main(payload_text: str) -> int:
 
     is_codex = "model" in payload or is_codex_payload(payload)
 
-    # Claude CodeのUserPromptSubmitだけがsessionTitleを受け付ける。
+    # Claude CodeのUserPromptSubmitだけがsessionTitleを出力する。
     # Codexはスキル起動の状態記録だけを行い、計画名を出力しない。
     plan_session_title = None
     if not is_codex:
-        raw_session_title = payload.get("session_title", "")
-        session_title = raw_session_title if isinstance(raw_session_title, str) else None
-        plan_session_title = _plan_session_title(session_id, session_title)
+        plan_session_title = _plan_session_title(session_id)
 
     # 先頭行のみを取り出して照合する（先頭行以外は無視）。
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
     if not first_line.startswith(command_prefix):
         if plan_session_title is not None:
-            _emit_hook_output(session_title=plan_session_title)
+            _emit_hook_output(session_title_output=plan_session_title)
         return 0
 
     match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
     if match is None:
         if plan_session_title is not None:
-            _emit_hook_output(session_title=plan_session_title)
+            _emit_hook_output(session_title_output=plan_session_title)
         return 0
 
     name = match.group(1)
@@ -259,6 +244,6 @@ def main(payload_text: str) -> int:
         update_state(session_id, _set_named_flag("add_feedback_skill_invoked"))
 
     if additional_context is not None or plan_session_title is not None:
-        _emit_hook_output(additional_context=additional_context, session_title=plan_session_title)
+        _emit_hook_output(additional_context=additional_context, session_title_output=plan_session_title)
 
     return 0

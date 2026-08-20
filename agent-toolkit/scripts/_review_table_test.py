@@ -22,17 +22,21 @@ def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     assert capsys.readouterr().out == path.read_text(encoding="utf-8")
 
 
-def test_validate_rejects_unanswered_rows_until_every_row_is_responded(tmp_path: pathlib.Path) -> None:
-    """公開検証は全行の応答完了まで成功させず、既存の追加・応答操作は維持する。"""
+def test_initial_review_can_validate_structure_before_response_and_strict_after_response(
+    tmp_path: pathlib.Path,
+) -> None:
+    """初回レビューと応答中は構造を、全件応答後は厳格な検証を使う。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "重大", "module.py:10", "修正が必要")
     table.add(path, "軽微", "README.md", "説明が不足")
 
+    assert table.validate(path, require_responses=False) == 0
     with pytest.raises(ValueError, match="対応要否が未回答"):
         table.validate(path)
 
     table.respond(path, "重大", "module.py:10", "修正が必要", "yes", "条件を追加した", "")
+    assert table.validate(path, require_responses=False) == 0
     table.respond(path, "軽微", "README.md", "説明が不足", "no", "対象外", "既存契約を維持する")
     assert table.validate(path) == 0
 

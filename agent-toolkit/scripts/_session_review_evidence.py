@@ -1514,6 +1514,12 @@ def _warning_boundary_line(records: list[_Record]) -> int | None:
         return None
     events = _extract_for_runtime([record.entry for record in records], runtime, [record.line for record in records])
     boundary = _review_boundary_index(events, runtime)
+    if runtime == "claude":
+        automatic_boundary = next(
+            (index for index, event in enumerate(events) if event["kind"] == "session-review-started"),
+            len(events),
+        )
+        boundary = min(boundary, automatic_boundary)
     if boundary >= len(events):
         return None
     for event in events[boundary:]:

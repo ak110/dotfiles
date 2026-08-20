@@ -313,35 +313,38 @@ class TestClaudePlanSessionTitle:
         self._state_path(tmp_path, session_id).write_text(json.dumps(state), encoding="utf-8")
         return plan
 
-    def test_empty_session_title_receives_current_plan_stem(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    def test_official_payload_without_current_title_receives_current_plan_stem(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         sid = "plan-title-initial"
         self._prepare_plan(tmp_path, monkeypatch, sid, "feedback-batch.md")
 
-        result = _run({"session_id": sid, "prompt": "計画を続けます", "session_title": ""}, state_dir=tmp_path)
+        result = _run(
+            {"session_id": sid, "prompt": "計画を続けます", "hook_event_name": "UserPromptSubmit"},
+            state_dir=tmp_path,
+        )
 
         assert result.returncode == 0
         output = json.loads(result.stdout)
         assert output["hookSpecificOutput"]["sessionTitle"] == "feedback-batch"
         assert _read_state(tmp_path, sid)["last_hook_session_title"] == "feedback-batch"
 
-    def test_same_hook_title_is_not_emitted_again(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    def test_same_session_does_not_emit_title_again(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         sid = "plan-title-repeat"
-        self._prepare_plan(
-            tmp_path,
-            monkeypatch,
-            sid,
-            "feedback-batch.md",
-            last_hook_session_title="feedback-batch",
-        )
+        self._prepare_plan(tmp_path, monkeypatch, sid, "feedback-batch.md")
 
-        result = _run({"session_id": sid, "prompt": "通常の入力", "session_title": "feedback-batch"}, state_dir=tmp_path)
+        first = _run({"session_id": sid, "prompt": "最初の入力"}, state_dir=tmp_path)
+        assert first.returncode == 0
+        assert json.loads(first.stdout)["hookSpecificOutput"]["sessionTitle"] == "feedback-batch"
+
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
         assert result.stdout == ""
 
-    def test_later_plan_edit_updates_title_when_previous_hook_title_is_input(
+    def test_later_plan_edit_does_not_emit_title_again_in_same_session(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    ) -> None:
         sid = "plan-title-update"
         old_plan = self._prepare_plan(
             tmp_path,
@@ -357,27 +360,11 @@ class TestClaudePlanSessionTitle:
         state["current_plan_file_path"] = str(new_plan)
         state_path.write_text(json.dumps(state), encoding="utf-8")
 
-        result = _run({"session_id": sid, "prompt": "計画を更新", "session_title": "old-plan"}, state_dir=tmp_path)
-
-        output = json.loads(result.stdout)
-        assert output["hookSpecificOutput"]["sessionTitle"] == "new-plan"
-        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "new-plan"
-
-    def test_explicit_rename_is_preserved(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        sid = "plan-title-rename"
-        self._prepare_plan(
-            tmp_path,
-            monkeypatch,
-            sid,
-            "plan-name.md",
-            last_hook_session_title="old-name",
-        )
-
-        result = _run({"session_id": sid, "prompt": "名前を変更", "session_title": "manual-name"}, state_dir=tmp_path)
+        result = _run({"session_id": sid, "prompt": "計画を更新"}, state_dir=tmp_path)
 
         assert result.returncode == 0
         assert result.stdout == ""
-        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "old-name"
+        assert _read_state(tmp_path, sid)["last_hook_session_title"] == "old-plan"
 
     @pytest.mark.parametrize("invalid_path", [None, 42, "relative.md", "/tmp/not-a-plan.md"])
     def test_invalid_or_missing_plan_path_fails_open(
@@ -395,7 +382,7 @@ class TestClaudePlanSessionTitle:
             encoding="utf-8",
         )
 
-        result = _run({"session_id": sid, "prompt": "通常の入力", "session_title": ""}, state_dir=tmp_path)
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
         assert result.stdout == ""
@@ -406,7 +393,7 @@ class TestClaudePlanSessionTitle:
         self._prepare_plan(tmp_path, monkeypatch, sid, "codex-plan.md")
 
         result = _run(
-            {"session_id": sid, "prompt": "通常の入力", "session_title": "", "model": "gpt-5"},
+            {"session_id": sid, "prompt": "通常の入力", "model": "gpt-5"},
             state_dir=tmp_path,
         )
 
@@ -426,7 +413,6 @@ class TestClaudePlanSessionTitle:
             {
                 "session_id": sid,
                 "prompt": "/session-review",
-                "session_title": "",
                 "transcript_path": "/tmp/review.jsonl",
             },
             state_dir=tmp_path,

@@ -28,9 +28,8 @@
   Agent識別子別に記録し、SubagentStopが完了報告を検査する。記録した要素は、正常報告、SendMessage再開、
   plan-mode起動のいずれでも削除されず、別の調整役の要素と併存する。状態JSON全体の寿命は末尾の規定に従う
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
-- `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した最後の値を記録する。
-  次回入力の`session_title`が利用者による明示renameか、計画ファイル名に追従可能な状態かを判定する。
-  sessionTitle出力時だけ更新し、明示rename時は保持する。同じセッション内で保持し、既存の状態JSONクリア又は保持期限を過ぎた回収で除去する
+- `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値を記録する。
+  値が存在する間は同一セッションで再出力しない。sessionTitle出力時だけ更新し、既存の状態JSONクリア又は保持期限を過ぎた回収で除去する
 - `plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`:
   計画ファイル作成前の直接編集を検知する
 

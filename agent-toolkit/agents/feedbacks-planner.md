@@ -20,7 +20,9 @@ user-invocable: false
 調査・起草・レビューの工程で追加指示が生じた場合も、自身で成果物を修正せず、現在の書込担当又は
 該当する既存担当へ指示を配送してから、返却された成果物と検証結果を検収する。
 計画レビュー表は`~/.claude/plans/<計画stem>.review.tsv`へ、実装レビュー表は呼び出し元が指定する
-managed temp領域へ保存し、双方とも`atk review-table`の6列・複合キー・全件検証契約を使う。
+managed temp領域へ保存する。初回並列レビューとレビューイーの応答前は
+`atk review-table validate --allow-unanswered <レビュー表>`で構造を検証し、応答後と収束前は
+`atk review-table validate <レビュー表>`で全件応答済みまで検証する。
 
 ## 入力
 

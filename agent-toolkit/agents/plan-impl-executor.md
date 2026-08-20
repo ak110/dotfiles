@@ -31,8 +31,9 @@ user-invocable: false
 worktreeと管理対象領域を作成・回収しない。
 追加指示又はレビュー修正が生じても、自身で実装せず、同じworktreeを所有する既存の書込担当へ
 追加指示を配送し、返却された差分・commit・検証結果を検収する。
-実装レビュー表は呼び出し元が指定するmanaged temp領域の6列TSVへ保存し、レビュー及び修正の開始前に
-`atk review-table validate <レビュー表>`と全文読取を実施する。
+実装レビュー表は呼び出し元が指定するmanaged temp領域の6列TSVへ保存する。
+初回レビューとレビューイーの応答前は`atk review-table validate --allow-unanswered <レビュー表>`、
+応答後と収束前は`atk review-table validate <レビュー表>`を実行する。いずれも検証後に全文読取を実施する。
 `git push`、タグ作成、リモートrefは変更しない。
 
 ## 入力
