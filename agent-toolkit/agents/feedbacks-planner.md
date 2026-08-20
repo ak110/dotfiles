@@ -87,8 +87,10 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 
 調査とレビュー担当は対象worktreeを読み取り専用とする。
 起草担当は指定された計画ファイル保存先だけを書込可能とする。
-各調査担当と計画の起草担当は、担当ファイル名ごとに
-`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行して保存本文を取得する。
+各調査担当は担当ファイル名1件について`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。
+計画の起草担当は同じ対象リポジトリの担当ファイル名をまとめ、
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`を対象リポジトリごとに1回実行する。
+CLIのファイル名見出しから本文を項目へ対応付け、項目ごとの警告・エラー後の再取得は単数形で行う。
 
 ## 出力
 

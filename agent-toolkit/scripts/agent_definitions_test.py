@@ -741,8 +741,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         assert phrase in text
 
 
-def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
-    """各受信主体がファイル名単位で保存本文を取得する契約を固定する。"""
+def test_feedback_source_contract_batches_same_repository_reads() -> None:
+    """同一対象リポジトリの複数本文は一括取得し、単一担当の取得は単数形で保つ契約を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
@@ -752,8 +752,12 @@ def test_feedback_source_contract_uses_one_queue_read_per_receiver() -> None:
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
     command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
-    for document in (sender, planner, explore, standards, delegation, review):
+    for document in (sender, planner, explore, standards):
         assert command in document
+    batch_command = "atk mq show <filename>... --target-repo=<repo> --skip-pull"
+    for document in (sender, planner, process, standards, delegation, review):
+        assert batch_command in document
+        assert "対象リポジトリごとに1回" in document
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
     for document in (sender, explore, standards, review):
@@ -996,7 +1000,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "pick_feedbacks_model",
         "plan_model",
         "plan_review_model",
-        "execute_model",
+        "execute_fast_model",
+        "execute_fix_model",
         "execute_review_model",
         "merge_model",
     ):
@@ -1011,12 +1016,14 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
     assert "同領域内の6列表ファイル以外を書き込まない" in executor
-    assert "各書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_model`" in executor
+    assert "最初の書込担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_fast_model`" in executor
+    assert "`atk config get execute_fix_model`を起動直前に実行する" in executor
     assert "各レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
     assert "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`" in flow
     assert "`feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし" in process_feedbacks
-    assert "ファイル名ごとに" in process_feedbacks
+    assert "ファイル名昇順でまとめ" in process_feedbacks
+    assert "`atk mq start-processing <filename>... --target-repo=<repo-path>`" in process_feedbacks
     assert "`atk mq convert-to-plan`" in process_feedbacks
     assert "計画全文を`feedbacks-planner`の完了報告へ要求しない" in reception
     assert "`feedbacks-planner`が起草担当へ対象ファイル名、対象リポジトリ、確定した採否と合意、対象、規範" in reception
@@ -1080,13 +1087,55 @@ def test_ci_repair_commits_are_delegated_by_caller() -> None:
         assert "原因分析によりコード・テスト・設定の修正commitが必要と確定" in text
         assert "通常モードの`plan-impl-executor`へ" in text
         assert "元計画を再投入せず" in text
-        assert "`execute_model`を" in text
+        assert "`execute_fix_model`を" in text
         assert "起動直前に解決" in text
         assert "単一の書込担当" in text
         assert "二系統レビュー、再push、CI確認" in text
         assert "外部基盤障害など修正commitを要しない失敗" in text
-    assert "原因分析で修正commitが必要と確定した場合に呼び出し元が起動直前に解決" in routing
+    assert "`execute_fix_model`" in routing
     assert "直接修正して再push" not in ci_failure
+
+
+def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
+    """fast担当は同じ失敗箇所の残存だけでfix担当へdirty差分を引き継ぐ。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+
+    for text in (runtime, executor, task):
+        assert "テストID・診断識別子" in text
+        assert "同じコマンド" in text
+        assert "直後" in text
+    assert "修正対象とした同一失敗箇所が直後の再検証にも残った場合" in runtime
+    assert "修正対象が解消して別の失敗箇所だけが現れた場合は" in executor
+    assert "追加修正とcommitを行わず" in task
+    assert "基準OID、未コミット差分、失敗コマンド" in executor
+    assert "同じworktreeへfix担当を1件だけ起動する" in executor
+    assert "dirty worktree" in executor
+    for review_mode in ("#### 通常の実装モードのレビュー修正", "#### 統合後レビュー調整モードのレビュー修正"):
+        section = executor.partition(review_mode)[2]
+        assert "`atk config get execute_fix_model`" in section
+
+
+def test_start_processing_batch_failure_boundary_is_documented() -> None:
+    """一括処理開始の移動前拒否と移動後の公開完了境界を文書で固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    rules = (_DISTRIBUTION_ROOT / "rules" / "02-agent-operations.md").read_text(encoding="utf-8")
+
+    for text in (process, reception):
+        assert "`atk mq start-processing <filename>... --target-repo=" in text
+        assert "移動前" in text
+        assert "集合全体" in text
+        assert "`atk mq list --status=active --target-repo=" in text
+        assert "`atk mq show <filename>..." in text
+        assert "git status --porcelain" in text
+        assert "git show --name-status --format=%H%n%s HEAD" in text
+        assert "git merge-base --is-ancestor" in text
+        assert "`atk mq commit`を1回" in text
+        assert "項目別コマンド" in text
+        assert "未完了" in text
+    assert "複数の識別子を同一工程で取得又は処理する場合" in rules
 
 
 def test_launch_points_limit_thread_continuation_to_codex_route() -> None:
@@ -1245,6 +1294,8 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "HEAD、修正commit、差分、clean状態、検証結果を実測",
     ):
         assert phrase in normal_fix
+    assert "`atk config get execute_fix_model`" in normal_fix
+    assert "`atk config get execute_fix_model`" in integrated_fix
     assert "指摘が帰属する実装writer" not in executor
     assert "merge-task.md" not in normal_fix
     assert "merge-task.md" in integrated_fix

@@ -30,10 +30,26 @@ TBDへ永続化して暫定判断で進める。
 4. 本文の順序条件は着手可否の判定前に抽出し、active項目から対象ファイル名自身を除外した項目を依存先候補とする。候補を追加した依存グラフに自己依存又は循環が無いことを登録前に検査し、該当時は登録せず順序条件をTBDへ送る。検査を通過した候補だけを`atk mq set-dependencies <filename> --depends-on=<filename> ... --target-repo=<repo-path>`へ登録する。`--depends-on`を付けない実行は依存の全解除となるため使用しない。保存結果を照合する
 5. `depends_on`が全て終端し、TBDは回答済みで、frontmatterと計画ファイルが有効な項目をreadyとする
 6. readyな回答済みTBDの開始順と後始末は`references/hold-with-tbd-inject.md`に従う
-7. readyなinbox項目を`atk mq start-processing`でprocessingへ移し、対象ファイル名と配置を照合する。
+7. 同じ対象リポジトリのreadyなinbox項目をファイル名昇順でまとめ、
+   `atk mq start-processing <filename>... --target-repo=<repo-path>`を1回実行してprocessingへ移し、対象集合と配置を照合する。
+   コマンドは全ファイルの存在、inbox配置、frontmatter及び`target_repo`一致を移動前に検証するため、1件でも失敗した場合は集合全体を拒否し、どの項目も移動しない。
    既存のprocessing項目では`start-processing`を再実行せず、同コマンドの再実行を未完了の`feedbacks-planner`工程の再開起点にしない
 
 `start-processing`が状態競合で拒否した場合は、active一覧と保存本文を再取得して着手可否の判定から再開する。
+移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで集合のprocessing配置と保存本文を確認する。
+`atk mq list --status=active --target-repo=<repo-path>`と
+`atk mq show <filename>... --target-repo=<repo-path> --skip-pull`を実行する。
+管理リポジトリでは`git status --porcelain`及び
+`git show --name-status --format=%H%n%s HEAD`を実行し、未コミット差分と遷移commitを照合する。
+remote設定時は遷移commitの完全OIDを取得し、`git fetch`後に
+`git merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
+全項目がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
+remote設定時にupstream包含が確認できた場合だけ成功とする。processing配置だけ、ローカルcommitだけでは成功扱いしない。
+commit前の失敗で未コミット差分が指定集合の移動だけと一致し、集合外差分とrebase中間状態がない場合に限り、
+既存の`atk mq commit`を1回実行してから全条件を再検査する。push失敗時にremoteが遷移commitを既に含む場合は追加操作なしで復旧完了とする。
+remoteが遷移commitを含まないcleanなローカルcommit、集合のinbox・processing混在、集合外差分、遷移commitの対応付け不能では、
+項目別コマンドや`start-processing`を再実行せず未完了で停止する。rebase中間状態、`atk mq commit`失敗又は
+upstream包含の確認不能でも同様に未完了で停止する。
 
 欠落依存、自己依存、循環、不正な`cooldown_until`、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
@@ -48,8 +64,11 @@ Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:de
 Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
 `feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし、本文を起動文へ複製しない。
-`feedbacks-planner`は各調査担当と起草担当へ同じ入力を渡し、各受信主体がファイル名ごとに
-`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行して本文を取得する。
+`feedbacks-planner`は各調査担当と起草担当へ同じ入力を渡す。
+各調査担当は担当ファイル名1件を`atk mq show <filename> --target-repo=<repo> --skip-pull`で取得する。
+起草担当は同じ対象リポジトリの全ファイル名を
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、対象リポジトリごとに1回で取得する。
+警告・エラー後の当該項目だけの再取得は単数形を維持する。
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
 readyな計画実装型のレーンは通常型バッチの計画工程を待たず、利用可能な書込担当枠で実装できる。
 

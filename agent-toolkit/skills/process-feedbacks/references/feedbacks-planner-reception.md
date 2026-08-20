@@ -10,11 +10,26 @@ active一覧を取得した時点のreadyな通常型のフィードバックを
 blocked項目、未回答TBD、一覧取得後に追加された項目は含めない。
 `feedbacks-planner`は採用項目を1つの統合計画へまとめ、項目ごとの原文、採否、対象、完了条件、実装単位を識別可能に保つ。
 
-新規`inbox`項目では着手可否の確定後に`atk mq start-processing`を実行し、対象ファイル名と
-`processing`配置を照合する。
+新規`inbox`項目では着手可否の確定後に、同じ対象リポジトリのreadyなファイル名を昇順でまとめ、
+`atk mq start-processing <filename>... --target-repo=<repo>`を1回実行し、対象集合と`processing`配置を照合する。
+全対象の存在、inbox配置、frontmatter及び`target_repo`一致は移動前に検証する。1件でも不適合なら集合全体を拒否し、どの対象も移動しない。
 状態競合で拒否された場合はactive一覧と保存本文を再取得し、着手可否の判定から再開する。
 既存`processing`項目の別セッション再開では履歴を探索せず、`start-processing`を再実行しない。
 既存`processing`項目を未完了の`feedbacks-planner`工程の再開起点にしない。
+
+移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで指定集合のprocessing配置と保存本文を確認する。
+`atk mq list --status=active --target-repo=<repo>`と
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`を実行する。
+管理リポジトリでは`git status --porcelain`及び
+`git show --name-status --format=%H%n%s HEAD`を実行し、未コミット差分と遷移commitを照合する。
+remote設定時は遷移commitの完全OIDを取得し、`git fetch`後に
+`git merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
+全対象がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
+remote設定時にupstream包含を確認できた場合だけ完了とする。
+commit前失敗で指定集合の移動だけが未コミット差分として残り、集合外差分とrebase中間状態がない場合に限り、
+`atk mq commit`を1回実行して全条件を再検査する。push失敗後にremoteが遷移commitを含む場合は追加操作なしで完了とする。
+remoteが遷移commitを含まないcleanなローカルcommit、集合の状態混在、集合外差分、遷移commitの対応付け不能、
+rebase中間状態、復旧失敗又はupstream包含の確認不能では、項目別コマンドを再実行せず未完了で停止する。
 
 起動文には次の絶対パスと値だけを渡す。
 
@@ -29,8 +44,10 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 これらは`feedbacks-planner`が起草担当へ対象ファイル名、対象リポジトリ、確定した採否と合意、対象、規範、
 起草担当用のタスク文書を欠落なく渡せる形で指定する。
 フィードバック本文を起動文へ複製しない。
-調査担当、起草担当及びレビュー担当は各ファイル名について
-`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行して保存本文を取得する。
+各調査担当は担当ファイル名1件について`atk mq show <filename> --target-repo=<repo> --skip-pull`を1回実行する。
+起草担当及びレビュー担当は同じ対象リポジトリのファイル名をまとめ、
+`atk mq show <filename>... --target-repo=<repo> --skip-pull`を対象リポジトリごとに1回実行して保存本文を取得する。
+表示用見出しから本文を項目へ対応付け、警告・エラー後の当該項目だけの再取得は単数形を維持する。
 表示用見出し、YAML frontmatter、CLI付加の末尾改行を除いたフィードバック本文を逐語照合の対象とする。
 専用の原文ファイルを作成しないため、原文ファイル固有の作成後失敗と再作成を扱わず、保持も回収もしない。
 各下流主体の終了確認は委譲の一般契約として維持する。
