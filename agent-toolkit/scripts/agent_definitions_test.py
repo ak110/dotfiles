@@ -1056,13 +1056,15 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in flow
 
 
-def test_all_codex_stage_continuations_recheck_effective_routing_values() -> None:
-    """全工程のCodex継続を実効engine・model・effortの完全一致時だけ許可する。"""
+def test_codex_stage_continuations_except_fast_fix_recheck_effective_routing_values() -> None:
+    """fastからfixは新規threadとし、その他のCodex継続だけ実効3値を照合する。"""
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
 
     for phrase in (
+        "`execute_fast_model`から`execute_fix_model`への引継ぎでは、実効値にかかわらず新規threadを起動する",
+        "その他の工程別モデル設定を再取得したCodex経路では",
         "新たに用いる実効`engine`、`model`及び`effort`",
         "現在のthreadの起動に用いた実効3値と比較する",
         "いずれかが異なる場合は同一threadを継続せず",
@@ -1090,6 +1092,8 @@ def test_all_codex_stage_continuations_recheck_effective_routing_values() -> Non
     for text in (plan_review, executor):
         assert "実効3値一致時だけ同一thread" in text or "実効3値一致時だけ同じthread" in text
         assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in text
+
+    assert "`execute_fast_model`から`execute_fix_model`への引継ぎは、実効3値にかかわらず新規threadで起動する" in executor
 
 
 def test_merge_conflict_git_options_are_owned_by_merge_task() -> None:

@@ -40,7 +40,8 @@
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
-5. 工程別モデル設定を再取得したCodex経路では、新たに用いる実効`engine`、`model`及び`effort`を、
+5. `execute_fast_model`から`execute_fix_model`への引継ぎでは、実効値にかかわらず新規threadを起動する。
+   その他の工程別モデル設定を再取得したCodex経路では、新たに用いる実効`engine`、`model`及び`effort`を、
    現在のthreadの起動に用いた実効3値と比較する。
    3値がすべて一致し、いずれも`engine=codex`の場合だけ同一threadへ継続接続する。
    いずれかが異なる場合は同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。

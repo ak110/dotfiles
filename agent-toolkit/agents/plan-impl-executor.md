@@ -182,7 +182,8 @@ worktreeと管理対象領域を作成・回収しない。
 1つのworktreeへ割り当てる書込担当は同時に1つだけとし、レビュー担当は読み取り専用とする。
 タスク文書の内容、規範本文、出力書式を起動文へ複製しない。
 継続時は実行系別のライフサイクルに従う。
-Codexは`runtime-routing.md`の実効3値一致時だけ同じthreadを継続する。
+`execute_fast_model`から`execute_fix_model`への引継ぎは、実効3値にかかわらず新規threadで起動する。
+その他のCodex継続は`runtime-routing.md`の実効3値一致時だけ同じthreadを継続する。
 不一致時は検収済み状態を渡して解決後のengineで新規起動する。
 Claudeは検収済み状態を渡して新規起動する。
 
