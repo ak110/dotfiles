@@ -147,6 +147,11 @@ fast担当とfix担当は、工程別モデル設定の実効値が一致する�
 不一致時は検収済み状態を新規threadへ渡す。
 設定変更後も同一threadを継続する案は、threadが保持する実行条件と工程の実効設定を一致させられないため採用しない。
 
+Claude Code用の`agent-toolkit/agents/*.md`をagent定義の単一の正本とし、Codexは配布されたMarkdownを実行時に全文読み、frontmatter、本文、スキル及びツール制約を`spawn_agent`へ互換適用する。
+Codex Custom Agent用TOMLは、Claude固有の`tools`、`skills`、本文を意味論的に一対一変換できず、正本、生成器、配布先を増やすため採用しない。
+調査・採否と通常型の計画化はClaude CodeとCodexで共通の`feedbacks-planner`委譲経路を使い、agent定義の欠落、frontmatterの写像不能又は起動失敗をメイン主体の別経路へ迂回しない。
+Codexのready項目再取得、連続処理及び本体プロセスの終了範囲だけはagent定義の適用能力と独立したホスト固有のセッション運用として分岐する。
+
 フィードバック本文が示す文言案、列挙及び節配置は、投入元識別子にかかわらず利用者合意とみなさない。
 `feedbacks-planner`の起草担当は目的と指定された外部可視要素を維持する文面を技術判断で確定し、原文との差異と根拠を採否記録と計画へ残す。
 採用済み本文が明示する変更は確認事項又は実装前提にせず、`user_decisions`から先に除外する。

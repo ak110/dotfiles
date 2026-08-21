@@ -99,8 +99,8 @@ sourceがある場合は同じ値を渡す。
 移管先では`atk mq show`でsource（指定時）、本文、`target_repo`及び元項目の非予約frontmatter全体を照合する。
 照合後に元項目を終端する。
 
-Claude Codeホストでは、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
-Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
+Claude CodeとCodexの双方で、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
+双方で`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
 1バッチとして1つの`agent-toolkit:feedbacks-planner`へ渡す。
 `feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし、キュー経路では本文を起動文へ複製しない。
 キューにない素材の逐語本文・回答全文は計画外の明示入力として、調査、起草、初回レビュー、再レビューへ同じ値を保持する。
@@ -118,22 +118,10 @@ Claude Codeホストでは`references/feedbacks-planner-reception.md`を全文�
 調査と計画工程は対象worktreeを読み取り専用で共有し、項目別worktreeを作成しない。
 readyな計画実装型のレーンは通常型バッチの計画工程を待たず、利用可能な書込担当枠で実装できる。
 
-サブエージェント機能を利用できないCodexホストでは、通常型を次の順で扱う。
-この経路では`references/explore-template.md`へ対象のフィードバックファイル名と対象リポジトリを渡す。
+agent定義の欠落、frontmatterの写像不能又は`feedbacks-planner`の起動失敗は、メイン主体の別経路へ迂回せず失敗として返す。
 
-1. `references/review-checklists.md`を全文読む
-2. 原文、現行実装、関連規範、履歴、既存の成功経路を調査する
-3. バグ・障害・回帰では実行主体が`agent-toolkit:bugfix`をSkill機能で起動する
-4. 横断調査を委譲する前に`agent-toolkit:delegation`をSkill機能で起動する。
-   起動後は`references/explore-template.md`だけを受信者用のタスク文書として渡す
-5. 要求単位で採用または不採用を確定し、独立した複数要求は要求ごとに判定する
-   同一ファイルに採用要求が1件以上ある場合は、不採用要求も要求表へ残し、採否理由と除外範囲を記録する
-   全要求が不採用の場合だけファイルをrejectする
-   未確定要求が1件以上ある場合はファイルをholdする
-6. `references/decision-format.md`に従って採否と根拠を記録する
-
-Claude Codeホストの通常型で`feedbacks-planner`から`status: awaiting_confirmation`と不採用確認用`user_decisions`を受領した場合は、確認待ち経路へ進む。
-`status`を失敗処理より先に確認し、`awaiting_confirmation`を失敗又は`needs_escalation`として扱わない。
+Claude CodeとCodexのいずれかのホストの通常型で`feedbacks-planner`から`status: awaiting_confirmation`と不採用確認用`user_decisions`を受領した場合は、確認待ち経路へ進む。
+`status`を失敗処理より先に確認し、`awaiting_confirmation`を失敗や`needs_escalation`として扱わない。
 `source: session-review`と確認できる項目だけを利用者確認から除外する。その他のsource、source欠落及び不明の項目ごとに
 原文との差異と技術的理由を示す`AskUserQuestion`を発行し、回答を得た場合は逐語文を渡して同じ系列の新しい`feedbacks-planner`識別子を起動し、
 採否記録を再検収する。
@@ -197,9 +185,8 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
 失敗時はpush済み内容を巻き戻さず、`references/hold-with-tbd-inject.md`に従って保留する。
 終端工程だけを求める項目は計画を作成せず、終端待機集合へ登録して全レーンの統合とpush後にファイル名昇順で実行する。
 
-- Claude Codeホストの通常型採用項目は、`feedbacks-planner`の統合計画を各フィードバックへ`atk mq convert-to-plan`で記録し、
+- Claude CodeとCodexの双方の通常型採用項目は、`feedbacks-planner`の統合計画を各フィードバックへ`atk mq convert-to-plan`で記録し、
   `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
-- Codexホストの通常型採用項目は実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、調査済み事実と採否を渡す
 - 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する
 - commit前に実行主体が`agent-toolkit:commit`をSkill機能で起動する
 - 実装と二系統レビューの完了後、呼び出し元がpushとCI通過確認を完遂する
