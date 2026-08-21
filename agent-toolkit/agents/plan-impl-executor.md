@@ -41,7 +41,8 @@ worktreeと管理対象領域を作成・回収しない。
 `atk review-table validate --allow-unanswered <レビュー表>`で自身の表の構造を検証する。いずれも検証後に自身の表を全文読取し、レビューイーの全行への応答後は次ラウンド起動前のstrict検証へ戻る。
 両系統の担当が終端した後に、調整主体が各表を個別に読み、系統・ラウンドの帰属を維持して指摘と対応結果を統合する。独立系へ計画準拠系の表や出力を渡さない。
 再レビューでは、各レビュー担当へ今回の系統・ラウンド表と対応`.lock`だけを指摘追加対象として渡し、同じ系統の過去全ラウンド表と対応`.lock`をラウンド昇順で検証・全文読取するための絶対パス一覧を渡す。レビューイーへは修正対象となる全系統・全ラウンド表の絶対パス一覧を渡し、全表を全文読取させる。
-`git push`、タグ作成、リモートrefは変更しない。
+`git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正におけるphaseごとの公開済み判定、履歴書換え直前の再判定及び遮断は書込担当へ委譲する。executorは書込担当の完了後にphaseごとの最小化済み`rewrite_guard`反復証跡を検収し、履歴書換え前の中間受渡しは設けない。
+`rewrite_guard`のphaseは通常モードのレビュー修正だけに適用し、通常モードのレビュー修正以外、統合後レビュー調整モードでは`rewrite_guard: not_applicable`とする。
 
 ## 入力
 
@@ -113,6 +114,7 @@ worktreeと管理対象領域を作成・回収しない。
    担当種別は`fix担当`として明示し、直前に解決した`execute_fix_model`を適用する。
    このdirty worktreeの引継ぎは同一失敗箇所の残存を観測した実装単位に限る一般的なclean開始契約の例外であり、
    1つのworktreeへ同時に1つの書込主体だけを置く契約は維持する
+   初回実装担当の起動結果として返されたrouteと識別子を保持する。レビュー修正の引継ぎは後段の遷移表で確定し、開始後は同じ書込担当が履歴書換えを完結する
 5. 各書込担当の完了後にcommit、差分、検証、cleanな作業ツリーを実測する。
    各単位commitが同じレーンのworktreeの直前に検収したHEADを直接進めたことを確認する。
    各単位後にHEAD、計画ベースからの累積差分、変更説明との一致、追加変更の目的への帰属と必要性、clean状態を照合する。
@@ -189,17 +191,49 @@ worktreeと管理対象領域を作成・回収しない。
 
 #### 通常の実装モードのレビュー修正
 
-1. 実装担当が終端し、レーンのworktreeがcleanで、HEADがレビュー対象の最終HEADと一致することを実測する
-2. 同worktreeだけへ単一の修正用の書込担当を割り当てる。
-   単一単位を同じworktreeで実装した場合も、元の実装担当へ戻さず本項の経路を適用する
-3. 修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`を実行して経路を解決する。
+1. 実装担当が終端し、レーンのworktreeがcleanであることを実測し、HEADの完全OIDをレビュー対象の最終HEADとして内部確定する。
+2. 採用指摘ごとに計画の実装単位、実装commitの差分及び指摘対象を照合し、指摘IDと統合先の実装単位commit完全OIDの対応表を内部確定する。
+   対応不能、複数単位へ不可分にまたがる修正、又は各中間commitの公開契約を維持できない修正は書込担当へ渡さず、`needs_escalation`で返す。
+3. 同worktreeだけへ単一の修正用の書込担当を割り当てる。
+4. 修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`を実行して今回routeを解決する。
+   Codex経路の継続接続の直前も同じ設定値を再取得する。
+   初回実装担当の起動結果として保持したrouteと実効`engine`、`model`及び`effort`、今回routeと実効3値により、次の遷移表を適用する。
+
+   | 初回実装担当route | 今回route | 引継ぎ |
+   | --- | --- | --- |
+   | Codex | Codex | 実効3値がすべて一致する場合は元の実装担当threadを継続する。いずれかが異なる場合は旧担当の終端確認後、今回routeで新規起動する |
+   | Codex | Claude | 旧担当の終端確認後、今回routeで新規起動する |
+   | Claude | Codex | 旧担当の終端確認後、今回routeで新規起動する |
+   | Claude | Claude | 旧担当の終端確認後、今回routeで新規起動する |
+
+   新規起動では検収済み状態を開始前に1回だけ渡す。書込担当への受け渡しには保持した初回実装担当routeと実効3値、今回routeと実効3値、継続又は新規起動に用いる識別子、前担当の終端確認結果を明示する。開始後は同じ書込担当が再判定からamendまでを完結する。
+   レビュー検収後にexecutorが内部確定したレビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表、検収済みHEAD、cleanな作業ツリー及び検証結果を含め、次を渡す。
    `plan-mode/references/implementation-task.md`の呼び出し元指定絶対パス、レーンのworktree、対象計画、採用指摘を実装単位とした目的及び変更説明、
    系統・ラウンド別に統合した固定6列TSV、修正対象となる全系統・全ラウンド表の絶対パス一覧、プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パス、
    ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
-   複製元と対象外worktree、git操作の制約を渡す
-   起動文へ担当種別を`レビュー修正担当`として明示する
-4. 修正用の書込担当の完了と終端を確認し、修正commitがレビュー対象の最終HEADを直接進めたことを確認する。
-   当該worktreeのHEAD、修正commit、差分、clean状態、検証結果を実測する
+   複製元と対象外worktree、git操作の制約を渡す。
+   起動文へ担当種別を`レビュー修正担当`として明示する。
+5. レビュー修正の実装、再判定、履歴統合及び完了報告は`skills/plan-mode/references/implementation-task.md`を正本とし、executorは個別手順を再掲しない。
+6. 書込担当の完了後、executorは履歴書換え前後の全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果とclean状態を検収する。
+   過去単位を含む場合は、fixup作成前に専用の`pre_fixup` phaseを完了する。
+   最古fixup対象から元HEADまでのfirst-parent全OIDを`target_oids`へ履歴順で記録したことを検収する。
+   欠落・判定不能・公開済み・mergeがあればfixupを作成せず`needs_escalation`で返したことを検収する。
+   `rewrite_guard`反復証跡はremote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数と全照会URL endpointの完了フラグを含める。
+   `query_endpoints`の各反復ブロックについて、phase内だけで用いる数値`query_endpoint_id`が広告取得・不足OID fetch・再照合の終了コード、広告ref-OID、一時ref回収及び各direct refの共通`ref_evidence`を同じIDで結合していることを検収する。
+   `target_oids`と`advertised_refs_and_oids`の直積が共通`ref_evidence`へ1件ずつ対応し、対象OID、ref名、広告OID、広告OIDの実在確認、最終OID・型、commitの祖先判定又はnoncommitの除外理由を同じ反復block内で直接照合できることも検収する。広告OIDのobject typeがtagなら名前空間に依存せず再帰的にpeelし、branch・tagの二分類とtag専用証跡を設けていないことも検収する。
+   不足OIDが無いendpointの`fetch_exit_code`が`not_applicable`であることも検収する。
+   `shallow_repository_check_exit_code`と`is_shallow_repository`を検収し、終了コード0かつboolが`false`の場合だけ後続判定を許可する。
+   boolが`true`又は終了コードが非0の場合は`needs_escalation`で返したことを確認する。
+   各endpointの共通`ref_evidence`について、`target_oids`と広告された全direct refの各組合せが1件だけ存在することを検収する。`target_oid`、`ref_name`及び`advertised_oid`の組が一意で、各値が`target_oids`と`advertised_refs_and_oids`へ完全一致し、`final_oid`、`final_type`、`ancestor_decision`又は`exclusion_reason`を対応付けていることを検収する。欠落、重複又は不一致があれば完了として受理しない。
+   URL値と永続的な状態・TODO編集機構は受け取らず、URL列挙終了コードと件数だけを検収する。
+   レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
+   `pre_fixup` phaseでは、graftファイルのパス解決・存在検査を他の履歴照会の前置条件として完了したことを検収する。
+   最終単位だけが対象の場合は、amend前の`amend` phaseでgraft検査を含む再判定を完了したことを検収する。
+   `autosquash`では、fixup対象の最古commitから履歴書換え前に保持した元HEADまでのfirst-parent全OIDが`target_oids`へ履歴順で含まれ、範囲にmerge commitが無いことを、fixup作成前の事前遮断を含めて検収する。範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了したことを検収する。fixup作成前に範囲内のOIDと件名を列挙し、対象コミット件名が範囲内で一意であることを確認したことも検収する。対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。広告OIDの実在確認、object解決、object typeがtagである広告OIDの再帰peel及び祖先判定へ`GIT_NO_REPLACE_OBJECTS=1`を付け、replace refは同環境変数で無効化し、graftは`GIT_NO_REPLACE_OBJECTS=1 git rev-parse --path-format=absolute --git-path info/grafts`でパスを解決して`test ! -e <graftファイルの絶対パス>`で存在しないことを確認したことも検収する。パスの解決又は存在確認に失敗するかgraftファイルが存在する場合は、履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲列挙、merge確認、OIDと件名の列挙、件名の一意性確認、OID解決、tag peel、祖先判定又は`target_oids`各OIDの公開済み判定に1件でも失敗があれば、履歴書換えを適用せず`needs_escalation`で返したことを確認する。
+   各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）が`git log -1 --format=%s`で完全一致したことを検収する。期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返したことを確認する。
+   fixupは`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`で実行したことを検収する。
+   rebaseは`GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で実行したことを検収する。
+   amendは`GIT_NO_REPLACE_OBJECTS=1 git commit --amend --no-edit`で実行したことを検収する。
 
 #### 統合後レビュー調整モードのレビュー修正
 
@@ -240,7 +274,7 @@ Claudeは検収済み状態を渡して新規起動する。
 status: completed | needs_escalation
 summary: <結果>
 commits:
-- <完全長SHA、対応する計画単位>
+- <計画単位、変更前の完全OID、変更後の完全OID、commit件名、順序、差分帰属>
 worktrees:
 - <用途、正確な絶対パス、管理対象領域の正確な絶対パス、借用時はなし、状態、完全OID、作成主体、回収可否>
 verification:
@@ -251,6 +285,37 @@ findings:
 - <固定6列TSVの指摘と対応結果。無ければ「指摘なし」>
 plan_check: <概要、実施内容、任意の合意済みの除外・保持、実装者向け領域、完了条件、累積差分、進捗ログとの照合結果>
 feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>
+rewrite_guard:
+- phase: <pre_fixup|fixup:<単位順>|autosquash|amend>
+  target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
+  git_version: <Git版>
+  verified_head: <検収済みHEAD>
+  shallow_repository_check_exit_code: <`git rev-parse --is-shallow-repository`の終了コード>
+  is_shallow_repository: <終了コード0で取得したbool。取得不能時は「なし」>
+  remote_fetch_url_enumeration_exit_codes: <remote別fetch URL列挙終了コード（URLは記録しない）>
+  remote_push_url_enumeration_exit_codes: <remote別push URL列挙終了コード（URLは記録しない）>
+  query_url_count_before_deduplication: <重複排除前の照会URL件数>
+  query_url_count_after_deduplication: <重複排除後の照会URL件数>
+  all_query_endpoints_completed: <全照会URL endpointの広告取得・不足OID fetch・再照合完了>
+  query_endpoints:
+  - query_endpoint_id: <phase内だけで用いる一時数値識別子。URLは記録しない>
+    advertisement_exit_code: <広告取得終了コード>
+    advertised_refs_and_oids: <このendpointの正規化済み広告ref・OID>
+    ref_evidence:
+    - target_oid: <この祖先判定が対象とするtarget_oids内の完全OID>
+      ref_name: <広告されたdirect ref名>
+      advertised_oid: <広告OID>
+      ref_object_exists: <広告OIDの実在確認結果>
+      final_oid: <最終参照先のOID>
+      final_type: <最終参照先のobject type>
+      ancestor_decision: <最終参照先がcommitの場合の公開済み判定。noncommitは「なし」>
+      exclusion_reason: <最終参照先がcommit以外のdirect refを祖先判定から除外した理由。commitは「なし」>
+    fetch_exit_code: <不足OID fetch終了コード。不足OIDが無い場合は`not_applicable`>
+    recheck_exit_code: <広告集合再照合終了コード>
+    temporary_ref_cleanup: <このendpointの一時ref回収結果>
+  git_command_exit_codes: <各Gitコマンドの終了コード>
+  published_decision: <公開済み判定結果>
+  error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
 blockers:
 - <未完了事項。完了時は「なし」>
 ```
