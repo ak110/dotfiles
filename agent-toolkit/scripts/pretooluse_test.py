@@ -2933,7 +2933,7 @@ class TestCodexAppServerPolicyContract:
 
 
 class TestCodexMcpReply:
-    """mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply強制承認。"""
+    """Codex継続用MCP toolの強制承認。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -2941,8 +2941,15 @@ class TestCodexMcpReply:
 
     _write_state = staticmethod(_write_session_state)
 
-    def test_reply_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """delegation起動後は`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`が強制承認される。"""
+    @pytest.mark.parametrize(
+        ("tool_name", "prompt"),
+        [
+            ("mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply", "next"),
+            ("mcp__plugin_agent-toolkit_codex_app_server__codex_send_message", "追加指示"),
+        ],
+    )
+    def test_continuation_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path, tool_name: str, prompt: str):
+        """delegation起動後はCodex継続用MCP toolが強制承認される。"""
         self._write_state(
             tmp_path,
             "reply1",
@@ -2950,8 +2957,8 @@ class TestCodexMcpReply:
         )
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
-                "tool_input": {"session_id": "abc", "prompt": "next"},
+                "tool_name": tool_name,
+                "tool_input": {"session_id": "abc", "prompt": prompt},
                 "session_id": "reply1",
             },
             env_overrides=state_dir,
@@ -4946,6 +4953,69 @@ class TestCodexRemoteSnapshotRecording:
         entries = state.get("codex_remote_snapshot_by_key")
         assert entries is not None
         assert entries.get("session:snap-reply", {}).get("cwd") == str(repo)
+
+    def test_send_message_preserves_existing_thread_snapshot(self, tmp_path: pathlib.Path):
+        """実行中turnへの`codex_send_message`は同一threadのsnapshotを上書きしない。"""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        sid = "snap-send-active"
+        old_snapshot = {"origin": {"main": "old"}}
+        self._write_state(
+            tmp_path,
+            sid,
+            {
+                "delegation_skill_invoked": True,
+                "codex_app_server_cwd_by_session": {"thread-1": str(repo)},
+                "codex_app_server_sessions": {
+                    "thread-1": {"status": "running", "result_retrieved": False, "snapshot_key": "start-1"}
+                },
+                "codex_remote_snapshot_by_key": {"start-1": {"cwd": str(repo), "snapshot": old_snapshot}},
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+                "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
+                "tool_use_id": "send-1",
+                "session_id": sid,
+                "isSidechain": True,
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        state = self._read_state(tmp_path, sid)
+        assert state["codex_remote_snapshot_by_key"] == {"start-1": {"cwd": str(repo), "snapshot": old_snapshot}}
+
+    def test_send_message_records_snapshot_after_result_recovery(self, tmp_path: pathlib.Path):
+        """結果回収済みthreadのreply開始だけは新しいsnapshotを記録する。"""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        sid = "snap-send-reply"
+        self._write_state(
+            tmp_path,
+            sid,
+            {
+                "delegation_skill_invoked": True,
+                "codex_app_server_cwd_by_session": {"thread-1": str(repo)},
+                "codex_app_server_sessions": {
+                    "thread-1": {"status": "completed", "result_retrieved": True, "snapshot_key": "old-1"}
+                },
+                "codex_remote_snapshot_by_key": {},
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+                "tool_input": {"session_id": "thread-1", "prompt": "続行"},
+                "tool_use_id": "send-1",
+                "session_id": sid,
+                "isSidechain": True,
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        state = self._read_state(tmp_path, sid)
+        assert state["codex_remote_snapshot_by_key"]["send-1"]["cwd"] == str(repo)
 
 
 class TestDelegationGateForAgentTask:

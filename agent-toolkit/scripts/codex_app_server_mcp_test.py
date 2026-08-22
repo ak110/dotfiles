@@ -143,6 +143,58 @@ class InterruptResponseErrorClient(FakeClient):
         return await super().request(method, params)
 
 
+class SteerClient(FakeClient):
+    """turn/steerの応答と拒否を制御する偽クライアント。"""
+
+    def __init__(self, *, response: dict[str, Any] | None = None, error: BaseException | None = None) -> None:
+        super().__init__()
+        self.steer_response = response
+        self.steer_error = error
+        self.steer_called = asyncio.Event()
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method == "turn/steer":
+            self.requests.append((method, params or {}))
+            self.steer_called.set()
+            if self.steer_error is not None:
+                raise self.steer_error
+            return self.steer_response or {}
+        return await super().request(method, params)
+
+
+class ReplyResponseLossClient(FakeClient):
+    """replyのturn/start応答だけを失わせる偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.turn_start_count = 0
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method == "turn/start":
+            self.turn_start_count += 1
+            if self.turn_start_count >= 2:
+                self.requests.append((method, params or {}))
+                raise subject.AppServerError("reply turn/start response lost")
+        return await super().request(method, params)
+
+
+class MissingTurnIdResponseClient(FakeClient):
+    """指定回のturn/start応答からturn IDを欠落させる偽クライアント。"""
+
+    def __init__(self, missing_on_turn_start: int) -> None:
+        super().__init__()
+        self.missing_on_turn_start = missing_on_turn_start
+        self.turn_start_count = 0
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method == "turn/start":
+            self.turn_start_count += 1
+            if self.turn_start_count == self.missing_on_turn_start:
+                self.requests.append((method, params or {}))
+                return {"turn": {}}
+        return await super().request(method, params)
+
+
 class FakeStderr:
     """stderrのreadlineを再現する非同期入力。"""
 
@@ -229,18 +281,27 @@ def _seed_completed_reply_session(session: subject.SessionState) -> None:
     session.result_retrieved = True
 
 
-def test_tools_are_exactly_the_five_async_operations() -> None:
+def _mark_result_available(session: subject.SessionState) -> None:
+    """テスト用sessionをresult_availableへ進める。"""
+    session.turn_completed = True
+
+
+def test_tools_are_exactly_the_six_async_operations() -> None:
     assert set(subject.mcp._tool_manager._tools) == {  # noqa: SLF001  # pylint: disable=protected-access
         "codex_start",
         "codex_status",
         "codex_wait",
         "codex_result",
         "codex_start_reply",
+        "codex_send_message",
     }
     start_schema = subject.mcp._tool_manager._tools["codex_start"].parameters  # noqa: SLF001
     assert start_schema["required"] == ["prompt", "cwd"]
     wait_schema = subject.mcp._tool_manager._tools["codex_wait"].parameters  # noqa: SLF001
     assert wait_schema["properties"]["timeout"]["default"] == subject.DEFAULT_WAIT_TIMEOUT
+    send_schema = subject.mcp._tool_manager._tools["codex_send_message"].parameters  # noqa: SLF001
+    assert send_schema["required"] == ["session_id", "prompt"]
+    assert "expectedTurnId" not in send_schema["properties"]
 
 
 def test_validation_rejects_invalid_cwd_and_partial_model_effort(tmp_path: pathlib.Path) -> None:
@@ -387,6 +448,24 @@ async def test_initial_turn_start_response_loss_keeps_thread_until_completion(
 
 
 @pytest.mark.asyncio
+async def test_initial_turn_start_missing_id_is_ambiguous(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """初回turn/start応答のID欠落を非終端の曖昧状態へ保つ。"""
+    manager = subject.AppServerManager()
+    client = MissingTurnIdResponseClient(missing_on_turn_start=1)
+
+    async def ensure_client() -> MissingTurnIdResponseClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    response = await manager.start("開始", str(tmp_path))
+
+    session = manager.sessions["thread-1"]
+    assert response["result_available"] is False
+    assert session.turn_start_ambiguous is True
+    assert response["error"] == {"message": "turn/start returned no turn.id"}
+
+
+@pytest.mark.asyncio
 async def test_initial_completion_before_turn_start_response_preserves_terminal_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -528,6 +607,309 @@ async def test_notifications_complete_turn_and_result_then_reply(
 
 
 @pytest.mark.asyncio
+async def test_send_message_steers_active_turn_without_resetting_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """実行中の追加指示は同じturnへ送り、既存状態を初期化しない。"""
+    manager = subject.AppServerManager()
+    client = SteerClient()
+
+    async def ensure_client() -> SteerClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    manager.client = cast(subject.JsonRpcProcess, client)
+    session = manager.sessions["thread-1"]
+    expected_turn_id = session.turn_id
+    session.plan = [{"id": "plan"}]
+    session.commentary = "進行中"
+    session.diff_changed = True
+    client.steer_response = {"turnId": expected_turn_id}
+
+    response = await manager.send_message("thread-1", "追加指示")
+
+    assert response["delivery"] == "steered"
+    assert response["previous_result"] is None
+    assert response["status"] == "running"
+    assert response["turn_id"] == expected_turn_id
+    assert response["plan"] == [{"id": "plan"}]
+    assert response["commentary"] == "進行中"
+    assert response["diff_changed"] is True
+    assert client.requests[-1] == (
+        "turn/steer",
+        {
+            "threadId": "thread-1",
+            "expectedTurnId": expected_turn_id,
+            "input": [{"type": "text", "text": "追加指示"}],
+        },
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_kind", ["missing", "mismatched", "snake_case", "nested"])
+async def test_send_message_rejects_missing_or_mismatched_steer_response_turn(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    response_kind: str,
+) -> None:
+    """steer応答のturn ID欠落・不一致では別turnへ再試行しない。"""
+    manager = subject.AppServerManager()
+    client = SteerClient()
+
+    async def ensure_client() -> SteerClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    manager.client = cast(subject.JsonRpcProcess, client)
+    turn_id = manager.sessions["thread-1"].turn_id
+    steer_responses: dict[str, dict[str, Any]] = {
+        "missing": {},
+        "mismatched": {"turnId": "turn-other"},
+        "snake_case": {"turn_id": turn_id},
+        "nested": {"turn": {"id": turn_id}},
+    }
+    client.steer_response = steer_responses[response_kind]
+
+    with pytest.raises(subject.AppServerError, match="unexpected turn.id"):
+        await manager.send_message("thread-1", "追加指示")
+
+    assert [method for method, _ in client.requests].count("turn/steer") == 1
+    assert [method for method, _ in client.requests].count("thread/resume") == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_replies_after_terminal_result_and_preserves_previous_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """終端turnでは直前結果を退避して同じlock内でreplyを1回開始する。"""
+    manager = subject.AppServerManager()
+    client = FakeClient()
+
+    async def ensure_client() -> FakeClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    session = manager.sessions["thread-1"]
+    previous_turn_id = session.turn_id
+    await manager._handle_notification(  # noqa: SLF001
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": previous_turn_id,
+                "item": {"type": "agentMessage", "text": "直前結果"},
+            },
+        }
+    )
+    await manager._handle_notification(  # noqa: SLF001
+        {
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": previous_turn_id, "status": "completed", "error": None},
+            },
+        }
+    )
+
+    response = await manager.send_message("thread-1", "続行")
+
+    assert response["delivery"] == "reply_started"
+    assert response["previous_result"]["agent_message"] == "直前結果"
+    assert response["previous_result"]["turn_id"] == previous_turn_id
+    assert response["previous_result"]["result_available"] is True
+    assert response["status"] == "running"
+    assert response["result_available"] is False
+    assert [method for method, _ in client.requests].count("turn/steer") == 0
+    assert [method for method, _ in client.requests].count("thread/resume") == 1
+    assert [method for method, _ in client.requests].count("turn/start") == 2
+
+
+@pytest.mark.asyncio
+async def test_send_message_rejection_waits_for_completion_and_ignores_nonterminal_notifications(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """steer拒否後は同turnの非終端通知でreplyへ切り替えず、完了だけを待つ。"""
+    manager = subject.AppServerManager()
+    client = SteerClient(error=subject.JsonRpcResponseError("turn/steer", -32600, "turn is not active"))
+
+    async def ensure_client() -> SteerClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    monkeypatch.setattr(subject, "DEFAULT_WAIT_TIMEOUT", 1.0)
+    await manager.start("開始", str(tmp_path))
+    manager.client = cast(subject.JsonRpcProcess, client)
+    turn_id = manager.sessions["thread-1"].turn_id
+    task = asyncio.create_task(manager.send_message("thread-1", "追加指示"))
+    await client.steer_called.wait()
+
+    for message in (
+        {
+            "method": "turn/plan/updated",
+            "params": {"threadId": "thread-1", "turnId": turn_id, "plan": [{"id": "plan"}]},
+        },
+        {
+            "method": "item/agentMessage/delta",
+            "params": {"threadId": "thread-1", "turnId": turn_id, "delta": "途中"},
+        },
+        {
+            "method": "turn/diff/updated",
+            "params": {"threadId": "thread-1", "turnId": turn_id, "diff": "diff"},
+        },
+    ):
+        await manager._handle_notification(message)  # noqa: SLF001
+    await asyncio.sleep(0)
+    assert not task.done()
+
+    await manager._handle_notification(  # noqa: SLF001
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": turn_id,
+                "item": {"type": "agentMessage", "text": "完了結果"},
+            },
+        }
+    )
+    await manager._handle_notification(  # noqa: SLF001
+        {
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": turn_id, "status": "completed", "error": None},
+            },
+        }
+    )
+
+    response = await task
+    assert response["delivery"] == "reply_started"
+    assert response["previous_result"]["agent_message"] == "完了結果"
+    assert [method for method, _ in client.requests].count("turn/steer") == 1
+    assert [method for method, _ in client.requests].count("thread/resume") == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_client_failure_takes_precedence_over_result_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """steer拒否待機中のclient failureでは、同時成立した結果をreplyへ使わない。"""
+    manager = subject.AppServerManager()
+    client = SteerClient(error=subject.JsonRpcResponseError("turn/steer", -32600, "turn is not active"))
+
+    async def ensure_client() -> SteerClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    monkeypatch.setattr(subject, "DEFAULT_WAIT_TIMEOUT", 1.0)
+    await manager.start("開始", str(tmp_path))
+    manager.client = cast(subject.JsonRpcProcess, client)
+    task = asyncio.create_task(manager.send_message("thread-1", "追加指示"))
+    await client.steer_called.wait()
+    client._closed = True  # noqa: SLF001
+    await manager._handle_client_failure(subject.AppServerError("connection lost"))  # noqa: SLF001
+
+    with pytest.raises(subject.JsonRpcResponseError, match="turn is not active"):
+        await task
+    assert [method for method, _ in client.requests].count("thread/resume") == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_reply_failures_are_structured_and_ambiguous_start_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """自動replyの確定失敗とturn/start応答喪失を配送種別で区別する。"""
+    for client, expected_delivery in (
+        (FailingReplyClient(), "reply_failed"),
+        (ReplyResponseLossClient(), "reply_ambiguous"),
+    ):
+        manager = subject.AppServerManager()
+
+        async def ensure_client(client: FakeClient = client) -> FakeClient:
+            return client
+
+        monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+        await manager.start("開始", str(tmp_path))
+        session = manager.sessions["thread-1"]
+        _seed_completed_reply_session(session)
+        _mark_result_available(session)
+        session.result_retrieved = False
+        response = await manager.send_message("thread-1", "続行")
+
+        assert response["delivery"] == expected_delivery
+        assert response["previous_result"]["agent_message"] == "previous result"
+        assert response["previous_result"]["status"] == "completed"
+        if expected_delivery == "reply_ambiguous":
+            assert response["status"] == "running"
+            assert response["result_available"] is False
+            assert session.turn_start_ambiguous is True
+        else:
+            assert response["status"] == "failed"
+            assert response["result_available"] is True
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_send_message_reply_turn_start_missing_id_is_ambiguous(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """自動replyのturn/start応答のID欠落を非終端の曖昧状態へ保つ。"""
+    manager = subject.AppServerManager()
+    client = MissingTurnIdResponseClient(missing_on_turn_start=2)
+
+    async def ensure_client() -> MissingTurnIdResponseClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    session = manager.sessions["thread-1"]
+    _seed_completed_reply_session(session)
+    _mark_result_available(session)
+    session.result_retrieved = False
+
+    response = await manager.send_message("thread-1", "続行")
+
+    assert response["delivery"] == "reply_ambiguous"
+    assert response["result_available"] is False
+    assert session.turn_start_ambiguous is True
+    assert response["error"] == {"message": "turn/start returned no turn.id"}
+
+
+@pytest.mark.asyncio
+async def test_old_turn_notifications_do_not_overwrite_new_turn_state(tmp_path: pathlib.Path) -> None:
+    """新turnが開始済みなら古いturnの完了・item通知を状態へ反映しない。"""
+    manager = subject.AppServerManager()
+    manager.sessions["thread-1"] = subject.SessionState("thread-1", str(tmp_path), turn_id="turn-new")
+
+    for message in (
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-old",
+                "item": {"type": "agentMessage", "text": "古い結果"},
+            },
+        },
+        {
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-old", "status": "completed", "error": None},
+            },
+        },
+    ):
+        await manager._handle_notification(message)  # noqa: SLF001
+
+    status = manager.status("thread-1")
+    assert status["status"] == "running"
+    assert status["turn_id"] == "turn-new"
+    assert status["result_available"] is False
+    assert manager.sessions["thread-1"].agent_message == ""
+
+
+@pytest.mark.asyncio
 async def test_start_reply_serializes_same_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """同一sessionの並行replyを直列化し、後続要求を二重開始しない。"""
     manager = subject.AppServerManager()
@@ -554,6 +936,66 @@ async def test_start_reply_serializes_same_session(monkeypatch: pytest.MonkeyPat
         await second
     assert [method for method, _ in client.requests].count("thread/resume") == 1
     assert [method for method, _ in client.requests].count("turn/start") == 2
+
+
+@pytest.mark.asyncio
+async def test_send_message_and_start_reply_serialize_terminal_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """自動replyと明示replyの競合を同じsession lockで直列化する。"""
+    manager = subject.AppServerManager()
+    client = BlockingReplyClient()
+
+    async def ensure_client() -> BlockingReplyClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    session = manager.sessions["thread-1"]
+    _seed_completed_reply_session(session)
+    _mark_result_available(session)
+    first = asyncio.create_task(manager.send_message("thread-1", "自動継続"))
+    await client.reply_turn_started.wait()
+    second = asyncio.create_task(manager.start_reply("thread-1", "明示継続"))
+    await asyncio.sleep(0)
+    assert not second.done()
+
+    client.release_reply_turn.set()
+    assert (await first)["delivery"] == "reply_started"
+    with pytest.raises(ValueError, match="still running"):
+        await second
+    assert [method for method, _ in client.requests].count("thread/resume") == 1
+    assert [method for method, _ in client.requests].count("turn/start") == 2
+
+
+@pytest.mark.asyncio
+async def test_multiple_send_messages_preserve_order_and_current_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """同じactive turnへの複数追加指示をsession lockで順序付ける。"""
+    manager = subject.AppServerManager()
+    client = SteerClient()
+
+    async def ensure_client() -> SteerClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    manager.client = cast(subject.JsonRpcProcess, client)
+    turn_id = manager.sessions["thread-1"].turn_id
+    client.steer_response = {"turnId": turn_id}
+
+    responses = await asyncio.gather(
+        manager.send_message("thread-1", "追加1"),
+        manager.send_message("thread-1", "追加2"),
+    )
+
+    assert [response["delivery"] for response in responses] == ["steered", "steered"]
+    assert [params["input"][0]["text"] for method, params in client.requests if method == "turn/steer"] == [
+        "追加1",
+        "追加2",
+    ]
+    assert all(response["turn_id"] == turn_id for response in responses)
 
 
 @pytest.mark.asyncio
@@ -596,6 +1038,28 @@ async def test_start_reply_failure_marks_failed_and_wakes_waiters(
     assert status_after_result["error"] == result["error"]
     with pytest.raises(ValueError, match="ambiguous"):
         await manager.start_reply("thread-1", "再試行")
+
+
+@pytest.mark.asyncio
+async def test_start_reply_turn_start_missing_id_is_ambiguous(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """明示replyのturn/start応答のID欠落を非終端の曖昧状態へ保つ。"""
+    manager = subject.AppServerManager()
+    client = MissingTurnIdResponseClient(missing_on_turn_start=2)
+
+    async def ensure_client() -> MissingTurnIdResponseClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("開始", str(tmp_path))
+    session = manager.sessions["thread-1"]
+    _seed_completed_reply_session(session)
+    _mark_result_available(session)
+
+    response = await manager.start_reply("thread-1", "続行")
+
+    assert response["result_available"] is False
+    assert session.turn_start_ambiguous is True
+    assert response["error"] == {"message": "turn/start returned no turn.id"}
 
 
 @pytest.mark.asyncio

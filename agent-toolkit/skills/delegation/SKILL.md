@@ -78,6 +78,8 @@ user-invocable: false
 作業ディレクトリは受領済みの絶対パスをそのまま渡す。受信者に自己解決させない。
 Codex App Server MCPの`codex_start`では`cwd`へ作業ディレクトリの絶対パスを必ず渡す（未指定・相対パスの呼び出しは遮断される）。
 継続時は`codex_start_reply`へ既存の`session_id`を渡し、`codex_result`で先行turnを回収してから同じsessionを再開する。
+同じ担当へ追加指示を送る場合は`codex_send_message(session_id, prompt)`を使う。実行中turnにはsteerし、
+終端結果が回収可能な場合は直前結果を`previous_result`へ退避して同じsessionのreplyを開始する。
 `codex_wait`は公開terminal statusになるまで待機し、`result_available`で結果回収可否を明示する。
 `status`が`failed`でも`result_available=false`なら`turn/completed`未受信のため`codex_result`は拒否される。
 `result_available=true`を確認してから結果を回収する。

@@ -62,11 +62,14 @@ Claude Codeからの長時間Codex委譲は、plugin同梱の薄いMCPサーバ�
 JSON-RPCのreaderとsession単位の状態・待機者を管理する。Unix限定の共有daemonや永続job registryは
 使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、LinuxとWindowsで寿命契約を揃えられる。
 
-公開APIは`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`の5つに固定する。
+公開APIは`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`、`codex_send_message`の6つに固定する。
 `codex_start`は絶対`cwd`を受け取り、`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`を
 内部で固定してApp Serverへ渡し、完了を待たず`session_id`を返す。`codex_wait`の既定timeoutは300秒で、
 期限到達時はturnを継続したまま状態を返す。`codex_result`で`turn/completed`を回収した後だけ、
-同じ`session_id`へ`codex_start_reply`で次turnを開始できる。
+同じ`session_id`へ`codex_start_reply`で次turnを開始できる。`codex_send_message`は実行中turnへ
+`turn/steer`を送り、終端で結果が回収可能な場合は直前結果を`previous_result`へ退避して同じlock内でreplyを開始する。
+steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
+reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
 App Serverからのserver requestは公開toolを増やさず、elicitationをcancelし、それ以外を非対話の
 非対応エラーとして応答する。承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、

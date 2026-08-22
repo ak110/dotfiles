@@ -208,6 +208,13 @@ class TestTestExecution:
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
         assert re.fullmatch(matcher, _PYFLTR_RUN_FOR_AGENT_TOOL_NAME) is not None
+        assert (
+            re.fullmatch(
+                matcher,
+                "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+            )
+            is not None
+        )
 
     @pytest.mark.parametrize(
         "tool_name",
@@ -221,6 +228,12 @@ class TestTestExecution:
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         assert re.fullmatch(matcher, tool_name) is not None
+
+    def test_posttooluse_failure_matcher_excludes_codex_send_message(self):
+        """追加指示の失敗はPostToolUseFailure matcherへ配送しない。"""
+        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
+        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message") is None
 
 
 class TestPlanModeSkillInvocation:
@@ -1206,7 +1219,7 @@ class TestAmendPendingStatusCheck:
 
 
 class TestWarnCodexRemoteChange:
-    """`mcp__plugin_agent-toolkit_codex_app_server__codex_start`/`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`呼び出し前後のリモート参照比較による警告。
+    """Codex開始・継続呼び出し前後のリモート参照比較による警告。
 
     codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
     行う事象への機械チェック（事後検知）のうち、比較・警告・後始末側（PostToolUse）を検証する。
@@ -1305,6 +1318,269 @@ class TestWarnCodexRemoteChange:
         reply_post = _run(self._result_payload(sid), state_dir=tmp_path)
         assert reply_post.returncode == 0
         assert "remote refs changed" in reply_post.stdout
+
+    def test_send_message_preserves_active_thread_snapshot(self, tmp_path: pathlib.Path):
+        """実行中turnへの`codex_send_message`成功では既存snapshotを維持する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "send-active"
+        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+        send_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message"
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        assert (
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "tool_response": {
+                        "structuredContent": {
+                            "session_id": "thread-1",
+                            "turn_id": "turn-1",
+                            "status": "running",
+                        }
+                    },
+                    "isSidechain": True,
+                },
+                state_dir=tmp_path,
+            ).returncode
+            == 0
+        )
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": send_tool,
+                    "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
+                    "tool_use_id": "send-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        assert (
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_name": send_tool,
+                    "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
+                    "tool_use_id": "send-1",
+                    "tool_response": {
+                        "structuredContent": {
+                            "session_id": "thread-1",
+                            "turn_id": "turn-1",
+                            "status": "running",
+                        }
+                    },
+                    "isSidechain": True,
+                },
+                state_dir=tmp_path,
+            ).returncode
+            == 0
+        )
+        state = _read_state(tmp_path, sid)
+        assert set(state["codex_remote_snapshot_by_key"]) == {"start-1"}
+        assert state["codex_app_server_sessions"]["thread-1"]["snapshot_key"] == "start-1"
+
+    def test_send_message_records_new_snapshot_after_result_recovery(self, tmp_path: pathlib.Path):
+        """結果回収後の`codex_send_message`によるreply開始ではsnapshotを更新する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "send-reply"
+        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+        send_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message"
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        assert (
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_name": start_tool,
+                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                    "tool_use_id": "start-1",
+                    "tool_response": {
+                        "structuredContent": {
+                            "session_id": "thread-1",
+                            "turn_id": "turn-1",
+                            "status": "running",
+                        }
+                    },
+                    "isSidechain": True,
+                },
+                state_dir=tmp_path,
+            ).returncode
+            == 0
+        )
+        assert _run(self._result_payload(sid), state_dir=tmp_path).returncode == 0
+        assert _read_state(tmp_path, sid)["codex_remote_snapshot_by_key"] == {}
+        assert (
+            _run_pretooluse(
+                {
+                    "session_id": sid,
+                    "tool_name": send_tool,
+                    "tool_input": {"session_id": "thread-1", "prompt": "続行"},
+                    "tool_use_id": "send-1",
+                    "isSidechain": True,
+                },
+                tmp_path,
+            ).returncode
+            == 0
+        )
+        assert (
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_name": send_tool,
+                    "tool_input": {"session_id": "thread-1", "prompt": "続行"},
+                    "tool_use_id": "send-1",
+                    "tool_response": {
+                        "structuredContent": {
+                            "session_id": "thread-1",
+                            "turn_id": "turn-2",
+                            "status": "running",
+                        }
+                    },
+                    "isSidechain": True,
+                },
+                state_dir=tmp_path,
+            ).returncode
+            == 0
+        )
+        state = _read_state(tmp_path, sid)
+        assert state["codex_remote_snapshot_by_key"]["send-1"]["cwd"] == str(repo)
+        assert state["codex_app_server_sessions"]["thread-1"]["snapshot_key"] == "send-1"
+
+    @pytest.mark.parametrize(
+        ("tool_name", "status", "delivery"),
+        [
+            ("codex_send_message", "failed", "reply_failed"),
+            ("codex_send_message", "running", "reply_ambiguous"),
+            ("codex_send_message", "running", "reply_started"),
+            ("codex_start_reply", "failed", None),
+        ],
+    )
+    def test_new_turn_response_resets_result_retrieved_and_blocks_stop(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        status: str,
+        delivery: str | None,
+    ) -> None:
+        """開始応答の成否にかかわらず、新turnの結果回収までStopを遮断する。"""
+        sid = f"new-turn-{tool_name}-{delivery or 'direct-failure'}"
+        snapshot_key = "start-1"
+        state = {
+            "session_review_invoked": {"agent-toolkit:session-review": True},
+            "codex_app_server_sessions": {
+                "thread-1": {
+                    "session_id": "thread-1",
+                    "status": "completed",
+                    "turn_id": "turn-1",
+                    "result_retrieved": True,
+                    "snapshot_key": snapshot_key,
+                }
+            },
+            "codex_remote_snapshot_by_key": {
+                snapshot_key: {"cwd": str(tmp_path), "snapshot": {}},
+            },
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            json.dumps(state, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        structured = {
+            "session_id": "thread-1",
+            "turn_id": "turn-2",
+            "status": status,
+        }
+        if delivery is not None:
+            structured["delivery"] = delivery
+
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": f"mcp__plugin_agent-toolkit_codex_app_server__{tool_name}",
+                "tool_input": {"session_id": "thread-1", "prompt": "続行"},
+                "tool_response": {"structuredContent": structured},
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        record = _read_state(tmp_path, sid)["codex_app_server_sessions"]["thread-1"]
+        assert record["result_retrieved"] is False
+        blocked = _run_stop({"session_id": sid}, tmp_path)
+        assert blocked.returncode == 0
+        assert json.loads(blocked.stdout)["decision"] == "block"
+        assert "codex_result" in json.loads(blocked.stdout)["reason"]
+
+    def test_steered_send_message_preserves_result_retrieved(self, tmp_path: pathlib.Path) -> None:
+        """同一turnを継続する`steered`応答は既存の回収状態を変更しない。"""
+        sid = "send-steered-preserves-result"
+        state = {
+            "codex_app_server_sessions": {
+                "thread-1": {
+                    "session_id": "thread-1",
+                    "status": "completed",
+                    "turn_id": "turn-1",
+                    "result_retrieved": True,
+                    "snapshot_key": "start-1",
+                }
+            },
+            "codex_remote_snapshot_by_key": {
+                "start-1": {"cwd": str(tmp_path), "snapshot": {}},
+            },
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            json.dumps(state, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+                "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-1",
+                        "turn_id": "turn-1",
+                        "status": "running",
+                        "delivery": "steered",
+                    }
+                },
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        record = _read_state(tmp_path, sid)["codex_app_server_sessions"]["thread-1"]
+        assert record["result_retrieved"] is True
 
     def test_reply_failure_blocks_stop_until_result_and_keeps_snapshot(self, tmp_path: pathlib.Path):
         """内部開始失敗は未回収としてStopを遮断し、結果回収時だけsnapshotを比較・解放する。"""

@@ -20,10 +20,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_codex_app_server__codex_start / codex_start_reply:
+mcp__plugin_agent-toolkit_codex_app_server__codex_start / codex_start_reply / codex_send_message:
 
 - メインセッションで`agent-toolkit:delegation`の起動記録が無いCodex App Server MCP呼び出しのブロック (block)
-- App Serverへ渡す絶対`cwd`と`codex_start_reply`のprompt/sessionの検査 (block)
+- App Serverへ渡す絶対`cwd`と`codex_start_reply`/`codex_send_message`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
 codex_status / codex_wait / codex_result:
@@ -293,7 +293,10 @@ def _handle_codex_tool(
     if tool_name == _CODEX_APP_SERVER_START_TOOL:
         if _check_codex_app_server_cwd(tool_input):
             return 2
-    elif tool_name == _CODEX_APP_SERVER_REPLY_TOOL and _check_codex_app_server_reply_input(session_id, tool_input):
+    elif tool_name in {
+        _CODEX_APP_SERVER_REPLY_TOOL,
+        _CODEX_APP_SERVER_SEND_TOOL,
+    } and _check_codex_app_server_continuation_input(session_id, tool_input, tool_name):
         return 2
     if tool_name in _CODEX_APP_SERVER_START_TOOLS:
         emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})
@@ -1231,6 +1234,7 @@ def _check_body_section_reference_exists(tool_name: str, content: str, file_path
 _CODEX_APP_SERVER_NAMESPACE = "mcp__plugin_agent-toolkit_codex_app_server__"
 _CODEX_APP_SERVER_START_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start"
 _CODEX_APP_SERVER_REPLY_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start_reply"
+_CODEX_APP_SERVER_SEND_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_send_message"
 _CODEX_APP_SERVER_OBSERVE_TOOLS = frozenset(
     {
         f"{_CODEX_APP_SERVER_NAMESPACE}codex_status",
@@ -1238,7 +1242,9 @@ _CODEX_APP_SERVER_OBSERVE_TOOLS = frozenset(
         f"{_CODEX_APP_SERVER_NAMESPACE}codex_result",
     }
 )
-_CODEX_APP_SERVER_START_TOOLS = frozenset({_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL})
+_CODEX_APP_SERVER_START_TOOLS = frozenset(
+    {_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL, _CODEX_APP_SERVER_SEND_TOOL}
+)
 _CODEX_APP_SERVER_TOOL_NAMES = _CODEX_APP_SERVER_START_TOOLS | _CODEX_APP_SERVER_OBSERVE_TOOLS
 # App Serverのthread/startへ渡す既存の全権限契約。新しいhook入力へ転記せず、
 # `codex_app_server_mcp.py`のturn/startでは`dangerFullAccess`を指定する。
@@ -1257,15 +1263,31 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
     抽出できない場合（主セッション自身の直接呼び出し時）は`session_id`とする。
 
     比較対象のcwdはcodexが実際に実行される作業ディレクトリでなければならない。
-    `codex_start`はtool入力の絶対cwdを使い、`codex_start_reply`は初回結果が
+    `codex_start`はtool入力の絶対cwdを使い、`codex_start_reply`/`codex_send_message`は初回結果が
     保存したsession_id→cwd対応表から復元する。`payload["cwd"]`（呼び出し元Claude
     sessionのcwd）は使わない。Codex実行対象と異なり得るためである。
     cwdを取得できない場合は比較対象が無いため記録をスキップする。
     """
     agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
     tool_use_id = payload.get("tool_use_id")
-    key = tool_use_id if isinstance(tool_use_id, str) and tool_use_id else (agent_id or f"session:{session_id}")
     state = read_state(session_id)
+    key = tool_use_id if isinstance(tool_use_id, str) and tool_use_id else (agent_id or f"session:{session_id}")
+    entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
+    sessions = state.get("codex_app_server_sessions")
+    remote_session_id = tool_input.get("session_id") if isinstance(tool_input, dict) else None
+    record = sessions.get(remote_session_id) if isinstance(sessions, dict) and isinstance(remote_session_id, str) else None
+    existing_key = record.get("snapshot_key") if isinstance(record, dict) else None
+    if tool_name != _CODEX_APP_SERVER_START_TOOL:
+        if isinstance(existing_key, str) and isinstance(entries, dict) and existing_key in entries:
+            return
+        if (
+            tool_name == _CODEX_APP_SERVER_SEND_TOOL
+            and isinstance(record, dict)
+            and not (record.get("status") in {"completed", "failed", "interrupted"} and record.get("result_retrieved") is True)
+        ):
+            return
+    if isinstance(entries, dict) and key in entries:
+        return
     if tool_name == _CODEX_APP_SERVER_START_TOOL:
         cwd_raw = tool_input.get("cwd")
     else:
@@ -3380,19 +3402,20 @@ def _check_codex_app_server_cwd(tool_input: dict) -> bool:
     return True
 
 
-def _check_codex_app_server_reply_input(session_id: str, tool_input: dict) -> bool:
-    """`codex_start_reply`の入力と保存済みcwdを検査する。"""
+def _check_codex_app_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> bool:
+    """`codex_start_reply`/`codex_send_message`の入力と保存済みcwdを検査する。"""
+    display_name = tool_name.rsplit("__", 1)[-1]
     prompt = tool_input.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         print(
-            _llm_notice("blocked: codex_start_reply requires a non-empty prompt."),
+            _llm_notice(f"blocked: {display_name} requires a non-empty prompt."),
             file=sys.stderr,
         )
         return True
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         print(
-            _llm_notice("blocked: codex_start_reply requires a non-empty session_id."),
+            _llm_notice(f"blocked: {display_name} requires a non-empty session_id."),
             file=sys.stderr,
         )
         return True
@@ -3401,7 +3424,7 @@ def _check_codex_app_server_reply_input(session_id: str, tool_input: dict) -> bo
     if not isinstance(cwd_map, dict) or not isinstance(cwd_map.get(remote_session_id), str):
         print(
             _llm_notice(
-                "blocked: codex_start_reply session_id has no stored absolute cwd."
+                f"blocked: {display_name} session_id has no stored absolute cwd."
                 " Call codex_start successfully before continuing the session."
             ),
             file=sys.stderr,

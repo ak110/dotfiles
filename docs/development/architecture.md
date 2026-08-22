@@ -116,12 +116,15 @@ Claude Code pluginの`.mcp.json`だけが`codex_app_server`を定義し、
 CodexまたはAgent PluginsへClaude専用MCPを再公開しない。
 
 MCPサーバーは必要時に公式の`codex app-server --stdio`を子プロセスとして起動し、
-`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`を公開する。
+`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`、`codex_send_message`を公開する。
 `codex_start`は絶対`cwd`と固定の`approvalPolicy=never`・`dangerFullAccess`でthreadを開始し、
 完了を待たず`session_id`を返す。状態応答は`result_available`で結果回収可否を明示する。
 `codex_wait`は公開terminal statusで復帰するが、`status=failed`でも`result_available=false`なら
 `turn/completed`未受信のため`codex_result`が拒否される。`result_available=true`を確認してから結果を回収する。
 `codex_result`で先行turnを回収してから同じsessionを継続する。
+同じ担当へ追加指示を返す`codex_send_message`は、実行中turnではsteerし、終端結果が回収可能な場合は
+直前結果を`previous_result`へ含めてreplyを開始する。既存turnのsnapshotは実行中steerで上書きせず、
+結果回収後のreply開始時だけ新しい比較対象を作成する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 Claude Code pluginの`SessionStart`フックは、User scopeへ残る旧`codex mcp-server`定義を読み取り専用で診断する。

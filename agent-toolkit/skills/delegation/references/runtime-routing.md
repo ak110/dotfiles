@@ -6,11 +6,14 @@
 ## 経路
 
 - 専用agent定義がある作業は、その定義を実装する実行機能で起動する
-- Codex App Server MCPを利用できるClaude Code環境では、ToolSearchで5つの実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+- Codex App Server MCPを利用できるClaude Code環境では、ToolSearchで6つの実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`codex_start(prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`model`と`effort`は両方指定するか、両方省略する
   - `approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`はMCPサーバーが固定してApp Serverへ渡す。呼び出し側は値を上書きしない
   - `codex_status`または`codex_wait`で進捗を観測し、`codex_result`で終端結果を回収する。`codex_wait`の既定timeoutは300秒である
-  - Codexは先行turnの`codex_result`回収後に`codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する
+  - 同じ担当へ追加指示を返す場合は`codex_send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端結果が回収可能な場合は
+    直前結果を`previous_result`へ退避して同じ`session_id`のreplyを開始する
+  - 明示的に結果を回収してから次turnを開始する経路では、先行turnの`codex_result`回収後に
+    `codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する
   - fast担当、fast担当からfix担当への昇格、別の実装単位、統合後レビュー修正及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
@@ -40,7 +43,7 @@
 
 1. 設定値を`engine`、`model`、`effort`へ分解する。
 2. `engine=codex`ではCodex App Server MCPを使う。`codex_start`へ`model`と`effort`を両方渡し、開始後は`codex_status`・`codex_wait`・`codex_result`で状態と結果を回収する。
-   agents定義の`tools`で5つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
+   agents定義の`tools`で6つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
 3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
@@ -51,7 +54,8 @@
    継続直前に工程別モデル設定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、
    現在のthreadの起動に用いた実効3値と比較する。
    3値がすべて一致し、いずれも`engine=codex`の場合だけ同一threadへ継続接続する。
-   Codexは先行turnの`codex_result`回収後に、同じ`session_id`へ`codex_start_reply`で継続接続する。
+   同じ担当へ追加指示を返す場合は`codex_send_message(session_id, prompt)`で実行中turnへのsteer又は終端後のreplyを選択する。
+   明示的に次turnを開始する場合、Codexは先行turnの`codex_result`回収後に同じ`session_id`へ`codex_start_reply`で継続接続する。
    いずれかが異なる場合は同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。
    Claudeは完了済み識別子を再利用せず新規起動する。
    レビュー修正の書込担当は、保持した初回実装担当の実効`engine`・`model`・`effort`と、

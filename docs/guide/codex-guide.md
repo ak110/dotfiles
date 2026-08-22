@@ -75,12 +75,14 @@ Claude Code pluginの`codex_app_server`は、Claude Codeセッションの要求
 MCPプロセスの終了時に自身が起動した子プロセスだけを終了する。
 
 Claude Code側では`codex_start`、`codex_status`、`codex_wait`、`codex_result`、
-`codex_start_reply`を使用する。`codex_start`の`cwd`は既存ディレクトリの絶対パスとし、
+`codex_start_reply`、`codex_send_message`を使用する。`codex_start`の`cwd`は既存ディレクトリの絶対パスとし、
 `codex_wait`は公開terminal statusで復帰する。状態応答の`result_available`で結果回収可否を確認でき、既定timeoutは300秒である。
 非対応server requestや未知methodで`status=failed`を返しても`result_available=false`なら`turn/completed`未受信のため
 `codex_result`が拒否される。`result_available=true`を確認してから`codex_result`を実行する。
 `codex_result`で終端結果を回収してから、
-同じ`session_id`へ`codex_start_reply`で継続する。Codex向けmanifestは共有MCPの`pyfltr`だけを含み、
+同じ`session_id`へ`codex_start_reply`で継続する。同じ担当へ追加指示を返す場合は
+`codex_send_message(session_id, prompt)`を使い、実行中turnへsteerするか、回収可能な終端結果を退避してreplyを開始する。
+Codex向けmanifestは共有MCPの`pyfltr`だけを含み、
 Claude Code専用の`codex_app_server`をCodex自身へ提供しない。
 
 App Serverから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、

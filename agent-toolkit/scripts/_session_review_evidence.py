@@ -728,6 +728,7 @@ _CODEX_TOOL_NAMES = frozenset(
         "mcp__plugin_agent-toolkit_codex_app_server__codex_wait",
         "mcp__plugin_agent-toolkit_codex_app_server__codex_result",
         "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+        "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
     }
 )
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)

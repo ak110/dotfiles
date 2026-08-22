@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__plugin_agent-toolkit_codex_app_server__codex_start|mcp__plugin_agent-toolkit_codex_app_server__codex_status|mcp__plugin_agent-toolkit_codex_app_server__codex_wait|mcp__plugin_agent-toolkit_codex_app_server__codex_result|mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply|mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__plugin_agent-toolkit_codex_app_server__codex_start|mcp__plugin_agent-toolkit_codex_app_server__codex_status|mcp__plugin_agent-toolkit_codex_app_server__codex_wait|mcp__plugin_agent-toolkit_codex_app_server__codex_result|mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply|mcp__plugin_agent-toolkit_codex_app_server__codex_send_message|mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
         "hooks": [
           {
             "type": "command",

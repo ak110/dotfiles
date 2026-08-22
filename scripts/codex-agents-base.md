@@ -113,7 +113,7 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | `TaskStop` | `interrupt_agent`で対象エージェントを停止し、`list_agents`で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | `wait_agent`で更新を待ち、`list_agents`で稼働中の一覧を取得し、`interrupt_agent`で中断する |
-| `mcp__plugin_agent-toolkit_codex_app_server__codex_start`・`codex_status`・`codex_wait`・`codex_result`・`codex_start_reply`（Codex App Serverへの委譲・継続） | 自身がCodexであるためMCP経由の自己呼び出しは不要。`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲し、`followup_task`で継続する |
+| `mcp__plugin_agent-toolkit_codex_app_server__codex_start`・`codex_status`・`codex_wait`・`codex_result`・`codex_start_reply`・`codex_send_message`（Codex App Serverへの委譲・継続） | 自身がCodexであるためMCP経由の自己呼び出しは不要。`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲し、同じ担当へ追加指示を返す場合は`followup_task`で継続する |
 | `Monitor` | `list_agents`と`wait_agent`、または実行セッションの待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは利用者へ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む |
@@ -122,6 +122,9 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | `WebFetch`・`WebSearch` | ネイティブ機能を利用 |
 | `EnterPlanMode`・`ExitPlanMode` | `plan modeの扱い`節を参照 |
 | `ScheduleWakeup`・`CronCreate` | 現行セッションで公開された能力を確認できない場合は、手動運用又は利用者への依頼へ切り替える |
+
+Claude側の`codex_send_message`は、対象turnが実行中か待機中かを呼出側で判定せず、同じ担当への`followup_task`へ対応させる。
+Codex側の`send_message`はturnを開始しない単純な伝達に限り、追加指示の配送・再開は`followup_task`で行う。
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
 

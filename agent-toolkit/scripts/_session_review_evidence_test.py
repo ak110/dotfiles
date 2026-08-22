@@ -2599,6 +2599,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     notified_id = "33333333-3333-4333-8333-333333333333"
     quoted_id = "22222222-2222-4222-8222-222222222222"
     missing_id = "44444444-4444-4444-8444-444444444444"
+    sent_id = "55555555-5555-4555-8555-555555555555"
     codex_home = tmp_path / "codex"
     rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
     rollout_dir.mkdir(parents=True)
@@ -2624,6 +2625,9 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     _write_rollout(
         codex_home, notified_id, [("2026-08-19T00:00:00Z", {"input_tokens": 8, "output_tokens": 9, "total_tokens": 17})]
     )
+    _write_rollout(
+        codex_home, sent_id, [("2026-08-19T00:00:00Z", {"input_tokens": 10, "output_tokens": 11, "total_tokens": 21})]
+    )
     notification = (
         "<task-notification>\n"
         "<source>codex/codex</source>\n"
@@ -2641,6 +2645,12 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                 "message": {"role": "user", "content": "引用本文にはthreadId: " + quoted_id},
             },
             _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-missing", missing_id),
+            _codex_tool_use_entry(
+                "2026-08-19T00:00:01Z",
+                "call-send",
+                sent_id,
+                tool_name="mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+            ),
             {
                 "type": "assistant",
                 "timestamp": "2026-08-19T00:00:01Z",
@@ -2674,8 +2684,8 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     threads = _events_by_kind(events, "stats-codex-thread")
-    assert [event["thread"] for event in threads] == [notified_id, thread_id]
-    assert [event["tokens"]["total_tokens"] for event in threads] == [17, 9]
+    assert [event["thread"] for event in threads] == [sent_id, notified_id, thread_id]
+    assert [event["tokens"]["total_tokens"] for event in threads] == [21, 17, 9]
     assert quoted_id not in {event["thread"] for event in threads}
     assert missing_id not in {event["thread"] for event in threads}
 
@@ -2887,7 +2897,13 @@ def _write_rollout(codex_home: pathlib.Path, thread_id: str, usages: list[tuple[
     )
 
 
-def _codex_tool_use_entry(timestamp: str, call_id: str, thread_id: str) -> dict:
+def _codex_tool_use_entry(
+    timestamp: str,
+    call_id: str,
+    thread_id: str,
+    *,
+    tool_name: str = "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+) -> dict:
     """Codex委譲のtool_useを持つassistantエントリを作成する。"""
     return {
         "type": "assistant",
@@ -2897,7 +2913,7 @@ def _codex_tool_use_entry(timestamp: str, call_id: str, thread_id: str) -> dict:
             "content": [
                 {
                     "type": "tool_use",
-                    "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                    "name": tool_name,
                     "id": call_id,
                     "input": {"threadId": thread_id},
                 }

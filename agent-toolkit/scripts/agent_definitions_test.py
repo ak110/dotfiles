@@ -1026,6 +1026,7 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert metadata["effort"] == "medium"
     assert metadata["skills"] == ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"]
     assert "mcp__plugin_agent-toolkit_codex_app_server__codex_start" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
     assert "実装タスク文書、作成規範スキル、レビュータスク文書は読み込まず" in text
     assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは書込担当へ割り当てる" in text
@@ -1150,6 +1151,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     assert metadata["model"] == "sonnet"
     assert metadata["skills"] == ["agent-toolkit:delegation"]
     assert "mcp__plugin_agent-toolkit_codex_app_server__codex_start" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message" in metadata["tools"]
     for phrase in (
         "自身は成果物、計画ファイル、キューを変更せず",
         "受信者専用のタスク文書と作成規範スキルは読み込まず",

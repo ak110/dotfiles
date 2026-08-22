@@ -177,8 +177,12 @@ _DELEGATION_SKILL_NAMES = frozenset({"agent-toolkit:delegation", "delegation"})
 _CODEX_APP_SERVER_NAMESPACE = "mcp__plugin_agent-toolkit_codex_app_server__"
 _CODEX_APP_SERVER_START_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start"
 _CODEX_APP_SERVER_REPLY_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_start_reply"
+_CODEX_APP_SERVER_SEND_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_send_message"
 _CODEX_APP_SERVER_RESULT_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_result"
-_CODEX_APP_SERVER_START_TOOLS = frozenset({_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL})
+_CODEX_APP_SERVER_START_TOOLS = frozenset(
+    {_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL, _CODEX_APP_SERVER_SEND_TOOL}
+)
+_CODEX_APP_SERVER_FAILURE_TOOLS = frozenset({_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL})
 _CODEX_APP_SERVER_TOOL_NAMES = frozenset(
     {
         _CODEX_APP_SERVER_START_TOOL,
@@ -186,6 +190,7 @@ _CODEX_APP_SERVER_TOOL_NAMES = frozenset(
         f"{_CODEX_APP_SERVER_NAMESPACE}codex_wait",
         _CODEX_APP_SERVER_RESULT_TOOL,
         _CODEX_APP_SERVER_REPLY_TOOL,
+        _CODEX_APP_SERVER_SEND_TOOL,
     }
 )
 
@@ -294,16 +299,28 @@ def _record_codex_session_cwd(session_id: str, payload: dict) -> None:
     remote_session_id = structured.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         return
+    state = read_state(session_id)
     snapshot_key = _codex_snapshot_key(payload, session_id)
+    sessions = state.get(_CODEX_SESSION_STATE_KEY)
+    previous = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
+    previous_key = previous.get("snapshot_key") if isinstance(previous, dict) else None
+    entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
+    if isinstance(previous_key, str) and isinstance(entries, dict) and previous_key in entries:
+        snapshot_key = previous_key
     tool_input = payload.get("tool_input")
     cwd = tool_input.get("cwd") if isinstance(tool_input, dict) else None
     if not isinstance(cwd, str) or not cwd:
-        entries = read_state(session_id).get(_CODEX_REMOTE_SNAPSHOT_KEY)
         recorded = entries.get(snapshot_key) if isinstance(entries, dict) else None
         cwd = recorded.get("cwd") if isinstance(recorded, dict) else None
     if not isinstance(cwd, str) or not cwd:
         return
-    _record_codex_session_state(session_id, structured, cwd=cwd, snapshot_key=snapshot_key)
+    _record_codex_session_state(
+        session_id,
+        structured,
+        cwd=cwd,
+        snapshot_key=snapshot_key,
+        reset_result_retrieved=structured.get("delivery") != "steered",
+    )
 
 
 def _codex_snapshot_key(payload: dict, session_id: str) -> str:
@@ -427,6 +444,7 @@ def _record_codex_session_state(
     *,
     cwd: str | None = None,
     snapshot_key: str | None = None,
+    reset_result_retrieved: bool | None = None,
 ) -> None:
     """Codex App Serverの各tool応答をStop判定用状態へ記録する。"""
     remote_session_id = structured.get("session_id")
@@ -449,8 +467,10 @@ def _record_codex_session_state(
             record["cwd"] = cwd
         if isinstance(snapshot_key, str) and snapshot_key:
             record["snapshot_key"] = snapshot_key
-        if structured.get("status") in {"running"}:
+        if reset_result_retrieved is True or (reset_result_retrieved is None and structured.get("status") in {"running"}):
             record["result_retrieved"] = False
+        if structured.get("status") in {"running"}:
+            record.pop("error", None)
         if structured.get("status") in {"completed", "failed", "interrupted"} and structured.get("error") is not None:
             record["error"] = structured.get("error")
         if structured.get("agent_message") is not None:
@@ -550,7 +570,7 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] |
     event_name = payload.get("hook_event_name", "")
     if event_name == "PermissionDenied":
         return None
-    if event_name == "PostToolUseFailure" and tool_name not in _CODEX_APP_SERVER_START_TOOLS:
+    if event_name == "PostToolUseFailure" and tool_name not in _CODEX_APP_SERVER_FAILURE_TOOLS:
         return None
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
@@ -846,7 +866,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             codex_notice = _warn_codex_remote_change(session_id, payload)
             if codex_notice is not None:
                 notices.append(codex_notice)
-        elif tool_name in (_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL):
+        elif tool_name in (_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL, _CODEX_APP_SERVER_SEND_TOOL):
             _record_codex_session_cwd(session_id, payload)
         else:
             _record_codex_session_state(session_id, structured)

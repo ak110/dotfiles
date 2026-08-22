@@ -8,7 +8,7 @@
 このMCPは、Claude CodeのMCPプロセスと同じ寿命で
 ``codex app-server --stdio``を1つだけ所有する。App ServerのJSON-RPC通信は
 標準ライブラリで扱い、MCP層へ公開する操作を開始・状態照会・待機・結果回収・
-同一threadの継続の5つに限定する。状態照会と待機の応答には、結果を回収できる状態かを
+同一threadの継続と実行中turnへの追加指示の6つに限定する。状態照会と待機の応答には、結果を回収できる状態かを
 示す``result_available``を含める。
 
 App Serverのwire protocolはJSON-RPC 2.0に準拠するが、stdioの各行では
@@ -87,6 +87,10 @@ class JsonRpcResponseError(AppServerError):
         self.data = data
 
 
+class TurnStartResponseError(AppServerError):
+    """turn/startの応答形式が不正である。要求拒否を確認できないため、client生存中は受理状態が曖昧である。"""
+
+
 @dataclasses.dataclass
 class SessionState:
     """MCPから観測できる1つのCodex threadと最新turnの状態。"""
@@ -113,7 +117,7 @@ class SessionState:
     turn_completed: bool = False
     failure_pending_completion: bool = False
     updated_at: str = dataclasses.field(default_factory=_utc_now)
-    reply_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
+    turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
 
     @property
     def terminal(self) -> bool:
@@ -168,6 +172,14 @@ def _turn_id_from(params: Any) -> str | None:
         if isinstance(value, str) and value:
             return value
     return None
+
+
+def _response_turn_id(response: Any) -> str | None:
+    """JSON-RPC responseからsteer対象turn IDを取り出す。"""
+    if not isinstance(response, dict):
+        return None
+    turn_id = response.get("turnId")
+    return turn_id if isinstance(turn_id, str) and turn_id else None
 
 
 class JsonRpcProcess:
@@ -435,7 +447,7 @@ class AppServerManager:
         """結果取得済みのthreadを再開して新しいturnを開始する。"""
         _validate_prompt(prompt)
         session = self._get_session(session_id)
-        async with session.reply_lock:
+        async with session.turn_control_lock:
             if not session.terminal:
                 raise ValueError("the previous Codex turn is still running")
             if not session.result_retrieved:
@@ -449,33 +461,148 @@ class AppServerManager:
                 and not session.reply_retryable
             ):
                 raise ValueError("codex_start_reply cannot retry an ambiguous turn/start failure")
-            self._begin_reply(session)
-            try:
-                client = await self._ensure_client()
-                resume_params: dict[str, Any] = {
-                    "threadId": session.session_id,
-                    "cwd": session.cwd,
-                    "approvalPolicy": "never",
-                    "sandbox": "danger-full-access",
+            delivery, status, error = await self._start_reply_locked(session, prompt)
+            if delivery == "reply_failed" and error is not None:
+                raise error
+            return status
+
+    async def send_message(self, session_id: str, prompt: str) -> dict[str, Any]:
+        """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
+        _validate_prompt(prompt)
+        session = self._get_session(session_id)
+        async with session.turn_control_lock:
+            if session.result_available:
+                previous_result = self._capture_result(session)
+                delivery, status, error = await self._start_reply_locked(session, prompt)
+                if error is not None and delivery not in {"reply_failed", "reply_ambiguous"}:
+                    raise error from None
+                return {
+                    "delivery": delivery,
+                    "previous_result": previous_result,
+                    **status,
                 }
-                if session.model is not None:
-                    resume_params["model"] = session.model
-                resume_response = await client.request("thread/resume", resume_params)
-                resumed_thread = resume_response.get("thread")
-                if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
-                    raise AppServerError("thread/resume returned an unexpected thread.id")
-            except Exception as exc:
-                await self._mark_failed(session, exc, retryable=True)
-                raise
+            if session.terminal:
+                raise ValueError("the Codex turn has not completed with a recoverable result")
+            if not session.turn_id:
+                raise ValueError("the active Codex turn has no turn_id")
+            client = self.client
+            if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
+                raise AppServerError("Codex App Server client is unavailable for steering")
+            expected_turn_id = session.turn_id
             try:
-                await self._start_turn(session, prompt, client)
-            except Exception as exc:
-                if self._turn_start_response_is_ambiguous(client, exc):
-                    await self._mark_turn_start_ambiguous(session, exc)
-                    return session.public_status()
-                await self._mark_failed(session, exc, retryable=False)
-                raise
-            return session.public_status()
+                response = await client.request(
+                    "turn/steer",
+                    {
+                        "threadId": session.session_id,
+                        "expectedTurnId": expected_turn_id,
+                        "input": [{"type": "text", "text": prompt}],
+                    },
+                )
+            except JsonRpcResponseError as exc:
+                outcome = await self._wait_after_steer_rejection(session, expected_turn_id, client)
+                if outcome == "completed":
+                    previous_result = self._capture_result(session)
+                    delivery, status, error = await self._start_reply_locked(session, prompt)
+                    if error is not None and delivery not in {"reply_failed", "reply_ambiguous"}:
+                        raise error from None
+                    return {
+                        "delivery": delivery,
+                        "previous_result": previous_result,
+                        **status,
+                    }
+                raise exc from None
+            response_turn_id = _response_turn_id(response)
+            if response_turn_id != expected_turn_id:
+                raise AppServerError(
+                    f"turn/steer returned an unexpected turn.id: expected {expected_turn_id}, got {response_turn_id or 'none'}"
+                )
+            session.touch()
+            return {
+                "delivery": "steered",
+                "previous_result": None,
+                **session.public_status(),
+            }
+
+    async def _start_reply_locked(
+        self,
+        session: SessionState,
+        prompt: str,
+    ) -> tuple[str, dict[str, Any], BaseException | None]:
+        """lock取得済みのsessionへreplyを開始し、公開状態と失敗分類を返す。"""
+        self._begin_reply(session)
+        try:
+            client = await self._ensure_client()
+            resume_params: dict[str, Any] = {
+                "threadId": session.session_id,
+                "cwd": session.cwd,
+                "approvalPolicy": "never",
+                "sandbox": "danger-full-access",
+            }
+            if session.model is not None:
+                resume_params["model"] = session.model
+            resume_response = await client.request("thread/resume", resume_params)
+            resumed_thread = resume_response.get("thread")
+            if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
+                raise AppServerError("thread/resume returned an unexpected thread.id")
+        except Exception as exc:
+            await self._mark_failed(session, exc, retryable=True)
+            return "reply_failed", session.public_status(), exc
+        try:
+            await self._start_turn(session, prompt, client)
+        except Exception as exc:
+            if self._turn_start_response_is_ambiguous(client, exc):
+                await self._mark_turn_start_ambiguous(session, exc)
+                return "reply_ambiguous", session.public_status(), None
+            await self._mark_failed(session, exc, retryable=False)
+            return "reply_failed", session.public_status(), exc
+        return "reply_started", session.public_status(), None
+
+    @staticmethod
+    def _capture_result(session: SessionState) -> dict[str, Any]:
+        """codex_resultと同じ形で直前結果を退避し、回収済みとして記録する。"""
+        session.result_retrieved = True
+        session.touch()
+        return {
+            "session_id": session.session_id,
+            "turn_id": session.turn_id,
+            "status": session.status,
+            "result_available": session.result_available,
+            "agent_message": session.agent_message,
+            "error": session.error,
+            "updated_at": session.updated_at,
+        }
+
+    async def _wait_after_steer_rejection(
+        self,
+        session: SessionState,
+        expected_turn_id: str,
+        client: Any,
+    ) -> str:
+        """steer拒否後に終端競合だけを待ち、優先順位付きの判定結果を返す。"""
+        timed_out = False
+
+        def _changed() -> bool:
+            return bool(
+                getattr(client, "closed", False)
+                or getattr(client, "reader_failure", None) is not None
+                or session.turn_id != expected_turn_id
+                or session.result_available
+            )
+
+        try:
+            async with self._condition:
+                await asyncio.wait_for(self._condition.wait_for(_changed), timeout=DEFAULT_WAIT_TIMEOUT)
+        except TimeoutError:
+            timed_out = True
+        if getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
+            return "client_failure"
+        if session.turn_id != expected_turn_id:
+            return "turn_changed"
+        if timed_out:
+            return "timeout"
+        if session.result_available:
+            return "completed"
+        return "timeout"
 
     @staticmethod
     def _initialize_turn(session: SessionState) -> None:
@@ -578,7 +705,7 @@ class AppServerManager:
         turn = response.get("turn")
         turn_id = turn.get("id") if isinstance(turn, dict) else None
         if not isinstance(turn_id, str) or not turn_id:
-            raise AppServerError("turn/start returned no turn.id")
+            raise TurnStartResponseError("turn/start returned no turn.id")
         session.turn_id = turn_id
         if session.reply_attempted:
             session.reply_turn_started = True
@@ -610,17 +737,7 @@ class AppServerManager:
         session = self._get_session(session_id)
         if not session.result_available:
             raise ValueError("the Codex turn has not completed")
-        session.result_retrieved = True
-        session.touch()
-        return {
-            "session_id": session.session_id,
-            "turn_id": session.turn_id,
-            "status": session.status,
-            "result_available": session.result_available,
-            "agent_message": session.agent_message,
-            "error": session.error,
-            "updated_at": session.updated_at,
-        }
+        return self._capture_result(session)
 
     def _get_session(self, session_id: str) -> SessionState:
         if not isinstance(session_id, str) or not session_id:
@@ -642,6 +759,9 @@ class AppServerManager:
         session = self._find_session(params)
         if session is None:
             return
+        notification_turn_id = self._notification_turn_id(params)
+        if notification_turn_id is not None and session.turn_id and notification_turn_id != session.turn_id:
+            return
         turn = params.get("turn")
         if method == "turn/started":
             if isinstance(turn, dict):
@@ -650,6 +770,7 @@ class AppServerManager:
                     session.turn_id = turn_id
                     if session.reply_attempted:
                         session.reply_turn_started = True
+                    session.turn_start_ambiguous = False
             if not session.failure_pending_completion:
                 session.status = "running"
         elif method == "turn/completed":
@@ -810,6 +931,19 @@ class AppServerManager:
         return None
 
     @staticmethod
+    def _notification_turn_id(params: dict[str, Any]) -> str | None:
+        """通知本文に含まれるturn IDを取得する。"""
+        turn_id = _turn_id_from(params)
+        if turn_id is not None:
+            return turn_id
+        turn = params.get("turn")
+        if isinstance(turn, dict):
+            turn_id = turn.get("id")
+            if isinstance(turn_id, str) and turn_id:
+                return turn_id
+        return None
+
+    @staticmethod
     def _consume_items(session: SessionState, items: Any) -> None:
         if not isinstance(items, list):
             return
@@ -934,6 +1068,12 @@ async def codex_result(session_id: str) -> dict[str, Any]:
 async def codex_start_reply(session_id: str, prompt: str) -> dict[str, Any]:
     """結果回収済みthreadへ同じ会話の次turnを開始する。"""
     return await _MANAGER.start_reply(session_id, prompt)
+
+
+@mcp.tool(name="codex_send_message", structured_output=True)
+async def codex_send_message(session_id: str, prompt: str) -> dict[str, Any]:
+    """実行中turnへ追加指示を送り、終端競合時は同じthreadを自動継続する。"""
+    return await _MANAGER.send_message(session_id, prompt)
 
 
 def main() -> None:
