@@ -29,6 +29,8 @@ _CONFIG_PATH = Path.home() / ".claude.json"
 # settings.json の hooks 配下から除去する command 部分文字列。
 # share/claude_settings_json_managed.* から廃止したエントリを列挙する。
 # union マージは削除を反映しないため、ここで明示的に除去する。
+# Windows向けPreToolUseは、複合構文を外側のシェルへ渡さず、`-File`でPowerShellスクリプトを起動する。
+# `-Command`の引用符は起動経路によって除去の有無が異なり、argvへ引用符が残る経路では実行されない。
 _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "claude_hook_call_formatter.py",
     # 2026-04: 統合フック (claude_hook_pretooluse.py) に統合したため旧エントリを除去
@@ -50,6 +52,8 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_posttooluse.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
+    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py",
+    'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
     # 2026-08: 振り返り入口をagent-toolkit側へ統合したため個人Stop hookを除去
     "claude_hook.py stop;",
 )

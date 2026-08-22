@@ -127,7 +127,12 @@ class TestSyncWorktreeWithUpstream:
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append(list(cmd))
-            stdout = "origin/master" if cmd[1:2] == ["symbolic-ref"] else ""
+            if cmd[1:2] == ["symbolic-ref"]:
+                stdout = "origin/master"
+            elif cmd[1:2] == ["remote"]:
+                stdout = "origin\n"
+            else:
+                stdout = ""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -137,12 +142,84 @@ class TestSyncWorktreeWithUpstream:
         assert ["git", "rebase", "origin/master"] in calls
         assert worktree.is_dir()
 
+    def test_tracking_branch_has_priority_without_origin_head(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """origin/HEADが無くても現在ブランチの追跡先を使って追随する。"""
+        worktree = self._make_worktree(tmp_path)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_process_loop, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_process_loop, "_validate_existing_worktree", lambda *_args: True)
+
+        def fake_git_output(args: list[str], cwd: pathlib.Path) -> str | None:
+            del cwd
+            if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+                return "origin/feature"
+            if args == ["remote"]:
+                return "origin"
+            if args == ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
+                raise AssertionError("追跡先が解決できた場合はorigin/HEADへ後退しないこと")
+            return None
+
+        monkeypatch.setattr(_process_loop, "_git_output", fake_git_output)
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
+            calls.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        result = _process_loop._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert result == worktree
+        assert ["git", "fetch", "origin"] in calls
+        assert ["git", "rebase", "origin/feature"] in calls
+
+    def test_fetches_tracking_remote_before_rebase(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """origin以外の追跡remoteをfetchし、同じ追跡先へrebaseする。"""
+        worktree = self._make_worktree(tmp_path)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_process_loop, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_process_loop, "_validate_existing_worktree", lambda *_args: True)
+
+        def fake_git_output(args: list[str], cwd: pathlib.Path) -> str | None:
+            del cwd
+            if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+                return "upstream/feature"
+            if args == ["remote"]:
+                return "origin\nupstream"
+            raise AssertionError(args)
+
+        monkeypatch.setattr(_process_loop, "_git_output", fake_git_output)
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
+            calls.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        result = _process_loop._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert result == worktree
+        assert ["git", "fetch", "upstream"] in calls
+        assert ["git", "fetch", "origin"] not in calls
+        assert ["git", "rebase", "upstream/feature"] in calls
+
     def test_reuses_existing_branch_when_worktree_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """worktree未作成でも専用ブランチがあれば同ブランチから作成する。"""
         local_path = tmp_path / "repo"
         worktree = local_path / ".claude" / "worktrees" / "process-loop"
         calls: list[list[str]] = []
-        monkeypatch.setattr(_process_loop, "_git_output", lambda *_args, **_kwargs: "origin/master")
+
+        def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:
+            del cwd
+            return "origin" if args == ["remote"] else "origin/master"
+
+        monkeypatch.setattr(_process_loop, "_git_output", fake_git_output)
         monkeypatch.setattr(_process_loop, "_worktree_is_clean", lambda path: path == worktree)
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -161,7 +238,7 @@ class TestSyncWorktreeWithUpstream:
         monkeypatch.setattr(subprocess, "run", fake_run)
         result = _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert result == (worktree, "origin/master")
+        assert result == worktree
         assert ["git", "worktree", "add", str(worktree), "worktree-process-loop"] in calls
         assert ["git", "rebase", "origin/master"] in calls
 
@@ -212,6 +289,8 @@ class TestSyncWorktreeWithUpstream:
             calls.append(list(cmd))
             if cmd[1:2] == ["symbolic-ref"]:
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout="origin/master", stderr="")
+            if cmd[1:2] == ["remote"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="origin\n", stderr="")
             if cmd[1:3] == ["rebase", "origin/master"]:
                 return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="conflict")
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
@@ -246,7 +325,7 @@ class TestPublicWorktreePreparation:
         worktree_path = local_path / ".claude" / "worktrees" / "custom"
         assert len(session_calls) == 1
         assert session_calls[0]["cwd"] == worktree_path
-        assert "現在のHEADを`origin/main`へ反映" in session_calls[0]["cmd"][-1]
+        assert "現在のHEADを`origin/main`へ反映" not in session_calls[0]["cmd"][-1]
         assert exclude_path.read_text(encoding="utf-8") == "# existing\n/.claude/worktrees/\n"
         assert exclude_path.read_text(encoding="utf-8").splitlines().count("/.claude/worktrees/") == 1
         check_ignore = subprocess.run(

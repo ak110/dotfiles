@@ -35,6 +35,7 @@ _is_ancestor_of_ref = wait_ci._is_ancestor_of_ref  # pylint: disable=protected-a
 _follow_shas = wait_ci._follow_shas  # pylint: disable=protected-access
 _all_cancelled = wait_ci._all_cancelled  # pylint: disable=protected-access
 _all_success = wait_ci._all_success  # pylint: disable=protected-access
+_github_ci_configured = wait_ci._github_ci_configured  # pylint: disable=protected-access
 
 _FULL_SHA = "a" * 40
 
@@ -300,6 +301,156 @@ class TestRegistrationGrace:
             )
             == wait_ci.EXIT_CI_FAILED
         )
+
+
+class TestGithubCiConfiguration:
+    """GitHub tree応答によるCI定義不在の即時判定と後退経路。"""
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"truncated": False, "tree": []},
+            {"truncated": False, "tree": [{"type": "tree", "path": ".github/workflows"}]},
+        ],
+    )
+    def test_no_workflow_blob_is_confirmed_absent(self, monkeypatch: pytest.MonkeyPatch, payload: dict) -> None:
+        def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            assert command == [
+                "gh",
+                "api",
+                "-X",
+                "GET",
+                "repos/owner/repository/git/trees/sha1?recursive=1",
+            ]
+            return subprocess.CompletedProcess(command, 0, json.dumps(payload).encode(), b"")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        assert _github_ci_configured("owner/repository", "sha1", 10.0) is False
+
+    def test_workflow_blob_is_confirmed_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        payload = {"truncated": False, "tree": [{"type": "blob", "path": ".github/workflows/test.yml"}]}
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, json.dumps(payload).encode(), b""),
+        )
+        assert _github_ci_configured("owner/repository", "sha1", 10.0) is True
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            ".github/workflows/README.md",
+            ".github/workflows/archive/disabled.yml",
+            ".github/workflows/archive/disabled.yaml",
+        ],
+    )
+    def test_non_workflow_blob_is_confirmed_absent(self, monkeypatch: pytest.MonkeyPatch, path: str) -> None:
+        payload = {"truncated": False, "tree": [{"type": "blob", "path": path}]}
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, json.dumps(payload).encode(), b""),
+        )
+        assert _github_ci_configured("owner/repository", "sha1", 10.0) is False
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            {"truncated": True, "tree": []},
+            b"not-json",
+        ],
+    )
+    def test_uncertain_tree_response_falls_back(self, monkeypatch: pytest.MonkeyPatch, response: object) -> None:
+        def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            stdout = response if isinstance(response, bytes) else json.dumps(response).encode()
+            return subprocess.CompletedProcess(command, 0, stdout, b"")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        assert _github_ci_configured("owner/repository", "sha1", 10.0) is None
+
+    @pytest.mark.parametrize("status", [403, 404, 422])
+    def test_tree_cli_failure_falls_back_to_registration_grace(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        status: int,
+    ) -> None:
+        """tree取得のCLI失敗時はrun登録猶予へ後退する。"""
+
+        def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if command[1:2] == ["api"]:
+                return subprocess.CompletedProcess(command, 1, b"", f"HTTP {status}".encode())
+            return subprocess.CompletedProcess(command, 0, b"[]", b"")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        assert (
+            wait_ci.wait_for_ci(
+                "sha1",
+                10.0,
+                1.0,
+                0.0,
+                False,
+                10.0,
+                repository="owner/repository",
+                ref="refs/heads/main",
+                source_ref="HEAD",
+                baseline_ids=frozenset(),
+                now_fn=lambda: 0.0,
+                sleep_fn=lambda _seconds: None,
+            )
+            == wait_ci.EXIT_NO_RUNS
+        )
+
+    def test_non_github_forge_skips_tree_query_and_uses_existing_wait(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GitHub以外ではtreeを照会せず既存のrun登録猶予を使う。"""
+        monkeypatch.setattr(
+            wait_ci,
+            "_github_ci_configured",
+            lambda *_args: (_ for _ in ()).throw(AssertionError("GitHub treeを照会しないこと")),
+        )
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, b"[]", b""),
+        )
+        assert (
+            wait_ci.wait_for_ci(
+                "sha1",
+                10.0,
+                1.0,
+                0.0,
+                False,
+                10.0,
+                repository="group/repository",
+                ref="refs/heads/main",
+                source_ref="HEAD",
+                baseline_ids=frozenset(),
+                forge="gitlab",
+                now_fn=lambda: 0.0,
+                sleep_fn=lambda _seconds: None,
+            )
+            == wait_ci.EXIT_NO_RUNS
+        )
+
+    def test_no_definition_exits_before_run_listing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(wait_ci, "_github_ci_configured", lambda *_args: False)
+        result = wait_ci.wait_for_ci(
+            "sha1",
+            10.0,
+            1.0,
+            0.0,
+            False,
+            10.0,
+            repository="owner/repository",
+            ref="refs/heads/main",
+            source_ref="HEAD",
+            baseline_ids=frozenset(),
+            now_fn=lambda: 0.0,
+            sleep_fn=lambda _seconds: None,
+        )
+        assert result == wait_ci.EXIT_NO_CI_CONFIG
 
 
 class TestPushIdentityDifferential:

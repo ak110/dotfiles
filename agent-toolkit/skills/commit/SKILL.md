@@ -71,7 +71,10 @@ commit直前に次を実施する。
 - `git stash`: `git stash list`で対象を特定し、`git stash show --include-untracked -p <識別子>`で
   追跡分と未追跡分の双方の内容を確認する（未追跡分だけを確認する場合は`--only-untracked`を使う）。
   追跡分と未追跡分のそれぞれについて採用差分か破棄差分かの帰属を確定し、
-  採用差分であれば統合先への反映を確認したうえで`git stash drop <識別子>`により識別子を指定して削除する
+  採用差分であれば統合先への反映を確認したうえで`atk worktree-stash drop '<識別子>'`により
+  固定ロック下のOID再照合と削除を完了する
+  - worktree固有refへ退避した場合は`git stash show --include-untracked -p refs/worktree/<退避ラベル>`で照合し、
+    `atk worktree-stash drop refs/worktree/<退避ラベル>`で同じ削除経路を使う
 - 別パスへの複製: `diff`で複製元と複製先の内容を照合する
 
 いずれかの帰属または反映状況が未確定である間は削除しない。

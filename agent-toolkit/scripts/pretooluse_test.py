@@ -575,6 +575,52 @@ class TestHomePathCheck:
         assert "home directory" not in _agent_messages(result)
 
 
+class TestRecursiveHomeSearchCheck:
+    """高容量の利用者領域を無限定に再帰検索する実行位置の警告。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "rg keyword ~/.local",
+            "grep -r keyword ~/.npm",
+            "grep -R keyword ~/.codex",
+            "rg keyword ~/.local ~/.codex",
+            "rg /tmp ~/.local",
+        ],
+    )
+    def test_warns_for_unlimited_recursive_home_search(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "high-capacity user directory" in _additional_context(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "rg --files ~/.local",
+            "rg keyword ~/.local/share/foo",
+            "rg keyword ~/.local /tmp/repository",
+            "rg --ignore-file ~/.local keyword /tmp/repository",
+            "rg --ignore-file=~/.local keyword /tmp/repository",
+            "rg -g ~/.local keyword /tmp/repository",
+            "grep -r --include ~/.local keyword /tmp/repository",
+            "grep -r --exclude-dir=~/.local keyword /tmp/repository",
+            "rg --ignore-file /tmp/ignore keyword ~/.local",
+            "rg --type-add custom:*.txt keyword ~/.local",
+            "rg -g '*.py' keyword ~/.local",
+            "rg --max-count 2 keyword ~/.local",
+            "grep -r --include '*.py' keyword ~/.local",
+            "grep -r --exclude-dir cache keyword ~/.local",
+            "grep --recursive keyword ~/.local",
+            "echo rg keyword ~/.local",
+            "grep keyword ~/.codex",
+        ],
+    )
+    def test_allows_bounded_or_non_execution_position_search(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "high-capacity user directory" not in _additional_context(result)
+
+
 @pytest.fixture(name="deny_substring")
 def _deny_substring_fixture() -> str:
     """辞書ファイルから口語表現の検出サンプルを生成する。
@@ -1525,6 +1571,9 @@ class TestBashSleepPollPattern:
             # ループ開始セグメントの直前にある待機は、後続がループでも検出する。
             ("sleep 570; while true; do sleep 1; done", "sleep-poll-first-22"),
             ("sleep 420; until test -f /tmp/marker; do sleep 1; done", "sleep-poll-first-23"),
+            ("while true; do sleep 60; git status --short; done", "sleep-poll-first-24"),
+            ("while :; do sleep 60; git status --short; done", "sleep-poll-first-25"),
+            ("for item in a b; do sleep 60; git status --short; done", "sleep-poll-first-26"),
         ],
     )
     def test_first_detection_warns_and_allows(
@@ -1565,15 +1614,28 @@ class TestBashSleepPollPattern:
             # 閾値未満の待機は、後続が状態確認コマンドでない限り通過させる。
             ("sleep 5; echo done", "sleep-poll-allow-25"),
             ("sleep 29; echo done", "sleep-poll-allow-26"),
-            # 条件成立で抜けるループ内の長い待機は、ループ予約語の位置を問わず通過させる。
+            # 条件成立で抜けるループ内の長い待機は通過させる。
             ("until test -f /tmp/marker; do echo waiting; sleep 60; done", "sleep-poll-allow-27"),
-            ("while true; do echo waiting; sleep 60; done", "sleep-poll-allow-28"),
-            ("for i in 1 2 3; do echo $i; sleep 60; done", "sleep-poll-allow-29"),
+            ("while test ! -f /tmp/marker; do echo waiting; sleep 60; done", "sleep-poll-allow-28"),
+            ("while true; do echo waiting; break; sleep 60; done", "sleep-poll-allow-29"),
+            ("for i in 1 2 3; do echo $i; break; sleep 60; done", "sleep-poll-allow-30"),
+            ("while :; do echo waiting; exit 0; sleep 60; done", "sleep-poll-allow-36"),
+            ("while true; do echo waiting; return 0; sleep 60; done", "sleep-poll-allow-37"),
             ("attempt=0; until test -f /tmp/marker; do echo waiting; sleep 60; done", "sleep-poll-allow-30"),
             # `done`を伴わない入力では、ループ予約語以降の全体をループ本体として通過させる。
             ("until test -f /tmp/marker; do sleep 60; echo waiting", "sleep-poll-allow-31"),
             # ループ本体にある閾値以上の待機は、直後に状態確認コマンドが続く場合も通過させる。
-            ("while true; do echo waiting; sleep 570; git status --short; done", "sleep-poll-allow-32"),
+            ("while test ! -f /tmp/marker; do echo waiting; sleep 570; git status --short; done", "sleep-poll-allow-32"),
+            ("kill 123; sleep 1; ps -p 123", "sleep-poll-allow-33"),
+            ("while true; do echo waiting; then break; sleep 60; done", "sleep-poll-allow-34"),
+            (
+                "while true; do echo outer; while test -f /tmp/marker; do break; done; break; sleep 60; done",
+                "sleep-poll-allow-35",
+            ),
+            (
+                "while true; do while test -f /tmp/marker; do echo inner; done; sleep 60; git status --short; done",
+                "sleep-poll-allow-38",
+            ),
             ("printf 'sleep 1; git status'", "sleep-poll-allow-4"),
             ("sleep 1 || git status --short", "sleep-poll-allow-5"),
             ("sleep 1 | cat", "sleep-poll-allow-6"),

@@ -77,6 +77,9 @@ Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.jso
 
 `atk mq process-loop`のClaude起動では、利用者設定に依存せず`--settings`で同じ値を明示する。
 CLI設定はユーザー設定より優先されるため、配布設定を持たないプラグイン単体利用でも起動時の値を揃えられる。
+Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
+`CLAUDE_STREAM_IDLE_TIMEOUT_MS`及び`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
+該当する障害を実測した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
 
 ## mise latestの非ログイン再評価
 

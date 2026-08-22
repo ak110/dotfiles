@@ -168,7 +168,7 @@ class TestProcessArchive:
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"keep.txt"}
 
-    def test_ignore_dirs_skips_extraction(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_ignore_dirs_are_removed_after_flattening(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -188,6 +188,60 @@ class TestProcessArchive:
         entries = _zip_entries(tmp_path / "foo.zip")
         # `keep/` だけが残り、単一ルートが平坦化されて `a.txt` のみになる
         assert entries == {"a.txt"}
+
+    def test_ignore_dir_only_archive_promotes_contents_before_removal(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """無視対象ディレクトリだけを含む入力でも、初回平坦化後の内容を残す。"""
+        archive = tmp_path / "foo.zip"
+        _make_zip(archive, {"NoText/b.txt": b"b"})
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
+
+        exit_code = _run_main(monkeypatch, ["--no-trash", "--config", str(config_yaml), str(archive)])
+
+        assert exit_code == 0
+        assert _zip_entries(tmp_path / "foo.zip") == {"b.txt"}
+
+    def test_ignore_dirs_are_removed_after_flattening_for_libarchive(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """libarchive経路でもignore_dirs除去後に残存階層を平坦化する。"""
+        archive = tmp_path / "foo.tar"
+        _make_tar(
+            archive,
+            {
+                "keep/a.txt": b"a",
+                "NoText/b.txt": b"b",
+            },
+        )
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
+
+        exit_code = _run_main(monkeypatch, ["--no-trash", "--config", str(config_yaml), str(archive)])
+
+        assert exit_code == 0
+        assert _zip_entries(tmp_path / "foo.zip") == {"a.txt"}
+
+    def test_ignore_dir_only_archive_promotes_contents_for_libarchive(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """libarchive経路でも単独の無視対象ラッパー配下をルートへ昇格する。"""
+        archive = tmp_path / "foo.tar"
+        _make_tar(archive, {"NoText/b.txt": b"b"})
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
+
+        exit_code = _run_main(monkeypatch, ["--no-trash", "--config", str(config_yaml), str(archive)])
+
+        assert exit_code == 0
+        assert _zip_entries(tmp_path / "foo.zip") == {"b.txt"}
 
     def test_flatten_single_root(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
@@ -476,6 +530,42 @@ class TestProcessDirectory:
         assert (tmp_path / "bk" / "book").exists()
         assert not src.exists()
 
+    def test_directory_ignore_dirs_are_removed_between_flattening_passes(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ディレクトリ入力でもignore_dirs除去後に残存階層を平坦化する。"""
+        src = tmp_path / "book"
+        (src / "keep").mkdir(parents=True)
+        (src / "NoText").mkdir()
+        (src / "keep" / "01.txt").write_bytes(b"1")
+        (src / "NoText" / "drop.txt").write_bytes(b"drop")
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
+
+        exit_code = _run_main(monkeypatch, ["--no-trash", "--config", str(config_yaml), str(src)])
+
+        assert exit_code == 0
+        assert _zip_entries(tmp_path / "book.zip") == {"01.txt"}
+
+    def test_directory_ignore_dir_only_promotes_contents(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ディレクトリ入力でも単独の無視対象ラッパー配下をルートへ昇格する。"""
+        src = tmp_path / "book"
+        (src / "NoText").mkdir(parents=True)
+        (src / "NoText" / "01.txt").write_bytes(b"1")
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
+
+        exit_code = _run_main(monkeypatch, ["--no-trash", "--config", str(config_yaml), str(src)])
+
+        assert exit_code == 0
+        assert _zip_entries(tmp_path / "book.zip") == {"01.txt"}
+
     def test_directory_input_send2trash(
         self,
         tmp_path: pathlib.Path,
@@ -691,6 +781,40 @@ class TestExtractZipPathSafety:
         assert not (tmp_path / "escape.txt").exists()
 
 
+class TestExtractLibarchivePathSafety:
+    """libarchiveのエントリ名による不正パスを失敗扱いとする挙動の検証。"""
+
+    @pytest.mark.parametrize(
+        ("entry_path", "config_text"),
+        [
+            ("../escaped.txt", None),
+            ("NoText/../../escaped.txt", "ignore_dirs: ['NoText']\n"),
+        ],
+    )
+    def test_unsafe_paths_are_recorded_before_extraction(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        entry_path: str,
+        config_text: str | None,
+    ) -> None:
+        """通常の親参照とignore_dirs配下の親参照を作業領域外へ書き込まない。"""
+        archive = tmp_path / "unsafe.tar"
+        _make_tar(archive, {entry_path: b"escaped", "safe.txt": b"safe"})
+        args = ["--no-trash"]
+        if config_text is not None:
+            config_yaml = tmp_path / "repack-archive.yaml"
+            config_yaml.write_text(config_text, encoding="utf-8")
+            args.extend(["--config", str(config_yaml)])
+        args.append(str(archive))
+
+        exit_code = _run_main(monkeypatch, args)
+
+        assert exit_code == 1
+        assert not (tmp_path / "escaped.txt").exists()
+        assert _zip_entries(tmp_path / "unsafe.zip") == {"safe.txt"}
+
+
 class TestMainFailureSummary:
     """複数 target の失敗集約と終了コードの検証。"""
 
@@ -814,6 +938,77 @@ class TestZeroTargetAfterFilter:
         summary = "\n".join(r.getMessage() for r in caplog.records)
         assert "対象ファイルが0件のためスキップします" in summary
         assert str(empty_dir) in summary
+
+    def test_ignore_dirs_removal_to_zero_restores_original(
+        self,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ignore_dirs除去後に対象0件となるZIPでは原本を復元する。"""
+        archive = tmp_path / "empty.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("root/NoText/drop.txt", b"drop")
+            zf.writestr("root/No_Text/also-drop.txt", b"drop")
+        original = archive.read_bytes()
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
+
+        caplog.set_level(logging.WARNING, logger=repack_archive.logger.name)
+        exit_code = _run_main(monkeypatch, ["--no-trash", "--config", str(config_yaml), str(archive)])
+
+        assert exit_code == 1
+        assert archive.read_bytes() == original
+        assert archive.exists()
+        assert "対象ファイルが0件のためスキップします" in "\n".join(r.getMessage() for r in caplog.records)
+
+    @pytest.mark.parametrize("archive_kind", ["tar", "directory"])
+    def test_ignore_dirs_removal_to_zero_restores_original_for_other_inputs(
+        self,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+        archive_kind: str,
+    ) -> None:
+        """libarchive・ディレクトリ経路でもignore_dirs除去後の原本復元を行う。"""
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
+        if archive_kind == "tar":
+            target = tmp_path / "empty.tar"
+            _make_tar(
+                target,
+                {
+                    "root/NoText/drop.txt": b"drop",
+                    "root/No_Text/also-drop.txt": b"drop",
+                },
+            )
+        else:
+            target = tmp_path / "empty_book"
+            (target / "root" / "NoText").mkdir(parents=True)
+            (target / "root" / "No_Text").mkdir()
+            (target / "root" / "NoText" / "drop.txt").write_bytes(b"drop")
+            (target / "root" / "No_Text" / "also-drop.txt").write_bytes(b"drop")
+        original = (
+            target.read_bytes()
+            if target.is_file()
+            else sorted(
+                (path.relative_to(target).as_posix(), path.read_bytes()) for path in target.rglob("*") if path.is_file()
+            )
+        )
+
+        caplog.set_level(logging.WARNING, logger=repack_archive.logger.name)
+        exit_code = _run_main(monkeypatch, ["--no-trash", "--config", str(config_yaml), str(target)])
+
+        assert exit_code == 1
+        if target.is_file():
+            assert target.read_bytes() == original
+        else:
+            assert target.is_dir()
+            assert (
+                sorted((path.relative_to(target).as_posix(), path.read_bytes()) for path in target.rglob("*") if path.is_file())
+                == original
+            )
+        assert "対象ファイルが0件のためスキップします" in "\n".join(r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="Poppler (pdftoppm) 未導入")

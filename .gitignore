@@ -10,6 +10,7 @@
 /.claude/.format-dirty
 /.claude/scheduled_tasks.lock
 /.claude/settings.local.json
+/.textlintcache
 /.codex/
 /.config/
 /.ipython/

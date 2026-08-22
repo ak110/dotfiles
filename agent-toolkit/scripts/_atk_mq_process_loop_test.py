@@ -689,63 +689,19 @@ class TestProcessLoopPromptAndEnv:
         assert target_repo_id in prompt
         assert "/repo" in prompt
 
-    def test_dotfiles_prompt_declares_publish_destination_without_internal_command(self) -> None:
-        """dotfiles固有worktreeだけに公開先を伝え、内部commandをpromptへ複製しない。"""
+    def test_prompt_does_not_inject_publish_destination(self) -> None:
+        """対象リポジトリ固有の公開先をprocess-loopが目的文へ注入しない。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo/.claude/worktrees/process-loop"),
             "github.com/ak110/dotfiles",
             "claude",
-            publish_destination="origin/master",
         )
 
-        assert "現在のHEADを`origin/master`へ反映" in prompt
+        assert "origin/master" not in prompt
+        assert "公開先" not in prompt
         assert "git push" not in prompt
         assert "commit" not in prompt
         assert "レビュー" not in prompt
-
-    def test_dotfiles_publish_destination_dry_run_targets_master(self, tmp_path: pathlib.Path) -> None:
-        """branch名が異なるworktreeでも、明示した公開先がremoteのmasterへ到達する。"""
-        remote = tmp_path / "remote.git"
-        worktree = tmp_path / "worktree"
-        subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
-        subprocess.run(
-            ["git", "init", "--initial-branch=worktree-process-loop", str(worktree)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(["git", "-C", str(worktree), "config", "user.name", "test"], check=True)
-        subprocess.run(["git", "-C", str(worktree), "config", "user.email", "test@example.invalid"], check=True)
-        (worktree / "tracked.txt").write_text("payload\n", encoding="utf-8")
-        subprocess.run(["git", "-C", str(worktree), "add", "tracked.txt"], check=True)
-        subprocess.run(["git", "-C", str(worktree), "commit", "-m", "test"], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "-C", str(worktree), "remote", "add", "origin", str(remote)], check=True)
-        subprocess.run(["git", "-C", str(worktree), "config", "push.default", "simple"], check=True)
-        subprocess.run(
-            ["git", "-C", str(worktree), "config", "branch.worktree-process-loop.remote", "origin"],
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(worktree), "config", "branch.worktree-process-loop.merge", "refs/heads/master"],
-            check=True,
-        )
-
-        implicit = subprocess.run(
-            ["git", "-C", str(worktree), "push", "--dry-run", "--porcelain"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        explicit = subprocess.run(
-            ["git", "-C", str(worktree), "push", "--dry-run", "--porcelain", "origin", "HEAD:master"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-
-        assert implicit.returncode != 0
-        assert explicit.returncode == 0
-        assert "HEAD:refs/heads/master" in explicit.stdout
 
     @pytest.mark.parametrize(
         ("config_value", "expected_model", "expected_effort"),
@@ -951,9 +907,9 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
         sync_calls: list[tuple[pathlib.Path, str]] = []
 
-        def fake_sync_worktree(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
+        def fake_sync_worktree(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
             sync_calls.append((local_path, worktree_name))
-            return local_path / ".claude" / "worktrees" / worktree_name, "origin/master"
+            return local_path / ".claude" / "worktrees" / worktree_name
 
         monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", fake_sync_worktree)
 
@@ -1139,7 +1095,10 @@ class TestCodexWindowsSessionConfiguration:
 
         shim_dir = pathlib.Path(_process_loop.__file__).resolve().parent / "windows-shims"
         assert pathlib.Path(codex_env["PATH"].split(os.pathsep, maxsplit=1)[0]) == shim_dir
-        assert claude_env == inherited
+        assert claude_env["CLAUDE_CODE_RETRY_WATCHDOG"] == "1"
+        assert "CLAUDE_CODE_RETRY_WATCHDOG" not in codex_env
+        assert "CLAUDE_CODE_RETRY_WATCHDOG" not in posix_env
+        assert claude_env["KEEP"] == inherited["KEEP"]
         assert posix_env == inherited
         assert inherited["PATH"] == os.pathsep.join(("first", "second"))
 
@@ -1431,9 +1390,9 @@ class TestProcessLoopWorktreeOption:
         worktree_path = myrepo / ".claude" / "worktrees" / expected_name
         sync_calls: list[tuple[pathlib.Path, str]] = []
 
-        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
+        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
             sync_calls.append((local_path, worktree_name))
-            return worktree_path, "origin/main"
+            return worktree_path
 
         monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", fake_sync)
 
@@ -1447,7 +1406,7 @@ class TestProcessLoopWorktreeOption:
         assert sync_calls == [(myrepo, expected_name)]
         assert len(claude_calls) == 1
         assert claude_calls[0]["cwd"] == worktree_path
-        assert "現在のHEADを`origin/main`へ反映" in claude_calls[0]["cmd"][-1]
+        assert "現在のHEADを`origin/main`へ反映" not in claude_calls[0]["cmd"][-1]
         assert "--worktree=" not in " ".join(claude_calls[0]["cmd"])
 
     def test_dotfiles_worktree_name_can_be_overridden(
@@ -1479,9 +1438,9 @@ class TestProcessLoopWorktreeOption:
         worktree_path = myrepo / ".claude" / "worktrees" / "custom"
         sync_calls: list[tuple[pathlib.Path, str]] = []
 
-        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
+        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
             sync_calls.append((local_path, worktree_name))
-            return worktree_path, "origin/master"
+            return worktree_path
 
         monkeypatch.setattr(
             _process_loop,
@@ -1497,7 +1456,7 @@ class TestProcessLoopWorktreeOption:
 
         assert sync_calls == [(myrepo, "custom")]
         assert claude_calls[0]["cwd"] == worktree_path
-        assert "現在のHEADを`origin/master`へ反映" in claude_calls[0]["cmd"][-1]
+        assert "現在のHEADを`origin/master`へ反映" not in claude_calls[0]["cmd"][-1]
 
 
 class TestMiseLatestRefresh:
@@ -1675,15 +1634,14 @@ class TestMiseLatestRefresh:
 
         assert refresh_calls == [dotfiles_root, dotfiles_root]
 
-    @pytest.mark.parametrize(("update_returncode", "expected_marker"), [(0, True), (9, False)])
+    @pytest.mark.parametrize("update_returncode", [0, 9])
     def test_session_restart_marks_only_successful_update(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         update_returncode: int,
-        expected_marker: bool,
     ) -> None:
-        """セッション後更新の成否を次の起動に渡し、失敗時はmise再評価を省かない。"""
+        """セッション終了後の再起動では、子セッション後更新の結果を扱わない。"""
         _setup_notes(tmp_path)
         target = tmp_path / "dotfiles-target"
         target.mkdir()
@@ -1695,7 +1653,7 @@ class TestMiseLatestRefresh:
         monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: 1)
         monkeypatch.setattr(_process_loop, "_update_before_session", lambda *_args, **_kwargs: (True, True))
         monkeypatch.setattr(_process_loop, "_refresh_mise_tools", lambda _root: True)
-        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", lambda *_args: (target, "origin/master"))
+        monkeypatch.setattr(_process_loop, "_sync_worktree_with_upstream", lambda *_args: target)
         monkeypatch.setattr(_process_loop.time, "monotonic", lambda: 0.0)
 
         def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1714,7 +1672,7 @@ class TestMiseLatestRefresh:
         with pytest.raises(SystemExit):
             atk.main(["mq", "process-loop", f"--target-repo={target}", "--no-alerts"], home=tmp_path)
 
-        assert restart_kwargs[-1]["mise_refreshed"] is expected_marker
+        assert restart_kwargs[-1]["mise_refreshed"] is False
 
     def test_mise_command_uses_dotfiles_root_and_quiet_mode(
         self,
@@ -1861,7 +1819,7 @@ class TestProcessLoopUpdateAndRestart:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--no-update`未指定でclaude正常終了時にupdate-dotfilesと`os.execv`が呼ばれること。"""
+        """`--no-update`未指定で開始前更新とclaude後の`os.execv`再起動が行われること。"""
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
         _setup_notes(tmp_path)
@@ -1896,7 +1854,7 @@ class TestProcessLoopUpdateAndRestart:
         assert execv_calls[0][1][1:4] == ["run", "--no-project", "--script"]
         assert _command_was_called(subprocess_calls, "update-dotfiles")
         captured = capsys.readouterr()
-        assert "update-dotfilesを実行して" in captured.out
+        assert "process-loopを再起動します。" in captured.out
         # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。
         assert "\033]2;" not in captured.out
         assert "\033]2;" not in captured.err
@@ -1932,7 +1890,7 @@ class TestProcessLoopUpdateAndRestart:
         with pytest.raises(SystemExit):
             atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
 
-        assert len(update_envs) == 2
+        assert len(update_envs) == 1
         for child_env in update_envs:
             assert child_env is not None
             assert "VIRTUAL_ENV" not in child_env
@@ -2091,6 +2049,8 @@ class TestConsoleTitleReset:
                 return subprocess.CompletedProcess(cmd, 0, "worktree-process-loop", "")
             if cmd == ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
                 return subprocess.CompletedProcess(cmd, 0, "origin/master\n", "")
+            if cmd == ["git", "remote"]:
+                return subprocess.CompletedProcess(cmd, 0, "origin\n", "")
             stdout = "1\n" if "rev-list" in cmd else ""
             return subprocess.CompletedProcess(cmd, 0, stdout, "")
 
@@ -2115,7 +2075,12 @@ class TestWorktreeWriterGate:
         local_path.mkdir()
         worktree_path = local_path / ".claude" / "worktrees" / "process-loop"
         calls: list[list[str]] = []
-        monkeypatch.setattr(_process_loop, "_git_output", lambda *_args, **_kwargs: "origin/main")
+
+        def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:
+            del cwd
+            return "origin" if args == ["remote"] else "origin/main"
+
+        monkeypatch.setattr(_process_loop, "_git_output", fake_git_output)
         monkeypatch.setattr(_process_loop, "_worktree_is_clean", lambda path: path == worktree_path)
 
         def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -2127,7 +2092,7 @@ class TestWorktreeWriterGate:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        assert _process_loop._sync_worktree_with_upstream(local_path, "process-loop") == (worktree_path, "origin/main")  # pylint: disable=protected-access  # noqa: SLF001
+        assert _process_loop._sync_worktree_with_upstream(local_path, "process-loop") == worktree_path  # pylint: disable=protected-access  # noqa: SLF001
         assert ["git", "fetch", "origin"] in calls
         assert [
             "git",
@@ -2176,8 +2141,12 @@ class TestWorktreeWriterGate:
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:
             del cwd
+            if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+                return ""
             if args == ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
                 return "origin/main"
+            if args == ["remote"]:
+                return "origin"
             if args == ["rev-parse", "--git-common-dir"]:
                 return str(local_path / ".git")
             if args == ["rev-parse", "--show-toplevel"]:
@@ -2218,7 +2187,7 @@ class TestWorktreeWriterGate:
             atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
         assert entered == ["atk mq process-loop"]
         # 処理前更新・claude起動・終了後更新の3回のsubprocess.runそれぞれに1回ずつ続く。
-        assert title_calls == ["atk mq process-loop"] * 3
+        assert title_calls == ["atk mq process-loop"] * 2
         # 非TTY下での制御文字抑止は`TestProcessLoopUpdateAndRestart.test_update_and_execv_called_by_default`が検証する。
 
 
@@ -2557,10 +2526,9 @@ class TestProcessLoopUrlInput:
             pathlib.Path("/repo"),
             "github.com/ak110/dotfiles",
             "claude",
-            publish_destination="origin/master",
         )
         assert "git worktree内で起動" not in prompt
-        assert "現在のHEADを`origin/master`へ反映" in prompt
+        assert "現在のHEADを`origin/master`へ反映" not in prompt
         assert "git push" not in prompt
         assert "push" not in prompt
 
@@ -2597,9 +2565,9 @@ class TestProcessLoopUrlInput:
         worktree_path = myrepo / ".claude" / "worktrees" / "process-loop"
         sync_calls: list[tuple[pathlib.Path, str]] = []
 
-        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str]:
+        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
             sync_calls.append((local_path, worktree_name))
-            return worktree_path, "origin/master"
+            return worktree_path
 
         monkeypatch.setattr(
             _process_loop,

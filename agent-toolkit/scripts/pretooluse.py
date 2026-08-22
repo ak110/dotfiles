@@ -33,6 +33,7 @@ codex_status / codex_wait / codex_result:
 Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
+- 高容量の利用者領域を無限定に再帰検索する実行位置の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
@@ -344,6 +345,7 @@ def _handle_bash_tool(
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         _check_bash_output_truncation(command),
+        _check_bash_recursive_home_search(command),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -2857,9 +2859,8 @@ def _split_serial_shell_commands(command: str) -> list[str]:
 
 def _is_long_fixed_sleep(command: str) -> bool:
     """コマンドが閾値以上の数値リテラルを与える`sleep`単体であるかを判定する。"""
-    try:
-        args = shlex.split(command, posix=True)
-    except ValueError:
+    args = _command_tokens(command)
+    if args is None:
         return False
     if len(args) != 2 or args[0] != _SLEEP_COMMAND:
         return False
@@ -2868,6 +2869,17 @@ def _is_long_fixed_sleep(command: str) -> bool:
     except ValueError:
         return False
     return seconds >= _LONG_SLEEP_SECONDS
+
+
+def _command_tokens(command: str) -> list[str] | None:
+    """制御構文の接頭予約語を除いたコマンドトークンを返す。"""
+    try:
+        args = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    while args and args[0] in {"do", "then", "else"}:
+        args = args[1:]
+    return args
 
 
 def _first_token(command: str) -> str | None:
@@ -2881,7 +2893,8 @@ def _first_token(command: str) -> str | None:
 
 def _starts_loop_keyword(command: str) -> bool:
     """コマンドの先頭トークンが条件ループの予約語であるかを判定する。"""
-    return _first_token(command) in _LOOP_KEYWORDS
+    tokens = _command_tokens(command) or []
+    return bool(tokens) and tokens[0] in _LOOP_KEYWORDS
 
 
 def _loop_scope_flags(segments: list[str]) -> list[bool]:
@@ -2898,20 +2911,61 @@ def _loop_scope_flags(segments: list[str]) -> list[bool]:
             flags.append(True)
             continue
         flags.append(depth > 0)
-        if depth > 0 and _first_token(segment) == _LOOP_END_KEYWORD:
+        tokens = _command_tokens(segment) or []
+        if depth > 0 and tokens and tokens[0] == _LOOP_END_KEYWORD:
             depth -= 1
     return flags
 
 
-def _is_sleep_poll_pair(left: str, right: str) -> bool:
+def _polling_loop_body_flags(segments: list[str]) -> list[bool]:
+    """入れ子でなく早期離脱を持たない単純ポーリングループの本体範囲を返す。"""
+    flags = [False] * len(segments)
+    start: int | None = None
+    eligible = False
+    nested = False
+    has_early_exit = False
+    depth = 0
+    for index, segment in enumerate(segments):
+        tokens = _command_tokens(segment) or []
+        first = tokens[0] if tokens else None
+        if first in _LOOP_KEYWORDS:
+            if depth == 0:
+                start = index
+                eligible = first == "for" or (first == "while" and tokens[1:] in (["true"], [":"]))
+                nested = False
+                has_early_exit = False
+            else:
+                nested = True
+            depth += 1
+            continue
+        if depth == 0:
+            continue
+        if first == _LOOP_END_KEYWORD:
+            depth -= 1
+            if depth == 0:
+                if start is not None and eligible and not nested and not has_early_exit:
+                    flags[start + 1 : index] = [True] * (index - start - 1)
+                start = None
+            continue
+        if first in {"break", "exit", "return"}:
+            has_early_exit = True
+    if depth == 1 and start is not None and eligible and not nested and not has_early_exit:
+        flags[start + 1 :] = [True] * (len(segments) - start - 1)
+    return flags
+
+
+def _is_sleep_poll_pair(left: str, right: str, *, previous: str | None = None) -> bool:
     """隣接する2コマンドがsleepと読み取り専用状態確認の組であるかを判定する。"""
-    try:
-        left_args = shlex.split(left, posix=True)
-        right_args = shlex.split(right, posix=True)
-    except ValueError:
+    left_args = _command_tokens(left)
+    right_args = _command_tokens(right)
+    if left_args is None or right_args is None:
         return False
     if not left_args or left_args[0] != _SLEEP_COMMAND or not right_args:
         return False
+    if previous is not None:
+        previous_args = _command_tokens(previous) or []
+        if previous_args and previous_args[0] == "kill" and right_args[0] == "ps" and "-p" in right_args[1:]:
+            return False
     if any(tuple(right_args[: len(prefix)]) == prefix for prefix in _POLL_COMMAND_PREFIXES):
         return True
     return tuple(right_args[:1]) == _CURL_COMMAND and not _curl_args_have_write_indicator(right_args[1:])
@@ -2924,9 +2978,17 @@ def _has_foreground_sleep_wait(segments: list[str]) -> bool:
     直後のセグメントは検出条件の判定にだけ用い、その所属は除外条件へ混ぜない。
     """
     in_loop_body = _loop_scope_flags(segments)
+    polling_loop_body = _polling_loop_body_flags(segments)
     return any(
-        not in_loop_body[index]
-        and (_is_long_fixed_sleep(segments[index]) or _is_sleep_poll_pair(segments[index], segments[index + 1]))
+        (polling_loop_body[index] or not in_loop_body[index])
+        and (
+            _is_long_fixed_sleep(segments[index])
+            or _is_sleep_poll_pair(
+                segments[index],
+                segments[index + 1],
+                previous=segments[index - 1] if index > 0 else None,
+            )
+        )
         for index in range(len(segments) - 1)
     )
 
@@ -2941,9 +3003,10 @@ def _check_bash_sleep_poll_pattern(
     検出条件は、閾値以上の`sleep`の直後に任意のコマンドが続く形と、
     閾値未満の`sleep`の直後に読み取り専用の状態確認コマンドが続く形の2つとする。
     前者は待機後に続くコマンドの種類に依存しないため、状態確認コマンド名の追随保守を要しない。
-    条件成立で抜けるループ（`until`・`while`・`for`）の本体、すなわちループ予約語から
-    対応する`done`までの範囲にある`sleep`は検出対象から除く。当該範囲の外にある`sleep`は、
-    同一のBash呼び出しにループが含まれる場合も通常どおり判定する。
+    条件成立で抜けるループ（`until`・条件付き`while`）の本体は検出対象から除く。
+    入れ子でない`for`・`while true`・`while :`の本体は、早期離脱が無い場合だけ検出対象とする。
+    入れ子ループは検出対象から除く。
+    当該範囲の外にある`sleep`は、同一のBash呼び出しにループが含まれる場合も通常どおり判定する。
 
     簡略化: クォート外の`;`・`&&`直列連結だけを検出する,
     既知の限界: サブシェルで包んだ状態確認は検出しない,
@@ -2967,7 +3030,8 @@ def _check_bash_sleep_poll_pattern(
     update_state(session_id, _record_detection)
     guidance = (
         "Use one `until <condition>; do sleep <interval>; done` call, or start the job in\n"
-        "the background and wait once for its completion marker."
+        "the background and wait once for its machine-readable completion marker, or observe\n"
+        "the delegated work with `atk watch`."
     )
     if already_detected:
         print(
@@ -3074,6 +3138,62 @@ def _check_bash_output_truncation(command: str) -> str | None:
         "warn: verification command output is piped through `tail`/`head`, truncating it."
         " Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved"
         " file instead of truncating the live output.",
+        tag="warn",
+    )
+
+
+def _is_high_capacity_home_target(token: str) -> bool:
+    """高容量の利用者領域を表す検索対象かを返す。"""
+    normalized = token.rstrip("/")
+    home = pathlib.Path.home()
+    targets = {
+        str(home),
+        str(home / ".local"),
+        str(home / ".npm"),
+        str(home / ".codex"),
+        "~",
+        "~/.local",
+        "~/.npm",
+        "~/.codex",
+        "$HOME",
+        "$HOME/.local",
+        "$HOME/.npm",
+        "$HOME/.codex",
+        "${HOME}",
+        "${HOME}/.local",
+        "${HOME}/.npm",
+        "${HOME}/.codex",
+    }
+    return normalized in targets
+
+
+def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
+    """オプションの無い単純な再帰検索が高容量領域だけを対象とするかを返す。"""
+    if len(tokens) < 3:
+        return False
+    if tokens[0] == "rg":
+        arguments = tokens[1:]
+    elif tokens[0] == "grep" and tokens[1] in {"-r", "-R"}:
+        arguments = tokens[2:]
+    else:
+        return False
+    if len(arguments) < 2 or any(token.startswith("-") for token in arguments):
+        return False
+    paths = arguments[1:]
+    return all(_is_high_capacity_home_target(path) for path in paths)
+
+
+def _check_bash_recursive_home_search(command: str) -> str | None:
+    """高容量の利用者領域を無限定に再帰検索する実行位置へ警告を返す。"""
+    if not any(
+        segment.resolved and _pipeline_has_recursive_home_search(segment.tokens)
+        for pipeline in _extract_execution_pipelines(command)
+        for segment in pipeline
+    ):
+        return None
+    return _llm_notice(
+        "warn: recursive search targets a high-capacity user directory. "
+        "Limit the path to a repository or a narrower subdirectory before running `rg`/recursive `grep`.",
         tag="warn",
     )
 

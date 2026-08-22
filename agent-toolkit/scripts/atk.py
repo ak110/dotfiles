@@ -15,7 +15,7 @@
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
 サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`・
-`atk managed-temp <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
+`atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
@@ -61,6 +61,7 @@ import _atk_mq_process_loop as _process_loop  # noqa: E402
 import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_watch as _watch  # noqa: E402
+import _atk_worktree_stash as _worktree_stash  # noqa: E402
 import _managed_temp  # noqa: E402
 import _review_table  # noqa: E402
 
@@ -291,10 +292,16 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
     )
     _add_source_arg(list_)
-    list_.add_argument(
+    output = list_.add_mutually_exclusive_group()
+    output.add_argument(
         "--count",
         action="store_true",
         help="エントリ件数を整数のみで出力する（種別ヘッダを抑制する）。",
+    )
+    output.add_argument(
+        "--json",
+        action="store_true",
+        help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
     )
     list_.add_argument(
         "--skip-pull",
@@ -684,6 +691,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _config_cmd.build_parser(config)
     managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・列挙・後始末する")
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
+    worktree_stash = top.add_parser("worktree-stash", help="worktree固有refへ変更を退避する")
+    _worktree_stash.build_parser(worktree_stash, command_dest="worktree_stash_subcommand")
     watch = top.add_parser("watch", help="委譲先の成果物側の状況を1行で出力する")
     _watch.build_parser(watch)
     _review_table.build_parser(top)
@@ -795,6 +804,8 @@ def main(
         sys.exit(0)
     if args.command == "managed-temp":
         sys.exit(_managed_temp.dispatch(args, command_dest="managed_temp_subcommand"))
+    if args.command == "worktree-stash":
+        sys.exit(_worktree_stash.dispatch(args, command_dest="worktree_stash_subcommand"))
     if args.command == "watch":
         sys.exit(_watch.dispatch(args, now=now))
     if args.command == "config":

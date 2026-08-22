@@ -5,8 +5,10 @@
 """
 
 import argparse
+import json
 import pathlib
 import shutil
+import sys
 
 from _atk_mq_common import (
     MQ_ACTIVE_STATES,
@@ -65,6 +67,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     """
     return (
         not args.count
+        and not getattr(args, "json", False)
         and args.type in ("all", "tbd")
         and args.status in ("all", "active")
         and args.answered in ("all", "no")
@@ -134,6 +137,33 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
             print(f"{prefix}{summary}")
 
 
+def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:
+    """選択済みエントリを端末幅に依存しないJSON Linesで出力する。"""
+    for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
+        actual_type = entry_type or "feedback"
+        state_readiness = (
+            "complete" if state not in MQ_ACTIVE_STATES else "ready" if path.name in readiness.ready else "blocked"
+        )
+        answered = actual_type == MQ_TYPE_TBD and _is_tbd_answered(text)
+        reason = (
+            _blocked_reason(readiness, path.name)
+            if state_readiness == "blocked" and (actual_type != MQ_TYPE_TBD or answered)
+            else None
+        )
+        summary = _tbd_body_summary(text, sys.maxsize) if actual_type == MQ_TYPE_TBD else _body_summary(text, sys.maxsize)
+        record = {
+            "filename": path.name,
+            "type": actual_type,
+            "target_repo": target_repo,
+            "state": state,
+            "ready": state in MQ_ACTIVE_STATES and path.name in readiness.ready,
+            "blocked_reason": reason,
+            "source": _parse_source(text),
+            "summary": summary,
+        }
+        print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+
+
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`list`サブコマンド: フィードバック/`tbd`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
@@ -168,6 +198,10 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     if args.count:
         print(len(selected))
+        return
+
+    if args.json:
+        _print_json_entries(selected, readiness)
         return
 
     _print_entries(selected, readiness)

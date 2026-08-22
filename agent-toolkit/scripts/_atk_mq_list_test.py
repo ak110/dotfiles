@@ -6,6 +6,7 @@
 """
 
 import datetime
+import json
 import os
 import pathlib
 import shutil
@@ -992,6 +993,56 @@ class TestListCount:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "0\n"
+
+
+class TestListJson:
+    """listサブコマンド: --jsonは端末幅に依存しないJSON Linesを返す。"""
+
+    def test_json_preserves_long_fields_and_reports_readiness(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """狭い端末でも本文要約・target_repo・blocked理由を切り詰めず出力する。"""
+        notes = _setup_notes(tmp_path)
+        long_repo = "github.com/example/" + "repository-" * 12
+        body = "本文の長い要約 " + "長文" * 100
+        path = _write_feedback_file(notes, "json.md", target_repo=long_repo, body=body)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [missing.md]\n"),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((40, 24)))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--json"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        record = json.loads(capsys.readouterr().out)
+        assert record["filename"] == "json.md"
+        assert record["type"] == "feedback"
+        assert record["target_repo"] == long_repo
+        assert record["summary"] == body
+        assert record["ready"] is False
+        assert record["blocked_reason"] == "missing-dependency"
+
+    def test_json_and_count_are_mutually_exclusive(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--jsonと--countの同時指定はargparseの利用エラーとなる。"""
+        _setup_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--json", "--count"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "not allowed with argument" in capsys.readouterr().err
 
 
 class TestMultipleFiltersCombinedAsAnd:

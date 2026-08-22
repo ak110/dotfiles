@@ -112,14 +112,7 @@ class _CompiledRules:
     def should_ignore_entry(self, entry_path: str) -> bool:
         """アーカイブ内エントリパスが無視対象かを判定する (展開前フィルタ)。"""
         parts = pathlib.PurePosixPath(entry_path).parts
-        # ディレクトリ名が 1 つでもマッチすれば無視
-        for part in parts[:-1]:
-            if any(p.search(part) for p in self.ignore_dir_patterns):
-                return True
-        # 終端がディレクトリそのものならディレクトリ名でもチェック
         basename = parts[-1] if parts else ""
-        if entry_path.endswith("/") and any(p.search(basename) for p in self.ignore_dir_patterns):
-            return True
         return bool(
             not entry_path.endswith("/") and any(fnmatch.fnmatch(basename, pattern) for pattern in self.ignore_file_patterns)
         )
@@ -127,16 +120,7 @@ class _CompiledRules:
     def should_ignore_path(self, path: pathlib.Path, *, root: pathlib.Path) -> bool:
         """ローカルファイルシステム上のパスが無視対象かを判定する (ディレクトリコピー時)。"""
         rel = path.relative_to(root)
-        if path.is_file():
-            for part in rel.parts[:-1]:
-                if any(p.search(part) for p in self.ignore_dir_patterns):
-                    return True
-            if any(fnmatch.fnmatch(rel.name, pattern) for pattern in self.ignore_file_patterns):
-                return True
-        elif path.is_dir():
-            if any(p.search(rel.name) for p in self.ignore_dir_patterns):
-                return True
-        return False
+        return path.is_file() and any(fnmatch.fnmatch(rel.name, pattern) for pattern in self.ignore_file_patterns)
 
 
 def main() -> None:
@@ -392,7 +376,12 @@ def _process_target(
 
         # 5. 平坦化
         if not dry_run:
+            # 単独の無視対象ラッパーは先に昇格させ、混在時だけ除去後に残りを再平坦化する。
             _flatten_single_root(work_dir)
+            removed_directories = _remove_ignored_directories(work_dir, compiled)
+            _flatten_single_root(work_dir)
+            if removed_directories and not any(work_dir.iterdir()):
+                raise ValueError("対象ファイルが0件のためスキップします")
 
         # 6. 無圧縮 ZIP 作成 (出力 stem は rename_rules 適用後)
         zip_path = parent / f"{stem}.zip"
@@ -626,6 +615,8 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
 
     展開順は元アーカイブ記録順のまま据え置く（逐次走査制約のため事前ソート不可）。
     最終ZIPのnatsort順揃えは後段の ``_write_uncompressed_zip`` が担当する。
+    ZIP経路と同じ安全な相対パス検証を出力パス構築前に適用し、作業領域外への
+    書込みにつながるエントリはfailuresへ記録してスキップする。
     ignoreフィルタ適用後の対象エントリが0件の場合は ``ValueError`` を送出する。
     """
     libarchive = _load_libarchive()
@@ -645,12 +636,19 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
             entry_path = entry.pathname or ""
             if not entry_path:
                 continue
-            if compiled.should_ignore_entry(entry_path):
+            is_dir = entry.isdir
+            normalized = entry_path.rstrip("/") if is_dir else entry_path
+            if not pytilpack.zipfile.is_safe_relative_path(normalized):
+                failures.append((entry_path, "error", "不正なパスのためスキップ"))
+                logger.warning("%s: 不正なパスのためスキップ: %r", archive.name, entry_path)
+                continue
+            ignore_path = normalized + "/" if is_dir else normalized
+            if compiled.should_ignore_entry(ignore_path):
                 continue
             target_count += 1
             try:
-                out_path = dest / entry_path
-                if entry.isdir:
+                out_path = dest / normalized
+                if is_dir:
                     out_path.mkdir(parents=True, exist_ok=True)
                     continue
                 out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -694,6 +692,21 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
     if target_count == 0:
         raise ValueError("対象ファイルが0件のためスキップします")
     return failures
+
+
+def _remove_ignored_directories(work_dir: pathlib.Path, compiled: _CompiledRules) -> bool:
+    """平坦化後の作業ツリーから`ignore_dirs`一致ディレクトリを削除する。"""
+    candidates = sorted(
+        (path for path in work_dir.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    removed = False
+    for path in candidates:
+        if any(pattern.search(path.name) for pattern in compiled.ignore_dir_patterns):
+            shutil.rmtree(path)
+            removed = True
+    return removed
 
 
 def _flatten_single_root(work_dir: pathlib.Path) -> None:

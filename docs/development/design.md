@@ -12,8 +12,7 @@ commitとpushを伴う状態遷移系は同期を省略せず、変更直前の�
 remote同期はfetch後の統合対象を現在のブランチの`@{u}`へ明示し、fast-forward更新とpush再試行時のrebaseを
 共有状態の`FETCH_HEAD`と利用者の`pull.rebase`設定から独立させる。
 
-同じ対象リポジトリの複数項目を同一工程で読む場合は、`atk mq show <filename>... --target-repo=<repo> --skip-pull`へまとめ、
-ファイル名見出しから本文を対応付ける。readyなinbox集合の処理開始も、ファイル名昇順の
+同じ対象リポジトリの複数項目を同一工程で読む場合は、管理対象一時領域を作成し、`atk mq show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存ファイルへ書き込んでから全文を読み、ファイル名見出しから本文を対応付ける。保存内容の構造成立・不成立・コマンド失敗を確定した後にcleanupを完了し、保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も、ファイル名昇順の
 `atk mq start-processing <filename>... --target-repo=<repo>`を1回実行する。
 処理開始コマンドは全対象の存在、状態及び`target_repo`を移動前に検証するため、一部不適合で集合全体を拒否できる。
 移動開始後にI/O、commit又はpushが失敗した場合は、指定集合のprocessing配置、管理リポジトリの未コミット差分、
@@ -38,6 +37,8 @@ toolkitは自身の排他区間外で他プロセスが行うfetchを管理し�
 回答済みTBDは回答が本文へ保存されたことを確認して先に終端する。
 終端によって依存が解除された項目は、ファイル名でterminal状態のTBDを再取得し、保存回答を反映してから処理する。
 項目間の順序は明示依存で表し、無関係なactive TBDを状態遷移の一律条件にしない。
+日付境界を持つ順序条件は、境界日以前の項目をグループ終端項目の依存先とし、境界日後の項目を終端項目へ依存させる。日付帰属、終端項目又は公開先マージ条件を一意に確定できない場合は、後続項目を処理せずTBDへ送る。終端項目のadoptはPR/MRマージ後に行う。
+同一バッチ・同一`target_repo`で、事象、期待値、実際値、発生条件、直接的原因及び再開情報の6要素が一致する失敗だけを1件の共通TBDへ集約し、主題の類似だけでは統合しない。`source: session-review`は共通TBD名を記録して終端し、それ以外は同じTBDへ依存して`blocked`を確認する。
 実装担当は渡された要求と計画を知る一方、キュー全体の採否や他項目の開始時機を決定しない。
 
 会話内の作業一覧だけで進捗を管理する案は、中断後に依存関係と利用者回答を再現できないため採用しない。
@@ -93,8 +94,10 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 `--git-common-dir`を対象リポジトリと一致させ、`--show-toplevel`をworktreeの配置先と一致させる。
 現在のブランチが`worktree-<NAME>`であり、worktreeがcleanであることも再利用の条件とする。
 条件のいずれかを確認できない場合はfetchとrebaseを実行せず、セッションを起動しない。
-条件を満たしたworktreeは`origin/HEAD`から解決した上流ブランチへfetchとrebaseで追随させる。
-解決した上流ブランチは、セッションの公開先としてプロンプトへ明示する。
+条件を満たしたworktreeは、現在のブランチの追跡先を優先し、解決できない場合だけ`origin/HEAD`へ後退して得た上流ブランチへfetchとrebaseで追随させる。
+解決した上流ブランチはfetch・rebaseの内部だけで使用し、対象リポジトリごとに異なる公開先をセッションのプロンプトへ推測注入しない。公開操作と公開先の判断は、その運用を所有する主体へ委ねる。
+
+並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`_file_lock.py`で排他し、ロック中にstash生成、`refs/worktree/<退避ラベル>`記録及び生成分だけのdropを行う。既存の`refs/stash`先頭OIDは維持し、途中失敗時はstash又はworktree固有refを削除せず復旧識別子を報告する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
 `atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。

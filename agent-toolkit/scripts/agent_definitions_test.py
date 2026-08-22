@@ -421,7 +421,8 @@ def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> No
     assert "`git stash`による退避、別パスへの複製" in removal
     assert "呼び出し元が受領時の検収で本節により処置する" in removal
     assert "git stash show --include-untracked -p <識別子>" in removal
-    assert "git stash drop <識別子>" in removal
+    assert "atk worktree-stash drop '<識別子>'" in removal
+    assert "git stash drop <識別子>" not in removal
     assert "いずれかの帰属または反映状況が未確定である間は削除しない" in removal
     # 履歴一本化後の統合先ではpatch-id比較が成立しないため、代替の検収手段を併記する。
     assert "git diff <対象ブランチ> <統合先> -- <files>" in removal
@@ -713,8 +714,9 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "plan-review-task.md" in delegation
     assert "計画とリポジトリを修正しない" in task
     assert "総ライフサイクルコスト" in task
-    # 再設計へ切り替える判定は、判定材料を観測するレビュー担当側の出力義務とする。
-    assert "同一見出し配下（`## 変更履歴`の`同期先`が同一）で2ラウンド連続して指摘が成立した場合" in task
+    # 再設計へ切り替える判定は、違反契約又は新設・変更機構を単位とする。
+    assert "同一の違反契約又は同一の新設・変更機構" in task
+    assert "2ラウンド連続" in task
     assert "レビュー担当が再設計・簡素化・撤去を求めた箇所へ小修正で応じない" in delegation
 
 
@@ -1189,17 +1191,20 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
     command = "atk mq show <filename> --target-repo=<repo> --skip-pull"
-    for document in (sender, planner, explore, standards):
+    for document in (planner, explore):
         assert command in document
     batch_command = "atk mq show <filename>... --target-repo=<repo> --skip-pull"
-    for document in (sender, planner, process, standards, delegation, review):
+    assert batch_command in planner
+    for document in (sender, process, standards, delegation):
+        assert "一括取得の管理対象一時領域" in document
+        assert "atk managed-temp create --prefix mq-show" in document
+        assert "mq-show.stdout" in document
+        assert "## target_repo: <target_repo>" in document
+        assert "### <filename> [<state>]" in document
+        assert "cleanup" in document
+        assert "非0終了" in document
+    for document in (standards, delegation, review):
         assert batch_command in document
-        assert "対象リポジトリごとに1回" in document
-        assert "行頭から行末まで完全一致する`## target_repo: <target_repo>`行" in document
-        assert "`### <filename> [<state>]`行が各1回だけ現れ" in document
-        assert "両行の並びが要求順と一致する場合だけ採用" in document
-        assert "次の`## target_repo:`行の直前までを一意に切り出す" in document
-        assert "余分な管理見出し、欠落、重複、順序不一致、本文境界の不成立のいずれか" in document
         assert "一括出力全体を破棄し" in document
         assert "要求した全項目を" in document
         assert "単数取得する" in document
@@ -1759,7 +1764,9 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     for phrase in (
         "上流最新OIDから",
         "統合段階で新たに生じた差分が無い場合は、統合後のレビューを実施しない",
-        "当該箇所と同一ファイルの隣接する記述を対象として",
+        "統合段階で新たに生じた差分のhunkと、当該hunkが属する同一節だけを対象として",
+        "コードでは当該hunkを含む最小の関数又はクラス、Markdownでは当該hunkを含む最小の見出し配下",
+        "差分hunkを含まないファイル及びレーンのcommitをそのまま適用できた箇所は対象へ含めない",
         "non-fast-forward拒否",
         "安定ID",
         "適用済みスキップ",
@@ -4632,7 +4639,7 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否" in executor
 
     for phrase in (
-        "検証済みの実際値、期待値及び違反契約を確認する",
+        "検証済みの実際値、期待値と違反契約を確認する",
         "対象への適用根拠と保持契約が指摘ごとにそろうことも確認する",
     ):
         assert phrase in writer
@@ -4780,7 +4787,7 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
     assert "終端工程はレーン又は統合担当へ委譲しない" in process
     assert "push及びCI通過の後、adoptの前" in process
     assert "active項目から対象ファイル名自身を除外" in process
-    assert "自己依存又は循環が無いことを登録前に検査" in process
+    assert "自己依存や循環が無いことを登録前に検査" in process
     for field in ("schema_version", "group_final_item", "target_repo", "created_at"):
         assert field in publish_group
     for requirement in (

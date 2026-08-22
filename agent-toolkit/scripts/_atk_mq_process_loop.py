@@ -120,8 +120,10 @@ def _child_env() -> dict[str, str]:
 
 
 def _session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.name) -> dict[str, str]:
-    """セッション専用の環境を返し、Windows Codexだけにbash互換層を追加する。"""
+    """セッション専用の環境を返し、Claudeの監視設定とWindows Codexのbash互換層を加える。"""
     session_env = env.copy()
+    if orchestrator == "claude":
+        session_env["CLAUDE_CODE_RETRY_WATCHDOG"] = "1"
     if platform == "nt" and orchestrator == "codex":
         shim_dir = pathlib.Path(__file__).resolve().parent / "windows-shims"
         inherited_path = session_env.get("PATH", "")
@@ -360,8 +362,11 @@ def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib
     return True
 
 
-def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> tuple[pathlib.Path, str] | None:
+def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path | None:
     """worktreeを準備して対象リポジトリの上流最新へ追随させる。
+
+    上流は現在ブランチの追跡先を優先し、利用不能な場合だけ`refs/remotes/origin/HEAD`へ後退する。
+    解決結果はworktreeのfetch・作成・rebaseだけに用い、公開先を起動プロンプトへ暗黙に設定しない。
 
     worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
     前回反復の成果がpush済みでも、その後に他の作業ツリーが上流へ進めた分は
@@ -379,9 +384,20 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         return None
     if not _ensure_worktree_excluded(local_path):
         return None
-    upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
+    upstream_branch = _git_output(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=local_path)
+    if not upstream_branch:
+        upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
     if not upstream_branch:
         print(f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
+        return None
+    remotes = (_git_output(["remote"], cwd=local_path) or "").splitlines()
+    upstream_remote = max(
+        (remote for remote in remotes if upstream_branch.startswith(f"{remote}/")),
+        key=len,
+        default=None,
+    )
+    if upstream_remote is None:
+        print(f"上流remoteを解決できないため実装セッションを起動しません: {worktree_path}", file=sys.stderr)
         return None
     created_worktree = False
     if not worktree_path.exists():
@@ -399,7 +415,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         except OSError:
             _warn_worktree_preparation_failure("worktreeの親ディレクトリを作成できなかった", worktree_path)
             return None
-        fetch = _run_worktree_git(["fetch", "origin"], local_path)
+        fetch = _run_worktree_git(["fetch", upstream_remote], local_path)
         if fetch.returncode != 0:
             print(f"worktree作成前のfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
             return None
@@ -421,7 +437,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
             _warn_worktree_preparation_failure("worktreeに未コミット変更がある", worktree_path)
             return None
     if not created_worktree:
-        fetch = _run_worktree_git(["fetch", "origin"], worktree_path)
+        fetch = _run_worktree_git(["fetch", upstream_remote], worktree_path)
         if fetch.returncode != 0:
             print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
             return None
@@ -429,7 +445,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     if rebase.returncode == 0:
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         if _worktree_is_clean(worktree_path):
-            return worktree_path, upstream_branch
+            return worktree_path
         _warn_worktree_preparation_failure("追随後のworktreeがdirtyになった", worktree_path)
         return None
     _run_worktree_git(["rebase", "--abort"], worktree_path)
@@ -444,8 +460,6 @@ def _build_process_loop_prompt(
     local_path: pathlib.Path,
     target_repo_id: str,
     orchestrator: str,
-    *,
-    publish_destination: str | None = None,
 ) -> str:
     """対象リポジトリのフィードバック処理を依頼する短い目的文を構築する。"""
     prompt = (
@@ -453,8 +467,6 @@ def _build_process_loop_prompt(
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
         "フィードバック処理を完遂してください。"
     )
-    if publish_destination is not None:
-        prompt += f"公開時は現在のHEADを`{publish_destination}`へ反映してください。"
     if orchestrator == "codex":
         prompt += (
             "Codexオーケストレーターの連続処理として、開始後に追加されたready項目も同じセッションで順次処理し、"
@@ -831,13 +843,7 @@ def _prepare_session_target(
     prepared = _sync_worktree_with_upstream(local_path, effective_name)
     if prepared is None:
         return None
-    worktree_path, upstream_branch = prepared
-    return worktree_path, _build_process_loop_prompt(
-        worktree_path,
-        target_repo_id,
-        orchestrator,
-        publish_destination=upstream_branch,
-    )
+    return prepared, _build_process_loop_prompt(prepared, target_repo_id, orchestrator)
 
 
 def _run_process_session(
@@ -851,9 +857,8 @@ def _run_process_session(
     effort: str,
     resume_pending: bool,
     dotfiles_root: pathlib.Path | None,
-    mise_refresh_enabled: bool,
 ) -> bool:
-    """子セッションを1回実行し、update-dotfilesの成功有無を返す。"""
+    """子セッションを1回実行し、正常終了後の再起動を要求する。"""
     session_argv, hook_debug_log = _build_session_argv(
         args,
         session_prompt,
@@ -885,20 +890,14 @@ def _run_process_session(
         sys.exit(result.returncode)
     if args.no_update:
         return False
-    executable = _resolve_executable("update-dotfiles")
-    if executable is None:
-        return False
-    print("update-dotfilesを実行してprocess-loopを再起動します。")
-    update_result = subprocess.run([executable, "--force"], check=False, env=env)
-    _console_title.set_console_title("atk mq process-loop")
-    update_succeeded = update_result.returncode == 0
+    print("process-loopを再起動します。")
     _restart_process_loop(
         sys.argv,
         dotfiles_root,
         resume_consumed=True,
-        mise_refreshed=mise_refresh_enabled and update_succeeded,
+        mise_refreshed=False,
     )
-    return update_succeeded
+    return False
 
 
 def _check_process_loop_alerts(
@@ -957,8 +956,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     Codexは対話CLIを使い、設定値のmodel・effortを起動引数へ渡す。
     Claude Codeは0・-15・15・143、Codexは0を正常終了とする。
     正常終了した場合、
-    `--no-update`未指定なら`update-dotfiles`を実行してから
-    `_restart_process_loop`でランチャーへ再起動を要求する。
+    `--no-update`未指定なら`_restart_process_loop`でランチャーへ再起動を要求する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
     秒間隔で実行し、新規アラートを検知した場合はフィードバックへ投入して即座に次反復へ進む。
@@ -1054,7 +1052,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             refresh_before_session = True
                             continue
                         session_path, session_prompt = prepared_target
-                        update_succeeded = _run_process_session(
+                        _run_process_session(
                             args,
                             session_path,
                             session_prompt,
@@ -1064,10 +1062,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             effort=effort,
                             resume_pending=current_resume_pending,
                             dotfiles_root=dotfiles_root,
-                            mise_refresh_enabled=mise_refresh_root is not None,
                         )
-                        if update_succeeded and mise_refresh_root is not None:
-                            mise_refreshed_at = time.monotonic()
                         continue
                     last_alert_check, submitted = _check_process_loop_alerts(
                         args,

@@ -42,6 +42,7 @@ EXIT_CI_FAILED = 1
 EXIT_TIMEOUT = 2
 EXIT_GH_ERROR = 3
 EXIT_NO_RUNS = 4
+EXIT_NO_CI_CONFIG = 5
 EXIT_INTERRUPTED = 130
 
 _STDERR_FD = 2
@@ -330,6 +331,48 @@ def _run_forge_json_command(command: list[str], subprocess_timeout: float, descr
         return RunListError(f"{description} returned invalid JSON: {failure.detail}")
 
     return _json_command.run(command, subprocess_timeout, error_factory=error_factory)
+
+
+def _github_ci_configured(repository: str, sha: str, subprocess_timeout: float) -> bool | None:
+    """GitHub tree応答からCI workflowの有無を確定する。
+
+    判定不能な応答はCI定義不在と確定せず、呼び出し元が既存のrun登録猶予へ後退できるように`None`を返す。
+    """
+    try:
+        target = _parse_repository(repository)
+        if target.project_path.count("/") != 1:
+            return None
+        command = [
+            "gh",
+            "api",
+            "-X",
+            "GET",
+            f"repos/{target.project_path}/git/trees/{sha}?recursive=1",
+        ]
+        if target.hostname is not None:
+            command.extend(["--hostname", target.hostname])
+        payload = _run_forge_json_command(command, subprocess_timeout, "gh api git tree")
+    except RunListError:
+        return None
+    if not isinstance(payload, dict) or payload.get("truncated") is not False:
+        return None
+    tree = payload.get("tree")
+    if not isinstance(tree, list):
+        return None
+    for item in tree:
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path")
+        if not isinstance(path, str):
+            continue
+        workflow_path = pathlib.PurePosixPath(path)
+        if (
+            item.get("type") == "blob"
+            and workflow_path.parent == pathlib.PurePosixPath(".github/workflows")
+            and workflow_path.suffix in {".yml", ".yaml"}
+        ):
+            return True
+    return False
 
 
 def _resolve_forge(explicit: str, repository: str) -> str | None:
@@ -629,6 +672,7 @@ def wait_for_ci(
     - `forge`は早期失敗の分類（`_find_early_failure`のforgeごとの判定）には
       `run_list_fn`・`job_list_fn`の明示指定有無によらず常に使う
     """
+    use_default_fetchers = run_list_fn is None and job_list_fn is None
     if run_list_fn is None:
         run_list_fn = _default_run_list_fn(forge, repository, ref, subprocess_timeout)
     if job_list_fn is None:
@@ -637,6 +681,9 @@ def wait_for_ci(
     ancestor_check_fn = ancestor_check_fn or (lambda ancestor: _is_ancestor_of_ref(ancestor, source_ref, subprocess_timeout))
     follow_shas_fn = follow_shas_fn or (lambda base: _follow_shas(base, source_ref, subprocess_timeout))
     start = now_fn()
+    if forge == "github" and use_default_fetchers and _github_ci_configured(repository, sha, subprocess_timeout) is False:
+        _print(0.0, "CI定義が無いため監視対象なし")
+        return EXIT_NO_CI_CONFIG
     runs: list[RunRecord] = []
     consecutive_failures = 0
     expected_ids: set[int] = set()
