@@ -85,25 +85,13 @@
 `agent-toolkit/agents/*.md`のClaude Code用Markdownをagent定義の単一の正本とする。
 `setup_codex_links.py`が公開する`~/.codex/agent-toolkit/agents/<agent-name>.md`は、Codex Custom Agent用TOMLへ変換せず、次の互換手順で実行時に読む。
 
-名前付きagentの互換実行におけるモデル写像は次表で確定する。
-この写像は`engine=codex`で名前付きagentを起動するときだけ適用し、工程別モデル設定の`engine`を変更しない。
-Claude Codeの`model`区分は`haiku`（軽量）、`sonnet`（標準）、`opus`（上位）の順である。
-`runtime-routing.md`のCodexモデル・effort対応に基づき、同じ能力区分を維持する。
-
-| Claude Codeの`model` | Codexの`model` |
-| --- | --- |
-| `haiku` | `gpt-5.6-luna` |
-| `sonnet` | `gpt-5.6-terra` |
-| `opus` | `gpt-5.6-sol` |
-
-frontmatterの`effort`は同じ値を`reasoning_effort`へ渡す。
-`effort`が無い場合は`runtime-routing.md`の既定値`medium`を使う。
-表にない`model`値又はCodexが受理できない`reasoning_effort`は、値を推測せず`needs_escalation`として返す。
+名前付きagentの互換起動では`spawn_agent`へ`model`と`reasoning_effort`を指定せず、Codexの既定サブエージェント設定へ委ねる。
+frontmatterの`model`と`effort`はClaude Code実行時の指定であり、Codex側のモデル識別子へは写像しない。写像表を本文書へ置くと、能力区分の定義、`model: inherit`の扱い、識別子の正本を新設する必要が生じ、いずれも現行の要件に対応しないためである。
 
 1. 起動対象のagent名から`~/.codex/agent-toolkit/agents/<agent-name>.md`の絶対パスを確定し、ファイル全体を読む。
 2. YAML frontmatterを解析し、`name`、`description`、`model`、`effort`、`tools`、`skills`、`user-invocable`及びfrontmatterコメントを区別する。
    `name`は定義の識別子とし、`task_name`へ許可文字に正規化した一意な名前を渡して定義名自体を委譲文へ保持する。`description`は起動対象を選ぶ条件として用いる。
-   `model`は前記のモデル表へ、`effort`は`reasoning_effort`へ写像し、`tools`と`skills`は後続の制約及び読込手順へ渡す。
+   `model`と`effort`は定義側の意図を示す値として保持し、`tools`と`skills`は後続の制約及び読込手順へ渡す。
    `user-invocable`は利用者が直接起動できるかという公開条件として維持し、frontmatterコメントは編集用メタ情報として実行時命令へ含めない。
 3. Markdown本文をagentの役割、制約、入力、出力及び完了契約として全文適用する。
    起動文へ本文を複製せず、正本の絶対パスとタスク固有入力だけを`spawn_agent`へ渡す。
@@ -126,7 +114,6 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | `wait_agent`で更新を待ち、`list_agents`で稼働中の一覧を取得し、`interrupt_agent`で中断する |
 | `mcp__plugin_agent-toolkit_codex_app_server__codex_start`・`codex_status`・`codex_wait`・`codex_result`・`codex_start_reply`（Codex App Serverへの委譲・継続） | 自身がCodexであるためMCP経由の自己呼び出しは不要。`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲し、`followup_task`で継続する |
-| `TeamCreate` | `spawn_agent`、`followup_task`、`send_message`及び`list_agents`を組み合わせ、別のチーム状態を作成せずに委譲を管理する |
 | `Monitor` | `list_agents`と`wait_agent`、または実行セッションの待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは利用者へ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む |
@@ -146,10 +133,11 @@ Codexで利用する場合は次の対応表に従って読み替える。
 履歴を混同しない。
 
 工程別モデル設定と名前付きagentの互換起動は別の判断である。
-工程別設定が`engine=claude`の場合は`runtime-routing.md`の手順3に従い、公開されたClaude実行機能を使う。
-`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
+`runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程では、同文書の手順に従って`engine`を解決する。
+`engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 指定engineの経路を利用できない場合は同文書の手順4に従って`needs_escalation`又は未完了として返す。
-工程別設定が`engine=codex`の場合だけ、前記のモデル表と`spawn_agent`による名前付きagent互換起動を適用する。
+`engine=codex`の場合は、当該工程の設定値から解決した`model`・`reasoning_effort`を`spawn_agent`へ渡す。
+工程別モデル設定のキーを持たない名前付きagentの起動は、当該設定の`engine`判定を経ず、本節の互換手順で`spawn_agent`を使う。
 
 公開サブコマンドがないplugin内部資源を実行する場合は、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
 作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成する。

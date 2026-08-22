@@ -378,6 +378,7 @@ class TestProductionManagedSettings:
                 "指定先を問わず",
                 "利用者個人のフィードバックキュー",
                 "private-notes",
+                "ファイル移動・削除",
                 "コミット・push",
             )
         )

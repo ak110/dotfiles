@@ -148,6 +148,7 @@ fast担当とfix担当は、工程別モデル設定の実効値が一致する�
 設定変更後も同一threadを継続する案は、threadが保持する実行条件と工程の実効設定を一致させられないため採用しない。
 
 Claude Code用の`agent-toolkit/agents/*.md`をagent定義の単一の正本とし、Codexは配布されたMarkdownを実行時に全文読み、frontmatter、本文、スキル及びツール制約を`spawn_agent`へ互換適用する。
+名前付きagentのCodex互換起動と、`atk config`の工程別モデル設定によるengine選択は別の判断とする。前者はagent定義そのものを実行する経路であり工程別設定のキーを持たないため、後者の`engine`値を起動可否の条件にしない。
 Codex Custom Agent用TOMLは、Claude固有の`tools`、`skills`、本文を意味論的に一対一変換できず、正本、生成器、配布先を増やすため採用しない。
 調査・採否と通常型の計画化はClaude CodeとCodexで共通の`feedbacks-planner`委譲経路を使い、agent定義の欠落、frontmatterの写像不能又は起動失敗をメイン主体の別経路へ迂回しない。
 Codexのready項目再取得、連続処理及び本体プロセスの終了範囲だけはagent定義の適用能力と独立したホスト固有のセッション運用として分岐する。

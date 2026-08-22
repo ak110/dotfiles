@@ -236,44 +236,12 @@ def test_codex_agent_compatibility_covers_current_frontmatter_and_body() -> None
         assert phrase in base
 
 
-def test_codex_agent_compatibility_maps_frontmatter_models_and_effort() -> None:
-    """現行agentのモデル区分とeffortをCodex引数へ一意に写像する。"""
-    base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
-    current_models: set[str] = set()
-    for path in sorted(_AGENTS_DIR.glob("*.md")):
-        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
-        assert parsed is not None
-        metadata, _ = parsed
-        model = metadata.get("model")
-        assert isinstance(model, str)
-        current_models.add(model)
-
-    model_mapping = {
-        "haiku": "gpt-5.6-luna",
-        "sonnet": "gpt-5.6-terra",
-        "opus": "gpt-5.6-sol",
-    }
-    assert current_models <= model_mapping.keys()
-    for model, codex_model in model_mapping.items():
-        row = f"| `{model}` | `{codex_model}` |"
-        assert base.count(row) == 1
-    for phrase in (
-        "Claude Codeの`model`区分は`haiku`（軽量）、`sonnet`（標準）、`opus`（上位）の順",
-        "`runtime-routing.md`のCodexモデル・effort対応に基づき",
-        "frontmatterの`effort`は同じ値を`reasoning_effort`へ渡す",
-        "`effort`が無い場合は`runtime-routing.md`の既定値`medium`を使う",
-        "表にない`model`値又はCodexが受理できない`reasoning_effort`",
-    ):
-        assert phrase in base
-
-
 def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
     """主要ツールの直接対応、条件付き対応及び代替不能範囲を検査する。"""
     base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
 
     for direct_mapping in (
         ("`TaskStop`", "`interrupt_agent`", "`list_agents`"),
-        ("`TeamCreate`", "`spawn_agent`", "`followup_task`", "`send_message`", "`list_agents`"),
         ("`Monitor`", "`list_agents`", "`wait_agent`"),
     ):
         for phrase in direct_mapping:
@@ -296,22 +264,42 @@ def test_codex_named_agent_compatibility_preserves_stage_engine() -> None:
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
 
     for phrase in (
-        "名前付きagentのCodex互換起動",
-        "工程別設定が`engine=codex`の場合",
+        "工程別モデル設定と名前付きagentの互換起動は別の判断である",
+        "`runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程",
         "`engine=claude`",
         "`needs_escalation`又は未完了として返す",
+        "工程別モデル設定のキーを持たない名前付きagentの起動",
     ):
         assert phrase in base
     for phrase in (
         "名前付きagentのCodex互換起動",
-        "工程別設定が`engine=codex`の場合",
+        "工程別モデル設定のキーを持たない起動",
+        "工程別モデル設定のキーを持つ工程",
         "`engine=claude`",
         "他engineへ自動切替せず",
         "`needs_escalation`または未完了として返す",
     ):
         assert phrase in runtime
-    assert "Codexでは`spawn_agent`経路へ一本化する。" not in base
+    assert "工程別設定が`engine=codex`の場合だけ" not in base
+    assert "工程別設定が`engine=codex`の場合だけ" not in runtime
     assert "`engine=claude`をCodexの`spawn_agent`へ置換してはならない" in runtime
+
+
+def test_codex_model_identifiers_are_not_repeated_in_normative_markdown() -> None:
+    """工程別モデル設定の正本を除き、Codexモデル識別子を規範文書へ複製しない。"""
+    identifier = re.compile(r"gpt-5\.6-")
+    markdown_paths = sorted(
+        path
+        for root in (_DISTRIBUTION_ROOT, _REPOSITORY_ROOT / "scripts")
+        for path in root.rglob("*.md")
+        if path != _RUNTIME_ROUTING
+    )
+    offenders = [
+        str(path.relative_to(_REPOSITORY_ROOT))
+        for path in markdown_paths
+        if identifier.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, f"Codexモデル識別子を複製した規範文書: {offenders}"
 
 
 def test_delegating_agents_allow_required_tools() -> None:
