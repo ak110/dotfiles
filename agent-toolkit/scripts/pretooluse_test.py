@@ -43,6 +43,14 @@ def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subpro
     return _fork_runner.run_script(_SCRIPT, argv=("pretooluse",), input=text, env=env)
 
 
+def _run_posttooluse(payload: object, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """PostToolUse hookを同じ一時状態ディレクトリで実行する。"""
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    env = os.environ.copy()
+    env.update(env_overrides)
+    return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
+
+
 def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
     """stdoutのJSONから`hookSpecificOutput.additionalContext`を取り出す。"""
     stdout = result.stdout.strip()
@@ -4973,8 +4981,47 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert result.returncode == 2
         assert "no stored absolute cwd" in result.stderr
+        assert "Do not continue this session" in result.stderr
+        assert "start a new one with codex_start" in result.stderr
         state = self._read_state(tmp_path, "snap-reply-nocwd")
         assert state.get("codex_remote_snapshot_by_key") is None
+
+    def test_reply_accepts_json_string_response_recorded_by_posttooluse(self, tmp_path: pathlib.Path):
+        """PostToolUseのJSON文字列応答で記録したcwdを後続のreplyが利用する。"""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        sid = "snap-json-post"
+        env = _plan_file_state_env(tmp_path)
+        self._write_state(tmp_path, sid, {"delegation_skill_invoked": True})
+        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+        reply_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply"
+        post = _run_posttooluse(
+            {
+                "session_id": sid,
+                "tool_name": start_tool,
+                "tool_input": {"prompt": "実装", "cwd": str(repo)},
+                "tool_use_id": "json-start-1",
+                "tool_response": json.dumps({"session_id": "thread-json", "turn_id": "turn-json", "status": "running"}),
+            },
+            env,
+        )
+        assert post.returncode == 0
+        state = self._read_state(tmp_path, sid)
+        assert state["codex_app_server_cwd_by_session"]["thread-json"] == str(repo)
+        reply = _run(
+            {
+                "session_id": sid,
+                "tool_name": reply_tool,
+                "tool_input": {"session_id": "thread-json", "prompt": "続行"},
+                "tool_use_id": "json-reply-1",
+                "isSidechain": False,
+            },
+            env,
+        )
+        assert reply.returncode == 0
+        assert "cannot continue because session_id has no stored absolute cwd" not in _agent_messages(reply)
+        state_after = self._read_state(tmp_path, sid)
+        assert state_after.get("codex_remote_snapshot_by_key")
 
     def test_reply_reuses_cwd_recorded_by_prior_codex_call(self, tmp_path: pathlib.Path):
         """`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`は同一キーの直近`mcp__plugin_agent-toolkit_codex_app_server__codex_start`呼び出しのcwdを引き継いで記録する。"""

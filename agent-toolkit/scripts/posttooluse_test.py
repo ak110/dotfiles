@@ -1271,6 +1271,108 @@ class TestWarnCodexRemoteChange:
             payload["transcript_path"] = f"/x/agent-{key}.jsonl"
         return payload
 
+    @pytest.mark.parametrize(
+        ("tool_name", "status"),
+        (
+            ("codex_start", "running"),
+            ("codex_start_reply", "running"),
+            ("codex_status", "running"),
+            ("codex_wait", "running"),
+            ("codex_result", "completed"),
+        ),
+    )
+    def test_json_string_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str, status: str) -> None:
+        """JSON文字列形状の成功応答を状態記録へ反映する。"""
+        sid = f"json-response-{tool_name}"
+        full_tool_name = f"mcp__plugin_agent-toolkit_codex_app_server__{tool_name}"
+        response = {"session_id": "thread-json", "turn_id": "turn-json", "status": status}
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": full_tool_name,
+                "tool_input": {
+                    "session_id": "thread-json",
+                    "prompt": "続行",
+                    "cwd": str(tmp_path),
+                },
+                "tool_response": json.dumps(response),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert state["codex_app_server_sessions"]["thread-json"]["status"] == status
+        if tool_name in ("codex_start", "codex_start_reply"):
+            assert state["codex_app_server_cwd_by_session"]["thread-json"] == str(tmp_path)
+
+    def test_json_string_result_response_warns_after_remote_change(self, tmp_path: pathlib.Path) -> None:
+        """JSON文字列形状の`codex_result`でもリモート変更を警告する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "json-result-warning"
+        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        payload = self._result_payload(sid)
+        payload["tool_response"] = json.dumps(payload["tool_response"]["structuredContent"])
+        result = _run(payload, state_dir=tmp_path)
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+
+    @pytest.mark.parametrize("tool_name", ("codex_start", "codex_start_reply", "codex_status", "codex_wait", "codex_result"))
+    @pytest.mark.parametrize(
+        ("response", "missing"),
+        (
+            ("not-json", ("response", "session_id", "status")),
+            ({"status": "running"}, ("session_id",)),
+            ({"session_id": "thread-json"}, ("status",)),
+        ),
+    )
+    def test_codex_response_diagnostics_include_missing_fields(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        response: str | dict,
+        missing: tuple[str, ...],
+    ) -> None:
+        """解析不能または必須値欠落の成功応答を追加コンテキストへ診断する。"""
+        sid = f"json-diagnostic-{tool_name}-{len(missing)}"
+        full_tool_name = f"mcp__plugin_agent-toolkit_codex_app_server__{tool_name}"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": full_tool_name,
+                "tool_input": {
+                    "session_id": "thread-json",
+                    "prompt": "続行",
+                    "cwd": str(tmp_path),
+                },
+                "tool_response": response if isinstance(response, str) else response,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert tool_name in context
+        for field in missing:
+            assert field in context
+
+    @pytest.mark.parametrize("tool_name", ("codex_start", "codex_start_reply"))
+    def test_start_and_reply_diagnose_missing_cwd(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        """開始・継続応答でcwdを解決できない場合を追加コンテキストへ診断する。"""
+        tool_input = {"prompt": "実装"} if tool_name == "codex_start" else {"session_id": "thread-json", "prompt": "続行"}
+        result = _run(
+            {
+                "session_id": f"missing-cwd-{tool_name}",
+                "tool_name": f"mcp__plugin_agent-toolkit_codex_app_server__{tool_name}",
+                "tool_input": tool_input,
+                "tool_response": json.dumps({"session_id": "thread-json", "status": "running"}),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert tool_name in context
+        assert "cwd" in context
+
     def test_no_warning_when_no_change(self, tmp_path: pathlib.Path):
         """記録済みスナップショットと現在値が一致する場合は警告しない。"""
         repo, _ = self._init_repo_with_remote(tmp_path)

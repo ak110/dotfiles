@@ -84,7 +84,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
    remote-tracking ref、local tag、remote設定と`FETCH_HEAD`が変更されていないことを確認する。
    Gitコマンドの出力、stderr全文と認証情報が無加工で受渡しされず、URLが照会中の一時値としてのみ扱われ、`rewrite_guard`、完了報告その他の受渡しへ記録されていないことを確認する。
    executorが書込担当の完了後にphaseごとの`rewrite_guard`反復証跡を検収し、履歴書換え前の中間受渡しを設けていないことを確認する。
-   executorが保持した初回実装担当routeと実効`engine`、`model`及び`effort`、起動直前に解決した今回routeと実効3値、継続・新規起動に用いる識別子及び前担当の終端確認結果を照合する。両方の`engine`がCodexで実効3値がすべて一致する場合だけ元の実装担当threadを継続し、いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい書込担当を起動して、検収済み状態を開始前に1回だけ渡したことを確認する。開始後は同じ書込担当が再判定からamendまでを所有したことを確認する。
+   executorが保持した初回実装担当routeと実効`engine`、`model`及び`effort`、起動直前に解決した今回routeと実効3値、継続・新規起動に用いる識別子及び前担当の終端確認結果を照合する。同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続し、いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい書込担当を起動して、検収済み状態を開始前に1回だけ渡したことを確認する。開始後は同じ書込担当が再判定からamendまでを所有したことを確認する。
    autosquashとamendの両方を実行した場合は、autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換したことを確認する。
    各fixup作成後に、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）が`git log -1 --format=%s`で完全一致したことを確認する。期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返したことを確認する。
    fixupは`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`で実行したことを確認する。

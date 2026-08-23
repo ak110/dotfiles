@@ -193,6 +193,15 @@ _CODEX_APP_SERVER_TOOL_NAMES = frozenset(
         _CODEX_APP_SERVER_SEND_TOOL,
     }
 )
+_CODEX_APP_SERVER_DIAGNOSTIC_TOOLS = frozenset(
+    {
+        _CODEX_APP_SERVER_START_TOOL,
+        f"{_CODEX_APP_SERVER_NAMESPACE}codex_status",
+        f"{_CODEX_APP_SERVER_NAMESPACE}codex_wait",
+        _CODEX_APP_SERVER_RESULT_TOOL,
+        _CODEX_APP_SERVER_REPLY_TOOL,
+    }
+)
 
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
 # `pretooluse.py`がtool_use_id単位で書き込み、本スクリプトがcodex_result後に読み取り・削除する共有SSOT。
@@ -290,12 +299,62 @@ def _diff_remote_snapshots(
     return changed
 
 
+def _extract_codex_structured_response(tool_response: object) -> dict:
+    """Codex応答のdictまたはJSON文字列を状態記録用のdictへ正規化する。"""
+    if isinstance(tool_response, dict):
+        structured = tool_response.get("structuredContent")
+        return structured if isinstance(structured, dict) else tool_response
+    if isinstance(tool_response, str):
+        try:
+            parsed = json.loads(tool_response)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _is_nonempty_absolute_cwd(value: object) -> bool:
+    """cwdが空白でない絶対パスであることを判定する。"""
+    return isinstance(value, str) and bool(value.strip()) and pathlib.PurePath(value).is_absolute()
+
+
+def _codex_recorded_cwd(session_id: str, payload: dict, structured: dict) -> object:
+    """入力またはPreToolUse snapshotからCodex応答のcwd候補を取得する。"""
+    tool_input = payload.get("tool_input")
+    input_cwd = tool_input.get("cwd") if isinstance(tool_input, dict) else None
+    if _is_nonempty_absolute_cwd(input_cwd):
+        return input_cwd
+    state = read_state(session_id)
+    remote_session_id = structured.get("session_id")
+    sessions = state.get(_CODEX_SESSION_STATE_KEY)
+    session_record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
+    key = session_record.get("snapshot_key") if isinstance(session_record, dict) else None
+    if not isinstance(key, str) or not key:
+        key = _codex_snapshot_key(payload, session_id)
+    entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
+    recorded = entries.get(key) if isinstance(entries, dict) else None
+    return recorded.get("cwd") if isinstance(recorded, dict) else None
+
+
+def _codex_missing_response_fields(session_id: str, payload: dict, structured: dict, tool_name: str) -> list[str]:
+    """成功したCodex応答から記録に必要な欠落項目を列挙する。"""
+    missing: list[str] = []
+    if not structured:
+        missing.append("response")
+    for field in ("session_id", "status"):
+        value = structured.get(field)
+        if not isinstance(value, str) or not value.strip():
+            missing.append(field)
+    if tool_name in (_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL) and not _is_nonempty_absolute_cwd(
+        _codex_recorded_cwd(session_id, payload, structured)
+    ):
+        missing.append("cwd")
+    return missing
+
+
 def _record_codex_session_cwd(session_id: str, payload: dict) -> None:
     """開始・継続応答のsession_idと開始snapshotのcwdを状態へ保存する。"""
-    tool_response = payload.get("tool_response", {})
-    structured = tool_response.get("structuredContent") if isinstance(tool_response, dict) else None
-    if not isinstance(structured, dict):
-        structured = tool_response if isinstance(tool_response, dict) else {}
+    structured = _extract_codex_structured_response(payload.get("tool_response", {}))
     remote_session_id = structured.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         return
@@ -494,10 +553,7 @@ def _warn_codex_remote_change(session_id: str, payload: dict) -> str | None:
     state = read_state(session_id)
     entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
 
-    tool_response = payload.get("tool_response", {})
-    structured = tool_response.get("structuredContent") if isinstance(tool_response, dict) else None
-    if not isinstance(structured, dict):
-        structured = tool_response if isinstance(tool_response, dict) else {}
+    structured = _extract_codex_structured_response(payload.get("tool_response", {}))
     remote_session_id = structured.get("session_id")
     sessions = state.get(_CODEX_SESSION_STATE_KEY)
     session_record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
@@ -843,10 +899,12 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             else:
                 _clear_codex_remote_snapshot(payload, session_id)
             return 0
-        tool_response = payload.get("tool_response", {})
-        structured = tool_response.get("structuredContent") if isinstance(tool_response, dict) else None
-        if not isinstance(structured, dict):
-            structured = tool_response if isinstance(tool_response, dict) else {}
+        structured = _extract_codex_structured_response(payload.get("tool_response", {}))
+        if tool_name in _CODEX_APP_SERVER_DIAGNOSTIC_TOOLS:
+            missing = _codex_missing_response_fields(session_id, payload, structured, tool_name)
+            if missing:
+                display_name = tool_name.rsplit("__", 1)[-1]
+                notices.append(_llm_notice(f"warn: {display_name} response is missing or invalid {', '.join(missing)}."))
         if tool_name == _CODEX_APP_SERVER_RESULT_TOOL:
             _record_codex_session_state(session_id, structured)
 

@@ -3544,8 +3544,8 @@ def _check_codex_app_server_continuation_input(session_id: str, tool_input: dict
     if not isinstance(cwd_map, dict) or not isinstance(cwd_map.get(remote_session_id), str):
         print(
             _llm_notice(
-                f"blocked: {display_name} session_id has no stored absolute cwd."
-                " Call codex_start successfully before continuing the session."
+                f"blocked: {display_name} cannot continue because session_id has no stored absolute cwd."
+                " Do not continue this session; start a new one with codex_start using an absolute cwd."
             ),
             file=sys.stderr,
         )

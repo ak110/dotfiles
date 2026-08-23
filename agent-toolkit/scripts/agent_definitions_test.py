@@ -402,12 +402,13 @@ def test_review_table_contract_is_shared_by_all_producers_and_consumers() -> Non
 
 
 def test_delegation_forbids_reusing_completed_identifiers() -> None:
-    """完了報告を受領して停止した識別子の再利用禁止を委譲スキル本体へ置く。"""
+    """識別子の再利用禁止と完了済み識別子の継続条件を委譲スキル本体へ置く。"""
     continuation = _h2_section(_DELEGATION_SKILL.read_text(encoding="utf-8"), "継続と新規起動")
 
-    assert "中断済み、完了報告を受領して停止済み、完了配送不能、前提が無効化された識別子は再利用せず" in continuation
-    assert "停止済みの識別子を再開すると完了通知が依頼元へ配送されず待機が解けない" in continuation
-    assert "稼働中の識別子への継続だけを認める" in continuation
+    assert "中断済み、完了配送不能、前提が無効化された識別子は再利用せず" in continuation
+    assert "完了報告を受領して停止済みの識別子は一律に禁止せず" in continuation
+    assert "同じ担当へ同じタスクを返し、継続直前の実効`engine`・`model`・`effort`が一致する条件" in continuation
+    assert "feedbacks-planner`の`awaiting_confirmation`後の再開はこの一般条件の例外" in continuation
     assert "references/claude-code-runtime.md" in continuation
 
 
@@ -842,7 +843,7 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     assert "修正対象となる全系統・全ラウンド表" in executor
     for phrase in (
         "通常の実装レビュー用managed temp領域の絶対パス",
-        "各レビュー担当の新規起動とCodex経路の同一thread継続のいずれでも",
+        "各レビュー担当の新規起動と同じレビュー担当への継続接続のいずれでも",
         "今回の系統・ラウンド表と対応`.lock`",
         "同じ系統の過去全ラウンド表と対応`.lock`",
         "必須差分入力として渡す",
@@ -921,7 +922,7 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "再レビューへの追送には、キューにない素材の逐語本文・回答全文も計画外の明示入力として含め" in delegation
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは、既知でない情報に加えて" in delegation
-    assert "実効3値一致により同一threadを継続する場合は" in delegation
+    assert "同じ担当・同じタスク・実効3値一致の条件により同一threadを継続する場合は" in delegation
     assert (
         "今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
         in delegation
@@ -936,7 +937,7 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
     assert "差分要約と追加範囲は計画本文を正本" in delegation
     assert "起動文へ再記述しない" in delegation
-    assert "レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get plan_review_model`" in delegation
+    assert "レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`" in delegation
     assert "各修正差分を対象に意味自己監査を1巡" in delegation
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
     assert "`## 変更履歴`と本文の一致" in delegation
@@ -1172,7 +1173,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "本文を起動文へ複製しない",
         "各フィードバックごとの調査スレッド",
         "キューの状態と他のレーンの情報は渡さない",
-        "起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`",
+        "起草担当への新規起動又は継続接続の直前は`plan_model`",
         "調査スレッドの起動直前に`atk config get pick_feedbacks_model`",
         "起草スレッドの起動直前に`atk config get plan_model`",
         "計画レビュースレッドの起動直前に`atk config get plan_review_model`",
@@ -1721,11 +1722,11 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "他engineへ自動切替せず",
         "effort部は実行機能に相当する引数が無いため適用しない",
         "実効`engine`、`model`及び`effort`",
-        "3値がすべて一致し、いずれも`engine=codex`の場合だけ同一threadへ継続接続する",
+        "3値がすべて一致する場合だけ同一threadへ継続接続する",
         "fast担当、fast担当からfix担当への引継ぎ、別の実装単位、統合後レビュー修正及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する",
         "通常実装モードのレビュー修正は本項の明示的な例外",
         "Codexは先行turnの`codex_result`回収後",
-        "Claudeは完了済み識別子を再利用せず",
+        "`engine=claude`では`SendMessage`で同じ担当へ追加指示を返し",
     ):
         assert phrase in runtime
     assert "書込担当の工程とcommit統合を開始せず" in executor
@@ -1734,12 +1735,9 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
     assert "各単位の最初のfast担当を新規起動する直前に" in executor
     assert "複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する" in executor
     assert "`atk config get execute_fix_model`を起動直前に実行する" in executor
-    assert (
-        "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前に`atk config get execute_review_model`"
-        in executor
-    )
+    assert "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`" in executor
     assert "統合担当のモデル解決と起動は`references/plan-impl-feedback-flow.md`を正本" in process_feedbacks
-    assert "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`" in flow
+    assert "統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`" in flow
     assert "`feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし" in process_feedbacks
     assert "ファイル名昇順でまとめ" in process_feedbacks
     assert "`atk mq start-processing <filename>... --target-repo=<repo-path>`" in process_feedbacks
@@ -1772,15 +1770,15 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "適用済みスキップ",
         "固定6列TSVと対応`.lock`一時成果物だけを統合用管理対象領域内へ保存",
         "キューの`plan_file`から各計画の進捗ログを辿り",
-        "統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",
+        "統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",
         "初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動",
         "新しい上流最新OIDから統合worktreeを再作成し、本節の手順で統合担当を起動",
     ):
         assert phrase in flow
 
 
-def test_all_codex_stage_continuations_recheck_effective_routing_values() -> None:
-    """全工程のCodex継続を実効engine・model・effortの完全一致時だけ許可する。"""
+def test_all_stage_continuations_recheck_effective_routing_values() -> None:
+    """全工程の継続を実効engine・model・effortの完全一致時だけ許可する。"""
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
@@ -1788,31 +1786,31 @@ def test_all_codex_stage_continuations_recheck_effective_routing_values() -> Non
     for phrase in (
         "新たに用いる実効`engine`、`model`及び`effort`",
         "現在のthreadの起動に用いた実効3値と比較する",
-        "いずれかが異なる場合は同一threadを継続せず",
+        "いずれかの実効値が異なる場合、同じ担当へ同じタスクを返さない場合、又は中断済み・完了配送不能・前提無効化の場合は、",
         "検収済み状態を渡して解決後のengineで新規起動する",
     ):
         assert phrase in runtime
 
     launch_contracts = {
         _FEEDBACKS_PLANNER: (
-            "起草担当への新規起動又はCodex経路の継続接続の直前は`plan_model`",
+            "起草担当への新規起動又は継続接続の直前は`plan_model`",
             "レビュー担当の再レビュー直前は`plan_review_model`",
         ),
-        _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又はCodex経路の継続接続の直前に`atk config get plan_review_model`",),
+        _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",),
         _PLAN_IMPL_EXECUTOR: (
             "各単位の最初のfast担当を新規起動する直前に",
             "修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`",
-            "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前に`atk config get execute_review_model`",
+            "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`",
         ),
-        _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`",),
+        _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",),
     }
     for path, phrases in launch_contracts.items():
         text = path.read_text(encoding="utf-8")
         for phrase in phrases:
             assert phrase in text
 
-    assert "実効3値一致時だけ同一thread" in plan_review
-    assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in plan_review
+    assert "同じ担当・同じタスク・実効3値一致の条件により同一thread" in plan_review
+    assert "条件不一致時は検収済み状態を渡して解決後のengineで新規起動する" in plan_review
     assert "継続直前の実効3値が一致する場合だけ同じthreadを継続し" in executor
     assert "不一致時は検収済み状態を渡して解決後のengineで新規起動する" in executor
 
@@ -2203,16 +2201,20 @@ def test_start_processing_failure_resolves_management_repo_before_git_checks() -
         assert "`git merge-base --is-ancestor" not in text
 
 
-def test_launch_points_limit_thread_continuation_to_codex_route() -> None:
-    """起動地点の記載で継続接続をCodex経路へ限定する。
-
-    Claude経路で完了済み識別子を再利用すると完了通知が起動元へ配送されないため、
-    実行系を限定しない継続接続の記述を起動地点へ残さない。
-    """
-    for path in (_PLAN_IMPL_EXECUTOR, _FEEDBACKS_PLANNER, _PLAN_REVIEW_DELEGATION, _PLAN_IMPL_FEEDBACK_FLOW):
+def test_launch_points_reread_routing_before_launch_or_continuation() -> None:
+    """全起動地点で新規起動・継続接続の直前に実効routeを再取得する契約を固定する。"""
+    launch_points = {
+        _PLAN_IMPL_EXECUTOR: (
+            "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`"
+        ),
+        _FEEDBACKS_PLANNER: "起草担当への新規起動又は継続接続の直前は`plan_model`",
+        _PLAN_REVIEW_DELEGATION: "レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",
+        _PLAN_IMPL_FEEDBACK_FLOW: "統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",
+    }
+    for path, phrase in launch_points.items():
         text = path.read_text(encoding="utf-8")
-        for unrestricted in ("又は継続接続", "または継続接続"):
-            assert unrestricted not in text, f"{path.relative_to(_REPOSITORY_ROOT)}: 実行系を限定しない継続接続の記述"
+        assert phrase in text, f"{path.relative_to(_REPOSITORY_ROOT)}: 起動直前のroute再取得"
+        assert "runtime-routing.md" in text
 
 
 def test_review_repair_writer_route_transition_table_is_complete() -> None:
@@ -2225,25 +2227,27 @@ def test_review_repair_writer_route_transition_table_is_complete() -> None:
 
     expected_rows = (
         (
-            "| Codex | Codex | 実効3値がすべて一致する場合は元の実装担当threadを継続する。"
+            "| Codex | Codex | 同じ担当へ同じタスクを返し、実効3値がすべて一致する場合は元の実装担当threadを継続する。"
             "いずれかが異なる場合は旧担当の終端確認後、今回routeで新規起動する |"
         ),
-        "| Codex | Claude | 旧担当の終端確認後、今回routeで新規起動する |",
-        "| Claude | Codex | 旧担当の終端確認後、今回routeで新規起動する |",
-        "| Claude | Claude | 旧担当の終端確認後、今回routeで新規起動する |",
+        "| Codex | Claude | `engine`が異なるため旧担当の終端確認後、今回routeで新規起動する |",
+        "| Claude | Codex | `engine`が異なるため旧担当の終端確認後、今回routeで新規起動する |",
+        (
+            "| Claude | Claude | 同じ担当へ同じタスクを返し、実効3値がすべて一致する場合は元の実装担当threadを継続する。"
+            "いずれかが異なる場合は旧担当の終端確認後、今回routeで新規起動する |"
+        ),
     )
     for row in expected_rows:
         assert normal_fix.count(row) == 1
-    assert normal_fix.count("元の実装担当threadを継続する") == 1
+    assert normal_fix.count("元の実装担当threadを継続する") == 2
     for document in (normal_fix, runtime, writer, caller):
         assert "初回実装担当" in document
         assert "今回route" in document
         assert "実効3値" in document
         assert "開始前に1回だけ渡" in document
-    assert "両方の`engine`がCodexの場合だけ同一threadへ継続接続する" in runtime
-    assert "実効値が異なる場合を含むそれ以外の組合せ" in runtime
-    assert "実効値が異なる場合を含むそれ以外の組合せ" in writer
-    assert "両方の`engine`がCodexで実効3値がすべて一致する場合だけ" in caller
+    assert "実効3値がすべて一致し、同じ担当へ同じタスクを返す場合だけ同一threadへ継続接続する" in runtime
+    assert "`engine`が異なるため旧担当の終端確認後、今回routeで新規起動する" in normal_fix
+    assert "両方の`engine`がCodexで実効3値がすべて一致する場合だけ" not in caller
     assert "実効値が異なる場合を含むそれ以外" in caller
     for document in (normal_fix, runtime, writer, caller):
         assert "両方Codexの場合だけ" not in document
@@ -2360,7 +2364,7 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     assert "別識別子" in common_review
     assert "implementation-plan-review-task.md" in common_review
     assert "implementation-independent-review-task.md" in common_review
-    assert "各レビュー担当の新規起動又は同じレビュー担当へのCodex経路の継続接続の直前" in common_review
+    assert "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前" in common_review
     assert "二系統とも指摘0件になるまで" in common_review
     for mode_preparation in (normal, integrated):
         assert "implementation-plan-review-task.md" not in mode_preparation
@@ -2444,7 +2448,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "対応不能、複数単位へ不可分にまたがる修正",
         "初回実装担当の起動結果として保持したrouteと実効`engine`、`model`及び`effort`、今回routeと実効3値",
         (
-            "| Codex | Codex | 実効3値がすべて一致する場合は元の実装担当threadを継続する。"
+            "| Codex | Codex | 同じ担当へ同じタスクを返し、実効3値がすべて一致する場合は元の実装担当threadを継続する。"
             "いずれかが異なる場合は旧担当の終端確認後、今回routeで新規起動する |"
         ),
         "レビュー修正専用commitを残さず",
@@ -2753,7 +2757,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
             "書換え後HEADの完全OIDを取得し、最終単位の修正差分を実装し、近接検証を実行してstageする。"
             "その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする"
         ),
-        "保持した初回実装担当と起動直前に解決した今回routeの実効`engine`・`model`・`effort`がすべて一致し、両方の`engine`がCodexの場合だけ、元の実装担当threadを継続する。",
+        "保持した初回実装担当と起動直前に解決した今回routeの実効`engine`・`model`・`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ、元の実装担当threadを継続する。",
         "いずれかの実効値が異なる場合を含むそれ以外の組合せでは旧担当の終端を確認し、今回routeで新しい書込担当を起動して、検収済みHEAD・作業ツリー・検証結果を開始前に1回だけ渡す。",
     )
     loop_positions = [review_loop.index(phrase) for phrase in loop_phrases]

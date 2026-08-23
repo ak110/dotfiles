@@ -67,7 +67,7 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
 それ以外では`bump不要`、PATCH、MINOR、MAJORの順序で最も上位の種別を確定し、当該種別の版数更新を「統合段階で1回だけ適用する変更」として統合担当を起動する。
 確定した種別がMAJORで、当該種別を記録したレーンの認可根拠を読み取れない場合は、統合担当を起動せず確認へ送り、回答を得るまで起動しない。
 
-統合担当の各新規起動又はCodex経路の継続接続の直前に`atk config get merge_model`を実行し、
+統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`を実行し、
 `runtime-routing.md`「工程別モデル設定」で経路を解決する。
 統合担当へ`merge-task.md`、統合worktreeと作成時HEADの完全OID、統合対応表、全計画、プロジェクト規範、
 作成規範スキル、検証コマンド、統合段階で1回だけ適用する変更、commit可・push不可・worktree作成回収不可・キュー変更不可の権限を渡す。

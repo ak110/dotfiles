@@ -189,7 +189,9 @@
 - `plan-impl-executor`はfast担当の終端、基準OID、未コミット差分、修正前後の検証結果及び
   同一失敗箇所の残存を実測してからfix担当へdirtyな同一worktreeを渡す。書込所有権は同時に1主体だけとし、
   同一失敗箇所の残存以外ではclean開始の契約を維持する
-- fast担当とfix担当は担当ごとに新規threadで起動する。継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
+- fast担当とfix担当は担当ごとに新規threadで起動する。継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使い、
+  Claude経路では`SendMessage`、Codex経路では`runtime-routing.md`が定める接続手段を使う。継続条件の正本は
+  `agent-toolkit/skills/delegation/references/runtime-routing.md`とし、`feedbacks-planner`の確認待ち再開は累積コンテキストを新しい識別子へ渡す例外とする
 - 通常の実装モードで採用したレビュー修正は、指摘IDと実装単位commitの完全OIDを対応付けて未pushの実装履歴へ統合する。
   履歴統合前に指摘の原文、対象への適用条件、実測値と通常運用の再現経路を確認して採否を確定し、採用済みの指摘だけを修正対象へ含める。不採用、または採否未確定の指摘がある場合は、履歴と作業ツリーを変更せず`needs_escalation`で返す。
   最終単位だけは修正・近接検証・stage後に`amend` phaseでgraftを検査して再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・近接検証・stageした後、amend直前の再判定後にamendする。レビュー修正専用commitは残さない。
@@ -231,7 +233,7 @@
   終了コード0を公開済み、1を未公開、その他をGit実行失敗として扱う。commit以外は祖先判定から除外する。
   各phaseの対象は履歴順の`target_oids`配列で扱う。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを配列へ含める。autosquashでは配列のfirst-parent全OIDを判定し、1件でも公開済み・判定不能又は範囲にmergeを含む場合は遮断する。
   URL取得、重複排除、広告取得、不足OIDのfetch、広告集合の再照合または一時refの回収に失敗した場合、残りの結果を判定材料とせず履歴を書き換えず`needs_escalation`で返す。再判定不能、対象OIDのpush済み検出がある場合も`needs_escalation`で返す。
-  初回実装担当のrouteと実効`engine`、`model`及び`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。両方の`engine`がCodexで実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい書込担当を起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ書込担当が再判定からamendまでを完結する。
+  初回実装担当のrouteと実効`engine`、`model`及び`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい書込担当を起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ書込担当が再判定からamendまでを完結する。
   `rewrite_guard`のphaseは通常の`plan-impl`レビュー修正だけに記録し、fixup作成前の専用phase名を`pre_fixup`とする。通常実装のレビュー修正以外及び統合後レビュー調整モードでは`not_applicable`とする。executorは書込担当の完了後に各再判定phaseの履歴順`target_oids`を含む最小化済み`rewrite_guard`反復証跡を検収する。証跡にはshallow判定の終了コードと正規化済みbool、remote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数、全照会URL endpointの完了フラグ、URL単位の各終了コード、`target_oids`と広告された全direct refの直積へ1件ずつ対応する共通`ref_evidence`（対象OID、ref名、広告OID、広告OIDの実在確認、最終OID・型、commitの祖先判定又はnoncommitの除外理由）及び判定結果を含める。広告OIDのobject typeがtagなら名前空間に依存せず最終参照先まで再帰的にpeelする。branch・tagの二分類とtag専用の証跡は設けない。各組の欠落、重複又は不一致は遮断する。URL値、Git出力又は認証情報の無加工な受渡しは行わず、履歴書換え前の中間受渡しも設けない。
   autosquashとamendの両方を実行する場合は、autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。
    書換え前の各対象OIDと書換え後の全実装単位OIDの対応は履歴検収用に保持する。
