@@ -47,14 +47,15 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
 5. 許可を受領したレーンは`マージ担当`（`skills/plan-mode/references/implementation-task.md`の担当種別。起動直前に
    `atk config get execute_fix_model`で解決）へ委譲し、レーンworktree内で`git -C <lane-worktree> rebase --onto <tip>
    <共通ベース> HEAD`相当のrebaseを実行させる。統合ブランチtipが共通ベースと一致する最初のレーンはrebase不要で、
-   そのままff前進する
+   そのままff前進する。
+   `execute_fix_model`の解決は`../../delegation/references/runtime-routing.md`「工程別モデル設定」に従う
 6. rebase競合はレーン自身が解消する。マージ担当は自レーンの計画と、競合相手のcommitが属する計画（メインが許可時に
    計画パス一覧を渡す）を読み、双方の目的を両立する最小限の解消をする。
    競合を解消した場合は、解消箇所を対象にレーン内の変更ファイル限定検査を再実行する。
    その後、ff前進へ進まず`status: merge_review_pending`（解消箇所・rebase後HEADの完全OID・解消差分の対象OID範囲・
    検証結果を含む中間報告）で終端する。
-   executorは差分限定レビュー調整モード（`agent-toolkit/agents/plan-impl-executor.md`。既存の入力変換・系統別TSV・
-   `review_contract`の機構を維持し、採用指摘の修正は`差分限定レビュー修正担当`へ委譲する）を起動する。
+   executorをモード指定`差分限定レビュー調整モード`（`agent-toolkit/agents/plan-impl-executor.md`。既存の入力変換・系統別TSV・
+   `review_contract`の機構を維持し、採用指摘の修正は`差分限定レビュー修正担当`へ委譲する）で起動する。
    同モードは、競合解消箇所のファイルに限定した差分（当該ファイル内のレビュー済みレーン変更を含む）を対象に
    レビューを収束させる。ファイル粒度が差分限定の最小単位であり、解消行だけの抽出は行わない。
    レビュータスクへの入力変換規則は次のとおりとする。着手前SHA＝メイン許可時の統合ブランチtip完全OID、
@@ -89,7 +90,8 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
     差分限定レビュー調整モードと同型の手順）はメインが実行主体となる。
     対象commitが0件（bump不要かつ修正なし）の場合だけ二系統レビューを実施しない
     （レーンのcommitはレーン内でレビュー済みのため）
-11. push・CI通過確認・終端工程・adopt・レーンworktree回収は既存契約を維持する（メインだけが実行する）
+11. push・CI通過確認・終端工程・レーンworktree回収は既存契約を維持する（メインだけが実行する）。
+    push・CI成功後、ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行する
 12. push前のfetch照合又は実pushで上流進行（non-fast-forward拒否）を観測した場合、メインは`execute_fix_model`で
     経路を解決する。
     解決した`マージ担当`（工程`rebaseのみ`・対象worktree＝セッションworktree）へ、rebase（`git rebase --onto

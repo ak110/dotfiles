@@ -1120,7 +1120,7 @@ def test_single_plan_units_advance_one_lane_worktree_without_cherry_pick() -> No
     ):
         assert phrase in normal
     assert "cherry-pick" not in normal
-    assert "cherry-pick統合" not in flow
+    assert "終了時一括のcherry-pick統合と統合担当は廃止し" in flow
     assert "rebase" in flow
 
 
@@ -1729,7 +1729,7 @@ def test_all_stage_continuations_recheck_effective_routing_values() -> None:
             "修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`",
             "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`",
         ),
-        _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",),
+        _PLAN_IMPL_FEEDBACK_FLOW: ("`atk config get execute_fix_model`で解決）へ委譲し",),
     }
     for path, phrases in launch_contracts.items():
         text = path.read_text(encoding="utf-8")
@@ -1794,8 +1794,8 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
         assert "原因となった変更を認可した利用者指示の逐語文" in text
         assert "既存の公開契約の該当箇所" in text
     assert "一般のCI失敗では計画ファイルとフィードバックファイル名一覧が存在しないことを入力不足としない" in ci_failure
-    assert "計画ファイルは`CI修正担当`以外では必須" in task
-    assert "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す" in task
+    assert "計画ファイルは`CI修正担当`・`マージ担当`以外では必須" in task
+    assert "`CI修正担当`ではフィードバック起因の場合だけ渡す" in task
     assert "計画を受領しない`CI修正担当`" in task
     common_output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
     for field in (
@@ -1904,7 +1904,7 @@ def test_fast_handoff_status_and_record_are_distinct_from_final_statuses() -> No
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
 
-    assert "status: completed | fast_fix_handoff | needs_escalation" in output
+    assert "status: completed | fast_fix_handoff | scope_deviation_hold | merge_review_pending | needs_escalation" in output
     assert "repair_handoff:" not in output
     handoff_output = task.partition("`status: fast_fix_handoff`の場合だけ、共通出力へ次の修正引継ぎ記録を追加する。")[2]
     assert "repair_handoff:" in handoff_output
@@ -2010,10 +2010,13 @@ def test_implementation_task_type_is_explicit_at_each_launch_point() -> None:
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     ci_failure = _CI_FAILURE_HANDLING.read_text(encoding="utf-8")
 
-    assert "担当種別（`fast担当`、`fix担当`、`レビュー修正担当`又は`CI修正担当`" in task
+    assert (
+        "担当種別（`fast担当`、`fix担当`、`レビュー修正担当`、`CI修正担当`、`マージ担当`又は`差分限定レビュー修正担当`" in task
+    )
     assert "起動文へ担当種別を`fast担当`として明示" in executor
     assert "担当種別は`fix担当`として明示" in executor
-    assert executor.count("起動文へ担当種別を`レビュー修正担当`として明示") == 2
+    assert executor.count("起動文へ担当種別を`レビュー修正担当`として明示") == 1
+    assert "起動文へ担当種別を`差分限定レビュー修正担当`として明示" in executor
     assert "起動文へ担当種別を`CI修正担当`として明示" in caller
     assert "担当種別`CI修正担当`" in caller
     assert "担当種別`CI修正担当`" in ci_failure
@@ -2120,7 +2123,7 @@ def test_launch_points_reread_routing_before_launch_or_continuation() -> None:
         ),
         _FEEDBACKS_PLANNER: ("起草担当への新規起動又は継続接続の直前は`plan_model`",),
         _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",),
-        _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",),
+        _PLAN_IMPL_FEEDBACK_FLOW: ("`atk config get execute_fix_model`で解決）へ委譲し",),
     }
     for path, phrases in launch_points.items():
         text = path.read_text(encoding="utf-8")
@@ -2189,26 +2192,13 @@ def test_normal_review_repair_route_is_not_overridden_by_a_general_new_thread_ru
         assert conflicting not in runtime
 
 
-def test_merge_table_coverage_is_verified_before_merge_agent_launch() -> None:
-    """統合対応表の作成直後にレーン項目と母集団の出現回数を照合し、不一致では統合担当を起動しない。"""
-    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
-
-    for phrase in (
-        "--type=feedback --status=processing",
-        "出現回数が1回",
-        "母集団に含まれないファイル名の出現回数が0回",
-        "いずれかを検出した場合は統合担当を起動しない",
-    ):
-        assert phrase in flow
-
-
 def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     """`plan-impl-executor`と呼び出し元の入力契約を選択モードごとに分離する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     input_contract = _h2_section(executor, "入力")
     common = input_contract.partition("### 共通\n")[2].partition("\n### 通常の実装モード\n")[0]
-    normal = input_contract.partition("### 通常の実装モード\n")[2].partition("\n### 統合後レビュー調整モード\n")[0]
-    integrated = input_contract.partition("### 統合後レビュー調整モード\n")[2]
+    normal = input_contract.partition("### 通常の実装モード\n")[2].partition("\n### 差分限定レビュー調整モード\n")[0]
+    integrated = input_contract.partition("### 差分限定レビュー調整モード\n")[2]
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
@@ -2245,37 +2235,39 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     assert "採用指摘IDと統合先の実装単位commit完全OIDの対応表" in implementation_task
     assert "レビュー対象の最終HEAD完全OID" not in integrated
     for phrase in (
-        "統合worktree",
-        "最終HEADの完全OID",
-        "統合対応表の絶対パス",
-        "統合対応表に含まれる全計画の絶対パス",
-        "統合スレッドの検証結果",
-        "統合用管理対象領域の絶対パス",
+        "着手前SHA（発火元の生成規則で確定した完全OID）",
+        "レビュー対象の現行HEAD完全OID",
+        "変更ファイル一覧（`対象ファイル限定`としてレビュータスクへ渡す解消箇所・累積差分の変更ファイル）",
+        "照合先計画パス一覧",
+        "検証コマンド（発火元が指定する検証区分。手順6はレーン内検証）",
+        "実装レビュー用managed temp領域の絶対パス",
         "再レビュー時は各系統表、及び修正対象となる全系統表の絶対パス",
     ):
         assert phrase in integrated
+    assert "発火元は次の3つである" in integrated
+    assert "executorが起動されるのは手順6の発火だけであり、手順10・12では本executorは起動されない" in integrated
     assert "共通入力又は選択したモードの必須入力" in input_contract
     assert "選択していないモードの入力を要求せず" in input_contract
     assert "モード指定`通常の実装モード`" in caller
-    assert "モード指定`統合後レビュー調整モード`" in flow
-    assert "統合対応表の絶対パス" in flow
-    assert "### 統合担当の起動" in flow
-    lane_launch = flow.partition("### 統合担当の起動")[0]
-    integrated_launch = flow.partition("モード指定`統合後レビュー調整モード`")[2]
+    assert "モード指定`差分限定レビュー調整モード`" in flow
+    lane_launch = flow.partition("モード指定`差分限定レビュー調整モード`")[0]
+    integrated_launch = flow.partition("モード指定`差分限定レビュー調整モード`")[2]
     assert "該当する作成規範スキルの絶対パス" in lane_launch
-    assert "該当する作成規範スキルの絶対パス" in integrated_launch
+    assert "既存の入力変換・系統別TSV" in integrated_launch
 
 
 def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     """両モードにタスク文書指定を持つ共通の最終二系統レビューを適用する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     execution = _h2_section(executor, "実行")
-    normal = execution.partition("### 通常の実装モードの準備\n")[2].partition("\n### 統合後レビュー調整モードの準備\n")[0]
-    integrated = execution.partition("### 統合後レビュー調整モードの準備\n")[2].partition("\n### 共通の最終二系統レビュー\n")[0]
+    normal = execution.partition("### 通常の実装モードの準備\n")[2].partition("\n### 差分限定レビュー調整モードの準備\n")[0]
+    integrated = execution.partition("### 差分限定レビュー調整モードの準備\n")[2].partition("\n### 共通の最終二系統レビュー\n")[
+        0
+    ]
     common_review = execution.partition("### 共通の最終二系統レビュー\n")[2]
 
     assert "同worktreeのHEADを最終レビュー対象" in normal
-    assert "レビュー対象は統合段階の変更一覧が示すcommitの" in integrated
+    assert "レビュー対象は`merge_review_pending`が報告した解消箇所" in integrated
     assert "同じ最終HEAD" in common_review
     assert "別識別子" in common_review
     assert "implementation-plan-review-task.md" in common_review
@@ -2297,8 +2289,8 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     common_review = _h2_section(executor, "実行").partition("### 共通の最終二系統レビュー\n")[2]
 
     assert "最初の書込担当の起動前にレーンのworktreeのclean状態とHEADの完全OIDを検収" in executor
-    assert "統合worktree作成時の完全OID" in input_contract
-    assert "統合対応表の絶対パス" in input_contract
+    assert "着手前SHA（発火元の生成規則で確定した完全OID）" in input_contract
+    assert "照合先計画パス一覧" in input_contract
     for phrase in (
         "`対応要否`と後半の対応欄を確定する前",
         "`## 変更履歴`と現在状態を定める後続節の整合",
@@ -2308,7 +2300,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
         "最初の書込担当の起動前に検収したレーンのworktreeの完全OID",
         "対象計画、ユーザー合意",
         "追加指示及び許容済みの挙動変化を合成",
-        "必須入力の統合worktree作成時完全OID",
+        "必須入力の着手前SHAにある公開契約",
         "契約条項の出典及び適用範囲",
         "適用される全計画と条項を対応付け",
         "全適用条項と両立する修正だけを認可",
@@ -2327,10 +2319,9 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     writer_handoff_at = common_review.index("実在欠陥だけを書込担当へ一括して返す", policy_at)
     assert plan_check_at < authorization_at < policy_at < writer_handoff_at
 
-    assert "統合担当へ渡した作成時HEADの完全OIDと同じ文字列" in flow
-    assert "統合対応表の絶対パス" in flow
-    assert "統合後HEADはレビュー対象として渡す" in flow
-    assert "統合担当以降の差分を公開契約の認可基準へ含めない" in flow
+    assert "着手前SHA＝メイン許可時の統合ブランチtip完全OID" in flow
+    assert "レビュー対象＝rebase後HEAD" in flow
+    assert "照合先計画＝" in flow
     assert "ベースコミットから現行`HEAD`までの累積差分" in common_review
 
 
