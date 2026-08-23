@@ -90,7 +90,7 @@
    rebase・ff前進のいずれかが失敗した場合は`git rebase --abort`で自worktreeを復元し、失敗事象を`needs_escalation`で返す。
    検証コマンドを実行し、新tip（`rebaseのみ`工程では新HEAD）の完全OIDと検証結果を`completed`で返す。
 9. 担当種別が`差分限定レビュー修正担当`の場合は、受領した採用指摘だけを、履歴書換え（amend・fixup・autosquash）を
-   行わず新規commitで修正する。`rewrite_guard`は`not_applicable`とする。
+   行わず、修正を新規commitで積む。`rewrite_guard`は`not_applicable`とする。
    指定された検証コマンドで近接検証を実施し、修正commitの完全OID、再検証結果、指摘IDごとの解消記録を`completed`で返す。
    指摘の根拠不足、計画との衝突、認可外の変更が必要な場合は修正せず`needs_escalation`で返す。
 10. 全ての書込担当は、共有の判定処理、振り分け処理、解析処理を変更する場合に、変更分岐へ到達する全呼び出し元と

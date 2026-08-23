@@ -33,8 +33,9 @@
 起動文は受信者への命令を先頭に置き、次だけを渡す。
 
 - モード指定`通常の実装モード`
-- 計画ファイル（新書式はメイン側・detail側の絶対パスの組、旧形式は単一パス。新旧の判別は
-  対応する`<stem>.detail.md`ファイルの実在で行う）、プロジェクト規範、該当する作成規範スキルの絶対パス。
+- 計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス
+  （計画ファイルは新書式ならメイン側・detail側の絶対パスの組、旧形式は単一パス。新旧の判別は
+  対応する`<stem>.detail.md`ファイルの実在で行う）。
   同じ計画ファイルの実装単位は同じworktreeへ順次割り当て、同時に1つの書込担当だけを置くこと
 - `implementation-task.md`、`implementation-plan-review-task.md`、`implementation-independent-review-task.md`、
   `../../reviewee-standards/SKILL.md`の絶対パス

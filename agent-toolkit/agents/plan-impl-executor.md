@@ -111,9 +111,10 @@ executorが起動されるのは手順6の発火だけであり、手順10・12�
    前の単位の実効値と一致する場合も前の担当のthreadを継続せず、検収済みの先行commit、検証結果及び未完了の実装単位を渡して新規threadを起動する。
    書込担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
    `engine=codex`はCodex App Server MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名とeffortを契約どおり渡す。
-   書込担当へ呼び出し元から受け取った`skills/plan-mode/references/implementation-task.md`、計画ファイル
-   （新書式はdetail側を実装詳細の正本として渡し、メイン側は素材・要求の復元が必要な場合だけ追加で渡す。
-   旧形式は単一パス）、対象worktree、プロジェクト規範の絶対パス、
+   書込担当へ呼び出し元から受け取った`skills/plan-mode/references/implementation-task.md`、
+   計画ファイル、対象worktree、プロジェクト規範の絶対パス
+   （計画ファイルは新書式ならdetail側を実装詳細の正本として渡し、メイン側は素材・要求の復元が必要な場合だけ追加で渡す。
+   旧形式は単一パス）、
    実装するコミット単位、その目的及び変更説明、適用する作成規範スキル名と絶対パス、
    受領している場合はソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、
    git操作に用いるworktree絶対パス、複製元と対象外worktree及びgit操作の制約を渡す。
