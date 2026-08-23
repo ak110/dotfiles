@@ -280,7 +280,7 @@ function Get-LegacyUserCodexMcpStatus {
     $codexProperty = $mcpProperty.Value.PSObject.Properties['codex']
     if ($null -eq $codexProperty -or $null -eq $codexProperty.Value) { return 'missing' }
     $definition = $codexProperty.Value
-    $allowed = @('type', 'command', 'args', 'timeout')
+    $allowed = @('type', 'command', 'args', 'timeout', 'env')
     foreach ($property in $definition.PSObject.Properties) {
         if ($property.Name -notin $allowed) { return 'custom' }
     }
@@ -298,6 +298,14 @@ function Get-LegacyUserCodexMcpStatus {
         $numericTypes = @([byte], [sbyte], [int16], [uint16], [int32], [uint32], [int64], [uint64], [single], [double], [decimal])
         if (-not ($numericTypes | Where-Object { $_.IsInstanceOfType($timeoutValue) }) -or [decimal]$timeoutValue -ne 7200000) { return 'custom' }
     }
+    # 旧installerが使う`claude mcp add`は`-e`未指定でもenvを空で書き込む。
+    # 値を持つenvは利用者が加えた設定として保持する（bash版と同じ契約）。
+    $envProperty = $definition.PSObject.Properties['env']
+    if ($null -ne $envProperty -and $null -ne $envProperty.Value) {
+        $envValue = $envProperty.Value
+        if ($envValue -isnot [System.Management.Automation.PSCustomObject]) { return 'custom' }
+        if (@($envValue.PSObject.Properties).Count -ne 0) { return 'custom' }
+    }
     return 'legacy'
 }
 
@@ -308,11 +316,6 @@ function Move-LegacyCodexMcp {
     }
     if ($status -eq 'custom') {
         Write-Warning 'User scopeのcodex MCP定義は利用者固有設定のため保持します。必要なら claude mcp remove --scope user codex を手動実行してください。'
-        return
-    }
-    # CLI実行直前にも再照合し、並行変更された定義を削除しない。
-    if ((Get-LegacyUserCodexMcpStatus) -ne 'legacy') {
-        Write-Warning 'User scopeのcodex MCP定義が再照合時に変化したため移行を見送ります。'
         return
     }
     Invoke-RequiredNativeCommand claude @('mcp', 'remove', '--scope', 'user', 'codex')

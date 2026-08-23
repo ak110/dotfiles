@@ -18,6 +18,8 @@ def _write(path: pathlib.Path, value: object) -> None:
 def test_is_legacy_definition_accepts_old_variants() -> None:
     assert subject.is_legacy_definition({"command": "codex", "args": ["mcp-server"]})
     assert subject.is_legacy_definition({"type": "stdio", "command": "codex", "args": ["mcp-server"], "timeout": 7_200_000})
+    # 旧installerが使う`claude mcp add`は`-e`未指定でも空dictの`env`を書き込む。
+    assert subject.is_legacy_definition({"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {}})
 
 
 @pytest.mark.parametrize(
@@ -28,6 +30,7 @@ def test_is_legacy_definition_accepts_old_variants() -> None:
         {"type": "sse", "command": "codex", "args": ["mcp-server"]},
         {"command": "codex", "args": ["mcp-server"], "timeout": 1},
         {"command": "codex", "args": ["mcp-server"], "env": {"X": "1"}},
+        {"command": "codex", "args": ["mcp-server"], "customField": True},
     ],
 )
 def test_is_legacy_definition_preserves_custom_definition(value: dict[str, object]) -> None:
@@ -36,7 +39,8 @@ def test_is_legacy_definition_preserves_custom_definition(value: dict[str, objec
 
 def test_run_removes_only_exact_user_definition(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     path = tmp_path / ".claude.json"
-    _write(path, {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}})
+    # 旧installerの`claude mcp add`が生成する形をそのまま入力にする。
+    _write(path, {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {}}}})
     monkeypatch.setattr(subject, "_CLAUDE_CONFIG_PATH", path)
     monkeypatch.setattr(subject.shutil, "which", lambda _name: "/usr/bin/claude")
     calls: list[list[str]] = []

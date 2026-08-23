@@ -315,7 +315,7 @@ if not isinstance(servers, dict):
 value = servers.get("codex")
 if not isinstance(value, dict):
     raise SystemExit(1)
-if set(value) - {"type", "command", "args", "timeout"}:
+if set(value) - {"type", "command", "args", "timeout", "env"}:
     raise SystemExit(3)
 if value.get("type") not in (None, "stdio"):
     raise SystemExit(3)
@@ -323,6 +323,11 @@ if value.get("type") not in (None, "stdio"):
 if value.get("command") != "codex" or value.get("args") != ["mcp-server"]:
     raise SystemExit(3)
 if value.get("timeout") not in (None, 7200000):
+    raise SystemExit(3)
+# 旧installerが使う`claude mcp add`は`-e`未指定でもenvを空で書き込む。
+# 値を持つenvは利用者が加えた設定として保持する（PowerShell版と同じ契約）。
+env = value.get("env")
+if env is not None and env != {}:
     raise SystemExit(3)
 raise SystemExit(0)
 PY
@@ -345,17 +350,6 @@ _migrate_legacy_codex_mcp() {
     if [ "$status" -ne 0 ]; then
         echo "$HOME/.claude.jsonから旧Codex MCPのUser scope登録を判定できません。設定を変更せず終了します。" >&2
         return 1
-    fi
-
-    # CLI実行直前にも完全一致を再照合し、並行変更された定義を削除しない。
-    if _legacy_user_codex_mcp_status; then
-        status=0
-    else
-        status=$?
-    fi
-    if [ "$status" -ne 0 ]; then
-        echo "User scopeのcodex MCP定義が再照合時に変化したため移行を見送ります。" >&2
-        return 0
     fi
     if claude mcp remove --scope user codex >/dev/null; then
         echo "旧Codex MCPのUser scope登録を削除しました。"

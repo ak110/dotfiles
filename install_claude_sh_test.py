@@ -754,6 +754,10 @@ _REGISTERED_STATES = [
         {"mcpServers": {"codex": {}}, "projects": {"/repo": {"mcpServers": {"codex": {}}}}, "projectMarker": True},
         id="user-local-project",
     ),
+    pytest.param(
+        {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {"X": "1"}}}},
+        id="user-env-value",
+    ),
 ]
 
 
@@ -811,6 +815,11 @@ _LEGACY_USER_CODEX_STATES = [
     pytest.param(
         {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "timeout": 7200000}}},
         id="with-managed-timeout",
+    ),
+    # 旧installerが使う`claude mcp add`が実際に生成する形。
+    pytest.param(
+        {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"], "env": {}}}},
+        id="with-empty-env",
     ),
 ]
 

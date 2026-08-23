@@ -127,10 +127,6 @@ MCPサーバーは必要時に公式の`codex app-server --stdio`を子プロセ
 結果回収後のreply開始時だけ新しい比較対象を作成する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
-Claude Code pluginの`SessionStart`フックは、User scopeへ残る旧`codex mcp-server`定義を読み取り専用で診断する。
-旧定義を検出した場合は`claude mcp get codex`による確認と、`claude mcp remove --scope user codex`による手動削除を案内する。
-pluginの起動だけを契機に`~/.claude.json`を変更しない。
-
 ## ホーム配下のファイルを編集する前の確認
 
 `~/.config/`・`~/.claude/`などホーム直下のファイルを編集する場合、

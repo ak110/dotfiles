@@ -661,24 +661,23 @@ class TestCodexMcpTimeout:
     """`run()`経由で旧Codex MCP timeoutの一回限りの除去を検証する。"""
 
     def test_production_config_does_not_manage_codex_mcp(self) -> None:
-        """配布設定は旧Codex MCP定義を新規作成しない。"""
+        """配布設定は`mcpServers`自体を管理しない。"""
         managed = json.loads(_PROD_MANAGED_CONFIG.read_text(encoding="utf-8"))
-        assert managed["mcpServers"] == {}
+        assert "mcpServers" not in managed
 
-    def test_legacy_timeout_is_removed_and_other_fields_preserved(
+    def test_legacy_timeout_is_removed_from_generated_definition(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """旧管理値だけを除去し、旧定義の他フィールドは保持する。"""
+        """旧installerが生成する形の定義から管理値のtimeoutだけを除去する。"""
         _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
         existing_codex = {
             "type": "stdio",
             "command": "codex",
             "args": ["mcp-server"],
-            "env": {"CUSTOM": "value"},
-            "customField": True,
+            "env": {},
             "timeout": 7_200_000,
         }
         config_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
@@ -687,6 +686,32 @@ class TestCodexMcpTimeout:
 
         result = json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["codex"]
         assert result == {key: value for key, value in existing_codex.items() if key != "timeout"}
+
+    def test_definition_with_extra_fields_is_preserved(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """利用者が加えたフィールドを持つ定義は変更しない。"""
+        _setup_run_paths(tmp_path, monkeypatch, {})
+        config_path = tmp_path / "claude.json"
+        existing = {
+            "mcpServers": {
+                "codex": {
+                    "type": "stdio",
+                    "command": "codex",
+                    "args": ["mcp-server"],
+                    "env": {"CUSTOM": "value"},
+                    "customField": True,
+                    "timeout": 7_200_000,
+                }
+            }
+        }
+        config_path.write_text(json.dumps(existing), encoding="utf-8")
+
+        mod.run()
+
+        assert json.loads(config_path.read_text(encoding="utf-8")) == existing
 
     def test_settings_json_does_not_strip_legacy_timeout(
         self,
@@ -1562,6 +1587,41 @@ class TestStripRemovedListItems:
 
         result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert result["autoMode"]["allow"] == ["利用者独自ルール"]
+
+    def test_run_removes_legacy_codex_mcp_permission(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`run()`は旧Codex MCPの許可だけを除去し、現行MCPと利用者独自許可を保持する。"""
+        settings_path = _setup_run_paths(
+            tmp_path,
+            monkeypatch,
+            {"permissions": {"allow": ["mcp__plugin_agent-toolkit_codex_app_server__codex_start"]}},
+        )
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "permissions": {
+                        "allow": [
+                            "mcp__codex__codex",
+                            "mcp__codex__codex_reply",
+                            "Bash(ls:*)",
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert result["permissions"]["allow"] == [
+            "Bash(ls:*)",
+            "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+        ]
 
 
 class TestStripStaleLabeledListItems:

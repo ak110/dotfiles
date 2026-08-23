@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytilpack.jsonc
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, log_format, remove_legacy_codex_mcp_from_claude
 from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,11 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
     (
         "permissions.deny",
         "Read(./.env)",
+    ),
+    # 2026-08: 旧Codex User scope MCPの登録廃止に伴い、当該MCPツールの許可項目を除去
+    (
+        "permissions.allow",
+        "mcp__codex",
     ),
 )
 
@@ -246,22 +251,10 @@ def _strip_legacy_codex_timeout(data: dict) -> None:
     if not isinstance(servers, dict):
         return
     codex = servers.get("codex")
-    if not _is_legacy_codex_definition(codex):
+    if not remove_legacy_codex_mcp_from_claude.is_legacy_definition(codex):
         return
     assert isinstance(codex, dict)
-    del codex["timeout"]
-
-
-def _is_legacy_codex_definition(value: object) -> bool:
-    """旧installerのCodex stdio定義であるかを判定する。"""
-    if not isinstance(value, dict):
-        return False
-    return (
-        value.get("type") in (None, "stdio")
-        and value.get("command") == "codex"
-        and value.get("args") == ["mcp-server"]
-        and value.get("timeout") == 7_200_000
-    )
+    codex.pop("timeout", None)
 
 
 def _substitute_home_placeholder(value: object) -> object:

@@ -15,15 +15,14 @@ _CODEX_NAME = "codex"
 _CODEX_COMMAND = "codex"
 _CODEX_ARGS = ["mcp-server"]
 _LEGACY_TIMEOUT = 7_200_000
-_ALLOWED_FIELDS = frozenset({"type", "command", "args", "timeout"})
+_ALLOWED_FIELDS = frozenset({"type", "command", "args", "timeout", "env"})
 _CLAUDE_CONFIG_PATH = claude_common.CLAUDE_CONFIG_PATH
 
 
-def _load_user_codex(path: Any = None) -> dict[str, Any] | None:
+def _load_user_codex() -> dict[str, Any] | None:
     """User scope設定のcodex定義を読み取る。"""
-    config_path = path or _CLAUDE_CONFIG_PATH
     try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
+        data = json.loads(_CLAUDE_CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
@@ -36,12 +35,20 @@ def _load_user_codex(path: Any = None) -> dict[str, Any] | None:
 
 
 def is_legacy_definition(value: object) -> bool:
-    """過去installerが生成した完全一致の定義であるかを返す。"""
+    """過去installerが生成した完全一致の定義であるかを返す。
+
+    受理するフィールドの集合は移行元の実生成物を基準とする。旧installerが使う
+    `claude mcp add`は`-e`を指定しない場合も`env`を空dictとして書き込むため、
+    値を持たない`env`だけを受理し、値を持つ`env`は利用者が加えた設定として保持する。
+    """
     if not isinstance(value, dict) or not set(value).issubset(_ALLOWED_FIELDS):
         return False
     if value.get("type") not in (None, "stdio"):
         return False
     if value.get("command") != _CODEX_COMMAND or value.get("args") != _CODEX_ARGS:
+        return False
+    env = value.get("env")
+    if env is not None and env != {}:
         return False
     timeout = value.get("timeout")
     return timeout is None or timeout == _LEGACY_TIMEOUT
@@ -60,12 +67,6 @@ def run() -> bool:
                 " 必要なら `claude mcp remove --scope user codex` を手動実行してください。"
             )
         return False
-
-    # 外部設定が並行変更された場合に別定義を削除しないよう、CLI実行直前に再照合する。
-    latest = _load_user_codex()
-    if not is_legacy_definition(latest):
-        logger.warning("User scopeのcodex MCP定義が再照合時に変化したため移行を見送ります。")
-        return False
     result = claude_common.run_claude(["mcp", "remove", "--scope", "user", _CODEX_NAME])
     if result is None or result.returncode != 0:
         detail = claude_common.format_cli_error(result)
@@ -73,7 +74,3 @@ def run() -> bool:
         return False
     logger.info(log_format.format_status("legacy-codex-mcp", "旧User scope登録を削除しました"))
     return True
-
-
-if __name__ == "__main__":
-    raise SystemExit(0 if run() else 1)

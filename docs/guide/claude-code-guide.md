@@ -279,7 +279,6 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みTBDの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックし、登録済み調整役では未消化の子エージェント起動もブロックする | 対応 | 対応。空の完了報告のブロックに対応する。調整役の子エージェント検査は、完了判定へ利用できる安定したtranscript契約が無いため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `SessionStart/session_start` | plugin更新だけの経路で残る旧Codex User scope MCPを読み取り専用で診断し、手動削除手順を案内する | 対応 | 非対応。Codex向けmanifestへは配布しない |
 | plugin `Stop/stop_advisor` | 作業完了時に同一セッションの振り返りを一度だけ継続し、未コミット変更があれば`git status`の件数を表示する | 対応 | 対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 手動スキル起動の状態と振り返り対象を記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
