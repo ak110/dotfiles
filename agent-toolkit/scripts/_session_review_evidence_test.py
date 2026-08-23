@@ -1471,6 +1471,7 @@ def test_query_modes_search_hook_notice_stored_under_attachment(
                 "attachment": {
                     "type": "hook_success",
                     "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
                     "stdout": json.dumps({"hookSpecificOutput": {"additionalContext": notice}}, ensure_ascii=False),
                     "stderr": "",
                     "exitCode": 0,
@@ -1482,6 +1483,7 @@ def test_query_modes_search_hook_notice_stored_under_attachment(
                 "attachment": {
                     "type": "hook_additional_context",
                     "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
                     "content": [notice],
                 },
             },
@@ -1490,14 +1492,66 @@ def test_query_modes_search_hook_notice_stored_under_attachment(
 
     assert evidence.main([str(transcript), "--warn"]) == 0
     warnings = _read_jsonl(capsys)
-    assert [event["line"] for event in warnings] == [1, 2]
+    assert [event["line"] for event in warnings] == [1]
     assert notice in warnings[0]["text"]
-    assert warnings[1]["text"] == notice
 
     assert evidence.main([str(transcript), "--grep", "切り詰めている"]) == 0
     matches = _read_jsonl(capsys)
     assert [event["line"] for event in matches[:2]] == [1, 2]
     assert matches[-1] == {"kind": "summary", "count": 2}
+
+
+def test_warn_mode_keeps_hook_notices_with_distinct_or_missing_tool_use_ids(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """異なるツール呼び出しの通知と識別子を持たない通知は個別の警告として保持する。"""
+    notice = "[auto-generated: agent-toolkit/pretooluse][warn] 検証コマンドの出力を切り詰めている"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "content": [notice],
+                },
+            },
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-2",
+                    "content": [notice],
+                },
+            },
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "content": [notice],
+                },
+            },
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "content": [notice],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    warnings = _read_jsonl(capsys)
+    assert [event["line"] for event in warnings] == [1, 2, 3, 4]
+    assert [event["text"] for event in warnings] == [notice] * 4
 
 
 def test_warn_mode_reports_matches_found_only_in_tool_use_result(

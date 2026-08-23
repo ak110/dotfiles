@@ -1607,9 +1607,30 @@ def _warning_boundary_line(records: list[_Record]) -> int | None:
     return None
 
 
+def _warning_hook_identities(entry: dict[str, Any]) -> dict[str, list[str]]:
+    """hook記録の警告本文ごとにツール呼び出し識別子を出現順で返す。"""
+    identities: dict[str, list[str]] = {}
+    for hook_record in _warning_hook_records(entry):
+        tool_use_id = hook_record.get("toolUseID")
+        if not isinstance(tool_use_id, str):
+            continue
+        for line_text in _warning_texts(hook_record):
+            tool_use_ids = identities.setdefault(line_text, [])
+            if tool_use_id not in tool_use_ids:
+                tool_use_ids.append(tool_use_id)
+    return identities
+
+
 def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
-    """振り返り境界より前の実行時警告を行番号付きで返す。一致なしはその事実を返す。"""
+    """振り返り境界より前の実行時警告を行番号付きで返す。
+
+    同じhook通知は成功記録と追加コンテキストへ重複して格納されるため、
+    ツール呼び出し識別子と本文の組で1件として扱う。
+    識別子を持たない警告はコマンド出力由来の検出を失わないように個別に保持する。
+    一致しない場合はその事実を返す。
+    """
     events: list[dict[str, Any]] = []
+    seen_hook_warnings: set[tuple[str, str]] = set()
     boundary_line = _warning_boundary_line(records)
     scannable = _scannable_records(records)
     if boundary_line is not None:
@@ -1618,12 +1639,25 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
         matched_lines = _warning_texts(record.entry)
         if not matched_lines:
             continue
+        hook_identities = _warning_hook_identities(record.entry)
         hint = _tool_hint(record.entry)
         for line_text in matched_lines:
-            event: dict[str, Any] = {"kind": "warning", "line": record.line, "text": _clip(line_text)}
-            if hint:
-                event["tool"] = hint
-            events.append(event)
+            tool_use_ids = hook_identities.get(line_text, [])
+            if not tool_use_ids:
+                event: dict[str, Any] = {"kind": "warning", "line": record.line, "text": _clip(line_text)}
+                if hint:
+                    event["tool"] = hint
+                events.append(event)
+                continue
+            for tool_use_id in tool_use_ids:
+                identity = (tool_use_id, line_text)
+                if identity in seen_hook_warnings:
+                    continue
+                seen_hook_warnings.add(identity)
+                event = {"kind": "warning", "line": record.line, "text": _clip(line_text)}
+                if hint:
+                    event["tool"] = hint
+                events.append(event)
     return events or [{"kind": "warning", "text": "一致なし"}]
 
 
