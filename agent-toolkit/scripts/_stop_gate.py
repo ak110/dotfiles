@@ -185,17 +185,27 @@ def has_uncollected_codex_turns(session_id: str) -> bool:
 def has_pending_agent_launches(transcript_path: str, session_id: str) -> bool:
     """配下で起動した孫エージェントのうち、完了未消化のものが1件以上あれば真を返す。
 
-    背景Bash起動を除き、Agent起動とSendMessageによる再開を対象とする。
-    背景Bashジョブの未消化は完了報告本文の検査を免除する根拠にしない。
+    判定対象と除外理由は`pending_agent_launch_ids`を参照。
+    """
+    return bool(pending_agent_launch_ids(transcript_path, session_id))
+
+
+def pending_agent_launch_ids(transcript_path: str, session_id: str) -> set[str]:
+    """配下で起動した孫エージェントのうち、完了未消化の`tool_use_id`集合を返す。
+
+    Agent起動だけを対象とし、背景Bash起動とSendMessageによる再開は除く。
+    SendMessage再開の完了通知は最上位セッションへ配送されるため、サブエージェント自身の
+    transcriptでは起動と完了を突合できない。全体Stop用の`is_pending_async_work`は
+    最上位セッションのtranscriptを判定するため、SendMessage再開を引き続き対象とする。
     SubagentStopが渡すサブエージェント自身の記録を扱うため、sidechainエントリも走査する。
     """
     launched, completed = _describe_pending_background_tasks(
         transcript_path,
         session_id,
         include_sidechain=True,
-        kinds=("agent", "sendmessage"),
+        kinds=("agent",),
     )
-    return bool(launched - completed)
+    return launched - completed
 
 
 def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bool:

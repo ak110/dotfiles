@@ -8,7 +8,7 @@ import pathlib
 import pytest
 import subagent_stop_advisor as advisor
 
-_REAL_HAS_PENDING_AGENT_LAUNCHES = advisor.has_pending_agent_launches
+_REAL_PENDING_AGENT_LAUNCH_IDS = advisor.pending_agent_launch_ids
 
 
 def _minimal_report() -> str:
@@ -45,7 +45,7 @@ def _active_executor(monkeypatch: pytest.MonkeyPatch) -> None:
         "read_state",
         lambda _session_id: {advisor._PLAN_IMPL_EXECUTOR_ACTIVE_KEY: {"agent": {}}},  # pylint: disable=protected-access
     )
-    monkeypatch.setattr(advisor, "has_pending_agent_launches", lambda *_args: False)
+    monkeypatch.setattr(advisor, "pending_agent_launch_ids", lambda *_args: set())
 
 
 def test_current_minimal_executor_report_passes(capsys: pytest.CaptureFixture[str]) -> None:
@@ -72,13 +72,18 @@ def test_registered_orchestrator_with_pending_child_is_blocked(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(advisor, "has_pending_agent_launches", lambda *_args: True)
+    monkeypatch.setattr(
+        advisor,
+        "pending_agent_launch_ids",
+        lambda *_args: {"toolu_child_b", "toolu_child_a"},
+    )
 
     assert advisor.main(json.dumps(_payload(_minimal_report()))) == 0
 
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
     assert "Complete or receive every child agent before stopping" in decision["reason"]
+    assert "Pending child tool_use_id values: toolu_child_a, toolu_child_b." in decision["reason"]
 
 
 def test_real_sidechain_transcript_with_pending_child_is_blocked(
@@ -87,7 +92,7 @@ def test_real_sidechain_transcript_with_pending_child_is_blocked(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """実記録形状のsidechain起動を実判定関数で検出して遮断する。"""
-    monkeypatch.setattr(advisor, "has_pending_agent_launches", _REAL_HAS_PENDING_AGENT_LAUNCHES)
+    monkeypatch.setattr(advisor, "pending_agent_launch_ids", _REAL_PENDING_AGENT_LAUNCH_IDS)
     transcript = tmp_path / "agent.jsonl"
     entries = [
         {
@@ -123,6 +128,7 @@ def test_real_sidechain_transcript_with_pending_child_is_blocked(
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
     assert "Complete or receive every child agent before stopping" in decision["reason"]
+    assert "Pending child tool_use_id values: toolu_child." in decision["reason"]
 
 
 def test_unregistered_agent_with_pending_child_keeps_existing_approval(
@@ -130,7 +136,7 @@ def test_unregistered_agent_with_pending_child_keeps_existing_approval(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(advisor, "read_state", lambda _session_id: {})
-    monkeypatch.setattr(advisor, "has_pending_agent_launches", lambda *_args: True)
+    monkeypatch.setattr(advisor, "pending_agent_launch_ids", lambda *_args: {"toolu_child"})
 
     assert advisor.main(json.dumps(_payload("中間報告"))) == 0
     assert capsys.readouterr().out == ""
@@ -163,7 +169,7 @@ def test_codex_does_not_consult_transcript(
     def _fail(*_args: object) -> bool:
         raise AssertionError("Codexではtranscriptを完了判定へ使わない")
 
-    monkeypatch.setattr(advisor, "has_pending_agent_launches", _fail)
+    monkeypatch.setattr(advisor, "pending_agent_launch_ids", _fail)
 
     assert advisor.main(json.dumps({**_payload("完了"), "turn_id": "turn-1"})) == 0
     assert capsys.readouterr().out == ""

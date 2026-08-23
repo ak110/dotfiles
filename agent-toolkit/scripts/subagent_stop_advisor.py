@@ -22,7 +22,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import has_pending_agent_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import pending_agent_launch_ids  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_transcript_agent_id as _extract_transcript_agent_id,
 )
@@ -82,19 +82,21 @@ def main(payload_text: str) -> int:
     if not isinstance(transcript_path, str) or not transcript_path:
         transcript_path = payload.get("transcript_path")
     session_id = payload.get("session_id")
-    has_pending = (
-        not is_codex
-        and isinstance(transcript_path, str)
-        and has_pending_agent_launches(
+    pending_ids = (
+        pending_agent_launch_ids(
             transcript_path,
             session_id if isinstance(session_id, str) else "",
         )
+        if not is_codex and isinstance(transcript_path, str)
+        else set()
     )
 
-    if has_pending and _is_registered_orchestrator(payload):
+    if pending_ids and _is_registered_orchestrator(payload):
+        pending_id_list = ", ".join(sorted(pending_ids))
         reason = _llm_notice(
             "Complete or receive every child agent before stopping."
             " The registered orchestration agent still has an unfinished child agent launch."
+            f" Pending child tool_use_id values: {pending_id_list}."
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0
