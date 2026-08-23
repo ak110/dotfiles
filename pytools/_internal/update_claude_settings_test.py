@@ -258,6 +258,7 @@ class TestProductionManagedSettings:
             "Personal Repo Default-Branch Push",
             "Merge Approval",
             "Plan File Write",
+            "Reconsidered Retry Approval",
             "Feedback Queue State Transition",
         }
         assert all(
@@ -376,6 +377,19 @@ class TestProductionManagedSettings:
                 "Write・Edit・Bash",
                 "承認ゲートの緩和・規範改訂",
                 "同ディレクトリ外",
+                "hard_deny",
+            )
+        )
+        assert all(
+            term in rules["Reconsidered Retry Approval"]
+            for term in (
+                "同一操作",
+                "拒否メッセージ本文",
+                "1回の再発行",
+                "符号化",
+                "間接実行",
+                "改名",
+                "別経路",
                 "hard_deny",
             )
         )

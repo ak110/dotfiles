@@ -67,6 +67,7 @@ auto modeの拒否ではなく従来の確認ダイアログが対象の場合�
 | リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 設定に`Release Workflow Dispatch`が存在する場合、個人リポジトリの`release.yaml`起動に限定して同ルールを使う |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | フィードバック処理由来に限定するルールを追加する |
 | MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | マージ操作を無条件に許可するルールを追加する（必須レビュー・チェックの迂回形態とhard_deny領域は対象外のまま） |
+| 同一操作の理由確認後の再発行 | Auto-Mode Bypass等 | `Reconsidered Retry Approval`により同一のコマンド・引数・ツールを1回だけ再発行する |
 
 - `git commit --amend`はデフォルトの`soft_deny`が自身の作成したHEADへのamendを`clears`するが、
   別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
@@ -85,13 +86,14 @@ auto modeの拒否ではなく従来の確認ダイアログが対象の場合�
 - `kill -TERM $PPID`のルールは、transcriptの直前のツール呼び出しがこのエージェントによる
   `agent-toolkit:exit-session`のSkill呼び出しである場合だけ適用する。
   チェーン演算子や他の対象を含まない単独実行に限定し、他プロセスへのシグナル送出には適用しない
-- ルールを追加しても拒否が続く場合は`AskUserQuestion`で当該判定が偽陽性かを明示的に問い、
+- `Reconsidered Retry Approval`による1回の再発行後も拒否が続く場合は`AskUserQuestion`で当該判定が偽陽性かを明示的に問い、
   偽陽性である旨の回答を得てから再試行する（進行への同意のみでは`clears`されない）
 
 ### 偽陽性と判断できる拒否への対応
 
 auto mode classifierによる拒否は対象操作の実行自体を妨げる技術的ブロックであり、TBD記録では解消できないため、
 自律モード・協調モードのいずれでも本フローの`AskUserQuestion`を発行する。
+本フローは`Reconsidered Retry Approval`で許可された同一操作の1回の再発行後も拒否が残る場合に適用する。
 
 メインエージェント・サブエージェントいずれが発行した操作にも適用する。
 対象操作は`git commit`・`git commit --amend`・`Write`／`Edit`／`MultiEdit`によるファイル編集、
@@ -123,7 +125,8 @@ GitHubリポジトリ設定変更等の外部サービスの設定変更コマ�
    回答を待つためのTBDを記録し、解除条件を満たすまで代替経路だけを継続する
 5. 無応答後にTBDへ回答が保存されても、それだけではclassifierが観測する承認にならない。
    transcript内で同じ操作への再確認を発行し、利用者の回答を受領したことを確認してから、
-   本フローの1へ戻って拒否の有無を再確認する。再確認前の再試行は禁止する
+   本フローの1へ戻って拒否の有無を再確認する。
+   `Reconsidered Retry Approval`による1回の再発行を終えた後は、再確認前の再試行を禁止する
 
 ## カスタムルール記述の注意点
 

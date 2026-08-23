@@ -1622,7 +1622,7 @@ class TestBashSleepPollPattern:
             env,
         )
         assert second.returncode == 2
-        assert "until <condition>" in second.stderr
+        assert "completion notification" in second.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
 
     @pytest.mark.parametrize(
@@ -4665,169 +4665,6 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert state_post["last_agent_toolkit_edit_path"] is None
 
 
-class TestFrontmatterSyncNoteBodyExists:
-    """frontmatter同期注記の本体該当語句の実在検証（フィードバック2、`warn`）。"""
-
-    @staticmethod
-    def _target(tmp_path: pathlib.Path, name: str = "test-agent.md") -> pathlib.Path:
-        target = tmp_path / "agent-toolkit" / "agents" / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        return target
-
-    @classmethod
-    def _prepare_scenario(cls, tmp_path: pathlib.Path, setup: str) -> pathlib.Path:
-        target = cls._target(tmp_path)
-        if setup.startswith("git-"):
-            (tmp_path / ".git").mkdir()
-        related_files = {
-            "sibling": ("other-agent.md", "# other-agent\n\n## 実在節\n\n本文。\n"),
-            "missing-section": ("other-agent2.md", "# other-agent2\n\n本文のみ。\n"),
-            "multiline": ("other-multiline-agent.md", "# other-multiline-agent\n\n## 実在複数行節\n\n本文。\n"),
-            "git-sibling": ("sibling-agent.md", "# sibling-agent\n\n## 実在兄弟節\n\n本文。\n"),
-            "git-consecutive-ok": ("external-agent.md", "# external-agent\n\n## 外部節\n\n本文。\n"),
-            "git-consecutive-missing": ("external-agent2.md", "# external-agent2\n\n## 外部節2\n\n本文。\n"),
-        }
-        related = related_files.get(setup)
-        if related is not None:
-            name, body = related
-            (target.parent / name).write_text(body, encoding="utf-8")
-        if setup == "git-neighbor":
-            rules_dir = tmp_path / "agent-toolkit" / "rules"
-            rules_dir.mkdir(parents=True)
-            (rules_dir / "01-agent.md").write_text(
-                "# 01-agent\n\n## 判断指針\n\n本文。\n",
-                encoding="utf-8",
-            )
-        return target
-
-    @pytest.mark.parametrize(
-        ("setup", "content"),
-        [
-            pytest.param(
-                "sibling",
-                "---\nname: test-agent\n# other-agent.mdの「実在節」節と意図的に重複させている\n---\n\n# test-agent\n",
-                id="same-directory-reference",
-            ),
-            pytest.param("none", "# test-agent\n\nfrontmatterなし本文。\n", id="no-frontmatter"),
-            pytest.param(
-                "multiline",
-                "---\nname: test-agent\n# 同期注記: 「実在複数行節」節の内容は\n"
-                "# other-multiline-agent.md\n# と意図的に重複する。\n---\n\n# test-agent\n",
-                id="multiline-reference",
-            ),
-            pytest.param(
-                "git-sibling",
-                "---\nname: test-agent\n# sibling-agent.mdの「実在兄弟節」節と意図的に重複させている\n---\n\n# test-agent\n",
-                id="git-ancestor-sibling",
-            ),
-            pytest.param(
-                "git-neighbor",
-                "---\nname: test-agent\n# 01-agent.mdの「判断指針」節と意図的に重複させている\n---\n\n# test-agent\n",
-                id="git-ancestor-neighbor",
-            ),
-            pytest.param(
-                "git-consecutive-ok",
-                "---\nname: test-agent\n"
-                "# external-agent.mdの「外部節」節と意図的に重複させている\n"
-                "# 「## 自己節」節はこのファイル自身の内容と意図的に同期する\n"
-                "---\n\n# test-agent\n\n## 自己節\n\n本文。\n",
-                id="consecutive-notes-separated",
-            ),
-        ],
-    )
-    def test_existing_reference_scenarios_do_not_warn(
-        self,
-        tmp_path: pathlib.Path,
-        setup: str,
-        content: str,
-    ) -> None:
-        """実在参照と対象外形式ではfrontmatter同期注記警告を返さない。"""
-        target = self._prepare_scenario(tmp_path, setup)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-ok",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "frontmatter sync note" not in _agent_messages(result)
-
-    @pytest.mark.parametrize(
-        ("setup", "content", "expected_message", "expected_identifier"),
-        [
-            pytest.param(
-                "none",
-                "---\nname: test-agent\n# nonexistent-agent.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n",
-                "referenced file path does not exist",
-                "nonexistent-agent.md",
-                id="missing-file",
-            ),
-            pytest.param(
-                "missing-section",
-                "---\nname: test-agent\n# other-agent2.mdの「存在しない節」節と意図的に重複させている\n---\n\n# test-agent\n",
-                "section name does not exist",
-                "存在しない節",
-                id="missing-section",
-            ),
-            pytest.param(
-                "none",
-                "---\nname: test-agent\n# 同期注記: nonexistent-prefix.mdの「何か」節\n---\n\n# test-agent\n",
-                "referenced file path does not exist",
-                "nonexistent-prefix.md",
-                id="prefix-form-missing",
-            ),
-            pytest.param(
-                "none",
-                "---\nname: test-agent\n# 同期注記: 「何か」節の内容は\n"
-                "# nonexistent-multiline.md\n# と意図的に重複する。\n---\n\n# test-agent\n",
-                "referenced file path does not exist",
-                "nonexistent-multiline.md",
-                id="multiline-missing",
-            ),
-            pytest.param(
-                "git-missing",
-                "---\nname: test-agent\n# never-exists.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n",
-                "referenced file path does not exist",
-                "never-exists.md",
-                id="git-ancestor-missing",
-            ),
-            pytest.param(
-                "git-consecutive-missing",
-                "---\nname: test-agent\n"
-                "# external-agent2.mdの「外部節2」節と意図的に重複させている\n"
-                "# 「## 存在しない自己節」節はこのファイル自身の内容と意図的に同期する\n"
-                "---\n\n# test-agent\n",
-                "section name does not exist",
-                "存在しない自己節",
-                id="consecutive-note-mismatch",
-            ),
-        ],
-    )
-    def test_missing_reference_scenarios_warn(
-        self,
-        tmp_path: pathlib.Path,
-        setup: str,
-        content: str,
-        expected_message: str,
-        expected_identifier: str,
-    ) -> None:
-        """不在パスまたは不在節を参照する同期注記では警告を返す。"""
-        target = self._prepare_scenario(tmp_path, setup)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-missing-path",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert expected_message in _additional_context(result)
-        assert expected_identifier in _additional_context(result)
-
-
 # --- 日本語文中への他言語文字の混入検査 (block) ---
 
 _HANGUL_SAMPLE = "\uac00"  # ハングル音節1文字（エスケープ表記で構成する）
@@ -5425,27 +5262,6 @@ class TestCodexApplyPatchEditChecks:
         result = _run(_codex_payload(patch_text, tmp_path))
 
         assert result.returncode == 0
-
-    def test_frontmatter_and_body_reference_checks_are_claude_only(self, tmp_path: pathlib.Path) -> None:
-        """外部ファイル解決を伴う2検査はCodex入力で起動しない。"""
-        content = "---\nname: test-agent\n# nonexistent-agent.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n"
-        relative = "agent-toolkit/agents/test-agent.md"
-        patch_text = _patch(f"*** Add File: {relative}\n" + "".join(f"+{line}\n" for line in content.splitlines()))
-        codex = _run(_codex_payload(patch_text, tmp_path))
-        target = tmp_path / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        claude = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-claude",
-            }
-        )
-
-        assert codex.returncode == 0
-        assert "frontmatter sync note" not in _agent_messages(codex)
-        assert claude.returncode == 0
-        assert "referenced file path does not exist" in _additional_context(claude)
 
 
 class TestStyleNegationAcrossHosts:

@@ -2914,6 +2914,33 @@ def test_delegation_observes_only_identified_artifact_paths() -> None:
     assert "対象パスが未確定の間は成果物を観測せず" in waiting
 
 
+def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
+    """待機、通知中継、配送不能時の復旧を単一経路で検査する。"""
+    waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
+    runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
+
+    for phrase in (
+        "機械的な完了通知の受領を待機解除の既定手段",
+        "`ListAgents`と`TaskStop`",
+        "委譲先自身のtranscript",
+        "未完了の工程だけを巻き取る",
+    ):
+        assert phrase in waiting
+    for phrase in (
+        "孫の完了通知は最上位セッションへ配送",
+        "`subagent_type`は種別であり宛先識別子ではない",
+        "No transcript found for agent ID",
+        "`CronDelete`",
+        "`claude --version`",
+        "単独で完了判定に用いず",
+    ):
+        assert phrase in runtime
+    assert "上限付きの前景待機" not in waiting
+    assert "上限付きの前景待機" not in runtime
+    assert "do sleep" not in waiting
+    assert "do sleep" not in runtime
+
+
 def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> None:
     """`feedbacks-planner`の委譲元と委譲先へ計画パス、単一経路及びTBD境界を同期する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")

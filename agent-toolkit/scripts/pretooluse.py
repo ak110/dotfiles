@@ -497,12 +497,7 @@ def _collect_edit_operation_warnings(
     if content is None:
         return warnings
     warnings.extend(
-        warning
-        for warning in (
-            _check_frontmatter_sync_note_body_exists(tool_name, content, display_path),
-            _check_body_section_reference_exists(tool_name, content, display_path),
-        )
-        if warning is not None
+        warning for warning in (_check_body_section_reference_exists(tool_name, content, display_path),) if warning is not None
     )
     return warnings
 
@@ -979,101 +974,8 @@ def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperat
     )
 
 
-# --- frontmatter同期注記の本体該当語句の実在検証（`warn`、フィードバック2） ---
-
-# 対象は`agent-toolkit/`・`.chezmoi-source/dot_claude/`配下の`.md`ファイル全般
-# （`_plan_format.is_agent_doc_target_file`より対象範囲が広い専用判定）。
-_FRONTMATTER_SYNC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(^|/)agent-toolkit/.+\.md$"),
-    re.compile(r"(^|/)\.chezmoi-source/dot_claude/.+\.md$"),
-)
-
 # frontmatter区間（`^---$`〜`^---$`）の抽出用。
 _FRONTMATTER_BLOCK_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
-
-# 同期注記コメント行の判定トリガー。
-# `# ...と意図的に重複させている` / `# ...と意図的に同期する` / `# 同期注記:`の3形式を検出する。
-_SYNC_NOTE_TRIGGER_RE = re.compile(r"と意図的に(?:重複させている|同期する)|同期注記:")
-
-# 注記本文からの参照ファイルパス抽出（`<name>.md`形式）。
-_SYNC_NOTE_FILE_PATH_RE = re.compile(r"[\w.\-/]+\.md")
-
-# 注記本文からの節名抽出。`「<節名>」節`形式とバッククォート囲み`<節名>節`形式の両方に対応する。
-_SYNC_NOTE_SECTION_KAGI_RE = re.compile(r"「([^」]+)」節")
-_SYNC_NOTE_SECTION_QUOTED_RE = re.compile(r"`([^`]+)`節")
-
-
-def _is_frontmatter_sync_check_target(file_path: str) -> bool:
-    """frontmatter同期注記検査の対象ファイルかを判定する。
-
-    対象は`agent-toolkit/`・`.chezmoi-source/dot_claude/`配下の`.md`ファイル、
-    および計画ファイル（`is_plan_component_file`が真のパス）。
-    """
-    if not file_path:
-        return False
-    normalized = file_path.replace("\\", "/")
-    if any(p.search(normalized) is not None for p in _FRONTMATTER_SYNC_TARGET_PATTERNS):
-        return True
-    return is_plan_component_file(file_path)
-
-
-def _extract_frontmatter_sync_notes(content: str) -> list[str]:
-    """frontmatter区間から同期注記コメントブロックの本文一覧を抽出する。
-
-    `#`始まり行が連続するコメントブロックを走査単位とし、ブロック内をさらに
-    `_SYNC_NOTE_TRIGGER_RE`一致行を境界として複数の注記へ分離する
-    （`_split_sync_note_block`参照）。トリガー語・参照先ファイルパスが別行に分かれる形式
-    （1行目に参照先パス、後続行にトリガー語を含む宣言文）は同一注記として結合する一方、
-    空行を置かず連続して書かれた独立した複数の同期注記宣言が1つの注記へ混在する事態を避ける。
-    frontmatter未使用ファイル（先頭が`---`で始まらない）は空リストを返す
-    （原文転記領域はfrontmatter区間の外側のため走査対象に含まれない）。
-    """
-    match = _FRONTMATTER_BLOCK_RE.match(content)
-    if match is None:
-        return []
-    notes: list[str] = []
-    current_block: list[str] = []
-    for line in match.group(1).splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            current_block.append(stripped.lstrip("#").strip())
-            continue
-        notes.extend(_split_sync_note_block(current_block))
-        current_block = []
-    notes.extend(_split_sync_note_block(current_block))
-    return notes
-
-
-def _split_sync_note_block(block: list[str]) -> list[str]:
-    """連続コメント行ブロックをトリガー行境界で複数の同期注記へ分離する。
-
-    トリガー行（`_SYNC_NOTE_TRIGGER_RE`一致行）に到達するたびそこまでの蓄積行を1件の注記として確定し、
-    次のトリガー行に向けて新たな蓄積を開始する。これにより「1行目に参照先パス、
-    後続行にトリガー語を含む宣言文」形式は同一注記として結合されつつ、
-    空行を置かず連続する独立した複数の同期注記宣言は別々の注記に分離される。
-    最終トリガー行より後に続く行（後続の補足）はトリガーを含まないため、
-    直前に確定した注記へ継続として統合する。ブロック全体にトリガー行が1つも無い場合は空リストを返す。
-    """
-    notes: list[list[str]] = []
-    current: list[str] = []
-    for body in block:
-        current.append(body)
-        if _SYNC_NOTE_TRIGGER_RE.search(body):
-            notes.append(current)
-            current = []
-    if current:
-        if notes:
-            notes[-1].extend(current)
-        else:
-            return []
-    return [" ".join(note) for note in notes]
-
-
-def _extract_sync_note_references(note: str) -> tuple[list[str], list[str]]:
-    """同期注記本文から参照ファイルパス一覧と節名一覧を抽出する。"""
-    paths = _SYNC_NOTE_FILE_PATH_RE.findall(note)
-    sections = _SYNC_NOTE_SECTION_KAGI_RE.findall(note) + _SYNC_NOTE_SECTION_QUOTED_RE.findall(note)
-    return paths, sections
 
 
 def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | None:
@@ -1110,64 +1012,6 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     return None
 
 
-def _check_frontmatter_sync_note_body_exists(tool_name: str, content: str, file_path: str) -> str | None:
-    r"""frontmatter同期注記が指す本体側の該当語句の実在を検査して警告本文を返す（warn）。
-
-    対象は`_is_frontmatter_sync_check_target`が真のファイル。
-    frontmatter区間から`# ...と意図的に重複させている`・`# ...と意図的に同期する`・
-    `# 同期注記:`形式のコメント行（同期注記）を抽出し、注記本文が参照するファイルパス
-    （`<name>.md`形式）と節名（`「<節名>」節`または`` `<節名>`節 ``形式）の実在を照合する。
-
-    - 参照ファイルパスがリポジトリ内に実在しない場合は警告する
-    - 節名は、自ファイルの適用後本文（frontmatter区間を除く）と実在する参照ファイル本文を
-      連結した対象に対し見出し一致（`^#+\s*<節名>$`）または部分文字列一致のいずれかで照合し、
-      いずれも一致しない場合は警告する
-
-    表記揺れ（同旨表現の同義語形式）による誤検出を許容するためblock化しない。
-    """
-    if not _is_frontmatter_sync_check_target(file_path):
-        return None
-    notes = _extract_frontmatter_sync_notes(content)
-    if not notes:
-        return None
-
-    # 節名照合の自ファイル側corpusはfrontmatter区間を除いた本文のみとする。
-    # frontmatter内の同期注記コメント自体が対象の節名文字列を引用形式で含むため、
-    # frontmatterを含めたまま照合すると常に自明一致（誤検出解消の形骸化）してしまう。
-    frontmatter_match = _FRONTMATTER_BLOCK_RE.match(content)
-    self_body = content[frontmatter_match.end() :] if frontmatter_match is not None else content
-
-    reasons: list[str] = []
-    for note in notes:
-        paths, sections = _extract_sync_note_references(note)
-        referenced_bodies: list[str] = []
-        for path in paths:
-            resolved = _resolve_referenced_path(file_path, path)
-            if resolved is None:
-                reasons.append(f"referenced file path does not exist: {path}")
-                continue
-            try:
-                referenced_bodies.append(resolved.read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError):
-                reasons.append(f"failed to read referenced file: {path}")
-        # 節名は自ファイル本文内で完結する場合（自己参照）と、他ファイル参照を伴う場合の双方があるため、
-        # 自ファイル本文（frontmatter除く）と参照先ファイル本文の双方を照合対象に含める。
-        search_corpus = "\n".join([self_body, *referenced_bodies])
-        for section in sections:
-            heading_pattern = re.compile(rf"^#+\s*{re.escape(section)}\s*$", re.MULTILINE)
-            if heading_pattern.search(search_corpus) is None and section not in search_corpus:
-                reasons.append(f"section name does not exist: {section}")
-
-    if not reasons:
-        return None
-    return _llm_notice(
-        "the body-side identifier referenced by the frontmatter sync note may not exist"
-        f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
-        " Verify that the sync note body matches the target file and section name.",
-        tag="warn",
-    )
-
-
 # --- .md規範文書の本文中にある節参照の実在検証check (warn) ---
 
 _BODY_SECTION_REFERENCE_RE = re.compile(r"`([^`\n]+\.md)`「([^」\n]+)」[節項]")
@@ -1176,8 +1020,7 @@ _BODY_SECTION_REFERENCE_RE = re.compile(r"`([^`\n]+\.md)`「([^」\n]+)」[節�
 def _check_body_section_reference_exists(tool_name: str, content: str, file_path: str) -> str | None:
     """規範文書の本文中にある他ファイルの節参照の実在を検査して警告本文を返す（warn）。
 
-    `_check_frontmatter_sync_note_body_exists`はfrontmatterコメント区間の同期注記のみを走査するため、
-    本文中の参照は当該checkの対象外である。本checkは本文（frontmatter区間を除く）を走査する。
+    本checkは本文（frontmatter区間を除く）を走査する。
     参照先ファイル名が複数のパスへ一致する場合は照合せず、一意に解決できない旨を警告する。
     """
     # 対象ファイル判定: `agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`配下の`.md`
@@ -2973,9 +2816,8 @@ def _check_bash_sleep_poll_pattern(
 
     update_state(session_id, _record_detection)
     guidance = (
-        "Use one `until <condition>; do sleep <interval>; done` call, or start the job in\n"
-        "the background and wait once for its machine-readable completion marker, or observe\n"
-        "the delegated work with `atk watch`."
+        "Receive the completion notification, use a background job's machine-readable completion marker,\n"
+        "or observe delegated work with `atk watch`, then end the turn with a waiting status."
     )
     if already_detected:
         print(
