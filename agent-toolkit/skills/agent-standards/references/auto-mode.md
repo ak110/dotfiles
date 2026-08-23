@@ -67,7 +67,7 @@ auto modeの拒否ではなく従来の確認ダイアログが対象の場合�
 | リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 設定に`Release Workflow Dispatch`が存在する場合、個人リポジトリの`release.yaml`起動に限定して同ルールを使う |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | フィードバック処理由来に限定するルールを追加する |
 | MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | マージ操作を無条件に許可するルールを追加する（必須レビュー・チェックの迂回形態とhard_deny領域は対象外のまま） |
-| 同一操作の理由確認後の再発行 | Auto-Mode Bypass等 | `Reconsidered Retry Approval`により同一のコマンド・引数・ツールを1回だけ再発行する |
+| 利用者の指示を反映しない拒否後の再発行 | Auto-Mode Bypass等 | `Reconsidered Retry Approval`により拒否本文と利用者メッセージを照合し、同一のコマンド・引数・ツールを1回だけ再発行する |
 
 - `git commit --amend`はデフォルトの`soft_deny`が自身の作成したHEADへのamendを`clears`するが、
   別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
@@ -88,6 +88,8 @@ auto modeの拒否ではなく従来の確認ダイアログが対象の場合�
   チェーン演算子や他の対象を含まない単独実行に限定し、他プロセスへのシグナル送出には適用しない
 - `Reconsidered Retry Approval`による1回の再発行後も拒否が続く場合は`AskUserQuestion`で当該判定が偽陽性かを明示的に問い、
   偽陽性である旨の回答を得てから再試行する（進行への同意のみでは`clears`されない）
+- `Reconsidered Retry Approval`は、拒否理由がtranscript内の利用者による当該操作の明示指示または承認を
+  反映していない場合に限り、拒否メッセージ本文と該当する利用者メッセージを照合して適用する
 
 ### 偽陽性と判断できる拒否への対応
 

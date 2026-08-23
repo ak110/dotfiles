@@ -385,6 +385,10 @@ class TestProductionManagedSettings:
             for term in (
                 "同一操作",
                 "拒否メッセージ本文",
+                "利用者",
+                "明示指示",
+                "承認",
+                "照合",
                 "1回の再発行",
                 "符号化",
                 "間接実行",
