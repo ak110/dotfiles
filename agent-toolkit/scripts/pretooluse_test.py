@@ -4723,137 +4723,6 @@ class TestBodySectionReferenceExists:
         assert "section name does not exist" in _additional_context(result)
 
 
-# --- codex sandbox指定（danger-full-access）を含む行の削除・変更の遮断 (block) ---
-
-# 保護対象パスの相対表記と、sandbox指定記述を持つ検体本文。Claude入力とCodex `apply_patch`の双方で使う。
-_PROTECTED_RELATIVE_PATH = "agent-toolkit/scripts/codex_app_server_mcp.py"
-_PROTECTED_BODY = "説明文\n`sandbox: danger-full-access`を指定する\n末尾\n"
-
-
-def _codex_app_server_mcp_path() -> pathlib.Path:
-    """保護対象実体`codex_app_server_mcp.py`の絶対パスを返す。"""
-    return pathlib.Path(pretooluse.__file__).resolve().with_name("codex_app_server_mcp.py")
-
-
-class TestDangerFullAccessPreserved:
-    """codex sandbox指定を含む行の削除・変更の遮断。"""
-
-    def test_blocks_removal_of_sandbox_assignment(self):
-        """sandbox指定記述を削除する編集を遮断する。"""
-        file_path = _codex_app_server_mcp_path()
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": str(file_path),
-                    "content": "sandbox指定記述を含まない本文",
-                },
-            }
-        )
-        assert result.returncode == 2
-        assert "blocked" in result.stderr
-        assert "codex sandbox assignment" in result.stderr
-
-    def test_blocks_edit_removing_sandbox_assignment(self):
-        """Edit経路でsandbox指定記述を削除する操作を遮断する。"""
-        file_path = pathlib.Path(__file__).resolve().parents[1] / "skills/delegation/references/runtime-routing.md"
-        old_string = "作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す"
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(file_path),
-                    "old_string": old_string,
-                    "new_string": "作業ディレクトリの絶対パスを例外なく渡す",
-                },
-            }
-        )
-        assert result.returncode == 2
-        assert "blocked" in result.stderr
-        assert "codex sandbox assignment" in result.stderr
-
-    def test_blocks_weakening_of_sandbox_value(self):
-        """sandbox値を弱める編集を遮断する。"""
-        file_path = pathlib.Path(__file__).resolve().parents[1] / "skills/delegation/references/runtime-routing.md"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": str(file_path),
-                    "content": "`sandbox: workspace-write`を指定する",
-                },
-            }
-        )
-        assert result.returncode == 2
-        assert "blocked" in result.stderr
-        assert "codex sandbox assignment" in result.stderr
-
-    def test_passes_non_sandbox_change(self):
-        """sandbox指定記述を保ったまま説明文を変える編集は通過する。"""
-        file_path = _codex_app_server_mcp_path()
-        content = file_path.read_text(encoding="utf-8").replace(
-            "状態照会と待機の応答には", "状態照会と待機の応答（変更後）には", 1
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": str(file_path),
-                    "content": content,
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    def test_protected_files_contain_only_required_sandbox_assignments(self):
-        """保護対象の各実体から1件以上の固定sandbox値を抽出する。"""
-        repository_root = pathlib.Path(__file__).resolve().parents[2]
-        for relative_path in pretooluse._DANGER_FULL_ACCESS_PROTECTED_PATHS:  # pylint: disable=protected-access
-            content = (repository_root / relative_path).read_text(encoding="utf-8")
-            values = pretooluse._extract_sandbox_assignments(content)  # pylint: disable=protected-access
-            assert values, relative_path
-            assert set(values) == {"danger-full-access"}, relative_path
-
-    _WRITE_CONTENT = "`sandbox: danger-full-access`を指定する\n"
-
-    def test_write_over_undecodable_protected_file_blocks(self, tmp_path: pathlib.Path) -> None:
-        """既存の保護対象を復号できないWriteは判定不能として遮断する。"""
-        target = tmp_path / _PROTECTED_RELATIVE_PATH
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(b"\xff\xfe`sandbox: danger-full-access`\n")
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": self._WRITE_CONTENT}})
-        assert result.returncode == 2
-        assert "could not be reconstructed" in result.stderr
-
-    def test_write_over_unreadable_protected_path_blocks(self, tmp_path: pathlib.Path) -> None:
-        """対象不在を確定できない読み取り失敗（対象がディレクトリ）でも遮断する。"""
-        target = tmp_path / _PROTECTED_RELATIVE_PATH
-        target.mkdir(parents=True, exist_ok=True)
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": self._WRITE_CONTENT}})
-        assert result.returncode == 2
-        assert "could not be reconstructed" in result.stderr
-
-    def test_write_creating_new_protected_file_passes(self, tmp_path: pathlib.Path) -> None:
-        """未作成の保護対象パスへの新規Writeは従来どおり通過する。"""
-        target = tmp_path / _PROTECTED_RELATIVE_PATH
-        target.parent.mkdir(parents=True, exist_ok=True)
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": self._WRITE_CONTENT}})
-        assert result.returncode == 0
-
-    def test_passes_non_protected_file(self):
-        """保護対象外ファイルでは通過する。"""
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "/tmp/unrelated.py",
-                    "content": 'sandbox = "read-only"',
-                },
-            }
-        )
-        assert result.returncode == 0
-
-
 class TestCodexRemoteSnapshotRecording:
     """`mcp__plugin_agent-toolkit_codex_app_server__codex_start`/`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`呼び出し時のリモート参照スナップショット記録。
 
@@ -5286,14 +5155,6 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-
     }
 
 
-def _write_protected_file(repo: pathlib.Path) -> pathlib.Path:
-    """sandbox指定記述を持つ保護対象ファイルを作業ツリーへ用意する。"""
-    target = repo / _PROTECTED_RELATIVE_PATH
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_PROTECTED_BODY, encoding="utf-8")
-    return target
-
-
 class TestCodexApplyPatchEditChecks:
     """Codexの`apply_patch`入力に対する共通編集検査。"""
 
@@ -5369,15 +5230,6 @@ class TestCodexApplyPatchEditChecks:
         assert result.returncode == 2
         assert "uv.lock" in result.stderr
 
-    def test_delete_of_protected_file_blocks(self, tmp_path: pathlib.Path) -> None:
-        """保護対象ファイル全体の削除を遮断する（相対パスをcwd起点で解決する）。"""
-        _write_protected_file(tmp_path)
-        patch_text = _patch(f"*** Delete File: {_PROTECTED_RELATIVE_PATH}\n")
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 2
-        assert "codex sandbox assignment" in result.stderr
-
     def test_delete_of_unprotected_file_passes(self, tmp_path: pathlib.Path) -> None:
         """非保護対象の削除はこの検査で誤遮断しない。"""
         target = tmp_path / "docs" / "old.md"
@@ -5387,35 +5239,6 @@ class TestCodexApplyPatchEditChecks:
         result = _run(_codex_payload(patch_text, tmp_path))
 
         assert result.returncode == 0
-
-    def test_unmaterializable_protected_update_blocks(self, tmp_path: pathlib.Path) -> None:
-        """保護対象の変更前後像を具体化できない場合も遮断する。"""
-        _write_protected_file(tmp_path)
-        patch_text = _patch(f"*** Update File: {_PROTECTED_RELATIVE_PATH}\n@@\n 実在しない文脈行\n-古い行\n+新しい行\n")
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 2
-        assert "could not be reconstructed" in result.stderr
-
-    def test_protected_update_preserving_assignment_passes(self, tmp_path: pathlib.Path) -> None:
-        """sandbox指定記述を保つ更新は通過する。"""
-        _write_protected_file(tmp_path)
-        patch_text = _patch(f"*** Update File: {_PROTECTED_RELATIVE_PATH}\n@@\n-説明文\n+説明文を更新する\n")
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 0
-
-    def test_move_of_protected_file_blocks(self, tmp_path: pathlib.Path) -> None:
-        """保護対象の移動は移動元の消滅として遮断する。"""
-        _write_protected_file(tmp_path)
-        patch_text = _patch(
-            f"*** Update File: {_PROTECTED_RELATIVE_PATH}\n"
-            "*** Move to: agent-toolkit/scripts/moved.py\n@@\n-末尾\n+末尾を更新\n"
-        )
-        result = _run(_codex_payload(patch_text, tmp_path))
-
-        assert result.returncode == 2
-        assert "codex sandbox assignment" in result.stderr
 
     def test_frontmatter_and_body_reference_checks_are_claude_only(self, tmp_path: pathlib.Path) -> None:
         """外部ファイル解決を伴う2検査はCodex入力で起動しない。"""

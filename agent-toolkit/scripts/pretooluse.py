@@ -69,13 +69,10 @@ Write / Edit / MultiEdit / apply_patch:
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
 - 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (block)
 - .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
-- codex sandbox指定（`danger-full-access`）を含む行の削除・変更 (block)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 block系checkの検査対象は「新規に書き込まれる側」（変更後断片）を基本とする。
 変更前断片は既存内容の修正・削除を妨げないため単独では検査対象としない。
-例外は`_check_danger_full_access_preserved`とする。同checkは保護対象文字列の「削除」自体を検出対象とするため、
-変更前後の全文像からsandbox指定記述を抽出して比較する。
 
 ホスト差の扱い:
 
@@ -410,8 +407,8 @@ def _handle_edit_tool(
         flush_warning()
         return 0
     images: dict[int, _hook_tool_input.MaterializedEdit | None] = {}
-    for index, operation in enumerate(operations):
-        if _check_edit_operation_blocks(tool_name, operation, index, images):
+    for operation in operations:
+        if _check_edit_operation_blocks(tool_name, operation):
             return 2
     warnings: list[str] = []
     for index, operation in enumerate(operations):
@@ -444,8 +441,6 @@ def _materialize_cached(
 def _check_edit_operation_blocks(
     tool_name: str,
     operation: _hook_tool_input.EditOperation,
-    index: int,
-    images: dict[int, _hook_tool_input.MaterializedEdit | None],
 ) -> bool:
     """1操作分の遮断検査を実行する。"""
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
@@ -457,10 +452,7 @@ def _check_edit_operation_blocks(
         or (tool_name == "Write" and _is_ps1(display_path) and _check_ps1_eol(tool_name, fields, display_path))
     ):
         return True
-    for path in operation.display_paths:
-        if _check_lockfiles(tool_name, path) or _check_secrets(tool_name, path):
-            return True
-    return _check_danger_full_access_preserved(tool_name, operation, index, images)
+    return any(_check_lockfiles(tool_name, path) or _check_secrets(tool_name, path) for path in operation.display_paths)
 
 
 def _collect_edit_operation_warnings(
@@ -1303,117 +1295,6 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
         return state
 
     update_state(session_id, _mutator)
-
-
-# --- codex sandbox指定（danger-full-access）の保護 (block, FB13) ---
-
-# `codex_app_server_mcp.py`が`thread/start`・`thread/resume`へ渡す固定sandbox値を保護対象とする。
-# 本フックはtool入力を補正せず、App Server内部の当該固定値が唯一の権限契約である。
-_DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
-    "agent-toolkit/skills/delegation/references/runtime-routing.md",
-    "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
-    "agent-toolkit/scripts/codex_app_server_mcp.py",
-)
-_DANGER_FULL_ACCESS_VALUE = "danger-full-access"
-_KNOWN_SANDBOX_VALUES = frozenset({_DANGER_FULL_ACCESS_VALUE, "read-only", "workspace-write"})
-_SANDBOX_VALUE_PATTERN = "|".join(re.escape(value) for value in sorted(_KNOWN_SANDBOX_VALUES))
-# 句全体又はキーと値を個別に囲む表記だけを対象とし、説明文からの誤抽出を防ぐ。
-_SANDBOX_ASSIGNMENT_RE = re.compile(
-    rf'"sandbox"\s*:\s*"(?P<json>{_SANDBOX_VALUE_PATTERN})"'
-    rf"|`sandbox\s*:\s*(?P<inline>{_SANDBOX_VALUE_PATTERN})`"
-    rf"|`sandbox`\s*(?::|へ|は|に|が)\s*`(?P<split>{_SANDBOX_VALUE_PATTERN})`"
-)
-# 行コメント。抽出対象から除く。
-_COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|<!--)")
-
-
-def _extract_sandbox_assignments(text: str) -> list[str]:
-    """sandbox指定記述から値を抽出する。行コメント行は除外する。"""
-    values: list[str] = []
-    for line in text.split("\n"):
-        if _COMMENT_LINE_RE.match(line):
-            continue
-        for match in _SANDBOX_ASSIGNMENT_RE.finditer(line):
-            value = next(group for group in match.groups() if group is not None)
-            values.append(value)
-    return values
-
-
-def _danger_full_access_target(operation: _hook_tool_input.EditOperation) -> str | None:
-    """操作が保護対象パスへ及ぶ場合に、その入力表記を返す。"""
-    for path in operation.display_paths:
-        normalized = path.replace("\\", "/")
-        if any(
-            normalized.endswith(protected) or normalized.endswith("/" + protected)
-            for protected in _DANGER_FULL_ACCESS_PROTECTED_PATHS
-        ):
-            return path
-    return None
-
-
-def _danger_full_access_block_message(file_path: str) -> str:
-    return _llm_notice(
-        f"blocked: a codex sandbox assignment in {file_path} would be removed or set to a value"
-        f" other than `danger-full-access`."
-        f" read-only and workspace-write leave the codex process waiting for approval and never returning,"
-        f" so the caller cannot detect completion. This value is fixed by design."
-        f" Commit ad3d07f4 already reverted one attempt to weaken it."
-        f" A security warning about this setting is not a reason to change, verify, or narrow it."
-        f" To change it intentionally, disable this hook first and record the reason."
-    )
-
-
-def _check_danger_full_access_preserved(
-    tool_name: str,
-    operation: _hook_tool_input.EditOperation,
-    index: int,
-    images: dict[int, _hook_tool_input.MaterializedEdit | None],
-) -> bool:
-    """`danger-full-access`を含む行の削除・変更を遮断する（block）。
-
-    保護対象はsandbox指定記述を現に含むファイルだけに限定する。
-    記述を持たないパスを列挙すると、検査が有効であるという誤った保証になるため対象に含めない。
-
-    判定は`danger-full-access`という文字列の出現数ではなく、`sandbox`へ値を結びつける記述
-    （以下「sandbox指定記述」）を抽出して比較する。sandbox指定記述とは、`sandbox`という語とその直後の値を
-    1組で表す記述であり、`"sandbox": "<値>"`・`` `sandbox`へ`<値>` ``・
-    `` `sandbox: <値>` ``等の形式を対象とする。値は既知のsandbox値だけを抽出する。
-    行コメント（`#`・`//`・`<!--`で始まる行）は抽出対象から除く。
-    次のいずれかに当たる場合に遮断する:
-    - sandbox指定記述の総数が減る（設定そのものの削除。ファイル全体の削除を含む）
-    - 値が`danger-full-access`でないsandbox指定記述が1件でも新たに出現する（設定の弱体化）
-    - 変更前後の全文像を具体化できず、保護を回避できるかを判定できない
-    """
-    file_path = _danger_full_access_target(operation)
-    if file_path is None:
-        return False
-    image = _materialize_cached(operation, index, images)
-    if image is None:
-        print(
-            _llm_notice(
-                f"blocked: {tool_name} targets {file_path}, whose pre-edit and post-edit contents could not be"
-                " reconstructed, so the codex sandbox assignment protection cannot be evaluated."
-                " Re-read the current file, restate the edit against its exact current contents, and retry."
-            ),
-            file=sys.stderr,
-        )
-        return True
-
-    old_values = _extract_sandbox_assignments(image.before_image)
-    new_values = _extract_sandbox_assignments(image.after_image)
-
-    # 総数が減少したか判定
-    if len(new_values) < len(old_values):
-        print(_danger_full_access_block_message(file_path), file=sys.stderr)
-        return True
-
-    # 値が変わっていないか判定
-    for value in new_values:
-        if value != _DANGER_FULL_ACCESS_VALUE and value not in old_values:
-            print(_danger_full_access_block_message(file_path), file=sys.stderr)
-            return True
-
-    return False
 
 
 # --- plan mode中のplan file編集をplan-modeスキル未起動の場合にブロック ---
