@@ -368,7 +368,7 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         "標準モデル",
         "`model`と`effort`",
         "読み取り専用",
-        "書込担当とworktree",
+        "実装担当とworktree",
         "snapshot",
     ):
         assert phrase in runtime
@@ -551,6 +551,14 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "提案と異なる判断を確定する場合は、当該判断と理由を報告したうえで確認経路へ送り、"
         "受領した回答を根拠へ併記する。\n",
     ),
+    (
+        "起草担当が実行して結果を確認していない環境",
+        "計画担当が実行して結果を確認していない環境",
+    ),
+    (
+        "各commit単位の受領時と最終レビュー時に追記する",
+        "各commit単位の受領時と実装レビュー収束時に追記する",
+    ),
 )
 
 
@@ -717,14 +725,14 @@ def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary(
 
 
 def test_plan_review_keeps_author_as_the_only_writer() -> None:
-    """計画の起草担当が検査・修正を所有し、レビュー担当を読み取り専用にする。"""
+    """計画の計画担当が検査・修正を所有し、レビュー担当を読み取り専用にする。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "通常モードでは起草担当が正規計画へ書き込み" in delegation
+    assert "通常モードでは計画担当が正規計画へ書き込み" in delegation
     assert "各パスの書込主体は常に1名とする" in delegation
-    assert "独立したレビュー担当" in delegation
-    assert "意味自己監査" in delegation
+    assert "計画レビュー担当" in delegation
+    assert "計画自己監査" in delegation
     assert "自己監査は品質形成" in delegation
     assert "plan-review-task.md" in delegation
     assert "計画とリポジトリを修正しない" in task
@@ -736,7 +744,7 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
 
 
 def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
-    """実装担当と二系統レビュー担当の責務を一方向のタスク文書で分離する。"""
+    """実装担当と準拠系・盲検系のレビュー担当の責務を一方向のタスク文書で分離する。"""
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
@@ -746,10 +754,10 @@ def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
     assert "委譲の内部資料は読まず" in writer
     assert "`git push`、タグ作成、リモートrefも変更しない" in writer
     assert "計画からの逸脱、実装漏れ" in plan_review
-    assert "境界条件と回帰は独立系が担う" in plan_review
+    assert "境界条件と回帰は盲検系が担う" in plan_review
     assert "計画ファイル、進捗ログ、コミットメッセージ" in independent_review
     assert "公開契約、正確性、回帰、境界条件、安全性" in independent_review
-    assert "計画との照合と実装漏れは計画準拠系が担う" in independent_review
+    assert "計画との照合と実装漏れは準拠系が担う" in independent_review
     for task in (writer, plan_review, independent_review):
         assert "skills/delegation" not in task
         assert "runtime-routing.md" not in task
@@ -773,7 +781,7 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
         assert structural in document, path
         assert strict in document, path
 
-    coordinator_phrase = "各ラウンドの二系統並列レビュー起動前は"
+    coordinator_phrase = "各ラウンドの準拠系・盲検系の並列レビュー起動前は"
     assert coordinator_phrase in _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     single_system_coordinator_phrase = "レビュー担当の起動前に、調整主体が前ラウンドの"
     for path in (_FEEDBACKS_PLANNER, _PLAN_REVIEW_DELEGATION, _PLAN_REVIEW_TASK):
@@ -787,7 +795,7 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
         assert "レビュー担当はラウンド開始時に" in path.read_text(encoding="utf-8"), path
 
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    assert "各ラウンドの二系統並列レビュー起動前は、調整主体が前ラウンドの" in executor
+    assert "各ラウンドの準拠系・盲検系の並列レビュー起動前は、調整主体が前ラウンドの" in executor
     assert "各レビュー担当とレビューイーはラウンド開始時に" in executor
     assert executor.index("調整主体が前ラウンドの") < executor.index("各レビュー担当とレビューイーはラウンド開始時に")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
@@ -817,8 +825,8 @@ def test_review_table_paths_preserve_system_and_round_independence() -> None:
 
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "独立系へ計画準拠系の表や出力を渡さない" in executor
-    assert "計画準拠系の表や出力を受け取らず" in independent
+    assert "盲検系へ準拠系の表や出力を渡さない" in executor
+    assert "準拠系の表や出力を受け取らず" in independent
     assert "両系統の担当が終端した後" in executor
     assert "未解消の同一指摘を別ラウンドの行として同じ表へ再提示する" in _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
@@ -851,8 +859,8 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     assert "同一threadでは、前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" not in delegation
-    assert "計画準拠系の表はこの必須差分入力へ含めない" in independent_review
-    assert "独立系へ計画準拠系の表や出力を渡さない" in executor
+    assert "準拠系の表はこの必須差分入力へ含めない" in independent_review
+    assert "盲検系へ準拠系の表や出力を渡さない" in executor
     assert "修正対象となる全系統表" in executor
     for phrase in (
         "通常の実装レビュー用managed temp領域の絶対パス",
@@ -868,7 +876,7 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
 
 
 def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() -> None:
-    """採用フィードバックの文書契約と影響検証を起草担当・レビュー担当双方で固定する。"""
+    """採用フィードバックの文書契約と影響検証を計画担当・レビュー担当双方で固定する。"""
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
@@ -940,12 +948,12 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "差分要約と追加範囲は計画本文を正本" in delegation
     assert "起動文へ再記述しない" in delegation
     assert "レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`" in delegation
-    assert "各修正差分を対象に意味自己監査を1巡" in delegation
+    assert "各修正差分を対象に計画自己監査を1巡" in delegation
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
     assert "`## 変更履歴`と本文の一致" in delegation
     assert (
         "調整主体がある場合は調整主体が同じレビュー担当へ前掲の最小入力で再レビューを指示し、"
-        "調整主体が無い場合は起草担当が`agent-toolkit:delegation`に従って指示する"
+        "調整主体が無い場合は計画担当が`agent-toolkit:delegation`に従って指示する"
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
     assert "再レビューでは全修正と累積計画全体を再監査" in task
@@ -1014,16 +1022,16 @@ def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
 
     assert "人間向け固定領域（`## 概要`から`## 変更履歴`まで）をユーザー要求の正本" in writer
     assert "実装者向け領域を実装詳細の正本" in writer
-    assert "書込担当は人間向け固定領域と`## 進捗ログ`を編集せず" in writer
+    assert "実装担当は人間向け固定領域と`## 進捗ログ`を編集せず" in writer
     assert "`## 概要`、`## 実施内容`、実装者向け領域、`## 完了条件`" in plan_review
-    assert "呼び出し元は各commit単位の受領時と最終レビュー時に`## 進捗ログ`の3列表へ行を追記する" in caller
+    assert "呼び出し元は各commit単位の受領時と実装レビュー収束時に`## 進捗ログ`の3列表へ行を追記する" in caller
     assert "`## 変更履歴`へ起点、指摘内容、採否、現在の結論、同期先を追記" in caller
     assert (
-        "同じ計画ファイルへ書き込む起草側の実行主体（調整主体と起草担当）が終端していることを、"
+        "同じ計画ファイルへ書き込む起草側の実行主体（調整主体と計画担当）が終端していることを、"
         "起動時に保持した実行識別子の直接照会で確認してから実装担当を起動する。" in caller
     )
     assert (
-        "`## 進捗ログ`のうち呼び出し元だけが記入する項目（実装commitの受領記録、統合後レビューの収束記録）の欠落は、"
+        "`## 進捗ログ`のうち呼び出し元だけが記入する項目（実装commitの受領記録、統合差分レビューの収束記録）の欠落は、"
         "レビュー表へ行を追加せず、欠落項目と根拠を`needs_escalation`で呼び出し元へ返す" in plan_review
     )
 
@@ -1042,13 +1050,13 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
     assert "実装タスク文書、作成規範スキル、レビュータスク文書は読み込まず" in text
-    assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは書込担当へ割り当てる" in text
+    assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは実装担当へ割り当てる" in text
     assert "シェル経由のファイル書換え" in text
     assert "`check_dash.py`による文書検収" in text
-    assert "同じworktreeへ順次割り当て、同時に1つの書込担当だけを置け" in text
+    assert "同じworktreeへ順次割り当て、同時に1つの実装担当だけを置け" in text
     assert "異なる計画ファイルのレーン" in text
     assert "だけを別worktreeで並列に扱える" in text
-    assert "同じ計画ファイルの書込担当は依存順に1件ずつ起動" in text
+    assert "同じ計画ファイルの実装担当は依存順に1件ずつ起動" in text
     for task_name in (
         "implementation-task.md",
         "implementation-plan-review-task.md",
@@ -1073,7 +1081,7 @@ def test_plan_file_is_the_writer_parallelism_boundary() -> None:
     for text in (flow, executor, writer, rules, caller):
         assert "同じ計画ファイル" in text
     for text in (executor, writer, rules, design, flow, caller):
-        assert "同時に1つの書込担当" in text
+        assert "同時に1つの実装担当" in text
     assert "fast担当が同一失敗箇所の残存を確認して終端した後にfix担当へ移行する場合だけ" in rules
     assert "この引継ぎだけはclean開始契約の限定例外" in design
     assert "同一失敗箇所の残存後は、fast担当の終端確認が完了した後だけ" in flow
@@ -1089,7 +1097,7 @@ def test_overlapping_plan_lanes_run_parallel_and_merge_all_plan_intents() -> Non
     design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
     incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
-    assert "同じworktreeへ後続の書込担当を起動する場合に限り" in rules
+    assert "同じworktreeへ後続の実装担当を起動する場合に限り" in rules
     assert "変更ファイルが重複しても相互に待機しない" in rules
     assert "変更対象ファイルの重複を待機又は分割の条件にせず" in flow
     assert "変更ファイルの重複を理由に先行レーンの完了を待たず" in caller
@@ -1116,8 +1124,8 @@ def test_single_plan_units_advance_one_lane_worktree_without_cherry_pick() -> No
 
     for phrase in (
         "同じ計画の全単位を実装するレーンのworktreeを1つ確定",
-        "全単位を確定した同じレーンのworktreeへ、同時に1つの書込担当だけを順次割り当て",
-        "先行commitが同worktreeのHEADを進めた後に後続の新規書込担当へ逐次割り当て",
+        "全単位を確定した同じレーンのworktreeへ、同時に1つの実装担当だけを順次割り当て",
+        "先行commitが同worktreeのHEADを進めた後に後続の新規実装担当へ逐次割り当て",
         "各単位commitが同じレーンのworktreeの直前に検収したHEADを直接進めた",
         "計画ベースからの累積差分",
         "レーンのworktreeの累積差分",
@@ -1174,15 +1182,15 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "push、フィードバック投入、worktreeの作成と回収は行わない",
         "explore-template.md",
         "plan-review-task.md",
-        "指摘を加工せず起草担当へ全件配送",
+        "指摘を加工せず計画担当へ全件配送",
         "通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない",
-        "起草スレッドへバッチ全項目のファイル名",
+        "計画スレッドへバッチ全項目のファイル名",
         "本文を起動文へ複製しない",
         "各フィードバックごとの調査スレッド",
         "キューの状態と他のレーンの情報は渡さない",
-        "起草担当への新規起動又は継続接続の直前は`plan_model`",
+        "計画担当への新規起動又は継続接続の直前は`plan_model`",
         "調査スレッドの起動直前に`atk config get pick_feedbacks_model`",
-        "起草スレッドの起動直前に`atk config get plan_model`",
+        "計画スレッドの起動直前に`atk config get plan_model`",
         "計画レビュースレッドの起動直前に`atk config get plan_review_model`",
     ):
         assert phrase in text
@@ -1682,7 +1690,7 @@ def test_human_source_contract_covers_direct_and_delegated_inputs() -> None:
     assert "受信した起動文全体を機械的に転記せず" in standards
     assert "人間由来の場合は種別、出所及び引用範囲" in plan_review_delegation
     assert "直接起動経路では、直接受領した実際の利用者メッセージ" in plan_review_delegation
-    assert "起草担当の起動文、フィードバック本文、調査資料を利用者発言へ分類しておらず" in plan_review_task
+    assert "計画担当の起動文、フィードバック本文、調査資料を利用者発言へ分類しておらず" in plan_review_task
 
 
 def test_codex_new_connection_contract_is_centralized() -> None:
@@ -1724,13 +1732,13 @@ def test_all_stage_continuations_recheck_effective_routing_values() -> None:
 
     launch_contracts = {
         _FEEDBACKS_PLANNER: (
-            "起草担当への新規起動又は継続接続の直前は`plan_model`",
+            "計画担当への新規起動又は継続接続の直前は`plan_model`",
             "レビュー担当の再レビュー直前は`plan_review_model`",
         ),
         _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",),
         _PLAN_IMPL_EXECUTOR: (
             "各単位の最初のfast担当を新規起動する直前に",
-            "修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`",
+            "修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`",
             "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`",
         ),
         _PLAN_IMPL_FEEDBACK_FLOW: ("`atk config get execute_fix_model`で解決）へ委譲し",),
@@ -1758,8 +1766,8 @@ def test_ci_repair_commits_are_delegated_by_caller() -> None:
         assert "元計画を再投入せず" in text
         assert "`execute_fix_model`を" in text
         assert "起動直前に解決" in text
-        assert "単一の書込担当" in text
-        assert "二系統レビュー、再push、CI確認" in text
+        assert "単一の実装担当" in text
+        assert "準拠系・盲検系のレビュー、再push、CI確認" in text
         assert "外部基盤障害など修正commitを要しない失敗" in text
     assert "`execute_fix_model`" in routing
     assert "直接修正して再push" not in ci_failure
@@ -1850,7 +1858,7 @@ def test_fast_model_is_resolved_once_per_unit_before_each_first_launch() -> None
 
     assert launch.count("`atk config get execute_fast_model`") == 1
     resolve_at = launch.index("`atk config get execute_fast_model`")
-    first_launch_at = launch.index("書込担当は解決した実行系で起動し")
+    first_launch_at = launch.index("実装担当は解決した実行系で起動し")
     assert resolve_at < first_launch_at
     assert "各単位の最初のfast担当" in launch
     assert "複数単位でも前の単位の解決値を次の単位へ流用せず" in launch
@@ -1862,7 +1870,7 @@ def test_fast_model_is_resolved_once_per_unit_before_each_first_launch() -> None
 
 
 def test_implementation_task_requires_role_specific_handoff_records() -> None:
-    """各書込担当へ担当種別に対応する記録だけを要求する契約を固定する。"""
+    """各実装担当へ担当種別に対応する記録だけを要求する契約を固定する。"""
     task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     fix = task.partition("5. 担当種別が`fix担当`の場合は")[2].partition("\n6. ")[0]
     review = task.partition("6. 担当種別が`レビュー修正担当`の場合は")[2].partition("\n7. ")[0]
@@ -1937,7 +1945,7 @@ def test_clean_worktree_exception_and_thread_lifecycle_are_limited() -> None:
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
 
-    assert "書込担当の起動前に上流追随済みで" in runtime
+    assert "実装担当の起動前に上流追随済みで" in runtime
     assert "fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す" in runtime
     assert "`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外" in runtime
     assert "fast担当とfix担当は、実効3値にかかわらず担当ごとに新規threadで起動する" in executor
@@ -1959,7 +1967,7 @@ def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
         assert "同じコマンド" in text
         assert "直後" in text
     for text in (rules, executor, task, design):
-        assert "同時に1つの書込担当" in text
+        assert "同時に1つの実装担当" in text
     assert "修正対象とした同一失敗箇所が直後の再検証にも残った場合" in runtime
     assert "修正対象が解消して別の失敗箇所だけが現れた場合は" in executor
     assert "追加修正とcommitを行わず" in task
@@ -1993,7 +2001,7 @@ def test_shared_structure_checks_are_common_to_all_write_roles() -> None:
     """共有分岐と反復構造の追加検証をfast専用手順から分離する。"""
     task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
 
-    common = task.partition("10. 全ての書込担当は")[1] + task.partition("10. 全ての書込担当は")[2].partition("\n11. ")[0]
+    common = task.partition("10. 全ての実装担当は")[1] + task.partition("10. 全ての実装担当は")[2].partition("\n11. ")[0]
     fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
 
     for phrase in (
@@ -2122,10 +2130,10 @@ def test_launch_points_reread_routing_before_launch_or_continuation() -> None:
     launch_points = {
         _PLAN_IMPL_EXECUTOR: (
             "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`",
-            "修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`",
+            "修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`",
             "継続接続の直前も同じ設定値を再取得する。",
         ),
-        _FEEDBACKS_PLANNER: ("起草担当への新規起動又は継続接続の直前は`plan_model`",),
+        _FEEDBACKS_PLANNER: ("計画担当への新規起動又は継続接続の直前は`plan_model`",),
         _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",),
         _PLAN_IMPL_FEEDBACK_FLOW: ("`atk config get execute_fix_model`で解決）へ委譲し",),
     }
@@ -2182,15 +2190,15 @@ def test_normal_review_repair_route_is_not_overridden_by_a_general_new_thread_ru
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
 
     for required in (
-        "fast担当、fast担当からfix担当への昇格、別の実装単位、統合後レビュー修正及びCI修正は毎回新規threadで起動する",
+        "fast担当、fast担当からfix担当への昇格、別の実装単位、差分限定レビュー修正及びCI修正は毎回新規threadで起動する",
         "通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする",
         "通常実装モードのレビュー修正は本項の明示的な例外とし、手順6の4遷移で継続又は新規起動を確定する",
     ):
         assert required in runtime
 
     for conflicting in (
-        "`execute_fast_model`又は`execute_fix_model`を適用する書込担当は毎回新規threadで起動する",
-        "`execute_fast_model`又は`execute_fix_model`を適用する書込担当は、前の担当の識別子を再利用せず新規threadで起動する",
+        "`execute_fast_model`又は`execute_fix_model`を適用する実装担当は毎回新規threadで起動する",
+        "`execute_fast_model`又は`execute_fix_model`を適用する実装担当は、前の担当の識別子を再利用せず新規threadで起動する",
         "別のレビュー修正及びCI修正は、実効3値が一致しても別の担当として扱う",
     ):
         assert conflicting not in runtime
@@ -2261,16 +2269,16 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
 
 
 def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
-    """両モードにタスク文書指定を持つ共通の最終二系統レビューを適用する。"""
+    """両モードにタスク文書指定を持つ実装レビュー・統合差分レビュー共通の手順を適用する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     execution = _h2_section(executor, "実行")
     normal = execution.partition("### 通常の実装モードの準備\n")[2].partition("\n### 差分限定レビュー調整モードの準備\n")[0]
-    integrated = execution.partition("### 差分限定レビュー調整モードの準備\n")[2].partition("\n### 共通の最終二系統レビュー\n")[
-        0
-    ]
-    common_review = execution.partition("### 共通の最終二系統レビュー\n")[2]
+    integrated = execution.partition("### 差分限定レビュー調整モードの準備\n")[2].partition(
+        "\n### 実装レビュー・統合差分レビュー共通の手順\n"
+    )[0]
+    common_review = execution.partition("### 実装レビュー・統合差分レビュー共通の手順\n")[2]
 
-    assert "同worktreeのHEADを最終レビュー対象" in normal
+    assert "同worktreeのHEADをレビュー対象HEAD" in normal
     assert "レビュー対象は`merge_review_pending`が報告した解消箇所" in integrated
     assert "同じ最終HEAD" in common_review
     assert "別識別子" in common_review
@@ -2306,9 +2314,9 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
     input_contract = _h2_section(executor, "入力")
-    common_review = _h2_section(executor, "実行").partition("### 共通の最終二系統レビュー\n")[2]
+    common_review = _h2_section(executor, "実行").partition("### 実装レビュー・統合差分レビュー共通の手順\n")[2]
 
-    assert "最初の書込担当の起動前にレーンのworktreeのclean状態とHEADの完全OIDを検収" in executor
+    assert "最初の実装担当の起動前にレーンのworktreeのclean状態とHEADの完全OIDを検収" in executor
     assert "着手前SHA（発火元の生成規則で確定した完全OID）" in input_contract
     assert "照合先計画パス一覧" in input_contract
     for phrase in (
@@ -2317,7 +2325,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
         "`### ファイル群別の変更説明`の変更対象集合からの差異",
         "後続節で再採用済みなら許容",
         "追加ファイルは計画目的への帰属と必要性を確認",
-        "最初の書込担当の起動前に検収したレーンのworktreeの完全OID",
+        "最初の実装担当の起動前に検収したレーンのworktreeの完全OID",
         "対象計画、ユーザー合意",
         "追加指示及び許容済みの挙動変化を合成",
         "必須入力の着手前SHAにある公開契約",
@@ -2325,9 +2333,9 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
         "適用される全計画と条項を対応付け",
         "全適用条項と両立する修正だけを認可",
         "計画準拠のレビュー担当の対象計画又は指摘の出所だけに限定しない",
-        "最初の書込担当以降のHEAD又は`review_contract`へ混入した未承認契約",
+        "最初の実装担当以降のHEAD又は`review_contract`へ混入した未承認契約",
         "計画ベースコミットを公開契約基準に用いない",
-        "対応付け不能、計画間衝突又は修正認可の上限を実際に超える方針は書込担当へ渡さず",
+        "対応付け不能、計画間衝突又は修正認可の上限を実際に超える方針は実装担当へ渡さず",
         "事象、期待値、実際値、発生条件、直接的原因、対応案及び超過内容",
         "`needs_escalation`で呼び出し元へ返す",
     ):
@@ -2336,7 +2344,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     plan_check_at = common_review.index("`## 変更履歴`と現在状態を定める後続節の整合")
     authorization_at = common_review.index("モード別の修正認可の上限", plan_check_at)
     policy_at = common_review.index("`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定", authorization_at)
-    writer_handoff_at = common_review.index("実在欠陥だけを書込担当へ一括して返す", policy_at)
+    writer_handoff_at = common_review.index("実在欠陥だけを実装担当へ一括して返す", policy_at)
     assert plan_check_at < authorization_at < policy_at < writer_handoff_at
 
     assert "着手前SHA＝メイン許可時の統合ブランチtip完全OID" in flow
@@ -2348,7 +2356,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
 def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     """通常モードのレビュー修正をphase別再判定後に安全に統合する契約を検査する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    common_review = _h2_section(executor, "実行").partition("### 共通の最終二系統レビュー\n")[2]
+    common_review = _h2_section(executor, "実行").partition("### 実装レビュー・統合差分レビュー共通の手順\n")[2]
     normal_fix = common_review.partition("#### 通常の実装モードのレビュー修正\n")[2].partition(
         "\n#### 差分限定レビュー調整モードのレビュー修正\n"
     )[0]
@@ -2365,7 +2373,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "実装担当が終端",
         "レーンのworktreeがclean",
         "HEADの完全OIDをレビュー対象の最終HEADとして内部確定する",
-        "同worktreeだけへ単一の修正用の書込担当",
+        "同worktreeだけへ単一の修正用の実装担当",
         "implementation-task.md",
         "フィードバックファイル名",
         "複製元と対象外worktree",
@@ -2381,7 +2389,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     ):
         assert phrase in normal_fix
     for phrase in (
-        "書込担当への受け渡しには保持した初回実装担当routeと実効3値、今回routeと実効3値、継続又は新規起動に用いる識別子、前担当の終端確認結果を明示する",
+        "実装担当への受け渡しには保持した初回実装担当routeと実効3値、今回routeと実効3値、継続又は新規起動に用いる識別子、前担当の終端確認結果を明示する",
         "レビュー検収後にexecutorが内部確定したレビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表",
     ):
         assert phrase in normal_fix
@@ -2461,7 +2469,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "修正差分だけをstageし、`git commit --fixup=<対象OID>`で対応する`fixup`を作成する",
         "対象OID、件名及び作業ツリーがcleanであることを確認してから次の過去単位へ進む",
         "過去単位と最終単位が対象の場合、autosquash前の反復対象を過去単位だけに限定する",
-        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前に汎用判定を再実行し、遮断を完了する。",
+        "全過去単位の反復後、実装担当が`autosquash` phaseの履歴書換え直前に汎用判定を再実行し、遮断を完了する。",
         (
             "最終単位だけが対象の場合は、最終単位の修正を実装し、近接検証を実行してstageした後、"
             "`amend` phaseで汎用判定を再実行し、遮断を完了する。"
@@ -2472,13 +2480,13 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
             "その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする"
         ),
         "保持した初回実装担当と起動直前に解決した今回routeの実効`engine`・`model`・`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ、元の実装担当threadを継続する。",
-        "いずれかの実効値が異なる場合を含むそれ以外の組合せでは旧担当の終端を確認し、今回routeで新しい書込担当を起動して、検収済みHEAD・作業ツリー・検証結果を開始前に1回だけ渡す。",
+        "いずれかの実効値が異なる場合を含むそれ以外の組合せでは旧担当の終端を確認し、今回routeで新しい実装担当を起動して、検収済みHEAD・作業ツリー・検証結果を開始前に1回だけ渡す。",
     )
     loop_positions = [review_loop.index(phrase) for phrase in loop_phrases]
     assert loop_positions == sorted(loop_positions)
     past_clean_at = review_loop.index("対象OID、件名及び作業ツリーがcleanであることを確認してから次の過去単位へ進む")
     autosquash_at = review_loop.index(
-        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前に汎用判定を再実行し、遮断を完了する。"
+        "全過去単位の反復後、実装担当が`autosquash` phaseの履歴書換え直前に汎用判定を再実行し、遮断を完了する。"
     )
     final_only_amend_at = review_loop.index(
         "最終単位だけが対象の場合は、最終単位の修正を実装し、近接検証を実行してstageした後、"
@@ -2956,7 +2964,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert "--note=<採否理由>" in decision_format
     assert "`decision-format.md`の理由又は" not in sender
     for phrase in (
-        "`feedbacks-planner`の起草担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
+        "`feedbacks-planner`の計画担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
         "未回答事項による実装・検証の条件分岐を残さない単一経路",
     ):
         assert phrase in sender
@@ -3762,7 +3770,7 @@ def test_review_workflows_gate_findings_by_original_purpose() -> None:
     assert "UX補助へ、敵対的入力に対する堅牢性を暗黙の要件として課さない" in purpose_contract
     assert "元の目的、契約または適用規範の何に違反するかを1文で記す" in purpose_contract
     assert "計画を入力契約として受け取るレビュー" in purpose_contract
-    assert "独立レビューは`review_contract`を確認" in purpose_contract
+    assert "盲検系のレビューは`review_contract`を確認" in purpose_contract
     assert "`review_contract`" in independent_task
     assert "ユーザー目的、現行の公開契約" in independent_task
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針" in independent_task
@@ -3858,26 +3866,26 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "   複製元と対象外worktree、git操作の制約を渡す。\n"
     ) in _h4_section(executor, "通常の実装モードのレビュー修正")
     assert (
-        "   修正用の書込担当へ`skills/plan-mode/references/implementation-task.md`の呼び出し元指定絶対パス、対象worktree、\n"
+        "   修正用の実装担当へ`skills/plan-mode/references/implementation-task.md`の呼び出し元指定絶対パス、対象worktree、\n"
         "   系統別の固定7列TSV、修正対象となる全系統表の絶対パス一覧、関係計画パス一覧、検証コマンド、\n"
         "   プロジェクト規範、該当する作成規範スキル、"
         "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パスを渡す\n"
     ) in _h4_section(executor, "差分限定レビュー調整モードのレビュー修正")
     assert (
         "調整主体が指摘を配送する場合は、`agent-toolkit:reviewee-standards`の`SKILL.md`と\n"
-        "`agent-toolkit:review-standards`の`references/judgment-details.md`の絶対パスを起草担当への配送文へ含める。\n"
+        "`agent-toolkit:review-standards`の`references/judgment-details.md`の絶対パスを計画担当への配送文へ含める。\n"
     ) in _h2_section(plan_review, "指摘の検収と修正")
-    # 起草担当が採否確定の正本へ到達する経路は、資料の受け渡しと配送時の明示の両方が成立して初めて成り立つ。
+    # 計画担当が採否確定の正本へ到達する経路は、資料の受け渡しと配送時の明示の両方が成立して初めて成り立つ。
     assert (
         "   対象worktree、プロジェクト規範、計画ファイルの絶対パス、作成規範スキル、`plan-mode/SKILL.md`、\n"
         "   `plan-file-standards.md`、`plan-review-delegation.md`と必要なタスク文書も渡す。\n"
     ) in planner
     assert (
-        "7. レビュー指摘を加工せず起草担当へ全件配送する。\n"
+        "7. レビュー指摘を加工せず計画担当へ全件配送する。\n"
         "   配送文へ`reviewee-standards/SKILL.md`と`plan-review-delegation.md`の絶対パスを含め、"
         "採否の確定に用いる正本として示す。\n"
         "   `review-standards/references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
-        "   起草担当の応答では、各指摘の採否と比例性の判断根拠が"
+        "   計画担当の応答では、各指摘の採否と比例性の判断根拠が"
         "固定7列TSV、要求表及び変更履歴へ記録されていることを検収する。\n"
     ) in planner
     assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
@@ -3894,7 +3902,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         assert "`agent-toolkit:reviewee-standards`を起動" not in document
     writer_reviewee_phrase = "`../../reviewee-standards/SKILL.md`と該当する作成規範スキルを適用し、指摘の採否と修正を確定する。"
     assert writer_reviewee_phrase in writer
-    assert "起草担当は`agent-toolkit:reviewee-standards`の`SKILL.md`を適用し、" in plan_review
+    assert "計画担当は`agent-toolkit:reviewee-standards`の`SKILL.md`を適用し、" in plan_review
     assert "ラウンド、重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由の固定7列TSVの絶対パス" in flow
     assert "修正を新規commitで積む" in writer
     assert "指摘の根拠不足、計画との衝突、認可外の変更" in writer
@@ -3903,7 +3911,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
     assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否と最小限の修正" in executor
     assert "根拠と適用条件のいずれかが不足する指摘は`未検証`へ移す" in executor
-    assert "実在欠陥だけを書込担当へ一括して返す" in executor
+    assert "実在欠陥だけを実装担当へ一括して返す" in executor
 
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     assert "固定7列TSV（ラウンド、重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）" in delegation
@@ -3962,11 +3970,11 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     assert "採否の確定前と反映後" in plan_review_delegation
     assert "前回ラウンドとの差分だけで完了を判定しない" in plan_review_delegation
     assert "ベースコミットから現行`HEAD`までの累積差分" in executor
-    assert "照合成功後だけ最終検証と次の二系統のレビューへ進む" in executor
+    assert "照合成功後だけ最終検証と次の準拠系・盲検系のレビューへ進む" in executor
 
 
 def test_policy_parser_review_contract_declares_operating_boundary() -> None:
-    """自動判定の作成規範と独立レビュー入力が同じ運用境界を共有する。"""
+    """自動判定の作成規範と盲検系レビュー入力が同じ運用境界を共有する。"""
     coding_standards = _CODING_STANDARDS.read_text(encoding="utf-8")
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")

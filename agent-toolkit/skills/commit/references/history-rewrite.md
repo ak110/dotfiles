@@ -18,16 +18,16 @@ fixupは、修正が統合先コミットの時点で独立して成立し、対
 autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
 対応表の不足、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
 又はautosquash・amendの失敗時は新規commitへフォールバックせず`needs_escalation`で返す。
-`rewrite_guard`の受渡しは、`agent-toolkit:plan-mode`の`references/implementation-task.md`が定める通常`plan-impl`レビュー修正の書込担当契約だけに置く。
+`rewrite_guard`の受渡しは、`agent-toolkit:plan-mode`の`references/implementation-task.md`が定める通常`plan-impl`レビュー修正の実装担当契約だけに置く。
 差分限定レビュー調整モードは`agent-toolkit:plan-mode`の`references/implementation-task.md`が定める`差分限定レビュー修正担当`契約に従い、履歴を書き換えず新規commitで採用指摘を修正する既定を維持する。
-未pushかつ単一の書込担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refの照合、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
+未pushかつ単一の実装担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refの照合、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
 
 過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。
 各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認し、その確認後にだけ次の過去単位の修正差分を適用する。
 全過去単位のfixupを作成した後に1回だけautosquashを実行する。
 最終単位と過去単位の両方が対象の場合は、autosquash前の反復対象を過去単位だけに限定する。最終単位の修正実装と近接検証、stageはautosquash成功後へ延期する。
 autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
-autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。開始済みの同じ書込担当が最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする。
+autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。開始済みの同じ実装担当が最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする。
 
 - 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend --no-edit`を使う
 - それより前の未プッシュコミットを完成させる修正は、統合後のメッセージ変更要否でfixup形式を選ぶ

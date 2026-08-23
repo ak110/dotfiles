@@ -14,7 +14,7 @@
     直前結果を`previous_result`へ退避して同じ`session_id`のreplyを開始する
   - 明示的に結果を回収してから次turnを開始する経路では、先行turnの`codex_result`回収後に
     `codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する
-  - fast担当、fast担当からfix担当への昇格、別の実装単位、統合後レビュー修正及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
+  - fast担当、fast担当からfix担当への昇格、別の実装単位、差分限定レビュー修正及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
 - Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える
@@ -29,11 +29,11 @@
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner`・`plan-review-executor` | Codex App Server MCP | Agentツール |
-| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の起草担当を含む） | Codex App Server MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | Codex App Server MCP | Agentツール |
+| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | Codex App Server MCP | Agentツール |
 | `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
 | `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、差分限定レビュー修正、CI失敗修正、マージ担当のrebase・競合解消・ff前進 | 同一失敗箇所の引継ぎと差分限定レビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元）。マージ担当はレーンでは`plan-impl-executor`、統合後の上流進行rebaseではメイン | Codex App Server MCP | Agentツール |
-| `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
+| `execute_review_model` | 実装後の準拠系・盲検系のレビュー | レビュー担当を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 上表の未設定時の実効値は、`execute_fast_model`が`codex:gpt-5.6-luna/max`、その他のキーが`codex:gpt-5.6-sol/medium`とする。effort省略時は`medium`とする。
@@ -47,7 +47,7 @@
    effort部は実行機能に相当する引数が無いため適用しない。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
-5. fast担当、fast担当からfix担当への引継ぎ、別の実装単位、統合後レビュー修正及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
+5. fast担当、fast担当からfix担当への引継ぎ、別の実装単位、差分限定レビュー修正及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
    通常実装モードのレビュー修正は本項の明示的な例外とし、手順6の4遷移で継続又は新規起動を確定する。
 6. 継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ使う。
    継続直前に工程別モデル設定と本節の経路規定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、
@@ -58,7 +58,7 @@
    明示的に次turnを開始する場合、Codexは先行turnの`codex_result`回収後に同じ`session_id`へ`codex_start_reply`で継続接続する。
    いずれかの実効値が異なる場合、同じ担当へ同じタスクを返さない場合、又は中断済み・完了配送不能・前提無効化の場合は、
    同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。
-   レビュー修正の書込担当は、保持した初回実装担当の実効`engine`・`model`・`effort`と、
+   レビュー修正の実装担当は、保持した初回実装担当の実効`engine`・`model`・`effort`と、
    起動直前に解決した今回の実効3値がすべて一致し、同じ担当へ同じタスクを返す場合だけ同一threadへ継続接続する。
    それ以外の組合せでは、旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。
    計画、進捗ログ、保存済みの固定7列TSVのいずれかで検収済み状態を一意に参照できる場合は、
@@ -136,14 +136,14 @@ fast担当を終端して修正引継ぎ記録を作成し、fix担当へdirty�
 再現証跡が必要な場合は、管理対象一時領域だけを書込可能にする。
 読み取り専用の担保に、実行環境のsandbox値による書込制限を用いない。
 
-## 書込担当とworktree
+## 実装担当とworktree
 
-- 1つのworktreeへ同時に起動する書込担当は1つだけとする
-- 書込担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
+- 1つのworktreeへ同時に起動する実装担当は1つだけとする
+- 実装担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
   ただし、fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す、`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外とする
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない
-- レビュー担当は書込担当の終端後に起動し、相互に独立したレビュー担当は別識別子で並列起動できる
+- レビュー担当は実装担当の終端後に起動し、準拠系・盲検系のレビュー担当は別識別子で並列起動できる
 - 作業用の複製（git worktree等）内でセッションを起動する場合は、調査・計画作成への着手前に
   `git fetch`後の分岐元との差分を双方向で確認し、分岐元が進んでいる場合は先に追随してから着手するよう
   起動文で指示する（努力目標）

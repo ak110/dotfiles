@@ -149,7 +149,7 @@ PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "�
 PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当箇所")
 """構造検査が通常変更だけに要求する類似見直し表の固定3行。
 
-バグ対応は起草担当の規定に基づき、バグ調査表との意味上の対応をレビュー担当が照合する。
+バグ対応は計画担当の規定に基づき、バグ調査表との意味上の対応をレビュー担当が照合する。
 """
 
 PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})

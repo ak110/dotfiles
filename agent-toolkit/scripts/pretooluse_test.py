@@ -771,7 +771,7 @@ def _write_tmp_file(tmp_path: pathlib.Path, relative_path: str, content: str) ->
     return path
 
 
-# 現行の機械検査を通過する最小限の正規計画ファイル内容。
+# 現行の計画構造検査を通過する最小限の正規計画ファイル内容。
 _VALID_H2_PLAN_CONTENT = (
     "## 概要\n\nx\n\n"
     "### 計画メタ情報\n\n"

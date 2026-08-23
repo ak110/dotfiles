@@ -262,7 +262,7 @@ class TestProductionManagedSettings:
         }
         assert all(
             term in rules["Session-Owned Amend"]
-            for term in ("transcript", "現在のHEAD", "稼働中の別書込担当", "ユーザー作成", "`git commit --amend`")
+            for term in ("transcript", "現在のHEAD", "稼働中の別実装担当", "ユーザー作成", "`git commit --amend`")
         )
         assert all(
             term in rules["Exit-Session Termination"]

@@ -20,7 +20,7 @@ commits:
 verification:
 - pytest: 終了コード0、警告0件
 reviews:
-- 計画準拠系と独立系: 完了
+- 準拠系と盲検系: 完了
 findings:
 - 指摘なし
 plan_check: 完了条件を満たす

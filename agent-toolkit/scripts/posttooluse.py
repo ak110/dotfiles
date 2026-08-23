@@ -830,7 +830,7 @@ def _plan_main_path_for(display_path: str) -> str:
 
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
-    """計画ファイル全文書き込み後に実行する機械検査の案内文を返す。"""
+    """計画ファイル全文書き込み後に実行する計画構造検査の案内文を返す。"""
     check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
