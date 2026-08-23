@@ -68,6 +68,7 @@ PLAN_PERMANENCE_H3: tuple[str, ...] = ("恒久化", "リファクタリング", 
 
 PLAN_METADATA_H3: str = "計画メタ情報"
 PLAN_EXCLUSION_H3: str = "合意済みの除外・保持"
+PLAN_IMPLEMENTATION_UNITS_H3: str = "実装単位"
 
 PLAN_METADATA_FIELDS: tuple[str, ...] = ("起動経路", "対象リポジトリ", "作業種別", "ベースコミット")
 """計画メタ情報の正規形が持つ項目と順序（旧形式単一ファイル・新書式detail側は本4項目のみ）。"""
@@ -95,6 +96,17 @@ PLAN_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所
 PLAN_LEGACY_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "原文参照", "確認方法")
 PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
 PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
+
+PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
+    "単位ID",
+    "目的",
+    "対象の実施内容",
+    "先行依存",
+    "統合順",
+    "近接検証",
+)
+PLAN_IMPLEMENTATION_UNIT_ID_PATTERN = re.compile(r"^U-[0-9]{3}$")
+"""detail側の実装単位表が持つ固定列と単位ID書式。"""
 
 PLAN_VERIFICATION_TABLE_HEADER: tuple[str, ...] = ("区分", "検証コマンド")
 PLAN_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("レーン内検証", "統合後検証")
@@ -380,6 +392,18 @@ class PlanMaterials:
     is_legacy: bool
     adopted_requirement_ids: frozenset[str] = frozenset()
     terminal_only_requirement_ids: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class PlanImplementationUnit:
+    """detail側の実装単位表1行を表す。"""
+
+    unit_id: str
+    purpose: str
+    action_indices: tuple[int, ...]
+    dependencies: tuple[str, ...]
+    integration_order: int
+    verification: str
 
 
 @functools.cache
@@ -1005,6 +1029,105 @@ def _check_fixed_table(
     return table, errors
 
 
+def _comma_separated_values(value: str) -> tuple[str, ...]:
+    """ASCIIカンマ区切りの値を前後の空白を除いて返す。"""
+    return tuple(part.strip() for part in value.split(","))
+
+
+def parse_plan_implementation_units(
+    content: str,
+) -> tuple[tuple[PlanImplementationUnit, ...] | None, list[str]]:
+    """detail側`### 実装単位`の固定表を解析して構造違反を返す。
+
+    単位表は新書式detail側だけの必須契約であり、違反は計画を実装順へ分解できないためerrorとする。
+    メイン側`## 実施内容`との被覆は2ファイルを扱う`check_plan_file.py`が検査する。
+    """
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    implementation_index = find_heading_index(headings, 2, PLAN_H2_IMPLEMENTATION)
+    if implementation_index is None:
+        return None, []
+    matching_headings = [
+        (position, heading)
+        for position, heading in child_headings(headings, implementation_index, 3)
+        if heading.text == PLAN_IMPLEMENTATION_UNITS_H3
+    ]
+    if len(matching_headings) != 1:
+        return None, [
+            f"`## {PLAN_H2_IMPLEMENTATION}`直下に`### {PLAN_IMPLEMENTATION_UNITS_H3}`を1件置く: 実際={len(matching_headings)}件"
+        ]
+
+    position, _heading = matching_headings[0]
+    start, end = heading_subtree_range(headings, position)
+    table, errors = _check_fixed_table(
+        lines_within(body, start, end),
+        PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`",
+    )
+    if table is None:
+        return None, errors
+
+    units: list[PlanImplementationUnit] = []
+    for row in table.rows:
+        if len(row) != len(PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER) or any(not cell for cell in row):
+            continue
+        unit_id, purpose, action_value, dependency_value, order_value, verification = row
+        if PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(unit_id) is None:
+            errors.append(f"実装単位IDは`U-[0-9]{{3}}`形式にする: {unit_id}")
+        action_parts = _comma_separated_values(action_value)
+        if not action_parts or any(not part.isdecimal() or int(part) < 1 for part in action_parts):
+            errors.append(f"実装単位`{unit_id}`の`対象の実施内容`は1以上の整数をASCIIカンマ区切りで列挙する")
+            action_indices: tuple[int, ...] = ()
+        else:
+            action_indices = tuple(int(part) for part in action_parts)
+            if tuple(sorted(set(action_indices))) != action_indices:
+                errors.append(f"実装単位`{unit_id}`の`対象の実施内容`は昇順かつ重複なしで列挙する")
+
+        if dependency_value == "なし":
+            dependencies: tuple[str, ...] = ()
+        else:
+            dependencies = _comma_separated_values(dependency_value)
+            if any(PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(value) is None for value in dependencies):
+                errors.append(f"実装単位`{unit_id}`の`先行依存`は実装単位ID又は`なし`にする")
+            if tuple(dict.fromkeys(dependencies)) != dependencies:
+                errors.append(f"実装単位`{unit_id}`の`先行依存`は重複なしで列挙する")
+
+        if not order_value.isdecimal() or int(order_value) < 1:
+            errors.append(f"実装単位`{unit_id}`の`統合順`は1以上の整数にする")
+            integration_order = 0
+        else:
+            integration_order = int(order_value)
+        units.append(
+            PlanImplementationUnit(
+                unit_id,
+                purpose,
+                action_indices,
+                dependencies,
+                integration_order,
+                verification,
+            )
+        )
+
+    unit_ids = tuple(unit.unit_id for unit in units)
+    expected_ids = tuple(f"U-{index:03d}" for index in range(1, len(units) + 1))
+    if unit_ids != expected_ids:
+        errors.append(f"実装単位IDは`U-001`から欠番なく昇順に置く: 実際={list(unit_ids)}")
+
+    integration_orders = tuple(unit.integration_order for unit in units)
+    if integration_orders != tuple(range(1, len(units) + 1)):
+        errors.append(f"実装単位の`統合順`は1から欠番なく昇順に置く: 実際={list(integration_orders)}")
+
+    units_by_id = {unit.unit_id: unit for unit in units}
+    for unit in units:
+        for dependency in unit.dependencies:
+            dependency_unit = units_by_id.get(dependency)
+            if dependency_unit is None:
+                errors.append(f"実装単位`{unit.unit_id}`の`先行依存`が実装単位表に無い: {dependency}")
+            elif dependency_unit.integration_order >= unit.integration_order:
+                errors.append(f"実装単位`{unit.unit_id}`の`先行依存`が`統合順`より前にない: {dependency}")
+    return tuple(units), errors
+
+
 def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading], index: int) -> list[str]:
     """`## バグ調査結果`配下の各バグ単位が固定14行の2列表を持つかを検査する。"""
     errors: list[str] = []
@@ -1363,6 +1486,9 @@ def check_plan_detail_structure(content: str, work_type: str | None) -> list[str
     )
 
     errors.extend(_check_bug_and_permanence(body, headings, work_type))
+
+    _units, unit_errors = parse_plan_implementation_units(content)
+    errors.extend(unit_errors)
 
     allowed_h3_parents = {PLAN_H2_BUG, PLAN_H2_PERMANENCE}
     errors.extend(_check_h3_and_deeper(headings, allowed_h3_parents, frozenset({PLAN_H2_IMPLEMENTATION})))

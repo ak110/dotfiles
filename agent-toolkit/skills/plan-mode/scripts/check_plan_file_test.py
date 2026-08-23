@@ -216,6 +216,12 @@ def _new_format_plan(
 
 ## 実装資料
 
+### 実装単位
+
+| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- | --- |
+| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |
+
 ### 変更説明
 
 対象の構造を更新する。
@@ -561,6 +567,60 @@ def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path,
     )
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
     assert any("固定H2" in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    ("replacement", "expected_actual"),
+    [
+        ("2", "実際=[2]"),
+        ("1, 2", "実際=[1, 2]"),
+    ],
+)
+def test_new_format_rejects_incomplete_duplicate_or_out_of_range_action_coverage(
+    repo: tuple[pathlib.Path, str], replacement: str, expected_actual: str
+) -> None:
+    """実装単位表による実施内容行の欠落、重複及び範囲外参照を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    detail_content = detail_content.replace(
+        "| U-001 | 診断件数を更新する | 1 | なし | 1 |",
+        f"| U-001 | 診断件数を更新する | {replacement} | なし | 1 |",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("全内容行を過不足なく" in error and expected_actual in error for error in errors), errors
+
+
+def test_new_format_rejects_action_coverage_duplicated_across_units(repo: tuple[pathlib.Path, str]) -> None:
+    """異なる実装単位による同じ実施内容行の重複参照を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    detail_content = detail_content.replace(
+        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
+        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |\n"
+        "| U-002 | 回帰検証を追加する | 1 | U-001 | 2 | `pytest check_plan_file_test.py` |",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("全内容行を過不足なく" in error and "実際=[1, 1]" in error for error in errors), errors
+
+
+def test_new_format_accepts_multiple_units_covering_noncontiguous_action_rows(repo: tuple[pathlib.Path, str]) -> None:
+    """複数単位が異なる実施内容行を過不足なく被覆する場合を受理する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    main_content = main_content.replace(
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |\n"
+        "| 診断表示を更新する | 具体化 | R-P-001-001 |\n"
+        "| 回帰検証を追加する | エージェント追加 | R-P-001-001 |",
+    )
+    detail_content = detail_content.replace(
+        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
+        "| U-001 | 診断件数を更新する | 1, 3 | なし | 1 | `pytest check_plan_file_test.py` |\n"
+        "| U-002 | 診断表示を更新する | 2 | U-001 | 2 | `pytest check_plan_file_test.py` |",
+    )
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert not warnings, warnings
 
 
 def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:

@@ -199,6 +199,33 @@ def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Pat
     return []
 
 
+def _check_implementation_action_coverage(main_text: str, detail_text: str) -> list[str]:
+    """実装単位表がメイン側`## 実施内容`の全内容行を過不足なく被覆するかを検査する。"""
+    headings = _plan_format.extract_headings(main_text)
+    action_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_ACTION)
+    if action_index is None:
+        return []
+    start, end = _plan_format.heading_subtree_range(headings, action_index)
+    body = list(_plan_format.iter_markdown_body_lines(main_text))
+    action_tables = [
+        table
+        for table in _plan_format.extract_tables(_plan_format.lines_within(body, start, end))
+        if table.header == _plan_format.PLAN_ACTION_TABLE_HEADER
+    ]
+    units, unit_errors = _plan_format.parse_plan_implementation_units(detail_text)
+    if len(action_tables) != 1 or units is None or unit_errors:
+        return []
+
+    actual = tuple(index for unit in units for index in unit.action_indices)
+    expected = tuple(range(1, len(action_tables[0].rows) + 1))
+    if tuple(sorted(actual)) == expected:
+        return []
+    return [
+        "実装単位表の`対象の実施内容`はメイン側`## 実施内容`の全内容行を過不足なく被覆する: "
+        f"期待={list(expected)}, 実際={list(actual)}"
+    ]
+
+
 def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """新書式（メイン側・detail側の2ファイル）を検査してエラーと警告を返す。
 
@@ -221,6 +248,7 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     _outside_detail, detail_fence_errors = _outside_fences(detail_structure_lines)
     errors.extend(detail_fence_errors)
     errors.extend(_plan_format.check_plan_detail_structure(detail_text, work_type))
+    errors.extend(_check_implementation_action_coverage(text, detail_text))
     errors.extend(_check_references(detail_text, work_dir))
     warnings.extend(_check_plan_size(detail_lines))
 
