@@ -1055,12 +1055,16 @@ def _stats_thread_records(
 
     直接の委譲先だけでなく、rollout内の`SubAgentActivity`から得られる子孫も探索する。
     同じrolloutを複数の親が参照しても一度だけ処理し、循環した委譲木で停止しない。
+    境界超過で除外したthreadは`excluded`へ記録し、別の親から再発見されても`threads`へ戻さない
+    （`visited`済みのthreadは再処理時に無条件で`continue`するため、`threads`への再挿入だけを
+    別途防がないと最終結果へ復帰する）。
     """
     threads: dict[str, tuple[int, str | None]] = {}
+    excluded: set[str] = set()
     pending: list[tuple[str, int, str | None]] = []
 
     def add(thread_id: str, line: int, agent_id: str | None) -> None:
-        if thread_id not in threads:
+        if thread_id not in threads and thread_id not in excluded:
             threads[thread_id] = (line, agent_id)
             pending.append((thread_id, line, agent_id))
 
@@ -1089,6 +1093,7 @@ def _stats_thread_records(
             start = min((value for value in starts if value is not None), default=None)
             if start is None or start >= boundary_timestamp:
                 threads.pop(thread_id, None)
+                excluded.add(thread_id)
                 continue
         for record in rollout_records:
             for child_id in _native_agent_thread_ids(record.entry):

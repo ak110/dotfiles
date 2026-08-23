@@ -7,8 +7,10 @@
 （先発プロセスの追加キーが後発プロセスの書き込みで消失する事象を防ぐ）。
 
 ロック取得・解放は`_file_lock.py`（POSIX: `fcntl.flock`、Windows: `msvcrt.locking`）へ委譲する。
-状態ロックの取得開始と削除は共通の調整ロックで直列化し、使用中のロックを削除しない。
-書き込みは同一ディレクトリの一時ファイル経由`os.replace`でアトミックに反映する。
+ロックファイルはどの経路でも削除しない。内容を持たない空ファイルであり、
+一時ディレクトリの通常の回収に委ねる（削除経路を持たないため、取得開始と削除の
+直列化も不要になる）。書き込みは同一ディレクトリの一時ファイル経由`os.replace`で
+アトミックに反映する。
 
 パス規則は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
 「セッション状態ファイル」節に記載がある。
@@ -18,13 +20,13 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import pathlib
 import tempfile
 import time
 from collections.abc import Callable, Iterator
 from typing import TextIO
 
+from _atomic_file import atomic_write as _atomic_write
 from _file_lock import acquire_lock as _acquire_lock
 from _file_lock import release_lock as _release_lock
 
@@ -32,7 +34,6 @@ _FILENAME_PREFIX = "claude-agent-toolkit-"
 _FILENAME_SUFFIX = ".json"
 _LOCK_SUFFIX = ".lock"
 _TITLE_DIRECTORY_NAME = "claude-agent-toolkit-session-title"
-_LOCK_COORDINATION_FILENAME = "claude-agent-toolkit-session-state-locks.lock"
 _SESSION_TITLE_KEY = "last_hook_session_title"
 
 STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
@@ -60,30 +61,16 @@ def _lock_path(path: pathlib.Path) -> pathlib.Path:
 
 
 @contextlib.contextmanager
-def _lock_coordination() -> Iterator[None]:
-    """状態ロックの取得開始と削除を直列化する。"""
-    path = pathlib.Path(tempfile.gettempdir()) / _LOCK_COORDINATION_FILENAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8") as lock_file:
-        _acquire_lock(lock_file)
-        try:
-            yield
-        finally:
-            _release_lock(lock_file)
-
-
-@contextlib.contextmanager
 def _locked_state(path: pathlib.Path) -> Iterator[None]:
     """状態ファイルと同じセッション別ロックを取得して処理を実行する。"""
     lock_file: TextIO
-    with _lock_coordination():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = _lock_path(path).open("a+", encoding="utf-8")
-        try:
-            _acquire_lock(lock_file)
-        except OSError:
-            lock_file.close()
-            raise
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = _lock_path(path).open("a+", encoding="utf-8")
+    try:
+        _acquire_lock(lock_file)
+    except OSError:
+        lock_file.close()
+        raise
     try:
         yield
     finally:
@@ -97,81 +84,51 @@ def sweep_stale_states(
     now: float | None = None,
     max_age_seconds: float = STALE_STATE_MAX_AGE_SECONDS,
 ) -> int:
-    """期限を過ぎた状態ファイルとロックファイルを回収し、削除した状態ファイル数を返す。
+    """期限を過ぎた状態ファイルと計画名の再出力抑止記録を回収し、削除した件数を返す。
 
-    `keep_session_id`を渡すと、当該セッションの状態ファイルとロックファイルを
+    `keep_session_id`を渡すと、当該セッションの通常状態と計画名記録を
     期限にかかわらず回収対象から除く。セッション終了イベントを契機に呼ぶ場合、
     当該セッションは`--continue`・`--resume`・`/resume`で戻れる一方、
     更新時刻は最後の記録時点のままとなり、長く記録が無いだけで削除されうるため。
 
-    状態ファイルは更新時刻が期限を超えた場合に、対のロックファイルとともに削除する。
-    計画名の再出力抑止記録は独立した保存先を使うため、本走査の対象に含めない。
-    対応する状態ファイルが無いロックファイルは、ロック自身の更新時刻で判定する。
-    ロックは`open(path, "a+")`で開くだけで内容を書かないため更新時刻が進まず、
-    当該値は作成時刻に等しい。対の状態ファイルがある間は、そちらの更新時刻のほうが
-    稼働の有無をよく表すため、ロック単独では判定しない。
-
-    `update_state`はロックを先に作成して状態ファイルを後段で生成するため、
-    対応する状態ファイルが無いロックはセッション開始直後にも生じる。
-    期限を課さずに回収すると稼働中の排他を壊すため、孤立ロックにも同じ期限を課す。
+    通常状態・計画名記録とも、更新時刻が期限を超えた場合に削除する。
+    ロックファイルはどの経路でも削除せず、一時ディレクトリの通常の回収に委ねる。
 
     個別の削除失敗は無視して走査を継続する。
     """
     directory = pathlib.Path(tempfile.gettempdir())
     threshold = (time.time() if now is None else now) - max_age_seconds
-    kept_name = state_path(keep_session_id).name if keep_session_id else None
+    kept_state_name = state_path(keep_session_id).name if keep_session_id else None
+    kept_title_path = title_state_path(keep_session_id) if keep_session_id else None
     removed = 0
     for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"):
-        if path.name == kept_name or not _is_stale(path, threshold):
+        if path.name == kept_state_name or not _is_stale(path, threshold):
             continue
         if _collect_stale_state(path, threshold):
             removed += 1
-    for lock_path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}{_LOCK_SUFFIX}"):
-        if kept_name is not None and lock_path.name == kept_name + _LOCK_SUFFIX:
+    title_directory = directory / _TITLE_DIRECTORY_NAME
+    for path in title_directory.glob(f"*{_FILENAME_SUFFIX}"):
+        if path == kept_title_path or not _is_stale(path, threshold):
             continue
-        if (lock_path.parent / lock_path.name[: -len(_LOCK_SUFFIX)]).exists():
-            continue
-        _collect_stale_orphan_lock(lock_path, threshold)
+        if _collect_stale_state(path, threshold):
+            removed += 1
     return removed
 
 
 def _collect_stale_state(path: pathlib.Path, threshold: float) -> bool:
-    """期限切れ状態と対のロックを、ロック利用者がいない間に回収する。"""
+    """期限切れ状態を、ロック利用者がいない間に回収する。対応するロックは削除しない。"""
     lock_path = _lock_path(path)
     try:
-        with _lock_coordination():
-            with lock_path.open("a+", encoding="utf-8") as lock_file:
-                _acquire_lock(lock_file)
-                try:
-                    if not _is_stale(path, threshold):
-                        return False
-                    removed = _unlink_quietly(path)
-                finally:
-                    _release_lock(lock_file)
-            if removed:
-                _unlink_quietly(lock_path)
-            return removed
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            _acquire_lock(lock_file)
+            try:
+                if not _is_stale(path, threshold):
+                    return False
+                return _unlink_quietly(path)
+            finally:
+                _release_lock(lock_file)
     except OSError:
         return False
-
-
-def _collect_stale_orphan_lock(lock_path: pathlib.Path, threshold: float) -> None:
-    """期限切れの孤立ロックを、ロック利用者がいない間に回収する。"""
-    path = lock_path.with_name(lock_path.name[: -len(_LOCK_SUFFIX)])
-    try:
-        with _lock_coordination():
-            if path.exists() or not _is_stale(lock_path, threshold):
-                return
-            with lock_path.open("a+", encoding="utf-8") as lock_file:
-                _acquire_lock(lock_file)
-                try:
-                    if path.exists() or not _is_stale(lock_path, threshold):
-                        return
-                finally:
-                    _release_lock(lock_file)
-            _unlink_quietly(lock_path)
-    except OSError:
-        return
 
 
 def _is_stale(path: pathlib.Path, threshold: float) -> bool:
@@ -248,43 +205,35 @@ def claim_session_title(session_id: str, title: str) -> bool:
 
 
 def delete_state(session_id: str) -> bool:
-    """有効なセッションの通常状態と対のロックを安全に削除する。"""
+    """有効なセッションの通常状態を安全に削除する。対応するロックは削除しない。"""
     if not isinstance(session_id, str) or not session_id:
         return False
-    return _delete_paths_and_locks((state_path(session_id),))
+    return _delete_state_paths((state_path(session_id),))
 
 
 def clear_session_state(session_id: str) -> bool:
-    """会話破棄時に通常状態と計画名記録及び双方のロックを削除する。"""
+    """会話破棄時に通常状態と計画名記録を削除する。対応するロックは削除しない。"""
     if not isinstance(session_id, str) or not session_id:
         return False
-    return _delete_paths_and_locks((state_path(session_id), title_state_path(session_id)))
+    return _delete_state_paths((state_path(session_id), title_state_path(session_id)))
 
 
-def _delete_paths_and_locks(paths: tuple[pathlib.Path, ...]) -> bool:
-    """指定状態と各ロックを、ロック利用者がいない間に削除する。"""
+def _delete_state_paths(paths: tuple[pathlib.Path, ...]) -> bool:
+    """指定状態を、ロック利用者がいない間に削除する。対応するロックは削除しない。"""
     succeeded = True
-    try:
-        with _lock_coordination():
-            for path in paths:
-                lock_path = _lock_path(path)
-                if not path.exists() and not lock_path.exists():
-                    continue
-                removed = False
+    for path in paths:
+        if not path.exists():
+            continue
+        lock_path = _lock_path(path)
+        try:
+            with lock_path.open("a+", encoding="utf-8") as lock_file:
+                _acquire_lock(lock_file)
                 try:
-                    with lock_path.open("a+", encoding="utf-8") as lock_file:
-                        _acquire_lock(lock_file)
-                        try:
-                            path.unlink(missing_ok=True)
-                            removed = True
-                        finally:
-                            _release_lock(lock_file)
-                except OSError:
-                    succeeded = False
-                if removed and not _unlink_quietly(lock_path):
-                    succeeded = False
-    except OSError:
-        return False
+                    path.unlink(missing_ok=True)
+                finally:
+                    _release_lock(lock_file)
+        except OSError:
+            succeeded = False
     return succeeded
 
 
@@ -311,22 +260,3 @@ def _read_title_locked(path: pathlib.Path) -> dict | None:
     if set(data) != {_SESSION_TITLE_KEY} or not isinstance(title, str) or not title:
         return None
     return data
-
-
-def _atomic_write(path: pathlib.Path, content: str) -> None:
-    """同一ディレクトリの一時ファイル経由でアトミック書き込みする。
-
-    一時ファイル作成→書き込み→`os.replace`の順で実行し、書き込み中断時は
-    旧ファイル内容が残るよう保証する。
-    """
-    parent = path.parent
-    parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=parent, prefix=path.name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(tmp_name, path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_name)
-        raise

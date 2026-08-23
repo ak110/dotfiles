@@ -92,7 +92,7 @@ def test_state_is_preserved_when_reason_is_absent(tmp_path: pathlib.Path) -> Non
 
 
 def test_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -> None:
-    """会話破棄時は自セッションの両状態とロックを削除し、他セッションを残す。"""
+    """会話破棄時は自セッションの両状態を削除するが対応するロックは残し、他セッションを残す。"""
     target = _write_state(tmp_path, "target")
     target_lock = _write_lock(tmp_path, "target")
     title, title_lock = _write_title_state(tmp_path, "target")
@@ -104,14 +104,14 @@ def test_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -
     assert not result.stdout
     assert not result.stderr
     assert not target.exists()
-    assert not target_lock.exists()
+    assert target_lock.exists()
     assert not title.exists()
-    assert not title_lock.exists()
+    assert title_lock.exists()
     assert other.exists()
 
 
-def test_stale_state_and_its_lock_are_collected(tmp_path: pathlib.Path) -> None:
-    """期限を過ぎた状態ファイルは対のロックとともに回収する。"""
+def test_stale_state_is_collected_but_its_lock_is_kept(tmp_path: pathlib.Path) -> None:
+    """期限を過ぎた状態ファイルは回収するが、対応するロックは削除しない。"""
     stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
     stale_lock = _write_lock(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
     fresh = _write_state(tmp_path, "fresh")
@@ -122,7 +122,7 @@ def test_stale_state_and_its_lock_are_collected(tmp_path: pathlib.Path) -> None:
 
     assert result.returncode == 0
     assert not stale.exists()
-    assert not stale_lock.exists()
+    assert stale_lock.exists()
     assert fresh.exists()
     assert fresh_lock.exists()
     assert stale_title.exists()
@@ -141,8 +141,8 @@ def test_fresh_state_keeps_its_old_lock(tmp_path: pathlib.Path) -> None:
     assert old_lock.exists()
 
 
-def test_orphan_lock_is_collected_only_after_expiry(tmp_path: pathlib.Path) -> None:
-    """状態ファイルの無いロックは、期限を過ぎた場合だけ回収する。"""
+def test_orphan_lock_is_never_collected(tmp_path: pathlib.Path) -> None:
+    """状態ファイルの無いロックは、期限をいくら過ぎても回収しない。"""
     starting = _write_lock(tmp_path, "starting")
     abandoned = _write_lock(tmp_path, "abandoned", age_seconds=_STALE_AGE_SECONDS)
 
@@ -150,7 +150,7 @@ def test_orphan_lock_is_collected_only_after_expiry(tmp_path: pathlib.Path) -> N
 
     assert result.returncode == 0
     assert starting.exists()
-    assert not abandoned.exists()
+    assert abandoned.exists()
 
 
 def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib.Path) -> None:
@@ -174,7 +174,7 @@ def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib
     assert not result.stderr
     assert own.exists()
     assert not stale.exists()
-    assert not stale_lock.exists()
+    assert stale_lock.exists()
 
 
 def test_codex_other_reason_keeps_own_expired_state(tmp_path: pathlib.Path) -> None:

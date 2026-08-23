@@ -94,6 +94,7 @@ def test_codex_command_preserves_space_containing_script_path_as_one_argument(tm
         _SCRIPT.parent / "_session_review_evidence.py",
         _SCRIPT.parent / "_session_state.py",
         _SCRIPT.parent / "_file_lock.py",
+        _SCRIPT.parent / "_atomic_file.py",
     ):
         shutil.copy2(source, scripts_dir / source.name)
 

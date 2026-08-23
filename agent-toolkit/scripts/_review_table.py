@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import tempfile
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
+from _atomic_file import atomic_write
 from _file_lock import acquire_lock, release_lock
 
 COLUMNS = (
@@ -117,19 +116,8 @@ def validate(path: str | Path, *, require_responses: bool = True) -> int:
 
 def _write_atomic(path: Path, rows: list[list[str]]) -> None:
     """行を一時ファイルへ書き、同一ディレクトリ内で原子的に置換する。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    temporary_path = Path(temporary)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            for row in rows:
-                handle.write("\t".join(_cell(value) for value in row))
-                handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
+    content = "".join("\t".join(_cell(value) for value in row) + "\n" for row in rows)
+    atomic_write(path, content, fsync=True)
 
 
 def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[str]]]) -> list[list[str]]:

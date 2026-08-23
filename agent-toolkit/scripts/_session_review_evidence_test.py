@@ -2813,6 +2813,78 @@ def test_stats_drops_native_subagent_activity_started_after_review_boundary(
     assert [event["thread"] for event in _events_by_kind(events, "stats-codex-thread")] == [root_id]
 
 
+def test_stats_excluded_thread_does_not_return_when_rediscovered_from_sibling(
+    tmp_path: pathlib.Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """境界超過で除外したthreadが、後から処理される兄弟rolloutから再発見されても集計へ戻らない。
+
+    `root_id`のrolloutが`shared_id`と`sibling_id`をこの順で子として発見し、`shared_id`は
+    境界後に起動したため除外される。`sibling_id`は境界前に起動し、自身のrollout内で
+    `shared_id`を再び子として発見するが、既に除外済みのため復帰してはならない。
+    """
+    root_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    shared_id = "11111111-2222-4111-8222-111111111111"
+    sibling_id = "33333333-4444-4333-8444-333333333333"
+    codex_home = tmp_path / "codex"
+    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
+    rollout_dir.mkdir(parents=True)
+
+    def activity(thread_id: str) -> dict:
+        return {"type": "SubAgentActivity", "agent_thread_id": thread_id}
+
+    (rollout_dir / f"rollout-test-{root_id}.jsonl").write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                _codex_token_count_entry("2026-08-19T00:00:01Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+                {"timestamp": "2026-08-19T00:00:02Z", "payload": {"activity": activity(shared_id)}},
+                {"timestamp": "2026-08-19T00:00:03Z", "payload": {"activity": activity(sibling_id)}},
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (rollout_dir / f"rollout-test-{sibling_id}.jsonl").write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                _codex_token_count_entry("2026-08-19T00:00:04Z", {"input_tokens": 3, "output_tokens": 3, "total_tokens": 6}),
+                {"timestamp": "2026-08-19T00:00:04Z", "payload": {"activity": activity(shared_id)}},
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_rollout(
+        codex_home,
+        shared_id,
+        [("2026-08-19T00:00:10Z", {"input_tokens": 90, "output_tokens": 90, "total_tokens": 180})],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {"type": "message", "role": "assistant", "activity": activity(root_id)},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:05Z",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "$session-review"}]},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    threads = {event["thread"] for event in _events_by_kind(events, "stats-codex-thread")}
+    assert threads == {root_id, sibling_id}
+
+
 def test_stats_boundary_excludes_manual_review_and_rejects_combination(tmp_path: pathlib.Path, capsys) -> None:
     """手動起動境界以降を集計せず、statsと既存照会モードの併用を拒否する。"""
     transcript = _write_transcript(
