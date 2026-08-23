@@ -2205,15 +2205,18 @@ def test_launch_points_reread_routing_before_launch_or_continuation() -> None:
     """全起動地点で新規起動・継続接続の直前に実効routeを再取得する契約を固定する。"""
     launch_points = {
         _PLAN_IMPL_EXECUTOR: (
-            "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`"
+            "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`",
+            "修正用の書込担当を新規起動する直前に`atk config get execute_fix_model`",
+            "継続接続の直前も同じ設定値を再取得する。",
         ),
-        _FEEDBACKS_PLANNER: "起草担当への新規起動又は継続接続の直前は`plan_model`",
-        _PLAN_REVIEW_DELEGATION: "レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",
-        _PLAN_IMPL_FEEDBACK_FLOW: "統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",
+        _FEEDBACKS_PLANNER: ("起草担当への新規起動又は継続接続の直前は`plan_model`",),
+        _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",),
+        _PLAN_IMPL_FEEDBACK_FLOW: ("統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",),
     }
-    for path, phrase in launch_points.items():
+    for path, phrases in launch_points.items():
         text = path.read_text(encoding="utf-8")
-        assert phrase in text, f"{path.relative_to(_REPOSITORY_ROOT)}: 起動直前のroute再取得"
+        for phrase in phrases:
+            assert phrase in text, f"{path.relative_to(_REPOSITORY_ROOT)}: 起動直前のroute再取得"
         assert "runtime-routing.md" in text
 
 
@@ -2248,6 +2251,10 @@ def test_review_repair_writer_route_transition_table_is_complete() -> None:
     assert "実効3値がすべて一致し、同じ担当へ同じタスクを返す場合だけ同一threadへ継続接続する" in runtime
     assert "`engine`が異なるため旧担当の終端確認後、今回routeで新規起動する" in normal_fix
     assert "両方の`engine`がCodexで実効3値がすべて一致する場合だけ" not in caller
+    assert (
+        "同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、"
+        "実効3値がすべて一致する場合だけ元の実装担当threadを継続し、" in caller
+    )
     assert "実効値が異なる場合を含むそれ以外" in caller
     for document in (normal_fix, runtime, writer, caller):
         assert "両方Codexの場合だけ" not in document
@@ -3975,18 +3982,32 @@ def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> 
     assert "介入とエージェントの誤りの因果を確定できない候補には適用しない" in skill
 
 
-def test_session_review_investigates_fourth_review_by_artifact_and_responsibility() -> None:
-    """第4回以降だけを同一成果物・同一責務の原因調査対象として固定する。"""
+def test_session_review_investigates_third_review_by_artifact_and_responsibility() -> None:
+    """第3回以降を同一成果物・同一責務の原因調査対象とし、原則提案を課す。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
 
     for phrase in (
         "同じ計画・基点から続く累積実装",
         "同じ責務系統のレビュー担当",
-        "第4回以降",
-        "3回以下、結果未返却、別成果物、別責務系統は合算しない",
+        "第3回以降",
+        "2回以下、結果未返却、別成果物、別責務系統は合算しない",
+        "転換後の最初のレビューを第1回としてカウントを取り直す",
         "レビュー側と初版作成・指摘反映側の原因を別々に確定する",
+        "原則として改善提案を1件以上確定する",
     ):
         assert phrase in skill
+
+
+def test_review_rounds_have_an_escalation_route_for_repeated_findings() -> None:
+    """同一単位への連続3ラウンドで確定経路へ返す規定を固定する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+
+    for text in (executor, plan_review_delegation, reviewee):
+        assert "連続3ラウンドへ達した場合" in text
+        assert "撤去と同一内容の復元をともに観測した場合" in text
+        assert "呼び出し元が当該単位の処置を確定して指示した場合" in text
 
 
 def test_plan_workflows_reread_completion_conditions_before_reporting() -> None:

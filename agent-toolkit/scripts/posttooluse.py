@@ -300,7 +300,12 @@ def _diff_remote_snapshots(
 
 
 def _extract_codex_structured_response(tool_response: object) -> dict:
-    """Codex応答のdictまたはJSON文字列を状態記録用のdictへ正規化する。"""
+    """Codex応答のdictまたはJSON文字列を状態記録用のdictへ正規化する。
+
+    受理するのは、dictの`structuredContent`、dict本体、JSONオブジェクトを表す文字列の3形態とする。
+    いずれにも該当しない場合と解析に失敗した場合は、状態記録に必要な値を解決できないことを表す空dictを返す。
+    空dictに対する診断の出力責務は`_dispatch`のCodex分岐だけが持ち、他の呼び出し側は診断を出力しない。
+    """
     if isinstance(tool_response, dict):
         structured = tool_response.get("structuredContent")
         return structured if isinstance(structured, dict) else tool_response
