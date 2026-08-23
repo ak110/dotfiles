@@ -181,14 +181,63 @@ def _check_plan_size(lines: list[str]) -> list[str]:
     ]
 
 
-def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
-    """計画ファイルを検査し、エラーと警告を返す。"""
-    text = plan_path.read_text(encoding="utf-8")
+def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
+    """メイン側計画パスから対応するdetail側の絶対パスを返す（stem導出）。"""
+    return plan_path.with_name(f"{plan_path.stem}{_plan_format.PLAN_DETAIL_SUFFIX}")
+
+
+def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Path) -> list[str]:
+    """メイン側の計画メタ情報`実装詳細`がstem導出値と一致するかを検査する。"""
+    if declared_value is None:
+        return [f"計画メタ情報の`{_plan_format.PLAN_METADATA_DETAIL_FIELD}`が無い: 期待={detail_path.name}"]
+    declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
+    if declared_text != detail_path.name:
+        return [
+            f"計画メタ情報の`{_plan_format.PLAN_METADATA_DETAIL_FIELD}`がstem導出値と一致しない: "
+            f"計画={declared_text}, 期待={detail_path.name}"
+        ]
+    return []
+
+
+def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
+    """新書式（メイン側・detail側の2ファイル）を検査してエラーと警告を返す。
+
+    呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
+    detail側の実在は呼び出し前提として扱う。
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    work_type, main_errors = _plan_format.check_plan_main_structure(text)
+    errors.extend(main_errors)
+
+    parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
+    metadata = parsed.values if parsed is not None else {}
+    errors.extend(_check_detail_reference(metadata.get(_plan_format.PLAN_METADATA_DETAIL_FIELD), detail_path))
+
+    detail_text = detail_path.read_text(encoding="utf-8")
+    detail_lines = detail_text.splitlines()
+    detail_body_start = _plan_format.markdown_body_start_index(detail_text)
+    detail_structure_lines = ["" if index < detail_body_start else line for index, line in enumerate(detail_lines)]
+    _outside_detail, detail_fence_errors = _outside_fences(detail_structure_lines)
+    errors.extend(detail_fence_errors)
+    errors.extend(_plan_format.check_plan_detail_structure(detail_text, work_type))
+    errors.extend(_check_references(detail_text, work_dir))
+    warnings.extend(_check_plan_size(detail_lines))
+
+    materials, _material_errors = _plan_format.parse_plan_materials(text)
+    if materials is not None and materials.is_legacy:
+        warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
+    errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
+    errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
+    errors.extend(_check_references(text, work_dir))
+    warnings.extend(_check_plan_size(text.splitlines()))
+    return errors, warnings
+
+
+def _check_legacy_format(text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
+    """旧形式（単一ファイル9節）を検査してエラーと警告を返す。読み取り互換であり新規作成では生成しない。"""
     lines = text.splitlines()
-    body_start = _plan_format.markdown_body_start_index(text)
-    structure_lines = ["" if index < body_start else line for index, line in enumerate(lines)]
-    _outside, errors = _outside_fences(structure_lines)
-    errors.extend(_plan_format.check_plan_structure(text))
+    errors = _plan_format.check_plan_structure(text)
     materials, _material_errors = _plan_format.parse_plan_materials(text)
     warnings: list[str] = []
     if materials is not None and materials.is_legacy:
@@ -199,6 +248,27 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(lines))
+    return errors, warnings
+
+
+def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
+    """計画ファイルを検査し、エラーと警告を返す。
+
+    新旧の判別は対応する`<stem>.detail.md`ファイルの実在で行う（`plan-file-standards.md`正本）。
+    実在する場合は新書式の2ファイル、実在しない場合は旧形式の単一ファイルとして検査する。
+    """
+    text = plan_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    body_start = _plan_format.markdown_body_start_index(text)
+    structure_lines = ["" if index < body_start else line for index, line in enumerate(lines)]
+    _outside, errors = _outside_fences(structure_lines)
+
+    detail_path = _detail_path_for(plan_path)
+    if detail_path.is_file():
+        format_errors, warnings = _check_new_format(detail_path, text, work_dir)
+    else:
+        format_errors, warnings = _check_legacy_format(text, work_dir)
+    errors.extend(format_errors)
     return errors, warnings
 
 

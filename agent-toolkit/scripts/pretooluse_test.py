@@ -727,6 +727,17 @@ class TestColloquialCheck:
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
 
+    def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        """実装詳細側`.detail.md`も計画構成要素述語で真となり口語警告を出力しない。"""
+        detail = _make_plan_file(tmp_path / "home", "colloquial.detail.md")
+        content = f"概要は{deny_substring}該当する。\n"
+        result = _run(
+            {"tool_name": "Write", "tool_input": {"file_path": str(detail), "content": content}},
+            env_overrides=_plan_file_state_env(tmp_path, tmp_path / "home"),
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
 
 def _plan_file_state_env(
     tmp_path: pathlib.Path,

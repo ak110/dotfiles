@@ -29,7 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _hook_tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     claim_session_title,
     read_state,
@@ -149,7 +149,7 @@ def _session_review_context(session_id: str, transcript_path: str) -> str:
 def _plan_session_title(session_id: str) -> str | None:
     """計画ファイルのstemをClaude CodeのsessionTitleへ一度だけ反映する。"""
     raw_plan_path = read_state(session_id).get("current_plan_file_path")
-    if not isinstance(raw_plan_path, str) or not raw_plan_path or not is_plan_file(raw_plan_path):
+    if not isinstance(raw_plan_path, str) or not raw_plan_path or not is_plan_main_file(raw_plan_path):
         return None
     plan_stem = pathlib.Path(raw_plan_path).stem
     if not plan_stem or not claim_session_title(session_id, plan_stem):

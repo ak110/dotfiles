@@ -186,7 +186,11 @@ class TestSearchFiles:
 
 
 class TestTargetPathConsistency:
-    """一覧・検索・監視の3経路が同一の対象集合を扱うことを検証する。"""
+    """一覧・検索・監視の3経路の対象集合を検証する。
+
+    読取・検索・変更監視は`is_target_path`を共有し、実装詳細側`.detail.md`も対象へ含める。
+    一覧だけは`is_listed_path`を使い、`.detail.md`を除外する。
+    """
 
     def test_list_search_and_watch_agree_on_target_set(self, tmp_path: Path):
         """`root`直下・サブディレクトリ・隠しディレクトリ・隠しファイルの各形態で3経路が一致すること。"""
@@ -225,6 +229,22 @@ class TestTargetPathConsistency:
         assert _local.search_files(root, "本文") == listed
         assert _local.is_target_path(root / "top.md", root)
         assert not _local.is_target_path(root / ".cache" / "hidden.md", root)
+
+    def test_detail_file_excluded_from_list_but_included_in_search_and_watch(self, tmp_path: Path) -> None:
+        """`.detail.md`は一覧から除外し、検索・変更監視の対象には含める。"""
+        main = tmp_path / "plan.md"
+        detail = tmp_path / "plan.detail.md"
+        main.write_text("本文", encoding="utf-8")
+        detail.write_text("本文", encoding="utf-8")
+
+        listed = {entry.path for entry in _local.list_files(tmp_path, "local-host")}
+        searched = _local.search_files(tmp_path, "本文")
+
+        assert listed == {"plan.md"}
+        assert searched == {"plan.md", "plan.detail.md"}
+        assert _local.is_target_path(detail, tmp_path)
+        assert not _local.is_listed_path(detail, tmp_path)
+        assert _local.is_listed_path(main, tmp_path)
 
 
 class TestCreationTimeIndex:

@@ -117,7 +117,7 @@ from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,
     locked_rotate_and_append as _locked_rotate_and_append,
 )
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import is_plan_component_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
@@ -825,7 +825,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     一時ルート配下は配置だけでは除外せず、既存親からルートまでにGit管理マーカーがないと
     確定できた一時作業文書だけを対象外とする。マーカーの確認不能時は既存検査を継続する。
     """
-    if is_plan_file(file_path):
+    if is_plan_component_file(file_path):
         return None
 
     try:
@@ -905,7 +905,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
-    if is_plan_file(file_path):
+    if is_plan_component_file(file_path):
         return None
     for field, value in fields:
         if not value:
@@ -1007,14 +1007,14 @@ def _is_frontmatter_sync_check_target(file_path: str) -> bool:
     """frontmatter同期注記検査の対象ファイルかを判定する。
 
     対象は`agent-toolkit/`・`.chezmoi-source/dot_claude/`配下の`.md`ファイル、
-    および計画ファイル（`is_plan_file`が真のパス）。
+    および計画ファイル（`is_plan_component_file`が真のパス）。
     """
     if not file_path:
         return False
     normalized = file_path.replace("\\", "/")
     if any(p.search(normalized) is not None for p in _FRONTMATTER_SYNC_TARGET_PATTERNS):
         return True
-    return is_plan_file(file_path)
+    return is_plan_component_file(file_path)
 
 
 def _extract_frontmatter_sync_notes(content: str) -> list[str]:
@@ -1346,7 +1346,7 @@ def _check_plan_mode_skill_first(
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
         return None
     file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
+    if not isinstance(file_path_raw, str) or not is_plan_component_file(file_path_raw):
         return None
     state = read_state(session_id)
     if state.get("plan_mode_skill_invoked", False):
@@ -1506,7 +1506,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
         return False, None
 
     # 計画ファイル編集時は`plan_file_written`を真にしカウンタをリセットする。
-    if is_plan_file(file_path_raw):
+    if is_plan_component_file(file_path_raw):
 
         def _mark_plan_written(current: dict) -> dict | None:
             changed = False

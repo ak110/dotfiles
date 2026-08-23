@@ -102,7 +102,9 @@ _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。
 
-    一覧・検索・監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
+    読取・検索・変更監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
+    計画本体`<stem>.md`と実装詳細側`<stem>.detail.md`の双方を真とする
+    （detailは一覧だけから除外し、読取・検索・監視の対象には含める。`is_listed_path`が一覧専用の判定を持つ）。
     リモート側`_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
@@ -117,8 +119,16 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     return not any(part.startswith(".") for part in rel.parts)
 
 
+def is_listed_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+    """`path`が計画一覧の対象（`is_target_path`が真、かつ実装詳細側`.detail.md`ではない）かを判定する。
+
+    一覧経路だけに使う。読取・検索・変更監視は`is_target_path`を使い、detailも対象へ含める。
+    """
+    return is_target_path(path, root) and not path.name.endswith(".detail.md")
+
+
 def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """監視イベントの対象判定。一覧・検索と同一の判定を用いる。"""
+    """監視イベントの対象判定。読取・検索と同一の`is_target_path`を用いる（detailも対象へ含める）。"""
     return is_target_path(path, root)
 
 
@@ -413,12 +423,13 @@ def local_host_info(root: pathlib.Path) -> dict[str, str]:
 def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
     """`root`から`.md`ファイルを再帰的に探し、作成日時の降順で返す。
 
+    実装詳細側`<stem>.detail.md`は一覧から除外する（`is_listed_path`）。
     `host`は各エントリの`host`フィールドへ埋め込むラベル（通常はサーバー実行ホスト名）。
     """
     scanned: list[dict[str, typing.Any]] = []
     observed: dict[str, float] = {}
     for path in root.rglob("*.md"):
-        if not path.is_file() or not is_target_path(path, root):
+        if not path.is_file() or not is_listed_path(path, root):
             continue
         st = path.stat()
         rel = path.relative_to(root).as_posix()

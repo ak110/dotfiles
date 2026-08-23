@@ -53,3 +53,30 @@ class TestHostInfo:
 
         assert "\\" not in info["home"]
         assert info["home"] == str(pathlib.Path.home()).replace("\\", "/")
+
+
+class TestListedPath:
+    """`_is_target_path`・`_is_listed_path`・`_scan_entries`のdetail除外契約を検証する。"""
+
+    def test_detail_file_target_but_not_listed(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`.detail.md`は`_is_target_path`で真、`_is_listed_path`で偽になる。"""
+        monkeypatch.setattr(_remote_helper, "ROOT", tmp_path)
+        main = tmp_path / "plan.md"
+        detail = tmp_path / "plan.detail.md"
+        main.write_text("x", encoding="utf-8")
+        detail.write_text("x", encoding="utf-8")
+
+        assert _remote_helper._is_target_path(detail)  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+        assert not _remote_helper._is_listed_path(detail)  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+        assert _remote_helper._is_listed_path(main)  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+    def test_scan_entries_excludes_detail_file(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`_scan_entries`（一覧経路）は`.detail.md`を返さない。"""
+        monkeypatch.setattr(_remote_helper, "ROOT", tmp_path)
+        monkeypatch.setattr(_remote_helper, "_CREATION_TIME_INDEX_PATH", tmp_path / "creation-times" / "index.json")
+        (tmp_path / "plan.md").write_text("x", encoding="utf-8")
+        (tmp_path / "plan.detail.md").write_text("x", encoding="utf-8")
+
+        entries = _remote_helper._scan_entries()  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+        assert {entry["path"] for entry in entries} == {"plan.md"}

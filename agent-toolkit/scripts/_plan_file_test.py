@@ -1,4 +1,4 @@
-"""_plan_file.pyのis_plan_file判定挙動を検証する。"""
+"""_plan_file.pyのis_plan_main_file・is_plan_component_file判定挙動を検証する。"""
 
 import pathlib
 
@@ -16,42 +16,97 @@ def _plans_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> path
     return plans
 
 
-def test_is_plan_file_normal_md_returns_true(_plans_home: pathlib.Path) -> None:
-    """`~/.claude/plans/`直下の`.md`は計画ファイル判定される。"""
+def test_is_plan_main_file_normal_md_returns_true(_plans_home: pathlib.Path) -> None:
+    """`~/.claude/plans/`直下の`.md`は計画本体として真になる。"""
     plan = _plans_home / "sample.md"
     plan.write_text("# t\n", encoding="utf-8")
-    assert _plan_file.is_plan_file(str(plan)) is True
+    assert _plan_file.is_plan_main_file(str(plan)) is True
 
 
-def test_is_plan_file_review_md_excluded(_plans_home: pathlib.Path) -> None:
+def test_is_plan_main_file_detail_md_returns_false(_plans_home: pathlib.Path) -> None:
+    """`.detail.md`（実装詳細側）は計画本体述語では偽になる。"""
+    plan = _plans_home / "sample.detail.md"
+    plan.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_main_file(str(plan)) is False
+
+
+def test_is_plan_main_file_review_md_excluded(_plans_home: pathlib.Path) -> None:
     """`.review.md`サフィックスは副次ファイルとして除外される。"""
     path = _plans_home / "sample.review.md"
     path.write_text("x\n", encoding="utf-8")
-    assert _plan_file.is_plan_file(str(path)) is False
+    assert _plan_file.is_plan_main_file(str(path)) is False
 
 
-def test_is_plan_file_codex_log_excluded(_plans_home: pathlib.Path) -> None:
+def test_is_plan_main_file_codex_log_excluded(_plans_home: pathlib.Path) -> None:
     """`.codex.log`サフィックスは副次ファイルとして除外される。"""
     path = _plans_home / "sample.codex.log"
     path.write_text("x\n", encoding="utf-8")
-    assert _plan_file.is_plan_file(str(path)) is False
+    assert _plan_file.is_plan_main_file(str(path)) is False
 
 
-def test_is_plan_file_workaround_check_excluded(_plans_home: pathlib.Path) -> None:
+def test_is_plan_main_file_workaround_check_excluded(_plans_home: pathlib.Path) -> None:
     """`-workaround-check.md`サフィックスは副次ファイルとして除外される。"""
     path = _plans_home / "sample-workaround-check.md"
     path.write_text("x\n", encoding="utf-8")
-    assert _plan_file.is_plan_file(str(path)) is False
+    assert _plan_file.is_plan_main_file(str(path)) is False
 
 
-def test_is_plan_file_subdirectory_excluded(_plans_home: pathlib.Path) -> None:
+def test_is_plan_main_file_subdirectory_excluded(_plans_home: pathlib.Path) -> None:
     """サブディレクトリ配下は対象外。"""
     subdir = _plans_home / "sub"
     subdir.mkdir()
     path = subdir / "sample.md"
     path.write_text("x\n", encoding="utf-8")
-    assert _plan_file.is_plan_file(str(path)) is False
+    assert _plan_file.is_plan_main_file(str(path)) is False
 
 
-def test_is_plan_file_empty_path_returns_false() -> None:
-    assert _plan_file.is_plan_file("") is False
+def test_is_plan_main_file_empty_path_returns_false() -> None:
+    assert _plan_file.is_plan_main_file("") is False
+
+
+def test_is_plan_component_file_normal_md_returns_true(_plans_home: pathlib.Path) -> None:
+    """計画本体は計画構成要素述語でも真になる。"""
+    plan = _plans_home / "sample.md"
+    plan.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_component_file(str(plan)) is True
+
+
+def test_is_plan_component_file_detail_md_returns_true(_plans_home: pathlib.Path) -> None:
+    """`.detail.md`（実装詳細側）は計画構成要素述語では真になる。"""
+    plan = _plans_home / "sample.detail.md"
+    plan.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_component_file(str(plan)) is True
+
+
+def test_is_plan_component_file_review_md_excluded(_plans_home: pathlib.Path) -> None:
+    """`.review.md`サフィックスは計画構成要素述語でも除外される。"""
+    path = _plans_home / "sample.review.md"
+    path.write_text("x\n", encoding="utf-8")
+    assert _plan_file.is_plan_component_file(str(path)) is False
+
+
+def test_is_plan_component_file_codex_log_excluded(_plans_home: pathlib.Path) -> None:
+    """`.codex.log`サフィックスは計画構成要素述語でも除外される。"""
+    path = _plans_home / "sample.codex.log"
+    path.write_text("x\n", encoding="utf-8")
+    assert _plan_file.is_plan_component_file(str(path)) is False
+
+
+def test_is_plan_component_file_workaround_check_excluded(_plans_home: pathlib.Path) -> None:
+    """`-workaround-check.md`サフィックスは計画構成要素述語でも除外される。"""
+    path = _plans_home / "sample-workaround-check.md"
+    path.write_text("x\n", encoding="utf-8")
+    assert _plan_file.is_plan_component_file(str(path)) is False
+
+
+def test_is_plan_component_file_subdirectory_excluded(_plans_home: pathlib.Path) -> None:
+    """サブディレクトリ配下は計画構成要素述語でも対象外。"""
+    subdir = _plans_home / "sub"
+    subdir.mkdir()
+    path = subdir / "sample.md"
+    path.write_text("x\n", encoding="utf-8")
+    assert _plan_file.is_plan_component_file(str(path)) is False
+
+
+def test_is_plan_component_file_empty_path_returns_false() -> None:
+    assert _plan_file.is_plan_component_file("") is False

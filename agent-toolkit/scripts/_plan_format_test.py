@@ -827,3 +827,174 @@ def test_agent_document_target_paths() -> None:
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/example/SKILL.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
     assert not _plan_format.is_agent_doc_target_file("pytools/example.py")
+
+
+# --- 新書式（計画2ファイル）の構造検査 ---
+
+_MAIN_CONTENT = """# 計画の主題
+
+## 概要
+
+成果を得る。
+
+### 計画メタ情報
+
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `/repo`
+- 作業種別: 通常変更
+- ベースコミット: `{base}`
+- 実装詳細: `sample.detail.md`
+
+## 実施内容
+
+| 実施内容 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- |
+| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
+
+## 提示素材
+
+| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
+| --- | --- | --- | --- | --- |
+| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
+
+| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
+| --- | --- | --- | --- | --- | --- | --- |
+| R-P-001-001 | P-001 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示を反映するため。 |
+
+## 変更履歴
+
+| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
+| --- | --- | --- | --- | --- |
+| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |
+
+## 検証区分
+
+| 区分 | 検証コマンド |
+| --- | --- |
+| レーン内検証 | `pytest _plan_format_test.py` |
+| 統合後検証 | `make test` |
+
+## 終端工程
+
+なし
+
+## 進捗ログ
+
+| 日時 | 完了した工程 | 結果・特記事項 |
+| --- | --- | --- |
+"""
+
+_DETAIL_CONTENT = """## 恒久化・リファクタリング内容
+
+### 恒久化
+
+| 知見 | 出所 | 反映先 | 根拠 |
+| --- | --- | --- | --- |
+| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |
+
+### リファクタリング
+
+| 項目 | 内容 |
+| --- | --- |
+| 対象 | 対象ファイル。 |
+| 現状の問題 | 重複がある。 |
+| 対応 | 共通化する。 |
+| 本計画に含めるか | 含める。 |
+
+### 類似見直し
+
+| 項目 | 内容 |
+| --- | --- |
+| 母集団 | リポジトリ全体。 |
+| 点検観点 | 同じ重複が残るか。 |
+| 該当箇所 | 対象ファイル。 |
+
+## 実装資料
+
+### ファイル群別の変更説明
+
+対象の構造と検査を更新する。
+
+## 完了条件
+
+基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
+"""
+
+_VALID_MAIN_CONTENT = _MAIN_CONTENT.format(base=_BASE)
+_VALID_DETAIL_CONTENT = _DETAIL_CONTENT
+
+
+def test_main_and_detail_canonical_pass_structure_check() -> None:
+    """新書式のメイン側・detail側の正規形はいずれも構造検査を通過する。"""
+    work_type, main_errors = _plan_format.check_plan_main_structure(_VALID_MAIN_CONTENT)
+    assert work_type == "通常変更"
+    assert not main_errors
+    assert not _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT, work_type)
+
+
+def test_main_structure_requires_detail_metadata_field() -> None:
+    """メイン側の計画メタ情報は`実装詳細`を末尾へ含む5項目にする。"""
+    content = _VALID_MAIN_CONTENT.replace("- 実装詳細: `sample.detail.md`\n", "")
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any("この順序で1行ずつ置く" in error for error in errors), errors
+
+
+def test_main_structure_rejects_missing_verification_table() -> None:
+    """メイン側の`## 検証区分`は固定2行2列表にする。"""
+    content = _VALID_MAIN_CONTENT.replace(
+        "| レーン内検証 | `pytest _plan_format_test.py` |\n| 統合後検証 | `make test` |\n",
+        "",
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any(f"`## {_plan_format.PLAN_H2_VERIFICATION}`は" in error for error in errors), errors
+
+
+def test_main_structure_rejects_empty_verification_command() -> None:
+    """`## 検証区分`の各行に空の検証コマンドを置けない。"""
+    content = _VALID_MAIN_CONTENT.replace("| 統合後検証 | `make test` |", "| 統合後検証 |  |")
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any("空の検証コマンドがある" in error for error in errors), errors
+
+
+def test_main_structure_accepts_termination_placeholder() -> None:
+    """`## 終端工程`は終端工程が無い場合`なし`の記載を受理する。"""
+    assert "\n## 終端工程\n\nなし\n" in _VALID_MAIN_CONTENT
+    _work_type, errors = _plan_format.check_plan_main_structure(_VALID_MAIN_CONTENT)
+    assert not any(f"`## {_plan_format.PLAN_H2_TERMINATION}`は" in error for error in errors), errors
+
+
+def test_main_structure_rejects_empty_termination_section() -> None:
+    """`## 終端工程`は空欄を拒否する（無い場合は`なし`と書く）。"""
+    content = _VALID_MAIN_CONTENT.replace("## 終端工程\n\nなし\n", "## 終端工程\n\n")
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any(f"`## {_plan_format.PLAN_H2_TERMINATION}`は" in error for error in errors), errors
+
+
+def test_main_structure_rejects_bug_section() -> None:
+    """メイン側に`## バグ調査結果`は置かない（detail側専用）。"""
+    content = _VALID_MAIN_CONTENT.replace(
+        "## 検証区分",
+        "## バグ調査結果\n\n未使用。\n\n## 検証区分",
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any("固定H2は" in error for error in errors), errors
+
+
+def test_detail_structure_requires_bug_section_for_bug_work_type() -> None:
+    """detail側は作業種別が`バグ対応`の場合だけ`## バグ調査結果`を先頭へ要求する。"""
+    errors = _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT, "バグ対応")
+    assert any(f"固定H2`## {_plan_format.PLAN_H2_BUG}`は1件必要" in error for error in errors), errors
+
+
+def test_detail_structure_rejects_bug_section_for_normal_work_type() -> None:
+    """detail側は作業種別が`通常変更`の場合`## バグ調査結果`を拒否する。"""
+    content = "## バグ調査結果\n\n未使用。\n\n" + _VALID_DETAIL_CONTENT
+    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    assert any(f"`## {_plan_format.PLAN_H2_BUG}`は置かない" in error for error in errors), errors
+
+
+def test_detail_structure_permanence_rejects_free_h3() -> None:
+    """detail側の恒久化領域でも固定3見出し以外のH3を拒否する。"""
+    content = _VALID_DETAIL_CONTENT.replace("\n## 実装資料", "\n### 任意の補足\n\n補足する。\n\n## 実装資料")
+    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    assert any("固定見出し以外のH3" in error for error in errors), errors

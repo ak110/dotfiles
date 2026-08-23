@@ -51,7 +51,10 @@ import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,
 import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    is_plan_component_file,
+    is_plan_main_file,
+)
 from _plan_format import is_agent_facing_md  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -794,12 +797,12 @@ def _handle_edit_tool(
         if not operation.exists_after_apply:
             continue
         display_path = operation.display_path
-        if is_plan_file(display_path):
+        if is_plan_main_file(display_path):
             _record_plan_file(session_id, display_path)
         if is_agent_facing_md(display_path):
             _append_conditional_prohibition_notice(operation.path, display_path, notices)
-        if plan_mode_invoked and is_plan_file(display_path) and operation.is_whole_write:
-            notices.append(_plan_file_check_notice(display_path, cwd))
+        if plan_mode_invoked and is_plan_component_file(display_path) and operation.is_whole_write:
+            notices.append(_plan_file_check_notice(_plan_main_path_for(display_path), cwd))
 
 
 def _append_conditional_prohibition_notice(read_path: str, display_path: str, notices: list[str]) -> None:
@@ -811,6 +814,19 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
     warnings = _check_conditional_prohibition(pathlib.Path(display_path), content)
     if warnings:
         notices.append(_llm_notice("\n".join(warnings), tag="warn"))
+
+
+def _plan_main_path_for(display_path: str) -> str:
+    """計画構成要素のパスから対応するメイン側（計画本体）の絶対パスを返す。
+
+    実装詳細側`<stem>.detail.md`はstem導出でメイン側`<stem>.md`へ変換する。
+    メイン側の節構成検査が実装詳細側の実在・節構成も検査するため、
+    detail側書込み時もメイン側パスを検査案内の対象とする。
+    メイン側パスはそのまま返す。
+    """
+    if display_path.endswith(".detail.md"):
+        return display_path[: -len(".detail.md")] + ".md"
+    return display_path
 
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:

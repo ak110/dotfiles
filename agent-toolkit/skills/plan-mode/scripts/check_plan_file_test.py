@@ -135,6 +135,108 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 """
 
 
+def _new_format_plan(
+    repo: pathlib.Path, base: str, *, bug: bool = False, detail_name: str = "plan.detail.md"
+) -> tuple[str, str]:
+    """新書式（メイン側・detail側）の正規計画を組み立てて返す。"""
+    work_type = "バグ対応" if bug else "通常変更"
+    main = f"""# 計画の主題
+
+## 概要
+
+成果を得る。
+
+### 計画メタ情報
+
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `{repo.resolve()}`
+- 作業種別: {work_type}
+- ベースコミット: `{base}`
+- 実装詳細: `{detail_name}`
+
+## 実施内容
+
+| 実施内容 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- |
+| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
+
+## 提示素材
+
+| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
+| --- | --- | --- | --- | --- |
+| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
+
+| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
+| --- | --- | --- | --- | --- | --- | --- |
+| R-P-001-001 | P-001 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示を反映するため。 |
+
+## 変更履歴
+
+| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
+| --- | --- | --- | --- | --- |
+| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |
+
+## 検証区分
+
+| 区分 | 検証コマンド |
+| --- | --- |
+| レーン内検証 | `pytest check_plan_file_test.py` |
+| 統合後検証 | `make test` |
+
+## 終端工程
+
+なし
+
+## 進捗ログ
+
+| 日時 | 完了した工程 | 結果・特記事項 |
+| --- | --- | --- |
+"""
+    bug_section = ""
+    if bug:
+        bug_section = (
+            "## バグ調査結果\n\n### 対象の不整合\n\n"
+            + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
+            + "\n\n"
+        )
+    permanence = "調査表の処置を正本として参照する。" if bug else _permanence_table()
+    detail = f"""{bug_section}## 恒久化・リファクタリング内容
+
+### 恒久化
+
+{permanence}
+
+### リファクタリング
+
+{_rows_table(_plan_format.PLAN_REFACTORING_TABLE_ROWS, "検討結果を記載する。")}
+
+### 類似見直し
+
+{_rows_table(_plan_format.PLAN_SIMILAR_REVIEW_TABLE_ROWS, "検討結果を記載する。")}
+
+## 実装資料
+
+### 変更説明
+
+対象の構造を更新する。
+
+## 完了条件
+
+基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
+"""
+    return main, detail
+
+
+def _check_new(
+    repo: pathlib.Path, main_content: str, detail_content: str, *, plan_name: str = "plan.md"
+) -> tuple[list[str], list[str]]:
+    """新書式の計画（メイン側・detail側）を一時ファイルへ保存して検査する。"""
+    path = repo / plan_name
+    path.write_text(main_content, encoding="utf-8")
+    (repo / f"{path.stem}.detail.md").write_text(detail_content, encoding="utf-8")
+    return check_plan_file.check(path, repo)
+
+
 def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
     """計画を一時ファイルへ保存して検査する。"""
     path = repo / "plan.md"
@@ -381,3 +483,98 @@ def test_cli_has_no_base_commit_option() -> None:
         check=True,
     )
     assert "--base-commit" not in parser_result.stdout
+
+
+# --- 新書式（計画2ファイル）の検査 ---
+
+
+@pytest.mark.parametrize("bug", [False, True])
+def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bug: bool) -> None:
+    """新書式のメイン側・detail側の組を通常・バグ対応いずれも受理する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert not warnings, warnings
+
+
+def test_new_format_detected_by_detail_file_presence(repo: tuple[pathlib.Path, str]) -> None:
+    """detail側ファイルが存在しない同名メイン側は旧形式として検査される（`実装詳細`欠落を新書式エラーにしない）。"""
+    work_dir, base = repo
+    errors, _warnings = _check(work_dir, _plan(work_dir, base))
+    assert not errors, errors
+
+
+def test_new_format_rejects_detail_reference_mismatch(repo: tuple[pathlib.Path, str]) -> None:
+    """メイン側の`実装詳細`がstem導出値と一致しない場合を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    main_content = main_content.replace("- 実装詳細: `plan.detail.md`", "- 実装詳細: `other.detail.md`")
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("stem導出値と一致しない" in error for error in errors), errors
+
+
+def test_new_format_rejects_missing_detail_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
+    """メイン側の計画メタ情報に`実装詳細`が無い場合を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    main_content = main_content.replace("- 実装詳細: `plan.detail.md`\n", "")
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("`実装詳細`が無い" in error for error in errors), errors
+
+
+def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Path, str]) -> None:
+    """メイン側に`## 検証区分`が無い新書式を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    main_content = main_content.replace(
+        "## 検証区分\n\n"
+        "| 区分 | 検証コマンド |\n"
+        "| --- | --- |\n"
+        "| レーン内検証 | `pytest check_plan_file_test.py` |\n"
+        "| 統合後検証 | `make test` |\n\n",
+        "",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("固定H2" in error for error in errors), errors
+
+
+def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path, str]) -> None:
+    """`## バグ調査結果`はdetail側専用でありメイン側に置くと拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    main_content = main_content.replace(
+        "## 検証区分",
+        "## バグ調査結果\n\n未使用。\n\n## 検証区分",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("固定H2は" in error for error in errors), errors
+
+
+def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
+    """detail側の固定H2欠落も検査対象となる。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    detail_content = detail_content.replace(
+        "## 完了条件\n\n基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。\n",
+        "",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("固定H2" in error for error in errors), errors
+
+
+def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
+    """CLI経由でも新書式のメイン側・detail側の組を受理する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, detail_name="new-format-plan.detail.md")
+    path = work_dir / "new-format-plan.md"
+    path.write_text(main_content, encoding="utf-8")
+    (work_dir / "new-format-plan.detail.md").write_text(detail_content, encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--work-dir", str(work_dir), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr

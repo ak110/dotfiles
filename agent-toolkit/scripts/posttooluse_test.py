@@ -532,6 +532,25 @@ class TestCurrentPlanFilePathTracking:
         state = _read_state(tmp_path, sid)
         assert "current_plan_file_path" not in state
 
+    def test_detail_file_write_does_not_record_current_plan_file_path(self, tmp_path: pathlib.Path):
+        """実装詳細側`.detail.md`は計画本体述語で偽のため`current_plan_file_path`を記録しない。"""
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True)
+        detail_path = plans_dir / "sample.detail.md"
+        sid = "plan-path-detail-write"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(detail_path), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        state = _read_state(tmp_path, sid)
+        assert "current_plan_file_path" not in state
+
 
 class TestEdgeCases:
     """エッジケース。"""
@@ -887,6 +906,26 @@ class TestPlanFilePostWriteNotice:
         assert str(expected_script) in message
         # 空白を含むパスは引用しないと単語分割され、意図しない引数として渡る。
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
+
+    def test_notice_on_detail_file_write_targets_main_path(self, tmp_path: pathlib.Path) -> None:
+        """実装詳細側`.detail.md`書込み時も検査案内は対応するメイン側パスを対象にする。"""
+        plan_path = self._make_plan_path(tmp_path)
+        detail_path = plan_path.with_name("sample.detail.md")
+        sid = "post-write-notice-detail"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(detail_path), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=plan_path.parents[2],
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        message = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert str(plan_path) in message
+        assert str(detail_path) not in message
 
     def test_notice_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path) -> None:
         plan_path = self._make_plan_path(tmp_path)
