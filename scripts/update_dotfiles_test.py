@@ -319,12 +319,14 @@ class TestLockExclusion:
             [sys.executable, "-c", _LOCK_HOLDER_CODE, str(lock_path), str(ready_path), str(release_path)]
         ) as holder:
             try:
-                for _ in range(100):
-                    if ready_path.exists():
-                        break
+                ready_deadline = time.monotonic() + 30
+                while not ready_path.exists():
+                    holder_returncode = holder.poll()
+                    if holder_returncode is not None:
+                        pytest.fail(f"ロック保持プロセスが終了した（終了コード: {holder_returncode}）")
+                    if time.monotonic() >= ready_deadline:
+                        pytest.fail("別プロセスがロックを取得できなかった")
                     time.sleep(0.05)
-                else:
-                    pytest.fail("別プロセスがロックを取得できなかった")
 
                 assert update_dotfiles.main() == 1
             finally:
