@@ -12,30 +12,27 @@ fixupは、修正が統合先コミットの時点で独立して成立し、対
 
 通常実装モードの`plan-impl-executor`が検証済みの採用指摘IDと実装単位commit完全OIDの対応表を渡したレビュー修正は、
 上記の新規commit既定の例外とする。
-最終単位だけが対象の場合は、修正・近接検証・stage後に`amend` phaseでgraftを検査して再判定し、成功した場合だけamendを実行する。
+最終単位だけが対象の場合は、修正・近接検証・stage後に`amend` phaseで下記の汎用判定を再実行し、成功した場合だけamendを実行する。
 過去単位だけが対象の場合は対象commitへのfixupとautosquashだけを実行する。
 両方が対象の場合は過去単位だけを先に実装してautosquashする。
 autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
 対応表の不足、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
 又はautosquash・amendの失敗時は新規commitへフォールバックせず`needs_escalation`で返す。
-remote広告refを含む強化判定と`rewrite_guard`の受渡しは、`implementation-task.md`が定める通常`plan-impl`レビュー修正の書込担当契約だけに置く。
-本書の汎用公開済み判定、通常のamend・fixup・autosquash及び統合後レビュー調整モードへ強化判定を追加しない。
+`rewrite_guard`の受渡しは、`implementation-task.md`が定める通常`plan-impl`レビュー修正の書込担当契約だけに置く。
 統合後レビュー調整モードは`merge-task.md`に従い、統合差分へ1つの修正commitを作成する既定を維持する。
-
-通常実装モードの`plan-impl-executor`が検証済みの採用指摘IDと実装単位commit完全OIDの対応表を渡すレビュー修正では、下記の汎用判定を適用せず、`implementation-task.md`の専用再判定を優先する。この経路では`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`を実行しない。各fetch URL及びpush URL endpointの広告取得と不足OIDだけの一時ref取得を用いる。不足OIDが無いendpointではfetchを実行せず`fetch_exit_code`へ`not_applicable`を記録する。通常のamend、fixup、autosquashと統合後レビュー調整モードは下記の汎用判定を維持する。
 
 過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。
 各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認し、その確認後にだけ次の過去単位の修正差分を適用する。
 全過去単位のfixupを作成した後に1回だけautosquashを実行する。
 最終単位と過去単位の両方が対象の場合は、autosquash前の反復対象を過去単位だけに限定する。最終単位の修正実装と近接検証、stageはautosquash成功後へ延期する。
-autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
+autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
 autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。開始済みの同じ書込担当が最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする。
 
-- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`GIT_NO_REPLACE_OBJECTS=1 git commit --amend --no-edit`を使う
+- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend --no-edit`を使う
 - それより前の未プッシュコミットを完成させる修正は、統合後のメッセージ変更要否でfixup形式を選ぶ
-  - メッセージを変更しない場合は`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<sha>`を使う
-  - メッセージへ帰属情報などを追加または更新する場合は`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=amend:<sha>`を使う
-  - コード差分を含めずメッセージだけを変更する場合は`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=reword:<sha>`を使う
+  - メッセージを変更しない場合は`git commit --fixup=<sha>`を使う
+  - メッセージへ帰属情報などを追加または更新する場合は`git commit --fixup=amend:<sha>`を使う
+  - コード差分を含めずメッセージだけを変更する場合は`git commit --fixup=reword:<sha>`を使う
 - 上記の例外に該当しない独立した変更目的を持つ修正、または統合先に適する未プッシュコミットがない修正は新規コミットを作成する
 
 ## fixupの実行上の制約
@@ -50,14 +47,10 @@ autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換す�
   （`fatal: options '-m' and '--fixup:reword' cannot be used together`で失敗する）。
   非対話環境では`GIT_EDITOR`へ1行目を保持したまま以降を差し替える処理を指定する
 - autosquashを実行する場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを完全OIDで保持する。
-  replace refは`GIT_NO_REPLACE_OBJECTS=1`で無効化する。graftは同環境変数では無効化されないため、
-  `GIT_NO_REPLACE_OBJECTS=1 git rev-parse --path-format=absolute --git-path info/grafts`でgraftファイルのパスを解決し、
-  `test ! -e <graftファイルの絶対パス>`で存在しないことを確認する。
-  パスの解決または存在確認に失敗した場合、graftファイルが存在する場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返す。
-  `GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でrebase範囲のfirst-parent全OIDを確定する。
-  `GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
-  この範囲のfirst-parent全OIDについて、fixup作成前に公開済み判定を完了する。
-  `GIT_NO_REPLACE_OBJECTS=1 git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`で範囲内のOIDと件名を列挙する。
+  `git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でrebase範囲のfirst-parent全OIDを確定する。
+  `git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
+  この範囲のfirst-parent全OIDについて、fixup作成前に下記の「プッシュ済み判定」で公開済み判定を完了する。
+  `git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`で範囲内のOIDと件名を列挙する。
   各fixup対象コミットの件名が範囲内で一意であることをfixup作成前に確認する。
   対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返す。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。
   範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙又は件名の一意性確認のいずれかに失敗した場合は、fixupを作成せずautosquashを中止する。
@@ -68,7 +61,7 @@ autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換す�
   `amend:`・`reword:`では`amend! <統合先の件名>`を確認する。
   いずれも対象OIDから得た統合先件名との完全一致を確認する。
   期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返す
-- 統合は`GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で行う
+- 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で行う
   （`<base>`は対象コミットの親以前を指す）
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する帰属情報を統合後に1回だけ残す

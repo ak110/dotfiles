@@ -218,22 +218,13 @@ worktreeと管理対象領域を作成・回収しない。
    過去単位を含む場合は、fixup作成前に専用の`pre_fixup` phaseを完了する。
    最古fixup対象から元HEADまでのfirst-parent全OIDを`target_oids`へ履歴順で記録したことを検収する。
    欠落・判定不能・公開済み・mergeがあればfixupを作成せず`needs_escalation`で返したことを検収する。
-   `rewrite_guard`反復証跡はremote別fetch URL列挙・push URL列挙終了コード、重複排除前後の照会URL件数と全照会URL endpointの完了フラグを含める。
-   `query_endpoints`の各反復ブロックについて、phase内だけで用いる数値`query_endpoint_id`が広告取得・不足OID fetch・再照合の終了コード、広告ref-OID、一時ref回収及び各direct refの共通`ref_evidence`を同じIDで結合していることを検収する。
-   `target_oids`と`advertised_refs_and_oids`の直積が共通`ref_evidence`へ1件ずつ対応し、対象OID、ref名、広告OID、広告OIDの実在確認、最終OID・型、commitの祖先判定又はnoncommitの除外理由を同じ反復block内で直接照合できることも検収する。広告OIDのobject typeがtagなら名前空間に依存せず再帰的にpeelし、branch・tagの二分類とtag専用証跡を設けていないことも検収する。
-   不足OIDが無いendpointの`fetch_exit_code`が`not_applicable`であることも検収する。
-   `shallow_repository_check_exit_code`と`is_shallow_repository`を検収し、終了コード0かつboolが`false`の場合だけ後続判定を許可する。
-   boolが`true`又は終了コードが非0の場合は`needs_escalation`で返したことを確認する。
-   各endpointの共通`ref_evidence`について、`target_oids`と広告された全direct refの各組合せが1件だけ存在することを検収する。`target_oid`、`ref_name`及び`advertised_oid`の組が一意で、各値が`target_oids`と`advertised_refs_and_oids`へ完全一致し、`final_oid`、`final_type`、`ancestor_decision`又は`exclusion_reason`を対応付けていることを検収する。欠落、重複又は不一致があれば完了として受理しない。
-   URL値と永続的な状態・TODO編集機構は受け取らず、URL列挙終了コードと件数だけを検収する。
-   レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
-   `pre_fixup` phaseでは、graftファイルのパス解決・存在検査を他の履歴照会の前置条件として完了したことを検収する。
-   最終単位だけが対象の場合は、amend前の`amend` phaseでgraft検査を含む再判定を完了したことを検収する。
-   `autosquash`では、fixup対象の最古commitから履歴書換え前に保持した元HEADまでのfirst-parent全OIDが`target_oids`へ履歴順で含まれ、範囲にmerge commitが無いことを、fixup作成前の事前遮断を含めて検収する。範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了したことを検収する。fixup作成前に範囲内のOIDと件名を列挙し、対象コミット件名が範囲内で一意であることを確認したことも検収する。対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。広告OIDの実在確認、object解決、object typeがtagである広告OIDの再帰peel及び祖先判定へ`GIT_NO_REPLACE_OBJECTS=1`を付け、replace refは同環境変数で無効化し、graftは`GIT_NO_REPLACE_OBJECTS=1 git rev-parse --path-format=absolute --git-path info/grafts`でパスを解決して`test ! -e <graftファイルの絶対パス>`で存在しないことを確認したことも検収する。パスの解決又は存在確認に失敗するかgraftファイルが存在する場合は、履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲列挙、merge確認、OIDと件名の列挙、件名の一意性確認、OID解決、tag peel、祖先判定又は`target_oids`各OIDの公開済み判定に1件でも失敗があれば、履歴書換えを適用せず`needs_escalation`で返したことを確認する。
+   `autosquash`では、fixup対象の最古commitから履歴書換え前に保持した元HEADまでのfirst-parent全OIDが`target_oids`へ履歴順で含まれ、範囲にmerge commitが無いことを、fixup作成前の事前遮断を含めて検収する。範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了したことを検収する。fixup作成前に範囲内のOIDと件名を列挙し、対象コミット件名が範囲内で一意であることを確認したことも検収する。対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。範囲列挙、merge確認、OIDと件名の列挙、件名の一意性確認又は公開済み判定に1件でも失敗があれば、履歴書換えを適用せず`needs_escalation`で返したことを確認する。
    各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）が`git log -1 --format=%s`で完全一致したことを検収する。期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返したことを確認する。
-   fixupは`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`で実行したことを検収する。
-   rebaseは`GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で実行したことを検収する。
-   amendは`GIT_NO_REPLACE_OBJECTS=1 git commit --amend --no-edit`で実行したことを検収する。
+   `pre_fixup`、各`fixup:<単位順>`、`autosquash`及び`amend` phaseの履歴統合操作前に`../../commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定を再実行したことを検収する。
+   fixupは`git commit --fixup=<対象OID>`で実行したことを検収する。
+   rebaseは`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で実行したことを検収する。
+   amendは`git commit --amend --no-edit`で実行したことを検収する。
+   レビュー修正専用commitを残さず、書込担当の完了前に再判定証跡を受け取って許可を返す中間受渡しを設けない。
 
 #### 統合後レビュー調整モードのレビュー修正
 
@@ -296,33 +287,8 @@ feedbacks: <受領したソート済みフィードバックファイル名一�
 rewrite_guard:
 - phase: <pre_fixup|fixup:<単位順>|autosquash|amend>
   target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
-  git_version: <Git版>
-  verified_head: <検収済みHEAD>
-  shallow_repository_check_exit_code: <`git rev-parse --is-shallow-repository`の終了コード>
-  is_shallow_repository: <終了コード0で取得したbool。取得不能時は「なし」>
-  remote_fetch_url_enumeration_exit_codes: <remote別fetch URL列挙終了コード（URLは記録しない）>
-  remote_push_url_enumeration_exit_codes: <remote別push URL列挙終了コード（URLは記録しない）>
-  query_url_count_before_deduplication: <重複排除前の照会URL件数>
-  query_url_count_after_deduplication: <重複排除後の照会URL件数>
-  all_query_endpoints_completed: <全照会URL endpointの広告取得・不足OID fetch・再照合完了>
-  query_endpoints:
-  - query_endpoint_id: <phase内だけで用いる一時数値識別子。URLは記録しない>
-    advertisement_exit_code: <広告取得終了コード>
-    advertised_refs_and_oids: <このendpointの正規化済み広告ref・OID>
-    ref_evidence:
-    - target_oid: <この祖先判定が対象とするtarget_oids内の完全OID>
-      ref_name: <広告されたdirect ref名>
-      advertised_oid: <広告OID>
-      ref_object_exists: <広告OIDの実在確認結果>
-      final_oid: <最終参照先のOID>
-      final_type: <最終参照先のobject type>
-      ancestor_decision: <最終参照先がcommitの場合の公開済み判定。noncommitは「なし」>
-      exclusion_reason: <最終参照先がcommit以外のdirect refを祖先判定から除外した理由。commitは「なし」>
-    fetch_exit_code: <不足OID fetch終了コード。不足OIDが無い場合は`not_applicable`>
-    recheck_exit_code: <広告集合再照合終了コード>
-    temporary_ref_cleanup: <このendpointの一時ref回収結果>
+  published_decision: <`../../commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定結果>
   git_command_exit_codes: <各Gitコマンドの終了コード>
-  published_decision: <公開済み判定結果>
   error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
 blockers:
 - <未完了事項。完了時は「なし」>

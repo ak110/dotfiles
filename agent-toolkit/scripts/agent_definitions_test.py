@@ -77,17 +77,13 @@ _SKILL_MARKDOWN = {
 def _run_history_git(
     repository: pathlib.Path,
     *arguments: str,
-    no_replace_objects: bool = False,
     extra_environment: dict[str, str] | None = None,
     input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """履歴書換え用Gitコマンドを置換参照の有無を固定して実行する。"""
+    """履歴書換え用Gitコマンドを共通の隔離環境で実行する。"""
     environment = os.environ.copy()
     if extra_environment is not None:
         environment.update(extra_environment)
-    environment.pop("GIT_NO_REPLACE_OBJECTS", None)
-    if no_replace_objects:
-        environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     return subprocess.run(
         ["git", "-C", str(repository), *arguments],
         check=False,
@@ -2438,7 +2434,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
-    merge_task = _MERGE_TASK.read_text(encoding="utf-8")
+    _MERGE_TASK.read_text(encoding="utf-8")
     concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
     design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
@@ -2477,269 +2473,57 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     assert "レビュー修正を受領した場合は、履歴書換え前後のOID対応" in caller
     assert "phaseごとに反復された`rewrite_guard`" in caller
     assert "通常実装モードのレビュー修正以外、統合後レビュー調整モードでは、`rewrite_guard`が`not_applicable`" in caller
-    assert (
-        "autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、"
-        "2回目のpush済み判定対象を当該OIDへ置換した後、最終単位の修正を実装し、"
-        "近接検証を実行してstageする。amend直前の再判定後にだけ書換え後HEADへamendした" in caller
-    )
 
-    for phrase in (
-        "通常実装モードのレビュー修正では、レビュー対象の最終HEAD完全OID、採用指摘IDと統合先の実装単位commit完全OIDの対応表",
-        "`git remote`で全remoteを列挙",
-        (
-            "各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（"
-            "`git remote get-url --all --push <remote>`）を取得"
-        ),
-        "fetch URL列挙とpush URL列挙のremote別終了コード",
-        "全remoteの集合を1つの照会URL集合へ統合し、URL文字列が完全一致するものだけ重複を除き",
-        "重複排除前後の照会URL件数を計数",
-        "全照会URL endpointの広告取得・不足OID fetch・再照合が完了したことを確認できない場合",
-        "各照会URLへ`git ls-remote --refs <URL>`を実行",
-        "URL取得、重複排除又は広告照会に失敗した場合",
-        "正規化した全広告ref・OIDを母集団",
-        "local object databaseに存在しない広告OIDだけを照会URLごとにまとめ",
-        "`git fetch --no-tags --no-write-fetch-head <URL> <OID>:<一時ref>...`",
-        "取得後に同じ`ls-remote`を再実行して広告集合の不変を確認",
-        "期待OIDを指定した`git update-ref -d`",
-        "remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない",
-        "local-only ref、remoteが広告しないref",
-        "最終参照先がcommit以外のdirect refは正規化済みOID・型・除外判定を保持して祖先判定から除外する",
-        "最終参照先がcommit",
-        "各再判定phaseで`git rev-parse --is-shallow-repository`を実行",
-        "終了コード0かつ出力が`false`の場合だけ広告照会と祖先判定を継続する",
-        "終了コード0で出力が`true`の場合",
-        "終了コード1は未公開として判定を継続",
-        "その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す",
-        "`rewrite_guard`には各再判定phase",
-        "`shallow_repository_check_exit_code`へ`git rev-parse --is-shallow-repository`の終了コード",
-        "`is_shallow_repository`へ終了コード0で得た出力を正規化したbool",
-        "`target_oids`と`advertised_refs_and_oids`の直積はendpointブロック内の共通`ref_evidence`へ1件ずつ記録する",
-        "各要素へ対象OID、ref名、広告OID、広告OIDの実在確認、最終OID・型、commitの場合の祖先判定又はnoncommitの場合の除外理由を記録する。",
-        "branch・tagの二分類とtag専用の証跡は設けない。",
-        "URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない",
-        "通常`plan-impl`レビュー修正だけに適用する",
-        "汎用の`git fetch --all --prune`を実行せず、各照会URLの広告取得と不足OIDだけの一時ref取得に限定する",
-        "autosquashが非0終了した場合はrebase進行状態を実測",
-        "amendが非0終了した場合も追加の履歴操作をせず",
-    ):
-        assert phrase in implementation_task
-    assert "`rewrite_guard`のphaseは通常実装モードのレビュー修正だけに記録し" in implementation_task
-    assert "レビュー修正以外の通常実装モードでは`rewrite_guard: not_applicable`" in implementation_task
-    assert "`rewrite_guard`のphaseは通常モードのレビュー修正だけに適用し" in executor
-    assert "通常モードのレビュー修正以外、統合後レビュー調整モードでは`rewrite_guard: not_applicable`" in executor
-
-    for document in (implementation_task, history_rewrite):
+    # remote広告refの直積証跡・shallow判定・graftファイル検査は撤去済みであり、
+    # `history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
+    for document in (implementation_task, caller, executor, history_rewrite):
+        assert "プッシュ済み判定" in document
+    for document in (implementation_task, caller, executor, history_rewrite, concepts, design):
+        assert "GIT_NO_REPLACE_OBJECTS" not in document
+    for document in (implementation_task, caller, executor, history_rewrite):
         for phrase in (
-            "通常実装モード",
-            "実装単位commit完全OIDの対応表",
-            "最終単位だけが対象の場合は",
-            "過去単位だけが対象の場合は",
-            "両方が対象の場合は",
+            "ref_evidence",
+            "query_endpoint",
+            "advertised_refs_and_oids",
+            "is-shallow-repository",
+            "is_shallow_repository",
+            "info/grafts",
         ):
-            assert phrase in document
-    assert "新規commitへフォールバックせず`needs_escalation`" in implementation_task
-    assert "新規commitへフォールバックせず`needs_escalation`" in history_rewrite
-    for document in (implementation_task, history_rewrite, caller, concepts, design):
-        assert "autosquash成功後の2回目のpush済み判定対象" in document
-        assert "書換え前の各対象OIDと書換え後の全実装単位OIDの対応" in document
-    head_sync_phrase = "autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、"
-    for document in (implementation_task, caller, concepts, design, history_rewrite):
-        assert head_sync_phrase in document
-    assert "git fetch --all --prune --tags" not in executor
-    assert "git fetch --all --prune --tags" not in implementation_task
-    assert "git for-each-ref --contains=<対象sha> refs/remotes/ refs/tags/" not in executor
-    assert "git for-each-ref --contains=<対象sha> refs/remotes/ refs/tags/" not in implementation_task
-    generic_history = history_rewrite.partition("## プッシュ済み判定\n")[2]
-    assert "`git fetch --all --prune`" in generic_history
-    assert "refs/remotes/" in generic_history
-    for phrase in ("--tags", "refs/tags/", "git ls-remote", "is-shallow-repository", "rewrite_guard"):
-        assert phrase not in generic_history
-    assert "remote広告refを含む強化判定と`rewrite_guard`の受渡し" in history_rewrite
-    for phrase in (
-        "通常実装モードの`plan-impl-executor`が検証済みの採用指摘IDと実装単位commit完全OIDの対応表を渡すレビュー修正",
-        "下記の汎用判定を適用せず、`implementation-task.md`の専用再判定を優先する",
-        "`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`を実行しない",
-        "各fetch URL及びpush URL endpointの広告取得と不足OIDだけの一時ref取得を用いる",
-    ):
-        assert phrase in history_rewrite
-    for phrase in (
-        "過去単位が複数ある場合は、履歴順に1単位ずつ",
-        "その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する",
-        "各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認",
-        "全過去単位のfixupを作成した後に1回だけautosquashを実行",
-        "最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする",
-    ):
-        assert phrase in history_rewrite
-    assert "1つの修正commitを作成" in merge_task
-    assert "通常実装モードでは手順3〜7の通常実装手順を実行する" in implementation_task
-    assert "レビュー修正モードでは手順5〜6の通常commit経路を実行せず" in implementation_task
-    assert (
-        "レビュー修正モードでは本項を実行せず、後段の履歴統合手順で指定したamendまたはfixupとautosquashだけをcommit経路とする"
-        in implementation_task
-    )
-    assert "通常commitを再実行せず、各実装単位の近接検証を再実行" in implementation_task
-    assert (
-        "各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認してから、次の単位の修正差分を適用する"
-        in implementation_task
-    )
-    assert (
-        "過去単位と最終単位が対象の場合、autosquash成功後に"
-        "`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、" in implementation_task
-    )
-    assert "次の単位の修正は、当該単位の履歴統合とclean確認後に適用する" not in implementation_task
-    for document in (executor, caller, concepts, design):
-        assert "`rewrite_guard`" in document
-        assert "履歴書換え前の中間受渡し" in document
-    for document in (concepts, design):
-        assert "履歴統合前に指摘の原文" in document
-        assert "採用済みの指摘だけを" in document
-        assert "不採用、または採否未確定" in document
-    for document in (implementation_task,):
-        assert "各再判定phase" in document
-        assert "`fixup:<単位順>`" in document
-    for document in (concepts, design):
-        assert "各再判定phase" in document
-        assert "各fixup作成前" in document
-    for document in (implementation_task,):
-        assert "`autosquash`" in document
-        assert "`amend`" in document
-    for document in (concepts, design):
-        assert "autosquash" in document
-        assert "amend" in document
-    assert "executorは個別手順を再掲しない" in normal_fix
-    for phrase in (
-        "各remoteのfetch URL",
-        "各remoteについてfetch URL集合",
-        "全remoteの集合を1つの照会URL集合へ統合し、URL文字列が完全一致するものだけ重複を除き",
-        "`git remote`で全remoteを列挙",
-        "各URLへ`git ls-remote --refs <URL>`を実行",
-        "全広告ref・OIDを母集団",
-        "remote-tracking ref、local tag、remote設定及び`FETCH_HEAD`は変更しない",
-        "対象OIDを祖先とするremote広告direct ref",
-    ):
-        assert phrase not in normal_fix
-    for document in (implementation_task, caller, concepts, design):
-        assert "`GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor <対象OID> <最終commit>`" in document
-        assert "終了コード0" in document
-        assert "終了コード1" in document
-        assert "Git実行失敗" in document
-        assert "git rev-parse --is-shallow-repository" in document
-        assert "終了コード0かつ出力が`false`の場合だけ" in document
-        assert "出力が`true`" in document
-    for document in (implementation_task, concepts, design):
-        assert "最終commitの祖先" in document
+            assert phrase not in document
 
     rewrite_guard_fields = (
         "phase: <pre_fixup|fixup:<単位順>|autosquash|amend>",
         "target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から"
         "履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>",
-        "git_version: <Git版>",
-        "verified_head: <検収済みHEAD>",
-        "shallow_repository_check_exit_code: <`git rev-parse --is-shallow-repository`の終了コード>",
-        "is_shallow_repository: <終了コード0で取得したbool。取得不能時は「なし」>",
-        "remote_fetch_url_enumeration_exit_codes: <remote別fetch URL列挙終了コード（URLは記録しない）>",
-        "remote_push_url_enumeration_exit_codes: <remote別push URL列挙終了コード（URLは記録しない）>",
-        "query_url_count_before_deduplication: <重複排除前の照会URL件数>",
-        "query_url_count_after_deduplication: <重複排除後の照会URL件数>",
-        "all_query_endpoints_completed: <全照会URL endpointの広告取得・不足OID fetch・再照合完了>",
-        "query_endpoints:",
-        "query_endpoint_id: <phase内だけで用いる一時数値識別子。URLは記録しない>",
-        "advertisement_exit_code: <広告取得終了コード>",
-        "advertised_refs_and_oids: <このendpointの正規化済み広告ref・OID>",
-        "ref_evidence:",
-        "target_oid: <この祖先判定が対象とするtarget_oids内の完全OID>",
-        "ref_name: <広告されたdirect ref名>",
-        "advertised_oid: <広告OID>",
-        "ref_object_exists: <広告OIDの実在確認結果>",
-        "final_oid: <最終参照先のOID>",
-        "final_type: <最終参照先のobject type>",
-        "ancestor_decision: <最終参照先がcommitの場合の公開済み判定。noncommitは「なし」>",
-        "exclusion_reason: <最終参照先がcommit以外のdirect refを祖先判定から除外した理由。commitは「なし」>",
-        "fetch_exit_code: <不足OID fetch終了コード。不足OIDが無い場合は`not_applicable`>",
-        "recheck_exit_code: <広告集合再照合終了コード>",
-        "temporary_ref_cleanup: <このendpointの一時ref回収結果>",
+        "published_decision: ",
         "git_command_exit_codes: <各Gitコマンドの終了コード>",
-        "published_decision: <公開済み判定結果>",
         "error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>",
     )
     executor_guard = executor.partition("rewrite_guard:\n")[2].partition("blockers:")[0]
     writer_guard = implementation_task.partition("rewrite_guard:\n")[2].partition("plan_deviation:")[0]
     assert executor_guard == writer_guard
     assert executor_guard.startswith("- phase: <pre_fixup|fixup:<単位順>|autosquash|amend>\n")
-    assert (
-        "\n  target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から"
-        "履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>" in executor_guard
-    )
-    assert "\n  target_oid: " not in executor_guard
-    assert "\n  git_version: <Git版>" in executor_guard
-    assert "\n- git_version: <Git版>" not in executor_guard
     for field in rewrite_guard_fields:
         assert field in executor_guard
+    assert "shallow_repository_check_exit_code" not in executor_guard
+    assert "query_endpoints" not in executor_guard
+    assert "ref_evidence" not in executor_guard
 
-    for document in (implementation_task, executor, caller):
-        for field in (
-            "ref_evidence",
-            "target_oid",
-            "ref_name",
-            "advertised_oid",
-            "ref_object_exists",
-            "final_oid",
-            "final_type",
-            "ancestor_decision",
-            "exclusion_reason",
-        ):
-            assert field in document
-        assert "ref_kind" not in document
-        assert "tag_evidence" not in document
-    assert (
-        "`ref_evidence`の各要素について`target_oid`、`ref_name`、`advertised_oid`、`ref_object_exists`、"
-        "`final_oid`、`final_type`、`ancestor_decision`及び`exclusion_reason`を照合する。"
-    ) in caller
-    for document in (implementation_task, executor, caller):
-        assert (
-            "`target_oids`と`advertised_refs_and_oids`の直積" in document
-            or "`target_oids`と広告された全direct refの直積" in document
-        )
-        assert any(
-            phrase in document for phrase in ("欠落、重複又は不一致", "欠落、重複又は値の不一致", "欠落、重複、値の不一致")
-        )
-
-    target_oids_contract = (
-        "各再判定phaseの対象は履歴順の`target_oids`配列で確定する。",
-        "`fixup:<単位順>`と`amend`は対象が1件でも1要素の配列を使い、",
-        "`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを同じ配列へ履歴順で含める。",
-        "`autosquash` phaseでは配列のfirst-parent全OIDについて公開済み判定と遮断を反復する。",
-        "1件でも公開済み・判定不能のOIDがあるか、範囲にmergeを含む場合は履歴を書き換えない。",
-    )
-    for document in (implementation_task,):
-        for phrase in target_oids_contract:
-            assert phrase in document
-    for document in (caller, concepts, design):
-        assert "履歴順`target_oids`" in document or "履歴順の`target_oids`" in document
-        assert "単一対象でも1要素の配列" in document
-        assert "first-parent全OID" in document
-
-    for document in (implementation_task, caller, concepts, design, history_rewrite):
-        assert "GIT_NO_REPLACE_OBJECTS=1" in document
-        assert "replace ref" in document or "replace refs" in document
-    history_integration_documents = (implementation_task, caller, concepts, design, history_rewrite, executor)
-    for document in history_integration_documents:
-        assert "GIT_NO_REPLACE_OBJECTS=1 git commit --fixup" in document
-        assert "GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase" in document
-        assert "GIT_NO_REPLACE_OBJECTS=1 git commit --amend --no-edit" in document
-        assert "`git commit --fixup" not in document
-        assert "`git rebase" not in document
-        assert "`git commit --amend" not in document
-    for document in (implementation_task, caller, concepts, design, history_rewrite):
+    for document in (implementation_task, caller, history_rewrite):
         assert "rev-list --first-parent --reverse" in document
         assert "rev-list --first-parent --merges" in document
         assert "merge commit" in document
-    for document in (implementation_task, caller, concepts, design):
+    for document in (implementation_task, caller):
         assert "最古fixup対象" in document
         assert "履歴書換え前に保持した元HEAD" in document
         assert "first-parent全OID" in document
         assert "範囲にmerge" in document
-        assert "`GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor <対象OID> <最終commit>`" in document
+    # concepts.md・design.mdは確定した方針・採用理由だけを残し、
+    # 具体的なコマンド列・phase名・ref名前空間の転記を`history-rewrite.md`への参照へ置き換える。
+    for document in (concepts, design):
+        assert "history-rewrite.md" in document
+        assert "rev-list --first-parent" not in document
+        assert "query_endpoint" not in document
 
     normal_mode_at = implementation_task.index("通常実装モードでは手順3〜7の通常実装手順を実行する")
     review_mode_at = implementation_task.index("レビュー修正モードでは手順1〜2を実行した後")
@@ -2751,16 +2535,16 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "採用指摘を統合先の実装単位ごとに履歴順で処理する",
         "手順3・4を採用指摘全体へ一括適用せず",
         "過去単位の反復では、当該単位の修正を実装し、近接検証を実行して警告を解消する",
-        "修正差分だけをstageし、`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`で対応する`fixup`を作成する",
+        "修正差分だけをstageし、`git commit --fixup=<対象OID>`で対応する`fixup`を作成する",
         "対象OID、件名及び作業ツリーがcleanであることを確認してから次の過去単位へ進む",
         "過去単位と最終単位が対象の場合、autosquash前の反復対象を過去単位だけに限定する",
-        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前の再判定と遮断を完了する。",
+        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前に汎用判定を再実行し、遮断を完了する。",
         (
             "最終単位だけが対象の場合は、最終単位の修正を実装し、近接検証を実行してstageした後、"
-            "`amend` phaseでgraftを検査して再判定し、遮断を完了する。"
+            "`amend` phaseで汎用判定を再実行し、遮断を完了する。"
         ),
         (
-            "過去単位と最終単位が対象の場合、autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で"
+            "過去単位と最終単位が対象の場合、autosquash成功後に`git rev-parse HEAD`で"
             "書換え後HEADの完全OIDを取得し、最終単位の修正差分を実装し、近接検証を実行してstageする。"
             "その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする"
         ),
@@ -2771,14 +2555,14 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     assert loop_positions == sorted(loop_positions)
     past_clean_at = review_loop.index("対象OID、件名及び作業ツリーがcleanであることを確認してから次の過去単位へ進む")
     autosquash_at = review_loop.index(
-        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前の再判定と遮断を完了する。"
+        "全過去単位の反復後、書込担当が`autosquash` phaseの履歴書換え直前に汎用判定を再実行し、遮断を完了する。"
     )
     final_only_amend_at = review_loop.index(
         "最終単位だけが対象の場合は、最終単位の修正を実装し、近接検証を実行してstageした後、"
-        "`amend` phaseでgraftを検査して再判定し、遮断を完了する。"
+        "`amend` phaseで汎用判定を再実行し、遮断を完了する。"
     )
     mixed_amend_at = review_loop.index(
-        "過去単位と最終単位が対象の場合、autosquash成功後に`GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD`で"
+        "過去単位と最終単位が対象の場合、autosquash成功後に`git rev-parse HEAD`で"
         "書換え後HEADの完全OIDを取得し、最終単位の修正差分を実装し、近接検証を実行してstageする。"
         "その後、`amend` phaseの再判定と遮断を完了し、書換え後HEADへamendする"
     )
@@ -2815,54 +2599,11 @@ def test_review_resolution_precedes_history_rewrite_and_preserves_unadopted_hist
         assert phrase in resolution
     for rewrite_marker in (
         "対応するfixupを作成する",
-        "GIT_NO_REPLACE_OBJECTS=1 git commit --amend --no-edit",
-        "GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=:",
+        "git commit --amend --no-edit",
+        "GIT_SEQUENCE_EDITOR=:",
     ):
         assert rewrite_marker not in resolution
         assert unit_loop_at < implementation_task.index(rewrite_marker)
-
-
-def test_normal_review_push_check_rejects_tag_only_publication() -> None:
-    """remote広告direct refの母集団とnoncommit除外を通常レビュー修正へ限定する契約を検査する。"""
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
-
-    for document in (implementation_task,):
-        assert "`git remote`で全remoteを列挙" in document
-        assert (
-            "各remoteについてfetch URL集合（`git remote get-url --all <remote>`）とpush URL集合（"
-            "`git remote get-url --all --push <remote>`）を取得" in document
-        )
-        assert "fetch URL列挙とpush URL列挙のremote別終了コード" in document
-        assert "全remoteの集合を1つの照会URL集合へ統合し、URL文字列が完全一致するものだけ重複を除き" in document
-        assert "重複排除前後の照会URL件数を計数" in document
-        assert "全照会URL endpointの広告取得・不足OID fetch・再照合が完了したことを確認できない場合" in document
-        assert "各照会URLへ`git ls-remote --refs <URL>`" in document
-        assert "`git fetch --no-tags --no-write-fetch-head <URL>" in document
-        assert "照会URLごと" in document
-        assert "local-only ref" in document
-        assert "全広告direct refのOIDを名前空間に依存せず最終参照先へ解決" in document
-        assert "commit以外" in document or "commit以外なら" in document
-        assert "終了コード1は未公開として判定を継続" in document
-        assert "その他の終了コードはGit実行失敗として履歴を書き換えず`needs_escalation`で返す" in document
-        assert "needs_escalation" in document
-    assert "`git remote`で全remoteを列挙" not in executor
-    assert "各remoteについてfetch URL集合" not in executor
-    assert "各照会URLへ`git ls-remote --refs <URL>`" not in executor
-    assert "全広告ref・OIDを母集団" not in executor
-    assert "対象OIDの子孫である広告branch tip" not in executor
-    assert "`git fetch --no-tags --no-write-fetch-head" not in executor
-    assert "`git update-ref -d`" in implementation_task
-    assert "`refs/tags/`全体の検索結果は判定材料にしない" in implementation_task
-    assert "URLは照会中の一時値としてのみ扱い、`rewrite_guard`、完了報告その他の受渡しへ記録しない" in implementation_task
-
-    generic_history = history_rewrite.partition("## プッシュ済み判定\n")[2]
-    assert "`git fetch --all --prune`" in generic_history
-    assert "refs/remotes/" in generic_history
-    for phrase in ("--tags", "refs/tags/", "git ls-remote", "rewrite_guard"):
-        assert phrase not in generic_history
-    assert "remote広告refを含む強化判定と`rewrite_guard`の受渡し" in history_rewrite
 
 
 def test_history_rewrite_checks_fixup_subject_for_each_form() -> None:
@@ -2883,7 +2624,6 @@ def test_history_rewrite_fixup_oid_can_misplace_duplicate_subject_in_real_git(tm
 
     def run_history_git(
         *arguments: str,
-        no_replace_objects: bool = False,
         extra_environment: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """回帰テスト内のGit呼出へ共通の隔離環境を適用する。"""
@@ -2893,7 +2633,6 @@ def test_history_rewrite_fixup_oid_can_misplace_duplicate_subject_in_real_git(tm
         return _run_history_git(
             repository,
             *arguments,
-            no_replace_objects=no_replace_objects,
             extra_environment=environment,
         )
 
@@ -2924,17 +2663,15 @@ def test_history_rewrite_fixup_oid_can_misplace_duplicate_subject_in_real_git(tm
         "commit",
         "--allow-empty",
         f"--fixup={later_same}",
-        no_replace_objects=True,
     )
     assert fixup.returncode == 0, fixup.stderr
-    fixup_oid = run_history_git("rev-parse", "HEAD", no_replace_objects=True).stdout.strip()
+    fixup_oid = run_history_git("rev-parse", "HEAD").stdout.strip()
 
     rebase = run_history_git(
         "rebase",
         "-i",
         "--autosquash",
         base,
-        no_replace_objects=True,
         extra_environment={"GIT_SEQUENCE_EDITOR": "cat"},
     )
     assert rebase.returncode == 0, rebase.stderr
@@ -2950,92 +2687,6 @@ def test_history_rewrite_fixup_oid_can_misplace_duplicate_subject_in_real_git(tm
         assert expected_oid.startswith(listed_oid)
 
 
-def test_history_rewrite_peels_tag_object_held_only_by_custom_ref_in_real_git(tmp_path: pathlib.Path) -> None:
-    """custom refだけが保持するtag objectも名前空間に依存せずcommitまでpeelする。"""
-    repository = tmp_path / "nonstandard-ref-repository"
-    history_environment = _history_git_environment(tmp_path / "git-environment")
-
-    def run_history_git(
-        *arguments: str,
-        no_replace_objects: bool = False,
-        extra_environment: dict[str, str] | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """回帰テスト内のGit呼出へ共通の隔離環境を適用する。"""
-        environment = history_environment.copy()
-        if extra_environment is not None:
-            environment.update(extra_environment)
-        return _run_history_git(
-            repository,
-            *arguments,
-            no_replace_objects=no_replace_objects,
-            extra_environment=environment,
-        )
-
-    initialized = subprocess.run(
-        ["git", "init", "-q", str(repository)],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=history_environment,
-        timeout=10,
-    )
-    assert initialized.returncode == 0, initialized.stderr
-
-    for message in ("base", "target"):
-        result = run_history_git("commit", "--allow-empty", "-qm", message)
-        assert result.returncode == 0, result.stderr
-
-    target = run_history_git("rev-parse", "HEAD", no_replace_objects=True).stdout.strip()
-    tagged = run_history_git("tag", "-a", "-m", "hidden tag", "hidden-tag", target, no_replace_objects=True)
-    assert tagged.returncode == 0, tagged.stderr
-    tag_oid = run_history_git("rev-parse", "refs/tags/hidden-tag", no_replace_objects=True).stdout.strip()
-    updated = run_history_git("update-ref", "refs/review/topic", tag_oid, no_replace_objects=True)
-    assert updated.returncode == 0, updated.stderr
-    deleted = run_history_git("update-ref", "-d", "refs/tags/hidden-tag", tag_oid, no_replace_objects=True)
-    assert deleted.returncode == 0, deleted.stderr
-
-    advertised = subprocess.run(
-        ["git", "ls-remote", "--refs", str(repository)],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=history_environment,
-        timeout=10,
-    )
-    assert advertised.returncode == 0, advertised.stderr
-    advertised_refs = {
-        ref: oid for line in advertised.stdout.splitlines() if line.strip() for oid, ref in [line.split("\t", 1)]
-    }
-    assert advertised_refs["refs/review/topic"] == tag_oid
-    assert not any(ref.startswith("refs/tags/") for ref in advertised_refs)
-    advertised_tag_refs = {
-        ref
-        for ref, oid in advertised_refs.items()
-        if run_history_git("cat-file", "-t", oid, no_replace_objects=True).stdout.strip() == "tag"
-    }
-    assert advertised_tag_refs == {"refs/review/topic"}
-
-    advertised_type = run_history_git("cat-file", "-t", tag_oid, no_replace_objects=True)
-    assert advertised_type.returncode == 0, advertised_type.stderr
-    assert advertised_type.stdout.strip() == "tag"
-    peeled = run_history_git("rev-parse", f"{tag_oid}^{{}}", no_replace_objects=True)
-    assert peeled.returncode == 0, peeled.stderr
-    peeled_oid = peeled.stdout.strip()
-    peeled_type = run_history_git("cat-file", "-t", peeled_oid, no_replace_objects=True)
-    assert peeled_type.returncode == 0, peeled_type.stderr
-    assert peeled_type.stdout.strip() == "commit"
-    assert peeled_oid == target
-
-    ancestor = run_history_git(
-        "merge-base",
-        "--is-ancestor",
-        target,
-        peeled_oid,
-        no_replace_objects=True,
-    )
-    assert ancestor.returncode == 0, ancestor.stderr
-
-
 def test_history_rewrite_existing_control_subjects_are_autosquashed_in_real_git(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -3046,7 +2697,6 @@ def test_history_rewrite_existing_control_subjects_are_autosquashed_in_real_git(
 
         def run_history_git(
             *arguments: str,
-            no_replace_objects: bool = False,
             extra_environment: dict[str, str] | None = None,
             repository: pathlib.Path = repository,
             history_environment: dict[str, str] = history_environment,
@@ -3058,7 +2708,6 @@ def test_history_rewrite_existing_control_subjects_are_autosquashed_in_real_git(
             return _run_history_git(
                 repository,
                 *arguments,
-                no_replace_objects=no_replace_objects,
                 extra_environment=environment,
             )
 
@@ -3076,18 +2725,17 @@ def test_history_rewrite_existing_control_subjects_are_autosquashed_in_real_git(
             result = run_history_git("commit", "--allow-empty", "-qm", message)
             assert result.returncode == 0, result.stderr
 
-        base = run_history_git("rev-parse", "HEAD~3", no_replace_objects=True).stdout.strip()
+        base = run_history_git("rev-parse", "HEAD~3").stdout.strip()
         rebase = run_history_git(
             "rebase",
             "-i",
             "--autosquash",
             base,
-            no_replace_objects=True,
             extra_environment={"GIT_SEQUENCE_EDITOR": ":"},
         )
         assert rebase.returncode == 0, rebase.stderr
 
-        count = run_history_git("rev-list", "--count", f"{base}..HEAD", no_replace_objects=True)
+        count = run_history_git("rev-list", "--count", f"{base}..HEAD")
         assert count.returncode == 0, count.stderr
         assert count.stdout.strip() == "2"
 
@@ -3101,9 +2749,9 @@ def test_history_rewrite_rejects_duplicate_subjects_before_fixup() -> None:
     concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
     design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
-    subject_listing = "`GIT_NO_REPLACE_OBJECTS=1 git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`"
+    subject_listing = "`git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`"
     uniqueness = "対象コミット件名が範囲内で一意でない場合"
-    for document in (implementation_task, caller, history_rewrite, concepts, design):
+    for document in (implementation_task, caller, history_rewrite):
         assert subject_listing in document
         assert "各fixup対象コミットの件名が範囲内で一意" in document
         assert uniqueness in document
@@ -3111,6 +2759,9 @@ def test_history_rewrite_rejects_duplicate_subjects_before_fixup() -> None:
         assert "autosquash直前の再判定" in document
         assert "範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合" in document
         assert "部分一致や件名途中の一致は遮断条件にしない" in document
+    # concepts.md・design.mdは確定した方針だけを残し、`history-rewrite.md`への参照に置き換える。
+    for document in (concepts, design):
+        assert "history-rewrite.md" in document
 
     assert "fixup作成前に範囲内のOIDと件名を列挙" in executor
     assert uniqueness in executor
@@ -3122,59 +2773,10 @@ def test_history_rewrite_rejects_duplicate_subjects_before_fixup() -> None:
     assert preflight.index("公開済み判定を完了") < preflight.index("対象コミット件名が範囲内で一意でない場合は")
     assert preflight.index(
         "範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合"
-    ) < implementation_task.index("`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`")
+    ) < implementation_task.index("`git commit --fixup=<対象OID>`で対応する`fixup`を作成する")
     assert preflight.index("対象コミット件名が範囲内で一意でない場合は") < implementation_task.index(
-        "`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup=<対象OID>`"
+        "`git commit --fixup=<対象OID>`で対応する`fixup`を作成する"
     )
-
-
-def test_history_rewrite_rejects_graft_files_before_history_rewrite() -> None:
-    """graftは環境変数で無効化せず、履歴統合前の存在検出で遮断する契約を検査する。"""
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
-    history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
-    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
-    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
-
-    documents = (executor, implementation_task, caller, history_rewrite, concepts, design)
-    graft_path_command = "`GIT_NO_REPLACE_OBJECTS=1 git rev-parse --path-format=absolute --git-path info/grafts`"
-    for document in documents:
-        assert graft_path_command in document
-        assert "`test ! -e <graftファイルの絶対パス>`" in document
-        assert (
-            "GIT_NO_REPLACE_OBJECTS=1`はreplace refだけを無効化しgraftを無効化しない" in document
-            or "GIT_NO_REPLACE_OBJECTS=1`はreplace refだけを無効化し、" in document
-            or "replace refは同環境変数で無効化し、graftは" in document
-            or "replace refは`GIT_NO_REPLACE_OBJECTS=1`で無効化し、graftは" in document
-            or "replace refは`GIT_NO_REPLACE_OBJECTS=1`で無効化する。graftは" in document
-        )
-        assert "graftファイルが存在する場合" in document
-        assert (
-            "履歴と作業ツリーを変更せず`needs_escalation`" in document or "履歴書換えを適用せず`needs_escalation`" in document
-        )
-        contract = document
-        if "## fixupの実行上の制約" in document:
-            contract = document.split("## fixupの実行上の制約", 1)[1]
-        graft_check_at = contract.index(graft_path_command)
-        range_command = "`GIT_NO_REPLACE_OBJECTS=1 git rev-list --first-parent --reverse"
-        if range_command in contract:
-            assert graft_check_at < contract.index(range_command)
-        fixup_command = "`GIT_NO_REPLACE_OBJECTS=1 git commit --fixup"
-        if fixup_command in contract:
-            assert graft_check_at < contract.index(fixup_command)
-
-    for document in (implementation_task, caller, concepts, design):
-        assert "`pre_fixup` phaseでは、他の履歴照会の前置条件としてgraftを検査する。" in document
-
-    for document in (implementation_task, history_rewrite, concepts, design):
-        assert "`amend` phaseでgraftを検査して再判定し" in document
-        assert "不足OIDが無いendpointではfetchを実行せず" in document
-    assert "amend直前の`amend` phaseでgraft検査を含む再判定" in caller
-    assert "amend前の`amend` phaseでgraft検査を含む再判定" in executor
-    assert "不足OIDが無いendpointの`fetch_exit_code`が`not_applicable`" in executor
-    assert "不足OIDが無いendpointではfetchを実行せず" in caller
-    assert "不足OIDが無いendpointではfetchを実行せず" in implementation_task
 
 
 def test_history_rewrite_blocks_control_subject_mismatch_before_autosquash() -> None:
@@ -3184,252 +2786,13 @@ def test_history_rewrite_blocks_control_subject_mismatch_before_autosquash() -> 
         _PLAN_IMPL_TASK,
         _PLAN_IMPL_CALLER,
         _HISTORY_REWRITE,
-        _REPOSITORY_ROOT / "docs" / "development" / "concepts.md",
-        _REPOSITORY_ROOT / "docs" / "development" / "design.md",
     )
     for path in documents:
         document = path.read_text(encoding="utf-8")
         assert "制御件名" in document
         assert "`git log -1 --format=%s`" in document
         assert "期待件名と一致しない場合はautosquashを実行せず" in document
-        assert document.index("制御件名") < document.index("GIT_NO_REPLACE_OBJECTS=1 GIT_SEQUENCE_EDITOR=: git rebase")
-
-
-def test_history_rewrite_graft_file_is_not_disabled_by_no_replace_objects_in_real_git(
-    tmp_path: pathlib.Path,
-) -> None:
-    """graftファイルが`GIT_NO_REPLACE_OBJECTS=1`でも親関係を変更することを実Gitで検証する。"""
-    repository = tmp_path / "graft-repository"
-    history_environment = _history_git_environment(tmp_path / "git-environment")
-
-    def run_history_git(
-        *arguments: str,
-        no_replace_objects: bool = False,
-        extra_environment: dict[str, str] | None = None,
-        input_text: str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """回帰テスト内のGit呼出へ共通の隔離環境を適用する。"""
-        environment = history_environment.copy()
-        if extra_environment is not None:
-            environment.update(extra_environment)
-        return _run_history_git(
-            repository,
-            *arguments,
-            no_replace_objects=no_replace_objects,
-            extra_environment=environment,
-            input_text=input_text,
-        )
-
-    for arguments in (
-        ("init", "-q", str(repository)),
-        ("-C", str(repository), "config", "user.name", "history-test"),
-        ("-C", str(repository), "config", "user.email", "history-test@example.invalid"),
-        ("-C", str(repository), "config", "advice.graftFileDeprecated", "false"),
-    ):
-        result = subprocess.run(
-            ["git", *arguments],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=history_environment,
-            timeout=10,
-        )
-        assert result.returncode == 0, result.stderr
-
-    for message in ("base", "target", "latest"):
-        result = run_history_git("commit", "--allow-empty", "-qm", message)
-        assert result.returncode == 0, result.stderr
-
-    base = run_history_git("rev-parse", "HEAD~2", no_replace_objects=True).stdout.strip()
-    target = run_history_git("rev-parse", "HEAD~1", no_replace_objects=True).stdout.strip()
-    tree = run_history_git("rev-parse", f"{base}^{{tree}}", no_replace_objects=True).stdout.strip()
-    graft_parent_result = run_history_git("commit-tree", tree, no_replace_objects=True, input_text="graft-parent\n")
-    assert graft_parent_result.returncode == 0, graft_parent_result.stderr
-    graft_parent = graft_parent_result.stdout.strip()
-
-    graft_path_result = run_history_git(
-        "rev-parse",
-        "--path-format=absolute",
-        "--git-path",
-        "info/grafts",
-        no_replace_objects=True,
-    )
-    assert graft_path_result.returncode == 0, graft_path_result.stderr
-    graft_path = pathlib.Path(graft_path_result.stdout.strip())
-    assert not graft_path.exists()
-    graft_path.parent.mkdir(parents=True, exist_ok=True)
-    graft_path.write_text(f"{target} {graft_parent}\n", encoding="ascii")
-    assert graft_path.is_file()
-
-    expected_grafted_parent = f"{target} {graft_parent}"
-    for no_replace_objects in (False, True):
-        parents = run_history_git(
-            "rev-list",
-            "--parents",
-            "-n",
-            "1",
-            target,
-            no_replace_objects=no_replace_objects,
-        )
-        assert parents.returncode == 0, parents.stderr
-        assert parents.stdout.strip() == expected_grafted_parent
-
-    graft_path.unlink()
-    original_parents = run_history_git(
-        "rev-list",
-        "--parents",
-        "-n",
-        "1",
-        target,
-        no_replace_objects=True,
-    )
-    assert original_parents.returncode == 0, original_parents.stderr
-    assert original_parents.stdout.strip() == f"{target} {base}"
-
-
-def test_history_rewrite_commands_ignore_git_replace_refs(tmp_path: pathlib.Path) -> None:
-    """fixup・rebase・amendが置換参照を無視し、非対話的に実行できることを実Gitで検証する。"""
-    repository = tmp_path / "replace-repository"
-    history_environment = _history_git_environment(tmp_path / "git-environment")
-
-    def run_history_git(
-        *arguments: str,
-        no_replace_objects: bool = False,
-        extra_environment: dict[str, str] | None = None,
-        input_text: str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """回帰テスト内のGit呼出へ共通の隔離環境を適用する。"""
-        environment = history_environment.copy()
-        if extra_environment is not None:
-            environment.update(extra_environment)
-        return _run_history_git(
-            repository,
-            *arguments,
-            no_replace_objects=no_replace_objects,
-            extra_environment=environment,
-            input_text=input_text,
-        )
-
-    for arguments in (
-        ("init", "-q", str(repository)),
-        ("-C", str(repository), "config", "user.name", "history-test"),
-        ("-C", str(repository), "config", "user.email", "history-test@example.invalid"),
-    ):
-        result = subprocess.run(
-            ["git", *arguments],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=history_environment,
-            timeout=10,
-        )
-        assert result.returncode == 0, result.stderr
-
-    source = repository / "source.txt"
-    source.write_text("base\n", encoding="utf-8")
-    for message, content in (("base", "base\n"), ("target", "base\ntarget\n"), ("latest", "base\ntarget\nlatest\n")):
-        source.write_text(content, encoding="utf-8")
-        assert run_history_git("add", "source.txt").returncode == 0
-        result = run_history_git("commit", "-qm", message)
-        assert result.returncode == 0, result.stderr
-
-    base = run_history_git("rev-parse", "HEAD~2").stdout.strip()
-    target = run_history_git("rev-parse", "HEAD~1").stdout.strip()
-    latest = run_history_git("rev-parse", "HEAD").stdout.strip()
-    target_tree = run_history_git(
-        "rev-parse",
-        f"{target}^{{tree}}",
-        no_replace_objects=True,
-    ).stdout.strip()
-    replacement_result = run_history_git(
-        "commit-tree",
-        target_tree,
-        input_text="replaced\n",
-    )
-    assert replacement_result.returncode == 0, replacement_result.stderr
-    replacement = replacement_result.stdout.strip()
-    result = run_history_git("replace", target, replacement)
-    assert result.returncode == 0, result.stderr
-
-    unsafe_range = run_history_git(
-        "rev-list",
-        "--first-parent",
-        "--reverse",
-        f"{target}^..HEAD",
-    )
-    assert unsafe_range.returncode != 0
-    safe_range = run_history_git(
-        "rev-list",
-        "--first-parent",
-        "--reverse",
-        f"{target}^..HEAD",
-        no_replace_objects=True,
-    )
-    assert safe_range.returncode == 0, safe_range.stderr
-    assert safe_range.stdout.splitlines() == [target, latest]
-
-    unsafe_fixup = run_history_git(
-        "commit",
-        "--allow-empty",
-        f"--fixup={target}",
-    )
-    assert unsafe_fixup.returncode == 0, unsafe_fixup.stderr
-    unsafe_subject = run_history_git("log", "-1", "--format=%s")
-    assert unsafe_subject.stdout.strip() == "fixup! replaced"
-    result = run_history_git(
-        "reset",
-        "--hard",
-        latest,
-        no_replace_objects=True,
-    )
-    assert result.returncode == 0, result.stderr
-
-    safe_fixup = run_history_git(
-        "commit",
-        "--allow-empty",
-        f"--fixup={target}",
-        no_replace_objects=True,
-    )
-    assert safe_fixup.returncode == 0, safe_fixup.stderr
-    safe_subject = run_history_git(
-        "log",
-        "-1",
-        "--format=%s",
-        no_replace_objects=True,
-    )
-    assert safe_subject.stdout.strip() == "fixup! target"
-
-    rebase = run_history_git(
-        "rebase",
-        "-i",
-        "--autosquash",
-        base,
-        no_replace_objects=True,
-        extra_environment={"GIT_SEQUENCE_EDITOR": ":"},
-    )
-    assert rebase.returncode == 0, rebase.stderr
-    before_amend_subject = run_history_git(
-        "log",
-        "-1",
-        "--format=%s",
-        no_replace_objects=True,
-    ).stdout.strip()
-    assert before_amend_subject == "latest"
-    amend = run_history_git(
-        "commit",
-        "--allow-empty",
-        "--amend",
-        "--no-edit",
-        no_replace_objects=True,
-    )
-    assert amend.returncode == 0, amend.stderr
-    after_amend_subject = run_history_git(
-        "log",
-        "-1",
-        "--format=%s",
-        no_replace_objects=True,
-    ).stdout.strip()
-    assert after_amend_subject == before_amend_subject
+        assert document.index("制御件名") < document.index("GIT_SEQUENCE_EDITOR=: git rebase")
 
 
 def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
