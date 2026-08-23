@@ -33,8 +33,8 @@ _HUMAN_SECTION = """# 計画の主題
 
 | 合意内容 | 対象と箇所 | 素材・要求参照 | 確認方法 |
 | --- | --- | --- | --- |
-| 公開契約を維持する | 対象の公開API | P-001, R-P-001-001 | 差分を確認する |
-| 対象外の挙動を変更しない | 対象外の入力処理 | P-001, R-P-001-001 | 回帰テストを実行する |
+| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |
+| 対象外の挙動を変更しない | 対象外の入力処理 | P-001, R-P-001-002 | 回帰テストを実行する |
 
 ## 提示素材
 
@@ -174,7 +174,13 @@ def test_optional_exclusion_section_may_be_absent() -> None:
     """除外・保持の合意が無い計画は任意H3を省略できる。"""
     start = _VALID_CONTENT.index("### 合意済みの除外・保持")
     end = _VALID_CONTENT.index("## 提示素材")
-    assert not _plan_format.check_plan_structure(_VALID_CONTENT[:start] + _VALID_CONTENT[end:])
+    content = _VALID_CONTENT[:start] + _VALID_CONTENT[end:]
+    # 除外表を欠くため、当該表でだけ被覆されていた採用要求の参照を`根拠`列へ追加して被覆を維持する。
+    content = content.replace(
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001, R-P-002-001 |",
+    )
+    assert not _plan_format.check_plan_structure(content)
 
 
 def test_canonical_fixture_accepts_mixed_agreements_and_numeric_target() -> None:
@@ -251,7 +257,7 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         (("| 日時 | 完了した工程 | 結果・特記事項 |", "| 日時 | 工程 | 結果 |"), "`## 進捗ログ`は"),
         (
             (
-                "| 公開契約を維持する | 対象の公開API | P-001, R-P-001-001 | 差分を確認する |",
+                "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |",
                 "| 公開契約を維持する | 対象の公開API | P-999 | 差分を確認する |",
             ),
             "素材・要求参照が提示素材に無い",
@@ -262,8 +268,8 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         ),
         (
             (
-                "| 公開契約を維持する | 対象の公開API | P-001, R-P-001-001 | 差分を確認する |",
-                "| 公開契約を維持する |  | P-001, R-P-001-001 | 差分を確認する |",
+                "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |",
+                "| 公開契約を維持する |  | P-002, R-P-002-001 | 差分を確認する |",
             ),
             "空cell",
         ),
@@ -477,6 +483,46 @@ def test_action_references_rejected_requirement_are_rejected() -> None:
     )
     errors = _plan_format.check_plan_structure(content)
     assert any("不採用要求を参照できない: R-P-001-002" in error for error in errors), errors
+
+
+def test_requirement_coverage_accepts_content_where_every_adopted_requirement_is_referenced() -> None:
+    """採用要求が`根拠`又は合意表の`素材・要求参照`のいずれかで被覆されていれば検出しない。"""
+    errors = _plan_format.check_plan_structure(_VALID_CONTENT)
+    assert not any("採用要求を被覆しない" in error for error in errors), errors
+
+
+def test_requirement_coverage_rejects_adopted_requirement_referenced_by_neither_action_nor_exclusion() -> None:
+    """採用要求が`根拠`にも合意表の`素材・要求参照`にも現れない場合を検出する。"""
+    content = _VALID_CONTENT.replace("P-002, R-P-002-001", "P-001, R-P-001-002")
+    errors = _plan_format.check_plan_structure(content)
+    assert any("採用要求を被覆しない: R-P-002-001" in error for error in errors), errors
+
+
+_UNCOVERED_REQUIREMENT_ROW = (
+    "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |"
+)
+
+
+def _plan_with_uncovered_requirement(adopted_scope: str) -> str:
+    """採用要求R-P-002-001を被覆しない計画本文を、指定した`採用範囲`で返す。
+
+    合意表の`素材・要求参照`を別要求へ差し替えることで、R-P-002-001は`根拠`と
+    `素材・要求参照`のいずれからも参照されない状態になる。
+    """
+    content = _VALID_CONTENT.replace("P-002, R-P-002-001", "P-001, R-P-001-002", 1)
+    replaced = _UNCOVERED_REQUIREMENT_ROW.replace("| 公開APIの維持 |", f"| {adopted_scope} |")
+    return content.replace(_UNCOVERED_REQUIREMENT_ROW, replaced, 1)
+
+
+def test_requirement_coverage_excludes_terminal_only_adopted_requirement() -> None:
+    """`採用範囲`が`終端工程のみ`で始まる採用要求は被覆されていなくても受理する。"""
+    assert not _plan_format.check_plan_structure(_plan_with_uncovered_requirement("終端工程のみ適用する"))
+
+
+def test_requirement_coverage_keeps_checking_adopted_requirement_outside_terminal_only() -> None:
+    """`終端工程のみ`で始まらない採用要求は除外の影響を受けず被覆検査の対象に残る。"""
+    errors = _plan_format.check_plan_structure(_plan_with_uncovered_requirement("公開APIの維持"))
+    assert any("採用要求を被覆しない: R-P-002-001" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(

@@ -23,7 +23,11 @@ description: >
    状態競合で拒否された場合はactiveを再取得し、processing項目を変更しない
 3. 計画に使うworktreeの絶対パスとbase commitを保持する
 4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。
-   実装委譲を除く調査、確認、計画作成、機械検査、レビューを完了する
+   実装委譲を除く調査、確認及び計画ファイル初版の起草を完了する。
+   起草完了後、実行主体が`plan-review-executor`を起動する。
+   計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と提示素材の出所・引用範囲を渡す。
+   機械検査・自己監査・レビュー担当の起動・指摘の配送・修正の検収・収束判定を委譲する。
+   `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断を利用者へ確認する
 5. 完成後、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、本文、対象worktreeの絶対パス、
    base commit、plan file、source `plan`、依存、吸収元のファイル名を渡す。
    add-feedbackは保存直前に最新状態を再確認し、新しい計画型のフィードバックを追加する

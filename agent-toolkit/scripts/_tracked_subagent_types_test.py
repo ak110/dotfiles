@@ -14,6 +14,8 @@ def test_tracked_subagent_types_are_orchestrators() -> None:
                 "agent-toolkit:plan-impl-executor",
                 "feedbacks-planner",
                 "agent-toolkit:feedbacks-planner",
+                "plan-review-executor",
+                "agent-toolkit:plan-review-executor",
             }
         )
         == TRACKED_SUBAGENT_TYPES

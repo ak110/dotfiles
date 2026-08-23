@@ -11,6 +11,7 @@ import re
 import subprocess
 import tempfile
 import textwrap
+import time
 
 import _fork_runner
 import claude_hook
@@ -1888,6 +1889,41 @@ class TestBashGitCommitWarning:
         assert result.returncode == 0
         assert self._has_additional_context(result, "committing without running tests")
 
+    @pytest.mark.parametrize(
+        ("label", "repo_relative", "remote_url", "command_template", "expect_warn"),
+        [
+            ("scratchpad-without-remote", "scratchpad/tmp-repo", None, "git -C {repo} commit -m 'x'", False),
+            (
+                "scratchpad-with-remote",
+                "scratchpad/tmp-repo",
+                "https://example.invalid/x.git",
+                "git -C {repo} commit -m 'x'",
+                True,
+            ),
+            ("outside-scratchpad", "work/tmp-repo", None, "git -C {repo} commit -m 'x'", True),
+            ("unresolved-cwd", "scratchpad/tmp-repo", None, 'cd "$TARGET" && git commit -m "x"', True),
+        ],
+    )
+    def test_scratchpad_temporary_repository_exclusion(
+        self,
+        tmp_path: pathlib.Path,
+        label: str,
+        repo_relative: str,
+        remote_url: str | None,
+        command_template: str,
+        expect_warn: bool,
+    ) -> None:
+        """scratchpad配下でremoteを持たない一時リポジトリへのcommitだけを未検証警告の対象外とする。"""
+        home = tmp_path.resolve() / "home"
+        repo = _make_repo_with_optional_remote(home / repo_relative, remote_url)
+        env = _plan_file_state_env(tmp_path, home_dir=home)
+        result = self._invoke(command_template.format(repo=repo), f"commit-scratchpad-{label}", env, cwd=repo)
+        assert result.returncode == 0
+        if expect_warn:
+            assert self._has_additional_context(result, "committing without running tests")
+        else:
+            assert result.stdout == ""
+
 
 class TestBashGitLogDecorate:
     """git log --decorate自動付与。"""
@@ -2085,6 +2121,44 @@ class TestBashAmendRebaseBlock:
         assert result.returncode == 2
         assert "unresolved" in result.stderr
 
+    @pytest.mark.parametrize(
+        ("label", "repo_relative", "remote_url", "command_template", "expected_returncode"),
+        [
+            ("scratchpad-without-remote", "scratchpad/tmp-repo", None, "git -C {repo} commit --amend --no-edit", 0),
+            (
+                "scratchpad-with-remote",
+                "scratchpad/tmp-repo",
+                "https://example.invalid/x.git",
+                "git -C {repo} commit --amend --no-edit",
+                2,
+            ),
+            ("outside-scratchpad", "work/tmp-repo", None, "git -C {repo} commit --amend --no-edit", 2),
+            ("scratchpad-rebase-without-remote", "scratchpad/tmp-repo", None, "git -C {repo} rebase main", 0),
+            (
+                "unresolved-cwd",
+                "scratchpad/tmp-repo",
+                None,
+                'cd "$TARGET" && git commit --amend --no-edit',
+                2,
+            ),
+        ],
+    )
+    def test_scratchpad_temporary_repository_exclusion(
+        self,
+        tmp_path: pathlib.Path,
+        label: str,
+        repo_relative: str,
+        remote_url: str | None,
+        command_template: str,
+        expected_returncode: int,
+    ) -> None:
+        """scratchpad配下でremoteを持たない一時リポジトリだけをamend/rebase検査の対象外とする。"""
+        home = tmp_path.resolve() / "home"
+        repo = _make_repo_with_optional_remote(home / repo_relative, remote_url)
+        env = _plan_file_state_env(tmp_path, home_dir=home)
+        result = self._invoke(command_template.format(repo=repo), f"amend-scratchpad-{label}", env, cwd=repo)
+        assert result.returncode == expected_returncode
+
 
 def _init_git_repo(path: pathlib.Path) -> None:
     """一括ステージ警告テスト用の最小git repo初期化。"""
@@ -2092,6 +2166,18 @@ def _init_git_repo(path: pathlib.Path) -> None:
     subprocess.run(["git", "-C", str(path), "config", "user.email", "t@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.name", "test"], check=True)
     subprocess.run(["git", "-C", str(path), "config", "commit.gpgsign", "false"], check=True)
+
+
+def _make_repo_with_optional_remote(path: pathlib.Path, remote_url: str | None) -> str:
+    """検査除外条件の判定用に、remote設定の有無を選べるgit repoを作成する。
+
+    `remote_url`が`None`の場合は`git remote`が空リストを返すrepoになる。
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    _init_git_repo(path)
+    if remote_url is not None:
+        subprocess.run(["git", "-C", str(path), "remote", "add", "origin", remote_url], check=True)
+    return str(path)
 
 
 def _git_commit_initial(path: pathlib.Path, files: dict[str, str]) -> None:
@@ -3821,6 +3907,93 @@ class TestSubagentModelOverrideGate:
             env_overrides=_delegation_state_env(tmp_path, "model-override-feedbacks-planner"),
         )
         assert result.returncode == 2
+
+
+class TestTaskStopBlock:
+    """`TaskStop`の初回遮断と再実行窓。
+
+    利用者の停止要求または停滞判定を経ずに背景タスクを停止する呼び出しを初回だけ遮断し、
+    警告を読んだうえでの短時間内の再実行は通す契約を検証する。
+    """
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return _plan_file_state_env(tmp_path)
+
+    @staticmethod
+    def _invoke(session_id: str, env: dict[str, str], tool_input: dict | None = None) -> subprocess.CompletedProcess[str]:
+        payload = {
+            "tool_name": "TaskStop",
+            "tool_input": tool_input if tool_input is not None else {},
+            "session_id": session_id,
+        }
+        return _run(payload, env_overrides=env)
+
+    def test_first_call_is_blocked_and_records_time(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """記録が無い初回呼び出しを遮断し、遮断時刻を記録する。"""
+        before = time.time()
+        result = self._invoke("task-stop-first", state_dir)
+        assert result.returncode == 2
+        blocked_at = _read_session_state(tmp_path, "task-stop-first")["task_stop_blocked_at"]
+        assert before <= blocked_at <= time.time()
+
+    def test_block_message_states_the_four_conditions(self, state_dir: dict[str, str]) -> None:
+        """遮断文面が停止の根拠、不十分な理由、確認手段、再実行方法を示す。"""
+        stderr = self._invoke("task-stop-message", state_dir).stderr
+        assert "user's explicit, immediate stop request" in stderr
+        assert "stall-detection procedure" in stderr
+        assert "slow progress or perceived inefficiency alone is not a stop instruction" in stderr
+        assert "confirm with AskUserQuestion before stopping" in stderr
+        assert "retry TaskStop within 5 minutes to proceed" in stderr
+
+    @pytest.mark.parametrize(
+        ("label", "elapsed_seconds", "expected_returncode"),
+        [
+            ("just-blocked", 0.0, 0),
+            ("inside-window", 60.0, 0),
+            ("outside-window", 600.0, 2),
+        ],
+    )
+    def test_retry_window_decides_pass_or_block(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        label: str,
+        elapsed_seconds: float,
+        expected_returncode: int,
+    ) -> None:
+        """直近の遮断からの経過時間が5分以内の再実行だけを通す。"""
+        session_id = f"task-stop-{label}"
+        _write_session_state(tmp_path, session_id, {"task_stop_blocked_at": time.time() - elapsed_seconds})
+        result = self._invoke(session_id, state_dir)
+        assert result.returncode == expected_returncode
+
+    def test_reblock_after_window_updates_recorded_time(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """窓を超えた再遮断では記録時刻を現在時刻へ更新し、次の窓を開く。"""
+        stale = time.time() - 600.0
+        _write_session_state(tmp_path, "task-stop-reblock", {"task_stop_blocked_at": stale})
+        assert self._invoke("task-stop-reblock", state_dir).returncode == 2
+        assert _read_session_state(tmp_path, "task-stop-reblock")["task_stop_blocked_at"] > stale
+        assert self._invoke("task-stop-reblock", state_dir).returncode == 0
+
+    @pytest.mark.parametrize(
+        ("label", "tool_input"),
+        [
+            ("empty", {}),
+            ("task-id", {"task_id": "task-1"}),
+            ("shell-id", {"shell_id": "shell-1"}),
+        ],
+    )
+    def test_result_does_not_depend_on_stop_target(
+        self,
+        state_dir: dict[str, str],
+        label: str,
+        tool_input: dict,
+    ) -> None:
+        """停止対象の識別子の有無と値によらず、初回は遮断し窓内は通す。"""
+        session_id = f"task-stop-input-{label}"
+        assert self._invoke(session_id, state_dir, tool_input).returncode == 2
+        assert self._invoke(session_id, state_dir, tool_input).returncode == 0
 
 
 class TestExecuteReviewAlternateRouteAllowed:

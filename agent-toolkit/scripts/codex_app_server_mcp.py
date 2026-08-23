@@ -122,13 +122,7 @@ class SessionState:
             "turn_id": self.turn_id,
             "status": self.status,
             "result_available": self.result_available,
-            "plan": list(self.plan),
-            "current_item": self.current_item,
-            "commentary": self.commentary,
-            "diff_changed": self.diff_changed,
             "error": self.error,
-            "protocol_warnings": list(self.protocol_warnings),
-            "updated_at": self.updated_at,
         }
 
 
@@ -548,10 +542,8 @@ class AppServerManager:
             "session_id": session.session_id,
             "turn_id": session.turn_id,
             "status": session.status,
-            "result_available": session.result_available,
             "agent_message": session.agent_message,
             "error": session.error,
-            "updated_at": session.updated_at,
         }
 
     async def _wait_after_steer_rejection(

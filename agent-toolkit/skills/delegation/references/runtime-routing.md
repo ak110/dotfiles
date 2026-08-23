@@ -29,8 +29,8 @@
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
-| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体 | Codex App Server MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner`・`plan-review-executor` | Codex App Server MCP | Agentツール |
+| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の起草担当を含む） | Codex App Server MCP | Agentツール |
 | `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
 | `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、通常・統合後レビュー修正、CI失敗修正 | 同一失敗箇所の引継ぎとレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex App Server MCP | Agentツール |
 | `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
@@ -62,9 +62,9 @@
    レビュー修正の書込担当は、保持した初回実装担当の実効`engine`・`model`・`effort`と、
    起動直前に解決した今回の実効3値がすべて一致し、同じ担当へ同じタスクを返す場合だけ同一threadへ継続接続する。
    それ以外の組合せでは、旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。
-   計画、進捗ログ、保存済みの固定6列TSVのいずれかで検収済み状態を一意に参照できる場合は、
+   計画、進捗ログ、保存済みの固定7列TSVのいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
-   参照可能な正本がない場合は、呼び出し元が管理対象領域へ固定6列TSV（重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）を作成してから継続し、表の内容を起動文へ埋め込まない。
+   参照可能な正本がない場合は、呼び出し元が管理対象領域へ固定7列TSV（ラウンド、重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）を作成してから継続し、表の内容を起動文へ埋め込まない。
 
 指定した組合せを一時的に利用できない事象を実際に観測した場合に限り、当該工程の設定を解決して委譲を起動した主体は、当該セッション内の起動時指定だけで代替の組合せへ切り替えて再起動してよい。
 この判断は当該主体が行い、当該主体自身がサブエージェントとして起動されているかを問わない。

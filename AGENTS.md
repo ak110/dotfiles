@@ -38,7 +38,7 @@
 
 本節の`agent-toolkit-edit`・`pytools-edit`・`sync-platform-pair`は、リポジトリ直下の`.claude/skills/`配下にあり、配布対象外である。
 
-- `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時はSkillツールで`agent-toolkit-edit`を呼び出す。
+- `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時、及び同パス群を変更対象に含む計画の起草前はSkillツールで`agent-toolkit-edit`を呼び出す。
   呼び出し漏れは編集時にPreToolUseフックが警告を返す。
   権限設定の配置・marketplace管理・フック実装の配置先判断・version bump手順・worktree編集時の注意も同スキルへ集約する
   - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-standards`・`writing-standards`を併用する

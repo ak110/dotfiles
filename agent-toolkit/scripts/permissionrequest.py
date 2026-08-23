@@ -55,6 +55,7 @@ import re
 import shlex
 
 import _managed_temp
+import _scratchpad_path
 
 # Git ワークツリー判定で親ディレクトリを遡る際の上限段数。
 # 病的に深いパスでの暴走を防ぐガード。
@@ -423,11 +424,11 @@ def _is_target_path(target: pathlib.Path) -> bool:
         tmp_root = pathlib.Path(_TMP_ROOT_STR).resolve(strict=False)
     except (ValueError, OSError):
         return False
-    if _is_under(target, home_claude / "plans"):
+    if _scratchpad_path.is_under(target, home_claude / "plans"):
         return True
-    if _is_scratchpad_path(target):
+    if _scratchpad_path.is_scratchpad_path(target):
         return True
-    if _is_under(target, tmp_root):
+    if _scratchpad_path.is_under(target, tmp_root):
         return True
     return _is_repo_agent_meta_edit(target, home_claude)
 
@@ -438,35 +439,6 @@ def _is_home_claude_plans_root(target: pathlib.Path) -> bool:
         return target == (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False)
     except (ValueError, OSError):
         return False
-
-
-def _is_under(target: pathlib.Path, base: pathlib.Path) -> bool:
-    """`target` が `base` 配下（`base` 自身は含まない）か判定する。"""
-    try:
-        rel = target.relative_to(base)
-    except ValueError:
-        return False
-    return bool(rel.parts)
-
-
-def _is_scratchpad_path(target: pathlib.Path) -> bool:
-    """パス構成要素として `scratchpad` を含み、かつ `/tmp/` またはホームディレクトリ配下か判定する。
-
-    「パス構成要素として含む」とは `target.parts` 内に `"scratchpad"` が要素として
-    現れることを指す。ファイル名の一部（`scratchpad-notes.md` 等）は対象外とする。
-
-    ここでの `/tmp` は scratchpad 判定の対象範囲を限定する境界条件として用いる
-    リテラル指定であり、`/tmp` 全許可判定用の `_TMP_ROOT_STR`（テストで差し替え可能）
-    とは別概念として意図的に分離する。
-    """
-    if "scratchpad" not in target.parts:
-        return False
-    try:
-        tmp_root = pathlib.Path("/tmp").resolve(strict=False)
-        home_root = pathlib.Path.home().resolve(strict=False)
-    except (ValueError, OSError, RuntimeError):
-        return False
-    return _is_under(target, tmp_root) or _is_under(target, home_root)
 
 
 def _is_repo_agent_meta_edit(target: pathlib.Path, home_claude: pathlib.Path) -> bool:

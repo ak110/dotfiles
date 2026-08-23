@@ -8,5 +8,7 @@ TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
         "agent-toolkit:plan-impl-executor",
         "feedbacks-planner",
         "agent-toolkit:feedbacks-planner",
+        "plan-review-executor",
+        "agent-toolkit:plan-review-executor",
     }
 )

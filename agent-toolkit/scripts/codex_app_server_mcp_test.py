@@ -401,14 +401,15 @@ async def test_large_jsonl_notifications_keep_connection_and_result_available(
 
         status = await manager.wait("thread-1", timeout=1)
         assert status["status"] == "completed"
-        assert status["plan"] == [{"text": large_plan}]
-        assert status["diff_changed"] is True
+        assert status["result_available"] is True
+        session = manager.sessions["thread-1"]
+        assert session.plan == [{"text": large_plan}]
+        assert session.diff_changed is True
         assert manager.client is not None
         assert manager.client.reader_failure is None
         assert manager.client.closed is False
         result = manager.result("thread-1")
         assert result["agent_message"] == "最終結果"
-        assert result["result_available"] is True
         assert (await manager.start_reply("thread-1", "継続"))["status"] == "running"
     finally:
         await manager.close()
@@ -536,9 +537,9 @@ async def test_initial_turn_start_response_loss_keeps_thread_until_completion(
             },
         }
     )
+    assert manager.status("thread-1")["result_available"] is True
     result = manager.result("thread-1")
     assert result["status"] == "completed"
-    assert result["result_available"] is True
 
 
 @pytest.mark.asyncio
@@ -694,7 +695,6 @@ async def test_notifications_complete_turn_and_result_then_reply(
     assert status["result_available"] is True
     result = manager.result("thread-1")
     assert result["agent_message"] == "最終結果"
-    assert result["result_available"] is True
     await manager.start_reply("thread-1", "続行")
     assert [method for method, _ in client.requests][-2:] == ["thread/resume", "turn/start"]
     assert client.requests[-2][1]["approvalPolicy"] == "never"
@@ -727,9 +727,9 @@ async def test_send_message_steers_active_turn_without_resetting_state(
     assert response["previous_result"] is None
     assert response["status"] == "running"
     assert response["turn_id"] == expected_turn_id
-    assert response["plan"] == [{"id": "plan"}]
-    assert response["commentary"] == "進行中"
-    assert response["diff_changed"] is True
+    assert session.plan == [{"id": "plan"}]
+    assert session.commentary == "進行中"
+    assert session.diff_changed is True
     assert client.requests[-1] == (
         "turn/steer",
         {
@@ -813,7 +813,6 @@ async def test_send_message_replies_after_terminal_result_and_preserves_previous
     assert response["delivery"] == "reply_started"
     assert response["previous_result"]["agent_message"] == "直前結果"
     assert response["previous_result"]["turn_id"] == previous_turn_id
-    assert response["previous_result"]["result_available"] is True
     assert response["status"] == "running"
     assert response["result_available"] is False
     assert [method for method, _ in client.requests].count("turn/steer") == 0
@@ -1120,11 +1119,11 @@ async def test_start_reply_failure_marks_failed_and_wakes_waiters(
     assert status["session_id"] == result["session_id"] == "thread-1"
     assert status["turn_id"] == result["turn_id"] == ""
     assert status["error"] == result["error"] == {"message": "turn/start: turn/start failed"}
-    assert status["plan"] == []
-    assert status["current_item"] is None
-    assert status["commentary"] == ""
-    assert status["diff_changed"] is False
-    assert status["protocol_warnings"] == []
+    assert session.plan == []
+    assert session.current_item is None
+    assert session.commentary == ""
+    assert session.diff_changed is False
+    assert session.protocol_warnings == []
     assert result["agent_message"] == ""
     status_after_result = manager.status("thread-1")
     assert status_after_result["status"] == result["status"]
@@ -1176,15 +1175,16 @@ async def test_start_reply_resume_failure_clears_previous_state_and_allows_expli
 
     status = manager.status("thread-1")
     result = manager.result("thread-1")
+    session = manager.sessions["thread-1"]
     assert status["status"] == result["status"] == "failed"
     assert status["session_id"] == result["session_id"] == "thread-1"
     assert status["turn_id"] == result["turn_id"] == ""
     assert status["error"] == result["error"] == {"message": "thread/resume failed"}
-    assert status["plan"] == []
-    assert status["current_item"] is None
-    assert status["commentary"] == ""
-    assert status["diff_changed"] is False
-    assert status["protocol_warnings"] == []
+    assert session.plan == []
+    assert session.current_item is None
+    assert session.commentary == ""
+    assert session.diff_changed is False
+    assert session.protocol_warnings == []
     assert result["agent_message"] == ""
     status_after_result = manager.status("thread-1")
     assert status_after_result["status"] == result["status"]
@@ -1270,9 +1270,9 @@ async def test_all_server_requests_are_replied_and_noninteractive_requests_fail(
         }
     )
     assert (await waiter)["status"] == "failed"
+    assert manager.status("thread-1")["result_available"] is True
     result = manager.result("thread-1")
     assert result["status"] == "failed"
-    assert result["result_available"] is True
     assert result["error"] == {"message": "Codex requested interactive server input: item/tool/requestUserInput"}
 
 
@@ -1322,9 +1322,9 @@ async def test_interrupt_json_rpc_error_releases_waiter_before_completion(
         }
     )
     assert (await waiter)["status"] == "failed"
+    assert manager.status("thread-1")["result_available"] is True
     result = manager.result("thread-1")
     assert result["status"] == "failed"
-    assert result["result_available"] is True
     assert result["error"] == {"message": "turn/interrupt: turn is already completing"}
 
 
@@ -1364,9 +1364,9 @@ async def test_unknown_request_fails_all_active_sessions_and_releases_waiters(tm
                 },
             }
         )
+        assert manager.status(session_id)["result_available"] is True
         result = manager.result(session_id)
         assert result["status"] == "failed"
-        assert result["result_available"] is True
 
 
 @pytest.mark.asyncio

@@ -348,6 +348,7 @@ class PlanMaterials:
     requirement_ids: frozenset[str]
     is_legacy: bool
     adopted_requirement_ids: frozenset[str] = frozenset()
+    terminal_only_requirement_ids: frozenset[str] = frozenset()
 
 
 @functools.cache
@@ -787,6 +788,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
 
     requirement_ids: set[str] = set()
     adopted_requirement_ids: set[str] = set()
+    terminal_only_requirement_ids: set[str] = set()
     requirements = requirement_tables[0] if requirement_tables else None
     if requirements is not None:
         if not requirements.rows:
@@ -827,6 +829,8 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
                 errors.append(f"要求{requirement_id}の採否は採用又は不採用にする: {decision}")
             elif decision == "採用":
                 adopted_requirement_ids.add(requirement_id)
+                if adopted.startswith("終端工程のみ"):
+                    terminal_only_requirement_ids.add(requirement_id)
             if decision == "採用" and (adopted == PLAN_NON_QUEUE_VALUE or excluded != PLAN_NON_QUEUE_VALUE):
                 errors.append(f"要求{requirement_id}の採用範囲又は除外範囲が不正である")
             if decision == "不採用" and (adopted != PLAN_NON_QUEUE_VALUE or excluded == PLAN_NON_QUEUE_VALUE):
@@ -869,6 +873,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
         frozenset(requirement_ids),
         False,
         frozenset(adopted_requirement_ids),
+        frozenset(terminal_only_requirement_ids),
     ), errors
 
 
@@ -1058,13 +1063,11 @@ def check_plan_structure(content: str) -> list[str]:
         section = lines_within(body, start, end)
         table, table_errors = _check_fixed_table(section, PLAN_ACTION_TABLE_HEADER, "`## 実施内容`")
         errors.extend(table_errors)
-        if table is not None:
-            errors.extend(_check_action_relations(table))
-            if materials is not None and not materials.is_legacy:
-                errors.extend(_check_action_references(table, requirement_ids, adopted_requirement_ids))
+
         children = child_headings(headings, action_index, 3)
         if any(heading.text != PLAN_EXCLUSION_H3 for _position, heading in children) or len(children) > 1:
             errors.append(f"`## 実施内容`直下のH3は任意の`### {PLAN_EXCLUSION_H3}`だけにする")
+        exclusion: MarkdownTable | None = None
         if children:
             position, _heading = children[0]
             child_start, child_end = heading_subtree_range(headings, position)
@@ -1083,6 +1086,12 @@ def check_plan_structure(content: str) -> list[str]:
                         exclusion_is_new,
                     )
                 )
+
+        if table is not None:
+            errors.extend(_check_action_relations(table))
+            if materials is not None and not materials.is_legacy:
+                errors.extend(_check_action_references(table, requirement_ids, adopted_requirement_ids))
+                errors.extend(_check_requirement_coverage(table, exclusion, materials))
 
     history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
     if history_index is not None:
@@ -1149,6 +1158,34 @@ def _check_action_references(
             elif reference not in adopted_requirement_ids:
                 errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
     return errors
+
+
+def _check_requirement_coverage(
+    action_table: MarkdownTable,
+    exclusion_table: MarkdownTable | None,
+    materials: PlanMaterials,
+) -> list[str]:
+    """採用要求IDが`## 実施内容`の`根拠`又は`### 合意済みの除外・保持`の`素材・要求参照`で被覆されるかを検査する。
+
+    `採用範囲`が`終端工程のみ`で始まる採用要求は被覆対象から除く。
+    合意表が存在しない、または新形式でない場合は`根拠`列だけで被覆を判定する。
+    """
+    covered: set[str] = set()
+    action_column = action_table.header.index("根拠")
+    for row in action_table.rows:
+        if len(row) > action_column:
+            covered.update(_requirement_references(row[action_column]))
+    if exclusion_table is not None and "素材・要求参照" in exclusion_table.header:
+        exclusion_column = exclusion_table.header.index("素材・要求参照")
+        for row in exclusion_table.rows:
+            if len(row) > exclusion_column:
+                covered.update(_requirement_references(row[exclusion_column]))
+    target = set(materials.adopted_requirement_ids) - set(materials.terminal_only_requirement_ids)
+    uncovered = target - covered
+    return [
+        f"`## 実施内容`の`根拠`又は`### 合意済みの除外・保持`の`素材・要求参照`が採用要求を被覆しない: {requirement_id}"
+        for requirement_id in sorted(uncovered)
+    ]
 
 
 def _check_exclusion_table(

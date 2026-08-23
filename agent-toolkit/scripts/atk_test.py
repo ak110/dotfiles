@@ -421,7 +421,7 @@ def test_review_table_subcommands_are_public() -> None:
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]
         if subcommand == "add":
-            argv.extend(["重大", "位置", "指摘"])
+            argv.extend(["--round=1", "重大", "位置", "指摘"])
         elif subcommand == "respond":
             argv.extend(["重大", "位置", "指摘", "--response-needed=yes", "--response=修正"])
         args = parser.parse_args(argv)
@@ -436,7 +436,7 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     """公開CLIは構造検証の明示指定を許容し、既定では未応答行を拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("重大", "位置", "指摘", "", "", "")) + "\n",
+        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", "重大", "位置", "指摘", "", "", "")) + "\n",
         encoding="utf-8",
     )
 

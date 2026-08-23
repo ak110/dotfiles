@@ -56,6 +56,10 @@ Agent / Task:
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
 - `name`引数指定のブロック (block)
 
+TaskStop:
+
+- 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
+
 Write / Edit / MultiEdit / apply_patch:
 
 - 文字化け（U+FFFD）検出 (block)
@@ -92,6 +96,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Sequence
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -100,6 +105,7 @@ import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,i
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _scratchpad_path  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     CwdResolution,
     GitEvent,
@@ -263,6 +269,12 @@ def main(payload_text: str) -> int:
                 is_codex=is_codex,
             )
         )
+
+    if tool_name == "TaskStop":
+        if _check_task_stop(session_id):
+            return exit_with(2)
+        flush_pending_notices()
+        return 0
 
     # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
@@ -1621,10 +1633,11 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # フルネームと短縮名の両方を許容する。
 _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 _FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:feedbacks-planner", "feedbacks-planner"})
+_PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-review-executor", "plan-review-executor"})
 
 # `model`引数指定を一律禁止する対象。調整役は定義済みモデルを使う委譲窓口として動く。
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
-    _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES
+    _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES | _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES
 )
 # 公式資料照会専用で委譲契約が関与しない種別は、委譲未起動ゲートから除外する。
 _DELEGATION_GATE_EXEMPT_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude-code-guide"})
@@ -1673,6 +1686,50 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
             " actual work through `agent-toolkit:delegation`; no per-call model override is defined.\n"
             "Normal fix: omit the `model` parameter and let the agent definition's default"
             " apply.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+# --- TaskStop: 初回遮断と再実行窓 ---
+
+_TASK_STOP_RETRY_WINDOW_SECONDS = 300
+
+
+def _check_task_stop(session_id: str) -> bool:
+    """`TaskStop`呼び出しを初回遮断し、再実行窓内なら通過させる。
+
+    判定は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
+    直近の遮断時刻のPOSIX秒）を用いる。値が存在し現在時刻との差が
+    `_TASK_STOP_RETRY_WINDOW_SECONDS`以下なら通過（偽を返す）し、それ以外は値を
+    現在時刻へ更新して遮断（真を返す）する。停止対象の識別子（`tool_input`の
+    `task_id`・`shell_id`）は読まない。
+
+    ここで保存する時刻は再実行許可窓の判定にのみ用いる値であり、状態ファイル自体の
+    回収期限（`_session_state.STALE_STATE_MAX_AGE_SECONDS`によるmtime基準の14日）とは
+    別の寿命を持つ。
+    """
+    now = time.time()
+    state = read_state(session_id)
+    blocked_at = state.get("task_stop_blocked_at")
+    if isinstance(blocked_at, (int, float)) and now - blocked_at <= _TASK_STOP_RETRY_WINDOW_SECONDS:
+        return False
+
+    def _mark_blocked(current: dict) -> dict | None:
+        current["task_stop_blocked_at"] = now
+        return current
+
+    update_state(session_id, _mark_blocked)
+    print(
+        _llm_notice(
+            "blocked: TaskStop."
+            " Only stop a background task on the user's explicit, immediate stop request,"
+            " or after completing the stall-detection procedure;"
+            " slow progress or perceived inefficiency alone is not a stop instruction."
+            " If more than one interpretation of intent remains, confirm with AskUserQuestion before stopping."
+            " If the basis for stopping is already confirmed, retry TaskStop within 5 minutes to proceed.",
             tag="block",
         ),
         file=sys.stderr,
@@ -1736,6 +1793,10 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
     そのまま参照する。
     判定は`extract_git_events`の結果を消費し、各git呼び出しの実効cwd
     （`cd`・`pushd`・`git -C`の影響を反映）ごとに行う。
+    実効cwdがscratchpad配下（`_scratchpad_path.is_scratchpad_path`）で、かつ当該cwdの
+    `git remote`（`_git_status.run_git_lines`）が空リストの場合だけ、当該イベントを
+    検査対象から外す。取得失敗（`None`）または非空リストの場合は検査を適用する
+    （取得失敗を除外の根拠にしない）。
     """
     targets: list[tuple[GitEvent, str]] = []
     for event in extract_git_events(command, cwd):
@@ -1762,6 +1823,10 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
     log_state = state.get("git_log_checked", False)
     for event, op in targets:
         event_cwd = event.cwd
+        if event_cwd and _scratchpad_path.is_scratchpad_path(pathlib.Path(event_cwd)):
+            remotes = _git_status.run_git_lines(["git", "remote"], event_cwd)
+            if remotes == []:
+                continue
         if isinstance(log_state, dict):
             if event_cwd and log_state.get(event_cwd, False):
                 continue
@@ -1772,6 +1837,8 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
                 f"blocked: {op}."
                 f" Run `git log --oneline --decorate` first to confirm commit state before amend/rebase"
                 f" (especially, do NOT amend/rebase commits that have already been pushed)."
+                f" A `git log` in the same Bash command does not satisfy this check;"
+                f" run it in a preceding Bash call against the same effective working directory."
             ),
             file=sys.stderr,
         )
@@ -3129,8 +3196,22 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
     誤反応しない（`_check_bash_amend_rebase_without_log`等と同一の検出方式）。
     ヒアドキュメント本文中の記述は`extract_git_events`の既知の限界として本checkでも扱わない
     （`_bash_command_parser.split_bash_segments`のdocstring参照）。
+    実効cwdがscratchpad配下（`_scratchpad_path.is_scratchpad_path`）で、かつ当該cwdの
+    `git remote`（`_git_status.run_git_lines`）が空リストのイベントは検査対象から外す。
+    取得失敗（`None`）または非空リストの場合は検査を適用する（取得失敗を除外の根拠にしない）。
     """
     commit_events = [e for e in extract_git_events(command, cwd) if e.subcommand == "commit"]
+    if not commit_events:
+        return None
+    commit_events = [
+        event
+        for event in commit_events
+        if not (
+            event.cwd_resolved
+            and _scratchpad_path.is_scratchpad_path(pathlib.Path(event.cwd))
+            and _git_status.run_git_lines(["git", "remote"], event.cwd) == []
+        )
+    ]
     if not commit_events:
         return None
     state = read_state(session_id)
