@@ -84,7 +84,6 @@ Codex App Server MCPの`codex_start`では`cwd`へ作業ディレクトリの絶
 `codex_wait`は公開terminal statusになるまで待機し、`result_available`で結果回収可否を明示する。
 `status`が`failed`でも`result_available=false`なら`turn/completed`未受信のため`codex_result`は拒否される。
 `result_available=true`を確認してから結果を回収する。
-`codex_result`で結果を回収するまでStopを許可しない。
 作業用複製では、複製元と対象外worktreeも明示する。
 
 ### 権限と成果物の取り決め

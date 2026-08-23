@@ -1,11 +1,9 @@
 """Claude Code・Codex plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
-概要は次のとおり。`stop_hook_active`が真の再呼び出しは、未回収Codex App Server結果の有無を問わず
-連続ブロック上限を避けるため即approveする。回収の強制は同一ターン内の初回Stopでの
-block判定と、`codex_result`失敗時のレコード終端（`posttooluse.py`の`PostToolUseFailure`経路）で担保する。
-`stop_hook_active`が偽の初回Stopでは、未回収Codex App Server結果がある場合にblockし、
-非同期作業継続中・`agent-toolkit:session-review`起動済み時はapproveとする。
+概要は次のとおり。`stop_hook_active`が真の再呼び出しは、連続ブロック上限を避けるため即approveする。
+`stop_hook_active`が偽の初回Stopでは、非同期作業継続中・
+`agent-toolkit:session-review`起動済み時はapproveとする。
 いずれにも該当しない通常終了時は、transcriptの絶対パスを含む振り返り誘導文をblockで返す。
 終了判定の言語的基準は`agent-toolkit:session-review`「起動方針」節をSSOTとし、
 誘導文冒頭へ同一基準（`_message_format.SESSION_REVIEW_PRECHECK`）を事前チェックとして埋め込む。
@@ -30,7 +28,6 @@ from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-imp
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
     has_command_invocation,
-    has_uncollected_codex_turns,
     is_pending_async_work,
 )
 
@@ -109,20 +106,10 @@ def main(payload_text: str) -> int:
 
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
-    # 未回収Codex結果の有無を問わず、構造判定・通知生成・git status出力をせず即座にapproveする。
+    # 構造判定・通知生成・git status出力をせず即座にapproveする。
     if payload.get("stop_hook_active") is True:
         append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
         _approve()
-        return 0
-
-    if has_uncollected_codex_turns(session_id):
-        append_stop_log(session_id, "block_codex_result_uncollected", {})
-        reason = _llm_notice(
-            "A Codex App Server turn has reached or may reach a terminal state, but its result"
-            " has not been collected. Call `codex_result` for each started session before stopping."
-        )
-        raw_cwd = payload.get("cwd", "")
-        _emit_block_with_status(reason, cwd=raw_cwd if isinstance(raw_cwd, str) else "")
         return 0
 
     # git_log_checkedのリセットはStop契機から除外する

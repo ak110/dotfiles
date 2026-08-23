@@ -450,8 +450,7 @@ def _terminate_unknown_codex_session_record(payload: dict, session_id: str) -> N
 
     Codex App Serverプロセスの再起動等でsession記録が失われると、`codex_result`は
     恒久的に`unknown Codex session`で失敗し続け、結果回収による終端が二度と成立しない。
-    当該レコードを`codex_app_server_sessions`から除去し、`has_uncollected_codex_turns`による
-    Stop blockを解除する。
+    当該レコードを`codex_app_server_sessions`から除去し、snapshot保持判定を解放する。
     """
     if "unknown codex session" not in _codex_failure_message(payload):
         return
@@ -533,7 +532,7 @@ def _record_codex_session_state(
     snapshot_key: str | None = None,
     reset_result_retrieved: bool | None = None,
 ) -> None:
-    """Codex App Serverの各tool応答をStop判定用状態へ記録する。"""
+    """Codex App Serverの各tool応答を結果回収とsnapshot比較用の状態へ記録する。"""
     remote_session_id = structured.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         return

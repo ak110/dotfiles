@@ -85,18 +85,6 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
-def _run_stop(payload: dict, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """同じ一時状態ディレクトリでStop hookを実行する。"""
-    env = os.environ.copy()
-    env.update({"TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)})
-    return _fork_runner.run_script(
-        _SCRIPT,
-        argv=("stop_advisor",),
-        input=json.dumps(payload, ensure_ascii=False),
-        env=env,
-    )
-
-
 class TestTestExecution:
     """テスト実行検出。"""
 
@@ -1657,18 +1645,17 @@ class TestWarnCodexRemoteChange:
             ("codex_start_reply", "failed", None),
         ],
     )
-    def test_new_turn_response_resets_result_retrieved_and_blocks_stop(
+    def test_new_turn_response_resets_result_retrieved(
         self,
         tmp_path: pathlib.Path,
         tool_name: str,
         status: str,
         delivery: str | None,
     ) -> None:
-        """開始応答の成否にかかわらず、新turnの結果回収までStopを遮断する。"""
+        """開始応答の成否にかかわらず、新turnを未回収として記録する。"""
         sid = f"new-turn-{tool_name}-{delivery or 'direct-failure'}"
         snapshot_key = "start-1"
         state = {
-            "session_review_invoked": {"agent-toolkit:session-review": True},
             "codex_app_server_sessions": {
                 "thread-1": {
                     "session_id": "thread-1",
@@ -1708,10 +1695,6 @@ class TestWarnCodexRemoteChange:
         assert result.returncode == 0
         record = _read_state(tmp_path, sid)["codex_app_server_sessions"]["thread-1"]
         assert record["result_retrieved"] is False
-        blocked = _run_stop({"session_id": sid}, tmp_path)
-        assert blocked.returncode == 0
-        assert json.loads(blocked.stdout)["decision"] == "block"
-        assert "codex_result" in json.loads(blocked.stdout)["reason"]
 
     def test_steered_send_message_preserves_result_retrieved(self, tmp_path: pathlib.Path) -> None:
         """同一turnを継続する`steered`応答は既存の回収状態を変更しない。"""
@@ -1757,8 +1740,8 @@ class TestWarnCodexRemoteChange:
         record = _read_state(tmp_path, sid)["codex_app_server_sessions"]["thread-1"]
         assert record["result_retrieved"] is True
 
-    def test_reply_failure_blocks_stop_until_result_and_keeps_snapshot(self, tmp_path: pathlib.Path):
-        """内部開始失敗は未回収としてStopを遮断し、結果回収時だけsnapshotを比較・解放する。"""
+    def test_reply_failure_keeps_snapshot_until_result(self, tmp_path: pathlib.Path):
+        """内部開始失敗を未回収として記録し、結果回収時だけsnapshotを比較・解放する。"""
         repo, _ = self._init_repo_with_remote(tmp_path)
         sid = "reply-failure"
         start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
@@ -1833,20 +1816,6 @@ class TestWarnCodexRemoteChange:
         assert failed_record["snapshot_key"] == "reply-1"
         assert "reply-1" in failed_state["codex_remote_snapshot_by_key"]
 
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:session-review"},
-            },
-            state_dir=tmp_path,
-        )
-        stop_before_result = _run_stop({"session_id": sid}, tmp_path)
-        assert stop_before_result.returncode == 0
-        stop_before_payload = json.loads(stop_before_result.stdout)
-        assert stop_before_payload["decision"] == "block"
-        assert "codex_result" in stop_before_payload["reason"]
-
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
         result_payload = self._result_payload(sid)
         result_payload["tool_use_id"] = "result-1"
@@ -1859,12 +1828,8 @@ class TestWarnCodexRemoteChange:
         assert retrieved_record["result_retrieved"] is True
         assert retrieved_state["codex_remote_snapshot_by_key"] == {}
 
-        stop_after_result = _run_stop({"session_id": sid}, tmp_path)
-        assert stop_after_result.returncode == 0
-        assert "decision" not in json.loads(stop_after_result.stdout)
-
     def test_initial_start_response_loss_keeps_session_until_completion_and_result(self, tmp_path: pathlib.Path):
-        """初回turn/start応答喪失をturn終端まで保持し、Stopとsnapshotを管理する。"""
+        """初回turn/start応答喪失をturn終端まで保持し、結果回収までsnapshotを管理する。"""
         repo, _ = self._init_repo_with_remote(tmp_path)
         sid = "initial-start-failure"
         start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
@@ -1908,17 +1873,6 @@ class TestWarnCodexRemoteChange:
         assert ambiguous_record["snapshot_key"] == "start-1"
         assert "start-1" in ambiguous_state["codex_remote_snapshot_by_key"]
 
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:session-review"},
-            },
-            state_dir=tmp_path,
-        )
-        stop_before_result = _run_stop({"session_id": sid}, tmp_path)
-        assert json.loads(stop_before_result.stdout)["decision"] == "block"
-
         completed = _run(
             {
                 "session_id": sid,
@@ -1949,9 +1903,6 @@ class TestWarnCodexRemoteChange:
         retrieved_record = retrieved_state["codex_app_server_sessions"]["thread-1"]
         assert retrieved_record["result_retrieved"] is True
         assert retrieved_state["codex_remote_snapshot_by_key"] == {}
-
-        stop_after_result = _run_stop({"session_id": sid}, tmp_path)
-        assert "decision" not in json.loads(stop_after_result.stdout)
 
     def test_result_failure_before_completion_keeps_snapshot(self, tmp_path: pathlib.Path):
         """未終端turnのcodex_result失敗では次の結果回収までsnapshotを保持する。"""

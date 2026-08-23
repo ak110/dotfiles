@@ -61,7 +61,7 @@
 - `codex_remote_snapshot_by_key`: Codex App Serverの`codex_start`または継続用`codex_start_reply`/`codex_send_message`直前のリモートrefを記録し、対応する結果回収後に比較して削除する。実行中turnへのsendでは既存snapshotを上書きしない
 - `codex_app_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`codex_start_reply`/`codex_send_message`の検査に使う
 - `codex_app_server_sessions`: `session_id`ごとのturn、状態、cwd、`result_retrieved`を記録する。
-  terminal statusだけでは回収済みとせず、`codex_result`成功後にStopゲートから除外する。thread IDをハッシュ化した状態ファイルは作成しない
+  terminal statusだけでは回収済みとせず、`codex_result`成功後に回収済みと記録する。thread IDをハッシュ化した状態ファイルは作成しない
 
 ## TBD系
 

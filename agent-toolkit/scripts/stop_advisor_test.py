@@ -170,49 +170,6 @@ class TestApproveConditions:
         assert "hookSpecificOutput" not in decision
         assert "systemMessage" not in decision
 
-    def test_first_call_blocks_uncollected_codex_but_stop_hook_active_approves_immediately(self, tmp_path: pathlib.Path):
-        """初回StopはCodex結果未回収でblockするが、`stop_hook_active`が真の再呼び出しは回収前でも即approveする。
-
-        未回収レコードの回収強制は同一ターン内の初回Stopでのblock判定と、`codex_result`失敗時の
-        レコード終端（`posttooluse.py`側）で担保し、`stop_hook_active`分岐より前段には置かない
-        （連続ブロック上限による強制終了を避けるため）。
-        """
-        session_id = "stop-hook-active-codex"
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        _write_state(
-            tmp_path,
-            session_id,
-            {
-                "codex_app_server_sessions": {
-                    "thread-1": {
-                        "session_id": "thread-1",
-                        "status": "failed",
-                        "result_retrieved": False,
-                    }
-                }
-            },
-        )
-        blocked = _run(
-            {
-                "session_id": session_id,
-                "transcript_path": str(transcript),
-            },
-            state_dir=tmp_path,
-        )
-        blocked_decision = _parse_decision(blocked)
-        assert blocked_decision.get("decision") == "block"
-        assert "codex_result" in _block_reason(blocked_decision)
-
-        approved = _run(
-            {
-                "session_id": session_id,
-                "transcript_path": str(transcript),
-                "stop_hook_active": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert "decision" not in _parse_decision(approved)
-
     def test_block_then_active_approves(self, tmp_path: pathlib.Path):
         """`stop_hook_active`が真の場合、直前のblock後の再呼び出しでもapproveを返す。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])

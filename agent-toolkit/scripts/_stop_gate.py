@@ -56,15 +56,11 @@ import tempfile
 import time
 
 from _file_lock import locked_rotate_and_append as _locked_rotate_and_append
-from _session_state import read_state
 
 # 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終端している場合は
 # セッション継続中と判断する。
 # Bashはrun_in_backgroundフラグで別途判定するため、ここには含めない。
 _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "Monitor"})
-
-# PostToolUseがCodex App Serverの開始・観測・結果回収を記録する状態キー。
-_CODEX_SESSION_STATE_KEY = "codex_app_server_sessions"
 
 # `<task-notification>...</task-notification>`要素を非貪欲に切り出す正規表現。
 # `re.DOTALL`で本文中の改行も拾う。
@@ -162,24 +158,6 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
         },
     )
     return pending
-
-
-def has_uncollected_codex_turns(session_id: str) -> bool:
-    """`codex_result`未回収のCodex App Server turnがある場合に真を返す。
-
-    `codex_status`又はtimeoutした`codex_wait`でterminalになっても、結果を
-    `codex_result`で回収するまでClaude CodeのStopを許可しない。
-    """
-    state = read_state(session_id)
-    sessions = state.get(_CODEX_SESSION_STATE_KEY)
-    if not isinstance(sessions, dict):
-        return False
-    return any(
-        isinstance(record, dict)
-        and record.get("status") in {"running", "completed", "failed", "interrupted"}
-        and record.get("result_retrieved") is not True
-        for record in sessions.values()
-    )
 
 
 def has_pending_agent_launches(transcript_path: str, session_id: str) -> bool:

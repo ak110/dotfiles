@@ -87,7 +87,7 @@ Claude Code専用の`codex_app_server`をCodex自身へ提供しない。
 
 App Serverから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
 対応turnを`failed`としてwaiterを起床させる。`turn/interrupt`の予約だけでは結果を回収済みとせず、
-`turn/completed`の受信後に`codex_result`を実行する。未回収結果がある間は、Claude CodeのStopを許可しない。
+`turn/completed`の受信後に`codex_result`を実行する。
 
 ### フックの信頼確認
 
