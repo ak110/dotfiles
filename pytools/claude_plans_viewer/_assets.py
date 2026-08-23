@@ -872,6 +872,14 @@ document.getElementById("menu-btn").addEventListener("click", () => {
   setDrawerOpen(!(aside && aside.classList.contains("open")));
 });
 document.getElementById("drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+document.getElementById("preview").addEventListener("click", (event) => {
+  // 実装詳細側は計画一覧に載らないため、サーバーが本文へ付与したリンクだけが選択経路になる。
+  // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
+  const link = event.target.closest("a[data-plan-path]");
+  if (!link) return;
+  event.preventDefault();
+  openFile(selectedHost, link.dataset.planPath);
+});
 main();
 
 if ("serviceWorker" in navigator) {

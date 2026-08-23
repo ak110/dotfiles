@@ -1799,7 +1799,7 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
         assert "既存の公開契約の該当箇所" in text
     assert "一般のCI失敗では計画ファイルとフィードバックファイル名一覧が存在しないことを入力不足としない" in ci_failure
     assert "計画ファイルは`CI修正担当`・`マージ担当`以外では必須" in task
-    assert "`CI修正担当`ではフィードバック起因の場合だけ渡す" in task
+    assert "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す" in task
     assert "計画を受領しない`CI修正担当`" in task
     common_output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
     for field in (
@@ -2283,6 +2283,22 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
         assert "implementation-independent-review-task.md" not in mode_preparation
         assert "atk config get execute_review_model" not in mode_preparation
     assert "手順2から7までは実行しない" not in executor
+
+
+def test_scoped_file_limit_input_is_declared_by_sender_and_both_reviewers() -> None:
+    """任意入力`対象ファイル限定`の受け渡しを、発火元と両レビュータスクの入力節で同期させる。"""
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+
+    assert "変更ファイル一覧は両レビュータスクへ任意入力`対象ファイル限定`として渡す" in flow
+    assert "`対象ファイル限定`としてレビュータスクへ渡す" in executor
+    for reviewer in (plan_review, independent_review):
+        inputs = _h2_section(reviewer, "入力")
+        assert "任意入力`対象ファイル限定`" in inputs
+        assert "指定されたファイルの差分だけをレビュー対象とする。範囲内の他ファイルは非レビュー対象として扱い、" in inputs
+        assert "未レビューと扱わない" in inputs
 
 
 def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> None:

@@ -1283,7 +1283,8 @@ const elements = {{
   'prev-btn': {{addEventListener() {{}}}},
   'next-btn': {{addEventListener() {{}}}},
   'menu-btn': {{addEventListener() {{}}}},
-  'drawer-backdrop': {{addEventListener() {{}}}}
+  'drawer-backdrop': {{addEventListener() {{}}}},
+  preview: {{addEventListener() {{}}}}
 }};
 globalThis.document = {{
   visibilityState: 'visible',

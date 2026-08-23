@@ -395,6 +395,56 @@ class TestApiEndpoints:
         assert "<table>" in body
 
     @pytest.mark.asyncio
+    async def test_api_file_includes_detail_link_when_local_detail_exists(self, tmp_path: Path):
+        """detail側が実在するローカル計画の表示応答へ、detailを開くリンク要素を含める。"""
+        (tmp_path / "a.md").write_text("# title\n", encoding="utf-8")
+        (tmp_path / "a.detail.md").write_text("# detail\n", encoding="utf-8")
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/api/file?path=a.md")
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert '<a href="#" data-plan-path="a.detail.md">実装詳細を開く</a>' in body
+
+    @pytest.mark.asyncio
+    async def test_api_file_omits_detail_link_when_local_detail_absent(self, tmp_path: Path):
+        """detail側が無いローカル計画の表示応答にはリンク要素を含めない。"""
+        (tmp_path / "a.md").write_text("# title\n", encoding="utf-8")
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/api/file?path=a.md")
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert "data-plan-path" not in body
+
+    @pytest.mark.asyncio
+    async def test_api_file_omits_detail_link_for_detail_itself(self, tmp_path: Path):
+        """detail側を表示した応答は、自身へのリンクを含めない。"""
+        (tmp_path / "a.detail.md").write_text("# detail\n", encoding="utf-8")
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/api/file?path=a.detail.md")
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert "data-plan-path" not in body
+
+    @pytest.mark.asyncio
+    async def test_detail_link_follows_detail_creation_despite_body_cache(self, tmp_path: Path):
+        """本文HTMLがキャッシュ済みでも、detailの作成がリンク表示へ反映される。"""
+        (tmp_path / "a.md").write_text("# title\n", encoding="utf-8")
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        first = await client.get("/api/file?path=a.md")
+        (tmp_path / "a.detail.md").write_text("# detail\n", encoding="utf-8")
+        second = await client.get("/api/file?path=a.md")
+
+        assert "data-plan-path" not in await first.get_data(as_text=True)
+        assert 'data-plan-path="a.detail.md"' in await second.get_data(as_text=True)
+
+    @pytest.mark.asyncio
     async def test_api_file_renders_diagrams_without_raw_html(self, tmp_path: Path):
         """/api/fileがMermaid・SVG専用構造を返し、Raw HTMLを無効化する。"""
         (tmp_path / "a.md").write_text(

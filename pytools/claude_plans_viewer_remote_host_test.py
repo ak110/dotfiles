@@ -513,11 +513,40 @@ class TestRemoteHostIntegration:
         assert response.status_code == 200
         body = await response.get_data(as_text=True)
         assert "<h1>remote title</h1>" in body
-        # `read`オペレーションがhost1宛に1回発行され、引数はbase64エンコードされた相対パス。
-        read_calls = [c for c in runner.calls if c[1] == "read"]
-        assert len(read_calls) == 1
-        assert read_calls[0][0] == "host1"
-        assert base64.b64decode(read_calls[0][2][0]).decode("utf-8") == "foo.md"
+        # 本文の`read`オペレーションがhost1宛に1回発行され、引数はbase64エンコードされた相対パス。
+        # detail実在判定の`read`は別パス宛のため、本文取得の呼び出し回数と分けて数える。
+        read_paths = [base64.b64decode(c[2][0]).decode("utf-8") for c in runner.calls if c[1] == "read"]
+        assert read_paths.count("foo.md") == 1
+        assert all(c[0] == "host1" for c in runner.calls if c[1] == "read")
+
+    @pytest.mark.asyncio
+    async def test_api_file_for_remote_host_includes_detail_link(self, tmp_path: Path):
+        """リモート計画でもdetailの取得に成功する場合だけ表示応答へリンク要素を含める。"""
+        runner = _FakeSshRunner(
+            read_responses={
+                ("host1", "foo.md"): "# remote title\n",
+                ("host1", "foo.detail.md"): "# remote detail\n",
+            },
+        )
+        app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1"], ssh_runner=runner)
+        client = app.test_client()
+        response = await client.get("/api/file?host=host1&path=foo.md")
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert '<a href="#" data-plan-path="foo.detail.md">実装詳細を開く</a>' in body
+
+    @pytest.mark.asyncio
+    async def test_api_file_for_remote_host_omits_detail_link_when_absent(self, tmp_path: Path):
+        """リモートのdetail取得が失敗する場合はリンク要素を含めない。"""
+        runner = _FakeSshRunner(read_responses={("host1", "foo.md"): "# remote title\n"})
+        app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1"], ssh_runner=runner)
+        client = app.test_client()
+        response = await client.get("/api/file?host=host1&path=foo.md")
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert "data-plan-path" not in body
 
     @pytest.mark.asyncio
     async def test_api_file_caches_remote_response_by_mtime(self, tmp_path: Path):
