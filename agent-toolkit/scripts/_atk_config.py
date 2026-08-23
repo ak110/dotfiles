@@ -28,7 +28,6 @@ _MUTABLE_KEY_DEFAULTS = {
     "execute_fast_model": _DEFAULT_EXECUTE_FAST_MODEL,
     "execute_fix_model": _DEFAULT_EXECUTE_FIX_MODEL,
     "execute_review_model": _DEFAULT_STAGE_MODEL,
-    "merge_model": _DEFAULT_STAGE_MODEL,
     "orchestrate_model": _ORCHESTRATE_MODEL_DEFAULT,
 }
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/]+(?:/[^/]+)?$")

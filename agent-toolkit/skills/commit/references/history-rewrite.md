@@ -19,7 +19,7 @@ autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近
 対応表の不足、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
 又はautosquash・amendの失敗時は新規commitへフォールバックせず`needs_escalation`で返す。
 `rewrite_guard`の受渡しは、`agent-toolkit:plan-mode`の`references/implementation-task.md`が定める通常`plan-impl`レビュー修正の書込担当契約だけに置く。
-統合後レビュー調整モードは`agent-toolkit:process-feedbacks`の`references/merge-task.md`に従い、統合差分へ1つの修正commitを作成する既定を維持する。
+差分限定レビュー調整モードは`agent-toolkit:plan-mode`の`references/implementation-task.md`が定める`差分限定レビュー修正担当`契約に従い、履歴を書き換えず新規commitで採用指摘を修正する既定を維持する。
 未pushかつ単一の書込担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refの照合、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
 
 過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。

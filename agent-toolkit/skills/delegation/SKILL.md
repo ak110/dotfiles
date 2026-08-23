@@ -184,12 +184,19 @@ Codex App Server MCPの`codex_start`では`cwd`へ作業ディレクトリの絶
 ```text
 route: <実際に使った経路>
 identifier: <threadまたはagent識別子>
-status: completed | fast_fix_handoff | awaiting_confirmation | needs_escalation
+status: completed | fast_fix_handoff | merge_review_pending | scope_deviation_hold | checkpoint | awaiting_confirmation | needs_escalation
 response: <受信者の最小完了報告>
 ```
 
 `fast_fix_handoff`は`implementation-task.md`のfast担当が同一失敗箇所の残存とdirty差分を
 構造化した`repair_handoff`として返す専用状態であり、`completed`又は`needs_escalation`へ読み替えない。
+`merge_review_pending`は`implementation-task.md`のマージ担当がrebase競合を解消した際の専用状態である。
+ff前進せず、解消箇所とrebase後HEADを返す。
+`scope_deviation_hold`は同文書の書込担当が計画の変更説明を超える差分を検出した際の専用状態である。
+追加変更とcommitへ進まず返す。いずれも`fast_fix_handoff`と同型の中間報告であり、確定状態へ読み替えない。
+`checkpoint`は作業継続中の定義済み中間報告であり、待機表明とは区別して受理する。
+`checkpoint`を返せるのは、呼び出し元が最上位セッションであり、呼び出し元のタスク文書がチェックポイントを
+定義する委譲に限る（`agent-toolkit/agents/plan-impl-executor.md`のチェックポイント契約を参照）。
 
 `awaiting_confirmation`は、`feedbacks-planner`が不採用確認用`user_decisions`を返して確認を待つ状態を表す。
 呼び出し元はこれを失敗として処理せず、確認回答又はTBDを受領して同じ系列の新しい識別子を起動する。

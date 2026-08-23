@@ -32,9 +32,8 @@
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の起草担当を委譲する`feedbacks-planner`・`plan-review-executor` | Codex App Server MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の起草担当を含む） | Codex App Server MCP | Agentツール |
 | `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
-| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、通常・統合後レビュー修正、CI失敗修正 | 同一失敗箇所の引継ぎとレビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元） | Codex App Server MCP | Agentツール |
+| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、差分限定レビュー修正、CI失敗修正、マージ担当のrebase・競合解消・ff前進 | 同一失敗箇所の引継ぎと差分限定レビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元）。マージ担当はレーンでは`plan-impl-executor`、統合後の上流進行rebaseではメイン | Codex App Server MCP | Agentツール |
 | `execute_review_model` | 実装後の二系統レビュー | レビュー担当を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
-| `merge_model` | レーンのcommitの適用、競合解消、履歴一本化、検証 | 統合担当を委譲する`process-feedbacks`の実行主体 | Codex App Server MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 上表の未設定時の実効値は、`execute_fast_model`が`codex:gpt-5.6-luna/max`、その他のキーが`codex:gpt-5.6-sol/medium`とする。effort省略時は`medium`とする。

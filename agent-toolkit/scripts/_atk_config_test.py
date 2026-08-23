@@ -42,7 +42,6 @@ class TestConfigShow:
             "plan_model",
             "plan_review_model",
             "execute_review_model",
-            "merge_model",
         ):
             assert f"{key}: codex:gpt-5.6-sol/medium" in out
         assert "execute_fast_model: codex:gpt-5.6-luna/max" in out
@@ -50,6 +49,7 @@ class TestConfigShow:
         assert "execute_model:" not in out
         assert "orchestrate_model: claude:opus[1m]/medium" in out
         assert "codex_model:" not in out
+        assert "merge_model:" not in out
 
     def test_no_subcommand_defaults_to_show(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """`atk config`（サブコマンド省略）は`show`と同じ出力になる。"""
@@ -300,7 +300,7 @@ class TestConfigSet:
     def test_set_unknown_model_and_effort_warns_both(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """モデル名とeffortがともに参考一覧外の場合は両方の警告を表示して受理する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "set", "merge_model", "codex:new-model/ultra"], home=tmp_path)
+            atk.main(["config", "set", "execute_review_model", "codex:new-model/ultra"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -308,9 +308,25 @@ class TestConfigSet:
         assert "警告: effort`ultra`は主に使う値の一覧" in captured.err
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "get", "merge_model"], home=tmp_path)
+            atk.main(["config", "get", "execute_review_model"], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == "codex:new-model/ultra\n"
+
+    def test_removed_merge_model_is_unknown(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """廃止した`merge_model`は変更可能キーとして受理しない。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "merge_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "変更できない設定キーです: merge_model" in capsys.readouterr().err
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "merge_model"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert not captured.out
+        assert "merge_model" in captured.err
 
     def test_set_known_value_without_effort_no_warning(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
