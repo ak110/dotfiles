@@ -156,8 +156,8 @@ def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, ob
         "state": state,
         "filename": path.name,
         "answered": answered,
-        "target_repo": metadata.get("target_repo"),
-        "source": metadata.get("source"),
+        "target_repo": _json_compatible(metadata.get("target_repo")),
+        "source": _json_compatible(metadata.get("source")),
         "summary": _summary(text, kind),
         "updated_at": datetime.datetime.fromtimestamp(
             path.stat().st_mtime,
@@ -456,14 +456,11 @@ class Operations:
             metadata = parsed[0] if parsed is not None else {}
             question_type, choices = _question_metadata(metadata, kind or "unknown")
             detail_entry = _entry(path, kind or "unknown", state, text)
-            detail_entry["target_repo"] = _json_compatible(detail_entry["target_repo"])
-            detail_entry["source"] = _json_compatible(detail_entry["source"])
             return {
                 **detail_entry,
                 "content": text,
                 "content_html": _render_content(text),
                 "body_html": _render_body(text),
-                "frontmatter": _json_compatible(metadata),
                 "frontmatter_entries": (
                     _json_compatible_mapping_entries(metadata) if isinstance(metadata, collections.abc.Mapping) else []
                 ),

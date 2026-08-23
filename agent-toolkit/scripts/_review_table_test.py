@@ -83,7 +83,7 @@ def test_initial_review_can_validate_structure_before_response_and_strict_after_
 
     table.respond(path, "重大", "module.py:10", "修正が必要", "yes", "条件を追加した", "")
     assert table.validate(path, require_responses=False) == 0
-    table.respond(path, "軽微", "README.md", "説明が不足", "no", "対象外", "既存契約を維持する")
+    table.respond(path, "軽微", "README.md", "説明が不足", "no", "", "既存契約を維持する")
     assert table.validate(path) == 0
 
 
@@ -91,20 +91,36 @@ def test_respond_updates_only_reviewee_columns(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "重大", "module.py:10", "修正が必要")
-    table.respond(path, "重大", "module.py:10", "修正が必要", "yes", "条件を追加した", "無視")
+    table.respond(path, "重大", "module.py:10", "修正が必要", "yes", "条件を追加した", "")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
     assert row == ["重大", "module.py:10", "修正が必要", "yes", "条件を追加した", ""]
     table.validate(path)
+
+
+def test_respond_rejects_no_response_reason_when_response_needed_yes(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "重大", "module.py:10", "修正が必要")
+    with pytest.raises(ValueError, match="no-response-reason"):
+        table.respond(path, "重大", "module.py:10", "修正が必要", "yes", "条件を追加した", "無視")
 
 
 def test_respond_no_requires_reason_and_clears_response(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "中", "hook", "対象外")
-    table.respond(path, "中", "hook", "対象外", "対応不要", "以前の契約を保持", "")
+    table.respond(path, "中", "hook", "対象外", "対応不要", "", "以前の契約を保持")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
     assert row == ["中", "hook", "対象外", "no", "", "以前の契約を保持"]
     table.validate(path)
+
+
+def test_respond_rejects_response_when_response_needed_no(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "中", "hook", "対象外")
+    with pytest.raises(ValueError, match="response"):
+        table.respond(path, "中", "hook", "対象外", "対応不要", "以前の契約を保持", "")
 
 
 def test_duplicate_key_and_existing_init_are_rejected(tmp_path: pathlib.Path) -> None:

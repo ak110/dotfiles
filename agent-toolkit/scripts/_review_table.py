@@ -188,13 +188,21 @@ def respond(
     response: str,
     no_response_reason: str,
 ) -> int:
-    """レビューイーの応答欄だけを複合キーで更新する。"""
+    """レビューイーの応答欄だけを複合キーで更新する。
+
+    対応要否と矛盾する欄（`response-needed=yes`に対する`no-response-reason`、
+    `response-needed=no`に対する`response`）の同時指定は`ValueError`で拒否する。
+    """
     target = _path(str(path))
     needed = _response_value(response_needed)
-    replacement = response.strip() if needed == "yes" else ""
-    reason = no_response_reason.strip() if needed == "no" else ""
-    if needed == "no" and not reason:
-        reason = response.strip()
+    response = response.strip()
+    reason = no_response_reason.strip()
+    if needed == "yes" and reason:
+        raise ValueError("対応要否がyesの場合はno-response-reasonを指定できない")
+    if needed == "no" and response:
+        raise ValueError("対応要否がnoの場合はresponseを指定できない")
+    replacement = response if needed == "yes" else ""
+    reason = reason if needed == "no" else ""
     key = tuple(_normalized(value) for value in (severity, location, issue))
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
@@ -223,7 +231,7 @@ def show(path: str | Path) -> int:
 def _required_value(args: argparse.Namespace, option: str, positional: str) -> str:
     value = getattr(args, option) or getattr(args, positional)
     if not isinstance(value, str) or not value:
-        raise ValueError(f"{option}を指定する")
+        raise ValueError(f"--{option}を指定する")
     return value
 
 

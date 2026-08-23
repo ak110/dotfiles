@@ -483,7 +483,8 @@ fetchHandler = async () => ({
 await selectEntry({state: 'inbox', filename: 'detail.md'}, new Element('detail-origin', 'BUTTON'));
 failures.push(elements['global-error-message'].textContent);
 const ambiguous = {
-  kind: 'feedback', state: 'processing', filename: 'ambiguous.md', content: '本文', body_html: '<p>本文</p>'
+  kind: 'feedback', state: 'processing', filename: 'ambiguous.md', content: '本文', body_html: '<p>本文</p>',
+  frontmatter_entries: []
 };
 displayEntry(ambiguous);
 detailOriginKey = entryKey(ambiguous);
@@ -737,7 +738,8 @@ const origin = new Element('origin', 'BUTTON');
 const entry = {
   kind: 'tbd', state: 'inbox', filename: 'question.md', answered: true, answer: '既存回答',
   summary: '質問', target_repo: 'example/repo', content: 'raw',
-  body_html: '<h2>質問</h2><p>本文</p>', question_type: 'choice', choices: ['A', 'B']
+  body_html: '<h2>質問</h2><p>本文</p>', question_type: 'choice', choices: ['A', 'B'],
+  frontmatter_entries: []
 };
 displayEntry(entry);
 const answerLabel = elements['answer-button'].textContent;
@@ -781,7 +783,7 @@ def test_assets_keep_terminal_entry_read_only_and_show_identifiers() -> None:
 displayEntry({
   kind: 'tbd', state: 'adopted', filename: 'done.md', answered: true, answer: '回答',
   summary: '完了', target_repo: 'example/repo', content: 'raw', body_html: '<p>本文</p>',
-  question_type: 'free-form', choices: []
+  question_type: 'free-form', choices: [], frontmatter_entries: []
 });
 process.stdout.write(JSON.stringify({
   heading: elements['detail-state'].textContent,
@@ -924,7 +926,7 @@ const restored = focused;
 displayEntry({
   kind: 'feedback', state: 'processing', filename: 'entry.md', answered: null,
   summary: '要約', target_repo: 'example/repo', content: 'raw', body_html: '<p>本文</p>',
-  question_type: 'free-form', choices: []
+  question_type: 'free-form', choices: [], frontmatter_entries: []
 });
 elements['detail-dialog'].open = true;
 dialogStack.push('detail-dialog');
@@ -951,11 +953,11 @@ def test_assets_restore_detail_focus_after_origin_row_disappears() -> None:
         """
 const first = {
   kind: 'feedback', state: 'inbox', filename: 'first.md', answered: null,
-  summary: '先頭', content: '本文', body_html: '<p>本文</p>'
+  summary: '先頭', content: '本文', body_html: '<p>本文</p>', frontmatter_entries: []
 };
 const second = {
   kind: 'feedback', state: 'inbox', filename: 'second.md', answered: null,
-  summary: '次行', content: '本文', body_html: '<p>本文</p>'
+  summary: '次行', content: '本文', body_html: '<p>本文</p>', frontmatter_entries: []
 };
 entries = [first, second];
 renderList();
@@ -993,7 +995,7 @@ def test_assets_reload_open_detail_from_sse_and_preserve_editing_input() -> None
         """
 const listed = {
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-  summary: '一覧要約', target_repo: 'example/repo'
+  summary: '一覧要約', target_repo: 'example/repo', frontmatter_entries: []
 };
 let detailContent = '外部更新後の本文';
 let deleted = false;
@@ -1083,14 +1085,14 @@ def test_assets_sse_detail_tracks_state_and_discards_stale_response() -> None:
         """
 const inbox = {
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-  content: '移動前本文', body_html: '<p>移動前本文</p>'
+  content: '移動前本文', body_html: '<p>移動前本文</p>', frontmatter_entries: []
 };
 const processing = {
   ...inbox, state: 'processing', content: '移動後本文', body_html: '<p>移動後本文</p>'
 };
 const second = {
   kind: 'feedback', state: 'inbox', filename: 'second.md', answered: null,
-  content: '別項目本文', body_html: '<p>別項目本文</p>'
+  content: '別項目本文', body_html: '<p>別項目本文</p>', frontmatter_entries: []
 };
 displayEntry(inbox);
 detailOriginKey = entryKey(inbox);
@@ -1151,7 +1153,7 @@ def test_assets_sse_detail_prefers_exact_identity_and_only_tracks_unique_move() 
         """
 const processing = {
   kind: 'feedback', state: 'processing', filename: 'same.md', answered: null,
-  summary: '処理中', content: '処理中本文', body_html: '<p>処理中本文</p>'
+  summary: '処理中', content: '処理中本文', body_html: '<p>処理中本文</p>', frontmatter_entries: []
 };
 const inbox = {
   ...processing, state: 'inbox', summary: '未処理', content: '未処理本文', body_html: '<p>未処理本文</p>'
@@ -1238,7 +1240,7 @@ def test_assets_sse_keeps_edit_target_for_duplicate_filename() -> None:
         """
 const processing = {
   kind: 'feedback', state: 'processing', filename: 'same.md', answered: null,
-  summary: '処理中', content: '処理中本文', body_html: '<p>処理中本文</p>'
+  summary: '処理中', content: '処理中本文', body_html: '<p>処理中本文</p>', frontmatter_entries: []
 };
 const inbox = {
   ...processing, state: 'inbox', summary: '未処理', content: '未処理本文', body_html: '<p>未処理本文</p>'
@@ -1277,7 +1279,8 @@ def test_assets_sse_reconciles_owned_delete_dialog() -> None:
         """
 const inbox = {
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-  summary: '移動前', target_repo: 'example/repo', content: '本文', body_html: '<p>本文</p>'
+  summary: '移動前', target_repo: 'example/repo', content: '本文', body_html: '<p>本文</p>',
+  frontmatter_entries: []
 };
 const processing = {...inbox, state: 'processing', summary: '移動後'};
 const remaining = {...inbox, filename: 'remaining.md', summary: '残存'};
@@ -1348,7 +1351,7 @@ def test_assets_clear_self_write_sse_alert_after_save_and_answer_success() -> No
 async function runSave() {
   let serverEntry = {
     kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-    summary: '保存対象', content: '更新前', body_html: '<p>更新前</p>'
+    summary: '保存対象', content: '更新前', body_html: '<p>更新前</p>', frontmatter_entries: []
   };
   displayEntry(serverEntry);
   detailOriginKey = entryKey(serverEntry);
@@ -1389,7 +1392,7 @@ async function runAnswer() {
   let serverEntry = {
     kind: 'tbd', state: 'inbox', filename: 'question.md', answered: false,
     summary: '回答対象', content: '質問', body_html: '<p>質問</p>',
-    question_type: 'free-form', choices: []
+    question_type: 'free-form', choices: [], frontmatter_entries: []
   };
   displayEntry(serverEntry);
   detailOriginKey = entryKey(serverEntry);
@@ -1462,7 +1465,7 @@ async function exercise(kind, status, code, withExternalUpdate) {
     kind: answering ? 'tbd' : 'feedback', state: 'inbox',
     filename: answering ? 'question.md' : 'entry.md', answered: answering ? false : null,
     summary: '操作対象', content: '更新前', body_html: '<p>更新前</p>',
-    question_type: 'free-form', choices: []
+    question_type: 'free-form', choices: [], frontmatter_entries: []
   };
   displayEntry(serverEntry);
   detailOriginKey = entryKey(serverEntry);
@@ -1551,7 +1554,8 @@ def test_assets_delete_conflict_requires_detail_reload() -> None:
         """
 const entry = {
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-  summary: '削除対象', target_repo: 'example/repo', content: '取得時本文', body_html: '<p>取得時本文</p>'
+  summary: '削除対象', target_repo: 'example/repo', content: '取得時本文', body_html: '<p>取得時本文</p>',
+  frontmatter_entries: []
 };
 displayEntry(entry);
 openDialog(elements['detail-dialog'], new Element('origin', 'BUTTON'), elements['detail-dialog-body']);
@@ -1584,7 +1588,8 @@ def test_assets_close_delete_confirmation_before_detail_refresh_failure() -> Non
 async function exercise(updatedEntries, warnings) {
   const original = {
     kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
-    summary: '変更前の要約', target_repo: 'example/old', content: '変更前本文', body_html: '<p>変更前本文</p>'
+    summary: '変更前の要約', target_repo: 'example/old', content: '変更前本文', body_html: '<p>変更前本文</p>',
+    frontmatter_entries: []
   };
   entries = [original];
   renderList();
@@ -1739,7 +1744,7 @@ fetchHandler = async () => ({
 const feedback = {
   kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
   summary: '要約', target_repo: 'example/repo', content: 'raw', body_html: '<p>本文</p>',
-  question_type: 'free-form', choices: []
+  question_type: 'free-form', choices: [], frontmatter_entries: []
 };
 elements['detail-dialog'].open = true;
 dialogStack.push('detail-dialog');
@@ -1816,7 +1821,7 @@ elements['state-filter'].value = 'all';
 elements['search-input'].value = '隠す条件';
 const listed = {
   kind: 'feedback', state: 'inbox', filename: 'new.md', answered: null,
-  summary: '新しい本文', target_repo: 'example/repo'
+  summary: '新しい本文', target_repo: 'example/repo', frontmatter_entries: []
 };
 const detailed = {
   ...listed, content: 'raw', body_html: '<p>新しい本文</p>',
@@ -2344,7 +2349,8 @@ def test_detail_preserves_frontmatter_as_strict_json_values(tmp_path: pathlib.Pa
     )
 
     detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
-    frontmatter = typing.cast(dict[str, typing.Any], detail["frontmatter"])
+    entries = typing.cast(list[dict[str, typing.Any]], detail["frontmatter_entries"])
+    frontmatter = {item["key"]["value"]: item["value"] for item in entries}
 
     json.dumps(detail, ensure_ascii=False, allow_nan=False)
     assert frontmatter["binary_value"] == "SGVsbG8="
@@ -2365,10 +2371,10 @@ def test_detail_preserves_frontmatter_as_strict_json_values(tmp_path: pathlib.Pa
     ["本文のみ\n", "---\ninvalid: [unterminated\n---\n本文\n"],
 )
 def test_detail_returns_empty_frontmatter_when_unavailable(tmp_path: pathlib.Path, text: str) -> None:
-    """frontmatterが無い又は解析できない詳細は空の表示用マッピングを返す。"""
+    """frontmatterが無い又は解析できない詳細は空の表示用一覧を返す。"""
     _write_detail_entry(tmp_path, text)
     detail = serve_app.Operations(tmp_path).detail("inbox", "entry.md")
-    assert not detail["frontmatter"]
+    assert not detail["frontmatter_entries"]
 
 
 @pytest.mark.asyncio
@@ -2392,10 +2398,13 @@ async def test_detail_api_round_trips_frontmatter_as_strict_json(tmp_path: pathl
         raise ValueError("非標準JSON定数です")
 
     payload = json.loads(await response.get_data(), parse_constant=reject_constant)
-    assert payload["entry"]["frontmatter"] == {
-        "type": "feedback",
-        "queue_schedule": {"nan": "NaN", "positive": "Infinity"},
-    }
+    assert payload["entry"]["frontmatter_entries"] == [
+        {"key": {"type": "str", "value": "type"}, "value": "feedback"},
+        {
+            "key": {"type": "str", "value": "queue_schedule"},
+            "value": {"nan": "NaN", "positive": "Infinity"},
+        },
+    ]
 
 
 @pytest.mark.asyncio
@@ -2426,23 +2435,32 @@ async def test_detail_api_preserves_frontmatter_order_cycles_and_mapping_keys(tm
 
     assert response.status_code == 200
     payload = json.loads(await response.get_data())
-    frontmatter = payload["entry"]["frontmatter"]
-    assert list(frontmatter) == ["type", "z_key", "a_key", "m_key", "queue_schedule"]
-    assert payload["entry"]["frontmatter_entries"][:4] == [
+    frontmatter_entries = payload["entry"]["frontmatter_entries"]
+    assert [item["key"]["value"] for item in frontmatter_entries] == [
+        "type",
+        "z_key",
+        "a_key",
+        "m_key",
+        "queue_schedule",
+    ]
+    assert frontmatter_entries[:4] == [
         {"key": {"type": "str", "value": "type"}, "value": "feedback"},
         {"key": {"type": "str", "value": "z_key"}, "value": "z"},
         {"key": {"type": "str", "value": "a_key"}, "value": "a"},
         {"key": {"type": "str", "value": "m_key"}, "value": "m"},
     ]
-    assert frontmatter["queue_schedule"] == {
-        "__mapping__": [
-            {"key": {"type": "int", "value": 1}, "value": "numeric"},
-            {"key": {"type": "str", "value": "1"}, "value": "textual"},
-            {
-                "key": {"type": "str", "value": "cyclic"},
-                "value": {"kept": "value", "self": "[Circular]"},
-            },
-        ]
+    assert frontmatter_entries[4] == {
+        "key": {"type": "str", "value": "queue_schedule"},
+        "value": {
+            "__mapping__": [
+                {"key": {"type": "int", "value": 1}, "value": "numeric"},
+                {"key": {"type": "str", "value": "1"}, "value": "textual"},
+                {
+                    "key": {"type": "str", "value": "cyclic"},
+                    "value": {"kept": "value", "self": "[Circular]"},
+                },
+            ]
+        },
     }
 
 

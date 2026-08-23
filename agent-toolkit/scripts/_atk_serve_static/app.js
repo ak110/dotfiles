@@ -37,7 +37,7 @@ const knownTbdFilenames = new Set();
 const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
-let refreshFocusIntent = null;
+let refreshFocusRequested = false;
 
 const byId = id => document.getElementById(id);
 const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
@@ -68,7 +68,7 @@ function setTextMessage(id, message) {
 }
 
 function setGlobalError(message) {
-  refreshFocusIntent = null;
+  refreshFocusRequested = false;
   byId('global-error-message').textContent = message;
   byId('global-error').hidden = !message;
 }
@@ -76,22 +76,18 @@ function setGlobalError(message) {
 function focusRefreshButton() {
   const refreshButton = byId('refresh-button');
   if (refreshButton.disabled) {
-    refreshFocusIntent = byId('global-error-close-button');
+    refreshFocusRequested = true;
     return;
   }
-  refreshFocusIntent = null;
+  refreshFocusRequested = false;
   refreshButton.focus();
 }
 
 function restoreRefreshFocus() {
-  const intent = refreshFocusIntent;
-  refreshFocusIntent = null;
-  if (!intent || document.activeElement !== intent) return;
+  if (!refreshFocusRequested) return;
   const refreshButton = byId('refresh-button');
-  if (refreshButton.disabled) {
-    refreshFocusIntent = intent;
-    return;
-  }
+  if (refreshButton.disabled) return;
+  refreshFocusRequested = false;
   refreshButton.focus();
 }
 
@@ -516,18 +512,7 @@ function formatMetadataKey(key) {
 }
 
 function metadataEntries(entry) {
-  let result;
-  if (Array.isArray(entry.frontmatter_entries)) {
-    result = entry.frontmatter_entries.map(item => ({key: item.key, value: item.value}));
-  } else {
-    const frontmatter = entry.frontmatter && typeof entry.frontmatter === 'object' && !Array.isArray(entry.frontmatter)
-      ? entry.frontmatter : {};
-    const legacyEntries = Object.keys(frontmatter).length === 1 && Array.isArray(frontmatter.__mapping__)
-      ? frontmatter.__mapping__ : null;
-    result = legacyEntries
-      ? legacyEntries.map(item => ({key: item.key, value: item.value}))
-      : Object.entries(frontmatter).map(([key, value]) => ({key: {type: 'str', value: key}, value}));
-  }
+  const result = entry.frontmatter_entries.map(item => ({key: item.key, value: item.value}));
   for (const key of ['target_repo', 'source']) {
     if (!result.some(item => item.key?.type === 'str' && item.key.value === key) &&
         entry[key] !== undefined && entry[key] !== null) {
@@ -1056,7 +1041,7 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
 
 function bindEvents() {
   document.addEventListener('focusin', () => {
-    refreshFocusIntent = null;
+    refreshFocusRequested = false;
   });
   byId('global-error-close-button').addEventListener('click', () => {
     setGlobalError('');

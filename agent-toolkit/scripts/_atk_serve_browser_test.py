@@ -468,6 +468,54 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
 
 @pytest.mark.asyncio
+async def test_global_error_closed_during_sync_restores_refresh_focus(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """同期進行中に共通エラーを閉じても、同期完了時に同期ボタンへフォーカスが戻る。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    refresh_button = page.locator("#refresh-button")
+    close_button = page.get_by_role("button", name="エラーメッセージを閉じる")
+
+    sync_started = asyncio.Event()
+    release_sync = asyncio.Event()
+
+    async def delay_sync(route: playwright.async_api.Route) -> None:
+        response = await route.fetch()
+        sync_started.set()
+        await release_sync.wait()
+        await route.fulfill(response=response)
+
+    async def fail_entries(route: playwright.async_api.Route) -> None:
+        await route.fulfill(
+            status=500,
+            content_type="application/json",
+            body='{"error":"一覧取得失敗"}',
+        )
+
+    await page.route("**/api/sync", delay_sync)
+    await refresh_button.click()
+    await asyncio.wait_for(sync_started.wait(), timeout=5)
+    await playwright.async_api.expect(refresh_button).to_be_disabled()
+
+    await page.route("**/api/entries?*", fail_entries)
+    await page.evaluate("void handleFilterChange({reloadRepos: false})")
+    await playwright.async_api.expect(page.locator("#global-error")).to_be_visible()
+    await page.unroute("**/api/entries?*", fail_entries)
+
+    await close_button.focus()
+    await close_button.click()
+    await playwright.async_api.expect(page.locator("#global-error")).to_be_hidden()
+    await playwright.async_api.expect(refresh_button).to_be_disabled()
+
+    release_sync.set()
+    await playwright.async_api.expect(refresh_button).to_be_enabled()
+    await playwright.async_api.expect(refresh_button).to_be_focused()
+    await page.unroute("**/api/sync", delay_sync)
+
+
+@pytest.mark.asyncio
 async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
     browser_harness: _BrowserHarness,
 ) -> None:

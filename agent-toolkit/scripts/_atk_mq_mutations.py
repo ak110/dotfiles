@@ -296,15 +296,10 @@ def _validate_transition_targets(
         content = current_content if current_content is not None else path.read_text(encoding="utf-8")
         if action == "start-processing":
             _require_type(path, content)
-            actual_target_repo = _entry_target_repo(path, content)
-            if normalized_target_repo is not None and actual_target_repo != normalized_target_repo:
-                print(
-                    f"target_repo不一致: 期待={normalized_target_repo} 実際={actual_target_repo} ファイル={path}",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
-        else:
-            _verify_target_repo_content(path, content, normalized_target_repo)
+            # `--target-repo`未指定でもtarget_repo欠落とfrontmatter解析不能を拒否するため、
+            # 不一致判定を`_verify_target_repo_content`へ委ねる一方でこの必須検査は残す。
+            _entry_target_repo(path, content)
+        _verify_target_repo_content(path, content, normalized_target_repo)
     if cooldown_days is not None:
         non_feedback = [
             path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK
