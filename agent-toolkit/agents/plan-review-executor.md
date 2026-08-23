@@ -42,7 +42,7 @@ user-invocable: false
 ```text
 status: completed | needs_escalation
 plan: <計画ファイルの絶対パス、実在・分量の証跡、1〜2文の要約>
-review: <ラウンド数と重大・中程度の解消状況>
+review: <ラウンド数と重大な指摘の解消状況>
 escalation:
 - <利用者確認を要する指摘、根拠、必要な判断。無ければ「なし」>
 blockers:

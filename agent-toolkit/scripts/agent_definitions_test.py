@@ -737,8 +737,9 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "plan-review-task.md" in delegation
     assert "計画とリポジトリを修正しない" in task
     assert "総ライフサイクルコスト" in task
-    # 再設計へ切り替える判定は、違反契約又は新設・変更機構を単位とする。
-    assert "同一の違反契約又は同一の新設・変更機構" in task
+    # 再設計へ切り替える判定は、指摘の成立を追跡できる全ての発火キーを単位とする。
+    for trigger in ("同一の違反契約", "同一の新設・変更機構", "同一の目的条項", "同一の混入構造"):
+        assert trigger in task
     assert "2ラウンド連続" in task
     assert "レビュー担当が再設計・簡素化・撤去を求めた箇所へ小修正で応じない" in delegation
 
@@ -2285,7 +2286,7 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     assert "implementation-plan-review-task.md" in common_review
     assert "implementation-independent-review-task.md" in common_review
     assert "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前" in common_review
-    assert "二系統とも指摘0件になるまで" in common_review
+    assert "前項の軽微判定による収束に該当しない限り、二系統とも指摘0件になるまで" in common_review
     for mode_preparation in (normal, integrated):
         assert "implementation-plan-review-task.md" not in mode_preparation
         assert "implementation-independent-review-task.md" not in mode_preparation
@@ -2811,7 +2812,7 @@ def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "二系統とも指摘0件になるまで" in executor
+    assert "前項の軽微判定による収束に該当しない限り、二系統とも指摘0件になるまで" in executor
     assert "レビュー回数に上限を設けない" in executor
     assert "未解決の実在欠陥がある限り" in plan_review_delegation
     assert "指摘候補を内部的に網羅列挙" in plan_review_task
@@ -3320,15 +3321,104 @@ def test_session_review_investigates_third_review_by_artifact_and_responsibility
 
 
 def test_review_rounds_have_an_escalation_route_for_repeated_findings() -> None:
-    """同一単位への連続3ラウンドで確定経路へ返す規定を固定する。"""
+    """同一単位への早期返却と連続3ラウンドの確定経路を固定する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
 
     for text in (executor, plan_review_delegation, reviewee):
+        assert "合格に自信を持てない場合" in text
+        assert "3ラウンド目" in text
+        assert "機械判定しない" in text
         assert "連続3ラウンドへ達した場合" in text
         assert "撤去と同一内容の復元をともに観測した場合" in text
         assert "呼び出し元が当該単位の処置を確定して指示した場合" in text
+
+
+def test_review_repetition_triggers_cover_purpose_and_contamination_structure() -> None:
+    """反復指摘の全発火キーと走査記録をレビュー経路間で同期する。"""
+    documents = (
+        _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
+        _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"),
+        _REVIEWEE_STANDARDS.read_text(encoding="utf-8"),
+        _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+    )
+
+    for document in documents:
+        for trigger in ("同一の目的条項", "同一の混入構造"):
+            assert trigger in document
+        assert "全箇所" in document or "全出現箇所" in document
+
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    for record in ("契約", "機構", "目的条項", "混入構造", "走査範囲", "比較結果", "不採用理由"):
+        assert record in executor
+
+
+def test_minor_review_convergence_uses_actual_repair_impact() -> None:
+    """3つのレビュー調整経路で軽微修正の収束判定を同期する。"""
+    plan_review = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    implementation_reviews = (
+        _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"),
+        _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8"),
+    )
+
+    assert "その修正は再レビューを要するほど計画を変えたか" in plan_review
+    for example in (
+        "実装単位の新設・分割",
+        "依存又は順序の変更",
+        "`## 実施内容`の行の追加・削除",
+        "公開インターフェース",
+        "完了条件又は設計の追加・削除",
+        "誤記、用語の統一、参照の訂正",
+    ):
+        assert example in plan_review
+
+    for document in implementation_reviews:
+        assert "その修正は再レビューを要するほど実装差分を変えたか" in document
+        assert "振る舞い又は公開契約の変更" in document
+        assert "コメント、名前及びformatだけの変更" in document
+
+    for document in (plan_review, *implementation_reviews):
+        for phrase in (
+            "修正完了後に実際の変更影響",
+            "例示を機械的な除外一覧として用いず",
+            "重大度ラベルと指摘件数も判定入力にしない",
+            "判断に確信が持てない場合",
+            "再レビューを省略した修正と理由",
+            "未解決の実在欠陥を残すために用いず",
+        ):
+            assert phrase in document
+
+
+def test_review_severity_is_single_major_label() -> None:
+    """レビューの重大度を`重大`へ統合し、読み手が判断を誤る欠陥だけを対象にする。"""
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+    severity_documents = (
+        review_standards,
+        _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
+        _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8"),
+        _REVIEWEE_STANDARDS.read_text(encoding="utf-8"),
+    )
+
+    assert "重大度ラベルは`重大`だけ" in review_standards
+    assert "読み手が実装・運用の判断を誤る内部不整合" in review_standards
+    assert "表記揺れ、参照の追従漏れ" in review_standards
+    assert "読者がSSOTへ到達でき判断へ影響しない" in review_standards
+    for document in severity_documents:
+        assert "中程度" not in document
+
+
+def test_review_findings_record_decision_axis_scan() -> None:
+    """確定指摘が判定軸の全走査と観測記録を保持する。"""
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+
+    for phrase in (
+        "指摘を確定する前に",
+        "判定軸が及ぶ全出現箇所",
+        "走査コマンド、一致件数、走査範囲及び未走査範囲",
+        "当該指摘が属する判定軸を1行で明記",
+    ):
+        assert phrase in review_standards
 
 
 def test_plan_workflows_reread_completion_conditions_before_reporting() -> None:
