@@ -510,7 +510,7 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`反復証跡�
 `agent-toolkit:plan-and-add-feedback`は、計画の起草から計画レビューの収束までを実施したうえで、
 実装ではなくフィードバック投入で終える運用を担う。
 計画担当（`agent-toolkit:plan-mode`）が調査と計画ファイル初版の起草までを担い、
-以降のレビュー修正ループ（機械検査、自己監査、レビュー担当の起動、指摘の配送、修正の検収、収束判定）は
+以降のレビュー修正ループ（計画構造検査、自己監査、レビュー担当の起動、指摘の配送、修正の検収、収束判定）は
 `plan-review-executor`へ委譲する。`plan-review-executor`は`plan-impl-executor`が実装レビューの調整主体を担う
 構成と対称であり、計画ファイル初稿の絶対パスを入力として計画レビューの調整主体を担う。
 `plan-review-executor`は、`feedbacks-planner`と同じく成果物を直接編集せず委譲と検収だけを担い、
