@@ -49,24 +49,6 @@ DEFAULT_WAIT_TIMEOUT = 300.0
 # readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
-PUBLIC_STATUSES = frozenset({"running", *TERMINAL_STATUSES})
-
-# Codex CLI 0.148.0のServerRequest schemaで確認した全server-initiated request。
-# 承認用の公開MCP toolは設けず、readerで必ず応答して非対話要求をfailedへ記録する。
-SERVER_REQUEST_METHODS = frozenset(
-    {
-        "item/commandExecution/requestApproval",
-        "item/fileChange/requestApproval",
-        "item/tool/requestUserInput",
-        "mcpServer/elicitation/request",
-        "item/permissions/requestApproval",
-        "item/tool/call",
-        "account/chatgptAuthTokens/refresh",
-        "attestation/generate",
-        "applyPatchApproval",
-        "execCommandApproval",
-    }
-)
 
 
 def _utc_now() -> str:
@@ -717,15 +699,15 @@ class AppServerManager:
         return self._get_session(session_id).public_status()
 
     async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-        """公開terminal statusまで待機し、結果回収可否とともにタイムアウト時は現状態を返す。"""
+        """結果を回収できる状態（`result_available`）まで待機し、タイムアウト時は現状態を返す。"""
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
         session = self._get_session(session_id)
-        if not session.terminal:
+        if not session.result_available:
             try:
                 async with self._condition:
                     await asyncio.wait_for(
-                        self._condition.wait_for(lambda: session.terminal),
+                        self._condition.wait_for(lambda: session.result_available),
                         timeout=timeout,
                     )
             except TimeoutError:
@@ -823,6 +805,13 @@ class AppServerManager:
         session.touch()
         await self._notify_waiters()
 
+    # Codex CLI 0.148.0のServerRequest schemaで確認した全server-initiated request:
+    # item/commandExecution/requestApproval・item/fileChange/requestApproval・
+    # item/tool/requestUserInput・mcpServer/elicitation/request・
+    # item/permissions/requestApproval・item/tool/call・
+    # account/chatgptAuthTokens/refresh・attestation/generate・
+    # applyPatchApproval・execCommandApproval。
+    # 承認用の公開MCP toolは設けず、readerで必ず応答して非対話要求をfailedへ記録する。
     async def _handle_server_request(self, message: dict[str, Any]) -> None:
         method = message.get("method")
         params = message.get("params")
@@ -870,6 +859,7 @@ class AppServerManager:
             active.error = {"message": f"Codex requested interactive server input: {method}"}
             active.protocol_warnings.append(f"unsupported server request: {method}")
             active.turn_completed = not has_active_turn
+            active.turn_start_ambiguous = False
             active.failure_pending_completion = has_active_turn
             if has_active_turn and not active.interrupt_requested:
                 interrupt_targets.append((active.session_id, active.turn_id))
@@ -1054,7 +1044,7 @@ async def codex_status(session_id: str) -> dict[str, Any]:
 
 @mcp.tool(name="codex_wait", structured_output=True)
 async def codex_wait(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-    """公開terminal statusまで待ち、結果回収可否を返す。timeout到達はエラーにしない。"""
+    """結果を回収できる状態（`result_available`）まで待ち、結果回収可否を返す。timeout到達はエラーにしない。"""
     return await _MANAGER.wait(session_id, timeout)
 
 

@@ -221,10 +221,11 @@ class TestTestExecution:
         [
             "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
             "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+            "mcp__plugin_agent-toolkit_codex_app_server__codex_result",
         ],
     )
     def test_posttooluse_failure_matcher_routes_codex_start_points(self, tool_name: str):
-        """Codex開始点の内部失敗をPostToolUseFailureへ配送するmatcherを維持する。"""
+        """Codex開始点・結果回収点の内部失敗をPostToolUseFailureへ配送するmatcherを維持する。"""
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         assert re.fullmatch(matcher, tool_name) is not None
@@ -234,6 +235,39 @@ class TestTestExecution:
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message") is None
+
+    def test_posttooluse_failure_matcher_matches_parse_hook_payload_allow_set(self):
+        """matcherが列挙するCodexツール名と`_parse_hook_payload`の許可集合が対応する。
+
+        `Agent`・`Task`はmatcherに含まれる一方、当該許可集合の対象外という既存設計を維持する
+        （両者はAgent/Task起動観測専用の別分岐で処理され、`_parse_hook_payload`を経由しない）。
+        """
+        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
+        matcher_tools = set(matcher.split("|"))
+        codex_matcher_tools = {
+            name for name in matcher_tools if name.startswith("mcp__plugin_agent-toolkit_codex_app_server__")
+        }
+        allow_set = _POSTTOOLUSE_MODULE._CODEX_APP_SERVER_FAILURE_TOOLS  # noqa: SLF001  # pylint: disable=protected-access
+        assert codex_matcher_tools == allow_set
+        assert matcher_tools - codex_matcher_tools == {"Agent", "Task"}
+
+        def _parse(tool_name: str) -> object:
+            payload_text = json.dumps(
+                {
+                    "session_id": "sid",
+                    "hook_event_name": "PostToolUseFailure",
+                    "tool_name": tool_name,
+                    "tool_input": {},
+                },
+                ensure_ascii=False,
+            )
+            return _POSTTOOLUSE_MODULE._parse_hook_payload(payload_text)  # noqa: SLF001  # pylint: disable=protected-access
+
+        for tool_name in codex_matcher_tools:
+            assert _parse(tool_name) is not None
+        for tool_name in ("Agent", "Task"):
+            assert _parse(tool_name) is None
 
 
 class TestPlanModeSkillInvocation:

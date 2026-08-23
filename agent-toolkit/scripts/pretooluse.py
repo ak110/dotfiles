@@ -1248,9 +1248,6 @@ _CODEX_APP_SERVER_START_TOOLS = frozenset(
     {_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL, _CODEX_APP_SERVER_SEND_TOOL}
 )
 _CODEX_APP_SERVER_TOOL_NAMES = _CODEX_APP_SERVER_START_TOOLS | _CODEX_APP_SERVER_OBSERVE_TOOLS
-# App Serverのthread/startへ渡す既存の全権限契約。新しいhook入力へ転記せず、
-# `codex_app_server_mcp.py`のturn/startでは`dangerFullAccess`を指定する。
-_CODEX_APP_SERVER_SANDBOX_PAYLOAD = {"sandbox": "danger-full-access", "sandboxPolicy": {"type": "dangerFullAccess"}}
 
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
 # `posttooluse.py`が同じtool_use_idで読み取り、codex_result後だけ比較を完了する共有SSOT。
@@ -1310,10 +1307,12 @@ def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict
 
 # --- codex sandbox指定（danger-full-access）の保護 (block, FB13) ---
 
+# `codex_app_server_mcp.py`が`thread/start`・`thread/resume`へ渡す固定sandbox値を保護対象とする。
+# 本フックはtool入力を補正せず、App Server内部の当該固定値が唯一の権限契約である。
 _DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
     "agent-toolkit/skills/delegation/references/runtime-routing.md",
     "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
-    "agent-toolkit/scripts/pretooluse.py",
+    "agent-toolkit/scripts/codex_app_server_mcp.py",
 )
 _DANGER_FULL_ACCESS_VALUE = "danger-full-access"
 _KNOWN_SANDBOX_VALUES = frozenset({_DANGER_FULL_ACCESS_VALUE, "read-only", "workspace-write"})

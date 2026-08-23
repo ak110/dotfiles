@@ -1,9 +1,11 @@
 """Claude Code・Codex plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
-概要は次のとおり。未回収Codex App Server結果がある場合は`stop_hook_active`真時もblockし、
-結果回収済みの`stop_hook_active`真時・非同期作業継続中はapprove、
-`agent-toolkit:session-review`起動済み時はapproveとする。
+概要は次のとおり。`stop_hook_active`が真の再呼び出しは、未回収Codex App Server結果の有無を問わず
+連続ブロック上限を避けるため即approveする。回収の強制は同一ターン内の初回Stopでの
+block判定と、`codex_result`失敗時のレコード終端（`posttooluse.py`の`PostToolUseFailure`経路）で担保する。
+`stop_hook_active`が偽の初回Stopでは、未回収Codex App Server結果がある場合にblockし、
+非同期作業継続中・`agent-toolkit:session-review`起動済み時はapproveとする。
 いずれにも該当しない通常終了時は、transcriptの絶対パスを含む振り返り誘導文をblockで返す。
 終了判定の言語的基準は`agent-toolkit:session-review`「起動方針」節をSSOTとし、
 誘導文冒頭へ同一基準（`_message_format.SESSION_REVIEW_PRECHECK`）を事前チェックとして埋め込む。
@@ -105,6 +107,14 @@ def main(payload_text: str) -> int:
         return 0
     session_id, payload = resolved
 
+    # Stop hookが直前のターンで既にブロック済みの再呼び出し。
+    # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
+    # 未回収Codex結果の有無を問わず、構造判定・通知生成・git status出力をせず即座にapproveする。
+    if payload.get("stop_hook_active") is True:
+        append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
+        _approve()
+        return 0
+
     if has_uncollected_codex_turns(session_id):
         append_stop_log(session_id, "block_codex_result_uncollected", {})
         reason = _llm_notice(
@@ -113,14 +123,6 @@ def main(payload_text: str) -> int:
         )
         raw_cwd = payload.get("cwd", "")
         _emit_block_with_status(reason, cwd=raw_cwd if isinstance(raw_cwd, str) else "")
-        return 0
-
-    # Stop hookが直前のターンで既にブロック済みの再呼び出し。
-    # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
-    # 構造判定・通知生成・git status出力をせず即座にapproveする。
-    if payload.get("stop_hook_active") is True:
-        append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
-        _approve()
         return 0
 
     # git_log_checkedのリセットはStop契機から除外する
@@ -132,9 +134,9 @@ def main(payload_text: str) -> int:
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     # 期限切れ状態の回収はSessionEndへ集約する（両ホストで同一契機とし、Stopでは重複実行しない）。
 
-    # Claude Codeで構造的にセッション継続中ならapprove。
+    # 構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background task（Agent・Bash・MCP）が存在するケース。
-    # Codex rolloutは安定した終了ゲートではないため背景作業判定へ渡さない。
+    # ホスト（Claude Code・Codex）を問わず同じ判定を適用する。
     if is_pending_async_work(transcript_path, session_id):
         append_stop_log(session_id, "approve_pending_async", {})
         _approve()

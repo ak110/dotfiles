@@ -128,9 +128,9 @@ Claude Code pluginから読み込まれるため、`codex plugin list`と`claude
 
 Codex委譲は次の6ツールで行う。`codex_start`は既存ディレクトリを絶対パスで指定して即時に
 `session_id`を返し、`codex_status`または`codex_wait`で状態を観測する。状態応答の`result_available`で結果回収可否を確認する。
-`codex_wait`は公開terminal statusで復帰し、既定timeoutは300秒である。非対応server requestによる`failed`でも
-`result_available=false`なら`turn/completed`未受信のため`codex_result`が拒否される。
-`result_available=true`を確認してから`codex_result`を再実行する。
+`codex_wait`は結果を回収できる状態（`result_available=true`）まで待機し、timeout到達時は現状態のまま復帰する。
+既定timeoutは300秒である。非対応server requestによる`failed`でも、`turn/completed`未受信の間は
+`result_available=false`のままで`codex_result`が拒否される。
 `codex_result`で終端結果を回収した後、同じ`session_id`へ`codex_start_reply`で次のturnを開始する。
 同じ担当へ追加指示を返す場合は`codex_send_message(session_id, prompt)`を使う。実行中turnへsteerし、
 終端結果が回収可能な場合は直前結果を`previous_result`へ退避して同じsessionのreplyを開始する。

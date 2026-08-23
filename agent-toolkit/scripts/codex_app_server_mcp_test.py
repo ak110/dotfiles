@@ -238,10 +238,13 @@ class FakeAppServerProcess:
         self.stdin = FakeAppServerStdin(self)
         self.returncode: int | None = None
         self.requests: list[dict[str, Any]] = []
+        self.error_responses: dict[str, dict[str, Any]] = {}
 
     def response_for(self, request: dict[str, Any]) -> dict[str, Any]:
         self.requests.append(request)
         method = request.get("method")
+        if method in self.error_responses:
+            return {"id": request["id"], "error": self.error_responses[method]}
         if method in {"thread/start", "thread/resume"}:
             result: dict[str, Any] = {"thread": {"id": "thread-1"}}
         elif method == "turn/start":
@@ -407,6 +410,97 @@ async def test_large_jsonl_notifications_keep_connection_and_result_available(
         assert result["agent_message"] == "最終結果"
         assert result["result_available"] is True
         assert (await manager.start_reply("thread-1", "継続"))["status"] == "running"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_reader_decode_failure_fails_active_session_and_reconnects_on_next_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """readerの不正な行によるデコード失敗は稼働中turnをfailedへ遷移させ、次回開始時に再接続する。"""
+    processes: list[FakeAppServerProcess] = []
+
+    async def create_subprocess(*args: Any, **kwargs: Any) -> FakeAppServerProcess:
+        del args
+        process = FakeAppServerProcess(kwargs["limit"])
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(subject.asyncio, "create_subprocess_exec", create_subprocess)
+    manager = subject.AppServerManager()
+    try:
+        response = await manager.start("開始", str(tmp_path))
+        assert response["status"] == "running"
+        first_client = manager.client
+        assert first_client is not None
+        first_process = processes[0]
+
+        first_process.stdout.feed_data(b"not-json\n")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert first_client.reader_failure is not None
+        status = manager.status("thread-1")
+        assert status["status"] == "failed"
+        assert status["result_available"] is True
+
+        second_response = await manager.start("再開始", str(tmp_path))
+        assert second_response["status"] == "running"
+        assert len(processes) == 2
+        assert manager.client is not None
+        assert manager.client is not first_client
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_codex_status_tool_returns_manager_state(tmp_path: pathlib.Path) -> None:
+    """`codex_status`公開toolが`AppServerManager.status`と同じ結果を返す。"""
+    manager = subject.AppServerManager()
+    client = FakeClient()
+    manager.client = cast(subject.JsonRpcProcess, client)
+    manager.sessions["thread-1"] = subject.SessionState("thread-1", str(tmp_path), turn_id="turn-1")
+    original_manager = subject._MANAGER
+    subject._MANAGER = manager
+    try:
+        result = await subject.codex_status("thread-1")
+    finally:
+        subject._MANAGER = original_manager
+    assert result == manager.status("thread-1")
+
+
+@pytest.mark.asyncio
+async def test_turn_start_error_response_builds_structured_json_rpc_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """実際のJSON-RPC error responseから`JsonRpcResponseError`のcode・message・dataを組み立てる。"""
+    processes: list[FakeAppServerProcess] = []
+
+    async def create_subprocess(*args: Any, **kwargs: Any) -> FakeAppServerProcess:
+        del args
+        process = FakeAppServerProcess(kwargs["limit"])
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(subject.asyncio, "create_subprocess_exec", create_subprocess)
+    manager = subject.AppServerManager()
+    try:
+        response = await manager.start("開始", str(tmp_path))
+        assert response["status"] == "running"
+        client = manager.client
+        assert client is not None
+        processes[0].error_responses["turn/start"] = {
+            "code": -32001,
+            "message": "turn/start rejected",
+            "data": {"reason": "busy"},
+        }
+        with pytest.raises(subject.JsonRpcResponseError) as exc_info:
+            await client.request("turn/start", {"threadId": "thread-1", "input": []})
+        assert exc_info.value.method == "turn/start"
+        assert exc_info.value.code == -32001
+        assert exc_info.value.data == {"reason": "busy"}
+        assert str(exc_info.value) == "turn/start: turn/start rejected"
     finally:
         await manager.close()
 
@@ -1273,6 +1367,57 @@ async def test_unknown_request_fails_all_active_sessions_and_releases_waiters(tm
         result = manager.result(session_id)
         assert result["status"] == "failed"
         assert result["result_available"] is True
+
+
+@pytest.mark.asyncio
+async def test_fail_for_request_clears_ambiguous_flag_so_result_becomes_available(tmp_path: pathlib.Path) -> None:
+    """`turn_completed`が真なら`turn_start_ambiguous`は偽という不変条件を`_fail_for_request`で固定する。
+
+    turn/start応答喪失で曖昧（`turn_start_ambiguous=True`）なまま非対話requestを受信すると、
+    アクティブturnを持たない終端化経路は`turn_completed`を真へ設定する。このとき`turn_start_ambiguous`を
+    偽へ更新しないと`result_available`（`terminal and turn_completed and not turn_start_ambiguous`）が
+    恒久的に成立せず、`codex_result`・`codex_start_reply`のいずれからも回収できなくなる。
+    """
+    manager = subject.AppServerManager()
+    client = FakeClient()
+    manager.client = cast(subject.JsonRpcProcess, client)
+    session = subject.SessionState("thread-1", str(tmp_path))
+    session.turn_start_ambiguous = True
+    manager.sessions["thread-1"] = session
+
+    await manager._handle_server_request(  # noqa: SLF001
+        {"id": 1, "method": "item/tool/requestUserInput", "params": {"threadId": "thread-1"}}
+    )
+
+    assert session.turn_completed is True
+    assert session.turn_start_ambiguous is False
+    status = manager.status("thread-1")
+    assert status["status"] == "failed"
+    assert status["result_available"] is True
+    result = manager.result("thread-1")
+    assert result["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_and_client_failure_also_clear_ambiguous_flag(tmp_path: pathlib.Path) -> None:
+    """`_mark_failed`・`_handle_client_failure`の両終端化経路も`turn_start_ambiguous`を偽へ更新する。"""
+    manager = subject.AppServerManager()
+
+    start_session = subject.SessionState("thread-start", str(tmp_path))
+    start_session.turn_start_ambiguous = True
+    manager.sessions["thread-start"] = start_session
+    await manager._mark_failed(start_session, RuntimeError("boom"), retryable=False)  # noqa: SLF001
+    assert start_session.turn_completed is True
+    assert start_session.turn_start_ambiguous is False
+    assert manager.status("thread-start")["result_available"] is True
+
+    failure_session = subject.SessionState("thread-failure", str(tmp_path))
+    failure_session.turn_start_ambiguous = True
+    manager.sessions["thread-failure"] = failure_session
+    await manager._handle_client_failure(RuntimeError("stopped"))  # noqa: SLF001
+    assert failure_session.turn_completed is True
+    assert failure_session.turn_start_ambiguous is False
+    assert manager.status("thread-failure")["result_available"] is True
 
 
 @pytest.mark.asyncio

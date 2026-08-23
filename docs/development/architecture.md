@@ -119,8 +119,8 @@ MCPサーバーは必要時に公式の`codex app-server --stdio`を子プロセ
 `codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`、`codex_send_message`を公開する。
 `codex_start`は絶対`cwd`と固定の`approvalPolicy=never`・`dangerFullAccess`でthreadを開始し、
 完了を待たず`session_id`を返す。状態応答は`result_available`で結果回収可否を明示する。
-`codex_wait`は公開terminal statusで復帰するが、`status=failed`でも`result_available=false`なら
-`turn/completed`未受信のため`codex_result`が拒否される。`result_available=true`を確認してから結果を回収する。
+`codex_wait`は結果を回収できる状態（`result_available=true`）まで待機し、timeout到達時は現状態のまま復帰する。
+`status=failed`でも`turn/completed`未受信の間は`result_available=false`のままで、`codex_result`は拒否される。
 `codex_result`で先行turnを回収してから同じsessionを継続する。
 同じ担当へ追加指示を返す`codex_send_message`は、実行中turnではsteerし、終端結果が回収可能な場合は
 直前結果を`previous_result`へ含めてreplyを開始する。既存turnのsnapshotは実行中steerで上書きせず、

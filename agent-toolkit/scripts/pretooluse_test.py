@@ -2902,16 +2902,6 @@ class TestCodexMcpExecution:
         assert "systemMessage" not in out
 
 
-class TestCodexAppServerSandboxContract:
-    """sandboxはhook入力を補正せず、App Server内部の固定payloadで指定する。"""
-
-    def test_hook_does_not_rewrite_sandbox(self) -> None:
-        assert pretooluse._CODEX_APP_SERVER_SANDBOX_PAYLOAD == {  # noqa: SLF001  # pylint: disable=protected-access
-            "sandbox": "danger-full-access",
-            "sandboxPolicy": {"type": "dangerFullAccess"},
-        }
-
-
 class TestCheckCodexMcpCwd:
     """`mcp__plugin_agent-toolkit_codex_app_server__codex_start`呼び出しの`cwd`絶対パス強制（CLI統合テスト、公開インターフェース経由）。"""
 
@@ -2991,15 +2981,6 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-
-
-class TestCodexAppServerPolicyContract:
-    """App Serverの権限固定はMCP内部へ委ね、hook入力へ追加しない。"""
-
-    def test_policy_is_not_rewritten_by_hook(self) -> None:
-        assert pretooluse._CODEX_APP_SERVER_SANDBOX_PAYLOAD["sandboxPolicy"] == {  # noqa: SLF001  # pylint: disable=protected-access
-            "type": "dangerFullAccess",
-        }
 
 
 class TestCodexMcpReply:
@@ -4745,8 +4726,13 @@ class TestBodySectionReferenceExists:
 # --- codex sandbox指定（danger-full-access）を含む行の削除・変更の遮断 (block) ---
 
 # 保護対象パスの相対表記と、sandbox指定記述を持つ検体本文。Claude入力とCodex `apply_patch`の双方で使う。
-_PROTECTED_RELATIVE_PATH = "agent-toolkit/scripts/pretooluse.py"
+_PROTECTED_RELATIVE_PATH = "agent-toolkit/scripts/codex_app_server_mcp.py"
 _PROTECTED_BODY = "説明文\n`sandbox: danger-full-access`を指定する\n末尾\n"
+
+
+def _codex_app_server_mcp_path() -> pathlib.Path:
+    """保護対象実体`codex_app_server_mcp.py`の絶対パスを返す。"""
+    return pathlib.Path(pretooluse.__file__).resolve().with_name("codex_app_server_mcp.py")
 
 
 class TestDangerFullAccessPreserved:
@@ -4754,7 +4740,7 @@ class TestDangerFullAccessPreserved:
 
     def test_blocks_removal_of_sandbox_assignment(self):
         """sandbox指定記述を削除する編集を遮断する。"""
-        file_path = pathlib.Path(pretooluse.__file__).resolve()
+        file_path = _codex_app_server_mcp_path()
         result = _run(
             {
                 "tool_name": "Write",
@@ -4804,8 +4790,10 @@ class TestDangerFullAccessPreserved:
 
     def test_passes_non_sandbox_change(self):
         """sandbox指定記述を保ったまま説明文を変える編集は通過する。"""
-        file_path = pathlib.Path(pretooluse.__file__).resolve()
-        content = file_path.read_text(encoding="utf-8").replace("統合フック", "統合済みフック", 1)
+        file_path = _codex_app_server_mcp_path()
+        content = file_path.read_text(encoding="utf-8").replace(
+            "状態照会と待機の応答には", "状態照会と待機の応答（変更後）には", 1
+        )
         result = _run(
             {
                 "tool_name": "Write",

@@ -76,9 +76,9 @@ MCPプロセスの終了時に自身が起動した子プロセスだけを終�
 
 Claude Code側では`codex_start`、`codex_status`、`codex_wait`、`codex_result`、
 `codex_start_reply`、`codex_send_message`を使用する。`codex_start`の`cwd`は既存ディレクトリの絶対パスとし、
-`codex_wait`は公開terminal statusで復帰する。状態応答の`result_available`で結果回収可否を確認でき、既定timeoutは300秒である。
-非対応server requestや未知methodで`status=failed`を返しても`result_available=false`なら`turn/completed`未受信のため
-`codex_result`が拒否される。`result_available=true`を確認してから`codex_result`を実行する。
+`codex_wait`は結果を回収できる状態（`result_available=true`）まで待機し、timeout到達時は現状態のまま復帰する。既定timeoutは300秒である。
+非対応server requestや未知methodで`status=failed`を返しても、`turn/completed`未受信の間は`result_available=false`のままで
+`codex_result`が拒否される。
 `codex_result`で終端結果を回収してから、
 同じ`session_id`へ`codex_start_reply`で継続する。同じ担当へ追加指示を返す場合は
 `codex_send_message(session_id, prompt)`を使い、実行中turnへsteerするか、回収可能な終端結果を退避してreplyを開始する。

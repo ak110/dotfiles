@@ -29,7 +29,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 14. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
 15. PostToolUseFailure・PermissionDenied: 原則状態を変更せず終了
-    （ただしCodex開始点の内部失敗は最新turn未回収とsnapshotを記録し、入力検証失敗は従来どおり変更しない）
+    （ただしCodex開始点の内部失敗は最新turn未回収とsnapshotを記録し、入力検証失敗は従来どおり変更しない。
+    `codex_result`が`unknown Codex session`で失敗した場合は当該レコードを終端させる）
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 17. `agent-toolkit:delegation`起動の記録 (Skill)
@@ -182,7 +183,9 @@ _CODEX_APP_SERVER_RESULT_TOOL = f"{_CODEX_APP_SERVER_NAMESPACE}codex_result"
 _CODEX_APP_SERVER_START_TOOLS = frozenset(
     {_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL, _CODEX_APP_SERVER_SEND_TOOL}
 )
-_CODEX_APP_SERVER_FAILURE_TOOLS = frozenset({_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL})
+_CODEX_APP_SERVER_FAILURE_TOOLS = frozenset(
+    {_CODEX_APP_SERVER_START_TOOL, _CODEX_APP_SERVER_REPLY_TOOL, _CODEX_APP_SERVER_RESULT_TOOL}
+)
 _CODEX_APP_SERVER_TOOL_NAMES = frozenset(
     {
         _CODEX_APP_SERVER_START_TOOL,
@@ -411,7 +414,7 @@ def _clear_codex_remote_snapshot(payload: dict, session_id: str) -> None:
 
 
 def _codex_failure_message(payload: dict) -> str:
-    """PostToolUseFailureの入力量から、検証失敗を判定するための本文を取り出す。"""
+    """PostToolUseFailureの入力量から、失敗理由を判定するための本文を取り出す。"""
     values: list[object] = [payload.get("error"), payload.get("message")]
     tool_response = payload.get("tool_response")
     if isinstance(tool_response, dict):
@@ -439,27 +442,44 @@ def _codex_result_failure_keeps_snapshot(session_id: str, payload: dict) -> bool
     )
 
 
+def _terminate_unknown_codex_session_record(payload: dict, session_id: str) -> None:
+    """`codex_result`が未知のCodex sessionで失敗したレコードを終端させる。
+
+    Codex App Serverプロセスの再起動等でsession記録が失われると、`codex_result`は
+    恒久的に`unknown Codex session`で失敗し続け、結果回収による終端が二度と成立しない。
+    当該レコードを`codex_app_server_sessions`から除去し、`has_uncollected_codex_turns`による
+    Stop blockを解除する。
+    """
+    if "unknown codex session" not in _codex_failure_message(payload):
+        return
+    tool_input = payload.get("tool_input")
+    remote_session_id = tool_input.get("session_id") if isinstance(tool_input, dict) else None
+    if not isinstance(remote_session_id, str) or not remote_session_id:
+        return
+
+    def _remove_record(state: dict) -> dict | None:
+        sessions = state.get(_CODEX_SESSION_STATE_KEY)
+        if not isinstance(sessions, dict) or remote_session_id not in sessions:
+            return None
+        del sessions[remote_session_id]
+        return state
+
+    update_state(session_id, _remove_record)
+
+
 def _record_codex_reply_failure(payload: dict, session_id: str) -> None:
-    """内部失敗だけを最新ターン未回収として記録する。"""
+    """内部失敗だけを最新ターン未回収として記録する。
+
+    分類は記録済みの`status`と`result_retrieved`だけで行い、例外文言の部分一致は用いない。
+    継続対象sessionが終端かつ結果回収済みの場合だけ内部失敗として扱い、それ以外
+    （入力検証失敗・未回収ターンへの重複呼び出し等）は既存の状態を変更しない。
+    """
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         _clear_codex_remote_snapshot(payload, session_id)
         return
     remote_session_id = tool_input.get("session_id")
     prompt = tool_input.get("prompt")
-    failure_message = _codex_failure_message(payload)
-    input_failure_fragments = (
-        "prompt must",
-        "requires a non-empty",
-        "session_id must",
-        "unknown codex session",
-        "previous codex turn is still running",
-        "codex_result must be called",
-        "cannot retry an ambiguous turn/start failure",
-    )
-    if any(fragment in failure_message for fragment in input_failure_fragments):
-        _clear_codex_remote_snapshot(payload, session_id)
-        return
     state = read_state(session_id)
     sessions = state.get(_CODEX_SESSION_STATE_KEY)
     record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
@@ -899,8 +919,11 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if payload.get("hook_event_name") == "PostToolUseFailure":
             if tool_name == _CODEX_APP_SERVER_REPLY_TOOL:
                 _record_codex_reply_failure(payload, session_id)
-            elif tool_name == _CODEX_APP_SERVER_RESULT_TOOL and _codex_result_failure_keeps_snapshot(session_id, payload):
-                return 0
+            elif tool_name == _CODEX_APP_SERVER_RESULT_TOOL:
+                _terminate_unknown_codex_session_record(payload, session_id)
+                if _codex_result_failure_keeps_snapshot(session_id, payload):
+                    return 0
+                _clear_codex_remote_snapshot(payload, session_id)
             else:
                 _clear_codex_remote_snapshot(payload, session_id)
             return 0
