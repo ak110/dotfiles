@@ -134,10 +134,7 @@ def test_current_output_is_synced() -> None:
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:
     """共有ルールの参照資料が両配布経路のplugin rootから解決できることを固定する。"""
     skill_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`")
-    reference_pattern = re.compile(
-        r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`スキルの`SKILL\.md`を含むディレクトリを基準に"
-        r"相対解決した`(?P<reference>references/[A-Za-z0-9._/-]+)`"
-    )
+    reference_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`の`(?P<reference>references/[A-Za-z0-9._/-]+)`")
     rule_paths = sorted((subject.REPO_ROOT / "agent-toolkit/rules").glob("*.md"))
     source_rules = "\n".join(path.read_text(encoding="utf-8") for path in rule_paths)
     generated = subject.render()

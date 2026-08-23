@@ -41,7 +41,7 @@ _CI_FAILURE_HANDLING = _BUGFIX.parent / "ci-failure-handling.md"
 _COMMIT_SKILL = _AGENTS_DIR.parent / "skills" / "commit" / "SKILL.md"
 _PUSH_AND_CI = _COMMIT_SKILL.parent / "references" / "push-and-ci.md"
 _HISTORY_REWRITE = _COMMIT_SKILL.parent / "references" / "history-rewrite.md"
-_REVIEW_TABLE_CONTRACT = "重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由"
+_REVIEW_TABLE_CONTRACT = "重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由"
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _AGENT_STANDARDS = _AGENTS_DIR.parent / "skills" / "agent-standards" / "SKILL.md"
 _WRITING_STANDARDS = _AGENTS_DIR.parent / "skills" / "writing-standards" / "SKILL.md"
@@ -425,7 +425,7 @@ def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> No
     assert "git diff <対象ブランチ> <統合先> -- <files>" in removal
     assert "`../commit/SKILL.md`の「作業用ブランチと退避物の削除」節" in reception
     assert "`../../commit/SKILL.md`の「作業用ブランチと退避物の削除」節" in writer
-    assert "`../SKILL.md`の「作業用ブランチと退避物の削除」節" in history_rewrite
+    assert "`agent-toolkit:commit`の`SKILL.md`「作業用ブランチと退避物の削除」節" in history_rewrite
     assert "完了報告が退避識別子または複製パスを開示した場合" in reception
     assert "退避物の回収は呼び出し元の責務" in writer
     assert "同一内容が既に退避済みである場合は追加の退避を作成しない" in writer
@@ -756,11 +756,14 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
         assert strict in document, path
 
     coordinator_phrase = "各ラウンドの二系統並列レビュー起動前は"
-    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR, _PLAN_REVIEW_DELEGATION):
+    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR):
         assert coordinator_phrase in path.read_text(encoding="utf-8"), path
+    assert "各ラウンドのレビュー起動前は調整主体が前ラウンドの" in _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     reviewer_phrase = "各レビュー担当とレビューイーはラウンド開始時に"
-    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR, _PLAN_REVIEW_TASK, _PLAN_REVIEW_DELEGATION):
+    for path in (_FEEDBACKS_PLANNER, _PLAN_IMPL_EXECUTOR):
         assert reviewer_phrase in path.read_text(encoding="utf-8"), path
+    for path in (_PLAN_REVIEW_TASK, _PLAN_REVIEW_DELEGATION):
+        assert "レビュー担当とレビューイーはラウンド開始時に" in path.read_text(encoding="utf-8"), path
     for path in (_PLAN_IMPL_PLAN_REVIEW_TASK, _PLAN_IMPL_INDEPENDENT_REVIEW_TASK):
         assert "レビュー担当はラウンド開始時に" in path.read_text(encoding="utf-8"), path
 
@@ -775,21 +778,24 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
 
 def test_review_table_paths_preserve_system_and_round_independence() -> None:
     """二系統を別表へ分離し、初回0件と次ラウンド再提示の工程を各文書で同期する。"""
-    documents = (
+    dual_track_documents = (
         _FEEDBACKS_PLANNER,
         _PLAN_IMPL_EXECUTOR,
-        _PLAN_REVIEW_DELEGATION,
-        _PLAN_REVIEW_TASK,
         _PLAN_IMPL_PLAN_REVIEW_TASK,
         _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
         _REVIEWEE_STANDARDS,
     )
-    for path in documents:
+    for path in dual_track_documents:
         document = path.read_text(encoding="utf-8")
         assert "系統・ラウンド" in document, path
-        assert ".lock" in document, path
         assert "atk review-table init <レビュー表>" in document, path
         assert "両系統" in document or "二系統" in document, path
+
+    single_track_documents = (_PLAN_REVIEW_DELEGATION, _PLAN_REVIEW_TASK)
+    for path in single_track_documents:
+        document = path.read_text(encoding="utf-8")
+        assert "atk review-table init <レビュー表>" in document, path
+        assert "系統" not in document, path
 
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
@@ -811,7 +817,7 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     merge = _MERGE_TASK.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
-    for reviewer in (plan_review, independent_review, plan_review_task):
+    for reviewer in (plan_review, independent_review):
         for phrase in (
             "同一thread継続でも新規起動でも",
             "必須差分入力",
@@ -824,31 +830,40 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
         ):
             assert phrase in reviewer
         assert "同一thread継続では実施指示だけを渡す" not in reviewer
-    for reviewer in (plan_review, independent_review):
-        assert "今回の系統・ラウンド表と対応`.lock`" in reviewer
-    assert "今回の系統・ラウンドに対応するレビュー指摘管理表と対応`.lock`の絶対パス" in delegation
+        assert "今回の系統・ラウンド表と対応`.lock`" not in reviewer
+    for phrase in (
+        "同一thread継続でも新規起動でも",
+        "必須差分入力",
+        "過去全ラウンド表",
+        "ラウンド昇順",
+        "過去表へは追記しない",
+        "過去表の先頭3列を今回の表へ追加せず",
+        "今回のラウンド表だけへ`atk review-table add`で追加する",
+        "全文読取",
+    ):
+        assert phrase in plan_review_task
+    assert "同一thread継続では実施指示だけを渡す" not in plan_review_task
+    assert "今回のラウンドに対応するレビュー指摘管理表の絶対パス" in delegation
     assert (
-        "今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
+        "再レビューでは、既知でない情報に加えて、今回のラウンド表、及び過去全ラウンド表の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
         in delegation
     )
     assert "同一threadでは、前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" not in delegation
-    assert "計画準拠系の表と対応`.lock`はこの一覧へ含めない" in independent_review
+    assert "計画準拠系の表はこの一覧へ含めない" in independent_review
     assert "独立系へ計画準拠系の表や出力を渡さない" in executor
     assert "修正対象となる全系統・全ラウンド表" in executor
     for phrase in (
         "通常の実装レビュー用managed temp領域の絶対パス",
         "各レビュー担当の新規起動と同じレビュー担当への継続接続のいずれでも",
-        "今回の系統・ラウンド表と対応`.lock`",
-        "同じ系統の過去全ラウンド表と対応`.lock`",
+        "今回の系統・ラウンド表、及び同じ系統の過去全ラウンド表",
         "必須差分入力として渡す",
-        "初回は過去全ラウンド表と対応`.lock`の一覧が空",
+        "初回は過去全ラウンド表の一覧が空",
     ):
         assert phrase in executor
     assert (
-        "再レビューでは、各系統の過去全ラウンド表と対応`.lock`をラウンド昇順で各担当へ渡し、今回の表と対応`.lock`だけを追加対象として指定する"
-        in executor
+        "初回は過去全ラウンド表の一覧が空であることを渡し、再レビューでは今回の表だけを指摘追加対象として指定する" in executor
     )
     assert "各系統の過去全ラウンド表をラウンド順に並べた一覧" in flow
     assert "今回の系統・ラウンド表だけへ指摘を追加する" in flow
@@ -919,10 +934,7 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "今回のレビュー種別だけを渡す" not in delegation
     assert "再レビューでは、既知でない情報に加えて" in delegation
     assert "同じ担当・同じタスク・実効3値一致の条件により同一threadを継続する場合は" in delegation
-    assert (
-        "今回の系統・ラウンド表と対応`.lock`、及び同じ系統の過去全ラウンド表と対応`.lock`の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す"
-        in delegation
-    )
+    assert "今回のラウンド表、及び過去全ラウンド表の絶対パスをラウンド昇順で並べた一覧を必須差分入力として渡す" in delegation
     assert "前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "初回レビュー起動後に人間由来の入力" in delegation
     assert "同一threadの継続では当該情報を追送し" in delegation
@@ -938,7 +950,7 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
     assert "`## 変更履歴`と本文の一致" in delegation
     assert (
-        "調整主体がある場合は調整主体が同じ論理レビュー系統へ前掲の最小入力で再レビューを指示し、"
+        "調整主体がある場合は調整主体が同じレビュー担当へ前掲の最小入力で再レビューを指示し、"
         "調整主体が無い場合は起草担当が`agent-toolkit:delegation`に従って指示する"
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
@@ -1131,14 +1143,20 @@ def test_plan_lane_preserves_sorted_feedback_filename_lists() -> None:
     assert "1件の場合も一覧として渡し" in flow
     assert "複数件の場合は項目をファイル名昇順に保つ" in flow
     for text in (caller, executor, writer):
-        assert "1件以上のソート済みフィードバックファイル名一覧" in text
+        assert "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す" in text
     for text in (flow, merge):
         assert "ソート済みフィードバックファイル名一覧" in text
         assert "レーンのcommit" in text
-    assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。0件は返さない>" in executor
-    assert "feedbacks: <受領したソート済みフィードバックファイル名一覧。一般のCI失敗で受領していない場合は「なし」>" in writer
+    assert (
+        "feedbacks: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>"
+        in executor
+    )
+    assert (
+        "feedbacks: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>"
+        in writer
+    )
     assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in flow
-    assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in caller
+    assert "ソート済みフィードバックファイル名一覧を受領した場合は、一覧の順で既存の`atk mq adopt`を1件ずつ実行" in caller
     for text in (flow, caller, executor, writer, merge):
         assert "feedback filename、" not in text
 
@@ -1196,15 +1214,17 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
         assert "一括取得の管理対象一時領域" in document
         assert "atk managed-temp create --prefix mq-show" in document
         assert "mq-show.stdout" in document
-        assert "## target_repo: <target_repo>" in document
-        assert "### <filename> [<state>]" in document
+        assert "終了コード0で全項目が出力された場合だけ" in document
+        assert "出力順序と本文境界は`atk mq show`のCLI契約とする" in document or (
+            "出力順序と本文境界は`atk mq show`のCLI契約とし、" in document
+        )
         assert "cleanup" in document
         assert "非0終了" in document
     for document in (standards, delegation, review):
         assert batch_command in document
-        assert "一括出力全体を破棄し" in document
-        assert "要求した全項目を" in document
-        assert "単数取得する" in document
+    assert "一括出力全体を使わず要求した全項目を単数取得する" in standards
+    assert "非0終了では要求した全項目を単数取得し" in delegation
+    assert "終了コード0で全項目が出力された場合だけ本文を採用し" in review
     for document in (sender, planner, process):
         assert "本文を起動文へ複製しない" in document
     for document in (sender, explore):
@@ -1388,7 +1408,7 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "調査根拠",
         "欠陥原因",
         "採否理由",
-        "完全採用以外の結果は項目固有の採否理由・原文との差異",
+        "不採用の結果は項目固有の採否理由・原文との差異",
         "関連性の低い項目を同じ包括理由だけで一括判断せず",
         "`source: session-review`だけをエージェント由来",
         "その他のsource、source欠落及び不明は人間由来",
@@ -1727,7 +1747,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         assert phrase in runtime
     assert "書込担当の工程とcommit統合を開始せず" in executor
     assert "計画ごとに別のレビュー担当" in executor
-    assert "対応`.lock`一時成果物だけを指定された統合用管理対象領域内へ保存し、それ以外を書き込まない" in executor
+    assert "レビュー表と`atk review-table`が付随して作成するファイルだけを指定された統合用管理対象領域内へ保存し、" in executor
+    assert "それ以外を書き込まない" in executor
     assert "各単位の最初のfast担当を新規起動する直前に" in executor
     assert "複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する" in executor
     assert "`atk config get execute_fix_model`を起動直前に実行する" in executor
@@ -1749,8 +1770,8 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "レビュー修正モード",
         "applications:",
         "統合モードでは、作成時HEADの完全OIDと統合対応表を必須入力",
-        "レビュー修正モードでは、採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）、修正対象となる全系統・全ラウンド表の絶対パス及び関係する全計画の絶対パスを必須入力",
-        "採用指摘の固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）と修正対象となる全系統・全ラウンド表を全文読取し、関係する全計画から保持契約を読み、採用指摘だけを修正",
+        "レビュー修正モードでは、採用指摘の固定6列TSV（重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）、修正対象となる全系統・全ラウンド表の絶対パス及び関係する全計画の絶対パスを必須入力",
+        "採用指摘の固定6列TSV（重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）と修正対象となる全系統・全ラウンド表を全文読取し、関係する全計画から保持契約を読み、採用指摘だけを修正",
         "レーン項目はソート済みフィードバックファイル名一覧、レーンのcommit OID、適用後OID",
         "レビュー修正項目は安定ID、適用元OID、再適用後OIDまたは適用済みスキップ",
     ):
@@ -1764,7 +1785,7 @@ def test_stage_model_routing_and_merge_contracts_are_present() -> None:
         "non-fast-forward拒否",
         "安定ID",
         "適用済みスキップ",
-        "固定6列TSVと対応`.lock`一時成果物だけを統合用管理対象領域内へ保存",
+        "レビュー表と`atk review-table`が付随して作成するファイルだけを統合用管理対象領域内へ保存",
         "キューの`plan_file`から各計画の進捗ログを辿り",
         "統合担当の各新規起動又は継続接続の直前に`atk config get merge_model`",
         "初回統合では、統合worktreeの作成後に本節の手順で統合担当を起動",
@@ -1883,7 +1904,7 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
         assert "既存の公開契約の該当箇所" in text
     assert "一般のCI失敗では計画ファイルとフィードバックファイル名一覧が存在しないことを入力不足としない" in ci_failure
     assert "計画ファイルは`CI修正担当`以外では必須" in task
-    assert "`CI修正担当`ではフィードバック起因の場合だけ渡す" in task
+    assert "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す" in task
     assert "計画を受領しない`CI修正担当`" in task
     common_output = task.partition("## 出力\n")[2].partition("\n```\n")[0]
     for field in (
@@ -1897,7 +1918,7 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
         "blockers:",
     ):
         assert field in common_output
-    assert "一般のCI失敗で受領していない場合は「なし」" in common_output
+    assert "フィードバック起因でなく受領していない場合は「なし」" in common_output
     assert "repair_handoff:" not in common_output
     assert "`status: fast_fix_handoff`の場合だけ、共通出力へ次の修正引継ぎ記録を追加する" in task
     fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. 担当種別が")[0]
@@ -1916,7 +1937,7 @@ def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
         "計画ファイル、対象worktree、プロジェクト規範の絶対パス",
         "実装するコミット単位、その目的及び変更説明",
         "適用する作成規範スキル名と絶対パス",
-        "1件以上のソート済みフィードバックファイル名一覧",
+        "受領している場合はソート済みフィードバックファイル名一覧",
         "追加指示、許容済みの挙動変化",
         "git操作に用いるworktree絶対パス、複製元と対象外worktree",
         "git操作の制約",
@@ -2119,13 +2140,14 @@ def test_start_processing_batch_failure_boundary_is_documented() -> None:
         assert "`atk mq list --status=active --target-repo=" in text
         assert "--skip-pull`" in text
         assert "`atk mq show <filename>..." in text
-        assert "`atk config get private_notes`" in text
-        assert "`git -C <private-notes-path> status --porcelain`" in text
-        assert "`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`" in text
-        assert "`git -C <private-notes-path> merge-base --is-ancestor" in text
-        assert "`atk mq commit`を1回" in text
-        assert "項目別コマンド" in text
         assert "未完了" in text
+    assert "`atk config get private_notes`" in reception
+    assert "`git -C <private-notes-path> status --porcelain`" in reception
+    assert "`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`" in reception
+    assert "`git -C <private-notes-path> merge-base --is-ancestor" in reception
+    assert "`atk mq commit`を1回" in reception
+    assert "項目別コマンド" in reception
+    assert "references/feedbacks-planner-reception.md" in process
 
 
 def test_batch_contract_is_limited_to_reads_and_start_processing() -> None:
@@ -2140,10 +2162,10 @@ def test_batch_contract_is_limited_to_reads_and_start_processing() -> None:
     for text in (process, reception):
         assert "atk mq show <filename>..." in text
         assert "atk mq start-processing <filename>..." in text
-        assert "項目別コマンド" in text
+    assert "項目別コマンド" in reception
     assert "複数のファイル名を1回の`atk mq adopt`へ渡さない" in process
-    for text in (flow, caller):
-        assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in text
+    assert "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行" in flow
+    assert "ソート済みフィードバックファイル名一覧を受領した場合は、一覧の順で既存の`atk mq adopt`を1件ずつ実行" in caller
 
 
 def test_start_processing_failure_observes_local_transition_and_upstream_boundary() -> None:
@@ -2151,13 +2173,11 @@ def test_start_processing_failure_observes_local_transition_and_upstream_boundar
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
 
-    assert "`atk mq list --status=active --target-repo=<repo-path> --skip-pull`" in process
+    assert "`atk mq list --status=active --target-repo=<repo-path>`" in process
     assert "`atk mq list --status=active --target-repo=<repo> --skip-pull`" in reception
-    for text in (process, reception):
-        assert "processing配置" in text
-        assert "遷移commit" in text
-        assert "upstream包含" in text
-        assert "git -C <private-notes-path> merge-base --is-ancestor" in text
+    for phrase in ("processing配置", "遷移commit", "upstream包含", "git -C <private-notes-path> merge-base --is-ancestor"):
+        assert phrase in reception
+    assert "references/feedbacks-planner-reception.md" in process
 
 
 def test_start_processing_recovery_refuses_commit_for_unsafe_states() -> None:
@@ -2165,11 +2185,11 @@ def test_start_processing_recovery_refuses_commit_for_unsafe_states() -> None:
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
 
-    for text in (process, reception):
-        assert "集合外差分" in text
-        assert "状態混在" in text or "inbox・processing混在" in text
-        assert "rebase中間状態" in text
-        assert "集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない" in text
+    assert "集合外差分" in reception
+    assert "状態混在" in reception or "inbox・processing混在" in reception
+    assert "rebase中間状態" in reception
+    assert "集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない" in reception
+    assert "references/feedbacks-planner-reception.md" in process
 
 
 def test_start_processing_failure_resolves_management_repo_before_git_checks() -> None:
@@ -2187,7 +2207,7 @@ def test_start_processing_failure_resolves_management_repo_before_git_checks() -
         "`git -C <private-notes-path> merge-base --is-ancestor",
         "対象リポジトリのcwd",
     )
-    for text in (process, reception, design):
+    for text in (reception, design):
         for phrase in required:
             assert phrase in text
         assert text.index("`atk config get private_notes`") < text.index("`git -C <private-notes-path> status")
@@ -2195,6 +2215,8 @@ def test_start_processing_failure_resolves_management_repo_before_git_checks() -
         assert "`git show --name-status --format=%H%n%s HEAD`" not in text
         assert "`git fetch`" not in text
         assert "`git merge-base --is-ancestor" not in text
+    assert "`atk config get private_notes`" not in process
+    assert "references/feedbacks-planner-reception.md" in process
 
 
 def test_launch_points_reread_routing_before_launch_or_continuation() -> None:
@@ -2338,7 +2360,7 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
         "統合対応表に含まれる全計画の絶対パス",
         "統合スレッドの検証結果",
         "統合用管理対象領域の絶対パス",
-        "今回の系統・ラウンド表、各系統の過去全ラウンド表をラウンド順に並べた一覧、及び修正対象となる全系統・全ラウンド表と対応`.lock`の絶対パス",
+        "今回の系統・ラウンド表、各系統の過去全ラウンド表をラウンド順に並べた一覧、及び修正対象となる全系統・全ラウンド表の絶対パス",
     ):
         assert phrase in integrated
     assert "共通入力又は選択したモードの必須入力" in input_contract
@@ -2525,8 +2547,8 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         assert "rev-list --first-parent" not in document
         assert "query_endpoint" not in document
 
-    normal_mode_at = implementation_task.index("通常実装モードでは手順3〜7の通常実装手順を実行する")
-    review_mode_at = implementation_task.index("レビュー修正モードでは手順1〜2を実行した後")
+    normal_mode_at = implementation_task.index("通常実装モードでは、担当種別に応じた通常実装手順を実行する。")
+    review_mode_at = implementation_task.index("レビュー修正モードでは、計画又はCI記録を全文読み、現行状態を実測した後")
     assert normal_mode_at < review_mode_at
     review_loop = implementation_task.partition("### レビュー修正の単位別反復\n")[2].partition(
         "\nレビュー指摘の修正を受け取った場合は"
@@ -2806,7 +2828,7 @@ def test_plan_impl_caller_owns_worktree_cleanup_after_publication() -> None:
     assert "commit・統合可、worktreeの作成・回収不可、push不可" in caller
     for phrase in (
         "pushとCI成功を実測",
-        "ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行",
+        "ソート済みフィードバックファイル名一覧を受領した場合は、一覧の順で既存の`atk mq adopt`を1件ずつ実行",
         "各採用処理の保存結果を照合",
         "用途、正確な絶対パス、状態、完全OID、管理対象領域の絶対パス、借用時は`なし`、作成主体、回収可否も記録",
         "進捗ログの記録値と`git worktree list --porcelain`を照合",
@@ -3280,7 +3302,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
         "計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス",
         "worktreeの完全な一覧",
         "通常の実装レビュー用managed temp領域の絶対パス",
-        "1件以上のソート済みフィードバックファイル名一覧",
+        "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す",
         "追加指示と許容済みの挙動変化",
         "複製元と対象外worktree",
     ):
@@ -3931,7 +3953,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "   系統・ラウンド別に統合した固定6列TSV、修正対象となる全系統・全ラウンド表の絶対パス一覧、"
         "プロジェクト規範、該当する作成規範スキル、受信者が適用する規範スキルとして"
         "`reviewee-standards/SKILL.md`の絶対パス、\n"
-        "   ソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、\n"
+        "   受領している場合はソート済みフィードバックファイル名一覧、追加指示、許容済みの挙動変化、\n"
         "   複製元と対象外worktree、git操作の制約を渡す。\n"
     ) in _h4_section(executor, "通常の実装モードのレビュー修正")
     assert (
@@ -3941,8 +3963,8 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "受信者が適用する規範スキルとして`reviewee-standards/SKILL.md`の絶対パスを渡す\n"
     ) in _h4_section(executor, "統合後レビュー調整モードのレビュー修正")
     assert (
-        "調整主体が指摘を配送する場合は、`../../reviewee-standards/SKILL.md`と解決済みの\n"
-        "`review-standards/references/judgment-details.md`の絶対パスを起草担当への配送文へ含める。\n"
+        "調整主体が指摘を配送する場合は、`agent-toolkit:reviewee-standards`の`SKILL.md`と\n"
+        "`agent-toolkit:review-standards`の`references/judgment-details.md`の絶対パスを起草担当への配送文へ含める。\n"
     ) in _h2_section(plan_review, "指摘の検収と修正")
     # 起草担当が採否確定の正本へ到達する経路は、資料の受け渡しと配送時の明示の両方が成立して初めて成り立つ。
     assert (
@@ -3974,7 +3996,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     merge_reviewee_phrase = "`../../reviewee-standards/SKILL.md`を適用し、指摘の採否と修正を確定する。"
     assert writer_reviewee_phrase in writer
     assert merge_reviewee_phrase in merge
-    assert "起草担当は`../../reviewee-standards/SKILL.md`を適用し、" in plan_review
+    assert "起草担当は`agent-toolkit:reviewee-standards`の`SKILL.md`を適用し、" in plan_review
     assert "採用指摘の固定6列TSV" in merge
     assert "1つの修正commit" in merge
     assert "指摘の根拠不足、計画との衝突、認可外の変更" in merge
@@ -3986,7 +4008,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert "実在欠陥だけを書込担当へ一括して返す" in executor
 
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
-    assert "固定6列TSV（重要度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）" in delegation
+    assert "固定6列TSV（重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由）" in delegation
     assert "`未検証`の指摘は修正担当へ渡さない" in delegation
 
 

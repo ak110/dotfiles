@@ -42,27 +42,8 @@ TBDへ永続化して暫定判断で進める。
    既存のprocessing項目では`start-processing`を再実行せず、同コマンドの再実行を未完了の`feedbacks-planner`工程の再開起点にしない
 
 `start-processing`が状態競合で拒否した場合は、active一覧と保存本文を再取得して着手可否の判定から再開する。
-移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで集合のprocessing配置と保存本文を確認する。
-`atk mq list --status=active --target-repo=<repo-path> --skip-pull`を実行し、保存本文の再取得は
-後述の「一括取得の管理対象一時領域」の手順に従う。
-管理リポジトリの検査を開始する前に、既存の`atk config get private_notes`を実行して標準出力から絶対パスを取得する。
-取得に失敗した場合は未完了で停止する。
-標準出力を絶対パスとして検証できない場合も同様とする。
-対象リポジトリのcwdでGit検査をしない。
-取得したパスを`<private-notes-path>`として、管理リポジトリの状態を
-`git -C <private-notes-path> status --porcelain`で確認する。
-遷移commitは`git -C <private-notes-path> show --name-status --format=%H%n%s HEAD`で取得し、未コミット差分と照合する。
-remote設定時は遷移commitの完全OIDを取得する。
-`git -C <private-notes-path> fetch`を実行した後、
-`git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
-全項目がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
-remote設定時にupstream包含が確認できた場合だけ成功とする。processing配置だけ、ローカルcommitだけでは成功扱いしない。
-commit前の失敗で未コミット差分が指定集合の移動だけと一致し、集合外差分とrebase中間状態がない場合に限り、
-既存の`atk mq commit`を1回実行してから全条件を再検査する。push失敗時にremoteが遷移commitを既に含む場合は追加操作なしで復旧完了とする。
-remoteが遷移commitを含まないcleanなローカルcommit、集合のinbox・processing混在、集合外差分、遷移commitの対応付け不能では、
-項目別コマンドや`start-processing`を再実行せず未完了で停止する。rebase中間状態、`atk mq commit`失敗及び
-upstream包含の確認不能でも同様に未完了で停止する。
-集合のinbox・processing混在、集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない。
+移動開始後にI/O、commit又はpushが失敗した場合の管理リポジトリ復旧手順は`references/feedbacks-planner-reception.md`
+「## 起動」の該当段落を正本とする。
 
 欠落依存、自己依存、循環、不正な`cooldown_until`、frontmatter破損、計画ファイル消失は修復対象とする。
 過去の`queue_schedule.dependency`は読取互換だけ維持し、新規記録へ用いない。
@@ -74,10 +55,9 @@ upstream包含の確認不能でも同様に未完了で停止する。
 
 1. 取得主体が`atk managed-temp create --prefix mq-show`を実行する。終了コード0、標準出力が単一の絶対パス、かつそのパスが実在するディレクトリである場合だけ成功とする。作成主体がcleanup完了まで領域と保存内容を単独所有し、別の実行主体へパス又は内容を渡さない。
 2. 作成時に得た絶対パスの`mq-show.stdout`へ、`atk mq show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存する。実行ツールの戻り値だけを完全性判定に用いない。
-3. 終了コード0の場合は保存ファイルを全文読む。要求順の各項目について、行頭から行末まで完全一致する`## target_repo: <target_repo>`行と`### <filename> [<state>]`行が各1回だけ現れることを検査する。
-   組の並びが要求順に一致し、本文を状態行の直後から次の`## target_repo:`行の直前まで一意に切り出せる場合だけ本文を採用する。
-4. 構造成立時は本文照合後、構造不成立時は一括出力全体を破棄した後、`atk mq show`非0終了時は部分出力を使用しないことを確定した後に、作成時の標準出力と同一で実在する絶対パスを検収して`atk managed-temp cleanup --path <検収済み絶対パス>`を実行する。
-5. cleanupの終了コード0を確認してから、構造不成立では要求した全項目を単数取得し、`atk mq show`非0終了では既存の終了コード別の停止又は単数再取得経路へ進む。構造成立時は本文の後続照合へ進む。
+3. 終了コード0で全項目が出力された場合だけ保存ファイルを本文として採用する。出力順序と本文境界は`atk mq show`のCLI契約とする。
+4. 採用後は本文照合へ進み、非0終了時は部分出力を使用しないことを確定した後に、作成時の標準出力と同一で実在する絶対パスを検収して`atk managed-temp cleanup --path <検収済み絶対パス>`を実行する。
+5. cleanupの終了コード0を確認してから、非0終了では要求した全項目を単数取得し、既存の終了コード別の停止又は単数再取得経路へ進む。採用時は本文の後続照合へ進む。
 6. 標準出力のファイル保存又は絶対パスの読取機能が無い場合、`managed-temp create`が非0終了してパスを作成できない場合、又は保存・再読込が失敗した場合だけ、回収対象があればcleanup成功を確認してから分割取得へ代替する。これ以外を保存不能と判定しない。
 7. 作成後のcleanupが非0終了した場合は絶対パスとエラーを起動主体へ返して停止し、分割取得、新しい一時領域の作成及び後続工程へ進まない。
 
@@ -151,10 +131,7 @@ Claude CodeとCodexのいずれかのホストの通常型で`feedbacks-planner`
 ただし保存済みの不採用確認用TBDを受領した再開で失敗した項目は、既存の確認TBDを同じ依存として保持する専用経路を先に適用する。
 この経路では新しい失敗TBD、再依存及び再inboxを作成又は実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
 それ以外の`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で保存する。
-失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
-直接的原因、再開に必要な情報、元のファイル名も含める。
-失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
-警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
+失敗TBDの必須項目と保存後の確認手順は`references/feedbacks-planner-reception.md`「## 受領」の該当段落を正本とする。
 `source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`references/hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
 失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
 `source: session-review`と確認できる項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できる場合だけrejectを1回再実行する。

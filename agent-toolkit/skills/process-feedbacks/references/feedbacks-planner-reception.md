@@ -22,9 +22,9 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 既存`processing`項目の別セッション再開では履歴を探索せず、`start-processing`を再実行しない。
 既存`processing`項目を未完了の`feedbacks-planner`工程の再開起点にしない。
 
-移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで指定集合のprocessing配置と保存本文を確認する。
-`atk mq list --status=active --target-repo=<repo> --skip-pull`と
-保存本文の再取得は後述の「一括取得の管理対象一時領域」の手順で行う。
+移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで集合のprocessing配置と保存本文を確認する。
+`atk mq list --status=active --target-repo=<repo> --skip-pull`を実行し、保存本文の再取得は
+後述の「一括取得の管理対象一時領域」の手順に従う。
 管理リポジトリの検査を開始する前に、既存の`atk config get private_notes`を実行して標準出力から絶対パスを取得する。
 取得に失敗した場合は未完了で停止する。
 標準出力を絶対パスとして検証できない場合も同様とする。
@@ -35,13 +35,14 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 remote設定時は遷移commitの完全OIDを取得する。
 `git -C <private-notes-path> fetch`を実行した後、
 `git -C <private-notes-path> merge-base --is-ancestor <transition-commit-oid> @{u}`でupstream包含を確認する。
-全対象がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
-remote設定時にupstream包含を確認できた場合だけ完了とする。
-commit前失敗で指定集合の移動だけが未コミット差分として残り、集合外差分とrebase中間状態がない場合に限り、
-`atk mq commit`を1回実行して全条件を再検査する。push失敗後にremoteが遷移commitを含む場合は追加操作なしで完了とする。
-remoteが遷移commitを含まないcleanなローカルcommit、集合の状態混在、集合外差分、遷移commitの対応付け不能、
-rebase中間状態、復旧失敗及びupstream包含の確認不能では、項目別コマンドを再実行せず未完了で停止する。
-集合の状態混在、集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない。
+全項目がprocessingへ移動し、管理リポジトリがcleanで、集合の移動だけを含む遷移commitがあり、
+remote設定時にupstream包含が確認できた場合だけ成功とする。processing配置だけ、ローカルcommitだけでは成功扱いしない。
+commit前の失敗で未コミット差分が指定集合の移動だけと一致し、集合外差分とrebase中間状態がない場合に限り、
+既存の`atk mq commit`を1回実行してから全条件を再検査する。push失敗時にremoteが遷移commitを既に含む場合は追加操作なしで復旧完了とする。
+remoteが遷移commitを含まないcleanなローカルcommit、集合のinbox・processing混在、集合外差分、遷移commitの対応付け不能では、
+項目別コマンドや`start-processing`を再実行せず未完了で停止する。rebase中間状態、`atk mq commit`失敗及び
+upstream包含の確認不能でも同様に未完了で停止する。
+集合のinbox・processing混在、集合外差分又はrebase中間状態を確認した場合は、`atk mq commit`を実行しない。
 
 順序条件の候補を確定する際は、日付境界を持つ条件を、境界日以前の項目からグループ終端項目への依存と、境界日後の項目から終端項目への依存として写像する。依存保存と循環検査を経て、readyな先行集合だけを1回の`atk mq start-processing`へ渡す。終端項目のadoptはPR/MRマージ後とする既存契約を維持する。日付帰属、終端項目又は公開先マージ条件を一意に確定できない場合は境界日後の項目を処理せずTBDへ送る。外部状態の解除時刻と観測経路がない待機条件を依存先へ登録せず、保留理由として記録する。短時間のcooldownは解除時刻と観測経路がある場合に限り候補へ残す。
 依存登録前に自己依存と循環を検査し、`set-dependencies`の保存結果を再取得して照合する。
@@ -91,9 +92,9 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 
 1. 取得主体が`atk managed-temp create --prefix mq-show`を実行し、終了コード0、標準出力が単一の絶対パス、かつ実在するディレクトリであることを確認する。作成主体がcleanup完了まで領域と保存内容を単独所有し、別の実行主体へパス又は内容を渡さない。
 2. 作成時に得た絶対パスの`mq-show.stdout`へ、対象リポジトリごとの`atk mq show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存する。ツールの戻り値だけで本文の完全性を判定しない。
-3. 終了コード0の場合は保存ファイルを全文読みし、要求順の`## target_repo: <target_repo>`行と`### <filename> [<state>]`行が行全体の完全一致で各1回だけ現れ、要求順と本文境界が成立する場合だけ本文を採用する。成立しない場合は一括出力全体を破棄する。
-4. 構造成立時は照合後、構造不成立時は破棄後、`atk mq show`非0終了時は部分出力を不使用と確定後に、作成時と同じ実在する絶対パスを検収して`atk managed-temp cleanup --path <検収済み絶対パス>`を実行する。
-5. cleanup終了コード0の確認後、構造不成立では要求全項目を単数取得し、`atk mq show`非0終了では既存の停止又は単数再取得経路へ進む。
+3. 終了コード0で全項目が出力された場合だけ保存ファイルを本文として採用する。出力順序と本文境界は`atk mq show`のCLI契約とする。
+4. 採用後は照合へ進み、非0終了時は部分出力を不使用と確定後に、作成時と同じ実在する絶対パスを検収して`atk managed-temp cleanup --path <検収済み絶対パス>`を実行する。
+5. cleanup終了コード0の確認後、非0終了では要求全項目を単数取得し、既存の停止又は単数再取得経路へ進む。採用時は照合へ進む。
 6. ファイル保存・再読込機能の不在、`managed-temp create`非0終了、保存・再読込の失敗だけを保存不能とし、回収対象があればcleanup成功後に分割取得へ代替する。
 7. cleanup非0終了時は絶対パスとエラーを起動主体へ返して停止し、分割取得、新しい一時領域の作成及び後続工程へ進まない。
 

@@ -18,8 +18,8 @@ fixupは、修正が統合先コミットの時点で独立して成立し、対
 autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
 対応表の不足、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
 又はautosquash・amendの失敗時は新規commitへフォールバックせず`needs_escalation`で返す。
-`rewrite_guard`の受渡しは、`implementation-task.md`が定める通常`plan-impl`レビュー修正の書込担当契約だけに置く。
-統合後レビュー調整モードは`merge-task.md`に従い、統合差分へ1つの修正commitを作成する既定を維持する。
+`rewrite_guard`の受渡しは、`agent-toolkit:plan-mode`の`references/implementation-task.md`が定める通常`plan-impl`レビュー修正の書込担当契約だけに置く。
+統合後レビュー調整モードは`agent-toolkit:process-feedbacks`の`references/merge-task.md`に従い、統合差分へ1つの修正commitを作成する既定を維持する。
 
 過去単位が複数ある場合は、履歴順に1単位ずつ、その単位へ帰属する修正差分だけを適用してstageし、対応するfixupを作成する。
 各fixup作成後に対象OID、件名及び作業ツリーがcleanであることを確認し、その確認後にだけ次の過去単位の修正差分を適用する。
@@ -69,7 +69,7 @@ autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換す�
 ## merge進行中の退避
 
 `git merge`進行中は`git stash`を使わない。退避は別パスへの`cp`または別ブランチ退避で行う。
-別パスへの複製も、`../SKILL.md`の「作業用ブランチと退避物の削除」節が定める回収規定の対象とする。
+別パスへの複製も、`agent-toolkit:commit`の`SKILL.md`「作業用ブランチと退避物の削除」節が定める回収規定の対象とする。
 
 ## プッシュ済み判定
 

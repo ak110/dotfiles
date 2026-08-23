@@ -31,9 +31,11 @@
 
 - モード指定`通常の実装モード`
 - 計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス。同じ計画ファイルの実装単位は同じworktreeへ順次割り当て、同時に1つの書込担当だけを置くこと
+- `implementation-task.md`、`implementation-plan-review-task.md`、`implementation-independent-review-task.md`、
+  `../../reviewee-standards/SKILL.md`、`../../process-feedbacks/references/merge-task.md`の絶対パス
 - worktreeの完全な一覧。各worktreeへ前掲の記録属性を付し、借用時の管理対象領域は`なし`とする
 - 通常の実装レビュー用managed temp領域の絶対パス
-- 1件以上のソート済みフィードバックファイル名一覧
+- ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す
 - 追加指示と許容済みの挙動変化。該当しない場合は`なし`
 - 複製元と対象外worktree、commit・統合可、worktreeの作成・回収不可、push不可などの権限
 
@@ -48,7 +50,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 1. 計画が明示した単位に対応するcommitと変更ファイル。単位の指定が無い場合は計画全体に対応する単一commit
 2. cleanな作業ツリーと担当外差分の有無
 3. 近接検証と最終検証の実行結果
-4. 二系統のレビューの対象commit、読み取り専用状態、指摘と対応結果、系統・ラウンド別レビュー表と対応`.lock`の実在
+4. 二系統のレビューの対象commit、読み取り専用状態、指摘と対応結果、系統・ラウンド別レビュー表の実在
 5. 計画の完了条件と`## 進捗ログ`
 6. 共通base、統合順、全単位commit、各worktreeの前掲の記録属性と状態
 7. 通常実装モードのレビュー修正以外、統合後レビュー調整モードでは、`rewrite_guard`が`not_applicable`でありphase証跡を要求していないことを確認する
@@ -118,12 +120,12 @@ CI失敗時は`agent-toolkit:bugfix`で原因を確定する。原因分析に�
 CI修正担当にはfast担当の1回修正とfastからfixへの昇格判定を適用しない。
 担当はCI記録の原因修正、全検証、差分検収、stage及びcommitを完了し、呼び出し元は二系統レビュー、再push、CI確認へ戻る。
 外部基盤障害など修正commitを要しない失敗では修正担当を起動せず、既存の原因別経路を維持する。
-pushとCI成功を実測し、ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行する。
+pushとCI成功を実測する。ソート済みフィードバックファイル名一覧を受領した場合は、一覧の順で既存の`atk mq adopt`を1件ずつ実行し、
 各採用処理の保存結果を照合する。
 全条件の成立後だけ、進捗ログの記録値と`git worktree list --porcelain`を照合する。
 `作成主体=caller`かつ`回収可否=可`で、管理対象領域を記録したworktreeだけを`git worktree remove <exact-path>`で除去し、
 続いて`atk managed-temp cleanup --path <exact-parent>`で対応する管理対象領域を回収する。
-実装レビュー用managed temp領域も、レビュー表と対応`.lock`の検収、push、CI、採用処理の完了後に`atk managed-temp cleanup --path <exact-parent>`で回収する。
+実装レビュー用managed temp領域も、レビュー表の検収、push、CI、採用処理の完了後に`atk managed-temp cleanup --path <exact-parent>`で回収する。
 借用した現在worktree、複製元、対象外worktreeは記録と検収だけを行い、削除しない。
 中断または失敗時は全領域を保持し、対象外worktreeを変更しない。
 
