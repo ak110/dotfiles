@@ -1645,13 +1645,10 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
             f" (given: {tool_input.get('name')!r}).\n"
             "Why this gate exists: a named background launch does not deliver its completion"
             " notification to the actual launcher, which leaves the launcher waiting indefinitely.\n"
-            "Normal fix: omit both `name` and `run_in_background`."
-            " Omitting them does not fix the launch mode; determine the actual completion-report"
-            " delivery route from the execution result. Place independent launches side by side"
+            "Normal fix: omit `name`. Place independent launches side by side"
             " in a single response to run them in parallel.\n"
             "See agent-toolkit/rules/99-claude-code.md '委譲起動時の厳守事項' section for the `name`"
-            " prohibition, and agent-toolkit/skills/delegation/references/claude-code-runtime.md"
-            " for omitting `run_in_background`.",
+            " prohibition.",
             tag="block",
         ),
         file=sys.stderr,

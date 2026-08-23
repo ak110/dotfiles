@@ -3738,8 +3738,8 @@ class TestAgentNameParameterGate:
         assert result.returncode == 0
         assert "`name` parameter is not allowed" not in result.stderr
 
-    def test_name_block_explains_execution_result_delivery_route(self, tmp_path: pathlib.Path) -> None:
-        """ブロック理由は起動形態を断定せず、実行結果から受領経路を判定するよう案内する。"""
+    def test_name_block_states_only_prohibition_and_parallel_guidance(self, tmp_path: pathlib.Path) -> None:
+        """ブロック理由は`name`禁止の根拠と並列起動の案内だけを示し、起動形態を断定しない。"""
         result = _run(
             {
                 "tool_name": "Agent",
@@ -3750,7 +3750,9 @@ class TestAgentNameParameterGate:
             env_overrides=_delegation_state_env(tmp_path, "agent-name-block-route"),
         )
         assert result.returncode == 2
-        assert "execution result" in result.stderr
+        assert "in parallel" in result.stderr
+        assert "run_in_background" not in result.stderr
+        assert "execution result" not in result.stderr
         assert "launch in the foreground" not in result.stderr
         assert "tool return value" not in result.stderr
 
