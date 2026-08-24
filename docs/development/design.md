@@ -325,6 +325,13 @@ Claude Codeの対象、`SendMessage`及び`to: "main"`は`agent-toolkit/rules/99
 メインは`session-review-advisor`の報告を現行実装と既存規範へ照合し、候補の採否と投入を確定する。
 `session-review-advisor`はキューを変更せず、候補も投入しない。
 
+照合対象のコンテキストを既に保有する側が既存規範・実装・キューとの照合を所有し、観測対象を専有する側がtranscript証拠の評価を所有する。
+この責務再配分により、メインは重複照合、推奨反映先の成立性及び契約同期検索を担い、`session-review-advisor`はtranscript証拠の評価、
+概念比較としての総ライフサイクルコスト、対策が失わせる成功経路・情報の評価及び`existing_means_check`を担う。
+実測では、規範・実装確認が`session-review-advisor`のツール呼び出しの45.6%を占め、メイン側の照合との二重実施になっていた。
+このため、規範本文を起動文へ複製してadvisorへ渡す案は、受け渡しをコンテキストの無駄とした先行判断と矛盾するため採用しない。
+advisor側で全候補の規範照合を続ける案も、メインの「提案の確定」と同じ照合を二重実施するため採用しない。
+
 `generation-criteria-detail.md`の報告契約と抑止条件を判断契約の正本、`session-review-advisor.md`の
 `existing_means_check`を候補ごとの受け渡し契約、`agent_definitions_test.py`を両者の同期検査とする。
 既存の`alternatives`は比較結果を表すが、確認した事実を専用に保持しないため残し、役割を分ける。
@@ -357,8 +364,9 @@ tool_use入力や`function_call`の`arguments`に含まれる任意JSONは構造
 advisorが都度組み立てるワンライナーによるtranscript再解析を置き換える。
 advisorがtranscriptを直接読む経路は、照会で候補の成立性を確定できない場合のfallbackとして残す。
 照会CLIへ評価基準を持たせる案は、判断契約の正本を`generation-criteria-detail.md`から分岐させるため採用しない。
-activeなフィードバックの一覧をadvisorの起動文へ複製する案は、委譲先が`atk mq list`の`--skip-pull`指定で
-低コストに再取得できる情報を起動文へ転記するため採用しない（利用者判断）。
+activeなフィードバックの一覧をadvisorの起動文へ複製する案は、メインが「提案の確定」で
+`atk mq list --status=active --target-repo=<repo-path> --skip-pull`を一度実行して照合するため採用しない。
+advisorはこの照合を担わず、一覧も起動文へ渡さない。
 証拠収集だけを別モデルのサブエージェントへ分割する案は、起動固定費と契約保守費が恒常費として残る一方、
 同じ削減を照会CLIで得られるため採用しない。
 `--hook-notices`は、hook実行の記録（追加コンテキスト、システムメッセージ、遮断、実行成功の4種）から

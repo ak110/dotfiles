@@ -1500,15 +1500,28 @@ def test_feedback_transfer_requires_successful_registration_before_rejection() -
 
 
 def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:
-    """成功コマンドの警告走査を証拠抽出後かつ時系列評価前に照会モードで実行する。"""
+    """成功コマンドの警告・統計・hook照会を連結し、異常系契約を維持する。"""
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     extraction_at = advisor.index("`scripts/_session_review_evidence.py`へそのパスを渡して1回だけ実行")
-    scan_at = advisor.index("同スクリプトへ`--warn`を付けて1回実行")
+    scan_at = advisor.index(
+        "抽出実行後に同スクリプトへ`--warn`・`--stats`・`--hook-notices`をそれぞれ付けた3回の実行を、1回のBash呼び出しで連結して実行する"
+    )
     timeline_at = advisor.index("抽出された時系列証拠から")
     assert extraction_at < scan_at < timeline_at
-    assert "一致イベントがある場合は該当`line`を`--detail`で照会し" in advisor
-    assert "不一致時はその事実を`evidence`へ記録" in advisor
+    for phrase in (
+        "照会ごとに、どのフラグの出力かを判別できる区切りと当該照会の終了コードを出力へ含める",
+        "一致イベントがある場合は該当`line`を`--detail`で照会し",
+        "不一致時はその事実を`evidence`へ記録する",
+        "いずれかの照会が非0で終了した場合も残る照会を続け",
+        "失敗した照会のフラグと終了コードを`evidence`へ記録して",
+        "連結照会の末尾照会の終了コードだけを全体の成否として扱わない",
+        "連結照会の失敗だけでは`status: evidence_insufficient`とせず",
+        "既定の抽出実行が失敗した場合又はtranscriptを取得できない場合に限り同statusとする",
+        "対策が失わせる成功経路や情報",
+        "総ライフサイクルコストを概念比較する",
+    ):
+        assert phrase in advisor
 
 
 def test_session_review_advisor_queries_before_reading_transcript_directly() -> None:
@@ -1519,12 +1532,29 @@ def test_session_review_advisor_queries_before_reading_transcript_directly() -> 
     assert "照会で確定できない場合に限りtranscriptを直接読む" in advisor
 
 
-def test_session_review_advisor_checks_duplicates_with_scoped_queue_list() -> None:
-    """activeなフィードバックとの重複確認を、対象限定かつremote同期なしの一覧取得へ固定する。"""
+def test_session_review_main_checks_duplicates_with_scoped_queue_list() -> None:
+    """activeなフィードバックとの重複確認をメイン側の対象限定一覧取得へ固定する。"""
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
-    assert "atk mq list --status=active --target-repo=<受領した対象リポジトリの絶対パス> --skip-pull" in advisor
-    assert "1回実行して確認し、他リポジトリ宛の一覧は取得しない" in advisor
+    assert "atk mq list --status=active --target-repo=<repo-path> --skip-pull" in skill
+    assert "既存規範・既存実装との重複" in skill
+    assert "推奨反映先のファイルと節の実在、既存契約との整合" in skill
+    assert "atk mq" not in advisor
+
+
+def test_session_review_advisor_delegates_repository_checks_to_main() -> None:
+    """リポジトリ依存の照合をメインへ移し、advisor固有の評価を残す。"""
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+
+    assert "既存実装と規範を読み" not in advisor
+    assert "恒久反映先を報告し、反映先の実在・整合、既存規範・既存実装との重複及び契約同期の成立性はメイン側へ委ねる" in advisor
+    assert "採用する候補に限り、`generation-criteria-detail.md`「総ライフサイクルコスト」が定める契約同期検索" in skill
+    assert "既存規範またはactiveなフィードバックとの重複判定はメインが所有" in criteria
+    assert "既存規範・activeなフィードバックとの重複判定" not in advisor
+    assert "duplicate_check:" not in advisor
 
 
 def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:
@@ -3277,7 +3307,7 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
     assert "別スキルとして起動せず" in skill
     assert "_session_review_evidence.py" in advisor_text
     assert "1回だけ実行" in advisor_text
-    assert "対象を変更せず、`atk mq add`、外部送信、サブエージェント起動も行わない" in advisor_text
+    assert "対象を変更せず、キューへの投入、外部送信、サブエージェント起動も行わない" in advisor_text
     assert _SESSION_REVIEW_EVIDENCE.is_file()
 
 

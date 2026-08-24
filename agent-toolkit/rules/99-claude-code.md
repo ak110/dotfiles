@@ -18,6 +18,7 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
   各呼び出しの成否を`git diff`・`Read`で個別確認してから次工程へ進む
 - auto modeまたは権限設定でツール呼び出しが拒否された場合、推測でフラグ追加・迂回を試みず
   `agent-toolkit:agent-standards`の`references/auto-mode.md`を参照して対応を判断する
+- エージェント定義（`.claude/agents/`配下・`~/.claude/agents/`配下・プラグイン配布分）はセッション起動時に読み込まれる。実行中のセッションで新規作成・改訂した定義は、当該セッションの`subagent_type`から解決できない。frontmatterの`tools`・`model`・`effort`を省略した場合は、順にサブエージェントが利用できる全ツール・`inherit`・セッション値を継承するため、起動プロンプトの文言ではこれらの条件を固定できない
 - Bashツールで`run_in_background=true`により背景実行したコマンドを停止する場合は、
   起動結果が返したタスクIDを`TaskStop`ツールへ渡す。
   前景起動が実行環境の判断で背景実行へ移行し、移行通知がタスクIDを示した場合も同様とする。
