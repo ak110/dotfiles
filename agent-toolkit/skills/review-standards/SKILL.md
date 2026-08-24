@@ -87,7 +87,9 @@ description: >
 
 ### 報告形式
 
-- レビュー表が指定された場合は、指摘を当該TSV（重大度、指摘箇所、指摘内容、対応要否、対応内容、対応不要理由の固定6列）へ登録する。
+- レビュー表が指定された場合は、調整主体から渡された`track`を保持し、`atk review-table validate --allow-unanswered <レビュー表>`で構造を確認してから
+  `atk review-table show --track <track> <レビュー表>`で必要な行を確認し、`atk review-table add --round <ラウンド> --track <track>`で指摘を登録する。
+  表の構造と正規の`track`値は`agent-toolkit/scripts/_review_table.py`を正本とし、本書へ列一覧を重複記載しない。
   行頭へ`[重大度] path:123`形式の箇所指定を付ける行内列挙は、レビュー表が指定されない場合に用いる
 - 指摘は行頭に`[重大度] path:123`形式の箇所指定を付け、修正方針を簡潔に併記する。
   `指摘内容`には当該指摘が属する判定軸を1行で明記する。

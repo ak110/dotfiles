@@ -30,9 +30,8 @@ user-invocable: false
 
 ## 実行
 
-`plan-mode/references/plan-review-delegation.md`と`plan-mode/references/plan-review-task.md`の絶対パスを受信者へ渡し、
-両文書が定める計画構造検査、レビュー担当の起動、指摘の配送、再レビューと収束の手順にそのまま従う。
-両文書の内容を本文へ複製しない。
+自身は`plan-mode/references/plan-review-delegation.md`と`plan-mode/references/review-loop-coordination.md`を読み、調整主体の手順として適用する。
+レビュー担当へ渡すタスク文書は`plan-mode/references/plan-review-task.md`だけとし、同文書が要求する入力と作成・レビュー規範を併せて渡す。
 レビュー担当の起動直前に`atk config get plan_review_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
 レビュー指摘は加工せず、計画ファイルの現在の実装担当へ全件配送する。
 利用者確認を要する指摘は反映せず、事象、期待値、実際値、発生条件、直接的原因及び必要な判断を`needs_escalation`で呼び出し元へ返す。

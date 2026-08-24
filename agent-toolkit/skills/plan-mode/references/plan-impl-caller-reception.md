@@ -38,6 +38,7 @@
   対応する`<stem>.detail.md`ファイルの実在で行う）。
   同じ計画ファイルの実装単位は同じworktreeへ順次割り当て、同時に1つの実装担当だけを置くこと
 - `implementation-task.md`、`implementation-plan-review-task.md`、`implementation-independent-review-task.md`、
+  `review-loop-coordination.md`、
   `../../reviewee-standards/SKILL.md`の絶対パス
 - worktreeの完全な一覧。各worktreeへ前掲の記録属性を付し、借用時の管理対象領域は`なし`とする
 - 通常の実装レビュー用managed temp領域の絶対パス
@@ -71,7 +72,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 2. cleanな作業ツリーと担当外差分の有無
 3. 近接検証と最終検証の実行結果。実装単位の検証は計画の`## 検証区分`が指定するレーン内検証（対象に近い
    最小検証）とし、フル検証（統合後検証）はメインが全レーンの統合後に1回だけ実行する
-4. 準拠系・盲検系のレビューの対象commit、読み取り専用状態、指摘と対応結果、系統別レビュー表の実在
+4. 準拠系・盲検系のレビューの対象commit、読み取り専用状態、指摘と対応結果、`review.tsv`の実在及び`track`帰属
 5. 計画の完了条件と`## 進捗ログ`
 6. 共通base、統合順、全単位commit、各worktreeの前掲の記録属性と状態
 7. 通常実装モードのレビュー修正以外、差分限定レビュー調整モードでは、`rewrite_guard`が`not_applicable`でありphase証跡を要求していないことを確認する
