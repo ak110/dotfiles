@@ -6,10 +6,11 @@
 ## 経路
 
 - 専用agent定義がある作業は、その定義を実装する実行機能で起動する
-- `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+- `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start(engine, prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`engine`は`codex`または`claude`とし、`model`と`effort`は両方指定するか、両方省略する
   - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。`timeout=0`は待機せず現状態を返す
   - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する
+  - 実行中turnを明示的に中断する場合は`kill(session_id, timeout)`を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端と結果を待つ。timeout超過後もsessionを保持し、`wait`または終端後の`send_message`で処理を続ける
   - fast担当、fast担当からfix担当への昇格、別の実装単位、差分限定レビュー修正及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
@@ -38,7 +39,7 @@
 
 1. 設定値を`engine`、`model`、`effort`へ分解する。
 2. `engine=codex`では`agents_server` MCPを使う。`start(engine="codex", ...)`へ`model`と`effort`を両方渡し、開始後は`wait`で状態と結果を観測する。
-   agents定義の`tools`で3つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
+   agents定義の`tools`で4つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
 3. `engine=claude`ではClaude CodeからはAgentツールを使い、`model`へモデル名部分を渡す。
    CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使う。いずれも`effort`部はAgentツールへ渡さず、`agents_server`では指定値をそのまま渡す。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
@@ -141,9 +142,3 @@ fast担当を終端して修正引継ぎ記録を作成し、fix担当へdirty�
 - 作業用の複製（git worktree等）内でセッションを起動する場合は、調査・計画作成への着手前に
   `git fetch`後の分岐元との差分を双方向で確認し、分岐元が進んでいる場合は先に追随してから着手するよう
   起動文で指示する（努力目標）
-
-## snapshot
-
-外部委譲による意図しないremote ref変更を検出する必要がある経路では、起動前後のremote refを同じ条件で取得する。
-委譲元が差分を検出した場合は、委譲先が変更したと推定して復元せず、対象refと観測値を呼び出し元へ返す。
-ローカル成果物の検収はsnapshotで代替せず、Git実体と検証結果を直接確認する。

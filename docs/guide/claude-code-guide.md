@@ -126,11 +126,13 @@ claude plugin list
 `claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
 Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-委譲は`start`・`wait`・`send_message`の3ツールで行う。`start`は`engine`（`codex`または`claude`）、
+委譲は`start`・`wait`・`send_message`・`kill`の4ツールで行う。`start`は`engine`（`codex`または`claude`）、
 `prompt`、既存ディレクトリの絶対`cwd`、必要に応じて`model`と`effort`を受け取り、完了を待たず`session_id`を返す。
 `wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。`timeout=0`は待機せず現状態を返し、
 終端結果の再取得も同じ本文を返す。`send_message`は実行中turnへsteerし、終端済みturnでは結果回収を前提に
-同じsessionでreplyを開始する。MCP内部で承認・停止・一覧操作は公開しない。
+同じsessionでreplyを開始する。`kill(session_id, timeout=300)`は実行中turnだけを中断し、`timeout=0`は要求配送後の現状態を返す。
+正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。
+成功応答の`kill_requested`は中断要求の受理事実を示し、自然終端を中断成功へ置き換えない。MCP内部で承認・一覧操作は公開しない。
 
 ## Claude Codeの推奨設定
 

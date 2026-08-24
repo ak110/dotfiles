@@ -180,6 +180,23 @@ def test_agent_tools_are_comma_separated_scalars() -> None:
         assert all(value.strip() for value in tools.split(","))
 
 
+def test_agents_server_tools_are_available_to_all_delegating_agents() -> None:
+    """委譲調整役のagent定義へagents_serverの4ツールを一貫して許可する。"""
+    expected = {
+        "mcp__plugin_agent-toolkit_agents_server__start",
+        "mcp__plugin_agent-toolkit_agents_server__wait",
+        "mcp__plugin_agent-toolkit_agents_server__send_message",
+        "mcp__plugin_agent-toolkit_agents_server__kill",
+    }
+    for name in ("feedbacks-planner.md", "plan-impl-executor.md", "plan-review-executor.md"):
+        parsed = frontmatter.parse_frontmatter((_AGENTS_DIR / name).read_text(encoding="utf-8"))
+        assert parsed is not None
+        metadata, _ = parsed
+        tools = metadata.get("tools")
+        assert isinstance(tools, str)
+        assert expected <= {value.strip() for value in tools.split(",")}
+
+
 def test_agent_skills_are_string_lists() -> None:
     """skillsを文字列配列とし、プリロードしないagentでは省略する。"""
     expected = {
@@ -369,7 +386,6 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
         "`model`と`effort`",
         "読み取り専用",
         "実装担当とworktree",
-        "snapshot",
     ):
         assert phrase in runtime
 
@@ -1876,7 +1892,7 @@ def test_codex_new_connection_contract_is_centralized() -> None:
     """Codex新規接続と読み取り専用の契約を共通参照文書へ集約する。"""
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     for phrase in (
-        "`start`・`wait`・`send_message`",
+        "`start`・`wait`・`send_message`・`kill`",
         "作業ディレクトリの絶対パス",
         '`start(engine="codex", ...)`',
     ):

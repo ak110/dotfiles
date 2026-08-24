@@ -106,10 +106,10 @@ Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolU
 
 `updatedInput`による入力書き換えは、確認ダイアログの発生自体を抑止しない。
 ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
-`agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択し、呼び出し側の承認・停止・一覧操作を公開しない。
-PreToolUseは`start`の絶対`cwd`と`wait`・`send_message`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
-PostToolUseは成功した`send_message`を継続turnの状態とリモートsnapshotへ記録する。失敗時は既存の開始点用
-`PostToolUseFailure` matcherを拡張せず、失敗したsendで状態を変更しない。
+`agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新及び一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
+PreToolUseは`start`の絶対`cwd`と`wait`・`send_message`・`kill`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
+PostToolUseは成功した`start`のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。失敗時は状態を変更せず、既存の開始点用
+`PostToolUseFailure` matcherを拡張しない。
 旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` は移行説明と保護対象の識別にだけ残し、新経路へ渡さない。
 
 エージェントへ特定の行動・引数を要求するblockを新設する場合は、要求する要件を実行主体が事前に読み得る規範文書（常時ロードのルール、または当該作業で起動されるスキルの本文・参照文書）へ明示する。遮断メッセージだけを要件の初出にしない。

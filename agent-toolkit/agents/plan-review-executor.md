@@ -6,7 +6,7 @@ model: sonnet
 effort: medium
 # Sonnet指定: 複数ラウンドのレビュー指摘の採否判断と収束状態の検収を要する。
 # ツール制限: 調整と検収に専念し、成果物を直接編集しない。Codex経路は明示した`agents_server` MCPツールで起動する。
-tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message
+tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
 skills:
   - agent-toolkit:delegation
 user-invocable: false
