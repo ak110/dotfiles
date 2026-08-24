@@ -8,7 +8,7 @@
 終端していない場合は先に終端させ、計画ファイルの書込主体を実装担当1つに限る。
 
 対象worktreeが上流追随済みでcleanであることと、同じworktreeに実装担当がいないことを確認する。
-計画から単位、共通のベースコミット、統合順を読み、`plan-impl-executor`へ渡すworktreeの完全な一覧を作成する。
+計画から単位、共通のベースコミット、統合順を読み、`plan-impl-executor`へ渡すworktreeの完全な一覧を作成する。複数計画を1レーンへ割り当てる場合は、全計画のベースコミットが一致することを起動前に確認し、レーンの共通のベースコミットとする。一致しない計画ファイルは同じレーンへ割り当てない。
 通常経路では受領済みの現在worktreeをレーンのworktreeとして借用し、`作成主体=既存`かつ`回収可否=不可`で記録する。
 借用時は`管理対象領域=なし`とする。
 
@@ -20,9 +20,9 @@
 上記2組合せ以外は`plan-impl-executor`へ渡さない。
 
 先行成果へ依存しない複数の計画ファイルを並列実装する場合は、ファイル重複にかかわらず、
-呼び出し元が計画ファイルごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
-変更ファイルの重複を理由に先行レーンの完了を待たず、各計画ファイルを専用worktreeへ割り当てる。
-各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`で計画ファイル専用worktreeを作成する。
+呼び出し元がレーンごとに`atk managed-temp create --prefix <unit>`で管理対象領域を作成する。
+変更ファイルの重複を理由に先行レーンの完了を待たず、各レーンを専用worktreeへ割り当てる。
+各管理対象領域には`git worktree add --detach <absolute-path> <common-base>`でレーン専用worktreeを作成する。
 計画が呼び出し元によるレーンのworktreeの作成も明示する場合は、同じ方法でレーンのworktreeを作成する。
 作成直後に用途、絶対パス、管理対象領域の絶対パス、HEADの完全OID、作成主体、回収可否を`## 進捗ログ`へ記録する。
 以降、この6項目をworktreeの記録属性と呼ぶ。
@@ -34,9 +34,9 @@
 
 - モード指定`通常の実装モード`
 - 計画ファイル、プロジェクト規範、該当する作成規範スキルの絶対パス
-  （計画ファイルは新書式ならメイン側・detail側の絶対パスの組、旧形式は単一パス。新旧の判別は
+  （計画ファイルは新書式ならメイン側・detail側の絶対パスの組を1組以上、旧形式は単一パス。複数組を渡す場合は計画間の統合順を明示すること。新旧の判別は
   対応する`<stem>.detail.md`ファイルの実在で行う）。
-  同じ計画ファイルの実装単位は同じworktreeへ順次割り当て、同時に1つの実装担当だけを置くこと
+  同じレーンの実装単位は、計画ファイルをまたぐ場合も同じworktreeへ順次割り当て、同時に1つの実装担当だけを置くこと
 - `implementation-task.md`、`implementation-plan-review-task.md`、`implementation-independent-review-task.md`、
   `review-loop-coordination.md`、
   `../../reviewee-standards/SKILL.md`の絶対パス

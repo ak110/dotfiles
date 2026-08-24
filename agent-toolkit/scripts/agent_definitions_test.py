@@ -1132,9 +1132,9 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert "シェル経由のファイル書換え" in text
     assert "`check_dash.py`による文書検収" in text
     assert "同じworktreeへ順次割り当て、同時に1つの実装担当だけを置け" in text
-    assert "異なる計画ファイルのレーン" in text
+    assert "異なるレーン" in text
     assert "だけを別worktreeで並列に扱える" in text
-    assert "同じ計画ファイルの実装担当は依存順に1件ずつ起動" in text
+    assert "同じレーンの実装担当は依存順に1件ずつ起動" in text
     for task_name in (
         "implementation-task.md",
         "implementation-plan-review-task.md",
@@ -1143,8 +1143,8 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
         assert task_name in text
 
 
-def test_plan_file_is_the_writer_parallelism_boundary() -> None:
-    """同じ計画を複数の実装担当へ分割せず、異なる計画だけを並列化する。"""
+def test_plan_lane_is_the_writer_parallelism_boundary() -> None:
+    """同じレーンの単位を複数の実装担当へ分割せず、異なるレーンだけを並列化する。"""
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
@@ -1152,23 +1152,32 @@ def test_plan_file_is_the_writer_parallelism_boundary() -> None:
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
+    feedbacks_planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    feedbacks_planner_output = _h2_section(feedbacks_planner, "出力")
+    feedbacks_planner_plan = feedbacks_planner_output.partition("plan: ")[2].partition("\n")[0]
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
 
     assert "1バッチとして1つの`agent-toolkit:feedbacks-planner`" in process
     assert "通常型バッチの計画工程を待たず" in process
-    assert "同じ計画ファイル（同じ`plan_file`）を持つready項目を1レーン" in flow
+    assert "1つ以上の計画ファイルを1レーンへ割り当てる" in flow
     for text in (flow, executor, writer, rules, caller):
-        assert "同じ計画ファイル" in text
+        assert "同じレーン" in text
     for text in (executor, writer, rules, design, flow, caller):
         assert "同時に1つの実装担当" in text
     assert "fast担当が同一失敗箇所の残存を確認して終端した後にfix担当へ移行する場合だけ" in rules
     assert "この引継ぎだけはclean開始契約の限定例外" in design
     assert "同一失敗箇所の残存後は、fast担当の終端確認が完了した後だけ" in flow
-    assert "異なる計画ファイルのレーンだけを別worktreeで並列化" in flow
-    assert "計画ファイルごとに`atk managed-temp create" in caller
+    assert "異なるレーンだけを別worktreeで並列化" in flow
+    assert "レーンごとに`atk managed-temp create" in caller
+    assert "フィードバックファイル名と担当計画ファイル絶対パスの対応" in feedbacks_planner_plan
+    assert "対応表が当該計画へ割り当てたフィードバックファイル名一覧（担当項目集合）" in feedbacks_planner
+    assert "基準パスのstemから`<stem>-NN.md`" in feedbacks_planner
+    assert "各計画担当へ対応表が当該計画へ割り当てた担当項目集合" in reception
+    assert "`<基準stem>`を接頭辞とする名前空間全体の非衝突" in reception
 
 
 def test_overlapping_plan_lanes_run_parallel_and_merge_all_plan_intents() -> None:
-    """変更ファイルが重複する計画を並列化し、統合時に双方の意図を照合する。"""
+    """変更ファイルが重複するレーンを並列化し、統合時に双方の意図を照合する。"""
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
@@ -1177,10 +1186,13 @@ def test_overlapping_plan_lanes_run_parallel_and_merge_all_plan_intents() -> Non
 
     assert "同じworktreeへ後続の実装担当を起動する場合に限り" in rules
     assert "変更ファイルが重複しても相互に待機しない" in rules
-    assert "変更対象ファイルの重複を待機又は分割の条件にせず" in flow
+    assert "変更対象ファイルの重複を待機の条件にせず" in flow
     assert "変更ファイルの重複を理由に先行レーンの完了を待たず" in caller
+    assert "異なるレーン" in design
+    assert "異なる" + "計画ファイル" in incidents
+    assert "レーンを分けた後は変更ファイルが重複しても待機しない" in incidents
+    assert "異なる" + "レーンは変更ファイルが重複しても別worktreeで並列実装する" in incidents
     for text in (design, incidents):
-        assert "異なる計画ファイル" in text
         assert "別worktree" in text
         assert "全計画" in text
     for phrase in (
@@ -1201,7 +1213,7 @@ def test_single_plan_units_advance_one_lane_worktree_without_cherry_pick() -> No
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
 
     for phrase in (
-        "同じ計画の全単位を実装するレーンのworktreeを1つ確定",
+        "同じレーンの全計画の全単位を実装するworktreeを1つ確定",
         "全単位を確定した同じレーンのworktreeへ、同時に1つの実装担当だけを順次割り当て",
         "先行commitが同worktreeのHEADを進めた後に後続の新規実装担当へ逐次割り当て",
         "各単位commitが同じレーンのworktreeの直前に検収したHEADを直接進めた",
@@ -2856,7 +2868,7 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
         "現在worktreeをレーンのworktreeとして借用",
         "`作成主体=既存`かつ`回収可否=不可`",
         "複数の計画ファイルを並列実装する場合",
-        "呼び出し元が計画ファイルごとに`atk managed-temp create",
+        "呼び出し元がレーンごとに`atk managed-temp create",
         "計画が呼び出し元によるレーンのworktreeの作成も明示",
         "呼び出し元が管理対象領域内へ作成（並列単位・計画が明示したレーン）",
         "上記2組合せ以外は`plan-impl-executor`へ渡さない",
@@ -2865,7 +2877,7 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
     ):
         assert phrase in caller
     assert "渡されたworktree一覧を計画の単位、共通のベースコミット、実装順と照合" in executor
-    assert "同じ計画の全単位を実装するレーンのworktreeを1つ確定" in executor
+    assert "同じレーンの全計画の全単位を実装するworktreeを1つ確定" in executor
     for command in ("atk managed-temp create", "git worktree add", "git worktree remove"):
         assert command not in executor
 
