@@ -237,6 +237,11 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION" not in data["env"]
 
+    def test_experimental_agent_teams_is_absent(self):
+        """配布設定にAgent Teamsの実験環境変数を残さない。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        assert "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" not in data["env"]
+
     def test_managed_deny_protects_key_certificate_and_credentials(self):
         """配布設定は秘密鍵、証明書及び利用者の認証情報ファイルの読取を禁止する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
@@ -1385,6 +1390,29 @@ class TestStripRemovedEnvKeys:
 
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert "DEPRECATED_ENV_KEY" not in result["env"]
+        assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
+
+    def test_default_removed_env_key_is_removed(self, tmp_path: Path):
+        """既定の廃止キー一覧に含まれる環境変数を既存設定から除去する。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps({"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1", "KEEP_KEY": "keep"}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" not in result["env"]
+        assert result["env"]["KEEP_KEY"] == "keep"
         assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
 
 

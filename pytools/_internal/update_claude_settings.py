@@ -61,7 +61,10 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
 # settings.json の env 配下から除去するキー。
 # share/claude_settings_json_managed.* から廃止した env キーを列挙する。
 # dict は再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
-_REMOVED_ENV_KEYS: tuple[str, ...] = ("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION",)
+_REMOVED_ENV_KEYS: tuple[str, ...] = (
+    "AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+)
 
 # 配布元から廃止した設定キーのドット区切りパス。
 # dictは再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
