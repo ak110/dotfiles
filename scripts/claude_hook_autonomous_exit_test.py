@@ -13,7 +13,7 @@ import sys
 
 # 共通テストヘルパー読み込みのため agent-toolkit/scripts/ を sys.path へ追加する。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
@@ -154,11 +154,33 @@ class TestBlockCondition:
         assert isinstance(reason, str)
         assert "exit-session" in reason
         assert "agent-toolkit:session-review" in reason
+        assert "AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1" in reason
+        assert "DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1" in reason
+        assert "atk mq process-loop CLI" not in reason
         assert "session-review-dotfiles" not in reason
-        for heading in ("入力と着手可否", "調査と採否", "保留", "実装と公開", "後始末", "振り返りと終了"):
-            assert heading in reason
         assert "steps 1-3" not in reason
         assert "step 4" not in reason
+
+    def test_reason_body_matches_trigger_scope(self, tmp_path: pathlib.Path):
+        """発火条件外の起動経路を断定せず、節名を例示へ限定する。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "scope", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        reason = _parse_decision(result)["reason"]
+        lines = reason.splitlines()
+        process_feedbacks_lines = [line for line in lines if "agent-toolkit:process-feedbacks" in line]
+        assert len(process_feedbacks_lines) == 1
+        process_feedbacks_line = process_feedbacks_lines[0]
+        for heading in ("入力と着手可否", "調査と採否", "保留", "実装と公開", "後始末"):
+            assert heading in process_feedbacks_line
+            assert sum(heading in line for line in lines) == 1
+        prerequisite_lines = [line for line in lines if line.startswith(("1.", "2.", "3."))]
+        assert len(prerequisite_lines) == 3
+        assert all("exit-session" not in line for line in prerequisite_lines)
+        assert any(line.startswith("Call /agent-toolkit:exit-session") for line in lines)
+        assert "振り返りと終了" not in reason
 
     def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
         """旧process-loopの移行互換名だけが設定された場合もblockする。"""

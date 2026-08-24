@@ -1,9 +1,8 @@
 r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び忘れ防止。
 
-`atk mq process-loop`CLIが常駐ループの1反復ごとに起動するclaudeサブプロセスは、
-環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`を設定した状態で起動される。
-更新中に旧process-loopと併存する場合は、移行互換名も同じセッション識別子として受理する。
-本hookはどちらかの環境変数が設定されたセッションに限り、`agent-toolkit:exit-session`スキルの
+環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`または移行互換名
+`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`が設定されたセッションを対象とする。
+本hookは環境変数印を検出したセッションに限り、`agent-toolkit:exit-session`スキルの
 呼び出し漏れを検知して当該ターンの継続をblockし再促する。
 
 `agent-toolkit:exit-session`呼び出しの記録は個人フックPostToolUse
@@ -61,21 +60,22 @@ _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 # セッション状態へ記録するフラグ名。
 _STATE_KEY = "autonomous_exit_invoked"
 
-# 順序制約の再促文。process-feedbacksの多段処理途中でexit-session呼び出しが
-# 忘却されることを防ぐため、工程順序を明示する。
+# 発火判定が観測する環境変数印だけを根拠として適用範囲を断定する再促文。
+# 起動元のCLIや起動時のスキル名は判定していないため、本文では例示として扱う。
 _REASON_BODY = """\
-This session was launched in autonomous execution mode by the atk mq process-loop CLI.
-After processing completes, you must call /agent-toolkit:exit-session to end the session.
-Before calling exit-session, fully complete the following steps.
-1. All applicable work in the process-feedbacks sections "入力と着手可否", "調査と採否", "保留",
-   "実装と公開", and "後始末" (including feedback disposition, commit, push, and cleanup)
-2. The process-feedbacks section "振り返りと終了"
-   (the agent-toolkit:session-review skill, including its independent advisor assessment)
-3. Submission of improvement proposals via the agent-toolkit:session-review skill
-Call exit-session only after all of the above steps are complete.
+This session has the autonomous-loop environment marker \
+`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1` or its legacy compatibility marker \
+`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`.
+Before calling /agent-toolkit:exit-session, fully complete the following prerequisite steps.
+1. Complete every applicable step defined by the skill that launched this session. \
+For example, when that skill is agent-toolkit:process-feedbacks, complete its sections \
+"入力と着手可否", "調査と採否", "保留", "実装と公開", and "後始末" (including feedback disposition, commit, push, and cleanup).
+2. Complete the agent-toolkit:session-review skill, including its independent advisor assessment.
+3. Submit improvement proposals via the agent-toolkit:session-review skill.
+Call /agent-toolkit:exit-session only after all prerequisite steps are complete.
 Calling exit-session before submitting improvement proposals is strictly forbidden, \
 because it discards the reflection results.
-If any step remains incomplete, resume that step before reconsidering this message."""
+If any prerequisite remains incomplete, resume that step before reconsidering this message."""
 
 
 def _llm_notice(body: str) -> str:
