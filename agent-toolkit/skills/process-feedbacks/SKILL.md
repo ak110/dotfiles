@@ -170,7 +170,7 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
 失敗時はpush済み内容を巻き戻さず、`references/hold-with-tbd-inject.md`に従って保留する。
 終端工程だけを求める項目は計画を作成せず、終端待機集合へ登録して全レーンの統合とpush後にファイル名昇順で実行する。
 
-- Claude CodeとCodexの双方の通常型採用項目は、`feedbacks-planner`の統合計画を各フィードバックへ`atk mq convert-to-plan`で記録し、
+- Claude CodeとCodexの双方の通常型採用項目は、`feedbacks-planner`が返した対応表の担当計画ファイルを各フィードバックへ`atk mq convert-to-plan`で記録し、
   `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
 - 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する
 - commit前に実行主体が`agent-toolkit:commit`をSkill機能で起動する
