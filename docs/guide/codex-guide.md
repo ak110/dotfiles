@@ -1,7 +1,7 @@
 # Codex利用ガイド
 
 Codexはagent-toolkitの標準構成に含まれる。単体インストーラーはCodexプラグインと共有スキルを設定する。
-Claude CodeからCodexを呼び出すCodex App Server MCPはClaude Code plugin専用であり、Codex向けmanifestへ再公開しない。
+`agents_server` MCPはClaude CodeとCodexの双方へ共有され、`engine`引数で委譲先を選択する。
 
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル
 `AGENTS.md`と共有リンク群を展開しない。dotfiles利用者は`update-dotfiles`または`chezmoi apply`により、
@@ -44,7 +44,7 @@ codex app-server daemon restart
 ```
 
 公開インストーラーでは、プラグイン追加または`atk`配置が失敗した場合も、エラーの後の最終行へ
-必要な再起動コマンドを表示し、非0の終了状態を維持する。Codex App Server MCPの登録や
+必要な再起動コマンドを表示し、非0の終了状態を維持する。`agents_server` MCPの登録や
 `~/.claude.json`のUser scope設定は行わない。
 進行中のセッションを保護するため、app-server daemonは自動再起動しない。
 
@@ -68,26 +68,19 @@ daemonの未起動、状態確認の失敗、マーケットプレイスの登�
 案内されたコマンドは、Codex plugin、remote-controlを利用する実行中セッションの終了後に実行する。
 daemonを利用しない既存のCLI・IDEセッションは、作業完了後に新しいセッションを開始する。
 
-## Claude CodeからのCodex委譲
+## agents_serverによる委譲
 
-Claude Code pluginの`codex_app_server`は、Claude Codeセッションの要求に応じて
-`codex app-server --stdio`を子プロセスとして起動する。共有daemonや永続registryは使用せず、
-MCPプロセスの終了時に自身が起動した子プロセスだけを終了する。
+`agents_server`はCodex pluginから利用できる共有MCPである。`start(engine="codex", prompt, cwd, model, effort)`または
+`start(engine="claude", prompt, cwd, model, effort)`で委譲先のengineを選択する。Codex自身をCodex engineでMCP経由に呼び出さず、CodexからClaudeへ委譲する場合は
+`start(engine="claude", ...)`を使う。MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
-Claude Code側では`codex_start`、`codex_status`、`codex_wait`、`codex_result`、
-`codex_start_reply`、`codex_send_message`を使用する。`codex_start`の`cwd`は既存ディレクトリの絶対パスとし、
-`codex_wait`は結果を回収できる状態（`result_available=true`）まで待機し、timeout到達時は現状態のまま復帰する。既定timeoutは300秒である。
-非対応server requestや未知methodで`status=failed`を返しても、`turn/completed`未受信の間は`result_available=false`のままで
-`codex_result`が拒否される。
-`codex_result`で終端結果を回収してから、
-同じ`session_id`へ`codex_start_reply`で継続する。同じ担当へ追加指示を返す場合は
-`codex_send_message(session_id, prompt)`を使い、実行中turnへsteerするか、回収可能な終端結果を退避してreplyを開始する。
-Codex向けmanifestは共有MCPの`pyfltr`だけを含み、
-Claude Code専用の`codex_app_server`をCodex自身へ提供しない。
+公開ツールは`start`、`wait`、`send_message`の3つである。`start`の`cwd`は既存ディレクトリの絶対パスとし、
+完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout=0`は待機せず現状態を返す。
+`send_message(session_id, prompt)`は実行中turnへsteerし、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
+`send_message`の`delivery`と`wait`の終端応答で配送結果を確認する。
 
-App Serverから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
-対応turnを`failed`としてwaiterを起床させる。`turn/interrupt`の予約だけでは結果を回収済みとせず、
-`turn/completed`の受信後に`codex_result`を実行する。
+backendから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
+対応turnを`failed`としてwaiterを起床させる。承認・停止・一覧操作は公開しない。
 
 ### フックの信頼確認
 

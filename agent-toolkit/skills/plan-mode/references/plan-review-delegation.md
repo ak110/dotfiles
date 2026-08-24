@@ -131,8 +131,7 @@ plan mode外は計画担当が正規計画へ反映する。
 計画担当は調整主体が担当する再レビューの実施及びその結果を主張しない。
 実識別子は`runtime-routing.md`の実効3値と担当・タスクの継続条件に従う。
 同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、継続直前の実効3値が一致する場合だけ同一threadを継続する。
-Claudeは追加指示を`SendMessage`で返す。Codexは`codex_send_message(session_id, prompt)`を使う。
-先行turnを`codex_result`で回収した後は`codex_start_reply`で接続する。
+Claude Codeからの追加指示は`SendMessage`で返す。Codexからの追加指示は`agents_server`の`send_message(session_id, prompt)`を使い、終端後も結果回収を前提にせず同じsessionへreplyを開始する。
 条件不一致時は検収済み状態を渡して解決後のengineで新規起動する。
 
 レビュー担当が再設計・簡素化・撤去を求めた箇所へ小修正で応じない。

@@ -6,14 +6,10 @@
 ## 経路
 
 - 専用agent定義がある作業は、その定義を実装する実行機能で起動する
-- Codex App Server MCPを利用できるClaude Code環境では、ToolSearchで6つの実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
-  - 新規開始は`codex_start(prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`model`と`effort`は両方指定するか、両方省略する
-  - `approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`はMCPサーバーが固定してApp Serverへ渡す。呼び出し側は値を上書きしない
-  - `codex_status`または`codex_wait`で進捗を観測し、`codex_result`で終端結果を回収する。`codex_wait`の既定timeoutは300秒である
-  - 同じ担当へ追加指示を返す場合は`codex_send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端結果が回収可能な場合は
-    直前結果を`previous_result`へ退避して同じ`session_id`のreplyを開始する
-  - 明示的に結果を回収してから次turnを開始する経路では、先行turnの`codex_result`回収後に
-    `codex_start_reply(session_id, prompt)`を使い、同じ`session_id`を再利用する
+- `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+  - 新規開始は`start(engine, prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`engine`は`codex`または`claude`とし、`model`と`effort`は両方指定するか、両方省略する
+  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。`timeout=0`は待機せず現状態を返す
+  - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する
   - fast担当、fast担当からfix担当への昇格、別の実装単位、差分限定レビュー修正及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
@@ -28,12 +24,12 @@
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
-| `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | Codex App Server MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | Codex App Server MCP | Agentツール |
-| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | Codex App Server MCP | Agentツール |
-| `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
-| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、差分限定レビュー修正、CI失敗修正、マージ担当のrebase・競合解消・ff前進 | 同一失敗箇所の引継ぎと差分限定レビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元）。マージ担当はレーンでは`plan-impl-executor`、統合後の上流進行rebaseではメイン | Codex App Server MCP | Agentツール |
-| `execute_review_model` | 実装後の準拠系・盲検系のレビュー | レビュー担当を委譲する`plan-impl-executor` | Codex App Server MCP | Agentツール |
+| `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | `agents_server` MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
+| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
+| `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
+| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、差分限定レビュー修正、CI失敗修正、マージ担当のrebase・競合解消・ff前進 | 同一失敗箇所の引継ぎと差分限定レビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元）。マージ担当はレーンでは`plan-impl-executor`、統合後の上流進行rebaseではメイン | `agents_server` MCP | Agentツール |
+| `execute_review_model` | 実装後の準拠系・盲検系のレビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 上表の未設定時の実効値は、`execute_fast_model`が`codex:gpt-5.6-luna/max`、その他のキーが`codex:gpt-5.6-sol/medium`とする。effort省略時は`medium`とする。
@@ -41,10 +37,10 @@
 `atk config set`は主に使うモデル名・effortの参考一覧に無い値へ警告を表示するが、新モデルの利用を妨げないため受理する。
 
 1. 設定値を`engine`、`model`、`effort`へ分解する。
-2. `engine=codex`ではCodex App Server MCPを使う。`codex_start`へ`model`と`effort`を両方渡し、開始後は`codex_status`・`codex_wait`・`codex_result`で状態と結果を回収する。
-   agents定義の`tools`で6つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
-3. `engine=claude`ではAgentツールを使い、`model`へモデル名部分を渡す。
-   effort部は実行機能に相当する引数が無いため適用しない。
+2. `engine=codex`では`agents_server` MCPを使う。`start(engine="codex", ...)`へ`model`と`effort`を両方渡し、開始後は`wait`で状態と結果を観測する。
+   agents定義の`tools`で3つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
+3. `engine=claude`ではClaude CodeからはAgentツールを使い、`model`へモデル名部分を渡す。
+   CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使う。いずれも`effort`部はAgentツールへ渡さず、`agents_server`では指定値をそのまま渡す。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 5. fast担当、fast担当からfix担当への引継ぎ、別の実装単位、差分限定レビュー修正及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
@@ -53,9 +49,7 @@
    継続直前に工程別モデル設定と本節の経路規定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、
    現在のthreadの起動に用いた実効3値と比較する。
    3値がすべて一致する場合だけ同一threadへ継続接続する。
-   `engine=claude`では`SendMessage`で同じ担当へ追加指示を返し、`engine=codex`では
-   `codex_send_message(session_id, prompt)`で実行中turnへのsteer又は終端後のreplyを選択する。
-   明示的に次turnを開始する場合、Codexは先行turnの`codex_result`回収後に同じ`session_id`へ`codex_start_reply`で継続接続する。
+   `engine=claude`ではClaude Codeからは`SendMessage`、Codexからは`agents_server`の`send_message(session_id, prompt)`で同じ担当へ追加指示を返す。`engine=codex`では`agents_server`の`send_message(session_id, prompt)`で実行中turnへのsteer又は終端後のreplyを選択する。終端後のreply開始に結果回収の前提条件は設けない。
    いずれかの実効値が異なる場合、同じ担当へ同じタスクを返さない場合、又は中断済み・完了配送不能・前提無効化の場合は、
    同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。
    レビュー修正の実装担当は、保持した初回実装担当の実効`engine`・`model`・`effort`と、

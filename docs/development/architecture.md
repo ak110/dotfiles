@@ -98,7 +98,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 | 経路 | マーケットプレイス | 設定対象 |
 | --- | --- | --- |
-| 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、Claude Code専用Codex App Server MCP、`atk` |
+| 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、共有`agents_server` MCP、`atk` |
 | dotfiles `post_apply` | ローカル生成物 | 単体経路の対象に加え、Codex向け`AGENTS.md`と共有リンク |
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
@@ -108,23 +108,15 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
-### Codex App Server MCPの配置と寿命
+### agents_server MCPの配置と寿命
 
-Claude Code pluginの`.mcp.json`だけが`codex_app_server`を定義し、
-`${CLAUDE_PLUGIN_ROOT}/scripts/codex_app_server_mcp.py`を`uv run --no-project --script`で起動する。
-生成器はClaude用MCPから共有許可リストの`pyfltr`だけを`.mcp.codex.json`と`mcp.json`へ射影するため、
-CodexまたはAgent PluginsへClaude専用MCPを再公開しない。
+共有MCP設定の正本が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py`を
+`uv run --no-project --script`で起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
+Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`の`engine`引数でCodex backendまたはClaude backendを選択する。
 
-MCPサーバーは必要時に公式の`codex app-server --stdio`を子プロセスとして起動し、
-`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`、`codex_send_message`を公開する。
-`codex_start`は絶対`cwd`と固定の`approvalPolicy=never`・`dangerFullAccess`でthreadを開始し、
-完了を待たず`session_id`を返す。状態応答は`result_available`で結果回収可否を明示する。
-`codex_wait`は結果を回収できる状態（`result_available=true`）まで待機し、timeout到達時は現状態のまま復帰する。
-`status=failed`でも`turn/completed`未受信の間は`result_available=false`のままで、`codex_result`は拒否される。
-`codex_result`で先行turnを回収してから同じsessionを継続する。
-同じ担当へ追加指示を返す`codex_send_message`は、実行中turnではsteerし、終端結果が回収可能な場合は
-直前結果を`previous_result`へ含めてreplyを開始する。既存turnのsnapshotは実行中steerで上書きせず、
-結果回収後のreply開始時だけ新しい比較対象を作成する。
+公開APIは`start`、`wait`、`send_message`の3つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
+`model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。
+`send_message`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 ## ホーム配下のファイルを編集する前の確認

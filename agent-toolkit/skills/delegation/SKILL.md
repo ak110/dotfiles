@@ -77,13 +77,10 @@ user-invocable: false
 出所表示のない起動文を人間の利用者による発話として扱わない。
 
 作業ディレクトリは受領済みの絶対パスをそのまま渡す。受信者に自己解決させない。
-Codex App Server MCPの`codex_start`では`cwd`へ作業ディレクトリの絶対パスを必ず渡す（未指定・相対パスの呼び出しは遮断される）。
-継続時は`codex_start_reply`へ既存の`session_id`を渡し、`codex_result`で先行turnを回収してから同じsessionを再開する。
-同じ担当へ追加指示を送る場合は`codex_send_message(session_id, prompt)`を使う。実行中turnにはsteerし、
-終端結果が回収可能な場合は直前結果を`previous_result`へ退避して同じsessionのreplyを開始する。
-`codex_wait`は公開terminal statusになるまで待機し、`result_available`で結果回収可否を明示する。
-`status`が`failed`でも`result_available=false`なら`turn/completed`未受信のため`codex_result`は拒否される。
-`result_available=true`を確認してから結果を回収する。
+`agents_server`の`start`では`engine`、`prompt`及び`cwd`へ値を渡す。`engine`は`codex`または`claude`とし、`cwd`には作業ディレクトリの絶対パスを必ず渡す（未指定・相対パスの呼び出しは成立しない）。`model`と`effort`は両方指定するか、両方省略する。
+`wait(session_id, timeout)`は状態を観測し、終端時は同じ応答で結果本文を返す。`timeout=0`は待機せず現状態を返し、終端結果の再取得も同じ本文を返す。
+同じ担当へ追加指示を送る場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収の有無にかかわらず同じsessionでreplyを開始する。
+`send_message`の応答は`delivery`で配送結果を示し、reply開始時は直前結果を`previous_result`へ含める。`wait`と`send_message`のいずれにも、結果回収済みの状態にする前提条件は設けない。
 作業用複製では、複製元と対象外worktreeも明示する。
 
 ### 権限と成果物の取り決め

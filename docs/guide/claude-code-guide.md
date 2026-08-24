@@ -1,7 +1,7 @@
 # agent-toolkit導入ガイド（Agent Plugins・Claude Code・Codex）
 
 agent-toolkitはAgent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
-Claude Codeは対話、フック、ルールの読み込み、作業全体の統括を担う。Codex CLIはCodex App Server MCP経由の
+Claude Codeは対話、フック、ルールの読み込み、作業全体の統括を担う。Codex CLIは`agents_server` MCP経由の
 調査・実装・レビューに加え、Codexセッションで共有スキルを直接実行する。uvは配布スクリプトと
 `atk`コマンドの実行基盤である。
 
@@ -82,7 +82,7 @@ Codexの双方を設定する。3コマンドのいずれかを検出できな�
     ```
 
 ルールファイルが`~/.claude/rules/agent-toolkit/`へ配置され、Claude CodeとCodexの
-agent-toolkitプラグイン、Claude Code専用のCodex App Server MCP、`atk`ラッパーが設定される。
+agent-toolkitプラグイン、共有`agents_server` MCP、`atk`ラッパーが設定される。
 再実行すると最新版へ同期される。
 
 両インストーラーは再実行時にCodexプラグインも更新する。
@@ -107,7 +107,7 @@ agent-toolkitプラグイン、Claude Code専用のCodex App Server MCP、`atk`�
 5. User scopeに残る旧Codex MCPの完全一致定義を照合し、該当時だけ移行する
 6. `atk`ラッパーを配置する
 
-新しいMCPサーバーはClaude Code plugin内の`codex_app_server`であり、User scopeへ登録しない。
+新しいMCPサーバーはplugin内の共有`agents_server`であり、User scopeへ登録しない。
 インストーラーと`chezmoi apply`後処理は、過去の手順で登録されたUser scope
 `codex`が`codex mcp-server`の完全一致定義である場合だけ、直前に再照合して削除する。
 追加フィールド、別のcommand・args・timeout、Local・Project scopeの設定は変更しない。
@@ -123,18 +123,14 @@ codex plugin list
 claude plugin list
 ```
 
-`claude mcp get codex`は旧User scope定義の有無を確認する診断である。Codex App Server MCPは
-Claude Code pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
+`claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
+Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-Codex委譲は次の6ツールで行う。`codex_start`は既存ディレクトリを絶対パスで指定して即時に
-`session_id`を返し、`codex_status`または`codex_wait`で状態を観測する。状態応答の`result_available`で結果回収可否を確認する。
-`codex_wait`は結果を回収できる状態（`result_available=true`）まで待機し、timeout到達時は現状態のまま復帰する。
-既定timeoutは300秒である。非対応server requestによる`failed`でも、`turn/completed`未受信の間は
-`result_available=false`のままで`codex_result`が拒否される。
-`codex_result`で終端結果を回収した後、同じ`session_id`へ`codex_start_reply`で次のturnを開始する。
-同じ担当へ追加指示を返す場合は`codex_send_message(session_id, prompt)`を使う。実行中turnへsteerし、
-終端結果が回収可能な場合は直前結果を`previous_result`へ退避して同じsessionのreplyを開始する。
-App Serverへ渡す`approvalPolicy=never`と`dangerFullAccess`はMCP内部で固定され、承認・停止・一覧操作は公開しない。
+委譲は`start`・`wait`・`send_message`の3ツールで行う。`start`は`engine`（`codex`または`claude`）、
+`prompt`、既存ディレクトリの絶対`cwd`、必要に応じて`model`と`effort`を受け取り、完了を待たず`session_id`を返す。
+`wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。`timeout=0`は待機せず現状態を返し、
+終端結果の再取得も同じ本文を返す。`send_message`は実行中turnへsteerし、終端済みturnでは結果回収を前提に
+同じsessionでreplyを開始する。MCP内部で承認・停止・一覧操作は公開しない。
 
 ## Claude Codeの推奨設定
 
@@ -367,7 +363,7 @@ Claude Codeで有効化する。
 
 「ツールキットのインストール」のワンライナーを再実行すると更新される。
 dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。
-いずれの単体インストーラーも初回導入専用ではない。Codex App ServerはClaude Code pluginが
-セッション単位でstdio子プロセスとして所有するため、共有daemonの再起動は行わない。
+いずれの単体インストーラーも初回導入専用ではない。`agents_server`はClaude CodeまたはCodex pluginが
+セッション単位でstdioプロセスとして所有するため、共有daemonの再起動は行わない。
 Codex plugin本体の更新で既存セッションへ反映できない場合は、Codex pluginの案内に従い、
 進行中の作業を回収してから新しいセッションを開始する。

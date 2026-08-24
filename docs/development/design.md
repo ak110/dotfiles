@@ -56,32 +56,34 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 利用者合意で廃止した。設定値を反復ごとに再解決する案は、既定運用がセッションごとに自己再起動するため、
 恒常的な処理費用に見合わないことから採用しない。
 
-## Codex App Server MCPの委譲経路
+## agents_server MCPの委譲経路
 
-Claude Codeからの長時間Codex委譲は、plugin同梱の薄いMCPサーバーが公式stdio App Serverを
-セッション単位で所有する。MCPサーバーは`codex app-server --stdio`を必要時に起動し、
-JSON-RPCのreaderとsession単位の状態・待機者を管理する。Unix限定の共有daemonや永続job registryは
-使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、LinuxとWindowsで寿命契約を揃えられる。
+`agents_server`は、Claude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
+`start`の`engine`引数でCodex backendまたはClaude backendを選択し、各backendの実行主体を
+共有のsession状態機械、待機通知及び結果配送境界へ接続する。Codex backendは公式stdio App Serverを
+セッション単位で所有し、Claude backendはClaude Agent SDKのclientをセッション単位で所有する。
+共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
+LinuxとWindowsで寿命契約を揃えられる。
 
-公開APIは`codex_start`、`codex_status`、`codex_wait`、`codex_result`、`codex_start_reply`、`codex_send_message`の6つに固定する。
-`codex_start`は絶対`cwd`を受け取り、`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`を
-内部で固定してApp Serverへ渡し、完了を待たず`session_id`を返す。`codex_wait`の既定timeoutは300秒で、
-期限到達時はturnを継続したまま状態を返す。`codex_result`で`turn/completed`を回収した後だけ、
-同じ`session_id`へ`codex_start_reply`で次turnを開始できる。`codex_send_message`は実行中turnへ
-`turn/steer`を送り、終端で結果が回収可能な場合は直前結果を`previous_result`へ退避して同じlock内でreplyを開始する。
+公開APIは`start`、`wait`、`send_message`の3つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
+`model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。
+`send_message`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
+この統合により、backendごとに公開toolを増やさず、`status`・`progress`・結果配送の共通契約を維持できる。
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
-App Serverからのserver requestは公開toolを増やさず、elicitationをcancelし、それ以外を非対話の
-非対応エラーとして応答する。承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、
-対応turnをfailedへ遷移してwaiterを解放する。通知のdeltaは進捗表示にだけ用い、`turn/completed`を終端とする。
-この境界により、Claude Codeは実行中の状態を照会し、終端後に結果を回収できる。
-結果の回収漏れをStopで機械的に遮断する経路は持たない。
+backend固有のserver requestは共有公開toolを増やさず、非対話の非対応エラーとして応答する。
+承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、対応turnをfailedへ遷移してwaiterを解放する。
+通知のdeltaは進捗表示にだけ用い、終端応答で結果本文を返す。この境界により、呼び出し側は実行中の状態を照会し、
+終端後に結果を取得できる。結果の回収漏れをStopで機械的に遮断する経路は持たない。
+
+却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
+hookの配送境界及び継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
 
 ## 委譲継続の設計意図
 
 目的は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合に、会話履歴と検収前提を保持したまま作業を続けられるようにすることである。新規起動による履歴の欠落を避けつつ、担当・タスク・実行条件が変わる引継ぎでは新しいthreadへ検収済み状態を渡す。
-構造の理由は、`runtime-routing.md`を継続可否の単一の正本とし、起動と継続の直前に工程別設定を再取得して実効`engine`・`model`・`effort`を比較するためである。実効3値が一致する場合だけ継続する。Claudeは`SendMessage`を使い、Codexは`codex_send_message`を使う。先行turnを`codex_result`で回収した後は`codex_start_reply`を使う。
+構造の理由は、`runtime-routing.md`を継続可否の単一の正本とし、起動と継続の直前に工程別設定を再取得して実効`engine`・`model`・`effort`を比較するためである。実効3値が一致する場合だけ継続する。Claude Codeからは`SendMessage`を使い、Codexからは`agents_server`の`send_message`を使う。終端後のreply開始に結果回収の前提条件は設けない。
 判断理由は、同じthreadが保持する実行条件と工程の現在値を一致させることで、実行系の別ではなく観測可能な条件を継続可否の根拠にできる点にある。継続時と新規起動時には同じ正本の絶対パス、対象ID、未記録の差分及びレビュー表を渡す。
 知識境界として、呼び出し元とexecutorは実効route、検収済み状態、全レビュー表の受け渡しを管理する。レビュー担当は指定された今回表と過去表だけを読み、継続可否を独自に再設計しない。
 `feedbacks-planner`の`awaiting_confirmation`後の再開は例外である。累積`user_decisions`と調査結果全文を新しい識別子へ渡す設計を保持するため、停止済み識別子を継続せず、同じ系列の新しい識別子を起動する。
@@ -610,7 +612,7 @@ patchを扱わないホストの入力へ限定する。
 実装レビューでは、`execute_review_model`が指すengineと実際の起動ツールの一致を
 フックで強制せず、`runtime-routing.md`「工程別モデル設定」と`plan-impl-executor`の手順で統制する。
 フックは設定値、タスク文書及び起動ツールを同時に観測できる一方、当該engineが実際に応答するかを
-観測できない。Codexを指定した状態でCodex App Server MCP経路自体を利用できない場合、
+観測できない。Codexを指定した状態で`agents_server` MCP経路自体を利用できない場合、
 可用性に起因する正当な代替であるClaude経路の起動まで遮断され、代替の候補が残らない。
 経路の逸脱は、代替時に記録する観測した失敗と実際に用いた組合せから事後に判定する。
 

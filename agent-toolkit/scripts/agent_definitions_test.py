@@ -1728,9 +1728,9 @@ def test_codex_new_connection_contract_is_centralized() -> None:
     """Codex新規接続と読み取り専用の契約を共通参照文書へ集約する。"""
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     for phrase in (
-        "Codex App Server MCP",
+        "`start`・`wait`・`send_message`",
         "作業ディレクトリの絶対パス",
-        "`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`",
+        '`start(engine="codex", ...)`',
     ):
         assert phrase in runtime
 
