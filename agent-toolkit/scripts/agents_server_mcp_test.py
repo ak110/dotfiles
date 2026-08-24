@@ -44,6 +44,8 @@ class FakeBackend:
         self.sessions = sessions
         self.engine = engine
         self.delivery = delivery
+        self.interrupt_calls = 0
+        self.send_calls = 0
 
     async def start(self, prompt: str, cwd: str, model: str | None, effort: str | None) -> subject.SessionState:
         del prompt
@@ -60,11 +62,16 @@ class FakeBackend:
 
     async def send_message(self, session: subject.SessionState, prompt: str) -> dict[str, Any]:
         del prompt
+        self.send_calls += 1
         if session.terminal:
             previous = session.previous_result()
             subject._begin_reply(session)
             return {"delivery": self.delivery, "previous_result": previous}
         return {"delivery": "steered"}
+
+    async def interrupt(self, session: subject.SessionState) -> None:
+        del session
+        self.interrupt_calls += 1
 
     async def close(self) -> None:
         """バックエンド終了処理のダミー。"""
@@ -81,9 +88,9 @@ def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[su
     return manager, backend
 
 
-def test_public_tools_are_exactly_three_async_operations() -> None:
-    """公開ツール集合をstart・wait・send_messageへ固定する。"""
-    assert set(subject.mcp._tool_manager._tools) == {"start", "wait", "send_message"}
+def test_public_tools_are_exactly_four_async_operations() -> None:
+    """公開ツール集合をstart・wait・send_message・killへ固定する。"""
+    assert set(subject.mcp._tool_manager._tools) == {"start", "wait", "send_message", "kill"}
 
 
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
@@ -142,6 +149,108 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
         "status": "running",
         "progress": "",
     }
+
+
+@pytest.mark.asyncio
+async def test_kill_timeout_zero_returns_request_state(tmp_path: pathlib.Path) -> None:
+    """killのtimeout=0は中断要求の受理後に現在状態を返す。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    response = await manager.kill(session.session_id, timeout=0)
+
+    assert response == {
+        "session_id": "thread-1",
+        "engine": "codex",
+        "status": "running",
+        "progress": "",
+        "kill_requested": True,
+    }
+    assert backend.interrupt_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_path: pathlib.Path) -> None:
+    """正のtimeoutを指定したkillは終端結果と要求済み状態を返す。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    kill_task = asyncio.create_task(manager.kill(session.session_id, timeout=1))
+    while backend.interrupt_calls == 0:
+        await asyncio.sleep(0)
+    _complete(session, message="中断結果")
+    await manager._notify_waiters()
+
+    assert await kill_task == {
+        "session_id": "thread-1",
+        "engine": "codex",
+        "status": "completed",
+        "progress": "",
+        "agent_message": "中断結果",
+        "kill_requested": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_kill_terminal_session_is_idempotent_without_backend_request(tmp_path: pathlib.Path) -> None:
+    """終端済みsessionへのkillは要求を送らず結果を返す。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _complete(session, message="既存結果")
+    manager.sessions[session.session_id] = session
+
+    response = await manager.kill(session.session_id, timeout=0)
+
+    assert response["kill_requested"] is False
+    assert response["agent_message"] == "既存結果"
+    assert backend.interrupt_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_kill_requests_share_one_backend_request(tmp_path: pathlib.Path) -> None:
+    """同一turnへの並行killは中断要求を1回だけ送る。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    first, second = await asyncio.gather(
+        manager.kill(session.session_id, timeout=0),
+        manager.kill(session.session_id, timeout=0),
+    )
+
+    assert first["kill_requested"] is True
+    assert second["kill_requested"] is True
+    assert backend.interrupt_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_kill_lock_wait_respects_positive_timeout(tmp_path: pathlib.Path) -> None:
+    """正のtimeoutはturn制御ロックの取得待ちにも適用する。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    async with session.turn_control_lock:
+        with pytest.raises(TimeoutError, match="kill timed out: thread-1"):
+            await manager.kill(session.session_id, timeout=0.01)
+
+    assert backend.interrupt_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_rejects_active_interrupt_without_backend_call(tmp_path: pathlib.Path) -> None:
+    """中断要求が有効な未終端turnへ継続入力を送らない。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    session.interrupt_requested = True
+    manager.sessions[session.session_id] = session
+
+    with pytest.raises(ValueError, match="session is being interrupted: thread-1"):
+        await manager.send_message(session.session_id, "追加指示")
+
+    assert backend.send_calls == 0
 
 
 @pytest.mark.asyncio
@@ -277,6 +386,53 @@ class InterruptErrorClient(FakeCodexClient):
         if method == "turn/interrupt":
             raise codex_backend.JsonRpcResponseError(method, -32600, "interrupt rejected")
         return await super().request(method, params)
+
+
+class CompletingInterruptClient(FakeCodexClient):
+    """中断要求の配送中に対象turnを終端させる偽クライアント。"""
+
+    def __init__(self, backend: codex_backend.AppServerManager, session: subject.SessionState) -> None:
+        super().__init__()
+        self.backend = backend
+        self.session = session
+
+    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if method == "turn/interrupt":
+            await self.backend._handle_notification(
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": self.session.session_id,
+                        "turn": {"id": self.session.turn_id, "status": "interrupted", "error": None},
+                    },
+                }
+            )
+        return await super().request(method, params)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_kills_preserve_shared_request_when_turn_completes_before_lock_handoff(
+    tmp_path: pathlib.Path,
+) -> None:
+    """ロック待ち中にturnが終端しても並行killは要求済み状態を共有する。"""
+    manager = subject.AgentsServerManager()
+    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+    backend.client = cast(Any, CompletingInterruptClient(backend, session))
+    manager._codex = backend
+
+    async with session.turn_control_lock:
+        first_task = asyncio.create_task(manager.kill(session.session_id, timeout=1))
+        await asyncio.sleep(0)
+        second_task = asyncio.create_task(manager.kill(session.session_id, timeout=1))
+        await asyncio.sleep(0)
+
+    first, second = await asyncio.gather(first_task, second_task)
+
+    assert first["kill_requested"] is True
+    assert second["kill_requested"] is True
+    assert session.status == "interrupted"
 
 
 @pytest.mark.asyncio
@@ -514,6 +670,11 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
     steered = await manager.send_message("thread-codex", "追加指示")
     assert steered["delivery"] == "steered"
     assert client.requests[-1][0] == "turn/steer"
+    killed = await manager.kill("thread-codex", timeout=0)
+    assert killed["kill_requested"] is True
+    assert client.requests[-1][0] == "turn/interrupt"
+    with pytest.raises(ValueError, match="being interrupted"):
+        await manager.send_message("thread-codex", "競合入力")
 
 
 class SystemMessage:
@@ -544,9 +705,10 @@ class ResultMessage:
 
     is_error = False
 
-    def __init__(self, result: str) -> None:
+    def __init__(self, result: str, terminal_reason: str | None = None) -> None:
         self.result = result
         self.errors: list[str] = []
+        self.terminal_reason = terminal_reason
 
 
 class FakeClaudeClient:
@@ -555,6 +717,7 @@ class FakeClaudeClient:
     def __init__(self, streams: list[list[Any]]) -> None:
         self.streams = [list(stream) for stream in streams]
         self.queries: list[str] = []
+        self.interrupts = 0
         self.connected = False
         self.disconnected = False
 
@@ -563,6 +726,9 @@ class FakeClaudeClient:
 
     async def query(self, prompt: str) -> None:
         self.queries.append(prompt)
+
+    async def interrupt(self) -> None:
+        self.interrupts += 1
 
     def receive_messages(self):
         messages = self.streams.pop(0)
@@ -590,6 +756,29 @@ class DelayedClaudeClient(FakeClaudeClient):
                 yield message
 
         return stream()
+
+
+class InterruptAwareClaudeClient(FakeClaudeClient):
+    """interruptの受理後に中断結果を返す偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__([[SystemMessage("claude-interrupted")]])
+        self.interrupt_event = asyncio.Event()
+
+    def receive_messages(self):
+        messages = self.streams.pop(0)
+
+        async def stream():
+            for message in messages:
+                yield message
+            await self.interrupt_event.wait()
+            yield ResultMessage("中断結果", "aborted_streaming")
+
+        return stream()
+
+    async def interrupt(self) -> None:
+        self.interrupts += 1
+        self.interrupt_event.set()
 
 
 class FailingClaudeClient(FakeClaudeClient):
@@ -679,6 +868,29 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
         await manager.close()
     assert client.connected is True
     assert client.disconnected is True
+
+
+@pytest.mark.asyncio
+async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Claudeのkillは所有タスクからinterruptを呼び、中断理由を状態へ写像する。"""
+    client = InterruptAwareClaudeClient()
+    manager = subject.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
+    manager._claude = backend
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+
+    try:
+        start_response = await manager.start("claude", "調査", str(tmp_path))
+        response = await manager.kill(start_response["session_id"], timeout=1)
+        assert response["status"] == "interrupted"
+        assert response["kill_requested"] is True
+        assert response["agent_message"] == "中断結果"
+        assert client.interrupts == 1
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
