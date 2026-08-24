@@ -109,7 +109,7 @@ executorが起動されるのは手順6の発火だけであり、手順10・12�
    複数単位でも前の単位の解決値を次の単位へ流用せず、単位ごとに1回だけ取得する。
    前の単位の実効値と一致する場合も前の担当のthreadを継続せず、検収済みの先行commit、検証結果及び未完了の実装単位を渡して新規threadを起動する。
    実装担当は解決した実行系で起動し、`plan-impl-executor`自身を含む同じ役割種別へ割り当てない。
-   `engine=codex`はCodex App Server MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名とeffortを契約どおり渡す。
+   `engine=codex`は`agents_server` MCP、`engine=claude`はAgentツールの`claude`を使い、モデル名とeffortを契約どおり渡す。
    実装担当へ呼び出し元から受け取った`skills/plan-mode/references/implementation-task.md`、
    計画ファイル、対象worktree、プロジェクト規範の絶対パス
    （計画ファイルは新書式ならdetail側を実装詳細の正本として渡し、メイン側は素材・要求の復元が必要な場合だけ追加で渡す。
@@ -234,7 +234,7 @@ executorが起動されるのは手順6の発火だけであり、手順10・12�
    欠落・判定不能・公開済み・mergeがあればfixupを作成せず`needs_escalation`で返したことを検収する。
    `autosquash`では、fixup対象の最古commitから履歴書換え前に保持した元HEADまでのfirst-parent全OIDが`target_oids`へ履歴順で含まれ、範囲にmerge commitが無いことを、fixup作成前の事前遮断を含めて検収する。範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了したことを検収する。fixup作成前に範囲内のOIDと件名を列挙し、対象コミット件名が範囲内で一意であることを確認したことも検収する。対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。範囲列挙、merge確認、OIDと件名の列挙、件名の一意性確認又は公開済み判定に1件でも失敗があれば、履歴書換えを適用せず`needs_escalation`で返したことを確認する。
    各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）が`git log -1 --format=%s`で完全一致したことを検収する。期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返したことを確認する。
-   `pre_fixup`、各`fixup:<単位順>`、`autosquash`及び`amend` phaseの履歴統合操作前に`../../commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定を再実行したことを検収する。
+   `pre_fixup`、各`fixup:<単位順>`、`autosquash`及び`amend` phaseの履歴統合操作前に`../skills/commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定を再実行したことを検収する。
    fixupは`git commit --fixup=<対象OID>`で実行したことを検収する。
    rebaseは`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で実行したことを検収する。
    amendは`git commit --amend --no-edit`で実行したことを検収する。
@@ -290,7 +290,7 @@ feedbacks: <受領したソート済みフィードバックファイル名一�
 rewrite_guard:
 - phase: <pre_fixup|fixup:<単位順>|autosquash|amend>
   target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
-  published_decision: <`../../commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定結果>
+  published_decision: <`../skills/commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定結果>
   git_command_exit_codes: <各Gitコマンドの終了コード>
   error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
 blockers:

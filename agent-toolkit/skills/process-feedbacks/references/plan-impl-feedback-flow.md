@@ -84,9 +84,6 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
     統合後検証は「検証区分」でメイン所有とした全コマンドとし、長出力は`agent-toolkit:shell-exec`へ委譲してよい。
     失敗時は`execute_fix_model`で解決したCI修正担当（統合後検証失敗記録を受理する拡張後の契約。
     `implementation-task.md`を参照）へセッションworktree上の修正を委譲する。
-    統合差分レビューの対象は「統合後にセッションブランチ上で新たに作成したcommitの累積差分」とする
-    （手順9のbump・manifest同期commit、本手順の修正commit、手順12の再bump commitを由来の区別なく含める）。
-    統合差分レビューを起動する場合は、呼び出し元が`execute_review_model`で二系統を起動する。
     二系統のレビュー担当は同じ`review.tsv`へ`plan-conformance`又は`independent`の`track`で指摘を追加し、
     表のライフサイクル・モデル解決・収束判定は`review-loop-coordination.md`に従う。
     統合差分レビュー修正後の再レビュー省略可否は`review-loop-coordination.md`の収束判定に従う

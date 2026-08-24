@@ -20,7 +20,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin-agent-toolkit_agents_server__start / send_message:
+mcp__plugin_agent-toolkit_agents_server__start / send_message:
 
 - メインセッションで`agent-toolkit:delegation`の起動記録が無いagents_server MCP呼び出しのブロック (block)
 - 委譲先へ渡す絶対`cwd`と`send_message`のprompt/sessionの検査 (block)
