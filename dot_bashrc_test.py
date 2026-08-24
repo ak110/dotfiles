@@ -1,4 +1,4 @@
-"""dot_bashrcのPATH追加契約を検証する。"""
+"""dot_bashrcの起動時契約全般を検証する。"""
 
 import pathlib
 import subprocess
@@ -114,3 +114,141 @@ def test_enable_pyenv_keeps_existing_path_position(tmp_path: pathlib.Path) -> No
         "--version",
         "versions",
     ]
+
+
+def test_tmux_command_state_uses_calling_pane_and_tracks_commands(
+    tmp_path: pathlib.Path,
+) -> None:
+    """tmux内ではコマンド開始とプロンプト復帰を呼び出し元ペインへ通知する。"""
+    home = tmp_path / "home"
+    fake_bin = home / "fake-bin"
+    fake_bin.mkdir(parents=True)
+    call_log = home / "tmux-calls"
+    tmux_stub = fake_bin / "tmux"
+    tmux_stub.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TMUX_CALL_LOG"\n',
+        encoding="utf-8",
+    )
+    tmux_stub.chmod(0o755)
+
+    pane = "%known-pane"
+    script = """\
+. "$1"
+_tmux_cmd_idle
+printf 'first\\n'; printf 'second\\n'
+_tmux_cmd_idle
+printf 'third\\n'; printf 'fourth\\n'
+_tmux_cmd_idle
+"""
+    subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-i", "-c", script, "bash", str(BASHRC)],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env={
+            "HOME": str(home),
+            "PATH": str(fake_bin),
+            "TERM": "dumb",
+            "TMUX": "/tmp/tmux-test,1,0",
+            "TMUX_PANE": pane,
+            "TMUX_CALL_LOG": str(call_log),
+        },
+    )
+
+    assert call_log.read_text(encoding="utf-8").splitlines() == [
+        f"set-option -p -t {pane} -q @cmd_running 1",
+        f"set-option -p -t {pane} -qu @cmd_running",
+        f"set-option -p -t {pane} -q @cmd_running 1",
+        f"set-option -p -t {pane} -qu @cmd_running",
+        f"set-option -p -t {pane} -q @cmd_running 1",
+        f"set-option -p -t {pane} -qu @cmd_running",
+    ]
+
+
+def test_tmux_command_state_prompt_hook_is_unique_and_gated(
+    tmp_path: pathlib.Path,
+) -> None:
+    """tmux内のPROMPT_COMMANDを末尾へ一度だけ追加し、tmux外では追加しない。"""
+    home = tmp_path / "home"
+    fake_bin = home / "fake-bin"
+    fake_bin.mkdir(parents=True)
+    call_log = home / "tmux-calls"
+    tmux_stub = fake_bin / "tmux"
+    tmux_stub.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TMUX_CALL_LOG"\n',
+        encoding="utf-8",
+    )
+    tmux_stub.chmod(0o755)
+
+    prompt_script = """\
+. "$1"
+. "$1"
+printf 'PROMPT:%s\\n' "$PROMPT_COMMAND"
+"""
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-i",
+            "-c",
+            prompt_script,
+            "bash",
+            str(BASHRC),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env={
+            "HOME": str(home),
+            "PATH": str(fake_bin),
+            "PROMPT_COMMAND": "",
+            "TERM": "dumb",
+            "TMUX": "/tmp/tmux-test,1,0",
+            "TMUX_PANE": "%known-pane",
+            "TMUX_CALL_LOG": str(call_log),
+        },
+    )
+    prompt_line = next(line for line in completed.stdout.splitlines() if line.startswith("PROMPT:"))
+    prompt_command = prompt_line.removeprefix("PROMPT:")
+
+    assert prompt_command.startswith("history -a;_show_status;")
+    assert prompt_command.endswith("_tmux_cmd_idle;")
+    assert prompt_command.count("_tmux_cmd_idle;") == 1
+
+    outside_call_log = home / "tmux-outside-calls"
+    outside_script = """\
+. "$1"
+printf 'PROMPT:%s\\n' "$PROMPT_COMMAND"
+printf 'DEBUG:%s\\n' "$(trap -p DEBUG)"
+"""
+    outside = subprocess.run(
+        [
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-i",
+            "-c",
+            outside_script,
+            "bash",
+            str(BASHRC),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env={
+            "HOME": str(home),
+            "PATH": str(fake_bin),
+            "PROMPT_COMMAND": "",
+            "TERM": "dumb",
+            "TMUX_CALL_LOG": str(outside_call_log),
+        },
+    )
+    outside_lines = outside.stdout.splitlines()
+
+    assert next(line for line in outside_lines if line.startswith("PROMPT:")).endswith("history -a;_show_status;")
+    assert next(line for line in outside_lines if line.startswith("DEBUG:")) == "DEBUG:"
+    assert not outside_call_log.exists()

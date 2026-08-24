@@ -306,6 +306,34 @@ PROMPT_COMMAND=${PROMPT_COMMAND//history -a;/}
 PROMPT_COMMAND=${PROMPT_COMMAND//_show_status;/}
 PROMPT_COMMAND="history -a;_show_status;${PROMPT_COMMAND}"
 
+# tmuxのウィンドウ表示でコマンド実行中と待機中を見分けるため、実行状態を
+# ペイン単位ユーザーオプション @cmd_running へ通知する。表示側は ~/.tmux.conf が
+# 同じウィンドウ内の全ペインを集約して判定する。
+# ウィンドウ単位に持たせると、先に終了したペインの解除により実行継続中の他ペインの表示も削除される。
+# ターゲットを省略した tmux は呼び出し元ペインではなく現在のアクティブペインを指すため、
+# $TMUX_PANE を明示する。
+# DEBUGトラップはコマンド開始時に発火し、PROMPT_COMMANDの末尾要素がプロンプト復帰時に解除する。
+# PROMPT_COMMAND自身の実行によるDEBUGトラップの発火は、解除時に設定するフラグで抑止する。
+# mise activate bash は PROMPT_COMMAND の先頭へ自身のフックを挿入するため、
+# 解除要素を末尾へ置いて解除が最後に実行される順序を保つ。
+if [ -n "$TMUX" ] && [ -n "$TMUX_PANE" ] && command -v tmux >/dev/null 2>&1; then
+    _tmux_cmd_armed=1
+    function _tmux_cmd_start() {
+        if [ -n "$_tmux_cmd_armed" ]; then
+            _tmux_cmd_armed=""
+            tmux set-option -p -t "$TMUX_PANE" -q @cmd_running 1
+        fi
+        return 0
+    }
+    function _tmux_cmd_idle() {
+        tmux set-option -p -t "$TMUX_PANE" -qu @cmd_running
+        _tmux_cmd_armed=1
+    }
+    trap '_tmux_cmd_start' DEBUG
+    PROMPT_COMMAND=${PROMPT_COMMAND//_tmux_cmd_idle;/}
+    PROMPT_COMMAND="${PROMPT_COMMAND}_tmux_cmd_idle;"
+fi
+
 # pyenv
 # 手動で有効化
 function enable-pyenv() {
