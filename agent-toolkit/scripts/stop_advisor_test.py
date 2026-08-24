@@ -569,6 +569,7 @@ class TestContextConditions:
         assert "uncommitted" not in body.lower()
         assert "user-question mechanism" in body
         assert "end the turn silently" in body
+        assert "Fix: " in body
         assert "session_id=clean-context" in body
         assert str(transcript) in body
 

@@ -115,7 +115,12 @@ from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import
 from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
-from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+# pylint: disable-next=wrong-import-position,import-error
+from _hook_notice import block_formatter as _block_notice_formatter  # noqa: E402
+
+# pylint: disable-next=wrong-import-position,import-error
+from _hook_notice import formatter as _notice_formatter  # noqa: E402
 from _plan_file import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
     is_plan_component_file,
@@ -152,6 +157,7 @@ _HOOK_ID = "agent-toolkit/pretooluse"
 
 
 _llm_notice = _notice_formatter(_HOOK_ID)
+_block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def _language_notice(body: str) -> str:
@@ -616,10 +622,10 @@ def _check_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -
         start = max(0, match.start() - 10)
         end = min(len(value), match.end() + 10)
         print(
-            _llm_notice(
+            _block_notice(
                 f"blocked: non-Japanese script (Hangul/Cyrillic) mixed into Japanese text"
-                f" in {tool_name}.{field}. Context: {ascii(value[start:end])}."
-                f" Replace it with the intended Japanese characters."
+                f" in {tool_name}.{field}. Context: {ascii(value[start:end])}.",
+                fix="Replace it with the intended Japanese characters.",
             ),
             file=sys.stderr,
         )
@@ -637,7 +643,10 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
         end = min(len(value), position + 11)
         sample = value[start:end]
         print(
-            _llm_notice(f"blocked: U+FFFD (mojibake) detected in {tool_name}.{field}. Context: {sample!r}"),
+            _block_notice(
+                f"blocked: U+FFFD (mojibake) detected in {tool_name}.{field}. Context: {sample!r}",
+                fix="Replace the U+FFFD character with the intended character and retry.",
+            ),
             file=sys.stderr,
         )
         return True
@@ -658,13 +667,15 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
         if "\r\n" in value:
             continue
         print(
-            _llm_notice(
+            _block_notice(
                 f"blocked: LF-only content detected in {tool_name}.{field}."
                 f" PowerShell 5.1 cannot parse .ps1 files with LF line endings; CRLF is required."
-                f" Use the Edit tool for existing files (it preserves CRLF transparently)."
-                f" For new files, write via Bash with a UTF-8 BOM and CRLF line endings"
-                f" (e.g., printf '\\xEF\\xBB\\xBF' > file.ps1 && ... | sed 's/$/\\r/' >> file.ps1)."
-                f" Target: {file_path}"
+                f" Target: {file_path}",
+                fix=(
+                    "Use the Edit tool for existing files (it preserves CRLF transparently)."
+                    " For new files, write via Bash with a UTF-8 BOM and CRLF line endings"
+                    " (e.g., printf '\\xEF\\xBB\\xBF' > file.ps1 && ... | sed 's/$/\\r/' >> file.ps1)."
+                ),
             ),
             file=sys.stderr,
         )
@@ -706,8 +717,16 @@ def _check_lockfiles(tool_name: str, file_path: str) -> bool:
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _LOCKFILE_RULES:
         if pattern.search(normalized):
+            fix = (
+                "Do not edit this path; regenerate it with the package manager instead."
+                if label in {".venv/", "node_modules/"}
+                else hint
+            )
             print(
-                _llm_notice(f"blocked: direct edit of {label} is prohibited by {tool_name}. {hint} Target: {file_path}"),
+                _block_notice(
+                    f"blocked: direct edit of {label} is prohibited by {tool_name}. Target: {file_path}",
+                    fix=fix,
+                ),
                 file=sys.stderr,
             )
             return True
@@ -754,11 +773,16 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
     if normalized.endswith(_SECRETS_EXEMPT_SUFFIXES):
         return False
     if _SECRETS_PATTERN.search(normalized):
-        guidance = _ENV_FILE_GUIDANCE if _ENV_FILE_PATTERN.search(normalized) else ""
+        guidance = (
+            _ENV_FILE_GUIDANCE.strip()
+            if _ENV_FILE_PATTERN.search(normalized)
+            else "Do not edit key or certificate files; abandon this edit."
+        )
         print(
-            _llm_notice(
+            _block_notice(
                 f"blocked: direct edit of secret / key files is prohibited by {tool_name}."
-                f" Accidental edits can cause service outages or data leaks.{guidance} Target: {file_path}"
+                f" Accidental edits can cause service outages or data leaks. Target: {file_path}",
+                fix=guidance,
             ),
             file=sys.stderr,
         )
@@ -1396,11 +1420,10 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
 
     if new_count >= 3:
         print(
-            _llm_notice(
+            _block_notice(
                 f"blocked: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
-                f" operations targeted files under agent-toolkit/ without first creating a plan file."
-                " Create a plan file under `~/.claude/plans/` before editing any file under agent-toolkit/.",
-                tag="block",
+                f" operations targeted files under agent-toolkit/ without first creating a plan file.",
+                fix="Create a plan file under `~/.claude/plans/` before editing any file under agent-toolkit/.",
             ),
             file=sys.stderr,
         )
@@ -1480,13 +1503,11 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
         return False
     model = tool_input.get("model")
     print(
-        _llm_notice(
+        _block_notice(
             f"blocked: explicit `model` argument (`{model!r}`) for subagent_type `{subagent_type}`.\n"
             "Why this gate exists: this subagent uses its frontmatter model and delegates"
-            " actual work through `agent-toolkit:delegation`; no per-call model override is defined.\n"
-            "Normal fix: omit the `model` parameter and let the agent definition's default"
-            " apply.",
-            tag="block",
+            " actual work through `agent-toolkit:delegation`; no per-call model override is defined.",
+            fix="Omit the `model` parameter and let the agent definition's default apply.",
         ),
         file=sys.stderr,
     )
@@ -1523,7 +1544,7 @@ def _check_task_stop(session_id: str) -> bool:
 
     update_state(session_id, _mark_blocked)
     print(
-        _llm_notice(
+        _block_notice(
             "blocked: TaskStop."
             " Only stop a background task on the user's explicit, immediate stop request,"
             " or after completing the stall-detection procedure;"
@@ -1532,9 +1553,8 @@ def _check_task_stop(session_id: str) -> bool:
             " After user intervention, send additional instructions to active delegates by default;"
             " stop only when the intervention invalidates the delegated scope or assumptions"
             " and continuing would produce an incorrect artifact, as specified by"
-            " `agent-toolkit:delegation`「継続と新規起動」."
-            " If the basis for stopping is already confirmed, retry TaskStop within 5 minutes to proceed.",
-            tag="block",
+            " `agent-toolkit:delegation`「継続と新規起動」.",
+            fix="If the basis for stopping is already confirmed, retry TaskStop within 5 minutes to proceed.",
         ),
         file=sys.stderr,
     )
@@ -1614,11 +1634,12 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
     if unresolved is not None:
         _, op = unresolved
         print(
-            _llm_notice(
-                f"blocked: {op}."
-                " The command changes its working directory through an unresolved shell expression."
-                " Run `git log --oneline --decorate` from the target repository first,"
-                " then retry with a statically resolvable working directory."
+            _block_notice(
+                f"blocked: {op}. The command changes its working directory through an unresolved shell expression.",
+                fix=(
+                    "Run `git log --oneline --decorate` from the target repository first,"
+                    " then retry with a statically resolvable working directory."
+                ),
             ),
             file=sys.stderr,
         )
@@ -1637,12 +1658,14 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
         elif log_state:
             continue
         print(
-            _llm_notice(
-                f"blocked: {op}."
-                f" Run `git log --oneline --decorate` first to confirm commit state before amend/rebase"
-                f" (especially, do NOT amend/rebase commits that have already been pushed)."
-                f" A `git log` in the same Bash command does not satisfy this check;"
-                f" run it in a preceding Bash call against the same effective working directory."
+            _block_notice(
+                f"blocked: {op}. Commit state must be confirmed before amend/rebase.",
+                fix=(
+                    "Run `git log --oneline --decorate` first to confirm commit state before amend/rebase"
+                    " (especially, do NOT amend/rebase commits that have already been pushed)."
+                    " A `git log` in the same Bash command does not satisfy this check;"
+                    " run it in a preceding Bash call against the same effective working directory."
+                ),
             ),
             file=sys.stderr,
         )
@@ -1678,10 +1701,9 @@ def _check_bash_git_push_after_amend_with_dirty_status(command: str, session_id:
         if not event.cwd_resolved:
             if any(value is True for value in flags.values()):
                 print(
-                    _llm_notice(
-                        "blocked: git push after an amend/fixup could not resolve its working directory."
-                        " Review the amend state and retry with a statically resolvable working directory.",
-                        tag="block",
+                    _block_notice(
+                        "blocked: git push after an amend/fixup could not resolve its working directory.",
+                        fix="Review the amend state and retry with a statically resolvable working directory.",
                     ),
                     file=sys.stderr,
                 )
@@ -1694,13 +1716,14 @@ def _check_bash_git_push_after_amend_with_dirty_status(command: str, session_id:
             continue
         if dirty:
             print(
-                _llm_notice(
+                _block_notice(
                     f"blocked: git push after `git commit --amend` / `--fixup` with uncommitted tracked changes"
-                    f" in {event.cwd}."
-                    f" Run `git status` to review, then either `git add` + `git commit --amend`"
-                    f" (or `--fixup=<sha>`) to fold the residual diff into the amended commit,"
-                    f" or create a follow-up commit before pushing.",
-                    tag="block",
+                    f" in {event.cwd}.",
+                    fix=(
+                        "Run `git status` to review, then either `git add` + `git commit --amend`"
+                        " (or `--fixup=<sha>`) to fold the residual diff into the amended commit,"
+                        " or create a follow-up commit before pushing."
+                    ),
                 ),
                 file=sys.stderr,
             )
@@ -1890,14 +1913,15 @@ _UV_RUN_PYTHON_BLOCK_MSG = (
     " (applies regardless of whether a path or `-c` follows `python`)."
     " In a non-Python project (pyproject.toml without a [project] section, or absent),"
     " uv treats the cwd as a project and generates `.venv` and `uv.lock` as a side effect."
-    " Alternatives:"
-    " (1) for a PEP 723 script, use `uv run --script <path>` or invoke the executable shebang directly;"
-    " (2) to skip cwd project resolution, use `uv run --no-project python ...`;"
-    " (3) as a separate command, run it from a directory where the first `pyproject.toml`"
-    " found in the cwd or its ancestors has a `[project]` section."
-    " A statically resolvable `cd` target is evaluated as the effective working directory."
-    " An unresolved shell expansion in a cwd change blocks this invocation because the project"
-    " type cannot be confirmed."
+    " The invocation cannot safely continue without an explicit project-independent form."
+)
+
+_UV_RUN_PYTHON_FIX = (
+    "For a PEP 723 script, use `uv run --script <path>` or invoke the executable shebang directly;"
+    " to skip cwd project resolution, use `uv run --no-project python ...`;"
+    " otherwise run it from a directory where the first `pyproject.toml` found in the cwd or its ancestors"
+    " has a `[project]` section. A statically resolvable `cd` target is evaluated as the effective working directory."
+    " An unresolved shell expansion in a cwd change blocks this invocation because the project type cannot be confirmed."
 )
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
@@ -1930,7 +1954,7 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
             if not has_script_or_no_project and (
                 directory_or_project_overridden or not current_cwd.resolved or not _cwd_in_python_project(current_cwd.path)
             ):
-                print(_llm_notice(_UV_RUN_PYTHON_BLOCK_MSG), file=sys.stderr)
+                print(_block_notice(_UV_RUN_PYTHON_BLOCK_MSG, fix=_UV_RUN_PYTHON_FIX), file=sys.stderr)
                 return True
     return False
 
@@ -2782,9 +2806,9 @@ def _check_bash_sleep_poll_pattern(
     )
     if already_detected:
         print(
-            _llm_notice(
-                f"block: foreground sleep followed by another command was detected again in this session.\n{guidance}",
-                tag="block",
+            _block_notice(
+                "block: foreground sleep followed by another command was detected again in this session.",
+                fix=guidance,
             ),
             file=sys.stderr,
         )
@@ -2809,11 +2833,10 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     if not _PROCESS_KILL_BY_PATTERN_RE.search(command):
         return False
     print(
-        _llm_notice(
+        _block_notice(
             "blocked: pattern-based process termination (pkill/killall) is prohibited because"
-            " process ownership cannot be verified. Use `kill <PID>` for a process you started"
-            " and identified by PID instead.",
-            tag="block",
+            " process ownership cannot be verified.",
+            fix="Use `kill <PID>` for a process you started and identified by PID instead.",
         ),
         file=sys.stderr,
     )
@@ -3251,10 +3274,9 @@ def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:
     if state.get("delegation_skill_invoked", False):
         return False
     print(
-        _llm_notice(
-            f"{tool_name} call is blocked because `agent-toolkit:delegation` was not invoked."
-            " Invoke the skill before starting a delegation from the main session.",
-            tag="block",
+        _block_notice(
+            f"{tool_name} call is blocked because `agent-toolkit:delegation` was not invoked.",
+            fix="Invoke `agent-toolkit:delegation` before starting a delegation from the main session.",
         ),
         file=sys.stderr,
     )
@@ -3272,11 +3294,11 @@ def _check_agents_server_cwd(tool_input: dict) -> bool:
     specified = tool_input.get("cwd")
     actual = f"`{specified}`" if isinstance(specified, str) and specified != "" else "unspecified"
     print(
-        _llm_notice(
+        _block_notice(
             f"blocked: agents_server start requires a non-empty absolute cwd parameter (got {actual})."
             " Without it, Codex resolves the working directory from the App Server"
-            " process rather than the requested worktree."
-            " Retry with cwd set to the absolute path of the target working directory."
+            " process rather than the requested worktree.",
+            fix="Retry with cwd set to the absolute path of the target working directory.",
         ),
         file=sys.stderr,
     )
@@ -3289,14 +3311,20 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
     prompt = tool_input.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         print(
-            _llm_notice(f"blocked: {display_name} requires a non-empty prompt."),
+            _block_notice(
+                f"blocked: {display_name} requires a non-empty prompt.",
+                fix="Retry with a non-empty prompt.",
+            ),
             file=sys.stderr,
         )
         return True
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         print(
-            _llm_notice(f"blocked: {display_name} requires a non-empty session_id."),
+            _block_notice(
+                f"blocked: {display_name} requires a non-empty session_id.",
+                fix="Use the session_id returned by codex_start, or start a new session with codex_start.",
+            ),
             file=sys.stderr,
         )
         return True
@@ -3304,9 +3332,9 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
     cwd_map = state.get(_AGENTS_SERVER_SESSION_CWD_KEY)
     if not isinstance(cwd_map, dict) or not isinstance(cwd_map.get(remote_session_id), str):
         print(
-            _llm_notice(
-                f"blocked: {display_name} cannot continue because session_id has no stored absolute cwd."
-                " Do not continue this session; start a new one with agents_server start using an absolute cwd."
+            _block_notice(
+                f"blocked: {display_name} cannot continue because session_id has no stored absolute cwd.",
+                fix="Do not continue this session; start a new one with agents_server start using an absolute cwd.",
             ),
             file=sys.stderr,
         )

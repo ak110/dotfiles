@@ -156,6 +156,7 @@ class TestBlockCondition:
         assert "agent-toolkit:session-review" in reason
         assert "AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1" in reason
         assert "DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1" in reason
+        assert "Fix: " in reason
         assert "atk mq process-loop CLI" not in reason
         assert "session-review-dotfiles" not in reason
         assert "steps 1-3" not in reason

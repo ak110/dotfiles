@@ -203,6 +203,8 @@ class TestMojibakeCheck:
         assert "U+FFFD" in result.stderr
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+        assert "[block]" in result.stderr
+        assert "Fix: Replace the U+FFFD character" in result.stderr
         assert "Auto-generated hook notice" in result.stderr
 
     def test_edit_with_mojibake(self):
@@ -248,6 +250,7 @@ class TestPs1EolCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 2
         assert "LF-only" in result.stderr
+        assert "Fix: Use the Edit tool" in result.stderr
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -300,6 +303,7 @@ class TestLockfilesCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
         assert "direct edit" in result.stderr
+        assert "Fix: " in result.stderr
 
     def test_edit_cargo_lock_blocked(self):
         result = _run(
@@ -310,6 +314,7 @@ class TestLockfilesCheck:
         )
         assert result.returncode == 2
         assert "cargo add" in result.stderr
+        assert "Fix: " in result.stderr
 
     def test_normal_file_allowed(self):
         """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""
@@ -339,6 +344,7 @@ class TestSecretsCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
         assert "secret" in result.stderr
+        assert "Fix: " in result.stderr
         assert (_SECRETS_COPY_GUIDANCE in result.stderr) is expects_guidance
         assert (_SECRETS_VALUE_EDIT_GUIDANCE in result.stderr) is expects_guidance
 

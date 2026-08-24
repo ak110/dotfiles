@@ -17,7 +17,7 @@ r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び
 4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
 5. 上記いずれでもない: blockして順序制約の再促文を返す
 
-LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整形し、
+LLM宛て出力は`agent-toolkit/scripts/_hook_notice`のblock専用整形関数経由で整形し、
 `decision: "block"`＋`reason`フィールドへ載せて返す。
 参照経路は`Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"`を
 `sys.path`に追加して解決する。
@@ -37,7 +37,10 @@ sys.path.insert(
     0,
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+# pylint: disable-next=wrong-import-position,import-error
+from _hook_notice import (
+    block_formatter as _block_notice_formatter,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
@@ -78,21 +81,20 @@ because it discards the reflection results.
 If any prerequisite remains incomplete, resume that step before reconsidering this message."""
 
 
-def _llm_notice(body: str) -> str:
-    """コーディングエージェント宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
-    return _llm_notice_base(body, _HOOK_ID)
+_block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def _approve() -> None:
     print(json.dumps({}, ensure_ascii=False))
 
 
-def _emit_block(reason: str) -> None:
+def _emit_block(body: str, *, fix: str) -> None:
     """Stop hookで当該ターン継続を強制する誘導を返す。
 
     `stop_hook_active`保護で1回のみ発火する前提。反復呼び出しに備え、
     本メッセージは反復再促の役割も担う。
     """
+    reason = _block_notice(body, fix=fix)
     print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
 
 
@@ -130,5 +132,8 @@ def main(payload_text: str) -> int:
         return 0
 
     append_stop_log(session_id, "block_autonomous_exit", {})
-    _emit_block(_llm_notice(_REASON_BODY))
+    _emit_block(
+        _REASON_BODY,
+        fix="Complete all listed prerequisites, then invoke /agent-toolkit:exit-session.",
+    )
     return 0
