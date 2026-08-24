@@ -3767,6 +3767,61 @@ def test_feedback_dependencies_point_to_provider_references() -> None:
         assert "process-feedbacks/references/plan-impl-feedback-flow.md" not in text
 
 
+def test_feedback_dependencies_are_derived_from_external_waits_and_plan_order() -> None:
+    """キュー依存を本文の外部待ち条件へ一致させ、実装順序を計画へ伝達する契約を固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    entrypoint = _ATK_ENTRYPOINT.read_text(encoding="utf-8")
+    mutations = _ATK_MQ_MUTATIONS.read_text(encoding="utf-8")
+
+    external_waits = (
+        "未回答TBDの回答待ち",
+        "`cooldown_until`による待機",
+        "解除時刻と観測経路が確定する外部状態の解除待ち",
+        "別リポジトリの先行変更の完了待ち",
+        "利用者が本文で明示した完了待ち",
+        "日付境界",
+    )
+    for document in (process, reception, add_feedback, concepts, design):
+        for wait in external_waits:
+            assert wait in document
+        assert "実装順序の前後" in document
+
+    step4 = process.partition("4. 本文の順序条件")[2].partition("\n5. ")[0]
+    assert "本文から導出した集合へ一致させる" in step4
+    assert "集合が空でない場合は各ファイル名を`--depends-on`へ指定" in step4
+    assert "空の場合は`--depends-on`を付けずに実行して依存を全解除する" in step4
+    assert "`--depends-on`を付けない実行は依存の全解除となるため使用しない" not in step4
+    assert "実装順序の前後は依存先候補へ含めない" in step4
+
+    step5 = process.partition("5. 手順4の一致操作")[2].partition("\n6. ")[0]
+    assert "`depends_on`が全て終端" in step5
+    assert "バッチの候補集合はready判定へ持ち込まない" in step5
+
+    step7 = process.partition("7. 手順4で実装順序")[2].partition("\n\n`start-processing`")[0]
+    assert "同一バッチ内の項目" in step7
+    assert "実装順序の保証は統合計画の実装単位順へ移し" in step7
+    assert "新たな順序又は依存の検査を追加しない" in step7
+
+    assert "手順4で除去した実装順序の向き（先行項目と後続項目の対）" in reception
+    assert "手順4で除去した実装順序の向き（先行項目と後続項目の対）" in _h2_section(planner, "入力")
+    execution_step5 = planner.partition("5. 採用要求がある場合")[2].partition("\n6. ")[0]
+    assert "先行項目と後続項目の対）も渡し" in execution_step5
+    assert "`先行依存`と`統合順`へ写像する" in execution_step5
+    assert "実装順序の前後だけを理由に受け取らない" in add_feedback
+
+    assert "省略時は依存を全て解除する" in entrypoint
+    assert "if depends_on is not None:" in mutations
+    assert 'data.pop("depends_on", None)' in mutations
+    for document in (concepts, design):
+        assert "同一バッチの候補集合を条件にしない" in document
+        assert "`先行依存`と`統合順`" in document or "実装単位順で保証する" in document
+
+
 def test_bug_response_prompt_contracts_are_synchronized() -> None:
     """バグ対応・commit・CIの正本境界と条件付き参照を固定する。"""
     agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
