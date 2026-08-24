@@ -1548,6 +1548,10 @@ def _check_task_stop(session_id: str) -> bool:
             " or after completing the stall-detection procedure;"
             " slow progress or perceived inefficiency alone is not a stop instruction."
             " If more than one interpretation of intent remains, confirm with AskUserQuestion before stopping."
+            " After user intervention, send additional instructions to active delegates by default;"
+            " stop only when the intervention invalidates the delegated scope or assumptions"
+            " and continuing would produce an incorrect artifact, as specified by"
+            " `agent-toolkit:delegation`「継続と新規起動」."
             " If the basis for stopping is already confirmed, retry TaskStop within 5 minutes to proceed.",
             tag="block",
         ),

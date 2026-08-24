@@ -3957,6 +3957,14 @@ class TestTaskStopBlock:
         assert "confirm with AskUserQuestion before stopping" in stderr
         assert "retry TaskStop within 5 minutes to proceed" in stderr
 
+    def test_block_message_defaults_to_additional_instructions_and_limits_stopping(self, state_dir: dict[str, str]) -> None:
+        """遮断文面が利用者介入時の追加指示既定と停止限定条件を示す。"""
+        stderr = self._invoke("task-stop-message-route", state_dir).stderr
+        assert "After user intervention, send additional instructions to active delegates by default;" in stderr
+        assert "stop only when the intervention invalidates the delegated scope or assumptions" in stderr
+        assert "continuing would produce an incorrect artifact" in stderr
+        assert "`agent-toolkit:delegation`「継続と新規起動」" in stderr
+
     @pytest.mark.parametrize(
         ("label", "elapsed_seconds", "expected_returncode"),
         [
