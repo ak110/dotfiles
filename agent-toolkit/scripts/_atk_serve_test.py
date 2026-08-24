@@ -74,6 +74,7 @@ def test_web_transition_warns_and_records_unverified_commit(
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
 
     result = serve_app.Operations(tmp_path).transition("adopt", ["feedback.md"], commit="abcdef1")
 
@@ -2817,8 +2818,10 @@ async def test_tbd_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatc
     monkeypatch.setattr(common, "_repo_lock", lock)
     monkeypatch.setattr(common, "_pull", lambda _path: None)
     monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_mutations, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.feedback_mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
@@ -2883,6 +2886,7 @@ async def test_edit_and_answer_apis_detect_external_changes(
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
     monkeypatch.setattr(common, "repo_lock", lock)
     monkeypatch.setattr(common, "pull", lambda _path: None)
 
@@ -2979,6 +2983,7 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
     inbox = tmp_path / "inbox"
     processing = tmp_path / "processing"
     inbox.mkdir()
@@ -3067,6 +3072,7 @@ async def test_remove_api_rejects_changed_and_unreadable_expected_content(
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     original = "---\ntype: feedback\n---\n\n確認時本文\n"
@@ -3128,6 +3134,7 @@ async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     target = inbox / "unreadable.md"
@@ -3174,6 +3181,7 @@ async def test_answer_api_returns_edit_conflict_for_unreadable_expected_content(
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     target = inbox / "question.md"
@@ -3220,6 +3228,7 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_pull_moves_targe
     for module in (common, serve_app.feedback_mutations, serve_app.tbd_mutations):
         monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
         monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
     inbox = tmp_path / "inbox"
     processing = tmp_path / "processing"
     inbox.mkdir()
@@ -3607,8 +3616,10 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
     monkeypatch.setattr(common, "_repo_lock", lock)
     monkeypatch.setattr(common, "_pull", lambda _path: None)
     monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_mutations, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.feedback_mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
@@ -3726,6 +3737,7 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     monkeypatch.setattr(common, "_repo_lock", lock)
     monkeypatch.setattr(common, "_pull", lambda _path: None)
     monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_add, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_add, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_add, "_commit_and_push", lambda *_args, **_kwargs: None)
@@ -4943,6 +4955,7 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     monkeypatch.setattr(common, "_repo_lock", lock)
     monkeypatch.setattr(common, "_pull", lambda _path: None)
     monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(common, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_add, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_add, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_add, "_commit_and_push", lambda *_args, **_kwargs: None)
