@@ -214,6 +214,23 @@ def _response_value(raw: str) -> str:
     raise ValueError("対応要否はyesまたはnoを指定する")
 
 
+def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], matches: list[int]) -> str:
+    """一意に解決できない部分キーと復号済み候補行を整形する。"""
+    requested = ", ".join(f"{COLUMNS[index]}={value}" for index, value in given) or "なし"
+    candidate_rows = [rows[index] for index in matches] if matches else rows
+    candidate_lines = [
+        "  - "
+        + ", ".join(f"{column}={_normalized(value)}" for column, value in zip(COLUMNS[:_KEY_COLUMN_COUNT], row, strict=False))
+        for row in candidate_rows
+    ]
+    candidates = "\n".join(candidate_lines) or "  - 候補行なし"
+    return (
+        f"指定された部分キー: {requested}\n"
+        f"候補行（復号済み）:\n{candidates}\n"
+        "レビュー表のセルはJSON文字列として保存されるため、キーには復号後の値を指定する。"
+    )
+
+
 def respond(
     path: str | Path,
     round_value: str,
@@ -255,7 +272,8 @@ def respond(
             if all(_normalized(row[column_index]) == value for column_index, value in given)
         ]
         if len(matches) != 1:
-            raise ValueError(f"応答対象の複合キーが一意に解決できない: {len(matches)}件")
+            diagnostic = _format_key_diagnostic(rows, given, matches)
+            raise ValueError(f"応答対象の複合キーが一意に解決できない: {len(matches)}件\n{diagnostic}")
         updated = [*rows]
         updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], needed, replacement, reason]
         return updated
