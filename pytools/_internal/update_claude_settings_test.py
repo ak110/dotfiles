@@ -225,7 +225,7 @@ class TestProductionManagedSettings:
     def test_question_timeout_in_production_file(self):
         """配布設定の質問自動継続タイムアウトを検証する。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        assert data["askUserQuestionTimeout"] == "5m"
+        assert data["askUserQuestionTimeout"] == "never"
 
     def test_env_has_no_flicker(self):
         """Claude Code のちらつき抑制フラグが env に設定されている。"""

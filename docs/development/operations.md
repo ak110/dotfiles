@@ -97,13 +97,13 @@ Windowsはtmux運用外のため対象外とする。
 
 ## 質問自動継続タイムアウトの配布
 
-Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.json`で`5m`を配布する。
+Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.json`で`never`を配布する。
 対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
-計時はアイドル時間を基準とし、キー入力でリセットされる。
-フォーカスを報告する端末では、ウィンドウへの切り替えでもリセットされる。
+端末とtmuxのアクティブペインにフォーカスが当たっている間は、設定値によらずタイムアウトは発火しない。
+フォーカスを失った後に計時が進み、キー入力があればその時点から再計測される。
 
-`atk mq process-loop`のClaude起動では、利用者設定に依存せず`--settings`で同じ値を明示する。
-CLI設定はユーザー設定より優先されるため、配布設定を持たないプラグイン単体利用でも起動時の値を揃えられる。
+`atk mq process-loop`のClaude起動だけが`--settings`で`5m`を明示する。
+CLI設定はユーザー設定より優先されるため、常駐実行では`5m`が適用される。
 Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
 `CLAUDE_STREAM_IDLE_TIMEOUT_MS`及び`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
 該当する障害を実測した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
