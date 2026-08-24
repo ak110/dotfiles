@@ -472,9 +472,14 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
         "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n"
         "\n"
-        "`agent-toolkit:process-feedbacks`が複数の通常型フィードバックを1つの統合計画へまとめる場合は、"
-        "バッチに含まれる全項目を`## 実施内容`の行として記録する。\n"
-        "不採用、保留、対象外及び移管の項目も行へ含め、採用系の行だけを実装対象とする。\n"
+        "`agent-toolkit:process-feedbacks`が複数の通常型フィードバックを1つの統合計画へまとめる場合、"
+        "`feedbacks-planner`は全要求不採用の項目をreject対象、未確定要求を含む項目をhold対象と"
+        "計画スレッドの起動前に判定する。\n"
+        "判定対象を除外して計画スレッドへ渡す集合を計画対象集合とする。"
+        "判定結果は完了報告でメインへ返し、キュー操作はメインが担当する。\n"
+        "`## 実施内容`には計画対象集合の各項目を1行ずつ記録し、項目の採否を採否列へ記録する。\n"
+        "部分採用では採用範囲と除外範囲の要点を`実施内容`セルへ記載し、"
+        "要求別の採否詳細を別行へ複製せず要求表を正本とする。\n"
         "概要に独立したバッチ採否表は置かず、採否と方針を同じ実施内容表で確認できる状態を保つ。\n"
         "\n"
         "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
@@ -1203,7 +1208,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     assert "mcp__plugin_agent-toolkit_agents_server__start" in metadata["tools"]
     assert "mcp__plugin_agent-toolkit_agents_server__send_message" in metadata["tools"]
     for phrase in (
-        "自身は成果物、計画ファイル、キューを変更せず",
+        "成果物、計画ファイル及びキューへ書き込まず",
+        "採否候補の確定、reject対象・hold対象の判定と結果の返却",
         "受信者専用のタスク文書と作成規範スキルは読み込まず",
         "注入済みの`agent-toolkit:delegation`スキル本文に付随する所在ディレクトリ",
         "現行plugin rootとして確定し",
@@ -1216,7 +1222,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "plan-review-task.md",
         "指摘を加工せず計画担当へ全件配送",
         "通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない",
-        "計画スレッドへバッチ全項目のファイル名",
+        "計画スレッドへ計画対象集合のファイル名",
         "本文を起動文へ複製しない",
         "各フィードバックごとの調査スレッド",
         "キューの状態と他のレーンの情報は渡さない",
@@ -1224,6 +1230,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "調査スレッドの起動直前に`atk config get pick_feedbacks_model`",
         "計画スレッドの起動直前に`atk config get plan_model`",
         "計画レビュースレッドの起動直前に`atk config get plan_review_model`",
+        "バグ対応では分離先バグ調査ファイルの正確な絶対パスも渡し",
+        "指定された計画成果物を全て保存し、保存直後に全て読み戻して",
     ):
         assert phrase in text
 
@@ -1408,8 +1416,8 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     assert "当該契約が定める工程で検証してから採否を確定" in checklist
 
 
-def test_integrated_plan_overview_lists_every_feedback_with_exceptions() -> None:
-    """通常型統合計画の全項目一覧を計画様式の正本へ固定する。"""
+def test_integrated_plan_overview_lists_post_exclusion_feedbacks() -> None:
+    """通常型統合計画の記録範囲を事前除外後の計画対象集合へ限定する。"""
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
@@ -1417,8 +1425,11 @@ def test_integrated_plan_overview_lists_every_feedback_with_exceptions() -> None
     metadata = standards.index("直下のH3は`### 計画メタ情報`だけとし", overview)
     assert overview < metadata
     for phrase in (
-        "バッチに含まれる全項目を`## 実施内容`の行として記録する。",
-        "不採用、保留、対象外及び移管の項目も行へ含め、採用系の行だけを実装対象とする。",
+        "全要求不採用の項目をreject対象、未確定要求を含む項目をhold対象と計画スレッドの起動前に判定する。",
+        "判定対象を除外して計画スレッドへ渡す集合を計画対象集合とする。",
+        "判定結果は完了報告でメインへ返し、キュー操作はメインが担当する。",
+        "`## 実施内容`には計画対象集合の各項目を1行ずつ記録し、項目の採否を採否列へ記録する。",
+        "部分採用では採用範囲と除外範囲の要点を`実施内容`セルへ記載し、要求別の採否詳細を別行へ複製せず要求表を正本とする。",
         "概要に独立したバッチ採否表は置かず、採否と方針を同じ実施内容表で確認できる状態を保つ。",
     ):
         assert phrase in standards
@@ -1426,7 +1437,7 @@ def test_integrated_plan_overview_lists_every_feedback_with_exceptions() -> None
 
 
 def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> None:
-    """項目別の根拠、由来境界、確認後確定及びTBD保留を同期する。"""
+    """項目別の根拠、全項目の実施内容行、確認後確定及びTBD保留を同期する。"""
     decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
@@ -1454,7 +1465,7 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         assert "`source: session-review`" in document
     for phrase in (
         "バッチ全項目の採否記録",
-        "実施内容へは、対象項目の採用範囲だけを反映する",
+        "計画対象集合",
         "同じ`feedbacks-planner`系列の新しい識別子",
         "依存設定と`blocked`確認後",
         "元項目をrejectしない",
@@ -1471,7 +1482,7 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "`status: awaiting_confirmation`として",
         "これは失敗ではない",
         "停止済みの識別子へ継続せず",
-        "計画起草、キュー操作及びrejectを開始しない",
+        "回答又は保留結果を受領するまで計画起草及びファイル単位の終端判定を開始しない",
     ):
         assert phrase in planner
 
@@ -2999,11 +3010,13 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
 
 
 def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> None:
-    """`feedbacks-planner`の委譲元と委譲先へ計画パス、単一経路及びTBD境界を同期する。"""
+    """計画パス、事前除外後の実施内容行、単一経路及びTBD境界を同期する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     receiver = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
     checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
     decision_format = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
 
     for text in (sender, receiver):
         assert "委譲元が確定した計画ファイルの絶対パス" in text
@@ -3037,15 +3050,16 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         "同じ計画ファイルの絶対パス",
     ):
         assert phrase in sender
-    assert "保留項目を含む" in sender
-    assert "全項目の採否一覧と採用範囲だけで計画起草を続行" in sender
-    assert "保留項目を含む全項目の採否一覧と採用範囲だけで計画起草を続行" in receiver
+    assert "保留項目を計画対象集合から除外" in sender
+    assert "保留結果を確認した項目は既存の`blocked`状態を保持したまま計画対象から除外" in receiver
+    assert "保留項目は既存の`blocked`状態を保持して計画対象集合から除外" in hold
     assert "フィードバック原文が示す文言案、列挙及び節配置を利用者合意とみなさない" in checklist
     assert "原文との差異と根拠を採否記録へ残す" in checklist
     assert "差異と根拠を`採否理由`又は`反映内容`へ記録" in decision_format
     assert "- 理由:" not in decision_format
     assert "項目固有の採否理由" in decision_format
-    assert "--note=<採否理由>" in decision_format
+    assert "--note=<採否理由>" not in decision_format
+    assert "--note=<採否理由>" in sender
     assert "`decision-format.md`の理由又は" not in sender
     for phrase in (
         "`feedbacks-planner`の計画担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
@@ -3058,7 +3072,18 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert "全要求が不採用" in text
         assert "未確定要求" in text
     assert "不採用要求の採否理由と除外範囲" in decision_format
-    assert "`## 実施内容`の`根拠`は採用要求だけ" in decision_format
+    assert "判定で除外されなかったファイルを計画対象集合とする" in decision_format
+    for text in (receiver, decision_format, standards):
+        assert "全要求が不採用" in text
+        assert "未確定要求" in text
+        assert "計画スレッドの起動前" in text
+        assert "計画対象集合" in text
+    receiver_terminal = receiver.index("全要求が不採用の項目は計画スレッドの起動前にreject対象")
+    receiver_plan = receiver.index("計画対象集合が1件以上ある場合は計画スレッドの起動直前")
+    assert receiver_terminal < receiver_plan
+    assert "計画担当の入力に含めた計画対象項目数と`## 実施内容`のフィードバック由来行数が一致" in receiver
+    assert "計画担当が全項目の記録を完了したことを検収した後" not in receiver
+    assert "非採用系の実施内容行を確認した後" not in decision_format
     for phrase in (
         "計画本文を編集せず同じ`feedbacks-planner`系統へ差し戻す",
         "不採用確認用TBDとして`agent-toolkit:add-feedback`へ渡し",
@@ -3084,6 +3109,79 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert phrase in tbd_output
         assert phrase not in user_decisions_output
     assert "通常の将来判断TBDは含めない" in user_decisions_output
+
+
+def test_feedback_plan_target_scope_and_item_rows_are_synchronized() -> None:
+    """9文書の事前判定、計画対象集合及び項目単位1行の契約を同期する。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    checklist = _REVIEW_CHECKLISTS.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    documents = (planner, decision, hold, reception, standards, process, checklist, concepts, design)
+    for document in documents:
+        assert "計画対象集合" in document
+        assert "保留項目を含む全項目" not in document
+        assert "当該採否を計画担当へ渡す" not in document
+        assert "実施内容表にはバッチ全項目" not in document
+        assert "計画対象集合に含まれる項目の不採用要求も非採用系の行" not in document
+
+    for document in (reception, process, checklist, concepts, design):
+        assert "バッチ全項目の採否記録" in document
+        assert "`blocked`状態" in document
+
+    pre_plan_documents = (planner, hold, reception, standards, process, checklist)
+    for document in pre_plan_documents:
+        assert "計画スレッドの起動前" in document
+        assert "hold対象" in document
+    for document in (planner, decision, reception, standards, process, checklist):
+        assert "reject対象" in document
+        assert "メイン" in document
+    for document in (planner, decision, reception, standards, process):
+        assert "キュー状態を変更しない" in document
+    for document in (concepts, design):
+        assert document.index("全要求不採用") < document.index("計画対象集合")
+
+    item_row_documents = (planner, decision, reception, standards, process, checklist, concepts)
+    for document in item_row_documents:
+        assert "1行ずつ" in document
+        assert "要求表を正本" in document
+        assert "要求別の採否詳細" in document
+    assert "計画対象集合の各項目を1行ずつ" in design
+    assert "不採用要求も要求表へ残し" in design
+
+    assert "計画担当の入力に含めた計画対象項目数と`## 実施内容`のフィードバック由来行数が一致" in planner
+    assert "実施内容表は計画対象集合の項目単位で1行" in planner
+    assert "部分採用では採用範囲と除外範囲の要点を実施内容セルへ記載" in planner
+    assert "要求別の採否詳細を別行へ複製しない" in planner
+    assert "項目の要求別採否、採用範囲、除外範囲及び理由は要求表を正本" in planner
+    assert "不採用要求も行として含め" not in planner
+    assert "キュー操作判定（reject対象・hold対象・対象外）" in planner
+    assert "既存TBD・依存・blocked状態との対応" in planner
+    assert "成果物、計画ファイル及びキューへ書き込まず" in planner
+    assert "採否候補の確定、reject対象・hold対象の判定と結果の返却" in planner
+    assert "`atk mq reject <filename>" not in planner
+    assert "メインはキュー操作と検収を担当" in reception
+    assert "メインはキュー操作、`feedbacks-planner`" in process
+    reception_check = _h2_section(reception, "受領")
+    assert "完了報告の検収直後" in reception_check
+    assert "`atk mq reject <filename> --note=<採否理由>`を実行" in reception_check
+    assert "`hold-with-tbd-inject.md`の保留経路を適用" in reception_check
+    for document in (concepts, design):
+        assert "`feedbacks-planner`は判定結果をメインへ返" in document
+        assert "実際のreject実行と保留処理はメインが担当" in document
+    assert "採否候補の確定、reject対象・hold対象の判定と結果の返却も担う" in design
+    decision_cleanup = _h2_section(decision, "後始末")
+    assert "reject対象" not in decision_cleanup
+    assert "hold対象" not in decision_cleanup
+    cleanup = _h2_section(process, "5. 後始末")
+    assert "reject対象・hold対象" not in cleanup
+    assert "キューを操作" not in cleanup
 
 
 def test_feedback_confirmation_wait_restarts_same_series_with_full_context() -> None:
@@ -4059,7 +4157,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "採否の確定に用いる正本として示す。\n"
         "   `review-standards/references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
         "   計画担当の応答では、各指摘の採否と比例性の判断根拠が"
-        "固定7列TSV、要求表及び変更履歴へ記録されていることを検収する。\n"
+        "固定7列TSV、要求表及びラウンド単位の変更履歴要約行へ記録されていることを検収する。\n"
     ) in planner
     assert "計画の目的と合意済みの除外・保持を満たす最小限の修正" in plan_review
     assert "採否と対応結果を要求表、変更履歴及び`atk review-table`の固定7列TSV" in plan_review
