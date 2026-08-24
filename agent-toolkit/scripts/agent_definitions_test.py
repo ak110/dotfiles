@@ -25,7 +25,6 @@ _PLAN_IMPL_TASK = _PLAN_MODE_REFERENCES / "implementation-task.md"
 _PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-plan-review-task.md"
 _PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-independent-review-task.md"
 _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
-_COORDINATION_PREFLIGHT = _ADD_FEEDBACK.parent / "references" / "coordination-preflight.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PLAN_IMPL_FEEDBACK_FLOW = _PROCESS_FEEDBACKS.parent / "references" / "plan-impl-feedback-flow.md"
 _FEEDBACKS_PLANNER_RECEPTION = _PROCESS_FEEDBACKS.parent / "references" / "feedbacks-planner-reception.md"
@@ -1553,8 +1552,8 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
     assert "sourceの欠落・不一致では完了扱いにせず" in add_feedback
     assert "sourceを受領していない場合は追加のsource照合をしない" in add_feedback
-    assert "手順7のsource照合後" in add_feedback
-    assert "手順6の照合後" not in add_feedback
+    assert "手順6のsource照合後" in add_feedback
+    assert "手順7のsource照合後" not in add_feedback
     assert "source `plan`を明示" in plan_and_add
     assert "source `session-review`を明示" in session_review
 
@@ -3633,7 +3632,6 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "利用者依存事項は確認又はTBDへ分離" in add_feedback
     assert "技術的未確定が通常型本文へ残っていない" in add_feedback
     assert "`../plan-mode/SKILL.md`の調査成果を証拠として再利用" in add_feedback
-    assert "保存直前にactive一覧" in add_feedback
     assert "正確なローカルworktreeが既知" in add_feedback
     assert "その絶対パスを`atk mq add --target-repo`へ渡し" in add_feedback
     assert "正規の対象リポジトリと作成時点のHEAD完全OID" in add_feedback
@@ -3672,16 +3670,14 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
 
-    preflight = _COORDINATION_PREFLIGHT.read_text(encoding="utf-8")
-    assert "保存直前にactive一覧を再取得して同期を所有" in add_feedback
-    assert "同じ確認で関連項目を読む場合だけ" in add_feedback
-    assert "processing" in preflight
-    assert "依存付き追随" in preflight
+    coordination_preflight = _ADD_FEEDBACK.parent / "references" / "coordination-preflight.md"
+    assert not coordination_preflight.exists()
+    assert "coordination-preflight" not in add_feedback
+    assert "coordination-preflight" not in plan_and_add
     reject_at = plan_and_add.index("atk mq reject <filename> --if-inbox")
     for later_phase in ("追加調査", "計画起草", "レビュー"):
         assert reject_at < plan_and_add.index(later_phase, reject_at)
     assert "回答済みTBD" not in plan_and_add
-    assert "回答済みTBD" not in preflight
     assert "新しい計画型のフィードバックを追加" in plan_and_add
     assert "吸収元のファイル名" in plan_and_add
     assert "processing項目を変更しない" in plan_and_add
@@ -3698,14 +3694,6 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
         assert removed_command not in add_feedback
         assert removed_command not in plan_and_add
         assert removed_command not in process
-
-
-def test_coordination_preflight_conditions_plan_handoff_note() -> None:
-    """通常addに計画移管のnoteを要求しない。"""
-    preflight = _COORDINATION_PREFLIGHT.read_text(encoding="utf-8")
-
-    assert "計画作成へ移管する場合は" in preflight
-    assert "通常のadd経路では、実際の終端理由" in preflight
 
 
 def test_problem_solution_proportionality_contract_is_complete() -> None:

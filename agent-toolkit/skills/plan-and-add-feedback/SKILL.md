@@ -14,8 +14,7 @@ description: >
 
 作業途中で本スキルが起動された場合は、現時点までの調査結果を計画へ引き継ぎ、実装せずフィードバック投入でセッションを完了する意図として扱う。既存の未コミット差分を変更せず、確認済みの事実だけを計画へ再利用する。
 
-1. 計画作成前に`${CLAUDE_PLUGIN_ROOT}/skills/add-feedback/references/coordination-preflight.md`を全文読み、
-   active、processing、関連worktreeを確認する。複数repoの場合だけ
+1. 複数repoの場合だけ
    `${CLAUDE_PLUGIN_ROOT}/skills/add-feedback/references/cross-repository-submission.md`も全文読む
 2. 重複inboxを計画へ吸収すると確定した直後に、
    `atk mq reject <filename> --if-inbox --note=<移管理由と計画パス>`を実行する。
