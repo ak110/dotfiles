@@ -99,7 +99,7 @@ def test_first_nonempty_subagent_stop_passes_without_posttooluse(tmp_path: pathl
 
     result = _run(
         "subagent_stop_advisor",
-        {"session_id": "sid", "agent_id": "agent-a", "last_assistant_message": "status: completed"},
+        {"session_id": "sid", "agent_id": "agent-a", "last_assistant_message": "完了報告"},
         tmp_path,
     )
 
