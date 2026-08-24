@@ -1184,7 +1184,7 @@ def test_overlapping_plan_lanes_run_parallel_and_merge_all_plan_intents() -> Non
     design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
     incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
-    assert "同じworktreeへ後続の実装担当を起動する場合に限り" in rules
+    assert "同じworktreeへ書き込む主体を交代させる場合" in rules
     assert "変更ファイルが重複しても相互に待機しない" in rules
     assert "変更対象ファイルの重複を待機の条件にせず" in flow
     assert "変更ファイルの重複を理由に先行レーンの完了を待たず" in caller
