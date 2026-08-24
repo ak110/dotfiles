@@ -54,6 +54,7 @@ def _write_tbd_entry(
 def _disable_transition_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """状態遷移テストからprivate-notesのgit操作を除外する。"""
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
 
@@ -81,6 +82,7 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     notes = _setup_notes(tmp_path)
     _write_feedback_file(notes, "entry.md")
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     filenames = mutations.transition_entries(
@@ -252,6 +254,7 @@ def test_remove_targets_explicit_state_and_keeps_legacy_priority(
     """状態指定時は指定側を削除し、省略時はprocessing優先を維持する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     content = "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n"
@@ -293,6 +296,7 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
     """確認後の内容変更とUTF-8読取り不能を競合として削除しない。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     original = "---\ntype: feedback\n---\n\n確認時本文\n"
@@ -897,6 +901,7 @@ def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monke
     notes = _setup_notes(tmp_path)
     _write_feedback_file(notes, "entry.md")
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     mutations.transition_entries(notes, action="start-processing", filenames=["entry.md"], now=_FIXED_DT)
@@ -1215,6 +1220,300 @@ class TestRejectDeletes:
         assert (notes / "rejected" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 entry (rejected)" in commit_cmd
+
+
+class TestSkipPush:
+    """adopt・rejectの中間操作でpushを省略し、最後に滞留commitを送信する。"""
+
+    def test_adopt_skip_push_commits_without_push_and_reports_note(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """adoptの--skip-pushはcommitだけを実行し未push状態を案内する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "adopt", "fb-001.md", "--skip-push"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        commands = [call["cmd"] for call in git_calls]
+        assert any(command[:2] == ["git", "add"] for command in commands)
+        assert any(command[:2] == ["git", "commit"] for command in commands)
+        assert commands[0] == ["git", "push"]
+        assert commands.count(["git", "push"]) == 1
+        captured = capsys.readouterr()
+        assert "未pushのcommit" in captured.err
+        assert "atk mq commit" in captured.err
+
+    def test_reject_skip_push_commits_without_push_and_reports_note(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """rejectの--skip-pushはcommitだけを実行し未push状態を案内する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "reject", "fb-001.md", "--skip-push"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        commands = [call["cmd"] for call in git_calls]
+        assert any(command[:2] == ["git", "add"] for command in commands)
+        assert any(command[:2] == ["git", "commit"] for command in commands)
+        assert commands[0] == ["git", "push"]
+        assert commands.count(["git", "push"]) == 1
+        captured = capsys.readouterr()
+        assert "未pushのcommit" in captured.err
+        assert "atk mq commit" in captured.err
+
+    def test_default_adopt_pushes_without_skip_note(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--skip-pushを指定しないadoptは従来どおりpushし注記を出力しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "adopt", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        commands = [call["cmd"] for call in git_calls]
+        assert ["git", "push"] in commands
+        assert "--skip-push" not in capsys.readouterr().err
+
+    def test_pending_commits_are_pushed_by_following_normal_transition(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """skip-push後の通常遷移が先行分を含む滞留commitをまとめてpushする。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as first_exc_info:
+            atk.main(["mq", "adopt", "fb-001.md", "--skip-push"], home=tmp_path)
+        assert first_exc_info.value.code == 0
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as second_exc_info:
+            atk.main(["mq", "reject", "fb-002.md"], home=tmp_path)
+        assert second_exc_info.value.code == 0
+        commands = [call["cmd"] for call in git_calls]
+        assert commands.count(["git", "commit", "-m", "chore: process 1 entry (adopted)"]) == 1
+        assert commands.count(["git", "commit", "-m", "chore: process 1 entry (rejected)"]) == 1
+        assert commands.count(["git", "push"]) == 3
+        assert "--skip-push" not in capsys.readouterr().err
+
+    def test_commit_pushes_clean_ahead_repository(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """キューがcleanでもaheadの滞留commitを`atk mq commit`でpushする。"""
+        notes = _setup_notes(tmp_path)
+        for state in ("processing", "adopted", "rejected"):
+            (notes / state).mkdir()
+        (notes / "adopted" / "base.md").write_text("base\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "init", "--initial-branch=main"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(["git", "add", "."], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "commit", "-m", "base"], cwd=notes, capture_output=True, text=True, check=True)
+        remote = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=main", str(remote)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "push", "--set-upstream", "origin", "main"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        (notes / "adopted" / "pending.md").write_text("pending\n", encoding="utf-8")
+        subprocess.run(["git", "add", "adopted/pending.md"], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "commit", "-m", "pending"], cwd=notes, capture_output=True, text=True, check=True)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "commit"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        local_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        remote_head = subprocess.run(
+            ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/main"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert local_head == remote_head
+        assert "差分なし。滞留commitをpushしました。" in capsys.readouterr().out
+
+    def test_real_git_transitions_push_and_recover_after_remote_advances(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """通常遷移は即時pushし、remote進行後もskip-pushの滞留commitを回復する。"""
+        first_home = tmp_path / "first"
+        first_home.mkdir()
+        notes = _setup_notes(first_home)
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+        for state in ("processing", "adopted", "rejected"):
+            (notes / state).mkdir()
+        for filename in ("default-adopt.md", "default-reject.md", "skip.md", "following.md"):
+            _write_feedback_file(notes, filename)
+
+        subprocess.run(
+            ["git", "init", "--initial-branch=main"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for key, value in (("user.name", "queue-test"), ("user.email", "queue-test@example.invalid")):
+            subprocess.run(["git", "config", key, value], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "add", "."], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "commit", "-m", "base"], cwd=notes, capture_output=True, text=True, check=True)
+
+        remote = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=main", str(remote)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote)],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "push", "--set-upstream", "origin", "main"],
+            cwd=notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        second_home = tmp_path / "second"
+        second_home.mkdir()
+        second_notes = second_home / "private-notes"
+        subprocess.run(
+            ["git", "clone", "--branch", "main", str(remote), str(second_notes)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for key, value in (("user.name", "queue-test"), ("user.email", "queue-test@example.invalid")):
+            subprocess.run(["git", "config", key, value], cwd=second_notes, capture_output=True, text=True, check=True)
+
+        def local_head() -> str:
+            return subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=notes, capture_output=True, text=True, check=True
+            ).stdout.strip()
+
+        def remote_head() -> str:
+            return subprocess.run(
+                ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/main"],
+                cwd=tmp_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+        with pytest.raises(SystemExit) as adopt_exit:
+            atk.main(["mq", "adopt", "default-adopt.md"], home=first_home, now=_FIXED_DT)
+        assert adopt_exit.value.code == 0
+        assert local_head() == remote_head()
+
+        with pytest.raises(SystemExit) as reject_exit:
+            atk.main(["mq", "reject", "default-reject.md"], home=first_home, now=_FIXED_DT)
+        assert reject_exit.value.code == 0
+        assert local_head() == remote_head()
+
+        subprocess.run(["git", "pull", "--ff-only"], cwd=second_notes, capture_output=True, text=True, check=True)
+        with pytest.raises(SystemExit) as skip_exit:
+            atk.main(["mq", "adopt", "skip.md", "--skip-push"], home=first_home, now=_FIXED_DT)
+        assert skip_exit.value.code == 0
+        assert local_head() != remote_head()
+
+        (second_notes / "remote-update.txt").write_text("remote update\n", encoding="utf-8")
+        subprocess.run(["git", "add", "remote-update.txt"], cwd=second_notes, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "remote update"],
+            cwd=second_notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(["git", "push"], cwd=second_notes, capture_output=True, text=True, check=True)
+
+        with pytest.raises(SystemExit) as following_exit:
+            atk.main(["mq", "reject", "following.md"], home=first_home, now=_FIXED_DT)
+        assert following_exit.value.code == 0
+        assert local_head() == remote_head()
+        assert (notes / "adopted/skip.md").is_file()
+        assert (notes / "rejected/following.md").is_file()
+
+    def test_skip_push_without_remote_does_not_report_note(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """remote未設定の管理リポジトリでは--skip-pushの注記を出力しない。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        (notes / common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "adopt", "fb-001.md", "--skip-push"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert ["git", "push"] not in [call["cmd"] for call in git_calls]
+        assert "未pushのcommit" not in capsys.readouterr().err
 
 
 class TestRejectStampWithNote:
@@ -2538,6 +2837,7 @@ class TestStartProcessingFailureBoundaries:
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+        monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
         monkeypatch.setattr(mutations, "_pull", lambda _path: None)
         transition_calls: list[str] = []
 
@@ -2561,6 +2861,7 @@ class TestStartProcessingFailureBoundaries:
 
         status_outputs = [" M processing/fb-001.md\n M processing/fb-002.md\n", ""]
         recovery_calls: list[tuple[object, ...]] = []
+        push_calls: list[pathlib.Path] = []
 
         def fake_status(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
             assert cmd[:3] == ["git", "status", "--porcelain"]
@@ -2571,9 +2872,11 @@ class TestStartProcessingFailureBoundaries:
 
         monkeypatch.setattr(subprocess, "run", fake_status)
         monkeypatch.setattr(mutations, "_commit_and_push", recover_commit)
+        monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
         assert mutations.commit_entries(notes) is True
         assert mutations.commit_entries(notes) is False
         assert len(recovery_calls) == 1
+        assert push_calls == [notes, notes, notes]
 
     def test_push_failure_after_transition_commit_is_not_success(
         self,

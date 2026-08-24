@@ -368,7 +368,13 @@ def _copy_to_tempfile(content: bytes) -> pathlib.Path:
         return pathlib.Path(f.name)
 
 
-def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Iterable[str]) -> None:
+def _commit_and_push(
+    private_notes: pathlib.Path,
+    message: str,
+    rel_paths: Iterable[str],
+    *,
+    skip_push: bool = False,
+) -> None:
     """指定パスをaddしcommit・pushする。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
@@ -379,11 +385,21 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
     再試行後のpushが失敗した場合はその例外をそのまま送出する。
     remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
     commitのみ実行しpushをスキップする。
+    `skip_push=True`の場合はcommitだけを実行し、remote設定時は未pushのcommitが残る旨と
+    後続の通常操作又は`atk mq commit`でpushする旨を標準エラーへ出力する。
     """
     _assert_repo_lock_held(private_notes)
     rel_list = list(rel_paths)
     _run_git(["add", *rel_list], cwd=private_notes)
     _run_git(["commit", "-m", message], cwd=private_notes)
+    if skip_push:
+        if _has_remote(private_notes):
+            print(
+                "注記: --skip-pushにより未pushのcommitをローカルへ残し、pushを省略しました。"
+                "最後の操作は--skip-pushなしで実行するか、atk mq commitを実行して滞留commitをpushしてください。",
+                file=sys.stderr,
+            )
+        return
     _push_pending_commits(private_notes)
 
 

@@ -1788,7 +1788,7 @@ def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
 
 
 def test_feedback_failure_contract_keeps_mq_commit_public_behavior() -> None:
-    """失敗処置がmq commitの用途、出力及びhelpを変更しない契約を固定する。"""
+    """失敗処置がmq commitの用途、出力及びhelpを維持する契約を固定する。"""
     mutations = _ATK_MQ_MUTATIONS.read_text(encoding="utf-8")
     entrypoint = _ATK_ENTRYPOINT.read_text(encoding="utf-8")
 
@@ -1797,10 +1797,13 @@ def test_feedback_failure_contract_keeps_mq_commit_public_behavior() -> None:
         "inbox・processing配下の外部編集差分をcommit・push",
         '"status", "--porcelain", "--", inbox_rel, processing_rel',
         'print("外部編集分をコミット・pushしました。")',
-        'print("差分なし。")',
+        'print("差分なし。滞留commitをpushしました。")',
     ):
         assert phrase in mutations
-    assert 'help="外部編集後にinbox・processing配下の未コミット変更をコミット・push（差分なしなら無動作）"' in entrypoint
+    assert (
+        'help="外部編集後にinbox・processing配下の未コミット変更をコミット・push（差分がなくても滞留commitをpush）"'
+        in entrypoint
+    )
 
 
 def test_session_review_advisor_uses_default_reasoning_effort() -> None:

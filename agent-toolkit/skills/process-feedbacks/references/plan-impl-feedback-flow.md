@@ -93,7 +93,7 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
     対象commitが0件（bump不要かつ修正なし）の場合だけ統合差分レビューを実施しない
     （レーンのcommitはレーン内でレビュー済みのため）
 11. push・CI通過確認・終端工程・レーンworktree回収は既存契約を維持する（メインだけが実行する）。
-    push・CI成功後、ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行する
+    push・CI成功後、ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行する。複数件の場合は最後の1件を除く実行へ`--skip-push`を付け、最後の1件は付けずに実行して滞留commitをまとめてpushする。1件の場合は`--skip-push`を付けない
 12. push前のfetch照合又は実pushで上流進行（non-fast-forward拒否）を観測した場合、メインは`execute_fix_model`で
     経路を解決する。
     競合解消後に実施する統合差分レビューも`review-loop-coordination.md`の表ライフサイクル・モデル解決・収束判定を適用する。

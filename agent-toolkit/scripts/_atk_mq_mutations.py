@@ -408,6 +408,7 @@ def transition_entries(
     expected_content: str | None = None,
     cooldown_days: int | None = None,
     local_worktree: pathlib.Path | None = None,
+    skip_push: bool = False,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移又は削除を実行する。
 
@@ -425,6 +426,7 @@ def transition_entries(
     inbox_dir = private_notes / MQ_STATE_INBOX
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _push_pending_commits(private_notes)
         _pull(private_notes)
         missing_is_conflict = action == "remove" and expected_content is not None
         paths = _resolve_transition_paths(
@@ -456,7 +458,12 @@ def transition_entries(
             commit_values=commit_values,
             cooldown_days=cooldown_days,
         )
-        _commit_and_push(private_notes, _transition_commit_message(action, len(paths), note), list(MQ_STATES))
+        _commit_and_push(
+            private_notes,
+            _transition_commit_message(action, len(paths), note),
+            list(MQ_STATES),
+            skip_push=skip_push,
+        )
     return [path.name for path in paths]
 
 
@@ -601,8 +608,12 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
 
 
 def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:
-    """平引数でinbox・processing配下の外部編集差分をcommit・pushする。"""
+    """平引数でinbox・processing配下の外部編集差分をcommit・pushする。
+
+    対象配下に差分がない場合も滞留commitをpushし、外部編集によるcommitを行ったかを返す。
+    """
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _push_pending_commits(private_notes)
         _pull(private_notes)
         inbox_rel = MQ_STATE_INBOX
         processing_rel = MQ_STATE_PROCESSING
@@ -614,6 +625,7 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
             text=True,
         )
         if not status.stdout.strip():
+            _push_pending_commits(private_notes)
             return False
         _commit_and_push(private_notes, "chore: edit queue items externally", [inbox_rel, processing_rel])
     return True
@@ -928,6 +940,7 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         note=args.note,
         commit=args.commit,
         local_worktree=local_worktree,
+        skip_push=args.skip_push,
     )
     print(f"{len(filenames)}件採用処理: {', '.join(filenames)}")
 
@@ -951,6 +964,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
         commit=args.commit,
         state=MQ_STATE_INBOX if args.if_inbox else None,
         local_worktree=local_worktree,
+        skip_push=args.skip_push,
     )
     print(f"{len(filenames)}件不採用処理: {', '.join(filenames)}")
 
@@ -1161,9 +1175,9 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 def _cmd_commit(private_notes: pathlib.Path) -> None:
     """commitサブコマンド: 外部編集後のinbox・processing配下未コミット変更をコミット・push。
 
-    inbox・processing配下に未コミット変更が無い場合は早期return。
+    inbox・processing配下に未コミット変更がない場合も滞留commitをpushする。
     """
     if commit_entries(private_notes):
         print("外部編集分をコミット・pushしました。")
     else:
-        print("差分なし。")
+        print("差分なし。滞留commitをpushしました。")

@@ -402,6 +402,11 @@ def _add_mq_transition_parsers(sub: Any) -> None:
             "--commit=VALUE形式で渡すことを推奨。"
         ),
     )
+    adopt.add_argument(
+        "--skip-push",
+        action="store_true",
+        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
+    )
     _add_target_repo_arg(adopt, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
     reject = sub.add_parser("reject", help="不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push")
@@ -423,6 +428,11 @@ def _add_mq_transition_parsers(sub: Any) -> None:
             "記録時に完全OIDへ解決する。対応付けできない場合は警告し、指定値を記録する。"
             "--commit=VALUE形式で渡すことを推奨。"
         ),
+    )
+    reject.add_argument(
+        "--skip-push",
+        action="store_true",
+        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
     )
     reject.add_argument(
         "--if-inbox",
@@ -578,7 +588,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
 
     sub.add_parser(
         "commit",
-        help="外部編集後にinbox・processing配下の未コミット変更をコミット・push（差分なしなら無動作）",
+        help="外部編集後にinbox・processing配下の未コミット変更をコミット・push（差分がなくても滞留commitをpush）",
     )
 
 
