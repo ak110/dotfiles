@@ -267,7 +267,7 @@ class TestApproveConditions:
                             {
                                 "type": "tool_use",
                                 "id": "toolu_mcp",
-                                "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                                "name": "mcp__agents_server__start",
                                 "input": {},
                             }
                         ],

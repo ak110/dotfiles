@@ -2841,7 +2841,7 @@ class TestDelegationRouteGate:
         """メインセッションでdelegation未起動の初回呼び出しをブロックする。"""
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello"},
                 "session_id": "no-review",
             },
@@ -2855,7 +2855,7 @@ class TestDelegationRouteGate:
         self._write_state(tmp_path, "with-review", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "with-review",
             },
@@ -2870,7 +2870,7 @@ class TestDelegationRouteGate:
         """サイドチェーンでは明示Skill起動記録を要求しない。"""
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "sidechain-invoked",
                 "isSidechain": True,
@@ -2885,7 +2885,7 @@ class TestDelegationRouteGate:
         """`isSidechain`が偽の呼び出しへメインセッションゲートを適用する。"""
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello"},
                 "session_id": "not-sidechain",
                 "isSidechain": False,
@@ -2910,7 +2910,7 @@ class TestCodexMcpExecution:
         self._write_state(tmp_path, "fix1", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "cwd": "/tmp/workdir"},
                 "session_id": "fix1",
             },
@@ -2927,7 +2927,7 @@ class TestCodexMcpExecution:
         self._write_state(tmp_path, "fix2", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": sandbox, "cwd": "/tmp/workdir"},
                 "session_id": "fix2",
             },
@@ -2943,7 +2943,7 @@ class TestCodexMcpExecution:
         self._write_state(tmp_path, "fix_side", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "read-only", "cwd": "/tmp/workdir"},
                 "session_id": "fix_side",
                 "isSidechain": True,
@@ -2960,7 +2960,7 @@ class TestCodexMcpExecution:
         self._write_state(tmp_path, "fix3", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {
                     "prompt": "hello",
                     "sandbox": "danger-full-access",
@@ -2982,7 +2982,7 @@ class TestCodexMcpExecution:
         self._write_state(tmp_path, "fix_ap", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {
                     "prompt": "hello",
                     "sandbox": "danger-full-access",
@@ -3000,7 +3000,7 @@ class TestCodexMcpExecution:
 
 
 class TestCheckCodexMcpCwd:
-    """`mcp__plugin_agent-toolkit_codex_app_server__codex_start`呼び出しの`cwd`絶対パス強制（CLI統合テスト、公開インターフェース経由）。"""
+    """`mcp__plugin_agent-toolkit_agents_server__start`呼び出しの`cwd`絶対パス強制（CLI統合テスト、公開インターフェース経由）。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -3013,7 +3013,7 @@ class TestCheckCodexMcpCwd:
         self._write_state(tmp_path, "cwd-missing", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
                 "session_id": "cwd-missing",
             },
@@ -3027,7 +3027,7 @@ class TestCheckCodexMcpCwd:
         self._write_state(tmp_path, "cwd-empty", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": ""},
                 "session_id": "cwd-empty",
             },
@@ -3041,7 +3041,7 @@ class TestCheckCodexMcpCwd:
         self._write_state(tmp_path, "cwd-whitespace", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "   "},
                 "session_id": "cwd-whitespace",
             },
@@ -3055,7 +3055,7 @@ class TestCheckCodexMcpCwd:
         self._write_state(tmp_path, "cwd-relative", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "relative/path"},
                 "session_id": "cwd-relative",
             },
@@ -3069,7 +3069,7 @@ class TestCheckCodexMcpCwd:
         self._write_state(tmp_path, "cwd-absolute", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/home/aki/dotfiles"},
                 "session_id": "cwd-absolute",
             },
@@ -3092,8 +3092,8 @@ class TestCodexMcpReply:
     @pytest.mark.parametrize(
         ("tool_name", "prompt"),
         [
-            ("mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply", "next"),
-            ("mcp__plugin_agent-toolkit_codex_app_server__codex_send_message", "追加指示"),
+            ("mcp__plugin_agent-toolkit_agents_server__send_message", "next"),
+            ("mcp__plugin_agent-toolkit_agents_server__send_message", "追加指示"),
         ],
     )
     def test_continuation_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path, tool_name: str, prompt: str):
@@ -3101,7 +3101,7 @@ class TestCodexMcpReply:
         self._write_state(
             tmp_path,
             "reply1",
-            {"delegation_skill_invoked": True, "codex_app_server_cwd_by_session": {"abc": "/tmp"}},
+            {"delegation_skill_invoked": True, "agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
         result = _run(
             {
@@ -3143,13 +3143,13 @@ class TestCodexMcpLanguageWarningMerge:
         return path
 
     def test_codex_merges_pending_language_warning(self, tmp_path: pathlib.Path):
-        """mcp__plugin_agent-toolkit_codex_app_server__codex_start分岐で保留警告が承認JSONへ統合される。"""
+        """mcp__plugin_agent-toolkit_agents_server__start分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
         self._write_state(tmp_path, "codex-lang", {"delegation_skill_invoked": True})
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "transcript_path": str(transcript),
                 "session_id": "codex-lang",
@@ -3163,17 +3163,17 @@ class TestCodexMcpLanguageWarningMerge:
         assert "英語主体" in out["hookSpecificOutput"]["additionalContext"]
 
     def test_codex_reply_merges_pending_language_warning(self, tmp_path: pathlib.Path):
-        """mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply分岐で保留警告が承認JSONへ統合される。"""
+        """mcp__plugin_agent-toolkit_agents_server__send_message分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
         self._write_state(
             tmp_path,
             "reply-lang",
-            {"delegation_skill_invoked": True, "codex_app_server_cwd_by_session": {"abc": "/tmp"}},
+            {"delegation_skill_invoked": True, "agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "abc", "prompt": "next"},
                 "transcript_path": str(transcript),
                 "session_id": "reply-lang",
@@ -3203,7 +3203,7 @@ class TestIssSidechainProbe:
         self._write_state(tmp_path, "probe1", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe1",
                 "isSidechain": False,
@@ -3228,7 +3228,7 @@ class TestIssSidechainProbe:
         )
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe2",
                 "isSidechain": False,
@@ -3241,7 +3241,7 @@ class TestIssSidechainProbe:
         entry = json.loads(self._log_path(tmp_path, "probe2").read_text(encoding="utf-8").splitlines()[0])
         assert entry["isSidechain"] is False
         assert entry["session_id"] == "probe2"
-        assert entry["tool_name"] == "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
+        assert entry["tool_name"] == "mcp__plugin_agent-toolkit_agents_server__start"
         assert entry["transcript_path"] == "/tmp/transcript.jsonl"
         assert entry["cwd"] == "/tmp/workdir"
         assert entry["current_plan_file_path"] == "/tmp/plan.md"
@@ -3252,7 +3252,7 @@ class TestIssSidechainProbe:
         self._write_state(tmp_path, "probe3", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe3",
             },
@@ -3268,7 +3268,7 @@ class TestIssSidechainProbe:
         self._write_state(tmp_path, "probe4", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe4",
                 "isSidechain": "yes",
@@ -3286,7 +3286,7 @@ class TestIssSidechainProbe:
         env = {"TMPDIR": str(blocked_tmpdir), "TEMP": str(blocked_tmpdir), "TMP": str(blocked_tmpdir)}
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe-oserror",
                 "isSidechain": True,
@@ -3305,7 +3305,7 @@ class TestIssSidechainProbe:
         log_path.write_text("x" * (1_000_001), encoding="utf-8")
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe-rotate",
                 "isSidechain": False,
@@ -3319,16 +3319,16 @@ class TestIssSidechainProbe:
         assert len(log_path.read_text(encoding="utf-8").splitlines()) == 1
 
     def test_called_for_codex_reply_tool(self, tmp_path: pathlib.Path):
-        """`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`の呼び出し時にも本ヘルパーが呼ばれる。"""
+        """`mcp__plugin_agent-toolkit_agents_server__send_message`の呼び出し時にも本ヘルパーが呼ばれる。"""
         env = self._state_env(tmp_path)
         self._write_state(
             tmp_path,
             "probe-reply",
-            {"delegation_skill_invoked": True, "codex_app_server_cwd_by_session": {"abc": "/tmp"}},
+            {"delegation_skill_invoked": True, "agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "abc", "prompt": "next"},
                 "session_id": "probe-reply",
                 "isSidechain": False,
@@ -3338,14 +3338,14 @@ class TestIssSidechainProbe:
         assert result.returncode == 0
         log_path = self._log_path(tmp_path, "probe-reply")
         entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
-        assert entry["tool_name"] == "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply"
+        assert entry["tool_name"] == "mcp__plugin_agent-toolkit_agents_server__send_message"
 
     def test_called_even_when_iss_sidechain_true(self, tmp_path: pathlib.Path):
         """`isSidechain=True`ケースでも本ヘルパーが呼ばれる（既存ゲートより前で実行される確認）。"""
         env = self._state_env(tmp_path)
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe-sidechain-true",
                 "isSidechain": True,
@@ -4747,7 +4747,7 @@ class TestBodySectionReferenceExists:
 
 
 class TestCodexRemoteSnapshotRecording:
-    """`mcp__plugin_agent-toolkit_codex_app_server__codex_start`/`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`呼び出し時のリモート参照スナップショット記録。
+    """`mcp__plugin_agent-toolkit_agents_server__start`/`mcp__plugin_agent-toolkit_agents_server__send_message`呼び出し時のリモート参照スナップショット記録。
 
     codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
     行う事象への機械チェック（事後検知）のうち、記録側（PreToolUse）を検証する。
@@ -4771,7 +4771,7 @@ class TestCodexRemoteSnapshotRecording:
         self._write_state(tmp_path, "snap-agent", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
                 "session_id": "snap-agent",
                 "cwd": str(repo),
@@ -4782,7 +4782,7 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert result.returncode == 0
         state = self._read_state(tmp_path, "snap-agent")
-        entries = state.get("codex_remote_snapshot_by_key")
+        entries = state.get("agents_server_remote_snapshot_by_key")
         assert entries is not None
         recorded = entries.get("abc123")
         assert recorded is not None
@@ -4797,7 +4797,7 @@ class TestCodexRemoteSnapshotRecording:
         self._write_state(tmp_path, "snap-session", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
                 "session_id": "snap-session",
                 "cwd": str(repo),
@@ -4807,7 +4807,7 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert result.returncode == 0
         state = self._read_state(tmp_path, "snap-session")
-        entries = state.get("codex_remote_snapshot_by_key")
+        entries = state.get("agents_server_remote_snapshot_by_key")
         assert entries is not None
         recorded = entries.get("session:snap-session")
         assert recorded is not None
@@ -4826,7 +4826,7 @@ class TestCodexRemoteSnapshotRecording:
         self._write_state(tmp_path, "snap-cwd-src", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(codex_repo)},
                 "session_id": "snap-cwd-src",
                 "cwd": str(session_repo),
@@ -4836,23 +4836,23 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert result.returncode == 0
         state = self._read_state(tmp_path, "snap-cwd-src")
-        entries = state.get("codex_remote_snapshot_by_key")
+        entries = state.get("agents_server_remote_snapshot_by_key")
         assert entries is not None
         recorded = entries.get("session:snap-cwd-src")
         assert recorded is not None
         assert recorded["cwd"] == str(codex_repo)
 
     def test_reply_skips_recording_when_no_prior_cwd(self, tmp_path: pathlib.Path):
-        """直前の`mcp__plugin_agent-toolkit_codex_app_server__codex_start`呼び出しによるcwd記録が無い場合、`-reply`は記録をスキップする。
+        """直前の`mcp__plugin_agent-toolkit_agents_server__start`呼び出しによるcwd記録が無い場合、`-reply`は記録をスキップする。
 
-        `mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`の`tool_input`には`cwd`が含まれないため、
-        同一キーの直近`mcp__plugin_agent-toolkit_codex_app_server__codex_start`呼び出しで永続化したcwdが無ければ比較対象が無い。
+        `mcp__plugin_agent-toolkit_agents_server__send_message`の`tool_input`には`cwd`が含まれないため、
+        同一キーの直近`mcp__plugin_agent-toolkit_agents_server__start`呼び出しで永続化したcwdが無ければ比較対象が無い。
         """
         env = _plan_file_state_env(tmp_path)
         self._write_state(tmp_path, "snap-reply-nocwd", {"delegation_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "th_abc123", "prompt": "続行"},
                 "session_id": "snap-reply-nocwd",
                 "isSidechain": False,
@@ -4862,9 +4862,9 @@ class TestCodexRemoteSnapshotRecording:
         assert result.returncode == 2
         assert "no stored absolute cwd" in result.stderr
         assert "Do not continue this session" in result.stderr
-        assert "start a new one with codex_start" in result.stderr
+        assert "start a new one with agents_server start" in result.stderr
         state = self._read_state(tmp_path, "snap-reply-nocwd")
-        assert state.get("codex_remote_snapshot_by_key") is None
+        assert state.get("agents_server_remote_snapshot_by_key") is None
 
     def test_reply_accepts_json_string_response_recorded_by_posttooluse(self, tmp_path: pathlib.Path):
         """PostToolUseのJSON文字列応答で記録したcwdを後続のreplyが利用する。"""
@@ -4873,8 +4873,8 @@ class TestCodexRemoteSnapshotRecording:
         sid = "snap-json-post"
         env = _plan_file_state_env(tmp_path)
         self._write_state(tmp_path, sid, {"delegation_skill_invoked": True})
-        start_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start"
-        reply_tool = "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply"
+        start_tool = "mcp__plugin_agent-toolkit_agents_server__start"
+        reply_tool = "mcp__plugin_agent-toolkit_agents_server__send_message"
         post = _run_posttooluse(
             {
                 "session_id": sid,
@@ -4887,7 +4887,7 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert post.returncode == 0
         state = self._read_state(tmp_path, sid)
-        assert state["codex_app_server_cwd_by_session"]["thread-json"] == str(repo)
+        assert state["agents_server_cwd_by_session"]["thread-json"] == str(repo)
         reply = _run(
             {
                 "session_id": sid,
@@ -4901,17 +4901,17 @@ class TestCodexRemoteSnapshotRecording:
         assert reply.returncode == 0
         assert "cannot continue because session_id has no stored absolute cwd" not in _agent_messages(reply)
         state_after = self._read_state(tmp_path, sid)
-        assert state_after.get("codex_remote_snapshot_by_key")
+        assert state_after.get("agents_server_remote_snapshot_by_key")
 
     def test_reply_reuses_cwd_recorded_by_prior_codex_call(self, tmp_path: pathlib.Path):
-        """`mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply`は同一キーの直近`mcp__plugin_agent-toolkit_codex_app_server__codex_start`呼び出しのcwdを引き継いで記録する。"""
+        """`mcp__plugin_agent-toolkit_agents_server__send_message`は同一キーの直近`mcp__plugin_agent-toolkit_agents_server__start`呼び出しのcwdを引き継いで記録する。"""
         repo = tmp_path / "repo"
         self._init_repo(repo)
         env = _plan_file_state_env(tmp_path)
         self._write_state(tmp_path, "snap-reply", {"delegation_skill_invoked": True})
         first = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
                 "session_id": "snap-reply",
                 "isSidechain": True,
@@ -4925,12 +4925,12 @@ class TestCodexRemoteSnapshotRecording:
             self._read_state(tmp_path, "snap-reply")
             | {
                 "delegation_skill_invoked": True,
-                "codex_app_server_cwd_by_session": {"th_abc123": str(repo)},
+                "agents_server_cwd_by_session": {"th_abc123": str(repo)},
             },
         )
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "th_abc123", "prompt": "続行"},
                 "session_id": "snap-reply",
                 "isSidechain": False,
@@ -4939,12 +4939,12 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert result.returncode == 0
         state = self._read_state(tmp_path, "snap-reply")
-        entries = state.get("codex_remote_snapshot_by_key")
+        entries = state.get("agents_server_remote_snapshot_by_key")
         assert entries is not None
         assert entries.get("session:snap-reply", {}).get("cwd") == str(repo)
 
     def test_send_message_preserves_existing_thread_snapshot(self, tmp_path: pathlib.Path):
-        """実行中turnへの`codex_send_message`は同一threadのsnapshotを上書きしない。"""
+        """実行中turnへの`send_message`は同一threadのsnapshotを上書きしない。"""
         repo = tmp_path / "repo"
         self._init_repo(repo)
         sid = "snap-send-active"
@@ -4954,16 +4954,14 @@ class TestCodexRemoteSnapshotRecording:
             sid,
             {
                 "delegation_skill_invoked": True,
-                "codex_app_server_cwd_by_session": {"thread-1": str(repo)},
-                "codex_app_server_sessions": {
-                    "thread-1": {"status": "running", "result_retrieved": False, "snapshot_key": "start-1"}
-                },
-                "codex_remote_snapshot_by_key": {"start-1": {"cwd": str(repo), "snapshot": old_snapshot}},
+                "agents_server_cwd_by_session": {"thread-1": str(repo)},
+                "agents_server_sessions": {},
+                "agents_server_remote_snapshot_by_key": {"start-1": {"cwd": str(repo), "snapshot": old_snapshot}},
             },
         )
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
                 "tool_use_id": "send-1",
                 "session_id": sid,
@@ -4973,7 +4971,10 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert result.returncode == 0
         state = self._read_state(tmp_path, sid)
-        assert state["codex_remote_snapshot_by_key"] == {"start-1": {"cwd": str(repo), "snapshot": old_snapshot}}
+        assert state["agents_server_remote_snapshot_by_key"] == {
+            "start-1": {"cwd": str(repo), "snapshot": old_snapshot},
+            "send-1": {"cwd": str(repo), "snapshot": {}},
+        }
 
     def test_send_message_records_snapshot_after_result_recovery(self, tmp_path: pathlib.Path):
         """結果回収済みthreadのreply開始だけは新しいsnapshotを記録する。"""
@@ -4985,16 +4986,14 @@ class TestCodexRemoteSnapshotRecording:
             sid,
             {
                 "delegation_skill_invoked": True,
-                "codex_app_server_cwd_by_session": {"thread-1": str(repo)},
-                "codex_app_server_sessions": {
-                    "thread-1": {"status": "completed", "result_retrieved": True, "snapshot_key": "old-1"}
-                },
-                "codex_remote_snapshot_by_key": {},
+                "agents_server_cwd_by_session": {"thread-1": str(repo)},
+                "agents_server_sessions": {},
+                "agents_server_remote_snapshot_by_key": {},
             },
         )
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "thread-1", "prompt": "続行"},
                 "tool_use_id": "send-1",
                 "session_id": sid,
@@ -5004,7 +5003,7 @@ class TestCodexRemoteSnapshotRecording:
         )
         assert result.returncode == 0
         state = self._read_state(tmp_path, sid)
-        assert state["codex_remote_snapshot_by_key"]["send-1"]["cwd"] == str(repo)
+        assert state["agents_server_remote_snapshot_by_key"]["send-1"]["cwd"] == str(repo)
 
 
 class TestDelegationGateForAgentTask:
@@ -5407,7 +5406,7 @@ class TestCodexBashCheckSelection:
         }
 
         claude_result = _run(claude_payload, env_overrides=env)
-        codex_result = _run(codex_payload, env_overrides=env)
+        wait_result = _run(codex_payload, env_overrides=env)
 
         assert "英語主体" in _additional_context(claude_result)
-        assert codex_result.stdout == ""
+        assert wait_result.stdout == ""

@@ -1519,7 +1519,11 @@ class TestStripRemovedListItems:
         managed_config_path = tmp_path / "managed_config.json"
         managed_config_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
         settings_path = tmp_path / "settings.json"
-        old_rule_marker = mod._REMOVED_LIST_ITEM_SUBSTRINGS[0][1]  # pylint: disable=protected-access
+        old_rule_marker = next(
+            marker
+            for path, marker in mod._REMOVED_LIST_ITEM_SUBSTRINGS  # pylint: disable=protected-access
+            if path == "autoMode.allow"
+        )
         settings_path.write_text(
             json.dumps(
                 {"autoMode": {"allow": [f"{old_rule_marker} 旧ルール文面", "新ルール文面"]}},

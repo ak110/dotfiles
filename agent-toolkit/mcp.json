@@ -10,6 +10,16 @@
         "pyfltr",
         "mcp"
       ]
+    },
+    "agents_server": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--no-project",
+        "--script",
+        "${PLUGIN_ROOT}/scripts/agents_server_mcp.py"
+      ]
     }
   }
 }

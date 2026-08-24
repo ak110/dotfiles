@@ -414,6 +414,7 @@ class TestDefaultSteps:
             "Codex リンクの同期",
             "Claude Code plugin のインストール",
             "Codex plugin のインストール",
+            "agents_serverのuv環境ウォームアップ",
             "旧Codex User scope MCP登録の移行",
             "Claude 設定",
         ]
@@ -424,6 +425,13 @@ class TestDefaultSteps:
         """hookスクリプトのuv環境ウォームアップをCodex plugin導入の直後に1回登録する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         warmup_name = "hookスクリプトのuv環境ウォームアップ"
+        assert names.count(warmup_name) == 1
+        assert names.index(warmup_name) == names.index("agents_serverのuv環境ウォームアップ") + 1
+
+    def test_agents_server_warmup_follows_codex_plugin_install(self) -> None:
+        """agents_serverのuv環境ウォームアップをCodex plugin導入直後に登録する。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        warmup_name = "agents_serverのuv環境ウォームアップ"
         assert names.count(warmup_name) == 1
         assert names.index(warmup_name) == names.index("Codex plugin のインストール") + 1
 

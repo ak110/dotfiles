@@ -18,6 +18,7 @@ $legacyDir = Join-Path $HOME '.claude/rules/agent-basics'
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 $stageRoot = Join-Path $HOME '.claude/rules-stage'
 $codexPluginId = 'agent-toolkit@ak110-dotfiles'
+$claudeInstalledPluginsPath = Join-Path $HOME '.claude/plugins/installed_plugins.json'
 $script:codexPluginUpdated = $false
 $script:utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $codexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
@@ -249,6 +250,53 @@ function Install-CodexPlugin {
     Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
 }
 
+function Get-ClaudePluginScriptPath {
+    if (-not (Test-Path -LiteralPath $claudeInstalledPluginsPath -PathType Leaf)) { return }
+    try {
+        $data = Get-Content -LiteralPath $claudeInstalledPluginsPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "$claudeInstalledPluginsPath からClaude Code plugin一覧を取得できません。"
+    }
+    $pluginsProperty = $data.PSObject.Properties['plugins']
+    if ($null -eq $pluginsProperty -or $null -eq $pluginsProperty.Value) {
+        throw "$claudeInstalledPluginsPath のpluginsがJSONオブジェクトではありません。"
+    }
+    $entriesProperty = $pluginsProperty.Value.PSObject.Properties[$codexPluginId]
+    if ($null -eq $entriesProperty) { return }
+    foreach ($entry in @($entriesProperty.Value)) {
+        if ($null -eq $entry) { continue }
+        $installPathProperty = $entry.PSObject.Properties['installPath']
+        if ($null -ne $installPathProperty -and $installPathProperty.Value -is [string]) {
+            Join-Path $installPathProperty.Value 'scripts/agents_server_mcp.py'
+        }
+    }
+}
+
+function Initialize-AgentsServer {
+    $scriptPaths = [System.Collections.Generic.List[string]]::new()
+    try {
+        foreach ($scriptPath in @(Get-ClaudePluginScriptPath)) { $scriptPaths.Add($scriptPath) }
+    } catch {
+        Write-Warning 'Claude Code plugin一覧からagents_serverのウォームアップ対象を解決できないためClaude Code分をスキップします。'
+    }
+    try {
+        $expectedVersion = Get-CodexExpectedPluginVersion
+        $scriptPaths.Add((Join-Path $codexPluginCacheRoot "$expectedVersion/scripts/agents_server_mcp.py"))
+    } catch {
+        Write-Warning 'Codex pluginからagents_serverのウォームアップ対象バージョンを解決できないためCodex分をスキップします。'
+    }
+    foreach ($scriptPath in @($scriptPaths | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+            Write-Warning "agents_serverのウォームアップ対象が存在しないためスキップします: $scriptPath"
+            continue
+        }
+        $null | & uv run --no-project --script $scriptPath --help *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "agents_serverのuv環境ウォームアップに失敗しました: $scriptPath"
+        }
+    }
+}
+
 function Write-CodexRestartNotice {
     [Console]::Error.WriteLine('Codex pluginを更新しました。実行中のCodexセッションを終了してから、次のコマンドでapp-server daemonを再起動してください。')
     [Console]::Error.WriteLine('codex app-server daemon restart')
@@ -400,6 +448,7 @@ function Main {
 
         Install-AgentToolkitPlugin
         Install-CodexPlugin
+        Initialize-AgentsServer
         Move-LegacyCodexMcp
         Install-AtkWrapper
         Write-Output 'Claude Code・Codex、agent-toolkit、atkの設定が完了しました。'

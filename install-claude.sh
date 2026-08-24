@@ -18,6 +18,7 @@ LEGACY_DIR="$HOME/.claude/rules/agent-basics"
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 STAGE_ROOT="$HOME/.claude/rules-stage"
 CODEX_PLUGIN_ID="agent-toolkit@ak110-dotfiles"
+CLAUDE_INSTALLED_PLUGINS="$HOME/.claude/plugins/installed_plugins.json"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 CODEX_PLUGIN_CACHE_ROOT="$CODEX_HOME_DIR/plugins/cache/ak110-dotfiles/agent-toolkit"
 CODEX_CACHE_COMPAT_VERSIONS="$CODEX_HOME_DIR/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
@@ -291,6 +292,75 @@ _install_codex_plugin() {
     echo "Codex側のagent-toolkitプラグインを設定しました。"
 }
 
+_claude_plugin_scripts() {
+    [ -f "$CLAUDE_INSTALLED_PLUGINS" ] || return 0
+    uv run --no-config --no-project --python 3 python - "$CLAUDE_INSTALLED_PLUGINS" "$CODEX_PLUGIN_ID" <<'PY'
+import json
+import pathlib
+import sys
+
+installed_plugins = pathlib.Path(sys.argv[1])
+plugin_id = sys.argv[2]
+try:
+    data = json.loads(installed_plugins.read_text(encoding="utf-8"))
+    entries = data["plugins"].get(plugin_id, [])
+except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+    raise SystemExit(1)
+if not isinstance(entries, list):
+    raise SystemExit(1)
+for entry in entries:
+    install_path = entry.get("installPath") if isinstance(entry, dict) else None
+    if isinstance(install_path, str):
+        print(pathlib.Path(install_path) / "scripts/agents_server_mcp.py")
+PY
+}
+
+_warm_agents_server_path() {
+    local script_path="$1"
+    if [ ! -f "$script_path" ]; then
+        echo "agents_serverのウォームアップ対象が存在しないためスキップします: $script_path" >&2
+        return 0
+    fi
+    if ! uv run --no-project --script "$script_path" --help </dev/null >/dev/null; then
+        echo "agents_serverのuv環境ウォームアップに失敗しました: $script_path" >&2
+    fi
+    return 0
+}
+
+_warm_agents_server() {
+    local claude_scripts=""
+    local expected_version=""
+    local existing=""
+    local script_path=""
+    local duplicate=0
+    local -a script_paths=()
+    local -a warmed_paths=()
+    if claude_scripts=$(_claude_plugin_scripts); then
+        while IFS= read -r script_path; do
+            [ -n "$script_path" ] && script_paths+=("$script_path")
+        done <<<"$claude_scripts"
+    else
+        echo "Claude Code plugin一覧からagents_serverのウォームアップ対象を解決できないためClaude Code分をスキップします。" >&2
+    fi
+    if expected_version=$(_codex_expected_plugin_version); then
+        script_paths+=("$CODEX_PLUGIN_CACHE_ROOT/$expected_version/scripts/agents_server_mcp.py")
+    else
+        echo "Codex pluginからagents_serverのウォームアップ対象バージョンを解決できないためCodex分をスキップします。" >&2
+    fi
+    for script_path in "${script_paths[@]}"; do
+        duplicate=0
+        for existing in "${warmed_paths[@]}"; do
+            if [ "$existing" = "$script_path" ]; then
+                duplicate=1
+                break
+            fi
+        done
+        [ "$duplicate" -eq 0 ] || continue
+        warmed_paths+=("$script_path")
+        _warm_agents_server_path "$script_path"
+    done
+}
+
 _legacy_user_codex_mcp_status() {
     local config_path="$HOME/.claude.json"
     uv run --no-config --no-project --python 3 python - "$config_path" <<'PY'
@@ -433,6 +503,7 @@ main() {
 
     _install_agent_toolkit
     _install_codex_plugin
+    _warm_agents_server
     _migrate_legacy_codex_mcp
     _install_atk_wrapper
     echo "Claude Code・Codex、agent-toolkit、atkの設定が完了しました。"

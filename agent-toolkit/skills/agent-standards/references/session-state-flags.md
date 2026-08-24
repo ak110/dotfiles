@@ -56,12 +56,11 @@
   メインセッションからCodex App Server MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
   セッション終了まで保持する。sidechainのSkill起動は記録しない
 
-## codex連携系
+## agents_server連携系
 
-- `codex_remote_snapshot_by_key`: Codex App Serverの`codex_start`または継続用`codex_start_reply`/`codex_send_message`直前のリモートrefを記録し、対応する結果回収後に比較して削除する。実行中turnへのsendでは既存snapshotを上書きしない
-- `codex_app_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`codex_start_reply`/`codex_send_message`の検査に使う
-- `codex_app_server_sessions`: `session_id`ごとのturn、状態、cwd、`result_retrieved`を記録する。
-  terminal statusだけでは回収済みとせず、`codex_result`成功後に回収済みと記録する。thread IDをハッシュ化した状態ファイルは作成しない
+- `agents_server_remote_snapshot_by_key`: agents_serverの`start`または`send_message`直前のリモートrefを記録し、`wait`の終端返却またはreply開始時の配送境界で比較して削除する。実行中turnへのsendでは既存snapshotを維持し、同一呼出の保留値はPostToolUseで破棄する
+- `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`の検査に使う
+- `agents_server_sessions`: `session_id`ごとのturn、状態、cwdを記録する。thread IDをハッシュ化した状態ファイルは作成しない
 
 ## TBD系
 

@@ -32,7 +32,7 @@ def _mcp_background_timeout_entries(
     tool_use_id: str,
     *,
     sidechain: bool = False,
-    tool_name: str = "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+    tool_name: str = "mcp__agents_server__start",
 ) -> list[dict]:
     """MCP timeoutによる背景化を記録したassistant・userエントリを生成する。"""
     return [
@@ -178,7 +178,7 @@ class TestMcpBackgroundTaskCompletion:
                     {
                         "type": "tool_use",
                         "id": "toolu_mcp",
-                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "name": "mcp__agents_server__start",
                         "input": {},
                     }
                 ]
@@ -209,7 +209,7 @@ class TestMcpBackgroundTaskCompletion:
                     {
                         "type": "tool_use",
                         "id": "toolu_mcp",
-                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "name": "mcp__agents_server__start",
                         "input": {},
                     }
                 ]
@@ -302,13 +302,13 @@ class TestMcpBackgroundTaskCompletion:
                     {
                         "type": "tool_use",
                         "id": "toolu_mcp_1",
-                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "name": "mcp__agents_server__start",
                         "input": {},
                     },
                     {
                         "type": "tool_use",
                         "id": "toolu_mcp_2",
-                        "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                        "name": "mcp__agents_server__start",
                         "input": {},
                     },
                 ]

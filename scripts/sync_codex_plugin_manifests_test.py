@@ -40,7 +40,13 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                         "args": ["--from", "pyfltr>=3.16", "pyfltr", "mcp"],
                         "env": {"MODE": "portable"},
                         "cwd": "./workspace",
-                    }
+                    },
+                    "agents_server": {
+                        "command": "${CLAUDE_PLUGIN_ROOT}/bin/agents-server",
+                        "args": ["--script", "${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py"],
+                        "env": {"SCRIPT_ROOT": "${CLAUDE_PLUGIN_ROOT}/data"},
+                        "cwd": "${CLAUDE_PLUGIN_ROOT}/workspace",
+                    },
                 }
             },
         ),
@@ -133,7 +139,14 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                 "args": ["--from", "pyfltr>=3.16", "pyfltr", "mcp"],
                 "env": {"MODE": "portable"},
                 "cwd": "./workspace",
-            }
+            },
+            "agents_server": {
+                "type": "stdio",
+                "command": "${PLUGIN_ROOT}/bin/agents-server",
+                "args": ["--script", "${PLUGIN_ROOT}/scripts/agents_server_mcp.py"],
+                "env": {"SCRIPT_ROOT": "${PLUGIN_ROOT}/data"},
+                "cwd": "${PLUGIN_ROOT}/workspace",
+            },
         },
     }
     assert json.loads(codex_mcp_text) == expected_mcp
@@ -145,13 +158,13 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
         "hooks": {
             "PreToolUse": [
                 {
-                    "matcher": "Bash|Edit|Write",
+                    "matcher": subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher,
                     "hooks": [{"type": "command", "command": subject.CODEX_PRE_TOOL_USE_COMMAND}],
                 }
             ],
             "PostToolUse": [
                 {
-                    "matcher": "Edit|Write",
+                    "matcher": subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher,
                     "hooks": [{"type": "command", "command": subject.CODEX_POST_TOOL_USE_COMMAND}],
                 }
             ],
@@ -198,8 +211,8 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     subject.sync(manifest_root)
     generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
 
-    assert generated["PreToolUse"][0]["matcher"] == "Bash|Edit|Write"
-    assert generated["PostToolUse"][0]["matcher"] == "Edit|Write"
+    assert generated["PreToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher
+    assert generated["PostToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])

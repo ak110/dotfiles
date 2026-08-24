@@ -65,6 +65,7 @@ if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json"
     if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts"
         printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/claude_hook.py"
+        printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/agents_server_mcp.py"
     fi
     if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION"
@@ -188,6 +189,24 @@ def _run(
     manifest = marketplace_root / "agent-toolkit" / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps({"version": after_version}), encoding="utf-8")
+    claude_plugin_root = home / "claude-plugin"
+    claude_plugin_script = claude_plugin_root / "scripts" / "agents_server_mcp.py"
+    claude_plugin_script.parent.mkdir(parents=True, exist_ok=True)
+    claude_plugin_script.write_text("agents server\n", encoding="utf-8")
+    installed_plugins = home / ".claude" / "plugins" / "installed_plugins.json"
+    installed_plugins.parent.mkdir(parents=True, exist_ok=True)
+    installed_plugins.write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "agent-toolkit@ak110-dotfiles": [
+                        {"installPath": str(claude_plugin_root)},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     if before_version != "__missing__":
         old_cache = effective_codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit" / before_version / "scripts"
         old_cache.mkdir(parents=True, exist_ok=True)
@@ -260,6 +279,33 @@ foreach ($functionName in $functionNames) {{
     )
 
 
+def test_agents_server_warmup_closes_standard_input() -> None:
+    """MCPのウォームアップは親端末の標準入力を待たずに終了する。"""
+    shell_source = INSTALL_SH.read_text(encoding="utf-8")
+    powershell_source = INSTALL_PS1.read_text(encoding="utf-8-sig")
+
+    assert '"$script_path" --help </dev/null >/dev/null' in shell_source
+    assert "$null | & uv run --no-project --script $scriptPath --help *> $null" in powershell_source
+
+
+@pytest.mark.parametrize("kind", _runners())
+def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """Claude CodeとCodexが実際に参照する両方のスクリプトを事前取得する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = _make_command_stubs(tmp_path)
+
+    _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+
+    warmups = [line for line in _log_lines(stub_log) if line.startswith("uv run --no-project --script ")]
+    assert len(warmups) == 2
+    assert any(str(home / "claude-plugin" / "scripts" / "agents_server_mcp.py") in line for line in warmups)
+    assert any(
+        str(home / ".codex" / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/scripts/agents_server_mcp.py") in line
+        for line in warmups
+    )
+
+
 @pytest.mark.parametrize("kind", _runners())
 def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     home = tmp_path / "home"
@@ -287,6 +333,8 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
         "codex plugin marketplace add ak110/dotfiles --json",
         "codex plugin marketplace upgrade ak110-dotfiles --json",
         "codex plugin add agent-toolkit@ak110-dotfiles --json",
+        "uv run --no-project --script",
+        "agents_server_mcp.py --help",
     ]
     last_index = -1
     for command in expected:

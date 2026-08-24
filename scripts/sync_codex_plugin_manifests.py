@@ -27,7 +27,7 @@ PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
 OPTIONAL_TARGETS = frozenset((MCP_CODEX_TARGET, AGENT_MCP_TARGET, HOOKS_TARGET))
-SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr"})
+SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 
 
 def _hook_command(name: str) -> str:
@@ -69,8 +69,14 @@ class CodexHookProjection(NamedTuple):
 
 
 CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
-    "PreToolUse": CodexHookProjection((CODEX_PRE_TOOL_USE_COMMAND,), matcher="Bash|Edit|Write"),
-    "PostToolUse": CodexHookProjection((CODEX_POST_TOOL_USE_COMMAND,), matcher="Edit|Write"),
+    "PreToolUse": CodexHookProjection(
+        (CODEX_PRE_TOOL_USE_COMMAND,),
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message",
+    ),
+    "PostToolUse": CodexHookProjection(
+        (CODEX_POST_TOOL_USE_COMMAND,),
+        matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__wait|mcp__agents_server__send_message",
+    ),
     "PermissionRequest": CodexHookProjection((CODEX_PERMISSION_REQUEST_COMMAND,)),
     "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
     "Stop": CodexHookProjection((CODEX_STOP_COMMAND,)),
@@ -106,6 +112,10 @@ PLUGIN_METADATA_FIELDS = (
 STDIO_SOURCE_FIELDS = {"command", "args", "env", "cwd"}
 
 
+def _replace_plugin_root(value: str) -> str:
+    return value.replace("${CLAUDE_PLUGIN_ROOT}", "${PLUGIN_ROOT}")
+
+
 def _load(root: Path, relative: Path) -> dict[str, Any]:
     value = json.loads((root / relative).read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -131,19 +141,24 @@ def _agent_mcp(source: dict[str, Any]) -> dict[str, Any]:
         cwd = value.get("cwd")
         if not isinstance(command, str):
             raise ValueError(f"MCP commandは文字列である必要がある: {name}")
+        command = _replace_plugin_root(command)
         if not command:
             raise ValueError(f"MCP commandは空文字列にできない: {name}")
         if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
             raise ValueError(f"MCP argsは文字列の配列である必要がある: {name}")
+        args = [_replace_plugin_root(item) for item in args]
         if env is not None and (
             not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(item, str) for key, item in env.items())
         ):
             raise ValueError(f"MCP envは文字列を値に持つJSON objectである必要がある: {name}")
+        if env is not None:
+            env = {key: _replace_plugin_root(item) for key, item in env.items()}
         if env is not None and {"PLUGIN_ROOT", "PLUGIN_DATA"} & set(env):
             raise ValueError(f"MCP envにAgent Pluginsの予約名は指定できない: {name}")
         if cwd is not None:
             if not isinstance(cwd, str):
                 raise ValueError(f"MCP cwdは文字列である必要がある: {name}")
+            cwd = _replace_plugin_root(cwd)
             if not (
                 cwd.startswith("./")
                 or cwd == "${PLUGIN_ROOT}"

@@ -2647,7 +2647,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     `tool_use`入力・`mcpMeta.structuredContent`・JSON文字列型`toolUseResult`は同一threadIdへ重複排除し、
     タスク通知の`<result>`要素だけで到達するthreadIdも収集する。
     引用UUIDにも対応するrolloutを配置するため、誤って収集した場合は当該スレッドの
-    `stats-codex-thread`が出力され、本テストが失敗する。
+    `stats-agent-thread`が出力され、本テストが失敗する。
     """
     thread_id = "11111111-1111-4111-8111-111111111111"
     notified_id = "33333333-3333-4333-8333-333333333333"
@@ -2686,7 +2686,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
         "<task-notification>\n"
         "<source>codex/codex</source>\n"
         "<status>completed</status>\n"
-        f"<result>{json.dumps({'threadId': notified_id})}</result>\n"
+        f"<result>{json.dumps({'engine': 'codex', 'threadId': notified_id})}</result>\n"
         "</task-notification>"
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -2703,7 +2703,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                 "2026-08-19T00:00:01Z",
                 "call-send",
                 sent_id,
-                tool_name="mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+                tool_name="mcp__agents_server__send_message",
             ),
             {
                 "type": "assistant",
@@ -2713,9 +2713,9 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                     "content": [
                         {
                             "type": "tool_use",
-                            "name": "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+                            "name": "mcp__agents_server__start",
                             "id": "a",
-                            "input": {"threadId": thread_id},
+                            "input": {"engine": "codex", "threadId": thread_id},
                         }
                     ],
                 },
@@ -2723,8 +2723,8 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
             {
                 "type": "user",
                 "timestamp": "2026-08-19T00:00:02Z",
-                "mcpMeta": {"structuredContent": {"threadId": thread_id}},
-                "toolUseResult": json.dumps({"conversationId": thread_id}),
+                "mcpMeta": {"structuredContent": {"engine": "codex", "threadId": thread_id}},
+                "toolUseResult": json.dumps({"engine": "codex", "conversationId": thread_id}),
                 "message": {"role": "user", "content": "完了"},
             },
             {
@@ -2737,11 +2737,51 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    threads = _events_by_kind(events, "stats-codex-thread")
+    threads = _events_by_kind(events, "stats-agent-thread")
     assert [event["thread"] for event in threads] == [sent_id, notified_id, thread_id]
     assert [event["tokens"]["total_tokens"] for event in threads] == [21, 17, 9]
     assert quoted_id not in {event["thread"] for event in threads}
     assert missing_id not in {event["thread"] for event in threads}
+
+
+def test_stats_resolves_claude_session_from_codex_rollout_tool_call(
+    tmp_path: pathlib.Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """Codex rolloutのcustom tool callからClaude sessionを解決し、エンジン別に集計する。"""
+    session_id = "claude-session-11111111"
+    claude_home = tmp_path / "home"
+    claude_transcript = claude_home / ".claude" / "projects" / "repo" / f"{session_id}.jsonl"
+    claude_transcript.parent.mkdir(parents=True)
+    claude_transcript.write_text(
+        json.dumps(_assistant_usage_entry("2026-08-19T00:00:02Z", "claude-message", _usage(4, 5))) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(claude_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "mcp__agents_server__start",
+                    "call_id": "call-claude",
+                    "arguments": json.dumps({"engine": "claude", "session_id": session_id}),
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    thread = _events_by_kind(events, "stats-agent-thread")[0]
+    assert thread["engine"] == "claude"
+    assert thread["session_id"] == session_id
+    assert thread["tokens"] == _usage(4, 5)
+    assert _events_by_kind(events, "stats-total")[0]["agent_thread_counts"] == {"claude": 1}
 
 
 def test_stats_recursively_discovers_native_subagent_activity_without_cycles(
@@ -2800,7 +2840,7 @@ def test_stats_recursively_discovers_native_subagent_activity_without_cycles(
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    threads = _events_by_kind(events, "stats-codex-thread")
+    threads = _events_by_kind(events, "stats-agent-thread")
     assert [event["thread"] for event in threads] == [grandchild_id, child_id, root_id]
     assert [event["tokens"]["total_tokens"] for event in threads] == [6, 4, 2]
     assert _events_by_kind(events, "stats-total")[0]["tokens"] == {
@@ -2864,7 +2904,7 @@ def test_stats_drops_native_subagent_activity_started_after_review_boundary(
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    assert [event["thread"] for event in _events_by_kind(events, "stats-codex-thread")] == [root_id]
+    assert [event["thread"] for event in _events_by_kind(events, "stats-agent-thread")] == [root_id]
 
 
 def test_stats_excluded_thread_does_not_return_when_rediscovered_from_sibling(
@@ -2935,7 +2975,7 @@ def test_stats_excluded_thread_does_not_return_when_rediscovered_from_sibling(
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    threads = {event["thread"] for event in _events_by_kind(events, "stats-codex-thread")}
+    threads = {event["thread"] for event in _events_by_kind(events, "stats-agent-thread")}
     assert threads == {root_id, sibling_id}
 
 
@@ -3028,7 +3068,7 @@ def _codex_tool_use_entry(
     call_id: str,
     thread_id: str,
     *,
-    tool_name: str = "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
+    tool_name: str = "mcp__agents_server__start",
 ) -> dict:
     """Codex委譲のtool_useを持つassistantエントリを作成する。"""
     return {
@@ -3041,7 +3081,7 @@ def _codex_tool_use_entry(
                     "type": "tool_use",
                     "name": tool_name,
                     "id": call_id,
-                    "input": {"threadId": thread_id},
+                    "input": {"engine": "codex", "threadId": thread_id},
                 }
             ],
         },
@@ -3090,7 +3130,7 @@ def test_stats_outputs_every_codex_thread_without_limit(tmp_path: pathlib.Path, 
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    threads = _events_by_kind(events, "stats-codex-thread")
+    threads = _events_by_kind(events, "stats-agent-thread")
     assert [event["thread"] for event in threads] == list(reversed(thread_ids))
     assert [event["tokens"]["total_tokens"] for event in threads] == list(range(22, 1, -1))
 
@@ -3131,11 +3171,11 @@ def test_stats_excludes_auxiliary_records_started_after_boundary(tmp_path: pathl
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     assert [row["agent"] for row in _events_by_kind(events, "stats-subagent")] == ["agent-before"]
-    assert _events_by_kind(events, "stats-codex-thread") == []
+    assert _events_by_kind(events, "stats-agent-thread") == []
     total = _events_by_kind(events, "stats-total")[0]
     assert total["tokens"] == _usage(9, 3)
     assert total["subagent_count"] == 1
-    assert total["codex_thread_count"] == 0
+    assert total["agent_thread_count"] == 0
 
 
 def test_stats_attributes_whole_record_started_before_boundary(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
@@ -3174,7 +3214,7 @@ def test_stats_attributes_whole_record_started_before_boundary(tmp_path: pathlib
     subagent = _events_by_kind(events, "stats-subagent")[0]
     assert subagent["agent"] == "agent-span"
     assert subagent["tokens"] == _usage(16)
-    thread = _events_by_kind(events, "stats-codex-thread")[0]
+    thread = _events_by_kind(events, "stats-agent-thread")[0]
     assert thread["thread"] == thread_id
     assert thread["tokens"]["total_tokens"] == 32
 
@@ -3215,7 +3255,7 @@ def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathli
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    threads = _events_by_kind(events, "stats-codex-thread")
+    threads = _events_by_kind(events, "stats-agent-thread")
     assert [event["thread"] for event in threads] == [normal_thread]
     assert threads[0]["agent"] == "agent-normal"
 
@@ -3256,7 +3296,7 @@ def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Pa
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    threads = {event["thread"]: event for event in _events_by_kind(events, "stats-codex-thread")}
+    threads = {event["thread"]: event for event in _events_by_kind(events, "stats-agent-thread")}
     assert threads[main_thread]["line"] == 2
     assert "agent" not in threads[main_thread]
     assert threads[sub_thread]["agent"] == "agent-sub"
@@ -3326,8 +3366,9 @@ def test_stats_total_sums_main_subagent_and_normalized_codex(tmp_path: pathlib.P
         "cache_read_input_tokens": 95,
     }
     assert total["subagent_count"] == 1
-    assert total["codex_thread_count"] == 1
-    thread_tokens = _events_by_kind(events, "stats-codex-thread")[0]["tokens"]
+    assert total["agent_thread_count"] == 1
+    assert total["agent_thread_counts"] == {"codex": 1}
+    thread_tokens = _events_by_kind(events, "stats-agent-thread")[0]["tokens"]
     assert thread_tokens["total_tokens"] == 140
     assert thread_tokens["cached_input_tokens"] == 90
 

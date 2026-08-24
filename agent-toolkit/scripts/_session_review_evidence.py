@@ -721,14 +721,10 @@ _CODEX_TOKEN_KEYS = (
 )
 _CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
 _THREAD_ID_KEYS = ("session_id", "sessionId", "threadId", "conversationId")
-_CODEX_TOOL_NAMES = frozenset(
+_AGENTS_SERVER_TOOL_NAMES = frozenset(
     {
-        "mcp__plugin_agent-toolkit_codex_app_server__codex_start",
-        "mcp__plugin_agent-toolkit_codex_app_server__codex_status",
-        "mcp__plugin_agent-toolkit_codex_app_server__codex_wait",
-        "mcp__plugin_agent-toolkit_codex_app_server__codex_result",
-        "mcp__plugin_agent-toolkit_codex_app_server__codex_start_reply",
-        "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message",
+        *(f"mcp__plugin_agent-toolkit_agents_server__{name}" for name in ("start", "wait", "send_message")),
+        *(f"mcp__agents_server__{name}" for name in ("start", "wait", "send_message")),
     }
 )
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
@@ -977,34 +973,50 @@ def _thread_id_from_mapping(value: Any) -> str | None:
     return None
 
 
-def _thread_ids_from_record(record: _Record) -> list[str]:
+def _thread_ids_from_record(record: _Record) -> list[tuple[_Runtime, str]]:
+    """Claude transcriptとCodex rolloutからエンジン付きsession識別子を抽出する。"""
     entry = record.entry
-    thread_ids: list[str] = _native_agent_thread_ids(entry)
+    found: list[tuple[_Runtime, str]] = [("codex", thread_id) for thread_id in _native_agent_thread_ids(entry)]
+
+    def add_mapping(value: Any, default_engine: _Runtime) -> None:
+        mapping = value if isinstance(value, dict) else _json_object(value)
+        if not isinstance(mapping, dict):
+            return
+        session_id = _thread_id_from_mapping(mapping)
+        if not session_id:
+            return
+        engine = mapping.get("engine")
+        if engine == "claude":
+            chosen_engine: _Runtime = "claude"
+        elif engine == "codex":
+            chosen_engine = "codex"
+        else:
+            chosen_engine = default_engine
+        found.append((chosen_engine, session_id))
+
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if isinstance(content, list):
         for block in content:
-            if not isinstance(block, dict) or block.get("type") != "tool_use" or block.get("name") not in _CODEX_TOOL_NAMES:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
-            thread = _thread_id_from_mapping(block.get("input"))
-            if thread:
-                thread_ids.append(thread)
+            if block.get("name") in _AGENTS_SERVER_TOOL_NAMES:
+                add_mapping(block.get("input"), "claude")
 
     mcp_meta = entry.get("mcpMeta")
     if isinstance(mcp_meta, dict):
-        thread = _thread_id_from_mapping(mcp_meta.get("structuredContent"))
-        if thread:
-            thread_ids.append(thread)
+        add_mapping(mcp_meta.get("structuredContent"), "claude")
 
     tool_result = entry.get("toolUseResult")
-    if isinstance(tool_result, dict):
-        thread = _thread_id_from_mapping(tool_result)
-        if thread:
-            thread_ids.append(thread)
-    elif isinstance(tool_result, str):
-        thread = _thread_id_from_mapping(_json_object(tool_result))
-        if thread:
-            thread_ids.append(thread)
+    add_mapping(tool_result, "claude")
+
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and payload.get("type") in {"custom_tool_call", "custom_tool_call_output"}:
+        name = payload.get("name")
+        if payload.get("type") == "custom_tool_call" and name in _AGENTS_SERVER_TOOL_NAMES:
+            add_mapping(payload.get("arguments") or payload.get("input"), "codex")
+        if payload.get("type") == "custom_tool_call_output":
+            add_mapping(payload.get("output"), "codex")
 
     notification_texts: list[str] = []
     if entry.get("type") == "queue-operation":
@@ -1012,11 +1024,8 @@ def _thread_ids_from_record(record: _Record) -> list[str]:
     notification_texts.extend(_text_blocks(content))
     for text in notification_texts:
         for match in _TASK_RESULT_PATTERN.finditer(text):
-            result = _json_object(match.group(1))
-            thread = _thread_id_from_mapping(result)
-            if thread:
-                thread_ids.append(thread)
-    return list(dict.fromkeys(thread_ids))
+            add_mapping(match.group(1), "claude")
+    return list(dict.fromkeys(found))
 
 
 def _native_agent_thread_ids(value: Any) -> list[str]:
@@ -1046,12 +1055,23 @@ def _rollout_path(thread_id: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
+def _claude_transcript_path(session_id: str) -> Path | None:
+    """Claude Code transcriptのsession_idに対応するJSONLを探す。"""
+    projects = Path.home() / ".claude" / "projects"
+    candidates = sorted(projects.glob(f"**/{session_id}.jsonl"))
+    return candidates[0] if candidates else None
+
+
+def _session_path(engine: _Runtime, session_id: str) -> Path | None:
+    return _rollout_path(session_id) if engine == "codex" else _claude_transcript_path(session_id)
+
+
 def _stats_thread_records(
     main_records: list[_Record],
     subagents: list[tuple[str, str | None, list[_Record]]],
     boundary_timestamp: datetime.datetime | None = None,
-) -> dict[str, tuple[int, str | None]]:
-    """主記録・補助記録からCodexスレッドを再帰列挙する。
+) -> dict[tuple[_Runtime, str], tuple[int, str | None]]:
+    """主記録・補助記録から委譲先sessionをエンジン別に再帰列挙する。
 
     直接の委譲先だけでなく、rollout内の`SubAgentActivity`から得られる子孫も探索する。
     同じrolloutを複数の親が参照しても一度だけ処理し、循環した委譲木で停止しない。
@@ -1059,45 +1079,47 @@ def _stats_thread_records(
     （`visited`済みのthreadは再処理時に無条件で`continue`するため、`threads`への再挿入だけを
     別途防がないと最終結果へ復帰する）。
     """
-    threads: dict[str, tuple[int, str | None]] = {}
-    excluded: set[str] = set()
-    pending: list[tuple[str, int, str | None]] = []
+    threads: dict[tuple[_Runtime, str], tuple[int, str | None]] = {}
+    excluded: set[tuple[_Runtime, str]] = set()
+    pending: list[tuple[_Runtime, str, int, str | None]] = []
 
-    def add(thread_id: str, line: int, agent_id: str | None) -> None:
-        if thread_id not in threads and thread_id not in excluded:
-            threads[thread_id] = (line, agent_id)
-            pending.append((thread_id, line, agent_id))
+    def add(engine: _Runtime, session_id: str, line: int, agent_id: str | None) -> None:
+        key = (engine, session_id)
+        if key not in threads and key not in excluded:
+            threads[key] = (line, agent_id)
+            pending.append((engine, session_id, line, agent_id))
 
     for record in main_records:
-        for thread_id in _thread_ids_from_record(record):
-            add(thread_id, record.line, None)
+        for engine, session_id in _thread_ids_from_record(record):
+            add(engine, session_id, record.line, None)
     for agent_id, _, records in subagents:
         for record in records:
-            for thread_id in _thread_ids_from_record(record):
-                add(thread_id, record.line, agent_id)
+            for engine, session_id in _thread_ids_from_record(record):
+                add(engine, session_id, record.line, agent_id)
 
-    visited: set[str] = set()
+    visited: set[tuple[_Runtime, str]] = set()
     while pending:
-        thread_id, line, agent_id = pending.pop(0)
-        if thread_id in visited:
+        engine, session_id, line, agent_id = pending.pop(0)
+        key = (engine, session_id)
+        if key in visited:
             continue
-        visited.add(thread_id)
-        rollout = _rollout_path(thread_id)
-        if rollout is None:
+        visited.add(key)
+        transcript = _session_path(engine, session_id)
+        if transcript is None:
             continue
-        rollout_records = _load_records(str(rollout))
-        if rollout_records is None:
+        session_records = _load_records(str(transcript))
+        if session_records is None:
             continue
         if boundary_timestamp is not None:
-            starts = [_record_timestamp(record) for record in rollout_records]
+            starts = [_record_timestamp(record) for record in session_records]
             start = min((value for value in starts if value is not None), default=None)
             if start is None or start >= boundary_timestamp:
-                threads.pop(thread_id, None)
-                excluded.add(thread_id)
+                threads.pop(key, None)
+                excluded.add(key)
                 continue
-        for record in rollout_records:
+        for record in session_records:
             for child_id in _native_agent_thread_ids(record.entry):
-                add(child_id, line, agent_id)
+                add("codex", child_id, line, agent_id)
     return threads
 
 
@@ -1258,16 +1280,16 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
     if runtime == "claude":
         subagents, excluded_review_agents, subagent_record_count = _stats_subagent_records(transcript_path, boundary_timestamp)
     threads = _stats_thread_records(main_records, subagents, boundary_timestamp)
-    thread_summaries: list[tuple[str, dict[str, Any], int, str | None]] = []
-    for thread_id, (line, agent_id) in threads.items():
-        rollout = _rollout_path(thread_id)
-        if rollout is None:
+    thread_summaries: list[tuple[_Runtime, str, dict[str, Any], int, str | None]] = []
+    for (engine, session_id), (line, agent_id) in threads.items():
+        transcript = _session_path(engine, session_id)
+        if transcript is None:
             continue
-        rollout_records = _load_records(str(rollout))
-        if rollout_records is None:
+        session_records = _load_records(str(transcript))
+        if session_records is None:
             continue
-        thread_summary = _stats_summary_data(rollout_records, "codex")
-        thread_summaries.append((thread_id, thread_summary, line, agent_id))
+        thread_summary = _stats_summary_data(session_records, engine)
+        thread_summaries.append((engine, session_id, thread_summary, line, agent_id))
 
     total_tokens: dict[str, int] = {}
     if isinstance(summary.get("tokens"), dict):
@@ -1276,15 +1298,21 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
         sub_summary = _stats_summary_data(subagent_records, "claude")
         if isinstance(sub_summary.get("tokens"), dict):
             _add_tokens(total_tokens, sub_summary["tokens"])
-    for _, thread_summary, _, _ in thread_summaries:
+    for engine, _, thread_summary, _, _ in thread_summaries:
         if isinstance(thread_summary.get("tokens"), dict):
-            _add_tokens(total_tokens, _codex_normalized_tokens(thread_summary["tokens"]))
+            _add_tokens(
+                total_tokens,
+                _codex_normalized_tokens(thread_summary["tokens"]) if engine == "codex" else thread_summary["tokens"],
+            )
+
+    thread_counts: dict[str, int] = collections.Counter(engine for engine, _, _, _, _ in thread_summaries)
 
     total_event: dict[str, Any] = {
         "kind": "stats-total",
         "tokens": total_tokens,
         "subagent_count": len(subagents),
-        "codex_thread_count": len(thread_summaries),
+        "agent_thread_count": len(thread_summaries),
+        "agent_thread_counts": dict(sorted(thread_counts.items())),
     }
     if "elapsed_seconds" in summary:
         total_event["elapsed_seconds"] = summary["elapsed_seconds"]
@@ -1378,15 +1406,17 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
             }
         )
 
-    for thread_id, thread_summary, line, agent_id in sorted(
+    for engine, session_id, thread_summary, line, agent_id in sorted(
         thread_summaries,
-        key=lambda item: (-item[1].get("tokens", {}).get("total_tokens", 0), item[0]),
+        key=lambda item: (-item[2].get("tokens", {}).get("total_tokens", 0), item[1]),
     ):
         # `line`はメインtranscriptの行番号を指す`--detail`用の値であるため、
         # サブエージェント記録から見つけたスレッド（`agent_id`が非null）では付けない。
         thread_event: dict[str, Any] = {
-            "kind": "stats-codex-thread",
-            "thread": thread_id,
+            "kind": "stats-agent-thread",
+            "engine": engine,
+            "session_id": session_id,
+            "thread": session_id,
             **thread_summary,
         }
         if agent_id:

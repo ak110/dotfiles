@@ -38,6 +38,7 @@ from pytools._internal import (
     update_claude_settings,
     update_npmrc,
     update_vscode_settings,
+    warm_agents_server,
     warmup_hook_scripts,
 )
 
@@ -265,6 +266,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
     ("Claude Code plugin のインストール", install_claude_plugins.run),
     ("Codex plugin のインストール", install_codex_plugins.run),
+    ("agents_serverのuv環境ウォームアップ", warm_agents_server.run),
     # hookが参照するインストール先を対象にするため、両プラグインの導入・更新の後に実行する。
     ("hookスクリプトのuv環境ウォームアップ", warmup_hook_scripts.run),
     ("旧Codex User scope MCP登録の移行", remove_legacy_codex_mcp_from_claude.run),

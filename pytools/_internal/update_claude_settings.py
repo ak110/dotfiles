@@ -72,6 +72,8 @@ _REMOVED_KEYS: tuple[str, ...] = ("autoMode.allowMode",)
 # share/claude_settings_json_managed.* から廃止した配列項目を列挙する。
 # union マージは削除を反映しないため、ここで明示的に除去する。
 _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
+    # 2026-08: agents_serverへ移行したため旧Codex App Serverの許可項目を除去
+    ("permissions.allow", "mcp__plugin_agent-toolkit_codex_app_server__"),
     # 2026-06: Session-Owned Amend ルールに置き換えたため旧文面を除去
     (
         "autoMode.allow",

@@ -1047,8 +1047,8 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert metadata["model"] == "sonnet"
     assert metadata["effort"] == "medium"
     assert metadata["skills"] == ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"]
-    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_start" in metadata["tools"]
-    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_agents_server__start" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_agents_server__send_message" in metadata["tools"]
     assert "自身は成果物と計画ファイルを直接編集せず" in text
     assert "実装タスク文書、作成規範スキル、レビュータスク文書は読み込まず" in text
     assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは実装担当へ割り当てる" in text
@@ -1169,8 +1169,8 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     metadata, _ = frontmatter.parse_frontmatter(text) or ({}, "")
     assert metadata["model"] == "sonnet"
     assert metadata["skills"] == ["agent-toolkit:delegation"]
-    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_start" in metadata["tools"]
-    assert "mcp__plugin_agent-toolkit_codex_app_server__codex_send_message" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_agents_server__start" in metadata["tools"]
+    assert "mcp__plugin_agent-toolkit_agents_server__send_message" in metadata["tools"]
     for phrase in (
         "自身は成果物、計画ファイル、キューを変更せず",
         "受信者専用のタスク文書と作成規範スキルは読み込まず",
@@ -1729,10 +1729,8 @@ def test_codex_new_connection_contract_is_centralized() -> None:
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
     for phrase in (
         "Codex App Server MCP",
-        "`codex_start`",
         "作業ディレクトリの絶対パス",
         "`approvalPolicy=never`と`sandboxPolicy.type=dangerFullAccess`",
-        "`codex_start_reply(session_id, prompt)`",
     ):
         assert phrase in runtime
 
@@ -1741,7 +1739,7 @@ def test_codex_new_connection_contract_is_centralized() -> None:
         assert parsed is not None
         metadata, body = parsed
         tools = metadata.get("tools")
-        if not isinstance(tools, str) or "mcp__plugin_agent-toolkit_codex_app_server__codex_start" not in tools:
+        if not isinstance(tools, str) or "mcp__plugin_agent-toolkit_agents_server__start" not in tools:
             continue
         assert "runtime-routing.md" in body
         assert "sandbox: danger-full-access" not in body

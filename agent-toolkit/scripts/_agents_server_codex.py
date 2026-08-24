@@ -1,15 +1,9 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["mcp>=1.28.1,<2"]
+# This module is loaded by agents_server_mcp.py and has no standalone dependencies.
 # ///
-"""Codex App ServerをClaude Codeへ非同期MCPとして公開する。
-
-このMCPは、Claude CodeのMCPプロセスと同じ寿命で
-``codex app-server --stdio``を1つだけ所有する。App ServerのJSON-RPC通信は
-標準ライブラリで扱い、MCP層へ公開する操作を開始・状態照会・待機・結果回収・
-同一threadの継続と実行中turnへの追加指示の6つに限定する。状態照会と待機の応答には、結果を回収できる状態かを
-示す``result_available``を含める。
+"""Codex App ServerとのJSON-RPC通信を担当する。
 
 App Serverのwire protocolはJSON-RPC 2.0に準拠するが、stdioの各行では
 ``jsonrpc``フィールドを省略できる（OpenAI公式資料）。この実装では送信時に
@@ -22,25 +16,23 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import dataclasses
-import datetime
 import json
 import logging
-import os
-import pathlib
 import sys
-import warnings
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from agents_server_mcp import (
+    SessionState,
+    _append_bounded,
+    _begin_reply,
+    _initialize_turn,
+    _validate_cwd,
+    _validate_model_effort,
+    _validate_prompt,
+)
 
-try:
-    from pydantic_settings.exceptions import IncompleteFieldDefinitionWarning
-except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開しない場合
-    IncompleteFieldDefinitionWarning = None  # type: ignore[assignment,misc]
-
-_LOG = logging.getLogger("agent-toolkit.codex-app-server")
+_LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
 DEFAULT_WAIT_TIMEOUT = 300.0
@@ -49,10 +41,6 @@ DEFAULT_WAIT_TIMEOUT = 300.0
 # readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
-
-
-def _utc_now() -> str:
-    return datetime.datetime.now(datetime.UTC).isoformat()
 
 
 class AppServerError(RuntimeError):
@@ -71,59 +59,6 @@ class JsonRpcResponseError(AppServerError):
 
 class TurnStartResponseError(AppServerError):
     """turn/startの応答形式が不正である。要求拒否を確認できないため、client生存中は受理状態が曖昧である。"""
-
-
-@dataclasses.dataclass
-class SessionState:
-    """MCPから観測できる1つのCodex threadと最新turnの状態。"""
-
-    session_id: str
-    cwd: str
-    model: str | None = None
-    effort: str | None = None
-    turn_id: str = ""
-    status: str = "running"
-    plan: list[dict[str, Any]] = dataclasses.field(default_factory=list)
-    current_item: dict[str, Any] | None = None
-    commentary: str = ""
-    diff_changed: bool = False
-    error: Any = None
-    agent_message: str = ""
-    protocol_warnings: list[str] = dataclasses.field(default_factory=list)
-    result_retrieved: bool = False
-    reply_attempted: bool = False
-    reply_turn_started: bool = False
-    reply_retryable: bool = False
-    turn_start_ambiguous: bool = False
-    interrupt_requested: bool = False
-    turn_completed: bool = False
-    failure_pending_completion: bool = False
-    updated_at: str = dataclasses.field(default_factory=_utc_now)
-    turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
-
-    @property
-    def terminal(self) -> bool:
-        """最新turnが終端状態であるかを返す。"""
-        return self.status in TERMINAL_STATUSES
-
-    @property
-    def result_available(self) -> bool:
-        """最新turnが終端し、turn/completed受信済みで結果を回収できる状態であるかを返す。"""
-        return self.terminal and self.turn_completed and not self.turn_start_ambiguous
-
-    def touch(self) -> None:
-        """更新時刻をUTC ISO 8601へ更新する。"""
-        self.updated_at = _utc_now()
-
-    def public_status(self) -> dict[str, Any]:
-        """公開MCP応答用に内部状態と結果回収可否を必要最小限へ射影する。"""
-        return {
-            "session_id": self.session_id,
-            "turn_id": self.turn_id,
-            "status": self.status,
-            "result_available": self.result_available,
-            "error": self.error,
-        }
 
 
 def _as_text(value: Any) -> str:
@@ -351,12 +286,16 @@ class JsonRpcProcess:
 
 
 class AppServerManager:
-    """App Server clientと公開session状態を管理する。"""
+    """Codex App Serverと共有session状態を管理する。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        sessions: dict[str, SessionState] | None = None,
+        condition: asyncio.Condition | None = None,
+    ) -> None:
         self.client: JsonRpcProcess | None = None
-        self.sessions: dict[str, SessionState] = {}
-        self._condition = asyncio.Condition()
+        self.sessions = sessions if sessions is not None else {}
+        self._condition = condition if condition is not None else asyncio.Condition()
         self._lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
 
@@ -388,7 +327,13 @@ class AppServerManager:
                 raise
             return client
 
-    async def start(self, prompt: str, cwd: str, model: str | None = None, effort: str | None = None) -> dict[str, Any]:
+    async def start(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> SessionState:
         """新しいthreadとturnを開始し、直ちにsession状態を返す。"""
         _validate_prompt(prompt)
         _validate_cwd(cwd)
@@ -406,9 +351,9 @@ class AppServerManager:
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
             raise AppServerError("thread/start returned no thread.id")
         session_id = thread["id"]
-        session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort)
+        session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort, engine="codex")
         self.sessions[session_id] = session
-        self._initialize_turn(session)
+        _initialize_turn(session)
         try:
             await self._start_turn(session, prompt, client)
         except Exception as exc:
@@ -416,49 +361,24 @@ class AppServerManager:
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
                 await self._mark_failed(session, exc, retryable=False)
-            return session.public_status()
-        return session.public_status()
+            return session
+        return session
 
-    async def start_reply(self, session_id: str, prompt: str) -> dict[str, Any]:
-        """結果取得済みのthreadを再開して新しいturnを開始する。"""
-        _validate_prompt(prompt)
-        session = self._get_session(session_id)
-        async with session.turn_control_lock:
-            if not session.terminal:
-                raise ValueError("the previous Codex turn is still running")
-            if not session.result_retrieved:
-                raise ValueError("codex_result must be called before starting a reply")
-            if session.turn_start_ambiguous:
-                raise ValueError("cannot retry an ambiguous turn/start failure")
-            if (
-                session.status == "failed"
-                and session.reply_attempted
-                and not session.reply_turn_started
-                and not session.reply_retryable
-            ):
-                raise ValueError("codex_start_reply cannot retry an ambiguous turn/start failure")
-            delivery, status, error = await self._start_reply_locked(session, prompt)
-            if delivery == "reply_failed" and error is not None:
-                raise error
-            return status
-
-    async def send_message(self, session_id: str, prompt: str) -> dict[str, Any]:
+    async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
         _validate_prompt(prompt)
-        session = self._get_session(session_id)
         async with session.turn_control_lock:
-            if session.result_available:
+            if session.terminal:
                 previous_result = self._capture_result(session)
                 delivery, status, error = await self._start_reply_locked(session, prompt)
                 if error is not None and delivery not in {"reply_failed", "reply_ambiguous"}:
                     raise error from None
-                return {
+                result = {
                     "delivery": delivery,
                     "previous_result": previous_result,
                     **status,
                 }
-            if session.terminal:
-                raise ValueError("the Codex turn has not completed with a recoverable result")
+                return result
             if not session.turn_id:
                 raise ValueError("the active Codex turn has no turn_id")
             client = self.client
@@ -495,7 +415,6 @@ class AppServerManager:
             session.touch()
             return {
                 "delivery": "steered",
-                "previous_result": None,
                 **session.public_status(),
             }
 
@@ -535,16 +454,8 @@ class AppServerManager:
 
     @staticmethod
     def _capture_result(session: SessionState) -> dict[str, Any]:
-        """codex_resultと同じ形で直前結果を退避し、回収済みとして記録する。"""
-        session.result_retrieved = True
-        session.touch()
-        return {
-            "session_id": session.session_id,
-            "turn_id": session.turn_id,
-            "status": session.status,
-            "agent_message": session.agent_message,
-            "error": session.error,
-        }
+        """継続入力へ直前turnの結果を退避する。"""
+        return session.previous_result()
 
     async def _wait_after_steer_rejection(
         self,
@@ -580,31 +491,11 @@ class AppServerManager:
 
     @staticmethod
     def _initialize_turn(session: SessionState) -> None:
-        """新しいturnの開始前に公開状態と完了境界を初期化する。"""
-        session.turn_id = ""
-        session.status = "running"
-        session.plan = []
-        session.current_item = None
-        session.commentary = ""
-        session.diff_changed = False
-        session.error = None
-        session.agent_message = ""
-        session.protocol_warnings = []
-        session.result_retrieved = False
-        session.reply_retryable = False
-        session.turn_start_ambiguous = False
-        session.interrupt_requested = False
-        session.turn_completed = False
-        session.failure_pending_completion = False
-        session.touch()
+        _initialize_turn(session)
 
     @staticmethod
     def _begin_reply(session: SessionState) -> None:
-        """直前turnの値を公開状態から除去し、新しいreply開始を準備する。"""
-        AppServerManager._initialize_turn(session)
-        session.reply_attempted = True
-        session.reply_turn_started = False
-        session.touch()
+        _begin_reply(session)
 
     async def _mark_failed(
         self,
@@ -615,7 +506,7 @@ class AppServerManager:
     ) -> None:
         """要求開始の失敗を終端状態へ反映し、待機者を起床する。
 
-        `retryable`が真の場合だけ、失敗結果の回収後に同じreplyを明示的に再試行できる。
+        `retryable`が真の場合だけ、同じreplyを再試行できる内部状態にする。
         """
         session.turn_id = ""
         session.status = "failed"
@@ -626,7 +517,6 @@ class AppServerManager:
         session.error = {"message": str(error) or error.__class__.__name__}
         session.agent_message = ""
         session.protocol_warnings = []
-        session.result_retrieved = False
         session.reply_turn_started = False
         session.reply_retryable = retryable
         session.turn_start_ambiguous = False
@@ -642,7 +532,6 @@ class AppServerManager:
             return
         session.status = "running"
         session.error = {"message": str(error) or error.__class__.__name__}
-        session.result_retrieved = False
         session.reply_retryable = False
         session.turn_start_ambiguous = True
         session.interrupt_requested = False
@@ -685,33 +574,6 @@ class AppServerManager:
             session.reply_turn_started = True
         session.touch()
         await self._notify_waiters()
-
-    def status(self, session_id: str) -> dict[str, Any]:
-        """指定sessionの最新状態を返す。"""
-        return self._get_session(session_id).public_status()
-
-    async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-        """結果を回収できる状態（`result_available`）まで待機し、タイムアウト時は現状態を返す。"""
-        if timeout < 0:
-            raise ValueError("timeout must be non-negative")
-        session = self._get_session(session_id)
-        if not session.result_available:
-            try:
-                async with self._condition:
-                    await asyncio.wait_for(
-                        self._condition.wait_for(lambda: session.result_available),
-                        timeout=timeout,
-                    )
-            except TimeoutError:
-                pass
-        return session.public_status()
-
-    def result(self, session_id: str) -> dict[str, Any]:
-        """result_availableが真の終端sessionの結果を返し、取得済みとして記録する。"""
-        session = self._get_session(session_id)
-        if not session.result_available:
-            raise ValueError("the Codex turn has not completed")
-        return self._capture_result(session)
 
     def _get_session(self, session_id: str) -> SessionState:
         if not isinstance(session_id, str) or not session_id:
@@ -788,10 +650,17 @@ class AppServerManager:
             if isinstance(item, dict):
                 session.current_item = None
                 self._consume_item(session, item)
-        elif method in {"item/agentMessage/delta", "item/plan/delta"}:
+        elif method == "item/agentMessage/delta":
             delta = params.get("delta")
             if isinstance(delta, str):
-                session.commentary = _append_bounded(session.commentary, delta)
+                item_id = params.get("itemId")
+                if not isinstance(item_id, str) or not item_id:
+                    current = session.current_item
+                    item_id = current.get("id") if isinstance(current, dict) else None
+                item_id = item_id if isinstance(item_id, str) and item_id else "__current__"
+                session.progress_items[item_id] = _append_bounded(session.progress_items.get(item_id, ""), delta)
+                session.commentary = session.progress_items[item_id]
+                session.set_progress(session.commentary)
         elif method in {"item/fileChange/outputDelta", "item/fileChange/patchUpdated"}:
             session.diff_changed = True
         session.touch()
@@ -940,6 +809,11 @@ class AppServerManager:
             text = item.get("text")
             if isinstance(text, str):
                 session.agent_message = text
+                item_id = item.get("id")
+                if not isinstance(item_id, str) or not item_id:
+                    item_id = "__current__"
+                session.progress_items[item_id] = text
+                session.set_progress(text)
         elif item_type == "plan":
             text = item.get("text")
             if isinstance(text, str):
@@ -961,108 +835,9 @@ class AppServerManager:
             await client.close()
 
 
-def _append_bounded(existing: str, delta: str, limit: int = 4000) -> str:
-    value = existing + delta
-    return value if len(value) <= limit else value[-limit:]
-
-
 def _public_turn_status(status: Any) -> str:
     if status == "inProgress":
         return "running"
     if status in TERMINAL_STATUSES:
         return status
     return "failed"
-
-
-def _validate_prompt(prompt: str) -> None:
-    if not isinstance(prompt, str) or not prompt.strip():
-        raise ValueError("prompt must be a non-empty string")
-
-
-def _validate_cwd(cwd: str) -> None:
-    if not isinstance(cwd, str) or not cwd or not pathlib.PurePath(cwd).is_absolute():
-        raise ValueError("cwd must be a non-empty absolute path")
-    if not pathlib.Path(cwd).is_dir():
-        raise ValueError(f"cwd is not an existing directory: {cwd}")
-
-
-def _validate_model_effort(model: str | None, effort: str | None) -> None:
-    if (model is None) != (effort is None):
-        raise ValueError("model and effort must be provided together")
-    if model is not None and (not model.strip() or not effort or not effort.strip()):
-        raise ValueError("model and effort must be non-empty strings")
-
-
-_MANAGER = AppServerManager()
-
-
-@contextlib.asynccontextmanager
-async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncIterator[None]:
-    """MCPと同じイベントループでApp Serverの終了・task回収を行う。"""
-    try:
-        yield
-    finally:
-        await _MANAGER.close()
-
-
-with warnings.catch_warnings():
-    # mcp 1.28系のFastMCP Settingsが未解決の汎用型を警告するが、stdio運用では
-    # lifespan設定を使わないため実行へ影響しない。依存版が型を公開する場合だけ抑制する。
-    if IncompleteFieldDefinitionWarning is not None:
-        warnings.simplefilter("ignore", IncompleteFieldDefinitionWarning)
-    mcp = FastMCP(
-        "codex_app_server",
-        instructions="非同期のCodex App Server委譲。承認・停止・一覧操作は公開しない。",
-        lifespan=_mcp_lifespan,
-    )
-
-
-@mcp.tool(name="codex_start", structured_output=True)
-async def codex_start(
-    prompt: str,
-    cwd: str,
-    model: str | None = None,
-    effort: str | None = None,
-) -> dict[str, Any]:
-    """Codex turnを開始し、完了を待たず状態と結果回収可否を返す。"""
-    return await _MANAGER.start(prompt, cwd, model, effort)
-
-
-@mcp.tool(name="codex_status", structured_output=True)
-async def codex_status(session_id: str) -> dict[str, Any]:
-    """Codex sessionの最新状態と結果回収可否を返す。"""
-    return _MANAGER.status(session_id)
-
-
-@mcp.tool(name="codex_wait", structured_output=True)
-async def codex_wait(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-    """結果を回収できる状態（`result_available`）まで待ち、結果回収可否を返す。timeout到達はエラーにしない。"""
-    return await _MANAGER.wait(session_id, timeout)
-
-
-@mcp.tool(name="codex_result", structured_output=True)
-async def codex_result(session_id: str) -> dict[str, Any]:
-    """result_availableが真の終端Codex turnから最終agentMessageを回収する。"""
-    return _MANAGER.result(session_id)
-
-
-@mcp.tool(name="codex_start_reply", structured_output=True)
-async def codex_start_reply(session_id: str, prompt: str) -> dict[str, Any]:
-    """結果回収済みthreadへ同じ会話の次turnを開始する。"""
-    return await _MANAGER.start_reply(session_id, prompt)
-
-
-@mcp.tool(name="codex_send_message", structured_output=True)
-async def codex_send_message(session_id: str, prompt: str) -> dict[str, Any]:
-    """実行中turnへ追加指示を送り、終端競合時は同じthreadを自動継続する。"""
-    return await _MANAGER.send_message(session_id, prompt)
-
-
-def main() -> None:
-    """MCP stdio transportを起動する。"""
-    logging.basicConfig(level=os.environ.get("AGENT_TOOLKIT_CODEX_LOG_LEVEL", "WARNING"))
-    mcp.run(transport="stdio")
-
-
-if __name__ == "__main__":
-    main()

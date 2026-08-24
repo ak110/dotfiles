@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write",
+        "matcher": "Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message",
         "hooks": [
           {
             "type": "command",
@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|mcp__agents_server__start|mcp__agents_server__wait|mcp__agents_server__send_message",
         "hooks": [
           {
             "type": "command",
