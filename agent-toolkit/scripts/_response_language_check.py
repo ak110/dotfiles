@@ -1,7 +1,7 @@
-"""Claude Code agent-toolkit: メインエージェント応答の言語検査。
+"""Claude Code agent-toolkit: 文字列の記述言語検査。
 
-直前のアシスタントターン（非サブエージェント）のテキストブロックを集約し、
-コードブロック・インラインコード・URLを除いた地の文を判定する。
+文字列からコードブロック・インラインコード・URLを除いた地の文を判定する。
+直前のメインエージェント応答はtranscriptから文字列を取得して同じ判定へ渡す。
 判定条件は、日本語文字を含まない英語だけの地の文、地の文の先頭に置かれた英語の談話標識、
 語数比が閾値未満であることの3種とする。
 語数比は日本語文字数を、日本語文字数と英単語数（連続英字列）の和で割った値とする。
@@ -80,6 +80,38 @@ WARNING_BODY = (
 
 BLOCK_BODY = "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、日本語での応答に切り替えること。"
 
+SUBAGENT_REPORT_BLOCK_BODY = (
+    "完了報告が英語主体であるため、01-agent.md「日本語」節に従い日本語で書き直すこと。"
+    "遮断された報告本文は呼び出し元へ保持されないため、報告全文を再掲すること。"
+)
+
+
+def check_text(text: str) -> tuple[CheckOutcome, str | None]:
+    """文字列の記述言語を判定し、3値で結果を返す。
+
+    判定対象テキストは、フェンス付きコードブロック・インラインコード・URLを除外した地の文である。
+    長さ下限を適用しない2条件（英語だけの地の文、先頭の談話標識）を先に判定し、
+    どちらにも該当しない場合だけ長さ下限付きの語数比判定へ進む。
+
+    Returns:
+        (判定結果, 警告本文またはNone)のタプル。
+        SKIPまたはPASSの場合、警告本文はNoneを返す。
+    """
+    plain_text = _FENCED_CODE_PATTERN.sub(" ", text)
+    plain_text = _INLINE_CODE_PATTERN.sub(" ", plain_text)
+    plain_text = _URL_PATTERN.sub(" ", plain_text)
+    japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
+    english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
+    if _is_english_only(japanese_count, english_word_count):
+        return (CheckOutcome.WARN, WARNING_BODY)
+    if _starts_with_discourse_marker(plain_text):
+        return (CheckOutcome.WARN, WARNING_BODY)
+    if len(plain_text) < _MIN_PLAIN_TEXT_LENGTH or japanese_count + english_word_count == 0:
+        return (CheckOutcome.SKIP, None)
+    if _is_below_word_ratio(japanese_count, english_word_count):
+        return (CheckOutcome.WARN, WARNING_BODY)
+    return (CheckOutcome.PASS, None)
+
 
 def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]:
     """直前のメインエージェント応答の記述言語を判定し、3値で結果を返す。
@@ -96,18 +128,9 @@ def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]
     """
     if not transcript_path:
         return (CheckOutcome.SKIP, None, "")
-    plain_text, msg_id = _collect_plain_text(transcript_path)
-    japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
-    english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
-    if _is_english_only(japanese_count, english_word_count):
-        return (CheckOutcome.WARN, WARNING_BODY, msg_id)
-    if _starts_with_discourse_marker(plain_text):
-        return (CheckOutcome.WARN, WARNING_BODY, msg_id)
-    if len(plain_text) < _MIN_PLAIN_TEXT_LENGTH or japanese_count + english_word_count == 0:
-        return (CheckOutcome.SKIP, None, msg_id)
-    if _is_below_word_ratio(japanese_count, english_word_count):
-        return (CheckOutcome.WARN, WARNING_BODY, msg_id)
-    return (CheckOutcome.PASS, None, msg_id)
+    raw_text, msg_id = _collect_raw_text(transcript_path)
+    outcome, body = check_text(raw_text)
+    return (outcome, body, msg_id)
 
 
 def _is_english_only(japanese_count: int, english_word_count: int) -> bool:
@@ -128,8 +151,8 @@ def _is_below_word_ratio(japanese_count: int, english_word_count: int) -> bool:
     return japanese_count / (japanese_count + english_word_count) < _MIN_JAPANESE_WORD_RATIO
 
 
-def _collect_plain_text(transcript_path: str) -> tuple[str, str]:
-    """直前アシスタントターンのテキストブロックを連結し、コード・URLをマスクした地の文とmessage IDを返す。
+def _collect_raw_text(transcript_path: str) -> tuple[str, str]:
+    """直前アシスタントターンのテキストブロックを連結した文字列とmessage IDを返す。
 
     テキストが空の場合は("", "")を返す。
     """
@@ -152,8 +175,4 @@ def _collect_plain_text(transcript_path: str) -> tuple[str, str]:
                 texts.append(text)
     if not texts:
         return ("", "")
-    joined = "\n".join(texts)
-    masked = _FENCED_CODE_PATTERN.sub(" ", joined)
-    masked = _INLINE_CODE_PATTERN.sub(" ", masked)
-    masked = _URL_PATTERN.sub(" ", masked)
-    return (masked, msg_id)
+    return ("\n".join(texts), msg_id)

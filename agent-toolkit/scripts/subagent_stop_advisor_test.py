@@ -54,7 +54,35 @@ def test_current_minimal_executor_report_passes(capsys: pytest.CaptureFixture[st
 
 
 def test_nonempty_report_does_not_require_legacy_labels(capsys: pytest.CaptureFixture[str]) -> None:
-    assert advisor.main(json.dumps(_payload("status: completed"))) == 0
+    assert advisor.main(json.dumps(_payload("完了"))) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_english_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) -> None:
+    """英語主体の完了報告を日本語での再提出へ差し戻す。"""
+    assert advisor.main(json.dumps(_payload("Done here."))) == 0
+
+    decision = json.loads(capsys.readouterr().out)
+    assert decision["decision"] == "block"
+    assert "01-agent.md「日本語」節に従い日本語で書き直すこと" in decision["reason"]
+    assert "遮断された報告本文は呼び出し元へ保持されないため、報告全文を再掲すること" in decision["reason"]
+
+
+def test_japanese_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
+    """日本語の完了報告は空stdoutで許可する。"""
+    assert advisor.main(json.dumps(_payload("完了報告を確認した。"))) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_single_english_word_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
+    """英単語1語だけの短文は空stdoutで許可する。"""
+    assert advisor.main(json.dumps(_payload("Done"))) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_non_string_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
+    """非文字列の完了報告は空stdoutで許可する。"""
+    assert advisor.main(json.dumps({**_payload(), "last_assistant_message": {"status": "completed"}})) == 0
     assert capsys.readouterr().out == ""
 
 
@@ -157,6 +185,20 @@ def test_codex_empty_report_is_blocked(capsys: pytest.CaptureFixture[str]) -> No
 def test_codex_normal_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
     """Codexの非空報告は空stdoutで許可する。"""
     assert advisor.main(json.dumps({**_payload(_minimal_report()), "turn_id": "turn-1"})) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_codex_english_report_skips_language_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexの英語主体の報告では言語ゲートを実行せず許可する。"""
+
+    def _fail(_text: str) -> tuple[object, object]:
+        raise AssertionError("Codexでは言語ゲートを実行しない")
+
+    monkeypatch.setattr(advisor, "check_text", _fail)
+    assert advisor.main(json.dumps({**_payload("Done here."), "turn_id": "turn-1"})) == 0
     assert capsys.readouterr().out == ""
 
 

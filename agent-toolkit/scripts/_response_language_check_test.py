@@ -5,7 +5,7 @@ import pathlib
 import re
 
 import pytest
-from _response_language_check import CheckOutcome, detailed_check
+from _response_language_check import CheckOutcome, check_text, detailed_check
 from _test_helpers import _write_transcript
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
@@ -51,6 +51,54 @@ def _make_mixed(japanese_count: int, english_word_count: int) -> str:
     if japanese and words:
         return japanese + " " + words
     return japanese or words
+
+
+class TestCheckText:
+    """check_text()の文字列入力に対する判定契約を検証する。"""
+
+    def test_warns_for_english_only_text(self):
+        """日本語文字を含まない英単語2語以上の文字列はWARNを返す。"""
+        outcome, body = check_text("Done here.")
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
+    def test_warns_for_discourse_marker(self):
+        """先頭の英語談話標識を含む短い文字列はWARNを返す。"""
+        outcome, body = check_text("Now、調査を続ける。")
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
+    def test_warns_below_japanese_word_ratio(self):
+        """語数比が閾値未満の文字列はWARNを返す。"""
+        outcome, body = check_text(_make_mixed(14, 35))
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
+    def test_passes_japanese_text(self):
+        """日本語主体の十分な長さの文字列はPASSを返す。"""
+        outcome, body = check_text("あ" * 50)
+        assert outcome is CheckOutcome.PASS
+        assert body is None
+
+    def test_skips_short_mixed_text(self):
+        """長さ下限未満の混在文字列はSKIPを返す。"""
+        outcome, body = check_text("あ word")
+        assert outcome is CheckOutcome.SKIP
+        assert body is None
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "```text\nDone here.\n```",
+            "`Done here.`",
+            "https://example.com/done",
+        ],
+    )
+    def test_excludes_code_and_url_from_language_check(self, text: str):
+        """コードとURLは記述言語の判定対象から除外する。"""
+        outcome, body = check_text(text)
+        assert outcome is CheckOutcome.SKIP
+        assert body is None
 
 
 class TestDetailedCheck:
