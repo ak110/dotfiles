@@ -54,7 +54,6 @@ Agent / Task:
 - `plan-impl-executor`起動時、起動プロンプトが指す実在計画パスの記録 (side-effect)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
-- `name`引数指定のブロック (block)
 
 TaskStop:
 
@@ -395,8 +394,6 @@ def _handle_agent_tool(
         state = read_state(session_id)
         if _check_delegation_not_invoked(state, tool_name=tool_name):
             return 2
-    if _check_agent_name_parameter(tool_name, tool_input):
-        return 2
     if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
         return 2
     if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
@@ -1470,32 +1467,6 @@ _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
 )
 # 公式資料照会専用で委譲契約が関与しない種別は、委譲未起動ゲートから除外する。
 _DELEGATION_GATE_EXEMPT_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude-code-guide"})
-
-
-def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
-    """AgentまたはTask起動時の`name`引数指定を値によらずブロックする。
-
-    `name`付きの背景起動は完了通知が本来の起動元へ配送されず停滞するため、
-    `agent-toolkit/rules/99-claude-code.md`「委譲起動時の厳守事項」節が`name`の指定を厳守規定として禁じる。
-    キーの存在のみで判定し、空文字列・`None`を含め値の内容は問わない。
-    """
-    if "name" not in tool_input:
-        return False
-    print(
-        _llm_notice(
-            f"blocked: the `name` parameter is not allowed for {tool_name}"
-            f" (given: {tool_input.get('name')!r}).\n"
-            "Why this gate exists: a named background launch does not deliver its completion"
-            " notification to the actual launcher, which leaves the launcher waiting indefinitely.\n"
-            "Normal fix: omit `name`. Place independent launches side by side"
-            " in a single response to run them in parallel.\n"
-            "See agent-toolkit/rules/99-claude-code.md '委譲起動時の厳守事項' section for the `name`"
-            " prohibition.",
-            tag="block",
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:

@@ -3803,14 +3803,14 @@ class TestBashOutputTruncationWarning:
         assert "truncating it" not in _agent_messages(result)
 
 
-class TestAgentNameParameterGate:
-    """AgentとTask起動時の`name`引数指定の一律ブロック。"""
+class TestAgentNameParameterAccepted:
+    """`name`引数を伴うAgent/Task起動が委譲ゲートで拒否されないことを保証する（`name`禁止規程撤回の受理契約）。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("name_value", ["impl-1", "", None])
-    def test_name_parameter_blocks(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
-        """`name`キーが存在する起動は値の内容によらずブロックする。"""
-        sid = f"agent-name-block-{tool_name.lower()}-{name_value!r}"
+    def test_name_parameter_does_not_block(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
+        """`name`キーの値によらず、他の委譲ゲートを満たす起動はブロックされない。"""
+        sid = f"agent-name-accept-{tool_name.lower()}-{name_value!r}"
         result = _run(
             {
                 "tool_name": tool_name,
@@ -3820,65 +3820,8 @@ class TestAgentNameParameterGate:
             },
             env_overrides=_delegation_state_env(tmp_path, sid),
         )
-        assert result.returncode == 2
-        assert "`name` parameter is not allowed" in result.stderr
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_launch_without_name_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """`name`キーを持たない起動は通過する。"""
-        sid = f"agent-name-allow-{tool_name.lower()}"
-        result = _run(
-            {
-                "tool_name": tool_name,
-                "tool_input": {"subagent_type": "claude", "prompt": "調査してください。"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, sid),
-        )
         assert result.returncode == 0
-        assert "`name` parameter is not allowed" not in result.stderr
-
-    def test_name_block_states_only_prohibition_and_parallel_guidance(self, tmp_path: pathlib.Path) -> None:
-        """ブロック理由は`name`禁止の根拠と並列起動の案内だけを示し、起動形態を断定しない。"""
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "claude", "name": "named", "prompt": "調査してください。"},
-                "session_id": "agent-name-block-route",
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, "agent-name-block-route"),
-        )
-        assert result.returncode == 2
-        assert "in parallel" in result.stderr
-        assert "run_in_background" not in result.stderr
-        assert "execution result" not in result.stderr
-        assert "launch in the foreground" not in result.stderr
-        assert "tool return value" not in result.stderr
-
-    def test_name_block_precedes_subagent_type_flag_record(self, tmp_path: pathlib.Path) -> None:
-        """ブロックされた起動では`subagent_type`別フラグを記録しない（起動しない呼び出しの副作用を残さない）。"""
-        sid = "agent-name-block-no-flag"
-        plan = _make_plan_file(tmp_path / "home", "name-block.md")
-        _write_session_state(tmp_path, sid, {"delegation_skill_invoked": True})
-        env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "name": "codex-1",
-                    "prompt": f"計画ファイル `{plan}` を実装する。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
-        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+        assert "`name`" not in result.stderr
 
 
 class TestSubagentModelOverrideGate:
