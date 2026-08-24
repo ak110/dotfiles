@@ -28,12 +28,12 @@ description: >
    計画構造検査・自己監査・レビュー担当の起動・指摘の配送・修正の検収・収束判定を委譲する。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断を利用者へ確認する
 5. 完成後、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、本文、対象worktreeの絶対パス、
-   base commit、plan file、source `plan`、依存、吸収元のファイル名を渡す。
-   add-feedbackは保存直前に最新状態を再確認し、新しい計画型のフィードバックを追加する
+   base commit、plan file、source `plan`（人間由来）、依存、吸収元のファイル名を渡す。
+   新しい計画型のフィードバックを追加する
 6. 「完了報告の形式」に従う完了報告を利用者へ提示する
 
 計画を投入せず終了する場合や継続不能時は、rejectedへ保存した本文を入力として
-`agent-toolkit:add-feedback`をSkill機能で起動し、source `plan`を明示して同一セッション内で再投入する。
+`agent-toolkit:add-feedback`をSkill機能で起動し、source `plan`（人間由来）を明示して同一セッション内で再投入する。
 
 本スキルは協調モードで動作する。利用者の選好は計画確定前に確認し、完成済み本文を
 add-feedbackへ渡した後は問い直さない。

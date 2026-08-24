@@ -259,7 +259,8 @@ def _add_mq_add_parser(sub: Any) -> None:
         metavar="NAME",
         default=None,
         help=(
-            "投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: session-review・plan）。"
+            "投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: "
+            "session-review・alert-monitor・agent・human・plan）。"
             "メッセージ先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
     )

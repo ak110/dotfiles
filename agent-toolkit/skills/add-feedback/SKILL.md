@@ -11,7 +11,9 @@ description: >
 
 ## 入力
 
-- 完成済み本文は問い直さず、本文、対象リポジトリ、種別、source、plan file、依存関係を受け取る。sourceは任意で、受領した値を改変しない
+- 完成済み本文は問い直さず、本文、対象リポジトリ、種別、source、plan file、依存関係を受け取る。利用者発話を原文とする投入では、受領した`source`を改変せず、受領していない場合は推測しない
+- エージェント自身が投入元で人間由来の指示が無い場合は、`source`を必須とし、本スキルが自ら確定する。生成経路名を持つ起票は当該経路名（`session-review`・`alert-monitor`）を用い、経路名を持たない起票は`agent`を用いる
+- 利用者が本スキル又は`agent-toolkit:plan-and-add-feedback`を手動起動した投入と、対話中の利用者指示による登録は人間由来とし、`human`を用いる。利用者が`atk mq add`を直接実行した投入の`source`欠落は人間由来として扱い、`source`欄の遡及付与は行わない
 - `depends_on`は本文が述べる外部待ち条件に対応するものだけを受け取る。外部待ち条件は未回答TBDの回答待ちと`cooldown_until`による待機とする。解除時刻と観測経路が確定する外部状態の解除待ちと別リポジトリの先行変更の完了待ちも含める。利用者が本文で明示した完了待ちと日付境界も含める。実装順序の前後だけを理由に受け取らない
 - 完成済みの通常型本文では、投入元が同じ対象と技術主張について完了した調査の証拠を持つ場合に受け取る。
   証拠には計画、調査結果、実行結果を含み、再利用できない範囲の調査は本スキルが担う
@@ -45,11 +47,12 @@ description: >
    別リポジトリ移管では、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを
    移管先の値へ一時的に置き換えてから、元項目のfrontmatterと本文を含むメッセージ全体を渡す。
    通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。
-   sourceを受領した場合だけ同じ値を`atk mq add --source=<source>`へ渡す。
-   sourceを受領していない場合は`--source`を省略し、sourceを推測、必須化又は別値へ置換しない
-7. 完了表示のファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`を入力と照合する。sourceを受領した場合は、
+   sourceを受領又は確定した場合は同じ値を`atk mq add --source=<source>`へ渡す。
+   エージェント自身の投入で人間由来の指示が無い場合は、確定したsourceを省略しない。
+   利用者発話を原文とする投入でsourceを受領していない場合は`--source`を省略し、sourceを推測せず、必須化せず、別値へ置換しない
+7. 完了表示のファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`を入力と照合する。sourceを受領又は確定した場合は、
    保存後に既存の`atk mq show <filename> --target-repo=<repo-path> --skip-pull`で項目を再取得し、frontmatterのsourceが入力値と一致することを照合する。
-   sourceの欠落・不一致では完了扱いにせず、同じ経路で修復する。sourceを受領していない場合は追加のsource照合をしない。
+   照合対象のsourceが欠落しているか入力値と一致しない場合は完了扱いにせず、同じ経路で修復する。利用者発話を原文とする投入でsourceを受領していない場合は追加のsource照合をしない。
    警告やエラーが出た場合も、終了コード0であっても`atk mq show <filename> --target-repo=<repo-path>`で保存内容を再取得し、欠落を同じ経路で修復する
    別リポジトリ移管では、移管先の`target_repo`と本文を照合する。
    元項目の非予約frontmatter（`alert_keys`など）も照合する。
@@ -124,3 +127,4 @@ TBDで複数項目の判断を回答者へ求める場合は、次の要素を�
 - 完了表示のファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`が入力と一致し、
   投入時のエラーを解消済みで、警告があれば再取得により保存内容に欠落が無いことを確認済みで、
   processing項目を変更していない
+- エージェント自身が投入元で人間由来の指示が無い場合は、sourceを確定して保存し、保存後にfrontmatterのsourceが確定値と一致することを確認している

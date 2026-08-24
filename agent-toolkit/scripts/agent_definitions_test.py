@@ -1448,16 +1448,18 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     assert "調査結果から投入元と引用範囲を受領し、値を改変せず採否判断へ渡す" in planner
     assert "追加の`atk mq show`は実行しない" in planner
     assert planner.index("調査結果から投入元と引用範囲を受領") < planner.index("`decision-format.md`へ照合")
-    for source in ("`session-review`", "`alert-monitor`", "`plan`", "値なし", "その他の値"):
+    for source in ("`session-review`", "`alert-monitor`", "`agent`", "`human`", "`plan`", "値なし", "その他の値"):
         assert source in decision
-    assert "`source: session-review`だけをエージェント由来" in decision
+    assert "エージェント由来の値集合は`session-review`・`alert-monitor`・`agent`" in decision
+    assert "人間由来の値集合は`human`・`plan`" in decision
+    assert "この値集合を由来区分の正本とし" in decision
     assert "sourceによる由来境界の判定と利用者認可の確認を分ける" in decision
     assert "sourceは由来境界の判定にだけ用い、source又はフィードバック本文から利用者認可を推定しない" in decision
     assert "投入元識別子で由来境界を判定するが、投入元識別子やフィードバック本文から利用者認可を推定しない" in design
     assert "投入元識別子やフィードバック本文から、人間由来若しくは利用者認可を推定しない" not in design
     for source in (
-        "`source: plan`",
-        "`source: alert-monitor`",
+        "`human`",
+        "`plan`",
         "その他のsource",
         "source欠落及び不明",
     ):
@@ -1503,8 +1505,8 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "採否理由",
         "不採用の結果は項目固有の採否理由・原文との差異",
         "関連性の低い項目を同じ包括理由だけで一括判断せず",
-        "`source: session-review`だけをエージェント由来",
-        "その他のsource、source欠落及び不明は人間由来",
+        "エージェント由来の値集合に含まれる項目の不採用",
+        "人間由来の値集合は`human`・`plan`",
         "部分採用を理由にAskUserQuestionを機械的に発行せず",
         "回答が得られない場合は同じ質問内容をTBDへ保存",
         "回答又はTBDを確認できない状態では`reject`を実行しない",
@@ -1513,8 +1515,10 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "不採用確認用`user_decisions`は通常の将来判断TBDと区別する",
     ):
         assert phrase in decision
-    for document in (sender, planner, process, hold, decision):
-        assert "`source: session-review`" in document
+    for document in (sender, planner, process, hold):
+        assert "`decision-format.md`" in document
+        assert "エージェント由来" in document
+    assert "エージェント由来の値集合" in decision
     for phrase in (
         "バッチ全項目の採否記録",
         "計画対象集合",
@@ -1545,16 +1549,22 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
 
-    assert "sourceを受領した場合だけ同じ値を" in add_feedback
+    assert "sourceを受領又は確定した場合は同じ値を" in add_feedback
     assert "`atk mq add --source=<source>`へ渡す" in add_feedback
-    assert "sourceを受領していない場合は`--source`を省略し" in add_feedback
+    assert "エージェント自身が投入元で人間由来の指示が無い場合は、`source`を必須とし" in add_feedback
+    assert "生成経路名を持つ起票は当該経路名（`session-review`・`alert-monitor`）を用い" in add_feedback
+    assert "経路名を持たない起票は`agent`を用いる" in add_feedback
+    assert "手動起動した投入と、対話中の利用者指示による登録は人間由来とし、`human`を用いる" in add_feedback
+    assert "エージェント自身の投入で人間由来の指示が無い場合は、確定したsourceを省略しない" in add_feedback
+    assert "利用者発話を原文とする投入でsourceを受領していない場合は`--source`を省略" in add_feedback
     assert "`atk mq show <filename> --target-repo=<repo-path> --skip-pull`" in add_feedback
     assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
-    assert "sourceの欠落・不一致では完了扱いにせず" in add_feedback
-    assert "sourceを受領していない場合は追加のsource照合をしない" in add_feedback
+    assert "照合対象のsourceが欠落しているか入力値と一致しない場合は完了扱いにせず" in add_feedback
+    assert "利用者発話を原文とする投入でsourceを受領していない場合は追加のsource照合をしない" in add_feedback
+    assert "エージェント自身が投入元で人間由来の指示が無い場合は、sourceを確定して保存し" in add_feedback
     assert "手順7のsource照合後" in add_feedback
     assert "手順8のsource照合後" not in add_feedback
-    assert "source `plan`を明示" in plan_and_add
+    assert "source `plan`（人間由来）を明示" in plan_and_add
     assert "source `session-review`を明示" in session_review
 
 
@@ -1661,7 +1671,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "失敗TBDの保存コマンドの完了表示にエラーが無いことを確認",
         "警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`",
         "保存内容に欠落が無いことを確認",
-        "`source: session-review`と確認できる項目は",
+        "`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は",
         "それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い",
         "失敗TBDを依存へ追加して`blocked`まで確認する",
         "元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する",
@@ -1682,7 +1692,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     save_at = sender.index("失敗TBDを`agent-toolkit:add-feedback`で1件保存")
     completion_at = sender.index("失敗TBDの保存コマンドの完了表示にエラーが無いことを確認", save_at)
     warning_at = sender.index("警告が出た場合は`atk mq show", completion_at)
-    source_branch_at = sender.index("`source: session-review`と確認できる項目は", warning_at)
+    source_branch_at = sender.index("`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は", warning_at)
     human_branch_at = sender.index("それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い", source_branch_at)
     terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", warning_at)
     assert save_at < completion_at < warning_at < source_branch_at < terminal_at < human_branch_at
@@ -1696,7 +1706,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "バッチを失敗"):
         assert phrase in process
     for phrase in (
-        "source: session-review",
+        "`decision-format.md`「採否結果」の値集合でエージェント由来と判定される",
         "失敗TBDを依存へ追加",
         "TBD依存を設定し、`blocked`を確認して保留する",
         "不採用確認を経ずに元のフィードバックをrejectしない",
@@ -1758,7 +1768,9 @@ def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
         "元のフィードバックの採否候補へ反映する",
     ):
         assert phrase in hold
-    session_review_at = hold.index("`source: session-review`と確認できる項目の失敗TBDへ回答された場合は")
+    session_review_at = hold.index(
+        "`decision-format.md`「採否結果」の値集合でエージェント由来と確認できる項目の失敗TBDへ回答された場合は"
+    )
     save_at = hold.index("depends_on=<失敗TBD filename>", session_review_at)
     verify_at = hold.index("新規のフィードバックの本文と依存を再取得して照合", save_at)
     terminal_at = hold.index("失敗TBDを採用終端", verify_at)
@@ -1767,7 +1779,7 @@ def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
     human_resume_at = hold.index("停止済みの`feedbacks-planner`系統を再開・再利用せず", human_terminal_at)
     assert session_review_at < save_at < verify_at < terminal_at < human_source_at < human_terminal_at < human_resume_at
     for phrase in (
-        "`source: session-review`と確認できる項目は、却下済みの元本文と回答を失敗TBDへ依存する新規のフィードバックへ反映し",
+        "`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は、却下済みの元本文と回答を失敗TBDへ依存する新規のフィードバックへ反映し",
         "本文と依存を照合してから失敗TBDを採用終端する",
         "それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留する",
         "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する",
@@ -3342,7 +3354,8 @@ def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dep
         assert "原文正本IDごとの累積" in document
         for field in ("`raw`", "`question`", "`answer_or_tbd`", "`unanswered`", "`resolution`", "`decision`"):
             assert field in document
-        assert "過去の確認サイクルのレコードを削除又は上書きしない" in document
+        assert "過去の確認サイクルのレコードを" in document
+        assert "削除又は上書きしない" in document or "削除も上書きもしない" in document
         for resolution in ("`未確定`", "`回答による確定`", "`TBDによる保留`"):
             assert resolution in document
         for decision_value in ("`採用`", "`部分採用`", "`不採用`", "`保留`"):
@@ -3387,7 +3400,9 @@ def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dep
     reception_generic_failure = reception.index("それ以外の`feedbacks-planner`の失敗", reception_saved_failure)
     assert reception_saved_failure < reception_generic_failure
     hold_saved_failure = hold.index("保存済みの不採用確認用TBDを受領した再開での失敗")
-    hold_generic_failure = hold.index("`source: session-review`と確認できない項目で", hold_saved_failure)
+    hold_generic_failure = hold.index(
+        "`decision-format.md`「採否結果」の値集合でエージェント由来と確認できない項目で", hold_saved_failure
+    )
     assert hold_saved_failure < hold_generic_failure
 
 

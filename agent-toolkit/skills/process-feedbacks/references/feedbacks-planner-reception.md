@@ -109,7 +109,7 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 `feedbacks-planner`の計画担当が技術判断として確定する。
 これらの差異は`user_decisions`へ含めない。
 差異と根拠は`decision-format.md`の採否理由又は反映内容と計画へ記録する。
-採否確定工程では`source: session-review`だけをエージェント由来と判定し、それ以外のsource、source欠落及び不明の不採用候補を
+採否確定工程では由来区分を`decision-format.md`「採否結果」の値集合を参照して判定し、エージェント由来でない不採用候補を
 原文との差異と技術的理由付きの不採用確認用`user_decisions`へ返す。`user_decisions`は通常の将来判断TBDと区別し、
 不採用候補の採否確定だけに用いる。部分採用はこの確認へ機械的に含めず、差異、採用範囲、除外範囲、採否理由を採否記録へ残す。
 メインは不採用確認用`user_decisions`ごとに`AskUserQuestion`を発行し、直接回答を受領した場合は出所と引用範囲付きの逐語文を渡して
@@ -120,7 +120,7 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 `atk mq list --status=active --target-repo=<repo-path>`で元項目の`blocked`状態を照合する。
 この再開では既存TBDと`blocked`状態の照合だけを行い、`agent-toolkit:add-feedback`によるTBD再投入、
 `atk mq set-dependencies`による再依存と`atk mq return-to-inbox`による再inboxを実行しない。
-既存TBD又は`blocked`状態を照合できない場合は新しい識別子を起動せず失敗として返す。
+既存TBDの保存内容を照合できない場合は新しい識別子を起動せず失敗として返す。`blocked`状態を照合できない場合も同じ扱いとする。
 保存済みの不採用確認用TBDを受領した再開の工程が照合後に失敗した場合も、既存の確認TBDを同じ依存として保持する。
 新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持した失敗を返す。
 保留項目を計画対象集合から除外し、残る採用項目がある場合だけ計画起草を続行する。
@@ -152,7 +152,7 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキュー操作は`feedbacks-planner`の判定による計画対象集合を変更しない。
 操作前に保存状態を照合し、完了済みのreject又は保留操作を再実行しない。
 
-`source: session-review`と確認できない項目の不採用は、原文との差異と技術的理由を示す`AskUserQuestion`の回答後だけ確定する。
+`decision-format.md`「採否結果」の値集合でエージェント由来と判定できない項目の不採用は、原文との差異と技術的理由を示す`AskUserQuestion`の回答後だけ確定する。
 回答又はTBDの保存・依存設定を確認できない場合は`atk mq reject`を実行せず、元項目をactiveのまま保持して失敗を返す。
 同じrejectメモを複数項目へ用いる場合も、各項目で同じ理由が成立する根拠を採否記録へ対応付ける。
 
@@ -175,12 +175,12 @@ hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキ
 それ以外の`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で1件保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
-同一バッチかつ同一`target_repo`で、この6要素（事象、期待値、実際値、発生条件、直接的原因、再開に必要な情報）が全て一致する失敗は、対象の元ファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。`source: session-review`の元項目は同じTBD名を記録してrejectで終端し、それ以外の元項目は全て同じTBDへ依存させて`blocked`を確認する。6要素又は`target_repo`が異なる失敗を同じTBDへまとめない。
+同一バッチかつ同一`target_repo`で、この6要素（事象、期待値、実際値、発生条件、直接的原因、再開に必要な情報）が全て一致する失敗は、対象の元ファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。`decision-format.md`「採否結果」の値集合でエージェント由来と判定される元項目は同じTBD名を記録してrejectで終端し、それ以外の元項目は全て同じTBDへ依存させて`blocked`を確認する。6要素又は`target_repo`が異なる失敗を同じTBDへまとめない。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-`source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
+`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
 失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
-`source: session-review`と確認できる項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
+`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
 それ以外では新しいTBDを作成せず、Git操作も`feedbacks-planner`の再開も行わず失敗として返す。
 
 計画レビューの収束不能判定により分離した単位の`needs_escalation`は、失敗TBDと`atk mq reject`の対象としない。
@@ -197,8 +197,8 @@ hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキ
 元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存し、
 保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-`source: session-review`と確認できる項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`を実行する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。不採用確認を経ずに元項目をrejectしない。
-`source: session-review`と確認できる項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
+`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`を実行する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。不採用確認を経ずに元項目をrejectしない。
+`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
 再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目をファイル名昇順で各1回処理する。
 結果反映エラーが先頭、中間、末尾のいずれで発生しても、全ファイル名を各1回処理する。

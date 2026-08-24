@@ -88,7 +88,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    `user_decisions`を再調査又は要約せず、そのまま採否判断へ用いる。いずれの経路でも追加の`atk mq show`は実行しない。
 4. 調査結果を`decision-format.md`へ照合し、要求ごとに素材ID、要求ID、素材参照、原文正本ID、人間由来の指示又は方針の優先度、
    調査根拠、欠陥原因、採否及び採否理由を対応付けて採否候補を確定する。
-   `source: session-review`だけをエージェント由来と判定し、それ以外のsource、source欠落及び不明の不採用候補は、
+   由来区分は`decision-format.md`「採否結果」の値集合を参照して判定し、エージェント由来でない不採用候補は、
    原文との差異と技術的理由を示す不採用確認用`user_decisions`へ返す。
    `awaiting_confirmation`後の新規起動では、受領した逐語回答又は保存TBDを対応する`user_decisions`へ先に統合する。
    逐語回答は採否を確定し、TBDは保留として記録する。`resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は

@@ -9,7 +9,7 @@
 再開工程、対象のフィードバックを完成済み入力として、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動する。
 質問本文の構築、重複判定、保存は同スキルへ委ねる。
 
-`source: session-review`と確認できないフィードバックを不採用にする場合は、原文との差異と技術的理由を示す
+`decision-format.md`「採否結果」の値集合でエージェント由来と確認できないフィードバックを不採用にする場合は、原文との差異と技術的理由を示す
 `AskUserQuestion`を先に発行する。不採用確認用`user_decisions`の回答を得られない場合は質問と同じ本文をTBDとして保存し、元項目への依存設定、
 inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了する。回答を得られず、TBDの保存・依存設定を確認できない場合は
 元項目をrejectせずactiveのまま保持して失敗を返す。通常型の`feedbacks-planner`から受領した項目では、停止済みの識別子へ継続せず、
@@ -56,7 +56,7 @@ inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了す
 保存済みの不採用確認用TBDを受領した再開での失敗は、以下の汎用的な失敗TBD処理より先に扱う。既存の確認TBDを同じ依存として保持し、
 新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
 
-`source: session-review`と確認できない項目で、`feedbacks-planner`の失敗又は結果反映の失敗により失敗TBDを保存した場合は、元項目をrejectせず、失敗TBDを元項目の依存へ追加して保留する。失敗TBDの保存結果を確認した後、現行の有効依存を復元して失敗TBDのファイル名を追加し、`atk mq set-dependencies`の保存結果で全依存を照合する。
+`decision-format.md`「採否結果」の値集合でエージェント由来と確認できない項目で、`feedbacks-planner`の失敗又は結果反映の失敗により失敗TBDを保存した場合は、元項目をrejectせず、失敗TBDを元項目の依存へ追加して保留する。失敗TBDの保存結果を確認した後、現行の有効依存を復元して失敗TBDのファイル名を追加し、`atk mq set-dependencies`の保存結果で全依存を照合する。
 
 依存を照合した後に通常の`atk mq return-to-inbox`で元項目をinboxへ戻し、`atk mq list --status=active --target-repo=<repo-path>`で対象行が`blocked`であることを確認する。失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する。失敗TBDの保存、依存設定、差し戻し又は`blocked`確認のいずれかに失敗した場合も、元項目をrejectせずactiveのまま保持して失敗を返す。
 
@@ -88,7 +88,7 @@ TBDを伴わない外部条件待ちは`--cooldown-days`を使い、`depends_on`
 回答内容が現在の処理と独立する新規作業なら、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
 完成済み本文と対象リポジトリを渡す。
 
-`source: session-review`と確認できる項目の失敗TBDへ回答された場合は、
+`decision-format.md`「採否結果」の値集合でエージェント由来と確認できる項目の失敗TBDへ回答された場合は、
 `atk mq show <元feedback filename> --target-repo=<repo-path>`で却下済みの元のフィードバックを取得する。
 `atk mq show`の出力から表示用見出し（`target_repo`見出しとファイル名見出し）、YAML frontmatter、
 CLI付加の末尾改行を除外し、フィードバック本文を検索対象とする。
