@@ -124,7 +124,7 @@ class TestShowAllPullsBeforeRead:
 
 
 class TestCommitSubcommand:
-    """commitサブコマンド: 外部編集分のコミット・push、差分なしなら早期return。"""
+    """commitサブコマンド: 外部編集分をコミットし、滞留commitをpushする。"""
 
     def test_commit_when_dirty(
         self,
@@ -132,7 +132,7 @@ class TestCommitSubcommand:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """未コミット差分ありの場合、remote同期→add→commit→pushの順で呼び出される。"""
+        """未コミット差分ありの場合、滞留push→remote同期→add→commit→pushの順で呼び出される。"""
         notes = _setup_notes(tmp_path)
         calls: list[_GitCall] = []
 
@@ -150,22 +150,26 @@ class TestCommitSubcommand:
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls]
-        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
-        assert git_cmds[2][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[3] == ["git", "add", "inbox", "processing"]
-        assert git_cmds[4] == ["git", "commit", "-m", "chore: edit queue items externally"]
-        assert git_cmds[5] == ["git", "push"]
+        assert git_cmds[:3] == [
+            ["git", "push"],
+            ["git", "fetch"],
+            ["git", "merge", "--ff-only", "@{u}"],
+        ]
+        assert git_cmds[3][:3] == ["git", "status", "--porcelain"]
+        assert git_cmds[4] == ["git", "add", "inbox", "processing"]
+        assert git_cmds[5] == ["git", "commit", "-m", "chore: edit queue items externally"]
+        assert git_cmds[6] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()
         assert "外部編集分をコミット" in captured.out
 
-    def test_commit_when_clean(
+    def test_commit_when_clean_pushes_pending_commits(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """未コミット差分なしの場合、commit・pushを呼ばず「差分なし」を出力する。"""
+        """未コミット差分なしの場合、commitを呼ばず滞留commitをpushする。"""
         _setup_notes(tmp_path)
         calls: list[_GitCall] = []
 
@@ -182,10 +186,17 @@ class TestCommitSubcommand:
             atk.main(["mq", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        commit_cmds = [c["cmd"] for c in calls if "commit" in c["cmd"] or c["cmd"][:2] == ["git", "push"]]
-        assert commit_cmds == []
+        git_cmds = [c["cmd"] for c in calls]
+        assert git_cmds[:3] == [
+            ["git", "push"],
+            ["git", "fetch"],
+            ["git", "merge", "--ff-only", "@{u}"],
+        ]
+        assert git_cmds[3][:3] == ["git", "status", "--porcelain"]
+        assert not [cmd for cmd in git_cmds if cmd[:2] == ["git", "commit"]]
+        assert [cmd for cmd in git_cmds if cmd[:2] == ["git", "push"]] == [["git", "push"], ["git", "push"]]
         captured = capsys.readouterr()
-        assert "差分なし" in captured.out
+        assert "差分なし。滞留commitをpushしました。" in captured.out
 
 
 def _write_processing_file(
