@@ -17,7 +17,7 @@ from _atk_mq_common import (
     ReadinessResult,
     _is_tbd_answered,
     _iter_entries,
-    _pull_with_recent_notice,
+    _pull_with_recent_reuse,
     _repo_lock,
     calculate_readiness,
 )
@@ -183,7 +183,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """
     if not args.skip_pull:
         with _repo_lock(private_notes):
-            _pull_with_recent_notice(private_notes)
+            _pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
     filter_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
     readiness = calculate_readiness(private_notes, filter_repo)
 
