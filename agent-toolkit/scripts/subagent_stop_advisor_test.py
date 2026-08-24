@@ -8,8 +8,6 @@ import pathlib
 import pytest
 import subagent_stop_advisor as advisor
 
-_REAL_PENDING_AGENT_LAUNCH_IDS = advisor.pending_agent_launch_ids
-
 
 def _minimal_report() -> str:
     """委譲調整役の構造化された最小完了報告を返す。"""
@@ -36,16 +34,6 @@ def _payload(report: str = "完了") -> dict[str, object]:
         "agent_transcript_path": "/tmp/agent.jsonl",
         "last_assistant_message": report,
     }
-
-
-@pytest.fixture(autouse=True)
-def _active_executor(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        advisor,
-        "read_state",
-        lambda _session_id: {advisor._PLAN_IMPL_EXECUTOR_ACTIVE_KEY: {"agent": {}}},  # pylint: disable=protected-access
-    )
-    monkeypatch.setattr(advisor, "pending_agent_launch_ids", lambda *_args: set())
 
 
 def test_current_minimal_executor_report_passes(capsys: pytest.CaptureFixture[str]) -> None:
@@ -94,33 +82,14 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
     assert decision["reason"].startswith(
         "[auto-generated: agent-toolkit/subagent-stop][block] Provide a non-empty completion report"
     )
+    assert "Fix: Write a non-empty completion report and stop again." in decision["reason"]
 
 
-def test_registered_orchestrator_with_pending_child_is_blocked(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setattr(
-        advisor,
-        "pending_agent_launch_ids",
-        lambda *_args: {"toolu_child_b", "toolu_child_a"},
-    )
-
-    assert advisor.main(json.dumps(_payload(_minimal_report()))) == 0
-
-    decision = json.loads(capsys.readouterr().out)
-    assert decision["decision"] == "block"
-    assert "Complete or receive every child agent before stopping" in decision["reason"]
-    assert "Pending child tool_use_id values: toolu_child_a, toolu_child_b." in decision["reason"]
-
-
-def test_real_sidechain_transcript_with_pending_child_is_blocked(
+def test_pending_child_with_nonempty_report_is_approved(
     tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実記録形状のsidechain起動を実判定関数で検出して遮断する。"""
-    monkeypatch.setattr(advisor, "pending_agent_launch_ids", _REAL_PENDING_AGENT_LAUNCH_IDS)
+    """未消化の子起動があっても非空の完了報告だけでSubagentStopを許可する。"""
     transcript = tmp_path / "agent.jsonl"
     entries = [
         {
@@ -152,21 +121,6 @@ def test_real_sidechain_transcript_with_pending_child_is_blocked(
 
     payload = {**_payload(_minimal_report()), "agent_transcript_path": str(transcript)}
     assert advisor.main(json.dumps(payload, ensure_ascii=False)) == 0
-
-    decision = json.loads(capsys.readouterr().out)
-    assert decision["decision"] == "block"
-    assert "Complete or receive every child agent before stopping" in decision["reason"]
-    assert "Pending child tool_use_id values: toolu_child." in decision["reason"]
-
-
-def test_unregistered_agent_with_pending_child_keeps_existing_approval(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setattr(advisor, "read_state", lambda _session_id: {})
-    monkeypatch.setattr(advisor, "pending_agent_launch_ids", lambda *_args: {"toolu_child"})
-
-    assert advisor.main(json.dumps(_payload("中間報告"))) == 0
     assert capsys.readouterr().out == ""
 
 
@@ -199,21 +153,6 @@ def test_codex_english_report_skips_language_gate(
 
     monkeypatch.setattr(advisor, "check_text", _fail)
     assert advisor.main(json.dumps({**_payload("Done here."), "turn_id": "turn-1"})) == 0
-    assert capsys.readouterr().out == ""
-
-
-def test_codex_does_not_consult_transcript(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Codexでは子エージェント検査へtranscriptを渡さない。"""
-
-    def _fail(*_args: object) -> bool:
-        raise AssertionError("Codexではtranscriptを完了判定へ使わない")
-
-    monkeypatch.setattr(advisor, "pending_agent_launch_ids", _fail)
-
-    assert advisor.main(json.dumps({**_payload("完了"), "turn_id": "turn-1"})) == 0
     assert capsys.readouterr().out == ""
 
 

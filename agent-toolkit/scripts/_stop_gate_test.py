@@ -18,9 +18,7 @@ from _stop_gate import (
     _describe_pending_background_tasks,
     append_stop_log,
     has_command_invocation,
-    has_pending_agent_launches,
     is_pending_async_work,
-    pending_agent_launch_ids,
 )
 from _test_helpers import _write_transcript
 
@@ -928,96 +926,6 @@ class TestIsPendingAsyncWork:
         ]
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is False
-
-
-class TestHasPendingAgentLaunches:
-    """`has_pending_agent_launches`の抽出種別を検証する。"""
-
-    def test_returns_true_for_pending_agent(self, tmp_path: pathlib.Path) -> None:
-        """背景Agent起動のみが未消化の場合に真を返す。"""
-        t = _write_transcript(tmp_path, [_user_async_launched_entry("toolu_agent_pending")])
-        assert has_pending_agent_launches(str(t), "sess-agent") is True
-
-    def test_returns_false_for_pending_bash(self, tmp_path: pathlib.Path) -> None:
-        """背景Bash起動のみが未消化の場合に偽を返す。"""
-        t = _write_transcript(tmp_path, [_user_background_bash_entry("toolu_bash_pending")])
-        assert has_pending_agent_launches(str(t), "sess-bash-agent-filter") is False
-
-    def test_returns_false_for_completed_agent(self, tmp_path: pathlib.Path) -> None:
-        """背景Agent起動が完了消化済みの場合に偽を返す。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_async_launched_entry("toolu_agent_completed"),
-                _user_task_notification_entry("toolu_agent_completed"),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-agent-completed") is False
-
-    def test_returns_false_for_sendmessage_resume_while_root_stop_remains_pending(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """SendMessage背景再開はSubagentStopだけから除き、全体Stopでは未完了として扱う。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _assistant_sendmessage_entry("toolu_sendmessage_pending"),
-                _user_sendmessage_bg_resume_entry("toolu_sendmessage_pending"),
-                _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-sendmessage") is False
-        assert is_pending_async_work(str(t), "sess-sendmessage") is True
-
-    def test_returns_only_agent_ids_for_mixed_pending_launches(self, tmp_path: pathlib.Path) -> None:
-        """Agent起動とSendMessage背景再開の混在からAgent起動の識別子だけを返す。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_async_launched_entry("toolu_agent_pending"),
-                _assistant_sendmessage_entry("toolu_sendmessage_pending"),
-                _user_sendmessage_bg_resume_entry("toolu_sendmessage_pending"),
-            ],
-        )
-        assert pending_agent_launch_ids(str(t), "sess-mixed") == {"toolu_agent_pending"}
-        assert has_pending_agent_launches(str(t), "sess-mixed") is True
-
-    def test_returns_multiple_pending_agent_ids(self, tmp_path: pathlib.Path) -> None:
-        """複数の未消化Agent起動は各`tool_use_id`を保持する。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_async_launched_entry("toolu_agent_a"),
-                _user_async_launched_entry("toolu_agent_b"),
-            ],
-        )
-        assert pending_agent_launch_ids(str(t), "sess-multiple") == {
-            "toolu_agent_a",
-            "toolu_agent_b",
-        }
-
-    def test_returns_true_for_sidechain_launch_marker_without_status(self, tmp_path: pathlib.Path) -> None:
-        """sidechainの起動成功本文から未消化の子エージェントを検出する。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _assistant_agent_entry("toolu_sidechain_pending"),
-                _user_agent_launch_marker_entry("toolu_sidechain_pending"),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-sidechain-pending") is True
-
-    def test_sync_completed_sidechain_launch_marker_is_not_pending(self, tmp_path: pathlib.Path) -> None:
-        """同期完了statusを持つ起動成功本文は未消化へ計上しない。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _assistant_agent_entry("toolu_sidechain_completed"),
-                _user_agent_launch_marker_entry("toolu_sidechain_completed", status="completed"),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-sidechain-completed") is False
 
 
 class TestDebugOutput:
