@@ -34,6 +34,15 @@ def _rows_table(rows: tuple[str, ...], filler: str) -> str:
     return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *(f"| {row} | {filler} |" for row in rows)])
 
 
+def _bug_file_content() -> str:
+    """バグ調査付属ファイルの正規内容を組み立てる。"""
+    return (
+        "# 計画の主題\n\n### 対象の不整合\n\n"
+        + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
+        + "\n"
+    )
+
+
 def _permanence_table() -> str:
     """恒久化表の固定列を持つ横持ち表を組み立てる。"""
     header = _plan_format.PLAN_PERMANENCE_TABLE_HEADER
@@ -82,9 +91,9 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 
 ## 実施内容
 
-| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
+| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- | --- |
+| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
 {exclusion}
 ## 提示素材
 
@@ -156,9 +165,9 @@ def _new_format_plan(
 
 ## 実施内容
 
-| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
+| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- | --- |
+| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
 
 ## 提示素材
 
@@ -194,11 +203,9 @@ def _new_format_plan(
 """
     bug_section = ""
     if bug:
-        bug_section = (
-            "## バグ調査結果\n\n### 対象の不整合\n\n"
-            + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
-            + "\n\n"
-        )
+        bug_stem = detail_name.removesuffix(_plan_format.PLAN_DETAIL_SUFFIX)
+        bug_path = (repo / f"{bug_stem}.bugs.md").resolve()
+        bug_section = f"## バグ調査結果\n\n- バグ調査ファイル: {bug_path}\n\n"
     permanence = "調査表の処置を正本として参照する。" if bug else _permanence_table()
     detail = f"""{bug_section}## 恒久化・リファクタリング内容
 
@@ -234,12 +241,22 @@ def _new_format_plan(
 
 
 def _check_new(
-    repo: pathlib.Path, main_content: str, detail_content: str, *, plan_name: str = "plan.md"
+    repo: pathlib.Path,
+    main_content: str,
+    detail_content: str,
+    *,
+    plan_name: str = "plan.md",
+    create_bug_file: bool = True,
+    bug_file_content: str | None = None,
 ) -> tuple[list[str], list[str]]:
     """新書式の計画（メイン側・detail側）を一時ファイルへ保存して検査する。"""
     path = repo / plan_name
     path.write_text(main_content, encoding="utf-8")
-    (repo / f"{path.stem}.detail.md").write_text(detail_content, encoding="utf-8")
+    detail_path = repo / f"{path.stem}.detail.md"
+    detail_path.write_text(detail_content, encoding="utf-8")
+    reference = _plan_format.extract_bug_file_reference(detail_content)
+    if create_bug_file and reference is not None:
+        pathlib.Path(reference).write_text(bug_file_content or _bug_file_content(), encoding="utf-8")
     return check_plan_file.check(path, repo)
 
 
@@ -280,7 +297,12 @@ P-001:
 """
     content = content[:start] + legacy + content[end:]
     content = content.replace(
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |", "| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |"
+        "| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 実施内容 | ユーザー指示との関係 | 根拠 |\n"
+        "| --- | --- | --- |\n"
+        "| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |",
     )
     content = content.replace("素材・要求参照", "原文参照")
     content = content.replace("P-001, R-P-001-001", "P-001")
@@ -294,7 +316,11 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
     content = _plan(work_dir, base, bug=bug, exclusions=exclusions)
     errors, warnings = _check(work_dir, content)
     assert not errors
-    expected = ["実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する"] if _plan_format.has_legacy_action_table(content) else []
+    expected = (
+        ["実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する"]
+        if _plan_format.has_legacy_action_table(content)
+        else []
+    )
     if bug:
         expected.append("バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")
     assert warnings == expected
@@ -332,8 +358,8 @@ def test_cli_rejects_action_reference_to_rejected_requirement(repo: tuple[pathli
     """CLI経由でも実施内容から不採用要求への参照を拒否する。"""
     work_dir, base = repo
     content = _plan(work_dir, base).replace(
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-002 |",
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-002 |",
         1,
     )
     path = work_dir / "rejected-reference-plan.md"
@@ -573,6 +599,44 @@ def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path,
     )
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
     assert any("固定H2は" in error for error in errors), errors
+
+
+def test_new_format_rejects_missing_bug_sidecar(repo: tuple[pathlib.Path, str]) -> None:
+    """バグ対応detail側の分離先ファイルが無い場合を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    errors, _warnings = _check_new(work_dir, main_content, detail_content, create_bug_file=False)
+    assert any("バグ調査ファイルが実在しない" in error for error in errors), errors
+
+
+def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, str]) -> None:
+    """バグ調査付属ファイルのstemが計画本体と異なる場合を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    detail_content = detail_content.replace("plan.bugs.md", "other.bugs.md")
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+    assert any("計画stemと一致しない" in error for error in errors), errors
+
+
+def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
+    """バグ調査付属ファイルの固定14行表欠落を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    invalid_bug_file = _bug_file_content().replace("| 直接的原因 | 発生条件と実際値を記載する。 |\n", "")
+    errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
+    assert any("固定14行" in error for error in errors), errors
+
+
+def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str]) -> None:
+    """バグ調査付属ファイルの`内容`空欄を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    invalid_bug_file = _bug_file_content().replace(
+        "| 直接的原因 | 発生条件と実際値を記載する。 |",
+        "| 直接的原因 |  |",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
+    assert any("空の`内容`" in error for error in errors), errors
 
 
 def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path, str]) -> None:

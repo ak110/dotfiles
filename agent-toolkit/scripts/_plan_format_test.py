@@ -25,9 +25,9 @@ _HUMAN_SECTION = """# 計画の主題
 
 ## 実施内容
 
-| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
+| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- | --- |
+| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
 
 ### 合意済みの除外・保持
 
@@ -121,6 +121,8 @@ _BUG_SECTION = """
 | 設計意図の記録 | 破棄契約をコメントへ残す。 |
 """
 
+_BUG_FILE_CONTENT = "# 計画の主題\n\n" + _BUG_SECTION.split("## バグ調査結果\n\n", 1)[1]
+
 
 def _plan(*, base: str = _BASE, bug: bool = False) -> str:
     """固定構造を満たす計画本文を返す。"""
@@ -149,9 +151,9 @@ P-001:
 """
     content = _VALID_CONTENT[:start] + legacy_materials + _VALID_CONTENT[end:]
     content = content.replace(
-        "| 実施内容 | ユーザー指示との関係 | 根拠 |\n"
-        "| --- | --- | --- |\n"
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
+        "| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
         "| 実施内容 | ユーザー指示との関係 | 根拠 |\n"
         "| --- | --- | --- |\n"
         "| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |",
@@ -170,6 +172,28 @@ def test_canonical_plan_passes_structure_check() -> None:
     assert not _plan_format.check_plan_structure(_plan(bug=True))
 
 
+def test_bug_file_structure_accepts_canonical_sidecar() -> None:
+    """H1直下のバグ単位と固定14行表を持つ付属ファイルを受理する。"""
+    assert not _plan_format.check_bug_file_structure(_BUG_FILE_CONTENT)
+
+
+def test_bug_file_structure_rejects_missing_fixed_row() -> None:
+    """付属ファイルの固定14行表から行が欠けた場合を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace("| 直接的原因 | キャッシュを破棄していない。 |\n", "")
+    errors = _plan_format.check_bug_file_structure(content)
+    assert any("固定14行" in error for error in errors), errors
+
+
+def test_bug_file_structure_rejects_empty_content_cell() -> None:
+    """付属ファイルの固定表で`内容`が空欄の場合を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(
+        "| 直接的原因 | キャッシュを破棄していない。 |",
+        "| 直接的原因 |  |",
+    )
+    errors = _plan_format.check_bug_file_structure(content)
+    assert any("空の`内容`" in error for error in errors), errors
+
+
 def test_optional_exclusion_section_may_be_absent() -> None:
     """除外・保持の合意が無い計画は任意H3を省略できる。"""
     start = _VALID_CONTENT.index("### 合意済みの除外・保持")
@@ -177,8 +201,8 @@ def test_optional_exclusion_section_may_be_absent() -> None:
     content = _VALID_CONTENT[:start] + _VALID_CONTENT[end:]
     # 除外表を欠くため、当該表でだけ被覆されていた採用要求の参照を`根拠`列へ追加して被覆を維持する。
     content = content.replace(
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001, R-P-002-001 |",
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001, R-P-002-001 |",
     )
     assert not _plan_format.check_plan_structure(content)
 
@@ -280,9 +304,9 @@ def test_permanence_rejects_free_h3() -> None:
 
 def test_duplicate_fixed_table_is_rejected() -> None:
     """同一H2内に複製した固定表を拒否する。"""
-    duplicate = """| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 追加の変更 | 具体化 | 検査契約を満たすため |
+    duplicate = """| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- | --- |
+| 追加の変更 | 採用 | 具体化 | R-P-001-001 |
 
 """
     content = _VALID_CONTENT.replace("### 合意済みの除外・保持", duplicate + "### 合意済みの除外・保持", 1)
@@ -324,7 +348,10 @@ def test_duplicate_fixed_table_is_rejected() -> None:
             "素材・要求参照が提示素材に無い",
         ),
         (
-            ("| 診断件数を2件から1件へ減らす | 指示どおり |", "| 診断件数を2件から1件へ減らす | 追加対応 |"),
+            (
+                "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+                "| 診断件数を2件から1件へ減らす | 採用 | 追加対応 | R-P-001-001 |",
+            ),
             "`ユーザー指示との関係`は",
         ),
         (
@@ -536,14 +563,84 @@ def test_structured_material_ids_preserve_full_namespace() -> None:
 
 
 def test_action_references_rejected_requirement_are_rejected() -> None:
-    """実施内容の根拠に不採用要求を指定できない。"""
+    """採用系の実施内容の根拠に不採用要求を指定できない。"""
     content = _VALID_CONTENT.replace(
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-002 |",
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-002 |",
         1,
     )
     errors = _plan_format.check_plan_structure(content)
     assert any("不採用要求を参照できない: R-P-001-002" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
+def test_action_decisions_accept_all_declared_values(decision: str) -> None:
+    """実施内容表が定義する6種類の採否値を受理する。"""
+    relation = "指示どおり" if decision in {"採用", "部分採用"} else "非該当"
+    root = "R-P-001-001" if decision in {"採用", "部分採用"} else "R-P-001-002を採用しない理由を記載する。"
+    row = f"| 診断件数を2件から1件へ減らす | {decision} | {relation} | {root} |"
+    content = _VALID_CONTENT.replace(
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        row,
+        1,
+    )
+    if decision not in {"採用", "部分採用"}:
+        content = content.replace(
+            "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 |",
+            "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001, R-P-001-001 |",
+            1,
+        )
+    errors = _plan_format.check_plan_structure(content)
+    assert not errors, errors
+
+
+def test_action_decision_rejects_unknown_value() -> None:
+    """実施内容表の未定義な採否値を拒否する。"""
+    content = _VALID_CONTENT.replace(
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 未定義 | 指示どおり | R-P-001-001 |",
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert any("採否" in error and "未定義" in error for error in errors), errors
+
+
+def test_non_adopted_action_requires_free_text_reason() -> None:
+    """非採用系の実施内容は要求IDでなく理由を根拠へ記載する。"""
+    content = _VALID_CONTENT.replace(
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 不採用 | 非該当 |  |",
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert any("非採用系の`根拠`は理由を記載する" in error for error in errors), errors
+
+
+def test_non_adopted_action_may_reference_rejected_requirement_in_reason() -> None:
+    """非採用系の理由に存在する不採用要求IDを含めても拒否しない。"""
+    content = _VALID_CONTENT.replace(
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 不採用 | 非該当 | R-P-001-002を不採用とする理由を記載する。 |",
+        1,
+    )
+    content = content.replace(
+        "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 |",
+        "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001, R-P-001-001 |",
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert not errors, errors
+
+
+def test_adopted_action_rejects_non_queue_relation() -> None:
+    """採用系の実施内容に非該当の関係を指定できない。"""
+    content = _VALID_CONTENT.replace(
+        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        "| 診断件数を2件から1件へ減らす | 採用 | 非該当 | R-P-001-001 |",
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert any("ユーザー指示との関係" in error and "非該当" in error for error in errors), errors
 
 
 def test_requirement_coverage_accepts_content_where_every_adopted_requirement_is_referenced() -> None:
@@ -908,9 +1005,9 @@ _MAIN_CONTENT = """# 計画の主題
 
 ## 実施内容
 
-| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |
+| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- | --- |
+| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
 
 ## 提示素材
 

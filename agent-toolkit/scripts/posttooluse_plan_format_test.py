@@ -63,9 +63,9 @@ def _plan_content() -> str:
 
 ## 実施内容
 
-| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 対象を更新する | 指示どおり | R-P-001-001 |
+| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- | --- |
+| 対象を更新する | 採用 | 指示どおり | R-P-001-001 |
 
 ## 提示素材
 
@@ -191,7 +191,12 @@ class TestPlanPostWrite:
         """計画外パスと副次ファイルには案内を返さない。"""
         home = tmp_path / "home"
         plans = _prepare_plan_home(home)
-        for target in (tmp_path / "other.md", plans / "sample.review.md", plans / "sample.codex.log"):
+        for target in (
+            tmp_path / "other.md",
+            plans / "sample.bugs.md",
+            plans / "sample.review.md",
+            plans / "sample.codex.log",
+        ):
             target.write_text("content\n", encoding="utf-8")
             result = _run(
                 {

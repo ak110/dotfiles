@@ -565,10 +565,11 @@ class TestHomePathCheck:
         )
         assert result.returncode == 0
 
-    def test_home_path_in_plan_file_skipped(self, tmp_path: pathlib.Path):
-        """Git管理外の計画ファイルでは正確なホーム絶対パスを許容する。"""
+    @pytest.mark.parametrize("name", ["home-path.md", "home-path.bugs.md"])
+    def test_home_path_in_plan_file_skipped(self, tmp_path: pathlib.Path, name: str):
+        """計画本体とバグ調査付属ファイルでは正確なホーム絶対パスを許容する。"""
         home = tmp_path / "home"
-        plan = _make_plan_file(home, "home-path.md")
+        plan = _make_plan_file(home, name)
         result = _run(
             {
                 "tool_name": "Edit",
@@ -727,9 +728,10 @@ class TestColloquialCheck:
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
 
-    def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
-        """実装詳細側`.detail.md`も計画構成要素述語で真となり口語警告を出力しない。"""
-        detail = _make_plan_file(tmp_path / "home", "colloquial.detail.md")
+    @pytest.mark.parametrize("name", ["colloquial.detail.md", "colloquial.bugs.md"])
+    def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str, name: str) -> None:
+        """detail側とバグ調査付属側は口語警告を出力しない。"""
+        detail = _make_plan_file(tmp_path / "home", name)
         content = f"概要は{deny_substring}該当する。\n"
         result = _run(
             {"tool_name": "Write", "tool_input": {"file_path": str(detail), "content": content}},
@@ -796,9 +798,10 @@ class TestPlanModeSkillFirstCheck:
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
-    def test_warns_plan_file_write_without_skill(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize("name", ["plan.md", "plan.bugs.md"])
+    def test_warns_plan_file_write_without_skill(self, tmp_path: pathlib.Path, name: str):
         home = tmp_path / "home"
-        plan = self._make_plan(home)
+        plan = self._make_plan(home, name)
         env = self._state_env(tmp_path, home)
         result = _run(
             {
@@ -821,9 +824,10 @@ class TestPlanModeSkillFirstCheck:
         assert "editing a plan file without invoking" in _additional_context(result)
         assert "editing a plan file without invoking" not in result.stderr
 
-    def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize("name", ["edit.md", "edit.bugs.md"])
+    def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path, name: str):
         home = tmp_path / "home"
-        plan = self._make_plan(home, "edit.md")
+        plan = self._make_plan(home, name)
         env = self._state_env(tmp_path, home)
         result = _run(
             {
@@ -4519,8 +4523,8 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         self._write_flag_state(tmp_path, sid)
         env = self._state_env(tmp_path)
         # 1件目・2件目で異なるパスの編集を実行しwarn状態にする。
-        for name in ("foo/SKILL.md", "bar/SKILL.md"):
-            target = self._target(tmp_path, name)
+        for edit_name in ("foo/SKILL.md", "bar/SKILL.md"):
+            target = self._target(tmp_path, edit_name)
             result = _run(
                 {
                     "tool_name": "Edit",
@@ -4625,7 +4629,8 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             )
             assert result.returncode == 0
 
-    def test_plan_file_write_marks_written_and_resets_counter(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize("name", ["test.md", "test.bugs.md"])
+    def test_plan_file_write_marks_written_and_resets_counter(self, tmp_path: pathlib.Path, name: str):
         """warn状態まで進めた後、計画ファイル書込で`plan_file_written=True`とカウンタリセットを検証する。
 
         `_mark_plan_written`（pretooluse.py内）の副作用として、
@@ -4636,8 +4641,8 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         self._write_flag_state(tmp_path, sid)
         env = self._state_env(tmp_path, home)
         # 2件目でwarn状態にする。
-        for name in ("foo/SKILL.md", "bar/SKILL.md"):
-            target = self._target(tmp_path, name)
+        for edit_name in ("foo/SKILL.md", "bar/SKILL.md"):
+            target = self._target(tmp_path, edit_name)
             result = _run(
                 {
                     "tool_name": "Edit",
@@ -4655,7 +4660,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert state_pre["last_agent_toolkit_edit_path"] is not None
         assert not state_pre.get("plan_file_written", False)
         # 計画ファイルへの書き込みを実行する。
-        plan = _make_plan_file(home)
+        plan = _make_plan_file(home, name)
         result = _run(
             {
                 "tool_name": "Write",

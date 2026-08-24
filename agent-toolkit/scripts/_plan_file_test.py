@@ -1,4 +1,4 @@
-"""_plan_file.pyのis_plan_main_file・is_plan_component_file判定挙動を検証する。"""
+"""_plan_file.pyの計画本体・構成要素・付属ファイル判定を検証する。"""
 
 import pathlib
 
@@ -28,6 +28,13 @@ def test_is_plan_main_file_detail_md_returns_false(_plans_home: pathlib.Path) ->
     plan = _plans_home / "sample.detail.md"
     plan.write_text("# t\n", encoding="utf-8")
     assert _plan_file.is_plan_main_file(str(plan)) is False
+
+
+def test_is_plan_main_file_bugs_md_returns_false(_plans_home: pathlib.Path) -> None:
+    """`.bugs.md`（バグ調査付属側）は計画本体述語では偽になる。"""
+    path = _plans_home / "sample.bugs.md"
+    path.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_main_file(str(path)) is False
 
 
 def test_is_plan_main_file_review_md_excluded(_plans_home: pathlib.Path) -> None:
@@ -78,6 +85,13 @@ def test_is_plan_component_file_detail_md_returns_true(_plans_home: pathlib.Path
     assert _plan_file.is_plan_component_file(str(plan)) is True
 
 
+def test_is_plan_component_file_bugs_md_returns_false(_plans_home: pathlib.Path) -> None:
+    """`.bugs.md`（バグ調査付属側）は計画構成要素述語でも偽になる。"""
+    path = _plans_home / "sample.bugs.md"
+    path.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_component_file(str(path)) is False
+
+
 def test_is_plan_component_file_review_md_excluded(_plans_home: pathlib.Path) -> None:
     """`.review.md`サフィックスは計画構成要素述語でも除外される。"""
     path = _plans_home / "sample.review.md"
@@ -110,3 +124,31 @@ def test_is_plan_component_file_subdirectory_excluded(_plans_home: pathlib.Path)
 
 def test_is_plan_component_file_empty_path_returns_false() -> None:
     assert _plan_file.is_plan_component_file("") is False
+
+
+def test_is_plan_adjunct_file_bugs_md_returns_true(_plans_home: pathlib.Path) -> None:
+    """`~/.claude/plans/`直下の`.bugs.md`は計画付属ファイルとして真になる。"""
+    path = _plans_home / "sample.bugs.md"
+    path.write_text("# t\n", encoding="utf-8")
+    assert _plan_file.is_plan_adjunct_file(str(path)) is True
+
+
+@pytest.mark.parametrize("name", ["sample.md", "sample.detail.md", "sample.review.md", "sample.bugs.txt"])
+def test_is_plan_adjunct_file_non_bugs_files_return_false(_plans_home: pathlib.Path, name: str) -> None:
+    """計画本体、detail及び副次ファイルは付属ファイル述語で偽になる。"""
+    path = _plans_home / name
+    path.write_text("x\n", encoding="utf-8")
+    assert _plan_file.is_plan_adjunct_file(str(path)) is False
+
+
+def test_is_plan_adjunct_file_subdirectory_excluded(_plans_home: pathlib.Path) -> None:
+    """サブディレクトリ配下の`.bugs.md`は対象外。"""
+    subdir = _plans_home / "sub"
+    subdir.mkdir()
+    path = subdir / "sample.bugs.md"
+    path.write_text("x\n", encoding="utf-8")
+    assert _plan_file.is_plan_adjunct_file(str(path)) is False
+
+
+def test_is_plan_adjunct_file_empty_path_returns_false() -> None:
+    assert _plan_file.is_plan_adjunct_file("") is False
