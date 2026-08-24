@@ -1027,6 +1027,8 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "各修正差分を対象に計画自己監査を1巡" in delegation
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
     assert "`## 変更履歴`と本文の一致" in delegation
+    assert "計画へ新規に追加又は変更した行番号、条文引用及び編集指示は、対象行を実読して実体と照合する" in delegation
+    assert "探索結果、レビュー報告の要約及び自前の要約を照合先に代用しない" in delegation
     assert (
         "調整主体がある場合は調整主体が同じレビュー担当へ前掲の最小入力で再レビューを指示し、"
         "調整主体が無い場合は計画担当が`agent-toolkit:delegation`に従って指示する"
