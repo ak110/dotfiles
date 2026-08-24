@@ -199,8 +199,52 @@ def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Pat
     return []
 
 
+def _main_path_for_detail(detail_path: pathlib.Path) -> pathlib.Path:
+    """detail側パスからstem対応するメイン側計画パスを返す。"""
+    suffix = _plan_format.PLAN_DETAIL_SUFFIX
+    if detail_path.name.endswith(suffix):
+        return detail_path.with_name(f"{detail_path.name[: -len(suffix)]}.md")
+    return detail_path.with_suffix(".md")
+
+
+def _check_bug_file_reference(plan_path: pathlib.Path, text: str, work_type: str | None) -> list[str]:
+    """バグ対応計画の分離先参照について実在、stem、構造を検査する。"""
+    if work_type != "バグ対応":
+        return []
+    reference = _plan_format.extract_bug_file_reference(text)
+    if reference is None:
+        return []
+
+    reference_path = pathlib.Path(reference)
+    if not reference_path.is_absolute():
+        return [f"バグ調査ファイルの参照パスは絶対パスにする: {reference}"]
+
+    expected_path = plan_path.with_name(f"{plan_path.stem}.bugs.md")
+    if reference_path.resolve() != expected_path.resolve():
+        return [f"バグ調査ファイルの参照パスが計画stemと一致しない: 計画={reference_path}, 期待={expected_path}"]
+    if not reference_path.is_file():
+        return [f"バグ調査ファイルが実在しない: {reference_path}"]
+
+    bug_text = reference_path.read_text(encoding="utf-8")
+    return _plan_format.check_bug_file_structure(bug_text)
+
+
+def _legacy_action_warnings(text: str) -> list[str]:
+    """旧3列表の実施内容表を新4列表へ移行するwarningを返す。"""
+    if not _plan_format.has_legacy_action_table(text):
+        return []
+    return ["実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する"]
+
+
+def _legacy_bug_warnings(text: str) -> list[str]:
+    """旧形式の本文内バグ調査表を分離先ファイルへ移行するwarningを返す。"""
+    if not _plan_format.has_legacy_bug_table(text):
+        return []
+    return ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
+
+
 def _check_implementation_action_coverage(main_text: str, detail_text: str) -> list[str]:
-    """実装単位表がメイン側`## 実施内容`の全内容行を過不足なく被覆するかを検査する。"""
+    """実装単位表がメイン側`## 実施内容`の実装対象行を過不足なく被覆するかを検査する。"""
     headings = _plan_format.extract_headings(main_text)
     action_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_ACTION)
     if action_index is None:
@@ -210,18 +254,27 @@ def _check_implementation_action_coverage(main_text: str, detail_text: str) -> l
     action_tables = [
         table
         for table in _plan_format.extract_tables(_plan_format.lines_within(body, start, end))
-        if table.header == _plan_format.PLAN_ACTION_TABLE_HEADER
+        if table.header in (_plan_format.PLAN_ACTION_TABLE_HEADER, _plan_format.PLAN_LEGACY_ACTION_TABLE_HEADER)
     ]
     units, unit_errors = _plan_format.parse_plan_implementation_units(detail_text)
     if len(action_tables) != 1 or units is None or unit_errors:
         return []
 
     actual = tuple(index for unit in units for index in unit.action_indices)
-    expected = tuple(range(1, len(action_tables[0].rows) + 1))
+    action_table = action_tables[0]
+    if action_table.header == _plan_format.PLAN_ACTION_TABLE_HEADER:
+        decision_column = action_table.header.index("採否")
+        expected = tuple(
+            index
+            for index, row in enumerate(action_table.rows, start=1)
+            if len(row) > decision_column and row[decision_column] in ("採用", "部分採用")
+        )
+    else:
+        expected = tuple(range(1, len(action_table.rows) + 1))
     if tuple(sorted(actual)) == expected:
         return []
     return [
-        "実装単位表の`対象の実施内容`はメイン側`## 実施内容`の全内容行を過不足なく被覆する: "
+        "実装単位表の`対象の実施内容`はメイン側`## 実施内容`の実装対象行を過不足なく被覆する: "
         f"期待={list(expected)}, 実際={list(actual)}"
     ]
 
@@ -248,11 +301,14 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     _outside_detail, detail_fence_errors = _outside_fences(detail_structure_lines)
     errors.extend(detail_fence_errors)
     errors.extend(_plan_format.check_plan_detail_structure(detail_text, work_type))
+    errors.extend(_check_bug_file_reference(_main_path_for_detail(detail_path), detail_text, work_type))
     errors.extend(_check_implementation_action_coverage(text, detail_text))
     errors.extend(_check_references(detail_text, work_dir))
     warnings.extend(_check_plan_size(detail_lines))
+    warnings.extend(_legacy_bug_warnings(detail_text))
 
     materials, _material_errors = _plan_format.parse_plan_materials(text)
+    warnings.extend(_legacy_action_warnings(text))
     if materials is not None and materials.is_legacy:
         warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
@@ -262,18 +318,21 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     return errors, warnings
 
 
-def _check_legacy_format(text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
+def _check_legacy_format(plan_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """旧形式（単一ファイル9節）を検査してエラーと警告を返す。読み取り互換であり新規作成では生成しない。"""
     lines = text.splitlines()
     errors = _plan_format.check_plan_structure(text)
     materials, _material_errors = _plan_format.parse_plan_materials(text)
     warnings: list[str] = []
+    warnings.extend(_legacy_action_warnings(text))
+    warnings.extend(_legacy_bug_warnings(text))
     if materials is not None and materials.is_legacy:
         warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
+    errors.extend(_check_bug_file_reference(plan_path, text, metadata.get("作業種別")))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(lines))
     return errors, warnings
@@ -295,7 +354,7 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     if detail_path.is_file():
         format_errors, warnings = _check_new_format(detail_path, text, work_dir)
     else:
-        format_errors, warnings = _check_legacy_format(text, work_dir)
+        format_errors, warnings = _check_legacy_format(plan_path, text, work_dir)
     errors.extend(format_errors)
     return errors, warnings
 

@@ -205,6 +205,67 @@ def test_history_origin_and_user_material_reference_are_checked(mutation: tuple[
     assert any(message in error for error in errors), errors
 
 
+def test_history_review_rows_reject_duplicate_track_and_round() -> None:
+    """異なる表記でも同じ系統・ラウンドを表すレビュー指摘行を拒否する。"""
+    review_rows = (
+        "| R1-conformance | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |\n"
+        "| R01-conformance | レビュー指摘 | 追加の指摘。 | 1件を採用した。 | `## 変更履歴` |\n"
+    )
+    content = _VALID_CONTENT.replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n",
+        review_rows,
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert any("レビュー指摘行は系統・ラウンドを重複させない: conformance, 1" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("review_id", ["arbitrary", "R0-conformance", "R1-conformance-a"])
+def test_history_review_rows_reject_invalid_identifier(review_id: str) -> None:
+    """系統と正のラウンド番号を分離できないレビュー指摘IDを拒否する。"""
+    review_row = f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |\n"
+    content = _VALID_CONTENT.replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n",
+        review_row,
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert any("レビュー指摘行の`ID`は`R<正の整数>-<系統名>`形式にする" in error for error in errors), errors
+
+
+def test_legacy_plan_accepts_legacy_history_review_identifier() -> None:
+    """旧形式の単一ファイルでは既存のレビュー指摘IDを読み取り互換として受理する。"""
+    content = _VALID_CONTENT.replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        "| C-002 | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        1,
+    )
+    assert not _plan_format.check_plan_structure(content)
+
+
+@pytest.mark.parametrize("empty_column", range(len(_plan_format.PLAN_HISTORY_TABLE_HEADER)))
+def test_history_review_rows_reject_empty_columns(empty_column: int) -> None:
+    """レビュー指摘行の全列を必須とする。"""
+    cells = ["R1-conformance", "レビュー指摘", "主要な指摘。", "1件を採用した。", "`## 実施内容`"]
+    cells[empty_column] = ""
+    review_row = f"| {' | '.join(cells)} |\n"
+    content = _VALID_CONTENT.replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n",
+        review_row,
+        1,
+    )
+    errors = _plan_format.check_plan_structure(content)
+    assert any("空cellまたは列数不一致" in error for error in errors), errors
+
+
+def test_legacy_bug_table_predicate_requires_valid_fixed_table() -> None:
+    """旧形式のバグ調査表は固定14行表を満たす場合だけ検出する。"""
+    content = _plan(bug=True)
+    assert _plan_format.has_legacy_bug_table(content)
+    invalid = content.replace("| 動機的要因 | 更新頻度が低いと仮定した。 |\n", "")
+    assert not _plan_format.has_legacy_bug_table(invalid)
+
+
 def test_implementation_materials_allows_free_h3_composition() -> None:
     """実装資料配下では自由なH3構成を受理する。"""
     content = _VALID_CONTENT.replace("### ファイル群別の変更説明", "### 実行方法\n\n手順。\n\n### 変更説明")
@@ -936,6 +997,17 @@ def test_main_and_detail_canonical_pass_structure_check() -> None:
     assert work_type == "通常変更"
     assert not main_errors
     assert not _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT, work_type)
+
+
+def test_new_main_rejects_legacy_history_review_identifier() -> None:
+    """新書式のメイン側では旧形式のレビュー指摘IDを拒否する。"""
+    content = _VALID_MAIN_CONTENT.replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        "| C-002 | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        1,
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any("レビュー指摘行の`ID`は`R<正の整数>-<系統名>`形式にする" in error for error in errors), errors
 
 
 def test_detail_structure_requires_implementation_units() -> None:

@@ -91,11 +91,18 @@ PLAN_METADATA_FALLBACK_H2: tuple[str, ...] = ("目的", "実装契約", "背景"
 
 PLAN_HISTORY_TABLE_HEADER: tuple[str, ...] = ("ID", "起点", "指摘内容", "採否・現在の結論", "同期先")
 PLAN_HISTORY_ORIGINS: tuple[str, ...] = ("ユーザー発言", "レビュー指摘", "方針転換")
+PLAN_HISTORY_REVIEW_ID_PATTERN = re.compile(r"^R(?P<round>[0-9]+)-(?P<track>[a-z][a-z0-9]*)$")
+"""レビュー指摘行のID書式。ラウンド番号と系統名を一意に分離できる形に限定する。"""
+PLAN_LEGACY_HISTORY_REVIEW_ID_PATTERN = re.compile(r"^C-[0-9]{3}$")
+"""旧形式の単一ファイルだけで読み取り互換として受理するレビュー指摘行のID書式。"""
 PLAN_PROGRESS_TABLE_HEADER: tuple[str, ...] = ("日時", "完了した工程", "結果・特記事項")
 PLAN_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "素材・要求参照", "確認方法")
 PLAN_LEGACY_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "原文参照", "確認方法")
-PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
+PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "採否", "ユーザー指示との関係", "根拠")
+PLAN_LEGACY_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
+PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "保留", "対象外", "移管")
 PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
+PLAN_BUG_FILE_REFERENCE_PREFIX: str = "- バグ調査ファイル:"
 
 PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
     "単位ID",
@@ -1128,12 +1135,17 @@ def parse_plan_implementation_units(
     return tuple(units), errors
 
 
-def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading], index: int) -> list[str]:
-    """`## バグ調査結果`配下の各バグ単位が固定14行の2列表を持つかを検査する。"""
+def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
+    """バグ調査節直下の分離先参照行からパス文字列を抽出する。"""
+    prefix = PLAN_BUG_FILE_REFERENCE_PREFIX
+    return [line.strip()[len(prefix) :].strip() for _lineno, line in section if line.strip().startswith(prefix)]
+
+
+def _check_bug_unit_sections(
+    body: list[tuple[int, str]], headings: list[PlanHeading], children: list[tuple[int, PlanHeading]]
+) -> list[str]:
+    """バグ単位H3ごとに固定14行の2列表を検査する。"""
     errors: list[str] = []
-    children = child_headings(headings, index, 3)
-    if not children:
-        errors.append(f"`## {PLAN_H2_BUG}`直下にバグ単位のH3が1件以上必要")
     for position, heading in children:
         start, end = heading_subtree_range(headings, position)
         table = _find_table_with_rows(extract_tables(lines_within(body, start, end)), PLAN_BUG_TABLE_ROWS)
@@ -1143,6 +1155,76 @@ def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading]
         for row in table.rows:
             if len(row) != 2 or not row[1]:
                 errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
+    return errors
+
+
+def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading], index: int) -> list[str]:
+    """`## バグ調査結果`の分離先参照または旧形式の本文内調査表を検査する。"""
+    start, end = heading_subtree_range(headings, index)
+    section = lines_within(body, start, end)
+    children = child_headings(headings, index, 3)
+    references = _bug_file_reference_values(section)
+    nonempty_lines = [line.strip() for _lineno, line in section if line.strip()]
+
+    if children:
+        if references:
+            return [f"`## {PLAN_H2_BUG}`は分離先参照または本文内調査表のどちらか一方にする"] + _check_bug_unit_sections(
+                body, headings, children
+            )
+        return _check_bug_unit_sections(body, headings, children)
+
+    if len(references) == 1 and references[0] and len(nonempty_lines) == 1:
+        return []
+    return [f"`## {PLAN_H2_BUG}`直下に`{PLAN_BUG_FILE_REFERENCE_PREFIX}`で始まる分離先参照1行、またはバグ単位のH3が1件以上必要"]
+
+
+def extract_bug_file_reference(content: str) -> str | None:
+    """本文のバグ調査節が単独で参照する分離先パスを返す。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)
+    if bug_index is None:
+        return None
+    start, end = heading_subtree_range(headings, bug_index)
+    section = lines_within(body, start, end)
+    if child_headings(headings, bug_index, 3):
+        return None
+    references = _bug_file_reference_values(section)
+    nonempty_lines = [line.strip() for _lineno, line in section if line.strip()]
+    if len(references) != 1 or not references[0] or len(nonempty_lines) != 1:
+        return None
+    return references[0]
+
+
+def has_legacy_bug_table(content: str) -> bool:
+    """本文の`## バグ調査結果`が旧形式の固定14行表である場合に真を返す。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)
+    if bug_index is None:
+        return False
+    children = child_headings(headings, bug_index, 3)
+    return bool(children) and not _check_bug_unit_sections(body, headings, children)
+
+
+def check_bug_file_structure(content: str) -> list[str]:
+    """バグ調査付属ファイルのH1、バグ単位H3、固定14行表を検査する。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    errors = _check_h1(headings)
+    h1_index = next((index for index, heading in enumerate(headings) if heading.level == 1), None)
+    if h1_index is None:
+        return errors + ["バグ調査ファイルにバグ単位のH3が1件以上必要"]
+
+    if any(heading.level == 2 for heading in headings):
+        errors.append("バグ調査ファイルにH2は置かない")
+    if any(heading.level >= 4 for heading in headings):
+        errors.append("バグ調査ファイルにH4以深の見出しは置かない")
+
+    children = child_headings(headings, h1_index, 3)
+    if not children:
+        errors.append("バグ調査ファイルにバグ単位のH3が1件以上必要")
+    errors.extend(_check_bug_unit_sections(body, headings, children))
     return errors
 
 
@@ -1230,6 +1312,33 @@ def _check_materials_and_identifiers(
     return identifiers, requirement_ids, adopted_requirement_ids, materials, errors
 
 
+def _check_action_table(tables: list[MarkdownTable]) -> tuple[MarkdownTable | None, list[str]]:
+    """新旧の実施内容表を新形式優先で検査し、互換形式を含む表を返す。"""
+    candidates = [table for table in tables if table.header in (PLAN_ACTION_TABLE_HEADER, PLAN_LEGACY_ACTION_TABLE_HEADER)]
+    if not candidates:
+        return None, [f"`## {PLAN_H2_ACTION}`は{list(PLAN_ACTION_TABLE_HEADER)}の列を持つ表にする"]
+
+    table = candidates[0]
+    errors = [f"`## {PLAN_H2_ACTION}`の固定表は1件必要: 実際={len(candidates)}件"] if len(candidates) != 1 else []
+    if len(table.rows) < 1:
+        errors.append(f"`## {PLAN_H2_ACTION}`の表に1行以上の内容が必要")
+    for row in table.rows:
+        if len(row) != len(table.header) or any(not cell for cell in row):
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {list(row)}")
+    return table, errors
+
+
+def has_legacy_action_table(content: str) -> bool:
+    """本文の`## 実施内容`が旧3列表である場合に真を返す。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
+    if action_index is None:
+        return False
+    start, end = heading_subtree_range(headings, action_index)
+    return any(table.header == PLAN_LEGACY_ACTION_TABLE_HEADER for table in extract_tables(lines_within(body, start, end)))
+
+
 def _check_action_section(
     body: list[tuple[int, str]],
     headings: list[PlanHeading],
@@ -1245,7 +1354,7 @@ def _check_action_section(
     errors: list[str] = []
     start, end = heading_subtree_range(headings, action_index)
     section = lines_within(body, start, end)
-    table, table_errors = _check_fixed_table(section, PLAN_ACTION_TABLE_HEADER, "`## 実施内容`")
+    table, table_errors = _check_action_table(extract_tables(section))
     errors.extend(table_errors)
     children = child_headings(headings, action_index, 3)
     if any(heading.text != PLAN_EXCLUSION_H3 for _position, heading in children) or len(children) > 1:
@@ -1270,6 +1379,7 @@ def _check_action_section(
                 )
             )
     if table is not None:
+        errors.extend(_check_action_decisions(table))
         errors.extend(_check_action_relations(table))
         if materials is not None and not materials.is_legacy:
             errors.extend(_check_action_references(table, requirement_ids, adopted_requirement_ids))
@@ -1278,7 +1388,12 @@ def _check_action_section(
 
 
 def _check_history_section(
-    body: list[tuple[int, str]], headings: list[PlanHeading], history_index: int | None, identifiers: set[str]
+    body: list[tuple[int, str]],
+    headings: list[PlanHeading],
+    history_index: int | None,
+    identifiers: set[str],
+    *,
+    allow_legacy_review_ids: bool = False,
 ) -> list[str]:
     """`## 変更履歴`の固定表を検査する。"""
     if history_index is None:
@@ -1286,7 +1401,7 @@ def _check_history_section(
     start, end = heading_subtree_range(headings, history_index)
     history, errors = _check_fixed_table(lines_within(body, start, end), PLAN_HISTORY_TABLE_HEADER, f"`## {PLAN_H2_HISTORY}`")
     if history is not None:
-        errors.extend(_check_history_rows(history, identifiers))
+        errors.extend(_check_history_rows(history, identifiers, allow_legacy_review_ids=allow_legacy_review_ids))
     return errors
 
 
@@ -1406,7 +1521,7 @@ def check_plan_structure(content: str) -> list[str]:
     )
 
     history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
-    errors.extend(_check_history_section(body, headings, history_index, identifiers))
+    errors.extend(_check_history_section(body, headings, history_index, identifiers, allow_legacy_review_ids=True))
 
     progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
     errors.extend(_check_progress_section(body, headings, progress_index))
@@ -1500,22 +1615,53 @@ def _check_action_references(
     requirement_ids: set[str],
     adopted_requirement_ids: set[str],
 ) -> list[str]:
-    """新形式の実施内容表が採用要求だけを参照するかを検査する。"""
+    """実施内容表の採否に応じた根拠の記載と要求参照を検査する。"""
     column = table.header.index("根拠")
     errors: list[str] = []
+
+    if table.header == PLAN_LEGACY_ACTION_TABLE_HEADER:
+        for row in table.rows:
+            if len(row) <= column or not row[column]:
+                errors.append("`## 実施内容`の`根拠`へ要求IDを1件以上記載する")
+                continue
+            references = _requirement_references(row[column])
+            if not references:
+                errors.append(f"`## 実施内容`の`根拠`は要求IDを参照する: {row[column]}")
+                continue
+            for reference in references:
+                if reference not in requirement_ids:
+                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
+                elif reference not in adopted_requirement_ids:
+                    errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
+        return errors
+
+    decision_column = table.header.index("採否")
     for row in table.rows:
-        if len(row) <= column or not row[column]:
-            errors.append("`## 実施内容`の`根拠`へ要求IDを1件以上記載する")
+        if len(row) <= decision_column:
             continue
-        references = _requirement_references(row[column])
-        if not references:
-            errors.append(f"`## 実施内容`の`根拠`は要求IDを参照する: {row[column]}")
+        decision = row[decision_column]
+        root = row[column] if len(row) > column else ""
+        if decision in ("採用", "部分採用"):
+            if not root:
+                errors.append("`## 実施内容`の採用系の`根拠`は採用要求IDを1件以上記載する")
+                continue
+            references = _requirement_references(root)
+            if not references:
+                errors.append(f"`## 実施内容`の採用系の`根拠`は採用要求IDを参照する: {root}")
+                continue
+            for reference in references:
+                if reference not in requirement_ids:
+                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
+                elif reference not in adopted_requirement_ids:
+                    errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
             continue
-        for reference in references:
-            if reference not in requirement_ids:
-                errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
-            elif reference not in adopted_requirement_ids:
-                errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
+        if decision in ("不採用", "保留", "対象外", "移管"):
+            if not root:
+                errors.append("`## 実施内容`の非採用系の`根拠`は理由を記載する")
+                continue
+            for reference in _requirement_references(root):
+                if reference not in requirement_ids:
+                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
     return errors
 
 
@@ -1531,8 +1677,11 @@ def _check_requirement_coverage(
     """
     covered: set[str] = set()
     action_column = action_table.header.index("根拠")
+    decision_column = action_table.header.index("採否") if action_table.header == PLAN_ACTION_TABLE_HEADER else None
     for row in action_table.rows:
-        if len(row) > action_column:
+        if len(row) > action_column and (
+            decision_column is None or (len(row) > decision_column and row[decision_column] in ("採用", "部分採用"))
+        ):
             covered.update(_requirement_references(row[action_column]))
     if exclusion_table is not None and "素材・要求参照" in exclusion_table.header:
         exclusion_column = exclusion_table.header.index("素材・要求参照")
@@ -1589,15 +1738,34 @@ def _check_reference_ids(
     return errors
 
 
-def _check_history_rows(table: MarkdownTable, identifiers: set[str]) -> list[str]:
-    """変更履歴の起点とユーザー発言行の素材ID記法を検査する。"""
+def _check_history_rows(table: MarkdownTable, identifiers: set[str], *, allow_legacy_review_ids: bool = False) -> list[str]:
+    """変更履歴の起点、レビューID及びユーザー発言行の素材ID記法を検査する。"""
     errors: list[str] = []
+    review_ids: set[str] = set()
+    review_keys: set[tuple[str, int]] = set()
     for row in table.rows:
         if len(row) < len(PLAN_HISTORY_TABLE_HEADER):
             continue
         origin, detail = row[1], row[2]
         if origin not in PLAN_HISTORY_ORIGINS:
             errors.append(f"`## 変更履歴`の`起点`は{list(PLAN_HISTORY_ORIGINS)}のいずれかにする: {origin}")
+        if origin == "レビュー指摘":
+            review_id = row[0]
+            if review_id in review_ids:
+                errors.append(f"`## 変更履歴`のレビュー指摘行は`ID`を重複させない: {review_id}")
+            review_ids.add(review_id)
+            if allow_legacy_review_ids and PLAN_LEGACY_HISTORY_REVIEW_ID_PATTERN.fullmatch(review_id):
+                continue
+            match = PLAN_HISTORY_REVIEW_ID_PATTERN.fullmatch(review_id)
+            if match is None or int(match["round"]) == 0:
+                errors.append(f"`## 変更履歴`のレビュー指摘行の`ID`は`R<正の整数>-<系統名>`形式にする: {review_id}")
+            else:
+                review_key = (match["track"], int(match["round"]))
+                if review_key in review_keys:
+                    errors.append(
+                        f"`## 変更履歴`のレビュー指摘行は系統・ラウンドを重複させない: {review_key[0]}, {review_key[1]}"
+                    )
+                review_keys.add(review_key)
         if origin != "ユーザー発言":
             continue
         references = [token for token in re.split(r",\s*", detail) if token]
@@ -1609,11 +1777,39 @@ def _check_history_rows(table: MarkdownTable, identifiers: set[str]) -> list[str
     return errors
 
 
-def _check_action_relations(table: MarkdownTable) -> list[str]:
-    """実施内容表の`ユーザー指示との関係`が3値だけを取るかを検査する。"""
-    column = table.header.index("ユーザー指示との関係")
+def _check_action_decisions(table: MarkdownTable) -> list[str]:
+    """新形式の実施内容表の`採否`が6値のいずれかであることを検査する。"""
+    if table.header != PLAN_ACTION_TABLE_HEADER:
+        return []
+    column = table.header.index("採否")
     return [
-        f"`## 実施内容`の`ユーザー指示との関係`は{list(PLAN_ACTION_RELATIONS)}のいずれかにする: {row[column]}"
+        f"`## 実施内容`の`採否`は{list(PLAN_ACTION_DECISIONS)}のいずれかにする: {row[column]}"
         for row in table.rows
-        if len(row) > column and row[column] and row[column] not in PLAN_ACTION_RELATIONS
+        if len(row) > column and row[column] and row[column] not in PLAN_ACTION_DECISIONS
     ]
+
+
+def _check_action_relations(table: MarkdownTable) -> list[str]:
+    """実施内容表の`ユーザー指示との関係`の許容値を採否別に検査する。"""
+    column = table.header.index("ユーザー指示との関係")
+    decision_column = table.header.index("採否") if table.header == PLAN_ACTION_TABLE_HEADER else None
+    errors: list[str] = []
+    for row in table.rows:
+        if len(row) <= column or not row[column]:
+            continue
+        allowed = PLAN_ACTION_RELATIONS
+        if (
+            decision_column is not None
+            and len(row) > decision_column
+            and row[decision_column]
+            in (
+                "不採用",
+                "保留",
+                "対象外",
+                "移管",
+            )
+        ):
+            allowed = (*PLAN_ACTION_RELATIONS, PLAN_NON_QUEUE_VALUE)
+        if row[column] not in allowed:
+            errors.append(f"`## 実施内容`の`ユーザー指示との関係`は{list(allowed)}のいずれかにする: {row[column]}")
+    return errors

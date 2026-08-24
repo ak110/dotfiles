@@ -117,7 +117,10 @@ from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,
     locked_rotate_and_append as _locked_rotate_and_append,
 )
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import is_plan_component_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    is_plan_adjunct_file,
+    is_plan_component_file,
+)
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
@@ -131,6 +134,12 @@ from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
+
+
+def _is_plan_file_or_adjunct(file_path: str) -> bool:
+    """計画本体・実装詳細またはバグ調査付属ファイルの場合に真を返す。"""
+    return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
+
 
 # 日本語の文字（ひらがな・カタカナ・CJK統合漢字）。
 _JAPANESE_SCRIPT_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
@@ -817,7 +826,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     一時ルート配下は配置だけでは除外せず、既存親からルートまでにGit管理マーカーがないと
     確定できた一時作業文書だけを対象外とする。マーカーの確認不能時は既存検査を継続する。
     """
-    if is_plan_component_file(file_path):
+    if _is_plan_file_or_adjunct(file_path):
         return None
 
     try:
@@ -897,7 +906,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
-    if is_plan_component_file(file_path):
+    if _is_plan_file_or_adjunct(file_path):
         return None
     for field, value in fields:
         if not value:
@@ -1145,12 +1154,12 @@ def _check_plan_mode_skill_first(
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - セッション状態の`plan_mode_skill_invoked`が偽
     - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
+    - 対象の`file_path`が`~/.claude/plans/`直下の計画本体・実装詳細・バグ調査付属ファイル
 
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
     サブエージェント経由の呼び出しでも同一の判定が働く
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
-    plan file編集に至るまでは警告を表示しない
+    計画ファイル編集に至るまでは警告を表示しない
     （`process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
     既存計画へのEdit・MultiEditで、一意かつ最後の`## 進捗ログ`見出し行までの接頭部が
     編集後も不変である場合は、受領側の正規操作として警告しない。
@@ -1165,7 +1174,7 @@ def _check_plan_mode_skill_first(
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
         return None
     file_path_raw = tool_input.get("file_path")
-    if not isinstance(file_path_raw, str) or not is_plan_component_file(file_path_raw):
+    if not isinstance(file_path_raw, str) or not _is_plan_file_or_adjunct(file_path_raw):
         return None
     state = read_state(session_id)
     if state.get("plan_mode_skill_invoked", False):
@@ -1301,7 +1310,8 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
 
     連続判定は`last_agent_toolkit_edit_path`と対象パスを比較し、
     直前と異なるパスのときのみ`direct_agent_toolkit_edit_count`をincrementする。
-    `~/.claude/plans/`配下のWrite/Edit時は`plan_file_written`を真にしてカウンタをリセットする。
+    `~/.claude/plans/`配下の計画本体・実装詳細・バグ調査付属ファイルへのWrite/Edit時は
+    `plan_file_written`を真にしてカウンタをリセットする。
     対象外パスへの編集時もカウンタをリセットする。
     カウンタ2件目でwarn（`additionalContext`へ載せる通知本文を返して進行を継続）、
     3件目以上でblock（stderr出力＋第1要素にTrueを返してツール呼び出しを中断）する。
@@ -1324,8 +1334,8 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     if not state.get("plan_mode_skill_invoked", False):
         return False, None
 
-    # 計画ファイル編集時は`plan_file_written`を真にしカウンタをリセットする。
-    if is_plan_component_file(file_path_raw):
+    # 計画本体・実装詳細・バグ調査付属ファイルの編集時は`plan_file_written`を真にしカウンタをリセットする。
+    if _is_plan_file_or_adjunct(file_path_raw):
 
         def _mark_plan_written(current: dict) -> dict | None:
             changed = False
