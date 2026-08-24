@@ -139,7 +139,7 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`を検収し�
 過去単位を含む場合は、単位別反復を開始する前にfixup対象の最古commitと履歴書換え前の元HEADを完全OIDで確定する。
 `git rev-list --first-parent --reverse <最古fixup対象>^..<元HEAD>`でautosquashのrebase範囲を列挙する。
 `git rev-list --first-parent --merges <最古fixup対象>^..<元HEAD>`でmerge commitが無いことを確認する。
-この範囲のfirst-parent全OIDについて、fixup作成前に`../../commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定で公開済み判定を完了する。
+この範囲のfirst-parent全OIDについて、fixup作成前に`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の汎用判定で公開済み判定を完了する。
 同判定は`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`を使う。
 `git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`で範囲内のOIDと件名を列挙する。
 各fixup対象コミットの件名が範囲内で一意であることをfixup作成前に確認する。
@@ -157,7 +157,7 @@ OIDの欠落、判定不能、公開済みまたはmergeの検出が1件でも�
 レビュー修正モードでは、採用指摘を統合先の実装単位ごとに履歴順で処理する。
 手順3・4を採用指摘全体へ一括適用せず、各反復で当該単位の修正だけを扱う。
 過去単位の反復では、当該単位の修正を実装し、近接検証を実行して警告を解消する。
-修正差分をstageした後、各fixup作成前の`fixup:<単位順>` phaseで実装担当が`../../commit/references/history-rewrite.md`
+修正差分をstageした後、各fixup作成前の`fixup:<単位順>` phaseで実装担当が`agent-toolkit:commit`の`references/history-rewrite.md`
 「プッシュ済み判定」の汎用判定を再実行する。対象OIDがプッシュ済みと判定された場合は履歴を書き換えず`needs_escalation`で返す。
 修正差分だけをstageし、`git commit --fixup=<対象OID>`で対応する`fixup`を作成する。
 各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）の完全一致を`git log -1 --format=%s`で確認する。
@@ -180,7 +180,7 @@ OIDの欠落、判定不能、公開済みまたはmergeの検出が1件でも�
 最終単位と過去単位の両方が対象の場合は、過去単位のautosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換し、開始済みの同じ実装担当が最終単位の修正差分だけを実装し、近接検証を実行してstageする。その後、`amend` phaseの再判定が成功した場合だけ書換え後HEADへamendする。
 いずれもレビュー修正専用commitを残さない。
 各再判定phase（`pre_fixup`、`fixup:<単位順>`、`autosquash`、`amend`）の対象は履歴順の`target_oids`配列で確定する。`fixup:<単位順>`と`amend`は対象が1件でも1要素の配列を使い、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを同じ配列へ履歴順で含める。
-`autosquash` phaseでは配列のfirst-parent全OIDについて`../../commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定と遮断を反復する。
+`autosquash` phaseでは配列のfirst-parent全OIDについて`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の汎用判定と遮断を反復する。
 1件でも公開済み・判定不能のOIDがあるか、範囲にmergeを含む場合は履歴を書き換えない。
 `rewrite_guard`には専用の`pre_fixup` phaseと各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。
 各要素へ同じ順序の`target_oids`、各Gitコマンドの終了コードと公開済み判定結果を記録する。永続的な状態やTODO編集機構は作成しない。
@@ -199,7 +199,7 @@ autosquashが非0終了した場合はrebase進行状態を実測し、進行中
 委譲元から着手前の未コミット差分の採否判定を明示的に委ねられ、不採用と判定して破棄する場合は、
 破棄前に差分を退避し、退避識別子を完了報告へ含める。
 merge進行中でなければ`atk worktree-stash save --label <退避ラベル>`を使い、merge進行中は
-`../../commit/references/history-rewrite.md`「merge進行中の退避」に従う。復元時は
+`agent-toolkit:commit`の`references/history-rewrite.md`「merge進行中の退避」に従う。復元時は
 `git stash apply --index refs/worktree/<退避ラベル>`を使い、ステージ済み・未ステージ・未追跡の3状態を対象とする。
 共有`refs/stash`へ直接触れる複数コマンドを実行主体へ指示しない。
 退避の破棄は既存の破壊的操作規範に従い、自動で破棄しない。
@@ -223,7 +223,7 @@ feedbacks: <受領したソート済みフィードバックファイル名一�
 rewrite_guard:
 - phase: <pre_fixup|fixup:<単位順>|autosquash|amend>
   target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
-  published_decision: <`../../commit/references/history-rewrite.md`「プッシュ済み判定」の汎用判定結果>
+  published_decision: <`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の汎用判定結果>
   git_command_exit_codes: <各Gitコマンドの終了コード>
   error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
 plan_deviation:

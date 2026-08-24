@@ -89,7 +89,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
    対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。
    範囲列挙、merge確認、元HEADの確定、公開済み判定、OID・件名の列挙、件名一意性確認のいずれかに失敗するか範囲にmergeを含む場合は、fixupを作成せず`needs_escalation`で返したことを確認する。
    autosquash直前の再判定をTOCTOU対策として維持したことも確認する。
-   実装担当が各fixup作成前、autosquash直前とamend直前の各phaseで`../../commit/references/history-rewrite.md`
+   実装担当が各fixup作成前、autosquash直前とamend直前の各phaseで`agent-toolkit:commit`の`references/history-rewrite.md`
    「プッシュ済み判定」の汎用判定（`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`）を再実行したことを確認する。
    汎用判定に失敗した場合（Gitコマンドの非0終了を含む）は、履歴を書き換えず`needs_escalation`で返したことを確認する。
    phaseごとに反復された`rewrite_guard`の履歴順`target_oids`、各Gitコマンドの終了コード、公開済み判定結果及び秘密情報を除去した必要最小限のエラー要約を履歴実体と照合する。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを順序どおり含める。autosquashでは`target_oids`のfirst-parent全OIDを公開済み判定して遮断し、1件でも公開済み・判定不能または範囲にmergeを含む場合は履歴を書き換えていないことを確認する。
