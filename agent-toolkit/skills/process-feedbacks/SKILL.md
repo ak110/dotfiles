@@ -100,7 +100,10 @@ Claude CodeとCodexの双方で、`feedbacks-planner`の起動前に`agent-toolk
 `feedbacks-planner`への起動入力は`references/feedbacks-planner-reception.md`の列挙を正本とし、キュー経路では本文を起動文へ複製しない。
 キューにない素材の逐語本文・回答全文は計画外の明示入力として、調査、起草、初回レビュー、再レビューへ同じ値を保持する。
 `feedbacks-planner`は各調査担当へ事前割当した素材IDとファイル名を渡す。
-各調査担当は担当ファイル名1件を`atk mq show <filename> --target-repo=<repo> --skip-pull`で取得する。
+各調査担当は、担当が2件以上の場合は一括取得の管理対象一時領域の手順で取得する。
+一括取得では`atk mq show <filename>... --target-repo=<repo> --skip-pull`を1回実行する。
+担当が1件の場合は`atk mq show <filename> --target-repo=<repo> --skip-pull`で単数取得する。
+警告・エラー後の当該項目だけの再取得も単数形とする。
 計画担当は構造化入力にフィードバック由来素材があるときだけ、同じ対象リポジトリの全キューIDを
 「一括取得の管理対象一時領域」の手順で対象リポジトリごとに1回取得する。警告・エラー後の当該項目だけの再取得は単数形を維持する。
 計画担当は取得した本文を素材表・要求表と照合する。

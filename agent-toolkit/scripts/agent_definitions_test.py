@@ -534,6 +534,13 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
     ),
     (
+        "`## 実施内容`には計画対象集合の各項目を1行ずつ記録し、項目の採否を採否列へ記録する。",
+        "複数の統合計画へ分割した場合は、各計画へ割り当てた担当項目集合を`## 実施内容`へ1行ずつ記録し、"
+        "全計画の担当項目集合が合わせて計画対象集合を過不足なく被覆する。\n"
+        "分割しない場合は計画対象集合を担当項目集合とする。\n"
+        "各項目の採否を採否列へ記録する。",
+    ),
+    (
         "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
         "直下のH3は`### 計画メタ情報`だけとし、次の5行を固定順で置く（旧形式は末尾の`実装詳細`行を持たない4行）。",
     ),
@@ -1171,7 +1178,7 @@ def test_plan_lane_is_the_writer_parallelism_boundary() -> None:
     assert "フィードバックファイル名と担当計画ファイル絶対パスの対応" in feedbacks_planner_plan
     assert "対応表が当該計画へ割り当てたフィードバックファイル名一覧（担当項目集合）" in feedbacks_planner
     assert "基準パスのstemから`<stem>-NN.md`" in feedbacks_planner
-    assert "各計画担当へ対応表が当該計画へ割り当てた担当項目集合" in reception
+    assert "各計画担当へ対応表が割り当てた担当項目集合" in reception
     assert "`<基準stem>`を接頭辞とする名前空間全体の非衝突" in reception
 
 
@@ -1274,9 +1281,14 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "plan-review-task.md",
         "指摘を加工せず計画担当へ全件配送",
         "通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない",
-        "計画スレッドへ計画対象集合のファイル名",
+        "計画スレッドへバッチ全項目のファイル名一覧を渡さず",
         "本文を起動文へ複製しない",
-        "各フィードバックごとの調査スレッド",
+        "複数のフィードバックを1つの調査スレッドへまとめてよい",
+        "調査対象ファイルが重なる項目を優先する",
+        "分割の可否を機械的に決める規則と担当件数の上限は置かず",
+        "review-checklists.md`の絶対パス",
+        "プロジェクト規範の絶対パス",
+        "担当ファイル名（1件以上）",
         "キューの状態と他のレーンの情報は渡さない",
         "計画担当への新規起動又は継続接続の直前は`plan_model`",
         "調査スレッドの起動直前に`atk config get pick_feedbacks_model`",
@@ -1286,10 +1298,11 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
         "指定された計画成果物を全て保存し、保存直後に全て読み戻して",
     ):
         assert phrase in text
+    assert "各フィードバックごとの調査スレッド" not in text
 
 
 def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
-    """調査担当の単独取得と起草・初回レビューの一括取得境界を固定する。"""
+    """調査担当の担当件数別取得と起草・初回レビューの一括取得境界を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
@@ -1303,7 +1316,7 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
         assert command in document
     batch_command = "atk mq show <filename>... --target-repo=<repo> --skip-pull"
     assert batch_command in planner
-    for document in (sender, process, standards, delegation):
+    for document in (sender, process, explore, standards, delegation):
         assert "一括取得の管理対象一時領域" in document
         assert "atk managed-temp create --prefix mq-show" in document
         assert "mq-show.stdout" in document
@@ -1313,8 +1326,12 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
         )
         assert "cleanup" in document
         assert "非0終了" in document
-    for document in (standards, delegation, review):
+    for document in (explore, standards, delegation, review):
         assert batch_command in document
+    for document in (sender, process, planner, explore):
+        assert "担当が2件以上" in document
+        assert "担当が1件の場合" in document
+        assert "単数形" in document
     assert "一括出力全体を使わず要求した全項目を単数取得する" in standards
     assert "非0終了では要求した全項目を単数取得し" in delegation
     assert "終了コード0で全項目が出力された場合だけ本文を採用し" in review
@@ -1325,8 +1342,8 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
         assert "YAML frontmatter" in document
         assert "CLI付加の末尾改行" in document
     assert "ファイル名昇順の対象一覧と対象リポジトリ" in sender
-    assert "担当ファイル名、対象リポジトリ及び事前割当した素材ID" in planner
-    assert "対象のフィードバックファイル名、対象リポジトリ及び事前割当した素材ID" in explore
+    assert "担当ファイル名（1件以上）、対象リポジトリ及び事前割当した素材ID" in planner
+    assert "対象のフィードバックファイル名（1件以上）、対象リポジトリ及び事前割当した素材ID" in explore
     assert "直接経路では対象の素材IDと本文、投入元及び引用範囲" in explore
     assert "フィードバック由来素材が存在するとき" in sender
     assert "原文正本ID" in delegation
@@ -1348,6 +1365,28 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     for document in (sender, process, planner, explore, standards, delegation, review):
         for phrase in forbidden:
             assert phrase not in document
+
+
+def test_feedback_explore_task_has_complete_batch_read_fallbacks() -> None:
+    """調査担当が一括取得の全分岐と所有境界を単独で復元できることを固定する。"""
+    explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
+
+    for phrase in (
+        "一括取得の管理対象一時領域",
+        "managed-temp create --prefix mq-show",
+        "非0終了又は絶対パスとして検証できない場合は一時領域を作成せず",
+        "mq-show.stdout",
+        "保存又は再読込が失敗した場合は",
+        "終了コード0で全項目が出力された場合だけ本文を採用し",
+        "CLIのファイル名見出しから本文を項目へ対応付ける",
+        "出力順序と本文境界は`atk mq show`のCLI契約とする",
+        "atk managed-temp cleanup --path <作成時に得た絶対パス>",
+        "cleanupの終了コード0を確認する前に単数取得へ進まない",
+        "cleanupが非0終了した場合は",
+        "新しい一時領域の作成及び後続の調査工程へ進まない",
+        "他の実行主体へパスも内容も渡さない",
+    ):
+        assert phrase in explore
 
 
 def test_plan_file_batch_read_contract_limits_single_form_to_single_items() -> None:
@@ -1482,7 +1521,10 @@ def test_integrated_plan_overview_lists_post_exclusion_feedbacks() -> None:
         "全要求不採用の項目をreject対象、未確定要求を含む項目をhold対象と計画スレッドの起動前に判定する。",
         "判定対象を除外して計画スレッドへ渡す集合を計画対象集合とする。",
         "判定結果は完了報告でメインへ返し、キュー操作はメインが担当する。",
-        "`## 実施内容`には計画対象集合の各項目を1行ずつ記録し、項目の採否を採否列へ記録する。",
+        "複数の統合計画へ分割した場合は、各計画へ割り当てた担当項目集合を`## 実施内容`へ1行ずつ記録し、"
+        "全計画の担当項目集合が合わせて計画対象集合を過不足なく被覆する。",
+        "分割しない場合は計画対象集合を担当項目集合とする。",
+        "各項目の採否を採否列へ記録する。",
         "部分採用では採用範囲と除外範囲の要点を`実施内容`セルへ記載し、要求別の採否詳細を別行へ複製せず要求表を正本とする。",
         "概要に独立したバッチ採否表は置かず、採否と方針を同じ実施内容表で確認できる状態を保つ。",
     ):
@@ -3136,7 +3178,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     receiver_terminal = receiver.index("全要求が不採用の項目は計画スレッドの起動前にreject対象")
     receiver_plan = receiver.index("計画対象集合が1件以上ある場合は計画スレッドの起動直前")
     assert receiver_terminal < receiver_plan
-    assert "計画担当の入力に含めた計画対象項目数と`## 実施内容`のフィードバック由来行数が一致" in receiver
+    assert "計画担当の入力に含めた担当項目数と`## 実施内容`のフィードバック由来行数が一致" in receiver
     assert "計画担当が全項目の記録を完了したことを検収した後" not in receiver
     assert "非採用系の実施内容行を確認した後" not in decision_format
     for phrase in (
@@ -3207,11 +3249,11 @@ def test_feedback_plan_target_scope_and_item_rows_are_synchronized() -> None:
         assert "1行ずつ" in document
         assert "要求表を正本" in document
         assert "要求別の採否詳細" in document
-    assert "計画対象集合の各項目を1行ずつ" in design
+    assert "担当項目集合の各項目を1行ずつ" in design
     assert "不採用要求も要求表へ残し" in design
 
-    assert "計画担当の入力に含めた計画対象項目数と`## 実施内容`のフィードバック由来行数が一致" in planner
-    assert "実施内容表は計画対象集合の項目単位で1行" in planner
+    assert "計画担当の入力に含めた担当項目数と`## 実施内容`のフィードバック由来行数が一致" in planner
+    assert "実施内容表は担当項目集合の項目単位で1行" in planner
     assert "部分採用では採用範囲と除外範囲の要点を実施内容セルへ記載" in planner
     assert "要求別の採否詳細を別行へ複製しない" in planner
     assert "項目の要求別採否、採用範囲、除外範囲及び理由は要求表を正本" in planner
@@ -3358,7 +3400,9 @@ def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dep
         for field in ("`raw`", "`question`", "`answer_or_tbd`", "`unanswered`", "`resolution`", "`decision`"):
             assert field in document
         assert "過去の確認サイクルのレコードを" in document
-        assert "削除又は上書きしない" in document or "削除も上書きもしない" in document
+        assert (
+            "削除又は上書きしない" in document or "削除も上書きもしない" in document or "削除せず、上書きもしない" in document
+        )
         for resolution in ("`未確定`", "`回答による確定`", "`TBDによる保留`"):
             assert resolution in document
         for decision_value in ("`採用`", "`部分採用`", "`不採用`", "`保留`"):
@@ -3715,8 +3759,8 @@ def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
     add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
-
     coordination_preflight = _ADD_FEEDBACK.parent / "references" / "coordination-preflight.md"
+
     assert not coordination_preflight.exists()
     assert "coordination-preflight" not in add_feedback
     assert "coordination-preflight" not in plan_and_add
@@ -3855,7 +3899,7 @@ def test_feedback_dependencies_are_derived_from_external_waits_and_plan_order() 
 
     assert "手順4で除去した実装順序の向き（先行項目と後続項目の対）" in reception
     assert "手順4で除去した実装順序の向き（先行項目と後続項目の対）" in _h2_section(planner, "入力")
-    execution_step5 = planner.partition("5. 採用要求がある場合")[2].partition("\n6. ")[0]
+    execution_step5 = planner.partition("5. 計画対象集合が1件以上ある場合")[2].partition("\n6. ")[0]
     assert "先行項目と後続項目の対）も渡し" in execution_step5
     assert "`先行依存`と`統合順`へ写像する" in execution_step5
     assert "実装順序の前後だけを理由に受け取らない" in add_feedback
