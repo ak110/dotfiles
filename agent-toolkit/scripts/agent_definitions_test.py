@@ -1552,8 +1552,8 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
     assert "sourceの欠落・不一致では完了扱いにせず" in add_feedback
     assert "sourceを受領していない場合は追加のsource照合をしない" in add_feedback
-    assert "手順6のsource照合後" in add_feedback
-    assert "手順7のsource照合後" not in add_feedback
+    assert "手順7のsource照合後" in add_feedback
+    assert "手順8のsource照合後" not in add_feedback
     assert "source `plan`を明示" in plan_and_add
     assert "source `session-review`を明示" in session_review
 
@@ -3645,6 +3645,34 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "識別子の列挙で文脈を代替しない" in add_feedback
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in plan_and_add
     assert "`atk mq add`を実行" not in plan_and_add
+
+
+def test_add_feedback_requires_bugfix_depth_and_decision_record_contracts() -> None:
+    """観測欠陥の深掘り判定と規範主張の決定記録確認を起草経路へ固定する。"""
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    procedure = _h2_section(add_feedback, "手順")
+    completion = _h2_section(add_feedback, "完成条件")
+
+    evidence_at = procedure.index("2. 通常型は、適用規範")
+    bugfix_at = procedure.index("観測した欠陥を起点とする通常型本文")
+    writing_at = procedure.index("本文の起草前に`agent-toolkit:writing-standards`")
+    assert evidence_at < bugfix_at < writing_at
+    for phrase in (
+        "`git log -S`で当該記述を導入した変更を特定",
+        "`adopted/`にある対応するキュー項目の本文とユーザー追記を確認",
+        "利用者の逐語指示の有無を証拠へ含める",
+        "この追加確認は当該主張を含む本文に限って適用し、他の投入へ確認工程を課さない",
+        "`agent-toolkit:bugfix`の「初動と深掘り判定」を適用",
+        "TBDは判断を求める問いであり、原因分析の対象外とする",
+        "深掘り条件に該当する場合だけ同スキルをSkill機能で起動する。",
+    ):
+        assert phrase in procedure
+    assert (
+        "深掘り条件に該当する通常型本文が4原因区分、原因起点の類似見直し、是正・横展開・再発防止の3処置の結果を含んでいる"
+        in completion
+    )
+    assert "利用者の逐語指示の有無を含む決定記録の確認を完了している" in completion
+    assert "該当しないと判定した根拠" not in add_feedback
 
 
 def test_user_facing_body_paths_invoke_writing_standards() -> None:
