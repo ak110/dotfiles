@@ -1,6 +1,6 @@
 {
   "name": "agent-toolkit",
-  "version": "2.70.0",
+  "version": "2.71.0",
   "description": "Agent Plugins、Claude Code、Codex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針と、フックによる機械検査を提供する。",
   "author": {
     "name": "aki",

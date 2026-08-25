@@ -7,7 +7,9 @@ import subprocess
 
 import _fork_runner
 import _plan_format
+import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
+from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 
@@ -44,6 +46,38 @@ def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:
     plans = home_dir / ".claude" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
     return plans
+
+
+def _codex_patch(*sections: str) -> str:
+    """Codex apply_patch入力を組み立てる。"""
+    return "*** Begin Patch\n" + "".join(sections) + "*** End Patch\n"
+
+
+def _codex_add_section(path: pathlib.Path, content: str = "content\n") -> str:
+    lines = "".join(f"+{line}\n" for line in content.splitlines())
+    return f"*** Add File: {path}\n{lines}"
+
+
+def _run_codex_patch(
+    session_id: str,
+    command: str,
+    *,
+    state_dir: pathlib.Path,
+    home_dir: pathlib.Path,
+    plan_mode_skill_invoked: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    return _run(
+        {
+            "session_id": session_id,
+            "tool_name": "apply_patch",
+            "tool_input": {"command": command},
+            "cwd": "/repo",
+            "turn_id": "turn-1",
+        },
+        state_dir=state_dir,
+        home_dir=home_dir,
+        plan_mode_skill_invoked=plan_mode_skill_invoked,
+    )
 
 
 def _plan_content() -> str:
@@ -209,6 +243,203 @@ class TestPlanPostWrite:
                 plan_mode_skill_invoked=True,
             )
             assert result.stdout.strip() == ""
+
+    @pytest.mark.parametrize(
+        ("first_name", "second_name"),
+        [
+            ("sample.md", "sample.detail.md"),
+            ("sample.detail.md", "sample.md"),
+            ("plan with spaces.md", "plan with spaces.detail.md"),
+        ],
+    )
+    def test_codex_whole_write_emits_quality_notice_only_after_pair_exists(
+        self,
+        tmp_path: pathlib.Path,
+        first_name: str,
+        second_name: str,
+    ) -> None:
+        """Codexのwhole-writeは計画メイン/detailの両方がそろった後だけ通知する。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        state_dir = tmp_path / "state"
+        first = plans / first_name
+        second = plans / second_name
+        first.write_text("content\n", encoding="utf-8")
+        first_result = _run_codex_patch(
+            "codex-pair",
+            _codex_patch(_codex_add_section(first)),
+            state_dir=state_dir,
+            home_dir=home,
+        )
+        second.write_text("content\n", encoding="utf-8")
+        second_result = _run_codex_patch(
+            "codex-pair",
+            _codex_patch(_codex_add_section(second)),
+            state_dir=state_dir,
+            home_dir=home,
+        )
+
+        assert QUALITY_CHECKPOINT_NOTICE not in first_result.stdout
+        assert second_result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
+
+    def test_codex_patch_with_both_pair_files_emits_one_quality_notice(self, tmp_path: pathlib.Path) -> None:
+        """1回のapply_patchで両ファイルを追加しても通知は1件にまとめる。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "both.md"
+        detail = plans / "both.detail.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        result = _run_codex_patch(
+            "codex-both",
+            _codex_patch(_codex_add_section(main), _codex_add_section(detail)),
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+
+        assert result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
+
+    def test_codex_existing_pair_rewhole_write_emits_one_quality_notice(self, tmp_path: pathlib.Path) -> None:
+        """完成済みペアのCodex whole-writeでも実行ごとに1件だけ通知する。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "existing-pair.md"
+        detail = plans / "existing-pair.detail.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        result = _run_codex_patch(
+            "codex-existing-pair",
+            _codex_patch(_codex_add_section(main)),
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+
+        assert result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
+
+    @pytest.mark.parametrize(
+        ("command_builder", "plan_mode_skill_invoked"),
+        [
+            (lambda main: _codex_patch(_codex_add_section(main)), False),
+            (lambda main: _codex_patch(f"*** Update File: {main}\n"), True),
+            (lambda main: _codex_patch(f"*** Delete File: {main}\n"), True),
+        ],
+    )
+    def test_codex_non_completion_operations_are_silent(
+        self,
+        tmp_path: pathlib.Path,
+        command_builder,
+        plan_mode_skill_invoked: bool,
+    ) -> None:
+        """計画モード外、部分更新、削除では品質通知を出力しない。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "existing.md"
+        detail = plans / "existing.detail.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        result = _run_codex_patch(
+            "codex-silent",
+            command_builder(main),
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=plan_mode_skill_invoked,
+        )
+
+        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
+
+    def test_apply_patch_without_codex_turn_id_does_not_emit_quality_notice(self, tmp_path: pathlib.Path) -> None:
+        """Codex識別情報が欠落したapply_patchは品質通知経路への追加対象外とする。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "without-turn.md"
+        detail = plans / "without-turn.detail.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        result = _run(
+            {
+                "session_id": "without-turn",
+                "tool_name": "apply_patch",
+                "tool_input": {"command": _codex_patch(_codex_add_section(main))},
+                "cwd": "/repo",
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+
+        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
+
+    def test_codex_sidecar_is_silent(self, tmp_path: pathlib.Path) -> None:
+        """計画の副次ファイルはペア完成の対象外とする。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "sample.md"
+        detail = plans / "sample.detail.md"
+        sidecar = plans / "sample.review.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        sidecar.write_text("content\n", encoding="utf-8")
+        result = _run_codex_patch(
+            "codex-sidecar",
+            _codex_patch(_codex_add_section(sidecar)),
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+
+        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
+
+    def test_codex_plan_path_with_spaces_keeps_pair_detection(self, tmp_path: pathlib.Path) -> None:
+        """空白を含む計画パスでも対応するdetail側を機械的に検出する。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "plan with spaces.md"
+        detail = plans / "plan with spaces.detail.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        result = _run_codex_patch(
+            "codex-spaces",
+            _codex_patch(_codex_add_section(main)),
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+
+        assert result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
+
+    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
+    def test_claude_edit_tools_do_not_emit_codex_quality_notice(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+    ) -> None:
+        """Claude Codeの既存編集経路は品質通知を追加しない。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "claude.md"
+        detail = plans / "claude.detail.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        if tool_name == "Write":
+            tool_input = {"file_path": str(main), "content": "content\n"}
+        elif tool_name == "Edit":
+            tool_input = {"file_path": str(main), "old_string": "content", "new_string": "changed"}
+        else:
+            tool_input = {
+                "file_path": str(main),
+                "edits": [{"old_string": "content", "new_string": "changed"}],
+            }
+        result = _run(
+            {
+                "session_id": f"claude-{tool_name}",
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "cwd": "/repo",
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+
+        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
 
 
 def test_plan_format_exposes_permanence_destination_column() -> None:

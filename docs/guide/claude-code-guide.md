@@ -272,7 +272,8 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
 | plugin `PreToolUse/pretooluse` | 編集内容とコマンドの事前検査。文字化け・他言語文字の混入・LF改行のみの`.ps1`書き込み・lockfileやシークレットの直接編集・codexサンドボックス指定の弱体化をブロックし、口語表現・ホーム絶対パスの混入・自動生成manifestの手編集を警告する。Bashでは`sleep`直後の状態確認連結・`uv run python`の誤用・パターン一致によるプロセス終了をブロックし、出力の切り詰め・version未更新・未検証コミット・一括ステージ・`codex exec`前の未決事項を警告し、`git log`へ`--decorate`を自動挿入する | 対応 | 部分対応。編集検査は口語表現・文字化け・他言語文字・ホーム絶対パス・lockfile・シークレット・manifest・否定規定表現・サンドボックス保護に対応する。`.ps1`改行、frontmatter同期注記と本文節参照の実在検証はpatch入力から判定できないため非対応。Bash検査は現在の入力とcwdだけで判定するものと、編集成功状態による一括ステージ警告に対応する。コマンドの終了コードを取得できないため、`git log`確認・amend後の状態・検証実行に依存する検査は非対応 |
-| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みTBDの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
+| plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みTBDの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。新形式計画の2ファイルがそろったwhole-writeでは、非遮断の品質想起通知も返す。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
+| plugin `SessionStart/quality_checkpoint` | Codexの圧縮後に品質想起通知を追加する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応。`source=compact`だけを対象にし、非遮断の追加文脈を返す |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックし、登録済み調整役では未消化の子エージェント起動もブロックする | 対応 | 対応。空の完了報告のブロックに対応する。調整役の子エージェント検査は、完了判定へ利用できる安定したtranscript契約が無いため非対応。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop_advisor` | 作業完了時に同一セッションの振り返りを一度だけ継続し、未コミット変更があれば`git status`の件数を表示する | 対応 | 対応 |
@@ -287,7 +288,10 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | 個人設定 `PostToolUse/posttooluse` | 参照文書へのReadとスキル起動をセッション状態へ記録する | 対応 | 非対応。同上 |
 | 個人設定 `Stop/autonomous_exit` | 自律実行の終了契約に従ってセッションを終了する | 対応 | 非対応。Claude Code固有の自律終了契約に依存する |
 
-Codexの`SessionStart`・`PreCompact`・`PostCompact`は、対応するCodex向け実装が無いため新設しない。
+Codexの`SessionStart`は、`source=compact`に限り品質想起通知へ対応する。`startup`・`resume`・`clear`では通知しない。
+pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする`SessionStart(compact)`定義と`quality_checkpoint` commandを確認して信頼する。
+信頼前は変更済みHookがスキップされるため、圧縮後通知は発火しない。
+信頼後に`/compact`を実行し、次のモデル継続前に自動生成通知が現れることを確認する。
 
 計画ファイルと計画運用に関する検査は、上表の`PreToolUse`・`PostToolUse`が扱う。
 
