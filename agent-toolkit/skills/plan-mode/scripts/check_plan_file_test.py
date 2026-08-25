@@ -225,9 +225,9 @@ def _new_format_plan(
 
 ### 実装単位
 
-| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- | --- |
-| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |
+| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- |
+| U-001 | 診断件数を更新する | なし | 1 | `pytest check_plan_file_test.py` |
 
 ### 変更説明
 
@@ -651,39 +651,6 @@ def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path,
     assert any("固定H2" in error for error in errors), errors
 
 
-@pytest.mark.parametrize(
-    ("replacement", "expected_actual"),
-    [
-        ("1", "実際=[1]"),
-        ("1, 3", "実際=[1, 3]"),
-    ],
-)
-@pytest.mark.parametrize("legacy", [False, True])
-def test_new_format_rejects_incomplete_or_out_of_range_action_coverage(
-    repo: tuple[pathlib.Path, str], replacement: str, expected_actual: str, *, legacy: bool
-) -> None:
-    """新4列表と旧3列表の実施内容行について欠落及び範囲外参照を拒否する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    if legacy:
-        rows = [
-            "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新する | 具体化 | R-P-001-001 |",
-        ]
-    else:
-        rows = [
-            "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新する | 採用 | 具体化 | R-P-001-001 |",
-        ]
-    main_content = _replace_action_table(main_content, rows, legacy=legacy)
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 |",
-        f"| U-001 | 診断件数を更新する | {replacement} | なし | 1 |",
-    )
-    errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("実装対象行を過不足なく" in error and expected_actual in error for error in errors), errors
-
-
 def test_new_format_reports_short_action_row_without_index_error(repo: tuple[pathlib.Path, str]) -> None:
     """列不足の新4列表は例外を送出せず、既存の構造診断として拒否する。"""
     work_dir, base = repo
@@ -696,69 +663,6 @@ def test_new_format_reports_short_action_row_without_index_error(repo: tuple[pat
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
 
     assert any("実施内容`の表に空cellまたは列数不一致の行がある" in error for error in errors), errors
-
-
-@pytest.mark.parametrize("legacy", [False, True])
-def test_new_format_rejects_action_coverage_duplicated_across_units(repo: tuple[pathlib.Path, str], *, legacy: bool) -> None:
-    """新4列表と旧3列表で異なる実装単位による同じ内容行の重複参照を拒否する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    row = (
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |"
-        if legacy
-        else "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |"
-    )
-    main_content = _replace_action_table(main_content, [row], legacy=legacy)
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |\n"
-        "| U-002 | 回帰検証を追加する | 1 | U-001 | 2 | `pytest check_plan_file_test.py` |",
-    )
-    errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("実装対象行を過不足なく" in error and "実際=[1, 1]" in error for error in errors), errors
-
-
-def test_new_format_accepts_multiple_units_covering_noncontiguous_action_rows(repo: tuple[pathlib.Path, str]) -> None:
-    """新4列表では採用又は部分採用の内容行だけを被覆すれば受理する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    main_content = _replace_action_table(
-        main_content,
-        [
-            "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新しない | 不採用 | 非該当 | 実装上不要であるため。 |",
-            "| 回帰検証を追加する | 部分採用 | エージェント追加 | R-P-001-001 |",
-        ],
-    )
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |\n"
-        "| U-002 | 回帰検証を追加する | 3 | U-001 | 2 | `pytest check_plan_file_test.py` |",
-    )
-    errors, warnings = _check_new(work_dir, main_content, detail_content)
-    assert not errors, errors
-    assert not warnings, warnings
-
-
-def test_new_format_accepts_legacy_action_rows_when_all_rows_are_covered(repo: tuple[pathlib.Path, str]) -> None:
-    """読み取り互換の旧3列表では全内容行を被覆すれば受理する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    main_content = _replace_action_table(
-        main_content,
-        [
-            "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新する | 具体化 | R-P-001-001 |",
-        ],
-        legacy=True,
-    )
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
-        "| U-001 | 診断件数を更新する | 1, 2 | なし | 1 | `pytest check_plan_file_test.py` |",
-    )
-    errors, warnings = _check_new(work_dir, main_content, detail_content)
-    assert not errors, errors
-    assert warnings == ["実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する"]
 
 
 def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, str]) -> None:

@@ -1071,9 +1071,9 @@ _DETAIL_CONTENT = """## 恒久化・リファクタリング内容
 
 ### 実装単位
 
-| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- | --- |
-| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |
+| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- |
+| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |
 
 ### ファイル群別の変更説明
 
@@ -1119,47 +1119,55 @@ def test_detail_structure_requires_implementation_units() -> None:
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [
-        ("| U-001 | 診断件数を更新する | 1 | なし | 1 |", "| unit-1 | 診断件数を更新する | 1 | なし | 1 |", "U-[0-9]{3}"),
+        ("| U-001 | 診断件数を更新する | なし | 1 |", "| unit-1 | 診断件数を更新する | なし | 1 |", "U-[0-9]{3}"),
         (
-            "| U-001 | 診断件数を更新する | 1 | なし | 1 |",
-            "| U-002 | 診断件数を更新する | 1 | なし | 1 |",
+            "| U-001 | 診断件数を更新する | なし | 1 |",
+            "| U-002 | 診断件数を更新する | なし | 1 |",
             "U-001`から欠番なく",
         ),
-        (
-            "| U-001 | 診断件数を更新する | 1 | なし | 1 |",
-            "| U-001 | 診断件数を更新する | 2, 1 | なし | 1 |",
-            "昇順かつ重複なし",
-        ),
-        ("| U-001 | 診断件数を更新する | 1 | なし | 1 |", "| U-001 | 診断件数を更新する | 1 | U-999 | 1 |", "実装単位表に無い"),
-        ("| U-001 | 診断件数を更新する | 1 | なし | 1 |", "| U-001 | 診断件数を更新する | 1 | なし | 2 |", "1から欠番なく"),
+        ("| U-001 | 診断件数を更新する | なし | 1 |", "| U-001 | 診断件数を更新する | U-999 | 1 |", "実装単位表に無い"),
+        ("| U-001 | 診断件数を更新する | なし | 1 |", "| U-001 | 診断件数を更新する | なし | 2 |", "1から欠番なく"),
     ],
 )
 def test_detail_structure_rejects_invalid_implementation_unit_contract(old: str, new: str, message: str) -> None:
-    """実装単位ID、実施内容参照、依存及び統合順の構造違反を拒否する。"""
+    """実装単位ID、依存及び統合順の構造違反を拒否する。"""
     errors = _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT.replace(old, new), "通常変更")
     assert any(message in error for error in errors), errors
 
 
 def test_detail_structure_accepts_multiple_units_with_dependency() -> None:
     """複数単位と先行依存を持つ正規形を受理する。"""
-    second = "| U-002 | 回帰検証を追加する | 2 | U-001 | 2 | `pytest check_plan_file_test.py` |\n"
+    second = "| U-002 | 回帰検証を追加する | U-001 | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |\n",
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |\n" + second,
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n",
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n" + second,
     )
     assert not _plan_format.check_plan_detail_structure(content, "通常変更")
 
 
 def test_detail_structure_rejects_dependency_not_preceding_integration_order() -> None:
     """先行依存が依存元より前の統合順に無い場合を拒否する。"""
-    first = "| U-001 | 診断件数を更新する | 1 | U-002 | 1 | `pytest _plan_format_test.py` |\n"
-    second = "| U-002 | 回帰検証を追加する | 2 | なし | 2 | `pytest check_plan_file_test.py` |\n"
+    first = "| U-001 | 診断件数を更新する | U-002 | 1 | `pytest _plan_format_test.py` |\n"
+    second = "| U-002 | 回帰検証を追加する | なし | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |\n",
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n",
         first + second,
     )
     errors = _plan_format.check_plan_detail_structure(content, "通常変更")
     assert any("`統合順`より前にない" in error for error in errors), errors
+
+
+def test_detail_structure_accepts_legacy_implementation_unit_column() -> None:
+    """既存計画の6列表を読み取り互換として受理する。"""
+    legacy = _VALID_DETAIL_CONTENT.replace(
+        "| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |",
+        "| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| U-001 | 診断件数を更新する | 任意の旧値 | なし | 1 | `pytest _plan_format_test.py` |",
+    )
+    assert not _plan_format.check_plan_detail_structure(legacy, "通常変更")
 
 
 def test_main_structure_requires_detail_metadata_field() -> None:

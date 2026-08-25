@@ -107,6 +107,13 @@ PLAN_BUG_FILE_REFERENCE_PREFIX: str = "- バグ調査ファイル:"
 PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
     "単位ID",
     "目的",
+    "先行依存",
+    "統合順",
+    "近接検証",
+)
+PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
+    "単位ID",
+    "目的",
     "対象の実施内容",
     "先行依存",
     "統合順",
@@ -407,7 +414,6 @@ class PlanImplementationUnit:
 
     unit_id: str
     purpose: str
-    action_indices: tuple[int, ...]
     dependencies: tuple[str, ...]
     integration_order: int
     verification: str
@@ -1047,7 +1053,7 @@ def parse_plan_implementation_units(
     """detail側`### 実装単位`の固定表を解析して構造違反を返す。
 
     単位表は新書式detail側だけの必須契約であり、違反は計画を実装順へ分解できないためerrorとする。
-    メイン側`## 実施内容`との被覆は2ファイルを扱う`check_plan_file.py`が検査する。
+    旧6列表は読み取り互換として受理し、`対象の実施内容`列の値を検査しない。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -1066,29 +1072,32 @@ def parse_plan_implementation_units(
 
     position, _heading = matching_headings[0]
     start, end = heading_subtree_range(headings, position)
-    table, errors = _check_fixed_table(
-        lines_within(body, start, end),
-        PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
-        f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`",
-    )
-    if table is None:
-        return None, errors
+    tables = extract_tables(lines_within(body, start, end))
+    matching = [
+        candidate
+        for candidate in tables
+        if candidate.header in (PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER, PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER)
+    ]
+    if not matching:
+        return None, [f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`は{list(PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER)}の列を持つ表にする"]
+    table = matching[0]
+    errors = [f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の固定表は1件必要: 実際={len(matching)}件"] if len(matching) != 1 else []
+    if not table.rows:
+        errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に1行以上の内容が必要")
+    for row in table.rows:
+        if len(row) != len(table.header) or any(not cell for cell in row):
+            errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {list(row)}")
 
     units: list[PlanImplementationUnit] = []
     for row in table.rows:
-        if len(row) != len(PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER) or any(not cell for cell in row):
+        if len(row) != len(table.header) or any(not cell for cell in row):
             continue
-        unit_id, purpose, action_value, dependency_value, order_value, verification = row
+        if table.header == PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER:
+            unit_id, purpose, _action_value, dependency_value, order_value, verification = row
+        else:
+            unit_id, purpose, dependency_value, order_value, verification = row
         if PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(unit_id) is None:
             errors.append(f"実装単位IDは`U-[0-9]{{3}}`形式にする: {unit_id}")
-        action_parts = _comma_separated_values(action_value)
-        if not action_parts or any(not part.isdecimal() or int(part) < 1 for part in action_parts):
-            errors.append(f"実装単位`{unit_id}`の`対象の実施内容`は1以上の整数をASCIIカンマ区切りで列挙する")
-            action_indices: tuple[int, ...] = ()
-        else:
-            action_indices = tuple(int(part) for part in action_parts)
-            if tuple(sorted(set(action_indices))) != action_indices:
-                errors.append(f"実装単位`{unit_id}`の`対象の実施内容`は昇順かつ重複なしで列挙する")
 
         if dependency_value == "なし":
             dependencies: tuple[str, ...] = ()
@@ -1108,7 +1117,6 @@ def parse_plan_implementation_units(
             PlanImplementationUnit(
                 unit_id,
                 purpose,
-                action_indices,
                 dependencies,
                 integration_order,
                 verification,

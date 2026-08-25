@@ -30,46 +30,8 @@ user-invocable: false
 
 ## 入力
 
-初回起動では、次の入力だけを受け取る。
-
-- ファイル名昇順の対象一覧と対象リポジトリ
-- 手順4で除去した実装順序の向き（先行項目と後続項目の対）
-- 人間由来の利用者指示、利用者合意、参考素材又は処理対象資料がある場合は、受領順を保持した素材レコード集合として受け取る。各レコードは種別、出所及び引用範囲をこの順で記録し、逐語本文・回答全文をレコードの末尾へ続ける
-- キューにない素材の逐語本文・回答全文がある場合は、素材IDを付けずに計画外の明示入力として本文も受け取る
-- 対象worktree、プロジェクト規範、委譲元が確定した計画ファイルの絶対パス（分割前の基準計画ファイル。メイン側`<計画名>.md`）。
-  分割しない場合は基準パスをそのまま用い、detail側`<計画名>.detail.md`とレビュー表`<計画stem>.tsv`のパスを基準stemから導出する。
-  バグ対応の項目を含む場合は、分離先`<計画stem>.bugs.md`の絶対パスも同じstemから導出する
-- 分割する場合は基準パスのstemから`<stem>-NN.md`（`NN`は`01`から始まる2桁の連番）を導出して各計画担当へ割り当てる。
-  detail側`<stem>-NN.detail.md`、レビュー表`<stem>-NN.tsv`及びバグ対応の項目を含む場合の`<stem>-NN.bugs.md`は各stemから導出する
-- バグ対応の項目を含む場合はその旨
-
-`awaiting_confirmation`後の再開起動では、停止済みの識別子を再利用せず、同じバッチと計画を指す同じ`feedbacks-planner`系列の新しい識別子を使う。
-再開起動は初回入力に加えて、次の確認待ち再開コンテキストを全て受け取る。
-
-- `original_investigations`: 元のバッチ全項目の調査結果全文
-- `raw_sources`: 原文frontmatterの`source`原値（欠落は値なし）
-- `user_decisions`: 不採用確認用`user_decisions`の原文を、原文正本IDごとの累積レコードとして保持したもの。各レコードは`id`、`raw`、`question`、`answer_or_tbd`、`unanswered`、`resolution`及び`decision`を持ち、過去の確認サイクルのレコードを削除又は上書きしない
-- `answer_or_tbd`: 出所と引用範囲付きの逐語回答又は保存したTBDを当サイクルのID付き値として保持したもの。未受領のIDは`unanswered`として明記し、累積`user_decisions`にも残す
-- `plan_path`: 初回起動と同じ計画ファイルの絶対パス
-
-agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パスは、委譲元から受け取らず自身で解決する。
-注入済みの`agent-toolkit:delegation`スキル本文に付随する所在ディレクトリの絶対パスから、
-一致した末尾成分`skills/delegation`を除いた接頭部分を現行plugin rootとして確定し、
-次のplugin root相対パスを絶対パス化して用いる。
-
-- 調査担当へ渡す`<plugin root>/skills/process-feedbacks/references/explore-template.md`と`<plugin root>/skills/process-feedbacks/references/review-checklists.md`
-- 採否確定で自身が読む`<plugin root>/skills/process-feedbacks/references/decision-format.md`
-- 計画担当へ渡す`<plugin root>/skills/plan-mode/SKILL.md`と`<plugin root>/skills/plan-mode/references/plan-file-standards.md`
-- 調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキルの`<plugin root>/skills/<skill>/SKILL.md`を計画担当へ渡す
-- 作成規範スキルの代表例は`<plugin root>/skills/coding-standards/SKILL.md`など
-- レビュー担当へ渡す`<plugin root>/skills/plan-mode/references/plan-review-task.md`と`<plugin root>/skills/review-standards/SKILL.md`
-- バグ対応の項目を含む場合に調査担当と計画担当へ渡す`<plugin root>/skills/bugfix/SKILL.md`
-
-解決した各絶対パスは、受信者へ渡す前又は自身で読む前に実在を確認する。
-plugin rootを確定できない場合と実在しないパスがある場合は`needs_escalation`で返す。
-必須入力が欠ける場合は推測せず`needs_escalation`で返す。
-自身の職務として列挙されていない判断が生じた場合も、自ら確定せず`needs_escalation`で返す。
-push、フィードバック投入、worktreeの作成と回収は行わない。
+入力欄を復元する時点で`../skills/process-feedbacks/references/feedbacks-planner-io.md`を全文読み、同文書の入力契約を適用する。
+調査担当への入力項目は`../skills/process-feedbacks/references/feedbacks-planner-reception.md`「起動」を正本とする。
 
 ## 実行
 
@@ -140,7 +102,7 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
    `feedbacks-planner`の計画担当は構造化入力及び原文との差異と根拠を要求ごとの採否記録と計画へ残し、要求別の採否詳細は要求表を正本とする。
    計画担当の入力に含めた担当項目数と`## 実施内容`のフィードバック由来行数が一致することを検収する。
    技術的な文面調整は`user_decisions`へ含めない。
-   実施内容表は担当項目集合の項目単位で1行とし、項目の採否を採否列へ記録する。部分採用では採用範囲と除外範囲の要点を実施内容セルへ記載し、要求別の採否詳細を別行へ複製しない。
+   実施内容表の部分採用行は`../skills/plan-mode/references/plan-file-standards.md`を正本とする。
    採用済み本文が明示する変更を`user_decisions`から先に除外し、確認事項又は実装前提にしない。
    残る事項だけを`agent-toolkit/rules/01-agent.md`「協調と自律」節の確認境界へ照合する。
    採用項目内で既存の許可条件と明文化済み方針により確定できる利用者判断事項は、
@@ -166,50 +128,14 @@ push、フィードバック投入、worktreeの作成と回収は行わない�
 計画担当は指定されたメイン側・detail側の計画ファイル保存先だけを書込可能とする。
 バグ対応では、指定された分離先バグ調査ファイルも書込可能な計画成果物へ含める。
 指定された計画成果物を全て保存し、保存直後に全て読み戻して本文全体が保存されている状態を検収する。
-各調査担当は、担当が2件以上の場合は一括取得の管理対象一時領域の手順で`atk mq show <filename>... --target-repo=<repo> --skip-pull`を1回実行し、終了コード0で全項目が出力された場合だけ本文を採用する。
+各調査担当は、担当が2件以上の場合は`../skills/add-feedback/references/managed-temp-bulk-show.md`を読み、同文書の一括取得手順を完了させる。
 担当が1件の場合と、警告・エラー後の当該項目だけの再取得は、`atk mq show <filename> --target-repo=<repo> --skip-pull`を単数形で実行する。
 計画の計画担当はフィードバック由来素材が存在するときだけ、同じ対象リポジトリの全キューIDをまとめ、
-`atk mq show <filename>... --target-repo=<repo> --skip-pull`を対象リポジトリごとに1回実行する。
+同じ正本の一括取得手順を対象リポジトリごとに1回実行する。
 CLIのファイル名見出しから本文を項目へ対応付ける。終了コード0で全項目が出力された場合だけ本文を採用する。
-出力順序と本文境界は`atk mq show`のCLI契約とし、非0終了時は要求した全項目を
-`atk mq show <filename> --target-repo=<repo> --skip-pull`で単数取得する。
 項目ごとの警告・エラー後の再取得も単数形で行う。
 
 ## 出力
 
-```text
-status: completed | awaiting_confirmation | needs_escalation
-decision: <採否とdecision-format.mdに基づく根拠>
-decisions:
-- <バッチ全項目のファイル名、提示素材ID、採否、理由・差異、部分採用範囲、移管先、確認・保留状態及びキュー操作判定（reject対象・hold対象・対象外）。hold対象は既存TBD・依存・blocked状態との対応を含め、0件は返さない>
-plan: <全計画ファイルの絶対パスと実在・分量の証跡、計画対象集合のフィードバックファイル名と担当計画ファイル絶対パスの対応、1〜2文の要約。該当しない場合はなし>
-review: <計画ファイルごとの収束状態、検査結果、write_status>
-tbd:
-- <不採用確認用`user_decisions`とは別の、通常の将来判断TBD候補。暫定判断の内容、根拠、回答後に必要な追随作業、検証を含める。無ければ「なし」>
-user_decisions:
-- id: <原文正本ID（原文ファイル名）>
-  raw: <不採用確認用の採否候補の原文。過去サイクルの値を保持>
-  question: <このIDへ発行したAskUserQuestionの逐語文>
-  answer_or_tbd: <このIDで受領した逐語回答又は保存TBD。未受領は「未受領」>
-  unanswered: <回答又はTBDが未受領ならtrue、受領済みならfalse>
-  resolution: <未確定 | 回答による確定 | TBDによる保留>
-  decision: <未確定 | 採用 | 部分採用 | 不採用 | 保留>
-  detail: <原文との差異、技術的理由、回答なしの場合に保存する同内容のTBD本文。通常の将来判断TBDは含めない>
-blockers:
-- <未完了事項。完了時は「なし」>
-confirmation_context:
-- original_investigations: <元のバッチ全項目の調査結果全文。`awaiting_confirmation`時は必須>
-- raw_sources: <原文frontmatterの`source`原値を項目ごとに保持。欠落は値なし。`awaiting_confirmation`時は必須>
-- user_decisions: <原文正本IDごとの累積レコード。各IDのraw、question、answer_or_tbd、unanswered、resolution、decisionを保持し、`awaiting_confirmation`時は必須>
-- answer_or_tbd: <当サイクルで受領した回答又は保存TBDをID付きで列挙したもの。未受領のIDはunansweredとして記す>
-- plan_path: <同じ計画ファイルの絶対パス>
-```
-
-完了報告には採用・reject対象・hold対象・技術的失敗別のファイル名を含める。
-reject対象とhold対象の判定はキュー状態を変更しない。メインが完了報告を検収してキューを操作する。
-技術的失敗には、失敗TBDに必要な事象、期待値、実際値、発生条件、直接的原因、再開に必要な情報及び元のファイル名を含める。
-
-通常の完了報告へ計画全文、調査結果の内訳、レビュー指摘の内訳は含めない。
-`status: awaiting_confirmation`の報告だけは、停止済み識別子を再利用せず新規起動できるよう
-`confirmation_context`へ元の調査結果全文、raw source、原文正本IDごとの累積`user_decisions`及び計画ファイル絶対パスを含める。
+完了報告を組み立てる時点で`../skills/process-feedbacks/references/feedbacks-planner-io.md`を全文読み、同文書の出力契約を適用する。
 完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。

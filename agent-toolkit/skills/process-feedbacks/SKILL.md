@@ -27,8 +27,7 @@ TBDへ永続化して暫定判断で進める。
    後述の`process-loop`用再取得も適用する
 2. 必要なファイル名だけを、後述の「一括取得の管理対象一時領域」の手順で1回取得する
 3. `plan_file`を持つフィードバックを計画実装型、それ以外を通常型とする。本文から型を推測しない
-4. 本文の順序条件は着手可否の判定前に抽出する。active項目から対象ファイル名自身を除外し、本文が述べる外部待ち条件を依存先候補へ写像する。
-   外部待ち条件は、未回答TBDの回答待ちと`cooldown_until`による待機とする。解除時刻と観測経路が確定する外部状態の解除待ちと別リポジトリの先行変更の完了待ちも含める。利用者が本文で明示した完了待ちと日付境界も含める。実装順序の前後は依存先候補へ含めない。
+4. 本文の順序条件は着手可否の判定前に抽出する。active項目から対象ファイル名自身を除外し、`../add-feedback/SKILL.md`「入力」が定める外部待ち条件を依存先候補へ写像する。実装順序の前後は依存先候補へ含めない。
    別リポジトリの先行変更の完了待ちでは、依存先候補を手順1で対象リポジトリへ限定したactive一覧だけから選ばない。
    対象リポジトリを跨ぐ候補は、`atk mq show <filename> --target-repo=<referenced-repo> --skip-pull`で個別に存在を確認し、候補集合へ加える。
    日付境界を持つ条件では、境界日以前の項目をグループ終端項目の依存先とし、境界日後の項目を終端項目へ依存させる。
@@ -54,17 +53,11 @@ TBDへ永続化して暫定判断で進める。
 
 ### 一括取得の管理対象一時領域
 
-一括取得は、実行ツールの戻り値の切り詰めを避けるため、次のライフサイクルで実施する。
-
-1. 取得主体が`atk managed-temp create --prefix mq-show`を実行する。終了コード0、標準出力が単一の絶対パス、かつそのパスが実在するディレクトリである場合だけ成功とする。作成主体がcleanup完了まで領域と保存内容を単独所有し、別の実行主体へパス又は内容を渡さない。
-2. 作成時に得た絶対パスの`mq-show.stdout`へ、`atk mq show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存する。実行ツールの戻り値だけを完全性判定に用いない。
-3. 終了コード0で全項目が出力された場合だけ保存ファイルを本文として採用する。出力順序と本文境界は`atk mq show`のCLI契約とする。
-4. 採用後は本文照合へ進み、非0終了時は部分出力を使用しないことを確定した後に、作成時の標準出力と同一で実在する絶対パスを検収して`atk managed-temp cleanup --path <検収済み絶対パス>`を実行する。
-5. cleanupの終了コード0を確認してから、非0終了では要求した全項目を単数取得し、既存の終了コード別の停止又は単数再取得経路へ進む。採用時は本文の後続照合へ進む。
-6. 標準出力のファイル保存又は絶対パスの読取機能が無い場合、`managed-temp create`が非0終了してパスを作成できない場合、又は保存・再読込が失敗した場合だけ、回収対象があればcleanup成功を確認してから分割取得へ代替する。これ以外を保存不能と判定しない。
-7. 作成後のcleanupが非0終了した場合は絶対パスとエラーを起動主体へ返して停止し、分割取得、新しい一時領域の作成及び後続工程へ進まない。
+同一対象リポジトリの複数ファイル名を同一工程で取得する時点で、`../add-feedback/references/managed-temp-bulk-show.md`を読み、同文書の手順を完了させる。
 
 ## 2. 調査と採否
+
+各フィードバックの採否を判定する工程の開始時点で`references/decision-format.md`を全文読み、採否記録と`user_decisions`の累積レコード契約を適用する。
 
 複数項目を連続処理する場合、新しい項目の調査は前項目の調査結果・仮説・識別子を引き継がず
 独立に確定する（努力目標）。
@@ -76,23 +69,14 @@ TBDへ永続化して暫定判断で進める。
 同じ`feedbacks-planner`系列（同じバッチと計画）の新しい識別子を起動し、当該項目の採否を確定する。
 回答が得られない場合は同じ質問内容を不採用確認用TBDへ保存して保留し、回答を得られずTBDを確認できない状態ではrejectしない。
 保留確認後は、停止済みの識別子へ継続せず、保留結果を渡して同じ系列の新しい`feedbacks-planner`識別子を起動する。
-確認待ちを複数サイクルで処理する場合、`user_decisions`は現在の未解決項目だけへ置き換えず、原文正本IDごとの累積レコードとして渡す。
-各レコードは`id`、`raw`、`question`、`answer_or_tbd`、`unanswered`、`resolution`、`decision`を保持し、新しい回答・TBDを対応するIDへ追記して過去の確認サイクルのレコードを削除せず、上書きもしない。
-`resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は`回答による確定`、保存TBDで保留した場合は`TBDによる保留`とする。
-`decision`は未受領なら`未確定`、逐語回答による確定では`採用`・`部分採用`・`不採用`のいずれか、保存TBDによる保留では`保留`とする。再開した`feedbacks-planner`は確定済みの`decision`を再判断せず、ファイル単位の終端判定に用いる。
+確認待ちを複数サイクルで処理する場合は、`references/decision-format.md`が定める原文正本IDごとの累積レコードを渡す。
 初回起動には再開コンテキストを渡さない。
 `awaiting_confirmation`後の再開起動だけは、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、IDごとの累積`user_decisions`、
 出所と引用範囲付きの逐語回答・保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
 `feedbacks-planner`はバッチ全項目の採否記録を保持したまま、全要求不採用の項目をreject対象、保留項目をhold対象と計画スレッドの起動前に判定して計画対象集合から除外する。判定結果は完了報告でメインへ返し、キュー状態を変更しない。
-部分採用は確認経路へ機械的に含めず、差異、採用範囲、除外範囲、理由を採否記録へ残す。事前除外後の計画対象集合だけを計画担当へ渡す。
-実施内容表には当該計画へ割り当てた担当項目集合の各項目を1行ずつ記録し、採用系（`採用`・`部分採用`）の行だけを実装対象とする。部分採用では採用範囲と除外範囲の要点を実施内容セルへ記載し、要求別の採否詳細を別行へ複製せず要求表を正本とする。
-別リポジトリ項目は、投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
-元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ`agent-toolkit:add-feedback`で登録する。
-通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する。
-sourceがある場合は同じ値を渡す。
-`alert_keys`などの非予約frontmatterは元項目の値を保持する。
-移管先では`atk mq show`でsource（指定時）、本文、`target_repo`及び元項目の非予約frontmatter全体を照合する。
-照合後に元項目を終端する。
+部分採用は確認経路へ機械的に含めず、`references/decision-format.md`の採否記録へ残す。事前除外後の計画対象集合だけを計画担当へ渡す。
+実施内容表の部分採用行は`../plan-mode/references/plan-file-standards.md`を正本とする。
+別リポジトリ項目の投入と照合は`../add-feedback/references/cross-repository-submission.md`を正本とする。
 
 Claude CodeとCodexの双方で、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 双方で`references/feedbacks-planner-reception.md`を全文読み、active一覧を取得した時点のreadyな通常型項目を
@@ -118,31 +102,12 @@ Claude CodeとCodexのいずれかのホストの通常型で`feedbacks-planner`
 `decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目だけを利用者確認から除外する。それ以外の項目ごとに
 原文との差異と技術的理由を示す`AskUserQuestion`を発行し、回答を得た場合は逐語文を渡して同じ系列の新しい`feedbacks-planner`識別子を起動し、
 採否記録を再検収する。
-回答なしでは`references/hold-with-tbd-inject.md`に従い不採用確認用TBDを初回だけ保存する。
-依存設定と`blocked`確認後の保留結果を渡して同じ系列の新しい識別子を起動する。
-保存済みの不採用確認用TBDを受領した再開では、既存TBDと元項目の`blocked`状態を照合する。
-`atk mq show <TBD filename> --target-repo=<repo-path> --skip-pull`で既存TBDを照合し、
-`atk mq list --status=active --target-repo=<repo-path>`で元項目の`blocked`状態を照合する。
-既存TBDと`blocked`状態の照合以外の汎用保留処理を実行せず、`agent-toolkit:add-feedback`によるTBD再投入、`atk mq set-dependencies`による再依存、
-`atk mq return-to-inbox`による再inboxを実行しない。
-照合できない場合は新しい識別子を起動せず、失敗として返す。
-保存済みの不採用確認用TBDを受領した再開の工程が照合後に失敗した場合も、既存の確認TBDを同じ依存として保持する。
-新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持した失敗を返す。
-`awaiting_confirmation`後の再開起動には元の全調査結果、原文frontmatterの`source`原値、IDごとの累積`user_decisions`、逐語回答又は保存TBD及び同じ計画ファイルの絶対パスを含める。
-保留項目は既存の`blocked`状態を保持して計画対象集合から除外し、残る採用項目がある場合だけ計画起草を続行する。
+回答なしの不採用確認用TBD、保存済みTBDの再開及び`blocked`状態の扱いは`references/hold-with-tbd-inject.md`を正本とする。
 
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
 
-`status: awaiting_confirmation`は上記の確認待ち経路で処理し、失敗TBDを作成しない。
-ただし保存済みの不採用確認用TBDを受領した再開で失敗した項目は、既存の確認TBDを同じ依存として保持する専用経路を先に適用する。
-この経路では新しい失敗TBD、再依存及び再inboxを作成又は実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
-それ以外の`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で保存する。
-失敗TBDの必須項目と保存後の確認手順は`references/feedbacks-planner-reception.md`「## 受領」の該当段落を正本とする。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`references/hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
-失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できる場合だけrejectを1回再実行する。
-3分類、元のフィードバックの`feedbacks-planner`再開、Git状態の回復は行わない。
+`feedbacks-planner`の失敗時におけるTBD保存、由来別の終端及び再開は`references/hold-with-tbd-inject.md`を正本とする。失敗TBDの必須項目と保存後の確認は`references/feedbacks-planner-reception.md`「受領」を適用する。
 
 同一バッチかつ同一`target_repo`で、失敗した事象、期待値、実際値、発生条件、直接的原因及び再開に必要な情報が全て一致する失敗は、元のファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。`decision-format.md`「採否結果」の値集合でエージェント由来と判定される元項目は同じTBDのファイル名を項目固有メモへ記録してrejectで終端し、それ以外の元項目は全て同じTBDへ依存させ、`blocked`を確認する。6要素又は`target_repo`が異なる場合は同じTBDへ集約しない。
 
