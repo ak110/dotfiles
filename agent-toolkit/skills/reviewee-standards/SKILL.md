@@ -85,7 +85,9 @@ description: >
 表が指定されている場合は、調整主体から渡された修正対象の`track`集合を保持して同じ表を扱う。
 レビューイーは各ラウンドの開始時に`atk review-table validate --allow-unanswered <レビュー表>`で構造を検証する。
 渡された集合に属する各`track`の行だけを`atk review-table show --track <track>`で取得し、全文確認する。
-行を一意に特定できる`round`、`track`その他のキーを指定して`atk review-table respond --track <track>`で対応要否、対応内容、対応不要理由だけを更新する。
+行を一意に特定できる`round`、`track`、`severity`、`location`、`issue`のうち必要な列だけを指定して`atk review-table respond --track <track>`で対応要否、対応内容、対応不要理由だけを更新する。
+表の各セルはJSON文字列として保存されるため、`show`が返す生のTSVの値をそのまま渡さず、JSON復号後の本文をキーへ指定する。
+一意に解決できない場合はエラーが復号済みの候補行を示すため、その値から不足している列を補って再実行する。
 応答更新後は同じ構造検証を再実行し、全行への応答を終えたら`atk review-table validate <レビュー表>`で全件応答済みを検証する。
 レビューイーは渡された集合の外に属する`track`の行を採否判断と更新の対象にせず、更新する各行の`track`帰属を保つ。
 盲検系レビュー担当へ渡す情報は自ら拡張しない。

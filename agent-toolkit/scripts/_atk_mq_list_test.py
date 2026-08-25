@@ -801,13 +801,13 @@ class TestListSkipPull:
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_calls)
 
-    def test_recent_sync_notices_and_still_pulls(
+    def test_recent_sync_is_reused_without_remote_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """直近の同期形跡がある通常一覧では再利用を案内してpullを実行する。"""
+        """直近の同期形跡がある通常一覧ではremote同期を省略して再利用を案内する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_dir = notes / ".git"
@@ -820,8 +820,47 @@ class TestListSkipPull:
             atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert any(call["cmd"][:2] == ["git", "fetch"] for call in git_calls)
-        assert "`--skip-pull`で同期結果を再利用できる" in capsys.readouterr().err
+        assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"]) for call in git_calls)
+        stderr = capsys.readouterr().err
+        assert stderr == (
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
+            "最新化する場合は`--pull`を指定してください。\n"
+        )
+
+    def test_pull_forces_remote_sync_after_recent_sync(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--pull指定時は直近の同期形跡があってもfetch・mergeを実行する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_dir = notes / ".git"
+        git_dir.mkdir()
+        (git_dir / "FETCH_HEAD").touch()
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        command = ["mq", "list", "--pull"]
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(command, home=tmp_path)
+
+        assert exc_info.value.code == 0
+        git_commands = [call["cmd"][:2] for call in git_calls]
+        assert ["git", "fetch"] in git_commands
+        assert ["git", "merge"] in git_commands
+
+    def test_skip_pull_and_pull_are_mutually_exclusive(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--skip-pullと--pullの同時指定は終了コード2で拒否する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--skip-pull", "--pull"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "not allowed with argument" in capsys.readouterr().err
 
 
 class TestListStatusFilter:

@@ -1089,6 +1089,65 @@ class TestExplicitUpstreamIntegration:
         with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(old_copy):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull(old_copy)  # pylint: disable=protected-access  # noqa: SLF001
 
+    def test_recent_predicate_requires_upstream_ancestor_in_addition_to_time(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """直近のFETCH_HEADだけでは再利用せず、upstreamがHEADの祖先の場合だけ再利用する。"""
+        _remote, behind, ahead = self._make_remote_and_clones(tmp_path)
+        self._git(behind, "fetch")
+        self._git(ahead, "config", "user.email", "test@example.com")
+        self._git(ahead, "config", "user.name", "test")
+        (ahead / "local.md").write_text("local\n", encoding="utf-8")
+        self._git(ahead, "add", "local.md")
+        self._git(ahead, "commit", "-m", "local")
+
+        for repo in (behind, ahead):
+            fetch_head = repo / ".git" / "FETCH_HEAD"
+            fetch_head.touch()
+            os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
+
+        assert _common._pulled_recently(behind) is False  # pylint: disable=protected-access  # noqa: SLF001
+        assert _common._pulled_recently(ahead) is True  # pylint: disable=protected-access  # noqa: SLF001
+
+    def test_recent_predicate_excludes_local_only_repository(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ローカル管理リポジトリはFETCH_HEADが直近でも再利用しない。"""
+        local_only = tmp_path / "local-only"
+        self._git(tmp_path, "init", "--initial-branch=main", str(local_only))
+        (local_only / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        fetch_head = local_only / ".git" / "FETCH_HEAD"
+        fetch_head.touch()
+        os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
+
+        assert _common._pulled_recently(local_only) is False  # pylint: disable=protected-access  # noqa: SLF001
+
+    def test_recent_predicate_excludes_unresolvable_upstream(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """upstreamを解決できない場合はFETCH_HEADが直近でも再利用しない。"""
+        repo = tmp_path / "untracked"
+        self._git(tmp_path, "init", "--initial-branch=main", str(repo))
+        self._git(repo, "config", "user.email", "test@example.com")
+        self._git(repo, "config", "user.name", "test")
+        (repo / "entry.md").write_text("entry\n", encoding="utf-8")
+        self._git(repo, "add", "entry.md")
+        self._git(repo, "commit", "-m", "initial")
+        fetch_head = repo / ".git" / "FETCH_HEAD"
+        fetch_head.touch()
+        os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
+
+        assert _common._pulled_recently(repo) is False  # pylint: disable=protected-access  # noqa: SLF001
+
 
 class TestValidateFilename:
     """`_validate_filename`の拡張子`.md`省略入力の正規化を検証する（fb 20260721-164301-001反映）。"""
@@ -1315,7 +1374,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
-        assert not calls
+        assert not any(call[0] in ("fetch", "merge") for call in calls)
 
     def test_commit_and_push_skips_push_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """マーカー付きディレクトリでは`_commit_and_push`がadd・commitのみ実行しpushしない。"""
@@ -1342,7 +1401,7 @@ class TestPullIfStale:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             assert _common.pull_if_stale(tmp_path) is False
-        assert not calls
+        assert not any(call[0] in ("fetch", "merge") for call in calls)
 
     def test_pulls_when_due(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """更新期限を過ぎた定期更新がpullすることを確認する。"""
@@ -1382,15 +1441,15 @@ class TestPullIfStale:
 
 
 class TestPullWithRecentNotice:
-    """利用者操作のpullが直近同期を注記しつつ必ず実行されることを検証する。"""
+    """読み取り専用操作の同期再利用・強制同期・移行契約を検証する。"""
 
-    def test_notices_and_pulls_when_fetch_head_is_recent(
+    def test_reuses_recent_sync_when_upstream_is_ancestor(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """直近30秒の同期形跡を検出してもpullは省略しない。"""
+        """直近同期が統合済みの場合はfetch・mergeを省略し、再利用を案内する。"""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         fetch_head = git_dir / "FETCH_HEAD"
@@ -1401,16 +1460,169 @@ class TestPullWithRecentNotice:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _common._pull_with_recent_notice(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert [call for call in calls if call[0] in ("fetch", "merge")] == []
+        assert capsys.readouterr().err == (
+            "注記: 直近30秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
+            "最新化する場合は`--pull`を指定してください。\n"
+        )
+
+    def test_recent_reuse_still_migrates_legacy_reservations(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """remote同期を再利用しても旧予約移行は実行する。"""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        fetch_head = git_dir / "FETCH_HEAD"
+        fetch_head.touch()
+        os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
+        calls: list[list[str]] = []
+        migrations: list[pathlib.Path] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+
+        def migrate(private_notes: pathlib.Path) -> int:
+            migrations.append(private_notes)
+            return 0
+
+        monkeypatch.setattr(_common, "_migrate_legacy_reservations", migrate)
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert [call for call in calls if call[0] in ("fetch", "merge")] == []
+        assert migrations == [tmp_path]
+
+    def test_force_pull_bypasses_recent_reuse(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """強制同期指定時は直近同期形跡があってもfetch・mergeを実行する。"""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        fetch_head = git_dir / "FETCH_HEAD"
+        fetch_head.touch()
+        os.utime(fetch_head, (1000.0, 1000.0))
+        monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
-        assert capsys.readouterr().err == (
-            "注記: 直近30秒に他プロセスを含むfetch形跡がある。"
-            "同一の連続操作内で`list`・`show`・`grep`・`rm --all`を繰り返す場合は"
-            "`--skip-pull`で同期結果を再利用できる"
-            "（`rm --all`は削除直前だけ同期し、他の状態遷移系のサブコマンドは毎回同期する）。"
-            "単発実行では対処不要。\n"
-        )
+        assert not capsys.readouterr().err
+
+    def test_fetch_failure_stops_before_merge_and_migration(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """fetch失敗時はmergeと旧予約移行へ進まず例外を送出する。"""
+        calls: list[list[str]] = []
+        migrations: list[pathlib.Path] = []
+
+        def run_git(args: list[str], cwd: pathlib.Path) -> None:
+            del cwd
+            calls.append(args)
+            if args == ["fetch"]:
+                raise subprocess.CalledProcessError(1, ["git", *args])
+
+        monkeypatch.setattr(_common, "_run_git", run_git)
+
+        def migrate(private_notes: pathlib.Path) -> int:
+            migrations.append(private_notes)
+            return 0
+
+        monkeypatch.setattr(_common, "_migrate_legacy_reservations", migrate)
+        with (
+            pytest.raises(subprocess.CalledProcessError),
+            _common._repo_lock(tmp_path),  # pylint: disable=protected-access  # noqa: SLF001
+        ):
+            _common._pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert calls == [["fetch"]]
+        assert not migrations
+
+    def test_merge_failure_stops_before_legacy_migration(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """merge失敗時は旧予約移行へ進まず例外を送出する。"""
+        calls: list[list[str]] = []
+        migrations: list[pathlib.Path] = []
+
+        def run_git(args: list[str], cwd: pathlib.Path) -> None:
+            del cwd
+            calls.append(args)
+            if args == ["merge", "--ff-only", "@{u}"]:
+                raise subprocess.CalledProcessError(128, ["git", *args])
+
+        monkeypatch.setattr(_common, "_run_git", run_git)
+
+        def migrate(private_notes: pathlib.Path) -> int:
+            migrations.append(private_notes)
+            return 0
+
+        monkeypatch.setattr(_common, "_migrate_legacy_reservations", migrate)
+        with (
+            pytest.raises(subprocess.CalledProcessError),
+            _common._repo_lock(tmp_path),  # pylint: disable=protected-access  # noqa: SLF001
+        ):
+            _common._pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
+        assert not migrations
+
+    def test_failed_merge_after_recent_fetch_is_retried_instead_of_reused(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """fetch後のff-only統合失敗直後は、直近mtimeでも同期を再試行して失敗を観測する。"""
+        integration = TestExplicitUpstreamIntegration()
+        _remote, local, _other = integration._make_remote_and_clones(tmp_path)  # pylint: disable=protected-access
+        integration._git(local, "config", "user.email", "test@example.com")  # pylint: disable=protected-access
+        integration._git(local, "config", "user.name", "test")  # pylint: disable=protected-access
+        (local / "local.md").write_text("local\n", encoding="utf-8")
+        integration._git(local, "add", "local.md")  # pylint: disable=protected-access
+        integration._git(local, "commit", "-m", "local")  # pylint: disable=protected-access
+        integration._git(local, "fetch")  # pylint: disable=protected-access
+        merge_result = integration._git(local, "merge", "--ff-only", "@{u}", check=False)  # pylint: disable=protected-access
+        assert merge_result.returncode != 0
+        fetch_head = local / ".git" / "FETCH_HEAD"
+        fetch_mtime = fetch_head.stat().st_mtime
+        monkeypatch.setattr(_common.time, "time", lambda: fetch_mtime + 1.0)
+
+        calls: list[list[str]] = []
+        migrations: list[pathlib.Path] = []
+        original_run_git = _common._run_git  # pylint: disable=protected-access  # noqa: SLF001
+
+        def run_git(args: list[str], cwd: pathlib.Path) -> None:
+            calls.append(args)
+            original_run_git(args, cwd)
+
+        monkeypatch.setattr(_common, "_run_git", run_git)
+
+        def migrate(private_notes: pathlib.Path) -> int:
+            migrations.append(private_notes)
+            return 0
+
+        monkeypatch.setattr(_common, "_migrate_legacy_reservations", migrate)
+        with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(local):  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull_with_recent_reuse(local)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert calls == [
+            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
+            ["fetch"],
+            ["merge", "--ff-only", "@{u}"],
+        ]
+        assert not migrations
 
     def test_pulls_without_notice_when_fetch_head_is_old(
         self,
@@ -1429,7 +1641,7 @@ class TestPullWithRecentNotice:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _common._pull_with_recent_notice(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
         assert "同期形跡" not in capsys.readouterr().err
