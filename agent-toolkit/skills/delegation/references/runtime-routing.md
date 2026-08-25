@@ -77,7 +77,7 @@
 代替の判断と起動は委譲を起動した主体が行う。
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
-工程別モデル設定のキーを持たない名前付きagentのCodex互換起動は、「工程別モデル設定」及び「modelとreasoning effort」の対象外とし、`scripts/codex-agents-base.md`の省略契約に従う。
+工程別モデル設定のキーを持たない名前付きagentのCodex互換起動は、「工程別モデル設定」及び「modelとreasoning effort」の対象外とし、`agent-toolkit/share/codex-agents-base.md`の省略契約に従う。
 同じ計画に複数の実装単位がある場合も、`plan-impl-executor`は各単位の最初のfast担当を新規起動する直前に
 `execute_fast_model`を単位ごとに1回解決し、前単位の解決値を再利用しない。
 前の単位と実効3値が一致する場合も、前の担当のthreadを継続せず新規threadを起動する。

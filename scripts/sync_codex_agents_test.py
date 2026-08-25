@@ -10,8 +10,9 @@ import sync_codex_agents as subject
 def _root(tmp_path: Path, *, project: str = "project\n") -> Path:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
+    (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
-    (tmp_path / "scripts/codex-agents-base.md").write_text("base\n", encoding="utf-8")
+    (tmp_path / "agent-toolkit/share/codex-agents-base.md").write_text("base\n", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
     return tmp_path
 

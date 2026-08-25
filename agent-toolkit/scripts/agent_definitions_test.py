@@ -65,7 +65,7 @@ _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendM
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
-_CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "scripts" / "codex-agents-base.md"
+_CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "agent-toolkit" / "share" / "codex-agents-base.md"
 _SECTION_REFERENCE_SOURCE_ROOTS = (
     _DISTRIBUTION_ROOT,
     _REPOSITORY_ROOT / ".claude" / "skills",

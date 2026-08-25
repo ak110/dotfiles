@@ -87,7 +87,7 @@ uvx pyfltr fast                                         # 高速ツールと生�
 | `.claude-plugin/plugin.json`・`.mcp.json` | Claude Code向け設定であり、metadataとClaude専用を含むMCP server定義の正本 |
 | `plugin.json`・`.mcp.codex.json`・`mcp.json` | Agent Plugins v1向け生成物。正本から共有許可済みserverだけを固定schemaへ写像する |
 | `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。正本から許可済みの要素だけを写像する |
-| `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
+| `rules/`・`agents/`・`hooks/`・`bin/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 
 `scripts/sync_codex_plugin_manifests.py`がAgent PluginsとCodexの生成物を同期する。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
