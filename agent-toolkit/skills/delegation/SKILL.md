@@ -53,7 +53,7 @@ user-invocable: false
    未割当と重複が0件であることを集合演算で確認する。
    分割単位が母集団の要素と一致しない場合（主題単位の分割など）は、要素単位の対応を担当決定の正本とする。
    独立コンテキストのレビューのように同じ対象を複数系統で意図的に確認する作業は、重複の判定対象に含めない。
-2. 実行環境、model、worktree、snapshotの経路固有判断が必要な場合だけ、
+2. 実行環境、model、worktreeの経路固有判断が必要な場合だけ、
    起動直前に`references/runtime-routing.md`を全文読む。
    Claude Codeで起動する場合は`references/claude-code-runtime.md`も併せて全文読む
 3. 起動文の先頭で受信者への命令を1文で示す。続けて必要な正本の絶対パスと対象ID、
@@ -81,6 +81,7 @@ user-invocable: false
 `wait(session_id, timeout)`は状態を観測し、終端時は同じ応答で結果本文を返す。`timeout=0`は待機せず現状態を返し、終端結果の再取得も同じ本文を返す。
 同じ担当へ追加指示を送る場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収の有無にかかわらず同じsessionでreplyを開始する。
 `send_message`の応答は`delivery`で配送結果を示し、reply開始時は直前結果を`previous_result`へ含める。`wait`と`send_message`のいずれにも、結果回収済みの状態にする前提条件は設けない。
+同じsessionの実行中turnを明示的に中断する場合は`kill(session_id, timeout)`を使う。`timeout=0`は中断要求の安全な配送だけを待って現状態を返し、正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionとbackend processを破棄せず、保持されたsessionへ`wait`で状態を確認し、終端後は`send_message`を続けられる。
 作業用複製では、複製元と対象外worktreeも明示する。
 
 ### 権限と成果物の取り決め

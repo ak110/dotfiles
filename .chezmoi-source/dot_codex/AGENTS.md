@@ -110,13 +110,12 @@ Codexで利用する場合は次の対応表に従って読み替える。
 
 | Claude Code | Codex相当 |
 | --- | --- |
-| `TaskCreate`・`TaskUpdate`・`TaskList`・`TaskGet` | `update_plan`で計画状態を管理する |
 | `Agent`ツール（サブエージェント起動。旧称`Task`） | `spawn_agent`で別エージェントへ委譲する。`task_name`と`message`は必須で、`fork_turns`へ`"none"`を指定する。`model`・`reasoning_effort`による委譲先の指定は`fork_turns`が`"none"`または継承ターン数の場合に有効となり、省略時と`"all"`では上書きできない |
 | `SendMessage`（稼働中のサブエージェントへの追加指示・再開） | `followup_task`で追加タスクを送る（待機中の対象は新しいターンを開始する）。ターンを開始せず伝えるだけの場合は`send_message`を使う |
 | `TaskStop` | `interrupt_agent`で対象エージェントを停止し、`list_agents`で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | `wait_agent`で更新を待ち、`list_agents`で稼働中の一覧を取得し、`interrupt_agent`で中断する |
-| `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`（agents_serverの委譲・継続） | 自身がCodexであるためCodex engineをMCP経由で自己呼び出しせず、`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲する。Claude engineへ委譲する場合は`start(engine="claude", prompt, cwd, model, effort)`を使い、状態と結果は`wait`、追加指示は`send_message`で扱う |
+| `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・継続・中断） | 自身がCodexであるためCodex engineをMCP経由で自己呼び出しせず、`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲する。Claude engineへ委譲する場合は`start(engine="claude", prompt, cwd, model, effort)`を使い、状態と結果は`wait`、追加指示は`send_message`、実行中turnの明示的な中断は`kill(session_id, timeout)`で扱う。timeout超過後もsessionを保持する |
 | `Monitor` | `list_agents`と`wait_agent`、または実行セッションの待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは利用者へ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む |
@@ -126,8 +125,8 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | `EnterPlanMode`・`ExitPlanMode` | `plan modeの扱い`節を参照 |
 | `ScheduleWakeup`・`CronCreate` | 現行セッションで公開された能力を確認できない場合は、手動運用又は利用者への依頼へ切り替える |
 
-Claude Code側の`agents_server`は、`start`・`wait`・`send_message`の3ツールでCodexまたはClaudeへ委譲する。
-Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担う。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
+Claude Code側の`agents_server`は、`start`・`wait`・`send_message`・`kill`の4ツールでCodexまたはClaudeへ委譲する。
+Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
 
@@ -179,11 +178,10 @@ Plan modeはターン開始時点のホスト状態を基準に扱う。
 ユーザーは要件を提示し内部実装には踏み込まない。コーディングエージェントは要件を満たす外部仕様と最適な実装を提案する。
 受託開発のベンダーとユーザー企業に近い関係とする。
 
-- ユーザーの発言に内部実装上の間違いが含まれる場合は、指摘と代替案を提示する
-- 発話の識別子は読者基準で選ぶ。利用者が呼び出す・設定する・目にする対象
-  （ツール名・コマンド名・設定ファイル名・主要なファイル名など）は原表記で書く
-- 言い換えは利用者が知り得ない内部実装の識別子（内部関数名・内部変数名など）に限り、対象を一意に特定できる語を選ぶ。
-  曖昧な一般名詞への機械的な置換で説明を不明瞭にしない
+- ユーザーの発言に内部実装上の間違いが含まれる場合は、指摘と代替案を提示する。
+- 利用者が呼び出す・設定する・目にする対象は、まず対象を一意に特定できる言い換えを選ぶ。
+  一意に特定できる言い換えを作成できない場合に限り原表記を使う。
+  判定基準は利用者が対象を判別できるかであり、識別子の記載自体を目的にしない。
 
 ## 判断指針
 
@@ -267,6 +265,16 @@ Plan modeはターン開始時点のホスト状態を基準に扱う。
   （厳守規定。誤った前提のまま記述すると成果物が技術的に成立しない）
 - 依頼の前提が事実と異なると判明した時点で、以降の調査を続ける前にその事実を報告する
 - 権威ある情報源は公式ドキュメント・公式ブログ・CHANGELOG・MDN・Web標準とする
+- 既存の記述がホスト機能や実行環境の挙動を前提とする場合、当該前提と異なる観測を得た時点で、
+  公式一次資料の明示記載・実機再現のいずれかで条文の失効を確定できるかを判定する。
+  確定できる場合は「問題を見つけたときの対処」の経路で自ら是正するか改訂を提案する。
+  条文の失効を確定できないか、「協調と自律」の確認要否第2段階（公開インターフェース変更・破壊的操作・
+  利用者が直接観測する出力の変更など）に当たる場合に限り、観測事象、当該条文の位置及び再検証手段を
+  添えて確認経路へ送る。同一セッション内で扱いを確定できない事項は`agent-toolkit:add-feedback`を
+  Skill機能で起動して登録する
+  （厳守規定。失効した前提のまま条文を適用すると、以降の判断が誤った前提の上で確定される）
+- 実測を根拠として条文を新規に記述又は改訂する場合は、観測した版数と再検証手段を当該条文へ併記する。
+  本項は新規の記述・変更箇所へ適用し、既存の記述へ遡及適用しない（努力目標）
 
 ### 問題を見つけたときの対処
 
@@ -380,6 +388,7 @@ TBDは回答を得られない`AskUserQuestion`の代替として用いる。
 - 破壊的操作を含む委譲先が、意図せず外部公開状態を除去した
 
 確認時は候補を一覧で示し、技術的な最適案を第1選択肢に置く。
+`AskUserQuestion`の`question`本文だけでなく、`label`と`header`を含む提示全体を、利用者が対象を判別できる表現にし、判別できる言い換えを作成できない場合に限り原表記を使う。
 技術的に優劣を判断できる事項は選択肢化せず最適な手法を選ぶ。
 実装手順の詳細（タスク分解の粒度・実装順序・委譲判断・ファイル名・節の配置など）は技術判断として自律決定する。
 確認へ送ると確定した事項で、選択肢の差が実装上の位置（ファイル・関数・エンドポイント・イベント種別・フィールドなど）に

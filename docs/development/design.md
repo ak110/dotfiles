@@ -67,10 +67,13 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
 LinuxとWindowsで寿命契約を揃えられる。
 
-公開APIは`start`、`wait`、`send_message`の3つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
+公開APIは`start`、`wait`、`send_message`、`kill`の4つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
 `model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。
 `send_message`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
-この統合により、backendごとに公開toolを増やさず、`status`・`progress`・結果配送の共通契約を維持できる。
+`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。`timeout=0`は要求配送後の現状態を返し、
+正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionまたはbackend processを強制終了せず、後続の`wait`または終端後の`send_message`を許可する。
+成功応答は`status`・`progress`・`kill_requested`を含み、`kill_requested`は要求の受理事実を示し、自然終端を`interrupted`へ置き換えない。
+この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
@@ -623,6 +626,13 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`反復証跡�
 Codex品質想起通知は、計画メイン側とdetail側の実在後のwhole-writeと、`SessionStart(source=compact)`だけを発火境界とする。
 通知handlerは本文を共有し、意味判定やセッション状態を持たず、非遮断の`additionalContext`として返す。
 Codex専用の`SessionStart`登録はmanifest生成器が生成し、Claude Code向け`hooks.json`へ登録しない。
+
+block通知の解消手段は、`_hook_notice`のblock専用整形関数へ集約する。
+フックが誤発火した場合でも、通知を受領した主体が抜けられる状態を保つことが目的である。
+強制境界を単一にしないと解消手段の欠落を機械的に検出できないため、既存の`formatter`へ引数を追加せず、
+warn経路の既存契約へ影響しない独立関数とする。フック実装は`fix`の文面だけを持ち、解消手段の必須化判定は整形関数が担う。
+各フックの本文へ解消手段を書く運用規定だけで担保する案は、検査手段が無く反復を防げないため採用しない。
+既存の`formatter`へサフィックス切替引数を追加する案は、warn経路の既存契約と既存テストへ影響するため採用しない。
 
 作業手順全体をフックへ実装する案は、イベント単位の観測から利用者意図を推測する構造になるため採用しない。
 広い一致条件だけで操作を拒否する案も、無関係な呼び出しを停止させるため採用しない。

@@ -74,13 +74,15 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 `start(engine="claude", prompt, cwd, model, effort)`で委譲先のengineを選択する。Codex自身をCodex engineでMCP経由に呼び出さず、CodexからClaudeへ委譲する場合は
 `start(engine="claude", ...)`を使う。MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
-公開ツールは`start`、`wait`、`send_message`の3つである。`start`の`cwd`は既存ディレクトリの絶対パスとし、
+公開ツールは`start`、`wait`、`send_message`、`kill`の4つである。`start`の`cwd`は既存ディレクトリの絶対パスとし、
 完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout=0`は待機せず現状態を返す。
 `send_message(session_id, prompt)`は実行中turnへsteerし、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
-`send_message`の`delivery`と`wait`の終端応答で配送結果を確認する。
+`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。
+timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。`kill`の`kill_requested`、
+`send_message`の`delivery`及び`wait`の終端応答で要求・配送・結果を確認する。
 
 backendから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
-対応turnを`failed`としてwaiterを起床させる。承認・停止・一覧操作は公開しない。
+対応turnを`failed`としてwaiterを起床させる。承認・ユーザー入力・一覧操作は公開せず、明示的な中断は`kill`で行う。
 
 ### フックの信頼確認
 

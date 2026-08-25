@@ -23,6 +23,7 @@ from agents_server_mcp import (
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 _DeliveryResult = tuple[str, dict[str, Any] | None]
+_Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
 
 
 def _build_options(cwd: str, model: str | None, effort: str | None) -> Any:
@@ -64,7 +65,7 @@ class ClaudeServerManager:
         self._expire_session = expire_session or self._expire_local_session
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
-        self._commands: dict[str, asyncio.Queue[tuple[str, asyncio.Future[_DeliveryResult]]]] = {}
+        self._commands: dict[str, asyncio.Queue[_Command]] = {}
 
     def _expire_local_session(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
@@ -105,12 +106,42 @@ class ClaudeServerManager:
             raise ValueError("the Claude session is not ready for continuation")
         future: asyncio.Future[_DeliveryResult] = asyncio.get_running_loop().create_future()
         async with session.turn_control_lock:
-            await queue.put((prompt, future))
+            if not session.terminal and session.interrupt_requested:
+                raise ValueError("the active Claude turn is being interrupted")
+            await queue.put(("prompt", prompt, future))
             actual_delivery, previous_result = await future
         result: dict[str, Any] = {"delivery": actual_delivery}
         if actual_delivery in {"reply_started", "reply_failed", "reply_ambiguous"}:
             result["previous_result"] = previous_result
         return result
+
+    async def interrupt(self, session: SessionState) -> None:
+        """公開killから所有タスクへ中断要求を送り、受理を待つ。"""
+        task = self._task_for(session.session_id)
+        if task.done():
+            raise ValueError("the Claude session is no longer active; use wait to retrieve its result")
+        queue = self._commands.get(session.session_id)
+        if queue is None:
+            raise ValueError("the Claude session is not ready for interruption")
+        future: asyncio.Future[_DeliveryResult] = asyncio.get_running_loop().create_future()
+        if session.terminal:
+            return
+        session.interrupt_requested = True
+        session.touch()
+        await queue.put(("interrupt", "", future))
+        try:
+            delivery, _ = await future
+        except Exception:
+            session.interrupt_requested = False
+            session.touch()
+            await self._notify_waiters()
+            raise
+        if delivery != "interrupt_accepted":
+            session.interrupt_requested = False
+            session.touch()
+            await self._notify_waiters()
+            raise RuntimeError(f"unexpected Claude interrupt delivery: {delivery}")
+        await self._notify_waiters()
 
     def _task_for(self, session_id: str) -> asyncio.Task[Any]:
         for task in self._tasks:
@@ -134,7 +165,7 @@ class ClaudeServerManager:
     ) -> None:
         client: Any = None
         session: SessionState | None = None
-        queue: asyncio.Queue[tuple[str, asyncio.Future[_DeliveryResult]]] | None = None
+        queue: asyncio.Queue[_Command] | None = None
         iterator: Any = None
         message_task: asyncio.Task[Any] | None = None
         command_task: asyncio.Task[Any] | None = None
@@ -232,13 +263,30 @@ class ClaudeServerManager:
         self,
         client: Any,
         session: SessionState | None,
-        command: tuple[str, asyncio.Future[_DeliveryResult]],
+        command: _Command,
         iterator: Any,
     ) -> Any:
-        prompt, future = command
+        command_kind, prompt, future = command
         if session is None:
             if not future.done():
                 future.set_exception(ValueError("Claude session initialization is incomplete"))
+            return iterator
+        if command_kind == "interrupt":
+            if session.terminal:
+                if not future.done():
+                    future.set_result(("interrupt_accepted", None))
+                return iterator
+            try:
+                await client.interrupt()
+            except Exception as exc:
+                session.interrupt_requested = False
+                session.touch()
+                if not future.done():
+                    future.set_exception(exc)
+            else:
+                if not future.done():
+                    future.set_result(("interrupt_accepted", None))
+            await self._notify_waiters()
             return iterator
         kind = "reply" if session.terminal else "steer"
         previous_result = session.previous_result() if kind == "reply" else None
@@ -267,7 +315,11 @@ class ClaudeServerManager:
 
     @staticmethod
     def _record_result(session: SessionState, message: Any) -> None:
-        session.status = "failed" if bool(getattr(message, "is_error", False)) else "completed"
+        terminal_reason = getattr(message, "terminal_reason", None)
+        if terminal_reason in {"aborted_streaming", "aborted_tools"}:
+            session.status = "interrupted"
+        else:
+            session.status = "failed" if bool(getattr(message, "is_error", False)) else "completed"
         result = getattr(message, "result", None)
         session.agent_message = result if isinstance(result, str) else session.agent_message
         errors = getattr(message, "errors", None)

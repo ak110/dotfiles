@@ -203,6 +203,8 @@ class TestMojibakeCheck:
         assert "U+FFFD" in result.stderr
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+        assert "[block]" in result.stderr
+        assert "Fix: Replace the U+FFFD character" in result.stderr
         assert "Auto-generated hook notice" in result.stderr
 
     def test_edit_with_mojibake(self):
@@ -248,6 +250,7 @@ class TestPs1EolCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 2
         assert "LF-only" in result.stderr
+        assert "Fix: Use the Edit tool" in result.stderr
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -300,6 +303,7 @@ class TestLockfilesCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
         assert "direct edit" in result.stderr
+        assert "Fix: " in result.stderr
 
     def test_edit_cargo_lock_blocked(self):
         result = _run(
@@ -310,6 +314,7 @@ class TestLockfilesCheck:
         )
         assert result.returncode == 2
         assert "cargo add" in result.stderr
+        assert "Fix: " in result.stderr
 
     def test_normal_file_allowed(self):
         """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""
@@ -339,6 +344,7 @@ class TestSecretsCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
         assert "secret" in result.stderr
+        assert "Fix: " in result.stderr
         assert (_SECRETS_COPY_GUIDANCE in result.stderr) is expects_guidance
         assert (_SECRETS_VALUE_EDIT_GUIDANCE in result.stderr) is expects_guidance
 
@@ -3098,6 +3104,7 @@ class TestCodexMcpReply:
         [
             ("mcp__plugin_agent-toolkit_agents_server__send_message", "next"),
             ("mcp__plugin_agent-toolkit_agents_server__send_message", "追加指示"),
+            ("mcp__plugin_agent-toolkit_agents_server__kill", ""),
         ],
     )
     def test_continuation_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path, tool_name: str, prompt: str):
@@ -3110,7 +3117,7 @@ class TestCodexMcpReply:
         result = _run(
             {
                 "tool_name": tool_name,
-                "tool_input": {"session_id": "abc", "prompt": prompt},
+                "tool_input": {"session_id": "abc", **({"prompt": prompt} if prompt else {})},
                 "session_id": "reply1",
             },
             env_overrides=state_dir,
@@ -3803,14 +3810,14 @@ class TestBashOutputTruncationWarning:
         assert "truncating it" not in _agent_messages(result)
 
 
-class TestAgentNameParameterGate:
-    """AgentとTask起動時の`name`引数指定の一律ブロック。"""
+class TestAgentNameParameterAccepted:
+    """`name`引数を伴うAgent/Task起動が委譲ゲートで拒否されないことを保証する（`name`禁止規程撤回の受理契約）。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("name_value", ["impl-1", "", None])
-    def test_name_parameter_blocks(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
-        """`name`キーが存在する起動は値の内容によらずブロックする。"""
-        sid = f"agent-name-block-{tool_name.lower()}-{name_value!r}"
+    def test_name_parameter_does_not_block(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
+        """`name`キーの値によらず、他の委譲ゲートを満たす起動はブロックされない。"""
+        sid = f"agent-name-accept-{tool_name.lower()}-{name_value!r}"
         result = _run(
             {
                 "tool_name": tool_name,
@@ -3820,65 +3827,8 @@ class TestAgentNameParameterGate:
             },
             env_overrides=_delegation_state_env(tmp_path, sid),
         )
-        assert result.returncode == 2
-        assert "`name` parameter is not allowed" in result.stderr
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_launch_without_name_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """`name`キーを持たない起動は通過する。"""
-        sid = f"agent-name-allow-{tool_name.lower()}"
-        result = _run(
-            {
-                "tool_name": tool_name,
-                "tool_input": {"subagent_type": "claude", "prompt": "調査してください。"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, sid),
-        )
         assert result.returncode == 0
-        assert "`name` parameter is not allowed" not in result.stderr
-
-    def test_name_block_states_only_prohibition_and_parallel_guidance(self, tmp_path: pathlib.Path) -> None:
-        """ブロック理由は`name`禁止の根拠と並列起動の案内だけを示し、起動形態を断定しない。"""
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "claude", "name": "named", "prompt": "調査してください。"},
-                "session_id": "agent-name-block-route",
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, "agent-name-block-route"),
-        )
-        assert result.returncode == 2
-        assert "in parallel" in result.stderr
-        assert "run_in_background" not in result.stderr
-        assert "execution result" not in result.stderr
-        assert "launch in the foreground" not in result.stderr
-        assert "tool return value" not in result.stderr
-
-    def test_name_block_precedes_subagent_type_flag_record(self, tmp_path: pathlib.Path) -> None:
-        """ブロックされた起動では`subagent_type`別フラグを記録しない（起動しない呼び出しの副作用を残さない）。"""
-        sid = "agent-name-block-no-flag"
-        plan = _make_plan_file(tmp_path / "home", "name-block.md")
-        _write_session_state(tmp_path, sid, {"delegation_skill_invoked": True})
-        env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "name": "codex-1",
-                    "prompt": f"計画ファイル `{plan}` を実装する。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
-        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+        assert "`name`" not in result.stderr
 
 
 class TestSubagentModelOverrideGate:
@@ -4757,266 +4707,6 @@ class TestBodySectionReferenceExists:
         assert result.returncode == 0
         # 警告が出ること
         assert "section name does not exist" in _additional_context(result)
-
-
-class TestCodexRemoteSnapshotRecording:
-    """`mcp__plugin_agent-toolkit_agents_server__start`/`mcp__plugin_agent-toolkit_agents_server__send_message`呼び出し時のリモート参照スナップショット記録。
-
-    codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
-    行う事象への機械チェック（事後検知）のうち、記録側（PreToolUse）を検証する。
-    """
-
-    _write_state = staticmethod(_write_session_state)
-    _read_state = staticmethod(_read_session_state)
-
-    @staticmethod
-    def _init_repo(path: pathlib.Path) -> None:
-        path.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "-q"], cwd=path, check=True)
-        subprocess.run(["git", "config", "user.email", "a@example.com"], cwd=path, check=True)
-        subprocess.run(["git", "config", "user.name", "a"], cwd=path, check=True)
-
-    def test_records_snapshot_with_agent_id_key(self, tmp_path: pathlib.Path):
-        """`transcript_path`からagentIdを抽出できる場合、agentIdをキーとして記録する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-agent", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
-                "session_id": "snap-agent",
-                "cwd": str(repo),
-                "transcript_path": "/x/agent-abc123.jsonl",
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-agent")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        recorded = entries.get("abc123")
-        assert recorded is not None
-        assert recorded["cwd"] == str(repo)
-        assert recorded["snapshot"] == {}
-
-    def test_records_snapshot_with_session_id_fallback_key(self, tmp_path: pathlib.Path):
-        """agentIdを抽出できない場合（メインセッション自身の直接呼び出し）は`session_id`をキーとする。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-session", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
-                "session_id": "snap-session",
-                "cwd": str(repo),
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-session")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        recorded = entries.get("session:snap-session")
-        assert recorded is not None
-        assert recorded["cwd"] == str(repo)
-
-    def test_records_snapshot_from_tool_input_cwd_not_payload_cwd(self, tmp_path: pathlib.Path):
-        """比較対象は`tool_input["cwd"]`（codexの実行対象）であり、`payload["cwd"]`
-        （呼び出し元セッション自身の作業ディレクトリ）ではないことを検証する。両者が異なる場合、
-        `tool_input["cwd"]`側が記録されなければcodexの実行対象と異なるリポジトリを比較してしまう。
-        """
-        codex_repo = tmp_path / "codex-repo"
-        session_repo = tmp_path / "session-repo"
-        self._init_repo(codex_repo)
-        self._init_repo(session_repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-cwd-src", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(codex_repo)},
-                "session_id": "snap-cwd-src",
-                "cwd": str(session_repo),
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-cwd-src")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        recorded = entries.get("session:snap-cwd-src")
-        assert recorded is not None
-        assert recorded["cwd"] == str(codex_repo)
-
-    def test_reply_skips_recording_when_no_prior_cwd(self, tmp_path: pathlib.Path):
-        """直前の`mcp__plugin_agent-toolkit_agents_server__start`呼び出しによるcwd記録が無い場合、`-reply`は記録をスキップする。
-
-        `mcp__plugin_agent-toolkit_agents_server__send_message`の`tool_input`には`cwd`が含まれないため、
-        同一キーの直近`mcp__plugin_agent-toolkit_agents_server__start`呼び出しで永続化したcwdが無ければ比較対象が無い。
-        """
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-reply-nocwd", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "th_abc123", "prompt": "続行"},
-                "session_id": "snap-reply-nocwd",
-                "isSidechain": False,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert "no stored absolute cwd" in result.stderr
-        assert "Do not continue this session" in result.stderr
-        assert "start a new one with agents_server start" in result.stderr
-        state = self._read_state(tmp_path, "snap-reply-nocwd")
-        assert state.get("agents_server_remote_snapshot_by_key") is None
-
-    def test_reply_accepts_json_string_response_recorded_by_posttooluse(self, tmp_path: pathlib.Path):
-        """PostToolUseのJSON文字列応答で記録したcwdを後続のreplyが利用する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        sid = "snap-json-post"
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, sid, {"delegation_skill_invoked": True})
-        start_tool = "mcp__plugin_agent-toolkit_agents_server__start"
-        reply_tool = "mcp__plugin_agent-toolkit_agents_server__send_message"
-        post = _run_posttooluse(
-            {
-                "session_id": sid,
-                "tool_name": start_tool,
-                "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                "tool_use_id": "json-start-1",
-                "tool_response": json.dumps({"session_id": "thread-json", "turn_id": "turn-json", "status": "running"}),
-            },
-            env,
-        )
-        assert post.returncode == 0
-        state = self._read_state(tmp_path, sid)
-        assert state["agents_server_cwd_by_session"]["thread-json"] == str(repo)
-        reply = _run(
-            {
-                "session_id": sid,
-                "tool_name": reply_tool,
-                "tool_input": {"session_id": "thread-json", "prompt": "続行"},
-                "tool_use_id": "json-reply-1",
-                "isSidechain": False,
-            },
-            env,
-        )
-        assert reply.returncode == 0
-        assert "cannot continue because session_id has no stored absolute cwd" not in _agent_messages(reply)
-        state_after = self._read_state(tmp_path, sid)
-        assert state_after.get("agents_server_remote_snapshot_by_key")
-
-    def test_reply_reuses_cwd_recorded_by_prior_codex_call(self, tmp_path: pathlib.Path):
-        """`mcp__plugin_agent-toolkit_agents_server__send_message`は同一キーの直近`mcp__plugin_agent-toolkit_agents_server__start`呼び出しのcwdを引き継いで記録する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-reply", {"delegation_skill_invoked": True})
-        first = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
-                "session_id": "snap-reply",
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert first.returncode == 0
-        self._write_state(
-            tmp_path,
-            "snap-reply",
-            self._read_state(tmp_path, "snap-reply")
-            | {
-                "delegation_skill_invoked": True,
-                "agents_server_cwd_by_session": {"th_abc123": str(repo)},
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "th_abc123", "prompt": "続行"},
-                "session_id": "snap-reply",
-                "isSidechain": False,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-reply")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        assert entries.get("session:snap-reply", {}).get("cwd") == str(repo)
-
-    def test_send_message_preserves_existing_thread_snapshot(self, tmp_path: pathlib.Path):
-        """実行中turnへの`send_message`は同一threadのsnapshotを上書きしない。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        sid = "snap-send-active"
-        old_snapshot = {"origin": {"main": "old"}}
-        self._write_state(
-            tmp_path,
-            sid,
-            {
-                "delegation_skill_invoked": True,
-                "agents_server_cwd_by_session": {"thread-1": str(repo)},
-                "agents_server_sessions": {},
-                "agents_server_remote_snapshot_by_key": {"start-1": {"cwd": str(repo), "snapshot": old_snapshot}},
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
-                "tool_use_id": "send-1",
-                "session_id": sid,
-                "isSidechain": True,
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, sid)
-        assert state["agents_server_remote_snapshot_by_key"] == {
-            "start-1": {"cwd": str(repo), "snapshot": old_snapshot},
-            "send-1": {"cwd": str(repo), "snapshot": {}},
-        }
-
-    def test_send_message_records_snapshot_after_result_recovery(self, tmp_path: pathlib.Path):
-        """結果回収済みthreadのreply開始だけは新しいsnapshotを記録する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        sid = "snap-send-reply"
-        self._write_state(
-            tmp_path,
-            sid,
-            {
-                "delegation_skill_invoked": True,
-                "agents_server_cwd_by_session": {"thread-1": str(repo)},
-                "agents_server_sessions": {},
-                "agents_server_remote_snapshot_by_key": {},
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                "tool_use_id": "send-1",
-                "session_id": sid,
-                "isSidechain": True,
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, sid)
-        assert state["agents_server_remote_snapshot_by_key"]["send-1"]["cwd"] == str(repo)
 
 
 class TestDelegationGateForAgentTask:

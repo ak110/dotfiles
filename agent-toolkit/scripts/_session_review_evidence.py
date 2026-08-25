@@ -723,8 +723,8 @@ _CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
 _THREAD_ID_KEYS = ("session_id", "sessionId", "threadId", "conversationId")
 _AGENTS_SERVER_TOOL_NAMES = frozenset(
     {
-        *(f"mcp__plugin_agent-toolkit_agents_server__{name}" for name in ("start", "wait", "send_message")),
-        *(f"mcp__agents_server__{name}" for name in ("start", "wait", "send_message")),
+        *(f"mcp__plugin_agent-toolkit_agents_server__{name}" for name in ("start", "wait", "send_message", "kill")),
+        *(f"mcp__agents_server__{name}" for name in ("start", "wait", "send_message", "kill")),
     }
 )
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)

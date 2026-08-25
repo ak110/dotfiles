@@ -281,6 +281,9 @@ class AgentsServerManager:
         _validate_prompt(prompt)
         session = self._get_session(session_id)
         backend = self._backend(session.engine)
+        async with session.turn_control_lock:
+            if session.interrupt_requested and not session.terminal:
+                raise ValueError(f"session is being interrupted: {session_id}")
         result = await backend.send_message(session, prompt)
         delivery = result["delivery"]
         if delivery in {"reply_started", "reply_ambiguous"}:
@@ -288,6 +291,90 @@ class AgentsServerManager:
         response: dict[str, Any] = {"delivery": delivery, **session.public_status()}
         if delivery in REPLY_DELIVERIES:
             response["previous_result"] = result["previous_result"]
+        return response
+
+    async def kill(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
+        """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
+            raise ValueError("timeout must be non-negative")
+        session = self._get_session(session_id)
+        started_terminal = session.terminal
+        requested_before_call = session.interrupt_requested
+        if started_terminal:
+            response = session.public_status(include_result=True)
+            response["kill_requested"] = False
+            return response
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + float(timeout) if timeout > 0 else None
+        requested = requested_before_call
+        backend = self._backend(session.engine)
+        try:
+            if deadline is None:
+                await session.turn_control_lock.acquire()
+            else:
+                await asyncio.wait_for(
+                    session.turn_control_lock.acquire(),
+                    timeout=max(0.0, deadline - loop.time()),
+                )
+        except TimeoutError as exc:
+            raise TimeoutError(f"kill timed out: {session_id}") from exc
+        try:
+            if session.terminal:
+                requested = requested or requested_before_call or session.interrupt_requested
+            elif session.interrupt_requested:
+                requested = True
+            else:
+                if session.engine == "codex" and not session.turn_id:
+                    if timeout == 0:
+                        raise ValueError("the active Codex turn has no turn_id")
+                    try:
+                        async with self._condition:
+                            await asyncio.wait_for(
+                                self._condition.wait_for(lambda: bool(session.turn_id) or session.terminal),
+                                timeout=max(0.0, deadline - loop.time()) if deadline is not None else None,
+                            )
+                    except TimeoutError as exc:
+                        raise TimeoutError(f"kill timed out: {session_id}") from exc
+                    if session.terminal:
+                        response = session.public_status(include_result=True)
+                        response["kill_requested"] = False
+                        return response
+                session.interrupt_requested = True
+                session.touch()
+                try:
+                    interrupt = backend.interrupt(session)
+                    if deadline is None:
+                        await interrupt
+                    else:
+                        await asyncio.wait_for(interrupt, timeout=max(0.0, deadline - loop.time()))
+                except TimeoutError:
+                    await self._notify_waiters()
+                    raise TimeoutError(f"kill timed out: {session_id}") from None
+                except Exception:
+                    session.interrupt_requested = False
+                    session.touch()
+                    await self._notify_waiters()
+                    raise
+                requested = True
+        finally:
+            session.turn_control_lock.release()
+
+        if not requested:
+            response = session.public_status(include_result=True)
+            response["kill_requested"] = False
+            return response
+        if timeout > 0:
+            try:
+                async with self._condition:
+                    await asyncio.wait_for(
+                        self._condition.wait_for(lambda: session.result_available),
+                        timeout=max(0.0, deadline - loop.time()) if deadline is not None else None,
+                    )
+            except TimeoutError as exc:
+                raise TimeoutError(f"kill timed out: {session_id}") from exc
+        response = session.public_status(include_result=session.result_available)
+        response["kill_requested"] = True
         return response
 
     async def _notify_waiters(self) -> None:
@@ -344,6 +431,12 @@ async def wait(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[s
 async def send_message(session_id: str, prompt: str) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。"""
     return await _MANAGER.send_message(session_id, prompt)
+
+
+@mcp.tool(name="kill", structured_output=True)
+async def kill(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
+    """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
+    return await _MANAGER.kill(session_id, timeout)
 
 
 def main() -> None:
