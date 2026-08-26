@@ -722,6 +722,51 @@ CLIは内容が不要になったかを推測せず、呼び出し元もパス�
 専用の整理サブコマンドを新設する案は、許可判定と契約検査を含む同時改訂の費用が既存サブコマンドの整合化を上回るため採用しない。
 列挙を非破壊の表示へ戻す案も、実体不在の記録が増え続ける状態へ回帰するため採用しない。
 
+## developとmasterのbranch・リリース設計
+
+`develop`を開発用branch、`master`をリリース用branch及びGitHubの既定branchとする。
+`master`への更新経路はPRのマージコミットだけに限定し、直接pushを許可しない。
+PRの作成は手動で行い、head branchの機械的な限定は設けない。
+
+repository設定ではマージコミットを有効にし、squash merge、rebase merge及びauto-mergeを無効にする。
+マージ後のbranch自動削除も無効にし、エージェントが同期状態を検収した後にだけ次の工程へ進める。
+既定branchは`master`のまま維持する。
+
+`master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
+rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の6必須check、削除禁止及びforce push禁止を設定する。
+
+- `test-linux`
+- `test-windows`
+- `python-lint (3.12)`
+- `python-lint (3.13)`
+- `python-lint (3.14)`
+- `rust-lint`
+
+ruleset一覧には個別ref条件が含まれないため、同名候補の完全なIDを取得した後に個別GETで対象repository、branch ruleset及び`refs/heads/master`を確認する。
+候補が0件の場合は作成し、1件の場合は完全IDへPUTする。
+複数件、取得失敗又は対象不一致の場合は設定を変更しない。
+`required_linear_history`はマージコミット要件と両立しないため設定しない。
+
+GitHubのruleset API仕様は、2026年8月26日時点の[Rulesets REST API](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10)を参照する。
+workflowの`workflow_run`入力境界は、同日時点の[workflow_runイベント仕様](https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#workflow_run)を参照する。
+
+PRマージ後は、マージコミットの完全OIDを取得して`origin/master`と照合する。
+その後にローカル`develop`を`git merge --ff-only origin/master`で進め、push前のCI baselineを保存して`origin/develop`へpushする。
+developのCIは`wait_ci.py`で待機し、masterのCIは完全OIDに一致するGitHub Actions runを`gh run watch --exit-status`で待機する。
+runが登録される前は読み取りだけを継続し、自作のshell sleep loopを追加しない。
+
+マージコミットの第一親との差分にstatuslineが含まれる場合は、同じ完全OIDの`Release statusLine` run、タグ、GitHub Release及びLinux・Windows assetを検収する。
+statuslineの差分がない場合はRelease成果物を検収しない。
+成功時はローカル`develop`、`origin/develop`、`origin/master`が同じ完全OIDであることを確認する。
+
+初回branch初期化は1回だけ実行する。
+実装済みHEADの完全OIDからローカル`develop`を作成して公開し、developのCIを確認する。
+`origin/master`の移行前OIDを保存し、初回リリースPRを作成しない。
+ローカル`develop`と`origin/develop`のOID一致を確認した後、ローカル`master`の削除直前OIDを記録して削除する。
+公開又はCIが失敗した場合はローカル`master`を削除せず、成立済みの外部状態と再開点を報告する。
+
+PRマージ、branch同期及びRelease検収の詳細は、プロジェクトスキル[merge-pr](../../.claude/skills/merge-pr/SKILL.md)を実行時の手順とする。
+
 ## 終端工程
 
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
