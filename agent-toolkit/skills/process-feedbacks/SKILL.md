@@ -43,6 +43,8 @@ TBDへ永続化して暫定判断で進める。
    実装順序の保証は統合計画の実装単位順へ移し、`start-processing`へ新たな順序又は依存の検査を追加しない。
    既存のprocessing項目では`start-processing`を再実行せず、同コマンドの再実行を未完了の`feedbacks-planner`工程の再開起点にしない
 
+feedbackのactive集合は`inbox`・`planning`・`processing`である。`planning`は計画作成中の通常型フィードバックとして一覧・詳細・serveで確認できるが、ready判定と`process-loop`の起動集合には含めない。TBD修復と`start-processing`の対象にも含めない。planning項目の計画作成、再開及び失敗復旧は、同じファイル名集合を指定する`plan-and-add-feedback`の経路だけで行う。
+
 `start-processing`が状態競合で拒否した場合は、active一覧と保存本文を再取得して着手可否の判定から再開する。
 移動開始後にI/O、commit又はpushが失敗した場合の管理リポジトリ復旧手順は`references/feedbacks-planner-reception.md`
 「## 起動」の該当段落を正本とする。
@@ -107,18 +109,18 @@ Claude CodeとCodexのいずれかのホストの通常型で`feedbacks-planner`
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
 
-`feedbacks-planner`の失敗時におけるTBD保存、由来別の終端及び再開は`references/hold-with-tbd-inject.md`を正本とする。失敗TBDの必須項目と保存後の確認は`references/feedbacks-planner-reception.md`「受領」を適用する。
+`feedbacks-planner`の失敗時におけるTBD保存、全source共通の保留及び再開は`references/hold-with-tbd-inject.md`を正本とする。失敗TBDの必須項目と保存後の確認は`references/feedbacks-planner-reception.md`「受領」を適用する。
 
-同一バッチかつ同一`target_repo`で、失敗した事象、期待値、実際値、発生条件、直接的原因及び再開に必要な情報が全て一致する失敗は、元のファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。`decision-format.md`「採否結果」の値集合でエージェント由来と判定される元項目は同じTBDのファイル名を項目固有メモへ記録してrejectで終端し、それ以外の元項目は全て同じTBDへ依存させ、`blocked`を確認する。6要素又は`target_repo`が異なる場合は同じTBDへ集約しない。
+同一バッチかつ同一`target_repo`で、失敗した事象、期待値、実際値、発生条件、直接的原因及び再開に必要な情報が全て一致する失敗は、元のファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。失敗した元項目は投入元の由来にかかわらず同じTBDへ依存させ、`blocked`を確認する。技術的失敗を不採用へ変換せず、`atk mq reject`はprocess-loop内で要求の全てを不採用と確定した終端に限る。6要素又は`target_repo`が異なる場合は同じTBDへ集約しない。
 
 `feedbacks-planner`完了後の項目別結果はファイル名昇順で各1回反映する。
 保存済みの不採用確認用TBDを受領して再開した項目は、既存TBDの保存内容と元項目の`blocked`状態を確認済みであるため、結果反映時の失敗処理対象から除外する。
 この項目では失敗TBDの再投入、`atk mq set-dependencies`による再依存、`atk mq return-to-inbox`による再inboxとrejectを実行せず、保持済みの結果を反映して次の項目へ進む。
 結果反映コマンドが警告・エラーを返した場合は、同じコマンドを再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
-意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認及び由来に応じた終端処置を各1回実行する。`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目はrejectで終端し、それ以外の項目は`references/hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。後者では不採用確認を経ずに元のフィードバックをrejectしない。
+意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認及び依存設定を各1回実行する。由来にかかわらず`references/hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認してactiveのまま保留する。不採用確認を経ずに元のフィードバックをrejectせず、失敗処理からrejectを呼び出さない。
 保存済みの不採用確認用TBDを受領して再開した項目で結果反映が失敗した場合は、保持済みの確認TBDを同じ依存として残し、新しい失敗TBDを作成しない。
-再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
+再取得失敗、想定外状態又は失敗TBDの保存失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目を各1回処理し、全件走査後に警告・エラーが1件でもあればバッチを失敗として返す。
 
 回答済みTBDの処理は`references/hold-with-tbd-inject.md`を正本とする。
@@ -168,8 +170,8 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
 - 回答済みTBD: `references/hold-with-tbd-inject.md`に従って採用終端し、依存解除後の処理を再開する
 
 各コマンドの保存結果を再取得し、対象、採否、note、commitを照合する。
-複数の採用項目もファイル名昇順で1件ずつ終端し、複数のファイル名を1回の`atk mq adopt`へ渡さない。
-複数の項目を連続して終端する場合は、ファイル名昇順で最後の1件を除く`atk mq adopt`・`atk mq reject`へ`--skip-push`を付け、最後の1件は付けずに実行して滞留commitをまとめてpushする。対象が1件だけの場合は`--skip-push`を付けない。
+複数の採用項目もファイル名昇順で1件ずつ終端し、複数のファイル名を1回の`atk mq adopt`へ渡さない。全要求不採用とprocess-loop内で確定した項目のrejectも、判定済みの対象ごとに1件ずつ実行する。
+複数の項目を連続して終端する場合は、ファイル名昇順で最後の1件を除く`atk mq adopt`・全要求不採用と確定した項目への`atk mq reject`へ`--skip-push`を付け、最後の1件は付けずに実行して滞留commitをまとめてpushする。対象が1件だけの場合は`--skip-push`を付けない。
 終端工程を持つ項目のnoteには実施した操作と結果を記録する。
 
 Codexホストと連続処理モードでは、後始末の完了後は再取得したready項目の有無で分岐し、ready項目があれば「2. 調査と採否」へ戻り、

@@ -6,6 +6,8 @@ import re
 import subprocess
 
 import _atk_mq_frontmatter as frontmatter
+import atk
+import pytest
 
 _AGENTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "agents"
 _DELEGATION_SKILL = _AGENTS_DIR.parent / "skills" / "delegation" / "SKILL.md"
@@ -1695,7 +1697,7 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     assert "source `session-review`を明示" in session_review
 
 
-def test_feedback_transfer_requires_successful_registration_before_rejection() -> None:
+def test_feedback_transfer_requires_successful_registration_before_removal() -> None:
     """別リポジトリ項目の登録・照合・元項目終端の順序を固定する。"""
     cross_repository = _CROSS_REPOSITORY_SUBMISSION.read_text(encoding="utf-8")
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
@@ -1712,12 +1714,13 @@ def test_feedback_transfer_requires_successful_registration_before_rejection() -
         "指定済みsourceがある場合は同じ値を渡す",
         "`atk mq show <移管先ファイル名> --target-repo=<target_repo> --skip-pull`",
         "登録と照合の成功後だけ",
-        "項目固有メモでrejectする",
+        "`atk mq rm <元項目ファイル名> --force --note=<移管先リポジトリと移管先ファイル名>`",
     ):
         assert phrase in cross_repository
     registration = cross_repository.index("`agent-toolkit:add-feedback`で登録する")
-    terminal = cross_repository.index("元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする")
+    terminal = cross_repository.index("`atk mq rm <元項目ファイル名> --force")
     assert registration < terminal
+    assert "reject" not in cross_repository
 
 
 def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:
@@ -1779,7 +1782,7 @@ def test_session_review_advisor_delegates_repository_checks_to_main() -> None:
 
 
 def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:
-    """技術的失敗の由来別終端と結果反映エラー後の全件走査を固定する。"""
+    """技術的失敗を由来で分岐せずTBDへ集約し、結果反映後も全件を走査する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8") + _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
     hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
@@ -1791,13 +1794,12 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "失敗TBDの保存コマンドの完了表示にエラーが無いことを確認",
         "警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`",
         "保存内容に欠落が無いことを確認",
-        "`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は",
-        "それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い",
-        "失敗TBDを依存へ追加して`blocked`まで確認する",
+        "失敗した元項目は投入元の由来にかかわらず全て同じTBDへ依存させて`blocked`を確認する",
+        "技術的失敗を不採用へ変換せず",
+        "失敗TBDを保存した後は、由来にかかわらず元のフィードバックへ失敗TBDを依存させて`blocked`を確認する",
         "元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する",
-        "atk mq reject <filename> --note=<失敗TBD filename>",
-        "失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず",
-        "一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行",
+        "失敗処理から`atk mq reject`を呼び出さず",
+        "元項目がactiveな場合は、由来にかかわらず`hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し",
         "項目別結果をファイル名昇順で各1回反映",
         "atk mq show <filename> --target-repo=<repo>",
         "意図した保存後状態を確認できた場合は同じ結果を再実行せず",
@@ -1812,20 +1814,25 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
     save_at = sender.index("失敗TBDを`agent-toolkit:add-feedback`で1件保存")
     completion_at = sender.index("失敗TBDの保存コマンドの完了表示にエラーが無いことを確認", save_at)
     warning_at = sender.index("警告が出た場合は`atk mq show", completion_at)
-    source_branch_at = sender.index("`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は", warning_at)
-    human_branch_at = sender.index("それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い", source_branch_at)
-    terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", warning_at)
-    assert save_at < completion_at < warning_at < source_branch_at < terminal_at < human_branch_at
+    dependency_at = sender.index(
+        "失敗TBDを保存した後は、由来にかかわらず元のフィードバックへ失敗TBDを依存させて`blocked`を確認する", warning_at
+    )
+    terminal_at = sender.index("失敗処理から`atk mq reject`を呼び出さず", dependency_at)
+    assert save_at < completion_at < warning_at < dependency_at < terminal_at
+    assert "atk mq reject <filename> --note=<失敗TBD filename>" not in sender
     reflect_save_at = sender.index(
         "元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存", terminal_at
     )
     reflect_completion_at = sender.index("保存コマンドの完了表示にエラーが無いことを確認", reflect_save_at)
     reflect_warning_at = sender.index("警告が出た場合は`atk mq show", reflect_completion_at)
-    reflect_terminal_at = sender.index("atk mq reject <filename> --note=<失敗TBD filename>", reflect_warning_at)
+    reflect_terminal_at = sender.index("失敗処理から`atk mq reject`を呼び出さない", reflect_warning_at)
     assert terminal_at < reflect_save_at < reflect_completion_at < reflect_warning_at < reflect_terminal_at
+    assert "atk mq reject <filename> --note=<失敗TBD filename>" not in process
     for phrase in ("失敗TBD", "atk mq reject", "後続項目", "全件走査後", "バッチを失敗"):
         assert phrase in process
     assert "hold-with-tbd-inject.md" in process
+    assert "TBD保存、全source共通の保留及び再開" in process
+    assert "由来別の終端及び再開" not in process
     for phrase in (
         "## 技術的失敗",
         "元項目をrejectせず",
@@ -1857,47 +1864,24 @@ def test_saved_confirmation_tbd_is_excluded_from_final_result_failure_handling()
             assert phrase in result_section
 
 
-def test_failed_tbd_reprocessing_splits_source_specific_restart() -> None:
-    """失敗TBD回答後の由来別再開経路と終端順序を固定する。"""
+def test_failed_tbd_reprocessing_uses_one_active_item_restart() -> None:
+    """失敗TBD回答後は由来を問わずactiveな元項目を通常再開する。"""
     hold = _HOLD_WITH_TBD_INJECT.read_text(encoding="utf-8")
-    design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
     for phrase in (
-        "表示用見出し",
-        "YAML frontmatter",
-        "CLI付加の末尾改行",
-        "最後の`## 処理結果`節",
-        "`採否: rejected`",
-        "ISO形式の`処理日時`",
-        "対応する失敗TBDのファイル名と一致する`メモ`だけ",
-        "節後がEOF",
-        "元本文中の同名見出し",
-        "depends_on=<失敗TBD filename>",
-        "新規のフィードバックの本文と依存を再取得して照合した後に失敗TBDを採用終端",
-        "失敗TBDをactiveのまま保持",
-        "それ以外の項目の失敗TBDへ回答された場合は、回答済みTBDを先に採用終端する",
+        "失敗TBDへ回答された場合は、投入元の由来にかかわらず回答済みTBDを先に採用終端する",
+        "依存が解除されたactiveの元のフィードバック",
         "停止済みの`feedbacks-planner`系統を再開・再利用せず",
         "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で再開する",
         "元のフィードバックの採否候補へ反映する",
     ):
         assert phrase in hold
-    session_review_at = hold.index(
-        "`decision-format.md`「採否結果」の値集合でエージェント由来と確認できる項目の失敗TBDへ回答された場合は"
-    )
-    save_at = hold.index("depends_on=<失敗TBD filename>", session_review_at)
-    verify_at = hold.index("新規のフィードバックの本文と依存を再取得して照合", save_at)
-    terminal_at = hold.index("失敗TBDを採用終端", verify_at)
-    human_source_at = hold.index("それ以外の項目の失敗TBDへ回答された場合は", terminal_at)
-    human_terminal_at = hold.index("回答済みTBDを先に採用終端する", human_source_at)
-    human_resume_at = hold.index("停止済みの`feedbacks-planner`系統を再開・再利用せず", human_terminal_at)
-    assert session_review_at < save_at < verify_at < terminal_at < human_source_at < human_terminal_at < human_resume_at
-    for phrase in (
-        "`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は、却下済みの元本文と回答を失敗TBDへ依存する新規のフィードバックへ反映し",
-        "本文と依存を照合してから失敗TBDを採用終端する",
-        "それ以外の項目は、元のフィードバックを失敗TBDへ依存させたままinboxで保留する",
-        "次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する",
-    ):
-        assert phrase in design
+    terminal_at = hold.index("回答済みTBDを先に採用終端する")
+    refresh_at = hold.index("終端後にactive一覧と着手可否を再取得する", terminal_at)
+    resume_at = hold.index("停止済みの`feedbacks-planner`系統を再開・再利用せず", refresh_at)
+    assert terminal_at < refresh_at < resume_at
+    for forbidden in ("却下済みの元のフィードバック", "新規のフィードバックとして保存", "それ以外の項目"):
+        assert forbidden not in hold
 
 
 def test_feedback_failure_contract_keeps_mq_commit_public_behavior() -> None:
@@ -3477,9 +3461,7 @@ def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dep
     reception_generic_failure = reception.index("それ以外の`feedbacks-planner`の失敗", reception_saved_failure)
     assert reception_saved_failure < reception_generic_failure
     hold_saved_failure = hold.index("保存済みの不採用確認用TBDを受領した再開での失敗")
-    hold_generic_failure = hold.index(
-        "`decision-format.md`「採否結果」の値集合でエージェント由来と確認できない項目で", hold_saved_failure
-    )
+    hold_generic_failure = hold.index("投入元の由来にかかわらず元項目をrejectせずactiveのまま保持", hold_saved_failure)
     assert hold_saved_failure < hold_generic_failure
 
 
@@ -3812,25 +3794,48 @@ def test_user_facing_body_paths_invoke_writing_standards() -> None:
     assert "フィードバック・TBDの本文起草時" in metadata["description"]
 
 
-def test_feedback_workflow_rejects_duplicate_inbox_before_planning() -> None:
-    """計画着手前の即時終端とprocessing非更新を明示する。"""
+def test_feedback_workflow_starts_planning_before_research_and_recovers() -> None:
+    """ファイル名入力をplanningへ移し、最古の変換と残項目の復旧を一意にする。"""
     add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     coordination_preflight = _ADD_FEEDBACK.parent / "references" / "coordination-preflight.md"
 
     assert not coordination_preflight.exists()
     assert "coordination-preflight" not in add_feedback
     assert "coordination-preflight" not in plan_and_add
-    reject_at = plan_and_add.index("atk mq reject <filename> --if-inbox")
-    for later_phase in ("追加調査", "計画起草", "レビュー"):
-        assert reject_at < plan_and_add.index(later_phase, reject_at)
+    assert "通常型フィードバックファイル名を1件以上明示した場合は" in plan_and_add
+    assert "混在入力又は存在しない正規ファイル名は自然言語要件へ読み替えず入力エラー" in plan_and_add
+    assert "`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行" in plan_and_add
+    assert (
+        "`atk mq edit <oldest> <message> --plan-file=<main-plan-absolute-path> --depends-on=<filename>... --target-repo=<repo>`"
+        in plan_and_add
+    )
+    return_command = "`atk mq return-to-inbox <filename>... --state=planning`"
+    assert return_command in plan_and_add
+    assert return_command in reception
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    parsed = parser.parse_args(
+        ["mq", "return-to-inbox", "20260827-000000-001.md", "20260827-000000-002.md", "--state=planning"]
+    )
+    assert parsed.filenames == ["20260827-000000-001.md", "20260827-000000-002.md"]
+    assert parsed.state == "planning"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["mq", "return-to-inbox", "--state=planning"])
+    assert "`atk mq rm <filename>... --force --note=<統合先ファイル名と計画パス>`" in plan_and_add
+    assert "残りが0件の単一入力ではrmを呼ばず成功終端する" in plan_and_add
+    assert "同じplanning集合は再開できる" in plan_and_add
+    assert "計画時の旧worktreeパス" in plan_and_add
+    assert "atk mq reject" not in plan_and_add
     assert "回答済みTBD" not in plan_and_add
     assert "新しい計画型のフィードバックを追加" in plan_and_add
     assert "吸収元のファイル名" in plan_and_add
-    assert "processing項目を変更しない" in plan_and_add
+    assert "統合元のファイル名" in add_feedback
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in process
     assert "状態競合で拒否した場合は、active一覧と保存本文を再取得" in process
+    assert "planning項目の計画作成、再開及び失敗復旧" in process
+    assert "planning項目はready集合とprocess-loopの着手対象へ含めず" in reception
     assert "## フィードバック投入" not in process
     for removed_command in (
         "reserve-inbox",

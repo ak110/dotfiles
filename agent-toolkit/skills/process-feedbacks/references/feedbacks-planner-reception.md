@@ -11,7 +11,7 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 `feedbacks-planner`は採用要求を1つ以上の統合計画へまとめる。
 素材ID、要求ID、素材参照、要求別採否は内部採否記録として識別可能に保ち、計画ではフィードバックファイル名、由来、採否、採用範囲、実施しない範囲、理由、完了条件、実装順序へ投影する。
 採用要求が1件以上ある項目は、不採用要求も内部採否記録へ残し、計画の1行へ`採用`又は`部分採用`として統合する。
-`feedbacks-planner`は計画スレッドの起動前に全要求が不採用の項目をreject対象、未確定要求を含む項目をhold対象と判定し、計画対象集合から除外する。判定によってキュー状態を変更しない。
+`feedbacks-planner`は計画スレッドの起動前に全要求が不採用の項目を、process-loop内のreject対象として判定し、未確定要求を含む項目をhold対象として計画対象集合から除外する。判定によってキュー状態を変更しない。
 バッチ全項目について、原文正本ID、投入元、人間由来の指示・方針の優先度、調査根拠、欠陥原因、採否、項目固有の採否理由を記録する。
 判定で除外されなかった計画対象集合を1つ以上の統合計画へ渡し、各計画へ割り当てたフィードバックファイルを`## 実施内容`へ原則1ファイル1行ずつ記録する。
 各行へ採否、採用範囲、実施しない範囲、理由を統合し、全計画の担当ファイル集合が合わせて計画対象集合を過不足なく被覆する。
@@ -23,6 +23,10 @@ blocked項目、未回答TBD、一覧取得後に追加された項目は含め�
 状態競合で拒否された場合はactive一覧と保存本文を再取得し、着手可否の判定から再開する。
 既存`processing`項目の別セッション再開では履歴を探索せず、`start-processing`を再実行しない。
 既存`processing`項目を未完了の`feedbacks-planner`工程の再開起点にしない。
+
+計画作成のファイル名モードでは、同一対象リポジトリの通常型inbox項目を計画調査より前に`atk mq start-planning <filename>... --target-repo=<repo>`で一括移動する。入力はファイル名昇順で扱う。移動前に全対象の存在、`target_repo`及び通常型であることを検証し、`plan_file`が無いことを確認する。全対象がplanningにある再開を初期再開とする。最古だけが期待する計画型metadataを持つprocessingにあり、残りがplanning若しくは統合済みとして消えている状態を部分完了再開とする。これらだけを受理する。planning項目はready集合とprocess-loopの着手対象へ含めず、別の`start-processing`を実行しない。
+
+計画レビュー後は最古の項目へ`atk mq edit <oldest> <message> --plan-file=<main-plan-absolute-path> --depends-on=<filename>... --target-repo=<repo>`を1回実行する。本文、`source: plan`、計画パス、計画のベースcommit、外部依存を同じ原子的編集で保存する。変換前に中断した場合は全対象へ`atk mq return-to-inbox <filename>... --state=planning`を実行する。変換後は最古を戻さない。保存本文、Git差分、upstream包含、残りのplanning件数を再取得し、滞留commitのpush又は残りのrmだけを前方回復する。残りが0件ならrmを呼ばず、1件以上なら残りだけを`atk mq rm --force`で除去する。
 
 移動開始後にI/O、commit又はpushが失敗した場合は、次のコマンドで集合のprocessing配置と保存本文を確認する。
 `atk mq list --status=active --target-repo=<repo> --skip-pull`を実行し、保存本文の再取得は
@@ -149,6 +153,8 @@ hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキ
 回答又はTBDの保存・依存設定を確認できない場合は`atk mq reject`を実行せず、元項目をactiveのまま保持して失敗を返す。
 同じrejectメモを複数項目へ用いる場合も、各項目で同じ理由が成立する根拠を採否記録へ対応付ける。
 
+`atk mq reject`は、process-loop内で要求の全てを不採用と確定した項目だけに用いる。採用済み内容を別項目へ統合した元項目は、統合先をnoteへ記録して`atk mq rm`で除去する。別リポジトリへ移管して投入先を検収した元項目は、移管先をnoteへ記録して`atk mq rm`で除去する。技術的な失敗、入力不足又は外部条件待ちは不採用へ変換しない。TBD依存を追加してactive状態に保つ。
+
 条件分岐が残る場合は、計画本文を編集せず同じ`feedbacks-planner`系統へ差し戻す。
 計画全文を`feedbacks-planner`の完了報告へ要求しない。
 終端工程の一覧、対象及び認可根拠となる要求を照合し、要求にない操作は差し戻す。
@@ -168,12 +174,11 @@ hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキ
 それ以外の`feedbacks-planner`の失敗又は解消不能な`needs_escalation`では、対象の元のファイル名ごとに失敗TBDを`agent-toolkit:add-feedback`で1件保存する。
 失敗TBDには失敗した事象、期待値、実際値、発生条件を含める。
 直接的原因、再開に必要な情報、元のファイル名も含める。
-同一バッチかつ同一`target_repo`で、この6要素（事象、期待値、実際値、発生条件、直接的原因、再開に必要な情報）が全て一致する失敗は、対象の元ファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。`decision-format.md`「採否結果」の値集合でエージェント由来と判定される元項目は同じTBD名を記録してrejectで終端し、それ以外の元項目は全て同じTBDへ依存させて`blocked`を確認する。6要素又は`target_repo`が異なる失敗を同じTBDへまとめない。
+同一バッチかつ同一`target_repo`で、この6要素（事象、期待値、実際値、発生条件、直接的原因、再開に必要な情報）が全て一致する失敗は、対象の元ファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。失敗した元項目は投入元の由来にかかわらず全て同じTBDへ依存させて`blocked`を確認する。技術的失敗を不採用へ変換せず、`atk mq reject`はprocess-loop内で要求の全てを不採用と確定した終端に限る。6要素又は`target_repo`が異なる失敗を同じTBDへまとめない。
 失敗TBDの保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`で元のフィードバックを終端する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従い、失敗TBDを依存へ追加して`blocked`まで確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
-失敗TBDを保存できない場合と欠落を修復できない場合はrejectを実行せず、元のフィードバックをactiveのまま保持して失敗として返す。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
+失敗TBDを保存した後は、由来にかかわらず元のフィードバックへ失敗TBDを依存させて`blocked`を確認する。元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する。
+失敗TBDを保存できない場合と欠落を修復できない場合は、元のフィードバックをactiveのまま保持して失敗として返す。失敗処理から`atk mq reject`を呼び出さず、保存済み失敗TBDの有無だけを理由に不採用へ変換しない。
 それ以外では新しいTBDを作成せず、Git操作も`feedbacks-planner`の再開も行わず失敗として返す。
 
 計画レビューの収束不能判定により分離した単位の`needs_escalation`は、失敗TBDと`atk mq reject`の対象としない。
@@ -190,9 +195,8 @@ hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキ
 元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存し、
 保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目は、確認後に`atk mq reject <filename> --note=<失敗TBD filename>`を実行する。それ以外の項目は、`hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。不採用確認を経ずに元項目をrejectしない。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目でrejectだけが失敗した場合は、一意な失敗TBDとactiveな元のフィードバックを確認できるときだけrejectを1回再実行する。
-再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
+元項目がactiveな場合は、由来にかかわらず`hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。不採用確認を経ずに元項目をrejectせず、失敗処理から`atk mq reject`を呼び出さない。
+再取得失敗、想定外状態又は失敗TBDの保存失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目をファイル名昇順で各1回処理する。
 結果反映エラーが先頭、中間、末尾のいずれで発生しても、全ファイル名を各1回処理する。
 全ファイル名の走査後に警告・エラーが1件でもあればバッチを失敗として返す。
@@ -203,7 +207,7 @@ Git操作、3分類及び元項目の`feedbacks-planner`再開は行わない。
 保存結果の`plan_file`を対応表が当該ファイル名へ割り当てた実在する計画パスへ照合する。
 別リポジトリ項目は終端結果として扱わず、`../../add-feedback/references/cross-repository-submission.md`を正本として登録・照合する。
 登録・照合の結果から移管先ファイル名と本文を照合できた場合だけ、
-元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする。登録又は照合に失敗した場合は元項目を保持する。
+移管先リポジトリとファイル名付きの項目固有メモを付けて`atk mq rm <filename> --force --note=<移管先ファイル名>`で元項目を除去する。登録又は照合に失敗した場合は元項目を保持する。
 ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡す。
 `hold-with-tbd-inject.md`の`保留と再開`に従い、既存の有効依存とTBDのファイル名を登録してから
 通常の`atk mq return-to-inbox`でinboxへ戻し、active一覧で`blocked`を確認する。
