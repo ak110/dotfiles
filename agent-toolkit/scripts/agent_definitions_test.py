@@ -54,6 +54,7 @@ _WRITING_STANDARDS = _AGENTS_DIR.parent / "skills" / "writing-standards" / "SKIL
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
+_CLAUDE_CODE_RULE = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _SESSION_REVIEW_CRITERIA = _SESSION_REVIEW.parent / "references" / "generation-criteria-detail.md"
 _SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
@@ -3044,17 +3045,41 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
         "`ListAgents`と`TaskStop`",
         "委譲先自身のtranscript",
         "未完了の工程だけを巻き取る",
+        "直接の呼出元ではない主体",
+        "`ListAgents`が不在又は呼び出しを拒否された場合",
+        "`atk watch`",
+        "queued",
+        "中継不能時",
+        "`claude-code-runtime.md`「### 完了通知と中継の実行順」",
     ):
         assert phrase in waiting
     for phrase in (
-        "孫の完了通知は最上位セッションへ配送",
-        "`subagent_type`は種別であり宛先識別子ではない",
+        "実行時能力と通信scope",
+        "| 同一セッション内の親子委譲 |",
+        "| Agent Teams |",
+        "| 独立セッション間通信 |",
+        "Claude Platform on AWS",
+        "未対応providerでは依存せず、代替機構を追加しない",
+        "`SendMessage`と`ListAgents`は、環境変数、provider又はagent定義の許可だけで提供を推定しない",
+        "`senderTaskId`",
+        "`from`、`origin.from`、`name`及び`subagent_type`を宛先として解決しない",
+        "起動結果が返すagent ID",
+        "`SendMessage`が`success: true`又はqueued",
+        "完了通知又は戻り値を対応付け",
+        "`needs_escalation`として呼出元へ返す",
         "No transcript found for agent ID",
         "`CronDelete`",
         "`claude --version`",
         "単独で完了判定に用いず",
     ):
         assert phrase in runtime
+    for forbidden in (
+        "孫の完了通知は最上位セッションへ配送",
+        "最上位主体は完了報告を逐語で",
+        "完了通知が最上位セッションへ配送される場合でも",
+        'to: "main"',
+    ):
+        assert forbidden not in runtime
     assert "上限付きの前景待機" not in waiting
     assert "上限付きの前景待機" not in runtime
     assert "do sleep" not in waiting
@@ -4090,11 +4115,30 @@ def test_delegation_runtime_keeps_normal_completion_separate_from_tree_withdrawa
     """委譲ツリーの取下げ中に子の完了経路を再開せず、通常経路を保持する。"""
     runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
 
-    assert "委譲元を先に停止し、続けて子孫を停止したうえで`ListAgents`" in runtime
+    assert "未知の子孫が存在しないことを確定できない場合は停止と書込所有権移行を開始せず" in runtime
+    stop_target = "残る`TaskStop`対象を停止する"
+    post_stop_confirmation = "停止結果と停止後に受領した完了通知又は成果物観測を対応付け"
+    ownership_transfer = "全対象の終端を確認した後に限り実装担当を交代する"
+    assert runtime.index(stop_target) < runtime.index(post_stop_confirmation) < runtime.index(ownership_transfer)
+    assert "停止後の終端を確認できない場合は書込所有権を移さず" in runtime
+    assert "取下げを開始せず、書込所有権を移さず" in runtime
+    assert "保持した全ての子孫ID" not in runtime
+    assert "閉じた子孫台帳" not in runtime
     assert "取下げの途中で子孫の完了通知を受領しても" in runtime
     assert "通常経路の完了通知処理へ戻らない" in runtime
-    assert "`plan-impl-executor`と`feedbacks-planner`は、許可された`ListAgents`" in runtime
-    assert "通常経路では既存どおり、完了通知を受領してから完了報告を検収する" in runtime
+    assert "実行時に`ListAgents`が存在し呼び出しに成功する場合だけ" in runtime
+    assert "通常完了報告はツール戻り値で1回だけ返し" in runtime
+    assert "完了通知の受領主体はproviderと構成へ依存するため" in runtime
+    assert "最上位と直接の親のいずれも標準配送先として固定しない" in runtime
+    assert "許可された`ListAgents`" not in runtime
+
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    assert "未知の子孫が存在しないことを確定できない場合は停止と書込所有権移行を開始せず" in design
+    assert design.index(stop_target) < design.index(post_stop_confirmation)
+    assert design.index(post_stop_confirmation) < design.index("全対象の終端を確認した後に限り書込所有権を移す")
+    assert "停止後の終端を確認できない場合は書込所有権を移さず" in design
+    assert "保持した全ての子孫ID" not in design
+    assert "閉じた子孫台帳" not in design
 
 
 def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
@@ -4524,6 +4568,21 @@ def test_return_path_contract_covers_definitions_that_can_send_messages() -> Non
     assert (
         "当該タスク文書又はagent定義の側に、完了報告をツール戻り値で1回返し`SendMessage`で能動送付しない契約を含める" in runtime
     )
+    assert "到達可能な返信識別子を保持する場合に限り、想定外事象の即時報告を`SendMessage`で送る" in runtime
+
+
+def test_claude_code_rule_limits_main_notification() -> None:
+    """Claude Code固有のmain通知を最上位の即時通知へ限定する。"""
+    rule = _CLAUDE_CODE_RULE.read_text(encoding="utf-8")
+
+    assert '`SendMessage`の`to: "main"`はClaude Codeの最上位セッションへの通知だけに用いる' in rule
+    for forbidden_use in (
+        "直接の呼出元への返信",
+        "通常の完了報告",
+        "独立セッション間通信",
+    ):
+        assert forbidden_use in rule
+    assert "完了報告の返却には用いない" in rule
 
 
 def test_feedback_explore_task_confirms_recorded_triggers_in_project_documents() -> None:
