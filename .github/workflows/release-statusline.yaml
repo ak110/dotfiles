@@ -1,146 +1,111 @@
 name: Release statusLine
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - rust/claude-statusline/**
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: バージョン番号の更新タイプ
-        required: true
-        type: choice
-        options:
-          - PATCH
-          - MINOR
-          - MAJOR
-        default: PATCH
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
 
 permissions:
-  contents: write
-  actions: read
+  contents: read
 
 concurrency:
   group: release-statusline
   cancel-in-progress: false
 
 jobs:
-  bump:
+  gate:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      eligible: ${{ steps.validate.outputs.eligible }}
+      head_sha: ${{ steps.validate.outputs.head_sha }}
+    steps:
+      - name: upstream CIの入力を検証
+        id: validate
+        env:
+          EVENT: ${{ github.event.workflow_run.event }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          eligible=false
+          if [ "$EVENT" = "push" ] &&
+            [ "$CONCLUSION" = "success" ] &&
+            [ "$HEAD_BRANCH" = "master" ] &&
+            [ "$HEAD_REPOSITORY" = "$REPOSITORY" ]; then
+            eligible=true
+          fi
+
+          {
+            echo "eligible=$eligible"
+            echo "head_sha=$HEAD_SHA"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$eligible" != "true" ]; then
+            echo "対象repositoryのmasterへの成功したpush以外のため、リリースを省略する。"
+          fi
+
+  prepare:
+    needs: gate
+    if: needs.gate.outputs.eligible == 'true'
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.final.outputs.version }}
-      skip_self_trigger: ${{ steps.self_trigger.outputs.skip }}
+      changed: ${{ steps.inspect.outputs.changed }}
+      version: ${{ steps.inspect.outputs.version }}
+      tag: ${{ steps.inspect.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.gate.outputs.head_sha }}
           fetch-depth: 0
-      - name: 既存リリースタグの確認
-        id: existing
-        run: |
-          set -euo pipefail
-          tag=$(git tag --points-at=HEAD | grep -E '^statusline-v[0-9]' | head -n1 || true)
-          if [ -n "$tag" ]; then
-            echo "version=${tag#statusline-v}" >> "$GITHUB_OUTPUT"
-            echo "rerun=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "rerun=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: 自己トリガーの判定
-        id: self_trigger
-        run: |
-          set -euo pipefail
-          # `push`起動かつHEADが既にリリース済みタグの場合、
-          # 本ワークフロー自身が作成した「コミットとタグ付け」ステップのpushによる
-          # 自己再トリガーとみなし、以降のCI待機・build・releaseを省略する。
-          # `workflow_dispatch`での意図的な再実行（build失敗後の再ビルド等）は対象外とする。
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ steps.existing.outputs.rerun }}" = "true" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: CI通過を確認
-        if: steps.self_trigger.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          max_attempts=30
-          interval_sec=20
-          for i in $(seq 1 "$max_attempts"); do
-            # `--workflow`にワークフロー名（ファイル名ではない）を指定し、本ワークフロー
-            # （release-statusline.yaml）自身の実行中チェックを誤って対象に含めないようにする。
-            # ファイル名指定（例: `ci.yaml`）は実際のworkflowNameと一致せず対象runが常に空になるため使わない。
-            run_json=$(gh run list --workflow="CI" --commit="${{ github.sha }}" \
-              --json status,conclusion --limit 1)
-            state=$(echo "$run_json" | jq -r '.[0].status // "missing"')
-            conclusion=$(echo "$run_json" | jq -r '.[0].conclusion // "null"')
-            if [ "$state" = "completed" ] && [ "$conclusion" = "success" ]; then
-              echo "CI passed."
-              exit 0
-            fi
-            if [ "$state" = "completed" ]; then
-              echo "CI failed on this commit (conclusion: $conclusion)." >&2
-              exit 1
-            fi
-            echo "CI not finished (status: $state), polling again in ${interval_sec}s (attempt $i/$max_attempts)"
-            sleep "$interval_sec"
-          done
-          echo "Timed out waiting for CI to complete." >&2
-          exit 1
-      - name: gitユーザー情報を設定
-        if: steps.existing.outputs.rerun != 'true'
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-      - name: バージョン番号を更新
-        if: steps.existing.outputs.rerun != 'true'
-        id: bump
-        run: |
-          set -euo pipefail
-          current=$(grep -m1 -E '^version = "[0-9]+\.[0-9]+\.[0-9]+"' rust/claude-statusline/Cargo.toml \
-            | sed -E 's/version = "([0-9]+)\.([0-9]+)\.([0-9]+)"/\1 \2 \3/')
-          read -r major minor patch <<< "$current"
-          bump_type="${{ github.event_name == 'workflow_dispatch' && inputs.bump || 'PATCH' }}"
-          case "$bump_type" in
-            PATCH) patch=$((patch + 1)) ;;
-            MINOR) minor=$((minor + 1)); patch=0 ;;
-            MAJOR) major=$((major + 1)); minor=0; patch=0 ;;
-          esac
-          new_version="$major.$minor.$patch"
-          sed -i -E "0,/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/s//version = \"$new_version\"/" rust/claude-statusline/Cargo.toml
-          echo "version=$new_version" >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        if: steps.existing.outputs.rerun != 'true'
-      - name: Cargo.lockを更新
-        if: steps.existing.outputs.rerun != 'true'
-        working-directory: rust/claude-statusline
-        run: cargo generate-lockfile
-      - name: コミットとタグ付け
-        if: steps.existing.outputs.rerun != 'true'
+      - name: statusline差分と版数を検査
+        id: inspect
+        env:
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
         run: |
           set -euo pipefail
-          version="${{ steps.bump.outputs.version }}"
-          git add rust/claude-statusline/Cargo.toml rust/claude-statusline/Cargo.lock
-          git commit -m "release: claude-statusline v$version をリリースする"
-          git tag "statusline-v$version"
-          git push origin HEAD --tags
-      - name: 最終バージョンを確定
-        id: final
-        run: |
-          set -euo pipefail
-          if [ "${{ steps.existing.outputs.rerun }}" = "true" ]; then
-            echo "version=${{ steps.existing.outputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ steps.bump.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+          parent_sha=$(git rev-parse "$HEAD_SHA^1")
+          if git diff --quiet "$parent_sha" "$HEAD_SHA" -- rust/claude-statusline/; then
+            {
+              echo "changed=false"
+              echo "version="
+              echo "tag="
+            } >> "$GITHUB_OUTPUT"
+            echo "statuslineの変更がないため、リリースを省略する。"
+            exit 0
           fi
 
+          metadata=$(mise exec -- cargo metadata \
+            --locked \
+            --no-deps \
+            --format-version=1 \
+            --manifest-path rust/claude-statusline/Cargo.toml)
+          version=$(jq -er '[.packages[] | select(.name == "claude-statusline") | .version] | if length == 1 then .[0] else error("claude-statuslineのpackage版数を一意に取得できない") end' <<< "$metadata")
+          tag="statusline-v$version"
+
+          tagged_sha=$(git rev-parse --verify --quiet "$tag^{}" || true)
+          if [ -n "$tagged_sha" ] && [ "$tagged_sha" != "$HEAD_SHA" ]; then
+            echo "既存タグが別のcommitを指している: $tag" >&2
+            exit 1
+          fi
+
+          {
+            echo "changed=true"
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
   build:
-    needs: bump
-    if: needs.bump.outputs.skip_self_trigger != 'true'
+    needs: [gate, prepare]
+    if: needs.gate.outputs.eligible == 'true' && needs.prepare.outputs.changed == 'true'
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -148,17 +113,18 @@ jobs:
           - os: windows-latest
             asset: claude-statusline-x86_64-pc-windows-msvc.exe
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: statusline-v${{ needs.bump.outputs.version }}
+          ref: ${{ needs.gate.outputs.head_sha }}
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust/claude-statusline
       - name: ビルド
-        working-directory: rust/claude-statusline
-        run: cargo build --release
+        run: mise exec -- cargo build --release --locked --manifest-path rust/claude-statusline/Cargo.toml
       - name: バイナリを配置 (POSIX)
         if: runner.os != 'Windows'
         run: cp rust/claude-statusline/target/release/claude-statusline "${{ matrix.asset }}"
@@ -172,25 +138,53 @@ jobs:
           path: ${{ matrix.asset }}
 
   release:
-    needs: [bump, build]
-    if: needs.bump.outputs.skip_self_trigger != 'true'
+    needs: [gate, prepare, build]
+    if: needs.gate.outputs.eligible == 'true' && needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+      TAG: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: statusline-v${{ needs.bump.outputs.version }}
+          ref: ${{ needs.gate.outputs.head_sha }}
+          fetch-depth: 0
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: assets
           merge-multiple: true
-      - name: GitHub Releaseを作成
+      - name: タグとGitHub Releaseを公開
         run: |
           set -euo pipefail
-          tag="statusline-v${{ needs.bump.outputs.version }}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists, skipping"
+
+          tag="$TAG"
+          git fetch --tags origin
+          tagged_sha=$(git rev-parse --verify --quiet "$tag^{}" || true)
+          if [ -n "$tagged_sha" ]; then
+            if [ "$tagged_sha" != "$HEAD_SHA" ]; then
+              echo "既存タグが別のcommitを指している: $tag" >&2
+              exit 1
+            fi
           else
-            gh release create "$tag" assets/* --title="$tag" --notes="claude-statusline v${{ needs.bump.outputs.version }}"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$tag" "$HEAD_SHA"
+            git push origin "refs/tags/$tag"
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              assets/claude-statusline-x86_64-unknown-linux-gnu \
+              assets/claude-statusline-x86_64-pc-windows-msvc.exe \
+              --clobber
+          else
+            gh release create "$tag" \
+              assets/claude-statusline-x86_64-unknown-linux-gnu \
+              assets/claude-statusline-x86_64-pc-windows-msvc.exe \
+              --title="$tag" \
+              --notes="claude-statusline v${tag#statusline-v}をリリースする"
           fi
