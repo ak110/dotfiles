@@ -12,6 +12,8 @@ import sys
 
 from _atk_mq_common import (
     MQ_ACTIVE_STATES,
+    MQ_FEEDBACK_ACTIVE_STATES,
+    MQ_STATE_PLANNING,
     MQ_STATES,
     MQ_TYPE_TBD,
     ReadinessResult,
@@ -39,7 +41,7 @@ type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 def _resolve_states(status: str) -> tuple[str, ...]:
     """状態フィルターを走査対象へ変換する。"""
     if status == "active":
-        return MQ_ACTIVE_STATES
+        return MQ_FEEDBACK_ACTIVE_STATES
     if status == "all":
         return MQ_STATES
     return (status,)
@@ -53,6 +55,21 @@ def _answered_matches(entry_type: str | None, text: str, answered_filter: str) -
         return False
     answered = _is_tbd_answered(text)
     return answered if answered_filter == "yes" else not answered
+
+
+def _is_selected_state(entry: QueueEntryDisplay, status: str) -> bool:
+    """状態フィルターと種別の組み合わせで表示可能か判定する。"""
+    _path, _target_repo, _text, state, entry_type = entry
+    return not (status == "active" and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD)
+
+
+def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> str:
+    """一覧表示用の状態別着手可否を返す。"""
+    if state == MQ_STATE_PLANNING:
+        return "blocked"
+    if state not in MQ_ACTIVE_STATES:
+        return "complete"
+    return "ready" if filename in readiness.ready else "blocked"
 
 
 def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
@@ -104,9 +121,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
             parsed = parse_frontmatter(text)
             plan_file = parsed[0].get("plan_file") if parsed is not None else None
             item_kind = "frontmatter-broken" if parsed is None else "plan" if isinstance(plan_file, str) else "normal"
-            state_readiness = (
-                "complete" if state not in MQ_ACTIVE_STATES else "ready" if path.name in readiness.ready else "blocked"
-            )
+            state_readiness = _state_readiness(state, path.name, readiness)
             label = f"{state}/{item_kind}/{state_readiness}"
             answered = False
             if entry_type == MQ_TYPE_TBD:
@@ -141,9 +156,7 @@ def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessR
     """選択済みエントリを端末幅に依存しないJSON Linesで出力する。"""
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
         actual_type = entry_type or "feedback"
-        state_readiness = (
-            "complete" if state not in MQ_ACTIVE_STATES else "ready" if path.name in readiness.ready else "blocked"
-        )
+        state_readiness = _state_readiness(state, path.name, readiness)
         answered = actual_type == MQ_TYPE_TBD and _is_tbd_answered(text)
         reason = (
             _blocked_reason(readiness, path.name)
@@ -169,9 +182,9 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: active）。
-    `active`はフィードバック側`inbox`・`processing`と`tbd`側`answered`を出力する。
-    フィードバック側は`inbox`・`processing`・`adopted`・`rejected`・`all`を解釈する。
-    `tbd`側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`adopted`・`rejected`・`all`は
+    `active`はフィードバック側`inbox`・`planning`・`processing`と`tbd`側`answered`を出力する。
+    フィードバック側は`inbox`・`planning`・`processing`・`adopted`・`rejected`・`all`を解釈する。
+    `tbd`側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`planning`・`processing`・`adopted`・`rejected`・`all`は
     `tbd`側に作用せず、`tbd` inboxの全件を返す）。
     `--source`指定時はフィードバック・`tbd`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
@@ -189,6 +202,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     selected: list[QueueEntryDisplay] = []
     for entry in _iter_entries(private_notes, _resolve_states(args.status), filter_repo, args.type):
+        if not _is_selected_state(entry, args.status):
+            continue
         _, _, text, _, entry_type = entry
         if not _answered_matches(entry_type, text, args.answered):
             continue

@@ -15,6 +15,7 @@ from _atk_mq_common import (
     _commit_and_push,
     _parse_type,
     _pull,
+    _push_pending_commits,
     _repo_lock,
     _require_type,
     _validate_filename,
@@ -209,6 +210,7 @@ def edit_entry(
     分類情報であり、編集で書き換わると一覧・集計から静かに脱落するため）。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _push_pending_commits(private_notes)
         _pull(private_notes)
         path = _validate_filename(filename, directory)
         if not path.is_file():

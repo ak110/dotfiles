@@ -761,6 +761,7 @@ def test_parse_plan_materials_returns_structured_ids_and_legacy_flag() -> None:
         frozenset({"R-P-001-001", "R-P-001-002", "R-P-002-001"}),
         False,
         frozenset({"R-P-001-001", "R-P-002-001"}),
+        feedback_queue_ids=frozenset({"20260817-223603-001.md"}),
     )
 
     legacy_materials, legacy_errors = _plan_format.parse_plan_materials(_LEGACY_CONTENT)
@@ -1009,6 +1010,17 @@ def test_structured_material_contract_rejects_duplicate_material_id() -> None:
     )
     _materials, errors = _plan_format.parse_plan_materials(content)
     assert any("素材IDが重複している" in error for error in errors), errors
+
+
+def test_structured_material_contract_rejects_duplicate_feedback_queue_id() -> None:
+    """異なる素材IDから同じフィードバックを重複参照できない。"""
+    content = _VALID_CONTENT.replace(
+        "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+        "| P-002 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
+        1,
+    )
+    _materials, errors = _plan_format.parse_plan_materials(content)
+    assert any("フィードバック素材のキューIDが重複している" in error for error in errors), errors
 
 
 def test_structured_material_contract_rejects_requirement_order_and_gap() -> None:

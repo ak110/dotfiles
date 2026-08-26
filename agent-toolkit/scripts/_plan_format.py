@@ -422,6 +422,7 @@ class PlanMaterials:
     terminal_only_requirement_ids: frozenset[str] = frozenset()
     is_human_readable: bool = False
     material_paths: frozenset[str] = frozenset()
+    feedback_queue_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -888,6 +889,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
     if len(tables) != 2:
         errors.append(f"提示素材には素材表と要求表だけを置く: 実際={len(tables)}件")
     identifiers: set[str] = set()
+    feedback_queue_ids: set[str] = set()
     if not material_tables:
         return PlanMaterials(frozenset(), frozenset(), False), errors
 
@@ -899,6 +901,10 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
             errors.append(f"提示素材の素材表に空cellまたは列数不一致の行がある: {list(row)}")
             continue
         errors.extend(_validate_material_row(row, identifiers))
+        if row[1] == "フィードバック" and PLAN_QUEUE_ID_PATTERN.fullmatch(row[2]):
+            if row[2] in feedback_queue_ids:
+                errors.append(f"フィードバック素材のキューIDが重複している: {row[2]}")
+            feedback_queue_ids.add(row[2])
         identifiers.add(row[0])
 
     requirement_ids: set[str] = set()
@@ -989,6 +995,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
         False,
         frozenset(adopted_requirement_ids),
         frozenset(terminal_only_requirement_ids),
+        feedback_queue_ids=frozenset(feedback_queue_ids),
     ), errors
 
 

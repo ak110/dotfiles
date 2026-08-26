@@ -74,10 +74,15 @@ def _safe_base_path(raw: str) -> str:
 def _resolve_states(status: str) -> tuple[str, ...]:
     """`status` queryの指定値を走査対象の状態フォルダ列へ変換する。"""
     if status == "active":
-        return common.MQ_ACTIVE_STATES
+        return common.MQ_FEEDBACK_ACTIVE_STATES
     if status == "all":
         return common.MQ_STATES
     return (status,)
+
+
+def _is_selected_state(status: str, state: str, kind: str | None) -> bool:
+    """一覧の状態フィルターと種別の組み合わせで表示対象か判定する。"""
+    return not (status == "active" and state == common.MQ_STATE_PLANNING and kind == common.MQ_TYPE_TBD)
 
 
 async def _request_json() -> typing.Any:
@@ -387,6 +392,8 @@ class Operations:
         for state, path, text in self._iter_entry_files(states, warnings):
             try:
                 kind = common.entry_type_of(path, text)
+                if not _is_selected_state(status_filter, state, kind):
+                    continue
                 if kind_filter not in ("all", kind):
                     continue
                 item = _entry(path, kind or "unknown", state, text)
@@ -505,6 +512,8 @@ class Operations:
         for _state, _path, text in self._iter_entry_files(_resolve_states(status)):
             parsed = frontmatter.parse_frontmatter(text)
             if parsed is None:
+                continue
+            if not _is_selected_state(status, _state, common.entry_type_of(_path, text)):
                 continue
             target_repo = parsed[0].get("target_repo")
             if isinstance(target_repo, str) and target_repo:
@@ -866,8 +875,12 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
             raise common.WebInputError("forceはbooleanで指定してください")
         force = data["force"]
     state_name = _optional_string(data, "state") if "state" in allowed else None
-    if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
-        raise common.WebInputError("stateはinbox又はprocessingで指定してください")
+    if state_name is not None:
+        valid_states = common.MQ_FEEDBACK_ACTIVE_STATES if action == "remove" else common.MQ_ACTIVE_STATES
+        if state_name not in valid_states:
+            if action == "remove":
+                raise common.WebInputError("stateはinbox、planning又はprocessingで指定してください")
+            raise common.WebInputError("stateはinbox又はprocessingで指定してください")
     expected_content = _specified_text(data, "expected_content") if "expected_content" in allowed else None
     if state_name is None and expected_content is None:
         result = await runtime.workers.run(

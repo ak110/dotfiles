@@ -156,7 +156,7 @@ class TestRemoveAllConfirmation:
         assert stdin.tell() == 2
         assert not (notes / "inbox/feedback.md").exists()
         assert not (notes / "inbox/question.md").exists()
-        assert commits == [("chore: remove 2 entries", ["inbox", "processing", "adopted", "rejected"])]
+        assert commits == [("chore: remove 2 entries", ["inbox", "processing", "planning", "adopted", "rejected"])]
 
     @pytest.mark.parametrize("answer", ["n\n", "\n", "later\n"])
     def test_non_approval_keeps_all_candidates(
@@ -441,7 +441,7 @@ class TestRemoveAllConcurrentChanges:
 
         assert not original.exists()
         assert added.exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "adopted", "rejected"])]
+        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "planning", "adopted", "rejected"])]
         assert "確認後に変更されたため削除しません" not in capsys.readouterr().out
 
     def test_removes_only_unchanged_entry_of_two(
@@ -462,7 +462,7 @@ class TestRemoveAllConcurrentChanges:
 
         assert not unchanged.exists()
         assert (notes / "processing/changed.md").exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "adopted", "rejected"])]
+        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "planning", "adopted", "rejected"])]
         assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out
 
 
@@ -519,5 +519,5 @@ class TestRemoveAllSkipPull:
         assert tracker.count == 1
         assert not unchanged.exists()
         assert changed.exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "adopted", "rejected"])]
+        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "planning", "adopted", "rejected"])]
         assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out

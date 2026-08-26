@@ -2665,6 +2665,21 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
 
 
+def test_operations_active_includes_planning_feedback(tmp_path: pathlib.Path) -> None:
+    """一覧APIのactive状態はplanningのフィードバックを含める。"""
+    planning = tmp_path / "planning"
+    planning.mkdir()
+    (planning / "planned.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n計画作成中\n",
+        encoding="utf-8",
+    )
+
+    entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "active"})
+
+    assert not warnings
+    assert [(item["filename"], item["state"]) for item in entries] == [("planned.md", "planning")]
+
+
 @pytest.mark.parametrize(
     ("frontmatter_source", "expected_repo", "expected_source"),
     [
@@ -3476,8 +3491,8 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
     assert warnings == [{"filename": "os-error.md", "reason": "ファイルを読み取れません"}]
 
 
-def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """状態監視は平坦化後の4状態フォルダのみを対象とし、旧feedback/tbd階層を生成しない。"""
+def test_serve_state_watches_only_new_five_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """状態監視は平坦化後の5状態フォルダのみを対象とし、旧feedback/tbd階層を生成しない。"""
     current = state.ServeState(tmp_path)
     scheduled: list[str] = []
     monkeypatch.setattr(
@@ -3489,7 +3504,13 @@ def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkey
     loop = asyncio.new_event_loop()
     try:
         current.start(loop)
-        assert sorted(pathlib.Path(p).name for p in scheduled) == ["adopted", "inbox", "processing", "rejected"]
+        assert sorted(pathlib.Path(p).name for p in scheduled) == [
+            "adopted",
+            "inbox",
+            "planning",
+            "processing",
+            "rejected",
+        ]
         assert not (tmp_path / "feedback").exists()
         assert not (tmp_path / "tbd").exists()
     finally:
