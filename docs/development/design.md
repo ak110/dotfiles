@@ -845,7 +845,7 @@ repository設定ではマージコミットを有効にし、squash merge、reba
 既定branchは`master`のまま維持する。
 
 `master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
-rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の6必須check、削除禁止及びforce push禁止を設定する。
+rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の7必須check、削除禁止及びforce push禁止を設定する。
 
 - `test-linux`
 - `test-windows`
@@ -853,6 +853,35 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 - `python-lint (3.13)`
 - `python-lint (3.14)`
 - `rust-lint`
+- `statusline-version`
+
+### CIの実処理所有権
+
+共通CIは`push`と`master`向け`pull_request`の全経路でjobを開始し、job表示名とmatrixを評価する。
+共通jobにはjob-level `if`を置かず、step-level条件で非所有markerと既存実処理を切り替える。
+
+| イベント | head repository | head branch | base branch | 共通6 jobの実処理所有者 | 表示名 |
+| --- | --- | --- | --- | --- | --- |
+| `push` | base repository | 任意 | 該当なし | `push` run | 6件のrequired check名 |
+| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 6件の`(non-owner)`名 |
+| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 6件のrequired check名 |
+| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 6件のrequired check名 |
+
+同一repositoryのheadが`develop`、baseが`master`のpull requestでは、共通jobの先頭で非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
+このrelease pull request以外の同一repository pull requestとfork pull requestでは、非所有markerをskipして既存実処理を実行する。
+非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、`test-windows`は`pwsh`、その他の共通jobは`bash`を明示する。
+`rust-lint`の既存job既定作業場所は維持し、非所有markerだけがworkspace rootを明示して既定を上書きする。
+
+job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の6件の表示名を保証できない。
+共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
+pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示すが、check runの`head_sha`はstatusを関連付けるpull request head commitを示すため、両者を同一視しない。
+`master`が`develop`の祖先であり、release merge commitのtreeが`develop` headのtreeと同一になるrelease invariantを、共通CIの実処理を`develop`の`push` runへ帰属させる根拠とする。
+
+statuslineのCargo versionとbase・head version及びtagの検査は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
+`statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。
+同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。
+ruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、既存6名を変更しない。
+ruleset更新の失敗又は更新後の検査不一致時は現行状態を再取得し、追加のPUTを実行せず、変更前状態と現行状態を保持して`needs_escalation`で終端する。
 
 ruleset一覧には個別ref条件が含まれないため、同名候補の完全なIDを取得した後に個別GETで対象repository、branch ruleset及び`refs/heads/master`を確認する。
 候補が0件の場合は作成し、1件の場合は完全IDへPUTする。

@@ -15,22 +15,33 @@ concurrency:
 
 jobs:
   test-linux:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'test-linux (non-owner)' || 'test-linux' }}
     runs-on: ubuntu-latest
     steps:
+      - name: 共通CI非所有経路
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           fetch-depth: 0
           path: dotfiles
       - name: ~/dotfiles に配置
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: |
           mv dotfiles ~/dotfiles
           echo "DOTFILES_DIR=$HOME/dotfiles" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
       - name: PowerShell + PSScriptAnalyzer インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: make -C "$HOME/dotfiles" setup-pwsh
       - name: chezmoi インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: |
           set -euo pipefail
           install_chezmoi() {
@@ -48,8 +59,10 @@ jobs:
           install_chezmoi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: install.sh 実行
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: |
           set -euo pipefail
           test -f ~/.bashrc
@@ -60,13 +73,21 @@ jobs:
           grep -qF '$HOME/dotfiles/bin' ~/.bashrc
 
   test-windows:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'test-windows (non-owner)' || 'test-windows' }}
     runs-on: windows-latest
     steps:
+      - name: 共通CI非所有経路
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           fetch-depth: 0
           path: dotfiles
       - name: ~/dotfiles に配置
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         # Windows runnerはチェックアウト先（D:）と $env:USERPROFILE（C:）が別ボリュームのため、
         # GNU mvでクロスドライブ移動するとシンボリックリンクの再作成に失敗する。
         # robocopyの /SL でsymlinkを保持しつつコピーし、元ディレクトリを削除して移動を実現する。
@@ -81,9 +102,11 @@ jobs:
           "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           exit 0
       - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
       - name: managed-temp Windows境界テスト
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
@@ -92,6 +115,7 @@ jobs:
           agent-toolkit/scripts/agent_definitions_test.py
           agent-toolkit/scripts/permissionrequest_codex_test.py
       - name: chezmoi インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash
         run: |
           set -euo pipefail
@@ -109,15 +133,18 @@ jobs:
           }
           install_chezmoi
       - name: chezmoi 適用
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
           chezmoi init --source=~/dotfiles --apply
       - name: dotfiles-post-apply の動作確認
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: pwsh
         run: dotfiles-post-apply
       - name: 主要ファイルの存在確認
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: pwsh
         run: |
           if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\01-agent.md")) { exit 1 }
@@ -134,6 +161,7 @@ jobs:
           if ($pathKind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { exit 1 }
 
   python-lint:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && format('python-lint ({0}) (non-owner)', matrix.python-version) || format('python-lint ({0})', matrix.python-version) }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ak110/pyfltr:latest
@@ -158,23 +186,32 @@ jobs:
       # container job では明示しないと secrets.GITHUB_TOKEN がコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
     steps:
+      - name: 共通CI非所有経路
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
       - name: 利用者設定から隔離したlockfile検証
-        if: matrix.python-version == '3.12'
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.12'
         run: |
           set -euo pipefail
           config_dir="$(mktemp -d)"
           trap 'rm -r -- "$config_dir"' EXIT
           env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
       - name: safe.directory の設定
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
         # pre-commit 等の git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: GitHub Actions のピン留め検証
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: pinact run --check
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           path: /cache
           # 固定キーでは一度保存されると更新されないため、run_idとrun_attemptを含めて毎回保存させる。
@@ -186,9 +223,11 @@ jobs:
           restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Install dependencies
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: uv sync --all-groups --all-extras
 
       - name: ネイティブ依存インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
         # libarchive13 の共有ライブラリを必要とする。
         # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
@@ -198,10 +237,11 @@ jobs:
           apt-get install -y --no-install-recommends poppler-utils libarchive13 make
 
       - name: Playwright Chromiumの導入
-        if: matrix.python-version == '3.12'
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.12'
         run: make setup-browser
 
       - name: Test with pyfltr
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         env:
           CLAUDE_PLANS_VIEWER_BROWSER_TESTS: ${{ matrix.python-version == '3.12' && '1' || '0' }}
           AGENT_TOOLKIT_SERVE_BROWSER_TESTS: ${{ matrix.python-version == '3.12' && '1' || '0' }}
@@ -213,23 +253,51 @@ jobs:
         run: pyfltr ci --disable=claude-plugin-validate
 
       - name: Prune uv cache for CI
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: uv cache prune --ci
 
   rust-lint:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'rust-lint (non-owner)' || 'rust-lint' }}
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: rust/claude-statusline
     steps:
+      - name: 共通CI非所有経路
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        with:
+          workspaces: rust/claude-statusline
+      - name: cargo fmt --check
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: cargo fmt --check
+      - name: cargo clippy
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: cargo test
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: cargo test
+
+  statusline-version:
+    name: statusline-version
+    if: github.event_name == 'pull_request' && github.base_ref == 'master'
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust/claude-statusline
       - name: statuslineの版数とタグを検査
-        if: github.event_name == 'pull_request' && github.base_ref == 'master'
         working-directory: ${{ github.workspace }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -284,9 +352,3 @@ jobs:
               exit "$tag_status"
               ;;
           esac
-      - name: cargo fmt --check
-        run: cargo fmt --check
-      - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: cargo test
-        run: cargo test
