@@ -2703,7 +2703,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                 "2026-08-19T00:00:01Z",
                 "call-send",
                 sent_id,
-                tool_name="mcp__agents_server__send_message",
+                tool_name="mcp__agents_server__kill",
             ),
             {
                 "type": "assistant",
@@ -2782,6 +2782,50 @@ def test_stats_resolves_claude_session_from_codex_rollout_tool_call(
     assert thread["session_id"] == session_id
     assert thread["tokens"] == _usage(4, 5)
     assert _events_by_kind(events, "stats-total")[0]["agent_thread_counts"] == {"claude": 1}
+
+
+def test_stats_resolves_claude_session_from_claude_plugin_kill_tool_call(
+    tmp_path: pathlib.Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """Claude transcriptのplugin修飾名による`kill`からClaude sessionを解決する。"""
+    session_id = "claude-session-kill-11111111"
+    claude_home = tmp_path / "home"
+    claude_transcript = claude_home / ".claude" / "projects" / "repo" / f"{session_id}.jsonl"
+    claude_transcript.parent.mkdir(parents=True)
+    claude_transcript.write_text(
+        json.dumps(_assistant_usage_entry("2026-08-19T00:00:02Z", "claude-kill", _usage(4, 5))) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(claude_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__plugin_agent-toolkit_agents_server__kill",
+                            "id": "call-claude-kill",
+                            "input": {"engine": "claude", "session_id": session_id},
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    thread = _events_by_kind(events, "stats-agent-thread")[0]
+    assert thread["engine"] == "claude"
+    assert thread["session_id"] == session_id
+    assert thread["tokens"] == _usage(4, 5)
 
 
 def test_stats_recursively_discovers_native_subagent_activity_without_cycles(

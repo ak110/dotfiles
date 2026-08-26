@@ -17,6 +17,9 @@
   - pyfltrの実行時間を比較する場合は、実行後に`uvx pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uvx pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する近接検査を先に実行し、公開前に`make test`相当で全体を検査する。近接検査の成功だけを全体検査の代替にしない
+- 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
+  - リリースPRの作成は手動で行い、statuslineの版数変更はPRへ含める。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
+  - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
 - 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
   OSパッケージの導入には権限が必要となる場合がある
 - `atk serve`又は`claude-plans-viewer`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
@@ -103,7 +106,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.claude/`（本リポジトリルート）: dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
   - Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする
 - `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
-  - `AGENTS.md`はCodex向けアダプター。`scripts/codex-agents-base.md`と`agent-toolkit/rules/`配下の共有規範から
+  - `AGENTS.md`はCodex向けアダプター。`agent-toolkit/share/codex-agents-base.md`と`agent-toolkit/rules/`配下の共有規範から
     `scripts/sync_generated_files.py`が生成するため、手動編集しない（生成差分で上書きされ、手動編集は消失する）
   - 共有ルール・スキルは`setup_codex_links.py`が
     `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する

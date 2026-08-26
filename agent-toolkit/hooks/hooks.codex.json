@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message",
+        "matcher": "Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill",
         "hooks": [
           {
             "type": "command",
@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|mcp__agents_server__start|mcp__agents_server__wait|mcp__agents_server__send_message",
+        "matcher": "Edit|Write|mcp__agents_server__start|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill",
         "hooks": [
           {
             "type": "command",
@@ -70,6 +70,17 @@
             "type": "command",
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py session_end_cleanup",
             "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py quality_checkpoint"
           }
         ]
       }

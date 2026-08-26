@@ -173,7 +173,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 - `agent-toolkit/agents/`配下のagent定義
 - `agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」のキー
-- `scripts/codex-agents-base.md`のCodex互換起動条件
+- `agent-toolkit/share/codex-agents-base.md`のCodex互換起動条件
 
 `agent-toolkit/agents/`配下の全定義を扱えることを人手で確認する。
 3つの対応関係は機械判定できる入力を持たないため、自動検査では保証しない。

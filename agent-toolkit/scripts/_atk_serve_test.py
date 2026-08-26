@@ -2295,6 +2295,7 @@ def test_operations_reads_local_entries_and_detail_without_pull(
         "state": "inbox",
         "filename": "entry.md",
         "answered": None,
+        "plan": False,
         "target_repo": "example/repo",
         "source": "test",
         "summary": "要約本文",

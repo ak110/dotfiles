@@ -100,11 +100,32 @@ PLAN_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所
 PLAN_LEGACY_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "原文参照", "確認方法")
 PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "採否", "ユーザー指示との関係", "根拠")
 PLAN_LEGACY_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
+PLAN_HUMAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "由来", "採否", "根拠")
+PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
+    "人間由来のフィードバック",
+    "エージェント由来のフィードバック",
+    "ユーザー指示",
+    "エージェント提案",
+)
 PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "保留", "対象外", "移管")
 PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
 PLAN_BUG_FILE_REFERENCE_PREFIX: str = "- バグ調査ファイル:"
 
 PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
+    "単位ID",
+    "目的",
+    "先行依存",
+    "統合順",
+    "近接検証",
+)
+PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
+    "実装単位",
+    "目的",
+    "先行依存",
+    "統合順",
+    "近接検証",
+)
+PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
     "単位ID",
     "目的",
     "対象の実施内容",
@@ -399,6 +420,8 @@ class PlanMaterials:
     is_legacy: bool
     adopted_requirement_ids: frozenset[str] = frozenset()
     terminal_only_requirement_ids: frozenset[str] = frozenset()
+    is_human_readable: bool = False
+    material_paths: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -407,7 +430,6 @@ class PlanImplementationUnit:
 
     unit_id: str
     purpose: str
-    action_indices: tuple[int, ...]
     dependencies: tuple[str, ...]
     integration_order: int
     verification: str
@@ -660,6 +682,14 @@ _LEGACY_MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$"
 _MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^P-[0-9A-Za-z][0-9A-Za-z_-]*(?:(?:（[^）\n]+）|\([^)\n]+\)):|:\s+\S.*)$")
 _MATERIAL_FENCE_PATTERN = re.compile(r"^\s*(?:`{3,}|~{3,})text\s*$")
 _REFERENCE_SEPARATOR_PATTERN = re.compile(r"[、,・/\s]+")
+_HUMAN_MATERIAL_LINE_PATTERN = re.compile(r"^\s*-\s+(?P<path>[^/\\\s]+\.md)\s*$")
+_STRICT_INTERNAL_PLAN_ID_PATTERN = re.compile(
+    r"(?<![0-9A-Za-z_-])(?:R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}|P-[0-9A-Za-z][0-9A-Za-z_-]*|U-[0-9]{3}|H-[0-9]{3}|C-[0-9]{3}|R[0-9]+-[a-z][a-z0-9]*)(?![0-9A-Za-z_-])"
+)
+# `P-256`は外部仕様でも使われるため、自由文では旧素材IDとの区別を断定しない。
+_INTERNAL_PLAN_ID_PATTERN = re.compile(
+    r"(?<![0-9A-Za-z_-])(?:R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}|P-(?!256(?![0-9A-Za-z_-]))[0-9A-Za-z][0-9A-Za-z_-]*|U-[0-9]{3}|H-[0-9]{3}|C-[0-9]{3}|R[0-9]+-[a-z][a-z0-9]*)(?![0-9A-Za-z_-])"
+)
 
 
 def _is_placeholder_only(lines: list[tuple[int, str]]) -> bool:
@@ -776,9 +806,8 @@ def _check_metadata_block(
     if work_type is not None and work_type not in PLAN_WORK_TYPES:
         errors.append(f"計画メタ情報の`作業種別`は{list(PLAN_WORK_TYPES)}のいずれかで記載する")
         work_type = None
-    base_commit = metadata.values.get("ベースコミット")
-    if base_commit is not None and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", base_commit) is None:
-        errors.append("計画メタ情報の`ベースコミット`は完全長SHAで記載する")
+    # `ベースコミット`は計画作成時点の参照値であり、存在・完全長・HEADとの一致は
+    # 計画構造の成立条件ではない。実際のGit操作へ渡す値だけを各操作側で検証する。
     return work_type, errors
 
 
@@ -972,10 +1001,53 @@ def parse_plan_materials(content: str) -> tuple[PlanMaterials | None, list[str]]
         return None, ["固定H2の提示素材を検査できない"]
     section = _materials_section(content, headings, index)
     tables = extract_tables(section)
+    if (
+        not any(table.header in {PLAN_MATERIAL_TABLE_HEADER, PLAN_REQUIREMENT_TABLE_HEADER} for table in tables)
+        and not any(_LEGACY_MATERIAL_ID_PATTERN.fullmatch(line.strip()) for _lineno, line in section)
+        and not any(_MATERIAL_ID_CANDIDATE_PATTERN.fullmatch(line.strip()) for _lineno, line in section)
+    ):
+        human_materials, human_errors = _check_human_materials(section)
+        if human_materials is not None:
+            return human_materials, human_errors
     if any(table.header in {PLAN_MATERIAL_TABLE_HEADER, PLAN_REQUIREMENT_TABLE_HEADER} for table in tables):
         return _check_new_materials(section)
     identifiers, errors = _check_materials(content, body, headings, index)
     return PlanMaterials(frozenset(identifiers), frozenset(), True), errors
+
+
+def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials | None, list[str]]:
+    """新規書式の`## 提示素材`にファイル名だけが列挙されていることを検査する。"""
+    nonempty = [(lineno, line.strip()) for lineno, line in section if line.strip()]
+    if not nonempty:
+        return PlanMaterials(frozenset(), frozenset(), False, is_human_readable=True), [
+            "新規書式の`## 提示素材`はフィードバック又はTBDのファイル名を1件以上、または`なし`と記載する"
+        ]
+
+    if len(nonempty) == 1 and nonempty[0][1] == "なし":
+        return PlanMaterials(frozenset(), frozenset(), False, is_human_readable=True), []
+
+    errors: list[str] = []
+    paths: list[str] = []
+    for _lineno, line in nonempty:
+        match = _HUMAN_MATERIAL_LINE_PATTERN.fullmatch(line)
+        if match is None:
+            errors.append(f"提示素材は正本ファイル名の箇条書き又は`なし`だけにする: {line}")
+            continue
+        path = match.group("path").strip()
+        if _STRICT_INTERNAL_PLAN_ID_PATTERN.search(path):
+            errors.append(f"提示素材へ合成IDを記載しない: {path}")
+        if path in paths:
+            errors.append(f"提示素材のファイル名を重複させない: {path}")
+        paths.append(path)
+    if not paths:
+        errors.append("提示素材にフィードバック又はTBDのファイル名が1件以上必要")
+    return PlanMaterials(
+        frozenset(),
+        frozenset(),
+        False,
+        is_human_readable=True,
+        material_paths=frozenset(paths),
+    ), errors
 
 
 def _check_materials(
@@ -1047,7 +1119,7 @@ def parse_plan_implementation_units(
     """detail側`### 実装単位`の固定表を解析して構造違反を返す。
 
     単位表は新書式detail側だけの必須契約であり、違反は計画を実装順へ分解できないためerrorとする。
-    メイン側`## 実施内容`との被覆は2ファイルを扱う`check_plan_file.py`が検査する。
+    旧6列表は読み取り互換として受理し、`対象の実施内容`列の値を検査しない。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -1066,35 +1138,52 @@ def parse_plan_implementation_units(
 
     position, _heading = matching_headings[0]
     start, end = heading_subtree_range(headings, position)
-    table, errors = _check_fixed_table(
-        lines_within(body, start, end),
-        PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
-        f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`",
-    )
-    if table is None:
-        return None, errors
+    tables = extract_tables(lines_within(body, start, end))
+    matching = [
+        candidate
+        for candidate in tables
+        if candidate.header
+        in (
+            PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+            PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+            PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        )
+    ]
+    if not matching:
+        return None, [f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`は{list(PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER)}の列を持つ表にする"]
+    table = matching[0]
+    errors = [f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の固定表は1件必要: 実際={len(matching)}件"] if len(matching) != 1 else []
+    if not table.rows:
+        errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に1行以上の内容が必要")
+    for row in table.rows:
+        if len(row) != len(table.header) or any(not cell for cell in row):
+            errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {list(row)}")
 
+    is_human = table.header == PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER
     units: list[PlanImplementationUnit] = []
     for row in table.rows:
-        if len(row) != len(PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER) or any(not cell for cell in row):
+        if len(row) != len(table.header) or any(not cell for cell in row):
             continue
-        unit_id, purpose, action_value, dependency_value, order_value, verification = row
-        if PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(unit_id) is None:
-            errors.append(f"実装単位IDは`U-[0-9]{{3}}`形式にする: {unit_id}")
-        action_parts = _comma_separated_values(action_value)
-        if not action_parts or any(not part.isdecimal() or int(part) < 1 for part in action_parts):
-            errors.append(f"実装単位`{unit_id}`の`対象の実施内容`は1以上の整数をASCIIカンマ区切りで列挙する")
-            action_indices: tuple[int, ...] = ()
+        if table.header == PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER:
+            unit_id, purpose, _action_value, dependency_value, order_value, verification = row
         else:
-            action_indices = tuple(int(part) for part in action_parts)
-            if tuple(sorted(set(action_indices))) != action_indices:
-                errors.append(f"実装単位`{unit_id}`の`対象の実施内容`は昇順かつ重複なしで列挙する")
+            unit_id, purpose, dependency_value, order_value, verification = row
+        if not is_human and PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(unit_id) is None:
+            errors.append(f"実装単位IDは`U-[0-9]{{3}}`形式にする: {unit_id}")
+        if is_human and (
+            _STRICT_INTERNAL_PLAN_ID_PATTERN.fullmatch(unit_id)
+            or _INTERNAL_PLAN_ID_PATTERN.search(unit_id)
+            or unit_id in {"なし", "-"}
+        ):
+            errors.append(f"実装単位は合成IDではない説明的な名前にする: {unit_id}")
 
         if dependency_value == "なし":
             dependencies: tuple[str, ...] = ()
         else:
             dependencies = _comma_separated_values(dependency_value)
-            if any(PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(value) is None for value in dependencies):
+            if any(not value for value in dependencies):
+                errors.append(f"実装単位`{unit_id}`の`先行依存`に空の値を置かない")
+            if not is_human and any(PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(value) is None for value in dependencies):
                 errors.append(f"実装単位`{unit_id}`の`先行依存`は実装単位ID又は`なし`にする")
             if tuple(dict.fromkeys(dependencies)) != dependencies:
                 errors.append(f"実装単位`{unit_id}`の`先行依存`は重複なしで列挙する")
@@ -1108,7 +1197,6 @@ def parse_plan_implementation_units(
             PlanImplementationUnit(
                 unit_id,
                 purpose,
-                action_indices,
                 dependencies,
                 integration_order,
                 verification,
@@ -1116,9 +1204,13 @@ def parse_plan_implementation_units(
         )
 
     unit_ids = tuple(unit.unit_id for unit in units)
-    expected_ids = tuple(f"U-{index:03d}" for index in range(1, len(units) + 1))
-    if unit_ids != expected_ids:
-        errors.append(f"実装単位IDは`U-001`から欠番なく昇順に置く: 実際={list(unit_ids)}")
+    if is_human:
+        if len(set(unit_ids)) != len(unit_ids):
+            errors.append("実装単位は表内で一意の説明的な名前にする")
+    else:
+        expected_ids = tuple(f"U-{index:03d}" for index in range(1, len(units) + 1))
+        if unit_ids != expected_ids:
+            errors.append(f"実装単位IDは`U-001`から欠番なく昇順に置く: 実際={list(unit_ids)}")
 
     integration_orders = tuple(unit.integration_order for unit in units)
     if integration_orders != tuple(range(1, len(units) + 1)):
@@ -1314,7 +1406,11 @@ def _check_materials_and_identifiers(
 
 def _check_action_table(tables: list[MarkdownTable]) -> tuple[MarkdownTable | None, list[str]]:
     """新旧の実施内容表を新形式優先で検査し、互換形式を含む表を返す。"""
-    candidates = [table for table in tables if table.header in (PLAN_ACTION_TABLE_HEADER, PLAN_LEGACY_ACTION_TABLE_HEADER)]
+    candidates = [
+        table
+        for table in tables
+        if table.header in (PLAN_HUMAN_ACTION_TABLE_HEADER, PLAN_ACTION_TABLE_HEADER, PLAN_LEGACY_ACTION_TABLE_HEADER)
+    ]
     if not candidates:
         return None, [f"`## {PLAN_H2_ACTION}`は{list(PLAN_ACTION_TABLE_HEADER)}の列を持つ表にする"]
 
@@ -1348,7 +1444,7 @@ def _check_action_section(
     adopted_requirement_ids: set[str],
     identifiers: set[str],
 ) -> list[str]:
-    """`## 実施内容`の固定表と`### 合意済みの除外・保持`を検査する。"""
+    """`## 実施内容`の固定表と新旧の除外・保持表を検査する。"""
     if action_index is None:
         return []
     errors: list[str] = []
@@ -1356,6 +1452,11 @@ def _check_action_section(
     section = lines_within(body, start, end)
     table, table_errors = _check_action_table(extract_tables(section))
     errors.extend(table_errors)
+    if table is not None and table.header == PLAN_HUMAN_ACTION_TABLE_HEADER:
+        errors.extend(_check_human_action_table(table, materials))
+        if any(heading.level == 3 for _position, heading in child_headings(headings, action_index, 3)):
+            errors.append(f"`## {PLAN_H2_ACTION}`直下に独立した除外・保持表を置かない")
+        return errors
     children = child_headings(headings, action_index, 3)
     if any(heading.text != PLAN_EXCLUSION_H3 for _position, heading in children) or len(children) > 1:
         errors.append(f"`## 実施内容`直下のH3は任意の`### {PLAN_EXCLUSION_H3}`だけにする")
@@ -1387,6 +1488,49 @@ def _check_action_section(
     return errors
 
 
+def _check_human_action_table(table: MarkdownTable, materials: PlanMaterials | None) -> list[str]:
+    """新規書式の実施内容4列表を検査する。"""
+    errors: list[str] = []
+    if not table.rows:
+        return [f"`## {PLAN_H2_ACTION}`の表に1行以上の内容が必要"]
+    origin_index = table.header.index("由来")
+    decision_index = table.header.index("採否")
+    root_index = table.header.index("根拠")
+    for row in table.rows:
+        if len(row) != len(PLAN_HUMAN_ACTION_TABLE_HEADER) or any(not cell for cell in row):
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {list(row)}")
+            continue
+        origin = row[origin_index]
+        if origin in PLAN_HUMAN_ORIGINS:
+            if origin.endswith("フィードバック"):
+                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来には正本ファイル名を括弧内へ記載する: {origin}")
+        elif origin.startswith("人間由来のフィードバック (") or origin.startswith("エージェント由来のフィードバック ("):
+            match = re.fullmatch(
+                r"(?:人間由来のフィードバック|エージェント由来のフィードバック) \(([^/\\()\s]+\.md)\)",
+                origin,
+            )
+            if match is None:
+                errors.append(f"`## {PLAN_H2_ACTION}`の`由来`は正本ファイル名付きの4値にする: {origin}")
+            elif materials is None or match.group(1) not in materials.material_paths:
+                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が提示素材に無い: {match.group(1)}")
+        else:
+            errors.append(
+                f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}又はファイル名付きフィードバックにする: {origin}"
+            )
+        decision = row[decision_index]
+        if decision not in PLAN_ACTION_DECISIONS:
+            errors.append(f"`## {PLAN_H2_ACTION}`の`採否`は{list(PLAN_ACTION_DECISIONS)}のいずれかにする: {decision}")
+        root = row[root_index]
+        if decision == "採用" and root != "-":
+            errors.append(f"`## {PLAN_H2_ACTION}`の`採用`の`根拠`は`-`にする: {root}")
+        elif decision != "採用" and (not root or root == "-"):
+            errors.append(f"`## {PLAN_H2_ACTION}`の採用以外の`根拠`は理由を自足して記載する: {root}")
+        for value in row:
+            if _INTERNAL_PLAN_ID_PATTERN.search(value):
+                errors.append(f"`## {PLAN_H2_ACTION}`へ素材・要求・履歴・実装単位の合成IDを記載しない: {value}")
+    return errors
+
+
 def _check_history_section(
     body: list[tuple[int, str]],
     headings: list[PlanHeading],
@@ -1403,6 +1547,56 @@ def _check_history_section(
     if history is not None:
         errors.extend(_check_history_rows(history, identifiers, allow_legacy_review_ids=allow_legacy_review_ids))
     return errors
+
+
+def _check_human_history_section(headings: list[PlanHeading], history_index: int | None, content: str) -> list[str]:
+    """新規書式の変更履歴（自然な見出しと逐語入力）を検査する。"""
+    if history_index is None:
+        return []
+    start, end = heading_subtree_range(headings, history_index)
+    raw_lines = content.splitlines()
+    upper = len(raw_lines) + 1 if end is None else end
+    section = [(lineno, raw_lines[lineno - 1]) for lineno in range(start + 1, upper) if lineno <= len(raw_lines)]
+    body_section = [(lineno, line) for lineno, line in iter_markdown_body_lines(content) if start < lineno < upper]
+    errors: list[str] = []
+    if extract_tables(section):
+        errors.append(f"`## {PLAN_H2_HISTORY}`へ履歴ID表を置かない")
+    if any(_INTERNAL_PLAN_ID_PATTERN.search(line) for _lineno, line in body_section):
+        errors.append(f"`## {PLAN_H2_HISTORY}`へ履歴・要求・実装単位の合成IDを記載しない")
+    children = child_headings(headings, history_index, 3)
+    if not children and not [line for _lineno, line in section if line.strip()]:
+        errors.append(f"`## {PLAN_H2_HISTORY}`に変更内容を判別できる記録が必要")
+    for position, heading in children:
+        child_start, child_end = heading_subtree_range(headings, position)
+        child_upper = len(raw_lines) + 1 if child_end is None else child_end
+        child_lines = [
+            (lineno, raw_lines[lineno - 1]) for lineno in range(child_start + 1, child_upper) if lineno <= len(raw_lines)
+        ]
+        if _INTERNAL_PLAN_ID_PATTERN.search(heading.text):
+            errors.append(f"`## {PLAN_H2_HISTORY}`の見出しへ履歴・要求・実装単位の合成IDを記載しない: {heading.text}")
+        user_event = any(keyword in heading.text for keyword in ("ユーザー", "利用者", "発言"))
+        if not user_event:
+            continue
+        fence_positions = [
+            index for index, (_lineno, line) in enumerate(child_lines) if _MATERIAL_FENCE_PATTERN.fullmatch(line)
+        ]
+        if not fence_positions:
+            errors.append(f"`## {PLAN_H2_HISTORY}`の利用者発言には`text`コードブロックを置く: {heading.text}")
+            continue
+        if not any(line.strip() == "```" for _lineno, line in child_lines[fence_positions[0] + 1 :]):
+            errors.append(f"`## {PLAN_H2_HISTORY}`の利用者発言の`text`コードブロックを閉じる: {heading.text}")
+    return errors
+
+
+def has_human_action_table(content: str) -> bool:
+    """本文の`## 実施内容`が新規人間向け4列表である場合に真を返す。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
+    if action_index is None:
+        return False
+    start, end = heading_subtree_range(headings, action_index)
+    return any(table.header == PLAN_HUMAN_ACTION_TABLE_HEADER for table in extract_tables(lines_within(body, start, end)))
 
 
 def _check_progress_section(body: list[tuple[int, str]], headings: list[PlanHeading], progress_index: int | None) -> list[str]:
@@ -1566,7 +1760,11 @@ def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
     )
 
     history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
-    errors.extend(_check_history_section(body, headings, history_index, identifiers))
+    human_format = has_human_action_table(content)
+    if human_format:
+        errors.extend(_check_human_history_section(headings, history_index, content))
+    else:
+        errors.extend(_check_history_section(body, headings, history_index, identifiers))
 
     verification_index = find_heading_index(headings, 2, PLAN_H2_VERIFICATION)
     errors.extend(_check_verification_section(body, headings, verification_index))
@@ -1578,6 +1776,8 @@ def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
     errors.extend(_check_progress_section(body, headings, progress_index))
 
     allowed_h3_parents = {PLAN_H2_OVERVIEW, PLAN_H2_ACTION}
+    if human_format:
+        allowed_h3_parents.add(PLAN_H2_HISTORY)
     errors.extend(_check_h3_and_deeper(headings, allowed_h3_parents, frozenset()))
     return work_type, errors
 
@@ -1604,7 +1804,6 @@ def check_plan_detail_structure(content: str, work_type: str | None) -> list[str
 
     _units, unit_errors = parse_plan_implementation_units(content)
     errors.extend(unit_errors)
-
     allowed_h3_parents = {PLAN_H2_BUG, PLAN_H2_PERMANENCE}
     errors.extend(_check_h3_and_deeper(headings, allowed_h3_parents, frozenset({PLAN_H2_IMPLEMENTATION})))
     return errors

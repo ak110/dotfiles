@@ -245,7 +245,7 @@ def _write_entries(root: Path) -> None:
         encoding="utf-8",
     )
     (inbox / "feedback.md").write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\nsource: browser\n---\n\n編集対象の本文\n",
+        "---\ntype: feedback\ntarget_repo: example/repo\nsource: browser\nplan_file: /tmp/plan.md\n---\n\n編集対象の本文\n",
         encoding="utf-8",
     )
     (inbox / "unknown.md").write_text("種別を判定できない本文\n", encoding="utf-8")
@@ -553,11 +553,13 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
 
     feedback_row = page.locator('#entry-list .entry-select[data-kind="feedback"]').filter(has_text="feedback.md")
     assert await feedback_row.locator(".entry-kind").text_content() == "feedback"
+    assert await feedback_row.locator(".plan-badge").text_content() == "plan"
     assert await feedback_row.locator(".state-badge").text_content() == "inbox"
     assert await feedback_row.locator(".filename-cell").text_content() == "feedback.md"
     assert await feedback_row.locator(".summary-cell").text_content() == "編集対象の本文"
 
     empty_row = page.locator("#entry-list .entry-select").filter(has_text="empty.md")
+    assert await empty_row.locator(".plan-badge").count() == 0
     await empty_row.click()
     empty_dialog = page.get_by_role("dialog", name="詳細")
     assert await empty_dialog.locator("#detail-content").inner_html() == ""

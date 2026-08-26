@@ -5,6 +5,8 @@
 `main()`実行中の例外では要約1行とtracebackを書いたうえでStop系サブコマンドの空JSON応答を返す。
 """
 
+# pylint: disable=duplicate-code  # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
+
 import os
 import pathlib
 import shutil
@@ -25,6 +27,7 @@ _SUBCOMMANDS = (
     "stopfailure_notifier",
     "permissionrequest",
     "permissionrequest_codex",
+    "quality_checkpoint",
     "user_prompt_submit",
 )
 

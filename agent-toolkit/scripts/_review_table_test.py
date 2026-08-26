@@ -86,8 +86,11 @@ def test_same_issue_can_be_separated_by_track_and_responded_individually(tmp_pat
     table.add(path, "1", "plan-conformance", *key)
     table.add(path, "1", "independent", *key)
 
-    with pytest.raises(ValueError, match="一意に解決できない: 2件"):
+    with pytest.raises(ValueError, match="一意に解決できない: 2件") as exc_info:
         table.respond(path, "1", "", *key, "yes", "修正", "")
+    message = str(exc_info.value)
+    assert "track=plan-conformance" in message
+    assert "track=independent" in message
 
     table.respond(path, "1", "plan-conformance", *key, "yes", "準拠系で修正", "")
     table.respond(path, "1", "independent", *key, "no", "", "独立した根拠を維持")
@@ -269,6 +272,28 @@ def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pa
     with pytest.raises(ValueError, match="一意に解決できない: 2件"):
         table.respond(path, "", _TRACK, "重大", "", "", "yes", "対応した", "")
     assert path.read_text(encoding="utf-8") == before
+
+
+def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path: pathlib.Path) -> None:
+    """一致しない部分キーへ、復号済み候補行を示して再指定を可能にする。"""
+    path = tmp_path / "review.tsv"
+    issue = '本文に"引用"を含む指摘'
+    table.init(path)
+    table.add(path, "1", _TRACK, "重大", "module.py:10", issue)
+    encoded_issue = json.dumps(issue, ensure_ascii=False)
+
+    with pytest.raises(ValueError) as exc_info:
+        table.respond(path, "1", _TRACK, "重大", "module.py:10", encoded_issue, "yes", "対応した", "")
+
+    message = str(exc_info.value)
+    assert "一意に解決できない: 0件" in message
+    assert "指定された部分キー:" in message
+    assert f"issue={issue}" in message
+    candidate_section = message.split("候補行（復号済み）:\n", maxsplit=1)[1]
+    assert encoded_issue not in candidate_section
+
+    assert table.respond(path, "1", _TRACK, "重大", "module.py:10", issue, "yes", "対応した", "") == 0
+    assert table.validate(path) == 0
 
 
 def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.Path) -> None:

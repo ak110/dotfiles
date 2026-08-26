@@ -19,7 +19,11 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_command  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+# pylint: disable-next=wrong-import-position,import-error
+from _hook_notice import (
+    block_formatter as _block_notice_formatter,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_review_evidence import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     has_session_review_started,
@@ -49,7 +53,7 @@ _AUTO_SESSION_REVIEW_FLAGS = (
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
 
 
-_llm_notice = _notice_formatter(_HOOK_ID)
+_block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def _git_status_for_display(cwd: str) -> str | None:
@@ -86,12 +90,13 @@ def _approve(cwd: str = "") -> None:
     print(json.dumps(_status_summary(cwd), ensure_ascii=False))
 
 
-def _emit_block_with_status(reason: str, cwd: str = "") -> None:
+def _emit_block_with_status(body: str, *, fix: str, cwd: str = "") -> None:
     """振り返り誘導を`decision: "block"`＋`reason`で出力し、未コミット変更があれば`systemMessage`で件数を併記する。
 
-    `reason`をhookの応答に載せることでセッション終端ターンを継続させ、振り返りスキルを当該ターン内で強制起動する。
+    `body`をhookの応答へ載せることでセッション終端ターンを継続させ、振り返りスキルを当該ターン内で強制起動する。
     `stop_hook_active`保護で1回のみ発火する前提。
     """
+    reason = _block_notice(body, fix=fix)
     output: dict[str, str] = {"decision": "block", "reason": reason}
     output.update(_status_summary(cwd))
     print(json.dumps(output, ensure_ascii=False))
@@ -161,11 +166,18 @@ def main(payload_text: str) -> int:
     # 終了判定の基準・振り返り手順はスキル本体の「起動方針」節に集約する。
     # 誘導文の先頭にSESSION_REVIEW_PRECHECKを付与し、質問直後など終了相当の
     # ケースではスキル起動自体を抑止する。
-    reason = _llm_notice(
+    body = (
         f"{SESSION_REVIEW_PRECHECK} If so, use the `{_SESSION_REVIEW_SKILL}` skill immediately"
         " according to its activation policy. Pass the following values from this Stop payload:"
         f" session_id={session_id}; transcript_path={transcript_path}"
     )
     append_stop_log(session_id, "block_session_review", {})
-    _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
+    _emit_block_with_status(
+        body,
+        fix=(
+            f"Immediately use the `{_SESSION_REVIEW_SKILL}` skill according to its activation policy"
+            " and pass the Stop payload values shown above."
+        ),
+        cwd=cwd if isinstance(cwd, str) else "",
+    )
     return 0

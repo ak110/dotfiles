@@ -97,30 +97,3 @@ def resolve_default_branch(cwd: str) -> str | None:
         if lines:
             return lines[0]
     return None
-
-
-def snapshot_remote_refs(cwd: str) -> dict[str, dict[str, str] | None]:
-    """全リモートのref名とOIDのスナップショットを取得する。
-
-    戻り値は`{<remote>: {<ref名>: <OID>} | None}`の辞書。キーは`git remote`で取得した
-    構成済みリモート名全件を含む。`git ls-remote`が失敗したリモートは値を`None`とする
-    （取得失敗のマーカーであり、リモート名自体は保持する）。値を単純に欠落させず`None`で
-    残すのは、比較時に「取得失敗（既知のリモートだが値が無い）」と「新規追加されたリモート
-    （その時点で未知だったリモート）」を区別できるようにするためである（「[16]機械チェックの
-    実装設計」の誤検知抑止条件を参照。取得失敗を「参照が消えた」という差分と誤認しない）。
-    """
-    snapshot: dict[str, dict[str, str] | None] = {}
-    for remote in list_remotes(cwd):
-        lines = run_git_lines(["git", "ls-remote", "--heads", "--tags", remote], cwd)
-        if lines is None:
-            snapshot[remote] = None
-            continue
-        refs: dict[str, str] = {}
-        for line in lines:
-            parts = line.split("\t", 1)
-            if len(parts) != 2:
-                continue
-            oid, ref = parts
-            refs[ref] = oid
-        snapshot[remote] = refs
-    return snapshot

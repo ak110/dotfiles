@@ -522,12 +522,11 @@ def _write_plan_with_base_commit(tmp_path: pathlib.Path, value: str | None) -> p
     return plan
 
 
-def test_add_operation_warns_on_mismatched_base_commit(
+def test_add_operation_ignores_mismatched_base_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """計画ベースと`target_commit`の不一致は警告に留め、投入を継続する。"""
+    """計画作成時点の参照値と`target_commit`を比較せず投入を継続する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = _write_plan_with_base_commit(tmp_path, "a" * 40)
 
@@ -542,9 +541,6 @@ def test_add_operation_warns_on_mismatched_base_commit(
     )
 
     assert len(generated) == 1
-    captured_err = capsys.readouterr().err
-    assert f"計画ファイル={'a' * 40}" in captured_err
-    assert f"target_commit={'b' * 40}" in captured_err
 
 
 def test_add_operation_accepts_plan_file_with_matching_base_commit(
@@ -567,12 +563,11 @@ def test_add_operation_accepts_plan_file_with_matching_base_commit(
     assert len(generated) == 1
 
 
-def test_add_operation_warns_on_annotated_base_commit_mismatch(
+def test_add_operation_ignores_annotated_base_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """閉じバッククォート以降に注記がある既存記法でも照合を省略しない。"""
+    """計画ベースの注記付き参照値を投入先の検証へ使わない。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
@@ -591,10 +586,9 @@ def test_add_operation_warns_on_annotated_base_commit_mismatch(
     )
 
     assert len(generated) == 1
-    assert f"計画ファイル={'a' * 40}" in capsys.readouterr().err
 
 
-def test_add_operation_rejects_spoofed_or_duplicate_plan_metadata(
+def test_add_operation_ignores_spoofed_or_duplicate_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -607,26 +601,23 @@ def test_add_operation_rejects_spoofed_or_duplicate_plan_metadata(
         encoding="utf-8",
     )
 
-    with pytest.raises(WebInputError, match="計画メタ情報"):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
-
-    assert not list((notes / "inbox").iterdir())
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+    assert len(generated) == 1
 
 
 def test_add_operation_ignores_blockquoted_plan_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """引用中のメタ情報は候補に採らず、本文側の値で照合結果を警告する。"""
+    """計画メタ情報を投入先の検証へ使わない。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
@@ -646,13 +637,11 @@ def test_add_operation_ignores_blockquoted_plan_metadata(
     )
 
     assert len(generated) == 1
-    assert f"計画ファイル={'b' * 40}" in capsys.readouterr().err
 
 
-def test_add_operation_warns_when_plan_file_lacks_base_commit(
+def test_add_operation_accepts_plan_file_without_base_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = _write_plan_with_base_commit(tmp_path, None)
@@ -668,7 +657,6 @@ def test_add_operation_warns_when_plan_file_lacks_base_commit(
     )
 
     assert len(generated) == 1
-    assert "完全OIDを抽出できない" in capsys.readouterr().err
 
 
 def test_add_operation_accepts_canonical_plan_metadata(
@@ -726,11 +714,11 @@ def test_add_operation_prefers_canonical_over_legacy_plan_metadata(
     assert len(generated) == 1
 
 
-def test_add_operation_rejects_metadata_split_across_legacy_sections(
+def test_add_operation_ignores_metadata_split_across_legacy_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """旧配置の候補が複数のH2へ分かれる計画は曖昧として拒否する。"""
+    """旧配置の計画メタ情報を投入先の検証へ使わない。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "ambiguous-plan.md"
     plan.write_text(
@@ -739,26 +727,23 @@ def test_add_operation_rejects_metadata_split_across_legacy_sections(
         encoding="utf-8",
     )
 
-    with pytest.raises(WebInputError, match="計画メタ情報"):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
-
-    assert not list((notes / "inbox").iterdir())
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+    assert len(generated) == 1
 
 
-def test_add_operation_warns_when_base_commit_lacks_backticks(
+def test_add_operation_ignores_unquoted_base_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """囲み違反のベースコミットは候補として採らず`target_commit`との照合を省略する。"""
+    """囲みのないベース参照値も投入先の検証へ使わない。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "unquoted-plan.md"
     plan.write_text(
@@ -777,7 +762,6 @@ def test_add_operation_warns_when_base_commit_lacks_backticks(
     )
 
     assert len(generated) == 1
-    assert "完全OIDを抽出できない" in capsys.readouterr().err
 
 
 def test_add_operation_accepts_legacy_plan_metadata(
@@ -805,10 +789,9 @@ def test_add_operation_accepts_legacy_plan_metadata(
     assert len(generated) == 1
 
 
-def test_add_operation_warns_when_legacy_plan_lacks_metadata(
+def test_add_operation_accepts_legacy_plan_without_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "legacy-plan.md"
@@ -825,15 +808,13 @@ def test_add_operation_warns_when_legacy_plan_lacks_metadata(
     )
 
     assert len(generated) == 1
-    assert "完全OIDを抽出できない" in capsys.readouterr().err
 
 
 def test_add_operation_ignores_base_commit_inside_metadata_code_fence(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """コードフェンス内のメタ情報は候補に採らず、フェンス外の値で照合結果を警告する。"""
+    """コードフェンス内外のベース参照値を投入先の検証へ使わない。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
@@ -852,10 +833,9 @@ def test_add_operation_ignores_base_commit_inside_metadata_code_fence(
     )
 
     assert len(generated) == 1
-    assert f"計画ファイル={'b' * 40}" in capsys.readouterr().err
 
 
-def test_add_operation_rejects_duplicate_base_commit_candidates(
+def test_add_operation_accepts_duplicate_base_commit_candidates(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -866,24 +846,21 @@ def test_add_operation_rejects_duplicate_base_commit_candidates(
         encoding="utf-8",
     )
 
-    with pytest.raises(WebInputError, match="複数"):
-        add_module.add_entries(
-            notes,
-            messages=["本文"],
-            target_repo="github.com/example/repo",
-            source=None,
-            now=_FIXED_DT,
-            target_commit="a" * 40,
-            plan_file=str(plan),
-        )
-
-    assert not list((notes / "inbox").iterdir())
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        target_commit="a" * 40,
+        plan_file=str(plan),
+    )
+    assert len(generated) == 1
 
 
-def test_add_operation_warns_when_plan_file_base_commit_is_abbreviated(
+def test_add_operation_accepts_abbreviated_base_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = _write_plan_with_base_commit(tmp_path, "01234567")
@@ -899,7 +876,6 @@ def test_add_operation_warns_when_plan_file_base_commit_is_abbreviated(
     )
 
     assert len(generated) == 1
-    assert "完全OIDを抽出できない" in capsys.readouterr().err
 
 
 def test_add_operation_rejects_plan_file_with_target_repo_override(

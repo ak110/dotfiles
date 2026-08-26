@@ -63,6 +63,25 @@
 - プロジェクト直下に`.claude/rules/`が存在する場合は、作業内容に該当するルールファイルを読む
 - `~/.codex/agent-toolkit/rules/`と`~/.codex/skills/`のdotfiles配布物は、Claude Code側の原本へのシンボリックリンクとして扱う
 
+### Codexホスト契約の適用
+
+Codexホストが提供する公開能力と個別ツールの契約が共有規範と異なる場合は、この節の契約を共有規範へ優先して適用する。
+ツールを利用する前に短い`commentary`を必要とするCodexホストでは、共有規範の事前説明を抑制する指示にかかわらず、ツール呼び出し前に短い`commentary`を送る。
+コード評価を伴うコマンドでは、何をするか、何を読むまたは書くか、何を確認したいかをその`commentary`で説明する。
+承認を要する操作では、実行内容、影響範囲及び元に戻す方法を実行前に説明する。
+
+回答期限を提供しないCodexのDefault modeでは、協調モードは利用者へ直接質問して回答を待つ。
+Codexの自律モードは質問を発行せず、確認事項をTBDへ記録して暫定判断で続行する。
+利用者接点を持たない委譲先は確認を発行せず、呼び出し元へ判断を返す。
+
+Codexの委譲待機では、ホストが提供する`wait_agent`を使って終了状態を観測する。
+`wait_agent`が提供される場面では、共有規範の待機表明でターンを終えず、未完了のまま`final`を返さない。
+完了通知だけを提供するホストでは、共有規範の待機表明による再開経路を使う。
+
+独立した複数のツール呼び出しは、Codexホストと各ツールの契約がともに許可する場合だけ同一応答内で並列化する。
+個別ツールが逐次呼び出しを要求する場合は、その契約を優先する。
+Web調査ツールのように逐次呼び出しを要求する個別ツールでは、依存関係のない呼び出しも逐次化する。
+
 ### 計画ファイルの起草開始条件
 
 計画ファイルの起草前に調査の完了を観測可能にし、根拠不足のまま本文作成へ移る事象を防ぐ。
@@ -108,13 +127,12 @@ Codexで利用する場合は次の対応表に従って読み替える。
 
 | Claude Code | Codex相当 |
 | --- | --- |
-| `TaskCreate`・`TaskUpdate`・`TaskList`・`TaskGet` | `update_plan`で計画状態を管理する |
 | `Agent`ツール（サブエージェント起動。旧称`Task`） | `spawn_agent`で別エージェントへ委譲する。`task_name`と`message`は必須で、`fork_turns`へ`"none"`を指定する。`model`・`reasoning_effort`による委譲先の指定は`fork_turns`が`"none"`または継承ターン数の場合に有効となり、省略時と`"all"`では上書きできない |
 | `SendMessage`（稼働中のサブエージェントへの追加指示・再開） | `followup_task`で追加タスクを送る（待機中の対象は新しいターンを開始する）。ターンを開始せず伝えるだけの場合は`send_message`を使う |
 | `TaskStop` | `interrupt_agent`で対象エージェントを停止し、`list_agents`で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | `wait_agent`で更新を待ち、`list_agents`で稼働中の一覧を取得し、`interrupt_agent`で中断する |
-| `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`（agents_serverの委譲・継続） | 自身がCodexであるためCodex engineをMCP経由で自己呼び出しせず、`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲する。Claude engineへ委譲する場合は`start(engine="claude", prompt, cwd, model, effort)`を使い、状態と結果は`wait`、追加指示は`send_message`で扱う |
+| `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・継続・中断） | 自身がCodexであるためCodex engineをMCP経由で自己呼び出しせず、`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲する。Claude engineへ委譲する場合は`start(engine="claude", prompt, cwd, model, effort)`を使い、状態と結果は`wait`、追加指示は`send_message`、実行中turnの明示的な中断は`kill(session_id, timeout)`で扱う。timeout超過後もsessionを保持する |
 | `Monitor` | `list_agents`と`wait_agent`、または実行セッションの待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは利用者へ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む |
@@ -124,8 +142,8 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | `EnterPlanMode`・`ExitPlanMode` | `plan modeの扱い`節を参照 |
 | `ScheduleWakeup`・`CronCreate` | 現行セッションで公開された能力を確認できない場合は、手動運用又は利用者への依頼へ切り替える |
 
-Claude Code側の`agents_server`は、`start`・`wait`・`send_message`の3ツールでCodexまたはClaudeへ委譲する。
-Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担う。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
+Claude Code側の`agents_server`は、`start`・`wait`・`send_message`・`kill`の4ツールでCodexまたはClaudeへ委譲する。
+Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
 

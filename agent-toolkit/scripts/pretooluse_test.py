@@ -203,6 +203,8 @@ class TestMojibakeCheck:
         assert "U+FFFD" in result.stderr
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+        assert "[block]" in result.stderr
+        assert "Fix: Replace the U+FFFD character" in result.stderr
         assert "Auto-generated hook notice" in result.stderr
 
     def test_edit_with_mojibake(self):
@@ -248,6 +250,7 @@ class TestPs1EolCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 2
         assert "LF-only" in result.stderr
+        assert "Fix: Use the Edit tool" in result.stderr
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -300,6 +303,7 @@ class TestLockfilesCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
         assert "direct edit" in result.stderr
+        assert "Fix: " in result.stderr
 
     def test_edit_cargo_lock_blocked(self):
         result = _run(
@@ -310,6 +314,7 @@ class TestLockfilesCheck:
         )
         assert result.returncode == 2
         assert "cargo add" in result.stderr
+        assert "Fix: " in result.stderr
 
     def test_normal_file_allowed(self):
         """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""
@@ -339,6 +344,7 @@ class TestSecretsCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
         assert "secret" in result.stderr
+        assert "Fix: " in result.stderr
         assert (_SECRETS_COPY_GUIDANCE in result.stderr) is expects_guidance
         assert (_SECRETS_VALUE_EDIT_GUIDANCE in result.stderr) is expects_guidance
 
@@ -524,6 +530,66 @@ class TestHomePathCheck:
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(sibling), "content": f"対象: {self._HOME}/worktree"},
             }
+        )
+        assert result.returncode == 0
+        assert "home directory" in _additional_context(result)
+
+    @pytest.mark.parametrize("xdg_value", ["unset", ""])
+    def test_home_path_in_default_cache_document_is_skipped(self, xdg_value: str, monkeypatch: pytest.MonkeyPatch):
+        """XDGキャッシュ設定が未設定又は空値の場合は`$HOME/.cache`をGit管理外として扱う。"""
+        if xdg_value == "unset":
+            monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+        else:
+            monkeypatch.setenv("XDG_CACHE_HOME", xdg_value)
+        target = pathlib.Path.home() / ".cache" / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": xdg_value} if xdg_value != "unset" else None,
+        )
+        assert result.returncode == 0
+        assert "home directory" not in _agent_messages(result)
+
+    def test_home_path_in_absolute_xdg_cache_document_is_skipped(self, tmp_path: pathlib.Path):
+        """絶対`XDG_CACHE_HOME`配下のGit管理外文書はホームパス警告の対象外とする。"""
+        cache_home = tmp_path / "cache"
+        target = cache_home / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": str(cache_home)},
+        )
+        assert result.returncode == 0
+        assert "home directory" not in _agent_messages(result)
+
+    def test_home_path_in_relative_xdg_cache_document_warns(self):
+        """相対`XDG_CACHE_HOME`は除外ルートとして扱わず警告する。"""
+        target = pathlib.Path.cwd() / "relative-cache" / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": "relative-cache"},
+        )
+        assert result.returncode == 0
+        assert "home directory" in _additional_context(result)
+
+    def test_home_path_in_git_managed_xdg_cache_warns(self, tmp_path: pathlib.Path):
+        """絶対`XDG_CACHE_HOME`配下でもGit管理マーカーがあれば警告する。"""
+        cache_repo = tmp_path / "cache-repo"
+        subprocess.run(["git", "init", str(cache_repo)], check=True, capture_output=True)
+        target = cache_repo / "docs" / "note.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": str(cache_repo.parent)},
         )
         assert result.returncode == 0
         assert "home directory" in _additional_context(result)
@@ -752,12 +818,6 @@ def _plan_file_state_env(
     return env
 
 
-def _delegation_state_env(tmp_path: pathlib.Path, session_id: str) -> dict[str, str]:
-    """delegation起動済みの後段ゲート検証用に状態ファイルを準備する。"""
-    _write_session_state(tmp_path, session_id, {"delegation_skill_invoked": True})
-    return _plan_file_state_env(tmp_path)
-
-
 def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Path:
     plans = home_dir / ".claude" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
@@ -937,7 +997,7 @@ class TestPlanModeSkillFirstCheck:
             pytest.param("Bash", {"command": "ls"}, False, 0, id="bash-without-skill"),
             pytest.param(
                 "Skill",
-                # 委譲を伴う工程を定めないスキルを選び、delegation未起動の事前案内と混在させない。
+                # 通常の品質スキルを選び、計画単位の状態検査と分離する。
                 {"skill": "agent-toolkit:coding-standards"},
                 False,
                 0,
@@ -993,8 +1053,7 @@ class TestPlanModeSkillFirstCheck:
 class TestPlanModeSkillCallSites:
     """plan-modeスキル呼び出しの素通り保証。
 
-    plan-modeは委譲を伴う工程を定めるため、delegation未起動では事前案内（warn）が載る。
-    遮断はせず`returncode`は0を保つ。
+    plan-mode起動時の計画単位リセット以外の委譲状態を参照せず、`returncode`は0を保つ。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
@@ -1002,7 +1061,6 @@ class TestPlanModeSkillCallSites:
     @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
     def test_allowed_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
         env = self._state_env(tmp_path)
-        _write_session_state(tmp_path, "outside-plan", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Skill",
@@ -1017,7 +1075,6 @@ class TestPlanModeSkillCallSites:
 
     def test_allowed_in_plan_mode(self, tmp_path: pathlib.Path):
         env = self._state_env(tmp_path)
-        _write_session_state(tmp_path, "inside-plan", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Skill",
@@ -2832,43 +2889,53 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 0
 
 
-class TestDelegationRouteGate:
-    """メインセッションのdelegation起動ゲート。"""
+class TestAgentsServerInputChecks:
+    """agents_serverの入力検査が委譲スキル状態から独立していることを確認する。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    _write_state = staticmethod(_write_session_state)
-
-    def test_blocked_when_skill_not_invoked(self, state_dir: dict[str, str]) -> None:
-        """メインセッションでdelegation未起動の初回呼び出しをブロックする。"""
+    @pytest.mark.parametrize(
+        ("tool_suffix", "tool_input", "remote_session_id"),
+        [
+            pytest.param(
+                "start",
+                {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
+                None,
+                id="start",
+            ),
+            pytest.param("send_message", {"prompt": "hello", "session_id": "remote"}, "remote", id="send_message"),
+            pytest.param("kill", {"session_id": "remote"}, "remote", id="kill"),
+        ],
+    )
+    def test_allowed_without_skill_record(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        tool_suffix: str,
+        tool_input: dict,
+        remote_session_id: str | None,
+    ) -> None:
+        """専用スキルの起動記録が無くても独立した入力検査を通過すれば許可する。"""
+        session_id = f"without-skill-{tool_suffix}"
+        if remote_session_id is not None:
+            _write_session_state(
+                tmp_path,
+                session_id,
+                {"agents_server_cwd_by_session": {remote_session_id: "/tmp/workdir"}},
+            )
         result = _run(
             {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello"},
-                "session_id": "no-review",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "agent-toolkit:delegation" in result.stderr
-
-    def test_allowed_when_skill_invoked(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
-        """delegation起動後の初回呼び出しを許可する。"""
-        self._write_state(tmp_path, "with-review", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
-                "session_id": "with-review",
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_suffix}",
+                "tool_input": tool_input,
+                "session_id": session_id,
             },
             env_overrides=state_dir,
         )
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "updatedInput" not in out["hookSpecificOutput"]
 
     def test_allowed_when_sidechain_without_skill_record(self, state_dir: dict[str, str]) -> None:
         """サイドチェーンでは明示Skill起動記録を要求しない。"""
@@ -2885,20 +2952,6 @@ class TestDelegationRouteGate:
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
-    def test_blocked_when_not_sidechain_and_skill_missing(self, state_dir: dict[str, str]) -> None:
-        """`isSidechain`が偽の呼び出しへメインセッションゲートを適用する。"""
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello"},
-                "session_id": "not-sidechain",
-                "isSidechain": False,
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 2
-        assert "agent-toolkit:delegation" in result.stderr
-
 
 class TestCodexMcpExecution:
     """codex MCP sandbox明示指定の強制・approval-policy自動修正（CLI統合テスト）。"""
@@ -2907,11 +2960,8 @@ class TestCodexMcpExecution:
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    _write_state = staticmethod(_write_session_state)
-
-    def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+    def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str]):
         """sandbox未指定の場合は`danger-full-access`へ自動補正する。"""
-        self._write_state(tmp_path, "fix1", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -2926,9 +2976,8 @@ class TestCodexMcpExecution:
         assert "systemMessage" not in out
 
     @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
-    def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str], tmp_path: pathlib.Path):
+    def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str]):
         """`danger-full-access`以外のsandbox指定は自動補正する。"""
-        self._write_state(tmp_path, "fix2", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -2942,9 +2991,8 @@ class TestCodexMcpExecution:
         assert "updatedInput" not in out["hookSpecificOutput"]
         assert "systemMessage" not in out
 
-    def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+    def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str]):
         """サブエージェント内部からの呼び出しでもsandboxを自動補正する。"""
-        self._write_state(tmp_path, "fix_side", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -2959,9 +3007,8 @@ class TestCodexMcpExecution:
         assert "updatedInput" not in out["hookSpecificOutput"]
         assert "systemMessage" not in out
 
-    def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+    def test_sandbox_correct_no_message(self, state_dir: dict[str, str]):
         """sandbox・approval-policyが共に既定値の場合、updatedInputは返すがsystemMessageを含めない。"""
-        self._write_state(tmp_path, "fix3", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -2981,9 +3028,8 @@ class TestCodexMcpExecution:
         assert "updatedInput" not in out["hookSpecificOutput"]
         assert "systemMessage" not in out
 
-    def test_approval_policy_wrong_value_auto_fix_with_correct_sandbox(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+    def test_approval_policy_wrong_value_auto_fix_with_correct_sandbox(self, state_dir: dict[str, str]):
         """sandboxが正しい値でもapproval-policyのみ誤りなら単独でneverへ強制修正する。"""
-        self._write_state(tmp_path, "fix_ap", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3010,11 +3056,8 @@ class TestCheckCodexMcpCwd:
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    _write_state = staticmethod(_write_session_state)
-
-    def test_blocks_missing_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+    def test_blocks_missing_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`未指定の場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-missing", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3026,9 +3069,8 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "unspecified" in result.stderr
 
-    def test_blocks_empty_string_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+    def test_blocks_empty_string_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が空文字列の場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-empty", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3040,9 +3082,8 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "unspecified" in result.stderr
 
-    def test_blocks_whitespace_only_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+    def test_blocks_whitespace_only_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が空白のみの場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-whitespace", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3054,9 +3095,8 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "`   `" in result.stderr
 
-    def test_blocks_relative_path_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+    def test_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が相対パスの場合はブロックする。"""
-        self._write_state(tmp_path, "cwd-relative", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3068,9 +3108,8 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "relative/path" in result.stderr
 
-    def test_allows_absolute_path_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+    def test_allows_absolute_path_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が絶対パスの場合は許可する。"""
-        self._write_state(tmp_path, "cwd-absolute", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3091,26 +3130,25 @@ class TestCodexMcpReply:
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    _write_state = staticmethod(_write_session_state)
-
     @pytest.mark.parametrize(
         ("tool_name", "prompt"),
         [
             ("mcp__plugin_agent-toolkit_agents_server__send_message", "next"),
             ("mcp__plugin_agent-toolkit_agents_server__send_message", "追加指示"),
+            ("mcp__plugin_agent-toolkit_agents_server__kill", ""),
         ],
     )
     def test_continuation_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path, tool_name: str, prompt: str):
-        """delegation起動後はCodex継続用MCP toolが強制承認される。"""
-        self._write_state(
+        """Codex継続用MCP toolが入力検査後に強制承認される。"""
+        _write_session_state(
             tmp_path,
             "reply1",
-            {"delegation_skill_invoked": True, "agents_server_cwd_by_session": {"abc": "/tmp"}},
+            {"agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
         result = _run(
             {
                 "tool_name": tool_name,
-                "tool_input": {"session_id": "abc", "prompt": prompt},
+                "tool_input": {"session_id": "abc", **({"prompt": prompt} if prompt else {})},
                 "session_id": "reply1",
             },
             env_overrides=state_dir,
@@ -3149,7 +3187,6 @@ class TestCodexMcpLanguageWarningMerge:
     def test_codex_merges_pending_language_warning(self, tmp_path: pathlib.Path):
         """mcp__plugin_agent-toolkit_agents_server__start分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "codex-lang", {"delegation_skill_invoked": True})
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
@@ -3169,10 +3206,10 @@ class TestCodexMcpLanguageWarningMerge:
     def test_codex_reply_merges_pending_language_warning(self, tmp_path: pathlib.Path):
         """mcp__plugin_agent-toolkit_agents_server__send_message分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
-        self._write_state(
+        _write_session_state(
             tmp_path,
             "reply-lang",
-            {"delegation_skill_invoked": True, "agents_server_cwd_by_session": {"abc": "/tmp"}},
+            {"agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
@@ -3204,7 +3241,6 @@ class TestIssSidechainProbe:
     def test_writes_one_jsonl_line_under_tempdir(self, tmp_path: pathlib.Path):
         """`tempfile.gettempdir()`起点、session_id含むパスへJSONL 1行を追記する。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe1", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3226,7 +3262,6 @@ class TestIssSidechainProbe:
             tmp_path,
             "probe2",
             {
-                "delegation_skill_invoked": True,
                 "current_plan_file_path": "/tmp/plan.md",
             },
         )
@@ -3253,7 +3288,6 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_absent_is_recorded_as_null(self, tmp_path: pathlib.Path):
         """`isSidechain`欠落時に`null`が記録される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe3", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3269,7 +3303,6 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_non_boolean_is_recorded_as_is(self, tmp_path: pathlib.Path):
         """`isSidechain`が非boolean型（整数・文字列など）でもそのまま記録される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe4", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -3304,7 +3337,6 @@ class TestIssSidechainProbe:
     def test_rotates_when_log_exceeds_one_megabyte(self, tmp_path: pathlib.Path):
         """ログファイルが1MB超過時に`_file_lock.rotate_if_needed`経由で`.1`世代ファイルへローテートされる。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe-rotate", {"delegation_skill_invoked": True})
         log_path = self._log_path(tmp_path, "probe-rotate")
         log_path.write_text("x" * (1_000_001), encoding="utf-8")
         result = _run(
@@ -3325,10 +3357,10 @@ class TestIssSidechainProbe:
     def test_called_for_codex_reply_tool(self, tmp_path: pathlib.Path):
         """`mcp__plugin_agent-toolkit_agents_server__send_message`の呼び出し時にも本ヘルパーが呼ばれる。"""
         env = self._state_env(tmp_path)
-        self._write_state(
+        _write_session_state(
             tmp_path,
             "probe-reply",
-            {"delegation_skill_invoked": True, "agents_server_cwd_by_session": {"abc": "/tmp"}},
+            {"agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
         result = _run(
             {
@@ -3803,14 +3835,14 @@ class TestBashOutputTruncationWarning:
         assert "truncating it" not in _agent_messages(result)
 
 
-class TestAgentNameParameterGate:
-    """AgentとTask起動時の`name`引数指定の一律ブロック。"""
+class TestAgentNameParameterAccepted:
+    """`name`引数を伴うAgent/Task起動が委譲ゲートで拒否されないことを保証する（`name`禁止規程撤回の受理契約）。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("name_value", ["impl-1", "", None])
-    def test_name_parameter_blocks(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
-        """`name`キーが存在する起動は値の内容によらずブロックする。"""
-        sid = f"agent-name-block-{tool_name.lower()}-{name_value!r}"
+    def test_name_parameter_does_not_block(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
+        """`name`キーの値によらず、他の委譲ゲートを満たす起動はブロックされない。"""
+        sid = f"agent-name-accept-{tool_name.lower()}-{name_value!r}"
         result = _run(
             {
                 "tool_name": tool_name,
@@ -3818,67 +3850,10 @@ class TestAgentNameParameterGate:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=_delegation_state_env(tmp_path, sid),
-        )
-        assert result.returncode == 2
-        assert "`name` parameter is not allowed" in result.stderr
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_launch_without_name_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """`name`キーを持たない起動は通過する。"""
-        sid = f"agent-name-allow-{tool_name.lower()}"
-        result = _run(
-            {
-                "tool_name": tool_name,
-                "tool_input": {"subagent_type": "claude", "prompt": "調査してください。"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, sid),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "`name` parameter is not allowed" not in result.stderr
-
-    def test_name_block_states_only_prohibition_and_parallel_guidance(self, tmp_path: pathlib.Path) -> None:
-        """ブロック理由は`name`禁止の根拠と並列起動の案内だけを示し、起動形態を断定しない。"""
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "claude", "name": "named", "prompt": "調査してください。"},
-                "session_id": "agent-name-block-route",
-                "permission_mode": "default",
-            },
-            env_overrides=_delegation_state_env(tmp_path, "agent-name-block-route"),
-        )
-        assert result.returncode == 2
-        assert "in parallel" in result.stderr
-        assert "run_in_background" not in result.stderr
-        assert "execution result" not in result.stderr
-        assert "launch in the foreground" not in result.stderr
-        assert "tool return value" not in result.stderr
-
-    def test_name_block_precedes_subagent_type_flag_record(self, tmp_path: pathlib.Path) -> None:
-        """ブロックされた起動では`subagent_type`別フラグを記録しない（起動しない呼び出しの副作用を残さない）。"""
-        sid = "agent-name-block-no-flag"
-        plan = _make_plan_file(tmp_path / "home", "name-block.md")
-        _write_session_state(tmp_path, sid, {"delegation_skill_invoked": True})
-        env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
-                    "name": "codex-1",
-                    "prompt": f"計画ファイル `{plan}` を実装する。",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
-        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+        assert "`name`" not in result.stderr
 
 
 class TestSubagentModelOverrideGate:
@@ -3892,7 +3867,7 @@ class TestSubagentModelOverrideGate:
                 "session_id": "model-override-plan-impl-executor",
                 "permission_mode": "default",
             },
-            env_overrides=_delegation_state_env(tmp_path, "model-override-plan-impl-executor"),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 2
 
@@ -3905,7 +3880,7 @@ class TestSubagentModelOverrideGate:
                 "session_id": "model-override-none",
                 "permission_mode": "default",
             },
-            env_overrides=_delegation_state_env(tmp_path, "model-override-none"),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
 
@@ -3919,7 +3894,7 @@ class TestSubagentModelOverrideGate:
                 "session_id": "model-override-feedbacks-planner",
                 "permission_mode": "default",
             },
-            env_overrides=_delegation_state_env(tmp_path, "model-override-feedbacks-planner"),
+            env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 2
 
@@ -4056,7 +4031,7 @@ class TestExecuteReviewAlternateRouteAllowed:
     def test_codex_setting_allows_main_session_agent(self, tmp_path: pathlib.Path) -> None:
         session_id = "execute-review-main"
         env = _stage_model_env(tmp_path, "codex:gpt-5.6-sol/medium")
-        env.update(_delegation_state_env(tmp_path, session_id))
+        env.update(_plan_file_state_env(tmp_path))
         result = _run(
             {
                 "tool_name": "Agent",
@@ -4097,7 +4072,6 @@ class TestSubagentStartLogOrdering:
 
     def test_model_override_block_does_not_log_start(self, tmp_path: pathlib.Path):
         log_path = self._log_path(tmp_path)
-        _write_session_state(tmp_path, "log-order-model-override", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Agent",
@@ -4117,7 +4091,6 @@ class TestSubagentStartLogOrdering:
     def test_all_checks_pass_logs_start(self, tmp_path: pathlib.Path):
         """モデル指定なし・見出し検査対象外・`process7`未起動時の`plan-impl-executor`は通過し記録される。"""
         log_path = self._log_path(tmp_path)
-        _write_session_state(tmp_path, "log-order-pass", {"delegation_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Agent",
@@ -4759,271 +4732,11 @@ class TestBodySectionReferenceExists:
         assert "section name does not exist" in _additional_context(result)
 
 
-class TestCodexRemoteSnapshotRecording:
-    """`mcp__plugin_agent-toolkit_agents_server__start`/`mcp__plugin_agent-toolkit_agents_server__send_message`呼び出し時のリモート参照スナップショット記録。
-
-    codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
-    行う事象への機械チェック（事後検知）のうち、記録側（PreToolUse）を検証する。
-    """
-
-    _write_state = staticmethod(_write_session_state)
-    _read_state = staticmethod(_read_session_state)
-
-    @staticmethod
-    def _init_repo(path: pathlib.Path) -> None:
-        path.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "-q"], cwd=path, check=True)
-        subprocess.run(["git", "config", "user.email", "a@example.com"], cwd=path, check=True)
-        subprocess.run(["git", "config", "user.name", "a"], cwd=path, check=True)
-
-    def test_records_snapshot_with_agent_id_key(self, tmp_path: pathlib.Path):
-        """`transcript_path`からagentIdを抽出できる場合、agentIdをキーとして記録する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-agent", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
-                "session_id": "snap-agent",
-                "cwd": str(repo),
-                "transcript_path": "/x/agent-abc123.jsonl",
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-agent")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        recorded = entries.get("abc123")
-        assert recorded is not None
-        assert recorded["cwd"] == str(repo)
-        assert recorded["snapshot"] == {}
-
-    def test_records_snapshot_with_session_id_fallback_key(self, tmp_path: pathlib.Path):
-        """agentIdを抽出できない場合（メインセッション自身の直接呼び出し）は`session_id`をキーとする。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-session", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
-                "session_id": "snap-session",
-                "cwd": str(repo),
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-session")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        recorded = entries.get("session:snap-session")
-        assert recorded is not None
-        assert recorded["cwd"] == str(repo)
-
-    def test_records_snapshot_from_tool_input_cwd_not_payload_cwd(self, tmp_path: pathlib.Path):
-        """比較対象は`tool_input["cwd"]`（codexの実行対象）であり、`payload["cwd"]`
-        （呼び出し元セッション自身の作業ディレクトリ）ではないことを検証する。両者が異なる場合、
-        `tool_input["cwd"]`側が記録されなければcodexの実行対象と異なるリポジトリを比較してしまう。
-        """
-        codex_repo = tmp_path / "codex-repo"
-        session_repo = tmp_path / "session-repo"
-        self._init_repo(codex_repo)
-        self._init_repo(session_repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-cwd-src", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(codex_repo)},
-                "session_id": "snap-cwd-src",
-                "cwd": str(session_repo),
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-cwd-src")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        recorded = entries.get("session:snap-cwd-src")
-        assert recorded is not None
-        assert recorded["cwd"] == str(codex_repo)
-
-    def test_reply_skips_recording_when_no_prior_cwd(self, tmp_path: pathlib.Path):
-        """直前の`mcp__plugin_agent-toolkit_agents_server__start`呼び出しによるcwd記録が無い場合、`-reply`は記録をスキップする。
-
-        `mcp__plugin_agent-toolkit_agents_server__send_message`の`tool_input`には`cwd`が含まれないため、
-        同一キーの直近`mcp__plugin_agent-toolkit_agents_server__start`呼び出しで永続化したcwdが無ければ比較対象が無い。
-        """
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-reply-nocwd", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "th_abc123", "prompt": "続行"},
-                "session_id": "snap-reply-nocwd",
-                "isSidechain": False,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert "no stored absolute cwd" in result.stderr
-        assert "Do not continue this session" in result.stderr
-        assert "start a new one with agents_server start" in result.stderr
-        state = self._read_state(tmp_path, "snap-reply-nocwd")
-        assert state.get("agents_server_remote_snapshot_by_key") is None
-
-    def test_reply_accepts_json_string_response_recorded_by_posttooluse(self, tmp_path: pathlib.Path):
-        """PostToolUseのJSON文字列応答で記録したcwdを後続のreplyが利用する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        sid = "snap-json-post"
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, sid, {"delegation_skill_invoked": True})
-        start_tool = "mcp__plugin_agent-toolkit_agents_server__start"
-        reply_tool = "mcp__plugin_agent-toolkit_agents_server__send_message"
-        post = _run_posttooluse(
-            {
-                "session_id": sid,
-                "tool_name": start_tool,
-                "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                "tool_use_id": "json-start-1",
-                "tool_response": json.dumps({"session_id": "thread-json", "turn_id": "turn-json", "status": "running"}),
-            },
-            env,
-        )
-        assert post.returncode == 0
-        state = self._read_state(tmp_path, sid)
-        assert state["agents_server_cwd_by_session"]["thread-json"] == str(repo)
-        reply = _run(
-            {
-                "session_id": sid,
-                "tool_name": reply_tool,
-                "tool_input": {"session_id": "thread-json", "prompt": "続行"},
-                "tool_use_id": "json-reply-1",
-                "isSidechain": False,
-            },
-            env,
-        )
-        assert reply.returncode == 0
-        assert "cannot continue because session_id has no stored absolute cwd" not in _agent_messages(reply)
-        state_after = self._read_state(tmp_path, sid)
-        assert state_after.get("agents_server_remote_snapshot_by_key")
-
-    def test_reply_reuses_cwd_recorded_by_prior_codex_call(self, tmp_path: pathlib.Path):
-        """`mcp__plugin_agent-toolkit_agents_server__send_message`は同一キーの直近`mcp__plugin_agent-toolkit_agents_server__start`呼び出しのcwdを引き継いで記録する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        env = _plan_file_state_env(tmp_path)
-        self._write_state(tmp_path, "snap-reply", {"delegation_skill_invoked": True})
-        first = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
-                "session_id": "snap-reply",
-                "isSidechain": True,
-            },
-            env_overrides=env,
-        )
-        assert first.returncode == 0
-        self._write_state(
-            tmp_path,
-            "snap-reply",
-            self._read_state(tmp_path, "snap-reply")
-            | {
-                "delegation_skill_invoked": True,
-                "agents_server_cwd_by_session": {"th_abc123": str(repo)},
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "th_abc123", "prompt": "続行"},
-                "session_id": "snap-reply",
-                "isSidechain": False,
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, "snap-reply")
-        entries = state.get("agents_server_remote_snapshot_by_key")
-        assert entries is not None
-        assert entries.get("session:snap-reply", {}).get("cwd") == str(repo)
-
-    def test_send_message_preserves_existing_thread_snapshot(self, tmp_path: pathlib.Path):
-        """実行中turnへの`send_message`は同一threadのsnapshotを上書きしない。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        sid = "snap-send-active"
-        old_snapshot = {"origin": {"main": "old"}}
-        self._write_state(
-            tmp_path,
-            sid,
-            {
-                "delegation_skill_invoked": True,
-                "agents_server_cwd_by_session": {"thread-1": str(repo)},
-                "agents_server_sessions": {},
-                "agents_server_remote_snapshot_by_key": {"start-1": {"cwd": str(repo), "snapshot": old_snapshot}},
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
-                "tool_use_id": "send-1",
-                "session_id": sid,
-                "isSidechain": True,
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, sid)
-        assert state["agents_server_remote_snapshot_by_key"] == {
-            "start-1": {"cwd": str(repo), "snapshot": old_snapshot},
-            "send-1": {"cwd": str(repo), "snapshot": {}},
-        }
-
-    def test_send_message_records_snapshot_after_result_recovery(self, tmp_path: pathlib.Path):
-        """結果回収済みthreadのreply開始だけは新しいsnapshotを記録する。"""
-        repo = tmp_path / "repo"
-        self._init_repo(repo)
-        sid = "snap-send-reply"
-        self._write_state(
-            tmp_path,
-            sid,
-            {
-                "delegation_skill_invoked": True,
-                "agents_server_cwd_by_session": {"thread-1": str(repo)},
-                "agents_server_sessions": {},
-                "agents_server_remote_snapshot_by_key": {},
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                "tool_use_id": "send-1",
-                "session_id": sid,
-                "isSidechain": True,
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-        state = self._read_state(tmp_path, sid)
-        assert state["agents_server_remote_snapshot_by_key"]["send-1"]["cwd"] == str(repo)
-
-
-class TestDelegationGateForAgentTask:
-    """新規Agent／Task委譲はdelegation起動後だけ通す。"""
+class TestAgentTaskLaunchIndependence:
+    """Agent／Task起動が委譲スキル状態から独立していることを確認する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_main_launch_without_delegation_is_blocked(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+    def test_main_launch_without_skill_is_allowed(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         sid = f"missing-{tool_name.lower()}"
         plan = _make_plan_file(tmp_path / "home", f"{tool_name.lower()}-missing.md")
         env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
@@ -5038,17 +4751,12 @@ class TestDelegationGateForAgentTask:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "agent-toolkit:delegation" in result.stderr
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        assert not state_path.exists()
-        log_path = tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
-        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+        assert result.returncode == 0
+        assert "agent-toolkit:delegation" not in result.stderr
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_with_delegation_or_sidechain_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-        _write_session_state(tmp_path, "ready", {"delegation_skill_invoked": True})
         allowed = _run({"session_id": "ready", "tool_name": tool_name, "tool_input": {}}, env_overrides=env)
         sidechain = _run(
             {"session_id": "sidechain", "tool_name": tool_name, "tool_input": {}, "isSidechain": True},
@@ -5058,7 +4766,7 @@ class TestDelegationGateForAgentTask:
         assert sidechain.returncode == 0
 
     def test_claude_code_guide_without_delegation_passes(self, tmp_path: pathlib.Path) -> None:
-        """公式資料照会専用エージェントは委譲スキル未起動でも許容する。"""
+        """公式資料照会専用エージェントも独立した入力検査後に許可する。"""
         result = _run(
             {
                 "session_id": "guide-without-delegation",
@@ -5070,12 +4778,8 @@ class TestDelegationGateForAgentTask:
         assert result.returncode == 0
 
 
-class TestDelegationSkillReminderOnSkillInvocation:
-    """委譲を伴う工程のスキル起動時にdelegation未起動を事前案内する。
-
-    事前案内はAgent・Task起動プロンプトを構成する前の最後の観測点で1回返し、
-    既存のAgent・Task遮断判定とセッション状態は変えない。
-    """
+class TestWorkflowSkillInvocation:
+    """工程スキル起動が委譲スキルの状態記録又は事前案内を発生させないことを確認する。"""
 
     @pytest.mark.parametrize(
         "skill_name",
@@ -5090,8 +4794,8 @@ class TestDelegationSkillReminderOnSkillInvocation:
             "bugfix",
         ],
     )
-    def test_notice_for_delegation_workflow_skill(self, tmp_path: pathlib.Path, skill_name: str) -> None:
-        """対象スキルの起動かつdelegation未起動では案内が1回返る。"""
+    def test_no_delegation_notice_for_workflow_skill(self, tmp_path: pathlib.Path, skill_name: str) -> None:
+        """工程スキルを起動しても委譲に関する追加出力を返さない。"""
         result = _run(
             {
                 "tool_name": "Skill",
@@ -5100,27 +4804,11 @@ class TestDelegationSkillReminderOnSkillInvocation:
             },
             env_overrides=_plan_file_state_env(tmp_path),
         )
-        context = _additional_context(result)
-        assert result.returncode == 0
-        assert context.count("agent-toolkit:delegation") == 1
-        assert skill_name in context
-
-    def test_no_notice_when_delegation_already_invoked(self, tmp_path: pathlib.Path) -> None:
-        """delegation起動済みでは案内を返さない。"""
-        _write_session_state(tmp_path, "reminder-done", {"delegation_skill_invoked": True})
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
-                "session_id": "reminder-done",
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
         assert result.returncode == 0
         assert result.stdout == ""
 
     def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
-        """委譲を伴う工程を定めないスキルでは案内を返さない。"""
+        """委譲工程を定めないスキルも追加出力を返さない。"""
         result = _run(
             {
                 "tool_name": "Skill",
@@ -5146,8 +4834,8 @@ class TestDelegationSkillReminderOnSkillInvocation:
         assert result.returncode == 0
         assert result.stdout == ""
 
-    def test_notice_does_not_unblock_agent_launch(self, tmp_path: pathlib.Path) -> None:
-        """案内を返した後もAgent起動の遮断判定は変わらない。"""
+    def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
+        """工程スキル起動後のAgent起動も委譲スキル状態に依存しない。"""
         env = _plan_file_state_env(tmp_path)
         skill_result = _run(
             {
@@ -5165,9 +4853,9 @@ class TestDelegationSkillReminderOnSkillInvocation:
             },
             env_overrides=env,
         )
-        assert "agent-toolkit:delegation" in _additional_context(skill_result)
-        assert agent_result.returncode == 2
-        assert "agent-toolkit:delegation" in agent_result.stderr
+        assert skill_result.stdout == ""
+        assert agent_result.returncode == 0
+        assert "agent-toolkit:delegation" not in agent_result.stderr
 
 
 # --- Codex `apply_patch` / Bash の共通検査 ---

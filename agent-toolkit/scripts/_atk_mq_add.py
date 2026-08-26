@@ -13,7 +13,6 @@ import sys
 
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_tbd as _tbd
-import _plan_format
 from _atk_mq_common import (
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
@@ -102,42 +101,6 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     if entry_type != MQ_TYPE_FEEDBACK:
         _tbd.reject_reserved_tbd_markup(body)
     return frontmatter, body
-
-
-def _verify_plan_base_commit(plan_path: pathlib.Path, target_commit: str | None) -> None:
-    """計画ファイルのベースコミットと投入先の`target_commit`を照合し、不一致を警告する。
-
-    計画メタ情報の解析は`_plan_format.parse_plan_metadata`へ委ねる。
-    正規形の`## 概要`直下を優先し、正規形を持たない既存計画だけ旧配置へ読み取り互換で
-    フォールバックする。配置が曖昧な計画とベースコミット候補が複数ある計画は拒否する。
-    双方が完全OIDとして得られた場合だけ比較し、不一致は警告を1回出力して処理を継続する。
-    計画側が欠落または短縮表記の場合も警告を出力して処理を継続する。
-    """
-    try:
-        plan_text = plan_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as error:
-        raise WebInputError(f"plan_fileを読み込めません: {plan_path}") from error
-    metadata, ambiguity_errors = _plan_format.parse_plan_metadata(plan_text)
-    if ambiguity_errors:
-        raise WebInputError(f"計画ファイルの`### 計画メタ情報`を一意に解析できません: {ambiguity_errors[0]}")
-    candidates = list(metadata.base_commit_candidates) if metadata is not None else []
-    if len(candidates) > 1:
-        raise WebInputError(f"計画ファイルの`### 計画メタ情報`にベースコミット候補が複数あります: 実際={len(candidates)}件")
-    if not candidates or len(candidates[0]) not in {40, 64}:
-        print(
-            "警告: 計画ファイルの`### 計画メタ情報`からベースコミットの完全OIDを抽出できないため、"
-            "投入先の`target_commit`との照合を省略します。",
-            file=sys.stderr,
-        )
-        return
-    plan_commit = candidates[0]
-    if target_commit is None or plan_commit.casefold() == target_commit.casefold():
-        return
-    print(
-        "警告: 計画ファイルのベースコミットと投入先の`target_commit`が一致しません。"
-        f"計画ファイル={plan_commit}、target_commit={target_commit}。",
-        file=sys.stderr,
-    )
 
 
 def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, object], str]]) -> None:
@@ -373,7 +336,6 @@ def add_entries(
         if normalized_target_repo is None:
             raise WebInputError("plan_file指定時はtarget_repoを指定してください")
         _verify_plan_target_repos(parsed_messages, normalized_target_repo)
-        _verify_plan_base_commit(plan_path, target_commit)
     if entry_type != MQ_TYPE_FEEDBACK and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):

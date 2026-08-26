@@ -249,29 +249,40 @@ def _pull(private_notes: pathlib.Path) -> None:
     他プロセスのfetch及び`pull.rebase`設定から独立させる。
     """
     _assert_repo_lock_held(private_notes)
-    if _has_remote(private_notes):
-        _run_git(["fetch"], cwd=private_notes)
-        _run_git(["merge", "--ff-only", "@{u}"], cwd=private_notes)
+    _pull_remote(private_notes)
     _migrate_legacy_reservations(private_notes)
 
 
-def _pull_with_recent_notice(private_notes: pathlib.Path) -> None:
-    """直近の同期形跡がある場合は再利用方法を案内したうえでremote同期する。
+def _pull_remote(private_notes: pathlib.Path) -> None:
+    """フィードバック保存リポジトリのremoteをfetchし、upstreamへ統合する。"""
+    _assert_repo_lock_held(private_notes)
+    if _has_remote(private_notes):
+        _run_git(["fetch"], cwd=private_notes)
+        _run_git(["merge", "--ff-only", "@{u}"], cwd=private_notes)
 
+
+def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = False) -> None:
+    """読み取り専用サブコマンドの同期を直近の成功済み同期結果だけ再利用する。
+
+    直近30秒の同期形跡とupstreamのHEAD祖先判定が成立した場合だけremoteのfetch・mergeを
+    省略し、旧予約形式の移行は実行する。状態遷移系サブコマンドは最新状態を要するため
+    この経路を使わず、毎回`pull`を実行する。
+
+    `force_pull`が真の場合は再利用判定を行わず、必ず`_pull`を実行する。
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
     """
     _assert_repo_lock_held(private_notes)
-    if _pulled_recently(private_notes):
-        interval = int(_PULL_MIN_INTERVAL_SECONDS)
-        print(
-            f"注記: 直近{interval}秒に他プロセスを含むfetch形跡がある。"
-            "同一の連続操作内で`list`・`show`・`grep`・`rm --all`を繰り返す場合は"
-            "`--skip-pull`で同期結果を再利用できる"
-            "（`rm --all`は削除直前だけ同期し、他の状態遷移系のサブコマンドは毎回同期する）。"
-            "単発実行では対処不要。",
-            file=sys.stderr,
-        )
-    _pull(private_notes)
+    if force_pull or not _pulled_recently(private_notes):
+        _pull(private_notes)
+        return
+
+    interval = int(_PULL_MIN_INTERVAL_SECONDS)
+    print(
+        f"注記: 直近{interval}秒に他プロセスを含む同期形跡があるため、直近の同期結果を再利用しました。"
+        "最新化する場合は`--pull`を指定してください。",
+        file=sys.stderr,
+    )
+    _migrate_legacy_reservations(private_notes)
 
 
 class _ThreadLocalHeldPaths(threading.local):
@@ -787,18 +798,31 @@ def pull_if_stale(private_notes: pathlib.Path) -> bool:
 
 
 def _pulled_recently(private_notes: pathlib.Path) -> bool:
-    """直近のremote同期から`_PULL_MIN_INTERVAL_SECONDS`未満かを返す。
+    """直近の成功済み同期を再利用できる状態かを返す。
 
     `.git`がファイルの場合（worktree形式）は`stat`が失敗し偽を返すため、
     レート制限が無効化されてremote同期を実行する側へ倒れる。
     フィードバック保存リポジトリは通常のクローンであり該当しない。
+    ローカル管理リポジトリは再利用対象外とする。
+
+    `FETCH_HEAD`のmtimeだけではfetch後の統合失敗を検出できないため、
+    `@{u}`がHEADの祖先であることも確認する。祖先判定が失敗した場合は再利用せず、
+    呼び出し元が通常のremote同期を実行する。
     """
+    if not _has_remote(private_notes):
+        return False
     fetch_head = private_notes / ".git" / "FETCH_HEAD"
     try:
         elapsed = time.time() - fetch_head.stat().st_mtime
     except OSError:
         return False
-    return elapsed < _PULL_MIN_INTERVAL_SECONDS
+    if elapsed >= _PULL_MIN_INTERVAL_SECONDS:
+        return False
+    try:
+        _run_git(["merge-base", "--is-ancestor", "@{u}", "HEAD"], cwd=private_notes)
+    except subprocess.CalledProcessError:
+        return False
+    return True
 
 
 def repo_lock(private_notes: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:

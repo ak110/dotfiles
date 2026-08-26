@@ -8,11 +8,12 @@ Rustバイナリ直接起動へ置き換える。
 import logging
 import os
 import pathlib
+import subprocess
 import sys
 
 import httpx
 
-from pytools._internal import claude_common, log_format
+from pytools._internal import claude_common, log_format, setup_mise
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,11 @@ _INSTALL_PATH = _INSTALL_DIR / ("claude-statusline.exe" if sys.platform == "win3
 _ETAG_PATH = _INSTALL_DIR / ".claude-statusline.etag"
 _HTTP_TIMEOUT = 30.0
 _DOWNLOAD_URL_ENV = "DOTFILES_STATUSLINE_DOWNLOAD_URL"
+_STATUSLINE_DIR = pathlib.Path("rust/claude-statusline")
+_STATUSLINE_MANIFEST = _STATUSLINE_DIR / "Cargo.toml"
+_BUILD_DIR = _STATUSLINE_DIR / "target" / "release"
+_GIT_TIMEOUT = 30.0
+_BUILD_TIMEOUT = 600.0
 
 
 def main() -> None:
@@ -45,6 +51,101 @@ def main() -> None:
 
 def run(client: httpx.Client | None = None) -> bool:
     """claude-statuslineバイナリを配置する。
+
+    `CHEZMOI_WORKING_TREE`が`develop`のGit作業ツリーを指し、
+    `origin/master`との差分がある場合は、解決済みmiseからstatuslineをビルドする。
+    それ以外の場合はGitHub Releaseから取得する。開発版のビルドまたは配置に失敗した場合は
+    例外を送出し、`post_apply`がステップ失敗として記録できるようにする。
+    """
+    working_tree = _find_development_tree()
+    if working_tree is not None:
+        return _install_development_binary(working_tree)
+    return _download_release(client)
+
+
+def _find_development_tree() -> pathlib.Path | None:
+    """ローカルstatuslineを使うGit作業ツリーを返す。"""
+    working_tree_value = os.environ.get("CHEZMOI_WORKING_TREE")
+    if not working_tree_value:
+        return None
+    working_tree = pathlib.Path(working_tree_value)
+
+    repository = _run_git(working_tree, ["rev-parse", "--show-toplevel"])
+    if repository is None or repository.returncode != 0:
+        return None
+
+    branch = _run_git(working_tree, ["branch", "--show-current"])
+    if branch is None or branch.returncode != 0:
+        raise RuntimeError(f"Gitの現在branch取得に失敗: {claude_common.format_cli_error(branch)}")
+    if (branch.stdout or "").strip() != "develop":
+        return None
+
+    origin_master = _run_git(working_tree, ["rev-parse", "--verify", "origin/master^{commit}"])
+    if origin_master is None or origin_master.returncode != 0:
+        raise RuntimeError(f"origin/masterの解決に失敗: {claude_common.format_cli_error(origin_master)}")
+
+    tracked_diff = _run_git(working_tree, ["diff", "--quiet", "origin/master", "--", str(_STATUSLINE_DIR)])
+    if tracked_diff is None or tracked_diff.returncode not in (0, 1):
+        raise RuntimeError(f"statusline差分の確認に失敗: {claude_common.format_cli_error(tracked_diff)}")
+    if tracked_diff.returncode == 1:
+        return working_tree
+
+    untracked = _run_git(working_tree, ["ls-files", "--others", "--exclude-standard", "--", str(_STATUSLINE_DIR)])
+    if untracked is None or untracked.returncode != 0:
+        raise RuntimeError(f"statuslineの未追跡ファイル確認に失敗: {claude_common.format_cli_error(untracked)}")
+    return working_tree if (untracked.stdout or "").strip() else None
+
+
+def _run_git(
+    working_tree: pathlib.Path,
+    args: list[str],
+) -> subprocess.CompletedProcess[str] | None:
+    """指定したGit作業ツリーでGitコマンドを実行する。"""
+    return claude_common.run_subprocess(
+        ["git", *args],
+        timeout=_GIT_TIMEOUT,
+        cwd=working_tree,
+        tag="statusline",
+    )
+
+
+def _install_development_binary(working_tree: pathlib.Path) -> bool:
+    """miseからビルドしたstatuslineを原子的に配置する。"""
+    mise_bin = setup_mise.find_mise_binary()
+    if mise_bin is None:
+        raise RuntimeError("statusline開発版のビルドに必要なmiseが見つからない")
+
+    build = claude_common.run_subprocess(
+        [
+            str(mise_bin),
+            "exec",
+            "--",
+            "cargo",
+            "build",
+            "--release",
+            "--locked",
+            "--manifest-path",
+            str(_STATUSLINE_MANIFEST),
+        ],
+        timeout=_BUILD_TIMEOUT,
+        cwd=working_tree,
+        tag="statusline",
+    )
+    if build is None or build.returncode != 0:
+        raise RuntimeError(f"statusline開発版のビルドに失敗: {claude_common.format_cli_error(build)}")
+
+    artifact = working_tree / _BUILD_DIR / ("claude-statusline.exe" if sys.platform == "win32" else "claude-statusline")
+    content = artifact.read_bytes()
+    _ETAG_PATH.unlink(missing_ok=True)
+    mode = None if sys.platform == "win32" else 0o755
+    if not claude_common.atomic_write_bytes(_INSTALL_PATH, content, mode=mode, tag="statusline"):
+        raise RuntimeError(f"statusline開発版の配置に失敗: {_INSTALL_PATH}")
+    logger.info(log_format.format_status("statusline", f"開発版をインストールしました: {_INSTALL_PATH}"))
+    return True
+
+
+def _download_release(client: httpx.Client | None = None) -> bool:
+    """GitHub Releaseからclaude-statuslineバイナリを配置する。
 
     直リンク（`releases/latest/download/`）は`api.github.com`名前空間を経由しないため、
     未認証60回/時のREST APIレート制限（`GET /repos/{owner}/{repo}/releases/latest`相当）の

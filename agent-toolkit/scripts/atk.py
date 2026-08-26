@@ -188,6 +188,21 @@ def _add_target_repo_arg(
     )
 
 
+def _add_mq_read_sync_args(parser: argparse.ArgumentParser) -> None:
+    """読み取り専用`mq`サブコマンドの同期制御オプションを登録する。"""
+    sync = parser.add_mutually_exclusive_group()
+    sync.add_argument(
+        "--skip-pull",
+        action="store_true",
+        help="remote同期全体をスキップする（ログイン時など軽量参照用）。",
+    )
+    sync.add_argument(
+        "--pull",
+        action="store_true",
+        help="直近の同期省略判定を上書きしてremote同期を必ず実行する。",
+    )
+
+
 def _add_mq_add_parser(sub: Any) -> None:
     """投入サブコマンドを登録する。"""
     add = sub.add_parser("add", help="エントリをinboxへ投入する")
@@ -243,8 +258,7 @@ def _add_mq_add_parser(sub: Any) -> None:
             "計画ファイルの絶対パス。指定するとフィードバックを計画実装型として確定記録する。"
             "--type=feedback（既定）でのみ指定でき、指定したパスは実在を検証する。"
             "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
-            "計画ファイルがベースコミットを完全な識別子で記載する場合、投入先の`target_commit`と"
-            "照合し、一致しない場合は警告を1回出力して投入を継続する。"
+            "計画ファイルのベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない。"
         ),
     )
     add.add_argument(
@@ -304,11 +318,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
     )
-    list_.add_argument(
-        "--skip-pull",
-        action="store_true",
-        help="remote同期全体をスキップする（ログイン時など軽量参照用）。",
-    )
+    _add_mq_read_sync_args(list_)
 
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")
     show.add_argument(
@@ -341,11 +351,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="TBDの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はフィードバックを除外する。",
     )
     _add_source_arg(show)
-    show.add_argument(
-        "--skip-pull",
-        action="store_true",
-        help="remote同期全体をスキップする（ログイン時など軽量参照用）。",
-    )
+    _add_mq_read_sync_args(show)
     show.set_defaults(subparser=show)
 
 
@@ -573,7 +579,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
     )
     _add_target_repo_arg(grep)
-    grep.add_argument("--skip-pull", action="store_true", help="remote同期全体をスキップする。")
+    _add_mq_read_sync_args(grep)
     grep.set_defaults(subparser=grep)
 
     answer = sub.add_parser(

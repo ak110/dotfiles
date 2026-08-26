@@ -16,11 +16,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from _stop_gate import is_pending_async_work  # noqa: E402  # pylint: disable=wrong-import-position
 from _stop_gate_test import (  # noqa: E402  # pylint: disable=wrong-import-position
+    _assistant_agent_entry,
     _assistant_entry,
     _attachment_task_notification_entry,
     _bash_no_bg,
+    _queue_operation_task_notification_entry,
     _user_async_launched_entry,
     _user_task_notification_entry,
+    _write_nested_subagent_fixture,
     _write_transcript,
 )
 
@@ -166,6 +169,26 @@ class TestAttachmentTaskIdFallbackCompletion:
         assert is_pending_async_work(str(t), "session-fallback") is True
         log_path = tmp_path / "claude-agent-toolkit-stop-session-fallback.log"
         assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
+
+
+class TestNestedAgentTaskIdFallbackCompletion:
+    """孫Agentの`queue-operation`完了通知を`<task-id>`だけで突合する。"""
+
+    @pytest.mark.parametrize("operation", ["enqueue", "remove"])
+    def test_task_id_only_queue_operation_completes_grandchild(self, tmp_path: pathlib.Path, operation: str) -> None:
+        """子記録から収集した孫のagent ID対応表でtask-id単独通知を解決する。"""
+        entries = [
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _queue_operation_task_notification_entry(operation, task_id="grandchild-id"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        child_entries = [
+            _assistant_agent_entry("toolu_grandchild"),
+            _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
+        assert is_pending_async_work(str(transcript), "") is False
 
 
 class TestMcpBackgroundTaskCompletion:

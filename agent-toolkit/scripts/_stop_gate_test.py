@@ -18,9 +18,7 @@ from _stop_gate import (
     _describe_pending_background_tasks,
     append_stop_log,
     has_command_invocation,
-    has_pending_agent_launches,
     is_pending_async_work,
-    pending_agent_launch_ids,
 )
 from _test_helpers import _write_transcript
 
@@ -347,6 +345,45 @@ def _attachment_task_notification_entry(
     }
 
 
+def _queue_operation_task_notification_entry(
+    operation: str,
+    *,
+    tool_use_id: str | None = None,
+    task_id: str | None = "task-x",
+) -> dict:
+    """最上位transcriptの`queue-operation`へ記録される完了通知を生成する。"""
+    return {
+        "type": "queue-operation",
+        "operation": operation,
+        "content": _task_notification_body(tool_use_id, task_id=task_id),
+    }
+
+
+def _write_nested_subagent_fixture(
+    directory: pathlib.Path,
+    entries: list[dict],
+    child_entries: list[dict],
+    *,
+    child_id: str = "child-id",
+    metadata: dict[str, object] | None = None,
+) -> pathlib.Path:
+    """最上位transcriptと直接の子transcriptの最小fixtureを生成する。"""
+    transcript = _write_transcript(directory, entries)
+    subagents_dir = transcript.with_suffix("") / "subagents"
+    subagents_dir.mkdir(parents=True)
+    child_path = subagents_dir / f"agent-{child_id}.jsonl"
+    child_path.write_text(
+        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in child_entries) + "\n",
+        encoding="utf-8",
+    )
+    metadata_path = child_path.with_name(f"{child_path.stem}.meta.json")
+    metadata_path.write_text(
+        json.dumps(metadata if metadata is not None else {"spawnDepth": 1}),
+        encoding="utf-8",
+    )
+    return transcript
+
+
 def _user_foreground_agent_entry(tool_use_id: str) -> dict:
     """foreground Agent完了を記録するuserエントリを生成する。
 
@@ -659,6 +696,169 @@ class TestIsPendingAsyncWork:
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is False
 
+    def test_pending_grandchild_from_direct_child_transcript(self, tmp_path: pathlib.Path) -> None:
+        """直接の子が完了済みでも、子transcriptの未完了な孫Agentを待機中と判定する。"""
+        entries = [
+            _user_entry("hello"),
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        child_entries = [
+            _assistant_agent_entry("toolu_grandchild"),
+            _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
+        assert is_pending_async_work(str(transcript), "") is True
+
+    @pytest.mark.parametrize("operation", ["enqueue", "remove"])
+    def test_queue_operation_completion_completes_grandchild(self, tmp_path: pathlib.Path, operation: str) -> None:
+        """最上位`queue-operation`のenqueue・remove完了通知で孫Agentを相殺する。"""
+        entries = [
+            _user_entry("hello"),
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _queue_operation_task_notification_entry(
+                operation,
+                tool_use_id="toolu_grandchild",
+                task_id="grandchild-id",
+            ),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        child_entries = [
+            _assistant_agent_entry("toolu_grandchild"),
+            _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_missing_child_transcript_preserves_top_level_decision(self, tmp_path: pathlib.Path) -> None:
+        """子記録ディレクトリが無い場合も、最上位の起動・完了判定を維持する。"""
+        entries = [
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_malformed_or_unrelated_child_transcript_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """破損記録と親子関係の無い孫記録を無視し、最上位判定を例外化しない。"""
+        entries = [
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_transcript(tmp_path, entries)
+        subagents_dir = transcript.with_suffix("") / "subagents"
+        subagents_dir.mkdir(parents=True)
+        malformed = subagents_dir / "agent-malformed.jsonl"
+        malformed.write_text("{not-json\n", encoding="utf-8")
+        malformed.with_name("agent-malformed.meta.json").write_text(json.dumps({"spawnDepth": 1}), encoding="utf-8")
+        unrelated = subagents_dir / "agent-unrelated.jsonl"
+        unrelated.write_text(
+            "\n".join(
+                json.dumps(entry, ensure_ascii=False)
+                for entry in [
+                    _assistant_agent_entry("toolu_unrelated"),
+                    _user_async_launched_entry("toolu_unrelated", agent_id="unrelated-id"),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        unrelated.with_name("agent-unrelated.meta.json").write_text(
+            json.dumps({"parentAgentId": "other-parent", "spawnDepth": 2}), encoding="utf-8"
+        )
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_empty_child_metadata_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """直接の子を示すmetadataが空の場合は子記録を走査しない。"""
+        entries = [
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        child_entries = [
+            _assistant_agent_entry("toolu_grandchild"),
+            _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries, metadata={})
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_partially_corrupt_child_transcript_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """子transcriptに破損行が1行でもあれば有効行を部分採用しない。"""
+        entries = [
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        child_entries = [
+            _assistant_agent_entry("toolu_grandchild"),
+            _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
+        child_path = transcript.with_suffix("") / "subagents" / "agent-child-id.jsonl"
+        with child_path.open("a", encoding="utf-8") as child_file:
+            child_file.write("{not-json\n")
+        assert is_pending_async_work(str(transcript), "") is False
+
+    def test_multiple_children_and_mixed_grandchildren_are_completed(self, tmp_path: pathlib.Path) -> None:
+        """複数の直接の子から収集したAgent・Taskの孫を個別識別子で完了扱いする。"""
+        entries = [
+            _user_async_launched_entry("toolu_child_a", agent_id="child-a"),
+            _user_task_notification_entry("toolu_child_a", task_id="child-a"),
+            _user_async_launched_entry("toolu_child_b", agent_id="child-b"),
+            _user_task_notification_entry("toolu_child_b", task_id="child-b"),
+            _queue_operation_task_notification_entry(
+                "enqueue",
+                tool_use_id="toolu_grandchild_agent",
+                task_id="local-agent-id",
+            ),
+            _queue_operation_task_notification_entry("remove", task_id="local-task-id"),
+            _queue_operation_task_notification_entry(
+                "enqueue",
+                tool_use_id="toolu_grandchild_other",
+                task_id="local-other-id",
+            ),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        child_entries = [
+            _assistant_agent_entry("toolu_grandchild_agent"),
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "toolu_grandchild_task", "name": "Task", "input": {}}],
+                    "stop_reason": "tool_use",
+                },
+            },
+            _user_async_launched_entry("toolu_grandchild_agent", agent_id="local-agent-id"),
+            _user_async_launched_entry("toolu_grandchild_task", agent_id="local-task-id"),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries, child_id="child-a")
+        subagents_dir = transcript.with_suffix("") / "subagents"
+        child_b_path = subagents_dir / "agent-child-b.jsonl"
+        child_b_path.write_text(
+            "\n".join(
+                json.dumps(entry, ensure_ascii=False)
+                for entry in [
+                    _assistant_agent_entry("toolu_grandchild_other"),
+                    _user_async_launched_entry("toolu_grandchild_other", agent_id="local-other-id"),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        child_b_path.with_name("agent-child-b.meta.json").write_text(
+            json.dumps({"spawnDepth": 1}),
+            encoding="utf-8",
+        )
+        assert is_pending_async_work(str(transcript), "") is False
+
     def test_missing_transcript_returns_false(self):
         """transcript が存在しない → False（Stop抑止しない）。"""
         assert is_pending_async_work("/nonexistent/transcript.jsonl", "") is False
@@ -928,96 +1128,6 @@ class TestIsPendingAsyncWork:
         ]
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is False
-
-
-class TestHasPendingAgentLaunches:
-    """`has_pending_agent_launches`の抽出種別を検証する。"""
-
-    def test_returns_true_for_pending_agent(self, tmp_path: pathlib.Path) -> None:
-        """背景Agent起動のみが未消化の場合に真を返す。"""
-        t = _write_transcript(tmp_path, [_user_async_launched_entry("toolu_agent_pending")])
-        assert has_pending_agent_launches(str(t), "sess-agent") is True
-
-    def test_returns_false_for_pending_bash(self, tmp_path: pathlib.Path) -> None:
-        """背景Bash起動のみが未消化の場合に偽を返す。"""
-        t = _write_transcript(tmp_path, [_user_background_bash_entry("toolu_bash_pending")])
-        assert has_pending_agent_launches(str(t), "sess-bash-agent-filter") is False
-
-    def test_returns_false_for_completed_agent(self, tmp_path: pathlib.Path) -> None:
-        """背景Agent起動が完了消化済みの場合に偽を返す。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_async_launched_entry("toolu_agent_completed"),
-                _user_task_notification_entry("toolu_agent_completed"),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-agent-completed") is False
-
-    def test_returns_false_for_sendmessage_resume_while_root_stop_remains_pending(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """SendMessage背景再開はSubagentStopだけから除き、全体Stopでは未完了として扱う。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _assistant_sendmessage_entry("toolu_sendmessage_pending"),
-                _user_sendmessage_bg_resume_entry("toolu_sendmessage_pending"),
-                _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-sendmessage") is False
-        assert is_pending_async_work(str(t), "sess-sendmessage") is True
-
-    def test_returns_only_agent_ids_for_mixed_pending_launches(self, tmp_path: pathlib.Path) -> None:
-        """Agent起動とSendMessage背景再開の混在からAgent起動の識別子だけを返す。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_async_launched_entry("toolu_agent_pending"),
-                _assistant_sendmessage_entry("toolu_sendmessage_pending"),
-                _user_sendmessage_bg_resume_entry("toolu_sendmessage_pending"),
-            ],
-        )
-        assert pending_agent_launch_ids(str(t), "sess-mixed") == {"toolu_agent_pending"}
-        assert has_pending_agent_launches(str(t), "sess-mixed") is True
-
-    def test_returns_multiple_pending_agent_ids(self, tmp_path: pathlib.Path) -> None:
-        """複数の未消化Agent起動は各`tool_use_id`を保持する。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_async_launched_entry("toolu_agent_a"),
-                _user_async_launched_entry("toolu_agent_b"),
-            ],
-        )
-        assert pending_agent_launch_ids(str(t), "sess-multiple") == {
-            "toolu_agent_a",
-            "toolu_agent_b",
-        }
-
-    def test_returns_true_for_sidechain_launch_marker_without_status(self, tmp_path: pathlib.Path) -> None:
-        """sidechainの起動成功本文から未消化の子エージェントを検出する。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _assistant_agent_entry("toolu_sidechain_pending"),
-                _user_agent_launch_marker_entry("toolu_sidechain_pending"),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-sidechain-pending") is True
-
-    def test_sync_completed_sidechain_launch_marker_is_not_pending(self, tmp_path: pathlib.Path) -> None:
-        """同期完了statusを持つ起動成功本文は未消化へ計上しない。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _assistant_agent_entry("toolu_sidechain_completed"),
-                _user_agent_launch_marker_entry("toolu_sidechain_completed", status="completed"),
-            ],
-        )
-        assert has_pending_agent_launches(str(t), "sess-sidechain-completed") is False
 
 
 class TestDebugOutput:

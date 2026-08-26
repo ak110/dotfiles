@@ -51,16 +51,11 @@
   それぞれ対応するフィードバック処理スキルの起動を記録する。Stop hookの自動session-review起動条件に使う。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に3フラグをまとめて偽へ戻す。
   手動session-review起動はこれらのフラグを必要としない。セッション終了まで保持する
-- `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
-  `delegation`を起動した場合にPostToolUseが真化する。
-  メインセッションから`agents_server` MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
-  セッション終了まで保持する。sidechainのSkill起動は記録しない
 
 ## agents_server連携系
 
-- `agents_server_remote_snapshot_by_key`: agents_serverの`start`または`send_message`直前のリモートrefを記録し、`wait`の終端応答または`send_message`の配送境界で比較して削除する。実行中turnへのsendでは既存snapshotを維持し、同一呼出の保留値はPostToolUseで破棄する
-- `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`の検査に使う
-- `agents_server_sessions`: `session_id`ごとに公開状態の`status`、remote snapshotの`snapshot_key`及び内部の`turn_id`を記録する。`wait`の終端応答または`send_message`の配送境界で状態を更新し、結果回収済みを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
+- `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の検査及び各ツールのPostToolUse状態更新に使う
+- `agents_server_sessions`: `session_id`ごとに公開状態の`status`、`kill_requested`及び内部の`turn_id`を記録する。`wait`・`send_message`・`kill`の応答境界で状態を更新し、結果回収済みを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
 
 ## TBD系
 

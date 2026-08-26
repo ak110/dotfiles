@@ -225,9 +225,9 @@ def _new_format_plan(
 
 ### 実装単位
 
-| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- | --- |
-| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |
+| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- |
+| U-001 | 診断件数を更新する | なし | 1 | `pytest check_plan_file_test.py` |
 
 ### 変更説明
 
@@ -236,6 +236,113 @@ def _new_format_plan(
 ## 完了条件
 
 基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
+"""
+    return main, detail
+
+
+def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
+    """新規作成用の人間向けメイン側・detail側fixtureを返す。"""
+    main = f"""# 計画の主題
+
+## 概要
+
+対象の公開契約を更新する。
+
+### 計画メタ情報
+
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `{repo.resolve()}`
+- 作業種別: 通常変更
+- ベースコミット: `作成時点の参照値`
+- 実装詳細: `{detail_name}`
+
+## 実施内容
+
+| 実施内容 | 由来 | 採否 | 根拠 |
+| --- | --- | --- | --- |
+| 公開契約の境界を更新する | ユーザー指示 | 採用 | - |
+| 影響のない類似箇所は変更しない | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |
+
+## 提示素材
+
+なし
+
+## 変更履歴
+
+### 利用者からの確認
+
+```text
+公開契約の境界だけを更新する。
+```
+
+### レビューで確定した変更
+
+対象範囲を確認して反映した。
+
+## 検証区分
+
+| 区分 | 検証コマンド |
+| --- | --- |
+| レーン内検証 | `pytest` |
+| 統合後検証 | `make test` |
+
+## 終端工程
+
+なし
+
+## 進捗ログ
+
+| 日時 | 完了した工程 | 結果・特記事項 |
+| --- | --- | --- |
+"""
+    detail = """## 恒久化・リファクタリング内容
+
+### 恒久化
+
+| 知見 | 出所 | 反映先 | 根拠 |
+| --- | --- | --- | --- |
+| 公開契約の境界を維持する | 実装時調査 | 対象モジュール | 更新後も契約を確認するため。 |
+
+### リファクタリング
+
+| 項目 | 内容 |
+| --- | --- |
+| 対象 | 対象モジュール。 |
+| 現状の問題 | 判定が分散している。 |
+| 対応 | 判定を統合する。 |
+| 本計画に含めるか | 含める。 |
+
+### 類似見直し
+
+| 項目 | 内容 |
+| --- | --- |
+| 母集団 | 対象モジュール。 |
+| 点検観点 | 公開契約への影響。 |
+| 該当箇所 | 該当なし。 |
+
+## 実装資料
+
+### 実装単位
+
+| 実装単位 | 目的 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- |
+| 公開契約の境界更新 | 公開契約の判定を更新する | なし | 1 | `pytest` |
+
+### 調査結果
+
+検索母集団は対象モジュールと関連テストである。
+検索コマンド: `rg -n "公開契約|境界" agent-toolkit`
+検索結果: 一致は2箇所で、対象外の接続面は不一致として除外した。
+
+### 確定文面
+
+```markdown
+公開契約の判定は対象境界に限定する。
+```
+
+## 完了条件
+
+近接検証と統合後検証が成功し、確定文面を対象ファイルへ反映する。
 """
     return main, detail
 
@@ -351,7 +458,7 @@ def test_cli_accepts_mixed_agreements_and_numeric_target(repo: tuple[pathlib.Pat
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert not result.stderr
+    assert result.stderr == ""
 
 
 def test_cli_rejects_action_reference_to_rejected_requirement(repo: tuple[pathlib.Path, str]) -> None:
@@ -442,11 +549,11 @@ def test_rejects_unclosed_fence(repo: tuple[pathlib.Path, str]) -> None:
     assert any("閉じていないMarkdownフェンス" in error for error in errors)
 
 
-def test_rejects_unresolvable_base_commit(repo: tuple[pathlib.Path, str]) -> None:
-    """対象リポジトリで解決できないベースコミットを拒否する。"""
+def test_accepts_unresolvable_base_reference(repo: tuple[pathlib.Path, str]) -> None:
+    """計画作成時点の参考値は対象リポジトリで解決できなくても受理する。"""
     work_dir, base = repo
     errors, _warnings = _check(work_dir, _plan(work_dir, base).replace(base, "f" * 40))
-    assert any("対象リポジトリでベースコミットを解決できない" in error for error in errors), errors
+    assert not errors, errors
 
 
 def test_rejects_target_repo_mismatched_with_worktree(repo: tuple[pathlib.Path, str]) -> None:
@@ -544,6 +651,18 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    expected = ["二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する"]
+    assert warnings == expected, warnings
+
+
+def test_accepts_human_readable_new_format_plan_without_migration_warning(
+    repo: tuple[pathlib.Path, str],
+) -> None:
+    """新規作成用の人間向けメイン側・detail側をwarningなしで受理する。"""
+    work_dir, _base = repo
+    main_content, detail_content = _human_new_format_plan(work_dir)
+    errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
     assert not errors, errors
     assert not warnings, warnings
 
@@ -651,39 +770,6 @@ def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path,
     assert any("固定H2" in error for error in errors), errors
 
 
-@pytest.mark.parametrize(
-    ("replacement", "expected_actual"),
-    [
-        ("1", "実際=[1]"),
-        ("1, 3", "実際=[1, 3]"),
-    ],
-)
-@pytest.mark.parametrize("legacy", [False, True])
-def test_new_format_rejects_incomplete_or_out_of_range_action_coverage(
-    repo: tuple[pathlib.Path, str], replacement: str, expected_actual: str, *, legacy: bool
-) -> None:
-    """新4列表と旧3列表の実施内容行について欠落及び範囲外参照を拒否する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    if legacy:
-        rows = [
-            "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新する | 具体化 | R-P-001-001 |",
-        ]
-    else:
-        rows = [
-            "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新する | 採用 | 具体化 | R-P-001-001 |",
-        ]
-    main_content = _replace_action_table(main_content, rows, legacy=legacy)
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 |",
-        f"| U-001 | 診断件数を更新する | {replacement} | なし | 1 |",
-    )
-    errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("実装対象行を過不足なく" in error and expected_actual in error for error in errors), errors
-
-
 def test_new_format_reports_short_action_row_without_index_error(repo: tuple[pathlib.Path, str]) -> None:
     """列不足の新4列表は例外を送出せず、既存の構造診断として拒否する。"""
     work_dir, base = repo
@@ -696,69 +782,6 @@ def test_new_format_reports_short_action_row_without_index_error(repo: tuple[pat
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
 
     assert any("実施内容`の表に空cellまたは列数不一致の行がある" in error for error in errors), errors
-
-
-@pytest.mark.parametrize("legacy", [False, True])
-def test_new_format_rejects_action_coverage_duplicated_across_units(repo: tuple[pathlib.Path, str], *, legacy: bool) -> None:
-    """新4列表と旧3列表で異なる実装単位による同じ内容行の重複参照を拒否する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    row = (
-        "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |"
-        if legacy
-        else "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |"
-    )
-    main_content = _replace_action_table(main_content, [row], legacy=legacy)
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |\n"
-        "| U-002 | 回帰検証を追加する | 1 | U-001 | 2 | `pytest check_plan_file_test.py` |",
-    )
-    errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("実装対象行を過不足なく" in error and "実際=[1, 1]" in error for error in errors), errors
-
-
-def test_new_format_accepts_multiple_units_covering_noncontiguous_action_rows(repo: tuple[pathlib.Path, str]) -> None:
-    """新4列表では採用又は部分採用の内容行だけを被覆すれば受理する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    main_content = _replace_action_table(
-        main_content,
-        [
-            "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新しない | 不採用 | 非該当 | 実装上不要であるため。 |",
-            "| 回帰検証を追加する | 部分採用 | エージェント追加 | R-P-001-001 |",
-        ],
-    )
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |\n"
-        "| U-002 | 回帰検証を追加する | 3 | U-001 | 2 | `pytest check_plan_file_test.py` |",
-    )
-    errors, warnings = _check_new(work_dir, main_content, detail_content)
-    assert not errors, errors
-    assert not warnings, warnings
-
-
-def test_new_format_accepts_legacy_action_rows_when_all_rows_are_covered(repo: tuple[pathlib.Path, str]) -> None:
-    """読み取り互換の旧3列表では全内容行を被覆すれば受理する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    main_content = _replace_action_table(
-        main_content,
-        [
-            "| 診断件数を2件から1件へ減らす | 指示どおり | R-P-001-001 |",
-            "| 診断表示を更新する | 具体化 | R-P-001-001 |",
-        ],
-        legacy=True,
-    )
-    detail_content = detail_content.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest check_plan_file_test.py` |",
-        "| U-001 | 診断件数を更新する | 1, 2 | なし | 1 | `pytest check_plan_file_test.py` |",
-    )
-    errors, warnings = _check_new(work_dir, main_content, detail_content)
-    assert not errors, errors
-    assert warnings == ["実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する"]
 
 
 def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, str]) -> None:
@@ -781,6 +804,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     expected = ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
     if _plan_format.has_legacy_action_table(main_content):
         expected.append("実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")
+    expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     assert warnings == expected
 
 
@@ -798,4 +822,4 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert not result.stderr
+    assert result.stderr == "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"

@@ -135,6 +135,113 @@ def _plan(*, base: str = _BASE, bug: bool = False) -> str:
 
 _VALID_CONTENT = _plan()
 
+_HUMAN_MAIN_CONTENT = """# 計画の主題
+
+## 概要
+
+対象の契約を更新する。
+
+### 計画メタ情報
+
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `/repo`
+- 作業種別: 通常変更
+- ベースコミット: `作成時点の参照値`
+- 実装詳細: `human.detail.md`
+
+## 実施内容
+
+| 実施内容 | 由来 | 採否 | 根拠 |
+| --- | --- | --- | --- |
+| 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |
+| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |
+| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | 公開契約に関係する範囲だけを採用するため。 |
+
+## 提示素材
+
+- feedback.md
+- pending.md
+
+## 変更履歴
+
+### 利用者からの確認
+
+```text
+公開契約に必要な変更だけを実施する。
+```
+
+### レビューで確定した変更
+
+レビューで確認した対象範囲を反映した。
+
+## 検証区分
+
+| 区分 | 検証コマンド |
+| --- | --- |
+| レーン内検証 | `pytest` |
+| 統合後検証 | `make test` |
+
+## 終端工程
+
+なし
+
+## 進捗ログ
+
+| 日時 | 完了した工程 | 結果・特記事項 |
+| --- | --- | --- |
+"""
+
+_HUMAN_DETAIL_CONTENT = """## 恒久化・リファクタリング内容
+
+### 恒久化
+
+| 知見 | 出所 | 反映先 | 根拠 |
+| --- | --- | --- | --- |
+| 公開契約の境界を維持する | 実装時調査 | 対象モジュール | 変更後も同じ契約を確認するため。 |
+
+### リファクタリング
+
+| 項目 | 内容 |
+| --- | --- |
+| 対象 | 対象モジュール。 |
+| 現状の問題 | 境界が分散している。 |
+| 対応 | 判定を統合する。 |
+| 本計画に含めるか | 含める。 |
+
+### 類似見直し
+
+| 項目 | 内容 |
+| --- | --- |
+| 母集団 | 対象モジュール。 |
+| 点検観点 | 公開契約への影響。 |
+| 該当箇所 | 該当なし。 |
+
+## 実装資料
+
+### 実装単位
+
+| 実装単位 | 目的 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- |
+| 契約境界の更新 | 公開契約の判定を更新する | なし | 1 | `pytest` |
+| 回帰検証の追加 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |
+
+### 調査結果
+
+検索母集団は対象モジュールと関連テストである。
+検索コマンド: `rg -n "公開契約|境界" agent-toolkit`
+検索結果: 一致は2箇所で、対象外の接続面は不一致として除外した。
+
+### 確定文面
+
+```markdown
+公開契約の判定は対象境界に限定する。
+```
+
+## 完了条件
+
+近接検証と統合後検証が成功し、確定文面を対象ファイルへ反映する。
+"""
+
 
 def _legacy_plan() -> str:
     """旧形式の素材と合意表を持つ互換fixtureを返す。"""
@@ -170,6 +277,145 @@ def test_canonical_plan_passes_structure_check() -> None:
     """通常変更とバグ対応の正規形はいずれも構造検査を通過する。"""
     assert not _plan_format.check_plan_structure(_VALID_CONTENT)
     assert not _plan_format.check_plan_structure(_plan(bug=True))
+
+
+def test_human_readable_main_and_detail_pass_structure_check() -> None:
+    """新規の人間向けメインとdetailがIDなしの判断・実装契約を満たす。"""
+    work_type, main_errors = _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)
+    assert work_type == "通常変更"
+    assert not main_errors, main_errors
+    assert not _plan_format.check_plan_detail_structure(_HUMAN_DETAIL_CONTENT, work_type)
+
+
+def test_human_readable_materials_and_units_do_not_expose_internal_ids() -> None:
+    """人間向け形式は素材ファイル名と説明的な実装単位だけを解析する。"""
+    materials, material_errors = _plan_format.parse_plan_materials(_HUMAN_MAIN_CONTENT)
+    assert not material_errors, material_errors
+    assert materials is not None and materials.is_human_readable
+    units, unit_errors = _plan_format.parse_plan_implementation_units(_HUMAN_DETAIL_CONTENT)
+    assert not unit_errors, unit_errors
+    assert units is not None
+    assert tuple(unit.unit_id for unit in units) == ("契約境界の更新", "回帰検証の追加")
+
+
+def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
+    """人間向け形式の採用以外の行は自足した理由を持つ。"""
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
+        "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | - |",
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any("採用以外の`根拠`" in error for error in errors), errors
+
+
+def test_human_readable_action_rejects_independent_exclusion_table() -> None:
+    """人間向けメイン側は実施内容と別の除外・保持表を持たない。"""
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "\n## 提示素材\n",
+        "\n### 合意済みの除外・保持\n\n対象外の類似箇所は維持する。\n\n## 提示素材\n",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("独立した除外・保持表を置かない" in error for error in errors), errors
+
+
+def test_human_readable_action_rejects_feedback_missing_from_materials() -> None:
+    """フィードバック由来の正本は提示素材から逆照合できる。"""
+    content = _HUMAN_MAIN_CONTENT.replace("(feedback.md)", "(not-listed.md)", 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("フィードバック由来が提示素材に無い" in error for error in errors), errors
+
+
+def test_human_readable_materials_reject_paths() -> None:
+    """提示素材は任意文書のパスではなく正本ファイル名だけを受理する。"""
+    content = _HUMAN_MAIN_CONTENT.replace("- feedback.md", "- docs/notes.md", 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("正本ファイル名の箇条書き" in error for error in errors), errors
+
+
+def test_human_readable_materials_reject_ambiguous_id_filename() -> None:
+    """構造化された提示素材では曖昧な外部識別子も旧素材IDとして拒否する。"""
+    content = _HUMAN_MAIN_CONTENT.replace("- feedback.md", "- P-256.md", 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("提示素材へ合成IDを記載しない" in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("- feedback.md", "提示素材へ合成IDを記載しない"),
+        (
+            "| 対象外の類似するが対象外の記述は変更しない |",
+            "`## 実施内容`へ素材・要求・履歴・実装単位の合成IDを記載しない",
+        ),
+    ],
+)
+def test_human_readable_main_rejects_internal_identifiers(mutation: str, expected: str) -> None:
+    """人間向けメイン側に内部管理IDを持ち込まない。"""
+    if mutation == "- feedback.md":
+        content = _HUMAN_MAIN_CONTENT.replace(mutation, "- P-001.md", 1)
+    else:
+        content = _HUMAN_MAIN_CONTENT.replace(
+            "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
+            "| P-001 | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
+            1,
+        )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any(expected in error for error in errors), errors
+
+
+def test_human_readable_history_rejects_internal_identifier() -> None:
+    """人間向け変更履歴は内部管理IDを含めず自然な記録を持つ。"""
+    content = _HUMAN_MAIN_CONTENT.replace("レビューで確認した対象範囲を反映した。", "P-001", 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("`## 変更履歴`へ履歴・要求・実装単位の合成ID" in error for error in errors), errors
+
+
+def test_human_readable_main_accepts_external_identifiers_and_verbatim_ids() -> None:
+    """通常の外部識別子と利用者発言の逐語文は合成IDとして誤拒否しない。"""
+    content = _HUMAN_MAIN_CONTENT.replace("公開契約に必要な変更を実装する", "MCP-toolとTLSのP-256を維持する", 1)
+    content = content.replace("公開契約に必要な変更だけを実施する。", "P-001という入力を変更しない。", 1)
+    assert not _plan_format.check_plan_main_structure(content)[1]
+
+
+@pytest.mark.parametrize("external_id", ["TLS P-256", "TLSでP-256", "NIST P-256", "ECDSA P-256"])
+def test_human_readable_main_accepts_ambiguous_external_identifier(external_id: str) -> None:
+    """外部仕様名と旧素材IDを区別できない完全トークンは誤拒否しない。"""
+    content = _HUMAN_MAIN_CONTENT.replace("公開契約に必要な変更を実装する", f"{external_id}を維持する", 1)
+    assert not _plan_format.check_plan_main_structure(content)[1]
+
+
+@pytest.mark.parametrize(
+    "internal_id",
+    ["P-001", "P-100", "P-999", "P-1000", "U-001", "R-P-001-001", "H-001", "C-001", "R1-plan"],
+)
+def test_human_readable_main_rejects_internal_identifiers_before_japanese(internal_id: str) -> None:
+    """日本語の助詞が続く場合も既存の合成IDを検出する。"""
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "公開契約に必要な変更を実装する",
+        f"{internal_id}を実装する",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("`## 実施内容`へ素材・要求・履歴・実装単位の合成ID" in error for error in errors), errors
+
+
+def test_human_readable_units_reject_duplicate_descriptive_name() -> None:
+    """人間向けdetail側の実装単位名は重複させない。"""
+    content = _HUMAN_DETAIL_CONTENT.replace(
+        "| 回帰検証の追加 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |",
+        "| 契約境界の更新 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |",
+        1,
+    )
+    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    assert any("表内で一意の説明的な名前" in error for error in errors), errors
+
+
+def test_human_readable_units_reject_ambiguous_exact_id() -> None:
+    """構造化された実装単位名では曖昧な完全トークンも旧IDとして拒否する。"""
+    content = _HUMAN_DETAIL_CONTENT.replace("| 契約境界の更新 |", "| P-256 |", 1)
+    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    assert any("合成IDではない説明的な名前" in error for error in errors), errors
 
 
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
@@ -333,7 +579,6 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         (("- 作業種別: 通常変更", "- 作業種別: `通常変更`"), "バッククォートで囲まない"),
         (("- 対象リポジトリ: `/repo`", "- 対象リポジトリ: /repo"), "バッククォートで囲む"),
         (("- 作業種別: 通常変更", "- 作業種別: 改善"), "`作業種別`は"),
-        ((f"- ベースコミット: `{_BASE}`", "- ベースコミット: `0123456`"), "完全長SHA"),
         (("| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n", ""), "1行以上の内容が必要"),
         (
             ("| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |", "| ID | 起点 | 指摘内容 | 結論 | 同期先 |"),
@@ -1071,9 +1316,9 @@ _DETAIL_CONTENT = """## 恒久化・リファクタリング内容
 
 ### 実装単位
 
-| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- | --- |
-| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |
+| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- |
+| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |
 
 ### ファイル群別の変更説明
 
@@ -1119,47 +1364,55 @@ def test_detail_structure_requires_implementation_units() -> None:
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [
-        ("| U-001 | 診断件数を更新する | 1 | なし | 1 |", "| unit-1 | 診断件数を更新する | 1 | なし | 1 |", "U-[0-9]{3}"),
+        ("| U-001 | 診断件数を更新する | なし | 1 |", "| unit-1 | 診断件数を更新する | なし | 1 |", "U-[0-9]{3}"),
         (
-            "| U-001 | 診断件数を更新する | 1 | なし | 1 |",
-            "| U-002 | 診断件数を更新する | 1 | なし | 1 |",
+            "| U-001 | 診断件数を更新する | なし | 1 |",
+            "| U-002 | 診断件数を更新する | なし | 1 |",
             "U-001`から欠番なく",
         ),
-        (
-            "| U-001 | 診断件数を更新する | 1 | なし | 1 |",
-            "| U-001 | 診断件数を更新する | 2, 1 | なし | 1 |",
-            "昇順かつ重複なし",
-        ),
-        ("| U-001 | 診断件数を更新する | 1 | なし | 1 |", "| U-001 | 診断件数を更新する | 1 | U-999 | 1 |", "実装単位表に無い"),
-        ("| U-001 | 診断件数を更新する | 1 | なし | 1 |", "| U-001 | 診断件数を更新する | 1 | なし | 2 |", "1から欠番なく"),
+        ("| U-001 | 診断件数を更新する | なし | 1 |", "| U-001 | 診断件数を更新する | U-999 | 1 |", "実装単位表に無い"),
+        ("| U-001 | 診断件数を更新する | なし | 1 |", "| U-001 | 診断件数を更新する | なし | 2 |", "1から欠番なく"),
     ],
 )
 def test_detail_structure_rejects_invalid_implementation_unit_contract(old: str, new: str, message: str) -> None:
-    """実装単位ID、実施内容参照、依存及び統合順の構造違反を拒否する。"""
+    """実装単位ID、依存及び統合順の構造違反を拒否する。"""
     errors = _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT.replace(old, new), "通常変更")
     assert any(message in error for error in errors), errors
 
 
 def test_detail_structure_accepts_multiple_units_with_dependency() -> None:
     """複数単位と先行依存を持つ正規形を受理する。"""
-    second = "| U-002 | 回帰検証を追加する | 2 | U-001 | 2 | `pytest check_plan_file_test.py` |\n"
+    second = "| U-002 | 回帰検証を追加する | U-001 | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |\n",
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |\n" + second,
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n",
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n" + second,
     )
     assert not _plan_format.check_plan_detail_structure(content, "通常変更")
 
 
 def test_detail_structure_rejects_dependency_not_preceding_integration_order() -> None:
     """先行依存が依存元より前の統合順に無い場合を拒否する。"""
-    first = "| U-001 | 診断件数を更新する | 1 | U-002 | 1 | `pytest _plan_format_test.py` |\n"
-    second = "| U-002 | 回帰検証を追加する | 2 | なし | 2 | `pytest check_plan_file_test.py` |\n"
+    first = "| U-001 | 診断件数を更新する | U-002 | 1 | `pytest _plan_format_test.py` |\n"
+    second = "| U-002 | 回帰検証を追加する | なし | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
-        "| U-001 | 診断件数を更新する | 1 | なし | 1 | `pytest _plan_format_test.py` |\n",
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n",
         first + second,
     )
     errors = _plan_format.check_plan_detail_structure(content, "通常変更")
     assert any("`統合順`より前にない" in error for error in errors), errors
+
+
+def test_detail_structure_accepts_legacy_implementation_unit_column() -> None:
+    """既存計画の6列表を読み取り互換として受理する。"""
+    legacy = _VALID_DETAIL_CONTENT.replace(
+        "| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |",
+        "| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| U-001 | 診断件数を更新する | 任意の旧値 | なし | 1 | `pytest _plan_format_test.py` |",
+    )
+    assert not _plan_format.check_plan_detail_structure(legacy, "通常変更")
 
 
 def test_main_structure_requires_detail_metadata_field() -> None:

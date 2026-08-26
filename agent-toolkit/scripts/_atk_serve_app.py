@@ -156,6 +156,7 @@ def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, ob
         "state": state,
         "filename": path.name,
         "answered": answered,
+        "plan": kind == "feedback" and isinstance(metadata.get("plan_file"), str),
         "target_repo": _json_compatible(metadata.get("target_repo")),
         "source": _json_compatible(metadata.get("source")),
         "summary": _summary(text, kind),

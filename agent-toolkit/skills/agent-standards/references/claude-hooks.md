@@ -93,6 +93,10 @@ Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
 挙動の強制が不要であれば`additionalContext`単独で出力する。
 
+- block通知は`_hook_notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`fix`が空文字列または空白文字だけの場合は`ValueError`となる
+- 独自の整形関数でblock本文を構成しない（解消手段の欠落を機械的に検出できなくなるため）
+- PreToolUse・PostToolUseのblockは当該操作の中止で場面が解消するため、Stop系の成立条件の規定は適用しない
+
 警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する。
 決定を省略すると通常の権限フローが適用され、警告表示が許可プロンプトを省略しない。
 
@@ -102,10 +106,10 @@ Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolU
 
 `updatedInput`による入力書き換えは、確認ダイアログの発生自体を抑止しない。
 ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
-`agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択し、呼び出し側の承認・停止・一覧操作を公開しない。
-PreToolUseは`start`の絶対`cwd`と`wait`・`send_message`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
-PostToolUseは成功した`send_message`を継続turnの状態とリモートsnapshotへ記録する。失敗時は既存の開始点用
-`PostToolUseFailure` matcherを拡張せず、失敗したsendで状態を変更しない。
+`agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新及び一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
+PreToolUseは`start`の絶対`cwd`と`wait`・`send_message`・`kill`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
+PostToolUseは成功した`start`のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。失敗時は状態を変更せず、既存の開始点用
+`PostToolUseFailure` matcherを拡張しない。
 旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` は移行説明と保護対象の識別にだけ残し、新経路へ渡さない。
 
 エージェントへ特定の行動・引数を要求するblockを新設する場合は、要求する要件を実行主体が事前に読み得る規範文書（常時ロードのルール、または当該作業で起動されるスキルの本文・参照文書）へ明示する。遮断メッセージだけを要件の初出にしない。
@@ -144,6 +148,10 @@ Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得
 Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、
 判定処理を行わず終了を許可する応答を返す。出力経路によらず両イベントで必須とする。
 `stop_hook_active`は、直前の同フック呼び出しが当該ターンの終了を一度阻止したことを示す。
+
+Stop/SubagentStopの`decision: "block"`は、対象主体が同一ターン内の行動で解消できる条件に限る（厳守規定）。
+外部事象の完了、他主体の稼働状態、直前ターンで確定済みの内容など、対象主体の行動で変えられない状態を条件にしない。
+待機中の主体が終了を拒否されると、ターンを終える以外の動作が残らず、無操作のツール呼び出しの反復に陥る。
 
 この対策を要する理由は次のとおりである。
 フックがターン終了を阻止するとコーディングエージェントは新たな応答を生成し、

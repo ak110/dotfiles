@@ -10,8 +10,9 @@ import sync_codex_agents as subject
 def _root(tmp_path: Path, *, project: str = "project\n") -> Path:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
+    (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
-    (tmp_path / "scripts/codex-agents-base.md").write_text("base\n", encoding="utf-8")
+    (tmp_path / "agent-toolkit/share/codex-agents-base.md").write_text("base\n", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
     return tmp_path
 
@@ -66,8 +67,9 @@ def test_size_failure_does_not_replace_output(tmp_path: Path, monkeypatch: pytes
 
 
 def test_current_output_is_synced() -> None:
-    """生成器の実行漏れと部分同期だけを検出し、原本の契約検査は担当しない。"""
+    """生成同期、共有契約及びCodex固有契約の配置を検査する。"""
     content = subject.render()
+    codex_base = content.split("<!-- BEGIN: agent-toolkit/rules/01-agent.md -->", maxsplit=1)[0]
     shared_agent = content.split("<!-- BEGIN: agent-toolkit/rules/01-agent.md -->", maxsplit=1)[1].split(
         "<!-- END: agent-toolkit/rules/01-agent.md -->", maxsplit=1
     )[0]
@@ -78,6 +80,45 @@ def test_current_output_is_synced() -> None:
     operations_source = (subject.REPO_ROOT / "agent-toolkit/rules/02-agent-operations.md").read_text(encoding="utf-8")
     assert (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8") == content
     assert "99-claude-code.md" not in content
+    priority_section = shared_agent.split("### 方針が衝突する場合の優先順位", maxsplit=1)[1].split("\n### ", maxsplit=1)[0]
+    priority_items = """1. ユーザーの明示的な指示
+2. プロジェクト方針（`CLAUDE.md`・本ルールファイル以外のルール・スキル）
+3. 明文化された方針が扱わない事項で、同種の複数箇所に一貫して観測され、
+   明文化された方針と矛盾しないプロジェクト内の慣例
+4. 本ルールファイルとagent-toolkitプラグイン
+5. システムプロンプト"""
+    assert priority_section.strip().split("\n\n", maxsplit=1)[0] == priority_items
+    precedence_contract = "\n".join(
+        (
+            "上記の優先順位は、厳守規定、手順、例外処理その他の全ての規範へ先に適用し、"
+            "優先順位で有効と確定した適用対象だけを後続の規範へ適用する。",
+            "利用者の明示的な指示が下位規範を上書きした場合は、その下位規範を再適用しない。",
+            "「規定の適用可否」に従って規定どおり適用する判断及び本節の手順は、"
+            "上記の優先順位で適用対象を確定した後にだけ働く。",
+            "エージェントが規範を過剰と判断しただけの場合は、規範を適用したうえで改訂を提案する。",
+        )
+    )
+    assert precedence_contract in priority_section
+    for codex_contract in (
+        "Codexホストが提供する公開能力と個別ツールの契約が共有規範と異なる場合は、この節の契約を共有規範へ優先して適用する。",
+        "ツールを利用する前に短い`commentary`を必要とするCodexホストでは、"
+        "共有規範の事前説明を抑制する指示にかかわらず、ツール呼び出し前に短い`commentary`を送る。",
+        "コード評価を伴うコマンドでは、何をするか、何を読むまたは書くか、何を確認したいかをその`commentary`で説明する。",
+        "承認を要する操作では、実行内容、影響範囲及び元に戻す方法を実行前に説明する。",
+        "回答期限を提供しないCodexのDefault modeでは、協調モードは利用者へ直接質問して回答を待つ。",
+        "Codexの自律モードは質問を発行せず、確認事項をTBDへ記録して暫定判断で続行する。",
+        "利用者接点を持たない委譲先は確認を発行せず、呼び出し元へ判断を返す。",
+        "Codexの委譲待機では、ホストが提供する`wait_agent`を使って終了状態を観測する。",
+        "`wait_agent`が提供される場面では、共有規範の待機表明でターンを終えず、未完了のまま`final`を返さない。",
+        "完了通知だけを提供するホストでは、共有規範の待機表明による再開経路を使う。",
+        "独立した複数のツール呼び出しは、Codexホストと各ツールの契約がともに許可する場合だけ同一応答内で並列化する。",
+        "個別ツールが逐次呼び出しを要求する場合は、その契約を優先する。",
+        "Web調査ツールのように逐次呼び出しを要求する個別ツールでは、依存関係のない呼び出しも逐次化する。",
+    ):
+        assert codex_contract in codex_base
+        assert codex_contract not in shared_rules
+    for shared_only_boundary in ("`wait_agent`", "Codexホストと各ツール"):
+        assert shared_only_boundary not in shared_rules
     for stable_command in (
         "atk managed-temp create --prefix <用途>",
         "atk managed-temp cleanup --path <検収済み絶対パス>",
@@ -124,7 +165,7 @@ def test_current_output_is_synced() -> None:
         "`agent-toolkit:bugfix`が定義する",
         "`agent-toolkit:process-feedbacks`の起動中",
         "`agent-toolkit:reviewee-standards`を起動",
-        "`agent-toolkit:delegation`を正本とし",
+        "`agent-toolkit:delegation`を適用して経路固有の契約を確定する。",
     ):
         assert skill_invocation in shared_rules
     assert "../skills/" not in shared_rules

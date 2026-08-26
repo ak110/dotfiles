@@ -97,13 +97,13 @@ Windowsはtmux運用外のため対象外とする。
 
 ## 質問自動継続タイムアウトの配布
 
-Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.json`で`5m`を配布する。
+Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.json`で`never`を配布する。
 対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
-計時はアイドル時間を基準とし、キー入力でリセットされる。
-フォーカスを報告する端末では、ウィンドウへの切り替えでもリセットされる。
+端末とtmuxのアクティブペインにフォーカスが当たっている間は、設定値によらずタイムアウトは発火しない。
+フォーカスを失った後に計時が進み、キー入力があればその時点から再計測される。
 
-`atk mq process-loop`のClaude起動では、利用者設定に依存せず`--settings`で同じ値を明示する。
-CLI設定はユーザー設定より優先されるため、配布設定を持たないプラグイン単体利用でも起動時の値を揃えられる。
+`atk mq process-loop`のClaude起動だけが`--settings`で`5m`を明示する。
+CLI設定はユーザー設定より優先されるため、常駐実行では`5m`が適用される。
 Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
 `CLAUDE_STREAM_IDLE_TIMEOUT_MS`及び`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
 該当する障害を実測した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
@@ -125,6 +125,20 @@ dotfilesリポジトリを対象とする`atk mq process-loop`は、miseの`late
 miseは実行位置から設定ファイルを探索するため、後処理は`CHEZMOI_WORKING_TREE`に`mise.toml`がある場合だけ
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
 working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
+
+## claude-statuslineの開発版導入
+
+`chezmoi apply`の後処理は、`CHEZMOI_WORKING_TREE`がGit作業ツリーを指す場合に対象を判定する。
+現在のブランチが`develop`で、`rust/claude-statusline/`に`origin/master`との差分がある場合は、解決済みのmiseから開発版をビルドする。
+差分にはコミット済み、ステージ済み、未ステージの変更と、Gitのignore対象外である同じパス配下の未追跡ファイルを含める。
+
+作業ツリーを解決できない場合、Git管理下でない場合、`develop`以外のブランチである場合、又は差分がない場合は、
+従来どおりGitHub Releaseから取得する。`develop`で`origin/master`を解決できない場合は取得へ切り替えず、後処理を失敗させる。
+ビルド、成果物の読込、既存バイナリの原子的な置換に失敗した場合も、既存バイナリを保持したまま後処理を失敗させる。
+
+開発版へ置き換える前に、リリース取得用のETagを無効化する。次回のリリース取得が`304 Not Modified`になっても、開発版を
+リリース版として保持し続けないためである。開発版の導入失敗後も後続の後処理は継続し、最終終了コードは1とする。
+リリース取得のネットワーク失敗は従来どおり非致命として扱う。
 
 ## Codex診断ログの通常ストレージ復元
 

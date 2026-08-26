@@ -379,6 +379,8 @@ class AppServerManager:
                     **status,
                 }
                 return result
+            if session.interrupt_requested:
+                raise ValueError("the active Codex turn is being interrupted")
             if not session.turn_id:
                 raise ValueError("the active Codex turn has no turn_id")
             client = self.client
@@ -417,6 +419,25 @@ class AppServerManager:
                 "delivery": "steered",
                 **session.public_status(),
             }
+
+    async def interrupt(self, session: SessionState) -> None:
+        """公開killから対象turnへ中断要求を送り、受理を待つ。"""
+        if session.terminal:
+            return
+        if not session.turn_id:
+            raise ValueError("the active Codex turn has no turn_id")
+        client = self.client
+        if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
+            raise AppServerError("Codex App Server client is unavailable for interrupt")
+        try:
+            await client.request(
+                "turn/interrupt",
+                {"threadId": session.session_id, "turnId": session.turn_id},
+            )
+        except JsonRpcResponseError:
+            if session.terminal:
+                return
+            raise
 
     async def _start_reply_locked(
         self,
@@ -621,12 +642,10 @@ class AppServerManager:
                 if turn_error is not None or not failure_pending_completion:
                     session.error = turn_error
                 self._consume_items(session, turn.get("items"))
-                session.interrupt_requested = False
                 session.turn_start_ambiguous = False
             else:
                 session.status = "failed"
                 session.error = "turn/completed did not contain turn"
-                session.interrupt_requested = False
                 session.turn_start_ambiguous = False
             session.turn_completed = True
             session.failure_pending_completion = False

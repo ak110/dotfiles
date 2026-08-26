@@ -188,6 +188,7 @@ class TestPs1DirectivesBlock:
         assert result.returncode == 2
         assert "Set-StrictMode" in result.stderr
         assert "ErrorActionPreference" in result.stderr
+        assert "Fix: " in result.stderr
 
     def test_missing_only_strict_mode_blocks(self):
         content = "$ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
@@ -597,6 +598,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         )
         assert result.returncode == 2
         assert name in result.stderr
+        assert "Fix: " in result.stderr
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
         assert "Auto-generated hook notice" in result.stderr

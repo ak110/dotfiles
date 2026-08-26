@@ -30,7 +30,6 @@ _SKILL_SUFFIX_MARKER_RE = re.compile(r"^スキルを(?:起動|呼び出)")
 _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
-_BASE_VALUE_RE = re.compile(r"`?([0-9a-f]{40}|[0-9a-f]{64})`?")
 # 計画の分量を警告する行数の閾値。
 # 既存計画380件の実測分布（中央値443行、第75百分位732行、第90百分位1312行、最大3476行）の
 # 第75百分位と第90百分位の間から選び、通常規模の計画を警告せず肥大した計画だけを検出する。
@@ -54,35 +53,6 @@ def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
                 marker = None
     errors = ["閉じていないMarkdownフェンスがある"] if marker is not None else []
     return outside, errors
-
-
-def _git_commit_exists(work_dir: pathlib.Path, base_commit: str) -> bool:
-    """完全長SHAが対象リポジトリのcommitとして解決できるかを返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(work_dir), "cat-file", "-e", f"{base_commit}^{{commit}}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.returncode == 0
-
-
-def _check_base_commit(declared_value: str | None, work_dir: pathlib.Path) -> list[str]:
-    """計画メタ情報のベースコミットを対象リポジトリのcommitとして解決できるかを検査する。
-
-    値の取得元は計画メタ情報だけとし、CLIオプションからは受け取らない。
-    HEADとの一致は求めない。計画作成後にHEADが進む正常な経路を拒否しないためである。
-    完全長SHAでない値は共有構造検査が書式違反として報告するため、ここでは扱わない。
-    """
-    if declared_value is None:
-        return []
-    match = _BASE_VALUE_RE.fullmatch(declared_value)
-    if match is None:
-        return []
-    base_commit = match.group(1)
-    if not _git_commit_exists(work_dir, base_commit):
-        return [f"対象リポジトリでベースコミットを解決できない: {base_commit}"]
-    return []
 
 
 def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
@@ -243,42 +213,6 @@ def _legacy_bug_warnings(text: str) -> list[str]:
     return ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
 
 
-def _check_implementation_action_coverage(main_text: str, detail_text: str) -> list[str]:
-    """実装単位表がメイン側`## 実施内容`の実装対象行を過不足なく被覆するかを検査する。"""
-    headings = _plan_format.extract_headings(main_text)
-    action_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_ACTION)
-    if action_index is None:
-        return []
-    start, end = _plan_format.heading_subtree_range(headings, action_index)
-    body = list(_plan_format.iter_markdown_body_lines(main_text))
-    action_tables = [
-        table
-        for table in _plan_format.extract_tables(_plan_format.lines_within(body, start, end))
-        if table.header in (_plan_format.PLAN_ACTION_TABLE_HEADER, _plan_format.PLAN_LEGACY_ACTION_TABLE_HEADER)
-    ]
-    units, unit_errors = _plan_format.parse_plan_implementation_units(detail_text)
-    if len(action_tables) != 1 or units is None or unit_errors:
-        return []
-
-    actual = tuple(index for unit in units for index in unit.action_indices)
-    action_table = action_tables[0]
-    if action_table.header == _plan_format.PLAN_ACTION_TABLE_HEADER:
-        decision_column = action_table.header.index("採否")
-        expected = tuple(
-            index
-            for index, row in enumerate(action_table.rows, start=1)
-            if len(row) > decision_column and row[decision_column] in ("採用", "部分採用")
-        )
-    else:
-        expected = tuple(range(1, len(action_table.rows) + 1))
-    if tuple(sorted(actual)) == expected:
-        return []
-    return [
-        "実装単位表の`対象の実施内容`はメイン側`## 実施内容`の実装対象行を過不足なく被覆する: "
-        f"期待={list(expected)}, 実際={list(actual)}"
-    ]
-
-
 def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """新書式（メイン側・detail側の2ファイル）を検査してエラーと警告を返す。
 
@@ -302,17 +236,17 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     errors.extend(detail_fence_errors)
     errors.extend(_plan_format.check_plan_detail_structure(detail_text, work_type))
     errors.extend(_check_bug_file_reference(_main_path_for_detail(detail_path), detail_text, work_type))
-    errors.extend(_check_implementation_action_coverage(text, detail_text))
     errors.extend(_check_references(detail_text, work_dir))
     warnings.extend(_check_plan_size(detail_lines))
     warnings.extend(_legacy_bug_warnings(detail_text))
 
     materials, _material_errors = _plan_format.parse_plan_materials(text)
     warnings.extend(_legacy_action_warnings(text))
+    if not _plan_format.has_human_action_table(text):
+        warnings.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     if materials is not None and materials.is_legacy:
         warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
-    errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(text.splitlines()))
     return errors, warnings
@@ -331,7 +265,6 @@ def _check_legacy_format(plan_path: pathlib.Path, text: str, work_dir: pathlib.P
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
-    errors.extend(_check_base_commit(metadata.get("ベースコミット"), work_dir))
     errors.extend(_check_bug_file_reference(plan_path, text, metadata.get("作業種別")))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(lines))

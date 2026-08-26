@@ -230,6 +230,12 @@ function renderEntry(entry) {
   kind.className = 'entry-kind';
   kind.textContent = entry.kind || 'unknown';
   status.append(kind);
+  if (entry.plan) {
+    const plan = document.createElement('span');
+    plan.className = 'plan-badge';
+    plan.textContent = 'plan';
+    status.append(plan);
+  }
   const badge = document.createElement('span');
   badge.className = 'state-badge';
   badge.dataset.state = entry.state;
@@ -244,7 +250,8 @@ function renderEntry(entry) {
   appendTextCell(button, '要約', 'summary-cell', entry.summary);
   button.setAttribute(
     'aria-label',
-    [entry.filename, entry.target_repo || '対象なし', entry.kind || 'unknown', entry.state || 'unknown',
+    [entry.filename, entry.target_repo || '対象なし', entry.kind || 'unknown', entry.plan ? 'plan' : '',
+      entry.state || 'unknown',
       unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
   button.addEventListener('click', () => selectEntry(entry, button));

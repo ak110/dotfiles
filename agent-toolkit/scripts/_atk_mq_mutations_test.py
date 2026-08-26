@@ -483,13 +483,12 @@ def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
 
 
 @pytest.mark.parametrize("resolved_worktree", [pathlib.Path("/worktree"), None])
-def test_convert_to_plan_cli_warns_on_mismatched_target_commit(
+def test_convert_to_plan_cli_ignores_mismatched_plan_base(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
     resolved_worktree: pathlib.Path | None,
 ) -> None:
-    """計画ベースと`target_commit`が異なる変換を、ローカルworktreeの有無を問わず警告付きで成立させる。"""
+    """計画作成時点の参照値と`target_commit`を比較せず変換を成立させる。"""
     notes = _setup_notes(tmp_path)
     path = _write_convert_feedback(notes, "feedback.md", target_commit="a" * 40)
     plan = _write_convert_plan(tmp_path, "b" * 40)
@@ -526,7 +525,6 @@ def test_convert_to_plan_cli_warns_on_mismatched_target_commit(
     assert parsed is not None
     assert parsed[0]["plan_file"] == str(plan)
     assert resolved_targets == ["github.com/example/foo"]
-    assert f"計画ファイル={'b' * 40}" in capsys.readouterr().err
 
 
 def test_convert_to_plan_migrates_legacy_entry_dependencies_when_omitted(

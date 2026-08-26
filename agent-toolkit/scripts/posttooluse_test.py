@@ -29,7 +29,7 @@ _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_age
 def _load_posttooluse_module() -> types.ModuleType:
     """`scripts/posttooluse.py`を`importlib`で動的にインポートする。
 
-    `TestDiffRemoteSnapshots`で`_diff_remote_snapshots`等の内部関数を直接呼ぶために使う。
+    PostToolUseの内部dispatchと補助機構を直接呼ぶテストで使う。
     引数注入では到達不能なモジュール内部関数の単体検査のため、importlibによる直接参照を例外的に許容する。
     `_SCRIPT`（`claude_hook.py`、サブプロセス起動用）とは別に本体ファイルのパスを参照する。
     """
@@ -40,8 +40,7 @@ def _load_posttooluse_module() -> types.ModuleType:
     return module
 
 
-# モジュールレベルでキャッシュ済みモジュールを参照し、内部関数（`_diff_remote_snapshots`等）を直接呼ぶ。
-# 引数注入では到達不能なモジュール内部関数の参照のため直接アクセスする。
+# モジュールレベルでキャッシュ済みモジュールを参照し、引数注入では到達不能な内部関数を直接検査する。
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
@@ -203,19 +202,22 @@ class TestTestExecution:
             )
             is not None
         )
+        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__kill") is not None
 
     @pytest.mark.parametrize(
         "tool_name",
         [
             "mcp__plugin_agent-toolkit_agents_server__start",
             "mcp__plugin_agent-toolkit_agents_server__send_message",
+            "mcp__plugin_agent-toolkit_agents_server__wait",
+            "mcp__plugin_agent-toolkit_agents_server__kill",
         ],
     )
-    def test_posttooluse_failure_matcher_routes_start_points(self, tool_name: str):
-        """開始点・継続入力の内部失敗をPostToolUseFailureへ配送するmatcherを維持する。"""
+    def test_posttooluse_failure_matcher_excludes_agents_server(self, tool_name: str):
+        """agents_server専用のPostToolUseFailure配送を撤去する。"""
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
-        assert re.fullmatch(matcher, tool_name) is not None
+        assert re.fullmatch(matcher, tool_name) is None
 
     def test_posttooluse_failure_matcher_excludes_wait(self):
         """waitの失敗はPostToolUseFailure matcherへ配送しない。"""
@@ -223,42 +225,12 @@ class TestTestExecution:
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__wait") is None
 
-    def test_posttooluse_failure_matcher_matches_parse_hook_payload_allow_set(self):
-        """matcherが列挙するagents_serverツール名と`_parse_hook_payload`の許可集合が対応する。
-
-        `Agent`・`Task`はmatcherに含まれる一方、当該許可集合の対象外という既存設計を維持する
-        （両者はAgent/Task起動観測専用の別分岐で処理され、`_parse_hook_payload`を経由しない）。
-        """
+    def test_posttooluse_failure_matcher_keeps_agent_task(self):
+        """agents_server撤去後もAgent・Taskの失敗イベントmatcherを維持する。"""
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         matcher_tools = set(matcher.split("|"))
-        codex_matcher_tools = {
-            name
-            for name in matcher_tools
-            if name.startswith(("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__"))
-        }
-        allow_set = _POSTTOOLUSE_MODULE._AGENTS_SERVER_FAILURE_TOOLS & {  # noqa: SLF001  # pylint: disable=protected-access
-            name for name in matcher_tools if name.startswith("mcp__plugin_agent-toolkit_agents_server__")
-        }
-        assert codex_matcher_tools == allow_set
-        assert matcher_tools - codex_matcher_tools == {"Agent", "Task"}
-
-        def _parse(tool_name: str) -> object:
-            payload_text = json.dumps(
-                {
-                    "session_id": "sid",
-                    "hook_event_name": "PostToolUseFailure",
-                    "tool_name": tool_name,
-                    "tool_input": {},
-                },
-                ensure_ascii=False,
-            )
-            return _POSTTOOLUSE_MODULE._parse_hook_payload(payload_text)  # noqa: SLF001  # pylint: disable=protected-access
-
-        for tool_name in codex_matcher_tools:
-            assert _parse(tool_name) is not None
-        for tool_name in ("Agent", "Task"):
-            assert _parse(tool_name) is None
+        assert matcher_tools == {"Agent", "Task"}
 
 
 class TestPlanModeSkillInvocation:
@@ -394,21 +366,29 @@ class TestSessionReviewSkillInvocation:
         assert path.stat().st_mtime_ns == mtime_before
 
 
-class TestDelegationTracking:
-    """delegation起動の状態記録。"""
+class TestDelegationStateRemoval:
+    """delegation起動が専用の状態を更新しないこと。"""
 
     @pytest.mark.parametrize("skill_name", ["delegation", "agent-toolkit:delegation"])
-    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path, skill_name: str) -> None:
-        sid = f"delegation-skill-{skill_name}"
-        _run(
+    @pytest.mark.parametrize("is_sidechain", [False, True])
+    def test_skill_invocation_does_not_set_state(
+        self,
+        tmp_path: pathlib.Path,
+        skill_name: str,
+        is_sidechain: bool,
+    ) -> None:
+        sid = f"delegation-skill-{skill_name}-{is_sidechain}"
+        result = _run(
             {
                 "session_id": sid,
                 "tool_name": "Skill",
                 "tool_input": {"skill": skill_name},
+                "isSidechain": is_sidechain,
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("delegation_skill_invoked") is True
+        assert result.returncode == 0
+        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).exists()
 
 
 class TestTbdCompletionNotice:
@@ -1282,925 +1262,127 @@ class TestAmendPendingStatusCheck:
         assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
 
 
-class TestWarnCodexRemoteChange:
-    """Codex開始・継続呼び出し前後のリモート参照比較による警告。
+class TestAgentsServerSessionState:
+    """agents_serverの4ツール応答とsessionごとのcwd状態記録を検証する。"""
 
-    codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
-    行う事象への機械チェック（事後検知）のうち、比較・警告・後始末側（PostToolUse）を検証する。
-    """
-
-    @staticmethod
-    def _init_repo_with_remote(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-        remote = base / "remote.git"
-        remote.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "-q", "--bare"], cwd=remote, check=True)
-        repo = base / "repo"
-        repo.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-        subprocess.run(["git", "config", "user.email", "a@example.com"], cwd=repo, check=True)
-        subprocess.run(["git", "config", "user.name", "a"], cwd=repo, check=True)
-        (repo / "a.txt").write_text("x", encoding="utf-8")
-        subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
-        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
-        subprocess.run(["git", "branch", "-M", "main"], cwd=repo, check=True)
-        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
-        return repo, remote
-
-    @staticmethod
-    def _write_snapshot_state(tmp_path: pathlib.Path, sid: str, entries: dict) -> None:
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps({"agents_server_remote_snapshot_by_key": entries}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-
-    @staticmethod
-    def _result_payload(sid: str, *, key: str | None = None) -> dict:
-        """waitのPostToolUse payloadを作成する。"""
-        payload = {
-            "session_id": sid,
-            "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-            "tool_input": {"session_id": "thread-1"},
-            "tool_response": {
-                "structuredContent": {
-                    "session_id": "thread-1",
-                    "turn_id": "turn-1",
-                    "status": "completed",
-                    "agent_message": "完了",
-                    "error": None,
-                },
-            },
-            "isSidechain": True,
-        }
-        if key is not None:
-            payload["transcript_path"] = f"/x/agent-{key}.jsonl"
-        return payload
-
-    @pytest.mark.parametrize(
-        ("tool_name", "status"),
-        (
-            ("start", "running"),
-            ("send_message", "running"),
-            ("wait", "running"),
-            ("wait", "running"),
-            ("wait", "completed"),
-        ),
-    )
-    def test_json_string_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str, status: str) -> None:
+    @pytest.mark.parametrize("tool_name", ("start", "send_message", "wait", "kill"))
+    def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
-        full_tool_name = f"mcp__plugin_agent-toolkit_agents_server__{tool_name}"
-        response = {"session_id": "thread-json", "turn_id": "turn-json", "status": status}
+        remote_session_id = "thread-json"
+        status = "running" if tool_name in ("start", "send_message") else "interrupted"
+        tool_input = {"cwd": str(tmp_path)} if tool_name == "start" else {"session_id": remote_session_id}
+        if tool_name == "send_message":
+            tool_input["prompt"] = "続行"
+        response: dict[str, object] = {"session_id": remote_session_id, "turn_id": "turn-json", "status": status}
+        if tool_name == "kill":
+            response["kill_requested"] = True
+        if tool_name != "start":
+            (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+                json.dumps({"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}),
+                encoding="utf-8",
+            )
         result = _run(
             {
                 "session_id": sid,
-                "tool_name": full_tool_name,
-                "tool_input": {
-                    "session_id": "thread-json",
-                    "prompt": "続行",
-                    "cwd": str(tmp_path),
-                },
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_name}",
+                "tool_input": tool_input,
                 "tool_response": json.dumps(response),
             },
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
-        assert state["agents_server_sessions"]["thread-json"]["status"] == status
-        if tool_name in ("start", "send_message"):
-            assert state["agents_server_cwd_by_session"]["thread-json"] == str(tmp_path)
+        assert state["agents_server_sessions"][remote_session_id]["status"] == status
+        if tool_name == "kill":
+            assert state["agents_server_sessions"][remote_session_id]["kill_requested"] is True
+        assert "cwd" not in state["agents_server_sessions"][remote_session_id]
+        assert state["agents_server_cwd_by_session"][remote_session_id] == str(tmp_path)
 
-    def test_json_string_result_response_warns_after_remote_change(self, tmp_path: pathlib.Path) -> None:
-        """JSON文字列形状の`wait`でもリモート変更を警告する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "json-result-warning"
-        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        payload = self._result_payload(sid)
-        payload["tool_response"] = json.dumps(payload["tool_response"]["structuredContent"])
-        result = _run(payload, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" in result.stdout
-
-    @pytest.mark.parametrize("tool_name", ("start", "send_message", "wait"))
-    @pytest.mark.parametrize(
-        ("response", "missing"),
-        (
-            ("not-json", ("response", "session_id", "status")),
-            ({"status": "running"}, ("session_id",)),
-            ({"session_id": "thread-json"}, ("status",)),
-        ),
-    )
-    def test_codex_response_diagnostics_include_missing_fields(
-        self,
-        tmp_path: pathlib.Path,
-        tool_name: str,
-        response: str | dict,
-        missing: tuple[str, ...],
-    ) -> None:
-        """解析不能または必須値欠落の成功応答を追加コンテキストへ診断する。"""
-        sid = f"json-diagnostic-{tool_name}-{len(missing)}"
-        full_tool_name = f"mcp__plugin_agent-toolkit_agents_server__{tool_name}"
+    def test_start_stores_input_cwd_under_response_session_id(self, tmp_path: pathlib.Path) -> None:
+        """startの入力cwdを応答session_idへ保存し、session記録へ複製しない。"""
+        sid = "start-cwd"
         result = _run(
             {
                 "session_id": sid,
-                "tool_name": full_tool_name,
-                "tool_input": {
-                    "session_id": "thread-json",
-                    "prompt": "続行",
-                    "cwd": str(tmp_path),
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"prompt": "実装", "cwd": str(tmp_path)},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-start",
+                        "turn_id": "turn-start",
+                        "status": "running",
+                    }
                 },
-                "tool_response": response if isinstance(response, str) else response,
             },
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert tool_name in context
-        for field in missing:
-            assert field in context
+        state = _read_state(tmp_path, sid)
+        assert state["agents_server_cwd_by_session"] == {"thread-start": str(tmp_path)}
+        assert "cwd" not in state["agents_server_sessions"]["thread-start"]
 
-    @pytest.mark.parametrize("tool_name", ("start",))
-    def test_start_and_reply_diagnose_missing_cwd(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """開始・継続応答でcwdを解決できない場合を追加コンテキストへ診断する。"""
-        tool_input = {"prompt": "実装"} if tool_name == "start" else {"session_id": "thread-json", "prompt": "続行"}
+    @pytest.mark.parametrize("tool_name", ("wait", "send_message", "kill"))
+    def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        """wait・send_message・killはcwd mapを参照し、session記録へcwdを保存しない。"""
+        sid = f"continuation-cwd-{tool_name}"
+        remote_session_id = "thread-continuation"
+        state = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            json.dumps(state, ensure_ascii=False), encoding="utf-8"
+        )
+        tool_input = {"session_id": remote_session_id}
+        if tool_name == "send_message":
+            tool_input["prompt"] = "続行"
+        response: dict[str, object] = {"session_id": remote_session_id, "turn_id": "turn-next", "status": "running"}
+        if tool_name == "kill":
+            response.update({"status": "interrupted", "kill_requested": True})
         result = _run(
             {
-                "session_id": f"missing-cwd-{tool_name}",
+                "session_id": sid,
                 "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_name}",
                 "tool_input": tool_input,
-                "tool_response": json.dumps({"session_id": "thread-json", "status": "running"}),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert tool_name in context
-        assert "cwd" in context
-
-    def test_no_warning_when_no_change(self, tmp_path: pathlib.Path):
-        """記録済みスナップショットと現在値が一致する場合は警告しない。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "warn-nochange"
-        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
-        result = _run(self._result_payload(sid), state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" not in result.stdout
-        assert _read_state(tmp_path, sid).get("agents_server_remote_snapshot_by_key") == {}
-
-    def test_remote_check_tracks_result_for_same_session(self, tmp_path: pathlib.Path):
-        """開始応答からsessionを記録し、結果回収時に同じsnapshotと比較する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "same-session"
-        initial_pre = _run_pretooluse(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                "tool_use_id": "start-1",
-                "isSidechain": True,
-            },
-            tmp_path,
-        )
-        assert initial_pre.returncode == 0
-        initial_post = _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                "tool_use_id": "start-1",
-                "tool_response": {
-                    "structuredContent": {
-                        "session_id": "thread-1",
-                        "turn_id": "turn-1",
-                        "status": "running",
-                    }
-                },
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert initial_post.returncode == 0
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        reply_post = _run(self._result_payload(sid), state_dir=tmp_path)
-        assert reply_post.returncode == 0
-        assert "remote refs changed" in reply_post.stdout
-
-    def test_send_message_preserves_active_thread_snapshot(self, tmp_path: pathlib.Path):
-        """実行中turnへの`send_message`成功では既存snapshotを維持する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "send-active"
-        start_tool = "mcp__plugin_agent-toolkit_agents_server__start"
-        send_tool = "mcp__plugin_agent-toolkit_agents_server__send_message"
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": start_tool,
-                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                    "tool_use_id": "start-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        assert (
-            _run(
-                {
-                    "session_id": sid,
-                    "tool_name": start_tool,
-                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                    "tool_use_id": "start-1",
-                    "tool_response": {
-                        "structuredContent": {
-                            "session_id": "thread-1",
-                            "turn_id": "turn-1",
-                            "status": "running",
-                        }
-                    },
-                    "isSidechain": True,
-                },
-                state_dir=tmp_path,
-            ).returncode
-            == 0
-        )
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": send_tool,
-                    "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
-                    "tool_use_id": "send-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        assert (
-            _run(
-                {
-                    "session_id": sid,
-                    "tool_name": send_tool,
-                    "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
-                    "tool_use_id": "send-1",
-                    "tool_response": {
-                        "structuredContent": {
-                            "session_id": "thread-1",
-                            "turn_id": "turn-1",
-                            "status": "running",
-                        }
-                    },
-                    "isSidechain": True,
-                },
-                state_dir=tmp_path,
-            ).returncode
-            == 0
-        )
-        state = _read_state(tmp_path, sid)
-        assert set(state["agents_server_remote_snapshot_by_key"]) == {"start-1"}
-        assert state["agents_server_sessions"]["thread-1"]["snapshot_key"] == "start-1"
-
-    def test_send_message_records_new_snapshot_after_result_recovery(self, tmp_path: pathlib.Path):
-        """結果回収後の`send_message`によるreply開始ではsnapshotを更新する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "send-reply"
-        start_tool = "mcp__plugin_agent-toolkit_agents_server__start"
-        send_tool = "mcp__plugin_agent-toolkit_agents_server__send_message"
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": start_tool,
-                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                    "tool_use_id": "start-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        assert (
-            _run(
-                {
-                    "session_id": sid,
-                    "tool_name": start_tool,
-                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                    "tool_use_id": "start-1",
-                    "tool_response": {
-                        "structuredContent": {
-                            "session_id": "thread-1",
-                            "turn_id": "turn-1",
-                            "status": "running",
-                        }
-                    },
-                    "isSidechain": True,
-                },
-                state_dir=tmp_path,
-            ).returncode
-            == 0
-        )
-        assert _run(self._result_payload(sid), state_dir=tmp_path).returncode == 0
-        assert _read_state(tmp_path, sid)["agents_server_remote_snapshot_by_key"] == {}
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": send_tool,
-                    "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                    "tool_use_id": "send-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        assert (
-            _run(
-                {
-                    "session_id": sid,
-                    "tool_name": send_tool,
-                    "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                    "tool_use_id": "send-1",
-                    "tool_response": {
-                        "structuredContent": {
-                            "session_id": "thread-1",
-                            "turn_id": "turn-2",
-                            "status": "running",
-                            "delivery": "reply_started",
-                        }
-                    },
-                    "isSidechain": True,
-                },
-                state_dir=tmp_path,
-            ).returncode
-            == 0
-        )
-        state = _read_state(tmp_path, sid)
-        assert state["agents_server_remote_snapshot_by_key"]["send-1"]["cwd"] == str(repo)
-        assert state["agents_server_sessions"]["thread-1"]["snapshot_key"] == "send-1"
-
-    @pytest.mark.parametrize("delivery", ("reply_started", "reply_ambiguous"))
-    def test_reply_start_replaces_old_snapshot(self, tmp_path: pathlib.Path, delivery: str) -> None:
-        """新turnの基準へ付け替える際に旧snapshotを残さない。"""
-        sid = f"replace-old-{delivery}"
-        state = {
-            "agents_server_cwd_by_session": {"thread-1": str(tmp_path)},
-            "agents_server_sessions": {
-                "thread-1": {
-                    "session_id": "thread-1",
-                    "status": "completed",
-                    "snapshot_key": "start-1",
-                }
-            },
-            "agents_server_remote_snapshot_by_key": {
-                "start-1": {"cwd": str(tmp_path), "snapshot": {}},
-            },
-        }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        tool_name = "mcp__plugin_agent-toolkit_agents_server__send_message"
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": tool_name,
-                    "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                    "tool_use_id": "send-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        result = _run(
-            {
-                "session_id": sid,
-                "tool_name": tool_name,
-                "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                "tool_use_id": "send-1",
-                "tool_response": {
-                    "structuredContent": {
-                        "session_id": "thread-1",
-                        "status": "running",
-                        "delivery": delivery,
-                    }
-                },
-                "isSidechain": True,
+                "tool_response": {"structuredContent": response},
             },
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         current = _read_state(tmp_path, sid)
-        assert set(current["agents_server_remote_snapshot_by_key"]) == {"send-1"}
-        assert current["agents_server_sessions"]["thread-1"]["snapshot_key"] == "send-1"
+        assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
+        assert "cwd" not in current["agents_server_sessions"][remote_session_id]
 
-    @pytest.mark.parametrize(
-        ("tool_name", "status", "delivery"),
-        [
-            ("send_message", "failed", "reply_failed"),
-            ("send_message", "running", "reply_ambiguous"),
-            ("send_message", "running", "reply_started"),
-            ("send_message", "failed", None),
-        ],
-    )
-    def test_new_turn_response_resets_result_state(
-        self,
-        tmp_path: pathlib.Path,
-        tool_name: str,
-        status: str,
-        delivery: str | None,
-    ) -> None:
-        """開始応答の成否にかかわらず、新turnを未回収として記録する。"""
-        sid = f"new-turn-{tool_name}-{delivery or 'direct-failure'}"
-        snapshot_key = "start-1"
+    def test_missing_cwd_map_does_not_fallback_to_session_record(self, tmp_path: pathlib.Path) -> None:
+        """cwd map欠落時も古いsession記録のcwdへフォールバックしない。"""
+        sid = "continuation-no-cwd-map"
+        remote_session_id = "thread-no-cwd-map"
         state = {
             "agents_server_sessions": {
-                "thread-1": {
-                    "session_id": "thread-1",
-                    "status": "completed",
-                    "turn_id": "turn-1",
-                    "snapshot_key": snapshot_key,
+                remote_session_id: {
+                    "session_id": remote_session_id,
+                    "status": "running",
+                    "cwd": "/fallback/that/must/not/be/used",
                 }
-            },
-            "agents_server_remote_snapshot_by_key": {
-                snapshot_key: {"cwd": str(tmp_path), "snapshot": {}},
-            },
+            }
         }
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False),
-            encoding="utf-8",
+            json.dumps(state, ensure_ascii=False), encoding="utf-8"
         )
-        structured = {
-            "session_id": "thread-1",
-            "turn_id": "turn-2",
-            "status": status,
-        }
-        if delivery is not None:
-            structured["delivery"] = delivery
-
         result = _run(
-            {
-                "session_id": sid,
-                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_name}",
-                "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                "tool_response": {"structuredContent": structured},
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-
-    def test_steered_send_message_preserves_result_state(self, tmp_path: pathlib.Path) -> None:
-        """同一turnを継続する`steered`応答は既存の回収状態を変更しない。"""
-        sid = "send-steered-preserves-result"
-        state = {
-            "agents_server_sessions": {
-                "thread-1": {
-                    "session_id": "thread-1",
-                    "status": "completed",
-                    "turn_id": "turn-1",
-                    "snapshot_key": "start-1",
-                }
-            },
-            "agents_server_remote_snapshot_by_key": {
-                "start-1": {"cwd": str(tmp_path), "snapshot": {}},
-            },
-        }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False),
-            encoding="utf-8",
-        )
-
-        result = _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "thread-1", "prompt": "追加指示"},
-                "tool_response": {
-                    "structuredContent": {
-                        "session_id": "thread-1",
-                        "turn_id": "turn-1",
-                        "status": "running",
-                        "delivery": "steered",
-                    }
-                },
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-
-    def test_posttooluse_failure_running_preserves_snapshot_until_wait(self, tmp_path: pathlib.Path):
-        """実行中turnのsend_message失敗では旧snapshotを維持し、終端waitで比較する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "reply-failure"
-        start_tool = "mcp__plugin_agent-toolkit_agents_server__start"
-        reply_tool = "mcp__plugin_agent-toolkit_agents_server__send_message"
-
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": start_tool,
-                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                    "tool_use_id": "start-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        assert (
-            _run(
-                {
-                    "session_id": sid,
-                    "tool_name": start_tool,
-                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                    "tool_use_id": "start-1",
-                    "tool_response": {
-                        "structuredContent": {
-                            "session_id": "thread-1",
-                            "turn_id": "turn-1",
-                            "status": "running",
-                        }
-                    },
-                    "isSidechain": True,
-                },
-                state_dir=tmp_path,
-            ).returncode
-            == 0
-        )
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": reply_tool,
-                    "tool_input": {"session_id": "thread-1", "prompt": "続けて実装"},
-                    "tool_use_id": "reply-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        failure = _run(
-            {
-                "session_id": sid,
-                "hook_event_name": "PostToolUseFailure",
-                "tool_name": reply_tool,
-                "tool_input": {"session_id": "thread-1", "prompt": "続けて実装"},
-                "tool_use_id": "reply-1",
-                "tool_response": {"error": "turn/start failed"},
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert failure.returncode == 0
-        failed_state = _read_state(tmp_path, sid)
-        failed_record = failed_state["agents_server_sessions"]["thread-1"]
-        assert failed_record["status"] == "running"
-        assert failed_record["snapshot_key"] == "start-1"
-        assert set(failed_state["agents_server_remote_snapshot_by_key"]) == {"start-1"}
-
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        result_payload = self._result_payload(sid)
-        result = _run(result_payload, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" in result.stdout
-        retrieved_state = _read_state(tmp_path, sid)
-        assert retrieved_state["agents_server_remote_snapshot_by_key"] == {}
-
-    def test_initial_start_response_loss_keeps_session_until_completion_and_result(self, tmp_path: pathlib.Path):
-        """初回turn/start応答喪失をturn終端まで保持し、結果回収までsnapshotを管理する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "initial-start-failure"
-        start_tool = "mcp__plugin_agent-toolkit_agents_server__start"
-
-        assert (
-            _run_pretooluse(
-                {
-                    "session_id": sid,
-                    "tool_name": start_tool,
-                    "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                    "tool_use_id": "start-1",
-                    "isSidechain": True,
-                },
-                tmp_path,
-            ).returncode
-            == 0
-        )
-        start = _run(
-            {
-                "session_id": sid,
-                "tool_name": start_tool,
-                "tool_input": {"prompt": "実装", "cwd": str(repo)},
-                "tool_use_id": "start-1",
-                "tool_response": {
-                    "structuredContent": {
-                        "session_id": "thread-1",
-                        "turn_id": "",
-                        "status": "running",
-                        "error": {"message": "turn/start response lost"},
-                    }
-                },
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert start.returncode == 0
-        ambiguous_state = _read_state(tmp_path, sid)
-        ambiguous_record = ambiguous_state["agents_server_sessions"]["thread-1"]
-        assert ambiguous_record["status"] == "running"
-        assert ambiguous_record["snapshot_key"] == "start-1"
-        assert "start-1" in ambiguous_state["agents_server_remote_snapshot_by_key"]
-
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        completed = _run(
             {
                 "session_id": sid,
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {"session_id": "thread-1", "timeout": 300},
-                "tool_use_id": "wait-1",
+                "tool_input": {"session_id": remote_session_id},
                 "tool_response": {
                     "structuredContent": {
-                        "session_id": "thread-1",
-                        "turn_id": "turn-1",
+                        "session_id": remote_session_id,
                         "status": "completed",
                         "agent_message": "完了",
-                        "error": None,
                     }
                 },
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert completed.returncode == 0
-
-        assert "remote refs changed" in completed.stdout
-        assert _read_state(tmp_path, sid)["agents_server_remote_snapshot_by_key"] == {}
-
-    def test_result_failure_before_completion_keeps_snapshot(self, tmp_path: pathlib.Path):
-        """未終端turnのwait失敗では次の結果回収までsnapshotを保持する。"""
-        sid = "result-before-completion"
-        state = {
-            "agents_server_sessions": {
-                "thread-1": {
-                    "session_id": "thread-1",
-                    "status": "running",
-                    "turn_id": "turn-1",
-                    "snapshot_key": "start-1",
-                }
-            },
-            "agents_server_remote_snapshot_by_key": {"start-1": {"cwd": str(tmp_path), "snapshot": {}}},
-        }
-        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-        failure = _run(
-            {
-                "session_id": sid,
-                "hook_event_name": "PostToolUseFailure",
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {"session_id": "thread-1"},
-                "tool_use_id": "result-1",
-                "tool_response": {"error": "the Codex turn has not completed"},
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert failure.returncode == 0
-        assert _read_state(tmp_path, sid)["agents_server_remote_snapshot_by_key"] == {
-            "start-1": {"cwd": str(tmp_path), "snapshot": {}}
-        }
-
-    def test_reply_input_failure_preserves_session_state_and_clears_snapshot(self, tmp_path: pathlib.Path):
-        """入力検証失敗は新しい未回収ターンに変換せず、対応するsnapshotだけを破棄する。"""
-        sid = "reply-input-failure"
-        state = {
-            "agents_server_sessions": {
-                "thread-1": {
-                    "session_id": "thread-1",
-                    "status": "completed",
-                    "turn_id": "turn-1",
-                }
-            },
-            "agents_server_remote_snapshot_by_key": {"reply-invalid": {"cwd": str(tmp_path), "snapshot": {}}},
-        }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8"
-        )
-        result = _run(
-            {
-                "session_id": sid,
-                "hook_event_name": "PostToolUseFailure",
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "thread-1", "prompt": ""},
-                "tool_use_id": "reply-invalid",
-                "tool_response": {"error": "prompt must not be empty"},
             },
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        state_after = _read_state(tmp_path, sid)
-        assert state_after["agents_server_sessions"]["thread-1"]["status"] == "completed"
-        assert state_after["agents_server_remote_snapshot_by_key"] == {}
-
-    def test_reply_failure_uses_recorded_session_snapshot_when_response_is_empty(self, tmp_path: pathlib.Path):
-        """失敗応答が空でもtool_inputのsession IDから記録済みsnapshotを比較して削除する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "reply-empty-failure"
-        state = {
-            "agents_server_sessions": {
-                "thread-1": {
-                    "session_id": "thread-1",
-                    "status": "completed",
-                    "snapshot_key": "start-1",
-                }
-            },
-            "agents_server_remote_snapshot_by_key": {
-                "start-1": {"cwd": str(repo), "snapshot": {"origin": {}}},
-                "reply-1": {
-                    "cwd": str(repo),
-                    "snapshot": {"origin": {"refs/heads/main": "new-oid"}},
-                },
-            },
-        }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8"
-        )
-        result = _run(
-            {
-                "session_id": sid,
-                "hook_event_name": "PostToolUseFailure",
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-                "tool_input": {"session_id": "thread-1", "prompt": "続行"},
-                "tool_use_id": "reply-1",
-                "tool_response": {},
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert "remote refs changed" in result.stdout
-        state_after = _read_state(tmp_path, sid)
-        assert state_after["agents_server_remote_snapshot_by_key"] == {}
-        assert state_after["agents_server_sessions"]["thread-1"]["snapshot_key"] == "start-1"
-
-    def test_warns_and_clears_state_when_remote_changed(self, tmp_path: pathlib.Path):
-        """codex呼び出し中にリモートへpushされた変化を検知して警告し、記録済みスナップショットを削除する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "warn-changed"
-        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        state = _read_state(tmp_path, sid)
-        state["agents_server_sessions"] = {
-            "thread-1": {"session_id": "thread-1", "status": "running", "snapshot_key": f"session:{sid}"}
-        }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(json.dumps(state), encoding="utf-8")
-        result = _run(self._result_payload(sid), state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" in result.stdout
-        assert "origin" in result.stdout
-        assert _read_state(tmp_path, sid).get("agents_server_remote_snapshot_by_key") == {}
-
-    def test_uses_agent_id_key_when_transcript_path_present(self, tmp_path: pathlib.Path):
-        """`transcript_path`からagentIdを抽出できる場合はagentIdをキーとして比較する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "warn-agent"
-        self._write_snapshot_state(tmp_path, sid, {"abc123": {"cwd": str(repo), "snapshot": {}}})
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        state = _read_state(tmp_path, sid)
-        state["agents_server_sessions"] = {
-            "thread-1": {"session_id": "thread-1", "status": "running", "snapshot_key": "abc123"}
-        }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(json.dumps(state), encoding="utf-8")
-        result = _run(self._result_payload(sid, key="abc123"), state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" in result.stdout
-        assert _read_state(tmp_path, sid).get("agents_server_remote_snapshot_by_key") == {}
-
-    def test_no_warning_when_no_recorded_entry(self, tmp_path: pathlib.Path):
-        """記録済みスナップショットが存在しない場合は比較せず警告しない。"""
-        sid = "warn-none"
-        result = _run(self._result_payload(sid), state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" not in result.stdout
-
-    def test_no_warning_when_recorded_cwd_invalid(self, tmp_path: pathlib.Path):
-        """記録済みエントリの`cwd`が不正な場合は比較せず警告しない。"""
-        sid = "warn-badcwd"
-        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": None, "snapshot": {}}})
-        result = _run(self._result_payload(sid), state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" not in result.stdout
-
-    def test_codex_reply_also_warns(self, tmp_path: pathlib.Path):
-        """`mcp__plugin_agent-toolkit_agents_server__send_message`呼び出し後も同様に比較・警告する。"""
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "warn-reply"
-        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        result = _run(self._result_payload(sid), state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "remote refs changed" in result.stdout
-
-    def test_warning_delivered_via_additional_context(self, tmp_path: pathlib.Path):
-        """警告は`hookSpecificOutput.additionalContext`経由で出力され、stderrへは出力しない。
-
-        PostToolUseで行動を促す通知はコーディングエージェントへ確実に届く`additionalContext`を
-        第一経路とする（`claude-hooks.md`「出力フィールドの使い分け」節）。stderr出力（exit 0時）は
-        コーディングエージェントへ届く経路として保証されないため使わない。
-        """
-        repo, _ = self._init_repo_with_remote(tmp_path)
-        sid = "warn-context"
-        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
-        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
-        result = _run(self._result_payload(sid), state_dir=tmp_path)
-        assert result.returncode == 0
-        assert result.stderr == ""
-        payload = json.loads(result.stdout)
-        assert payload["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "remote refs changed" in payload["hookSpecificOutput"]["additionalContext"]
-
-
-class TestDiffRemoteSnapshots:
-    """`_diff_remote_snapshots`: 取得失敗（`None`）と新規追加リモートの区別。
-
-    `snapshot_remote_refs`は取得失敗したリモートを`None`でマーキングしつつキー自体は
-    保持する。既存リモートが一時的な取得失敗（`None`）を経て次回成功した場合、
-    「新規追加されたリモート」と誤認して警告してはならない。
-    """
-
-    _diff = staticmethod(_POSTTOOLUSE_MODULE._diff_remote_snapshots)  # pylint: disable=protected-access
-
-    def test_no_diff_when_unchanged(self):
-        before = {"origin": {"refs/heads/main": "aaa"}}
-        after = {"origin": {"refs/heads/main": "aaa"}}
-        assert self._diff(before, after) == set()
-
-    def test_diff_when_ref_updated(self):
-        before = {"origin": {"refs/heads/main": "aaa"}}
-        after = {"origin": {"refs/heads/main": "bbb"}}
-        assert self._diff(before, after) == {"origin"}
-
-    def test_diff_when_new_remote_added_with_refs(self):
-        before: dict[str, dict[str, str] | None] = {}
-        after = {"origin": {"refs/heads/main": "aaa"}}
-        assert self._diff(before, after) == {"origin"}
-
-    def test_no_diff_when_new_remote_added_without_refs(self):
-        before: dict[str, dict[str, str] | None] = {}
-        after: dict[str, dict[str, str] | None] = {"origin": {}}
-        assert self._diff(before, after) == set()
-
-    def test_no_false_positive_when_existing_remote_recovers_from_failure(self):
-        """既存リモートが`before`側で取得失敗（`None`）し`after`側で成功した場合、
-        新規追加と誤認せず対象から除外する。"""
-        before: dict[str, dict[str, str] | None] = {"origin": None}
-        after: dict[str, dict[str, str] | None] = {"origin": {"refs/heads/main": "aaa"}}
-        assert self._diff(before, after) == set()
-
-    def test_no_false_positive_when_existing_remote_fails_after_success(self):
-        """既存リモートが`before`側で成功し`after`側で取得失敗（`None`）した場合も、
-        取得失敗を「参照が消えた」という差分と誤認せず対象から除外する。"""
-        before: dict[str, dict[str, str] | None] = {"origin": {"refs/heads/main": "aaa"}}
-        after: dict[str, dict[str, str] | None] = {"origin": None}
-        assert self._diff(before, after) == set()
-
-    def test_no_diff_when_remote_removed_from_after(self):
-        """`after`側にリモート自体が存在しない（削除された）場合は比較対象が無いため除外する。"""
-        before = {"origin": {"refs/heads/main": "aaa"}}
-        after: dict[str, dict[str, str] | None] = {}
-        assert self._diff(before, after) == set()
-
-
-class TestDelegationSkillState:
-    """delegation起動記録はメインセッションだけに残す。"""
-
-    def test_sidechain_skill_does_not_set_delegation_state(self, tmp_path: pathlib.Path) -> None:
-        result = _run(
-            {
-                "session_id": "side",
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:delegation"},
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="side")).exists()
-
-    def test_main_skill_sets_delegation_state(self, tmp_path: pathlib.Path) -> None:
-        result = _run(
-            {"session_id": "main", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:delegation"}},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="main")
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert state["delegation_skill_invoked"] is True
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["status"] == "completed"
+        assert "cwd" not in record

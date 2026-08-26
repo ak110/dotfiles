@@ -18,7 +18,7 @@
 予期せぬ例外の処理は共通エントリポイント（`scripts/claude_hook.py`）が担う。
 メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
 
-LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整形する。
+LLM宛て出力は`agent-toolkit/scripts/_hook_notice`の整形関数経由で整形する。
 プレフィックス／サフィックス規約と出力先フィールド（`reason`・`additionalContext`）の詳細は
 `_message_format`モジュールのdocstringを参照する。
 参照経路は`Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"`を
@@ -37,8 +37,14 @@ sys.path.insert(
     0,
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
+# pylint: disable-next=wrong-import-position,import-error
+from _hook_notice import (
+    block_formatter as _block_notice_formatter,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+
+# pylint: disable-next=wrong-import-position,import-error
+from _hook_notice import formatter as _notice_formatter  # noqa: E402
 from _hook_tool_input import new_content_fields  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import is_agent_doc_target_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -48,12 +54,8 @@ _HOOK_ID = "dotfiles/claude_hook_pretooluse"
 _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
 
 
-def _llm_notice(body: str, *, tag: str = "") -> str:
-    """コーディングエージェント宛てメッセージを標準プレフィックス / サフィックス付きで整形する。
-
-    `tag` に `warn` 等を渡すとプレフィックスに並置する (`[auto-generated: ...][warn]`)。
-    """
-    return _llm_notice_base(body, _HOOK_ID, tag=tag)
+_llm_notice = _notice_formatter(_HOOK_ID)
+_block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def main(payload_text: str) -> int:
@@ -84,7 +86,13 @@ def main(payload_text: str) -> int:
         return 2
     dotfiles_block, dotfiles_warn = _check_dotfiles_specific_names(tool_name, fields, file_path)
     if dotfiles_block is not None:
-        print(_llm_notice(dotfiles_block), file=sys.stderr)
+        print(
+            _block_notice(
+                dotfiles_block,
+                fix="Replace the identifiers with generalized wording before editing the distribution file again.",
+            ),
+            file=sys.stderr,
+        )
         return 2
     # --- warn 系 check ---
     warnings: list[str] = []
@@ -163,12 +171,13 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
         missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
         if missing:
             print(
-                _llm_notice(
-                    f"{tool_name}.{field}: missing required PowerShell directives: "
-                    f"{', '.join(missing)}. For Windows PowerShell 5.1 compatibility, add "
-                    f"`Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` "
-                    f"near the top (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
-                    f" Target: {file_path}"
+                _block_notice(
+                    f"{tool_name}.{field}: missing required PowerShell directives: {', '.join(missing)}. Target: {file_path}",
+                    fix=(
+                        "For Windows PowerShell 5.1 compatibility, add `Set-StrictMode -Version Latest`"
+                        f" and `$ErrorActionPreference = 'Stop'` near the top"
+                        f" (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
+                    ),
                 ),
                 file=sys.stderr,
             )
@@ -373,8 +382,8 @@ def _check_dotfiles_specific_names(
         block_msg = (
             "agent-toolkit distribution must not contain dotfiles-specific identifiers."
             f" Hits: {'; '.join(block_hits)}."
-            " Replace with generalized wording (personal skill names, pytools commands, scripts,"
-            " and personal project names like glatasks/gv/lc/smpr leak repository internals)."
+            " Personal skill names, pytools commands, scripts, and personal project names"
+            " like glatasks/gv/lc/smpr leak repository internals."
             f" Target: {file_path}"
         )
     warn_msg: str | None = None

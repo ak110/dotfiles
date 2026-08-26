@@ -200,9 +200,15 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     ],
                 }
             ],
+            "SessionStart": [
+                {
+                    "matcher": "compact",
+                    "hooks": [{"type": "command", "command": subject.CODEX_QUALITY_CHECKPOINT_COMMAND}],
+                }
+            ],
         }
     }
-    assert len(generated_hooks["hooks"]) == 7
+    assert len(generated_hooks["hooks"]) == 8
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
@@ -221,14 +227,25 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
 def test_codex_projection_omits_events_without_allowlisted_handler(manifest_root: Path) -> None:
     """許可表に無いイベントは正本にあってもCodexへ配布しない。"""
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
-    hooks["hooks"]["SessionStart"] = [{"hooks": [{"type": "command", "command": "uv run --no-project --script other.py"}]}]
+    hooks["hooks"]["SubagentStart"] = [{"hooks": [{"type": "command", "command": "uv run --no-project --script other.py"}]}]
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
 
     subject.sync(manifest_root)
 
     generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
-    assert "SessionStart" not in generated
-    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST)
+    assert "SubagentStart" not in generated
+    assert "SessionStart" in generated
+    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST) | {"SessionStart"}
+
+
+def test_rejects_codex_only_event_collision(manifest_root: Path) -> None:
+    """Codex専用イベントをClaude向け正本へ重ねて登録しない。"""
+    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
+    hooks["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": []}]
+    (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="衝突"):
+        subject.sync(manifest_root)
 
 
 def test_sync_reads_all_json_as_utf8(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:

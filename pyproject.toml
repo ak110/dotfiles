@@ -160,7 +160,7 @@ targets = [
     "install-claude.sh",
     "install-claude.ps1",
     "pytools/**/*.py",
-    "scripts/codex-agents-base.md",
+    "agent-toolkit/share/codex-agents-base.md",
     "scripts/codex_shared_rules.py",
     "scripts/gen-completions.py",
     "scripts/gen-install-files.py",
