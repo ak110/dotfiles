@@ -4629,6 +4629,89 @@ def test_terminal_workflow_and_scenario_review_contracts_are_present() -> None:
     assert "### 要件シナリオ走査" in review
 
 
+def test_review_completion_evidence_and_checkpoint_observation_contracts_are_connected() -> None:
+    """レビュー完了証拠とチェックポイント履行観測を各正本へ接続する。"""
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    feedbacks_planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
+
+    coverage_contract = (
+        "各要件には、正常系、最小値・件数境界、状態遷移・失敗復旧、外部入力・保存不変条件及び利用者可視境界を記録する。"
+    )
+    assert "初回レビューでは他の点検より先に、計画から独立要件を列挙する。" in review_task
+    assert "列挙した各要件へ、正常系、完遂範囲・順序・条件を指定する入力、主要な異常系を構成する。" in review_task
+    assert "初回レビューの完了報告は、計画から列挙した独立要件ごとに被覆結果を返す。" in review_task
+    assert coverage_contract in review_task
+    assert "各観点は`確認済み`又は`非該当: <理由>`とし、未走査の観点を完了済みとして返さない。" in review_task
+    assert "1ラウンドで完了できない範囲は既存の未走査範囲として明示する。" in review_task
+    assert "被覆結果はレビュー表の指摘と別の完了報告として返し" in review_task
+    assert coverage_contract not in standards
+    assert coverage_contract not in feedbacks_planner
+
+    delegation_evidence = (
+        "初回レビューの完了報告を受領した調整主体は、計画の独立要件が被覆結果へ過不足なく対応することを検収する。"
+    )
+    assert delegation_evidence in delegation
+    assert "各要件の全観点が`確認済み`又は理由付きの`非該当`でない場合は、計画レビューの完了を受理しない。" in delegation
+    assert "欠落した要件又は観点と同じレビュー表を渡し、同じレビュー担当へ未走査範囲の走査を指示する。" in delegation
+    assert (
+        "初回レビューの完了報告は`plan-review-delegation.md`が定める被覆証拠を検収し、欠落がある状態でレビュー完了を返さない。"
+    ) in executor
+
+    watch_contract = "既存の成果物観測へ`atk watch --file <レーン名>-review=<レビュー表の絶対パス>`として追加する。"
+    assert (
+        "レーンの起動時に、呼び出し元は渡した管理対象一時領域からレーンごとのレビュー表の絶対パスを確定して保持する。" in caller
+    )
+    assert (
+        "レビュー表の初期化は、既存の`review-loop-coordination.md`どおり調整主体が初回レビュー前に行い、呼び出し元は初期化又は書込みを行わない。"
+        in caller
+    )
+    assert "初期化前はレビュー表を成果物観測へ含めず" in caller
+    assert watch_contract in caller
+    assert "初回レビュー前に空表へ初期化する既存契約に従い、受領済み行数の初期値は0とする。" in caller
+    assert "`review_round`の受領時は、その時点で観測したレビュー表の行数を当該レーンの受領済み値として更新する。" in caller
+    assert (
+        "レビュー表の行数が受領済み値より増えた状態で`review_round`を受領せず、次の成果物観測でも同じ未着状態が続く場合は、必須チェックポイントの履行確認として扱う。"
+        in caller
+    )
+    assert "保持したエージェント識別子へ、次のラウンド境界で`review_round`を返す是正指示を`SendMessage`で1回送る。" in caller
+    assert "行数増加だけからラウンド完了、委譲先の停滞又は停止可否を判定しない。" in caller
+    assert "review-table init" not in caller
+    assert "review-table add" not in caller
+    assert caller.index("初期化前はレビュー表を成果物観測へ含めず") < caller.index(watch_contract)
+
+    assert (
+        "レビュー表の進行を観測したまま`review_round`が届かないレーンは、`plan-impl-caller-reception.md`の履行確認で扱う"
+        in flow
+    )
+    assert "成果物の進行もチェックポイントも観測できないレーンだけを、`waiting-and-monitoring.md`の停滞検知で扱う" in flow
+    assert "チェックポイントが長時間届かないレーンは既存の停滞検知" not in flow
+
+    for phrase in (
+        "初回計画レビューは、独立要件ごとのシナリオ走査結果を完了報告へ返す。",
+        "調整主体は全要件と各観点の被覆証拠を検収し、未走査又は理由のない非該当が残る報告を完了として受理しない。",
+        "既存の成果物観測へレーンごとのレビュー表を加える。",
+        "レビュー表の行数進行と`review_round`未着が次の観測まで継続した場合は、次ラウンド境界での返却を1回要求する。",
+        "行数はラウンド完了又は稼働状態を証明しないため、停止と巻き取りは既存の停滞検知へ委ねる。",
+        "初回被覆の専用永続表は既存レビュー表と状態を二重化するため採用しない。",
+        "レビュー表の全件`show`を観測ごとに行う案は出力量が累積するため採用しない。",
+        "行数増加からラウンド完了を断定する案は、ラウンド途中の指摘追加と指摘なしラウンドを識別できないため採用しない。",
+    ):
+        assert phrase in design
+    for phrase in (
+        "初回レビューの走査手順を完了報告の要件別被覆証拠へ接続せず",
+        "レビュー表の進行と未着状態を照合していなかった",
+        "進行中の未着を履行確認、無進行を停滞検知へ分離する",
+    ):
+        assert phrase in incidents
+
+
 def _return_path_contract_targets() -> tuple[pathlib.Path, ...]:
     """能動送付を実行できる委譲先の受信タスク文書とagent定義を列挙する。"""
     targets: list[pathlib.Path] = []
