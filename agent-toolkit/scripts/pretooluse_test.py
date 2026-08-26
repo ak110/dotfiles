@@ -534,6 +534,66 @@ class TestHomePathCheck:
         assert result.returncode == 0
         assert "home directory" in _additional_context(result)
 
+    @pytest.mark.parametrize("xdg_value", ["unset", ""])
+    def test_home_path_in_default_cache_document_is_skipped(self, xdg_value: str, monkeypatch: pytest.MonkeyPatch):
+        """XDGキャッシュ設定が未設定又は空値の場合は`$HOME/.cache`をGit管理外として扱う。"""
+        if xdg_value == "unset":
+            monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+        else:
+            monkeypatch.setenv("XDG_CACHE_HOME", xdg_value)
+        target = pathlib.Path.home() / ".cache" / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": xdg_value} if xdg_value != "unset" else None,
+        )
+        assert result.returncode == 0
+        assert "home directory" not in _agent_messages(result)
+
+    def test_home_path_in_absolute_xdg_cache_document_is_skipped(self, tmp_path: pathlib.Path):
+        """絶対`XDG_CACHE_HOME`配下のGit管理外文書はホームパス警告の対象外とする。"""
+        cache_home = tmp_path / "cache"
+        target = cache_home / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": str(cache_home)},
+        )
+        assert result.returncode == 0
+        assert "home directory" not in _agent_messages(result)
+
+    def test_home_path_in_relative_xdg_cache_document_warns(self):
+        """相対`XDG_CACHE_HOME`は除外ルートとして扱わず警告する。"""
+        target = pathlib.Path.cwd() / "relative-cache" / "draft.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": "relative-cache"},
+        )
+        assert result.returncode == 0
+        assert "home directory" in _additional_context(result)
+
+    def test_home_path_in_git_managed_xdg_cache_warns(self, tmp_path: pathlib.Path):
+        """絶対`XDG_CACHE_HOME`配下でもGit管理マーカーがあれば警告する。"""
+        cache_repo = tmp_path / "cache-repo"
+        subprocess.run(["git", "init", str(cache_repo)], check=True, capture_output=True)
+        target = cache_repo / "docs" / "note.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            },
+            env_overrides={"XDG_CACHE_HOME": str(cache_repo.parent)},
+        )
+        assert result.returncode == 0
+        assert "home directory" in _additional_context(result)
+
     def test_home_path_in_local_md_skipped(self):
         content = f"See {self._HOME}/proj for details."
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "CLAUDE.local.md", "content": content}})

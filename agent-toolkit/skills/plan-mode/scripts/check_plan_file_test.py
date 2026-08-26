@@ -240,6 +240,113 @@ def _new_format_plan(
     return main, detail
 
 
+def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
+    """新規作成用の人間向けメイン側・detail側fixtureを返す。"""
+    main = f"""# 計画の主題
+
+## 概要
+
+対象の公開契約を更新する。
+
+### 計画メタ情報
+
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `{repo.resolve()}`
+- 作業種別: 通常変更
+- ベースコミット: `作成時点の参照値`
+- 実装詳細: `{detail_name}`
+
+## 実施内容
+
+| 実施内容 | 由来 | 採否 | 根拠 |
+| --- | --- | --- | --- |
+| 公開契約の境界を更新する | ユーザー指示 | 採用 | - |
+| 影響のない類似箇所は変更しない | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |
+
+## 提示素材
+
+なし
+
+## 変更履歴
+
+### 利用者からの確認
+
+```text
+公開契約の境界だけを更新する。
+```
+
+### レビューで確定した変更
+
+対象範囲を確認して反映した。
+
+## 検証区分
+
+| 区分 | 検証コマンド |
+| --- | --- |
+| レーン内検証 | `pytest` |
+| 統合後検証 | `make test` |
+
+## 終端工程
+
+なし
+
+## 進捗ログ
+
+| 日時 | 完了した工程 | 結果・特記事項 |
+| --- | --- | --- |
+"""
+    detail = """## 恒久化・リファクタリング内容
+
+### 恒久化
+
+| 知見 | 出所 | 反映先 | 根拠 |
+| --- | --- | --- | --- |
+| 公開契約の境界を維持する | 実装時調査 | 対象モジュール | 更新後も契約を確認するため。 |
+
+### リファクタリング
+
+| 項目 | 内容 |
+| --- | --- |
+| 対象 | 対象モジュール。 |
+| 現状の問題 | 判定が分散している。 |
+| 対応 | 判定を統合する。 |
+| 本計画に含めるか | 含める。 |
+
+### 類似見直し
+
+| 項目 | 内容 |
+| --- | --- |
+| 母集団 | 対象モジュール。 |
+| 点検観点 | 公開契約への影響。 |
+| 該当箇所 | 該当なし。 |
+
+## 実装資料
+
+### 実装単位
+
+| 実装単位 | 目的 | 先行依存 | 統合順 | 近接検証 |
+| --- | --- | --- | --- | --- |
+| 公開契約の境界更新 | 公開契約の判定を更新する | なし | 1 | `pytest` |
+
+### 調査結果
+
+検索母集団は対象モジュールと関連テストである。
+検索コマンド: `rg -n "公開契約|境界" agent-toolkit`
+検索結果: 一致は2箇所で、対象外の接続面は不一致として除外した。
+
+### 確定文面
+
+```markdown
+公開契約の判定は対象境界に限定する。
+```
+
+## 完了条件
+
+近接検証と統合後検証が成功し、確定文面を対象ファイルへ反映する。
+"""
+    return main, detail
+
+
 def _check_new(
     repo: pathlib.Path,
     main_content: str,
@@ -351,7 +458,7 @@ def test_cli_accepts_mixed_agreements_and_numeric_target(repo: tuple[pathlib.Pat
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert not result.stderr
+    assert result.stderr == ""
 
 
 def test_cli_rejects_action_reference_to_rejected_requirement(repo: tuple[pathlib.Path, str]) -> None:
@@ -442,11 +549,11 @@ def test_rejects_unclosed_fence(repo: tuple[pathlib.Path, str]) -> None:
     assert any("閉じていないMarkdownフェンス" in error for error in errors)
 
 
-def test_rejects_unresolvable_base_commit(repo: tuple[pathlib.Path, str]) -> None:
-    """対象リポジトリで解決できないベースコミットを拒否する。"""
+def test_accepts_unresolvable_base_reference(repo: tuple[pathlib.Path, str]) -> None:
+    """計画作成時点の参考値は対象リポジトリで解決できなくても受理する。"""
     work_dir, base = repo
     errors, _warnings = _check(work_dir, _plan(work_dir, base).replace(base, "f" * 40))
-    assert any("対象リポジトリでベースコミットを解決できない" in error for error in errors), errors
+    assert not errors, errors
 
 
 def test_rejects_target_repo_mismatched_with_worktree(repo: tuple[pathlib.Path, str]) -> None:
@@ -544,6 +651,18 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    expected = ["二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する"]
+    assert warnings == expected, warnings
+
+
+def test_accepts_human_readable_new_format_plan_without_migration_warning(
+    repo: tuple[pathlib.Path, str],
+) -> None:
+    """新規作成用の人間向けメイン側・detail側をwarningなしで受理する。"""
+    work_dir, _base = repo
+    main_content, detail_content = _human_new_format_plan(work_dir)
+    errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
     assert not errors, errors
     assert not warnings, warnings
 
@@ -685,6 +804,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     expected = ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
     if _plan_format.has_legacy_action_table(main_content):
         expected.append("実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")
+    expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     assert warnings == expected
 
 
@@ -702,4 +822,4 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert not result.stderr
+    assert result.stderr == "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"

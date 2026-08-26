@@ -87,6 +87,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 import dataclasses
 import datetime
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -812,34 +813,58 @@ _HOME_PATH_SKIP_SUFFIXES: tuple[str, ...] = (
 )
 
 
+def _unmanaged_temporary_path(resolved_path: pathlib.Path, root: pathlib.Path) -> bool | None:
+    """一時作業領域配下のGit管理マーカーを調べ、未管理なら真を返す。"""
+    try:
+        if not resolved_path.is_relative_to(root):
+            return None
+        existing_parent = resolved_path if resolved_path.is_dir() else resolved_path.parent
+        while not existing_parent.exists():
+            existing_parent = existing_parent.parent
+        for parent in (existing_parent, *existing_parent.parents):
+            try:
+                (parent / ".git").lstat()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return None
+            return False
+        return True
+    except (OSError, ValueError):
+        return None
+
+
+def _temporary_roots() -> tuple[pathlib.Path, ...]:
+    """配置だけで除外できる一時作業領域の候補を返す。"""
+    roots = [pathlib.Path(tempfile.gettempdir()).resolve()]
+    xdg_cache_home = os.environ.get("XDG_CACHE_HOME", "").strip()
+    if xdg_cache_home:
+        xdg_path = pathlib.Path(xdg_cache_home).expanduser()
+        if xdg_path.is_absolute():
+            roots.append(xdg_path.resolve())
+    else:
+        roots.append((pathlib.Path.home() / ".cache").resolve())
+    return tuple(dict.fromkeys(roots))
+
+
 def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """ホームディレクトリの絶対パス混入を検出したら警告本文を返す。
 
     リポジトリ管理ファイルに`/home/user/...`のような環境依存パスが書き込まれると
     他環境での再現性が失われるため警告する。警告のみでeditは継続（warn）。
     Git管理外の作業文書であり、正確な絶対パスを記録する計画ファイルは対象外とする。
-    一時ルート配下は配置だけでは除外せず、既存親からルートまでにGit管理マーカーがないと
-    確定できた一時作業文書だけを対象外とする。マーカーの確認不能時は既存検査を継続する。
+    一時ルート、絶対`XDG_CACHE_HOME`又は未設定時の`$HOME/.cache`配下は配置だけでは除外せず、
+    既存親からルートまでにGit管理マーカーがないと確定できた一時作業文書だけを対象外とする。
+    マーカーの確認不能時は既存検査を継続する。
     """
     if _is_plan_file_or_adjunct(file_path):
         return None
 
     try:
         resolved_path = pathlib.Path(file_path).resolve()
-        temp_root = pathlib.Path(tempfile.gettempdir()).resolve()
-        if resolved_path.is_relative_to(temp_root):
-            existing_parent = resolved_path if resolved_path.is_dir() else resolved_path.parent
-            while not existing_parent.exists():
-                existing_parent = existing_parent.parent
-            for parent in (existing_parent, *existing_parent.parents):
-                try:
-                    (parent / ".git").lstat()
-                except FileNotFoundError:
-                    continue
-                except OSError:
-                    break
-                break
-            else:
+        for root in _temporary_roots():
+            unmanaged = _unmanaged_temporary_path(resolved_path, root)
+            if unmanaged is True:
                 return None
     except (OSError, ValueError):
         pass

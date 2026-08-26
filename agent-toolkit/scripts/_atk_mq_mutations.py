@@ -765,11 +765,6 @@ def convert_entry_to_plan(
         if normalized_target_repo is not None and entry_repo != normalized_target_repo:
             raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
 
-        target_commit = data.get("target_commit")
-        _add._verify_plan_base_commit(  # pylint: disable=protected-access
-            plan_path,
-            target_commit if isinstance(target_commit, str) else None,
-        )
         if depends_on is None and "depends_on" not in data:
             legacy_dependencies = _legacy_entry_dependencies_for_conversion(data, path.name)
             if legacy_dependencies:

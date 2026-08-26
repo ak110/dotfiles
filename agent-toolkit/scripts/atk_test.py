@@ -362,7 +362,7 @@ class TestAddTargetRepoOptionParser:
         output = capsys.readouterr().out
         assert "ローカルパス指定時に指定worktree" in output
         assert "正規化リモートURL指定時にローカルHEADを持たない" in output
-        assert "一致しない場合は警告を1回出力して投入を継続する" in output
+        assert "ベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない" in output
 
 
 @pytest.mark.parametrize("subcommand", ["adopt", "reject"])
