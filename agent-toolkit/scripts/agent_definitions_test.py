@@ -847,6 +847,30 @@ def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary(
     assert "追記させず" in review_task
 
 
+def test_reviewee_costs_distinguish_standalone_typos_and_required_repairs() -> None:
+    """レビューイーのライフサイクル費用比較と利用者向け文書の必須是正を固定する。"""
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    reviewer = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+    adoption = _h2_section(reviewee, "採否の独立確定")
+
+    lifecycle_contract = (
+        "指摘の採否は、残置した場合の実害と認知・保守費用に加え、修正、検証及び再レビューに要する費用を同じライフサイクルで比較する。"
+        "実害がなく意味も変えない誤記だけを直すために独立した修正・再レビューを起こさない。"
+        "ただし、同じ成果物に別の重大な修正があり再レビューを既に行う場合は、追加費用が小さい誤記も同時に是正する。"
+        "利用者向け文書で誤記又は適用対象のスタイル違反だと確認した指摘は実害ありとして必ず是正し、実害のない単独誤記の修正省略及び低頻度リスクの費用比較から除外する。"
+        "それ以外の実害があり得る指摘は、現行運用での発生条件と頻度、影響、残余リスクを観測事実で評価し、恒常的な複雑性と保守性低下が利得を上回る場合は採用しない。"
+    )
+    boundary_contract = (
+        "重大な実害、明示要件違反、公開契約違反及びセキュリティ欠陥を、費用だけを理由に残置できない既存境界は維持する。"
+        "レビュー担当の指摘生成基準へ同じ文面を複製せず、最終採否を担うrevieweeの責務として実装する。"
+    )
+
+    assert lifecycle_contract in adoption
+    assert boundary_contract in adoption
+    assert lifecycle_contract not in reviewer
+    assert boundary_contract not in reviewer
+
+
 def test_plan_review_keeps_author_as_the_only_writer() -> None:
     """計画の計画担当が検査・修正を所有し、レビュー担当を読み取り専用にする。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
