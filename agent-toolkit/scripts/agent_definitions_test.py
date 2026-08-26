@@ -3515,6 +3515,33 @@ def test_session_review_existing_means_contract_is_synchronized() -> None:
     assert "existing_means_check" in advisor
     assert "既存手段の確認手段と結果" in advisor
     assert "新規機構に該当しない場合は「非該当」" in advisor
+    assert "対象ファイル単位" in advisor
+    assert "概念比較" in advisor
+    assert "ファイル内の節・関数・行" in advisor
+    assert "未判定（追加読解なし）" in advisor
+    assert "リポジトリの実装・規範・テストを追加読解しない" in (_DESIGN_DOC.read_text(encoding="utf-8"))
+
+
+def test_plan_review_receives_public_help_and_check_script_absolute_path() -> None:
+    """計画レビューの全生産者が公開CLIと構造検査スクリプトの絶対パスを受領する。"""
+    task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    assert "atk review-table --help" in task
+    assert "使用する各サブコマンドの" in task
+    assert "check_plan_file.py`の絶対パス" in task
+
+    producers = (
+        _PLAN_REVIEW_DELEGATION,
+        _PLAN_REVIEW_EXECUTOR,
+        _FEEDBACKS_PLANNER,
+    )
+    for path in producers:
+        text = path.read_text(encoding="utf-8")
+        assert "check_plan_file.py" in text, path
+        assert "絶対パス" in text, path
+        assert "再レビュー" in text, path
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    assert "現行plugin root" in delegation
+    assert "初回・再レビューの入力" in delegation
 
 
 def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> None:

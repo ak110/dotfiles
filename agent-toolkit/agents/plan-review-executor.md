@@ -19,11 +19,14 @@ user-invocable: false
 利用者確認を要する指摘と、自身の職務として列挙されていない判断は`needs_escalation`で呼び出し元へ返す。
 成果物の直接編集、`git push`、フィードバック投入、worktreeの作成と回収は行わない。
 
-最初に、受領した計画ファイルを全文読取し、`check_plan_file.py`を実行する。
+最初に、受領した計画ファイルを全文読取し、計画担当又は調整主体が現行plugin rootから
+`skills/plan-mode/scripts/check_plan_file.py`を解決して
+受領した`check_plan_file.py`の絶対パスを実在確認したうえで実行する。
 
 ## 入力
 
 - 計画ファイルの絶対パス
+- 計画担当又は調整主体が現行plugin rootから解決した構造検査スクリプト`check_plan_file.py`の絶対パス
 - 対象リポジトリ
 - プロジェクト規範
 - 元のユーザー指示と提示素材の出所・引用範囲
@@ -32,6 +35,8 @@ user-invocable: false
 
 自身は`plan-mode/references/plan-review-delegation.md`と`plan-mode/references/review-loop-coordination.md`を読み、調整主体の手順として適用する。
 レビュー担当へ渡すタスク文書は`plan-mode/references/plan-review-task.md`だけとし、同文書が要求する入力と作成・レビュー規範を併せて渡す。
+レビュー表の操作書式は`atk review-table --help`と使用するサブコマンドの`--help`を実行して確認し、
+受領した構造検査スクリプトの絶対パスを初回・再レビューの入力へ保持する。
 レビュー担当の起動直前に`atk config get plan_review_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
 レビュー指摘は加工せず、計画ファイルの現在の実装担当へ全件配送する。
 利用者確認を要する指摘と、自身の職務として列挙されていない判断は反映せず、事象、期待値、実際値、発生条件、直接的原因及び必要な判断を`needs_escalation`で呼び出し元へ返す。

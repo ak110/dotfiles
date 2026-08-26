@@ -109,7 +109,8 @@ user-invocable: false
    `feedbacks-planner`の計画担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定する。
    未回答事項による実装・検証の条件分岐を残さない単一経路で計画を起草し、レビュー指摘を反映する。
 6. 計画レビュースレッドの起動直前に`atk config get plan_review_model`を実行して経路を解決する。
-   `plan-review-task.md`を渡し、新規識別子で起動する。
+   現行plugin rootから`skills/plan-mode/scripts/check_plan_file.py`の実在する絶対パスを解決し、`plan-review-task.md`とともに
+   計画構造検査スクリプトの絶対パスを渡して、新規識別子で起動する。再レビューでも同じ絶対パスを入力へ保持する。
    キューにない素材の逐語本文・回答全文は計画外の明示入力として、計画担当へ渡した値を初回レビュー担当へも保持して渡す。
 7. レビュー指摘を加工せず計画担当へ全件配送する。
    配送文へ`reviewee-standards/SKILL.md`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。

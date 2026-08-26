@@ -18,7 +18,8 @@ SendMessage背景再開は前2者と異なり`toolUseResult`側に起動状態�
 SendMessage呼び出し由来のtool_resultへ限定したうえで`resumedAgentId`の有無で識別する。
 当該フィールドを持たない旧形式に限りテキストマーカー判定へフォールバックする。
 
-完了集合は`<task-notification>`による完了通知と、TaskStopの停止成功結果から構成する。
+完了集合は`<task-notification>`による完了通知、最上位transcriptの
+`queue-operation`に含まれる完了通知及びTaskStopの停止成功結果から構成する。
 停止成功は`toolUseResult`が文字列の`task_id`と`_TASK_STOP_SUCCESS_PREFIX`で始まる`message`を持ち、
 対応する`tool_result`の`is_error`が真でない場合に限る。
 走査範囲は呼び出し経路ごとに切り替え、メインのStop判定では非sidechainに限定し、
@@ -118,18 +119,26 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     - 非sidechainのMCP tool_useに対応するuser tool_result本文に`moved to the background as task`を含む
       （MCP背景タスク）
 
-    完了集合は後続エントリの`<task-notification>`要素とTaskStopの停止成功結果から構成する。
+    完了集合は後続エントリの`<task-notification>`要素、最上位transcriptの
+    `queue-operation`に含まれる完了通知及びTaskStopの停止成功結果から構成する。
     停止成功結果は`toolUseResult.task_id`を背景Bashの`backgroundTaskId`対応表又は
     agentId→tool_use_id集合マップで解決する。
-    完了通知エントリは次の2形式が併存する。
+    完了通知エントリは次の3形式が併存する。
     - 旧形式: 非sidechainの`type=="user"`エントリのtext content内に含まれる`<task-notification>`要素
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
       `attachment.prompt`文字列に含まれる`<task-notification>`要素（Claude Code 2.1系以降）
+    - 多段委譲形式: `type=="queue-operation"`かつ`operation`が`enqueue`又は`remove`のエントリの
+      `content`文字列に含まれる`<task-notification>`要素
     `<task-notification>`要素に`<tool-use-id>`が含まれない場合は`<task-id>`要素と
     agentId→tool_use_id集合マップによるフォールバック解決を試み、それでも解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
     停止成功結果を同じ2経路で解決できない場合も同形式で常時ログへ明示出力する。
     起動集合から完了集合を差し引いて1件以上残れば「未完了background taskあり」と判断する。
+
+    `transcript_path`が与えられた最上位Stop判定では、同じstemの`subagents`配下にある
+    `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読み、子記録から孫Agent起動と
+    task-id対応表を起動集合へ加える。子記録の不在・破損・無関係なmetadataは無視する。
+    この追加走査は非sidechainの最上位Stop判定だけで行い、SubagentStopの走査範囲は拡張しない。
 
     本経路は非sidechainエントリだけを走査する。
 
@@ -140,7 +149,11 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     entries = _read_transcript_entries(transcript_path)
     last_tool_use = _get_last_tool_use_block(entries)
     last_async = _last_tool_use_is_async_wait(last_tool_use)
-    launched, completed = _describe_pending_background_entries(entries, session_id)
+    launched, completed = _describe_pending_background_entries(
+        entries,
+        session_id,
+        transcript_path=transcript_path,
+    )
     remainder = launched - completed
     pending = last_async or bool(remainder)
     last_tool = _describe_last_tool_use(last_tool_use)
@@ -310,6 +323,24 @@ def _read_transcript_entries(transcript_path: str) -> list[dict]:
     return entries
 
 
+def _read_child_transcript_entries(transcript_path: str) -> list[dict] | None:
+    """子transcriptを全行検証し、破損があれば子全体を無効として返す。"""
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return None
+    entries: list[dict] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        if not isinstance(entry, dict):
+            return None
+        entries.append(entry)
+    return entries
+
+
 def _entry_in_scan_scope(entry: dict, *, include_sidechain: bool) -> bool:
     """エントリが呼び出し経路ごとの走査範囲に含まれる場合に真を返す。"""
     return include_sidechain or entry.get("isSidechain") is not True
@@ -397,6 +428,7 @@ def _describe_pending_background_tasks(
         session_id,
         include_sidechain=include_sidechain,
         kinds=kinds,
+        transcript_path=transcript_path,
     )
 
 
@@ -406,6 +438,7 @@ def _describe_pending_background_entries(
     *,
     include_sidechain: bool = False,
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
+    transcript_path: str | None = None,
 ) -> tuple[set[str], set[str]]:
     r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
 
@@ -423,7 +456,7 @@ def _describe_pending_background_entries(
     - 非sidechain assistantの`mcp__` tool_useに対応するuser tool_result本文が
       `moved to the background as task`を含む（MCP背景タスク）
 
-    完了通知の記録: 次の2形式から`tool_use_id`を抽出する。
+    完了通知の記録: 次の3形式から`tool_use_id`を抽出する。
     - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロックの
       `<task-notification>`要素の`<tool-use-id>(toolu_[\\w]+)</tool-use-id>`
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
@@ -433,6 +466,16 @@ def _describe_pending_background_entries(
     （`task_id_map`）で解決するフォールバック経路を共有ヘルパー
     `_resolve_task_notification_ids`経由で適用する。両者で解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
+    - 最上位transcriptの`type == "queue-operation"`エントリの`content`に含まれる
+      `operation == "enqueue"`又は`operation == "remove"`の通知（Claude Codeの多段委譲で観測される形式）
+
+    最上位Stop判定では、`transcript_path`が与えられた場合に
+    `Path(transcript_path).with_suffix("") / "subagents"`の固定ディレクトリから
+    `agent-*.jsonl`を列挙し、metadataの親子関係で直接の子に限定する。直接の子の記録にある
+    Agent・Task起動を孫起動として`launched`へ加え、子の`agentId`とtool-use-idの対応を
+    `task_id_map`へ追加する。子記録の読取失敗、欠落又は無関係なmetadataは既存の最上位transcript
+    の判定を変えずに無視する。`include_sidechain`が偽の最上位Stop判定だけがこの子記録を
+    読み取り、SubagentStopの走査範囲を拡張しない。
 
     TaskStopの停止成功結果も完了集合へ加える。
     `toolUseResult`が文字列の`task_id`と`_TASK_STOP_SUCCESS_PREFIX`で始まる`message`を持ち、
@@ -469,6 +512,11 @@ def _describe_pending_background_entries(
     )
     for task_id, tool_use_ids in mcp_background_tasks.items():
         task_id_map.setdefault(task_id, set()).update({task_id, *tool_use_ids})
+    if "agent" in kinds and not include_sidechain:
+        nested_launched, nested_task_id_map = _collect_nested_agent_launches(transcript_path)
+        launched.update(nested_launched)
+        for task_id, tool_use_ids in nested_task_id_map.items():
+            task_id_map.setdefault(task_id, set()).update(tool_use_ids)
     monitor_task_ids = _collect_monitor_task_ids(entries, include_sidechain=include_sidechain)
     for entry in entries:
         if not _entry_in_scan_scope(entry, include_sidechain=include_sidechain):
@@ -536,6 +584,15 @@ def _describe_pending_background_entries(
                         monitor_task_ids=monitor_task_ids,
                     )
                 )
+        else:
+            completed.update(
+                _extract_queue_operation_notification_ids(
+                    entry,
+                    task_id_map,
+                    session_id=session_id,
+                    monitor_task_ids=monitor_task_ids,
+                )
+            )
     if "mcp" in kinds:
         launched.update(mcp_background_tasks)
     return launched, completed
@@ -576,6 +633,100 @@ def _resolve_task_notification_ids(
             return resolved
     _log_unresolved_completion(session_id, notification_text)
     return resolved
+
+
+def _extract_queue_operation_notification_ids(
+    entry: dict,
+    task_id_map: dict[str, set[str]] | None,
+    *,
+    session_id: str | None = None,
+    monitor_task_ids: set[str] | None = None,
+) -> set[str]:
+    """最上位`queue-operation`の完了通知から完了`tool_use_id`集合を解決する。
+
+    Claude Codeの多段委譲では、子エージェントの完了通知が最上位transcriptの
+    `queue-operation`へ記録される。`enqueue`と`remove`はいずれも同じ完了通知を
+    表すため処理し、その他のキュー操作は対象外とする。LLM実行主体へ通知を配送する
+    契約とは別に、Stop hookが生transcriptを観測するための経路である。
+    """
+    if entry.get("type") != "queue-operation" or entry.get("operation") not in {"enqueue", "remove"}:
+        return set()
+    content = entry.get("content")
+    if not isinstance(content, str):
+        return set()
+    result: set[str] = set()
+    for notification in _TASK_NOTIFICATION_RE.findall(content):
+        result.update(
+            _resolve_task_notification_ids(
+                notification,
+                task_id_map,
+                session_id,
+                monitor_task_ids=monitor_task_ids,
+            )
+        )
+    return result
+
+
+def _collect_nested_agent_launches(
+    transcript_path: str | None,
+) -> tuple[set[str], dict[str, set[str]]]:
+    """直接の子transcriptから孫Agent起動とtask-id対応表を収集する。
+
+    Claude Codeの子transcriptは最上位transcriptと同じファイル名stemの
+    `subagents`ディレクトリへ配置される。入力値のagent IDをパスへ連結せず、固定の
+    `agent-*.jsonl`列挙とmetadataの親子関係だけで直接の子を選別する。子記録の欠落、
+    破損又は不正なmetadataは、最上位transcriptの既存判定を維持するため無視する。
+    """
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return set(), {}
+    subagents_dir = pathlib.Path(transcript_path).with_suffix("") / "subagents"
+    try:
+        child_paths = sorted(subagents_dir.glob("agent-*.jsonl"))
+    except OSError:
+        return set(), {}
+
+    launched: set[str] = set()
+    task_id_map: dict[str, set[str]] = {}
+    for child_path in child_paths:
+        metadata_path = child_path.with_name(f"{child_path.stem}.meta.json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not _is_direct_subagent_metadata(metadata):
+            continue
+        child_entries = _read_child_transcript_entries(str(child_path))
+        if not child_entries:
+            continue
+        agent_ids = _collect_agent_tool_use_ids(child_entries, include_sidechain=True)
+        for entry in child_entries:
+            if entry.get("type") != "user":
+                continue
+            tool_use_result = entry.get("toolUseResult")
+            if not isinstance(tool_use_result, dict):
+                continue
+            message = entry.get("message")
+            if not isinstance(message, dict):
+                continue
+            agent_launch_id = _extract_agent_launch_id(message, tool_use_result, agent_ids)
+            if agent_launch_id is None:
+                continue
+            launched.add(agent_launch_id)
+            agent_id = tool_use_result.get("agentId")
+            if isinstance(agent_id, str) and agent_id:
+                task_id_map.setdefault(agent_id, set()).add(agent_launch_id)
+    return launched, task_id_map
+
+
+def _is_direct_subagent_metadata(metadata: object) -> bool:
+    """metadataが最上位セッションの直接の子を示す場合に真を返す。"""
+    if not isinstance(metadata, dict):
+        return False
+    parent_agent_id = metadata.get("parentAgentId")
+    if parent_agent_id not in (None, ""):
+        return False
+    spawn_depth = metadata.get("spawnDepth")
+    return isinstance(spawn_depth, int) and not isinstance(spawn_depth, bool) and spawn_depth == 1
 
 
 def _log_unresolved_completion(session_id: str | None, detail: str) -> None:
