@@ -1,7 +1,9 @@
 const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
-const STATE_LABELS = {inbox: '未処理', processing: '処理中', adopted: '採用済み', rejected: '不採用'};
+const STATE_LABELS = {
+  inbox: '未処理', planning: '計画作成中', processing: '処理中', adopted: '採用済み', rejected: '不採用'
+};
 const ACTIVE_STATES = new Set(['inbox', 'processing']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
 const SEARCH_FALLBACK_NOTICE =
@@ -562,26 +564,36 @@ function renderMetadata(entry) {
 function setDetailMode(mode) {
   const editing = mode === 'edit';
   const answering = mode === 'answer';
+  const commenting = mode === 'user-comment';
+  const mutating = editing || answering || commenting;
   const unansweredTbd = currentEntry?.kind === 'tbd' && currentEntry.answered === false;
   byId('edit-panel').hidden = !editing;
   byId('answer-panel').hidden = !answering;
-  byId('edit-button').hidden = editing || answering || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
-  byId('answer-button').hidden = editing || answering || !currentEntry ||
+  byId('user-comment-panel').hidden = !commenting;
+  byId('edit-button').hidden = mutating || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
+  byId('answer-button').hidden = mutating || !currentEntry ||
     currentEntry.kind !== 'tbd' || !ACTIVE_STATES.has(currentEntry.state);
+  byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
   byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
-  byId('delete-button').hidden = editing || answering || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
+  byId('delete-button').hidden = mutating || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
+  byId('save-user-comment-button').hidden = !commenting;
   syncDetailMutationAvailability();
   byId('edit-button').className = unansweredTbd ? 'button-secondary' : 'button-primary';
   if (!editing) setFieldError(byId('edit-content'), byId('edit-content-error'), '');
   if (!answering) setFieldError(byId('answer-input'), byId('answer-input-error'), '');
+  if (!commenting) setFieldError(byId('user-comment-input'), byId('user-comment-input-error'), '');
 }
 
 function syncDetailMutationAvailability() {
-  for (const id of ['edit-button', 'answer-button', 'delete-button', 'save-entry-button', 'save-answer-button']) {
+  for (const id of [
+    'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
+    'save-entry-button', 'save-answer-button', 'save-user-comment-button'
+  ]) {
     const button = byId(id);
-    button.disabled = !button.hidden && detailRefreshRequired;
+    const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
+    button.disabled = !button.hidden && (detailRefreshRequired || userCommentUnavailable);
   }
 }
 
@@ -680,7 +692,19 @@ function closeDetailDialog() {
 function currentDetailMode() {
   if (!byId('edit-panel').hidden) return 'edit';
   if (!byId('answer-panel').hidden) return 'answer';
+  if (!byId('user-comment-panel').hidden) return 'user-comment';
   return 'view';
+}
+
+function refreshUserCommentMode(entry, message) {
+  const input = byId('user-comment-input');
+  const value = input.value;
+  detailOriginKey = entryKey(entry);
+  displayEntry(entry);
+  input.value = value;
+  setDetailMode('user-comment');
+  setTextMessage('detail-alert', message);
+  input.focus();
 }
 
 async function reloadOpenDetailFromExternalChange() {
@@ -741,7 +765,16 @@ async function reloadOpenDetailFromExternalChange() {
   if (byId('delete-dialog').open && deleteEntrySnapshot(resolvedEntry) !== deleteDialogEntrySnapshot) {
     deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
   }
-  if (currentDetailMode() !== 'view') {
+  const mode = currentDetailMode();
+  if (mode === 'user-comment' && detailChanged) {
+    const message = resolvedEntry.user_comment_editable === true
+      ? '外部で項目が更新されました。入力を保持して最新内容を再取得しました。'
+      : `${stateLabel(resolvedEntry.state)}へ移動したためユーザーコメントを保存できません。入力は保持しています。`;
+    refreshUserCommentMode(resolvedEntry, message);
+    updateCurrentRowSelection();
+    return;
+  }
+  if (mode !== 'view') {
     currentEntry = {...currentEntry, state: resolvedEntry.state};
     detailOriginKey = entryKey(currentEntry);
     if (detailChanged) {
@@ -750,7 +783,7 @@ async function reloadOpenDetailFromExternalChange() {
         'detail-alert',
         '外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。'
       );
-      setDetailMode(currentDetailMode());
+      setDetailMode(mode);
     }
     updateCurrentRowSelection();
     return;
@@ -772,6 +805,31 @@ function enterAnswer() {
   byId('answer-input').value = currentEntry.answer || '';
   setDetailMode('answer');
   byId('answer-input').focus();
+}
+
+function enterUserComment() {
+  if (!currentEntry || currentEntry.user_comment_editable !== true) return;
+  byId('user-comment-input').value = currentEntry.user_comment || '';
+  setDetailMode('user-comment');
+  byId('user-comment-input').focus();
+}
+
+async function reloadUserCommentAfterConflict(key, sessionGeneration) {
+  const state = currentEntry?.state;
+  const filename = currentEntry?.filename;
+  if (!state || !filename) return false;
+  try {
+    const refreshed = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
+    if (!byId('detail-dialog').open || entryKey(currentEntry) !== key ||
+        sessionGeneration !== detailSessionGeneration || refreshed.entry.user_comment_editable !== true) return false;
+    refreshUserCommentMode(
+      refreshed.entry,
+      `${key}は外部で更新されました。入力を保持して最新内容を再取得しました。内容を確認して再度保存してください。`
+    );
+    return true;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function mutationFailureMessage(key, failure, error) {
@@ -849,6 +907,45 @@ async function saveAnswer() {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('answer-input').focus();
+  }
+}
+
+async function saveUserComment() {
+  if (!currentEntry || detailRefreshRequired || currentEntry.user_comment_editable !== true) return;
+  const input = byId('user-comment-input');
+  const comment = input.value;
+  setFieldError(input, byId('user-comment-input-error'), comment.trim() ? '' : 'コメントを入力してください。');
+  if (firstInvalid([input])) return;
+  const key = entryKey(currentEntry);
+  const sessionGeneration = detailSessionGeneration;
+  const payload = {
+    state: currentEntry.state,
+    filename: currentEntry.filename,
+    comment,
+    expected_content: currentEntry.content
+  };
+  clearDialogMessages('detail');
+  try {
+    await runPending('user-comment', {
+      container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
+    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)}));
+    await loadEntries();
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
+        sessionGeneration === detailSessionGeneration) {
+      const refreshed = await api(
+        `/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`
+      );
+      if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
+          sessionGeneration === detailSessionGeneration) {
+        displayEntry(refreshed.entry);
+        byId('user-comment-button').focus();
+      }
+    }
+    deliverOperationMessage(`${key}のユーザーコメントを保存しました。`);
+  } catch (error) {
+    if (error.payload?.code === 'edit_conflict' && await reloadUserCommentAfterConflict(key, sessionGeneration)) return;
+    deliverOperationMessage(`${key}のユーザーコメントを保存できませんでした。 ${error.message}`, true);
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) input.focus();
   }
 }
 
@@ -1076,8 +1173,10 @@ function bindEvents() {
   });
   byId('edit-button').addEventListener('click', enterEdit);
   byId('answer-button').addEventListener('click', enterAnswer);
+  byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);
   byId('save-answer-button').addEventListener('click', saveAnswer);
+  byId('save-user-comment-button').addEventListener('click', saveUserComment);
   byId('delete-button').addEventListener('click', openDeleteDialog);
   byId('create-kind').addEventListener('change', updateCreateFields);
   byId('create-question-type').addEventListener('change', updateCreateFields);

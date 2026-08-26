@@ -21,6 +21,7 @@ import _atk_mq_frontmatter as frontmatter
 import _atk_mq_mutations as feedback_mutations
 import _atk_mq_repo as feedback_repo
 import _atk_mq_tbd as tbd_mutations
+import _atk_mq_user_comment as user_comment_mutations
 import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
 import _atk_serve_state as serve_state
@@ -464,6 +465,17 @@ class Operations:
             metadata = parsed[0] if parsed is not None else {}
             question_type, choices = _question_metadata(metadata, kind or "unknown")
             detail_entry = _entry(path, kind or "unknown", state, text)
+            try:
+                extracted_comment = user_comment_mutations.extract_user_comment(text)
+            except user_comment_mutations.UserCommentError:
+                extracted_comment = None
+                comment_editable = False
+            else:
+                comment_editable = (
+                    state == common.MQ_STATE_INBOX
+                    and kind == common.MQ_TYPE_FEEDBACK
+                    and metadata.get("source") == "session-review"
+                )
             return {
                 **detail_entry,
                 "content": text,
@@ -475,6 +487,8 @@ class Operations:
                 "question_type": question_type,
                 "choices": choices,
                 "answer": _tbd_answer(text, kind or "unknown"),
+                "user_comment": extracted_comment,
+                "user_comment_editable": comment_editable,
             }
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error
@@ -535,6 +549,39 @@ class Operations:
                 state=state,
                 filename=filename,
                 content=content,
+                lock_timeout=_WEB_LOCK_TIMEOUT,
+                expected_content=expected_content,
+            )
+        except SystemExit as error:
+            raise common.WebInputError("指定したエントリを操作できません") from error
+
+    def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
+        """session-review由来のinbox項目へユーザーコメントを追記又は置換する。"""
+        if state != common.MQ_STATE_INBOX:
+            raise common.WebInputError("ユーザーコメントを編集できる状態はinboxだけです")
+        if not isinstance(comment, str) or not comment.strip():
+            raise common.WebInputError("commentは空でない文字列で指定してください")
+        if not isinstance(expected_content, str) or not expected_content.strip():
+            raise common.WebInputError("expected_contentは空でない文字列で指定してください")
+
+        parsed = frontmatter.parse_frontmatter(expected_content)
+        if parsed is None:
+            raise common.WebInputError("frontmatterを解析できません")
+        metadata, _body = parsed
+        if metadata.get("type") != common.MQ_TYPE_FEEDBACK:
+            raise common.WebInputError("ユーザーコメントの対象はfeedbackだけです")
+        if metadata.get("source") != "session-review":
+            raise common.WebInputError("ユーザーコメントの対象sourceはsession-reviewだけです")
+        try:
+            updated = user_comment_mutations.update_user_comment(expected_content, comment)
+        except user_comment_mutations.UserCommentError as error:
+            raise common.WebInputError(str(error)) from error
+        try:
+            return feedback_mutations.edit_entry_content(
+                self.private_notes,
+                state=state,
+                filename=filename,
+                content=updated,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
                 expected_content=expected_content,
             )
@@ -908,7 +955,7 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
 
 
 def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
-    """編集・投入・回答・状態遷移ルートを登録する。"""
+    """編集・投入・ユーザーコメント・回答・状態遷移ルートを登録する。"""
     ops, workers = runtime.operations, runtime.workers
 
     @app.put("/api/entries/<state_name>/<filename>")
@@ -918,6 +965,35 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             raise common.WebInputError("contentは空でない文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         return quart.jsonify(changed=await workers.run(ops.edit, state_name, filename, data["content"], expected_content))
+
+    @app.post("/api/entries/user-comment")
+    async def save_user_comment() -> quart.Response:
+        data = _json_object(
+            await _request_json(),
+            allowed={"state", "filename", "comment", "expected_content"},
+            required={"state", "filename", "comment", "expected_content"},
+        )
+        state_name = data["state"]
+        filename = data["filename"]
+        comment = data["comment"]
+        expected_content = data["expected_content"]
+        for name, value in (
+            ("state", state_name),
+            ("filename", filename),
+            ("comment", comment),
+            ("expected_content", expected_content),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+        return quart.jsonify(
+            changed=await workers.run(
+                ops.user_comment,
+                state_name,
+                filename,
+                comment,
+                expected_content,
+            )
+        )
 
     @app.post("/api/entries")
     async def add_entry() -> tuple[quart.Response, int]:

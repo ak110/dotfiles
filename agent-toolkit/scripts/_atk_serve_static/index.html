@@ -136,6 +136,12 @@
           <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>
+        <section id="user-comment-panel" class="user-comment-panel" hidden>
+          <h3>ユーザーコメント</h3>
+          <label for="user-comment-input">コメント（必須）</label>
+          <textarea id="user-comment-input" aria-describedby="user-comment-input-error" required></textarea>
+          <p id="user-comment-input-error" class="inline-error" hidden></p>
+        </section>
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer">
         <div class="detail-footer-left">
@@ -143,9 +149,11 @@
         </div>
         <div class="detail-footer-right">
           <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
+          <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>
           <button id="edit-button" class="button-primary" type="button">編集</button>
           <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
           <button id="save-answer-button" class="button-primary" type="button" hidden>回答を保存</button>
+          <button id="save-user-comment-button" class="button-primary" type="button" hidden>コメントを保存</button>
         </div>
       </footer>
     </article>

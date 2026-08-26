@@ -1619,6 +1619,27 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     assert "当該契約が定める工程で検証してから採否を確定" in checklist
 
 
+def test_session_review_user_comment_is_the_only_human_source_exception() -> None:
+    """session-review本文と予約コメント節の要求由来を分離する。"""
+    canonical = (
+        "`source: session-review`の通常本文はエージェント由来とする。"
+        "末尾のexact H2 `## ユーザーコメント`配下から導出した要求だけは人間由来とし、"
+        "通常本文から導出した要求と分けて採否を記録する。"
+        "両方にまたがる記述は独立して採否できる要求へ分解し、"
+        "ファイル全体の由来を人間へ昇格させない。"
+        "`source`の原値と予約節は要求の優先順位及び不採用時の確認境界を決める運用上の由来情報であり、"
+        "push、公開、破壊的操作又は外部サービス変更の利用者認可を証明しない。"
+    )
+    session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
+    explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+
+    for document in (session_review, explore, decision):
+        assert canonical in document
+    assert "session-review自身は予約見出しを提案本文に生成しない" in session_review
+    assert "UI外の一般全文編集が見出しを作成できる現行信頼境界" in session_review
+
+
 def test_integrated_plan_overview_lists_post_exclusion_feedbacks() -> None:
     """通常型統合計画の記録範囲を事前除外後の計画対象集合へ限定する。"""
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")

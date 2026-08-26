@@ -19,6 +19,7 @@ import zlib
 
 import _atk_mq_common as common
 import _atk_mq_repo as feedback_repo
+import _atk_mq_user_comment as user_comment
 import _atk_serve as serve
 import _atk_serve_app as serve_app
 import _atk_serve_assets as assets
@@ -247,9 +248,9 @@ def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
 
 
 def test_assets_define_all_operation_lifecycles_and_message_regions() -> None:
-    """5更新操作を共通pending処理へ接続し、結果領域を操作場所ごとに持つ。"""
+    """6更新操作を共通pending処理へ接続し、結果領域を操作場所ごとに持つ。"""
     assert "async function runPending(" in assets.JS
-    for key in ("'sync'", "'save'", "'answer'", "'create'", "'delete'"):
+    for key in ("'sync'", "'save'", "'answer'", "'user-comment'", "'create'", "'delete'"):
         assert f"runPending({key}" in assets.JS
     assert "payload" in assets.JS.partition("async function runPending")[0] or "payload" in assets.JS
     assert ".filter(control => !control.classList.contains('dialog-close'))" in assets.JS
@@ -346,7 +347,8 @@ const ids = [
   'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
   'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
   'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
-  'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button',
+  'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
+  'user-comment-panel', 'user-comment-input', 'user-comment-input-error', 'save-user-comment-button',
   'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
   'create-kind', 'create-content', 'create-content-label', 'create-content-error',
   'create-repo-fields', 'create-target',
@@ -366,8 +368,9 @@ elements['create-question-type'].value = 'free-form';
 globalThis.controlGroups = {{
   'detail-shell': [
     elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
-    elements['delete-button'], elements['edit-content'], elements['save-entry-button'],
-    elements['answer-input'], elements['save-answer-button']
+    elements['user-comment-button'], elements['delete-button'], elements['edit-content'], elements['save-entry-button'],
+    elements['answer-input'], elements['save-answer-button'], elements['user-comment-input'],
+    elements['save-user-comment-button']
   ],
   'create-form': [
     elements['create-close-button'], elements['create-kind'], elements['create-content'],
@@ -2084,6 +2087,7 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/api/entries/remove",
         "/api/entries/commit",
         "/api/entries/answer",
+        "/api/entries/user-comment",
         "/api/events",
     }
     removed = {"/api/status", "/api/enable", "/api/disable"}
@@ -5163,3 +5167,258 @@ process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body)}));
 """
     )
     assert result == {"body": {"type": "feedback", "messages": ["---\ntarget_repo: example/repo\n---\n\n本文"]}}
+
+
+def _session_review_feedback(body: str, *, entry_type: str = "feedback", source: str = "session-review") -> str:
+    """ユーザーコメント操作テスト用のfeedback本文を組み立てる。"""
+    return f"---\ntype: {entry_type}\ntarget_repo: example/repo\nsource: {source}\n---\n\n{body}"
+
+
+def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ユーザーコメントAPIテストでGit同期だけを無効化する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, feedback_repo, serve_app.feedback_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+
+
+def test_user_comment_pure_update_preserves_frontmatter_and_previous_body() -> None:
+    """予約節の置換でfrontmatterと通常本文を保持し、再抽出できる。"""
+    original = _session_review_feedback("通常本文\n\n## 実装メモ\n\n既存の見出し本文\n\n## ユーザーコメント\n\n旧コメント\n")
+
+    updated = user_comment.update_user_comment(original, "\n\n新しいコメント\n\n2行目\n\n")
+
+    assert updated == _session_review_feedback(
+        "通常本文\n\n## 実装メモ\n\n既存の見出し本文\n\n## ユーザーコメント\n\n新しいコメント\n\n2行目\n"
+    )
+    assert user_comment.extract_user_comment(updated) == "新しいコメント\n\n2行目"
+
+
+def test_user_comment_pure_update_ignores_fenced_heading_and_appends_once() -> None:
+    """コードフェンス内の同名文字列を見出しと誤認せず、予約節を1件だけ追記する。"""
+    original = _session_review_feedback("```markdown\n## ユーザーコメント\n```\n\n通常本文\n")
+
+    updated = user_comment.update_user_comment(original, "コメント")
+
+    assert updated.count("## ユーザーコメント") == 2
+    assert updated.endswith("## ユーザーコメント\n\nコメント\n")
+    assert user_comment.extract_user_comment(updated) == "コメント"
+
+
+@pytest.mark.parametrize(
+    ("body", "comment", "message"),
+    [
+        (
+            "本文\n\n## ユーザーコメント\n\nコメント\n\n## 後続見出し\n\n後続本文\n",
+            "更新",
+            "ユーザーコメント節の後ろに別のH2見出しがあります",
+        ),
+        (
+            "本文\n\n## ユーザーコメント\n\n一つ目\n\n## ユーザーコメント\n\n二つ目\n",
+            "更新",
+            "ユーザーコメント節が複数あります",
+        ),
+        ("本文\n", "## コメント内見出し", "ユーザーコメントにコードフェンス外のH2見出しを含められません"),
+        ("本文\n", "```markdown\n## コメント内見出し\n```", ""),
+        ("本文\n", " \n\n", "ユーザーコメントは空にできません"),
+    ],
+)
+def test_user_comment_pure_update_rejects_invalid_structure_without_mutation(
+    body: str,
+    comment: str,
+    message: str,
+) -> None:
+    """不正な節・コメントは判別可能なエラーとなり、保存対象を変更しない。"""
+    original = _session_review_feedback(body)
+
+    if message:
+        with pytest.raises(user_comment.UserCommentError, match=re.escape(message)):
+            user_comment.update_user_comment(original, comment)
+        assert original == _session_review_feedback(body)
+    else:
+        updated = user_comment.update_user_comment(original, comment)
+        assert user_comment.extract_user_comment(updated) == comment
+
+
+@pytest.mark.asyncio
+async def test_user_comment_api_appends_and_replaces_only_inbox_session_review_feedback(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """専用APIが対象条件を満たす本文へ追記し、同じ節だけを置換する。"""
+    _patch_comment_edit_dependencies(monkeypatch)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    original = _session_review_feedback("通常本文\n")
+    path = inbox / "feedback.md"
+    path.write_text(original, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    detail_response = await client.get("/api/entries/inbox/feedback.md")
+    detail = await detail_response.get_json()
+    assert detail_response.status_code == 200
+    assert detail["entry"]["user_comment"] is None
+    assert detail["entry"]["user_comment_editable"] is True
+
+    first = await client.post(
+        "/api/entries/user-comment",
+        json={
+            "state": "inbox",
+            "filename": "feedback.md",
+            "comment": "最初のコメント",
+            "expected_content": original,
+        },
+    )
+    assert first.status_code == 200
+    assert await first.get_json() == {"changed": True}
+    after_first = path.read_text(encoding="utf-8")
+    assert after_first == _session_review_feedback("通常本文\n\n## ユーザーコメント\n\n最初のコメント\n")
+
+    second = await client.post(
+        "/api/entries/user-comment",
+        json={
+            "state": "inbox",
+            "filename": "feedback.md",
+            "comment": "置換後のコメント",
+            "expected_content": after_first,
+        },
+    )
+    assert second.status_code == 200
+    assert await second.get_json() == {"changed": True}
+    after_second = path.read_text(encoding="utf-8")
+    assert after_second == _session_review_feedback("通常本文\n\n## ユーザーコメント\n\n置換後のコメント\n")
+
+    final_detail = await (await client.get("/api/entries/inbox/feedback.md")).get_json()
+    assert final_detail["entry"]["user_comment"] == "置換後のコメント"
+
+
+@pytest.mark.asyncio
+async def test_user_comment_api_rejects_non_inbox_or_non_session_review_entries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """planning・processing・終端状態、TBD及び他sourceには操作を提供しない。"""
+    _patch_comment_edit_dependencies(monkeypatch)
+    contents = {
+        "inbox": _session_review_feedback("inbox本文\n", source="other"),
+        "planning": _session_review_feedback("planning本文\n"),
+        "processing": _session_review_feedback("processing本文\n"),
+        "adopted": _session_review_feedback("adopted本文\n"),
+        "rejected": _session_review_feedback("rejected本文\n"),
+        "tbd": _session_review_feedback("TBD本文\n", entry_type="tbd"),
+    }
+    for state_name, content in contents.items():
+        directory = tmp_path / ("inbox" if state_name == "tbd" else state_name)
+        directory.mkdir(exist_ok=True)
+        path = directory / f"{state_name}.md"
+        path.write_text(content, encoding="utf-8")
+
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+    for state_name, content in contents.items():
+        filename = "tbd.md" if state_name == "tbd" else f"{state_name}.md"
+        response = await client.post(
+            "/api/entries/user-comment",
+            json={
+                "state": "inbox" if state_name == "tbd" else state_name,
+                "filename": filename,
+                "comment": "追加コメント",
+                "expected_content": content,
+            },
+        )
+        assert response.status_code == 400
+        actual_path = tmp_path / ("inbox" if state_name == "tbd" else state_name) / filename
+        assert actual_path.read_text(encoding="utf-8") == content
+
+
+@pytest.mark.asyncio
+async def test_user_comment_api_returns_edit_conflict_without_losing_latest_content(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """期待本文と現行本文が異なる場合は409として最新本文を保持する。"""
+    _patch_comment_edit_dependencies(monkeypatch)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    original = _session_review_feedback("取得時本文\n")
+    latest = _session_review_feedback("外部更新後の本文\n")
+    path = inbox / "feedback.md"
+    path.write_text(original, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    detail = await (await app.test_client().get("/api/entries/inbox/feedback.md")).get_json()
+    path.write_text(latest, encoding="utf-8")
+
+    response = await app.test_client().post(
+        "/api/entries/user-comment",
+        json={
+            "state": "inbox",
+            "filename": "feedback.md",
+            "comment": "古い基準のコメント",
+            "expected_content": detail["entry"]["content"],
+        },
+    )
+
+    assert response.status_code == 409
+    assert await response.get_json() == {
+        "code": "edit_conflict",
+        "error": "編集中に他プロセスが対象を変更しました",
+    }
+    assert path.read_text(encoding="utf-8") == latest
+
+
+@pytest.mark.asyncio
+async def test_user_comment_api_requires_expected_content_and_rejects_comment_h2(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """expected_contentの省略・空値とコメント内H2を保存前に拒否する。"""
+    _patch_comment_edit_dependencies(monkeypatch)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    original = _session_review_feedback("本文\n")
+    path = inbox / "feedback.md"
+    path.write_text(original, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    for payload in (
+        {"state": "inbox", "filename": "feedback.md", "comment": "コメント"},
+        {
+            "state": "inbox",
+            "filename": "feedback.md",
+            "comment": "コメント",
+            "expected_content": "",
+        },
+        {
+            "state": "inbox",
+            "filename": "feedback.md",
+            "comment": "## 禁止見出し",
+            "expected_content": original,
+        },
+    ):
+        response = await client.post("/api/entries/user-comment", json=payload)
+        assert response.status_code == 400
+        assert path.read_text(encoding="utf-8") == original
