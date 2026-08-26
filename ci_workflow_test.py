@@ -134,30 +134,6 @@ def test_common_job_display_names_keep_owner_and_non_owner_names(workflow_data: 
     assert matrix["python-version"] == list(_PYTHON_VERSIONS)
 
 
-@pytest.mark.parametrize(
-    ("event_name", "head_repository", "repository", "head_branch", "base_branch", "non_owner"),
-    [
-        ("pull_request", "ak110/dotfiles", "ak110/dotfiles", "develop", "master", True),
-        ("pull_request", "ak110/dotfiles", "ak110/dotfiles", "feature", "master", False),
-        ("pull_request", "fork/dotfiles", "ak110/dotfiles", "develop", "master", False),
-        ("push", "", "ak110/dotfiles", "develop", "", False),
-    ],
-    ids=("release-pr", "same-repository-other-pr", "fork-pr", "push"),
-)
-def test_common_ownership_boundary(
-    event_name: str,
-    head_repository: str,
-    repository: str,
-    head_branch: str,
-    base_branch: str,
-    non_owner: bool,
-) -> None:
-    actual_non_owner = (
-        event_name == "pull_request" and head_repository == repository and head_branch == "develop" and base_branch == "master"
-    )
-    assert actual_non_owner is non_owner
-
-
 def test_statusline_version_is_an_independent_master_pull_request_check(
     workflow_data: dict[str, object],
 ) -> None:
@@ -188,29 +164,6 @@ def test_statusline_version_is_an_independent_master_pull_request_check(
     rust_steps = _steps(_mapping(jobs["rust-lint"]))
     assert all(step.get("name") != "statuslineの版数とタグを検査" for step in rust_steps)
     assert statusline_job["name"] != _mapping(jobs["rust-lint"])["name"]
-
-
-@pytest.mark.parametrize(
-    ("event_name", "head_repository", "repository", "head_branch", "base_branch"),
-    [
-        ("pull_request", "ak110/dotfiles", "ak110/dotfiles", "develop", "master"),
-        ("pull_request", "ak110/dotfiles", "ak110/dotfiles", "feature", "master"),
-        ("pull_request", "fork/dotfiles", "ak110/dotfiles", "feature", "master"),
-    ],
-    ids=("release-pr", "same-repository-other-pr", "fork-pr"),
-)
-def test_statusline_version_input_set_includes_every_master_pull_request(
-    event_name: str,
-    head_repository: str,
-    repository: str,
-    head_branch: str,
-    base_branch: str,
-) -> None:
-    assert event_name == "pull_request"
-    assert base_branch == "master"
-    assert head_repository
-    assert repository
-    assert head_branch
 
 
 def test_job_and_step_cardinality(workflow_data: dict[str, object]) -> None:
