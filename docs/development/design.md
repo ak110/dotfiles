@@ -179,6 +179,18 @@ Codex Custom Agent用TOMLは、Claude固有の`tools`、`skills`、本文を意�
 調査・採否と通常型の計画化はClaude CodeとCodexで共通の`feedbacks-planner`委譲経路を使い、agent定義の欠落、frontmatterの写像不能又は起動失敗をメイン主体の別経路へ迂回しない。
 Codexのready項目再取得、連続処理及び本体プロセスの終了範囲だけはagent定義の適用能力と独立したホスト固有のセッション運用として分岐する。
 
+### Claude CodeとCodexの規範配置
+
+hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
+Codexだけの公開能力との差分は`agent-toolkit/share/codex-agents-base.md`へ上書きとして置き、共有規範へCodex固有の条件を持ち込まない。
+Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
+`scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成入口となる。
+`scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持及びCodex固有上書きの配置を検査する。
+生成物は手編集せず、正本と正式生成器を更新して同期する。
+共有ルールをCodex固有条件で分岐する案は、Claude Codeへ不要な差分を配布して共通契約を曖昧にするため採用しない。
+共有文書をCodex用に複製する案は、正本・生成器・検査の同期対象を増やすため採用しない。
+Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。
+
 フィードバック本文が示す文言案、列挙及び節配置は、投入元識別子にかかわらず利用者合意とみなさない。
 `feedbacks-planner`の計画担当は目的と指定された外部可視要素を維持する文面を技術判断で確定し、原文との差異と根拠を採否記録と計画へ残す。
 採用済み本文が明示する変更は確認事項又は実装前提にせず、`user_decisions`から先に除外する。
