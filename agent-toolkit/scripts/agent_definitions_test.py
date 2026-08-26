@@ -1181,7 +1181,7 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert "同じworktreeへ順次割り当て、同時に1つの実装担当だけを置け" in text
     assert "異なるレーン" in text
     assert "だけを別worktreeで並列に扱える" in text
-    assert "同じレーンの実装担当は依存順に1件ずつ起動" in text
+    assert "同じ計画ファイルに属する実装単位" in text
     for task_name in (
         "implementation-task.md",
         "implementation-plan-review-task.md",
@@ -1206,7 +1206,12 @@ def test_plan_lane_is_the_writer_parallelism_boundary() -> None:
 
     assert "1バッチとして1つの`agent-toolkit:feedbacks-planner`" in process
     assert "通常型バッチの計画工程を待たず" in process
-    assert "1つ以上の計画ファイルを1レーンへ割り当てる" in flow
+    assert (
+        "先行成果へ依存しない計画ファイルは、対象ファイル集合の重なりと変更規模にかかわらず、1計画ファイルにつき1レーンへ割り当てる"
+        in flow
+    )
+    assert "対象ファイル集合の重なりと変更規模はレーン割当の入力にしない" in flow
+    assert "後続計画が先行計画の成果へ依存することと計画間の統合順を計画本文又は利用者合意から一意に確定できる場合だけ" in flow
     for text in (flow, executor, writer, rules, caller):
         assert "同じレーン" in text
     for text in (executor, writer, rules, design, flow, caller):
@@ -1214,8 +1219,8 @@ def test_plan_lane_is_the_writer_parallelism_boundary() -> None:
     assert "fast担当が同一失敗箇所の残存を確認して終端した後にfix担当へ移行する場合だけ" in rules
     assert "この引継ぎだけはclean開始契約の限定例外" in design
     assert "同一失敗箇所の残存後は、fast担当の終端確認が完了した後だけ" in flow
-    assert "異なるレーンだけを別worktreeで並列化" in flow
-    assert "レーンごとに`atk managed-temp create" in caller
+    assert "先行成果依存の無い計画ファイルを同じworktreeへ割り当てない" in flow
+    assert "各レーンの起動前に`atk managed-temp create" in caller
     assert "担当項目との対応" in feedbacks_planner_plan
     assert "対応表が当該計画へ割り当てたフィードバックファイル名一覧（担当項目集合）" in feedbacks_planner
     assert "基準パスのstemから`<stem>-NN.md`" in feedbacks_planner
@@ -1223,25 +1228,72 @@ def test_plan_lane_is_the_writer_parallelism_boundary() -> None:
     assert "`<基準stem>`を接頭辞とする名前空間全体の非衝突" in reception
 
 
-def test_overlapping_plan_lanes_run_parallel_and_merge_all_plan_intents() -> None:
-    """変更ファイルが重複するレーンを並列化し、統合時に双方の意図を照合する。"""
+def test_plan_lanes_use_explicit_dependencies_and_not_overlap() -> None:
+    """独立計画を専用レーンへ分け、明示的な依存だけを同一レーンの例外とする。"""
     rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
     incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
-    assert "同じworktreeへ書き込む主体を交代させる場合" in rules
-    assert "変更ファイルが重複しても相互に待機しない" in rules
-    assert "変更対象ファイルの重複を待機の条件にせず" in flow
+    dependency_condition = (
+        "複数組の計画ファイルを同じレーンへ渡す場合は、後続計画が先行計画の成果へ依存することを示す計画本文又は利用者合意、"
+        "計画間の統合順、及び各計画の`## 進捗ログ`へ記録した共有worktreeの根拠を入力へ含める。"
+    )
+    independent_condition = (
+        "先行成果へ依存しない複数の計画ファイルを実装する場合は、変更ファイルの重複にかかわらず、"
+        "呼び出し元が計画ファイルごとに管理対象領域と専用worktreeを作成する。"
+    )
+    implementation_condition = (
+        "同じ計画ファイルに属する実装単位と、明示的な先行成果依存により同じレーンへ割り当てられた複数計画の実装単位は、"
+        "同じworktreeで依存順に実装し、同時に1つの実装担当だけを置く"
+    )
+    progress_condition = (
+        "明示的な先行成果依存を持つ複数の計画ファイルを同じレーンへ割り当てる場合は、各計画の`## 進捗ログ`へ"
+        "先行計画と後続計画の絶対パス、統合順、依存する成果及び同じworktreeへ割り当てる根拠を記録する。"
+    )
+    design_condition = (
+        "計画ファイルの分割はレビューの単位、レーンは実装の並列性とworktreeの書込所有権を分ける単位とする。"
+        "先行成果へ依存しない計画ファイルは1計画ファイルにつき1レーンへ割り当てる。"
+    )
+
+    assert "後続計画が先行計画の成果へ依存することと計画間の統合順を計画本文又は利用者合意から一意に確定できる場合だけ" in flow
+    assert (
+        "先行成果へ依存しない計画ファイルは、対象ファイル集合の重なりと変更規模にかかわらず、1計画ファイルにつき1レーンへ割り当てる"
+        in flow
+    )
+    for text in (caller, executor):
+        assert dependency_condition in text
+        assert independent_condition in text
+    for text in (flow, caller, executor, implementation_task, rules):
+        assert implementation_condition in text
+    assert progress_condition in standards
+    for text in (design, concepts):
+        assert design_condition in text
+    assert "循環する場合" in executor
+    assert "統合順が一意に定まらない場合" in executor
+    assert "needs_escalation" in executor
     assert "変更ファイルの重複を理由に先行レーンの完了を待たず" in caller
-    assert "異なるレーン" in design
-    assert "異なる" + "計画ファイル" in incidents
+    assert "競合はレーン自己マージのrebase工程で扱う" in caller
+    assert "変更ファイルが重複しても相互に待機しない" in rules
     assert "レーンを分けた後は変更ファイルが重複しても待機しない" in incidents
-    assert "異なる" + "レーンは変更ファイルが重複しても別worktreeで並列実装する" in incidents
-    for text in (design, incidents):
-        assert "別worktree" in text
-        assert "全計画" in text
+    assert "7.82時間" in incidents
+    assert "変更対象の交差と変更規模をレーン統合の判断入力とし" in incidents
+    assert "複数計画の同一worktree共有は、明示的な先行成果依存と統合順を進捗ログへ記録した場合に限る" in incidents
+    documents = (flow, caller, executor, implementation_task, rules, standards, design, concepts, incidents)
+    for text in documents:
+        for obsolete in (
+            "1つ以上の計画ファイルを1レーンへ",
+            "対象ファイル集合の重なりと変更規模を使って同じレーンへまとめるか並列化する",
+            "対象ファイルの重なりと変更規模はレーン割当の判定に用い",
+            "既定では複数の計画ファイルを1レーンへまとめる",
+            "計画ファイルをまたぐ場合も同じworktree",
+        ):
+            assert obsolete not in text
     for phrase in (
         "競合相手のcommitが属する計画",
         "双方の目的を両立する最小限の解消",
@@ -2889,8 +2941,8 @@ def test_plan_impl_uses_only_caller_owned_or_borrowed_worktrees() -> None:
         "計画から説明的な実装単位名、先行依存、統合順及び近接検証を読み",
         "現在worktreeをレーンのworktreeとして借用",
         "`作成主体=既存`かつ`回収可否=不可`",
-        "複数の計画ファイルを並列実装する場合",
-        "呼び出し元がレーンごとに`atk managed-temp create",
+        "先行成果へ依存しない複数の計画ファイルを実装する場合",
+        "呼び出し元が計画ファイルごとに管理対象領域と専用worktreeを作成",
         "計画が呼び出し元によるレーンのworktreeの作成も明示",
         "呼び出し元が管理対象領域内へ作成（並列単位・計画が明示したレーン）",
         "上記2組合せ以外は`plan-impl-executor`へ渡さない",
