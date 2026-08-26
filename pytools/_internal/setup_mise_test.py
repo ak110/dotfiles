@@ -68,17 +68,55 @@ def _mise_stub(monkeypatch: pytest.MonkeyPatch) -> _MiseSubprocessStub:
     """既定で mise バイナリ検出済み・非 Windows・CHEZMOI_WORKING_TREE 未設定とする。"""
     stub = _MiseSubprocessStub()
     stub.install(monkeypatch)
-    monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
+    monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: Path("/fake/mise"))
     monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
     monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
     return stub
+
+
+class TestFindMiseBinary:
+    """mise実行ファイルのPATH・既知パス探索を検証する。"""
+
+    def test_returns_path_entry_as_absolute_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        mise_path = tmp_path / "bin" / "mise"
+        monkeypatch.setattr(_setup_mise.shutil, "which", lambda _name: str(mise_path))
+
+        assert _setup_mise.find_mise_binary() == mise_path
+
+    def test_returns_linux_known_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        mise_path = tmp_path / ".local" / "bin" / "mise"
+        mise_path.parent.mkdir(parents=True)
+        mise_path.write_bytes(b"mise")
+        monkeypatch.setattr(_setup_mise.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
+        monkeypatch.setattr(_setup_mise.Path, "home", lambda: tmp_path)
+
+        assert _setup_mise.find_mise_binary() == mise_path
+
+    def test_returns_windows_known_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        localappdata = tmp_path / "AppData" / "Local"
+        mise_path = localappdata / "mise" / "bin" / "mise.exe"
+        mise_path.parent.mkdir(parents=True)
+        mise_path.write_bytes(b"mise")
+        monkeypatch.setattr(_setup_mise.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: True)
+        monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
+
+        assert _setup_mise.find_mise_binary() == mise_path
+
+    def test_returns_none_when_not_found(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        monkeypatch.setattr(_setup_mise.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
+        monkeypatch.setattr(_setup_mise.Path, "home", lambda: tmp_path)
+
+        assert _setup_mise.find_mise_binary() is None
 
 
 class TestRunWithoutMise:
     """mise バイナリ未検出時は何もしない。"""
 
     def test_skips_when_binary_missing(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: None)
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: None)
         assert _setup_mise.run() is False
 
 

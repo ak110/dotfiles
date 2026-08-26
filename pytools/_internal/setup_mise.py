@@ -82,7 +82,7 @@ def run() -> bool:
     Returns:
         何らかの変更を加えたら True。何もしなければ False。
     """
-    mise_bin = _find_mise_binary()
+    mise_bin = find_mise_binary()
     if mise_bin is None:
         logger.info(log_format.format_status("mise", "未検出のためスキップ"))
         return False
@@ -97,15 +97,15 @@ def run() -> bool:
     return changed
 
 
-def _find_mise_binary() -> Path | None:
-    """Mise の実行ファイルを探す。
+def find_mise_binary() -> Path | None:
+    """Mise の実行ファイルを絶対パスで返す。
 
     現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も看過しないよう、
     既知のインストールパスも併せて確認する。
     """
     from_path = shutil.which("mise")
     if from_path is not None:
-        return Path(from_path)
+        return Path(from_path).absolute()
 
     candidates: list[Path] = []
     if _is_windows():
@@ -117,7 +117,7 @@ def _find_mise_binary() -> Path | None:
 
     for candidate in candidates:
         if candidate.is_file():
-            return candidate
+            return candidate.absolute()
     return None
 
 
