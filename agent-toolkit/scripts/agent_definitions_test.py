@@ -1024,6 +1024,7 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
     """採用フィードバックの文書契約と影響検証を計画担当・レビュー担当双方で固定する。"""
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    implementation_plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     plan_review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
@@ -1045,6 +1046,31 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
             "局所識別子の対応",
         ):
             assert phrase in task
+    conditional_documents = (writer, implementation_plan_review)
+    conditional_trigger = "入力拒否条件、必須項目の判定条件、`block`・`warning`の発火条件を新設・変更"
+    for document in conditional_documents:
+        assert conditional_trigger in document
+        for phrase in (
+            "条件を満たす入力と満たさない入力",
+            "既存近接テスト",
+            "positive・negative",
+            "条件変更を含む差分",
+            "各結果",
+        ):
+            assert phrase in document
+    assert writer.count("conditional_obligation_verification:\n  - condition:") == 1
+    assert implementation_plan_review.count("conditional_obligation_verification") == 1
+    for field in (
+        "source:",
+        "tests:",
+        "positive:",
+        "negative:",
+        "diff:",
+        "results:",
+    ):
+        assert field in writer
+    assert "条件変更に該当しない実装へ、この検証と完了報告項目を追加しない" in writer
+    assert "条件変更のない差分へ条件付き義務を拡大しない" in implementation_plan_review
     for phrase in ("1回だけ起動", "60秒未満", "同一process", "短い`--timeout`"):
         assert phrase in push_and_ci
     assert "`session-review-advisor`の起動前に`agent-toolkit:delegation`をSkill機能で起動" in session_review
