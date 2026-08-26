@@ -34,6 +34,7 @@ user-invocable: false
 4. 抽出された時系列証拠から、ユーザー介入、失敗、委譲先の完了、最終結果、反復した手戻りを評価する。`--stats`の集計から、突出した所要時間・トークン消費の工程を特定し、同じ成果をより少ない時間・トークンで得られた選択（過大な読解、反復照会、不要な委譲、過大な起動プロンプト、直列実行した独立作業など）の有無を毎回評価する。評価の根拠は抽出証拠、受領済み文書及び自動ロード済み規範の範囲に限る。
    同じ証拠（完了通知・`SendMessage`記録）から、メインとサブエージェント間のチェックポイントやり取りも評価する。
    報告粒度の過不足、メイン介入の有無と効果、逸脱・レビュー反復の検出漏れ、マージ許可待ちの停滞の有無を確認する
+   これとは別に、既定の抽出結果に含まれる全`kind=user`イベントを出現順のまま一行ずつ`intervention_inventory`へ保持する。各行へ証拠の`sequence`と`line`をそのまま記録し、利用者発話を逐語転記しない`observed_event`、`classification`（`intervention`又は`not_intervention`）及び空でない`classification_reason`を付ける。`classification=intervention`の各行には`interventions`の介入対応行を一行ずつ対応付け、観測事象、原因及び介入前の予防処置を記録する。候補統合は`proposals`の重複排除だけに適用し、inventory又は介入対応行を削除しない
 5. 抽出証拠だけでは候補の成立性を判定できない場合に限り、同スクリプトの`--grep <正規表現>`・`--detail <行番号>`で
    該当箇所だけを照会する。照会で確定できない場合に限りtranscriptを直接読む
 6. transcriptを取得できない場合は、継承した会話履歴だけを証拠にし、取得できなかった範囲を`未検証`とする
@@ -55,6 +56,24 @@ user-invocable: false
 status: completed | evidence_insufficient
 evidence:
 - <観測事象、裏付け手段>
+intervention_inventory:
+- sequence: <証拠抽出結果の順序識別子>
+  line: <transcriptの由来行>
+  observed_event: <利用者入力を判別できる要約。逐語転記しない>
+  classification: intervention | not_intervention
+  classification_reason: <空でない分類根拠>
+interventions:
+- inventory_sequence: <classificationがinterventionのinventory.sequence>
+  inventory_line: <対応するinventory.line>
+  observed_event: <介入を判別できる要約>
+  cause: <介入を必要にした直接的原因>
+  prevention_action:
+    kind: proposal | existing_feedback | suppression
+    value: <対応する提案、既存feedback filename又は抑止条件を一意に特定する値>
+    activation:
+      sequence: <介入より前に観測できる証拠抽出結果のsequence>
+      line: <同じ証拠イベントの由来行>
+      condition: <同種事象で予防処置を発火させる条件>
 proposals:
 - summary: <提案要約>
   root_cause: <根本原因>
@@ -72,6 +91,8 @@ suppressed:
   reason: <抑止した候補と理由>
   （抑止候補が無い場合は「なし」）
 ```
+
+`interventions`の各行は対応する`intervention_inventory`の`sequence`と`line`を参照し、`prevention_action.activation.sequence`と`line`は同じ証拠抽出結果の実在イベントを指さなければならない。`activation.sequence`は対応するinventoryのsequenceより小さい値とし、`condition`だけの自由記述は発火契機の証拠として扱わない。介入後の謝罪、説明、再実行又は修正は予防処置に含めない。`prevention_action.kind`は3許容値だけとし、`value`は対応する`proposals`の提案、既存feedback filename、`suppressed`の抑止条件のいずれかを一意に指す値とする。
 
 提案がない場合は`proposals`へ「提案なし」と記載する。各指摘の裏付け手段を示し、
 裏付けられない主張を確定事実として報告しない。

@@ -24,6 +24,14 @@
 2回以下、結果未返却、別成果物、別責務系統は合算しない。レビュー対象又は責務系統を転換した場合は、転換後の最初のレビューを第1回としてカウントを取り直す。
 レビュー側と初版作成・指摘反映側の原因を別々に確定し、抑止条件に該当しない限り原則として改善提案を1件以上確定する。
 
+### 利用者入力イベントの被覆と発火時点
+
+候補化の意味評価では、振り返り境界より前の既定の抽出結果にある全`kind=user`イベントを、`intervention_inventory`へ出現順のまま一行ずつ保持する。inventoryは提案候補の統合単位ではなく、各行へ`sequence`、`line`、利用者入力を逐語転記しない`observed_event`、`classification`及び空でない`classification_reason`を付ける独立した証拠一覧とする。
+
+`classification=intervention`の各inventory行には、同じ`sequence`と`line`を参照する介入対応行を1つだけ対応付ける。介入対応行は`observed_event`、`cause`及び`prevention_action`を保持し、処置の`kind`を`proposal`、`existing_feedback`、`suppression`のいずれかに限定する。`value`は対応する新規提案、既存feedback filename、抑止条件のいずれかを一意に指す値とする。候補統合は`proposals`の重複排除だけに適用し、`intervention_inventory`又は介入対応行を削除してはならない。
+
+予防処置の`activation`は、同じ証拠抽出結果の実在イベントを`sequence`と`line`の組で参照し、`activation.sequence < inventory_sequence`を満たす。`condition`だけの自由記述、介入後の謝罪、説明、再実行又は修正は介入前の予防処置として扱わない。全ての利用者介入が許容処置で被覆され、各処置の発火契機が介入前にある場合だけ候補を成立させる。新規提案がなく、全ての介入対応行が既存feedback・抑止条件を指す場合は、既存の表示経路で「提案無し」を許容する。
+
 ## 根本原因と反映先
 
 この節の根本原因の一般化、対象ファイル単位の反映先の推奨及び概念比較は`session-review-advisor`が所有する。

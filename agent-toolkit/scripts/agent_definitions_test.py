@@ -3049,16 +3049,149 @@ def test_implementation_review_internal_procedures_exist_only_in_receiver_tasks(
         assert receiver_contract not in executor
 
 
-def test_session_review_evidence_extraction_exists_only_in_advisor() -> None:
-    """証拠抽出スクリプトの実行手順を`session-review-advisor`だけの正本とする。"""
+def test_session_review_evidence_extraction_is_advisor_owned_and_main_rechecks_inventory() -> None:
+    """初回の証拠抽出をadvisorに所有させ、メインは同じ抽出器でinventoryを再検収する。"""
     sender = _SESSION_REVIEW.read_text(encoding="utf-8")
     receiver = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     assert "scripts/_session_review_evidence.py" in receiver
     assert "抽出された時系列証拠" in receiver
-    assert "scripts/_session_review_evidence.py" not in sender
+    assert "既存`scripts/_session_review_evidence.py`へ一度だけ渡し" in sender
+    assert "読み取り専用で証拠を再抽出する" in sender
     assert "transcript_path`の絶対パス" in sender
+    assert "`${CLAUDE_PLUGIN_ROOT}`を現行plugin rootとして使う" in sender
+    assert '"<plugin root>/scripts/_session_review_evidence.py" <transcript_path>' in sender
     assert "提案ごとの裏付け手段と`未検証`表示" in sender
+    assert "介入分類、観測事象、原因及び予防処置の意味評価はadvisorが所有" in sender
+
+
+def test_session_review_preserves_evidence_insufficient_status_path() -> None:
+    """証拠不足時は再抽出と構造検収を行わず既存報告経路を維持する。"""
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    validation = skill.partition("### 利用者入力イベントの構造検収")[2].partition("\n### ")[0]
+
+    assert (
+        "`status`が`evidence_insufficient`の場合は、既存の証拠不足報告経路を維持し、"
+        "証拠の再抽出、構造検収及び「提案無し」の確定へ進まない。"
+    ) in validation
+    assert "`status`が`completed`の場合だけ" in validation
+
+
+def test_session_review_preserves_every_user_event_in_independent_inventory() -> None:
+    """全userイベントの独立inventoryと介入対応行をadvisor・基準・設計へ接続する。"""
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+    criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    for phrase in (
+        "全`kind=user`イベント",
+        "出現順のまま一行ずつ",
+        "`intervention_inventory`",
+        "`sequence`と`line`",
+        "空でない`classification_reason`",
+        "利用者発話を逐語転記しない",
+        "`classification=intervention`",
+        "介入対応行を一行ずつ対応付け",
+        "観測事象、原因及び介入前の予防処置",
+        "候補統合は`proposals`の重複排除だけ",
+    ):
+        assert phrase in advisor
+    inventory_at = advisor.index("intervention_inventory:")
+    interventions_at = advisor.index("interventions:", inventory_at)
+    proposals_at = advisor.index("proposals:", interventions_at)
+    assert inventory_at < interventions_at < proposals_at
+
+    for phrase in (
+        "利用者入力イベントの被覆と発火時点",
+        "全`kind=user`イベントを、`intervention_inventory`へ出現順のまま一行ずつ保持",
+        "独立した証拠一覧",
+        "全ての利用者介入が許容処置で被覆",
+        "`intervention_inventory`又は介入対応行を削除してはならない",
+        "`activation.sequence < inventory_sequence`",
+    ):
+        assert phrase in criteria
+    for phrase in (
+        "全`kind=user`イベントを出現順のまま`sequence`・`line`付きの独立inventory",
+        "全件被覆、出現順、介入対応行の双方向集合差",
+        "新しい永続状態・所有者・表示経路・証拠抽出機構を追加しない",
+    ):
+        assert phrase in design
+
+
+def test_session_review_main_rejects_incomplete_inventory_and_post_event_activation() -> None:
+    """メイン検収がinventoryの差分、参照不整合及び事後発火を拒否する。"""
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    validation = skill.partition("### 利用者入力イベントの構造検収")[2].partition("\n### ")[0]
+
+    for phrase in (
+        "受領済み`transcript_path`の絶対パス",
+        "一度だけ渡し、読み取り専用で証拠を再抽出する",
+        "抽出結果の全`kind=user`イベントから期待する`(sequence, line)`列",
+        "値・件数・出現順が完全一致",
+        "各行が空でない`observed_event`、`classification`（`intervention`又は`not_intervention`）及び空でない`classification_reason`",
+        "`classification=intervention`の全sequenceと`interventions.inventory_sequence`の集合差が双方向に空",
+        "各`inventory_sequence`・`inventory_line`の組が対応するinventoryの`sequence`・`line`の組と一致",
+        "`prevention_action.kind`が`proposal`、`existing_feedback`又は`suppression`",
+        "`prevention_action.value`が対応する新規提案、既存feedback filename又は抑止条件を一意に指す",
+        "`activation.sequence`と`line`が抽出結果の同一イベントを参照",
+        "`activation.sequence < inventory_sequence`",
+        "`condition`だけの自由記述は識別子参照として受理しない",
+        "advisorへ差し戻し、「提案無し」を確定しない",
+        "候補統合は`proposals`の重複排除だけ",
+    ):
+        assert phrase in validation
+
+    rejection_cases = (
+        "空集合（1つ以上の`kind=user`がある場合）",
+        "一部欠落",
+        "余分",
+        "順序逆転",
+        "介入参照の集合差",
+        "参照不整合",
+        "許容外処置",
+        "識別子を欠くactivation",
+        "介入以後の発火",
+    )
+    for case in rejection_cases:
+        assert case in validation
+    rejection_contract = (
+        "inventoryの"
+        + "、".join(rejection_cases[:-1])
+        + "又は"
+        + rejection_cases[-1]
+        + "が一件でもあればadvisorへ差し戻し、「提案無し」を確定しない。"
+    )
+    assert rejection_contract in validation
+
+    ordered = [
+        validation.index("抽出結果の全`kind=user`イベント"),
+        validation.index("inventoryの`sequence`と`line`が一意"),
+        validation.index("`classification=intervention`の全sequence"),
+        validation.index("各介入対応行が"),
+        validation.index("`prevention_action.value`"),
+        validation.index("`activation.sequence`と`line`"),
+        validation.index("inventoryの空集合"),
+        validation.index("全介入が許容処置で被覆"),
+    ]
+    assert ordered == sorted(ordered)
+
+
+def test_session_review_allows_no_proposal_only_after_full_preventive_coverage() -> None:
+    """全介入の事前処置が揃った場合だけ既存経路の「提案無し」を許可する。"""
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+    criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    validation = skill.partition("### 利用者入力イベントの構造検収")[2].partition("\n### ")[0]
+
+    for document in (advisor, criteria):
+        assert "activation.sequence" in document
+        assert "介入後の謝罪、説明、再実行又は修正" in document
+        assert "候補統合は`proposals`の重複排除だけ" in document
+    assert "全ての利用者介入が許容処置で被覆" in criteria
+    assert "各処置の発火契機が介入前にある場合だけ候補を成立" in criteria
+    assert "全介入が許容処置で被覆され、全処置の発火契機が介入前にある場合だけ検収を成功" in validation
+    assert "新規提案がなく、全介入対応行が既存feedback又は抑止条件を参照する場合に限り" in validation
+    assert validation.index("全介入が許容処置で被覆") < validation.index("既存の表示経路で「提案無し」を確定")
 
 
 def test_removed_codex_exec_contracts_are_absent() -> None:

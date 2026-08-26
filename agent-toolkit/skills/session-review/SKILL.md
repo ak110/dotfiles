@@ -32,25 +32,28 @@ Stop hookからの自動起動は、同一セッションで`process-feedbacks`�
 Stopフックから呼ばれた場合は、直前のアシスタントターンが作業完了の言い切りで終わっている場合だけ進む。
 質問・確認・承認待ち、バックグラウンド処理待ち、外部完了通知待ちは完了に含めない。
 起動条件を満たさない場合は現在の状態と次の契機を示して終了する。
+起動済み状態の記録と後述の証拠再抽出では、ホスト別に現行plugin rootを確定する。
+Claude Codeでは`${CLAUDE_PLUGIN_ROOT}`を現行plugin rootとして使う。
+Codexでは、読み込んだ本`SKILL.md`の絶対パスの末尾成分が順に
+`skills`、`session-review`、`SKILL.md`と完全一致することを確認する。
+一致した固定末尾成分を一組として絶対パスから除き、残った接頭部分を現行plugin rootとする。
+固定末尾成分が一致しない場合又は対象スクリプトが実在する通常ファイルでない場合は、証拠収集へ進まず失敗を報告する。
+
 起動条件を満たして証拠収集へ進む場合、StopのreasonまたはUserPromptSubmitの`additionalContext`から
-`session_id`を受け取っていれば、ホスト別に現行plugin rootを確定して起動済み状態を記録する。
+`session_id`を受け取っていれば、起動済み状態を記録する。
 Claude Codeでは次のコマンドを使う。
 
 ```sh
 uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/session_review_state.py <session_id>
 ```
 
-Codexでは、読み込んだ本`SKILL.md`の絶対パスの末尾成分が順に
-`skills`、`session-review`、`SKILL.md`と完全一致することを確認する。
-一致した固定末尾成分を一組として絶対パスから除き、残った接頭部分を現行plugin rootとする。
-次の`<plugin root>`をその絶対パスへ置き換え、対象スクリプトが実在する通常ファイルであることを確認してから実行する。
+Codexでは、次の`<plugin root>`を確定済みの絶対パスへ置き換え、対象スクリプトが実在する通常ファイルであることを確認してから実行する。
 
 ```sh
 uv run --no-project --script "<plugin root>/scripts/session_review_state.py" <session_id>
 ```
 
-固定末尾成分が一致しない場合、対象スクリプトが実在しない場合、記録コマンドが失敗した場合は、
-いずれも証拠収集へ進まず失敗を報告する。
+記録コマンドが失敗した場合は、証拠収集へ進まず失敗を報告する。
 
 ## 証拠収集
 
@@ -78,6 +81,37 @@ Stopフック起動ではreason、ホスト別の手動コマンド起動では`
 `session-review-advisor`の報告をメインが実測と既存規範へ照合し、採否を確定する。
 各候補は`references/generation-criteria-detail.md`に従い、
 根本原因、恒久的な反映先、期待効果、総ライフサイクルコスト、未検証事項を検査する。
+
+### 利用者入力イベントの構造検収
+
+advisor報告の`status`が`evidence_insufficient`の場合は、既存の証拠不足報告経路を維持し、証拠の再抽出、構造検収及び「提案無し」の確定へ進まない。
+`status`が`completed`の場合だけ、受領済み`transcript_path`の絶対パスを現行plugin rootの既存`scripts/_session_review_evidence.py`へ一度だけ渡し、読み取り専用で証拠を再抽出する。
+Claude Codeでは次のコマンドを使う。
+
+```sh
+uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/_session_review_evidence.py <transcript_path>
+```
+
+Codexでは、起動方針で確定した現行plugin rootの絶対パスへ次の`<plugin root>`を置き換える。
+
+```sh
+uv run --no-project --script "<plugin root>/scripts/_session_review_evidence.py" <transcript_path>
+```
+
+両ホストとも既存の抽出器、出力及び`sequence`・`line`を再利用する。
+再抽出結果とadvisor報告について、次の構造を検収する。
+
+1. 抽出結果の全`kind=user`イベントから期待する`(sequence, line)`列を作成し、`intervention_inventory`の列と値・件数・出現順が完全一致することを確認する。
+2. inventoryの`sequence`と`line`が一意で、各行が空でない`observed_event`、`classification`（`intervention`又は`not_intervention`）及び空でない`classification_reason`を持つことを確認する。
+3. `classification=intervention`の全sequenceと`interventions.inventory_sequence`の集合差が双方向に空で、介入対応行の参照sequenceに重複がないことを確認する。各`inventory_sequence`・`inventory_line`の組が対応するinventoryの`sequence`・`line`の組と一致することを確認し、`not_intervention`の行を介入対応行が参照していないことも確認する。
+4. 各介入対応行が`observed_event`、`cause`及び`prevention_action`を持ち、`prevention_action.kind`が`proposal`、`existing_feedback`又は`suppression`のいずれかであることを確認する。
+5. `prevention_action.value`が対応する新規提案、既存feedback filename又は抑止条件を一意に指すことを確認する。
+6. `activation.sequence`と`line`が抽出結果の同一イベントを参照し、`activation.sequence < inventory_sequence`であることを確認する。`condition`だけの自由記述は識別子参照として受理しない。
+7. inventoryの空集合（1つ以上の`kind=user`がある場合）、一部欠落、余分、順序逆転、介入参照の集合差、参照不整合、許容外処置、識別子を欠くactivation又は介入以後の発火が一件でもあればadvisorへ差し戻し、「提案無し」を確定しない。
+8. 全介入が許容処置で被覆され、全処置の発火契機が介入前にある場合だけ検収を成功させる。新規提案がなく、全介入対応行が既存feedback又は抑止条件を参照する場合に限り、既存の表示経路で「提案無し」を確定できる。
+
+候補統合は`proposals`の重複排除だけに適用し、`intervention_inventory`・`interventions`の行を減らさない。この構造検収のために新しい永続状態、所有者又は表示経路を追加しない。介入分類、観測事象、原因及び予防処置の意味評価はadvisorが所有し、メインは証拠抽出結果との値・件数・順序・参照構造だけを検収する。
+
 既存のactiveなフィードバックは`atk mq list --status=active --target-repo=<repo-path> --skip-pull`で確認し、重複投入しない。
 メインは候補ごとに、自動ロード済みの規範を第一の照合対象として既存規範・既存実装との重複を確認し、
 不足する場合だけ対象ファイルを追加で読む。併せて、推奨反映先のファイルと節の実在、既存契約との整合を確認する。
