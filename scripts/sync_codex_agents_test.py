@@ -165,7 +165,7 @@ def test_current_output_is_synced() -> None:
         "`agent-toolkit:bugfix`が定義する",
         "`agent-toolkit:process-feedbacks`の起動中",
         "`agent-toolkit:reviewee-standards`を起動",
-        "`agent-toolkit:delegation`を正本とし",
+        "`agent-toolkit:delegation`を適用して経路固有の契約を確定する。",
     ):
         assert skill_invocation in shared_rules
     assert "../skills/" not in shared_rules

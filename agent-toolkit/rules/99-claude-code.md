@@ -24,8 +24,9 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 
 ## 委譲起動時の厳守事項
 
-Claude Codeで委譲を起動する場合の実装手順は、`agent-toolkit:delegation`の`references/claude-code-runtime.md`が定める。
-本節には、委譲スキルを経由しない起動でも成立させる厳守規定だけを置く。
+Claude Codeの基本的な委譲起動では、`02-agent-operations.md`「基本委譲契約」節を適用する。
+工程別モデル設定、複数主体調整、継続、停滞検知又は巻き取りが必要な場合の実装手順は、
+`agent-toolkit:delegation`の`references/claude-code-runtime.md`が定める。
 
 - `Agent`ツールで起動した委譲先が`01-agent.md`「手順どおりに進められない場合」の即時通知をする場合、
   `SendMessage`の`to: "main"`はClaude Codeの最上位セッションへの通知だけに用いる。

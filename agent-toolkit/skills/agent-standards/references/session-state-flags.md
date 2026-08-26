@@ -51,10 +51,6 @@
   それぞれ対応するフィードバック処理スキルの起動を記録する。Stop hookの自動session-review起動条件に使う。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に3フラグをまとめて偽へ戻す。
   手動session-review起動はこれらのフラグを必要としない。セッション終了まで保持する
-- `delegation_skill_invoked`: メインセッションでSkillツールが`agent-toolkit:delegation`または
-  `delegation`を起動した場合にPostToolUseが真化する。
-  メインセッションから`agents_server` MCPまたはAgent／Taskで新規委譲を開始する前の経路検査に使い、
-  セッション終了まで保持する。sidechainのSkill起動は記録しない
 
 ## agents_server連携系
 

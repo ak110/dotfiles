@@ -22,7 +22,6 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill:
 
-- メインセッションで`agent-toolkit:delegation`の起動記録が無いagents_server MCP呼び出しのブロック (block)
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
 
@@ -47,7 +46,6 @@ Bash:
 Skill:
 
 - `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
-- 委譲を伴う工程を定めるスキル起動時の`agent-toolkit:delegation`未起動の事前案内 (warn)
 
 Agent / Task:
 
@@ -252,17 +250,11 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
-    # Skill: plan-mode起動時は計画単位の状態をリセットし、
-    # 委譲を伴う工程のスキル起動時はdelegation未起動を事前に案内する。
+    # Skill: plan-mode起動時は計画単位の状態をリセットする。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
-        if isinstance(skill_name, str):
-            if skill_name in _PLAN_MODE_SKILL_NAMES:
-                _reset_plan_mode_state(session_id)
-            if payload.get("isSidechain") is not True:
-                delegation_notice = _check_delegation_skill_not_invoked_yet(skill_name, session_id)
-                if delegation_notice is not None:
-                    pending_notices.append(delegation_notice)
+        if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
+            _reset_plan_mode_state(session_id)
         flush_pending_notices()
         return 0
 
@@ -293,7 +285,7 @@ def main(payload_text: str) -> int:
         return 0
 
     if tool_name in ("Agent", "Task"):
-        return exit_with(_handle_agent_tool(payload, tool_name, tool_input, session_id, flush_pending_notices))
+        return exit_with(_handle_agent_tool(tool_input, flush_pending_notices))
 
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex))
 
@@ -307,13 +299,6 @@ def _handle_agents_server_tool(
 ) -> int:
     """agents_serverの開始点・観測点を分離して検査する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
-    if (
-        tool_name in _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
-        and payload.get("isSidechain") is not True
-    ):
-        state = read_state(session_id)
-        if _check_delegation_not_invoked(state, tool_name=tool_name):
-            return 2
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         if _check_agents_server_cwd(tool_input):
             return 2
@@ -384,20 +369,11 @@ def _handle_bash_tool(
 
 
 def _handle_agent_tool(
-    payload: dict,
-    tool_name: str,
     tool_input: dict,
-    session_id: str,
     flush_warning: Callable[[], None],
 ) -> int:
     """Agent・Task起動の委譲契約と観測ログを処理する。"""
     subagent_type = tool_input.get("subagent_type")
-    if payload.get("isSidechain") is not True and not (
-        isinstance(subagent_type, str) and subagent_type in _DELEGATION_GATE_EXEMPT_SUBAGENT_TYPES
-    ):
-        state = read_state(session_id)
-        if _check_delegation_not_invoked(state, tool_name=tool_name):
-            return 2
     if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
         return 2
     if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
@@ -1448,8 +1424,6 @@ _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
     _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES | _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES
 )
-# 公式資料照会専用で委譲契約が関与しない種別は、委譲未起動ゲートから除外する。
-_DELEGATION_GATE_EXEMPT_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude-code-guide"})
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
@@ -1465,8 +1439,8 @@ def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool
     print(
         _block_notice(
             f"blocked: explicit `model` argument (`{model!r}`) for subagent_type `{subagent_type}`.\n"
-            "Why this gate exists: this subagent uses its frontmatter model and delegates"
-            " actual work through `agent-toolkit:delegation`; no per-call model override is defined.",
+            "Why this gate exists: this subagent uses its frontmatter model;"
+            " no per-call model override is defined.",
             fix="Omit the `model` parameter and let the agent definition's default apply.",
         ),
         file=sys.stderr,
@@ -3192,55 +3166,6 @@ def _record_iss_sidechain_probe(
         _locked_rotate_and_append(log_path, json.dumps(entry, ensure_ascii=False) + "\n", 1_000_000)
     except OSError:
         pass
-
-
-# 本文が並行委譲・調査委譲・サブエージェント起動を手順として定めるスキル。
-# フルネームと接頭辞なし表記の両方を許容する。
-_DELEGATION_WORKFLOW_SKILL_NAMES: frozenset[str] = frozenset(
-    {
-        "agent-toolkit:plan-mode",
-        "plan-mode",
-        "agent-toolkit:process-feedbacks",
-        "process-feedbacks",
-        "agent-toolkit:session-review",
-        "session-review",
-        "agent-toolkit:bugfix",
-        "bugfix",
-    }
-)
-
-
-def _check_delegation_skill_not_invoked_yet(skill_name: str, session_id: str) -> str | None:
-    """委譲を伴う工程のスキル起動時にdelegation未起動なら事前案内の本文を返す。
-
-    スキル起動時点はAgent・Task起動プロンプトを構成する前の最後の観測点であり、
-    ここで案内すると構成済みプロンプトが遮断で破棄される往復を避けられる。
-    `delegation_skill_invoked`は読むだけで書き換えず、Agent・Task起動時の遮断判定は変えない。
-    """
-    if skill_name not in _DELEGATION_WORKFLOW_SKILL_NAMES:
-        return None
-    if read_state(session_id).get("delegation_skill_invoked", False):
-        return None
-    return _llm_notice(
-        f"`{skill_name}` defines steps that delegate work to subagents."
-        " Invoke `agent-toolkit:delegation` before composing an Agent or Task call;"
-        " otherwise the call is blocked and the composed prompt is discarded.",
-        tag="warn",
-    )
-
-
-def _check_delegation_not_invoked(state: dict, *, tool_name: str) -> bool:
-    """メインセッションでdelegation未起動の新規委譲をブロックする。"""
-    if state.get("delegation_skill_invoked", False):
-        return False
-    print(
-        _block_notice(
-            f"{tool_name} call is blocked because `agent-toolkit:delegation` was not invoked.",
-            fix="Invoke `agent-toolkit:delegation` before starting a delegation from the main session.",
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 # --- agents_server: 開始点の絶対cwd検査 ---

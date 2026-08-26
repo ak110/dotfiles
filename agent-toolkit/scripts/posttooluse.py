@@ -31,8 +31,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
 15. PostToolUseFailure・PermissionDenied: 原則状態を変更せず終了
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-17. `agent-toolkit:delegation`起動の記録 (Skill)
-18. 対象リポジトリで新たに回答されたTBDファイルの通知（全ツール共通）
+17. 対象リポジトリで新たに回答されたTBDファイルの通知（全ツール共通）
 """
 
 import json
@@ -170,8 +169,6 @@ _ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedba
 # exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
 # （`agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端する）。
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
-
-_DELEGATION_SKILL_NAMES = frozenset({"agent-toolkit:delegation", "delegation"})
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = (
@@ -389,7 +386,7 @@ def _record_plan_mode_entered(session_id: str) -> None:
     update_state(session_id, _reset_review_invoked)
 
 
-def _record_skill_use(session_id: str, skill_name: object, *, is_sidechain: bool) -> None:
+def _record_skill_use(session_id: str, skill_name: object) -> None:
     """Skill呼び出しに対応するセッション状態を記録する。"""
     if not isinstance(skill_name, str):
         return
@@ -437,15 +434,6 @@ def _record_skill_use(session_id: str, skill_name: object, *, is_sidechain: bool
         update_state(session_id, _set_add_feedback_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
         update_state(session_id, _reset_process_feedbacks_invoked)
-    if not is_sidechain and skill_name in _DELEGATION_SKILL_NAMES:
-
-        def _set_delegation_invoked(state: dict) -> dict | None:
-            if state.get("delegation_skill_invoked", False):
-                return None
-            state["delegation_skill_invoked"] = True
-            return state
-
-        update_state(session_id, _set_delegation_invoked)
 
 
 def _record_edited_file(session_id: str, file_path: str) -> None:
@@ -645,7 +633,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # Skill: plan-modeスキル呼び出し検出と振り返りスキル呼び出し検出
     if tool_name == "Skill":
-        _record_skill_use(session_id, tool_input.get("skill"), is_sidechain=payload.get("isSidechain") is True)
+        _record_skill_use(session_id, tool_input.get("skill"))
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)

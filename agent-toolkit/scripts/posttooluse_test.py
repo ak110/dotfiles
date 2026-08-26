@@ -366,21 +366,29 @@ class TestSessionReviewSkillInvocation:
         assert path.stat().st_mtime_ns == mtime_before
 
 
-class TestDelegationTracking:
-    """delegation起動の状態記録。"""
+class TestDelegationStateRemoval:
+    """delegation起動が専用の状態を更新しないこと。"""
 
     @pytest.mark.parametrize("skill_name", ["delegation", "agent-toolkit:delegation"])
-    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path, skill_name: str) -> None:
-        sid = f"delegation-skill-{skill_name}"
-        _run(
+    @pytest.mark.parametrize("is_sidechain", [False, True])
+    def test_skill_invocation_does_not_set_state(
+        self,
+        tmp_path: pathlib.Path,
+        skill_name: str,
+        is_sidechain: bool,
+    ) -> None:
+        sid = f"delegation-skill-{skill_name}-{is_sidechain}"
+        result = _run(
             {
                 "session_id": sid,
                 "tool_name": "Skill",
                 "tool_input": {"skill": skill_name},
+                "isSidechain": is_sidechain,
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("delegation_skill_invoked") is True
+        assert result.returncode == 0
+        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).exists()
 
 
 class TestTbdCompletionNotice:
@@ -1378,30 +1386,3 @@ class TestAgentsServerSessionState:
         record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
         assert record["status"] == "completed"
         assert "cwd" not in record
-
-
-class TestDelegationSkillState:
-    """delegation起動記録はメインセッションだけに残す。"""
-
-    def test_sidechain_skill_does_not_set_delegation_state(self, tmp_path: pathlib.Path) -> None:
-        result = _run(
-            {
-                "session_id": "side",
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:delegation"},
-                "isSidechain": True,
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="side")).exists()
-
-    def test_main_skill_sets_delegation_state(self, tmp_path: pathlib.Path) -> None:
-        result = _run(
-            {"session_id": "main", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:delegation"}},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="main")
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert state["delegation_skill_invoked"] is True
