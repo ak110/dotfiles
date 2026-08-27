@@ -3339,7 +3339,7 @@ def test_session_review_main_rechecks_user_events_and_problem_references() -> No
 
 
 def test_session_review_requires_root_cause_coverage_before_suppression() -> None:
-    """原因分析と根本原因単位の被覆を抑止判定と「提案無し」より先に確認する。"""
+    """共通active一覧の検証と原因単位の被覆を抑止判定より先に確認する。"""
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
@@ -3350,9 +3350,24 @@ def test_session_review_requires_root_cause_coverage_before_suppression() -> Non
     report = _h2_section(criteria, "報告契約")
 
     cause_and_coverage = "証拠からエージェントの誤りがユーザー介入を招いたと確定した候補"
-    active_check = "既存のactiveなフィードバックは"
+    active_list = "候補層の判定前に、メインは"
+    active_verification = (
+        "取得した各項目について、状態が`active`、対象リポジトリが同一、`process-loop`で処理可能であることを検証する。"
+    )
+    shared_snapshot = "第1層から第3層までの全候補層の抑止判定は、この検収済み一覧を共通に用いる。"
+    root_coverage = "各根本原因を成立させる単位は"
     suppression_judgment = "メインは問題一覧ごとに"
-    assert validation.index(cause_and_coverage) < validation.index(active_check) < validation.index(suppression_judgment)
+    active_query = "atk mq list --status=active --target-repo=<repo-path> --skip-pull"
+    assert validation.count(active_query) == 1
+    assert candidate.count(active_query) == 1
+    assert (
+        validation.index(active_list)
+        < validation.index(active_verification)
+        < validation.index(shared_snapshot)
+        < validation.index(cause_and_coverage)
+        < validation.index(root_coverage)
+        < validation.index(suppression_judgment)
+    )
 
     cause_terms = ("直接的原因", "混入要因", "動機的要因", "見逃し原因", "根本原因", "類似見直し")
     treatment_terms = ("是正処置", "横展開処置", "再発防止処置")
@@ -3368,21 +3383,62 @@ def test_session_review_requires_root_cause_coverage_before_suppression() -> Non
     assert candidate.index("再発防止処置") < candidate.index("原因単位の被覆が部分的な場合")
     assert design.index("再発防止処置") < design.index("部分被覆では未被覆単位だけを候補")
 
-    assert "現行実装・テスト又は反復しない実測により有効性を確認した実装済み処置" in validation
+    assert "現行実装・テスト若しくは反復しない実測により有効性を確認した実装済み処置" in validation
     assert "同一対象リポジトリで`process-loop`が処理できる有効なactiveフィードバック" in candidate
+    active_coverage = (
+        "activeフィードバックを被覆とする条件は、単なる処理可能性だけではない。"
+        "フィードバック本文または対応計画が、対応づける各根本原因単位と、"
+        "その単位に必要な是正処置・横展開処置・再発防止処置の全てを覆う根拠を確認する。"
+    )
+    assert active_coverage in validation
+    assert active_coverage in candidate
+    assert active_coverage in design
+    for document in (validation, candidate, design):
+        assert "対象リポジトリの唯一のactive一覧" in document
+        assert "`processing`配置を含む" in document
+        assert "`process-loop`" in document
+        for term in ("状態が`active`", "対象リポジトリが同一"):
+            assert term in document
+    assert candidate.index(active_list) < candidate.index("根本原因を成立させる各単位は")
+    assert candidate.index("根本原因を成立させる各単位は") < candidate.index("原因単位の被覆が部分的な場合")
+    assert design.index(active_list) < design.index("根本原因を成立させる各単位は")
+    assert design.index("根本原因を成立させる各単位は") < design.index("部分被覆では未被覆単位だけを候補")
+    for layer_marker in (
+        "1. 問題一覧と再抽出証拠から",
+        "2. コンテキスト効率や計画段階の摘出率を大きく改善する事象は",
+        "3. その他の単発ミスは",
+    ):
+        assert candidate.index(active_list) < candidate.index(layer_marker)
+        assert candidate.index(shared_snapshot) < candidate.index(layer_marker)
+    assert "本文又は対応計画が各根本原因単位と必要な処置の全てを覆う根拠" in report
     for invalid_item in ("処理不能", "失効済み", "終端済み"):
         assert invalid_item in candidate
     assert "原因単位の被覆が部分的な場合は未被覆単位だけを候補" in candidate
     assert "全単位が被覆されている場合だけ「提案無し」" in candidate
     assert "原因分析と各単位の被覆確認は、候補化及び抑止条件の判定に優先する" in candidate
-    assert "抑止条件の判定は、候補化の可否について確定義務に優先する。" not in candidate
+    suppression_reason = (
+        "「提案を抑止する条件」のいずれかに該当して提案を確定しない場合は、"
+        "重複による抑止では対応する既存項目のファイル名又は規範の節名を、"
+        "その他の抑止条件では該当した条件と成立の判定根拠を報告へ記載する。"
+    )
+    assert suppression_reason in candidate
+    for suppression_condition in (
+        "既存規範またはactiveなフィードバックと実質的に重複する",
+        "軽微な好み、表記、体裁に留まり",
+        "将来の仮定だけに依存し、観測事象がない",
+    ):
+        assert suppression_condition in criteria
+    assert candidate.index("原因分析と各単位の被覆確認") < candidate.index("「提案を抑止する条件」")
     assert criteria.index("原因分析と各単位の被覆確認") < criteria.index("## 提案を抑止する条件")
 
     report_without_proposal = (
         "実害がありエージェントの誤りが利用者介入を招いた問題について「提案無し」とする場合は、"
-        "4原因区分・根本原因・類似見直し・三層処置、各根本原因単位の被覆根拠、"
-        "実装済み処置の検証結果又はactiveフィードバックのファイル名・状態・対象リポジトリ・"
-        "`process-loop`処理可能性及び非重複理由"
+        "4原因区分・根本原因・類似見直し・三層処置及び各根本原因単位の被覆根拠を報告する。"
+        "実装済み処置を使う場合は検証結果を記録する。"
+        "反復しない実測を使う場合も記録する。"
+        "activeフィードバックを使う場合は、ファイル名、状態と対象リポジトリを記録する。"
+        "被覆単位、本文又は対応計画が各根本原因単位と必要な処置の全てを覆う根拠、"
+        "`process-loop`処理可能性と非重複理由も記録する"
     )
     assert report_without_proposal in report
     assert (
