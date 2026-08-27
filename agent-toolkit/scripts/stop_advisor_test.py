@@ -15,7 +15,9 @@ from collections.abc import Callable
 from typing import Any
 
 import _fork_runner
+import _managed_temp
 import pytest
+import stop_advisor
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
@@ -524,7 +526,7 @@ class TestManagedTempNotice:
             return entries
 
         monkeypatch.setattr(  # pylint: disable=protected-access
-            stop_advisor._managed_temp,
+            _managed_temp,
             "list_managed_temp",
             fake_list_managed_temp,
         )
@@ -547,7 +549,7 @@ class TestManagedTempNotice:
             raise RuntimeError("test failure")
 
         monkeypatch.setattr(  # pylint: disable=protected-access
-            stop_advisor._managed_temp,
+            _managed_temp,
             "list_managed_temp",
             raise_list_error,
         )
@@ -569,7 +571,7 @@ class TestManagedTempNotice:
             raise RuntimeError("test failure")
 
         monkeypatch.setattr(  # pylint: disable=protected-access
-            stop_advisor._managed_temp,
+            _managed_temp,
             "list_managed_temp",
             raise_list_error,
         )
@@ -607,7 +609,7 @@ class TestManagedTempNotice:
             return entries
 
         monkeypatch.setattr(  # pylint: disable=protected-access
-            stop_advisor._managed_temp,
+            _managed_temp,
             "list_managed_temp",
             fake_list_managed_temp,
         )
@@ -644,7 +646,7 @@ class TestManagedTempNotice:
             return [{"path": "/tmp/managed-one", "prefix": None, "created_at": None}]
 
         monkeypatch.setattr(  # pylint: disable=protected-access
-            stop_advisor._managed_temp,
+            _managed_temp,
             "list_managed_temp",
             list_with_diagnostic,
         )
@@ -675,7 +677,7 @@ class TestManagedTempNotice:
             return [{"path": "/tmp/managed-one", "prefix": None, "created_at": None}]
 
         monkeypatch.setattr(  # pylint: disable=protected-access
-            stop_advisor._managed_temp,
+            _managed_temp,
             "list_managed_temp",
             list_with_candidate,
         )
