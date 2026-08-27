@@ -297,6 +297,130 @@ class TestManagedTempPosix:
         subject.cleanup_managed_temp(target)
         assert not target.exists()
 
+    def test_default_sticky_world_writable_root_remains_supported(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """POSIXの既定rootであるstickyかつworld-writableな権限を維持する。"""
+        tmp_path.chmod(0o1777)
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+
+        target = subject.create_managed_temp("default-sticky-root")
+
+        assert target.parent == tmp_path
+        subject.cleanup_managed_temp(target)
+
+    def test_explicit_root_round_trip_survives_temp_root_change(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """明示rootへ作成した領域を現在の一時root変更後も検証・列挙・回収する。"""
+        shared_root = tmp_path / "shared-root"
+        current_root = tmp_path / "current-root"
+        shared_root.mkdir()
+        current_root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(current_root))
+
+        target = subject.create_managed_temp("shared-worktree", root=shared_root)
+
+        assert target.parent == shared_root
+        assert subject.validate_managed_temp(target) == target
+        assert [entry["path"] for entry in subject.list_managed_temp()] == [str(target)]
+        subject.cleanup_managed_temp(target)
+        assert not target.exists()
+
+    @pytest.mark.parametrize("root_kind", ["relative", "missing", "file", "symlink", "unsafe-mode", "owner"])
+    def test_explicit_root_rejects_unsafe_shapes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        root_kind: str,
+    ) -> None:
+        """明示rootの相対・不在・非ディレクトリ・リンク・権限・所有者不一致を拒否する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path / "default-root"))
+        (tmp_path / "default-root").mkdir()
+        safe = tmp_path / "safe-root"
+        safe.mkdir()
+        if root_kind == "relative":
+            root: pathlib.Path | str = pathlib.Path("relative-root")
+        elif root_kind == "missing":
+            root = tmp_path / "missing-root"
+        elif root_kind == "file":
+            root = tmp_path / "root-file"
+            root.write_text("not a directory", encoding="utf-8")
+        elif root_kind == "symlink":
+            root = tmp_path / "root-link"
+            root.symlink_to(safe, target_is_directory=True)
+        elif root_kind == "unsafe-mode":
+            root = tmp_path / "unsafe-root"
+            root.mkdir()
+            root.chmod(0o777)
+        else:
+            root = safe
+            current_euid = os.geteuid()
+            monkeypatch.setattr(subject.os, "geteuid", lambda: current_euid + 1)
+
+        with pytest.raises(subject.ManagedTempError):
+            subject.create_managed_temp("invalid-explicit-root", root=root)
+        assert not list(tmp_path.glob("invalid-explicit-root-*"))
+
+    def test_explicit_root_replacement_during_create_leaves_no_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """作成中のroot交換後に新規対象を元root側からも回収する。"""
+        root = tmp_path / "shared-root"
+        root.mkdir()
+        root.chmod(0o700)
+        displaced = tmp_path / "displaced-root"
+        replacement = tmp_path / "replacement-root"
+        original_mkdtemp = subject.tempfile.mkdtemp
+
+        def replace_root_after_create(*args: typing.Any, **kwargs: typing.Any) -> str:
+            created = original_mkdtemp(*args, **kwargs)
+            root.rename(displaced)
+            replacement.mkdir()
+            (replacement / pathlib.Path(created).name).mkdir()
+            return created
+
+        monkeypatch.setattr(subject.tempfile, "mkdtemp", replace_root_after_create)
+        with pytest.raises(subject.ManagedTempError, match="root"):
+            subject.create_managed_temp("create-root-race", root=root)
+        assert not list(displaced.glob("create-root-race-*"))
+        assert list(replacement.glob("create-root-race-*"))
+
+    def test_explicit_root_replacement_after_marker_preserves_replacement(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """marker書込み後のroot交換でも、交換先の同名領域を除去しない。"""
+        root = tmp_path / "shared-root"
+        root.mkdir()
+        root.chmod(0o700)
+        displaced = tmp_path / "displaced-root"
+        replacement = tmp_path / "replacement-root"
+        original_write_marker = subject._write_marker
+
+        def replace_root_after_marker(
+            path: pathlib.Path,
+            record: dict[str, typing.Any],
+            **kwargs: typing.Any,
+        ) -> None:
+            original_write_marker(path, record, **kwargs)
+            root.rename(displaced)
+            replacement.mkdir()
+            (replacement / path.name).mkdir()
+
+        monkeypatch.setattr(subject, "_write_marker", replace_root_after_marker)
+        with pytest.raises(subject.ManagedTempError, match="root"):
+            subject.create_managed_temp("marker-root-race", root=root)
+        assert not list(displaced.glob("marker-root-race-*"))
+        assert list(replacement.glob("marker-root-race-*"))
+
     def test_validate_accepts_matching_v1_records(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -533,8 +657,7 @@ class TestManagedTempPosix:
         missing.rmdir()
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(listed_root))
 
-        # 一時領域直下を要求する厳格判定は、cleanupと権限判定のために従来どおり維持する。
-        assert subject.is_missing_registered_temp(missing) is False
+        assert subject.is_missing_registered_temp(missing) is True
         assert subject.list_managed_temp() == []
         assert capsys.readouterr().err == ""
         assert not registry.exists()
@@ -814,6 +937,78 @@ class TestManagedTempPosix:
         assert (displaced / "original.txt").read_text(encoding="utf-8") == "original"
         assert replacement_sentinel.read_text(encoding="utf-8") == "replacement"
 
+    def test_root_mode_change_after_registry_consume_restores_registry_and_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """回収中のroot権限変更を拒否し、消費済みregistryと対象を復元する。"""
+        root = tmp_path / "shared-root"
+        root.mkdir()
+        root.chmod(0o700)
+        target = subject.create_managed_temp("root-mode-race", root=root)
+        registry = subject._registry_path(target)
+        original_consume = subject._consume_registry
+
+        def change_root_mode(validated: typing.Any) -> pathlib.Path:
+            consuming = original_consume(validated)
+            root.chmod(0o755)
+            return consuming
+
+        monkeypatch.setattr(subject, "_consume_registry", change_root_mode)
+        with pytest.raises(subject.ManagedTempError, match="root"):
+            subject.cleanup_managed_temp(target)
+        assert target.exists()
+        assert registry.exists()
+
+    def test_root_linkification_after_registry_consume_preserves_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """回収中のrootリンク化を拒否し、元rootと対象を保持する。"""
+        root = tmp_path / "shared-root"
+        root.mkdir()
+        target = subject.create_managed_temp("root-link-race", root=root)
+        registry = subject._registry_path(target)
+        displaced = tmp_path / "displaced-root"
+        replacement = tmp_path / "replacement-root"
+        original_consume = subject._consume_registry
+
+        def replace_root(validated: typing.Any) -> pathlib.Path:
+            consuming = original_consume(validated)
+            root.rename(displaced)
+            replacement.mkdir()
+            root.symlink_to(replacement, target_is_directory=True)
+            return consuming
+
+        monkeypatch.setattr(subject, "_consume_registry", replace_root)
+        with pytest.raises(subject.ManagedTempError, match="root"):
+            subject.cleanup_managed_temp(target)
+        assert (displaced / target.name / _MARKER_NAME).is_file()
+        assert registry.exists()
+
+    def test_root_mode_change_during_validation_is_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """検証中のroot権限変更を子操作へ進めない。"""
+        root = tmp_path / "shared-root"
+        root.mkdir()
+        root.chmod(0o700)
+        target = subject.create_managed_temp("root-validation-race", root=root)
+        original_load_marker = subject._load_marker
+
+        def change_root_mode(descriptor: int, path: pathlib.Path) -> dict[str, typing.Any]:
+            root.chmod(0o755)
+            return original_load_marker(descriptor, path)
+
+        monkeypatch.setattr(subject, "_load_marker", change_root_mode)
+        with pytest.raises(subject.ManagedTempError, match="root"):
+            subject.validate_managed_temp(target)
+        assert target.exists()
+
     @pytest.mark.parametrize("kind", ["leaf", "directory"])
     def test_child_replacement_before_isolation_preserves_both_versions(
         self,
@@ -887,6 +1082,26 @@ class TestManagedTempWindows:
         assert len(security.aces) == 1
         assert security.aces[0].sid is not None
         assert subject._windows_equal_sids(security.aces[0].sid, current_sid)
+        subject.cleanup_managed_temp(target)
+        assert not target.exists()
+
+    def test_explicit_root_round_trip_uses_secured_existing_directory(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """WindowsでもACLを整えた既存root直下の領域を検証・回収する。"""
+        shared_root = tmp_path / "shared-root"
+        current_root = tmp_path / "current-root"
+        shared_root.mkdir()
+        current_root.mkdir()
+        subject._windows_secure_path(shared_root, directory=True)
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(current_root))
+
+        target = subject.create_managed_temp("windows-shared-root", root=shared_root)
+
+        assert target.parent == shared_root
+        assert subject.validate_managed_temp(target) == target
         subject.cleanup_managed_temp(target)
         assert not target.exists()
 
@@ -1378,4 +1593,46 @@ def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
     assert created.returncode == 0
     assert cleaned.returncode == 0
     assert rejected.returncode == 2
+    assert not target.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windowsの明示rootはACLを設定した実機テストで検証する")
+def test_cli_explicit_root_returns_managed_temp_path(tmp_path: pathlib.Path) -> None:
+    """CLIの明示root形が指定root直下の絶対pathを返す。"""
+    env = os.environ.copy()
+    if os.name == "nt":
+        env["TEMP"] = str(tmp_path / "default")
+        env["TMP"] = str(tmp_path / "default")
+        env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
+    else:
+        env["TMPDIR"] = str(tmp_path / "default")
+        env["XDG_STATE_HOME"] = str(tmp_path / "state")
+    explicit_root = tmp_path / "shared-root"
+    explicit_root.mkdir()
+    created = subprocess.run(
+        [
+            sys.executable,
+            str(_SCRIPT),
+            "create",
+            "--prefix",
+            "cli-explicit",
+            "--root",
+            str(explicit_root),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    target = pathlib.Path(created.stdout.strip())
+    cleaned = subprocess.run(
+        [sys.executable, str(_SCRIPT), "cleanup", "--path", str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert created.returncode == 0
+    assert target.parent == explicit_root
+    assert cleaned.returncode == 0
     assert not target.exists()

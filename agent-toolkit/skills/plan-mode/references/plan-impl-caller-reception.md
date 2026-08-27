@@ -30,6 +30,12 @@
 通常の実装モードでは、呼び出し元が各レーンの起動前に`atk managed-temp create --prefix <レビュー用途>`を単独で実行し、標準出力の絶対パスを実装レビュー用managed temp領域として保持する。
 借用worktreeを使う場合も実装レビュー用managed temp領域を作成する。
 作成した実装レビュー用managed temp領域の用途と絶対パスを、対応する計画の`## 進捗ログ`へ記録する。
+実装worktreeの管理対象領域は、同一ファイルシステム名前空間で完結するレーンでは`atk managed-temp create --prefix <レーン>`を単独で実行する。
+対象プロジェクトの正式検証がDocker、VMなどの別ファイルシステム名前空間へworktreeを再提示する場合は、呼び出し元が全消費主体から同一絶対パスへ到達できる既存ディレクトリを読み取り専用で確認する。確認後、`atk managed-temp create --prefix <レーン> --root <共有ルートの絶対パス>`を単独で実行する。
+標準出力はmarkerを含むmanaged-temp親として保持し、その配下の未作成子パスを`<管理対象領域>/<レーンworktree>`と定めて`git worktree add --detach <管理対象領域>/<レーンworktree> <共通ベース>`へ渡す。
+実装完了後に子worktreeをremoveしてから親をcleanupする。
+共有可否を推測せず、確認できない場合はその実装レーンを開始せず呼び出し元へ返す。
+実装レビュー用managed-tempはこの領域とは別に、全レーンで`atk managed-temp create --prefix <レビュー用途>`を単独で実行し、`--root`を付けない。
 起動文は受信者への命令を先頭に置き、次だけを渡す。
 
 - モード指定`通常の実装モード`

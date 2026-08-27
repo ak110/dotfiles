@@ -1,4 +1,7 @@
-"""Codexの管理対象一時領域cleanupだけを承認するPermissionRequest hook。"""
+"""Codexの管理対象一時領域cleanupだけを承認するPermissionRequest hook。
+
+登録済みpathの親rootを含む共通検証へ対象を渡し、現在の一時rootに依存しない。
+"""
 
 from __future__ import annotations
 

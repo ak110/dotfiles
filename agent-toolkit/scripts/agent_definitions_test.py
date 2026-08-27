@@ -3972,6 +3972,15 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
         assert single_value in flow
     assert "管理対象領域内へレーンのworktreeを作成" in flow
     assert "完全な一覧の記録属性は`plan-impl-caller-reception.md`を正本" in flow
+    for text in (flow, caller):
+        assert "別ファイルシステム名前空間" in text
+        assert "同一絶対パスへ到達できる既存ディレクトリを読み取り専用で確認" in text
+        assert "--root <共有ルートの絶対パス>" in text
+        assert "markerを含むmanaged-temp親" in text
+        assert "未作成子パス" in text
+        assert "共有可否を推測せず" in text
+    assert "実装レビュー用managed-tempはこの領域とは別" in flow
+    assert "実装レビュー用managed-tempはこの領域とは別" in caller
     for field in ("用途", "絶対パス", "管理対象領域の絶対パス", "HEADの完全OID", "作成主体", "回収可否"):
         assert field in caller
     for required_input in (

@@ -24,6 +24,12 @@ readyなレーンが1件なら現在のcleanなworktreeで実行する。
 readyなレーンが1件の場合は、借用する現在worktreeを回収不可として含む完全な一覧を同文書に従って構成する。
 複数レーンの場合は、レーンのworktreeと計画が明示する管理対象worktreeを含む完全な一覧を同文書に従って構成する。
 各レーンの起動前に`atk managed-temp create --prefix <レビュー用途>`を単独で実行し、標準出力の絶対パスを通常の実装レビュー用managed temp領域として保持する。借用worktreeを使う場合も作成する。
+実装worktreeの管理対象領域は、同一ファイルシステム名前空間で完結するレーンでは`atk managed-temp create --prefix <レーン>`を単独で実行する。
+対象プロジェクトの正式検証がDocker、VMなどの別ファイルシステム名前空間へworktreeを再提示する場合は、呼び出し元が全消費主体から同一絶対パスへ到達できる既存ディレクトリを読み取り専用で確認する。確認後、`atk managed-temp create --prefix <レーン> --root <共有ルートの絶対パス>`を単独で実行する。
+標準出力はmarkerを含むmanaged-temp親として保持し、その配下の未作成子パスを`<管理対象領域>/<レーンworktree>`と定めて`git worktree add --detach <管理対象領域>/<レーンworktree> <共通ベース>`へ渡す。
+実装完了後に子worktreeをremoveしてから親をcleanupする。
+共有可否を推測せず、確認できない場合はその実装レーンを開始せず呼び出し元へ返す。
+実装レビュー用managed-tempはこの領域とは別に、全レーンで`atk managed-temp create --prefix <レビュー用途>`を単独で実行し、`--root`を付けない。
 起動文には計画、プロジェクト規範、該当する作成規範スキルの絶対パス、
 worktreeの完全な一覧、通常の実装レビュー用managed temp領域の絶対パス、ソート済みフィードバックファイル名一覧、追加指示、
 許容済みの挙動変化、権限だけを渡し、

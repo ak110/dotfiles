@@ -77,6 +77,19 @@ class _ValidatedTemp(typing.NamedTuple):
     inode: int
     nonce: str
     registry_path: pathlib.Path
+    root_device: int
+    root_inode: int
+    root_owner: int | None
+    root_mode: int | None
+    root_security: typing.Any = None
+
+
+class _ValidatedRoot(typing.NamedTuple):
+    device: int
+    inode: int
+    owner: int | None
+    mode: int | None
+    security: typing.Any = None
 
 
 class _AceHeader(ctypes.Structure):
@@ -564,6 +577,12 @@ def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
     """管理対象rootでは厳格ACLと実測済みの追加ACE 1件だけを受理する。"""
     current_sid = _windows_sid_bytes(_windows_current_sid())
     security = _windows_security_descriptor(path)
+    if not _windows_managed_root_security_is_valid(security, current_sid):
+        raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {path}")
+
+
+def _windows_managed_root_security_is_valid(security: _WindowsSecurity, current_sid: bytes) -> bool:
+    """厳格ACLと実測済みの追加ACE 1件だけを受理する。"""
     expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE
     current_user_aces = [ace for ace in security.aces if _windows_current_user_ace_is_valid(ace, current_sid, expected_flags)]
     other_aces = [ace for ace in security.aces if not _windows_current_user_ace_is_valid(ace, current_sid, expected_flags)]
@@ -571,8 +590,7 @@ def _validate_windows_managed_root_security(path: pathlib.Path) -> None:
         not other_aces
         or (len(other_aces) == 1 and _windows_external_writer_ace_is_valid(other_aces[0], current_sid, expected_flags))
     )
-    if not security.directory or not _windows_security_base_is_valid(security, current_sid) or not valid_operational_acl:
-        raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {path}")
+    return security.directory and _windows_security_base_is_valid(security, current_sid) and valid_operational_acl
 
 
 def _windows_identity(path: pathlib.Path) -> tuple[int, int]:
@@ -591,6 +609,61 @@ def _temp_root() -> pathlib.Path:
     if os.name == "nt" and getattr(root.lstat(), "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
         raise ManagedTempError(f"一時ディレクトリのルートがreparse pointである: {root}")
     return root
+
+
+def _validate_root(
+    root: pathlib.Path,
+    *,
+    explicit: bool = False,
+    expected: _ValidatedRoot | None = None,
+) -> _ValidatedRoot:
+    """管理対象の親rootを検証し、操作中に比較するidentityと属性を返す。"""
+    if not root.is_absolute():
+        raise ManagedTempError(f"rootは絶対パスで指定する: {root}")
+    if os.name == "posix":
+        try:
+            metadata = root.lstat()
+        except OSError as error:
+            raise ManagedTempError(f"管理対象rootを検証できない: {root}: {error}") from error
+        mode = stat.S_IMODE(metadata.st_mode)
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ManagedTempError(f"管理対象rootが通常ディレクトリではない: {root}")
+        if mode & (stat.S_ISUID | stat.S_ISGID):
+            raise ManagedTempError(f"管理対象rootの特殊権限が不正: {root}")
+        if (mode & stat.S_IWUSR) == 0 or (mode & stat.S_IXUSR) == 0:
+            raise ManagedTempError(f"管理対象rootの所有者権限が不正: {root}")
+        if mode & (stat.S_IWGRP | stat.S_IWOTH):
+            if explicit or mode != 0o1777:
+                raise ManagedTempError(f"管理対象rootの権限が不安全: {root}")
+        elif metadata.st_uid != os.geteuid():
+            raise ManagedTempError(f"管理対象rootの所有者が現在の利用者ではない: {root}")
+        current = _ValidatedRoot(metadata.st_dev, metadata.st_ino, metadata.st_uid, mode)
+    elif os.name == "nt":
+        try:
+            metadata = root.lstat()
+        except OSError as error:
+            raise ManagedTempError(f"管理対象rootを検証できない: {root}: {error}") from error
+        if not stat.S_ISDIR(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
+            raise ManagedTempError(f"管理対象rootが通常ディレクトリではない: {root}")
+        identity = _windows_identity(root)
+        current_sid = _windows_sid_bytes(_windows_current_sid())
+        security = _windows_security_descriptor(root)
+        if not security.directory or not security.dacl_present or not _windows_equal_sids(security.owner, current_sid):
+            raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {root}")
+        if explicit and not _windows_managed_root_security_is_valid(security, current_sid):
+            raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {root}")
+        after_identity = _windows_identity(root)
+        after_security = _windows_security_descriptor(root)
+        if after_identity != identity:
+            raise ManagedTempError(f"管理対象rootが検証中に置換された: {root}")
+        if after_security != security:
+            raise ManagedTempError(f"管理対象rootが検証中に変更された: {root}")
+        current = _ValidatedRoot(after_identity[0], after_identity[1], None, None, after_security)
+    else:
+        raise ManagedTempError(f"未対応platform: {os.name}")
+    if expected is not None and current != expected:
+        raise ManagedTempError(f"管理対象rootが検証中に置換または変更された: {root}")
+    return current
 
 
 def _owner_record() -> dict[str, str | int]:
@@ -705,9 +778,14 @@ def _path_identity(path: pathlib.Path) -> tuple[int, int]:
 
 
 def _record(
-    path: pathlib.Path, nonce: str, *, prefix: str | None = None, created_at: str | None = None
+    path: pathlib.Path,
+    nonce: str,
+    *,
+    prefix: str | None = None,
+    created_at: str | None = None,
+    identity: tuple[int, int] | None = None,
 ) -> dict[str, typing.Any]:
-    device, inode = _path_identity(path)
+    device, inode = identity if identity is not None else _path_identity(path)
     record = {
         "schema_version": _SCHEMA_VERSION,
         "path": str(path),
@@ -733,20 +811,38 @@ def _is_utc_iso8601(value: object) -> bool:
     return parsed.tzinfo is not None and parsed.utcoffset() == datetime.timedelta(0)
 
 
-def _records_match(path: pathlib.Path, marker: dict[str, typing.Any], registry: dict[str, typing.Any]) -> bool:
+def _records_match(
+    path: pathlib.Path,
+    marker: dict[str, typing.Any],
+    registry: dict[str, typing.Any],
+    *,
+    identity: tuple[int, int] | None = None,
+) -> bool:
+    if identity is not None:
+        try:
+            if _path_identity(path) != identity:
+                return False
+        except (OSError, ManagedTempError):
+            return False
     nonce = registry.get("nonce")
     schema_version = registry.get("schema_version")
     if not isinstance(schema_version, int) or isinstance(schema_version, bool):
         return False
     if schema_version == 1:
-        expected = _record(path, typing.cast(str, nonce))
+        expected = _record(path, typing.cast(str, nonce), identity=identity)
         expected["schema_version"] = 1
     elif schema_version == 2:
         prefix = registry.get("prefix")
         created_at = registry.get("created_at")
         if not isinstance(prefix, str) or not is_valid_prefix(prefix) or not _is_utc_iso8601(created_at):
             return False
-        expected = _record(path, typing.cast(str, nonce), prefix=prefix, created_at=typing.cast(str, created_at))
+        expected = _record(
+            path,
+            typing.cast(str, nonce),
+            prefix=prefix,
+            created_at=typing.cast(str, created_at),
+            identity=identity,
+        )
     else:
         return False
     return (
@@ -757,12 +853,20 @@ def _records_match(path: pathlib.Path, marker: dict[str, typing.Any], registry: 
     )
 
 
-def _write_marker(path: pathlib.Path, record: dict[str, typing.Any]) -> None:
+def _write_marker(
+    path: pathlib.Path,
+    record: dict[str, typing.Any],
+    *,
+    directory_descriptor: int | None = None,
+) -> None:
     marker_path = path / _MARKER_NAME
     if os.name == "posix":
-        directory_descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        owns_directory_descriptor = directory_descriptor is None
+        if owns_directory_descriptor:
+            directory_descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         descriptor: int | None = None
         try:
+            assert directory_descriptor is not None
             descriptor = os.open(
                 _MARKER_NAME,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
@@ -778,7 +882,9 @@ def _write_marker(path: pathlib.Path, record: dict[str, typing.Any]) -> None:
         finally:
             if descriptor is not None:
                 os.close(descriptor)
-            os.close(directory_descriptor)
+            if owns_directory_descriptor:
+                assert directory_descriptor is not None
+                os.close(directory_descriptor)
         return
     _write_private_json(marker_path, record)
 
@@ -788,25 +894,101 @@ def is_valid_prefix(prefix: str) -> bool:
     return _PREFIX_RE.fullmatch(prefix) is not None
 
 
-def create_managed_temp(prefix: str) -> pathlib.Path:
-    """管理対象一時ディレクトリを作成し、絶対パスを返す。"""
+def _remove_created_target(
+    path: pathlib.Path,
+    *,
+    root_descriptor: int | None,
+    target_descriptor: int | None,
+    created_identity: tuple[int, int] | None,
+) -> None:
+    """作成処理が所有する空の対象だけを、保持したroot境界から除去する。"""
+    if target_descriptor is not None:
+        try:
+            target_metadata = os.fstat(target_descriptor)
+        except OSError:
+            target_metadata = None
+        if target_metadata is not None and created_identity == (
+            target_metadata.st_dev,
+            target_metadata.st_ino,
+        ):
+            with contextlib.suppress(OSError):
+                os.unlink(_MARKER_NAME, dir_fd=target_descriptor)
+    if root_descriptor is not None:
+        try:
+            current = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
+        except OSError:
+            return
+        if (
+            created_identity is None
+            or (current.st_dev, current.st_ino) != created_identity
+            or not stat.S_ISDIR(current.st_mode)
+        ):
+            return
+        with contextlib.suppress(OSError):
+            os.rmdir(path.name, dir_fd=root_descriptor)
+        return
+    if created_identity is None:
+        return
+    try:
+        if _path_identity(path) != created_identity:
+            return
+    except (OSError, ManagedTempError):
+        return
+    with contextlib.suppress(OSError):
+        path.rmdir()
+
+
+def create_managed_temp(prefix: str, root: pathlib.Path | str | None = None) -> pathlib.Path:
+    """管理対象一時ディレクトリを指定root直下へ作成し、絶対パスを返す。"""
     if not is_valid_prefix(prefix):
         raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
-    root = _temp_root()
-    try:
-        path = pathlib.Path(tempfile.mkdtemp(prefix=f"{prefix}-", dir=root))
-        if os.name == "posix":
-            os.chmod(path, 0o700)
-        elif os.name == "nt":
-            _windows_secure_path(path, directory=True)
-        else:
-            raise ManagedTempError(f"未対応platform: {os.name}")
-    except OSError as error:
-        raise ManagedTempError(f"管理対象一時ディレクトリを作成できない: {error}") from error
-
-    marker_path = path / _MARKER_NAME
+    explicit_root = root is not None
+    if root is None:
+        root_path = _temp_root()
+    else:
+        root_argument = pathlib.Path(root)
+        if not root_argument.is_absolute():
+            raise ManagedTempError(f"rootは絶対パスで指定する: {root_argument}")
+        root_path = pathlib.Path(os.path.abspath(root_argument))
+    validated_root = _validate_root(root_path, explicit=explicit_root)
+    path: pathlib.Path | None = None
+    root_descriptor: int | None = None
+    target_descriptor: int | None = None
+    created_identity: tuple[int, int] | None = None
+    marker_path: pathlib.Path | None = None
     registry_path: pathlib.Path | None = None
     try:
+        if os.name == "posix":
+            root_descriptor = os.open(root_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            opened_root = os.fstat(root_descriptor)
+            if (opened_root.st_dev, opened_root.st_ino) != (validated_root.device, validated_root.inode):
+                raise ManagedTempError(f"管理対象rootが作成中に置換された: {root_path}")
+        path = pathlib.Path(tempfile.mkdtemp(prefix=f"{prefix}-", dir=root_path))
+        if root_descriptor is not None:
+            created_metadata = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
+            if not stat.S_ISDIR(created_metadata.st_mode):
+                raise ManagedTempError(f"管理対象が作成中に通常ディレクトリではなくなった: {path}")
+            created_identity = (created_metadata.st_dev, created_metadata.st_ino)
+        _validate_root(root_path, explicit=explicit_root, expected=validated_root)
+        if os.name == "posix":
+            assert root_descriptor is not None
+            target_descriptor = os.open(
+                path.name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=root_descriptor,
+            )
+            opened_target = os.fstat(target_descriptor)
+            if created_identity is None or created_identity != (opened_target.st_dev, opened_target.st_ino):
+                raise ManagedTempError(f"管理対象が作成中に置換された: {path}")
+            os.fchmod(target_descriptor, 0o700)
+            _validate_root(root_path, explicit=explicit_root, expected=validated_root)
+        elif os.name == "nt":
+            _windows_secure_path(path, directory=True)
+            created_identity = _windows_identity(path)
+        else:
+            raise ManagedTempError(f"未対応platform: {os.name}")
+        assert path is not None
+        marker_path = path / _MARKER_NAME
         registry_path = _registry_path(path)
         nonce = secrets.token_hex(32)
         record = _record(
@@ -814,31 +996,46 @@ def create_managed_temp(prefix: str) -> pathlib.Path:
             nonce,
             prefix=prefix,
             created_at=datetime.datetime.now(datetime.UTC).isoformat(),
+            identity=created_identity,
         )
-        _write_marker(path, record)
+        _validate_root(root_path, explicit=explicit_root, expected=validated_root)
+        _write_marker(path, record, directory_descriptor=target_descriptor)
+        _validate_root(root_path, explicit=explicit_root, expected=validated_root)
         _write_private_json(registry_path, record)
+        _validate_root(root_path, explicit=explicit_root, expected=validated_root)
         validate_managed_temp(path)
         return path
     except (ManagedTempError, OSError) as error:
         if registry_path is not None:
             with contextlib.suppress(OSError):
                 registry_path.unlink()
-        with contextlib.suppress(OSError):
-            marker_path.unlink()
-        with contextlib.suppress(OSError):
-            path.rmdir()
+        if marker_path is not None and target_descriptor is None:
+            with contextlib.suppress(OSError):
+                marker_path.unlink()
+        if path is not None:
+            _remove_created_target(
+                path,
+                root_descriptor=root_descriptor,
+                target_descriptor=target_descriptor,
+                created_identity=created_identity,
+            )
         if isinstance(error, ManagedTempError):
             raise
         raise ManagedTempError(f"管理情報を作成できない: {error}") from error
+    finally:
+        if target_descriptor is not None:
+            with contextlib.suppress(OSError):
+                os.close(target_descriptor)
+        if root_descriptor is not None:
+            with contextlib.suppress(OSError):
+                os.close(root_descriptor)
 
 
 def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     if not path_arg.is_absolute():
         raise ManagedTempError(f"pathは絶対パスで指定する: {path_arg}")
-    root = _temp_root()
     path = pathlib.Path(os.path.abspath(path_arg))
-    if path.parent != root:
-        raise ManagedTempError(f"管理対象は一時ディレクトリ直下に限る: {path}")
+    root = path.parent
     return root, path
 
 
@@ -873,33 +1070,74 @@ def _load_marker(directory_descriptor: int, path: pathlib.Path) -> dict[str, typ
 def _validate_posix(path_arg: pathlib.Path | str) -> _ValidatedTemp:
     if os.name != "posix":
         raise ManagedTempError("Windowsの所有者・ACL検証はWindows実機で確定する必要がある")
-    _, path = _validate_path_shape(pathlib.Path(path_arg))
-    descriptor: int | None = None
+    root, path = _validate_path_shape(pathlib.Path(path_arg))
+    root_state = _validate_root(root)
+    root_descriptor: int | None = None
+    target_descriptor: int | None = None
     try:
-        before = path.lstat()
+        root_descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        opened_root = os.fstat(root_descriptor)
+        opened_root_state = _ValidatedRoot(
+            opened_root.st_dev,
+            opened_root.st_ino,
+            opened_root.st_uid,
+            stat.S_IMODE(opened_root.st_mode),
+        )
+        if opened_root_state != root_state:
+            raise ManagedTempError(f"管理対象rootが検証中に置換または変更された: {root}")
+        before = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
         if not stat.S_ISDIR(before.st_mode):
             raise ManagedTempError(f"管理対象が通常ディレクトリではない: {path}")
         if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o700:
-            raise ManagedTempError(f"管理対象の所有者または権限が不正: {path}")
-        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        opened = os.fstat(descriptor)
+            raise ManagedTempError(f"管理対象の所有者・権限またはroot直下の条件が不正: {path}")
+        target_descriptor = os.open(
+            path.name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=root_descriptor,
+        )
+        opened = os.fstat(target_descriptor)
         if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
             raise ManagedTempError(f"管理対象が検証中に置換された: {path}")
-        marker = _load_marker(descriptor, path)
+        marker = _load_marker(target_descriptor, path)
+        after_root = os.fstat(root_descriptor)
+        after_root_state = _ValidatedRoot(
+            after_root.st_dev,
+            after_root.st_ino,
+            after_root.st_uid,
+            stat.S_IMODE(after_root.st_mode),
+        )
+        if after_root_state != root_state:
+            raise ManagedTempError(f"管理対象rootが検証中に置換または変更された: {root}")
+        if (opened.st_dev, opened.st_ino) != _path_identity(path):
+            raise ManagedTempError(f"管理対象が検証中に置換された: {path}")
     except OSError as error:
         raise ManagedTempError(f"管理対象を検証できない: {path}: {error}") from error
     finally:
-        if descriptor is not None:
-            os.close(descriptor)
+        if target_descriptor is not None:
+            os.close(target_descriptor)
+        if root_descriptor is not None:
+            os.close(root_descriptor)
     registry_path = _registry_path(path)
     registry = _load_private_json(registry_path)
-    if not _records_match(path, marker, registry):
+    if not _records_match(path, marker, registry, identity=(opened.st_dev, opened.st_ino)):
         raise ManagedTempError(f"管理情報の内容が一致しない: {path / _MARKER_NAME}")
-    return _ValidatedTemp(path, opened.st_dev, opened.st_ino, typing.cast(str, registry["nonce"]), registry_path)
+    _validate_root(root, expected=root_state)
+    return _ValidatedTemp(
+        path,
+        opened.st_dev,
+        opened.st_ino,
+        typing.cast(str, registry["nonce"]),
+        registry_path,
+        root_state.device,
+        root_state.inode,
+        root_state.owner,
+        root_state.mode,
+    )
 
 
 def _validate_windows(path_arg: pathlib.Path | str) -> _ValidatedTemp:
-    _, path = _validate_path_shape(pathlib.Path(path_arg))
+    root, path = _validate_path_shape(pathlib.Path(path_arg))
+    root_state = _validate_root(root)
     try:
         metadata = path.lstat()
     except OSError as error:
@@ -911,11 +1149,23 @@ def _validate_windows(path_arg: pathlib.Path | str) -> _ValidatedTemp:
     marker = _load_private_json(path / _MARKER_NAME)
     registry_path = _registry_path(path)
     registry = _load_private_json(registry_path)
-    if not _records_match(path, marker, registry):
+    if not _records_match(path, marker, registry, identity=identity):
         raise ManagedTempError(f"管理情報の内容が一致しない: {path / _MARKER_NAME}")
+    _validate_root(root, expected=root_state)
     if _windows_identity(path) != identity:
         raise ManagedTempError(f"管理対象が検証中に置換された: {path}")
-    return _ValidatedTemp(path, identity[0], identity[1], typing.cast(str, registry["nonce"]), registry_path)
+    return _ValidatedTemp(
+        path,
+        identity[0],
+        identity[1],
+        typing.cast(str, registry["nonce"]),
+        registry_path,
+        root_state.device,
+        root_state.inode,
+        root_state.owner,
+        root_state.mode,
+        root_state.security,
+    )
 
 
 def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
@@ -930,7 +1180,7 @@ def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
 def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
     """登録だけが残り実体を失った管理対象であるかを判定する。
 
-    真を返す条件は、一時領域直下の絶対パスであること、当該pathを記録した登録ファイルが
+    真を返す条件は、登録されたroot直下の絶対パスであること、当該pathを記録した登録ファイルが
     存在すること、実体が存在しないことの3つをすべて満たす場合とする。
     実体を失った領域には当該領域を使用中の主体が存在しないため、この条件に限り
     真正性検証（所有者・権限・マーカー）を経ずに登録の消滅として扱う。
@@ -941,7 +1191,14 @@ def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
         registry = _load_private_json(_registry_path(path))
     except (OSError, ValueError, ManagedTempError):
         return False
-    return registry.get("path") == str(path) and not os.path.lexists(path)
+    if registry.get("path") != str(path) or os.path.lexists(path):
+        return False
+    if path.parent.exists():
+        try:
+            _validate_root(path.parent)
+        except (OSError, ValueError, ManagedTempError):
+            return False
+    return True
 
 
 def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
@@ -966,6 +1223,8 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
             if not os.path.lexists(path):
+                if path.parent.exists():
+                    _validate_root(path.parent)
                 registry_path.unlink(missing_ok=True)
                 continue
             validate_managed_temp(path)
@@ -1005,6 +1264,22 @@ def _clear_directory(descriptor: int) -> None:
             os.close(child_descriptor)
 
 
+def _restore_posix_quarantine(
+    root_descriptor: int,
+    quarantine: pathlib.Path,
+    target_name: str,
+    expected_identity: tuple[int, int],
+) -> None:
+    """失敗時に、保持したroot descriptorから隔離対象を元の名前へ戻す。"""
+    quarantine_metadata = os.stat(quarantine.name, dir_fd=root_descriptor, follow_symlinks=False)
+    if (quarantine_metadata.st_dev, quarantine_metadata.st_ino) != expected_identity:
+        return
+    try:
+        os.stat(target_name, dir_fd=root_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        os.rename(quarantine.name, target_name, src_dir_fd=root_descriptor, dst_dir_fd=root_descriptor)
+
+
 def _tree_snapshot(root: pathlib.Path) -> dict[str, tuple[str, int, int]]:
     """cleanup開始前のtree identityを取得し、reparse pointを拒否する。"""
     snapshot: dict[str, tuple[str, int, int]] = {}
@@ -1032,7 +1307,7 @@ def _consume_registry(validated: _ValidatedTemp) -> pathlib.Path:
     except OSError as error:
         raise ManagedTempError(f"外部状態を原子的に消費できない: {validated.registry_path}: {error}") from error
     consumed = _load_private_json(consuming)
-    if not _records_match(validated.path, consumed, consumed):
+    if not _records_match(validated.path, consumed, consumed, identity=(validated.device, validated.inode)):
         with contextlib.suppress(OSError):
             _restore_registry(consuming, validated.registry_path)
         raise ManagedTempError(f"外部状態が消費時に置換された: {validated.registry_path}")
@@ -1050,10 +1325,35 @@ def _cleanup_posix(
     quarantine: pathlib.Path,
     expected_tree: dict[str, tuple[str, int, int]],
 ) -> None:
+    expected_root = _ValidatedRoot(
+        validated.root_device,
+        validated.root_inode,
+        validated.root_owner,
+        validated.root_mode,
+        validated.root_security,
+    )
     root_descriptor: int | None = None
     target_descriptor: int | None = None
     try:
         root_descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        _validate_root(root, expected=expected_root)
+        opened_root = os.fstat(root_descriptor)
+        if (
+            _ValidatedRoot(
+                opened_root.st_dev,
+                opened_root.st_ino,
+                opened_root.st_uid,
+                stat.S_IMODE(opened_root.st_mode),
+            )
+            != expected_root
+        ):
+            raise ManagedTempError(f"管理対象rootが隔離時に置換または変更された: {root}")
+        current = os.stat(validated.path.name, dir_fd=root_descriptor, follow_symlinks=False)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
+            validated.device,
+            validated.inode,
+        ):
+            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
         os.rename(validated.path.name, quarantine.name, src_dir_fd=root_descriptor, dst_dir_fd=root_descriptor)
         current = os.stat(quarantine.name, dir_fd=root_descriptor, follow_symlinks=False)
         if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (
@@ -1071,9 +1371,21 @@ def _cleanup_posix(
             raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
         if _tree_snapshot(quarantine) != expected_tree:
             raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
+        _validate_root(root, expected=expected_root)
         _clear_directory(target_descriptor)
+        _validate_root(root, expected=expected_root)
         os.rmdir(quarantine.name, dir_fd=root_descriptor)
-    except OSError as error:
+    except (ManagedTempError, OSError) as error:
+        if root_descriptor is not None:
+            with contextlib.suppress(OSError):
+                _restore_posix_quarantine(
+                    root_descriptor,
+                    quarantine,
+                    validated.path.name,
+                    (validated.device, validated.inode),
+                )
+        if isinstance(error, ManagedTempError):
+            raise
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
     finally:
         if target_descriptor is not None:
@@ -1083,16 +1395,27 @@ def _cleanup_posix(
 
 
 def _cleanup_windows(
+    root: pathlib.Path,
     validated: _ValidatedTemp,
     quarantine: pathlib.Path,
     expected_tree: dict[str, tuple[str, int, int]],
 ) -> None:
+    expected_root = _ValidatedRoot(
+        validated.root_device,
+        validated.root_inode,
+        validated.root_owner,
+        validated.root_mode,
+        validated.root_security,
+    )
     try:
+        _validate_root(root, expected=expected_root)
         os.replace(validated.path, quarantine)
+        _validate_root(root, expected=expected_root)
         if _windows_identity(quarantine) != (validated.device, validated.inode):
             raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
         if _tree_snapshot(quarantine) != expected_tree:
             raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
+        _validate_root(root, expected=expected_root)
         shutil.rmtree(quarantine)
     except OSError as error:
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
@@ -1128,7 +1451,7 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
                 raise ManagedTempError("symlink attack耐性を持つ後始末手段を利用できない")
             _cleanup_posix(root, validated, quarantine, before)
         elif os.name == "nt":
-            _cleanup_windows(validated, quarantine, before)
+            _cleanup_windows(root, validated, quarantine, before)
         else:
             raise ManagedTempError(f"未対応platform: {os.name}")
         consuming.unlink()
@@ -1156,6 +1479,7 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     subparsers = parser.add_subparsers(dest=command_dest, required=True)
     create_parser = subparsers.add_parser("create", help="管理対象一時ディレクトリを作成する")
     create_parser.add_argument("--prefix", required=True)
+    create_parser.add_argument("--root", type=pathlib.Path)
     cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
     cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
     list_parser = subparsers.add_parser("list", help="管理対象一時ディレクトリを列挙する")
@@ -1166,7 +1490,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
     """解析済み引数に対応する操作を実行し、終了状態を返す。"""
     try:
         if getattr(args, command_dest) == "create":
-            print(create_managed_temp(args.prefix))
+            print(create_managed_temp(args.prefix, getattr(args, "root", None)))
         elif getattr(args, command_dest) == "cleanup":
             cleanup_managed_temp(args.path)
         else:

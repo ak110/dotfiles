@@ -381,6 +381,9 @@ sourceを指定しない場合は本文、`target_repo`と非予約frontmatter�
   採用しない
 - Windows（CP932・PowerShell・パス区切り）での動作を常に考慮し、subprocess境界はUTF-8を明示する
   （事故対策。復号失敗・文字化けの反復観測に由来。incidents.md参照）
+- managed-tempの登録済み領域は登録簿の`path`の親を検証・列挙・回収のroot境界とし、現在の一時rootが変わっても同じ絶対pathを扱う。
+  実装worktreeをDockerやVMなど別namespaceへ渡す場合だけ、全消費主体から到達できる既存共有ディレクトリを読み取り専用で確認して`create --root <絶対パス>`を使う。
+  同一namespaceの実装worktreeと実装レビュー用managed-temp、MQ、レビュー表、CI、publishの補助領域は既定rootを維持し、Dockerの可視性を推測しない
 - 同一リポジトリのworktreeへ`.env`等のGit管理外の実行前提ファイルを複製する操作は、
   認証情報複製禁止の対象外とする（2026年8月、利用者指示。worktree運用の成立を優先する）。
   複製元に`.worktreeinclude`が存在しworktree作成前である場合に限り、worktree作成時の自動複製を活用する
