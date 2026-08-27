@@ -3340,6 +3340,13 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
         "単独で完了判定に用いず",
     ):
         assert phrase in runtime
+    for phrase in (
+        "存在しないファイルは`state=absent lines=NA age=NA`となり終了コードが0",
+        "既存ファイルの読取又は`stat`に失敗した場合は\n  `lines=ERR age=ERR`となり終了コードが1",
+        "不在又はGit照会不能の作業ツリーは`dirty=ERR head=ERR`となり終了コードが1",
+        "複数対象では異常結果が1件でもあれば終了コードが1、不在だけなら終了コードが0",
+    ):
+        assert phrase in runtime
     for forbidden in (
         "孫の完了通知は最上位セッションへ配送",
         "最上位主体は完了報告を逐語で",
