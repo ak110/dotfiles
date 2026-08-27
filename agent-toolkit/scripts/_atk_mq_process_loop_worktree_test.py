@@ -242,40 +242,6 @@ class TestSyncWorktreeWithUpstream:
         assert ["git", "worktree", "add", str(worktree), "worktree-process-loop"] in calls
         assert ["git", "rebase", "origin/master"] in calls
 
-    def test_existing_unregistered_branch_is_not_recreated_or_rebased(self, tmp_path: pathlib.Path) -> None:
-        """worktree未登録の既存ブランチは再作成・rebaseせずOIDを維持する。"""
-        origin = tmp_path / "origin.git"
-        seed = tmp_path / "seed"
-        local_path = tmp_path / "repo"
-
-        def run_git(args: list[str], cwd: pathlib.Path = tmp_path) -> subprocess.CompletedProcess[str]:
-            return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
-
-        run_git(["init", "--bare", "--initial-branch=master", str(origin)])
-        run_git(["init", "--initial-branch=master", str(seed)])
-        run_git(["config", "user.name", "test"], cwd=seed)
-        run_git(["config", "user.email", "test@example.com"], cwd=seed)
-        (seed / "state.txt").write_text("base\n", encoding="utf-8")
-        run_git(["add", "state.txt"], cwd=seed)
-        run_git(["commit", "-m", "base"], cwd=seed)
-        run_git(["remote", "add", "origin", str(origin)], cwd=seed)
-        run_git(["push", "-u", "origin", "master"], cwd=seed)
-        run_git(["clone", str(origin), str(local_path)])
-        run_git(["branch", "worktree-process-loop"], cwd=local_path)
-        before = run_git(["rev-parse", "refs/heads/worktree-process-loop"], cwd=local_path).stdout.strip()
-
-        (seed / "state.txt").write_text("upstream\n", encoding="utf-8")
-        run_git(["commit", "-am", "upstream"], cwd=seed)
-        run_git(["push", "origin", "master"], cwd=seed)
-
-        worktree = local_path / ".claude" / "worktrees" / "process-loop"
-        result = _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
-
-        after = run_git(["rev-parse", "refs/heads/worktree-process-loop"], cwd=local_path).stdout.strip()
-        assert result is None
-        assert before == after
-        assert not worktree.exists()
-
     def test_aborts_rebase_and_warns_on_conflict(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:

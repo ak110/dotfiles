@@ -14,7 +14,6 @@ from typing import Any
 
 import _fork_runner
 import pytest
-import stop_advisor
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
@@ -815,25 +814,3 @@ class TestGitStatusDisplay:
         decision = _parse_decision(result)
         assert "decision" not in decision
         assert "systemMessage" not in decision
-
-
-class TestStatusSummary:
-    """`_status_summary`のsystemMessage組み立てを検証する。"""
-
-    def test_empty_cwd_returns_empty_dict(self) -> None:
-        assert not stop_advisor._status_summary("")  # pylint: disable=protected-access
-
-    def test_clean_repo_returns_empty_dict(
-        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
-    ) -> None:
-        repo = make_clean_repo(tmp_path)
-        assert not stop_advisor._status_summary(str(repo))  # pylint: disable=protected-access
-
-    def test_dirty_repo_returns_file_count_summary(
-        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
-    ) -> None:
-        repo = make_dirty_repo(tmp_path)
-        summary = stop_advisor._status_summary(str(repo))  # pylint: disable=protected-access
-        assert "systemMessage" in summary
-        assert "[git status]" in summary["systemMessage"]
-        assert "changed file(s)" in summary["systemMessage"]

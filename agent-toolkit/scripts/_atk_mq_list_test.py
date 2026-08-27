@@ -943,18 +943,6 @@ class TestListStatusFilter:
 
         assert exc_info.value.code == 2
 
-    @pytest.mark.parametrize("status", ["active", "rejected"])
-    def test_active_and_rejected_are_accepted_choices(self, status: str) -> None:
-        """--status=active・--status=rejectedがargparseのchoicesとして受理されること。
-
-        機能的な出力検証（フィードバック側の状態別除外・`tbd`側の回答状況連動）は
-        `_atk_mq_extras_test.py`のTestListFeedbackStatusActive・
-        TestListFeedbackStatusRejectedへ集約する。
-        """
-        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "list", f"--status={status}"])
-        assert args.status == status
-
 
 class TestListCount:
     """listサブコマンド: --count指定時は種別ヘッダ・エントリ行を抑制し件数のみ出力する。"""
