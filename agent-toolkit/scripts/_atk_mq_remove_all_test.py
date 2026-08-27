@@ -158,6 +158,28 @@ class TestRemoveAllConfirmation:
         assert not (notes / "inbox/question.md").exists()
         assert commits == [("chore: remove 2 entries", ["inbox", "processing", "planning", "adopted", "rejected"])]
 
+    def test_restores_missing_state_directories_before_commit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """任意状態ディレクトリが不在でも全状態をgit addできる状態へ戻す。"""
+        notes = _setup_notes(tmp_path)
+        (notes / "planning").rmdir()
+        _write_feedback_file(notes, "feedback.md")
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits)
+
+        assert (
+            _run_main(
+                ["mq", "rm", "--all", "--target-repo", "github.com/example/foo", "--yes"],
+                tmp_path,
+            )
+            == 0
+        )
+
+        assert all((notes / state).is_dir() for state in commits[0][1])
+
     @pytest.mark.parametrize("answer", ["n\n", "\n", "later\n"])
     def test_non_approval_keeps_all_candidates(
         self,

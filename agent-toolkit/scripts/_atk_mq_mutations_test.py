@@ -95,6 +95,33 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     assert (notes / "processing/entry.md").is_file()
 
 
+def test_transition_restores_missing_state_directories_before_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """任意状態ディレクトリが不在でも全状態をgit addできる状態へ戻す。"""
+    notes = _setup_notes(tmp_path)
+    (notes / "planning").rmdir()
+    _write_feedback_file(notes, "entry.md")
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+
+    def assert_state_paths_exist(_notes: pathlib.Path, _message: str, paths: list[str], **_kwargs: object) -> None:
+        assert all((_notes / path).is_dir() for path in paths)
+
+    monkeypatch.setattr(mutations, "_commit_and_push", assert_state_paths_exist)
+
+    mutations.transition_entries(
+        notes,
+        action="start-processing",
+        filenames=["entry.md"],
+        now=_FIXED_DT,
+    )
+
+    assert (notes / "processing/entry.md").is_file()
+
+
 class TestCommitResolution:
     """採否結果へ記録するrevisionの解決境界を検証する。"""
 

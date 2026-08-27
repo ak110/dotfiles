@@ -486,6 +486,8 @@ def transition_entries(
             commit_values=commit_values,
             cooldown_days=cooldown_days,
         )
+        for state_name in MQ_STATES:
+            _subdir(private_notes, state_name)
         _commit_and_push(
             private_notes,
             _transition_commit_message(action, len(paths), note),
