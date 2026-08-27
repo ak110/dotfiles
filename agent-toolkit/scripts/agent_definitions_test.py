@@ -1,5 +1,7 @@
 """エージェント定義の委譲権限契約を検査する。"""
 
+import difflib
+import json
 import os
 import pathlib
 import re
@@ -73,6 +75,69 @@ _MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "agent-toolkit" / "share" / "codex-agents-base.md"
 _CODEX_AGENTS_ADAPTER = _REPOSITORY_ROOT / ".chezmoi-source" / "dot_codex" / "AGENTS.md"
+_REFERENCE_MIGRATION_BASE = "650e679d854c97e0395e1d26efa4ffa7c6939857"
+_REFERENCE_MIGRATION_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_./-])(?:\.\.?/)*(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+[.]md")
+_REFERENCE_MIGRATION_OWNER_TARGETS = {
+    "add-feedback": {
+        "agent-toolkit/skills/add-feedback/references/cross-repository-submission.md",
+        "agent-toolkit/skills/add-feedback/references/managed-temp-bulk-show.md",
+    },
+    "agent-standards": {
+        "agent-toolkit/skills/agent-standards/references/agent-skills.md",
+        "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
+        "agent-toolkit/skills/agent-standards/references/hook-message-labeling.md",
+        "agent-toolkit/skills/agent-standards/references/session-state-flags.md",
+    },
+    "agent-toolkit-edit": {
+        ".claude/skills/agent-toolkit-edit/references/version-bump.md",
+    },
+    "bugfix": {
+        "agent-toolkit/skills/bugfix/references/ci-failure-handling.md",
+        "agent-toolkit/skills/bugfix/references/root-cause-analysis.md",
+    },
+    "coding-standards": {
+        "agent-toolkit/skills/coding-standards/references/design-heuristics.md",
+        "agent-toolkit/skills/coding-standards/references/rust.md",
+        "agent-toolkit/skills/coding-standards/references/testing.md",
+    },
+    "commit": {
+        "agent-toolkit/skills/commit/references/history-rewrite.md",
+        "agent-toolkit/skills/commit/references/push-and-ci.md",
+    },
+    "delegation": {
+        "agent-toolkit/skills/delegation/references/claude-code-runtime.md",
+        "agent-toolkit/skills/delegation/references/runtime-routing.md",
+        "agent-toolkit/skills/delegation/references/waiting-and-monitoring.md",
+    },
+    "plan-mode": {
+        "agent-toolkit/skills/plan-mode/references/implementation-independent-review-task.md",
+        "agent-toolkit/skills/plan-mode/references/implementation-plan-review-task.md",
+        "agent-toolkit/skills/plan-mode/references/implementation-task.md",
+        "agent-toolkit/skills/plan-mode/references/plan-file-standards.md",
+        "agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md",
+        "agent-toolkit/skills/plan-mode/references/plan-review-task.md",
+        "agent-toolkit/skills/plan-mode/references/review-loop-coordination.md",
+    },
+    "process-feedbacks": {
+        "agent-toolkit/skills/process-feedbacks/references/decision-format.md",
+        "agent-toolkit/skills/process-feedbacks/references/hold-with-tbd-inject.md",
+        "agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md",
+        "agent-toolkit/skills/process-feedbacks/references/review-checklists.md",
+    },
+    "review-standards": {
+        "agent-toolkit/skills/review-standards/references/judgment-details.md",
+    },
+    "session-review": {
+        "agent-toolkit/skills/session-review/references/generation-criteria-detail.md",
+    },
+    "writing-standards": {
+        "agent-toolkit/skills/writing-standards/references/lint-relax-criteria.md",
+        "agent-toolkit/skills/writing-standards/references/notation-rules.md",
+        "agent-toolkit/skills/writing-standards/references/textlint-violations.md",
+        "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+        "agent-toolkit/skills/writing-standards/references/tone-examples.md",
+    },
+}
 _SECTION_REFERENCE_SOURCE_ROOTS = (
     _DISTRIBUTION_ROOT,
     _REPOSITORY_ROOT / ".claude" / "skills",
@@ -85,6 +150,154 @@ for _markdown in _DISTRIBUTION_ROOT.rglob("*.md"):
 _SKILL_MARKDOWN = {
     _skill.name: _skill / "SKILL.md" for _skill in (_DISTRIBUTION_ROOT / "skills").iterdir() if (_skill / "SKILL.md").is_file()
 }
+_REFERENCE_MIGRATION_FIXTURE = _DISTRIBUTION_ROOT / "scripts" / "reference_migration_baseline.json"
+
+
+def _reference_migration_sources() -> list[pathlib.Path]:
+    """参照移行検査の対象となる全references文書を返す。"""
+    return sorted(
+        set(_REPOSITORY_ROOT.glob("agent-toolkit/skills/*/references/*.md"))
+        | set(_REPOSITORY_ROOT.glob(".claude/skills/*/references/*.md"))
+    )
+
+
+def _reference_migration_edges() -> set[tuple[str, str, str]]:
+    """現行文書に残るreferences間の実在参照辺を解決して返す。"""
+    root = _REPOSITORY_ROOT.resolve()
+    sources = _reference_migration_sources()
+    by_name: dict[str, list[pathlib.Path]] = {}
+    for source in sources:
+        by_name.setdefault(source.name, []).append(source.resolve())
+
+    edges: set[tuple[str, str, str]] = set()
+    for source in sources:
+        source_resolved = source.resolve()
+        for reference in _REFERENCE_MIGRATION_TOKEN_RE.findall(source.read_text(encoding="utf-8")):
+            candidates = [
+                source.parent / reference,
+                source.parent.parent / reference,
+                root / "agent-toolkit" / reference,
+                root / reference,
+            ]
+            candidates.extend(by_name.get(pathlib.Path(reference).name, []))
+            target = next(
+                (
+                    candidate.resolve()
+                    for candidate in candidates
+                    if candidate.is_file()
+                    and candidate.resolve().parent.name == "references"
+                    and candidate.resolve() != source_resolved
+                ),
+                None,
+            )
+            if target is not None:
+                edges.add(
+                    (
+                        str(source_resolved.relative_to(root)),
+                        reference,
+                        str(target.relative_to(root)),
+                    )
+                )
+    return edges
+
+
+def _normalise_reference_paragraph(text: str) -> str:
+    """参照表記を除いて段落比較用の空白を正規化する。"""
+    return " ".join(_REFERENCE_MIGRATION_TOKEN_RE.sub(" ", text).split())
+
+
+def _owner_skill_path(owner: str) -> pathlib.Path:
+    """参照先を読む所属SKILL.mdのパスを返す。"""
+    if owner == "agent-toolkit-edit":
+        return _REPOSITORY_ROOT / ".claude" / "skills" / owner / "SKILL.md"
+    return _DISTRIBUTION_ROOT / "skills" / owner / "SKILL.md"
+
+
+def _has_owner_read_condition(skill_text: str, target: str) -> bool:
+    """対象path・工程条件・全文読込みを同じ箇条書き項目または段落で検査する。"""
+    target_path = pathlib.PurePosixPath(target)
+    skills_index = target_path.parts.index("skills")
+    skill_name = target_path.parts[skills_index + 1]
+    aliases = (target, f"{skill_name}/references/{target_path.name}")
+    units: list[str] = []
+    for block in re.split(r"\n\s*\n", skill_text):
+        paragraph: list[str] = []
+        bullet: list[str] | None = None
+        for line in block.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if re.match(r"^[-*+]\s+", stripped):
+                if bullet is not None:
+                    units.append(" ".join(bullet))
+                elif paragraph:
+                    units.append(" ".join(paragraph))
+                    paragraph = []
+                bullet = [stripped]
+            elif bullet is not None:
+                bullet.append(stripped)
+            else:
+                paragraph.append(stripped)
+        if bullet is not None:
+            units.append(" ".join(bullet))
+        if paragraph:
+            units.append(" ".join(paragraph))
+
+    for unit in units:
+        if not any(alias in unit for alias in aliases) or "全文読む" not in unit:
+            continue
+        without_paths = re.sub(r"`[^`]*`", "", unit)
+        if re.search(r"(?:とき|時|場合|工程|前|直前|入口)", without_paths):
+            return True
+    return False
+
+
+def _assert_reference_migration_inventory(
+    edges: list[dict[str, str]],
+    source_paths: list[str],
+    referrer_paths: list[str],
+    target_paths: list[str],
+    source_count: int,
+    edge_count: int,
+) -> None:
+    """参照移行fixtureの辺数と参照元・参照先集合を検査する。"""
+    assert len(edges) == edge_count
+    edge_keys = {(edge["source"], edge["ref"], edge["target"]) for edge in edges}
+    assert len(edge_keys) == edge_count
+    assert len(source_paths) == source_count
+    assert len(set(source_paths)) == source_count
+    assert len(referrer_paths) == len(set(referrer_paths))
+    assert len(target_paths) == len(set(target_paths))
+    assert set(referrer_paths) == {edge["source"] for edge in edges}
+    assert set(target_paths) == {edge["target"] for edge in edges}
+    assert all(edge["source"] in referrer_paths and edge["target"] in target_paths for edge in edges)
+    assert set(referrer_paths) <= set(source_paths)
+
+
+def _reference_migration_handoff_exists(source_text: str, target: str) -> bool:
+    """移行後の参照元に契約名または所属SKILLへの引渡し文が残ることを検査する。"""
+    target_path = pathlib.PurePosixPath(target)
+    skills_index = target_path.parts.index("skills")
+    skill_name = target_path.parts[skills_index + 1]
+    if target.startswith(".claude/"):
+        return any(
+            marker in source_text
+            for marker in (
+                target,
+                f"`{skill_name}`",
+                f"`agent-toolkit:{skill_name}`",
+                f"{skill_name}の版数更新詳細契約",
+            )
+        )
+    return any(
+        marker in source_text
+        for marker in (
+            target,
+            f"`agent-toolkit:{skill_name}`",
+            f"`{skill_name}/SKILL.md`",
+            f"{skill_name}の実装担当契約",
+        )
+    )
 
 
 def _run_history_git(
@@ -663,7 +876,12 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
         _PLAN_IMPL_FEEDBACK_FLOW,
     )
     for path in coordination_referrers:
-        assert "review-loop-coordination.md" in path.read_text(encoding="utf-8"), path
+        text = path.read_text(encoding="utf-8")
+        if path in (_PLAN_REVIEW_DELEGATION, _PLAN_IMPL_FEEDBACK_FLOW):
+            assert "agent-toolkit:plan-mode" in text
+            assert "レビュー継続契約" in text
+        else:
+            assert "review-loop-coordination.md" in text, path
 
     table = _REVIEW_TABLE.read_text(encoding="utf-8")
     assert '"round",\n    "track",' in table
@@ -706,7 +924,7 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
 
     implementation_executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     implementation_mode = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
-    assert "初回実装担当routeと今回routeの遷移は`skills/delegation/references/runtime-routing.md`" in implementation_mode
+    assert "初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。" in implementation_mode
     assert "| Codex | Codex |" not in implementation_executor
     assert "| Claude | Claude |" not in implementation_executor
     assert "atk review-table add --round <ラウンド> --track <track>" in reviewer
@@ -836,7 +1054,7 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     (
         "バグ単位のH3ごとに`項目`と`内容`の2列表を置き、`agent-toolkit:bugfix`の固定14行を記載する。",
         "バグ調査ファイルには、計画主題に対応するH1と、バグ単位のH3ごとの`項目`・`内容`の2列表を置く。\n"
-        "`../../bugfix/references/root-cause-analysis.md`の固定14行を記載し、行名、順序、統合分割規則及び恒久化・類似見直しの参照契約を維持する。",
+        "各表は`agent-toolkit:bugfix`の根本原因分析契約にある固定14行を記載し、行名、順序、統合分割規則及び恒久化・類似見直しの参照契約を維持する。",
     ),
     (
         "（`agent-toolkit:writing-standards`「ユーザー入力素材の取扱い」と同じ扱い）",
@@ -1041,8 +1259,8 @@ def test_plan_file_standards_own_plan_contracts_alone() -> None:
         for line in residual_lines:
             assert line not in plan_mode, f"{head}: {line}"
     assert "references/plan-file-standards.md" in plan_mode
-    assert "plan-file-standards.md" in review_task
-    assert "plan-file-standards.md" in delegation
+    assert "`agent-toolkit:plan-mode`の計画ファイル基準" in review_task
+    assert "`agent-toolkit:plan-mode`の計画ファイル基準" in delegation
     for removed, migrated in _PLAN_REVIEW_MIRROR_REMOVALS:
         assert removed not in review_task, removed
         assert migrated in standards, migrated
@@ -1143,7 +1361,7 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "計画レビュー担当" in delegation
     assert "計画自己監査" in delegation
     assert "自己監査は品質形成" in delegation
-    assert "plan-review-task.md" in delegation
+    assert "`agent-toolkit:plan-mode`の計画レビュー担当契約" in delegation
     assert "計画とリポジトリを修正しない" in task
     assert "総ライフサイクルコスト" in task
     # 再設計へ切り替える判定は、目的・公開契約・重大欠陥へ影響する違反契約又は変更機構に限定する。
@@ -1204,7 +1422,7 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
     assert "validate --allow-unanswered <レビュー表>" in independent
     assert "show --track independent <レビュー表>" in independent
     assert "review-loop-coordination.md" in _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    assert "review-loop-coordination.md" in _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    assert "`agent-toolkit:plan-mode`のレビュー継続契約" in _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
 
 
 def test_review_table_paths_use_one_file_and_track_attribution() -> None:
@@ -1801,8 +2019,9 @@ def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     batch_command = "atk mq show <filename>... --target-repo=<repo> --skip-pull"
     bulk_contract = _MANAGED_TEMP_BULK_SHOW.read_text(encoding="utf-8")
     assert batch_command in bulk_contract
-    for document in (sender, process, explore, standards, delegation):
-        assert "managed-temp-bulk-show.md" in document
+    for document in (sender, explore, standards, delegation):
+        assert "agent-toolkit:add-feedback" in document
+    assert "managed-temp-bulk-show.md" in process
     for phrase in (
         "atk managed-temp create --prefix mq-show",
         "mq-show.stdout",
@@ -1855,7 +2074,8 @@ def test_feedback_explore_task_has_complete_batch_read_fallbacks() -> None:
     explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
     bulk_contract = _MANAGED_TEMP_BULK_SHOW.read_text(encoding="utf-8")
 
-    assert "managed-temp-bulk-show.md" in explore
+    assert "agent-toolkit:add-feedback" in explore
+    assert "一括取得契約" in explore
 
     for phrase in (
         "managed-temp create --prefix mq-show",
@@ -2015,6 +2235,7 @@ def test_integrated_plan_overview_lists_post_exclusion_feedbacks() -> None:
     """通常型統合計画の記録範囲を事前除外後の計画対象集合へ限定する。"""
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
     overview = standards.index("`agent-toolkit:process-feedbacks`が複数の通常型フィードバック")
     metadata = standards.index("直下のH3は`### 計画メタ情報`だけとし", overview)
@@ -2033,6 +2254,7 @@ def test_integrated_plan_overview_lists_post_exclusion_feedbacks() -> None:
     ):
         assert phrase in standards
     assert "概要の説明直後かつ" not in review_task
+    assert "通常型フィードバックの計画統合規定を削除し" in incidents
 
 
 def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> None:
@@ -2061,7 +2283,10 @@ def test_feedback_decisions_preserve_item_evidence_and_user_confirmation() -> No
         "不採用確認用`user_decisions`は通常の将来判断TBDと区別する",
     ):
         assert phrase in decision_contract
-    for document in (sender, planner, process, hold):
+    for document in (sender, hold):
+        assert "agent-toolkit:process-feedbacks" in document
+        assert "エージェント由来" in document
+    for document in (planner, process):
         assert "`decision-format.md`" in document
         assert "エージェント由来" in document
     assert "エージェント由来の値集合" in decision
@@ -2122,7 +2347,7 @@ def test_feedback_transfer_requires_successful_registration_before_removal() -> 
     design = (_REPOSITORY_ROOT / "docs" / "development" / "design.md").read_text(encoding="utf-8")
 
     for document in (sender, decision, checklist, design):
-        assert "cross-repository-submission.md" in document
+        assert "agent-toolkit:add-feedback" in document
     for phrase in (
         "正しい`target_repo`",
         "移管先ファイル名",
@@ -2217,7 +2442,7 @@ def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None
         "失敗TBDを保存した後は、由来にかかわらず元のフィードバックへ失敗TBDを依存させて`blocked`を確認する",
         "元のフィードバックをrejectせず、失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元のフィードバックを再開する",
         "失敗処理から`atk mq reject`を呼び出さず",
-        "元項目がactiveな場合は、由来にかかわらず`hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し",
+        "元項目がactiveな場合は、由来にかかわらず`agent-toolkit:process-feedbacks`の技術的失敗契約に従ってTBD依存を設定し",
         "項目別結果をファイル名昇順で各1回反映",
         "atk mq show <filename> --target-repo=<repo>",
         "意図した保存後状態を確認できた場合は同じ結果を再実行せず",
@@ -2422,9 +2647,9 @@ def test_ci_repair_commits_are_delegated_by_caller() -> None:
         assert "外部基盤障害など修正commitを要しない失敗" in text
     assert "`execute_fix_model`" in routing
     assert "直接修正して再push" not in ci_failure
-    assert "`skills/plan-mode/references/implementation-task.md`" in caller
+    assert "`agent-toolkit:plan-mode`の実装担当契約" in caller
     assert "担当種別`CI修正担当`" in caller
-    assert "`skills/plan-mode/references/implementation-task.md`" in ci_failure
+    assert "`agent-toolkit:plan-mode`のCI修正担当契約" in ci_failure
     assert "担当種別`CI修正担当`" in ci_failure
 
 
@@ -2435,7 +2660,7 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
     task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
 
     required_inputs = (
-        "`skills/plan-mode/references/implementation-task.md`",
+        "`agent-toolkit:plan-mode`のCI修正担当契約",
         "担当種別`CI修正担当`",
         "実装単位、その目的及び変更説明",
         "適用する作成規範スキル名と絶対パス",
@@ -2448,7 +2673,7 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
             assert required_input in text
         assert "CI修正担当にはfast担当の1回修正とfastからfixへの昇格判定を適用しない" in text
         assert "CI記録の原因修正、全検証、差分検収、stage及びcommitを完了" in text
-    assert "ci-failure-handling.md" in caller
+    assert "`agent-toolkit:bugfix`のCI失敗分析契約" in caller
     assert "計画ファイルは計画起因の場合だけ" in ci_failure
     assert "フィードバックファイル名一覧はフィードバック起因の場合だけ" in ci_failure
     for text in (caller, ci_failure, task):
@@ -2485,7 +2710,7 @@ def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
     launch = _h2_section(_PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8"), "実装単位の実行")
 
     required_inputs = (
-        "`skills/plan-mode/references/implementation-task.md`",
+        "`agent-toolkit:plan-mode`の実装担当契約",
         "計画ファイル、対象worktree、プロジェクト規範の絶対パス",
         "実装するコミット単位、その目的と変更説明",
         "適用する作成規範スキル名と絶対パス",
@@ -2627,7 +2852,7 @@ def test_fast_fix_handoff_is_limited_to_same_failure_location() -> None:
     assert "基準OID、未コミット差分、失敗コマンド" in executor
     assert "同じworktreeへfix担当を1件だけ逐次起動する" in executor
     assert "同一threadを継続せず、新規threadとして" in executor
-    assert "implementation-task.md`の共通必須入力一式" in executor
+    assert "`agent-toolkit:plan-mode`の実装担当契約にある共通必須入力一式" in executor
     for required_input in (
         "ソート済みフィードバックファイル名一覧",
         "追加指示",
@@ -2684,7 +2909,7 @@ def test_implementation_task_type_is_explicit_at_each_launch_point() -> None:
     assert "担当種別は`fix担当`として明示" in executor
     assert executor.count("起動文へ担当種別を`レビュー修正担当`として明示") == 1
     assert "起動文へ担当種別を`差分限定レビュー修正担当`として明示" in executor
-    assert "ci-failure-handling.md" in caller
+    assert "`agent-toolkit:bugfix`のCI失敗分析契約" in caller
     assert "担当種別`CI修正担当`" in ci_failure
     assert "起動文へ担当種別を`CI修正担当`として明示" in ci_failure
 
@@ -2795,7 +3020,10 @@ def test_launch_points_reread_routing_before_launch_or_continuation() -> None:
         text = path.read_text(encoding="utf-8")
         for phrase in phrases:
             assert phrase in text, f"{path.relative_to(_REPOSITORY_ROOT)}: 起動直前のroute再取得"
-        assert "runtime-routing.md" in text
+        if path in (_PLAN_REVIEW_DELEGATION, _PLAN_IMPL_FEEDBACK_FLOW):
+            assert "agent-toolkit:delegation" in text
+        else:
+            assert "runtime-routing.md" in text
 
     implementation_mode = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
     assert "修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`" in implementation_mode
@@ -2809,7 +3037,7 @@ def test_review_repair_writer_route_transition_uses_runtime_ssot() -> None:
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
     normal_fix = _h2_section(_PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8"), "レビュー修正")
 
-    assert "初回実装担当routeと今回routeの遷移は`skills/delegation/references/runtime-routing.md`" in normal_fix
+    assert "初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。" in normal_fix
     for transition_row in ("| Codex | Codex |", "| Codex | Claude |", "| Claude | Codex |", "| Claude | Claude |"):
         assert transition_row not in normal_fix
     for document in (runtime, caller):
@@ -3016,13 +3244,13 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "レーンのworktreeがclean",
         "HEADの完全OIDをレビュー対象の最終HEADとして内部確定する",
         "同worktreeだけへ単一の修正用の実装担当",
-        "implementation-task.md",
+        "`agent-toolkit:plan-mode`の実装担当契約",
         "フィードバックファイル名",
         "複製元と対象外worktree",
         "レビュー対象の最終HEAD完全OID",
         "指摘IDと統合先commit完全OIDの対応表",
         "対応不能、複数単位へ不可分にまたがる修正",
-        "初回実装担当routeと今回routeの遷移は`skills/delegation/references/runtime-routing.md`",
+        "初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。",
     ):
         assert phrase in normal_fix
     assert "レビュー修正専用commitを残さない" in implementation_task
@@ -3035,7 +3263,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     assert "`atk config get execute_fix_model`" in integrated_fix
     assert "指摘が帰属する実装writer" not in executor
     assert "merge-task.md" not in normal_fix
-    assert "implementation-task.md" in integrated_fix
+    assert "`agent-toolkit:plan-mode`の実装担当契約" in integrated_fix
     assert "単位ごとの変更前OIDと変更後OID" in caller
     assert "commit数と順序" in caller
     assert "レビュー修正専用commitが残っていない" in caller
@@ -3046,7 +3274,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     # remote広告refの直積証跡・shallow判定・graftファイル検査は撤去済みであり、
     # `history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
     for document in (implementation_task, caller, executor + normal_fix):
-        assert "history-rewrite.md" in document
+        assert "`agent-toolkit:commit`の履歴書換え契約" in document
     assert "プッシュ済み判定" in history_rewrite
     for document in (implementation_task, caller, executor + normal_fix, history_rewrite, concepts, design):
         assert "GIT_NO_REPLACE_OBJECTS" not in document
@@ -3079,7 +3307,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     assert "ref_evidence" not in writer_guard
 
     for document in (implementation_task, caller):
-        assert "history-rewrite.md" in document
+        assert "`agent-toolkit:commit`の履歴書換え契約" in document
     assert "rev-list --first-parent --reverse" in history_rewrite
     assert "rev-list --first-parent --merges" in history_rewrite
     assert "merge commit" in history_rewrite
@@ -3280,7 +3508,7 @@ def test_history_rewrite_rejects_duplicate_subjects_before_fixup() -> None:
 
     subject_listing = "`git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`"
     uniqueness = "対象コミット件名が範囲内で一意でない場合"
-    assert "history-rewrite.md" in implementation_task
+    assert "`agent-toolkit:commit`の履歴書換え契約を全文読み" in implementation_task
     for document in (caller, history_rewrite):
         assert subject_listing in document
         assert "各fixup対象コミットの件名が範囲内で一意" in document
@@ -3293,7 +3521,7 @@ def test_history_rewrite_rejects_duplicate_subjects_before_fixup() -> None:
     for document in (concepts, design):
         assert "history-rewrite.md" in document
 
-    assert "history-rewrite.md" in executor
+    assert "`agent-toolkit:commit`の履歴書換え契約を正本とする" in executor
     preflight = _h2_section(history_rewrite, "fixupの実行上の制約")
     assert preflight.index("公開済み判定を完了") < preflight.index("対象コミット件名が範囲内で一意でない場合は")
     assert preflight.index("範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合")
@@ -3303,7 +3531,7 @@ def test_history_rewrite_blocks_control_subject_mismatch_before_autosquash() -> 
     """fixupの制御件名が対象件名と一致しない場合にautosquashを遮断する契約を検査する。"""
     history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
     for path in (_PLAN_IMPL_TASK, _PLAN_IMPL_CALLER, _PLAN_IMPL_EXECUTOR_IMPL_MODE):
-        assert "history-rewrite.md" in path.read_text(encoding="utf-8")
+        assert "`agent-toolkit:commit`の履歴書換え契約" in path.read_text(encoding="utf-8")
     assert "制御件名" in history_rewrite
     assert "`git log -1 --format=%s`" in history_rewrite
     assert "期待件名と一致しない場合はautosquashを実行せず" in history_rewrite
@@ -3365,7 +3593,7 @@ def test_plan_impl_worktree_schema_accepts_only_owned_or_borrowed_combinations()
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8") + _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
 
     assert "`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`" in flow
-    assert "完全な一覧の記録属性は`plan-impl-caller-reception.md`を正本" in flow
+    assert "完全な一覧の記録属性は`agent-toolkit:plan-mode`の実装受領契約を正本" in flow
     for contract in (caller, executor):
         assert "管理対象領域の絶対パス、借用時は`なし`" in contract
     assert "| 借用（受領済みの現在worktree） | `既存` | `不可` | `なし` |" in caller
@@ -3790,7 +4018,7 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
         "`atk watch`",
         "queued",
         "中継不能時",
-        "`claude-code-runtime.md`「### 完了通知と中継の実行順」",
+        "`agent-toolkit:delegation`の完了通知と中継の実行順を正本",
     ):
         assert phrase in waiting
     for phrase in (
@@ -3948,7 +4176,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert "tbd:" in output
     assert "通常の将来判断TBD候補" in output
     assert "user_decisions:" in output
-    assert "decision-format.mdが定める累積レコード" in output
+    assert "<採否記録契約が定める累積レコード>" in output
 
 
 def test_feedback_plan_target_scope_and_item_rows_are_synchronized() -> None:
@@ -4014,7 +4242,7 @@ def test_feedback_plan_target_scope_and_item_rows_are_synchronized() -> None:
     reception_check = _h2_section(reception, "受領")
     assert "完了報告の検収直後" in reception_check
     assert "`atk mq reject <filename> --note=<採否理由>`を実行" in reception_check
-    assert "`hold-with-tbd-inject.md`の保留経路を適用" in reception_check
+    assert "`agent-toolkit:process-feedbacks`の保留契約を適用" in reception_check
     for document in (concepts, design):
         assert "`feedbacks-planner`は判定結果をメインへ返" in document
         assert "実際のreject実行と保留処理はメインが担当" in document
@@ -4145,7 +4373,7 @@ def test_feedback_confirmation_context_accumulates_by_id_and_keeps_saved_tbd_dep
 
     output = _h2_section(_FEEDBACKS_PLANNER_IO.read_text(encoding="utf-8"), "出力")
     assert "user_decisions:" in output
-    assert "decision-format.mdが定める累積レコード" in output
+    assert "<採否記録契約が定める累積レコード>" in output
 
     # Aの回答後にBの確認待ちだけが残っても、次のplannerへAの確定結果を渡せる。
     resolved_a = {
@@ -4205,7 +4433,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     assert "計画実装型を1件以上扱う場合は`references/plan-impl-feedback-flow.md`を全文読む" in readiness
     assert "計画実装型は`references/plan-impl-feedback-flow.md`に従い" in implementation
     for phrase in (
-        "plan-impl-caller-reception.md`を全文読み",
+        "`agent-toolkit:plan-mode`の実装受領契約を全文読み",
         "委譲元契約の正本",
         "借用する現在worktreeを回収不可として含む完全な一覧",
         "レーンのworktreeと計画が明示する管理対象worktreeを含む完全な一覧",
@@ -4218,7 +4446,7 @@ def test_feedback_lanes_supply_complete_worktree_inputs_to_executor() -> None:
     for single_value in ("`用途=lane`", "`管理対象領域=なし`", "`作成主体=既存`", "`回収可否=不可`"):
         assert single_value in flow
     assert "管理対象領域内へレーンのworktreeを作成" in flow
-    assert "完全な一覧の記録属性は`plan-impl-caller-reception.md`を正本" in flow
+    assert "完全な一覧の記録属性は`agent-toolkit:plan-mode`の実装受領契約を正本" in flow
     for text in (flow, caller):
         assert "別ファイルシステム名前空間" in text
         assert "同一絶対パスへ到達できる既存ディレクトリを読み取り専用で確認" in text
@@ -4426,7 +4654,7 @@ def test_minor_review_convergence_uses_actual_repair_impact() -> None:
     assert "意味を変えない誤記・用語統一・参照訂正だけが残る場合" in coordinator
     assert "review-loop-coordination.md" in executor
     for document in (plan_review, implementation_flow):
-        assert "review-loop-coordination.md" in document
+        assert "`agent-toolkit:plan-mode`のレビュー継続契約" in document
         assert "その修正は再レビューを要するほど" not in document
         assert "コメント、名前及びformatだけの変更" not in document
         assert "意味を変えない説明の明確化" not in document
@@ -4568,7 +4796,7 @@ def test_add_feedback_requires_bugfix_depth_and_decision_record_contracts() -> N
     procedure = _h2_section(add_feedback, "手順")
     completion = _h2_section(add_feedback, "完成条件")
 
-    evidence_at = procedure.index("2. 通常型は、適用規範")
+    evidence_at = procedure.index("3. 通常型は、適用規範")
     bugfix_at = procedure.index("観測した欠陥を起点とする通常型本文")
     writing_at = procedure.index("本文の起草前に`agent-toolkit:writing-standards`")
     assert evidence_at < bugfix_at < writing_at
@@ -4821,7 +5049,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         assert phrase in root_cause
 
     assert "`references/root-cause-analysis.md`" in bugfix_skill
-    assert "`references/ci-failure-handling.md`" in bugfix_skill
+    assert "`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`" in bugfix_skill
     assert "深掘り条件に該当する場合だけ" in bugfix_skill
     assert "計画、実装、レビューのいずれでも同じ判定" in bugfix_skill
     for phrase in (
@@ -4835,8 +5063,8 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
     for phrase in ("原因区分", "類似見直し", "処置の階層", "再発防止策"):
         assert phrase in root_cause
 
-    assert "`references/history-rewrite.md`を全文読む" in commit_skill
-    assert "`references/push-and-ci.md`を全文読む" in commit_skill
+    assert "`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む" in commit_skill
+    assert "`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む" in commit_skill
     assert "push済みcommitのamend、fixup、rebaseは禁止" in commit_skill
     assert "## push後のCI通過確認" not in commit_skill
     for phrase in ("git commit --amend", "git commit --fixup=", "autosquash", "refs/remotes/"):
@@ -4863,7 +5091,7 @@ def test_bug_response_prompt_contracts_are_synchronized() -> None:
         "支持する事実",
         "反証する事実",
         "判別実験",
-        "`../SKILL.md`「初動と深掘り判定」に従って直接的原因と深掘り要否を確定",
+        "`agent-toolkit:bugfix`の「初動と深掘り判定」に従って直接的原因と深掘り要否を確定",
     ):
         assert phrase in ci_failure
     assert "scripts/wait_ci.py" not in ci_failure
@@ -5199,7 +5427,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert "関係計画パス一覧" in scoped_repair
     assert (
         "調整主体が指摘を配送する場合は、`agent-toolkit:reviewee-standards`の`SKILL.md`と\n"
-        "`agent-toolkit:review-standards`の`references/judgment-details.md`の絶対パスを計画担当への配送文へ含める。\n"
+        "`agent-toolkit:review-standards`の判断詳細契約の絶対パスを計画担当への配送文へ含める。\n"
     ) in _h2_section(plan_review, "指摘の検収と修正")
     # 計画担当が採否確定の正本へ到達する経路は、資料の受け渡しと配送時の明示の両方が成立して初めて成り立つ。
     assert (
@@ -5399,6 +5627,102 @@ def test_section_reference_patterns_accept_line_breaks() -> None:
     ]
 
 
+def test_reference_migration_fixture_preserves_contracts_and_owner_conditions() -> None:
+    """固定baseから移行した86辺の本文・引渡し・必要時読込みを検査する。"""
+    fixture = json.loads(_REFERENCE_MIGRATION_FIXTURE.read_text(encoding="utf-8"))
+    edges = fixture["edges"]
+
+    assert fixture["base"] == _REFERENCE_MIGRATION_BASE
+    assert fixture["source_count"] == 69
+    assert fixture["edge_count"] == 86
+    assert fixture["referrer_count"] == 35
+    assert fixture["target_count"] == 35
+    source_paths = fixture["source_paths"]
+    referrer_paths = fixture["referrer_paths"]
+    target_paths = fixture["target_paths"]
+    _assert_reference_migration_inventory(
+        edges,
+        source_paths,
+        referrer_paths,
+        target_paths,
+        fixture["source_count"],
+        fixture["edge_count"],
+    )
+    with pytest.raises(AssertionError):
+        _assert_reference_migration_inventory(
+            edges[:-1], source_paths, referrer_paths, target_paths, fixture["source_count"], fixture["edge_count"]
+        )
+    with pytest.raises(AssertionError):
+        _assert_reference_migration_inventory(
+            edges + [edges[0]], source_paths, referrer_paths, target_paths, fixture["source_count"], fixture["edge_count"]
+        )
+    extra_edge = dict(edges[0])
+    extra_edge["source"] = f"{extra_edge['source']}.extra"
+    with pytest.raises(AssertionError):
+        _assert_reference_migration_inventory(
+            edges[:-1] + [extra_edge],
+            source_paths,
+            referrer_paths,
+            target_paths,
+            fixture["source_count"],
+            fixture["edge_count"],
+        )
+    sources = _reference_migration_sources()
+    assert {str(path.relative_to(_REPOSITORY_ROOT)) for path in sources} == set(source_paths)
+    assert not _reference_migration_edges()
+    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
+    assert "9箇所が実体のない参照を継続" in incidents
+    assert "削除時に参照元を洗い出す工程が無かった" in incidents
+
+    owner_targets: dict[str, set[str]] = {}
+    for edge in edges:
+        source = _REPOSITORY_ROOT / edge["source"]
+        target = _REPOSITORY_ROOT / edge["target"]
+        assert source.is_file(), source
+        assert target.is_file(), target
+
+        source_text = source.read_text(encoding="utf-8")
+        current_paragraphs = [_normalise_reference_paragraph(paragraph) for paragraph in re.split(r"\n\s*\n", source_text)]
+        baseline_paragraph = edge["paragraph"]
+        similarity = max(
+            (difflib.SequenceMatcher(None, baseline_paragraph, paragraph).ratio() for paragraph in current_paragraphs),
+            default=0.0,
+        )
+        # 口調例の隔離方針変更は意図した移行であり、旧段落の類似度ではなく新しい契約文を検査する。
+        rewritten_edge = (edge["source"], edge["ref"]) in {
+            ("agent-toolkit/skills/writing-standards/references/notation-rules.md", "tone-examples.md"),
+            (
+                "agent-toolkit/skills/writing-standards/references/notation-rules.md",
+                "tone-examples-llm-tone.md",
+            ),
+            ("agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md", "notation-rules.md"),
+        }
+        if rewritten_edge:
+            assert "意図的な違反例" in source_text or "口調例は例示の内容を通常の成果物検査へ混入させない" in source_text
+        else:
+            assert similarity >= 0.60, edge
+        assert _reference_migration_handoff_exists(source_text, edge["target"]), edge
+
+        target_path = pathlib.PurePosixPath(edge["target"])
+        skills_index = target_path.parts.index("skills")
+        owner = target_path.parts[skills_index + 1]
+        owner_targets.setdefault(owner, set()).add(edge["target"])
+
+    assert owner_targets == _REFERENCE_MIGRATION_OWNER_TARGETS
+    assert len(referrer_paths) == fixture["referrer_count"]
+    assert len(target_paths) == fixture["target_count"]
+    assert set(target_paths) == set().union(*_REFERENCE_MIGRATION_OWNER_TARGETS.values())
+    for owner, targets in owner_targets.items():
+        skill_text = _owner_skill_path(owner).read_text(encoding="utf-8")
+        for target in targets:
+            assert _has_owner_read_condition(skill_text, target), (owner, target)
+
+    target = "agent-toolkit/skills/plan-mode/references/implementation-task.md"
+    assert not _has_owner_read_condition(f"- `{target}`だけを一覧に残す", target)
+    assert not _has_owner_read_condition(f"- `{target}`を記載する\n- 実装工程では別資料を全文読む", target)
+    assert _has_owner_read_condition(f"- 実装工程では`{target}`を全文読む", target)
+
+
 def test_skill_references_are_reachable_from_instruction_roots() -> None:
     """実行時に配布するスキルの参照文書を`SKILL.md`又は`agent`定義から到達可能に保つ。"""
     roots = set((_DISTRIBUTION_ROOT / "skills").glob("*/SKILL.md")) | set(_AGENTS_DIR.glob("*.md"))
@@ -5496,7 +5820,7 @@ def test_review_completion_evidence_and_checkpoint_observation_contracts_are_con
         "レーンの起動時に、呼び出し元は渡した管理対象一時領域からレーンごとのレビュー表の絶対パスを確定して保持する。" in caller
     )
     assert (
-        "レビュー表の初期化は、既存の`review-loop-coordination.md`どおり調整主体が初回レビュー前に行い、呼び出し元は初期化又は書込みを行わない。"
+        "レビュー表の初期化は、既存の`agent-toolkit:plan-mode`のレビュー継続契約どおり調整主体が初回レビュー前に行い、呼び出し元は初期化又は書込みを行わない。"
         in caller
     )
     assert "初期化前はレビュー表を成果物観測へ含めず" in caller
@@ -5514,10 +5838,13 @@ def test_review_completion_evidence_and_checkpoint_observation_contracts_are_con
     assert caller.index("初期化前はレビュー表を成果物観測へ含めず") < caller.index(watch_contract)
 
     assert (
-        "レビュー表の進行を観測したまま`review_round`が届かないレーンは、`plan-impl-caller-reception.md`の履行確認で扱う"
+        "レビュー表の進行を観測したまま`review_round`が届かないレーンは、`agent-toolkit:plan-mode`の実装受領契約にある履行確認で扱う"
         in flow
     )
-    assert "成果物の進行もチェックポイントも観測できないレーンだけを、`waiting-and-monitoring.md`の停滞検知で扱う" in flow
+    assert (
+        "成果物の進行もチェックポイントも観測できないレーンだけを、"
+        "`agent-toolkit:delegation`の待機・停滞契約にある停滞検知で扱う" in flow
+    )
     assert "チェックポイントが長時間届かないレーンは既存の停滞検知" not in flow
 
     for phrase in (
