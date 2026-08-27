@@ -522,8 +522,8 @@ class TestHomePathCheck:
         assert result.returncode == 0
         assert "home directory" in _additional_context(result)
 
-    def test_home_path_in_temp_prefix_sibling_warns(self):
-        """一時ルートと文字列prefixだけが同じ兄弟パスは除外しない。"""
+    def test_home_path_in_non_git_prefix_sibling_is_skipped(self):
+        """一時ルートと文字列prefixだけが同じGit管理外の兄弟パスは除外する。"""
         sibling = pathlib.Path(f"{tempfile.gettempdir()}-sibling") / "draft.md"
         result = _run(
             {
@@ -532,7 +532,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" in _additional_context(result)
+        assert "home directory" not in _agent_messages(result)
 
     @pytest.mark.parametrize("xdg_value", ["unset", ""])
     def test_home_path_in_default_cache_document_is_skipped(self, xdg_value: str, monkeypatch: pytest.MonkeyPatch):
@@ -3710,6 +3710,8 @@ class TestBashOutputTruncationWarning:
         [
             "uvx pyfltr run-for-agent | tail -20",
             "pytest -q | head -5",
+            "uv run --no-project --script /repo/agent-toolkit/scripts/check_plan_file.py | tail -20",
+            "uv run --script agent-toolkit/scripts/check_plan_file.py | tail -20",
         ],
     )
     def test_warns(self, command: str):
@@ -3717,6 +3719,71 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         output = json.loads(result.stdout)
         assert "warn" in output["hookSpecificOutput"]["additionalContext"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "make e2etest-single | tail -40",
+            "make ci-check | head -5",
+            "make lint | tail -5",
+            "make db-check | tail -5",
+        ],
+    )
+    def test_make_verification_target_warns(self, command: str):
+        """検証語を含む`make`ターゲットの出力切り詰めを警告する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "make docs | tail -5",
+            "make | head -5",
+            "make FOO=lint docs | tail -5",
+            "make -f test.mk docs | tail -5",
+            "make --directory /tmp docs | tail -5",
+        ],
+    )
+    def test_non_verification_make_target_is_silent(self, command: str):
+        """検証語を含まない`make`ターゲットやオプション値は警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'pytest -q | tail -5; echo "$?"',
+            "make test | tail -5 && echo exit=$?",
+            'pytest -q | tail -5 || echo "$?"',
+            'pytest -q | tail -5 & echo "$?"',
+        ],
+    )
+    def test_status_after_truncation_warns(self, command: str):
+        """切り詰め直後に`$?`を報告する場合は検証状態の診断を追加する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "truncating it" in messages
+        assert "reports the status of `head`/`tail`" in messages
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytest -q | tail -5; echo exit=${PIPESTATUS[0]}",
+            'pytest -q | tee /tmp/test.log | tail -5; echo "$?"',
+            'grep -n pytest pyproject.toml | head -5; echo "$?"',
+            "pytest -q | tail -5; printf '%s\\n' done",
+            'uv run --no-project --script /repo/other/scripts/check.py | tail -5; echo "$?"',
+            'uv run --no-project --script /repo/agent-toolkit/scripts/check.txt | tail -5; echo "$?"',
+        ],
+    )
+    def test_status_after_truncation_silent_when_status_is_preserved_or_not_reported(self, command: str):
+        """状態保存済み・非検証・終了状態非報告の経路には追加診断を出力しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "reports the status of `head`/`tail`" not in _agent_messages(result)
 
     def test_tee_saved_log_silent(self):
         command = "uvx pyfltr run-for-agent 2>&1 | tee /tmp/pyfltr.log"
