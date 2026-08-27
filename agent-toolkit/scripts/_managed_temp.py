@@ -40,6 +40,7 @@ _WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10
 _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 _WINDOWS_FILE_SHARE_ALL = 0x00000001 | 0x00000002 | 0x00000004
+_WINDOWS_FILE_SHARE_NO_DELETE = 0x00000001 | 0x00000002
 _WINDOWS_OBJECT_INHERIT_ACE = 0x01
 _WINDOWS_OPEN_EXISTING = 3
 _WINDOWS_OWNER_SECURITY_INFORMATION = 0x00000001
@@ -201,6 +202,8 @@ def _windows_equal_sids(first: bytes, second: bytes) -> bool:
 def _windows_path_handle(
     path: pathlib.Path,
     access: int,
+    *,
+    share_mode: int = _WINDOWS_FILE_SHARE_ALL,
 ) -> typing.Iterator[tuple[int, _ByHandleFileInformation]]:
     """再解析ポイントを追跡しないパスハンドルと属性を返す。"""
     kernel32 = _windows_dll("kernel32")
@@ -223,7 +226,7 @@ def _windows_path_handle(
     handle = create_file(
         str(path),
         effective_access,
-        _WINDOWS_FILE_SHARE_ALL,
+        share_mode,
         None,
         _WINDOWS_OPEN_EXISTING,
         _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS | _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT,
@@ -240,6 +243,21 @@ def _windows_path_handle(
         yield handle, information
     finally:
         kernel32.CloseHandle(handle)
+
+
+@contextlib.contextmanager
+def _windows_cleanup_boundary(root: pathlib.Path) -> typing.Iterator[None]:
+    """rootと全祖先を削除共有なしで保持し、cleanupのパス操作を保護する。"""
+    with contextlib.ExitStack() as stack:
+        for guarded_path in (root, *root.parents):
+            stack.enter_context(
+                _windows_path_handle(
+                    guarded_path,
+                    _WINDOWS_READ_ATTRIBUTES,
+                    share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
+                )
+            )
+        yield
 
 
 @contextlib.contextmanager
@@ -1394,6 +1412,17 @@ def _cleanup_posix(
             os.close(root_descriptor)
 
 
+def _restore_windows_quarantine(
+    quarantine: pathlib.Path,
+    target: pathlib.Path,
+    expected_identity: tuple[int, int],
+) -> None:
+    """保持中のroot境界で隔離対象を元の名前へ戻す。"""
+    with contextlib.suppress(ManagedTempError, OSError):
+        if quarantine.exists() and not target.exists() and _windows_identity(quarantine) == expected_identity:
+            os.replace(quarantine, target)
+
+
 def _cleanup_windows(
     root: pathlib.Path,
     validated: _ValidatedTemp,
@@ -1408,15 +1437,26 @@ def _cleanup_windows(
         validated.root_security,
     )
     try:
-        _validate_root(root, expected=expected_root)
-        os.replace(validated.path, quarantine)
-        _validate_root(root, expected=expected_root)
-        if _windows_identity(quarantine) != (validated.device, validated.inode):
-            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
-        if _tree_snapshot(quarantine) != expected_tree:
-            raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
-        _validate_root(root, expected=expected_root)
-        shutil.rmtree(quarantine)
+        with _windows_cleanup_boundary(root):
+            try:
+                _validate_root(root, expected=expected_root)
+                os.replace(validated.path, quarantine)
+                _validate_root(root, expected=expected_root)
+                if _windows_identity(quarantine) != (validated.device, validated.inode):
+                    raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
+                if _tree_snapshot(quarantine) != expected_tree:
+                    raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
+                _validate_root(root, expected=expected_root)
+                shutil.rmtree(quarantine)
+            except (ManagedTempError, OSError) as error:
+                _restore_windows_quarantine(
+                    quarantine,
+                    validated.path,
+                    (validated.device, validated.inode),
+                )
+                if isinstance(error, ManagedTempError):
+                    raise
+                raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
     except OSError as error:
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
 
@@ -1456,17 +1496,18 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
             raise ManagedTempError(f"未対応platform: {os.name}")
         consuming.unlink()
     except (ManagedTempError, OSError) as error:
-        with contextlib.suppress(OSError):
-            if (
-                quarantine.exists()
-                and not path.exists()
-                and _path_identity(quarantine)
-                == (
-                    validated.device,
-                    validated.inode,
-                )
-            ):
-                os.replace(quarantine, path)
+        if os.name == "posix":
+            with contextlib.suppress(OSError):
+                if (
+                    quarantine.exists()
+                    and not path.exists()
+                    and _path_identity(quarantine)
+                    == (
+                        validated.device,
+                        validated.inode,
+                    )
+                ):
+                    os.replace(quarantine, path)
         with contextlib.suppress(OSError):
             _restore_registry(consuming, validated.registry_path)
         if isinstance(error, ManagedTempError):

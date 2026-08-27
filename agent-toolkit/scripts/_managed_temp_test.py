@@ -22,6 +22,16 @@ _SCRIPT = pathlib.Path(subject.__file__).resolve()
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 
 
+def _assert_windows_directory_swap_rejected(path: pathlib.Path, displaced: pathlib.Path) -> None:
+    """cleanup境界が保持するハンドルでrootまたは祖先の交換を拒否する。"""
+    try:
+        path.rename(displaced)
+    except OSError:
+        return
+    displaced.rename(path)
+    raise AssertionError(f"ディレクトリ交換が拒否されなかった: {path}")
+
+
 @pytest.mark.parametrize(
     ("prefix", "expected"),
     [
@@ -1493,6 +1503,114 @@ class TestManagedTempWindows:
         with pytest.raises(subject.ManagedTempError, match="外部状態"):
             subject.cleanup_managed_temp(target)
         assert _managed_state(target, registry) == before
+
+    @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
+    def test_cleanup_rejects_root_swap_before_replace_and_preserves_external_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        swap_target: str,
+    ) -> None:
+        """検証後のrootまたは祖先交換を移動直前に拒否し、外部対象を変更しない。"""
+        container = tmp_path / "managed-container"
+        container.mkdir()
+        root = container / "managed-root"
+        root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root))
+        target = subject.create_managed_temp("windows-root-boundary")
+        external = tmp_path / "external-target"
+        external.mkdir()
+        sentinel = external / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        swap_path = {"root": root, "ancestor": container}[swap_target]
+        displaced = tmp_path / f"{swap_target}-displaced"
+        original_replace = subject.os.replace
+
+        def replace_with_swap(source: typing.Any, destination: typing.Any, **kwargs: typing.Any) -> typing.Any:
+            if source == target:
+                _assert_windows_directory_swap_rejected(swap_path, displaced)
+            return original_replace(source, destination, **kwargs)
+
+        monkeypatch.setattr(subject.os, "replace", replace_with_swap)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert root.is_dir()
+        assert container.is_dir()
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
+    def test_cleanup_rejects_root_swap_before_rmtree_and_preserves_external_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        swap_target: str,
+    ) -> None:
+        """削除直前のrootまたは祖先交換を拒否し、外部対象を変更しない。"""
+        container = tmp_path / "managed-container"
+        container.mkdir()
+        root = container / "managed-root"
+        root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root))
+        target = subject.create_managed_temp("windows-rmtree-boundary")
+        external = tmp_path / "external-target"
+        external.mkdir()
+        sentinel = external / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        swap_path = {"root": root, "ancestor": container}[swap_target]
+        displaced = tmp_path / f"{swap_target}-displaced"
+        original_rmtree = subject.shutil.rmtree
+
+        def rmtree_with_swap(path: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+            _assert_windows_directory_swap_rejected(swap_path, displaced)
+            return original_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(subject.shutil, "rmtree", rmtree_with_swap)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert root.is_dir()
+        assert container.is_dir()
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
+    def test_cleanup_restores_target_inside_boundary_after_rmtree_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        swap_target: str,
+    ) -> None:
+        """削除失敗時もroot交換を拒否し、同じ境界内で対象を復元する。"""
+        container = tmp_path / "managed-container"
+        container.mkdir()
+        root = container / "managed-root"
+        root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root))
+        target = subject.create_managed_temp("windows-restore-boundary")
+        original_content = target / "original.txt"
+        original_content.write_text("original", encoding="utf-8")
+        external = tmp_path / "external-target"
+        external.mkdir()
+        sentinel = external / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        swap_path = {"root": root, "ancestor": container}[swap_target]
+        displaced = tmp_path / f"{swap_target}-displaced"
+
+        def fail_after_swap_attempt(path: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.NoReturn:
+            _assert_windows_directory_swap_rejected(swap_path, displaced)
+            raise OSError("test rmtree failure")
+
+        monkeypatch.setattr(subject.shutil, "rmtree", fail_after_swap_attempt)
+
+        with pytest.raises(subject.ManagedTempError, match="後始末できない"):
+            subject.cleanup_managed_temp(target)
+
+        assert target.is_dir()
+        assert original_content.read_text(encoding="utf-8") == "original"
+        assert subject._registry_path(target).exists()
+        assert sentinel.read_text(encoding="utf-8") == "keep"
 
     def test_root_replacement_before_isolation_preserves_both_trees(
         self,
