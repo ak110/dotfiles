@@ -307,6 +307,28 @@ def test_codex_running_status_is_not_overridden_by_auxiliary_observations() -> N
     assert "広範な未完了調査を1つの委譲先へ再委譲せず" in waiting
 
 
+def test_codex_running_takeover_requires_terminal_and_ownership_release() -> None:
+    """Codex稼働中の巻取りを禁じ、後続起動条件を待機契約と委譲スキルで共有する。"""
+    documents = (_WAITING_AND_MONITORING, _DELEGATION_SKILL)
+
+    for document in documents:
+        text = document.read_text(encoding="utf-8")
+        for phrase in (
+            "Codexの`list_agents`が対象を`running`として返している間は",
+            "補助観測や催促だけを根拠とする巻取り、新規起動、役割引継ぎを行わない",
+            "後続主体を起動できるのは、ユーザーの明示要求、終端・失敗status、タスク契約上のキャンセルのいずれかを確認した後",
+            "元担当の終端と書込所有権の解放を確認した場合だけである",
+        ):
+            assert phrase in text, document
+
+    waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
+    assert waiting.index(
+        "Codexの`list_agents`が対象を`running`として返している間は、`Codex互換実行の稼働中turn`節の禁止及び起動条件を適用"
+    ) < waiting.index("Codex以外の対象でその後も応答が無ければ")
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    assert "Codex以外では、同一種別かつ同一用途の起動を反復しても収束しない場合に" in delegation
+
+
 def test_waiting_contract_distinguishes_same_turn_polling_from_requery_triggers() -> None:
     """同一turn内のpollingと通知不着等の再照会を区別する。"""
     waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
