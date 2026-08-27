@@ -68,7 +68,7 @@ _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "Monit
 _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
 
 # 文字列contentへ埋め込まれるシステム生成要素（background taskの完了通知・他セッションからの
-# 受信メッセージ）を非貪欲に切り出す正規表現。利用者自身の発話ではないため、
+# 受信メッセージ）を非貪欲に切り出す正規表現。ユーザー自身の発話ではないため、
 # スラッシュコマンド起動痕跡の照合前に除去する。
 _SYSTEM_EMBEDDED_ELEMENT_RE = re.compile(r"<(task-notification|teammate-message)\b.*?</\1>", re.DOTALL)
 

@@ -879,7 +879,7 @@ class TestPlanFilePostWriteNotice:
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
 
     def test_notice_on_detail_file_write_targets_main_path(self, tmp_path: pathlib.Path) -> None:
-        """実装詳細側`.detail.md`書込み時も検査案内は対応するメイン側パスを対象にする。"""
+        """計画ファイル（詳細）`.detail.md`書込み時も検査案内は対応する計画ファイル（メイン）パスを対象にする。"""
         plan_path = self._make_plan_path(tmp_path)
         detail_path = plan_path.with_name("sample.detail.md")
         sid = "post-write-notice-detail"

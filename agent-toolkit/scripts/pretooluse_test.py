@@ -796,7 +796,7 @@ class TestColloquialCheck:
 
     @pytest.mark.parametrize("name", ["colloquial.detail.md", "colloquial.bugs.md"])
     def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str, name: str) -> None:
-        """detail側とバグ調査付属側は口語警告を出力しない。"""
+        """計画ファイル（詳細）とバグ調査付属側は口語警告を出力しない。"""
         detail = _make_plan_file(tmp_path / "home", name)
         content = f"概要は{deny_substring}該当する。\n"
         result = _run(

@@ -246,15 +246,14 @@ def test_codex_agent_compatibility_covers_current_frontmatter_and_body() -> None
         "ファイル全体を読む",
         "YAML frontmatter",
         "Markdown本文",
-        "`task_name`へ許可文字に正規化した一意な名前",
-        "定義名自体を委譲文へ保持",
-        "`spawn_agent`",
+        "メインエージェントが定義を現在のセッションへ直接適用",
+        "定義の適用自体には`agents_server`も`spawn_agent`も使わない",
         "frontmatterコメント",
-        "`SKILL.md`を絶対パスから全文読み",
+        "各`SKILL.md`をメインエージェントが絶対パスから全文読み",
         "read-only要件は変更前後のGit状態で検収",
         "未知のfrontmatterフィールド",
-        "黙って破棄しない",
-        "`needs_escalation`として返し",
+        "黙って破棄せず",
+        "写像不能なら`needs_escalation`として返す",
     ):
         assert phrase in base
 
@@ -264,8 +263,8 @@ def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
     base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
 
     for direct_mapping in (
-        ("`TaskStop`", "`interrupt_agent`", "`list_agents`"),
-        ("`Monitor`", "`list_agents`", "`wait_agent`"),
+        ("`TaskStop`", "実際の別主体へ委譲した経路の中断操作", "返された識別子で停止を確認"),
+        ("`Monitor`", "実際の別主体へ委譲した経路の状態確認", "待機結果を用いて対象を観測"),
     ):
         for phrase in direct_mapping:
             assert phrase in base
@@ -275,29 +274,29 @@ def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
         "必須能力が公開されない場合は差し戻す",
         "`ScheduleWakeup`・`CronCreate`",
         "現行セッションで公開された能力を確認できない場合",
-        "手動運用又は利用者への依頼へ切り替える",
-        "対応表は直接対応、条件付き対応及び代替不能な範囲を区別する",
+        "手動運用又はユーザーへの依頼へ切り替える",
+        "`tools`制約をCodexの公開能力へ写像",
     ):
         assert phrase in base
 
 
 def test_codex_named_agent_compatibility_preserves_stage_engine() -> None:
-    """名前付きagentの互換起動が工程別engineを無断変更しない。"""
+    """名前付きagentの直接適用が工程別engineを無断変更しない。"""
     base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
 
     for phrase in (
-        "工程別モデル設定と名前付きagentの互換起動は別の判断である",
+        "工程別モデル設定と名前付きagentの直接適用は別の判断である",
         "`runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程",
         "`engine=claude`",
         "`needs_escalation`又は未完了として返す",
-        "工程別モデル設定のキーを持たない名前付きagentの起動",
+        "工程別モデル設定のキーを持たない名前付きagentの呼び出し",
     ):
         assert phrase in base
     for phrase in (
-        "名前付きagentのCodex互換起動",
-        "工程別モデル設定のキーを持たない起動",
-        "工程別モデル設定のキーを持つ工程",
+        "名前付きagent定義の適用と、その役割が要求する実際の別主体への委譲を区別",
+        "工程別モデル設定のキーを持たない名前付きagentの呼び出し",
+        "工程別モデル設定の適用範囲は表に記載した工程に限定",
         "`engine=claude`",
         "他engineへ自動切替せず",
         "`needs_escalation`または未完了として返す",
@@ -533,7 +532,7 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     ),
     (
         "利用者が確認への回答に付した選択理由・補足",
-        "利用者が確認への回答（`AskUserQuestion`の回答とTBDの`## 回答`節を含む）に付した判断基準・選択理由・補足",
+        "ユーザーが確認への回答（`AskUserQuestion`の回答とTBDの`## 回答`節を含む）に付した判断基準・選択理由・補足",
     ),
     (
         "変動しやすい集計値や対象範囲は複製せず、実施内容表又は名前付きSSOTを参照する。\n",
@@ -579,7 +578,7 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "実施内容表と任意の合意表における`指示どおり`は、根拠に引く提示素材が対象と範囲を明示している場合に限る。\n"
         "原文が問い、提案的表現、弱い自信の表現に留まる場合は、当該素材を`指示どおり`の根拠にしない。\n"
         "この場合は、範囲を確定する問いを確認経路へ送り、受領した回答を根拠へ併記する。\n"
-        "利用者合意に対応する",
+        "ユーザー合意に対応する",
     ),
     (
         "確認済み回答は、`AskUserQuestion`で受領した回答、又は確認事項を記録したTBDの`## 回答`節へ記録された回答とする。\n",
@@ -593,6 +592,14 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     (
         "（`agent-toolkit:writing-standards`「ユーザー入力素材の取扱い」と同じ扱い）",
         "（`../../writing-standards/SKILL.md`「ユーザー入力素材の取扱い」と同じ扱い）",
+    ),
+    (
+        "`## 完了条件`には利用者が観測できる成果と検証条件を書く。",
+        "`## 完了条件`には消費主体が観測できる成果と検証条件を書く。",
+    ),
+    (
+        "主作業ツリーの追跡ファイルと利用者設定を変更しないこと",
+        "主作業ツリーの追跡ファイルとユーザー設定を変更しないこと",
     ),
     (
         "原文正本IDはフェンス外に置き、計画内の素材IDとフィードバックファイル名を一意に対応付ける。\n"
@@ -645,6 +652,11 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
     (
         "各commit単位の受領時と最終レビュー時に追記する",
         "各commit単位の受領時と実装レビュー収束時に追記する",
+    ),
+    (
+        "`## 進捗ログ`は最後のH2とし、`日時`、`完了した工程`、`結果・特記事項`の3列表を置く。",
+        "`## 進捗ログ`は実装開始後のcommit単位の受領、実装レビューの収束及び完了判定を記録する最後のH2とし、"
+        "`日時`、`完了した工程`、`結果・特記事項`の3列表を置く。",
     ),
     (
         "反映を確定した知見は`## 実施内容`へ行を計上し、反映先へ書く文面はファイル群別の変更説明で確定する。",
@@ -825,13 +837,13 @@ def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary(
 
     for phrase in (
         "レビュー担当の指摘は、レビュー担当が立証済みの事実として扱わない",
-        "通常運用での再現経路及び利用者影響を独立に測定",
+        "通常運用での再現経路及び消費主体への影響を独立に測定",
         "必要十分な対策だけを選ぶ",
     ):
         assert phrase in reviewee
     assert "裏付けを取得できない候補は`未検証`と明記して確定指摘から分離する" in reviewer
 
-    excluded = ("変数名", "利用者が観測しない文言", "局所的な制御フロー")
+    excluded = ("変数名", "消費主体が観測しない文言", "局所的な制御フロー")
     retained = (
         "対象ファイルと識別子",
         "外部可視の入出力",
@@ -848,7 +860,7 @@ def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary(
 
 
 def test_reviewee_costs_distinguish_standalone_typos_and_required_repairs() -> None:
-    """レビューイーのライフサイクル費用比較と利用者向け文書の必須是正を固定する。"""
+    """レビューイーのライフサイクル費用比較とエンドユーザー向け文書の必須是正を固定する。"""
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
     reviewer = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     adoption = _h2_section(reviewee, "採否の独立確定")
@@ -857,7 +869,7 @@ def test_reviewee_costs_distinguish_standalone_typos_and_required_repairs() -> N
         "指摘の採否は、残置した場合の実害と認知・保守費用に加え、修正、検証及び再レビューに要する費用を同じライフサイクルで比較する。"
         "実害がなく意味も変えない誤記だけを直すために独立した修正・再レビューを起こさない。"
         "ただし、同じ成果物に別の重大な修正があり再レビューを既に行う場合は、追加費用が小さい誤記も同時に是正する。"
-        "利用者向け文書で誤記又は適用対象のスタイル違反だと確認した指摘は実害ありとして必ず是正し、実害のない単独誤記の修正省略及び低頻度リスクの費用比較から除外する。"
+        "エンドユーザー向け文書で誤記又は適用対象のスタイル違反だと確認した指摘は実害ありとして必ず是正し、実害のない単独誤記の修正省略及び低頻度リスクの費用比較から除外する。"
         "それ以外の実害があり得る指摘は、現行運用での発生条件と頻度、影響、残余リスクを観測事実で評価し、恒常的な複雑性と保守性低下が利得を上回る場合は採用しない。"
     )
     boundary_contract = (
@@ -1096,7 +1108,9 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
-    assert "フィードバック由来行の正本ファイル名、対象リポジトリ、メイン側・detail側の計画" in delegation
+    assert (
+        "フィードバック由来行の正本ファイル名、対象リポジトリ、計画ファイル（メイン）・計画ファイル（詳細）の計画" in delegation
+    )
     assert "直接起動経路では、正本ファイル名と出所・引用範囲" in delegation
     assert "投入元を`AskUserQuestion`、引用範囲を`回答全文`" in delegation
     assert "`AskUserQuestion`又は`TBD:<filename>#回答`なら`回答全文`" in standards
@@ -1263,7 +1277,9 @@ def test_plan_lane_is_the_writer_parallelism_boundary() -> None:
         in flow
     )
     assert "対象ファイル集合の重なりと変更規模はレーン割当の入力にしない" in flow
-    assert "後続計画が先行計画の成果へ依存することと計画間の統合順を計画本文又は利用者合意から一意に確定できる場合だけ" in flow
+    assert (
+        "後続計画が先行計画の成果へ依存することと計画間の統合順を計画本文又はユーザー合意から一意に確定できる場合だけ" in flow
+    )
     for text in (flow, executor, writer, rules, caller):
         assert "同じレーン" in text
     for text in (executor, writer, rules, design, flow, caller):
@@ -1293,7 +1309,7 @@ def test_plan_lanes_use_explicit_dependencies_and_not_overlap() -> None:
     incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
     dependency_condition = (
-        "複数組の計画ファイルを同じレーンへ渡す場合は、後続計画が先行計画の成果へ依存することを示す計画本文又は利用者合意、"
+        "複数組の計画ファイルを同じレーンへ渡す場合は、後続計画が先行計画の成果へ依存することを示す計画本文又はユーザー合意、"
         "計画間の統合順、及び各計画の`## 進捗ログ`へ記録した共有worktreeの根拠を入力へ含める。"
     )
     independent_condition = (
@@ -1306,14 +1322,16 @@ def test_plan_lanes_use_explicit_dependencies_and_not_overlap() -> None:
     )
     progress_condition = (
         "明示的な先行成果依存を持つ複数の計画ファイルを同じレーンへ割り当てる場合は、各計画の`## 進捗ログ`へ"
-        "先行計画と後続計画の絶対パス、統合順、依存する成果及び同じworktreeへ割り当てる根拠を記録する。"
+        "先行計画と後続計画の絶対パス、統合順、依存する成果と同じworktreeへ割り当てる根拠を記録する。"
     )
     design_condition = (
         "計画ファイルの分割はレビューの単位、レーンは実装の並列性とworktreeの書込所有権を分ける単位とする。"
         "先行成果へ依存しない計画ファイルは1計画ファイルにつき1レーンへ割り当てる。"
     )
 
-    assert "後続計画が先行計画の成果へ依存することと計画間の統合順を計画本文又は利用者合意から一意に確定できる場合だけ" in flow
+    assert (
+        "後続計画が先行計画の成果へ依存することと計画間の統合順を計画本文又はユーザー合意から一意に確定できる場合だけ" in flow
+    )
     assert (
         "先行成果へ依存しない計画ファイルは、対象ファイル集合の重なりと変更規模にかかわらず、1計画ファイルにつき1レーンへ割り当てる"
         in flow
@@ -1628,8 +1646,8 @@ def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> 
     assert "エージェント由来の値集合は`session-review`・`alert-monitor`・`agent`" in decision
     assert "人間由来の値集合は`human`・`plan`" in decision
     assert "この値集合を由来区分の正本とし" in decision
-    assert "sourceによる由来境界の判定と利用者認可の確認を分ける" in decision
-    assert "sourceは由来境界の判定にだけ用い、source又はフィードバック本文から利用者認可を推定しない" in decision
+    assert "sourceによる由来境界の判定とユーザー認可の確認を分ける" in decision
+    assert "sourceは由来境界の判定にだけ用い、source又はフィードバック本文からユーザー認可を推定しない" in decision
     assert "投入元識別子で由来境界を判定するが、投入元識別子やフィードバック本文から利用者認可を推定しない" in design
     assert "投入元識別子やフィードバック本文から、人間由来若しくは利用者認可を推定しない" not in design
     for source in (
@@ -1654,7 +1672,7 @@ def test_session_review_user_comment_is_the_only_human_source_exception() -> Non
         "両方にまたがる記述は独立して採否できる要求へ分解し、"
         "ファイル全体の由来を人間へ昇格させない。"
         "`source`の原値と予約節は要求の優先順位及び不採用時の確認境界を決める運用上の由来情報であり、"
-        "push、公開、破壊的操作又は外部サービス変更の利用者認可を証明しない。"
+        "push、公開、破壊的操作又は外部サービス変更のユーザー認可を証明しない。"
     )
     session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
     explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
@@ -1754,13 +1772,13 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     assert "エージェント自身が投入元で人間由来の指示が無い場合は、`source`を必須とし" in add_feedback
     assert "生成経路名を持つ起票は当該経路名（`session-review`・`alert-monitor`）を用い" in add_feedback
     assert "経路名を持たない起票は`agent`を用いる" in add_feedback
-    assert "手動起動した投入と、対話中の利用者指示による登録は人間由来とし、`human`を用いる" in add_feedback
+    assert "手動起動した投入と、対話中のユーザー指示による登録は人間由来とし、`human`を用いる" in add_feedback
     assert "エージェント自身の投入で人間由来の指示が無い場合は、確定したsourceを省略しない" in add_feedback
-    assert "利用者発話を原文とする投入でsourceを受領していない場合は`--source`を省略" in add_feedback
+    assert "ユーザー発話を原文とする投入でsourceを受領していない場合は`--source`を省略" in add_feedback
     assert "`atk mq show <filename> --target-repo=<repo-path> --skip-pull`" in add_feedback
     assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
     assert "照合対象のsourceが欠落しているか入力値と一致しない場合は完了扱いにせず" in add_feedback
-    assert "利用者発話を原文とする投入でsourceを受領していない場合は追加のsource照合をしない" in add_feedback
+    assert "ユーザー発話を原文とする投入でsourceを受領していない場合は追加のsource照合をしない" in add_feedback
     assert "エージェント自身が投入元で人間由来の指示が無い場合は、sourceを確定して保存し" in add_feedback
     assert "手順7のsource照合後" in add_feedback
     assert "手順8のsource照合後" not in add_feedback
@@ -1828,7 +1846,7 @@ def test_session_review_advisor_queries_before_reading_transcript_directly() -> 
 
 
 def test_session_review_main_checks_duplicates_with_scoped_queue_list() -> None:
-    """activeなフィードバックとの重複確認をメイン側の対象限定一覧取得へ固定する。"""
+    """activeなフィードバックとの重複確認を計画ファイル（メイン）の対象限定一覧取得へ固定する。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
@@ -1845,7 +1863,10 @@ def test_session_review_advisor_delegates_repository_checks_to_main() -> None:
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     assert "既存実装と規範を読み" not in advisor
-    assert "恒久反映先を報告し、反映先の実在・整合、既存規範・既存実装との重複及び契約同期の成立性はメイン側へ委ねる" in advisor
+    assert (
+        "恒久反映先を報告し、反映先の実在・整合、既存規範・既存実装との重複及び契約同期の成立性は計画ファイル（メイン）へ委ねる"
+        in advisor
+    )
     assert "採用する候補に限り、`generation-criteria-detail.md`「総ライフサイクルコスト」が定める契約同期検索" in skill
     assert "既存規範またはactiveなフィードバックとの重複判定はメインが所有" in criteria
     assert "既存規範・activeなフィードバックとの重複判定" not in advisor
@@ -1990,12 +2011,12 @@ def test_human_source_contract_covers_direct_and_delegated_inputs() -> None:
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
 
     assert "起動文の命令は委譲元が構成した情報" in delegation
-    assert "出所表示のない起動文を人間の利用者による発話として扱わない" in delegation
-    assert "直接対話では、実行環境上で実際の利用者メッセージ" in standards
+    assert "出所表示のない起動文を人間のユーザーによる発話として扱わない" in delegation
+    assert "直接対話では、実行環境上で実際のユーザーメッセージ" in standards
     assert "受信した起動文全体を機械的に転記せず" in standards
     assert "人間由来の場合は種別、出所及び引用範囲" in plan_review_delegation
-    assert "直接起動経路では、直接受領した実際の利用者メッセージ" in plan_review_delegation
-    assert "計画担当の起動文、フィードバック本文、調査資料を利用者発言へ分類しておらず" in plan_review_task
+    assert "直接起動経路では、直接受領した実際のユーザーメッセージ" in plan_review_delegation
+    assert "計画担当の起動文、フィードバック本文、調査資料をユーザー発言へ分類しておらず" in plan_review_task
 
 
 def test_codex_new_connection_contract_is_centralized() -> None:
@@ -2106,7 +2127,7 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
     assert "フィードバックファイル名一覧はフィードバック起因の場合だけ" in ci_failure
     for text in (caller, ci_failure, task):
         assert "承認済み計画の該当箇所" in text
-        assert "原因となった変更を認可した利用者指示の逐語文" in text
+        assert "原因となった変更を認可したユーザー指示の逐語文" in text
         assert "既存の公開契約の該当箇所" in text
     assert "一般のCI失敗では計画ファイルとフィードバックファイル名一覧が存在しないことを入力不足としない" in ci_failure
     assert "計画ファイルは`CI修正担当`・`マージ担当`以外では必須" in task
@@ -2626,7 +2647,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
         "後続節で再採用済みなら許容",
         "追加ファイルは計画目的への帰属と必要性を確認",
         "最初の実装担当の起動前に検収したレーンのworktreeの完全OID",
-        "対象計画、変更履歴の利用者合意",
+        "対象計画、変更履歴のユーザー合意",
         "追加指示及び許容済みの挙動変化を合成",
         "必須入力の着手前SHAにある公開契約",
         "契約条項の出典及び適用範囲",
@@ -3094,7 +3115,7 @@ def test_session_review_evidence_extraction_is_advisor_owned_and_main_rechecks_i
 def test_session_review_preserves_evidence_insufficient_status_path() -> None:
     """証拠不足時は再抽出と構造検収を行わず既存報告経路を維持する。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
-    validation = skill.partition("### 利用者入力イベントの構造検収")[2].partition("\n### ")[0]
+    validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n### ")[0]
 
     assert (
         "`status`が`evidence_insufficient`の場合は、既存の証拠不足報告経路を維持し、"
@@ -3115,7 +3136,7 @@ def test_session_review_preserves_every_user_event_in_independent_inventory() ->
         "`intervention_inventory`",
         "`sequence`と`line`",
         "空でない`classification_reason`",
-        "利用者発話を逐語転記しない",
+        "ユーザー発話を逐語転記しない",
         "`classification=intervention`",
         "介入対応行を一行ずつ対応付け",
         "観測事象、原因及び介入前の予防処置",
@@ -3128,10 +3149,10 @@ def test_session_review_preserves_every_user_event_in_independent_inventory() ->
     assert inventory_at < interventions_at < proposals_at
 
     for phrase in (
-        "利用者入力イベントの被覆と発火時点",
+        "ユーザー入力イベントの被覆と発火時点",
         "全`kind=user`イベントを、`intervention_inventory`へ出現順のまま一行ずつ保持",
         "独立した証拠一覧",
-        "全ての利用者介入が許容処置で被覆",
+        "全てのユーザー介入が許容処置で被覆",
         "`intervention_inventory`又は介入対応行を削除してはならない",
         "`activation.sequence < inventory_sequence`",
     ):
@@ -3147,7 +3168,7 @@ def test_session_review_preserves_every_user_event_in_independent_inventory() ->
 def test_session_review_main_rejects_incomplete_inventory_and_post_event_activation() -> None:
     """メイン検収がinventoryの差分、参照不整合及び事後発火を拒否する。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
-    validation = skill.partition("### 利用者入力イベントの構造検収")[2].partition("\n### ")[0]
+    validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n### ")[0]
 
     for phrase in (
         "受領済み`transcript_path`の絶対パス",
@@ -3207,13 +3228,13 @@ def test_session_review_allows_no_proposal_only_after_full_preventive_coverage()
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
-    validation = skill.partition("### 利用者入力イベントの構造検収")[2].partition("\n### ")[0]
+    validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n### ")[0]
 
     for document in (advisor, criteria):
         assert "activation.sequence" in document
         assert "介入後の謝罪、説明、再実行又は修正" in document
         assert "候補統合は`proposals`の重複排除だけ" in document
-    assert "全ての利用者介入が許容処置で被覆" in criteria
+    assert "全てのユーザー介入が許容処置で被覆" in criteria
     assert "各処置の発火契機が介入前にある場合だけ候補を成立" in criteria
     assert "全介入が許容処置で被覆され、全処置の発火契機が介入前にある場合だけ検収を成功" in validation
     assert "新規提案がなく、全介入対応行が既存feedback又は抑止条件を参照する場合に限り" in validation
@@ -3346,7 +3367,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
 
     assert "委譲元が確定した計画ファイルの絶対パス" in sender
-    assert "基準となるメイン側計画ファイルの絶対パス" in receiver
+    assert "基準となる計画ファイル（メイン）の絶対パス" in receiver
     for text in (sender, receiver):
         assert "計画ファイル保存先" + "ディレクトリ" not in text
     assert "既存ファイルと衝突しない乱数サフィックス付き" in sender
@@ -3381,7 +3402,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     assert "保留項目を計画対象集合から除外" in sender
     assert "保留結果を確認した項目は既存の`blocked`状態を保持したまま計画対象から除外" in receiver
     assert "保留項目は既存の`blocked`状態を保持して計画対象集合から除外" in hold
-    assert "フィードバック原文が示す文言案、列挙及び節配置を利用者合意とみなさない" in checklist
+    assert "フィードバック原文が示す文言案、列挙及び節配置をユーザー合意とみなさない" in checklist
     assert "原文との差異と根拠を採否記録へ残す" in checklist
     assert "差異と根拠を`採否理由`又は`反映内容`へ記録" in decision_format
     assert "- 理由:" not in decision_format
@@ -3793,13 +3814,13 @@ def test_plan_review_receives_public_help_and_check_script_absolute_path() -> No
 
 
 def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> None:
-    """証拠のある利用者介入起因の誤りだけを深掘り契約へ接続する。"""
+    """証拠のあるユーザー介入起因の誤りだけを深掘り契約へ接続する。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
 
-    assert "証拠からエージェントの誤りが利用者介入を招いたと確定した候補" in skill
+    assert "証拠からエージェントの誤りがユーザー介入を招いたと確定した候補" in skill
     assert "`agent-toolkit:bugfix`を起動" in skill
     assert "4原因区分、原因起点の類似見直し、是正・横展開・再発防止" in skill
-    assert "利用者介入がない候補" in skill
+    assert "ユーザー介入がない候補" in skill
     assert "介入とエージェントの誤りの因果を確定できない候補には適用しない" in skill
 
 
@@ -3936,7 +3957,7 @@ def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     assert "通常型の主題だけを受け取った場合" in add_feedback
     assert "技術主張に該当する証拠集合を調査" in add_feedback
     assert "投入元の証拠を同じ対象と主張へ照合" in add_feedback
-    assert "利用者依存事項は確認又はTBDへ分離" in add_feedback
+    assert "ユーザー依存事項は確認又はTBDへ分離" in add_feedback
     assert "技術的未確定が通常型本文へ残っていない" in add_feedback
     assert "`../plan-mode/SKILL.md`の調査成果を証拠として再利用" in add_feedback
     assert "正確なローカルworktreeが既知" in add_feedback
@@ -3966,7 +3987,7 @@ def test_add_feedback_requires_bugfix_depth_and_decision_record_contracts() -> N
     for phrase in (
         "`git log -S`で当該記述を導入した変更を特定",
         "`adopted/`にある対応するキュー項目の本文とユーザー追記を確認",
-        "利用者の逐語指示の有無を証拠へ含める",
+        "ユーザーの逐語指示の有無を証拠へ含める",
         "この追加確認は当該主張を含む本文に限って適用し、他の投入へ確認工程を課さない",
         "`agent-toolkit:bugfix`の「初動と深掘り判定」を適用",
         "TBDは判断を求める問いであり、原因分析の対象外とする",
@@ -3977,12 +3998,12 @@ def test_add_feedback_requires_bugfix_depth_and_decision_record_contracts() -> N
         "深掘り条件に該当する通常型本文が4原因区分、原因起点の類似見直し、是正・横展開・再発防止の3処置の結果を含んでいる"
         in completion
     )
-    assert "利用者の逐語指示の有無を含む決定記録の確認を完了している" in completion
+    assert "ユーザーの逐語指示の有無を含む決定記録の確認を完了している" in completion
     assert "該当しないと判定した根拠" not in add_feedback
 
 
 def test_user_facing_body_paths_invoke_writing_standards() -> None:
-    """利用者が読む本文の生成経路へ文章品質規範の起動契約を保つ。
+    """ユーザーが読む本文の生成経路へ文章品質規範の起動契約を保つ。
 
     該当するH2節の本文に指定文字列が含まれるかだけを検査する。節からの削除と別節への移動は検出するが、
     コメント化された記述や、一致箇所より後方へ置かれた打ち消しの記述は検出しない。
@@ -4071,7 +4092,7 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "目的をユーザーが観測する成果と公開契約から確定",
         "計画、一覧、clean状態、診断記録などを中間手段へ分類",
         "中間手段の完全性は独立した目的にせず",
-        "利用者成果に帰属する変更より優先しない",
+        "消費主体の成果に帰属する変更より優先しない",
         "観測事象、発生条件、確認できた頻度、最大影響、許容できる残存リスク",
         "何もしない案、既存操作だけの案、局所運用案、新機構案",
         "外部から参照される識別子、永続状態又は実際に導入する状態遷移に限定",
@@ -4080,7 +4101,7 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "個別対策を追加する前に採用案を候補比較へ戻す",
         "各レビューラウンド",
         "対応量又は既実装量を理由にした採用継続は認めない",
-        "対策を追加する案を利用者への選択肢に含める場合",
+        "対策を追加する案をユーザーへの選択肢に含める場合",
         "対策を追加しない案を推奨とする",
         "変更する判定経路に既存の例外、互換経路又はフォールバックが含まれる場合は",
         "旧版、無効設定、限定ホストなど未観測の条件を新たな維持根拠にしない（厳守規定）",
@@ -4142,11 +4163,15 @@ def test_feedback_dependencies_are_derived_from_external_waits_and_plan_order() 
         "`cooldown_until`による待機",
         "解除時刻と観測経路が確定する外部状態の解除待ち",
         "別リポジトリの先行変更の完了待ち",
-        "利用者が本文で明示した完了待ち",
+        "ユーザーが本文で明示した完了待ち",
         "日付境界",
     )
-    for document in (add_feedback, concepts, design):
+    for document in (add_feedback,):
         for wait in external_waits:
+            assert wait in document
+        assert "実装順序の前後" in document
+    for document in (concepts, design):
+        for wait in (*external_waits[:4], "利用者が本文で明示した完了待ち", "日付境界"):
             assert wait in document
         assert "実装順序の前後" in document
     for document in (process, reception):
@@ -4265,7 +4290,7 @@ def test_simplification_checks_cover_decisions_plans_and_user_explanations() -> 
 
     assert "仕組みを維持・修正する場合は、削除・簡素化案と比較した根拠" in decision_format
     assert "既存機構の維持・修正では、目的の存続" in plan_review
-    assert "利用者が操作又は判断しない一時状態や内部工程は命名して概念化せず" in agent_rules
+    assert "ユーザーが操作又は判断しない一時状態や内部工程は命名して概念化せず" in agent_rules
     assert "目的と寿命を平易に1回だけ示す" in agent_rules
     assert "同じ対象を複数名で呼ばない" in agent_rules
 
@@ -4381,7 +4406,7 @@ def test_plan_standards_require_success_paths_for_new_restrictions() -> None:
     ):
         assert restriction in standards
     assert "現行実装で成功する利用シナリオ" in standards
-    assert "公開契約変更として利用者合意の根拠を記載する" in standards
+    assert "公開契約変更としてユーザー合意の根拠を記載する" in standards
     assert "受理する入力値の縮小" not in review_task
 
 
@@ -4600,7 +4625,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         "   `review-standards/references/judgment-details.md`の絶対パスも同じ配送文へ含める。\n"
         "   計画担当の応答では、担当フィードバックファイル数とフィードバック由来行数の一致、"
         "内部の要求別採否が1行の採否・範囲・理由へ欠落なく統合されたこと、レビュー表の採否、"
-        "イベント単位の変更履歴及びdetail側の変更契約が一致することを検収する。\n"
+        "イベント単位の変更履歴及び計画ファイル（詳細）の変更契約が一致することを検収する。\n"
     ) in planner
     assert "計画の目的と実施内容に記録された採否・除外・保持を満たす最小限の修正" in plan_review
     assert "採否と対応結果を実施内容、イベント単位の変更履歴及び`atk review-table`のレビュー表" in plan_review
@@ -4851,7 +4876,7 @@ def test_review_completion_evidence_and_checkpoint_observation_contracts_are_con
     incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
     coverage_contract = (
-        "各要件には、正常系、最小値・件数境界、状態遷移・失敗復旧、外部入力・保存不変条件及び利用者可視境界を記録する。"
+        "各要件には、正常系、最小値・件数境界、状態遷移・失敗復旧、外部入力・保存不変条件及び消費主体可視境界を記録する。"
     )
     assert "初回レビューでは他の点検より先に、計画から独立要件を列挙する。" in review_task
     assert "列挙した各要件へ、正常系、完遂範囲・順序・条件を指定する入力、主要な異常系を構成する。" in review_task

@@ -239,7 +239,7 @@ _PULL_MIN_INTERVAL_SECONDS = 30.0
 直近の同期からの経過時間は`.git/FETCH_HEAD`のmtimeで判定する。
 同ファイルは`git fetch`が実行されるたびに更新され、プロセスを跨いで参照できるため、
 状態ファイルを別途設けずに済む。
-定期バックグラウンド更新の省略と、利用者操作での同期再利用案内に共用する。
+定期バックグラウンド更新の省略と、ユーザー操作での同期再利用案内に共用する。
 """
 
 
@@ -791,7 +791,7 @@ def pull(private_notes: pathlib.Path) -> None:
 def pull_if_stale(private_notes: pathlib.Path) -> bool:
     """定期更新が必要ならremote同期し、実行したかを返す。
 
-    定期バックグラウンド更新専用とする。利用者の操作に対応する経路
+    定期バックグラウンド更新専用とする。ユーザーの操作に対応する経路
     （変更操作・明示的な同期要求）は`pull`を用い、毎回リモートの最新状態を取得する。
     """
     _assert_repo_lock_held(private_notes)

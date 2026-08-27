@@ -41,7 +41,7 @@ _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 """定期バックグラウンド更新の間隔。
 
 `atk mq process-loop`が10分間隔で更新する先例に対し、
-Web UIは利用者が画面を閲覧する前提のため短く取る。
+Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
@@ -496,7 +496,7 @@ class Operations:
     def sync(self) -> bool:
         """リポジトリを明示的に同期する。
 
-        利用者の操作に対応する経路であるため、直近のpullからの経過時間によらず毎回実行する。
+        ユーザーの操作に対応する経路であるため、直近のpullからの経過時間によらず毎回実行する。
         """
         with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
             common.pull(self.private_notes)

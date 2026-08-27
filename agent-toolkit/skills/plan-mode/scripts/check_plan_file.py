@@ -152,12 +152,12 @@ def _check_plan_size(lines: list[str]) -> list[str]:
 
 
 def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
-    """メイン側計画パスから対応するdetail側の絶対パスを返す（stem導出）。"""
+    """計画ファイル（メイン）のパスから対応する計画ファイル（詳細）の絶対パスを返す（stem導出）。"""
     return plan_path.with_name(f"{plan_path.stem}{_plan_format.PLAN_DETAIL_SUFFIX}")
 
 
 def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Path) -> list[str]:
-    """メイン側の計画メタ情報`実装詳細`がstem導出値と一致するかを検査する。"""
+    """計画ファイル（メイン）の計画メタ情報`実装詳細`がstem導出値と一致するかを検査する。"""
     if declared_value is None:
         return [f"計画メタ情報の`{_plan_format.PLAN_METADATA_DETAIL_FIELD}`が無い: 期待={detail_path.name}"]
     declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
@@ -170,7 +170,7 @@ def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Pat
 
 
 def _main_path_for_detail(detail_path: pathlib.Path) -> pathlib.Path:
-    """detail側パスからstem対応するメイン側計画パスを返す。"""
+    """計画ファイル（詳細）のパスからstem対応する計画ファイル（メイン）のパスを返す。"""
     suffix = _plan_format.PLAN_DETAIL_SUFFIX
     if detail_path.name.endswith(suffix):
         return detail_path.with_name(f"{detail_path.name[: -len(suffix)]}.md")
@@ -214,10 +214,10 @@ def _legacy_bug_warnings(text: str) -> list[str]:
 
 
 def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
-    """新書式（メイン側・detail側の2ファイル）を検査してエラーと警告を返す。
+    """新書式（計画ファイル（メイン）・計画ファイル（詳細）の2ファイル）を検査してエラーと警告を返す。
 
     呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
-    detail側の実在は呼び出し前提として扱う。
+    計画ファイル（詳細）の実在は呼び出し前提として扱う。
     """
     errors: list[str] = []
     warnings: list[str] = []

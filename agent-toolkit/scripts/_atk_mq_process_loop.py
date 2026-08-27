@@ -945,7 +945,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     件数は選択したオーケストレーターのセッション起動要否だけに使う。
     分類結果の保存、依存判定、セッション上限、実行順、着手可否判定、バッチ選択は
     process-feedbacksが担う。
-    初回再開時は選択したCLIのresume形式だけを渡し、再開後のプロンプト入力は利用者へ委ねる。
+    初回再開時は選択したCLIのresume形式だけを渡し、再開後のプロンプト入力はユーザーへ委ねる。
     新規起動は対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
     `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。

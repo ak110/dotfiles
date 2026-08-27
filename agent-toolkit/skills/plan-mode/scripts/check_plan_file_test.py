@@ -147,7 +147,7 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 def _new_format_plan(
     repo: pathlib.Path, base: str, *, bug: bool = False, detail_name: str = "plan.detail.md"
 ) -> tuple[str, str]:
-    """新書式（メイン側・detail側）の正規計画を組み立てて返す。"""
+    """新書式（計画ファイル（メイン）・計画ファイル（詳細））の正規計画を組み立てて返す。"""
     work_type = "バグ対応" if bug else "通常変更"
     main = f"""# 計画の主題
 
@@ -241,7 +241,7 @@ def _new_format_plan(
 
 
 def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
-    """新規作成用の人間向けメイン側・detail側fixtureを返す。"""
+    """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）fixtureを返す。"""
     main = f"""# 計画の主題
 
 ## 概要
@@ -269,7 +269,7 @@ def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.
 
 ## 変更履歴
 
-### 利用者からの確認
+### ユーザー発言: 本セッションの直接指示
 
 ```text
 公開契約の境界だけを更新する。
@@ -356,7 +356,7 @@ def _check_new(
     create_bug_file: bool = True,
     bug_file_content: str | None = None,
 ) -> tuple[list[str], list[str]]:
-    """新書式の計画（メイン側・detail側）を一時ファイルへ保存して検査する。"""
+    """新書式の計画（計画ファイル（メイン）・計画ファイル（詳細））を一時ファイルへ保存して検査する。"""
     path = repo / plan_name
     path.write_text(main_content, encoding="utf-8")
     detail_path = repo / f"{path.stem}.detail.md"
@@ -647,7 +647,7 @@ def test_cli_has_no_base_commit_option() -> None:
 
 @pytest.mark.parametrize("bug", [False, True])
 def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bug: bool) -> None:
-    """新書式のメイン側・detail側の組を通常・バグ対応いずれも受理する。"""
+    """新書式の計画ファイル（メイン）・計画ファイル（詳細）の組を通常・バグ対応いずれも受理する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
@@ -659,7 +659,7 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
 def test_accepts_human_readable_new_format_plan_without_migration_warning(
     repo: tuple[pathlib.Path, str],
 ) -> None:
-    """新規作成用の人間向けメイン側・detail側をwarningなしで受理する。"""
+    """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）をwarningなしで受理する。"""
     work_dir, _base = repo
     main_content, detail_content = _human_new_format_plan(work_dir)
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
@@ -668,14 +668,14 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
 
 
 def test_new_format_detected_by_detail_file_presence(repo: tuple[pathlib.Path, str]) -> None:
-    """detail側ファイルが存在しない同名メイン側は旧形式として検査される（`実装詳細`欠落を新書式エラーにしない）。"""
+    """計画ファイル（詳細）が存在しない同名の計画ファイル（メイン）は旧形式として検査される（`実装詳細`欠落を新書式エラーにしない）。"""
     work_dir, base = repo
     errors, _warnings = _check(work_dir, _plan(work_dir, base))
     assert not errors, errors
 
 
 def test_new_format_rejects_detail_reference_mismatch(repo: tuple[pathlib.Path, str]) -> None:
-    """メイン側の`実装詳細`がstem導出値と一致しない場合を拒否する。"""
+    """計画ファイル（メイン）の`実装詳細`がstem導出値と一致しない場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 実装詳細: `plan.detail.md`", "- 実装詳細: `other.detail.md`")
@@ -684,7 +684,7 @@ def test_new_format_rejects_detail_reference_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_missing_detail_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
-    """メイン側の計画メタ情報に`実装詳細`が無い場合を拒否する。"""
+    """計画ファイル（メイン）の計画メタ情報に`実装詳細`が無い場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 実装詳細: `plan.detail.md`\n", "")
@@ -693,7 +693,7 @@ def test_new_format_rejects_missing_detail_metadata_field(repo: tuple[pathlib.Pa
 
 
 def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Path, str]) -> None:
-    """メイン側に`## 検証区分`が無い新書式を拒否する。"""
+    """計画ファイル（メイン）に`## 検証区分`が無い新書式を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace(
@@ -709,7 +709,7 @@ def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Pat
 
 
 def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path, str]) -> None:
-    """`## バグ調査結果`はdetail側専用でありメイン側に置くと拒否する。"""
+    """`## バグ調査結果`は計画ファイル（詳細）専用であり計画ファイル（メイン）に置くと拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace(
@@ -721,7 +721,7 @@ def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path,
 
 
 def test_new_format_rejects_missing_bug_sidecar(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ対応detail側の分離先ファイルが無い場合を拒否する。"""
+    """バグ対応の計画ファイル（詳細）に記載した分離先ファイルが無い場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     errors, _warnings = _check_new(work_dir, main_content, detail_content, create_bug_file=False)
@@ -759,7 +759,7 @@ def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """detail側の固定H2欠落も検査対象となる。"""
+    """計画ファイル（詳細）の固定H2欠落も検査対象となる。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     detail_content = detail_content.replace(
@@ -809,7 +809,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
 
 
 def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
-    """CLI経由でも新書式のメイン側・detail側の組を受理する。"""
+    """CLI経由でも新書式の計画ファイル（メイン）・計画ファイル（詳細）の組を受理する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, detail_name="new-format-plan.detail.md")
     path = work_dir / "new-format-plan.md"

@@ -55,7 +55,7 @@ _WINDOWS_WRITE_OWNER = 0x00080000
 
 
 class ManagedTempError(Exception):
-    """利用者が入力または実行環境を修正できる検証エラー。"""
+    """ユーザーが入力または実行環境を修正できる検証エラー。"""
 
 
 class _WindowsApiError(ManagedTempError):

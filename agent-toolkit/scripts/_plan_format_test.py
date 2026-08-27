@@ -155,7 +155,7 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 | --- | --- | --- | --- |
 | 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |
 | 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |
-| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | 公開契約に関係する範囲だけを採用するため。 |
+| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |
 
 ## 提示素材
 
@@ -164,7 +164,7 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 
 ## 変更履歴
 
-### 利用者からの確認
+### ユーザー発言: 本セッションの直接指示
 
 ```text
 公開契約に必要な変更だけを実施する。
@@ -280,7 +280,7 @@ def test_canonical_plan_passes_structure_check() -> None:
 
 
 def test_human_readable_main_and_detail_pass_structure_check() -> None:
-    """新規の人間向けメインとdetailがIDなしの判断・実装契約を満たす。"""
+    """新規の人間向け計画ファイル（メイン）と計画ファイル（詳細）がIDなしの判断・実装契約を満たす。"""
     work_type, main_errors = _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)
     assert work_type == "通常変更"
     assert not main_errors, main_errors
@@ -306,6 +306,58 @@ def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
     assert any("採用以外の`根拠`" in error for error in errors), errors
+
+
+def test_human_readable_history_requires_canonical_user_heading() -> None:
+    """新規書式の直接入力は`ユーザー発言:`見出しと空でない逐語本文を持つ。"""
+    content = _HUMAN_MAIN_CONTENT.replace("### ユーザー発言: 本セッションの直接指示", "### 利用者からの確認", 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("`### ユーザー発言:`見出し" in error for error in errors), errors
+
+
+def test_human_readable_partial_user_instruction_counts_as_adopted() -> None:
+    """ユーザー指示の部分採用も採用済みとして扱う。"""
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "| 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |",
+        "| 公開契約に必要な変更を実装する | ユーザー指示 | 部分採用 | - |",
+        1,
+    )
+    assert _plan_format.has_adopted_human_user_instruction(content)
+
+
+def test_human_readable_action_accepts_review_origin_with_matching_round(tmp_path: pathlib.Path) -> None:
+    """計画レビュー由来の採用行は絶対パスのTSVと同じ正のラウンドを指定する。"""
+    review_path = tmp_path / "review.tsv"
+    review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |",
+        f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | 採用 | {review_path.as_posix()}のround 2 |",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert not errors, errors
+
+
+@pytest.mark.parametrize(
+    ("origin", "root", "expected_error"),
+    [
+        ("計画レビュー第0ラウンド", "-", "`由来`は"),
+        ("計画レビュー第1ラウンド", "{path}のround 2", "計画レビュー由来"),
+    ],
+)
+def test_human_readable_action_rejects_invalid_review_origin_or_root(
+    tmp_path: pathlib.Path, origin: str, root: str, expected_error: str
+) -> None:
+    """計画レビュー由来の採用行は正のラウンドと対応する根拠を必要とする。"""
+    review_path = tmp_path / "review.tsv"
+    review_path.write_text("1\tplan-review\t指摘\n", encoding="utf-8")
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |",
+        f"| 入力の境界を追加確認する | {origin} | 採用 | {root.format(path=review_path.as_posix())} |",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any(expected_error in error for error in errors), errors
 
 
 def test_human_readable_action_rejects_independent_exclusion_table() -> None:

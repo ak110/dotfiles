@@ -523,12 +523,12 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
 
 
 def _plan_main_path_for(display_path: str) -> str:
-    """計画構成要素のパスから対応するメイン側（計画本体）の絶対パスを返す。
+    """計画構成要素のパスから対応する計画ファイル（メイン）の絶対パスを返す。
 
-    実装詳細側`<stem>.detail.md`はstem導出でメイン側`<stem>.md`へ変換する。
-    メイン側の節構成検査が実装詳細側の実在・節構成も検査するため、
-    detail側書込み時もメイン側パスを検査案内の対象とする。
-    メイン側パスはそのまま返す。
+    計画ファイル（詳細）`<stem>.detail.md`はstem導出で計画ファイル（メイン）`<stem>.md`へ変換する。
+    計画ファイル（メイン）の節構成検査が計画ファイル（詳細）の実在・節構成も検査するため、
+    計画ファイル（詳細）書込み時も計画ファイル（メイン）パスを検査案内の対象とする。
+    計画ファイル（メイン）パスはそのまま返す。
     """
     if display_path.endswith(".detail.md"):
         return display_path[: -len(".detail.md")] + ".md"
@@ -536,7 +536,7 @@ def _plan_main_path_for(display_path: str) -> str:
 
 
 def _plan_pair_exists(file_path: str) -> bool:
-    """計画構成要素のメイン側とdetail側がともに実在するかを返す。"""
+    """計画構成要素の計画ファイル（メイン）と計画ファイル（詳細）がともに実在するかを返す。"""
     main_path = pathlib.Path(_plan_main_path_for(file_path))
     detail_path = main_path.with_suffix(".detail.md")
     return main_path.is_file() and detail_path.is_file()

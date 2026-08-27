@@ -180,7 +180,7 @@ def _commit_values_by_path(
 def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
     """frontmatterの予約キーが不正に追加・変更・削除されていないかを検証する。
 
-    利用者が$EDITORまたはWeb APIで内部管理用frontmatterを書き換えることを防ぐ。
+    ユーザーが$EDITORまたはWeb APIで内部管理用frontmatterを書き換えることを防ぐ。
     """
     original_parsed = _frontmatter.parse_frontmatter(original)
     updated_parsed = _frontmatter.parse_frontmatter(updated)

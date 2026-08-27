@@ -36,7 +36,7 @@ from _atk_mq_repo import _resolve_repo_id, resolve_add_target, resolve_head_comm
 
 
 def _read_saved_entry_details(path: pathlib.Path) -> dict[str, object | None]:
-    """保存済みエントリを再読込し、利用者が照合するメタデータを返す。"""
+    """保存済みエントリを再読込し、ユーザーが照合するメタデータを返す。"""
     parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     if parsed is None:
         raise WebInputError(f"保存済みエントリのfrontmatterを読み込めません: {path.name}")
@@ -190,7 +190,7 @@ CLIオプションより優先して採用するが、`target_repo`は`_resolve_
 `type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
-`reservation`・`reservation_companion`・`target_commit_history`は利用者による直接指定を禁止し、
+`reservation`・`reservation_companion`・`target_commit_history`はユーザーによる直接指定を禁止し、
 CLIが管理する識別情報、依存、修復TBD、旧形式の内部metadataとして予約する。
 """
 

@@ -129,7 +129,7 @@ _METADATA_KEYS = frozenset(
 )
 _BODY_KEYS = frozenset(
     {
-        # 自由形式の本文を保持するフィールド。内部のキー名は利用者の入力に由来する
+        # 自由形式の本文を保持するフィールド。内部のキー名はユーザーの入力に由来する
         "input",
         "output",
         "arguments",
@@ -2067,7 +2067,7 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
     エントリ・`message`・`payload`・`item`・各ブロックのようなプロトコル構造は、
     深さを問わず区分値と識別子を保持するため除外の対象とする。
     `input`・`output`・`arguments`・`prompt`のような自由形式の本文フィールドでは、
-    `mode`・`status`のような汎用語のキーが利用者の入力そのものを保持するため、
+    `mode`・`status`のような汎用語のキーがユーザーの入力そのものを保持するため、
     その内部のキーを除外しない。
     """
     texts: list[str] = []

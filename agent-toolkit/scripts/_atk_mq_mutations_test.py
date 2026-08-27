@@ -812,7 +812,7 @@ def test_set_dependencies_cli_rejects_cycle(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """直接CLI呼び出しも循環拒否を利用者向け終了状態へ変換する。"""
+    """直接CLI呼び出しも循環拒否をユーザー向け終了状態へ変換する。"""
     notes = _setup_notes(tmp_path)
     first = _write_convert_feedback(notes, "first.md")
     _write_convert_feedback(notes, "second.md")

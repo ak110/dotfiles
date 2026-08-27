@@ -77,7 +77,7 @@ stdout全体が1つのJSONとして解析されるため、対象ごとに出力
 
 PreToolUseやPostToolUseでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
-`systemMessage`の情報通知は利用者の判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動して利用者の対応を要しない事象には付けない。
+`systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象には付けない。
 Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘導等）は`decision: "block"`＋`reason`を採用する。
 永続ログはstderr出力ではなく`_stop_gate.append_stop_log`等の専用APIに集約する。
 

@@ -120,7 +120,7 @@ def _codex_started_marker() -> dict:
 
 
 def _background_bash_launch_entry(tool_use_id: str) -> dict:
-    """背景Bash起動を記録するメイン側userエントリを生成する。"""
+    """背景Bash起動を記録する計画ファイル（メイン）側userエントリを生成する。"""
     return {
         "type": "user",
         "isSidechain": False,

@@ -79,7 +79,7 @@ _HOOK_ID = "agent-toolkit/user-prompt-submit"
 def _is_harness_message(prompt: str) -> bool:
     """ハーネスが挿入したメッセージかを判定する。
 
-    ハーネス通知を利用者のスラッシュコマンドとして扱わないために用いる。
+    ハーネス通知をユーザーのスラッシュコマンドとして扱わないために用いる。
     """
     return _HARNESS_MESSAGE_RE.search(prompt) is not None
 
@@ -185,7 +185,7 @@ def main(payload_text: str) -> int:
     if not isinstance(prompt, str) or not prompt:
         return 0
 
-    # 公式契約では`prompt`は利用者の送信本文である。実装版2.1.221で観測した
+    # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知の混入経路だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
         return 0

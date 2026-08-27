@@ -77,7 +77,7 @@ feedbackのactive集合は`inbox`・`planning`・`processing`である。`planni
 出所と引用範囲付きの逐語回答・保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
 `feedbacks-planner`はバッチ全項目の採否記録を保持したまま、全要求不採用の項目をreject対象、保留項目をhold対象と計画スレッドの起動前に判定して計画対象集合から除外する。判定結果は完了報告でメインへ返し、キュー状態を変更しない。
 部分採用は確認経路へ機械的に含めず、`references/decision-format.md`の採否記録へ残す。事前除外後の計画対象集合だけを計画担当へ渡す。
-実装順序の保証は統合計画detail側の`### 実装単位`の先行依存と統合順へ移し、`start-processing`へ新たな順序・依存検査を追加しない。
+実装順序の保証は統合計画の計画ファイル（詳細）`### 実装単位`の先行依存と統合順へ移し、`start-processing`へ新たな順序・依存検査を追加しない。
 別リポジトリ項目の投入と照合は`../add-feedback/references/cross-repository-submission.md`を正本とする。
 
 Claude CodeとCodexの双方で、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
@@ -101,7 +101,7 @@ agent定義の欠落、frontmatterの写像不能又は`feedbacks-planner`の起
 
 Claude CodeとCodexのいずれかのホストの通常型で`feedbacks-planner`から`status: awaiting_confirmation`と不採用確認用`user_decisions`を受領した場合は、確認待ち経路へ進む。
 `status`を失敗処理より先に確認し、`awaiting_confirmation`を失敗や`needs_escalation`として扱わない。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目だけを利用者確認から除外する。それ以外の項目ごとに
+`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目だけをユーザー確認から除外する。それ以外の項目ごとに
 原文との差異と技術的理由を示す`AskUserQuestion`を発行し、回答を得た場合は逐語文を渡して同じ系列の新しい`feedbacks-planner`識別子を起動し、
 採否記録を再検収する。
 回答なしの不採用確認用TBD、保存済みTBDの再開及び`blocked`状態の扱いは`references/hold-with-tbd-inject.md`を正本とする。

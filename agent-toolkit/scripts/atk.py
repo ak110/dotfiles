@@ -26,7 +26,7 @@
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
-  初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
+  初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末

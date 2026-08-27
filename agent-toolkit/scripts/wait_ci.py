@@ -33,7 +33,7 @@ from urllib.parse import quote, urlparse
 
 import _json_command
 
-# 以下の終了コードはCLIの公開インターフェース（利用者が`echo $?`等で参照する契約）であり、
+# 以下の終了コードはCLIの公開インターフェース（ユーザーが`echo $?`等で参照する契約）であり、
 # private実装詳細ではないためアンダースコア接頭辞を付けない。
 # `EXIT_GH_ERROR`はGitHub専用実装だった当時の名称を公開契約として維持する。
 # 現在はforge CLI（`gh`・`glab`）呼び出し失敗と対象forge判別失敗の双方を表す。

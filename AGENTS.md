@@ -96,7 +96,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 本リポジトリの成果物はLinux・Windowsの複数マシンへ配布される。
 設定・規範・ツールの変更は全環境への配布を前提として反映先を判定し、配布先を直接編集せず配布原本
 （chezmoiソース・`share/`配下のmanaged設定・agent-toolkitプラグイン）を編集する。
-例外は、利用者が単一環境限定と明示した対象と、既存規範が環境限定と定めた成果物
+例外は、ユーザーが単一環境限定と明示した対象と、既存規範が環境限定と定めた成果物
 （`scripts/`配下をLinux前提とする[docs/development/architecture.md](docs/development/architecture.md)の方針など）とする。
 配布元と配布先の対応は次の列挙を正本とする。
 

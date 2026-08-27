@@ -1002,7 +1002,7 @@ class TestCommitAndPushRetry:
 
 
 class TestExplicitUpstreamIntegration:
-    """実Gitで共有`FETCH_HEAD`と利用者設定から独立した同期対象を検証する。"""
+    """実Gitで共有`FETCH_HEAD`とユーザー設定から独立した同期対象を検証する。"""
 
     @staticmethod
     def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -1426,7 +1426,7 @@ class TestPullIfStale:
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
 
     def test_public_pull_ignores_rate_limit(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """利用者の操作に対応する`pull`は直近pullの有無によらず毎回実行する。"""
+        """ユーザーの操作に対応する`pull`は直近pullの有無によらず毎回実行する。"""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         fetch_head = git_dir / "FETCH_HEAD"

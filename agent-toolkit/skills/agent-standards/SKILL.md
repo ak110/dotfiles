@@ -108,7 +108,7 @@ description: >
 
 規範量が作業へ影響する経路は、同一契約の分散で同期対象箇所が増えることと、判断に使わない記述を起動時に読んで初期コンテキストを消費することの2つとする。総バイト数だけで削減対象を決めない。
 記述は、常時ロード（`rules/`とfrontmatterの`description`）、メイン起動時（`SKILL.md`本体）、明示Read時（`references/`）、サブエージェント注入（agent定義とfrontmatterの`skills`）の4階層から、読む主体と必要になる時点に合わせて配置する。
-スキルの本数削減は常時ロード量をほとんど減らさない。削減では、利用者が観測する起動経路を変える統廃合より、`SKILL.md`本体から`references/`への退避とagent定義の縮小を優先して検討する。
+スキルの本数削減は常時ロード量をほとんど減らさない。削減では、消費主体が観測する起動経路を変える統廃合より、`SKILL.md`本体から`references/`への退避とagent定義の縮小を優先して検討する。
 
 統合を検討する場合、削減判定は次のいずれかの根拠を満たすことを条件とする。
 
@@ -147,6 +147,6 @@ Claude Codeのhookは状態ファイル`{tempdir}/claude-agent-toolkit-{session_
 - `references/agent-skills.md`: スキル編集時（公式リファレンスの参照先を含む）
 - `references/check-script-design.md`: 機械チェックスクリプト新設・改修時
 - `references/claude-hooks.md`（hook編集時）・`references/auto-mode.md`（auto mode編集時・権限拒否時）
-- `references/hook-message-labeling.md`: hookの利用者向けメッセージを新設・改訂する時
+- `references/hook-message-labeling.md`: hookのエンドユーザー向けメッセージを新設・改訂する時
 - `references/session-records.md`: セッション記録の集計・分析時
 - `references/tool-operations.md`: 大量の文書読込・大規模ブロック置換・plugin資源のroot失効時

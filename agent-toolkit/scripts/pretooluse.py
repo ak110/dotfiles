@@ -32,7 +32,7 @@ wait:
 Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
-- 高容量の利用者領域を無限定に再帰検索する実行位置の検出 (warn)
+- 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
@@ -1987,7 +1987,7 @@ def _cwd_in_python_project(cwd: str) -> bool:
 
 # --- Bash: 実行位置のトークン列抽出（助言用検査の共通入口）---
 
-# 本ヘルパーの利用者は助言用の3検査（出力切り詰め・`codex exec`・agent-toolkit版更新漏れ）に限る。
+# 本ヘルパーの消費主体は助言用の3検査（出力切り詰め・`codex exec`・agent-toolkit版更新漏れ）に限る。
 # 遮断を伴う`_check_bash_process_kill_by_pattern`は、コマンド置換・サブシェル・オプション終端まで
 # 解決できる解析を用意できるまで現行のコマンド文字列全体への一致判定を維持し、本ヘルパーを使わない
 # （解析の不足で既存の保護を外さないため）。
@@ -2872,7 +2872,7 @@ def _check_bash_output_truncation(command: str) -> str | None:
 
 
 def _is_high_capacity_home_target(token: str) -> bool:
-    """高容量の利用者領域を表す検索対象かを返す。"""
+    """高容量のユーザー領域を表す検索対象かを返す。"""
     normalized = token.rstrip("/")
     home = pathlib.Path.home()
     targets = {
@@ -2913,7 +2913,7 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
 
 
 def _check_bash_recursive_home_search(command: str) -> str | None:
-    """高容量の利用者領域を無限定に再帰検索する実行位置へ警告を返す。"""
+    """高容量のユーザー領域を無限定に再帰検索する実行位置へ警告を返す。"""
     if not any(
         segment.resolved and _pipeline_has_recursive_home_search(segment.tokens)
         for pipeline in _extract_execution_pipelines(command)
