@@ -282,6 +282,27 @@ def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
         assert phrase in base
 
 
+def test_process_stop_contract_connects_shared_identifier_and_claude_task_id() -> None:
+    """共有終了規約とClaude CodeのTaskStop規約が起動結果の識別子で接続される。"""
+    operations = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    claude = _CLAUDE_CODE_RULE.read_text(encoding="utf-8")
+
+    for phrase in (
+        "プロセス又はホスト管理ジョブを終了させる操作は、自身が起動し、起動結果から停止用の識別子を取得して保持した対象に限る。",
+        "直接起動したOSプロセスではPID、ホスト管理ジョブでは起動結果または背景移行通知が返したタスクIDなど、対象の起動経路が指定する識別子と停止手段を組み合わせる。",
+        "別種の識別子への推測変換又はパターン一致で対象を特定しない。",
+    ):
+        assert phrase in operations
+    assert "自身が起動して識別子（PID）を確認したものに限る。" not in operations
+
+    for phrase in (
+        "起動結果が返したタスクIDを`TaskStop`ツールへ渡す。",
+        "前景起動が実行環境の判断で背景実行へ移行し、移行通知がタスクIDを示した場合も同様とする。",
+        "シェルの`kill`等でPIDを推測して停止しない",
+    ):
+        assert phrase in claude
+
+
 def test_codex_named_agent_compatibility_preserves_stage_engine() -> None:
     """名前付きagentの直接適用が工程別engineを無断変更しない。"""
     base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
