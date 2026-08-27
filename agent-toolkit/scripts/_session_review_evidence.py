@@ -589,6 +589,8 @@ def _is_manual_review_invocation(text: str, runtime: _Runtime) -> bool:
 def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str, Any]]:
     """手動・自動振り返り境界を適用し、最終結果と連番を確定する。"""
     boundary = _review_boundary_index(events, runtime)
+    if runtime == "claude" and boundary < len(events) and events[boundary]["kind"] == "session-review-started":
+        boundary = len(events)
     events = [event for event in events[:boundary] if event["kind"] != "session-review-started"]
 
     for event in reversed(events):
@@ -601,31 +603,28 @@ def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str,
 
 
 def _review_boundary_index(events: list[dict[str, Any]], runtime: _Runtime) -> int:
-    """既存の抽出契約に従う振り返り境界のイベント位置を返す。"""
-    manual_boundary = next(
-        (
-            index
-            for index, event in enumerate(events)
-            if event["kind"] == "user" and _is_manual_review_invocation(event["text"], runtime)
-        ),
-        len(events),
-    )
-    started_index = next(
-        (index for index, event in enumerate(events) if event["kind"] == "session-review-started"),
-        len(events),
-    )
-    automatic_boundary = len(events)
-    if runtime == "codex" and started_index < len(events):
-        automatic_boundary = next(
-            (
-                index
-                for index in range(started_index - 1, -1, -1)
-                if events[index]["kind"] == "user" and events[index]["text"].startswith(STOP_ADVISOR_PREFIX)
-            ),
-            len(events),
-        )
-    boundary = min(manual_boundary, automatic_boundary)
-    return boundary
+    """手動・自動振り返り境界から最新の適用可能なイベント位置を返す。"""
+    candidates = [
+        index
+        for index, event in enumerate(events)
+        if event["kind"] == "user" and _is_manual_review_invocation(event["text"], runtime)
+    ]
+    started_indices = [index for index, event in enumerate(events) if event["kind"] == "session-review-started"]
+    if runtime == "claude":
+        candidates.extend(started_indices)
+    else:
+        for started_index in started_indices:
+            stop_index = next(
+                (
+                    index
+                    for index in range(started_index - 1, -1, -1)
+                    if events[index]["kind"] == "user" and events[index]["text"].startswith(STOP_ADVISOR_PREFIX)
+                ),
+                None,
+            )
+            if stop_index is not None:
+                candidates.append(stop_index)
+    return max(candidates, default=len(events))
 
 
 def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> list[dict[str, Any]]:
@@ -885,6 +884,8 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
 def _stats_boundary_line(records: list[_Record], runtime: _Runtime) -> int | None:
     events = _extract_for_runtime([record.entry for record in records], runtime, [record.line for record in records])
     boundary = _review_boundary_index(events, runtime)
+    if runtime == "claude" and boundary < len(events) and events[boundary]["kind"] == "session-review-started":
+        return None
     if boundary >= len(events):
         return None
     line = events[boundary].get("line")
@@ -1622,12 +1623,6 @@ def _warning_boundary_line(records: list[_Record]) -> int | None:
         return None
     events = _extract_for_runtime([record.entry for record in records], runtime, [record.line for record in records])
     boundary = _review_boundary_index(events, runtime)
-    if runtime == "claude":
-        automatic_boundary = next(
-            (index for index, event in enumerate(events) if event["kind"] == "session-review-started"),
-            len(events),
-        )
-        boundary = min(boundary, automatic_boundary)
     if boundary >= len(events):
         return None
     for event in events[boundary:]:

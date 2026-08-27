@@ -3815,6 +3815,27 @@ def test_session_review_existing_means_contract_is_synchronized() -> None:
     assert "リポジトリの実装・規範・テストを追加読解しない" not in (_DESIGN_DOC.read_text(encoding="utf-8"))
 
 
+def test_session_review_uses_latest_boundary_for_each_consumer() -> None:
+    """複数起動時の最新境界選択と利用経路別の保持・除外を各正本へ同期する。"""
+    evidence = _SESSION_REVIEW_EVIDENCE.read_text(encoding="utf-8")
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    for document in (evidence, skill, design):
+        assert "最新の適用可能な" in document
+    assert "_is_manual_review_invocation" in evidence
+    for phrase in (
+        "Claudeの開始marker",
+        "Codexのstopに結び付く開始marker",
+        "`_review_boundary_index()`",
+        "`_finalize()`",
+        "`_stats_boundary_line()`",
+        "`_warning_boundary_line()`",
+    ):
+        assert phrase in skill or phrase in design
+    assert "automatic_boundary = next" not in evidence
+
+
 def test_plan_review_receives_public_help_and_check_script_absolute_path() -> None:
     """計画レビューの全生産者が公開CLIと構造検査スクリプトの絶対パスを受領する。"""
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
@@ -3969,6 +3990,24 @@ def test_plan_and_add_feedback_runs_outside_plan_mode() -> None:
     """plan-and-add-feedbackをplan mode外で実行する契約を維持する。"""
     text = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     assert "本スキルはplan mode外で実行する" in text
+
+
+def test_plan_and_add_feedback_restarts_same_session_without_implementation() -> None:
+    """同一セッションの計画改訂を両入力モードで再開し、投入で固定終端する。"""
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    contract = (
+        "同一セッションで、既に扱った同じ計画又は計画型feedbackを後続の方針に基づいて改訂し、"
+        "別の処理経路が明示されていない場合は、本スキルの再開として扱う。"
+        "自然言語modeとファイル名modeのいずれでも対象リポジトリを実装せず、"
+        "計画の更新を検収し、計画型feedbackの投入までを完了する。"
+        "更新後に実装承認を求めず、投入したfeedbackファイル名、計画ファイル及び実装へ着手していないことを"
+        "固定完了報告として返して終了する。"
+    )
+
+    assert contract in plan_and_add
+    assert contract in design
+    assert "実装承認を求める" not in plan_and_add
 
 
 def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:

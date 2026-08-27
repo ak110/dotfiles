@@ -98,7 +98,9 @@ Codexでは、起動方針で確定した現行plugin rootの絶対パスへ次�
 uv run --no-project --script "<plugin root>/scripts/_session_review_evidence.py" <transcript_path>
 ```
 
-両ホストとも既存の抽出器とJSONL出力を再利用する。
+両ホストとも既存の抽出器とJSONL出力を再利用する。抽出器は手動起動と自動起動の全候補（Claudeの開始markerと
+Codexのstopに結び付く開始markerを含む）から、最新の適用可能な起動境界を共通に選ぶ。`finalize`・`stats`・`warning`は同じ選択結果を使い、
+境界後を保持するか除外するかは各利用経路の既存契約に従う。
 メインは再抽出結果の全`kind=user`イベントから`(sequence, line)`列を作成し、advisorの`checked_user_events`の値・件数・順序が一致することを機械的に確認する。
 メインはこの照合で問題か否かを再分類しない。
 メインはadvisorの問題一覧だけを対象に、利用者介入かその他の問題かを分類し、観測事象、原因、予防処置、介入前の発火契機を確定する。

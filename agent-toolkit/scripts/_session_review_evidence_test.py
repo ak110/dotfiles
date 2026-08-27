@@ -937,6 +937,190 @@ def test_automatic_review_boundary_uses_last_stop_notice_before_started_marker(t
     assert evidence.has_session_review_started(str(transcript)) is True
 
 
+def test_review_boundary_uses_latest_applicable_manual_or_automatic_event() -> None:
+    """手動・自動の複数起動では最後の適用可能な境界を選択する。"""
+    claude_events = [
+        {"kind": "user", "text": "/session-review"},
+        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
+        {"kind": "user", "text": "再開後の作業"},
+        {"kind": "user", "text": "/session-review"},
+        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
+    ]
+    codex_events = [
+        {"kind": "assistant", "text": "結果"},
+        {"kind": "user", "text": evidence.STOP_ADVISOR_PREFIX + " 1回目"},
+        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
+        {"kind": "assistant", "text": "再開後の作業"},
+        {"kind": "user", "text": evidence.STOP_ADVISOR_PREFIX + " 2回目"},
+        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
+    ]
+
+    assert evidence._review_boundary_index(claude_events, "claude") == 4  # pylint: disable=protected-access  # noqa: SLF001
+    assert evidence._review_boundary_index(codex_events, "codex") == 4  # pylint: disable=protected-access  # noqa: SLF001
+
+
+@pytest.mark.parametrize("command", ["/session-review", "/agent-toolkit:session-review"])
+def test_multiple_manual_review_invocations_use_latest_claude_boundary(
+    tmp_path: pathlib.Path,
+    command: str,
+) -> None:
+    """Claude形式の複数手動起動では、最初のレビュー後の作業を保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
+            {"type": "user", "message": {"role": "user", "content": command}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "再開後の作業結果"}},
+            {"type": "user", "message": {"role": "user", "content": command}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "最新の振り返り中"}},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == ["本来の最終結果", command, "再開後の作業結果"]
+    assert events[-1]["kind"] == "final-result"
+
+
+def test_latest_claude_automatic_marker_is_shared_by_finalize_stats_and_warning(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Claude形式の複数自動起動で、各照会が最新markerを使い後続警告だけを除外する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "assistant", "message": {"role": "assistant", "content": "開始前の結果"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 最初のmarker後"},
+                "message": {"role": "user", "content": []},
+            },
+            {"type": "assistant", "message": {"role": "assistant", "content": "再開後の作業結果"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: 最新marker後"},
+                "message": {"role": "user", "content": []},
+            },
+            {"type": "assistant", "message": {"role": "assistant", "content": "最新marker後の作業結果"}},
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+    assert [event["text"] for event in events] == [
+        "開始前の結果",
+        "再開後の作業結果",
+        "最新marker後の作業結果",
+    ]
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 3, "text": "warning: 最初のmarker後"}]
+
+
+def test_latest_codex_automatic_boundary_is_shared_by_finalize_stats_and_warning(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codex形式の複数自動起動で、stopとmarkerの対応を最新へそろえる。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_token_count_entry("2026-08-19T00:00:00Z", {"input_tokens": 2, "output_tokens": 0, "total_tokens": 2}),
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "開始前"}]},
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 1回目"}],
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "completed",
+                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
+                    },
+                },
+            },
+            _codex_token_count_entry("2026-08-19T00:00:04Z", {"input_tokens": 5, "output_tokens": 0, "total_tokens": 5}),
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "最初のreview後"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "warning-before-latest",
+                    "output": "warning: 最新境界前",
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 2回目"}],
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "completed",
+                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
+                    },
+                },
+            },
+            _codex_token_count_entry("2026-08-19T00:00:10Z", {"input_tokens": 100, "output_tokens": 0, "total_tokens": 100}),
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "最新review後"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "function_call_output", "call_id": "warning-after-latest", "output": "warning: 最新境界後"},
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+    assert any(event["text"] == "最初のreview後" for event in events)
+    assert all(event["text"] != "最新review後" for event in events)
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    stats = _read_jsonl(capsys)
+    assert _events_by_kind(stats, "stats-summary")[0]["tokens"]["total_tokens"] == 7
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 7, "text": "warning: 最新境界前"}]
+
+
 def test_stop_notice_without_started_marker_does_not_mark_review_started(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

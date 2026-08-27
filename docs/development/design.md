@@ -53,6 +53,8 @@ toolkitは自身の排他区間外で他プロセスが行うfetchを管理し�
 検証後に`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行し、ファイル名昇順で全対象をplanningへ移す。
 自然言語要件を受領した場合は、この状態を経由せず、従来どおり新しい計画型フィードバックを追加する。
 
+同一セッションで、既に扱った同じ計画又は計画型feedbackを後続の方針に基づいて改訂し、別の処理経路が明示されていない場合は、本スキルの再開として扱う。自然言語modeとファイル名modeのいずれでも対象リポジトリを実装せず、計画の更新を検収し、計画型feedbackの投入までを完了する。更新後に実装承認を求めず、投入したfeedbackファイル名、計画ファイル及び実装へ着手していないことを固定完了報告として返して終了する。
+
 計画レビューが収束した後は、ファイル名昇順の最古の項目を`edit --plan-file`で計画型へ変換し、同じ保存境界でplanningからprocessingへ移す。
 変換結果を再取得してからplanningに残る統合元を判定し、残りが1件以上の場合だけ`rm --force`で統合先を`note`へ記録して除去する。
 入力が単一の場合は`rm`を呼ばず、計画型processing項目だけを残して成功とする。
@@ -424,6 +426,10 @@ transcriptの機械的な抽出と照会は`agent-toolkit/scripts/_session_revie
 `--detail`が指定行のtool_use入力全体とtool_result本文を返す。
 `--stats`は経過時間、非キャッシュ入力、キャッシュ読取、キャッシュ作成及び出力の4トークン成分、
 ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を返す。
+振り返り境界は、手動起動と自動起動の全候補（Claudeの開始markerとCodexのstopに結び付く開始markerを含む）を
+`_review_boundary_index()`で列挙し、最新の適用可能な境界を共通に選ぶ。`_finalize()`、`_stats_boundary_line()`と
+`_warning_boundary_line()`は同じ選択結果を使い、境界後を保持するか除外するかだけを各利用経路の既存契約に委ねる。
+Claude自動起動の`finalize`・`stats`は開始marker後を保持し、`warning`は境界後を除外する。
 メイン記録は振り返り境界より前のレコードを対象とし、補助記録は境界より前に起動した処理単位の全体を帰属させる。
 Codexの`SubAgentActivity.agent_thread_id`はrollout内から子孫まで訪問済み集合で再帰追跡し、同じthread又は循環参照を重複集計しない。
 `--detail`の出力量の上限は1エントリ単位で共有し、省略標識も上限へ算入することで、
