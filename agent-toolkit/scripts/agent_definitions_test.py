@@ -1813,26 +1813,22 @@ def test_feedback_transfer_requires_successful_registration_before_removal() -> 
 
 
 def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:
-    """成功コマンドの警告・統計・hook照会を連結し、異常系契約を維持する。"""
+    """成功コマンドの警告・統計・hook照会を連結し、問題一覧の契約を維持する。"""
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     extraction_at = advisor.index("`scripts/_session_review_evidence.py`へそのパスを渡して1回だけ実行")
     scan_at = advisor.index(
-        "抽出実行後に同スクリプトへ`--warn`・`--stats`・`--hook-notices`をそれぞれ付けた3回の実行を、1回のBash呼び出しで連結して実行する"
+        "抽出実行後に同スクリプトへ`--warn`、`--stats`、`--hook-notices`をそれぞれ付けた3回の照会を、1回のBash呼び出しで連結して実行する"
     )
-    timeline_at = advisor.index("抽出された時系列証拠から")
+    timeline_at = advisor.index("既定の抽出結果と各照会から")
     assert extraction_at < scan_at < timeline_at
     for phrase in (
-        "照会ごとに、どのフラグの出力かを判別できる区切りと当該照会の終了コードを出力へ含める",
-        "一致イベントがある場合は該当`line`を`--detail`で照会し",
-        "不一致時はその事実を`evidence`へ記録する",
+        "照会ごとにフラグを判別できる区切りと終了コードを出力へ含める",
         "いずれかの照会が非0で終了した場合も残る照会を続け",
-        "失敗した照会のフラグと終了コードを`evidence`へ記録して",
-        "連結照会の末尾照会の終了コードだけを全体の成否として扱わない",
+        "失敗した照会のフラグと終了コードを記録する",
+        "末尾の照会の終了コードだけを連結照会全体の成否として扱わない",
         "連結照会の失敗だけでは`status: evidence_insufficient`とせず",
-        "既定の抽出実行が失敗した場合又はtranscriptを取得できない場合に限り同statusとする",
-        "対策が失わせる成功経路や情報",
-        "総ライフサイクルコストを概念比較する",
+        "既定の抽出実行が失敗した場合又はtranscriptを取得できない場合に限り同statusを返す",
     ):
         assert phrase in advisor
 
@@ -1841,8 +1837,11 @@ def test_session_review_advisor_queries_before_reading_transcript_directly() -> 
     """追加調査を照会モード優先とし、transcriptの直接読解をfallbackへ限定する。"""
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
-    assert "`--grep <正規表現>`・`--detail <行番号>`で" in advisor
-    assert "照会で確定できない場合に限りtranscriptを直接読む" in advisor
+    assert "`--grep <正規表現>`又は`--detail <行番号...>`で" in advisor
+    assert "照会で問題の観測を確定できない場合に限りtranscriptを直接読む" in advisor
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    assert "照会で問題の観測を確定できない場合のfallback" in design
+    assert "候補の成立性" not in design
 
 
 def test_session_review_main_checks_duplicates_with_scoped_queue_list() -> None:
@@ -1852,25 +1851,25 @@ def test_session_review_main_checks_duplicates_with_scoped_queue_list() -> None:
 
     assert "atk mq list --status=active --target-repo=<repo-path> --skip-pull" in skill
     assert "既存規範・既存実装との重複" in skill
-    assert "推奨反映先のファイルと節の実在、既存契約との整合" in skill
+    assert "反映先のファイルと節の実在、既存契約との整合" in skill
     assert "atk mq" not in advisor
 
 
 def test_session_review_advisor_delegates_repository_checks_to_main() -> None:
-    """リポジトリ依存の照合をメインへ移し、advisor固有の評価を残す。"""
+    """リポジトリ依存の照合と判断をメインへ移し、advisorを問題列挙へ限定する。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     assert "既存実装と規範を読み" not in advisor
-    assert (
-        "恒久反映先を報告し、反映先の実在・整合、既存規範・既存実装との重複及び契約同期の成立性は計画ファイル（メイン）へ委ねる"
-        in advisor
-    )
+    for forbidden in ("対象リポジトリ", "提案基準", "環境固有", "既存実装と規範を読み"):
+        assert forbidden not in advisor
+    assert "advisorはtranscript内で観測した問題と証拠位置だけを問題一覧として返す" in skill
+    assert "問題の原因、対策及び改善提案の要否はメインが確定する" in skill
     assert "採用する候補に限り、`generation-criteria-detail.md`「総ライフサイクルコスト」が定める契約同期検索" in skill
-    assert "既存規範またはactiveなフィードバックとの重複判定はメインが所有" in criteria
+    assert "既存規範またはactiveなフィードバックとの重複を含む全ての抑止条件の判定はメインが所有" in criteria
     assert "既存規範・activeなフィードバックとの重複判定" not in advisor
-    assert "duplicate_check:" not in advisor
+    assert "問題と証拠位置の列挙だけを担い" in criteria
 
 
 def test_feedback_failure_contract_terminates_and_scans_the_whole_wave() -> None:
@@ -3096,20 +3095,30 @@ def test_implementation_review_internal_procedures_exist_only_in_receiver_tasks(
         assert receiver_contract not in executor
 
 
-def test_session_review_evidence_extraction_is_advisor_owned_and_main_rechecks_inventory() -> None:
-    """初回の証拠抽出をadvisorに所有させ、メインは同じ抽出器でinventoryを再検収する。"""
+def test_session_review_evidence_extraction_is_advisor_owned_and_main_rechecks_events() -> None:
+    """advisorの問題観測とメインの証拠再抽出を同じ抽出器へ接続する。"""
     sender = _SESSION_REVIEW.read_text(encoding="utf-8")
     receiver = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     assert "scripts/_session_review_evidence.py" in receiver
-    assert "抽出された時系列証拠" in receiver
-    assert "既存`scripts/_session_review_evidence.py`へ一度だけ渡し" in sender
-    assert "読み取り専用で証拠を再抽出する" in sender
+    assert "既定の抽出結果と各照会から" in receiver
+    assert "受領済み`transcript_path`を既存の証拠抽出器へ一度だけ渡して" in sender
+    assert "読み取り専用で既定の証拠を再抽出する" in sender
     assert "transcript_path`の絶対パス" in sender
     assert "`${CLAUDE_PLUGIN_ROOT}`を現行plugin rootとして使う" in sender
     assert '"<plugin root>/scripts/_session_review_evidence.py" <transcript_path>' in sender
-    assert "提案ごとの裏付け手段と`未検証`表示" in sender
-    assert "介入分類、観測事象、原因及び予防処置の意味評価はadvisorが所有" in sender
+    assert "advisorの問題一覧を独立した観測入力として扱い" in sender
+    assert "checked_user_events" in receiver
+    assert "problems:" in receiver
+    for forbidden in (
+        "classification",
+        "cause",
+        "prevention_action",
+        "root_cause",
+        "lifecycle_cost",
+        "alternatives",
+    ):
+        assert forbidden not in receiver
 
 
 def test_session_review_preserves_evidence_insufficient_status_path() -> None:
@@ -3124,121 +3133,108 @@ def test_session_review_preserves_evidence_insufficient_status_path() -> None:
     assert "`status`が`completed`の場合だけ" in validation
 
 
-def test_session_review_preserves_every_user_event_in_independent_inventory() -> None:
-    """全userイベントの独立inventoryと介入対応行をadvisor・基準・設計へ接続する。"""
+def test_session_review_separates_problem_observation_from_main_judgment() -> None:
+    """問題一覧とメインの改善候補判断をadvisor・基準・設計へ接続する。"""
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
 
     for phrase in (
-        "全`kind=user`イベント",
-        "出現順のまま一行ずつ",
-        "`intervention_inventory`",
-        "`sequence`と`line`",
-        "空でない`classification_reason`",
-        "ユーザー発話を逐語転記しない",
-        "`classification=intervention`",
-        "介入対応行を一行ずつ対応付け",
-        "観測事象、原因及び介入前の予防処置",
-        "候補統合は`proposals`の重複排除だけ",
+        "checked_user_events:",
+        "problems:",
+        "sequence:",
+        "line:",
+        "event_index:",
+        "unverified:",
+        "利用者入力又は自由形式の本文を逐語転記しない",
+        "問題がない場合は`problems`へ「問題なし」と記載する。",
     ):
         assert phrase in advisor
-    inventory_at = advisor.index("intervention_inventory:")
-    interventions_at = advisor.index("interventions:", inventory_at)
-    proposals_at = advisor.index("proposals:", interventions_at)
-    assert inventory_at < interventions_at < proposals_at
+    for forbidden in (
+        "classification",
+        "cause",
+        "prevention_action",
+        "root_cause",
+        "lifecycle_cost",
+        "alternatives",
+    ):
+        assert forbidden not in advisor
 
     for phrase in (
-        "ユーザー入力イベントの被覆と発火時点",
-        "全`kind=user`イベントを、`intervention_inventory`へ出現順のまま一行ずつ保持",
-        "独立した証拠一覧",
-        "全てのユーザー介入が許容処置で被覆",
-        "`intervention_inventory`又は介入対応行を削除してはならない",
-        "`activation.sequence < inventory_sequence`",
+        "advisorが全利用者入力を点検",
+        "確認済みイベントID一覧を機械検収する",
+        "問題一覧についてだけ、メインが介入、原因、処置及び発火時点を確定する",
+        "取得元で実行した完全な引数列と順序を表す`query`",
+        "異なる`--detail`引数列は別のqueryとして扱い、まとめて再照会しない",
+        "`query`へ利用者入力や自由形式の本文、grepの検索本文を記録せず",
+        "既定の利用者入力を含む全ての照会結果へ同じlocator契約を適用する",
     ):
         assert phrase in criteria
     for phrase in (
-        "全`kind=user`イベントを出現順のまま`sequence`・`line`付きの独立inventory",
-        "全件被覆、出現順、介入対応行の双方向集合差",
+        "全利用者入力を過不足なく覆う",
+        "問題一覧が参照する証拠位置を機械的に検収する",
+        "提案基準と環境固有観点を適用し、原因分析から提案投入までを確定する",
+        "取得元で実行した完全な引数列と順序を表す`query`",
+        "異なる`--detail`引数列をまとめない",
         "新しい永続状態・所有者・表示経路・証拠抽出機構を追加しない",
     ):
         assert phrase in design
 
 
-def test_session_review_main_rejects_incomplete_inventory_and_post_event_activation() -> None:
-    """メイン検収がinventoryの差分、参照不整合及び事後発火を拒否する。"""
+def test_session_review_main_rechecks_user_events_and_problem_references() -> None:
+    """メインが確認済みイベントIDと問題の証拠位置を機械的に再検収する。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
-    validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n### ")[0]
+    criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n## ")[0]
 
     for phrase in (
-        "受領済み`transcript_path`の絶対パス",
-        "一度だけ渡し、読み取り専用で証拠を再抽出する",
-        "抽出結果の全`kind=user`イベントから期待する`(sequence, line)`列",
-        "値・件数・出現順が完全一致",
-        "各行が空でない`observed_event`、`classification`（`intervention`又は`not_intervention`）及び空でない`classification_reason`",
-        "`classification=intervention`の全sequenceと`interventions.inventory_sequence`の集合差が双方向に空",
-        "各`inventory_sequence`・`inventory_line`の組が対応するinventoryの`sequence`・`line`の組と一致",
-        "`prevention_action.kind`が`proposal`、`existing_feedback`又は`suppression`",
-        "`prevention_action.value`が対応する新規提案、既存feedback filename又は抑止条件を一意に指す",
-        "`activation.sequence`と`line`が抽出結果の同一イベントを参照",
-        "`activation.sequence < inventory_sequence`",
-        "`condition`だけの自由記述は識別子参照として受理しない",
-        "advisorへ差し戻し、「提案無し」を確定しない",
-        "候補統合は`proposals`の重複排除だけ",
+        "既定の再抽出結果を`query=default`の照会結果としてそのまま使い",
+        "distinctな完全`query`文字列を、同じ引数列と順序で各1回だけ再実行する",
+        "異なる`--detail`引数列を1回の照会へまとめない",
+        "各`locator`が`event_index`だけを持ち",
+        "advisorが実行したものと同じ完全引数列の照会結果内に対象イベントが存在することを確認する",
+        "locatorの形式が異なる、又は対象イベントが存在しない証拠を持つ問題は判断材料に用いない",
+        "再抽出結果の全`kind=user`イベントから`(sequence, line)`列を作成し",
+        "advisorの`checked_user_events`の値・件数・順序が一致することを機械的に確認する",
+        "この照合で問題か否かを再分類しない",
+        "advisorの問題一覧だけを対象に、利用者介入かその他の問題かを分類し",
+        "観測事象、原因、予防処置、介入前の発火契機を確定する",
     ):
         assert phrase in validation
 
-    rejection_cases = (
-        "空集合（1つ以上の`kind=user`がある場合）",
-        "一部欠落",
-        "余分",
-        "順序逆転",
-        "介入参照の集合差",
-        "参照不整合",
-        "許容外処置",
-        "識別子を欠くactivation",
-        "介入以後の発火",
-    )
-    for case in rejection_cases:
-        assert case in validation
-    rejection_contract = (
-        "inventoryの"
-        + "、".join(rejection_cases[:-1])
-        + "又は"
-        + rejection_cases[-1]
-        + "が一件でもあればadvisorへ差し戻し、「提案無し」を確定しない。"
-    )
-    assert rejection_contract in validation
-
-    ordered = [
-        validation.index("抽出結果の全`kind=user`イベント"),
-        validation.index("inventoryの`sequence`と`line`が一意"),
-        validation.index("`classification=intervention`の全sequence"),
-        validation.index("各介入対応行が"),
-        validation.index("`prevention_action.value`"),
-        validation.index("`activation.sequence`と`line`"),
-        validation.index("inventoryの空集合"),
-        validation.index("全介入が許容処置で被覆"),
-    ]
-    assert ordered == sorted(ordered)
+    receiver = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+    for phrase in (
+        "query: default | --warn | --stats | --hook-notices | --detail <実際に渡した全行番号を同じ順序で列挙>",
+        "event_index: <当該照会のJSONL出力内における対象イベントの0始まりの位置>",
+        "各証拠には実際に実行した照会の完全な引数列を順序どおり`query`へ記録し",
+        "複数行を一度の`--detail`へ渡した場合は、実際に渡した全行番号と順序を同じ`query`へ保持する",
+        "`--grep`で見つけた箇所は`--detail`で照会する",
+        "`query`とlocatorへ利用者入力や自由形式の本文、grepの検索本文を記録しない",
+        "`summary`、`observed_event`及び`unverified`は問題の判別に必要な範囲へ要約し",
+    ):
+        assert phrase in receiver
+    for forbidden in (
+        "JSONイベント。キーと値を変えずに保持する",
+        "そのJSONイベントをlocatorに使う",
+        "`default`の`kind=user`イベントはlocatorに使わず",
+        "対象イベントが`kind=user`である証拠は判断材料に用いない",
+        "modeごとに一度だけ再実行する",
+    ):
+        for document in (receiver, skill, criteria, design):
+            assert forbidden not in document
 
 
 def test_session_review_allows_no_proposal_only_after_full_preventive_coverage() -> None:
     """全介入の事前処置が揃った場合だけ既存経路の「提案無し」を許可する。"""
-    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
-    validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n### ")[0]
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
 
-    for document in (advisor, criteria):
-        assert "activation.sequence" in document
-        assert "介入後の謝罪、説明、再実行又は修正" in document
-        assert "候補統合は`proposals`の重複排除だけ" in document
-    assert "全てのユーザー介入が許容処置で被覆" in criteria
-    assert "各処置の発火契機が介入前にある場合だけ候補を成立" in criteria
-    assert "全介入が許容処置で被覆され、全処置の発火契機が介入前にある場合だけ検収を成功" in validation
-    assert "新規提案がなく、全介入対応行が既存feedback又は抑止条件を参照する場合に限り" in validation
-    assert validation.index("全介入が許容処置で被覆") < validation.index("既存の表示経路で「提案無し」を確定")
+    assert "全ての利用者介入が問題一覧と証拠位置で確認できる場合だけ" in criteria
+    assert "全利用者入力を過不足なく覆う" in design
+    assert "evidence_insufficient" in skill
+    assert "「提案無し」の確定へ進まない" in skill
 
 
 def test_removed_codex_exec_contracts_are_absent() -> None:
@@ -3765,9 +3761,10 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
     assert metadata["tools"] == "Read, Bash"
     assert "skills" not in metadata
     assert "必ず読み取り専用の`session-review-advisor`を1つ起動" in skill
-    assert "メインだけで改善提案の要否を確定しない" in skill
+    assert "問題の原因、対策及び改善提案の要否はメインが確定する" in skill
     assert "Explore" not in skill
-    assert "別スキルとして起動せず" in skill
+    assert "提案基準と環境固有観点を適用して改善提案を確定する" in skill
+    assert "問題と証拠位置だけを問題一覧として返す" in skill
     assert "_session_review_evidence.py" in advisor_text
     assert "1回だけ実行" in advisor_text
     assert "対象を変更せず、キューへの投入、外部送信、サブエージェント起動も行わない" in advisor_text
@@ -3775,20 +3772,23 @@ def test_session_review_uses_single_entry_and_independent_advisor() -> None:
 
 
 def test_session_review_existing_means_contract_is_synchronized() -> None:
-    """新規機構候補の既存手段確認を判断契約と`session-review-advisor`の出力で同期する。"""
+    """新規機構候補の既存手段確認をメインの判断契約へ集約する。"""
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     assert "既存コマンド若しくは既存経路で得られるかを確認した手段と結果" in criteria
-    assert "既存手段による代替可否を確認していない場合も候補を抑止" in criteria
-    assert "existing_means_check" in advisor
-    assert "既存手段の確認手段と結果" in advisor
-    assert "新規機構に該当しない場合は「非該当」" in advisor
-    assert "対象ファイル単位" in advisor
-    assert "概念比較" in advisor
-    assert "ファイル内の節・関数・行" in advisor
-    assert "未判定（追加読解なし）" in advisor
-    assert "リポジトリの実装・規範・テストを追加読解しない" in (_DESIGN_DOC.read_text(encoding="utf-8"))
+    assert "既存手段による代替可否・契約同期・候補の抑止はメインが確定する" in criteria
+    assert (
+        "メインは問題一覧ごとに、自動ロード済みの規範を第一の照合対象として候補化、根本原因、反映先、既存手段、成功経路の喪失、総ライフサイクルコスト及び代替案を判断する"
+        in skill
+    )
+    assert "既存手段の確認" not in advisor
+    assert "対象ファイル単位" not in advisor
+    assert "概念比較" not in advisor
+    assert "ファイル内の節・関数・行" not in advisor
+    assert "未判定（追加読解なし）" not in advisor
+    assert "リポジトリの実装・規範・テストを追加読解しない" not in (_DESIGN_DOC.read_text(encoding="utf-8"))
 
 
 def test_plan_review_receives_public_help_and_check_script_absolute_path() -> None:

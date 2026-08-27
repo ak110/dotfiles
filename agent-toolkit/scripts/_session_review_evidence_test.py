@@ -3777,6 +3777,168 @@ def _hook_attachment(attachment: dict) -> dict:
     return {"type": "attachment", "attachment": attachment}
 
 
+@pytest.mark.parametrize(
+    ("query_args", "event_index", "expected_event"),
+    [
+        (
+            [],
+            1,
+            {
+                "kind": "user",
+                "text": "locatorへ含めない利用者本文2",
+                "line": 2,
+                "sequence": 2,
+            },
+        ),
+        (
+            ["--warn"],
+            0,
+            {
+                "kind": "warning",
+                "line": 4,
+                "text": "warning: successful command warning",
+                "tool": "call-1",
+            },
+        ),
+        (
+            ["--stats"],
+            0,
+            {
+                "kind": "stats-total",
+                "tokens": {},
+                "subagent_count": 0,
+                "agent_thread_count": 0,
+                "agent_thread_counts": {},
+            },
+        ),
+        (
+            ["--hook-notices"],
+            0,
+            {
+                "kind": "hook-notice",
+                "hook": "agent-toolkit/posttooluse",
+                "hook_name": "PostToolUse:Bash",
+                "tag": "warn",
+                "kind_text": "warn: 成功結果を確認する",
+                "count": 1,
+            },
+        ),
+        (
+            ["--detail", "4"],
+            0,
+            {
+                "kind": "detail",
+                "line": 4,
+                "tool": "call-1",
+                "text": "warning: successful command warning",
+            },
+        ),
+    ],
+)
+def test_query_event_is_a_stable_problem_locator(
+    query_args: list[str],
+    event_index: int,
+    expected_event: dict,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """全照会結果の同じ位置から利用者入力、統計、警告、hook通知及び詳細を再取得する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "locatorへ含めない利用者本文1"}},
+            {"type": "user", "message": {"role": "user", "content": "locatorへ含めない利用者本文2"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Bash", "id": "call-1", "input": {"command": "true"}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "call-1", "content": "warning: successful command warning"}
+                    ],
+                },
+            },
+            _hook_attachment(
+                {
+                    "type": "hook_system_message",
+                    "hookName": "PostToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "content": "[auto-generated: agent-toolkit/posttooluse][warn] warn: 成功結果を確認する",
+                }
+            ),
+        ],
+    )
+
+    locator = {"event_index": event_index}
+
+    assert evidence.main([str(transcript), *query_args]) == 0
+    first = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), *query_args]) == 0
+    second = _read_jsonl(capsys)
+
+    assert first == second
+    assert second[locator["event_index"]] == expected_event
+    assert set(locator) == {"event_index"}
+    assert "successful command warning" not in json.dumps(locator)
+    assert "locatorへ含めない利用者本文" not in json.dumps(locator, ensure_ascii=False)
+
+
+def test_multi_line_detail_query_keeps_each_problem_locator_stable(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """先行行が複数イベントを返しても、同じ完全引数列なら各証拠位置を再取得する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "id": "call-1", "input": {"command": "true"}},
+                        {"type": "tool_use", "name": "Read", "id": "call-2", "input": {"file_path": "/tmp/x"}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "別イベント"}],
+                },
+            },
+        ],
+    )
+    query = "--detail 1 2"
+    query_args = query.split()
+    locators = [{"event_index": index} for index in range(3)]
+
+    assert evidence.main([str(transcript), *query_args]) == 0
+    first = _read_jsonl(capsys)
+    assert evidence.main([str(transcript), *query_args]) == 0
+    second = _read_jsonl(capsys)
+
+    assert first == second
+    assert [second[locator["event_index"]] for locator in locators] == first
+    assert [event["line"] for event in second] == [1, 1, 2]
+    assert second[2] == {"kind": "detail", "line": 2, "tool": "call-1", "text": "別イベント"}
+    assert query == "--detail 1 2"
+    assert "別イベント" not in query
+    assert all(set(locator) == {"event_index"} for locator in locators)
+
+    assert evidence.main([str(transcript), "--detail", "2"]) == 0
+    individual = _read_jsonl(capsys)
+    assert individual[0] == second[2]
+    assert individual[0] != second[0]
+
+
 def test_hook_notices_mode_counts_notices_by_hook_origin_tag_and_kind(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

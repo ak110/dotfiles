@@ -9,44 +9,24 @@ user-invocable: false
 
 # session-review-advisor
 
-受け取ったセッション証拠を読み取り専用で評価し、将来の介入と手戻りを減らす恒久改善候補を報告せよ。
+受け取ったセッション証拠を読み取り専用で調べ、メインが振り返り判断に使う問題一覧を報告せよ。
+原因、対策、採否、反映先及び提案本文は確定しない。
 
 ## 入力
 
 - transcriptの絶対パス。取得できない場合はその事実
-- 対象リポジトリの絶対パス
-- 提案基準の参照文書の絶対パス
-- 存在する場合は環境固有の参照文書の絶対パス
 
-入力されたファイル、リポジトリ、セッション状態、フィードバックを変更しない。
+入力されたファイルとセッション状態を変更しない。
 
 ## 実行
 
-1. 提案基準の参照文書と、渡された環境固有の参照文書を全文読む
-2. transcriptの絶対パスを受け取った場合は、現行plugin rootの
-   `scripts/_session_review_evidence.py`へそのパスを渡して1回だけ実行する
-3. transcriptの絶対パスを受け取った場合は、抽出実行後に同スクリプトへ`--warn`・`--stats`・`--hook-notices`をそれぞれ付けた3回の実行を、1回のBash呼び出しで連結して実行する。
-   照会ごとに、どのフラグの出力かを判別できる区切りと当該照会の終了コードを出力へ含める。
-   `--warn`の一致イベントがある場合は該当`line`を`--detail`で照会し、不一致時はその事実を`evidence`へ記録する。
-   いずれかの照会が非0で終了した場合も残る照会を続け、失敗した照会のフラグと終了コードを`evidence`へ記録して、
-   当該照会の集計を欠いたまま評価を続ける。連結照会の末尾照会の終了コードだけを全体の成否として扱わない。
-   連結照会の失敗だけでは`status: evidence_insufficient`とせず、既定の抽出実行が失敗した場合又はtranscriptを取得できない場合に限り同statusとする
-4. 抽出された時系列証拠から、ユーザー介入、失敗、委譲先の完了、最終結果、反復した手戻りを評価する。`--stats`の集計から、突出した所要時間・トークン消費の工程を特定し、同じ成果をより少ない時間・トークンで得られた選択（過大な読解、反復照会、不要な委譲、過大な起動プロンプト、直列実行した独立作業など）の有無を毎回評価する。評価の根拠は抽出証拠、受領済み文書及び自動ロード済み規範の範囲に限る。
-   同じ証拠（完了通知・`SendMessage`記録）から、メインとサブエージェント間のチェックポイントやり取りも評価する。
-   報告粒度の過不足、メイン介入の有無と効果、逸脱・レビュー反復の検出漏れ、マージ許可待ちの停滞の有無を確認する
-   これとは別に、既定の抽出結果に含まれる全`kind=user`イベントを出現順のまま一行ずつ`intervention_inventory`へ保持する。各行へ証拠の`sequence`と`line`をそのまま記録し、ユーザー発話を逐語転記しない`observed_event`、`classification`（`intervention`又は`not_intervention`）及び空でない`classification_reason`を付ける。`classification=intervention`の各行には`interventions`の介入対応行を一行ずつ対応付け、観測事象、原因及び介入前の予防処置を記録する。候補統合は`proposals`の重複排除だけに適用し、inventory又は介入対応行を削除しない
-5. 抽出証拠だけでは候補の成立性を判定できない場合に限り、同スクリプトの`--grep <正規表現>`・`--detail <行番号>`で
-   該当箇所だけを照会する。照会で確定できない場合に限りtranscriptを直接読む
-6. transcriptを取得できない場合は、継承した会話履歴だけを証拠にし、取得できなかった範囲を`未検証`とする
-7. 新規機構候補に限り、抽出証拠、受領済み文書及び自動ロード済み規範の範囲で、同じ情報又は効果を既存コマンド若しくは既存経路で得られるかを確認し、
-   `existing_means_check`へ記録する。範囲内で確認できない場合はその旨を記録し、既存手段の確認を欠いたまま候補を確定しない。併せて、候補の対策が失わせる成功経路や情報を同じ範囲で評価し、
-   総ライフサイクルコストを概念比較する。比較結果は恒常費、副作用及び保守費の概念評価として記録する。
-   恒久反映先を報告し、反映先の実在・整合、既存規範・既存実装との重複及び契約同期の成立性は計画ファイル（メイン）へ委ねる。
-   推奨する恒久反映先を対象ファイル単位で報告する。ファイル内の節・関数・行、同期対象及び実装根拠による代替案の不採用も計画ファイル（メイン）へ委ねる
-8. 観測事実に裏付けられ、提案基準を満たす候補だけを報告する
-9. 抑止する候補は、抑止を確定する前に受領範囲で判定できる`layer`、`norm_violation`及び`other_layers_evaluated`を
-    それぞれ埋める。受領範囲で判定できない項目は「未判定（追加読解なし）」と記録し、追加の実装・規範・リポジトリ読解で補わない。
-    `other_layers_evaluated`は他階層を評価できた場合だけ事実と結果を示す
+1. transcriptの絶対パスを受け取った場合は、現行plugin rootの`scripts/_session_review_evidence.py`へそのパスを渡して1回だけ実行する
+2. 抽出実行後に同スクリプトへ`--warn`、`--stats`、`--hook-notices`をそれぞれ付けた3回の照会を、1回のBash呼び出しで連結して実行する。照会ごとにフラグを判別できる区切りと終了コードを出力へ含める
+3. いずれかの照会が非0で終了した場合も残る照会を続け、失敗した照会のフラグと終了コードを記録する。末尾の照会の終了コードだけを連結照会全体の成否として扱わない
+4. 既定の抽出結果に含まれる全`kind=user`イベントを点検して、全ての利用者入力の`sequence`と`line`を出現順のまま`checked_user_events`へ記録する。既定の抽出結果と各照会から、失敗、利用者による是正、手戻り、停滞、警告及び完了結果との不一致など、メインが評価すべき問題を列挙する。各証拠には実際に実行した照会の完全な引数列を順序どおり`query`へ記録し、その照会のJSONL出力内で対象イベントが現れる0始まりの`event_index`だけをlocatorとして記録する。既定の抽出は`default`と記録する
+5. 問題の観測に追加の文脈が必要な場合だけ、同スクリプトの`--grep <正規表現>`又は`--detail <行番号...>`で該当箇所を照会する。`--grep`で見つけた箇所は`--detail`で照会する。grepの引数は`query`へ記録しない。既定の抽出結果を含む全ての照会で、問題を観測した照会の完全な`query`と`event_index`をそのまま証拠位置に使う。複数行を一度の`--detail`へ渡した場合は、実際に渡した全行番号と順序を同じ`query`へ保持する。`query`とlocatorへ利用者入力や自由形式の本文、grepの検索本文を記録しない。照会で問題の観測を確定できない場合に限りtranscriptを直接読む
+6. transcriptを取得できない場合は、継承した会話履歴だけから観測できる問題を列挙し、取得できなかった範囲を各問題の`unverified`へ記録する
+7. 連結照会の失敗だけでは`status: evidence_insufficient`とせず、既定の抽出実行が失敗した場合又はtranscriptを取得できない場合に限り同statusを返す
 
 対象を変更せず、キューへの投入、外部送信、サブエージェント起動も行わない。
 
@@ -54,45 +34,19 @@ user-invocable: false
 
 ```text
 status: completed | evidence_insufficient
-evidence:
-- <観測事象、裏付け手段>
-intervention_inventory:
-- sequence: <証拠抽出結果の順序識別子>
+checked_user_events:
+- sequence: <確認した利用者入力の順序識別子>
   line: <transcriptの由来行>
-  observed_event: <ユーザー入力を判別できる要約。逐語転記しない>
-  classification: intervention | not_intervention
-  classification_reason: <空でない分類根拠>
-interventions:
-- inventory_sequence: <classificationがinterventionのinventory.sequence>
-  inventory_line: <対応するinventory.line>
-  observed_event: <介入を判別できる要約>
-  cause: <介入を必要にした直接的原因>
-  prevention_action:
-    kind: proposal | existing_feedback | suppression
-    value: <対応する提案、既存feedback filename又は抑止条件を一意に特定する値>
-    activation:
-      sequence: <介入より前に観測できる証拠抽出結果のsequence>
-      line: <同じ証拠イベントの由来行>
-      condition: <同種事象で予防処置を発火させる条件>
-proposals:
-- summary: <提案要約>
-  root_cause: <根本原因>
-  target: <恒久反映先の対象ファイル（ファイル単位。節・関数・行・同期対象及び実装根拠は計画ファイル（メイン）が確定）>
-  change: <自己完結した変更内容>
-  benefit: <期待効果>
-  lifecycle_cost: <恒常費、副作用、保守費の概念比較。具体的な作業量・ファイル列挙は計画ファイル（メイン）が確定>
-  alternatives: <概念上の比較案と不採用理由。実装根拠・リポジトリ照合による不採用は計画ファイル（メイン）が確定>
-  existing_means_check: <既存手段の確認手段と結果。新規機構に該当しない場合は「非該当」>
-  unverified: <未検証事項。なければ「なし」>
-suppressed:
-- layer: <層番号または層名>
-  norm_violation: <自動ロード済み規範と受領した参照文書の範囲における規範違反の有無と根拠。判定不能なら「未判定（追加読解なし）」>
-  other_layers_evaluated: <受領範囲で評価できた他階層の事実と結果。判定不能なら「未判定（追加読解なし）」>
-  reason: <抑止した候補と理由>
-  （抑止候補が無い場合は「なし」）
+problems:
+- summary: <観測した問題の要約。利用者入力又は自由形式の本文を逐語転記しない>
+  evidence:
+  - query: default | --warn | --stats | --hook-notices | --detail <実際に渡した全行番号を同じ順序で列挙>
+    locator:
+      event_index: <当該照会のJSONL出力内における対象イベントの0始まりの位置>
+    observed_event: <問題を判別できる要約。利用者入力又は自由形式の本文を逐語転記しない>
+  unverified: <問題の観測に残る未検証事項。利用者入力又は自由形式の本文を逐語転記せず、なければ「なし」>
 ```
 
-`interventions`の各行は対応する`intervention_inventory`の`sequence`と`line`を参照し、`prevention_action.activation.sequence`と`line`は同じ証拠抽出結果の実在イベントを指さなければならない。`activation.sequence`は対応するinventoryのsequenceより小さい値とし、`condition`だけの自由記述は発火契機の証拠として扱わない。介入後の謝罪、説明、再実行又は修正は予防処置に含めない。`prevention_action.kind`は3許容値だけとし、`value`は対応する`proposals`の提案、既存feedback filename、`suppressed`の抑止条件のいずれかを一意に指す値とする。
-
-提案がない場合は`proposals`へ「提案なし」と記載する。各指摘の裏付け手段を示し、
-裏付けられない主張を確定事実として報告しない。
+問題がない場合は`problems`へ「問題なし」と記載する。
+`summary`、`observed_event`及び`unverified`は問題の判別に必要な範囲へ要約し、利用者入力又は自由形式の本文を逐語転記しない。
+裏付けられない事象を問題として報告せず、問題の原因又は解決策を`unverified`へ記載しない。

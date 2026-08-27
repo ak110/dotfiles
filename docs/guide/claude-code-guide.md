@@ -388,7 +388,7 @@ Claude Codeで有効化する。
 ### 明示呼び出し専用のスキル
 
 - `agent-toolkit:session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
-  独立した読み取り専用の`session-review-advisor`が恒久改善候補を評価する
+  独立した読み取り専用の`session-review-advisor`が問題を列挙して、メインが改善提案を確定する
 
 ## 更新方法
 

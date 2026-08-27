@@ -4,13 +4,13 @@ description: >
   セッションの振り返りを実施するときに起動する。
   ユーザー手動起動、Stopフック、process-feedbacksの終了工程からの明示的な呼び出し指示でのみ起動する。
 # Stopフックは直前のアシスタントターンが作業完了の言い切りで終わる場合だけ本スキルを誘導する。
-# 本スキルは振り返りの唯一の外部入口であり、独立したsession-review-advisorによる評価を必須とする。
+# 本スキルは振り返りの唯一の外部入口であり、独立したsession-review-advisorが問題を列挙してメインが改善提案を確定する経路を必須とする。
 ---
 
 # セッション振り返り
 
-本スキルは、セッション振り返りの手順を提供する唯一の外部入口である。環境固有の観点を別スキルとして起動せず、
-存在する参照文書を独立した`session-review-advisor`へ追加で渡す。
+本スキルは、セッション振り返りの手順を提供する唯一の外部入口である。
+独立した読み取り専用の`session-review-advisor`がtranscriptの問題と証拠位置を列挙し、メインが提案基準と環境固有観点を適用して改善提案を確定する。
 
 ## 上位目的
 
@@ -61,31 +61,31 @@ Stopフック起動ではreason、ホスト別の手動コマンド起動では`
 `session_id`と`transcript_path`を受け取る。受け渡し専用の永続stateや証拠fileは作成しない。
 
 `session-review-advisor`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
-起動時に必ず読み取り専用の`session-review-advisor`を1つ起動する。メインだけで改善提案の要否を確定しない。
-`session-review-advisor`へ次を渡す。
+起動時に必ず読み取り専用の`session-review-advisor`を1つ起動し、transcriptの絶対パスを渡す。
+advisorはtranscript内で観測した問題と証拠位置だけを問題一覧として返す。
+問題の原因、対策及び改善提案の要否はメインが確定する。
 
 - Stopフックのreasonまたは手動コマンドの`additionalContext`から受け取った`transcript_path`の絶対パス
-- 現在作業中のリポジトリの絶対パス
-- `references/generation-criteria-detail.md`の絶対パス
-- 存在する場合はClaude Codeの`~/.claude/references/session-review-dotfiles.md`または
-  Codexの`~/.codex/references/session-review-dotfiles.md`の絶対パス
 
-提案ごとの裏付け手段と`未検証`表示は`session-review-advisor`定義の出力契約を正本とし、起動文へ複製しない。
+問題一覧と証拠位置の出力契約は`session-review-advisor`定義の出力を正本とし、起動文へ複製しない。
 
 ## 観察対象
 
-観察対象を列挙する工程の開始時点で`references/generation-criteria-detail.md`を全文読み、同文書の候補、原因分析、抑止条件及び報告契約を適用する。
+観察対象を列挙する工程の開始時点で`references/generation-criteria-detail.md`を全文読む。
+Claude Codeの`~/.claude/references/session-review-dotfiles.md`又はCodexの`~/.codex/references/session-review-dotfiles.md`が存在する場合は、該当する文書もメインが全文読む。
+メインはadvisorの問題一覧を独立した観測入力として扱い、採否を確定済みの改善候補として扱わない。
 
 ## 提案の確定
 
-`session-review-advisor`の報告をメインが実測と既存規範へ照合し、採否を確定する。
-各候補は`references/generation-criteria-detail.md`に従い、
-根本原因、恒久的な反映先、期待効果、総ライフサイクルコスト、未検証事項を検査する。
+メインはadvisorの問題一覧と再抽出証拠を`references/generation-criteria-detail.md`へ照合し、原因、対策及び採否を確定する。
 
 ### ユーザー入力イベントの構造検収
 
 advisor報告の`status`が`evidence_insufficient`の場合は、既存の証拠不足報告経路を維持し、証拠の再抽出、構造検収及び「提案無し」の確定へ進まない。
-`status`が`completed`の場合だけ、受領済み`transcript_path`の絶対パスを現行plugin rootの既存`scripts/_session_review_evidence.py`へ一度だけ渡し、読み取り専用で証拠を再抽出する。
+`status`が`completed`の場合だけ、受領済み`transcript_path`を既存の証拠抽出器へ一度だけ渡して、読み取り専用で既定の証拠を再抽出する。
+メインは既定の再抽出結果を`query=default`の照会結果としてそのまま使い、問題一覧が参照する`default`以外のdistinctな完全`query`文字列を、同じ引数列と順序で各1回だけ再実行する。異なる`--detail`引数列を1回の照会へまとめない。
+各`locator`が`event_index`だけを持ち、その値が0以上の整数であり、advisorが実行したものと同じ完全引数列の照会結果内に対象イベントが存在することを確認する。
+locatorの形式が異なる、又は対象イベントが存在しない証拠を持つ問題は判断材料に用いない。
 Claude Codeでは次のコマンドを使う。
 
 ```sh
@@ -98,29 +98,19 @@ Codexでは、起動方針で確定した現行plugin rootの絶対パスへ次�
 uv run --no-project --script "<plugin root>/scripts/_session_review_evidence.py" <transcript_path>
 ```
 
-両ホストとも既存の抽出器、出力及び`sequence`・`line`を再利用する。
-再抽出結果とadvisor報告について、次の構造を検収する。
-
-1. 抽出結果の全`kind=user`イベントから期待する`(sequence, line)`列を作成し、`intervention_inventory`の列と値・件数・出現順が完全一致することを確認する。
-2. inventoryの`sequence`と`line`が一意で、各行が空でない`observed_event`、`classification`（`intervention`又は`not_intervention`）及び空でない`classification_reason`を持つことを確認する。
-3. `classification=intervention`の全sequenceと`interventions.inventory_sequence`の集合差が双方向に空で、介入対応行の参照sequenceに重複がないことを確認する。各`inventory_sequence`・`inventory_line`の組が対応するinventoryの`sequence`・`line`の組と一致することを確認し、`not_intervention`の行を介入対応行が参照していないことも確認する。
-4. 各介入対応行が`observed_event`、`cause`及び`prevention_action`を持ち、`prevention_action.kind`が`proposal`、`existing_feedback`又は`suppression`のいずれかであることを確認する。
-5. `prevention_action.value`が対応する新規提案、既存feedback filename又は抑止条件を一意に指すことを確認する。
-6. `activation.sequence`と`line`が抽出結果の同一イベントを参照し、`activation.sequence < inventory_sequence`であることを確認する。`condition`だけの自由記述は識別子参照として受理しない。
-7. inventoryの空集合（1つ以上の`kind=user`がある場合）、一部欠落、余分、順序逆転、介入参照の集合差、参照不整合、許容外処置、識別子を欠くactivation又は介入以後の発火が一件でもあればadvisorへ差し戻し、「提案無し」を確定しない。
-8. 全介入が許容処置で被覆され、全処置の発火契機が介入前にある場合だけ検収を成功させる。新規提案がなく、全介入対応行が既存feedback又は抑止条件を参照する場合に限り、既存の表示経路で「提案無し」を確定できる。
-
-候補統合は`proposals`の重複排除だけに適用し、`intervention_inventory`・`interventions`の行を減らさない。この構造検収のために新しい永続状態、所有者又は表示経路を追加しない。介入分類、観測事象、原因及び予防処置の意味評価はadvisorが所有し、メインは証拠抽出結果との値・件数・順序・参照構造だけを検収する。
+両ホストとも既存の抽出器とJSONL出力を再利用する。
+メインは再抽出結果の全`kind=user`イベントから`(sequence, line)`列を作成し、advisorの`checked_user_events`の値・件数・順序が一致することを機械的に確認する。
+メインはこの照合で問題か否かを再分類しない。
+メインはadvisorの問題一覧だけを対象に、利用者介入かその他の問題かを分類し、観測事象、原因、予防処置、介入前の発火契機を確定する。
+この構造検収のために新しい永続状態、所有者又は表示経路を追加しない。
 
 既存のactiveなフィードバックは`atk mq list --status=active --target-repo=<repo-path> --skip-pull`で確認し、重複投入しない。
-メインは候補ごとに、自動ロード済みの規範を第一の照合対象として既存規範・既存実装との重複を確認し、
-不足する場合だけ対象ファイルを追加で読む。併せて、推奨反映先のファイルと節の実在、既存契約との整合を確認する。
-advisorの推奨反映先は対象ファイル単位、代替案は概念比較、ライフサイクルコストは恒常費・副作用・保守費の概念評価として受領する。
-ファイル内の節・関数・行、同期対象、実装根拠による代替案の不採用及び契約同期の成立性はメインが確定する。
+メインは問題一覧ごとに、自動ロード済みの規範を第一の照合対象として候補化、根本原因、反映先、既存手段、成功経路の喪失、総ライフサイクルコスト及び代替案を判断する。
+メインは既存規範・既存実装との重複を確認し、不足する場合だけ対象ファイルを追加で読む。
+併せて、反映先のファイルと節の実在、既存契約との整合、契約同期の成立性を確認する。
 採用する候補に限り、`generation-criteria-detail.md`「総ライフサイクルコスト」が定める契約同期検索として、
 対象パス・節名・識別子・入出力フィールド名・変更する規範文をリポジトリ全体で検索し、同時改訂を要するファイルとテストを列挙する。
-これらの照合はメインが所有し、`session-review-advisor`はリポジトリ依存の照合を担わない。
-transcript証拠の評価、`existing_means_check`、成功経路・情報の喪失、総ライフサイクルコストの概念比較を担う。
+これらの照合・概念比較・契約同期検索はメインが所有し、advisorはtranscript内の問題と証拠位置の列挙だけを担う。
 
 ## ユーザーコメントの由来
 
