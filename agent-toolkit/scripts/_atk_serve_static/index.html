@@ -92,6 +92,11 @@
         <span>要約</span>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
+      <nav id="pagination" class="pagination" aria-label="一覧ページ">
+        <button id="previous-page-button" class="button-secondary" type="button" disabled>前のページ</button>
+        <span id="pagination-status" class="pagination-status" role="status" aria-live="polite">1 / 1ページ</span>
+        <button id="next-page-button" class="button-secondary" type="button" disabled>次のページ</button>
+      </nav>
       <div id="empty-state" class="empty-state" hidden>
         <p id="empty-state-message"></p>
         <button id="empty-clear-button" class="button-secondary" type="button" hidden>条件をクリア</button>
@@ -237,7 +242,10 @@
     </form>
   </dialog>
 
-  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="operation-notice" class="operation-notice" role="status" aria-live="polite" tabindex="-1" hidden>
+    <span id="operation-notice-message"></span>
+    <button id="operation-notice-close-button" class="operation-notice-close" type="button" aria-label="操作通知を閉じる">×</button>
+  </div>
   <script src="__BASE_PATH_HTML__/static/app.js"></script>
 </body>
 </html>

@@ -614,7 +614,10 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     edit_input = detail.locator("#edit-content")
     await edit_input.fill((await edit_input.input_value()) + "\n追記")
     await detail.get_by_role("button", name="保存", exact=True).click()
-    await playwright.async_api.expect(detail.locator("#detail-dialog-body")).to_be_focused()
+    await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
+    await playwright.async_api.expect(detail).to_be_hidden()
+    await feedback_row.click()
+    detail = page.get_by_role("dialog", name="詳細")
 
     await detail.get_by_role("button", name="削除").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
@@ -641,7 +644,8 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
 
     async with page.expect_response(
         lambda response: (
-            response.request.method == "GET" and response.url.endswith("/api/entries?type=all&status=active&answered=all")
+            response.request.method == "GET"
+            and response.url.endswith("/api/entries?type=all&status=active&answered=all&page=1")
         )
     ):
         await page.locator("#clear-filters-button").click()
@@ -651,7 +655,9 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     async with page.expect_response(
         lambda response: (
             response.request.method == "GET"
-            and response.url.endswith("/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1")
+            and response.url.endswith(
+                "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
+            )
         )
     ):
         await page.locator("#search-input").fill("編集対象")
@@ -685,7 +691,7 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     )
 
     async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?q=%E6%8E%A1%E7%94%A8%E6%B8%88%E3%81%BF")
+        lambda response: response.url.endswith("/api/entries?q=%E6%8E%A1%E7%94%A8%E6%B8%88%E3%81%BF&page=1")
     ):
         await page.locator("#search-input").fill("採用済み")
     await page.locator('.entry-select[data-key="adopted/adopted.md"]').wait_for(state="visible")
@@ -694,13 +700,15 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await playwright.async_api.expect(page.locator("#kind-filter")).to_have_value("all")
     await playwright.async_api.expect(page.locator("#answer-filter")).to_have_value("all")
 
-    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=%E4%B8%8D%E6%8E%A1%E7%94%A8")):
+    async with page.expect_response(
+        lambda response: response.url.endswith("/api/entries?q=%E4%B8%8D%E6%8E%A1%E7%94%A8&page=1")
+    ):
         await page.locator("#search-input").fill("不採用")
     await page.locator('.entry-select[data-key="rejected/rejected.md"]').wait_for(state="visible")
     await playwright.async_api.expect(notice).to_be_visible()
     await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
 
-    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=many-terminal")):
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=many-terminal&page=1")):
         await page.locator("#search-input").fill("many-terminal")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await playwright.async_api.expect(notice).to_be_hidden()
@@ -711,12 +719,12 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await page.locator("#search-input").fill("")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
     await page.wait_for_timeout(100)
-    assert request_urls == [f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all"]
+    assert request_urls == [f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all&page=1"]
 
     request_urls.clear()
     async with page.expect_response(
         lambda response: response.url.endswith(
-            "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1"
+            "/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
         )
     ):
         await page.locator("#search-input").fill("編集対象")
@@ -725,7 +733,7 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
     await page.wait_for_timeout(100)
     assert request_urls == [
-        f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1"
+        f"{browser_harness.base_url}/api/entries?type=all&status=active&answered=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
     ]
 
     await page.locator("#kind-filter").select_option("all")
@@ -737,13 +745,15 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     request_urls.clear()
     async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all&q=all-filters-only")
+        lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1")
     ):
         await page.locator("#search-input").fill("all-filters-only")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await playwright.async_api.expect(notice).to_be_hidden()
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
-    assert request_urls == [f"{browser_harness.base_url}/api/entries?type=all&status=all&answered=all&q=all-filters-only"]
+    assert request_urls == [
+        f"{browser_harness.base_url}/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1"
+    ]
 
 
 @pytest.mark.asyncio
@@ -872,7 +882,7 @@ async def test_pending_edit_and_closed_delete_route_results(browser_harness: _Br
     await delete_dialog.get_by_role("button", name="閉じる").click()
     assert await detail.is_visible()
     harness.operations.remove_release.set()
-    await detail.get_by_role("status").filter(has_text="削除しました").wait_for(state="visible")
+    await page.get_by_role("status").filter(has_text="削除しました").wait_for(state="visible")
     assert harness.operations.remove_calls == 1
 
 
@@ -985,8 +995,8 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
         lambda request: request.method == "PUT" and request.url.endswith("/api/entries/processing/same.md")
     ):
         await detail.get_by_role("button", name="保存", exact=True).click()
-    await detail.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
-    await page.keyboard.press("Escape")
+    await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
+    await detail.wait_for(state="hidden")
 
     await processing_row.click()
     await detail.wait_for(state="visible")
@@ -1053,9 +1063,11 @@ async def test_self_write_sse_alert_clears_after_save_and_answer_success(
         await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible", timeout=4_000)
     finally:
         release_edit_response.set()
-    await detail.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
-    await playwright.async_api.expect(detail.locator("#detail-alert")).to_be_hidden()
+    await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
+    await detail.wait_for(state="hidden")
     await page.unroute("**/api/entries/inbox/feedback.md", delay_edit_response)
+    await feedback_row.click()
+    await detail.wait_for(state="visible")
     async with page.expect_response(
         lambda response: response.request.method == "GET" and response.url.endswith("/api/entries/inbox/feedback.md")
     ):
@@ -1269,8 +1281,8 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         harness.current_state.publish()
         await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible")
         release.set()
-        await detail.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
-        assert "詳細を閉じて開き直してから保存してください" in await detail.locator("#detail-alert").inner_text()
+        await page.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
+        assert "詳細を閉じて開き直してから保存してください" in await page.locator("#operation-notice-message").inner_text()
         assert await field.input_value() == user_input
         await playwright.async_api.expect(detail.get_by_role("button", name=submit_name, exact=True)).to_be_disabled()
         await page.unroute(mutation_pattern, fail_mutation)
@@ -1433,7 +1445,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
         "comment": "最初のコメント",
         "expected_content": original,
     }
-    await detail.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
+    await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
     assert "## ユーザーコメント\n\n最初のコメント" in path.read_text(encoding="utf-8")
     await playwright.async_api.expect(comment_button).to_be_focused()
 
@@ -1450,7 +1462,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     await playwright.async_api.expect(detail.locator("#save-user-comment-button")).to_be_disabled()
     assert harness.operations.user_comment_calls == 2
     harness.operations.user_comment_release.set()
-    await detail.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
+    await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
     saved = path.read_text(encoding="utf-8")
     assert "置換後のコメント" in saved
     assert "最初のコメント" not in saved
@@ -1476,7 +1488,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     retry_payload = (await retry_request_info.value).post_data_json
     assert isinstance(retry_payload, dict)
     assert retry_payload["expected_content"] == latest
-    await detail.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
+    await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
     assert "競合後も保持する入力" in path.read_text(encoding="utf-8")
     assert harness.operations.user_comment_calls == 4
 

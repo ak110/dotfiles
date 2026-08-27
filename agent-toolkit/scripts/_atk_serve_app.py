@@ -36,6 +36,9 @@ type JsonObject = dict[str, typing.Any]
 _ENTRY_STATES = set(common.MQ_STATES)
 _STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
+_PLAN_FILTERS = {"all", "normal", "plan"}
+_ENTRY_PAGE_SIZE = 100
+_DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
 _WEB_LOCK_TIMEOUT = 2.0
 _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 """定期バックグラウンド更新の間隔。
@@ -375,14 +378,14 @@ class Operations:
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。
 
-        未回答TBD、その他のTBD、フィードバック、種別不明の順に分け、
-        各群ではファイル名の降順とする。
+        未回答TBDを先頭に置き、残りは種別を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
         warnings: list[dict[str, str]] = []
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
+        plan_filter = filters.get("plan", "all")
         target_repo_filter = filters.get("target_repo")
         query = filters.get("q", "").casefold()
         states = _resolve_states(status_filter)
@@ -402,6 +405,8 @@ class Operations:
                 continue
             except OSError:
                 warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
+                continue
+            if plan_filter != "all" and item["plan"] != (plan_filter == "plan"):
                 continue
             if answered_filter == "yes" and item["answered"] is not True:
                 continue
@@ -432,20 +437,12 @@ class Operations:
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
-        other_tbd_items = sorted(
-            [item for item in result if item["kind"] == "tbd" and item["answered"] is not False],
-            key=lambda item: str(item["filename"]),
-            reverse=True,
-        )
-        feedback_items = sorted(
-            [item for item in result if item["kind"] == "feedback"], key=lambda item: str(item["filename"]), reverse=True
-        )
         other_items = sorted(
-            [item for item in result if item["kind"] not in ("tbd", "feedback")],
+            [item for item in result if not (item["kind"] == "tbd" and item["answered"] is False)],
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
-        return unanswered_tbd_items + other_tbd_items + feedback_items + other_items, warnings
+        return unanswered_tbd_items + other_items, warnings
 
     def entries_with_warnings(
         self,
@@ -851,6 +848,22 @@ def _register_lifecycle(app: quart.Quart, runtime: _ServeRuntime) -> None:
         runtime.background_task = None
 
 
+def _entry_page(filters: dict[str, str]) -> int | None:
+    """一覧APIの明示ページを正の10進整数として返す。"""
+    raw_page = filters.get("page")
+    if raw_page is None:
+        return None
+    if not _DECIMAL_INTEGER_RE.fullmatch(raw_page):
+        raise common.WebInputError("pageは正の10進整数で指定してください")
+    try:
+        page = int(raw_page)
+    except ValueError as error:
+        raise common.WebInputError("pageは正の10進整数で指定してください") from error
+    if page <= 0:
+        raise common.WebInputError("pageは正の10進整数で指定してください")
+    return page
+
+
 def _validate_entry_filters(filters: dict[str, str]) -> None:
     """一覧APIのquery組合せを検証する。"""
     if filters.get("type", "all") not in {"all", "feedback", "tbd"}:
@@ -859,6 +872,9 @@ def _validate_entry_filters(filters: dict[str, str]) -> None:
         raise common.WebInputError("statusが不正です")
     if filters.get("answered", "all") not in _ANSWERED_FILTERS:
         raise common.WebInputError("answeredが不正です")
+    if filters.get("plan", "all") not in _PLAN_FILTERS:
+        raise common.WebInputError("planが不正です")
+    _entry_page(filters)
     if "source_empty" in filters and filters["source_empty"] != "true":
         raise common.WebInputError("source_emptyはtrueで指定してください")
     if "source" in filters and "source_empty" in filters:
@@ -888,13 +904,29 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
-        allowed = {"type", "status", "answered", "target_repo", "source", "source_empty", "q"}
+        allowed = {"type", "status", "answered", "plan", "page", "target_repo", "source", "source_empty", "q"}
         unknown = set(quart.request.args) - allowed
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
         filters = dict(quart.request.args.items())
         _validate_entry_filters(filters)
         result, warnings = await workers.run(ops.entries_with_warnings, filters)
+        requested_page = _entry_page(filters)
+        if requested_page is not None:
+            total_count = len(result)
+            page_count = max(1, math.ceil(total_count / _ENTRY_PAGE_SIZE))
+            page = min(requested_page, page_count)
+            start = (page - 1) * _ENTRY_PAGE_SIZE
+            return quart.jsonify(
+                entries=result[start : start + _ENTRY_PAGE_SIZE],
+                warnings=warnings,
+                pagination={
+                    "page": page,
+                    "page_size": _ENTRY_PAGE_SIZE,
+                    "page_count": page_count,
+                    "total_count": total_count,
+                },
+            )
         return quart.jsonify(entries=result, warnings=warnings)
 
     @app.get("/api/entries/<state_name>/<filename>")

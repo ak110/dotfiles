@@ -7,6 +7,7 @@ import binascii
 import contextlib
 import json
 import logging
+import math
 import pathlib
 import re
 import signal
@@ -139,6 +140,23 @@ def test_assets_define_dismissible_global_error_region() -> None:
     assert "min-height: 2.75rem;" in close.group(1)
 
 
+def test_assets_define_pagination_and_dismissible_operation_notice() -> None:
+    """一覧ページ移動と操作結果通知へ、キーボード操作可能な領域を持たせる。"""
+    assert 'id="pagination"' in assets.HTML
+    assert 'id="previous-page-button"' in assets.HTML
+    assert 'id="next-page-button"' in assets.HTML
+    assert 'id="pagination-status"' in assets.HTML
+    assert 'id="operation-notice"' in assets.HTML
+    assert 'id="operation-notice-message"' in assets.HTML
+    assert (
+        '<button id="operation-notice-close-button" class="operation-notice-close" type="button" '
+        'aria-label="操作通知を閉じる">×</button>'
+    ) in assets.HTML
+    assert "parameters.set('page', String(page));" in assets.JS
+    assert "new URLSearchParams({q: searchTerm, page: String(currentPage)})" in assets.JS
+    assert 'operation-notice[data-error="true"]' in assets.CSS
+
+
 def test_text_assets_are_bundled_as_plugin_files() -> None:
     """配布対象のscripts配下に実ファイルを同梱し、Python側がその内容を読む。"""
     static_dir = pathlib.Path(assets.__file__).with_name("_atk_serve_static")
@@ -177,8 +195,8 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     grid = re.search(r"\.entry-columns, \.entry-select \{(.*?)\n\}", assets.CSS, re.DOTALL)
     assert grid is not None
     widths = re.findall(r"minmax\(([^)]+)\)", grid.group(1))
+    assert re.search(r"grid-template-columns:\s*12rem", grid.group(1))
     assert widths == [
-        "12rem, 1.4fr",
         "10rem, 1.35fr",
         "8rem, 1fr",
         "12rem, 2fr",
@@ -357,9 +375,13 @@ const ids = [
   'create-submit-button', 'delete-dialog', 'delete-form', 'delete-close-button',
   'delete-alert', 'delete-status', 'delete-target', 'delete-state', 'delete-target-repo',
   'delete-summary', 'force-delete-row', 'force-delete-confirmation', 'delete-error',
-  'delete-submit-button', 'repo-options', 'toast'
+  'delete-submit-button', 'repo-options', 'pagination', 'previous-page-button',
+  'pagination-status', 'next-page-button', 'operation-notice', 'operation-notice-message',
+  'operation-notice-close-button'
 ];
 const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
+elements['toast'] = elements['operation-notice-message'];
+elements['operation-notice-close-button'].setAttribute('aria-label', '操作通知を閉じる');
 elements['kind-filter'].value = 'all';
 elements['state-filter'].value = 'active';
 elements['answer-filter'].value = 'all';
@@ -513,7 +535,7 @@ await reloadFromExternalChange();
 await Promise.resolve();
 failures.push(elements['global-error-message'].textContent);
 deliverOperationMessage('ダイアログ外失敗', true);
-failures.push(elements['global-error-message'].textContent);
+failures.push(elements['operation-notice-message'].textContent);
 refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
@@ -651,15 +673,17 @@ def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:
 entries = [
   {kind: 'tbd', state: 'inbox', filename: 'u.md', answered: false, summary: '未回答', target_repo: 'x/u'},
   {kind: 'unknown', state: 'inbox', filename: 'x.md', answered: null, summary: '不明', target_repo: 'x/u'},
-  {kind: 'feedback', state: 'inbox', filename: 'f.md', answered: null, summary: '本文', target_repo: 'x/f',
+  {kind: 'feedback', state: 'inbox', filename: 'f.md', answered: null, plan: true, summary: '本文',
+   target_repo: 'github.com/example/a-very-long-repository-name',
    updated_at: '2026-08-07T10:11:00+00:00'}
 ];
 renderList([{filename: 'bad.md', reason: 'UTF-8として読み取れません'}], true);
 const announced = elements['result-status'].textContent;
 const warning = elements['list-warning'].textContent;
-const feedbackCells = elements['entry-list'].children[2].children[0].children;
-const kindState = feedbackCells[2].children.map(child => child.textContent);
-const summary = feedbackCells[3].textContent;
+  const feedbackCells = elements['entry-list'].children[2].children[0].children;
+  const kindState = feedbackCells[2].children.map(child => child.textContent);
+const targetCell = feedbackCells[1];
+  const summary = feedbackCells[3].textContent;
 elements['kind-filter'].value = 'feedback';
 elements['answer-filter'].value = 'no';
 elements['source-filter'].value = 'web';
@@ -675,6 +699,9 @@ process.stdout.write(JSON.stringify({
   warning,
   announced,
   kindState,
+  targetLabel: targetCell.textContent,
+  targetAria: targetCell.attributes['aria-label'],
+  rowAria: elements['entry-list'].children[2].children[0].attributes['aria-label'],
   summary,
   sseStatus: elements['result-status'].textContent,
   answerValue: elements['answer-filter'].value,
@@ -691,7 +718,10 @@ process.stdout.write(JSON.stringify({
         "count": "3件（未回答TBD 1件）",
         "warning": "一覧から除外したファイル: bad.md（UTF-8として読み取れません）",
         "announced": "3件を表示",
-        "kindState": ["feedback", "inbox"],
+        "kindState": ["feedback", "inbox", "plan"],
+        "targetLabel": "github.co…itory-name",
+        "targetAria": "対象リポジトリ: github.com/example/a-very-long-repository-name",
+        "rowAria": "f.md、github.com/example/a-very-long-repository-name、feedback、inbox、plan、本文",
         "summary": "本文",
         "sseStatus": "変更しない",
         "answerValue": "all",
@@ -1267,13 +1297,15 @@ fetchHandler = async (url, options) => {
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: processing})};
 };
 await reloadOpenDetailFromExternalChange();
+const savedState = currentEntry.state;
 await saveEntry();
-process.stdout.write(JSON.stringify({putUrls, state: currentEntry.state}));
+process.stdout.write(JSON.stringify({putUrls, state: savedState, open: elements['detail-dialog'].open}));
 """
     )
     assert result == {
         "putUrls": ["/atk/api/entries/processing/same.md"],
         "state": "processing",
+        "open": False,
     }
 
 
@@ -1443,9 +1475,9 @@ process.stdout.write(JSON.stringify({saved, answered}));
         "saved": {
             "during": warning,
             "after": "",
-            "status": "inbox/entry.mdを保存しました。",
-            "toast": "",
-            "open": True,
+            "status": "",
+            "toast": "inbox/entry.mdを保存しました。",
+            "open": False,
             "mode": "view",
         },
         "answered": {
@@ -1510,7 +1542,7 @@ async function exercise(kind, status, code, withExternalUpdate) {
   const button = elements[answering ? 'save-answer-button' : 'save-entry-button'];
   const input = elements[answering ? 'answer-input' : 'edit-content'];
   const outcome = {
-    alert: elements['detail-alert'].textContent,
+    alert: elements['operation-notice-message'].textContent,
     disabled: button.disabled,
     input: input.value,
     mode: currentDetailMode()
@@ -1715,8 +1747,8 @@ process.stdout.write(JSON.stringify({
     }
 
 
-def test_operation_result_uses_current_topmost_dialog_or_global_toast() -> None:
-    """開始元を閉じた後は現在最上位のdialogへ、dialogなしでは共通通知へ結果を送る。"""
+def test_operation_result_uses_page_notification_with_dismiss_action() -> None:
+    """操作結果は開いているdialogに依存せず、閉じる操作付きのページ通知へ送る。"""
     result = _run_node_ui(
         """
 elements['detail-dialog'].open = true;
@@ -1727,15 +1759,23 @@ closeDialog(elements['delete-dialog']);
 deliverOperationMessage('削除完了');
 const detailMessage = elements['detail-status'].textContent;
 closeDialog(elements['detail-dialog']);
-deliverOperationMessage('保存完了');
+deliverOperationMessage('保存完了', true);
 process.stdout.write(JSON.stringify({
   detailMessage,
-  toast: elements['toast'].textContent,
-  globalError: elements['global-error-message'].textContent
+  message: elements['operation-notice-message'].textContent,
+  error: elements['operation-notice'].dataset.error,
+  role: elements['operation-notice'].attributes.role,
+  closeLabel: elements['operation-notice-close-button'].attributes['aria-label']
 }));
 """
     )
-    assert result == {"detailMessage": "削除完了", "toast": "保存完了", "globalError": ""}
+    assert result == {
+        "detailMessage": "",
+        "message": "保存完了",
+        "error": "true",
+        "role": "alert",
+        "closeLabel": "操作通知を閉じる",
+    }
 
 
 def test_failed_dialog_updates_restore_actionable_focus() -> None:
@@ -3408,8 +3448,8 @@ async def test_unrelated_runtime_error_is_not_classified_as_edit_conflict(
     assert response.status_code == 500
 
 
-def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.Path) -> None:
-    """一覧は未回答TBD・その他TBD・フィードバックの順で各群をファイル名降順に返す。"""
+def test_operations_sort_entries_with_unanswered_tbd_then_mixed_remaining(tmp_path: pathlib.Path) -> None:
+    """一覧は未回答TBDを先頭に置き、残りを種別混在のファイル名降順で返す。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     # ファイル名の昇順でファイルを作成
@@ -3418,6 +3458,10 @@ def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.
         encoding="utf-8",
     )
     (inbox / "z-answered-tbd.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問\n\n## 回答\n\n回答済み\n",
+        encoding="utf-8",
+    )
+    (inbox / "m-answered-tbd.md").write_text(
         "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問\n\n## 回答\n\n回答済み\n",
         encoding="utf-8",
     )
@@ -3430,19 +3474,132 @@ def test_operations_sort_entries_with_tbd_and_feedback_groups(tmp_path: pathlib.
         "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
         encoding="utf-8",
     )
+    (inbox / "z-feedback.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
+        encoding="utf-8",
+    )
 
     operations = serve_app.Operations(tmp_path)
     result, warnings = operations.entries_with_warnings({})
     assert not warnings
     filenames = [item["filename"] for item in result]
 
-    # 未回答TBD、回答済みTBD、フィードバックの順になる。
-    assert filenames == ["a-unanswered-tbd.md", "z-answered-tbd.md", "d-feedback.md", "a-feedback.md"]
+    assert filenames == [
+        "a-unanswered-tbd.md",
+        "z-feedback.md",
+        "z-answered-tbd.md",
+        "m-answered-tbd.md",
+        "d-feedback.md",
+        "a-feedback.md",
+    ]
     # 種別の確認
     assert result[0]["kind"] == "tbd"
-    assert result[1]["kind"] == "tbd"
-    assert result[2]["kind"] == "feedback"
-    assert result[3]["kind"] == "feedback"
+    assert [item["kind"] for item in result[1:]] == ["feedback", "tbd", "tbd", "feedback", "feedback"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [0, 1, 100, 101])
+async def test_entries_api_paginates_at_one_hundred_entries(tmp_path: pathlib.Path, count: int) -> None:
+    """一覧APIは明示ページだけを100件単位で返し、総数境界と空一覧を正規化する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    for index in range(count):
+        (inbox / f"entry-{index:03d}.md").write_text(
+            "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+
+    response = await app.test_client().get("/api/entries?status=inbox&page=1")
+
+    assert response.status_code == 200
+    payload = await response.get_json()
+    expected_page_count = max(1, math.ceil(count / 100))
+    assert len(payload["entries"]) == min(count, 100)
+    assert payload["pagination"] == {
+        "page": 1,
+        "page_size": 100,
+        "page_count": expected_page_count,
+        "total_count": count,
+    }
+    if count == 101:
+        second = await app.test_client().get("/api/entries?status=inbox&page=2")
+        second_payload = await second.get_json()
+        assert len(second_payload["entries"]) == 1
+        assert second_payload["pagination"]["page"] == 2
+
+
+@pytest.mark.asyncio
+async def test_entries_api_omits_pagination_without_explicit_page_and_clamps_final_page(
+    tmp_path: pathlib.Path,
+) -> None:
+    """ページ省略時の既存payloadを維持し、最終ページを超える指定を末尾へ正規化する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    for index in range(101):
+        (inbox / f"entry-{index:03d}.md").write_text(
+            "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    complete = await client.get("/api/entries?status=inbox")
+    clamped = await client.get("/api/entries?status=inbox&page=999")
+
+    complete_payload = await complete.get_json()
+    clamped_payload = await clamped.get_json()
+    assert set(complete_payload) == {"entries", "warnings"}
+    assert len(complete_payload["entries"]) == 101
+    assert clamped_payload["pagination"] == {
+        "page": 2,
+        "page_size": 100,
+        "page_count": 2,
+        "total_count": 101,
+    }
+    assert len(clamped_payload["entries"]) == 1
+    assert clamped_payload["entries"][0]["filename"] == complete_payload["entries"][-1]["filename"]
+
+
+@pytest.mark.asyncio
+async def test_entries_api_filters_feedback_plan_type_and_keeps_warnings_full_scan(tmp_path: pathlib.Path) -> None:
+    """feedbackの通常型・計画型を独立条件で限定し、ページ警告は全走査分を返す。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "normal.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n通常\n",
+        encoding="utf-8",
+    )
+    (inbox / "plan.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\nplan_file: /tmp/plan.md\n---\n\n計画\n",
+        encoding="utf-8",
+    )
+    (inbox / "question.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n質問\n",
+        encoding="utf-8",
+    )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    normal = await client.get("/api/entries?status=inbox&type=feedback&plan=normal&page=1")
+    planned = await client.get("/api/entries?status=inbox&type=all&plan=plan&page=1")
+
+    assert [item["filename"] for item in (await normal.get_json())["entries"]] == ["normal.md"]
+    assert [item["filename"] for item in (await planned.get_json())["entries"]] == ["plan.md"]
+    assert (await normal.get_json())["entries"][0]["plan"] is False
+    assert (await planned.get_json())["entries"][0]["plan"] is True
 
 
 @pytest.mark.asyncio
@@ -3526,6 +3683,8 @@ def test_serve_state_watches_only_new_five_states(tmp_path: pathlib.Path, monkey
     ("method", "path", "payload"),
     [
         ("get", "/api/entries?status=unknown", None),
+        ("get", "/api/entries?page=0", None),
+        ("get", "/api/entries?page=abc", None),
         ("get", "/api/entries?target_repo=", None),
         ("get", "/api/entries?q=", None),
         ("get", "/api/entries?source_empty=false", None),
@@ -4333,7 +4492,7 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
-        "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all"],
+        "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all&page=1"],
         "rows": ["entry.md"],
         "error": "候補取得失敗",
     }
@@ -4411,7 +4570,7 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "state": "active",
         "candidates": ["", "active/repo"],
-        "listUrls": ["/atk/api/entries?type=all&status=active&answered=all"],
+        "listUrls": ["/atk/api/entries?type=all&status=active&answered=all&page=1"],
         "rows": ["active.md"],
     }
 
@@ -4479,7 +4638,7 @@ const runCase = async (token, count) => {
     if (url.includes('status=active')) {
       return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: initialWarnings})};
     }
-    if (url === `/atk/api/entries?q=${token}`) {
+    if (url === `/atk/api/entries?q=${token}&page=1`) {
       return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: fallbackEntries, warnings: []})};
     }
     throw new Error('想定外のURL: ' + url);
@@ -4545,7 +4704,7 @@ elements['target-filter'].value = '';
 elements['source-filter'].value = '';
 elements['source-empty-filter'].checked = false;
 fetchHandler = async url => {
-  if (url !== '/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only') {
+  if (url !== '/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1') {
     throw new Error('想定外のURL: ' + url);
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
@@ -4570,8 +4729,8 @@ process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, 
         assert result[name]["noticeHidden"] is False
         assert result[name]["warning"] == ""
         assert result[name]["urls"] == [
-            f"/atk/api/entries?type=all&status=active&answered=all&q={name}",
-            f"/atk/api/entries?q={name}",
+            f"/atk/api/entries?type=all&status=active&answered=all&q={name}&page=1",
+            f"/atk/api/entries?q={name}&page=1",
         ]
         assert result[name]["filters"] == {
             "kind": "all",
@@ -4588,23 +4747,23 @@ process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, 
         assert result[name]["warning"] == "一覧から除外したファイル: initial.md（初回警告）"
         assert result[name]["status"] == "一致する項目はありません"
         assert result[name]["urls"] == [
-            f"/atk/api/entries?type=all&status=active&answered=all&q={name}",
-            f"/atk/api/entries?q={name}",
+            f"/atk/api/entries?type=all&status=active&answered=all&q={name}&page=1",
+            f"/atk/api/entries?q={name}&page=1",
         ]
     assert result["normal"] == {
         "rows": ["normal.md"],
         "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=active&answered=all&q=normal"],
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all&q=normal&page=1"],
     }
     assert result["emptySearch"] == {
         "rows": [],
         "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=active&answered=all"],
+        "urls": ["/atk/api/entries?type=all&status=active&answered=all&page=1"],
     }
     assert result["allFilters"] == {
         "rows": [],
         "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only"],
+        "urls": ["/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1"],
     }
     assert result["fallbackNotice"] == expected_notice
 
@@ -4659,7 +4818,7 @@ let fallbackStarted;
 const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
 elements['search-input'].value = 'old';
 fetchHandler = async url => {
-  if (url === '/atk/api/entries?q=old') {
+  if (url === '/atk/api/entries?q=old&page=1') {
     fallbackStarted();
     return new Promise(resolve => { resolveFallback = resolve; });
   }
@@ -4708,7 +4867,7 @@ let fallbackStarted;
 const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
 elements['search-input'].value = 'old';
 fetchHandler = async url => {
-  if (url === '/atk/api/entries?q=old') {
+  if (url === '/atk/api/entries?q=old&page=1') {
     fallbackStarted();
     return new Promise((_resolve, reject) => { rejectFallback = reject; });
   }
@@ -4851,8 +5010,8 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "listUrls": [
             "/atk/api/entries?type=tbd&status=all&answered=all",
-            "/atk/api/entries?type=feedback&status=active&answered=all",
-            "/atk/api/entries?type=feedback&status=active&answered=all",
+            "/atk/api/entries?type=feedback&status=active&answered=all&page=1",
+            "/atk/api/entries?type=feedback&status=active&answered=all&page=1",
         ],
         "status": "1件を表示",
         "rows": ["filtered.md"],
@@ -4911,7 +5070,7 @@ process.stdout.write(JSON.stringify({
         "state": "adopted",
         "candidates": ["", "adopted/repo"],
         "selected": "adopted/repo",
-        "lastListUrl": ("/atk/api/entries?type=all&status=adopted&answered=all&target_repo=adopted%2Frepo"),
+        "lastListUrl": ("/atk/api/entries?type=all&status=adopted&answered=all&target_repo=adopted%2Frepo&page=1"),
         "rows": ["selected.md"],
     }
 
