@@ -12,14 +12,10 @@ user-invocable: false
 本スキルは高度な経路固有の契約を定める。受信者が行う用途固有の作業は
 受信者用のタスク文書またはagent定義を正本とする。
 
-委譲先とモデルを選ぶ時点で`references/runtime-routing.md`を全文読み、同文書の経路選択とモデル区分を適用する。
-
-委譲経路、モデル設定、Claude Code固有経路、完了通知及び待機・停滞を確定する時は、次の資料を全文読む。
-
-- `agent-toolkit/skills/delegation/references/claude-code-runtime.md`
-- `agent-toolkit/skills/delegation/references/runtime-routing.md`
-- `agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`
-- `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
+委譲先とモデルを選ぶ時点では`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読み、同文書の経路選択とモデル区分を適用する。
+Claude Code固有経路を確定する時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を全文読む。
+完了通知及び待機・停滞を確定する時は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`を全文読む。
+計画実装の受領契約を確定する時は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読む。
 
 ## 送信
 

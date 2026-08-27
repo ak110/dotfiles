@@ -20,7 +20,7 @@ description: >
 
 対象成果物の作成規範（スキル、又は成果物契約の明示された正本文書）を最初に全文読み、成果物契約は起草側を正本とする。
 本スキルは欠陥の証拠、重大度、未検証の区別、報告形式だけを定める。
-計画・設計の採用案や指摘・発見の妥当性を評価する場面では`references/judgment-details.md`を併せて読む。
+計画・設計の採用案や指摘・発見の妥当性を評価する時は`agent-toolkit/skills/review-standards/references/judgment-details.md`を全文読む。
 
 ## 目的との整合
 

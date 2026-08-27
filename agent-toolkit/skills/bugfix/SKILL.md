@@ -15,16 +15,15 @@ description: >
 
 1. 後述の「初動と深掘り判定」を読む
 2. 深掘り条件に該当する場合だけ、`references/root-cause-analysis.md`を全文読む
-3. CI失敗を扱う場合は`references/ci-failure-handling.md`も全文読む
+3. CI失敗を扱う時は`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
 4. 計画、実装、レビューのいずれでも同じ判定と原因区分を用いる
 
-原因区分、分岐検証、CI通過及び実装担当の契約を確定する時は、対象工程に応じて次の資料を全文読む。
+CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.md`を全文読む。
+履歴を扱う実装単位へ入る前は`agent-toolkit:plan-mode`の`plan-mode/references/implementation-task.md`を全文読む。
+実装担当の経路を確定する前は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`を全文読む。
+分岐検証へ入る前は`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`を全文読む。
 
-- `agent-toolkit/skills/bugfix/references/root-cause-analysis.md`
-- `agent-toolkit/skills/coding-standards/references/testing.md`
-- `agent-toolkit/skills/commit/references/push-and-ci.md`
-- `agent-toolkit/skills/delegation/references/runtime-routing.md`
-- `agent-toolkit/skills/plan-mode/references/implementation-task.md`
+原因区分を確定する時は、`agent-toolkit:bugfix`の`bugfix/references/root-cause-analysis.md`を全文読む。
 
 深掘り条件に該当しない局所不良は、直接的原因の是正と近接検証で完了する。
 深掘り条件に該当する不良は、4原因区分、原因起点の類似見直し、

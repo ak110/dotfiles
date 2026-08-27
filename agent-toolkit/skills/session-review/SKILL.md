@@ -71,7 +71,7 @@ advisorはtranscript内で観測した問題と証拠位置だけを問題一覧
 
 ## 観察対象
 
-観察対象を列挙する工程の開始時点で`references/generation-criteria-detail.md`を全文読む。
+観察対象を列挙する工程を開始する時は`agent-toolkit/skills/session-review/references/generation-criteria-detail.md`を全文読む。
 Claude Codeの`~/.claude/references/session-review-dotfiles.md`又はCodexの`~/.codex/references/session-review-dotfiles.md`が存在する場合は、該当する文書もメインが全文読む。
 メインはadvisorの問題一覧を独立した観測入力として扱い、採否を確定済みの改善候補として扱わない。
 

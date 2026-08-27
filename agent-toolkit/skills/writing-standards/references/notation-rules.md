@@ -41,6 +41,8 @@ uv run --script path/to/writing-standards/scripts/check_dash.py path/to/file.md
 
 Markdown要素は意味的役割に沿って使う。句点位置などの細則はmarkdownlint・textlintで検証する。
 
+口調例は例示の内容を通常の成果物検査へ混入させないため、検査除外の対象として扱う。内容確認や修正は`agent-toolkit:writing-standards`の条件付き参照契約へ委ね、禁止語は各ファイルの節名で間接参照する。
+
 - 強調は語句強調にのみ使い、見出しには見出し記法を使う
 - 形容詞・口語表現をかぎ括弧で強調しない
 - インラインコードはコードリテラル・コマンド・ファイルパス・識別子に限る

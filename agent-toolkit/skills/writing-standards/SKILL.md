@@ -149,16 +149,16 @@ READMEとコーディングエージェント向け文書が重複する場合�
 - 外部素材（記事・gist・他リポジトリ文書等）を再構成してスキル・規範文書へ取り込む場合、素材内の数値閾値・
   適用単位・規定本文と点検手順の項目対応の内部整合を転記前に検証し、不整合は取り込み方針を確定してから転記する
 
-口調の自己点検では、執筆者とレビュアーが次の参照資料を読み、該当する表現を成果物へ持ち込んでいないか確認する。
+口調の自己点検では、執筆者とレビュアーが次の参照資料を全文読み、該当する表現を成果物へ持ち込んでいないか確認する。
 
-- `agent-toolkit/skills/writing-standards/references/tone-examples.md`
-- `agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md`
+- 口調の自己点検時は`agent-toolkit/skills/writing-standards/references/tone-examples.md`を全文読む
+- 口調の自己点検時は`agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md`を全文読む
 
 表記、lint及び口調を検査する時は、対象に応じて次の資料を全文読む。
 
-- 表記検査時は`agent-toolkit/skills/writing-standards/references/notation-rules.md`を読む
-- lint違反の対処時は`agent-toolkit/skills/writing-standards/references/textlint-violations.md`を読む
-- lint設定を緩和する時は`agent-toolkit/skills/writing-standards/references/lint-relax-criteria.md`を読む
+- 表記検査時は`agent-toolkit/skills/writing-standards/references/notation-rules.md`を全文読む
+- lint違反の対処時は`agent-toolkit/skills/writing-standards/references/textlint-violations.md`を全文読む
+- lint設定を緩和する時は`agent-toolkit/skills/writing-standards/references/lint-relax-criteria.md`を全文読む
 
 ## コメントの記述粒度
 

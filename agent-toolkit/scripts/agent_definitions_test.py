@@ -2332,8 +2332,8 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     assert "照合対象のsourceが欠落しているか入力値と一致しない場合は完了扱いにせず" in add_feedback
     assert "ユーザー発話を原文とする投入でsourceを受領していない場合は追加のsource照合をしない" in add_feedback
     assert "エージェント自身が投入元で人間由来の指示が無い場合は、sourceを確定して保存し" in add_feedback
-    assert "手順7のsource照合後" in add_feedback
-    assert "手順8のsource照合後" not in add_feedback
+    assert "手順8のsource照合後" in add_feedback
+    assert "手順7のsource照合後" not in add_feedback
     assert "source `plan`（人間由来）を明示" in plan_and_add
     assert "source `session-review`を明示" in session_review
 

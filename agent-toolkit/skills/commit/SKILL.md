@@ -47,12 +47,12 @@ commit直前に次を実施する。
 
 ## 条件付き手順
 
-- amend、fixup、autosquashを行う直前に`references/history-rewrite.md`を全文読む
-- 実際にpushする直前に`references/push-and-ci.md`を全文読む
+- amend、fixup、autosquashを行う直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
+- 実際にpushする直前に`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
 - CI失敗を扱う直前に`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
 - 計画実装の履歴契約を扱う時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
 - push済みcommitのamend、fixup、rebaseは禁止する。push済み判定は
-  `references/history-rewrite.md`のremote-tracking ref到達判定を用いる
+  `agent-toolkit/skills/commit/references/history-rewrite.md`のremote-tracking ref到達判定を用いる
 - push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルのCI失敗契約で原因を分析する
 
 ## 作業用ブランチと退避物の削除
@@ -139,4 +139,4 @@ commit直前に次を実施する。
 採用フィードバックが複数なら複数行でよい）。
 要約は計画ファイルの`## 恒久化・リファクタリング内容`にある再発防止の判断と一致させる。
 
-リリース操作に着手する時点で`references/push-and-ci.md`を全文読み、同文書のリリース手順を適用する。
+リリース操作に着手する時点で`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読み、同文書のリリース手順を適用する。

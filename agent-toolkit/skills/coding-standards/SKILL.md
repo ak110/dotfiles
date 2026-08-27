@@ -25,7 +25,7 @@ description: >
 
 - Python: `references/python.md`と`references/python-references.md`
 - TypeScript/TSX: `references/typescript.md`
-- Rust: `agent-toolkit/skills/coding-standards/references/rust.md`
+- Rustのコードを編集する時は`agent-toolkit/skills/coding-standards/references/rust.md`を全文読む
 - C#: `references/csharp.md`
 - Bash/sh・bash・sh.tmpl: `references/bash.md`
 - PowerShell/ps1・ps1.tmpl・psm1・psd1: `references/powershell.md`
@@ -40,7 +40,7 @@ description: >
 - 文字エンコーディング詳細（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等。作成・修正時に必読）:
   `references/independent-html.md`
-- テスト方針（テストコードの作成・修正時に必読）: `references/testing.md`
+- テストコードを作成・修正する時は`agent-toolkit/skills/coding-standards/references/testing.md`を全文読む
 
 フレームワーク・ライブラリ別リファレンス:
 
@@ -77,7 +77,7 @@ description: >
 
 ### 実装方針の選択
 
-設計判断を確定する時点で`references/design-heuristics.md`を読み、該当する定石とトレードオフを確認する。
+設計判断を確定する時点で`agent-toolkit/skills/coding-standards/references/design-heuristics.md`を全文読む。該当する定石とトレードオフを確認する。
 
 - 実装に着手する前に、以下の順で検討する実装ラダーを適用する
   - 上位で成立する選択肢が見つかった時点で下位の検討は打ち切る
