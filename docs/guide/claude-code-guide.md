@@ -389,8 +389,8 @@ Claude Codeで有効化する。
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `agent-toolkit:shell-exec`: 長出力が予想されるコマンド列をサブエージェントへ委譲し、
   メインへ終了状態と要約だけを返す
-- `agent-toolkit:exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
-  （Claude Code以外のホストでは本体プロセスを停止せず、終了理由を最終応答としてターンを完了させる）
+- `agent-toolkit:exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求する。
+  （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 
 ### 明示呼び出し専用のスキル
 

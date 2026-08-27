@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 
 import _atk_mq_frontmatter as frontmatter
@@ -35,6 +36,8 @@ _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
 _CROSS_REPOSITORY_SUBMISSION = _ADD_FEEDBACK.parent / "references" / "cross-repository-submission.md"
 _TBD_FORMAT = _ADD_FEEDBACK.parent / "references" / "tbd-format.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
+_EXIT_SESSION = _AGENTS_DIR.parent / "skills" / "exit-session" / "SKILL.md"
+_EXIT_SESSION_TERMINATION = _EXIT_SESSION.parent / "references" / "host-and-os-termination.md"
 _PLAN_IMPL_FEEDBACK_FLOW = _PROCESS_FEEDBACKS.parent / "references" / "plan-impl-feedback-flow.md"
 _FEEDBACKS_PLANNER_RECEPTION = _PROCESS_FEEDBACKS.parent / "references" / "feedbacks-planner-reception.md"
 _FEEDBACKS_PLANNER_IO = _PROCESS_FEEDBACKS.parent / "references" / "feedbacks-planner-io.md"
@@ -4026,13 +4029,18 @@ def test_removed_codex_exec_contracts_are_absent() -> None:
 
 
 def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() -> None:
-    """通常Codexの再取得とprocess-loopの明示的な連続処理を両立する。"""
+    """終了能力に応じた再取得とprocess-loopの明示的な連続処理を両立する。"""
     text = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     reception = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
     cleanup = _h2_section(text, "5. 後始末")
     completion = _h2_section(text, "6. 振り返りと終了")
 
-    assert "`CLAUDECODE`が設定されている場合は、この一覧のファイル名を本セッションの処理対象として固定" in text
+    assert "`../exit-session/references/host-and-os-termination.md`で終了能力を判定し" in text
+    assert "本体停止可能かつ連続処理モードでない場合は" in text
+    assert "停止不能な場合と連続処理モードでは" in text
+    assert "| 本体停止可能、通常処理 |" in text
+    assert "| 本体停止不能、通常処理 |" in text
+    assert "| 明示的な連続処理モード |" in text
     assert "起動時の目的文にCodexオーケストレーターの連続処理と明記" in text
     assert "Claude CodeとCodexの双方で、`feedbacks-planner`の起動前" in text
     assert "Claude CodeとCodexで通常型のフィードバックを処理" in reception
@@ -4040,16 +4048,83 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
     assert "Codexホストの通常型採用項目は実行主体が`agent-toolkit:plan-mode`" not in text
     assert "frontmatterの写像不能又は`feedbacks-planner`の起動失敗は" in text
     assert "Claude CodeとCodexの双方の通常型採用項目は" in text
-    assert "Claude Codeホストでは、ready項目を再取得せず" in cleanup
+    assert "本体プロセスを停止でき、かつ連続処理モードでない場合はactive一覧を再取得せず" in cleanup
+    assert "本体プロセスを停止できない場合又は連続処理モードでは" in cleanup
     assert "更新された規範は次セッションの起動時に読み込む" in cleanup
-    assert "残る項目を次セッションで再集約して" in cleanup
-    assert "並列調査・統合計画化できるため、時間・コストを抑える" in cleanup
-    assert "Codexでは実装と後始末の間にactive一覧を再取得" in cleanup
+    assert "次セッションで再集約して並列調査・統合計画化する" in cleanup
     assert "取得済みのready項目を終端させたか保留した後にactive一覧を再取得" in cleanup
-    assert "依存関係の有無を問わず追加分を含むready項目" in cleanup
-    assert "ready項目が無い場合だけ「6. 振り返りと終了」へ進む" in cleanup
+    assert "連続処理モードでは依存関係の有無を問わず追加分を対象" in cleanup
+    assert "無い場合だけ「6. 振り返りと終了」へ進む" in cleanup
+    assert "Claude Codeホスト" not in cleanup
+    assert "Codexホスト" not in cleanup
+    assert "Codexでは実装と後始末の間" not in cleanup
     assert completion.count("`agent-toolkit:session-review`をSkill機能で起動") == 1
-    assert "`agent-toolkit:exit-session`をSkill機能で起動" in completion
+    assert completion.count("`agent-toolkit:exit-session`をSkill機能で起動") == 1
+
+
+def test_exit_session_uses_identity_based_codex_termination_contract() -> None:
+    """Codexの停止対象を一意識別し、共有プロセスを停止しない契約を固定する。"""
+    skill = _EXIT_SESSION.read_text(encoding="utf-8")
+    termination = _EXIT_SESSION_TERMINATION.read_text(encoding="utf-8")
+
+    assert "本体プロセスを一意に識別できる実行環境では" in skill
+    assert "一意に識別できない実行環境ではプロセスを停止せず" in skill
+    for phrase in (
+        "candidate_pid=$PPID",
+        'readlink -f "/proc/$candidate_pid/exe"',
+        "stat -Lc '%d:%i' \"/proc/$candidate_pid/exe\"",
+        "awk '{print $22}' \"/proc/$candidate_pid/stat\"",
+        'ps -p "$candidate_pid" -o tty=',
+        "mapfile -d '' -t candidate_argv < \"/proc/$candidate_pid/cmdline\" || exit 1",
+        "exe_basename=%s",
+        "`exe_basename`と`argv[0]`のbasenameがともに`codex`",
+        "pid`と`start`が正の10進整数",
+        "`exe_id`が`<10進整数>:<10進整数>`",
+        "`tty`が空でも`?`でもない",
+        "`argc=1`の`codex`",
+        "`codex resume`で始まるargv",
+        "`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`で、次のいずれかに一致するargv",
+        "`codex --model <値> -c model_reasoning_effort=<値> <目的文>`",
+        "`codex resume --model <値> -c model_reasoning_effort=<値> [session-id]`",
+        "argvはNUL区切りの要素単位で照合",
+        "`app-server`若しくは`remote-control`がsubcommand",
+        "`--remote`を持つargv",
+        "`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」",
+        "2回目の`Bash`ツール呼び出し",
+        "表示された数値形式の`pid`、`exe_id`及び`start`",
+        "実行ファイルの生パスはコマンドへ再埋込みしない",
+        "kill -TERM <表示されたpid>",
+        "再照合が失敗した場合は`kill`を実行しない",
+        "`pkill`、`killall`及び`codex remote-control stop`は使用しない",
+    ):
+        assert phrase in termination
+    assert "## LinuxのCodex直接CLIでの停止要求" in termination
+    assert "## 停止不能な環境" in termination
+    assert "## ホストの判定" not in termination
+    assert "## Claude Code以外での終了" not in termination
+
+    stop_command = (
+        "test \"$(stat -Lc '%d:%i' /proc/<表示されたpid>/exe)\" = "
+        "'<表示されたexe_id>' && test \"$(awk '{print $22}' /proc/<表示されたpid>/stat)\" = "
+        "'<表示されたstart>' && kill -TERM <表示されたpid>"
+    )
+    assert termination.count("kill -TERM <表示されたpid>") == 1
+    assert stop_command in termination
+    executable_path = "/tmp/cli's/codex"
+    checked_command = (
+        stop_command.replace("<表示されたpid>", "1234")
+        .replace("<表示されたexe_id>", "8:123")
+        .replace("<表示されたstart>", "456")
+    )
+    syntax_check = subprocess.run(
+        ["bash", "-n"],
+        input=f"candidate_exe={shlex.quote(executable_path)}\n{checked_command}\n",
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert syntax_check.returncode == 0, syntax_check.stderr
+    assert executable_path not in stop_command
 
 
 def test_process_feedbacks_terminates_answered_tbd_before_dependent_feedback() -> None:

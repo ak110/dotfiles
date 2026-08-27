@@ -35,11 +35,12 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileClosedEvent,
 )
 
-# Claude Codeがexit-sessionスキル経由でSIGTERMにより終了する場合のexit codeを含む正常終了集合。
-# 0は正常exit、-15はLinuxでのSIGTERM受信、15はWindowsでのSIGTERM相当、
-# 143はシェル経由でSIGTERM終了した場合の128+15を表す
-# （プラットフォーム分岐なしの緩い判定で十分と判断）。
+# Claude Codeがexit-sessionスキル経由でSIGTERMにより終了する場合の正常終了集合。
 _CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
+
+# Codexがexit-sessionスキル経由で終了する場合のOS別正常終了集合。
+_CODEX_NORMAL_EXIT_CODES_POSIX: frozenset[int] = frozenset({0, -15})
+_CODEX_NORMAL_EXIT_CODES_WINDOWS: frozenset[int] = frozenset({0})
 
 # `atk`は`uv run --no-project --script`で起動するため、PEP 723のエフェメラル環境を指す
 # `VIRTUAL_ENV`が本プロセスの環境に設定される。この値を子セッションへ引き継ぐと、
@@ -535,11 +536,13 @@ def _build_session_argv(
     return argv, None
 
 
-def _is_normal_session_exit(orchestrator: str, returncode: int) -> bool:
-    """オーケストレーター別の正常終了コードを判定する。"""
+def _is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str = os.name) -> bool:
+    """オーケストレーターとOS別の正常終了コードを判定する。"""
     if orchestrator == "claude":
         return returncode in _CLAUDE_NORMAL_EXIT_CODES
-    return returncode == 0
+    if platform == "nt":
+        return returncode in _CODEX_NORMAL_EXIT_CODES_WINDOWS
+    return returncode in _CODEX_NORMAL_EXIT_CODES_POSIX
 
 
 def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> bool:
@@ -885,7 +888,7 @@ def _run_process_session(
         elapsed_sec=round(time.monotonic() - session_started_at, 3),
         returncode=result.returncode,
     )
-    if not _is_normal_session_exit(orchestrator, result.returncode):
+    if not _is_normal_session_exit(orchestrator, result.returncode, platform=os.name):
         print(f"{orchestrator}がexit code {result.returncode}で異常終了しました。", file=sys.stderr)
         sys.exit(result.returncode)
     if args.no_update:
@@ -954,7 +957,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
     Codexは対話CLIを使い、設定値のmodel・effortを起動引数へ渡す。
-    Claude Codeは0・-15・15・143、Codexは0を正常終了とする。
+    Claude Codeは0・-15・15・143、POSIXのCodexは0・-15、WindowsのCodexは0を正常終了とする。
     正常終了した場合、
     `--no-update`未指定なら`_restart_process_loop`でランチャーへ再起動を要求する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。

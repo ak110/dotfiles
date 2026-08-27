@@ -3,10 +3,16 @@
 実行手順で停止要求を発行する直前に本文書を全文読む。
 起動条件と手順の骨子は`../SKILL.md`を正本とする。
 
-## ホストの判定
+## 終了能力の判定
 
-`CLAUDECODE`環境変数が設定されている場合はClaude Codeとして「Claude Codeでの停止要求」節へ進み、
-設定されていない場合は「Claude Code以外での終了」節へ進む。
+停止対象の本体プロセスを一意に識別できるかを、実行ホストと環境の観測結果で判定する。
+
+| 入力環境 | 判定 | 終了経路 |
+| --- | --- | --- |
+| Claude Codeで既存のPOSIX直親又はWindows祖先を一意識別できる | 停止可能 | 既存の単一PID停止を維持する |
+| Linuxでremote-controlなしのCodex対話CLIが前記argv・TTY・実行ファイル条件へ一致し、停止直前のPID開始時刻と実行ファイルのデバイス・inodeも一致する | 停止可能 | 表示済み単一PIDへ`TERM`を送る |
+| Codexの直親が`app-server`等の共有プロセスである | 停止不能 | シグナルを送らず終了案内を返す |
+| Windows Codex、親子関係を取得できない環境又は判定条件を満たさない環境 | 停止不能 | シグナルを送らず終了案内を返す |
 
 ## Claude Codeでの停止要求
 
@@ -24,18 +30,49 @@
   親子関係・実行ファイル・コマンドラインを照合して一意に特定した単一PIDは所有権確認済みとして扱う）
 - 対象を一意に特定できない場合は停止を要求せず、ユーザーへ`/exit`の入力を案内して本スキルを終える
 
-## Claude Code以外での終了
+## LinuxのCodex直接CLIでの停止要求
 
-プロセスの停止を一切要求せず、終了理由を最終応答としてターンを完了させる。
+Linuxでremote-controlを使わないCodex直接CLIを実行している場合は、停止要求の直前に、最初の`Bash`ツール呼び出しで次をそのまま実行する。
+
+```sh
+candidate_pid=$PPID
+candidate_exe=$(readlink -f "/proc/$candidate_pid/exe") || exit 1
+candidate_exe_id=$(stat -Lc '%d:%i' "/proc/$candidate_pid/exe") || exit 1
+candidate_start=$(awk '{print $22}' "/proc/$candidate_pid/stat") || exit 1
+candidate_tty=$(ps -p "$candidate_pid" -o tty=) || exit 1
+mapfile -d '' -t candidate_argv < "/proc/$candidate_pid/cmdline" || exit 1
+printf 'pid=%s\nexe_basename=%s\nexe_id=%s\nstart=%s\ntty=%s\nargc=%s\n' "$candidate_pid" "${candidate_exe##*/}" "$candidate_exe_id" "$candidate_start" "$candidate_tty" "${#candidate_argv[@]}"
+for index in "${!candidate_argv[@]}"; do printf 'argv[%s]=%q\n' "$index" "${candidate_argv[$index]}"; done
+```
+
+全ての読取りが成功し、`pid`と`start`が正の10進整数、`exe_id`が`<10進整数>:<10進整数>`、`exe_basename`と`argv[0]`のbasenameがともに`codex`、`tty`が空でも`?`でもないことを確認する。argvが次のいずれかに一致する場合だけ停止可能と判定する。
+
+- `argc=1`の`codex`
+- `codex resume`で始まるargv
+- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`で、次のいずれかに一致するargv
+  - `codex --model <値> -c model_reasoning_effort=<値> <目的文>`
+  - `codex resume --model <値> -c model_reasoning_effort=<値> [session-id]`
+
+argvはNUL区切りの要素単位で照合し、目的文に現れる語をsubcommandとして扱わない。前記以外、`app-server`若しくは`remote-control`がsubcommandであるargv、`--remote`を持つargv、読取失敗又は値の不一致は停止不能とする。
+
+この単一PIDへの停止要求は、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」に定める、セッション本体を一意に識別した場合の契約済み経路として扱う。
+
+停止可能と判定した場合だけ、2回目の`Bash`ツール呼び出しで、1回目に表示された数値形式の`pid`、`exe_id`及び`start`を次のプレースホルダーへそのまま代入して単独実行する。実行ファイルの生パスはコマンドへ再埋込みしない。
+
+```sh
+test "$(stat -Lc '%d:%i' /proc/<表示されたpid>/exe)" = '<表示されたexe_id>' && test "$(awk '{print $22}' /proc/<表示されたpid>/stat)" = '<表示されたstart>' && kill -TERM <表示されたpid>
+```
+
+再照合が失敗した場合は`kill`を実行しない。プロセス名の検索、推測又は再構成したPID、`pkill`、`killall`及び`codex remote-control stop`は使用しない。
+
+## 停止不能な環境
+
+本体プロセスを一意に特定できない場合は停止を要求せず、終了理由を最終応答としてターンを完了させる。
 対話CLIを閉じる操作はユーザーに委ね、`/exit`または`/quit`の入力が必要である旨を案内する。
 
-Codex CLIでプロセス停止を要求しない理由は次のとおりである。
-スキルから起動したシェルの親プロセスがセッション固有の対話CLIではなく、
-複数のクライアントが利用する共用のapp-serverとなる構成を観測している。
-この構成で`$PPID`へシグナルを送出すると、現在の会話ではなく共用プロセスを停止する方向に作用する。
-`codex remote-control stop`もapp-serverデーモン自体の停止操作であり、
-現在のクライアントだけを終了する手段ではない（同コマンドのヘルプで確認できる）。
-現在のクライアントだけを終了する正式な手段が公開されるまで、これらの操作を用いない。
+Codex CLI 0.150.1をLinuxでremote-controlなしに実行した実測では、`ps`、`readlink /proc/$PPID/exe`及び`kill -0 $PPID`で、
+ツールシェルの直親が別TTYのCodexとは異なるセッション固有の単一`codex`プロセスであることを確認した。
+実セッションを失わないため、実測時には`TERM`を送っていない。
 
 ## シグナル種別の見直し
 

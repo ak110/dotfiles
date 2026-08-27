@@ -19,7 +19,8 @@ atk mq process-loop
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
 ready項目がなくなると、終了時の`session-review`を1回実行して`/goal`で登録した目的を完了する。
-目的の完了後に対話UIで`/exit`を入力すると、親の監視ループへ戻る。
+Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
+終了対象を確認できない環境では対話UIに終了案内を表示し、利用者が`/exit`を入力すると親の監視ループへ戻る。
 
 初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
 `update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。

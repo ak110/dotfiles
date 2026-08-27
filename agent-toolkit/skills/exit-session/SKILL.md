@@ -12,7 +12,6 @@ allowed-tools: Bash
 本体プロセスを一意に識別できる実行環境では、当該単一プロセスへ停止を要求して`/exit`に近い停止挙動を得る。
 一意に識別できない実行環境ではプロセスを停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する。
 ホスト別・環境別の判定と停止手順は`references/host-and-os-termination.md`を正本とする。
-
 process-loopから起動されたセッションでは、agent-toolkit pluginのPostToolUseが`exit-session`の呼び出しを状態へ記録し、pluginのStop hookが`autonomous_exit_invoked`を参照して呼び出し漏れを検出する。
 
 ## 起動条件
