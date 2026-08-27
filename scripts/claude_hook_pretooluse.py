@@ -192,6 +192,7 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
 _HOME_CLAUDE_ALLOWED_DIRS: frozenset[str] = frozenset(
     {
         "plans",  # plan mode が書き込む計画ファイル
+        "jobs",  # Claude Code が生成するセッション作業領域
         "scratchpad",  # 一時作業ファイル領域 (chezmoi 管理外)
         "projects",  # Claude Code のセッション履歴
         "todos",  # TodoWrite ストレージ

@@ -420,6 +420,18 @@ class TestHomePathCheck:
         assert result.returncode == 0
         assert "home directory" in _additional_context(result)
 
+    def test_home_path_in_claude_job_file_is_skipped(self):
+        """Claude Codeが生成するセッション作業領域では正確なホーム絶対パスを許容する。"""
+        target = pathlib.Path.home() / ".claude" / "jobs" / "session" / "tmp" / "material.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            }
+        )
+        assert result.returncode == 0
+        assert "home directory" not in _agent_messages(result)
+
     def test_home_path_in_non_git_temp_document_is_skipped(self, tmp_path: pathlib.Path):
         """Git管理外の一時作業文書では正確なホーム絶対パスを許容する。"""
         target = tmp_path / "draft.md"

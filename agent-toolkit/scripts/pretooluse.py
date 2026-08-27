@@ -141,6 +141,16 @@ def _is_plan_file_or_adjunct(file_path: str) -> bool:
     return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
 
 
+def _is_claude_job_file(file_path: str) -> bool:
+    """Claude Codeが生成するセッション作業領域配下の場合に真を返す。"""
+    try:
+        target = pathlib.Path(file_path).expanduser().resolve(strict=False)
+        jobs = (pathlib.Path.home() / ".claude" / "jobs").resolve(strict=False)
+        return target.is_relative_to(jobs) and target != jobs
+    except (OSError, ValueError):
+        return False
+
+
 # 日本語の文字（ひらがな・カタカナ・CJK統合漢字）。
 _JAPANESE_SCRIPT_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
 # 日本語文中への混入を検出する他言語の文字。
@@ -842,7 +852,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     対象パスの最近接既存親からルートまでにGit管理マーカーがないと確定できた文書は対象外とする。
     マーカーの確認不能時は既存検査を継続する。
     """
-    if _is_plan_file_or_adjunct(file_path):
+    if _is_plan_file_or_adjunct(file_path) or _is_claude_job_file(file_path):
         return None
 
     try:

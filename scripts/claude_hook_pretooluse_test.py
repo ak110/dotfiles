@@ -85,6 +85,7 @@ class TestHomeClaudeEditWarning:
         "rel",
         [
             "plans/foo.md",  # plan mode が書き込む
+            "jobs/session/tmp/material.md",  # Claude Code が生成するセッション作業領域
             "projects/session.jsonl",  # Claude Code セッション
             "todos/todo.json",
             "shell-snapshots/foo.sh",
