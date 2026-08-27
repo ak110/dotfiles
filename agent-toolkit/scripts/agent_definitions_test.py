@@ -67,6 +67,7 @@ _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
+_MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "agent-toolkit" / "share" / "codex-agents-base.md"
 _SECTION_REFERENCE_SOURCE_ROOTS = (
@@ -4008,6 +4009,40 @@ def test_plan_and_add_feedback_restarts_same_session_without_implementation() ->
     assert contract in plan_and_add
     assert contract in design
     assert "実装承認を求める" not in plan_and_add
+
+
+def test_merge_pr_skips_develop_wait_only_for_identical_refs_without_extra_checks() -> None:
+    """developの重複CI待機を安全な条件でだけ省略し、fallbackと後続検収を維持する。"""
+    skill = _MERGE_PR.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    contract = (
+        "develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、"
+        "現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。"
+        "OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、"
+        "develop push前のbaselineを用いる既存の待機経路へ戻す。"
+        "master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、"
+        "local develop・origin/develop・origin/masterの最終完全OID照合は省略しない。"
+    )
+
+    assert contract in skill
+    assert contract in design
+    assert "git fetch origin develop master" in skill
+    assert "git rev-parse develop origin/develop origin/master" in skill
+    assert "`MERGE_OID`とローカル`develop`、`origin/develop`及び`origin/master`の完全OIDがすべて一致" in skill
+    assert "develop push前のbaselineを用いる既存の待機経路へ戻す" in skill
+    wait_command = (
+        "uv run --no-project --script /home/aki/dotfiles/agent-toolkit/scripts/wait_ci.py "
+        "--baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github "
+        "--ref refs/heads/develop --source-ref develop --sha <MERGE_OID>"
+    )
+    assert skill.count(wait_command) == 1
+    assert skill.index(wait_command) > skill.index("条件が成立しない場合だけ実行")
+    for phrase in (
+        "master pushのCIは",
+        "## 条件付きRelease検収",
+        "git rev-parse develop origin/develop origin/master",
+    ):
+        assert phrase in skill
 
 
 def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:

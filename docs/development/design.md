@@ -898,8 +898,9 @@ workflowの`workflow_run`入力境界は、同日時点の[workflow_runイベン
 
 PRマージ後は、マージコミットの完全OIDを取得して`origin/master`と照合する。
 その後にローカル`develop`を`git merge --ff-only origin/master`で進め、push前のCI baselineを保存して`origin/develop`へpushする。
-developのCIは`wait_ci.py`で待機し、masterのCIは完全OIDに一致するGitHub Actions runを`gh run watch --exit-status`で待機する。
-runが登録される前は読み取りだけを継続し、自作のshell sleep loopを追加しない。
+develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、local develop・origin/develop・origin/masterの最終完全OID照合は省略しない。
+同期push後に`git fetch origin develop master`する。`git rev-parse develop origin/develop origin/master`でローカル`develop`、`origin/develop`及び`origin/master`の完全OIDを比較し、マージコミットとdevelopへ同期したコミットの一致を確認する。現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であり、develop固有検査には含めない。CI定義が変化した場合は省略条件を再判定する。
+待機する場合、runが登録される前は読み取りだけを継続し、自作のshell sleep loopを追加しない。
 
 マージコミットの第一親との差分にstatuslineが含まれる場合は、同じ完全OIDの`Release statusLine` run、タグ、GitHub Release及びLinux・Windows assetを検収する。
 statuslineの差分がない場合はRelease成果物を検収しない。
