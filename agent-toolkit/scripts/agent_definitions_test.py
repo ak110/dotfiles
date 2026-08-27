@@ -1148,7 +1148,10 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
         "調整主体が無い場合は計画担当が`agent-toolkit:delegation`に従って指示する"
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
-    assert "初回または再レビューの別。再レビューでは共通契約が定める必須差分入力に加え" in task
+    assert (
+        "初回または再レビューの別。再レビューでは共通契約が定める必須差分入力に加え、"
+        "同一thread継続でも新規起動でも、今回のラウンド番号と今回の表の絶対パスを必須差分入力として受け取る"
+    ) in task
     assert "初回・再レビューの入力、被覆証拠、直接影響範囲及び不足範囲の返却は、review-standardsの共通契約に従う" in task
     assert "キューにない素材の逐語本文・回答全文が、調査、起草、初回レビュー、再レビューの明示入力として保持" in task
     assert "指摘候補を内部的に網羅列挙" in task
@@ -3080,7 +3083,23 @@ def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
     assert "指摘候補を内部的に網羅列挙" not in plan_review_delegation
     assert "全修正と累積計画全体を再監査" not in plan_review_delegation
     assert "## 初回・再レビューの共通契約" in review_standards
+    assert (
+        "修正した識別子の呼び出し元・参照元、同じ状態又はデータを消費する経路、対応テスト、生成・配布先、"
+        "変更した契約の適用先から直接影響範囲を導出する。"
+    ) in review_standards
+    assert (
+        "共有parser、共通状態、公開契約、生成元、配布元を修正した場合は、実際の全消費先まで範囲を広げる。"
+    ) in review_standards
+    assert "文字列、見出し、目的語、混在構造、接続関係が似ているだけの箇所は範囲へ含めない。" in review_standards
     assert "未変更かつ直接影響範囲に含まれない既存部分は再走査しない。" in review_standards
+    assert "初回被覆契約の不履行として不足範囲を調整主体へ返す。" in review_standards
+    assert (
+        "調整主体は初回レビューを未完了として同じレビュー担当へ不足範囲を返し、補完結果を受理してから再レビューを続ける。"
+    ) in review_standards
+    assert (
+        "再レビューで初回から判断できた問題が見つかった場合も、初回レビューを未完了として不足範囲を同じレビュー担当へ返し、"
+        "補完後に再レビューを続ける。"
+    ) in coordinator
     assert "指摘候補の全件抽出" not in executor
 
 
