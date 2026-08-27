@@ -2194,7 +2194,11 @@ def _is_pipeline_continuation(previous: str, separator: str, following: str) -> 
 
 def _is_redirection_continuation(previous: str, separator: str, following: str) -> bool:
     """`split_bash_segments`が分割したリダイレクト断片の続きであるかを返す。"""
-    return separator.strip() == "&" and separator.endswith("&") and (previous.endswith((">", "<")) or following.startswith(">"))
+    if separator.strip() != "&":
+        return False
+    if previous.endswith((">", "<")):
+        return True
+    return following.startswith(">") and separator.endswith("&")
 
 
 def _extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> list[list[_ExecutionSegment]]:

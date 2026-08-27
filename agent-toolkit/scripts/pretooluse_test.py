@@ -3728,6 +3728,7 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tee -a | tail -5",
             "pytest -q | tee --append | tail -5",
             "pytest -q | tee 2>&1 | tail -5",
+            "pytest -q | tee 2>& 1 | tail -5",
             "pytest -q | tee 2>/tmp/tee.err | tail -5",
             "pytest -q | tee < /tmp/tee.in | tail -5",
             "pytest -q | tee /dev/null | tail -5",
@@ -3753,6 +3754,7 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tee /dev/null /tmp/test.log | tail -5",
             "pytest -q | tee 2>&1 /tmp/test.log | tail -5",
             "pytest -q | tee 2>&1 /tmp/full.log | tail -5",
+            "pytest -q | tee 2>& 1 /tmp/full.log | tail -5",
             "pytest -q | tee /dev/tty /tmp/test.log | tail -5",
         ],
     )
