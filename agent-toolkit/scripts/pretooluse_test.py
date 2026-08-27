@@ -3727,6 +3727,14 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tee | tail -5",
             "pytest -q | tee -a | tail -5",
             "pytest -q | tee --append | tail -5",
+            "pytest -q | tee 2>&1 | tail -5",
+            "pytest -q | tee 2>/tmp/tee.err | tail -5",
+            "pytest -q | tee < /tmp/tee.in | tail -5",
+            "pytest -q | tee /dev/null | tail -5",
+            "pytest -q | tee /dev/stdin | tail -5",
+            "pytest -q | tee /dev/stdout | tail -5",
+            "pytest -q | tee /dev/stderr | tail -5",
+            "pytest -q | tee /dev/fd/1 | tail -5",
         ],
     )
     def test_tee_without_file_does_not_hide_truncation(self, command: str):
@@ -3736,7 +3744,12 @@ class TestBashOutputTruncationWarning:
         assert "truncating it" in _agent_messages(result)
 
     @pytest.mark.parametrize(
-        "command", ["pytest -q | tee /tmp/test.log | tail -5", "pytest -q | tee -a /tmp/test.log | tail -5"]
+        "command",
+        [
+            "pytest -q | tee /tmp/test.log | tail -5",
+            "pytest -q | tee -a /tmp/test.log | tail -5",
+            "pytest -q | tee /dev/null /tmp/test.log | tail -5",
+        ],
     )
     def test_tee_with_file_hides_truncation(self, command: str):
         """実ファイル引数を持つ`tee`は切り詰め前の保存として扱う。"""
@@ -3788,6 +3801,12 @@ class TestBashOutputTruncationWarning:
             "make --new-file=lint docs | tail -5",
             "make --assume-new lint docs | tail -5",
             "make --assume-new=lint docs | tail -5",
+            "make --dire lint docs | tail -5",
+            "make --assume-ol lint docs | tail -5",
+            "make --old lint docs | tail -5",
+            "make --new lint docs | tail -5",
+            "make --what lint docs | tail -5",
+            "make --inc lint docs | tail -5",
             "make FOO-BAR=lint docs | tail -5",
             "make -- FOO-BAR=lint docs | tail -5",
             "make FOO:=lint docs | tail -5",
@@ -3817,6 +3836,8 @@ class TestBashOutputTruncationWarning:
             "make -E 'lint: ;' lint | tail -5",
             "make --assume-old=lint docs lint | tail -5",
             "make --assume-new=lint docs check | tail -5",
+            "make --dire lint docs check | tail -5",
+            "make --assume-ol lint docs check | tail -5",
             "make -- FOO=lint docs check | tail -5",
             "make -- FOO-BAR=lint docs check | tail -5",
             "make -- FOO:=lint docs check | tail -5",
@@ -3855,6 +3876,12 @@ class TestBashOutputTruncationWarning:
             'pytest -q | tail -5 || echo "$?"',
             'pytest -q | tail -5 & echo "$?"',
             'pytest -q |& tail -5; echo "$?"',
+            "pytest -q | tail -5; exit $?",
+            "pytest -q | tail -5; return $?",
+            "pytest -q | tail -5; test $? -eq 0",
+            "pytest -q | tail -5; [ $? -eq 0 ]",
+            "pytest -q | tail -5; status=$?",
+            "pytest -q | tail -5; if [ $? -eq 0 ]; then echo ok; fi",
         ],
     )
     def test_status_after_truncation_warns(self, command: str):
@@ -3874,6 +3901,9 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tail -5; printf '%s\\n' done",
             'uv run --no-project --script /repo/other/scripts/check.py | tail -5; echo "$?"',
             'uv run --no-project --script /repo/agent-toolkit/scripts/check.txt | tail -5; echo "$?"',
+            "set -euo pipefail; pytest -q | tail -5; exit $?",
+            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; return $?",
+            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; status=$?",
         ],
     )
     def test_status_after_truncation_silent_when_status_is_preserved_or_not_reported(self, command: str):

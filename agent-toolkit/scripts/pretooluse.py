@@ -2853,6 +2853,8 @@ _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
 )
 _OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
 _OUTPUT_FULL_SAVE_COMMAND = "tee"
+_SHELL_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|<<<|<<|>>|<>|>&|<&|>\||>|<)")
+_TEE_NON_FILE_OPERAND_PATTERN = re.compile(r"^(?:/dev/null|/dev/(?:stdin|stdout|stderr)|/dev/fd/\d+|/proc/self/fd/\d+)/?$")
 _MAKE_ASSIGNMENT_PATTERN = re.compile(r"^[^=\s]+?\s*(?:::=|:=|\?=|\+=|!=|=)")
 _MAKE_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     {
@@ -2878,7 +2880,50 @@ _MAKE_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
 
 長形の`--name=value`形式は、走査側がオプション名と値を分離して判定する。
 """
-_STATUS_REPORT_COMMANDS: frozenset[str] = frozenset({"echo", "printf", "print"})
+_MAKE_LONG_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--always-make",
+        "--assume-new",
+        "--assume-old",
+        "--check-symlink-times",
+        "--debug",
+        "--directory",
+        "--dry-run",
+        "--environment-overrides",
+        "--eval",
+        "--file",
+        "--help",
+        "--ignore-errors",
+        "--include-dir",
+        "--jobs",
+        "--just-print",
+        "--keep-going",
+        "--load-average",
+        "--makefile",
+        "--max-load",
+        "--new-file",
+        "--no-builtin-rules",
+        "--no-builtin-variables",
+        "--no-keep-going",
+        "--no-print-directory",
+        "--no-silent",
+        "--old-file",
+        "--output-sync",
+        "--print-data-base",
+        "--print-directory",
+        "--question",
+        "--quiet",
+        "--recon",
+        "--silent",
+        "--stop",
+        "--touch",
+        "--trace",
+        "--version",
+        "--warn-undefined-variables",
+        "--what-if",
+    }
+)
+"""`make --help`に現れる長形オプション。GNU Makeの一意な省略解決に使う。"""
 
 
 def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) -> bool:
@@ -2891,16 +2936,39 @@ def _tee_saves_to_file(segment: _ExecutionSegment) -> bool:
     if not _segment_starts_with(segment, (_OUTPUT_FULL_SAVE_COMMAND,)):
         return False
     option_terminator = False
-    for token in segment.tokens[1:]:
+    tokens = segment.tokens[1:]
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        redirect_match = _SHELL_REDIRECTION_PATTERN.match(token)
+        if redirect_match is not None:
+            index += 1
+            if redirect_match.end() == len(token):
+                index += 1
+            continue
+        if _TEE_NON_FILE_OPERAND_PATTERN.fullmatch(token.rstrip("/")):
+            index += 1
+            continue
         if option_terminator:
             return True
         if token == "--":
             option_terminator = True
-            continue
-        if token.startswith("-") and token != "-":
-            continue
-        return True
+        elif token.startswith("-") and token != "-":
+            pass
+        else:
+            return True
+        index += 1
     return False
+
+
+def _make_option_requires_value(token: str) -> bool:
+    """`make`の短長オプションが別トークンの必須値を取るかを返す。"""
+    if token in _MAKE_OPTIONS_WITH_VALUE:
+        return True
+    if not token.startswith("--") or "=" in token:
+        return False
+    matches = tuple(option for option in _MAKE_LONG_OPTIONS if option.startswith(token))
+    return len(matches) == 1 and matches[0] in _MAKE_OPTIONS_WITH_VALUE
 
 
 def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
@@ -2920,7 +2988,7 @@ def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
             option_terminator = True
             continue
         if token.startswith("-"):
-            if "=" not in token and token in _MAKE_OPTIONS_WITH_VALUE:
+            if _make_option_requires_value(token):
                 next(tokens, None)
             continue
         targets.append(token)
@@ -3020,28 +3088,43 @@ def _contains_unquoted_status_expansion(token: str) -> bool:
 
 
 def _status_report_follows_truncation(command: str) -> bool:
-    """直後のserial commandが検証コマンドの終了状態を報告する形かを返す。"""
+    """直後のserial commandが検証コマンドの終了状態を利用する形かを返す。"""
     tokens = _command_tokens_with_quotes(command)
     if not tokens:
         return False
-    command_name = tokens[0].strip("'\"").rsplit("/", 1)[-1]
-    if command_name not in _STATUS_REPORT_COMMANDS:
-        return False
     if any("PIPESTATUS" in token for token in tokens):
         return False
-    return any(_contains_unquoted_status_expansion(token) for token in tokens[1:])
+    return any(_contains_unquoted_status_expansion(token) for token in tokens)
 
 
 def _pipefail_setting(command: str) -> bool | None:
-    """`set -o/+o pipefail`によるパイプライン終了状態の設定を返す。"""
+    """`set`による`pipefail`の最後の設定を返す。"""
     tokens = _command_tokens(command)
-    if not tokens or len(tokens) < 3 or tokens[0] != "set":
+    if not tokens or tokens[0] != "set":
         return None
-    if tokens[1:3] == ["-o", "pipefail"]:
-        return True
-    if tokens[1:3] == ["+o", "pipefail"]:
-        return False
-    return None
+    pipefail_enabled: bool | None = None
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            break
+        if token in {"-o", "+o"}:
+            if index + 1 < len(tokens) and tokens[index + 1] == "pipefail":
+                pipefail_enabled = token == "-o"
+            index += 2
+            continue
+        if len(token) > 1 and token[0] in {"-", "+"}:
+            option_chars = token[1:]
+            option_index = option_chars.find("o")
+            if option_index >= 0:
+                option_value = option_chars[option_index + 1 :]
+                if option_value == "pipefail":
+                    pipefail_enabled = token[0] == "-"
+                elif not option_value and index + 1 < len(tokens) and tokens[index + 1] == "pipefail":
+                    pipefail_enabled = token[0] == "-"
+                    index += 1
+        index += 1
+    return pipefail_enabled
 
 
 def _check_bash_output_status_after_truncation(command: str) -> str | None:
