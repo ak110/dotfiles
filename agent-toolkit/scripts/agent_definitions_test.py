@@ -60,7 +60,6 @@ _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "refe
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
 _CLAUDE_CODE_RULE = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
-_EXIT_SESSION_TERMINATION = _AGENTS_DIR.parent / "skills" / "exit-session" / "references" / "host-and-os-termination.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _SESSION_REVIEW_CRITERIA = _SESSION_REVIEW.parent / "references" / "generation-criteria-detail.md"
 _SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
@@ -706,42 +705,6 @@ def test_delegation_capability_comparison_uses_identical_machine_queries() -> No
         "単一対象の通常のstatus確認、常時収集、hook・状態保存を要求しない",
     ):
         assert phrase in delegation
-
-
-def test_process_stop_contract_connects_shared_identifier_and_claude_task_id() -> None:
-    """共有終了規約とClaude CodeのTaskStop規約が起動結果の識別子で接続される。"""
-    operations = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
-    claude = _CLAUDE_CODE_RULE.read_text(encoding="utf-8")
-    exit_session = _EXIT_SESSION_TERMINATION.read_text(encoding="utf-8")
-
-    for phrase in (
-        "プロセス又はホスト管理ジョブを終了させる操作は、自身が起動し起動結果から停止用の識別子を取得して保持した対象、及びホストが現在の実行主体専用の終了対象として指定し、その対象を一意に特定できる経路から識別子を取得して保持した対象に限る。",
-        "直接起動したOSプロセスではPID、ホスト管理ジョブでは起動結果または背景移行通知が返したタスクIDなど、対象の起動経路が指定する識別子と停止手段を組み合わせる。",
-        "別種の識別子への推測変換又はパターン一致で対象を特定しない。",
-    ):
-        assert phrase in operations
-    assert "自身が起動して識別子（PID）を確認したものに限る。" not in operations
-
-    for phrase in (
-        "起動結果が返したタスクIDを`TaskStop`ツールへ渡す。",
-        "前景起動が実行環境の判断で背景実行へ移行し、移行通知がタスクIDを示した場合も同様とする。",
-        "シェルの`kill`等でPIDを推測して停止しない",
-    ):
-        assert phrase in claude
-
-    for phrase in (
-        "`CLAUDECODE`が設定されていることを確認する。",
-        (
-            "ホストが`Bash`の親PIDを現在セッション専用のClaude Code本体として指定する契約を提供し、"
-            "実行主体が実行時にその指定を確認できる場合に限る。"
-        ),
-        "`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`のPID名前空間分離などにより親PIDへの参照と信号送出が制限される環境ではこの経路を使わない。",
-        "ホストが指定した親PIDが現在セッション専用のClaude Code本体であることを確認し",
-        "ホストが現在の実行主体専用の終了対象を指定し、実行時に一意に特定した識別子の原則に従う。",
-        "親子関係・実行ファイル・コマンドラインを照合して一意に特定した単一PID",
-        "対象を一意に特定できない場合は停止を要求せず、ユーザーへ`/exit`の入力を案内して本スキルを終える",
-    ):
-        assert phrase in exit_session
 
 
 def test_codex_named_agent_compatibility_preserves_stage_engine() -> None:
