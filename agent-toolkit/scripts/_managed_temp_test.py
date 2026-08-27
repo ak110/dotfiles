@@ -26,7 +26,8 @@ def _assert_windows_directory_swap_rejected(path: pathlib.Path, displaced: pathl
     """cleanup境界が保持するハンドルでrootまたは祖先の交換を拒否する。"""
     try:
         path.rename(displaced)
-    except OSError:
+    except OSError as error:
+        assert getattr(error, "winerror", None) == 32
         return
     displaced.rename(path)
     raise AssertionError(f"ディレクトリ交換が拒否されなかった: {path}")
@@ -79,6 +80,107 @@ def test_windows_ctypes_structures_match_sdk_layout() -> None:
     assert ctypes.sizeof(subject._Acl) == 8
     assert ctypes.sizeof(subject._AclSizeInformation) == 12
     assert ctypes.sizeof(subject._ByHandleFileInformation) == 52
+    assert ctypes.sizeof(subject._FileDispositionInfo) == 1
+    assert subject._FileRenameInfo.file_name.offset == 20
+    assert subject._FileIdBothDirectoryInfo.file_id.offset == 96
+    assert subject._FileIdBothDirectoryInfo.file_name.offset == 104
+
+
+def test_windows_handle_file_operations_use_bound_information(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """Windowsの移動・削除APIへハンドル束縛された情報を渡す。"""
+    calls: list[tuple[int, int, bytes, int]] = []
+
+    class _Kernel32Double:
+        @staticmethod
+        def SetFileInformationByHandle(
+            handle: int,
+            information_class: int,
+            information: typing.Any,
+            size: int,
+        ) -> int:
+            calls.append((handle, information_class, ctypes.string_at(information, size), size))
+            return 1
+
+    monkeypatch.setattr(subject, "_windows_dll", lambda _name: _Kernel32Double())
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    subject._windows_rename_handle(101, source, destination)
+    subject._windows_delete_handle(202, source)
+
+    assert [call[1] for call in calls] == [subject._WINDOWS_FILE_RENAME_INFO, subject._WINDOWS_FILE_DISPOSITION_INFO]
+    encoded_destination = str(destination).encode("utf-16-le")
+    rename_data = calls[0][2]
+    assert calls[0][0] == 101
+    assert calls[0][3] == subject._FileRenameInfo.file_name.offset + len(encoded_destination)
+    assert int.from_bytes(rename_data[0:4], "little") == 0
+    assert int.from_bytes(rename_data[16:20], "little") == len(encoded_destination)
+    assert rename_data[subject._FileRenameInfo.file_name.offset :].decode("utf-16-le") == str(destination)
+    assert calls[1] == (202, subject._WINDOWS_FILE_DISPOSITION_INFO, b"\x01", 1)
+
+
+def test_windows_directory_enumeration_uses_directory_handle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Windowsの子列挙APIへ削除対象ディレクトリのハンドルを渡す。"""
+    fixed_size = subject._FileIdBothDirectoryInfo.file_name.offset
+
+    def directory_record(name: str, *, attributes: int, next_offset: int = 0) -> bytes:
+        encoded_name = name.encode("utf-16-le")
+        record = ctypes.create_string_buffer(fixed_size + len(encoded_name))
+        information = ctypes.cast(
+            record,
+            ctypes.POINTER(subject._FileIdBothDirectoryInfo),
+        ).contents
+        information.next_entry_offset = next_offset
+        information.file_attributes = attributes
+        information.file_name_length = len(encoded_name)
+        ctypes.memmove(
+            ctypes.addressof(record) + fixed_size,
+            encoded_name,
+            len(encoded_name),
+        )
+        return ctypes.string_at(record, len(record))
+
+    first_next_offset = (fixed_size + 2 + 7) & ~7
+    payload = directory_record(".", attributes=0, next_offset=first_next_offset)
+    payload += b"\x00" * (first_next_offset - len(payload))
+    payload += directory_record(
+        "nested",
+        attributes=subject._WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
+    )
+    calls: list[tuple[int, int]] = []
+
+    class _Kernel32Double:
+        call_count = 0
+
+        @staticmethod
+        def GetFileInformationByHandleEx(
+            handle: int,
+            information_class: int,
+            information: typing.Any,
+            size: int,
+        ) -> int:
+            calls.append((handle, information_class))
+            if _Kernel32Double.call_count == 0:
+                ctypes.memmove(information, payload, len(payload))
+                _Kernel32Double.call_count += 1
+                return 1
+            return 0
+
+    monkeypatch.setattr(subject, "_windows_dll", lambda _name: _Kernel32Double())
+    monkeypatch.setattr(
+        subject.ctypes,
+        "get_last_error",
+        lambda: subject._WINDOWS_ERROR_NO_MORE_FILES,
+        raising=False,
+    )
+
+    assert subject._windows_directory_entries(707, tmp_path) == [("nested", subject._WINDOWS_FILE_ATTRIBUTE_DIRECTORY)]
+    assert calls == [
+        (707, subject._WINDOWS_FILE_ID_BOTH_DIRECTORY_RESTART_INFO),
+        (707, subject._WINDOWS_FILE_ID_BOTH_DIRECTORY_INFO),
+    ]
 
 
 def _install_windows_security_doubles(
@@ -1078,6 +1180,27 @@ class TestManagedTempPosix:
 class TestManagedTempWindows:
     """WindowsのSID・ACL・reparse point・cleanupを実環境で確認する。"""
 
+    @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
+    def test_root_swap_control_without_cleanup_boundary_allows_swap(
+        self,
+        tmp_path: pathlib.Path,
+        swap_target: str,
+    ) -> None:
+        """cleanup境界が無い場合はrootまたは祖先を交換できるテスト条件を確認する。"""
+        container = tmp_path / "managed-container"
+        container.mkdir()
+        root = container / "managed-root"
+        root.mkdir()
+        swap_path = {"root": root, "ancestor": container}[swap_target]
+        displaced = tmp_path / f"{swap_target}-displaced"
+
+        swap_path.rename(displaced)
+
+        assert not swap_path.exists()
+        assert displaced.is_dir()
+        displaced.rename(swap_path)
+        assert swap_path.is_dir()
+
     def test_create_validate_and_cleanup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-roundtrip")
@@ -1504,6 +1627,42 @@ class TestManagedTempWindows:
             subject.cleanup_managed_temp(target)
         assert _managed_state(target, registry) == before
 
+    def test_cleanup_binds_target_before_handle_rename(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """隔離直前の同名差替えを検出し、元対象と差替え対象をともに保持する。"""
+        container = tmp_path / "managed-container"
+        container.mkdir()
+        root = container / "managed-root"
+        root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root))
+        target = subject.create_managed_temp("windows-target-handle")
+        (target / "original.txt").write_text("original", encoding="utf-8")
+        displaced = tmp_path / "target-displaced"
+        replacement = tmp_path / "target-replacement"
+        replacement.mkdir()
+        subject._windows_secure_path(replacement, directory=True)
+        (replacement / "replacement.txt").write_text("replacement", encoding="utf-8")
+        original_boundary = subject._windows_cleanup_boundary
+
+        @contextlib.contextmanager
+        def replace_target_before_move(boundary_root: pathlib.Path) -> typing.Iterator[None]:
+            with original_boundary(boundary_root):
+                target.rename(displaced)
+                replacement.rename(target)
+                yield
+
+        monkeypatch.setattr(subject, "_windows_cleanup_boundary", replace_target_before_move)
+
+        with pytest.raises(subject.ManagedTempError, match="隔離時に置換"):
+            subject.cleanup_managed_temp(target)
+
+        assert (displaced / "original.txt").read_text(encoding="utf-8") == "original"
+        assert (target / "replacement.txt").read_text(encoding="utf-8") == "replacement"
+        assert subject._registry_path(target).exists()
+
     @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
     def test_cleanup_rejects_root_swap_before_replace_and_preserves_external_target(
         self,
@@ -1524,14 +1683,18 @@ class TestManagedTempWindows:
         sentinel.write_text("keep", encoding="utf-8")
         swap_path = {"root": root, "ancestor": container}[swap_target]
         displaced = tmp_path / f"{swap_target}-displaced"
-        original_replace = subject.os.replace
+        original_move_to_quarantine = subject._windows_move_to_quarantine
 
-        def replace_with_swap(source: typing.Any, destination: typing.Any, **kwargs: typing.Any) -> typing.Any:
-            if source == target:
-                _assert_windows_directory_swap_rejected(swap_path, displaced)
-            return original_replace(source, destination, **kwargs)
+        def move_to_quarantine_with_swap(
+            target_path: pathlib.Path,
+            quarantine: pathlib.Path,
+            expected_identity: tuple[int, int],
+        ) -> None:
+            assert target_path == target
+            _assert_windows_directory_swap_rejected(swap_path, displaced)
+            original_move_to_quarantine(target_path, quarantine, expected_identity)
 
-        monkeypatch.setattr(subject.os, "replace", replace_with_swap)
+        monkeypatch.setattr(subject, "_windows_move_to_quarantine", move_to_quarantine_with_swap)
 
         subject.cleanup_managed_temp(target)
 
@@ -1541,7 +1704,7 @@ class TestManagedTempWindows:
         assert sentinel.read_text(encoding="utf-8") == "keep"
 
     @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
-    def test_cleanup_rejects_root_swap_before_rmtree_and_preserves_external_target(
+    def test_cleanup_rejects_root_swap_before_remove_tree_and_preserves_external_target(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -1553,20 +1716,24 @@ class TestManagedTempWindows:
         root = container / "managed-root"
         root.mkdir()
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root))
-        target = subject.create_managed_temp("windows-rmtree-boundary")
+        target = subject.create_managed_temp("windows-remove-tree-boundary")
         external = tmp_path / "external-target"
         external.mkdir()
         sentinel = external / "sentinel.txt"
         sentinel.write_text("keep", encoding="utf-8")
         swap_path = {"root": root, "ancestor": container}[swap_target]
         displaced = tmp_path / f"{swap_target}-displaced"
-        original_rmtree = subject.shutil.rmtree
+        original_remove_tree = subject._windows_remove_tree
 
-        def rmtree_with_swap(path: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        def remove_tree_with_swap(
+            path: pathlib.Path,
+            expected_identity: tuple[int, int],
+            expected_tree: dict[str, tuple[str, int, int]],
+        ) -> None:
             _assert_windows_directory_swap_rejected(swap_path, displaced)
-            return original_rmtree(path, *args, **kwargs)
+            original_remove_tree(path, expected_identity, expected_tree)
 
-        monkeypatch.setattr(subject.shutil, "rmtree", rmtree_with_swap)
+        monkeypatch.setattr(subject, "_windows_remove_tree", remove_tree_with_swap)
 
         subject.cleanup_managed_temp(target)
 
@@ -1576,7 +1743,7 @@ class TestManagedTempWindows:
         assert sentinel.read_text(encoding="utf-8") == "keep"
 
     @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
-    def test_cleanup_restores_target_inside_boundary_after_rmtree_failure(
+    def test_cleanup_restores_target_inside_boundary_after_remove_tree_failure(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -1598,11 +1765,15 @@ class TestManagedTempWindows:
         swap_path = {"root": root, "ancestor": container}[swap_target]
         displaced = tmp_path / f"{swap_target}-displaced"
 
-        def fail_after_swap_attempt(path: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.NoReturn:
+        def fail_after_swap_attempt(
+            path: pathlib.Path,
+            expected_identity: tuple[int, int],
+            expected_tree: dict[str, tuple[str, int, int]],
+        ) -> typing.NoReturn:
             _assert_windows_directory_swap_rejected(swap_path, displaced)
-            raise OSError("test rmtree failure")
+            raise OSError("test remove-tree failure")
 
-        monkeypatch.setattr(subject.shutil, "rmtree", fail_after_swap_attempt)
+        monkeypatch.setattr(subject, "_windows_remove_tree", fail_after_swap_attempt)
 
         with pytest.raises(subject.ManagedTempError, match="後始末できない"):
             subject.cleanup_managed_temp(target)
@@ -1611,6 +1782,54 @@ class TestManagedTempWindows:
         assert original_content.read_text(encoding="utf-8") == "original"
         assert subject._registry_path(target).exists()
         assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    def test_cleanup_rejects_child_junction_replacement_after_snapshot(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """tree snapshot後の子junction交換を拒否し、外部対象を変更しない。"""
+        container = tmp_path / "managed-container"
+        container.mkdir()
+        root = container / "managed-root"
+        root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root))
+        target = subject.create_managed_temp("windows-child-boundary")
+        child = target / "nested"
+        child.mkdir()
+        (child / "original.txt").write_text("original", encoding="utf-8")
+        external = tmp_path / "external-target"
+        external.mkdir()
+        sentinel = external / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        displaced = tmp_path / "child-displaced"
+        original_remove_tree = subject._windows_remove_tree
+
+        def replace_child_before_remove(
+            quarantine: pathlib.Path,
+            expected_identity: tuple[int, int],
+            expected_tree: dict[str, tuple[str, int, int]],
+        ) -> None:
+            quarantine_child = quarantine / "nested"
+            quarantine_child.rename(displaced)
+            result = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(quarantine_child), str(external)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert result.returncode == 0, result.stderr or result.stdout
+            original_remove_tree(quarantine, expected_identity, expected_tree)
+
+        monkeypatch.setattr(subject, "_windows_remove_tree", replace_child_before_remove)
+
+        with pytest.raises(subject.ManagedTempError, match="reparse point"):
+            subject.cleanup_managed_temp(target)
+
+        assert (displaced / "original.txt").read_text(encoding="utf-8") == "original"
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+        assert target.is_dir()
+        (target / "nested").rmdir()
 
     def test_root_replacement_before_isolation_preserves_both_trees(
         self,
