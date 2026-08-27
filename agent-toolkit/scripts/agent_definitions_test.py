@@ -370,9 +370,16 @@ def test_process_stop_contract_connects_shared_identifier_and_claude_task_id() -
         assert phrase in claude
 
     for phrase in (
-        "ホストがシェルの親を現在セッション専用のClaude Code本体として指定していることを確認し",
-        "ホストが現在の実行主体専用の終了対象を一意に特定する原則に従う。",
+        "`CLAUDECODE`が設定されていることを確認する。",
+        (
+            "ホストが`Bash`の親PIDを現在セッション専用のClaude Code本体として指定する契約を提供し、"
+            "実行主体が実行時にその指定を確認できる場合に限る。"
+        ),
+        "`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`のPID名前空間分離などにより親PIDへの参照と信号送出が制限される環境ではこの経路を使わない。",
+        "ホストが指定した親PIDが現在セッション専用のClaude Code本体であることを確認し",
+        "ホストが現在の実行主体専用の終了対象を指定し、実行時に一意に特定した識別子の原則に従う。",
         "親子関係・実行ファイル・コマンドラインを照合して一意に特定した単一PID",
+        "対象を一意に特定できない場合は停止を要求せず、ユーザーへ`/exit`の入力を案内して本スキルを終える",
     ):
         assert phrase in exit_session
 
