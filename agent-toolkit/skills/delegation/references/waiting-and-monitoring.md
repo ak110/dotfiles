@@ -40,7 +40,7 @@
 
 ### Codex互換実行の稼働中turn
 
-Codexで後続主体の新規起動、巻取り又は役割引継ぎを行う場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を先に適用する。
+Codexで元担当の回復、置換、再起動、代替起動又は役割引継ぎを行う場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を先に適用する。
 Codexの`list_agents`が対象を`running`として返している間は、`running`のstatusを補助観測より優先する。
 Codexの`list_agents`が対象を`running`として返している間は、補助観測や催促だけを根拠とする巻取り、新規起動、役割引継ぎを行わない。
 後続主体を起動できるのは、ユーザーの明示要求、終端・失敗status、タスク契約上のキャンセルのいずれかを確認した後、

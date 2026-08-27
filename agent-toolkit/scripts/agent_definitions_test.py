@@ -328,8 +328,29 @@ def test_codex_running_takeover_requires_terminal_and_ownership_release() -> Non
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     assert "Codex以外では、同一種別かつ同一用途の起動を反復しても収束しない場合に" in delegation
     runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
-    assert "Codexの`list_agents`が対象を`running`として返している間は" in runtime
-    assert "後続主体の新規起動、委譲先の巻取り又は役割引継ぎを行えるのは" in runtime
+    assert "Codexの`list_agents`が元担当を`running`として返している間は" in runtime
+    assert "既存担当の回復・置換・再起動・代替起動又はfast担当からfix担当への役割引継ぎを行えるのは" in runtime
+
+
+def test_codex_initial_start_uses_normal_start_contract() -> None:
+    """元担当がない初回起動を共通条件の対象外として通常契約へ戻す。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+
+    assert (
+        "元担当が存在しないCodexの初回起動（各実装単位の最初のfast担当を含む）は、工程別モデル設定の通常起動契約に従い許可する"
+        in runtime
+    )
+    assert (
+        "初回fast担当、別の実装単位、元担当を持たない独立したレビューまたはCI修正の起動には、工程別モデル設定の通常起動契約を適用する"
+        in runtime
+    )
+    assert "Codexで各実装単位の最初のfast担当を起動する場合は、工程別モデル設定の通常起動契約に従う" in runtime
+    assert "Codexの初回起動は工程別モデル設定の通常起動契約に従う" in delegation
+    assert (
+        "元担当の回復、置換、再起動、代替起動又は役割引継ぎには、`runtime-routing.md`「Codex後続操作の共通先行条件」を先行して適用する"
+        in delegation
+    )
 
 
 def test_codex_recovery_entries_share_common_precondition() -> None:
@@ -342,10 +363,11 @@ def test_codex_recovery_entries_share_common_precondition() -> None:
 
     assert common_heading in runtime
     for phrase in (
-        "Codexで後続主体の新規起動、委譲先の巻取り又は役割引継ぎを行えるのは、次の共通条件を満たす場合だけである",
-        "Codexの`list_agents`が対象を`running`として返している間は、補助観測や催促だけを根拠とする新規起動、巻取り、役割引継ぎを行わない",
-        "後続主体の新規起動、委譲先の巻取り又は役割引継ぎを行えるのは、ユーザーの明示要求、終端・失敗status、タスク契約上のキャンセルのいずれかを確認し、元担当の終端と書込所有権の解放を確認した場合だけである",
-        "この共通条件は、工程別モデル設定、代替起動、fast担当からfix担当への引継ぎを含むCodexの全ての新規起動、巻取り及び役割引継ぎへ適用する",
+        "元担当が存在しないCodexの初回起動（各実装単位の最初のfast担当を含む）は、工程別モデル設定の通常起動契約に従い許可する",
+        "既存担当の回復・置換・再起動・代替起動又はfast担当からfix担当への役割引継ぎを行う場合は、次の共通条件を満たす場合だけ許可する",
+        "Codexの`list_agents`が元担当を`running`として返している間は、補助観測や催促だけを根拠とする回復、置換、再起動、代替起動又は役割引継ぎを行わない",
+        "既存担当の回復・置換・再起動・代替起動又はfast担当からfix担当への役割引継ぎを行えるのは、ユーザーの明示要求、終端・失敗status、タスク契約上のキャンセルのいずれかを確認し、元担当の終端と書込所有権の解放を確認した場合だけである",
+        "この共通条件は、元担当が存在するCodexの回復・置換・再起動・代替起動と、fast担当からfix担当への役割引継ぎへ適用する",
     ):
         assert phrase in runtime
 
@@ -360,8 +382,11 @@ def test_codex_recovery_entries_share_common_precondition() -> None:
     assert common_reference in delegation
     assert "Codexでは、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから新規起動する" in delegation
     assert "Codexで再起動する場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う" in delegation
-    assert "Codexで手順5の新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
-    assert "Codexで各実装単位の新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
+    assert (
+        "Codexで元担当を持たない初回fast担当、別の実装単位、独立した差分限定レビュー修正またはCI修正の新規threadを起動する場合は、工程別モデル設定の通常起動契約に従う"
+        in runtime
+    )
+    assert "Codexで既存担当を置換する新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
     assert "Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
     assert "Codexで代替起動を行う場合も、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
     assert "Codexでfast担当からfix担当へ役割を引き継ぐ場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
