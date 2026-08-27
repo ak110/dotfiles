@@ -32,23 +32,14 @@ _WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
 _WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
 _WINDOWS_ACL_REVISION = 2
 _WINDOWS_ERROR_ACCESS_DENIED = 5
-_WINDOWS_ERROR_FILE_NOT_FOUND = 2
-_WINDOWS_ERROR_NO_MORE_FILES = 18
 _WINDOWS_CONTAINER_INHERIT_ACE = 0x02
 _WINDOWS_DACL_SECURITY_INFORMATION = 0x00000004
 _WINDOWS_EXTERNAL_WRITER_ACCESS = 0x001301BF
-_WINDOWS_DELETE = 0x00010000
-_WINDOWS_FILE_DISPOSITION_INFO = 4
 _WINDOWS_FILE_ALL_ACCESS = 0x001F01FF
 _WINDOWS_FILE_ATTRIBUTE_DIRECTORY = 0x10
 _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
-_WINDOWS_FILE_ID_BOTH_DIRECTORY_INFO = 0x0A
-_WINDOWS_FILE_ID_BOTH_DIRECTORY_RESTART_INFO = 0x0B
-_WINDOWS_FILE_LIST_DIRECTORY = 0x0001
-_WINDOWS_FILE_RENAME_INFO = 3
 _WINDOWS_FILE_SHARE_ALL = 0x00000001 | 0x00000002 | 0x00000004
-_WINDOWS_FILE_SHARE_NO_DELETE = 0x00000001 | 0x00000002
 _WINDOWS_OBJECT_INHERIT_ACE = 0x01
 _WINDOWS_OPEN_EXISTING = 3
 _WINDOWS_OWNER_SECURITY_INFORMATION = 0x00000001
@@ -142,39 +133,6 @@ class _ByHandleFileInformation(ctypes.Structure):
     ]
 
 
-class _FileDispositionInfo(ctypes.Structure):
-    _fields_ = [("delete_file", ctypes.c_ubyte)]
-
-
-class _FileRenameInfo(ctypes.Structure):
-    _fields_ = [
-        ("replace_if_exists", ctypes.c_uint32),
-        ("root_directory", wintypes.HANDLE),
-        ("file_name_length", ctypes.c_uint32),
-        ("file_name", ctypes.c_uint16),
-    ]
-
-
-class _FileIdBothDirectoryInfo(ctypes.Structure):
-    _fields_ = [
-        ("next_entry_offset", ctypes.c_uint32),
-        ("file_index", ctypes.c_uint32),
-        ("creation_time", ctypes.c_int64),
-        ("last_access_time", ctypes.c_int64),
-        ("last_write_time", ctypes.c_int64),
-        ("change_time", ctypes.c_int64),
-        ("end_of_file", ctypes.c_int64),
-        ("allocation_size", ctypes.c_int64),
-        ("file_attributes", ctypes.c_uint32),
-        ("file_name_length", ctypes.c_uint32),
-        ("ea_size", ctypes.c_uint32),
-        ("short_name_length", ctypes.c_ubyte),
-        ("short_name", ctypes.c_uint16 * 12),
-        ("file_id", ctypes.c_int64),
-        ("file_name", ctypes.c_uint16),
-    ]
-
-
 class _WindowsAce(typing.NamedTuple):
     ace_type: int
     flags: int
@@ -239,31 +197,10 @@ def _windows_equal_sids(first: bytes, second: bytes) -> bool:
     return bool(advapi32.EqualSid(first_buffer, second_buffer))
 
 
-def _windows_handle_information(
-    handle: int,
-    path: pathlib.Path,
-    *,
-    kernel32: typing.Any | None = None,
-) -> _ByHandleFileInformation:
-    """開いたWindowsハンドルから属性を取得し、reparse pointを拒否する。"""
-    kernel32_api: typing.Any
-    kernel32_api = _windows_dll("kernel32") if kernel32 is None else kernel32
-    kernel32_api.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
-    kernel32_api.GetFileInformationByHandle.restype = wintypes.BOOL
-    information = _ByHandleFileInformation()
-    if not kernel32_api.GetFileInformationByHandle(handle, ctypes.byref(information)):
-        raise _windows_error("Windows path属性を取得できない", path)
-    if information.attributes & _WINDOWS_REPARSE_POINT:
-        raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")
-    return information
-
-
 @contextlib.contextmanager
 def _windows_path_handle(
     path: pathlib.Path,
     access: int,
-    *,
-    share_mode: int = _WINDOWS_FILE_SHARE_ALL,
 ) -> typing.Iterator[tuple[int, _ByHandleFileInformation]]:
     """再解析ポイントを追跡しないパスハンドルと属性を返す。"""
     kernel32 = _windows_dll("kernel32")
@@ -278,13 +215,15 @@ def _windows_path_handle(
         wintypes.HANDLE,
     ]
     create_file.restype = wintypes.HANDLE
+    kernel32.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
     effective_access = access | _WINDOWS_READ_ATTRIBUTES | _WINDOWS_SYNCHRONIZE
     handle = create_file(
         str(path),
         effective_access,
-        share_mode,
+        _WINDOWS_FILE_SHARE_ALL,
         None,
         _WINDOWS_OPEN_EXISTING,
         _WINDOWS_FILE_FLAG_BACKUP_SEMANTICS | _WINDOWS_FILE_FLAG_OPEN_REPARSE_POINT,
@@ -293,143 +232,14 @@ def _windows_path_handle(
     if handle == wintypes.HANDLE(-1).value:
         raise _windows_handle_open_error("Windowsのパスハンドルを取得できない", path)
     try:
-        information = _windows_handle_information(handle, path, kernel32=kernel32)
+        information = _ByHandleFileInformation()
+        if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
+            raise _windows_error("Windows path属性を取得できない", path)
+        if information.attributes & _WINDOWS_REPARSE_POINT:
+            raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")
         yield handle, information
     finally:
         kernel32.CloseHandle(handle)
-
-
-def _windows_set_file_information(
-    handle: int,
-    information_class: int,
-    information: typing.Any,
-    size: int,
-    path: pathlib.Path,
-) -> None:
-    """開いたWindowsハンドルへファイル情報を設定する。"""
-    kernel32 = _windows_dll("kernel32")
-    set_file_information = kernel32.SetFileInformationByHandle
-    set_file_information.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
-    set_file_information.restype = wintypes.BOOL
-    if not set_file_information(handle, information_class, information, size):
-        raise _windows_error("Windowsハンドルのファイル情報を設定できない", path)
-
-
-def _windows_rename_handle(handle: int, source: pathlib.Path, destination: pathlib.Path) -> None:
-    """開いたWindowsハンドルの実体を別名へ移動する。"""
-    if source.parent != destination.parent:
-        raise ManagedTempError(f"Windowsハンドルの移動先が同じ親ではない: {source}: {destination}")
-    with _windows_path_handle(
-        destination.parent,
-        _WINDOWS_READ_ATTRIBUTES,
-        share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
-    ) as (root_handle, _):
-        _windows_rename_handle_relative(handle, source, destination.name, root_handle)
-
-
-def _windows_rename_handle_relative(handle: int, source: pathlib.Path, destination_name: str, root_handle: int) -> None:
-    """保持した親ディレクトリを基準に開いたWindowsハンドルの実体を移動する。"""
-    encoded_destination = destination_name.encode("utf-16-le")
-    file_name_offset = _FileRenameInfo.file_name.offset
-    buffer = ctypes.create_string_buffer(file_name_offset + len(encoded_destination))
-    information = ctypes.cast(buffer, ctypes.POINTER(_FileRenameInfo)).contents
-    information.replace_if_exists = 0
-    information.root_directory = wintypes.HANDLE(root_handle)
-    information.file_name_length = len(encoded_destination)
-    ctypes.memmove(
-        ctypes.addressof(buffer) + file_name_offset,
-        encoded_destination,
-        len(encoded_destination),
-    )
-    _windows_set_file_information(
-        handle,
-        _WINDOWS_FILE_RENAME_INFO,
-        buffer,
-        file_name_offset + len(encoded_destination),
-        source,
-    )
-
-
-def _windows_delete_handle(handle: int, path: pathlib.Path) -> None:
-    """開いたWindowsハンドルの実体を削除対象としてマークする。"""
-    information = _FileDispositionInfo(1)
-    _windows_set_file_information(
-        handle,
-        _WINDOWS_FILE_DISPOSITION_INFO,
-        ctypes.byref(information),
-        ctypes.sizeof(information),
-        path,
-    )
-
-
-def _windows_directory_entries(handle: int, path: pathlib.Path) -> list[tuple[str, int]]:
-    """開いたWindowsディレクトリハンドルから子の名前と属性を列挙する。"""
-    kernel32 = _windows_dll("kernel32")
-    get_file_information = kernel32.GetFileInformationByHandleEx
-    get_file_information.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
-    get_file_information.restype = wintypes.BOOL
-    buffer_size = 64 * 1024
-    buffer = ctypes.create_string_buffer(buffer_size)
-    fixed_size = _FileIdBothDirectoryInfo.file_name.offset
-    entries: list[tuple[str, int]] = []
-    information_class = _WINDOWS_FILE_ID_BOTH_DIRECTORY_RESTART_INFO
-    while True:
-        if not get_file_information(
-            handle,
-            information_class,
-            buffer,
-            buffer_size,
-        ):
-            error_code = typing.cast(typing.Any, ctypes).get_last_error()
-            if error_code in (_WINDOWS_ERROR_FILE_NOT_FOUND, _WINDOWS_ERROR_NO_MORE_FILES):
-                return entries
-            raise _WindowsApiError("Windowsディレクトリの内容を列挙できない", path, error_code)
-        offset = 0
-        while True:
-            if offset + fixed_size > buffer_size:
-                raise ManagedTempError(f"Windowsディレクトリ情報が不正である: {path}")
-            information = ctypes.cast(
-                ctypes.byref(buffer, offset),
-                ctypes.POINTER(_FileIdBothDirectoryInfo),
-            ).contents
-            next_offset = int(information.next_entry_offset)
-            name_length = int(information.file_name_length)
-            record_size = next_offset or fixed_size + name_length
-            if record_size < fixed_size or offset + record_size > buffer_size:
-                raise ManagedTempError(f"Windowsディレクトリ情報が不正である: {path}")
-            if name_length % 2 != 0 or fixed_size + name_length > record_size:
-                raise ManagedTempError(f"Windowsディレクトリ名が不正である: {path}")
-            name_bytes = ctypes.string_at(
-                ctypes.addressof(buffer) + offset + fixed_size,
-                name_length,
-            )
-            try:
-                name = name_bytes.decode("utf-16-le")
-            except UnicodeDecodeError as error:
-                raise ManagedTempError(f"Windowsディレクトリ名を解釈できない: {path}") from error
-            if name not in (".", ".."):
-                entries.append((name, int(information.file_attributes)))
-            if next_offset == 0:
-                break
-            if next_offset % 8 != 0:
-                raise ManagedTempError(f"Windowsディレクトリ情報の境界が不正である: {path}")
-            offset += next_offset
-        information_class = _WINDOWS_FILE_ID_BOTH_DIRECTORY_INFO
-
-
-@contextlib.contextmanager
-def _windows_cleanup_boundary(root: pathlib.Path) -> typing.Iterator[None]:
-    """rootと全祖先を削除共有なしで保持し、cleanupのパス操作を保護する。"""
-    with contextlib.ExitStack() as stack:
-        for guarded_path in (root, *root.parents):
-            stack.enter_context(
-                _windows_path_handle(
-                    guarded_path,
-                    _WINDOWS_READ_ATTRIBUTES,
-                    share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
-                )
-            )
-        yield
 
 
 @contextlib.contextmanager
@@ -1490,91 +1300,6 @@ def _tree_snapshot(root: pathlib.Path) -> dict[str, tuple[str, int, int]]:
     return snapshot
 
 
-@contextlib.contextmanager
-def _windows_move_to_quarantine(
-    target: pathlib.Path,
-    quarantine: pathlib.Path,
-    expected_identity: tuple[int, int],
-) -> typing.Iterator[int]:
-    """検証済みの管理対象を対象ハンドルへ束縛して隔離する。"""
-    with _windows_path_handle(
-        target,
-        _WINDOWS_DELETE | _WINDOWS_FILE_LIST_DIRECTORY,
-        share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
-    ) as (handle, information):
-        if not information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
-            raise ManagedTempError(f"管理対象が通常ディレクトリではない: {target}")
-        if _windows_information_identity(information) != expected_identity:
-            raise ManagedTempError(f"管理対象が隔離時に置換された: {target}")
-        _windows_rename_handle(handle, target, quarantine)
-        yield handle
-
-
-def _windows_expected_children(
-    root: pathlib.Path,
-    parent: pathlib.Path,
-    expected_tree: dict[str, tuple[str, int, int]],
-) -> dict[str, tuple[str, int, int]]:
-    """Windowsの期待treeから指定ディレクトリ直下の子を抽出する。"""
-    parent_relative = pathlib.PurePath(".") if parent == root else pathlib.PurePath(parent.relative_to(root))
-    expected: dict[str, tuple[str, int, int]] = {}
-    for relative, state in expected_tree.items():
-        relative_path = pathlib.PurePath(relative)
-        if relative_path.parent == parent_relative:
-            expected[relative_path.name] = state
-    return expected
-
-
-def _windows_remove_directory_contents(
-    root: pathlib.Path,
-    parent: pathlib.Path,
-    parent_handle: int,
-    expected_tree: dict[str, tuple[str, int, int]],
-) -> None:
-    """開いたWindowsディレクトリから子を検証し、ハンドル単位で削除する。"""
-    expected_children = _windows_expected_children(root, parent, expected_tree)
-    seen: set[str] = set()
-    for name, attributes in _windows_directory_entries(parent_handle, parent):
-        child = parent / name
-        expected = expected_children.get(name)
-        if expected is None:
-            raise ManagedTempError(f"管理対象の子が削除中に追加された: {child}")
-        seen.add(name)
-        child_access = _WINDOWS_DELETE
-        if attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
-            child_access |= _WINDOWS_FILE_LIST_DIRECTORY
-        with _windows_path_handle(
-            child,
-            child_access,
-            share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
-        ) as (handle, information):
-            kind = "dir" if information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY else "leaf"
-            identity = _windows_information_identity(information)
-            if (kind, *identity) != expected:
-                raise ManagedTempError(f"管理対象の子が削除中に置換された: {child}")
-            if kind == "dir":
-                _windows_remove_directory_contents(root, child, handle, expected_tree)
-            _windows_delete_handle(handle, child)
-    if seen != set(expected_children):
-        raise ManagedTempError(f"管理対象の子が削除中に消失した: {parent}")
-
-
-def _windows_remove_tree(
-    root: pathlib.Path,
-    expected_identity: tuple[int, int],
-    expected_tree: dict[str, tuple[str, int, int]],
-    handle: int,
-) -> None:
-    """Windowsのtreeを各子のハンドルへ束縛して再帰削除する。"""
-    information = _windows_handle_information(handle, root)
-    if not information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
-        raise ManagedTempError(f"隔離先が通常ディレクトリではない: {root}")
-    if _windows_information_identity(information) != expected_identity:
-        raise ManagedTempError(f"管理対象が隔離時に置換された: {root}")
-    _windows_remove_directory_contents(root, root, handle, expected_tree)
-    _windows_delete_handle(handle, root)
-
-
 def _consume_registry(validated: _ValidatedTemp) -> pathlib.Path:
     consuming = validated.registry_path.with_name(f"{validated.registry_path.name}.consuming-{validated.nonce}")
     try:
@@ -1669,22 +1394,6 @@ def _cleanup_posix(
             os.close(root_descriptor)
 
 
-def _restore_windows_quarantine(
-    handle: int,
-    quarantine: pathlib.Path,
-    target: pathlib.Path,
-    expected_identity: tuple[int, int],
-) -> None:
-    """保持中のroot境界で隔離対象を元の名前へ戻す。"""
-    with contextlib.suppress(ManagedTempError, OSError):
-        information = _windows_handle_information(handle, quarantine)
-        if not information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
-            return
-        if _windows_information_identity(information) != expected_identity:
-            return
-        _windows_rename_handle(handle, quarantine, target)
-
-
 def _cleanup_windows(
     root: pathlib.Path,
     validated: _ValidatedTemp,
@@ -1699,45 +1408,15 @@ def _cleanup_windows(
         validated.root_security,
     )
     try:
-        with _windows_cleanup_boundary(root):
-            try:
-                _validate_root(root, expected=expected_root)
-                with _windows_move_to_quarantine(
-                    validated.path,
-                    quarantine,
-                    (validated.device, validated.inode),
-                ) as target_handle:
-                    try:
-                        _validate_root(root, expected=expected_root)
-                        information = _windows_handle_information(target_handle, quarantine)
-                        if _windows_information_identity(information) != (
-                            validated.device,
-                            validated.inode,
-                        ):
-                            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
-                        if _tree_snapshot(quarantine) != expected_tree:
-                            raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
-                        _validate_root(root, expected=expected_root)
-                        _windows_remove_tree(
-                            quarantine,
-                            (validated.device, validated.inode),
-                            expected_tree,
-                            target_handle,
-                        )
-                    except (ManagedTempError, OSError) as error:
-                        _restore_windows_quarantine(
-                            target_handle,
-                            quarantine,
-                            validated.path,
-                            (validated.device, validated.inode),
-                        )
-                        if isinstance(error, ManagedTempError):
-                            raise
-                        raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
-            except (ManagedTempError, OSError) as error:
-                if isinstance(error, ManagedTempError):
-                    raise
-                raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
+        _validate_root(root, expected=expected_root)
+        os.replace(validated.path, quarantine)
+        _validate_root(root, expected=expected_root)
+        if _windows_identity(quarantine) != (validated.device, validated.inode):
+            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
+        if _tree_snapshot(quarantine) != expected_tree:
+            raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
+        _validate_root(root, expected=expected_root)
+        shutil.rmtree(quarantine)
     except OSError as error:
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
 
@@ -1777,18 +1456,17 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
             raise ManagedTempError(f"未対応platform: {os.name}")
         consuming.unlink()
     except (ManagedTempError, OSError) as error:
-        if os.name == "posix":
-            with contextlib.suppress(OSError):
-                if (
-                    quarantine.exists()
-                    and not path.exists()
-                    and _path_identity(quarantine)
-                    == (
-                        validated.device,
-                        validated.inode,
-                    )
-                ):
-                    os.replace(quarantine, path)
+        with contextlib.suppress(OSError):
+            if (
+                quarantine.exists()
+                and not path.exists()
+                and _path_identity(quarantine)
+                == (
+                    validated.device,
+                    validated.inode,
+                )
+            ):
+                os.replace(quarantine, path)
         with contextlib.suppress(OSError):
             _restore_registry(consuming, validated.registry_path)
         if isinstance(error, ManagedTempError):
