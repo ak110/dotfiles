@@ -1,5 +1,8 @@
 """フィードバックキューの旧レイアウト・旧予約形式を一方向に移行する。"""
 
+# 旧レイアウトの読取互換では、現行状態名を独立した定数として固定する。
+# pylint: disable=duplicate-code
+
 import pathlib
 import shutil
 import subprocess
