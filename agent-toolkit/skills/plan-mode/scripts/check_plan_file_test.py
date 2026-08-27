@@ -1,5 +1,6 @@
 """意味契約中心の計画検査を検証する。"""
 
+import json
 import pathlib
 import subprocess
 import sys
@@ -372,6 +373,12 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
     path = repo / "plan.md"
     path.write_text(content, encoding="utf-8")
     return check_plan_file.check(path, repo)
+
+
+def _review_table_row(round_value: str = "1") -> str:
+    """レビュー表の8列JSON文字列行を組み立てる。"""
+    values = [round_value, "plan-review", "中程度", "計画本文", "確認が必要な欠落", "", "", ""]
+    return "\t".join(json.dumps(value, ensure_ascii=False) for value in values) + "\n"
 
 
 def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False) -> str:
@@ -823,3 +830,76 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert result.stderr == "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"
+
+
+def test_review_table_absence_does_not_add_round_error(repo: tuple[pathlib.Path, str]) -> None:
+    """同stemのレビュー表が無い計画はround照合を省略する。"""
+    work_dir, base = repo
+    errors, _warnings = _check(work_dir, _plan(work_dir, base))
+    assert not errors, errors
+
+
+def test_review_table_max_round_matches_progress_rows(repo: tuple[pathlib.Path, str]) -> None:
+    """レビュー表の最大roundと進捗行数が一致する場合を受理する。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace(
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 完了。 |\n",
+        1,
+    )
+    path = work_dir / "plan.md"
+    path.write_text(content, encoding="utf-8")
+    (work_dir / "plan.tsv").write_text(_review_table_row(), encoding="utf-8")
+    errors, _warnings = check_plan_file.check(path, work_dir)
+    assert not errors, errors
+
+
+def test_review_table_missing_rounds_are_reported(repo: tuple[pathlib.Path, str]) -> None:
+    """最大roundが進捗行数を超える場合は不足番号を診断する。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace(
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 進行中。 |\n",
+        1,
+    )
+    path = work_dir / "plan.md"
+    path.write_text(content, encoding="utf-8")
+    (work_dir / "plan.tsv").write_text(_review_table_row("1") + _review_table_row("3"), encoding="utf-8")
+    errors, _warnings = check_plan_file.check(path, work_dir)
+    assert any("不足round: 2, 3" in error for error in errors), errors
+
+
+def test_review_table_malformed_input_is_a_plan_error(repo: tuple[pathlib.Path, str]) -> None:
+    """同stemのレビュー表が破損する場合は計画入力エラーとして返す。"""
+    work_dir, base = repo
+    path = work_dir / "plan.md"
+    path.write_text(_plan(work_dir, base), encoding="utf-8")
+    (work_dir / "plan.tsv").write_text("not-a-json-row\n", encoding="utf-8")
+    errors, _warnings = check_plan_file.check(path, work_dir)
+    assert any("同stemのレビュー表を検証できない" in error for error in errors), errors
+
+
+def test_new_canonical_headings_are_accepted_and_legacy_aliases_warn(repo: tuple[pathlib.Path, str]) -> None:
+    """新しい固定H2を受理し、正規書式へ旧見出しを混在させた場合は移行warningを返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, detail_name="canonical-plan.detail.md")
+    main_content = (
+        main_content.replace(
+            "\n## 提示素材\n",
+            "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
+            1,
+        )
+        .replace("## 変更履歴", "## 変更履歴（計画時）", 1)
+        .replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+    )
+    errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="canonical-plan.md")
+    assert not errors, errors
+    assert warnings == ["二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する"], warnings
+
+    mixed = main_content.replace("canonical-plan.detail.md", "mixed-plan.detail.md", 1).replace(
+        "## 変更履歴（計画時）", "## 変更履歴", 1
+    )
+    errors, warnings = _check_new(work_dir, mixed, detail_content, plan_name="mixed-plan.md")
+    assert not errors, errors
+    assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in warnings, warnings
+    assert any("変更履歴の見出しが旧形式" in warning for warning in warnings), warnings

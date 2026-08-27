@@ -935,6 +935,24 @@ class TestPlanModeSkillFirstCheck:
         assert result.returncode == 0
         assert "editing a plan file without invoking" not in _agent_messages(result)
 
+    @pytest.mark.parametrize("heading", ["## 進捗ログ", "## 進捗ログ（実行時）"])
+    def test_progress_log_only_edit_accepts_legacy_and_canonical_headings(self, tmp_path: pathlib.Path, heading: str) -> None:
+        """進捗ログだけの編集許可判定は新旧の固定見出しを同じ節として扱う。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "progress-alias.md")
+        plan.write_text(f"# 計画\n\n## 概要\n\n本文\n\n{heading}\n\n旧工程\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(plan), "old_string": "旧工程", "new_string": "新工程"},
+                "session_id": "progress-alias-edit",
+                "permission_mode": "default",
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "editing a plan file without invoking" not in _agent_messages(result)
+
     @pytest.mark.parametrize("tool_name", ["Edit", "MultiEdit"])
     def test_warns_edit_outside_progress_log_without_skill(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """進捗ログより前を変更するEditと節内外混在MultiEditは警告する。"""

@@ -21,6 +21,7 @@ _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _review_table  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -151,6 +152,49 @@ def _check_plan_size(lines: list[str]) -> list[str]:
     ]
 
 
+def _progress_data_row_count(text: str) -> int:
+    """計画本文の進捗ログ表にあるデータ行数を返す。"""
+    body = list(_plan_format.iter_markdown_body_lines(text))
+    headings = _plan_format.extract_headings(text)
+    progress_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_PROGRESS)
+    if progress_index is None:
+        return 0
+    start, end = _plan_format.heading_subtree_range(headings, progress_index)
+    section = _plan_format.lines_within(body, start, end)
+    table = next(
+        (
+            candidate
+            for candidate in _plan_format.extract_tables(section)
+            if candidate.header == _plan_format.PLAN_PROGRESS_TABLE_HEADER
+        ),
+        None,
+    )
+    return len(table.rows) if table is not None else 0
+
+
+def _check_review_table_progress(plan_path: pathlib.Path, text: str) -> list[str]:
+    """同stemのレビュー表の最大roundが進捗ログへ反映済みか検査する。"""
+    review_path = plan_path.with_suffix(".tsv")
+    if not review_path.is_file():
+        return []
+    try:
+        rows = _review_table._read(review_path)  # pylint: disable=protected-access
+        _review_table._validate_rows(rows, require_responses=False)  # pylint: disable=protected-access
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        return [f"同stemのレビュー表を検証できない: {review_path}: {error}"]
+    if not rows:
+        return []
+    max_round = max(int(row[0]) for row in rows)
+    progress_count = _progress_data_row_count(text)
+    if max_round <= progress_count:
+        return []
+    missing = ", ".join(str(number) for number in range(progress_count + 1, max_round + 1))
+    return [
+        f"レビュー表の最大round {max_round} に対して`## 進捗ログ`のデータ行が{progress_count}件で不足している"
+        f"（不足round: {missing}）"
+    ]
+
+
 def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
     """計画ファイル（メイン）のパスから対応する計画ファイル（詳細）の絶対パスを返す（stem導出）。"""
     return plan_path.with_name(f"{plan_path.stem}{_plan_format.PLAN_DETAIL_SUFFIX}")
@@ -213,6 +257,20 @@ def _legacy_bug_warnings(text: str) -> list[str]:
     return ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
 
 
+def _legacy_h2_warnings(text: str) -> list[str]:
+    """新書式で旧見出し別名を使っている場合の移行warningを返す。"""
+    if not _plan_format.is_canonical_main_format(text):
+        return []
+    headings = _plan_format.extract_headings(text)
+    names = {heading.text for heading in headings if heading.level == 2}
+    warnings: list[str] = []
+    if _plan_format.PLAN_H2_LEGACY_HISTORY in names:
+        warnings.append("変更履歴の見出しが旧形式である。新規作成・改訂では`## 変更履歴（計画時）`へ移行する")
+    if _plan_format.PLAN_H2_LEGACY_PROGRESS in names:
+        warnings.append("進捗ログの見出しが旧形式である。新規作成・改訂では`## 進捗ログ（実行時）`へ移行する")
+    return warnings
+
+
 def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """新書式（計画ファイル（メイン）・計画ファイル（詳細）の2ファイル）を検査してエラーと警告を返す。
 
@@ -241,6 +299,7 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     warnings.extend(_legacy_bug_warnings(detail_text))
 
     materials, _material_errors = _plan_format.parse_plan_materials(text)
+    warnings.extend(_legacy_h2_warnings(text))
     warnings.extend(_legacy_action_warnings(text))
     if not _plan_format.has_human_action_table(text):
         warnings.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
@@ -289,6 +348,7 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     else:
         format_errors, warnings = _check_legacy_format(plan_path, text, work_dir)
     errors.extend(format_errors)
+    errors.extend(_check_review_table_progress(plan_path, text))
     return errors, warnings
 
 

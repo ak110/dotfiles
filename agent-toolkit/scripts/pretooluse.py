@@ -15,7 +15,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 
-固定見出しと固定表の構造、素材表・要求表・素材参照、計画メタ情報の4項目と記法、
+固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
+計画メタ情報の4項目と記法、計画単位のエージェント判断表（5項目）を含む
 フェンス整合、参照実在は
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
@@ -1181,7 +1182,7 @@ def _progress_log_heading_prefix(content: str) -> str | None:
     if progress_index is None:
         return None
     h2_headings = [heading for heading in headings if heading.level == 2]
-    if sum(heading.text == _plan_format.PLAN_H2_PROGRESS for heading in h2_headings) != 1:
+    if sum(heading.text in _plan_format.h2_aliases(_plan_format.PLAN_H2_PROGRESS) for heading in h2_headings) != 1:
         return None
     progress_heading = headings[progress_index]
     if not h2_headings or h2_headings[-1] != progress_heading:

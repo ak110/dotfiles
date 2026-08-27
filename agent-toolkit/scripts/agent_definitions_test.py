@@ -5971,3 +5971,43 @@ def test_feedback_explore_task_confirms_recorded_triggers_in_project_documents()
     explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
     for phrase in ("開発・運用文書", "記録済みの発火契機"):
         assert phrase in explore
+
+
+def test_plan_review_contracts_keep_authorization_and_recording_boundaries() -> None:
+    """計画・レビュー契約の確認境界、記録主体及び詳細化基準を各正本へ接続する。"""
+    rules = _AGENT_RULES.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    review_executor = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
+    agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
+    pretooluse = (_AGENTS_DIR.parent / "scripts" / "pretooluse.py").read_text(encoding="utf-8")
+
+    assert "ユーザー要求の対象、適用範囲、外部可視の結果又は除外内容をエージェントが原文から新たに具体化する場合" in rules
+    assert "ユーザーが対象、範囲及び結果を明示した提案を同じ内容で採用する場合" in rules
+    for document in (plan_mode, standards, review_task, delegation, flow):
+        assert "エージェント判断" in document
+        assert "変更履歴（計画時）" in document
+    for document in (plan_mode, standards, flow):
+        assert "進捗ログ（実行時）" in document
+    assert "`観測事象`、`ユーザー要求との関係`、`具体化した内容`、`根拠`の5列表" in standards
+    assert "追送入力" in review_task and "真正性を再判定せず" not in review_task
+    assert "逐語文、種別、出所及び引用範囲" in review_task
+    assert "起草担当が保証" in flow
+    assert "真正性を再判定せず" in flow
+
+    assert "実装順序・単位分割・個別コマンドなどの手順詳細" in agent_standards
+    assert "安全性、データ保全、公開契約又は主体間の認可境界" in review_standards
+    assert "対象ファイル集合と近接検証が独立" in review_task
+    assert "実装単位を分割するのは、成果、commit、対象ファイル集合及び近接検証が独立" in flow
+
+    for document in (review_executor, flow):
+        assert "atk review-table init" in document
+        assert "validate --allow-unanswered" in document
+        assert "同じ表" in document or "同じレビュー表" in document
+    assert "review-loop-coordination.md" in delegation
+    assert "PLAN_H2_PROGRESS" in pretooluse
+    assert "h2_aliases" in pretooluse
