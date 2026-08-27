@@ -411,6 +411,9 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mutations, "_assert_conversion_worktree_clean", lambda _path: None)
+    monkeypatch.setattr(mutations, "_assert_conversion_targets_tracked", lambda _path, _paths: None)
+    monkeypatch.setattr(mutations, "_git_head", lambda _path: "a" * 40)
 
 
 def _disable_direct_transition_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
@@ -988,6 +991,7 @@ def test_convert_to_plan_keeps_saved_change_when_push_fails(
     notes = _setup_notes(tmp_path)
     path = _write_convert_feedback(notes, "feedback.md")
     plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
@@ -1005,7 +1009,7 @@ def test_convert_to_plan_keeps_saved_change_when_push_fails(
     parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0]["plan_file"] == str(plan)
-    assert commit_calls[0][2] == ["inbox/feedback.md"]
+    assert commit_calls[0][2] == ("inbox/feedback.md",)
 
     push_calls: list[pathlib.Path] = []
     monkeypatch.setattr(
@@ -1015,7 +1019,8 @@ def test_convert_to_plan_keeps_saved_change_when_push_fails(
     )
     monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
 
-    mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
+    with pytest.raises(mutations.WebInputError, match="既に計画型"):
+        mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
 
     assert push_calls == [notes]
 
@@ -1028,6 +1033,7 @@ def test_convert_to_plan_pushes_pending_commit_before_pull(
     notes = _setup_notes(tmp_path)
     _write_convert_feedback(notes, "feedback.md")
     plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
     events: list[str] = []
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: events.append("push"))
@@ -1037,6 +1043,85 @@ def test_convert_to_plan_pushes_pending_commit_before_pull(
     mutations.convert_entry_to_plan(notes, filename="feedback.md", plan_file=str(plan))
 
     assert events[:2] == ["push", "pull"]
+
+
+def test_convert_multiple_entries_uses_one_commit_in_input_order(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """複数入力を指定順に更新し、1回のcommitへまとめる。"""
+    notes = _setup_notes(tmp_path)
+    paths = [_write_convert_feedback(notes, name) for name in ("second.md", "first.md")]
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+    commit_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
+
+    result = mutations.convert_entries_to_plan(
+        notes,
+        filenames=("second.md", "first.md"),
+        plan_file=str(plan),
+        skip_push=True,
+    )
+
+    assert commit_calls == [(notes, "chore: convert feedback items to plans", ("inbox/second.md", "inbox/first.md"))]
+    entries = result["entries"]
+    assert isinstance(entries, list)
+    assert len(entries) == 2
+    for path in paths:
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["plan_file"] == str(plan)
+
+
+def test_convert_multiple_entries_rejects_duplicate_before_writing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """重複入力を全体拒否し、対象本文を変更しない。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    original = path.read_text(encoding="utf-8")
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="重複"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=("feedback.md", "feedback"),
+            plan_file=str(plan),
+        )
+
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_convert_continues_with_one_push_when_commit_reports_failure_after_head_advance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """commitが成立後に失敗値を返した場合は再commitせず1回だけpushする。"""
+    notes = _setup_notes(tmp_path)
+    _write_convert_feedback(notes, "feedback.md")
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_convert_git(monkeypatch)
+    heads = iter(("a" * 40, "b" * 40, "b" * 40))
+    monkeypatch.setattr(mutations, "_git_head", lambda _path: next(heads))
+    monkeypatch.setattr(
+        mutations,
+        "_commit_and_push",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.CalledProcessError(1, ["git", "commit"])),
+    )
+    push_calls: list[pathlib.Path] = []
+    monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
+
+    result = mutations.convert_entries_to_plan(
+        notes,
+        filenames=("feedback.md",),
+        plan_file=str(plan),
+    )
+
+    assert result["commit"] == "b" * 40
+    assert push_calls == [notes, notes]
 
 
 def test_cmd_convert_to_plan_displays_saved_metadata(
@@ -1051,7 +1136,11 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
         "plan_file": "/tmp/plan.md",
         "depends_on": ["dependency.md"],
     }
-    monkeypatch.setattr(mutations, "convert_entry_to_plan", lambda *_args, **_kwargs: details)
+    monkeypatch.setattr(
+        mutations,
+        "convert_entries_to_plan",
+        lambda *_args, **_kwargs: {"entries": [details], "commit": "b" * 40},
+    )
     args = argparse.Namespace(
         filename="feedback.md",
         plan_file="/tmp/plan.md",
@@ -1066,6 +1155,8 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
     assert f"target_commit: {'a' * 40}" in output
     assert "plan_file: /tmp/plan.md" in output
     assert "depends_on: dependency.md" in output
+    assert "変換commit:" not in output
+    assert "push: 完了" not in output
 
 
 def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1416,7 +1507,8 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert any(command[:2] == ["git", "add"] for command in commands)
         assert any(command[:2] == ["git", "commit"] for command in commands)
-        assert commands[0] == ["git", "push"]
+        assert commands[0][:2] == ["git", "log"]
+        assert commands[1] == ["git", "push"]
         assert commands.count(["git", "push"]) == 1
         captured = capsys.readouterr()
         assert "未pushのcommit" in captured.err
@@ -1441,7 +1533,8 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert any(command[:2] == ["git", "add"] for command in commands)
         assert any(command[:2] == ["git", "commit"] for command in commands)
-        assert commands[0] == ["git", "push"]
+        assert commands[0][:2] == ["git", "log"]
+        assert commands[1] == ["git", "push"]
         assert commands.count(["git", "push"]) == 1
         captured = capsys.readouterr()
         assert "未pushのcommit" in captured.err

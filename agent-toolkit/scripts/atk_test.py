@@ -270,9 +270,17 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
             "second.md",
         ]
     )
-    assert args.filename == "feedback.md"
+    assert args.filename == ["feedback.md"]
     assert args.plan_file == "/tmp/plan.md"
     assert args.depends_on == ["first.md", "second.md"]
+
+
+def test_convert_to_plan_parser_accepts_multiple_filenames_and_skip_push() -> None:
+    """convert-to-planが複数入力とpush省略を1つの操作として保持する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    args = parser.parse_args(["mq", "convert-to-plan", "first.md", "second.md", "--plan-file", "/tmp/plan.md", "--skip-push"])
+    assert args.filename == ["first.md", "second.md"]
+    assert args.skip_push is True
 
 
 def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:

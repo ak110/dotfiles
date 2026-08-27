@@ -600,7 +600,8 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     convert_to_plan.add_argument(
         "filename",
         metavar="FILENAME",
-        help="変換する`inbox`または`processing`のフィードバックファイル名。",
+        nargs="+",
+        help="変換する`inbox`または`processing`のフィードバックファイル名（1個以上）。",
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--plan-file",
@@ -614,6 +615,11 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         action="append",
         default=None,
         help="処理完了を待つキュー項目。複数回指定でき、重複は初出順で除去する。",
+    )
+    convert_to_plan.add_argument(
+        "--skip-push",
+        action="store_true",
+        help="管理リポジトリへのpushを省略してcommitだけ行う。",
     )
     _add_target_repo_arg(convert_to_plan, help_extra="省略時は現在の作業リポジトリと照合する。")
 

@@ -2035,6 +2035,218 @@ def _git_head(private_notes: pathlib.Path) -> str:
     return commit
 
 
+def _assert_conversion_worktree_clean(private_notes: pathlib.Path) -> None:
+    """計画変換前に管理repoの作業ツリーとindex全体がcleanであることを確認する。"""
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=private_notes,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    if status.stdout.strip():
+        raise WebInputError("計画変換前に管理repoの作業ツリーとindexをcleanにしてください")
+
+
+def _assert_conversion_targets_tracked(
+    private_notes: pathlib.Path,
+    paths: list[pathlib.Path],
+) -> None:
+    """計画変換対象が開始時HEADに登録済みであることを確認する。"""
+    relative_paths = [str(path.relative_to(private_notes)) for path in paths]
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", *relative_paths],
+        cwd=private_notes,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise WebInputError("計画変換対象が管理repoの開始時HEADに登録されていません")
+
+
+def _restore_conversion_paths(
+    private_notes: pathlib.Path,
+    start_head: str,
+    relative_paths: tuple[str, ...],
+) -> None:
+    """commit前失敗時に変換対象だけを開始時のHEADへ戻す。"""
+    try:
+        if _git_head(private_notes) != start_head:
+            return
+        subprocess.run(["git", "reset", "--mixed", start_head], cwd=private_notes, check=True)
+        tracked = subprocess.run(
+            ["git", "ls-files", "--", *relative_paths],
+            cwd=private_notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+        if tracked:
+            subprocess.run(
+                ["git", "restore", f"--source={start_head}", "--staged", "--worktree", "--", *tracked],
+                cwd=private_notes,
+                check=True,
+            )
+        for relative_path in relative_paths:
+            status = subprocess.run(
+                ["git", "status", "--porcelain", "--", relative_path],
+                cwd=private_notes,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if status.stdout.strip():
+                raise RuntimeError(f"計画変換対象の復元後に差分が残っています: {relative_path}")
+    except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
+        print(f"計画変換対象の復元に失敗しました。手動確認が必要です: {error}", file=sys.stderr)
+
+
+def convert_entries_to_plan(
+    private_notes: pathlib.Path,
+    *,
+    filenames: tuple[str, ...],
+    plan_file: str,
+    depends_on: tuple[str, ...] | None = None,
+    target_repo: str | None = None,
+    lock_timeout: float = -1,
+    skip_push: bool = False,
+) -> dict[str, object]:
+    """複数の処理可能feedbackを1回のcommitへまとめて計画実装型へ変換する。"""
+    if not filenames:
+        raise WebInputError("変換するFILENAMEを1件以上指定してください")
+    plan_path = pathlib.Path(plan_file)
+    if not plan_path.is_absolute():
+        raise WebInputError("plan_fileは絶対パスで指定してください")
+    inbox_dir = private_notes / MQ_STATE_INBOX
+    processing_dir = private_notes / MQ_STATE_PROCESSING
+    normalized_filenames = tuple(dict.fromkeys(_validate_filename(name, inbox_dir).name for name in filenames))
+    if len(normalized_filenames) != len(filenames):
+        raise WebInputError("同じFILENAMEを重複して指定できません")
+    normalized_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in (depends_on or ())))
+    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _assert_conversion_worktree_clean(private_notes)
+        _push_pending_commits(private_notes)
+        _pull(private_notes)
+        try:
+            if not plan_path.is_file():
+                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
+        except OSError as error:
+            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+        paths = _resolve_processable_targets(list(normalized_filenames), inbox_dir, processing_dir)
+        if len(paths) != len(normalized_filenames):
+            raise WebInputError("変換対象を一意に特定できません")
+        _assert_conversion_targets_tracked(private_notes, paths)
+        snapshots = [(path, path.read_text(encoding="utf-8")) for path in paths]
+        dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
+        if normalized_dependencies:
+            dependency_graph.update({path.name: set(normalized_dependencies) for path, _text in snapshots})
+            for path, _text in snapshots:
+                if path.name in normalized_dependencies:
+                    raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+            if any(
+                _dependency_reaches(dependency_graph, dependency, path.name)
+                for path, _text in snapshots
+                for dependency in normalized_dependencies
+            ):
+                raise WebInputError("循環する依存を指定できません")
+
+        updated: list[tuple[pathlib.Path, str, str]] = []
+        repositories: set[str] = set()
+        for path, text in snapshots:
+            parsed = _frontmatter.parse_frontmatter(text)
+            if parsed is None:
+                raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
+            data, body = parsed
+            if _require_type(path, text) != MQ_TYPE_FEEDBACK:
+                raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
+            raw_entry_repo = data.get("target_repo")
+            if not isinstance(raw_entry_repo, str):
+                raise WebInputError(f"target_repoが不正です: {path.name}")
+            entry_repo = _resolve_repo_id(raw_entry_repo)
+            repositories.add(entry_repo)
+            if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+                raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+            if "plan_file" in data:
+                raise WebInputError(f"既に計画型のため再変換できません: {path.name}")
+            if depends_on is None and "depends_on" not in data:
+                legacy_dependencies = _legacy_entry_dependencies_for_conversion(data, path.name)
+                if legacy_dependencies:
+                    data["depends_on"] = list(legacy_dependencies)
+            if depends_on is not None:
+                if path.name in normalized_dependencies:
+                    raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
+                if normalized_dependencies:
+                    data["depends_on"] = list(normalized_dependencies)
+                else:
+                    data.pop("depends_on", None)
+            data["plan_file"] = str(plan_path)
+            data.pop("queue_schedule", None)
+            updated_text = _frontmatter.serialize_frontmatter(data, body)
+            updated.append((path, text, updated_text))
+        if len(repositories) != 1:
+            raise WebInputError("変換対象は同一target_repoで指定してください")
+
+        start_head = _git_head(private_notes)
+        relative_paths = tuple(str(path.relative_to(private_notes)) for path, _old, _new in updated)
+        try:
+            for path, _old, new in updated:
+                if new != _old:
+                    _atomic_write_text(path, new)
+            changed_paths = tuple(path for path, old, new in updated if old != new)
+            if not changed_paths:
+                return {
+                    "entries": [
+                        _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+                        for path, _old, _new in updated
+                    ],
+                    "plan_file": str(plan_path),
+                    "commit": None,
+                    "push_pending": False,
+                }
+            try:
+                _commit_and_push(
+                    private_notes,
+                    "chore: convert feedback items to plans",
+                    relative_paths,
+                    skip_push=skip_push,
+                )
+            except (OSError, subprocess.SubprocessError) as error:
+                current_head = _git_head(private_notes)
+                command = getattr(error, "cmd", ())
+                push_failure = any(part == "push" for part in command)
+                if current_head == start_head and not push_failure:
+                    _restore_conversion_paths(private_notes, start_head, relative_paths)
+                    raise
+                if current_head == start_head:
+                    raise
+                if push_failure:
+                    raise PushPendingError(PushPendingResult(current_head)) from error
+                if not skip_push:
+                    try:
+                        _push_pending_commits(private_notes)
+                    except (OSError, subprocess.SubprocessError) as push_error:
+                        raise PushPendingError(PushPendingResult(_git_head(private_notes))) from push_error
+            commit_oid = _git_head(private_notes)
+            return {
+                "entries": [
+                    _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+                    for path, _old, _new in updated
+                ],
+                "plan_file": str(plan_path),
+                "commit": commit_oid,
+                "push_pending": False,
+            }
+        except Exception as error:
+            command = getattr(error, "cmd", ())
+            push_failure = any(part == "push" for part in command)
+            if _git_head(private_notes) == start_head and not push_failure:
+                _restore_conversion_paths(private_notes, start_head, relative_paths)
+            raise
+
+
 def convert_entry_to_plan(
     private_notes: pathlib.Path,
     *,
@@ -2043,82 +2255,63 @@ def convert_entry_to_plan(
     depends_on: tuple[str, ...] | None = None,
     target_repo: str | None = None,
     lock_timeout: float = -1,
-) -> dict[str, object | None]:
-    """既存フィードバックを計画実装型へ変換し、保存済みメタデータを返す。"""
-    plan_path = pathlib.Path(plan_file)
-    if not plan_path.is_absolute():
-        raise WebInputError("plan_fileは絶対パスで指定してください")
-    inbox_dir = private_notes / MQ_STATE_INBOX
-    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
-    _validate_filenames_only([filename, *(depends_on or ())], inbox_dir)
-    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
-
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
-        _pull(private_notes)
-        try:
-            if not plan_path.is_file():
-                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
-        except OSError as error:
-            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
-
-        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
-        text = path.read_text(encoding="utf-8")
-        parsed = _frontmatter.parse_frontmatter(text)
-        if parsed is None:
-            raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
-        data, body = parsed
-        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
-            raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
-        raw_entry_repo = data.get("target_repo")
-        if not isinstance(raw_entry_repo, str):
-            raise WebInputError(f"target_repoが不正です: {path.name}")
-        entry_repo = _resolve_repo_id(raw_entry_repo)
-        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
-            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
-
-        if depends_on is None and "depends_on" not in data:
-            legacy_dependencies = _legacy_entry_dependencies_for_conversion(data, path.name)
-            if legacy_dependencies:
-                data["depends_on"] = list(legacy_dependencies)
-        data["plan_file"] = str(plan_path)
-        data.pop("queue_schedule", None)
-        if depends_on is not None:
-            canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
-            if path.name in canonical_dependencies:
-                raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
-            dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
-            dependency_graph[path.name] = set(canonical_dependencies)
-            if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
-                raise WebInputError(f"循環する依存を指定できません: {path.name}")
-            if canonical_dependencies:
-                data["depends_on"] = list(canonical_dependencies)
-            else:
-                data.pop("depends_on", None)
-        updated_text = _frontmatter.serialize_frontmatter(data, body)
-        if updated_text != text:
-            _atomic_write_text(path, updated_text)
-            relative_path = str(path.relative_to(private_notes))
-            _commit_and_push(private_notes, "chore: convert feedback item to plan", [relative_path])
-        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+    skip_push: bool = False,
+) -> dict[str, object]:
+    """既存の単一項目APIを一括変換経路へ委譲する。"""
+    result = convert_entries_to_plan(
+        private_notes,
+        filenames=(filename,),
+        plan_file=plan_file,
+        depends_on=depends_on,
+        target_repo=target_repo,
+        lock_timeout=lock_timeout,
+        skip_push=skip_push,
+    )
+    entries = result["entries"]
+    assert isinstance(entries, list) and len(entries) == 1
+    entry = entries[0]
+    assert isinstance(entry, dict)
+    return entry
 
 
 def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """convert-to-planサブコマンドを実行する。"""
     target_repo, _local_worktree = _add.resolve_add_target(args.target_repo)
+    skip_push = getattr(args, "skip_push", False)
+    raw_filenames = args.filename
+    filenames = (raw_filenames,) if isinstance(raw_filenames, str) else tuple(raw_filenames)
+    single_compat = len(filenames) == 1
+    dependencies = tuple(args.depends_on) if args.depends_on is not None else None
     try:
-        details = convert_entry_to_plan(
+        result = convert_entries_to_plan(
             private_notes,
-            filename=args.filename,
+            filenames=filenames,
             plan_file=args.plan_file,
-            depends_on=tuple(args.depends_on) if args.depends_on is not None else None,
+            depends_on=dependencies,
             target_repo=target_repo,
+            skip_push=skip_push,
         )
+        entries = result["entries"]
+        if not isinstance(entries, list):
+            raise RuntimeError("複数変換結果のentriesがリストではありません")
+    except PushPendingError as error:
+        print(
+            f"pushに失敗しました。未pushのcommit: {error.result.commit}。atk mq commitで復旧してください。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     except WebInputError as error:
         print(f"変換を拒否しました: {error}", file=sys.stderr)
         sys.exit(1)
-    print(f"計画実装型へ変換: {args.filename}")
-    _add._print_entry_details(details)  # pylint: disable=protected-access
+    for filename in filenames:
+        print(f"計画実装型へ変換: {filename}")
+    if not single_compat:
+        commit_oid = result.get("commit")
+        if commit_oid:
+            print(f"変換commit: {commit_oid}")
+        print("push: 省略 (--skip-push)" if skip_push else "push: 完了")
+    for details in entries:
+        _add._print_entry_details(details)  # pylint: disable=protected-access
 
 
 def set_entry_dependencies(
