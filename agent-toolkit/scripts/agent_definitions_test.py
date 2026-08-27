@@ -1207,6 +1207,39 @@ def test_plan_save_requires_unique_replacement_boundary() -> None:
     assert "行頭完全一致の見出し行" in plan_mode
 
 
+def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
+    """計画前の判断列挙を既存の二段階確認と依存付き質問ラウンドへ接続する。"""
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    progress = _h2_section(plan_mode, "進め方")
+
+    decision_list = progress.index("計画の変更対象又は採用方針を左右する未確定判断")
+    stage_one = progress.index("「協調と自律」節の第1段階")
+    stage_two = progress.index("第1段階で確定した操作へ同節の第2段階を必ず適用")
+    question_round = progress.index("現在の質問候補")
+    autonomous = progress.index("質問しなかった計画上の判断")
+    draft = progress.index("`references/plan-file-standards.md`を全文読み")
+    assert decision_list < stage_one < stage_two < question_round < autonomous < draft
+
+    for phrase in (
+        "広い要求の具体化や解釈によって対象、成果、完了条件のいずれかが変わる事項も列挙する",
+        "明示要件、適用規範、対象版の仕様、リポジトリの確立済み方針又は実測から技術選択を確定できる判断は、利用者へ質問せず自律確定する",
+        "必要十分な最小実装、問題と手段の比例性、何もしない案・既存操作案を含む最有力対案との比較",
+        "利用者の選好に依存する判断は確認候補へ送る",
+        "公開インターフェース変更、破壊的操作、他利用者への影響、外部サービス設定変更又は利用者が直接観測する出力の表示粒度・情報量変更",
+        "未回答判断に依存しないものだけを現在の質問候補とする",
+        "実行ホストの質問ツールが一度に受理する上限内",
+        "推奨案、根拠、不利益",
+        "現在の質問候補数、既知の残質問数、回答によって追加され得る分岐の有無",
+        "回答後は依存関係を更新して第1段階と第2段階を再適用し、質問候補が無くなるまで反復する",
+        "自律確定した結論、根拠、最有力対案、対案を採用しない理由",
+        "追加の承認待ちを設けず、計画ファイル初版の起草へ進む",
+        "新しい分類器、判定状態、監査状態又は例外経路を追加しない",
+    ):
+        assert phrase in progress or phrase in plan_mode
+
+    assert "技術的に確定できないユーザー依存事項だけを確認へ送る" not in progress
+
+
 def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
     """実装担当と計画準拠レビュー担当の参照範囲を固定領域と実装者向け領域で分ける。"""
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
