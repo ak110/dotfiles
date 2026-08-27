@@ -12,7 +12,7 @@
 
 実行環境を判定し、対応する経路で本体プロセスへ停止を要求する。
 
-- POSIX互換のプロセス識別が成立する環境: `Bash`ツールで`kill -TERM $PPID`を実行する。
+- POSIX互換のプロセス識別が成立する環境: ホストがシェルの親を現在セッション専用のClaude Code本体として指定していることを確認し、`Bash`ツールで`kill -TERM $PPID`を実行する。
   採用シグナルは`TERM`へ固定し、実行時に切り替えない
 - Windows環境（`$PPID`が実プロセスを指さない環境を含む）: `Bash`ツールから
   `powershell.exe -NoProfile -Command "<スクリプト>"`の形でPowerShellを起動する。
@@ -20,7 +20,7 @@
   祖先の実行ファイルとコマンドラインを照合してClaude Code本体を一意に特定し、
   当該単一PIDだけを`Stop-Process -Id <PID>`で終了する。
   POSIXシグナルは用いず、実行ファイル名の一致だけを根拠にしない
-  （`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」節の所有PID原則に従う。
+  （`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」節の、ホストが現在の実行主体専用の終了対象を一意に特定する原則に従う。
   親子関係・実行ファイル・コマンドラインを照合して一意に特定した単一PIDは所有権確認済みとして扱う）
 - 対象を一意に特定できない場合は停止を要求せず、ユーザーへ`/exit`の入力を案内して本スキルを終える
 

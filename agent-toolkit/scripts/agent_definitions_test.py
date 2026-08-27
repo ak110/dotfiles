@@ -57,6 +57,7 @@ _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "refe
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
 _CLAUDE_CODE_RULE = _AGENTS_DIR.parent / "rules" / "99-claude-code.md"
+_EXIT_SESSION_TERMINATION = _AGENTS_DIR.parent / "skills" / "exit-session" / "references" / "host-and-os-termination.md"
 _SESSION_REVIEW = _AGENTS_DIR.parent / "skills" / "session-review" / "SKILL.md"
 _SESSION_REVIEW_CRITERIA = _SESSION_REVIEW.parent / "references" / "generation-criteria-detail.md"
 _SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
@@ -286,9 +287,10 @@ def test_process_stop_contract_connects_shared_identifier_and_claude_task_id() -
     """共有終了規約とClaude CodeのTaskStop規約が起動結果の識別子で接続される。"""
     operations = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
     claude = _CLAUDE_CODE_RULE.read_text(encoding="utf-8")
+    exit_session = _EXIT_SESSION_TERMINATION.read_text(encoding="utf-8")
 
     for phrase in (
-        "プロセス又はホスト管理ジョブを終了させる操作は、自身が起動し、起動結果から停止用の識別子を取得して保持した対象に限る。",
+        "プロセス又はホスト管理ジョブを終了させる操作は、自身が起動し起動結果から停止用の識別子を取得して保持した対象、及びホストが現在の実行主体専用の終了対象として指定し、その対象を一意に特定できる経路から識別子を取得して保持した対象に限る。",
         "直接起動したOSプロセスではPID、ホスト管理ジョブでは起動結果または背景移行通知が返したタスクIDなど、対象の起動経路が指定する識別子と停止手段を組み合わせる。",
         "別種の識別子への推測変換又はパターン一致で対象を特定しない。",
     ):
@@ -301,6 +303,13 @@ def test_process_stop_contract_connects_shared_identifier_and_claude_task_id() -
         "シェルの`kill`等でPIDを推測して停止しない",
     ):
         assert phrase in claude
+
+    for phrase in (
+        "ホストがシェルの親を現在セッション専用のClaude Code本体として指定していることを確認し",
+        "ホストが現在の実行主体専用の終了対象を一意に特定する原則に従う。",
+        "親子関係・実行ファイル・コマンドラインを照合して一意に特定した単一PID",
+    ):
+        assert phrase in exit_session
 
 
 def test_codex_named_agent_compatibility_preserves_stage_engine() -> None:
