@@ -109,9 +109,9 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 LinuxとWindowsで寿命契約を揃えられる。
 
 公開APIは`start`、`wait`、`send_message`、`kill`の4つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
-`model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。
+`model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。
 `send_message`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
-`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。`timeout=0`は要求配送後の現状態を返し、
+`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、
 正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionまたはbackend processを強制終了せず、後続の`wait`または終端後の`send_message`を許可する。
 成功応答は`status`・`progress`・`kill_requested`を含み、`kill_requested`は要求の受理事実を示し、自然終端を`interrupted`へ置き換えない。
 この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。

@@ -28,7 +28,8 @@ try:
 except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開しない場合
     IncompleteFieldDefinitionWarning = None  # type: ignore[assignment,misc]
 
-DEFAULT_WAIT_TIMEOUT = 300.0
+DEFAULT_WAIT_TIMEOUT = 240.0
+DEFAULT_KILL_TIMEOUT = 300.0
 RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 SUPPORTED_ENGINES = frozenset({"claude", "codex"})
@@ -293,7 +294,7 @@ class AgentsServerManager:
             response["previous_result"] = result["previous_result"]
         return response
 
-    async def kill(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
+    async def kill(self, session_id: str, timeout: float = DEFAULT_KILL_TIMEOUT) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ValueError("timeout must be non-negative")
@@ -423,7 +424,11 @@ async def start(
 
 @mcp.tool(name="wait", structured_output=True)
 async def wait(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-    """委譲先の終端を待ち、終端時だけ結果本文を返す。"""
+    """委譲先の終端を待ち、終端時だけ結果本文を返す。
+
+    通常の既定は240秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
+    `timeout=0`は待機せず現状態を返す。
+    """
     return await _MANAGER.wait(session_id, timeout)
 
 
@@ -434,7 +439,7 @@ async def send_message(session_id: str, prompt: str) -> dict[str, Any]:
 
 
 @mcp.tool(name="kill", structured_output=True)
-async def kill(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
+async def kill(session_id: str, timeout: float = DEFAULT_KILL_TIMEOUT) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
     return await _MANAGER.kill(session_id, timeout)
 

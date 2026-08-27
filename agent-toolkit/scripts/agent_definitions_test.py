@@ -3360,6 +3360,23 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
     assert "do sleep" not in runtime
 
 
+def test_agents_server_timeout_defaults_are_synced_across_documents() -> None:
+    """agents_serverのwaitとkillの既定値を実装と委譲文書で一致させる。"""
+    documents = (
+        _DELEGATION_SKILL,
+        _RUNTIME_ROUTING,
+        _REPOSITORY_ROOT / "docs" / "development" / "architecture.md",
+        _DESIGN_DOC,
+        _REPOSITORY_ROOT / "docs" / "guide" / "claude-code-guide.md",
+        _REPOSITORY_ROOT / "docs" / "guide" / "codex-guide.md",
+    )
+    for path in documents:
+        text = path.read_text(encoding="utf-8")
+        assert "通常の既定は240秒" in text
+        assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in text
+        assert "killの通常の既定は300秒" in text
+
+
 def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> None:
     """計画パス、事前除外後の実施内容行、単一経路及びTBD境界を同期する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")

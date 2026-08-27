@@ -93,6 +93,24 @@ def test_public_tools_are_exactly_four_async_operations() -> None:
     assert set(subject.mcp._tool_manager._tools) == {"start", "wait", "send_message", "kill"}
 
 
+def test_wait_and_kill_schema_expose_distinct_timeout_defaults() -> None:
+    """公開schemaのwaitとkillが別の既定timeoutを示す。"""
+    assert subject.DEFAULT_WAIT_TIMEOUT == 240.0
+    assert subject.DEFAULT_KILL_TIMEOUT == 300.0
+    assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
+    wait_tool = subject.mcp._tool_manager.get_tool("wait")
+    kill_tool = subject.mcp._tool_manager.get_tool("kill")
+    assert wait_tool is not None
+    assert kill_tool is not None
+
+    wait_timeout = wait_tool.parameters["properties"]["timeout"]
+    assert wait_timeout["default"] == 240.0
+    assert "通常の既定は240秒" in wait_tool.description
+    assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in wait_tool.description
+    assert "`timeout=0`は待機せず現状態を返す" in wait_tool.description
+    assert kill_tool.parameters["properties"]["timeout"]["default"] == 300.0
+
+
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
     """進捗本文は改行を除き、長文では末尾80文字だけを返す。"""
     assert subject._progress_excerpt("a\r\nb\rc\nd") == "a b c d"

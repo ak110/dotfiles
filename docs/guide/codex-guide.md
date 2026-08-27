@@ -75,9 +75,9 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 `start(engine="claude", ...)`を使う。MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
 公開ツールは`start`、`wait`、`send_message`、`kill`の4つである。`start`の`cwd`は既存ディレクトリの絶対パスとし、
-完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout=0`は待機せず現状態を返す。
+完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す。
 `send_message(session_id, prompt)`は実行中turnへsteerし、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
-`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。
+`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。
 timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。`kill`の`kill_requested`、
 `send_message`の`delivery`及び`wait`の終端応答で要求・配送・結果を確認する。
 
