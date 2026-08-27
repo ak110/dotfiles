@@ -278,6 +278,13 @@
   対策: 共有Stop判定器が固定された子記録から孫起動とtask-id対応を収集し、最上位生transcriptの`enqueue`・`remove`完了通知で相殺する。
   LLM実行主体への完了通知配送契約とは観測面を分離し、`SubagentStop`の子孫blockは復活させない
 
+- 2026年8月: `agents_server` MCPの初回engine選択が、MCP起動後に置換されたプラグイン配置のローカルbackendを解決できず失敗した。
+  直接原因: backend class importをengine選択時まで遅延し、MCP初期化時にローカルmoduleの存在を確定していなかった。
+  対策: 共有状態moduleで循環importを解消し、Codex・Claude backend classをMCP初期化時に読み込む回帰検査を追加する
+- 2026年8月: `agents_server`のPEP 723環境ウォームアップが成功しても、Claude Agent SDKのimport不足をClaude turn開始まで検出できなかった。
+  直接原因: `--help`だけを実行し、lazyなSDK importとClaudeAgentOptions構築へ到達していなかった。
+  対策: `--check-dependencies`でoptions構築まで検査し、リポジトリ・Claude Code・Codexの全agents_serverウォームアップへ適用する
+
 ## 停滞・空転
 
 - 2026年8月: 孫の完了報告が呼び出し元へ配送されず、呼び出し元が成果物とtranscriptの最終更新時刻を実測して終了を検出した。

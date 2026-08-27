@@ -110,6 +110,11 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
 LinuxとWindowsで寿命契約を揃えられる。
 
+ローカルbackendのclassはMCP module初期化時に読込み、共有の`SessionState`と状態更新関数は独立した共通moduleが所有する。
+この境界により、プラグイン配置が初回engine選択まで利用できない場合も、既に読込済みのclassからbackendを生成できる。
+Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用経路へSDK依存を持ち込まない。
+`--check-dependencies`はPEP 723環境でClaudeAgentOptionsを構築するだけの検査であり、外部sessionの起動及びMCP公開statusを生成しない。
+
 公開APIは`start`、`wait`、`send_message`、`kill`の4つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
 `model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。
 `send_message`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。

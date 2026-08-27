@@ -121,6 +121,12 @@ Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`の`eng
 timeout超過時もsessionとbackend processを強制終了せず、同じsessionへ`wait`または終端後の`send_message`を続けられる。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
+MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。
+プラグイン配置の寿命に依存するローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
+Claude Agent SDKはCodex専用経路の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
+プラグイン導入後のウォームアップは、同じ`uv run --no-project --script`起動形へ`--check-dependencies`を渡し、
+PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外部Claude/Codex sessionは開始しない。
+
 ## ホーム配下のファイルを編集する前の確認
 
 `~/.config/`・`~/.claude/`などホーム直下のファイルを編集する場合、
