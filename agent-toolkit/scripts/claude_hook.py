@@ -28,6 +28,7 @@ import contextlib
 import datetime
 import importlib
 import io
+import json
 import os
 import pathlib
 import sys
@@ -93,6 +94,14 @@ def main(argv: list[str]) -> int:
         )
         return 0
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    with contextlib.suppress(Exception):
+        payload = json.loads(payload_text)
+        if isinstance(payload, dict):
+            session_id = payload.get("session_id")
+            transcript_path = payload.get("transcript_path")
+            if isinstance(session_id, str) and isinstance(transcript_path, str):
+                session_state = importlib.import_module("_session_state")
+                session_state.inherit_state_from_transcript(session_id, transcript_path)
     try:
         module = importlib.import_module(argv[0])
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉

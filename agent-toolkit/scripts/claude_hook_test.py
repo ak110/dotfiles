@@ -7,6 +7,7 @@
 
 # pylint: disable=duplicate-code  # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
 
+import json
 import os
 import pathlib
 import shutil
@@ -197,6 +198,42 @@ class TestStandardInputAndPayloadDump:
         assert not result.stdout
         assert "UTF-8" in result.stderr.decode("utf-8")
         assert not marker.exists()
+
+    def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:
+        """各サブコマンドへ渡す前に共通入口が前身状態を継承する。"""
+        entrypoint = self._copy_entrypoint(tmp_path)
+        self._write_echo_module(tmp_path)
+        source_directory = _SCRIPT.parent
+        for name in ("_session_state.py", "_atomic_file.py", "_file_lock.py"):
+            shutil.copy2(source_directory / name, tmp_path / name)
+        temp_directory = tmp_path / "temp"
+        temp_directory.mkdir()
+        (temp_directory / "claude-agent-toolkit-previous.json").write_text(
+            json.dumps({"plan_mode_skill_invoked": True}),
+            encoding="utf-8",
+        )
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(json.dumps({"sessionId": "previous"}) + "\n", encoding="utf-8")
+        payload = json.dumps({"session_id": "current", "transcript_path": str(transcript)})
+        env = os.environ.copy()
+        env["TMPDIR"] = str(temp_directory)
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "pretooluse"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == payload
+        assert not result.stderr
+        assert json.loads((temp_directory / "claude-agent-toolkit-current.json").read_text(encoding="utf-8")) == {
+            "plan_mode_skill_invoked": True,
+            "inherited_from_session_id": "previous",
+        }
 
     def test_module_import_error_uses_utf8_stderr(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
