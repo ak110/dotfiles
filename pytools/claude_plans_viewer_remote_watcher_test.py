@@ -41,6 +41,8 @@ class TestRemoteWatcher:
                         "entries": [
                             {"path": "a.md", "name": "a.md", "mtime_epoch": 100.0, "ctime_epoch": 50.0},
                             {"path": "sub/b.md", "name": "b.md", "mtime_epoch": 200.0, "ctime_epoch": 150.0},
+                            {"path": "a.detail.md", "name": "a.detail.md", "mtime_epoch": 300.0, "ctime_epoch": 250.0},
+                            {"path": "a.bugs.md", "name": "a.bugs.md", "mtime_epoch": 400.0, "ctime_epoch": 350.0},
                         ],
                     }
                 )
@@ -92,7 +94,7 @@ class TestRemoteWatcher:
                 state.subscribers.discard(q)
 
     @pytest.mark.asyncio
-    async def test_upsert_adds_new_path(self) -> None:
+    async def test_upsert_adds_new_path_but_not_attached_plans(self) -> None:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         # 既存snapshotを与えてから、新規pathのupsertが追加されることを確認する。
@@ -107,6 +109,20 @@ class TestRemoteWatcher:
                     )
                     + "\n",
                     json.dumps({"type": "upsert", "path": "b.md", "name": "b.md", "mtime_epoch": 200.0, "ctime_epoch": 150.0})
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "upsert",
+                            "path": "a.detail.md",
+                            "name": "a.detail.md",
+                            "mtime_epoch": 300.0,
+                            "ctime_epoch": 250.0,
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {"type": "upsert", "path": "a.bugs.md", "name": "a.bugs.md", "mtime_epoch": 400.0, "ctime_epoch": 350.0}
+                    )
                     + "\n",
                 ]
             )

@@ -103,8 +103,8 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。
 
     読取・検索・変更監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
-    計画本体`<stem>.md`と実装詳細側`<stem>.detail.md`の双方を真とする
-    （detailは一覧だけから除外し、読取・検索・監視の対象には含める。`is_listed_path`が一覧専用の判定を持つ）。
+    計画本体`<stem>.md`と付属計画`<stem>.detail.md`・`<stem>.bugs.md`の全てを真とする
+    （付属計画は一覧だけから除外し、読取・検索・監視の対象には含める。`is_listed_path`が一覧専用の判定を持つ）。
     リモート側`_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
@@ -120,15 +120,15 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
 
 
 def is_listed_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """`path`が計画一覧の対象（`is_target_path`が真、かつ実装詳細側`.detail.md`ではない）かを判定する。
+    """`path`が計画一覧の対象（`is_target_path`が真、かつ付属計画ではない）かを判定する。
 
-    一覧経路だけに使う。読取・検索・変更監視は`is_target_path`を使い、detailも対象へ含める。
+    一覧経路だけに使う。読取・検索・変更監視は`is_target_path`を使い、付属計画も対象へ含める。
     """
-    return is_target_path(path, root) and not path.name.endswith(".detail.md")
+    return is_target_path(path, root) and not path.name.endswith((".detail.md", ".bugs.md"))
 
 
 def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """監視イベントの対象判定。読取・検索と同一の`is_target_path`を用いる（detailも対象へ含める）。"""
+    """監視イベントの対象判定。読取・検索と同一の`is_target_path`を用いる（付属計画も対象へ含める）。"""
     return is_target_path(path, root)
 
 

@@ -24,8 +24,9 @@ logger = logging.getLogger(__name__)
 # 連続スラッシュ（`//`）はスキーム相対URL扱いになり外部オリジン誘導の口になるため別途禁止する。
 _BASE_PATH_ALLOWED_RE = re.compile(r"^/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$")
 
-# 実装詳細側ファイルの接尾辞。計画一覧からは除外されるため、メイン計画の表示応答からのリンクが唯一の到達経路になる。
+# 付属計画ファイルの接尾辞。計画一覧からは除外されるため、表示応答内のリンクが到達経路になる。
 _DETAIL_SUFFIX = ".detail.md"
+_BUGS_SUFFIX = ".bugs.md"
 
 
 def safe_base_path(raw: str) -> str:
@@ -386,9 +387,9 @@ def _register_file_routes(app: quart.Quart, context: _AppContext) -> None:
             rendered = _local.markdown_to_html(text, context.renderer)
             if cache_key is not None:
                 context.markdown_cache.put(cache_key, rendered)
-        # detailリンクは応答組み立て層で付与する。本文変換とそのキャッシュへ混ぜると、
-        # detailの出現・消失のたびに本文HTMLキャッシュを無効化する必要が生じるため。
-        body = await _detail_link_html(context, host, rel) + rendered
+        # 付属計画リンクは応答組み立て層で付与する。本文変換とそのキャッシュへ混ぜると、
+        # 付属計画の出現・消失のたびに本文HTMLキャッシュを無効化する必要が生じるため。
+        body = await _plan_links_html(context, host, rel) + rendered
         return quart.Response(body, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/raw")
@@ -406,42 +407,59 @@ def _register_file_routes(app: quart.Quart, context: _AppContext) -> None:
         return quart.Response(text, content_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
 
 
-def _detail_rel(rel: str) -> str | None:
-    """メイン計画の相対パスから実装詳細側`<stem>.detail.md`の相対パスを導出する。
+def _plan_paths(rel: str) -> tuple[tuple[str, str], ...]:
+    """同じstemに属する計画本体・detail・bugsの相対パスと表示名を返す。"""
+    suffix = next((suffix for suffix in (_DETAIL_SUFFIX, _BUGS_SUFFIX) if rel.endswith(suffix)), None)
+    if suffix is None:
+        if not rel.endswith(".md"):
+            return ()
+        stem = rel[: -len(".md")]
+    else:
+        stem = rel[: -len(suffix)]
+    return (
+        (f"{stem}.md", "計画本体"),
+        (f"{stem}{_DETAIL_SUFFIX}", "実装詳細"),
+        (f"{stem}{_BUGS_SUFFIX}", "バグ調査"),
+    )
 
-    メイン計画以外（detail自身や`.md`以外）は`None`を返す。
-    """
-    if not rel.endswith(".md") or rel.endswith(_DETAIL_SUFFIX):
-        return None
-    return rel[: -len(".md")] + _DETAIL_SUFFIX
 
-
-async def _detail_link_html(context: _AppContext, host: str, rel: str) -> str:
-    """実装詳細側が実在する場合だけ、表示応答の先頭へ付けるリンク要素を返す。"""
-    detail_rel = _detail_rel(rel)
-    if detail_rel is None or not await _detail_exists(context, host, detail_rel):
+async def _plan_links_html(context: _AppContext, host: str, rel: str) -> str:
+    """同じstemで実在する他の計画だけを、表示応答の先頭へリンクとして付ける。"""
+    plan_paths = _plan_paths(rel)
+    if not plan_paths:
         return ""
-    # detailは計画一覧に載らないため、クライアント側は一覧経由ではなくこの`data-plan-path`から選択する。
-    escaped = html.escape(detail_rel, quote=True)
-    return f'<nav class="detail-link"><a href="#" data-plan-path="{escaped}">実装詳細を開く</a></nav>\n'
+    existing: list[tuple[str, str]] = []
+    for plan_rel, label in plan_paths:
+        if plan_rel == rel or await _plan_exists(context, host, plan_rel):
+            existing.append((plan_rel, label))
+    if len(existing) < 2:
+        return ""
+    parts: list[str] = []
+    for plan_rel, label in existing:
+        if plan_rel == rel:
+            parts.append(html.escape(label))
+            continue
+        escaped = html.escape(plan_rel, quote=True)
+        parts.append(f'<a href="#" data-plan-path="{escaped}">{html.escape(label)}を開く</a>')
+    return f'<nav class="detail-link">{" | ".join(parts)}</nav>\n'
 
 
-async def _detail_exists(context: _AppContext, host: str, detail_rel: str) -> bool:
-    """実装詳細側の実在を判定する。
+async def _plan_exists(context: _AppContext, host: str, plan_rel: str) -> bool:
+    """付属計画の実在を判定する。
 
     ローカルはファイルシステムの存在確認、リモートは`_remote_helper.py`のファイル取得の成否で判定する
-    （detailは一覧から除外されるため、リモートでは一覧応答から実在を判定できない）。
+    （付属計画は一覧から除外されるため、リモートでは一覧応答から実在を判定できない）。
     """
     if host == context.hostname:
-        return _local.resolve_under_root(context.root, detail_rel) is not None
-    if not _remote.is_safe_remote_relpath(detail_rel):
+        return _local.resolve_under_root(context.root, plan_rel) is not None
+    if not _remote.is_safe_remote_relpath(plan_rel):
         return False
     watcher = context.state.remote_watchers.get(host)
     try:
-        await _remote.fetch_remote_file(host, detail_rel, context.runner, watcher)
+        await _remote.fetch_remote_file(host, plan_rel, context.runner, watcher)
     except Exception as error:  # noqa: BLE001
-        # detail未作成は通常状態であり障害ではないため、記録レベルはdebugとする。
-        logger.debug("実装詳細の取得不可 host=%s path=%s: %s", host, detail_rel, error)
+        # 付属計画未作成は通常状態であり障害ではないため、記録レベルはdebugとする。
+        logger.debug("付属計画の取得不可 host=%s path=%s: %s", host, plan_rel, error)
         return False
     return True
 

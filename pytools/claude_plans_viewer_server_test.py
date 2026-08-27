@@ -432,6 +432,60 @@ class TestApiEndpoints:
         assert "data-plan-path" not in body
 
     @pytest.mark.asyncio
+    async def test_api_file_navigates_symmetrically_between_attached_plans(self, tmp_path: Path):
+        """base・detail・bugsが実在する場合、各ページを現在ページのテキストと他ページのリンクへ分ける。"""
+        contents = {
+            "a.md": "# base\n",
+            "a.detail.md": "# detail\n",
+            "a.bugs.md": "# bugs\n",
+        }
+        for path, content in contents.items():
+            (tmp_path / path).write_text(content, encoding="utf-8")
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+
+        labels = {"a.md": "計画本体", "a.detail.md": "実装詳細", "a.bugs.md": "バグ調査"}
+        for current, current_label in labels.items():
+            response = await client.get(f"/api/file?path={current}")
+
+            assert response.status_code == 200
+            body = await response.get_data(as_text=True)
+            assert current_label in body
+            for target, target_label in labels.items():
+                if target == current:
+                    assert f'data-plan-path="{target}"' not in body
+                else:
+                    assert f'<a href="#" data-plan-path="{target}">{target_label}を開く</a>' in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("current", ["a.md", "a.detail.md", "a.bugs.md"])
+    async def test_api_file_omits_attached_links_when_other_pages_are_absent(self, tmp_path: Path, current: str):
+        """同じstemの他ページが無い場合、base・detail・bugsのいずれからもリンクを生成しない。"""
+        (tmp_path / current).write_text("# only\n", encoding="utf-8")
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+
+        response = await client.get(f"/api/file?path={current}")
+
+        assert response.status_code == 200
+        assert "data-plan-path" not in await response.get_data(as_text=True)
+
+    @pytest.mark.asyncio
+    async def test_api_file_escapes_attached_plan_path(self, tmp_path: Path):
+        """付属計画へのdata属性はHTML属性値としてエスケープする。"""
+        stem = "a&<x>"
+        (tmp_path / f"{stem}.md").write_text("# base\n", encoding="utf-8")
+        (tmp_path / f"{stem}.detail.md").write_text("# detail\n", encoding="utf-8")
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+
+        response = await client.get("/api/file", query_string={"path": f"{stem}.md"})
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert 'data-plan-path="a&amp;&lt;x&gt;.detail.md"' in body
+
+    @pytest.mark.asyncio
     async def test_detail_link_follows_detail_creation_despite_body_cache(self, tmp_path: Path):
         """本文HTMLがキャッシュ済みでも、detailの作成がリンク表示へ反映される。"""
         (tmp_path / "a.md").write_text("# title\n", encoding="utf-8")

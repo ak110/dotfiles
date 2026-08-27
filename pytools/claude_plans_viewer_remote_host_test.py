@@ -537,6 +537,32 @@ class TestRemoteHostIntegration:
         assert '<a href="#" data-plan-path="foo.detail.md">実装詳細を開く</a>' in body
 
     @pytest.mark.asyncio
+    async def test_api_file_for_remote_host_navigates_symmetrically_between_attached_plans(self, tmp_path: Path):
+        """リモートでもbase・detail・bugsの実在ページ間を相互に移動できる。"""
+        runner = _FakeSshRunner(
+            read_responses={
+                ("host1", "foo.md"): "# base\n",
+                ("host1", "foo.detail.md"): "# detail\n",
+                ("host1", "foo.bugs.md"): "# bugs\n",
+            },
+        )
+        app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1"], ssh_runner=runner)
+        client = app.test_client()
+        labels = {"foo.md": "計画本体", "foo.detail.md": "実装詳細", "foo.bugs.md": "バグ調査"}
+
+        for current, current_label in labels.items():
+            response = await client.get(f"/api/file?host=host1&path={current}")
+
+            assert response.status_code == 200
+            body = await response.get_data(as_text=True)
+            assert current_label in body
+            for target, target_label in labels.items():
+                if target == current:
+                    assert f'data-plan-path="{target}"' not in body
+                else:
+                    assert f'<a href="#" data-plan-path="{target}">{target_label}を開く</a>' in body
+
+    @pytest.mark.asyncio
     async def test_api_file_for_remote_host_omits_detail_link_when_absent(self, tmp_path: Path):
         """リモートのdetail取得が失敗する場合はリンク要素を含めない。"""
         runner = _FakeSshRunner(read_responses={("host1", "foo.md"): "# remote title\n"})

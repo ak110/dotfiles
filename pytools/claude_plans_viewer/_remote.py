@@ -65,6 +65,15 @@ SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
 # `asyncio.subprocess.Process.stdout`に依存しないインターフェースを使う。
 LineSource = typing.AsyncIterator[str]
 
+# 一覧に表示しない付属計画の接尾辞。snapshot/upsertで同じ判定を再利用する。
+_LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md")
+
+
+def _is_listed_path(path: str) -> bool:
+    """リモートwatchイベントのパスが一覧対象かを判定する。"""
+    return not pathlib.PurePosixPath(path).name.endswith(_LISTED_EXCLUDED_SUFFIXES)
+
+
 # リモート側で実行する短いPython bootstrap。
 # `os.path.expanduser('~')`でホームを展開し、リモートdotfiles配下の`_remote_helper.py`を
 # `read_text(encoding='utf-8')`で読み込んで`exec`する。
@@ -470,7 +479,11 @@ class RemoteWatcher:
     async def _handle_event(self, event: typing.Mapping[str, typing.Any]) -> None:
         kind = event.get("type")
         if kind == "snapshot":
-            entries = [_state.make_file_entry(self.host, item) for item in event.get("entries", [])]
+            entries = [
+                _state.make_file_entry(self.host, item)
+                for item in event.get("entries", [])
+                if _is_listed_path(str(item["path"]))
+            ]
             host_info = event.get("host_info")
             async with self.state.lock:
                 self.state.remote_files[self.host] = entries
@@ -489,7 +502,8 @@ class RemoteWatcher:
             async with self.state.lock:
                 cached = self.state.remote_files.get(self.host, [])
                 cached = [e for e in cached if e.path != entry.path]
-                cached.append(entry)
+                if _is_listed_path(entry.path):
+                    cached.append(entry)
                 self.state.remote_files[self.host] = cached
             await _state.deliver_refresh(self.state)
             return
