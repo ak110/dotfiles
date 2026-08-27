@@ -3889,6 +3889,10 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tail -5; [ $? -eq 0 ]",
             "pytest -q | tail -5; status=$?",
             "pytest -q | tail -5; if [ $? -eq 0 ]; then echo ok; fi",
+            'set -o pipefail; pytest -q | tail -5; echo "$?"',
+            "set -euo pipefail; pytest -q | tail -5; exit $?",
+            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; return $?",
+            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; status=$?",
         ],
     )
     def test_status_after_truncation_warns(self, command: str):
@@ -3908,9 +3912,6 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tail -5; printf '%s\\n' done",
             'uv run --no-project --script /repo/other/scripts/check.py | tail -5; echo "$?"',
             'uv run --no-project --script /repo/agent-toolkit/scripts/check.txt | tail -5; echo "$?"',
-            "set -euo pipefail; pytest -q | tail -5; exit $?",
-            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; return $?",
-            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; status=$?",
         ],
     )
     def test_status_after_truncation_silent_when_status_is_preserved_or_not_reported(self, command: str):
@@ -3919,16 +3920,9 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         assert "reports the status of `head`/`tail`" not in _agent_messages(result)
 
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "pytest -q | tail -5; echo '$?'",
-            'set -o pipefail; pytest -q | tail -5; echo "$?"',
-        ],
-    )
-    def test_status_after_truncation_silent_when_shell_preserves_status(self, command: str):
-        """リテラル出力と`pipefail`有効時の終了状態には追加診断を出力しない。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+    def test_status_after_truncation_silent_for_literal_status(self):
+        """リテラルの`$?`出力には追加診断を出力しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "pytest -q | tail -5; echo '$?'"}})
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "truncating it" in messages

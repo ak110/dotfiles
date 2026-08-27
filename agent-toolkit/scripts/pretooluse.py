@@ -3125,47 +3125,10 @@ def _status_report_follows_truncation(command: str) -> bool:
     return any(_contains_unquoted_status_expansion(token) for token in tokens)
 
 
-def _pipefail_setting(command: str) -> bool | None:
-    """`set`による`pipefail`の最後の設定を返す。"""
-    tokens = _command_tokens(command)
-    if not tokens or tokens[0] != "set":
-        return None
-    pipefail_enabled: bool | None = None
-    index = 1
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            break
-        if token in {"-o", "+o"}:
-            if index + 1 < len(tokens) and tokens[index + 1] == "pipefail":
-                pipefail_enabled = token == "-o"
-            index += 2
-            continue
-        if len(token) > 1 and token[0] in {"-", "+"}:
-            option_chars = token[1:]
-            option_index = option_chars.find("o")
-            if option_index >= 0:
-                option_value = option_chars[option_index + 1 :]
-                if option_value == "pipefail":
-                    pipefail_enabled = token[0] == "-"
-                elif not option_value and index + 1 < len(tokens) and tokens[index + 1] == "pipefail":
-                    pipefail_enabled = token[0] == "-"
-                    index += 1
-        index += 1
-    return pipefail_enabled
-
-
 def _check_bash_output_status_after_truncation(command: str) -> str | None:
     """切り詰め直後の`$?`報告が検証コマンドの状態を隠す場合に診断を返す。"""
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    pipefail_enabled = False
     for index, serial_command in enumerate(serial_commands[:-1]):
-        pipefail_state = _pipefail_setting(serial_command)
-        if pipefail_state is not None:
-            pipefail_enabled = pipefail_state
-            continue
-        if pipefail_enabled:
-            continue
         if not any(
             _pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(serial_command)
         ):
