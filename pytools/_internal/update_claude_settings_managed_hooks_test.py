@@ -158,8 +158,11 @@ class TestNormalizeManagedHooks:
         tmp_path: Path,
         override_path: Path,
     ):
-        """実在するOS別配布元で旧個別要素を正規化し、再実行しても変更しない。"""
+        """実在するOS別配布元で旧個別要素を正規化し、WindowsのStop不在も検証する。"""
         override = json.loads(override_path.read_text(encoding="utf-8"))
+        if "Stop" not in override["hooks"]:
+            assert override_path.name == "claude_settings_json_managed.win32.json"
+            return
         managed_entries = override["hooks"]["Stop"]
         expected_entries = typing.cast(
             list[dict[str, list[dict[str, str]]]],

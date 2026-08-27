@@ -51,7 +51,7 @@
   それぞれ対応するフィードバック処理スキルの起動を記録する。Stop hookの自動session-review起動条件に使う。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に3フラグをまとめて偽へ戻す。
   手動session-review起動はこれらのフラグを必要としない。セッション終了まで保持する
-- `autonomous_exit_invoked`: `agent-toolkit/scripts/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼出しを記録し、
+- `autonomous_exit_invoked`: `agent-toolkit/scripts/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
   `agent-toolkit/scripts/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
 
 ## agents_server連携系
