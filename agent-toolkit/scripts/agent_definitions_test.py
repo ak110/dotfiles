@@ -327,6 +327,44 @@ def test_codex_running_takeover_requires_terminal_and_ownership_release() -> Non
     ) < waiting.index("Codex以外の対象でその後も応答が無ければ")
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     assert "Codex以外では、同一種別かつ同一用途の起動を反復しても収束しない場合に" in delegation
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    assert "Codexの`list_agents`が対象を`running`として返している間は" in runtime
+    assert "後続主体の新規起動、委譲先の巻取り又は役割引継ぎを行えるのは" in runtime
+
+
+def test_codex_recovery_entries_share_common_precondition() -> None:
+    """Codexの全回復入口が共通の起動・巻取り条件を先行適用する。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    common_heading = "## Codex後続操作の共通先行条件"
+    common_reference = "`runtime-routing.md`「Codex後続操作の共通先行条件」"
+
+    assert common_heading in runtime
+    for phrase in (
+        "Codexで後続主体の新規起動、委譲先の巻取り又は役割引継ぎを行えるのは、次の共通条件を満たす場合だけである",
+        "Codexの`list_agents`が対象を`running`として返している間は、補助観測や催促だけを根拠とする新規起動、巻取り、役割引継ぎを行わない",
+        "後続主体の新規起動、委譲先の巻取り又は役割引継ぎを行えるのは、ユーザーの明示要求、終端・失敗status、タスク契約上のキャンセルのいずれかを確認し、元担当の終端と書込所有権の解放を確認した場合だけである",
+        "この共通条件は、工程別モデル設定、代替起動、fast担当からfix担当への引継ぎを含むCodexの全ての新規起動、巻取り及び役割引継ぎへ適用する",
+    ):
+        assert phrase in runtime
+
+    for phrase in (
+        "Codexでは、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから新規起動する",
+        "Codexで未完了工程を巻き取る場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う",
+        "Codexでは`runtime-routing.md`「Codex後続操作の共通先行条件」を適用した後に当該工程の巻取り、別の経路への切替え又は役割の引継ぎを行う",
+        "Codexで未完了工程を巻き取るか新規起動する場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う",
+    ):
+        assert phrase in waiting
+    assert common_reference in waiting
+    assert common_reference in delegation
+    assert "Codexでは、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから新規起動する" in delegation
+    assert "Codexで再起動する場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う" in delegation
+    assert "Codexで手順5の新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
+    assert "Codexで各実装単位の新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
+    assert "Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
+    assert "Codexで代替起動を行う場合も、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
+    assert "Codexでfast担当からfix担当へ役割を引き継ぐ場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
 
 
 def test_waiting_contract_distinguishes_same_turn_polling_from_requery_triggers() -> None:
