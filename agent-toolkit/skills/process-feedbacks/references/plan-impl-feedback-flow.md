@@ -12,14 +12,14 @@ readyなレーンが1件なら現在のcleanなworktreeで実行する。
 完全な一覧には`用途=lane`、`管理対象領域=なし`、`作成主体=既存`、`回収可否=不可`として含める。
 複数レーンなら変更対象ファイルの重複を待機の条件にせず、利用可能な実装担当枠まで上流追随済みの別worktreeへ1レーンずつ割り当てる。
 呼び出し元は管理対象領域内へレーンのworktreeを作成する。
-完全な一覧の記録属性は`plan-impl-caller-reception.md`を正本とする。
+完全な一覧の記録属性は`agent-toolkit:plan-mode`の実装受領契約を正本とする。
 同じ計画ファイルに属する実装単位と、明示的な先行成果依存により同じレーンへ割り当てられた複数計画の実装単位は、同じworktreeで依存順に実装し、同時に1つの実装担当だけを置く。先行成果依存の無い計画ファイルを同じworktreeへ割り当てない。
 同一失敗箇所の残存後は、fast担当の終端確認が完了した後だけ同じworktreeへfix担当を逐次移行する。
 異なるレーンだけを別worktreeで並列化し、dirty差分を前提とする計画は並列化しない。
 
 各レーンの呼び出し元は、`plan-impl-executor`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
 各レーンは`plan-impl-executor`を起動する。
-各レーンの呼び出し元は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読み、
+各レーンの呼び出し元は`agent-toolkit:plan-mode`の実装受領契約を全文読み、
 `plan-impl-executor`の起動と受領に関する委譲元契約の正本とする。
 readyなレーンが1件の場合は、借用する現在worktreeを回収不可として含む完全な一覧を同文書に従って構成する。
 複数レーンの場合は、レーンのworktreeと計画が明示する管理対象worktreeを含む完全な一覧を同文書に従って構成する。
@@ -51,11 +51,11 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
    で終端する。報告にはレーンHEADの完全OID、レーン内検証結果、rebase要否を含める
 4. メインはマージ許可を同時に1レーンだけへ発行する。許可は`SendMessage`で当該レーンの識別子へ送り、統合ブランチ名と
    現在tipの完全OIDを含める。先着順を基本とし、依存・競合規模でメインが順序を裁量調整してよい
-5. 許可を受領したレーンは`マージ担当`（`skills/plan-mode/references/implementation-task.md`の担当種別。起動直前に
+5. 許可を受領したレーンは`マージ担当`（`agent-toolkit:plan-mode`の実装担当契約にある担当種別。起動直前に
    `atk config get execute_fix_model`で解決）へ委譲し、レーンworktree内で`git -C <lane-worktree> rebase --onto <tip>
    <共通ベース> HEAD`相当のrebaseを実行させる。統合ブランチtipが共通ベースと一致する最初のレーンはrebase不要で、
    そのままff前進する。
-   `execute_fix_model`の解決は`../../delegation/references/runtime-routing.md`「工程別モデル設定」に従う
+   `execute_fix_model`の解決は`agent-toolkit:delegation`の工程別モデル設定に従う
 6. rebase競合はレーン自身が解消する。マージ担当は自レーンの計画と、競合相手のcommitが属する計画（メインが許可時に
    計画パス一覧を渡す）を読み、双方の目的を両立する最小限の解消をする。
    競合を解消した場合は、解消箇所を対象にレーン内の変更ファイル限定検査を再実行する。
@@ -90,20 +90,20 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
     統合差分レビューを起動する場合は、呼び出し元が`execute_review_model`で二系統を起動する。
     統合後検証は「検証区分」でメイン所有とした全コマンドとし、長出力は`agent-toolkit:shell-exec`へ委譲してよい。
     失敗時は`execute_fix_model`で解決したCI修正担当（統合後検証失敗記録を受理する拡張後の契約。
-    `implementation-task.md`を参照）へセッションworktree上の修正を委譲する。
+    `agent-toolkit:plan-mode`の実装担当契約を参照）へセッションworktree上の修正を委譲する。
     二系統のレビュー担当は同じ`review.tsv`へ`plan-conformance`又は`independent`の`track`で指摘を追加し、
-    表のライフサイクル・モデル解決・収束判定は`review-loop-coordination.md`に従う。
-    統合差分レビュー修正後の再レビュー省略可否は`review-loop-coordination.md`の収束判定に従う
+    表のライフサイクル・モデル解決・収束判定は`agent-toolkit:plan-mode`のレビュー継続契約に従う。
+    統合差分レビュー修正後の再レビュー省略可否は`agent-toolkit:plan-mode`のレビュー継続契約にある収束判定に従う
     （指摘修正は`差分限定レビュー修正担当`へ委譲する）。
     この統合差分レビューの調整契約（着手前SHA＝手順8完了時点のHEAD完全OID、レビュー対象＝現HEAD、
     変更ファイル一覧＝累積差分の変更ファイル。レビュー表・指摘修正の委譲を含む）は、
-    `agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を共通正本としてメインが実行主体となる。
+    `agent-toolkit:plan-mode`のレビュー継続契約を共通正本としてメインが実行主体となる。
     レビューの収束後、統合後検証の結果を`### 統合後検証の実行と結果の採用`で確定してからpushへ進む
 11. push・CI通過確認・終端工程・レーンworktree回収は既存契約を維持する（メインだけが実行する）。
     push・CI成功後、ソート済みフィードバックファイル名一覧の順で既存の`atk mq adopt`を1件ずつ実行する。複数件の場合は最後の1件を除く実行へ`--skip-push`を付け、最後の1件は付けずに実行して滞留commitをまとめてpushする。1件の場合は`--skip-push`を付けない
 12. push前のfetch照合又は実pushで上流進行（non-fast-forward拒否）を観測した場合、メインは`execute_fix_model`で
     経路を解決する。
-    競合解消後に実施する統合差分レビューも`review-loop-coordination.md`の表ライフサイクル・モデル解決・収束判定を適用する。
+    競合解消後に実施する統合差分レビューも`agent-toolkit:plan-mode`のレビュー継続契約にある表ライフサイクル・モデル解決・収束判定を適用する。
     解決した`マージ担当`（工程`rebaseのみ`・対象worktree＝セッションworktree）へ、rebase（`git rebase --onto
     <新上流OID> <旧共通ベース> HEAD`相当。競合解消を含む）を委譲する。
     マージ担当は`rebaseのみ`工程のため競合解消時も解消箇所を含む`completed`で返す。
@@ -112,7 +112,7 @@ worktreeの完全な一覧、通常の実装レビュー用managed temp領域の
     差分限定入力は手順12専用の生成規則で作成する。着手前SHA＝新上流OID、レビュー対象＝rebase後HEAD、
     変更ファイル一覧＝競合解消箇所と統合後新規commit（手順10の修正・bump及び本手順の再bump）の変更ファイル、
     照合先計画＝バッチ全計画パス一覧とする。
-    バッチが`agent-toolkit/`配下の変更を含む場合は、`.claude/skills/agent-toolkit-edit/references/version-bump.md`
+    バッチが`agent-toolkit/`配下の変更を含む場合は、`agent-toolkit-edit`の版数更新詳細契約にある
     「競合解決と統合後の確認」に従い、公開済み統合先と正本のversionを比較する。
     未公開の振る舞い変更が公開済みと同じversionのまま残る場合は`scripts/agent_toolkit_bump.py`の再実行と
     manifest同期を行い、その差分をcommitする。
@@ -206,7 +206,7 @@ push・CI確認は既存契約の操作のため対象外）。実装時に本�
 
 ## マージ担当契約
 
-`skills/plan-mode/references/implementation-task.md`の担当種別`マージ担当`を使う。既存の担当種別のうちfast・fix・
+`agent-toolkit:plan-mode`の実装担当契約にある担当種別`マージ担当`を使う。既存の担当種別のうちfast・fix・
 レビュー修正の契約は変わらない。CI修正担当は入力のCI記録に加えて、CI記録と同じ構成（原因分析結果・修正の認可
 根拠・対象の検証結果）の統合後検証失敗記録も受理する（手順10の統合後検証失敗の修正委譲を受領する経路）。統合後
 検証失敗記録を受領した場合の担当内検証は記録が指定する対象に近い最小検証へ限定し、全体検証は手順10の
@@ -237,7 +237,7 @@ CI記録を受領した従来経路の契約は不変とする。
 
 ## 差分限定レビュー修正担当契約
 
-`skills/plan-mode/references/implementation-task.md`の担当種別`差分限定レビュー修正担当`を使う。
+`agent-toolkit:plan-mode`の実装担当契約にある担当種別`差分限定レビュー修正担当`を使う。
 
 - 発火: 差分限定レビュー調整（前掲の手順6のレーン競合解消レビュー、手順10・12の統合差分レビュー）で採用指摘が
   確定した場合に、調整主体（手順6はexecutor、手順10・12はメイン）が`execute_fix_model`で解決して起動する
@@ -258,7 +258,7 @@ CI記録を受領した従来経路の契約は不変とする。
 - `agent-toolkit:delegation`の受領status一覧に`checkpoint`がある: `status: checkpoint`は作業継続中の定義済み
   中間報告であり、待機表明とは区別して受理する。`checkpoint`を返せるのは、呼び出し元が最上位セッションであり、
   呼び出し元のタスク文書がチェックポイントを定義する委譲に限る
-- `references/claude-code-runtime.md`が定めるとおり、チェックポイント終端したエージェントの再開は最上位セッションが
+- `agent-toolkit:delegation`のClaude Code経路契約が定めるとおり、チェックポイント終端したエージェントの再開は最上位セッションが
   `SendMessage`で行う。多段委譲の中間主体はチェックポイントを新設しない
 - `agent-toolkit/agents/plan-impl-executor.md`のチェックポイント種別と報告項目:
   - `review_round`: 準拠系・盲検系の並列レビューの1ラウンド完了ごと。指摘件数（系統別）、重大度上位の指摘概要、修正内容の要約、
@@ -266,7 +266,7 @@ CI記録を受領した従来経路の契約は不変とする。
   - `merge_request`: レーン内レビュー収束後。レーンHEAD完全OID、検証結果、rebase要否を返す
   - `scope_deviation`: 実装中に計画の変更説明を超える差分・追加ファイル・想定外の前提差異を検出した時点で返す。
     事象、影響範囲、続行案を返す。
-    検出主体は差分を直接観測する実装担当である。実装担当は`implementation-task.md`の中間返却
+    検出主体は差分を直接観測する実装担当である。実装担当は`agent-toolkit:plan-mode`の実装担当契約にある中間返却
     `status: scope_deviation_hold`で終端する（検出時に追加変更とcommitへ進まず、事象・拡大差分の要約・影響範囲・
     続行案・基準OID・dirty差分・自身が起動した全プロセスの終了証跡を構造化して返す。`fast_fix_handoff`と同型）。
     executorはこれをチェックポイント`scope_deviation`へ変換してメインへ返す。
@@ -276,7 +276,7 @@ CI記録を受領した従来経路の契約は不変とする。
     パス付き）`のいずれかとし、`plan-impl-executor`は指示を対応する既存工程（追加指示の配送・レビュー継続・
     マージ工程）へ写す
   - チェックポイント報告は要約に留め、レビュー表・計画などの正本はパス参照で返す
-- `plan-impl-caller-reception.md`「受領」を呼び出し元の受領契約の正本とする
+- `agent-toolkit:plan-mode`の実装受領契約にある「受領」を呼び出し元の受領契約の正本とする
 - 頻度の既定: `review_round`は各ラウンド1回、`scope_deviation`は検出時のみ。第3ラウンド以降の`review_round`では
   メインが是正・再設計の要否を必ず判断する
 - チェックポイントへの対応（続行・是正・詳細要求・順序調整）は、排他制御・公開認可・検収基準などの安全境界を
@@ -284,17 +284,17 @@ CI記録を受領した従来経路の契約は不変とする。
 - 検出の目安は次のとおりとする。(a) 同一レーンの`review_round`が第3ラウンド以降になった場合は方向性を確認して
   是正・再設計の要否を判断する。(b) `scope_deviation`受領時は他レーンの変更対象との交差を照合し、交差する
   レーンへ次の再開指示で影響を通知する。
-  レビュー表の進行を観測したまま`review_round`が届かないレーンは、`plan-impl-caller-reception.md`の履行確認で扱う
-  成果物の進行もチェックポイントも観測できないレーンだけを、`waiting-and-monitoring.md`の停滞検知で扱う
+  レビュー表の進行を観測したまま`review_round`が届かないレーンは、`agent-toolkit:plan-mode`の実装受領契約にある履行確認で扱う。
+  成果物の進行もチェックポイントも観測できないレーンだけを、`agent-toolkit:delegation`の待機・停滞契約にある停滞検知で扱う
 
 ## 検証区分
 
-- 検証区分と終端工程の定義は`../../plan-mode/references/plan-file-standards.md`を正本とする
+- 検証区分と終端工程の定義は`agent-toolkit:plan-mode`の計画ファイル基準を正本とする
 - メインはレーン起動前に各計画の計画ファイル（メイン）（概要・検証区分・終端工程）を読み、起動文へ検証区分を明示する。
   バッチが1レーンだけの場合は統合後検証をレーン完了直後にメインが実行する（節約効果が無いため既存と同等の検証
   範囲を維持する）
-- `implementation-task.md`のfast手順「対象に近いformat、lint、testを実行し」は維持し、fix担当・レビュー修正担当が
-  「全検証」を要求する箇所は「起動文で指定された検証区分のレーン内検証」とする。`plan-impl-caller-reception.md`の
+- `agent-toolkit:plan-mode`の実装担当契約にあるfast手順「対象に近いformat、lint、testを実行し」は維持し、fix担当・レビュー修正担当が
+  「全検証」を要求する箇所は「起動文で指定された検証区分のレーン内検証」とする。`agent-toolkit:plan-mode`の実装受領契約にある
   受領実測も同じ区分で読み替える
 - 統合後検証の失敗はメインが所有する（前掲の手順10）。失敗の原因レーンが特定できる場合も、レーンを再起動せず
   セッションworktree上の修正で解消する

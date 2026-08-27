@@ -17,6 +17,23 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 同節が定める契機（回答期限の超過、又は期限を提供しない実行環境では応答を得られないと判断した時点）で
 TBDへ永続化して暫定判断で進める。
 
+各工程の判断へ入る前に、対象に応じて次の資料を全文読む。
+
+- レーン自己マージの版数更新時は`.claude/skills/agent-toolkit-edit/references/version-bump.md`を読む
+- 別リポジトリ項目の投入時は`agent-toolkit/skills/add-feedback/references/cross-repository-submission.md`を読む
+- 複数項目の一括取得時は`agent-toolkit/skills/add-feedback/references/managed-temp-bulk-show.md`を読む
+- 配置判断時は`agent-toolkit/skills/coding-standards/references/design-heuristics.md`を読む
+- Claude Codeの経路を扱う時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を読む
+- 工程別モデル設定を扱う時は`agent-toolkit/skills/delegation/references/runtime-routing.md`を読む
+- 待機・停滞を扱う時は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`を読む
+- 計画実装の担当を扱う時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を読む
+- 計画ファイルを扱う時は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`を読む
+- 計画実装の受領を扱う時は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を読む
+- レビュー継続を扱う時は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を読む
+- 採否記録を扱う時は`agent-toolkit/skills/process-feedbacks/references/decision-format.md`を読む
+- 保留を扱う時は`agent-toolkit/skills/process-feedbacks/references/hold-with-tbd-inject.md`を読む
+- 調査チェックリストを扱う時は`agent-toolkit/skills/process-feedbacks/references/review-checklists.md`を読む
+
 ## 1. 入力と着手可否
 
 対象リポジトリの絶対パスを確定し、次を行う。

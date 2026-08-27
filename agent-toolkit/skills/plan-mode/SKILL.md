@@ -42,6 +42,23 @@ description: >
 実装工程では確定済み内容の転記・配置・検証だけを行い、原資料から内容を再確定しない。
 この限定は、実装者が現行の対象ファイルと技術的な成立条件を再調査する義務を妨げない。
 
+計画の各工程へ入る前に、次の資料を該当する判断に応じて全文読む。
+
+- 一括取得時は`agent-toolkit/skills/add-feedback/references/managed-temp-bulk-show.md`を読む
+- バグのCI失敗と原因を扱う時は`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`及び`agent-toolkit/skills/bugfix/references/root-cause-analysis.md`を読む
+- 履歴書換えとpushを扱う時は`agent-toolkit/skills/commit/references/history-rewrite.md`及び`agent-toolkit/skills/commit/references/push-and-ci.md`を読む
+- 委譲の工程別モデル設定を扱う時は`agent-toolkit/skills/delegation/references/runtime-routing.md`を読む
+- 独立レビューを計画する時は`agent-toolkit/skills/plan-mode/references/implementation-independent-review-task.md`を読む
+- 計画レビューを計画する時は`agent-toolkit/skills/plan-mode/references/implementation-plan-review-task.md`を読む
+- 実装担当へ引き継ぐ時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を読む
+- 計画ファイルを起草する時は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`を読む
+- 計画レビューの起動を扱う時は`agent-toolkit/skills/plan-mode/references/plan-review-task.md`を読む
+- レビュー継続を扱う時は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を読む
+- フィードバック採否を計画へ反映する時は`agent-toolkit/skills/process-feedbacks/references/decision-format.md`を読む
+- 計画実装型の統合を扱う時は`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`を読む
+- 計画案の妥当性を評価する時は`agent-toolkit/skills/review-standards/references/judgment-details.md`を読む
+- セッション振り返りの生成基準を扱う時は`agent-toolkit/skills/session-review/references/generation-criteria-detail.md`を読む
+
 計画が明示的な変更対象としない既存の判定・遮断・順序制御の機構へ間接的に作用する場合は、当該機構の設計根拠を記録した箇所（docstring、コメント、先行計画、設計文書）を読み、機構の成立条件を抽出して計画が当該条件を崩さないことを確認する。
 抽出した成立条件と確認結果は`## 実装資料`へ記録する。
 

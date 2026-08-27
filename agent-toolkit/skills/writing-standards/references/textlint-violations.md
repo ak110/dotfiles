@@ -22,14 +22,13 @@ textlintを中心としつつ、`pyfltr`経由で同時実行される他のツ�
 
 ## 文体と箇条書き
 
-- 箇条書きの記述単位規定は`notation-rules.md`
+- 箇条書きの記述単位規定は`agent-toolkit:writing-standards`のMarkdown記述スタイル
   「Markdown記述スタイル」節に集約する。
   1項目1文・1項目1行を原則とし、1文が長い場合や複数論点を含む場合はサブバレット階層化または項目分割で表す
 - 箇条書き項目末尾に句点を付けない
   （`preset-jtf-style 1.1.3.箇条書き`の`shouldUsePoint: false`規定に整合。
   当リポジトリでは`shouldUsePoint`を`false`で運用する）
-- 冗長表現（`ja-no-redundant-expression`の`dict5`系）はサ変動詞単独形へ置き換える。
-  置換例と許容される例外は`tone-examples.md`「冗長表現」節を参照する
+- 冗長表現（`ja-no-redundant-expression`の`dict5`系）は`agent-toolkit:writing-standards`の口調自己点検にある冗長表現の例に従い、サ変動詞単独形へ置き換える
 
 ## コードフェンスとラベル
 
@@ -38,7 +37,7 @@ textlintを中心としつつ、`pyfltr`経由で同時実行される他のツ�
   - 外側fenceは3バッククォートを既定とする。内側に3バッククォートを含むコードブロックを書く場合のみ4バッククォートを採用する
 - 列挙の分類ラベルに英字（`a`・`b`・`c`等）を使うと違反が連鎖する
   - 全角の`（a）`は`ja-technical-writing/ja-unnatural-alphabet`違反を招く
-  - バッククォート囲み表記は`notation-rules.md`「Markdown記述スタイル」の
+  - バッククォート囲み表記は`agent-toolkit:writing-standards`のMarkdown記述スタイルにある
     バッククォート用途規約（コードリテラル・コマンド・ファイルパス専用）違反を招く
   - バレット内番号ラベル方式（`- 1. xxx` `- 2. yyy`）はmarkdownlint-cli2の自動正規化で全番号が`- 1.`へ統一され識別性が失われる
   - 分類ラベルには順序付きリスト記法（`1. xxx`形式の直接記述）または意味ラベル（「仕様変更系」「追認系」等）を使う
@@ -53,7 +52,7 @@ textlintを中心としつつ、`pyfltr`経由で同時実行される他のツ�
 - 1文は目安80字を狙い、100字を超える場合は句点で分割する
   （いずれも目安であり、機械チェックの上限は150字。`sentence-length`違反の予防を目的とする）
   - 規範文書の追記箇条書き案は起草直後に対象文の文字数を概算し、上記の目安に収まるまで整形する
-- 口語的な動詞は`文体と箇条書き`節から参照する`tone-examples.md`の`冗長表現`節に従って書き換える
+- 口語的な動詞は`agent-toolkit:writing-standards`の口調自己点検にある冗長表現の例に従って書き換える
 - フィードバック原文・レビュー指摘・エラー出力の引用フレーズを規範文へ埋め込む前に、
   `ja-no-weak-phrase`に該当する語を機械的に書き換える
   - 書き換え例: 弱い自信を示す語尾相当を観測事象化した表現へ、
@@ -68,7 +67,7 @@ textlintを中心としつつ、`pyfltr`経由で同時実行される他のツ�
 
 typos linterは`text`コードブロック内も検査対象とする。固有名や末尾が切り詰められたファイル名で擬陽性が発生しやすい。
 除外語登録・プレースホルダー化のいずれも緩和判断に該当する。
-採用可否は`lint-relax-criteria.md`の判断フレーム・検証要件に従う。
+採用可否は`agent-toolkit:writing-standards`のlint緩和基準にある判断フレーム・検証要件に従う。
 
 - 対象語句が固有名・意味のある語（プロジェクト名・OSS名等）の場合は除外語登録を選ぶ
   - 登録先は`pyproject.toml`の`[tool.typos.default.extend-words]`

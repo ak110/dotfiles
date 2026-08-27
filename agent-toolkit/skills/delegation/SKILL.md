@@ -14,6 +14,13 @@ user-invocable: false
 
 委譲先とモデルを選ぶ時点で`references/runtime-routing.md`を全文読み、同文書の経路選択とモデル区分を適用する。
 
+委譲経路、モデル設定、Claude Code固有経路、完了通知及び待機・停滞を確定する時は、次の資料を全文読む。
+
+- `agent-toolkit/skills/delegation/references/claude-code-runtime.md`
+- `agent-toolkit/skills/delegation/references/runtime-routing.md`
+- `agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`
+- `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
+
 ## 送信
 
 起動文は呼び出し元と委譲先の双方のコンテキストを消費するため、

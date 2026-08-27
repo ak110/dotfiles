@@ -18,6 +18,14 @@ description: >
 3. CI失敗を扱う場合は`references/ci-failure-handling.md`も全文読む
 4. 計画、実装、レビューのいずれでも同じ判定と原因区分を用いる
 
+原因区分、分岐検証、CI通過及び実装担当の契約を確定する時は、対象工程に応じて次の資料を全文読む。
+
+- `agent-toolkit/skills/bugfix/references/root-cause-analysis.md`
+- `agent-toolkit/skills/coding-standards/references/testing.md`
+- `agent-toolkit/skills/commit/references/push-and-ci.md`
+- `agent-toolkit/skills/delegation/references/runtime-routing.md`
+- `agent-toolkit/skills/plan-mode/references/implementation-task.md`
+
 深掘り条件に該当しない局所不良は、直接的原因の是正と近接検証で完了する。
 深掘り条件に該当する不良は、4原因区分、原因起点の類似見直し、
 是正・横展開・再発防止を確定する。

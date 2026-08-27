@@ -32,7 +32,7 @@ auto modeは次の4区分でルールを判定する。
 auto mode classifierの順で行われる。
 PreToolUseフックの`permissionDecision: "allow"`はpermissions評価を迂回しない。
 auto modeの拒否ではなく従来の確認ダイアログが対象の場合は本節の対象外であり、
-`references/claude-hooks.md`「PermissionRequest」節のフックで自動許可を扱う。
+`agent-toolkit:agent-standards`のHook実装ガイドラインにある`PermissionRequest`節で自動許可を扱う。
 
 ## カスタムルール追加のワークフロー
 

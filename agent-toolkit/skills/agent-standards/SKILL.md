@@ -150,3 +150,7 @@ Claude Codeのhookは状態ファイル`{tempdir}/claude-agent-toolkit-{session_
 - `references/hook-message-labeling.md`: hookのエンドユーザー向けメッセージを新設・改訂する時
 - `references/session-records.md`: セッション記録の集計・分析時
 - `references/tool-operations.md`: 大量の文書読込・大規模ブロック置換・plugin資源のroot失効時
+- agent定義・スキル編集時は`agent-toolkit/skills/agent-standards/references/agent-skills.md`を全文読む
+- hook編集時は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`を全文読む
+- hookメッセージ編集時は`agent-toolkit/skills/agent-standards/references/hook-message-labeling.md`を全文読む
+- セッション状態フラグを扱う時は`agent-toolkit/skills/agent-standards/references/session-state-flags.md`を全文読む

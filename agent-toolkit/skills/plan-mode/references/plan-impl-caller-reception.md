@@ -43,9 +43,8 @@
   （計画ファイルは新書式なら計画ファイル（メイン）・計画ファイル（詳細）の絶対パスの組を1組以上、旧形式は単一パス。複数組を渡す場合は計画間の統合順を明示すること。新旧の判別は
   対応する`<stem>.detail.md`ファイルの実在で行う）。
   同じ計画ファイルに属する実装単位と、明示的な先行成果依存により同じレーンへ割り当てられた複数計画の実装単位は、同じworktreeで依存順に実装し、同時に1つの実装担当だけを置く
-- `implementation-task.md`、`implementation-plan-review-task.md`、`implementation-independent-review-task.md`、
-  `review-loop-coordination.md`、
-  `../../reviewee-standards/SKILL.md`の絶対パス
+- `agent-toolkit:plan-mode`の実装担当契約、計画レビュー担当契約、独立実装レビュー担当契約及びレビュー継続契約
+- `agent-toolkit:reviewee-standards`のSKILL.mdの絶対パス
 - worktreeの完全な一覧。各worktreeへ前掲の記録属性を付し、借用時の管理対象領域は`なし`とする
 - 通常の実装レビュー用managed temp領域の絶対パス
 - ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す
@@ -73,7 +72,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 `scope_deviation`受領時は他レーンの変更対象との交差を照合して、交差するレーンへ次の再開指示で影響を通知する。
 
 レーンの起動時に、呼び出し元は渡した管理対象一時領域からレーンごとのレビュー表の絶対パスを確定して保持する。
-レビュー表の初期化は、既存の`review-loop-coordination.md`どおり調整主体が初回レビュー前に行い、呼び出し元は初期化又は書込みを行わない。
+レビュー表の初期化は、既存の`agent-toolkit:plan-mode`のレビュー継続契約どおり調整主体が初回レビュー前に行い、呼び出し元は初期化又は書込みを行わない。
 初期化前はレビュー表を成果物観測へ含めず、読み取り専用の存在確認後に、既存の成果物観測へ`atk watch --file <レーン名>-review=<レビュー表の絶対パス>`として追加する。
 初回レビュー前に空表へ初期化する既存契約に従い、受領済み行数の初期値は0とする。
 `review_round`の受領時は、その時点で観測したレビュー表の行数を当該レーンの受領済み値として更新する。
@@ -105,7 +104,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
    対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返したことを確認する。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。
    範囲列挙、merge確認、元HEADの確定、公開済み判定、OID・件名の列挙、件名一意性確認のいずれかに失敗するか範囲にmergeを含む場合は、fixupを作成せず`needs_escalation`で返したことを確認する。
    autosquash直前の再判定をTOCTOU対策として維持したことも確認する。
-   実装担当が各fixup作成前、autosquash直前とamend直前の各phaseで`agent-toolkit:commit`の`references/history-rewrite.md`
+   実装担当が各fixup作成前、autosquash直前とamend直前の各phaseで`agent-toolkit:commit`の履歴書換え契約にある
    「プッシュ済み判定」の汎用判定（`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`）を再実行したことを確認する。
    汎用判定に失敗した場合（Gitコマンドの非0終了を含む）は、履歴を書き換えず`needs_escalation`で返したことを確認する。
    phaseごとに反復された`rewrite_guard`の履歴順`target_oids`、各Gitコマンドの終了コード、公開済み判定結果及び秘密情報を除去した必要最小限のエラー要約を履歴実体と照合する。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを順序どおり含める。autosquashでは`target_oids`のfirst-parent全OIDを公開済み判定して遮断し、1件でも公開済み・判定不能または範囲にmergeを含む場合は履歴を書き換えていないことを確認する。
@@ -141,12 +140,11 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 
 ## pushとCI
 
-実装委譲はcommitと準拠系・盲検系のレビューまでとする。呼び出し元が`../../commit/SKILL.md`の
-`references/push-and-ci.md`を読み、pushとCI通過確認を所有する。
+実装委譲はcommitと準拠系・盲検系のレビューまでとする。呼び出し元が`agent-toolkit:commit`のpushとCI契約を読み、pushとCI通過確認を所有する。
 CI失敗時は`agent-toolkit:bugfix`で原因を確定する。原因分析によりコード・テスト・設定の修正commitが必要と確定した場合だけ、
-`../../bugfix/references/ci-failure-handling.md`のCI修正担当への委譲契約を適用する。
+`agent-toolkit:bugfix`のCI失敗分析契約にあるCI修正担当への委譲契約を適用する。
 CI記録と同じ構成の統合後検証失敗記録を受領した場合は、担当内検証を記録が指定する対象に近い最小検証へ限定し、
-全体検証はメインが統合後の該当工程で1回だけ再実行する（`implementation-task.md`のマージ担当契約と同じ工程別例外）。
+全体検証はメインが統合後の該当工程で1回だけ再実行する（`agent-toolkit:plan-mode`のマージ担当契約と同じ工程別例外）。
 外部基盤障害など修正commitを要しない失敗では修正担当を起動せず、既存の原因別経路を維持する。
 pushとCI成功を実測する。ソート済みフィードバックファイル名一覧を受領した場合は、一覧の順で既存の`atk mq adopt`を1件ずつ実行し、
 各採用処理の保存結果を照合する。

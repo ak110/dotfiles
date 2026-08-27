@@ -142,7 +142,7 @@ Codexでfast担当からfix担当へ役割を引き継ぐ場合は、`Codex後�
 - 上表に無いモデルは候補を増やす用途では使わない。上表のある行の組合せを、同等以上と確認できる別の組合せへ置き換える用途にだけ使う
 - レビュー工程では上表の組合せより能力が下がる組合せを選ばない
 - effortを指定できない経路で上表の組合せを満たせない場合は、`codex`の行へ切り替えるか、より上位のモデルの行を選ぶ。
-  Claude経路のeffortはエージェント定義のfrontmatterで確定し、frontmatterを持たない経路では指定できない（`claude-code-runtime.md`）
+  Claude経路のeffortはエージェント定義のfrontmatterで確定し、frontmatterを持たない経路では指定できない（`agent-toolkit:delegation`のClaude Code経路契約）
 - 細部の欠陥検出は`codex`、設計判断は`claude`を優先する。実装工程では`claude`の行のeffortを上表の値より下げてよい
 - 読むファイル数が多いと事前に判明している工程へは、軽量モデルの高effortを割り当てない。推論部分がコンテキスト長を消費するためである。
   対象ファイル数が判明していない工程には適用せず、「modelとreasoning effort」の第2項による軽量モデルとreasoning effort `max`の選択を妨げない

@@ -139,9 +139,9 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`を検収し�
 不採用、または採否未確定（`未検証`を含む）の指摘は修正対象及び`target_oids`へ含めず、修正差分を適用せず、履歴と作業ツリーを変更しないまま`needs_escalation`で返す。
 レビュー担当の修正方針を要件へ昇格させず、採否を独立に確定する。
 レビュー修正の採否、対象実装単位及び対応表が確定するまで、修正差分を適用せず、履歴を変更しない。
-`agent-toolkit:commit`の`references/history-rewrite.md`を全文読み、履歴書換え前のベース、HEAD、実装単位の順序、各完全OID、親子関係、commit件数、件名とtrailer、各commitの差分帰属を保持する。
+`agent-toolkit:commit`の履歴書換え契約を全文読み、履歴書換え前のベース、HEAD、実装単位の順序、各完全OID、親子関係、commit件数、件名とtrailer、各commitの差分帰属を保持する。
 
-履歴書換えの操作、事前遮断及び失敗時の扱いは`../../commit/references/history-rewrite.md`「fixupの実行上の制約」を正本とする。実装担当は次のphaseだけを判断し、各phaseの対象完全OID、Gitコマンドの終了コード、公開済み判定とエラー要約を`rewrite_guard`へ記録する。
+履歴書換えの操作、事前遮断及び失敗時の扱いは`agent-toolkit:commit`のfixup実行制約を正本とする。実装担当は次のphaseだけを判断し、各phaseの対象完全OID、Gitコマンドの終了コード、公開済み判定とエラー要約を`rewrite_guard`へ記録する。
 
 | phase | 対象 | 失敗時の返却 |
 | --- | --- | --- |
@@ -157,7 +157,7 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`を検収し�
 委譲元から着手前の未コミット差分の採否判定を明示的に委ねられ、不採用と判定して破棄する場合は、
 破棄前に差分を退避し、退避識別子を完了報告へ含める。
 merge進行中でなければ`atk worktree-stash save --label <退避ラベル>`を使い、merge進行中は
-`agent-toolkit:commit`の`references/history-rewrite.md`「merge進行中の退避」に従う。復元時は
+`agent-toolkit:commit`のmerge進行中の退避契約に従う。復元時は
 `git stash apply --index refs/worktree/<退避ラベル>`を使い、ステージ済み・未ステージ・未追跡の3状態を対象とする。
 共有`refs/stash`へ直接触れる複数コマンドを実行主体へ指示しない。
 退避の破棄は既存の破壊的操作規範に従い、自動で破棄しない。
@@ -181,7 +181,7 @@ feedbacks: <受領したソート済みフィードバックファイル名一�
 rewrite_guard:
 - phase: <pre_fixup|fixup:<単位順>|autosquash|amend>
   target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
-  published_decision: <`agent-toolkit:commit`の`references/history-rewrite.md`「プッシュ済み判定」の汎用判定結果>
+  published_decision: <`agent-toolkit:commit`の「プッシュ済み判定」にある汎用判定結果>
   git_command_exit_codes: <各Gitコマンドの終了コード>
   error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
 plan_deviation:

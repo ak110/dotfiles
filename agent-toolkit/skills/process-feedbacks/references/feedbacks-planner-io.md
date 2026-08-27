@@ -10,7 +10,7 @@
 
 - `original_investigations`: 元のバッチ全項目の調査結果全文
 - `raw_sources`: 原文frontmatterの`source`原値。欠落は値なしとする
-- `user_decisions`: `decision-format.md`が定める原文正本IDごとの累積レコード
+- `user_decisions`: `agent-toolkit:process-feedbacks`の採否記録契約が定める原文正本IDごとの累積レコード
 - `answer_or_tbd`: 出所と引用範囲付きの逐語回答又は保存TBD。未受領のIDも保持する
 - `plan_path`: 初回起動と同じ計画ファイルの絶対パス
 
@@ -20,7 +20,7 @@ plugin内のタスク文書と規範スキルの絶対パスは、注入済み�
 
 ```text
 status: completed | awaiting_confirmation | needs_escalation
-decision: <採否とdecision-format.mdに基づく根拠>
+decision: <採否記録契約に基づく根拠>
 decisions:
 - <バッチ全項目のファイル名、素材ID、採否、理由・差異、範囲及びキュー操作判定>
 plan: <計画ファイルの絶対パス、実在・分量の証跡、担当項目との対応及び要約。該当しない場合はなし>
@@ -28,7 +28,7 @@ review: <計画ファイルごとの収束状態、検査結果、write_status>
 tbd:
 - <通常の将来判断TBD候補。無ければ「なし」>
 user_decisions:
-- <decision-format.mdが定める累積レコード>
+- <採否記録契約が定める累積レコード>
 blockers:
 - <未完了事項。完了時は「なし」>
 confirmation_context:

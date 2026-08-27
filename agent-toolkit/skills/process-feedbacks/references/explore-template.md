@@ -8,7 +8,7 @@
   - フィードバック原文経路では対象のフィードバックファイル名（1件以上）、対象リポジトリ及び事前割当した素材ID
   - 直接経路では対象の素材IDと本文、投入元及び引用範囲
 - プロジェクト規範の絶対パス
-- `review-checklists.md`の絶対パス
+- `agent-toolkit:process-feedbacks`の内容調整チェックリストの絶対パス
 - バグ対応の場合だけ`<plugin root>/skills/bugfix/SKILL.md`の絶対パス
 - 調査対象と完了条件
 
@@ -17,7 +17,7 @@
 ## 調査
 
 - フィードバック原文経路では、担当が1件の場合は`atk mq show <filename> --target-repo=<repo> --skip-pull`を単数形で1回実行する。
-  担当が2件以上の場合は、`../../add-feedback/references/managed-temp-bulk-show.md`を読み、同文書の一括取得手順を完了させる。
+  担当が2件以上の場合は、`agent-toolkit:add-feedback`の一括取得契約を読み、同契約の手順を完了させる。
   終了コード0で全項目が出力された場合は、CLIのファイル名見出しから本文を項目へ対応付ける。
   担当項目の警告・エラー後の再取得は、当該項目だけを単数形で取得する。
   表示用見出し、YAML frontmatter及びCLI付加の末尾改行を除いたフィードバック本文を調査対象とする。

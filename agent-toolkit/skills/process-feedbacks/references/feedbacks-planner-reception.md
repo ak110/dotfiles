@@ -58,7 +58,7 @@ upstream包含の確認不能でも同様に未完了で停止する。
 新しい識別子を起動する。確認待ち後の再開起動には、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、
 原文正本IDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答又は保存TBD、同じ計画ファイルの絶対パスを渡す。
 調査結果、原文source及び`user_decisions`は再取得、再調査、要約をしない。回答又はTBDを対応する採否記録へ統合する。
-`user_decisions`は`decision-format.md`が定める原文正本IDごとの累積レコードとして渡す。
+`user_decisions`は`agent-toolkit:process-feedbacks`の採否記録契約が定める原文正本IDごとの累積レコードとして渡す。
 
 初回起動には再開コンテキストを含めない。
 確認待ち後の再開起動には、`confirmation_context`の`original_investigations`、`raw_sources`、IDごとの累積`user_decisions`、`answer_or_tbd`、`plan_path`を全て渡す。
@@ -97,7 +97,7 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 
 ### 一括取得の管理対象一時領域
 
-同一対象リポジトリの複数ファイル名を同一工程で取得する時点で、`../../add-feedback/references/managed-temp-bulk-show.md`を読み、同文書の手順を完了させる。
+同一対象リポジトリの複数ファイル名を同一工程で取得する時点で、`agent-toolkit:add-feedback`の一括取得契約を読み、同契約の手順を完了させる。
 終了コード2では標準出力の部分結果を使わず、計画作成又は初回レビューを開始しないで入力不足として起動主体へ返す。
 
 通常の将来判断TBD候補は、技術調査と明文化済み方針で確定できず、かつ採用済み本文が要求しない選択肢に限定する。
@@ -105,8 +105,8 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 目的及びフィードバック本文が指定する外部可視要素を維持したコーディングエージェント向け規範文書の文言、列挙及び節配置は、
 `feedbacks-planner`の計画担当が技術判断として確定する。
 これらの差異は`user_decisions`へ含めない。
-差異と根拠は`decision-format.md`の採否理由又は反映内容と計画へ記録する。
-採否確定工程では由来区分を`decision-format.md`「採否結果」の値集合を参照して判定し、エージェント由来でない不採用候補を
+差異と根拠は`agent-toolkit:process-feedbacks`の採否記録契約にある採否理由又は反映内容と計画へ記録する。
+採否確定工程では由来区分を`agent-toolkit:process-feedbacks`の採否結果契約にある値集合を参照して判定し、エージェント由来でない不採用候補を
 原文との差異と技術的理由付きの不採用確認用`user_decisions`へ返す。`user_decisions`は通常の将来判断TBDと区別し、
 不採用候補の採否確定だけに用いる。部分採用はこの確認へ機械的に含めず、差異、採用範囲、除外範囲、採否理由を採否記録へ残す。
 メインは不採用確認用`user_decisions`ごとに`AskUserQuestion`を発行し、直接回答を受領した場合は出所と引用範囲付きの逐語文を渡して
@@ -135,7 +135,7 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 同じ計画ファイルの絶対パスを照合する。計画ファイルの起草とレビューは新規起動後に検収する。
 完了報告を次の実体へ照合する。
 
-- 採否記録と`decision-format.md`
+- 採否記録と`agent-toolkit:process-feedbacks`の採否記録契約
 - バッチ全項目の採否記録を検収し、各計画担当へ対応表が割り当てた担当ファイル集合が渡され、全計画の`## 実施内容`のフィードバック由来行が合わせて計画対象集合と1:1で一致し、要求別の採否詳細が別行へ複製されていないこと
 - 採用時の全計画ファイルの実在、分量、計画構造検査結果、計画ごとのレビュー収束状態
 - 計画の実施内容、提示素材、変更履歴及び計画ファイル（詳細）が、対象フィードバック、内部で確定した採否・範囲・理由、ユーザー合意及び実装順序に対応していること
@@ -146,10 +146,10 @@ agent-toolkitプラグイン内のタスク文書と規範スキルの絶対パ�
 - reject対象とhold対象のファイル名、判定区分、採否理由及びhold対象の既存TBD・依存・`blocked`状態との対応
 
 メインは完了報告の検収直後に、検収済みのreject対象へ`atk mq reject <filename> --note=<採否理由>`を実行し、
-hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキュー操作は`feedbacks-planner`の判定による計画対象集合を変更しない。
+hold対象へ`agent-toolkit:process-feedbacks`の保留契約を適用する。このキュー操作は`feedbacks-planner`の判定による計画対象集合を変更しない。
 操作前に保存状態を照合し、完了済みのreject又は保留操作を再実行しない。
 
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定できない項目の不採用は、原文との差異と技術的理由を示す`AskUserQuestion`の回答後だけ確定する。
+`agent-toolkit:process-feedbacks`の採否結果契約にある値集合でエージェント由来と判定できない項目の不採用は、原文との差異と技術的理由を示す`AskUserQuestion`の回答後だけ確定する。
 回答又はTBDの保存・依存設定を確認できない場合は`atk mq reject`を実行せず、元項目をactiveのまま保持して失敗を返す。
 同じrejectメモを複数項目へ用いる場合も、各項目で同じ理由が成立する根拠を採否記録へ対応付ける。
 
@@ -195,7 +195,7 @@ hold対象へ`hold-with-tbd-inject.md`の保留経路を適用する。このキ
 元項目がactiveな場合は、元のファイル名と失敗内容を持つ失敗TBDを既存の投入経路で1件保存し、
 保存コマンドの完了表示にエラーが無いことを確認する。
 警告が出た場合は`atk mq show <失敗TBD filename> --target-repo=<repo>`で保存内容に欠落が無いことを確認する。
-元項目がactiveな場合は、由来にかかわらず`hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。不採用確認を経ずに元項目をrejectせず、失敗処理から`atk mq reject`を呼び出さない。
+元項目がactiveな場合は、由来にかかわらず`agent-toolkit:process-feedbacks`の技術的失敗契約に従ってTBD依存を設定し、`blocked`を確認して保留する。不採用確認を経ずに元項目をrejectせず、失敗処理から`atk mq reject`を呼び出さない。
 再取得失敗、想定外状態又は失敗TBDの保存失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目をファイル名昇順で各1回処理する。
 結果反映エラーが先頭、中間、末尾のいずれで発生しても、全ファイル名を各1回処理する。
@@ -205,11 +205,11 @@ Git操作、3分類及び元項目の`feedbacks-planner`再開は行わない。
 採用結果では、`feedbacks-planner`が返した対応表を参照し、各フィードバックファイル名に対応する計画ファイル絶対パスを用いて
 `atk mq convert-to-plan <filename> --plan-file=<計画絶対パス> --target-repo=<repo>`を実行する。`<計画絶対パス>`は対応表が当該ファイル名へ与える計画ファイル絶対パスとする。
 保存結果の`plan_file`を対応表が当該ファイル名へ割り当てた実在する計画パスへ照合する。
-別リポジトリ項目は終端結果として扱わず、`../../add-feedback/references/cross-repository-submission.md`を正本として登録・照合する。
+別リポジトリ項目は終端結果として扱わず、`agent-toolkit:add-feedback`の別リポジトリ投入契約を正本として登録・照合する。
 登録・照合の結果から移管先ファイル名と本文を照合できた場合だけ、
 移管先リポジトリとファイル名付きの項目固有メモを付けて`atk mq rm <filename> --force --note=<移管先ファイル名>`で元項目を除去する。登録又は照合に失敗した場合は元項目を保持する。
 ユーザー判断の保留時はTBD候補を`agent-toolkit:add-feedback`へ渡す。
-`hold-with-tbd-inject.md`の`保留と再開`に従い、既存の有効依存とTBDのファイル名を登録してから
+`agent-toolkit:process-feedbacks`の保留と再開契約に従い、既存の有効依存とTBDのファイル名を登録してから
 通常の`atk mq return-to-inbox`でinboxへ戻し、active一覧で`blocked`を確認する。
 ファイル名で表せない外部条件待ちは、観測方法、現在値、解除条件、再開工程を本文へ記録し、
 `atk mq return-to-inbox <filename> --cooldown-days=3`で戻す。別のフィードバック待ちは`depends_on`を使う。

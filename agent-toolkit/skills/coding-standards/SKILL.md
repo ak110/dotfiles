@@ -25,7 +25,7 @@ description: >
 
 - Python: `references/python.md`と`references/python-references.md`
 - TypeScript/TSX: `references/typescript.md`
-- Rust: `references/rust.md`
+- Rust: `agent-toolkit/skills/coding-standards/references/rust.md`
 - C#: `references/csharp.md`
 - Bash/sh・bash・sh.tmpl: `references/bash.md`
 - PowerShell/ps1・ps1.tmpl・psm1・psd1: `references/powershell.md`

@@ -151,8 +151,14 @@ READMEとコーディングエージェント向け文書が重複する場合�
 
 口調の自己点検では、執筆者とレビュアーが次の参照資料を読み、該当する表現を成果物へ持ち込んでいないか確認する。
 
-- `writing-standards/references/tone-examples.md`
-- `writing-standards/references/tone-examples-llm-tone.md`
+- `agent-toolkit/skills/writing-standards/references/tone-examples.md`
+- `agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md`
+
+表記、lint及び口調を検査する時は、対象に応じて次の資料を全文読む。
+
+- 表記検査時は`agent-toolkit/skills/writing-standards/references/notation-rules.md`を読む
+- lint違反の対処時は`agent-toolkit/skills/writing-standards/references/textlint-violations.md`を読む
+- lint設定を緩和する時は`agent-toolkit/skills/writing-standards/references/lint-relax-criteria.md`を読む
 
 ## コメントの記述粒度
 
