@@ -353,6 +353,8 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
 }
 .detail-footer { justify-content: space-between; }
 .detail-footer-left, .detail-footer-right { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.decision-panel { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+.decision-panel textarea { min-height: 5rem; }
 .detail-title-row { justify-content: space-between; }
 .detail-title-row h3 { overflow-wrap: anywhere; }
 .metadata {

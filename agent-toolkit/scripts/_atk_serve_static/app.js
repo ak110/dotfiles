@@ -2,9 +2,11 @@ const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
 const STATE_LABELS = {
-  inbox: '未処理', planning: '計画作成中', processing: '処理中', adopted: '採用済み', rejected: '不採用'
+  inbox: '未処理', planning: '計画作成中', processing: '処理中', editing: '編集中', hold: '保留',
+  adopted: '採用済み', rejected: '不採用'
 };
-const ACTIVE_STATES = new Set(['inbox', 'processing']);
+const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
+const ACTIVE_STATES = new Set(['inbox', 'processing', 'editing', 'hold']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
 const SEARCH_FALLBACK_NOTICE =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
@@ -28,6 +30,13 @@ let detailOrigin = null;
 let detailOriginKey = '';
 let detailRequestGeneration = 0;
 let detailSessionGeneration = 0;
+let editingSessionId = null;
+let editingSessionKey = '';
+let editingStartPromise = null;
+let editingStartFailed = false;
+let pendingRecoveryCommit = null;
+let pendingRecoveryKey = '';
+let pendingRecoveryBlocked = false;
 let listRequestGeneration = 0;
 let targetRepoRequestGeneration = 0;
 let pendingListRequests = 0;
@@ -49,6 +58,8 @@ const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
 const deleteEntrySnapshot = entry => entry ? JSON.stringify([
   entryKey(entry), entry.content, entry.target_repo || '', entry.summary || ''
 ]) : '';
+
+const processableEntry = entry => entry && PROCESSABLE_STATES.has(entry.state);
 
 async function api(path, options = {}) {
   const request = {
@@ -634,16 +645,31 @@ function setDetailMode(mode) {
   const commenting = mode === 'user-comment';
   const mutating = editing || answering || commenting;
   const unansweredTbd = currentEntry?.kind === 'tbd' && currentEntry.answered === false;
+  const editable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
+  const held = currentEntry?.state === 'hold';
+  const persistentEditing = currentEntry?.state === 'editing' && editingSessionId !== null &&
+    editingSessionKey === entryKey(currentEntry);
+  const recoverableEditing = currentEntry?.state === 'editing' && !persistentEditing;
   byId('edit-panel').hidden = !editing;
   byId('answer-panel').hidden = !answering;
   byId('user-comment-panel').hidden = !commenting;
-  byId('edit-button').hidden = mutating || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
+  if (byId('decision-panel')) byId('decision-panel').hidden = !(editable && !mutating);
+  byId('edit-button').hidden = mutating || !editable;
   byId('answer-button').hidden = mutating || !currentEntry ||
-    currentEntry.kind !== 'tbd' || !ACTIVE_STATES.has(currentEntry.state);
+    currentEntry.kind !== 'tbd' || !editable;
   byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
   byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
-  byId('delete-button').hidden = mutating || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
+  if (byId('adopt-button')) byId('adopt-button').hidden = !(editable && currentEntry.kind === 'feedback' && !mutating);
+  if (byId('reject-button')) byId('reject-button').hidden = !(editable && currentEntry.kind === 'feedback' && !mutating);
+  if (byId('hold-button')) byId('hold-button').hidden = !(editable && !mutating);
+  if (byId('unhold-button')) byId('unhold-button').hidden = !(held && !mutating);
+  if (byId('recover-commit-button')) {
+    byId('recover-commit-button').hidden = !pendingRecoveryCommit || pendingRecoveryKey !== entryKey(currentEntry);
+  }
+  if (byId('recover-editing-button')) byId('recover-editing-button').hidden = !recoverableEditing;
+  byId('delete-button').hidden = mutating || !editable;
   byId('save-entry-button').hidden = !editing;
+  if (byId('cancel-editing-button')) byId('cancel-editing-button').hidden = !persistentEditing;
   byId('save-answer-button').hidden = !answering;
   byId('save-user-comment-button').hidden = !commenting;
   syncDetailMutationAvailability();
@@ -651,16 +677,27 @@ function setDetailMode(mode) {
   if (!editing) setFieldError(byId('edit-content'), byId('edit-content-error'), '');
   if (!answering) setFieldError(byId('answer-input'), byId('answer-input-error'), '');
   if (!commenting) setFieldError(byId('user-comment-input'), byId('user-comment-input-error'), '');
+  if (!editing && byId('decision-note') && byId('decision-note-error')) {
+    setFieldError(byId('decision-note'), byId('decision-note-error'), '');
+  }
 }
 
 function syncDetailMutationAvailability() {
   for (const id of [
     'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
-    'save-entry-button', 'save-answer-button', 'save-user-comment-button'
+    'save-entry-button', 'cancel-editing-button', 'save-answer-button', 'save-user-comment-button',
+    'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'recover-commit-button',
+    'recover-editing-button'
   ]) {
     const button = byId(id);
+    if (!button) continue;
     const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
-    button.disabled = !button.hidden && (detailRefreshRequired || userCommentUnavailable);
+    const recoveryPending = pendingRecoveryCommit && pendingRecoveryKey === entryKey(currentEntry);
+    const mutationBlockedByRecovery = recoveryPending && id !== 'recover-commit-button';
+    const recoveryBlocked = id === 'recover-commit-button' && pendingRecoveryBlocked;
+    button.disabled = !button.hidden && (
+      detailRefreshRequired || userCommentUnavailable || mutationBlockedByRecovery || recoveryBlocked
+    );
   }
 }
 
@@ -685,6 +722,7 @@ function renderAnswerChoices(entry) {
 function displayEntry(entry) {
   currentEntry = entry;
   detailRefreshRequired = false;
+  if (byId('decision-note')) byId('decision-note').value = '';
   setTextMessage('detail-alert', '');
   byId('detail-view').hidden = false;
   byId('detail-filename').textContent = entry.filename;
@@ -693,7 +731,7 @@ function displayEntry(entry) {
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
   renderAnswerChoices(entry);
-  byId('readonly-notice').hidden = ACTIVE_STATES.has(entry.state);
+  byId('readonly-notice').hidden = PROCESSABLE_STATES.has(entry.state);
   setDetailMode('view');
   updateCurrentRowSelection();
 }
@@ -701,6 +739,7 @@ function displayEntry(entry) {
 async function selectEntry(entry, origin = null) {
   const requestGeneration = ++detailRequestGeneration;
   const sessionGeneration = ++detailSessionGeneration;
+  if (editingSessionKey && editingSessionKey !== entryKey(entry)) clearEditingSession();
   detailOrigin = origin || document.activeElement;
   detailOriginKey = entryKey(entry);
   clearDialogMessages('detail');
@@ -761,6 +800,62 @@ function currentDetailMode() {
   if (!byId('answer-panel').hidden) return 'answer';
   if (!byId('user-comment-panel').hidden) return 'user-comment';
   return 'view';
+}
+
+function clearEditingSession() {
+  editingSessionId = null;
+  editingSessionKey = '';
+  editingStartPromise = null;
+  editingStartFailed = false;
+}
+
+function setPendingRecoveryCommit(entry, payload) {
+  const commit = payload?.commit;
+  if (typeof commit !== 'string' || !commit) return;
+  const filename = payload?.filename || entry?.filename;
+  const state = payload?.state || entry?.state;
+  if (typeof filename !== 'string' || typeof state !== 'string') return;
+  pendingRecoveryCommit = commit;
+  pendingRecoveryKey = `${state}/${filename}`;
+  pendingRecoveryBlocked = payload?.manual_recovery_required === true;
+  setDetailMode(currentDetailMode());
+}
+
+function clearPendingRecoveryCommit() {
+  pendingRecoveryCommit = null;
+  pendingRecoveryKey = '';
+  pendingRecoveryBlocked = false;
+  if (byId('recover-commit-button')) byId('recover-commit-button').hidden = true;
+}
+
+function setEditingPushPending(entry, payload) {
+  const filename = payload?.filename || entry?.filename;
+  const state = payload?.state || entry?.state;
+  const sessionId = typeof payload?.session_id === 'string' ? payload.session_id : null;
+  setPendingRecoveryCommit(entry, payload);
+  if (sessionId && filename && state === 'editing') {
+    editingSessionId = sessionId;
+    editingSessionKey = `editing/${filename}`;
+    currentEntry = {...entry, state: 'editing'};
+    detailOriginKey = entryKey(currentEntry);
+    byId('detail-state').textContent = `${currentEntry.kind || 'unknown'} / editing`;
+    byId('detail-state').dataset.state = 'editing';
+    byId('readonly-notice').hidden = false;
+    setDetailMode('edit');
+  }
+  setTextMessage(
+    'detail-alert',
+    'ローカル変更は確定しましたがpushに失敗しました。状態遷移を再送せず、atk mq commitを実行してから続きを操作してください。'
+  );
+}
+
+function setPreflightPushPending(entry, payload) {
+  setPendingRecoveryCommit(entry, payload);
+  setTextMessage(
+    'detail-alert',
+    '未公開commitがあるため状態を変更していません。pushを復旧してから同じ操作を再試行してください。'
+  );
+  syncDetailMutationAvailability();
 }
 
 function refreshUserCommentMode(entry, message) {
@@ -860,11 +955,47 @@ async function reloadOpenDetailFromExternalChange() {
   if (deleteConfirmationInvalidated) setTextMessage('detail-alert', DELETE_RECONFIRM_MESSAGE);
 }
 
+async function startPersistentEditing(entry) {
+  const key = entryKey(entry);
+  try {
+    const result = await api('/api/entries/editing', {
+      method: 'POST',
+      body: JSON.stringify({state: entry.state, filename: entry.filename, expected_content: entry.content})
+    });
+    if (typeof result.session_id !== 'string' || result.state !== 'editing') return false;
+    if (entryKey(currentEntry) !== key || currentDetailMode() !== 'edit') return true;
+    editingSessionId = result.session_id;
+    editingSessionKey = `editing/${entry.filename}`;
+    currentEntry = {...currentEntry, state: 'editing'};
+    detailOriginKey = entryKey(currentEntry);
+    byId('detail-state').textContent = `${currentEntry.kind || 'unknown'} / editing`;
+    byId('detail-state').dataset.state = 'editing';
+    byId('readonly-notice').hidden = false;
+    setDetailMode('edit');
+    return true;
+  } catch (error) {
+    if (error.status === 503 && error.payload?.push_pending) {
+      if (error.payload?.kind === 'preflight_push') {
+        setPreflightPushPending(entry, error.payload);
+        return true;
+      }
+      setEditingPushPending(entry, error.payload);
+      return true;
+    }
+    editingStartFailed = true;
+    setTextMessage('detail-alert', `編集を開始できませんでした。 ${error.message}`);
+    return true;
+  }
+}
+
 function enterEdit() {
-  if (!currentEntry) return;
-  byId('edit-content').value = currentEntry.content;
+  if (!currentEntry || !PROCESSABLE_STATES.has(currentEntry.state)) return;
+  const entry = {...currentEntry};
+  clearEditingSession();
+  byId('edit-content').value = entry.content;
   setDetailMode('edit');
   byId('edit-content').focus();
+  editingStartPromise = startPersistentEditing(entry);
 }
 
 function enterAnswer() {
@@ -911,25 +1042,42 @@ function mutationFailureMessage(key, failure, error) {
 
 async function saveEntry() {
   if (!currentEntry || detailRefreshRequired) return;
+  if (editingStartPromise) await editingStartPromise;
+  if (editingStartFailed) return;
   const content = byId('edit-content').value;
   setFieldError(byId('edit-content'), byId('edit-content-error'), content.trim() ? '' : 'ファイル全体を入力してください。');
   if (firstInvalid([byId('edit-content')])) return;
+  const persistent = editingSessionId !== null && editingSessionKey === entryKey(currentEntry);
   const key = entryKey(currentEntry);
   const sessionGeneration = detailSessionGeneration;
-  const payload = {content, expected_content: currentEntry.content};
+  const payload = persistent
+    ? {session_id: editingSessionId, content, expected_content: currentEntry.content}
+    : {content, expected_content: currentEntry.content};
   clearDialogMessages('detail');
   try {
-    await runPending('save', {
+    const result = await runPending('save', {
       container: byId('detail-shell'), button: byId('save-entry-button'), busyLabel: '保存中'
-    }, () => api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`, {
-      method: 'PUT', body: JSON.stringify(payload)
-    }));
+    }, () => persistent
+      ? api(`/api/entries/editing/${encodeURIComponent(currentEntry.filename)}`, {
+        method: 'PUT', body: JSON.stringify(payload)
+      })
+      : api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`, {
+        method: 'PUT', body: JSON.stringify(payload)
+      }));
+    if (persistent) {
+      const nextState = result?.state;
+      clearEditingSession();
+      if (typeof nextState === 'string') currentEntry = {...currentEntry, state: nextState};
+      detailOriginKey = entryKey(currentEntry);
+      clearPendingRecoveryCommit();
+    }
     await loadEntries();
     let closeDetail = false;
-    if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
+    const refreshedKey = persistent ? entryKey(currentEntry) : key;
+    if (byId('detail-dialog').open && entryKey(currentEntry) === refreshedKey &&
         sessionGeneration === detailSessionGeneration) {
       const refreshed = await api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`);
-      if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
+      if (byId('detail-dialog').open && entryKey(currentEntry) === refreshedKey &&
           sessionGeneration === detailSessionGeneration) {
         displayEntry(refreshed.entry);
         closeDetail = true;
@@ -939,9 +1087,196 @@ async function saveEntry() {
     if (closeDetail) closeDetailDialog();
     deliverOperationMessage(`${key}を保存しました。`);
   } catch (error) {
+    if (persistent && error.status === 503 && error.payload?.push_pending) {
+      if (error.payload?.kind === 'preflight_push') {
+        setPreflightPushPending(currentEntry, error.payload);
+        return;
+      }
+      const payloadState = error.payload?.state;
+      clearEditingSession();
+      if (typeof payloadState === 'string') currentEntry = {...currentEntry, state: payloadState};
+      detailOriginKey = entryKey(currentEntry);
+      setPendingRecoveryCommit(currentEntry, error.payload);
+      setDetailMode('view');
+      setTextMessage(
+        'detail-alert',
+        '編集内容はローカルへ保存されましたがpushに失敗しました。状態遷移を再送せず、atk mq commitを実行してください。'
+      );
+      await loadEntries();
+      return;
+    }
     const failure = `${key}を保存できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('edit-content').focus();
+  }
+}
+
+async function cancelPersistentEditing() {
+  if (!currentEntry || editingSessionId === null || editingSessionKey !== entryKey(currentEntry)) return;
+  const key = entryKey(currentEntry);
+  const sessionGeneration = detailSessionGeneration;
+  const payload = {
+    filename: currentEntry.filename,
+    session_id: editingSessionId,
+    expected_content: currentEntry.content
+  };
+  clearDialogMessages('detail');
+  try {
+    const result = await runPending('cancel-editing', {
+      container: byId('detail-shell'), button: byId('cancel-editing-button'), busyLabel: '取り消し中'
+    }, () => api('/api/entries/editing/cancel', {method: 'POST', body: JSON.stringify(payload)}));
+    clearEditingSession();
+    clearPendingRecoveryCommit();
+    if (typeof result?.state === 'string') currentEntry = {...currentEntry, state: result.state};
+    detailOriginKey = entryKey(currentEntry);
+    await loadEntries();
+    if (byId('detail-dialog').open && sessionGeneration === detailSessionGeneration) {
+      const refreshed = await api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`);
+      if (byId('detail-dialog').open && sessionGeneration === detailSessionGeneration) displayEntry(refreshed.entry);
+    }
+    deliverOperationMessage(`${key}の編集を取り消しました。`);
+  } catch (error) {
+    if (error.status === 503 && error.payload?.push_pending) {
+      if (error.payload?.kind === 'preflight_push') {
+        setPreflightPushPending(currentEntry, error.payload);
+        return;
+      }
+      clearEditingSession();
+      if (typeof error.payload?.state === 'string') currentEntry = {...currentEntry, state: error.payload.state};
+      detailOriginKey = entryKey(currentEntry);
+      setPendingRecoveryCommit(currentEntry, error.payload);
+      setDetailMode('view');
+      setTextMessage('detail-alert', '編集の取り消しはローカルへ反映されましたがpushに失敗しました。atk mq commitを実行してください。');
+      await loadEntries();
+      return;
+    }
+    deliverOperationMessage(`${key}の編集を取り消せませんでした。 ${error.message}`, true);
+  }
+}
+
+async function recoverPersistentEditing() {
+  if (!currentEntry || currentEntry.state !== 'editing' || editingSessionId !== null) return;
+  const key = entryKey(currentEntry);
+  const sessionGeneration = detailSessionGeneration;
+  const filename = currentEntry.filename;
+  const requestIsCurrent = () => sessionGeneration === detailSessionGeneration && currentEntry?.filename === filename;
+  clearDialogMessages('detail');
+  try {
+    const result = await runPending('recover-editing', {
+      container: byId('detail-shell'), button: byId('recover-editing-button'), busyLabel: '回復中'
+    }, () => api('/api/entries/editing/recover', {
+      method: 'POST', body: JSON.stringify({filename})
+    }));
+    if (!requestIsCurrent() || entryKey(currentEntry) !== key) {
+      await loadEntries();
+      return;
+    }
+    clearPendingRecoveryCommit();
+    if (typeof result?.state === 'string') currentEntry = {...currentEntry, state: result.state};
+    detailOriginKey = entryKey(currentEntry);
+    setDetailMode('view');
+    await loadEntries();
+    if (byId('detail-dialog').open) {
+      const refreshed = await api(
+        `/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`
+      );
+      if (byId('detail-dialog').open) displayEntry(refreshed.entry);
+    }
+    deliverOperationMessage(`${key}の編集状態を回復しました。`);
+  } catch (error) {
+    if (!requestIsCurrent()) return;
+    if (error.status === 503 && error.payload?.push_pending) {
+      if (error.payload?.kind === 'preflight_push') {
+        setPreflightPushPending(currentEntry, error.payload);
+        return;
+      }
+      if (typeof error.payload?.state === 'string') currentEntry = {...currentEntry, state: error.payload.state};
+      detailOriginKey = entryKey(currentEntry);
+      setPendingRecoveryCommit(currentEntry, error.payload);
+      setDetailMode('view');
+      setTextMessage(
+        'detail-alert',
+        '編集状態はローカルで回復しましたがpushに失敗しました。状態遷移を再送せず、pushを復旧してください。'
+      );
+      await loadEntries();
+      return;
+    }
+    setTextMessage('detail-alert', `${key}の編集状態を回復できませんでした。 ${error.message}`);
+  }
+}
+
+async function transitionDetail(action) {
+  if (!currentEntry) return;
+  const allowed = action === 'unhold' ? currentEntry.state === 'hold' : processableEntry(currentEntry);
+  if (!allowed || (action === 'adopt' && currentEntry.kind !== 'feedback') ||
+      (action === 'reject' && currentEntry.kind !== 'feedback')) return;
+  const key = entryKey(currentEntry);
+  const note = byId('decision-note')?.value.trim() || undefined;
+  const button = byId(`${action}-button`);
+  const payload = {filenames: [currentEntry.filename]};
+  if (note !== undefined && (action === 'adopt' || action === 'reject')) payload.note = note;
+  clearDialogMessages('detail');
+  try {
+    await runPending(`transition-${action}`, {
+      container: byId('detail-shell'), button, busyLabel: action === 'hold' ? '保留中' : action === 'unhold' ? '解除中' : '処理中'
+    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}));
+    await loadEntries();
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog();
+    deliverOperationMessage(`${key}を${action === 'adopt' ? '採用' : action === 'reject' ? '却下' : action === 'hold' ? '保留' : '保留解除'}しました。`);
+  } catch (error) {
+    if (error.status === 503 && error.payload?.push_pending) {
+      if (error.payload?.kind === 'preflight_push') {
+        setPreflightPushPending(currentEntry, error.payload);
+        return;
+      }
+      const nextState = error.payload?.state;
+      if (typeof nextState === 'string') currentEntry = {...currentEntry, state: nextState};
+      detailOriginKey = entryKey(currentEntry);
+      setPendingRecoveryCommit(currentEntry, error.payload);
+      setDetailMode('view');
+      setTextMessage('detail-alert', '状態変更はローカルへ反映されましたがpushに失敗しました。状態変更を再送せず、pushを復旧してください。');
+      await loadEntries();
+      return;
+    }
+    deliverOperationMessage(`${key}の操作に失敗しました。 ${error.message}`, true);
+    if (byId('detail-dialog').open) byId('detail-dialog-body').focus();
+  }
+}
+
+async function recoverPendingCommit() {
+  if (!pendingRecoveryCommit || pendingRecoveryBlocked) return;
+  const expectedCommit = pendingRecoveryCommit;
+  try {
+    const result = await runPending('recover-commit', {
+      container: byId('detail-shell'), button: byId('recover-commit-button'), busyLabel: '復旧中'
+    }, () => api('/api/entries/commit', {method: 'POST', body: JSON.stringify({})}));
+    const recoveredFrom = result?.recovered_from;
+    const commit = result?.commit;
+    const rebased = result?.rebased;
+    const completed = result?.push_pending === false && result?.retryable === false;
+    const validRebased = completed && rebased === true && recoveredFrom === expectedCommit && typeof commit === 'string' && commit;
+    const validUnrebased = completed && rebased === false && recoveredFrom == null && commit === expectedCommit;
+    if (!validRebased && !validUnrebased) {
+      throw new Error('復旧対象のcommitが一致しないため表示を更新できません。');
+    }
+    clearPendingRecoveryCommit();
+    const oidMessage = typeof commit === 'string' ? `（commit: ${commit}）` : '';
+    setTextMessage('detail-alert', `pushを復旧しました${oidMessage}`);
+    deliverOperationMessage(`未pushのcommitを復旧しました${oidMessage}`);
+  } catch (error) {
+    if (error.payload?.manual_recovery_required === true) {
+      setPendingRecoveryCommit(currentEntry, {...error.payload, commit: expectedCommit});
+    } else if (error.payload?.push_pending &&
+        error.payload?.recovered_from === expectedCommit &&
+        typeof error.payload?.commit === 'string' && error.payload.commit) {
+      setPendingRecoveryCommit(currentEntry, error.payload);
+    }
+    const message = error.message || 'pushの復旧に失敗しました。';
+    const recoveryMessage = error.payload?.manual_recovery_required === true
+      ? '管理repoを手動復旧するまで再試行できません。'
+      : '状態と編集セッションは保持しています。';
+    setTextMessage('detail-alert', `${message}${recoveryMessage}`);
+    syncDetailMutationAvailability();
   }
 }
 
@@ -1215,6 +1550,11 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
   });
 }
 
+function bindOptional(id, event, handler) {
+  const element = byId(id);
+  if (element) element.addEventListener(event, handler);
+}
+
 function bindEvents() {
   document.addEventListener('focusin', () => {
     refreshFocusRequested = false;
@@ -1252,8 +1592,15 @@ function bindEvents() {
   byId('answer-button').addEventListener('click', enterAnswer);
   byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);
+  bindOptional('cancel-editing-button', 'click', cancelPersistentEditing);
+  bindOptional('recover-editing-button', 'click', () => { void recoverPersistentEditing(); });
   byId('save-answer-button').addEventListener('click', saveAnswer);
   byId('save-user-comment-button').addEventListener('click', saveUserComment);
+  bindOptional('adopt-button', 'click', () => { void transitionDetail('adopt'); });
+  bindOptional('reject-button', 'click', () => { void transitionDetail('reject'); });
+  bindOptional('hold-button', 'click', () => { void transitionDetail('hold'); });
+  bindOptional('unhold-button', 'click', () => { void transitionDetail('unhold'); });
+  bindOptional('recover-commit-button', 'click', () => { void recoverPendingCommit(); });
   byId('delete-button').addEventListener('click', openDeleteDialog);
   byId('create-kind').addEventListener('change', updateCreateFields);
   byId('create-question-type').addEventListener('change', updateCreateFields);
