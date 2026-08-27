@@ -1208,8 +1208,10 @@ def test_plan_save_requires_unique_replacement_boundary() -> None:
 
 
 def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
-    """計画前の判断列挙を既存の二段階確認と依存付き質問ラウンドへ接続する。"""
+    """計画前の判断列挙を既存の二段階確認と質問経路へ接続する。"""
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    process_feedbacks = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
     progress = _h2_section(plan_mode, "進め方")
 
     decision_list = progress.index("計画の変更対象又は採用方針を左右する未確定判断")
@@ -1247,8 +1249,8 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
         "各回答の組合せについて技術的成立性を実機又は実装で検査し",
         "成立しない組合せは理由とともに選択肢から除外する",
         "協調モード（Default mode）では利用者へ直接質問して回答を待つ",
-        "自律モードでは質問を発行せず、確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
-        "ユーザー接点を持たない委譲先は確認を発行せず、判断を呼び出し元へ返す",
+        "自律モードでも、`AskUserQuestion`を発行でき、ユーザー接点を持つ主体は利用者へ直接質問して回答を待ち、回答を得られない場合だけ確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
+        "`AskUserQuestion`を発行する能力がない主体とユーザー接点を持たない委譲先はいずれも確認を発行せず、判断を呼び出し元へ返す",
         "回答後は依存関係を更新して第1段階と第2段階を再適用し、質問候補が無くなるまで反復する",
         "自律確定した結論、根拠、最有力対案、対案を採用しない理由",
         "追加の承認待ちを設けず、計画ファイル初版の起草へ進む",
@@ -1257,7 +1259,20 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
         assert phrase in progress or phrase in plan_mode
 
     assert "相互依存する判断（循環を含む）を同じ確認単位へまとめる前に候補を選ぶ" not in progress
+    assert "自律モードでは質問を発行せず、確認事項をTBDへ記録して暫定判断で依存しない工程を続行する" not in progress
     assert "技術的に確定できないユーザー依存事項だけを確認へ送る" not in progress
+
+    for phrase in (
+        "ユーザー判断が必要な事項は\n`agent-toolkit/rules/01-agent.md`「協調と自律」節に従って`AskUserQuestion`で確認し",
+        "TBDへ永続化して暫定判断で進める",
+    ):
+        assert phrase in process_feedbacks
+    for phrase in (
+        "「確認を要する事項」項が挙げる事項は、いずれのモードでも`AskUserQuestion`で確認する",
+        "`AskUserQuestion`を持たない実行主体は、確認事項を呼び出し元へ差し戻す",
+        "`AskUserQuestion`を発行できる実行主体は、回答を得られない場合に`agent-toolkit:add-feedback`をSkill機能で起動し",
+    ):
+        assert phrase in agent_rules
 
 
 def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
