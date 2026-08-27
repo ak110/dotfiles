@@ -103,8 +103,8 @@ python = true
 # Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、既定の600秒では境界を超えるためCIタイムアウトを延伸する
 command-timeout = 900
 ty = true
-# scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "agent-toolkit/scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
+# scripts/、agent-toolkit/scripts/、agent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
+ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "agent-toolkit/scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
 pylint-args = ["--jobs=4"]
 # リポジトリ直下とagent-toolkit/scripts/の`conftest.py`は、いずれもトップレベルのモジュール`conftest`へ
 # 解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。

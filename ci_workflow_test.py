@@ -9,7 +9,7 @@ import yaml
 _REPOSITORY_ROOT = Path(__file__).resolve().parent
 _WORKFLOW_PATH = _REPOSITORY_ROOT / ".github" / "workflows" / "ci.yaml"
 _CHECKOUT_ACTION = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-_MISE_ACTION = "jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518"
+_MISE_ACTION = "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c"
 _RELEASE_CONDITION = (
     "github.event_name == 'pull_request' && "
     "github.event.pull_request.head.repo.full_name == github.repository && "

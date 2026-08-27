@@ -17,35 +17,35 @@ url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/3849249
 provenance = "github-attestations"
 
 [[tools.pinact]]
-version = "4.1.0"
+version = "4.1.1"
 backend = "aqua:suzuki-shunsuke/pinact"
 
 [tools.pinact."platforms.linux-x64"]
-checksum = "sha256:8fcbf1b3e95551c82fd995535e3c1defa70e23299ce36eb3afd6c98778de6ca0"
-url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/442249966"
+checksum = "sha256:d1cffebe5704b74e2e5f8a864efb9f7e54768972dc686188c008033fb1797841"
+url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.1/pinact_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/494702259"
 provenance = "github-attestations"
 
 [tools.pinact."platforms.windows-x64"]
-checksum = "sha256:de04e9612a50cb7b0263d162400305ea02fc85410c38887d1be7446a7c5d5dc6"
-url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_windows_amd64.zip"
-url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/442249974"
+checksum = "sha256:88db480a3f8833d7233b482a72c97308df558ebceb0d3214775889239901f6a9"
+url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.1/pinact_windows_amd64.zip"
+url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/494702288"
 provenance = "github-attestations"
 
 [[tools.prek]]
-version = "0.4.12"
+version = "0.4.14"
 backend = "aqua:j178/prek"
 
 [tools.prek."platforms.linux-x64"]
-checksum = "sha256:3321ec6e4d873fbf41bef55d11b3f269fa91cbb87b19f18211df7c1bd061ac8a"
-url = "https://github.com/j178/prek/releases/download/v0.4.12/prek-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/499978791"
+checksum = "sha256:d1eacb826b9f71ce9098636d2c3e96df0ed1cf08c9c17c57bf358b401f5a995d"
+url = "https://github.com/j178/prek/releases/download/v0.4.14/prek-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/517620600"
 provenance = "github-attestations"
 
 [tools.prek."platforms.windows-x64"]
-checksum = "sha256:1ea049702009636296ca845e91b336aeb203d47df8ce500eb388672c8199d57b"
-url = "https://github.com/j178/prek/releases/download/v0.4.12/prek-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/499978783"
+checksum = "sha256:284eb3b185788fbb5c1b53b1e2217c744be44debaff88efd305b1947df6f0b82"
+url = "https://github.com/j178/prek/releases/download/v0.4.14/prek-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/517620593"
 provenance = "github-attestations"
 
 [[tools.rust]]

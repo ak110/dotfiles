@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# This module is loaded by agents_server_mcp.py and has no standalone dependencies.
+# # このモジュールはagents_server_mcp.pyから読み込まれ、単独実行時の依存関係を持たない。
 # ///
 """Codex App ServerとのJSON-RPC通信を担当する。
 
