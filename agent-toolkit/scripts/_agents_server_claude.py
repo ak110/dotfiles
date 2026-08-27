@@ -15,7 +15,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
-from agents_server_mcp import (
+from _agents_server_state import (
     SessionState,
     _begin_reply,
 )

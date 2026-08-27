@@ -5,11 +5,15 @@
 
 import asyncio
 import pathlib
+import shutil
+import subprocess
+import sys
 from types import SimpleNamespace
 from typing import Any, cast
 
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
+import _agents_server_state as state
 import agents_server_mcp as subject
 import pytest
 
@@ -57,7 +61,7 @@ class FakeBackend:
             engine=self.engine,
         )
         self.sessions[session.session_id] = session
-        subject._initialize_turn(session)
+        state._initialize_turn(session)
         return session
 
     async def send_message(self, session: subject.SessionState, prompt: str) -> dict[str, Any]:
@@ -65,7 +69,7 @@ class FakeBackend:
         self.send_calls += 1
         if session.terminal:
             previous = session.previous_result()
-            subject._begin_reply(session)
+            state._begin_reply(session)
             return {"delivery": self.delivery, "previous_result": previous}
         return {"delivery": "steered"}
 
@@ -86,6 +90,44 @@ def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[su
     else:
         manager._claude = backend
     return manager, backend
+
+
+def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> None:
+    """MCP初期化後にプラグイン配置を除去しても両backendを生成できる。"""
+    source_dir = pathlib.Path(__file__).parent
+    script_dir = tmp_path / "plugin" / "scripts"
+    script_dir.mkdir(parents=True)
+    for name in (
+        "agents_server_mcp.py",
+        "_agents_server_codex.py",
+        "_agents_server_claude.py",
+        "_agents_server_state.py",
+    ):
+        shutil.copyfile(source_dir / name, script_dir / name)
+
+    check = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import shutil, sys\n"
+                "from pathlib import Path\n"
+                "script_dir = Path(sys.argv[1])\n"
+                "sys.path.insert(0, str(script_dir))\n"
+                "import agents_server_mcp as subject\n"
+                "assert 'claude_agent_sdk' not in sys.modules\n"
+                "sys.path.remove(str(script_dir))\n"
+                "shutil.rmtree(script_dir)\n"
+                "assert subject._MANAGER._backend('codex').__class__.__name__ == 'AppServerManager'\n"
+                "assert subject._MANAGER._backend('claude').__class__.__name__ == 'ClaudeServerManager'\n"
+            ),
+            str(script_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert check.returncode == 0, check.stderr
 
 
 def test_public_tools_are_exactly_four_async_operations() -> None:
@@ -113,8 +155,8 @@ def test_wait_and_kill_schema_expose_distinct_timeout_defaults() -> None:
 
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
     """進捗本文は改行を除き、長文では末尾80文字だけを返す。"""
-    assert subject._progress_excerpt("a\r\nb\rc\nd") == "a b c d"
-    value = subject._progress_excerpt("x" * 100)
+    assert state._progress_excerpt("a\r\nb\rc\nd") == "a b c d"
+    value = state._progress_excerpt("x" * 100)
     assert value == "…" + "x" * 80
 
 
@@ -977,7 +1019,7 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
     tmp_path: pathlib.Path,
 ) -> None:
     """保持期限経過時にSDKを切断し、結果recordを識別子だけへ縮小する。"""
-    monkeypatch.setattr(subject, "RESULT_RETENTION_SECONDS", 0.01)
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
     sessions: dict[str, subject.SessionState] = {}
     manager = subject.AgentsServerManager()
