@@ -6,13 +6,14 @@
 
 import argparse
 import json
+import os
 import pathlib
 import shutil
 import sys
 
 from _atk_mq_common import (
-    MQ_ACTIVE_STATES,
     MQ_FEEDBACK_ACTIVE_STATES,
+    MQ_PROCESSABLE_STATES,
     MQ_STATE_PLANNING,
     MQ_STATES,
     MQ_TYPE_TBD,
@@ -42,6 +43,8 @@ def _resolve_states(status: str) -> tuple[str, ...]:
     """状態フィルターを走査対象へ変換する。"""
     if status == "active":
         return MQ_FEEDBACK_ACTIVE_STATES
+    if status == "processable":
+        return MQ_PROCESSABLE_STATES
     if status == "all":
         return MQ_STATES
     return (status,)
@@ -60,14 +63,14 @@ def _answered_matches(entry_type: str | None, text: str, answered_filter: str) -
 def _is_selected_state(entry: QueueEntryDisplay, status: str) -> bool:
     """状態フィルターと種別の組み合わせで表示可能か判定する。"""
     _path, _target_repo, _text, state, entry_type = entry
-    return not (status == "active" and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD)
+    return not (status in {"active", "processable"} and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD)
 
 
 def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> str:
     """一覧表示用の状態別着手可否を返す。"""
     if state == MQ_STATE_PLANNING:
         return "blocked"
-    if state not in MQ_ACTIVE_STATES:
+    if state not in MQ_PROCESSABLE_STATES:
         return "complete"
     return "ready" if filename in readiness.ready else "blocked"
 
@@ -78,15 +81,17 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     次の全条件を満たす場合に`True`を返す:
     - `args.count`が`False`（整数のみ出力時は本文表示がないため対象外）
     - `args.type`が`"all"`または`"tbd"`
-    - `args.status`が`"all"`または`"active"`
+    - `args.status`が`"all"`、`"active"`または`"processable"`
     - `args.answered`が`"all"`または`"no"`
     - `args.source`が`None`（source指定時は出力が部分集合になり得るため対象外）
     """
+    agent_environment = any(name in os.environ for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"))
+    emits_json = getattr(args, "json", False) or (agent_environment and not getattr(args, "no_json", False))
     return (
         not args.count
-        and not getattr(args, "json", False)
+        and not emits_json
         and args.type in ("all", "tbd")
-        and args.status in ("all", "active")
+        and args.status in ("all", "active", "processable")
         and args.answered in ("all", "no")
         and args.source is None
     )
@@ -133,8 +138,12 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                     if answered
                     else f"{state}/unanswered"
                 )
-            repo_budget = _target_repo_budget(path.name, label)
-            display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
+            # パイプ・リダイレクトでは後段が機械的に本文を取得できるよう短縮しない。
+            if sys.stdout.isatty():
+                repo_budget = _target_repo_budget(path.name, label)
+                display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
+            else:
+                display_repo = target_repo
             reason = (
                 _blocked_reason(readiness, path.name)
                 if state_readiness == "blocked" and (entry_type != MQ_TYPE_TBD or answered)
@@ -145,7 +154,9 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 cooldown_until = dict(readiness.cooldown_values)[path.name]
                 reason_suffix += f" cooldown_until={cooldown_until}"
             prefix = f"{path.name}: {display_repo} [{label}]{reason_suffix} "
-            available_width = shutil.get_terminal_size().columns - _display_width(prefix)
+            available_width = (
+                shutil.get_terminal_size().columns - _display_width(prefix) if sys.stdout.isatty() else sys.maxsize
+            )
             summary = (
                 _tbd_body_summary(text, available_width) if entry_type == MQ_TYPE_TBD else _body_summary(text, available_width)
             )
@@ -169,7 +180,7 @@ def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessR
             "type": actual_type,
             "target_repo": target_repo,
             "state": state,
-            "ready": state in MQ_ACTIVE_STATES and path.name in readiness.ready,
+            "ready": state in MQ_PROCESSABLE_STATES and path.name in readiness.ready,
             "blocked_reason": reason,
             "source": _parse_source(text),
             "summary": summary,
@@ -182,8 +193,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: active）。
-    `active`はフィードバック側`inbox`・`planning`・`processing`と`tbd`側`answered`を出力する。
-    フィードバック側は`inbox`・`planning`・`processing`・`adopted`・`rejected`・`all`を解釈する。
+    `active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を出力する。
+    フィードバック側は`inbox`・`planning`・`processing`・`editing`・`hold`・`adopted`・`rejected`・`all`を解釈する。
     `tbd`側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`planning`・`processing`・`adopted`・`rejected`・`all`は
     `tbd`側に作用せず、`tbd` inboxの全件を返す）。
     `--source`指定時はフィードバック・`tbd`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
@@ -215,7 +226,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         print(len(selected))
         return
 
-    if args.json:
+    agent_environment = any(name in os.environ for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"))
+    if getattr(args, "json", False) or (agent_environment and not getattr(args, "no_json", False)):
         _print_json_entries(selected, readiness)
         return
 

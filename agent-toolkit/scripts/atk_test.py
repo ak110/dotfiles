@@ -40,6 +40,13 @@ _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
 
 
+@pytest.fixture(autouse=True)
+def _clear_list_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """listの既定出力に関する既存テストをホスト環境変数から隔離する。"""
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.mark.parametrize(
     "argv",
     [

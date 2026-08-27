@@ -322,6 +322,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
     )
+    output.add_argument(
+        "--no-json",
+        action="store_true",
+        help="JSON Linesの既定を無効にし、従来のテキスト形式で出力する。",
+    )
     _add_mq_read_sync_args(list_)
 
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")

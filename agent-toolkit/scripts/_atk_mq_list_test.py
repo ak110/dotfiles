@@ -32,6 +32,15 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+
+
+@pytest.fixture(autouse=True)
+def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存のテキスト出力テストを実行ホストのエージェント環境から隔離する。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
 
 class TestListEmpty:
     """listサブコマンド: inbox空の場合は何も出力しない。"""
@@ -1071,6 +1080,48 @@ class TestListJson:
         assert exc_info.value.code == 2
         assert "not allowed with argument" in capsys.readouterr().err
 
+    @pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
+    def test_agent_environment_defaults_to_json_lines(
+        self,
+        environment_name: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """各エージェント環境変数で明示指定なしの出力をJSON Linesにする。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "feedback.md", body="全文")
+        monkeypatch.setenv(environment_name, "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert json.loads(capsys.readouterr().out)["filename"] == "feedback.md"
+
+    def test_no_json_overrides_agent_default_and_count_keeps_integer(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """エージェント環境でも明示テキストと件数形式を優先する。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "feedback.md", body="全文")
+        monkeypatch.setenv("CODEX_CI", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as text_exit:
+            atk.main(["mq", "list", "--no-json"], home=tmp_path)
+        assert text_exit.value.code == 0
+        assert capsys.readouterr().out.startswith("# feedback\n")
+
+        with pytest.raises(SystemExit) as count_exit:
+            atk.main(["mq", "list", "--count"], home=tmp_path)
+        assert count_exit.value.code == 0
+        assert capsys.readouterr().out == "1\n"
+
 
 class TestMultipleFiltersCombinedAsAnd:
     """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。
@@ -1175,8 +1226,8 @@ class TestMultipleFiltersCombinedAsAnd:
         assert "tbd-answered.md" not in captured.out
 
 
-class TestListNarrowTerminalTargetRepo:
-    """listサブコマンド: 狭幅端末の出力行が端末表示幅以内に収まることを検証する。"""
+class TestListNonTtyTargetRepo:
+    """listサブコマンド: 非TTYでは対象repoと要約を短縮しないことを検証する。"""
 
     _LONG_REPO = "github.com/organization-name/very-long-repository-name-example"
 
@@ -1185,13 +1236,13 @@ class TestListNarrowTerminalTargetRepo:
         """東アジア文字幅に基づく出力文字列の表示幅を返す。"""
         return sum(2 if unicodedata.east_asian_width(char) in ("W", "F", "A") else 1 for char in text)
 
-    def test_feedback_narrow_terminal(
+    def test_feedback_non_tty_preserves_full_target_repo(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """フィードバック部の各出力行が50桁以内に収まる。"""
+        """非TTYのフィードバック行はtarget_repoを完全に保持する。"""
         terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
@@ -1199,7 +1250,8 @@ class TestListNarrowTerminalTargetRepo:
             return os.terminal_size((terminal_columns, 24))
 
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body="本文1")
+        body = "本文" * 80
+        _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body=body)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
 
@@ -1209,16 +1261,40 @@ class TestListNarrowTerminalTargetRepo:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         output_lines = captured.out.splitlines()
-        assert self._LONG_REPO not in captured.out
-        assert all(self._display_width(line) <= terminal_columns for line in output_lines)
+        assert self._LONG_REPO in captured.out
+        assert body in captured.out
+        assert any(self._display_width(line) > terminal_columns for line in output_lines)
 
-    def test_tbd_narrow_terminal(
+    def test_feedback_tty_shortens_to_terminal_width(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """tbd部の各出力行が70桁以内に収まる。"""
+        """TTYだけはtarget_repoと要約を端末幅へ短縮する。"""
+        terminal_columns = 70
+        notes = _setup_notes(tmp_path)
+        body = "本文" * 80
+        _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body=body)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((terminal_columns, 24)))
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output_lines = capsys.readouterr().out.splitlines()
+        assert self._LONG_REPO not in output_lines[-1]
+        assert self._display_width(output_lines[-1]) <= terminal_columns
+
+    def test_tbd_non_tty_preserves_full_target_repo(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """非TTYのTBD行はtarget_repoを完全に保持する。"""
         terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
@@ -1242,5 +1318,5 @@ class TestListNarrowTerminalTargetRepo:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         output_lines = captured.out.splitlines()
-        assert self._LONG_REPO not in captured.out
-        assert all(self._display_width(line) <= terminal_columns for line in output_lines)
+        assert self._LONG_REPO in captured.out
+        assert any(self._display_width(line) > terminal_columns for line in output_lines)
