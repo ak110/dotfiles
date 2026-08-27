@@ -40,8 +40,8 @@ worktreeと管理対象領域を作成・回収しない。
 表構造、ラウンドの反復、起動前後の検証、モデル解決、収束判定は
 `skills/plan-mode/references/review-loop-coordination.md`を正本として適用する。
 各レビュー担当へ自系統以外の`track`の行や出力を渡さず、担当する`track`と同じ表の絶対パスを渡す。
-`git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正におけるphaseごとの公開済み判定、履歴書換え直前の再判定及び遮断は実装担当へ委譲する。executorは実装担当の完了後にphaseごとの最小化済み`rewrite_guard`反復証跡を検収し、履歴書換え前の中間受渡しは設けない。
-`rewrite_guard`のphaseは通常モードのレビュー修正だけに適用し、通常モードのレビュー修正以外、差分限定レビュー調整モードでは`rewrite_guard: not_applicable`とする。
+`git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正におけるphaseごとの公開済み判定、履歴書換え直前の再判定及び遮断は実装担当へ委譲する。executorは実装担当の完了後にphaseごとの最小化済み`履歴書換え防止`反復証跡を検収し、履歴書換え前の中間受渡しは設けない。
+`履歴書換え防止`のphaseは通常モードのレビュー修正だけに適用し、通常モードのレビュー修正以外、差分限定レビュー調整モードでは`履歴書換え防止: not_applicable`とする。
 定義済みチェックポイント（`review_round`・`merge_request`・`scope_deviation`）に該当する時点では`status: checkpoint`で終端し、
 メインの`SendMessage`による再開指示を待つ。多段委譲の中間主体としては起動されないため、チェックポイントは自身の判断で新設しない。
 
@@ -146,7 +146,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 ## 出力
 
-共通出力と`rewrite_guard`のスキーマは`../skills/plan-mode/references/implementation-task.md`「出力」を正本とする。
+共通出力と`履歴書換え防止`のスキーマは`../skills/plan-mode/references/implementation-task.md`「出力」を正本とする。
 
 `status: checkpoint`の場合だけ、共通出力へ次のチェックポイント報告を追加する。
 

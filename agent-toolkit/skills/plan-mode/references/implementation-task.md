@@ -93,7 +93,7 @@
    rebase・ff前進のいずれかが失敗した場合は`git rebase --abort`で自worktreeを復元し、失敗事象を`needs_escalation`で返す。
    検証コマンドを実行し、新tip（`rebaseのみ`工程では新HEAD）の完全OIDと検証結果を`completed`で返す。
 9. 担当種別が`差分限定レビュー修正担当`の場合は、受領した採用指摘だけを、履歴書換え（amend・fixup・autosquash）を
-   行わず、修正を新規commitで積む。`rewrite_guard`は`not_applicable`とする。
+   行わず、修正を新規commitで積む。`履歴書換え防止`は`not_applicable`とする。
    指定された検証コマンドで近接検証を実施し、修正commitの完全OID、再検証結果、指摘IDごとの解消記録を`completed`で返す。
    指摘の根拠不足、計画との衝突、認可外の変更が必要な場合は修正せず`needs_escalation`で返す。
 10. 全ての実装担当は、共有の判定処理、振り分け処理、解析処理を変更する場合に、変更分岐へ到達する全呼び出し元と
@@ -124,9 +124,9 @@ fast担当が同一失敗箇所の残存を記録し、呼び出し元が終端�
 修正対象の集合に属する各`track`の行を全文読取し、各行の`track`帰属を保ったまま採否と修正を確定する。
 検証済みの実際値、期待値と違反契約を確認する。
 対象への適用根拠と保持契約が指摘ごとにそろうことも確認する。
-通常実装モードのレビュー修正では、実装担当の完了報告に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）の`rewrite_guard`を反復した配列を必ず含める。
-executorは実装担当の完了後にphaseごとの`rewrite_guard`を検収し、executorの完了報告にも同じ反復証跡を必ず含める。
-`rewrite_guard`のphaseは通常実装モードのレビュー修正だけに記録し、レビュー修正以外の通常実装モードでは`rewrite_guard: not_applicable`とする。
+通常実装モードのレビュー修正では、実装担当の完了報告に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）の`履歴書換え防止`を反復した配列を必ず含める。
+executorは実装担当の完了後にphaseごとの`履歴書換え防止`を検収し、executorの完了報告にも同じ反復証跡を必ず含める。
+`履歴書換え防止`のphaseは通常実装モードのレビュー修正だけに記録し、レビュー修正以外の通常実装モードでは`履歴書換え防止: not_applicable`とする。
 
 レビュー指摘の修正を受け取った場合は、履歴書換えを開始する前に、指摘が根拠とする原文と対象への適用条件を確認し、指摘の成立性と修正方法を別々に確定する。
 各指摘の事実と違反契約を自身でも実測し、通常運用の再現経路と入力主体へ照合して問題を再現する。
@@ -144,7 +144,7 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`を検収し�
 レビュー修正の採否、対象実装単位及び対応表が確定するまで、修正差分を適用せず、履歴を変更しない。
 `agent-toolkit:commit`の履歴書換え契約を全文読み、履歴書換え前のベース、HEAD、実装単位の順序、各完全OID、親子関係、commit件数、件名とtrailer、各commitの差分帰属を保持する。
 
-履歴書換えの操作、事前遮断及び失敗時の扱いは`agent-toolkit:commit`のfixup実行制約を正本とする。実装担当は次のphaseだけを判断し、各phaseの対象完全OID、Gitコマンドの終了コード、公開済み判定とエラー要約を`rewrite_guard`へ記録する。
+履歴書換えの操作、事前遮断及び失敗時の扱いは`agent-toolkit:commit`のfixup実行制約を正本とする。実装担当は次のphaseだけを判断し、各phaseの対象完全OID、Gitコマンドの終了コード、公開済み判定とエラー要約を`履歴書換え防止`へ記録する。
 
 | phase | 対象 | 失敗時の返却 |
 | --- | --- | --- |
@@ -172,16 +172,16 @@ merge進行中でなければ`atk worktree-stash save --label <退避ラベル>`
 ```text
 status: completed | fast_fix_handoff | scope_deviation_hold | merge_review_pending | needs_escalation
 commit: <完全長SHAまたはなし>
-commits:
+コミット一覧:
 - <計画単位、変更前の完全OID、変更後の完全OID、commit件名、順序、差分帰属。通常実装時は実装commitのOID、レビュー修正時は全単位のOID対応。マージ担当は新tip又は新HEADのOID>
 changed:
 - <計画項目と変更結果>
-verification:
+検証結果:
 - <コマンド>; exit_code: <整数>; warnings: <整数>
 review_resolution:
 - <指摘ID、要求と適用根拠の確認結果、採用した修正、保持契約の維持結果。該当なしなら「なし」>
-feedbacks: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>
-rewrite_guard:
+フィードバック: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>
+履歴書換え防止:
 - phase: <pre_fixup|fixup:<単位順>|autosquash|amend>
   target_oids: <履歴順の対象完全OID一覧。autosquashは最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OID。単一対象も1要素の配列>
   published_decision: <`agent-toolkit:commit`の「プッシュ済み判定」にある汎用判定結果>
@@ -189,7 +189,7 @@ rewrite_guard:
   error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>
 plan_deviation:
 - <差異と調整結果。無ければ「なし」>
-blockers:
+阻害要因:
 - <未完了事項。完了時は「なし」>
 ```
 
@@ -241,7 +241,7 @@ merge_conflict_resolution:
   resolved_files: <解消箇所のファイル一覧>
   rebased_head: <rebase後HEADの完全OID>
   conflict_diff_range: <解消差分の対象OID範囲>
-  verification: <解消箇所限定の再検証結果>
+  検証結果: <解消箇所限定の再検証結果>
 ```
 
 成果物を書き込んだ場合は、成果物の絶対パスと実在・分量を示す実行結果も含める。

@@ -71,6 +71,7 @@ _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>"
 # 受信メッセージ）を非貪欲に切り出す正規表現。ユーザー自身の発話ではないため、
 # スラッシュコマンド起動痕跡の照合前に除去する。
 _SYSTEM_EMBEDDED_ELEMENT_RE = re.compile(r"<(task-notification|teammate-message)\b.*?</\1>", re.DOTALL)
+_MCP_BACKGROUND_TASK_RE = re.compile(r"moved to the background as task\s+(\S+)")
 
 # `<task-notification>`要素内の`<tool-use-id>toolu_xxx</tool-use-id>`から
 # `toolu_xxx`を抽出する正規表現。
@@ -804,10 +805,28 @@ def _collect_mcp_background_task_id_tool_use_ids(
             if not isinstance(tool_use_id, str) or tool_use_id not in mcp_ids:
                 continue
             for text in _tool_result_text_blocks(block.get("content")):
-                match = re.search(r"moved to the background as task\s+(\S+)", text)
-                if match:
-                    result.setdefault(match.group(1), set()).add(tool_use_id)
+                task_id = background_task_id_from_notice(text)
+                if task_id is not None:
+                    result.setdefault(task_id, set()).add(tool_use_id)
     return result
+
+
+def background_task_id_from_notice(value: object) -> str | None:
+    """MCP呼び出しの背景移行通知からタスクIDを返す。"""
+    if isinstance(value, str):
+        match = _MCP_BACKGROUND_TASK_RE.search(value)
+        return match.group(1) if match is not None else None
+    if isinstance(value, dict):
+        nested_values = value.values()
+    elif isinstance(value, list):
+        nested_values = value
+    else:
+        return None
+    for nested in nested_values:
+        task_id = background_task_id_from_notice(nested)
+        if task_id is not None:
+            return task_id
+    return None
 
 
 def _collect_task_id_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> dict[str, set[str]]:

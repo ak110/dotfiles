@@ -59,6 +59,7 @@ _REVIEW_LOOP_COORDINATION = _PLAN_MODE_REFERENCES / "review-loop-coordination.md
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _AGENT_STANDARDS = _AGENTS_DIR.parent / "skills" / "agent-standards" / "SKILL.md"
 _WRITING_STANDARDS = _AGENTS_DIR.parent / "skills" / "writing-standards" / "SKILL.md"
+_REFERENT_TABLE = _WRITING_STANDARDS.parent / "references" / "referent-table.md"
 _REVIEW_CHECKLISTS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "references" / "review-checklists.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
@@ -1042,11 +1043,8 @@ _PLAN_STANDARDS_MIGRATION_REWRITES: tuple[tuple[str, str], ...] = (
         "直下のH3は`### 計画メタ情報`だけとし、次の4行を固定順で置く。",
         "要件の追加、方針転換又はレビュー反映で内容が変わる場合は、変更部分の追記を重ねず、節全体を現在の計画に合わせて書き直す。\n"
         "\n"
-        "`agent-toolkit:process-feedbacks`が複数の通常型フィードバックを1つの統合計画へまとめる場合、"
-        "`feedbacks-planner`は全要求不採用の項目をreject対象、未確定要求を含む項目をhold対象と"
-        "計画スレッドの起動前に判定する。\n"
-        "判定対象を除外して計画スレッドへ渡す集合を計画対象集合とする。"
-        "判定結果は完了報告でメインへ返し、キュー操作はメインが担当する。\n"
+        "`agent-toolkit:process-feedbacks`が通常型フィードバックを統合計画へまとめる場合、"
+        "計画対象集合は同スキルの受領契約「reject・hold判定」に従う。\n"
         "`## 実施内容`には計画対象集合の各項目を1行ずつ記録し、項目の採否を採否列へ記録する。\n"
         "部分採用では採用範囲と除外範囲の要点を`実施内容`セルへ記載し、"
         "要求別の採否詳細を別行へ複製せず要求表を正本とする。\n"
@@ -1796,8 +1794,9 @@ def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
         "起動時に保持した実行識別子の直接照会で確認してから実装担当を起動する。" in caller
     )
     assert (
-        "`## 進捗ログ`のうち呼び出し元だけが記入する項目（実装commitの受領記録、統合差分レビューの収束記録）の欠落は、"
-        "レビュー表へ行を追加せず、欠落項目と根拠を`needs_escalation`で呼び出し元へ返す" in plan_review
+        "`## 進捗ログ`のうち呼び出し元だけが記入する項目（実装commitの受領記録、統合差分レビューの収束記録）は、"
+        "実装commitの受領又はレーン内レビューの収束という記入時点に達していない場合、欠落として扱わない。"
+        "記入時点を過ぎた欠落はレビュー表へ行を追加せず、欠落項目と根拠を`needs_escalation`で呼び出し元へ返す" in plan_review
     )
 
 
@@ -1975,11 +1974,11 @@ def test_plan_lane_preserves_sorted_feedback_filename_lists() -> None:
         assert "ソート済みフィードバックファイル名一覧。フィードバック起因の場合だけ渡す" in text
     assert "ソート済みフィードバックファイル名一覧" in flow
     assert (
-        "feedbacks: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>"
+        "フィードバック: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>"
         in executor
     )
     assert (
-        "feedbacks: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>"
+        "フィードバック: <受領したソート済みフィードバックファイル名一覧。フィードバック起因でなく受領していない場合は「なし」>"
         in writer
     )
     assert "ソート済みフィードバックファイル名一覧を受領した場合は、一覧の順で既存の`atk mq adopt`を1件ずつ実行" in caller
@@ -1999,7 +1998,7 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     assert "mcp__plugin_agent-toolkit_agents_server__send_message" in metadata["tools"]
     for phrase in (
         "成果物、計画ファイル及びキューへ書き込まず",
-        "採否候補の確定、reject対象・hold対象の判定と結果の返却",
+        "reject・hold判定の主体、時機、責務境界",
         "受信者専用のタスク文書と作成規範スキルは読み込まず",
         "調査結果が対象とするファイル種別に応じて自身が選定する作成規範スキル",
         "`explore-template.md`、作成規範スキル、バグ調査のタスク文書、レビュータスク文書は各受信者が読み込む",
@@ -2202,6 +2201,22 @@ def test_plan_standards_require_test_design_in_plans() -> None:
     assert "テストコードの新規作成又は変更を含む計画では" not in review
 
 
+def test_plan_contracts_keep_search_ownership_and_progress_timing() -> None:
+    """計画起草・レビュー・実装レビュー間の境界契約を固定する。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+
+    assert "用いた識別子、検索コマンド文字列及び一致件数" in standards
+    assert (
+        "計画ファイルの書込所有権が`plan-review-executor`配下の計画担当へ移る。"
+        "実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない" in plan_and_add
+    )
+    assert "完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない" in plan_mode
+    assert "記入時点に達していない場合、欠落として扱わない" in plan_review
+
+
 def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> None:
     """投入元識別子の値保持と提案成立性検査の順序を固定する。"""
     explore = _FEEDBACK_EXPLORE_TASK.read_text(encoding="utf-8")
@@ -2316,13 +2331,11 @@ def test_integrated_plan_overview_lists_post_exclusion_feedbacks() -> None:
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
-    overview = standards.index("`agent-toolkit:process-feedbacks`が複数の通常型フィードバック")
+    overview = standards.index("`agent-toolkit:process-feedbacks`が通常型フィードバックを統合計画へまとめる場合")
     metadata = standards.index("直下のH3は`### 計画メタ情報`だけとし", overview)
     assert overview < metadata
     for phrase in (
-        "全要求不採用の項目をreject対象、未確定要求を含む項目をhold対象と計画スレッドの起動前に判定する。",
-        "判定対象を除外して計画スレッドへ渡す集合を計画対象集合とする。",
-        "判定結果は完了報告でメインへ返し、キュー操作はメインが担当する。",
+        "計画対象集合は同スキルの受領契約「reject・hold判定」に従う。",
         "複数の統合計画へ分割した場合は、各計画へ割り当てた担当フィードバックファイルを"
         "`## 実施内容`へ原則1ファイル1行ずつ記録し、"
         "全計画の担当ファイル集合が合わせて計画対象集合を過不足なく被覆する。",
@@ -2767,12 +2780,14 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
     for field in (
         "status:",
         "commit:",
+        "コミット一覧:",
         "changed:",
-        "verification:",
+        "検証結果:",
         "review_resolution:",
-        "feedbacks:",
+        "フィードバック:",
+        "履歴書換え防止:",
         "plan_deviation:",
-        "blockers:",
+        "阻害要因:",
     ):
         assert field in common_output
     assert "フィードバック起因でなく受領していない場合は「なし」" in common_output
@@ -2782,6 +2797,34 @@ def test_ci_repair_launches_accept_plan_specific_and_general_authorization_input
     ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
     assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" in ci
     assert "受領したCI記録の原因修正、全検証、差分検収とcommitまで完遂する" not in fast
+
+
+def test_delegated_completion_report_headings_use_japanese() -> None:
+    """状態値以外の対象見出し語を日本語で固定する。"""
+    implementation = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    plan_review = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
+    feedbacks = _FEEDBACKS_PLANNER_IO.read_text(encoding="utf-8")
+    schemas = "\n".join((implementation, plan_review, feedbacks))
+
+    for field in (
+        "summary",
+        "commits",
+        "worktrees",
+        "verification",
+        "reviews",
+        "findings",
+        "plan_check",
+        "feedbacks",
+        "rewrite_guard",
+        "blockers",
+    ):
+        assert re.search(rf"(?m)^\s*{field}:", schemas) is None
+    for field in ("コミット一覧:", "検証結果:", "フィードバック:", "履歴書換え防止:", "阻害要因:"):
+        assert field in implementation
+    assert "レビュー:" in plan_review
+    assert "阻害要因:" in plan_review
+    assert "レビュー:" in feedbacks
+    assert "阻害要因:" in feedbacks
 
 
 def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
@@ -3347,8 +3390,8 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
     assert "commit数と順序" in caller
     assert "レビュー修正専用commitが残っていない" in caller
     assert "レビュー修正を受領した場合は、履歴書換え前後のOID対応" in caller
-    assert "phaseごとに反復された`rewrite_guard`" in caller
-    assert "通常実装モードのレビュー修正以外、差分限定レビュー調整モードでは、`rewrite_guard`が`not_applicable`" in caller
+    assert "phaseごとに反復された`履歴書換え防止`" in caller
+    assert "通常実装モードのレビュー修正以外、差分限定レビュー調整モードでは、`履歴書換え防止`が`not_applicable`" in caller
 
     # remote広告refの直積証跡・shallow判定・graftファイル検査は撤去済みであり、
     # `history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
@@ -3376,7 +3419,7 @@ def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
         "git_command_exit_codes: <各Gitコマンドの終了コード>",
         "error_summary: <秘密情報を除去した必要最小限のエラー要約。無ければ「なし」>",
     )
-    writer_guard = implementation_task.partition("rewrite_guard:\n")[2].partition("plan_deviation:")[0]
+    writer_guard = implementation_task.partition("履歴書換え防止:\n")[2].partition("plan_deviation:")[0]
     assert "implementation-task.md`「出力」を正本" in executor
     assert writer_guard.startswith("- phase: <pre_fixup|fixup:<単位順>|autosquash|amend>\n")
     for field in rewrite_guard_fields:
@@ -4273,14 +4316,14 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
         assert phrase in sender
     assert "保留項目を計画対象集合から除外" in sender
     assert "保留結果を確認した項目は既存の`blocked`状態を保持したまま計画対象から除外" in receiver
-    assert "保留項目は既存の`blocked`状態を保持して計画対象集合から除外" in hold
+    assert "ファイル単位のhold判定とキュー操作の責務境界" in hold
     assert "フィードバック原文が示す文言案、列挙及び節配置をユーザー合意とみなさない" in checklist
     assert "原文との差異と根拠を採否記録へ残す" in checklist
     assert "差異と根拠を`採否理由`又は`反映内容`へ記録" in decision_format
     assert "- 理由:" not in decision_format
     assert "項目固有の採否理由" in decision_format
     assert "--note=<採否理由>" not in decision_format
-    assert "--note=<採否理由>" in sender
+    assert "「reject・hold判定」の責務境界" in sender
     assert "`decision-format.md`の理由又は" not in sender
     for phrase in (
         "`feedbacks-planner`の計画担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定",
@@ -4288,20 +4331,12 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
     ):
         assert phrase in sender
         assert phrase in receiver
-    for text in (sender, receiver, decision_format):
-        assert "採用要求が1件以上" in text
-        assert "全要求が不採用" in text
-        assert "未確定要求" in text
+    canonical_terminal = _h2_section(sender, "reject・hold判定")
+    for phrase in ("採用要求が1件以上", "全要求が不採用", "未確定要求", "計画担当を起動する前"):
+        assert phrase in canonical_terminal
     assert "不採用要求の採否理由と除外範囲" in decision_format
-    assert "判定で除外されなかったファイルを計画対象集合とする" in decision_format
-    for text in (receiver, decision_format, standards):
-        assert "全要求が不採用" in text
-        assert "未確定要求" in text
-        assert "計画スレッドの起動前" in text
-        assert "計画対象集合" in text
-    receiver_terminal = receiver.index("全要求が不採用の項目は計画スレッドの起動前にreject対象")
-    receiver_plan = receiver.index("計画対象集合が1件以上ある場合は計画スレッドの起動直前")
-    assert receiver_terminal < receiver_plan
+    assert "計画対象集合が1件以上ある場合は計画スレッドの起動直前" in receiver
+    assert "`agent-toolkit:process-feedbacks`の受領契約「reject・hold判定」" in standards
     assert "計画担当の入力に含めた担当項目数と`## 実施内容`のフィードバック由来行数が一致" in receiver
     assert "計画担当が全項目の記録を完了したことを検収した後" not in receiver
     assert "非採用系の実施内容行を確認した後" not in decision_format
@@ -4331,7 +4366,7 @@ def test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary() -> 
 
 
 def test_feedback_plan_target_scope_and_item_rows_are_synchronized() -> None:
-    """9文書の事前判定、計画対象集合及び項目単位1行の契約を同期する。"""
+    """reject・hold責務の正本と計画項目単位1行の契約を固定する。"""
     planner = (
         _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
         + _FEEDBACKS_PLANNER_IO.read_text(encoding="utf-8")
@@ -4346,36 +4381,34 @@ def test_feedback_plan_target_scope_and_item_rows_are_synchronized() -> None:
     concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
 
-    documents = (planner, decision, hold, reception, standards, process, checklist, concepts, design)
-    for document in documents:
-        assert "計画対象集合" in document
-        assert "保留項目を含む全項目" not in document
-        assert "当該採否を計画担当へ渡す" not in document
-        assert "実施内容表にはバッチ全項目" not in document
-        assert "計画対象集合に含まれる項目の不採用要求も非採用系の行" not in document
+    canonical = _h2_section(reception, "reject・hold判定")
+    for phrase in (
+        "計画担当を起動する前",
+        "全要求が不採用と確定したファイルはreject対象",
+        "未確定要求が1件以上あるファイルはhold対象",
+        "`feedbacks-planner`は対象ファイル名、判定区分、採否理由",
+        "キュー状態を変更しない",
+        "メインは完了報告と保存状態を検収した後",
+        "技術的失敗、入力不足又は外部条件待ちはreject対象にしない",
+    ):
+        assert phrase in canonical
 
-    for document in (reception, process, checklist, concepts, design):
-        assert "バッチ全項目の採否記録" in document
-        assert "`blocked`状態" in document
+    references = (planner, process, concepts, design)
+    for document in references:
+        assert "feedbacks-planner-reception.md`「reject・hold判定」" in document
+    for document in (decision, hold, checklist, standards):
+        assert "`agent-toolkit:process-feedbacks`の受領契約「reject・hold判定」" in document
 
-    pre_plan_documents = (planner, hold, reception, standards, process, checklist)
-    for document in pre_plan_documents:
-        assert "計画スレッドの起動前" in document
-        assert "hold対象" in document
-    for document in (planner, decision, reception, standards, process, checklist):
-        assert "reject対象" in document
-        assert "メイン" in document
-    for document in (planner, decision, reception, standards, process):
-        assert "キュー状態を変更しない" in document
-    for document in (concepts, design):
-        assert document.index("全要求不採用") < document.index("計画対象集合")
+    for document in (planner, decision, hold, standards, process, checklist, concepts, design):
+        assert "全要求が不採用のファイルは、process-loop内" not in document
+        assert "全要求不採用の項目をreject対象、保留項目をhold対象" not in document
 
     item_row_contract = planner + standards
     assert "1行ずつ" in item_row_contract
-    assert "内部採否記録へ残し" in item_row_contract
+    assert "内部採否記録" in item_row_contract
     assert "要求別の採否詳細" in item_row_contract
     assert "計画担当は実施内容へ担当フィードバックを原則1ファイル1行で記録" in design
-    assert "不採用要求も内部採否記録へ残し" in design
+    assert "要求別採否と確認結果を累積" in reception
 
     assert "計画担当の入力に含めた担当項目数と`## 実施内容`のフィードバック由来行数が一致" in planner
     assert "担当フィードバックファイルを`## 実施内容`へ原則1ファイル1行ずつ記録" in item_row_contract
@@ -4384,20 +4417,12 @@ def test_feedback_plan_target_scope_and_item_rows_are_synchronized() -> None:
     assert "要求別の採否詳細は内部採否記録を正本" in item_row_contract
     assert "不採用要求も行として含め" not in planner
     assert "キュー操作判定" in planner
-    assert "既存TBD・依存・`blocked`状態との対応" in planner
+    assert "既存TBD、依存及び`blocked`状態との対応" in canonical
     assert "成果物、計画ファイル及びキューへ書き込まず" in planner
-    assert "採否候補の確定、reject対象・hold対象の判定と結果の返却" in planner
+    assert "reject・hold判定の主体、時機、責務境界" in planner
     assert "`atk mq reject <filename>" not in planner
     assert "メインはキュー操作と検収を担当" in reception
     assert "メインはキュー操作、`feedbacks-planner`" in process
-    reception_check = _h2_section(reception, "受領")
-    assert "完了報告の検収直後" in reception_check
-    assert "`atk mq reject <filename> --note=<採否理由>`を実行" in reception_check
-    assert "`agent-toolkit:process-feedbacks`の保留契約を適用" in reception_check
-    for document in (concepts, design):
-        assert "`feedbacks-planner`は判定結果をメインへ返" in document
-        assert "実際のreject実行と保留処理はメインが担当" in document
-    assert "採否候補の確定、reject対象・hold対象の判定と結果の返却も担う" in design
     decision_cleanup = _h2_section(decision, "後始末")
     assert "reject対象" not in decision_cleanup
     assert "hold対象" not in decision_cleanup
@@ -4986,6 +5011,23 @@ def test_user_facing_body_paths_invoke_writing_standards() -> None:
     assert "フィードバック・TBDの本文起草時" in metadata["description"]
 
 
+def test_agent_written_text_prefers_established_terms_before_new_terms() -> None:
+    """全てのエージェント記述で既存語を優先し、必要時だけ新語を定義する。"""
+    rules = _AGENT_RULES.read_text(encoding="utf-8")
+    writing = _WRITING_STANDARDS.read_text(encoding="utf-8")
+    referent = _REFERENT_TABLE.read_text(encoding="utf-8")
+
+    assert "文書、コメント、計画、フィードバック、レビュー、報告及びユーザーへの発話を含む全ての記述" in rules
+    for text in (rules, writing, referent):
+        assert "ユーザーの用語" in text
+        assert "対象リポジトリの識別子" in text
+        assert "公開仕様で確立した用語" in text
+        assert "一度しか使わない分類名" in text
+        assert "同じ文章内で繰り返し参照する場合だけ新しい用語" in text
+        assert "初出" in text
+    assert "エージェントが記述する全ての文章へ適用" in referent
+
+
 def test_feedback_workflow_starts_planning_before_research_and_recovers() -> None:
     """ファイル名入力をplanningへ移し、最古の変換と残項目の復旧を一意にする。"""
     add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
@@ -5026,7 +5068,7 @@ def test_feedback_workflow_starts_planning_before_research_and_recovers() -> Non
     assert "統合元のファイル名" in add_feedback
     assert "`agent-toolkit:add-feedback`をSkill機能で起動" in process
     assert "状態競合で拒否した場合は、active一覧と保存本文を再取得" in process
-    assert "planning項目の計画作成、再開及び失敗復旧" in process
+    assert "planning項目の計画作成、再開、失敗復旧" in process
     assert "planning項目はready集合とprocess-loopの着手対象へ含めず" in reception
     assert "## フィードバック投入" not in process
     for removed_command in (
@@ -5841,6 +5883,18 @@ def test_reference_migration_fixture_preserves_contracts_and_owner_conditions() 
         )
         # 口調例の隔離方針変更は意図した移行であり、旧段落の類似度ではなく新しい契約文を検査する。
         rewritten_edge = (edge["source"], edge["ref"]) in {
+            (
+                "agent-toolkit/skills/process-feedbacks/references/decision-format.md",
+                "../../plan-mode/references/plan-file-standards.md",
+            ),
+            (
+                "agent-toolkit/skills/process-feedbacks/references/feedbacks-planner-reception.md",
+                "hold-with-tbd-inject.md",
+            ),
+            (
+                "agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md",
+                "agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md",
+            ),
             ("agent-toolkit/skills/writing-standards/references/notation-rules.md", "tone-examples.md"),
             (
                 "agent-toolkit/skills/writing-standards/references/notation-rules.md",
@@ -5849,7 +5903,12 @@ def test_reference_migration_fixture_preserves_contracts_and_owner_conditions() 
             ("agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md", "notation-rules.md"),
         }
         if rewritten_edge:
-            assert "意図的な違反例" in source_text or "口調例は例示の内容を通常の成果物検査へ混入させない" in source_text
+            assert (
+                "reject・hold判定" in source_text
+                or "同一ファイルシステム名前空間" in source_text
+                or "意図的な違反例" in source_text
+                or "口調例は例示の内容を通常の成果物検査へ混入させない" in source_text
+            )
         else:
             assert similarity >= 0.60, edge
         assert _reference_migration_handoff_exists(source_text, edge["target"]), edge

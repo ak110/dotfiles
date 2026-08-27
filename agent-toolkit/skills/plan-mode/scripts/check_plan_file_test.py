@@ -928,9 +928,9 @@ def test_legacy_single_file_plan_does_not_use_progress_round_check(repo: tuple[p
 
 def test_review_table_max_round_matches_progress_rows(repo: tuple[pathlib.Path, str]) -> None:
     """レビュー表の最大roundと進捗行数が一致する場合を受理する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    content = _canonical_main_format(main_content).replace(
+    work_dir, _base = repo
+    main_content, detail_content = _human_new_format_plan(work_dir, detail_name="plan.detail.md")
+    content = main_content.replace(
         "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
         "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 完了。 |\n",
         1,
@@ -963,12 +963,12 @@ def test_review_table_malformed_input_is_a_plan_error(repo: tuple[pathlib.Path, 
     assert any("同stemのレビュー表を検証できない" in error for error in errors), errors
 
 
-def test_new_canonical_headings_are_accepted_and_legacy_aliases_warn(repo: tuple[pathlib.Path, str]) -> None:
-    """新しい固定H2を受理し、正規書式へ旧見出しを混在させた場合は移行warningを返す。"""
+def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path, str]) -> None:
+    """新しい固定H2と旧ID表を混在させたcanonical形式を拒否する。"""
     work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base, detail_name="canonical-plan.detail.md")
+    legacy_main_content, detail_content = _new_format_plan(work_dir, base, detail_name="canonical-plan.detail.md")
     main_content = (
-        main_content.replace(
+        legacy_main_content.replace(
             "\n## 提示素材\n",
             "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
             1,
@@ -977,13 +977,10 @@ def test_new_canonical_headings_are_accepted_and_legacy_aliases_warn(repo: tuple
         .replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
     )
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="canonical-plan.md")
-    assert not errors, errors
-    assert warnings == ["二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する"], warnings
+    assert any("canonical形式の`## 実施内容`" in error for error in errors), errors
+    assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" not in warnings
 
-    mixed = main_content.replace("canonical-plan.detail.md", "mixed-plan.detail.md", 1).replace(
-        "## 変更履歴（計画時）", "## 変更履歴", 1
-    )
+    mixed = legacy_main_content.replace("canonical-plan.detail.md", "mixed-plan.detail.md", 1)
     errors, warnings = _check_new(work_dir, mixed, detail_content, plan_name="mixed-plan.md")
     assert not errors, errors
     assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in warnings, warnings
-    assert any("変更履歴の見出しが旧形式" in warning for warning in warnings), warnings

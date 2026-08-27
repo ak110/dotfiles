@@ -44,6 +44,29 @@ def _load_posttooluse_module() -> types.ModuleType:
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
+class TestAgentsServerBackgroundResponse:
+    """agents_serverの背景移行応答を正常系として扱う。"""
+
+    @staticmethod
+    def _payload(tool_response: object) -> dict:
+        return {
+            "tool_name": "mcp__agents_server__wait",
+            "tool_input": {"session_id": "remote-session"},
+            "tool_response": tool_response,
+            "session_id": "local-session",
+        }
+
+    def test_background_transition_does_not_warn(self) -> None:
+        result = _run(self._payload({"content": [{"type": "text", "text": "moved to the background as task task-1"}]}))
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_malformed_regular_response_still_warns(self) -> None:
+        result = _run(self._payload("invalid response"))
+        assert result.returncode == 0
+        assert "response is missing or invalid response, session_id, status" in result.stdout
+
+
 def _run(
     payload: dict | str,
     *,

@@ -33,9 +33,3 @@ process-loopから起動されたセッションでは、agent-toolkit pluginの
 2. `references/host-and-os-termination.md`を全文読み、実行ホストと実行環境を判定する
 3. 判定した経路に従って本体プロセスの停止を要求するか、ユーザーへの案内でターンを完了させる
 4. 停止要求の発火後は本体プロセスが停止するため、後続のツール呼び出し・発話は行わない
-
-## auto mode下で拒否される場合の対処
-
-`kill -TERM $PPID`がauto mode classifierに拒否される事象を観測している。
-対処は`agent-toolkit:agent-standards`の
-`references/auto-mode.md`「既知の誤拒否パターンと対応」節のexit-session該当項を参照する。

@@ -24,12 +24,12 @@ decision: <採否記録契約に基づく根拠>
 decisions:
 - <バッチ全項目のファイル名、素材ID、採否、理由・差異、範囲及びキュー操作判定>
 plan: <計画ファイルの絶対パス、実在・分量の証跡、担当項目との対応及び要約。該当しない場合はなし>
-review: <計画ファイルごとの収束状態、検査結果、write_status>
+レビュー: <計画ファイルごとの収束状態、検査結果、write_status>
 tbd:
 - <通常の将来判断TBD候補。無ければ「なし」>
 user_decisions:
 - <採否記録契約が定める累積レコード>
-blockers:
+阻害要因:
 - <未完了事項。完了時は「なし」>
 confirmation_context:
 - original_investigations: <awaiting_confirmation時は必須>

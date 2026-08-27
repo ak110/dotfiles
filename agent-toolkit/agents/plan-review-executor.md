@@ -50,10 +50,10 @@ user-invocable: false
 ```text
 status: completed | needs_escalation
 plan: <計画ファイルの絶対パス、実在・分量の証跡、1〜2文の要約>
-review: <ラウンド数と重大な指摘の解消状況>
+レビュー: <ラウンド数と重大な指摘の解消状況>
 escalation:
 - <ユーザー確認を要する指摘、根拠、必要な判断。無ければ「なし」>
-blockers:
+阻害要因:
 - <未完了事項。完了時は「なし」>
 ```
 

@@ -284,9 +284,8 @@ Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホス�
 
 通常型のバッチでは、項目別調査担当が原文、実測、履歴及び投入元識別子の事実を返し、
 `feedbacks-planner`が採否確定工程で項目ごとの原文正本ID、人間由来の指示又は方針の優先度、調査根拠、欠陥原因及び採否理由を対応付ける。
-`feedbacks-planner`はバッチ全項目の採否記録を保持し、全要求不採用の項目をreject対象、保留項目をhold対象と判定して
-計画対象集合から除外する。保留項目の既存の`blocked`状態は維持する。`feedbacks-planner`は判定結果をメインへ返す。
-実際のreject実行と保留処理はメインが担当し、`feedbacks-planner`は計画対象集合だけを計画担当へ渡す。
+ファイル単位の終端、計画対象集合とキュー操作の責務境界は
+`agent-toolkit/skills/process-feedbacks/references/feedbacks-planner-reception.md`「reject・hold判定」を正本とする。
 計画担当は実施内容へ担当フィードバックを原則1ファイル1行で記録し、採否、採用範囲、実施しない範囲、理由を同じ行へ統合する。
 採用系（`採用`・`部分採用`）の行だけを実装対象とする。
 `decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目だけをエージェント由来とする。
@@ -371,7 +370,7 @@ agent-toolkitプラグイン内のタスク文書と作成規範の絶対パス�
 各レコードは種別、出所及び引用範囲をこの順で保持し、逐語本文・回答全文をレコードの末尾へ続ける。
 キューにない素材の逐語本文・回答全文は、計画外の明示入力として調査、起草、初回レビュー、再レビューへ渡し、計画本文へ転記しない。
 初回起動後の追送利用者発言は、起草担当が逐語本文、入力種別、出所、引用範囲を保持して真正性を保証し、レビュー担当は本文との整合だけを検収する。
-同一ファイルに採用要求が1件以上ある場合は不採用要求も内部採否記録へ残し、全要求が不採用の場合だけrejectし、未確定要求を含む場合はholdする。
+ファイル単位のreject・hold判定は`agent-toolkit/skills/process-feedbacks/references/feedbacks-planner-reception.md`「reject・hold判定」を正本とする。
 調査担当は同じキューCLI出力のfrontmatterから投入元識別子を取得し、文字列を改変せず`feedbacks-planner`へ渡す。
 `source`欄がない場合は値なしとして渡す。
 `feedbacks-planner`は全ての投入元で、原文が方針改訂を要求するか、明示した検証手段が現行方針に適合するかを先に検査する。
@@ -685,7 +684,7 @@ Claude Codeでは`plan-review-executor`へ委譲する。Codexではメインが
 `plan-review-executor`は`plan-impl-executor`が実装レビューの調整主体を担う
 構成と対称であり、計画ファイル初稿の絶対パスを入力として計画レビューの調整主体を担う。
 `plan-review-executor`と`feedbacks-planner`は、成果物を直接編集せず委譲と検収を担う点を共有する。
-`feedbacks-planner`は、採否候補の確定、reject対象・hold対象の判定と結果の返却も担う。
+`feedbacks-planner`によるreject・hold判定の分担は`agent-toolkit/skills/process-feedbacks/references/feedbacks-planner-reception.md`「reject・hold判定」を正本とする。
 `plan-review-executor`は`plan_model`と`plan_review_model`を解決する。
 対象工程では分担が分かれ、`plan-review-executor`は`feedbacks-planner`が所有するフィードバックの調査と項目別採否を担わず、
 計画ファイル初稿を受け取った後のレビュー修正ループだけを対象とする。

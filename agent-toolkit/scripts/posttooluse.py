@@ -46,6 +46,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-m
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -658,8 +659,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # agents_server応答からsession_id→cwdを保存し、session状態を更新する。
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
-        structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
-        if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS:
+        tool_response = payload.get("tool_response", {})
+        structured = _extract_agents_server_structured_response(tool_response)
+        if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and _stop_gate.background_task_id_from_notice(tool_response) is None:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
                 display_name = tool_name.rsplit("__", 1)[-1]

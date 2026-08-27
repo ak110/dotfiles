@@ -301,9 +301,14 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     materials, _material_errors = _plan_format.parse_plan_materials(text)
     warnings.extend(_legacy_h2_warnings(text))
     warnings.extend(_legacy_action_warnings(text))
-    if not _plan_format.has_human_action_table(text):
+    is_canonical = _plan_format.is_canonical_main_format(text)
+    if is_canonical and not _plan_format.has_human_action_table(text):
+        errors.append("canonical形式の`## 実施内容`には人間向け4列表が必要である")
+    elif not _plan_format.has_human_action_table(text):
         warnings.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
-    if materials is not None and materials.is_legacy:
+    if is_canonical and materials is not None and materials.is_legacy:
+        errors.append("canonical形式の`## 提示素材`には素材表と要求表が必要である")
+    elif materials is not None and materials.is_legacy:
         warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     errors.extend(_check_references(text, work_dir))

@@ -290,6 +290,20 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
+    if tool_name == "WebFetch":
+        notice = _check_webfetch_verbatim_request(tool_input)
+        if notice is not None:
+            pending_notices.append(notice)
+        flush_pending_notices()
+        return 0
+
+    if tool_name == "SendMessage":
+        notice = _check_sendmessage_agent_type_recipient(tool_input)
+        if notice is not None:
+            pending_notices.append(notice)
+        flush_pending_notices()
+        return 0
+
     # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
         flush_pending_notices()
@@ -906,6 +920,22 @@ _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.A
 
 _COLLOQUIAL_MAX_LISTED_MATCHES = 5
 """口語表現検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
+_MANAGED_TEMP_MARKER = ".agent-toolkit-managed-temp.json"
+
+
+def _is_in_managed_temp(file_path: str) -> bool:
+    """Git作業ツリー境界より内側に管理対象一時領域のマーカーがある場合に真を返す。"""
+    try:
+        current = pathlib.Path(file_path).expanduser().resolve(strict=False)
+        current = current if current.is_dir() else current.parent
+        for directory in (current, *current.parents):
+            if (directory / _MANAGED_TEMP_MARKER).is_file():
+                return True
+            if (directory / ".git").exists():
+                return False
+        return False
+    except (OSError, ValueError):
+        return False
 
 
 def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
@@ -919,7 +949,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
-    if _is_plan_file_or_adjunct(file_path):
+    if _is_plan_file_or_adjunct(file_path) or _is_in_managed_temp(file_path):
         return None
     for field, value in fields:
         if not value:
@@ -1442,6 +1472,36 @@ _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
     _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES | _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES
 )
+_WEBFETCH_VERBATIM_RE = re.compile(
+    r"(?:全文|原文|そのまま|逐語|引用|verbatim|word[ -]for[ -]word)",
+    re.IGNORECASE,
+)
+
+
+def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
+    """WebFetchへ逐語再現を要求する入力を検出して警告する。"""
+    prompt = tool_input.get("prompt")
+    if not isinstance(prompt, str) or _WEBFETCH_VERBATIM_RE.search(prompt) is None:
+        return None
+    return _llm_notice(
+        "WebFetch uses a summarization model and is not evidence for verbatim quotation."
+        " Save the raw content from the same URL in an agent-toolkit managed temporary directory,"
+        " then quote only the relevant passage from the saved raw content.",
+        tag="warn",
+    )
+
+
+def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
+    """SendMessageの宛先にエージェント種別名を指定した場合に警告する。"""
+    recipient = tool_input.get("to")
+    if not isinstance(recipient, str) or ":" not in recipient:
+        return None
+    return _llm_notice(
+        "An agent type name is not a reachable SendMessage recipient."
+        " Return the normal completion report through the tool result once;"
+        " send an immediate notification only to the caller identifier supplied by the runtime.",
+        tag="warn",
+    )
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:

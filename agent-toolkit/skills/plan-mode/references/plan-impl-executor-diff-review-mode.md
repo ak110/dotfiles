@@ -22,4 +22,4 @@
 採用指摘の修正では修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。
 `agent-toolkit:plan-mode`の実装担当契約、対象worktree、レビュー表の絶対パスと修正対象として確定した採用指摘の`track`集合を単一の`差分限定レビュー修正担当`へ渡す。
 関係計画パス一覧、検証コマンド、規範、作成規範スキル及び`reviewee-standards/SKILL.md`も同じ担当へ渡す。
-起動文へ担当種別を`差分限定レビュー修正担当`として明示する。履歴を書き換えず、`rewrite_guard: not_applicable`を維持する。
+起動文へ担当種別を`差分限定レビュー修正担当`として明示する。履歴を書き換えず、`履歴書換え防止: not_applicable`を維持する。

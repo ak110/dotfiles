@@ -111,8 +111,8 @@ feedbackの`active`集合は`inbox`・`processing`・`editing`・`hold`である
 初回起動には再開コンテキストを渡さない。
 `awaiting_confirmation`後の再開起動だけは、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、IDごとの累積`user_decisions`、
 出所と引用範囲付きの逐語回答・保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
-`feedbacks-planner`はバッチ全項目の採否記録を保持したまま、全要求不採用の項目をreject対象、保留項目をhold対象と計画スレッドの起動前に判定して計画対象集合から除外する。判定結果は完了報告でメインへ返し、キュー状態を変更しない。
-部分採用は確認経路へ機械的に含めず、`references/decision-format.md`の採否記録へ残す。事前除外後の計画対象集合だけを計画担当へ渡す。
+ファイル単位の終端、計画対象集合及びキュー操作の責務境界は`references/feedbacks-planner-reception.md`「reject・hold判定」を正本とする。
+部分採用は確認経路へ機械的に含めず、`references/decision-format.md`の採否記録へ残す。
 実装順序の保証は統合計画の計画ファイル（詳細）`### 実装単位`の先行依存と統合順へ移し、`start-processing`へ新たな順序・依存検査を追加しない。
 別リポジトリ項目の投入と照合は`../add-feedback/references/cross-repository-submission.md`を正本とする。
 

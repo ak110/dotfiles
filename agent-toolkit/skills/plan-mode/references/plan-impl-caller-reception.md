@@ -92,7 +92,7 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
 4. 準拠系・盲検系のレビューの対象commit、読み取り専用状態、指摘と対応結果、`review.tsv`の実在及び`track`帰属
 5. 計画の完了条件と`## 進捗ログ`
 6. 共通base、統合順、全単位commit、各worktreeの前掲の記録属性と状態
-7. 通常実装モードのレビュー修正以外、差分限定レビュー調整モードでは、`rewrite_guard`が`not_applicable`でありphase証跡を要求していないことを確認する
+7. 通常実装モードのレビュー修正以外、差分限定レビュー調整モードでは、`履歴書換え防止`が`not_applicable`でありphase証跡を要求していないことを確認する
 8. 通常の実装モードでレビュー修正を受領した場合は、レビュー対象の最終HEAD完全OIDと指摘ID・統合先commit完全OIDの対応表を確認する。
    単位ごとの変更前OIDと変更後OID、commit数と順序、commitメッセージを確認する。
    各commitの差分帰属、最終HEAD、レビュー修正専用commitが残っていないことも確認する。
@@ -109,8 +109,8 @@ agent定義とタスク文書が持つ手順、書式、完了条件を起動文
    実装担当が各fixup作成前、autosquash直前とamend直前の各phaseで`agent-toolkit:commit`の履歴書換え契約にある
    「プッシュ済み判定」の汎用判定（`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`）を再実行したことを確認する。
    汎用判定に失敗した場合（Gitコマンドの非0終了を含む）は、履歴を書き換えず`needs_escalation`で返したことを確認する。
-   phaseごとに反復された`rewrite_guard`の履歴順`target_oids`、各Gitコマンドの終了コード、公開済み判定結果及び秘密情報を除去した必要最小限のエラー要約を履歴実体と照合する。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを順序どおり含める。autosquashでは`target_oids`のfirst-parent全OIDを公開済み判定して遮断し、1件でも公開済み・判定不能または範囲にmergeを含む場合は履歴を書き換えていないことを確認する。
-   executorが実装担当の完了後にphaseごとの`rewrite_guard`反復証跡を検収し、履歴書換え前の中間受渡しを設けていないことを確認する。
+   phaseごとに反復された`履歴書換え防止`の履歴順`target_oids`、各Gitコマンドの終了コード、公開済み判定結果及び秘密情報を除去した必要最小限のエラー要約を履歴実体と照合する。`fixup:<単位順>`と`amend`は単一対象でも1要素の配列とし、`autosquash`は最古fixup対象から履歴書換え前に保持した元HEADまでのfirst-parent全OIDを順序どおり含める。autosquashでは`target_oids`のfirst-parent全OIDを公開済み判定して遮断し、1件でも公開済み・判定不能または範囲にmergeを含む場合は履歴を書き換えていないことを確認する。
+   executorが実装担当の完了後にphaseごとの`履歴書換え防止`反復証跡を検収し、履歴書換え前の中間受渡しを設けていないことを確認する。
    executorが保持した初回実装担当routeと実効`engine`、`model`及び`effort`、起動直前に解決した今回routeと実効3値、継続・新規起動に用いる識別子及び前担当の終端確認結果を照合する。同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続し、いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動して、検収済み状態を開始前に1回だけ渡したことを確認する。開始後は同じ実装担当が再判定からamendまでを所有したことを確認する。
    autosquashとamendの両方を実行した場合は、autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換したことを確認する。
    各fixup作成後に、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）が`git log -1 --format=%s`で完全一致したことを確認する。期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返したことを確認する。

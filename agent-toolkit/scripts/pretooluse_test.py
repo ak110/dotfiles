@@ -731,6 +731,34 @@ def _deny_substring_fixture() -> str:
     return ""  # unreachable
 
 
+class TestNonEditToolWarnings:
+    """WebFetchとSendMessageの入力警告。"""
+
+    @pytest.mark.parametrize("phrase", ["全文", "原文", "そのまま", "逐語", "引用", "verbatim", "word-for-word"])
+    def test_webfetch_verbatim_request_warns(self, phrase: str) -> None:
+        result = _run({"tool_name": "WebFetch", "tool_input": {"url": "https://example.invalid", "prompt": f"{phrase}で返す"}})
+        assert result.returncode == 0
+        assert "summarization model" in _additional_context(result)
+        assert "raw content" in _additional_context(result)
+
+    def test_webfetch_summary_request_does_not_warn(self) -> None:
+        result = _run({"tool_name": "WebFetch", "tool_input": {"url": "https://example.invalid", "prompt": "要点を整理する"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_sendmessage_agent_type_recipient_warns(self) -> None:
+        result = _run(
+            {"tool_name": "SendMessage", "tool_input": {"to": "agent-toolkit:plan-review-executor", "message": "通知"}}
+        )
+        assert result.returncode == 0
+        assert "not a reachable SendMessage recipient" in _additional_context(result)
+
+    def test_sendmessage_runtime_recipient_does_not_warn(self) -> None:
+        result = _run({"tool_name": "SendMessage", "tool_input": {"to": "main", "message": "通知"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
 class TestColloquialCheck:
     """口語的な日本語表現の混入警告（warn のみ、exit code は 0）。"""
 
@@ -770,6 +798,20 @@ class TestColloquialCheck:
 
     def test_clean_text_no_warn(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x = 1\n"}})
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
+    def test_managed_temp_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        managed = tmp_path / "managed"
+        managed.mkdir()
+        (managed / ".agent-toolkit-managed-temp.json").write_text("{}\n", encoding="utf-8")
+        target = managed / "nested" / "report.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"概要は{deny_substring}該当する。\n"},
+            }
+        )
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
 
