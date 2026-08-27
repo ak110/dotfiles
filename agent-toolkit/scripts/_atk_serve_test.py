@@ -203,8 +203,8 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     ]
 
 
-def test_assets_use_shared_dialog_shell_with_editing_cancel_ui() -> None:
-    """3ダイアログへ共通シェルを適用し、編集中の取り消しを詳細画面へ接続する。"""
+def test_assets_use_shared_dialog_shell_without_cancel_ui() -> None:
+    """3ダイアログへ共通シェルと唯一の終了操作を適用する。"""
     assert assets.HTML.count("<dialog ") == 3
     assert assets.HTML.count('class="dialog-shell') == 3
     assert 'class="dialog-shell detail-dialog"' in assets.HTML
@@ -222,7 +222,7 @@ def test_assets_use_shared_dialog_shell_with_editing_cancel_ui() -> None:
         assert f'id="{close_id}"' in dialog.group(2)
         assert 'aria-label="閉じる"' in dialog.group(2)
     assert "unsaved-dialog" not in assets.HTML
-    assert 'id="cancel-editing-button"' in assets.HTML
+    assert "cancel-" not in assets.HTML
     assert "requestDiscard" not in assets.JS
     assert "pendingDiscardAction" not in assets.JS
     assert "中止</button>" not in assets.HTML
@@ -367,9 +367,6 @@ const ids = [
   'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
   'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
   'user-comment-panel', 'user-comment-input', 'user-comment-input-error', 'save-user-comment-button',
-  'decision-panel', 'decision-note', 'decision-note-error', 'adopt-button', 'reject-button',
-  'hold-button', 'unhold-button', 'recover-commit-button', 'cancel-editing-button',
-  'recover-editing-button',
   'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
   'create-kind', 'create-content', 'create-content-label', 'create-content-error',
   'create-repo-fields', 'create-target',
@@ -395,9 +392,7 @@ globalThis.controlGroups = {{
     elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
     elements['user-comment-button'], elements['delete-button'], elements['edit-content'], elements['save-entry-button'],
     elements['answer-input'], elements['save-answer-button'], elements['user-comment-input'],
-    elements['save-user-comment-button'], elements['decision-note'], elements['adopt-button'],
-    elements['reject-button'], elements['hold-button'], elements['unhold-button'],
-    elements['recover-commit-button'], elements['cancel-editing-button'], elements['recover-editing-button']
+    elements['save-user-comment-button']
   ],
   'create-form': [
     elements['create-close-button'], elements['create-kind'], elements['create-content'],
@@ -2131,12 +2126,6 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/api/entries/reject",
         "/api/entries/remove",
         "/api/entries/commit",
-        "/api/entries/editing",
-        "/api/entries/editing/<filename>",
-        "/api/entries/editing/cancel",
-        "/api/entries/editing/recover",
-        "/api/entries/hold",
-        "/api/entries/unhold",
         "/api/entries/answer",
         "/api/entries/user-comment",
         "/api/events",
@@ -2144,234 +2133,6 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
     removed = {"/api/status", "/api/enable", "/api/disable"}
     assert expected <= rules
     assert not removed & rules
-
-
-def test_assets_disable_commit_recovery_after_manual_recovery_required() -> None:
-    """rebase abort失敗後は保持OIDを維持し、明示復旧を再送しない。"""
-    result = _run_node_ui(
-        """
-currentEntry = {kind: 'feedback', state: 'hold', filename: 'entry.md', content: '本文'};
-detailOriginKey = entryKey(currentEntry);
-elements['detail-dialog'].open = true;
-setPendingRecoveryCommit(currentEntry, {commit: 'a'.repeat(40), filename: 'entry.md', state: 'hold'});
-fetchHandler = async url => {
-  if (url.endsWith('/api/entries/commit')) {
-    return {
-      ok: false, status: 503, statusText: 'Unavailable',
-      json: async () => ({
-        error: 'rebaseの中断に失敗しました。',
-        commit: 'b'.repeat(40),
-        push_pending: true,
-        retryable: false,
-        git_state: 'rebase_in_progress',
-        manual_recovery_required: true
-      })
-    };
-  }
-  throw new Error('想定外のURL: ' + url);
-};
-await recoverPendingCommit();
-await recoverPendingCommit();
-process.stdout.write(JSON.stringify({
-  calls: fetchCalls.filter(call => call.url.endsWith('/api/entries/commit')).length,
-  commit: pendingRecoveryCommit,
-  blocked: pendingRecoveryBlocked,
-  disabled: elements['recover-commit-button'].disabled,
-  message: elements['detail-alert'].textContent
-}));
-"""
-    )
-    assert result == {
-        "calls": 1,
-        "commit": "a" * 40,
-        "blocked": True,
-        "disabled": True,
-        "message": "rebaseの中断に失敗しました。管理repoを手動復旧するまで再試行できません。",
-    }
-
-
-def test_assets_keep_state_and_block_mutations_on_preflight_push_pending() -> None:
-    """preflight pendingでは状態を変えず、明示commit回復以外の再送を禁止する。"""
-    result = _run_node_ui(
-        """
-currentEntry = {kind: 'feedback', state: 'inbox', filename: 'entry.md', content: '本文'};
-detailOriginKey = entryKey(currentEntry);
-elements['detail-dialog'].open = true;
-setDetailMode('view');
-fetchHandler = async url => {
-  if (url.endsWith('/api/entries/hold')) {
-    return {
-      ok: false, status: 503, statusText: 'Unavailable',
-      json: async () => ({
-        error: '未公開commitがあります。', kind: 'preflight_push', commit: 'a'.repeat(40),
-        push_pending: true, retryable: false
-      })
-    };
-  }
-  throw new Error('想定外のURL: ' + url);
-};
-await transitionDetail('hold');
-process.stdout.write(JSON.stringify({
-  state: currentEntry.state,
-  commit: pendingRecoveryCommit,
-  holdDisabled: elements['hold-button'].disabled,
-  recoverVisible: !elements['recover-commit-button'].hidden,
-  recoverDisabled: elements['recover-commit-button'].disabled,
-  message: elements['detail-alert'].textContent,
-  calls: fetchCalls.length
-}));
-"""
-    )
-    assert result == {
-        "state": "inbox",
-        "commit": "a" * 40,
-        "holdDisabled": True,
-        "recoverVisible": True,
-        "recoverDisabled": False,
-        "message": "未公開commitがあるため状態を変更していません。pushを復旧してから同じ操作を再試行してください。",
-        "calls": 1,
-    }
-
-
-def test_assets_recover_persistent_editing_without_session_id() -> None:
-    """再読込後のediting項目を管理者回復し、元状態の詳細へ更新する。"""
-    result = _run_node_ui(
-        """
-currentEntry = {kind: 'feedback', state: 'editing', filename: 'entry.md', content: '本文'};
-detailOriginKey = entryKey(currentEntry);
-elements['detail-dialog'].open = true;
-setDetailMode('view');
-const visibleBefore = !elements['recover-editing-button'].hidden;
-fetchHandler = async (url, options) => {
-  if (url.endsWith('/api/entries/editing/recover')) {
-    return {
-      ok: true, status: 200, statusText: 'OK',
-      json: async () => ({filename: 'entry.md', state: 'inbox', session_id: null, commit: 'a'.repeat(40)})
-    };
-  }
-  if (url.includes('/api/entries?')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [
-      {kind: 'feedback', state: 'inbox', filename: 'entry.md', content: '本文', summary: '本文'}
-    ], warnings: []})};
-  }
-  if (url.endsWith('/api/entries/inbox/entry.md')) {
-    return {
-      ok: true, status: 200, statusText: 'OK',
-      json: async () => ({entry: {
-        kind: 'feedback', state: 'inbox', filename: 'entry.md', content: '本文', body_html: '<p>本文</p>',
-        updated_at: '2026-08-28T00:00:00+00:00', frontmatter_entries: []
-      }})
-    };
-  }
-  throw new Error('想定外のURL: ' + url);
-};
-await recoverPersistentEditing();
-const call = fetchCalls.find(item => item.url.endsWith('/api/entries/editing/recover'));
-process.stdout.write(JSON.stringify({
-  visibleBefore,
-  body: JSON.parse(call.options.body),
-  state: currentEntry.state,
-  hiddenAfter: elements['recover-editing-button'].hidden,
-  notice: elements['toast'].textContent
-}));
-"""
-    )
-    assert result == {
-        "visibleBefore": True,
-        "body": {"filename": "entry.md"},
-        "state": "inbox",
-        "hiddenAfter": True,
-        "notice": "editing/entry.mdの編集状態を回復しました。",
-    }
-
-
-@pytest.mark.asyncio
-async def test_editing_recovery_api_returns_operation_result(tmp_path: pathlib.Path) -> None:
-    """編集回復APIがfilenameをOperationsへ渡し、完全な状態結果を返す。"""
-
-    class RecoverOperations(serve_app.Operations):
-        def recover_editing(self, filename: str) -> dict[str, object | None]:
-            assert filename == "entry.md"
-            return {
-                "filename": filename,
-                "state": "inbox",
-                "session_id": None,
-                "commit": "a" * 40,
-                "push_pending": False,
-                "retryable": False,
-            }
-
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        state.ServeState(tmp_path),
-        operations=RecoverOperations(tmp_path),
-    )
-    response = await app.test_client().post("/api/entries/editing/recover", json={"filename": "entry.md"})
-
-    assert response.status_code == 200
-    assert await response.get_json() == {
-        "filename": "entry.md",
-        "state": "inbox",
-        "session_id": None,
-        "commit": "a" * 40,
-        "push_pending": False,
-        "retryable": False,
-    }
-
-
-@pytest.mark.parametrize(
-    ("action", "state_name", "expected_note"),
-    [
-        ("adopt", "inbox", "判断根拠" * 100),
-        ("reject", "inbox", "判断根拠" * 100),
-        ("hold", "inbox", None),
-        ("unhold", "hold", None),
-    ],
-)
-def test_assets_submit_detail_transitions_with_only_supported_note(
-    action: str,
-    state_name: str,
-    expected_note: str | None,
-) -> None:
-    """詳細画面の4状態操作を正しいAPIへ送り、採否だけに任意noteを付ける。"""
-    note = "判断根拠" * 100
-    scenario = (
-        """
-currentEntry = {kind: 'feedback', state: '__STATE__', filename: 'entry.md', content: '本文'};
-detailOriginKey = entryKey(currentEntry);
-elements['detail-dialog'].open = true;
-elements['decision-note'].value = '__NOTE__';
-setDetailMode('view');
-fetchHandler = async url => {
-  if (url.endsWith('/api/entries/__ACTION__')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({filenames: ['entry.md']})};
-  }
-  if (url.includes('/api/entries?')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
-  }
-  throw new Error('想定外のURL: ' + url);
-};
-await transitionDetail('__ACTION__');
-const call = fetchCalls.find(item => item.url.endsWith('/api/entries/__ACTION__'));
-process.stdout.write(JSON.stringify({
-  url: call.url,
-  body: JSON.parse(call.options.body),
-  notice: elements['toast'].textContent
-}));
-""".replace("__STATE__", state_name)
-        .replace("__ACTION__", action)
-        .replace("__NOTE__", note)
-    )
-
-    result = _run_node_ui(scenario)
-
-    expected_body: dict[str, object] = {"filenames": ["entry.md"]}
-    if expected_note is not None:
-        expected_body["note"] = expected_note
-    assert result["url"] == f"/atk/api/entries/{action}"
-    assert result["body"] == expected_body
-    assert "entry.md" in result["notice"]
 
 
 @pytest.mark.asyncio
@@ -2948,8 +2709,8 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
 
 
-def test_operations_active_excludes_planning_feedback(tmp_path: pathlib.Path) -> None:
-    """一覧APIのactive状態はplanningのフィードバックを含めない。"""
+def test_operations_active_includes_planning_feedback(tmp_path: pathlib.Path) -> None:
+    """一覧APIのactive状態はplanningのフィードバックを含める。"""
     planning = tmp_path / "planning"
     planning.mkdir()
     (planning / "planned.md").write_text(
@@ -2960,7 +2721,7 @@ def test_operations_active_excludes_planning_feedback(tmp_path: pathlib.Path) ->
     entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "active"})
 
     assert not warnings
-    assert entries == []
+    assert [(item["filename"], item["state"]) for item in entries] == [("planned.md", "planning")]
 
 
 @pytest.mark.parametrize(
@@ -3152,7 +2913,6 @@ async def test_answer_api_rejects_feedback_entry(tmp_path: pathlib.Path, monkeyp
     monkeypatch.setattr(common, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.tbd_mutations, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.tbd_mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(serve_app.tbd_mutations, "_push_pending_commits", lambda _path: None)
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(
@@ -3892,8 +3652,8 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
     assert warnings == [{"filename": "os-error.md", "reason": "ファイルを読み取れません"}]
 
 
-def test_serve_state_watches_all_seven_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """状態監視は平坦化後の7状態フォルダを対象とし、旧feedback/tbd階層を生成しない。"""
+def test_serve_state_watches_only_new_five_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """状態監視は平坦化後の5状態フォルダのみを対象とし、旧feedback/tbd階層を生成しない。"""
     current = state.ServeState(tmp_path)
     scheduled: list[str] = []
     monkeypatch.setattr(
@@ -3907,8 +3667,6 @@ def test_serve_state_watches_all_seven_states(tmp_path: pathlib.Path, monkeypatc
         current.start(loop)
         assert sorted(pathlib.Path(p).name for p in scheduled) == [
             "adopted",
-            "editing",
-            "hold",
             "inbox",
             "planning",
             "processing",
@@ -4168,7 +3926,6 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     monkeypatch.setattr(serve_app.feedback_add, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_add, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_add, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(serve_app.feedback_add, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(serve_app.tbd_mutations, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.tbd_mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.tbd_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
@@ -5367,7 +5124,6 @@ def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(serve_app.feedback_batch, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_batch, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_batch, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(serve_app.feedback_batch, "_push_pending_commits", lambda _path: None)
 
 
 @pytest.mark.asyncio
@@ -5388,7 +5144,6 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     monkeypatch.setattr(serve_app.feedback_add, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_add, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_add, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(serve_app.feedback_add, "_push_pending_commits", lambda _path: None)
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -5630,7 +5385,7 @@ def test_user_comment_pure_update_ignores_fenced_heading_and_appends_once() -> N
             "ユーザーコメント節の後ろに別のH2見出しがあります",
         ),
         (
-            "本文\n\n## ユーザーコメント\n\n1つ目\n\n## ユーザーコメント\n\n2つ目\n",
+            "本文\n\n## ユーザーコメント\n\n一つ目\n\n## ユーザーコメント\n\n二つ目\n",
             "更新",
             "ユーザーコメント節が複数あります",
         ),

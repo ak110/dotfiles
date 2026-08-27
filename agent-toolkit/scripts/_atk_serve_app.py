@@ -34,7 +34,7 @@ import werkzeug.exceptions
 
 type JsonObject = dict[str, typing.Any]
 _ENTRY_STATES = set(common.MQ_STATES)
-_STATUS_FILTERS = {"all", "active", "processable", *common.MQ_STATES}
+_STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _PLAN_FILTERS = {"all", "normal", "plan"}
 _ENTRY_PAGE_SIZE = 100
@@ -79,8 +79,6 @@ def _resolve_states(status: str) -> tuple[str, ...]:
     """`status` queryの指定値を走査対象の状態フォルダ列へ変換する。"""
     if status == "active":
         return common.MQ_FEEDBACK_ACTIVE_STATES
-    if status == "processable":
-        return common.MQ_PROCESSABLE_STATES
     if status == "all":
         return common.MQ_STATES
     return (status,)
@@ -88,7 +86,7 @@ def _resolve_states(status: str) -> tuple[str, ...]:
 
 def _is_selected_state(status: str, state: str, kind: str | None) -> bool:
     """一覧の状態フィルターと種別の組み合わせで表示対象か判定する。"""
-    return not (status in {"active", "processable"} and state == common.MQ_STATE_PLANNING and kind == common.MQ_TYPE_TBD)
+    return not (status == "active" and state == common.MQ_STATE_PLANNING and kind == common.MQ_TYPE_TBD)
 
 
 async def _request_json() -> typing.Any:
@@ -554,68 +552,6 @@ class Operations:
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
-    def start_editing(self, state: str, filename: str, expected_content: str | None = None) -> dict[str, object | None]:
-        """詳細画面の編集開始を永続editingセッションへ接続する。"""
-        try:
-            return feedback_mutations.start_editing(
-                self.private_notes,
-                state=state,
-                filename=filename,
-                expected_content=expected_content,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
-            )
-        except SystemExit as error:
-            raise common.WebInputError("指定したエントリを操作できません") from error
-
-    def save_editing(
-        self,
-        filename: str,
-        session_id: str,
-        content: str,
-        expected_content: str | None = None,
-    ) -> dict[str, object | None]:
-        """詳細画面の編集保存を永続editingセッションへ接続する。"""
-        try:
-            return feedback_mutations.save_editing(
-                self.private_notes,
-                filename=filename,
-                session_id=session_id,
-                content=content,
-                expected_content=expected_content,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
-            )
-        except SystemExit as error:
-            raise common.WebInputError("指定したエントリを操作できません") from error
-
-    def cancel_editing(
-        self,
-        filename: str,
-        session_id: str,
-        expected_content: str | None = None,
-    ) -> dict[str, object | None]:
-        """詳細画面の編集取り消しを永続editingセッションへ接続する。"""
-        try:
-            return feedback_mutations.cancel_editing(
-                self.private_notes,
-                filename=filename,
-                session_id=session_id,
-                expected_content=expected_content,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
-            )
-        except SystemExit as error:
-            raise common.WebInputError("指定したエントリを操作できません") from error
-
-    def recover_editing(self, filename: str) -> dict[str, object | None]:
-        """管理者向けのediting回復を接続する。"""
-        try:
-            return feedback_mutations.recover_editing(
-                self.private_notes,
-                filename=filename,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
-            )
-        except SystemExit as error:
-            raise common.WebInputError("指定したエントリを操作できません") from error
-
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """session-review由来のinbox項目へユーザーコメントを追記又は置換する。"""
         if state != common.MQ_STATE_INBOX:
@@ -747,15 +683,6 @@ class Operations:
         processing状態のファイルへの既定保護（`atk mq rm`の`--force`と同義）を解除する。
         """
         try:
-            if action in {"hold", "unhold"}:
-                return feedback_mutations.direct_transition_entries(
-                    self.private_notes,
-                    action=action,
-                    filenames=filenames,
-                    now=datetime.datetime.now(),
-                    target_repo=target_repo,
-                    lock_timeout=_WEB_LOCK_TIMEOUT,
-                )
             return feedback_mutations.transition_entries(
                 self.private_notes,
                 action=action,
@@ -772,9 +699,9 @@ class Operations:
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
-    def commit(self) -> dict[str, object]:
-        """外部編集差分をcommitしてpushし、復旧用OIDを返す。"""
-        return feedback_mutations.commit_entries_result(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
+    def commit(self) -> bool:
+        """外部編集差分をcommitしてpushする。"""
+        return feedback_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
 
 class _ServeRuntime:
@@ -823,28 +750,11 @@ def _register_error_handlers(app: quart.Quart) -> None:
         del error
         return quart.jsonify(error="別の操作が進行中です", code="lock_conflict"), 409
 
-    @app.errorhandler(common.DirectPushPendingError)
-    async def direct_push_pending(error: common.DirectPushPendingError) -> tuple[quart.Response, int]:
-        return (
-            quart.jsonify(
-                error=str(error),
-                kind="preflight_push",
-                commit=error.commit,
-                push_pending=True,
-                retryable=False,
-            ),
-            503,
-        )
-
     @app.errorhandler(RuntimeError)
     async def edit_conflict(error: RuntimeError) -> tuple[quart.Response, int]:
         if str(error) != _EDIT_CONFLICT_MESSAGE:
             raise error
         return quart.jsonify(error=str(error), code="edit_conflict"), 409
-
-    @app.errorhandler(feedback_mutations.MutationFailure)
-    async def mutation_failure(error: feedback_mutations.MutationFailure) -> tuple[quart.Response, int]:
-        return quart.jsonify(error=str(error), **error.payload), error.status
 
     @app.errorhandler(subprocess.CalledProcessError)
     async def git_error(error: subprocess.CalledProcessError) -> tuple[quart.Response, int]:
@@ -1045,11 +955,7 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
         force = data["force"]
     state_name = _optional_string(data, "state") if "state" in allowed else None
     if state_name is not None:
-        valid_states = (
-            (common.MQ_STATE_INBOX, common.MQ_STATE_PLANNING, common.MQ_STATE_PROCESSING)
-            if action == "remove"
-            else common.MQ_PROCESSABLE_STATES
-        )
+        valid_states = common.MQ_FEEDBACK_ACTIVE_STATES if action == "remove" else common.MQ_ACTIVE_STATES
         if state_name not in valid_states:
             if action == "remove":
                 raise common.WebInputError("stateはinbox、planning又はprocessingで指定してください")
@@ -1083,63 +989,6 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
 def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     """編集・投入・ユーザーコメント・回答・状態遷移ルートを登録する。"""
     ops, workers = runtime.operations, runtime.workers
-
-    @app.post("/api/entries/editing")
-    async def start_editing() -> quart.Response:
-        data = _json_object(
-            await _request_json(),
-            allowed={"state", "filename", "expected_content"},
-            required={"state", "filename"},
-        )
-        state_name = data["state"]
-        filename = data["filename"]
-        if not isinstance(state_name, str) or not isinstance(filename, str) or not state_name or not filename:
-            raise common.WebInputError("stateとfilenameは空でない文字列で指定してください")
-        expected_content = _specified_string(data, "expected_content")
-        result = await workers.run(ops.start_editing, state_name, filename, expected_content)
-        return quart.jsonify(**result)
-
-    @app.put("/api/entries/editing/<filename>")
-    async def save_editing(filename: str) -> quart.Response:
-        data = _json_object(
-            await _request_json(),
-            allowed={"session_id", "content", "expected_content"},
-            required={"session_id", "content"},
-        )
-        session_id = data["session_id"]
-        content = data["content"]
-        if not isinstance(session_id, str) or not session_id.strip():
-            raise common.WebInputError("session_idは空でない文字列で指定してください")
-        if not isinstance(content, str) or not content.strip():
-            raise common.WebInputError("contentは空でない文字列で指定してください")
-        expected_content = _specified_string(data, "expected_content")
-        result = await workers.run(ops.save_editing, filename, session_id, content, expected_content)
-        return quart.jsonify(**result)
-
-    @app.post("/api/entries/editing/cancel")
-    async def cancel_editing() -> quart.Response:
-        data = _json_object(
-            await _request_json(),
-            allowed={"filename", "session_id", "expected_content"},
-            required={"filename", "session_id"},
-        )
-        filename = data["filename"]
-        session_id = data["session_id"]
-        if not isinstance(filename, str) or not filename.strip():
-            raise common.WebInputError("filenameは空でない文字列で指定してください")
-        if not isinstance(session_id, str) or not session_id.strip():
-            raise common.WebInputError("session_idは空でない文字列で指定してください")
-        expected_content = _specified_string(data, "expected_content")
-        result = await workers.run(ops.cancel_editing, filename, session_id, expected_content)
-        return quart.jsonify(**result)
-
-    @app.post("/api/entries/editing/recover")
-    async def recover_editing() -> quart.Response:
-        data = _json_object(await _request_json(), allowed={"filename"}, required={"filename"})
-        filename = data["filename"]
-        if not isinstance(filename, str) or not filename.strip():
-            raise common.WebInputError("filenameは空でない文字列で指定してください")
-        return quart.jsonify(**await workers.run(ops.recover_editing, filename))
 
     @app.put("/api/entries/<state_name>/<filename>")
     async def edit_entry(state_name: str, filename: str) -> quart.Response:
@@ -1227,7 +1076,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             raise common.WebInputError("filenameは文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         state_name = _optional_string(data, "state")
-        if state_name is not None and state_name not in common.MQ_PROCESSABLE_STATES:
+        if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
             raise common.WebInputError("stateはinbox又はprocessingで指定してください")
         if state_name is None:
             changed = await workers.run(ops.answer_tbd, data["filename"], data["answer"], expected_content)
@@ -1243,8 +1092,6 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
 
     transition_specs = {
         "start-processing": {"filenames", "target_repo"},
-        "hold": {"filenames", "target_repo"},
-        "unhold": {"filenames", "target_repo"},
         "adopt": {"filenames", "note", "commit", "target_repo"},
         "reject": {"filenames", "note", "commit", "target_repo"},
         "remove": {"filenames", "note", "target_repo", "force", "state", "expected_content"},
@@ -1263,7 +1110,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     @app.post("/api/entries/commit")
     async def commit_entries() -> quart.Response:
         _json_object(await _request_json(), allowed=set())
-        return quart.jsonify(await workers.run(ops.commit))
+        return quart.jsonify(changed=await workers.run(ops.commit))
 
 
 def create_app(

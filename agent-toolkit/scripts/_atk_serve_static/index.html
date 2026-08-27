@@ -47,13 +47,10 @@
         <label for="state-filter">状態</label>
         <select id="state-filter">
           <option value="active">active</option>
-          <option value="processable">processable</option>
           <option value="all">all</option>
           <option value="inbox">inbox</option>
           <option value="planning">planning</option>
           <option value="processing">processing</option>
-          <option value="editing">editing</option>
-          <option value="hold">hold</option>
           <option value="adopted">adopted</option>
           <option value="rejected">rejected</option>
         </select>
@@ -151,28 +148,15 @@
           <textarea id="user-comment-input" aria-describedby="user-comment-input-error" required></textarea>
           <p id="user-comment-input-error" class="inline-error" hidden></p>
         </section>
-        <section id="decision-panel" class="decision-panel" hidden>
-          <h3>採否</h3>
-          <label for="decision-note">メモ（任意）</label>
-          <textarea id="decision-note" aria-describedby="decision-note-error"></textarea>
-          <p id="decision-note-error" class="inline-error" hidden></p>
-        </section>
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer">
         <div class="detail-footer-left">
-          <button id="adopt-button" class="button-primary" type="button" hidden>採用</button>
-          <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
-          <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
-          <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
-          <button id="recover-commit-button" class="button-secondary" type="button" hidden>pushを復旧</button>
-          <button id="recover-editing-button" class="button-secondary" type="button" hidden>編集状態を回復</button>
           <button id="delete-button" class="button-danger" type="button">削除</button>
         </div>
         <div class="detail-footer-right">
           <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
           <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>
           <button id="edit-button" class="button-primary" type="button">編集</button>
-          <button id="cancel-editing-button" class="button-secondary" type="button" hidden>編集を取り消し</button>
           <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
           <button id="save-answer-button" class="button-primary" type="button" hidden>回答を保存</button>
           <button id="save-user-comment-button" class="button-primary" type="button" hidden>コメントを保存</button>
