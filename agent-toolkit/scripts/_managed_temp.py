@@ -317,12 +317,24 @@ def _windows_set_file_information(
 
 def _windows_rename_handle(handle: int, source: pathlib.Path, destination: pathlib.Path) -> None:
     """開いたWindowsハンドルの実体を別名へ移動する。"""
-    encoded_destination = str(destination).encode("utf-16-le")
+    if source.parent != destination.parent:
+        raise ManagedTempError(f"Windowsハンドルの移動先が同じ親ではない: {source}: {destination}")
+    with _windows_path_handle(
+        destination.parent,
+        _WINDOWS_READ_ATTRIBUTES,
+        share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
+    ) as (root_handle, _):
+        _windows_rename_handle_relative(handle, source, destination.name, root_handle)
+
+
+def _windows_rename_handle_relative(handle: int, source: pathlib.Path, destination_name: str, root_handle: int) -> None:
+    """保持した親ディレクトリを基準に開いたWindowsハンドルの実体を移動する。"""
+    encoded_destination = destination_name.encode("utf-16-le")
     file_name_offset = _FileRenameInfo.file_name.offset
     buffer = ctypes.create_string_buffer(file_name_offset + len(encoded_destination))
     information = ctypes.cast(buffer, ctypes.POINTER(_FileRenameInfo)).contents
     information.replace_if_exists = 0
-    information.root_directory = wintypes.HANDLE()
+    information.root_directory = wintypes.HANDLE(root_handle)
     information.file_name_length = len(encoded_destination)
     ctypes.memmove(
         ctypes.addressof(buffer) + file_name_offset,
@@ -826,7 +838,7 @@ def _validate_root(
         identity = _windows_identity(root)
         current_sid = _windows_sid_bytes(_windows_current_sid())
         security = _windows_security_descriptor(root)
-        if not security.directory or not security.dacl_present or not _windows_equal_sids(security.owner, current_sid):
+        if not security.directory or not security.dacl_present:
             raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {root}")
         if explicit and not _windows_managed_root_security_is_valid(security, current_sid):
             raise ManagedTempError(f"Windows pathのownerまたはACLが不正: {root}")

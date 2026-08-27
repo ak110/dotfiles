@@ -104,17 +104,18 @@ def test_windows_handle_file_operations_use_bound_information(monkeypatch: pytes
     monkeypatch.setattr(subject, "_windows_dll", lambda _name: _Kernel32Double())
     source = tmp_path / "source"
     destination = tmp_path / "destination"
-    subject._windows_rename_handle(101, source, destination)
+    subject._windows_rename_handle_relative(101, source, destination.name, 303)
     subject._windows_delete_handle(202, source)
 
     assert [call[1] for call in calls] == [subject._WINDOWS_FILE_RENAME_INFO, subject._WINDOWS_FILE_DISPOSITION_INFO]
-    encoded_destination = str(destination).encode("utf-16-le")
+    encoded_destination = destination.name.encode("utf-16-le")
     rename_data = calls[0][2]
     assert calls[0][0] == 101
     assert calls[0][3] == subject._FileRenameInfo.file_name.offset + len(encoded_destination)
     assert int.from_bytes(rename_data[0:4], "little") == 0
+    assert int.from_bytes(rename_data[8:16], "little") == 303
     assert int.from_bytes(rename_data[16:20], "little") == len(encoded_destination)
-    assert rename_data[subject._FileRenameInfo.file_name.offset :].decode("utf-16-le") == str(destination)
+    assert rename_data[subject._FileRenameInfo.file_name.offset :].decode("utf-16-le") == destination.name
     assert calls[1] == (202, subject._WINDOWS_FILE_DISPOSITION_INFO, b"\x01", 1)
 
 

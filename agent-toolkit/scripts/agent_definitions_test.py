@@ -3947,14 +3947,15 @@ def test_exit_session_uses_identity_based_codex_termination_contract() -> None:
         .replace("<表示されたexe_id>", "8:123")
         .replace("<表示されたstart>", "456")
     )
-    syntax_check = subprocess.run(
-        ["bash", "-n"],
-        input=f"candidate_exe={shlex.quote(executable_path)}\n{checked_command}\n",
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    assert syntax_check.returncode == 0, syntax_check.stderr
+    if os.name != "nt":
+        syntax_check = subprocess.run(
+            ["bash", "-n"],
+            input=f"candidate_exe={shlex.quote(executable_path)}\n{checked_command}\n",
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        assert syntax_check.returncode == 0, syntax_check.stderr
     assert executable_path not in stop_command
 
 
