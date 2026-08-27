@@ -2231,6 +2231,56 @@ def test_session_review_user_comment_is_the_only_human_source_exception() -> Non
     assert "UI外の一般全文編集が見出しを作成できる現行信頼境界" in session_review
 
 
+def test_feedback_source_classification_covers_all_values_and_comment_boundaries() -> None:
+    """sourceの全分岐とsession-review予約節の末尾条件を検査する。"""
+    decision = _FEEDBACK_DECISION_FORMAT.read_text(encoding="utf-8")
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    concepts = (_REPOSITORY_ROOT / "docs" / "development" / "concepts.md").read_text(encoding="utf-8")
+    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
+
+    classification_cases = (
+        ("session-review", "エージェント由来"),
+        ("alert-monitor", "エージェント由来"),
+        ("agent", "エージェント由来"),
+        ("human", "人間由来"),
+        ("plan", "人間由来"),
+    )
+    classification_lines = decision.splitlines()
+    for source, origin in classification_cases:
+        assert any(f"`{source}`" in line and origin in line for line in classification_lines)
+    assert any(
+        all(value in line for value in ("その他のsource", "source欠落", "不明", "人間由来")) for line in classification_lines
+    )
+    assert "フィードバックの投入元を二値分類し" in incidents
+    assert "投入元識別子は`source`の文字列又は「値なし」を改変せず記録する" in decision
+    assert "生成経路名を持つ起票は当該経路名（`session-review`・`alert-monitor`）を用い" in add_feedback
+    assert "経路名を持たない起票は`agent`を用いる" in add_feedback
+    assert "手動起動した投入と、対話中のユーザー指示による登録は人間由来とし、`human`を用いる" in add_feedback
+    assert "source `plan`（人間由来）を明示" in plan_and_add
+    for policy in (
+        "恒久成果物は対話の経緯を要件・挙動・根拠へ変換し",
+        "口調例は執筆者とレビュアーが必要時に同じ意図的違反例を参照する",
+        "`references/`間の直接参照を置かず",
+        "所属スキル名を含む表記",
+    ):
+        assert policy in concepts
+
+    heading = re.compile(r"^## ユーザーコメント$", re.MULTILINE)
+    any_h2 = re.compile(r"^## .+$", re.MULTILINE)
+
+    def is_trailing_comment(text: str) -> bool:
+        matches = list(heading.finditer(text))
+        all_h2 = list(any_h2.finditer(text))
+        return bool(matches and len(matches) == 1 and all_h2 and matches[-1].start() == all_h2[-1].start()) and bool(
+            text[matches[-1].end() :].strip()
+        )
+
+    assert is_trailing_comment("## 概要\nエージェント由来\n## ユーザーコメント\n人間の要求\n")
+    assert not is_trailing_comment("## 概要\nエージェント由来\n## ユーザーコメント\n人間の要求\n## 継続\n後続本文\n")
+    assert not is_trailing_comment("## 概要\nエージェント由来\n## ユーザーコメント\n途中本文\n## ユーザーコメント\n末尾本文\n")
+
+
 def test_integrated_plan_overview_lists_post_exclusion_feedbacks() -> None:
     """通常型統合計画の記録範囲を事前除外後の計画対象集合へ限定する。"""
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")

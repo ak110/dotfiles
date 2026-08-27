@@ -378,6 +378,8 @@ sourceがある場合は同じ値を渡す。
 sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を`atk mq show`で照合する。
 sourceを指定しない場合は本文、`target_repo`と非予約frontmatter全体を照合する。
 照合後に移管先ファイル名を記録して元項目を終端する。
+`add-feedback`・`plan-and-add-feedback`・`process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
+主題の継続又はフィードバック投入と直接実装の境界が不明な場合は、変更又は投入の前に確認する。
 各投入経路は指定されたsourceだけを保持し、`add-feedback`はsource受領時だけ`atk mq add --source`へ渡して、保存後に既存の`atk mq show`で照合する。
 
 ## セキュリティと環境
