@@ -3712,6 +3712,7 @@ class TestBashOutputTruncationWarning:
             "pytest -q | head -5",
             "uv run --no-project --script /repo/agent-toolkit/scripts/check_plan_file.py | tail -20",
             "uv run --script agent-toolkit/scripts/check_plan_file.py | tail -20",
+            "uv run -s agent-toolkit/scripts/check_plan_file.py | tail -20",
         ],
     )
     def test_warns(self, command: str):
@@ -3719,6 +3720,29 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         output = json.loads(result.stdout)
         assert "warn" in output["hookSpecificOutput"]["additionalContext"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytest -q | tee | tail -5",
+            "pytest -q | tee -a | tail -5",
+            "pytest -q | tee --append | tail -5",
+        ],
+    )
+    def test_tee_without_file_does_not_hide_truncation(self, command: str):
+        """保存先の無い`tee`を完全出力保存として扱わない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command", ["pytest -q | tee /tmp/test.log | tail -5", "pytest -q | tee -a /tmp/test.log | tail -5"]
+    )
+    def test_tee_with_file_hides_truncation(self, command: str):
+        """実ファイル引数を持つ`tee`は切り詰め前の保存として扱う。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -3764,10 +3788,25 @@ class TestBashOutputTruncationWarning:
             "make --new-file=lint docs | tail -5",
             "make --assume-new lint docs | tail -5",
             "make --assume-new=lint docs | tail -5",
+            "make FOO-BAR=lint docs | tail -5",
+            "make -- FOO-BAR=lint docs | tail -5",
+            "make FOO:=lint docs | tail -5",
+            "make -- FOO:=lint docs | tail -5",
+            "make FOO+=lint docs | tail -5",
+            "make -- FOO+=lint docs | tail -5",
+            "make FOO?=lint docs | tail -5",
+            "make -- FOO?=lint docs | tail -5",
+            "make FOO!=lint docs | tail -5",
+            "make -- FOO!=lint docs | tail -5",
+            "make FOO::=lint docs | tail -5",
+            "make -- FOO::=lint docs | tail -5",
+            "make -- 'FOO-BAR = lint' docs | tail -5",
+            "make -- 'FOO := lint' docs | tail -5",
+            "make -- 'FOO += lint' docs | tail -5",
         ],
     )
     def test_make_option_values_are_not_targets(self, command: str):
-        """値付き`make`オプションの値をターゲットとして誤認しない。"""
+        """値付き`make`オプションの値や変数代入をターゲットとして誤認しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "truncating it" not in _agent_messages(result)
@@ -3778,6 +3817,11 @@ class TestBashOutputTruncationWarning:
             "make -E 'lint: ;' lint | tail -5",
             "make --assume-old=lint docs lint | tail -5",
             "make --assume-new=lint docs check | tail -5",
+            "make -- FOO=lint docs check | tail -5",
+            "make -- FOO-BAR=lint docs check | tail -5",
+            "make -- FOO:=lint docs check | tail -5",
+            "make -- FOO+=lint docs check | tail -5",
+            "make -- 'FOO += lint' docs check | tail -5",
         ],
     )
     def test_make_real_verification_target_still_warns(self, command: str):
@@ -3792,6 +3836,7 @@ class TestBashOutputTruncationWarning:
             "make docs | tail -5",
             "make | head -5",
             "make FOO=lint docs | tail -5",
+            "make -- FOO=lint docs | tail -5",
             "make -f test.mk docs | tail -5",
             "make --directory /tmp docs | tail -5",
         ],
@@ -3809,6 +3854,7 @@ class TestBashOutputTruncationWarning:
             "make test | tail -5 && echo exit=$?",
             'pytest -q | tail -5 || echo "$?"',
             'pytest -q | tail -5 & echo "$?"',
+            'pytest -q |& tail -5; echo "$?"',
         ],
     )
     def test_status_after_truncation_warns(self, command: str):
@@ -3836,6 +3882,21 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         assert "reports the status of `head`/`tail`" not in _agent_messages(result)
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytest -q | tail -5; echo '$?'",
+            'set -o pipefail; pytest -q | tail -5; echo "$?"',
+        ],
+    )
+    def test_status_after_truncation_silent_when_shell_preserves_status(self, command: str):
+        """リテラル出力と`pipefail`有効時の終了状態には追加診断を出力しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "truncating it" in messages
+        assert "reports the status of `head`/`tail`" not in messages
+
     def test_tee_saved_log_silent(self):
         command = "uvx pyfltr run-for-agent 2>&1 | tee /tmp/pyfltr.log"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
@@ -3847,7 +3908,7 @@ class TestBashOutputTruncationWarning:
         command = "pytest -q | tee /tmp/test.log | tail -5"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "warn" not in result.stderr
+        assert "truncating it" not in _agent_messages(result)
 
     def test_non_verification_command_silent(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log | head -5"}})

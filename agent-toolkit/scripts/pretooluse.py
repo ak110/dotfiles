@@ -2349,8 +2349,11 @@ def _is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, ex
     script_path = tokens[execution_index]
     normalized = script_path.replace("\\", "/")
     components = tuple(part for part in normalized.split("/") if part)
+    run_options = tokens[run_index + 1 : execution_index]
     return (
-        "--script" in tokens[run_index + 1 : execution_index] and "agent-toolkit" in components and normalized.endswith(".py")
+        any(option in run_options for option in ("--script", "-s"))
+        and "agent-toolkit" in components
+        and normalized.endswith(".py")
     )
 
 
@@ -2590,7 +2593,7 @@ def _split_serial_shell_commands(
                 char == "&"
                 and "&" in separators
                 and not command.startswith("&>", index)
-                and not (index > 0 and command[index - 1] in "<>")
+                and not (index > 0 and command[index - 1] in "<>|")
             )
         ):
             separator_length = 1
@@ -2630,6 +2633,17 @@ def _command_tokens(command: str) -> list[str] | None:
     """制御構文の接頭予約語を除いたコマンドトークンを返す。"""
     try:
         args = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    while args and args[0] in {"do", "then", "else"}:
+        args = args[1:]
+    return args
+
+
+def _command_tokens_with_quotes(command: str) -> list[str] | None:
+    """クォートを保持したコマンドトークンを返す。"""
+    try:
+        args = shlex.split(command, posix=False)
     except ValueError:
         return None
     while args and args[0] in {"do", "then", "else"}:
@@ -2839,7 +2853,7 @@ _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
 )
 _OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
 _OUTPUT_FULL_SAVE_COMMAND = "tee"
-_MAKE_ASSIGNMENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_MAKE_ASSIGNMENT_PATTERN = re.compile(r"^[^=\s]+?\s*(?:::=|:=|\?=|\+=|!=|=)")
 _MAKE_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     {
         "-C",
@@ -2872,6 +2886,23 @@ def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) ->
     return segment.resolved and segment.tokens[: len(prefix)] == prefix
 
 
+def _tee_saves_to_file(segment: _ExecutionSegment) -> bool:
+    """`tee`区間に標準出力を保存するファイル引数があるかを返す。"""
+    if not _segment_starts_with(segment, (_OUTPUT_FULL_SAVE_COMMAND,)):
+        return False
+    option_terminator = False
+    for token in segment.tokens[1:]:
+        if option_terminator:
+            return True
+        if token == "--":
+            option_terminator = True
+            continue
+        if token.startswith("-") and token != "-":
+            continue
+        return True
+    return False
+
+
 def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
     """`make`区間からオプションと変数代入を除いたターゲット名を返す。"""
     if not _segment_starts_with(segment, ("make",)):
@@ -2880,6 +2911,8 @@ def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
     option_terminator = False
     tokens = iter(segment.tokens[1:])
     for token in tokens:
+        if _MAKE_ASSIGNMENT_PATTERN.match(token):
+            continue
         if option_terminator:
             targets.append(token)
             continue
@@ -2889,8 +2922,6 @@ def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
         if token.startswith("-"):
             if "=" not in token and token in _MAKE_OPTIONS_WITH_VALUE:
                 next(tokens, None)
-            continue
-        if _MAKE_ASSIGNMENT_PATTERN.match(token):
             continue
         targets.append(token)
     return tuple(targets)
@@ -2927,7 +2958,7 @@ def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment
         )
         if truncation_index is None:
             continue
-        if any(_segment_starts_with(item, (_OUTPUT_FULL_SAVE_COMMAND,)) for item in following[:truncation_index]):
+        if any(_tee_saves_to_file(item) for item in following[:truncation_index]):
             continue
         return True
     return False
@@ -2953,23 +2984,77 @@ def _check_bash_output_truncation(command: str) -> str | None:
     )
 
 
+def _contains_unquoted_status_expansion(token: str) -> bool:
+    """トークンに単一引用符で保護されていない`$?`があるかを返す。"""
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(token):
+        char = token[index]
+        if escaped:
+            escaped = False
+            index += 1
+            continue
+        if quote == "'":
+            if char == "'":
+                quote = None
+            index += 1
+            continue
+        if quote == '"':
+            if char == "\\":
+                escaped = True
+            elif char == '"':
+                quote = None
+            elif token.startswith("$?", index):
+                return True
+            index += 1
+            continue
+        if char == "\\":
+            escaped = True
+        elif char in {"'", '"'}:
+            quote = char
+        elif token.startswith("$?", index):
+            return True
+        index += 1
+    return False
+
+
 def _status_report_follows_truncation(command: str) -> bool:
     """直後のserial commandが検証コマンドの終了状態を報告する形かを返す。"""
-    tokens = _command_tokens(command)
+    tokens = _command_tokens_with_quotes(command)
     if not tokens:
         return False
-    command_name = tokens[0].rsplit("/", 1)[-1]
+    command_name = tokens[0].strip("'\"").rsplit("/", 1)[-1]
     if command_name not in _STATUS_REPORT_COMMANDS:
         return False
     if any("PIPESTATUS" in token for token in tokens):
         return False
-    return any("$?" in token for token in tokens[1:])
+    return any(_contains_unquoted_status_expansion(token) for token in tokens[1:])
+
+
+def _pipefail_setting(command: str) -> bool | None:
+    """`set -o/+o pipefail`によるパイプライン終了状態の設定を返す。"""
+    tokens = _command_tokens(command)
+    if not tokens or len(tokens) < 3 or tokens[0] != "set":
+        return None
+    if tokens[1:3] == ["-o", "pipefail"]:
+        return True
+    if tokens[1:3] == ["+o", "pipefail"]:
+        return False
+    return None
 
 
 def _check_bash_output_status_after_truncation(command: str) -> str | None:
     """切り詰め直後の`$?`報告が検証コマンドの状態を隠す場合に診断を返す。"""
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
+    pipefail_enabled = False
     for index, serial_command in enumerate(serial_commands[:-1]):
+        pipefail_state = _pipefail_setting(serial_command)
+        if pipefail_state is not None:
+            pipefail_enabled = pipefail_state
+            continue
+        if pipefail_enabled:
+            continue
         if not any(
             _pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(serial_command)
         ):
