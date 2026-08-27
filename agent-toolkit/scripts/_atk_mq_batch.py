@@ -42,7 +42,6 @@ from _atk_mq_common import (
     _count_feedback,
     _max_existing_seq,
     _pull,
-    _push_pending_commits,
     _repo_lock,
     _subdir,
     validate_filename,
@@ -146,7 +145,7 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
 
 
 def _existing_filenames(private_notes: pathlib.Path) -> set[str]:
-    """全状態フォルダに実在する`.md`ファイル名の集合を返す。"""
+    """5状態フォルダに実在する`.md`ファイル名の集合を返す。"""
     return {
         path.name
         for state in MQ_STATES
@@ -193,7 +192,7 @@ def _assign_filenames(
 ) -> dict[str, str]:
     """元ファイル名から保存ファイル名への対応を書き込み前に一括確定する。
 
-    元名を維持できるエントリを先に確定し、全状態フォルダの既存名と衝突するエントリだけを
+    元名を維持できるエントリを先に確定し、5状態フォルダの既存名と衝突するエントリだけを
     通常の投入経路と同じ採番規則で再採番する。再採番候補は既存名・元名を維持するエントリの元名・
     割り当て済みの保存名を予約集合として除外する。
     既存名との衝突判定と予約集合の判定は`_comparison_key`が返す比較キーで行い、
@@ -304,7 +303,7 @@ def _dependency_warnings(
 ) -> list[str]:
     """取り込み先に実在しない`depends_on`参照を警告文へ列挙する。
 
-    取り込み後に実在する名前は、全状態フォルダの既存名、バッチ内エントリの元名
+    取り込み後に実在する名前は、5状態フォルダの既存名、バッチ内エントリの元名
     （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
     及び再採番で確定した保存名の3種とする。
     判定対象の依存先は`_declared_dependencies`が返す列とし、スカラー形式の`depends_on`も含める。
@@ -347,7 +346,6 @@ def add_batch_entries(
     for entry in entries:
         validate_filename(entry.original_name, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
         _pull(private_notes)
         case_sensitive = _is_case_sensitive(inbox_dir)
         counts = collections.Counter(_comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries)

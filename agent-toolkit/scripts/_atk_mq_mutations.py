@@ -5,19 +5,14 @@
 """
 
 import argparse
-import dataclasses
 import datetime
-import hashlib
-import json
 import os
 import pathlib
 import re
-import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
-import typing
 
 import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
@@ -26,12 +21,7 @@ import _atk_mq_tbd as _tbd
 import _plan_format
 from _atk_mq_common import (
     MQ_ACTIVE_STATES,
-    MQ_DIRECT_PUSH_TRAILER_KEY,
-    MQ_DIRECT_PUSH_TRAILER_VALUE,
-    MQ_PROCESSABLE_STATES,
     MQ_STATE_ADOPTED,
-    MQ_STATE_EDITING,
-    MQ_STATE_HOLD,
     MQ_STATE_INBOX,
     MQ_STATE_PLANNING,
     MQ_STATE_PROCESSING,
@@ -39,19 +29,14 @@ from _atk_mq_common import (
     MQ_STATES,
     MQ_TYPE_FEEDBACK,
     MQ_TYPE_TBD,
-    RebaseRecoveryError,
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
     _dedup_positional_filenames,
-    _has_direct_push_pending,
-    _has_remote,
-    _parse_type,
     _pull,
     _push_pending_commits,
     _repo_lock,
     _require_type,
-    _run_git,
     _stamp_result,
     _subdir,
     _validate_filename,
@@ -74,42 +59,6 @@ _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
     "repair_kind",
     "plan_file",
 )
-
-
-@dataclasses.dataclass(frozen=True)
-class PushPendingResult:
-    """commit後のpush失敗を、確定済みローカル結果として返す。"""
-
-    commit: str
-    push_pending: bool = True
-    retryable: bool = False
-
-
-class PushPendingError(RuntimeError):
-    """commitは完了したがpushだけ失敗した操作。"""
-
-    def __init__(self, result: PushPendingResult) -> None:
-        super().__init__("pushに失敗しました。未pushのcommitをatk mq commitで復旧してください。")
-        self.result = result
-
-
-class MutationFailure(RuntimeError):
-    """状態遷移の失敗分類とHTTP応答情報を保持する。"""
-
-    def __init__(self, message: str, *, status: int, payload: dict[str, object]) -> None:
-        super().__init__(message)
-        self.status = status
-        self.payload = payload
-
-
-def _editing_meta_dir(private_notes: pathlib.Path) -> pathlib.Path:
-    """編集中セッションのメタデータディレクトリを返す。"""
-    return private_notes / MQ_STATE_EDITING / ".meta"
-
-
-def _editing_meta_path(private_notes: pathlib.Path, filename: str) -> pathlib.Path:
-    """編集中セッションのメタデータパスを返す。"""
-    return _editing_meta_dir(private_notes) / f"{filename.removesuffix('.md')}.json"
 
 
 def _entry_target_repo(path: pathlib.Path, text: str) -> str:
@@ -289,28 +238,17 @@ def _validate_transition_options(
     cooldown_days: int | None,
 ) -> None:
     """状態遷移オプション間の制約を検証する。"""
-    if action not in {
-        "start-planning",
-        "start-processing",
-        "return-to-inbox",
-        "hold",
-        "unhold",
-        "adopt",
-        "reject",
-        "remove",
-    }:
+    if action not in {"start-planning", "start-processing", "return-to-inbox", "adopt", "reject", "remove"}:
         raise WebInputError(f"未知のエントリ操作です: {action}")
     if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
         raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
     state_is_valid = (
         (action == "remove" and state in {MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING})
         or (action == "return-to-inbox" and state == MQ_STATE_PLANNING)
-        or (action == "hold" and state in MQ_PROCESSABLE_STATES)
-        or (action == "unhold" and state == MQ_STATE_HOLD)
         or (action == "reject" and state == MQ_STATE_INBOX)
     )
     if state is not None and not state_is_valid:
-        raise WebInputError("stateの指定が操作対象と一致しません")
+        raise WebInputError("stateはplanningからのreturn-to-inbox、remove、又はinbox限定のrejectでのみ使用できます")
     if expected_content is not None and (action != "remove" or len(filenames) != 1):
         raise WebInputError("expected_contentはremoveで1件を指定する場合に限り使用できます")
 
@@ -334,14 +272,6 @@ def _resolve_transition_paths(
         return _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
     if action == "return-to-inbox":
         return _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
-    if action == "hold":
-        return _resolve_processable_targets(filenames, inbox_dir, processing_dir, missing_is_conflict=missing_is_conflict)
-    if action == "unhold":
-        return _resolve_feedback_targets(
-            filenames,
-            _subdir(private_notes, MQ_STATE_HOLD),
-            missing_is_conflict=missing_is_conflict,
-        )
     if action == "remove":
         return _resolve_removable_targets(
             filenames,
@@ -386,10 +316,6 @@ def _validate_transition_targets(
                 if parsed is None or "plan_file" in parsed[0]:
                     raise WebInputError(f"既存の計画型フィードバックはplanningへ移動できません: {path.name}")
         _verify_target_repo_content(path, content, normalized_target_repo)
-        if action == "hold" and path.parent.name not in MQ_PROCESSABLE_STATES:
-            raise WebInputError(f"inboxまたはprocessingだけを保留できます: {path.name}")
-        if action == "unhold" and path.parent.name != MQ_STATE_HOLD:
-            raise WebInputError(f"holdだけを解除できます: {path.name}")
         if (
             path.parent.name == MQ_STATE_PLANNING
             and action == "return-to-inbox"
@@ -459,8 +385,6 @@ def _apply_transition(
         "start-planning": MQ_STATE_PLANNING,
         "start-processing": MQ_STATE_PROCESSING,
         "return-to-inbox": MQ_STATE_INBOX,
-        "hold": MQ_STATE_HOLD,
-        "unhold": MQ_STATE_INBOX,
         "adopt": MQ_STATE_ADOPTED,
         "reject": MQ_STATE_REJECTED,
     }.get(action)
@@ -491,8 +415,6 @@ def _transition_commit_message(action: str, count: int, note: str | None) -> str
         "start-planning": f"chore: start planning {count} {item_word}",
         "start-processing": f"chore: start processing {count} {item_word}",
         "return-to-inbox": f"chore: return {count} {item_word} to inbox",
-        "hold": f"chore: hold {count} {item_word}",
-        "unhold": f"chore: unhold {count} {item_word}",
         "adopt": f"chore: process {count} {item_word} (adopted)",
         "reject": f"chore: process {count} {item_word} (rejected)",
         "remove": f"chore: remove {count} {item_word}{note_suffix}",
@@ -522,17 +444,6 @@ def transition_entries(
     対象に含まれるとexit 2で拒否する（`atk mq rm`の既定保護。処理中ファイルの
     意図しない削除を防ぐ。解除するには`force=True`を渡す）。
     """
-    if action in {"hold", "unhold"}:
-        if note is not None or commit is not None or force or state is not None or expected_content is not None or skip_push:
-            raise WebInputError("hold・unholdではnote・commit・force・state・expected_content・skip_pushを指定できません")
-        return direct_transition_entries(
-            private_notes,
-            action=action,
-            filenames=filenames,
-            now=now,
-            target_repo=target_repo,
-            lock_timeout=lock_timeout,
-        )
     _validate_transition_options(
         action,
         filenames,
@@ -584,768 +495,6 @@ def transition_entries(
             skip_push=skip_push,
         )
     return [path.name for path in paths]
-
-
-def _direct_push(
-    private_notes: pathlib.Path,
-    *,
-    kind: str,
-    entries: list[dict[str, object]],
-    allow_pending: bool = False,
-) -> None:
-    """hold・unhold・editingの非書換pushを実行し、失敗を再試行可能として分類する。"""
-    if not _has_remote(private_notes):
-        return
-    if not allow_pending and _has_direct_push_pending(private_notes):
-        raise MutationFailure(
-            "非書換push対象の未公開commitがあります。atk mq commitで復旧してから操作を再試行してください。",
-            status=503,
-            payload={
-                "kind": kind,
-                "entries": entries,
-                "commit": _git_head(private_notes),
-                "push_pending": True,
-                "retryable": False,
-            },
-        )
-    try:
-        _run_git(["push"], cwd=private_notes)
-    except (OSError, subprocess.SubprocessError) as error:
-        raise MutationFailure(
-            "既存の未push commitを公開できません。atk mq commit後に同じ操作を再試行してください。",
-            status=503,
-            payload={"kind": kind, "entries": entries, "push_pending": False, "retryable": True},
-        ) from error
-
-
-def _assert_index_clean(private_notes: pathlib.Path) -> None:
-    """新設状態遷移の開始前に管理repoのindex全体がcleanであることを確認する。"""
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--quiet"],
-        cwd=private_notes,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 1:
-        raise WebInputError("状態遷移前に管理repoのindex全体をcleanにしてください")
-    if result.returncode != 0:
-        raise MutationFailure(
-            "管理repoのindex状態を確認できませんでした。",
-            status=503,
-            payload={"kind": "preflight_index", "push_pending": False, "retryable": True},
-        )
-
-
-def _direct_transition_restore(
-    private_notes: pathlib.Path,
-    start_head: str,
-    snapshots: list[tuple[pathlib.Path, bytes]],
-    destinations: list[pathlib.Path],
-) -> None:
-    """直接遷移のcommit前失敗時に対象の状態だけを復元する。"""
-    try:
-        if _git_head(private_notes) != start_head:
-            return
-        _run_git(["reset", "--mixed", start_head], cwd=private_notes)
-        for path, content in snapshots:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(content)
-        for destination in destinations:
-            if destination.exists():
-                destination.unlink()
-    except (OSError, subprocess.CalledProcessError) as error:
-        print(f"状態遷移の復元に失敗しました。手動確認が必要です: {error}", file=sys.stderr)
-
-
-def direct_transition_entries(
-    private_notes: pathlib.Path,
-    *,
-    action: str,
-    filenames: list[str],
-    now: datetime.datetime,
-    target_repo: str | None = None,
-    lock_timeout: float = -1,
-) -> list[str]:
-    """hold・unholdを非書換pushで一括実行する。"""
-    if action not in {"hold", "unhold"}:
-        raise WebInputError(f"直接遷移に対応しない操作です: {action}")
-    inbox_dir = private_notes / MQ_STATE_INBOX
-    _validate_filenames_only(filenames, inbox_dir)
-    normalized_filenames = list(dict.fromkeys(_validate_filename(name, inbox_dir).name for name in filenames))
-    _validate_transition_options(action, normalized_filenames, state=None, expected_content=None, cooldown_days=None)
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _assert_index_clean(private_notes)
-        source_entries: list[dict[str, object]]
-        if action == "hold":
-            source_paths = _resolve_processable_targets(
-                normalized_filenames, inbox_dir, _subdir(private_notes, MQ_STATE_PROCESSING)
-            )
-            source_entries = [{"filename": path.name, "state": path.parent.name} for path in source_paths]
-        else:
-            source_entries = [{"filename": name, "state": MQ_STATE_HOLD} for name in filenames]
-        _direct_push(private_notes, kind="preflight_push", entries=source_entries)
-        try:
-            _pull(private_notes)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise MutationFailure(
-                "remoteのfast-forward同期に失敗しました。同期後に同じ操作を再試行してください。",
-                status=503,
-                payload={"kind": "preflight_sync", "entries": source_entries, "push_pending": False, "retryable": True},
-            ) from error
-        paths = _resolve_transition_paths(private_notes, action, normalized_filenames, None, missing_is_conflict=False)
-        _validate_transition_targets(
-            paths,
-            action=action,
-            target_repo=target_repo,
-            expected_content=None,
-            cooldown_days=None,
-            force=False,
-        )
-        destination_name = MQ_STATE_HOLD if action == "hold" else MQ_STATE_INBOX
-        destination = _subdir(private_notes, destination_name)
-        conflicts = [path.name for path in paths if (destination / path.name).exists()]
-        if conflicts:
-            raise WebInputError(f"移動先（{destination_name}）に同名エントリが既に存在します: {', '.join(conflicts)}")
-        start_head = _git_head(private_notes)
-        snapshots = [(path, path.read_bytes()) for path in paths]
-        destinations = [destination / path.name for path in paths]
-        try:
-            _apply_transition(
-                private_notes,
-                paths,
-                action=action,
-                now=now,
-                note=None,
-                commit_values={path: None for path in paths},
-                cooldown_days=None,
-            )
-            relative_paths = [
-                *[str(path.relative_to(private_notes)) for path in paths],
-                *[str(path.relative_to(private_notes)) for path in destinations],
-            ]
-            _run_git(["add", "--", *relative_paths], cwd=private_notes)
-            _run_git(
-                [
-                    "commit",
-                    "-m",
-                    _transition_commit_message(action, len(paths), None),
-                    "--trailer",
-                    f"{MQ_DIRECT_PUSH_TRAILER_KEY}={MQ_DIRECT_PUSH_TRAILER_VALUE}",
-                ],
-                cwd=private_notes,
-            )
-        except (OSError, subprocess.CalledProcessError) as error:
-            _direct_transition_restore(private_notes, start_head, snapshots, destinations)
-            raise MutationFailure(
-                "状態遷移のcommit前処理に失敗しました。対象を復元しました。",
-                status=500,
-                payload={"kind": "commit", "entries": source_entries, "push_pending": False, "retryable": False},
-            ) from error
-        try:
-            _direct_push(
-                private_notes,
-                kind="push_pending",
-                entries=[{"filename": path.name, "state": destination_name} for path in paths],
-                allow_pending=True,
-            )
-        except MutationFailure as error:
-            oid = _git_head(private_notes)
-            error.payload.update(
-                {
-                    "entries": [{"filename": path.name, "state": destination_name} for path in paths],
-                    "state": destination_name,
-                    "commit": oid,
-                    "push_pending": True,
-                    "retryable": False,
-                }
-            )
-            raise
-        return [path.name for path in paths]
-
-
-def _read_editing_metadata(private_notes: pathlib.Path, filename: str) -> dict[str, object]:
-    """編集中メタデータを読み取り、構造を検証する。"""
-    metadata_path = _editing_meta_path(private_notes, filename)
-    try:
-        value = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except FileNotFoundError as error:
-        raise WebInputError(f"編集中セッションが見つかりません: {filename}") from error
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise WebInputError(f"編集中セッションのメタデータを読み取れません: {filename}") from error
-    if not isinstance(value, dict):
-        raise WebInputError(f"編集中セッションのメタデータが不正です: {filename}")
-    return value
-
-
-def _validate_editing_metadata(
-    metadata: dict[str, object],
-    *,
-    filename: str,
-    session_id: str | None,
-) -> tuple[str, str, str]:
-    """編集中メタデータから元状態・セッション・本文ハッシュを検証して返す。"""
-    original_state = metadata.get("original_state")
-    stored_filename = metadata.get("filename")
-    stored_session = metadata.get("session_id")
-    content_hash = metadata.get("content_hash")
-    if (
-        stored_filename != filename
-        or not isinstance(original_state, str)
-        or original_state not in MQ_PROCESSABLE_STATES
-        or not isinstance(stored_session, str)
-        or not isinstance(content_hash, str)
-    ):
-        raise WebInputError(f"編集中セッションのメタデータが不正です: {filename}")
-    if session_id is not None and stored_session != session_id:
-        raise WebInputError("編集中セッションIDが一致しません")
-    return original_state, stored_session, content_hash
-
-
-def _editing_result(
-    *,
-    filename: str,
-    state: str,
-    session_id: str | None,
-    commit: str | None,
-    push_pending: bool = False,
-    retryable: bool = False,
-) -> dict[str, object | None]:
-    """編集操作のCLI・API共通結果を構成する。"""
-    return {
-        "filename": filename,
-        "state": state,
-        "session_id": session_id,
-        "commit": commit,
-        "push_pending": push_pending,
-        "retryable": retryable,
-    }
-
-
-def _commit_editing_transition(
-    private_notes: pathlib.Path,
-    *,
-    start_head: str,
-    paths: tuple[str, ...],
-    restore: typing.Callable[[], None],
-    filename: str,
-    state: str,
-    session_id: str | None,
-) -> dict[str, object | None]:
-    """編集状態遷移をcommitし、push失敗を確定済み結果として返す。"""
-    try:
-        _run_git(["add", *paths], cwd=private_notes)
-        _run_git(
-            [
-                "commit",
-                "-m",
-                "chore: update editing session",
-                "--trailer",
-                f"{MQ_DIRECT_PUSH_TRAILER_KEY}={MQ_DIRECT_PUSH_TRAILER_VALUE}",
-            ],
-            cwd=private_notes,
-        )
-    except (OSError, subprocess.CalledProcessError) as error:
-        try:
-            current_head = _git_head(private_notes)
-            if current_head != start_head:
-                print(
-                    "commitコマンドは失敗を返しましたがHEADが進んでいるため、確定済みcommitとしてpushを続行します。",
-                    file=sys.stderr,
-                )
-            else:
-                _run_git(["reset", "--mixed", start_head], cwd=private_notes)
-                restore()
-                status = subprocess.run(
-                    ["git", "status", "--porcelain", "--", *paths],
-                    cwd=private_notes,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                if status.stdout.strip():
-                    raise RuntimeError("編集遷移の復元後に対象差分が残っています") from error
-        except (OSError, subprocess.CalledProcessError, RuntimeError) as restore_error:
-            print(f"編集中状態の復元に失敗しました: {restore_error}", file=sys.stderr)
-            raise MutationFailure(
-                "編集中状態のcommitと復元に失敗しました。管理repoを手動確認してください。",
-                status=500,
-                payload={
-                    "kind": "commit",
-                    "filename": filename,
-                    "state": state,
-                    "session_id": session_id,
-                    "push_pending": False,
-                    "retryable": False,
-                    "manual_recovery_required": True,
-                },
-            ) from restore_error
-        if current_head == start_head:
-            raise MutationFailure(
-                "編集中状態のcommitに失敗しました。状態を開始前へ復元しました。",
-                status=500,
-                payload={
-                    "kind": "commit",
-                    "filename": filename,
-                    "state": state,
-                    "session_id": session_id,
-                    "push_pending": False,
-                    "retryable": False,
-                },
-            ) from error
-    commit_oid = _git_head(private_notes)
-    try:
-        _direct_push(
-            private_notes,
-            kind="push_pending",
-            entries=[{"filename": filename, "state": state}],
-            allow_pending=True,
-        )
-    except MutationFailure as error:
-        error.payload.update(
-            {
-                "filename": filename,
-                "state": state,
-                "session_id": session_id,
-                "commit": commit_oid,
-                "push_pending": True,
-                "retryable": False,
-            }
-        )
-        raise
-    return _editing_result(filename=filename, state=state, session_id=session_id, commit=commit_oid)
-
-
-def start_editing(
-    private_notes: pathlib.Path,
-    *,
-    state: str | None,
-    filename: str,
-    expected_content: str | None = None,
-    lock_timeout: float = -1,
-) -> dict[str, object | None]:
-    """processable項目をeditingへ移し、永続セッションを開始する。"""
-    if state is not None and state not in MQ_PROCESSABLE_STATES:
-        raise WebInputError("編集開始はinboxまたはprocessingだけで実行できます")
-    inbox_dir = private_notes / MQ_STATE_INBOX
-    _validate_filenames_only([filename], inbox_dir)
-    normalized = _validate_filename(filename, inbox_dir).name
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _assert_index_clean(private_notes)
-        preflight_entries: list[dict[str, object]] = [{"filename": normalized, "state": state or "processable"}]
-        try:
-            _direct_push(private_notes, kind="preflight_push", entries=preflight_entries)
-        except MutationFailure as error:
-            error.payload.update({"state": state, "session_id": None, "filename": normalized})
-            raise
-        try:
-            _pull(private_notes)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise MutationFailure(
-                "remoteのfast-forward同期に失敗しました。同期後に編集開始を再試行してください。",
-                status=503,
-                payload={
-                    "kind": "preflight_sync",
-                    "filename": normalized,
-                    "state": state,
-                    "session_id": None,
-                    "push_pending": False,
-                    "retryable": True,
-                },
-            ) from error
-        if state is None:
-            source = _resolve_processable_targets(
-                [normalized],
-                private_notes / MQ_STATE_INBOX,
-                private_notes / MQ_STATE_PROCESSING,
-            )[0]
-            state = source.parent.name
-        else:
-            source = _validate_filename(normalized, private_notes / state)
-        editing_path = _validate_filename(normalized, private_notes / MQ_STATE_EDITING)
-        if not source.is_file():
-            raise FileNotFoundError(normalized)
-        if editing_path.exists() or _editing_meta_path(private_notes, normalized).exists():
-            raise WebInputError(f"既に編集中のため開始できません: {normalized}")
-        content = source.read_text(encoding="utf-8")
-        if expected_content is not None and content != expected_content:
-            raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        session_id = secrets.token_urlsafe(24)
-        metadata_path = _editing_meta_path(private_notes, normalized)
-        metadata = {
-            "filename": normalized,
-            "original_state": state,
-            "session_id": session_id,
-            "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        }
-        start_head = _git_head(private_notes)
-        editing_path.parent.mkdir(parents=True, exist_ok=True)
-        metadata_path.parent.mkdir(parents=True, exist_ok=True)
-        snapshots = (content.encode("utf-8"),)
-
-        def restore() -> None:
-            if editing_path.exists() and not source.exists():
-                shutil.move(editing_path, source)
-            elif editing_path.exists():
-                editing_path.unlink()
-            metadata_path.unlink(missing_ok=True)
-            if not source.exists():
-                source.write_bytes(snapshots[0])
-
-        try:
-            shutil.move(source, editing_path)
-            metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-            return _commit_editing_transition(
-                private_notes,
-                start_head=start_head,
-                paths=(
-                    str(source.relative_to(private_notes)),
-                    str(editing_path.relative_to(private_notes)),
-                    str(metadata_path.relative_to(private_notes)),
-                ),
-                restore=restore,
-                filename=normalized,
-                state=MQ_STATE_EDITING,
-                session_id=session_id,
-            )
-        except (OSError, UnicodeError) as error:
-            restore()
-            raise MutationFailure(
-                "編集中状態の作成に失敗しました。状態を開始前へ復元しました。",
-                status=500,
-                payload={
-                    "kind": "commit",
-                    "filename": normalized,
-                    "state": MQ_STATE_EDITING,
-                    "session_id": session_id,
-                    "push_pending": False,
-                    "retryable": False,
-                },
-            ) from error
-
-
-def _prepare_editing_operation(
-    private_notes: pathlib.Path,
-    *,
-    filename: str,
-    session_id: str,
-    expected_content: str | None,
-    check_content_hash: bool = True,
-) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, dict[str, object], str, str, str]:
-    """editing保存・取り消し共通のロック内検証を行う。"""
-    normalized = _validate_filename(filename, private_notes / MQ_STATE_EDITING).name
-    metadata_path = _editing_meta_path(private_notes, normalized)
-    metadata = _read_editing_metadata(private_notes, normalized)
-    original_state, stored_session, content_hash = _validate_editing_metadata(
-        metadata,
-        filename=normalized,
-        session_id=session_id,
-    )
-    editing_path = _validate_filename(normalized, private_notes / MQ_STATE_EDITING)
-    original_path = _validate_filename(normalized, private_notes / original_state)
-    if not editing_path.is_file():
-        raise FileNotFoundError(normalized)
-    current = editing_path.read_text(encoding="utf-8")
-    if expected_content is not None and current != expected_content:
-        raise RuntimeError("編集中に他プロセスが対象を変更しました")
-    if check_content_hash and hashlib.sha256(current.encode("utf-8")).hexdigest() != content_hash and expected_content is None:
-        raise RuntimeError("編集中に他プロセスが対象を変更しました")
-    if original_path.exists():
-        raise WebInputError(f"元の状態に同名エントリが存在します: {normalized}")
-    return editing_path, original_path, metadata_path, metadata, original_state, stored_session, current
-
-
-def save_editing(
-    private_notes: pathlib.Path,
-    *,
-    filename: str,
-    session_id: str,
-    content: str,
-    expected_content: str | None = None,
-    lock_timeout: float = -1,
-) -> dict[str, object | None]:
-    """編集中項目を検証して元状態へ保存する。"""
-    if not isinstance(content, str) or not content.strip():
-        raise WebInputError("contentは空でない文字列で指定してください")
-    normalized = _validate_filename(filename, private_notes / MQ_STATE_EDITING).name
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _assert_index_clean(private_notes)
-        try:
-            _direct_push(private_notes, kind="preflight_push", entries=[{"filename": normalized, "state": MQ_STATE_EDITING}])
-        except MutationFailure as error:
-            metadata = _read_editing_metadata(private_notes, normalized)
-            _original_state, valid_session, _hash = _validate_editing_metadata(
-                metadata,
-                filename=normalized,
-                session_id=session_id,
-            )
-            error.payload.update({"filename": normalized, "state": MQ_STATE_EDITING, "session_id": valid_session})
-            raise
-        try:
-            _pull(private_notes)
-        except (OSError, subprocess.SubprocessError) as error:
-            metadata = _read_editing_metadata(private_notes, normalized)
-            _original_state, valid_session, _hash = _validate_editing_metadata(
-                metadata,
-                filename=normalized,
-                session_id=session_id,
-            )
-            raise MutationFailure(
-                "remoteのfast-forward同期に失敗しました。同期後に同じ保存操作を再試行してください。",
-                status=503,
-                payload={
-                    "kind": "preflight_sync",
-                    "filename": normalized,
-                    "state": MQ_STATE_EDITING,
-                    "session_id": valid_session,
-                    "push_pending": False,
-                    "retryable": True,
-                },
-            ) from error
-        editing_path, original_path, metadata_path, _metadata, original_state, _valid_session, current = (
-            _prepare_editing_operation(
-                private_notes,
-                filename=normalized,
-                session_id=session_id,
-                expected_content=expected_content,
-            )
-        )
-        _validate_no_reserved_frontmatter_modification(current, content)
-        if _require_type(editing_path, current) != _parse_type(content):
-            raise WebInputError("typeを変更または欠落させることはできません")
-        start_head = _git_head(private_notes)
-        old_content = current.encode("utf-8")
-
-        def restore() -> None:
-            if original_path.exists() and not editing_path.exists():
-                shutil.move(original_path, editing_path)
-            elif original_path.exists():
-                original_path.unlink()
-            if not editing_path.exists():
-                editing_path.write_bytes(old_content)
-            metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            metadata_path.write_text(json.dumps(_metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-        try:
-            editing_path.write_text(content, encoding="utf-8")
-            shutil.move(editing_path, original_path)
-            metadata_path.unlink()
-
-            return _commit_editing_transition(
-                private_notes,
-                start_head=start_head,
-                paths=(
-                    str(editing_path.relative_to(private_notes)),
-                    str(original_path.relative_to(private_notes)),
-                    str(metadata_path.relative_to(private_notes)),
-                ),
-                restore=restore,
-                filename=original_path.name,
-                state=original_state,
-                session_id=None,
-            )
-        except (OSError, UnicodeError) as error:
-            restore()
-            raise MutationFailure(
-                "編集中内容の保存に失敗しました。editing状態を保持しました。",
-                status=500,
-                payload={
-                    "kind": "commit",
-                    "filename": normalized,
-                    "state": MQ_STATE_EDITING,
-                    "session_id": _valid_session,
-                    "push_pending": False,
-                    "retryable": False,
-                },
-            ) from error
-
-
-def cancel_editing(
-    private_notes: pathlib.Path,
-    *,
-    filename: str,
-    session_id: str,
-    expected_content: str | None = None,
-    lock_timeout: float = -1,
-) -> dict[str, object | None]:
-    """編集中項目を本文変更なしで元状態へ戻す。"""
-    normalized = _validate_filename(filename, private_notes / MQ_STATE_EDITING).name
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _assert_index_clean(private_notes)
-        try:
-            _direct_push(private_notes, kind="preflight_push", entries=[{"filename": normalized, "state": MQ_STATE_EDITING}])
-        except MutationFailure as error:
-            metadata = _read_editing_metadata(private_notes, normalized)
-            _original_state, valid_session, _hash = _validate_editing_metadata(
-                metadata,
-                filename=normalized,
-                session_id=session_id,
-            )
-            error.payload.update({"filename": normalized, "state": MQ_STATE_EDITING, "session_id": valid_session})
-            raise
-        try:
-            _pull(private_notes)
-        except (OSError, subprocess.SubprocessError) as error:
-            metadata = _read_editing_metadata(private_notes, normalized)
-            _original_state, valid_session, _hash = _validate_editing_metadata(
-                metadata,
-                filename=normalized,
-                session_id=session_id,
-            )
-            raise MutationFailure(
-                "remoteのfast-forward同期に失敗しました。同期後に同じ取り消し操作を再試行してください。",
-                status=503,
-                payload={
-                    "kind": "preflight_sync",
-                    "filename": normalized,
-                    "state": MQ_STATE_EDITING,
-                    "session_id": valid_session,
-                    "push_pending": False,
-                    "retryable": True,
-                },
-            ) from error
-        editing_path, original_path, metadata_path, metadata, original_state, _valid_session, current = (
-            _prepare_editing_operation(
-                private_notes,
-                filename=normalized,
-                session_id=session_id,
-                expected_content=expected_content,
-            )
-        )
-        del current
-        start_head = _git_head(private_notes)
-        old_content = editing_path.read_bytes()
-
-        def restore() -> None:
-            if original_path.exists() and not editing_path.exists():
-                shutil.move(original_path, editing_path)
-            elif original_path.exists():
-                original_path.unlink()
-            if not editing_path.exists():
-                editing_path.write_bytes(old_content)
-            metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-        try:
-            shutil.move(editing_path, original_path)
-            metadata_path.unlink()
-
-            return _commit_editing_transition(
-                private_notes,
-                start_head=start_head,
-                paths=(
-                    str(editing_path.relative_to(private_notes)),
-                    str(original_path.relative_to(private_notes)),
-                    str(metadata_path.relative_to(private_notes)),
-                ),
-                restore=restore,
-                filename=original_path.name,
-                state=original_state,
-                session_id=None,
-            )
-        except (OSError, UnicodeError) as error:
-            restore()
-            raise MutationFailure(
-                "編集中状態の取り消しに失敗しました。editing状態を保持しました。",
-                status=500,
-                payload={
-                    "kind": "commit",
-                    "filename": normalized,
-                    "state": MQ_STATE_EDITING,
-                    "session_id": _valid_session,
-                    "push_pending": False,
-                    "retryable": False,
-                },
-            ) from error
-
-
-def recover_editing(
-    private_notes: pathlib.Path,
-    *,
-    filename: str,
-    lock_timeout: float = -1,
-) -> dict[str, object | None]:
-    """管理者の明示操作として編集中項目を元状態へ戻し、セッションを無効化する。"""
-    normalized = _validate_filename(filename, private_notes / MQ_STATE_EDITING).name
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _assert_index_clean(private_notes)
-        try:
-            _direct_push(private_notes, kind="preflight_push", entries=[{"filename": normalized, "state": MQ_STATE_EDITING}])
-        except MutationFailure as error:
-            metadata = _read_editing_metadata(private_notes, normalized)
-            original_state, valid_session, _hash = _validate_editing_metadata(metadata, filename=normalized, session_id=None)
-            error.payload.update({"filename": normalized, "state": MQ_STATE_EDITING, "session_id": valid_session})
-            raise
-        try:
-            _pull(private_notes)
-        except (OSError, subprocess.SubprocessError) as error:
-            metadata = _read_editing_metadata(private_notes, normalized)
-            _original_state, valid_session, _hash = _validate_editing_metadata(metadata, filename=normalized, session_id=None)
-            raise MutationFailure(
-                "remoteのfast-forward同期に失敗しました。同期後に回復操作を再試行してください。",
-                status=503,
-                payload={
-                    "kind": "preflight_sync",
-                    "filename": normalized,
-                    "state": MQ_STATE_EDITING,
-                    "session_id": valid_session,
-                    "push_pending": False,
-                    "retryable": True,
-                },
-            ) from error
-        metadata = _read_editing_metadata(private_notes, normalized)
-        editing_path, original_path, metadata_path, metadata, original_state, _session, _current = _prepare_editing_operation(
-            private_notes,
-            filename=normalized,
-            session_id=str(metadata.get("session_id")) if isinstance(metadata.get("session_id"), str) else "",
-            expected_content=None,
-            check_content_hash=False,
-        )
-        start_head = _git_head(private_notes)
-        old_content = editing_path.read_bytes()
-
-        def restore() -> None:
-            if original_path.exists() and not editing_path.exists():
-                shutil.move(original_path, editing_path)
-            elif original_path.exists():
-                original_path.unlink()
-            if not editing_path.exists():
-                editing_path.write_bytes(old_content)
-            metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-        try:
-            shutil.move(editing_path, original_path)
-            metadata_path.unlink()
-
-            return _commit_editing_transition(
-                private_notes,
-                start_head=start_head,
-                paths=(
-                    str(editing_path.relative_to(private_notes)),
-                    str(original_path.relative_to(private_notes)),
-                    str(metadata_path.relative_to(private_notes)),
-                ),
-                restore=restore,
-                filename=normalized,
-                state=original_state,
-                session_id=None,
-            )
-        except (OSError, UnicodeError) as error:
-            restore()
-            raise MutationFailure(
-                "編集中状態の回復に失敗しました。editing状態を保持しました。",
-                status=500,
-                payload={
-                    "kind": "commit",
-                    "filename": normalized,
-                    "state": MQ_STATE_EDITING,
-                    "session_id": _session,
-                    "push_pending": False,
-                    "retryable": False,
-                },
-            ) from error
 
 
 def edit_entry_content(
@@ -1712,7 +861,7 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
     対象配下に差分がない場合も滞留commitをpushし、外部編集によるcommitを行ったかを返す。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes, allow_rebase=True)
+        _push_pending_commits(private_notes)
         _pull(private_notes)
         inbox_rel = MQ_STATE_INBOX
         processing_rel = MQ_STATE_PROCESSING
@@ -1724,176 +873,10 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
             text=True,
         )
         if not status.stdout.strip():
+            _push_pending_commits(private_notes)
             return False
-        _commit_and_push(
-            private_notes,
-            "chore: edit queue items externally",
-            [inbox_rel, processing_rel],
-            allow_rebase=True,
-        )
+        _commit_and_push(private_notes, "chore: edit queue items externally", [inbox_rel, processing_rel])
     return True
-
-
-def commit_entries_result(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> dict[str, object]:
-    """外部編集分のcommit・push結果を完全OID付きで返す。"""
-    inbox_rel = MQ_STATE_INBOX
-    processing_rel = MQ_STATE_PROCESSING
-
-    def current_head_or_failure() -> str:
-        try:
-            return _git_head(private_notes)
-        except (OSError, subprocess.SubprocessError, RuntimeError) as head_error:
-            raise MutationFailure(
-                "commit復旧後のHEADを確認できません。管理repoを手動確認してください。",
-                status=503,
-                payload={"kind": "commit_recovery", "push_pending": True, "retryable": True},
-            ) from head_error
-
-    def push_failure(error: BaseException, *, changed: bool, recovery_base: str) -> MutationFailure:
-        current_head = current_head_or_failure()
-        if isinstance(error, RebaseRecoveryError) and not error.abort_succeeded:
-            return MutationFailure(
-                "rebaseの中断に失敗しました。管理repoを手動復旧してください。",
-                status=503,
-                payload={
-                    "kind": "commit_recovery",
-                    "commit": current_head,
-                    "recovered_from": None,
-                    "rebased": False,
-                    "changed": changed,
-                    "push_pending": True,
-                    "retryable": False,
-                    "git_state": "rebase_in_progress",
-                    "manual_recovery_required": True,
-                },
-            )
-        rebased = current_head != recovery_base
-        return MutationFailure(
-            "pushに失敗しました。atk mq commitを再試行してください。",
-            status=503,
-            payload={
-                "kind": "commit_recovery",
-                "commit": current_head,
-                "recovered_from": recovery_base if rebased else None,
-                "rebased": rebased,
-                "changed": changed,
-                "push_pending": True,
-                "retryable": True,
-                "git_state": "clean",
-                "manual_recovery_required": False,
-            },
-        )
-
-    def rebase_in_progress() -> bool:
-        for rebase_directory in ("rebase-merge", "rebase-apply"):
-            git_path = subprocess.run(
-                ["git", "rev-parse", "--git-path", rebase_directory],
-                cwd=private_notes,
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip()
-            resolved = pathlib.Path(git_path)
-            if not resolved.is_absolute():
-                resolved = private_notes / resolved
-            if resolved.exists():
-                return True
-        return False
-
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        if rebase_in_progress():
-            raise MutationFailure(
-                "rebase中間状態が残っています。管理repoを手動復旧してください。",
-                status=503,
-                payload={
-                    "kind": "commit_recovery",
-                    "commit": _git_head(private_notes),
-                    "recovered_from": None,
-                    "rebased": False,
-                    "changed": False,
-                    "push_pending": True,
-                    "retryable": False,
-                    "git_state": "rebase_in_progress",
-                    "manual_recovery_required": True,
-                },
-            )
-        start_head = _git_head(private_notes)
-        recovered_from: str | None = None
-        before_pending_push = start_head
-        try:
-            _push_pending_commits(private_notes, allow_rebase=True)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise push_failure(error, changed=False, recovery_base=start_head) from error
-        after_pending_push = _git_head(private_notes)
-        if after_pending_push != before_pending_push:
-            recovered_from = before_pending_push
-        try:
-            _pull(private_notes)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise MutationFailure(
-                "remoteのfast-forward同期に失敗しました。同期後にcommit復旧を再試行してください。",
-                status=503,
-                payload={
-                    "kind": "preflight_sync",
-                    "commit": _git_head(private_notes),
-                    "recovered_from": None,
-                    "rebased": False,
-                    "changed": False,
-                    "push_pending": False,
-                    "retryable": True,
-                },
-            ) from error
-        status = subprocess.run(
-            ["git", "status", "--porcelain", "--", inbox_rel, processing_rel],
-            cwd=private_notes,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        if not status.stdout.strip():
-            current_head = _git_head(private_notes)
-            rebased = recovered_from is not None
-            return {
-                "changed": False,
-                "commit": current_head,
-                "recovered_from": recovered_from,
-                "rebased": rebased,
-                "push_pending": False,
-                "retryable": False,
-            }
-
-        try:
-            _run_git(["add", inbox_rel, processing_rel], cwd=private_notes)
-            _run_git(["commit", "-m", "chore: edit queue items externally"], cwd=private_notes)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise MutationFailure(
-                "外部編集分のcommitに失敗しました。作業ツリーを確認してください。",
-                status=500,
-                payload={
-                    "kind": "commit",
-                    "commit": _git_head(private_notes),
-                    "recovered_from": None,
-                    "rebased": False,
-                    "changed": False,
-                    "push_pending": False,
-                    "retryable": False,
-                },
-            ) from error
-        commit_oid = _git_head(private_notes)
-        try:
-            _push_pending_commits(private_notes, allow_rebase=True)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise push_failure(error, changed=True, recovery_base=commit_oid) from error
-        current_head = _git_head(private_notes)
-        rebased = current_head != commit_oid or recovered_from is not None
-        return {
-            "changed": True,
-            "commit": current_head,
-            "recovered_from": commit_oid if current_head != commit_oid else recovered_from,
-            "rebased": rebased,
-            "push_pending": False,
-            "retryable": False,
-        }
 
 
 def _resolve_feedback_targets(
@@ -2214,21 +1197,9 @@ def convert_entries_to_plan(
                     skip_push=skip_push,
                 )
             except (OSError, subprocess.SubprocessError) as error:
-                current_head = _git_head(private_notes)
-                command = getattr(error, "cmd", ())
-                push_failure = any(part == "push" for part in command)
-                if current_head == start_head and not push_failure:
+                if _git_head(private_notes) == start_head:
                     _restore_conversion_paths(private_notes, start_head, relative_paths)
-                    raise
-                if current_head == start_head:
-                    raise
-                if push_failure:
-                    raise PushPendingError(PushPendingResult(current_head)) from error
-                if not skip_push:
-                    try:
-                        _push_pending_commits(private_notes)
-                    except (OSError, subprocess.SubprocessError) as push_error:
-                        raise PushPendingError(PushPendingResult(_git_head(private_notes))) from push_error
+                raise error
             commit_oid = _git_head(private_notes)
             return {
                 "entries": [
@@ -2294,12 +1265,6 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
         entries = result["entries"]
         if not isinstance(entries, list):
             raise RuntimeError("複数変換結果のentriesがリストではありません")
-    except PushPendingError as error:
-        print(
-            f"pushに失敗しました。未pushのcommit: {error.result.commit}。atk mq commitで復旧してください。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
     except WebInputError as error:
         print(f"変換を拒否しました: {error}", file=sys.stderr)
         sys.exit(1)
@@ -2492,45 +1457,6 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
     print(f"{len(filenames)}件処理開始: {', '.join(filenames)}")
 
 
-def _cmd_direct_transition(
-    args: argparse.Namespace,
-    private_notes: pathlib.Path,
-    now: datetime.datetime,
-    action: str,
-) -> None:
-    """hold・unhold CLIを実行し、push失敗時は復旧情報を出力する。"""
-    args.filenames = _dedup_positional_filenames(args.filenames, action)
-    try:
-        filenames = direct_transition_entries(
-            private_notes,
-            action=action,
-            filenames=args.filenames,
-            now=now,
-            target_repo=args.target_repo,
-        )
-    except MutationFailure as error:
-        payload = error.payload
-        if payload.get("kind") == "push_pending":
-            print(
-                f"pushに失敗しました。未pushのcommit: {payload.get('commit', '')}。atk mq commitで復旧してください。",
-                file=sys.stderr,
-            )
-        else:
-            print(f"{action}を実行できませんでした: {error}", file=sys.stderr)
-        sys.exit(1)
-    print(f"{len(filenames)}件{('保留' if action == 'hold' else '保留解除')}: {', '.join(filenames)}")
-
-
-def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """holdサブコマンドを実行する。"""
-    _cmd_direct_transition(args, private_notes, now, "hold")
-
-
-def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """unholdサブコマンドを実行する。"""
-    _cmd_direct_transition(args, private_notes, now, "unhold")
-
-
 def _cmd_start_planning(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """start-planningサブコマンド: inboxからplanning/へ移動しcommit・pushする。"""
     args.filenames = _dedup_positional_filenames(args.filenames, "start-planning")
@@ -2592,178 +1518,12 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     print(f"{len(filenames)}件削除: {', '.join(filenames)}")
 
 
-def _print_editing_failure(error: MutationFailure) -> None:
-    """編集セッションの失敗分類をCLIへ表示する。"""
-    payload = error.payload
-    if payload.get("kind") == "push_pending":
-        print(
-            f"pushに失敗しました。未pushのcommit: {payload.get('commit', '')}。atk mq commitで復旧してください。",
-            file=sys.stderr,
-        )
-        session_id = payload.get("session_id")
-        filename = payload.get("filename")
-        if isinstance(session_id, str) and isinstance(filename, str):
-            print(
-                f"復旧後はセッションを継続できます: atk mq edit --resume {session_id} {filename}",
-                file=sys.stderr,
-            )
-        return
-    if payload.get("kind") in {"preflight_push", "preflight_sync"}:
-        commit = payload.get("commit")
-        commit_suffix = f" 未pushのcommit: {commit}。" if isinstance(commit, str) and commit else ""
-        print(
-            f"Git同期に失敗しました。{commit_suffix}atk mq commit後に同じ操作を再試行してください: {error}",
-            file=sys.stderr,
-        )
-        return
-    print(f"編集操作を実行できませんでした: {error}", file=sys.stderr)
-
-
-def _cmd_editing_session(
-    args: argparse.Namespace,
-    private_notes: pathlib.Path,
-    *,
-    session_id: str | None = None,
-) -> None:
-    """editingセッションを開始又は再開し、エディター内容を保存する。"""
-    filename = args.filename
-    if not isinstance(filename, str) or not filename:
-        args.subparser.error("editingセッションにはFILENAMEを指定してください")
-    if args.append or args.plan_file is not None or args.depends_on:
-        args.subparser.error("--resume・通常の編集セッションでは--append・--plan-file・--depends-onを指定できません")
-    editor = os.environ.get("EDITOR")
-    if args.message is None and not editor:
-        print("$EDITORが未設定のため編集できません。", file=sys.stderr)
-        sys.exit(1)
-    if args.message is not None:
-        try:
-            _add.reject_message_file_path(
-                args.message,
-                file_input_hint="ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。",
-            )
-        except WebInputError as error:
-            print(f"編集を拒否しました: {error}", file=sys.stderr)
-            sys.exit(1)
-    normalized = _validate_filename(filename, private_notes / MQ_STATE_INBOX).name
-    try:
-        if session_id is None:
-            result = start_editing(private_notes, state=None, filename=normalized)
-            candidate_session_id = result.get("session_id")
-            if not isinstance(candidate_session_id, str):
-                raise WebInputError("編集セッションIDを取得できません")
-            session_id = candidate_session_id
-        editing_path = _validate_filename(normalized, private_notes / MQ_STATE_EDITING)
-        original = editing_path.read_text(encoding="utf-8")
-        if args.message is not None:
-            content = _build_noninteractive_edit_content(editing_path, original, args.message)
-        else:
-            assert editor is not None
-            # エディターは作業中のediting本体ではなく一時コピーへ接続する。
-            # 本体を直接書き換えると、保存時の期待本文検証と開始時ハッシュ検証が
-            # エディター自身の変更を外部競合として扱うためである。
-            tmp_path = _copy_to_tempfile(original.encode("utf-8"))
-            try:
-                completed = subprocess.run([editor, str(tmp_path)], check=False)
-                if completed.returncode != 0:
-                    print(
-                        f"エディターが終了コード{completed.returncode}で終了しました。"
-                        f"編集状態を保持しています。atk mq edit --resume {session_id} {normalized}で再開できます。",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-                content = tmp_path.read_text(encoding="utf-8")
-            finally:
-                tmp_path.unlink(missing_ok=True)
-        if not content.strip():
-            print(
-                f"本文が空のため保存を中止しました。編集状態を保持しています。"
-                f"atk mq edit --resume {session_id} {normalized}で再開できます。",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        result = save_editing(
-            private_notes,
-            filename=normalized,
-            session_id=session_id,
-            content=content,
-            expected_content=original,
-        )
-    except MutationFailure as error:
-        _print_editing_failure(error)
-        sys.exit(1)
-    except (OSError, subprocess.SubprocessError) as error:
-        print(f"Git同期またはエディターの起動に失敗しました。編集状態を確認して再試行してください: {error}", file=sys.stderr)
-        sys.exit(1)
-    except (RuntimeError, WebInputError) as error:
-        print(f"編集を拒否しました: {error}", file=sys.stderr)
-        sys.exit(1)
-    print(f"編集反映: {normalized}")
-    if result.get("push_pending"):
-        print(f"未pushのcommit: {result.get('commit')}", file=sys.stderr)
-
-
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """editサブコマンド: MESSAGE又は$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
     """
     message = args.message
-    if args.recover:
-        if (
-            args.filename is None
-            or message is not None
-            or args.resume_session is not None
-            or args.cancel
-            or args.append
-            or args.plan_file
-            or args.depends_on
-        ):
-            args.subparser.error(
-                "--recoverはFILENAMEだけと指定し、MESSAGE・--resume・--cancel・--append・--plan-file・--depends-onと併用できません"
-            )
-        filename = args.filename
-        if not isinstance(filename, str) or not filename:
-            args.subparser.error("--recoverにはFILENAMEを指定してください")
-        assert isinstance(filename, str)
-        try:
-            result = recover_editing(private_notes, filename=filename)
-        except MutationFailure as error:
-            _print_editing_failure(error)
-            sys.exit(1)
-        except (RuntimeError, WebInputError) as error:
-            print(f"編集セッションの回復を拒否しました: {error}", file=sys.stderr)
-            sys.exit(1)
-        print(f"編集中セッションを回復しました: {filename}（既存セッションIDを無効化しました）")
-        if result.get("push_pending"):
-            print(f"未pushのcommit: {result.get('commit')}", file=sys.stderr)
-        return
-    if args.resume_session is not None:
-        filename = args.filename
-        if not isinstance(filename, str) or not filename:
-            args.subparser.error("--resumeにはFILENAMEを指定してください")
-        if args.cancel:
-            if message is not None:
-                args.subparser.error("--cancelとMESSAGEは併用できません")
-            try:
-                result = cancel_editing(
-                    private_notes,
-                    filename=filename,
-                    session_id=args.resume_session,
-                )
-            except MutationFailure as error:
-                _print_editing_failure(error)
-                sys.exit(1)
-            except (RuntimeError, WebInputError) as error:
-                print(f"編集の取り消しを拒否しました: {error}", file=sys.stderr)
-                sys.exit(1)
-            print(f"編集を取り消しました: {filename}（既存セッションIDを無効化しました）")
-            if result.get("push_pending"):
-                print(f"未pushのcommit: {result.get('commit')}", file=sys.stderr)
-            return
-        _cmd_editing_session(args, private_notes, session_id=args.resume_session)
-        return
-    if args.cancel:
-        args.subparser.error("--cancelは--resume SESSION_IDとともに指定してください")
     if args.depends_on and args.plan_file is None:
         args.subparser.error("--depends-onは--plan-fileとともに指定してください。")
     if args.plan_file is not None:
@@ -2828,9 +1588,6 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if args.filename is None or message is None:
             args.subparser.error("--appendではFILENAMEとMESSAGEを指定してください。")
         _cmd_append(args, private_notes)
-        return
-    if args.filename is not None and (private_notes / ".git").exists():
-        _cmd_editing_session(args, private_notes)
         return
     if message is not None and args.filename is None:
         args.subparser.error("MESSAGEを指定する場合はFILENAMEも指定してください。")
@@ -2964,37 +1721,7 @@ def _cmd_commit(private_notes: pathlib.Path) -> None:
 
     inbox・processing配下に未コミット変更がない場合も滞留commitをpushする。
     """
-    # 従来のテスト用・remote未初期化経路では、OIDを取得できない旧実装の互換を維持する。
-    # 通常のGit作業コピーでは結果型を使い、rebase復旧時の旧OIDと新OIDを明示する。
-    if not (private_notes / ".git").exists():
-        if commit_entries(private_notes):
-            print("外部編集分をコミット・pushしました。")
-        else:
-            print("差分なし。滞留commitをpushしました。")
-        return
-    try:
-        result = commit_entries_result(private_notes)
-    except MutationFailure as error:
-        print(f"commit復旧を完了できませんでした: {error}", file=sys.stderr)
-        commit_oid = error.payload.get("commit")
-        if isinstance(commit_oid, str) and commit_oid:
-            print(f"現在の未push commit: {commit_oid}", file=sys.stderr)
-        if error.payload.get("manual_recovery_required") is True:
-            print(
-                "管理repoはrebase中間状態です。手動復旧が完了するまでatk mq commitを再試行しないでください。",
-                file=sys.stderr,
-            )
-        sys.exit(1)
-    if result.get("changed"):
+    if commit_entries(private_notes):
         print("外部編集分をコミット・pushしました。")
     else:
         print("差分なし。滞留commitをpushしました。")
-    commit_oid = result.get("commit")
-    if isinstance(commit_oid, str) and commit_oid:
-        print(f"commit: {commit_oid}")
-    recovered_from = result.get("recovered_from")
-    if isinstance(recovered_from, str) and recovered_from:
-        print(f"recovered_from: {recovered_from}")
-        print("rebased: true")
-    else:
-        print("rebased: false")

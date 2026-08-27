@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 from _atk_mq_common import (
-    MQ_PROCESSABLE_STATES,
+    MQ_ACTIVE_STATES,
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
     MQ_TYPE_TBD,
@@ -22,7 +22,6 @@ from _atk_mq_common import (
     _is_tbd_answered,
     _iter_entries,
     _pull,
-    _push_pending_commits,
     _repo_lock,
     _require_type,
     _validate_filename,
@@ -166,7 +165,7 @@ def _resolve_active_entry(
     （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
     """
     if state is not None:
-        if state not in MQ_PROCESSABLE_STATES:
+        if state not in MQ_ACTIVE_STATES:
             raise WebInputError("stateはinbox又はprocessingで指定してください")
         candidate = _validate_filename(filename, private_notes / state)
         if candidate.is_file():
@@ -235,7 +234,6 @@ def answer_tbd(
     if not answer.strip():
         raise WebInputError("回答本文が空です")
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
         _pull(private_notes)
         try:
             path = _resolve_active_entry(private_notes, filename, state)
@@ -287,12 +285,11 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
     targets: list[pathlib.Path] = []
     with _repo_lock(private_notes):
-        _push_pending_commits(private_notes)
         _pull(private_notes)
         filter_repo: str | None = None
         if args.target_repo is not None:
             filter_repo = _resolve_repo_id(args.target_repo)
-        for path, _repo, text, _state, _kind in _iter_entries(private_notes, MQ_PROCESSABLE_STATES, filter_repo, MQ_TYPE_TBD):
+        for path, _repo, text, _state, _kind in _iter_entries(private_notes, MQ_ACTIVE_STATES, filter_repo, MQ_TYPE_TBD):
             if _is_tbd_answered(text):
                 continue
             targets.append(path)
@@ -304,7 +301,6 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     editor_failed = False
     for path in targets:
         with _repo_lock(private_notes):
-            _push_pending_commits(private_notes)
             _pull(private_notes)
             if not path.exists():
                 continue

@@ -25,7 +25,6 @@ from _atk_mq_common import (
     _count_feedback,
     _max_existing_seq,
     _pull,
-    _push_pending_commits,
     _reject_bare_repo_path_override,
     _repo_lock,
     _resolve_repo_path_override,
@@ -340,7 +339,6 @@ def add_entries(
     if entry_type != MQ_TYPE_FEEDBACK and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
         _pull(private_notes)
         generated = _add_entries_locked(
             private_notes,

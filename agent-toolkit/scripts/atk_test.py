@@ -816,8 +816,7 @@ class TestAddSingleMessage:
         assert git_cmds[fetch_idx + 1] == ["git", "merge", "--ff-only", "@{u}"]
         assert git_cmds[fetch_idx + 2] == ["git", "add", "inbox"]
         assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 feedback item"]
-        assert git_cmds[fetch_idx + 4][:2] == ["git", "log"]
-        assert git_cmds[fetch_idx + 5] == ["git", "push"]
+        assert git_cmds[fetch_idx + 4] == ["git", "push"]
         for call in git_calls:
             if call["cmd"][:2] != ["git", "-C"]:
                 assert call["kwargs"].get("cwd") == notes
@@ -1245,7 +1244,6 @@ class TestAddBatchOption:
         import _atk_mq_batch as batch_module  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         monkeypatch.setattr(batch_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-        monkeypatch.setattr(batch_module, "_push_pending_commits", lambda _path: None)
         monkeypatch.setattr(batch_module, "_pull", lambda _path: None)
         monkeypatch.setattr(batch_module, "_commit_and_push", lambda *_args, **_kwargs: None)
 

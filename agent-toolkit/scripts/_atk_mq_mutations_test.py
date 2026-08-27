@@ -416,153 +416,6 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mutations, "_git_head", lambda _path: "a" * 40)
 
 
-def _disable_direct_transition_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
-    """新設状態遷移のファイル契約だけを検証できるようGit境界を記録する。"""
-    commands: list[list[str]] = []
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_assert_index_clean", lambda _path: None)
-    monkeypatch.setattr(mutations, "_direct_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
-    monkeypatch.setattr(mutations, "_git_head", lambda _path: "a" * 40)
-    monkeypatch.setattr(mutations, "_run_git", lambda args, cwd: commands.append(args))
-    return commands
-
-
-def test_hold_and_unhold_move_only_between_explicit_states(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """holdは処理可能状態から保留へ移し、unholdはinboxだけへ戻す。"""
-    notes = _setup_notes(tmp_path)
-    path = _write_feedback_file(notes, "entry.md")
-    commands = _disable_direct_transition_git(monkeypatch)
-
-    held = mutations.direct_transition_entries(
-        notes,
-        action="hold",
-        filenames=[path.name],
-        now=_FIXED_DT,
-    )
-    released = mutations.direct_transition_entries(
-        notes,
-        action="unhold",
-        filenames=[path.name],
-        now=_FIXED_DT,
-    )
-
-    assert held == released == ["entry.md"]
-    assert (notes / "inbox/entry.md").is_file()
-    assert not (notes / "hold/entry.md").exists()
-    commits = [command for command in commands if command[0] == "commit"]
-    assert len(commits) == 2
-    assert all("Agent-Toolkit-MQ-Push-Mode=direct" in command for command in commits)
-
-
-def test_editing_session_starts_and_saves_with_single_use_session(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """編集セッションをeditingへ永続化し、保存後は元状態へ戻してトークンを無効化する。"""
-    notes = _setup_notes(tmp_path)
-    path = _write_feedback_file(notes, "entry.md", body="変更前")
-    _disable_direct_transition_git(monkeypatch)
-
-    started = mutations.start_editing(
-        notes,
-        state="inbox",
-        filename=path.name,
-        expected_content=path.read_text(encoding="utf-8"),
-    )
-    session_id = started["session_id"]
-    assert isinstance(session_id, str)
-    editing_path = notes / "editing/entry.md"
-    changed = editing_path.read_text(encoding="utf-8").replace("変更前", "変更後")
-    saved = mutations.save_editing(
-        notes,
-        filename=path.name,
-        session_id=session_id,
-        content=changed,
-        expected_content=editing_path.read_text(encoding="utf-8"),
-    )
-
-    assert saved["state"] == "inbox"
-    assert saved["session_id"] is None
-    assert "変更後" in path.read_text(encoding="utf-8")
-    assert not editing_path.exists()
-    with pytest.raises(mutations.WebInputError, match="セッション"):
-        mutations.cancel_editing(notes, filename=path.name, session_id=session_id)
-
-
-def test_direct_pending_guard_rejects_before_pull_and_state_lookup(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """非書換pendingをpullと候補取得より前に拒否し、状態を変更しない。"""
-    notes = _setup_notes(tmp_path)
-    path = _write_feedback_file(notes, "entry.md")
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_assert_index_clean", lambda _path: None)
-    monkeypatch.setattr(
-        mutations,
-        "_direct_push",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            mutations.MutationFailure(
-                "pending",
-                status=503,
-                payload={"kind": "preflight_push", "push_pending": True, "retryable": False},
-            )
-        ),
-    )
-    monkeypatch.setattr(mutations, "_pull", lambda _path: pytest.fail("pending時にpullしてはならない"))
-
-    with pytest.raises(mutations.MutationFailure) as captured:
-        mutations.direct_transition_entries(notes, action="hold", filenames=[path.name], now=_FIXED_DT)
-
-    assert captured.value.payload["push_pending"] is True
-    assert path.is_file()
-    assert not (notes / "hold/entry.md").exists()
-
-
-def test_commit_recovery_reports_manual_recovery_when_rebase_abort_fails(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """rebase abort失敗を再試行不可の手動回復要求として返す。"""
-    notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(mutations, "_git_head", lambda _path: "a" * 40)
-
-    def fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert args[:3] == ["git", "rev-parse", "--git-path"]
-        return subprocess.CompletedProcess(args, 0, stdout=f".git/{args[-1]}\n", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    rebase_error = mutations.RebaseRecoveryError(
-        subprocess.CalledProcessError(1, ["git", "rebase", "@{u}"]),
-        abort_succeeded=False,
-    )
-    monkeypatch.setattr(
-        mutations,
-        "_push_pending_commits",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(rebase_error),
-    )
-
-    with pytest.raises(mutations.MutationFailure) as captured:
-        mutations.commit_entries_result(notes)
-
-    assert captured.value.payload == {
-        "kind": "commit_recovery",
-        "commit": "a" * 40,
-        "recovered_from": None,
-        "rebased": False,
-        "changed": False,
-        "push_pending": True,
-        "retryable": False,
-        "git_state": "rebase_in_progress",
-        "manual_recovery_required": True,
-    }
-
-
 @pytest.mark.parametrize("state", ["inbox", "processing"])
 def test_convert_to_plan_replaces_legacy_schedule_with_top_level_metadata(
     tmp_path: pathlib.Path,
@@ -3526,15 +3379,11 @@ class TestStartProcessingFailureBoundaries:
 
         monkeypatch.setattr(subprocess, "run", fake_status)
         monkeypatch.setattr(mutations, "_commit_and_push", recover_commit)
-        monkeypatch.setattr(
-            mutations,
-            "_push_pending_commits",
-            lambda path, **_kwargs: push_calls.append(path),
-        )
+        monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
         assert mutations.commit_entries(notes) is True
         assert mutations.commit_entries(notes) is False
         assert len(recovery_calls) == 1
-        assert push_calls == [notes, notes]
+        assert push_calls == [notes, notes, notes]
 
     def test_push_failure_after_transition_commit_is_not_success(
         self,
