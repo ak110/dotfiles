@@ -3735,6 +3735,8 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tee /dev/stdout | tail -5",
             "pytest -q | tee /dev/stderr | tail -5",
             "pytest -q | tee /dev/fd/1 | tail -5",
+            "pytest -q | tee /dev/tty | tail -5",
+            "pytest -q | tee /dev/zero | tail -5",
         ],
     )
     def test_tee_without_file_does_not_hide_truncation(self, command: str):
@@ -3749,6 +3751,9 @@ class TestBashOutputTruncationWarning:
             "pytest -q | tee /tmp/test.log | tail -5",
             "pytest -q | tee -a /tmp/test.log | tail -5",
             "pytest -q | tee /dev/null /tmp/test.log | tail -5",
+            "pytest -q | tee 2>&1 /tmp/test.log | tail -5",
+            "pytest -q | tee 2>&1 /tmp/full.log | tail -5",
+            "pytest -q | tee /dev/tty /tmp/test.log | tail -5",
         ],
     )
     def test_tee_with_file_hides_truncation(self, command: str):

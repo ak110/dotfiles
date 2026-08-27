@@ -2169,8 +2169,13 @@ def _split_bash_pipelines(command: str) -> list[list[str]]:
     position = 0
     for index, segment in enumerate(segments):
         start = command.find(segment, position)
-        separator = command[position:start].strip() if start >= 0 else ""
+        separator_text = command[position:start] if start >= 0 else ""
+        separator = separator_text.strip()
         previous = segments[index - 1] if index > 0 else ""
+        if pipelines and _is_redirection_continuation(previous, separator_text, segment):
+            pipelines[-1][-1] += separator_text + segment
+            position = (start if start >= 0 else position) + len(segment)
+            continue
         if index == 0 or not _is_pipeline_continuation(previous, separator, segment):
             pipelines.append([])
         pipelines[-1].append(segment)
@@ -2185,6 +2190,11 @@ def _is_pipeline_continuation(previous: str, separator: str, following: str) -> 
     # `2>&1`・`&>log`等のリダイレクトに含まれる`&`は、`split_bash_segments`が区切りとして分割するが
     # コマンドの終端ではないため継続として扱う（前段の出力は後段のパイプへ渡る）。
     return separator == "&" and (previous.endswith((">", "<")) or following.startswith(">"))
+
+
+def _is_redirection_continuation(previous: str, separator: str, following: str) -> bool:
+    """`split_bash_segments`が分割したリダイレクト断片の続きであるかを返す。"""
+    return separator.strip() == "&" and separator.endswith("&") and (previous.endswith((">", "<")) or following.startswith(">"))
 
 
 def _extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> list[list[_ExecutionSegment]]:
@@ -2854,7 +2864,7 @@ _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
 _OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
 _OUTPUT_FULL_SAVE_COMMAND = "tee"
 _SHELL_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|<<<|<<|>>|<>|>&|<&|>\||>|<)")
-_TEE_NON_FILE_OPERAND_PATTERN = re.compile(r"^(?:/dev/null|/dev/(?:stdin|stdout|stderr)|/dev/fd/\d+|/proc/self/fd/\d+)/?$")
+_TEE_NON_FILE_OPERAND_PATTERN = re.compile(r"^(?:/dev/null|/dev/(?:stdin|stdout|stderr|tty)|/dev/fd/\d+|/proc/self/fd/\d+)/?$")
 _MAKE_ASSIGNMENT_PATTERN = re.compile(r"^[^=\s]+?\s*(?:::=|:=|\?=|\+=|!=|=)")
 _MAKE_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     {
@@ -2931,6 +2941,20 @@ def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) ->
     return segment.resolved and segment.tokens[: len(prefix)] == prefix
 
 
+def _tee_operand_is_non_regular_file(token: str) -> bool:
+    """`tee`のoperandが既知の特殊出力先または既存の非通常ファイルかを返す。"""
+    normalized = token.rstrip("/")
+    if _TEE_NON_FILE_OPERAND_PATTERN.fullmatch(normalized):
+        return True
+    path = pathlib.Path(normalized)
+    if not path.is_absolute():
+        return False
+    try:
+        return path.exists() and not path.is_file()
+    except OSError:
+        return False
+
+
 def _tee_saves_to_file(segment: _ExecutionSegment) -> bool:
     """`tee`区間に標準出力を保存するファイル引数があるかを返す。"""
     if not _segment_starts_with(segment, (_OUTPUT_FULL_SAVE_COMMAND,)):
@@ -2946,7 +2970,7 @@ def _tee_saves_to_file(segment: _ExecutionSegment) -> bool:
             if redirect_match.end() == len(token):
                 index += 1
             continue
-        if _TEE_NON_FILE_OPERAND_PATTERN.fullmatch(token.rstrip("/")):
+        if _tee_operand_is_non_regular_file(token):
             index += 1
             continue
         if option_terminator:
