@@ -337,7 +337,8 @@ class TestShouldAllowBash:
 
         assert hook.should_allow_bash("atk managed-temp create --prefix agent-work", str(tmp_path)) is True
         if os.name == "nt":
-            _managed_temp._windows_secure_path(tmp_path, directory=True)
+            # 公開APIにrootのACL準備がないため、明示root判定の前提だけを設定する。
+            _managed_temp._windows_secure_path(tmp_path, directory=True)  # pylint: disable=protected-access
         assert hook.should_allow_bash(f"atk managed-temp create --prefix agent-work --root {tmp_path}", str(tmp_path)) is True
         unsafe_root = tmp_path / "unsafe-root"
         unsafe_root.mkdir()

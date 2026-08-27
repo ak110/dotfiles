@@ -246,12 +246,12 @@ def _windows_handle_information(
     kernel32: typing.Any | None = None,
 ) -> _ByHandleFileInformation:
     """開いたWindowsハンドルから属性を取得し、reparse pointを拒否する。"""
-    if kernel32 is None:
-        kernel32 = _windows_dll("kernel32")
-    kernel32.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
-    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32_api: typing.Any
+    kernel32_api = _windows_dll("kernel32") if kernel32 is None else kernel32
+    kernel32_api.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
+    kernel32_api.GetFileInformationByHandle.restype = wintypes.BOOL
     information = _ByHandleFileInformation()
-    if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
+    if not kernel32_api.GetFileInformationByHandle(handle, ctypes.byref(information)):
         raise _windows_error("Windows path属性を取得できない", path)
     if information.attributes & _WINDOWS_REPARSE_POINT:
         raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")

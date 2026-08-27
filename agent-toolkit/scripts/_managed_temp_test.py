@@ -161,6 +161,7 @@ def test_windows_directory_enumeration_uses_directory_handle(
             information: typing.Any,
             size: int,
         ) -> int:
+            del size
             calls.append((handle, information_class))
             if _Kernel32Double.call_count == 0:
                 ctypes.memmove(information, payload, len(payload))
@@ -1811,6 +1812,7 @@ class TestManagedTempWindows:
             expected_tree: dict[str, tuple[str, int, int]],
             handle: int,
         ) -> typing.NoReturn:
+            del expected_identity, expected_tree, handle
             _assert_windows_directory_swap_rejected(swap_path, displaced)
             quarantine_displaced = tmp_path / f"{swap_target}-quarantine-displaced"
             _assert_windows_directory_swap_rejected(path, quarantine_displaced)
