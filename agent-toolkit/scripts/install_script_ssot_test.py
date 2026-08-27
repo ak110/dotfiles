@@ -1,9 +1,8 @@
 """install-claude.{sh,ps1}とagent-toolkit/rules/配下のSSOT整合性テスト。
 
-ワンライナーインストーラーはGitHub Raw経由で個別ファイルを取得する都合上、
-配布対象のファイル名を配列としてスクリプト内に保持する。
-`agent-toolkit/rules/`配下のファイル追加・削除時には両スクリプトの手動同期が必要で、
-本テストは3者の一致を検証して同期漏れを検知する。
+配布対象のファイル名は`scripts/gen-install-files.py`がrules一覧から両インストーラーへ生成し、
+`scripts/sync_generated_files.py`が同生成器を統合実行する。
+本テストは生成後の3者の一致を検証して同期漏れを検知する。
 """
 
 import pathlib
