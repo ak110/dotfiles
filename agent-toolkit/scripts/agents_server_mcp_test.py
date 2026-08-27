@@ -897,6 +897,41 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> 
     assert options.permission_mode == "bypassPermissions"
 
 
+def test_claude_dependency_check_builds_options_without_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """依存検査は現在の作業ディレクトリでoptionsだけを構築する。"""
+    calls: list[tuple[str, str | None, str | None]] = []
+
+    def fake_build_options(cwd: str, model: str | None, effort: str | None) -> object:
+        calls.append((cwd, model, effort))
+        return object()
+
+    monkeypatch.setattr(claude_backend, "_build_options", fake_build_options)
+    claude_backend.check_dependencies()
+
+    assert calls == [(str(pathlib.Path.cwd()), None, None)]
+
+
+def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """依存検査指定時はMCP stdioを起動しない。"""
+    calls: list[bool] = []
+    monkeypatch.setattr(claude_backend, "check_dependencies", lambda: calls.append(True))
+    monkeypatch.setattr(subject.mcp, "run", lambda **_kwargs: pytest.fail("MCPを起動してはいけない"))
+
+    assert subject.main(["--check-dependencies"]) == 0
+    assert calls == [True]
+
+
+def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """依存検査の例外を握り潰さず呼び出し元へ伝える。"""
+
+    def fail_check() -> None:
+        raise ImportError("claude-agent-sdk is unavailable")
+
+    monkeypatch.setattr(claude_backend, "check_dependencies", fail_check)
+    with pytest.raises(ImportError, match="claude-agent-sdk is unavailable"):
+        subject.main(["--check-dependencies"])
+
+
 @pytest.mark.asyncio
 async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """Claude init・結果受信・終端後replyを1長命タスクで処理する。"""

@@ -61,14 +61,14 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> list[list
     return calls
 
 
-def test_warms_all_targets_with_help(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """3系統の参照先へ同じ``--help``ウォームアップを行う。"""
+def test_warms_all_targets_with_dependency_check(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """3系統の参照先へ同じ依存検査を行う。"""
     calls = _setup(monkeypatch, tmp_path)
 
     assert _warmup.run() is False
     warmups = [cmd for cmd in calls if cmd[:4] == ["uv", "run", "--no-project", "--script"]]
     assert len(warmups) == 3
-    assert all(cmd[-1] == "--help" for cmd in warmups)
+    assert all(cmd[-1] == "--check-dependencies" for cmd in warmups)
 
 
 def test_missing_uv_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

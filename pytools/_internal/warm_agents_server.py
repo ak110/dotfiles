@@ -137,10 +137,10 @@ def _enabled_version(installed: list[object]) -> str | None:
 
 
 def _warmup(path: Path) -> None:
-    """1件のスクリプトに``--help``を渡し、PEP 723環境を構築する。"""
+    """1件のスクリプトに``--check-dependencies``を渡し、PEP 723環境の依存読込を確認する。"""
     started = time.monotonic()
     result = claude_common.run_subprocess(
-        ["uv", "run", "--no-project", "--script", str(path), "--help"],
+        ["uv", "run", "--no-project", "--script", str(path), "--check-dependencies"],
         timeout=_WARMUP_TIMEOUT,
         tag="uv",
     )

@@ -7,12 +7,13 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import logging
 import os
 import warnings
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 import _agents_server_claude as claude_backend
@@ -282,11 +283,22 @@ async def kill(session_id: str, timeout: float = DEFAULT_KILL_TIMEOUT) -> dict[s
     return await _MANAGER.kill(session_id, timeout)
 
 
-def main() -> None:
-    """MCP stdio transportを起動する。"""
+def main(argv: Sequence[str] | None = None) -> int:
+    """引数に応じて依存検査またはMCP stdio transportを起動する。"""
     logging.basicConfig(level=os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING"))
+    parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
+    parser.add_argument(
+        "--check-dependencies",
+        action="store_true",
+        help="Claude Agent SDKの依存を読み込み、options構築まで検査する。",
+    )
+    args = parser.parse_args(argv)
+    if args.check_dependencies:
+        claude_backend.check_dependencies()
+        return 0
     mcp.run(transport="stdio")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
