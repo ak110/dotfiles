@@ -5102,6 +5102,12 @@ def test_assets_offer_batch_creation_without_required_target_repo() -> None:
     assert "対象リポジトリを入力してください" not in assets.JS
 
 
+def test_assets_offer_every_queue_state_filter() -> None:
+    """状態フィルターがキューの全状態を個別に選択できる。"""
+    for state_name in ("inbox", "planning", "processing", "adopted", "rejected"):
+        assert f'<option value="{state_name}">{state_name}</option>' in assets.HTML
+
+
 def test_batch_creation_sends_raw_text_and_hides_frontmatter_driven_fields() -> None:
     """一括登録では生テキストを送り、対象リポジトリ欄と投入元欄を隠す。"""
     result = _run_node_ui(
