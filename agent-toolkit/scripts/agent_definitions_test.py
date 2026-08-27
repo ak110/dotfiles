@@ -3338,16 +3338,73 @@ def test_session_review_main_rechecks_user_events_and_problem_references() -> No
             assert forbidden not in document
 
 
-def test_session_review_allows_no_proposal_only_after_full_preventive_coverage() -> None:
-    """全介入の事前処置が揃った場合だけ既存経路の「提案無し」を許可する。"""
+def test_session_review_requires_root_cause_coverage_before_suppression() -> None:
+    """原因分析と根本原因単位の被覆を抑止判定と「提案無し」より先に確認する。"""
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
+    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
 
-    assert "全ての利用者介入が問題一覧と証拠位置で確認できる場合だけ" in criteria
-    assert "全利用者入力を過不足なく覆う" in design
-    assert "evidence_insufficient" in skill
-    assert "「提案無し」の確定へ進まない" in skill
+    validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n## ユーザーコメントの由来")[0]
+    candidate = _h2_section(criteria, "提案する候補")
+    report = _h2_section(criteria, "報告契約")
+
+    cause_and_coverage = "証拠からエージェントの誤りがユーザー介入を招いたと確定した候補"
+    active_check = "既存のactiveなフィードバックは"
+    suppression_judgment = "メインは問題一覧ごとに"
+    assert validation.index(cause_and_coverage) < validation.index(active_check) < validation.index(suppression_judgment)
+
+    cause_terms = ("直接的原因", "混入要因", "動機的要因", "見逃し原因", "根本原因", "類似見直し")
+    treatment_terms = ("是正処置", "横展開処置", "再発防止処置")
+    for document in (validation, candidate, design):
+        for term in cause_terms:
+            assert term in document
+        for term in treatment_terms:
+            assert term in document
+        assert document.index("原因起点の類似見直し") < document.index("是正処置")
+        assert document.index("是正処置") < document.index("横展開処置") < document.index("再発防止処置")
+
+    assert validation.index("再発防止処置") < validation.index("原因単位の被覆が部分的な場合")
+    assert candidate.index("再発防止処置") < candidate.index("原因単位の被覆が部分的な場合")
+    assert design.index("再発防止処置") < design.index("部分被覆では未被覆単位だけを候補")
+
+    assert "現行実装・テスト又は反復しない実測により有効性を確認した実装済み処置" in validation
+    assert "同一対象リポジトリで`process-loop`が処理できる有効なactiveフィードバック" in candidate
+    for invalid_item in ("処理不能", "失効済み", "終端済み"):
+        assert invalid_item in candidate
+    assert "原因単位の被覆が部分的な場合は未被覆単位だけを候補" in candidate
+    assert "全単位が被覆されている場合だけ「提案無し」" in candidate
+    assert "原因分析と各単位の被覆確認は、候補化及び抑止条件の判定に優先する" in candidate
+    assert "抑止条件の判定は、候補化の可否について確定義務に優先する。" not in candidate
+    assert criteria.index("原因分析と各単位の被覆確認") < criteria.index("## 提案を抑止する条件")
+
+    report_without_proposal = (
+        "実害がありエージェントの誤りが利用者介入を招いた問題について「提案無し」とする場合は、"
+        "4原因区分・根本原因・類似見直し・三層処置、各根本原因単位の被覆根拠、"
+        "実装済み処置の検証結果又はactiveフィードバックのファイル名・状態・対象リポジトリ・"
+        "`process-loop`処理可能性及び非重複理由"
+    )
+    assert report_without_proposal in report
+    assert (
+        "提案がない章には「提案無し」と書く。"
+        "実害がありエージェントの誤りが利用者介入を招いた問題で「提案無し」とする場合は、" in skill
+    )
+
+    for phrase in (
+        "利用者介入とエージェントの誤りの因果が成立した問題では",
+        "既存フィードバック、既存規範、重複と過剰設計による抑止判定の前に",
+        "全単位の被覆を確認した場合だけ「提案無し」を許可する",
+    ):
+        assert phrase in design
+    for phrase in (
+        "2026年8月27日: session-reviewで",
+        "直接的原因: 原因と既存対策の有効性を確定する前に抑止判定を行った。",
+        "混入要因: `75a3efa4`で原因分析の責務をadvisorからメインへ移した際",
+        "見逃し原因: 「提案無し」テストが利用者入力と証拠位置だけを確認し",
+        "根本原因: 判断責務の移管時に実害の是正を抑止判定より先に完了する不変条件を移さず",
+        "対策: 原因分析・類似見直し・三層処置・根本原因単位の被覆を抑止判定より先に確定し",
+    ):
+        assert phrase in incidents
 
 
 def test_removed_codex_exec_contracts_are_absent() -> None:
@@ -3977,9 +4034,18 @@ def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> 
 
     assert "証拠からエージェントの誤りがユーザー介入を招いたと確定した候補" in skill
     assert "`agent-toolkit:bugfix`を起動" in skill
-    assert "4原因区分、原因起点の類似見直し、是正・横展開・再発防止" in skill
-    assert "ユーザー介入がない候補" in skill
-    assert "介入とエージェントの誤りの因果を確定できない候補には適用しない" in skill
+    for phrase in (
+        "直接的原因",
+        "混入要因",
+        "動機的要因",
+        "見逃し原因",
+        "根本原因",
+        "原因起点の類似見直し",
+        "是正処置・横展開処置・再発防止処置",
+    ):
+        assert phrase in skill
+    assert "各根本原因を成立させる単位" in skill
+    assert "同一対象リポジトリで`process-loop`が処理できる有効なactiveフィードバック" in skill
 
 
 def test_session_review_investigates_third_review_by_artifact_and_responsibility() -> None:
