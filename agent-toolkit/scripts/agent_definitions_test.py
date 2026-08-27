@@ -603,6 +603,7 @@ def test_codex_recovery_entries_share_common_precondition() -> None:
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     common_heading = "## Codex後続操作の共通先行条件"
     common_reference = "`runtime-routing.md`「Codex後続操作の共通先行条件」"
+    waiting_common_reference = "`agent-toolkit:delegation`の「Codex後続操作の共通先行条件」"
 
     assert common_heading in runtime
     for phrase in (
@@ -615,13 +616,13 @@ def test_codex_recovery_entries_share_common_precondition() -> None:
         assert phrase in runtime
 
     for phrase in (
-        "Codexでは、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから新規起動する",
-        "Codexで未完了工程を巻き取る場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う",
-        "Codexでは`runtime-routing.md`「Codex後続操作の共通先行条件」を適用した後に当該工程の巻取り、別の経路への切替え又は役割の引継ぎを行う",
-        "Codexで未完了工程を巻き取るか新規起動する場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う",
+        "Codexでは、`agent-toolkit:delegation`の「Codex後続操作の共通先行条件」を適用してから新規起動する",
+        "Codexで未完了工程を巻き取る場合は、`agent-toolkit:delegation`の「Codex後続操作の共通先行条件」を適用してから行う",
+        "Codexでは`agent-toolkit:delegation`の「Codex後続操作の共通先行条件」を適用した後に当該工程の巻取り、別の経路への切替え又は役割の引継ぎを行う",
+        "Codexで未完了工程を巻き取るか新規起動する場合は、`agent-toolkit:delegation`の「Codex後続操作の共通先行条件」を適用してから行う",
     ):
         assert phrase in waiting
-    assert common_reference in waiting
+    assert waiting_common_reference in waiting
     assert common_reference in delegation
     assert "Codexでは、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから新規起動する" in delegation
     assert "Codexで再起動する場合は、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う" in delegation
@@ -925,9 +926,9 @@ def test_implementation_review_table_lifecycle_is_separate_and_restart_safe() ->
     assert "統合差分レビュー用専用managed temp領域と`review.tsv`" in flow
     assert "メインを作成・検収主体" in flow
     assert "全ての再レビューround" in flow
-    assert "implementation-plan-review-task.md" in flow
-    assert "implementation-independent-review-task.md" in flow
-    assert "差分限定レビュー修正担当`（`implementation-task.md`）" in flow
+    assert "`agent-toolkit:plan-mode`の計画準拠レビュー担当契約" in flow
+    assert "独立実装レビュー担当契約" in flow
+    assert "実装担当契約にある`差分限定レビュー修正担当`" in flow
     assert "保持した専用managed temp領域・`review.tsv`・未解消行" in flow
     assert "managed temp領域の絶対パス>`を単独で実行する" in flow
     assert "managed temp領域の`review.tsv`" in executor
@@ -6108,6 +6109,6 @@ def test_plan_review_contracts_keep_authorization_and_recording_boundaries() -> 
         assert "atk review-table init" in document
         assert "validate --allow-unanswered" in document
         assert "同じ表" in document or "同じレビュー表" in document
-    assert "review-loop-coordination.md" in delegation
+    assert "`agent-toolkit:plan-mode`のレビュー継続契約" in delegation
     assert "PLAN_H2_PROGRESS" in pretooluse
     assert "h2_aliases" in pretooluse
