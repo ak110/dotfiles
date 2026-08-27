@@ -20,6 +20,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _SUBCOMMANDS = (
     "pretooluse",
     "posttooluse",
+    "autonomous_exit",
     "stop_advisor",
     "subagent_stop_advisor",
     "subagent_start_tracker",
@@ -41,9 +42,14 @@ class TestEntrypointExceptionStages:
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
-    def test_main_import_error_emits_summary_traceback_and_empty_json(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize("subcommand", ["stop_advisor", "autonomous_exit"])
+    def test_main_import_error_emits_summary_traceback_and_empty_json(
+        self,
+        tmp_path: pathlib.Path,
+        subcommand: str,
+    ) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "stop_advisor.py").write_text(
+        (tmp_path / f"{subcommand}.py").write_text(
             "import json\n\n"
             "def _approve() -> None:\n"
             "    print(json.dumps({}))\n\n"
@@ -54,7 +60,7 @@ class TestEntrypointExceptionStages:
         )
 
         result = subprocess.run(
-            [sys.executable, str(entrypoint), "stop_advisor"],
+            [sys.executable, str(entrypoint), subcommand],
             input="",
             capture_output=True,
             text=True,
@@ -63,7 +69,7 @@ class TestEntrypointExceptionStages:
 
         assert result.returncode == 0
         assert result.stdout == "{}\n"
-        assert result.stderr.startswith("[stop_advisor] 想定外エラー: ImportError: main failure")
+        assert result.stderr.startswith(f"[{subcommand}] 想定外エラー: ImportError: main failure")
         assert "Traceback (most recent call last):" in result.stderr
 
     def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:

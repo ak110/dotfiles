@@ -1012,6 +1012,7 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         assert state.get("process_feedbacks_skill_invoked") is False
         assert state.get("plan_and_add_feedback_skill_invoked") is False
         assert state.get("add_feedback_skill_invoked") is False
+        assert state.get("autonomous_exit_invoked") is True
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
         """既に偽の状態でexit-sessionが起動されても状態は変わらない。"""
@@ -1028,7 +1029,9 @@ class TestExitSessionResetsProcessFeedbacksFlag:
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is False
+        state = _read_state(tmp_path, sid)
+        assert state.get("process_feedbacks_skill_invoked") is False
+        assert state.get("autonomous_exit_invoked") is True
 
 
 class TestProcessFeedbacksInvokedNonIdempotent:

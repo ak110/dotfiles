@@ -20,7 +20,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. agents_server MCP呼び出し後のsession状態記録
-10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
+10. exit-session起動検知による`autonomous_exit_invoked`の記録と
+    `process_feedbacks_skill_invoked`等のリセット (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
 12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
@@ -169,6 +170,7 @@ _ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedba
 # exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
 # （`agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端する）。
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
+_AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = (
@@ -247,6 +249,17 @@ def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
     for key in keys:
         state[key] = False
     return state
+
+
+def _record_exit_session_invoked(state: dict) -> dict | None:
+    """exit-session呼び出しを記録し、自動振り返りの起点フラグをまとめてリセットする。"""
+    changed = False
+    if state.get(_AUTONOMOUS_EXIT_STATE_KEY) is not True:
+        state[_AUTONOMOUS_EXIT_STATE_KEY] = True
+        changed = True
+    if _reset_process_feedbacks_invoked(state) is not None:
+        changed = True
+    return state if changed else None
 
 
 def _extract_agents_server_structured_response(tool_response: object) -> dict:
@@ -433,7 +446,7 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
 
         update_state(session_id, _set_add_feedback_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
-        update_state(session_id, _reset_process_feedbacks_invoked)
+        update_state(session_id, _record_exit_session_invoked)
 
 
 def _record_edited_file(session_id: str, file_path: str) -> None:
