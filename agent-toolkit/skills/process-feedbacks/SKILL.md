@@ -75,9 +75,7 @@ TBDへ永続化して暫定判断で進める。
 
 feedbackの`active`集合は`inbox`・`processing`・`editing`・`hold`である。`processable`集合はTBD処理、readiness、`process-loop`へ渡せる`inbox`・`processing`だけとする。`planning`は計画作成中の明示状態として`--status=planning`で確認できるが、active・processable、ready判定、`process-loop`の起動集合、TBD修復、`start-processing`の対象には含めない。planning項目の計画作成、再開、失敗復旧は、同じファイル名集合を指定する`plan-and-add-feedback`の経路だけで行う。
 
-`hold`は明示的な`unhold`まで自動処理の候補から除外し、`unhold`では`inbox`へ戻す。`editing`は元状態、セッションID、本文ハッシュを保持する永続的な編集状態であり、保存・取り消し・明示的な`atk mq edit --recover`まで自動処理の候補から除外する。エディター異常終了や切断では自動回復せず、状態遷移を再送しない。commit前の失敗は対象を復元し、commit後のpush失敗は完全OIDと確定済み状態を保持して`atk mq commit`へ誘導する。
-
-`atk mq commit`のrebase失敗後にabortが成功した場合だけ同じ明示復旧を再試行できる。abortにも失敗して`git_state: rebase_in_progress`・`manual_recovery_required: true`が返った場合は、管理repoを手動復旧するまで`atk mq commit`を再試行しない。
+`hold`は明示的な`unhold`まで自動処理の候補から除外し、`unhold`では`inbox`へ戻す。`editing`も自動処理の候補から除外する。永続的な編集セッション、専用の復旧状態又はpush再試行APIは設けない。
 
 `atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境でJSON Linesを既定出力とし、`--no-json`でテキスト表示へ戻す。`--json`と`--count`は明示指定を優先する。この出力規則は`list`に限り、`show`、状態遷移及び編集CLIの既存テキスト出力を変更しない。テキスト表示の短縮はstdoutがTTYの場合だけ行い、非TTYではtarget_repoと要約を全文で保持する。
 

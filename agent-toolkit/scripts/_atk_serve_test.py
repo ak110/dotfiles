@@ -364,6 +364,7 @@ const ids = [
   'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
   'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
   'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
+  'decision-panel', 'decision-note', 'adopt-button', 'reject-button', 'hold-button', 'unhold-button',
   'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
   'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
   'user-comment-panel', 'user-comment-input', 'user-comment-input-error', 'save-user-comment-button',
@@ -390,7 +391,9 @@ elements['create-question-type'].value = 'free-form';
 globalThis.controlGroups = {{
   'detail-shell': [
     elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
-    elements['user-comment-button'], elements['delete-button'], elements['edit-content'], elements['save-entry-button'],
+    elements['user-comment-button'], elements['delete-button'], elements['adopt-button'], elements['reject-button'],
+    elements['hold-button'], elements['unhold-button'], elements['decision-note'],
+    elements['edit-content'], elements['save-entry-button'],
     elements['answer-input'], elements['save-answer-button'], elements['user-comment-input'],
     elements['save-user-comment-button']
   ],
@@ -2069,7 +2072,11 @@ async def test_state_ignores_pending_timer_cancelled_by_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """取り消し済みタイマーが発火しても、再設定後の保留通知を重複発行しない。"""
-    current = state.ServeState(tmp_path, debounce_seconds=10.0)
+    current = state.ServeState(
+        tmp_path,
+        debounce_seconds=10.0,
+        timer_factory=_FakeTimer,
+    )
     current._loop = asyncio.get_running_loop()
     published: list[str] = []
     monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
@@ -2122,6 +2129,8 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/api/entries/batch",
         "/api/entries/<state_name>/<filename>",
         "/api/entries/start-processing",
+        "/api/entries/hold",
+        "/api/entries/unhold",
         "/api/entries/adopt",
         "/api/entries/reject",
         "/api/entries/remove",
@@ -2709,8 +2718,8 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
 
 
-def test_operations_active_includes_planning_feedback(tmp_path: pathlib.Path) -> None:
-    """一覧APIのactive状態はplanningのフィードバックを含める。"""
+def test_operations_active_excludes_planning_feedback(tmp_path: pathlib.Path) -> None:
+    """一覧APIのactive状態は計画作成中のフィードバックを含めない。"""
     planning = tmp_path / "planning"
     planning.mkdir()
     (planning / "planned.md").write_text(
@@ -2721,7 +2730,7 @@ def test_operations_active_includes_planning_feedback(tmp_path: pathlib.Path) ->
     entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "active"})
 
     assert not warnings
-    assert [(item["filename"], item["state"]) for item in entries] == [("planned.md", "planning")]
+    assert entries == []
 
 
 @pytest.mark.parametrize(
@@ -3652,8 +3661,8 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
     assert warnings == [{"filename": "os-error.md", "reason": "ファイルを読み取れません"}]
 
 
-def test_serve_state_watches_only_new_five_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """状態監視は平坦化後の5状態フォルダのみを対象とし、旧feedback/tbd階層を生成しない。"""
+def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """状態監視は7状態フォルダを対象とし、旧feedback/tbd階層を生成しない。"""
     current = state.ServeState(tmp_path)
     scheduled: list[str] = []
     monkeypatch.setattr(
@@ -3667,6 +3676,8 @@ def test_serve_state_watches_only_new_five_states(tmp_path: pathlib.Path, monkey
         current.start(loop)
         assert sorted(pathlib.Path(p).name for p in scheduled) == [
             "adopted",
+            "editing",
+            "hold",
             "inbox",
             "planning",
             "processing",

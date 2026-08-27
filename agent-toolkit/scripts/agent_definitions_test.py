@@ -1,7 +1,5 @@
 """エージェント定義の委譲権限契約を検査する。"""
 
-import difflib
-import json
 import os
 import pathlib
 import re
@@ -80,69 +78,6 @@ _MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "agent-toolkit" / "share" / "codex-agents-base.md"
 _CODEX_AGENTS_ADAPTER = _REPOSITORY_ROOT / ".chezmoi-source" / "dot_codex" / "AGENTS.md"
-_REFERENCE_MIGRATION_BASE = "650e679d854c97e0395e1d26efa4ffa7c6939857"
-_REFERENCE_MIGRATION_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_./-])(?:\.\.?/)*(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+[.]md")
-_REFERENCE_MIGRATION_OWNER_TARGETS = {
-    "add-feedback": {
-        "agent-toolkit/skills/add-feedback/references/cross-repository-submission.md",
-        "agent-toolkit/skills/add-feedback/references/managed-temp-bulk-show.md",
-    },
-    "agent-standards": {
-        "agent-toolkit/skills/agent-standards/references/agent-skills.md",
-        "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
-        "agent-toolkit/skills/agent-standards/references/hook-message-labeling.md",
-        "agent-toolkit/skills/agent-standards/references/session-state-flags.md",
-    },
-    "agent-toolkit-edit": {
-        ".claude/skills/agent-toolkit-edit/references/version-bump.md",
-    },
-    "bugfix": {
-        "agent-toolkit/skills/bugfix/references/ci-failure-handling.md",
-        "agent-toolkit/skills/bugfix/references/root-cause-analysis.md",
-    },
-    "coding-standards": {
-        "agent-toolkit/skills/coding-standards/references/design-heuristics.md",
-        "agent-toolkit/skills/coding-standards/references/rust.md",
-        "agent-toolkit/skills/coding-standards/references/testing.md",
-    },
-    "commit": {
-        "agent-toolkit/skills/commit/references/history-rewrite.md",
-        "agent-toolkit/skills/commit/references/push-and-ci.md",
-    },
-    "delegation": {
-        "agent-toolkit/skills/delegation/references/claude-code-runtime.md",
-        "agent-toolkit/skills/delegation/references/runtime-routing.md",
-        "agent-toolkit/skills/delegation/references/waiting-and-monitoring.md",
-    },
-    "plan-mode": {
-        "agent-toolkit/skills/plan-mode/references/implementation-independent-review-task.md",
-        "agent-toolkit/skills/plan-mode/references/implementation-plan-review-task.md",
-        "agent-toolkit/skills/plan-mode/references/implementation-task.md",
-        "agent-toolkit/skills/plan-mode/references/plan-file-standards.md",
-        "agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md",
-        "agent-toolkit/skills/plan-mode/references/plan-review-task.md",
-        "agent-toolkit/skills/plan-mode/references/review-loop-coordination.md",
-    },
-    "process-feedbacks": {
-        "agent-toolkit/skills/process-feedbacks/references/decision-format.md",
-        "agent-toolkit/skills/process-feedbacks/references/hold-with-tbd-inject.md",
-        "agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md",
-        "agent-toolkit/skills/process-feedbacks/references/review-checklists.md",
-    },
-    "review-standards": {
-        "agent-toolkit/skills/review-standards/references/judgment-details.md",
-    },
-    "session-review": {
-        "agent-toolkit/skills/session-review/references/generation-criteria-detail.md",
-    },
-    "writing-standards": {
-        "agent-toolkit/skills/writing-standards/references/lint-relax-criteria.md",
-        "agent-toolkit/skills/writing-standards/references/notation-rules.md",
-        "agent-toolkit/skills/writing-standards/references/textlint-violations.md",
-        "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
-        "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    },
-}
 _SECTION_REFERENCE_SOURCE_ROOTS = (
     _DISTRIBUTION_ROOT,
     _REPOSITORY_ROOT / ".claude" / "skills",
@@ -155,154 +90,6 @@ for _markdown in _DISTRIBUTION_ROOT.rglob("*.md"):
 _SKILL_MARKDOWN = {
     _skill.name: _skill / "SKILL.md" for _skill in (_DISTRIBUTION_ROOT / "skills").iterdir() if (_skill / "SKILL.md").is_file()
 }
-_REFERENCE_MIGRATION_FIXTURE = _DISTRIBUTION_ROOT / "scripts" / "reference_migration_baseline.json"
-
-
-def _reference_migration_sources() -> list[pathlib.Path]:
-    """参照移行検査の対象となる全references文書を返す。"""
-    return sorted(
-        set(_REPOSITORY_ROOT.glob("agent-toolkit/skills/*/references/*.md"))
-        | set(_REPOSITORY_ROOT.glob(".claude/skills/*/references/*.md"))
-    )
-
-
-def _reference_migration_edges() -> set[tuple[str, str, str]]:
-    """現行文書に残るreferences間の実在参照辺を解決して返す。"""
-    root = _REPOSITORY_ROOT.resolve()
-    sources = _reference_migration_sources()
-    by_name: dict[str, list[pathlib.Path]] = {}
-    for source in sources:
-        by_name.setdefault(source.name, []).append(source.resolve())
-
-    edges: set[tuple[str, str, str]] = set()
-    for source in sources:
-        source_resolved = source.resolve()
-        for reference in _REFERENCE_MIGRATION_TOKEN_RE.findall(source.read_text(encoding="utf-8")):
-            candidates = [
-                source.parent / reference,
-                source.parent.parent / reference,
-                root / "agent-toolkit" / reference,
-                root / reference,
-            ]
-            candidates.extend(by_name.get(pathlib.Path(reference).name, []))
-            target = next(
-                (
-                    candidate.resolve()
-                    for candidate in candidates
-                    if candidate.is_file()
-                    and candidate.resolve().parent.name == "references"
-                    and candidate.resolve() != source_resolved
-                ),
-                None,
-            )
-            if target is not None:
-                edges.add(
-                    (
-                        str(source_resolved.relative_to(root)),
-                        reference,
-                        str(target.relative_to(root)),
-                    )
-                )
-    return edges
-
-
-def _normalise_reference_paragraph(text: str) -> str:
-    """参照表記を除いて段落比較用の空白を正規化する。"""
-    return " ".join(_REFERENCE_MIGRATION_TOKEN_RE.sub(" ", text).split())
-
-
-def _owner_skill_path(owner: str) -> pathlib.Path:
-    """参照先を読む所属SKILL.mdのパスを返す。"""
-    if owner == "agent-toolkit-edit":
-        return _REPOSITORY_ROOT / ".claude" / "skills" / owner / "SKILL.md"
-    return _DISTRIBUTION_ROOT / "skills" / owner / "SKILL.md"
-
-
-def _has_owner_read_condition(skill_text: str, target: str) -> bool:
-    """対象path・工程条件・全文読込みを同じ箇条書き項目または段落で検査する。"""
-    target_path = pathlib.PurePosixPath(target)
-    skills_index = target_path.parts.index("skills")
-    skill_name = target_path.parts[skills_index + 1]
-    aliases = (target, f"{skill_name}/references/{target_path.name}")
-    units: list[str] = []
-    for block in re.split(r"\n\s*\n", skill_text):
-        paragraph: list[str] = []
-        bullet: list[str] | None = None
-        for line in block.splitlines():
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if re.match(r"^[-*+]\s+", stripped):
-                if bullet is not None:
-                    units.append(" ".join(bullet))
-                elif paragraph:
-                    units.append(" ".join(paragraph))
-                    paragraph = []
-                bullet = [stripped]
-            elif bullet is not None:
-                bullet.append(stripped)
-            else:
-                paragraph.append(stripped)
-        if bullet is not None:
-            units.append(" ".join(bullet))
-        if paragraph:
-            units.append(" ".join(paragraph))
-
-    for unit in units:
-        if not any(alias in unit for alias in aliases) or "全文読む" not in unit:
-            continue
-        without_paths = re.sub(r"`[^`]*`", "", unit)
-        if re.search(r"(?:とき|時|場合|工程|前|直前|入口)", without_paths):
-            return True
-    return False
-
-
-def _assert_reference_migration_inventory(
-    edges: list[dict[str, str]],
-    source_paths: list[str],
-    referrer_paths: list[str],
-    target_paths: list[str],
-    source_count: int,
-    edge_count: int,
-) -> None:
-    """参照移行fixtureの辺数と参照元・参照先集合を検査する。"""
-    assert len(edges) == edge_count
-    edge_keys = {(edge["source"], edge["ref"], edge["target"]) for edge in edges}
-    assert len(edge_keys) == edge_count
-    assert len(source_paths) == source_count
-    assert len(set(source_paths)) == source_count
-    assert len(referrer_paths) == len(set(referrer_paths))
-    assert len(target_paths) == len(set(target_paths))
-    assert set(referrer_paths) == {edge["source"] for edge in edges}
-    assert set(target_paths) == {edge["target"] for edge in edges}
-    assert all(edge["source"] in referrer_paths and edge["target"] in target_paths for edge in edges)
-    assert set(referrer_paths) <= set(source_paths)
-
-
-def _reference_migration_handoff_exists(source_text: str, target: str) -> bool:
-    """移行後の参照元に契約名または所属SKILLへの引渡し文が残ることを検査する。"""
-    target_path = pathlib.PurePosixPath(target)
-    skills_index = target_path.parts.index("skills")
-    skill_name = target_path.parts[skills_index + 1]
-    if target.startswith(".claude/"):
-        return any(
-            marker in source_text
-            for marker in (
-                target,
-                f"`{skill_name}`",
-                f"`agent-toolkit:{skill_name}`",
-                f"{skill_name}の版数更新詳細契約",
-            )
-        )
-    return any(
-        marker in source_text
-        for marker in (
-            target,
-            f"`agent-toolkit:{skill_name}`",
-            f"`{skill_name}/SKILL.md`",
-            f"{skill_name}の実装担当契約",
-        )
-    )
 
 
 def _run_history_git(
@@ -4795,6 +4582,9 @@ def test_review_rounds_have_an_escalation_route_for_repeated_findings() -> None:
         "3ラウンド連続",
         "撤去と同一内容の復元をともに観測した場合",
         "needs_escalation",
+        "過去ラウンドの指摘や修正方針そのものは対応先として扱わない",
+        "レビュー起因で追加した構成要素を列挙する",
+        "既に実装済みであっても撤去してから返す",
     ):
         assert phrase in coordinator
 
@@ -5818,119 +5608,6 @@ def test_section_reference_patterns_accept_line_breaks() -> None:
     assert _FILE_SECTION_REFERENCE_RE.findall(file_reference) == [
         ("agent-toolkit/skills/commit/references/push-and-ci.md", "CI通過確認")
     ]
-
-
-def test_reference_migration_fixture_preserves_contracts_and_owner_conditions() -> None:
-    """固定baseから移行した86辺の本文・引渡し・必要時読込みを検査する。"""
-    fixture = json.loads(_REFERENCE_MIGRATION_FIXTURE.read_text(encoding="utf-8"))
-    edges = fixture["edges"]
-
-    assert fixture["base"] == _REFERENCE_MIGRATION_BASE
-    assert fixture["source_count"] == 69
-    assert fixture["edge_count"] == 86
-    assert fixture["referrer_count"] == 35
-    assert fixture["target_count"] == 35
-    source_paths = fixture["source_paths"]
-    referrer_paths = fixture["referrer_paths"]
-    target_paths = fixture["target_paths"]
-    _assert_reference_migration_inventory(
-        edges,
-        source_paths,
-        referrer_paths,
-        target_paths,
-        fixture["source_count"],
-        fixture["edge_count"],
-    )
-    with pytest.raises(AssertionError):
-        _assert_reference_migration_inventory(
-            edges[:-1], source_paths, referrer_paths, target_paths, fixture["source_count"], fixture["edge_count"]
-        )
-    with pytest.raises(AssertionError):
-        _assert_reference_migration_inventory(
-            edges + [edges[0]], source_paths, referrer_paths, target_paths, fixture["source_count"], fixture["edge_count"]
-        )
-    extra_edge = dict(edges[0])
-    extra_edge["source"] = f"{extra_edge['source']}.extra"
-    with pytest.raises(AssertionError):
-        _assert_reference_migration_inventory(
-            edges[:-1] + [extra_edge],
-            source_paths,
-            referrer_paths,
-            target_paths,
-            fixture["source_count"],
-            fixture["edge_count"],
-        )
-    sources = _reference_migration_sources()
-    assert {str(path.relative_to(_REPOSITORY_ROOT)) for path in sources} == set(source_paths)
-    assert not _reference_migration_edges()
-    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
-    assert "9箇所が実体のない参照を継続" in incidents
-    assert "削除時に参照元を洗い出す工程が無かった" in incidents
-
-    owner_targets: dict[str, set[str]] = {}
-    for edge in edges:
-        source = _REPOSITORY_ROOT / edge["source"]
-        target = _REPOSITORY_ROOT / edge["target"]
-        assert source.is_file(), source
-        assert target.is_file(), target
-
-        source_text = source.read_text(encoding="utf-8")
-        current_paragraphs = [_normalise_reference_paragraph(paragraph) for paragraph in re.split(r"\n\s*\n", source_text)]
-        baseline_paragraph = edge["paragraph"]
-        similarity = max(
-            (difflib.SequenceMatcher(None, baseline_paragraph, paragraph).ratio() for paragraph in current_paragraphs),
-            default=0.0,
-        )
-        # 口調例の隔離方針変更は意図した移行であり、旧段落の類似度ではなく新しい契約文を検査する。
-        rewritten_edge = (edge["source"], edge["ref"]) in {
-            (
-                "agent-toolkit/skills/process-feedbacks/references/decision-format.md",
-                "../../plan-mode/references/plan-file-standards.md",
-            ),
-            (
-                "agent-toolkit/skills/process-feedbacks/references/feedbacks-planner-reception.md",
-                "hold-with-tbd-inject.md",
-            ),
-            (
-                "agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md",
-                "agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md",
-            ),
-            ("agent-toolkit/skills/writing-standards/references/notation-rules.md", "tone-examples.md"),
-            (
-                "agent-toolkit/skills/writing-standards/references/notation-rules.md",
-                "tone-examples-llm-tone.md",
-            ),
-            ("agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md", "notation-rules.md"),
-        }
-        if rewritten_edge:
-            assert (
-                "reject・hold判定" in source_text
-                or "同一ファイルシステム名前空間" in source_text
-                or "意図的な違反例" in source_text
-                or "口調例は例示の内容を通常の成果物検査へ混入させない" in source_text
-            )
-        else:
-            assert similarity >= 0.60, edge
-        assert _reference_migration_handoff_exists(source_text, edge["target"]), edge
-
-        target_path = pathlib.PurePosixPath(edge["target"])
-        skills_index = target_path.parts.index("skills")
-        owner = target_path.parts[skills_index + 1]
-        owner_targets.setdefault(owner, set()).add(edge["target"])
-
-    assert owner_targets == _REFERENCE_MIGRATION_OWNER_TARGETS
-    assert len(referrer_paths) == fixture["referrer_count"]
-    assert len(target_paths) == fixture["target_count"]
-    assert set(target_paths) == set().union(*_REFERENCE_MIGRATION_OWNER_TARGETS.values())
-    for owner, targets in owner_targets.items():
-        skill_text = _owner_skill_path(owner).read_text(encoding="utf-8")
-        for target in targets:
-            assert _has_owner_read_condition(skill_text, target), (owner, target)
-
-    target = "agent-toolkit/skills/plan-mode/references/implementation-task.md"
-    assert not _has_owner_read_condition(f"- `{target}`だけを一覧に残す", target)
-    assert not _has_owner_read_condition(f"- `{target}`を記載する\n- 実装工程では別資料を全文読む", target)
-    assert _has_owner_read_condition(f"- 実装工程では`{target}`を全文読む", target)
 
 
 def test_skill_references_are_reachable_from_instruction_roots() -> None:

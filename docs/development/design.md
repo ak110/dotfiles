@@ -73,13 +73,7 @@ toolkitは自身の排他区間外で他プロセスが行うfetchを管理し�
 
 `hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`、`hold`以外の`unhold`及び保留中の編集・採否・削除は拒否する。強制削除は`hold`と`editing`を候補へ含めない。
 
-`editing`は本文を編集セッション中に保持する永続状態であり、開始時に元状態、セッションID、本文ハッシュをメタデータへ保存する。保存または取り消しは有効なセッションIDを検証して元状態へ戻し、メタデータを削除する。エディター異常終了や切断で自動回復せず、`atk mq edit --recover`による明示的な管理者回復だけが既存セッションを無効化して状態を戻す。commit前の失敗は対象状態と本文を復元し、commit後のpush失敗は確定済み状態と完全OIDを保持して`atk mq commit`へ誘導する。
-
-新設状態遷移の前処理ではindex全体がcleanであることを確認し、対象外のstageを成功commitへ混入させない。push前の同期失敗は状態不変・再試行可として返し、pushだけの失敗は同じ状態遷移を再送せず滞留commitを明示復旧する。編集開始後の継続は`atk mq edit --resume SESSION_ID`で保存または取り消しを選ぶ。
-
-serveの`POST /api/entries/commit`は空JSONを受理して滞留commitを復旧し、`commit`、`recovered_from`、`rebased`、`push_pending`及び`retryable`を完全OID付きで返す。詳細画面の復旧操作はpush保留時のOIDと`recovered_from`が一致した場合だけ表示を更新し、状態遷移や編集セッションの操作を再送しない。不一致または復旧失敗時は保留状態と入力を保持する。
-
-明示復旧中のrebaseが失敗した場合は`git rebase --abort`を実行する。abort成功時は`retryable: true`として再試行できる。abortにも失敗してrebase中間状態が残る場合は`git_state: rebase_in_progress`、`manual_recovery_required: true`及び`retryable: false`を返し、管理repoの手動復旧が完了するまでCLIと画面の再試行を禁止する。
+`editing`は一覧と既存データの状態判定で認識する。今回の状態追加は編集操作の排他方式を変更せず、永続的な編集セッション、専用の復旧状態又はpush再試行APIを追加しない。
 
 ### 一覧出力と計画変換
 

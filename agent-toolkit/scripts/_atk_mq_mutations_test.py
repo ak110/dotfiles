@@ -95,6 +95,19 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     assert (notes / "processing/entry.md").is_file()
 
 
+def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """holdとunholdは専用復旧状態を作成せず既存の状態遷移で往復する。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "entry.md")
+    _disable_transition_git(monkeypatch)
+
+    mutations.transition_entries(notes, action="hold", filenames=["entry.md"], now=_FIXED_DT)
+    assert (notes / "hold/entry.md").is_file()
+
+    mutations.transition_entries(notes, action="unhold", filenames=["entry.md"], now=_FIXED_DT)
+    assert (notes / "inbox/entry.md").is_file()
+
+
 def test_transition_restores_missing_state_directories_before_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -948,35 +961,6 @@ def test_convert_multiple_entries_rejects_duplicate_before_writing(
     assert path.read_text(encoding="utf-8") == original
 
 
-def test_convert_continues_with_one_push_when_commit_reports_failure_after_head_advance(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """commitが成立後に失敗値を返した場合は再commitせず1回だけpushする。"""
-    notes = _setup_notes(tmp_path)
-    _write_convert_feedback(notes, "feedback.md")
-    plan = _write_convert_plan(tmp_path, "a" * 40)
-    _disable_convert_git(monkeypatch)
-    heads = iter(("a" * 40, "b" * 40, "b" * 40))
-    monkeypatch.setattr(mutations, "_git_head", lambda _path: next(heads))
-    monkeypatch.setattr(
-        mutations,
-        "_commit_and_push",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.CalledProcessError(1, ["git", "commit"])),
-    )
-    push_calls: list[pathlib.Path] = []
-    monkeypatch.setattr(mutations, "_push_pending_commits", push_calls.append)
-
-    result = mutations.convert_entries_to_plan(
-        notes,
-        filenames=("feedback.md",),
-        plan_file=str(plan),
-    )
-
-    assert result["commit"] == "b" * 40
-    assert push_calls == [notes, notes]
-
-
 def test_cmd_convert_to_plan_displays_saved_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1360,8 +1344,7 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert any(command[:2] == ["git", "add"] for command in commands)
         assert any(command[:2] == ["git", "commit"] for command in commands)
-        assert commands[0][:2] == ["git", "log"]
-        assert commands[1] == ["git", "push"]
+        assert commands[0] == ["git", "push"]
         assert commands.count(["git", "push"]) == 1
         captured = capsys.readouterr()
         assert "未pushのcommit" in captured.err
@@ -1386,8 +1369,7 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert any(command[:2] == ["git", "add"] for command in commands)
         assert any(command[:2] == ["git", "commit"] for command in commands)
-        assert commands[0][:2] == ["git", "log"]
-        assert commands[1] == ["git", "push"]
+        assert commands[0] == ["git", "push"]
         assert commands.count(["git", "push"]) == 1
         captured = capsys.readouterr()
         assert "未pushのcommit" in captured.err

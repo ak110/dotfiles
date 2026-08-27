@@ -2,9 +2,10 @@ const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
 const STATE_LABELS = {
-  inbox: '未処理', planning: '計画作成中', processing: '処理中', adopted: '採用済み', rejected: '不採用'
+  inbox: '未処理', planning: '計画作成中', processing: '処理中', editing: '編集中', hold: '保留',
+  adopted: '採用済み', rejected: '不採用'
 };
-const ACTIVE_STATES = new Set(['inbox', 'processing']);
+const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
 const SEARCH_FALLBACK_NOTICE =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
@@ -468,7 +469,7 @@ async function refreshKnownTbds({notify = false} = {}) {
   const payload = await api('/api/entries?type=tbd&status=all&answered=all');
   const allTbds = Array.isArray(payload.entries) ? payload.entries : [];
   const newUnanswered = knownTbdBaselineReady && notify ? allTbds.filter(entry =>
-    !knownTbdFilenames.has(entry.filename) && ACTIVE_STATES.has(entry.state) && entry.answered === false
+    !knownTbdFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
   ) : [];
   allTbds.forEach(entry => knownTbdFilenames.add(entry.filename));
   knownTbdBaselineReady = true;
@@ -634,15 +635,22 @@ function setDetailMode(mode) {
   const commenting = mode === 'user-comment';
   const mutating = editing || answering || commenting;
   const unansweredTbd = currentEntry?.kind === 'tbd' && currentEntry.answered === false;
+  const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
+  const held = currentEntry?.state === 'hold';
   byId('edit-panel').hidden = !editing;
   byId('answer-panel').hidden = !answering;
   byId('user-comment-panel').hidden = !commenting;
-  byId('edit-button').hidden = mutating || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
+  byId('decision-panel').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
+  byId('edit-button').hidden = mutating || !processable;
   byId('answer-button').hidden = mutating || !currentEntry ||
-    currentEntry.kind !== 'tbd' || !ACTIVE_STATES.has(currentEntry.state);
+    currentEntry.kind !== 'tbd' || !processable;
   byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
   byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
-  byId('delete-button').hidden = mutating || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
+  byId('adopt-button').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
+  byId('reject-button').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
+  byId('hold-button').hidden = mutating || !processable;
+  byId('unhold-button').hidden = mutating || !held;
+  byId('delete-button').hidden = mutating || !processable;
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
   byId('save-user-comment-button').hidden = !commenting;
@@ -656,7 +664,8 @@ function setDetailMode(mode) {
 function syncDetailMutationAvailability() {
   for (const id of [
     'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
-    'save-entry-button', 'save-answer-button', 'save-user-comment-button'
+    'save-entry-button', 'save-answer-button', 'save-user-comment-button',
+    'adopt-button', 'reject-button', 'hold-button', 'unhold-button'
   ]) {
     const button = byId(id);
     const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
@@ -685,6 +694,7 @@ function renderAnswerChoices(entry) {
 function displayEntry(entry) {
   currentEntry = entry;
   detailRefreshRequired = false;
+  byId('decision-note').value = '';
   setTextMessage('detail-alert', '');
   byId('detail-view').hidden = false;
   byId('detail-filename').textContent = entry.filename;
@@ -693,7 +703,7 @@ function displayEntry(entry) {
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
   renderAnswerChoices(entry);
-  byId('readonly-notice').hidden = ACTIVE_STATES.has(entry.state);
+  byId('readonly-notice').hidden = PROCESSABLE_STATES.has(entry.state);
   setDetailMode('view');
   updateCurrentRowSelection();
 }
@@ -1019,6 +1029,27 @@ async function saveUserComment() {
   }
 }
 
+async function transitionDetail(action) {
+  if (!currentEntry || detailRefreshRequired) return;
+  const allowed = action === 'unhold' ? currentEntry.state === 'hold' : PROCESSABLE_STATES.has(currentEntry.state);
+  if (!allowed || ((action === 'adopt' || action === 'reject') && currentEntry.kind !== 'feedback')) return;
+  const key = entryKey(currentEntry);
+  const payload = {filenames: [currentEntry.filename]};
+  const note = byId('decision-note').value.trim();
+  if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
+  try {
+    await runPending(`transition-${action}`, {
+      container: byId('detail-shell'), button: byId(`${action}-button`), busyLabel: '処理中'
+    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}));
+    await loadEntries();
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog();
+    const label = {adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除'}[action];
+    deliverOperationMessage(`${key}を${label}しました。`);
+  } catch (error) {
+    deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
+  }
+}
+
 function resetCreateForm() {
   byId('create-kind').value = 'feedback';
   byId('create-content').value = '';
@@ -1254,6 +1285,10 @@ function bindEvents() {
   byId('save-entry-button').addEventListener('click', saveEntry);
   byId('save-answer-button').addEventListener('click', saveAnswer);
   byId('save-user-comment-button').addEventListener('click', saveUserComment);
+  byId('adopt-button').addEventListener('click', () => { void transitionDetail('adopt'); });
+  byId('reject-button').addEventListener('click', () => { void transitionDetail('reject'); });
+  byId('hold-button').addEventListener('click', () => { void transitionDetail('hold'); });
+  byId('unhold-button').addEventListener('click', () => { void transitionDetail('unhold'); });
   byId('delete-button').addEventListener('click', openDeleteDialog);
   byId('create-kind').addEventListener('change', updateCreateFields);
   byId('create-question-type').addEventListener('change', updateCreateFields);

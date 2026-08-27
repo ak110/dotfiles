@@ -5,7 +5,7 @@ import sys
 import typing
 
 from _atk_mq_common import (
-    MQ_FEEDBACK_ACTIVE_STATES,
+    MQ_STATE_INBOX,
     MQ_STATE_PLANNING,
     MQ_STATE_PROCESSING,
     MQ_STATES,
@@ -42,7 +42,12 @@ def _select_candidates(
     """`active`項目から同じ正規リポジトリと有効な種別を選択する。"""
     return [
         entry
-        for entry in _iter_entries(private_notes, MQ_FEEDBACK_ACTIVE_STATES, target_repo, "all")
+        for entry in _iter_entries(
+            private_notes,
+            (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_PLANNING),
+            target_repo,
+            "all",
+        )
         if entry[4] in MQ_TYPES and not (entry[3] == MQ_STATE_PLANNING and entry[4] == MQ_TYPE_TBD)
     ]
 

@@ -636,7 +636,7 @@ class TestTbdList:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--type=tbd", "--answered", "no"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--answered", "no", "--no-json"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
@@ -1346,6 +1346,19 @@ def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
 
     assert tbd_module.answer_tbd(notes, filename="same.md", answer="従来経路の回答") is True
     assert processing.read_text(encoding="utf-8").endswith("従来経路の回答\n")
+
+
+def test_answer_tbd_rejects_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """hold上のTBDは一覧に表示しても回答操作の対象にしない。"""
+    notes = _setup_notes(tmp_path)
+    held = _write_tbd_file(notes, "held.md")
+    (notes / "hold").mkdir()
+    held.rename(notes / "hold/held.md")
+    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+
+    with pytest.raises(tbd_module.WebInputError, match="stateはinbox又はprocessing"):
+        tbd_module.answer_tbd(notes, filename="held.md", state="hold", answer="回答")
 
 
 def test_reject_reserved_tbd_markup_allows_plain_body() -> None:

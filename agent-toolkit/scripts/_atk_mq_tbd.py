@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 from _atk_mq_common import (
-    MQ_ACTIVE_STATES,
+    MQ_PROCESSABLE_STATES,
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
     MQ_TYPE_TBD,
@@ -165,7 +165,7 @@ def _resolve_active_entry(
     （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
     """
     if state is not None:
-        if state not in MQ_ACTIVE_STATES:
+        if state not in MQ_PROCESSABLE_STATES:
             raise WebInputError("stateはinbox又はprocessingで指定してください")
         candidate = _validate_filename(filename, private_notes / state)
         if candidate.is_file():
@@ -289,7 +289,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         filter_repo: str | None = None
         if args.target_repo is not None:
             filter_repo = _resolve_repo_id(args.target_repo)
-        for path, _repo, text, _state, _kind in _iter_entries(private_notes, MQ_ACTIVE_STATES, filter_repo, MQ_TYPE_TBD):
+        for path, _repo, text, _state, _kind in _iter_entries(private_notes, MQ_PROCESSABLE_STATES, filter_repo, MQ_TYPE_TBD):
             if _is_tbd_answered(text):
                 continue
             targets.append(path)

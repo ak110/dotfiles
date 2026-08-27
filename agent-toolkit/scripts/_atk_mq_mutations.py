@@ -20,8 +20,9 @@ import _atk_mq_remove_all as _remove_all
 import _atk_mq_tbd as _tbd
 import _plan_format
 from _atk_mq_common import (
-    MQ_ACTIVE_STATES,
+    MQ_PROCESSABLE_STATES,
     MQ_STATE_ADOPTED,
+    MQ_STATE_HOLD,
     MQ_STATE_INBOX,
     MQ_STATE_PLANNING,
     MQ_STATE_PROCESSING,
@@ -238,7 +239,7 @@ def _validate_transition_options(
     cooldown_days: int | None,
 ) -> None:
     """状態遷移オプション間の制約を検証する。"""
-    if action not in {"start-planning", "start-processing", "return-to-inbox", "adopt", "reject", "remove"}:
+    if action not in {"start-planning", "start-processing", "return-to-inbox", "hold", "unhold", "adopt", "reject", "remove"}:
         raise WebInputError(f"未知のエントリ操作です: {action}")
     if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
         raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
@@ -272,6 +273,12 @@ def _resolve_transition_paths(
         return _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
     if action == "return-to-inbox":
         return _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
+    if action == "unhold":
+        return _resolve_feedback_targets(
+            filenames,
+            _subdir(private_notes, MQ_STATE_HOLD),
+            missing_is_conflict=missing_is_conflict,
+        )
     if action == "remove":
         return _resolve_removable_targets(
             filenames,
@@ -385,6 +392,8 @@ def _apply_transition(
         "start-planning": MQ_STATE_PLANNING,
         "start-processing": MQ_STATE_PROCESSING,
         "return-to-inbox": MQ_STATE_INBOX,
+        "hold": MQ_STATE_HOLD,
+        "unhold": MQ_STATE_INBOX,
         "adopt": MQ_STATE_ADOPTED,
         "reject": MQ_STATE_REJECTED,
     }.get(action)
@@ -415,6 +424,8 @@ def _transition_commit_message(action: str, count: int, note: str | None) -> str
         "start-planning": f"chore: start planning {count} {item_word}",
         "start-processing": f"chore: start processing {count} {item_word}",
         "return-to-inbox": f"chore: return {count} {item_word} to inbox",
+        "hold": f"chore: hold {count} {item_word}",
+        "unhold": f"chore: unhold {count} {item_word}",
         "adopt": f"chore: process {count} {item_word} (adopted)",
         "reject": f"chore: process {count} {item_word} (rejected)",
         "remove": f"chore: remove {count} {item_word}{note_suffix}",
@@ -680,7 +691,7 @@ def _plan_feedback_paths(
             feedback_paths.append(path)
             continue
         if entry_type == MQ_TYPE_TBD:
-            if state not in MQ_ACTIVE_STATES:
+            if state not in MQ_PROCESSABLE_STATES:
                 raise WebInputError(f"計画の提示素材TBDがactive状態ではありません: {filename}")
             continue
         raise WebInputError(f"計画の提示素材のtypeが不正です: {filename}")
@@ -1187,7 +1198,6 @@ def convert_entries_to_plan(
                     ],
                     "plan_file": str(plan_path),
                     "commit": None,
-                    "push_pending": False,
                 }
             try:
                 _commit_and_push(
@@ -1208,7 +1218,6 @@ def convert_entries_to_plan(
                 ],
                 "plan_file": str(plan_path),
                 "commit": commit_oid,
-                "push_pending": False,
             }
         except Exception as error:
             command = getattr(error, "cmd", ())
@@ -1455,6 +1464,32 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path,
         target_repo=args.target_repo,
     )
     print(f"{len(filenames)}件処理開始: {', '.join(filenames)}")
+
+
+def _cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+    """holdサブコマンド: 処理可能な項目をholdへ移動する。"""
+    args.filenames = _dedup_positional_filenames(args.filenames, "hold")
+    filenames = transition_entries(
+        private_notes,
+        action="hold",
+        filenames=args.filenames,
+        now=now,
+        target_repo=args.target_repo,
+    )
+    print(f"{len(filenames)}件保留: {', '.join(filenames)}")
+
+
+def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+    """unholdサブコマンド: hold項目をinboxへ戻す。"""
+    args.filenames = _dedup_positional_filenames(args.filenames, "unhold")
+    filenames = transition_entries(
+        private_notes,
+        action="unhold",
+        filenames=args.filenames,
+        now=now,
+        target_repo=args.target_repo,
+    )
+    print(f"{len(filenames)}件保留解除: {', '.join(filenames)}")
 
 
 def _cmd_start_planning(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:

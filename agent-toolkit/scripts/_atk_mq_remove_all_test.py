@@ -156,7 +156,29 @@ class TestRemoveAllConfirmation:
         assert stdin.tell() == 2
         assert not (notes / "inbox/feedback.md").exists()
         assert not (notes / "inbox/question.md").exists()
-        assert commits == [("chore: remove 2 entries", ["inbox", "processing", "planning", "adopted", "rejected"])]
+        assert commits == [
+            ("chore: remove 2 entries", ["inbox", "processing", "planning", "editing", "hold", "adopted", "rejected"])
+        ]
+
+    def test_excludes_hold_and_editing_entries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """holdとeditingは一覧表示上activeでも一括削除の候補にしない。"""
+        notes = _setup_notes(tmp_path)
+        held = _write_entry(notes, "hold", "held.md")
+        editing = _write_entry(notes, "editing", "editing.md")
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits)
+
+        assert _run_main(["mq", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
+
+        assert held.exists()
+        assert editing.exists()
+        assert not commits
+        assert "削除対象なし" in capsys.readouterr().out
 
     def test_restores_missing_state_directories_before_commit(
         self,
@@ -463,7 +485,9 @@ class TestRemoveAllConcurrentChanges:
 
         assert not original.exists()
         assert added.exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "planning", "adopted", "rejected"])]
+        assert commits == [
+            ("chore: remove 1 entry", ["inbox", "processing", "planning", "editing", "hold", "adopted", "rejected"])
+        ]
         assert "確認後に変更されたため削除しません" not in capsys.readouterr().out
 
     def test_removes_only_unchanged_entry_of_two(
@@ -484,7 +508,9 @@ class TestRemoveAllConcurrentChanges:
 
         assert not unchanged.exists()
         assert (notes / "processing/changed.md").exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "planning", "adopted", "rejected"])]
+        assert commits == [
+            ("chore: remove 1 entry", ["inbox", "processing", "planning", "editing", "hold", "adopted", "rejected"])
+        ]
         assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out
 
 
@@ -541,5 +567,7 @@ class TestRemoveAllSkipPull:
         assert tracker.count == 1
         assert not unchanged.exists()
         assert changed.exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "planning", "adopted", "rejected"])]
+        assert commits == [
+            ("chore: remove 1 entry", ["inbox", "processing", "planning", "editing", "hold", "adopted", "rejected"])
+        ]
         assert "確認後に変更されたため削除しません: changed.md" in capsys.readouterr().out

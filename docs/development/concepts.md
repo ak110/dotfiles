@@ -52,6 +52,10 @@
 - モデル指定時は推論の深さ（effort）も必ず併記する
 - レビューと修正の往復が3回を超える場合は、個別修正を継続せず
   作業プロセス・規範側の欠陥を疑う
+- 2ラウンド目の修正前に、レビュー起因で追加した各状態、API、識別子、互換経路、復旧経路及び検査を、
+  元の利用者目的、公開契約、規範的制約又は再現済み重大欠陥へ対応付ける。過去のレビュー指摘又は修正済みという事実は根拠にしない
+- 3ラウンド目へ進む前に初版からの累積差分を再監査し、対応先のないレビュー起因要素は実装済みでも撤去する。
+  ラウンド数だけを根拠とする一律の停止や規模上限は設けず、元の目的への必要性で判定する
 - 過去計画30件のレビュー実績の実測では、起草側の完成条件に対応の無い検出側専用の検査基準5件と、
   ラウンド数上位3事例での新設機構への段階的な指摘（最終的な機構の撤去・縮小で収束）を観測した。
   これに基づき、計画の成果物契約は
@@ -310,9 +314,7 @@ Codexが`agent-toolkit/agents/*.md`の名前付きagentを呼び出す場合だ�
 - 計画作成中の通常型フィードバックは専用の`planning`へ移し、公開一覧の`active`・`processable`、`process-loop`のready集合、TBD、一般編集及びユーザーコメントから分離する。計画作成途中の項目を実装対象として扱わず、必要な場合は`--status=planning`を明示して参照する状態境界を優先する
 - キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`とする。公開一覧の`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は通常の自動処理へ渡せる`inbox`・`processing`だけを表示する。`hold`・`editing`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない
 - `hold`は`inbox`または`processing`から移動し、`unhold`では`inbox`へ戻す。保留元を推測して`processing`へ戻す経路、保留中の編集・採否・削除及び強制削除の候補化は行わない
-- `editing`は元状態、セッションID、本文ハッシュを保持する永続的な編集状態とする。保存・取り消しは有効なセッションIDを検証して元状態へ戻し、エディター異常終了・切断では自動回復しない。`atk mq edit --recover`だけが明示的な管理者回復として既存セッションを無効化する
-- 新設状態遷移はindex全体のcleanを確認してから実行し、commit前の失敗では対象パスを開始時へ復元する。commit後のpush失敗では確定済み状態と完全OIDを保持して`atk mq commit`へ誘導し、状態遷移を再送しない。編集開始後の保存・取り消しは`atk mq edit --resume SESSION_ID`で継続する
-- serveの`POST /api/entries/commit`は空JSONで滞留commitを明示復旧し、`commit`・`recovered_from`・`rebased`・`push_pending`・`retryable`を返す。詳細画面は保留時のOIDと`recovered_from`が一致した場合だけ表示を更新し、状態遷移や編集セッションを再送しない
+- `editing`は一覧と既存データの状態判定で認識する。今回の状態追加を理由に、永続的な編集セッション、専用の復旧状態又はpush再試行APIを新設しない
 - `atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-json`でテキスト表示へ戻す。`--json`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
 - `atk mq list`のテキスト表示はstdoutがTTYの場合だけ端末幅に応じて短縮し、非TTYでは`target_repo`と要約を全文で保持する。人間TTYの幅適応は維持する
 - `atk mq convert-to-plan FILENAME...`は全入力を事前検証して1回のロック・commit・任意pushで処理し、`--skip-push`ではcommitを保持してpushだけを省略する。commit前の失敗で部分変換を残さない

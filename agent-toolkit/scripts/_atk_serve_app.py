@@ -34,7 +34,7 @@ import werkzeug.exceptions
 
 type JsonObject = dict[str, typing.Any]
 _ENTRY_STATES = set(common.MQ_STATES)
-_STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
+_STATUS_FILTERS = {"all", "active", "processable", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _PLAN_FILTERS = {"all", "normal", "plan"}
 _ENTRY_PAGE_SIZE = 100
@@ -79,6 +79,8 @@ def _resolve_states(status: str) -> tuple[str, ...]:
     """`status` queryの指定値を走査対象の状態フォルダ列へ変換する。"""
     if status == "active":
         return common.MQ_FEEDBACK_ACTIVE_STATES
+    if status == "processable":
+        return common.MQ_PROCESSABLE_STATES
     if status == "all":
         return common.MQ_STATES
     return (status,)
@@ -86,7 +88,7 @@ def _resolve_states(status: str) -> tuple[str, ...]:
 
 def _is_selected_state(status: str, state: str, kind: str | None) -> bool:
     """一覧の状態フィルターと種別の組み合わせで表示対象か判定する。"""
-    return not (status == "active" and state == common.MQ_STATE_PLANNING and kind == common.MQ_TYPE_TBD)
+    return not (status in {"active", "processable"} and state == common.MQ_STATE_PLANNING and kind == common.MQ_TYPE_TBD)
 
 
 async def _request_json() -> typing.Any:
@@ -955,7 +957,11 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
         force = data["force"]
     state_name = _optional_string(data, "state") if "state" in allowed else None
     if state_name is not None:
-        valid_states = common.MQ_FEEDBACK_ACTIVE_STATES if action == "remove" else common.MQ_ACTIVE_STATES
+        valid_states = (
+            (common.MQ_STATE_INBOX, common.MQ_STATE_PROCESSING, common.MQ_STATE_PLANNING)
+            if action == "remove"
+            else common.MQ_PROCESSABLE_STATES
+        )
         if state_name not in valid_states:
             if action == "remove":
                 raise common.WebInputError("stateはinbox、planning又はprocessingで指定してください")
@@ -1076,7 +1082,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             raise common.WebInputError("filenameは文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         state_name = _optional_string(data, "state")
-        if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
+        if state_name is not None and state_name not in common.MQ_PROCESSABLE_STATES:
             raise common.WebInputError("stateはinbox又はprocessingで指定してください")
         if state_name is None:
             changed = await workers.run(ops.answer_tbd, data["filename"], data["answer"], expected_content)
@@ -1092,6 +1098,8 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
 
     transition_specs = {
         "start-processing": {"filenames", "target_repo"},
+        "hold": {"filenames", "target_repo"},
+        "unhold": {"filenames", "target_repo"},
         "adopt": {"filenames", "note", "commit", "target_repo"},
         "reject": {"filenames", "note", "commit", "target_repo"},
         "remove": {"filenames", "note", "target_repo", "force", "state", "expected_content"},

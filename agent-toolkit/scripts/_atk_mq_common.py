@@ -41,26 +41,38 @@ from _atk_mq_formatters import (
 )
 from _atk_mq_frontmatter import parse_frontmatter
 from _atk_mq_readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
-from _tbd_scan import _ACTIVE_STATES as MQ_ACTIVE_STATES
 from _tbd_scan import _TBD_TYPE as MQ_TYPE_TBD
 from _tbd_scan import is_tbd_answered as _is_tbd_answered
 
 __all__ = ["QueueEntry", "ReadinessResult", "_count_pending_entries", "calculate_readiness"]
 
-# フィードバック管理repoの5状態フォルダー名（管理repoのroot直下）。
+# フィードバック管理repoの状態フォルダー名（管理repoのroot直下）。
 # - `inbox`: 未処理の投入直後
 # - `planning`: 計画作成中。process-loopの着手対象外
 # - `processing`: `start-processing`で処理中に移動された途中状態
+# - `editing`: 外部の編集処理が使用する編集中状態
+# - `hold`: 明示的な解除まで自動処理を保留した状態
 # - `adopted`: 採用として最終処理された状態
 # - `rejected`: 不採用として最終処理された状態
 MQ_STATE_INBOX = "inbox"
 MQ_STATE_PLANNING = "planning"
 MQ_STATE_PROCESSING = "processing"
+MQ_STATE_EDITING = "editing"
+MQ_STATE_HOLD = "hold"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
-MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_PLANNING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
-# `MQ_ACTIVE_STATES`は`tbd`とreadinessが参照する既存の着手対象を維持する。
-MQ_FEEDBACK_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING)
+MQ_STATES = (
+    MQ_STATE_INBOX,
+    MQ_STATE_PROCESSING,
+    MQ_STATE_PLANNING,
+    MQ_STATE_EDITING,
+    MQ_STATE_HOLD,
+    MQ_STATE_ADOPTED,
+    MQ_STATE_REJECTED,
+)
+MQ_PROCESSABLE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
+MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_EDITING, MQ_STATE_HOLD)
+MQ_FEEDBACK_ACTIVE_STATES = MQ_ACTIVE_STATES
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
@@ -650,7 +662,7 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
     """未回答TBDが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
     entries = [
         (path, entry_repo, text, state)
-        for path, entry_repo, text, state, _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_TBD)
+        for path, entry_repo, text, state, _ in _iter_entries(private_notes, MQ_PROCESSABLE_STATES, target_repo, MQ_TYPE_TBD)
         if not _is_tbd_answered(text)
     ]
     if not entries:

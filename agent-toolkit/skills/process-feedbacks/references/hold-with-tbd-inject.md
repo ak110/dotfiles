@@ -6,9 +6,7 @@
 
 本書でいうTBDによる「保留」は、質問または外部条件を依存へ記録し、元のフィードバックを`inbox`へ戻して`blocked`にする意味である。`atk mq hold`で移動する物理状態の`hold`とは区別し、TBD保留の処理で物理`hold`へ移動しない。
 
-キューの公開`active`は`inbox`・`processing`・`editing`・`hold`、処理可能な`processable`は`inbox`・`processing`である。物理`hold`は明示的な`unhold`まで処理ループ、readiness、TBDスキャン、alertsの対象にせず、`unhold`では`inbox`へ戻す。`editing`は編集セッション中の永続状態であり、保存・取り消しまたは管理者による明示的な`atk mq edit --recover`まで同じ自動処理の対象外とする。編集の異常終了・切断で自動回復せず、状態遷移を再送しない。
-
-物理`hold`・`unhold`・編集遷移の前処理、commit前失敗、commit後push失敗は、各コマンドの結果へ状態不変または確定済み状態、完全OID、再試行可否、`atk mq commit`による復旧方法を含める。TBDの依存設定、`blocked`確認、`return-to-inbox`を完了した項目へ、物理状態の復旧操作を重ねて実行しない。
+キューの公開`active`は`inbox`・`processing`・`editing`・`hold`、処理可能な`processable`は`inbox`・`processing`である。物理`hold`は明示的な`unhold`まで処理ループ、readiness、TBDスキャン、alertsの対象にせず、`unhold`では`inbox`へ戻す。`editing`も同じ自動処理の対象外とする。TBDの依存設定、`blocked`確認、`return-to-inbox`を完了した項目へ、物理`hold`操作を重ねて実行しない。
 
 ## ユーザー判断
 

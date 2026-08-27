@@ -10,6 +10,7 @@ import sys
 
 from _atk_mq_common import (
     MQ_FEEDBACK_ACTIVE_STATES,
+    MQ_PROCESSABLE_STATES,
     MQ_STATE_PLANNING,
     MQ_STATES,
     MQ_TYPE_TBD,
@@ -141,12 +142,20 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 print()
         return
 
-    states = MQ_FEEDBACK_ACTIVE_STATES if args.status == "active" else MQ_STATES if args.status == "all" else (args.status,)
+    states = (
+        MQ_FEEDBACK_ACTIVE_STATES
+        if args.status == "active"
+        else MQ_PROCESSABLE_STATES
+        if args.status == "processable"
+        else MQ_STATES
+        if args.status == "all"
+        else (args.status,)
+    )
     selected = list(_iter_entries(private_notes, states, filter_repo, args.type))
     for header_type in ("feedback", "tbd"):
         entries: dict[str, list[tuple[str, str, str]]] = {}
         for path, target_repo, text, state, entry_type in selected:
-            if args.status == "active" and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD:
+            if args.status in {"active", "processable"} and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD:
                 continue
             if entry_type != header_type:
                 continue
