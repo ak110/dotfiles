@@ -1421,6 +1421,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     await page.locator('.entry-select[data-key="inbox/empty.md"]').click()
     await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_hidden()
     await page.keyboard.press("Escape")
+    await detail.wait_for(state="hidden")
 
     await page.locator('.entry-select[data-key="inbox/feedback.md"]').click()
     comment_button = detail.get_by_role("button", name="ユーザーコメント", exact=True)
