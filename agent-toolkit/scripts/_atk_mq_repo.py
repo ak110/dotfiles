@@ -255,6 +255,7 @@ def append_entry(
 ) -> bool:
     """フィードバック本文をraw bytesのまま追記し、競合を検出してcommitまで行う。"""
     with _repo_lock(private_notes, timeout=lock_timeout):
+        _push_pending_commits(private_notes)
         _pull(private_notes)
         path = _validate_filename(filename, directory)
         if not path.is_file():

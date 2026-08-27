@@ -5,7 +5,9 @@ import sys
 import typing
 
 from _atk_mq_common import (
-    MQ_FEEDBACK_ACTIVE_STATES,
+    MQ_STATE_EDITING,
+    MQ_STATE_HOLD,
+    MQ_STATE_INBOX,
     MQ_STATE_PLANNING,
     MQ_STATE_PROCESSING,
     MQ_STATES,
@@ -14,12 +16,15 @@ from _atk_mq_common import (
     _commit_and_push,
     _iter_entries,
     _pull,
+    _push_pending_commits,
     _repo_lock,
     _subdir,
     calculate_readiness,
 )
 from _atk_mq_list import QueueEntryDisplay, _print_entries
 from _atk_mq_repo import _resolve_repo_id
+
+_REMOVABLE_COMMIT_STATES = tuple(state for state in MQ_STATES if state not in {MQ_STATE_EDITING, MQ_STATE_HOLD})
 
 
 class CandidateKey(typing.NamedTuple):
@@ -39,11 +44,14 @@ def _select_candidates(
     private_notes: pathlib.Path,
     target_repo: str,
 ) -> list[QueueEntryDisplay]:
-    """`active`項目から同じ正規リポジトリと有効な種別を選択する。"""
+    """削除対象の状態から同じ正規リポジトリと有効な種別を選択する。"""
+    removable_states = (MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING)
     return [
         entry
-        for entry in _iter_entries(private_notes, MQ_FEEDBACK_ACTIVE_STATES, target_repo, "all")
-        if entry[4] in MQ_TYPES and not (entry[3] == MQ_STATE_PLANNING and entry[4] == MQ_TYPE_TBD)
+        for entry in _iter_entries(private_notes, removable_states, target_repo, "all")
+        if entry[4] in MQ_TYPES
+        and entry[3] not in {MQ_STATE_EDITING, MQ_STATE_HOLD}
+        and not (entry[3] == MQ_STATE_PLANNING and entry[4] == MQ_TYPE_TBD)
     ]
 
 
@@ -95,7 +103,7 @@ def _remove_candidates(
     """ロック保持下で候補を削除し、単一commit・pushへまとめる。"""
     for path, _repo, _text, _state, _type in candidates:
         path.unlink()
-    for state_name in MQ_STATES:
+    for state_name in _REMOVABLE_COMMIT_STATES:
         _subdir(private_notes, state_name)
     count = len(candidates)
     item_word = "entry" if count == 1 else "entries"
@@ -103,7 +111,7 @@ def _remove_candidates(
     _commit_and_push(
         private_notes,
         f"chore: remove {count} {item_word}{note_suffix}",
-        list(MQ_STATES),
+        list(_REMOVABLE_COMMIT_STATES),
     )
     return [path.name for path, _repo, _text, _state, _type in candidates]
 
@@ -122,6 +130,7 @@ def _remove_confirmed_candidates(
     """
     confirmed_keys = set(confirmed)
     with _repo_lock(private_notes):
+        _push_pending_commits(private_notes)
         _pull(private_notes)
         current = _select_candidates(private_notes, normalized_repo)
         current_keys = {_candidate_key(entry) for entry in current}
@@ -151,6 +160,7 @@ def remove_all_entries(
     """
     normalized_repo = _resolve_repo_id(target_repo)
     with _repo_lock(private_notes):
+        _push_pending_commits(private_notes)
         if not skip_pull:
             _pull(private_notes)
         candidates = _select_candidates(private_notes, normalized_repo)

@@ -41,28 +41,64 @@ from _atk_mq_formatters import (
 )
 from _atk_mq_frontmatter import parse_frontmatter
 from _atk_mq_readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
-from _tbd_scan import _ACTIVE_STATES as MQ_ACTIVE_STATES
 from _tbd_scan import _TBD_TYPE as MQ_TYPE_TBD
 from _tbd_scan import is_tbd_answered as _is_tbd_answered
 
 __all__ = ["QueueEntry", "ReadinessResult", "_count_pending_entries", "calculate_readiness"]
 
-# フィードバック管理repoの5状態フォルダー名（管理repoのroot直下）。
+# フィードバック管理repoの7状態フォルダー名（管理repoのroot直下）。
 # - `inbox`: 未処理の投入直後
 # - `planning`: 計画作成中。process-loopの着手対象外
 # - `processing`: `start-processing`で処理中に移動された途中状態
+# - `editing`: 永続的な編集セッション中
+# - `hold`: 明示的な解除まで自動処理を保留した状態
 # - `adopted`: 採用として最終処理された状態
 # - `rejected`: 不採用として最終処理された状態
 MQ_STATE_INBOX = "inbox"
 MQ_STATE_PLANNING = "planning"
 MQ_STATE_PROCESSING = "processing"
+MQ_STATE_EDITING = "editing"
+MQ_STATE_HOLD = "hold"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
-MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_PLANNING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
-# `MQ_ACTIVE_STATES`は`tbd`とreadinessが参照する既存の着手対象を維持する。
-MQ_FEEDBACK_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING)
+MQ_STATES = (
+    MQ_STATE_INBOX,
+    MQ_STATE_PROCESSING,
+    MQ_STATE_PLANNING,
+    MQ_STATE_EDITING,
+    MQ_STATE_HOLD,
+    MQ_STATE_ADOPTED,
+    MQ_STATE_REJECTED,
+)
+# `_tbd_scan`・readiness・process-loopが扱う処理可能状態は既存の境界を維持する。
+MQ_PROCESSABLE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
+# `active`は一覧・詳細で可視化する状態集合であり、自動処理の対象ではない。
+MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_EDITING, MQ_STATE_HOLD)
+# 旧呼出元との互換用に、feedback表示のactive集合も同じ定義を参照する。
+MQ_FEEDBACK_ACTIVE_STATES = MQ_ACTIVE_STATES
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
+
+# `hold`・`unhold`・`editing`が作成した未公開commitを、既存操作の暗黙rebaseから
+# 保護するGit trailer。明示的な`atk mq commit`だけがこのcommitをrebase復旧できる。
+MQ_DIRECT_PUSH_TRAILER_KEY = "Agent-Toolkit-MQ-Push-Mode"
+MQ_DIRECT_PUSH_TRAILER_VALUE = "direct"
+
+
+class DirectPushPendingError(RuntimeError):
+    """非書換push対象の未公開commitを非明示操作が検出した。"""
+
+    def __init__(self, message: str, *, commit: str) -> None:
+        super().__init__(message)
+        self.commit = commit
+
+
+class RebaseRecoveryError(subprocess.CalledProcessError):
+    """明示commit復旧中のrebaseが失敗し、abort結果を保持する。"""
+
+    def __init__(self, error: subprocess.CalledProcessError, *, abort_succeeded: bool) -> None:
+        super().__init__(error.returncode, error.cmd, output=error.output, stderr=error.stderr)
+        self.abort_succeeded = abort_succeeded
 
 
 _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
@@ -221,6 +257,7 @@ def _migrate_legacy_layout(private_notes: pathlib.Path) -> None:
         repo_lock_fn=_repo_lock,
         pull_fn=_pull,
         commit_fn=_commit_and_push,
+        push_pending_fn=_push_pending_commits,
     )
 
 
@@ -389,12 +426,15 @@ def _commit_and_push(
     rel_paths: Iterable[str],
     *,
     skip_push: bool = False,
+    allow_rebase: bool = False,
 ) -> None:
     """指定パスをaddしcommit・pushする。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
-    push失敗時（他プロセス・他端末による先行pushとの非fast-forward等）は
-    `git fetch`後に明示した`@{u}`へrebaseしてpushを1回だけ再試行する。rebase自体が
+    push失敗時（他プロセス・他端末による先行pushとの非fast-forward等）は、
+    `allow_rebase=True`の場合に限り`git fetch`後に明示した`@{u}`へrebaseしてpushを1回だけ再試行する。
+    既定の`allow_rebase=False`では、非書換push用trailer付きpending commitを検出した場合に
+    fetch・rebaseへ進まず失敗をそのまま返す。rebase自体が
     失敗した場合は`git rebase --abort`の成否を確認してからリベース開始前の状態への
     復元結果をstderrへ出力し、元の例外を送出する。
     再試行後のpushが失敗した場合はその例外をそのまま送出する。
@@ -415,21 +455,58 @@ def _commit_and_push(
                 file=sys.stderr,
             )
         return
-    _push_pending_commits(private_notes)
+    if allow_rebase:
+        _push_pending_commits(private_notes, allow_rebase=True)
+    else:
+        _push_pending_commits(private_notes)
 
 
-def _push_pending_commits(private_notes: pathlib.Path) -> None:
+def _has_direct_push_pending(private_notes: pathlib.Path) -> bool:
+    """upstreamとの差分に非書換push用trailer付きcommitがあるか返す。"""
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "log",
+                f"--format=%(trailers:key={MQ_DIRECT_PUSH_TRAILER_KEY},valueonly)",
+                "@{u}..HEAD",
+            ],
+            cwd=private_notes,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError, TypeError):
+        return False
+    if result.returncode != 0:
+        return False
+    return any(line.strip() == MQ_DIRECT_PUSH_TRAILER_VALUE for line in result.stdout.splitlines())
+
+
+def _push_pending_commits(private_notes: pathlib.Path, *, allow_rebase: bool = False) -> None:
     """ローカルcommitをpushし、競合時は明示したupstreamへのrebase後に1回だけ再試行する。"""
     _assert_repo_lock_held(private_notes)
     if not _has_remote(private_notes):
         return
+    if not allow_rebase and _has_direct_push_pending(private_notes):
+        commit = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+            cwd=private_notes,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        raise DirectPushPendingError(
+            "非書換push対象の未公開commitがあります。atk mq commitで復旧してから操作を再試行してください。",
+            commit=commit,
+        )
     try:
         _run_git(["push"], cwd=private_notes)
     except subprocess.CalledProcessError:
         try:
             _run_git(["fetch"], cwd=private_notes)
             _run_git(["rebase", "@{u}"], cwd=private_notes)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as error:
             abort_result = subprocess.run(["git", "rebase", "--abort"], cwd=private_notes, check=False)
             if abort_result.returncode != 0:
                 print(
@@ -438,7 +515,7 @@ def _push_pending_commits(private_notes: pathlib.Path) -> None:
                 )
             else:
                 print("git rebase --abortでリベース開始前の状態へ復元しました。", file=sys.stderr)
-            raise
+            raise RebaseRecoveryError(error, abort_succeeded=abort_result.returncode == 0) from error
         _run_git(["push"], cwd=private_notes)
 
 
@@ -650,7 +727,7 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
     """未回答TBDが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
     entries = [
         (path, entry_repo, text, state)
-        for path, entry_repo, text, state, _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_TBD)
+        for path, entry_repo, text, state, _ in _iter_entries(private_notes, MQ_PROCESSABLE_STATES, target_repo, MQ_TYPE_TBD)
         if not _is_tbd_answered(text)
     ]
     if not entries:
@@ -679,13 +756,13 @@ def _count_feedback(feedback_dir: pathlib.Path, target_repo: str | None = None) 
 
 
 def _max_existing_seq(private_notes: pathlib.Path, timestamp_prefix: str) -> int:
-    """同一タイムスタンププレフィックスを持つファイルの最大連番を、5状態すべてから返す。
+    """同一タイムスタンププレフィックスを持つファイルの最大連番を、全状態から返す。
 
     例えば`{prefix}-001.md`と`{prefix}-003.md`が存在する場合は3を返す。
     非連続連番でも新規生成側で既存ファイルへ衝突しないよう最大値を基準にする。
     inboxのみを走査すると、同一秒に採番したエントリが別状態へ遷移した後の再投入で
     連番が再発行され、`adopted`・`rejected`等の既存エントリと同名衝突を起こすため、
-    5状態フォルダすべてを走査対象にする。
+    全状態フォルダを走査対象にする。
     """
     max_seq = 0
     for state in MQ_STATES:

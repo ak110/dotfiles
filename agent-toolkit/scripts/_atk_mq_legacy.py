@@ -14,9 +14,19 @@ from _tbd_scan import _TBD_TYPE as MQ_TYPE_TBD
 MQ_STATE_INBOX = "inbox"
 MQ_STATE_PLANNING = "planning"
 MQ_STATE_PROCESSING = "processing"
+MQ_STATE_EDITING = "editing"
+MQ_STATE_HOLD = "hold"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
-MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_PLANNING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
+MQ_STATES = (
+    MQ_STATE_INBOX,
+    MQ_STATE_PROCESSING,
+    MQ_STATE_PLANNING,
+    MQ_STATE_EDITING,
+    MQ_STATE_HOLD,
+    MQ_STATE_ADOPTED,
+    MQ_STATE_REJECTED,
+)
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
@@ -103,6 +113,7 @@ def migrate_legacy_layout(
     repo_lock_fn: Callable[[pathlib.Path], AbstractContextManager[object]],
     pull_fn: Callable[[pathlib.Path], None],
     commit_fn: Callable[[pathlib.Path, str, Iterable[str]], None],
+    push_pending_fn: Callable[[pathlib.Path], None] | None = None,
 ) -> None:
     """旧2階層レイアウトの管理repoを平坦レイアウトへ移行する。
 
@@ -118,6 +129,8 @@ def migrate_legacy_layout(
     if not any((private_notes / name).is_dir() for name in MQ_TYPES):
         return
     with repo_lock_fn(private_notes):
+        if push_pending_fn is not None:
+            push_pending_fn(private_notes)
         pull_fn(private_notes)
         # 他プロセス・他端末が先に移行済みの場合があるため、pull後の状態で再判定する。
         legacy_dirs = [private_notes / name for name in MQ_TYPES if (private_notes / name).is_dir()]
