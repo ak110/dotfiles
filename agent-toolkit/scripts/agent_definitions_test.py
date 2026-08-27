@@ -283,6 +283,71 @@ def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
         assert phrase in base
 
 
+def test_codex_running_status_is_not_overridden_by_auxiliary_observations() -> None:
+    """Codexの稼働中statusを補助観測だけで中断へ変換しない。"""
+    base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
+    waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
+    codex_contract = "Codexの`list_agents`が対象を`running`として返している間は"
+
+    assert codex_contract in base
+    assert codex_contract in waiting
+    for phrase in (
+        "`interrupt_agent`",
+        "Git差分",
+        "HEAD",
+        "成果物",
+        "無応答",
+        "経過時間",
+        "終端又は失敗",
+        "タスク契約",
+    ):
+        assert phrase in base
+    assert "Claude、agents_server及び背景ジョブ" not in base
+    assert "同じ対象について状態照会を反復せず" in waiting
+    assert "広範な未完了調査を1つの委譲先へ再委譲せず" in waiting
+
+
+def test_delegation_observation_values_are_attributed_to_writer_and_scope() -> None:
+    """待機報告の観測値を対象と書込主体へ帰属させる。"""
+    waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
+
+    for phrase in (
+        "当該実行主体が書き込む対象",
+        "実際に書き込んだ実行主体",
+        "並行セッション、CI、formatterその他の主体",
+        "作業ツリー全体の値",
+        "単独で示さない",
+    ):
+        assert phrase in waiting
+
+
+def test_claude_runtime_requires_list_agents_call_success_and_owned_pid_fallback() -> None:
+    """ClaudeのListAgents失敗時に所有識別子だけをfallbackへ用いる。"""
+    runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
+
+    for phrase in (
+        "ツールが公開されていることと、実際の呼び出しが成功することの両方",
+        "ツール一覧に掲載されていても呼び出しが拒否された場合は利用不能",
+        "自身が起動して識別子を保持したプロセスの生存",
+        "プロセス名の一致だけから生存状態又は対象を推定しない",
+    ):
+        assert phrase in runtime
+
+
+def test_delegation_capability_comparison_uses_identical_machine_queries() -> None:
+    """委譲先の能力比較を同一条件の機械照会へ限定する。"""
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+
+    for phrase in (
+        "複数の委譲先についてツール、権限、モデル又はホスト能力を比較・分類する場合",
+        "全ての対象へ同一の機械照会を同じ条件で実行し、同じ項目を取得する",
+        "比較結果を未検証として返す",
+        "委譲先自身の申告だけで能力の不在や差異を確定しない",
+        "単一対象の通常のstatus確認、常時収集、hook・状態保存を要求しない",
+    ):
+        assert phrase in delegation
+
+
 def test_process_stop_contract_connects_shared_identifier_and_claude_task_id() -> None:
     """共有終了規約とClaude CodeのTaskStop規約が起動結果の識別子で接続される。"""
     operations = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
