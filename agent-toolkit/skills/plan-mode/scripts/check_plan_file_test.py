@@ -13,6 +13,11 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
+_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN = pathlib.Path("/home/aki/.claude/plans/review-scope-consolidation-2609f04f.md")
+_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL = _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.with_name(
+    f"{_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.stem}.detail.md"
+)
+_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW = _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.with_suffix(".tsv")
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -242,6 +247,19 @@ def _new_format_plan(
 基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
 """
     return main, detail
+
+
+def _canonical_main_format(content: str) -> str:
+    """旧見出しfixtureを新規計画の固定H2へ変換する。"""
+    return (
+        content.replace(
+            "\n## 提示素材\n",
+            "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
+            1,
+        )
+        .replace("## 変更履歴", "## 変更履歴（計画時）", 1)
+        .replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+    )
 
 
 def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
@@ -857,6 +875,42 @@ def test_cli_accepts_review_ids_in_real_legacy_two_file_plan() -> None:
     assert "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in result.stderr
 
 
+@pytest.mark.skipif(
+    not all(
+        path.is_file()
+        for path in (
+            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN,
+            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL,
+            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW,
+        )
+    ),
+    reason="進捗表を持つ実在する旧二ファイル計画がこの環境に無い",
+)
+def test_cli_accepts_real_legacy_two_file_plan_without_progress_round_check() -> None:
+    """実在する旧二ファイル計画へ新形式の進捗照合を適用せず、本文と表を保持する。"""
+    paths = (
+        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN,
+        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL,
+        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW,
+    )
+    before = {path: path.read_bytes() for path in paths}
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(check_plan_file.__file__)),
+            "--work-dir",
+            "/home/aki/dotfiles",
+            str(_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "レビュー表の最大round" not in result.stderr
+    assert {path: path.read_bytes() for path in paths} == before
+
+
 def test_review_table_absence_does_not_add_round_error(repo: tuple[pathlib.Path, str]) -> None:
     """同stemのレビュー表が無い計画はround照合を省略する。"""
     work_dir, base = repo
@@ -864,43 +918,48 @@ def test_review_table_absence_does_not_add_round_error(repo: tuple[pathlib.Path,
     assert not errors, errors
 
 
+def test_legacy_single_file_plan_does_not_use_progress_round_check(repo: tuple[pathlib.Path, str]) -> None:
+    """旧単一形式も新形式の進捗照合を適用せず、旧本文を受理する。"""
+    work_dir, base = repo
+    (work_dir / "plan.tsv").write_text("not-a-json-row\n", encoding="utf-8")
+    errors, _warnings = _check(work_dir, _plan(work_dir, base))
+    assert not any("同stemのレビュー表" in error for error in errors), errors
+
+
 def test_review_table_max_round_matches_progress_rows(repo: tuple[pathlib.Path, str]) -> None:
     """レビュー表の最大roundと進捗行数が一致する場合を受理する。"""
     work_dir, base = repo
-    content = _plan(work_dir, base).replace(
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    content = _canonical_main_format(main_content).replace(
         "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
         "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 完了。 |\n",
         1,
     )
-    path = work_dir / "plan.md"
-    path.write_text(content, encoding="utf-8")
     (work_dir / "plan.tsv").write_text(_review_table_row(), encoding="utf-8")
-    errors, _warnings = check_plan_file.check(path, work_dir)
+    errors, _warnings = _check_new(work_dir, content, detail_content)
     assert not errors, errors
 
 
 def test_review_table_missing_rounds_are_reported(repo: tuple[pathlib.Path, str]) -> None:
     """最大roundが進捗行数を超える場合は不足番号を診断する。"""
     work_dir, base = repo
-    content = _plan(work_dir, base).replace(
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    content = _canonical_main_format(main_content).replace(
         "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
         "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 進行中。 |\n",
         1,
     )
-    path = work_dir / "plan.md"
-    path.write_text(content, encoding="utf-8")
     (work_dir / "plan.tsv").write_text(_review_table_row("1") + _review_table_row("3"), encoding="utf-8")
-    errors, _warnings = check_plan_file.check(path, work_dir)
+    errors, _warnings = _check_new(work_dir, content, detail_content)
     assert any("不足round: 2, 3" in error for error in errors), errors
 
 
 def test_review_table_malformed_input_is_a_plan_error(repo: tuple[pathlib.Path, str]) -> None:
     """同stemのレビュー表が破損する場合は計画入力エラーとして返す。"""
     work_dir, base = repo
-    path = work_dir / "plan.md"
-    path.write_text(_plan(work_dir, base), encoding="utf-8")
+    main_content, detail_content = _new_format_plan(work_dir, base)
     (work_dir / "plan.tsv").write_text("not-a-json-row\n", encoding="utf-8")
-    errors, _warnings = check_plan_file.check(path, work_dir)
+    errors, _warnings = _check_new(work_dir, _canonical_main_format(main_content), detail_content)
     assert any("同stemのレビュー表を検証できない" in error for error in errors), errors
 
 

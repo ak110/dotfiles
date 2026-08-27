@@ -26,6 +26,7 @@ _PLAN_MODE_REFERENCES = _PLAN_MODE.parent / "references"
 _PLAN_IMPL_EXECUTOR_IMPL_MODE = _PLAN_MODE_REFERENCES / "plan-impl-executor-impl-mode.md"
 _PLAN_IMPL_EXECUTOR_DIFF_REVIEW_MODE = _PLAN_MODE_REFERENCES / "plan-impl-executor-diff-review-mode.md"
 _PLAN_FILE_STANDARDS = _PLAN_MODE_REFERENCES / "plan-file-standards.md"
+_PLAN_FORMAT = _AGENTS_DIR.parent / "scripts" / "_plan_format.py"
 _PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "plan-review-task.md"
 _PLAN_IMPL_TASK = _PLAN_MODE_REFERENCES / "implementation-task.md"
 _PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-plan-review-task.md"
@@ -69,8 +70,9 @@ _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
 _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
-_DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
 _CONCEPTS_DOC = _REPOSITORY_ROOT / "docs" / "development" / "concepts.md"
+_DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
+_CLAUDE_CODE_GUIDE = _REPOSITORY_ROOT / "docs" / "guide" / "claude-code-guide.md"
 _MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "agent-toolkit" / "share" / "codex-agents-base.md"
@@ -943,10 +945,25 @@ def test_implementation_review_table_lifecycle_is_separate_and_restart_safe() ->
     coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    guide = _CLAUDE_CODE_GUIDE.read_text(encoding="utf-8")
     for document in (coordinator, executor, flow):
         assert "未作成の場合だけ" in document
         assert "既存の場合は初期化せず" in document
         assert "validate --allow-unanswered" in document
+    for document in (design, guide):
+        assert "未作成の場合だけ" in document
+        assert "validate --allow-unanswered" in document
+        assert "未作成の場合だけ`atk review-table init <レビュー表>`" in document
+        assert "初期化せず保持" in document
+    assert "統合差分レビュー用専用managed temp領域と`review.tsv`" in flow
+    assert "メインを作成・検収主体" in flow
+    assert "全ての再レビューround" in flow
+    assert "implementation-plan-review-task.md" in flow
+    assert "implementation-independent-review-task.md" in flow
+    assert "差分限定レビュー修正担当`（`implementation-task.md`）" in flow
+    assert "保持した専用managed temp領域・`review.tsv`・未解消行" in flow
+    assert "managed temp領域の絶対パス>`を単独で実行する" in flow
     assert "managed temp領域の`review.tsv`" in executor
     assert "実装レビュー用managed temp領域の`review.tsv`" in executor
     assert "計画stemと同じ`<計画stem>.tsv`を使う別表" in executor
@@ -954,6 +971,33 @@ def test_implementation_review_table_lifecycle_is_separate_and_restart_safe() ->
     assert "その領域の`review.tsv`" in flow
     assert "計画レビューが使う計画stemの`<計画stem>.tsv`は別表" in flow
     assert "実装レビューの開始ゲートでは初期化・更新しない" in flow
+
+
+def test_plan_format_compatibility_contract_is_separated_by_format() -> None:
+    """旧形式の読み取り互換と新形式の厳格検査を計画基準と実装で同期する。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    concepts = _CONCEPTS_DOC.read_text(encoding="utf-8")
+    plan_format = _PLAN_FORMAT.read_text(encoding="utf-8")
+
+    for phrase in (
+        "旧二ファイル形式",
+        "旧単一ファイル形式とは別の読み取り互換",
+        "旧二ファイルの変更履歴に残る旧ID",
+        "旧単一ファイル形式は対応する`<stem>.detail.md`が無い形式として別に判定",
+        "新規書式のメインはcanonical固定H2を備え",
+        "旧二ファイル・旧単一の互換値を新規書式の検査へ混入させない",
+        "旧二ファイル形式及び旧単一形式は読み取り互換としてこの進捗照合を適用しない",
+    ):
+        assert phrase in standards
+    for document in (executor, concepts):
+        assert "新形式の計画" in document
+        assert "旧二ファイル形式及び旧単一形式は読み取り互換としてこの照合を適用しない" in document
+    assert "allow_legacy_review_ids=not canonical_format" in plan_format
+    assert "allow_legacy_review_tracks=not canonical_format" in plan_format
+    assert "canonical_format = _plan_format.is_canonical_main_format(text)" in (
+        (_PLAN_MODE.parent / "scripts" / "check_plan_file.py").read_text(encoding="utf-8")
+    )
 
 
 def test_delegation_forbids_reusing_completed_identifiers() -> None:

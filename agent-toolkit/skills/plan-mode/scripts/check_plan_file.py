@@ -272,7 +272,7 @@ def _legacy_h2_warnings(text: str) -> list[str]:
 
 
 def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
-    """新書式（計画ファイル（メイン）・計画ファイル（詳細）の2ファイル）を検査してエラーと警告を返す。
+    """二ファイル形式の計画を検査してエラーと警告を返す。
 
     呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
     計画ファイル（詳細）の実在は呼び出し前提として扱う。
@@ -333,8 +333,8 @@ def _check_legacy_format(plan_path: pathlib.Path, text: str, work_dir: pathlib.P
 def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
-    新旧の判別は対応する`<stem>.detail.md`ファイルの実在で行う（`plan-file-standards.md`正本）。
-    実在する場合は新書式の2ファイル、実在しない場合は旧形式の単一ファイルとして検査する。
+    対応する`<stem>.detail.md`の実在により二ファイル形式と旧単一ファイル形式を分ける。
+    二ファイル形式ではメインのcanonical固定H2により新規書式と旧二ファイル形式を分ける。
     """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -343,12 +343,14 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     _outside, errors = _outside_fences(structure_lines)
 
     detail_path = _detail_path_for(plan_path)
+    canonical_format = _plan_format.is_canonical_main_format(text)
     if detail_path.is_file():
         format_errors, warnings = _check_new_format(detail_path, text, work_dir)
     else:
         format_errors, warnings = _check_legacy_format(plan_path, text, work_dir)
     errors.extend(format_errors)
-    errors.extend(_check_review_table_progress(plan_path, text))
+    if detail_path.is_file() and canonical_format:
+        errors.extend(_check_review_table_progress(plan_path, text))
     return errors, warnings
 
 
