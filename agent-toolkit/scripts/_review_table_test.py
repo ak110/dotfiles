@@ -176,6 +176,28 @@ def test_duplicate_key_and_existing_init_are_rejected(tmp_path: pathlib.Path) ->
         table.add(path, "1", _TRACK, " 重大 ", "module.py:10", "同じ指摘")
 
 
+def test_start_gate_preserves_existing_table_and_initializes_only_missing_table(tmp_path: pathlib.Path) -> None:
+    """開始ゲートは既存表を初期化せず構造検証し、未作成時だけ初期化する。"""
+    existing = tmp_path / "existing-review.tsv"
+    table.init(existing)
+    table.add(existing, "1", _TRACK, "重大", "module.py:10", "既存の指摘")
+    before = existing.read_text(encoding="utf-8")
+
+    if existing.exists():
+        assert table.validate(existing, require_responses=False) == 0
+    else:
+        assert table.init(existing) == 0
+        assert table.validate(existing, require_responses=False) == 0
+    assert existing.read_text(encoding="utf-8") == before
+
+    missing = tmp_path / "missing-review.tsv"
+    if missing.exists():
+        assert table.validate(missing, require_responses=False) == 0
+    else:
+        assert table.init(missing) == 0
+        assert table.validate(missing, require_responses=False) == 0
+
+
 def test_add_requires_round(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)

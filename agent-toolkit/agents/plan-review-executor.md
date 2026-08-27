@@ -37,7 +37,7 @@ user-invocable: false
 レビュー担当へ渡すタスク文書は`plan-mode/references/plan-review-task.md`だけとし、同文書が要求する入力と作成・レビュー規範を併せて渡す。
 レビュー表の操作書式は`atk review-table --help`と使用するサブコマンドの`--help`を実行して確認し、
 受領した構造検査スクリプトの絶対パスを初回・再レビューの入力へ保持する。
-初回レビュー前に計画ファイル（メイン）と同じstemのレビュー表の絶対パスを解決し、`atk review-table init <レビュー表>`と
+初回レビュー前に計画ファイル（メイン）と同じstemのレビュー表の絶対パスを解決し、存在を確認する。未作成の場合だけ`atk review-table init <レビュー表>`を実行し、既存の場合は初期化せず表を保持する。その後、
 `atk review-table validate --allow-unanswered <レビュー表>`を実行する。初期化、構造検証又は各ラウンドのstrict検証に失敗した場合は
 レビューを完了せず`needs_escalation`で返す。同じレビュー表を全ラウンドへ渡し、各ラウンドの応答後に`atk review-table validate <レビュー表>`を実行する。
 レビュー担当の起動直前に`atk config get plan_review_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従って経路を解決する。

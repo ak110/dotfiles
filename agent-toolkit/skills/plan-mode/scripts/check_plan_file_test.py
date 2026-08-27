@@ -11,6 +11,9 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
+_REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
+_REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
+
 
 def _git(repo: pathlib.Path, *args: str) -> str:
     """テスト用リポジトリでgitを実行して標準出力を返す。"""
@@ -830,6 +833,28 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert result.stderr == "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"
+
+
+@pytest.mark.skipif(
+    not (_REAL_LEGACY_TWO_FILE_PLAN.is_file() and _REAL_LEGACY_TWO_FILE_DETAIL.is_file()),
+    reason="実在する旧二ファイル計画がこの環境に無い",
+)
+def test_cli_accepts_review_ids_in_real_legacy_two_file_plan() -> None:
+    """実在する旧二ファイル計画を公式CLIで検査し、旧IDをエラーにしない。"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(check_plan_file.__file__)),
+            "--work-dir",
+            "/home/aki/dotfiles",
+            str(_REAL_LEGACY_TWO_FILE_PLAN),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert not any("レビュー指摘行の`ID`" in line for line in result.stderr.splitlines()), result.stderr
+    assert "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in result.stderr
 
 
 def test_review_table_absence_does_not_add_round_error(repo: tuple[pathlib.Path, str]) -> None:

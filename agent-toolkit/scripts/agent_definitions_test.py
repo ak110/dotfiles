@@ -938,6 +938,24 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
         assert not any(pattern in document for pattern in old_patterns), path
 
 
+def test_implementation_review_table_lifecycle_is_separate_and_restart_safe() -> None:
+    """実装レビューは計画レビュー表を再初期化せず、専用表の開始ゲートを使う。"""
+    coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
+    for document in (coordinator, executor, flow):
+        assert "未作成の場合だけ" in document
+        assert "既存の場合は初期化せず" in document
+        assert "validate --allow-unanswered" in document
+    assert "managed temp領域の`review.tsv`" in executor
+    assert "実装レビュー用managed temp領域の`review.tsv`" in executor
+    assert "計画stemと同じ`<計画stem>.tsv`を使う別表" in executor
+    assert "計画レビュー表を初期化・更新せず" in executor
+    assert "その領域の`review.tsv`" in flow
+    assert "計画レビューが使う計画stemの`<計画stem>.tsv`は別表" in flow
+    assert "実装レビューの開始ゲートでは初期化・更新しない" in flow
+
+
 def test_delegation_forbids_reusing_completed_identifiers() -> None:
     """識別子の再利用禁止と完了済み識別子の継続条件を委譲スキル本体へ置く。"""
     continuation = _h2_section(_DELEGATION_SKILL.read_text(encoding="utf-8"), "継続と新規起動")
@@ -5873,9 +5891,9 @@ def test_review_completion_evidence_and_checkpoint_observation_contracts_are_con
         "レビュー表の初期化は、既存の`agent-toolkit:plan-mode`のレビュー継続契約どおり調整主体が初回レビュー前に行い、呼び出し元は初期化又は書込みを行わない。"
         in caller
     )
-    assert "初期化前はレビュー表を成果物観測へ含めず" in caller
+    assert "開始ゲート前はレビュー表を成果物観測へ含めず" in caller
     assert watch_contract in caller
-    assert "初回レビュー前に空表へ初期化する既存契約に従い、受領済み行数の初期値は0とする。" in caller
+    assert "開始ゲート後に観測したレビュー表の行数を、当該レーンの受領済み行数の初期値とする。" in caller
     assert "`review_round`の受領時は、その時点で観測したレビュー表の行数を当該レーンの受領済み値として更新する。" in caller
     assert (
         "レビュー表の行数が受領済み値より増えた状態で`review_round`を受領せず、次の成果物観測でも同じ未着状態が続く場合は、必須チェックポイントの履行確認として扱う。"
@@ -5885,7 +5903,7 @@ def test_review_completion_evidence_and_checkpoint_observation_contracts_are_con
     assert "行数増加だけからラウンド完了、委譲先の停滞又は停止可否を判定しない。" in caller
     assert "review-table init" not in caller
     assert "review-table add" not in caller
-    assert caller.index("初期化前はレビュー表を成果物観測へ含めず") < caller.index(watch_contract)
+    assert caller.index("開始ゲート前はレビュー表を成果物観測へ含めず") < caller.index(watch_contract)
 
     assert (
         "レビュー表の進行を観測したまま`review_round`が届かないレーンは、`agent-toolkit:plan-mode`の実装受領契約にある履行確認で扱う"

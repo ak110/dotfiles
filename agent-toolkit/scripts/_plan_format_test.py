@@ -1423,7 +1423,7 @@ def _canonical_human_main_content() -> str:
 
 def test_main_and_detail_canonical_pass_structure_check() -> None:
     """新書式のメイン側・detail側の正規形はいずれも構造検査を通過する。"""
-    work_type, main_errors = _plan_format.check_plan_main_structure(_VALID_MAIN_CONTENT)
+    work_type, main_errors = _plan_format.check_plan_main_structure(_canonical_main_content())
     assert work_type == "通常変更"
     assert not main_errors
     assert not _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT, work_type)
@@ -1502,7 +1502,7 @@ def test_human_main_structure_rejects_judgment_table_shape_or_empty_cells(
 @pytest.mark.parametrize("track", _plan_format.PLAN_HISTORY_TRACK_VALUES)
 def test_main_history_accepts_review_table_track_values(track: str) -> None:
     """新形式の変更履歴はレビュー表の正規trackを受理する。"""
-    content = _VALID_MAIN_CONTENT.replace(
+    content = _canonical_main_content().replace(
         "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
         f"| R1-{track} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
@@ -1525,11 +1525,24 @@ def test_legacy_history_keeps_old_track_compatibility_but_rejects_unknown_track(
     assert any("系統名は" in error and "正規値" not in error for error in errors), errors
 
 
-def test_new_main_rejects_legacy_history_review_identifier() -> None:
-    """新書式のメイン側では旧形式のレビュー指摘IDを拒否する。"""
+@pytest.mark.parametrize("review_id", ["C-002", "H-005", "R1-planreview", "R2-planconformance", "R1-plan", "R5-review"])
+def test_legacy_two_file_main_accepts_legacy_review_ids_and_tracks(review_id: str) -> None:
+    """旧二ファイル計画に残るレビューIDと系統名を読み取り互換で受理する。"""
     content = _VALID_MAIN_CONTENT.replace(
         "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
-        "| C-002 | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        1,
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert not any("レビュー指摘行の`ID`" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("review_id", ["C-002", "R1-planreview", "R2-planconformance"])
+def test_new_main_rejects_legacy_history_review_identifier(review_id: str) -> None:
+    """新書式のメイン側では旧形式のレビュー指摘IDを拒否する。"""
+    content = _canonical_main_content().replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)

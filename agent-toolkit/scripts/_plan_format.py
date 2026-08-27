@@ -1688,8 +1688,13 @@ def _check_history_section(
     identifiers: set[str],
     *,
     allow_legacy_review_ids: bool = False,
+    allow_legacy_review_tracks: bool = False,
 ) -> list[str]:
-    """`## 変更履歴`の固定表を検査する。"""
+    """`## 変更履歴`の固定表を検査する。
+
+    ``allow_legacy_review_ids`` は旧単一ファイルの ``C-`` IDを許可し、
+    ``allow_legacy_review_tracks`` は旧二ファイル計画に残るIDと系統名を読み取り専用で受理する。
+    """
     if history_index is None:
         return []
     start, end = heading_subtree_range(headings, history_index)
@@ -1697,7 +1702,14 @@ def _check_history_section(
         lines_within(body, start, end), PLAN_HISTORY_TABLE_HEADER, f"`## {PLAN_H2_LEGACY_HISTORY}`"
     )
     if history is not None:
-        errors.extend(_check_history_rows(history, identifiers, allow_legacy_review_ids=allow_legacy_review_ids))
+        errors.extend(
+            _check_history_rows(
+                history,
+                identifiers,
+                allow_legacy_review_ids=allow_legacy_review_ids,
+                allow_legacy_review_tracks=allow_legacy_review_tracks,
+            )
+        )
     return errors
 
 
@@ -1973,7 +1985,16 @@ def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
             )
         )
     else:
-        errors.extend(_check_history_section(body, headings, history_index, identifiers))
+        errors.extend(
+            _check_history_section(
+                body,
+                headings,
+                history_index,
+                identifiers,
+                allow_legacy_review_ids=not canonical_format,
+                allow_legacy_review_tracks=not canonical_format,
+            )
+        )
 
     verification_index = find_heading_index(headings, 2, PLAN_H2_VERIFICATION)
     errors.extend(_check_verification_section(body, headings, verification_index))
@@ -2146,7 +2167,13 @@ def _check_reference_ids(
     return errors
 
 
-def _check_history_rows(table: MarkdownTable, identifiers: set[str], *, allow_legacy_review_ids: bool = False) -> list[str]:
+def _check_history_rows(
+    table: MarkdownTable,
+    identifiers: set[str],
+    *,
+    allow_legacy_review_ids: bool = False,
+    allow_legacy_review_tracks: bool = False,
+) -> list[str]:
     """変更履歴の起点、レビューID及びユーザー発言行の素材ID記法を検査する。"""
     errors: list[str] = []
     review_ids: set[str] = set()
@@ -2162,6 +2189,8 @@ def _check_history_rows(table: MarkdownTable, identifiers: set[str], *, allow_le
             if review_id in review_ids:
                 errors.append(f"`## 変更履歴`のレビュー指摘行は`ID`を重複させない: {review_id}")
             review_ids.add(review_id)
+            if allow_legacy_review_tracks:
+                continue
             if allow_legacy_review_ids and PLAN_LEGACY_HISTORY_REVIEW_ID_PATTERN.fullmatch(review_id):
                 continue
             match = PLAN_HISTORY_REVIEW_ID_PATTERN.fullmatch(review_id)
