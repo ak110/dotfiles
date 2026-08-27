@@ -70,6 +70,7 @@ _DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
 _MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "agent-toolkit" / "share" / "codex-agents-base.md"
+_CODEX_AGENTS_ADAPTER = _REPOSITORY_ROOT / ".chezmoi-source" / "dot_codex" / "AGENTS.md"
 _SECTION_REFERENCE_SOURCE_ROOTS = (
     _DISTRIBUTION_ROOT,
     _REPOSITORY_ROOT / ".claude" / "skills",
@@ -1208,10 +1209,12 @@ def test_plan_save_requires_unique_replacement_boundary() -> None:
 
 
 def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
-    """計画前の判断列挙を既存の二段階確認と質問経路へ接続する。"""
+    """計画前の判断列挙を既存の二段階確認と各ホストの質問経路へ接続する。"""
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
     process_feedbacks = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
     agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
+    codex_base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
+    codex_adapter = _CODEX_AGENTS_ADAPTER.read_text(encoding="utf-8")
     progress = _h2_section(plan_mode, "進め方")
 
     decision_list = progress.index("計画の変更対象又は採用方針を左右する未確定判断")
@@ -1250,7 +1253,8 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
         "成立しない組合せは理由とともに選択肢から除外する",
         "協調モード（Default mode）では利用者へ直接質問して回答を待つ",
         "自律モードでも、`AskUserQuestion`を発行でき、ユーザー接点を持つ主体は利用者へ直接質問して回答を待ち、回答を得られない場合だけ確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
-        "`AskUserQuestion`を発行する能力がない主体とユーザー接点を持たない委譲先はいずれも確認を発行せず、判断を呼び出し元へ返す",
+        "Codexの自律モードで`AskUserQuestion`を発行できないが、ユーザー接点を持つ主体は確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
+        "ユーザー接点を持たない委譲先は確認を発行せず、判断を呼び出し元へ返す",
         "回答後は依存関係を更新して第1段階と第2段階を再適用し、質問候補が無くなるまで反復する",
         "自律確定した結論、根拠、最有力対案、対案を採用しない理由",
         "追加の承認待ちを設けず、計画ファイル初版の起草へ進む",
@@ -1273,6 +1277,12 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
         "`AskUserQuestion`を発行できる実行主体は、回答を得られない場合に`agent-toolkit:add-feedback`をSkill機能で起動し",
     ):
         assert phrase in agent_rules
+    for codex_contract in (
+        "Codexの自律モードは質問を発行せず、確認事項をTBDへ記録して暫定判断で続行する。",
+        "ユーザー接点を持たない委譲先は確認を発行せず、呼び出し元へ判断を返す。",
+    ):
+        assert codex_contract in codex_base
+        assert codex_contract in codex_adapter
 
 
 def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
