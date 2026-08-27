@@ -354,7 +354,7 @@ class TestListFeedbackStatusActive:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--type=feedback", "--status=active"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--status=active", "--no-json"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -378,12 +378,12 @@ class TestListFeedbackStatusActive:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list"], home=tmp_path)
+            atk.main(["mq", "list", "--no-json"], home=tmp_path)
         assert exc_info.value.code == 0
         default_out = capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--status=active"], home=tmp_path)
+            atk.main(["mq", "list", "--status=active", "--no-json"], home=tmp_path)
         assert exc_info.value.code == 0
         active_out = capsys.readouterr().out
 
@@ -415,7 +415,7 @@ class TestListFeedbackStatusRejected:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--type=feedback", "--status=rejected"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--status=rejected", "--no-json"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
