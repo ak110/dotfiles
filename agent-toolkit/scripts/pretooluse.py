@@ -2843,6 +2843,7 @@ _MAKE_ASSIGNMENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _MAKE_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     {
         "-C",
+        "-E",
         "-f",
         "-I",
         "-o",
@@ -2852,11 +2853,17 @@ _MAKE_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
         "--makefile",
         "--include-dir",
         "--old-file",
+        "--assume-old",
         "--what-if",
         "--new-file",
+        "--assume-new",
         "--eval",
     }
 )
+"""`make --help`で値を必須とする短長オプション（別名を含む）。
+
+長形の`--name=value`形式は、走査側がオプション名と値を分離して判定する。
+"""
 _STATUS_REPORT_COMMANDS: frozenset[str] = frozenset({"echo", "printf", "print"})
 
 

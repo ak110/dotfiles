@@ -3738,6 +3738,57 @@ class TestBashOutputTruncationWarning:
     @pytest.mark.parametrize(
         "command",
         [
+            "make -C lint docs | tail -5",
+            "make --directory lint docs | tail -5",
+            "make --directory=lint docs | tail -5",
+            "make -E 'lint: ;' docs | tail -5",
+            "make --eval 'lint: ;' docs | tail -5",
+            "make --eval='lint: ;' docs | tail -5",
+            "make -f lint docs | tail -5",
+            "make --file lint docs | tail -5",
+            "make --file=lint docs | tail -5",
+            "make --makefile lint docs | tail -5",
+            "make --makefile=lint docs | tail -5",
+            "make -I lint docs | tail -5",
+            "make --include-dir lint docs | tail -5",
+            "make --include-dir=lint docs | tail -5",
+            "make -o lint docs | tail -5",
+            "make --old-file lint docs | tail -5",
+            "make --old-file=lint docs | tail -5",
+            "make --assume-old lint docs | tail -5",
+            "make --assume-old=lint docs | tail -5",
+            "make -W lint docs | tail -5",
+            "make --what-if lint docs | tail -5",
+            "make --what-if=lint docs | tail -5",
+            "make --new-file lint docs | tail -5",
+            "make --new-file=lint docs | tail -5",
+            "make --assume-new lint docs | tail -5",
+            "make --assume-new=lint docs | tail -5",
+        ],
+    )
+    def test_make_option_values_are_not_targets(self, command: str):
+        """値付き`make`オプションの値をターゲットとして誤認しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "make -E 'lint: ;' lint | tail -5",
+            "make --assume-old=lint docs lint | tail -5",
+            "make --assume-new=lint docs check | tail -5",
+        ],
+    )
+    def test_make_real_verification_target_still_warns(self, command: str):
+        """値付きオプションの後にある実ターゲットの検証語は検出する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
             "make docs | tail -5",
             "make | head -5",
             "make FOO=lint docs | tail -5",
