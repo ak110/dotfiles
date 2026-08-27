@@ -346,7 +346,33 @@ def test_codex_initial_start_uses_normal_start_contract() -> None:
         in runtime
     )
     assert "Codexで各実装単位の最初のfast担当を起動する場合は、工程別モデル設定の通常起動契約に従う" in runtime
-    assert "Codexの初回起動は工程別モデル設定の通常起動契約に従う" in delegation
+    assert (
+        "Codexの初回起動（元担当不在を実測確認した初回生成前失敗からの代替起動を含む）は工程別モデル設定の通常起動契約に従う"
+        in delegation
+    )
+    assert (
+        "元担当の回復、置換、再起動、代替起動又は役割引継ぎには、`runtime-routing.md`「Codex後続操作の共通先行条件」を先行して適用する"
+        in delegation
+    )
+
+
+def test_codex_pre_session_availability_failure_uses_initial_fallback_contract() -> None:
+    """元担当生成前の可用性失敗だけ初回起動の代替として扱う。"""
+    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+
+    for phrase in (
+        "Codexのclient確立中または`thread/start`前に可用性失敗を観測し、利用可能な状態照会でsession未生成かつ元担当不在を実測確認できる場合を、初回生成前失敗とする",
+        "初回生成前失敗からの代替起動は、元担当不在の初回起動として工程別モデル設定の通常起動契約に含める",
+        "sessionか元担当のいずれかが生成された後に可用性失敗から代替起動する場合は、既存担当の代替起動として共通条件を満たす場合だけ許可する",
+        "session未生成かつ元担当不在を実測確認できない場合は、この例外を適用せず、既存担当の代替起動として共通条件を満たす場合だけ許可する",
+        "初回生成前失敗に該当しないCodexの代替起動は、`Codex後続操作の共通先行条件`を適用してから行う",
+    ):
+        assert phrase in runtime
+    assert (
+        "Codexの初回起動（元担当不在を実測確認した初回生成前失敗からの代替起動を含む）は工程別モデル設定の通常起動契約に従う"
+        in delegation
+    )
     assert (
         "元担当の回復、置換、再起動、代替起動又は役割引継ぎには、`runtime-routing.md`「Codex後続操作の共通先行条件」を先行して適用する"
         in delegation
@@ -388,7 +414,7 @@ def test_codex_recovery_entries_share_common_precondition() -> None:
     )
     assert "Codexで既存担当を置換する新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
     assert "Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
-    assert "Codexで代替起動を行う場合も、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
+    assert "初回生成前失敗に該当しないCodexの代替起動は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
     assert "Codexでfast担当からfix担当へ役割を引き継ぐ場合は、`Codex後続操作の共通先行条件`を適用してから行う" in runtime
 
 
