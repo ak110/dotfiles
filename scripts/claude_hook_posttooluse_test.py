@@ -212,51 +212,15 @@ class TestReferenceDocsReadRecording:
         assert not list(tmp_path.glob("claude-agent-toolkit-*.json"))
 
 
-class TestAutonomousExitSkillRecording:
-    """`agent-toolkit:exit-session`スキル呼び出しを`autonomous_exit_invoked`へ記録する。"""
-
-    _SKILL = "agent-toolkit:exit-session"
-
-    def test_records_invocation(self, tmp_path: pathlib.Path):
-        """`agent-toolkit:exit-session`は自律終了フラグだけを記録する。"""
-        env = _state_env(tmp_path)
-        sid = "exit-rec-fallthrough"
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": self._SKILL},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert state.get("autonomous_exit_invoked") is True
-        assert "session_review_extension_pending" not in state
-
-    def test_other_skill_does_not_set_flag(self, tmp_path: pathlib.Path):
-        env = _state_env(tmp_path)
-        sid = "exit-other-skill"
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:coding-standards"},
-                "session_id": sid,
-            },
-            env=env,
-        )
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("autonomous_exit_invoked") is not True
-
-
 class TestGeneralBehavior:
     """共通の振る舞い。"""
 
-    def test_removed_stop_subcommand_is_not_dispatched(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize("subcommand", ["autonomous_exit", "stop"])
+    def test_removed_stop_subcommand_is_not_dispatched(self, tmp_path: pathlib.Path, subcommand: str):
         """廃止した個人Stop入口を共通エントリポイントから起動しない。"""
         result = _fork_runner.run_script(
             _SCRIPT,
-            argv=("stop",),
+            argv=(subcommand,),
             input="{}",
             env=_state_env(tmp_path),
         )

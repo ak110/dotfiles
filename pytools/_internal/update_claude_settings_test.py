@@ -428,12 +428,14 @@ class TestProductionManagedSettings:
         """OS別設定の個人Stop hookが各プラットフォームの契約と一致する。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(f".{suffix}.json")
         data = json.loads(path.read_text(encoding="utf-8"))
-        commands = [hook["command"] for group in data["hooks"]["Stop"] for hook in group["hooks"]]
-        assert sum("claude_hook.py" in command and "autonomous_exit" in command for command in commands) == 1
+        stop_groups = data["hooks"].get("Stop", [])
+        commands = [hook["command"] for group in stop_groups for hook in group["hooks"]]
+        assert sum("claude_hook.py" in command and "autonomous_exit" in command for command in commands) == 0
         assert sum("claude_hook.py" in command and "stop_bell" in command for command in commands) == (
             1 if suffix == "posix" else 0
         )
         assert all("claude_hook.py stop;" not in command for command in commands)
+        assert ("Stop" in data["hooks"]) is (suffix == "posix")
 
     def test_windows_hook_commands_use_home_placeholder(self):
         """Windows個人hookの実行パスがプレースホルダー形式である。"""
@@ -447,7 +449,7 @@ class TestProductionManagedSettings:
             if hook.get("type") == "command"
         ]
         python_hook_commands = [command for command in commands if "claude_hook.py" in command]
-        assert len(python_hook_commands) == 2
+        assert len(python_hook_commands) == 1
         assert all("__HOME__\\dotfiles\\scripts\\claude_hook.py" in command for command in python_hook_commands)
         assert all("$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py" not in command for command in commands)
 
@@ -565,7 +567,7 @@ sys.exit(int(os.environ["UV_EXIT_CODE"]))
             if hook.get("type") == "command"
             and ("claude_hook.py" in hook.get("command", "") or "claude-hook-pretooluse.ps1" in hook.get("command", ""))
         ]
-        assert len(commands) == 3
+        assert len(commands) == 2
         assert any(
             '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"' in command for command in commands
         )
@@ -1239,7 +1241,12 @@ class TestStripRemovedHooks:
             ),
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit; exit 0'",
-                False,
+                True,
+            ),
+            (
+                'powershell -Command "& { uv run --no-project --script '
+                '$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py autonomous_exit; exit 0 }"',
+                True,
             ),
         ],
     )

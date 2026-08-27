@@ -52,6 +52,9 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_posttooluse.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
+    # 2026-08: 自律終了Stop hookをagent-toolkitプラグイン側へ移動したため個人common入口を除去
+    "uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit",
+    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py autonomous_exit",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py",
     'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
     # 2026-08: 振り返り入口をagent-toolkit側へ統合したため個人Stop hookを除去

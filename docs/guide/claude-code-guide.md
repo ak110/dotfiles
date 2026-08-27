@@ -313,6 +313,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop_advisor` | 作業完了時に同一セッションの振り返りを一度だけ継続し、未コミット変更があれば`git status`の件数を表示する。検証済みの管理対象一時領域が残る場合は、回収候補の件数、`atk managed-temp list`による詳細確認及び検収後の`atk managed-temp cleanup --path <path>`による個別回収手順を併記する | 対応 | 対応 |
+| plugin `Stop/autonomous_exit` | process-loop環境で`exit-session`呼出し漏れをblockする | 対応 | 非対応。Codex派生hookは`stop_advisor`だけを射影する |
 | plugin `UserPromptSubmit/user_prompt_submit` | 手動スキル起動の状態と振り返り対象を記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や`~/.claude/plans/`への書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
@@ -322,7 +323,6 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前検査 | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
 | 個人設定 `PostToolUse/posttooluse` | 参照文書へのReadとスキル起動をセッション状態へ記録する | 対応 | 非対応。同上 |
-| 個人設定 `Stop/autonomous_exit` | 自律実行の終了契約に従ってセッションを終了する | 対応 | 非対応。Claude Code固有の自律終了契約に依存する |
 
 Codexの`SessionStart`は、`source=compact`に限り品質想起通知へ対応する。`startup`・`resume`・`clear`では通知しない。
 pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする`SessionStart(compact)`定義と`quality_checkpoint` commandを確認して信頼する。

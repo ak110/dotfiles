@@ -1015,7 +1015,7 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         assert state.get("autonomous_exit_invoked") is True
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
-        """既に偽の状態でexit-sessionが起動されても状態は変わらない。"""
+        """既に偽の状態でもexit-sessionの記録だけを追加する。"""
         sid = "exit-idem"
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps({"process_feedbacks_skill_invoked": False}, ensure_ascii=False),
@@ -1032,6 +1032,35 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         state = _read_state(tmp_path, sid)
         assert state.get("process_feedbacks_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
+
+    def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
+        """exit-session記録とリセット済み状態がそろう場合は再書き込みしない。"""
+        sid = "exit-no-rewrite"
+        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        path.write_text(
+            json.dumps(
+                {
+                    "autonomous_exit_invoked": True,
+                    "process_feedbacks_skill_invoked": False,
+                    "plan_and_add_feedback_skill_invoked": False,
+                    "add_feedback_skill_invoked": False,
+                    "marker": "keep",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        mtime_before = path.stat().st_mtime_ns
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:exit-session"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid)["marker"] == "keep"
+        assert path.stat().st_mtime_ns == mtime_before
 
 
 class TestProcessFeedbacksInvokedNonIdempotent:

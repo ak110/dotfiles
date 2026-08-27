@@ -237,7 +237,7 @@ def parse_stop_session(raw_stdin: str, approve: collections.abc.Callable[[], Non
 
     JSON解析失敗またはsession_id欠落時は`approve`を呼び出したうえで`None`を返す。
     正常時は`(session_id, payload)`を返す。`stop_hook_active`判定・環境変数判定等の
-    後続分岐は呼び出し側ごとに判定順序（`claude_hook_autonomous_exit.py`は環境変数判定を
+    後続分岐は呼び出し側ごとに判定順序（`autonomous_exit.py`は環境変数判定を
     `stop_hook_active`より先に行う等）が異なるため、本関数には含めず呼び出し側へ委ねる。
     """
     try:

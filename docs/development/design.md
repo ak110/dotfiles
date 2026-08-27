@@ -722,7 +722,7 @@ Claude Codeでは`plan-review-executor`へ委譲する。Codexではメインが
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
 Stopの未完了判定は`agent-toolkit/scripts/_stop_gate.py`の共有`is_pending_async_work`を生産者とする。
-`stop_advisor.py`、`claude_hook_autonomous_exit.py`及び`claude_hook_stop_bell.py`の3消費者が同じ真偽を利用する。
+`agent-toolkit/scripts/stop_advisor.py`、`agent-toolkit/scripts/autonomous_exit.py`及び`scripts/claude_hook_stop_bell.py`の3消費者が同じ真偽を利用する。
 最上位Stopはpayloadの`transcript_path`から生JSONLを読み、同じstemの`subagents`配下にある固定名
 `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読む。直接の子の記録にあるAgent起動を孫起動として起動集合へ加え、
 最上位生transcriptの`queue-operation`で`operation`が`enqueue`又は`remove`の完了通知をtool-use-id又はtask-idで相殺する。
