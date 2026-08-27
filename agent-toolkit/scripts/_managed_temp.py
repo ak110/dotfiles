@@ -239,6 +239,25 @@ def _windows_equal_sids(first: bytes, second: bytes) -> bool:
     return bool(advapi32.EqualSid(first_buffer, second_buffer))
 
 
+def _windows_handle_information(
+    handle: int,
+    path: pathlib.Path,
+    *,
+    kernel32: typing.Any | None = None,
+) -> _ByHandleFileInformation:
+    """開いたWindowsハンドルから属性を取得し、reparse pointを拒否する。"""
+    if kernel32 is None:
+        kernel32 = _windows_dll("kernel32")
+    kernel32.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    information = _ByHandleFileInformation()
+    if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
+        raise _windows_error("Windows path属性を取得できない", path)
+    if information.attributes & _WINDOWS_REPARSE_POINT:
+        raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")
+    return information
+
+
 @contextlib.contextmanager
 def _windows_path_handle(
     path: pathlib.Path,
@@ -259,8 +278,6 @@ def _windows_path_handle(
         wintypes.HANDLE,
     ]
     create_file.restype = wintypes.HANDLE
-    kernel32.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
-    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
     effective_access = access | _WINDOWS_READ_ATTRIBUTES | _WINDOWS_SYNCHRONIZE
@@ -276,11 +293,7 @@ def _windows_path_handle(
     if handle == wintypes.HANDLE(-1).value:
         raise _windows_handle_open_error("Windowsのパスハンドルを取得できない", path)
     try:
-        information = _ByHandleFileInformation()
-        if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
-            raise _windows_error("Windows path属性を取得できない", path)
-        if information.attributes & _WINDOWS_REPARSE_POINT:
-            raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")
+        information = _windows_handle_information(handle, path, kernel32=kernel32)
         yield handle, information
     finally:
         kernel32.CloseHandle(handle)
@@ -1465,18 +1478,24 @@ def _tree_snapshot(root: pathlib.Path) -> dict[str, tuple[str, int, int]]:
     return snapshot
 
 
+@contextlib.contextmanager
 def _windows_move_to_quarantine(
     target: pathlib.Path,
     quarantine: pathlib.Path,
     expected_identity: tuple[int, int],
-) -> None:
+) -> typing.Iterator[int]:
     """検証済みの管理対象を対象ハンドルへ束縛して隔離する。"""
-    with _windows_path_handle(target, _WINDOWS_DELETE, share_mode=_WINDOWS_FILE_SHARE_NO_DELETE) as (handle, information):
+    with _windows_path_handle(
+        target,
+        _WINDOWS_DELETE | _WINDOWS_FILE_LIST_DIRECTORY,
+        share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
+    ) as (handle, information):
         if not information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
             raise ManagedTempError(f"管理対象が通常ディレクトリではない: {target}")
         if _windows_information_identity(information) != expected_identity:
             raise ManagedTempError(f"管理対象が隔離時に置換された: {target}")
         _windows_rename_handle(handle, target, quarantine)
+        yield handle
 
 
 def _windows_expected_children(
@@ -1532,19 +1551,16 @@ def _windows_remove_tree(
     root: pathlib.Path,
     expected_identity: tuple[int, int],
     expected_tree: dict[str, tuple[str, int, int]],
+    handle: int,
 ) -> None:
     """Windowsのtreeを各子のハンドルへ束縛して再帰削除する。"""
-    with _windows_path_handle(
-        root,
-        _WINDOWS_DELETE | _WINDOWS_FILE_LIST_DIRECTORY,
-        share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
-    ) as (handle, information):
-        if not information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
-            raise ManagedTempError(f"隔離先が通常ディレクトリではない: {root}")
-        if _windows_information_identity(information) != expected_identity:
-            raise ManagedTempError(f"管理対象が隔離時に置換された: {root}")
-        _windows_remove_directory_contents(root, root, handle, expected_tree)
-        _windows_delete_handle(handle, root)
+    information = _windows_handle_information(handle, root)
+    if not information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
+        raise ManagedTempError(f"隔離先が通常ディレクトリではない: {root}")
+    if _windows_information_identity(information) != expected_identity:
+        raise ManagedTempError(f"管理対象が隔離時に置換された: {root}")
+    _windows_remove_directory_contents(root, root, handle, expected_tree)
+    _windows_delete_handle(handle, root)
 
 
 def _consume_registry(validated: _ValidatedTemp) -> pathlib.Path:
@@ -1642,22 +1658,19 @@ def _cleanup_posix(
 
 
 def _restore_windows_quarantine(
+    handle: int,
     quarantine: pathlib.Path,
     target: pathlib.Path,
     expected_identity: tuple[int, int],
 ) -> None:
     """保持中のroot境界で隔離対象を元の名前へ戻す。"""
     with contextlib.suppress(ManagedTempError, OSError):
-        if not quarantine.exists() or target.exists():
+        information = _windows_handle_information(handle, quarantine)
+        if not information.attributes & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY:
             return
-        with _windows_path_handle(
-            quarantine,
-            _WINDOWS_DELETE,
-            share_mode=_WINDOWS_FILE_SHARE_NO_DELETE,
-        ) as (handle, information):
-            if _windows_information_identity(information) != expected_identity:
-                return
-            _windows_rename_handle(handle, quarantine, target)
+        if _windows_information_identity(information) != expected_identity:
+            return
+        _windows_rename_handle(handle, quarantine, target)
 
 
 def _cleanup_windows(
@@ -1677,28 +1690,39 @@ def _cleanup_windows(
         with _windows_cleanup_boundary(root):
             try:
                 _validate_root(root, expected=expected_root)
-                _windows_move_to_quarantine(
+                with _windows_move_to_quarantine(
                     validated.path,
                     quarantine,
                     (validated.device, validated.inode),
-                )
-                _validate_root(root, expected=expected_root)
-                if _windows_identity(quarantine) != (validated.device, validated.inode):
-                    raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
-                if _tree_snapshot(quarantine) != expected_tree:
-                    raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
-                _validate_root(root, expected=expected_root)
-                _windows_remove_tree(
-                    quarantine,
-                    (validated.device, validated.inode),
-                    expected_tree,
-                )
+                ) as target_handle:
+                    try:
+                        _validate_root(root, expected=expected_root)
+                        information = _windows_handle_information(target_handle, quarantine)
+                        if _windows_information_identity(information) != (
+                            validated.device,
+                            validated.inode,
+                        ):
+                            raise ManagedTempError(f"管理対象が隔離時に置換された: {validated.path}")
+                        if _tree_snapshot(quarantine) != expected_tree:
+                            raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
+                        _validate_root(root, expected=expected_root)
+                        _windows_remove_tree(
+                            quarantine,
+                            (validated.device, validated.inode),
+                            expected_tree,
+                            target_handle,
+                        )
+                    except (ManagedTempError, OSError) as error:
+                        _restore_windows_quarantine(
+                            target_handle,
+                            quarantine,
+                            validated.path,
+                            (validated.device, validated.inode),
+                        )
+                        if isinstance(error, ManagedTempError):
+                            raise
+                        raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
             except (ManagedTempError, OSError) as error:
-                _restore_windows_quarantine(
-                    quarantine,
-                    validated.path,
-                    (validated.device, validated.inode),
-                )
                 if isinstance(error, ManagedTempError):
                     raise
                 raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error

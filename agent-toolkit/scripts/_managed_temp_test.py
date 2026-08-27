@@ -1663,6 +1663,43 @@ class TestManagedTempWindows:
         assert (target / "replacement.txt").read_text(encoding="utf-8") == "replacement"
         assert subject._registry_path(target).exists()
 
+    def test_cleanup_keeps_quarantine_handle_until_remove(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """隔離後から削除まで対象ハンドルを保持し、quarantine交換を拒否する。"""
+        container = tmp_path / "managed-container"
+        container.mkdir()
+        root = container / "managed-root"
+        root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root))
+        target = subject.create_managed_temp("windows-quarantine-handle")
+        (target / "original.txt").write_text("original", encoding="utf-8")
+        external = tmp_path / "external-target"
+        external.mkdir()
+        sentinel = external / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        displaced = tmp_path / "quarantine-displaced"
+        original_remove_tree = subject._windows_remove_tree
+
+        def remove_tree_with_swap(
+            quarantine: pathlib.Path,
+            expected_identity: tuple[int, int],
+            expected_tree: dict[str, tuple[str, int, int]],
+            handle: int,
+        ) -> None:
+            _assert_windows_directory_swap_rejected(quarantine, displaced)
+            original_remove_tree(quarantine, expected_identity, expected_tree, handle)
+
+        monkeypatch.setattr(subject, "_windows_remove_tree", remove_tree_with_swap)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert not displaced.exists()
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
     @pytest.mark.parametrize("swap_target", ["root", "ancestor"])
     def test_cleanup_rejects_root_swap_before_replace_and_preserves_external_target(
         self,
@@ -1685,14 +1722,16 @@ class TestManagedTempWindows:
         displaced = tmp_path / f"{swap_target}-displaced"
         original_move_to_quarantine = subject._windows_move_to_quarantine
 
+        @contextlib.contextmanager
         def move_to_quarantine_with_swap(
             target_path: pathlib.Path,
             quarantine: pathlib.Path,
             expected_identity: tuple[int, int],
-        ) -> None:
+        ) -> typing.Iterator[int]:
             assert target_path == target
             _assert_windows_directory_swap_rejected(swap_path, displaced)
-            original_move_to_quarantine(target_path, quarantine, expected_identity)
+            with original_move_to_quarantine(target_path, quarantine, expected_identity) as handle:
+                yield handle
 
         monkeypatch.setattr(subject, "_windows_move_to_quarantine", move_to_quarantine_with_swap)
 
@@ -1729,9 +1768,10 @@ class TestManagedTempWindows:
             path: pathlib.Path,
             expected_identity: tuple[int, int],
             expected_tree: dict[str, tuple[str, int, int]],
+            handle: int,
         ) -> None:
             _assert_windows_directory_swap_rejected(swap_path, displaced)
-            original_remove_tree(path, expected_identity, expected_tree)
+            original_remove_tree(path, expected_identity, expected_tree, handle)
 
         monkeypatch.setattr(subject, "_windows_remove_tree", remove_tree_with_swap)
 
@@ -1749,7 +1789,7 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
         swap_target: str,
     ) -> None:
-        """削除失敗時もroot交換を拒否し、同じ境界内で対象を復元する。"""
+        """削除失敗時もroot・quarantine交換を拒否し、同じ境界内で対象を復元する。"""
         container = tmp_path / "managed-container"
         container.mkdir()
         root = container / "managed-root"
@@ -1769,8 +1809,11 @@ class TestManagedTempWindows:
             path: pathlib.Path,
             expected_identity: tuple[int, int],
             expected_tree: dict[str, tuple[str, int, int]],
+            handle: int,
         ) -> typing.NoReturn:
             _assert_windows_directory_swap_rejected(swap_path, displaced)
+            quarantine_displaced = tmp_path / f"{swap_target}-quarantine-displaced"
+            _assert_windows_directory_swap_rejected(path, quarantine_displaced)
             raise OSError("test remove-tree failure")
 
         monkeypatch.setattr(subject, "_windows_remove_tree", fail_after_swap_attempt)
@@ -1809,6 +1852,7 @@ class TestManagedTempWindows:
             quarantine: pathlib.Path,
             expected_identity: tuple[int, int],
             expected_tree: dict[str, tuple[str, int, int]],
+            handle: int,
         ) -> None:
             quarantine_child = quarantine / "nested"
             quarantine_child.rename(displaced)
@@ -1819,7 +1863,7 @@ class TestManagedTempWindows:
                 check=False,
             )
             assert result.returncode == 0, result.stderr or result.stdout
-            original_remove_tree(quarantine, expected_identity, expected_tree)
+            original_remove_tree(quarantine, expected_identity, expected_tree, handle)
 
         monkeypatch.setattr(subject, "_windows_remove_tree", replace_child_before_remove)
 
