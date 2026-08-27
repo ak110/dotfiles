@@ -1148,20 +1148,18 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
         "調整主体が無い場合は計画担当が`agent-toolkit:delegation`に従って指示する"
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
-    assert "再レビューでは全修正と累積計画全体を再監査" in task
+    assert "初回または再レビューの別。再レビューでは共通契約が定める必須差分入力に加え" in task
+    assert "初回・再レビューの入力、被覆証拠、直接影響範囲及び不足範囲の返却は、review-standardsの共通契約に従う" in task
     assert "キューにない素材の逐語本文・回答全文が、調査、起草、初回レビュー、再レビューの明示入力として保持" in task
-    assert "現行計画に同じ違反が残る場合だけ再提示" in task
     assert "指摘候補を内部的に網羅列挙" in task
     for receiver_contract in (
         "指摘候補を内部的に網羅列挙",
-        "全修正と累積計画全体を再監査",
-        "現行計画に同じ違反が残る場合だけ再提示",
         "計画起草時に判断可能だった事項、初回レビューの見逃し",
     ):
         assert receiver_contract in task
         assert receiver_contract not in delegation
+    assert "全修正と累積計画全体を再監査" not in task
     assert "1対1で照合" in task
-    assert "現存箇所と破る契約を示す" in task
 
 
 def test_plan_review_audits_shared_representation_and_overview_sync() -> None:
@@ -3064,19 +3062,25 @@ def test_plan_impl_escalation_is_self_contained_and_uses_existing_routes() -> No
 
 
 def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
-    """初回全件抽出と指摘0件までの累積再レビューを固定する。"""
+    """初回全件抽出と直接影響範囲に限定した再レビューを固定する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
 
     assert "review-loop-coordination.md" in executor
-    assert "初回と第2回での収束を目標とするが、未解決の実在欠陥がある限り、上限を設けず" in coordinator
+    assert (
+        "初回と第2回での収束を目標とするが、未解決の実在欠陥がある限り、前回修正と直接影響範囲を入力として修正と再レビューを反復する。"
+        in coordinator
+    )
     assert "未解決の実在欠陥がある限り" not in plan_review_delegation
     assert "指摘候補を内部的に網羅列挙" in plan_review_task
-    assert "全修正と累積計画全体を再監査" in plan_review_task
+    assert "全修正と累積計画全体を再監査" not in plan_review_task
     assert "指摘候補を内部的に網羅列挙" not in plan_review_delegation
     assert "全修正と累積計画全体を再監査" not in plan_review_delegation
+    assert "## 初回・再レビューの共通契約" in review_standards
+    assert "未変更かつ直接影響範囲に含まれない既存部分は再走査しない。" in review_standards
     assert "指摘候補の全件抽出" not in executor
 
 
@@ -4972,17 +4976,22 @@ def test_review_completion_evidence_and_checkpoint_observation_contracts_are_con
     flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
     incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
+    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
 
-    coverage_contract = (
-        "各要件には、正常系、最小値・件数境界、状態遷移・失敗復旧、外部入力・保存不変条件及び消費主体可視境界を記録する。"
-    )
-    assert "初回レビューでは他の点検より先に、計画から独立要件を列挙する。" in review_task
+    coverage_contract = "2. ユーザー原文、合意済み採否・除外及び成果物から対象を別々に列挙し、3つの入力を対応付ける。"
+    assert "初回レビューでは、計画レビュー固有の対象である独立要件を、共通契約の対象構成手順に従って列挙する。" in review_task
     assert "列挙した各要件へ、正常系、完遂範囲・順序・条件を指定する入力、主要な異常系を構成する。" in review_task
-    assert "初回レビューの完了報告は、計画から列挙した独立要件ごとに被覆結果を返す。" in review_task
-    assert coverage_contract in review_task
-    assert "各観点は`確認済み`又は`非該当: <理由>`とし、未走査の観点を完了済みとして返さない。" in review_task
+    assert "初回レビューの完了報告は、共通契約に従い、計画レビュー固有の独立要件ごとに被覆結果を返す。" in review_task
+    assert "各要件の被覆結果と根拠は、review-standardsの共通契約に従う。" in review_task
     assert "1ラウンドで完了できない範囲は既存の未走査範囲として明示する。" in review_task
     assert "被覆結果はレビュー表の指摘と別の完了報告として返し" in review_task
+    assert "## 初回・再レビューの共通契約" in review_standards
+    assert coverage_contract in review_standards
+    assert (
+        "未走査、根拠のない`確認済み`又は理由のない`非該当`が残る場合は、初回レビューを完了として返さず不足範囲を返す。"
+        in review_standards
+    )
+    assert coverage_contract not in review_task
     assert coverage_contract not in standards
     assert coverage_contract not in feedbacks_planner
 
