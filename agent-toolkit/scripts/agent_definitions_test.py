@@ -68,6 +68,7 @@ _REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
+_CONCEPTS_DOC = _REPOSITORY_ROOT / "docs" / "development" / "concepts.md"
 _MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
 _CODEX_AGENTS_BASE = _REPOSITORY_ROOT / "agent-toolkit" / "share" / "codex-agents-base.md"
@@ -303,8 +304,24 @@ def test_codex_running_status_is_not_overridden_by_auxiliary_observations() -> N
     ):
         assert phrase in base
     assert "Claude、agents_server及び背景ジョブ" not in base
-    assert "同じ対象について状態照会を反復せず" in waiting
     assert "広範な未完了調査を1つの委譲先へ再委譲せず" in waiting
+
+
+def test_waiting_contract_distinguishes_same_turn_polling_from_requery_triggers() -> None:
+    """同一turn内のpollingと通知不着等の再照会を区別する。"""
+    waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
+
+    for phrase in (
+        "同一turn内では、補助観測の更新だけを理由に同じ対象の状態照会を反復するポーリングを行わない",
+        "完了通知の不着を検出した時点では、同一turn内でも対象を直接照会してよい",
+        "通知不着後の次の定時turn（定時起動）では、対象の状態を直接照会してよい",
+        "終端statusを確認する工程では、必要な再照会を実施してよい",
+        "ターン終了前の稼働状況の1回測定は、同一turn内のポーリングに当たらない",
+        "別turn又は次の定時turnで間隔を空けた複数回の観測は、同一turn内のポーリングに当たらない",
+        "`running`のstatusを補助観測より優先する",
+    ):
+        assert phrase in waiting
+    assert "同じ対象について状態照会を反復せず" not in waiting
 
 
 def test_delegation_observation_values_are_attributed_to_writer_and_scope() -> None:
@@ -321,17 +338,34 @@ def test_delegation_observation_values_are_attributed_to_writer_and_scope() -> N
         assert phrase in waiting
 
 
-def test_claude_runtime_requires_list_agents_call_success_and_owned_pid_fallback() -> None:
-    """ClaudeのListAgents失敗時に所有識別子だけをfallbackへ用いる。"""
-    runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
+def test_list_agents_fallback_contract_is_shared_across_documents() -> None:
+    """ListAgents失敗時のfallback契約を関連文書で共有する。"""
+    documents = (
+        _CLAUDE_CODE_RUNTIME,
+        _WAITING_AND_MONITORING,
+        _CONCEPTS_DOC,
+        _DESIGN_DOC,
+    )
 
+    runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
     for phrase in (
         "ツールが公開されていることと、実際の呼び出しが成功することの両方",
         "ツール一覧に掲載されていても呼び出しが拒否された場合は利用不能",
-        "自身が起動して識別子を保持したプロセスの生存",
-        "プロセス名の一致だけから生存状態又は対象を推定しない",
     ):
         assert phrase in runtime
+
+    for document in documents:
+        text = document.read_text(encoding="utf-8")
+        for phrase in (
+            "`ListAgents`",
+            "保持済みのID",
+            "完了通知",
+            "成果物観測",
+            "自身が起動して識別子を保持したプロセスの生存",
+            "プロセス名の一致だけから生存状態",
+            "対象を推定しない",
+        ):
+            assert phrase in text, document
 
 
 def test_delegation_capability_comparison_uses_identical_machine_queries() -> None:
@@ -3641,7 +3675,7 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
         "委譲先自身のtranscript",
         "未完了の工程だけを巻き取る",
         "直接の呼出元ではない主体",
-        "`ListAgents`が不在又は呼び出しを拒否された場合",
+        "`ListAgents`が不在か、呼び出しを拒否された場合",
         "`atk watch`",
         "queued",
         "中継不能時",
