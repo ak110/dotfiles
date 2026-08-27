@@ -3088,6 +3088,10 @@ def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
         "変更した契約の適用先から直接影響範囲を導出する。"
     ) in review_standards
     assert (
+        "再レビューでは、通常のレビュー入力に加え、前回レビュー対象の完全OID又は版、前回以降の修正差分、"
+        "採用指摘、未解決指摘、修正担当が列挙した直接影響範囲及び新設・変更契約を必須差分入力として受け取る。"
+    ) in review_standards
+    assert (
         "共有parser、共通状態、公開契約、生成元、配布元を修正した場合は、実際の全消費先まで範囲を広げる。"
     ) in review_standards
     assert "文字列、見出し、目的語、混在構造、接続関係が似ているだけの箇所は範囲へ含めない。" in review_standards
@@ -3100,6 +3104,13 @@ def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
         "再レビューで初回から判断できた問題が見つかった場合も、初回レビューを未完了として不足範囲を同じレビュー担当へ返し、"
         "補完後に再レビューを続ける。"
     ) in coordinator
+    assert (
+        "調整主体は、未走査、根拠のない`確認済み`又は理由のない`非該当`を含む完了報告を受理せず、"
+        "同じレビュー担当へ不足範囲を返す。"
+    ) in coordinator
+    assert (
+        "再レビューでは、計画差分と共通契約が導出する直接影響範囲に含まれる独立要件へ同じシナリオ走査を適用する。"
+    ) in plan_review_task
     assert "指摘候補の全件抽出" not in executor
 
 
