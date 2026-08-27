@@ -92,7 +92,7 @@ def test_current_output_is_synced() -> None:
         (
             "上記の優先順位は、厳守規定、手順、例外処理その他の全ての規範へ先に適用し、"
             "優先順位で有効と確定した適用対象だけを後続の規範へ適用する。",
-            "利用者の明示的な指示が下位規範を上書きした場合は、その下位規範を再適用しない。",
+            "ユーザーの明示的な指示が下位規範を上書きした場合は、その下位規範を再適用しない。",
             "「規定の適用可否」に従って規定どおり適用する判断及び本節の手順は、"
             "上記の優先順位で適用対象を確定した後にだけ働く。",
             "エージェントが規範を過剰と判断しただけの場合は、規範を適用したうえで改訂を提案する。",
@@ -170,6 +170,54 @@ def test_current_output_is_synced() -> None:
         assert skill_invocation in shared_rules
     assert "../skills/" not in shared_rules
     assert "agent-toolkit/skills/" not in shared_rules
+
+    named_agent_section = codex_base.split("### Claude Code agent定義のCodex互換適用", maxsplit=1)[1].split(
+        "\n### ", maxsplit=1
+    )[0]
+    for direct_application_contract in (
+        "Codexで名前付きagentを呼び出す場合だけ、別の実行主体を起動せず、メインエージェントが定義を現在のセッションへ直接適用して役割を遂行する。",
+        "定義の適用自体には`agents_server`も`spawn_agent`も使わない。",
+        "`agent-toolkit/agents/*.md`",
+        "`name`、`description`、`model`、`effort`、`tools`、`skills`、`user-invocable`及びfrontmatterコメントを区別する。",
+        "`name`は定義の識別子として保持し、`description`は起動対象を選ぶ条件として用いる。",
+        "`model`と`effort`は定義側の意図を示す値として保持し、`tools`と`skills`は後続の制約及び読込手順へ渡す。",
+        "`user-invocable`は利用者が直接起動できるかという公開条件として維持し、frontmatterコメントは編集用メタ情報として実行時命令へ含めない。",
+        "Markdown本文をメインエージェント自身の役割、制約、入力、出力及び完了契約として全文適用する。",
+        "`skills`に列挙された各`SKILL.md`をメインエージェントが絶対パスから全文読み、内容を適用する。",
+        "`tools`制約をCodexの公開能力へ写像し、構造的allowlistが無い制約はメインエージェント自身の操作制限として適用する。",
+        "未知のfrontmatterフィールド又は対応不能な必須制約は黙って破棄せず、公式仕様と公開ツールスキーマを確認し、写像不能なら`needs_escalation`として返す。",
+        "frontmatterの解析、既知の必須フィールドの写像、名前付きagent定義の直接適用のいずれかに失敗した場合は、"
+        "部分適用も別の実行経路への迂回もせず、失敗として返す。",
+        "名前付きagent定義自体を`spawn_agent`又は`followup_task`へ渡さない。",
+        "`completed`、`evidence_insufficient`及び`needs_escalation`は適用区間の終端結果として外側のメイン工程へ返す。",
+        "`awaiting_confirmation`は適用区間を終了する。",
+        "`checkpoint`は適用区間を終了する。",
+        "Codexでは自身への`SendMessage`を使わない",
+        "実際の別主体が必要な場合だけ、`runtime-routing.md`の通常経路でCodexから`agents_server`へ委譲する",
+        "名前付き役割が起動した実際の別主体は、当該役割の出力契約と委譲規範に従って終端又は継続可能な識別子として検収してから適用区間を終了する。",
+        "外側のメイン工程へ戻った後に名前付き役割のread-only制約やツール制限を残さず、外側のメインの権限を名前付き役割へ持ち込まない。",
+    ):
+        assert direct_application_contract in named_agent_section
+    runtime_routing = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/runtime-routing.md").read_text(
+        encoding="utf-8"
+    )
+    assert "特殊経路はCodexによる前者だけへ適用し、後者は本書の通常経路を変更しない" in runtime_routing
+    assert "Codexから実際の別主体へ委譲するときは、`agents_server`を利用できる環境では同経路を使う" in (runtime_routing)
+    assert "Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える" not in (runtime_routing)
+    assert "Codexではメインエージェントが定義を同一セッションへ直接適用し、Claude Codeでは既存の名前付きAgent起動へ従う。" in (
+        runtime_routing
+    )
+    definition_comment = (
+        "# ツール制限: 調整と検収に専念し、成果物を直接編集しない。"
+        "名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲は明示した`agents_server` MCPツールで起動する。"
+    )
+    old_definition_comment = (
+        "# ツール制限: 調整と検収に専念し、成果物を直接編集しない。Codex経路は明示した`agents_server` MCPツールで起動する。"
+    )
+    for definition_name in ("feedbacks-planner.md", "plan-review-executor.md"):
+        definition = (subject.REPO_ROOT / "agent-toolkit/agents" / definition_name).read_text(encoding="utf-8")
+        assert definition_comment in definition
+        assert old_definition_comment not in definition
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:

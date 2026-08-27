@@ -102,40 +102,53 @@ Web調査ツールのように逐次呼び出しを要求する個別ツール�
 - 共有`agent-toolkit:plan-mode`の完成条件と照合し、各ユーザー依存事項が共有`01-agent.md`の確認経路を完了し、その他の未確定事項がない状態で起草を開始する
 - 起草後に事実不足が判明した場合は、同一の`update_plan`呼び出しで起草工程を`pending`、調査工程を`in_progress`へ戻す。調査完了後に調査工程を`completed`、起草工程を`in_progress`へ更新してから起草を再開する
 
-### Claude Code agent定義のCodex互換実行
+### Claude Code agent定義のCodex互換適用
 
 `agent-toolkit/agents/*.md`のClaude Code用Markdownをagent定義の単一の正本とする。
-`setup_codex_links.py`が公開する`~/.codex/agent-toolkit/agents/<agent-name>.md`は、Codex Custom Agent用TOMLへ変換せず、次の互換手順で実行時に読む。
+Codexで名前付きagentを呼び出す場合だけ、別の実行主体を起動せず、メインエージェントが定義を現在のセッションへ直接適用して役割を遂行する。
+定義の適用自体には`agents_server`も`spawn_agent`も使わない。
 
-名前付きagentの互換起動では`spawn_agent`へ`model`と`reasoning_effort`を指定せず、Codexの既定サブエージェント設定へ委ねる。
-frontmatterの`model`と`effort`はClaude Code実行時の指定であり、Codex側のモデル識別子へは写像しない。写像表を本文書へ置くと、能力区分の定義、`model: inherit`の扱い、識別子の正本を新設する必要が生じ、いずれも現行の要件に対応しないためである。
+frontmatterの`model`と`effort`はClaude Code実行時の指定であり、Codex側のモデル識別子へ写像しない。
+`task_name`へ許可文字に正規化した一意な名前を渡して定義名自体を委譲文へ保持する処理は行わない。
 
-1. 起動対象のagent名から`~/.codex/agent-toolkit/agents/<agent-name>.md`の絶対パスを確定し、ファイル全体を読む。
+1. 対象のagent名から`~/.codex/agent-toolkit/agents/<agent-name>.md`の絶対パスを確定し、メインエージェントがファイル全体を読む。
 2. YAML frontmatterを解析し、`name`、`description`、`model`、`effort`、`tools`、`skills`、`user-invocable`及びfrontmatterコメントを区別する。
-   `name`は定義の識別子とし、`task_name`へ許可文字に正規化した一意な名前を渡して定義名自体を委譲文へ保持する。`description`は起動対象を選ぶ条件として用いる。
+   `name`は定義の識別子として保持し、`description`は起動対象を選ぶ条件として用いる。
    `model`と`effort`は定義側の意図を示す値として保持し、`tools`と`skills`は後続の制約及び読込手順へ渡す。
    `user-invocable`は利用者が直接起動できるかという公開条件として維持し、frontmatterコメントは編集用メタ情報として実行時命令へ含めない。
-3. Markdown本文をagentの役割、制約、入力、出力及び完了契約として全文適用する。
-   起動文へ本文を複製せず、正本の絶対パスとタスク固有入力だけを`spawn_agent`へ渡す。
-4. `skills`に列挙された各スキルをCodexが自動で事前読込したと仮定せず、対応する`SKILL.md`を絶対パスから全文読み、内容を適用する。
-5. `tools`に含まれる制約を下表で写像する。対応表は直接対応、条件付き対応及び代替不能な範囲を区別する。`spawn_agent`が構造的allowlistを受け取らない場合は委譲文へ制約を明記し、read-only要件は変更前後のGit状態で検収する。
-   対応不能な必須ツール又は制約は黙って無視せず、利用可能な構造的制約、委譲文による制約、差し戻しの順で扱う。
-6. 未知のfrontmatterフィールドは、Claude Code公式仕様、Codex公式仕様及び公開ツールスキーマを確認する。
-   挙動へ影響する場合は写像又は`needs_escalation`として返し、未知のフィールドを黙って破棄しない。
-   解析、必須フィールドの写像、agent定義の起動に失敗した場合は、別の実行経路へ迂回せず失敗として返す。
+3. Markdown本文をメインエージェント自身の役割、制約、入力、出力及び完了契約として全文適用する。
+4. `skills`に列挙された各`SKILL.md`をメインエージェントが絶対パスから全文読み、内容を適用する。
+5. `tools`制約をCodexの公開能力へ写像し、構造的allowlistが無い制約はメインエージェント自身の操作制限として適用する。read-only要件は変更前後のGit状態で検収する。
+6. 未知のfrontmatterフィールド又は対応不能な必須制約は黙って破棄せず、公式仕様と公開ツールスキーマを確認し、写像不能なら`needs_escalation`として返す。
+   frontmatterの解析、既知の必須フィールドの写像、名前付きagent定義の直接適用のいずれかに失敗した場合は、部分適用も別の実行経路への迂回もせず、失敗として返す。
+
+名前付き定義の役割がレビュー担当・実装担当などの実際の別主体を必要とする場合、その委譲は特殊経路に含めず、`agent-toolkit:delegation`と`runtime-routing.md`に従う。
+Codexから実際の別主体へ委譲するときは`agents_server`を使う。Claude Codeでは既存どおりAgentツール又は`agents_server`を使う。
+
+名前付きagentの直接適用は、外側のメイン工程から呼び出した一時的な役割適用区間として扱う。
+メインは呼び出し前の工程、入力及び再開位置を保持し、定義が出力契約に従ってstatusを組み立てた時点で当該役割と`tools`制約の適用を終了する。
+外側のメイン工程は同じセッション内でstatusと出力を受領し、通常の呼び出し元契約に従って次の工程を続ける。
+
+- `completed`、`evidence_insufficient`及び`needs_escalation`は適用区間の終端結果として外側のメイン工程へ返す。外側のメインが成果物の検収、利用者確認又は後続工程を所有する
+- `awaiting_confirmation`は適用区間を終了する。外側のメインが確認又はTBD処理を完了した後、既存定義が要求する累積入力を渡して同じ名前付きagent定義を新しい適用区間として呼び出す
+- `checkpoint`は適用区間を終了する。外側のメインがcheckpointを検収して既定の再開指示を確定した後、保持した検収済み状態、checkpoint及び再開指示を入力として同じ名前付きagent定義を新しい適用区間で呼び出す。Codexでは自身への`SendMessage`を使わない
+- 計画レビューの指摘反映など、名前付き役割が書込禁止で外側のメインが書込主体である工程は、名前付き役割の適用区間を終了してから外側のメインが実施する。反映後の調整は同じ定義を新しい適用区間で再び呼び出す
+
+名前付き役割が起動した実際の別主体は、当該役割の出力契約と委譲規範に従って終端又は継続可能な識別子として検収してから適用区間を終了する。
+外側のメイン工程へ戻った後に名前付き役割のread-only制約やツール制限を残さず、外側のメインの権限を名前付き役割へ持ち込まない。
 
 agent-toolkit配下のルール・スキル本文・サブエージェント定義はClaude Code固有のツール名で記述される。
-Codexで利用する場合は次の対応表に従って読み替える。
+Codexメインが名前付き定義を直接適用して役割を遂行するときは、次の対応表に従って読み替える。
 
 | Claude Code | Codex相当 |
 | --- | --- |
-| `Agent`ツール（サブエージェント起動。旧称`Task`） | `spawn_agent`で別エージェントへ委譲する。`task_name`と`message`は必須で、`fork_turns`へ`"none"`を指定する。`model`・`reasoning_effort`による委譲先の指定は`fork_turns`が`"none"`または継承ターン数の場合に有効となり、省略時と`"all"`では上書きできない |
-| `SendMessage`（稼働中のサブエージェントへの追加指示・再開） | `followup_task`で追加タスクを送る（待機中の対象は新しいターンを開始する）。ターンを開始せず伝えるだけの場合は`send_message`を使う |
-| `TaskStop` | `interrupt_agent`で対象エージェントを停止し、`list_agents`で停止を確認する |
+| `Agent`ツール（サブエージェント起動。旧称`Task`） | 実際の別主体が必要な場合だけ、`runtime-routing.md`の通常経路でCodexから`agents_server`へ委譲する |
+| `SendMessage`（稼働中のサブエージェントへの追加指示・再開） | 実際の別主体へ委譲した経路が返した識別子と操作を使う。名前付き定義自身の再適用には使わない |
+| `TaskStop` | 実際の別主体へ委譲した経路の中断操作を使い、返された識別子で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
-| サブエージェントの完了待機・稼働確認・中断 | `wait_agent`で更新を待ち、`list_agents`で稼働中の一覧を取得し、`interrupt_agent`で中断する |
-| `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・継続・中断） | 自身がCodexであるためCodex engineをMCP経由で自己呼び出しせず、`fork_turns`へ`"none"`を指定した`spawn_agent`で委譲する。Claude engineへ委譲する場合は`start(engine="claude", prompt, cwd, model, effort)`を使い、状態と結果は`wait`、追加指示は`send_message`、実行中turnの明示的な中断は`kill(session_id, timeout)`で扱う。timeout超過後もsessionを保持する |
-| `Monitor` | `list_agents`と`wait_agent`、または実行セッションの待機結果を用いて対象を観測する |
+| サブエージェントの完了待機・稼働確認・中断 | 実際の別主体へ委譲した経路が返す識別子と`wait`・状態確認・中断操作を使う |
+| `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・継続・中断） | 名前付き定義の適用自体には使わない。定義内で実際の別主体へ委譲する場合は、`runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
+| `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは利用者へ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む |
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
@@ -149,19 +162,16 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
 
-`agent-toolkit:delegation`が定める`agents_server`経路と汎用エージェント代替経路の分岐は、
-名前付きagentのCodex互換起動では`spawn_agent`経路へ読み替える。
-系統別`session_id`の継続は、`spawn_agent`が返すエージェントIDまたはタスク名を
-`followup_task`の`target`へ渡して代替する。
-計画レビュー系・計画準拠実装レビュー系・独立実装レビュー系・実装修正系は系統ごとに別のエージェントを起動し、
-履歴を混同しない。
+`agent-toolkit:delegation`が定める`agents_server`経路と汎用エージェント代替経路は、名前付きagent定義の適用後に実際の別主体へ委譲するときだけ使う。
+名前付きagent定義自体を`spawn_agent`又は`followup_task`へ渡さない。
+計画レビュー系・計画準拠実装レビュー系・独立実装レビュー系・実装修正系は系統ごとに別の実際の別主体を起動し、履歴を混同しない。
 
-工程別モデル設定と名前付きagentの互換起動は別の判断である。
+工程別モデル設定と名前付きagentの直接適用は別の判断である。
 `runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程では、同文書の手順に従って`engine`を解決する。
-`engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
+`engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使い、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 指定engineの経路を利用できない場合は同文書の手順4に従って`needs_escalation`又は未完了として返す。
-`engine=codex`の場合は、当該工程の設定値から解決した`model`・`reasoning_effort`を`spawn_agent`へ渡す。
-工程別モデル設定のキーを持たない名前付きagentの起動は、当該設定の`engine`判定を経ず、本節の互換手順で`spawn_agent`を使う。
+`engine=codex`の場合は、当該工程の設定値から解決した`model`・`effort`を`agents_server`の`start`へ渡す。
+工程別モデル設定のキーを持たない名前付きagentの呼び出しは、当該設定の`engine`判定を経ず、本節の直接適用契約に従う。
 
 公開サブコマンドがないplugin内部資源を実行する場合は、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
 作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成する。

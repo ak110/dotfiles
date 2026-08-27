@@ -216,10 +216,13 @@ fast担当とfix担当は、工程別モデル設定の実効値が一致する�
 継続直前に再取得した`engine`・`model`・`effort`の実効値が起動値と一致するときだけ継続する。不一致時は検収済み状態を新規threadへ渡す。
 実効値が変わる設定変更後も同一threadを継続する案は、threadが保持する実行条件と工程の実効設定を一致させられないため採用しない。
 
-Claude Code用の`agent-toolkit/agents/*.md`をagent定義の単一の正本とし、Codexは配布されたMarkdownを実行時に全文読み、frontmatter、本文、スキル及びツール制約を`spawn_agent`へ互換適用する。
-名前付きagentのCodex互換起動と、`atk config`の工程別モデル設定によるengine選択は別の判断とする。前者はagent定義そのものを実行する経路であり工程別設定のキーを持たないため、後者の`engine`値を起動可否の条件にしない。
+Claude Code用の`agent-toolkit/agents/*.md`をagent定義の単一の正本とする。
+Codexが名前付きagentを呼び出す場合だけ、配布されたMarkdownを実行時に全文読み、frontmatter、本文、スキル及びツール制約をメインエージェントの現在のセッションへ直接適用する。
+名前付きagent定義の適用自体は別主体への委譲ではなく、`agents_server`又はCodexネイティブの`spawn_agent`を起動しない。
+特殊経路以外は変更せず、定義の役割が実際の別主体を必要とする場合は従来の工程別モデル設定と`runtime-routing.md`に従って委譲する。
 Codex Custom Agent用TOMLは、Claude固有の`tools`、`skills`、本文を意味論的に一対一変換できず、正本、生成器、配布先を増やすため採用しない。
-調査・採否と通常型の計画化はClaude CodeとCodexで共通の`feedbacks-planner`委譲経路を使い、agent定義の欠落、frontmatterの写像不能又は起動失敗をメイン主体の別経路へ迂回しない。
+調査・採否と通常型の計画化はClaude CodeとCodexで共通の`feedbacks-planner`委譲経路を使う。
+agent定義の欠落、frontmatterの写像不能、起動失敗をメイン主体の別経路へ迂回しない。
 Codexのready項目再取得、連続処理及び本体プロセスの終了範囲だけはagent定義の適用能力と独立したホスト固有のセッション運用として分岐する。
 
 ### Claude CodeとCodexの規範配置
@@ -630,7 +633,10 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`反復証跡�
 実装ではなくフィードバック投入で終える運用を担う。
 計画担当（`agent-toolkit:plan-mode`）が調査と計画ファイル初版の起草までを担い、
 以降のレビュー修正ループ（計画構造検査、自己監査、レビュー担当の起動、指摘の配送、修正の検収、収束判定）は
-`plan-review-executor`へ委譲する。`plan-review-executor`は`plan-impl-executor`が実装レビューの調整主体を担う
+Claude Codeでは`plan-review-executor`へ委譲する。Codexではメインが同定義を同一セッションへ直接適用し、
+計画レビューの調整主体を担う。Codexで同定義内のレビュー担当を起動する場合は、
+`plan_review_model`のagents_server別セッションへ委譲する。
+`plan-review-executor`は`plan-impl-executor`が実装レビューの調整主体を担う
 構成と対称であり、計画ファイル初稿の絶対パスを入力として計画レビューの調整主体を担う。
 `plan-review-executor`と`feedbacks-planner`は、成果物を直接編集せず委譲と検収を担う点を共有する。
 `feedbacks-planner`は、採否候補の確定、reject対象・hold対象の判定と結果の返却も担う。
@@ -649,8 +655,8 @@ executorは実装担当の完了後にphaseごとの`rewrite_guard`反復証跡�
 
 却下した代替案は次の2つである。
 
-- メイン兼任の維持: `plan-and-add-feedback`経路でメインが計画担当と調整主体を兼ねる現行構成は、
-  レビューのラウンドごとに計画全文とレビュー表がメインのコンテキストへ蓄積する構造を変えないため採らない
+- メイン兼任の維持（Claude Code）: `plan-and-add-feedback`経路でClaude Codeメインが計画担当と調整主体を兼ねる案は、
+  レビューのラウンドごとに計画全文とレビュー表がメインのコンテキストへ蓄積する構造を変えないため採らない。Codexでは名前付き定義の直接適用としてメインが調整主体を担うため、この却下理由の対象外とする
 - 新しい工程別モデル設定キーの新設: `plan-review-executor`が解決する工程は既存の`plan_model`
   （起草とレビュー指摘反映）と`plan_review_model`（計画レビュー）のいずれかであり、新しい工程を持たないため採らない
 
