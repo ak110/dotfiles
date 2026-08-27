@@ -307,7 +307,15 @@ Codexが`agent-toolkit/agents/*.md`の名前付きagentを呼び出す場合だ�
   既存の単一ファイル形式は読み取り互換として維持し、新規作成では生成しない
   （2026年8月、利用者指示。レーンへ終端工程や進捗ログの編集権限を渡さない知識境界のため）
 - フィードバック実体を全件保持し削除しない（2026年6月の削除運用を転換）
-- 計画作成中の通常型フィードバックは専用の`planning`へ移し、`process-loop`のready集合、TBD、一般編集及びユーザーコメントから分離する。計画作成途中の項目を実装対象として扱わない状態境界を優先する
+- 計画作成中の通常型フィードバックは専用の`planning`へ移し、公開一覧の`active`・`processable`、`process-loop`のready集合、TBD、一般編集及びユーザーコメントから分離する。計画作成途中の項目を実装対象として扱わず、必要な場合は`--status=planning`を明示して参照する状態境界を優先する
+- キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`とする。公開一覧の`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は通常の自動処理へ渡せる`inbox`・`processing`だけを表示する。`hold`・`editing`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない
+- `hold`は`inbox`または`processing`から移動し、`unhold`では`inbox`へ戻す。保留元を推測して`processing`へ戻す経路、保留中の編集・採否・削除及び強制削除の候補化は行わない
+- `editing`は元状態、セッションID、本文ハッシュを保持する永続的な編集状態とする。保存・取り消しは有効なセッションIDを検証して元状態へ戻し、エディター異常終了・切断では自動回復しない。`atk mq edit --recover`だけが明示的な管理者回復として既存セッションを無効化する
+- 新設状態遷移はindex全体のcleanを確認してから実行し、commit前の失敗では対象パスを開始時へ復元する。commit後のpush失敗では確定済み状態と完全OIDを保持して`atk mq commit`へ誘導し、状態遷移を再送しない。編集開始後の保存・取り消しは`atk mq edit --resume SESSION_ID`で継続する
+- serveの`POST /api/entries/commit`は空JSONで滞留commitを明示復旧し、`commit`・`recovered_from`・`rebased`・`push_pending`・`retryable`を返す。詳細画面は保留時のOIDと`recovered_from`が一致した場合だけ表示を更新し、状態遷移や編集セッションを再送しない
+- `atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-json`でテキスト表示へ戻す。`--json`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
+- `atk mq list`のテキスト表示はstdoutがTTYの場合だけ端末幅に応じて短縮し、非TTYでは`target_repo`と要約を全文で保持する。人間TTYの幅適応は維持する
+- `atk mq convert-to-plan FILENAME...`は全入力を事前検証して1回のロック・commit・任意pushで処理し、`--skip-push`ではcommitを保持してpushだけを省略する。commit前の失敗で部分変換を残さない
 - 同一バッチの複数項目は1つ以上の統合計画へまとめ、1件ずつの直列処理をしない。
   計画ファイルの分割は対象ファイル集合の重なりと検証境界の独立性を主判定とする。
   計画ファイルの分割はレビューの単位、レーンは実装の並列性とworktreeの書込所有権を分ける単位とする。先行成果へ依存しない計画ファイルは1計画ファイルにつき1レーンへ割り当てる。後続計画が先行計画の成果へ明示的に依存する場合だけ、依存順を記録して同じレーンで逐次実装する。変更対象ファイルの重なりと変更規模はレーン割当の入力にせず、異なるレーン間の競合はrebase時に解消する

@@ -47,7 +47,7 @@ toolkitは自身の排他区間外で他プロセスが行うfetchを管理し�
 
 通常型フィードバックをファイル名で計画化するため、`inbox`と`processing`の間に`planning`状態を置く。
 `processing`はprocess-loopの実装対象であるため、計画作成途中の項目を同じ状態へ置くと、計画未完了の項目を実装へ渡す境界が失われる。
-`planning`は一覧、詳細、重複判定及び強制削除ではactiveとして扱うが、TBDの配置先、readiness、process-loop、一般編集、ユーザーコメント及び既存の計画変換の対象から除外する。
+`planning`は計画作業中の明示状態として一覧・詳細で確認できるが、`active`・`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集、ユーザーコメント及び既存の計画変換の対象から除外する。必要な場合は`--status=planning`を明示して参照する。
 
 通常型フィードバックのファイル名を1件以上指定した場合はファイル名モードとし、全対象が同一対象リポジトリのinbox通常型feedbackであることを計画調査前に一括検証する。
 検証後に`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行し、ファイル名昇順で全対象をplanningへ移す。
@@ -66,6 +66,28 @@ toolkitは自身の排他区間外で他プロセスが行うfetchを管理し�
 `atk mq reject`は、process-loop内で要求の全てを不採用と確定した項目だけに用いる。
 採用済み内容を統合した元項目と、別リポジトリへ移管して投入先を検収した元項目は、統合先又は移管先をnoteへ記録して`rm`で除去する。
 技術的な失敗、入力不足、外部条件待ちは不採用へ変換せず、TBD依存を追加してactive状態に保つ。
+
+### キュー状態と公開一覧
+
+キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`である。公開一覧の`active`は`inbox`、`processing`、`editing`、`hold`を表示し、計画作業中の`planning`は含めない。`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。`hold`と`editing`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
+
+`hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`、`hold`以外の`unhold`及び保留中の編集・採否・削除は拒否する。強制削除は`hold`と`editing`を候補へ含めない。
+
+`editing`は本文を編集セッション中に保持する永続状態であり、開始時に元状態、セッションID、本文ハッシュをメタデータへ保存する。保存または取り消しは有効なセッションIDを検証して元状態へ戻し、メタデータを削除する。エディター異常終了や切断で自動回復せず、`atk mq edit --recover`による明示的な管理者回復だけが既存セッションを無効化して状態を戻す。commit前の失敗は対象状態と本文を復元し、commit後のpush失敗は確定済み状態と完全OIDを保持して`atk mq commit`へ誘導する。
+
+新設状態遷移の前処理ではindex全体がcleanであることを確認し、対象外のstageを成功commitへ混入させない。push前の同期失敗は状態不変・再試行可として返し、pushだけの失敗は同じ状態遷移を再送せず滞留commitを明示復旧する。編集開始後の継続は`atk mq edit --resume SESSION_ID`で保存または取り消しを選ぶ。
+
+serveの`POST /api/entries/commit`は空JSONを受理して滞留commitを復旧し、`commit`、`recovered_from`、`rebased`、`push_pending`及び`retryable`を完全OID付きで返す。詳細画面の復旧操作はpush保留時のOIDと`recovered_from`が一致した場合だけ表示を更新し、状態遷移や編集セッションの操作を再送しない。不一致または復旧失敗時は保留状態と入力を保持する。
+
+明示復旧中のrebaseが失敗した場合は`git rebase --abort`を実行する。abort成功時は`retryable: true`として再試行できる。abortにも失敗してrebase中間状態が残る場合は`git_state: rebase_in_progress`、`manual_recovery_required: true`及び`retryable: false`を返し、管理repoの手動復旧が完了するまでCLIと画面の再試行を禁止する。
+
+### 一覧出力と計画変換
+
+`atk mq list`は、`AI_AGENT`、`CODEX_CI`、`CLAUDECODE`、`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力する。`--json`はJSON Lines、`--no-json`は従来のテキスト表示、`--count`は件数だけの表示として優先する。この既定変更は`list`だけに適用し、`show`、状態遷移及び編集CLIの既存テキスト出力は変更しない。
+
+テキスト表示の`target_repo`と要約は、stdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
+
+`atk mq convert-to-plan FILENAME...`は入力全体を事前検証してから1つのロック区間で計画本文を更新し、1回のcommitとpushへまとめる。`--skip-push`ではcommitを保持したままpushだけを省略する。入力検証、作業ツリーまたはindexのclean検査、対象の書込み、commit及びpushを分離し、commit前の失敗では対象パスの作業ツリーとindexを開始時へ戻して部分変換を残さない。
 
 ### session-reviewコメントの由来と編集境界
 
