@@ -3037,6 +3037,18 @@ def test_agent_written_text_prefers_established_terms_before_new_terms() -> None
     assert "エージェントが記述する全ての文章へ適用" in referent
 
 
+def test_evidence_reproduction_and_recovery_contracts_are_distributed_to_codex() -> None:
+    """実測の再現条件と裏付け手段の回復契約をCodex向け生成物へ配布する。"""
+    rules = _AGENT_RULES.read_text(encoding="utf-8")
+    codex = _CODEX_AGENTS_ADAPTER.read_text(encoding="utf-8")
+
+    for text in (rules, codex):
+        assert "観測事象、再現条件、観測した版数及び再検証手段" in text
+        assert "そろえられない条件差を記録し、その結果を条文の失効根拠に用いない" in text
+        assert "導入、再認証又は対象に適した別手段で裏付け手段を回復できるか確認する" in text
+        assert "回復可否を確認する前に手段の不在も裏付け不能も結論しない" in text
+
+
 def test_problem_solution_proportionality_contract_is_complete() -> None:
     """問題側の入力、候補比較、複雑化時の再評価を共通規範と詳細参照文書へ保持する。"""
     agent_rules = _AGENT_RULES.read_text(encoding="utf-8")
