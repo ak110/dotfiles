@@ -1357,7 +1357,7 @@ def test_session_review_advisor_scans_successful_warning_output_after_extraction
     scan_at = advisor.index(
         "抽出実行後に同スクリプトへ`--warn`、`--stats`、`--hook-notices`をそれぞれ付けた3回の照会を、1回のBash呼び出しで連結して実行する"
     )
-    timeline_at = advisor.index("既定の抽出結果と各照会から")
+    timeline_at = advisor.index("既定の抽出結果は問題の発見と完了前自己照合に使用できるが")
     assert extraction_at < scan_at < timeline_at
     for phrase in (
         "照会ごとにフラグを判別できる区切りと終了コードを出力へ含める",
@@ -1453,7 +1453,8 @@ def test_session_review_advisor_queries_before_reading_transcript_directly() -> 
     """追加調査を照会モード優先とし、transcriptの直接読解をfallbackへ限定する。"""
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
-    assert "`--grep <正規表現>`又は`--detail <行番号...>`で" in advisor
+    assert "問題の観測には`--detail <行番号...>`、`--stats`、`--warn`又は`--hook-notices`の照会結果を用いる" in advisor
+    assert "`--grep <正規表現>`で該当箇所を探し" in advisor
     assert "照会で問題の観測を確定できない場合に限りtranscriptを直接読む" in advisor
     design = _DESIGN_DOC.read_text(encoding="utf-8")
     assert "照会で問題の観測を確定できない場合のfallback" in design
@@ -1868,12 +1869,12 @@ def test_session_review_evidence_extraction_is_advisor_owned_and_main_rechecks_e
     receiver = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
     assert "scripts/_session_review_evidence.py" in receiver
-    assert "既定の抽出結果と各照会から" in receiver
-    assert "受領済み`transcript_path`を既存の証拠抽出器へ一度だけ渡して" in sender
-    assert "読み取り専用で既定の証拠を再抽出する" in sender
+    assert "既定の抽出結果は問題の発見と完了前自己照合に使用できるが、問題の証拠位置には使用しない" in receiver
+    assert "受領済み`transcript_path`を既存の証拠抽出器へ`--index`付きで一度だけ渡し" in sender
+    assert "読み取り専用で証拠索引を照会する" in sender
     assert "transcript_path`の絶対パス" in sender
     assert "`${CLAUDE_PLUGIN_ROOT}`を現行plugin rootとして使う" in sender
-    assert '"<plugin root>/scripts/_session_review_evidence.py" <transcript_path>' in sender
+    assert '"<plugin root>/scripts/_session_review_evidence.py" <transcript_path> --index' in sender
     assert "advisorの問題一覧を独立した観測入力として扱い" in sender
     assert "checked_user_events" in receiver
     assert "problems:" in receiver
@@ -1938,18 +1939,19 @@ def test_session_review_separates_problem_observation_from_main_judgment() -> No
         "advisorが全利用者入力を点検",
         "確認済みイベントID一覧を機械検収する",
         "問題一覧についてだけ、メインが介入、原因、処置及び発火時点を確定する",
-        "取得元で実行した完全な引数列と順序を表す`query`",
+        "問題一覧の各証拠は、`--detail`・`--stats`・`--warn`又は`--hook-notices`のいずれかについて",
         "異なる`--detail`引数列は別のqueryとして扱い、まとめて再照会しない",
+        "既定抽出はadvisorの問題発見と完了前自己照合に使用できるが、問題の証拠位置には使用しない",
         "`query`へ利用者入力や自由形式の本文、grepの検索本文を記録せず",
-        "既定の利用者入力を含む全ての照会結果へ同じlocator契約を適用する",
     ):
         assert phrase in criteria
     for phrase in (
         "全利用者入力を過不足なく覆う",
         "問題一覧が参照する証拠位置を機械的に検収する",
         "提案基準と環境固有観点を適用し、原因分析から提案投入までを確定する",
-        "取得元で実行した完全な引数列と順序を表す`query`",
-        "異なる`--detail`引数列をまとめない",
+        "`--index`を1回実行し",
+        "問題一覧の証拠位置は`--detail`、`--stats`、`--warn`又は`--hook-notices`の完全なqueryと`event_index`だけを保持し",
+        "問題一覧が参照するdistinctな完全queryを同じ引数列と順序で各1回だけ再実行する",
         "新しい永続状態・所有者・表示経路・証拠抽出機構を追加しない",
     ):
         assert phrase in design
@@ -1963,13 +1965,15 @@ def test_session_review_main_rechecks_user_events_and_problem_references() -> No
     validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n## ")[0]
 
     for phrase in (
-        "既定の再抽出結果を`query=default`の照会結果としてそのまま使い",
-        "distinctな完全`query`文字列を、同じ引数列と順序で各1回だけ再実行する",
+        "受領済み`transcript_path`を既存の証拠抽出器へ`--index`付きで一度だけ渡し",
+        "メインは索引照会結果を`checked_user_events`の構造検収だけに用いる",
+        "`query=default`を持つ問題は判断材料に用いない",
+        "問題一覧が参照するdistinctな完全`query`文字列は、同じ引数列と順序で各1回だけ再実行する",
         "異なる`--detail`引数列を1回の照会へまとめない",
         "各`locator`が`event_index`だけを持ち",
         "advisorが実行したものと同じ完全引数列の照会結果内に対象イベントが存在することを確認する",
         "locatorの形式が異なる、又は対象イベントが存在しない証拠を持つ問題は判断材料に用いない",
-        "再抽出結果の全`kind=user`イベントから`(sequence, line)`列を作成し",
+        "索引照会結果の全`kind=user`イベントから`(sequence, line)`列を作成し",
         "advisorの`checked_user_events`の値・件数・順序が一致することを機械的に確認する",
         "advisorが初回報告又は外部訂正後の返却で`evidence_insufficient`を返した場合",
         "初回照合で値・件数・順序が一致しない場合",
@@ -1985,7 +1989,7 @@ def test_session_review_main_rechecks_user_events_and_problem_references() -> No
     ):
         assert phrase in validation
 
-    initial_check_at = validation.index("メインは再抽出結果の全`kind=user`イベントから`(sequence, line)`列を作成し")
+    initial_check_at = validation.index("メインは索引照会結果の全`kind=user`イベントから`(sequence, line)`列を作成し")
     correction_at = validation.index("初回照合で値・件数・順序が一致しない場合")
     recheck_at = validation.index("メインは訂正済み`completed`の累積出力へ")
     classification_at = validation.index("メインはこの照合で問題か否かを再分類しない")
@@ -1993,15 +1997,16 @@ def test_session_review_main_rechecks_user_events_and_problem_references() -> No
 
     receiver = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
     for phrase in (
-        "query: default | --warn | --stats | --hook-notices | --detail <実際に渡した全行番号を同じ順序で列挙>",
+        "query: --warn | --stats | --hook-notices | --detail <実際に渡した全行番号を同じ順序で列挙>",
         "event_index: <当該照会のJSONL出力内における対象イベントの0始まりの位置>",
         "各証拠には実際に実行した照会の完全な引数列を順序どおり`query`へ記録し",
         "複数行を一度の`--detail`へ渡した場合は、実際に渡した全行番号と順序を同じ`query`へ保持する",
-        "`--grep`で見つけた箇所は`--detail`で照会する",
+        "`--grep <正規表現>`で該当箇所を探し、見つけた箇所を`--detail`で照会する",
         "`query`とlocatorへ利用者入力や自由形式の本文、grepの検索本文を記録しない",
         "`summary`、`observed_event`及び`unverified`は問題の判別に必要な範囲へ要約し",
     ):
         assert phrase in receiver
+    assert "query: default |" not in receiver
     for forbidden in (
         "JSONイベント。キーと値を変えずに保持する",
         "そのJSONイベントをlocatorに使う",

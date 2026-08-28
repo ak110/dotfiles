@@ -1244,6 +1244,151 @@ def _read_jsonl(capsys: pytest.CaptureFixture[str]) -> list[dict]:
     return [json.loads(line) for line in captured.out.splitlines()]
 
 
+def test_index_mode_projects_claude_events_without_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Claude形式の索引が既定順序を保ち、本文を返さないことを検証する。"""
+    long_text = "索引へ含めない長い本文" * 1000
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": long_text}},
+            {
+                "type": "assistant",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "途中結果"}]},
+            },
+            {"type": "user", "message": {"role": "user", "content": "次の入力"}},
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--index"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert events == [
+        {"kind": "user", "sequence": 1, "line": 1},
+        {"kind": "final-result", "sequence": 2, "line": 2},
+        {"kind": "user", "sequence": 3, "line": 3},
+    ]
+    assert long_text not in json.dumps(events, ensure_ascii=False)
+    assert all(set(event) <= {"kind", "sequence", "line"} for event in events)
+
+
+def test_index_mode_projects_codex_events_without_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codex形式の索引が既定順序を保ち、本文を返さないことを検証する。"""
+    long_text = "Codex索引へ含めない長い本文" * 1000
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": long_text}]},
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "途中結果"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "agent_message", "message": "Message Type: FINAL_ANSWER\n完了報告"},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--index"]) == 0
+
+    events = _read_jsonl(capsys)
+    assert events == [
+        {"kind": "user", "sequence": 1, "line": 1},
+        {"kind": "final-result", "sequence": 2, "line": 2},
+        {"kind": "agent-completion", "sequence": 3, "line": 3},
+    ]
+    assert long_text not in json.dumps(events, ensure_ascii=False)
+    assert all(set(event) <= {"kind", "sequence", "line"} for event in events)
+
+
+def test_index_mode_projects_fallback_to_location_fields(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """取得不能又は実行系不明の索引がfallback本文を返さないことを検証する。"""
+    invalid = tmp_path / "invalid.jsonl"
+    invalid.write_text("{invalid\n", encoding="utf-8")
+    unknown_dir = tmp_path / "unknown"
+    unknown_dir.mkdir()
+    unknown = _write_transcript(unknown_dir, [{"type": "unknown"}])
+
+    raw_paths: list[str | None] = [
+        None,
+        "relative-transcript.jsonl",
+        str(tmp_path / "missing.jsonl"),
+        str(invalid),
+        str(unknown),
+    ]
+    for raw_path in raw_paths:
+        arguments = ["--index"] if raw_path is None else [raw_path, "--index"]
+        assert evidence.main(arguments) == 0
+        assert _read_jsonl(capsys) == [{"kind": "fallback", "sequence": 1}]
+
+
+def test_index_mode_returns_no_events_for_empty_valid_transcript(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """空の有効transcriptでは空の索引を返す。"""
+    transcript = tmp_path / "empty.jsonl"
+    transcript.write_text("\n", encoding="utf-8")
+
+    assert evidence.main([str(transcript), "--index"]) == 0
+    assert _read_jsonl(capsys) == []
+
+
+@pytest.mark.parametrize(
+    "query_args",
+    [
+        ["--warn"],
+        ["--grep", "依頼"],
+        ["--detail", "1"],
+        ["--stats"],
+        ["--hook-notices"],
+    ],
+)
+def test_index_mode_is_exclusive_with_existing_query_modes(
+    query_args: list[str],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """索引と既存5照会の併用を既存と同じ引数誤用として拒否する。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+
+    assert evidence.main([str(transcript), "--index", *query_args]) == 2
+
+    events = _read_jsonl(capsys)
+    assert events == [{"kind": "error", "text": "--index・--warn・--grep・--detail・--stats・--hook-noticesは併用できない"}]
+
+
+def test_index_mode_does_not_change_default_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """索引追加後もフラグなしの既定出力が本文を含む既存形式であることを検証する。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "本文"}}])
+
+    assert evidence.main([str(transcript)]) == 0
+    default_events = _read_jsonl(capsys)
+    assert default_events == [{"kind": "user", "text": "本文", "line": 1, "sequence": 1}]
+
+    assert evidence.main([str(transcript), "--index"]) == 0
+    assert _read_jsonl(capsys) == [{"kind": "user", "sequence": 1, "line": 1}]
+
+
 def test_warn_mode_reports_matching_entries_with_line_and_tool(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -3965,16 +4110,6 @@ def _hook_attachment(attachment: dict) -> dict:
     ("query_args", "event_index", "expected_event"),
     [
         (
-            [],
-            1,
-            {
-                "kind": "user",
-                "text": "locatorへ含めない利用者本文2",
-                "line": 2,
-                "sequence": 2,
-            },
-        ),
-        (
             ["--warn"],
             0,
             {
@@ -4026,7 +4161,7 @@ def test_query_event_is_a_stable_problem_locator(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """全照会結果の同じ位置から利用者入力、統計、警告、hook通知及び詳細を再取得する。"""
+    """既存照会結果の同じ位置から統計、警告、hook通知及び詳細を再取得する。"""
     transcript = _write_transcript(
         tmp_path,
         [

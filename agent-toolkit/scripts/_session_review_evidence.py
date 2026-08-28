@@ -6,6 +6,7 @@
 """Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
 
 既定モードは時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
+`--index`は既定のイベント列から`kind`・`sequence`・存在する場合の`line`だけを射影し、構造検収用の位置情報をJSONLで出力する。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 
@@ -702,6 +703,11 @@ def load_and_extract(raw_path: str | None) -> list[dict[str, Any]]:
 def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
     """読み込み済みレコードから行番号付きの時系列イベントを取得する。"""
     return extract([record.entry for record in records], [record.line for record in records])
+
+
+def _index_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """抽出済みイベントから構造検収用の位置情報だけを射影する。"""
+    return [{key: event[key] for key in ("kind", "sequence", "line") if key in event} for event in events]
 
 
 _CLAUDE_TOKEN_KEYS = (
@@ -2158,7 +2164,7 @@ def _print_error(text: str) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """既定の抽出と照会モードの引数を定義する。"""
+    """既定の抽出、索引及び照会モードの引数を定義する。"""
     parser = argparse.ArgumentParser(
         description=(
             "transcriptから振り返り用の時系列証拠を抽出・照会する。--statsは経過時間、トークン消費、"
@@ -2172,6 +2178,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "transcript_path",
         nargs="?",
         help="transcriptの絶対パス。省略時と読み込み失敗時はfallback指示を出力する。",
+    )
+    parser.add_argument(
+        "--index",
+        action="store_true",
+        help="既定のイベント列からkind・sequence・存在する場合のlineだけを射影して照会する。",
     )
     parser.add_argument(
         "--warn",
@@ -2217,12 +2228,16 @@ def main(argv: list[str] | None = None) -> int:
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if sum((args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices)) > 1:
-        return _print_error("--warn・--grep・--detail・--stats・--hook-noticesは併用できない")
+    if sum((args.index, args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices)) > 1:
+        return _print_error("--index・--warn・--grep・--detail・--stats・--hook-noticesは併用できない")
 
     records = _load_records(args.transcript_path)
     if records is None:
-        _print_events(_fallback())
+        _print_events(_index_events(_fallback()) if args.index else _fallback())
+        return 0
+
+    if args.index:
+        _print_events(_index_events(_extract_records(records)))
         return 0
 
     if args.warn:
