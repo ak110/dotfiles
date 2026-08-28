@@ -30,6 +30,7 @@ user-invocable: false
 - 対象リポジトリ
 - プロジェクト規範
 - 元のユーザー指示と提示素材の出所・引用範囲
+- 呼び出し元が当該計画専用に作成した計画レビュー用managed temp領域の絶対パス
 
 ## 実行
 
@@ -37,13 +38,18 @@ user-invocable: false
 レビュー担当へ渡すタスク文書は`plan-mode/references/plan-review-task.md`だけとし、同文書が要求する入力と作成・レビュー規範を併せて渡す。
 レビュー表の操作書式は`atk review-table --help`と使用するサブコマンドの`--help`を実行して確認し、
 受領した構造検査スクリプトの絶対パスを初回・再レビューの入力へ保持する。
+受領した当該計画専用managed temp領域の絶対パスを保持し、別の計画へ使用しない。各ラウンドの指摘受領後かつ計画担当への修正指示前に、`plan-review-delegation.md`の「計画再レビューの前回版」に従って同じ領域へ前回版を保存・検収し、その前回版だけを機械差分へ使用する。
+計画担当の修正後は、検収済みの前回版、機械差分、変更した見出し、採用指摘との対応及び直接影響範囲を同じレビュー担当へ渡す。
+前回版、差分、検収値のいずれかが欠けた場合は累積全体の再監査へ戻らず、`needs_escalation`で返す。
+再レビューを実施するたびに再レビュー回数を加算し、各回の前回版、保存直後と再レビュー直前の検収値、機械差分を該当ラウンドと対応付けて保持する。初回レビューで収束した場合は再レビュー0回として、前回版を保存していないことを完了報告へ含める。
+レビュー収束時は`plan-review-delegation.md`の`cleanup_evidence`を組み立てる。再レビュー0回では計画ファイル（メイン）と専用領域の対応、`baseline_not_saved: true`、空の`rounds`を返す。再レビュー1回以上では各ラウンドの対象計画、全前回版のパス、保存直後と再レビュー直前のバイト数・SHA-256、機械差分の対応を返す。必須項目を構成できない場合や対応を検収できない場合は`completed`を返さず、専用領域を保持させるため`needs_escalation`で返す。
 初回レビュー前に計画ファイル（メイン）と同じstemのレビュー表の絶対パスを解決し、存在を確認する。未作成の場合だけ`atk review-table init <レビュー表>`を実行し、既存の場合は初期化せず表を保持する。その後、
-`atk review-table validate --allow-unanswered <レビュー表>`を実行する。初期化、構造検証又は各ラウンドのstrict検証に失敗した場合は
+`atk review-table validate --allow-unanswered <レビュー表>`を実行する。初期化、構造検証、各ラウンドのstrict検証のいずれかに失敗した場合は
 レビューを完了せず`needs_escalation`で返す。同じレビュー表を全ラウンドへ渡し、各ラウンドの応答後に`atk review-table validate <レビュー表>`を実行する。
 レビュー担当の起動直前に`atk config get plan_review_model`を実行し、`runtime-routing.md`「工程別モデル設定」に従って経路を解決する。
 初回レビューの完了報告は`plan-review-delegation.md`が定める被覆証拠を検収し、欠落がある状態でレビュー完了を返さない。
 レビュー指摘は加工せず、計画ファイルの現在の実装担当へ全件配送する。
-ユーザー確認を要する指摘と、自身の職務として列挙されていない判断は反映せず、事象、期待値、実際値、発生条件、直接的原因及び必要な判断を`needs_escalation`で呼び出し元へ返す。
+ユーザー確認を要する指摘と、自身の職務として列挙されていない判断は反映せず、事象、期待値、実際値、発生条件、直接的原因、必要な判断を`needs_escalation`で呼び出し元へ返す。
 
 ## 出力
 
@@ -51,6 +57,24 @@ user-invocable: false
 status: completed | needs_escalation
 plan: <計画ファイルの絶対パス、実在・分量の証跡、1〜2文の要約>
 レビュー: <ラウンド数と全ての指摘の解消状況>
+cleanup_evidence:
+  plan: <計画ファイル（メイン）の絶対パス>
+  managed_temp: <当該計画専用managed temp領域の絶対パス>
+  rereview_count: <再レビュー回数>
+  baseline_not_saved: <true | false>
+  rounds:
+    - round: <再レビューのラウンド番号>
+      target_plan: <対象計画ファイルの絶対パス>
+      previous_files:
+        - path: <前回版の絶対パス>
+          bytes_after_save: <保存直後のバイト数>
+          sha256_after_save: <保存直後のSHA-256>
+          bytes_before_rereview: <再レビュー直前のバイト数>
+          sha256_before_rereview: <再レビュー直前のSHA-256>
+          mechanical_diff:
+            current_path: <対応する現行計画ファイルの絶対パス>
+            exit_code: <diffの終了コード0又は1>
+            verified: true
 escalation:
 - <ユーザー確認を要する指摘、根拠、必要な判断。無ければ「なし」>
 阻害要因:

@@ -1867,6 +1867,136 @@ def test_feedbacks_planner_contract_separates_coordination_from_writes() -> None
     assert "各フィードバックごとの調査スレッド" not in text
 
 
+def test_plan_review_baselines_are_isolated_per_plan_and_round() -> None:
+    """複数計画の同一ラウンド前回版を計画専用領域へ分離する。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    direct_skill = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
+    coordination = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
+
+    for phrase in (
+        "1計画につき1つ作成する",
+        "別の計画と共有せず",
+        "同じ計画の保存・検収・機械差分・全ラウンドだけに使用する",
+        "他の計画で作成した絶対パスを再利用しない",
+        "当該計画の領域だけを独立して回収し",
+        "他の計画の開始と収束のいずれも回収条件にしない",
+        "同じラウンド番号の前回版を別の計画と同じ領域へ保存しない",
+    ):
+        assert phrase in planner
+    for phrase in (
+        "1計画につき1回`atk managed-temp create --prefix plan-review-baseline`",
+        "当該計画専用managed temp領域内の保存先",
+        "当該計画専用managed temp領域の前回版だけを対象",
+        "当該計画専用managed temp領域に保存して検収した前回版",
+        "各計画の領域を独立して回収し",
+        "別の計画の開始又は収束を回収条件にしない",
+    ):
+        assert phrase in delegation
+    assert "別の計画へ使用しない" in executor
+    assert "その前回版だけを機械差分へ使用する" in executor
+    for caller in (planner, direct_skill):
+        assert "`cleanup_evidence`" in caller
+        assert "欠落、不一致、中断又は失敗時は領域を保持" in caller
+    assert "`implementation-review`の単一`track`へ指摘を追加する" in coordination
+    assert "準拠系と盲検系" not in coordination
+    assert "自系統以外の`track`" not in coordination
+
+    create_at = planner.index("当該計画の計画レビュー開始前に`atk managed-temp create")
+    review_at = planner.index("`plan-review-task.md`", create_at)
+    cleanup_at = planner.index("`atk managed-temp cleanup --path <当該計画専用managed temp領域", review_at)
+    assert create_at < review_at < cleanup_at
+
+    first = pathlib.PurePosixPath("/managed/plan-a") / "round-1.main.previous"
+    second = pathlib.PurePosixPath("/managed/plan-b") / "round-1.main.previous"
+    assert first.name == second.name
+    assert first != second
+
+
+def test_plan_review_cleanup_without_rereview_requires_no_baseline() -> None:
+    """再レビュー0回では計画との対応と前回版不存在を回収条件にする。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    direct_skill = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
+
+    for document in (planner, direct_skill, delegation):
+        assert "再レビュー0回" in document
+        assert "`round-*.previous`の前回版が存在しない" in document
+    for caller in (planner, direct_skill):
+        assert "`rereview_count: 0`" in caller
+        assert "`baseline_not_saved: true`" in caller
+        assert "`rounds: []`" in caller
+    assert "初回レビューで収束した場合は再レビュー0回" in executor
+    assert "前回版を保存していないことを完了報告へ含める" in executor
+
+
+def test_plan_review_cleanup_after_one_rereview_requires_evidence() -> None:
+    """再レビュー1回では保存物と検収結果を計画・ラウンドへ対応付ける。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    direct_skill = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+
+    for document in (planner, direct_skill, delegation):
+        assert "再レビュー1回以上" in document
+        assert "保存直後と再レビュー直前" in document
+    for caller in (planner, direct_skill):
+        assert "`baseline_not_saved: false`" in caller
+        assert "`rereview_count`と`rounds`の要素数" in caller
+        assert "`verified: true`" in caller
+
+
+def test_plan_review_cleanup_after_multiple_rereviews_checks_each_round() -> None:
+    """複数回の再レビューでは各回の保存物と機械差分を照合する。"""
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+    direct_skill = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    executor = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
+
+    for document in (planner, direct_skill, delegation):
+        assert "各再レビュー" in document
+        assert "前回版" in document
+    assert "再レビューを実施するたびに再レビュー回数を加算" in executor
+    assert "各回の前回版" in executor
+    assert "該当ラウンドと対応付けて保持" in executor
+    assert "再レビュー回数" in _h2_section(executor, "出力")
+
+
+def test_plan_review_cleanup_evidence_fields_match_both_direct_callers() -> None:
+    """実行担当の構造化証拠と両直接呼び出し元の受信項目を一致させる。"""
+    executor_output = _h2_section(_PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8"), "出力")
+    evidence_output = executor_output.partition("cleanup_evidence:\n")[2].partition("\nescalation:")[0]
+    sender_fields = set(re.findall(r"^\s+(?:- )?([a-z][a-z0-9_]*):", evidence_output, re.MULTILINE))
+    expected_fields = {
+        "plan",
+        "managed_temp",
+        "rereview_count",
+        "baseline_not_saved",
+        "rounds",
+        "round",
+        "target_plan",
+        "previous_files",
+        "path",
+        "bytes_after_save",
+        "sha256_after_save",
+        "bytes_before_rereview",
+        "sha256_before_rereview",
+        "mechanical_diff",
+        "current_path",
+        "exit_code",
+        "verified",
+    }
+    assert sender_fields == expected_fields
+
+    for caller_path in (_FEEDBACKS_PLANNER, _PLAN_AND_ADD_FEEDBACK):
+        caller = caller_path.read_text(encoding="utf-8")
+        _, marker, remainder = caller.partition("受信する`cleanup_evidence`の項目は")
+        assert marker
+        receiver_fields = set(re.findall(r"`([a-z][a-z0-9_]*)`", remainder.partition("とする。\n")[0]))
+        assert receiver_fields == expected_fields
+
+
 def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     """調査担当の担当件数別取得と起草・初回レビューの一括取得境界を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")

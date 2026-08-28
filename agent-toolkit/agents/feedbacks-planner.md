@@ -28,6 +28,9 @@ reject・hold判定の主体、時機、責務境界は`../skills/process-feedba
 実装レビューの表ライフサイクル、モデル解決及び収束判定は`plan-mode/references/review-loop-coordination.md`を正本として適用する。
 各レビュー担当へ自系統以外の`track`の行や出力を渡さず、同じ表へ異なる`track`で指摘を追加する。
 
+計画レビュー用managed temp領域は、手順5から手順8までの計画ごとの反復内で1計画につき1つ作成する。
+各領域を計画ファイル（メイン）の絶対パスと対応付け、別の計画と共有せず、同じ計画の保存・検収・機械差分・全ラウンドだけに使用する。
+
 ## 入力
 
 入力欄を復元する時点で`../skills/process-feedbacks/references/feedbacks-planner-io.md`を全文読み、同文書の入力契約を適用する。
@@ -108,8 +111,9 @@ reject・hold判定の主体、時機、責務境界は`../skills/process-feedba
    `feedbacks-planner`の計画担当が既存の許可条件と明文化済み方針に基づく推奨案を暫定判断として確定する。
    未回答事項による実装・検証の条件分岐を残さない単一経路で計画を起草し、レビュー指摘を反映する。
 6. 計画レビュースレッドの起動直前に`atk config get plan_review_model`を実行して経路を解決する。
-   現行plugin rootから`skills/plan-mode/scripts/check_plan_file.py`の実在する絶対パスを解決し、`plan-review-task.md`とともに
-   計画構造検査スクリプトの絶対パスを渡して、新規識別子で起動する。再レビューでも同じ絶対パスを入力へ保持する。
+   現行plugin rootから`skills/plan-mode/scripts/check_plan_file.py`の実在する絶対パスを解決する。
+   当該計画の計画レビュー開始前に`atk managed-temp create --prefix plan-review-baseline`を単独で実行し、標準出力の絶対パスを当該計画専用として保持する。他の計画で作成した絶対パスを再利用しない。
+   `plan-review-task.md`、計画構造検査スクリプトの絶対パス及び当該計画専用managed temp領域の絶対パスを渡して、新規識別子で起動する。再レビューでも同じ絶対パスを入力へ保持する。
    キューにない素材の逐語本文・回答全文は計画外の明示入力として、計画担当へ渡した値を初回レビュー担当へも保持して渡す。
 7. レビュー指摘を加工せず計画担当へ全件配送する。
    配送文へ`reviewee-standards/SKILL.md`と`plan-review-delegation.md`の絶対パスを含め、採否の確定に用いる正本として示す。
@@ -120,6 +124,10 @@ reject・hold判定の主体、時機、責務境界は`../skills/process-feedba
    `runtime-routing.md`「工程別モデル設定」に従う。
    計画担当への新規起動又は継続接続の直前は`plan_model`、レビュー担当の再レビュー直前は`plan_review_model`を再取得する。
 8. 計画成果物（計画ファイル（メイン）・計画ファイル（詳細）、バグ対応では分離先バグ調査ファイル）の実在と分量、計画構造検査、レビュー収束、起動前後のGit状態を検収する。
+   `plan-review-executor`の完了出力から`cleanup_evidence`を受信する。受信する`cleanup_evidence`の項目は`plan`、`managed_temp`、`rereview_count`、`baseline_not_saved`、`rounds`、`round`、`target_plan`、`previous_files`、`path`、`bytes_after_save`、`sha256_after_save`、`bytes_before_rereview`、`sha256_before_rereview`、`mechanical_diff`、`current_path`、`exit_code`及び`verified`とする。
+   レビュー収束後は、当該計画の再レビュー回数を検収する。再レビュー0回では、`cleanup_evidence`の`plan`と`managed_temp`が作成時の保持値に一致し、`rereview_count: 0`、`baseline_not_saved: true`及び`rounds: []`であることを照合する。当該計画専用managed temp領域に`round-*.previous`の前回版が存在しないことも照合する。再レビュー1回以上では、`baseline_not_saved: false`、`rereview_count`と`rounds`の要素数の一致及び各再レビューについて保存した全前回版を照合する。各前回版の保存直後と再レビュー直前のバイト数・SHA-256及び機械差分の検収結果が、当該計画、現存する前回版と該当ラウンドへ対応し、`verified: true`であることも照合する。
+   `cleanup_evidence`と必須項目が揃い、該当する回収前照合に成功した場合に限り、`atk managed-temp cleanup --path <当該計画専用managed temp領域の絶対パス>`を単独で実行する。欠落、不一致、中断又は失敗時は領域を保持し、レビュー収束を成功として扱わない。
+   複数計画では当該計画の再レビュー回数を独立して照合し、当該計画の領域だけを独立して回収し、他の計画の開始と収束のいずれも回収条件にしない。他の計画の再レビュー回数も回収条件にしない。同じラウンド番号の前回版を別の計画と同じ領域へ保存しない。
 
 `explore-template.md`、作成規範スキル、バグ調査のタスク文書、レビュータスク文書は各受信者が読み込む。
 自身は採否とレビュー収束に使う正本及び成果物の検収に必要な正本だけを読む。

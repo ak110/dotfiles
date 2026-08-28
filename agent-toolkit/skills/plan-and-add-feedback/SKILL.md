@@ -52,6 +52,13 @@ description: >
 
 計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:add-feedback`をSkill機能で起動し、source `plan`（人間由来）を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
+自然言語要件モードで`plan-review-executor`を直接起動した実行主体は、`status: completed`で`cleanup_evidence`を受信する。受信する`cleanup_evidence`の項目は`plan`、`managed_temp`、`rereview_count`、`baseline_not_saved`、`rounds`を含む。
+`rounds`の各要素は`round`、`target_plan`、`previous_files`を含む。`previous_files`の各要素は`path`、`bytes_after_save`、`sha256_after_save`、`bytes_before_rereview`、`sha256_before_rereview`、`mechanical_diff`を含む。
+`mechanical_diff`は`current_path`、`exit_code`、`verified`を含み、ここまでの全項目を必須とする。
+計画レビュー収束後、計画ファイルの実在と分量を照合する。再レビュー0回では、`cleanup_evidence`の`plan`と`managed_temp`が作成時の保持値に一致することを照合する。`rereview_count: 0`、`baseline_not_saved: true`、`rounds: []`であり、専用領域に`round-*.previous`の前回版が存在しないことも照合する。
+再レビュー1回以上では、`baseline_not_saved: false`であり、`rereview_count`と`rounds`の要素数が一致することを照合する。各再レビューについて保存した全前回版、保存直後と再レビュー直前のバイト数・SHA-256、機械差分の検収結果が当該計画、現存する前回版と該当ラウンドへ対応することも照合する。`verified: true`も必須とする。
+計画ファイルの実在と分量の照合だけでは回収前照合の成功としない。`cleanup_evidence`と必須項目が揃い、該当する回収前照合に成功した場合に限り、保持した絶対パスを`atk managed-temp cleanup --path <計画レビュー用managed temp領域の絶対パス>`へ渡して回収する。欠落、不一致、中断又は失敗時は領域を保持し、計画レビューを成功として扱わない。
+
 本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文をadd-feedbackへ渡した後は問い直さない。
 
 ## 完了報告の形式
