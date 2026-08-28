@@ -191,23 +191,6 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """認証応答を公開出力へ混在させない。"""
-        environment_names = (
-            "FORCE_PROMPT_CACHING_5M",
-            "CLAUDE_CODE_PROMPT_CACHE_TTL",
-            "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
-            "ENABLE_PROMPT_CACHING_1H",
-            "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
-            "ANTHROPIC_API_KEY",
-            "ANTHROPIC_AUTH_TOKEN",
-            "ANTHROPIC_BASE_URL",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_MANTLE",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-            "CLAUDE_CODE_USE_ANTHROPIC_AWS",
-        )
-        for name in environment_names:
-            monkeypatch.delenv(name, raising=False)
 
         def fake_run(cmd: list[str], *args: object, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
             del args

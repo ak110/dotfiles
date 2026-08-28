@@ -9,28 +9,6 @@ import pytest
 
 _FIVE_MINUTE_SCHEDULE = "*/3 * * * *"
 _ONE_HOUR_SCHEDULE = "*/30 * * * *"
-_ENVIRONMENT_NAMES = (
-    "FORCE_PROMPT_CACHING_5M",
-    "CLAUDE_CODE_PROMPT_CACHE_TTL",
-    "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
-    "ENABLE_PROMPT_CACHING_1H",
-    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_BASE_URL",
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_MANTLE",
-    "CLAUDE_CODE_USE_VERTEX",
-    "CLAUDE_CODE_USE_FOUNDRY",
-    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
-)
-
-
-@pytest.fixture(autouse=True)
-def _clear_wait_schedule_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """判定対象の環境変数をテストごとに除去する。"""
-    for name in _ENVIRONMENT_NAMES:
-        monkeypatch.delenv(name, raising=False)
 
 
 def _fail_if_auth_status_is_called(*args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:

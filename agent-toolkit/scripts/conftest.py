@@ -10,6 +10,21 @@ import pytest
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
 _GIT_IDENTITY_NAME = "test"
 _GIT_IDENTITY_EMAIL = "test@example.invalid"
+_WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
+    "FORCE_PROMPT_CACHING_5M",
+    "CLAUDE_CODE_PROMPT_CACHE_TTL",
+    "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
+    "ENABLE_PROMPT_CACHING_1H",
+    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_MANTLE",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -49,6 +64,13 @@ def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
     （`_setup_notes`等）が担う。
     """
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+
+
+@pytest.fixture(autouse=True)
+def _clear_wait_schedule_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TTL判定用の環境変数を各テストの実行環境から除去する。"""
+    for name in _WAIT_SCHEDULE_ENVIRONMENT_NAMES:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
