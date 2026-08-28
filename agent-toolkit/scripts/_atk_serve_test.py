@@ -189,6 +189,14 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     assert assets.HTML.count(">tbd<") == 2
     assert ">今すぐ同期<" in assets.HTML
     assert 'placeholder="本文・ファイル名・対象・投入元を検索"' in assets.HTML
+    source_filter = re.search(r'<select id="source-filter">(.*?)</select>', assets.HTML, re.DOTALL)
+    assert source_filter is not None
+    assert re.findall(r'<option value="([^"]*)">(.*?)</option>', source_filter.group(1)) == [
+        ("", "すべて"),
+        ("human", "human"),
+        ("agent", "agent"),
+    ]
+    assert "source-empty-filter" not in assets.HTML
     assert "dataset.unansweredTbd" in assets.JS
     assert "種別不明" in assets.JS
 
@@ -358,7 +366,7 @@ const ids = [
   'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button', 'global-error',
   'global-error-message', 'global-error-close-button',
   'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'answer-filter',
-  'target-filter', 'source-filter', 'source-empty-filter', 'entry-count',
+  'target-filter', 'source-filter', 'entry-count',
   'result-status', 'list-warning', 'list-fallback-notice', 'loading-indicator', 'entry-list', 'empty-state',
   'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-create-button',
   'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
@@ -689,8 +697,7 @@ const targetCell = feedbackCells[1];
   const summary = feedbackCells[3].textContent;
 elements['kind-filter'].value = 'feedback';
 elements['answer-filter'].value = 'no';
-elements['source-filter'].value = 'web';
-elements['source-empty-filter'].checked = true;
+elements['source-filter'].value = 'agent';
 syncFilterDependencies();
 elements['result-status'].textContent = '変更しない';
 renderList([], false);
@@ -729,8 +736,8 @@ process.stdout.write(JSON.stringify({
         "sseStatus": "変更しない",
         "answerValue": "all",
         "answerDisabled": True,
-        "sourceValue": "",
-        "sourceDisabled": True,
+        "sourceValue": "agent",
+        "sourceDisabled": False,
     }
 
 
@@ -1855,8 +1862,8 @@ process.stdout.write(JSON.stringify({
     }
 
 
-def test_create_success_resets_filters_and_opens_created_detail() -> None:
-    """追加成功後は既定条件へ戻し、返却されたファイルの詳細を開く。"""
+def test_create_success_resets_filters_and_keeps_list() -> None:
+    """追加成功後は既定条件へ戻し、返却されたファイルを一覧へ残して詳細を開かない。"""
     result = _run_node_ui(
         """
 elements['create-dialog'].open = true;
@@ -1870,10 +1877,6 @@ const listed = {
   kind: 'feedback', state: 'inbox', filename: 'new.md', answered: null,
   summary: '新しい本文', target_repo: 'example/repo', frontmatter_entries: []
 };
-const detailed = {
-  ...listed, content: 'raw', body_html: '<p>新しい本文</p>',
-  question_type: 'free-form', choices: []
-};
 fetchHandler = async (url, options) => {
   if (url.endsWith('/api/entries') && options.method === 'POST') {
     return {ok: true, status: 201, statusText: 'Created', json: async () => ({filenames: ['new.md']})};
@@ -1884,9 +1887,6 @@ fetchHandler = async (url, options) => {
   if (url.includes('/api/entries?')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [listed], warnings: []})};
   }
-  if (url.endsWith('/api/entries/inbox/new.md')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: detailed})};
-  }
   throw new Error('想定外のURL: ' + url);
 };
 await createEntry({preventDefault() {}});
@@ -1895,8 +1895,9 @@ process.stdout.write(JSON.stringify({
   state: elements['state-filter'].value,
   search: elements['search-input'].value,
   detailOpen: elements['detail-dialog'].open,
-  current: currentEntry.filename,
+  current: currentEntry ? currentEntry.filename : null,
   body: elements['detail-content'].innerHTML,
+  listCount: elements['entry-list'].children.length,
   createCalls: fetchCalls.filter(call => call.url.endsWith('/api/entries') && call.options.method === 'POST').length
 }));
 """
@@ -1905,9 +1906,10 @@ process.stdout.write(JSON.stringify({
         "kind": "all",
         "state": "active",
         "search": "",
-        "detailOpen": True,
-        "current": "new.md",
-        "body": "<p>新しい本文</p>",
+        "detailOpen": False,
+        "current": None,
+        "body": "",
+        "listCount": 1,
         "createCalls": 1,
     }
 
@@ -2852,6 +2854,44 @@ def test_operations_source_empty_filter_returns_items_with_missing_or_empty_sour
 
 
 @pytest.mark.asyncio
+async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(tmp_path: pathlib.Path) -> None:
+    """一覧APIは投入元分類を適用し、既存のraw投入元フィルターを維持する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    for filename, source in [
+        ("agent.md", "agent"),
+        ("alert-monitor.md", "alert-monitor"),
+        ("review.md", "session-review"),
+        ("human.md", "web"),
+        ("empty.md", None),
+    ]:
+        metadata = "type: feedback\ntarget_repo: example/repo"
+        if source is not None:
+            metadata += f"\nsource: {source}"
+        (inbox / filename).write_text(f"---\n{metadata}\n---\n\n本文\n", encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    agent = await client.get("/api/entries?status=inbox&type=feedback&source_kind=agent")
+    human = await client.get("/api/entries?status=inbox&type=feedback&source_kind=human")
+    raw = await client.get("/api/entries?status=inbox&type=feedback&source=session-review")
+    empty = await client.get("/api/entries?status=inbox&type=feedback&source_empty=true")
+
+    assert {item["filename"] for item in (await agent.get_json())["entries"]} == {
+        "agent.md",
+        "alert-monitor.md",
+        "review.md",
+    }
+    assert {item["filename"] for item in (await human.get_json())["entries"]} == {"empty.md", "human.md"}
+    assert [item["filename"] for item in (await raw.get_json())["entries"]] == ["review.md"]
+    assert {item["filename"] for item in (await empty.get_json())["entries"]} == {"empty.md"}
+
+
+@pytest.mark.asyncio
 async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
     """`type`欠落は必須キー不足として400を返す。"""
     app = serve_app.create_app(
@@ -3705,6 +3745,9 @@ def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatc
         ("get", "/api/entries?q=", None),
         ("get", "/api/entries?source_empty=false", None),
         ("get", "/api/entries?source=web&source_empty=true", None),
+        ("get", "/api/entries?source_kind=unknown", None),
+        ("get", "/api/entries?source_kind=agent&source=web", None),
+        ("get", "/api/entries?source_kind=human&source_empty=true", None),
         (
             "post",
             "/api/entries",
@@ -4646,7 +4689,6 @@ const runCase = async (token, count) => {
   elements['answer-filter'].value = 'all';
   elements['target-filter'].value = '';
   elements['source-filter'].value = '';
-  elements['source-empty-filter'].checked = false;
   const fallbackEntries = Array.from({length: count}, (_, index) => ({
     kind: 'feedback', state: 'adopted', filename: `${token}-${index}.md`, summary: token
   }));
@@ -4672,8 +4714,7 @@ const runCase = async (token, count) => {
       state: elements['state-filter'].value,
       answer: elements['answer-filter'].value,
       target: elements['target-filter'].value,
-      source: elements['source-filter'].value,
-      sourceEmpty: elements['source-empty-filter'].checked
+      source: elements['source-filter'].value
     },
     urls: fetchCalls.map(call => call.url)
   };
@@ -4718,7 +4759,6 @@ elements['state-filter'].value = 'all';
 elements['answer-filter'].value = 'all';
 elements['target-filter'].value = '';
 elements['source-filter'].value = '';
-elements['source-empty-filter'].checked = false;
 fetchHandler = async url => {
   if (url !== '/atk/api/entries?type=all&status=all&answered=all&q=all-filters-only&page=1') {
     throw new Error('想定外のURL: ' + url);
@@ -4754,7 +4794,6 @@ process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, 
             "answer": "all",
             "target": "",
             "source": "",
-            "sourceEmpty": False,
         }
     for name in ("none", "six"):
         assert result[name]["rows"] == []

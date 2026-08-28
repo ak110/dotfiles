@@ -193,13 +193,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .additional-filters { margin-top: var(--space-2); }
 .additional-filters h3 { margin: 0 0 var(--space-2); font-size: inherit; }
-.checkbox-field {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  grid-column: 2;
-}
-.checkbox-field input { width: auto; }
 .entry-pane { min-height: 34rem; }
 .entry-columns, .entry-select {
   display: grid;
@@ -504,7 +497,6 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
   .app-layout { grid-template-columns: 1fr; padding: var(--space-2); }
   .entry-pane { min-height: 0; }
   .filter-grid { grid-template-columns: 1fr; }
-  .checkbox-field { grid-column: auto; }
   dialog.dialog-shell { width: calc(100% - 1rem); max-height: calc(100svh - 1rem); }
   .dialog-frame { max-height: calc(100svh - 1rem); }
   .dialog-header, .dialog-body, .dialog-footer { padding-inline: var(--space-3); }

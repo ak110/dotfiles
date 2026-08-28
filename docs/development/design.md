@@ -46,7 +46,7 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 
 通常型フィードバックをファイル名で計画化するため、`inbox`と`processing`の間に`planning`状態を置く。
 `processing`はprocess-loopの実装対象であるため、計画作成途中の項目を同じ状態へ置くと、計画未完了の項目を実装へ渡す境界が失われる。
-`planning`は計画作業中の明示状態として一覧・詳細で確認できるが、`active`・`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集、ユーザーコメント及び既存の計画変換の対象から除外する。必要な場合は`--status=planning`を明示して参照する。
+`planning`は計画作業中の明示状態として一覧・詳細で確認できる。feedback用の`active`表示には含めるが、`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集、ユーザーコメント及び既存の計画変換の対象から除外する。必要な場合は`--status=planning`を明示して参照する。
 
 通常型フィードバックのファイル名を1件以上指定した場合はファイル名モードとし、全対象が同一対象リポジトリのinbox通常型feedbackであることを計画調査前に一括検証する。
 検証後に`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行し、ファイル名昇順で全対象をplanningへ移す。
@@ -68,7 +68,7 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 
 ### キュー状態と公開一覧
 
-キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`である。公開一覧の`active`は`inbox`、`processing`、`editing`、`hold`を表示し、計画作業中の`planning`は含めない。`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。`hold`と`editing`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
+キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`である。feedback用の公開一覧の`active`は`inbox`、`planning`、`processing`、`editing`、`hold`を表示する。TBDの`active`には`planning`を含めない。`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。`hold`と`editing`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
 
 `hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`、`hold`以外の`unhold`及び保留中の編集・採否・削除は拒否する。強制削除は`hold`と`editing`を候補へ含めない。
 
@@ -483,7 +483,7 @@ advisorが都度組み立てるワンライナーによるtranscript再解析を
 advisorがtranscriptを直接読む経路は、照会で問題の観測を確定できない場合のfallbackとして残す。
 照会CLIへ評価基準を持たせる案は、判断契約の正本を`generation-criteria-detail.md`から分岐させるため採用しない。
 activeなフィードバックの一覧をadvisorの起動文へ複製する案は、メインが「提案の確定」で
-`atk mq list --status=active --target-repo=<repo-path> --skip-pull`を一度実行して照合するため採用しない。
+`atk mq list --status=active --type=feedback --target-repo=<repo-path> --skip-pull`を一度実行して照合するため採用しない。
 advisorはこの照合を担わず、一覧も起動文へ渡さない。
 証拠収集だけを別モデルのサブエージェントへ分割する案は、起動固定費と契約保守費が恒常費として残る一方、
 同じ削減を照会CLIで得られるため採用しない。

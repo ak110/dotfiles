@@ -70,11 +70,11 @@
           <label for="target-filter">対象リポジトリ</label>
           <select id="target-filter"><option value="">すべて</option></select>
           <label for="source-filter">投入元</label>
-          <input id="source-filter" type="text">
-          <label class="checkbox-field" for="source-empty-filter">
-            <input id="source-empty-filter" type="checkbox">
-            投入元が空
-          </label>
+          <select id="source-filter">
+            <option value="">すべて</option>
+            <option value="human">human</option>
+            <option value="agent">agent</option>
+          </select>
         </div>
       </section>
     </aside>

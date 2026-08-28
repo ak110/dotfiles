@@ -264,7 +264,7 @@ def _write_entries(root: Path) -> None:
     rejected.mkdir()
     long_body = "\n\n".join(f"段落{i} `inline-{i}`" for i in range(80))
     (inbox / "question.md").write_text(
-        "---\ntype: tbd\ntarget_repo: example/repo\nsource: browser\npriority: high\n"
+        "---\ntype: tbd\ntarget_repo: example/repo\nsource: session-review\npriority: high\n"
         f"z_key: z\na_key: a\n{_LONG_UNKNOWN_FRONTMATTER_KEY}: long\n"
         "metadata:\n  branch: main\n  flags:\n    - one\nquestion_type: choice\nchoices: A, B\n---\n\n"
         f"## 質問\n\n{long_body}\n\n```text\n折り返す長いコード {'x' * 240}\n```\n\n"
@@ -272,7 +272,8 @@ def _write_entries(root: Path) -> None:
         encoding="utf-8",
     )
     (inbox / "feedback.md").write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\nsource: browser\nplan_file: /tmp/plan.md\n---\n\n編集対象の本文\n",
+        "---\ntype: feedback\ntarget_repo: example/repo\nsource: alert-monitor\n"
+        "plan_file: /tmp/plan.md\n---\n\n編集対象の本文\n",
         encoding="utf-8",
     )
     (inbox / "unknown.md").write_text("種別を判定できない本文\n", encoding="utf-8")
@@ -630,10 +631,19 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#kind-filter").select_option("feedback")
     await playwright.async_api.expect(page.locator("#answer-filter")).to_be_disabled()
     assert await page.locator("#answer-filter").input_value() == "all"
-    await page.locator("#source-filter").fill("browser")
-    await page.locator("#source-empty-filter").check()
-    await playwright.async_api.expect(page.locator("#source-filter")).to_be_disabled()
-    assert await page.locator("#source-filter").input_value() == ""
+    assert await page.locator("#source-filter option").all_text_contents() == ["すべて", "human", "agent"]
+    async with page.expect_response(
+        lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=agent&page=1")
+    ):
+        await page.locator("#source-filter").select_option("agent")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
+    await playwright.async_api.expect(feedback_row).to_be_visible()
+    async with page.expect_response(
+        lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=human&page=1")
+    ):
+        await page.locator("#source-filter").select_option("human")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
+    await playwright.async_api.expect(empty_row).to_be_visible()
     await page.locator("#clear-filters-button").click()
 
     await page.locator("#target-filter").select_option("example/repo")
@@ -740,8 +750,7 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     await page.locator("#state-filter").select_option("all")
     await page.locator("#answer-filter").select_option("all")
     await page.locator("#target-filter").select_option("")
-    await page.locator("#source-filter").fill("")
-    await page.locator("#source-empty-filter").uncheck()
+    await page.locator("#source-filter").select_option("")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     request_urls.clear()
     async with page.expect_response(
@@ -884,6 +893,37 @@ async def test_pending_edit_and_closed_delete_route_results(browser_harness: _Br
     harness.operations.remove_release.set()
     await page.get_by_role("status").filter(has_text="削除しました").wait_for(state="visible")
     assert harness.operations.remove_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_edit_success_does_not_depend_on_auxiliary_detail_get(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """本文保存の成功を後続の詳細取得失敗へ変換しない。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    feedback_row = page.locator('.entry-select[data-key="inbox/feedback.md"]')
+    await feedback_row.click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.get_by_role("button", name="編集", exact=True).click()
+    edit_input = detail.locator("#edit-content")
+    await edit_input.fill((await edit_input.input_value()) + "\n保存追記")
+    request_methods: list[str] = []
+
+    async def fail_detail_get(route: playwright.async_api.Route) -> None:
+        request_methods.append(route.request.method)
+        if route.request.method == "GET":
+            await route.fulfill(status=500, json={"error": "詳細を再取得できませんでした。"})
+            return
+        await route.continue_()
+
+    await page.route("**/api/entries/inbox/feedback.md", fail_detail_get)
+    await detail.get_by_role("button", name="保存", exact=True).click()
+    await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
+    await detail.wait_for(state="hidden")
+    assert request_methods == ["PUT"]
+    await page.unroute("**/api/entries/inbox/feedback.md", fail_detail_get)
 
 
 @pytest.mark.asyncio
@@ -1401,8 +1441,8 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
     await create_dialog.wait_for(state="hidden")
     assert harness.operations.add_calls[-1]["target_repo"] is None
     detail = page.get_by_role("dialog", name="詳細")
-    await detail.wait_for(state="visible")
-    await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("frontmatter指定の本文")
+    await playwright.async_api.expect(detail).to_be_hidden()
+    await page.locator("#entry-list .entry-select").filter(has_text="frontmatter指定の本文").wait_for(state="visible")
 
 
 @pytest.mark.asyncio
@@ -1448,8 +1488,11 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     }
     await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
     assert "## ユーザーコメント\n\n最初のコメント" in path.read_text(encoding="utf-8")
-    await playwright.async_api.expect(comment_button).to_be_focused()
+    await playwright.async_api.expect(detail).to_be_hidden()
 
+    await page.locator('.entry-select[data-key="inbox/feedback.md"]').click()
+    await detail.wait_for(state="visible")
+    comment_button = detail.get_by_role("button", name="ユーザーコメント", exact=True)
     await comment_button.click()
     await playwright.async_api.expect(comment_input).to_have_value("最初のコメント")
     await comment_input.fill("置換後のコメント")
@@ -1468,6 +1511,9 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     assert "置換後のコメント" in saved
     assert "最初のコメント" not in saved
 
+    await page.locator('.entry-select[data-key="inbox/feedback.md"]').click()
+    await detail.wait_for(state="visible")
+    comment_button = detail.get_by_role("button", name="ユーザーコメント", exact=True)
     await comment_button.click()
     await comment_input.fill("SSE中も保持する入力")
     path.write_text(saved.replace("通常本文", "SSE外部更新本文"), encoding="utf-8")
@@ -1491,6 +1537,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     assert retry_payload["expected_content"] == latest
     await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
     assert "競合後も保持する入力" in path.read_text(encoding="utf-8")
+    await playwright.async_api.expect(detail).to_be_hidden()
     assert harness.operations.user_comment_calls == 4
 
 

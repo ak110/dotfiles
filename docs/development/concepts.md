@@ -313,8 +313,8 @@ source欠落と`human`は本文の既定を人間由来とし、それ以外は�
   既存の単一ファイル形式は読み取り互換として維持し、新規作成では生成しない
   （2026年8月、利用者指示。レーンへ終端工程や進捗ログの編集権限を渡さない知識境界のため）
 - フィードバック実体を全件保持し削除しない（2026年6月の削除運用を転換）
-- 計画作成中の通常型フィードバックは専用の`planning`へ移し、公開一覧の`active`・`processable`、`process-loop`のready集合、TBD、一般編集及びユーザーコメントから分離する。計画作成途中の項目を実装対象として扱わず、必要な場合は`--status=planning`を明示して参照する状態境界を優先する
-- キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`とする。公開一覧の`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は通常の自動処理へ渡せる`inbox`・`processing`だけを表示する。`hold`・`editing`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない
+- 計画作成中の通常型フィードバックは専用の`planning`へ移し、TBDの`active`・`processable`、`process-loop`のready集合、一般編集及びユーザーコメントから分離する。feedback用の公開一覧の`active`表示には`planning`を含めるが、計画作成途中の項目を自動処理や実装対象として扱わず、必要な場合は`--status=planning`を明示して参照する状態境界を優先する
+- キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`とする。feedback用の公開一覧の`active`は`inbox`・`planning`・`processing`・`editing`・`hold`、TBDの`active`には`planning`を含めず、`processable`は通常の自動処理へ渡せる`inbox`・`processing`だけを表示する。`hold`・`editing`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない
 - `hold`は`inbox`または`processing`から移動し、`unhold`では`inbox`へ戻す。保留元を推測して`processing`へ戻す経路、保留中の編集・採否・削除及び強制削除の候補化は行わない
 - `editing`は一覧と既存データの状態判定で認識する。今回の状態追加を理由に、永続的な編集セッション、専用の復旧状態又はpush再試行APIを新設しない
 - `atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-json`でテキスト表示へ戻す。`--json`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
