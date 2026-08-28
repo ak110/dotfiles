@@ -99,17 +99,18 @@ def test_current_output_is_synced() -> None:
         )
     )
     assert precedence_contract in priority_section
-    host_hierarchy_contract = "\n".join(
-        (
-            "Codexでは、system、developer、userのホスト命令階層を常に優先する。",
-            "`AGENTS.md`、プロジェクト指示及びagent-toolkit共有規範は、それらを配送したroleの範囲で適用し、上位roleの指示を上書きしない。",
-            "`01-agent.md`「方針が衝突する場合の優先順位」は、Codexではホスト命令階層を適用した後に残る同一role内のプロジェクト方針、慣例、共有規範の順位として読み替える。",
-        )
+    host_hierarchy_contract = (
+        "Codexでは、system、developer、userのホスト命令階層を常に優先する。",
+        "`AGENTS.md`、プロジェクト指示及びagent-toolkit共有規範は、それらを配送したroleの範囲で適用し、上位roleの指示を上書きしない。",
+        "`01-agent.md`「方針が衝突する場合の優先順位」は、Codexではホスト命令階層を適用した後に残る同一role内のプロジェクト方針、慣例及び共有規範の順位として読み替える。",
     )
-    assert host_hierarchy_contract in codex_base
-    assert host_hierarchy_contract not in shared_rules
-    assert codex_base.index(host_hierarchy_contract) < codex_base.index(
-        "Codexホストが提供する公開能力と個別ツールの契約が共有規範と異なる場合は、"
+    assert all(contract_line in codex_base for contract_line in host_hierarchy_contract)
+    assert all(contract_line not in shared_rules for contract_line in host_hierarchy_contract)
+    assert (
+        codex_base.index(host_hierarchy_contract[0])
+        < codex_base.index(host_hierarchy_contract[1])
+        < codex_base.index(host_hierarchy_contract[2])
+        < codex_base.index("Codexホストが提供する公開能力と個別ツールの契約が共有規範と異なる場合は、")
     )
     for codex_contract in (
         "Codexホストが提供する公開能力と個別ツールの契約が共有規範と異なる場合は、この節の契約を共有規範へ優先して適用する。",
