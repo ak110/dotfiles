@@ -2718,19 +2718,24 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
 
 
-def test_operations_active_excludes_planning_feedback(tmp_path: pathlib.Path) -> None:
-    """一覧APIのactive状態は計画作成中のフィードバックを含めない。"""
+def test_operations_active_includes_planning_feedback_but_excludes_planning_tbd(tmp_path: pathlib.Path) -> None:
+    """一覧APIのactive状態はplanning feedbackを含め、planning TBDを除外する。"""
     planning = tmp_path / "planning"
     planning.mkdir()
     (planning / "planned.md").write_text(
         "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n計画作成中\n",
         encoding="utf-8",
     )
+    (planning / "planned-tbd.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n計画作成中TBD\n",
+        encoding="utf-8",
+    )
 
     entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "active"})
 
     assert not warnings
-    assert entries == []
+    assert [item["filename"] for item in entries] == ["planned.md"]
+    assert entries[0]["state"] == "planning"
 
 
 @pytest.mark.parametrize(

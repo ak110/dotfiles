@@ -619,16 +619,26 @@ class TestShowProcessing:
         assert "inbox側本文" in captured.out
         assert "processing側本文" not in captured.out
 
-    def test_all_scans_inbox_and_processing(
+    def test_all_scans_feedback_active_states_but_excludes_planning_tbd(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all指定時にinboxとprocessingの双方の本文がグループ化されて出力される。"""
+        """--all指定時にfeedbackのplanningを含め、planningのTBDを除外して出力する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
         _write_feedback_processing_file(notes, "fb-processing.md", body="processing本文")
+        planning_dir = notes / "planning"
+        planning_dir.mkdir(parents=True, exist_ok=True)
+        (planning_dir / "fb-planning.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nplanning本文\n",
+            encoding="utf-8",
+        )
+        (planning_dir / "tbd-planning.md").write_text(
+            "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\nplanning TBD\n",
+            encoding="utf-8",
+        )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -640,6 +650,9 @@ class TestShowProcessing:
         assert "inbox本文" in captured.out
         assert "### fb-processing.md" in captured.out
         assert "processing本文" in captured.out
+        assert "### fb-planning.md" in captured.out
+        assert "planning本文" in captured.out
+        assert "tbd-planning.md" not in captured.out
 
 
 class TestShowProcessedStates:

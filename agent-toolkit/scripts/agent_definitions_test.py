@@ -1485,7 +1485,9 @@ def test_session_review_main_checks_duplicates_with_scoped_queue_list() -> None:
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
 
-    assert "atk mq list --status=active --target-repo=<repo-path> --skip-pull" in skill
+    assert "atk mq list --status=active --type=feedback --target-repo=<repo-path> --skip-pull" in skill
+    assert "atk mq list --status=processable --type=feedback --target-repo=<repo-path> --skip-pull" in skill
+    assert "重複抑止だけに用い、被覆候補の判定へ流用しない" in skill
     assert "既存規範・既存実装との重複" in skill
     assert "反映先のファイルと節の実在、既存契約との整合" in skill
     assert "atk mq" not in advisor
@@ -1926,7 +1928,7 @@ def test_session_review_main_rechecks_user_events_and_problem_references() -> No
 
 
 def test_session_review_requires_root_cause_coverage_before_suppression() -> None:
-    """共通active一覧の検証と原因単位の被覆を抑止判定より先に確認する。"""
+    """active重複抑止一覧とprocessable-ready被覆候補一覧を抑止判定より先に確認する。"""
     criteria = _SESSION_REVIEW_CRITERIA.read_text(encoding="utf-8")
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
@@ -1937,20 +1939,28 @@ def test_session_review_requires_root_cause_coverage_before_suppression() -> Non
     report = _h2_section(criteria, "報告契約")
 
     cause_and_coverage = "証拠からエージェントの誤りがユーザー介入を招いたと確定した候補"
-    active_list = "候補層の判定前に、メインは"
-    active_verification = (
-        "取得した各項目について、状態が`active`、対象リポジトリが同一、`process-loop`で処理可能であることを検証する。"
+    active_list = "重複抑止の判定前に、メインは"
+    active_verification = "取得した各項目について、状態が`active`、対象リポジトリが同一であることを検証する。"
+    active_use = "この一覧は既存規範又はactiveなフィードバックとの重複抑止だけに用い、被覆候補の判定へ流用しない。"
+    processable_list = "被覆候補の判定前に、メインは"
+    processable_verification = (
+        "その結果から状態が`inbox`又は`processing`で、表示上の判定が`ready`である項目だけを"
+        "`process-loop`による被覆候補に用いる。"
     )
-    shared_snapshot = "第1層から第3層までの全候補層の抑止判定は、この検収済み一覧を共通に用いる。"
     root_coverage = "各根本原因を成立させる単位は"
     suppression_judgment = "メインは問題一覧ごとに"
-    active_query = "atk mq list --status=active --target-repo=<repo-path> --skip-pull"
+    active_query = "atk mq list --status=active --type=feedback --target-repo=<repo-path> --skip-pull"
+    processable_query = "atk mq list --status=processable --type=feedback --target-repo=<repo-path> --skip-pull"
     assert validation.count(active_query) == 1
     assert candidate.count(active_query) == 1
+    assert validation.count(processable_query) == 1
+    assert candidate.count(processable_query) == 1
     assert (
         validation.index(active_list)
         < validation.index(active_verification)
-        < validation.index(shared_snapshot)
+        < validation.index(active_use)
+        < validation.index(processable_list)
+        < validation.index(processable_verification)
         < validation.index(cause_and_coverage)
         < validation.index(root_coverage)
         < validation.index(suppression_judgment)
@@ -1971,9 +1981,9 @@ def test_session_review_requires_root_cause_coverage_before_suppression() -> Non
     assert design.index("再発防止処置") < design.index("部分被覆では未被覆単位だけを候補")
 
     assert "現行実装・テスト若しくは反復しない実測により有効性を確認した実装済み処置" in validation
-    assert "同一対象リポジトリで`process-loop`が処理できる有効なactiveフィードバック" in candidate
+    assert "同一対象リポジトリで`process-loop`が処理できる有効なprocessableでreadyのfeedback" in candidate
     active_coverage = (
-        "activeフィードバックを被覆とする条件は、単なる処理可能性だけではない。"
+        "processableでreadyのfeedbackを被覆とする条件は、単なる処理可能性だけではない。"
         "フィードバック本文または対応計画が、対応づける各根本原因単位と、"
         "その単位に必要な是正処置・横展開処置・再発防止処置の全てを覆う根拠を確認する。"
     )
@@ -1981,7 +1991,7 @@ def test_session_review_requires_root_cause_coverage_before_suppression() -> Non
     assert active_coverage in candidate
     assert active_coverage in design
     for document in (validation, candidate, design):
-        assert "対象リポジトリの唯一のactive一覧" in document
+        assert "対象リポジトリの唯一のactive feedback一覧" in document
         assert "`processing`配置を含む" in document
         assert "`process-loop`" in document
         for term in ("状態が`active`", "対象リポジトリが同一"):
@@ -1996,13 +2006,13 @@ def test_session_review_requires_root_cause_coverage_before_suppression() -> Non
         "3. その他の単発ミスは",
     ):
         assert candidate.index(active_list) < candidate.index(layer_marker)
-        assert candidate.index(shared_snapshot) < candidate.index(layer_marker)
+        assert candidate.index(active_use) < candidate.index(layer_marker)
     assert "本文又は対応計画が各根本原因単位と必要な処置の全てを覆う根拠" in report
-    for invalid_item in ("処理不能", "失効済み", "終端済み"):
+    for invalid_item in ("TBD", "planning", "editing", "hold", "readyでない"):
         assert invalid_item in candidate
     assert "原因単位の被覆が部分的な場合は未被覆単位だけを候補" in candidate
     assert "全単位が被覆されている場合だけ「提案無し」" in candidate
-    assert "原因分析と各単位の被覆確認は、候補化及び抑止条件の判定に優先する" in candidate
+    assert "原因分析と各単位の被覆確認は、候補化と抑止条件の判定に優先する" in candidate
     suppression_reason = (
         "「提案を抑止する条件」のいずれかに該当して提案を確定しない場合は、"
         "重複による抑止では対応する既存項目のファイル名又は規範の節名を、"
@@ -2023,7 +2033,7 @@ def test_session_review_requires_root_cause_coverage_before_suppression() -> Non
         "4原因区分・根本原因・類似見直し・三層処置及び各根本原因単位の被覆根拠を報告する。"
         "実装済み処置を使う場合は検証結果を記録する。"
         "反復しない実測を使う場合も記録する。"
-        "activeフィードバックを使う場合は、ファイル名、状態と対象リポジトリを記録する。"
+        "processableでreadyのfeedbackを使う場合は、ファイル名、状態と対象リポジトリを記録する。"
         "被覆単位、本文又は対応計画が各根本原因単位と必要な処置の全てを覆う根拠、"
         "`process-loop`処理可能性と非重複理由も記録する"
     )
@@ -2483,7 +2493,7 @@ def test_session_review_connects_only_proven_intervention_causes_to_bugfix() -> 
     ):
         assert phrase in skill
     assert "各根本原因を成立させる単位" in skill
-    assert "同一対象リポジトリで`process-loop`が処理できる有効なactiveフィードバック" in skill
+    assert "同一対象リポジトリで`process-loop`が処理できる有効なprocessableでreadyのfeedback" in skill
 
 
 def test_session_review_investigates_third_review_by_artifact_and_responsibility() -> None:

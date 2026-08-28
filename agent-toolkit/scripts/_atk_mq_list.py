@@ -193,7 +193,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: active）。
-    `active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を出力する。
+    `active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、
+    `processable`は`inbox`・`processing`を出力する。
     フィードバック側は`inbox`・`planning`・`processing`・`editing`・`hold`・`adopted`・`rejected`・`all`を解釈する。
     `tbd`側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`planning`・`processing`・`adopted`・`rejected`・`all`は
     `tbd`側に作用せず、`tbd` inboxの全件を返す）。

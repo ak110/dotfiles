@@ -332,7 +332,7 @@ class TestListFeedbackStatusAll:
 
 
 class TestListFeedbackStatusActive:
-    """listサブコマンド `--status=active`: フィードバックは`inbox`・`processing`のみを表示し`adopted`・`rejected`を除外する。"""
+    """listサブコマンド `--status=active`: フィードバックのactive状態を表示し終端状態を除外する。"""
 
     def test_active_excludes_adopted_and_rejected(
         self,
@@ -344,6 +344,12 @@ class TestListFeedbackStatusActive:
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
+        planning_dir = notes / "planning"
+        planning_dir.mkdir(parents=True, exist_ok=True)
+        (planning_dir / "fb-planning.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nplanning-body\n",
+            encoding="utf-8",
+        )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted-body")
         rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
@@ -360,6 +366,7 @@ class TestListFeedbackStatusActive:
         captured = capsys.readouterr()
         assert "fb-inbox.md: github.com/example/foo [inbox/normal/ready] in-body" in captured.out
         assert "fb-proc.md: github.com/example/foo [processing/normal/ready] proc-body" in captured.out
+        assert "fb-planning.md: github.com/example/foo [planning/normal/blocked] planning-body" in captured.out
         assert "fb-adopted.md" not in captured.out
         assert "fb-rejected.md" not in captured.out
 
@@ -372,6 +379,12 @@ class TestListFeedbackStatusActive:
         """`--status`省略時、フィードバック側は`adopted`配下を除外し、`tbd`側は未回答を除外する（`--status=active`と同じ結果）。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
+        planning_dir = notes / "planning"
+        planning_dir.mkdir(parents=True, exist_ok=True)
+        (planning_dir / "fb-planning.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nplanning本文\n",
+            encoding="utf-8",
+        )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted本文")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
@@ -389,6 +402,7 @@ class TestListFeedbackStatusActive:
 
         assert default_out == active_out
         assert "fb-inbox.md: github.com/example/foo [inbox/normal/ready] inbox本文" in default_out
+        assert "fb-planning.md: github.com/example/foo [planning/normal/blocked] planning本文" in default_out
         assert "fb-adopted.md" not in default_out
         assert f"{_FIXED_TIMESTAMP}-001.md" in default_out
         assert f"{_FIXED_TIMESTAMP}-002.md" in default_out

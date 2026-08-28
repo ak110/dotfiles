@@ -302,7 +302,8 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active）。"
-            "`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を指す。"
+            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
+            "`processable`は`inbox`・`processing`を指す。"
             "回答状況での限定は`--answered`で別途行う。"
         ),
     )
@@ -351,7 +352,8 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
-            "`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を指す。"
+            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
+            "`processable`は`inbox`・`processing`を指す。"
             "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
     )
