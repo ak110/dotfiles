@@ -557,7 +557,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "--plan-file",
         metavar="ABS_PATH",
         default=None,
-        help="planning項目を計画型feedbackへ編集しprocessingへ移す実在する計画ファイルの絶対パス。",
+        help="planning項目を計画型feedbackへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
     )
     edit.add_argument(
         "--depends-on",

@@ -2649,6 +2649,45 @@ def test_plan_and_add_feedback_restarts_same_session_without_implementation() ->
     assert "実装承認を求める" not in plan_and_add
 
 
+def test_alternative_design_rederives_dependent_decisions_in_plan_and_review_contracts() -> None:
+    """代替設計後の依存判断と状態遷移の出所を計画・レビュー契約へ同期する。"""
+    plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    plan_contract = (
+        "ユーザーが提案した操作が技術的に成立せず代替設計へ変更した場合は、変更した判断だけでなく、"
+        "その操作を前提に確定した判断を未確定へ戻す。"
+        "開始時、成功時、中断時、失敗時及び再開時ごとに、状態、操作主体、次の操作主体を再導出し、"
+        "各判断へ第1段階と第2段階を再適用する。"
+        "独立した外部可視結果は別の確認単位として扱い、代替設計への同意を依存判断への同意に拡張しない。"
+    )
+    review_contract = (
+        "ユーザーが提案した操作の不成立を理由に代替設計を採用した要件では、"
+        "その操作へ依存していた判断が未確定へ戻されたことを確認する。"
+        "開始時、成功時、中断時、失敗時及び再開時について、状態、実行主体、次の実行主体を列挙し、"
+        "追加又は変更された各状態遷移の根拠を、元のユーザー要求、実測に基づく技術判断又は"
+        "個別のユーザー回答のいずれかへ対応付ける。"
+        "独立した外部可視結果への回答を別の結果への同意として扱っている場合は指摘する。"
+    )
+
+    assert "レビュー収束後に最古の項目を本文と`plan_file`の同時編集で計画型へ変換してinboxへ移す。" in plan_and_add
+    assert "残りが1件以上なら1回の`atk mq rm --force`で除去し、残りが0件の単一入力ではrmを呼ばず成功終端する。" in plan_and_add
+    assert "及びinbox配置を照合する。" in plan_and_add
+    assert "昇順最古だけが期待する計画型metadataを持つinboxにあり" in plan_and_add
+    assert "残りがplanning又は統合済みとしてactiveから消えている" in plan_and_add
+    assert "計画型へ変換してprocessingへ移す" not in plan_and_add
+    assert plan_contract in plan_mode
+    assert review_contract in review_task
+    assert (
+        "この追加は代替設計を採用した要件だけへ適用し、全ての設計変更へ新しい状態、分類器又は監査成果物を追加しない。"
+        in review_task
+    )
+    assert (
+        "`## 実施内容`では、ユーザーが明示した要求と代替設計からエージェントが導出した判断を別の行へ分け、"
+        "後者をユーザー指示として扱わない。"
+    ) in plan_mode
+
+
 def test_merge_pr_skips_develop_wait_only_for_identical_refs_without_extra_checks() -> None:
     """developの重複CI待機を安全な条件でだけ省略し、fallbackと後続検収を維持する。"""
     skill = _MERGE_PR.read_text(encoding="utf-8")
