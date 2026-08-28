@@ -155,7 +155,7 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 | --- | --- | --- | --- |
 | 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |
 | 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |
-| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | 公開契約に関係する範囲だけを採用するため。 |
+| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |
 
 ## 提示素材
 
@@ -164,7 +164,7 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 
 ## 変更履歴
 
-### 利用者からの確認
+### ユーザー発言: 本セッションの直接指示
 
 ```text
 公開契約に必要な変更だけを実施する。
@@ -280,7 +280,7 @@ def test_canonical_plan_passes_structure_check() -> None:
 
 
 def test_human_readable_main_and_detail_pass_structure_check() -> None:
-    """新規の人間向けメインとdetailがIDなしの判断・実装契約を満たす。"""
+    """新規の人間向け計画ファイル（メイン）と計画ファイル（詳細）がIDなしの判断・実装契約を満たす。"""
     work_type, main_errors = _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)
     assert work_type == "通常変更"
     assert not main_errors, main_errors
@@ -306,6 +306,58 @@ def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
     assert any("採用以外の`根拠`" in error for error in errors), errors
+
+
+def test_human_readable_history_requires_canonical_user_heading() -> None:
+    """新規書式の直接入力は`ユーザー発言:`見出しと空でない逐語本文を持つ。"""
+    content = _HUMAN_MAIN_CONTENT.replace("### ユーザー発言: 本セッションの直接指示", "### 利用者からの確認", 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("`### ユーザー発言:`見出し" in error for error in errors), errors
+
+
+def test_human_readable_partial_user_instruction_counts_as_adopted() -> None:
+    """ユーザー指示の部分採用も採用済みとして扱う。"""
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "| 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |",
+        "| 公開契約に必要な変更を実装する | ユーザー指示 | 部分採用 | - |",
+        1,
+    )
+    assert _plan_format.has_adopted_human_user_instruction(content)
+
+
+def test_human_readable_action_accepts_review_origin_with_matching_round(tmp_path: pathlib.Path) -> None:
+    """計画レビュー由来の採用行は絶対パスのTSVと同じ正のラウンドを指定する。"""
+    review_path = tmp_path / "review.tsv"
+    review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |",
+        f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | 採用 | {review_path.as_posix()}のround 2 |",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert not errors, errors
+
+
+@pytest.mark.parametrize(
+    ("origin", "root", "expected_error"),
+    [
+        ("計画レビュー第0ラウンド", "-", "`由来`は"),
+        ("計画レビュー第1ラウンド", "{path}のround 2", "計画レビュー由来"),
+    ],
+)
+def test_human_readable_action_rejects_invalid_review_origin_or_root(
+    tmp_path: pathlib.Path, origin: str, root: str, expected_error: str
+) -> None:
+    """計画レビュー由来の採用行は正のラウンドと対応する根拠を必要とする。"""
+    review_path = tmp_path / "review.tsv"
+    review_path.write_text("1\tplan-review\t指摘\n", encoding="utf-8")
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |",
+        f"| 入力の境界を追加確認する | {origin} | 採用 | {root.format(path=review_path.as_posix())} |",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any(expected_error in error for error in errors), errors
 
 
 def test_human_readable_action_rejects_independent_exclusion_table() -> None:
@@ -761,6 +813,7 @@ def test_parse_plan_materials_returns_structured_ids_and_legacy_flag() -> None:
         frozenset({"R-P-001-001", "R-P-001-002", "R-P-002-001"}),
         False,
         frozenset({"R-P-001-001", "R-P-002-001"}),
+        feedback_queue_ids=frozenset({"20260817-223603-001.md"}),
     )
 
     legacy_materials, legacy_errors = _plan_format.parse_plan_materials(_LEGACY_CONTENT)
@@ -1009,6 +1062,17 @@ def test_structured_material_contract_rejects_duplicate_material_id() -> None:
     )
     _materials, errors = _plan_format.parse_plan_materials(content)
     assert any("素材IDが重複している" in error for error in errors), errors
+
+
+def test_structured_material_contract_rejects_duplicate_feedback_queue_id() -> None:
+    """異なる素材IDから同じフィードバックを重複参照できない。"""
+    content = _VALID_CONTENT.replace(
+        "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
+        "| P-002 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
+        1,
+    )
+    _materials, errors = _plan_format.parse_plan_materials(content)
+    assert any("フィードバック素材のキューIDが重複している" in error for error in errors), errors
 
 
 def test_structured_material_contract_rejects_requirement_order_and_gap() -> None:
@@ -1333,19 +1397,152 @@ _VALID_MAIN_CONTENT = _MAIN_CONTENT.format(base=_BASE)
 _VALID_DETAIL_CONTENT = _DETAIL_CONTENT
 
 
+def _canonical_main_content() -> str:
+    """新しい固定H2と、エージェント提案が無い場合の判断節を持つメイン本文を返す。"""
+    content = _VALID_MAIN_CONTENT.replace(
+        "\n## 提示素材\n",
+        "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
+        1,
+    )
+    return content.replace("## 変更履歴", "## 変更履歴（計画時）", 1).replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+
+
+def _canonical_human_main_content() -> str:
+    """新しい固定H2とエージェント提案の判断表を持つ人間向けメイン本文を返す。"""
+    judgment = (
+        "## エージェント判断\n\n"
+        "| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 類似するが対象外の記述は変更しない | 類似箇所は公開契約へ影響しない。 | "
+        "ユーザー要求は公開契約の更新に限定される。 | 類似箇所を対象外として保持する。 | "
+        "対象箇所の実測と差分確認。 |\n\n"
+    )
+    content = _HUMAN_MAIN_CONTENT.replace("\n## 提示素材\n", f"\n{judgment}## 提示素材\n", 1)
+    return content.replace("## 変更履歴", "## 変更履歴（計画時）", 1).replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+
+
 def test_main_and_detail_canonical_pass_structure_check() -> None:
     """新書式のメイン側・detail側の正規形はいずれも構造検査を通過する。"""
-    work_type, main_errors = _plan_format.check_plan_main_structure(_VALID_MAIN_CONTENT)
+    work_type, main_errors = _plan_format.check_plan_main_structure(_canonical_main_content())
     assert work_type == "通常変更"
     assert not main_errors
     assert not _plan_format.check_plan_detail_structure(_VALID_DETAIL_CONTENT, work_type)
 
 
-def test_new_main_rejects_legacy_history_review_identifier() -> None:
-    """新書式のメイン側では旧形式のレビュー指摘IDを拒否する。"""
+def test_main_structure_accepts_new_fixed_headings_and_empty_judgment() -> None:
+    """新しい固定H2と、エージェント提案が無い場合の`なし`を受理する。"""
+    work_type, errors = _plan_format.check_plan_main_structure(_canonical_main_content())
+    assert work_type == "通常変更"
+    assert not errors, errors
+
+
+def test_main_structure_requires_judgment_for_canonical_headings() -> None:
+    """新しい固定H2を使う計画では判断節を省略できない。"""
+    content = _VALID_MAIN_CONTENT.replace("## 変更履歴", "## 変更履歴（計画時）", 1).replace(
+        "## 進捗ログ", "## 進捗ログ（実行時）", 1
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any("`## エージェント判断`が無い" in error for error in errors), errors
+
+
+def test_main_structure_requires_none_when_no_agent_proposal_exists() -> None:
+    """提案行が無い判断節へ任意の説明文を置かない。"""
+    content = _canonical_main_content().replace("## エージェント判断\n\nなし", "## エージェント判断\n\n調査結果を記載する", 1)
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert any("エージェント提案が無い場合は`なし`" in error for error in errors), errors
+
+
+def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> None:
+    """人間向け実施内容のエージェント提案と判断表を一対一で対応させる。"""
+    _work_type, errors = _plan_format.check_plan_main_structure(_canonical_human_main_content())
+    assert not errors, errors
+
+    missing = _canonical_human_main_content().replace(
+        (
+            "| 類似するが対象外の記述は変更しない | 類似箇所は公開契約へ影響しない。 | "
+            "ユーザー要求は公開契約の更新に限定される。 | 類似箇所を対象外として保持する。 | "
+            "対象箇所の実測と差分確認。 |\n"
+        ),
+        "",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(missing)[1]
+    assert any("実施内容`はエージェント提案行と同じ順序" in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        (
+            "| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |",
+            "| 実施内容 | 観測事象 | ユーザー要求との関係 | 根拠 |",
+        ),
+        (
+            (
+                "| 類似するが対象外の記述は変更しない | 類似箇所は公開契約へ影響しない。 | "
+                "ユーザー要求は公開契約の更新に限定される。 | 類似箇所を対象外として保持する。 | "
+                "対象箇所の実測と差分確認。 |"
+            ),
+            (
+                "| 類似するが対象外の記述は変更しない |  | ユーザー要求は公開契約の更新に限定される。 | "
+                "類似箇所を対象外として保持する。 | 対象箇所の実測と差分確認。 |"
+            ),
+        ),
+    ],
+)
+def test_human_main_structure_rejects_judgment_table_shape_or_empty_cells(
+    mutation: tuple[str, str],
+) -> None:
+    """判断表の列不足と空cellを拒否する。"""
+    content = _canonical_human_main_content().replace(*mutation, 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("`## エージェント判断`" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("track", _plan_format.PLAN_HISTORY_TRACK_VALUES)
+def test_main_history_accepts_review_table_track_values(track: str) -> None:
+    """新形式の変更履歴はレビュー表の正規trackを受理する。"""
+    content = _canonical_main_content().replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        f"| R1-{track} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        1,
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert not errors, errors
+
+
+def test_legacy_history_keeps_old_track_compatibility_but_rejects_unknown_track() -> None:
+    """旧形式では旧trackを残せるが、正規値に無いハイフン付き系統名は拒否する。"""
+    accepted = _VALID_CONTENT.replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        "| R1-conformance | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        1,
+    )
+    assert not _plan_format.check_plan_structure(accepted)
+
+    rejected = accepted.replace("R1-conformance", "R1-unknown-track", 1)
+    errors = _plan_format.check_plan_structure(rejected)
+    assert any("系統名は" in error and "正規値" not in error for error in errors), errors
+
+
+@pytest.mark.parametrize("review_id", ["C-002", "H-005", "R1-planreview", "R2-planconformance", "R1-plan", "R5-review"])
+def test_legacy_two_file_main_accepts_legacy_review_ids_and_tracks(review_id: str) -> None:
+    """旧二ファイル計画に残るレビューIDと系統名を読み取り互換で受理する。"""
     content = _VALID_MAIN_CONTENT.replace(
         "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
-        "| C-002 | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
+        1,
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert not any("レビュー指摘行の`ID`" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("review_id", ["C-002", "R1-planreview", "R2-planconformance"])
+def test_new_main_rejects_legacy_history_review_identifier(review_id: str) -> None:
+    """新書式のメイン側では旧形式のレビュー指摘IDを拒否する。"""
+    content = _canonical_main_content().replace(
+        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
@@ -1388,6 +1585,34 @@ def test_detail_structure_accepts_multiple_units_with_dependency() -> None:
         "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n" + second,
     )
     assert not _plan_format.check_plan_detail_structure(content, "通常変更")
+
+
+def test_human_detail_structure_accepts_multiple_ascii_comma_dependencies() -> None:
+    """人間向け実装単位は複数の先行依存をASCIIカンマで列挙できる。"""
+    second = "| 調査結果の整理 | 既存の判断材料を整理する | なし | 2 | `pytest` |\n"
+    content = _HUMAN_DETAIL_CONTENT.replace(
+        "| 回帰検証の追加 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |",
+        second + "| 回帰検証の追加 | 更新後の挙動を検証する | 契約境界の更新, 調査結果の整理 | 3 | `pytest` |",
+        1,
+    )
+    units, errors = _plan_format.parse_plan_implementation_units(content)
+    assert not errors, errors
+    assert units is not None
+    assert units[-1].dependencies == ("契約境界の更新", "調査結果の整理")
+
+
+def test_human_detail_structure_rejects_non_ascii_dependency_separator() -> None:
+    """先行依存の全角読点を区切りとして扱わず、未解決の依存として拒否する。"""
+    content = _HUMAN_DETAIL_CONTENT.replace("契約境界の更新 | 2 |", "契約境界の更新、回帰検証の追加 | 2 |", 1)
+    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    assert any("先行依存`が実装単位表に無い" in error for error in errors), errors
+
+
+def test_human_detail_structure_rejects_ascii_comma_in_unit_name() -> None:
+    """説明的な実装単位名へASCIIカンマを含めない。"""
+    content = _HUMAN_DETAIL_CONTENT.replace("| 契約境界の更新 |", "| 契約境界,更新 |", 1)
+    errors = _plan_format.check_plan_detail_structure(content, "通常変更")
+    assert any("実装単位名へASCIIカンマを含めない" in error for error in errors), errors
 
 
 def test_detail_structure_rejects_dependency_not_preceding_integration_order() -> None:

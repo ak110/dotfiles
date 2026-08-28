@@ -42,15 +42,17 @@ commit直前に次を実施する。
 4. 競合解決後は`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`で競合マーカーが無いことを確認する
 5. commit後に`git status --short`と`git show --stat --oneline HEAD`で成果を実測する
 
-利用者の未コミット変更を混入させない。pre-commitのstashが競合する場合だけ、対象ファイルへ正式な検査を
+ユーザーの未コミット変更を混入させない。pre-commitのstashが競合する場合だけ、対象ファイルへ正式な検査を
 実行済みであることを条件に`--no-verify`を使用できる。検証省略やhook失敗の回避には使用しない。
 
 ## 条件付き手順
 
-- amend、fixup、autosquashを行う直前に`references/history-rewrite.md`を全文読む
-- 実際にpushする直前に`references/push-and-ci.md`を全文読む
+- amend、fixup、autosquashを行う直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
+- 実際にpushする直前に`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
+- CI失敗を扱う直前に`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
+- 計画実装の履歴契約を扱う時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
 - push済みcommitのamend、fixup、rebaseは禁止する。push済み判定は
-  `references/history-rewrite.md`のremote-tracking ref到達判定を用いる
+  `agent-toolkit/skills/commit/references/history-rewrite.md`のremote-tracking ref到達判定を用いる
 - push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルのCI失敗契約で原因を分析する
 
 ## 作業用ブランチと退避物の削除
@@ -97,8 +99,8 @@ commit直前に次を実施する。
 - 形式: `<type>[(<scope>)]: <description>`。破壊的変更は`!`を付ける
 - typeは当該リポジトリのエンドユーザー振る舞いへの影響を基準に選ぶ
   - 「エンドユーザー」はリポジトリの性質で変わる
-    アプリ・サービスでは利用者、開発者向けツール・ライブラリではそれを使う開発者、
-    配布物（プラグインなど）では配布先での利用者やエージェントが該当する
+    アプリ・サービスではエンドユーザー、開発者向けツール・ライブラリではそれを使う開発者、
+    配布物（プラグインなど）では配布先でのエンドユーザーやエージェントが該当する
   - 「当該リポジトリの開発者」と「エンドユーザー」を混同しない
     個人の開発設定だけが変わり配布先振る舞いに影響しない変更は内部的な変更に分類する
   - `feat`/`fix`/`perf`: 機能追加・バグ修正・性能改善
@@ -108,7 +110,7 @@ commit直前に次を実施する。
 - `!`もエンドユーザー振る舞いへの影響を基準に判断する
   lint/format設定・CI/ワークフロー手順・依存グループ入れ替えなど開発者向け設定の変更には付けない
 - 本文中の判断分岐・規範削除・機能的な規範変更は`chore`ではなく`fix`または`refactor`を選ぶ
-- descriptionは日本語で利用者向けの表現で変更内容を簡潔に説明する
+- descriptionは日本語でユーザー向けの表現で変更内容を簡潔に説明する
   - リリースノートへの転記時にscope部分が省略される場合があるため、
     description単独で対象範囲と意図が伝わる粒度で書く（scope情報をdescription側にも自然に含める）
   - 識別子は読者基準で選ぶ。エンドユーザーが呼び出す・設定する・目にする対象
@@ -137,4 +139,4 @@ commit直前に次を実施する。
 採用フィードバックが複数なら複数行でよい）。
 要約は計画ファイルの`## 恒久化・リファクタリング内容`にある再発防止の判断と一致させる。
 
-リリース操作に着手する時点で`references/push-and-ci.md`を全文読み、同文書のリリース手順を適用する。
+リリース操作に着手する時点で`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読み、同文書のリリース手順を適用する。

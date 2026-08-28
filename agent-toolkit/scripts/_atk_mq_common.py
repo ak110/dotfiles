@@ -41,22 +41,38 @@ from _atk_mq_formatters import (
 )
 from _atk_mq_frontmatter import parse_frontmatter
 from _atk_mq_readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
-from _tbd_scan import _ACTIVE_STATES as MQ_ACTIVE_STATES
 from _tbd_scan import _TBD_TYPE as MQ_TYPE_TBD
 from _tbd_scan import is_tbd_answered as _is_tbd_answered
 
 __all__ = ["QueueEntry", "ReadinessResult", "_count_pending_entries", "calculate_readiness"]
 
-# フィードバック管理repoの4状態フォルダー名（管理repoのroot直下）。
+# フィードバック管理repoの状態フォルダー名（管理repoのroot直下）。
 # - `inbox`: 未処理の投入直後
+# - `planning`: 計画作成中。process-loopの着手対象外
 # - `processing`: `start-processing`で処理中に移動された途中状態
+# - `editing`: 外部の編集処理が使用する編集中状態
+# - `hold`: 明示的な解除まで自動処理を保留した状態
 # - `adopted`: 採用として最終処理された状態
 # - `rejected`: 不採用として最終処理された状態
 MQ_STATE_INBOX = "inbox"
+MQ_STATE_PLANNING = "planning"
 MQ_STATE_PROCESSING = "processing"
+MQ_STATE_EDITING = "editing"
+MQ_STATE_HOLD = "hold"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
-MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
+MQ_STATES = (
+    MQ_STATE_INBOX,
+    MQ_STATE_PROCESSING,
+    MQ_STATE_PLANNING,
+    MQ_STATE_EDITING,
+    MQ_STATE_HOLD,
+    MQ_STATE_ADOPTED,
+    MQ_STATE_REJECTED,
+)
+MQ_PROCESSABLE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
+MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_EDITING, MQ_STATE_HOLD)
+MQ_FEEDBACK_ACTIVE_STATES = MQ_ACTIVE_STATES
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
@@ -235,7 +251,7 @@ _PULL_MIN_INTERVAL_SECONDS = 30.0
 直近の同期からの経過時間は`.git/FETCH_HEAD`のmtimeで判定する。
 同ファイルは`git fetch`が実行されるたびに更新され、プロセスを跨いで参照できるため、
 状態ファイルを別途設けずに済む。
-定期バックグラウンド更新の省略と、利用者操作での同期再利用案内に共用する。
+定期バックグラウンド更新の省略と、ユーザー操作での同期再利用案内に共用する。
 """
 
 
@@ -646,7 +662,7 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
     """未回答TBDが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
     entries = [
         (path, entry_repo, text, state)
-        for path, entry_repo, text, state, _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_TBD)
+        for path, entry_repo, text, state, _ in _iter_entries(private_notes, MQ_PROCESSABLE_STATES, target_repo, MQ_TYPE_TBD)
         if not _is_tbd_answered(text)
     ]
     if not entries:
@@ -675,13 +691,13 @@ def _count_feedback(feedback_dir: pathlib.Path, target_repo: str | None = None) 
 
 
 def _max_existing_seq(private_notes: pathlib.Path, timestamp_prefix: str) -> int:
-    """同一タイムスタンププレフィックスを持つファイルの最大連番を、4状態すべてから返す。
+    """同一タイムスタンププレフィックスを持つファイルの最大連番を、5状態すべてから返す。
 
     例えば`{prefix}-001.md`と`{prefix}-003.md`が存在する場合は3を返す。
     非連続連番でも新規生成側で既存ファイルへ衝突しないよう最大値を基準にする。
     inboxのみを走査すると、同一秒に採番したエントリが別状態へ遷移した後の再投入で
     連番が再発行され、`adopted`・`rejected`等の既存エントリと同名衝突を起こすため、
-    4状態フォルダすべてを走査対象にする。
+    5状態フォルダすべてを走査対象にする。
     """
     max_seq = 0
     for state in MQ_STATES:
@@ -787,7 +803,7 @@ def pull(private_notes: pathlib.Path) -> None:
 def pull_if_stale(private_notes: pathlib.Path) -> bool:
     """定期更新が必要ならremote同期し、実行したかを返す。
 
-    定期バックグラウンド更新専用とする。利用者の操作に対応する経路
+    定期バックグラウンド更新専用とする。ユーザーの操作に対応する経路
     （変更操作・明示的な同期要求）は`pull`を用い、毎回リモートの最新状態を取得する。
     """
     _assert_repo_lock_held(private_notes)

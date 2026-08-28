@@ -1,12 +1,17 @@
 const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
-const STATE_LABELS = {inbox: '未処理', processing: '処理中', adopted: '採用済み', rejected: '不採用'};
-const ACTIVE_STATES = new Set(['inbox', 'processing']);
+const STATE_LABELS = {
+  inbox: '未処理', planning: '計画作成中', processing: '処理中', editing: '編集中', hold: '保留',
+  adopted: '採用済み', rejected: '不採用'
+};
+const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
 const SEARCH_FALLBACK_NOTICE =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
   'フィルターの選択値は変更していません。';
+const ENTRY_PAGE_SIZE = 100;
+const TARGET_REPO_DISPLAY_LENGTH = 20;
 const METADATA_FIELDS = [
   ['kind', '種別'],
   ['state', '状態'],
@@ -31,7 +36,8 @@ let pendingListAnnouncement = false;
 let detailRefreshRequired = false;
 let deleteDialogEntrySnapshot = '';
 let searchTimer = null;
-let toastTimer = null;
+let currentPage = 1;
+let pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
 let knownTbdBaselineReady = false;
 const knownTbdFilenames = new Set();
 const pendingOperations = new Set();
@@ -96,12 +102,18 @@ function clearDialogMessages(dialogName) {
   setTextMessage(`${dialogName}-status`, '');
 }
 
-function showToast(message) {
-  const toast = byId('toast');
-  toast.textContent = message;
-  toast.hidden = false;
-  if (toastTimer !== null) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.hidden = true; }, 4000);
+function showToast(message, isError = false) {
+  const notice = byId('operation-notice');
+  byId('operation-notice-message').textContent = message;
+  notice.dataset.error = String(isError);
+  notice.setAttribute('role', isError ? 'alert' : 'status');
+  notice.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+  notice.hidden = false;
+}
+
+function closeOperationNotice() {
+  byId('operation-notice').hidden = true;
+  focusRefreshButton();
 }
 
 function topmostDialog() {
@@ -113,14 +125,7 @@ function topmostDialog() {
 }
 
 function deliverOperationMessage(message, isError = false) {
-  const dialog = topmostDialog();
-  if (dialog) {
-    const name = dialog.id.replace('-dialog', '');
-    setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
-    return;
-  }
-  if (isError) setGlobalError(message);
-  else showToast(message);
+  showToast(message, isError);
 }
 
 function openDialog(dialog, origin, focusTarget) {
@@ -211,6 +216,13 @@ function appendTextCell(row, label, className, value) {
   return cell;
 }
 
+function targetRepoDisplay(value) {
+  if (!value || value.length <= TARGET_REPO_DISPLAY_LENGTH) return value || '—';
+  const prefixLength = Math.floor((TARGET_REPO_DISPLAY_LENGTH - 1) / 2);
+  const suffixLength = TARGET_REPO_DISPLAY_LENGTH - prefixLength - 1;
+  return `${value.slice(0, prefixLength)}…${value.slice(-suffixLength)}`;
+}
+
 function renderEntry(entry) {
   const item = document.createElement('li');
   item.className = 'entry-row';
@@ -224,23 +236,27 @@ function renderEntry(entry) {
   button.setAttribute('aria-current', String(entryKey(currentEntry) === entryKey(entry)));
 
   appendTextCell(button, 'ファイル名', 'filename-cell', entry.filename);
-  appendTextCell(button, '対象リポジトリ', 'target-repo-cell', entry.target_repo);
+  const targetRepo = appendTextCell(button, '対象リポジトリ', 'target-repo-cell', targetRepoDisplay(entry.target_repo));
+  if (entry.target_repo) {
+    targetRepo.title = entry.target_repo;
+    targetRepo.setAttribute('aria-label', `対象リポジトリ: ${entry.target_repo}`);
+  }
   const status = appendCell(button, '種別・状態', 'status-cell');
   const kind = document.createElement('span');
   kind.className = 'entry-kind';
   kind.textContent = entry.kind || 'unknown';
   status.append(kind);
+  const badge = document.createElement('span');
+  badge.className = 'state-badge';
+  badge.dataset.state = entry.state;
+  badge.textContent = entry.state || 'unknown';
+  status.append(badge);
   if (entry.plan) {
     const plan = document.createElement('span');
     plan.className = 'plan-badge';
     plan.textContent = 'plan';
     status.append(plan);
   }
-  const badge = document.createElement('span');
-  badge.className = 'state-badge';
-  badge.dataset.state = entry.state;
-  badge.textContent = entry.state || 'unknown';
-  status.append(badge);
   if (unanswered) {
     const attention = document.createElement('span');
     attention.className = 'attention-badge';
@@ -250,8 +266,8 @@ function renderEntry(entry) {
   appendTextCell(button, '要約', 'summary-cell', entry.summary);
   button.setAttribute(
     'aria-label',
-    [entry.filename, entry.target_repo || '対象なし', entry.kind || 'unknown', entry.plan ? 'plan' : '',
-      entry.state || 'unknown',
+    [entry.filename, entry.target_repo || '対象なし', entry.kind || 'unknown', entry.state || 'unknown',
+      entry.plan ? 'plan' : '',
       unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
   button.addEventListener('click', () => selectEntry(entry, button));
@@ -307,6 +323,7 @@ function renderList(warnings = [], announce = false, searchFallback = false) {
   list.replaceChildren(...entries.map(renderEntry));
   const unanswered = entries.filter(entry => entry.kind === 'tbd' && entry.answered === false).length;
   byId('entry-count').textContent = `${entries.length}件（未回答TBD ${unanswered}件）`;
+  renderPagination();
   setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
   renderWarnings(warnings);
   renderEmptyState();
@@ -315,7 +332,7 @@ function renderList(warnings = [], announce = false, searchFallback = false) {
   }
 }
 
-function buildQuery() {
+function buildQuery(page = currentPage) {
   const parameters = new URLSearchParams();
   parameters.set('type', byId('kind-filter').value);
   parameters.set('status', byId('state-filter').value);
@@ -327,6 +344,7 @@ function buildQuery() {
   };
   Object.entries(values).forEach(([name, value]) => { if (value) parameters.set(name, value); });
   if (byId('source-empty-filter').checked) parameters.set('source_empty', 'true');
+  parameters.set('page', String(page));
   return parameters;
 }
 
@@ -342,11 +360,60 @@ function setListLoading(value) {
   const loading = pendingListRequests > 0;
   byId('loading-indicator').hidden = !loading;
   byId('entry-list').setAttribute('aria-busy', String(loading));
+  renderPagination();
+}
+
+function renderPagination() {
+  const previous = byId('previous-page-button');
+  const next = byId('next-page-button');
+  const status = byId('pagination-status');
+  if (!previous || !next || !status) return;
+  const page = pagination.page || currentPage;
+  const pageCount = pagination.page_count || 1;
+  status.textContent = `ページ ${page} / ${pageCount}（全${pagination.total_count}件）`;
+  previous.disabled = pendingListRequests > 0 || page <= 1;
+  next.disabled = pendingListRequests > 0 || page >= pageCount;
+  previous.setAttribute('aria-label', `前のページ（現在${page}ページ）`);
+  next.setAttribute('aria-label', `次のページ（現在${page}ページ）`);
+}
+
+async function movePage(offset) {
+  const targetPage = Math.min(
+    Math.max(1, currentPage + offset),
+    pagination.page_count || 1
+  );
+  if (targetPage === currentPage) return;
+  currentPage = targetPage;
+  await loadEntries({announce: true});
+}
+
+function applyPagination(payload) {
+  const metadata = payload.pagination;
+  if (metadata && Number.isInteger(metadata.page) && metadata.page > 0 &&
+      Number.isInteger(metadata.page_count) && metadata.page_count > 0 &&
+      Number.isInteger(metadata.total_count) && metadata.total_count >= 0) {
+    pagination = {
+      page: metadata.page,
+      page_size: Number.isInteger(metadata.page_size) && metadata.page_size > 0
+        ? metadata.page_size : ENTRY_PAGE_SIZE,
+      page_count: metadata.page_count,
+      total_count: metadata.total_count
+    };
+    currentPage = metadata.page;
+    return;
+  }
+  const totalCount = Array.isArray(payload.entries) ? payload.entries.length : 0;
+  pagination = {
+    page: currentPage,
+    page_size: ENTRY_PAGE_SIZE,
+    page_count: Math.max(1, Math.ceil(totalCount / ENTRY_PAGE_SIZE)),
+    total_count: totalCount
+  };
 }
 
 async function loadEntries({announce = false} = {}) {
   pendingListAnnouncement = pendingListAnnouncement || announce;
-  const query = buildQuery();
+  const query = buildQuery(currentPage);
   const searchTerm = query.get('q') || '';
   const canSearchFallback = searchTerm !== '' && hasSearchFallbackFilters(query);
   const generation = ++listRequestGeneration;
@@ -360,7 +427,7 @@ async function loadEntries({announce = false} = {}) {
     let fallbackError = null;
     if (canSearchFallback && initialEntries.length === 0) {
       try {
-        const fallbackQuery = new URLSearchParams({q: searchTerm});
+        const fallbackQuery = new URLSearchParams({q: searchTerm, page: String(currentPage)});
         const fallbackPayload = await api(`/api/entries?${fallbackQuery.toString()}`);
         if (generation !== listRequestGeneration) return entries;
         const fallbackEntries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
@@ -374,6 +441,7 @@ async function loadEntries({announce = false} = {}) {
     }
     if (generation !== listRequestGeneration) return entries;
     entries = Array.isArray(selectedPayload.entries) ? selectedPayload.entries : [];
+    applyPagination(selectedPayload);
     const selected = entries.find(item => entryKey(item) === entryKey(currentEntry));
     if (selected) currentEntry = {...currentEntry, ...selected};
     const shouldAnnounce = pendingListAnnouncement;
@@ -401,7 +469,7 @@ async function refreshKnownTbds({notify = false} = {}) {
   const payload = await api('/api/entries?type=tbd&status=all&answered=all');
   const allTbds = Array.isArray(payload.entries) ? payload.entries : [];
   const newUnanswered = knownTbdBaselineReady && notify ? allTbds.filter(entry =>
-    !knownTbdFilenames.has(entry.filename) && ACTIVE_STATES.has(entry.state) && entry.answered === false
+    !knownTbdFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
   ) : [];
   allTbds.forEach(entry => knownTbdFilenames.add(entry.filename));
   knownTbdBaselineReady = true;
@@ -475,6 +543,8 @@ async function clearFilters({load = true} = {}) {
   byId('target-filter').value = '';
   byId('source-filter').value = '';
   byId('source-empty-filter').checked = false;
+  currentPage = 1;
+  pagination.page = 1;
   syncFilterDependencies();
   if (load) {
     await loadTargetRepos();
@@ -562,26 +632,44 @@ function renderMetadata(entry) {
 function setDetailMode(mode) {
   const editing = mode === 'edit';
   const answering = mode === 'answer';
+  const commenting = mode === 'user-comment';
+  const mutating = editing || answering || commenting;
   const unansweredTbd = currentEntry?.kind === 'tbd' && currentEntry.answered === false;
+  const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
+  const held = currentEntry?.state === 'hold';
   byId('edit-panel').hidden = !editing;
   byId('answer-panel').hidden = !answering;
-  byId('edit-button').hidden = editing || answering || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
-  byId('answer-button').hidden = editing || answering || !currentEntry ||
-    currentEntry.kind !== 'tbd' || !ACTIVE_STATES.has(currentEntry.state);
+  byId('user-comment-panel').hidden = !commenting;
+  byId('decision-panel').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
+  byId('edit-button').hidden = mutating || !processable;
+  byId('answer-button').hidden = mutating || !currentEntry ||
+    currentEntry.kind !== 'tbd' || !processable;
+  byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
   byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
-  byId('delete-button').hidden = editing || answering || !currentEntry || !ACTIVE_STATES.has(currentEntry.state);
+  byId('adopt-button').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
+  byId('reject-button').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
+  byId('hold-button').hidden = mutating || !processable;
+  byId('unhold-button').hidden = mutating || !held;
+  byId('delete-button').hidden = mutating || !processable;
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
+  byId('save-user-comment-button').hidden = !commenting;
   syncDetailMutationAvailability();
   byId('edit-button').className = unansweredTbd ? 'button-secondary' : 'button-primary';
   if (!editing) setFieldError(byId('edit-content'), byId('edit-content-error'), '');
   if (!answering) setFieldError(byId('answer-input'), byId('answer-input-error'), '');
+  if (!commenting) setFieldError(byId('user-comment-input'), byId('user-comment-input-error'), '');
 }
 
 function syncDetailMutationAvailability() {
-  for (const id of ['edit-button', 'answer-button', 'delete-button', 'save-entry-button', 'save-answer-button']) {
+  for (const id of [
+    'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
+    'save-entry-button', 'save-answer-button', 'save-user-comment-button',
+    'adopt-button', 'reject-button', 'hold-button', 'unhold-button'
+  ]) {
     const button = byId(id);
-    button.disabled = !button.hidden && detailRefreshRequired;
+    const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
+    button.disabled = !button.hidden && (detailRefreshRequired || userCommentUnavailable);
   }
 }
 
@@ -606,6 +694,7 @@ function renderAnswerChoices(entry) {
 function displayEntry(entry) {
   currentEntry = entry;
   detailRefreshRequired = false;
+  byId('decision-note').value = '';
   setTextMessage('detail-alert', '');
   byId('detail-view').hidden = false;
   byId('detail-filename').textContent = entry.filename;
@@ -614,7 +703,7 @@ function displayEntry(entry) {
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
   renderAnswerChoices(entry);
-  byId('readonly-notice').hidden = ACTIVE_STATES.has(entry.state);
+  byId('readonly-notice').hidden = PROCESSABLE_STATES.has(entry.state);
   setDetailMode('view');
   updateCurrentRowSelection();
 }
@@ -680,7 +769,19 @@ function closeDetailDialog() {
 function currentDetailMode() {
   if (!byId('edit-panel').hidden) return 'edit';
   if (!byId('answer-panel').hidden) return 'answer';
+  if (!byId('user-comment-panel').hidden) return 'user-comment';
   return 'view';
+}
+
+function refreshUserCommentMode(entry, message) {
+  const input = byId('user-comment-input');
+  const value = input.value;
+  detailOriginKey = entryKey(entry);
+  displayEntry(entry);
+  input.value = value;
+  setDetailMode('user-comment');
+  setTextMessage('detail-alert', message);
+  input.focus();
 }
 
 async function reloadOpenDetailFromExternalChange() {
@@ -741,7 +842,16 @@ async function reloadOpenDetailFromExternalChange() {
   if (byId('delete-dialog').open && deleteEntrySnapshot(resolvedEntry) !== deleteDialogEntrySnapshot) {
     deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
   }
-  if (currentDetailMode() !== 'view') {
+  const mode = currentDetailMode();
+  if (mode === 'user-comment' && detailChanged) {
+    const message = resolvedEntry.user_comment_editable === true
+      ? '外部で項目が更新されました。入力を保持して最新内容を再取得しました。'
+      : `${stateLabel(resolvedEntry.state)}へ移動したためユーザーコメントを保存できません。入力は保持しています。`;
+    refreshUserCommentMode(resolvedEntry, message);
+    updateCurrentRowSelection();
+    return;
+  }
+  if (mode !== 'view') {
     currentEntry = {...currentEntry, state: resolvedEntry.state};
     detailOriginKey = entryKey(currentEntry);
     if (detailChanged) {
@@ -750,7 +860,7 @@ async function reloadOpenDetailFromExternalChange() {
         'detail-alert',
         '外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。'
       );
-      setDetailMode(currentDetailMode());
+      setDetailMode(mode);
     }
     updateCurrentRowSelection();
     return;
@@ -772,6 +882,31 @@ function enterAnswer() {
   byId('answer-input').value = currentEntry.answer || '';
   setDetailMode('answer');
   byId('answer-input').focus();
+}
+
+function enterUserComment() {
+  if (!currentEntry || currentEntry.user_comment_editable !== true) return;
+  byId('user-comment-input').value = currentEntry.user_comment || '';
+  setDetailMode('user-comment');
+  byId('user-comment-input').focus();
+}
+
+async function reloadUserCommentAfterConflict(key, sessionGeneration) {
+  const state = currentEntry?.state;
+  const filename = currentEntry?.filename;
+  if (!state || !filename) return false;
+  try {
+    const refreshed = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
+    if (!byId('detail-dialog').open || entryKey(currentEntry) !== key ||
+        sessionGeneration !== detailSessionGeneration || refreshed.entry.user_comment_editable !== true) return false;
+    refreshUserCommentMode(
+      refreshed.entry,
+      `${key}は外部で更新されました。入力を保持して最新内容を再取得しました。内容を確認して再度保存してください。`
+    );
+    return true;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function mutationFailureMessage(key, failure, error) {
@@ -800,15 +935,18 @@ async function saveEntry() {
       method: 'PUT', body: JSON.stringify(payload)
     }));
     await loadEntries();
+    let closeDetail = false;
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
       const refreshed = await api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`);
       if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
           sessionGeneration === detailSessionGeneration) {
         displayEntry(refreshed.entry);
-        byId('detail-dialog-body').focus();
+        closeDetail = true;
       }
     }
+    // 本文編集の保存確定後は詳細を閉じて一覧へ戻す。保存中に別項目へ切り替えた場合は閉じない。
+    if (closeDetail) closeDetailDialog();
     deliverOperationMessage(`${key}を保存しました。`);
   } catch (error) {
     const failure = `${key}を保存できませんでした。 ${error.message}`;
@@ -849,6 +987,66 @@ async function saveAnswer() {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('answer-input').focus();
+  }
+}
+
+async function saveUserComment() {
+  if (!currentEntry || detailRefreshRequired || currentEntry.user_comment_editable !== true) return;
+  const input = byId('user-comment-input');
+  const comment = input.value;
+  setFieldError(input, byId('user-comment-input-error'), comment.trim() ? '' : 'コメントを入力してください。');
+  if (firstInvalid([input])) return;
+  const key = entryKey(currentEntry);
+  const sessionGeneration = detailSessionGeneration;
+  const payload = {
+    state: currentEntry.state,
+    filename: currentEntry.filename,
+    comment,
+    expected_content: currentEntry.content
+  };
+  clearDialogMessages('detail');
+  try {
+    await runPending('user-comment', {
+      container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
+    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)}));
+    await loadEntries();
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
+        sessionGeneration === detailSessionGeneration) {
+      const refreshed = await api(
+        `/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`
+      );
+      if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
+          sessionGeneration === detailSessionGeneration) {
+        displayEntry(refreshed.entry);
+        byId('user-comment-button').focus();
+      }
+    }
+    deliverOperationMessage(`${key}のユーザーコメントを保存しました。`);
+  } catch (error) {
+    if (error.payload?.code === 'edit_conflict' && await reloadUserCommentAfterConflict(key, sessionGeneration)) return;
+    deliverOperationMessage(`${key}のユーザーコメントを保存できませんでした。 ${error.message}`, true);
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) input.focus();
+  }
+}
+
+async function transitionDetail(action) {
+  if (!currentEntry || detailRefreshRequired) return;
+  const allowed = action === 'unhold' ? currentEntry.state === 'hold' : PROCESSABLE_STATES.has(currentEntry.state);
+  if (!allowed || ((action === 'adopt' || action === 'reject') && currentEntry.kind !== 'feedback')) return;
+  const key = entryKey(currentEntry);
+  const payload = {filenames: [currentEntry.filename]};
+  const note = byId('decision-note').value.trim();
+  if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
+  try {
+    await runPending(`transition-${action}`, {
+      container: byId('detail-shell'), button: byId(`${action}-button`), busyLabel: '処理中'
+    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}));
+    await loadEntries();
+    if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog();
+    const label = {adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除'}[action];
+    deliverOperationMessage(`${key}を${label}しました。`);
+  } catch (error) {
+    deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
   }
 }
 
@@ -1021,6 +1219,8 @@ async function synchronizeAndLoad() {
 }
 
 async function handleFilterChange({reloadRepos = false} = {}) {
+  currentPage = 1;
+  pagination.page = 1;
   syncFilterDependencies();
   const requestedState = byId('state-filter').value;
   if (reloadRepos && !await loadTargetRepos() && byId('state-filter').value !== requestedState) return;
@@ -1054,6 +1254,9 @@ function bindEvents() {
     setGlobalError('');
     focusRefreshButton();
   });
+  byId('operation-notice-close-button').addEventListener('click', closeOperationNotice);
+  byId('previous-page-button').addEventListener('click', () => { void movePage(-1); });
+  byId('next-page-button').addEventListener('click', () => { void movePage(1); });
   byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
   byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
@@ -1072,12 +1275,20 @@ function bindEvents() {
   byId('source-empty-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('search-input').addEventListener('input', () => {
     if (searchTimer !== null) clearTimeout(searchTimer);
+    currentPage = 1;
+    pagination.page = 1;
     searchTimer = setTimeout(() => loadEntries({announce: true}), 250);
   });
   byId('edit-button').addEventListener('click', enterEdit);
   byId('answer-button').addEventListener('click', enterAnswer);
+  byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);
   byId('save-answer-button').addEventListener('click', saveAnswer);
+  byId('save-user-comment-button').addEventListener('click', saveUserComment);
+  byId('adopt-button').addEventListener('click', () => { void transitionDetail('adopt'); });
+  byId('reject-button').addEventListener('click', () => { void transitionDetail('reject'); });
+  byId('hold-button').addEventListener('click', () => { void transitionDetail('hold'); });
+  byId('unhold-button').addEventListener('click', () => { void transitionDetail('unhold'); });
   byId('delete-button').addEventListener('click', openDeleteDialog);
   byId('create-kind').addEventListener('change', updateCreateFields);
   byId('create-question-type').addEventListener('change', updateCreateFields);

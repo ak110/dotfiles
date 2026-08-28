@@ -54,7 +54,7 @@ def is_plan_component_file(file_path: str) -> bool:
 
 
 def is_plan_main_file(file_path: str) -> bool:
-    """計画本体（メイン側`.md`）の場合に真を返す。実装詳細側`.detail.md`は偽。"""
+    """計画ファイル（メイン）`.md`の場合に真を返す。計画ファイル（詳細）`.detail.md`は偽。"""
     name = _plan_file_name(file_path)
     if name is None or not _is_component_name(name):
         return False

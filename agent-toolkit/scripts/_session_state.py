@@ -35,6 +35,8 @@ _FILENAME_SUFFIX = ".json"
 _LOCK_SUFFIX = ".lock"
 _TITLE_DIRECTORY_NAME = "claude-agent-toolkit-session-title"
 _SESSION_TITLE_KEY = "last_hook_session_title"
+_INHERITED_FROM_SESSION_KEY = "inherited_from_session_id"
+_TRANSCRIPT_SESSION_ID_KEYS = ("sessionId", "session_id")
 
 STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 """状態ファイルを回収するまでの経過時間。
@@ -157,6 +159,61 @@ def read_state(session_id: str) -> dict:
     except (OSError, json.JSONDecodeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def inherit_state_from_transcript(session_id: str, transcript_path: str) -> bool:
+    """現行状態が無い場合に、transcript内の一意な前身状態を1回だけ継承する。"""
+    if not isinstance(session_id, str) or not session_id or not isinstance(transcript_path, str) or not transcript_path:
+        return False
+    target = state_path(session_id)
+    try:
+        target.stat()
+        return False
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+
+    try:
+        with _locked_state(target):
+            if target.exists():
+                return False
+            candidates: dict[str, dict] = {}
+            with pathlib.Path(transcript_path).open(encoding="utf-8") as transcript:
+                for line in transcript:
+                    try:
+                        entry = json.loads(line)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    if not isinstance(entry, dict):
+                        continue
+                    predecessor = next(
+                        (
+                            value
+                            for key in _TRANSCRIPT_SESSION_ID_KEYS
+                            if isinstance((value := entry.get(key)), str) and value and value != session_id
+                        ),
+                        None,
+                    )
+                    if predecessor is None or predecessor in candidates:
+                        continue
+                    predecessor_path = state_path(predecessor)
+                    if predecessor_path.parent != pathlib.Path(tempfile.gettempdir()):
+                        continue
+                    try:
+                        inherited = json.loads(predecessor_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError, ValueError):
+                        continue
+                    if isinstance(inherited, dict):
+                        candidates[predecessor] = inherited
+            if len(candidates) != 1:
+                return False
+            predecessor, inherited = next(iter(candidates.items()))
+            updated = {**inherited, _INHERITED_FROM_SESSION_KEY: predecessor}
+            _atomic_write(target, json.dumps(updated, ensure_ascii=False))
+            return True
+    except OSError:
+        return False
 
 
 def update_state(session_id: str, mutator: Callable[[dict], dict | None]) -> bool:

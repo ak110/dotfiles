@@ -43,20 +43,20 @@ description: >
 
 ## 配布物としての記述方針
 
-配布先の利用者は本リポジトリのdotfiles利用者とは限らないため、手元プロジェクト固有の前提を断定的に書かない。
+配布先のエンドユーザーは本リポジトリのdotfiles利用者とは限らないため、手元プロジェクト固有の前提を断定的に書かない。
 
 - 自己言及的な表現・特定設定値の前提・特定ディレクトリ構成の前提を断定せず、
   異なり得る条件は条件付き表現（「`～`設定が有効な場合、」など）で書く
 - 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、
-  利用者環境側の連携設計（個人フックとの優先順序など）は書かない
+  エンドユーザー環境側の連携設計（個人フックとの優先順序など）は書かない
 - 配布物の出力文字列・フックメッセージ・docstringにリポジトリ管理外の個人メモファイル名を含めない
 - 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
 - 配布物文面は実ファイル編集時に`scripts/claude_hook_pretooluse.py`の固有名検査を適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文でhook内部の実装挙動
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
-  利用者には挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
+  エンドユーザーには挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する節
     （`<plugin root>/skills/agent-standards/SKILL.md`「セッション状態フラグ」節等）は本規定の対象外とする
 
@@ -77,10 +77,10 @@ description: >
 
 ### プラグイン内リソースの参照書式
 
-利用者環境で実行される実行時パス（`hooks.json`の`command`・エージェント/スキル本文の実行コマンド例）は`${CLAUDE_PLUGIN_ROOT}/<相対パス>`形式に統一する。
-プラグイン配布物のルートはインストール先で動的に解決されるため、dotfilesリポジトリ相対パスは利用者環境で実行不能となる。
+エンドユーザー環境で実行される実行時パス（`hooks.json`の`command`・エージェント/スキル本文の実行コマンド例）は`${CLAUDE_PLUGIN_ROOT}/<相対パス>`形式に統一する。
+プラグイン配布物のルートはインストール先で動的に解決されるため、dotfilesリポジトリ相対パスはエンドユーザー環境で実行不能となる。
 規範文書内で役割を説明する言及（「〜は`agent-toolkit/scripts/<name>.py`が担う」等）はリポジトリ相対表記のままでよい。
-判定基準は当該パスを利用者環境で実行するか否かとする。
+判定基準は当該パスをエンドユーザー環境で実行するか否かとする。
 Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`env`の各値に含まれる`${CLAUDE_PLUGIN_ROOT}`を`${PLUGIN_ROOT}`へ変換する。Claude Code側の実行時パスは前項の形式を維持する。
 
 ## スキル間の連携
@@ -94,6 +94,8 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
+レーン自己マージの版数を更新する時点では、`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`を全文読む。
+`.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に同ファイルを全文読む。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
 実装資料の変更説明へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
@@ -115,7 +117,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
   `agent-toolkit/rules/`配下のmdファイル一覧は完全一致を保つ
-  （整合性は`install_script_ssot_test.py`が検査する。この一覧の自動同期手段は無い）
+  （整合性は`install_script_ssot_test.py`が検査し、`scripts/gen-install-files.py`を含む`uv run python scripts/sync_generated_files.py`が一覧を自動同期する）
 - 配布物スキル本体の外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）へ
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
@@ -135,8 +137,8 @@ SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_
 
 ## 権限設定の配置
 
-権限設定を変更する場合は、対象が全利用者向けかを先に判定する。
-全利用者向けの内容は配布原本`share/claude_settings_json_managed*.json`へ置く
+権限設定を変更する場合は、対象が全エンドユーザー向けかを先に判定する。
+全エンドユーザー向けの内容は配布原本`share/claude_settings_json_managed*.json`へ置く
 （`pytools/_internal/update_claude_settings.py`が`~/.claude/settings.json`へ反映する）。
 特定ホスト・本リポジトリ限定の内容はリポジトリ直下の`.claude/settings.local.json`（バージョン管理対象外）へ置く。
 読み取り専用コマンドには、引数なしの`Bash`許可を適用する。
@@ -157,7 +159,7 @@ hookに新規にブロックされた場合は、まず作業ツリーと稼働�
 
 ## 編集手順
 
-push前にbumpが必須（同じバージョンでは`claude plugin update`が「最新です」と返し利用者へ配信されないため）。
+push前にbumpが必須（同じバージョンでは`claude plugin update`が「最新です」と返しエンドユーザーへ配信されないため）。
 
 1. 「バージョン更新」の判定基準に該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する
 2. `description`を変更する場合はSSOTの2ファイルを手で同期する
@@ -202,7 +204,7 @@ agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_h
 
 ## 複数hook共存時の識別子
 
-agent-toolkitのhookが利用者環境の他hookと同一イベントで共存する場合がある。
+agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
 自身のhookメッセージを他hookから判別するため、`[auto-generated: agent-toolkit/<hook>]`形式のプレフィックスを行頭に置く。
 プレフィックス・サフィックスの規約は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
 「コーディングエージェント宛てメッセージの標識」節に従う。

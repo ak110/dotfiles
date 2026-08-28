@@ -2,22 +2,22 @@ r"""Claude Code Stopフック: 応答終了で入力待ちになったときに�
 
 `Notification`の入力待ち系種別のうち`idle_prompt`は応答終了の約60秒後に発火するため、
 背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も同じ扱いで発火し、
-利用者の入力を要さない待機でベルが鳴っていた。そのため`idle_prompt`をベルの対象から外し、
-代わりに本hookがStopイベントで「利用者の入力を待つ状態になった場合だけ」ベルを鳴らす。
+ユーザーの入力を要さない待機でベルが鳴っていた。そのため`idle_prompt`をベルの対象から外し、
+代わりに本hookがStopイベントで「ユーザーの入力を待つ状態になった場合だけ」ベルを鳴らす。
 
 判定順序は以下のとおり。
 
 1. ペイロード解析失敗または`session_id`欠落: 判定材料が無いためベルを鳴らさない
 2. 他のStop系hookがターン継続をblockした後の再呼び出し（`stop_hook_active`が真）:
    応答は終了しておらずベルを鳴らさない
-3. 常駐ループから起動された自律セッション: 利用者の入力を待たないためベルを鳴らさない
+3. 常駐ループから起動された自律セッション: ユーザーの入力を待たないためベルを鳴らさない
 4. 背景のサブエージェント・コマンド等が未完了: 待機の継続でありベルを鳴らさない
 5. 上記いずれでもない: ベルを鳴らす
 
 ベルはフック出力JSONの`terminalSequence`フィールドで返し、Claude Code自身の端末書き込み経路で
 送出させる。フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないためである。
 
-他のStop系hookの判定（`agent-toolkit`の振り返り誘導、`claude_hook_autonomous_exit.py`の
+他のStop系hookの判定（`agent-toolkit`の振り返り誘導、`agent-toolkit/scripts/autonomous_exit.py`の
 終了工程の再促）とは独立に動くため、同一Stopサイクルの1回目では当該hookのblockに先行して
 ベルが鳴り得る。block後の再呼び出しは`stop_hook_active`により鳴らさない。
 """
@@ -69,7 +69,7 @@ def main(payload_text: str) -> int:
     session_id, payload = resolved
 
     # 他のStop hookがターン継続をblockした後の再呼び出し。応答は終了しておらず
-    # 利用者の入力待ちでもないため、判定処理を行わずベルを鳴らさない。
+    # ユーザーの入力待ちでもないため、判定処理を行わずベルを鳴らさない。
     if payload.get("stop_hook_active") is True:
         append_stop_log(session_id, "silent_stop_hook_active", {"stop_hook_active": True})
         _approve()

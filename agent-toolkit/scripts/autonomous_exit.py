@@ -1,13 +1,13 @@
-r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び忘れ防止。
+r"""agent-toolkit pluginの自律終了Stopフック。
 
 環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`または移行互換名
 `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`が設定されたセッションを対象とする。
-本hookは環境変数印を検出したセッションに限り、`agent-toolkit:exit-session`スキルの
+本フックは環境変数印を検出したセッションに限り、`agent-toolkit:exit-session`スキルの
 呼び出し漏れを検知して当該ターンの継続をblockし再促する。
 
-`agent-toolkit:exit-session`呼び出しの記録は個人フックPostToolUse
-（`scripts/claude_hook_posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
-反映する。本hookは同フラグをセッション状態ファイル経由で読み取るのみで、記録は行わない。
+`agent-toolkit:exit-session`呼び出しの記録はpluginのPostToolUse
+（`agent-toolkit/scripts/posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
+反映する。本フックは同フラグをセッション状態ファイル経由で読み取るのみで、記録は行わない。
 
 判定順序は以下のとおり。
 
@@ -17,41 +17,23 @@ r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び
 4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
 5. 上記いずれでもない: blockして順序制約の再促文を返す
 
-LLM宛て出力は`agent-toolkit/scripts/_hook_notice`のblock専用整形関数経由で整形し、
+LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 `decision: "block"`＋`reason`フィールドへ載せて返す。
-参照経路は`Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"`を
-`sys.path`に追加して解決する。
 
-各判定分岐の最終判定ラベルと根拠は`agent-toolkit/scripts/_stop_gate.append_stop_log`で
+各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で
 常時ログへ記録する。
 """
 
 import json
 import os
-import pathlib
-import sys
 
-# agent-toolkit の共通ゲートモジュールを import する。
-# plugin が無効化されていても dotfiles リポジトリ上にファイルが存在し続けるため import は成立する。
-sys.path.insert(
-    0,
-    str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
-)
-# pylint: disable-next=wrong-import-position,import-error
-from _hook_notice import (
-    block_formatter as _block_notice_formatter,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    append_stop_log,
-    is_pending_async_work,
-)
+from _hook_notice import block_formatter as _block_notice_formatter
+from _session_state import read_state
+from _stop_gate import append_stop_log, is_pending_async_work
+from _stop_gate import parse_stop_session as _parse_stop_session
 
-# pylint: disable-next=wrong-import-position,import-error
-from _stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
-
-# このスクリプトの hook 識別子。
-_HOOK_ID = "dotfiles/claude_hook_autonomous_exit"
+# このスクリプトのhook識別子。
+_HOOK_ID = "agent-toolkit/autonomous_exit"
 
 # 常駐ループから起動されたセッションであることを示す環境変数名。
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
@@ -59,7 +41,7 @@ _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 # 更新中に旧process-loopと併存するため受理する移行互換名。
 _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
-# PostToolUse（`claude_hook_posttooluse.py`）が`agent-toolkit:exit-session`呼び出し検出時に
+# PostToolUse（`posttooluse.py`）が`agent-toolkit:exit-session`呼び出し検出時に
 # セッション状態へ記録するフラグ名。
 _STATE_KEY = "autonomous_exit_invoked"
 
@@ -85,15 +67,12 @@ _block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def _approve() -> None:
+    """空のapprove応答を返す。"""
     print(json.dumps({}, ensure_ascii=False))
 
 
 def _emit_block(body: str, *, fix: str) -> None:
-    """Stop hookで当該ターン継続を強制する誘導を返す。
-
-    `stop_hook_active`保護で1回のみ発火する前提。反復呼び出しに備え、
-    本メッセージは反復再促の役割も担う。
-    """
+    """Stop hookで当該ターン継続を強制する誘導を返す。"""
     reason = _block_notice(body, fix=fix)
     print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
 

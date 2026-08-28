@@ -1,5 +1,8 @@
 """フィードバックキューの旧レイアウト・旧予約形式を一方向に移行する。"""
 
+# 旧レイアウトの読取互換では、現行状態名を独立した定数として固定する。
+# pylint: disable=duplicate-code
+
 import pathlib
 import shutil
 import subprocess
@@ -12,10 +15,11 @@ from _atk_mq_frontmatter import parse_frontmatter, serialize_frontmatter
 from _tbd_scan import _TBD_TYPE as MQ_TYPE_TBD
 
 MQ_STATE_INBOX = "inbox"
+MQ_STATE_PLANNING = "planning"
 MQ_STATE_PROCESSING = "processing"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
-MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
+MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_PLANNING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 

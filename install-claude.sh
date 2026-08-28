@@ -321,7 +321,7 @@ _warm_agents_server_path() {
         echo "agents_serverのウォームアップ対象が存在しないためスキップします: $script_path" >&2
         return 0
     fi
-    if ! uv run --no-project --script "$script_path" --help </dev/null >/dev/null; then
+    if ! uv run --no-project --script "$script_path" --check-dependencies </dev/null >/dev/null; then
         echo "agents_serverのuv環境ウォームアップに失敗しました: $script_path" >&2
     fi
     return 0

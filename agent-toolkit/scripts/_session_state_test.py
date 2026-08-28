@@ -23,6 +23,7 @@ from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-posit
     claim_session_title,
     clear_session_state,
     delete_state,
+    inherit_state_from_transcript,
     read_state,
     state_path,
     sweep_stale_states,
@@ -165,6 +166,40 @@ class TestReadState:
     def test_non_dict_payload_returns_empty(self) -> None:
         state_path("array").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
         assert read_state("array") == {}
+
+
+class TestStateInheritance:
+    """背景化でsession_idが変わった場合の前身状態継承。"""
+
+    def test_unique_predecessor_is_inherited_once(self, tmp_path: pathlib.Path) -> None:
+        update_state("previous", lambda current: {**current, "plan_mode_skill_invoked": True})
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            "\n".join((json.dumps({"sessionId": "previous"}), json.dumps({"sessionId": "current"}))) + "\n",
+            encoding="utf-8",
+        )
+
+        assert inherit_state_from_transcript("current", str(transcript)) is True
+        assert read_state("current") == {
+            "plan_mode_skill_invoked": True,
+            "inherited_from_session_id": "previous",
+        }
+        update_state("previous", lambda current: {**current, "later": True})
+        assert inherit_state_from_transcript("current", str(tmp_path / "missing.jsonl")) is False
+        assert "later" not in read_state("current")
+
+    def test_ambiguous_or_missing_predecessor_is_not_inherited(self, tmp_path: pathlib.Path) -> None:
+        update_state("first", lambda current: {**current, "first": True})
+        update_state("second", lambda current: {**current, "second": True})
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            "\n".join((json.dumps({"session_id": "first"}), json.dumps({"sessionId": "second"}))) + "\n",
+            encoding="utf-8",
+        )
+
+        assert inherit_state_from_transcript("current", str(transcript)) is False
+        assert read_state("current") == {}
+        assert inherit_state_from_transcript("current", str(tmp_path / "missing.jsonl")) is False
 
 
 class TestClaimSessionTitle:

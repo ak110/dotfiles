@@ -12,17 +12,17 @@ import subagent_stop_advisor as advisor
 def _minimal_report() -> str:
     """委譲調整役の構造化された最小完了報告を返す。"""
     return """status: completed
-summary: 完了
-commits:
+要約: 完了
+コミット一覧:
 - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-verification:
+検証結果:
 - pytest: 終了コード0、警告0件
-reviews:
-- 準拠系と盲検系: 完了
-findings:
+レビュー:
+- 実装レビュー担当: 完了
+指摘:
 - 指摘なし
-plan_check: 完了条件を満たす
-blockers:
+計画検査: 完了条件を満たす
+阻害要因:
 - なし
 """
 

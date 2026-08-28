@@ -26,7 +26,7 @@
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
-  初回の`--resume`は再開後のプロンプト入力を利用者へ委ねる。
+  初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
@@ -66,10 +66,14 @@ import _managed_temp  # noqa: E402
 import _review_table  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
-_active_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES)
+_processable_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES)
+_removable_filename_completer = _common.make_filename_completer(
+    (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_PLANNING)
+)
+_hold_filename_completer = _common.make_filename_completer((_common.MQ_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.MQ_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.MQ_STATE_PROCESSING,))
-_tbd_filename_completer = _common.make_filename_completer(_common.MQ_ACTIVE_STATES, _common.MQ_TYPE_TBD)
+_tbd_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES, _common.MQ_TYPE_TBD)
 
 
 def _cooldown_days(value: str) -> int:
@@ -292,11 +296,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
-        choices=("all", "active", "inbox", "processing", "adopted", "rejected"),
+        choices=("all", "active", "processable", *_common.MQ_STATES),
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active）。"
-            "`active`は`inbox`・`processing`を指す（フィードバック・`tbd`共通）。"
+            "`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "回答状況での限定は`--answered`で別途行う。"
         ),
     )
@@ -318,6 +322,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
     )
+    output.add_argument(
+        "--no-json",
+        action="store_true",
+        help="JSON Linesの既定を無効にし、従来のテキスト形式で出力する。",
+    )
     _add_mq_read_sync_args(list_)
 
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")
@@ -336,11 +345,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
     show.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
-        choices=("all", "active", "inbox", "processing", "adopted", "rejected"),
+        choices=("all", "active", "processable", *_common.MQ_STATES),
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
-            "`active`は`inbox`・`processing`を指す（フィードバック・`tbd`共通）。"
+            "`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
     )
@@ -357,6 +366,18 @@ def _add_mq_read_parsers(sub: Any) -> None:
 
 def _add_mq_transition_parsers(sub: Any) -> None:
     """状態遷移・削除サブコマンドを登録する。"""
+    start_planning = sub.add_parser(
+        "start-planning",
+        help="通常型フィードバックをinboxからplanning/へ移動し計画作成中にする",
+    )
+    start_planning.add_argument(
+        "filenames",
+        metavar="FILENAME",
+        nargs="+",
+        help="計画作成を開始するinboxの通常型フィードバック名（1個以上）。",
+    ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
+    _add_target_repo_arg(start_planning, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+
     start_processing = sub.add_parser(
         "start-processing",
         help="フィードバックを`inbox`から`processing/`へ移動し処理中状態に遷移させコミット・push",
@@ -368,6 +389,18 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         help="処理開始するinboxファイル名（1個以上）。",
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
     _add_target_repo_arg(start_processing, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+
+    hold = sub.add_parser("hold", help="inboxまたはprocessingの項目を保留する")
+    hold.add_argument(
+        "filenames", metavar="FILENAME", nargs="+", help="保留するファイル名。"
+    ).completer = _processable_filename_completer
+    _add_target_repo_arg(hold, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+
+    unhold = sub.add_parser("unhold", help="holdの項目をinboxへ戻す")
+    unhold.add_argument(
+        "filenames", metavar="FILENAME", nargs="+", help="保留を解除するファイル名。"
+    ).completer = _hold_filename_completer
+    _add_target_repo_arg(unhold, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
     return_to_inbox = sub.add_parser(
         "return-to-inbox",
@@ -386,12 +419,18 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="DAYS",
         help="外部条件待ちのフィードバックを指定日数（3以上）だけ再処理対象から除外する。",
     )
+    return_to_inbox.add_argument(
+        "--state",
+        choices=("planning",),
+        default=None,
+        help="planningから差し戻す場合に指定する。省略時はprocessingから差し戻す。",
+    )
     _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
     adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
     adopt.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="採用するファイル名（1個以上。inbox・processingいずれも対象）。"
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
+    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     adopt.add_argument(
         "--note",
         metavar="TEXT",
@@ -418,7 +457,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     reject = sub.add_parser("reject", help="不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push")
     reject.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="不採用とするファイル名（1個以上。inbox・processingいずれも対象）。"
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
+    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     reject.add_argument(
         "--note",
         metavar="TEXT",
@@ -456,21 +495,21 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         metavar="FILENAME",
         nargs="*",
         help="削除するファイル名。--allと併用せず、個別削除では1個以上を指定する。",
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
+    ).completer = _removable_filename_completer  # type: ignore[attr-defined]
     rm.add_argument(
         "--all",
         action="store_true",
-        help="--target-repoと完全一致するinbox・processingの全項目を一覧表示後に削除する。",
+        help="--target-repoと完全一致するinbox・planning・processingの全項目を一覧表示後に削除する。",
     )
     rm.add_argument(
         "--yes",
         action="store_true",
-        help="--allによる一括削除の確認入力を省略する。一覧表示とprocessing保護は維持する。",
+        help="--allによる一括削除の確認入力を省略する。一覧表示とplanning・processing保護は維持する。",
     )
     rm.add_argument(
         "--force",
         action="store_true",
-        help="processing状態のファイルも削除する（既定では処理中のファイルを保護し拒否する）。",
+        help="planning・processing状態のファイルも削除する（既定では保護し拒否する）。",
     )
     rm.add_argument(
         "--skip-pull",
@@ -498,7 +537,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
             "MESSAGEとともに指定すると非対話で編集する。"
             "省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を$EDITORで編集する。"
         ),
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
+    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     edit.add_argument(
         "message",
         metavar="MESSAGE",
@@ -514,6 +553,19 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         action="store_true",
         help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。TBDは対象外。",
     )
+    edit.add_argument(
+        "--plan-file",
+        metavar="ABS_PATH",
+        default=None,
+        help="planning項目を計画型feedbackへ編集しprocessingへ移す実在する計画ファイルの絶対パス。",
+    )
+    edit.add_argument(
+        "--depends-on",
+        metavar="FILENAME",
+        action="append",
+        default=None,
+        help="計画型feedbackへ統合する外部依存先。複数回指定できる。",
+    )
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 
@@ -524,8 +576,9 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     convert_to_plan.add_argument(
         "filename",
         metavar="FILENAME",
-        help="変換する`inbox`または`processing`のフィードバックファイル名。",
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
+        nargs="+",
+        help="変換する`inbox`または`processing`のフィードバックファイル名（1個以上）。",
+    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--plan-file",
         metavar="ABS_PATH",
@@ -539,6 +592,11 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         default=None,
         help="処理完了を待つキュー項目。複数回指定でき、重複は初出順で除去する。",
     )
+    convert_to_plan.add_argument(
+        "--skip-push",
+        action="store_true",
+        help="管理リポジトリへのpushを省略してcommitだけ行う。",
+    )
     _add_target_repo_arg(convert_to_plan, help_extra="省略時は現在の作業リポジトリと照合する。")
 
     set_dependencies = sub.add_parser(
@@ -549,7 +607,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "filename",
         metavar="FILENAME",
         help="更新する`inbox`または`processing`のフィードバックファイル名。",
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
+    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     set_dependencies.add_argument(
         "--depends-on",
         metavar="FILENAME",
@@ -568,7 +626,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     grep.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     grep.add_argument(
         "--status",
-        choices=("all", "active", "inbox", "processing", "adopted", "rejected"),
+        choices=("all", "active", "processable", *_common.MQ_STATES),
         default="active",
         help="状態フォルダで検索範囲を限定する（既定: active）。`list`と同じ選択肢・既定値。",
     )
@@ -845,7 +903,10 @@ def main(
         ),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
+        "start-planning": lambda: _mutations._cmd_start_planning(args, private_notes, now),
         "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes, now),
+        "hold": lambda: _mutations._cmd_hold(args, private_notes, now),
+        "unhold": lambda: _mutations._cmd_unhold(args, private_notes, now),
         "return-to-inbox": lambda: _mutations._cmd_return_to_inbox(args, private_notes, now),
         "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
         "reject": lambda: _mutations._cmd_reject(args, private_notes, now),

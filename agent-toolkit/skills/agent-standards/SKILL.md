@@ -98,6 +98,8 @@ description: >
 意味を変えない誤字・句読点・リンクの修正だけの編集は対象外とする
 （「LLM読者特性の考慮」節の読込指示は努力目標）。
 
+計画やレビュー契約へ、実装順序・単位分割・個別コマンドなどの手順詳細を記載する場合は、既存規範と確定済み外部仕様から一意に導出できないかを確認する。一意に導出できる詳細は省略し、安全性、データ保全、公開契約又は主体間の認可境界を守るために必要な場合だけ明示する。
+
 ## 文書記述量の管理
 
 対象は`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`配下のMarkdownとする。
@@ -108,7 +110,7 @@ description: >
 
 規範量が作業へ影響する経路は、同一契約の分散で同期対象箇所が増えることと、判断に使わない記述を起動時に読んで初期コンテキストを消費することの2つとする。総バイト数だけで削減対象を決めない。
 記述は、常時ロード（`rules/`とfrontmatterの`description`）、メイン起動時（`SKILL.md`本体）、明示Read時（`references/`）、サブエージェント注入（agent定義とfrontmatterの`skills`）の4階層から、読む主体と必要になる時点に合わせて配置する。
-スキルの本数削減は常時ロード量をほとんど減らさない。削減では、利用者が観測する起動経路を変える統廃合より、`SKILL.md`本体から`references/`への退避とagent定義の縮小を優先して検討する。
+スキルの本数削減は常時ロード量をほとんど減らさない。削減では、消費主体が観測する起動経路を変える統廃合より、`SKILL.md`本体から`references/`への退避とagent定義の縮小を優先して検討する。
 
 統合を検討する場合、削減判定は次のいずれかの根拠を満たすことを条件とする。
 
@@ -147,6 +149,11 @@ Claude Codeのhookは状態ファイル`{tempdir}/claude-agent-toolkit-{session_
 - `references/agent-skills.md`: スキル編集時（公式リファレンスの参照先を含む）
 - `references/check-script-design.md`: 機械チェックスクリプト新設・改修時
 - `references/claude-hooks.md`（hook編集時）・`references/auto-mode.md`（auto mode編集時・権限拒否時）
-- `references/hook-message-labeling.md`: hookの利用者向けメッセージを新設・改訂する時
+- `references/hook-message-labeling.md`: hookのエンドユーザー向けメッセージを新設・改訂する時
 - `references/session-records.md`: セッション記録の集計・分析時
 - `references/tool-operations.md`: 大量の文書読込・大規模ブロック置換・plugin資源のroot失効時
+- agent定義・スキル編集の入口では`agent-toolkit:agent-standards`の`agent-standards/references/agent-skills.md`を全文読む
+- hook編集の入口では`agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`を全文読む
+- hookメッセージ編集の入口では`agent-toolkit:agent-standards`の`agent-standards/references/hook-message-labeling.md`を全文読む
+- auto mode編集又は権限拒否時は`agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`及び`references/auto-mode.md`を読む
+- セッション状態フラグを扱う入口では`agent-toolkit:agent-standards`の`agent-standards/references/session-state-flags.md`を全文読む

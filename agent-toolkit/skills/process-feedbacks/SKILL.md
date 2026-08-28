@@ -17,14 +17,50 @@ activeなフィードバックを取得し、調査、採否、実装、公開�
 同節が定める契機（回答期限の超過、又は期限を提供しない実行環境では応答を得られないと判断した時点）で
 TBDへ永続化して暫定判断で進める。
 
+本スキルを起動したセッションの追加指示は、同一主題のactive項目の採否、計画又は実装条件へ反映する。
+直接実装を求める表現も、同一主題である間は本スキルの処理を継続する追加条件として扱う。
+完了報告後も同一主題が続く限りこの扱いを維持する。
+主題が続くか、直接実装との境界が不明な場合は変更前にユーザーへ確認する。
+
+必要な工程へ入る時だけ対応資料を全文読む。
+
+- 一括取得時は`agent-toolkit/skills/add-feedback/references/managed-temp-bulk-show.md`を全文読む
+- 採否分類時は`agent-toolkit/skills/process-feedbacks/references/review-checklists.md`を全文読む
+- 採否記録時は`agent-toolkit/skills/process-feedbacks/references/decision-format.md`を全文読む
+- 採否分類で設計判断を行う時は`agent-toolkit/skills/coding-standards/references/design-heuristics.md`を全文読む
+- 別リポジトリへ投入する時は`agent-toolkit/skills/add-feedback/references/cross-repository-submission.md`を全文読む
+- TBDを保留する時は`agent-toolkit/skills/process-feedbacks/references/hold-with-tbd-inject.md`を全文読む
+- 計画起草時は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`を全文読む
+- レーン割当時は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読む
+- 計画実装の担当を扱う時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
+- レーン割当時は`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読む
+- Claude Code固有の委譲経路を扱う時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を全文読む
+- 待機時は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`を全文読む
+- レビュー継続時は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を全文読む
+- 計画実装型を扱う時は`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`を全文読む
+- 版数更新時は`.claude/skills/agent-toolkit-edit/references/version-bump.md`を全文読む
+
 ## 1. 入力と着手可否
 
 対象リポジトリの絶対パスを確定し、次を行う。
 
 1. `atk mq list --status=active --target-repo=<repo-path>`でactive項目を取得する。
-   `CLAUDECODE`が設定されている場合は、この一覧のファイル名を本セッションの処理対象として固定する。
-   起動時の目的文にCodexオーケストレーターの連続処理と明記されている場合（以下、連続処理モード）は、
-   後述の`process-loop`用再取得も適用する
+   `../exit-session/references/host-and-os-termination.md`を全文読み、同文書の副作用のない終了能力probeを実行する。
+   完了したprobeが全条件に一致する場合だけ終了能力の分岐値を停止可能とする。
+   probeの未実行、読取失敗又は値の不一致を含むそれ以外は停止不能とする。
+   起動時の目的文にCodexオーケストレーターの連続処理と明記されている場合を連続処理モードとする。
+   本体停止可能かつ連続処理モードでない場合は、起動時に取得した一覧のファイル名を本セッションの処理対象として固定する。
+   停止不能な場合と連続処理モードでは、後述の後始末後再取得を適用する。
+   起動時の分岐値は後始末後のactive再取得の選択にだけ使い、終了時の停止可否は`exit-session`が停止直前に新規probeして判定する。
+
+   状態の対応は次のとおりとする。
+
+   | 入力 | 起動時の対象 | 後始末後 | 終了工程 |
+   | --- | --- | --- | --- |
+   | 本体停止可能、通常処理 | 起動時active項目を固定 | 新規activeを再取得せず振り返りへ進む | `exit-session`が本体を停止する |
+   | 本体停止不能、通常処理 | 起動時対象から開始 | activeを再取得し、readyがあれば調査へ戻る | readyなしで終了案内を返す |
+   | 明示的な連続処理モード | 起動時対象から開始 | 終端又は保留後にactiveを再取得し、readyがあれば調査へ戻る | readyなしで能力に応じて本体停止又は終了案内を行う |
+
 2. 必要なファイル名だけを、後述の「一括取得の管理対象一時領域」の手順で1回取得する
 3. `plan_file`を持つフィードバックを計画実装型、それ以外を通常型とする。本文から型を推測しない
 4. 本文の順序条件は着手可否の判定前に抽出する。active項目から対象ファイル名自身を除外し、`../add-feedback/SKILL.md`「入力」が定める外部待ち条件を依存先候補へ写像する。実装順序の前後は依存先候補へ含めない。
@@ -42,6 +78,12 @@ TBDへ永続化して暫定判断で進める。
    コマンドは全ファイルの存在、inbox配置、frontmatter及び`target_repo`一致を移動前に検証するため、1件でも失敗した場合は集合全体を拒否し、どの項目も移動しない。
    実装順序の保証は統合計画の実装単位順へ移し、`start-processing`へ新たな順序又は依存の検査を追加しない。
    既存のprocessing項目では`start-processing`を再実行せず、同コマンドの再実行を未完了の`feedbacks-planner`工程の再開起点にしない
+
+feedbackの`active`集合は`inbox`・`processing`・`editing`・`hold`である。`processable`集合はTBD処理、readiness、`process-loop`へ渡せる`inbox`・`processing`だけとする。`planning`は計画作成中の明示状態として`--status=planning`で確認できるが、active・processable、ready判定、`process-loop`の起動集合、TBD修復、`start-processing`の対象には含めない。planning項目の計画作成、再開、失敗復旧は、同じファイル名集合を指定する`plan-and-add-feedback`の経路だけで行う。
+
+`hold`は明示的な`unhold`まで自動処理の候補から除外し、`unhold`では`inbox`へ戻す。`editing`も自動処理の候補から除外する。永続的な編集セッション、専用の復旧状態又はpush再試行APIは設けない。
+
+`atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境でJSON Linesを既定出力とし、`--no-json`でテキスト表示へ戻す。`--json`と`--count`は明示指定を優先する。この出力規則は`list`に限り、`show`、状態遷移及び編集CLIの既存テキスト出力を変更しない。テキスト表示の短縮はstdoutがTTYの場合だけ行い、非TTYではtarget_repoと要約を全文で保持する。
 
 `start-processing`が状態競合で拒否した場合は、active一覧と保存本文を再取得して着手可否の判定から再開する。
 移動開始後にI/O、commit又はpushが失敗した場合の管理リポジトリ復旧手順は`references/feedbacks-planner-reception.md`
@@ -73,9 +115,9 @@ TBDへ永続化して暫定判断で進める。
 初回起動には再開コンテキストを渡さない。
 `awaiting_confirmation`後の再開起動だけは、元のバッチ全項目の調査結果全文、原文frontmatterの`source`原値（欠落は値なし）、IDごとの累積`user_decisions`、
 出所と引用範囲付きの逐語回答・保存TBD、初回起動と同じ計画ファイルの絶対パスを全て渡す。
-`feedbacks-planner`はバッチ全項目の採否記録を保持したまま、全要求不採用の項目をreject対象、保留項目をhold対象と計画スレッドの起動前に判定して計画対象集合から除外する。判定結果は完了報告でメインへ返し、キュー状態を変更しない。
-部分採用は確認経路へ機械的に含めず、`references/decision-format.md`の採否記録へ残す。事前除外後の計画対象集合だけを計画担当へ渡す。
-実装順序の保証は統合計画detail側の`### 実装単位`の先行依存と統合順へ移し、`start-processing`へ新たな順序・依存検査を追加しない。
+ファイル単位の終端、計画対象集合及びキュー操作の責務境界は`references/feedbacks-planner-reception.md`「reject・hold判定」を正本とする。
+部分採用は確認経路へ機械的に含めず、`references/decision-format.md`の採否記録へ残す。
+実装順序の保証は統合計画の計画ファイル（詳細）`### 実装単位`の先行依存と統合順へ移し、`start-processing`へ新たな順序・依存検査を追加しない。
 別リポジトリ項目の投入と照合は`../add-feedback/references/cross-repository-submission.md`を正本とする。
 
 Claude CodeとCodexの双方で、`feedbacks-planner`の起動前に`agent-toolkit:delegation`をSkill機能で起動する。
@@ -99,7 +141,7 @@ agent定義の欠落、frontmatterの写像不能又は`feedbacks-planner`の起
 
 Claude CodeとCodexのいずれかのホストの通常型で`feedbacks-planner`から`status: awaiting_confirmation`と不採用確認用`user_decisions`を受領した場合は、確認待ち経路へ進む。
 `status`を失敗処理より先に確認し、`awaiting_confirmation`を失敗や`needs_escalation`として扱わない。
-`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目だけを利用者確認から除外する。それ以外の項目ごとに
+`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目だけをユーザー確認から除外する。それ以外の項目ごとに
 原文との差異と技術的理由を示す`AskUserQuestion`を発行し、回答を得た場合は逐語文を渡して同じ系列の新しい`feedbacks-planner`識別子を起動し、
 採否記録を再検収する。
 回答なしの不採用確認用TBD、保存済みTBDの再開及び`blocked`状態の扱いは`references/hold-with-tbd-inject.md`を正本とする。
@@ -107,18 +149,18 @@ Claude CodeとCodexのいずれかのホストの通常型で`feedbacks-planner`
 外部ツール、ライブラリ、サービスの挙動を成果物へ転記する前に、一次資料または実装で裏付ける。
 技術的に確定できない事項とユーザー判断は保留へ送る。
 
-`feedbacks-planner`の失敗時におけるTBD保存、由来別の終端及び再開は`references/hold-with-tbd-inject.md`を正本とする。失敗TBDの必須項目と保存後の確認は`references/feedbacks-planner-reception.md`「受領」を適用する。
+`feedbacks-planner`の失敗時におけるTBD保存、全source共通の保留及び再開は`references/hold-with-tbd-inject.md`を正本とする。失敗TBDの必須項目と保存後の確認は`references/feedbacks-planner-reception.md`「受領」を適用する。
 
-同一バッチかつ同一`target_repo`で、失敗した事象、期待値、実際値、発生条件、直接的原因及び再開に必要な情報が全て一致する失敗は、元のファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。`decision-format.md`「採否結果」の値集合でエージェント由来と判定される元項目は同じTBDのファイル名を項目固有メモへ記録してrejectで終端し、それ以外の元項目は全て同じTBDへ依存させ、`blocked`を確認する。6要素又は`target_repo`が異なる場合は同じTBDへ集約しない。
+同一バッチかつ同一`target_repo`で、失敗した事象、期待値、実際値、発生条件、直接的原因及び再開に必要な情報が全て一致する失敗は、元のファイル名一覧を本文へ列挙した1件の共通失敗TBDへ集約する。失敗した元項目は投入元の由来にかかわらず同じTBDへ依存させ、`blocked`を確認する。技術的失敗を不採用へ変換せず、`atk mq reject`はprocess-loop内で要求の全てを不採用と確定した終端に限る。6要素又は`target_repo`が異なる場合は同じTBDへ集約しない。
 
 `feedbacks-planner`完了後の項目別結果はファイル名昇順で各1回反映する。
 保存済みの不採用確認用TBDを受領して再開した項目は、既存TBDの保存内容と元項目の`blocked`状態を確認済みであるため、結果反映時の失敗処理対象から除外する。
 この項目では失敗TBDの再投入、`atk mq set-dependencies`による再依存、`atk mq return-to-inbox`による再inboxとrejectを実行せず、保持済みの結果を反映して次の項目へ進む。
 結果反映コマンドが警告・エラーを返した場合は、同じコマンドを再実行せず、
 `atk mq show <filename> --target-repo=<repo>`で当該項目だけを1回再取得する。
-意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認及び由来に応じた終端処置を各1回実行する。`decision-format.md`「採否結果」の値集合でエージェント由来と判定される項目はrejectで終端し、それ以外の項目は`references/hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認して保留する。後者では不採用確認を経ずに元のフィードバックをrejectしない。
+意図した保存後状態なら重複操作を避ける。元のフィードバックがactiveなら前段と同じ失敗TBDの保存、確認及び依存設定を各1回実行する。由来にかかわらず`references/hold-with-tbd-inject.md`の「技術的失敗」に従ってTBD依存を設定し、`blocked`を確認してactiveのまま保留する。不採用確認を経ずに元のフィードバックをrejectせず、失敗処理からrejectを呼び出さない。
 保存済みの不採用確認用TBDを受領して再開した項目で結果反映が失敗した場合は、保持済みの確認TBDを同じ依存として残し、新しい失敗TBDを作成しない。
-再取得失敗、想定外状態、失敗TBDの保存失敗、reject再失敗では、当該項目への追加操作だけを止める。
+再取得失敗、想定外状態又は失敗TBDの保存失敗では、当該項目への追加操作だけを止める。
 全ての分岐で保持済みの`feedbacks-planner`結果により後続項目を各1回処理し、全件走査後に警告・エラーが1件でもあればバッチを失敗として返す。
 
 回答済みTBDの処理は`references/hold-with-tbd-inject.md`を正本とする。
@@ -146,7 +188,7 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
   `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
 - 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する
 - commit前に実行主体が`agent-toolkit:commit`をSkill機能で起動する
-- 実装と準拠系・盲検系のレビューの完了後、呼び出し元がpushとCI通過確認を完遂する
+- 実装と`implementation-review`のレビューの完了後、呼び出し元がpushとCI通過確認を完遂する
 - 計画の完了条件を満たした対象だけを後始末へ進める
 
 メインはキュー操作、`feedbacks-planner`・`plan-impl-executor`の起動、レーン起動前の計画読解と検証区分の指定を担当する。
@@ -168,21 +210,14 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
 - 回答済みTBD: `references/hold-with-tbd-inject.md`に従って採用終端し、依存解除後の処理を再開する
 
 各コマンドの保存結果を再取得し、対象、採否、note、commitを照合する。
-複数の採用項目もファイル名昇順で1件ずつ終端し、複数のファイル名を1回の`atk mq adopt`へ渡さない。
-複数の項目を連続して終端する場合は、ファイル名昇順で最後の1件を除く`atk mq adopt`・`atk mq reject`へ`--skip-push`を付け、最後の1件は付けずに実行して滞留commitをまとめてpushする。対象が1件だけの場合は`--skip-push`を付けない。
+複数の採用項目もファイル名昇順で1件ずつ終端し、複数のファイル名を1回の`atk mq adopt`へ渡さない。全要求不採用とprocess-loop内で確定した項目のrejectも、判定済みの対象ごとに1件ずつ実行する。
+複数の項目を連続して終端する場合は、ファイル名昇順で最後の1件を除く`atk mq adopt`・全要求不採用と確定した項目への`atk mq reject`へ`--skip-push`を付け、最後の1件は付けずに実行して滞留commitをまとめてpushする。対象が1件だけの場合は`--skip-push`を付けない。
 終端工程を持つ項目のnoteには実施した操作と結果を記録する。
 
-Codexホストと連続処理モードでは、後始末の完了後は再取得したready項目の有無で分岐し、ready項目があれば「2. 調査と採否」へ戻り、
-ready項目が無い場合だけ「6. 振り返りと終了」へ進む。Codexホストと連続処理モードでは、再取得の範囲だけが異なる。
-Claude Codeホストでは、ready項目を再取得せず、起動時に固定した未終端項目だけを処理し、後始末の完了後は常に「6. 振り返りと終了」へ進む。
-更新された規範は次セッションの起動時に読み込む。起動後に追加された項目はactiveのまま残し、残る項目を次セッションで再集約して
-並列調査・統合計画化できるため、時間・コストを抑える。
-`process-loop`又は次回の手動起動による新しいセッションで扱う。
-Codexでは実装と後始末の間にactive一覧を再取得し、追加分を含むready項目も対象とする。
-連続処理モードでは、
-取得済みのready項目を終端させたか保留した後にactive一覧を再取得し、
-依存関係の有無を問わず追加分を含むready項目を対象とする。
-「6. 振り返りと終了」の開始後に追加された項目は次回の手動起動で扱う。
+本体プロセスを停止でき、かつ連続処理モードでない場合はactive一覧を再取得せず、起動時に固定した未終端項目の後始末後に「6. 振り返りと終了」へ進む。更新された規範は次セッションの起動時に読み込む。起動後に追加された項目はactiveのまま残し、次セッションで再集約して並列調査・統合計画化する。
+
+本体プロセスを停止できない場合又は連続処理モードでは、取得済みのready項目を終端させたか保留した後にactive一覧を再取得する。追加分を含むready項目があれば「2. 調査と採否」へ戻り、無い場合だけ「6. 振り返りと終了」へ進む。連続処理モードでは依存関係の有無を問わず追加分を対象とする。「6. 振り返りと終了」の開始後に追加された項目は次回の手動起動で扱う。
+
 既に本セッションのcommitで要求が満たされている場合は、その実測を根拠に採用として終端させる。
 
 ## 6. 振り返りと終了
@@ -191,6 +226,7 @@ Codexでは実装と後始末の間にactive一覧を再取得し、追加分を
 振り返りで生成した提案は同スキルが`agent-toolkit:add-feedback`を起動して投入する。完了後に実行主体が
 `agent-toolkit:exit-session`をSkill機能で起動する。
 
-`exit-session`が到達できる終了の範囲は実行ホストによって異なる。
-本体プロセスの停止を要求できないホストでは、終了理由を最終応答としてターンを完了させた時点で
-終了工程が正常に完了したものとして扱う。プロセスの停止と次セッションの起動はホスト側の責務とする。
+`exit-session`が停止直前の新規probeで現在の本体プロセスを停止できる場合は、停止要求の発火を終了工程とする。
+起動時の終了能力の分岐値は終了工程へ持ち越さない。
+停止できない場合は、終了理由を最終応答としてターンを完了した時点で終了工程が正常に完了したものとする。
+後者のプロセス停止と次セッションの起動は実行環境側の責務とする。

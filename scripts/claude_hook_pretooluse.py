@@ -192,6 +192,7 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
 _HOME_CLAUDE_ALLOWED_DIRS: frozenset[str] = frozenset(
     {
         "plans",  # plan mode が書き込む計画ファイル
+        "jobs",  # Claude Code が生成するセッション作業領域
         "scratchpad",  # 一時作業ファイル領域 (chezmoi 管理外)
         "projects",  # Claude Code のセッション履歴
         "todos",  # TodoWrite ストレージ
@@ -364,7 +365,7 @@ def _check_dotfiles_specific_names(
     """agent-toolkit 配布物への dotfiles 固有名混入を検出する。
 
     対象範囲は `agent-toolkit/` 配下。
-    block 対象は配布先の利用者にとって意味不明な参照となるため exit 2 で停止する。
+    block 対象は配布先のエンドユーザーにとって意味不明な参照となるため exit 2 で停止する。
     warn 対象 (`pyfltr` / `pytilpack`) は OSS として正規参照される場合があるため通知のみ。
 
     `(block_message, warn_message)` を返す。該当なしの側は None。

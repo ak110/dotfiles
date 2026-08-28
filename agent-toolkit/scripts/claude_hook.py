@@ -28,6 +28,7 @@ import contextlib
 import datetime
 import importlib
 import io
+import json
 import os
 import pathlib
 import sys
@@ -37,6 +38,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "pretooluse",
         "posttooluse",
+        "autonomous_exit",
         "stop_advisor",
         "subagent_stop_advisor",
         "subagent_start_tracker",
@@ -49,9 +51,8 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
     }
 )
 
-# 例外時に`_approve()`（空JSON応答）フォールバックを呼ぶ対象。既存の各モジュール実装を実測し
-# `stop_advisor.py`のみが該当することを確認済み（他6件は`_approve`を例外時に呼んでいない）。
-_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop_advisor"})
+# 例外時に`_approve()`（空JSON応答）フォールバックを呼ぶ対象。Stop系モジュールの実装と一致させる。
+_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"autonomous_exit", "stop_advisor"})
 
 
 def _configure_standard_output() -> None:
@@ -93,6 +94,14 @@ def main(argv: list[str]) -> int:
         )
         return 0
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    with contextlib.suppress(Exception):
+        payload = json.loads(payload_text)
+        if isinstance(payload, dict):
+            session_id = payload.get("session_id")
+            transcript_path = payload.get("transcript_path")
+            if isinstance(session_id, str) and isinstance(transcript_path, str):
+                session_state = importlib.import_module("_session_state")
+                session_state.inherit_state_from_transcript(session_id, transcript_path)
     try:
         module = importlib.import_module(argv[0])
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉

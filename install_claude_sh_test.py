@@ -284,8 +284,8 @@ def test_agents_server_warmup_closes_standard_input() -> None:
     shell_source = INSTALL_SH.read_text(encoding="utf-8")
     powershell_source = INSTALL_PS1.read_text(encoding="utf-8-sig")
 
-    assert '"$script_path" --help </dev/null >/dev/null' in shell_source
-    assert "$null | & uv run --no-project --script $scriptPath --help *> $null" in powershell_source
+    assert '"$script_path" --check-dependencies </dev/null >/dev/null' in shell_source
+    assert "$null | & uv run --no-project --script $scriptPath --check-dependencies *> $null" in powershell_source
 
 
 @pytest.mark.parametrize("kind", _runners())
@@ -334,7 +334,7 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
         "codex plugin marketplace upgrade ak110-dotfiles --json",
         "codex plugin add agent-toolkit@ak110-dotfiles --json",
         "uv run --no-project --script",
-        "agents_server_mcp.py --help",
+        "agents_server_mcp.py --check-dependencies",
     ]
     last_index = -1
     for command in expected:

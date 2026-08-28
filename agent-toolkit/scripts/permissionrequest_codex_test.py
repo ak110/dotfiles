@@ -203,6 +203,28 @@ def test_allows_trusted_atk_launcher_command(
     assert output["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
 
 
+def test_allows_cleanup_from_registered_root_after_temp_root_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codex側cleanupが現在の一時rootではなく登録pathの親rootを検証する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parent.parent
+    shared_root = tmp_path / "shared-root"
+    current_root = tmp_path / "current-root"
+    shared_root.mkdir()
+    current_root.mkdir()
+    if os.name == "nt":
+        _managed_temp._windows_secure_path(shared_root, directory=True)
+    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
+    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(current_root))
+    target = _managed_temp.create_managed_temp("hook-shared-root", root=shared_root)
+
+    assert subject.main(_payload(_command(plugin_root, target))) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
+
+
 def test_rejects_untrusted_or_noncanonical_atk_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

@@ -20,7 +20,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. agents_server MCP呼び出し後のsession状態記録
-10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
+10. exit-session起動検知による`autonomous_exit_invoked`の記録と
+    `process_feedbacks_skill_invoked`等のリセット (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
 12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
@@ -45,6 +46,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-m
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -169,6 +171,7 @@ _ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedba
 # exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
 # （`agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端する）。
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
+_AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = (
@@ -247,6 +250,17 @@ def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
     for key in keys:
         state[key] = False
     return state
+
+
+def _record_exit_session_invoked(state: dict) -> dict | None:
+    """exit-session呼び出しを記録し、自動振り返りの起点フラグをまとめてリセットする。"""
+    changed = False
+    if state.get(_AUTONOMOUS_EXIT_STATE_KEY) is not True:
+        state[_AUTONOMOUS_EXIT_STATE_KEY] = True
+        changed = True
+    if _reset_process_feedbacks_invoked(state) is not None:
+        changed = True
+    return state if changed else None
 
 
 def _extract_agents_server_structured_response(tool_response: object) -> dict:
@@ -433,7 +447,7 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
 
         update_state(session_id, _set_add_feedback_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
-        update_state(session_id, _reset_process_feedbacks_invoked)
+        update_state(session_id, _record_exit_session_invoked)
 
 
 def _record_edited_file(session_id: str, file_path: str) -> None:
@@ -523,12 +537,12 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
 
 
 def _plan_main_path_for(display_path: str) -> str:
-    """計画構成要素のパスから対応するメイン側（計画本体）の絶対パスを返す。
+    """計画構成要素のパスから対応する計画ファイル（メイン）の絶対パスを返す。
 
-    実装詳細側`<stem>.detail.md`はstem導出でメイン側`<stem>.md`へ変換する。
-    メイン側の節構成検査が実装詳細側の実在・節構成も検査するため、
-    detail側書込み時もメイン側パスを検査案内の対象とする。
-    メイン側パスはそのまま返す。
+    計画ファイル（詳細）`<stem>.detail.md`はstem導出で計画ファイル（メイン）`<stem>.md`へ変換する。
+    計画ファイル（メイン）の節構成検査が計画ファイル（詳細）の実在・節構成も検査するため、
+    計画ファイル（詳細）書込み時も計画ファイル（メイン）パスを検査案内の対象とする。
+    計画ファイル（メイン）パスはそのまま返す。
     """
     if display_path.endswith(".detail.md"):
         return display_path[: -len(".detail.md")] + ".md"
@@ -536,7 +550,7 @@ def _plan_main_path_for(display_path: str) -> str:
 
 
 def _plan_pair_exists(file_path: str) -> bool:
-    """計画構成要素のメイン側とdetail側がともに実在するかを返す。"""
+    """計画構成要素の計画ファイル（メイン）と計画ファイル（詳細）がともに実在するかを返す。"""
     main_path = pathlib.Path(_plan_main_path_for(file_path))
     detail_path = main_path.with_suffix(".detail.md")
     return main_path.is_file() and detail_path.is_file()
@@ -645,8 +659,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # agents_server応答からsession_id→cwdを保存し、session状態を更新する。
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
-        structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
-        if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS:
+        tool_response = payload.get("tool_response", {})
+        structured = _extract_agents_server_structured_response(tool_response)
+        if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and _stop_gate.background_task_id_from_notice(tool_response) is None:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
                 display_name = tool_name.rsplit("__", 1)[-1]

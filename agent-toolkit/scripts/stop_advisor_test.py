@@ -8,11 +8,14 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
+import tempfile
 import time
 from collections.abc import Callable
 from typing import Any
 
 import _fork_runner
+import _managed_temp
 import pytest
 import stop_advisor
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
@@ -120,7 +123,7 @@ def _codex_started_marker() -> dict:
 
 
 def _background_bash_launch_entry(tool_use_id: str) -> dict:
-    """背景Bash起動を記録するメイン側userエントリを生成する。"""
+    """背景Bash起動を記録する計画ファイル（メイン）側userエントリを生成する。"""
     return {
         "type": "user",
         "isSidechain": False,
@@ -494,6 +497,238 @@ class TestSessionReviewCommandInvocation:
         assert _parse_decision(result).get("decision") == "block"
 
 
+class TestManagedTempNotice:
+    """管理対象一時領域の残存警告を検証する。"""
+
+    @pytest.mark.parametrize(
+        ("entries", "expected"),
+        [
+            ([], ""),
+            ([{"path": "/tmp/managed-one", "prefix": None, "created_at": None}], "1"),
+            (
+                [
+                    {"path": "/tmp/managed-one", "prefix": None, "created_at": None},
+                    {"path": "/tmp/managed-two", "prefix": "review", "created_at": "2026-08-27T00:00:00Z"},
+                ],
+                "2",
+            ),
+        ],
+        ids=["none", "one", "multiple"],
+    )
+    def test_notice_uses_count_without_embedding_paths(
+        self,
+        entries: list[dict[str, str | None]],
+        expected: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        def fake_list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
+            assert prefix is None
+            return entries
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _managed_temp,
+            "list_managed_temp",
+            fake_list_managed_temp,
+        )
+
+        notice = stop_advisor._managed_temp_notice()  # pylint: disable=protected-access
+
+        if expected:
+            assert f"managed temporary cleanup candidates remain: {expected}" in notice
+            assert "`atk managed-temp list`" in notice
+            assert "`atk managed-temp cleanup --path <path>`" in notice
+            assert "do not assume they were forgotten" in notice
+            assert "/tmp/managed-one" not in notice
+            assert "/tmp/managed-two" not in notice
+        else:
+            assert notice == ""
+
+    def test_list_failure_keeps_notice_empty(self, monkeypatch: pytest.MonkeyPatch):
+        def raise_list_error(prefix: str | None = None) -> list[dict[str, str | None]]:
+            del prefix
+            raise RuntimeError("test failure")
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _managed_temp,
+            "list_managed_temp",
+            raise_list_error,
+        )
+
+        assert not stop_advisor._managed_temp_notice()  # pylint: disable=protected-access
+
+    def test_list_failure_keeps_existing_review_guidance(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        session_id = "managed-temp-list-failure"
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, session_id, {"process_feedbacks_skill_invoked": True})
+
+        def raise_list_error(prefix: str | None = None) -> list[dict[str, str | None]]:
+            del prefix
+            raise RuntimeError("test failure")
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _managed_temp,
+            "list_managed_temp",
+            raise_list_error,
+        )
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+        assert stop_advisor.main(json.dumps({"session_id": session_id, "transcript_path": str(transcript)})) == 0
+
+        reason = _block_reason(json.loads(capsys.readouterr().out))
+        assert _SESSION_REVIEW_SKILL in reason
+        assert "managed temporary cleanup candidates" not in reason
+        assert "`atk managed-temp" not in reason
+
+    @pytest.mark.parametrize(
+        "host_fields",
+        [{}, {"model": "gpt-5"}],
+        ids=["claude", "codex"],
+    )
+    def test_block_notice_includes_verified_entries_for_both_hosts(
+        self,
+        tmp_path: pathlib.Path,
+        host_fields: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        session_id = f"managed-temp-{len(host_fields)}"
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, session_id, {"process_feedbacks_skill_invoked": True})
+        entries: list[dict[str, str | None]] = [
+            {"path": "/tmp/managed-one", "prefix": None, "created_at": None},
+            {"path": "/tmp/managed-two", "prefix": "review", "created_at": "2026-08-27T00:00:00Z"},
+        ]
+
+        def fake_list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
+            assert prefix is None
+            return entries
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _managed_temp,
+            "list_managed_temp",
+            fake_list_managed_temp,
+        )
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+        payload: dict[str, str] = {
+            "session_id": session_id,
+            "transcript_path": str(transcript),
+            **host_fields,
+        }
+        assert stop_advisor.main(json.dumps(payload, ensure_ascii=False)) == 0
+
+        decision = json.loads(capsys.readouterr().out)
+        reason = _block_reason(decision)
+        assert "managed temporary cleanup candidates remain: 2" in reason
+        assert "`atk managed-temp list`" in reason
+        assert "`atk managed-temp cleanup --path <path>`" in reason
+        assert "/tmp/managed-one" not in reason
+        assert "/tmp/managed-two" not in reason
+
+    def test_block_notice_suppresses_partial_list_diagnostic(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        session_id = "managed-temp-partial-list"
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, session_id, {"process_feedbacks_skill_invoked": True})
+
+        def list_with_diagnostic(prefix: str | None = None) -> list[dict[str, str | None]]:
+            del prefix
+            print("warning: invalid registry /tmp/example", file=sys.stderr)
+            return [{"path": "/tmp/managed-one", "prefix": None, "created_at": None}]
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _managed_temp,
+            "list_managed_temp",
+            list_with_diagnostic,
+        )
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+        assert stop_advisor.main(json.dumps({"session_id": session_id, "transcript_path": str(transcript)})) == 0
+
+        captured = capsys.readouterr()
+        decision = json.loads(captured.out)
+        reason = _block_reason(decision)
+        assert captured.err == ""
+        assert "managed temporary cleanup candidates remain: 1" in reason
+        assert "/tmp/example" not in reason
+
+    def test_existing_allow_branches_skip_managed_temp_lookup(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        """候補が残っていても既存のapprove分岐では列挙処理へ到達しない。"""
+        call_count = 0
+
+        def list_with_candidate(prefix: str | None = None) -> list[dict[str, str | None]]:
+            nonlocal call_count
+            assert prefix is None
+            call_count += 1
+            return [{"path": "/tmp/managed-one", "prefix": None, "created_at": None}]
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _managed_temp,
+            "list_managed_temp",
+            list_with_candidate,
+        )
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+        cases = [
+            (
+                "managed-temp-stop-hook-active",
+                [_user_entry(), _assistant_text_only()],
+                {"stop_hook_active": True},
+                None,
+            ),
+            (
+                "managed-temp-pending-async",
+                [_user_entry(), _assistant_with_async_tool("Agent")],
+                {},
+                None,
+            ),
+            (
+                "managed-temp-review-invoked",
+                [_user_entry(), _assistant_text_only()],
+                {},
+                {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
+            ),
+            (
+                "managed-temp-not-eligible",
+                [_user_entry(), _assistant_text_only()],
+                {},
+                None,
+            ),
+        ]
+        for session_id, entries, fields, state in cases:
+            transcript = _write_transcript(tmp_path, entries)
+            if state is not None:
+                _write_state(tmp_path, session_id, state)
+
+            payload: dict[str, object] = {
+                "session_id": session_id,
+                "transcript_path": str(transcript),
+                **fields,
+            }
+            assert stop_advisor.main(json.dumps(payload, ensure_ascii=False)) == 0
+
+            captured = capsys.readouterr()
+            decision = json.loads(captured.out)
+            assert "decision" not in decision
+            assert "managed temporary cleanup candidates" not in captured.out
+            assert captured.err == ""
+            assert call_count == 0
+
+
 class TestAppendStopLog:
     """`append_stop_log`が最終判定分岐ごとに呼び出されることの検証（ログファイル1行確認）。"""
 
@@ -815,25 +1050,3 @@ class TestGitStatusDisplay:
         decision = _parse_decision(result)
         assert "decision" not in decision
         assert "systemMessage" not in decision
-
-
-class TestStatusSummary:
-    """`_status_summary`のsystemMessage組み立てを検証する。"""
-
-    def test_empty_cwd_returns_empty_dict(self) -> None:
-        assert not stop_advisor._status_summary("")  # pylint: disable=protected-access
-
-    def test_clean_repo_returns_empty_dict(
-        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
-    ) -> None:
-        repo = make_clean_repo(tmp_path)
-        assert not stop_advisor._status_summary(str(repo))  # pylint: disable=protected-access
-
-    def test_dirty_repo_returns_file_count_summary(
-        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
-    ) -> None:
-        repo = make_dirty_repo(tmp_path)
-        summary = stop_advisor._status_summary(str(repo))  # pylint: disable=protected-access
-        assert "systemMessage" in summary
-        assert "[git status]" in summary["systemMessage"]
-        assert "changed file(s)" in summary["systemMessage"]

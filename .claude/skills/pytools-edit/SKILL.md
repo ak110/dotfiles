@@ -25,7 +25,7 @@ description: >
 ## 実装規約
 
 - リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する
-  （CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため）
+  （CIチェックアウトやエンドユーザー環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため）
 - `pytools/_internal/claude_common.py`は共通基盤モジュール（`find_dotfiles_root()`・`run_subprocess()`・
   `atomic_write_*()`等）を提供する。新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。UTF-8前提のEdit/Writeツールでは

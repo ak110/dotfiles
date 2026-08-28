@@ -19,7 +19,12 @@ atk mq process-loop
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
 ready項目がなくなると、終了時の`session-review`を1回実行して`/goal`で登録した目的を完了する。
-目的の完了後に対話UIで`/exit`を入力すると、親の監視ループへ戻る。
+`process-feedbacks`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
+probe未実行、読取失敗又は値の不一致は停止不能として扱う。
+Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
+終了対象を確認できない環境では対話UIに終了案内を表示し、利用者が`/exit`を入力すると親の監視ループへ戻る。
+終了時の`exit-session`は起動時の分岐値を再利用せず、停止要求直前に終了能力probeを新規実行する。
+表示済みPIDの開始時刻と実行ファイルのデバイス・inodeが再照合で一致した場合だけCodexを停止する。
 
 初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
 `update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。
@@ -75,9 +80,9 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 `start(engine="claude", ...)`を使う。MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
 公開ツールは`start`、`wait`、`send_message`、`kill`の4つである。`start`の`cwd`は既存ディレクトリの絶対パスとし、
-完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout=0`は待機せず現状態を返す。
+完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す。
 `send_message(session_id, prompt)`は実行中turnへsteerし、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
-`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。
+`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。
 timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。`kill`の`kill_requested`、
 `send_message`の`delivery`及び`wait`の終端応答で要求・配送・結果を確認する。
 
@@ -142,7 +147,7 @@ WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版�
 - `~/.codex/AGENTS.md`: Codex向けの基本記述と、agent-toolkitの基本原則・製品横断の実行運用を埋め込む
 - `~/.codex/agent-toolkit/rules/99-claude-code.md`: リンク先には配置するが、Claude Code固有規範のためCodex向けAGENTS.mdへ埋め込まない
 - `~/.codex/agent-toolkit/rules`: Claude Code側のagent-toolkitルール原本へのシンボリックリンク
-- `~/.codex/skills/*`: `agent-toolkit/skills/*`および`.chezmoi-source/dot_claude/skills/*`へのシンボリックリンク
+- `~/.codex/skills/*`: `.chezmoi-source/dot_claude/skills/*`のうちdotfiles固有のグローバルスキルへのシンボリックリンク。agent-toolkit skillsはCodex plugin marketplace経由で配布する
 - プロジェクト直下の`.agents/skills`: プロジェクト専用スキルディレクトリへのシンボリックリンク
 
 CodexはClaude Codeの`CLAUDE.md`や`.claude/rules/`を同じ読み込み規則では扱わない。

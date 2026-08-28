@@ -1,5 +1,6 @@
 """意味契約中心の計画検査を検証する。"""
 
+import json
 import pathlib
 import subprocess
 import sys
@@ -9,6 +10,14 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+_REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
+_REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
+_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN = pathlib.Path("/home/aki/.claude/plans/review-scope-consolidation-2609f04f.md")
+_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL = _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.with_name(
+    f"{_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.stem}.detail.md"
+)
+_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW = _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.with_suffix(".tsv")
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -147,7 +156,7 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
 def _new_format_plan(
     repo: pathlib.Path, base: str, *, bug: bool = False, detail_name: str = "plan.detail.md"
 ) -> tuple[str, str]:
-    """新書式（メイン側・detail側）の正規計画を組み立てて返す。"""
+    """新書式（計画ファイル（メイン）・計画ファイル（詳細））の正規計画を組み立てて返す。"""
     work_type = "バグ対応" if bug else "通常変更"
     main = f"""# 計画の主題
 
@@ -240,8 +249,21 @@ def _new_format_plan(
     return main, detail
 
 
+def _canonical_main_format(content: str) -> str:
+    """旧見出しfixtureを新規計画の固定H2へ変換する。"""
+    return (
+        content.replace(
+            "\n## 提示素材\n",
+            "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
+            1,
+        )
+        .replace("## 変更履歴", "## 変更履歴（計画時）", 1)
+        .replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+    )
+
+
 def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
-    """新規作成用の人間向けメイン側・detail側fixtureを返す。"""
+    """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）fixtureを返す。"""
     main = f"""# 計画の主題
 
 ## 概要
@@ -269,7 +291,7 @@ def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.
 
 ## 変更履歴
 
-### 利用者からの確認
+### ユーザー発言: 本セッションの直接指示
 
 ```text
 公開契約の境界だけを更新する。
@@ -356,7 +378,7 @@ def _check_new(
     create_bug_file: bool = True,
     bug_file_content: str | None = None,
 ) -> tuple[list[str], list[str]]:
-    """新書式の計画（メイン側・detail側）を一時ファイルへ保存して検査する。"""
+    """新書式の計画（計画ファイル（メイン）・計画ファイル（詳細））を一時ファイルへ保存して検査する。"""
     path = repo / plan_name
     path.write_text(main_content, encoding="utf-8")
     detail_path = repo / f"{path.stem}.detail.md"
@@ -372,6 +394,12 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
     path = repo / "plan.md"
     path.write_text(content, encoding="utf-8")
     return check_plan_file.check(path, repo)
+
+
+def _review_table_row(round_value: str = "1") -> str:
+    """レビュー表の7列JSON文字列行を組み立てる。"""
+    values = [round_value, "plan-review", "計画本文", "確認が必要な欠落", "", "", ""]
+    return "\t".join(json.dumps(value, ensure_ascii=False) for value in values) + "\n"
 
 
 def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False) -> str:
@@ -647,7 +675,7 @@ def test_cli_has_no_base_commit_option() -> None:
 
 @pytest.mark.parametrize("bug", [False, True])
 def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bug: bool) -> None:
-    """新書式のメイン側・detail側の組を通常・バグ対応いずれも受理する。"""
+    """新書式の計画ファイル（メイン）・計画ファイル（詳細）の組を通常・バグ対応いずれも受理する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
@@ -659,7 +687,7 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
 def test_accepts_human_readable_new_format_plan_without_migration_warning(
     repo: tuple[pathlib.Path, str],
 ) -> None:
-    """新規作成用の人間向けメイン側・detail側をwarningなしで受理する。"""
+    """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）をwarningなしで受理する。"""
     work_dir, _base = repo
     main_content, detail_content = _human_new_format_plan(work_dir)
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
@@ -668,14 +696,14 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
 
 
 def test_new_format_detected_by_detail_file_presence(repo: tuple[pathlib.Path, str]) -> None:
-    """detail側ファイルが存在しない同名メイン側は旧形式として検査される（`実装詳細`欠落を新書式エラーにしない）。"""
+    """計画ファイル（詳細）が存在しない同名の計画ファイル（メイン）は旧形式として検査される（`実装詳細`欠落を新書式エラーにしない）。"""
     work_dir, base = repo
     errors, _warnings = _check(work_dir, _plan(work_dir, base))
     assert not errors, errors
 
 
 def test_new_format_rejects_detail_reference_mismatch(repo: tuple[pathlib.Path, str]) -> None:
-    """メイン側の`実装詳細`がstem導出値と一致しない場合を拒否する。"""
+    """計画ファイル（メイン）の`実装詳細`がstem導出値と一致しない場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 実装詳細: `plan.detail.md`", "- 実装詳細: `other.detail.md`")
@@ -684,7 +712,7 @@ def test_new_format_rejects_detail_reference_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_missing_detail_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
-    """メイン側の計画メタ情報に`実装詳細`が無い場合を拒否する。"""
+    """計画ファイル（メイン）の計画メタ情報に`実装詳細`が無い場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 実装詳細: `plan.detail.md`\n", "")
@@ -693,7 +721,7 @@ def test_new_format_rejects_missing_detail_metadata_field(repo: tuple[pathlib.Pa
 
 
 def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Path, str]) -> None:
-    """メイン側に`## 検証区分`が無い新書式を拒否する。"""
+    """計画ファイル（メイン）に`## 検証区分`が無い新書式を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace(
@@ -709,7 +737,7 @@ def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Pat
 
 
 def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path, str]) -> None:
-    """`## バグ調査結果`はdetail側専用でありメイン側に置くと拒否する。"""
+    """`## バグ調査結果`は計画ファイル（詳細）専用であり計画ファイル（メイン）に置くと拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace(
@@ -721,7 +749,7 @@ def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path,
 
 
 def test_new_format_rejects_missing_bug_sidecar(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ対応detail側の分離先ファイルが無い場合を拒否する。"""
+    """バグ対応の計画ファイル（詳細）に記載した分離先ファイルが無い場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     errors, _warnings = _check_new(work_dir, main_content, detail_content, create_bug_file=False)
@@ -759,7 +787,7 @@ def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """detail側の固定H2欠落も検査対象となる。"""
+    """計画ファイル（詳細）の固定H2欠落も検査対象となる。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     detail_content = detail_content.replace(
@@ -809,7 +837,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
 
 
 def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
-    """CLI経由でも新書式のメイン側・detail側の組を受理する。"""
+    """CLI経由でも新書式の計画ファイル（メイン）・計画ファイル（詳細）の組を受理する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, detail_name="new-format-plan.detail.md")
     path = work_dir / "new-format-plan.md"
@@ -823,3 +851,136 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert result.stderr == "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"
+
+
+@pytest.mark.skipif(
+    not (_REAL_LEGACY_TWO_FILE_PLAN.is_file() and _REAL_LEGACY_TWO_FILE_DETAIL.is_file()),
+    reason="実在する旧二ファイル計画がこの環境に無い",
+)
+def test_cli_accepts_review_ids_in_real_legacy_two_file_plan() -> None:
+    """実在する旧二ファイル計画を公式CLIで検査し、旧IDをエラーにしない。"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(check_plan_file.__file__)),
+            "--work-dir",
+            "/home/aki/dotfiles",
+            str(_REAL_LEGACY_TWO_FILE_PLAN),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert not any("レビュー指摘行の`ID`" in line for line in result.stderr.splitlines()), result.stderr
+    assert "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in result.stderr
+
+
+@pytest.mark.skipif(
+    not all(
+        path.is_file()
+        for path in (
+            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN,
+            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL,
+            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW,
+        )
+    ),
+    reason="進捗表を持つ実在する旧二ファイル計画がこの環境に無い",
+)
+def test_cli_accepts_real_legacy_two_file_plan_without_progress_round_check() -> None:
+    """実在する旧二ファイル計画へ新形式の進捗照合を適用せず、本文と表を保持する。"""
+    paths = (
+        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN,
+        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL,
+        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW,
+    )
+    before = {path: path.read_bytes() for path in paths}
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(check_plan_file.__file__)),
+            "--work-dir",
+            "/home/aki/dotfiles",
+            str(_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "レビュー表の最大round" not in result.stderr
+    assert {path: path.read_bytes() for path in paths} == before
+
+
+def test_review_table_absence_does_not_add_round_error(repo: tuple[pathlib.Path, str]) -> None:
+    """同stemのレビュー表が無い計画はround照合を省略する。"""
+    work_dir, base = repo
+    errors, _warnings = _check(work_dir, _plan(work_dir, base))
+    assert not errors, errors
+
+
+def test_legacy_single_file_plan_does_not_use_progress_round_check(repo: tuple[pathlib.Path, str]) -> None:
+    """旧単一形式も新形式の進捗照合を適用せず、旧本文を受理する。"""
+    work_dir, base = repo
+    (work_dir / "plan.tsv").write_text("not-a-json-row\n", encoding="utf-8")
+    errors, _warnings = _check(work_dir, _plan(work_dir, base))
+    assert not any("同stemのレビュー表" in error for error in errors), errors
+
+
+def test_review_table_max_round_matches_progress_rows(repo: tuple[pathlib.Path, str]) -> None:
+    """レビュー表の最大roundと進捗行数が一致する場合を受理する。"""
+    work_dir, _base = repo
+    main_content, detail_content = _human_new_format_plan(work_dir, detail_name="plan.detail.md")
+    content = main_content.replace(
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 完了。 |\n",
+        1,
+    )
+    (work_dir / "plan.tsv").write_text(_review_table_row(), encoding="utf-8")
+    errors, _warnings = _check_new(work_dir, content, detail_content)
+    assert not errors, errors
+
+
+def test_review_table_missing_rounds_are_reported(repo: tuple[pathlib.Path, str]) -> None:
+    """最大roundが進捗行数を超える場合は不足番号を診断する。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    content = _canonical_main_format(main_content).replace(
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 進行中。 |\n",
+        1,
+    )
+    (work_dir / "plan.tsv").write_text(_review_table_row("1") + _review_table_row("3"), encoding="utf-8")
+    errors, _warnings = _check_new(work_dir, content, detail_content)
+    assert any("不足round: 2, 3" in error for error in errors), errors
+
+
+def test_review_table_malformed_input_is_a_plan_error(repo: tuple[pathlib.Path, str]) -> None:
+    """同stemのレビュー表が破損する場合は計画入力エラーとして返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    (work_dir / "plan.tsv").write_text("not-a-json-row\n", encoding="utf-8")
+    errors, _warnings = _check_new(work_dir, _canonical_main_format(main_content), detail_content)
+    assert any("同stemのレビュー表を検証できない" in error for error in errors), errors
+
+
+def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path, str]) -> None:
+    """新しい固定H2と旧ID表を混在させたcanonical形式を拒否する。"""
+    work_dir, base = repo
+    legacy_main_content, detail_content = _new_format_plan(work_dir, base, detail_name="canonical-plan.detail.md")
+    main_content = (
+        legacy_main_content.replace(
+            "\n## 提示素材\n",
+            "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
+            1,
+        )
+        .replace("## 変更履歴", "## 変更履歴（計画時）", 1)
+        .replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+    )
+    errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="canonical-plan.md")
+    assert any("canonical形式の`## 実施内容`" in error for error in errors), errors
+    assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" not in warnings
+
+    mixed = legacy_main_content.replace("canonical-plan.detail.md", "mixed-plan.detail.md", 1)
+    errors, warnings = _check_new(work_dir, mixed, detail_content, plan_name="mixed-plan.md")
+    assert not errors, errors
+    assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in warnings, warnings

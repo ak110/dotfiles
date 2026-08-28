@@ -34,7 +34,7 @@ class TestRun:
         ("scenario_id", "files"),
         [
             ("single_file", ["01-agent.md"]),
-            # 配布元の実ファイルが01-agent.mdのみのため、複数同期の挙動はテスト専用のダミー名で検証する。
+            # 単一ファイルと複数ファイルの一般的な同期契約を検証する。
             ("multiple_files", ["01-agent.md", "extra.md"]),
         ],
     )

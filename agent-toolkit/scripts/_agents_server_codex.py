@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# This module is loaded by agents_server_mcp.py and has no standalone dependencies.
+# # このモジュールはagents_server_mcp.pyから読み込まれ、単独実行時の依存関係を持たない。
 # ///
 """Codex App ServerとのJSON-RPC通信を担当する。
 
@@ -22,7 +22,8 @@ import sys
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
-from agents_server_mcp import (
+from _agents_server_state import (
+    TERMINAL_STATUSES,
     SessionState,
     _append_bounded,
     _begin_reply,
@@ -40,7 +41,6 @@ DEFAULT_WAIT_TIMEOUT = 300.0
 # asyncioの既定値は64KiBで、turnのplan・diffなどの有効な通知が上限を超えると
 # readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
-TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 
 
 class AppServerError(RuntimeError):

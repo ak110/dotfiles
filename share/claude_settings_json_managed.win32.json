@@ -23,16 +23,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script '__HOME__\\dotfiles\\scripts\\claude_hook.py' autonomous_exit; exit 0 }\""
-          }
-        ]
-      }
     ]
   },
   "statusLine": {

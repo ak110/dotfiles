@@ -2,6 +2,12 @@
 
 ユーザー判断または外部条件を待つ項目を、次回セッションが単独で再開できる状態にする。
 
+## キューの物理状態との区別
+
+本書でいうTBDによる「保留」は、質問または外部条件を依存へ記録し、元のフィードバックを`inbox`へ戻して`blocked`にする意味である。`atk mq hold`で移動する物理状態の`hold`とは区別し、TBD保留の処理で物理`hold`へ移動しない。
+
+キューの公開`active`は`inbox`・`processing`・`editing`・`hold`、処理可能な`processable`は`inbox`・`processing`である。物理`hold`は明示的な`unhold`まで処理ループ、readiness、TBDスキャン、alertsの対象にせず、`unhold`では`inbox`へ戻す。`editing`も同じ自動処理の対象外とする。TBDの依存設定、`blocked`確認、`return-to-inbox`を完了した項目へ、物理`hold`操作を重ねて実行しない。
+
 ## ユーザー判断
 
 技術調査や明文化済み方針で確定できないユーザー判断だけをTBDにする。不採用確認用`user_decisions`の回答なしで作成するTBDは、
@@ -9,7 +15,7 @@
 再開工程、対象のフィードバックを完成済み入力として、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動する。
 質問本文の構築、重複判定、保存は同スキルへ委ねる。
 
-`decision-format.md`「採否結果」の値集合でエージェント由来と確認できないフィードバックを不採用にする場合は、原文との差異と技術的理由を示す
+`agent-toolkit:process-feedbacks`の採否結果契約にある値集合でエージェント由来と確認できないフィードバックを不採用にする場合は、原文との差異と技術的理由を示す
 `AskUserQuestion`を先に発行する。不採用確認用`user_decisions`の回答を得られない場合は質問と同じ本文をTBDとして保存し、元項目への依存設定、
 inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了する。回答を得られず、TBDの保存・依存設定を確認できない場合は
 元項目をrejectせずactiveのまま保持して失敗を返す。通常型の`feedbacks-planner`から受領した項目では、停止済みの識別子へ継続せず、
@@ -19,9 +25,8 @@ inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了す
 確認待ちを複数サイクルで処理する場合、`user_decisions`は現在の未解決項目だけへ置き換えず、原文正本IDごとの累積レコードとして渡す。
 各レコードは`id`、`raw`、`question`、`answer_or_tbd`、`unanswered`、`resolution`、`decision`を保持し、新しい回答・TBDを対応するIDへ追記して過去の確認サイクルのレコードを削除又は上書きしない。
 `resolution`は未受領なら`未確定`、逐語回答で採否を確定した場合は`回答による確定`、保存TBDで保留した場合は`TBDによる保留`とする。`decision`は未受領なら`未確定`、逐語回答による確定では`採用`・`部分採用`・`不採用`のいずれか、保存TBDによる保留では`保留`とする。再開した`feedbacks-planner`は確定済みの`decision`を再判断せず、当該採否をファイル単位の終端判定に用いる。
-保留項目は既存の`blocked`状態を保持して計画対象集合から除外し、残る採用項目がある場合だけ計画起草を続行する。
-`feedbacks-planner`は計画スレッドの起動前にhold対象と判定し、既存のTBD、依存及び`blocked`状態との対応を完了報告でメインへ返す。自身は保留操作を実行しない。
-メインは本節の保留経路を実行し、既存状態を照合できる項目へ同じ操作を再実行しない。
+ファイル単位のhold判定とキュー操作の責務境界は`agent-toolkit:process-feedbacks`の受領契約「reject・hold判定」を正本とする。
+メインは本節の保留経路を実行する。
 部分採用にはこの確認を機械的に適用せず、原文との差異、採用範囲、除外範囲と理由を採否記録へ残す。
 
 保存済みの不採用確認用TBDを確認待ち再開の入力として受領した場合は、
@@ -56,7 +61,7 @@ inboxへの差し戻し及びactive一覧での`blocked`確認を順に完了す
 保存済みの不採用確認用TBDを受領した再開での失敗は、以下の汎用的な失敗TBD処理より先に扱う。既存の確認TBDを同じ依存として保持し、
 新しい失敗TBDを作成しない。再依存・再inboxを実行せず、既存の`blocked`状態と依存を保持したまま失敗を返す。
 
-`decision-format.md`「採否結果」の値集合でエージェント由来と確認できない項目で、`feedbacks-planner`の失敗又は結果反映の失敗により失敗TBDを保存した場合は、元項目をrejectせず、失敗TBDを元項目の依存へ追加して保留する。失敗TBDの保存結果を確認した後、現行の有効依存を復元して失敗TBDのファイル名を追加し、`atk mq set-dependencies`の保存結果で全依存を照合する。
+`feedbacks-planner`の失敗又は結果反映の失敗により失敗TBDを保存した場合は、投入元の由来にかかわらず元項目をrejectせずactiveのまま保持し、失敗TBDを元項目の依存へ追加して保留する。失敗TBDの保存結果を確認した後、現行の有効依存を復元して失敗TBDのファイル名を追加し、`atk mq set-dependencies`の保存結果で全依存を照合する。
 
 依存を照合した後に通常の`atk mq return-to-inbox`で元項目をinboxへ戻し、`atk mq list --status=active --target-repo=<repo-path>`で対象行が`blocked`であることを確認する。失敗TBDの回答後は不採用確認を再開せず、次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で元項目を再開する。失敗TBDの保存、依存設定、差し戻し又は`blocked`確認のいずれかに失敗した場合も、元項目をrejectせずactiveのまま保持して失敗を返す。
 
@@ -88,20 +93,8 @@ TBDを伴わない外部条件待ちは`--cooldown-days`を使い、`depends_on`
 回答内容が現在の処理と独立する新規作業なら、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、
 完成済み本文と対象リポジトリを渡す。
 
-`decision-format.md`「採否結果」の値集合でエージェント由来と確認できる項目の失敗TBDへ回答された場合は、
-`atk mq show <元feedback filename> --target-repo=<repo-path>`で却下済みの元のフィードバックを取得する。
-`atk mq show`の出力から表示用見出し（`target_repo`見出しとファイル名見出し）、YAML frontmatter、
-CLI付加の末尾改行を除外し、フィードバック本文を検索対象とする。
-フィードバック本文を末尾から検索し、最後の`## 処理結果`節が`採否: rejected`、ISO形式の`処理日時`、
-対応する失敗TBDのファイル名と一致する`メモ`だけを持ち、節後がEOFである場合に限り、その1節だけを除外する。
-元本文中の同名見出しと、いずれかの条件に一致しない末尾節は保持する。
-得た元本文と回答内容を完成済み本文として`agent-toolkit:add-feedback`へ渡し、
-`depends_on=<失敗TBD filename>`を持つ新規のフィードバックとして保存する。
-新規のフィードバックの本文と依存を再取得して照合した後に失敗TBDを採用終端する。
-新規のフィードバックの保存又は照合が失敗した場合は失敗TBDをactiveのまま保持する。
-
-それ以外の項目の失敗TBDへ回答された場合は、回答済みTBDを先に採用終端する。
-終端後にactive一覧と着手可否を再取得する。依存が解除された元のフィードバックは、停止済みの`feedbacks-planner`系統を再開・再利用せず、
+失敗TBDへ回答された場合は、投入元の由来にかかわらず回答済みTBDを先に採用終端する。
+終端後にactive一覧と着手可否を再取得する。依存が解除されたactiveの元のフィードバックは、停止済みの`feedbacks-planner`系統を再開・再利用せず、
 次の`process-feedbacks`セッションで新しい`feedbacks-planner`を起動して通常経路で再開する。
 再開した実行主体は、保存済みの質問・回答を元のフィードバックの採否候補へ反映する。
 

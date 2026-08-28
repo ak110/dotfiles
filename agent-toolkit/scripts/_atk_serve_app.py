@@ -21,6 +21,7 @@ import _atk_mq_frontmatter as frontmatter
 import _atk_mq_mutations as feedback_mutations
 import _atk_mq_repo as feedback_repo
 import _atk_mq_tbd as tbd_mutations
+import _atk_mq_user_comment as user_comment_mutations
 import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
 import _atk_serve_state as serve_state
@@ -33,14 +34,17 @@ import werkzeug.exceptions
 
 type JsonObject = dict[str, typing.Any]
 _ENTRY_STATES = set(common.MQ_STATES)
-_STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
+_STATUS_FILTERS = {"all", "active", "processable", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
+_PLAN_FILTERS = {"all", "normal", "plan"}
+_ENTRY_PAGE_SIZE = 100
+_DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
 _WEB_LOCK_TIMEOUT = 2.0
 _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 """定期バックグラウンド更新の間隔。
 
 `atk mq process-loop`が10分間隔で更新する先例に対し、
-Web UIは利用者が画面を閲覧する前提のため短く取る。
+Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
@@ -74,10 +78,17 @@ def _safe_base_path(raw: str) -> str:
 def _resolve_states(status: str) -> tuple[str, ...]:
     """`status` queryの指定値を走査対象の状態フォルダ列へ変換する。"""
     if status == "active":
-        return common.MQ_ACTIVE_STATES
+        return common.MQ_FEEDBACK_ACTIVE_STATES
+    if status == "processable":
+        return common.MQ_PROCESSABLE_STATES
     if status == "all":
         return common.MQ_STATES
     return (status,)
+
+
+def _is_selected_state(status: str, state: str, kind: str | None) -> bool:
+    """一覧の状態フィルターと種別の組み合わせで表示対象か判定する。"""
+    return not (status in {"active", "processable"} and state == common.MQ_STATE_PLANNING and kind == common.MQ_TYPE_TBD)
 
 
 async def _request_json() -> typing.Any:
@@ -369,14 +380,14 @@ class Operations:
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。
 
-        未回答TBD、その他のTBD、フィードバック、種別不明の順に分け、
-        各群ではファイル名の降順とする。
+        未回答TBDを先頭に置き、残りは種別を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
         warnings: list[dict[str, str]] = []
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
+        plan_filter = filters.get("plan", "all")
         target_repo_filter = filters.get("target_repo")
         query = filters.get("q", "").casefold()
         states = _resolve_states(status_filter)
@@ -387,6 +398,8 @@ class Operations:
         for state, path, text in self._iter_entry_files(states, warnings):
             try:
                 kind = common.entry_type_of(path, text)
+                if not _is_selected_state(status_filter, state, kind):
+                    continue
                 if kind_filter not in ("all", kind):
                     continue
                 item = _entry(path, kind or "unknown", state, text)
@@ -394,6 +407,8 @@ class Operations:
                 continue
             except OSError:
                 warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
+                continue
+            if plan_filter != "all" and item["plan"] != (plan_filter == "plan"):
                 continue
             if answered_filter == "yes" and item["answered"] is not True:
                 continue
@@ -424,20 +439,12 @@ class Operations:
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
-        other_tbd_items = sorted(
-            [item for item in result if item["kind"] == "tbd" and item["answered"] is not False],
-            key=lambda item: str(item["filename"]),
-            reverse=True,
-        )
-        feedback_items = sorted(
-            [item for item in result if item["kind"] == "feedback"], key=lambda item: str(item["filename"]), reverse=True
-        )
         other_items = sorted(
-            [item for item in result if item["kind"] not in ("tbd", "feedback")],
+            [item for item in result if not (item["kind"] == "tbd" and item["answered"] is False)],
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
-        return unanswered_tbd_items + other_tbd_items + feedback_items + other_items, warnings
+        return unanswered_tbd_items + other_items, warnings
 
     def entries_with_warnings(
         self,
@@ -457,6 +464,17 @@ class Operations:
             metadata = parsed[0] if parsed is not None else {}
             question_type, choices = _question_metadata(metadata, kind or "unknown")
             detail_entry = _entry(path, kind or "unknown", state, text)
+            try:
+                extracted_comment = user_comment_mutations.extract_user_comment(text)
+            except user_comment_mutations.UserCommentError:
+                extracted_comment = None
+                comment_editable = False
+            else:
+                comment_editable = (
+                    state == common.MQ_STATE_INBOX
+                    and kind == common.MQ_TYPE_FEEDBACK
+                    and metadata.get("source") == "session-review"
+                )
             return {
                 **detail_entry,
                 "content": text,
@@ -468,6 +486,8 @@ class Operations:
                 "question_type": question_type,
                 "choices": choices,
                 "answer": _tbd_answer(text, kind or "unknown"),
+                "user_comment": extracted_comment,
+                "user_comment_editable": comment_editable,
             }
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error
@@ -475,7 +495,7 @@ class Operations:
     def sync(self) -> bool:
         """リポジトリを明示的に同期する。
 
-        利用者の操作に対応する経路であるため、直近のpullからの経過時間によらず毎回実行する。
+        ユーザーの操作に対応する経路であるため、直近のpullからの経過時間によらず毎回実行する。
         """
         with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
             common.pull(self.private_notes)
@@ -506,6 +526,8 @@ class Operations:
             parsed = frontmatter.parse_frontmatter(text)
             if parsed is None:
                 continue
+            if not _is_selected_state(status, _state, common.entry_type_of(_path, text)):
+                continue
             target_repo = parsed[0].get("target_repo")
             if isinstance(target_repo, str) and target_repo:
                 canonical_target_repo = _git_remote.canonical_repo(target_repo, resolver_cache)
@@ -526,6 +548,39 @@ class Operations:
                 state=state,
                 filename=filename,
                 content=content,
+                lock_timeout=_WEB_LOCK_TIMEOUT,
+                expected_content=expected_content,
+            )
+        except SystemExit as error:
+            raise common.WebInputError("指定したエントリを操作できません") from error
+
+    def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
+        """session-review由来のinbox項目へユーザーコメントを追記又は置換する。"""
+        if state != common.MQ_STATE_INBOX:
+            raise common.WebInputError("ユーザーコメントを編集できる状態はinboxだけです")
+        if not isinstance(comment, str) or not comment.strip():
+            raise common.WebInputError("commentは空でない文字列で指定してください")
+        if not isinstance(expected_content, str) or not expected_content.strip():
+            raise common.WebInputError("expected_contentは空でない文字列で指定してください")
+
+        parsed = frontmatter.parse_frontmatter(expected_content)
+        if parsed is None:
+            raise common.WebInputError("frontmatterを解析できません")
+        metadata, _body = parsed
+        if metadata.get("type") != common.MQ_TYPE_FEEDBACK:
+            raise common.WebInputError("ユーザーコメントの対象はfeedbackだけです")
+        if metadata.get("source") != "session-review":
+            raise common.WebInputError("ユーザーコメントの対象sourceはsession-reviewだけです")
+        try:
+            updated = user_comment_mutations.update_user_comment(expected_content, comment)
+        except user_comment_mutations.UserCommentError as error:
+            raise common.WebInputError(str(error)) from error
+        try:
+            return feedback_mutations.edit_entry_content(
+                self.private_notes,
+                state=state,
+                filename=filename,
+                content=updated,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
                 expected_content=expected_content,
             )
@@ -795,6 +850,22 @@ def _register_lifecycle(app: quart.Quart, runtime: _ServeRuntime) -> None:
         runtime.background_task = None
 
 
+def _entry_page(filters: dict[str, str]) -> int | None:
+    """一覧APIの明示ページを正の10進整数として返す。"""
+    raw_page = filters.get("page")
+    if raw_page is None:
+        return None
+    if not _DECIMAL_INTEGER_RE.fullmatch(raw_page):
+        raise common.WebInputError("pageは正の10進整数で指定してください")
+    try:
+        page = int(raw_page)
+    except ValueError as error:
+        raise common.WebInputError("pageは正の10進整数で指定してください") from error
+    if page <= 0:
+        raise common.WebInputError("pageは正の10進整数で指定してください")
+    return page
+
+
 def _validate_entry_filters(filters: dict[str, str]) -> None:
     """一覧APIのquery組合せを検証する。"""
     if filters.get("type", "all") not in {"all", "feedback", "tbd"}:
@@ -803,6 +874,9 @@ def _validate_entry_filters(filters: dict[str, str]) -> None:
         raise common.WebInputError("statusが不正です")
     if filters.get("answered", "all") not in _ANSWERED_FILTERS:
         raise common.WebInputError("answeredが不正です")
+    if filters.get("plan", "all") not in _PLAN_FILTERS:
+        raise common.WebInputError("planが不正です")
+    _entry_page(filters)
     if "source_empty" in filters and filters["source_empty"] != "true":
         raise common.WebInputError("source_emptyはtrueで指定してください")
     if "source" in filters and "source_empty" in filters:
@@ -832,13 +906,29 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
-        allowed = {"type", "status", "answered", "target_repo", "source", "source_empty", "q"}
+        allowed = {"type", "status", "answered", "plan", "page", "target_repo", "source", "source_empty", "q"}
         unknown = set(quart.request.args) - allowed
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
         filters = dict(quart.request.args.items())
         _validate_entry_filters(filters)
         result, warnings = await workers.run(ops.entries_with_warnings, filters)
+        requested_page = _entry_page(filters)
+        if requested_page is not None:
+            total_count = len(result)
+            page_count = max(1, math.ceil(total_count / _ENTRY_PAGE_SIZE))
+            page = min(requested_page, page_count)
+            start = (page - 1) * _ENTRY_PAGE_SIZE
+            return quart.jsonify(
+                entries=result[start : start + _ENTRY_PAGE_SIZE],
+                warnings=warnings,
+                pagination={
+                    "page": page,
+                    "page_size": _ENTRY_PAGE_SIZE,
+                    "page_count": page_count,
+                    "total_count": total_count,
+                },
+            )
         return quart.jsonify(entries=result, warnings=warnings)
 
     @app.get("/api/entries/<state_name>/<filename>")
@@ -866,8 +956,16 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
             raise common.WebInputError("forceはbooleanで指定してください")
         force = data["force"]
     state_name = _optional_string(data, "state") if "state" in allowed else None
-    if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
-        raise common.WebInputError("stateはinbox又はprocessingで指定してください")
+    if state_name is not None:
+        valid_states = (
+            (common.MQ_STATE_INBOX, common.MQ_STATE_PROCESSING, common.MQ_STATE_PLANNING)
+            if action == "remove"
+            else common.MQ_PROCESSABLE_STATES
+        )
+        if state_name not in valid_states:
+            if action == "remove":
+                raise common.WebInputError("stateはinbox、planning又はprocessingで指定してください")
+            raise common.WebInputError("stateはinbox又はprocessingで指定してください")
     expected_content = _specified_text(data, "expected_content") if "expected_content" in allowed else None
     if state_name is None and expected_content is None:
         result = await runtime.workers.run(
@@ -895,7 +993,7 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
 
 
 def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
-    """編集・投入・回答・状態遷移ルートを登録する。"""
+    """編集・投入・ユーザーコメント・回答・状態遷移ルートを登録する。"""
     ops, workers = runtime.operations, runtime.workers
 
     @app.put("/api/entries/<state_name>/<filename>")
@@ -905,6 +1003,35 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             raise common.WebInputError("contentは空でない文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         return quart.jsonify(changed=await workers.run(ops.edit, state_name, filename, data["content"], expected_content))
+
+    @app.post("/api/entries/user-comment")
+    async def save_user_comment() -> quart.Response:
+        data = _json_object(
+            await _request_json(),
+            allowed={"state", "filename", "comment", "expected_content"},
+            required={"state", "filename", "comment", "expected_content"},
+        )
+        state_name = data["state"]
+        filename = data["filename"]
+        comment = data["comment"]
+        expected_content = data["expected_content"]
+        for name, value in (
+            ("state", state_name),
+            ("filename", filename),
+            ("comment", comment),
+            ("expected_content", expected_content),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+        return quart.jsonify(
+            changed=await workers.run(
+                ops.user_comment,
+                state_name,
+                filename,
+                comment,
+                expected_content,
+            )
+        )
 
     @app.post("/api/entries")
     async def add_entry() -> tuple[quart.Response, int]:
@@ -955,7 +1082,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             raise common.WebInputError("filenameは文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         state_name = _optional_string(data, "state")
-        if state_name is not None and state_name not in common.MQ_ACTIVE_STATES:
+        if state_name is not None and state_name not in common.MQ_PROCESSABLE_STATES:
             raise common.WebInputError("stateはinbox又はprocessingで指定してください")
         if state_name is None:
             changed = await workers.run(ops.answer_tbd, data["filename"], data["answer"], expected_content)
@@ -971,6 +1098,8 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
 
     transition_specs = {
         "start-processing": {"filenames", "target_repo"},
+        "hold": {"filenames", "target_repo"},
+        "unhold": {"filenames", "target_repo"},
         "adopt": {"filenames", "note", "commit", "target_repo"},
         "reject": {"filenames", "note", "commit", "target_repo"},
         "remove": {"filenames", "note", "target_repo", "force", "state", "expected_content"},

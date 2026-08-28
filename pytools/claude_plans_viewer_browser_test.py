@@ -195,6 +195,30 @@ async def test_diagrams_render_and_refresh_safely(browser_harness: _BrowserHarne
 
 
 @pytest.mark.asyncio
+async def test_attached_plan_navigation_is_symmetric(browser_harness: _BrowserHarness) -> None:
+    """左一覧に付属計画を表示せず、右ペインからbase・detail・bugsを相互に開ける。"""
+    harness = browser_harness
+    (harness.root / "plan.detail.md").write_text("# 詳細ページ\n", encoding="utf-8")
+    (harness.root / "plan.bugs.md").write_text("# バグページ\n", encoding="utf-8")
+    await harness.page.goto(harness.base_url + "/")
+
+    await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
+    assert await harness.page.get_by_text("plan.detail.md", exact=True).count() == 0
+    assert await harness.page.get_by_text("plan.bugs.md", exact=True).count() == 0
+    await harness.page.locator('a[data-plan-path="plan.detail.md"]').click()
+    await harness.page.get_by_role("heading", name="詳細ページ").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.detail.md"
+
+    await harness.page.locator('a[data-plan-path="plan.bugs.md"]').click()
+    await harness.page.get_by_role("heading", name="バグページ").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.bugs.md"
+
+    await harness.page.locator('a[data-plan-path="plan.md"]').click()
+    await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.md"
+
+
+@pytest.mark.asyncio
 async def test_mermaid_strict_security_blocks_active_content(browser_harness: _BrowserHarness) -> None:
     harness = browser_harness
     await harness.page.goto(harness.base_url + "/")

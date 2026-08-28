@@ -29,6 +29,10 @@ _LEGACY_WINDOWS_PRETOOLUSE_COMMAND = (
     "'__HOME__\\dotfiles\\scripts\\claude_hook.py' pretooluse; "
     'if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"'
 )
+_LEGACY_WINDOWS_AUTONOMOUS_EXIT_COMMAND = (
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "& { uv run --no-project --script '
+    "'__HOME__\\dotfiles\\scripts\\claude_hook.py' autonomous_exit; exit 0 }\""
+)
 
 MANAGED_ALLOW = [
     "Bash",
@@ -428,12 +432,14 @@ class TestProductionManagedSettings:
         """OS別設定の個人Stop hookが各プラットフォームの契約と一致する。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(f".{suffix}.json")
         data = json.loads(path.read_text(encoding="utf-8"))
-        commands = [hook["command"] for group in data["hooks"]["Stop"] for hook in group["hooks"]]
-        assert sum("claude_hook.py" in command and "autonomous_exit" in command for command in commands) == 1
+        stop_groups = data["hooks"].get("Stop", [])
+        commands = [hook["command"] for group in stop_groups for hook in group["hooks"]]
+        assert sum("claude_hook.py" in command and "autonomous_exit" in command for command in commands) == 0
         assert sum("claude_hook.py" in command and "stop_bell" in command for command in commands) == (
             1 if suffix == "posix" else 0
         )
         assert all("claude_hook.py stop;" not in command for command in commands)
+        assert ("Stop" in data["hooks"]) is (suffix == "posix")
 
     def test_windows_hook_commands_use_home_placeholder(self):
         """Windows個人hookの実行パスがプレースホルダー形式である。"""
@@ -447,7 +453,7 @@ class TestProductionManagedSettings:
             if hook.get("type") == "command"
         ]
         python_hook_commands = [command for command in commands if "claude_hook.py" in command]
-        assert len(python_hook_commands) == 2
+        assert len(python_hook_commands) == 1
         assert all("__HOME__\\dotfiles\\scripts\\claude_hook.py" in command for command in python_hook_commands)
         assert all("$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py" not in command for command in commands)
 
@@ -565,7 +571,7 @@ sys.exit(int(os.environ["UV_EXIT_CODE"]))
             if hook.get("type") == "command"
             and ("claude_hook.py" in hook.get("command", "") or "claude-hook-pretooluse.ps1" in hook.get("command", ""))
         ]
-        assert len(commands) == 3
+        assert len(commands) == 2
         assert any(
             '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"' in command for command in commands
         )
@@ -1097,6 +1103,63 @@ class TestStripRemovedHooks:
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert "hooks" not in result or "PreToolUse" not in result["hooks"]
 
+    def test_substituted_windows_autonomous_entry_is_dropped_from_existing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """実ホーム絶対パスへ置換された旧Windows自律終了入口を既定の更新で除去する。"""
+        home = Path("C:/Users/Aki User")
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+        legacy_managed_path = tmp_path / "legacy-managed.json"
+        legacy_managed_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            {
+                                "hooks": [
+                                    {"type": "command", "command": _LEGACY_WINDOWS_AUTONOMOUS_EXIT_COMMAND},
+                                    {"type": "command", "command": "keep-stop-hook"},
+                                ]
+                            }
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "settings.json"
+        update_claude_settings(
+            legacy_managed_path,
+            target_path,
+            overrides=[],
+            removed_hook_substrings=(),
+            removed_env_keys=(),
+            removed_list_item_substrings=(),
+        )
+        generated = json.loads(target_path.read_text(encoding="utf-8"))
+        generated_command = generated["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert "C:/Users/Aki User\\dotfiles\\scripts\\claude_hook.py" in generated_command
+
+        update_claude_settings(
+            _PROD_MANAGED_SETTINGS,
+            target_path,
+            overrides=[_PROD_MANAGED_SETTINGS.with_suffix(".win32.json")],
+        )
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        commands = [
+            hook["command"]
+            for group in result.get("hooks", {}).get("Stop", [])
+            for hook in group["hooks"]
+            if hook.get("type") == "command"
+        ]
+        assert commands == ["keep-stop-hook"]
+
     def test_distributed_legacy_windows_pretooluse_is_replaced(
         self,
         tmp_path: Path,
@@ -1239,7 +1302,12 @@ class TestStripRemovedHooks:
             ),
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit; exit 0'",
-                False,
+                True,
+            ),
+            (
+                'powershell -Command "& { uv run --no-project --script '
+                '$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py autonomous_exit; exit 0 }"',
+                True,
             ),
         ],
     )

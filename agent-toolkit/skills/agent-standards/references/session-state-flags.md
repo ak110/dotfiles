@@ -10,6 +10,8 @@
 
 ## 検証・git状態系
 
+- `inherited_from_session_id`: 背景化などで現行`session_id`の状態が不在となった場合に、一意に特定した前身`session_id`を記録する。共通hook入口が前身の全状態キーと同時に1回だけ書き込み、現行状態が存在する間は再継承しない
+
 - `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run_for_agent`成功時に記録し、
   `git commit`未検証警告の抑制に使う。セッション終了まで保持する
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する
@@ -51,6 +53,8 @@
   それぞれ対応するフィードバック処理スキルの起動を記録する。Stop hookの自動session-review起動条件に使う。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に3フラグをまとめて偽へ戻す。
   手動session-review起動はこれらのフラグを必要としない。セッション終了まで保持する
+- `autonomous_exit_invoked`: `agent-toolkit/scripts/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
+  `agent-toolkit/scripts/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
 
 ## agents_server連携系
 

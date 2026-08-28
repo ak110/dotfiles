@@ -34,7 +34,7 @@ _INTERNAL_MISE_REFRESHED_ARG = _process_loop._INTERNAL_MISE_REFRESHED_ARG  # pyl
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部コマンドとClaude設定を利用者環境から分離する。"""
+    """外部コマンドとClaude設定をユーザー環境から分離する。"""
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.delenv(_RESTART_SPEC_ENV, raising=False)

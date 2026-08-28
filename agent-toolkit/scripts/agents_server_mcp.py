@@ -5,22 +5,25 @@
 # ///
 """CodexとClaudeの委譲先を非同期MCPとして公開する。"""
 
-# バックエンドはengine選択時に遅延読込するため、意図的に循環するモジュール構成である。
-# pylint: disable=cyclic-import,import-outside-toplevel
-
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
-import dataclasses
-import datetime
 import logging
 import os
-import pathlib
 import warnings
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
+import _agents_server_claude as claude_backend
+import _agents_server_codex as codex_backend
+from _agents_server_state import (
+    SessionState,
+    _validate_cwd,
+    _validate_model_effort,
+    _validate_prompt,
+)
 from mcp.server.fastmcp import FastMCP
 
 try:
@@ -28,173 +31,10 @@ try:
 except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開しない場合
     IncompleteFieldDefinitionWarning = None  # type: ignore[assignment,misc]
 
-DEFAULT_WAIT_TIMEOUT = 300.0
-RESULT_RETENTION_SECONDS = 1800.0
-TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+DEFAULT_WAIT_TIMEOUT = 240.0
+DEFAULT_KILL_TIMEOUT = 300.0
 SUPPORTED_ENGINES = frozenset({"claude", "codex"})
 REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"})
-
-
-def _utc_now() -> str:
-    return datetime.datetime.now(datetime.UTC).isoformat()
-
-
-def _progress_excerpt(text: str) -> str:
-    """テキストを改行なしの末尾80文字へ正規化する。"""
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
-    if len(normalized) <= 80:
-        return normalized
-    return f"…{normalized[-80:]}"
-
-
-def _nonempty_error(error: Any) -> bool:
-    return error is not None and error != "" and error != {}
-
-
-def _append_bounded(existing: str, delta: str, limit: int = 4000) -> str:
-    value = existing + delta
-    return value if len(value) <= limit else value[-limit:]
-
-
-@dataclasses.dataclass
-class SessionState:
-    """MCPから観測できる1つの委譲先sessionと最新turnの共有状態。"""
-
-    session_id: str
-    cwd: str
-    model: str | None = None
-    effort: str | None = None
-    engine: str = "codex"
-    turn_id: str = ""
-    status: str = "running"
-    plan: list[dict[str, Any]] = dataclasses.field(default_factory=list)
-    current_item: dict[str, Any] | None = None
-    commentary: str = ""
-    diff_changed: bool = False
-    error: Any = None
-    agent_message: str = ""
-    protocol_warnings: list[str] = dataclasses.field(default_factory=list)
-    reply_attempted: bool = False
-    reply_turn_started: bool = False
-    reply_retryable: bool = False
-    turn_start_ambiguous: bool = False
-    interrupt_requested: bool = False
-    turn_completed: bool = False
-    failure_pending_completion: bool = False
-    updated_at: str = dataclasses.field(default_factory=_utc_now)
-    retention_deadline: float | None = None
-    turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
-    _progress_text: str = dataclasses.field(default="", repr=False)
-    progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
-
-    @property
-    def terminal(self) -> bool:
-        """最新turnが終端状態であるかを返す。"""
-        return self.status in TERMINAL_STATUSES
-
-    @property
-    def result_available(self) -> bool:
-        """終端結果を返せる状態であるかを返す。"""
-        return self.terminal and self.turn_completed and not self.turn_start_ambiguous
-
-    @property
-    def progress(self) -> str:
-        """最新テキスト出力の公開用抜粋を返す。"""
-        return _progress_excerpt(self._progress_text)
-
-    def set_progress(self, text: str) -> None:
-        """最新テキスト出力を更新する。"""
-        self._progress_text = text
-        self.touch()
-
-    def reset_progress(self) -> None:
-        """現在turnの進捗を初期化する。"""
-        self._progress_text = ""
-        self.progress_items.clear()
-
-    def touch(self) -> None:
-        """状態の更新時刻を現在時刻へ更新する。"""
-        self.updated_at = _utc_now()
-        if self.result_available:
-            if self.retention_deadline is None:
-                self.retention_deadline = asyncio.get_running_loop().time() + RESULT_RETENTION_SECONDS
-        else:
-            self.retention_deadline = None
-
-    def public_status(self, *, include_result: bool = False) -> dict[str, Any]:
-        """公開契約へ状態を射影する。内部のturn識別子は含めない。"""
-        result: dict[str, Any] = {
-            "session_id": self.session_id,
-            "engine": self.engine,
-            "status": self.status,
-            "progress": self.progress,
-        }
-        if include_result and self.result_available:
-            result["agent_message"] = self.agent_message
-            if _nonempty_error(self.error):
-                result["error"] = self.error
-        return result
-
-    def previous_result(self) -> dict[str, Any]:
-        """継続入力の応答へ退避する直前turnの結果を返す。"""
-        result: dict[str, Any] = {
-            "session_id": self.session_id,
-            "engine": self.engine,
-            "status": self.status,
-            "agent_message": self.agent_message,
-        }
-        if _nonempty_error(self.error):
-            result["error"] = self.error
-        return result
-
-
-def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:
-    """新しいturnの開始前に共有状態を初期化する。"""
-    session.turn_id = ""
-    session.status = "running"
-    session.plan = []
-    session.current_item = None
-    session.commentary = ""
-    session.diff_changed = False
-    session.error = None
-    session.agent_message = ""
-    session.protocol_warnings = []
-    session.reply_retryable = False
-    session.turn_start_ambiguous = False
-    session.interrupt_requested = False
-    session.turn_completed = False
-    session.failure_pending_completion = False
-    session.retention_deadline = None
-    if reset_progress:
-        session.reset_progress()
-    session.touch()
-
-
-def _begin_reply(session: SessionState) -> None:
-    """終端済みsessionの新しいturnを開始する準備をする。"""
-    _initialize_turn(session, reset_progress=False)
-    session.reply_attempted = True
-    session.reply_turn_started = False
-    session.touch()
-
-
-def _validate_prompt(prompt: str) -> None:
-    if not isinstance(prompt, str) or not prompt.strip():
-        raise ValueError("prompt must be a non-empty string")
-
-
-def _validate_cwd(cwd: str) -> None:
-    if not isinstance(cwd, str) or not cwd or not pathlib.PurePath(cwd).is_absolute():
-        raise ValueError("cwd must be a non-empty absolute path")
-    if not pathlib.Path(cwd).is_dir():
-        raise ValueError(f"cwd is not an existing directory: {cwd}")
-
-
-def _validate_model_effort(model: str | None, effort: str | None) -> None:
-    if (model is None) != (effort is None):
-        raise ValueError("model and effort must be provided together")
-    if model is not None and (not model.strip() or not effort or not effort.strip()):
-        raise ValueError("model and effort must be non-empty strings")
 
 
 class AgentsServerManager:
@@ -210,15 +50,15 @@ class AgentsServerManager:
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
             if self._codex is None:
-                from _agents_server_codex import AppServerManager
-
-                self._codex = AppServerManager(self.sessions, self._condition)
+                self._codex = codex_backend.AppServerManager(self.sessions, self._condition)
             return self._codex
         if engine == "claude":
             if self._claude is None:
-                from _agents_server_claude import ClaudeServerManager
-
-                self._claude = ClaudeServerManager(self.sessions, self._condition, expire_session=self._expire_session)
+                self._claude = claude_backend.ClaudeServerManager(
+                    self.sessions,
+                    self._condition,
+                    expire_session=self._expire_session,
+                )
             return self._claude
         raise ValueError(f"unsupported engine: {engine}")
 
@@ -293,7 +133,7 @@ class AgentsServerManager:
             response["previous_result"] = result["previous_result"]
         return response
 
-    async def kill(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
+    async def kill(self, session_id: str, timeout: float = DEFAULT_KILL_TIMEOUT) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ValueError("timeout must be non-negative")
@@ -423,7 +263,11 @@ async def start(
 
 @mcp.tool(name="wait", structured_output=True)
 async def wait(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-    """委譲先の終端を待ち、終端時だけ結果本文を返す。"""
+    """委譲先の終端を待ち、終端時だけ結果本文を返す。
+
+    通常の既定は240秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
+    `timeout=0`は待機せず現状態を返す。
+    """
     return await _MANAGER.wait(session_id, timeout)
 
 
@@ -434,16 +278,27 @@ async def send_message(session_id: str, prompt: str) -> dict[str, Any]:
 
 
 @mcp.tool(name="kill", structured_output=True)
-async def kill(session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
+async def kill(session_id: str, timeout: float = DEFAULT_KILL_TIMEOUT) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
     return await _MANAGER.kill(session_id, timeout)
 
 
-def main() -> None:
-    """MCP stdio transportを起動する。"""
+def main(argv: Sequence[str] | None = None) -> int:
+    """引数に応じて依存検査またはMCP stdio transportを起動する。"""
     logging.basicConfig(level=os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING"))
+    parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
+    parser.add_argument(
+        "--check-dependencies",
+        action="store_true",
+        help="Claude Agent SDKの依存を読み込み、options構築まで検査する。",
+    )
+    args = parser.parse_args(argv)
+    if args.check_dependencies:
+        claude_backend.check_dependencies()
+        return 0
     mcp.run(transport="stdio")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

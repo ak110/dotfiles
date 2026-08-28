@@ -81,7 +81,7 @@ def _run_codex_patch(
 
 
 def _plan_content(detail_name: str) -> str:
-    """人間向けメイン側の正規形の計画を返す。"""
+    """人間向け計画ファイル（メイン）の正規形の計画を返す。"""
     return f"""# 計画の主題
 
 ## 概要
@@ -109,7 +109,7 @@ def _plan_content(detail_name: str) -> str:
 
 ## 変更履歴
 
-### 利用者からの確認
+### ユーザー発言: 本セッションの直接指示
 
 ```text
 対象を更新する。
@@ -138,7 +138,7 @@ def _plan_content(detail_name: str) -> str:
 
 
 def _detail_content() -> str:
-    """人間向けdetail側の正規形を返す。"""
+    """人間向け計画ファイル（詳細）の正規形を返す。"""
     return """## 恒久化・リファクタリング内容
 
 ### 恒久化
@@ -423,7 +423,7 @@ class TestPlanPostWrite:
         assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
 
     def test_codex_plan_path_with_spaces_keeps_pair_detection(self, tmp_path: pathlib.Path) -> None:
-        """空白を含む計画パスでも対応するdetail側を機械的に検出する。"""
+        """空白を含む計画パスでも対応する計画ファイル（詳細）を機械的に検出する。"""
         home = tmp_path / "home"
         plans = _prepare_plan_home(home)
         main = plans / "plan with spaces.md"

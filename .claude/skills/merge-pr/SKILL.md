@@ -64,14 +64,24 @@ git merge --ff-only origin/master
 ```
 
 push前に管理対象一時領域を作成し、`origin/develop`のCI runをbaselineへ保存する。
-baseline作成、push、CI待機の順序を変更しない。
+baseline作成と同期pushの順序を変更しない。push後に同期先のrefを再取得して、develop CIの待機を省略できるか判定する。
 `--repo`、`--forge`、`--ref`及び`--source-ref`は毎回明示する。
 
 ```sh
 uv run --no-project --script /home/aki/dotfiles/agent-toolkit/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
 git push origin develop
+git fetch origin develop master
+git rev-parse develop origin/develop origin/master
+```
+
+`MERGE_OID`とローカル`develop`、`origin/develop`及び`origin/master`の完全OIDがすべて一致することを確認する。develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、local develop・origin/develop・origin/masterの最終完全OID照合は省略しない。
+
+```sh
+# OID一致かつdevelop固有検査なしの条件が成立しない場合だけ実行する。
 uv run --no-project --script /home/aki/dotfiles/agent-toolkit/scripts/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
 ```
+
+現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であるため、develop固有検査として扱わない。CI定義が変化した場合は省略条件を再判定する。
 
 master pushのCIは、完全OID、`push` event及び`master` head branchに一致するrunを一覧から特定する。
 runの完全なdatabase IDを取得した後、公式CLIで待機する。

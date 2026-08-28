@@ -30,10 +30,7 @@ _SECRETS_COPY_GUIDANCE = "copy the original with `cp` via Bash"
 _SECRETS_VALUE_EDIT_GUIDANCE = "append or edit lines via Bash"
 
 # 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
-_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = (
-    "implementation-plan-review-task.md",
-    "implementation-independent-review-task.md",
-)
+_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review-task.md",)
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -420,6 +417,18 @@ class TestHomePathCheck:
         assert result.returncode == 0
         assert "home directory" in _additional_context(result)
 
+    def test_home_path_in_claude_job_file_is_skipped(self):
+        """Claude Codeが生成するセッション作業領域では正確なホーム絶対パスを許容する。"""
+        target = pathlib.Path.home() / ".claude" / "jobs" / "session" / "tmp" / "material.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+            }
+        )
+        assert result.returncode == 0
+        assert "home directory" not in _agent_messages(result)
+
     def test_home_path_in_non_git_temp_document_is_skipped(self, tmp_path: pathlib.Path):
         """Git管理外の一時作業文書では正確なホーム絶対パスを許容する。"""
         target = tmp_path / "draft.md"
@@ -522,8 +531,8 @@ class TestHomePathCheck:
         assert result.returncode == 0
         assert "home directory" in _additional_context(result)
 
-    def test_home_path_in_temp_prefix_sibling_warns(self):
-        """一時ルートと文字列prefixだけが同じ兄弟パスは除外しない。"""
+    def test_home_path_in_non_git_prefix_sibling_is_skipped(self):
+        """一時ルートと文字列prefixだけが同じGit管理外の兄弟パスは除外する。"""
         sibling = pathlib.Path(f"{tempfile.gettempdir()}-sibling") / "draft.md"
         result = _run(
             {
@@ -532,7 +541,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" in _additional_context(result)
+        assert "home directory" not in _agent_messages(result)
 
     @pytest.mark.parametrize("xdg_value", ["unset", ""])
     def test_home_path_in_default_cache_document_is_skipped(self, xdg_value: str, monkeypatch: pytest.MonkeyPatch):
@@ -719,6 +728,34 @@ def _deny_substring_fixture() -> str:
     return ""  # unreachable
 
 
+class TestNonEditToolWarnings:
+    """WebFetchとSendMessageの入力警告。"""
+
+    @pytest.mark.parametrize("phrase", ["全文", "原文", "そのまま", "逐語", "引用", "verbatim", "word-for-word"])
+    def test_webfetch_verbatim_request_warns(self, phrase: str) -> None:
+        result = _run({"tool_name": "WebFetch", "tool_input": {"url": "https://example.invalid", "prompt": f"{phrase}で返す"}})
+        assert result.returncode == 0
+        assert "summarization model" in _additional_context(result)
+        assert "raw content" in _additional_context(result)
+
+    def test_webfetch_summary_request_does_not_warn(self) -> None:
+        result = _run({"tool_name": "WebFetch", "tool_input": {"url": "https://example.invalid", "prompt": "要点を整理する"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_sendmessage_agent_type_recipient_warns(self) -> None:
+        result = _run(
+            {"tool_name": "SendMessage", "tool_input": {"to": "agent-toolkit:plan-review-executor", "message": "通知"}}
+        )
+        assert result.returncode == 0
+        assert "not a reachable SendMessage recipient" in _additional_context(result)
+
+    def test_sendmessage_runtime_recipient_does_not_warn(self) -> None:
+        result = _run({"tool_name": "SendMessage", "tool_input": {"to": "main", "message": "通知"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
 class TestColloquialCheck:
     """口語的な日本語表現の混入警告（warn のみ、exit code は 0）。"""
 
@@ -761,6 +798,20 @@ class TestColloquialCheck:
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
 
+    def test_managed_temp_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        managed = tmp_path / "managed"
+        managed.mkdir()
+        (managed / ".agent-toolkit-managed-temp.json").write_text("{}\n", encoding="utf-8")
+        target = managed / "nested" / "report.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": f"概要は{deny_substring}該当する。\n"},
+            }
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
     def test_old_string_not_inspected(self, deny_substring: str):
         result = _run(
             {
@@ -796,7 +847,7 @@ class TestColloquialCheck:
 
     @pytest.mark.parametrize("name", ["colloquial.detail.md", "colloquial.bugs.md"])
     def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str, name: str) -> None:
-        """detail側とバグ調査付属側は口語警告を出力しない。"""
+        """計画ファイル（詳細）とバグ調査付属側は口語警告を出力しない。"""
         detail = _make_plan_file(tmp_path / "home", name)
         content = f"概要は{deny_substring}該当する。\n"
         result = _run(
@@ -928,6 +979,24 @@ class TestPlanModeSkillFirstCheck:
                 "tool_name": tool_name,
                 "tool_input": tool_input,
                 "session_id": f"progress-only-{tool_name.lower()}",
+                "permission_mode": "default",
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "editing a plan file without invoking" not in _agent_messages(result)
+
+    @pytest.mark.parametrize("heading", ["## 進捗ログ", "## 進捗ログ（実行時）"])
+    def test_progress_log_only_edit_accepts_legacy_and_canonical_headings(self, tmp_path: pathlib.Path, heading: str) -> None:
+        """進捗ログだけの編集許可判定は新旧の固定見出しを同じ節として扱う。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "progress-alias.md")
+        plan.write_text(f"# 計画\n\n## 概要\n\n本文\n\n{heading}\n\n旧工程\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(plan), "old_string": "旧工程", "new_string": "新工程"},
+                "session_id": "progress-alias-edit",
                 "permission_mode": "default",
             },
             env_overrides=self._state_env(tmp_path, home),
@@ -3710,6 +3779,9 @@ class TestBashOutputTruncationWarning:
         [
             "uvx pyfltr run-for-agent | tail -20",
             "pytest -q | head -5",
+            "uv run --no-project --script /repo/agent-toolkit/scripts/check_plan_file.py | tail -20",
+            "uv run --script agent-toolkit/scripts/check_plan_file.py | tail -20",
+            "uv run -s agent-toolkit/scripts/check_plan_file.py | tail -20",
         ],
     )
     def test_warns(self, command: str):
@@ -3717,6 +3789,213 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         output = json.loads(result.stdout)
         assert "warn" in output["hookSpecificOutput"]["additionalContext"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytest -q | tee | tail -5",
+            "pytest -q | tee -a | tail -5",
+            "pytest -q | tee --append | tail -5",
+            "pytest -q | tee 2>&1 | tail -5",
+            "pytest -q | tee 2>& 1 | tail -5",
+            "pytest -q | tee 2>/tmp/tee.err | tail -5",
+            "pytest -q | tee < /tmp/tee.in | tail -5",
+            "pytest -q | tee /dev/null | tail -5",
+            "pytest -q | tee /dev/stdin | tail -5",
+            "pytest -q | tee /dev/stdout | tail -5",
+            "pytest -q | tee /dev/stderr | tail -5",
+            "pytest -q | tee /dev/fd/1 | tail -5",
+            "pytest -q | tee /dev/tty | tail -5",
+            "pytest -q | tee /dev/zero | tail -5",
+        ],
+    )
+    def test_tee_without_file_does_not_hide_truncation(self, command: str):
+        """保存先の無い`tee`を完全出力保存として扱わない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytest -q | tee /tmp/test.log | tail -5",
+            "pytest -q | tee -a /tmp/test.log | tail -5",
+            "pytest -q | tee /dev/null /tmp/test.log | tail -5",
+            "pytest -q | tee 2>&1 /tmp/test.log | tail -5",
+            "pytest -q | tee 2>&1 /tmp/full.log | tail -5",
+            "pytest -q | tee 2>& 1 /tmp/full.log | tail -5",
+            "pytest -q | tee /dev/tty /tmp/test.log | tail -5",
+        ],
+    )
+    def test_tee_with_file_hides_truncation(self, command: str):
+        """実ファイル引数を持つ`tee`は切り詰め前の保存として扱う。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "make e2etest-single | tail -40",
+            "make ci-check | head -5",
+            "make lint | tail -5",
+            "make db-check | tail -5",
+        ],
+    )
+    def test_make_verification_target_warns(self, command: str):
+        """検証語を含む`make`ターゲットの出力切り詰めを警告する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "make -C lint docs | tail -5",
+            "make --directory lint docs | tail -5",
+            "make --directory=lint docs | tail -5",
+            "make -E 'lint: ;' docs | tail -5",
+            "make --eval 'lint: ;' docs | tail -5",
+            "make --eval='lint: ;' docs | tail -5",
+            "make -f lint docs | tail -5",
+            "make --file lint docs | tail -5",
+            "make --file=lint docs | tail -5",
+            "make --makefile lint docs | tail -5",
+            "make --makefile=lint docs | tail -5",
+            "make -I lint docs | tail -5",
+            "make --include-dir lint docs | tail -5",
+            "make --include-dir=lint docs | tail -5",
+            "make -o lint docs | tail -5",
+            "make --old-file lint docs | tail -5",
+            "make --old-file=lint docs | tail -5",
+            "make --assume-old lint docs | tail -5",
+            "make --assume-old=lint docs | tail -5",
+            "make -W lint docs | tail -5",
+            "make --what-if lint docs | tail -5",
+            "make --what-if=lint docs | tail -5",
+            "make --new-file lint docs | tail -5",
+            "make --new-file=lint docs | tail -5",
+            "make --assume-new lint docs | tail -5",
+            "make --assume-new=lint docs | tail -5",
+            "make --dire lint docs | tail -5",
+            "make --assume-ol lint docs | tail -5",
+            "make --old lint docs | tail -5",
+            "make --new lint docs | tail -5",
+            "make --what lint docs | tail -5",
+            "make --inc lint docs | tail -5",
+            "make FOO-BAR=lint docs | tail -5",
+            "make -- FOO-BAR=lint docs | tail -5",
+            "make FOO:=lint docs | tail -5",
+            "make -- FOO:=lint docs | tail -5",
+            "make FOO+=lint docs | tail -5",
+            "make -- FOO+=lint docs | tail -5",
+            "make FOO?=lint docs | tail -5",
+            "make -- FOO?=lint docs | tail -5",
+            "make FOO!=lint docs | tail -5",
+            "make -- FOO!=lint docs | tail -5",
+            "make FOO::=lint docs | tail -5",
+            "make -- FOO::=lint docs | tail -5",
+            "make -- 'FOO-BAR = lint' docs | tail -5",
+            "make -- 'FOO := lint' docs | tail -5",
+            "make -- 'FOO += lint' docs | tail -5",
+        ],
+    )
+    def test_make_option_values_are_not_targets(self, command: str):
+        """値付き`make`オプションの値や変数代入をターゲットとして誤認しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "make -E 'lint: ;' lint | tail -5",
+            "make --assume-old=lint docs lint | tail -5",
+            "make --assume-new=lint docs check | tail -5",
+            "make --dire lint docs check | tail -5",
+            "make --assume-ol lint docs check | tail -5",
+            "make -- FOO=lint docs check | tail -5",
+            "make -- FOO-BAR=lint docs check | tail -5",
+            "make -- FOO:=lint docs check | tail -5",
+            "make -- FOO+=lint docs check | tail -5",
+            "make -- 'FOO += lint' docs check | tail -5",
+        ],
+    )
+    def test_make_real_verification_target_still_warns(self, command: str):
+        """値付きオプションの後にある実ターゲットの検証語は検出する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "make docs | tail -5",
+            "make | head -5",
+            "make FOO=lint docs | tail -5",
+            "make -- FOO=lint docs | tail -5",
+            "make -f test.mk docs | tail -5",
+            "make --directory /tmp docs | tail -5",
+        ],
+    )
+    def test_non_verification_make_target_is_silent(self, command: str):
+        """検証語を含まない`make`ターゲットやオプション値は警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'pytest -q | tail -5; echo "$?"',
+            "make test | tail -5 && echo exit=$?",
+            'pytest -q | tail -5 || echo "$?"',
+            'pytest -q | tail -5 & echo "$?"',
+            'pytest -q |& tail -5; echo "$?"',
+            "pytest -q | tail -5; exit $?",
+            "pytest -q | tail -5; return $?",
+            "pytest -q | tail -5; test $? -eq 0",
+            "pytest -q | tail -5; [ $? -eq 0 ]",
+            "pytest -q | tail -5; status=$?",
+            "pytest -q | tail -5; if [ $? -eq 0 ]; then echo ok; fi",
+            'set -o pipefail; pytest -q | tail -5; echo "$?"',
+            "set -euo pipefail; pytest -q | tail -5; exit $?",
+            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; return $?",
+            "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; status=$?",
+        ],
+    )
+    def test_status_after_truncation_warns(self, command: str):
+        """切り詰め直後に`$?`を報告する場合は検証状態の診断を追加する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "truncating it" in messages
+        assert "reports the status of `head`/`tail`" in messages
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pytest -q | tail -5; echo exit=${PIPESTATUS[0]}",
+            'pytest -q | tee /tmp/test.log | tail -5; echo "$?"',
+            'grep -n pytest pyproject.toml | head -5; echo "$?"',
+            "pytest -q | tail -5; printf '%s\\n' done",
+            'uv run --no-project --script /repo/other/scripts/check.py | tail -5; echo "$?"',
+            'uv run --no-project --script /repo/agent-toolkit/scripts/check.txt | tail -5; echo "$?"',
+        ],
+    )
+    def test_status_after_truncation_silent_when_status_is_preserved_or_not_reported(self, command: str):
+        """状態保存済み・非検証・終了状態非報告の経路には追加診断を出力しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "reports the status of `head`/`tail`" not in _agent_messages(result)
+
+    def test_status_after_truncation_silent_for_literal_status(self):
+        """リテラルの`$?`出力には追加診断を出力しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "pytest -q | tail -5; echo '$?'"}})
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "truncating it" in messages
+        assert "reports the status of `head`/`tail`" not in messages
 
     def test_tee_saved_log_silent(self):
         command = "uvx pyfltr run-for-agent 2>&1 | tee /tmp/pyfltr.log"
@@ -3729,7 +4008,7 @@ class TestBashOutputTruncationWarning:
         command = "pytest -q | tee /tmp/test.log | tail -5"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "warn" not in result.stderr
+        assert "truncating it" not in _agent_messages(result)
 
     def test_non_verification_command_silent(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log | head -5"}})
@@ -4019,7 +4298,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-plan-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review-task.mdを読んでレビューする。",
                 },
                 "session_id": "execute-review-claude",
                 "isSidechain": True,
@@ -4037,7 +4316,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-independent-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review-task.mdを読んでレビューする。",
                 },
                 "session_id": session_id,
                 "isSidechain": False,

@@ -7,6 +7,7 @@
 
 # pylint: disable=duplicate-code  # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
 
+import json
 import os
 import pathlib
 import shutil
@@ -20,6 +21,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _SUBCOMMANDS = (
     "pretooluse",
     "posttooluse",
+    "autonomous_exit",
     "stop_advisor",
     "subagent_stop_advisor",
     "subagent_start_tracker",
@@ -41,9 +43,14 @@ class TestEntrypointExceptionStages:
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
-    def test_main_import_error_emits_summary_traceback_and_empty_json(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize("subcommand", ["stop_advisor", "autonomous_exit"])
+    def test_main_import_error_emits_summary_traceback_and_empty_json(
+        self,
+        tmp_path: pathlib.Path,
+        subcommand: str,
+    ) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "stop_advisor.py").write_text(
+        (tmp_path / f"{subcommand}.py").write_text(
             "import json\n\n"
             "def _approve() -> None:\n"
             "    print(json.dumps({}))\n\n"
@@ -54,7 +61,7 @@ class TestEntrypointExceptionStages:
         )
 
         result = subprocess.run(
-            [sys.executable, str(entrypoint), "stop_advisor"],
+            [sys.executable, str(entrypoint), subcommand],
             input="",
             capture_output=True,
             text=True,
@@ -63,7 +70,7 @@ class TestEntrypointExceptionStages:
 
         assert result.returncode == 0
         assert result.stdout == "{}\n"
-        assert result.stderr.startswith("[stop_advisor] 想定外エラー: ImportError: main failure")
+        assert result.stderr.startswith(f"[{subcommand}] 想定外エラー: ImportError: main failure")
         assert "Traceback (most recent call last):" in result.stderr
 
     def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
@@ -191,6 +198,42 @@ class TestStandardInputAndPayloadDump:
         assert not result.stdout
         assert "UTF-8" in result.stderr.decode("utf-8")
         assert not marker.exists()
+
+    def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:
+        """各サブコマンドへ渡す前に共通入口が前身状態を継承する。"""
+        entrypoint = self._copy_entrypoint(tmp_path)
+        self._write_echo_module(tmp_path)
+        source_directory = _SCRIPT.parent
+        for name in ("_session_state.py", "_atomic_file.py", "_file_lock.py"):
+            shutil.copy2(source_directory / name, tmp_path / name)
+        temp_directory = tmp_path / "temp"
+        temp_directory.mkdir()
+        (temp_directory / "claude-agent-toolkit-previous.json").write_text(
+            json.dumps({"plan_mode_skill_invoked": True}),
+            encoding="utf-8",
+        )
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(json.dumps({"sessionId": "previous"}) + "\n", encoding="utf-8")
+        payload = json.dumps({"session_id": "current", "transcript_path": str(transcript)})
+        env = os.environ.copy()
+        env["TMPDIR"] = str(temp_directory)
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "pretooluse"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == payload
+        assert not result.stderr
+        assert json.loads((temp_directory / "claude-agent-toolkit-current.json").read_text(encoding="utf-8")) == {
+            "plan_mode_skill_invoked": True,
+            "inherited_from_session_id": "previous",
+        }
 
     def test_module_import_error_uses_utf8_stderr(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)

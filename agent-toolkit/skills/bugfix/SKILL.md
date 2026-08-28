@@ -15,8 +15,15 @@ description: >
 
 1. 後述の「初動と深掘り判定」を読む
 2. 深掘り条件に該当する場合だけ、`references/root-cause-analysis.md`を全文読む
-3. CI失敗を扱う場合は`references/ci-failure-handling.md`も全文読む
+3. CI失敗を扱う時は`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
 4. 計画、実装、レビューのいずれでも同じ判定と原因区分を用いる
+
+CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.md`を全文読む。
+履歴を扱う実装単位へ入る前は`agent-toolkit:plan-mode`の`plan-mode/references/implementation-task.md`を全文読む。
+実装担当の経路を確定する前は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`を全文読む。
+分岐検証へ入る前は`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`を全文読む。
+
+原因区分を確定する時は、`agent-toolkit:bugfix`の`bugfix/references/root-cause-analysis.md`を全文読む。
 
 深掘り条件に該当しない局所不良は、直接的原因の是正と近接検証で完了する。
 深掘り条件に該当する不良は、4原因区分、原因起点の類似見直し、
@@ -33,7 +40,7 @@ description: >
 - 判定材料の確認後に、次の深掘り条件を評価する
   - 深掘り条件は、当該事象が計画または設計の時点で判断材料が揃っており、その時点で適切に判断していれば
     回避できたか否かとする。深掘り条件へ該当する事象は、機能的な不具合の有無、動作の正否、
-    利用者への実害の有無にかかわらずバグとして扱う
+    エンドユーザーへの実害の有無にかかわらずバグとして扱う
   - 該当する事象の例は次のとおり
     - ユーザーが明示した要件または公開契約と成果物が異なる
     - 設計判断、代替手段の選択、誤ったテスト期待値の固定が不具合へ関与する

@@ -83,8 +83,8 @@ def _is_target_path(path: pathlib.Path) -> bool:
     """`path`が`.md`拡張子・`ROOT`配下・非dotdirの全条件を満たすか判定する。
 
     `_local.py`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
-    計画本体`<stem>.md`と実装詳細側`<stem>.detail.md`の双方を真とする
-    （detailは一覧だけから除外し、読取・検索・監視の対象には含める。`_is_listed_path`が一覧専用の判定を持つ）。
+    計画本体`<stem>.md`と付属計画`<stem>.detail.md`・`<stem>.bugs.md`の全てを真とする
+    （付属計画は一覧だけから除外し、読取・検索・監視の対象には含める。`_is_listed_path`が一覧専用の判定を持つ）。
     `ROOT`自身がドット配下でも通るよう、判定は`ROOT`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`ROOT`外を指すリンクは対象外となる
     （`_resolve_target`が単一ファイル取得へ課す範囲と一致させる）。
@@ -99,11 +99,11 @@ def _is_target_path(path: pathlib.Path) -> bool:
 
 
 def _is_listed_path(path: pathlib.Path) -> bool:
-    """`path`が計画一覧の対象（`_is_target_path`が真、かつ実装詳細側`.detail.md`ではない）かを判定する。
+    """`path`が計画一覧の対象（`_is_target_path`が真、かつ付属計画ではない）かを判定する。
 
-    一覧経路（`_scan_entries`）だけに使う。読取・検索・変更監視は`_is_target_path`を使う。
+    一覧経路（`_scan_entries`）だけに使う。読取・検索・変更監視は`_is_target_path`を使い、付属計画も対象へ含める。
     """
-    return _is_target_path(path) and not path.name.endswith(".detail.md")
+    return _is_target_path(path) and not path.name.endswith((".detail.md", ".bugs.md"))
 
 
 @contextlib.contextmanager

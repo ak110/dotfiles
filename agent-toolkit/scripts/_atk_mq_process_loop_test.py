@@ -36,7 +36,7 @@ _DOTFILES_REPO_ID = _process_loop._DOTFILES_REPO_ID  # pylint: disable=protected
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部コマンドとClaude設定を利用者環境から分離する。"""
+    """外部コマンドとClaude設定をユーザー環境から分離する。"""
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
@@ -496,7 +496,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`CLAUDE_CONFIG_DIR`未設定時は利用者ホーム配下`.claude/debug/`へ保存する。"""
+        """`CLAUDE_CONFIG_DIR`未設定時はユーザーホーム配下`.claude/debug/`へ保存する。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1720,7 +1720,43 @@ class TestMiseLatestRefresh:
 
 
 class TestProcessLoopReturncode:
-    """process-loopサブコマンドのオーケストレーター別returncode判定を検証する。"""
+    """process-loopサブコマンドのオーケストレーター・OS別returncode判定を検証する。"""
+
+    @pytest.mark.parametrize(
+        ("orchestrator", "platform", "returncode", "expected"),
+        [
+            ("claude", "posix", 0, True),
+            ("claude", "posix", -15, True),
+            ("claude", "posix", 15, True),
+            ("claude", "posix", 143, True),
+            ("codex", "posix", 0, True),
+            ("codex", "posix", -15, True),
+            ("codex", "nt", 0, True),
+            ("codex", "posix", 15, False),
+            ("codex", "posix", 143, False),
+            ("codex", "nt", 15, False),
+            ("codex", "nt", 143, False),
+            ("claude", "posix", 42, False),
+            ("codex", "posix", 42, False),
+            ("codex", "nt", 42, False),
+        ],
+    )
+    def test_normal_exit_codes_follow_orchestrator_and_platform(
+        self,
+        orchestrator: str,
+        platform: str,
+        returncode: int,
+        expected: bool,
+    ) -> None:
+        """オーケストレーターとOSごとの正常終了コードだけを受け入れること。"""
+        assert (
+            _process_loop._is_normal_session_exit(  # pylint: disable=protected-access  # noqa: SLF001
+                orchestrator,
+                returncode,
+                platform=platform,
+            )
+            is expected
+        )
 
     @pytest.mark.parametrize("returncode", [0, -15, 15, 143])
     def test_normal_returncode_continues_loop(
@@ -1779,13 +1815,13 @@ class TestProcessLoopReturncode:
         captured = capsys.readouterr()
         assert "claudeがexit code 42で異常終了しました" in captured.err
 
-    def test_codex_accepts_only_zero_returncode(
+    def test_codex_rejects_sigterm_style_returncodes(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """CodexではClaude Code用SIGTERM終了コードを正常扱いしない。"""
+        """POSIXのCodexではシェル経由のSIGTERM終了コードを正常扱いしない。"""
         _setup_notes(tmp_path)
         _set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/medium")
         myrepo = tmp_path / "myrepo"
@@ -1808,6 +1844,35 @@ class TestProcessLoopReturncode:
 
         assert exc_info.value.code == 15
         assert "codexがexit code 15で異常終了しました" in capsys.readouterr().err
+
+    def test_codex_accepts_posix_sigterm_returncode(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """POSIXのCodexでは直接受信したSIGTERMの終了コードを正常扱いする。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/medium")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        codex_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, codex_calls, -15))
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> NoReturn:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert len(codex_calls) == 1
 
 
 class TestProcessLoopUpdateAndRestart:

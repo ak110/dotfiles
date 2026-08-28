@@ -9,7 +9,9 @@ import pathlib
 import sys
 
 from _atk_mq_common import (
-    MQ_ACTIVE_STATES,
+    MQ_FEEDBACK_ACTIVE_STATES,
+    MQ_PROCESSABLE_STATES,
+    MQ_STATE_PLANNING,
     MQ_STATES,
     MQ_TYPE_TBD,
     _canonical_repo,
@@ -48,7 +50,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
 def _state_prefixed_filename_hint(filename: str) -> str | None:
     """`<状態名>/<ファイル名>`形式の入力に対する案内文を返す。該当しない場合は`None`を返す。
 
-    `show`は4状態フォルダすべてを探索するため、状態名を含む入力は受理しない。
+    `show`は5状態フォルダすべてを探索するため、状態名を含む入力は受理しない。
     共通のファイル名検証は`不正なファイル名`としか示さず正しい入力形式を判断できないため、
     この形式に限って再実行方法を案内する。共通検証自体は緩和しない。
     """
@@ -68,13 +70,14 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `FILENAME`を2件以上指定した場合の区切りは`--all`と同じく各項目の後の空行1行とし、
     1件だけ指定した場合は従来どおり空行を付けない。
     `--type`指定時は出力対象種別（feedback・tbd・all）を限定する（既定: all）。
-    `FILENAME...`指定時は4状態フォルダすべてを探索し、指定順に表示する。
+    `FILENAME...`指定時は5状態フォルダすべてを探索し、指定順に表示する。
     `--type`・`--target-repo`・`--source`の
     値で対象を限定する。`--status`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
     状態・回答有無フィルタを迂回する既定挙動であり、既定の`--status=active`によって
     adopted・rejected状態のエントリが参照不能になる事態を避けるためである）。
     `--all`指定時のフィードバック・`tbd`双方の走査対象は`--status`と連動する
-    （既定`active`はinbox・processing、`all`は4状態フォルダ全連結、個別状態指定は当該状態のみ）。
+    （既定`active`はフィードバックがinbox・planning・processing、TBDがinbox・processing、
+    `all`は5状態フォルダ全連結、個別状態指定は当該状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
@@ -139,11 +142,21 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 print()
         return
 
-    states = MQ_ACTIVE_STATES if args.status == "active" else MQ_STATES if args.status == "all" else (args.status,)
+    states = (
+        MQ_FEEDBACK_ACTIVE_STATES
+        if args.status == "active"
+        else MQ_PROCESSABLE_STATES
+        if args.status == "processable"
+        else MQ_STATES
+        if args.status == "all"
+        else (args.status,)
+    )
     selected = list(_iter_entries(private_notes, states, filter_repo, args.type))
     for header_type in ("feedback", "tbd"):
         entries: dict[str, list[tuple[str, str, str]]] = {}
         for path, target_repo, text, state, entry_type in selected:
+            if args.status in {"active", "processable"} and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD:
+                continue
             if entry_type != header_type:
                 continue
             answered = _is_tbd_answered(text)

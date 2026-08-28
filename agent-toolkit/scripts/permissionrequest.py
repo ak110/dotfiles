@@ -7,7 +7,7 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 このフックは通常のLLMが生成した操作について確認回数を減らすUX補助であり、
 セキュリティ境界ではない。Bashの完全な構文解析や、敵対的な引用・escape・展開形態の
 同値判定は非目標とする。明示的に扱う通常形へ一致しない入力は出力せず、Claude Codeの
-通常の確認へ戻す。信頼境界はClaude Codeの通常確認と利用者判断が担う。誤許可時は確認が
+通常の確認へ戻す。信頼境界はClaude Codeの通常確認とユーザー判断が担う。誤許可時は確認が
 1回省略され、誤拒否時は通常確認が1回表示される。`False`はdeny応答ではなく出力なしを表す。
 
 自動許可の対象パス:
@@ -266,14 +266,32 @@ def _is_allowed_heredoc_write(command: str, cwd_base: pathlib.Path | None) -> bo
 
 
 def _is_managed_temp_command(tokens: list[str]) -> bool:
-    """管理対象一時領域サブコマンドの通常のcreateまたはcleanupだけを許可する。"""
+    """管理対象一時領域サブコマンドのcanonical createまたはcleanupだけを許可する。"""
     if tokens[:3] == [_ATK_COMMAND, _MANAGED_TEMP_SUBCOMMAND, "list"]:
         return len(tokens) == 3 or (len(tokens) == 5 and tokens[3] == "--prefix" and _managed_temp.is_valid_prefix(tokens[4]))
+    if tokens[:3] == [_ATK_COMMAND, _MANAGED_TEMP_SUBCOMMAND, "create"]:
+        if len(tokens) == 5 and tokens[3] == "--prefix":
+            return _managed_temp.is_valid_prefix(tokens[4])
+        if len(tokens) == 7 and tokens[3] == "--prefix" and tokens[5] == "--root":
+            if not _managed_temp.is_valid_prefix(tokens[4]):
+                return False
+            root = pathlib.Path(tokens[6])
+            if not root.is_absolute():
+                return False
+            try:
+                _managed_temp._validate_root(root, explicit=True)  # pylint: disable=protected-access
+            except (OSError, ValueError, _managed_temp.ManagedTempError):
+                return False
+            return True
+        return False
+    return _is_managed_temp_cleanup_command(tokens)
+
+
+def _is_managed_temp_cleanup_command(tokens: list[str]) -> bool:
+    """管理対象一時領域のcanonical cleanupが登録済みpathを指すか確認する。"""
     if len(tokens) != 5 or tokens[0] != _ATK_COMMAND or tokens[1] != _MANAGED_TEMP_SUBCOMMAND:
         return False
     action, option, value = tokens[2:]
-    if action == "create" and option == "--prefix":
-        return _managed_temp.is_valid_prefix(value)
     if action != "cleanup" or option != "--path":
         return False
     try:

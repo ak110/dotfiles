@@ -812,7 +812,7 @@ class TestShowSkipPull:
 class TestShowStatePrefixedFilename:
     """showサブコマンド: 状態名付きファイル名は再実行方法を案内して終了する。"""
 
-    @pytest.mark.parametrize("state", ["inbox", "processing", "adopted", "rejected"])
+    @pytest.mark.parametrize("state", ["inbox", "processing", "planning", "adopted", "rejected"])
     def test_state_prefix_reports_hint(
         self,
         monkeypatch: pytest.MonkeyPatch,

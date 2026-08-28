@@ -290,7 +290,7 @@ function Initialize-AgentsServer {
             Write-Warning "agents_serverのウォームアップ対象が存在しないためスキップします: $scriptPath"
             continue
         }
-        $null | & uv run --no-project --script $scriptPath --help *> $null
+        $null | & uv run --no-project --script $scriptPath --check-dependencies *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "agents_serverのuv環境ウォームアップに失敗しました: $scriptPath"
         }

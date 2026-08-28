@@ -92,25 +92,39 @@ def test_current_output_is_synced() -> None:
         (
             "上記の優先順位は、厳守規定、手順、例外処理その他の全ての規範へ先に適用し、"
             "優先順位で有効と確定した適用対象だけを後続の規範へ適用する。",
-            "利用者の明示的な指示が下位規範を上書きした場合は、その下位規範を再適用しない。",
+            "ユーザーの明示的な指示が下位規範を上書きした場合は、その下位規範を再適用しない。",
             "「規定の適用可否」に従って規定どおり適用する判断及び本節の手順は、"
             "上記の優先順位で適用対象を確定した後にだけ働く。",
             "エージェントが規範を過剰と判断しただけの場合は、規範を適用したうえで改訂を提案する。",
         )
     )
     assert precedence_contract in priority_section
+    host_hierarchy_contract = (
+        "Codexでは、system、developer、userのホスト命令階層を常に優先する。",
+        "`AGENTS.md`、プロジェクト指示及びagent-toolkit共有規範は、それらを配送したroleの範囲で適用し、上位roleの指示を上書きしない。",
+        "`01-agent.md`「方針が衝突する場合の優先順位」は、Codexではホスト命令階層を適用した後に残る同一role内のプロジェクト方針、慣例及び共有規範の順位として読み替える。",
+    )
+    assert all(contract_line in codex_base for contract_line in host_hierarchy_contract)
+    assert all(contract_line not in shared_rules for contract_line in host_hierarchy_contract)
+    assert (
+        codex_base.index(host_hierarchy_contract[0])
+        < codex_base.index(host_hierarchy_contract[1])
+        < codex_base.index(host_hierarchy_contract[2])
+        < codex_base.index("Codexホストが提供する公開能力と個別ツールの契約が共有規範と異なる場合は、")
+    )
     for codex_contract in (
         "Codexホストが提供する公開能力と個別ツールの契約が共有規範と異なる場合は、この節の契約を共有規範へ優先して適用する。",
         "ツールを利用する前に短い`commentary`を必要とするCodexホストでは、"
         "共有規範の事前説明を抑制する指示にかかわらず、ツール呼び出し前に短い`commentary`を送る。",
         "コード評価を伴うコマンドでは、何をするか、何を読むまたは書くか、何を確認したいかをその`commentary`で説明する。",
         "承認を要する操作では、実行内容、影響範囲及び元に戻す方法を実行前に説明する。",
-        "回答期限を提供しないCodexのDefault modeでは、協調モードは利用者へ直接質問して回答を待つ。",
+        "回答期限を提供しないCodexのDefault modeでは、協調モードはユーザーへ直接質問して回答を待つ。",
         "Codexの自律モードは質問を発行せず、確認事項をTBDへ記録して暫定判断で続行する。",
-        "利用者接点を持たない委譲先は確認を発行せず、呼び出し元へ判断を返す。",
+        "ユーザー接点を持たない委譲先は確認を発行せず、呼び出し元へ判断を返す。",
         "Codexの委譲待機では、ホストが提供する`wait_agent`を使って終了状態を観測する。",
         "`wait_agent`が提供される場面では、共有規範の待機表明でターンを終えず、未完了のまま`final`を返さない。",
         "完了通知だけを提供するホストでは、共有規範の待機表明による再開経路を使う。",
+        "Codexの`list_agents`が対象を`running`として返している間は、Git差分、HEAD、成果物の更新時刻・行数、無応答、経過時間やこれらの組合せから停滞を推定して`interrupt_agent`を実行しない。中断は、ユーザーが明示的に要求した場合、対象が終端又は失敗状態へ遷移した場合、タスク契約でキャンセルが指定された場合だけ行う。",
         "独立した複数のツール呼び出しは、Codexホストと各ツールの契約がともに許可する場合だけ同一応答内で並列化する。",
         "個別ツールが逐次呼び出しを要求する場合は、その契約を優先する。",
         "Web調査ツールのように逐次呼び出しを要求する個別ツールでは、依存関係のない呼び出しも逐次化する。",
@@ -142,7 +156,6 @@ def test_current_output_is_synced() -> None:
         "`sonnet`",
         "`opus`",
         "atk managed-temp",
-        "Claude Code",
         "idle_notification",
         "記録ファイル直接読み取り",
         "自動的に背景実行へ転換",
@@ -154,10 +167,16 @@ def test_current_output_is_synced() -> None:
     for shared_contract in (
         "1つの作業ツリーへ書き込む主体は同時に1つだけ",
         "担当外差分は保持して委譲元へ報告",
-        "自身が起動して識別子（PID）を確認したものに限る",
+        "プロセス又はホスト管理ジョブを終了させる操作は、次のいずれかに該当する対象に限る。",
+        "現在のClaude Code又はCodex本体として、実行環境固有の条件で安全に一意識別した自身。",
+        "自身が起動し、起動結果から停止用の識別子を取得して保持した対象。",
+        "いずれにも該当しないプロセス又はホスト管理ジョブは終了させない。",
+        "別種の識別子への推測変換やパターン一致で対象を特定しない。",
     ):
         assert shared_contract in operations_source
         assert shared_contract in shared_operations
+    assert "自身が起動して識別子（PID）を確認したものに限る。" not in operations_source
+    assert "自身が起動して識別子（PID）を確認したものに限る。" not in shared_operations
 
     for skill_invocation in (
         "`agent-toolkit:add-feedback`をSkill機能で起動",
@@ -170,6 +189,54 @@ def test_current_output_is_synced() -> None:
         assert skill_invocation in shared_rules
     assert "../skills/" not in shared_rules
     assert "agent-toolkit/skills/" not in shared_rules
+
+    named_agent_section = codex_base.split("### Claude Code agent定義のCodex互換適用", maxsplit=1)[1].split(
+        "\n### ", maxsplit=1
+    )[0]
+    for direct_application_contract in (
+        "Codexで名前付きagentを呼び出す場合だけ、別の実行主体を起動せず、メインエージェントが定義を現在のセッションへ直接適用して役割を遂行する。",
+        "定義の適用自体には`agents_server`も`spawn_agent`も使わない。",
+        "`agent-toolkit/agents/*.md`",
+        "`name`、`description`、`model`、`effort`、`tools`、`skills`、`user-invocable`及びfrontmatterコメントを区別する。",
+        "`name`は定義の識別子として保持し、`description`は起動対象を選ぶ条件として用いる。",
+        "`model`と`effort`は定義側の意図を示す値として保持し、`tools`と`skills`は後続の制約及び読込手順へ渡す。",
+        "`user-invocable`はユーザーが直接起動できるかという公開条件として維持し、frontmatterコメントは編集用メタ情報として実行時命令へ含めない。",
+        "Markdown本文をメインエージェント自身の役割、制約、入力、出力及び完了契約として全文適用する。",
+        "`skills`に列挙された各`SKILL.md`をメインエージェントが絶対パスから全文読み、内容を適用する。",
+        "`tools`制約をCodexの公開能力へ写像し、構造的allowlistが無い制約はメインエージェント自身の操作制限として適用する。",
+        "未知のfrontmatterフィールド又は対応不能な必須制約は黙って破棄せず、公式仕様と公開ツールスキーマを確認し、写像不能なら`needs_escalation`として返す。",
+        "frontmatterの解析、既知の必須フィールドの写像、名前付きagent定義の直接適用のいずれかに失敗した場合は、"
+        "部分適用も別の実行経路への迂回もせず、失敗として返す。",
+        "名前付きagent定義自体を`spawn_agent`又は`followup_task`へ渡さない。",
+        "`completed`、`evidence_insufficient`及び`needs_escalation`は適用区間の終端結果として外側のメイン工程へ返す。",
+        "`awaiting_confirmation`は適用区間を終了する。",
+        "`checkpoint`は適用区間を終了する。",
+        "Codexでは自身への`SendMessage`を使わない",
+        "実際の別主体が必要な場合だけ、`runtime-routing.md`の通常経路でCodexから`agents_server`へ委譲する",
+        "名前付き役割が起動した実際の別主体は、当該役割の出力契約と委譲規範に従って終端又は継続可能な識別子として検収してから適用区間を終了する。",
+        "外側のメイン工程へ戻った後に名前付き役割のread-only制約やツール制限を残さず、外側のメインの権限を名前付き役割へ持ち込まない。",
+    ):
+        assert direct_application_contract in named_agent_section
+    runtime_routing = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/runtime-routing.md").read_text(
+        encoding="utf-8"
+    )
+    assert "特殊経路はCodexによる前者だけへ適用し、後者は本書の通常経路を変更しない" in runtime_routing
+    assert "Codexから実際の別主体へ委譲するときは、`agents_server`を利用できる環境では同経路を使う" in (runtime_routing)
+    assert "Codex自身はMCP経由で自己呼び出しせず、利用可能なサブエージェント機能へ同じ契約で読み替える" not in (runtime_routing)
+    assert "Codexではメインエージェントが定義を同一セッションへ直接適用し、Claude Codeでは既存の名前付きAgent起動へ従う。" in (
+        runtime_routing
+    )
+    definition_comment = (
+        "# ツール制限: 調整と検収に専念し、成果物を直接編集しない。"
+        "名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲は明示した`agents_server` MCPツールで起動する。"
+    )
+    old_definition_comment = (
+        "# ツール制限: 調整と検収に専念し、成果物を直接編集しない。Codex経路は明示した`agents_server` MCPツールで起動する。"
+    )
+    for definition_name in ("feedbacks-planner.md", "plan-review-executor.md"):
+        definition = (subject.REPO_ROOT / "agent-toolkit/agents" / definition_name).read_text(encoding="utf-8")
+        assert definition_comment in definition
+        assert old_definition_comment not in definition
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:

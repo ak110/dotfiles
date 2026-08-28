@@ -7,7 +7,7 @@ Claude Code固有の上限値や出力契約にはホスト名を付ける。
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
 Claude Codeは公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
-取得方法は`agent-toolkit/skills/agent-standards/references/agent-skills.md`「公式リファレンス（Claude Code）」節に従う。
+取得方法は`agent-toolkit:agent-standards`の公式リファレンス（Claude Code）節に従う。
 Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次資料とする。
 参照対象は入力ペイロード仕様（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`等）と出力形式仕様とする。
 参照したセクション名は計画ファイルの実装者向け領域へ引用する。
@@ -77,7 +77,7 @@ stdout全体が1つのJSONとして解析されるため、対象ごとに出力
 
 PreToolUseやPostToolUseでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
-`systemMessage`の情報通知は利用者の判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動して利用者の対応を要しない事象には付けない。
+`systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象には付けない。
 Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘導等）は`decision: "block"`＋`reason`を採用する。
 永続ログはstderr出力ではなく`_stop_gate.append_stop_log`等の専用APIに集約する。
 
@@ -202,8 +202,7 @@ hookメッセージの目的はコーディングエージェントが参照先�
 コーディングエージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）には、
 自動生成であることを明示するプレフィックスとサフィックスを付ける。
 hookの出力はユーザー発言と同じ形で会話コンテキストに注入されるため、指示として誤認されないよう二重の標識を設ける。
-書式（プレフィックス・サフィックス・ヘルパー関数の実装例）は
-[hook-message-labeling.md](hook-message-labeling.md)を参照する。
+書式（プレフィックス・サフィックス・ヘルパー関数の実装例）は`agent-toolkit:agent-standards`のメッセージ標識契約に従う。
 
 ## セッション状態ファイル
 
@@ -216,10 +215,11 @@ hookは1呼び出しごとに独立プロセスとして起動するため、メ
 - 書き込み: PostToolUseで観測したイベント（テスト実行・スキル呼び出しなど）をフラグとして記録する
 - 読み取り: PreToolUseで判定材料として参照する（例: テスト未実行警告・スキル先行呼び出し催促）
 - 破損・不在時: 空辞書として扱い、安全側の判定にフォールバックする
+- `session_id`の切替え: 現行状態が無い場合だけtranscriptを先頭から走査し、状態ファイルを持つ別の`session_id`が一意なら全キーを継承する。継承元を状態へ記録し、現行状態がある通常経路では状態ファイルの存在確認だけで終える
 - 設計原則: フックイベント間の多段同期（コマンド文字列の完全一致検出とハッシュ照合の組合せ等）を状態ファイルへ持ち込まない。
   検査は対象ファイル実体への直接実行・直接読み取りで代替し、フラグは実施済み・読了済みの単純な記録に限定する
 - フラグの用途・書き込み元・読み取り元の対応表をプラグインごとにドキュメント化する。
-  `agent-toolkit`自身の一覧SSOTは`session-state-flags.md`に置き、本ファイルへ再掲しない
+  `agent-toolkit`自身の一覧SSOTはセッション状態フラグ資料に置き、本ファイルへ再掲しない
 - 通常状態の期限より長く保持する記録は通常状態JSONへ混在させず、用途別の保存先と排他ロックへ分離する。
   `agent-toolkit`の計画名再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`を使う
 
@@ -239,5 +239,6 @@ hookは1呼び出しごとに独立プロセスとして起動するため、メ
 Claude Codeは並列ツール呼び出しでhookを同時発火するため、複数プロセスから同一の状態ファイルへ書き込みが競合する。
 
 - 通常状態の更新は排他ロック付きの`update_state`、計画名の記録は専用の`claim_session_title`を経由し、直接書き込むAPIを公開しない
+- 前身状態の継承は現行セッションの排他ロック下で不在を再確認し、並行するhookが同時に継承しないようにする
 - ロックファイルはどの経路でも削除しない。内容を持たない空ファイルであり、一時ディレクトリの通常の回収に委ねる
 - 並行書き込みの回帰テストを維持する

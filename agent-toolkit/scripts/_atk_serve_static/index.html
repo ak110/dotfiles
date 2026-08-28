@@ -47,9 +47,13 @@
         <label for="state-filter">状態</label>
         <select id="state-filter">
           <option value="active">active</option>
+          <option value="processable">processable</option>
           <option value="all">all</option>
           <option value="inbox">inbox</option>
+          <option value="planning">planning</option>
           <option value="processing">processing</option>
+          <option value="editing">editing</option>
+          <option value="hold">hold</option>
           <option value="adopted">adopted</option>
           <option value="rejected">rejected</option>
         </select>
@@ -91,6 +95,11 @@
         <span>要約</span>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
+      <nav id="pagination" class="pagination" aria-label="一覧ページ">
+        <button id="previous-page-button" class="button-secondary" type="button" disabled>前のページ</button>
+        <span id="pagination-status" class="pagination-status" role="status" aria-live="polite">1 / 1ページ</span>
+        <button id="next-page-button" class="button-secondary" type="button" disabled>次のページ</button>
+      </nav>
       <div id="empty-state" class="empty-state" hidden>
         <p id="empty-state-message"></p>
         <button id="empty-clear-button" class="button-secondary" type="button" hidden>条件をクリア</button>
@@ -136,16 +145,33 @@
           <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>
+        <section id="user-comment-panel" class="user-comment-panel" hidden>
+          <h3>ユーザーコメント</h3>
+          <label for="user-comment-input">コメント（必須）</label>
+          <textarea id="user-comment-input" aria-describedby="user-comment-input-error" required></textarea>
+          <p id="user-comment-input-error" class="inline-error" hidden></p>
+        </section>
+        <section id="decision-panel" class="decision-panel" hidden>
+          <h3>採否</h3>
+          <label for="decision-note">メモ（任意）</label>
+          <textarea id="decision-note"></textarea>
+        </section>
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer">
         <div class="detail-footer-left">
+          <button id="adopt-button" class="button-primary" type="button" hidden>採用</button>
+          <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
+          <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
+          <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
           <button id="delete-button" class="button-danger" type="button">削除</button>
         </div>
         <div class="detail-footer-right">
           <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
+          <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>
           <button id="edit-button" class="button-primary" type="button">編集</button>
           <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
           <button id="save-answer-button" class="button-primary" type="button" hidden>回答を保存</button>
+          <button id="save-user-comment-button" class="button-primary" type="button" hidden>コメントを保存</button>
         </div>
       </footer>
     </article>
@@ -228,7 +254,10 @@
     </form>
   </dialog>
 
-  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="operation-notice" class="operation-notice" role="status" aria-live="polite" tabindex="-1" hidden>
+    <span id="operation-notice-message"></span>
+    <button id="operation-notice-close-button" class="operation-notice-close" type="button" aria-label="操作通知を閉じる">×</button>
+  </div>
   <script src="__BASE_PATH_HTML__/static/app.js"></script>
 </body>
 </html>

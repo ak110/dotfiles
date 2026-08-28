@@ -12,10 +12,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import pathlib
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
-from agents_server_mcp import (
+from _agents_server_state import (
     SessionState,
     _begin_reply,
 )
@@ -38,6 +39,11 @@ def _build_options(cwd: str, model: str | None, effort: str | None) -> Any:
         setting_sources=["user", "project"],
         system_prompt={"type": "preset", "preset": "claude_code"},
     )
+
+
+def check_dependencies() -> None:
+    """Claude Agent SDKの依存を読み込み、optionsを構築する。"""
+    _build_options(str(pathlib.Path.cwd()), None, None)
 
 
 def _message_name(message: Any) -> str:

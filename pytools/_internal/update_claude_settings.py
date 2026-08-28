@@ -26,6 +26,11 @@ _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_json_managed.json"
 _CONFIG_PATH = Path.home() / ".claude.json"
 
+_REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND = "uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit"
+_REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND = (
+    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py autonomous_exit"
+)
+
 # settings.json の hooks 配下から除去する command 部分文字列。
 # share/claude_settings_json_managed.* から廃止したエントリを列挙する。
 # union マージは削除を反映しないため、ここで明示的に除去する。
@@ -52,6 +57,9 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_posttooluse.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
+    # 2026-08: 自律終了Stop hookをagent-toolkitプラグイン側へ移動したため個人common入口を除去
+    _REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND,
+    _REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND,
     "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py",
     'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
     # 2026-08: 振り返り入口をagent-toolkit側へ統合したため個人Stop hookを除去
@@ -344,7 +352,30 @@ def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
     """
     if not substrings:
         return
-    _strip_hooks(data, lambda _event, command: any(substring in command for substring in substrings))
+    windows_autonomous_exit_pattern = _windows_autonomous_exit_pattern(substrings)
+
+    def should_remove(_event: str, command: str) -> bool:
+        if any(substring in command for substring in substrings):
+            return True
+        return windows_autonomous_exit_pattern is not None and windows_autonomous_exit_pattern.search(command) is not None
+
+    _strip_hooks(data, should_remove)
+
+
+def _windows_autonomous_exit_pattern(substrings: tuple[str, ...]) -> re.Pattern[str] | None:
+    """置換済みWindowsホーム絶対パスの旧autonomous_exit command検出正規表現を返す。"""
+    if sys.platform != "win32" or not (
+        _REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND in substrings or _REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND in substrings
+    ):
+        return None
+    home = str(Path.home()).replace("\\", "/")
+    if not re.match(r"^(?:[A-Za-z]:/|//)", home):
+        return None
+    home_pattern = re.escape(home).replace("/", r"[\\/]")
+    return re.compile(
+        rf"uv\s+run\s+--no-project\s+--script\s+['\"]?{home_pattern}[\\/]+dotfiles[\\/]+scripts[\\/]claude_hook\.py['\"]?\s+autonomous_exit(?=$|[\s;])",
+        re.IGNORECASE,
+    )
 
 
 def _strip_managed_hooks(data: dict, managed: dict) -> None:

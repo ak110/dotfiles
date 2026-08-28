@@ -118,6 +118,93 @@ class TestWatch:
         assert exit_code == 0
         assert capsys.readouterr().out == "now=03:04:05 artifact.lines=1 artifact.age=30s\n"
 
+    def test_missing_file_is_a_normal_absent_observation(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """存在しないファイルを不在として終了コード0で報告する。"""
+        missing = tmp_path / "missing.md"
+
+        exit_code = _run_watch(["--file", str(missing)])
+
+        assert exit_code == 0
+        assert capsys.readouterr().out == "now=03:04:05 missing.state=absent missing.lines=NA missing.age=NA\n"
+
+    def test_file_read_error_remains_an_error(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """存在するが読み取れないファイルを既存のERRとして報告する。"""
+        unreadable = tmp_path / "unreadable.md"
+        _write_artifact(unreadable, "content\n", age=30)
+
+        def _raise_read_error(*_args: object, **_kwargs: object) -> str:
+            raise PermissionError("read blocked")
+
+        monkeypatch.setattr(pathlib.Path, "read_text", _raise_read_error)
+
+        exit_code = _run_watch(["--file", str(unreadable)])
+
+        assert exit_code == 1
+        assert capsys.readouterr().out == "now=03:04:05 unreadable.lines=ERR unreadable.age=ERR\n"
+
+    def test_file_stat_error_remains_an_error(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """存在するがstatできないファイルを既存のERRとして報告する。"""
+        unstatable = tmp_path / "unstatable.md"
+        _write_artifact(unstatable, "content\n", age=30)
+
+        def _raise_stat_error(*_args: object, **_kwargs: object) -> None:
+            raise PermissionError("stat blocked")
+
+        monkeypatch.setattr(pathlib.Path, "stat", _raise_stat_error)
+
+        exit_code = _run_watch(["--file", str(unstatable)])
+
+        assert exit_code == 1
+        assert capsys.readouterr().out == "now=03:04:05 unstatable.lines=ERR unstatable.age=ERR\n"
+
+    def test_mixed_file_observations_keep_absent_and_error_distinct(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """既存・不在・読取不能の混在で各状態を維持し、終了コード1を返す。"""
+        existing = tmp_path / "existing.md"
+        missing = tmp_path / "missing.md"
+        unreadable = tmp_path / "unreadable.md"
+        _write_artifact(existing, "content\n", age=10)
+        _write_artifact(unreadable, "content\n", age=20)
+        original_read_text = pathlib.Path.read_text
+
+        def _read_text(
+            path: pathlib.Path,
+            encoding: str | None = None,
+            errors: str | None = None,
+        ) -> str:
+            if path == unreadable:
+                raise PermissionError("read blocked")
+            return original_read_text(path, encoding=encoding, errors=errors)
+
+        monkeypatch.setattr(pathlib.Path, "read_text", _read_text)
+
+        exit_code = _run_watch(["--file", str(existing), "--file", str(missing), "--file", str(unreadable)])
+
+        assert exit_code == 1
+        assert capsys.readouterr().out == (
+            "now=03:04:05 existing.lines=1 existing.age=10s "
+            "missing.state=absent missing.lines=NA missing.age=NA "
+            "unreadable.lines=ERR unreadable.age=ERR\n"
+        )
+
     def test_duplicate_default_labels_are_rejected(
         self,
         tmp_path: pathlib.Path,

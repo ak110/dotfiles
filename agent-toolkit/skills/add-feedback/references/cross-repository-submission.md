@@ -10,4 +10,4 @@
 - `alert_keys`などの非予約frontmatterは元項目の値を保持する
 - source欄がない場合はsourceを指定しない。指定済みsourceがある場合は同じ値を渡す
 - 登録後は`atk mq show <移管先ファイル名> --target-repo=<target_repo> --skip-pull`で、移管先ファイル名、`target_repo`、本文、指定済みsource及び元項目の非予約frontmatter全体を照合する
-- 登録と照合の成功後だけ、元項目を移管先リポジトリとファイル名付きの項目固有メモでrejectする
+- 登録と照合の成功後だけ、`atk mq rm <元項目ファイル名> --force --note=<移管先リポジトリと移管先ファイル名>`で元項目を除去する

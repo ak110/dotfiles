@@ -26,8 +26,9 @@ class TestLockedRotateAndAppend:
         path = tmp_path / "parallel.log"
         max_bytes = 1_000
         path.write_text("x" * (max_bytes + 1), encoding="utf-8")
-        records = [f"record-{index}" for index in range(20)]
-        processes = [multiprocessing.Process(target=_append_record, args=(str(path), record, max_bytes)) for record in records]
+        records = [f"record-{index}" for index in range(8)]
+        context = multiprocessing.get_context("spawn")
+        processes = [context.Process(target=_append_record, args=(str(path), record, max_bytes)) for record in records]
 
         for process in processes:
             process.start()

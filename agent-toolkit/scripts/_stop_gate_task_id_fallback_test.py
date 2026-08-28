@@ -273,7 +273,7 @@ class TestMcpBackgroundTaskCompletion:
         assert is_pending_async_work(str(transcript), "") is False
 
     def test_sidechain_mcp_timeout_is_ignored(self, tmp_path: pathlib.Path) -> None:
-        """sidechain内のMCP背景化はメイン側の未完了タスクに含めない。"""
+        """sidechain内のMCP背景化は計画ファイル（メイン）側の未完了タスクに含めない。"""
         entries = [
             *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp", sidechain=True),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),

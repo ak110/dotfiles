@@ -1,6 +1,7 @@
 """agent-toolkit/scripts/permissionrequest.py の判定ロジックテスト。"""
 
 import json
+import os
 import pathlib
 
 import _fork_runner
@@ -335,6 +336,18 @@ class TestShouldAllowBash:
         target = _managed_temp.create_managed_temp("permission-test")
 
         assert hook.should_allow_bash("atk managed-temp create --prefix agent-work", str(tmp_path)) is True
+        if os.name == "nt":
+            # 公開APIにrootのACL準備がないため、明示root判定の前提だけを設定する。
+            _managed_temp._windows_secure_path(tmp_path, directory=True)  # pylint: disable=protected-access
+        assert hook.should_allow_bash(f"atk managed-temp create --prefix agent-work --root {tmp_path}", str(tmp_path)) is True
+        unsafe_root = tmp_path / "unsafe-root"
+        unsafe_root.mkdir()
+        if os.name == "posix":
+            unsafe_root.chmod(0o777)
+            assert (
+                hook.should_allow_bash(f"atk managed-temp create --prefix agent-work --root {unsafe_root}", str(tmp_path))
+                is False
+            )
         assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
         assert hook.should_allow_bash("atk managed-temp list --prefix agent-work", str(tmp_path)) is True
         assert hook.should_allow_bash("atk managed-temp list --prefix agent-work extra", str(tmp_path)) is False
@@ -377,6 +390,9 @@ class TestShouldAllowBash:
         [
             "atk managed-temp create --prefix UPPER",
             "atk managed-temp create --prefix agent-work extra",
+            "atk managed-temp create --prefix agent-work --root relative-root",
+            "atk managed-temp create --root /tmp --prefix agent-work",
+            "atk managed-temp create --prefix agent-work --root /tmp extra",
             "atk managed-temp cleanup --path relative",
             "atk managed-temp cleanup --path /tmp/unmanaged",
             "atk managed-temp validate --path /tmp/unmanaged",

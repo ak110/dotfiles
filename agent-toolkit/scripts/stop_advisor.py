@@ -11,6 +11,8 @@ Claude Codeが停止しようとするタイミングで発火する。判定分
 各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で常時ログへ記録する。
 """
 
+import contextlib
+import io
 import json
 import pathlib
 import re
@@ -19,6 +21,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_command  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
 from _hook_notice import (
@@ -84,6 +87,25 @@ def _status_summary(cwd: str) -> dict[str, str]:
     if not status:
         return {}
     return {"systemMessage": f"[git status] {len(status.splitlines())} changed file(s)"}
+
+
+def _managed_temp_notice() -> str:
+    """検証済みの管理対象一時領域が残る場合の固定長警告を返す。"""
+    try:
+        # CLIの項目別診断は保持し、Stopのstderrには漏らさない。
+        with contextlib.redirect_stderr(io.StringIO()):
+            count = len(_managed_temp.list_managed_temp())
+    except Exception:  # pylint: disable=broad-exception-caught
+        # 管理情報を取得できない場合も、既存の振り返り誘導は維持する。
+        return ""
+    if count == 0:
+        return ""
+    return (
+        f"Verified managed temporary cleanup candidates remain: {count}."
+        " Some may be used by another session or ongoing work; do not assume they were forgotten."
+        " Use `atk managed-temp list` to inspect details, then verify the purpose is complete and the contents"
+        " are safe before running `atk managed-temp cleanup --path <path>` for each item individually."
+    )
 
 
 def _approve(cwd: str = "") -> None:
@@ -171,6 +193,9 @@ def main(payload_text: str) -> int:
         " according to its activation policy. Pass the following values from this Stop payload:"
         f" session_id={session_id}; transcript_path={transcript_path}"
     )
+    managed_temp_notice = _managed_temp_notice()
+    if managed_temp_notice:
+        body = f"{body}\n{managed_temp_notice}"
     append_stop_log(session_id, "block_session_review", {})
     _emit_block_with_status(
         body,

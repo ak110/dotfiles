@@ -85,6 +85,7 @@ class TestHomeClaudeEditWarning:
         "rel",
         [
             "plans/foo.md",  # plan mode が書き込む
+            "jobs/session/tmp/material.md",  # Claude Code が生成するセッション作業領域
             "projects/session.jsonl",  # Claude Code セッション
             "todos/todo.json",
             "shell-snapshots/foo.sh",
@@ -570,7 +571,7 @@ class TestAgentToolkitDotfilesNamesCheck:
     """agent-toolkit 配布物への dotfiles 固有名混入検出 (block + warn)。
 
     対象は `agent-toolkit/` 配下。
-    block 対象は配布先利用者にとって意味不明な参照となるため exit 2 で停止する。
+    block 対象は配布先のエンドユーザーにとって意味不明な参照となるため exit 2 で停止する。
     warn 対象 (pyfltr / pytilpack) は OSS として正規参照される場合があるため通知のみ。
     """
 

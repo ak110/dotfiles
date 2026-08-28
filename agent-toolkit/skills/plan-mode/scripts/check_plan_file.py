@@ -21,6 +21,7 @@ _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _review_table  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -151,13 +152,56 @@ def _check_plan_size(lines: list[str]) -> list[str]:
     ]
 
 
+def _progress_data_row_count(text: str) -> int:
+    """計画本文の進捗ログ表にあるデータ行数を返す。"""
+    body = list(_plan_format.iter_markdown_body_lines(text))
+    headings = _plan_format.extract_headings(text)
+    progress_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_PROGRESS)
+    if progress_index is None:
+        return 0
+    start, end = _plan_format.heading_subtree_range(headings, progress_index)
+    section = _plan_format.lines_within(body, start, end)
+    table = next(
+        (
+            candidate
+            for candidate in _plan_format.extract_tables(section)
+            if candidate.header == _plan_format.PLAN_PROGRESS_TABLE_HEADER
+        ),
+        None,
+    )
+    return len(table.rows) if table is not None else 0
+
+
+def _check_review_table_progress(plan_path: pathlib.Path, text: str) -> list[str]:
+    """同stemのレビュー表の最大roundが進捗ログへ反映済みか検査する。"""
+    review_path = plan_path.with_suffix(".tsv")
+    if not review_path.is_file():
+        return []
+    try:
+        rows = _review_table._read(review_path)  # pylint: disable=protected-access
+        _review_table._validate_rows(rows, require_responses=False)  # pylint: disable=protected-access
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        return [f"同stemのレビュー表を検証できない: {review_path}: {error}"]
+    if not rows:
+        return []
+    max_round = max(int(row[0]) for row in rows)
+    progress_count = _progress_data_row_count(text)
+    if max_round <= progress_count:
+        return []
+    missing = ", ".join(str(number) for number in range(progress_count + 1, max_round + 1))
+    return [
+        f"レビュー表の最大round {max_round} に対して`## 進捗ログ`のデータ行が{progress_count}件で不足している"
+        f"（不足round: {missing}）"
+    ]
+
+
 def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
-    """メイン側計画パスから対応するdetail側の絶対パスを返す（stem導出）。"""
+    """計画ファイル（メイン）のパスから対応する計画ファイル（詳細）の絶対パスを返す（stem導出）。"""
     return plan_path.with_name(f"{plan_path.stem}{_plan_format.PLAN_DETAIL_SUFFIX}")
 
 
 def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Path) -> list[str]:
-    """メイン側の計画メタ情報`実装詳細`がstem導出値と一致するかを検査する。"""
+    """計画ファイル（メイン）の計画メタ情報`実装詳細`がstem導出値と一致するかを検査する。"""
     if declared_value is None:
         return [f"計画メタ情報の`{_plan_format.PLAN_METADATA_DETAIL_FIELD}`が無い: 期待={detail_path.name}"]
     declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
@@ -170,7 +214,7 @@ def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Pat
 
 
 def _main_path_for_detail(detail_path: pathlib.Path) -> pathlib.Path:
-    """detail側パスからstem対応するメイン側計画パスを返す。"""
+    """計画ファイル（詳細）のパスからstem対応する計画ファイル（メイン）のパスを返す。"""
     suffix = _plan_format.PLAN_DETAIL_SUFFIX
     if detail_path.name.endswith(suffix):
         return detail_path.with_name(f"{detail_path.name[: -len(suffix)]}.md")
@@ -213,11 +257,25 @@ def _legacy_bug_warnings(text: str) -> list[str]:
     return ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
 
 
+def _legacy_h2_warnings(text: str) -> list[str]:
+    """新書式で旧見出し別名を使っている場合の移行warningを返す。"""
+    if not _plan_format.is_canonical_main_format(text):
+        return []
+    headings = _plan_format.extract_headings(text)
+    names = {heading.text for heading in headings if heading.level == 2}
+    warnings: list[str] = []
+    if _plan_format.PLAN_H2_LEGACY_HISTORY in names:
+        warnings.append("変更履歴の見出しが旧形式である。新規作成・改訂では`## 変更履歴（計画時）`へ移行する")
+    if _plan_format.PLAN_H2_LEGACY_PROGRESS in names:
+        warnings.append("進捗ログの見出しが旧形式である。新規作成・改訂では`## 進捗ログ（実行時）`へ移行する")
+    return warnings
+
+
 def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
-    """新書式（メイン側・detail側の2ファイル）を検査してエラーと警告を返す。
+    """二ファイル形式の計画を検査してエラーと警告を返す。
 
     呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
-    detail側の実在は呼び出し前提として扱う。
+    計画ファイル（詳細）の実在は呼び出し前提として扱う。
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -241,10 +299,16 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     warnings.extend(_legacy_bug_warnings(detail_text))
 
     materials, _material_errors = _plan_format.parse_plan_materials(text)
+    warnings.extend(_legacy_h2_warnings(text))
     warnings.extend(_legacy_action_warnings(text))
-    if not _plan_format.has_human_action_table(text):
+    is_canonical = _plan_format.is_canonical_main_format(text)
+    if is_canonical and not _plan_format.has_human_action_table(text):
+        errors.append("canonical形式の`## 実施内容`には人間向け4列表が必要である")
+    elif not _plan_format.has_human_action_table(text):
         warnings.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
-    if materials is not None and materials.is_legacy:
+    if is_canonical and materials is not None and materials.is_legacy:
+        errors.append("canonical形式の`## 提示素材`には素材表と要求表が必要である")
+    elif materials is not None and materials.is_legacy:
         warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     errors.extend(_check_references(text, work_dir))
@@ -274,8 +338,8 @@ def _check_legacy_format(plan_path: pathlib.Path, text: str, work_dir: pathlib.P
 def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
-    新旧の判別は対応する`<stem>.detail.md`ファイルの実在で行う（`plan-file-standards.md`正本）。
-    実在する場合は新書式の2ファイル、実在しない場合は旧形式の単一ファイルとして検査する。
+    対応する`<stem>.detail.md`の実在により二ファイル形式と旧単一ファイル形式を分ける。
+    二ファイル形式ではメインのcanonical固定H2により新規書式と旧二ファイル形式を分ける。
     """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -284,11 +348,14 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     _outside, errors = _outside_fences(structure_lines)
 
     detail_path = _detail_path_for(plan_path)
+    canonical_format = _plan_format.is_canonical_main_format(text)
     if detail_path.is_file():
         format_errors, warnings = _check_new_format(detail_path, text, work_dir)
     else:
         format_errors, warnings = _check_legacy_format(plan_path, text, work_dir)
     errors.extend(format_errors)
+    if detail_path.is_file() and canonical_format:
+        errors.extend(_check_review_table_progress(plan_path, text))
     return errors, warnings
 
 

@@ -104,7 +104,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
 - `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のagents・rulesだけをリンクする
-- `setup_codex_links.py`が公開する`agent-toolkit/agents/*.md`は、Codexが互換手順で実行時に読むClaude Markdownのagent定義であり、Codex Custom Agent用TOMLではない。TOMLの生成物及びagent本文の複製は作成しない
+- `setup_codex_links.py`が公開する`agent-toolkit/agents/*.md`は、Codexメインが名前付きagentの呼び出し時だけ現在のセッションへ直接適用するClaude Markdownのagent定義であり、Codex Custom Agent用TOMLではない。TOMLの生成物及びagent本文の複製は作成しない
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
@@ -115,11 +115,17 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`の`engine`引数でCodex backendまたはClaude backendを選択する。
 
 公開APIは`start`、`wait`、`send_message`、`kill`の4つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
-`model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。
+`model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。
 `send_message`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
-`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端を待つ。
+`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端を待つ。
 timeout超過時もsessionとbackend processを強制終了せず、同じsessionへ`wait`または終端後の`send_message`を続けられる。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
+
+MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。
+プラグイン配置の寿命に依存するローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
+Claude Agent SDKはCodex専用経路の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
+プラグイン導入後のウォームアップは、同じ`uv run --no-project --script`起動形へ`--check-dependencies`を渡し、
+PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外部Claude/Codex sessionは開始しない。
 
 ## ホーム配下のファイルを編集する前の確認
 

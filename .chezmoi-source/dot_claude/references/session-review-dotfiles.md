@@ -1,16 +1,17 @@
 # dotfiles環境の振り返り観点
 
-`agent-toolkit:session-review`が独立した`session-review-advisor`へ渡す追加観点である。
+`agent-toolkit:session-review`を実行するメインが改善候補を確定するときに適用する追加観点である。
+advisorへは渡さず、advisorが返した問題一覧とメインが再抽出した証拠へ適用する。
 
 ## pyfltr
 
-セッションでpyfltrを使用した場合は、対象コマンドの成功・失敗だけでなく、検索・置換・検査の結果表示、
+メインは、セッションでpyfltrを使用した場合に対象コマンドの成功・失敗だけでなく、検索・置換・検査の結果表示、
 警告、エラー、復旧手順が判断と修正を支援したかを評価する。個別の操作ミスを一般化せず、
 CLI自体の改善で同じ失敗を防げる観測事象がある場合だけ候補化する。
 
 ## dotfiles配布物
 
-現在の対象がdotfilesリポジトリまたはその配布物である場合は、次を追加で点検する。
+現在の対象がdotfilesリポジトリまたはその配布物である場合は、メインが次を追加で点検する。
 
 - chezmoi原本と配布先、Claude CodeとCodex、POSIXとWindowsの同期境界
 - agent-toolkitのplugin、rules、skills、agents、hooks、settings、生成物の責務境界

@@ -1,19 +1,16 @@
-"""scripts/claude_hook_autonomous_exit.py のテスト。
+"""agent-toolkit/scripts/autonomous_exit.py のテスト。
 
-dotfiles個人環境専用のStopフックのテスト。独立スクリプトなのでfork-server経由
-（フォールバック時はsubprocess）で起動しstdout（JSON）を検証する。判定分岐は環境変数未設定・`stop_hook_active`・
-非同期待機中・`autonomous_exit_invoked`・block送出を検証する。
+agent-toolkit pluginが提供するStopフックを共通入口から起動し、環境変数・再帰呼び出し・
+非同期待機・呼び出し済み状態・blockの各契約を検証する。
 """
 
 import json
 import os
 import pathlib
 import subprocess
-import sys
 
-# 共通テストヘルパー読み込みのため agent-toolkit/scripts/ を sys.path へ追加する。
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _fork_runner
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
@@ -22,17 +19,8 @@ _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
-    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-
-def _write_transcript(tmp_path: pathlib.Path, entries: list[dict]) -> pathlib.Path:
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        "\n".join(json.dumps(e, ensure_ascii=False) for e in entries) + "\n",
-        encoding="utf-8",
-    )
-    return transcript
 
 
 def _assistant_with_async_tool(tool_name: str) -> dict:
@@ -75,6 +63,8 @@ def _run(
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
+    env["HOME"] = str(state_dir)
+    env["USERPROFILE"] = str(state_dir)
     env.pop(_ENV_REQUIRED, None)
     env.pop(_LEGACY_ENV_REQUIRED, None)
     if required_env is not None:
@@ -90,7 +80,7 @@ class TestApproveConditions:
     """approve条件: 環境変数未設定・構造的継続中・呼び出し済みのいずれか。"""
 
     def test_env_not_required_approves(self, tmp_path: pathlib.Path):
-        """環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`が未設定 → 無条件approve。"""
+        """環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`が未設定ならapproveする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {"session_id": "no-env", "transcript_path": str(transcript)},
@@ -101,7 +91,7 @@ class TestApproveConditions:
         assert "decision" not in decision
 
     def test_stop_hook_active_approves(self, tmp_path: pathlib.Path):
-        """`stop_hook_active`が真 → 再帰呼び出し抑止のため即approve。"""
+        """`stop_hook_active`が真なら再帰呼び出し抑止のためapproveする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {
@@ -115,7 +105,7 @@ class TestApproveConditions:
         assert "decision" not in decision
 
     def test_pending_async_work_approves(self, tmp_path: pathlib.Path):
-        """直前ターンの最後のtool_useが非同期待機系 → approve。"""
+        """直前ターンの最後のtool_useが非同期待機系ならapproveする。"""
         transcript = _write_transcript(
             tmp_path,
             [_user_entry(), _assistant_with_async_tool("Agent")],
@@ -128,7 +118,7 @@ class TestApproveConditions:
         assert "decision" not in decision
 
     def test_autonomous_exit_invoked_approves(self, tmp_path: pathlib.Path):
-        """`autonomous_exit_invoked`フラグが真 → approve。"""
+        """`autonomous_exit_invoked`フラグが真ならapproveする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         _write_state(tmp_path, "exit-invoked", {"autonomous_exit_invoked": True})
         result = _run(
@@ -140,7 +130,7 @@ class TestApproveConditions:
 
 
 class TestBlockCondition:
-    """block条件: 環境変数設定済み・構造的継続なし・未呼び出しの場合は毎回blockする。"""
+    """block条件: 環境変数設定済み・構造的継続なし・未呼び出しの場合。"""
 
     def test_not_invoked_blocks_with_reason(self, tmp_path: pathlib.Path):
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
@@ -161,6 +151,7 @@ class TestBlockCondition:
         assert "session-review-dotfiles" not in reason
         assert "steps 1-3" not in reason
         assert "step 4" not in reason
+        assert "agent-toolkit/autonomous_exit" in reason
 
     def test_reason_body_matches_trigger_scope(self, tmp_path: pathlib.Path):
         """発火条件外の起動経路を断定せず、節名を例示へ限定する。"""
@@ -194,7 +185,7 @@ class TestBlockCondition:
         assert _parse_decision(result).get("decision") == "block"
 
     def test_repeats_block_each_stop(self, tmp_path: pathlib.Path):
-        """同一transcriptで2回連続Stopしても、未呼び出しなら毎回blockする。"""
+        """同一transcriptで2回連続Stopしても未呼び出しなら毎回blockする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         first = _run(
             {"session_id": "repeat", "transcript_path": str(transcript)},
@@ -223,7 +214,7 @@ class TestEdgeCases:
         assert "decision" not in decision
 
     def test_missing_transcript_still_blocks(self, tmp_path: pathlib.Path):
-        """transcript未指定でも`is_pending_async_work`判定をスキップしblockする。"""
+        """transcript未指定でも`is_pending_async_work`をスキップしてblockする。"""
         result = _run({"session_id": "no-transcript"}, state_dir=tmp_path)
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"

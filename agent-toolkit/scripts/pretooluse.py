@@ -15,7 +15,8 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 
-固定見出しと固定表の構造、素材表・要求表・素材参照、計画メタ情報の4項目と記法、
+固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
+計画メタ情報の4項目と記法、計画単位のエージェント判断表（5項目）を含む
 フェンス整合、参照実在は
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
@@ -32,7 +33,7 @@ wait:
 Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
-- 高容量の利用者領域を無限定に再帰検索する実行位置の検出 (warn)
+- 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
@@ -87,7 +88,6 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 import dataclasses
 import datetime
 import json
-import os
 import pathlib
 import re
 import shlex
@@ -139,6 +139,16 @@ _REPLACEMENT_CHAR = "\ufffd"
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
     """計画本体・実装詳細またはバグ調査付属ファイルの場合に真を返す。"""
     return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
+
+
+def _is_claude_job_file(file_path: str) -> bool:
+    """Claude Codeが生成するセッション作業領域配下の場合に真を返す。"""
+    try:
+        target = pathlib.Path(file_path).expanduser().resolve(strict=False)
+        jobs = (pathlib.Path.home() / ".claude" / "jobs").resolve(strict=False)
+        return target.is_relative_to(jobs) and target != jobs
+    except (OSError, ValueError):
+        return False
 
 
 # 日本語の文字（ひらがな・カタカナ・CJK統合漢字）。
@@ -280,6 +290,20 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
+    if tool_name == "WebFetch":
+        notice = _check_webfetch_verbatim_request(tool_input)
+        if notice is not None:
+            pending_notices.append(notice)
+        flush_pending_notices()
+        return 0
+
+    if tool_name == "SendMessage":
+        notice = _check_sendmessage_agent_type_recipient(tool_input)
+        if notice is not None:
+            pending_notices.append(notice)
+        flush_pending_notices()
+        return 0
+
     # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
         flush_pending_notices()
@@ -349,6 +373,7 @@ def _handle_bash_tool(
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         _check_bash_output_truncation(command),
+        _check_bash_output_status_after_truncation(command),
         _check_bash_recursive_home_search(command),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
@@ -813,11 +838,9 @@ _HOME_PATH_SKIP_SUFFIXES: tuple[str, ...] = (
 )
 
 
-def _unmanaged_temporary_path(resolved_path: pathlib.Path, root: pathlib.Path) -> bool | None:
-    """一時作業領域配下のGit管理マーカーを調べ、未管理なら真を返す。"""
+def _unmanaged_path(resolved_path: pathlib.Path) -> bool | None:
+    """対象パスの最近接既存親からルートまでのGit管理マーカーを調べる。"""
     try:
-        if not resolved_path.is_relative_to(root):
-            return None
         existing_parent = resolved_path if resolved_path.is_dir() else resolved_path.parent
         while not existing_parent.exists():
             existing_parent = existing_parent.parent
@@ -834,38 +857,22 @@ def _unmanaged_temporary_path(resolved_path: pathlib.Path, root: pathlib.Path) -
         return None
 
 
-def _temporary_roots() -> tuple[pathlib.Path, ...]:
-    """配置だけで除外できる一時作業領域の候補を返す。"""
-    roots = [pathlib.Path(tempfile.gettempdir()).resolve()]
-    xdg_cache_home = os.environ.get("XDG_CACHE_HOME", "").strip()
-    if xdg_cache_home:
-        xdg_path = pathlib.Path(xdg_cache_home).expanduser()
-        if xdg_path.is_absolute():
-            roots.append(xdg_path.resolve())
-    else:
-        roots.append((pathlib.Path.home() / ".cache").resolve())
-    return tuple(dict.fromkeys(roots))
-
-
 def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """ホームディレクトリの絶対パス混入を検出したら警告本文を返す。
 
     リポジトリ管理ファイルに`/home/user/...`のような環境依存パスが書き込まれると
     他環境での再現性が失われるため警告する。警告のみでeditは継続（warn）。
     Git管理外の作業文書であり、正確な絶対パスを記録する計画ファイルは対象外とする。
-    一時ルート、絶対`XDG_CACHE_HOME`又は未設定時の`$HOME/.cache`配下は配置だけでは除外せず、
-    既存親からルートまでにGit管理マーカーがないと確定できた一時作業文書だけを対象外とする。
+    対象パスの最近接既存親からルートまでにGit管理マーカーがないと確定できた文書は対象外とする。
     マーカーの確認不能時は既存検査を継続する。
     """
-    if _is_plan_file_or_adjunct(file_path):
+    if _is_plan_file_or_adjunct(file_path) or _is_claude_job_file(file_path):
         return None
 
     try:
         resolved_path = pathlib.Path(file_path).resolve()
-        for root in _temporary_roots():
-            unmanaged = _unmanaged_temporary_path(resolved_path, root)
-            if unmanaged is True:
-                return None
+        if _unmanaged_path(resolved_path) is True:
+            return None
     except (OSError, ValueError):
         pass
 
@@ -913,6 +920,22 @@ _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.A
 
 _COLLOQUIAL_MAX_LISTED_MATCHES = 5
 """口語表現検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
+_MANAGED_TEMP_MARKER = ".agent-toolkit-managed-temp.json"
+
+
+def _is_in_managed_temp(file_path: str) -> bool:
+    """Git作業ツリー境界より内側に管理対象一時領域のマーカーがある場合に真を返す。"""
+    try:
+        current = pathlib.Path(file_path).expanduser().resolve(strict=False)
+        current = current if current.is_dir() else current.parent
+        for directory in (current, *current.parents):
+            if (directory / _MANAGED_TEMP_MARKER).is_file():
+                return True
+            if (directory / ".git").exists():
+                return False
+        return False
+    except (OSError, ValueError):
+        return False
 
 
 def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
@@ -926,7 +949,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
-    if _is_plan_file_or_adjunct(file_path):
+    if _is_plan_file_or_adjunct(file_path) or _is_in_managed_temp(file_path):
         return None
     for field, value in fields:
         if not value:
@@ -1199,7 +1222,7 @@ def _progress_log_heading_prefix(content: str) -> str | None:
     if progress_index is None:
         return None
     h2_headings = [heading for heading in headings if heading.level == 2]
-    if sum(heading.text == _plan_format.PLAN_H2_PROGRESS for heading in h2_headings) != 1:
+    if sum(heading.text in _plan_format.h2_aliases(_plan_format.PLAN_H2_PROGRESS) for heading in h2_headings) != 1:
         return None
     progress_heading = headings[progress_index]
     if not h2_headings or h2_headings[-1] != progress_heading:
@@ -1449,6 +1472,36 @@ _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
     _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES | _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES
 )
+_WEBFETCH_VERBATIM_RE = re.compile(
+    r"(?:全文|原文|そのまま|逐語|引用|verbatim|word[ -]for[ -]word)",
+    re.IGNORECASE,
+)
+
+
+def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
+    """WebFetchへ逐語再現を要求する入力を検出して警告する。"""
+    prompt = tool_input.get("prompt")
+    if not isinstance(prompt, str) or _WEBFETCH_VERBATIM_RE.search(prompt) is None:
+        return None
+    return _llm_notice(
+        "WebFetch uses a summarization model and is not evidence for verbatim quotation."
+        " Save the raw content from the same URL in an agent-toolkit managed temporary directory,"
+        " then quote only the relevant passage from the saved raw content.",
+        tag="warn",
+    )
+
+
+def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
+    """SendMessageの宛先にエージェント種別名を指定した場合に警告する。"""
+    recipient = tool_input.get("to")
+    if not isinstance(recipient, str) or ":" not in recipient:
+        return None
+    return _llm_notice(
+        "An agent type name is not a reachable SendMessage recipient."
+        " Return the normal completion report through the tool result once;"
+        " send an immediate notification only to the caller identifier supplied by the runtime.",
+        tag="warn",
+    )
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
@@ -1987,7 +2040,7 @@ def _cwd_in_python_project(cwd: str) -> bool:
 
 # --- Bash: 実行位置のトークン列抽出（助言用検査の共通入口）---
 
-# 本ヘルパーの利用者は助言用の3検査（出力切り詰め・`codex exec`・agent-toolkit版更新漏れ）に限る。
+# 本ヘルパーの消費主体は助言用の3検査（出力切り詰め・`codex exec`・agent-toolkit版更新漏れ）に限る。
 # 遮断を伴う`_check_bash_process_kill_by_pattern`は、コマンド置換・サブシェル・オプション終端まで
 # 解決できる解析を用意できるまで現行のコマンド文字列全体への一致判定を維持し、本ヘルパーを使わない
 # （解析の不足で既存の保護を外さないため）。
@@ -2167,10 +2220,12 @@ class _ExecutionSegment:
     """Bashコマンドの1区間について、実行位置以降のトークン列と実行位置の確定可否を表す。
 
     `resolved`が偽の区間では`tokens`を空とし、助言用検査は当該区間で検出しない。
+    `is_agent_toolkit_script`はagent-toolkit配下の配布検査スクリプトを表す。
     """
 
     tokens: tuple[str, ...]
     resolved: bool
+    is_agent_toolkit_script: bool = False
 
 
 def _split_bash_pipelines(command: str) -> list[list[str]]:
@@ -2185,8 +2240,13 @@ def _split_bash_pipelines(command: str) -> list[list[str]]:
     position = 0
     for index, segment in enumerate(segments):
         start = command.find(segment, position)
-        separator = command[position:start].strip() if start >= 0 else ""
+        separator_text = command[position:start] if start >= 0 else ""
+        separator = separator_text.strip()
         previous = segments[index - 1] if index > 0 else ""
+        if pipelines and _is_redirection_continuation(previous, separator_text, segment):
+            pipelines[-1][-1] += separator_text + segment
+            position = (start if start >= 0 else position) + len(segment)
+            continue
         if index == 0 or not _is_pipeline_continuation(previous, separator, segment):
             pipelines.append([])
         pipelines[-1].append(segment)
@@ -2201,6 +2261,15 @@ def _is_pipeline_continuation(previous: str, separator: str, following: str) -> 
     # `2>&1`・`&>log`等のリダイレクトに含まれる`&`は、`split_bash_segments`が区切りとして分割するが
     # コマンドの終端ではないため継続として扱う（前段の出力は後段のパイプへ渡る）。
     return separator == "&" and (previous.endswith((">", "<")) or following.startswith(">"))
+
+
+def _is_redirection_continuation(previous: str, separator: str, following: str) -> bool:
+    """`split_bash_segments`が分割したリダイレクト断片の続きであるかを返す。"""
+    if separator.strip() != "&":
+        return False
+    if previous.endswith((">", "<")):
+        return True
+    return following.startswith(">") and separator.endswith("&")
 
 
 def _extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> list[list[_ExecutionSegment]]:
@@ -2299,6 +2368,7 @@ def _resolve_execution_segment(tokens: list[str]) -> _ExecutionSegment:
     前置語の引数境界を確定できていないため実行位置未確定とする。
     """
     index = _skip_env_assignments(tokens, 0)
+    is_agent_toolkit_script = False
     while index < len(tokens):
         token = tokens[index]
         if token in _EXEC_PREFIX_WITH_ENV_ASSIGNMENTS:
@@ -2318,6 +2388,7 @@ def _resolve_execution_segment(tokens: list[str]) -> _ExecutionSegment:
                 return _ExecutionSegment((), False)
             if uv_index == index:
                 break
+            is_agent_toolkit_script = _is_agent_toolkit_script_invocation(tokens, index, uv_index)
             index = uv_index
             continue
         if _is_python_token(token) and index + 1 < len(tokens) and tokens[index + 1] == "-m":
@@ -2326,7 +2397,7 @@ def _resolve_execution_segment(tokens: list[str]) -> _ExecutionSegment:
         break
     if index >= len(tokens) or tokens[index].startswith("-"):
         return _ExecutionSegment((), False)
-    return _ExecutionSegment(tuple(tokens[index:]), True)
+    return _ExecutionSegment(tuple(tokens[index:]), True, is_agent_toolkit_script)
 
 
 def _resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
@@ -2349,6 +2420,26 @@ def _resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
     if state != "reached":
         return None
     return index
+
+
+def _is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, execution_index: int) -> bool:
+    """`uv run --script`のagent-toolkit配下Pythonスクリプトを識別する。"""
+    index, state = _scan_uv_options(list(tokens), uv_index + 1, _UV_GLOBAL_OPTIONS_WITH_VALUE, _UV_GLOBAL_OPTIONS_WITHOUT_VALUE)
+    if state != "reached" or index >= len(tokens) or tokens[index] != "run":
+        return False
+    run_index = index
+    index, state = _scan_uv_options(list(tokens), run_index + 1, _UV_RUN_OPTIONS_WITH_VALUE, _UV_RUN_OPTIONS_WITHOUT_VALUE)
+    if state != "reached" or index != execution_index:
+        return False
+    script_path = tokens[execution_index]
+    normalized = script_path.replace("\\", "/")
+    components = tuple(part for part in normalized.split("/") if part)
+    run_options = tokens[run_index + 1 : execution_index]
+    return (
+        any(option in run_options for option in ("--script", "-s"))
+        and "agent-toolkit" in components
+        and normalized.endswith(".py")
+    )
 
 
 def _scan_uv_options(
@@ -2500,11 +2591,19 @@ _WORD_BOUNDARY_CONTROL_CHARS = ("&", "|")
 """
 
 
-def _split_serial_shell_commands(command: str) -> list[str]:
-    """クォート外の`;`と`&&`だけでBash入力を直列コマンドへ分割し、コメント外の区切りのみを認識する。
+_SERIAL_SHELL_SEPARATORS: frozenset[str] = frozenset({";", "&&"})
+_STATUS_SHELL_SEPARATORS: frozenset[str] = frozenset({";", "&&", "||", "&"})
+
+
+def _split_serial_shell_commands(
+    command: str,
+    *,
+    separators: frozenset[str] = _SERIAL_SHELL_SEPARATORS,
+) -> list[str]:
+    """指定したクォート外のシェル演算子でBash入力を直列コマンドへ分割する。
 
     クォート外の`#`（Bashコメント開始）から行末までをスキップし、
-    コメント内の`;`・`&&`を区切りとして誤検出しない。
+    コメント内の演算子を区切りとして誤検出しない。
     """
     segments: list[str] = []
     buffer: list[str] = []
@@ -2569,7 +2668,20 @@ def _split_serial_shell_commands(command: str) -> list[str]:
             word_boundary = True
             index += 1
             continue
-        separator_length = 2 if command.startswith("&&", index) else 1 if char == ";" else 0
+        separator_length = 0
+        if command.startswith("&&", index) and "&&" in separators or command.startswith("||", index) and "||" in separators:
+            separator_length = 2
+        elif (
+            char == ";"
+            and ";" in separators
+            or (
+                char == "&"
+                and "&" in separators
+                and not command.startswith("&>", index)
+                and not (index > 0 and command[index - 1] in "<>|")
+            )
+        ):
+            separator_length = 1
         if separator_length:
             segments.append("".join(buffer).strip())
             buffer = []
@@ -2606,6 +2718,17 @@ def _command_tokens(command: str) -> list[str] | None:
     """制御構文の接頭予約語を除いたコマンドトークンを返す。"""
     try:
         args = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    while args and args[0] in {"do", "then", "else"}:
+        args = args[1:]
+    return args
+
+
+def _command_tokens_with_quotes(command: str) -> list[str] | None:
+    """クォートを保持したコマンドトークンを返す。"""
+    try:
+        args = shlex.split(command, posix=False)
     except ValueError:
         return None
     while args and args[0] in {"do", "then", "else"}:
@@ -2812,15 +2935,172 @@ _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("npm", "test"),
     ("npm", "run", "test"),
     ("vitest",),
-    ("make", "test"),
 )
 _OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
 _OUTPUT_FULL_SAVE_COMMAND = "tee"
+_SHELL_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|<<<|<<|>>|<>|>&|<&|>\||>|<)")
+_TEE_NON_FILE_OPERAND_PATTERN = re.compile(r"^(?:/dev/null|/dev/(?:stdin|stdout|stderr|tty)|/dev/fd/\d+|/proc/self/fd/\d+)/?$")
+_MAKE_ASSIGNMENT_PATTERN = re.compile(r"^[^=\s]+?\s*(?:::=|:=|\?=|\+=|!=|=)")
+_MAKE_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "-C",
+        "-E",
+        "-f",
+        "-I",
+        "-o",
+        "-W",
+        "--directory",
+        "--file",
+        "--makefile",
+        "--include-dir",
+        "--old-file",
+        "--assume-old",
+        "--what-if",
+        "--new-file",
+        "--assume-new",
+        "--eval",
+    }
+)
+"""`make --help`で値を必須とする短長オプション（別名を含む）。
+
+長形の`--name=value`形式は、走査側がオプション名と値を分離して判定する。
+"""
+_MAKE_LONG_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--always-make",
+        "--assume-new",
+        "--assume-old",
+        "--check-symlink-times",
+        "--debug",
+        "--directory",
+        "--dry-run",
+        "--environment-overrides",
+        "--eval",
+        "--file",
+        "--help",
+        "--ignore-errors",
+        "--include-dir",
+        "--jobs",
+        "--just-print",
+        "--keep-going",
+        "--load-average",
+        "--makefile",
+        "--max-load",
+        "--new-file",
+        "--no-builtin-rules",
+        "--no-builtin-variables",
+        "--no-keep-going",
+        "--no-print-directory",
+        "--no-silent",
+        "--old-file",
+        "--output-sync",
+        "--print-data-base",
+        "--print-directory",
+        "--question",
+        "--quiet",
+        "--recon",
+        "--silent",
+        "--stop",
+        "--touch",
+        "--trace",
+        "--version",
+        "--warn-undefined-variables",
+        "--what-if",
+    }
+)
+"""`make --help`に現れる長形オプション。GNU Makeの一意な省略解決に使う。"""
 
 
 def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) -> bool:
     """区間の実行位置以降のトークン列が指定の接頭トークン列で始まるかを返す。"""
     return segment.resolved and segment.tokens[: len(prefix)] == prefix
+
+
+def _tee_operand_is_non_regular_file(token: str) -> bool:
+    """`tee`のoperandが既知の特殊出力先または既存の非通常ファイルかを返す。"""
+    normalized = token.rstrip("/")
+    if _TEE_NON_FILE_OPERAND_PATTERN.fullmatch(normalized):
+        return True
+    path = pathlib.Path(normalized)
+    if not path.is_absolute():
+        return False
+    try:
+        return path.exists() and not path.is_file()
+    except OSError:
+        return False
+
+
+def _tee_saves_to_file(segment: _ExecutionSegment) -> bool:
+    """`tee`区間に標準出力を保存するファイル引数があるかを返す。"""
+    if not _segment_starts_with(segment, (_OUTPUT_FULL_SAVE_COMMAND,)):
+        return False
+    option_terminator = False
+    tokens = segment.tokens[1:]
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        redirect_match = _SHELL_REDIRECTION_PATTERN.match(token)
+        if redirect_match is not None:
+            index += 1
+            if redirect_match.end() == len(token):
+                index += 1
+            continue
+        if _tee_operand_is_non_regular_file(token):
+            index += 1
+            continue
+        if option_terminator:
+            return True
+        if token == "--":
+            option_terminator = True
+        elif token.startswith("-") and token != "-":
+            pass
+        else:
+            return True
+        index += 1
+    return False
+
+
+def _make_option_requires_value(token: str) -> bool:
+    """`make`の短長オプションが別トークンの必須値を取るかを返す。"""
+    if token in _MAKE_OPTIONS_WITH_VALUE:
+        return True
+    if not token.startswith("--") or "=" in token:
+        return False
+    matches = tuple(option for option in _MAKE_LONG_OPTIONS if option.startswith(token))
+    return len(matches) == 1 and matches[0] in _MAKE_OPTIONS_WITH_VALUE
+
+
+def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
+    """`make`区間からオプションと変数代入を除いたターゲット名を返す。"""
+    if not _segment_starts_with(segment, ("make",)):
+        return ()
+    targets: list[str] = []
+    option_terminator = False
+    tokens = iter(segment.tokens[1:])
+    for token in tokens:
+        if _MAKE_ASSIGNMENT_PATTERN.match(token):
+            continue
+        if option_terminator:
+            targets.append(token)
+            continue
+        if token == "--":
+            option_terminator = True
+            continue
+        if token.startswith("-"):
+            if _make_option_requires_value(token):
+                next(tokens, None)
+            continue
+        targets.append(token)
+    return tuple(targets)
+
+
+def _segment_is_verification(segment: _ExecutionSegment) -> bool:
+    """区間が検証コマンドの実行位置から始まるかを返す。"""
+    return (
+        any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES)
+        or segment.is_agent_toolkit_script
+        or any(target.lower().find(keyword) >= 0 for target in _make_targets(segment) for keyword in ("test", "check", "lint"))
+    )
 
 
 def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment]) -> bool:
@@ -2832,7 +3112,7 @@ def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment
     同一パイプラインに検証コマンドが複数ある場合は、いずれか1件でも該当すれば真を返す。
     """
     for index, segment in enumerate(pipeline):
-        if not any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES):
+        if not _segment_is_verification(segment):
             continue
         following = pipeline[index + 1 :]
         truncation_index = next(
@@ -2845,7 +3125,7 @@ def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment
         )
         if truncation_index is None:
             continue
-        if any(_segment_starts_with(item, (_OUTPUT_FULL_SAVE_COMMAND,)) for item in following[:truncation_index]):
+        if any(_tee_saves_to_file(item) for item in following[:truncation_index]):
             continue
         return True
     return False
@@ -2871,8 +3151,70 @@ def _check_bash_output_truncation(command: str) -> str | None:
     )
 
 
+def _contains_unquoted_status_expansion(token: str) -> bool:
+    """トークンに単一引用符で保護されていない`$?`があるかを返す。"""
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(token):
+        char = token[index]
+        if escaped:
+            escaped = False
+            index += 1
+            continue
+        if quote == "'":
+            if char == "'":
+                quote = None
+            index += 1
+            continue
+        if quote == '"':
+            if char == "\\":
+                escaped = True
+            elif char == '"':
+                quote = None
+            elif token.startswith("$?", index):
+                return True
+            index += 1
+            continue
+        if char == "\\":
+            escaped = True
+        elif char in {"'", '"'}:
+            quote = char
+        elif token.startswith("$?", index):
+            return True
+        index += 1
+    return False
+
+
+def _status_report_follows_truncation(command: str) -> bool:
+    """直後のserial commandが検証コマンドの終了状態を利用する形かを返す。"""
+    tokens = _command_tokens_with_quotes(command)
+    if not tokens:
+        return False
+    if any("PIPESTATUS" in token for token in tokens):
+        return False
+    return any(_contains_unquoted_status_expansion(token) for token in tokens)
+
+
+def _check_bash_output_status_after_truncation(command: str) -> str | None:
+    """切り詰め直後の`$?`報告が検証コマンドの状態を隠す場合に診断を返す。"""
+    serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
+    for index, serial_command in enumerate(serial_commands[:-1]):
+        if not any(
+            _pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(serial_command)
+        ):
+            continue
+        if _status_report_follows_truncation(serial_commands[index + 1]):
+            return _llm_notice(
+                "warn: `$?` after a truncating verification pipeline reports the status of `head`/`tail`,"
+                " not the verification command. Preserve the verification status before truncating output.",
+                tag="warn",
+            )
+    return None
+
+
 def _is_high_capacity_home_target(token: str) -> bool:
-    """高容量の利用者領域を表す検索対象かを返す。"""
+    """高容量のユーザー領域を表す検索対象かを返す。"""
     normalized = token.rstrip("/")
     home = pathlib.Path.home()
     targets = {
@@ -2913,7 +3255,7 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
 
 
 def _check_bash_recursive_home_search(command: str) -> str | None:
-    """高容量の利用者領域を無限定に再帰検索する実行位置へ警告を返す。"""
+    """高容量のユーザー領域を無限定に再帰検索する実行位置へ警告を返す。"""
     if not any(
         segment.resolved and _pipeline_has_recursive_home_search(segment.tokens)
         for pipeline in _extract_execution_pipelines(command)
