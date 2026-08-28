@@ -10,13 +10,12 @@ amend、fixup、autosquashの操作直前に本文書を全文読む。
 fixupは、修正が統合先コミットの時点で独立して成立し、対応する近接検証を再実行できる場合に限る。
 中間状態を独立して検証できない場合はfixupを使わず新規コミットを作成する。
 
-通常実装モードの`plan-impl-executor`が検証済みの採用指摘IDと実装単位commit完全OIDの対応表を渡したレビュー修正は、
-上記の新規commit既定の例外とする。
+通常実装モードのレビュー修正担当がレビュー表と現行履歴を照合し、採用指摘IDと実装単位commit完全OIDの対応を確定したレビュー修正は、上記の新規commit既定の例外とする。
 最終単位だけが対象の場合は、修正・近接検証・stage後に`amend` phaseで下記の汎用判定を再実行し、成功した場合だけamendを実行する。
 過去単位だけが対象の場合は対象commitへのfixupとautosquashだけを実行する。
 両方が対象の場合は過去単位だけを先に実装してautosquashする。
 autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
-対応表の不足、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
+対応付け不能、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
 又はautosquash・amendの失敗時は新規commitへフォールバックせず`needs_escalation`で返す。
 `rewrite_guard`の受渡しは、`agent-toolkit:plan-mode`が定める通常`plan-impl`レビュー修正の実装担当契約だけに置く。
 通常実装のレビュー修正以外は本節の履歴書換え契約を適用せず、各呼び出し元が定めるcommit契約に従う。

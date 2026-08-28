@@ -32,8 +32,8 @@ fast担当からエスカレーションを受領した場合は、fast担当の
 
 通常の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には最初の実装担当の起動前に検収したworktreeの完全OIDを使う。
 
-採用指摘を実装単位commitへ対応付け、対応不能、複数単位へ不可分にまたがる修正又は中間commitの公開契約を維持できない修正は`needs_escalation`で返す。同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
+同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
-`agent-toolkit:plan-mode`の実装担当契約、フィードバックファイル名一覧、複製元と対象外worktreeを渡す。レビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表も渡す。レビュー表の絶対パスと修正対象として確定した採用指摘の`implementation-review`の`track`及び`reviewee-standards/SKILL.md`を渡し、起動文へ担当種別を`レビュー修正担当`として明示する。
+新規起動では`agent-toolkit:plan-mode`の実装担当契約、元の実装入力、レビュー表の絶対パス、`implementation-review`の`track`、`reviewee-standards/SKILL.md`、フィードバックファイル名一覧、複製元と対象外worktreeを渡す。起動文へ担当種別を`レビュー修正担当`として明示する。修正担当はレビュー表とworktreeの実体から指摘の採否、対象の実装単位commit及び修正方針を確定する。調整担当はレビュー表を読まず、採否、対応付け又は成果物・Git・検証結果を再検収しない。
 
 レビュー修正の実装と履歴統合は`agent-toolkit:plan-mode`の実装担当契約、履歴書換えの遮断は`agent-toolkit:commit`の履歴書換え契約を正本とする。修正担当が`対応完了`を返した場合は同じレビューthreadへ`再レビューせよ`を送り、`対応完了（再レビュー不要）`の場合はレビューを省略する。

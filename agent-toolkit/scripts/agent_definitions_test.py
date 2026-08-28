@@ -1911,7 +1911,7 @@ def test_review_resolution_precedes_history_rewrite_and_preserves_unadopted_hist
         "対応する実装単位commitを履歴統合の対象へ含める",
         "不採用と確定した指摘は修正対象及び`target_oids`へ含めず",
         "履歴と作業ツリーを変更しないまま`needs_escalation`で返す",
-        "レビュー修正の採否、対象実装単位と対応表が確定するまで",
+        "レビュー修正の採否と対象実装単位が確定するまで",
     ):
         assert phrase in resolution
     for rewrite_marker in (
