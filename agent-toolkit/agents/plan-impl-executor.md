@@ -47,8 +47,7 @@ worktreeと管理対象領域を作成・回収しない。
 
 ## チェックポイント
 
-- `review_round`: 準拠系・盲検系の並列レビューの1ラウンド完了ごとに返す。指摘件数（系統別）、重大度上位の指摘概要、
-  修正内容の要約、次ラウンドの要否を`checkpoint`へ含める
+- `review_round`: 準拠系・盲検系の並列レビューの1ラウンド完了ごとに返す。指摘件数（系統別）、実害の概要、修正内容の要約、残る証拠不足及び次ラウンドの要否を含める
 - `merge_request`: レーン内レビュー収束後に返す。レーンHEAD完全OID、レーン内検証結果、rebase要否を`checkpoint`へ含める
 - `scope_deviation`: 実装担当が`status: scope_deviation_hold`（`implementation-task.md`）で返した内容を受領した時点で返す。
   事象、影響範囲、続行案を`checkpoint`へ含める。メインの再開指示（続行認可・是正・縮小）を受領した後は、
@@ -110,7 +109,7 @@ worktreeと管理対象領域を作成・回収しない。
    計画準拠のレビュー担当の対象計画又は指摘の出所だけに限定しない。
    各モードの最初の実装担当以降のHEAD又は`review_contract`へ混入した未承認契約と、
    累積差分検証用の計画ベースコミットを公開契約基準に用いない。
-   根拠と適用条件のいずれかが不足する指摘は`未検証`へ移す。
+   根拠と適用条件のいずれかが不足する行は採否対象へ含めず、証拠不足の範囲と必要な検証をレビュー工程へ返す。
    対応付け不能、計画間衝突又は修正認可の上限を実際に超える方針は実装担当へ渡さず、
    事象、期待値、実際値、発生条件、直接的原因、対応案及び超過内容を`needs_escalation`で呼び出し元へ返す。
    `対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否と最小限の修正を残し、実在欠陥だけを実装担当へ一括して返す。
@@ -156,8 +155,9 @@ checkpoint:
   review_round:
     round: <ラウンド番号>
     findings_count_by_track: <系統別指摘件数>
-    top_findings_summary: <重要度上位の指摘概要>
+    impact_summary: <実害の概要>
     fix_summary: <修正内容の要約>
+    evidence_gaps: <残る証拠不足>
     next_round_needed: <次ラウンドの要否>
   merge_request:
     lane_head: <レーンHEADの完全OID>

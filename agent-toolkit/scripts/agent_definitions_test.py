@@ -689,6 +689,8 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
         "`plan-mode/references/review-loop-coordination.md`を読み、調整主体の手順として適用する。"
     ) in plan_review_executor
     assert "レビュー担当へ渡すタスク文書は`plan-mode/references/plan-review-task.md`だけ" in plan_review_executor
+    assert "レビュー: <ラウンド数と全ての指摘の解消状況>" in plan_review_executor
+    assert "重大な指摘の解消状況" not in plan_review_executor
     assert (
         "plan-review-delegation.md`と`plan-mode/references/plan-review-task.md`の絶対パスを受信者へ渡す"
         not in plan_review_executor
@@ -709,7 +711,7 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
     assert "初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。" in implementation_mode
     assert "| Codex | Codex |" not in implementation_executor
     assert "| Claude | Claude |" not in implementation_executor
-    assert "atk review-table add --round <ラウンド> --track <track>" in reviewer
+    assert "atk review-table add --round <ラウンド> --track <track>" not in reviewer
     assert "atk review-table respond --track <track>" not in reviewee
     assert "`atk review-table`の公開CLI契約" in reviewee
     assert "`plan-conformance`" in _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
@@ -1132,7 +1134,7 @@ def test_plan_creation_and_review_external_command_contracts_are_synchronized() 
         "新規作成・新規改訂の提示素材はフィードバック/TBDの正本ファイル名だけを保持し、フィードバック原文全文を計画へ転記しない"
     ) in standards
     assert "当該機構が呼ぶ全コマンドを同一ラウンド" in review_task
-    assert "理由と未検証範囲" in review_task
+    assert "理由と証拠不足範囲" in review_task
 
 
 def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary() -> None:
@@ -1148,7 +1150,10 @@ def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary(
         "必要十分な対策だけを選ぶ",
     ):
         assert phrase in reviewee
-    assert "裏付けを取得できない候補は`未検証`と明記して確定指摘から分離する" in reviewer
+    assert (
+        "候補は対象に適した根拠で検証する。指摘に必要な根拠を取得できない場合は、証拠不足の範囲と必要な検証を返し、レビューを完了しない。"
+        in reviewer
+    )
 
     excluded = ("変数名", "消費主体が観測しない文言", "局所的な制御フロー")
     retained = (
@@ -1199,7 +1204,7 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "`agent-toolkit:plan-mode`の計画レビュー担当契約" in delegation
     assert "計画とリポジトリを修正しない" in task
     assert "総ライフサイクルコスト" in task
-    # 再設計へ切り替える判定は、目的・公開契約・重大欠陥へ影響する違反契約又は変更機構に限定する。
+    # 再設計へ切り替える判定は、目的・公開契約・通常運用で実害のある欠陥へ影響する違反契約又は変更機構に限定する。
     for trigger in ("同じ違反契約", "変更機構"):
         assert trigger in task
     assert "同一の目的条項" not in reviewee
@@ -1249,9 +1254,12 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
     reviewer = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
     independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "validate --allow-unanswered" in reviewer
-    assert "show --track <track>" in reviewer
-    assert "add --round <ラウンド> --track <track>" in reviewer
+    for command in (
+        "validate --allow-unanswered",
+        "show --track <track>",
+        "add --round <ラウンド> --track <track>",
+    ):
+        assert command not in reviewer
     assert "validate --allow-unanswered" not in reviewee
     assert "respond --track <track>" not in reviewee
     assert "`atk review-table`の公開CLI契約" in reviewee
@@ -1477,7 +1485,7 @@ def test_plan_review_audits_shared_representation_and_overview_sync() -> None:
     for phrase in (
         "`## 概要`、`## 提示素材`",
         "実施内容とファイル群別の変更説明と同じ内容",
-        "元の目的、公開契約又は再現可能な重大欠陥への影響を確認できる接続面だけ",
+        "元の目的、公開契約又は再現可能な通常運用で実害のある欠陥への影響を確認できる接続面だけ",
         "単純な文面変更と局所修正は本再列挙の対象外",
     ):
         assert phrase in delegation
@@ -3300,9 +3308,9 @@ def test_review_resolution_precedes_history_rewrite_and_preserves_unadopted_hist
         "採否確定前に指摘の成立性と修正方法を独立に判定し",
         "採用済みと確定した指摘だけを修正対象とし",
         "対応する実装単位commitを履歴統合の対象へ含める",
-        "不採用、または採否未確定（`未検証`を含む）の指摘は修正対象及び`target_oids`へ含めず",
+        "不採用と確定した指摘は修正対象及び`target_oids`へ含めず",
         "履歴と作業ツリーを変更しないまま`needs_escalation`で返す",
-        "レビュー修正の採否、対象実装単位及び対応表が確定するまで",
+        "レビュー修正の採否、対象実装単位と対応表が確定するまで",
     ):
         assert phrase in resolution
     for rewrite_marker in (
@@ -3586,24 +3594,15 @@ def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
     assert "全修正と累積計画全体を再監査" not in plan_review_task
     assert "指摘候補を内部的に網羅列挙" not in plan_review_delegation
     assert "全修正と累積計画全体を再監査" not in plan_review_delegation
-    assert "## 初回・再レビューの共通契約" in review_standards
-    assert (
-        "修正した識別子の呼び出し元・参照元、同じ状態又はデータを消費する経路、対応テスト、生成・配布先、"
-        "変更した契約の適用先から直接影響範囲を導出する。"
-    ) in review_standards
-    assert (
-        "再レビューでは、通常のレビュー入力に加え、前回レビュー対象の完全OID又は版、前回以降の修正差分、"
-        "採用指摘、未解決指摘、修正担当が列挙した直接影響範囲及び新設・変更契約を必須差分入力として受け取る。"
-    ) in review_standards
-    assert (
-        "共有parser、共通状態、公開契約、生成元、配布元を修正した場合は、実際の全消費先まで範囲を広げる。"
-    ) in review_standards
-    assert "文字列、見出し、目的語、混在構造、接続関係が似ているだけの箇所は範囲へ含めない。" in review_standards
-    assert "未変更かつ直接影響範囲に含まれない既存部分は再走査しない。" in review_standards
-    assert "初回被覆契約の不履行として不足範囲を調整主体へ返す。" in review_standards
-    assert (
-        "調整主体は初回レビューを未完了として同じレビュー担当へ不足範囲を返し、補完結果を受理してから再レビューを続ける。"
-    ) in review_standards
+    for phrase in (
+        "## 基本方針",
+        "## 初回レビュー",
+        "## 再レビュー",
+        "明示されたレビュー範囲を独立要件と変更面へ分解し、実害のある問題を同じラウンドで全て検出する。",
+        "無関係な既存不良を探索しない。",
+        "初回から判断できた問題は初回被覆の不足として同じレビュー担当が補完し、補完後に再レビューを続ける。",
+    ):
+        assert phrase in review_standards
     assert (
         "再レビューで初回から判断できた問題が見つかった場合も、初回レビューを未完了として不足範囲を同じレビュー担当へ返し、"
         "補完後に再レビューを続ける。"
@@ -4665,35 +4664,69 @@ def test_minor_review_convergence_uses_actual_repair_impact() -> None:
         assert "意味を変えない説明の明確化" not in document
 
 
-def test_review_severity_is_single_major_label() -> None:
-    """レビューの重大度を`重大`へ統合し、読み手が判断を誤る欠陥だけを対象にする。"""
+def test_review_round_checkpoint_preserves_impact_and_evidence_gaps() -> None:
+    """レビューラウンドの生産・受領契約で実害と証拠不足を保持する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+
+    for phrase in (
+        "impact_summary: <実害の概要>",
+        "evidence_gaps: <残る証拠不足>",
+    ):
+        assert phrase in executor
+    assert "top_findings_summary" not in executor
+    assert "重要度上位の指摘概要" not in executor
+    assert "系統別指摘件数、実害の概要、修正内容の要約、残る証拠不足、次ラウンドの要否" in caller
+    assert "重要度上位の指摘概要" not in caller
+
+
+def test_review_contract_excludes_severity_and_unverified_findings() -> None:
+    """レビュー担当の実害・証拠契約から重大度と未検証分類を除外する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    severity_documents = (
+    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    role_documents = (
         review_standards,
+        plan_review_task,
         _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
-        _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8"),
         _REVIEWEE_STANDARDS.read_text(encoding="utf-8"),
+        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_TASK.read_text(encoding="utf-8"),
+        _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"),
+        _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8"),
+        _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8"),
     )
 
-    assert "重大度ラベルは`重大`だけ" in review_standards
-    assert "読み手が実装・運用の判断を誤る内部不整合" in review_standards
-    assert "表記揺れ、参照の追従漏れ" in review_standards
-    assert "読者がSSOTへ到達でき判断へ影響しない" in review_standards
-    for document in severity_documents:
-        assert "中程度" not in document
+    for phrase in (
+        "明示されたレビュー範囲を独立要件と変更面へ分解し、実害のある問題を同じラウンドで全て検出する。",
+        "lint、format、textlint、型検査、スペル検査、補助スクリプト、構文エラー・構文の合法性及び機械的に算出できる定量値で検出できる事項は指摘しない。",
+        "候補は対象に適した根拠で検証する。指摘に必要な根拠を取得できない場合は、証拠不足の範囲と必要な検証を返し、レビューを完了しない。",
+        "指摘には、満たすべき契約と問題を解消する方向を示す。具体的な実装方法は確定しない。",
+    ):
+        assert phrase in review_standards
+    assert "### 計画固有の指摘範囲" in plan_review_task
+    assert "証拠不足の範囲、取得できなかった根拠及び必要な検証" in plan_review_task
+    for document in role_documents:
+        assert "severity" not in document
+        assert "未検証" not in document
+
+    delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
+    assert "証拠不足の範囲と必要な検証を同じレビュー担当へ返す" in delegation
+    assert "`未検証`の指摘は修正担当へ渡さない" not in delegation
 
 
 def test_review_findings_record_decision_axis_scan() -> None:
-    """確定指摘が判定軸の全走査と観測記録を保持する。"""
+    """確定指摘が契約、実害、根拠及び解消方向を保持する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
 
     for phrase in (
-        "指摘を確定する前に",
-        "影響を確認できる範囲を",
-        "走査コマンド、一致件数、走査範囲及び未走査範囲",
-        "当該指摘が属する判定軸を1行で明記",
+        "違反した目的又は契約の原文",
+        "対象へ適用される条件",
+        "通常運用で生じる実害及び裏付け",
+        "満たすべき契約と問題を解消する方向",
     ):
         assert phrase in review_standards
+    assert "指摘本文へ走査コマンド" not in review_standards
 
 
 def test_plan_workflows_reread_completion_conditions_before_reporting() -> None:
@@ -4937,14 +4970,14 @@ def test_problem_solution_proportionality_contract_is_complete() -> None:
         "作成、更新、失効、復旧、移行、検証のうち該当するライフサイクル",
         "点検表の空欄を埋めるために新しい状態、移行、表示、文書を作成しない",
         "個別対策を追加する前に採用案を候補比較へ戻す",
-        "各レビューラウンド",
-        "対応量又は既実装量を理由にした採用継続は認めない",
         "対策を追加する案をユーザーへの選択肢に含める場合",
         "対策を追加しない案を推奨とする",
         "変更する判定経路に既存の例外、互換経路又はフォールバックが含まれる場合は",
         "旧版、無効設定、限定ホストなど未観測の条件を新たな維持根拠にしない（厳守規定）",
     ):
         assert phrase in judgment_details
+    assert "各レビューラウンドでは" not in judgment_details
+    assert "対応量又は既実装量を理由にした採用継続は認めない" not in judgment_details
 
 
 def test_plan_change_descriptions_replace_target_list_contracts() -> None:
@@ -5337,30 +5370,20 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
 def test_review_workflows_gate_findings_by_original_purpose() -> None:
     """レビュー出力と受領側が目的・前提・非目標を基準に指摘を選別する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    purpose_contract = _h2_section(review_standards, "目的との整合")
     independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
 
     for phrase in (
-        "元のユーザー目的",
-        "公開契約",
-        "適用規範",
-        "計画が定める実装",
-        "入力前提",
-        "非目標",
-        "異なる脅威モデル",
+        "元のユーザー目的、公開契約、適用規範、入力生成主体、信頼境界、通常入力及び非目標を確認し、通常運用で実害が生じる契約違反だけを指摘する。",
+        "lint、format、textlint、型検査、スペル検査、補助スクリプト、構文エラー・構文の合法性及び機械的に算出できる定量値で検出できる事項は指摘しない。",
     ):
-        assert phrase in purpose_contract
-    assert "UX補助へ、敵対的入力に対する堅牢性を暗黙の要件として課さない" in purpose_contract
-    assert "元の目的、契約または適用規範の何に違反するかを1文で記す" in purpose_contract
-    assert "計画を入力契約として受け取るレビュー" in purpose_contract
-    assert "盲検系のレビューは`review_contract`を確認" in purpose_contract
+        assert phrase in review_standards
     assert "`review_contract`" in independent_task
     assert "ユーザー目的、現行の公開契約" in independent_task
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針" in independent_task
 
 
 def test_review_findings_recheck_operational_proportionality() -> None:
-    """レビュー担当が確定指摘を通常運用の再現性・比例性で選別する。"""
+    """レビュー担当が実害、証拠及び解消方向で指摘を選別する。"""
     reviewers = (
         _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
         _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
@@ -5371,12 +5394,12 @@ def test_review_findings_recheck_operational_proportionality() -> None:
     for reviewer in reviewers:
         assert "review-standards" in reviewer
     for phrase in (
-        "確定指摘の前",
-        "通常運用で発生する再現経路と入力主体",
-        "対象外の入力前提又は異なる脅威モデル",
-        "永続状態、所有権、期限、復旧経路又は互換経路の新設",
-        "何もしない案、既存操作だけの案、局所運用案及び新機構案",
-        "単純案で十分である場合は新機構を要求しない",
+        "実害のある問題を同じラウンドで全て検出する",
+        "元のユーザー目的、公開契約、適用規範、入力生成主体、信頼境界、通常入力及び非目標",
+        "通常運用で実害が生じる契約違反だけを指摘する",
+        "同じ違反契約が影響する全箇所を確認し、1件の指摘へまとめる",
+        "候補は対象に適した根拠で検証する",
+        "満たすべき契約と問題を解消する方向を示す",
     ):
         assert phrase in common_review
 
@@ -5400,6 +5423,8 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
         assert f"## {heading}\n" in reviewee
     for phrase in (
         "通常運用での再現経路及び消費主体への影響を独立に測定する",
+        "指摘は、観測事実、違反する目的又は契約、対象への適用条件、通常運用で生じる実害及び裏付けを照合して採否を確定する。",
+        "いずれかの根拠が不足する行は採否を確定せず、証拠不足の範囲と必要な検証をレビュー工程へ返す。",
         "何も変更しない案を含め",
         "過去の不採用理由が失効していない案",
         "既存の成功経路",
@@ -5505,13 +5530,18 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
     assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否と最小限の修正" in executor
-    assert "根拠と適用条件のいずれかが不足する指摘は`未検証`へ移す" in executor
+    assert (
+        "根拠と適用条件のいずれかが不足する行は採否対象へ含めず、証拠不足の範囲と必要な検証をレビュー工程へ返す。" in executor
+    )
     assert "実在欠陥だけを実装担当へ一括して返す" in executor
 
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     assert "指定されたレビュー表へ記録してから修正に着手する" in delegation
     assert "行を一意に特定できるキーを指定して応答欄を更新する" in delegation
-    assert "`未検証`の指摘は修正担当へ渡さない" in delegation
+    assert (
+        "レビュー指摘に必要な裏付けを取得できない場合は、指摘として統合又は修正担当へ配送せず、証拠不足の範囲と必要な検証を同じレビュー担当へ返す"
+        in delegation
+    )
 
 
 def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
@@ -5527,9 +5557,14 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
 
-    for phrase in ("出典の原文", "適用範囲", "例外条件", "対象への適用", "`未検証`"):
+    for phrase in (
+        "違反した目的又は契約の原文",
+        "対象へ適用される条件",
+        "通常運用で生じる実害及び裏付け",
+        "具体的な実装方法は確定しない",
+    ):
         assert phrase in review_standards
-    assert "元のユーザー目的、公開契約、保持対象の変更を認可する記述" in review_standards
+    assert "`未検証`" not in review_standards
 
     for reviewer in (plan_review_task, implementation_plan_review_task, independent_review_task):
         assert "対象への適用根拠" in reviewer
@@ -5541,9 +5576,10 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     for adopter in (delegation, executor):
         assert "適用" in adopter
         assert "最小限の修正" in adopter
-        assert "`未検証`" in adopter
-    for phrase in ("適用", "必要十分", "未検証"):
+        assert "証拠不足" in adopter
+    for phrase in ("適用", "必要十分", "証拠不足"):
         assert phrase in reviewee
+    assert "`未検証`" not in reviewee
     for phrase in ("適用", "最小限の修正"):
         assert phrase in plan_review_delegation
     assert "修正方針" in reviewee
@@ -5575,9 +5611,12 @@ def test_policy_parser_review_contract_declares_operating_boundary() -> None:
     independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
     independent_input_contract = _h2_section(independent_task, "入力")
 
-    for phrase in ("入力生成主体", "信頼境界", "通常入力", "対象外入力", "誤許可と誤拒否"):
+    for phrase in ("入力生成主体", "信頼境界", "通常入力"):
         assert phrase in coding_standards
         assert phrase in review_standards
+        assert phrase in independent_input_contract
+    for phrase in ("対象外入力", "誤許可と誤拒否"):
+        assert phrase in coding_standards
         assert phrase in independent_input_contract
     assert "`review_contract`" in independent_input_contract
     assert "ユーザー発話全文、作者の推論、変更意図、実装方針は含めない" in independent_input_contract
@@ -5735,11 +5774,11 @@ def test_review_completion_evidence_and_checkpoint_observation_contracts_are_con
     assert "各要件の被覆結果と根拠は、review-standardsの共通契約に従う。" in review_task
     assert "1ラウンドで完了できない範囲は既存の未走査範囲として明示する。" in review_task
     assert "被覆結果はレビュー表の指摘と別の完了報告として返し" in review_task
-    assert "## 初回・再レビューの共通契約" in review_standards
-    assert coverage_contract in review_standards
+    assert "## 基本方針" in review_standards
+    assert "## 初回レビュー" in review_standards
+    assert "## 再レビュー" in review_standards
     assert (
-        "未走査、根拠のない`確認済み`又は理由のない`非該当`が残る場合は、初回レビューを完了として返さず不足範囲を返す。"
-        in review_standards
+        "未走査、根拠のない`確認済み`又は理由のない`非該当`が残る場合は、不足範囲を返して走査を継続する。" in review_standards
     )
     assert coverage_contract not in review_task
     assert coverage_contract not in standards
@@ -5890,7 +5929,7 @@ def test_plan_review_contracts_keep_authorization_and_recording_boundaries() -> 
     assert "真正性を再判定せず" in flow
 
     assert "実装順序・単位分割・個別コマンドなどの手順詳細" in agent_standards
-    assert "安全性、データ保全、公開契約又は主体間の認可境界" in review_standards
+    assert "入力生成主体、信頼境界、通常入力及び非目標" in review_standards
     assert "対象ファイル集合と近接検証が独立" in review_task
     assert "実装単位を分割するのは、成果、commit、対象ファイル集合及び近接検証が独立" in flow
 
