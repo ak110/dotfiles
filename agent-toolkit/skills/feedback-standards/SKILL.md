@@ -41,6 +41,8 @@ TBDを起草する場合は[references/tbd-format.md](references/tbd-format.md)�
 
 `source`は本文全体の既定由来を示す。`source`欠落と`human`だけを既定で人間由来とし、`plan`を含むその他の値は既定でエージェント由来とする。値は改変せず、移行もしない。
 
+エージェント自身が投入元で人間由来の指示がない場合は、`source`を必須とする。生成経路名を持つ起票は当該経路名を、経路名を持たない起票は`agent`を用いる。ユーザー発話を原文とする投入で`source`を受領していない場合は、値を推測せず省略する。
+
 要求単位に記録された次の明示由来は、本文全体の既定由来より優先する。
 
 - 末尾の厳密なH2 `## ユーザーコメント`配下の要求
@@ -86,5 +88,5 @@ TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持�
 2. 複数リポジトリへ投入する場合は[references/cross-repository-submission.md](references/cross-repository-submission.md)を全文読む。
 3. 同じ対象リポジトリの複数項目を一括取得する場合は[references/managed-temp-bulk-show.md](references/managed-temp-bulk-show.md)を全文読む。
 4. 本文へ引用符又は改行を含む場合はファイルへ保存し、`atk mq add --body-file <path>`で渡す。位置引数とは併用しない。
-5. 呼出元が指定した本文、対象リポジトリ、種別、`source`、plan file及び依存を変更せず登録する。`source`が未指定の人間由来入力へ値を推測して追加しない。
-6. 完了表示と`atk mq show <filename> --target-repo=<repo> --skip-pull`の再取得結果を照合する。ファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`、指定済み`source`及び非予約frontmatterに欠落があれば、完了扱いにせず同じ経路で修復する。警告又はエラーが出た場合は終了コード0でも保存本文を再取得する。
+5. 呼出元が指定した本文、対象リポジトリ、種別、`source`、plan file及び依存を変更せず登録する。エージェント自身の投入では前節で確定した`source`を省略しない。`source`が未指定の人間由来入力へ値を推測して追加しない。
+6. 完了表示と`atk mq show <filename> --target-repo=<repo> --skip-pull`の再取得結果を照合する。ファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`、指定・確定済みの`source`及び非予約frontmatterに欠落があれば、完了扱いにせず同じ経路で修復する。警告又はエラーが出た場合は終了コード0でも保存本文を再取得する。

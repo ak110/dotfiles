@@ -1410,10 +1410,14 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
 
     assert "`source`欠落と`human`だけを既定で人間由来" in standards
     assert "`plan`を含むその他の値は既定でエージェント由来" in standards
+    assert "エージェント自身が投入元で人間由来の指示がない場合は、`source`を必須" in standards
+    assert "経路名を持たない起票は`agent`を用いる" in standards
+    assert "エージェント自身の投入では前節で確定した`source`を省略しない" in standards
+    assert "指定・確定済みの`source`" in standards
     for phrase in ("## ユーザーコメント", "TBDの`## 回答`", "関連計画の実施内容", "出所と引用範囲を保持した対話回答"):
         assert phrase in standards
-    assert "指定済み`source`" in standards
     assert "ユーザー発話を原文とする投入で`source`を受領していない場合は推測しない" in add_feedback
+    assert "ユーザー発話を原文とする投入で`source`を受領していない場合は、値を推測せず省略" in standards
     assert "source `plan`と要求単位の由来" in plan_and_add
     assert "source `session-review`を明示" in session_review
 
