@@ -685,7 +685,8 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
     assert "| Codex | Codex |" not in implementation_executor
     assert "| Claude | Claude |" not in implementation_executor
     assert "atk review-table add --round <ラウンド> --track <track>" in reviewer
-    assert "atk review-table respond --track <track>" in reviewee
+    assert "atk review-table respond --track <track>" not in reviewee
+    assert "`atk review-table`の公開CLI契約" in reviewee
     assert "`plan-conformance`" in _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     assert "`independent`" in _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
 
@@ -1144,24 +1145,19 @@ def test_reviewee_costs_distinguish_standalone_typos_and_required_repairs() -> N
     """レビューイーのライフサイクル費用比較とエンドユーザー向け文書の必須是正を固定する。"""
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
     reviewer = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    adoption = _h2_section(reviewee, "採否の独立確定")
+    adoption = _h2_section(reviewee, "修正要否の立証")
 
-    lifecycle_contract = (
-        "指摘の採否は、残置した場合の実害と認知・保守費用に加え、修正、検証及び再レビューに要する費用を同じライフサイクルで比較する。"
-        "実害がなく意味も変えない誤記だけを直すために独立した修正・再レビューを起こさない。"
-        "ただし、同じ成果物に別の重大な修正があり再レビューを既に行う場合は、追加費用が小さい誤記も同時に是正する。"
-        "エンドユーザー向け文書で誤記又は適用対象のスタイル違反だと確認した指摘は実害ありとして必ず是正し、実害のない単独誤記の修正省略及び低頻度リスクの費用比較から除外する。"
-        "それ以外の実害があり得る指摘は、現行運用での発生条件と頻度、影響、残余リスクを観測事実で評価し、恒常的な複雑性と保守性低下が利得を上回る場合は採用しない。"
-    )
-    boundary_contract = (
-        "重大な実害、明示要件違反、公開契約違反及びセキュリティ欠陥を、費用だけを理由に残置できない既存境界は維持する。"
-        "レビュー担当の指摘生成基準へ同じ文面を複製せず、最終採否を担うrevieweeの責務として実装する。"
+    lifecycle_contract = "\n".join(
+        (
+            "何も変更しない案を含め、残置した場合の実害と認知・保守費用、修正・検証・再レビューの費用、変更が増やす複雑性を同じライフサイクルで比較する。",
+            "実害がなく意味も変えない単独の誤記は、独立した修正と再レビューを起こさない。",
+            "同じ成果物に重大な修正があり再レビューする場合は、追加費用が小さい誤記も同時に是正する。",
+            "エンドユーザー向け文書の誤記と適用対象のスタイル違反、重大な実害、明示要件違反、公開契約違反及びセキュリティ欠陥は、費用だけを理由に残置しない。",
+        )
     )
 
     assert lifecycle_contract in adoption
-    assert boundary_contract in adoption
     assert lifecycle_contract not in reviewer
-    assert boundary_contract not in reviewer
 
 
 def test_plan_review_keeps_author_as_the_only_writer() -> None:
@@ -1184,8 +1180,8 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
     assert "同一の目的条項" not in reviewee
     assert "同一の混入構造への指摘も発火対象とする" not in reviewee
     assert "2ラウンド連続" in task
-    assert "直前ラウンドで自身が追加・変更した箇所への再指摘では局所修正を止め" in reviewee
-    assert "再設計・簡素化・撤去を同じラウンド内で比較する" in reviewee
+    assert "直前の修正後に同じ問題が再発した場合、局所修正を止め" in reviewee
+    assert "現在の設計の維持、再設計、簡素化及び撤去を比較する" in reviewee
     assert "レビュー担当が再設計・簡素化・撤去を求めた箇所へ小修正で応じない" not in delegation
 
 
@@ -1231,8 +1227,9 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
     assert "validate --allow-unanswered" in reviewer
     assert "show --track <track>" in reviewer
     assert "add --round <ラウンド> --track <track>" in reviewer
-    assert "validate --allow-unanswered" in reviewee
-    assert "respond --track <track>" in reviewee
+    assert "validate --allow-unanswered" not in reviewee
+    assert "respond --track <track>" not in reviewee
+    assert "`atk review-table`の公開CLI契約" in reviewee
     assert "validate --allow-unanswered <レビュー表>" in independent
     assert "show --track independent <レビュー表>" in independent
     assert "review-loop-coordination.md" in _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
@@ -1246,7 +1243,6 @@ def test_review_table_paths_use_one_file_and_track_attribution() -> None:
         _PLAN_IMPL_EXECUTOR,
         _PLAN_IMPL_PLAN_REVIEW_TASK,
         _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
-        _REVIEWEE_STANDARDS,
     )
     for path in implementation_documents:
         document = path.read_text(encoding="utf-8")
@@ -1256,6 +1252,9 @@ def test_review_table_paths_use_one_file_and_track_attribution() -> None:
     assert "independent" in _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
     assert "plan-review" in _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     assert "plan-review" in _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
+    assert "review.tsv" not in reviewee
+    assert "渡された修正対象の`track`集合" in reviewee
 
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8") + _PLAN_IMPL_EXECUTOR_DIFF_REVIEW_MODE.read_text(
         encoding="utf-8"
@@ -1308,7 +1307,8 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     ):
         assert phrase in executor
     assert "同じ表を指摘追加対象として指定する" in executor
-    assert "respond --track <track>" in reviewee
+    assert "respond --track <track>" not in reviewee
+    assert "`atk review-table`の公開CLI契約" in reviewee
     assert "指定されたレビュー表" in implementation_task
     assert "全文読取" in implementation_task
 
@@ -4569,16 +4569,15 @@ def test_session_review_investigates_third_review_by_artifact_and_responsibility
 
 
 def test_review_rounds_have_an_escalation_route_for_repeated_findings() -> None:
-    """同一単位への早期返却と連続3ラウンドの確定経路を固定する。"""
+    """再発時の設計比較をレビューイーへ、ラウンド管理を調整主体へ分離する。"""
     coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
 
-    assert "合格に自信を持てない場合" in reviewee
-    assert "3ラウンド目" in reviewee
-    assert "機械判定しない" in reviewee
-    assert "連続3ラウンドへ達した場合" in reviewee
-    assert "撤去と同一内容の復元をともに観測した場合" in reviewee
-    assert "呼び出し元が当該単位の処置を確定して指示した場合" in reviewee
+    assert "直前の修正後に同じ問題が再発した場合、局所修正を止め" in reviewee
+    assert "現在の設計の維持、再設計、簡素化及び撤去を比較する" in reviewee
+    assert "ラウンド数、指摘の分類、記録と収束判定は" in reviewee
+    for detail in ("3ラウンド目", "連続3ラウンドへ達した場合", "機械判定しない"):
+        assert detail not in reviewee
     for phrase in (
         "3ラウンド連続",
         "撤去と同一内容の復元をともに観測した場合",
@@ -4599,15 +4598,12 @@ def test_review_repetition_triggers_cover_purpose_and_contamination_structure() 
 
     coordinator, reviewee = documents
     assert "同じ違反契約・変更機構" in coordinator
-    assert "同一の違反契約又は同一の新設・変更機構" in reviewee
-    for document in documents:
-        assert "元の目的" in document or "当初のユーザー目的" in document
-        assert "文字列、見出し、目的語、混在構造又は接続関係だけ" in document
-
-    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
-    for record in ("契約", "機構", "目的条項", "混入構造", "採用した結果", "不採用理由"):
-        assert record in reviewee
-    assert "原因起点の横展開は`agent-toolkit:bugfix`の原因分析契約へ委ねる" in reviewee
+    assert "同じ違反契約が通常運用で再現する範囲" in reviewee
+    assert "元の目的" in coordinator or "当初のユーザー目的" in coordinator
+    assert "文字列、見出し、目的語、混在構造又は接続関係だけ" in coordinator
+    assert "文字列、見出し、目的語又は接続関係だけが似る箇所" in reviewee
+    for detail in ("2ラウンド連続して成立した場合", "連続3ラウンドへ達した場合", "採用した結果と不採用理由"):
+        assert detail not in reviewee
 
 
 def test_minor_review_convergence_uses_actual_repair_impact() -> None:
@@ -5352,23 +5348,37 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     description = metadata["description"]
 
     for phrase in (
-        "レビュー指摘・改善提案・レビュー結果を受領し",
-        "計画・設計の採用案や想定外の発見の妥当性を評価する場面",
+        "レビュー指摘・改善提案・ユーザーの割り込みや是正要求・想定外の発見を受領し",
+        "成果物を変更するか、どのように修正して検証するかを確定する場面で最初に起動する",
         "レビューを実施する主体（レビュー担当）は起動しない",
     ):
         assert phrase in description
+
+    for heading in ("修正要否の立証", "安全な修正", "公開可能性の検証"):
+        assert f"## {heading}\n" in reviewee
     for phrase in (
-        "各指摘の事実と違反契約を自身でも実測する",
-        "問題と手段の比例性を独立に再判定する",
-        "対象外の入力前提又は異なる脅威モデル",
-        "複写するだけで採用しない",
-        "元の目的と非目標へ差し戻す",
-        "比較階層と比例性の判定は、`../review-standards/references/judgment-details.md`を解決して正本",
-        "同じ修正回で一括修正する",
-        "違反契約の原文を修正後の成果物へ再適用する",
-        "references/judgment-details.md",
+        "通常運用での再現経路及び消費主体への影響を独立に測定する",
+        "何も変更しない案を含め",
+        "過去の不採用理由が失効していない案",
+        "既存の成功経路",
+        "直前の修正後に同じ問題が再発した場合、局所修正を止め",
+        "変更全体を通読又はレビューし",
+        "変更に最も近いテスト、lint、format、型検査、生成物同期と、呼び出し文脈が定める全体検査",
+        "成果物が修正直後の状態で公開されても事故を起こさない",
+        "同じ成果物に重大な修正があり再レビューする場合は、追加費用が小さい誤記も同時に是正する",
     ):
         assert phrase in reviewee
+
+    for detail in (
+        "../../scripts/_review_table.py",
+        "JSON文字列として保存",
+        "JSON復号",
+        "2ラウンド連続して成立した場合",
+        "連続3ラウンドへ達した場合",
+        "3ラウンド目",
+        "atk review-table respond --track <track>",
+    ):
+        assert detail not in reviewee
 
     body_references = (
         _PLAN_REVIEW_DELEGATION,
@@ -5385,11 +5395,11 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert "agent-toolkit:reviewee-standards" in executor_metadata["skills"]
 
     representative_phrases = (
-        "比例性を独立に再判定",
-        "新機構を採用しない",
-        "複写するだけで採用しない",
-        "脅威モデル",
-        "元の目的と非目標へ差し戻す",
+        "何も変更しない案を含め",
+        "過去の不採用理由が失効していない案",
+        "直前の修正後に同じ問題が再発した場合、局所修正を止め",
+        "変更全体を通読又はレビューし",
+        "成果物が修正直後の状態で公開されても事故を起こさない",
     )
     reception_paths = (*body_references[:3], _PLAN_IMPL_EXECUTOR, _DELEGATION_SKILL)
     for path in reception_paths:
@@ -5490,7 +5500,7 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
         assert "適用" in adopter
         assert "最小限の修正" in adopter
         assert "`未検証`" in adopter
-    for phrase in ("適用", "最小限", "`未検証`"):
+    for phrase in ("適用", "必要十分", "未検証"):
         assert phrase in reviewee
     for phrase in ("適用", "最小限の修正"):
         assert phrase in plan_review_delegation
